@@ -63,6 +63,16 @@ check_existing_services() {
 # Vérification des prérequis système
 # ============================================================================
 
+check_apache() {
+    log "Vérification Apache..."
+    if ! command -v apache2 &>/dev/null; then
+        log_warning "Apache2 n'est pas installé - configuration Apache ignorée"
+        return 1
+    fi
+    log_success "Apache2 trouvé: $(apache2 -v 2>&1 | head -n1)"
+    return 0
+}
+
 check_bash() {
     log "Vérification bash..."
     if [[ ! -n "${BASH_VERSION}" ]]; then
@@ -313,6 +323,37 @@ run_application_update() {
 }
 
 # ============================================================================
+# Configuration Apache
+# ============================================================================
+
+configure_apache() {
+    local conf_source="$APP_DIR/config/apache/sambaedu-reload.conf"
+    local conf_target="/etc/apache2/sites-available/sambaedu-reload.conf"
+
+    log "Configuration Apache (port 8080)..."
+
+    if [[ ! -f "$conf_source" ]]; then
+        log_error "Configuration Apache source introuvable: $conf_source"
+        exit 1
+    fi
+
+    cp "$conf_source" "$conf_target"
+
+    # Ajouter Listen 8080 si absent
+    if ! grep -q "Listen 8080" /etc/apache2/ports.conf; then
+        echo "Listen 8080" >> /etc/apache2/ports.conf
+        log "Listen 8080 ajouté à ports.conf"
+    fi
+
+    a2ensite sambaedu-reload.conf >/dev/null 2>&1 || true
+    a2enmod rewrite >/dev/null 2>&1 || true
+    a2enmod headers >/dev/null 2>&1 || true
+    a2enmod proxy_fcgi >/dev/null 2>&1 || true
+    systemctl reload apache2
+    log_success "Apache configuré (sambaedu-reload sur port 8080)"
+}
+
+# ============================================================================
 # Affichage du résumé
 # ============================================================================
 
@@ -367,7 +408,7 @@ main() {
     echo ""
 
     # Phase 1: Vérifications
-    log "Phase 1/5: Vérifications initiales..."
+    log "Phase 1/6: Vérifications initiales..."
     echo ""
 
     check_existing_services
@@ -382,12 +423,17 @@ main() {
         npm_available=false
     fi
 
+    apache_available=true
+    if ! check_apache; then
+        apache_available=false
+    fi
+
     echo ""
     log_success "Tous les prérequis sont OK"
 
     # Phase 2: Docker et configuration
     echo ""
-    log "Phase 2/5: Configuration Docker et .env..."
+    log "Phase 2/6: Configuration Docker et .env..."
     echo ""
 
     generate_env
@@ -396,7 +442,7 @@ main() {
 
     # Phase 3: Dépendances
     echo ""
-    log "Phase 3/5: Installation des dépendances..."
+    log "Phase 3/6: Installation des dépendances..."
     echo ""
 
     install_composer
@@ -409,17 +455,28 @@ main() {
 
     # Phase 4: Base de données
     echo ""
-    log "Phase 4/5: Migration de la base de données..."
+    log "Phase 4/6: Migration de la base de données..."
     echo ""
 
     run_migrations
 
     # Phase 5: Optimisation
     echo ""
-    log "Phase 5/5: Optimisation applicative..."
+    log "Phase 5/6: Optimisation applicative..."
     echo ""
 
     run_application_update
+
+    # Phase 6: Apache
+    echo ""
+    log "Phase 6/6: Configuration Apache..."
+    echo ""
+
+    if [[ $apache_available == true ]]; then
+        configure_apache
+    else
+        log_warning "Apache non disponible - configuration ignorée"
+    fi
 
     # Résumé
     echo ""
