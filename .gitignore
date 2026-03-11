@@ -32,6 +32,8 @@ coverage/
 # Build artifacts
 /public/css/*
 /public/js/*
+/public/build/*
+/public/vendor/*
 public/mix-manifest.json
 public/js/app.js
 public/css/app.css
