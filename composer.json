@@ -12,7 +12,7 @@
         "apereo/phpcas": "~1.6",
         "arthurhoaro/favicon": "~2.0",
         "czproject/git-php": "~4.3",
-        "darkaonline/l5-swagger": "^9.0",
+        "darkaonline/l5-swagger": "^10.0",
         "devrabiul/laravel-toaster-magic": "^1.4",
         "directorytree/ldaprecord": "^3.8",
         "directorytree/ldaprecord-laravel": "^3.4",

@@ -1,14 +1,16 @@
+version: '3.8'
+
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: se4fs_postgres
+    container_name: sambaedu_postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_DATABASE:-sambaedu}
       POSTGRES_USER: ${DB_USERNAME:-sambaedu}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-sambaedu_secret}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -16,7 +18,32 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - sambaedu
+
+  redis:
+    image: redis:7-alpine
+    container_name: sambaedu_redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_secret}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sambaedu
 
 volumes:
   postgres_data:
     driver: local
+  redis_data:
+    driver: local
+
+networks:
+  sambaedu:
+    driver: bridge

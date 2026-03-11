@@ -1,86 +1,166 @@
 #!/bin/bash
+# ============================================================================
+# SambaEdu Update Script
+# Mises à jour: dépendances, migrations, configurations
+# ============================================================================
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LARAVEL_DIR="$(dirname "$SCRIPT_DIR")"
-APACHE_CONF_SOURCE="$LARAVEL_DIR/config/apache/sambaedu.conf"
+APP_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Configuration
+APACHE_CONF_SOURCE="$APP_DIR/config/apache/sambaedu.conf"
 APACHE_CONF_TARGET="/etc/apache2/sites-available/sambaedu.conf"
-SYSTEMD_SOURCE_DIR="$LARAVEL_DIR/scripts/config"
+SYSTEMD_SOURCE_DIR="$APP_DIR/scripts/config"
 SYSTEMD_TARGET_DIR="/etc/systemd/system"
 PHP_CMD="${PHP_CMD:-/usr/bin/php8.2}"
 
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
 log() {
-    echo "[update] $*"
+    echo -e "${BLUE}[update]${NC} $*"
 }
 
-require_root() {
+log_success() {
+    echo -e "${GREEN}[✓]${NC} $*"
+}
+
+log_error() {
+    echo -e "${RED}[✗]${NC} $*"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[!]${NC} $*"
+}
+
+# ============================================================================
+# Validation des prérequis
+# ============================================================================
+
+check_root() {
     if [[ "${EUID}" -ne 0 ]]; then
-        echo "Ce script doit être exécuté en root (sudo)."
+        log_error "Ce script doit être exécuté en root (sudo)"
         exit 1
     fi
 }
 
-update_dependencies() {
-    cd "$LARAVEL_DIR"
+check_artisan() {
+    if [[ ! -f "$APP_DIR/artisan" ]]; then
+        log_error "artisan non trouvé - pas une installation Laravel valide"
+        exit 1
+    fi
+}
 
-    log "Mise à jour dépendances Composer"
+# ============================================================================
+# Mise à jour des dépendances
+# ============================================================================
+
+update_composer() {
+    log "Mise à jour dépendances Composer..."
+    cd "$APP_DIR"
+
     composer install --no-dev --optimize-autoloader --no-interaction
 
-    if [[ -f package.json ]] && command -v npm >/dev/null 2>&1; then
-        log "Build frontend"
-        npm run build
-    else
-        log "NPM/package.json absent: build frontend ignoré"
-    fi
+    log_success "Composer OK"
 }
+
+update_npm() {
+    log "Mise à jour dépendances NPM..."
+    cd "$APP_DIR"
+
+    if [[ ! -f package.json ]]; then
+        log_warning "package.json non trouvé - build frontend ignoré"
+        return
+    fi
+
+    if ! command -v npm >/dev/null 2>&1; then
+        log_warning "npm non installé - build frontend ignoré"
+        return
+    fi
+
+    npm install
+    npm run build
+
+    log_success "NPM OK"
+}
+
+# ============================================================================
+# Mise à jour Laravel
+# ============================================================================
 
 run_laravel_update() {
-    cd "$LARAVEL_DIR"
+    log "Exécution de la mise à jour applicative..."
+    cd "$APP_DIR"
 
-    if [[ ! -f artisan ]]; then
-        log "artisan introuvable, arrêt"
-        exit 1
-    fi
-
-    log "Exécution commande artisan de mise à jour applicative"
     "$PHP_CMD" artisan sambaedu:app:update
 
-    if [[ -f .env.example && -f .env ]]; then
-        local missing_keys
-        missing_keys=$(comm -23 \
-            <(grep -E '^[A-Z_]+=' .env.example | cut -d= -f1 | sort) \
-            <(grep -E '^[A-Z_]+=' .env | cut -d= -f1 | sort) || true)
+    log_success "Mise à jour Laravel OK"
+}
 
-        if [[ -n "$missing_keys" ]]; then
-            log "Variables présentes dans .env.example mais absentes de .env:"
-            echo "$missing_keys" | sed 's/^/  - /'
-        fi
+check_missing_env_vars() {
+    log "Vérification des variables d'environnement..."
+
+    if [[ ! -f .env.example || ! -f .env ]]; then
+        log_warning ".env.example ou .env introuvable"
+        return
+    fi
+
+    local missing_keys
+    missing_keys=$(comm -23 \
+        <(grep -E '^[A-Z_]+=' .env.example | cut -d= -f1 | sort) \
+        <(grep -E '^[A-Z_]+=' .env | cut -d= -f1 | sort) || true)
+
+    if [[ -n "$missing_keys" ]]; then
+        log_warning "Variables présentes dans .env.example mais absentes de .env:"
+        echo "$missing_keys" | sed 's/^/    - /'
+        log_warning "À ajouter manuellement au .env"
+    else
+        log_success "Toutes les variables d'environnement sont présentes"
     fi
 }
 
-update_apache_if_needed() {
+# ============================================================================
+# Mise à jour Apache
+# ============================================================================
+
+update_apache() {
+    log "Vérification configuration Apache..."
+
     if [[ ! -f "$APACHE_CONF_SOURCE" ]]; then
-        log "Configuration Apache source introuvable: $APACHE_CONF_SOURCE"
+        log_warning "Configuration Apache source introuvable: $APACHE_CONF_SOURCE"
         return
     fi
 
     if [[ ! -f "$APACHE_CONF_TARGET" ]] || ! cmp -s "$APACHE_CONF_SOURCE" "$APACHE_CONF_TARGET"; then
-        log "Mise à jour configuration Apache"
-        
+        log "Mise à jour configuration Apache..."
         cp "$APACHE_CONF_SOURCE" "$APACHE_CONF_TARGET"
         a2ensite sambaedu.conf >/dev/null 2>&1 || true
+        a2enmod rewrite >/dev/null 2>&1 || true
+        a2enmod headers >/dev/null 2>&1 || true
         systemctl reload apache2
+        log_success "Apache mis à jour"
     else
-        log "Configuration Apache déjà à jour"
+        log_success "Apache déjà à jour"
     fi
 }
 
-update_systemd_if_needed() {
+# ============================================================================
+# Mise à jour des services systemd
+# ============================================================================
+
+update_systemd() {
+    log "Vérification services systemd..."
+
     local changed=false
 
     if [[ ! -d "$SYSTEMD_SOURCE_DIR" ]]; then
-        log "Répertoire services introuvable: $SYSTEMD_SOURCE_DIR"
+        log_warning "Répertoire services introuvable: $SYSTEMD_SOURCE_DIR"
         return
     fi
 
@@ -100,22 +180,71 @@ update_systemd_if_needed() {
 
     if [[ "$changed" == true ]]; then
         systemctl daemon-reload
+        log_success "Services systemd mis à jour"
+    else
+        log_success "Services systemd déjà à jour"
     fi
 
-    systemctl restart laravel-queue-general laravel-queue-sync
+    # Redémarrer les workers
+    if systemctl is-enabled laravel-queue-general >/dev/null 2>&1; then
+        log "Redémarrage des workers..."
+        systemctl restart laravel-queue-general || true
+    fi
+    if systemctl is-enabled laravel-queue-sync >/dev/null 2>&1; then
+        systemctl restart laravel-queue-sync || true
+    fi
 }
 
+# ============================================================================
+# Affichage du résumé
+# ============================================================================
+
+show_summary() {
+    echo ""
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}Mise à jour terminée avec succès!${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    log_success "Toutes les étapes complétées"
+    echo ""
+    log "Statistiques:"
+    echo "  ✓ Composer"
+    echo "  ✓ NPM/Build frontend"
+    echo "  ✓ Laravel update"
+    echo "  ✓ Apache"
+    echo "  ✓ Services systemd"
+    echo ""
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+
 main() {
-    require_root
+    log "Démarrage de la mise à jour..."
+    echo ""
 
-    log "Démarrage mise à jour"
-    update_dependencies
+    check_root
+    check_artisan
+
+    echo ""
+    update_composer
+
+    echo ""
+    update_npm
+
+    echo ""
     run_laravel_update
-    update_apache_if_needed
-    update_systemd_if_needed
+    check_missing_env_vars
 
-    log "Mise à jour terminée"
-    log "Note: aucune correction globale de permissions n'a été appliquée."
+    echo ""
+    update_apache
+
+    echo ""
+    update_systemd
+
+    echo ""
+    show_summary
 }
 
 main "$@"

@@ -1,109 +1,429 @@
 #!/bin/bash
+# ============================================================================
+# SambaEdu Installation Script
+# Installation complète: Docker + .env + dépendances + migrations
+# ============================================================================
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LARAVEL_DIR="$(dirname "$SCRIPT_DIR")"
-APACHE_CONF_SOURCE="$LARAVEL_DIR/config/apache/sambaedu.conf"
-APACHE_CONF_TARGET="/etc/apache2/sites-available/sambaedu.conf"
-SYSTEMD_SOURCE_DIR="$LARAVEL_DIR/scripts/config"
-SYSTEMD_TARGET_DIR="/etc/systemd/system"
-PHP_CMD="${PHP_CMD:-/usr/bin/php8.2}"
+APP_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
 log() {
-    echo "[install] $*"
+    echo -e "${BLUE}[install]${NC} $*"
 }
 
-require_root() {
-    if [[ "${EUID}" -ne 0 ]]; then
-        echo "Ce script doit être exécuté en root (sudo)."
+log_success() {
+    echo -e "${GREEN}[✓]${NC} $*"
+}
+
+log_error() {
+    echo -e "${RED}[✗]${NC} $*"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[!]${NC} $*"
+}
+
+# ============================================================================
+# Vérification de l'état existant
+# ============================================================================
+
+check_existing_services() {
+    log "Vérification des services existants..."
+
+    if ! command -v docker &>/dev/null; then
+        return
+    fi
+
+    # Vérifier les conteneurs SambaEdu
+    local running_count
+    running_count=$(docker compose ps --services --filter "status=running" 2>/dev/null | wc -l || echo 0)
+
+    if [[ $running_count -gt 0 ]]; then
+        log_warning "Services SambaEdu déjà en cours d'exécution:"
+        docker compose ps 2>/dev/null || true
+        echo ""
+        log_warning "Options:"
+        echo "  1. Continuer (les services seront redémarrés)"
+        echo "  2. Arrêter et nettoyer: docker compose down"
+        echo "  3. Supprimer complètement: docker compose down -v"
+        echo ""
+    fi
+}
+
+# ============================================================================
+# Vérification des prérequis système
+# ============================================================================
+
+check_bash() {
+    log "Vérification bash..."
+    if [[ ! -n "${BASH_VERSION}" ]]; then
+        log_error "Ce script doit être exécuté avec bash"
+        exit 1
+    fi
+    log_success "bash OK"
+}
+
+check_docker() {
+    log "Vérification Docker..."
+    if ! command -v docker &>/dev/null; then
+        log_error "Docker n'est pas installé"
+        log_warning "Installation de Docker via get.docker.com..."
+        curl -fsSL https://get.docker.com | sh
+        log_success "Docker installé"
+    else
+        log_success "Docker trouvé: $(docker --version)"
+    fi
+
+    # Démarrer le service Docker
+    if ! systemctl is-active --quiet docker; then
+        log "Démarrage du service Docker..."
+        systemctl start docker
+        systemctl enable docker
+        log_success "Docker service démarré"
+    fi
+}
+
+check_docker_compose() {
+    log "Vérification Docker Compose..."
+    if ! docker compose version &>/dev/null; then
+        log_error "Docker Compose plugin n'est pas installé"
+        exit 1
+    fi
+    log_success "Docker Compose OK"
+}
+
+check_php() {
+    log "Vérification PHP..."
+    if ! command -v php &>/dev/null; then
+        log_error "PHP n'est pas installé"
+        log_warning "Installez PHP: sudo apt install php php-cli"
+        exit 1
+    fi
+    local php_version
+    php_version=$(php -v | head -n1)
+    log_success "PHP trouvé: $php_version"
+}
+
+check_composer() {
+    log "Vérification Composer..."
+    if ! command -v composer &>/dev/null; then
+        log_error "Composer n'est pas installé"
+        log_warning "Installez Composer: https://getcomposer.org/download/"
+        exit 1
+    fi
+    log_success "Composer trouvé: $(composer --version)"
+}
+
+check_npm() {
+    log "Vérification NPM (optionnel)..."
+    if ! command -v npm &>/dev/null; then
+        log_warning "NPM n'est pas installé - build frontend sera ignoré"
+        return 1
+    fi
+    log_success "NPM trouvé: $(npm --version)"
+    return 0
+}
+
+# ============================================================================
+# Génération du .env
+# ============================================================================
+
+generate_env() {
+    log "Génération du fichier .env..."
+
+    if [[ -f "$APP_DIR/.env" ]]; then
+        log_warning ".env existe déjà, utilisation du fichier existant"
+        return
+    fi
+
+    if [[ ! -f "$SCRIPT_DIR/create-env.sh" ]]; then
+        log_error "Script create-env.sh non trouvé"
+        exit 1
+    fi
+
+    cd "$APP_DIR"
+    bash "$SCRIPT_DIR/create-env.sh"
+    log_success ".env créé avec succès"
+}
+
+interactive_env_validation() {
+    echo ""
+    echo -e "${BLUE}════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${BLUE}Configuration du fichier .env${NC}"
+    echo -e "${BLUE}════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+
+    log "Affichage du fichier .env généré:"
+    echo ""
+    cat "$APP_DIR/.env"
+    echo ""
+
+    # Demander à l'utilisateur s'il veut éditer
+    log_warning "IMPORTANT: Vérifiez et personnalisez les variables si nécessaire"
+    echo ""
+
+    while true; do
+        read -p "Voulez-vous éditer le .env? (y/n): " -n 1 -r
+        echo ""
+
+        if [[ $REPLY == "y" ]]; then
+            log "Ouverture de l'éditeur..."
+            ${EDITOR:-nano} "$APP_DIR/.env"
+
+            # Afficher à nouveau après édition
+            echo ""
+            log "Fichier .env après édition:"
+            echo ""
+            cat "$APP_DIR/.env"
+            echo ""
+        fi
+
+        # Demander confirmation
+        read -p "Continuer avec cette configuration? (y/n): " -n 1 -r
+        echo ""
+
+        if [[ $REPLY == "y" ]]; then
+            log_success "Configuration validée"
+            break
+        fi
+    done
+
+    echo ""
+}
+
+# ============================================================================
+# Déploiement Docker
+# ============================================================================
+
+deploy_docker() {
+    log "Déploiement Docker (PostgreSQL + Redis)..."
+
+    cd "$APP_DIR"
+
+    # Vérifier si les conteneurs sont déjà lancés
+    if docker compose ps --services --filter "status=running" 2>/dev/null | grep -q postgres; then
+        log_warning "PostgreSQL est déjà en cours d'exécution"
+        log "Redémarrage des services..."
+        docker compose restart
+        log_success "Services redémarrés"
+    else
+        # Lancer les conteneurs
+        log "Démarrage des conteneurs..."
+        docker compose up -d
+        log_success "Conteneurs démarrés"
+    fi
+
+    # Attendre que PostgreSQL soit prêt
+    log "Attente de disponibilité PostgreSQL..."
+    max_attempts=30
+    attempt=0
+    while [[ $attempt -lt $max_attempts ]]; do
+        if docker compose exec -T postgres pg_isready -U sambaedu -d sambaedu >/dev/null 2>&1; then
+            log_success "PostgreSQL est prêt"
+            break
+        fi
+        attempt=$((attempt + 1))
+        sleep 1
+    done
+
+    if [[ $attempt -eq $max_attempts ]]; then
+        log_error "PostgreSQL n'a pas répondu dans le délai imparti"
+        exit 1
+    fi
+
+    # Attendre que Redis soit prêt
+    log "Attente de disponibilité Redis..."
+    attempt=0
+    while [[ $attempt -lt $max_attempts ]]; do
+        if docker compose exec -T redis redis-cli ping >/dev/null 2>&1; then
+            log_success "Redis est prêt"
+            break
+        fi
+        attempt=$((attempt + 1))
+        sleep 1
+    done
+
+    if [[ $attempt -eq $max_attempts ]]; then
+        log_error "Redis n'a pas répondu dans le délai imparti"
         exit 1
     fi
 }
 
-run_app_steps() {
-    cd "$LARAVEL_DIR"
+# ============================================================================
+# Installation des dépendances
+# ============================================================================
 
-    if [[ ! -f .env ]]; then
-        if [[ -f "$SCRIPT_DIR/create-env.sh" ]]; then
-            log "Création du .env via scripts/create-env.sh"
-            bash "$SCRIPT_DIR/create-env.sh"
-        else
-            log "create-env.sh absent/non exécutable, fallback sur .env.example"
-            cp .env.example .env
-        fi
-    fi
+install_composer() {
+    log "Installation des dépendances Composer..."
+    cd "$APP_DIR"
 
-    log "Installation dépendances Composer"
     composer install --no-dev --optimize-autoloader --no-interaction
 
-    if [[ -f package.json ]] && command -v npm >/dev/null 2>&1; then
-        log "Installation dépendances NPM"
-        npm install
-        log "Build frontend"
-        npm run build
-    else
-        log "NPM/package.json absent: build frontend ignoré"
-    fi
-
-    if [[ -f artisan ]]; then
-        log "Exécution des étapes applicatives Laravel"
-        "$PHP_CMD" artisan sambaedu:app:update
-    fi
+    log_success "Composer OK"
 }
 
-setup_postgres() {
-    if [[ -f "$SCRIPT_DIR/setup-postgres.sh" ]]; then
-        log "Configuration PostgreSQL"
-        bash "$SCRIPT_DIR/setup-postgres.sh"
-    else
-        log "setup-postgres.sh absent/non exécutable: étape ignorée"
-    fi
-}
+install_npm() {
+    log "Installation des dépendances NPM..."
+    cd "$APP_DIR"
 
-setup_apache() {
-    if [[ -f "$APACHE_CONF_SOURCE" ]]; then
-        log "Installation configuration Apache"
-        cp "$APACHE_CONF_SOURCE" "$APACHE_CONF_TARGET"
-        a2ensite sambaedu.conf >/dev/null 2>&1 || true
-        a2enmod rewrite >/dev/null 2>&1 || true
-        a2enmod headers >/dev/null 2>&1 || true
-        systemctl reload apache2
-    else
-        log "Configuration Apache source introuvable: $APACHE_CONF_SOURCE"
-    fi
-}
-
-setup_systemd_workers() {
-    local services=(laravel-queue-general.service laravel-queue-sync.service)
-
-    if [[ ! -d "$SYSTEMD_SOURCE_DIR" ]]; then
-        log "Répertoire services introuvable: $SYSTEMD_SOURCE_DIR"
+    if [[ ! -f package.json ]]; then
+        log_warning "package.json non trouvé - build frontend ignoré"
         return
     fi
 
-    for service in "${services[@]}"; do
-        if [[ -f "$SYSTEMD_SOURCE_DIR/$service" ]]; then
-            cp "$SYSTEMD_SOURCE_DIR/$service" "$SYSTEMD_TARGET_DIR/$service"
-        fi
-    done
+    npm install
+    npm run build
 
-    systemctl daemon-reload
-    systemctl enable laravel-queue-general laravel-queue-sync
-    systemctl restart laravel-queue-general laravel-queue-sync
+    log_success "NPM OK"
 }
 
+# ============================================================================
+# Migrations de base de données
+# ============================================================================
+
+run_migrations() {
+    log "Exécution des migrations de base de données..."
+    cd "$APP_DIR"
+
+    php artisan migrate:fresh --seed
+
+    log_success "Migrations OK"
+}
+
+# ============================================================================
+# Mise à jour applicative
+# ============================================================================
+
+run_application_update() {
+    log "Exécution de la mise à jour applicative..."
+    cd "$APP_DIR"
+
+    php artisan sambaedu:app:update
+
+    log_success "Mise à jour applicative OK"
+}
+
+# ============================================================================
+# Affichage du résumé
+# ============================================================================
+
+show_summary() {
+    echo ""
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}Installation SambaEdu terminée avec succès!${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo "Services disponibles:"
+    echo "  📦 PostgreSQL:  localhost:5432"
+    echo "  🔴 Redis:       localhost:6379"
+    echo ""
+    echo "Application:"
+    echo "  🌐 URL: Configurez APP_URL dans .env"
+    echo "  📝 Configuration: $APP_DIR/.env"
+    echo ""
+    echo "Prochaines étapes:"
+    echo ""
+    echo "  1. Vérifier la configuration:"
+    echo "     cat $APP_DIR/.env"
+    echo ""
+    echo "  2. Relancer l'application:"
+    echo "     docker compose restart"
+    echo ""
+    echo "  3. Mettre à jour régulièrement:"
+    echo "     sudo $SCRIPT_DIR/update.sh"
+    echo ""
+    echo "Commandes utiles:"
+    echo "  # Logs PostgreSQL:"
+    echo "  docker compose logs -f postgres"
+    echo ""
+    echo "  # Logs Redis:"
+    echo "  docker compose logs -f redis"
+    echo ""
+    echo "  # Accéder à PostgreSQL:"
+    echo "  docker compose exec postgres psql -U sambaedu -d sambaedu"
+    echo ""
+    echo "  # Accéder à Redis:"
+    echo "  docker compose exec redis redis-cli"
+    echo ""
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+
 main() {
-    require_root
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}Installation SambaEdu - Installation complète${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
 
-    log "Démarrage installation complète"
-    setup_postgres
-    run_app_steps
-    setup_apache
-    setup_systemd_workers
+    # Phase 1: Vérifications
+    log "Phase 1/5: Vérifications initiales..."
+    echo ""
 
-    log "Installation terminée"
-    log "Note: aucune correction globale de permissions n'a été appliquée."
+    check_existing_services
+    check_bash
+    check_docker
+    check_docker_compose
+    check_php
+    check_composer
+
+    npm_available=true
+    if ! check_npm; then
+        npm_available=false
+    fi
+
+    echo ""
+    log_success "Tous les prérequis sont OK"
+
+    # Phase 2: Docker et configuration
+    echo ""
+    log "Phase 2/5: Configuration Docker et .env..."
+    echo ""
+
+    generate_env
+    interactive_env_validation
+    deploy_docker
+
+    # Phase 3: Dépendances
+    echo ""
+    log "Phase 3/5: Installation des dépendances..."
+    echo ""
+
+    install_composer
+
+    if [[ $npm_available == true ]]; then
+        install_npm
+    else
+        log_warning "NPM non disponible - frontend non compilé"
+    fi
+
+    # Phase 4: Base de données
+    echo ""
+    log "Phase 4/5: Migration de la base de données..."
+    echo ""
+
+    run_migrations
+
+    # Phase 5: Optimisation
+    echo ""
+    log "Phase 5/5: Optimisation applicative..."
+    echo ""
+
+    run_application_update
+
+    # Résumé
+    echo ""
+    show_summary
 }
 
 main "$@"
