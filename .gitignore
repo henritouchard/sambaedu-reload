@@ -1,0 +1,69 @@
+# Laravel
+/node_modules
+/public/hot
+/public/storage
+/storage/*.key
+/bootstrap/cache
+.env
+.env.backup
+.env.*.php
+.phpunit.result.cache
+Homestead.json
+Homestead.yaml
+
+# Composer
+/vendor
+composer.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Testing
+.phpunit.result.cache
+coverage/
+.pest/
+
+# Build artifacts
+/public/css/*
+/public/js/*
+public/mix-manifest.json
+public/js/app.js
+public/css/app.css
+
+# NPM / Vite
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Logs (les dossiers storage/* ont leur propre .gitignore qui préserve la structure)
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Swagger / API docs générés
+/storage/api-docs/
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE settings
+.editorconfig
+*.sublime-project
+*.sublime-workspace
+
+# Temporary files
+*.tmp
+*.temp
+*.bak

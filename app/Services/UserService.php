@@ -1,0 +1,1020 @@
+<?php
+
+namespace App\Services;
+
+use App\Config\LdapDnHelper;
+use App\Config\SambaEduConfig;
+use App\Models\User as SqlUserModel;
+use App\Repositories\UserRepository;
+use App\Repositories\OrganizationalUnitRepository;
+use App\Repositories\EstablishmentRepository;
+use App\Repositories\FunctionRepository;
+use App\Repositories\ClassRepository;
+use App\Services\PasswordService;
+use App\LdapModels\LdapUser;
+use App\LdapModels\SambaEduGroup;
+use App\Types\UserSearchCriteria;
+use App\Types\PaginatedResult;
+use App\Types\User;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * Service de gestion des utilisateurs SE4FS
+ * Interface avec LDAP Samba4 AD
+ * 
+ * Utilise exclusivement LdapRecord via les repositories et modèles
+ */
+class UserService
+{
+    public function __construct(
+        private UserRepository $userRepository,
+        private OrganizationalUnitRepository $ouRepository,
+        private EstablishmentRepository $establishmentRepository,
+        private FunctionRepository $functionRepository,
+        private ClassRepository $classRepository,
+        private PasswordService $passwordService,
+        private SambaEduConfig $config
+    ) {
+    }
+
+
+    /**
+     * Recherche des utilisateurs dans Active Directory via le repository
+     * 
+     * OPTIMISÉ: Utilise searchWithFilters() qui pousse tous les filtres dans LDAP
+     * 
+     * @param string $search Terme de recherche générique
+     * @param string|array $role Rôle(s) (string 'all' ou array ['profs', 'eleves'])
+     * @param string|array $status Statut(s) (string 'all' ou array ['active', 'inactive'])
+     * @param int $perPage
+     * @param int $page
+     * @param array $groups Groupes et classes fusionnés
+     * @param string $searchLogin Recherche spécifique login
+     * @param string $searchName Recherche spécifique nom/prénom
+     * @return PaginatedResult
+     */
+    public function searchUsers(string $search = '', string|array $role = 'all', string|array $status = 'all', int $perPage = 20, int $page = 1, array $groups = [], string $searchLogin = '', string $searchName = ''): PaginatedResult
+    {
+        try {
+            // Récupérer l'établissement de la session
+            $establishmentCode = $this->config->getCurrentEstablishmentCode();
+
+            // Filtres de recherche spécifiques (prioritaires)
+            $loginSearch = !empty($searchLogin) ? $searchLogin : null;
+            $nameSearch = !empty($searchName) ? $searchName : null;
+            $genericSearch = (!empty($search) && empty($searchLogin) && empty($searchName)) ? $search : null;
+
+            // Préparation des tableaux pour le DTO
+            $rolesList = is_array($role) ? $role : ($role !== 'all' && !empty($role) ? [$role] : []);
+            $statusesList = is_array($status) ? $status : ($status !== 'all' && !empty($status) ? [$status] : []);
+            $groupsList = !empty($groups) ? $groups : [];
+
+            // Création du DTO de critères
+            $criteria = new UserSearchCriteria(
+                genericSearch: $genericSearch,
+                loginSearch: $loginSearch,
+                nameSearch: $nameSearch,
+                roles: $rolesList,
+                statuses: $statusesList,
+                groups: $groupsList,
+                perPage: $perPage,
+                page: $page
+            );
+
+            // Utiliser la nouvelle méthode optimisée du repository
+            // Tous les filtres, tri et pagination sont gérés côté LDAP
+            $result = $this->userRepository->searchWithFilters($criteria);
+
+            return PaginatedResult::create(
+                items: $result->users->all(), // Retourne un array d'objets User
+                pagination: [
+                    'current_page' => $result->currentPage,
+                    'per_page' => $result->perPage,
+                    'total' => $result->total,
+                    'last_page' => $result->lastPage,
+                    'from' => $result->from,
+                    'to' => $result->to,
+                    'has_more_pages' => $result->hasMorePages
+                ],
+                itemClass: User::class
+            );
+
+        } catch (\Exception $e) {
+            Log::error('UserService searchUsers error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            return PaginatedResult::create(
+                items: [],
+                pagination: [
+                    'current_page' => $page,
+                    'per_page' => $perPage,
+                    'total' => 0,
+                    'last_page' => 1,
+                    'from' => 0,
+                    'to' => 0,
+                    'has_more_pages' => false
+                ],
+                itemClass: User::class
+            );
+        }
+    }
+
+    public function getByLogin(string $login): ?User
+    {
+        return $this->userRepository->findByLogin($login);
+    }
+
+    /**
+     * Récupère un utilisateur depuis la base SQL locale (table users), sans LDAP.
+     */
+    public function getByLoginFromSql(string $login): ?User
+    {
+        $sqlUser = SqlUserModel::query()->where('login', $login)->first();
+
+        if (!$sqlUser) {
+            return null;
+        }
+
+        $memberOf = is_array($sqlUser->ad_groups) ? $sqlUser->ad_groups : [];
+        $rights = is_array($sqlUser->ad_right_profiles) ? $sqlUser->ad_right_profiles : [];
+
+        return new User(
+            login: (string) $sqlUser->login,
+            fullname: (string) ($sqlUser->fullname ?? $sqlUser->login),
+            firstname: $sqlUser->firstname,
+            lastname: $sqlUser->lastname,
+            email: $sqlUser->email,
+            isActive: (bool) $sqlUser->is_active,
+            memberOf: $memberOf,
+            groups: $memberOf,
+            rights: $rights,
+            dn: $sqlUser->dn,
+            role: (string) ($sqlUser->role ?? 'autre'),
+            isActiveUser: (bool) $sqlUser->is_active,
+            isTrash: false,
+            objectGuid: $sqlUser->ad_guid,
+            objectGuidDisplay: $sqlUser->ad_guid,
+        );
+    }
+
+    /**
+     * Formate un utilisateur depuis le modèle LdapRecord
+     * Retourne un objet User (DTO) au lieu d'un tableau
+     * 
+     * @param \App\LdapModels\LdapUser $ldapUser
+     * @return \App\Types\User
+     */
+    private function formatLdapUserFromModel(\App\LdapModels\LdapUser $ldapUser): \App\Types\User
+    {
+        return $ldapUser->toBusinessObject();
+    }
+
+    /**
+     * Vérifie si un utilisateur correspond aux filtres
+     * 
+     * @param \App\Types\User $user
+     * @param string $role
+     * @param string $status
+     * @return bool
+     */
+    private function matchesFilters(\App\Types\User $user, string $role, string $status): bool
+    {
+        // Normaliser le rôle pour la comparaison
+        $normalizedRole = $this->normalizeRole($role);
+
+        // Filtre par rôle
+        if ($normalizedRole !== 'all' && $user->role !== $normalizedRole) {
+            return false;
+        }
+
+        // Normaliser le statut pour la comparaison
+        $normalizedStatus = $this->normalizeStatus($status);
+
+        // Filtre par statut
+        if ($normalizedStatus === 'active' && !$user->isActiveUser) {
+            return false;
+        }
+        if ($normalizedStatus === 'inactive' && $user->isActiveUser) {
+            return false;
+        }
+        if ($normalizedStatus === 'trash' && !$user->isTrash) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Normalise les valeurs de rôle pour correspondre aux valeurs du User DTO
+     */
+    private function normalizeRole(string $role): string
+    {
+        $roleMap = [
+            'admin' => 'administratifs',
+            'administrateur' => 'administratifs',
+            'administratif' => 'administratifs',
+            'admins' => 'administratifs',
+            'professeur' => 'profs',
+            'prof' => 'profs',
+            'enseignant' => 'profs',
+            'eleve' => 'eleves',
+            'élève' => 'eleves',
+            'personnel' => 'administratifs',
+            'technicien' => 'administratifs',
+        ];
+
+        return $roleMap[strtolower($role)] ?? $role;
+    }
+
+    /**
+     * Normalise les valeurs de statut
+     */
+    private function normalizeStatus(string $status): string
+    {
+        $statusMap = [
+            'actif' => 'active',
+            'inactif' => 'inactive',
+            'suspendu' => 'inactive',
+        ];
+
+        return $statusMap[strtolower($status)] ?? $status;
+    }
+
+    /**
+     * Récupère les premiers utilisateurs (pour affichage par défaut) avec pagination
+     * Utilise le repository optimisé
+     */
+    public function getFirstUsers(int $perPage = 20, int $page = 1): array
+    {
+        try {
+            $criteria = new UserSearchCriteria(
+                statuses: ['active', 'inactive'], // Par défaut, on affiche les actifs et inactifs
+                perPage: $perPage,
+                page: $page
+            );
+
+            $result = $this->userRepository->searchWithFilters($criteria);
+
+            return [
+                'users' => $result->users->all(), // Retourne un array d'objets User
+                'pagination' => [
+                    'current_page' => $result->currentPage,
+                    'per_page' => $result->perPage,
+                    'total' => $result->total,
+                    'last_page' => $result->lastPage,
+                    'from' => $result->from,
+                    'to' => $result->to,
+                    'has_more_pages' => $result->hasMorePages
+                ]
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('UserService getFirstUsers error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            return [
+                'users' => [],
+                'pagination' => [
+                    'current_page' => $page,
+                    'per_page' => $perPage,
+                    'total' => 0,
+                    'last_page' => 1,
+                    'from' => 0,
+                    'to' => 0,
+                    'has_more_pages' => false
+                ]
+            ];
+        }
+    }
+
+    /**
+     * Récupère un utilisateur spécifique via le repository
+     * 
+     * @param string $username
+     * @return \App\Types\User|null
+     */
+    public function getUser(string $username): ?\App\Types\User
+    {
+        try {
+            // Utiliser le repository pour récupérer l'utilisateur
+            $ldapUser = $this->userRepository->findLdapModelByLogin($username);
+
+            if (!$ldapUser) {
+                return null;
+            }
+
+            return $this->formatLdapUserFromModel($ldapUser);
+
+        } catch (\Exception $e) {
+            Log::error('UserService getUser error: ' . $e->getMessage(), [
+                'username' => $username,
+                'trace' => $e->getTraceAsString()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Calcule les quotas utilisateur
+     */
+    public function getUserQuota(string $username): array
+    {
+        // TODO: Implémenter le calcul réel des quotas
+        return [
+            'total_mb' => 5000,
+            'used_mb' => rand(1000, 4500),
+            'percentage' => 0
+        ];
+    }
+
+    /**
+     * Vérifie si un utilisateur a dépassé son quota
+     */
+    public function isQuotaExceeded(string $username): bool
+    {
+        $quota = $this->getUserQuota($username);
+        return $quota['used_mb'] > $quota['total_mb'];
+    }
+
+    /**
+     * Formate un utilisateur pour l'API
+     */
+    private function formatUser(array $ldapUser): array
+    {
+        $quota = $this->getUserQuota($ldapUser['username']);
+        $quota['percentage'] = round(($quota['used_mb'] / $quota['total_mb']) * 100, 1);
+
+        return [
+            'ldap_dn' => $ldapUser['dn'],
+            'username' => $ldapUser['username'],
+            'display_name' => $ldapUser['displayName'],
+            'email' => $ldapUser['mail'],
+            'first_name' => $ldapUser['givenName'],
+            'last_name' => $ldapUser['sn'],
+            'profile' => $ldapUser['profile'],
+            'class' => $ldapUser['class'] ?? null,
+            'groups' => $ldapUser['groups'] ?? [],
+            'quota' => $quota,
+            'last_login' => $ldapUser['lastLogin'] ?? null,
+            'created_at' => $ldapUser['whenCreated'] ?? null,
+            'updated_at' => $ldapUser['whenChanged'] ?? null
+        ];
+    }
+
+    /**
+     * Récupère la liste des établissements
+     */
+    public function getEtablissements(): array
+    {
+        try {
+            return $this->establishmentRepository->getAll();
+
+        } catch (\Exception $e) {
+            Log::error('UserService getEtablissements error: ' . $e->getMessage());
+            return [0 => 'Domaine entier'];
+        }
+    }
+
+    /**
+     * Récupère la liste des fonctions disponibles
+     */
+    public function getFonctions(string $categorie = 'all'): array
+    {
+        try {
+            return $this->functionRepository->getAll($categorie);
+
+        } catch (\Exception $e) {
+            Log::error('UserService getFonctions error: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Récupère la liste des classes disponibles
+     */
+    public function getClasses(string $etab = '0'): array
+    {
+        try {
+            return $this->classRepository->getAll($etab);
+
+        } catch (\Exception $e) {
+            Log::error('UserService getClasses error: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Récupère la liste des rôles disponibles
+     */
+    public function getAvailableRoles(): array
+    {
+        try {
+            // Rôles standards SambaEdu
+            return [
+                ['value' => 'admin', 'label' => 'Administrateur', 'description' => 'Droits complets sur le système'],
+                ['value' => 'professeur', 'label' => 'Professeur', 'description' => 'Enseignant'],
+                ['value' => 'eleve', 'label' => 'Élève', 'description' => 'Apprenant'],
+                ['value' => 'personnel', 'label' => 'Personnel', 'description' => 'Personnel administratif ou technique'],
+                ['value' => 'administratif', 'label' => 'Administratif', 'description' => 'Personnel administratif'],
+                ['value' => 'technicien', 'label' => 'Technicien', 'description' => 'Personnel technique'],
+            ];
+        } catch (\Exception $e) {
+            Log::error('UserService getAvailableRoles error: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Récupère la politique de mot de passe
+     */
+    public function getPasswordPolicy(): array
+    {
+        try {
+            return $this->passwordService->getPolicy();
+
+        } catch (\Exception $e) {
+            Log::error('UserService getPasswordPolicy error: ' . $e->getMessage());
+            return [
+                'policy' => 0,
+                'min_length' => 8,
+                'complexity' => false,
+                'description' => 'Mot de passe aléatoire'
+            ];
+        }
+    }
+
+    /**
+     * Change le mot de passe d'un utilisateur directement dans l'AD.
+     */
+    public function changePasswordInAd(string $login, string $newPassword, bool $mustChangeAtNextLogin = true): bool
+    {
+        try {
+            $ldapUser = $this->userRepository->findLdapModelByLogin($login);
+            if (!$ldapUser) {
+                Log::warning('UserService changePasswordInAd: utilisateur introuvable', ['login' => $login]);
+                return false;
+            }
+
+            $this->setUserPassword($ldapUser, $newPassword);
+
+            // Recharger l'utilisateur après changement de mot de passe
+            $ldapUser = $this->userRepository->findLdapModelByLogin($login);
+
+            if ($mustChangeAtNextLogin) {
+                // Forcer le changement au prochain login
+                $ldapUser->setAttribute('pwdlastset', 0);
+            } else {
+                // Marquer le mot de passe comme changé (AD remplace -1 par le timestamp actuel)
+                $ldapUser->setAttribute('pwdlastset', -1);
+            }
+            $ldapUser->save();
+
+            $this->userRepository->invalidateCache($login);
+
+            return true;
+        } catch (\Exception $e) {
+            Log::error('UserService changePasswordInAd error: ' . $e->getMessage(), [
+                'login' => $login,
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return false;
+        }
+    }
+
+    /**
+     * Réinitialise le mot de passe d'un utilisateur dans l'AD.
+     */
+    public function resetPasswordInAd(string $login): array
+    {
+        $generatedPassword = $this->passwordService->generateRandomPassword();
+
+        $success = $this->changePasswordInAd(
+            login: $login,
+            newPassword: $generatedPassword,
+            mustChangeAtNextLogin: true,
+        );
+
+        if (!$success) {
+            return [
+                'success' => false,
+                'message' => 'Échec de la réinitialisation du mot de passe dans l\'AD.',
+            ];
+        }
+
+        return [
+            'success' => true,
+            'message' => 'Mot de passe réinitialisé avec succès dans l\'AD.',
+            'password' => $generatedPassword,
+        ];
+    }
+
+    /**
+     * Crée un nouvel utilisateur avec LdapRecord
+     * 
+     * Remplace l'ancienne implémentation basée sur les fonctions legacy
+     */
+    public function createUser(array $data): array
+    {
+        try {
+            // Validation des données
+            $nom = $data['nom'] ?? '';
+            $prenom = $data['prenom'] ?? '';
+            $naissance = $data['naissance'] ?? '';
+            $password = $data['password'] ?? '';
+            $categorie = $data['categorie'] ?? 'Administratifs';
+            $originallogin = $data['login'] ?? '';
+            $fonction = $data['fonction'] ?? '';
+            $classes = $data['classes'] ?? [];
+            $new_etab = $data['new_etab'] ?? 0;
+
+            // Validation basique
+            if (empty($nom) || empty($prenom)) {
+                return [
+                    'success' => false,
+                    'message' => 'Vous devez obligatoirement renseigner les champs : nom, prénom !'
+                ];
+            }
+
+            // Validation de la catégorie et des champs obligatoires
+            if ($categorie == "Administratifs" && empty($fonction)) {
+                return [
+                    'success' => false,
+                    'message' => 'La fonction est obligatoire pour les administratifs'
+                ];
+            }
+
+            if ($categorie == "Eleves" && empty($classes)) {
+                return [
+                    'success' => false,
+                    'message' => 'La classe est obligatoire pour les élèves'
+                ];
+            }
+
+            if ($categorie == "Profs" && empty($classes) && empty($fonction)) {
+                return [
+                    'success' => false,
+                    'message' => 'La classe ou la fonction est obligatoire pour les professeurs'
+                ];
+            }
+
+            // Générer le login si nécessaire
+            $login = $this->generateLogin($nom, $prenom, $originallogin);
+
+            // Vérifier que le login n'existe pas déjà
+            $existingUser = $this->userRepository->findByLogin($login);
+            if ($existingUser) {
+                return [
+                    'success' => false,
+                    'message' => "Un utilisateur avec le login '$login' existe déjà"
+                ];
+            }
+
+            // Déterminer le mot de passe final via le repository
+            $finalPassword = $this->passwordService->determinePassword($password, $naissance);
+
+            // Créer les OUs si elles n'existent pas
+            $this->ouRepository->ensureUserOUsExist($categorie, $fonction, $new_etab);
+
+            // Construire le DN de l'utilisateur
+            $userDn = $this->buildUserDn($login, $categorie, $fonction, $new_etab);
+
+            // Créer l'utilisateur avec LdapRecord
+            $ldapUser = new LdapUser();
+            $ldapUser->setDn($userDn);
+            $this->setUserAttributes($ldapUser, $login, $nom, $prenom, $data, $finalPassword);
+
+            // Définir le mot de passe AVANT la sauvegarde (requis par AD)
+            // LdapRecord encode automatiquement via Password::encode() (UTF-16LE + guillemets)
+            // Ne PAS encoder manuellement sinon double encodage
+            $ldapUser->unicodepwd = $finalPassword;
+
+            // Sauvegarder l'utilisateur avec le mot de passe
+            $ldapUser->save();
+
+            // Recharger l'utilisateur après création
+            $ldapUser = $this->userRepository->findLdapModelByLogin($login);
+            if (!$ldapUser) {
+                throw new \Exception("Impossible de recharger l'utilisateur après création");
+            }
+
+            // Effectuer les opérations post-création
+            $this->postCreationOperations($ldapUser, $data, $finalPassword);
+
+            return [
+                'success' => true,
+                'message' => "L'utilisateur $prenom $nom a été créé avec succès.",
+                'user' => [
+                    'cn' => $login,
+                    'password' => $finalPassword,
+                    'nom' => $nom,
+                    'prenom' => $prenom
+                ]
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('UserService createUser error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Erreur lors de la création de l\'utilisateur: ' . $e->getMessage()
+            ];
+        }
+    }
+    /**
+     * Définit les attributs de base de l'utilisateur
+     */
+    private function setUserAttributes(LdapUser $ldapUser, string $login, string $nom, string $prenom, array $data, string $finalPassword): void
+    {
+        $ldapConfig = $this->config->ldap();
+        $domain = $ldapConfig->domain;
+
+        $ldapUser->setAttribute('cn', $login);
+        $ldapUser->setAttribute('samaccountname', $login);
+        $ldapUser->setAttribute('sn', $nom);
+        $ldapUser->setAttribute('givenname', $prenom);
+        $ldapUser->setAttribute('displayname', "$prenom $nom");
+
+        // Gestion de l'email
+        $email = $this->determineEmail($login, $data);
+        $ldapUser->setAttribute('mail', $email);
+        $ldapUser->setAttribute('userprincipalname', "$login@$domain");
+        $ldapUser->setAttribute('useraccountcontrol', 512); // Compte actif
+
+        // pwdlastset = 0 si changement de mot de passe requis
+        $noPasswdChange = $this->config->get('no_passwd_change', '0') == '1';
+        $force = !empty($data['force'] ?? false);
+        if (!$noPasswdChange && !$force) {
+            $ldapUser->setAttribute('pwdlastset', 0);
+        }
+
+        // Date de naissance si fournie
+        if (!empty($data['naissance'] ?? '')) {
+            $encodedBirthdate = $this->encodeBirthdate($data['naissance']);
+            $ldapUser->setAttribute('physicaldeliveryofficename', $encodedBirthdate);
+        }
+
+        // Employeenumber
+        $employeeNumber = $this->buildEmployeeNumber($data);
+        if (!empty($employeeNumber)) {
+            $ldapUser->setAttribute('employeenumber', $employeeNumber);
+        }
+
+        // Title
+        $title = $this->buildTitle($data, $data['fonction'] ?? '');
+        if (!empty($title)) {
+            $ldapUser->setAttribute('title', $title);
+        }
+
+        $ldapUser->setAttribute('objectclass', ['top', 'user']);
+    }
+
+    /**
+     * Définit le mot de passe de l'utilisateur
+     */
+    private function setUserPassword(LdapUser $ldapUser, string $password): void
+    {
+        try {
+            // LdapRecord encode automatiquement via Password::encode() (UTF-16LE + guillemets)
+            // Ne PAS encoder manuellement sinon double encodage
+            $ldapUser->unicodepwd = $password;
+            $ldapUser->save();
+
+            Log::info("Mot de passe défini avec succès pour " . $ldapUser->getLogin());
+        } catch (\Exception $e) {
+            Log::error("Erreur lors de la définition du mot de passe", [
+                'login' => $ldapUser->getLogin(),
+                'error' => $e->getMessage()
+            ]);
+
+            throw new \Exception("Impossible de définir le mot de passe: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Effectue les opérations post-création
+     */
+    private function postCreationOperations(LdapUser $ldapUser, array $data, string $password): void
+    {
+        $login = $ldapUser->getLogin();
+        $categorie = $data['categorie'] ?? 'Administratifs';
+        $fonction = $data['fonction'] ?? '';
+        $classes = $data['classes'] ?? [];
+        $new_etab = $data['new_etab'] ?? 0;
+
+        // Créer le dossier home
+        $this->createHomeDirectory($login);
+
+        // Configuration cloud si activée
+        $noCloud = $this->config->get('no_cloud', '0') == '1';
+        if (!$noCloud) {
+            $this->configureUserCloud($login, $password);
+        }
+
+        // Ajouter aux groupes
+        $this->addUserToGroups($ldapUser, $categorie, $fonction, $classes, $new_etab, $data['etabs'] ?? []);
+    }
+
+    /**
+     * Ajoute l'utilisateur aux groupes appropriés
+     */
+    private function addUserToGroups(LdapUser $ldapUser, string $categorie, string $fonction, array $classes, int $new_etab, array $etabs): void
+    {
+        // Groupe principal (Eleves, Profs, Administratifs)
+        $mainGroup = SambaEduGroup::findMainGroup($categorie);
+        if ($mainGroup) {
+            $mainGroup->members()->attach($ldapUser);
+        }
+
+        // Groupe établissement
+        $uai = $this->establishmentRepository->toUai($new_etab);
+        if (!empty($uai) && $uai != '0') {
+            $etabGroup = SambaEduGroup::query()->where('cn', '=', $uai)->first();
+            if ($etabGroup) {
+                $etabGroup->members()->attach($ldapUser);
+            }
+        }
+
+        // Autres établissements
+        foreach ($etabs as $etabId) {
+            $otherUai = $this->establishmentRepository->toUai($etabId);
+            if (!empty($otherUai) && $otherUai != $uai) {
+                $otherEtabGroup = SambaEduGroup::query()->where('cn', '=', $otherUai)->first();
+                if ($otherEtabGroup) {
+                    $otherEtabGroup->members()->attach($ldapUser);
+                }
+            }
+        }
+
+        // Groupe fonction
+        if (!empty($fonction)) {
+            $fonctionGroup = SambaEduGroup::query()->where('cn', '=', $fonction)->first();
+            if ($fonctionGroup) {
+                $fonctionGroup->members()->attach($ldapUser);
+            }
+        }
+
+        // Groupes classes
+        foreach ($classes as $classe) {
+            $classeGroup = SambaEduGroup::query()->where('cn', '=', $classe)->first();
+            if ($classeGroup) {
+                $classeGroup->members()->attach($ldapUser);
+            }
+        }
+    }
+
+    /**
+     * Génère un login pour l'utilisateur
+     * Utilise la configuration depuis les repositories
+     */
+    private function generateLogin(string $nom, string $prenom, string $originallogin): string
+    {
+        if (!empty($originallogin)) {
+            return $originallogin;
+        }
+
+        // Simplification des noms
+        $nom = $this->simplifyName($nom);
+        $prenom = $this->simplifyFirstName($prenom);
+
+        // Politique de génération de login depuis la config
+        $cnPolicy = config('ldap.cn_policy', 0);
+
+        $login = '';
+        $nb = 0;
+
+        do {
+            switch ($cnPolicy) {
+                case 0:
+                case 1:
+                    // prenom.nom (tronqué à 19 caractères)
+                    if (strlen($nom) + strlen($prenom) > 18) {
+                        $prenom = substr($prenom, 0, 18 - strlen($nom));
+                    }
+                    $login = !empty($prenom) ? "$prenom.$nom" : $nom;
+                    if ($nb > 0) {
+                        $login = "$prenom.$nom$nb";
+                    }
+                    break;
+                case 2:
+                    // p.nom (tronqué à 15 caractères)
+                    $p = substr($prenom, 0, 1);
+                    $login = !empty($p) ? "$p.$nom" : $nom;
+                    if ($nb > 0) {
+                        $login = "$p.$nom$nb";
+                    }
+                    break;
+                default:
+                    // Par défaut : prenom.nom
+                    if (strlen($nom) + strlen($prenom) > 18) {
+                        $prenom = substr($prenom, 0, 18 - strlen($nom));
+                    }
+                    $login = !empty($prenom) ? "$prenom.$nom" : $nom;
+                    if ($nb > 0) {
+                        $login = "$prenom.$nom$nb";
+                    }
+            }
+
+            // Vérifier si le login existe déjà
+            $existingUser = $this->userRepository->findByLogin($login);
+            if ($existingUser) {
+                $nb++;
+            } else {
+                break;
+            }
+        } while ($nb < 100);
+
+        return strtolower($login);
+    }
+
+    /**
+     * Simplifie un nom (suppression accents, caractères spéciaux)
+     */
+    private function simplifyName(string $name, bool $removeHyphens = false): string
+    {
+        $name = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $name);
+        $name = preg_replace('/[^a-zA-Z0-9]/', '', $name);
+        if ($removeHyphens) {
+            $name = str_replace('-', '', $name);
+        }
+        return strtolower($name);
+    }
+
+    /**
+     * Simplifie un prénom
+     */
+    private function simplifyFirstName(string $firstname, bool $firstLetterOnly = false, bool $removeHyphens = false): string
+    {
+        if ($firstLetterOnly) {
+            return substr($this->simplifyName($firstname, $removeHyphens), 0, 1);
+        }
+        return $this->simplifyName($firstname, $removeHyphens);
+    }
+
+
+    /**
+     * Génère un mot de passe aléatoire
+     * Délègue au PasswordPolicyService
+     */
+    private function generateRandomPassword(): string
+    {
+        return $this->passwordService->generateRandomPassword();
+    }
+
+    /**
+     * Construit le DN de l'utilisateur selon la catégorie, fonction et établissement
+     * Utilise SambaEduConfig pour accéder aux DN de manière typée
+     */
+    private function buildUserDn(string $login, string $categorie, string $fonction, int $etab): string
+    {
+        $ldapConfig = $this->config->ldap();
+        $baseDn = $ldapConfig->baseDn;
+        $peopleRdn = $ldapConfig->peopleRdn;
+
+        // Obtenir l'UAI depuis l'établissement
+        $uai = $this->establishmentRepository->toUai($etab);
+
+        // Construire la racine des OUs
+        $racine = '';
+
+        if (!empty($uai) && $uai != '0' && preg_match("/[0-9]{7}[a-z]/i", $uai)) {
+            // Cas avec UAI : préfixer people_rdn avec OU=UAI
+            $peopleRdn = "OU=$uai,$peopleRdn";
+
+            if (!empty($fonction)) {
+                $racine = "OU=$fonction,OU=$categorie";
+            } else {
+                $racine = "OU=$categorie";
+            }
+        } else {
+            // Cas sans UAI
+            if (!empty($fonction)) {
+                $racine = "OU=$fonction,OU=$categorie";
+            } else {
+                $racine = "OU=$categorie";
+            }
+        }
+
+        // Construire le DN complet
+        if (!empty($racine)) {
+            $dn = "CN=$login,$racine,$peopleRdn,$baseDn";
+        } else {
+            $dn = "CN=$login,$peopleRdn,$baseDn";
+        }
+
+        return $dn;
+    }
+
+    /**
+     * Crée le dossier home de l'utilisateur
+     */
+    private function createHomeDirectory(string $login): void
+    {
+        try {
+            exec("sudo mkhomedir_helper $login 007 /etc/skel/user 2>&1", $output, $returnCode);
+            if ($returnCode === 0) {
+                exec("sudo chgrp -R www-admin /home/$login 2>&1", $output2, $returnCode2);
+            }
+        } catch (\Exception $e) {
+            Log::warning("Erreur lors de la création du dossier home pour $login", [
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Détermine l'email selon la configuration
+     * Utilise SambaEduConfig pour accéder à la configuration de manière typée
+     */
+    private function determineEmail(string $login, array $data): string
+    {
+        $entEmail = $this->config->get('ent_email', '0');
+        $entEmailDomain = $this->config->get('ent_email_domain', '');
+        $domain = $this->config->ldap()->domain;
+
+        if ($entEmail == "1" && !empty($data['email'] ?? '')) {
+            if (!empty($entEmailDomain) && $entEmailDomain != "0" && !empty($data['originalLogin'] ?? '')) {
+                return $data['originalLogin'] . "@" . $entEmailDomain;
+            } else {
+                return $data['email'] ?? "$login@$domain";
+            }
+        }
+
+        return "$login@$domain";
+    }
+
+    /**
+     * Construit employeenumber à partir des IDs
+     */
+    private function buildEmployeeNumber(array $data): string
+    {
+        $s = $data['Id Siecle'] ?? '';
+        $g = $data['Id GPEI'] ?? '';
+        $a = $data['Id ASM'] ?? '';
+        $p = $data['Id Pronote'] ?? '';
+
+        return "$s,$g,$a,$p";
+    }
+
+    /**
+     * Construit title à partir de id et externalId
+     */
+    private function buildTitle(array $data, string $fonction): string
+    {
+        $i = $data['id'] ?? '';
+        $x = $data['externalId'] ?? '';
+
+        // Si id ou externalId sont fournis, les utiliser
+        if (!empty($i) || !empty($x)) {
+            return "$i,$x";
+        }
+
+        // Sinon, utiliser la fonction si fournie
+        return $fonction;
+    }
+
+    /**
+     * Encode la date de naissance avec RSA
+     */
+    private function encodeBirthdate(string $birthdate): string
+    {
+        try {
+            $publicKeyPath = "/etc/sambaedu/sambaedu-pubkey.pem";
+            if (!file_exists($publicKeyPath)) {
+                // Si la clé n'existe pas, utiliser password_hash comme fallback
+                Log::warning("Clé publique RSA non trouvée, utilisation de password_hash pour la date de naissance");
+                return password_hash($birthdate, PASSWORD_DEFAULT);
+            }
+
+            $publicKey = file_get_contents($publicKeyPath);
+            $encrypted = "";
+            openssl_public_encrypt($birthdate, $encrypted, $publicKey);
+            return base64_encode($encrypted);
+        } catch (\Exception $e) {
+            Log::warning("Erreur lors du chiffrement de la date de naissance", [
+                'error' => $e->getMessage()
+            ]);
+            // Fallback vers password_hash
+            return password_hash($birthdate, PASSWORD_DEFAULT);
+        }
+    }
+
+    /**
+     * Configure le cloud pour l'utilisateur
+     */
+    private function configureUserCloud(string $login, string $password): void
+    {
+        try {
+            // Le legacy appelle configure_user_cloud() qui fait des appels API
+            // Pour l'instant, on log juste l'intention
+            // TODO: Implémenter la configuration cloud complète si nécessaire
+            Log::info("Configuration cloud pour $login (non implémentée pour l'instant)");
+        } catch (\Exception $e) {
+            Log::warning("Erreur lors de la configuration cloud pour $login", [
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+}

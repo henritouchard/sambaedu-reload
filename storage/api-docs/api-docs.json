@@ -1,0 +1,2703 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "SambaEdu API",
+        "description": "API REST pour l'application SambaEdu - Gestion des services éducatifs",
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "/api/v1",
+            "description": "Serveur API SambaEdu v1"
+        }
+    ],
+    "paths": {
+        "/api/v1/checkhub/healthcheck": {
+            "get": {
+                "tags": [
+                    "checkhub"
+                ],
+                "summary": "Healthcheck privé protégé par clé API (Check Hub)",
+                "description": "Retourne 'success' si la clé API Check Hub est valide",
+                "operationId": "4741fdbcdc34c7b6212be1dd41beba37",
+                "parameters": [
+                    {
+                        "name": "X-Api-Key",
+                        "in": "header",
+                        "description": "Clé API du Check Hub (méthode recommandée)",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "Authorization",
+                        "in": "header",
+                        "description": "Alternative: Authorization: ApiKey <clé>",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "key",
+                        "in": "query",
+                        "description": "Alternative en query string",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "api_key",
+                        "in": "query",
+                        "description": "Alternative en query string",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Clé valide",
+                        "content": {
+                            "text/plain": {}
+                        }
+                    },
+                    "403": {
+                        "description": "Clé invalide",
+                        "content": {
+                            "text/plain": {}
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "checkhub_api_key": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/ecowatt/status": {
+            "get": {
+                "tags": [
+                    "ecowatt"
+                ],
+                "summary": "État du réseau électrique français",
+                "description": "Retourne les données en temps réel du service EcoWatt de RTE sur l'état du réseau électrique français",
+                "operationId": "4066de4fd8d3fd6aa36e954abcee72ae",
+                "responses": {
+                    "200": {
+                        "description": "Données EcoWatt récupérées avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "description": "État général du réseau",
+                                            "type": "string",
+                                            "example": "normal"
+                                        },
+                                        "level": {
+                                            "description": "Niveau d'alerte (1=vert, 2=orange, 3=rouge)",
+                                            "type": "integer",
+                                            "example": 1
+                                        },
+                                        "message": {
+                                            "description": "Message descriptif",
+                                            "type": "string",
+                                            "example": "Consommation normale"
+                                        },
+                                        "timestamp": {
+                                            "description": "Horodatage des données",
+                                            "type": "string",
+                                            "format": "date-time",
+                                            "example": "2024-01-15T10:30:00Z"
+                                        },
+                                        "data": {
+                                            "description": "Données détaillées du service EcoWatt",
+                                            "properties": {
+                                                "region": {
+                                                    "description": "Zone géographique",
+                                                    "type": "string",
+                                                    "example": "France"
+                                                },
+                                                "forecast": {
+                                                    "description": "Prévisions pour les prochaines heures",
+                                                    "type": "array",
+                                                    "items": {
+                                                        "properties": {
+                                                            "hour": {
+                                                                "description": "Heure",
+                                                                "type": "string",
+                                                                "example": "14:00"
+                                                            },
+                                                            "level": {
+                                                                "description": "Niveau prévu",
+                                                                "type": "integer",
+                                                                "example": 1
+                                                            }
+                                                        },
+                                                        "type": "object"
+                                                    }
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service EcoWatt indisponible",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "error": {
+                                            "description": "Message d'erreur",
+                                            "type": "string",
+                                            "example": "Service indisponible"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/public/health": {
+            "get": {
+                "tags": [
+                    "health"
+                ],
+                "summary": "Vérification de l'état de santé du système",
+                "description": "Retourne l'état de santé de l'application et de ses dépendances",
+                "operationId": "0861a77b3800a0690a8945724dae1385",
+                "responses": {
+                    "200": {
+                        "description": "Système en bonne santé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "description": "État général du système",
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "timestamp": {
+                                            "description": "Horodatage de la vérification",
+                                            "type": "string",
+                                            "format": "date-time",
+                                            "example": "2024-01-15T10:30:00Z"
+                                        },
+                                        "services": {
+                                            "description": "État des services individuels",
+                                            "properties": {
+                                                "database": {
+                                                    "description": "État de la base de données",
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "cache": {
+                                                    "description": "État du cache",
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "storage": {
+                                                    "description": "État du stockage",
+                                                    "type": "boolean",
+                                                    "example": true
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Système en panne ou dégradé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "description": "État général du système",
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "timestamp": {
+                                            "description": "Horodatage de la vérification",
+                                            "type": "string",
+                                            "format": "date-time",
+                                            "example": "2024-01-15T10:30:00Z"
+                                        },
+                                        "services": {
+                                            "description": "État des services individuels",
+                                            "properties": {
+                                                "database": {
+                                                    "description": "État de la base de données",
+                                                    "type": "boolean",
+                                                    "example": false
+                                                },
+                                                "cache": {
+                                                    "description": "État du cache",
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "storage": {
+                                                    "description": "État du stockage",
+                                                    "type": "boolean",
+                                                    "example": true
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "errors": {
+                                            "description": "Liste des erreurs détectées",
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string",
+                                                "example": "Database connection failed"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/discovery": {
+            "get": {
+                "tags": [
+                    "SE4FS"
+                ],
+                "summary": "Découverte de l'instance SE4FS",
+                "description": "Permet aux applications tierces de découvrir automatiquement cette instance SE4FS sur le réseau. Endpoint public avec rate limiting. User-Agent recommandés: CLIENT-Discovery/, IRUNDO-Discovery/, SE4FS-Client/",
+                "operationId": "1723664cbd97db58a9720fec4d93e69b",
+                "responses": {
+                    "200": {
+                        "description": "Découverte réussie",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "se4fs_instance": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "name": {
+                                            "type": "string",
+                                            "example": "SE4FS - Lycée Jean Moulin"
+                                        },
+                                        "se4fs_version": {
+                                            "type": "string",
+                                            "example": "4.2.1"
+                                        },
+                                        "api_version": {
+                                            "type": "string",
+                                            "example": "1.0"
+                                        },
+                                        "establishment": {
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string",
+                                                    "example": "Lycée Jean Moulin"
+                                                },
+                                                "uai": {
+                                                    "type": "string",
+                                                    "example": "0751234A"
+                                                },
+                                                "dn": {
+                                                    "type": "string",
+                                                    "example": "DC=etablissement,DC=ac-paris,DC=fr"
+                                                },
+                                                "type": {
+                                                    "type": "string",
+                                                    "example": "lycee"
+                                                },
+                                                "academie": {
+                                                    "type": "string",
+                                                    "example": "Paris"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "system_info": {
+                                            "properties": {
+                                                "hostname": {
+                                                    "type": "string",
+                                                    "example": "se4fs-prod"
+                                                },
+                                                "ip_address": {
+                                                    "type": "string",
+                                                    "example": "192.168.122.50"
+                                                },
+                                                "uptime": {
+                                                    "type": "integer",
+                                                    "example": 1234567
+                                                },
+                                                "disk_usage": {
+                                                    "properties": {
+                                                        "total_gb": {
+                                                            "type": "number",
+                                                            "example": 2000
+                                                        },
+                                                        "used_gb": {
+                                                            "type": "number",
+                                                            "example": 856
+                                                        },
+                                                        "available_gb": {
+                                                            "type": "number",
+                                                            "example": 1144
+                                                        },
+                                                        "percentage": {
+                                                            "type": "number",
+                                                            "example": 42.8
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "capabilities": {
+                                            "properties": {
+                                                "file_sharing": {
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "user_management": {
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "quota_management": {
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "backup_system": {
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "ldap_integration": {
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "webhook_support": {
+                                                    "type": "boolean",
+                                                    "example": true
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service temporairement indisponible",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "error": {
+                                            "type": "string",
+                                            "example": "Service Unavailable"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/stats": {
+            "get": {
+                "tags": [
+                    "SE4FS"
+                ],
+                "summary": "Statistiques système SE4FS",
+                "description": "Retourne les statistiques complètes du système SE4FS : système, utilisateurs, fichiers et services. Endpoint authentifié par token API.",
+                "operationId": "875b905c7af33748f151c44e2d54313b",
+                "responses": {
+                    "200": {
+                        "description": "Statistiques récupérées avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "timestamp": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "system": {
+                                            "properties": {
+                                                "hostname": {
+                                                    "type": "string",
+                                                    "example": "se4fs-prod"
+                                                },
+                                                "uptime_seconds": {
+                                                    "type": "integer",
+                                                    "example": 1234567
+                                                },
+                                                "cpu_usage_percent": {
+                                                    "type": "number",
+                                                    "example": 45.2
+                                                },
+                                                "memory_usage_percent": {
+                                                    "type": "number",
+                                                    "example": 68.1
+                                                },
+                                                "load_average": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "number"
+                                                    },
+                                                    "example": [
+                                                        0.85,
+                                                        0.92,
+                                                        0.78
+                                                    ]
+                                                },
+                                                "disk_usage": {
+                                                    "properties": {
+                                                        "total_gb": {
+                                                            "type": "number",
+                                                            "example": 2000
+                                                        },
+                                                        "used_gb": {
+                                                            "type": "number",
+                                                            "example": 856.4
+                                                        },
+                                                        "available_gb": {
+                                                            "type": "number",
+                                                            "example": 1143.6
+                                                        },
+                                                        "percentage": {
+                                                            "type": "number",
+                                                            "example": 42.8
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                },
+                                                "network_io": {
+                                                    "properties": {
+                                                        "bytes_in": {
+                                                            "type": "integer",
+                                                            "example": 1234567890
+                                                        },
+                                                        "bytes_out": {
+                                                            "type": "integer",
+                                                            "example": 987654321
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "users": {
+                                            "properties": {
+                                                "total": {
+                                                    "type": "integer",
+                                                    "example": 1250
+                                                },
+                                                "active_today": {
+                                                    "type": "integer",
+                                                    "example": 89
+                                                },
+                                                "active_this_week": {
+                                                    "type": "integer",
+                                                    "example": 456
+                                                },
+                                                "new_this_month": {
+                                                    "type": "integer",
+                                                    "example": 23
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "files": {
+                                            "properties": {
+                                                "total_files": {
+                                                    "type": "integer",
+                                                    "example": 45678
+                                                },
+                                                "total_size_gb": {
+                                                    "type": "number",
+                                                    "example": 856.4
+                                                },
+                                                "uploads_today": {
+                                                    "type": "integer",
+                                                    "example": 23
+                                                },
+                                                "downloads_today": {
+                                                    "type": "integer",
+                                                    "example": 156
+                                                },
+                                                "shares_today": {
+                                                    "type": "integer",
+                                                    "example": 12
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "services": {
+                                            "properties": {
+                                                "samba": {
+                                                    "type": "string",
+                                                    "example": "running"
+                                                },
+                                                "ldap": {
+                                                    "type": "string",
+                                                    "example": "running"
+                                                },
+                                                "web_server": {
+                                                    "type": "string",
+                                                    "example": "running"
+                                                },
+                                                "backup_service": {
+                                                    "type": "string",
+                                                    "example": "running"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Token API invalide",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Invalid API token"
+                                        },
+                                        "error_code": {
+                                            "type": "string",
+                                            "example": "AUTH_REQUIRED"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Erreur serveur",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Internal server error"
+                                        },
+                                        "error_code": {
+                                            "type": "string",
+                                            "example": "SERVER_ERROR"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "se4fs_auth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/static": {
+            "get": {
+                "tags": [
+                    "SE4FS"
+                ],
+                "summary": "Données statiques de l'instance SE4FS",
+                "description": "Retourne les données statiques (coordonnées, établissement, infos qui ne changent pas). À collecter une seule fois ou lors de changements.",
+                "operationId": "d3e574b048edbaeb401d4de93b7caa32",
+                "responses": {
+                    "200": {
+                        "description": "Données statiques récupérées avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "timestamp": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "collection_interval": {
+                                            "type": "string",
+                                            "example": null,
+                                            "nullable": true
+                                        },
+                                        "note": {
+                                            "type": "string",
+                                            "example": "Collect only once or when changed"
+                                        },
+                                        "instance": {
+                                            "properties": {
+                                                "uai": {
+                                                    "type": "string",
+                                                    "example": "0751234A"
+                                                },
+                                                "name": {
+                                                    "type": "string",
+                                                    "example": "Lycée Jean Moulin"
+                                                },
+                                                "coordinates": {
+                                                    "properties": {
+                                                        "latitude": {
+                                                            "type": "number",
+                                                            "example": 48.8566
+                                                        },
+                                                        "longitude": {
+                                                            "type": "number",
+                                                            "example": 2.3522
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                },
+                                                "version": {
+                                                    "type": "string",
+                                                    "example": "4.2.1"
+                                                },
+                                                "install_date": {
+                                                    "type": "string",
+                                                    "format": "date",
+                                                    "example": "2024-09-15"
+                                                },
+                                                "last_update": {
+                                                    "type": "string",
+                                                    "format": "date",
+                                                    "example": "2024-12-01"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "se4fs_auth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/health": {
+            "get": {
+                "tags": [
+                    "SE4FS"
+                ],
+                "summary": "Contrôle de santé rapide SE4FS",
+                "description": "Retourne l'état de santé système et services. À collecter toutes les 30 secondes pour détection rapide des pannes.",
+                "operationId": "3fbc714fe74915706065132a24b6ee7d",
+                "responses": {
+                    "200": {
+                        "description": "État de santé récupéré avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "timestamp": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "collection_interval": {
+                                            "type": "integer",
+                                            "example": 30
+                                        },
+                                        "uai": {
+                                            "type": "string",
+                                            "example": "0751234A"
+                                        },
+                                        "status": {
+                                            "type": "string",
+                                            "example": "active"
+                                        },
+                                        "response_time": {
+                                            "type": "integer",
+                                            "example": 145
+                                        },
+                                        "services": {
+                                            "properties": {
+                                                "samba": {
+                                                    "type": "string",
+                                                    "example": "running"
+                                                },
+                                                "ldap": {
+                                                    "type": "string",
+                                                    "example": "running"
+                                                },
+                                                "apache": {
+                                                    "type": "string",
+                                                    "example": "running"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "quick_check": {
+                                            "properties": {
+                                                "cpu_critical": {
+                                                    "type": "boolean",
+                                                    "example": false
+                                                },
+                                                "memory_critical": {
+                                                    "type": "boolean",
+                                                    "example": false
+                                                },
+                                                "disk_critical": {
+                                                    "type": "boolean",
+                                                    "example": false
+                                                },
+                                                "services_ok": {
+                                                    "type": "integer",
+                                                    "example": 3
+                                                },
+                                                "services_error": {
+                                                    "type": "integer",
+                                                    "example": 0
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "critical_alerts": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "se4fs_auth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/metrics": {
+            "get": {
+                "tags": [
+                    "SE4FS"
+                ],
+                "summary": "Métriques détaillées SE4FS",
+                "description": "Retourne les métriques système détaillées (CPU, RAM, utilisateurs). À collecter toutes les 5 minutes.",
+                "operationId": "ecc90919c84ae9acda62d77943f5b4f0",
+                "responses": {
+                    "200": {
+                        "description": "Métriques détaillées récupérées avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "timestamp": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "collection_interval": {
+                                            "type": "integer",
+                                            "example": 300
+                                        },
+                                        "uai": {
+                                            "type": "string",
+                                            "example": "0751234A"
+                                        },
+                                        "status": {
+                                            "type": "string",
+                                            "example": "active"
+                                        },
+                                        "system": {
+                                            "properties": {
+                                                "cpu_usage": {
+                                                    "type": "number",
+                                                    "example": 45.2
+                                                },
+                                                "memory_usage": {
+                                                    "type": "number",
+                                                    "example": 68.1
+                                                },
+                                                "disk_usage": {
+                                                    "properties": {
+                                                        "home": {
+                                                            "type": "number",
+                                                            "example": 42.8
+                                                        },
+                                                        "sambaedu": {
+                                                            "type": "number",
+                                                            "example": 15.3
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                },
+                                                "load_average": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "number"
+                                                    },
+                                                    "example": [
+                                                        0.85,
+                                                        0.92,
+                                                        0.78
+                                                    ]
+                                                },
+                                                "uptime": {
+                                                    "type": "integer",
+                                                    "example": 86400
+                                                },
+                                                "network_io": {
+                                                    "properties": {
+                                                        "bytes_in": {
+                                                            "type": "integer",
+                                                            "example": 1234567890
+                                                        },
+                                                        "bytes_out": {
+                                                            "type": "integer",
+                                                            "example": 987654321
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "activity": {
+                                            "properties": {
+                                                "users_connected": {
+                                                    "type": "integer",
+                                                    "example": 23
+                                                },
+                                                "active_sessions": {
+                                                    "properties": {
+                                                        "samba": {
+                                                            "type": "integer",
+                                                            "example": 23
+                                                        },
+                                                        "ldap": {
+                                                            "type": "integer",
+                                                            "example": 15
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                },
+                                                "recent_logins": {
+                                                    "type": "integer",
+                                                    "example": 5
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "se4fs_auth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/historical/{period}": {
+            "get": {
+                "tags": [
+                    "SE4FS"
+                ],
+                "summary": "Données historiques SE4FS",
+                "description": "Retourne les données historiques et tendances. À collecter une fois par heure. Périodes supportées: 1h, 24h, 7d, 30d",
+                "operationId": "eb6a2fa8ac9da749e87f074d8d0fece8",
+                "parameters": [
+                    {
+                        "name": "period",
+                        "in": "path",
+                        "description": "Période pour les données historiques",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "1h",
+                                "24h",
+                                "7d",
+                                "30d"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Données historiques récupérées avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "timestamp": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "collection_interval": {
+                                            "type": "integer",
+                                            "example": 3600
+                                        },
+                                        "uai": {
+                                            "type": "string",
+                                            "example": "0751234A"
+                                        },
+                                        "period": {
+                                            "type": "string",
+                                            "example": "24h"
+                                        },
+                                        "data_points": {
+                                            "type": "integer",
+                                            "example": 144
+                                        },
+                                        "sampling_interval": {
+                                            "type": "integer",
+                                            "example": 600
+                                        },
+                                        "summary": {
+                                            "properties": {
+                                                "cpu_avg": {
+                                                    "type": "number",
+                                                    "example": 43.5
+                                                },
+                                                "cpu_max": {
+                                                    "type": "number",
+                                                    "example": 67.8
+                                                },
+                                                "memory_avg": {
+                                                    "type": "number",
+                                                    "example": 65.2
+                                                },
+                                                "users_max": {
+                                                    "type": "integer",
+                                                    "example": 45
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Période invalide",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Invalid period. Supported: 1h, 24h, 7d, 30d"
+                                        },
+                                        "error_code": {
+                                            "type": "string",
+                                            "example": "INVALID_PERIOD"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "se4fs_auth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/public/location/summary": {
+            "get": {
+                "tags": [
+                    "SE4FS"
+                ],
+                "summary": "Résumé de localisation SE4FS (public)",
+                "description": "Retourne un résumé simplifié pour découverte automatique d'instances sur le réseau. Endpoint public sans authentification.",
+                "operationId": "c48a3be6e58257a697da98cca6223f02",
+                "responses": {
+                    "200": {
+                        "description": "Résumé de localisation récupéré avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "timestamp": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "instance": {
+                                            "properties": {
+                                                "uai": {
+                                                    "type": "string",
+                                                    "example": "0751234A"
+                                                },
+                                                "name": {
+                                                    "type": "string",
+                                                    "example": "Lycée Jean Moulin"
+                                                },
+                                                "version": {
+                                                    "type": "string",
+                                                    "example": "4.2.1"
+                                                },
+                                                "status": {
+                                                    "type": "string",
+                                                    "example": "active"
+                                                },
+                                                "api_endpoints": {
+                                                    "properties": {
+                                                        "discovery": {
+                                                            "type": "string",
+                                                            "example": "/api/v1/discovery"
+                                                        },
+                                                        "handshake": {
+                                                            "type": "string",
+                                                            "example": "/api/v1/handshake"
+                                                        },
+                                                        "authenticated_apis": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "string"
+                                                            },
+                                                            "example": [
+                                                                "/api/v1/static",
+                                                                "/api/v1/health",
+                                                                "/api/v1/metrics"
+                                                            ]
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/users": {
+            "get": {
+                "tags": [
+                    "SE4FS"
+                ],
+                "summary": "Liste des utilisateurs SE4FS",
+                "description": "Retourne la liste des utilisateurs avec leurs informations LDAP et quotas. Endpoint authentifié par token API.",
+                "operationId": "e15403f24b5abac9ce4dac603013fa4d",
+                "parameters": [
+                    {
+                        "name": "since",
+                        "in": "query",
+                        "description": "Date ISO pour récupérer les utilisateurs modifiés depuis cette date",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "format": "date-time",
+                            "example": "2025-01-01T00:00:00Z"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "Nombre maximum d'utilisateurs à retourner",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 100,
+                            "maximum": 1000,
+                            "minimum": 1,
+                            "example": 100
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Liste des utilisateurs récupérée avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "users": {
+                                            "type": "array",
+                                            "items": {
+                                                "properties": {
+                                                    "ldap_dn": {
+                                                        "type": "string",
+                                                        "example": "CN=jdoe,OU=utilisateurs,DC=localdev,DC=fr"
+                                                    },
+                                                    "username": {
+                                                        "type": "string",
+                                                        "example": "jdoe"
+                                                    },
+                                                    "display_name": {
+                                                        "type": "string",
+                                                        "example": "Jean Doe"
+                                                    },
+                                                    "email": {
+                                                        "type": "string",
+                                                        "example": "jean.doe@etablissement.fr"
+                                                    },
+                                                    "first_name": {
+                                                        "type": "string",
+                                                        "example": "Jean"
+                                                    },
+                                                    "last_name": {
+                                                        "type": "string",
+                                                        "example": "Doe"
+                                                    },
+                                                    "profile": {
+                                                        "type": "string",
+                                                        "example": "Professeur"
+                                                    },
+                                                    "class": {
+                                                        "type": "string",
+                                                        "example": null,
+                                                        "nullable": true
+                                                    },
+                                                    "groups": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "string"
+                                                        },
+                                                        "example": [
+                                                            "CN=Professeurs,OU=Groups,DC=localdev,DC=fr",
+                                                            "CN=Mathematiques,OU=Groups,DC=localdev,DC=fr"
+                                                        ]
+                                                    },
+                                                    "quota": {
+                                                        "properties": {
+                                                            "total_mb": {
+                                                                "type": "integer",
+                                                                "example": 5000
+                                                            },
+                                                            "used_mb": {
+                                                                "type": "integer",
+                                                                "example": 2340
+                                                            },
+                                                            "percentage": {
+                                                                "type": "number",
+                                                                "example": 46.8
+                                                            }
+                                                        },
+                                                        "type": "object"
+                                                    },
+                                                    "last_login": {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "example": "2025-01-17T08:30:00Z"
+                                                    },
+                                                    "created_at": {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "example": "2024-09-01T00:00:00Z"
+                                                    },
+                                                    "updated_at": {
+                                                        "type": "string",
+                                                        "format": "date-time",
+                                                        "example": "2025-01-17T10:15:00Z"
+                                                    }
+                                                },
+                                                "type": "object"
+                                            }
+                                        },
+                                        "pagination": {
+                                            "properties": {
+                                                "count": {
+                                                    "type": "integer",
+                                                    "example": 1
+                                                },
+                                                "has_more": {
+                                                    "type": "boolean",
+                                                    "example": false
+                                                },
+                                                "next_since": {
+                                                    "type": "string",
+                                                    "example": null,
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Paramètres invalides",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Invalid parameters"
+                                        },
+                                        "error_code": {
+                                            "type": "string",
+                                            "example": "VALIDATION_ERROR"
+                                        },
+                                        "errors": {
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Token API invalide",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Invalid API token"
+                                        },
+                                        "error_code": {
+                                            "type": "string",
+                                            "example": "AUTH_REQUIRED"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "se4fs_auth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/users/{username}": {
+            "get": {
+                "tags": [
+                    "SE4FS"
+                ],
+                "summary": "Informations d'un utilisateur spécifique",
+                "description": "Retourne les informations détaillées d'un utilisateur par son nom d'utilisateur",
+                "operationId": "4168ef3e9b122080dc700072b32b14a6",
+                "parameters": [
+                    {
+                        "name": "username",
+                        "in": "path",
+                        "description": "Nom d'utilisateur",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "example": "jdoe"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Utilisateur trouvé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "user": {
+                                            "properties": {
+                                                "ldap_dn": {
+                                                    "type": "string",
+                                                    "example": "CN=jdoe,OU=utilisateurs,DC=localdev,DC=fr"
+                                                },
+                                                "username": {
+                                                    "type": "string",
+                                                    "example": "jdoe"
+                                                },
+                                                "display_name": {
+                                                    "type": "string",
+                                                    "example": "Jean Doe"
+                                                },
+                                                "email": {
+                                                    "type": "string",
+                                                    "example": "jean.doe@etablissement.fr"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Utilisateur non trouvé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "User not found"
+                                        },
+                                        "error_code": {
+                                            "type": "string",
+                                            "example": "USER_NOT_FOUND"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "se4fs_auth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/webhook": {
+            "post": {
+                "tags": [
+                    "SE4FS"
+                ],
+                "summary": "Réception de webhooks applications tierces",
+                "description": "Reçoit les notifications depuis les applications tierces. Endpoint authentifié par token webhook.",
+                "operationId": "1eff205455526f52ddaac2ca7adc9198",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "event",
+                                    "timestamp",
+                                    "data"
+                                ],
+                                "properties": {
+                                    "event": {
+                                        "description": "Type d'événement webhook",
+                                        "type": "string",
+                                        "example": "user.sync_request"
+                                    },
+                                    "timestamp": {
+                                        "description": "Timestamp de l'événement",
+                                        "type": "string",
+                                        "format": "date-time",
+                                        "example": "2025-01-17T10:30:00Z"
+                                    },
+                                    "data": {
+                                        "description": "Données spécifiques à l'événement",
+                                        "type": "object",
+                                        "example": {
+                                            "users": [
+                                                "jdoe",
+                                                "mmartin"
+                                            ],
+                                            "full_sync": false
+                                        }
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Webhook traité avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Webhook processed successfully"
+                                        },
+                                        "event_id": {
+                                            "type": "string",
+                                            "example": "evt_12345"
+                                        },
+                                        "processed_at": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Données webhook invalides",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Invalid webhook data"
+                                        },
+                                        "error_code": {
+                                            "type": "string",
+                                            "example": "VALIDATION_ERROR"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Token webhook invalide",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Invalid webhook token"
+                                        },
+                                        "error_code": {
+                                            "type": "string",
+                                            "example": "AUTH_INVALID"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "se4fs_webhook": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/checkhub/shortcuts": {
+            "get": {
+                "tags": [
+                    "ControlHub",
+                    "Shortcuts"
+                ],
+                "summary": "Récupération des raccourcis d'applications",
+                "description": "Retourne la liste complète des raccourcis d'applications configurés sur le système. Inclut les raccourcis du fichier principal et des fichiers d'inclusion (.inc.json). L'authentification est gérée automatiquement par le middleware ControlHubAuth.",
+                "operationId": "57878145101899f6ed54808039233327",
+                "parameters": [
+                    {
+                        "name": "X-Api-Key",
+                        "in": "header",
+                        "description": "Clé API ControlHub (méthode recommandée). Accepte les clés master ou instance configurées.",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 16
+                        },
+                        "example": "your-controlhub-api-key-here"
+                    },
+                    {
+                        "name": "Authorization",
+                        "in": "header",
+                        "description": "Alternative: Authorization: ApiKey <clé>",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^ApiKey .+"
+                        },
+                        "example": "ApiKey your-controlhub-api-key-here"
+                    },
+                    {
+                        "name": "key",
+                        "in": "query",
+                        "description": "Alternative en paramètre de requête (moins sécurisé)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 16
+                        },
+                        "example": "your-controlhub-api-key-here"
+                    },
+                    {
+                        "name": "api_key",
+                        "in": "query",
+                        "description": "Alternative en paramètre de requête (moins sécurisé)",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 16
+                        },
+                        "example": "your-controlhub-api-key-here"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Liste des raccourcis récupérée avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "description": "Indique le succès de l'opération",
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "description": "Raccourcis d'applications indexés par clé",
+                                            "type": "object",
+                                            "example": {
+                                                "firefox": {
+                                                    "key": "firefox",
+                                                    "name": "Mozilla Firefox",
+                                                    "owner": "admin",
+                                                    "place": "desktop",
+                                                    "windows": {
+                                                        "link": "firefox.exe",
+                                                        "args": "https://example.com",
+                                                        "path": "C:\\Program Files\\Mozilla Firefox",
+                                                        "icon": "firefox.ico"
+                                                    },
+                                                    "linux": {
+                                                        "link": "firefox",
+                                                        "args": "https://example.com",
+                                                        "path": "/usr/bin",
+                                                        "startupwmclass": "Firefox"
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "count": {
+                                            "description": "Nombre total de raccourcis",
+                                            "type": "integer",
+                                            "example": 25
+                                        },
+                                        "authenticated_with": {
+                                            "description": "Type de clé API utilisée pour l'authentification",
+                                            "type": "string",
+                                            "enum": [
+                                                "master",
+                                                "instance",
+                                                "unknown"
+                                            ],
+                                            "example": "instance"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authentification échouée - Clé API invalide ou manquante",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "error": {
+                                            "type": "string",
+                                            "example": "Forbidden"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Invalid API key"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Erreur interne du serveur",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "error": {
+                                            "type": "string",
+                                            "example": "Internal server error"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Trop de requêtes - Rate limit dépassé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "error": {
+                                            "type": "string",
+                                            "example": "Too many requests"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "controlhub_api_key": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "ControlHub",
+                    "Shortcuts"
+                ],
+                "summary": "Création d'un nouveau raccourci",
+                "description": "Crée un nouveau raccourci d'application avec les paramètres spécifiés pour Windows et Linux.",
+                "operationId": "73a338a4c13bf3b9f65597989b929744",
+                "requestBody": {
+                    "description": "Données du raccourci à créer",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "description": "Nom du raccourci",
+                                        "type": "string",
+                                        "example": "Mozilla Firefox"
+                                    },
+                                    "owner": {
+                                        "description": "Propriétaire du raccourci",
+                                        "type": "string",
+                                        "example": "admin"
+                                    },
+                                    "place": {
+                                        "description": "Emplacement du raccourci",
+                                        "type": "string",
+                                        "enum": [
+                                            "desktop",
+                                            "startup",
+                                            "taskbar"
+                                        ],
+                                        "example": "desktop"
+                                    },
+                                    "windows_link": {
+                                        "description": "Exécutable Windows",
+                                        "type": "string",
+                                        "example": "firefox.exe"
+                                    },
+                                    "windows_args": {
+                                        "description": "Arguments Windows",
+                                        "type": "string",
+                                        "example": "https://example.com"
+                                    },
+                                    "windows_path": {
+                                        "description": "Chemin Windows",
+                                        "type": "string",
+                                        "example": "C:\\Program Files\\Mozilla Firefox"
+                                    },
+                                    "windows_icon": {
+                                        "description": "Icône Windows",
+                                        "type": "string",
+                                        "example": "firefox.ico"
+                                    },
+                                    "linux_link": {
+                                        "description": "Exécutable Linux",
+                                        "type": "string",
+                                        "example": "firefox"
+                                    },
+                                    "linux_args": {
+                                        "description": "Arguments Linux",
+                                        "type": "string",
+                                        "example": "https://example.com"
+                                    },
+                                    "linux_path": {
+                                        "description": "Chemin Linux",
+                                        "type": "string",
+                                        "example": "/usr/bin"
+                                    },
+                                    "linux_startupwmclass": {
+                                        "description": "Classe de fenêtre Linux",
+                                        "type": "string",
+                                        "example": "Firefox"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Raccourci créé avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Shortcut created successfully"
+                                        },
+                                        "data": {
+                                            "description": "Raccourci créé avec sa clé générée",
+                                            "type": "object",
+                                            "example": {
+                                                "key": "64f8b2c1a3e5d",
+                                                "name": "Mozilla Firefox",
+                                                "owner": "admin",
+                                                "place": "desktop"
+                                            }
+                                        },
+                                        "authenticated_with": {
+                                            "type": "string",
+                                            "example": "instance"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Données invalides",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "error": {
+                                            "type": "string",
+                                            "example": "Bad request"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Name is required"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "controlhub_api_key": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "ControlHub",
+                    "Shortcuts"
+                ],
+                "summary": "Suppression en lot de raccourcis",
+                "description": "Supprime définitivement plusieurs raccourcis d'applications et leurs fichiers d'icônes associés en une seule requête.",
+                "operationId": "f78cd798ce4f83fc94c5a47cbd89a894",
+                "requestBody": {
+                    "description": "Liste des clés de raccourcis à supprimer",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "keys"
+                                ],
+                                "properties": {
+                                    "keys": {
+                                        "description": "Tableau des clés de raccourcis à supprimer",
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "example": [
+                                            "firefox",
+                                            "chrome",
+                                            "notepad"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Suppression en lot terminée",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Batch deletion completed"
+                                        },
+                                        "data": {
+                                            "description": "Résultats de la suppression en lot",
+                                            "properties": {
+                                                "deleted": {
+                                                    "description": "Clés des raccourcis supprimés avec succès",
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    },
+                                                    "example": [
+                                                        "firefox",
+                                                        "chrome"
+                                                    ]
+                                                },
+                                                "not_found": {
+                                                    "description": "Clés des raccourcis non trouvés",
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    },
+                                                    "example": [
+                                                        "notepad"
+                                                    ]
+                                                },
+                                                "failed": {
+                                                    "description": "Clés des raccourcis dont la suppression a échoué",
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    },
+                                                    "example": []
+                                                },
+                                                "summary": {
+                                                    "description": "Résumé de l'opération",
+                                                    "properties": {
+                                                        "total_requested": {
+                                                            "type": "integer",
+                                                            "example": 3
+                                                        },
+                                                        "deleted_count": {
+                                                            "type": "integer",
+                                                            "example": 2
+                                                        },
+                                                        "not_found_count": {
+                                                            "type": "integer",
+                                                            "example": 1
+                                                        },
+                                                        "failed_count": {
+                                                            "type": "integer",
+                                                            "example": 0
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "authenticated_with": {
+                                            "type": "string",
+                                            "example": "instance"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Données invalides",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "error": {
+                                            "type": "string",
+                                            "example": "Bad request"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Keys array is required"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "controlhub_api_key": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/checkhub/shortcuts/{key}": {
+            "get": {
+                "tags": [
+                    "ControlHub",
+                    "Shortcuts"
+                ],
+                "summary": "Récupération d'un raccourci spécifique",
+                "description": "Retourne les détails d'un raccourci d'application spécifique identifié par sa clé unique.",
+                "operationId": "23fc8bdc1c2caa1f24dd76d9980fa7c3",
+                "parameters": [
+                    {
+                        "name": "key",
+                        "in": "path",
+                        "description": "Clé unique du raccourci à récupérer",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "firefox"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Raccourci récupéré avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "description": "Détails du raccourci",
+                                            "type": "object",
+                                            "example": {
+                                                "key": "firefox",
+                                                "name": "Mozilla Firefox",
+                                                "owner": "admin",
+                                                "place": "desktop",
+                                                "windows": {
+                                                    "link": "firefox.exe",
+                                                    "args": "https://example.com",
+                                                    "path": "C:\\Program Files\\Mozilla Firefox",
+                                                    "icon": "firefox.ico"
+                                                },
+                                                "linux": {
+                                                    "link": "firefox",
+                                                    "args": "https://example.com",
+                                                    "path": "/usr/bin",
+                                                    "startupwmclass": "Firefox"
+                                                }
+                                            }
+                                        },
+                                        "authenticated_with": {
+                                            "type": "string",
+                                            "enum": [
+                                                "master",
+                                                "instance",
+                                                "unknown"
+                                            ],
+                                            "example": "instance"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Raccourci non trouvé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "error": {
+                                            "type": "string",
+                                            "example": "Not found"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Shortcut not found"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "controlhub_api_key": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "ControlHub",
+                    "Shortcuts"
+                ],
+                "summary": "Mise à jour d'un raccourci",
+                "description": "Met à jour un raccourci d'application existant identifié par sa clé unique.",
+                "operationId": "7fa2b5b27bc2a96ef08ea94475622feb",
+                "parameters": [
+                    {
+                        "name": "key",
+                        "in": "path",
+                        "description": "Clé unique du raccourci à modifier",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "firefox"
+                    }
+                ],
+                "requestBody": {
+                    "description": "Nouvelles données du raccourci",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "name": {
+                                        "description": "Nom du raccourci",
+                                        "type": "string",
+                                        "example": "Mozilla Firefox Updated"
+                                    },
+                                    "owner": {
+                                        "description": "Propriétaire du raccourci",
+                                        "type": "string",
+                                        "example": "admin"
+                                    },
+                                    "place": {
+                                        "description": "Emplacement du raccourci",
+                                        "type": "string",
+                                        "enum": [
+                                            "desktop",
+                                            "startup",
+                                            "taskbar"
+                                        ],
+                                        "example": "desktop"
+                                    },
+                                    "windows_link": {
+                                        "description": "Exécutable Windows",
+                                        "type": "string",
+                                        "example": "firefox.exe"
+                                    },
+                                    "windows_args": {
+                                        "description": "Arguments Windows",
+                                        "type": "string",
+                                        "example": "https://example.com"
+                                    },
+                                    "windows_path": {
+                                        "description": "Chemin Windows",
+                                        "type": "string",
+                                        "example": "C:\\Program Files\\Mozilla Firefox"
+                                    },
+                                    "windows_icon": {
+                                        "description": "Icône Windows",
+                                        "type": "string",
+                                        "example": "firefox.ico"
+                                    },
+                                    "linux_link": {
+                                        "description": "Exécutable Linux",
+                                        "type": "string",
+                                        "example": "firefox"
+                                    },
+                                    "linux_args": {
+                                        "description": "Arguments Linux",
+                                        "type": "string",
+                                        "example": "https://example.com"
+                                    },
+                                    "linux_path": {
+                                        "description": "Chemin Linux",
+                                        "type": "string",
+                                        "example": "/usr/bin"
+                                    },
+                                    "linux_startupwmclass": {
+                                        "description": "Classe de fenêtre Linux",
+                                        "type": "string",
+                                        "example": "Firefox"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Raccourci mis à jour avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Shortcut updated successfully"
+                                        },
+                                        "data": {
+                                            "description": "Raccourci mis à jour",
+                                            "type": "object",
+                                            "example": {
+                                                "key": "firefox",
+                                                "name": "Mozilla Firefox Updated",
+                                                "owner": "admin",
+                                                "place": "desktop"
+                                            }
+                                        },
+                                        "authenticated_with": {
+                                            "type": "string",
+                                            "example": "instance"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Raccourci non trouvé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "error": {
+                                            "type": "string",
+                                            "example": "Not found"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Shortcut not found"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "controlhub_api_key": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "ControlHub",
+                    "Shortcuts"
+                ],
+                "summary": "Suppression d'un raccourci",
+                "description": "Supprime définitivement un raccourci d'application et ses fichiers d'icônes associés.",
+                "operationId": "2f98a5c1901582914a07e774ca12156d",
+                "parameters": [
+                    {
+                        "name": "key",
+                        "in": "path",
+                        "description": "Clé unique du raccourci à supprimer",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "firefox"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Raccourci supprimé avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Shortcut deleted successfully"
+                                        },
+                                        "authenticated_with": {
+                                            "type": "string",
+                                            "example": "instance"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Raccourci non trouvé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "error": {
+                                            "type": "string",
+                                            "example": "Not found"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Shortcut not found"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "controlhub_api_key": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/user": {
+            "get": {
+                "tags": [
+                    "users"
+                ],
+                "summary": "Informations de l'utilisateur connecté",
+                "description": "Retourne les informations de l'utilisateur actuellement connecté via SambaEdu",
+                "operationId": "7210be5e991aa604dbf8b7794a24b35a",
+                "responses": {
+                    "200": {
+                        "description": "Informations utilisateur récupérées avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "login": {
+                                            "description": "Login de l'utilisateur",
+                                            "type": "string",
+                                            "example": "jdupont"
+                                        },
+                                        "user": {
+                                            "description": "Données utilisateur depuis l'annuaire",
+                                            "properties": {
+                                                "cn": {
+                                                    "description": "Nom complet",
+                                                    "type": "string",
+                                                    "example": "Jean Dupont"
+                                                },
+                                                "displayName": {
+                                                    "description": "Nom d'affichage",
+                                                    "type": "string",
+                                                    "example": "Jean Dupont"
+                                                },
+                                                "mail": {
+                                                    "description": "Adresse email",
+                                                    "type": "string",
+                                                    "example": "jean.dupont@etab.fr"
+                                                },
+                                                "etab": {
+                                                    "description": "Code établissement",
+                                                    "type": "string",
+                                                    "example": "LYCEE01"
+                                                },
+                                                "objectClass": {
+                                                    "description": "Classes d'objets LDAP",
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string",
+                                                        "example": "inetOrgPerson"
+                                                    }
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "authenticated": {
+                                            "description": "État d'authentification",
+                                            "type": "boolean",
+                                            "example": true
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Non authentifié",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "error": {
+                                            "description": "Message d'erreur",
+                                            "type": "string",
+                                            "example": "Unauthenticated"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "sambaedu_auth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/admin/users": {
+            "get": {
+                "tags": [
+                    "users",
+                    "admin"
+                ],
+                "summary": "Liste des utilisateurs (Admin)",
+                "description": "Retourne la liste des utilisateurs du système. Nécessite des droits administrateur.",
+                "operationId": "0060437915fdadbb849c14d346521669",
+                "parameters": [
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "Nombre maximum d'utilisateurs à retourner",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 20,
+                            "maximum": 100,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "offset",
+                        "in": "query",
+                        "description": "Nombre d'utilisateurs à ignorer pour la pagination",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 0,
+                            "minimum": 0
+                        }
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Terme de recherche pour filtrer les utilisateurs",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "example": "dupont"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Liste des utilisateurs récupérée avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "data": {
+                                            "description": "Liste des utilisateurs",
+                                            "type": "array",
+                                            "items": {
+                                                "properties": {
+                                                    "login": {
+                                                        "type": "string",
+                                                        "example": "jdupont"
+                                                    },
+                                                    "cn": {
+                                                        "type": "string",
+                                                        "example": "Jean Dupont"
+                                                    },
+                                                    "mail": {
+                                                        "type": "string",
+                                                        "example": "jean.dupont@etab.fr"
+                                                    },
+                                                    "etab": {
+                                                        "type": "string",
+                                                        "example": "LYCEE01"
+                                                    },
+                                                    "enabled": {
+                                                        "type": "boolean",
+                                                        "example": true
+                                                    }
+                                                },
+                                                "type": "object"
+                                            }
+                                        },
+                                        "meta": {
+                                            "description": "Métadonnées de pagination",
+                                            "properties": {
+                                                "total": {
+                                                    "description": "Nombre total d'utilisateurs",
+                                                    "type": "integer",
+                                                    "example": 150
+                                                },
+                                                "limit": {
+                                                    "description": "Limite par page",
+                                                    "type": "integer",
+                                                    "example": 20
+                                                },
+                                                "offset": {
+                                                    "description": "Décalage actuel",
+                                                    "type": "integer",
+                                                    "example": 0
+                                                },
+                                                "has_more": {
+                                                    "description": "Y a-t-il plus de résultats",
+                                                    "type": "boolean",
+                                                    "example": true
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Accès refusé - Droits administrateur requis",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "error": {
+                                            "description": "Message d'erreur",
+                                            "type": "string",
+                                            "example": "Admin rights required"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Non authentifié",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "error": {
+                                            "description": "Message d'erreur",
+                                            "type": "string",
+                                            "example": "Unauthenticated"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "sambaedu_auth": []
+                    }
+                ]
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "sambaedu_auth": {
+                "type": "apiKey",
+                "description": "Authentification via cookies de session SambaEdu",
+                "name": "Cookie",
+                "in": "header"
+            },
+            "checkhub_api_key": {
+                "type": "apiKey",
+                "description": "Clé API Check Hub. À fournir de préférence dans l'en-tête X-Api-Key. Alternative possible: Authorization: ApiKey <clé>",
+                "name": "X-Api-Key",
+                "in": "header"
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "ecowatt",
+            "description": "Service de consultation des données EcoWatt (RTE)"
+        },
+        {
+            "name": "SE4FS",
+            "description": "API SE4FS pour l'intégration d'applications tierces"
+        },
+        {
+            "name": "users",
+            "description": "Gestion des utilisateurs SambaEdu"
+        },
+        {
+            "name": "health",
+            "description": "Endpoints de vérification de santé du système"
+        },
+        {
+            "name": "admin",
+            "description": "Endpoints d'administration nécessitant des privilèges élevés"
+        },
+        {
+            "name": "checkhub",
+            "description": "Endpoints utilisés par le Check Hub (clé API)"
+        },
+        {
+            "name": "ControlHub",
+            "description": "ControlHub"
+        },
+        {
+            "name": "Shortcuts",
+            "description": "Shortcuts"
+        }
+    ]
+}

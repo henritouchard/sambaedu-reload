@@ -1,0 +1,36 @@
+{
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "vite build && npm run copy-fonts",
+        "copy-fonts": "cp -r public/webfonts public/build/ 2>/dev/null || mkdir -p public/build && cp -r public/webfonts public/build/",
+        "dev": "vite dev --host 0.0.0.0",
+        "dev-hot": "vite dev --host 0.0.0.0 --port 5173",
+        "test": "php artisan test:interactive",
+        "test:quick": "php artisan test:interactive --quick",
+        "test:all": "npm run test:compare:all && npm run test:integration && npm run test:unit && npm run test:feature",
+        "test:integration": "DB_CONNECTION=pgsql DB_DATABASE=sambaedu php artisan test tests/Integration/LegacyLaravelComparison/",
+        "test:compare": "php artisan compare:legacy-laravel",
+        "test:compare:all": "php artisan compare:legacy-laravel all",
+        "test:unit": "php artisan test tests/Unit/",
+        "test:feature": "php artisan test tests/Feature/",
+        "test:rights": "php artisan test --filter=RightsServiceTest",
+        "test:workstation-groups": "php artisan test --filter=WorkstationGroupCrudTest",
+        "test:shortcuts": "php artisan test --filter=ShortcutCrudTest"
+    },
+    "devDependencies": {
+        "@tailwindcss/forms": "^0.5.10",
+        "@tailwindcss/postcss": "^4.1.12",
+        "@tailwindcss/typography": "^0.5.16",
+        "autoprefixer": "^10.4.21",
+        "axios": "^1.6.4",
+        "daisyui": "^5.0.50",
+        "laravel-vite-plugin": "^1.0.0",
+        "postcss": "^8.5.6",
+        "tailwindcss": "^4.1.12",
+        "vite": "^5.0.0"
+    },
+    "dependencies": {
+        "@fortawesome/fontawesome-free": "^7.0.0"
+    }
+}

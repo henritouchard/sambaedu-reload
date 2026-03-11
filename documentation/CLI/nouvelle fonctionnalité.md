@@ -1,0 +1,1 @@
+Documenter la commande php artisan make:page

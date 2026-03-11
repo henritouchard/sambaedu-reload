@@ -1,0 +1,488 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "SambaEdu API",
+        "description": "API REST pour l'application SambaEdu - Gestion des services éducatifs",
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "/api/v1",
+            "description": "Serveur API SambaEdu v1"
+        }
+    ],
+    "paths": {
+        "/api/v1/ecowatt/status": {
+            "get": {
+                "tags": [
+                    "ecowatt"
+                ],
+                "summary": "État du réseau électrique français",
+                "description": "Retourne les données en temps réel du service EcoWatt de RTE sur l'état du réseau électrique français",
+                "operationId": "4066de4fd8d3fd6aa36e954abcee72ae",
+                "responses": {
+                    "200": {
+                        "description": "Données EcoWatt récupérées avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "description": "État général du réseau",
+                                            "type": "string",
+                                            "example": "normal"
+                                        },
+                                        "level": {
+                                            "description": "Niveau d'alerte (1=vert, 2=orange, 3=rouge)",
+                                            "type": "integer",
+                                            "example": 1
+                                        },
+                                        "message": {
+                                            "description": "Message descriptif",
+                                            "type": "string",
+                                            "example": "Consommation normale"
+                                        },
+                                        "timestamp": {
+                                            "description": "Horodatage des données",
+                                            "type": "string",
+                                            "format": "date-time",
+                                            "example": "2024-01-15T10:30:00Z"
+                                        },
+                                        "data": {
+                                            "description": "Données détaillées du service EcoWatt",
+                                            "properties": {
+                                                "region": {
+                                                    "description": "Zone géographique",
+                                                    "type": "string",
+                                                    "example": "France"
+                                                },
+                                                "forecast": {
+                                                    "description": "Prévisions pour les prochaines heures",
+                                                    "type": "array",
+                                                    "items": {
+                                                        "properties": {
+                                                            "hour": {
+                                                                "description": "Heure",
+                                                                "type": "string",
+                                                                "example": "14:00"
+                                                            },
+                                                            "level": {
+                                                                "description": "Niveau prévu",
+                                                                "type": "integer",
+                                                                "example": 1
+                                                            }
+                                                        },
+                                                        "type": "object"
+                                                    }
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service EcoWatt indisponible",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "error": {
+                                            "description": "Message d'erreur",
+                                            "type": "string",
+                                            "example": "Service indisponible"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/public/health": {
+            "get": {
+                "tags": [
+                    "health"
+                ],
+                "summary": "Vérification de l'état de santé du système",
+                "description": "Retourne l'état de santé de l'application et de ses dépendances",
+                "operationId": "0861a77b3800a0690a8945724dae1385",
+                "responses": {
+                    "200": {
+                        "description": "Système en bonne santé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "description": "État général du système",
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "timestamp": {
+                                            "description": "Horodatage de la vérification",
+                                            "type": "string",
+                                            "format": "date-time",
+                                            "example": "2024-01-15T10:30:00Z"
+                                        },
+                                        "services": {
+                                            "description": "État des services individuels",
+                                            "properties": {
+                                                "database": {
+                                                    "description": "État de la base de données",
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "cache": {
+                                                    "description": "État du cache",
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "storage": {
+                                                    "description": "État du stockage",
+                                                    "type": "boolean",
+                                                    "example": true
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Système en panne ou dégradé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "status": {
+                                            "description": "État général du système",
+                                            "type": "boolean",
+                                            "example": false
+                                        },
+                                        "timestamp": {
+                                            "description": "Horodatage de la vérification",
+                                            "type": "string",
+                                            "format": "date-time",
+                                            "example": "2024-01-15T10:30:00Z"
+                                        },
+                                        "services": {
+                                            "description": "État des services individuels",
+                                            "properties": {
+                                                "database": {
+                                                    "description": "État de la base de données",
+                                                    "type": "boolean",
+                                                    "example": false
+                                                },
+                                                "cache": {
+                                                    "description": "État du cache",
+                                                    "type": "boolean",
+                                                    "example": true
+                                                },
+                                                "storage": {
+                                                    "description": "État du stockage",
+                                                    "type": "boolean",
+                                                    "example": true
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "errors": {
+                                            "description": "Liste des erreurs détectées",
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string",
+                                                "example": "Database connection failed"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/user": {
+            "get": {
+                "tags": [
+                    "users"
+                ],
+                "summary": "Informations de l'utilisateur connecté",
+                "description": "Retourne les informations de l'utilisateur actuellement connecté via SambaEdu",
+                "operationId": "7210be5e991aa604dbf8b7794a24b35a",
+                "responses": {
+                    "200": {
+                        "description": "Informations utilisateur récupérées avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "login": {
+                                            "description": "Login de l'utilisateur",
+                                            "type": "string",
+                                            "example": "jdupont"
+                                        },
+                                        "user": {
+                                            "description": "Données utilisateur depuis l'annuaire",
+                                            "properties": {
+                                                "cn": {
+                                                    "description": "Nom complet",
+                                                    "type": "string",
+                                                    "example": "Jean Dupont"
+                                                },
+                                                "displayName": {
+                                                    "description": "Nom d'affichage",
+                                                    "type": "string",
+                                                    "example": "Jean Dupont"
+                                                },
+                                                "mail": {
+                                                    "description": "Adresse email",
+                                                    "type": "string",
+                                                    "example": "jean.dupont@etab.fr"
+                                                },
+                                                "etab": {
+                                                    "description": "Code établissement",
+                                                    "type": "string",
+                                                    "example": "LYCEE01"
+                                                },
+                                                "objectClass": {
+                                                    "description": "Classes d'objets LDAP",
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string",
+                                                        "example": "inetOrgPerson"
+                                                    }
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "authenticated": {
+                                            "description": "État d'authentification",
+                                            "type": "boolean",
+                                            "example": true
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Non authentifié",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "error": {
+                                            "description": "Message d'erreur",
+                                            "type": "string",
+                                            "example": "Unauthenticated"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "sambaedu_auth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/admin/users": {
+            "get": {
+                "tags": [
+                    "users",
+                    "admin"
+                ],
+                "summary": "Liste des utilisateurs (Admin)",
+                "description": "Retourne la liste des utilisateurs du système. Nécessite des droits administrateur.",
+                "operationId": "0060437915fdadbb849c14d346521669",
+                "parameters": [
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "Nombre maximum d'utilisateurs à retourner",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 20,
+                            "maximum": 100,
+                            "minimum": 1
+                        }
+                    },
+                    {
+                        "name": "offset",
+                        "in": "query",
+                        "description": "Nombre d'utilisateurs à ignorer pour la pagination",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 0,
+                            "minimum": 0
+                        }
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "Terme de recherche pour filtrer les utilisateurs",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "example": "dupont"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Liste des utilisateurs récupérée avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "data": {
+                                            "description": "Liste des utilisateurs",
+                                            "type": "array",
+                                            "items": {
+                                                "properties": {
+                                                    "login": {
+                                                        "type": "string",
+                                                        "example": "jdupont"
+                                                    },
+                                                    "cn": {
+                                                        "type": "string",
+                                                        "example": "Jean Dupont"
+                                                    },
+                                                    "mail": {
+                                                        "type": "string",
+                                                        "example": "jean.dupont@etab.fr"
+                                                    },
+                                                    "etab": {
+                                                        "type": "string",
+                                                        "example": "LYCEE01"
+                                                    },
+                                                    "enabled": {
+                                                        "type": "boolean",
+                                                        "example": true
+                                                    }
+                                                },
+                                                "type": "object"
+                                            }
+                                        },
+                                        "meta": {
+                                            "description": "Métadonnées de pagination",
+                                            "properties": {
+                                                "total": {
+                                                    "description": "Nombre total d'utilisateurs",
+                                                    "type": "integer",
+                                                    "example": 150
+                                                },
+                                                "limit": {
+                                                    "description": "Limite par page",
+                                                    "type": "integer",
+                                                    "example": 20
+                                                },
+                                                "offset": {
+                                                    "description": "Décalage actuel",
+                                                    "type": "integer",
+                                                    "example": 0
+                                                },
+                                                "has_more": {
+                                                    "description": "Y a-t-il plus de résultats",
+                                                    "type": "boolean",
+                                                    "example": true
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Accès refusé - Droits administrateur requis",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "error": {
+                                            "description": "Message d'erreur",
+                                            "type": "string",
+                                            "example": "Admin rights required"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Non authentifié",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "error": {
+                                            "description": "Message d'erreur",
+                                            "type": "string",
+                                            "example": "Unauthenticated"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "sambaedu_auth": []
+                    }
+                ]
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "sambaedu_auth": {
+                "type": "apiKey",
+                "description": "Authentification via cookies de session SambaEdu",
+                "name": "Cookie",
+                "in": "header"
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "ecowatt",
+            "description": "Service de consultation des données EcoWatt (RTE)"
+        },
+        {
+            "name": "users",
+            "description": "Gestion des utilisateurs SambaEdu"
+        },
+        {
+            "name": "health",
+            "description": "Endpoints de vérification de santé du système"
+        },
+        {
+            "name": "admin",
+            "description": "Endpoints d'administration nécessitant des privilèges élevés"
+        }
+    ]
+}

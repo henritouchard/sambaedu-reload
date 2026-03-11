@@ -1,0 +1,287 @@
+@import "tailwindcss";
+@import "@fortawesome/fontawesome-free/css/all.css";
+
+@source "../**/*.blade.php";
+@source "../**/*.js";
+@source "../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php";
+@source "../../storage/framework/views/*.php";
+
+@plugin "daisyui";
+
+/* Thème clair */
+[data-theme="light"] {
+
+    --color-base-100: oklch(1 0 none);
+    --color-base-200: oklch(1 0 none);
+    --color-base-300: oklch(1 0 none);
+    --color-base-400: oklch(1 0 none);
+    --color-base-dark: oklch(0.35 0.0355 274.59);
+    --color-base-light: oklch(1 0 none);
+
+    --gradient: linear-gradient(to top, var(--color-base-200) 80%, var(--color-base-300));
+    --gradient-sm: linear-gradient(to top, var(--color-base-200) 90%, var(--color-base-300));
+    --color-border: oklch(0.9 0 none);
+    --color-border-contrast: oklch(37.909% 0.00004 271.152);
+    --color-highlight: oklch(1 0 none);
+
+    --shadow-xs:
+        inset 0 1px 2px #ffffff30,
+        0 1px 2px #00000030,
+        0 2px 4px #00000015;
+
+    --shadow-s:
+        inset 0 1px 2px #ffffff30,
+        0 1px 2px #00000030,
+        0 2px 4px #00000015;
+
+    --shadow-m:
+        inset 0 1px 2px #ffffff50,
+        0 2px 4px #00000030,
+        0 4px 8px #00000015;
+
+    --shadow-reverse-m:
+        inset 0 5px 10px #8d8c8c60,
+        inset 0 1px 3px #00000040,
+        inset 0 -1px 2px #00000010;
+
+    --shadow-l:
+        inset 0 1px 2px #ffffff70,
+        0 4px 6px #00000030,
+        0 6px 10px #00000015;
+
+    --color-base-content: oklch(20% 0.042 265.755);
+    --color-primary: oklch(68% 0.169 237.323);
+    --color-primary-content: oklch(98% 0.018 155.826);
+    --color-secondary: oklch(89% 0.058 10.001);
+    --color-secondary-content: oklch(43% 0 0);
+    --color-accent: oklch(71% 0.202 349.761);
+    --color-accent-content: oklch(0% 0 0);
+    --color-neutral: oklch(12% 0.042 264.695);
+    --color-neutral-content: oklch(98% 0.003 247.858);
+    --color-info: oklch(77% 0.152 181.912);
+    --color-info-content: oklch(29% 0.066 243.157);
+    --color-success: oklch(79% 0.209 151.711);
+    --color-success-content: oklch(27% 0.033 256.848);
+    --color-warning: oklch(82% 0.189 84.429);
+    --color-warning-content: oklch(26% 0.079 36.259);
+    --color-error: oklch(64% 0.246 16.439);
+    --color-error-content: oklch(100% 0 0);
+    --color-border: oklch(60.479% 0.13263 238.111);
+    --radius-selector: 0.25rem;
+    --radius-field: 2.5rem;
+    --radius-box: 1rem;
+    --size-selector: 0.25rem;
+    --size-field: 0.25rem;
+    --border: 1px;
+
+    --depth: 1;
+    --noise: 0;
+
+    color-scheme: light;
+}
+
+/* Thème sombre */
+[data-theme="dark"] {
+    --color-base-100: oklch(0.14 0.0333 282.87);
+    --color-base-200: oklch(0.17 0.0333 274.5);
+    --color-base-300: oklch(0.24 0.0355 274.59);
+    --color-base-400: oklch(0.35 0.0355 274.59);
+    --color-base-dark: oklch(0.35 0.0355 274.59);
+    --color-base-light: oklch(0.35 0.0355 274.59);
+    --gradient: linear-gradient(to top, var(--color-base-200) 90%, var(--color-base-300));
+    --color-border: oklch(0.3 0.067 274.75);
+    --color-border-contrast: oklch(67.5% 0.15998 251.474);
+    --color-highlight: oklch(0.43 0.0371 276.22);
+
+    --color-base-content: oklch(97.747% 0.007 106.545);
+    --color-primary: oklch(62% 0.214 259.815);
+    --color-primary-content: oklch(98% 0.003 247.858);
+    --color-secondary: oklch(74.202% 0.148 301.883);
+    --color-secondary-content: oklch(14.84% 0.029 301.883);
+    --color-accent: oklch(83.392% 0.124 66.558);
+    --color-accent-content: oklch(16.678% 0.024 66.558);
+    --color-neutral: oklch(39.445% 0.032 275.524);
+    --color-neutral-content: oklch(87.889% 0.006 275.524);
+    --color-info: oklch(88.263% 0.093 212.846);
+    --color-info-content: oklch(17.652% 0.018 212.846);
+    --color-success: oklch(87.099% 0.219 148.024);
+    --color-success-content: oklch(17.419% 0.043 148.024);
+    --color-warning: oklch(95.533% 0.134 112.757);
+    --color-warning-content: oklch(19.106% 0.026 112.757);
+    --color-error: oklch(68.22% 0.206 24.43);
+    --color-error-content: oklch(13.644% 0.041 24.43);
+    --radius-selector: 1rem;
+    --radius-field: 0.5rem;
+    --radius-box: 1rem;
+    --size-selector: 0.25rem;
+    --size-field: 0.25rem;
+    --border: 1px;
+    --depth: 0;
+    --noise: 0;
+    color-scheme: dark;
+
+
+    --shadow-s:
+        inset 0 1px 2px #ffffff30,
+        /* top highlight*/
+        0 1px 2px #00000030,
+        /* dark shadow*/
+        0 2px 4px #00000015;
+    /* soft shadow*/
+
+    --shadow-m:
+        inset 0 1px 2px #ffffff50,
+        0 2px 4px #00000030,
+        0 4px 8px #00000015;
+
+    --shadow-reverse-s:
+        inset 0 -4px 10px #6d6e9250,
+        inset 0 -1px 2px #00000030,
+        inset 0 -2px 4px #00000020;
+
+    --shadow-reverse-m:
+        inset 0 -5px 10px #6d6e9250,
+        inset 0 -1px 2px #00000030,
+        inset 0 -2px 4px #00000020;
+
+    --shadow-l:
+        inset 0 1px 2px #ffffff70,
+        0 4px 6px #00000030,
+        0 6px 10px #00000015;
+}
+
+.input:focus {
+    outline: var(--color-primary) solid 1px;
+    outline-offset: 2px !important;
+    border-color: var(--color-base-100) !important;
+}
+
+.select:focus {
+    outline: var(--color-primary) solid 1px;
+    outline-offset: 2px !important;
+    border-color: var(--color-base-100) !important;
+}
+
+.modal-box {
+    background: var(--gradient);
+    @apply border;
+    border: 1px solid var(--color-border-contrast) !important;
+}
+
+.drawer-content {
+    background: var(--gradient);
+}
+
+/* Pour desktop, rendre le drawer-content transparent uniquement pour la navbar */
+@media (min-width: 1024px) {
+    .drawer-content {
+        background: transparent;
+    }
+
+    /* Background simple pour le contenu principal */
+    .drawer-content main {
+        background: var(--gradient);
+    }
+}
+
+.card {
+    @apply bg-gradient-to-br from-primary/10 via-secondary/5 to-accent/10 rounded-3xl border border-base-200/50 shadow-xl backdrop-blur-sm;
+    /* border: var(--border) solid var(--color-border) !important; */
+    /* background: var(--gradient); */
+    background-color: var(--color-base-100);
+}
+
+.highlight {
+    box-shadow: var(--shadow-s);
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
+
+    &:hover {
+        border-top: 1px solid rgba(255, 255, 255, 0.6);
+        box-shadow: var(--shadow-m);
+    }
+}
+
+/* .btn:not(.btn-primary):not(.btn-ghost):not(.btn-secondary):not(.btn-accent):not(.btn-info):not(.btn-success):not(.btn-warning):not(.btn-error) {
+    background-color: var(--color-base-300);
+    &:hover {
+        background-color: var(--color-base-400);
+    }
+} */
+
+.select {
+    background-color: var(--color-base-300);
+
+    &:hover {
+        background-color: color-mix(in srgb, var(--color-base-300) 95%, white);
+
+    }
+}
+
+.table th {
+    background-color: #f4f8fb;
+}
+
+.tablebody {
+    /* border: 1px solid var(--color-base-300); */
+    border-radius: 0.1rem;
+}
+
+.deepen {
+    /* background-color: color-mix(in srgb, var(--color-base-200) 70%, var(--color-base-100)); */
+    background-color: var(--color-base-100);
+
+
+    border-color: var(--color-border);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-base-300) 10%, var(--color-base-light));
+    box-shadow: inset 0 2px 5px #46464650;
+}
+
+/* Inverser le hover des boutons : éclaircir au lieu d'assombrir */
+/* 
+.btn:hover {
+    filter: brightness(1.15);
+}
+
+.btn-outline:hover {
+    background-color: brightness(1.15);
+    border-color: brightness(1.15);
+    color: brightness(1.15);
+}
+*/
+
+.stat {
+    box-shadow: var(--shadow-s);
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
+    background: var(--gradient);
+}
+
+/* Pour les boutons ghost */
+.btn-ghost:hover {
+    background-color: brightness(1.15);
+}
+
+.avatar {
+    border: 1px solid var(--color-border);
+    border-radius: 50%;
+}
+
+.toast-body-container>p {
+    font-size: 1rem !important;
+}
+
+.toast-body-title>h4 {
+    font-size: 1rem !important;
+}
+
+.tooltip-content {
+    @apply text-left font-bold;
+}
+
+/* Fix z-index pour les modales CSS (checkbox) vs sidebar (z-50) */
+.modal {
+    z-index: 100 !important;
+}
+
+.textarea {
+    border-radius: var(--radius-box);
+}
