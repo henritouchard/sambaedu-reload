@@ -9,6 +9,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(dirname "$SCRIPT_DIR")"
 
+TARGET_INSTALL_DIR="/var/www/sambaedu-reload"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -30,6 +32,51 @@ log_error() {
 
 log_warning() {
     echo -e "${YELLOW}[!]${NC} $*"
+}
+
+# ============================================================================
+# Vérification et déplacement vers le bon répertoire
+# ============================================================================
+
+relocate_if_needed() {
+    if [[ "$APP_DIR" == "$TARGET_INSTALL_DIR" ]]; then
+        return
+    fi
+
+    log_warning "Le projet se trouve dans: $APP_DIR"
+    log_warning "Il doit être installé dans: $TARGET_INSTALL_DIR"
+    echo ""
+
+    read -p "Déplacer le projet vers $TARGET_INSTALL_DIR ? (y/n): " -n 1 -r
+    echo ""
+
+    if [[ $REPLY != "y" ]]; then
+        log_warning "Déplacez manuellement le projet vers $TARGET_INSTALL_DIR puis relancez."
+        exit 1
+    fi
+
+    mkdir -p "$(dirname "$TARGET_INSTALL_DIR")"
+
+    if [[ -d "$TARGET_INSTALL_DIR" ]]; then
+        log_warning "$TARGET_INSTALL_DIR existe déjà."
+        read -p "Écraser le répertoire existant ? (y/n): " -n 1 -r
+        echo ""
+        if [[ $REPLY != "y" ]]; then
+            log_error "Installation annulée."
+            exit 1
+        fi
+        rm -rf "$TARGET_INSTALL_DIR"
+    fi
+
+    log "Déplacement du projet vers $TARGET_INSTALL_DIR..."
+    mv "$APP_DIR" "$TARGET_INSTALL_DIR"
+    log_success "Projet déplacé vers $TARGET_INSTALL_DIR"
+
+    # Relancer le script depuis le nouveau chemin (les variables SCRIPT_DIR/APP_DIR
+    # seraient fausses si on continuait — exec repart proprement depuis le bon endroit)
+    local new_script="$TARGET_INSTALL_DIR/scripts/install.sh"
+    log "Relancement depuis $new_script..."
+    exec "$new_script" "$@"
 }
 
 # ============================================================================
@@ -406,6 +453,9 @@ main() {
     echo -e "${GREEN}Installation SambaEdu - Installation complète${NC}"
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
+
+    # Phase 0: Emplacement du projet
+    relocate_if_needed "$@"
 
     # Phase 1: Vérifications
     log "Phase 1/6: Vérifications initiales..."
