@@ -209,7 +209,7 @@ class AppServiceProvider extends ServiceProvider
             }
 
             return $route;
-        }
+        });
     }
 
     private function registerQueueTaskTracking(): void
