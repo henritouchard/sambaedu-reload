@@ -4,6 +4,8 @@
 /public/storage
 /storage/*.key
 /bootstrap/cache
+/bootstrap/cache/*
+!/bootstrap/cache/.gitkeep
 .env
 .env.backup
 .env.*.php
