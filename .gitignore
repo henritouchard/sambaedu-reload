@@ -35,6 +35,7 @@ coverage/
 /public/js/*
 /public/build/*
 /public/vendor/*
+/public/packages/*
 public/mix-manifest.json
 public/js/app.js
 public/css/app.css
