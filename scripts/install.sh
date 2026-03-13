@@ -428,6 +428,33 @@ configure_apache() {
 }
 
 # ============================================================================
+# Permissions ACL
+# ============================================================================
+
+setup_acl_permissions() {
+  log "Configuration des permissions ACL pour www-admin..."
+
+  local target_dir="${1:-$APP_DIR}"
+
+  if ! command -v setfacl &>/dev/null; then
+    log_warning "setfacl non disponible — tentative d'installation de acl..."
+    if command -v apt-get &>/dev/null; then
+      apt-get install -y acl
+    else
+      log_warning "Impossible d'installer acl. Appliquez manuellement:"
+      log_warning "  setfacl -R -m u:www-admin:rwX $target_dir/storage $target_dir/bootstrap/cache"
+      log_warning "  setfacl -R -d -m u:www-admin:rwX $target_dir/storage $target_dir/bootstrap/cache"
+      return
+    fi
+  fi
+
+  setfacl -R -m u:www-admin:rwX "$target_dir/storage" "$target_dir/bootstrap/cache"
+  setfacl -R -d -m u:www-admin:rwX "$target_dir/storage" "$target_dir/bootstrap/cache"
+
+  log_success "ACL configurées: www-admin peut lire/écrire dans storage/ et bootstrap/cache/"
+}
+
+# ============================================================================
 # Affichage du résumé
 # ============================================================================
 
@@ -485,7 +512,7 @@ main() {
   relocate_if_needed "$@"
 
   # Phase 1: Vérifications
-  log "Phase 1/6: Vérifications initiales..."
+  log "Phase 1/7: Vérifications initiales..."
   echo ""
 
   check_existing_services
@@ -510,7 +537,7 @@ main() {
 
   # Phase 2: Docker et configuration
   echo ""
-  log "Phase 2/6: Configuration Docker et .env..."
+  log "Phase 2/7: Configuration Docker et .env..."
   echo ""
 
   generate_env
@@ -519,7 +546,7 @@ main() {
 
   # Phase 3: Dépendances
   echo ""
-  log "Phase 3/6: Installation des dépendances..."
+  log "Phase 3/7: Installation des dépendances..."
   echo ""
 
   install_composer
@@ -532,21 +559,21 @@ main() {
 
   # Phase 4: Base de données
   echo ""
-  log "Phase 4/6: Migration de la base de données..."
+  log "Phase 4/7: Migration de la base de données..."
   echo ""
 
   run_migrations
 
   # Phase 5: Optimisation
   echo ""
-  log "Phase 5/6: Optimisation applicative..."
+  log "Phase 5/7: Optimisation applicative..."
   echo ""
 
   run_application_update
 
   # Phase 6: Apache
   echo ""
-  log "Phase 6/6: Configuration Apache..."
+  log "Phase 6/7: Configuration Apache..."
   echo ""
 
   if [[ $apache_available == true ]]; then
@@ -554,6 +581,13 @@ main() {
   else
     log_warning "Apache non disponible - configuration ignorée"
   fi
+
+  # Phase 7: Permissions
+  echo ""
+  log "Phase 7/7: Configuration des permissions ACL..."
+  echo ""
+
+  setup_acl_permissions "$APP_DIR"
 
   # Résumé
   echo ""
