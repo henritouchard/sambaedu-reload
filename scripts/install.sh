@@ -168,6 +168,24 @@ check_php() {
   local php_version
   php_version=$(php -v | head -n1)
   log_success "PHP trouvé: $php_version"
+
+  # Vérification de l'extension pdo_pgsql
+  log "Vérification de l'extension PHP pdo_pgsql..."
+  if ! php -m 2>/dev/null | grep -q "pdo_pgsql"; then
+    log_warning "Extension pdo_pgsql manquante — tentative d'installation..."
+    local php_ver
+    php_ver=$(php -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;")
+    if command -v apt-get &>/dev/null; then
+      apt-get install -y "php${php_ver}-pgsql" 2>/dev/null || apt-get install -y php-pgsql
+    else
+      log_error "Impossible d'installer pdo_pgsql automatiquement."
+      log_error "Installez-le manuellement: sudo apt install php-pgsql"
+      exit 1
+    fi
+    log_success "Extension pdo_pgsql installée"
+  else
+    log_success "Extension pdo_pgsql OK"
+  fi
 }
 
 check_composer() {
