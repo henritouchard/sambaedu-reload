@@ -19,7 +19,7 @@ class TrustProxies extends Middleware
      */
     public function __construct()
     {
-        $this->proxies = env('TRUSTED_PROXIES');
+        $this->proxies = config('sambaedu.trusted_proxies');
     }
 
     /**

@@ -100,8 +100,8 @@ class SambaEduConfig
                 trashRdn: $raw['trash_rdn'] ?? 'ou=Trash',
                 etablissementsRdn: $raw['etablissements_rdn'] ?? 'OU=etablissements',
                 adminRdn: $raw['admin_rdn'] ?? 'cn=Users',
-                serverIp: $raw['se4ad_ip'] ?? env('SAMBAEDU_SE4AD_IP'),
-                etabServerIp: $raw['se4ad_etab_ip'] ?? env('SAMBAEDU_SE4AD_ETAB_IP'),
+                serverIp: $raw['se4ad_ip'] ?? config('sambaedu.se4ad_ip'),
+                etabServerIp: $raw['se4ad_etab_ip'] ?? config('sambaedu.se4ad_etab_ip'),
                 strictLocalAd: $this->parseStrictLocalAd($raw),
             );
         }
@@ -463,8 +463,8 @@ class SambaEduConfig
             return $raw['strict_local_ad'] === '1' || $raw['strict_local_ad'] === 'true';
         }
 
-        // Priorité 2: variable d'environnement Laravel
-        $envValue = env('SAMBAEDU_STRICT_LOCAL_AD', true);
+        // Priorité 2: variable d'environnement Laravel (via config pour compatibilité cache)
+        $envValue = config('sambaedu.strict_local_ad', true);
         if (is_string($envValue)) {
             return $envValue === '1' || strtolower($envValue) === 'true';
         }

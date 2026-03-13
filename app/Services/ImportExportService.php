@@ -351,11 +351,11 @@ class ImportExportService
             
             // Fallback vers des valeurs par défaut
             return [
-                'ldap_server' => env('LDAP_SERVER', 'localhost'),
-                'ldap_port' => env('LDAP_PORT', 389),
-                'ldap_base_dn' => env('LDAP_BASE_DN', ''),
-                'ldap_bind_dn' => env('LDAP_BIND_DN', ''),
-                'ldap_bind_password' => env('LDAP_BIND_PASSWORD', ''),
+                'ldap_server' => config('sambaedu.legacy_ldap.server', 'localhost'),
+                'ldap_port' => config('sambaedu.legacy_ldap.port', 389),
+                'ldap_base_dn' => config('sambaedu.legacy_ldap.base_dn', ''),
+                'ldap_bind_dn' => config('sambaedu.legacy_ldap.bind_dn', ''),
+                'ldap_bind_password' => config('sambaedu.legacy_ldap.bind_password', ''),
             ];
         } catch (\Exception $e) {
             Log::error('Erreur lors du chargement de la config legacy', ['error' => $e->getMessage()]);

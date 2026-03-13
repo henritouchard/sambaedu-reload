@@ -11,6 +11,20 @@ return [
     */
 
     'rte_api_key' => env('RTE_API_KEY', ''),
+
+    'se4ad_ip' => env('SAMBAEDU_SE4AD_IP'),
+    'se4ad_etab_ip' => env('SAMBAEDU_SE4AD_ETAB_IP'),
+    'strict_local_ad' => env('SAMBAEDU_STRICT_LOCAL_AD', true),
+
+    'trusted_proxies' => env('TRUSTED_PROXIES'),
+
+    'legacy_ldap' => [
+        'server' => env('LDAP_SERVER', 'localhost'),
+        'port' => env('LDAP_PORT', 389),
+        'base_dn' => env('LDAP_BASE_DN', ''),
+        'bind_dn' => env('LDAP_BIND_DN', ''),
+        'bind_password' => env('LDAP_BIND_PASSWORD', ''),
+    ],
     
     /*
     |--------------------------------------------------------------------------
