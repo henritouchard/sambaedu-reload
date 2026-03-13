@@ -23,7 +23,7 @@ sed -i "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=$REDIS_PASSWORD|" .env
 
 # Charger les valeurs depuis /etc/sambaedu/sambaedu.conf si disponible
 if [ -f "/etc/sambaedu/sambaedu.conf" ]; then
-    source <(grep -E '^[a-z_]+ = ' /etc/sambaedu/sambaedu.conf | sed 's/ = /=/g' | sed 's/"//g')
+    source <(grep -E '^[a-z_]+ = ' /etc/sambaedu/sambaedu.conf | sed 's/ = /=/g')
 
     [ -n "$se4ad_ip" ] && sed -i "s|SAMBAEDU_SE4AD_IP=.*|SAMBAEDU_SE4AD_IP=$se4ad_ip|" .env
 
