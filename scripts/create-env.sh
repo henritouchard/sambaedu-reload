@@ -4,8 +4,9 @@ set -e
 # Copier .env.example à .env
 cp .env.example .env
 
-# Générer APP_KEY avec Laravel
-php artisan key:generate
+# Générer APP_KEY sans bootstrap Laravel (vendor/ pas encore installé)
+APP_KEY="base64:$(php -r 'echo base64_encode(random_bytes(32));')"
+sed -i "s|APP_KEY=.*|APP_KEY=$APP_KEY|" .env
 
 # Générer SE4FS_INSTANCE_ID et SE4FS_INSTANCE_API_KEY
 if command -v uuidgen >/dev/null 2>&1; then
