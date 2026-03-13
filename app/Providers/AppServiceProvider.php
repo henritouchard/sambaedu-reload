@@ -195,16 +195,21 @@ class AppServiceProvider extends ServiceProvider
         }
 
         \Livewire\Livewire::setUpdateRoute(function ($handle) {
-            return \Illuminate\Support\Facades\Route::post('/livewire/update', $handle)
+            // Route principale : utilisée pour générer l'URL frontend (via forceRootUrl)
+            $route = \Illuminate\Support\Facades\Route::post('/livewire/update', $handle)
                 ->middleware(['web', 'sambaedu.auth']);
-        });
-        $this->fixHadPermitSignatureForLivewireFileUpload();
-        // Configuration des rate limits personnalisés pour SE4FS
-        if (config('sambaedu.se4fs.api_enabled')) {
-            $this->configureRateLimits();
-        }
 
-        $this->registerQueueTaskTracking();
+            // Route alias : quand le reverse proxy ne strip pas le préfixe APP_URL
+            // Ex: APP_URL=https://host/laravel → proxy envoie /laravel/livewire/update au backend
+            $urlPath = parse_url(config('app.url'), PHP_URL_PATH) ?? '';
+            $prefix = trim($urlPath, '/');
+            if ($prefix) {
+                \Illuminate\Support\Facades\Route::post("/{$prefix}/livewire/update", $handle)
+                    ->middleware(['web', 'sambaedu.auth']);
+            }
+
+            return $route;
+        }
     }
 
     private function registerQueueTaskTracking(): void
