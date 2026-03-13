@@ -199,12 +199,21 @@ check_composer() {
 }
 
 check_npm() {
-  log "Vérification NPM (optionnel)..."
+  log "Vérification NPM..."
   if ! command -v npm &>/dev/null; then
-    log_warning "NPM n'est pas installé - build frontend sera ignoré"
-    return 1
+    log_warning "NPM n'est pas installé — tentative d'installation via NodeSource..."
+    if command -v apt-get &>/dev/null; then
+      curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
+      apt-get install -y nodejs
+      log_success "NPM installé: $(npm --version)"
+    else
+      log_error "Impossible d'installer NPM automatiquement."
+      log_error "Installez-le manuellement: https://nodejs.org"
+      return 1
+    fi
+  else
+    log_success "NPM trouvé: $(npm --version)"
   fi
-  log_success "NPM trouvé: $(npm --version)"
   return 0
 }
 
