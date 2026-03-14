@@ -153,7 +153,11 @@ check_docker_compose() {
   log "Vérification Docker Compose..."
   if ! docker compose version &>/dev/null; then
     log_error "Docker Compose plugin n'est pas installé"
-    exit 1
+    log "Tentative d'installation"
+    if ! sudo apt install -y docker-compose-plugin; then
+      log_error "Échec de l'installation de docker-compose-plugin"
+      exit 1
+    fi
   fi
   log_success "Docker Compose OK"
 }
