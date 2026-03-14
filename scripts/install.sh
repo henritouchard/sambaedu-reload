@@ -388,7 +388,7 @@ deploy_docker() {
 install_composer() {
   log "Installation des dépendances Composer..."
   cd "$APP_DIR"
-
+  mkdir -p bootstrap/cache
   composer install --no-dev --optimize-autoloader --no-interaction
 
   log_success "Composer OK"
