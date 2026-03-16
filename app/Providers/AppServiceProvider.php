@@ -3,7 +3,6 @@
 namespace App\Providers;
 
 use App\Services\FileManagerService;
-use App\Services\SE4FSService;
 use App\Services\ShortcutsService;
 use App\Services\UserService;
 use App\Services\StatsService;
@@ -73,7 +72,6 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(LegacyConfigBridge::class);
         $this->app->singleton(EstablishmentRepository::class);
         $this->app->singleton(GroupRepository::class);
-        $this->app->singleton(SE4FSService::class);
         $this->app->singleton(ShortcutsService::class);
         $this->app->singleton(ShortcutCompilerService::class);
         $this->app->singleton(StatsService::class);

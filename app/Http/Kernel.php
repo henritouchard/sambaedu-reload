@@ -70,9 +70,6 @@ class Kernel extends HttpKernel
         'sambaedu.admin' => \App\Http\Middleware\RequireAdminRights::class,
         'password.change' => \App\Http\Middleware\PasswordChangeMiddleware::class,
         
-        // SE4FS middleware pour l'intégration d'applications tierces
-        'se4fs.auth' => \App\Http\Middleware\SE4\SE4FSAuth::class,
-        
         // ControlHub middleware pour l'authentification API
         'controlhub.auth' => \App\Http\Middleware\ControlHubAuth::class,
     ];
