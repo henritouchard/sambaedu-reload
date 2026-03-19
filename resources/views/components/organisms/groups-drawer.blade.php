@@ -335,24 +335,6 @@ new class extends Component {
 
                     <!-- Options de mode -->
                     <div class="space-y-3 shrink-0 mb-4">
-                        <!-- Option de réinitialisation -->
-                        <label class="flex gap-3 cursor-pointer">
-                            <input type="checkbox" wire:model.live="resetGroups" class="toggle toggle-error" />
-                            <div class="flex-1">
-                                <div class="font-medium">Réinitialiser avec ces groupes</div>
-                                @if ($resetGroups)
-                                    <div class="text-sm text-error">
-                                        Les utilisateurs se verront supprimer tous les groupes existants et attribuer
-                                        uniquement ceux sélectionnés
-                                    </div>
-                                @else
-                                    <div class="text-sm text-base-content/60">
-                                        Remplace tous les groupes existants
-                                    </div>
-                                @endif
-                            </div>
-                        </label>
-
                         <!-- Mode ajouter/retirer -->
                         <label class="flex gap-3 cursor-pointer" @class(['opacity-50 pointer-events-none' => $resetGroups])>
                             <input type="checkbox" wire:model.live="removeMode" class="toggle toggle-warning"
@@ -363,6 +345,19 @@ new class extends Component {
                                 </div>
                                 <div class="text-sm text-base-content/60">
                                     {{ $removeMode ? 'Retire les groupes sélectionnés des utilisateurs' : 'Ajoute les groupes sélectionnés aux utilisateurs' }}
+                                </div>
+                            </div>
+                        </label>
+
+                        <!-- Option de réinitialisation -->
+                        <label class="flex gap-3 cursor-pointer">
+                            <input type="checkbox" wire:model.live="resetGroups" class="toggle toggle-error" />
+                            <div class="flex-1">
+                                <div class="font-medium">{{ $resetGroups ? 'Mode réinitialisation' : 'Mode normal' }}</div>
+                                <div class="text-sm {{ $resetGroups ? 'text-error' : 'text-base-content/60' }}">
+                                    {{ $resetGroups
+                                        ? 'Supprime tous les groupes existants et assigne uniquement les groupes sélectionnés'
+                                        : 'Conserve les groupes existants et ajoute ou retire les groupes sélectionnés' }}
                                 </div>
                             </div>
                         </label>

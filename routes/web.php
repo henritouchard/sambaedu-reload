@@ -73,7 +73,6 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
     // Groupes d'utilisateurs
     Route::livewire('/users/groups/new', 'pages::users.groups.new.index')->name('users.groups.new');
     Route::livewire('/users/groups/{id}', 'pages::users.groups.[id].index')->whereNumber('id')->name('users.groups.edit');
-    Route::livewire('/users/groups/{groupCn}', 'pages::users.groups.[groupCn].index')->name('users.groups.show');
     
     // Gestion des quotas (nécessite droits admin)
     Route::post('/users/groups/{groupCn}/quota', [\App\Http\Controllers\QuotaController::class, 'updateGroupQuota'])

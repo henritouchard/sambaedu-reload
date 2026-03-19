@@ -103,19 +103,6 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                         <ul tabindex="0"
                             class="dropdown-content menu p-2 shadow-lg bg-base-100 rounded-box w-64 border border-base-200">
                             <li>
-                                <a href="/annu/mod_user_entry.php?cn={{ $user->login }}" class="flex items-center gap-3">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z">
-                                        </path>
-                                    </svg>
-                                    <div class="flex flex-col items-start">
-                                        <span class="font-medium">Modifier le compte</span>
-                                        <span class="text-xs opacity-70">Informations personnelles</span>
-                                    </div>
-                                </a>
-                            </li>
-                            <li>
                                 <button type="button" class="flex items-center gap-3 w-full" wire:click="resetPassword"
                                     wire:confirm="Réinitialiser le mot de passe de cet utilisateur ?">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -125,17 +112,13 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                                     </svg>
                                     <div class="flex flex-col items-start">
                                         <span class="font-medium">Réinitialiser le mot de passe</span>
-                                        <span class="text-xs opacity-70">Nouveau mot de passe</span>
                                     </div>
                                 </button>
                             </li>
                             <li>
                                 <button type="button" class="flex items-center gap-3 w-full"
                                     @click="Livewire.dispatch('open-groups-drawer', { users: ['{{ $user->login }}'] }); document.activeElement.blur();">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                                    </svg>
+                                    <i class="fas fa-users mr-1"></i>
                                     <div class="flex flex-col items-start">
                                         <span class="font-medium">Gérer les groupes</span>
                                         <span class="text-xs opacity-70">Ajouter ou retirer des groupes</span>

@@ -96,7 +96,7 @@
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-6">
                         <!-- Login -->
                         <div
                             class="stat bg-gradient-to-br from-base-100 to-base-50 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 border border-base-200/30 hover:border-primary/20 group">
@@ -148,11 +148,11 @@
                                 </div>
                                 <div class="stat-title  font-medium">Adresse email</div>
                                 <div class="stat-value text-lg font-bold">
-                                    <a href="mailto:{{ $user->email }}"
-                                        class="link hover:link-primary transition-all duration-300 hover:scale-105 inline-block max-w-full truncate"
+                                    <div
+                                        class="hover:scale-105 inline-block max-w-full truncate"
                                         title="{{ $user->email }}">
                                         {{ $user->email }}
-                                    </a>
+                                    </div>
                                 </div>
                             </div>
                         @else

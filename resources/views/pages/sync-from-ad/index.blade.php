@@ -66,19 +66,10 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
     private function initializeSteps(): void
     {
         $this->steps = [
-            'users_tree' => [
-                'id' => 'users_tree',
+            'users_establishment' => [
+                'id' => 'users_establishment',
                 'title' => '1. Importer les utilisateurs de l\'établissement',
-                'description' => 'Importe les utilisateurs rattachés à l\'établissement par arborescence LDAP',
-                'status' => 'pending', // pending, running, success, error
-                'stats' => null,
-                'error' => null,
-                'expanded' => false,
-            ],
-            'users_member_of' => [
-                'id' => 'users_member_of',
-                'title' => '2. Importer les utilisateurs liés à l\'établissement',
-                'description' => 'Importe les utilisateurs rattachés à l\'établissement via memberOf',
+                'description' => 'Importe tous les utilisateurs rattachés ou liés à l\'établissement (arborescence + memberOf)',
                 'status' => 'pending', // pending, running, success, error
                 'stats' => null,
                 'error' => null,
@@ -86,7 +77,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             ],
             'user_groups' => [
                 'id' => 'user_groups',
-                'title' => '3. Importer les groupes utilisateurs',
+                'title' => '2. Importer les groupes utilisateurs',
                 'description' => 'Synchronise les groupes utilisateurs directement depuis l\'AD vers SQL',
                 'status' => 'pending',
                 'stats' => null,
@@ -95,7 +86,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             ],
             'workstations' => [
                 'id' => 'workstations',
-                'title' => '4. Importer les postes de travail',
+                'title' => '3. Importer les postes de travail',
                 'description' => 'Importe les machines depuis OU=Computers',
                 'status' => 'pending',
                 'stats' => null,
@@ -104,7 +95,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             ],
             'physical_groups' => [
                 'id' => 'physical_groups',
-                'title' => '5. Importer les groupes physiques (salles)',
+                'title' => '4. Importer les groupes physiques (salles)',
                 'description' => 'Importe les OU depuis OU=Computers et crée les liens avec les postes',
                 'status' => 'pending',
                 'stats' => null,
@@ -113,7 +104,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             ],
             'logical_groups' => [
                 'id' => 'logical_groups',
-                'title' => '6. Importer les groupes logiques (parcs)',
+                'title' => '5. Importer les groupes logiques (parcs)',
                 'description' => 'Importe les CN depuis OU=Parcs (ignore les groupes physiques existants)',
                 'status' => 'pending',
                 'stats' => null,
@@ -122,7 +113,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             ],
             'app_profiles' => [
                 'id' => 'app_profiles',
-                'title' => '7. Importer les profils applicatifs',
+                'title' => '6. Importer les profils applicatifs',
                 'description' => 'Importe les AppProfiles depuis OU=Parcs',
                 'status' => 'pending',
                 'stats' => null,
@@ -131,7 +122,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             ],
             'shortcuts' => [
                 'id' => 'shortcuts',
-                'title' => '8. Importer les raccourcis',
+                'title' => '7. Importer les raccourcis',
                 'description' => 'Importe les raccourcis depuis le fichier JSON vers la base de données',
                 'status' => 'pending',
                 'stats' => null,
@@ -141,8 +132,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
         ];
 
         $this->stepLogs = [
-            'users_tree' => [],
-            'users_member_of' => [],
+            'users_establishment' => [],
             'user_groups' => [],
             'workstations' => [],
             'physical_groups' => [],
@@ -177,11 +167,8 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             $this->addLog($stepId, 'info', 'Démarrage de l\'import...');
 
             switch ($stepId) {
-                case 'users_tree':
-                    $this->runUsersTreeSync();
-                    break;
-                case 'users_member_of':
-                    $this->runUsersMemberOfSync();
+                case 'users_establishment':
+                    $this->runUsersEstablishmentSync();
                     break;
                 case 'user_groups':
                     $this->runUserGroupsSync();
@@ -242,30 +229,17 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
         }
     }
 
-    private function runUsersTreeSync(): void
+    private function runUsersEstablishmentSync(): void
     {
         $this->ensureEstablishmentSelectedForScopedUsersImport();
 
         $userSyncService = app(UserSyncService::class);
 
         $stats = $userSyncService->importFromAd(function (string $level, string $message) {
-            $this->addLog('users_tree', $level, $message);
-        }, 'tree');
+            $this->addLog('users_establishment', $level, $message);
+        }, 'all');
 
-        $this->steps['users_tree']['stats'] = $stats;
-    }
-
-    private function runUsersMemberOfSync(): void
-    {
-        $this->ensureEstablishmentSelectedForScopedUsersImport();
-
-        $userSyncService = app(UserSyncService::class);
-
-        $stats = $userSyncService->importFromAd(function (string $level, string $message) {
-            $this->addLog('users_member_of', $level, $message);
-        }, 'memberOf');
-
-        $this->steps['users_member_of']['stats'] = $stats;
+        $this->steps['users_establishment']['stats'] = $stats;
     }
 
     private function runUserGroupsSync(): void
