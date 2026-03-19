@@ -6,6 +6,8 @@ use Livewire\Attributes\Computed;
 use App\Repositories\GroupRepository;
 use App\Repositories\UserRepository;
 use App\Services\UserGroupService;
+use App\Models\User as SqlUserModel;
+use App\Models\UserGroup;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Gate;
 use Devrabiul\ToastMagic\Facades\ToastMagic;
@@ -274,6 +276,32 @@ new class extends Component {
                         $this->groupRepository->addMember($groupCn, $userDn);
                     }
                     $successCount++;
+                }
+
+                // Sync pivot SQL
+                $sqlUser = SqlUserModel::query()->where('login', $login)->first();
+                if ($sqlUser) {
+                    $selectedGroupIds = UserGroup::query()
+                        ->whereIn('name', $this->selectedGroups)
+                        ->pluck('id')
+                        ->all();
+
+                    if ($this->resetGroups) {
+                        // Re-lire les groupes AD du user et sync tout le pivot
+                        $freshMemberOf = $ldapUser->getAttribute('memberof') ?? [];
+                        $adGroupCns = [];
+                        foreach ($freshMemberOf as $dn) {
+                            if (preg_match('/^CN=([^,]+),/i', $dn, $m)) {
+                                $adGroupCns[] = $m[1];
+                            }
+                        }
+                        $allGroupIds = UserGroup::query()->whereIn('name', $adGroupCns)->pluck('id')->all();
+                        $sqlUser->userGroups()->sync($allGroupIds);
+                    } elseif ($this->removeMode) {
+                        $sqlUser->userGroups()->detach($selectedGroupIds);
+                    } else {
+                        $sqlUser->userGroups()->syncWithoutDetaching($selectedGroupIds);
+                    }
                 }
 
                 $this->userRepository->invalidateCache($login);

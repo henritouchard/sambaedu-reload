@@ -86,7 +86,6 @@ Colonnes principales :
 | `dn` | string | Distinguished Name AD |
 | `role` | string | `eleve`, `prof`, `administratif`, `admin`, `autre` |
 | `is_active` | bool | Compte actif |
-| `ad_groups` | json | Noms des groupes AD (memberOf) |
 | `ad_right_profiles` | json | Groupes de droits (OU=Rights) |
 | `ad_rights_bitmask` | int | Bitmask legacy calculé |
 | `ad_synced_at` | datetime | Dernière synchronisation AD |

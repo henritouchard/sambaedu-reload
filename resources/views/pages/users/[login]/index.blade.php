@@ -5,6 +5,11 @@ use App\Services\UserService;
 use App\Services\AuthenticationService;
 use App\Services\AdDataTransformer;
 use App\Types\User;
+use App\Repositories\GroupRepository;
+use App\Repositories\UserRepository;
+use App\Services\UserGroupService;
+use App\Models\User as SqlUserModel;
+use App\Models\UserGroup;
 use Illuminate\Support\Facades\Gate;
 use Devrabiul\ToastMagic\Facades\ToastMagic;
 
@@ -21,12 +26,18 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
     private UserService $userService;
     private AuthenticationService $authService;
     private AdDataTransformer $adTransformer;
+    private GroupRepository $groupRepository;
+    private UserRepository $userRepository;
+    private UserGroupService $userGroupService;
 
-    public function boot(UserService $userService, AuthenticationService $authService, AdDataTransformer $adTransformer)
+    public function boot(UserService $userService, AuthenticationService $authService, AdDataTransformer $adTransformer, GroupRepository $groupRepository, UserRepository $userRepository, UserGroupService $userGroupService)
     {
         $this->userService = $userService;
         $this->authService = $authService;
         $this->adTransformer = $adTransformer;
+        $this->groupRepository = $groupRepository;
+        $this->userRepository = $userRepository;
+        $this->userGroupService = $userGroupService;
     }
 
     public function mount(string $login): void
@@ -47,6 +58,81 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
         // Groupes et droits
         $this->listCurrentGroups = $this->user->groups;
         $this->listCurrentRights = $this->user->rights;
+    }
+
+    public function removeFromGroup(string $group): void
+    {
+        if (!Gate::allows('update-user')) {
+            ToastMagic::error('Vous n\'avez pas les droits pour cette action.');
+            return;
+        }
+
+        $groupCn = $group;
+
+        $ldapUser = $this->userRepository->findLdapModelByLogin($this->user->login);
+        if (!$ldapUser) {
+            ToastMagic::error('Utilisateur introuvable dans l\'annuaire.');
+            return;
+        }
+
+        $this->groupRepository->removeMember($groupCn, $ldapUser->getDn());
+        $this->userRepository->invalidateCache($this->user->login);
+
+        // Sync pivot SQL
+        $sqlUser = SqlUserModel::query()->where('login', $this->user->login)->first();
+        if ($sqlUser) {
+            $userGroup = UserGroup::query()->where('name', $groupCn)->first();
+            if ($userGroup) {
+                $sqlUser->userGroups()->detach($userGroup->id);
+            }
+        }
+
+        $this->listCurrentGroups = array_values(array_filter(
+            $this->listCurrentGroups,
+            fn($g) => $g !== $group
+        ));
+
+        ToastMagic::success("Retiré du groupe « {$groupCn} ».");
+    }
+
+    public function syncGroupsFromAd(): void
+    {
+        if (!Gate::allows('update-user')) {
+            ToastMagic::error('Vous n\'avez pas les droits pour cette action.');
+            return;
+        }
+
+        $ldapUser = $this->userRepository->findLdapModelByLogin($this->user->login);
+        if (!$ldapUser) {
+            ToastMagic::error('Utilisateur introuvable dans l\'annuaire.');
+            return;
+        }
+
+        // Lire les groupes LDAP actuels du user
+        $memberOf = $ldapUser->getAttribute('memberof') ?? [];
+        $adGroupCns = [];
+        foreach ($memberOf as $dn) {
+            if (preg_match('/^CN=([^,]+),/i', $dn, $m)) {
+                $adGroupCns[] = $m[1];
+            }
+        }
+
+        // Synchroniser le pivot avec les UserGroups connus en SQL
+        $sqlUser = SqlUserModel::query()->where('login', $this->user->login)->first();
+        if ($sqlUser) {
+            $matchingGroupIds = UserGroup::query()
+                ->whereIn('name', $adGroupCns)
+                ->pluck('id')
+                ->all();
+            $sqlUser->userGroups()->sync($matchingGroupIds);
+        }
+
+        // Rafraîchir l'affichage
+        $this->listCurrentGroups = $sqlUser
+            ? $sqlUser->userGroups()->pluck('name')->all()
+            : [];
+
+        ToastMagic::success('Groupes synchronisés depuis l\'AD.');
     }
 
     public function resetPassword(): void
@@ -136,6 +222,21 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                                     <div class="flex flex-col items-start">
                                         <span class="font-medium">Gérer les permissions</span>
                                         <span class="text-xs opacity-70">Droits d'administration</span>
+                                    </div>
+                                </button>
+                            </li>
+                            <li>
+                                <button type="button" class="flex items-center gap-3 w-full"
+                                    wire:click="syncGroupsFromAd"
+                                    wire:confirm="Synchroniser les groupes de cet utilisateur depuis l'AD ?">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                                        </path>
+                                    </svg>
+                                    <div class="flex flex-col items-start">
+                                        <span class="font-medium">Sync groupes AD</span>
+                                        <span class="text-xs opacity-70">Relire les groupes depuis l'annuaire</span>
                                     </div>
                                 </button>
                             </li>

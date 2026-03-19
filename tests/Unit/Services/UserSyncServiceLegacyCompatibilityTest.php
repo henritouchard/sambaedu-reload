@@ -101,7 +101,6 @@ class UserSyncServiceLegacyCompatibilityTest extends TestCase
 
         $row = \App\Models\User::query()->where('login', 'mleclerc')->firstOrFail();
         $this->assertSame('Marie Leclerc', $row->fullname);
-        $this->assertSame(['Classe_5emeB', 'Equipe_5emeB'], $row->ad_groups);
 
         $updatedUser = new AdUser(
             login: 'mleclerc',
@@ -119,7 +118,6 @@ class UserSyncServiceLegacyCompatibilityTest extends TestCase
 
         $row->refresh();
         $this->assertSame('Marie L.', $row->fullname);
-        $this->assertSame(['Classe_5emeB'], $row->ad_groups);
     }
 
     /** @test */
@@ -151,7 +149,6 @@ class UserSyncServiceLegacyCompatibilityTest extends TestCase
             $table->text('dn')->nullable();
             $table->string('role')->default('autre');
             $table->boolean('is_active')->default(true);
-            $table->json('ad_groups')->nullable();
             $table->json('ad_right_profiles')->nullable();
             $table->integer('ad_rights_bitmask')->default(0);
             $table->timestamp('ad_synced_at')->nullable();

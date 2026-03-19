@@ -135,7 +135,7 @@ class UserService
             return null;
         }
 
-        $memberOf = is_array($sqlUser->ad_groups) ? $sqlUser->ad_groups : [];
+        $groups = $sqlUser->userGroups()->pluck('name')->all();
         $rights = is_array($sqlUser->ad_right_profiles) ? $sqlUser->ad_right_profiles : [];
 
         return new User(
@@ -145,8 +145,8 @@ class UserService
             lastname: $sqlUser->lastname,
             email: $sqlUser->email,
             isActive: (bool) $sqlUser->is_active,
-            memberOf: $memberOf,
-            groups: $memberOf,
+            memberOf: $groups,
+            groups: $groups,
             rights: $rights,
             dn: $sqlUser->dn,
             role: (string) ($sqlUser->role ?? 'autre'),

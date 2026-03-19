@@ -207,7 +207,7 @@ new class extends Component {
     #[Computed]
     public function availableGroups(): Collection
     {
-        return User::query()->whereNotNull('ad_groups')->pluck('ad_groups')->filter(fn($groups) => is_array($groups) && !empty($groups))->flatten()->filter(fn($group) => is_string($group) && $group !== '')->unique()->sort()->values();
+        return \App\Models\UserGroup::query()->orderBy('name')->pluck('name');
     }
 
     #[Computed]
@@ -267,10 +267,8 @@ new class extends Component {
         }
 
         if (!empty($this->group)) {
-            $query->where(function (Builder $builder) {
-                foreach ($this->group as $selectedGroup) {
-                    $builder->orWhereJsonContains('ad_groups', $selectedGroup);
-                }
+            $query->whereHas('userGroups', function (Builder $builder) {
+                $builder->whereIn('name', $this->group);
             });
         }
 

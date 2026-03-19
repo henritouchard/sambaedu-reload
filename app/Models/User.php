@@ -32,7 +32,6 @@ use Livewire\Wireable;
  * @property string|null $ad_guid
  * @property string $role
  * @property bool $is_active
- * @property array|null $ad_groups
  * @property array|null $ad_right_profiles
  * @property int $ad_rights_bitmask
  * @property \DateTime|null $ad_synced_at
@@ -58,7 +57,6 @@ class User extends Authenticatable implements Wireable
         'ad_guid',
         'role',
         'is_active',
-        'ad_groups',
         'ad_right_profiles',
         'ad_rights_bitmask',
         'ad_synced_at',
@@ -71,7 +69,6 @@ class User extends Authenticatable implements Wireable
 
     protected $casts = [
         'is_active' => 'boolean',
-        'ad_groups' => 'array',
         'ad_right_profiles' => 'array',
         'ad_rights_bitmask' => 'integer',
         'ad_synced_at' => 'datetime',

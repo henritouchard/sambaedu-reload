@@ -186,7 +186,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'login' => 'bob',
             'role' => 'prof',
             'is_active' => true,
-            'ad_groups' => ['Classe_3emeA', 'Equipe_3emeA', 'PP_3emeA', 'RefNum'],
         ]);
 
         $stats = $service->importFromUsersAdGroups();
@@ -246,7 +245,6 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             $table->text('dn')->nullable();
             $table->string('role')->default('autre');
             $table->boolean('is_active')->default(true);
-            $table->json('ad_groups')->nullable();
             $table->json('ad_right_profiles')->nullable();
             $table->integer('ad_rights_bitmask')->default(0);
             $table->timestamp('ad_synced_at')->nullable();

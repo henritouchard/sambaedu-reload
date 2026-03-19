@@ -586,7 +586,6 @@ class UserSyncService
                 'ad_guid' => $adGuid,
                 'role' => $adUser->role,
                 'is_active' => true,
-                'ad_groups' => $adUser->groups,
                 'ad_synced_at' => now(),
             ]);
         } else {
@@ -599,7 +598,6 @@ class UserSyncService
                 'dn' => $adUser->dn ?? $user->dn,
                 'ad_guid' => $adGuid ?? $user->ad_guid,
                 'role' => $adUser->role !== '' ? $adUser->role : $user->role,
-                'ad_groups' => $adUser->groups,
                 'ad_synced_at' => now(),
             ]);
         }

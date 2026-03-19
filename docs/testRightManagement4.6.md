@@ -428,7 +428,6 @@ CREATE TABLE users (
     role                VARCHAR(50) DEFAULT 'autre',     -- eleve, prof, admin, autre
     is_active           BOOLEAN DEFAULT TRUE,
     -- Colonnes de sync AD (transitoires, a supprimer quand SQL = source de verite)
-    ad_groups           JSON NULL,                       -- groupes AD (memberOf)
     ad_right_profiles   JSON NULL,                       -- profils de droits AD
     ad_rights_bitmask   INT UNSIGNED DEFAULT 0,          -- bitmask legacy calcule
     ad_synced_at        TIMESTAMP NULL,                  -- derniere sync depuis AD
@@ -616,7 +615,6 @@ public function syncFromAd(string $login): User
     $user->update([
         'fullname' => $ldapUser->fullname,
         'dn' => $ldapUser->dn,
-        'ad_groups' => $ldapUser->groups,
         'ad_right_profiles' => $ldapUser->rightProfiles,
         'last_synced_at' => now(),
     ]);
