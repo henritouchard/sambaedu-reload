@@ -12,6 +12,38 @@ return [
 
     'rte_api_key' => env('RTE_API_KEY', ''),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Legacy Catchall
+    |--------------------------------------------------------------------------
+    | Chemin absolu vers le répertoire legacy PHP SambAEdu.
+    | Utilisé par LegacyCatchallController pour résoudre les routes non migrées.
+    */
+    'legacy_path' => env('SAMBAEDU_LEGACY_PATH', '/var/www/sambaedu'),
+
+    'legacy_base_url' => env('SAMBAEDU_LEGACY_BASE_URL', 'http://127.0.0.1:80'),
+
+    'block_migrated_routes' => env('LEGACY_BLOCK_MIGRATED_ROUTES', true),
+
+    'log_404' => env('LEGACY_LOG_404', true),
+
+    /*
+    | Routes legacy bloquées : mapping regex_pattern => URL SER de redirection.
+    | Les patterns sont testés avec preg_match() sur le path de la requête.
+    | Les routes dans allowed_legacy_routes prennent la priorité.
+    */
+    'blocked_legacy_routes' => [
+        // Exemple : '^gpo/raccourcis' => '/app/shortcuts/list',
+    ],
+
+    /*
+    | Routes legacy explicitement autorisées (passent même si bloquées).
+    | Tableau de patterns regex.
+    */
+    'allowed_legacy_routes' => [
+        // Exemple : '^gpo/shortcuts_out\.php$',
+    ],
+
     'se4ad_ip' => env('SAMBAEDU_SE4AD_IP'),
     'se4ad_etab_ip' => env('SAMBAEDU_SE4AD_ETAB_IP'),
     'strict_local_ad' => env('SAMBAEDU_STRICT_LOCAL_AD', true),

@@ -118,6 +118,14 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'legacylog' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/legacy-catchall.log'),
+            'level' => 'info',
+            'days' => 30,
+            'replace_placeholders' => true,
+        ],
+
         'null' => [
             'driver' => 'monolog',
             'handler' => NullHandler::class,

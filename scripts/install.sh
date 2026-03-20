@@ -423,30 +423,170 @@ run_application_update() {
 # ============================================================================
 
 configure_apache() {
-  local conf_source="$APP_DIR/config/apache/sambaedu-reload.conf"
-  local conf_target="/etc/apache2/sites-available/sambaedu-reload.conf"
+  local legacy_port=8082
+  local sites_available="/etc/apache2/sites-available"
+  local sites_enabled="/etc/apache2/sites-enabled"
+  local ports_conf="/etc/apache2/ports.conf"
 
-  log "Configuration Apache (port 8080)..."
+  log "Configuration Apache — SER comme vhost principal (port 80)..."
 
-  if [[ ! -f "$conf_source" ]]; then
-    log_error "Configuration Apache source introuvable: $conf_source"
-    exit 1
-  fi
-
-  cp "$conf_source" "$conf_target"
-
-  # Ajouter Listen 8080 si absent
-  if ! grep -q "Listen 8080" /etc/apache2/ports.conf; then
-    echo "Listen 8080" >>/etc/apache2/ports.conf
-    log "Listen 8080 ajouté à ports.conf"
-  fi
-
-  a2ensite sambaedu-reload.conf >/dev/null 2>&1 || true
+  # ── Activer les modules nécessaires ──
   a2enmod rewrite >/dev/null 2>&1 || true
   a2enmod headers >/dev/null 2>&1 || true
   a2enmod proxy_fcgi >/dev/null 2>&1 || true
-  systemctl reload apache2
-  log_success "Apache configuré (sambaedu-reload sur port 8080)"
+
+  # ── Backup de la conf existante ──
+  local backup_dir="/etc/apache2/backups-$(date +%Y%m%d_%H%M%S)"
+  mkdir -p "$backup_dir"
+
+  if [[ -f "$sites_enabled/sambaedu.conf" ]] || [[ -L "$sites_enabled/sambaedu.conf" ]]; then
+    cp "$sites_enabled/sambaedu.conf" "$backup_dir/sambaedu.conf.backup"
+  fi
+  if [[ -f "$sites_available/sambaedu-reload.conf" ]]; then
+    cp "$sites_available/sambaedu-reload.conf" "$backup_dir/sambaedu-reload.conf.backup"
+  fi
+  cp "$ports_conf" "$backup_dir/ports.conf.backup"
+  log "Backup dans $backup_dir"
+
+  # ── Récupérer ServerName/ServerAdmin depuis la conf existante ──
+  local servername serveradmin preseed_network
+  servername=$(grep -oP 'ServerName\s+\K\S+' "$sites_enabled/sambaedu.conf" 2>/dev/null || hostname)
+  serveradmin=$(grep -oP 'ServerAdmin\s+\K\S+' "$sites_enabled/sambaedu.conf" 2>/dev/null || echo "webmaster@localhost")
+  preseed_network=$(grep -oP 'Allow from \K\S+' "$sites_enabled/sambaedu.conf" 2>/dev/null | head -1)
+  preseed_network="${preseed_network:-172.19.1.0}"
+
+  # ── Vhost SER (port 80) ──
+  cat > "$sites_available/sambaedu.conf" << VHOST_SER
+<VirtualHost *:80>
+    ServerAdmin $serveradmin
+    ServerName $servername
+    DocumentRoot $APP_DIR/public
+
+    <FilesMatch "\.php\$">
+        SetHandler "proxy:fcgi://127.0.0.1:9000/"
+    </FilesMatch>
+
+    <Directory $APP_DIR/public>
+        Options -Indexes +FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog /var/log/apache2/sambaedu-reload-error.log
+    CustomLog /var/log/apache2/sambaedu-reload-access.log combined
+</VirtualHost>
+VHOST_SER
+
+  # ── Vhost legacy (port 8082, localhost only) ──
+  cat > "$sites_available/sambaedu-legacy.conf" << VHOST_LEGACY
+# Vhost legacy — accès interne uniquement (proxy catchall SER)
+# Généré par install.sh le $(date +%Y-%m-%d)
+<VirtualHost 127.0.0.1:${legacy_port}>
+    ServerAdmin $serveradmin
+    DocumentRoot /var/www/sambaedu/
+
+    <FilesMatch "\.php\$">
+        SetHandler "proxy:fcgi://127.0.0.1:9000/"
+    </FilesMatch>
+
+    <Directory />
+        Options +FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+
+    <Directory /var/www/sambaedu>
+        Options -Indexes +FollowSymLinks +MultiViews +ExecCGI
+        AllowOverride None
+        Require all granted
+    </Directory>
+
+    <Directory /var/www/sambaedu/api2>
+        AllowOverride All
+    </Directory>
+
+    <Directory /var/www/sambaedu/central>
+        AllowOverride All
+    </Directory>
+
+    <Directory /var/www/sambaedu/setup>
+        AllowOverride All
+    </Directory>
+
+    ScriptAlias /cgi-bin/ /usr/lib/cgi-binse/
+    <Directory "/usr/lib/cgi-binse">
+        AllowOverride None
+        Options +ExecCGI -MultiViews +SymLinksIfOwnerMatch
+        Require all granted
+    </Directory>
+
+    Alias /images /var/sambaedu/Docs/images
+    <Directory /var/sambaedu/Docs/images>
+        AllowOverride None
+        Require all granted
+    </Directory>
+
+    Alias /os /var/sambaedu/unattended/install/os
+    <Directory /var/sambaedu/unattended/install/os>
+        AllowOverride None
+        Require all granted
+    </Directory>
+
+    Alias /doc/ "/usr/share/doc/"
+    <Directory "/usr/share/doc/">
+        Options +Indexes +MultiViews +FollowSymLinks
+        AllowOverride None
+        Require host 127.0.0.0/255.0.0.0 ::1/128
+    </Directory>
+
+    <FilesMatch "diconf/.*\.preseed\$">
+        Order deny,allow
+        Deny from all
+        Allow from ${preseed_network}
+    </FilesMatch>
+
+    ErrorLog /var/log/apache2/sambaedu-legacy-error.log
+    CustomLog /var/log/apache2/sambaedu-legacy-access.log combined
+</VirtualHost>
+VHOST_LEGACY
+
+  # ── ports.conf : nettoyer et ajouter le port legacy ──
+  sed -i "/Legacy sambaedu/d" "$ports_conf"
+  sed -i "/Listen.*${legacy_port}/d" "$ports_conf"
+  sed -i "/Listen 8080/d" "$ports_conf"
+  echo "" >> "$ports_conf"
+  echo "# Legacy sambaedu — accès interne uniquement (proxy catchall SER)" >> "$ports_conf"
+  echo "Listen 127.0.0.1:${legacy_port}" >> "$ports_conf"
+
+  # ── Activer les sites ──
+  cp "$sites_available/sambaedu.conf" "$sites_enabled/sambaedu.conf"
+  ln -sf "$sites_available/sambaedu-legacy.conf" "$sites_enabled/sambaedu-legacy.conf"
+  rm -f "$sites_enabled/sambaedu-reload.conf"
+
+  # ── Mettre à jour .env ──
+  if [[ -f "$APP_DIR/.env" ]]; then
+    if grep -q "SAMBAEDU_LEGACY_BASE_URL" "$APP_DIR/.env"; then
+      sed -i "s|SAMBAEDU_LEGACY_BASE_URL=.*|SAMBAEDU_LEGACY_BASE_URL=http://127.0.0.1:${legacy_port}|" "$APP_DIR/.env"
+    else
+      echo "" >> "$APP_DIR/.env"
+      echo "# URL interne du vhost legacy (proxy catchall)" >> "$APP_DIR/.env"
+      echo "SAMBAEDU_LEGACY_BASE_URL=http://127.0.0.1:${legacy_port}" >> "$APP_DIR/.env"
+    fi
+  fi
+
+  # ── Vérifier et recharger ──
+  if ! apache2ctl configtest 2>&1; then
+    log_error "Configuration Apache invalide — restauration automatique..."
+    cp "$backup_dir/sambaedu.conf.backup" "$sites_enabled/sambaedu.conf" 2>/dev/null || true
+    cp "$backup_dir/ports.conf.backup" "$ports_conf"
+    rm -f "$sites_enabled/sambaedu-legacy.conf"
+    apache2ctl configtest 2>/dev/null && apache2ctl graceful
+    log_error "Config restaurée. Vérifiez manuellement. Backups : $backup_dir"
+    return 1
+  fi
+
+  apache2ctl graceful
+  log_success "Apache configuré — SER sur port 80, legacy interne sur port $legacy_port"
 }
 
 # ============================================================================

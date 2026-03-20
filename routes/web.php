@@ -223,128 +223,14 @@ Route::match(['GET', 'POST'], 'gpo/shortcuts_out.php', [App\Http\Controllers\Api
 |--------------------------------------------------------------------------
 | Legacy PHP Fallback Route (DOIT ÊTRE EN DERNIER)
 |--------------------------------------------------------------------------
-| Cette route catch-all gère automatiquement le fallback vers le code PHP legacy
-| quand aucune route Laravel n'est trouvée.
+| Cette route catch-all délègue au LegacyCatchallController :
+| - Blocage configurable des routes dont l'équivalent SER existe
+| - Logging dans legacy_catchall_logs (DB) + channel legacylog (fichier)
+| - Résolution legacy : PHP, dossier index, assets statiques
 |
 */
-Route::match(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'], '{path}', function (Illuminate\Http\Request $request, $path = '') {
-    $path = $request->path();
-
-    // Empêcher l'accès aux dossiers sensibles
-    $forbidden = ['laravel', 'vendor', 'node_modules', '.git', '.env'];
-    foreach ($forbidden as $dir) {
-        if (strpos($path, $dir) === 0) {
-            abort(403, 'Accès interdit');
-        }
-    }
-
-    // Chemin vers le fichier/dossier legacy  
-    $legacyPath = base_path('../' . $path);
-
-    // Si c'est un fichier PHP legacy qui existe
-    if (file_exists($legacyPath) && pathinfo($legacyPath, PATHINFO_EXTENSION) === 'php') {
-        // Changer le répertoire de travail pour le contexte legacy
-        $originalDir = getcwd();
-        chdir(dirname($legacyPath));
-
-        // Capturer la sortie du fichier legacy
-        ob_start();
-        try {
-            // Inclure le fichier legacy avec son contexte
-            include $legacyPath;
-            $content = ob_get_contents();
-        } catch (Exception $e) {
-            ob_end_clean();
-            chdir($originalDir);
-            abort(500, 'Erreur dans le code legacy: ' . $e->getMessage());
-        }
-        ob_end_clean();
-        chdir($originalDir);
-
-        return response($content);
-    }
-
-    // Si c'est un dossier legacy qui existe avec un index.php ou index.html
-    if (is_dir($legacyPath)) {
-        $indexFile = $legacyPath . '/index.php';
-        $indexHtml = $legacyPath . '/index.html';
-
-        if (file_exists($indexFile)) {
-            $originalDir = getcwd();
-            chdir($legacyPath);
-
-            // Démarrer la capture de sortie avec gestion des chemins relatifs
-            ob_start();
-            try {
-                // Simuler les variables d'environnement pour le code legacy
-                $_SERVER['REQUEST_URI'] = '/' . $path . ($_SERVER['QUERY_STRING'] ? '?' . $_SERVER['QUERY_STRING'] : '');
-                $_SERVER['SCRIPT_NAME'] = '/' . $path . '/index.php';
-
-                include $indexFile;
-                $content = ob_get_contents();
-
-                // Corriger les chemins relatifs des assets dans le HTML généré
-                $content = preg_replace_callback(
-                    '/(href="|src=")([^"]+\.(?:css|js|png|jpg|jpeg|gif|svg|ico))(")/i',
-                    function ($matches) use ($path) {
-                        $assetPath = $matches[2];
-                        // Si c'est un chemin relatif (ne commence pas par http, https, ou /)
-                        if (!preg_match('/^(https?:\/\/|\/)/i', $assetPath)) {
-                            // Convertir en chemin absolu
-                            $assetPath = '/' . $path . '/' . $assetPath;
-                        }
-                        return $matches[1] . $assetPath . $matches[3];
-                    },
-                    $content
-                );
-            } catch (Exception $e) {
-                ob_end_clean();
-                chdir($originalDir);
-                abort(500, 'Erreur dans le code legacy: ' . $e->getMessage());
-            }
-            ob_end_clean();
-            chdir($originalDir);
-
-            return response($content);
-        } elseif (file_exists($indexHtml)) {
-            // Servir le fichier HTML statique
-            return response()->file($indexHtml, [
-                'Content-Type' => 'text/html',
-                'Cache-Control' => 'public, max-age=3600'
-            ]);
-        }
-    }
-
-    // Si c'est un fichier statique (CSS, JS, images, etc.)
-    if (file_exists($legacyPath) && !is_dir($legacyPath)) {
-        // Déterminer le type MIME
-        $extension = pathinfo($legacyPath, PATHINFO_EXTENSION);
-        $mimeTypes = [
-            'css' => 'text/css',
-            'js' => 'application/javascript',
-            'png' => 'image/png',
-            'jpg' => 'image/jpeg',
-            'jpeg' => 'image/jpeg',
-            'gif' => 'image/gif',
-            'svg' => 'image/svg+xml',
-            'ico' => 'image/x-icon',
-            'woff' => 'font/woff',
-            'woff2' => 'font/woff2',
-            'ttf' => 'font/ttf',
-            'eot' => 'application/vnd.ms-fontobject'
-        ];
-
-        $mimeType = $mimeTypes[$extension] ?? (function_exists('mime_content_type') ? mime_content_type($legacyPath) : 'application/octet-stream');
-
-        return response()->file($legacyPath, [
-            'Content-Type' => $mimeType,
-            'Cache-Control' => 'public, max-age=3600' // Cache 1h pour les assets
-        ]);
-    }
-
-    // Aucun fichier legacy trouvé, erreur 404 normale
-    abort(404, 'Page non trouvée');
-})->where('path', '.*');
+Route::match(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'], '{path}', [App\Http\Controllers\LegacyCatchallController::class, 'handle'])
+    ->where('path', '.*');
 
 
 
