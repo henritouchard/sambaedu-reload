@@ -1,0 +1,118 @@
+<?php
+
+use Livewire\Component;
+use Livewire\Attributes\Title;
+use Livewire\WithPagination;
+use Illuminate\Support\Str;
+use App\Components\Traits\WithToasts;
+use App\Models\LegacyCatchallLog;
+
+new #[Title('Legacy Monitor - Instance SE4FS')] class extends Component {
+    use WithToasts, WithPagination;
+
+    public string $filterPath = '';
+    public string $filterMethod = '';
+    public int $perPage = 50;
+
+    public function updatingFilterPath(): void { $this->resetPage(); }
+    public function updatingFilterMethod(): void { $this->resetPage(); }
+
+    public function getLogs()
+    {
+        $perPage = max(1, min(200, $this->perPage));
+
+        return LegacyCatchallLog::query()
+            ->when($this->filterPath, fn($q) => $q->where('path', 'like', '%' . Str::escapeLikeWildcards($this->filterPath) . '%'))
+            ->when($this->filterMethod, fn($q) => $q->where('method', $this->filterMethod))
+            ->selectRaw('method, path, COUNT(*) as frequency, MAX(created_at) as last_seen, MAX(ip) as last_ip')
+            ->groupBy('method', 'path')
+            ->orderByDesc('frequency')
+            ->orderBy('path')
+            ->paginate($perPage);
+    }
+};
+?>
+
+<x-organisms.page title="Legacy Monitor" description="Appels catchall en temps réel — identifiez les routes legacy encore actives">
+    <x-slot:actions>
+        <button wire:click="$refresh" class="btn btn-outline btn-primary btn-sm">
+            <i class="fas fa-refresh"></i>
+            Actualiser
+        </button>
+    </x-slot:actions>
+
+    {{-- Filtres --}}
+    <div class="flex flex-wrap gap-4 mb-6">
+        <input
+            type="text"
+            class="input input-bordered w-full max-w-xs"
+            wire:model.live.300ms="filterPath"
+            placeholder="Filtrer par path..."
+        />
+        <select class="select select-bordered" wire:model.live="filterMethod">
+            <option value="">Toutes les méthodes</option>
+            <option value="GET">GET</option>
+            <option value="POST">POST</option>
+            <option value="PUT">PUT</option>
+            <option value="DELETE">DELETE</option>
+            <option value="PATCH">PATCH</option>
+        </select>
+    </div>
+
+    {{-- Tableau avec polling automatique toutes les 5 secondes --}}
+    <div wire:poll.5s>
+        @php $logs = $this->getLogs(); @endphp
+
+        @if ($logs->isEmpty())
+            <div class="hero min-h-[200px]">
+                <div class="hero-content text-center">
+                    <div>
+                        <i class="fas fa-check-circle text-4xl text-success mb-4"></i>
+                        <p class="text-lg">Aucun appel catchall enregistré</p>
+                    </div>
+                </div>
+            </div>
+        @else
+            <div class="overflow-x-auto">
+                <table class="table table-zebra w-full">
+                    <thead>
+                        <tr>
+                            <th>Méthode</th>
+                            <th>Path</th>
+                            <th>Dernière IP</th>
+                            <th>Dernière occurrence</th>
+                            <th>Fréquence</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($logs as $log)
+                            <tr>
+                                <td>
+                                    @php
+                                        $badgeClass = match($log->method) {
+                                            'GET'    => 'badge-info',
+                                            'POST'   => 'badge-warning',
+                                            'DELETE' => 'badge-error',
+                                            default  => 'badge-neutral',
+                                        };
+                                    @endphp
+                                    <span class="badge {{ $badgeClass }}">{{ $log->method }}</span>
+                                </td>
+                                <td class="font-mono text-sm">{{ $log->path }}</td>
+                                <td class="font-mono text-sm">{{ $log->last_ip ?? '—' }}</td>
+                                <td>{{ $log->last_seen ? \Carbon\Carbon::parse($log->last_seen)->diffForHumans() : '—' }}</td>
+                                <td>
+                                    <span class="badge badge-ghost">{{ $log->frequency }}</span>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="mt-4">
+                {{ $logs->links() }}
+            </div>
+        @endif
+    </div>
+</x-organisms.page>

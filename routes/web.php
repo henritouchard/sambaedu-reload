@@ -150,6 +150,9 @@ Route::prefix('admin')->middleware('sambaedu.admin')->name('admin.')->group(func
     // Control Hub - Livewire fullpage component
     Route::livewire('/control-hub', 'pages::control-hub.index')->name('controlHub.control-hub');
 
+    // Legacy Monitor - Dashboard des appels catchall
+    Route::livewire('/legacy-monitor', 'pages::admin.legacy-monitor.index')->name('legacy-monitor');
+
     // Routes de gestion des parcs
     Route::prefix('parcs')->name('parcs.')->group(function () {
         // Actions de masse
