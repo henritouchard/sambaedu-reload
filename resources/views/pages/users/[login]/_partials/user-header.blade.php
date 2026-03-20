@@ -103,16 +103,12 @@
                             <div
                                 class="stat-figure text-primary group-hover:scale-110 transition-transform duration-300">
                                 <div class="bg-primary/10 p-3 rounded-xl">
-                                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207">
-                                        </path>
-                                    </svg>
+                                    <i class="fa-solid fa-at text-xl"></i>
                                 </div>
                             </div>
                             <div class="stat-title font-medium">Login d'utilisateur</div>
-                            <div class="stat-value text-lg font-bold text-primary">{{ $user->login ?? '' }}</div>
-                            <div class="stat-desc">Identifiant unique</div>
+                            <div class="stat-value text-lg font-bold text-primary text-lg">{{ $user->login ?? '' }}</div>
+                            {{-- <div class="stat-desc">Identifiant unique</div> --}}
                         </div>
 
                         <!-- Rôle -->
@@ -128,12 +124,11 @@
                             class="stat bg-gradient-to-br from-base-100 to-base-50 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 border border-base-200/30 hover:border-info/20 group">
                             <div class="stat-figure text-info group-hover:scale-110 transition-transform duration-300">
                                 <div class="bg-info/10 p-3 rounded-xl">
-                                    <i class="fa-solid fa-user-tag text-2xl"></i>
+                                    <i class="fa-solid fa-user-tag text-xl"></i>
                                 </div>
                             </div>
                             <div class="stat-title font-medium">Rôle</div>
-                            <div class="stat-value text-lg font-bold text-info">{{ $roleLabel }}</div>
-                            <div class="stat-desc">Profil principal</div>
+                            <div class="stat-value text-info text-lg">{{ $roleLabel }}</div>
                         </div>
 
                         <!-- Email -->
@@ -149,7 +144,7 @@
                                 <div class="stat-title  font-medium">Adresse email</div>
                                 <div class="stat-value text-lg font-bold">
                                     <div
-                                        class="hover:scale-105 inline-block max-w-full truncate"
+                                        class="inline-block max-w-full truncate text-sm text-secondary"
                                         title="{{ $user->email }}">
                                         {{ $user->email }}
                                     </div>
@@ -169,64 +164,27 @@
                         @endif
 
                         <!-- Établissement -->
-                        @if ($user->etabName || $user->etabCode)
                             <div
                                 class="stat rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 border border-base-200/30 hover:border-accent/20 group">
-                                <div
-                                    class="stat-figure text-accent group-hover:scale-110 transition-transform duration-300">
-                                    <div class="bg-accent/10 p-3 rounded-xl">
-                                        <svg class="w-8 h-8" fill="none" stroke="currentColor"
-                                            viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4">
-                                            </path>
-                                        </svg>
-                                    </div>
-                                </div>
-                                <div class="stat-title  font-medium">Établissement</div>
-                                <div class="stat-value text-lg font-bold text-accent">
-                                    {{ $user->etabName ?? $user->etabCode }}</div>
-                                <div class="stat-desc ">Institution de rattachement</div>
-                            </div>
-                        @else
-                            <div
-                                class="stat bg-gradient-to-br from-base-100 to-base-50 rounded-2xl shadow-lg border border-base-200/30">
                                 <div class="stat-figure">
                                     <div class="p-3 rounded-xl bg-emerald-200">
                                         <i class="fa-solid fa-school text-emerald-500 text-2xl"></i>
                                     </div>
                                 </div>
-                                <div class="stat-title  font-medium">Établissement</div>
-                                <div class="stat-value text-lg ">Non défini</div>
-                                <div class="stat-desc ">Aucun établissement assigné</div>
+                                @if ($user->etabName || $user->etabCode)
+                                    <div class="stat-title  font-medium">Établissement</div>
+                                    <div class="stat-value text-lg font-bold text-accent truncate text-emerald-500"  title="{{ $user->etabName ?? $user->etabCode }}">
+                                        {{ $user->etabName ?? $user->etabCode }}
+                                    </div>
+                                @else
+                                    <div class="stat-title font-medium text-zinc-200">Établissement</div>
+                                    <div class="stat-value text-lg ">Non assigné</div>
+                                @endif
                             </div>
-                        @endif
                     </div>
 
                     <!-- Informations personnelles -->
                     @livewire('pages::users.[login]._partials.personal-info-form', ['user' => $user], key('personal-info-' . $user->login))
-                    <!-- Card de debug -->
-                    {{-- <div class="card bg-base-200 border border-warning shadow-lg mt-6">
-                        <div class="card-body">
-                            <h2 class="card-title text-warning flex items-center gap-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z">
-                                    </path>
-                                </svg>
-                                Debug - Données utilisateur (JSON)
-                            </h2>
-                            <div class="collapse collapse-arrow bg-base-100 border border-base-300">
-                                <input type="checkbox" class="peer" />
-                                <div class="collapse-title text-sm font-medium">
-                                    Cliquer pour afficher/masquer le JSON complet
-                                </div>
-                                <div class="collapse-content">
-                                    <pre class="text-xs bg-base-200 p-4 rounded-lg overflow-x-auto whitespace-pre-wrap">{{ json_encode($user, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</pre>
-                                </div>
-                            </div>
-                        </div>
-                    </div> --}}
                 </div>
             </div>
         </div>
