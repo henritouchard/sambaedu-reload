@@ -440,7 +440,7 @@ configure_apache() {
   mkdir -p "$backup_dir"
 
   if [[ -f "$sites_enabled/sambaedu.conf" ]] || [[ -L "$sites_enabled/sambaedu.conf" ]]; then
-    cp "$sites_enabled/sambaedu.conf" "$backup_dir/sambaedu.conf.backup"
+    cp -L "$sites_enabled/sambaedu.conf" "$backup_dir/sambaedu.conf.backup"
   fi
   if [[ -f "$sites_available/sambaedu-reload.conf" ]]; then
     cp "$sites_available/sambaedu-reload.conf" "$backup_dir/sambaedu-reload.conf.backup"
@@ -559,7 +559,12 @@ VHOST_LEGACY
   echo "Listen 127.0.0.1:${legacy_port}" >> "$ports_conf"
 
   # ── Activer les sites ──
-  cp "$sites_available/sambaedu.conf" "$sites_enabled/sambaedu.conf"
+  if [ -L "$sites_enabled/sambaedu.conf" ]; then
+    # Symlink → déjà à jour via l'écriture dans sites-available
+    log "sambaedu.conf mis à jour (via symlink)"
+  else
+    cp "$sites_available/sambaedu.conf" "$sites_enabled/sambaedu.conf"
+  fi
   ln -sf "$sites_available/sambaedu-legacy.conf" "$sites_enabled/sambaedu-legacy.conf"
   rm -f "$sites_enabled/sambaedu-reload.conf"
 

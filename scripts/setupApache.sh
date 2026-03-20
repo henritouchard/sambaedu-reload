@@ -51,7 +51,7 @@ mkdir -p "$BACKUP_DIR"
 
 echo "[1/7] Backup des configurations dans $BACKUP_DIR"
 
-cp "$APACHE_SITES_ENABLED/sambaedu.conf" "$BACKUP_DIR/sambaedu.conf.backup"
+cp -L "$APACHE_SITES_ENABLED/sambaedu.conf" "$BACKUP_DIR/sambaedu.conf.backup"
 
 if [ -f "$APACHE_SITES_AVAILABLE/sambaedu-reload.conf" ]; then
     cp "$APACHE_SITES_AVAILABLE/sambaedu-reload.conf" "$BACKUP_DIR/sambaedu-reload.conf.backup"
@@ -207,9 +207,15 @@ echo "[5/7] Activation des vhosts"
 ln -sf "$APACHE_SITES_AVAILABLE/sambaedu-legacy.conf" "$APACHE_SITES_ENABLED/sambaedu-legacy.conf"
 echo "   sambaedu-legacy.conf activé"
 
-# Copier le nouveau sambaedu.conf dans sites-enabled (fichier direct, pas symlink)
-cp "$APACHE_SITES_AVAILABLE/sambaedu.conf" "$APACHE_SITES_ENABLED/sambaedu.conf"
-echo "   sambaedu.conf mis à jour (SER)"
+# Activer sambaedu.conf dans sites-enabled
+if [ -L "$APACHE_SITES_ENABLED/sambaedu.conf" ]; then
+    # Symlink vers sites-available → déjà à jour via l'écriture précédente
+    echo "   sambaedu.conf mis à jour (via symlink)"
+else
+    # Fichier direct → copier le nouveau contenu
+    cp "$APACHE_SITES_AVAILABLE/sambaedu.conf" "$APACHE_SITES_ENABLED/sambaedu.conf"
+    echo "   sambaedu.conf mis à jour (SER)"
+fi
 
 # Désactiver l'ancien vhost SER port 8080
 if [ -f "$APACHE_SITES_ENABLED/sambaedu-reload.conf" ] || [ -L "$APACHE_SITES_ENABLED/sambaedu-reload.conf" ]; then
