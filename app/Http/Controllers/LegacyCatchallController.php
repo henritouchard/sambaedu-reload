@@ -109,11 +109,10 @@ class LegacyCatchallController extends Controller
 
         try {
             $proxyRequest = Http::withoutVerifying()
+                ->withoutRedirecting()
                 ->timeout(30)
                 ->withHeaders([
                     'X-Forwarded-For' => $request->ip(),
-                    'X-Forwarded-Host' => $request->getHost(),
-                    'X-Forwarded-Proto' => $request->getScheme(),
                     'Cookie' => $request->header('Cookie', ''),
                 ]);
 
@@ -128,10 +127,23 @@ class LegacyCatchallController extends Controller
             $response = response($legacyResponse->body(), $legacyResponse->status());
 
             // Transmettre les headers pertinents de la réponse legacy
-            foreach (['Content-Type', 'Set-Cookie', 'Location'] as $header) {
+            foreach (['Content-Type', 'Set-Cookie'] as $header) {
                 if ($legacyResponse->header($header)) {
                     $response->header($header, $legacyResponse->header($header));
                 }
+            }
+
+            // Si le legacy redirige, suivre la redirection en interne
+            // plutôt que de la transmettre au client (évite les boucles)
+            if ($legacyResponse->redirect()) {
+                $location = $legacyResponse->header('Location');
+                // Si c'est une redirection relative ou vers le même host, la suivre via proxy
+                $parsed = parse_url($location);
+                $relativePath = $parsed['path'] ?? '/';
+                if (! empty($parsed['query'])) {
+                    $relativePath .= '?' . $parsed['query'];
+                }
+                return redirect($relativePath);
             }
 
             return $response;

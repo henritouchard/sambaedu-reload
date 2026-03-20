@@ -259,6 +259,22 @@ generate_env() {
   cd "$APP_DIR"
   bash "$SCRIPT_DIR/create-env.sh"
   log_success ".env créé avec succès"
+
+  # Pré-remplir APP_URL avec l'UAI depuis /etc/sambaedu/sambaedu.conf
+  local uai=""
+  if [[ -f "/etc/sambaedu/sambaedu.conf" ]]; then
+    uai=$(grep -oP 'UAI\s*=\s*"\K[^"]+' /etc/sambaedu/sambaedu.conf 2>/dev/null || echo "")
+  fi
+
+  if [[ -n "$uai" ]]; then
+    sed -i "s|^APP_URL=.*|APP_URL=https://URL_A_COMPLETER/${uai}|" "$APP_DIR/.env"
+    log "UAI détecté : $uai"
+    log_warning "APP_URL pré-remplie : https://URL_A_COMPLETER/${uai}"
+  else
+    sed -i "s|^APP_URL=.*|APP_URL=https://URL_A_COMPLETER|" "$APP_DIR/.env"
+    log_warning "UAI non trouvé dans /etc/sambaedu/sambaedu.conf"
+    log_warning "APP_URL pré-remplie : https://URL_A_COMPLETER"
+  fi
 }
 
 interactive_env_validation() {
@@ -273,7 +289,22 @@ interactive_env_validation() {
   cat "$APP_DIR/.env"
   echo ""
 
-  # Demander à l'utilisateur s'il veut éditer
+  # Vérifier si APP_URL contient encore le placeholder
+  local app_url
+  app_url=$(grep -oP '^APP_URL=\K.*' "$APP_DIR/.env" 2>/dev/null || echo "")
+  if [[ "$app_url" == *"URL_A_COMPLETER"* ]]; then
+    echo ""
+    echo -e "${RED}════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${RED}  APP_URL doit être configurée avant de continuer !${NC}"
+    echo -e "${RED}════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "  Valeur actuelle : ${YELLOW}${app_url}${NC}"
+    echo ""
+    echo "  Remplacez URL_A_COMPLETER par le domaine réel."
+    echo "  Exemple : https://se4fs-0991229y.lab1.irundo.fr/0991229y"
+    echo ""
+  fi
+
   log_warning "IMPORTANT: Vérifiez et personnalisez les variables si nécessaire"
   echo ""
 
