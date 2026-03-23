@@ -59,6 +59,13 @@
                     </a>
                 </li>
                 <li>
+                    <a href="{{ route('admin.migrate') }}"
+                        class="flex items-center gap-4 px-4 py-3 text-base font-medium {{ request()->is('admin/migrate*') ? 'active bg-primary/20 text-primary shadow-lg' : 'hover:bg-base-200/70' }} rounded-xl transition-all duration-200 hover:shadow-md hover:scale-[1.02]">
+                        <i class="fa-solid fa-exchange-alt text-xl"></i>
+                        Migration
+                    </a>
+                </li>
+                <li>
                     <a href="{{ route('app.shortcuts') }}"
                         class="flex items-center gap-4 px-4 py-3 text-base font-medium {{ request()->is('app/shortcuts*') ? 'active bg-primary/20 text-primary shadow-lg' : 'hover:bg-base-200/70' }} rounded-xl transition-all duration-200 hover:shadow-md hover:scale-[1.02]">
                         <i class="fa-solid fa-arrow-up-right-from-square text-xl"></i>

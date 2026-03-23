@@ -112,11 +112,6 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
 
 
     // ========================================
-    // Synchronisation depuis l'AD (Assistant de mise en place)
-    // ========================================
-    Route::livewire('/sync-from-ad', 'pages::sync-from-ad.index')->name('sync-from-ad');
-
-    // ========================================
     // Gestion du Parc (Section 1 - MySQL source)
     // ========================================
     Route::prefix('parc')->name('parc.')->group(function () {
@@ -152,6 +147,12 @@ Route::prefix('admin')->middleware('sambaedu.admin')->name('admin.')->group(func
 
     // Legacy Monitor - Dashboard des appels catchall
     Route::livewire('/legacy-monitor', 'pages::admin.legacy-monitor.index')->name('legacy-monitor');
+
+    // Migration - Dashboard d'assistance
+    Route::livewire('/migrate', 'pages::admin.migrate.index')->name('migrate');
+
+    // Synchronisation depuis l'AD (déplacé de /app)
+    Route::livewire('/sync-from-ad', 'pages::sync-from-ad.index')->name('sync-from-ad');
 
     // Routes de gestion des parcs
     Route::prefix('parcs')->name('parcs.')->group(function () {
