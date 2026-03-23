@@ -22,6 +22,26 @@ class AuthenticationService
     }
 
     /**
+     * Démarre la session PHP en validant le session ID du cookie.
+     * Protège contre les session ID invalides (trop longs ou caractères interdits).
+     */
+    private function ensureSession(): void
+    {
+        if (!session_name()) {
+            session_name("Sambaedu");
+        }
+
+        if (empty(session_id())) {
+            $cookieName = session_name();
+            if (isset($_COOKIE[$cookieName]) && !preg_match('/^[a-zA-Z0-9,-]{1,128}$/', $_COOKIE[$cookieName])) {
+                unset($_COOKIE[$cookieName]);
+                session_id(bin2hex(random_bytes(16)));
+            }
+            session_start(['cookie_lifetime' => 86400]);
+        }
+    }
+
+    /**
      * Charge la configuration complète depuis les fichiers INI
      * Nécessaire UNIQUEMENT pour les fonctions legacy critiques suivantes :
      * - search_machine() : Recherche de machines par IP (auto-login) - utilise ldap.inc.php
@@ -125,13 +145,7 @@ class AuthenticationService
      */
     public function isAlreadyAuthenticated(): bool
     {
-        if (!session_name()) {
-            session_name("Sambaedu");
-        }
-
-        if (empty(session_id())) {
-            session_start(['cookie_lifetime' => 86400]);
-        }
+        $this->ensureSession();
 
         return !empty($_SESSION['login'] ?? null);
     }
@@ -212,13 +226,7 @@ class AuthenticationService
      */
     public function createSession(string $login): void
     {
-        if (!session_name()) {
-            session_name("Sambaedu");
-        }
-
-        if (empty(session_id())) {
-            session_start(['cookie_lifetime' => 86400]);
-        }
+        $this->ensureSession();
 
         $_SESSION['login'] = $login;
     }
@@ -485,13 +493,7 @@ class AuthenticationService
      */
     public function getCurrentUser(): ?string
     {
-        if (!session_name()) {
-            session_name("Sambaedu");
-        }
-
-        if (empty(session_id())) {
-            session_start(['cookie_lifetime' => 86400]);
-        }
+        $this->ensureSession();
 
         return $_SESSION['login'] ?? null;
     }
@@ -568,13 +570,7 @@ class AuthenticationService
      */
     public function createEntSession(array $userInfo, $accessToken): void
     {
-        if (!session_name()) {
-            session_name("Sambaedu");
-        }
-
-        if (empty(session_id())) {
-            session_start(['cookie_lifetime' => 86400]);
-        }
+        $this->ensureSession();
 
         $_SESSION['login_ent'] = $userInfo['login'] ?? null;
         $_SESSION['login'] = $userInfo['cn'] ?? $userInfo['login'];
@@ -594,13 +590,7 @@ class AuthenticationService
      */
     public function isEntAuthenticated(): bool
     {
-        if (!session_name()) {
-            session_name("Sambaedu");
-        }
-
-        if (empty(session_id())) {
-            session_start(['cookie_lifetime' => 86400]);
-        }
+        $this->ensureSession();
 
         return !empty($_SESSION['login']) &&
             !empty($_SESSION['auth']) &&
@@ -630,13 +620,7 @@ class AuthenticationService
      */
     public function logout(): void
     {
-        if (!session_name()) {
-            session_name("Sambaedu");
-        }
-
-        if (empty(session_id())) {
-            session_start(['cookie_lifetime' => 86400]);
-        }
+        $this->ensureSession();
 
         session_destroy();
         unset($_SESSION);

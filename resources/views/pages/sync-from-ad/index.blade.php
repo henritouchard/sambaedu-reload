@@ -469,8 +469,8 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                                             <span
                                                 class="badge badge-warning badge-sm">🔗{{ $step['stats']['linked_groups'] }}</span>
                                         @endif
-                                        @if (isset($step['stats']['errors']) && $step['stats']['errors'] > 0)
-                                            <span class="badge badge-error badge-sm">{{ $step['stats']['errors'] }}
+                                        @if (isset($step['stats']['errors']) && count($step['stats']['errors']) > 0)
+                                            <span class="badge badge-error badge-sm">{{ count($step['stats']['errors']) }}
                                                 err</span>
                                         @endif
                                         @if (isset($step['stats']['admin_granted']) && $step['stats']['admin_granted'])
