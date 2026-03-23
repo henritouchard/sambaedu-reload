@@ -66,7 +66,7 @@ class Kernel extends HttpKernel
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
         
         // SambaEdu middleware personnalisé
-        'sambaedu.auth' => \App\Http\Middleware\SambaEduAuth::class,
+        'sambaedu.auth' => \App\Http\Middleware\Auth\SambaEduAuth::class,
         'sambaedu.admin' => \App\Http\Middleware\RequireAdminRights::class,
         'password.change' => \App\Http\Middleware\PasswordChangeMiddleware::class,
         

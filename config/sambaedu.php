@@ -23,6 +23,10 @@ return [
 
     'legacy_base_url' => env('SAMBAEDU_LEGACY_BASE_URL', 'http://127.0.0.1:80'),
 
+
+    // UAI de l'établissement — utilisé pour stripper le préfixe dans les URLs legacy
+    'etab_ou' => env('SAMBAEDU_ETAB_OU', ''),
+    
     'block_migrated_routes' => env('LEGACY_BLOCK_MIGRATED_ROUTES', true),
 
     'log_404' => env('LEGACY_LOG_404', true),

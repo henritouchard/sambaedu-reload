@@ -92,6 +92,12 @@ class AppServiceProvider extends ServiceProvider
         // Service de pont legacy pour les parcs
         $this->app->singleton(LegacyParcBridgeService::class);
 
+        // Binding AuthGuard — swap Phase 2 : remplacer SambaEduAuthGuard par KeycloakAuthGuard
+        $this->app->bind(
+            \App\Http\Middleware\Auth\AuthGuardInterface::class,
+            \App\Http\Middleware\Auth\SambaEduAuthGuard::class
+        );
+
         // Alias pour faciliter l'utilisation via app('sambaedu.config') qui fournit l'instance singleton de SambaeduConfig
         $this->app->alias(AdDataTransformer::class, 'sambaedu.transformer');
         $this->app->alias(AuthenticationService::class, 'sambaedu.auth');

@@ -24,6 +24,16 @@ class LegacyCatchallController extends Controller
     {
         $path = $request->path();
 
+        // 0. Stripper le préfixe UAI (etab_ou) du path s'il est présent
+        // Le legacy génère des URLs avec le préfixe UAI (ex: /0991229y/blank.php)
+        // mais les fichiers sont à la racine du legacy (ex: /var/www/sambaedu/blank.php)
+        $uai = config('sambaedu.etab_ou', '');
+        if (! empty($uai) && str_starts_with($path, $uai . '/')) {
+            $path = substr($path, strlen($uai) + 1);
+        } elseif ($path === $uai) {
+            $path = '';
+        }
+
         // 1. Dossiers sensibles interdits
         $forbidden = ['laravel', 'vendor', 'node_modules', '.git', '.env'];
         foreach ($forbidden as $dir) {
@@ -124,7 +134,26 @@ class LegacyCatchallController extends Controller
                 default => $proxyRequest->get($url),
             };
 
-            $response = response($legacyResponse->body(), $legacyResponse->status());
+            $body = $legacyResponse->body();
+
+            // Réécrire les URLs absolues dans le body HTML pour inclure le base path
+            // Tout passe par /0991229y/ (le reverse proxy utilise ce préfixe pour router)
+            // donc les chemins absolus du legacy (/auth.php, /elements/...) doivent être préfixés
+            $basePath = parse_url(config('app.url', ''), PHP_URL_PATH) ?: '';
+            if (! empty($basePath) && $basePath !== '/') {
+                $bp = rtrim($basePath, '/');
+                $bpQ = preg_quote(ltrim($bp, '/'), '#');
+                $contentType = $legacyResponse->header('Content-Type', '');
+                if (str_contains($contentType, 'text/html') || empty($contentType)) {
+                    $body = preg_replace(
+                        '#((?:href|src|action)\s*=\s*["\']|window\.location(?:\.href)?\s*=\s*["\']|URL=)(/(?!' . $bpQ . '/))#i',
+                        '$1' . $bp . '$2',
+                        $body
+                    );
+                }
+            }
+
+            $response = response($body, $legacyResponse->status());
 
             // Transmettre les headers pertinents de la réponse legacy
             foreach (['Content-Type', 'Set-Cookie'] as $header) {
@@ -133,17 +162,31 @@ class LegacyCatchallController extends Controller
                 }
             }
 
-            // Si le legacy redirige, suivre la redirection en interne
-            // plutôt que de la transmettre au client (évite les boucles)
+            // Transmettre la redirection directement au client sans la ré-intercepter
             if ($legacyResponse->redirect()) {
                 $location = $legacyResponse->header('Location');
-                // Si c'est une redirection relative ou vers le même host, la suivre via proxy
-                $parsed = parse_url($location);
-                $relativePath = $parsed['path'] ?? '/';
-                if (! empty($parsed['query'])) {
-                    $relativePath .= '?' . $parsed['query'];
+                $legacyBaseUrl = config('sambaedu.legacy_base_url', 'http://127.0.0.1:80');
+
+                // Si la Location pointe vers l'URL interne du legacy, extraire le chemin relatif
+                if (str_starts_with($location, $legacyBaseUrl)) {
+                    $location = substr($location, strlen(rtrim($legacyBaseUrl, '/')));
+                    if (empty($location)) {
+                        $location = '/';
+                    }
                 }
-                return redirect($relativePath);
+
+                // Réécrire les redirections pour inclure le base path du reverse proxy
+                // Le legacy génère des chemins absolus (ex: /user/index.php) qui doivent
+                // être préfixés par le base path (ex: /0991229y) pour rester dans le SER
+                if (str_starts_with($location, '/')) {
+                    $basePath = parse_url(config('app.url', ''), PHP_URL_PATH) ?: '';
+                    if (! empty($basePath) && $basePath !== '/' && ! str_starts_with($location, $basePath)) {
+                        $location = rtrim($basePath, '/') . $location;
+                    }
+                }
+
+                return response('', $legacyResponse->status())
+                    ->header('Location', $location);
             }
 
             return $response;

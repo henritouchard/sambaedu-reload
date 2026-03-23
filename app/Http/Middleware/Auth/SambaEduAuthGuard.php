@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Middleware;
+namespace App\Http\Middleware\Auth;
 
 use Closure;
 use Illuminate\Http\Request;
@@ -14,12 +14,15 @@ use App\Services\UserSyncService;
 use App\Repositories\UserRepository;
 
 /**
- * Middleware d'authentification SambaEdu
- * 
- * Utilise les services Laravel modernes (AuthenticationService, UserRepository)
- * au lieu des fonctions legacy (get_config, search_user, etc.)
+ * Implémentation MVP de l'AuthGuard pour SambaEdu
+ *
+ * Reproduit exactement le comportement du middleware SambaEduAuth original :
+ * session, LDAP, auto-provisioning Eloquent, Auth::login.
+ *
+ * Pour swapper vers Keycloak (Phase 2), remplacer le binding dans AppServiceProvider :
+ * AuthGuardInterface::class → KeycloakAuthGuard::class
  */
-class SambaEduAuth
+class SambaEduAuthGuard implements AuthGuardInterface
 {
     public function __construct(
         private AuthenticationService $authService,

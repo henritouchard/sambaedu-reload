@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Http\Middleware\RequireAdminRights;
-use App\Http\Middleware\SambaEduAuth;
+use App\Http\Middleware\Auth\SambaEduAuth;
 use App\Models\LegacyCatchallLog;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
