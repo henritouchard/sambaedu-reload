@@ -18,7 +18,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
     public bool $accountDisabled = false;
     public bool $homeExists = true;
     public bool $isOwnProfile = false;
-    public ?string $resetPasswordValue = null;
+    private ?string $resetPasswordValue = null;
     public ?array $localAdminInfo = null;
     public array $listCurrentGroups = [];
     public array $listCurrentRights = [];
@@ -51,6 +51,11 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
         // Vérifier si c'est le profil de l'utilisateur connecté
         $currentLogin = $this->authService->getCurrentUser();
         $this->isOwnProfile = $currentLogin && $currentLogin === $this->user->login;
+
+        // Mot de passe affiché après création
+        if (session('created_password')) {
+            $this->resetPasswordValue = session('created_password');
+        }
 
         // Statut du compte
         $this->accountDisabled = $this->user->isDisabled();
@@ -154,8 +159,13 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
             return;
         }
 
-        $this->resetPasswordValue = $result['password'] ?? null;
-        ToastMagic::success($result['message'] ?? 'Mot de passe réinitialisé avec succès.');
+        session()->flash('created_password', $result['password'] ?? null);
+        $this->redirect(route('app.user.show', $this->user->login), navigate: true);
+    }
+
+    public function getPasswordForDisplay(): ?string
+    {
+        return $this->resetPasswordValue;
     }
 };
 
@@ -312,19 +322,8 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
         </div>
     </x-slot:actions>
 
-    @if ($resetPasswordValue)
-        <div class="alert alert-success mb-4">
-            <i class="fa-solid fa-key"></i>
-            <div>
-                <div class="font-medium">Mot de passe réinitialisé (AD)</div>
-                <div class="text-sm">Nouveau mot de passe : <span class="font-mono">{{ $resetPasswordValue }}</span>
-                </div>
-            </div>
-        </div>
-    @endif
-
     <!-- En-tête avec actions principales -->
-    @include('pages.users.[login]._partials.user-header')
+    @include('pages.users.[login]._partials.user-header', ['resetPasswordValue' => $this->getPasswordForDisplay()])
 
     <!-- Groupes et Permissions -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

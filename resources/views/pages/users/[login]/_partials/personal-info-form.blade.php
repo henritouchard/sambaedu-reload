@@ -282,6 +282,7 @@ new class extends Component {
                             {{ $description ?: '-' }}
                         </div>
                     </div>
+
                 </div>
             </div>
         @endif

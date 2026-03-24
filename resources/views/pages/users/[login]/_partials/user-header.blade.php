@@ -183,6 +183,63 @@
                             </div>
                     </div>
 
+                    <!-- Mot de passe (rendu serveur uniquement, ne transite pas via Livewire) -->
+                    @if ($resetPasswordValue ?? false)
+                        <div class="mt-6 p-4 bg-success/10 border border-success/30 rounded-2xl" x-data="{ revealed: false }">
+                            <div class="flex items-center gap-3">
+                                <div class="bg-success/20 p-2 rounded-xl">
+                                    <i class="fa-solid fa-key text-success"></i>
+                                </div>
+                                <div class="flex-1">
+                                    <div class="text-sm font-medium text-base-content/70">Mot de passe</div>
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <code class="font-mono bg-base-200 px-3 py-1.5 rounded-lg select-all text-base"
+                                            x-text="revealed ? @js($resetPasswordValue) : '••••••••••'"
+                                        ></code>
+                                        <button type="button"
+                                            @click="revealed = !revealed"
+                                            class="btn btn-ghost btn-xs btn-square"
+                                            :title="revealed ? 'Masquer' : 'Révéler'">
+                                            <template x-if="!revealed">
+                                                <i class="fa-solid fa-eye"></i>
+                                            </template>
+                                            <template x-if="revealed">
+                                                <i class="fa-solid fa-eye-slash"></i>
+                                            </template>
+                                        </button>
+                                        <button type="button"
+                                            onclick="copyToClipboard(@js($resetPasswordValue), this)"
+                                            class="btn btn-ghost btn-xs btn-square"
+                                            title="Copier">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        @once
+                            <script>
+                                window.copyToClipboard = window.copyToClipboard || function(text, btn) {
+                                    var ta = document.createElement('textarea');
+                                    ta.value = text;
+                                    ta.style.position = 'fixed';
+                                    ta.style.opacity = '0';
+                                    document.body.appendChild(ta);
+                                    ta.select();
+                                    document.execCommand('copy');
+                                    document.body.removeChild(ta);
+                                    if (btn) {
+                                        var icon = btn.querySelector('i');
+                                        if (icon) {
+                                            icon.classList.replace('fa-copy', 'fa-check');
+                                            setTimeout(function() { icon.classList.replace('fa-check', 'fa-copy'); }, 1500);
+                                        }
+                                    }
+                                };
+                            </script>
+                        @endonce
+                    @endif
+
                     <!-- Informations personnelles -->
                     @livewire('pages::users.[login]._partials.personal-info-form', ['user' => $user], key('personal-info-' . $user->login))
                 </div>

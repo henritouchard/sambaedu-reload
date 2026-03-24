@@ -2,15 +2,17 @@
 
 use Livewire\Component;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
 use Livewire\WithPagination;
-use Illuminate\Support\Str;
 use App\Components\Traits\WithToasts;
 use App\Models\LegacyCatchallLog;
 
 new #[Title('Legacy Monitor - Instance SE4FS')] class extends Component {
     use WithToasts, WithPagination;
 
+    #[Url]
     public string $filterPath = '';
+    #[Url]
     public string $filterMethod = '';
     public int $perPage = 50;
 
@@ -22,7 +24,7 @@ new #[Title('Legacy Monitor - Instance SE4FS')] class extends Component {
         $perPage = max(1, min(200, $this->perPage));
 
         return LegacyCatchallLog::query()
-            ->when($this->filterPath, fn($q) => $q->where('path', 'like', '%' . Str::escapeLikeWildcards($this->filterPath) . '%'))
+            ->when($this->filterPath, fn($q) => $q->where('path', 'like', '%' . addcslashes($this->filterPath, '%_\\') . '%'))
             ->when($this->filterMethod, fn($q) => $q->where('method', $this->filterMethod))
             ->selectRaw('method, path, COUNT(*) as frequency, MAX(created_at) as last_seen, MAX(ip) as last_ip')
             ->groupBy('method', 'path')

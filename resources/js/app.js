@@ -1,6 +1,25 @@
 import './bootstrap';
 import './theme';
 
+window.copyToClipboard = function (text, btn = null) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+
+    if (btn) {
+        const icon = btn.querySelector('i');
+        if (icon) {
+            icon.classList.replace('fa-copy', 'fa-check');
+            setTimeout(() => icon.classList.replace('fa-check', 'fa-copy'), 1500);
+        }
+    }
+};
+
 // Tooltip positioning system
 document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('mouseenter', (e) => {
