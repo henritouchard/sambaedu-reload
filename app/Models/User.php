@@ -93,6 +93,19 @@ class User extends Authenticatable implements Wireable
     }
 
     /**
+     * Groupes d'utilisateurs (classes, équipes, etc.)
+     */
+    public function groups(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            UserGroup::class,
+            'user_group_user',
+            'user_id',
+            'user_group_id'
+        );
+    }
+
+    /**
      * Délégations accordées à cet utilisateur
      */
     public function delegations(): HasMany

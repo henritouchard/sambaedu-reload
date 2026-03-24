@@ -170,24 +170,27 @@ class OrganizationalUnitModel extends Model
      */
     public static function createWithParents(string $dn, string $ouName): static
     {
+        Log::info("createWithParents appelé", ['dn' => $dn, 'ouName' => $ouName]);
+
         // Extraire le DN parent
         $parentDn = static::extractParentDn($dn);
-        
+
         // Si on a un parent et qu'il ne s'agit pas d'un DC (base DN)
         if ($parentDn && stripos($parentDn, 'OU=') !== false) {
-            // Vérifier si le parent existe
-            if (!static::exists($parentDn)) {
-                // Extraire le nom du parent
+            $parentExists = static::exists($parentDn);
+            Log::info("Vérification parent", ['parentDn' => $parentDn, 'exists' => $parentExists]);
+
+            if (!$parentExists) {
                 $parentOuName = static::extractOuNameFromDn($parentDn);
-                
                 Log::info("Création récursive du parent: $parentDn");
-                
-                // Créer le parent récursivement
                 static::createWithParents($parentDn, $parentOuName);
             }
+        } else {
+            Log::info("Parent est un DC ou null, pas de récursion", ['parentDn' => $parentDn]);
         }
-        
+
         // Créer l'OU courante
+        Log::info("createIfNotExists pour: $dn");
         return static::createIfNotExists($dn, $ouName);
     }
 

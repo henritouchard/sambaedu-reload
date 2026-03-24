@@ -7,8 +7,10 @@ use App\Config\SambaEduConfig;
 use App\Repositories\ClassRepository;
 use App\Repositories\FunctionRepository;
 use Livewire\Attributes\Validate;
+use App\Components\Traits\WithToasts;
 
 new #[Title('Nouvel utilisateur - Instance SE4FS')] class extends Component {
+    use WithToasts;
     // Données du formulaire
     #[Validate('required|min:2|max:50')]
     public string $nom = '';
@@ -85,15 +87,29 @@ new #[Title('Nouvel utilisateur - Instance SE4FS')] class extends Component {
     public function loadFonctions()
     {
         try {
-            $fonctionsData = $this->functionRepository->getAll();
+            // Mapper la catégorie du formulaire vers celle du repository
+            $repoCat = match ($this->categorie) {
+                'Administratifs' => 'Administratifs',
+                'Profs' => 'Pedagogiques',
+                default => 'all',
+            };
+            $fonctionsData = $this->functionRepository->getAll($repoCat);
             $this->fonctions = array_map(fn($f) => $f['cn'] ?? $f, $fonctionsData);
 
-            // Ajouter des fonctions par défaut si la liste est vide
+            // Fonctions par défaut si la liste est vide
             if (empty($this->fonctions)) {
-                $this->fonctions = ['Direction', 'Secrétariat', 'Vie scolaire', 'Intendance', 'Documentation', 'Informatique', 'Autre'];
+                $this->fonctions = match ($this->categorie) {
+                    'Administratifs' => ['Direction', 'Secrétariat', 'Gestionnaire', 'Medical', 'VieScol', 'Agent', 'AED', 'Tech'],
+                    'Profs' => ['Documentaliste', 'AESH'],
+                    default => [],
+                };
             }
         } catch (\Exception $e) {
-            $this->fonctions = ['Direction', 'Secrétariat', 'Vie scolaire', 'Intendance', 'Documentation', 'Informatique', 'Autre'];
+            $this->fonctions = match ($this->categorie) {
+                'Administratifs' => ['Direction', 'Secrétariat', 'Gestionnaire', 'Medical', 'VieScol', 'Agent', 'AED', 'Tech'],
+                'Profs' => ['Documentaliste', 'AESH'],
+                default => [],
+            };
         }
     }
 
@@ -117,6 +133,10 @@ new #[Title('Nouvel utilisateur - Instance SE4FS')] class extends Component {
             $this->fonction = '';
         }
         $this->classSearch = '';
+
+        // Recharger les fonctions filtrées par catégorie
+        $this->fonction = '';
+        $this->loadFonctions();
     }
 
     /**
@@ -196,12 +216,18 @@ new #[Title('Nouvel utilisateur - Instance SE4FS')] class extends Component {
             $result = $this->userService->createUser($userData);
 
             if ($result['success'] ?? false) {
-                $this->createdLogin = $result['user']['cn'] ?? null;
-                $this->createdPassword = $result['user']['password'] ?? null;
+                $login = $result['user']['cn'] ?? null;
+                $password = $result['user']['password'] ?? null;
 
-                session()->flash('success', $result['message'] ?? 'Utilisateur créé avec succès.');
+                if ($login) {
+                    session()->flash('created_password', $password);
+                    $this->redirect(route('app.user.show', $login), navigate: true);
+                    return;
+                }
+
+                $this->toastSuccess($result['message'] ?? 'Utilisateur créé avec succès.');
             } else {
-                $this->addError('form', $result['message'] ?? 'Erreur lors de la création.');
+                $this->toastError($result['message'] ?? 'Erreur lors de la création.');
             }
         } catch (\Exception $e) {
             $this->addError('form', 'Erreur lors de la création : ' . $e->getMessage());

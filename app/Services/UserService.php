@@ -613,7 +613,22 @@ class UserService
             ];
 
         } catch (\Exception $e) {
+            // Récupérer le détail de l'erreur LDAP si disponible
+            $ldapError = null;
+            $ldapDiagnostic = null;
+            try {
+                $connection = \LdapRecord\Container::getDefaultConnection();
+                $ldap = $connection->getLdapConnection();
+                $ldapError = $ldap->getLastError();
+                $ldapDiagnostic = $ldap->getDiagnosticMessage();
+            } catch (\Throwable $ldapEx) {
+                // ignore
+            }
+
             Log::error('UserService createUser error: ' . $e->getMessage(), [
+                'ldap_error' => $ldapError,
+                'ldap_diagnostic' => $ldapDiagnostic,
+                'dn' => $userDn ?? null,
                 'trace' => $e->getTraceAsString()
             ]);
 
@@ -668,7 +683,9 @@ class UserService
             $ldapUser->setAttribute('title', $title);
         }
 
-        $ldapUser->setAttribute('objectclass', ['top', 'user']);
+        // Ne pas définir objectclass manuellement :
+        // LdapRecord\Models\ActiveDirectory\User définit automatiquement
+        // ['top', 'person', 'organizationalperson', 'user']
     }
 
     /**
@@ -704,6 +721,19 @@ class UserService
         $classes = $data['classes'] ?? [];
         $new_etab = $data['new_etab'] ?? 0;
 
+        // Audit log (NFR8) — qui a créé quoi, quand
+        Log::info("Création utilisateur", [
+            'action' => 'user.create',
+            'login' => $login,
+            'categorie' => $categorie,
+            'fonction' => $fonction,
+            'classes' => $classes,
+            'operator' => auth()->user()?->login ?? 'system',
+        ]);
+
+        // Double-write : persister le User Eloquent dans PostgreSQL
+        $this->persistUserToSql($ldapUser, $data);
+
         // Créer le dossier home
         $this->createHomeDirectory($login);
 
@@ -713,8 +743,101 @@ class UserService
             $this->configureUserCloud($login, $password);
         }
 
-        // Ajouter aux groupes
+        // Ajouter aux groupes (AD)
         $this->addUserToGroups($ldapUser, $categorie, $fonction, $classes, $new_etab, $data['etabs'] ?? []);
+
+        // Double-write : lier l'utilisateur à ses groupes en SQL
+        $this->persistUserGroupsToSql($login, $categorie, $fonction, $classes);
+    }
+
+    /**
+     * Persiste l'utilisateur dans PostgreSQL après création LDAP (double-write)
+     *
+     * Utilise updateOrCreate sur le login pour gérer le cas où le guard
+     * a déjà auto-provisionné le User SQL.
+     * En cas d'échec PostgreSQL : log mais pas d'exception (AD = source de vérité MVP).
+     */
+    private function persistUserToSql(LdapUser $ldapUser, array $data): void
+    {
+        try {
+            $login = $ldapUser->getLogin();
+            $nom = $data['nom'] ?? '';
+            $prenom = $data['prenom'] ?? '';
+            $categorie = $data['categorie'] ?? 'Administratifs';
+
+            // Mapper la catégorie AD vers le rôle SQL
+            $roleMap = [
+                'eleves' => 'eleve',
+                'profs' => 'prof',
+                'administratifs' => 'admin',
+            ];
+            $role = $roleMap[strtolower($categorie)] ?? 'autre';
+
+            // Récupérer l'ad_guid depuis l'objet LDAP rechargé (binaire → hex string)
+            $adGuidRaw = $ldapUser->getFirstAttribute('objectguid');
+            $adGuid = $adGuidRaw ? bin2hex($adGuidRaw) : null;
+
+            $domain = $this->config->ldap()?->domain ?? '';
+            $email = $ldapUser->getFirstAttribute('mail') ?? ($domain ? "$login@$domain" : $login);
+
+            SqlUserModel::updateOrCreate(
+                ['login' => $login],
+                [
+                    'fullname' => trim("$prenom $nom"),
+                    'firstname' => $prenom,
+                    'lastname' => $nom,
+                    'email' => $email,
+                    'dn' => $ldapUser->getDn(),
+                    'ad_guid' => $adGuid,
+                    'role' => $role,
+                    'is_active' => true,
+                    'ad_synced_at' => now(),
+                ]
+            );
+
+            Log::info("User Eloquent persisté pour $login (double-write)");
+        } catch (\Exception $e) {
+            Log::error("Échec persistance SQL pour l'utilisateur (AD = source de vérité, on continue)", [
+                'login' => $ldapUser->getLogin(),
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Lie l'utilisateur SQL à ses groupes dans la table pivot user_group_user
+     */
+    private function persistUserGroupsToSql(string $login, string $categorie, string $fonction, array $classes): void
+    {
+        try {
+            $sqlUser = SqlUserModel::where('login', $login)->first();
+            if (!$sqlUser) {
+                return;
+            }
+
+            // Noms des groupes : catégorie + fonction + classes
+            $groupNames = array_merge(
+                [$categorie],
+                !empty($fonction) ? [$fonction] : [],
+                array_map(fn($c) => 'Classe_' . $c, $classes),
+            );
+
+            $groupIds = \App\Models\UserGroup::where(function ($q) use ($groupNames) {
+                foreach ($groupNames as $name) {
+                    $q->orWhereRaw('LOWER(name) = ?', [strtolower($name)]);
+                }
+            })->pluck('id');
+
+            if ($groupIds->isNotEmpty()) {
+                $sqlUser->groups()->syncWithoutDetaching($groupIds);
+                Log::info("Groupes SQL liés pour $login", ['groups' => $groupNames]);
+            }
+        } catch (\Exception $e) {
+            Log::error("Échec liaison groupes SQL (AD = source de vérité, on continue)", [
+                'login' => $login,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -908,17 +1031,68 @@ class UserService
     }
 
     /**
-     * Crée le dossier home de l'utilisateur
+     * Crée ou vérifie le dossier home de l'utilisateur
+     *
+     * Reproduit le comportement legacy de mkhome.sh :
+     * - Si /home/$login n'existe pas : mkdir + copie skel + chown + chmod 770
+     * - Si /home/$login existe : vérifie et corrige le propriétaire si nécessaire
      */
-    private function createHomeDirectory(string $login): void
+    public function createHomeDirectory(string $login): void
     {
+        // Validation : empêcher l'injection de commande via le login
+        if (!preg_match('/^[a-zA-Z0-9._-]+$/', $login)) {
+            Log::error("createHomeDirectory: login invalide (caractères non autorisés)", ['login' => $login]);
+            return;
+        }
+
+        $homePath = "/home/" . $login;
+
         try {
-            exec("sudo mkhomedir_helper $login 007 /etc/skel/user 2>&1", $output, $returnCode);
-            if ($returnCode === 0) {
-                exec("sudo chgrp -R www-admin /home/$login 2>&1", $output2, $returnCode2);
+            if (!is_dir($homePath)) {
+                // Créer le répertoire
+                exec("sudo mkdir -p " . escapeshellarg($homePath) . " 2>&1", $output, $returnCode);
+                if ($returnCode !== 0) {
+                    Log::error("createHomeDirectory: échec mkdir", ['login' => $login, 'output' => implode("\n", $output)]);
+                    return;
+                }
+
+                // Copier le skel (user.windows comme dans le legacy)
+                // Utiliser /. au lieu de /* pour inclure les dotfiles (.bashrc, .profile, etc.)
+                $skelPath = '/etc/skel/user.windows';
+                if (is_dir($skelPath)) {
+                    exec("sudo cp -a " . escapeshellarg($skelPath) . "/. " . escapeshellarg($homePath) . "/ 2>&1", $output2, $rc2);
+                    if ($rc2 !== 0) {
+                        Log::warning("createHomeDirectory: échec copie skel", ['login' => $login, 'output' => implode("\n", $output2)]);
+                    }
+                } else {
+                    Log::warning("createHomeDirectory: skel absent, home créé vide", ['skel' => $skelPath, 'login' => $login]);
+                }
+
+                // Appliquer propriétaire et permissions comme mkhome.sh
+                // Sur SE4FS, les UID AD ne sont pas résolubles (pas de winbind) → www-admin est le propriétaire effectif
+                exec("sudo chown -R www-admin:www-admin " . escapeshellarg($homePath) . " 2>&1", $output3, $rc3);
+                if ($rc3 !== 0) {
+                    Log::warning("createHomeDirectory: échec chown", ['login' => $login, 'output' => implode("\n", $output3)]);
+                }
+                exec("sudo chmod -R 770 " . escapeshellarg($homePath) . " 2>&1", $output4, $rc4);
+                if ($rc4 !== 0) {
+                    Log::warning("createHomeDirectory: échec chmod", ['login' => $login, 'output' => implode("\n", $output4)]);
+                }
+
+                Log::info("Home directory créé pour $login", ['path' => $homePath]);
+            } else {
+                // Le home existe : vérifier et corriger le propriétaire si nécessaire
+                $stat = stat($homePath);
+                if ($stat !== false) {
+                    $expectedUid = posix_getpwnam('www-admin');
+                    if ($expectedUid !== false && $stat['uid'] !== $expectedUid['uid']) {
+                        exec("sudo chown -R www-admin:www-admin " . escapeshellarg($homePath) . " 2>&1", $output5, $rc5);
+                        Log::info("Home directory propriétaire corrigé pour $login", ['path' => $homePath]);
+                    }
+                }
             }
         } catch (\Exception $e) {
-            Log::warning("Erreur lors de la création du dossier home pour $login", [
+            Log::warning("Erreur lors de la création/vérification du dossier home pour $login", [
                 'error' => $e->getMessage()
             ]);
         }
@@ -1002,19 +1176,209 @@ class UserService
     }
 
     /**
-     * Configure le cloud pour l'utilisateur
+     * Configure le cloud pour l'utilisateur (Nextcloud via rclone)
+     *
+     * Reproduit le comportement legacy de cloud.inc.php:configure_user_cloud() :
+     * 1. Obtenir un app password Nextcloud via l'API OCS
+     * 2. Récupérer l'ID cloud de l'utilisateur
+     * 3. Créer la config rclone via `rclone config create`
+     * 4. Si rclone OK : chown + ajout au groupe AD "Cloud"
+     *
+     * L'échec cloud ne bloque pas la création utilisateur.
      */
     private function configureUserCloud(string $login, string $password): void
     {
         try {
-            // Le legacy appelle configure_user_cloud() qui fait des appels API
-            // Pour l'instant, on log juste l'intention
-            // TODO: Implémenter la configuration cloud complète si nécessaire
-            Log::info("Configuration cloud pour $login (non implémentée pour l'instant)");
+            // Validation du login
+            if (!preg_match('/^[a-zA-Z0-9._-]+$/', $login)) {
+                Log::warning("configureUserCloud: login invalide", ['login' => $login]);
+                return;
+            }
+
+            // Lire la config cloud
+            $cloudType = $this->config->get('cloud_type', '');
+            $cloudName = $this->config->get('cloud_name', '');
+            $cloudUri = $this->config->get('cloud_uri', '');
+
+            if (empty($cloudType) || empty($cloudName) || empty($cloudUri)) {
+                Log::info("Configuration cloud incomplète, skip pour $login");
+                return;
+            }
+
+            // Seul webdav (Nextcloud) est supporté pour l'instant
+            if ($cloudType !== 'webdav') {
+                Log::info("Type cloud '$cloudType' non supporté (seul webdav est implémenté), skip pour $login");
+                return;
+            }
+
+            // 1. Obtenir un app password Nextcloud
+            $appPassword = $this->getNextcloudAppPassword($cloudUri, $login, $password);
+            if ($appPassword === null) {
+                Log::warning("Impossible d'obtenir un app password Nextcloud pour $login");
+                return;
+            }
+
+            // 2. Récupérer l'ID cloud
+            $cloudId = $this->getNextcloudUserId($cloudUri, $login, $password);
+
+            // 3. Créer la config rclone
+            $rcloneDir = "/home/" . $login . "/.config/rclone";
+            $rcloneConf = $rcloneDir . "/rclone.conf";
+
+            exec("sudo mkdir -p " . escapeshellarg($rcloneDir) . " 2>&1", $mkdirOutput, $mkdirRc);
+            if ($mkdirRc !== 0) {
+                Log::warning("configureUserCloud: échec mkdir rclone dir", ['login' => $login, 'output' => implode("\n", $mkdirOutput)]);
+                return;
+            }
+
+            // --config= pour écrire dans le fichier de l'utilisateur (pas celui de root)
+            $davUser = $cloudId ?: $login;
+            $rcloneCmd = sprintf(
+                "sudo rclone --config=%s config create %s %s vendor=sambaedu url=%s user=%s pass=%s 2>&1",
+                escapeshellarg($rcloneConf),
+                escapeshellarg($cloudName),
+                escapeshellarg($cloudType),
+                escapeshellarg(rtrim($cloudUri, '/') . '/remote.php/dav/files/' . rawurlencode($davUser) . '/'),
+                escapeshellarg($login),
+                escapeshellarg($appPassword)
+            );
+
+            exec($rcloneCmd, $rcloneOutput, $rcloneRc);
+
+            if ($rcloneRc === 0) {
+                // chown + chmod 600 pour que seul l'utilisateur puisse lire ses credentials
+                exec("sudo chown " . escapeshellarg($login) . " " . escapeshellarg($rcloneConf) . " 2>&1");
+                exec("sudo chmod 600 " . escapeshellarg($rcloneConf) . " 2>&1");
+
+                // Ajouter au groupe AD "Cloud" si pas déjà membre
+                $this->addToCloudGroupIfNeeded($login);
+
+                Log::info("Configuration cloud rclone créée pour $login");
+            } else {
+                Log::warning("Échec rclone config create pour $login", [
+                    'exit_code' => $rcloneRc,
+                    'output' => implode("\n", $rcloneOutput),
+                ]);
+            }
         } catch (\Exception $e) {
             Log::warning("Erreur lors de la configuration cloud pour $login", [
                 'error' => $e->getMessage()
             ]);
+        }
+    }
+
+    /**
+     * Obtient un app password Nextcloud via l'API OCS
+     *
+     * Note : CURLOPT_SSL_VERIFYPEER = false car le Nextcloud est en réseau local
+     * avec un certificat auto-signé (infrastructure SE4FS). À activer si le
+     * certificat est remplacé par un certificat public.
+     */
+    private function getNextcloudAppPassword(string $cloudUri, string $login, string $password): ?string
+    {
+        try {
+            $url = rtrim($cloudUri, '/') . '/ocs/v2.php/core/getapppassword';
+
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER => ['OCS-APIREQUEST: true'],
+                CURLOPT_USERPWD => $login . ':' . $password,
+                CURLOPT_TIMEOUT => 10,
+                CURLOPT_SSL_VERIFYPEER => false, // réseau local, certificat auto-signé SE4FS
+            ]);
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($httpCode !== 200 || $response === false) {
+                return null;
+            }
+
+            $xml = @simplexml_load_string($response);
+            if ($xml === false) {
+                return null;
+            }
+
+            return (string) ($xml->data->apppassword ?? '') ?: null;
+        } catch (\Exception $e) {
+            Log::warning("Erreur getNextcloudAppPassword", ['login' => $login, 'error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+    /**
+     * Récupère l'ID cloud Nextcloud de l'utilisateur
+     */
+    private function getNextcloudUserId(string $cloudUri, string $login, string $password): ?string
+    {
+        try {
+            $url = rtrim($cloudUri, '/') . '/ocs/v2.php/cloud/user';
+
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER => ['OCS-APIREQUEST: true'],
+                CURLOPT_USERPWD => $login . ':' . $password,
+                CURLOPT_TIMEOUT => 10,
+                CURLOPT_SSL_VERIFYPEER => false, // réseau local, certificat auto-signé SE4FS
+            ]);
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($httpCode !== 200 || $response === false) {
+                return null;
+            }
+
+            $xml = @simplexml_load_string($response);
+            if ($xml === false) {
+                return null;
+            }
+
+            return (string) ($xml->data->id ?? '') ?: null;
+        } catch (\Exception $e) {
+            Log::warning("Erreur getNextcloudUserId", ['login' => $login, 'error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+    /**
+     * Ajoute l'utilisateur au groupe AD "Cloud" s'il n'en est pas déjà membre
+     */
+    private function addToCloudGroupIfNeeded(string $login): void
+    {
+        try {
+            $ldapUser = $this->userRepository->findLdapModelByLogin($login);
+            if (!$ldapUser) {
+                return;
+            }
+
+            // Vérifier s'il est déjà membre du groupe Cloud
+            // getAttribute (pas getFirstAttribute) pour récupérer TOUS les groupes
+            $memberOf = $ldapUser->getAttribute('memberof') ?? [];
+
+            $alreadyInCloud = false;
+            foreach ($memberOf as $groupDn) {
+                if (stripos($groupDn, 'CN=Cloud,') !== false) {
+                    $alreadyInCloud = true;
+                    break;
+                }
+            }
+
+            if (!$alreadyInCloud) {
+                $cloudGroup = SambaEduGroup::query()->where('cn', '=', 'Cloud')->first();
+                if ($cloudGroup) {
+                    $cloudGroup->members()->attach($ldapUser);
+                    Log::info("Utilisateur $login ajouté au groupe Cloud");
+                } else {
+                    Log::warning("Groupe AD 'Cloud' introuvable, impossible d'ajouter $login");
+                }
+            }
+        } catch (\Exception $e) {
+            Log::warning("Erreur ajout groupe Cloud pour $login", ['error' => $e->getMessage()]);
         }
     }
 }

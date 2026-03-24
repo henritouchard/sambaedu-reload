@@ -101,36 +101,40 @@ class OrganizationalUnitRepository
             $peopleRdn = "OU={$uai},{$peopleRdn}";
         }
 
-        // Liste des OUs à créer dans l'ordre hiérarchique
-        $ousToCreate = [];
-
-        // 1. OU de base (People)
         $peopleDn = "{$peopleRdn},{$baseDn}";
-        $peopleOuName = OrganizationalUnitModel::extractOuNameFromDn($peopleRdn);
-        $ousToCreate[] = ['dn' => $peopleDn, 'name' => $peopleOuName];
 
-        // 2. OU de catégorie (Eleves, Profs, etc.)
+        // Comme le legacy : créer séquentiellement les OUs nécessaires (parents d'abord)
+        // 1. OU catégorie (ex: OU=Administratifs,ou=Utilisateurs,dc=...)
         if (!empty($categorie)) {
             $categorieDn = "OU={$categorie},{$peopleDn}";
-            $ousToCreate[] = ['dn' => $categorieDn, 'name' => $categorie];
+            $this->createOuIfNotExists($categorieDn, $categorie);
 
-            // 3. OU de fonction/classe si présente
+            // 2. OU fonction si présente (ex: OU=Direction,OU=Administratifs,ou=Utilisateurs,dc=...)
             if (!empty($fonction) && $fonction !== $categorie) {
                 $fonctionDn = "OU={$fonction},{$categorieDn}";
-                $ousToCreate[] = ['dn' => $fonctionDn, 'name' => $fonction];
+                $this->createOuIfNotExists($fonctionDn, $fonction);
             }
         }
+    }
 
-        // Créer les OUs dans l'ordre (parents avant enfants)
-        foreach ($ousToCreate as $ou) {
-            try {
-                $this->createWithParents($ou['dn'], $ou['name']);
-            } catch (\Exception $e) {
-                Log::warning("Erreur lors de la création de l'OU: {$ou['dn']}", [
-                    'error' => $e->getMessage()
-                ]);
-                // Continuer même en cas d'erreur (l'OU existe peut-être déjà)
-            }
+    /**
+     * Crée une OU si elle n'existe pas — appel direct sans récursion
+     * Reproduit le comportement de ouadd() du legacy
+     */
+    private function createOuIfNotExists(string $dn, string $ouName): void
+    {
+        if ($this->exists($dn)) {
+            return;
+        }
+
+        try {
+            $this->create($dn, $ouName);
+            Log::info("OU créée: {$dn}");
+        } catch (\LdapRecord\Exceptions\AlreadyExistsException $e) {
+            // Race condition, pas grave
+        } catch (\Exception $e) {
+            Log::error("Échec création OU: {$dn}", ['error' => $e->getMessage()]);
+            throw new \RuntimeException("Impossible de créer l'OU '{$ouName}' ({$dn}): " . $e->getMessage(), 0, $e);
         }
     }
 
