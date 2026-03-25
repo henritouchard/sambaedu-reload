@@ -575,30 +575,7 @@ if (!function_exists('have_right_or_delegation')) {
     }
 }
 
-if (!function_exists('getintlevel')) {
-    /**
-     * Shim getintlevel : retourne le niveau d'interface legacy.
-     * 0 = admin, 4 = user basique. Déduit des rôles Spatie.
-     */
-    function getintlevel(array $config = [], string $user = ''): int
-    {
-        $login = $user ?: ($config['login'] ?? '');
-        if (empty($login)) {
-            return 4; // Niveau par défaut (user)
-        }
-
-        $u = User::where('login', $login)->first();
-        if (!$u) {
-            return 4;
-        }
-
-        if ($u->hasRole('super-admin')) return 0;
-        if ($u->hasAnyRole(['user-admin', 'computer-admin', 'technicien'])) return 1;
-        if ($u->hasAnyRole(['referent-numerique', 'share-admin', 'eleve-admin'])) return 2;
-        if ($u->hasRole('prof')) return 3;
-        return 4;
-    }
-}
+// getintlevel : défini dans le vrai functions.inc.php du legacy — pas de shim ici.
 
 // ─── Fonctions de modification (lecture seule pour l'instant) ────────────────
 
