@@ -55,7 +55,7 @@
                         }
                         .legacy-content tr:hover { background: oklch(var(--b2) / 0.5); }
 
-                        /* ─── Inputs texte & select ────────────────── */
+                        /* ─── Inputs texte & select (!important pour battre Tailwind preflight) ── */
                         .legacy-content input[type="text"],
                         .legacy-content input[type="password"],
                         .legacy-content input[type="email"],
@@ -66,25 +66,25 @@
                         .legacy-content input[type="file"],
                         .legacy-content select,
                         .legacy-content textarea {
-                            display: inline-block;
-                            padding: 0.5rem 0.75rem;
-                            border: 1px solid oklch(var(--bc) / 0.3);
-                            border-radius: 0.5rem;
-                            background: oklch(var(--b1));
-                            color: oklch(var(--bc));
-                            font-size: 0.875rem;
-                            line-height: 1.5;
+                            display: inline-block !important;
+                            padding: 0.5rem 0.75rem !important;
+                            border: 1px solid oklch(var(--bc) / 0.3) !important;
+                            border-radius: 0.5rem !important;
+                            background-color: oklch(var(--b1)) !important;
+                            color: oklch(var(--bc)) !important;
+                            font-size: 0.875rem !important;
+                            line-height: 1.5 !important;
                             min-height: 2.5rem;
                             transition: border-color 0.15s, box-shadow 0.15s;
                         }
                         .legacy-content input:focus,
                         .legacy-content select:focus,
                         .legacy-content textarea:focus {
-                            outline: none;
-                            border-color: oklch(var(--p));
-                            box-shadow: 0 0 0 3px oklch(var(--p) / 0.15);
+                            outline: none !important;
+                            border-color: oklch(var(--p)) !important;
+                            box-shadow: 0 0 0 3px oklch(var(--p) / 0.15) !important;
                         }
-                        .legacy-content select { appearance: auto; padding-right: 2rem; }
+                        .legacy-content select { appearance: auto !important; padding-right: 2rem !important; }
                         .legacy-content select[multiple] { min-height: 6rem; }
                         .legacy-content textarea { min-height: 4rem; resize: vertical; }
 
@@ -93,26 +93,26 @@
                         .legacy-content input[type="button"],
                         .legacy-content input[type="reset"],
                         .legacy-content button:not(.btn) {
-                            display: inline-flex;
+                            display: inline-flex !important;
                             align-items: center;
                             justify-content: center;
-                            padding: 0.5rem 1.25rem;
-                            border-radius: 0.5rem;
-                            font-size: 0.875rem;
+                            padding: 0.5rem 1.25rem !important;
+                            border-radius: 0.5rem !important;
+                            font-size: 0.875rem !important;
                             font-weight: 500;
-                            border: none;
+                            border: none !important;
                             cursor: pointer;
                             min-height: 2.5rem;
                             transition: opacity 0.15s, transform 0.1s;
                         }
                         .legacy-content input[type="submit"] {
-                            background: oklch(var(--p));
-                            color: oklch(var(--pc));
+                            background-color: oklch(var(--p)) !important;
+                            color: oklch(var(--pc)) !important;
                         }
                         .legacy-content input[type="button"],
                         .legacy-content input[type="reset"] {
-                            background: oklch(var(--b3));
-                            color: oklch(var(--bc));
+                            background-color: oklch(var(--b3)) !important;
+                            color: oklch(var(--bc)) !important;
                         }
                         .legacy-content input[type="submit"]:hover,
                         .legacy-content input[type="button"]:hover,
