@@ -148,6 +148,14 @@ class LegacyEmbedService
             $html
         );
 
+        // Injecter le token CSRF dans chaque formulaire POST
+        $csrfField = '<input type="hidden" name="_token" value="' . e(csrf_token()) . '">';
+        $html = preg_replace(
+            '/(<form[^>]*method\s*=\s*["\']post["\'][^>]*>)/i',
+            '$1' . $csrfField,
+            $html
+        );
+
         return trim($html);
     }
 }
