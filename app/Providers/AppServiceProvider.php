@@ -29,6 +29,7 @@ use App\Repositories\UserGroupRepository;
 use App\Services\AdSync\AdSyncService;
 use App\Services\AdSync\UserGroupAdSyncService;
 use App\Services\Legacy\LegacyParcBridgeService;
+use App\Services\Parc\MachinePowerService;
 use App\Services\ShortcutCompilerService;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\URL;
@@ -88,6 +89,9 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(UserGroupAdSyncService::class);
         $this->app->singleton(\App\Services\AdSync\AdSyncChecker::class);
         $this->app->singleton(\App\Services\AdSync\AppProfileAdSyncService::class);
+
+        // Services Parc
+        $this->app->singleton(MachinePowerService::class);
 
         // Service de pont legacy pour les parcs
         $this->app->singleton(LegacyParcBridgeService::class);

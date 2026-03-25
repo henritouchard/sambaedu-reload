@@ -6,14 +6,14 @@ use App\LdapModels\MachineModel;
 use App\Models\Workstation;
 use App\Observers\WorkstationObserver;
 use App\Repositories\WorkstationRepository;
+use App\Services\Parc\MachinePowerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Service pour la gestion des postes de travail (workstations)
- * 
- * Interface Laravel pour les fonctions legacy de gestion des postes
- * Utilise les fonctions PHP existantes dans includes/parcs.inc.php
+ *
+ * Délègue les actions power (WOL, shutdown, reboot) à MachinePowerService.
  */
 class WorkstationService
 {
@@ -21,37 +21,18 @@ class WorkstationService
     private const ACTION_SHUTDOWN = 'shutdown';
     private const ACTION_RESTART = 'restart';
 
-    /**
-     * Mapping des actions fonctionnelles vers les actions legacy
-     *
-     * @var array<string, string>
-     */
-    private const LEGACY_ACTION_MAP = [
-        self::ACTION_WAKE => 'start',
-        self::ACTION_SHUTDOWN => 'stop',
-        self::ACTION_RESTART => 'reboot',
+    private const VALID_ACTIONS = [
+        self::ACTION_WAKE,
+        self::ACTION_SHUTDOWN,
+        self::ACTION_RESTART,
     ];
 
-    private array $config;
-
     public function __construct(
-        private WorkstationRepository $workstationRepository
+        private WorkstationRepository $workstationRepository,
+        private MachinePowerService $machinePowerService,
     ) {
-        // En mode mock, on évite de charger la config legacy
-        $this->config = [];
     }
 
-    /**
-     * Récupère la configuration globale SE4
-     */
-    private function getGlobalConfig(): array
-    {
-        // Inclusion des fichiers de configuration legacy
-        require_once base_path('../includes/config.inc.php');
-        require_once base_path('../includes/fonc_outils.inc.php');
-
-        return get_config();
-    }
 
     /**
      * Récupère les machines d'un parc via le repository
@@ -115,35 +96,13 @@ class WorkstationService
      */
     private function enrichMachineWithStatus(array $machine): array
     {
-        try {
-            require_once base_path('../includes/parcs.inc.php');
-
-            $machineName = $machine['cn'] ?? '';
-            if (empty($machineName)) {
-                return $machine;
-            }
-
-            // Récupère le statut de la machine
-            $status = get_machine_status($this->config, $machineName);
-            $machine['status'] = $status;
-
-            return $machine;
-
-        } catch (\Exception $e) {
-            Log::debug('Erreur enrichissement machine', [
-                'machine' => $machine['cn'] ?? 'unknown',
-                'error' => $e->getMessage()
-            ]);
-
-            // Retourne la machine avec un statut par défaut
-            $machine['status'] = [
-                'status' => 'unknown',
-                'user' => null,
-                'login_time' => null
-            ];
-
+        $machineName = $machine['cn'] ?? '';
+        if (empty($machineName)) {
             return $machine;
         }
+
+        $machine['status'] = $this->getMachineStatus($machineName);
+        return $machine;
     }
 
     /**
@@ -190,13 +149,11 @@ class WorkstationService
      */
     public function executePowerAction(array $machineNames, string $action): array
     {
-        if (!isset(self::LEGACY_ACTION_MAP[$action])) {
+        if (!in_array($action, self::VALID_ACTIONS, true)) {
             throw new \InvalidArgumentException("Action machine non supportée: {$action}");
         }
 
         try {
-            require_once base_path('../includes/parcs.inc.php');
-
             $normalizedNames = array_values(array_filter(array_map(
                 static fn (mixed $name): string => is_string($name) ? trim($name) : '',
                 $machineNames
@@ -204,8 +161,6 @@ class WorkstationService
 
             $results = [];
             $successCount = 0;
-            $legacyAction = self::LEGACY_ACTION_MAP[$action];
-            $config = $this->getGlobalConfig();
 
             foreach ($normalizedNames as $machineName) {
                 $machineModel = $this->resolveMachineModel($machineName);
@@ -225,18 +180,26 @@ class WorkstationService
                     continue;
                 }
 
-                $legacyMachine = $this->buildLegacyMachinePayload($machineModel);
-                $code = (int) start_machine($config, $legacyAction, $legacyMachine);
-                $isSuccess = $this->isLegacyActionSuccessful($code);
+                $name = (string) $machineModel->getMachineName();
+                $ip = (string) ($machineModel->getIpAddress() ?? $name);
+                $mac = (string) ($machineModel->getMacAddress() ?? '');
+
+                $actionResult = match ($action) {
+                    self::ACTION_WAKE => $this->machinePowerService->wakeOnLan($mac, $ip, $name),
+                    self::ACTION_SHUTDOWN => $this->machinePowerService->shutdown($name, $ip),
+                    self::ACTION_RESTART => $this->machinePowerService->reboot($name, $ip, $mac),
+                };
+
+                $isSuccess = $this->isLegacyActionSuccessful($actionResult['code']);
 
                 if ($isSuccess) {
                     $successCount++;
                 }
 
                 $results[] = [
-                    'machine' => (string) ($legacyMachine['cn'] ?? $machineName),
+                    'machine' => $name,
                     'success' => $isSuccess,
-                    'code' => $code,
+                    'code' => $actionResult['code'],
                 ];
             }
 
@@ -278,20 +241,6 @@ class WorkstationService
         return $machineModel;
     }
 
-    /**
-     * @return array{cn: string, dn: string, samaccountname: string, networkaddress: string, iphostnumber: string}
-     */
-    private function buildLegacyMachinePayload(MachineModel $machineModel): array
-    {
-        return [
-            'cn' => (string) $machineModel->getMachineName(),
-            'dn' => (string) $machineModel->getDn(),
-            'samaccountname' => (string) $machineModel->getAttribute('samaccountname', ''),
-            'networkaddress' => (string) ($machineModel->getMacAddress() ?? ''),
-            'iphostnumber' => (string) ($machineModel->getIpAddress() ?? ''),
-        ];
-    }
-
     private function isLegacyActionSuccessful(int $code): bool
     {
         return $code >= 200 && $code < 300 && $code !== 203;
@@ -316,15 +265,29 @@ class WorkstationService
     }
 
     /**
-     * Récupère le statut d'une machine spécifique
+     * Récupère le statut d'une machine spécifique via ping natif
      */
     public function getMachineStatus(string $machineName): array
     {
         try {
-            require_once base_path('../includes/parcs.inc.php');
+            $machineModel = $this->resolveMachineModel($machineName);
+            $ip = $machineModel ? (string) ($machineModel->getIpAddress() ?? $machineName) : $machineName;
 
-            return get_machine_status($this->config, $machineName);
+            $os = $this->machinePowerService->ping($ip);
 
+            if ($os === false) {
+                return [
+                    'status' => 'off',
+                    'user' => null,
+                    'login_time' => null,
+                ];
+            }
+
+            return [
+                'status' => $os, // 'windows' ou 'linux'
+                'user' => null,
+                'login_time' => null,
+            ];
         } catch (\Exception $e) {
             Log::error('Erreur MachineService::getMachineStatus', [
                 'machine' => $machineName,
@@ -334,7 +297,7 @@ class WorkstationService
             return [
                 'status' => 'unknown',
                 'user' => null,
-                'login_time' => null
+                'login_time' => null,
             ];
         }
     }
