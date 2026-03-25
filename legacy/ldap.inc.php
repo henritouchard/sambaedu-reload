@@ -34,6 +34,30 @@ if (defined('LEGACY_LDAP_SHIM_LOADED')) {
 }
 define('LEGACY_LDAP_SHIM_LOADED', true);
 
+// ─── Constantes de droits legacy (bitmask) ──────────────────────────────────
+if (!defined('SE_NO_RIGHT'))             define('SE_NO_RIGHT', 0);
+if (!defined('SE_USER_PASSWORD_INIT'))   define('SE_USER_PASSWORD_INIT', 1);
+if (!defined('SE_USER_READ'))            define('SE_USER_READ', 2);
+if (!defined('SE_USER_MODIFY'))          define('SE_USER_MODIFY', 4);
+if (!defined('SE_USER_CREATE_TEMP'))     define('SE_USER_CREATE_TEMP', 8);
+if (!defined('SE_USER_ASSIGN_RIGHT'))    define('SE_USER_ASSIGN_RIGHT', 0x10);
+if (!defined('SE_USER_DELEGATE'))        define('SE_USER_DELEGATE', 0x20);
+if (!defined('SE_SHARE_VIEW'))           define('SE_SHARE_VIEW', 0x40);
+if (!defined('SE_SHARE_REFRESH'))        define('SE_SHARE_REFRESH', 0x80);
+if (!defined('SE_SHARE_ADMIN'))          define('SE_SHARE_ADMIN', 0xC0);
+if (!defined('SE_ELEVE_ADMIN'))          define('SE_ELEVE_ADMIN', 0x07);
+if (!defined('SE_USER_ADMIN'))           define('SE_USER_ADMIN', 0xFF);
+if (!defined('SE_COMPUTER_VIEW'))        define('SE_COMPUTER_VIEW', 0x100);
+if (!defined('SE_COMPUTER_CONTROL'))     define('SE_COMPUTER_CONTROL', 0x200);
+if (!defined('SE_COMPUTER_ELEVATE'))     define('SE_COMPUTER_ELEVATE', 0x400);
+if (!defined('SE_COMPUTER_INSTALL'))     define('SE_COMPUTER_INSTALL', 0x800);
+if (!defined('SE_WPKG_ASSIGN'))          define('SE_WPKG_ASSIGN', 0x1000);
+if (!defined('SE_WPKG_ADD'))             define('SE_WPKG_ADD', 0x2000);
+if (!defined('SE_WPKG_CREATE'))          define('SE_WPKG_CREATE', 0x4000);
+if (!defined('SE_COMPUTER_ADMIN'))       define('SE_COMPUTER_ADMIN', SE_COMPUTER_VIEW | SE_COMPUTER_CONTROL | SE_COMPUTER_ELEVATE | SE_COMPUTER_INSTALL | SE_WPKG_ASSIGN | SE_WPKG_ADD);
+if (!defined('SE_SERVER_ADMIN'))         define('SE_SERVER_ADMIN', 0x8000);
+if (!defined('SE_ADMIN'))                define('SE_ADMIN', 0xFFFF);
+
 // ─── Objet factice pour $config['bind'] ──────────────────────────────────────
 
 /**
@@ -463,6 +487,116 @@ if (!function_exists('list_classes')) {
             $results[] = _shim_group_to_ldap_entry($group, $config);
         }
         return _shim_wrap_results($results);
+    }
+}
+
+// ─── Droits & permissions (shim bitmask legacy → Spatie) ────────────────────
+
+/**
+ * Mapping rôles Spatie → bitmask legacy.
+ * Un rôle Spatie confère TOUS les bits correspondants.
+ */
+$_spatie_role_to_bitmask = [
+    'super-admin'         => SE_ADMIN,
+    'computer-admin'      => SE_COMPUTER_ADMIN | SE_USER_READ,
+    'user-admin'          => SE_USER_ADMIN,
+    'technicien'          => SE_COMPUTER_ADMIN | SE_USER_READ | SE_SHARE_VIEW,
+    'referent-numerique'  => SE_USER_READ | SE_SHARE_VIEW | SE_COMPUTER_VIEW,
+    'share-admin'         => SE_SHARE_ADMIN | SE_USER_READ,
+    'eleve-admin'         => SE_ELEVE_ADMIN,
+    'prof'                => SE_USER_READ | SE_SHARE_VIEW,
+    'eleve'               => SE_USER_READ,
+];
+
+if (!function_exists('list_rights')) {
+    /**
+     * Shim list_rights : traduit les rôles Spatie en bitmask legacy.
+     */
+    function list_rights(array $config, $name, bool $deleg = false, bool $refresh = false): int
+    {
+        global $_spatie_role_to_bitmask;
+
+        // Résoudre le login
+        if (is_array($name) && isset($name['cn'])) {
+            $login = $name['cn'];
+        } elseif ($name === 'login' || empty($name)) {
+            $login = $config['login'] ?? '';
+        } else {
+            $login = $name;
+        }
+
+        if ($login === 'admin') {
+            return SE_ADMIN;
+        }
+
+        // Trouver l'utilisateur et ses rôles Spatie
+        $user = User::where('login', $login)->first();
+        if (!$user) {
+            return SE_NO_RIGHT;
+        }
+
+        $bitmask = SE_NO_RIGHT;
+        foreach ($user->getRoleNames() as $role) {
+            $bitmask |= ($_spatie_role_to_bitmask[$role] ?? 0);
+        }
+
+        return $bitmask;
+    }
+}
+
+if (!function_exists('have_right')) {
+    /**
+     * Shim have_right : vérifie si un utilisateur possède un droit legacy (bitmask).
+     */
+    function have_right(array $config, int $test_right, $user = 'login', bool $or = false): bool
+    {
+        if ($user === 'login') {
+            $user = $config['login'] ?? '';
+        }
+
+        if ($user === 'admin') {
+            return true;
+        }
+
+        $right = list_rights($config, $user);
+
+        if ($or) {
+            return ($test_right & $right) != 0;
+        } else {
+            return (~(~$test_right | $right) == 0);
+        }
+    }
+}
+
+if (!function_exists('have_right_or_delegation')) {
+    function have_right_or_delegation(array $config, int $right, string $name = 'login'): bool
+    {
+        return have_right($config, $right, $name, true);
+    }
+}
+
+if (!function_exists('getintlevel')) {
+    /**
+     * Shim getintlevel : retourne le niveau d'interface legacy.
+     * 0 = admin, 4 = user basique. Déduit des rôles Spatie.
+     */
+    function getintlevel(array $config = [], string $user = ''): int
+    {
+        $login = $user ?: ($config['login'] ?? '');
+        if (empty($login)) {
+            return 4; // Niveau par défaut (user)
+        }
+
+        $u = User::where('login', $login)->first();
+        if (!$u) {
+            return 4;
+        }
+
+        if ($u->hasRole('super-admin')) return 0;
+        if ($u->hasAnyRole(['user-admin', 'computer-admin', 'technicien'])) return 1;
+        if ($u->hasAnyRole(['referent-numerique', 'share-admin', 'eleve-admin'])) return 2;
+        if ($u->hasRole('prof')) return 3;
+        return 4;
     }
 }
 
