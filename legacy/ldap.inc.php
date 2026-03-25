@@ -919,6 +919,7 @@ if (!function_exists('unlock')) {
 // ─── Fonctions de chiffrement URL (utilitaires pures) ────────────────────────
 
 if (!function_exists('se_encrypt')) {
+    /** @deprecated Use encrypt() — kept as alias for internal references */
     function se_encrypt($config, $data)
     {
         if (empty($config['url_key'])) {

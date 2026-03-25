@@ -31,6 +31,10 @@ if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php'))
 |
 */
 
+// Compat legacy encrypt/decrypt — DOIT être avant l'autoloader
+// pour que les guards function_exists() de Laravel cèdent la priorité
+require __DIR__.'/../legacy/encrypt_compat.php';
+
 require __DIR__.'/../vendor/autoload.php';
 
 /*
