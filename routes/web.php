@@ -72,6 +72,9 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
 
     // Groupes d'utilisateurs
     Route::livewire('/users/groups/new', 'pages::users.groups.new.index')->name('users.groups.new');
+    Route::match(['GET', 'POST'], '/users/groups/legacy-new', [\App\Http\Controllers\LegacyEmbedController::class, 'show'])
+        ->defaults('module', 'annu2/add_group.php')
+        ->name('users.groups.legacy-new');
     Route::livewire('/users/groups/{id}', 'pages::users.groups.[id].index')->whereNumber('id')->name('users.groups.edit');
     
     // Gestion des quotas (nécessite droits admin)

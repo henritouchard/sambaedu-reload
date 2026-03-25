@@ -51,7 +51,26 @@ class LegacyCatchallController extends Controller
             }
         }
 
-        // 3. Résolution legacy via proxy HTTP vers le vhost legacy (port 80)
+        // 3. Vérifier si le path cible un module dans legacy/modules/ (bootstrap direct)
+        $localLegacyPath = base_path('legacy/modules');
+        if (is_dir($localLegacyPath)) {
+            $localModulePath = $localLegacyPath . '/' . $path;
+            $resolvedPath = realpath($localModulePath);
+            $resolvedBase = realpath($localLegacyPath);
+
+            // Containment check : le path résolu doit rester dans legacy/modules/
+            if ($resolvedPath && $resolvedBase && str_starts_with($resolvedPath, $resolvedBase . DIRECTORY_SEPARATOR)) {
+                $isLocalPhp = is_file($resolvedPath) && pathinfo($resolvedPath, PATHINFO_EXTENSION) === 'php';
+                $isLocalDirWithIndex = is_dir($resolvedPath) && file_exists($resolvedPath . '/index.php');
+
+                if ($isLocalPhp || $isLocalDirWithIndex) {
+                    $this->logLegacyAccess($request, $path);
+                    return $this->executeViaBootstrap($request, $resolvedPath, $isLocalDirWithIndex);
+                }
+            }
+        }
+
+        // 4. Résolution legacy via proxy HTTP vers le vhost legacy (port 80)
         $legacyBasePath = config('sambaedu.legacy_path');
 
         if (empty($legacyBasePath) || ! is_dir($legacyBasePath)) {
@@ -196,6 +215,58 @@ class LegacyCatchallController extends Controller
                 'error' => $e->getMessage(),
             ]);
             abort(502, 'Erreur de communication avec le legacy.');
+        }
+    }
+
+    /**
+     * Exécute un module legacy via le bootstrap Laravel (legacy/bootstrap.php).
+     *
+     * Utilisé pour les modules copiés dans legacy/modules/ — exécution
+     * directe dans le process Laravel, sans proxy HTTP.
+     */
+    private function executeViaBootstrap(Request $request, string $modulePath, bool $isDirWithIndex): Response
+    {
+        $targetFile = $isDirWithIndex ? $modulePath . '/index.php' : $modulePath;
+
+        try {
+            // Charger le bootstrap legacy (idempotent)
+            require_once base_path('legacy/bootstrap.php');
+
+            // Capturer la sortie du module legacy
+            $initialObLevel = ob_get_level();
+            ob_start();
+            require $targetFile;
+            $output = ob_get_clean() ?: '';
+
+            // Récupérer les headers envoyés par le module legacy (status, content-type, redirects)
+            $statusCode = http_response_code() ?: 200;
+            $contentType = 'text/html; charset=UTF-8';
+            $response = response($output, $statusCode);
+
+            foreach (headers_list() as $header) {
+                if (preg_match('/^([^:]+):\s*(.+)$/i', $header, $m)) {
+                    $headerName = strtolower($m[1]);
+                    if ($headerName === 'content-type') {
+                        $contentType = $m[2];
+                    } elseif ($headerName !== 'set-cookie') {
+                        $response->header($m[1], $m[2]);
+                    }
+                }
+            }
+
+            return $response->header('Content-Type', $contentType);
+        } catch (\Throwable $e) {
+            // Nettoyer tous les buffers ouverts par le module
+            while (ob_get_level() > ($initialObLevel ?? 0)) {
+                ob_end_clean();
+            }
+
+            Log::channel('legacylog')->error('Legacy bootstrap execution error', [
+                'path' => $modulePath,
+                'error' => $e->getMessage(),
+            ]);
+
+            abort(500, 'Erreur lors de l\'exécution du module legacy.');
         }
     }
 
