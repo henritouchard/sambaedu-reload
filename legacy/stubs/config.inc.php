@@ -35,16 +35,5 @@ if (!function_exists('header_authorize')) {
     }
 }
 
-if (!function_exists('open_session')) {
-    function open_session($login = '', $passwd = ''): bool
-    {
-        return true; // Session déjà gérée par Laravel
-    }
-}
-
-if (!function_exists('close_session')) {
-    function close_session(): void
-    {
-        // No-op en mode embed
-    }
-}
+// open_session / close_session : définis dans le vrai functions.inc.php
+// du legacy (chargé via l'include path) — pas besoin de stubs ici.
