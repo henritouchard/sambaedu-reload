@@ -262,6 +262,13 @@ function _shim_machine_to_ldap_entry(Workstation $ws, array $config): array
  */
 function _shim_wrap_results(array $entries): array
 {
+    // Le format LDAP legacy : [0 => [...], 1 => [...], 'count' => 2]
+    // Le code legacy utilise tantôt $result['count'] tantôt count($result)
+    // Pour que count() PHP retourne le bon nombre, on ne met 'count'
+    // que s'il y a des résultats (sinon tableau vide = count() PHP retourne 0)
+    if (empty($entries)) {
+        return [];
+    }
     $entries['count'] = count($entries);
     return $entries;
 }
@@ -690,7 +697,16 @@ if (!function_exists('filter_user')) {
 if (!function_exists('filter_group')) {
     function filter_group(array $config, string $filter, string $branch = 'default'): array
     {
-        $groups = UserGroup::search($filter)->get();
+        // Parser les filtres LDAP basiques : (cn=xxx), (name=xxx)
+        if (preg_match('/^\((?:cn|name)\s*=\s*(.+)\)$/i', $filter, $m)) {
+            $name = trim($m[1]);
+            $groups = $name === '*'
+                ? UserGroup::all()
+                : UserGroup::where('name', $name)->get();
+        } else {
+            $groups = UserGroup::search($filter)->get();
+        }
+
         $results = [];
         foreach ($groups as $group) {
             $results[] = _shim_group_to_ldap_entry($group, $config);
