@@ -286,6 +286,10 @@ new class extends Component {
 <x-organisms.page title="Utilisateurs" :scrollable="false" description="Liste des utilisateurs synchronisés en base SQL">
     <x-slot:actions>
         @if ($activeTab === 'groups')
+            <a href="{{ route('app.users.groups.legacy-new') }}" class="btn btn-outline btn-warning">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+                + groupe legacy
+            </a>
             <a href="{{ route('app.users.groups.new') }}" class="btn btn-primary">
                 <i class="fa-solid fa-plus"></i>
                 Nouveau groupe

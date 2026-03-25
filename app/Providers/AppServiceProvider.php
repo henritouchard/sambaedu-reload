@@ -26,6 +26,7 @@ use App\Observers\WorkstationGroupObserver;
 use App\Repositories\EstablishmentRepository;
 use App\Repositories\GroupRepository;
 use App\Repositories\UserGroupRepository;
+use App\Services\ErrorLoggerService;
 use App\Services\AdSync\AdSyncService;
 use App\Services\AdSync\UserGroupAdSyncService;
 use App\Services\Legacy\LegacyParcBridgeService;
@@ -83,6 +84,9 @@ class AppServiceProvider extends ServiceProvider
 
         // Services avec dépendances (auto-résolution Laravel)
         $this->app->singleton(AuthenticationService::class);
+
+        // Error logger (singleton pour le shim LDAP legacy)
+        $this->app->singleton(ErrorLoggerService::class);
 
         // Services de synchronisation AD
         $this->app->singleton(AdSyncService::class);
