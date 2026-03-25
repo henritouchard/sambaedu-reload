@@ -65,16 +65,19 @@
                         .legacy-content input[type="url"],
                         .legacy-content input[type="file"],
                         .legacy-content select,
-                        .legacy-content textarea {
+                        .legacy-content textarea,
+                        div.legacy-content input,
+                        div.legacy-content select,
+                        div.legacy-content textarea {
                             display: inline-block !important;
                             padding: 0.5rem 0.75rem !important;
-                            border: 1px solid oklch(var(--bc) / 0.3) !important;
+                            border: 1px solid #888 !important;
                             border-radius: 0.5rem !important;
-                            background-color: oklch(var(--b1)) !important;
-                            color: oklch(var(--bc)) !important;
+                            background-color: #fff !important;
+                            color: #1a1a1a !important;
                             font-size: 0.875rem !important;
                             line-height: 1.5 !important;
-                            min-height: 2.5rem;
+                            min-height: 2.5rem !important;
                             transition: border-color 0.15s, box-shadow 0.15s;
                         }
                         .legacy-content input:focus,
@@ -92,33 +95,39 @@
                         .legacy-content input[type="submit"],
                         .legacy-content input[type="button"],
                         .legacy-content input[type="reset"],
+                        div.legacy-content input[type="submit"],
+                        div.legacy-content input[type="button"],
+                        div.legacy-content input[type="reset"],
                         .legacy-content button:not(.btn) {
                             display: inline-flex !important;
-                            align-items: center;
-                            justify-content: center;
+                            align-items: center !important;
+                            justify-content: center !important;
                             padding: 0.5rem 1.25rem !important;
                             border-radius: 0.5rem !important;
                             font-size: 0.875rem !important;
-                            font-weight: 500;
+                            font-weight: 500 !important;
                             border: none !important;
-                            cursor: pointer;
-                            min-height: 2.5rem;
+                            cursor: pointer !important;
+                            min-height: 2.5rem !important;
                             transition: opacity 0.15s, transform 0.1s;
                         }
-                        .legacy-content input[type="submit"] {
-                            background-color: oklch(var(--p)) !important;
-                            color: oklch(var(--pc)) !important;
+                        .legacy-content input[type="submit"],
+                        div.legacy-content input[type="submit"] {
+                            background-color: #4f46e5 !important;
+                            color: #fff !important;
                         }
                         .legacy-content input[type="button"],
-                        .legacy-content input[type="reset"] {
-                            background-color: oklch(var(--b3)) !important;
-                            color: oklch(var(--bc)) !important;
+                        .legacy-content input[type="reset"],
+                        div.legacy-content input[type="button"],
+                        div.legacy-content input[type="reset"] {
+                            background-color: #e5e7eb !important;
+                            color: #1a1a1a !important;
                         }
                         .legacy-content input[type="submit"]:hover,
                         .legacy-content input[type="button"]:hover,
                         .legacy-content input[type="reset"]:hover,
                         .legacy-content button:not(.btn):hover {
-                            opacity: 0.85;
+                            opacity: 0.8 !important;
                         }
 
                         /* ─── Checkbox & radio ─────────────────────── */
