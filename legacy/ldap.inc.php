@@ -343,6 +343,7 @@ if (!function_exists('search_ad')) {
                 return _shim_wrap_results($results);
 
             case 'group':
+            case 'groupe':
             case 'group_fast':
                 $query = UserGroup::query();
 
