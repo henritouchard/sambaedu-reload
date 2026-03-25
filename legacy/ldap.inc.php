@@ -782,8 +782,13 @@ if (!function_exists('create_ad_user')) {
 if (!function_exists('create_group')) {
     function create_group(array $config, string $name, string $description, string $type = 'groupe'): bool
     {
-        _shim_log_unimplemented('create_group');
-        return false;
+        try {
+            $repo = app(\App\Repositories\GroupRepository::class);
+            return $repo->createGroup($name, $description, $type);
+        } catch (\Throwable $e) {
+            _shim_log_unimplemented("create_group FAILED: {$e->getMessage()}");
+            return false;
+        }
     }
 }
 
