@@ -35,6 +35,11 @@ class Kernel extends ConsoleKernel
                  ->everyFiveMinutes()
                  ->withoutOverlapping()
                  ->runInBackground();
+
+        // Purge des error_logs de plus de 30 jours
+        $schedule->command('error-logs:prune')
+                 ->daily()
+                 ->runInBackground();
     }
 
     /**

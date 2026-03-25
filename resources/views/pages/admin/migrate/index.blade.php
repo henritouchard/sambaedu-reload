@@ -31,6 +31,24 @@ new #[Title('Migration - Assistance')] class extends Component {
             </div>
         </a>
 
+        {{-- Card: Error Logger --}}
+        <a href="{{ route('admin.error-logger') }}" class="card bg-base-100 shadow-md hover:shadow-xl transition-all duration-200 hover:-translate-y-1 border border-base-300/50">
+            <div class="card-body">
+                <div class="flex items-center gap-4 mb-2">
+                    <div class="w-12 h-12 rounded-xl bg-error/10 flex items-center justify-center">
+                        <i class="fa-solid fa-bug text-error text-xl"></i>
+                    </div>
+                    <h2 class="card-title text-lg">Error Logger</h2>
+                </div>
+                <p class="text-sm text-base-content/70">
+                    Erreurs capturées en temps réel (legacy PHP & exceptions Laravel). Diagnostic unifié pour surveiller l'intégration.
+                </p>
+                <div class="card-actions justify-end mt-4">
+                    <span class="badge badge-error badge-outline">Diagnostic</span>
+                </div>
+            </div>
+        </a>
+
         {{-- Card: Legacy Monitor --}}
         <a href="{{ route('admin.legacy-monitor') }}" class="card bg-base-100 shadow-md hover:shadow-xl transition-all duration-200 hover:-translate-y-1 border border-base-300/50">
             <div class="card-body">

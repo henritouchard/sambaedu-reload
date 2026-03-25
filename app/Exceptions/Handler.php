@@ -2,7 +2,9 @@
 
 namespace App\Exceptions;
 
+use App\Services\ErrorLoggerService;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Throwable;
 
 class Handler extends ExceptionHandler
@@ -19,12 +21,21 @@ class Handler extends ExceptionHandler
     ];
 
     /**
-     * Register the exception handling callbacks for the application.
+     * Report or log an exception.
+     * Log toutes les exceptions en DB (y compris HttpException 404/403/etc.),
+     * puis délègue au parent pour le reporting Laravel standard.
      */
-    public function register(): void
+    public function report(Throwable $e): void
     {
-        $this->reportable(function (Throwable $e) {
-            //
-        });
+        $message = $e->getMessage();
+
+        if ($e instanceof HttpException && empty($message)) {
+            $path = request()?->getPathInfo() ?? '';
+            $message = "HTTP {$e->getStatusCode()} {$path}";
+        }
+
+        app(ErrorLoggerService::class)->log('laravel', $message ?: get_class($e));
+
+        parent::report($e);
     }
 }

@@ -148,6 +148,9 @@ Route::prefix('admin')->middleware('sambaedu.admin')->name('admin.')->group(func
     // Legacy Monitor - Dashboard des appels catchall
     Route::livewire('/legacy-monitor', 'pages::admin.legacy-monitor.index')->name('legacy-monitor');
 
+    // Error Logger - Erreurs capturées (legacy PHP & exceptions Laravel)
+    Route::livewire('/error-logger', 'pages::admin.error-logger.index')->name('error-logger');
+
     // Migration - Dashboard d'assistance
     Route::livewire('/migrate', 'pages::admin.migrate.index')->name('migrate');
 
