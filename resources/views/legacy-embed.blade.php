@@ -162,7 +162,7 @@
                         }
                     </style>
 
-                    <div class="legacy-content card bg-base-100 shadow-sm p-6">
+                    <div class="legacy-content card bg-base-200 shadow-sm p-6">
                         {!! $legacyHtml !!}
                     </div>
                 </x-organisms.page>
