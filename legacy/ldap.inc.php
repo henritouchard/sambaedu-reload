@@ -785,7 +785,28 @@ if (!function_exists('create_group')) {
     {
         try {
             $repo = app(\App\Repositories\GroupRepository::class);
-            return $repo->createGroup($name, $description, $type);
+            $result = $repo->createGroup($name, $description, $type);
+
+            if ($result) {
+                // Sync immédiate en SQL pour que search_ad le trouve tout de suite
+                // (le sync AD→SQL normal est asynchrone)
+                $cnPrefixes = [
+                    'classe' => 'Classe_',
+                    'equipe' => 'Equipe_',
+                    'cours' => 'Cours_',
+                    'matiere' => 'Matiere_',
+                    'projet' => 'Projet_',
+                ];
+                $prefix = $cnPrefixes[$type] ?? '';
+                $cn = $prefix . $name;
+
+                UserGroup::firstOrCreate(
+                    ['name' => $cn],
+                    ['display_name' => $description, 'type' => $type]
+                );
+            }
+
+            return $result;
         } catch (\Throwable $e) {
             _shim_log_unimplemented("create_group FAILED: {$e->getMessage()}");
             return false;
