@@ -67,6 +67,9 @@ update_composer() {
 
     composer install --no-dev --optimize-autoloader --no-interaction
 
+    # S'assurer que vendor/ appartient à www-admin (groupe web)
+    chown -R www-admin:www-admin "$APP_DIR/vendor"
+
     log_success "Composer OK"
 }
 
