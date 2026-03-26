@@ -14,7 +14,6 @@ APACHE_CONF_SOURCE="$APP_DIR/config/apache/sambaedu.conf"
 APACHE_CONF_TARGET="/etc/apache2/sites-available/sambaedu.conf"
 SYSTEMD_SOURCE_DIR="$APP_DIR/scripts/config"
 SYSTEMD_TARGET_DIR="/etc/systemd/system"
-PHP_CMD="${PHP_CMD:-/usr/bin/php8.2}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -101,7 +100,7 @@ run_laravel_update() {
     log "Exécution de la mise à jour applicative..."
     cd "$APP_DIR"
 
-    "$PHP_CMD" artisan sambaedu:app:update
+    php artisan sambaedu:app:update
 
     log_success "Mise à jour Laravel OK"
 }
