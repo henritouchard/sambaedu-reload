@@ -119,30 +119,44 @@ class GroupRepository
         }
     }
 
+    /**
+     * Extrait la partie OU relative d'un DN complet (retire le baseDn final).
+     * Ex: "ou=classes,OU=0991229y,ou=Groups,dc=lab1,dc=irundo,dc=fr" → "ou=classes,OU=0991229y,ou=Groups"
+     */
+    private function ouFromDn(string $fullDn): string
+    {
+        $baseDn = $this->dnHelper->base();
+        $suffix = ',' . $baseDn;
+        if (str_ends_with(strtolower($fullDn), strtolower($suffix))) {
+            return substr($fullDn, 0, -strlen($suffix));
+        }
+        return $fullDn;
+    }
+
     private function resolvePrefixedGroupOu(string $cn): ?string
     {
         if (str_starts_with($cn, 'Classe_')) {
-            return $this->config->get('classes_rdn') . ',' . $this->config->get('groups_rdn');
+            return $this->ouFromDn($this->dnHelper->classes());
         }
 
         if (str_starts_with($cn, 'Equipe_') || str_starts_with($cn, 'PP_')) {
-            return $this->config->get('equipes_rdn') . ',' . $this->config->get('groups_rdn');
+            return $this->ouFromDn($this->dnHelper->equipes());
         }
 
         if (str_starts_with($cn, 'Cours_')) {
-            return $this->config->get('cours_rdn') . ',' . $this->config->get('groups_rdn');
+            return $this->ouFromDn($this->dnHelper->cours());
         }
 
         if (str_starts_with($cn, 'Projet_')) {
-            return $this->config->get('projets_rdn') . ',' . $this->config->get('groups_rdn');
+            return $this->ouFromDn($this->dnHelper->projets());
         }
 
         if (str_starts_with($cn, 'Matiere_') && str_contains($cn, '@')) {
-            return $this->config->get('equipes_rdn') . ',' . $this->config->get('groups_rdn');
+            return $this->ouFromDn($this->dnHelper->equipes());
         }
 
         if (str_starts_with($cn, 'Matiere_')) {
-            return $this->config->get('matieres_rdn') . ',' . $this->config->get('groups_rdn');
+            return $this->ouFromDn($this->dnHelper->matieres());
         }
 
         return null;
@@ -443,45 +457,45 @@ class GroupRepository
             if ($type === 'classe' || $type === 'equipe') {
                 // Créer Classe_X
                 $classeCn = 'Classe_' . $prefixPart . $name;
-                $classeOu = $this->config->get('classes_rdn') . ',' . $this->config->get('groups_rdn');
+                $classeOu = $this->ouFromDn($this->dnHelper->classes());
                 $results[] = $this->addGroup($connection, $classeCn, $classeOu, $description, $baseDn, $suffix);
-                
+
                 // Créer Equipe_X
                 $equipeCn = 'Equipe_' . $prefixPart . $name;
-                $equipeOu = $this->config->get('equipes_rdn') . ',' . $this->config->get('groups_rdn');
+                $equipeOu = $this->ouFromDn($this->dnHelper->equipes());
                 $results[] = $this->addGroup($connection, $equipeCn, $equipeOu, 'Equipe pédagogique de ' . $description, $baseDn, $suffix);
-                
+
                 // Créer PP_X (Profs principaux)
                 $ppCn = 'PP_' . $prefixPart . $name;
                 $results[] = $this->addGroup($connection, $ppCn, $equipeOu, 'Profs principaux de ' . $description, $baseDn, $suffix);
-                
+
             } elseif ($type === 'cours') {
                 // Créer Cours_X
                 $coursCn = 'Cours_' . $prefixPart . $name;
-                $coursOu = $this->config->get('cours_rdn') . ',' . $this->config->get('groups_rdn');
+                $coursOu = $this->ouFromDn($this->dnHelper->cours());
                 $results[] = $this->addGroup($connection, $coursCn, $coursOu, 'Cours de ' . $description, $baseDn, $suffix);
-                
+
                 // Créer Equipe_X
                 $equipeCn = 'Equipe_' . $prefixPart . $name;
-                $equipeOu = $this->config->get('equipes_rdn') . ',' . $this->config->get('groups_rdn');
+                $equipeOu = $this->ouFromDn($this->dnHelper->equipes());
                 $results[] = $this->addGroup($connection, $equipeCn, $equipeOu, 'Equipe pédagogique de ' . $description, $baseDn, $suffix);
-                
+
             } elseif ($type === 'projet') {
                 // Créer Projet_X
                 $projetCn = 'Projet_' . $prefixPart . $name;
-                $projetOu = $this->config->get('projets_rdn') . ',' . $this->config->get('groups_rdn');
+                $projetOu = $this->ouFromDn($this->dnHelper->projets());
                 $results[] = $this->addGroup($connection, $projetCn, $projetOu, 'Projet ' . $description, $baseDn, $suffix);
-                
+
             } elseif ($type === 'matiere') {
                 // Créer Matiere_X
                 $matiereCn = 'Matiere_' . $prefixPart . $name;
-                $matiereOu = $this->config->get('matieres_rdn') . ',' . $this->config->get('groups_rdn');
+                $matiereOu = $this->ouFromDn($this->dnHelper->matieres());
                 $results[] = $this->addGroup($connection, $matiereCn, $matiereOu, $description, $baseDn, $suffix);
-                
+
             } else {
                 // other_group - groupe sans préfixe de catégorie
                 $groupCn = ucfirst($prefixPart . $name);
-                $groupOu = $this->config->get('other_groups_rdn') . ',' . $this->config->get('groups_rdn');
+                $groupOu = $this->ouFromDn($this->dnHelper->otherGroups());
                 $results[] = $this->addGroup($connection, $groupCn, $groupOu, $description, $baseDn, $suffix);
             }
             
