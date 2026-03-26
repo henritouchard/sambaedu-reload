@@ -71,3 +71,7 @@ Desktop.ini
 *.tmp
 *.temp
 *.bak
+
+_bmad*
+.claude*
+CLAUDE.md

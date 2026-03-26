@@ -3,7 +3,9 @@
 use Livewire\Component;
 use App\Services\UserService;
 use App\Types\User;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Devrabiul\ToastMagic\Facades\ToastMagic;
 
 new class extends Component {
     #[Locked]
@@ -32,7 +34,7 @@ new class extends Component {
         $this->loadUserData();
 
         // Vérifier les permissions d'édition
-        $this->canEdit = $this->login !== 'Administrator';
+        $this->canEdit = Gate::allows('update-user') && $this->login !== 'Administrator';
     }
 
     private function loadUserData(): void
@@ -72,44 +74,47 @@ new class extends Component {
 
     public function save(): void
     {
-        if (!$this->canEdit) {
-            $this->dispatch('notify', type: 'error', message: 'Vous n\'avez pas les droits pour modifier cet utilisateur.');
+        if (!Gate::allows('update-user')) {
+            ToastMagic::error('Vous n\'avez pas les droits pour modifier cet utilisateur.');
             return;
         }
 
         $this->validate([
-            'prenom' => 'required|string|max:255',
-            'nom' => 'required|string|max:255',
+            'prenom' => 'required|string|max:64',
+            'nom' => 'required|string|max:64',
             'email' => 'nullable|email|max:255',
             'phone' => 'nullable|string|max:20',
             'description' => 'nullable|string|max:1000',
         ]);
 
         try {
-            // TODO: Implémenter la mise à jour LDAP via UserService
-            // $this->userService->updatePersonalInfo($this->login, [
-            //     'prenom' => $this->prenom,
-            //     'nom' => $this->nom,
-            //     'email' => $this->email,
-            //     'phone' => $this->phone,
-            //     'description' => $this->description,
-            // ]);
-
-            Log::info('Mise à jour des informations personnelles', [
-                'login' => $this->login,
+            $result = $this->userService->updatePersonalInfo($this->login, [
                 'prenom' => $this->prenom,
                 'nom' => $this->nom,
                 'email' => $this->email,
+                'phone' => $this->phone,
+                'description' => $this->description,
             ]);
 
-            $this->editMode = false;
-            $this->dispatch('notify', type: 'success', message: 'Informations mises à jour avec succès.');
+            if ($result['success']) {
+                // Recharger les données depuis SQL
+                $this->user = $this->userService->getByLoginFromSql($this->login);
+                $this->loadUserData();
+
+                $this->editMode = false;
+                ToastMagic::success($result['message']);
+
+                // Rafraîchir le composant parent (header)
+                $this->dispatch('user-updated');
+            } else {
+                ToastMagic::error($result['message']);
+            }
         } catch (\Exception $e) {
             Log::error('Erreur lors de la mise à jour des informations personnelles', [
                 'login' => $this->login,
                 'error' => $e->getMessage(),
             ]);
-            $this->dispatch('notify', type: 'error', message: 'Erreur lors de la mise à jour: ' . $e->getMessage());
+            ToastMagic::error('Une erreur est survenue lors de la mise à jour.');
         }
     }
 };

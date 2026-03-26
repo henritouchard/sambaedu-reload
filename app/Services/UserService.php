@@ -16,6 +16,7 @@ use App\LdapModels\SambaEduGroup;
 use App\Types\UserSearchCriteria;
 use App\Types\PaginatedResult;
 use App\Types\User;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -158,9 +159,132 @@ class UserService
     }
 
     /**
+     * Met à jour les informations personnelles d'un utilisateur
+     *
+     * Double-write: AD (source de vérité) puis PostgreSQL
+     *
+     * @param string $login Login de l'utilisateur
+     * @param array $data Données à mettre à jour (prenom, nom, email, phone, description)
+     * @return array ['success' => bool, 'message' => string]
+     */
+    public function updatePersonalInfo(string $login, array $data): array
+    {
+        // D1: Vérification des permissions côté service
+        if (!Gate::allows('update-user')) {
+            return ['success' => false, 'message' => 'Vous n\'avez pas les droits pour modifier cet utilisateur.'];
+        }
+
+        try {
+            // Charger l'utilisateur LDAP
+            $ldapUser = $this->userRepository->findLdapModelByLogin($login);
+            if (!$ldapUser) {
+                return ['success' => false, 'message' => 'Utilisateur introuvable dans l\'annuaire.'];
+            }
+
+            // Préparer les attributs LDAP à modifier
+            $prenom = trim($data['prenom']);
+            $nom = trim($data['nom']);
+
+            $ldapUser->givenname = $prenom;
+            $ldapUser->sn = $nom;
+            $ldapUser->displayname = "{$prenom} {$nom}";
+
+            if (array_key_exists('email', $data)) {
+                $ldapUser->mail = $data['email'] ?: null;
+            }
+            if (array_key_exists('phone', $data)) {
+                $ldapUser->telephonenumber = $data['phone'] ?: null;
+            }
+            if (array_key_exists('description', $data)) {
+                $ldapUser->description = $data['description'] ?: null;
+            }
+
+            // Sauvegarder dans l'AD
+            $ldapUser->save();
+
+            // Invalider le cache
+            $this->userRepository->invalidateCache($login);
+
+            // Double-write SQL (non bloquant)
+            $sqlWriteOk = true;
+            try {
+                SqlUserModel::updateOrCreate(
+                    ['login' => $login],
+                    [
+                        'firstname' => $prenom,
+                        'lastname' => $nom,
+                        'fullname' => trim("{$prenom} {$nom}"),
+                        'email' => $data['email'] ?? null,
+                        'phone' => $data['phone'] ?? null,
+                        'description' => $data['description'] ?? null,
+                        'ad_synced_at' => now(),
+                    ]
+                );
+            } catch (\Exception $e) {
+                $sqlWriteOk = false;
+                Log::error('Échec double-write SQL pour updatePersonalInfo (AD = source de vérité, on continue)', [
+                    'login' => $login,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            Log::info('User personal info updated', [
+                'login' => $login,
+                'fields' => array_keys($data),
+                'operator' => auth()->user()?->login ?? 'system',
+                'sql_synced' => $sqlWriteOk,
+            ]);
+
+            return ['success' => true, 'message' => 'Informations mises à jour.'];
+
+        } catch (\Exception $e) {
+            Log::error('Erreur lors de la mise à jour des informations personnelles', [
+                'login' => $login,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'message' => 'Une erreur est survenue lors de la mise à jour.'];
+        }
+    }
+
+    /**
+     * Valide les données de mise à jour des informations personnelles.
+     * Réutilisable par les controllers API et les composants Livewire.
+     *
+     * @param array $data
+     * @return array Liste des messages d'erreur (vide si valide)
+     */
+    public function validatePersonalInfo(array $data): array
+    {
+        $errors = [];
+
+        if (empty(trim($data['prenom'] ?? ''))) {
+            $errors[] = 'Le prénom est requis.';
+        } elseif (mb_strlen($data['prenom']) > 64) {
+            $errors[] = 'Le prénom ne doit pas dépasser 64 caractères.';
+        }
+        if (empty(trim($data['nom'] ?? ''))) {
+            $errors[] = 'Le nom est requis.';
+        } elseif (mb_strlen($data['nom']) > 64) {
+            $errors[] = 'Le nom ne doit pas dépasser 64 caractères.';
+        }
+        if (!empty($data['email'] ?? '') && !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+            $errors[] = 'L\'adresse email n\'est pas valide.';
+        }
+        if (!empty($data['phone'] ?? '') && mb_strlen($data['phone']) > 20) {
+            $errors[] = 'Le numéro de téléphone ne doit pas dépasser 20 caractères.';
+        }
+        if (!empty($data['description'] ?? '') && mb_strlen($data['description']) > 1000) {
+            $errors[] = 'La description ne doit pas dépasser 1000 caractères.';
+        }
+
+        return $errors;
+    }
+
+    /**
      * Formate un utilisateur depuis le modèle LdapRecord
      * Retourne un objet User (DTO) au lieu d'un tableau
-     * 
+     *
      * @param \App\LdapModels\LdapUser $ldapUser
      * @return \App\Types\User
      */
