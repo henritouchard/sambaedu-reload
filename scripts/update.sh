@@ -132,21 +132,45 @@ check_missing_env_vars() {
 update_apache() {
     log "Vérification configuration Apache..."
 
-    if [[ ! -f "$APACHE_CONF_SOURCE" ]]; then
-        log_warning "Configuration Apache source introuvable: $APACHE_CONF_SOURCE"
-        return
+    local SETUP_APACHE_SCRIPT="$APP_DIR/scripts/setupApache.sh"
+
+    # Vérifier si le vhost SER est en place (setupApache.sh déjà exécuté)
+    if [[ -f "$APACHE_CONF_TARGET" ]] && grep -q "sambaedu-reload/public" "$APACHE_CONF_TARGET"; then
+        # Le vhost SER est actif — vérifier qu'il n'a pas été altéré
+        # en comparant le DocumentRoot et la structure attendue
+        if grep -q "DocumentRoot.*sambaedu-reload/public" "$APACHE_CONF_TARGET" \
+           && [[ -f "/etc/apache2/sites-available/sambaedu-legacy.conf" ]]; then
+            log_success "Apache déjà configuré pour SER (setupApache.sh)"
+            return
+        else
+            # Le vhost SER est incomplet (legacy manquant) → relancer setupApache.sh
+            log_warning "Configuration Apache SER incomplète — relance de setupApache.sh"
+            if [[ -x "$SETUP_APACHE_SCRIPT" ]]; then
+                bash "$SETUP_APACHE_SCRIPT"
+                log_success "Apache reconfiguré via setupApache.sh"
+            else
+                log_error "setupApache.sh introuvable ou non exécutable: $SETUP_APACHE_SCRIPT"
+            fi
+            return
+        fi
     fi
 
-    if [[ ! -f "$APACHE_CONF_TARGET" ]] || ! cmp -s "$APACHE_CONF_SOURCE" "$APACHE_CONF_TARGET"; then
-        log "Mise à jour configuration Apache..."
+    # Pas de vhost SER en place → exécuter setupApache.sh si disponible
+    if [[ -x "$SETUP_APACHE_SCRIPT" ]]; then
+        log "Premier déploiement SER — exécution de setupApache.sh"
+        bash "$SETUP_APACHE_SCRIPT"
+        log_success "Apache configuré via setupApache.sh"
+    elif [[ -f "$APACHE_CONF_SOURCE" ]]; then
+        # Fallback : ancien comportement (copie du template)
+        log_warning "setupApache.sh non disponible — fallback sur le template Apache"
         cp "$APACHE_CONF_SOURCE" "$APACHE_CONF_TARGET"
         a2ensite sambaedu.conf >/dev/null 2>&1 || true
         a2enmod rewrite >/dev/null 2>&1 || true
         a2enmod headers >/dev/null 2>&1 || true
         systemctl reload apache2
-        log_success "Apache mis à jour"
+        log_success "Apache mis à jour (template)"
     else
-        log_success "Apache déjà à jour"
+        log_warning "Aucune source de configuration Apache trouvée"
     fi
 }
 
