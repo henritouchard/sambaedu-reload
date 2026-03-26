@@ -141,7 +141,7 @@ class LegacyEmbedService
         $html = preg_replace('/<\/body>/i', '', $html);
 
         // Réécrire les actions de formulaire pour rester dans l'embed
-        $currentUrl = request()->getRequestUri();
+        $currentUrl = request()->fullUrl();
         $html = preg_replace(
             '/(<form[^>]*\s)action\s*=\s*["\'][^"\']*\.php["\']/',
             '$1action="' . e($currentUrl) . '"',
