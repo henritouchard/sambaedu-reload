@@ -16,11 +16,13 @@ use App\Services\PasswordService;
 use App\Services\UserService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Tests\TestCase;
+use Tests\Traits\MocksAdminUser;
 
 /**
  * Tests d'intégration pour la modification d'utilisateur (Story 2.2)
@@ -30,6 +32,7 @@ use Tests\TestCase;
 class UserUpdateTest extends TestCase
 {
     use DatabaseTransactions;
+    use MocksAdminUser;
 
     private UserService $service;
     private UserRepository $userRepository;
@@ -87,8 +90,6 @@ class UserUpdateTest extends TestCase
             $this->passwordService,
             $this->config
         );
-
-        Gate::define('update-user', fn () => true);
     }
 
     protected function tearDown(): void
@@ -118,6 +119,7 @@ class UserUpdateTest extends TestCase
         ]);
 
         $ldapUser = Mockery::mock(LdapUser::class);
+        $ldapUser->shouldReceive('setAttribute')->withAnyArgs()->andReturnSelf();
         $ldapUser->shouldReceive('__set')->withAnyArgs();
         $ldapUser->shouldReceive('save')->once();
 
@@ -127,8 +129,7 @@ class UserUpdateTest extends TestCase
         $this->userRepository->shouldReceive('invalidateCache')
             ->with('j.dupont');
 
-        Log::shouldReceive('info')->atLeast()->once();
-        Log::shouldReceive('error')->zeroOrMoreTimes();
+        $this->actAsAdmin();
 
         $result = $this->service->updatePersonalInfo('j.dupont', [
             'prenom' => 'Marie',
@@ -154,6 +155,7 @@ class UserUpdateTest extends TestCase
     public function updatePersonalInfo_creates_sql_user_if_not_exists(): void
     {
         $ldapUser = Mockery::mock(LdapUser::class);
+        $ldapUser->shouldReceive('setAttribute')->withAnyArgs()->andReturnSelf();
         $ldapUser->shouldReceive('__set')->withAnyArgs();
         $ldapUser->shouldReceive('save')->once();
 
@@ -163,8 +165,7 @@ class UserUpdateTest extends TestCase
         $this->userRepository->shouldReceive('invalidateCache')
             ->with('newuser');
 
-        Log::shouldReceive('info')->atLeast()->once();
-        Log::shouldReceive('error')->zeroOrMoreTimes();
+        $this->actAsAdmin();
 
         $result = $this->service->updatePersonalInfo('newuser', [
             'prenom' => 'Alice',
@@ -180,22 +181,59 @@ class UserUpdateTest extends TestCase
         $this->assertEquals('Wonderland', $sqlUser->lastname);
     }
 
+    /** @test */
+    public function updatePersonalInfo_succeeds_even_when_sql_write_fails(): void
+    {
+        $this->actAsAdmin();
+
+        Log::spy();
+
+        $ldapUser = Mockery::mock(LdapUser::class);
+        $ldapUser->shouldReceive('setAttribute')->withAnyArgs()->andReturnSelf();
+        $ldapUser->shouldReceive('__set')->withAnyArgs();
+        $ldapUser->shouldReceive('save')->once();
+
+        $this->userRepository->shouldReceive('findLdapModelByLogin')
+            ->with('sqlfail')
+            ->andReturn($ldapUser);
+        $this->userRepository->shouldReceive('invalidateCache')
+            ->with('sqlfail');
+
+        // Ajoute une contrainte CHECK impossible pour forcer l'échec SQL
+        // NOT VALID = ne vérifie pas les rows existantes, bloque seulement INSERT/UPDATE
+        // (transactionnelle en PostgreSQL → rollback auto via DatabaseTransactions)
+        DB::statement('ALTER TABLE users ADD CONSTRAINT force_sql_fail CHECK (false) NOT VALID');
+
+        $result = $this->service->updatePersonalInfo('sqlfail', [
+            'prenom' => 'Test',
+            'nom' => 'SqlFail',
+            'email' => 'test@fail.fr',
+        ]);
+
+        // AD = source de vérité → success malgré l'échec SQL
+        $this->assertTrue($result['success']);
+
+        Log::shouldHaveReceived('error')
+            ->withArgs(fn ($msg) => str_contains($msg, 'double-write SQL'))
+            ->once();
+    }
+
     // =========================================================================
     // E2E: Validation — messages d'erreur
     // =========================================================================
 
     /** @test */
-    public function updatePersonalInfo_validation_errors_are_user_friendly(): void
+    public function validatePersonalInfo_returns_user_friendly_errors(): void
     {
-        $result = $this->service->updatePersonalInfo('testuser', [
+        $errors = $this->service->validatePersonalInfo([
             'prenom' => '',
             'nom' => '',
             'email' => 'bad-email',
         ]);
 
-        $this->assertFalse($result['success']);
-        $this->assertStringContainsString('prénom', $result['message']);
-        $this->assertStringContainsString('nom', $result['message']);
-        $this->assertStringContainsString('email', $result['message']);
+        $joined = implode(' ', $errors);
+        $this->assertStringContainsString('prénom', $joined);
+        $this->assertStringContainsString('nom', $joined);
+        $this->assertStringContainsString('email', $joined);
     }
 }

@@ -53,6 +53,8 @@ class User extends Authenticatable implements Wireable
         'firstname',
         'lastname',
         'email',
+        'phone',
+        'description',
         'dn',
         'ad_guid',
         'role',

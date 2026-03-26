@@ -220,7 +220,7 @@ class UserService
                         'ad_synced_at' => now(),
                     ]
                 );
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 $sqlWriteOk = false;
                 Log::error('Échec double-write SQL pour updatePersonalInfo (AD = source de vérité, on continue)', [
                     'login' => $login,
@@ -237,7 +237,7 @@ class UserService
 
             return ['success' => true, 'message' => 'Informations mises à jour.'];
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('Erreur lors de la mise à jour des informations personnelles', [
                 'login' => $login,
                 'error' => $e->getMessage(),
