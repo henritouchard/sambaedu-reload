@@ -228,9 +228,16 @@ class LegacyCatchallController extends Controller
     {
         $targetFile = $isDirWithIndex ? $modulePath . '/index.php' : $modulePath;
 
+        $originalCwd = getcwd();
+
         try {
             // Charger le bootstrap legacy (idempotent)
             require_once base_path('legacy/bootstrap.php');
+
+            // Changer le CWD vers le dossier du module — les includes relatifs
+            // (ex: require "../vendor/autoload.php") en dépendent.
+            $moduleDir = dirname($targetFile);
+            chdir($moduleDir);
 
             // Capturer la sortie du module legacy
             $initialObLevel = ob_get_level();
@@ -267,6 +274,11 @@ class LegacyCatchallController extends Controller
             ]);
 
             abort(500, 'Erreur lors de l\'exécution du module legacy.');
+        } finally {
+            // Restaurer le CWD original
+            if (is_dir($originalCwd)) {
+                chdir($originalCwd);
+            }
         }
     }
 
