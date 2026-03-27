@@ -45,10 +45,20 @@ try {
 
     // 6. Include path legacy — les modules font des include("xxx.inc.php")
     //    qui doivent résoudre vers le dossier includes/ du legacy original.
+    //    IMPORTANT : les stubs doivent être AVANT le legacy includes/ pour que
+    //    require 'ldap.inc.php' / 'config.inc.php' / 'admin_ui.inc.php'
+    //    résolvent vers nos stubs (qui bridgent vers les shims) et non vers
+    //    les originaux legacy (qui redéclareraient des fonctions = fatal error).
+    $stubsPath = base_path('legacy/stubs');
     $legacyIncludesPath = config('sambaedu.legacy_path', '/var/www/sambaedu') . '/includes';
-    if (is_dir($legacyIncludesPath)) {
-        set_include_path(get_include_path() . PATH_SEPARATOR . $legacyIncludesPath);
+    $newIncludePath = get_include_path();
+    if (is_dir($stubsPath)) {
+        $newIncludePath = $stubsPath . PATH_SEPARATOR . $newIncludePath;
     }
+    if (is_dir($legacyIncludesPath)) {
+        $newIncludePath .= PATH_SEPARATOR . $legacyIncludesPath;
+    }
+    set_include_path($newIncludePath);
 
     // ─── LEGACY INCLUDES ─────────────────────────────────────────────────
     // Fichiers legacy chargés directement car utilisés par les modules.
@@ -57,7 +67,7 @@ try {
     // ─────────────────────────────────────────────────────────────────────
     if (is_dir($legacyIncludesPath)) {
         // Fonctions utilitaires globales (utilisées partout)
-        // require_once $legacyIncludesPath . '/functions.inc.php';
+        require_once $legacyIncludesPath . '/functions.inc.php';
 
         // Samba / AD tools
         // require_once $legacyIncludesPath . '/samba-tool.inc.php';

@@ -864,6 +864,52 @@ if (!function_exists('user_valid_passwd')) {
     }
 }
 
+if (!function_exists('is_eleve')) {
+    /**
+     * Vérifie si un utilisateur est un élève (membre du groupe "Eleves").
+     * Utilise search_user() déjà shimmée pour récupérer les données.
+     */
+    function is_eleve($config, $name): bool
+    {
+        if (!is_array($name)) {
+            $name = search_user($config, $name);
+        }
+        if (isset($name['memberof']) && is_array($name['memberof'])) {
+            foreach ($name['memberof'] as $g) {
+                if (preg_match('/Eleves/', $g)) {
+                    return true;
+                }
+            }
+        } elseif (empty($name) || !isset($name['memberof'])) {
+            // Compte non trouvé → considéré comme élève par défaut (comportement legacy)
+            return true;
+        }
+        return false;
+    }
+}
+
+if (!function_exists('is_prof')) {
+    /**
+     * Vérifie si un utilisateur est un professeur (membre du groupe "Profs").
+     */
+    function is_prof($config, $name): bool
+    {
+        if (is_array($name)) {
+            if (isset($name['memberof']) && is_array($name['memberof'])) {
+                foreach ($name['memberof'] as $g) {
+                    if (preg_match('/Profs/', $g)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        } elseif (!empty($name)) {
+            return count(search_ad($config, $name, 'member', 'Profs')) > 0;
+        }
+        return false;
+    }
+}
+
 // ─── Fonctions de comparaison (utilitaires pures — pas de LDAP) ─────────────
 
 if (!function_exists('cmp_fullname')) {
