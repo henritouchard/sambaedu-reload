@@ -296,9 +296,8 @@ function info_poste_appli_full($config, $nom_poste)
                     ->pluck('required_application_id');
 
                 foreach ($deps as $reqId) {
-                    $reqApp = Application::find($reqId);
-                    if ($reqApp) {
-                        $tab[$reqId]['depends'][] = $reqApp->app_id;
+                    if (Application::find($reqId)) {
+                        $tab[$reqId]['depends'][] = $app->app_id;
                     }
                 }
             }
@@ -504,9 +503,8 @@ function info_parc_appli_full($config, $nom_parc)
                 ->pluck('required_application_id');
 
             foreach ($deps as $reqId) {
-                $reqApp = Application::find($reqId);
-                if ($reqApp) {
-                    $tab[$reqId]['depends'][] = $reqApp->app_id;
+                if (Application::find($reqId)) {
+                    $tab[$reqId]['depends'][] = $app->app_id;
                 }
             }
         }
@@ -1505,14 +1503,16 @@ function maintenance_liste_poste($config, $flag, $uuid)
 
     switch ($uuid) {
         case 0:
+            // uuid=0 : postes sans UUID ou marqués pour suppression
             $query->where(function ($q) {
                 $q->whereNull('uuid')
-                    ->orWhere('uuid', 'LIKE', 'DELETE%');
+                    ->orWhere('status', 'pending-deletion');
             });
             break;
         case 1:
+            // uuid=1 : postes avec UUID et non marqués pour suppression
             $query->whereNotNull('uuid')
-                ->where('uuid', 'NOT LIKE', 'DELETE%');
+                ->where('status', '!=', 'pending-deletion');
             break;
     }
 
@@ -1585,14 +1585,13 @@ function maintenance_poste_suppression($config, $id_poste)
 
     if (empty($ws->uuid) || $ws->uuid === null) {
         $ws->update([
-            'status' => 'active',
-            'uuid' => 'DELETE' . $id_poste,
+            'status' => 'pending-deletion',
         ]);
         return $ws->name;
     }
 
     // Idempotence : déjà marqué pour suppression
-    if (str_starts_with($ws->uuid, 'DELETE')) {
+    if ($ws->status === 'pending-deletion') {
         return $ws->name;
     }
 
