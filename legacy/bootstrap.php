@@ -41,6 +41,7 @@ try {
     // 5. Charger le config bridge et les shims
     require_once __DIR__ . '/config.inc.php';
     require_once __DIR__ . '/ldap.inc.php';
+    require_once __DIR__ . '/wpkg_libsql.php';
 
     // 6. Include path legacy — les modules font des include("xxx.inc.php")
     //    qui doivent résoudre vers le dossier includes/ du legacy original.
