@@ -18,9 +18,9 @@
 
             <main class="flex-1 p-6 lg:pt-4 lg:py-0 max-h-full overflow-x-hidden relative z-10">
                 <x-organisms.page
-                    :title="$title"
+                    :title="$title ?? 'Module Legacy'"
                     description="Page legacy embarquée dans le layout SER"
-                    back="{{ route('app.users') }}"
+                    :back="$back ?? url()->previous()"
                 >
                     <x-slot:actions>
                         <span class="badge badge-warning badge-outline gap-1">

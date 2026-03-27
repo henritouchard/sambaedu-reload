@@ -37,7 +37,9 @@ return [
     | Les routes dans allowed_legacy_routes prennent la priorité.
     */
     'blocked_legacy_routes' => [
-        // Exemple : '^gpo/raccourcis' => '/app/shortcuts/list',
+        '^annu2/annu\.php' => 'app/users',
+        'parcs/show_parc.php' => 'app/parcs',
+        'gpo/shortcuts_out\.php' => 'app/shortcuts',
     ],
 
     /*

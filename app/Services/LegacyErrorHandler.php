@@ -22,8 +22,14 @@ class LegacyErrorHandler
             return false;
         }
 
+        // Ignorer les warnings require/include — le fatal qui suit sera capturé
+        // par le try/catch de executeViaBootstrap avec le contexte complet.
+        if ($errno === E_WARNING && preg_match('/^(require|include)/', $errstr)) {
+            return false;
+        }
+
         if (function_exists('app') && app()->bound(ErrorLoggerService::class)) {
-            app(ErrorLoggerService::class)->log('legacy', $errstr);
+            app(ErrorLoggerService::class)->log('legacy', "{$errstr} in {$errfile}:{$errline}");
         }
 
         return false;

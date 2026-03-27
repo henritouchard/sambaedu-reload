@@ -1246,6 +1246,56 @@ if (!function_exists('cache_delete_multi')) {
     }
 }
 
+if (!function_exists('activated_etabs')) {
+    /**
+     * Shim activated_etabs — retourne la liste des établissements activés.
+     * En mono-etab, retourne simplement l'etab courant depuis la config.
+     */
+    function activated_etabs(array $config): array
+    {
+        $uai = $config['etab_ou'] ?? config('sambaedu.etab_ou', '');
+        return [
+            [
+                'uai' => $uai,
+                'activated' => true,
+            ],
+        ];
+    }
+}
+
+if (!function_exists('my_etabs')) {
+    /**
+     * Shim my_etabs — retourne les établissements auxquels un utilisateur appartient.
+     * En mono-etab, retourne l'etab courant.
+     */
+    function my_etabs(array $config, $login): array
+    {
+        $uai = $config['etab_ou'] ?? config('sambaedu.etab_ou', '');
+        return [
+            [
+                'uai' => $uai,
+                'activated' => true,
+            ],
+        ];
+    }
+}
+
+if (!function_exists('etab_to_name')) {
+    /**
+     * Shim etab_to_name — retourne le nom d'un établissement à partir de son UAI.
+     * La version legacy interroge l'AD directement — ici on retourne le nom depuis la config.
+     */
+    function etab_to_name($config, $uai = 0)
+    {
+        $etabName = $config['etab_name'] ?? '';
+        $currentUai = $config['etab_ou'] ?? '';
+        if ($uai == 0 || $uai == $currentUai) {
+            return !empty($etabName) ? "($etabName)" : '';
+        }
+        return '';
+    }
+}
+
 if (!function_exists('db_connect')) {
     function db_connect($config, $etab = 'localhost')
     {

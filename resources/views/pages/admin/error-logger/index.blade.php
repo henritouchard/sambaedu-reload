@@ -67,6 +67,20 @@ new #[Title('Error Logger - Instance SE4FS')] class extends Component {
                 default   => 'badge-neutral',
             };
         @endphp
+        @php
+            // Extraire les champs structurés (format "Clé: valeur" par ligne)
+            $lines = explode("\n", $sel->message);
+            $fields = [];
+            $remainder = [];
+            foreach ($lines as $line) {
+                if (preg_match('/^(Route|Module|Fichier|Erreur)\s*:\s*(.+)$/i', $line, $m)) {
+                    $fields[strtolower($m[1])] = trim($m[2]);
+                } else {
+                    $remainder[] = $line;
+                }
+            }
+            $remainderText = trim(implode("\n", $remainder));
+        @endphp
         <div class="alert alert-info mb-6 flex flex-col items-start gap-2">
             <div class="flex w-full items-center justify-between">
                 <div class="flex items-center gap-2">
@@ -77,7 +91,21 @@ new #[Title('Error Logger - Instance SE4FS')] class extends Component {
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <pre class="font-mono text-sm whitespace-pre-wrap break-all w-full">{{ $sel->message }}</pre>
+            @if (!empty($fields))
+                <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm w-full">
+                    @foreach (['route' => 'Route', 'erreur' => 'Erreur', 'fichier' => 'Fichier', 'module' => 'Module'] as $key => $label)
+                        @if (!empty($fields[$key]))
+                            <span class="font-semibold opacity-70">{{ $label }}</span>
+                            <span class="font-mono break-all">{{ $fields[$key] }}</span>
+                        @endif
+                    @endforeach
+                </div>
+                @if (!empty($remainderText))
+                    <pre class="font-mono text-sm whitespace-pre-wrap break-all w-full mt-2">{{ $remainderText }}</pre>
+                @endif
+            @else
+                <pre class="font-mono text-sm whitespace-pre-wrap break-all w-full">{{ $sel->message }}</pre>
+            @endif
         </div>
     @endif
 

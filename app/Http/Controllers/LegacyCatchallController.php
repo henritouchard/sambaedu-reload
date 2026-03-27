@@ -172,6 +172,20 @@ class LegacyCatchallController extends Controller
                 }
             }
 
+            // Détection page web HTML → embed dans le layout SER
+            $contentType = $legacyResponse->header('Content-Type', '');
+            if (!$legacyResponse->redirect() && $this->isHtmlWebPage($contentType, $body)) {
+                $cleanedHtml = $this->cleanLegacyHtml($body);
+
+                return response(
+                    view('legacy-embed', [
+                        'legacyHtml' => $cleanedHtml,
+                        'title' => $path,
+                    ])->render(),
+                    $legacyResponse->status()
+                )->header('Content-Type', 'text/html; charset=UTF-8');
+            }
+
             $response = response($body, $legacyResponse->status());
 
             // Transmettre les headers pertinents de la réponse legacy
@@ -234,10 +248,17 @@ class LegacyCatchallController extends Controller
             // Charger le bootstrap legacy (idempotent)
             require_once base_path('legacy/bootstrap.php');
 
+            // Bridge session Laravel → $_SESSION legacy
+            $this->bridgeLegacySession();
+
             // Changer le CWD vers le dossier du module — les includes relatifs
             // (ex: require "../vendor/autoload.php") en dépendent.
             $moduleDir = dirname($targetFile);
             chdir($moduleDir);
+
+            // Simuler PHP_SELF pour les forms legacy
+            $originalPhpSelf = $_SERVER['PHP_SELF'] ?? '';
+            $_SERVER['PHP_SELF'] = $request->getPathInfo();
 
             // Capturer la sortie du module legacy
             $initialObLevel = ob_get_level();
@@ -248,14 +269,40 @@ class LegacyCatchallController extends Controller
             // Récupérer les headers envoyés par le module legacy (status, content-type, redirects)
             $statusCode = http_response_code() ?: 200;
             $contentType = 'text/html; charset=UTF-8';
-            $response = response($output, $statusCode);
 
             foreach (headers_list() as $header) {
                 if (preg_match('/^([^:]+):\s*(.+)$/i', $header, $m)) {
                     $headerName = strtolower($m[1]);
                     if ($headerName === 'content-type') {
                         $contentType = $m[2];
-                    } elseif ($headerName !== 'set-cookie') {
+                    }
+                }
+            }
+
+            // Restaurer PHP_SELF
+            $_SERVER['PHP_SELF'] = $originalPhpSelf;
+
+            // Détection : page web HTML → embed dans le layout SER
+            if ($this->isHtmlWebPage($contentType, $output)) {
+                $cleanedHtml = $this->cleanLegacyHtml($output);
+                $moduleName = basename(dirname($targetFile === $modulePath ? $modulePath : $modulePath));
+
+                return response(
+                    view('legacy-embed', [
+                        'legacyHtml' => $cleanedHtml,
+                        'title' => $moduleName,
+                    ])->render(),
+                    $statusCode
+                )->header('Content-Type', 'text/html; charset=UTF-8');
+            }
+
+            // Sinon : retourner brut (scripts, API, iPXE, etc.)
+            $response = response($output, $statusCode);
+
+            foreach (headers_list() as $header) {
+                if (preg_match('/^([^:]+):\s*(.+)$/i', $header, $m)) {
+                    $headerName = strtolower($m[1]);
+                    if ($headerName !== 'content-type' && $headerName !== 'set-cookie') {
                         $response->header($m[1], $m[2]);
                     }
                 }
@@ -268,12 +315,26 @@ class LegacyCatchallController extends Controller
                 ob_end_clean();
             }
 
+            $route = $request->path();
+
+            $errorDetail = "Route: /{$route}\n"
+                . "Module: {$modulePath}\n"
+                . "Fichier: {$e->getFile()}:{$e->getLine()}\n"
+                . "Erreur: {$e->getMessage()}";
+
             Log::channel('legacylog')->error('Legacy bootstrap execution error', [
+                'route' => $route,
                 'path' => $modulePath,
                 'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
             ]);
 
-            abort(500, 'Erreur lors de l\'exécution du module legacy.');
+            if (app()->bound(\App\Services\ErrorLoggerService::class)) {
+                app(\App\Services\ErrorLoggerService::class)->log('legacy', $errorDetail);
+            }
+
+            abort(500, 'Erreur module legacy [' . basename(dirname($modulePath)) . ']: ' . $e->getMessage());
         } finally {
             // Restaurer le CWD original
             if (is_dir($originalCwd)) {
@@ -330,4 +391,105 @@ class LegacyCatchallController extends Controller
 
         Log::channel('legacylog')->info('Legacy access', $data);
     }
+
+    /**
+     * Détermine si l'output est une page web HTML destinée à l'affichage navigateur.
+     * Retourne false pour les scripts (text/plain, JSON, XML), les redirections, etc.
+     */
+    private function isHtmlWebPage(string $contentType, string $output): bool
+    {
+        // Seul le text/html est candidat à l'embed
+        if (!str_contains(strtolower($contentType), 'text/html')) {
+            return false;
+        }
+
+        // Output vide ou très court → pas une page web
+        if (strlen(trim($output)) < 20) {
+            return false;
+        }
+
+        // Présence de marqueurs HTML typiques d'une page web
+        $htmlMarkers = ['<form', '<table', '<div', '<input', '<select', '<h1', '<h2', '<h3', '<p ', '<ul', '<ol'];
+        foreach ($htmlMarkers as $marker) {
+            if (stripos($output, $marker) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Nettoie le HTML legacy : retire le chrome (doctype, html/head/body),
+     * réécrit les form actions, injecte le CSRF token.
+     */
+    private function cleanLegacyHtml(string $html): string
+    {
+        // Retirer doctype, <html>, <head>...</head>, <body>, </body>, </html>
+        $html = preg_replace('/<!DOCTYPE[^>]*>/i', '', $html);
+        $html = preg_replace('/<html[^>]*>/i', '', $html);
+        $html = preg_replace('/<\/html>/i', '', $html);
+        $html = preg_replace('/<head[^>]*>.*?<\/head>/is', '', $html);
+        $html = preg_replace('/<body[^>]*>/i', '', $html);
+        $html = preg_replace('/<\/body>/i', '', $html);
+
+        // Retirer les <link> et <style> globaux qui auraient échappé au nettoyage du <head>
+        $html = preg_replace('/<link[^>]*rel=["\']stylesheet["\'][^>]*>/is', '', $html);
+        $html = preg_replace('/<style[^>]*>.*?<\/style>/is', '', $html);
+
+        // Retirer le header legacy entier (contient nav, sidebar menu, bonjour, etc.)
+        $html = preg_replace('/<header[^>]*class="page-header"[^>]*>.*?<\/header>/is', '', $html);
+
+        // Retirer la topbar Bootstrap legacy
+        $html = preg_replace('/<nav[^>]*class="navbar[^"]*topbar[^"]*"[^>]*>.*?<\/nav>/is', '', $html);
+
+        // Retirer le menu sidebar legacy (div#menu avec position:absolute)
+        $html = preg_replace('/<div[^>]*id="menu"[^>]*>.*?<\/div>\s*<\/div>/is', '', $html);
+
+        // Retirer le "Bonjour xxx" legacy
+        $html = preg_replace('/<h3[^>]*align[^>]*>Bonjour.*?<\/h3>/is', '', $html);
+
+        // Retirer les scripts legacy (jQuery, sambaedu.js, user.interface.js)
+        $html = preg_replace('/<script[^>]*src="[^"]*(?:jquery|sambaedu|user\.interface)[^"]*"[^>]*><\/script>/is', '', $html);
+
+        // Neutraliser le position:absolute sur les divs de contenu legacy
+        $html = preg_replace('/style="[^"]*position:\s*absolute[^"]*"/i', 'style="position:relative; width:100%; padding:0;"', $html);
+
+        // Réécrire les actions de formulaire pour rester sur l'URL courante
+        $currentUrl = url()->current();
+        $html = preg_replace(
+            '/(<form[^>]*\s)action\s*=\s*["\'][^"\']*\.php["\']/',
+            '$1action="' . e($currentUrl) . '"',
+            $html
+        );
+
+        // Injecter le token CSRF dans chaque formulaire POST
+        $csrfField = '<input type="hidden" name="_token" value="' . e(csrf_token()) . '">';
+        $html = preg_replace(
+            '/(<form[^>]*method\s*=\s*["\']post["\'][^>]*>)/i',
+            '$1' . $csrfField,
+            $html
+        );
+
+        return trim($html);
+    }
+
+    /**
+     * Bridge la session Laravel vers les variables $_SESSION attendues par le legacy.
+     */
+    private function bridgeLegacySession(): void
+    {
+        if (!session_id()) {
+            @session_start();
+        }
+
+        if (function_exists('auth') && auth()->check()) {
+            $user = auth()->user();
+            $_SESSION['login'] = $user->login ?? '';
+            $_SESSION['level'] = 0;
+            $_SESSION['etab'] = config('sambaedu.etab_ou', '');
+            $_SESSION['etab_ou'] = config('sambaedu.etab_ou', '');
+        }
+    }
+
 }
