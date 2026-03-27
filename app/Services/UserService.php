@@ -16,6 +16,8 @@ use App\LdapModels\SambaEduGroup;
 use App\Types\UserSearchCriteria;
 use App\Types\PaginatedResult;
 use App\Types\User;
+use App\Constants\Ldap\MainGroups;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 
@@ -1472,6 +1474,334 @@ class UserService
     /**
      * Ajoute l'utilisateur au groupe AD "Cloud" s'il n'en est pas déjà membre
      */
+    // ============================================
+    // DÉSACTIVATION / ACTIVATION / SUPPRESSION
+    // ============================================
+
+    /**
+     * Désactive un compte utilisateur.
+     * Double-write: AD (useraccountcontrol → 514) puis PostgreSQL (is_active → false).
+     * Archive le home directory dans /home/trash/.
+     */
+    public function disableUser(string $login): array
+    {
+        if (!Gate::allows('delete-user')) {
+            return ['success' => false, 'message' => 'Vous n\'avez pas les droits pour cette action.'];
+        }
+
+        if (MainGroups::isSystemAccount($login)) {
+            return ['success' => false, 'message' => 'Ce compte système ne peut pas être désactivé.'];
+        }
+
+        $lock = Cache::lock("user-operation-{$login}", 30);
+        if (!$lock->get()) {
+            return ['success' => false, 'message' => 'Une opération est déjà en cours sur cet utilisateur.'];
+        }
+
+        try {
+            $ldapUser = $this->userRepository->findLdapModelByLogin($login);
+            if (!$ldapUser) {
+                return ['success' => false, 'message' => 'Utilisateur introuvable dans l\'annuaire.'];
+            }
+
+            // AD: désactiver le compte
+            $ldapUser->useraccountcontrol = User::UAC_DISABLED;
+            $ldapUser->save();
+
+            // Invalider le cache
+            $this->userRepository->invalidateCache($login);
+
+            // Double-write SQL (non bloquant)
+            try {
+                SqlUserModel::where('login', $login)->update(['is_active' => false]);
+            } catch (\Throwable $e) {
+                Log::error('Échec double-write SQL pour disableUser (AD = source de vérité)', [
+                    'login' => $login,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            // Archiver le home directory
+            $archived = $this->archiveHomeDirectory($login);
+            if (!$archived) {
+                Log::warning('disableUser: échec archivage home directory (compte désactivé quand même)', [
+                    'login' => $login,
+                ]);
+            }
+
+            Log::info('User disabled', [
+                'login' => $login,
+                'home_archived' => $archived,
+                'operator' => auth()->user()?->login ?? 'system',
+            ]);
+
+            $message = $archived
+                ? 'Compte désactivé.'
+                : 'Compte désactivé, mais l\'archivage du home directory a échoué.';
+
+            return ['success' => true, 'message' => $message];
+
+        } catch (\Throwable $e) {
+            Log::error('Erreur lors de la désactivation du compte', [
+                'login' => $login,
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'message' => 'Erreur lors de la désactivation du compte.'];
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Réactive un compte utilisateur.
+     * Double-write: AD (useraccountcontrol → 512) puis PostgreSQL (is_active → true).
+     * Restaure le home directory depuis /home/trash/ si présent.
+     */
+    public function enableUser(string $login): array
+    {
+        if (!Gate::allows('delete-user')) {
+            return ['success' => false, 'message' => 'Vous n\'avez pas les droits pour cette action.'];
+        }
+
+        if (MainGroups::isSystemAccount($login)) {
+            return ['success' => false, 'message' => 'Ce compte système ne peut pas être modifié.'];
+        }
+
+        $lock = Cache::lock("user-operation-{$login}", 30);
+        if (!$lock->get()) {
+            return ['success' => false, 'message' => 'Une opération est déjà en cours sur cet utilisateur.'];
+        }
+
+        try {
+            $ldapUser = $this->userRepository->findLdapModelByLogin($login);
+            if (!$ldapUser) {
+                return ['success' => false, 'message' => 'Utilisateur introuvable dans l\'annuaire.'];
+            }
+
+            // AD: réactiver le compte
+            $ldapUser->useraccountcontrol = User::UAC_ACTIVE;
+            $ldapUser->save();
+
+            // Invalider le cache
+            $this->userRepository->invalidateCache($login);
+
+            // Double-write SQL (non bloquant)
+            try {
+                SqlUserModel::where('login', $login)->update(['is_active' => true]);
+            } catch (\Throwable $e) {
+                Log::error('Échec double-write SQL pour enableUser (AD = source de vérité)', [
+                    'login' => $login,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            // Restaurer le home directory si archivé (après réactivation AD)
+            if ($this->hasArchivedHome($login)) {
+                $this->restoreHomeDirectory($login);
+            }
+
+            Log::info('User enabled', [
+                'login' => $login,
+                'operator' => auth()->user()?->login ?? 'system',
+            ]);
+
+            return ['success' => true, 'message' => 'Compte réactivé.'];
+
+        } catch (\Throwable $e) {
+            Log::error('Erreur lors de la réactivation du compte', [
+                'login' => $login,
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'message' => 'Erreur lors de la réactivation du compte.'];
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Supprime définitivement un compte utilisateur.
+     * Requiert que le compte soit déjà désactivé (suppression en deux temps).
+     * Ordre: AD → home archivé → PostgreSQL → cache.
+     */
+    public function deleteUserPermanently(string $login): array
+    {
+        if (!Gate::allows('delete-user')) {
+            return ['success' => false, 'message' => 'Vous n\'avez pas les droits pour cette action.'];
+        }
+
+        if (MainGroups::isSystemAccount($login)) {
+            return ['success' => false, 'message' => 'Ce compte système ne peut pas être supprimé.'];
+        }
+
+        $lock = Cache::lock("user-operation-{$login}", 30);
+        if (!$lock->get()) {
+            return ['success' => false, 'message' => 'Une opération est déjà en cours sur cet utilisateur.'];
+        }
+
+        try {
+            $ldapUser = $this->userRepository->findLdapModelByLogin($login);
+
+            // P-1: l'utilisateur DOIT exister dans l'AD pour vérifier le two-step
+            if (!$ldapUser) {
+                return ['success' => false, 'message' => 'Utilisateur introuvable dans l\'annuaire. Impossible de vérifier le statut du compte.'];
+            }
+
+            // Vérifier la suppression en deux temps : le compte doit être désactivé
+            $uac = (int) ($ldapUser->getFirstAttribute('useraccountcontrol') ?? User::UAC_ACTIVE);
+            if ($uac !== User::UAC_DISABLED) {
+                return ['success' => false, 'message' => 'Vous devez d\'abord désactiver le compte avant de le supprimer définitivement.'];
+            }
+
+            // P-5: Supprimer de l'AD en premier (source de vérité)
+            $deleted = $ldapUser->delete();
+            if ($deleted === false) {
+                Log::error('deleteUserPermanently: échec suppression AD', ['login' => $login]);
+                return ['success' => false, 'message' => 'Échec de la suppression du compte dans l\'annuaire.'];
+            }
+
+            // Supprimer le home archivé (après AD, car irréversible)
+            $this->deleteHomeDirectoryPermanently($login);
+
+            // Double-write SQL (non bloquant — AD = source de vérité)
+            try {
+                SqlUserModel::where('login', $login)->delete();
+            } catch (\Throwable $e) {
+                Log::error('Échec double-write SQL pour deleteUserPermanently (AD = source de vérité)', [
+                    'login' => $login,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            // Supprimer du cache
+            $this->userRepository->invalidateCache($login);
+
+            Log::info('User permanently deleted', [
+                'login' => $login,
+                'timestamp' => now()->toIso8601String(),
+                'operator' => auth()->user()?->login ?? 'system',
+            ]);
+
+            return ['success' => true, 'message' => 'Compte supprimé définitivement.'];
+
+        } catch (\Throwable $e) {
+            Log::error('Erreur lors de la suppression permanente du compte', [
+                'login' => $login,
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'message' => 'Erreur lors de la suppression du compte.'];
+        } finally {
+            $lock->release();
+        }
+    }
+
+    // ============================================
+    // GESTION FILESYSTEM HOME DIRECTORY (private)
+    // ============================================
+
+    /**
+     * Archive le home directory : /home/{login} → /home/trash/{login}
+     */
+    private function archiveHomeDirectory(string $login): bool
+    {
+        if (!preg_match('/^[a-zA-Z0-9._-]+$/', $login)) {
+            Log::error("archiveHomeDirectory: login invalide", ['login' => $login]);
+            return false;
+        }
+
+        $homePath = "/home/" . $login;
+        $trashPath = "/home/trash/" . $login;
+
+        if (!is_dir($homePath)) {
+            Log::warning("archiveHomeDirectory: home inexistant", ['path' => $homePath]);
+            return false;
+        }
+
+        // Créer /home/trash/ si inexistant
+        if (!is_dir('/home/trash')) {
+            exec("sudo mkdir -p /home/trash 2>&1", $output, $rc);
+            if ($rc !== 0) {
+                Log::error("archiveHomeDirectory: échec création /home/trash", ['output' => implode("\n", $output)]);
+                return false;
+            }
+        }
+
+        exec("sudo mv " . escapeshellarg($homePath) . " " . escapeshellarg($trashPath) . " 2>&1", $output, $rc);
+        if ($rc !== 0) {
+            Log::error("archiveHomeDirectory: échec mv", ['login' => $login, 'output' => implode("\n", $output)]);
+            return false;
+        }
+
+        Log::info("Home directory archivé", ['login' => $login, 'from' => $homePath, 'to' => $trashPath]);
+        return true;
+    }
+
+    /**
+     * Restaure le home directory : /home/trash/{login} → /home/{login}
+     */
+    private function restoreHomeDirectory(string $login): bool
+    {
+        if (!preg_match('/^[a-zA-Z0-9._-]+$/', $login)) {
+            Log::error("restoreHomeDirectory: login invalide", ['login' => $login]);
+            return false;
+        }
+
+        $trashPath = "/home/trash/" . $login;
+        $homePath = "/home/" . $login;
+
+        if (!is_dir($trashPath)) {
+            Log::warning("restoreHomeDirectory: archive inexistante", ['path' => $trashPath]);
+            return false;
+        }
+
+        exec("sudo mv " . escapeshellarg($trashPath) . " " . escapeshellarg($homePath) . " 2>&1", $output, $rc);
+        if ($rc !== 0) {
+            Log::error("restoreHomeDirectory: échec mv", ['login' => $login, 'output' => implode("\n", $output)]);
+            return false;
+        }
+
+        Log::info("Home directory restauré", ['login' => $login, 'from' => $trashPath, 'to' => $homePath]);
+        return true;
+    }
+
+    /**
+     * Supprime définitivement le home archivé : rm -rf /home/trash/{login}
+     * UNIQUEMENT depuis /home/trash/ — ne jamais supprimer /home/{login} directement.
+     */
+    private function deleteHomeDirectoryPermanently(string $login): bool
+    {
+        if (!preg_match('/^[a-zA-Z0-9._-]+$/', $login)) {
+            Log::error("deleteHomeDirectoryPermanently: login invalide", ['login' => $login]);
+            return false;
+        }
+
+        $trashPath = "/home/trash/" . $login;
+
+        if (!is_dir($trashPath)) {
+            Log::info("deleteHomeDirectoryPermanently: rien à supprimer", ['path' => $trashPath]);
+            return true;
+        }
+
+        exec("sudo rm -rf " . escapeshellarg($trashPath) . " 2>&1", $output, $rc);
+        if ($rc !== 0) {
+            Log::error("deleteHomeDirectoryPermanently: échec rm", ['login' => $login, 'output' => implode("\n", $output)]);
+            return false;
+        }
+
+        Log::info("Home directory supprimé définitivement", ['login' => $login, 'path' => $trashPath]);
+        return true;
+    }
+
+    /**
+     * Vérifie si un home archivé existe dans /home/trash/
+     */
+    private function hasArchivedHome(string $login): bool
+    {
+        if (!preg_match('/^[a-zA-Z0-9._-]+$/', $login)) {
+            return false;
+        }
+        return is_dir("/home/trash/" . $login);
+    }
+
     private function addToCloudGroupIfNeeded(string $login): void
     {
         try {

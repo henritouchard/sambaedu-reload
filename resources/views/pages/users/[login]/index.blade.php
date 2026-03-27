@@ -12,8 +12,10 @@ use App\Models\User as SqlUserModel;
 use App\Models\UserGroup;
 use Illuminate\Support\Facades\Gate;
 use Devrabiul\ToastMagic\Facades\ToastMagic;
+use App\Components\Traits\WithToasts;
 
 new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
+    use WithToasts;
     public ?User $user = null;
     public bool $accountDisabled = false;
     public bool $homeExists = true;
@@ -167,6 +169,75 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
     {
         return $this->resetPasswordValue;
     }
+
+    public function disableUser(): void
+    {
+        if (!$this->user) {
+            $this->toastError('Utilisateur introuvable.');
+            return;
+        }
+
+        if (!Gate::allows('delete-user')) {
+            $this->toastAccessDenied();
+            return;
+        }
+
+        $result = $this->userService->disableUser($this->user->login);
+
+        if ($result['success']) {
+            $this->toastSuccess($result['message']);
+            $this->redirect(route('app.user.show', $this->user->login), navigate: true);
+            return;
+        }
+
+        $this->toastError($result['message']);
+    }
+
+    public function enableUser(): void
+    {
+        if (!$this->user) {
+            $this->toastError('Utilisateur introuvable.');
+            return;
+        }
+
+        if (!Gate::allows('delete-user')) {
+            $this->toastAccessDenied();
+            return;
+        }
+
+        $result = $this->userService->enableUser($this->user->login);
+
+        if ($result['success']) {
+            $this->toastSuccess($result['message']);
+            $this->redirect(route('app.user.show', $this->user->login), navigate: true);
+            return;
+        }
+
+        $this->toastError($result['message']);
+    }
+
+    public function deleteUserPermanently(): void
+    {
+        if (!$this->user) {
+            $this->toastError('Utilisateur introuvable.');
+            return;
+        }
+
+        if (!Gate::allows('delete-user')) {
+            $this->toastAccessDenied();
+            return;
+        }
+
+        $result = $this->userService->deleteUserPermanently($this->user->login);
+
+        if ($result['success']) {
+            $this->toastSuccess($result['message']);
+            $this->redirect(route('app.users'), navigate: true);
+            return;
+        }
+
+        $this->toastError($result['message']);
+    }
 };
 
 ?>
@@ -253,11 +324,12 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                             <li class="menu-title">
                                 <span>Actions système</span>
                             </li>
+                            @can('delete-user')
                             @if (!$accountDisabled)
                                 <li>
-                                    <a href="/annu/desac_user_entry.php?cn={{ $user->login }}"
-                                        onclick="return confirm('Êtes-vous sûr de vouloir désactiver ce compte ?')"
-                                        class="flex items-center gap-3 text-warning">
+                                    <button type="button" class="flex items-center gap-3 w-full text-warning"
+                                        wire:click="disableUser"
+                                        wire:confirm="Êtes-vous sûr de vouloir désactiver ce compte ? Le home directory sera archivé dans /home/trash/.">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                                 d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636">
@@ -265,14 +337,15 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                                         </svg>
                                         <div class="flex flex-col items-start">
                                             <span class="font-medium">Désactiver le compte</span>
-                                            <span class="text-xs opacity-70">Bloquer l'accès</span>
+                                            <span class="text-xs opacity-70">Bloquer l'accès et archiver le home</span>
                                         </div>
-                                    </a>
+                                    </button>
                                 </li>
                             @else
                                 <li>
-                                    <a href="/annu/desac_user_entry.php?cn={{ $user->login }}&action=activ"
-                                        class="flex items-center gap-3 text-success">
+                                    <button type="button" class="flex items-center gap-3 w-full text-success"
+                                        wire:click="enableUser"
+                                        wire:confirm="Réactiver ce compte utilisateur ?">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                                 d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -281,9 +354,25 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                                             <span class="font-medium">Activer le compte</span>
                                             <span class="text-xs opacity-70">Réactiver l'accès</span>
                                         </div>
-                                    </a>
+                                    </button>
+                                </li>
+                                <li>
+                                    <button type="button" class="flex items-center gap-3 w-full text-error"
+                                        wire:click="deleteUserPermanently"
+                                        wire:confirm="ATTENTION : Cette action est IRRÉVERSIBLE. Le compte et toutes ses données seront supprimés définitivement. Confirmer la suppression ?">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                            </path>
+                                        </svg>
+                                        <div class="flex flex-col items-start">
+                                            <span class="font-medium">Supprimer définitivement</span>
+                                            <span class="text-xs opacity-70">Suppression AD, SQL et home</span>
+                                        </div>
+                                    </button>
                                 </li>
                             @endif
+                            @endcan
                             <li>
                                 <a href="/annu/del_nt_profile.php?cn={{ $user->login }}&action=del"
                                     onclick="return confirm('Régénérer le profil Windows de cet utilisateur ?')"
