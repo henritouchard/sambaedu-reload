@@ -13,12 +13,18 @@ use App\Repositories\RightRepository;
 use App\Repositories\UserGroupRepository;
 use App\Services\UserGroupService;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class UserGroupServiceLegacyCompatibilityTest extends TestCase
 {
+    use DatabaseTransactions;
+
+    /** true si on a créé les tables nous-mêmes (SQLite :memory:) */
+    private bool $createdTables = false;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -29,6 +35,12 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
 
     protected function tearDown(): void
     {
+        // Nettoyer uniquement si on a créé les tables (SQLite :memory:)
+        if ($this->createdTables) {
+            Schema::dropIfExists('user_group_user');
+            Schema::dropIfExists('user_groups');
+            Schema::dropIfExists('users');
+        }
         UserGroupObserver::enableSync();
         parent::tearDown();
     }
@@ -230,40 +242,47 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
 
     private function createTestTables(): void
     {
-        Schema::dropIfExists('user_group_user');
-        Schema::dropIfExists('user_groups');
-        Schema::dropIfExists('users');
+        // En SQLite :memory:, les tables n'existent pas → les créer
+        // Sur PostgreSQL (VM), les tables existent déjà via les migrations → ne pas y toucher
+        if (!Schema::hasTable('users')) {
+            Schema::create('users', function (Blueprint $table): void {
+                $table->id();
+                $table->string('login')->unique();
+                $table->string('password')->nullable();
+                $table->string('fullname')->nullable();
+                $table->string('firstname')->nullable();
+                $table->string('lastname')->nullable();
+                $table->string('email')->nullable();
+                $table->text('dn')->nullable();
+                $table->string('role')->default('autre');
+                $table->boolean('is_active')->default(true);
+                $table->json('ad_right_profiles')->nullable();
+                $table->integer('ad_rights_bitmask')->default(0);
+                $table->timestamp('ad_synced_at')->nullable();
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
 
-        Schema::create('users', function (Blueprint $table): void {
-            $table->id();
-            $table->string('login')->unique();
-            $table->string('password')->nullable();
-            $table->string('fullname')->nullable();
-            $table->string('firstname')->nullable();
-            $table->string('lastname')->nullable();
-            $table->string('email')->nullable();
-            $table->text('dn')->nullable();
-            $table->string('role')->default('autre');
-            $table->boolean('is_active')->default(true);
-            $table->json('ad_right_profiles')->nullable();
-            $table->integer('ad_rights_bitmask')->default(0);
-            $table->timestamp('ad_synced_at')->nullable();
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('user_groups')) {
+            Schema::create('user_groups', function (Blueprint $table): void {
+                $table->id();
+                $table->string('name')->unique();
+                $table->string('display_name')->nullable();
+                $table->string('type');
+                $table->text('ad_dn')->nullable();
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
 
-        Schema::create('user_groups', function (Blueprint $table): void {
-            $table->id();
-            $table->string('name')->unique();
-            $table->string('display_name')->nullable();
-            $table->string('type');
-            $table->text('ad_dn')->nullable();
-            $table->timestamps();
-        });
-
-        Schema::create('user_group_user', function (Blueprint $table): void {
-            $table->unsignedBigInteger('user_group_id');
-            $table->unsignedBigInteger('user_id');
-            $table->primary(['user_group_id', 'user_id']);
-        });
+        if (!Schema::hasTable('user_group_user')) {
+            Schema::create('user_group_user', function (Blueprint $table): void {
+                $table->unsignedBigInteger('user_group_id');
+                $table->unsignedBigInteger('user_id');
+                $table->primary(['user_group_id', 'user_id']);
+            });
+            $this->createdTables = true;
+        }
     }
 }
