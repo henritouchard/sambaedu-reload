@@ -22,13 +22,12 @@ if (!function_exists('get_config')) {
      * Override get_config — retourne le $config déjà initialisé par notre bridge.
      * La version legacy lit /etc/sambaedu/ et se connecte en LDAP — on ne veut pas ça.
      */
-    function get_config(array $config = [], bool $force = true, $global = false, $module = "all")
+    function get_config(array $inputConfig = [], bool $force = true, $global = false, $module = "all")
     {
-        global $config;
         $globalConfig = $GLOBALS['config'] ?? [];
-        // Fusionner : le $config passé en paramètre peut contenir des clés supplémentaires
-        if (!empty($config)) {
-            return array_merge($globalConfig, $config);
+        // Fusionner : le $inputConfig passé en paramètre peut contenir des clés supplémentaires
+        if (!empty($inputConfig)) {
+            return array_merge($globalConfig, $inputConfig);
         }
         return $globalConfig;
     }

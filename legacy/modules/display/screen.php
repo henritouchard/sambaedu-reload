@@ -21,7 +21,7 @@ echo $html;
 include "ihm.inc.php";
 
 if (! have_right($config, SE_ADMIN))
-    exit();
+    return;
 
 echo "<h1>Configuration des écrans</h1>\n";
 echo "<b>En cours de développement....</b>\n";

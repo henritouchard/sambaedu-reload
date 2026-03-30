@@ -242,7 +242,7 @@ class LegacyCatchallController extends Controller
     {
         $targetFile = $isDirWithIndex ? $modulePath . '/index.php' : $modulePath;
 
-        $originalCwd = getcwd();
+        $originalCwd = getcwd() ?: base_path();
 
         try {
             // Charger le bootstrap legacy (idempotent)
@@ -285,7 +285,7 @@ class LegacyCatchallController extends Controller
             // Détection : page web HTML → embed dans le layout SER
             if ($this->isHtmlWebPage($contentType, $output)) {
                 $cleanedHtml = $this->cleanLegacyHtml($output);
-                $moduleName = basename(dirname($targetFile === $modulePath ? $modulePath : $modulePath));
+                $moduleName = basename(dirname($targetFile));
 
                 return response(
                     view('legacy-embed', [
@@ -455,10 +455,21 @@ class LegacyCatchallController extends Controller
         // Neutraliser le position:absolute sur les divs de contenu legacy
         $html = preg_replace('/style="[^"]*position:\s*absolute[^"]*"/i', 'style="position:relative; width:100%; padding:0;"', $html);
 
-        // Réécrire les actions de formulaire pour rester sur l'URL courante
+        // Réécrire les actions de formulaire pour le routage via le catchall
+        // Actions absolues (commençant par /) : injecter le préfixe UAI
+        $uai = config('sambaedu.etab_ou', '');
+        if (!empty($uai)) {
+            $html = preg_replace(
+                '/(<form[^>]*\s)action\s*=\s*["\']\/([^"\']*\.php)["\']/',
+                '$1action="/' . e($uai) . '/$2"',
+                $html
+            );
+        }
+        // Actions relatives : résoudre vers l'URL courante (le navigateur
+        // ne saurait pas les résoudre correctement via le proxy)
         $currentUrl = url()->current();
         $html = preg_replace(
-            '/(<form[^>]*\s)action\s*=\s*["\'][^"\']*\.php["\']/',
+            '/(<form[^>]*\s)action\s*=\s*["\'](?!\/|https?:)([^"\']*\.php)["\']/',
             '$1action="' . e($currentUrl) . '"',
             $html
         );
@@ -490,6 +501,11 @@ class LegacyCatchallController extends Controller
             $_SESSION['etab'] = config('sambaedu.etab_ou', '');
             $_SESSION['etab_ou'] = config('sambaedu.etab_ou', '');
         }
+
+        // Libérer le lock session immédiatement — le module legacy peut encore
+        // lire $_SESSION (le tableau reste en mémoire) mais ne bloque plus
+        // les requêtes concurrentes du même utilisateur.
+        session_write_close();
     }
 
 }

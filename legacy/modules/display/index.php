@@ -39,7 +39,7 @@ if (isset($conf['diapo']) && isset($conf['diapo']['nb'])) {
             if ($conf['diapo']['ip' . $i] == $_SERVER['REMOTE_ADDR']) {
                 $url = str_replace('&amp;', '&', $conf['diapo']['url' . $i]);
                 header('Location:' . $url);
-                exit();
+                return;
             }
         }
     }

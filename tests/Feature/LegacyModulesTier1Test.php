@@ -384,4 +384,46 @@ class LegacyModulesTier1Test extends TestCase
             @rmdir($testDir);
         }
     }
+
+    // ── AC3 : Pas d'erreur récurrente ──────────────────────────────────
+
+    /**
+     * AC3 — L'exécution d'un module Tier 1 ne génère pas d'erreur dans le error logger.
+     */
+    public function test_module_execution_does_not_generate_error_logs(): void
+    {
+        // Vider les erreurs existantes
+        \App\Models\ErrorLog::where('source', 'legacy')->delete();
+
+        $testDir = base_path('legacy/modules/test-ac3');
+        @mkdir($testDir, 0777, true);
+        // Module minimal qui charge le bootstrap complet (stubs + shims)
+        file_put_contents(
+            $testDir . '/index.php',
+            '<?php
+            require_once "config.inc.php";
+            require_once "ldap.inc.php";
+            $config = get_config();
+            echo "AC3_OK";
+            ?>'
+        );
+
+        try {
+            $response = $this->get('/test-ac3');
+            $response->assertStatus(200);
+            $response->assertSee('AC3_OK');
+
+            // Vérifier qu'aucune erreur legacy n'a été loggée
+            $errors = \App\Models\ErrorLog::where('source', 'legacy')->get();
+            $this->assertCount(
+                0,
+                $errors,
+                'AC3 violé : erreurs legacy après exécution du module : '
+                . $errors->pluck('message')->implode(' | ')
+            );
+        } finally {
+            @unlink($testDir . '/index.php');
+            @rmdir($testDir);
+        }
+    }
 }

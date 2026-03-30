@@ -21,7 +21,7 @@ echo $html;
 include "ihm.inc.php";
 include "display.inc.php";
 if (! have_right($config, SE_ADMIN))
-    exit();
+    return;
 echo "<h1>Configuration de l'affichage dynamique</h1>\n";
 echo "<h1>Ajout d'un flux d'informations :</h1>\n";
 echo form_choose_info(); // nom du flux + durée d'affichage par news + nombre de news + image de fond + image d'intro. Lors de la saisi du premier flux, l'url du diaporama (précédemment paramétré éventuellement) est supprimé, lors de la saisi du 2e flux, il s'ajoute au premier.

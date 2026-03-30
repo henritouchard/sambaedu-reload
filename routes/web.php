@@ -50,6 +50,9 @@ Route::prefix("authentication")->name("auth.")->group(function () {
 
 // Route pour l'interface utilisateur modernisée
 Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function () {
+    // Navigation legacy (temporaire)
+    Route::livewire('/homelegacy', 'pages::homelegacy.index')->name('homelegacy');
+
     Route::livewire('/dashboard', 'pages::dashboard.index')->name('dashboard');
     Route::livewire('/workers', 'pages::workers.index')->name('workers.index');
     Route::livewire('/workers/{pid}', 'pages::workers.[pid].index')->whereNumber('pid')->name('workers.show');
