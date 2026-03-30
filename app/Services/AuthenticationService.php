@@ -575,7 +575,7 @@ class AuthenticationService
         $_SESSION['login_ent'] = $userInfo['login'] ?? null;
         $_SESSION['login'] = $userInfo['cn'] ?? $userInfo['login'];
         $_SESSION['auth'] = "ent";
-        $_SESSION['accesstoken'] = $accessToken;
+        $_SESSION['accesstoken'] = is_object($accessToken) ? $accessToken->getToken() : $accessToken;
         $_SESSION['hasPw'] = $userInfo['hasPw'] ?? null;
         $_SESSION['forceChangePassword'] = $userInfo['forceChangePassword'] ?? null;
 

@@ -6,20 +6,30 @@
 
 namespace App\Http\Controllers;
 
+use App\Config\SambaEduConfig;
 use App\Constants\Errors\AuthenticationErrors;
+use App\Repositories\UserRepository;
 use App\Services\AuthenticationService;
 use Devrabiul\ToastMagic\Facades\ToastMagic;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use League\OAuth2\Client\Provider\GenericProvider;
 use Exception;
 
 class AuthController extends Controller
 {
     private AuthenticationService $authService;
+    private SambaEduConfig $sambaEduConfig;
+    private UserRepository $userRepository;
 
-    public function __construct(AuthenticationService $authService)
-    {
+    public function __construct(
+        AuthenticationService $authService,
+        SambaEduConfig $sambaEduConfig,
+        UserRepository $userRepository
+    ) {
         $this->authService = $authService;
+        $this->sambaEduConfig = $sambaEduConfig;
+        $this->userRepository = $userRepository;
     }
 
     /**
@@ -162,14 +172,19 @@ class AuthController extends Controller
     private function redirectToEntOAuth2()
     {
         try {
-            Log::info('Redirection vers ENT OAuth2');
-            return redirect('/oauth2/login.php');
+            $provider = $this->buildOAuth2Provider();
+            $authorizationUrl = $provider->getAuthorizationUrl();
+
+            session()->regenerate(true);
+            session(['oauth2state' => $provider->getState()]);
+
+            return redirect($authorizationUrl);
         } catch (Exception $e) {
-            Log::error('Erreur lors de la redirection ENT', [
+            Log::error('Erreur lors de la redirection ENT OAuth2', [
                 'error' => $e->getMessage()
             ]);
             ToastMagic::error('Erreur', 'Impossible de se connecter à l\'ENT. Veuillez réessayer.');
-            return back();
+            return redirect()->route('auth.login');
         }
     }
 
@@ -191,16 +206,134 @@ class AuthController extends Controller
     }
 
     /**
-     * Callback pour l'authentification ENT (si nécessaire)
+     * Callback OAuth2 ENT — échange le code d'autorisation contre un token,
+     * récupère les infos utilisateur, puis crée la session.
      */
     public function entCallback(Request $request)
     {
-        Log::info('Callback ENT reçu', [
-            'params' => $request->all()
-        ]);
+        if ($this->authService->isAlreadyAuthenticated()) {
+            return redirect()->route('app.dashboard');
+        }
 
-        // Rediriger vers l'URL demandée initialement ou le dashboard
-        return redirect()->intended(route('app.dashboard'));
+        // Pas de code = pas de callback valide
+        if (!$request->has('code')) {
+            return redirect()->route('auth.login');
+        }
+
+        // Vérification CSRF via state
+        $storedState = session('oauth2state');
+        session()->forget('oauth2state');
+
+        if (empty($request->get('state')) || !hash_equals($storedState ?? '', $request->get('state'))) {
+            Log::warning('OAuth2 ENT : state invalide', [
+                'received' => $request->get('state'),
+            ]);
+            ToastMagic::error('Erreur', 'Session OAuth2 invalide. Veuillez réessayer.');
+            return redirect()->route('auth.login');
+        }
+
+        try {
+            $provider = $this->buildOAuth2Provider();
+
+            // Échanger le code contre un access token
+            $accessToken = $provider->getAccessToken('authorization_code', [
+                'code' => $request->get('code'),
+            ]);
+
+            // Récupérer les infos utilisateur depuis l'ENT
+            $resourceOwner = $provider->getResourceOwner($accessToken);
+            $userinfo = $resourceOwner->toArray();
+
+            // Rechercher l'utilisateur local (par login ou par externalId dans l'attribut title)
+            $login = $userinfo['login'] ?? '';
+            $user = !empty($login) ? $this->userRepository->findByLogin($login) : null;
+
+            if (!$user && !empty($userinfo['externalId'])) {
+                $user = $this->userRepository->findByExternalId($userinfo['externalId']);
+            }
+
+            if (!$user) {
+                Log::error('OAuth2 ENT : utilisateur introuvable localement', [
+                    'login_ent' => $userinfo['login'] ?? null,
+                    'externalId' => $userinfo['externalId'] ?? null,
+                ]);
+                ToastMagic::error('Erreur', 'Votre compte ENT n\'est associé à aucun compte local.');
+                return redirect()->route('auth.login');
+            }
+
+            // Créer la session ENT via le service d'authentification
+            // On force 'cn' avec le login local : le login ENT peut différer du login AD local
+            // (incohérence connue entre userinfo ENT et l'annuaire AD)
+            $this->authService->createEntSession(
+                array_merge($userinfo, ['cn' => $user->login]),
+                $accessToken
+            );
+
+            Log::info('Connexion ENT réussie', [
+                'login' => $user->login,
+                'login_ent' => $userinfo['login'] ?? null,
+            ]);
+
+            cache()->put('ent_status', true, 300);
+
+            ToastMagic::success('Connexion', 'Bienvenue ' . $user->login . ' ! Connexion ENT réussie.');
+            return redirect()->intended(route('app.dashboard'));
+
+        } catch (\League\OAuth2\Client\Provider\Exception\IdentityProviderException $e) {
+            Log::error('OAuth2 ENT : erreur provider', ['error' => $e->getMessage()]);
+
+            // Quota overflow ou erreur provider → marquer ENT indisponible
+            if (str_contains($e->getMessage(), 'quota_overflow') || str_contains($e->getMessage(), 'Invalid response received from Authorization Server')) {
+                cache()->put('ent_status', false, 300);
+                return redirect()->route('auth.login');
+            }
+
+            ToastMagic::error('Erreur', 'Erreur de connexion à l\'ENT. Veuillez réessayer.');
+            return redirect()->route('auth.login');
+
+        } catch (Exception $e) {
+            Log::error('OAuth2 ENT : erreur inattendue', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            ToastMagic::error('Erreur', 'Erreur lors de la connexion ENT. Veuillez réessayer.');
+            return redirect()->route('auth.login');
+        }
+    }
+
+    /**
+     * Construit le provider OAuth2 League avec la config SambaEdu.
+     */
+    private function buildOAuth2Provider(): GenericProvider
+    {
+        $clientId     = $this->sambaEduConfig->get('openent_oauth2_id', '');
+        $clientSecret = $this->sambaEduConfig->get('openent_oauth2_pass', '');
+        $entUri       = rtrim($this->sambaEduConfig->get('openent_uri', ''), '/');
+
+        if (empty($clientId) || empty($clientSecret) || empty($entUri)) {
+            throw new \RuntimeException('Configuration OAuth2 ENT incomplète : clientId, clientSecret et openent_uri sont requis.');
+        }
+
+        $options = [
+            'clientId'                => $clientId,
+            'clientSecret'            => $clientSecret,
+            'redirectUri'             => route('auth.ent.callback'),
+            'urlAuthorize'            => $entUri . '/' . ltrim($this->sambaEduConfig->get('openent_oauth2_auth', ''), '/'),
+            'urlAccessToken'          => $entUri . '/' . ltrim($this->sambaEduConfig->get('openent_oauth2_token', ''), '/'),
+            'urlResourceOwnerDetails' => $entUri . '/' . ltrim($this->sambaEduConfig->get('openent_oauth2_userinfo', ''), '/'),
+            'scopes'                  => ['userinfo'],
+        ];
+
+        // Support proxy si configuré
+        // TODO: verify=false hérité du legacy — décision archi en attente.
+        //   Voir notes-constats-henri.md § "OAuth2 / Proxy — Question architecturale ouverte"
+        $proxy = $this->sambaEduConfig->proxy();
+        if ($proxy->isEnabled()) {
+            $options['proxy'] = $proxy->getUrl();
+            $options['verify'] = false;
+        }
+
+        return new GenericProvider($options);
     }
 
     /**
