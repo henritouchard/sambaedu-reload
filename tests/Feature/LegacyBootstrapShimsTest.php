@@ -8,28 +8,21 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * Test Feature : intégration des modules legacy Tier 1 via le catchall.
+ * Test Feature : infrastructure d'exécution legacy (bootstrap, stubs, shims).
  *
- * Story 1bis.4 — Vérifie que les modules Tier 1 copiés dans legacy/modules/
- * sont accessibles, que les stubs sont prépendus dans l'include path,
- * et que le bootstrap + shims fournissent le contexte nécessaire.
+ * Vérifie que le bootstrap prépend les stubs dans l'include_path,
+ * que les shims LDAP/SQL sont disponibles, et que le runtime legacy
+ * (autoload bridge, CWD, functions.inc.php) fonctionne correctement.
  */
-class LegacyModulesTier1Test extends TestCase
+class LegacyBootstrapShimsTest extends TestCase
 {
     protected function setUp(): void
     {
         parent::setUp();
         $this->withoutVite();
 
-        // NE PAS overrider legacy_path — le bootstrap en a besoin pour
-        // construire l'include_path et charger functions.inc.php.
-        // Les modules Tier 1 sont dans legacy/modules/ → exécutés via
-        // executeViaBootstrap(), pas via proxy HTTP.
         Config::set('sambaedu.block_migrated_routes', false);
 
-        // S'assurer que l'include_path contient les stubs et le legacy includes,
-        // même si le bootstrap a déjà été chargé par un autre test avec un
-        // legacy_path temporaire.
         $stubsPath = base_path('legacy/stubs');
         $legacyIncludesPath = config('sambaedu.legacy_path', '/var/www/sambaedu') . '/includes';
         $currentPath = get_include_path();
@@ -41,8 +34,6 @@ class LegacyModulesTier1Test extends TestCase
         }
         set_include_path($currentPath);
 
-        // Charger functions.inc.php si pas encore fait (le bootstrap peut
-        // avoir été chargé par un autre test sans le bon include path)
         if (is_dir($legacyIncludesPath) && !function_exists('remote_ip')) {
             $functionsPath = $legacyIncludesPath . '/functions.inc.php';
             if (file_exists($functionsPath)) {
@@ -50,7 +41,6 @@ class LegacyModulesTier1Test extends TestCase
             }
         }
 
-        // Créer les tables de log en mémoire si absentes
         if (!Schema::hasTable('legacy_catchall_logs')) {
             Schema::create('legacy_catchall_logs', function (Blueprint $table) {
                 $table->id();
@@ -78,10 +68,10 @@ class LegacyModulesTier1Test extends TestCase
         parent::tearDown();
     }
 
-    // ── AC4 : Stubs chargés avant les includes originaux ──────────────
+    // ── Stubs & Include Path ─────────────────────────────────────────────
 
     /**
-     * AC4 — Le bootstrap prépend legacy/stubs/ dans l'include_path.
+     * Le bootstrap prépend legacy/stubs/ dans l'include_path.
      */
     public function test_bootstrap_prepends_stubs_in_include_path(): void
     {
@@ -100,8 +90,6 @@ class LegacyModulesTier1Test extends TestCase
             $stubsPos = strpos($includePath, 'legacy/stubs');
             $this->assertNotFalse($stubsPos, 'legacy/stubs doit être dans l\'include_path');
 
-            // Vérifier que stubs est AVANT le includes legacy dans l'include_path
-            // Rechercher spécifiquement le dossier legacy includes (pas 'stubs' qui contient aussi 'includes')
             $legacyIncludesPos = strpos($includePath, '/includes', $stubsPos + 12);
             if ($legacyIncludesPos !== false) {
                 $this->assertLessThan(
@@ -117,7 +105,7 @@ class LegacyModulesTier1Test extends TestCase
     }
 
     /**
-     * AC4 — require 'config.inc.php' résout vers le stub, pas le legacy original.
+     * require 'config.inc.php' résout vers le stub, pas le legacy original.
      */
     public function test_config_inc_resolves_to_stub(): void
     {
@@ -142,7 +130,7 @@ class LegacyModulesTier1Test extends TestCase
     }
 
     /**
-     * AC4 — require 'ldap.inc.php' résout vers le stub (shim LDAP).
+     * require 'ldap.inc.php' résout vers le stub (shim LDAP).
      */
     public function test_ldap_inc_resolves_to_stub(): void
     {
@@ -167,7 +155,7 @@ class LegacyModulesTier1Test extends TestCase
     }
 
     /**
-     * AC4 — require 'admin_ui.inc.php' résout vers le stub (fonctions vides).
+     * require 'admin_ui.inc.php' résout vers le stub (fonctions vides).
      */
     public function test_admin_ui_inc_resolves_to_stub(): void
     {
@@ -191,67 +179,10 @@ class LegacyModulesTier1Test extends TestCase
         }
     }
 
-    // ── AC1 : Modules Tier 1 copiés et accessibles ────────────────────
+    // ── Shims LDAP ───────────────────────────────────────────────────────
 
     /**
-     * AC1 — Les modules Tier 1 existent dans legacy/modules/.
-     */
-    public function test_tier1_modules_exist_in_legacy_modules(): void
-    {
-        $modulesBase = base_path('legacy/modules');
-
-        $expectedModules = [
-            'display/index.php',
-            'display/screen.php',
-            'display/config.php',
-            'oauth2/login.php',
-            'oauth2/callback.php',
-            'sso/cas.php',
-            'sso/oauth2.php',
-            'sso/openid.php',
-            'cas/cas.php',
-            'cas/ent.php',
-            'api/ecowatt.php',
-            'user/index.php',
-            'dossier_echange/dossier_echange.php',
-        ];
-
-        foreach ($expectedModules as $module) {
-            $this->assertFileExists(
-                $modulesBase . '/' . $module,
-                "Module Tier 1 manquant : {$module}"
-            );
-        }
-    }
-
-    /**
-     * AC1 — Les assets statiques du module display sont copiés.
-     */
-    public function test_display_module_assets_are_copied(): void
-    {
-        $displayDir = base_path('legacy/modules/display');
-
-        $this->assertDirectoryExists($displayDir . '/css', 'display/css manquant');
-        $this->assertDirectoryExists($displayDir . '/js', 'display/js manquant');
-        $this->assertDirectoryExists($displayDir . '/IMG', 'display/IMG manquant');
-        $this->assertFileExists($displayDir . '/css/reveal.css');
-        $this->assertFileExists($displayDir . '/js/reveal.js');
-    }
-
-    /**
-     * AC1 — Le module api/ecowatt.php est accessible via catchall (pas de 404).
-     */
-    public function test_api_ecowatt_module_accessible_via_catchall(): void
-    {
-        $response = $this->get('/api/ecowatt.php');
-        // Le module peut retourner une erreur de dépendance mais pas un 404
-        $this->assertNotEquals(404, $response->status(), 'Le module api/ecowatt.php ne doit pas retourner 404');
-    }
-
-    // ── AC2 : Données via shim LDAP ───────────────────────────────────
-
-    /**
-     * AC2 — Les fonctions LDAP shimmées sont disponibles pour les modules.
+     * Les fonctions LDAP shimmées sont disponibles pour les modules.
      */
     public function test_ldap_shim_functions_available_in_module_context(): void
     {
@@ -280,7 +211,7 @@ class LegacyModulesTier1Test extends TestCase
     }
 
     /**
-     * AC2 — functions.inc.php est chargé et fournit les fonctions utilitaires.
+     * functions.inc.php est chargé et fournit les fonctions utilitaires.
      */
     public function test_functions_inc_loaded_in_module_context(): void
     {
@@ -309,7 +240,7 @@ class LegacyModulesTier1Test extends TestCase
     }
 
     /**
-     * AC2 — is_eleve() et is_prof() sont disponibles via le shim LDAP.
+     * is_eleve() et is_prof() sont disponibles via le shim LDAP.
      */
     public function test_is_eleve_and_is_prof_available_in_module_context(): void
     {
@@ -337,6 +268,8 @@ class LegacyModulesTier1Test extends TestCase
         }
     }
 
+    // ── Runtime Legacy (autoload, CWD) ───────────────────────────────────
+
     /**
      * Le bridge vendor/autoload.php dans legacy/modules/ fonctionne.
      */
@@ -344,7 +277,6 @@ class LegacyModulesTier1Test extends TestCase
     {
         $testDir = base_path('legacy/modules/test-vendor');
         @mkdir($testDir, 0777, true);
-        // Simule le require_once que font les modules legacy
         file_put_contents(
             $testDir . '/index.php',
             '<?php

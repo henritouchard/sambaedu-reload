@@ -190,8 +190,18 @@ class UserRepository
     }
 
     /**
+     * Recherche un utilisateur par son externalId ENT (attribut LDAP 'title')
+     */
+    public function findByExternalId(string $externalId): ?User
+    {
+        $ldapUser = LdapUser::findByExternalId($externalId);
+
+        return $ldapUser ? $ldapUser->toBusinessObject() : null;
+    }
+
+    /**
      * Recherche des utilisateurs par terme de recherche
-     * 
+     *
      * OPTIMISATION: Utilise un filtre LDAP natif combiné au lieu de 15 requêtes (3 groupes × 5 champs)
      * Format: (&(|(memberOf=DN1)(memberOf=DN2)(memberOf=DN3))(|(cn=*term*)(sn=*term*)(displayname=*term*)(givenname=*term*)(mail=*term*)))
      * 

@@ -81,6 +81,14 @@ class LdapUser extends BaseUser
         return static::where('employeenumber', '=', $employeenumber)->first();
     }
 
+    /**
+     * Recherche un utilisateur par son externalId ENT (stocké dans l'attribut LDAP 'title')
+     */
+    public static function findByExternalId(string $externalId): ?static
+    {
+        return static::where('title', '=', $externalId)->first();
+    }
+
     // ============================================
     // ACCESSEURS LDAP SIMPLES (pour usage interne avant conversion DTO)
     // ============================================

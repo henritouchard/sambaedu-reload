@@ -43,7 +43,6 @@ class VerifyCsrfToken extends Middleware
         'majtest.php*',
         'menu.php*',
         'metrics*',
-        'oauth2*',
         'parcs*',
         'parcs2*',
         'partages*',
