@@ -147,6 +147,7 @@ class UserService
             firstname: $sqlUser->firstname,
             lastname: $sqlUser->lastname,
             email: $sqlUser->email,
+            etabCode: $sqlUser->school_code,
             isActive: (bool) $sqlUser->is_active,
             memberOf: $groups,
             groups: $groups,

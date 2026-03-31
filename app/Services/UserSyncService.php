@@ -486,12 +486,15 @@ class UserSyncService
             return is_string($val) ? $val : null;
         };
 
+        $businessObject = $ldapUser->toBusinessObject();
+
         return new AdUser(
             login: (string) ($ldapUser->getLogin() ?? ''),
             fullname: $getValue('displayname') ?? $getValue('cn') ?? '',
             firstname: $getValue('givenname'),
             lastname: $getValue('sn'),
             email: $getValue('mail'),
+            etabCode: $businessObject->etabCode,
             dn: $ldapUser->getDn(),
             groups: $groupNames,
             rights: $rightProfiles,
@@ -585,6 +588,7 @@ class UserSyncService
                 'dn' => $adUser->dn,
                 'ad_guid' => $adGuid,
                 'role' => $adUser->role,
+                'school_code' => $adUser->etabCode,
                 'is_active' => true,
                 'ad_synced_at' => now(),
             ]);
@@ -598,6 +602,7 @@ class UserSyncService
                 'dn' => $adUser->dn ?? $user->dn,
                 'ad_guid' => $adGuid ?? $user->ad_guid,
                 'role' => $adUser->role !== '' ? $adUser->role : $user->role,
+                'school_code' => ($adUser->etabCode !== null && $adUser->etabCode !== '') ? $adUser->etabCode : $user->school_code,
                 'ad_synced_at' => now(),
             ]);
         }

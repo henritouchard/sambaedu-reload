@@ -50,6 +50,13 @@
                                                         Professeur
                                                     </div>
                                                 @endif
+                                                @if ($user->isExternal())
+                                                    <div
+                                                        class="badge badge-warning badge-lg gap-2 px-4 py-2 shadow-md hover:shadow-lg transition-all duration-300">
+                                                        <i class="fa-solid fa-arrow-right-arrow-left w-4 h-4"></i>
+                                                        Externe
+                                                    </div>
+                                                @endif
                                                 @if ($user->isDisabled())
                                                     <div
                                                         class="badge badge-error badge-outline badge-lg px-4 py-2 shadow-md">

@@ -31,6 +31,7 @@ use Livewire\Wireable;
  * @property string|null $dn
  * @property string|null $ad_guid
  * @property string $role
+ * @property string|null $school_code
  * @property bool $is_active
  * @property array|null $ad_right_profiles
  * @property int $ad_rights_bitmask
@@ -58,6 +59,7 @@ class User extends Authenticatable implements Wireable
         'dn',
         'ad_guid',
         'role',
+        'school_code',
         'is_active',
         'ad_right_profiles',
         'ad_rights_bitmask',
@@ -153,6 +155,13 @@ class User extends Authenticatable implements Wireable
         return $query->whereNotNull('ad_synced_at');
     }
 
+    public function scopeExternal(Builder $query, string $currentSchoolCode): Builder
+    {
+        return $query->whereNotNull('school_code')
+            ->where('school_code', '!=', '0')
+            ->whereRaw('LOWER(school_code) != LOWER(?)', [$currentSchoolCode]);
+    }
+
     // ========================================================================
     // HELPERS
     // ========================================================================
@@ -171,6 +180,24 @@ class User extends Authenticatable implements Wireable
     public function isSyncedFromAd(): bool
     {
         return $this->ad_synced_at !== null;
+    }
+
+    /**
+     * Vérifie si l'utilisateur est externe (rattaché à un autre établissement)
+     */
+    public function isExternal(): bool
+    {
+        if (empty(trim($this->school_code ?? '')) || $this->school_code === '0') {
+            return false;
+        }
+
+        $currentCode = \App\Facades\SEConfig::getCurrentEstablishmentCode();
+
+        if (empty($currentCode) || $currentCode === '0') {
+            return false;
+        }
+
+        return strtolower($this->school_code) !== strtolower($currentCode);
     }
 
     /**

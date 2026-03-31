@@ -229,7 +229,18 @@ new class extends Component {
     #[Computed]
     public function statusFilterOptions(): array
     {
-        return [['value' => 'active', 'label' => 'Actifs', 'hint' => '', 'disabled' => false], ['value' => 'inactive', 'label' => 'Inactifs', 'hint' => '', 'disabled' => false], ['value' => 'trash', 'label' => 'Corbeille', 'hint' => '', 'disabled' => false]];
+        $options = [
+            ['value' => 'active', 'label' => 'Actifs', 'hint' => '', 'disabled' => false],
+            ['value' => 'inactive', 'label' => 'Inactifs', 'hint' => '', 'disabled' => false],
+            ['value' => 'trash', 'label' => 'Corbeille', 'hint' => '', 'disabled' => false],
+        ];
+
+        $currentCode = \App\Facades\SEConfig::getCurrentEstablishmentCode();
+        if (!empty($currentCode) && $currentCode !== '0') {
+            $options[] = ['value' => 'externe', 'label' => 'Externes', 'hint' => '', 'disabled' => false];
+        }
+
+        return $options;
     }
 
     #[Computed]
@@ -237,7 +248,7 @@ new class extends Component {
     {
         $term = trim($this->search);
 
-        $query = User::query()->select(['id', 'login', 'firstname', 'lastname', 'fullname', 'is_active']);
+        $query = User::query()->select(['id', 'login', 'firstname', 'lastname', 'fullname', 'is_active', 'school_code']);
 
         if (mb_strlen($term) >= 4) {
             $normalizedSearch = '%' . mb_strtolower($term) . '%';
@@ -262,6 +273,17 @@ new class extends Component {
 
                 if (in_array('inactive', $this->status, true) || in_array('trash', $this->status, true)) {
                     $builder->orWhere('is_active', false);
+                }
+
+                if (in_array('externe', $this->status, true)) {
+                    $currentCode = \App\Facades\SEConfig::getCurrentEstablishmentCode();
+                    if (!empty($currentCode) && $currentCode !== '0') {
+                        $builder->orWhere(function (Builder $q) use ($currentCode) {
+                            $q->whereNotNull('school_code')
+                                ->where('school_code', '!=', '0')
+                                ->whereRaw('LOWER(school_code) != LOWER(?)', [$currentCode]);
+                        });
+                    }
                 }
             });
         }
@@ -494,11 +516,16 @@ new class extends Component {
                                 <td>{{ $user->firstname ?: '-' }}</td>
                                 <td class="font-mono text-sm">{{ $user->login }}</td>
                                 <td>
-                                    @if ($user->is_active)
-                                        <span class="badge badge-success">Actif</span>
-                                    @else
-                                        <span class="badge badge-error">Inactif</span>
-                                    @endif
+                                    <div class="flex gap-1 flex-wrap">
+                                        @if ($user->is_active)
+                                            <span class="badge badge-success">Actif</span>
+                                        @else
+                                            <span class="badge badge-error">Inactif</span>
+                                        @endif
+                                        @if ($user->isExternal())
+                                            <span class="badge badge-warning">Externe</span>
+                                        @endif
+                                    </div>
                                 </td>
                             </tr>
                         @empty

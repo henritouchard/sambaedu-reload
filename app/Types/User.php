@@ -193,6 +193,24 @@ class User implements Wireable
     }
 
     /**
+     * Vérifie si l'utilisateur est externe (rattaché à un autre établissement)
+     */
+    public function isExternal(): bool
+    {
+        if (empty(trim($this->etabCode ?? '')) || $this->etabCode === '0') {
+            return false;
+        }
+
+        $currentCode = \App\Facades\SEConfig::getCurrentEstablishmentCode();
+
+        if (empty($currentCode) || $currentCode === '0') {
+            return false;
+        }
+
+        return strtolower($this->etabCode) !== strtolower($currentCode);
+    }
+
+    /**
      * Vérifie si l'utilisateur est dans la corbeille
      */
     public function isInTrash(): bool
