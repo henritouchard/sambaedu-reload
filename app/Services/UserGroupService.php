@@ -8,6 +8,8 @@ use App\Facades\SEConfig;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Observers\UserGroupObserver;
+use App\Constants\Ldap\FunctionGroups;
+use App\Constants\Ldap\MainGroups;
 use App\Repositories\GroupRepository;
 use App\Repositories\RightRepository;
 use App\Repositories\UserGroupRepository;
@@ -334,8 +336,10 @@ class UserGroupService
                                 $updated = true;
                             }
 
-                            if (($group->type ?? '') !== $detectedType) {
-                                $group->type = $detectedType;
+                            // Le type n'existe pas dans l'AD, il est inféré depuis le nom du groupe.
+                            // On le recalcule systématiquement pour corriger tout écart SQL.
+                            $group->type = $detectedType;
+                            if ($group->isDirty('type')) {
                                 $updated = true;
                             }
 
@@ -616,6 +620,14 @@ class UserGroupService
 
         if (str_starts_with($groupName, 'Matiere_')) {
             return 'matiere';
+        }
+
+        if (MainGroups::isMainGroup($groupName)) {
+            return 'role';
+        }
+
+        if (FunctionGroups::isFunctionGroup($groupName)) {
+            return 'function';
         }
 
         return 'custom';

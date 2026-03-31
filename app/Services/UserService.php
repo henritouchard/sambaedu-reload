@@ -12,6 +12,7 @@ use App\Repositories\FunctionRepository;
 use App\Repositories\ClassRepository;
 use App\Services\PasswordService;
 use App\LdapModels\LdapUser;
+use App\Constants\Ldap\FunctionGroups;
 use App\LdapModels\SambaEduGroup;
 use App\Types\UserSearchCriteria;
 use App\Types\PaginatedResult;
@@ -1834,6 +1835,270 @@ class UserService
             }
         } catch (\Exception $e) {
             Log::warning("Erreur ajout groupe Cloud pour $login", ['error' => $e->getMessage()]);
+        }
+    }
+
+    // ============================================
+    // DÉPLACEMENT DN — Story 2.5
+    // ============================================
+
+    /**
+     * Déplace un utilisateur dans l'arbre AD quand sa catégorie ou sa fonction change.
+     *
+     * 1. Détecte si un déplacement est nécessaire (DN actuel vs DN cible)
+     * 2. Crée les OUs manquantes
+     * 3. ldap_rename vers le nouveau parent
+     * 4. Recharge l'objet LdapUser (le DN a changé)
+     *
+     * @return array{success: bool, message: string, ldapUser?: LdapUser}
+     */
+    public function moveUserDn(LdapUser $ldapUser, string $newCategorie, string $newFonction, int|string $etab): array
+    {
+        $login = $ldapUser->getLogin();
+        $oldDn = $ldapUser->getDn();
+
+        // Gérer les cas spéciaux Documentaliste/AESH : DN sous Profs
+        $dnCategorie = $newCategorie;
+        if (in_array($newFonction, FunctionGroups::PEDAGOGIQUES) && strtolower($newCategorie) !== 'profs') {
+            $dnCategorie = 'Profs';
+        }
+
+        // Construire le DN cible
+        $targetDn = $this->buildUserDn($login, $dnCategorie, $newFonction, $etab);
+
+        // Pas de changement nécessaire ?
+        if (strcasecmp($oldDn, $targetDn) === 0) {
+            return ['success' => true, 'message' => 'Aucun déplacement nécessaire.', 'ldapUser' => $ldapUser];
+        }
+
+        // Créer les OUs cibles si manquantes
+        $this->ouRepository->ensureUserOUsExist($dnCategorie, $newFonction, $etab);
+
+        // Préparer les paramètres pour ldap_rename
+        $connection = $ldapUser->getConnection()->getLdapConnection();
+        $newRdn = "CN={$login}";
+
+        // Extraire le parent DN depuis le DN cible (tout sauf le premier composant CN=...)
+        $targetParts = ldap_explode_dn($targetDn, 0);
+        if ($targetParts === false) {
+            Log::error('DN cible malformé', ['target_dn' => $targetDn, 'login' => $login]);
+            return ['success' => false, 'message' => 'DN cible malformé.'];
+        }
+        unset($targetParts['count']);
+        array_shift($targetParts); // retirer CN=login
+        $newParentDn = implode(',', $targetParts);
+
+        $result = @ldap_rename($connection, $oldDn, $newRdn, $newParentDn, true);
+
+        if (!$result) {
+            $error = ldap_error($connection);
+            Log::error('Échec ldap_rename pour déplacement utilisateur', [
+                'login' => $login,
+                'old_dn' => $oldDn,
+                'target_dn' => $targetDn,
+                'error' => $error,
+            ]);
+            return ['success' => false, 'message' => "Erreur LDAP lors du déplacement : {$error}"];
+        }
+
+        Log::info('Utilisateur déplacé dans l\'AD', [
+            'action' => 'user.move_dn',
+            'login' => $login,
+            'old_dn' => $oldDn,
+            'new_dn' => $targetDn,
+            'new_categorie' => $newCategorie,
+            'new_fonction' => $newFonction,
+            'operator' => auth()->user()?->login ?? 'system',
+        ]);
+
+        // Recharger l'objet LDAP (le DN a changé)
+        $this->userRepository->invalidateCache($login);
+        $reloadedUser = $this->userRepository->findLdapModelByLogin($login);
+
+        return [
+            'success' => true,
+            'message' => 'Utilisateur déplacé avec succès.',
+            'ldapUser' => $reloadedUser ?? $ldapUser,
+        ];
+    }
+
+    /**
+     * Synchronise les groupes de rôle/fonction d'un utilisateur après un changement.
+     *
+     * Retire les anciens groupes de catégorie et de fonction,
+     * puis ajoute les nouveaux.
+     */
+    public function syncRoleGroups(LdapUser $ldapUser, string $newCategorie, string $newFonction): void
+    {
+        $login = $ldapUser->getLogin();
+        $allMainGroups = MainGroups::all(); // Eleves, Profs, Administratifs
+        $allFonctions = FunctionGroups::all();
+
+        // Lire les groupes actuels de l'utilisateur (normalisés en lowercase pour comparaisons)
+        $memberOf = $ldapUser->getAttribute('memberof') ?? [];
+        $currentGroupCns = [];
+        foreach ($memberOf as $dn) {
+            if (preg_match('/^CN=([^,]+),/i', $dn, $m)) {
+                $currentGroupCns[] = $m[1];
+            }
+        }
+        $currentGroupCnsLower = array_map('strtolower', $currentGroupCns);
+
+        // --- Retirer les anciens groupes de catégorie ---
+        foreach ($allMainGroups as $mainGroupName) {
+            if (strcasecmp($mainGroupName, $newCategorie) === 0) {
+                continue; // on garde le nouveau
+            }
+            if (in_array(strtolower($mainGroupName), $currentGroupCnsLower)) {
+                $group = SambaEduGroup::findMainGroup($mainGroupName);
+                if ($group) {
+                    $group->members()->detach($ldapUser);
+                }
+            }
+        }
+
+        // --- Retirer les anciens groupes de fonction ---
+        foreach ($allFonctions as $fonctionName) {
+            if (strcasecmp($fonctionName, $newFonction) === 0) {
+                continue; // on garde la nouvelle
+            }
+            if (in_array(strtolower($fonctionName), $currentGroupCnsLower)) {
+                $fonctionGroup = SambaEduGroup::query()->where('cn', '=', $fonctionName)->first();
+                if ($fonctionGroup) {
+                    $fonctionGroup->members()->detach($ldapUser);
+                }
+            }
+        }
+
+        // --- Ajouter le nouveau groupe de catégorie ---
+        if (!in_array(strtolower($newCategorie), $currentGroupCnsLower)) {
+            $mainGroup = SambaEduGroup::findMainGroup($newCategorie);
+            if ($mainGroup) {
+                $mainGroup->members()->attach($ldapUser);
+            }
+        }
+
+        // --- Ajouter le nouveau groupe de fonction ---
+        if (!empty($newFonction) && !in_array(strtolower($newFonction), $currentGroupCnsLower)) {
+            $fonctionGroup = SambaEduGroup::query()->where('cn', '=', $newFonction)->first();
+            if ($fonctionGroup) {
+                $fonctionGroup->members()->attach($ldapUser);
+            }
+        }
+
+        // --- Cas spécial : groupe Portables pour Direction/Gestionnaire ---
+        $portablesPerdir = $this->config->get('portables_perdir', '0');
+        if ($portablesPerdir == '1') {
+            if (in_array($newFonction, ['Direction', 'Gestionnaire'])) {
+                if (!in_array(strtolower('Portables'), $currentGroupCnsLower)) {
+                    $portablesGroup = SambaEduGroup::query()->where('cn', '=', 'Portables')->first();
+                    if ($portablesGroup) {
+                        $portablesGroup->members()->attach($ldapUser);
+                    }
+                }
+            } else {
+                // Retirer Portables si l'utilisateur n'est plus Direction/Gestionnaire
+                if (in_array(strtolower('Portables'), $currentGroupCnsLower)) {
+                    $portablesGroup = SambaEduGroup::query()->where('cn', '=', 'Portables')->first();
+                    if ($portablesGroup) {
+                        $portablesGroup->members()->detach($ldapUser);
+                    }
+                }
+            }
+        }
+
+        Log::info('Groupes de rôle synchronisés', [
+            'action' => 'user.sync_role_groups',
+            'login' => $login,
+            'new_categorie' => $newCategorie,
+            'new_fonction' => $newFonction,
+            'operator' => auth()->user()?->login ?? 'system',
+        ]);
+    }
+
+    /**
+     * Change le rôle (catégorie/fonction) d'un utilisateur.
+     *
+     * Orchestre : moveUserDn + syncRoleGroups + double-write SQL.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function changeUserRole(string $login, string $newCategorie, string $newFonction, int|string $etab): array
+    {
+        if (!Gate::allows('update-user')) {
+            return ['success' => false, 'message' => 'Vous n\'avez pas les droits pour modifier cet utilisateur.'];
+        }
+
+        // Validation : fonction obligatoire pour Administratifs
+        if (strtolower($newCategorie) === 'administratifs' && empty($newFonction)) {
+            return ['success' => false, 'message' => 'La fonction est obligatoire pour les Administratifs.'];
+        }
+
+        $ldapUser = $this->userRepository->findLdapModelByLogin($login);
+        if (!$ldapUser) {
+            return ['success' => false, 'message' => 'Utilisateur introuvable dans l\'annuaire.'];
+        }
+
+        // Catégorie effective pour les groupes et le SQL (Documentaliste/AESH → Profs)
+        $effectiveCategorie = $newCategorie;
+        if (in_array($newFonction, FunctionGroups::PEDAGOGIQUES) && strtolower($newCategorie) !== 'profs') {
+            $effectiveCategorie = 'Profs';
+        }
+
+        // 1. Déplacement DN dans l'AD
+        $moveResult = $this->moveUserDn($ldapUser, $newCategorie, $newFonction, $etab);
+        if (!$moveResult['success']) {
+            return $moveResult;
+        }
+
+        $ldapUser = $moveResult['ldapUser'];
+
+        // 2. Synchronisation des groupes AD (catégorie effective)
+        $this->syncRoleGroups($ldapUser, $effectiveCategorie, $newFonction);
+
+        // 3. Double-write SQL (non bloquant, catégorie effective)
+        $this->updateRoleInSql($login, $ldapUser, $effectiveCategorie, $newFonction);
+
+        Log::info('Changement de rôle utilisateur complet', [
+            'action' => 'user.change_role',
+            'login' => $login,
+            'new_categorie' => $newCategorie,
+            'new_fonction' => $newFonction,
+            'operator' => auth()->user()?->login ?? 'system',
+        ]);
+
+        return ['success' => true, 'message' => 'Rôle modifié avec succès.'];
+    }
+
+    /**
+     * Met à jour le rôle et le DN en SQL après un déplacement AD (double-write).
+     * Échec SQL = log, pas de rollback (AD = source de vérité MVP).
+     */
+    private function updateRoleInSql(string $login, LdapUser $ldapUser, string $newCategorie, string $newFonction): void
+    {
+        try {
+            $roleMap = [
+                'eleves' => 'eleve',
+                'profs' => 'prof',
+                'administratifs' => 'admin',
+            ];
+            $role = $roleMap[strtolower($newCategorie)] ?? 'autre';
+
+            SqlUserModel::where('login', $login)->update([
+                'dn' => $ldapUser->getDn(),
+                'role' => $role,
+                'ad_synced_at' => now(),
+            ]);
+
+            // Re-sync les groupes SQL
+            $this->persistUserGroupsToSql($login, $newCategorie, $newFonction, []);
+
+            Log::info("Rôle SQL mis à jour pour $login (double-write)");
+        } catch (\Exception $e) {
+            Log::error('Échec double-write SQL pour changeUserRole (AD = source de vérité, on continue)', [
+                'login' => $login,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }
