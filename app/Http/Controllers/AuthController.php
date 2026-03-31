@@ -14,6 +14,7 @@ use Devrabiul\ToastMagic\Facades\ToastMagic;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use League\OAuth2\Client\Provider\GenericProvider;
+use phpCAS;
 use Exception;
 
 class AuthController extends Controller
@@ -189,19 +190,88 @@ class AuthController extends Controller
     }
 
     /**
-     * Rediriger vers l'authentification CAS
+     * Rediriger vers l'authentification CAS.
+     *
+     * phpCAS gère le round-trip sur la même URL :
+     *  1. Premier appel → forceAuthentication() redirect 302 vers le serveur CAS
+     *  2. Retour avec ?ticket= → forceAuthentication() valide le ticket et retourne
+     *  3. On continue avec handleCasAuthenticated()
      */
     private function redirectToCas()
     {
         try {
-            Log::info('Redirection vers CAS');
-            return redirect('/cas/cas.php');
+            $this->initCasClient();
+            if (!app()->isProduction()) {
+                phpCAS::setNoCasServerValidation();
+            }
+            phpCAS::forceAuthentication();
+
+            // Si on arrive ici, l'utilisateur est authentifié par CAS
+            return $this->handleCasAuthenticated();
         } catch (Exception $e) {
-            Log::error('Erreur lors de la redirection CAS', [
-                'error' => $e->getMessage()
+            Log::error('Erreur lors de l\'authentification CAS', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             ToastMagic::error('Erreur', 'Impossible de se connecter via CAS. Veuillez réessayer.');
-            return back();
+            return redirect()->route('auth.login');
+        }
+    }
+
+    /**
+     * Traite le retour CAS après validation du ticket.
+     */
+    private function handleCasAuthenticated(): \Illuminate\Http\RedirectResponse
+    {
+        $casLogin = phpCAS::getUser();
+
+        if (empty($casLogin)) {
+            Log::warning('CAS : getUser() a retourné une valeur vide');
+            ToastMagic::error('Erreur', 'Connexion impossible. Veuillez réessayer.');
+            return redirect()->route('auth.login');
+        }
+
+        $user = $this->userRepository->findByLogin($casLogin);
+        if (!$user) {
+            Log::warning('CAS : utilisateur introuvable localement', [
+                'cas_login' => $casLogin,
+            ]);
+            ToastMagic::error('Erreur', 'Connexion impossible. Veuillez réessayer.');
+            return redirect()->route('auth.login');
+        }
+
+        $this->authService->createEntSession(
+            ['cn' => $user->login, 'login' => $casLogin],
+            null
+        );
+        $_SESSION['cas_auth_method'] = 'cas';
+
+        Log::info('Connexion CAS réussie', [
+            'login' => $user->login,
+            'cas_login' => $casLogin,
+        ]);
+
+        ToastMagic::success('Connexion', 'Bienvenue ' . $user->login . ' ! Connexion CAS réussie.');
+        return redirect()->intended(route('app.dashboard'));
+    }
+
+    /**
+     * Initialise le client phpCAS avec la configuration SambaEdu.
+     */
+    private function initCasClient(): void
+    {
+        $casUrl  = $this->sambaEduConfig->get('cas_url');
+        $casPortRaw = $this->sambaEduConfig->get('cas_port');
+        $casPort = ($casPortRaw !== null && $casPortRaw !== '') ? (int) $casPortRaw : 443;
+        $casBase = $this->sambaEduConfig->get('cas_base') ?: '';
+        $serviceUrl = route('auth.login');
+
+        if (empty(trim($casUrl ?? ''))) {
+            throw new \RuntimeException('Configuration CAS incomplète : cas_url requis.');
+        }
+
+        if (!phpCAS::isInitialized()) {
+            phpCAS::client(CAS_VERSION_2_0, $casUrl, $casPort, $casBase, $serviceUrl, true);
         }
     }
 
@@ -342,7 +412,26 @@ class AuthController extends Controller
     public function logout()
     {
         try {
+            // Lire le flag AVANT de détruire la session
+            $wasCasAuth = $this->authService->isEntAuthenticated()
+                && (($_SESSION['cas_auth_method'] ?? '') === 'cas');
+
             $this->authService->logout();
+
+            if ($wasCasAuth) {
+                try {
+                    $this->initCasClient();
+                    if (!app()->isProduction()) {
+                        phpCAS::setNoCasServerValidation();
+                    }
+                    phpCAS::logoutWithRedirectService(route('auth.login'));
+                    // phpCAS::logoutWithRedirectService fait exit() — on n'arrive pas ici
+                } catch (Exception $e) {
+                    Log::warning('Logout CAS échoué, fallback local', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
 
             Log::info('Déconnexion réussie');
             ToastMagic::success('Déconnexion', 'Vous avez été déconnecté avec succès.');
