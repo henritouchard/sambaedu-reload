@@ -2,6 +2,7 @@
 
 namespace App\Repositories;
 
+use App\Constants\Ldap\FunctionGroups;
 use App\LdapModels\SambaEduGroup;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
@@ -66,19 +67,13 @@ class FunctionRepository
             return true;
         }
 
-        // Motifs pour les différentes catégories
-        $patterns = [
-            'Administratifs' => '/Direction|Secretariat|Gestionnaire|Medical|VieScol|Agent|AED|Tech/i',
-            'Pedagogiques' => '/Documentaliste|AESH/i',
-        ];
+        $allowed = FunctionGroups::forCategory($categorie);
 
-        $pattern = $patterns[$categorie] ?? null;
-
-        if (!$pattern) {
-            return true; // Si la catégorie n'est pas reconnue, tout inclure
+        if (empty($allowed)) {
+            return true;
         }
 
-        return preg_match($pattern, $functionName);
+        return in_array($functionName, $allowed, true);
     }
 
     /**

@@ -208,6 +208,22 @@ class User extends Authenticatable implements Wireable
         return $this->fullname ?? $this->login;
     }
 
+    /**
+     * Retourne le groupe de rôle (Eleves, Profs, Administratifs) de l'utilisateur.
+     */
+    public function roleGroup(): ?UserGroup
+    {
+        return $this->groups()->where('type', 'role')->first();
+    }
+
+    /**
+     * Retourne le groupe de fonction (Direction, Agent, etc.) de l'utilisateur.
+     */
+    public function functionGroup(): ?UserGroup
+    {
+        return $this->groups()->where('type', 'function')->first();
+    }
+
     // ========================================================================
     // WIREABLE (Livewire)
     // ========================================================================

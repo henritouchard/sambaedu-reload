@@ -414,6 +414,9 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
     <!-- En-tête avec actions principales -->
     @include('pages.users.[login]._partials.user-header', ['resetPasswordValue' => $this->getPasswordForDisplay()])
 
+    <!-- Changement de rôle/catégorie -->
+    @livewire('pages::users.[login]._partials.role-change-form', ['user' => $user], key('role-change-' . $user->login))
+
     <!-- Groupes et Permissions -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <!-- Groupes -->
