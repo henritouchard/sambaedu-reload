@@ -34,6 +34,9 @@ Route::prefix("authentication")->name("auth.")->group(function () {
     Route::post("login", [AuthController::class, 'authenticate'])->name('authenticate');
     Route::get("signout", [AuthController::class, 'logout'])->name('logout');
 
+    // Callback CAS — validation du ticket retourné par le serveur SSO
+    Route::get("cas/callback", [AuthController::class, 'casCallback'])->name('cas.callback');
+
     // Callback ENT (optionnel pour futures intégrations)
     Route::get("ent/callback", [AuthController::class, 'entCallback'])->name('ent.callback');
 

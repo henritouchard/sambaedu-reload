@@ -190,24 +190,23 @@ class AuthController extends Controller
     }
 
     /**
-     * Rediriger vers l'authentification CAS.
+     * Redirige vers le serveur CAS via une URL Laravel (pas d'exit()).
      *
-     * phpCAS gère le round-trip sur la même URL :
-     *  1. Premier appel → forceAuthentication() redirect 302 vers le serveur CAS
-     *  2. Retour avec ?ticket= → forceAuthentication() valide le ticket et retourne
-     *  3. On continue avec handleCasAuthenticated()
+     * checkAuthentication() retourne false sans exit() si l'utilisateur n'est pas
+     * encore authentifié — on redirige manuellement vers le serveur CAS.
+     * La validation du ticket se fait dans casCallback() sur une route dédiée.
      */
     private function redirectToCas()
     {
         try {
             $this->initCasClient();
-            if (!app()->isProduction()) {
-                phpCAS::setNoCasServerValidation();
-            }
-            phpCAS::forceAuthentication();
+            $this->applyCasServerValidation();
 
-            // Si on arrive ici, l'utilisateur est authentifié par CAS
-            return $this->handleCasAuthenticated();
+            if (phpCAS::checkAuthentication()) {
+                return $this->handleCasAuthenticated();
+            }
+
+            return redirect(phpCAS::getServerLoginURL());
         } catch (Exception $e) {
             Log::error('Erreur lors de l\'authentification CAS', [
                 'error' => $e->getMessage(),
@@ -219,7 +218,34 @@ class AuthController extends Controller
     }
 
     /**
+     * Callback CAS — valide le ticket retourné par le serveur CAS.
+     *
+     * Route dédiée (auth.cas.callback) : le paramètre ?ticket= est destiné à cette URL.
+     * forceAuthentication() valide le ticket et retourne sans exit() car le ticket est présent.
+     */
+    public function casCallback()
+    {
+        try {
+            $this->initCasClient();
+            $this->applyCasServerValidation();
+            phpCAS::forceAuthentication();
+
+            return $this->handleCasAuthenticated();
+        } catch (Exception $e) {
+            Log::error('Erreur lors du callback CAS', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            ToastMagic::error('Erreur', 'Impossible de valider l\'authentification CAS. Veuillez réessayer.');
+            return redirect()->route('auth.login');
+        }
+    }
+
+    /**
      * Traite le retour CAS après validation du ticket.
+     *
+     * En CAS 3.0, récupère les attributs du serveur (dont cn) via getAttributes().
+     * En CAS 2.0, cn est défini sur le login local faute d'attributs disponibles.
      */
     private function handleCasAuthenticated(): \Illuminate\Http\RedirectResponse
     {
@@ -240,8 +266,16 @@ class AuthController extends Controller
             return redirect()->route('auth.login');
         }
 
+        // En CAS 3.0, les attributs sont disponibles via getAttributes()
+        $casVersion = $this->sambaEduConfig->get('cas_version') ?: CAS_VERSION_2_0;
+        $cn = $user->login;
+        if ($casVersion === CAS_VERSION_3_0) {
+            $attributes = phpCAS::getAttributes();
+            $cn = $attributes['cn'] ?? $attributes['displayName'] ?? $user->login;
+        }
+
         $this->authService->createEntSession(
-            ['cn' => $user->login, 'login' => $casLogin],
+            ['cn' => $cn, 'login' => $casLogin],
             null
         );
         $_SESSION['cas_auth_method'] = 'cas';
@@ -249,6 +283,7 @@ class AuthController extends Controller
         Log::info('Connexion CAS réussie', [
             'login' => $user->login,
             'cas_login' => $casLogin,
+            'cas_version' => $casVersion,
         ]);
 
         ToastMagic::success('Connexion', 'Bienvenue ' . $user->login . ' ! Connexion CAS réussie.');
@@ -257,6 +292,10 @@ class AuthController extends Controller
 
     /**
      * Initialise le client phpCAS avec la configuration SambaEdu.
+     *
+     * Utilise une route de callback dédiée (auth.cas.callback) comme serviceUrl,
+     * ce qui isole la validation du ticket du flow de login standard.
+     * La version CAS est configurable via la clé cas_version (défaut : CAS 2.0).
      */
     private function initCasClient(): void
     {
@@ -264,14 +303,26 @@ class AuthController extends Controller
         $casPortRaw = $this->sambaEduConfig->get('cas_port');
         $casPort = ($casPortRaw !== null && $casPortRaw !== '') ? (int) $casPortRaw : 443;
         $casBase = $this->sambaEduConfig->get('cas_base') ?: '';
-        $serviceUrl = route('auth.login');
+        $casVersion = $this->sambaEduConfig->get('cas_version') ?: CAS_VERSION_2_0;
+        $serviceUrl = route('auth.cas.callback');
 
         if (empty(trim($casUrl ?? ''))) {
             throw new \RuntimeException('Configuration CAS incomplète : cas_url requis.');
         }
 
         if (!phpCAS::isInitialized()) {
-            phpCAS::client(CAS_VERSION_2_0, $casUrl, $casPort, $casBase, $serviceUrl, true);
+            phpCAS::client($casVersion, $casUrl, $casPort, $casBase, $serviceUrl, true);
+        }
+    }
+
+    /**
+     * Désactive la validation du certificat TLS en environnement non-production.
+     * En production, le CA cert doit être configuré via phpCAS::setCasServerCACert().
+     */
+    private function applyCasServerValidation(): void
+    {
+        if (!app()->isProduction()) {
+            phpCAS::setNoCasServerValidation();
         }
     }
 
@@ -421,9 +472,7 @@ class AuthController extends Controller
             if ($wasCasAuth) {
                 try {
                     $this->initCasClient();
-                    if (!app()->isProduction()) {
-                        phpCAS::setNoCasServerValidation();
-                    }
+                    $this->applyCasServerValidation();
                     phpCAS::logoutWithRedirectService(route('auth.login'));
                     // phpCAS::logoutWithRedirectService fait exit() — on n'arrive pas ici
                 } catch (Exception $e) {
