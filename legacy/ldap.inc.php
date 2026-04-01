@@ -375,10 +375,13 @@ if (!function_exists('search_ad')) {
                     // Normalisation : MAC en xx:xx:xx:xx:xx:xx minuscules, UUID en minuscules
                     // pour matcher le format stocké en DB (iso avec boot.php qui fait strtolower($uuid)).
                     $normalized = strtolower($name);
-                    $query->where(function ($q) use ($name, $normalized) {
+                    $looksLikeUuid = preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $normalized);
+                    $query->where(function ($q) use ($name, $normalized, $looksLikeUuid) {
                         $q->where('name', $name)
-                          ->orWhere('mac', $normalized)
-                          ->orWhere('uuid', $normalized);
+                          ->orWhere('mac', $normalized);
+                        if ($looksLikeUuid) {
+                            $q->orWhere('uuid', $normalized);
+                        }
                     });
                 }
 
@@ -456,11 +459,11 @@ if (!function_exists('search_machine')) {
      * shim les deux passent par search_ad(type='machine') qui cherche
      * déjà par name/mac/uuid.
      */
-    function search_machine(array $config, string $cn, bool $ip = false): array|false
+    function search_machine(array $config, string $cn, bool $ip = false): array
     {
         $results = search_ad($config, $cn, 'machine');
         if (!is_array($results) || empty($results)) {
-            return false;
+            return [];
         }
         return $results[0];
     }
