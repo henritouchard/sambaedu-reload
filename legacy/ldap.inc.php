@@ -245,15 +245,19 @@ function _shim_machine_to_ldap_entry(Workstation $ws, array $config): array
     $dn = $ws->ad_dn ?? ('CN=' . $ws->name . ',' . ($config['dn']['computers'] ?? ''));
 
     return [
-        'cn'          => $ws->name,
-        'dn'          => $dn,
-        'name'        => $ws->name,
-        'os'          => $ws->os ?? '',
-        'ip'          => $ws->ip ?? '',
-        'mac'         => $ws->mac ?? '',
-        'description' => '',
+        'cn'              => $ws->name,
+        'dn'              => $dn,
+        'name'            => $ws->name,
+        'os'              => $ws->os ?? '',
+        'ip'              => $ws->ip ?? '',
+        'iphostnumber'    => $ws->ip ?? '',
+        'mac'             => $ws->mac ?? '',
+        'networkaddress'  => $ws->mac ?? '',
+        'netbootguid'     => $ws->uuid ?? '',
+        'description'     => '',
         'operatingsystem' => $ws->os ?? '',
-        'dnshostname' => $ws->name . '.' . ($config['domain'] ?? ''),
+        'dnshostname'     => ($ws->name ?? '') . '.' . ($config['domain'] ?? ''),
+        'memberof'        => [],
     ];
 }
 
@@ -367,7 +371,15 @@ if (!function_exists('search_ad')) {
                 $query = Workstation::query();
 
                 if ($name !== '*') {
-                    $query->where('name', $name);
+                    // Le legacy cherche par name, MAC (networkAddress) ou UUID (netbootGUID).
+                    // Normalisation : MAC en xx:xx:xx:xx:xx:xx minuscules, UUID en minuscules
+                    // pour matcher le format stocké en DB (iso avec boot.php qui fait strtolower($uuid)).
+                    $normalized = strtolower($name);
+                    $query->where(function ($q) use ($name, $normalized) {
+                        $q->where('name', $name)
+                          ->orWhere('mac', $normalized)
+                          ->orWhere('uuid', $normalized);
+                    });
                 }
 
                 $machines = $query->get();
@@ -436,17 +448,21 @@ if (!function_exists('search_group')) {
 }
 
 if (!function_exists('search_machine')) {
+    /**
+     * Recherche une machine par nom, UUID ou MAC.
+     *
+     * Le paramètre $ip du legacy est mal nommé : il signifie "recherche
+     * complète" (type=machine) vs "fast" (type=machine_fast). Dans notre
+     * shim les deux passent par search_ad(type='machine') qui cherche
+     * déjà par name/mac/uuid.
+     */
     function search_machine(array $config, string $cn, bool $ip = false): array|false
     {
-        if ($ip) {
-            $ws = Workstation::where('ip', $cn)->get();
-            $results = [];
-            foreach ($ws as $w) {
-                $results[] = _shim_machine_to_ldap_entry($w, $config);
-            }
-            return _shim_wrap_results($results);
+        $results = search_ad($config, $cn, 'machine');
+        if (!is_array($results) || empty($results)) {
+            return false;
         }
-        return search_ad($config, $cn, 'machine');
+        return $results[0];
     }
 }
 

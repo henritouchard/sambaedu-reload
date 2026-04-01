@@ -127,6 +127,13 @@ $config['dn']['cours']           = $config['cours_rdn'] . ',' . $config['groups_
 $config['dn']['classes']         = $config['classes_rdn'] . ',' . $config['groups_rdn'] . ',' . $baseDn;
 $config['dn']['equipes']         = $config['equipes_rdn'] . ',' . $config['groups_rdn'] . ',' . $baseDn;
 
+// iPXE / Déploiement réseau
+$config['se4fs_ip']          = config('sambaedu.se4fs_ip', '');
+$config['se4fs_name']        = config('sambaedu.se4fs_name', '');
+$config['ipxe_url']          = config('sambaedu.ipxe_url', '');
+$config['se4install_name']   = config('sambaedu.se4install_name', '');
+$config['se4install_passwd'] = config('sambaedu.se4install_passwd', '');
+
 // Session / utilisateur connecté
 $config['login'] = '';
 if (function_exists('auth') && auth()->check()) {

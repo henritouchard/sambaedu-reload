@@ -143,6 +143,22 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Configuration iPXE / Déploiement réseau
+    |--------------------------------------------------------------------------
+    |
+    | Variables requises par le module legacy ipxe pour le boot réseau,
+    | le déploiement Windows et l'installation Linux.
+    |
+    */
+
+    'se4fs_ip'          => env('SAMBAEDU_SE4FS_IP', ''),
+    'se4fs_name'        => env('SAMBAEDU_SE4FS_NAME', ''),
+    'ipxe_url'          => env('SAMBAEDU_IPXE_URL', ''),
+    'se4install_name'   => env('SAMBAEDU_SE4INSTALL_NAME', ''),
+    'se4install_passwd' => env('SAMBAEDU_SE4INSTALL_PASSWD', ''),
+
     'wpkg' => [
         // Chemin de stockage local des applications
         'storage_path' => env('WPKG_STORAGE_PATH', '/var/sambaedu/unattended/install'),
