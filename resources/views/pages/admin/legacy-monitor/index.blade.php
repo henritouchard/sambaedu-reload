@@ -14,10 +14,13 @@ new #[Title('Legacy Monitor - Instance SE4FS')] class extends Component {
     public string $filterPath = '';
     #[Url]
     public string $filterMethod = '';
+    #[Url]
+    public string $filterIp = '';
     public int $perPage = 50;
 
     public function updatingFilterPath(): void { $this->resetPage(); }
     public function updatingFilterMethod(): void { $this->resetPage(); }
+    public function updatingFilterIp(): void { $this->resetPage(); }
 
     public function getLogs()
     {
@@ -26,6 +29,7 @@ new #[Title('Legacy Monitor - Instance SE4FS')] class extends Component {
         return LegacyCatchallLog::query()
             ->when($this->filterPath, fn($q) => $q->where('path', 'like', '%' . addcslashes($this->filterPath, '%_\\') . '%'))
             ->when($this->filterMethod, fn($q) => $q->where('method', $this->filterMethod))
+            ->when($this->filterIp, fn($q) => $q->where('ip', 'like', '%' . addcslashes($this->filterIp, '%_\\') . '%'))
             ->selectRaw('method, path, COUNT(*) as frequency, MAX(created_at) as last_seen, MAX(ip) as last_ip')
             ->groupBy('method', 'path')
             ->orderByDesc('frequency')
@@ -50,6 +54,12 @@ new #[Title('Legacy Monitor - Instance SE4FS')] class extends Component {
             class="input input-bordered w-full max-w-xs"
             wire:model.live.300ms="filterPath"
             placeholder="Filtrer par path..."
+        />
+        <input
+            type="text"
+            class="input input-bordered w-full max-w-xs"
+            wire:model.live.300ms="filterIp"
+            placeholder="Filtrer par IP..."
         />
         <select class="select select-bordered" wire:model.live="filterMethod">
             <option value="">Toutes les méthodes</option>
