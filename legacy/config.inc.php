@@ -46,104 +46,120 @@ if (!defined('SAMBAEDU_SLOW_NET_ERROR'))      define('SAMBAEDU_SLOW_NET_ERROR', 
 if (!defined('CACHE_DIR'))                    define('CACHE_DIR', '/tmp/phpcache');
 
 // ─── $config array — pont vers la config Laravel ────────────────────────────
-// Le code legacy attend $config comme variable globale
-global $config;
-$config = $config ?? [];
+// Le code legacy attend $config comme variable globale.
+// La logique est extraite dans legacy_build_config() pour être testable
+// indépendamment du guard LEGACY_CONFIG_LOADED.
 
-// LDAP / AD
-$config['ldap_base_dn']      = config('sambaedu.legacy_ldap.base_dn', '');
-$config['ldap_admin_name']   = config('sambaedu.legacy_ldap.bind_dn', '');
-$config['ldap_admin_passwd'] = config('sambaedu.legacy_ldap.bind_password', '');
-$config['se4ad_ip']          = config('sambaedu.se4ad_ip', '');
-$config['se4ad_etab_ip']     = config('sambaedu.se4ad_etab_ip', '');
+/**
+ * Construit le tableau $config legacy depuis la config Laravel.
+ *
+ * Peut être appelée plusieurs fois (pas de side-effects globaux) :
+ * utile dans les tests pour rejouer la logique avec des valeurs différentes.
+ */
+function legacy_build_config(): array
+{
+    $c = [];
 
-// Déduire le domaine depuis le base_dn (DC=ecole,DC=local → ecole.local)
-$config['domain'] = '';
-$dcParts = [];
-if (!empty($config['ldap_base_dn'])) {
-    foreach (explode(',', $config['ldap_base_dn']) as $part) {
-        $part = trim($part);
-        if (stripos($part, 'DC=') === 0) {
-            $dcParts[] = substr($part, 3);
+    // LDAP / AD
+    $c['ldap_base_dn']      = config('sambaedu.legacy_ldap.base_dn', '');
+    $c['ldap_admin_name']   = config('sambaedu.legacy_ldap.bind_dn', '');
+    $c['ldap_admin_passwd'] = config('sambaedu.legacy_ldap.bind_password', '');
+    $c['se4ad_ip']          = config('sambaedu.se4ad_ip', '');
+    $c['se4ad_etab_ip']     = config('sambaedu.se4ad_etab_ip', '');
+
+    // Déduire le domaine depuis le base_dn (DC=ecole,DC=local → ecole.local)
+    $c['domain'] = '';
+    if (!empty($c['ldap_base_dn'])) {
+        $dcParts = [];
+        foreach (explode(',', $c['ldap_base_dn']) as $part) {
+            $part = trim($part);
+            if (stripos($part, 'DC=') === 0) {
+                $dcParts[] = substr($part, 3);
+            }
         }
+        $c['domain'] = implode('.', $dcParts);
     }
-    $config['domain'] = implode('.', $dcParts);
+
+    // Établissement
+    $c['etab_ou'] = config('sambaedu.etab_ou', '');
+    $c['suffix']  = '';
+    if (preg_match('/[0-9]{7}[a-z]/i', $c['etab_ou'])) {
+        $c['suffix'] = strtolower('-' . substr($c['etab_ou'], 3));
+    }
+
+    // OUs — valeurs par défaut legacy
+    $c['people_rdn']         = 'OU=people';
+    $c['groups_rdn']         = 'OU=groups';
+    $c['equipements_rdn']    = 'OU=equipements';
+    $c['computers_rdn']      = 'OU=computers';
+    $c['delegations_rdn']    = 'OU=delegations';
+    $c['parcs_rdn']          = 'OU=parcs';
+    $c['rights_rdn']         = 'OU=rights';
+    $c['trash_rdn']          = 'OU=trash';
+    $c['etablissements_rdn'] = 'OU=etablissements';
+    $c['matieres_rdn']       = 'OU=Matieres';
+    $c['cours_rdn']          = 'OU=Cours';
+    $c['classes_rdn']        = 'OU=Classes';
+    $c['equipes_rdn']        = 'OU=Equipes';
+    $c['projets_rdn']        = 'OU=Projets';
+    $c['other_groups_rdn']   = 'OU=Autres';
+
+    // Appliquer le préfixe UAI si présent (comme get_config_file le fait)
+    if (preg_match('/[0-9]{7}[a-z]/i', $c['etab_ou'])) {
+        $uaiPrefix = 'OU=' . $c['etab_ou'] . ',';
+        $c['people_rdn']      = $uaiPrefix . $c['people_rdn'];
+        $c['groups_rdn']      = $uaiPrefix . $c['groups_rdn'];
+        $c['equipements_rdn'] = $uaiPrefix . $c['equipements_rdn'];
+        $c['delegations_rdn'] = $uaiPrefix . $c['delegations_rdn'];
+        $c['parcs_rdn']       = $uaiPrefix . $c['parcs_rdn'];
+        $c['computers_rdn']   = $uaiPrefix . $c['computers_rdn'];
+    }
+
+    // Construire les DN complets (identique à get_config_file)
+    $baseDn = $c['ldap_base_dn'];
+    $c['dn'] = [];
+    $c['dn']['people']          = $c['people_rdn'] . ',' . $baseDn;
+    $c['dn']['Eleves']          = 'OU=Eleves,' . $c['people_rdn'] . ',' . $baseDn;
+    $c['dn']['Profs']           = 'OU=Profs,' . $c['people_rdn'] . ',' . $baseDn;
+    $c['dn']['Administratifs']  = 'OU=Administratifs,' . $c['people_rdn'] . ',' . $baseDn;
+    $c['dn']['groups']          = $c['groups_rdn'] . ',' . $baseDn;
+    $c['dn']['rights']          = $c['rights_rdn'] . ',' . $baseDn;
+    $c['dn']['equipements']     = $c['equipements_rdn'] . ',' . $baseDn;
+    $c['dn']['etablissements']  = $c['etablissements_rdn'] . ',' . $baseDn;
+    $c['dn']['delegations']     = $c['delegations_rdn'] . ',' . $baseDn;
+    $c['dn']['matieres']        = $c['matieres_rdn'] . ',' . $baseDn;
+    $c['dn']['trash']           = $c['trash_rdn'] . ',' . $baseDn;
+    $c['dn']['parcs']           = $c['parcs_rdn'] . ',' . $baseDn;
+    $c['dn']['computers']       = $c['computers_rdn'] . ',' . $baseDn;
+    $c['dn']['autres']          = $c['other_groups_rdn'] . ',' . $c['groups_rdn'] . ',' . $baseDn;
+    $c['dn']['projets']         = $c['projets_rdn'] . ',' . $c['groups_rdn'] . ',' . $baseDn;
+    $c['dn']['cours']           = $c['cours_rdn'] . ',' . $c['groups_rdn'] . ',' . $baseDn;
+    $c['dn']['classes']         = $c['classes_rdn'] . ',' . $c['groups_rdn'] . ',' . $baseDn;
+    $c['dn']['equipes']         = $c['equipes_rdn'] . ',' . $c['groups_rdn'] . ',' . $baseDn;
+
+    // Session / utilisateur connecté
+    $c['login'] = '';
+    if (function_exists('auth') && auth()->check()) {
+        $c['login'] = auth()->user()->login ?? '';
+    }
+
+    // iPXE / Déploiement réseau
+    $c['se4fs_ip']          = config('sambaedu.se4fs_ip', '');
+    $c['se4fs_name']        = config('sambaedu.se4fs_name', '');
+    $c['ipxe_url']          = config('sambaedu.ipxe_url', '');
+    $c['se4install_name']   = config('sambaedu.se4install_name', '');
+    $c['se4install_passwd'] = config('sambaedu.se4install_passwd', '');
+
+    // Timeouts LDAP
+    $c['ldap_timeout']   = 20;
+    $c['ldap_timelimit'] = 30;
+    $c['ent_timeout']    = 600;
+
+    return $c;
 }
 
-// Établissement
-$config['etab_ou'] = config('sambaedu.etab_ou', '');
-$config['suffix']  = '';
-if (preg_match('/[0-9]{7}[a-z]/i', $config['etab_ou'])) {
-    $config['suffix'] = strtolower('-' . substr($config['etab_ou'], 3));
-}
-
-// OUs — valeurs par défaut legacy (surchargées si configurées)
-$config['people_rdn']        = $config['people_rdn'] ?? 'OU=people';
-$config['groups_rdn']        = $config['groups_rdn'] ?? 'OU=groups';
-$config['equipements_rdn']   = $config['equipements_rdn'] ?? 'OU=equipements';
-$config['computers_rdn']     = $config['computers_rdn'] ?? 'OU=computers';
-$config['delegations_rdn']   = $config['delegations_rdn'] ?? 'OU=delegations';
-$config['parcs_rdn']         = $config['parcs_rdn'] ?? 'OU=parcs';
-$config['rights_rdn']        = $config['rights_rdn'] ?? 'OU=rights';
-$config['trash_rdn']         = $config['trash_rdn'] ?? 'OU=trash';
-$config['etablissements_rdn'] = $config['etablissements_rdn'] ?? 'OU=etablissements';
-$config['matieres_rdn']      = $config['matieres_rdn'] ?? 'OU=Matieres';
-$config['cours_rdn']         = $config['cours_rdn'] ?? 'OU=Cours';
-$config['classes_rdn']       = $config['classes_rdn'] ?? 'OU=Classes';
-$config['equipes_rdn']       = $config['equipes_rdn'] ?? 'OU=Equipes';
-$config['projets_rdn']       = $config['projets_rdn'] ?? 'OU=Projets';
-$config['other_groups_rdn']  = $config['other_groups_rdn'] ?? 'OU=Autres';
-
-// Appliquer le préfixe UAI si présent (comme get_config_file le fait)
-if (preg_match('/[0-9]{7}[a-z]/i', $config['etab_ou'])) {
-    $uaiPrefix = 'OU=' . $config['etab_ou'] . ',';
-    $config['people_rdn']      = $uaiPrefix . $config['people_rdn'];
-    $config['groups_rdn']      = $uaiPrefix . $config['groups_rdn'];
-    $config['equipements_rdn'] = $uaiPrefix . $config['equipements_rdn'];
-    $config['delegations_rdn'] = $uaiPrefix . $config['delegations_rdn'];
-    $config['parcs_rdn']       = $uaiPrefix . $config['parcs_rdn'];
-    $config['computers_rdn']   = $uaiPrefix . $config['computers_rdn'];
-}
-
-// Construire les DN complets (identique à get_config_file)
-$baseDn = $config['ldap_base_dn'];
-$config['dn'] = $config['dn'] ?? [];
-$config['dn']['people']          = $config['people_rdn'] . ',' . $baseDn;
-$config['dn']['Eleves']          = 'OU=Eleves,' . $config['people_rdn'] . ',' . $baseDn;
-$config['dn']['Profs']           = 'OU=Profs,' . $config['people_rdn'] . ',' . $baseDn;
-$config['dn']['Administratifs']  = 'OU=Administratifs,' . $config['people_rdn'] . ',' . $baseDn;
-$config['dn']['groups']          = $config['groups_rdn'] . ',' . $baseDn;
-$config['dn']['rights']          = $config['rights_rdn'] . ',' . $baseDn;
-$config['dn']['equipements']     = $config['equipements_rdn'] . ',' . $baseDn;
-$config['dn']['etablissements']  = $config['etablissements_rdn'] . ',' . $baseDn;
-$config['dn']['delegations']     = $config['delegations_rdn'] . ',' . $baseDn;
-$config['dn']['matieres']        = $config['matieres_rdn'] . ',' . $baseDn;
-$config['dn']['trash']           = $config['trash_rdn'] . ',' . $baseDn;
-$config['dn']['parcs']           = $config['parcs_rdn'] . ',' . $baseDn;
-$config['dn']['computers']       = $config['computers_rdn'] . ',' . $baseDn;
-$config['dn']['autres']          = $config['other_groups_rdn'] . ',' . $config['groups_rdn'] . ',' . $baseDn;
-$config['dn']['projets']         = $config['projets_rdn'] . ',' . $config['groups_rdn'] . ',' . $baseDn;
-$config['dn']['cours']           = $config['cours_rdn'] . ',' . $config['groups_rdn'] . ',' . $baseDn;
-$config['dn']['classes']         = $config['classes_rdn'] . ',' . $config['groups_rdn'] . ',' . $baseDn;
-$config['dn']['equipes']         = $config['equipes_rdn'] . ',' . $config['groups_rdn'] . ',' . $baseDn;
-
-// iPXE / Déploiement réseau
-$config['se4fs_ip']          = config('sambaedu.se4fs_ip', '');
-$config['se4fs_name']        = config('sambaedu.se4fs_name', '');
-$config['ipxe_url']          = config('sambaedu.ipxe_url', '');
-$config['se4install_name']   = config('sambaedu.se4install_name', '');
-$config['se4install_passwd'] = config('sambaedu.se4install_passwd', '');
-
-// Session / utilisateur connecté
-$config['login'] = '';
-if (function_exists('auth') && auth()->check()) {
-    $config['login'] = auth()->user()->login ?? '';
-}
-
-// Timeouts LDAP
-$config['ldap_timeout']   = $config['ldap_timeout'] ?? 20;
-$config['ldap_timelimit'] = $config['ldap_timelimit'] ?? 30;
-$config['ent_timeout']    = $config['ent_timeout'] ?? 600;
+global $config;
+$config = legacy_build_config();
 
 // Caractères spéciaux pour mots de passe (repris du legacy)
 $GLOBALS['char_spec'] = '_#@£%§:!?*$-';

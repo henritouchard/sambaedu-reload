@@ -11,8 +11,8 @@ use Tests\TestCase;
  * Vérifie que les variables de configuration legacy sont
  * correctement alimentées depuis config('sambaedu.*').
  *
- * Note : config.inc.php n'est chargé qu'une fois (guard LEGACY_CONFIG_LOADED).
- * On configure les valeurs AVANT le premier chargement dans setUpBeforeClass().
+ * Note : config.inc.php n'est chargé qu'une fois (guard LEGACY_CONFIG_LOADED),
+ * mais legacy_build_config() est appelable à chaque test via reloadConfigBridge().
  */
 class LegacyConfigBridgeTest extends TestCase
 {
@@ -21,106 +21,28 @@ class LegacyConfigBridgeTest extends TestCase
         parent::setUp();
         $this->withoutVite();
 
-        // Configurer les valeurs Laravel AVANT de charger le bridge
+        // Configurer les valeurs Laravel avant d'appeler legacy_build_config()
         Config::set('sambaedu.legacy_ldap.base_dn', 'DC=ecole,DC=local');
         Config::set('sambaedu.legacy_ldap.bind_dn', 'administrator');
         Config::set('sambaedu.legacy_ldap.bind_password', 'secret');
         Config::set('sambaedu.se4ad_ip', '192.168.1.10');
         Config::set('sambaedu.etab_ou', '0991229Y');
 
-        // Forcer le rechargement du config bridge en effaçant les constantes
-        // Comme on ne peut pas undefine(), on recharge les variables manuellement
         $this->reloadConfigBridge();
     }
 
     /**
-     * Recharge les variables $config en réexécutant la logique du bridge.
+     * Recharge $config en appelant la vraie fonction du bridge.
+     *
+     * legacy/config.inc.php ne peut être chargé qu'une fois (guard LEGACY_CONFIG_LOADED),
+     * mais legacy_build_config() est appelable à volonté — ce qui permet de rejouer
+     * la logique réelle avec des valeurs Laravel différentes entre chaque test.
      */
     private function reloadConfigBridge(): void
     {
+        require_once base_path('legacy/config.inc.php');
         global $config;
-        $config = $config ?? [];
-
-        // Reproduire la logique de config.inc.php
-        $config['ldap_base_dn']      = config('sambaedu.legacy_ldap.base_dn', '');
-        $config['ldap_admin_name']   = config('sambaedu.legacy_ldap.bind_dn', '');
-        $config['ldap_admin_passwd'] = config('sambaedu.legacy_ldap.bind_password', '');
-        $config['se4ad_ip']          = config('sambaedu.se4ad_ip', '');
-        $config['se4ad_etab_ip']     = config('sambaedu.se4ad_etab_ip', '');
-        $config['etab_ou']           = config('sambaedu.etab_ou', '');
-
-        // Déduire le domaine
-        $config['domain'] = '';
-        if (!empty($config['ldap_base_dn'])) {
-            $dcParts = [];
-            foreach (explode(',', $config['ldap_base_dn']) as $part) {
-                $part = trim($part);
-                if (stripos($part, 'DC=') === 0) {
-                    $dcParts[] = substr($part, 3);
-                }
-            }
-            $config['domain'] = implode('.', $dcParts);
-        }
-
-        // Suffix UAI
-        $config['suffix'] = '';
-        if (preg_match('/[0-9]{7}[a-z]/i', $config['etab_ou'])) {
-            $config['suffix'] = strtolower('-' . substr($config['etab_ou'], 3));
-        }
-
-        // OUs
-        $config['people_rdn']        = 'OU=people';
-        $config['groups_rdn']        = 'OU=groups';
-        $config['equipements_rdn']   = 'OU=equipements';
-        $config['computers_rdn']     = 'OU=computers';
-        $config['delegations_rdn']   = 'OU=delegations';
-        $config['parcs_rdn']         = 'OU=parcs';
-        $config['rights_rdn']        = 'OU=rights';
-        $config['trash_rdn']         = 'OU=trash';
-        $config['etablissements_rdn'] = 'OU=etablissements';
-        $config['matieres_rdn']      = 'OU=Matieres';
-        $config['cours_rdn']         = 'OU=Cours';
-        $config['classes_rdn']       = 'OU=Classes';
-        $config['equipes_rdn']       = 'OU=Equipes';
-        $config['projets_rdn']       = 'OU=Projets';
-        $config['other_groups_rdn']  = 'OU=Autres';
-
-        // Préfixe UAI
-        if (preg_match('/[0-9]{7}[a-z]/i', $config['etab_ou'])) {
-            $uaiPrefix = 'OU=' . $config['etab_ou'] . ',';
-            $config['people_rdn']      = $uaiPrefix . $config['people_rdn'];
-            $config['groups_rdn']      = $uaiPrefix . $config['groups_rdn'];
-            $config['equipements_rdn'] = $uaiPrefix . $config['equipements_rdn'];
-            $config['delegations_rdn'] = $uaiPrefix . $config['delegations_rdn'];
-            $config['parcs_rdn']       = $uaiPrefix . $config['parcs_rdn'];
-            $config['computers_rdn']   = $uaiPrefix . $config['computers_rdn'];
-        }
-
-        // DNs
-        $baseDn = $config['ldap_base_dn'];
-        $config['dn'] = [];
-        $config['dn']['people']          = $config['people_rdn'] . ',' . $baseDn;
-        $config['dn']['Eleves']          = 'OU=Eleves,' . $config['people_rdn'] . ',' . $baseDn;
-        $config['dn']['Profs']           = 'OU=Profs,' . $config['people_rdn'] . ',' . $baseDn;
-        $config['dn']['Administratifs']  = 'OU=Administratifs,' . $config['people_rdn'] . ',' . $baseDn;
-        $config['dn']['groups']          = $config['groups_rdn'] . ',' . $baseDn;
-        $config['dn']['rights']          = $config['rights_rdn'] . ',' . $baseDn;
-        $config['dn']['equipements']     = $config['equipements_rdn'] . ',' . $baseDn;
-        $config['dn']['etablissements']  = $config['etablissements_rdn'] . ',' . $baseDn;
-        $config['dn']['delegations']     = $config['delegations_rdn'] . ',' . $baseDn;
-        $config['dn']['matieres']        = $config['matieres_rdn'] . ',' . $baseDn;
-        $config['dn']['trash']           = $config['trash_rdn'] . ',' . $baseDn;
-        $config['dn']['parcs']           = $config['parcs_rdn'] . ',' . $baseDn;
-        $config['dn']['computers']       = $config['computers_rdn'] . ',' . $baseDn;
-        $config['dn']['autres']          = $config['other_groups_rdn'] . ',' . $config['groups_rdn'] . ',' . $baseDn;
-        $config['dn']['projets']         = $config['projets_rdn'] . ',' . $config['groups_rdn'] . ',' . $baseDn;
-        $config['dn']['cours']           = $config['cours_rdn'] . ',' . $config['groups_rdn'] . ',' . $baseDn;
-        $config['dn']['classes']         = $config['classes_rdn'] . ',' . $config['groups_rdn'] . ',' . $baseDn;
-        $config['dn']['equipes']         = $config['equipes_rdn'] . ',' . $config['groups_rdn'] . ',' . $baseDn;
-
-        $config['ldap_timeout']   = 20;
-        $config['ldap_timelimit'] = 30;
-        $config['ent_timeout']    = 600;
+        $config = legacy_build_config();
     }
 
     /**
