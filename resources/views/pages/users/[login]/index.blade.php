@@ -411,34 +411,38 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
         </div>
     </x-slot:actions>
 
-    <!-- En-tête avec actions principales -->
-    @include('pages.users.[login]._partials.user-header', ['resetPasswordValue' => $this->getPasswordForDisplay()])
+    <div>
+        <!-- En-tête avec actions principales -->
+        @include('pages.users.[login]._partials.user-header', ['resetPasswordValue' => $this->getPasswordForDisplay()])
 
-    <!-- Changement de rôle/catégorie -->
-    @livewire('pages::users.[login]._partials.role-change-form', ['user' => $user], key('role-change-' . $user->login))
+        <!-- Changement de rôle/catégorie -->
+        <div class="mb-8">
+            @livewire('pages::users.[login]._partials.role-change-form', ['user' => $user], key('role-change-' . $user->login))
+        </div>
 
-    <!-- Groupes et Permissions -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <!-- Groupes -->
-        @include('pages.users.[login]._partials.groups')
-        <!-- Permissions -->
-        @include('pages.users.[login]._partials.permissions')
+        <!-- Groupes et Permissions -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Groupes -->
+            @include('pages.users.[login]._partials.groups')
+            <!-- Permissions -->
+            @include('pages.users.[login]._partials.permissions')
+        </div>
+
+        <!-- Quotas disque -->
+        <div class="mb-6">
+            @include('pages.users.[login]._partials.quota-info')
+        </div>
+
+        <!-- Identifiants techniques et activité -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Identifiants techniques -->
+            @include('pages.users.[login]._partials.technical-identifiers')
+            <!-- Activité de l'utilisateur -->
+            @include('pages.users.[login]._partials.user-activity')
+        </div>
+
+        {{-- <!-- Administration locale -->
+        @include('pages.users.[login]._partials.local-admin-rights') --}}
+
     </div>
-
-    <!-- Quotas disque -->
-    <div class="mb-6">
-        @include('pages.users.[login]._partials.quota-info')
-    </div>
-
-    <!-- Identifiants techniques et activité -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <!-- Identifiants techniques -->
-        @include('pages.users.[login]._partials.technical-identifiers')
-        <!-- Activité de l'utilisateur -->
-        @include('pages.users.[login]._partials.user-activity')
-    </div>
-
-    {{-- <!-- Administration locale -->
-    @include('pages.users.[login]._partials.local-admin-rights') --}}
-
 </x-organisms.page>
