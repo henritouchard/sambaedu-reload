@@ -872,7 +872,13 @@ if (!function_exists('is_eleve')) {
     function is_eleve($config, $name): bool
     {
         if (!is_array($name)) {
-            $name = search_user($config, $name);
+            // search_user retourne un tableau wrappé [0 => user, 'count' => N]
+            $result = search_user($config, $name);
+            $name = $result[0] ?? null;
+        }
+        if (empty($name)) {
+            // Compte non trouvé → élève par défaut (least privilege fallback legacy)
+            return true;
         }
         if (isset($name['memberof']) && is_array($name['memberof'])) {
             foreach ($name['memberof'] as $g) {
@@ -880,9 +886,6 @@ if (!function_exists('is_eleve')) {
                     return true;
                 }
             }
-        } elseif (empty($name) || !isset($name['memberof'])) {
-            // Compte non trouvé → considéré comme élève par défaut (comportement legacy)
-            return true;
         }
         return false;
     }
@@ -894,17 +897,17 @@ if (!function_exists('is_prof')) {
      */
     function is_prof($config, $name): bool
     {
-        if (is_array($name)) {
-            if (isset($name['memberof']) && is_array($name['memberof'])) {
-                foreach ($name['memberof'] as $g) {
-                    if (preg_match('/Profs/', $g)) {
-                        return true;
-                    }
+        if (!is_array($name)) {
+            // search_ad retourne un tableau wrappé [0 => user, 'count' => N]
+            $result = search_ad($config, $name, 'member', 'Profs');
+            return is_array($result) && isset($result['count']) && $result['count'] > 0;
+        }
+        if (isset($name['memberof']) && is_array($name['memberof'])) {
+            foreach ($name['memberof'] as $g) {
+                if (preg_match('/Profs/', $g)) {
+                    return true;
                 }
             }
-            return false;
-        } elseif (!empty($name)) {
-            return count(search_ad($config, $name, 'member', 'Profs')) > 0;
         }
         return false;
     }
