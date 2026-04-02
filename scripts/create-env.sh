@@ -38,6 +38,28 @@ if [ -f "/etc/sambaedu/sambaedu.conf" ]; then
     [ -n "$domain" ] && sed -i "s|SAMBAEDU_LDAP_DOMAIN=.*|SAMBAEDU_LDAP_DOMAIN=$domain|" .env
     [ -n "$sql_passwd" ] && sed -i "s|DB_PASSWORD=.*|DB_PASSWORD=$sql_passwd|" .env
     [ -n "$se4_url" ] && sed -i "s|APP_URL=.*|APP_URL=http://$se4_url|" .env
+
+    # iPXE / Déploiement réseau (peut être dans sambaedu.conf ou sambaedu.conf.d/)
+    [ -n "$se4fs_ip" ] && sed -i "s|SAMBAEDU_SE4FS_IP=.*|SAMBAEDU_SE4FS_IP=$se4fs_ip|" .env
+    [ -n "$se4fs_name" ] && sed -i "s|SAMBAEDU_SE4FS_NAME=.*|SAMBAEDU_SE4FS_NAME=$se4fs_name|" .env
+    [ -n "$ipxe_url" ] && sed -i "s|SAMBAEDU_IPXE_URL=.*|SAMBAEDU_IPXE_URL=$ipxe_url|" .env
+    [ -n "$se4install_name" ] && sed -i "s|SAMBAEDU_SE4INSTALL_NAME=.*|SAMBAEDU_SE4INSTALL_NAME=$se4install_name|" .env
+    [ -n "$se4install_passwd" ] && sed -i "s|SAMBAEDU_SE4INSTALL_PASSWD=.*|SAMBAEDU_SE4INSTALL_PASSWD=$se4install_passwd|" .env
+fi
+
+# Charger les modules depuis /etc/sambaedu/sambaedu.conf.d/ (ipxe, wpkg, etc.)
+if [ -d "/etc/sambaedu/sambaedu.conf.d" ]; then
+    for conf_file in /etc/sambaedu/sambaedu.conf.d/*.conf; do
+        [ -f "$conf_file" ] || continue
+        source <(grep -E '^[a-z_]+ = ' "$conf_file" | sed 's/ = /=/g')
+    done
+
+    # Ré-appliquer les variables iPXE (elles peuvent venir d'un module .conf.d/)
+    [ -n "$se4fs_ip" ] && sed -i "s|SAMBAEDU_SE4FS_IP=.*|SAMBAEDU_SE4FS_IP=$se4fs_ip|" .env
+    [ -n "$se4fs_name" ] && sed -i "s|SAMBAEDU_SE4FS_NAME=.*|SAMBAEDU_SE4FS_NAME=$se4fs_name|" .env
+    [ -n "$ipxe_url" ] && sed -i "s|SAMBAEDU_IPXE_URL=.*|SAMBAEDU_IPXE_URL=$ipxe_url|" .env
+    [ -n "$se4install_name" ] && sed -i "s|SAMBAEDU_SE4INSTALL_NAME=.*|SAMBAEDU_SE4INSTALL_NAME=$se4install_name|" .env
+    [ -n "$se4install_passwd" ] && sed -i "s|SAMBAEDU_SE4INSTALL_PASSWD=.*|SAMBAEDU_SE4INSTALL_PASSWD=$se4install_passwd|" .env
 fi
 
 # Charger les valeurs depuis /etc/msmtprc (configuration SMTP)

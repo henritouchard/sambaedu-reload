@@ -105,26 +105,8 @@ run_laravel_update() {
     log_success "Mise à jour Laravel OK"
 }
 
-check_missing_env_vars() {
-    log "Vérification des variables d'environnement..."
-
-    if [[ ! -f .env.example || ! -f .env ]]; then
-        log_warning ".env.example ou .env introuvable"
-        return
-    fi
-
-    local missing_keys
-    missing_keys=$(comm -23 \
-        <(grep -E '^[A-Z_]+=' .env.example | cut -d= -f1 | sort) \
-        <(grep -E '^[A-Z_]+=' .env | cut -d= -f1 | sort) || true)
-
-    if [[ -n "$missing_keys" ]]; then
-        log_warning "Variables présentes dans .env.example mais absentes de .env:"
-        echo "$missing_keys" | sed 's/^/    - /'
-        log_warning "À ajouter manuellement au .env"
-    else
-        log_success "Toutes les variables d'environnement sont présentes"
-    fi
+update_env() {
+    bash "$SCRIPT_DIR/updateEnv.sh"
 }
 
 # ============================================================================
@@ -260,8 +242,10 @@ main() {
     update_npm
 
     echo ""
+    update_env
+
+    echo ""
     run_laravel_update
-    check_missing_env_vars
 
     echo ""
     update_apache
