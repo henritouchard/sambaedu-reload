@@ -17,12 +17,6 @@ use App\Http\Controllers\ChangePasswordController;
 |
 */
 
-// Route racine - Page d'accueil Laravel
-// Route de test simple - sans middleware, sans LDAP
-Route::get('/test-simple', function () {
-    return response()->json(['status' => 'ok', 'time' => now()->toDateTimeString()]);
-});
-
 // Route de test avec middleware sambaedu.auth
 Route::get('/test-auth', function () {
     return response()->json(['status' => 'ok', 'authenticated' => true, 'time' => now()->toDateTimeString()]);
@@ -53,8 +47,7 @@ Route::prefix("authentication")->name("auth.")->group(function () {
 
 // Route pour l'interface utilisateur modernisée
 Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function () {
-    // Navigation legacy (temporaire)
-    Route::livewire('/homelegacy', 'pages::homelegacy.index')->name('homelegacy');
+    // Navigation legacy déplacée sous /admin/homelegacy
 
     Route::livewire('/dashboard', 'pages::dashboard.index')->name('dashboard');
     Route::livewire('/workers', 'pages::workers.index')->name('workers.index');
@@ -163,6 +156,9 @@ Route::prefix('admin')->middleware('sambaedu.admin')->name('admin.')->group(func
     // Migration - Dashboard d'assistance
     Route::livewire('/migrate', 'pages::admin.migrate.index')->name('migrate');
 
+    // Navigation legacy (menus SE4FS)
+    Route::livewire('/homelegacy', 'pages::homelegacy.index')->name('homelegacy');
+
     // Synchronisation depuis l'AD (déplacé de /app)
     Route::livewire('/sync-from-ad', 'pages::sync-from-ad.index')->name('sync-from-ad');
 
@@ -214,15 +210,6 @@ Route::get('/shortcuts/icon/{name}', function (string $name) {
 
     abort(404);
 })->name('shortcuts.icon');
-
-/*
-|--------------------------------------------------------------------------
-| Page de test Modal vs Sidebar (z-index debugging)
-|--------------------------------------------------------------------------
-*/
-Route::get('/test-modal', function () {
-    return view('pages.test-modal.index');
-})->name('test-modal');
 
 /*
 |--------------------------------------------------------------------------

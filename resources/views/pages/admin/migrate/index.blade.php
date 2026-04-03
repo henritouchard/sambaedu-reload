@@ -67,6 +67,24 @@ new #[Title('Migration - Assistance')] class extends Component {
             </div>
         </a>
 
+        {{-- Card: Navigation Legacy --}}
+        <a href="{{ route('admin.homelegacy') }}" class="card bg-base-100 shadow-md hover:shadow-xl transition-all duration-200 hover:-translate-y-1 border border-base-300/50">
+            <div class="card-body">
+                <div class="flex items-center gap-4 mb-2">
+                    <div class="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center">
+                        <i class="fa-solid fa-compass text-info text-xl"></i>
+                    </div>
+                    <h2 class="card-title text-lg">Navigation Legacy</h2>
+                </div>
+                <p class="text-sm text-base-content/70">
+                    Accès aux menus et pages de l'interface SE4FS. Permet de naviguer dans l'ancienne interface embarquée dans le nouveau layout.
+                </p>
+                <div class="card-actions justify-end mt-4">
+                    <span class="badge badge-info badge-outline">Legacy</span>
+                </div>
+            </div>
+        </a>
+
     </div>
 
 </x-organisms.page>
