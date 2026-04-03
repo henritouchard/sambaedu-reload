@@ -51,7 +51,16 @@ class LegacyCatchallController extends Controller
             }
         }
 
-        // 3. Vérifier si le path cible un module dans legacy/modules/ (bootstrap direct)
+        // 3. Routes legacy en mode direct → proxy vers le vhost legacy original
+        //    (pas de bootstrap Laravel, pas de shims, le vrai code legacy gère tout)
+        foreach (config('sambaedu.direct_legacy_routes', []) as $pattern) {
+            if (preg_match('#' . $pattern . '#', '/' . $path)) {
+                $this->logLegacyAccess($request, $path);
+                return $this->proxyToLegacy($request, $path);
+            }
+        }
+
+        // 4. Vérifier si le path cible un module dans legacy/modules/ (bootstrap direct)
         $localLegacyPath = base_path('legacy/modules');
         if (is_dir($localLegacyPath)) {
             $localModulePath = $localLegacyPath . '/' . $path;
@@ -142,6 +151,9 @@ class LegacyCatchallController extends Controller
                 ->timeout(30)
                 ->withHeaders([
                     'X-Forwarded-For' => $request->ip(),
+                    'X-Forwarded-Host' => $request->getHost(),
+                    'X-Forwarded-Port' => (string) $request->getPort(),
+                    'X-Forwarded-Proto' => $request->getScheme(),
                     'Cookie' => $request->header('Cookie', ''),
                 ]);
 
@@ -154,21 +166,39 @@ class LegacyCatchallController extends Controller
             };
 
             $body = $legacyResponse->body();
+            $contentType = $legacyResponse->header('Content-Type', '');
+            $isTextContent = str_contains($contentType, 'text/') || str_contains($contentType, 'application/json') || str_contains($contentType, 'application/xml');
 
-            // Réécrire les URLs absolues dans le body HTML pour inclure le base path
-            // Tout passe par /0991229y/ (le reverse proxy utilise ce préfixe pour router)
-            // donc les chemins absolus du legacy (/auth.php, /elements/...) doivent être préfixés
-            $basePath = parse_url(config('app.url', ''), PHP_URL_PATH) ?: '';
-            if (! empty($basePath) && $basePath !== '/') {
-                $bp = rtrim($basePath, '/');
-                $bpQ = preg_quote(ltrim($bp, '/'), '#');
-                $contentType = $legacyResponse->header('Content-Type', '');
-                if (str_contains($contentType, 'text/html') || empty($contentType)) {
-                    $body = preg_replace(
-                        '#((?:href|src|action)\s*=\s*["\']|window\.location(?:\.href)?\s*=\s*["\']|URL=)(/(?!' . $bpQ . '/))#i',
-                        '$1' . $bp . '$2',
-                        $body
-                    );
+            // Réécriture des URLs uniquement pour les réponses texte (HTML, scripts iPXE, etc.)
+            // Les fichiers binaires (.wim, .sdi, wimboot, etc.) passent tels quels
+            if ($isTextContent || empty($contentType)) {
+                // Réécrire les URLs legacy (port interne) vers l'URL publique (Laravel)
+                $legacyPort = parse_url($legacyBaseUrl, PHP_URL_PORT) ?: 80;
+                $publicHost = $request->getHost();
+                $publicPort = $request->getPort();
+                $publicScheme = $request->getScheme();
+                $publicOrigin = ($publicPort == 80 || $publicPort == 443)
+                    ? "{$publicScheme}://{$publicHost}"
+                    : "{$publicScheme}://{$publicHost}:{$publicPort}";
+
+                $body = preg_replace(
+                    '#http://[^/\s]+:' . preg_quote((string) $legacyPort, '#') . '#',
+                    $publicOrigin,
+                    $body
+                );
+
+                // Réécrire les URLs absolues dans le body HTML pour inclure le base path
+                $basePath = parse_url(config('app.url', ''), PHP_URL_PATH) ?: '';
+                if (! empty($basePath) && $basePath !== '/') {
+                    $bp = rtrim($basePath, '/');
+                    $bpQ = preg_quote(ltrim($bp, '/'), '#');
+                    if (str_contains($contentType, 'text/html') || empty($contentType)) {
+                        $body = preg_replace(
+                            '#((?:href|src|action)\s*=\s*["\']|window\.location(?:\.href)?\s*=\s*["\']|URL=)(/(?!' . $bpQ . '/))#i',
+                            '$1' . $bp . '$2',
+                            $body
+                        );
+                    }
                 }
             }
 
@@ -186,13 +216,19 @@ class LegacyCatchallController extends Controller
                 )->header('Content-Type', 'text/html; charset=UTF-8');
             }
 
-            $response = response($body, $legacyResponse->status());
+            // Déterminer le Content-Type : legacy > extension > défaut
+            $legacyContentType = $legacyResponse->header('Content-Type');
+            if (empty($legacyContentType) || $legacyContentType === 'text/html') {
+                // Le legacy n'a pas renvoyé de Content-Type fiable → déduire de l'extension
+                $legacyContentType = $this->resolveMimeType($path) ?: 'application/octet-stream';
+            }
 
-            // Transmettre les headers pertinents de la réponse legacy
-            foreach (['Content-Type', 'Set-Cookie'] as $header) {
-                if ($legacyResponse->header($header)) {
-                    $response->header($header, $legacyResponse->header($header));
-                }
+            $response = response($body, $legacyResponse->status())
+                ->header('Content-Type', $legacyContentType);
+
+            // Transmettre les autres headers pertinents de la réponse legacy
+            if ($legacyResponse->header('Set-Cookie')) {
+                $response->header('Set-Cookie', $legacyResponse->header('Set-Cookie'));
             }
 
             // Transmettre la redirection directement au client sans la ré-intercepter
@@ -223,6 +259,14 @@ class LegacyCatchallController extends Controller
             }
 
             return $response;
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::channel('legacylog')->error('Legacy proxy TIMEOUT', [
+                'path' => $path,
+                'url' => $url,
+                'timeout' => 30,
+                'error' => $e->getMessage(),
+            ]);
+            abort(504, 'Timeout lors de la communication avec le legacy (path: ' . $path . ')');
         } catch (\Exception $e) {
             Log::channel('legacylog')->error('Legacy proxy error', [
                 'path' => $path,
@@ -357,6 +401,16 @@ class LegacyCatchallController extends Controller
             'gif'   => 'image/gif',
             'svg'   => 'image/svg+xml',
             'ico'   => 'image/x-icon',
+            'wim'   => 'application/octet-stream',
+            'sdi'   => 'application/octet-stream',
+            'iso'   => 'application/octet-stream',
+            'img'   => 'application/octet-stream',
+            'efi'   => 'application/octet-stream',
+            'exe'   => 'application/octet-stream',
+            'xml'   => 'application/xml',
+            'ini'   => 'text/plain',
+            'cfg'   => 'text/plain',
+            'ipxe'  => 'text/plain',
             'woff'  => 'font/woff',
             'woff2' => 'font/woff2',
             'ttf'   => 'font/ttf',
@@ -365,8 +419,22 @@ class LegacyCatchallController extends Controller
 
         $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
 
-        return $mimeTypes[$extension]
-            ?? (function_exists('mime_content_type') ? mime_content_type($filePath) : 'application/octet-stream');
+        if (isset($mimeTypes[$extension])) {
+            return $mimeTypes[$extension];
+        }
+
+        // Pas d'extension (ex: wimboot) → octet-stream
+        if (empty($extension)) {
+            return 'application/octet-stream';
+        }
+
+        // Fallback : détection via le filesystem (path absolu requis)
+        $absolutePath = rtrim(config('sambaedu.legacy_path', ''), '/') . '/' . $filePath;
+        if (function_exists('mime_content_type') && file_exists($absolutePath)) {
+            return mime_content_type($absolutePath);
+        }
+
+        return 'application/octet-stream';
     }
 
     /**

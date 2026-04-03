@@ -50,6 +50,15 @@ return [
         // Exemple : '^gpo/shortcuts_out\.php$',
     ],
 
+    /*
+    | Routes legacy en mode direct : pas de shims, le vrai code legacy
+    | gère tout (connexion LDAP/AD, opérations d'écriture...).
+    | Tableau de patterns regex testés sur le REQUEST_URI.
+    */
+    'direct_legacy_routes' => [
+        '^/ipxe/',
+    ],
+
     'se4ad_ip' => env('SAMBAEDU_SE4AD_IP'),
     'se4ad_etab_ip' => env('SAMBAEDU_SE4AD_ETAB_IP'),
     'strict_local_ad' => env('SAMBAEDU_STRICT_LOCAL_AD', true),
