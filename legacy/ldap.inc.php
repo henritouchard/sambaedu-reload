@@ -892,6 +892,25 @@ if (!function_exists('user_valid_passwd')) {
     }
 }
 
+if (!function_exists('is_dual_boot')) {
+    /**
+     * Vérifie si une machine est en dual boot (membre des parcs "windows" ET "linux").
+     */
+    function is_dual_boot($config, $machine): bool
+    {
+        $name = $machine['cn'] ?? ($machine['name'] ?? '');
+        if (empty($name)) {
+            return false;
+        }
+        $ws = Workstation::where('name', $name)->first();
+        if (!$ws) {
+            return false;
+        }
+        $groups = $ws->groups()->pluck('name')->map(fn($n) => strtolower($n))->toArray();
+        return in_array('windows', $groups) && in_array('linux', $groups);
+    }
+}
+
 if (!function_exists('register_machine_hardware')) {
     /**
      * Enregistre/met à jour le netbootguid d'une machine.

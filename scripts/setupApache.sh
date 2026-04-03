@@ -93,6 +93,15 @@ cat > "$APACHE_SITES_AVAILABLE/sambaedu.conf" << VHOST_SER
         Require all granted
     </Directory>
 
+    # Servir les fichiers iPXE directement depuis le legacy (fichiers statiques
+    # volumineux : .wim, .sdi, wimboot, etc.) — les .php passent toujours par FPM
+    Alias /ipxe /var/www/sambaedu/ipxe
+    <Directory /var/www/sambaedu/ipxe>
+        Options -Indexes +FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+
     ErrorLog /var/log/apache2/sambaedu-reload-error.log
     CustomLog /var/log/apache2/sambaedu-reload-access.log combined
 </VirtualHost>
