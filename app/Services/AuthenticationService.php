@@ -277,6 +277,9 @@ class AuthenticationService
                 // Si c'est null ou vide, considérer comme 0
                 if ($pwdLastSetRaw === null || $pwdLastSetRaw === '') {
                     $pwdLastSet = 0;
+                } elseif ($pwdLastSetRaw instanceof \Carbon\Carbon) {
+                    // LdapRecord peut convertir automatiquement en Carbon
+                    $pwdLastSet = $pwdLastSetRaw->getTimestamp() > 0 ? 1 : 0;
                 } else {
                     // Convertir en int directement depuis la valeur brute
                     $pwdLastSet = (int) $pwdLastSetRaw;

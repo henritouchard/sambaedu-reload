@@ -53,7 +53,7 @@ if ($session_ipxe != $uuid or $session_ipxe == "NOTHING") {
         }
     }
 }
-check_system_accounts($config);
+// check_system_accounts($config); // désactivé : gestion des comptes AD système, non pertinent dans le contexte shimmé
 $machine = search_machine($config, $uuid);
 
 if ($admin) {

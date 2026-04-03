@@ -876,10 +876,34 @@ if (!function_exists('trash_users')) {
 }
 
 if (!function_exists('user_valid_passwd')) {
-    function user_valid_passwd(array $config, string $login, string $password): bool
+    /**
+     * Vérifie le mot de passe d'un utilisateur via AuthenticationService Laravel.
+     * Retourne 1 si OK, 0 si échec (compatible avec le code legacy).
+     */
+    function user_valid_passwd(array $config, string $login, string $password): int
     {
-        _shim_log_unimplemented('user_valid_passwd');
-        return false;
+        try {
+            $authService = app(\App\Services\AuthenticationService::class);
+            $result = $authService->authenticate($login, $password, $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+            return ($result['success'] ?? false) ? 1 : 0;
+        } catch (\Throwable $e) {
+            return 0;
+        }
+    }
+}
+
+if (!function_exists('register_machine_hardware')) {
+    /**
+     * Enregistre/met à jour le netbootguid d'une machine.
+     * Shim : retourne simplement $machine sans toucher à l'AD,
+     * le uuid est déjà stocké dans PostgreSQL.
+     */
+    function register_machine_hardware($config, array $machine, string $guid): array
+    {
+        if (!empty($guid) && empty($machine['netbootguid'])) {
+            $machine['netbootguid'] = $guid;
+        }
+        return $machine;
     }
 }
 
