@@ -1086,6 +1086,12 @@ if (!function_exists('array_unique_multi')) {
 if (!function_exists('get_config')) {
     function get_config(array $config = [], bool $force = true, $global = false, string $module = 'all', $ad = false): array
     {
+        // Partir du $config global (initialisé par legacy_build_config dans config.inc.php)
+        $globalConfig = $GLOBALS['config'] ?? [];
+
+        // Fusionner : le $config passé en paramètre peut contenir des clés supplémentaires
+        $config = !empty($config) ? array_merge($globalConfig, $config) : $globalConfig;
+
         // Préserver le bind existant
         if (!isset($config['bind'])) {
             $config['bind'] = new LdapShimConnection();
