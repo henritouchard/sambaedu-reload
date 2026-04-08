@@ -65,14 +65,6 @@ class LdapRecordServiceProvider extends ServiceProvider
 
             // Définir comme connexion par défaut
             Container::setDefaultConnection('default');
-
-            Log::info('LdapRecordServiceProvider: Connexion LDAP configurée avec succès', [
-                'hosts' => $ldapConfig->getHosts(),
-                'port' => $ldapConfig->port,
-                'base_dn' => $ldapConfig->baseDn,
-                'username' => $ldapConfig->getAdminUsername(),
-            ]);
-
         } catch (\Exception $e) {
             Log::error('LdapRecordServiceProvider: Erreur lors de la configuration LDAP', [
                 'error' => $e->getMessage(),
