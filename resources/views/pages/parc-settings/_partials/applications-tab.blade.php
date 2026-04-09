@@ -1,3 +1,280 @@
+<?php
+
+use App\Components\Traits\WithToasts;
+use App\Models\Application;
+use App\Models\Depot;
+use App\Models\DepotApplication;
+use App\Services\AppProfile\AppProfileService;
+use App\Services\AppStore\AppStoreService;
+use Illuminate\Support\Facades\Log;
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
+use Livewire\Attributes\Url;
+use Livewire\Component;
+use Livewire\WithPagination;
+
+new class extends Component
+{
+    use WithPagination;
+    use WithToasts;
+
+    private AppProfileService $appProfileService;
+
+    private AppStoreService $appStoreService;
+
+    #[Url]
+    public string $appSearch = '';
+
+    #[Url]
+    public string $categoryFilter = '';
+
+    public array $selectedApps = [];
+
+    #[Url]
+    public int $appsPerPage = 20;
+
+    public array $allowedPerPage = [10, 20, 50, 100];
+
+    public array $categories = [];
+
+    // Modal AppStore
+    public bool $showAppStoreModal = false;
+
+    public string $appStoreSearch = '';
+
+    public string $appStoreCategoryFilter = '';
+
+    public string $appStoreBranchTab = 'stable';
+
+    public array $depotApps = [];
+
+    public array $selectedDepotApps = [];
+
+    public array $branchCounts = [];
+
+    public bool $isSyncing = false;
+
+    public bool $isInstalling = false;
+
+    public ?string $lastSyncMessage = null;
+
+    public function boot(AppProfileService $appProfileService, AppStoreService $appStoreService): void
+    {
+        $this->appProfileService = $appProfileService;
+        $this->appStoreService = $appStoreService;
+    }
+
+    public function mount(): void
+    {
+        try {
+            $this->categories = $this->appProfileService->getCategories()->toArray();
+        } catch (\Exception $e) {
+            Log::error('[ApplicationsTab] Erreur chargement catégories: '.$e->getMessage());
+            $this->categories = [];
+        }
+    }
+
+    #[Computed]
+    public function applications()
+    {
+        try {
+            return $this->appProfileService->listApplications(
+                perPage: $this->appsPerPage,
+                search: $this->appSearch ?: null,
+                category: $this->categoryFilter ?: null,
+            );
+        } catch (\Exception $e) {
+            Log::error('[ApplicationsTab] Erreur chargement applications: '.$e->getMessage());
+
+            return collect();
+        }
+    }
+
+    public function resetAppFilters(): void
+    {
+        $this->appSearch = '';
+        $this->categoryFilter = '';
+        $this->selectedApps = [];
+        $this->resetPage();
+    }
+
+    public function updatedAppsPerPage(): void
+    {
+        $this->resetPage();
+    }
+
+    // ========================================
+    // AppStore Modal
+    // ========================================
+
+    #[On('open-app-store-modal')]
+    public function openAppStoreModal(): void
+    {
+        $this->showAppStoreModal = true;
+        $this->appStoreSearch = '';
+        $this->appStoreCategoryFilter = '';
+        $this->selectedDepotApps = [];
+        $this->lastSyncMessage = null;
+        $this->loadDepotApps();
+    }
+
+    public function closeAppStoreModal(): void
+    {
+        $this->showAppStoreModal = false;
+        $this->selectedDepotApps = [];
+    }
+
+    public function loadDepotApps(): void
+    {
+        try {
+            $installedAppIds = Application::pluck('app_id')->toArray();
+            $activeDepotIds = Depot::active()->pluck('id');
+
+            $this->branchCounts = DepotApplication::query()
+                ->whereIn('depot_id', $activeDepotIds)
+                ->whereNotIn('app_id', $installedAppIds)
+                ->selectRaw('branch, COUNT(DISTINCT app_id) as cnt')
+                ->groupBy('branch')
+                ->pluck('cnt', 'branch')
+                ->toArray();
+
+            $apps = DepotApplication::query()
+                ->whereIn('depot_id', $activeDepotIds)
+                ->whereNotIn('app_id', $installedAppIds)
+                ->where('branch', $this->appStoreBranchTab)
+                ->when(
+                    $this->appStoreSearch,
+                    fn ($q) => $q->where(function ($q2) {
+                        $q2->where('name', 'ILIKE', "%{$this->appStoreSearch}%")
+                            ->orWhere('app_id', 'ILIKE', "%{$this->appStoreSearch}%");
+                    }),
+                )
+                ->when($this->appStoreCategoryFilter, fn ($q) => $q->where('category', $this->appStoreCategoryFilter))
+                ->orderBy('name')
+                ->limit(100)
+                ->get();
+
+            $this->depotApps = $apps
+                ->map(fn ($app) => [
+                    'id' => $app->id,
+                    'app_id' => $app->app_id,
+                    'name' => $app->name,
+                    'version' => $app->version,
+                    'category' => $app->category,
+                    'branch' => $app->branch,
+                ])
+                ->toArray();
+        } catch (\Exception $e) {
+            Log::error('[ApplicationsTab] Erreur chargement apps dépôt: '.$e->getMessage());
+            $this->depotApps = [];
+            $this->branchCounts = [];
+        }
+    }
+
+    public function switchBranchTab(string $branch): void
+    {
+        $this->appStoreBranchTab = $branch;
+        $this->selectedDepotApps = [];
+        $this->loadDepotApps();
+    }
+
+    public function updatedAppStoreSearch(): void
+    {
+        $this->loadDepotApps();
+    }
+
+    public function updatedAppStoreCategoryFilter(): void
+    {
+        $this->loadDepotApps();
+    }
+
+    public function syncDepots(): void
+    {
+        $this->isSyncing = true;
+
+        try {
+            $result = $this->appStoreService->syncAllDepots();
+
+            $message = "Synchronisation terminée : {$result['new']} nouvelles, {$result['updated']} mises à jour";
+            if (! empty($result['errors'])) {
+                $message .= " ({$result['synced']} dépôts avec erreurs)";
+            }
+
+            $this->lastSyncMessage = $message;
+            $this->toastSuccess($message);
+            $this->loadDepotApps();
+        } catch (\Exception $e) {
+            Log::error('[ApplicationsTab] Erreur sync dépôts: '.$e->getMessage());
+            $this->toastError('Erreur lors de la synchronisation: '.$e->getMessage());
+        } finally {
+            $this->isSyncing = false;
+        }
+    }
+
+    public function installSelectedApps(): void
+    {
+        if (empty($this->selectedDepotApps)) {
+            $this->toastWarning('Aucune application sélectionnée');
+
+            return;
+        }
+
+        $this->isInstalling = true;
+        $installed = 0;
+        $errors = 0;
+
+        try {
+            foreach ($this->selectedDepotApps as $depotAppId) {
+                try {
+                    $depotApp = DepotApplication::find($depotAppId);
+                    if ($depotApp) {
+                        $this->appStoreService->installApplication($depotApp);
+                        $installed++;
+                    }
+                } catch (\Exception $e) {
+                    Log::error("[ApplicationsTab] Erreur installation app {$depotAppId}: ".$e->getMessage());
+                    $errors++;
+                }
+            }
+
+            if ($installed > 0) {
+                $this->toastSuccess("{$installed} application(s) ajoutée(s) au catalogue");
+            }
+            if ($errors > 0) {
+                $this->toastWarning("{$errors} erreur(s) lors de l'ajout");
+            }
+
+            $this->selectedDepotApps = [];
+            $this->loadDepotApps();
+        } catch (\Exception $e) {
+            Log::error('[ApplicationsTab] Erreur installation apps: '.$e->getMessage());
+            $this->toastError('Erreur lors de l\'ajout');
+        } finally {
+            $this->isInstalling = false;
+        }
+    }
+
+    public function toggleDepotAppSelection(int $appId): void
+    {
+        if (in_array($appId, $this->selectedDepotApps)) {
+            $this->selectedDepotApps = array_values(array_diff($this->selectedDepotApps, [$appId]));
+        } else {
+            $this->selectedDepotApps[] = $appId;
+        }
+    }
+
+    public function selectAllDepotApps(): void
+    {
+        $this->selectedDepotApps = array_column($this->depotApps, 'id');
+    }
+
+    public function deselectAllDepotApps(): void
+    {
+        $this->selectedDepotApps = [];
+    }
+};
+?>
+
 <div class="flex flex-col gap-4 flex-1 min-h-0">
     <!-- Filtres -->
     <div class="flex-shrink-0 card bg-base-100 shadow-sm border border-base-200">
@@ -30,6 +307,7 @@
                     title="Réinitialiser les filtres">
                     <i class="fa-solid fa-rotate-left"></i>
                 </button>
+
             </div>
         </div>
     </div>
@@ -162,6 +440,147 @@
                     </button>
                 </div>
             </div>
+        </div>
+    @endif
+
+    <!-- Modal AppStore -->
+    @if ($showAppStoreModal)
+        <div class="modal modal-open">
+            <div class="modal-box max-w-4xl max-h-[80vh] flex flex-col">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-lg">
+                        <i class="fa-solid fa-cloud-arrow-down mr-2 text-primary"></i>
+                        Ajouter des applications depuis le dépôt
+                    </h3>
+                    <button type="button" class="btn btn-ghost btn-sm btn-circle" wire:click="closeAppStoreModal">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <!-- Actions et filtres -->
+                <div class="flex flex-wrap gap-3 mb-4 items-end">
+                    <button type="button" class="btn btn-secondary btn-sm" wire:click="syncDepots"
+                        wire:loading.attr="disabled" wire:target="syncDepots">
+                        <span wire:loading.remove wire:target="syncDepots">
+                            <i class="fa-solid fa-sync"></i>
+                        </span>
+                        <span wire:loading wire:target="syncDepots">
+                            <i class="fa-solid fa-spinner fa-spin"></i>
+                        </span>
+                        Synchroniser le dépôt
+                    </button>
+
+                    <div class="form-control flex-1 min-w-[200px]">
+                        <input type="text" wire:model.live.debounce.300ms="appStoreSearch"
+                            class="input input-bordered input-sm" placeholder="Rechercher une application..." />
+                    </div>
+
+                    <select wire:model.live="appStoreCategoryFilter" class="select select-bordered select-sm">
+                        <option value="">Toutes catégories</option>
+                        @foreach ($categories as $cat)
+                            <option value="{{ $cat }}">{{ $cat }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                @if ($lastSyncMessage)
+                    <div class="alert alert-info alert-sm mb-4">
+                        <i class="fa-solid fa-info-circle"></i>
+                        <span>{{ $lastSyncMessage }}</span>
+                    </div>
+                @endif
+
+                <!-- Onglets par branche -->
+                <div class="tabs tabs-boxed mb-4">
+                    <button type="button" class="tab {{ $appStoreBranchTab === 'stable' ? 'tab-active' : '' }}"
+                        wire:click="switchBranchTab('stable')">
+                        <i class="fa-solid fa-check-circle mr-1 text-success"></i>
+                        Stable
+                        <span class="badge badge-sm ml-1">{{ $branchCounts['stable'] ?? 0 }}</span>
+                    </button>
+                    <button type="button" class="tab {{ $appStoreBranchTab === 'testing' ? 'tab-active' : '' }}"
+                        wire:click="switchBranchTab('testing')">
+                        <i class="fa-solid fa-flask mr-1 text-warning"></i>
+                        Testing
+                        <span class="badge badge-sm ml-1">{{ $branchCounts['testing'] ?? 0 }}</span>
+                    </button>
+                    <button type="button" class="tab {{ $appStoreBranchTab === 'manuel' ? 'tab-active' : '' }}"
+                        wire:click="switchBranchTab('manuel')">
+                        <i class="fa-solid fa-hand mr-1 text-info"></i>
+                        Manuel
+                        <span class="badge badge-sm ml-1">{{ $branchCounts['manuel'] ?? 0 }}</span>
+                    </button>
+                </div>
+
+                <!-- Liste des applications -->
+                <div class="flex-1 overflow-auto border border-base-300 rounded-lg">
+                    @if (count($depotApps) > 0)
+                        <table class="table table-zebra table-sm table-pin-rows">
+                            <thead>
+                                <tr>
+                                    <th class="w-10">
+                                        <input type="checkbox" class="checkbox checkbox-sm"
+                                            @if (count($selectedDepotApps) === count($depotApps) && count($depotApps) > 0) checked @endif
+                                            wire:click="{{ count($selectedDepotApps) === count($depotApps) ? 'deselectAllDepotApps' : 'selectAllDepotApps' }}" />
+                                    </th>
+                                    <th>Application</th>
+                                    <th>Version</th>
+                                    <th>Catégorie</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($depotApps as $app)
+                                    <tr wire:key="depot-app-{{ $app['id'] }}" class="hover cursor-pointer"
+                                        wire:click="toggleDepotAppSelection({{ $app['id'] }})">
+                                        <td>
+                                            <input type="checkbox" class="checkbox checkbox-sm"
+                                                @if (in_array($app['id'], $selectedDepotApps)) checked @endif />
+                                        </td>
+                                        <td>
+                                            <div class="font-medium">{{ $app['name'] }}</div>
+                                            <div class="text-xs text-base-content/60">{{ $app['app_id'] }}</div>
+                                        </td>
+                                        <td>
+                                            <span
+                                                class="badge badge-ghost badge-sm">{{ $app['version'] ?? '-' }}</span>
+                                        </td>
+                                        <td class="text-sm">{{ $app['category'] ?? '-' }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    @else
+                        <div class="flex flex-col items-center justify-center py-12 text-base-content/60">
+                            <i class="fa-solid fa-box-open text-4xl mb-3 opacity-30"></i>
+                            <p>Aucune nouvelle application disponible</p>
+                            <p class="text-sm">Cliquez sur "Synchroniser le dépôt" pour mettre à jour</p>
+                        </div>
+                    @endif
+                </div>
+
+                <!-- Actions -->
+                <div class="modal-action mt-4">
+                    <span class="text-sm text-base-content/70 mr-auto">
+                        {{ count($selectedDepotApps) }} application(s) sélectionnée(s)
+                    </span>
+                    <button type="button" class="btn btn-ghost" wire:click="closeAppStoreModal">
+                        Annuler
+                    </button>
+                    <button type="button" class="btn btn-primary" wire:click="installSelectedApps"
+                        @if (count($selectedDepotApps) === 0) disabled @endif wire:loading.attr="disabled"
+                        wire:target="installSelectedApps">
+                        <span wire:loading.remove wire:target="installSelectedApps">
+                            <i class="fa-solid fa-download mr-2"></i>
+                            Installer
+                        </span>
+                        <span wire:loading wire:target="installSelectedApps">
+                            <i class="fa-solid fa-spinner fa-spin mr-2"></i>
+                            Installation...
+                        </span>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-backdrop" wire:click="closeAppStoreModal"></div>
         </div>
     @endif
 </div>

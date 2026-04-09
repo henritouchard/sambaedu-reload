@@ -1,4 +1,165 @@
+<?php
+
+use App\Components\Traits\WithToasts;
+use App\Models\AppProfile;
+use App\Services\AppProfile\AppProfileService;
+use Illuminate\Support\Facades\Log;
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
+use Livewire\Attributes\Url;
+use Livewire\Component;
+use Livewire\WithPagination;
+
+new class extends Component
+{
+    use WithPagination;
+    use WithToasts;
+
+    private AppProfileService $appProfileService;
+
+    #[Url]
+    public string $profileSearch = '';
+
+    #[Url]
+    public ?bool $activeOnly = null;
+
+    public array $selectedProfiles = [];
+
+    #[Url]
+    public int $profilesPerPage = 20;
+
+    public array $allowedPerPage = [10, 20, 50, 100];
+
+    // Modal création profil
+    public bool $showCreateModal = false;
+
+    public string $newProfileName = '';
+
+    public string $newProfileDisplayName = '';
+
+    public string $newProfileDescription = '';
+
+    public function boot(AppProfileService $appProfileService): void
+    {
+        $this->appProfileService = $appProfileService;
+    }
+
+    #[Computed]
+    public function profiles()
+    {
+        try {
+            return $this->appProfileService->listProfiles(
+                perPage: $this->profilesPerPage,
+                search: $this->profileSearch ?: null,
+                activeOnly: $this->activeOnly,
+            );
+        } catch (\Exception $e) {
+            Log::error('[ProfilesTab] Erreur chargement profils: '.$e->getMessage());
+
+            return collect();
+        }
+    }
+
+    public function resetProfileFilters(): void
+    {
+        $this->profileSearch = '';
+        $this->activeOnly = null;
+        $this->selectedProfiles = [];
+        $this->resetPage();
+    }
+
+    public function updatedProfilesPerPage(): void
+    {
+        $this->resetPage();
+    }
+
+    #[On('open-create-profile-modal')]
+    public function openCreateModal(): void
+    {
+        $this->newProfileName = '';
+        $this->newProfileDisplayName = '';
+        $this->newProfileDescription = '';
+        $this->showCreateModal = true;
+    }
+
+    public function closeCreateModal(): void
+    {
+        $this->showCreateModal = false;
+    }
+
+    public function createProfile(): void
+    {
+        $this->validate([
+            'newProfileName' => 'required|string|max:100|unique:app_profiles,name',
+            'newProfileDisplayName' => 'nullable|string|max:255',
+            'newProfileDescription' => 'nullable|string',
+        ]);
+
+        try {
+            $profile = $this->appProfileService->createProfile([
+                'name' => $this->newProfileName,
+                'display_name' => $this->newProfileDisplayName ?: null,
+                'description' => $this->newProfileDescription ?: null,
+                'is_active' => true,
+            ]);
+
+            $this->toastSuccess("Profil '{$profile->name}' créé avec succès");
+            $this->closeCreateModal();
+        } catch (\Exception $e) {
+            Log::error('[ProfilesTab] Erreur création profil: '.$e->getMessage());
+            $this->toastError('Erreur lors de la création du profil');
+        }
+    }
+
+    public function deleteProfile(int $profileId): void
+    {
+        try {
+            $profile = AppProfile::find($profileId);
+            if (! $profile) {
+                $this->toastError('Profil non trouvé');
+
+                return;
+            }
+
+            $name = $profile->name;
+            $this->appProfileService->deleteProfile($profileId);
+            $this->toastSuccess("Profil '{$name}' supprimé avec succès");
+        } catch (\Exception $e) {
+            Log::error('[ProfilesTab] Erreur suppression profil: '.$e->getMessage());
+            $this->toastError($e->getMessage());
+        }
+    }
+
+    public function toggleProfileActive(int $profileId): void
+    {
+        try {
+            $profile = AppProfile::find($profileId);
+            if (! $profile) {
+                $this->toastError('Profil non trouvé');
+
+                return;
+            }
+
+            $this->appProfileService->updateProfile($profileId, [
+                'is_active' => ! $profile->is_active,
+            ]);
+
+            $status = ! $profile->is_active ? 'activé' : 'désactivé';
+            $this->toastSuccess("Profil '{$profile->name}' {$status}");
+        } catch (\Exception $e) {
+            Log::error('[ProfilesTab] Erreur toggle profil: '.$e->getMessage());
+            $this->toastError('Erreur lors de la modification du profil');
+        }
+    }
+};
+?>
+
 <div class="flex flex-col gap-4 flex-1 min-h-0">
+    {{-- Vérification synchronisation AD/SQL --}}
+    <div class="flex-shrink-0">
+        <livewire:components::molecules.app-profile-sync-status />
+    </div>
+
     <!-- Filtres -->
     <div class="flex-shrink-0 card bg-base-100 shadow-sm border border-base-200">
         <div class="card-body p-4">
@@ -175,6 +336,51 @@
                     </button>
                 </div>
             </div>
+        </div>
+    @endif
+
+    <!-- Modal création profil -->
+    @if ($showCreateModal)
+        <div class="modal modal-open">
+            <div class="modal-box">
+                <h3 class="font-bold text-lg mb-4">Nouveau Profil Applicatif</h3>
+                <form wire:submit="createProfile">
+                    <div class="form-control mb-4">
+                        <label class="label">
+                            <span class="label-text">Nom technique *</span>
+                        </label>
+                        <input type="text" wire:model="newProfileName" class="input input-bordered"
+                            placeholder="ex: salle-info-101" required />
+                        @error('newProfileName')
+                            <label class="label">
+                                <span class="label-text-alt text-error">{{ $message }}</span>
+                            </label>
+                        @enderror
+                    </div>
+                    <div class="form-control mb-4">
+                        <label class="label">
+                            <span class="label-text">Nom d'affichage</span>
+                        </label>
+                        <input type="text" wire:model="newProfileDisplayName" class="input input-bordered"
+                            placeholder="ex: Salle Informatique 101" />
+                    </div>
+                    <div class="form-control mb-4">
+                        <label class="label">
+                            <span class="label-text">Description</span>
+                        </label>
+                        <textarea wire:model="newProfileDescription" class="textarea textarea-bordered" rows="3"
+                            placeholder="Description du profil..."></textarea>
+                    </div>
+                    <div class="modal-action">
+                        <button type="button" class="btn" wire:click="closeCreateModal">Annuler</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fa-solid fa-check mr-2"></i>
+                            Créer
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-backdrop" wire:click="closeCreateModal"></div>
         </div>
     @endif
 </div>

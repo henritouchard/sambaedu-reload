@@ -83,7 +83,9 @@ class AppStoreService
     {
         Log::info('[AppStore] Synchronisation du dépôt', ['depot' => $depot->name, 'url' => $depot->url]);
 
-        $xmlUrl = rtrim($depot->url, '/') . '/packages.xml';
+        $xmlUrl = str_ends_with($depot->url, '/packages.xml')
+            ? $depot->url
+            : rtrim($depot->url, '/') . '/packages.xml';
         $response = Http::timeout($this->syncTimeout)->get($xmlUrl);
 
         if (!$response->successful()) {
@@ -472,6 +474,111 @@ class AppStoreService
         ]);
 
         $this->updateLocalPackagesXml();
+    }
+
+    // ========================================
+    // CONSULTATION DU CATALOGUE DISTANT
+    // ========================================
+
+    /**
+     * Retourne la liste des dépôts, triés par principal d'abord puis par nom
+     */
+    public function listDepots(): Collection
+    {
+        return Depot::orderByDesc('is_primary')->orderBy('name')->get();
+    }
+
+    /**
+     * Retourne le dépôt par défaut (principal ou premier disponible)
+     */
+    public function getDefaultDepot(): ?Depot
+    {
+        return Depot::primary()->first() ?? Depot::first();
+    }
+
+    /**
+     * Retourne les applications d'un dépôt avec statut d'installation, paginées
+     *
+     * @return \Illuminate\Pagination\LengthAwarePaginator
+     */
+    public function listDepotApplications(
+        int $depotId,
+        int $perPage = 20,
+        ?string $search = null,
+        ?string $category = null,
+        ?string $branch = null,
+    ) {
+        $installedApps = Application::pluck('version', 'app_id')->toArray();
+
+        $query = DepotApplication::query()
+            ->where('depot_id', $depotId)
+            ->when($search, fn ($q) => $q->search($search))
+            ->when($category, fn ($q) => $q->byCategory($category))
+            ->when($branch, fn ($q) => $q->byBranch($branch))
+            ->orderBy('name');
+
+        $paginated = $query->paginate($perPage);
+
+        $paginated->getCollection()->transform(function ($app) use ($installedApps) {
+            $app->is_installed = array_key_exists($app->app_id, $installedApps);
+            if ($app->is_installed) {
+                $app->local_version = $installedApps[$app->app_id];
+                $app->has_update = $installedApps[$app->app_id] !== $app->version;
+            }
+
+            return $app;
+        });
+
+        return $paginated;
+    }
+
+    /**
+     * Retourne les statistiques d'un dépôt spécifique
+     */
+    public function getDepotStats(int $depotId): array
+    {
+        $total = DepotApplication::where('depot_id', $depotId)->count();
+
+        $stats = DepotApplication::query()
+            ->where('depot_applications.depot_id', $depotId)
+            ->join('applications', 'depot_applications.app_id', '=', 'applications.app_id')
+            ->selectRaw('COUNT(*) as installed')
+            ->selectRaw('SUM(CASE WHEN depot_applications.version != applications.version THEN 1 ELSE 0 END) as updatable')
+            ->first();
+
+        return [
+            'total' => $total,
+            'installed' => (int) ($stats->installed ?? 0),
+            'updatable' => (int) ($stats->updatable ?? 0),
+        ];
+    }
+
+    /**
+     * Retourne les catégories distinctes d'un dépôt
+     */
+    public function getDepotCategories(int $depotId): array
+    {
+        return DepotApplication::where('depot_id', $depotId)
+            ->whereNotNull('category')
+            ->where('category', '!=', '')
+            ->distinct()
+            ->orderBy('category')
+            ->pluck('category')
+            ->toArray();
+    }
+
+    /**
+     * Retourne les branches distinctes d'un dépôt
+     */
+    public function getDepotBranches(int $depotId): array
+    {
+        return DepotApplication::where('depot_id', $depotId)
+            ->whereNotNull('branch')
+            ->where('branch', '!=', '')
+            ->distinct()
+            ->orderBy('branch')
+            ->pluck('branch')
+            ->toArray();
     }
 
     // ========================================

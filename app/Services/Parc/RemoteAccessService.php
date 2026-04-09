@@ -18,6 +18,7 @@ if (!defined('SE_COMPUTER_CONTROL')) {
  */
 class RemoteAccessService
 {
+    public const DEFAULT_CONNECTION_TYPE = 'rdp';
     /**
      * @return string Absolute path to legacy sambaedu root (sibling of /laravel)
      */
@@ -199,27 +200,6 @@ class RemoteAccessService
         ];
     }
 
-    /**
-     * Détermine le type de connexion par défaut pour une machine
-     * 
-     * @param string $machineName Nom de la machine
-     * @return string Type de connexion par défaut
-     */
-    public function getDefaultConnectionType(string $machineName): string
-    {
-        try {
-            // Les serveurs SE4 utilisent SSH par défaut
-            if (preg_match('/se4(?:fs|ad)/i', $machineName) === 1) {
-                return 'ssh';
-            }
-
-            // Pour les postes clients, RDP par défaut
-            return 'rdp';
-        } catch (\Exception $e) {
-            Log::error('[RemoteAccess] Erreur détermination type par défaut: ' . $e->getMessage());
-            return 'rdp';
-        }
-    }
 
     /**
      * Vérifie si l'utilisateur a les droits pour l'accès distant

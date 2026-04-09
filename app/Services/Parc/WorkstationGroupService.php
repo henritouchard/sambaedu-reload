@@ -413,7 +413,7 @@ class WorkstationGroupService
 
         foreach ($machines as $machine) {
             try {
-                $connectionType = $this->remoteAccessService->getDefaultConnectionType($machine->name);
+                $connectionType = RemoteAccessService::DEFAULT_CONNECTION_TYPE;
                 $remoteUrl = $this->remoteAccessService->generateRemoteToken($machine->name, $connectionType);
 
                 if ($remoteUrl) {
