@@ -94,7 +94,7 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
 
     // Onglet Dépôt
     #[Url]
-    public ?int $depotId = null;
+    public int $depotId = 0;
 
     #[Url]
     public string $depotSearch = '';
@@ -454,7 +454,7 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
         $depotId = $this->depotId;
 
         // Si pas de dépôt sélectionné, prendre le principal
-        if (! $depotId) {
+        if ($depotId === 0) {
             $primary = Depot::primary()->first() ?? Depot::first();
             if ($primary) {
                 $this->depotId = $primary->id;
@@ -495,7 +495,7 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
 
     public function getDepotCategoriesProperty(): array
     {
-        if (! $this->depotId) {
+        if ($this->depotId === 0) {
             return [];
         }
 
@@ -510,7 +510,7 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
 
     public function getDepotBranchesProperty(): array
     {
-        if (! $this->depotId) {
+        if ($this->depotId === 0) {
             return [];
         }
 
@@ -525,7 +525,7 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
 
     public function getDepotStatsProperty(): array
     {
-        if (! $this->depotId) {
+        if ($this->depotId === 0) {
             return ['total' => 0, 'installed' => 0, 'updatable' => 0];
         }
 
@@ -721,7 +721,7 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                 <div class="flex gap-2">
                     <button type="button" class="btn btn-secondary" wire:click="syncCurrentDepot"
                         wire:loading.attr="disabled" wire:target="syncCurrentDepot"
-                        @if (! $depotId) disabled @endif>
+                        @if ($depotId === 0) disabled @endif>
                         <span wire:loading.remove wire:target="syncCurrentDepot">
                             <i class="fa-solid fa-sync"></i>
                         </span>
