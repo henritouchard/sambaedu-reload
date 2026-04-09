@@ -92,6 +92,28 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
 
     public ?string $lastSyncMessage = null;
 
+    // Onglet Dépôt
+    #[Url]
+    public ?int $depotId = null;
+
+    #[Url]
+    public string $depotSearch = '';
+
+    #[Url]
+    public string $depotCategoryFilter = '';
+
+    #[Url]
+    public string $depotBranchFilter = '';
+
+    #[Url]
+    public int $depotPerPage = 20;
+
+    public array $selectedDepotInstallApps = [];
+
+    public bool $isDepotSyncing = false;
+
+    public ?string $depotSyncMessage = null;
+
     public function boot(AppProfileService $appProfileService, AppStoreService $appStoreService): void
     {
         $this->appProfileService = $appProfileService;
@@ -418,6 +440,247 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
         }
     }
 
+    // ========================================
+    // Onglet Dépôt
+    // ========================================
+
+    public function getDepotsProperty()
+    {
+        return Depot::orderByDesc('is_primary')->orderBy('name')->get();
+    }
+
+    public function getDepotApplicationsProperty()
+    {
+        $depotId = $this->depotId;
+
+        // Si pas de dépôt sélectionné, prendre le principal
+        if (! $depotId) {
+            $primary = Depot::primary()->first() ?? Depot::first();
+            if ($primary) {
+                $this->depotId = $primary->id;
+                $depotId = $primary->id;
+            } else {
+                return new \Illuminate\Pagination\LengthAwarePaginator([], 0, $this->depotPerPage);
+            }
+        }
+
+        $installedAppIds = Application::pluck('app_id')->toArray();
+
+        $query = DepotApplication::query()
+            ->where('depot_id', $depotId)
+            ->when($this->depotSearch, fn ($q) => $q->where(function ($q2) {
+                $q2->where('name', 'ILIKE', "%{$this->depotSearch}%")
+                    ->orWhere('app_id', 'ILIKE', "%{$this->depotSearch}%");
+            }))
+            ->when($this->depotCategoryFilter, fn ($q) => $q->where('category', $this->depotCategoryFilter))
+            ->when($this->depotBranchFilter, fn ($q) => $q->where('branch', $this->depotBranchFilter))
+            ->orderBy('name');
+
+        $paginated = $query->paginate($this->depotPerPage);
+
+        // Enrichir chaque app avec son statut local
+        $paginated->getCollection()->transform(function ($app) use ($installedAppIds) {
+            $app->is_installed = in_array($app->app_id, $installedAppIds);
+            if ($app->is_installed) {
+                $localApp = Application::where('app_id', $app->app_id)->first();
+                $app->local_version = $localApp?->version;
+                $app->has_update = $localApp && $localApp->version !== $app->version;
+            }
+
+            return $app;
+        });
+
+        return $paginated;
+    }
+
+    public function getDepotCategoriesProperty(): array
+    {
+        if (! $this->depotId) {
+            return [];
+        }
+
+        return DepotApplication::where('depot_id', $this->depotId)
+            ->whereNotNull('category')
+            ->where('category', '!=', '')
+            ->distinct()
+            ->orderBy('category')
+            ->pluck('category')
+            ->toArray();
+    }
+
+    public function getDepotBranchesProperty(): array
+    {
+        if (! $this->depotId) {
+            return [];
+        }
+
+        return DepotApplication::where('depot_id', $this->depotId)
+            ->whereNotNull('branch')
+            ->where('branch', '!=', '')
+            ->distinct()
+            ->orderBy('branch')
+            ->pluck('branch')
+            ->toArray();
+    }
+
+    public function getDepotStatsProperty(): array
+    {
+        if (! $this->depotId) {
+            return ['total' => 0, 'installed' => 0, 'updatable' => 0];
+        }
+
+        $depotApps = DepotApplication::where('depot_id', $this->depotId)->get();
+        $installedAppIds = Application::pluck('app_id', 'version')->toArray();
+        $installedApps = Application::pluck('version', 'app_id')->toArray();
+
+        $total = $depotApps->count();
+        $installed = 0;
+        $updatable = 0;
+
+        foreach ($depotApps as $app) {
+            if (array_key_exists($app->app_id, $installedApps)) {
+                $installed++;
+                if ($installedApps[$app->app_id] !== $app->version) {
+                    $updatable++;
+                }
+            }
+        }
+
+        return [
+            'total' => $total,
+            'installed' => $installed,
+            'updatable' => $updatable,
+        ];
+    }
+
+    public function updatedDepotId(): void
+    {
+        $this->depotSearch = '';
+        $this->depotCategoryFilter = '';
+        $this->depotBranchFilter = '';
+        $this->selectedDepotInstallApps = [];
+        $this->resetPage();
+    }
+
+    public function updatedDepotSearch(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedDepotCategoryFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedDepotBranchFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedDepotPerPage(): void
+    {
+        $this->resetPage();
+    }
+
+    public function resetDepotFilters(): void
+    {
+        $this->depotSearch = '';
+        $this->depotCategoryFilter = '';
+        $this->depotBranchFilter = '';
+        $this->selectedDepotInstallApps = [];
+        $this->resetPage();
+    }
+
+    public function syncCurrentDepot(): void
+    {
+        $this->isDepotSyncing = true;
+
+        try {
+            $depot = Depot::find($this->depotId);
+            if (! $depot) {
+                $this->toastError('Dépôt non trouvé');
+                return;
+            }
+
+            $result = $this->appStoreService->syncDepot($depot);
+            $message = "Synchronisation terminée : {$result['new']} nouvelles, {$result['updated']} mises à jour";
+            $this->depotSyncMessage = $message;
+            $this->toastSuccess($message);
+            $this->statsLoaded = false;
+        } catch (\Exception $e) {
+            Log::error('[ParcSettings] Erreur sync dépôt: ' . $e->getMessage());
+            $this->toastError('Erreur lors de la synchronisation: ' . $e->getMessage());
+        } finally {
+            $this->isDepotSyncing = false;
+        }
+    }
+
+    public function installFromDepot(): void
+    {
+        if (empty($this->selectedDepotInstallApps)) {
+            $this->toastWarning('Aucune application sélectionnée');
+            return;
+        }
+
+        $this->isInstalling = true;
+        $installed = 0;
+        $errors = 0;
+
+        try {
+            foreach ($this->selectedDepotInstallApps as $depotAppId) {
+                try {
+                    $depotApp = DepotApplication::find($depotAppId);
+                    if ($depotApp) {
+                        $this->appStoreService->installApplication($depotApp);
+                        $installed++;
+                    }
+                } catch (\Exception $e) {
+                    Log::error("[ParcSettings] Erreur installation app {$depotAppId}: " . $e->getMessage());
+                    $errors++;
+                }
+            }
+
+            if ($installed > 0) {
+                $this->toastSuccess("{$installed} application(s) ajoutée(s) au catalogue");
+            }
+            if ($errors > 0) {
+                $this->toastWarning("{$errors} erreur(s) lors de l'ajout");
+            }
+
+            $this->selectedDepotInstallApps = [];
+            $this->statsLoaded = false;
+        } catch (\Exception $e) {
+            Log::error('[ParcSettings] Erreur installation apps: ' . $e->getMessage());
+            $this->toastError("Erreur lors de l'ajout");
+        } finally {
+            $this->isInstalling = false;
+        }
+    }
+
+    public function toggleDepotInstallAppSelection(int $appId): void
+    {
+        if (in_array($appId, $this->selectedDepotInstallApps)) {
+            $this->selectedDepotInstallApps = array_values(array_diff($this->selectedDepotInstallApps, [$appId]));
+        } else {
+            $this->selectedDepotInstallApps[] = $appId;
+        }
+    }
+
+    public function selectAllDepotInstallApps(): void
+    {
+        // Sélectionner uniquement les apps non installées de la page courante
+        $this->selectedDepotInstallApps = $this->depotApplications
+            ->getCollection()
+            ->filter(fn ($app) => ! $app->is_installed)
+            ->pluck('id')
+            ->toArray();
+    }
+
+    public function deselectAllDepotInstallApps(): void
+    {
+        $this->selectedDepotInstallApps = [];
+    }
+
     public function toggleDepotAppSelection(int $appId): void
     {
         if (in_array($appId, $this->selectedDepotApps)) {
@@ -454,6 +717,33 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                     <i class="fa-solid fa-cloud-arrow-down"></i>
                     Ajouter des applications
                 </button>
+            @elseif ($tab === 'depot')
+                <div class="flex gap-2">
+                    <button type="button" class="btn btn-secondary" wire:click="syncCurrentDepot"
+                        wire:loading.attr="disabled" wire:target="syncCurrentDepot"
+                        @if (! $depotId) disabled @endif>
+                        <span wire:loading.remove wire:target="syncCurrentDepot">
+                            <i class="fa-solid fa-sync"></i>
+                        </span>
+                        <span wire:loading wire:target="syncCurrentDepot">
+                            <i class="fa-solid fa-spinner fa-spin"></i>
+                        </span>
+                        Synchroniser
+                    </button>
+                    @if (count($selectedDepotInstallApps) > 0)
+                        <button type="button" class="btn btn-primary" wire:click="installFromDepot"
+                            wire:loading.attr="disabled" wire:target="installFromDepot">
+                            <span wire:loading.remove wire:target="installFromDepot">
+                                <i class="fa-solid fa-download"></i>
+                                Installer ({{ count($selectedDepotInstallApps) }})
+                            </span>
+                            <span wire:loading wire:target="installFromDepot">
+                                <i class="fa-solid fa-spinner fa-spin"></i>
+                                Installation...
+                            </span>
+                        </button>
+                    @endif
+                </div>
             @endif
         </div>
     </x-slot:actions>
@@ -480,6 +770,11 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                     <span class="badge badge-sm ml-2">{{ $stats['applications_count'] }}</span>
                 @endif
             </button>
+            <button type="button" role="tab" class="tab {{ $tab === 'depot' ? 'tab-active' : '' }}"
+                wire:click="setTab('depot')">
+                <i class="fa-solid fa-warehouse mr-2"></i>
+                Dépôt
+            </button>
         </div>
 
         <!-- Contenu des onglets -->
@@ -490,6 +785,8 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                     <livewire:components::molecules.app-profile-sync-status />
                 </div>
                 @include('pages.parc-settings._partials.profiles-tab')
+            @elseif ($tab === 'depot')
+                @include('pages.parc-settings._partials.depot-tab')
             @else
                 @include('pages.parc-settings._partials.applications-tab')
             @endif
