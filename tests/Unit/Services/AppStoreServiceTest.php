@@ -9,6 +9,7 @@ use App\Services\AppStore\DepotSyncService;
 use App\Services\AppStore\PackageInstallerService;
 use App\Services\AppStore\PackagesXmlService;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Tests unitaires pour AppStoreService
@@ -25,7 +26,7 @@ class AppStoreServiceTest extends TestCase
         $this->service = app(AppStoreService::class);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_parse_xml_with_branches(): void
     {
         $xmlContent = $this->getSamplePackagesXml();
@@ -46,7 +47,7 @@ class AppStoreServiceTest extends TestCase
         $this->assertContains('manuel', $branchIds);
     }
 
-    /** @test */
+    #[Test]
     public function it_extracts_packages_from_branches(): void
     {
         $xmlContent = $this->getSamplePackagesXml();
@@ -68,7 +69,7 @@ class AppStoreServiceTest extends TestCase
         $this->assertEquals(1, $packagesByBranch['manuel']);
     }
 
-    /** @test */
+    #[Test]
     public function it_extracts_package_attributes_correctly(): void
     {
         $xmlContent = $this->getSamplePackagesXml();
@@ -86,7 +87,7 @@ class AppStoreServiceTest extends TestCase
         $this->assertEquals('7', $firstPackage->getAttribute('compatibilite'));
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_revision_as_version(): void
     {
         $xmlContent = $this->getSamplePackagesXml();
@@ -102,7 +103,7 @@ class AppStoreServiceTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function it_extracts_xml_url_and_hash(): void
     {
         $xmlContent = $this->getSamplePackagesXml();
@@ -118,7 +119,7 @@ class AppStoreServiceTest extends TestCase
         $this->assertEquals('http://test.example.com/wpkg/logs/7zip.log', $firstPackage->getAttribute('log'));
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_empty_xml(): void
     {
         $xmlContent = '<?xml version="1.0" encoding="UTF-8"?><packages></packages>';
@@ -133,7 +134,7 @@ class AppStoreServiceTest extends TestCase
         $this->assertEquals(0, $packages->length);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_xml_without_branches(): void
     {
         $xmlContent = '<?xml version="1.0" encoding="UTF-8"?>
@@ -152,13 +153,13 @@ class AppStoreServiceTest extends TestCase
         $this->assertEquals(1, $packages->length);
     }
 
-    /** @test */
+    #[Test]
     public function service_is_instantiable(): void
     {
         $this->assertInstanceOf(AppStoreService::class, $this->service);
     }
 
-    /** @test */
+    #[Test]
     public function it_injects_sub_services_via_constructor(): void
     {
         $service = app(AppStoreService::class);
@@ -170,20 +171,20 @@ class AppStoreServiceTest extends TestCase
         $this->assertInstanceOf(PackageInstallerService::class, app(PackageInstallerService::class));
     }
 
-    /** @test */
+    #[Test]
     public function it_still_exposes_sync_methods(): void
     {
         $this->assertTrue(method_exists($this->service, 'syncDepot'));
         $this->assertTrue(method_exists($this->service, 'syncAllDepots'));
     }
 
-    /** @test */
+    #[Test]
     public function it_still_exposes_update_local_packages_xml(): void
     {
         $this->assertTrue(method_exists($this->service, 'updateLocalPackagesXml'));
     }
 
-    /** @test */
+    #[Test]
     public function it_still_exposes_consultation_methods(): void
     {
         $this->assertTrue(method_exists($this->service, 'listDepots'));
@@ -195,7 +196,7 @@ class AppStoreServiceTest extends TestCase
         $this->assertTrue(method_exists($this->service, 'getStats'));
     }
 
-    /** @test */
+    #[Test]
     public function it_still_exposes_install_uninstall_methods(): void
     {
         $this->assertTrue(method_exists($this->service, 'installApplication'));

@@ -10,6 +10,7 @@ use App\Services\FileManagerService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class PackageInstallerServiceTest extends TestCase
 {
@@ -53,13 +54,13 @@ class PackageInstallerServiceTest extends TestCase
     // Smoke tests (existants)
     // ========================================
 
-    /** @test */
+    #[Test]
     public function it_is_instantiable(): void
     {
         $this->assertInstanceOf(PackageInstallerService::class, $this->service);
     }
 
-    /** @test */
+    #[Test]
     public function it_has_install_method(): void
     {
         $this->assertTrue(method_exists($this->service, 'install'));
@@ -69,7 +70,7 @@ class PackageInstallerServiceTest extends TestCase
     // downloadXmlRecipe()
     // ========================================
 
-    /** @test */
+    #[Test]
     public function download_xml_recipe_downloads_to_tmp2_with_correct_naming(): void
     {
         $xmlContent = '<packages><package id="firefox" name="Firefox"/></packages>';
@@ -90,7 +91,7 @@ class PackageInstallerServiceTest extends TestCase
         $this->assertFileExists($path);
     }
 
-    /** @test */
+    #[Test]
     public function download_xml_recipe_creates_tmp2_directory(): void
     {
         $xmlContent = '<packages><package id="test" name="Test"/></packages>';
@@ -111,7 +112,7 @@ class PackageInstallerServiceTest extends TestCase
         $this->assertDirectoryExists($this->tmpDir . '/wpkg/tmp2');
     }
 
-    /** @test */
+    #[Test]
     public function download_xml_recipe_throws_when_url_is_empty(): void
     {
         $depotApp = new DepotApplication();
@@ -128,7 +129,7 @@ class PackageInstallerServiceTest extends TestCase
     // verifyXmlHash()
     // ========================================
 
-    /** @test */
+    #[Test]
     public function verify_xml_hash_passes_with_valid_sha512(): void
     {
         $content = 'test xml content';
@@ -141,7 +142,7 @@ class PackageInstallerServiceTest extends TestCase
         $this->assertFileExists($filePath);
     }
 
-    /** @test */
+    #[Test]
     public function verify_xml_hash_is_case_insensitive(): void
     {
         $content = 'test xml content';
@@ -154,7 +155,7 @@ class PackageInstallerServiceTest extends TestCase
         $this->assertFileExists($filePath);
     }
 
-    /** @test */
+    #[Test]
     public function verify_xml_hash_throws_on_mismatch(): void
     {
         $filePath = $this->tmpDir . '/test.xml';
@@ -166,7 +167,7 @@ class PackageInstallerServiceTest extends TestCase
         $this->service->verifyXmlHash($filePath, 'badhash');
     }
 
-    /** @test */
+    #[Test]
     public function verify_xml_hash_deletes_file_on_mismatch(): void
     {
         $filePath = $this->tmpDir . '/test.xml';
@@ -181,7 +182,7 @@ class PackageInstallerServiceTest extends TestCase
         $this->assertFileDoesNotExist($filePath);
     }
 
-    /** @test */
+    #[Test]
     public function verify_xml_hash_skips_when_hash_is_null(): void
     {
         Log::shouldReceive('warning')
@@ -196,7 +197,7 @@ class PackageInstallerServiceTest extends TestCase
         $this->assertFileExists($filePath);
     }
 
-    /** @test */
+    #[Test]
     public function verify_xml_hash_skips_when_hash_is_empty_string(): void
     {
         Log::shouldReceive('warning')
@@ -215,7 +216,7 @@ class PackageInstallerServiceTest extends TestCase
     // parseDirectives()
     // ========================================
 
-    /** @test */
+    #[Test]
     public function parse_directives_extracts_all_node_types(): void
     {
         $xml = <<<'XML'
@@ -271,7 +272,7 @@ XML;
         $this->assertEquals('wpkg/packages/firefox/', $directives['unzips'][0]['target']);
     }
 
-    /** @test */
+    #[Test]
     public function parse_directives_returns_empty_arrays_for_xml_without_directives(): void
     {
         $xml = '<packages><package id="empty" name="Empty App" revision="1.0" compatibilite="" category2="" priority="" reboot=""/></packages>';
@@ -287,7 +288,7 @@ XML;
         $this->assertEmpty($directives['unzips']);
     }
 
-    /** @test */
+    #[Test]
     public function parse_directives_handles_multi_packages(): void
     {
         $xml = <<<'XML'
@@ -313,7 +314,7 @@ XML;
         $this->assertCount(1, $directives['deletes']);
     }
 
-    /** @test */
+    #[Test]
     public function parse_directives_throws_on_invalid_xml(): void
     {
         $filePath = $this->tmpDir . '/invalid.xml';

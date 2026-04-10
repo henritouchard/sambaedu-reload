@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Log;
 use Mockery;
 use Tests\TestCase;
 use Tests\Traits\MocksAdminUser;
+use PHPUnit\Framework\Attributes\Test;
 
 class UserServiceRoleChangeTest extends TestCase
 {
@@ -68,7 +69,7 @@ class UserServiceRoleChangeTest extends TestCase
     // Tests changeUserRole() — Permissions
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function changeUserRole_rejects_when_no_permission(): void
     {
         // Sans utilisateur authentifié, la policy refuse
@@ -82,7 +83,7 @@ class UserServiceRoleChangeTest extends TestCase
     // Tests changeUserRole() — Validation
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function changeUserRole_rejects_administratif_without_fonction(): void
     {
         $this->actAsAdmin();
@@ -93,7 +94,7 @@ class UserServiceRoleChangeTest extends TestCase
         $this->assertStringContainsString('fonction', strtolower($result['message']));
     }
 
-    /** @test */
+    #[Test]
     public function changeUserRole_rejects_when_user_not_found(): void
     {
         $this->actAsAdmin();
@@ -112,7 +113,7 @@ class UserServiceRoleChangeTest extends TestCase
     // Tests moveUserDn() — Pas de move si inchangé
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function moveUserDn_returns_success_when_no_change_needed(): void
     {
         $oldDn = 'CN=jean.dupont,OU=Profs,OU=Utilisateurs,DC=test,DC=local';
@@ -138,7 +139,7 @@ class UserServiceRoleChangeTest extends TestCase
     // Tests moveUserDn() — Déplacement effectif
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function moveUserDn_calls_ensureOUsExist_and_attempts_ldap_rename(): void
     {
         $oldDn = 'CN=jean.dupont,OU=Profs,OU=Utilisateurs,DC=test,DC=local';
@@ -175,7 +176,7 @@ class UserServiceRoleChangeTest extends TestCase
     // Tests cas spéciaux Documentaliste/AESH
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function moveUserDn_places_documentaliste_under_profs(): void
     {
         $oldDn = 'CN=jean.dupont,OU=Agent,OU=Administratifs,OU=Utilisateurs,DC=test,DC=local';
@@ -208,7 +209,7 @@ class UserServiceRoleChangeTest extends TestCase
         $this->assertFalse($result['success']); // échoue car fake connection, c'est attendu
     }
 
-    /** @test */
+    #[Test]
     public function moveUserDn_places_aesh_under_profs(): void
     {
         $oldDn = 'CN=marie.martin,OU=Agent,OU=Administratifs,OU=Utilisateurs,DC=test,DC=local';
@@ -243,7 +244,7 @@ class UserServiceRoleChangeTest extends TestCase
     // Tests syncRoleGroups()
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function syncRoleGroups_removes_old_category_group_and_adds_new(): void
     {
         // syncRoleGroups utilise des appels statiques (SambaEduGroup::findMainGroup(),

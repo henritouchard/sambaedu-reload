@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Tests\TestCase;
 use Tests\Traits\MocksAdminUser;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Tests d'intégration pour la modification d'utilisateur (Story 2.2)
@@ -105,7 +106,7 @@ class UserUpdateTest extends TestCase
     // E2E: updatePersonalInfo — double-write SQL
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function updatePersonalInfo_persists_to_sql_after_ldap(): void
     {
         SqlUserModel::create([
@@ -151,7 +152,7 @@ class UserUpdateTest extends TestCase
         $this->assertEquals('Changement de nom', $sqlUser->description);
     }
 
-    /** @test */
+    #[Test]
     public function updatePersonalInfo_creates_sql_user_if_not_exists(): void
     {
         $ldapUser = Mockery::mock(LdapUser::class);
@@ -181,7 +182,7 @@ class UserUpdateTest extends TestCase
         $this->assertEquals('Wonderland', $sqlUser->lastname);
     }
 
-    /** @test */
+    #[Test]
     public function updatePersonalInfo_succeeds_even_when_sql_write_fails(): void
     {
         $this->actAsAdmin();
@@ -222,7 +223,7 @@ class UserUpdateTest extends TestCase
     // E2E: Validation — messages d'erreur
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function validatePersonalInfo_returns_user_friendly_errors(): void
     {
         $errors = $this->service->validatePersonalInfo([

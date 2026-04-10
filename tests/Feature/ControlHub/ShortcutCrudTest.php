@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Test CRUD complet des Shortcuts via l'API ControlHub.
@@ -229,14 +230,14 @@ class ShortcutCrudTest extends TestCase
     // API ENDPOINT TESTS - CREATE
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function create_requires_auth(): void
     {
         $response = $this->postJson('/api/v1/shortcuts/create', $this->createShortcutPayload('Test'));
         $response->assertStatus(403);
     }
 
-    /** @test */
+    #[Test]
     public function create_validates_payload(): void
     {
         $response = $this->postJson('/api/v1/shortcuts/create', [
@@ -249,7 +250,7 @@ class ShortcutCrudTest extends TestCase
         $response->assertStatus(422);
     }
 
-    /** @test */
+    #[Test]
     public function create_requires_controlhub_id(): void
     {
         $payload = $this->createShortcutPayload('Test');
@@ -259,7 +260,7 @@ class ShortcutCrudTest extends TestCase
         $response->assertStatus(422);
     }
 
-    /** @test */
+    #[Test]
     public function create_dispatches_job(): void
     {
         $payload = $this->createShortcutPayload('Firefox');
@@ -277,7 +278,7 @@ class ShortcutCrudTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function create_is_idempotent(): void
     {
         $payload = $this->createShortcutPayload('Firefox');
@@ -292,7 +293,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertEquals(1, ControlHubTask::where('controlhub_task_id', $payload['task_id'])->count());
     }
 
-    /** @test */
+    #[Test]
     public function create_rejects_wrong_task_type(): void
     {
         $payload = $this->createShortcutPayload('Firefox', ['task_type' => 'delete_shortcut']);
@@ -305,7 +306,7 @@ class ShortcutCrudTest extends TestCase
     // API ENDPOINT TESTS - UPDATE
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function update_requires_auth(): void
     {
         $shortcut = $this->createShortcutInDb('Firefox');
@@ -315,7 +316,7 @@ class ShortcutCrudTest extends TestCase
         $response->assertStatus(403);
     }
 
-    /** @test */
+    #[Test]
     public function update_requires_controlhub_id(): void
     {
         $payload = $this->updateShortcutPayload('', 'Firefox');
@@ -325,7 +326,7 @@ class ShortcutCrudTest extends TestCase
         $response->assertStatus(422);
     }
 
-    /** @test */
+    #[Test]
     public function update_returns_404_for_unknown_controlhub_id(): void
     {
         $payload = $this->updateShortcutPayload((string) Str::uuid(), 'Firefox');
@@ -334,7 +335,7 @@ class ShortcutCrudTest extends TestCase
         $response->assertStatus(404);
     }
 
-    /** @test */
+    #[Test]
     public function update_returns_403_for_non_global_shortcut(): void
     {
         $shortcut = $this->createShortcutInDb('Firefox', ['is_global' => false]);
@@ -344,7 +345,7 @@ class ShortcutCrudTest extends TestCase
         $response->assertStatus(403);
     }
 
-    /** @test */
+    #[Test]
     public function update_dispatches_job(): void
     {
         $shortcut = $this->createShortcutInDb('Firefox');
@@ -360,7 +361,7 @@ class ShortcutCrudTest extends TestCase
         Queue::assertPushed(UpdateShortcutJob::class);
     }
 
-    /** @test */
+    #[Test]
     public function update_is_idempotent(): void
     {
         $shortcut = $this->createShortcutInDb('Firefox');
@@ -377,7 +378,7 @@ class ShortcutCrudTest extends TestCase
     // API ENDPOINT TESTS - DELETE
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function delete_requires_auth(): void
     {
         $payload = $this->deleteShortcutPayload('Firefox');
@@ -385,7 +386,7 @@ class ShortcutCrudTest extends TestCase
         $response->assertStatus(403);
     }
 
-    /** @test */
+    #[Test]
     public function delete_returns_404_for_unknown_shortcut(): void
     {
         $payload = $this->deleteShortcutPayload('NonExistent', (string) Str::uuid());
@@ -394,7 +395,7 @@ class ShortcutCrudTest extends TestCase
         $response->assertStatus(404);
     }
 
-    /** @test */
+    #[Test]
     public function delete_returns_403_for_non_global_shortcut(): void
     {
         $shortcut = $this->createShortcutInDb('Firefox', ['is_global' => false]);
@@ -404,7 +405,7 @@ class ShortcutCrudTest extends TestCase
         $response->assertStatus(403);
     }
 
-    /** @test */
+    #[Test]
     public function delete_dispatches_job(): void
     {
         $shortcut = $this->createShortcutInDb('Firefox');
@@ -418,7 +419,7 @@ class ShortcutCrudTest extends TestCase
         Queue::assertPushed(DeleteShortcutJob::class);
     }
 
-    /** @test */
+    #[Test]
     public function delete_is_idempotent(): void
     {
         $shortcut = $this->createShortcutInDb('Firefox');
@@ -431,7 +432,7 @@ class ShortcutCrudTest extends TestCase
         $response->assertJson(['message' => 'Task already received']);
     }
 
-    /** @test */
+    #[Test]
     public function delete_finds_by_name_when_no_controlhub_id(): void
     {
         $shortcut = $this->createShortcutInDb('Firefox');
@@ -447,7 +448,7 @@ class ShortcutCrudTest extends TestCase
     // JOB EXECUTION TESTS - CREATE
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function job_create_persists_shortcut_in_db(): void
     {
         Queue::fake([]);
@@ -482,7 +483,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertEquals($controlhubId, $result['controlhub_id']);
     }
 
-    /** @test */
+    #[Test]
     public function job_create_is_idempotent_on_controlhub_id(): void
     {
         Queue::fake([]);
@@ -510,7 +511,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertStringContainsString('idempotence', $result['message']);
     }
 
-    /** @test */
+    #[Test]
     public function job_create_fails_without_name(): void
     {
         Queue::fake([]);
@@ -533,7 +534,7 @@ class ShortcutCrudTest extends TestCase
     // JOB EXECUTION TESTS - UPDATE
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function job_update_modifies_shortcut_in_db(): void
     {
         Queue::fake([]);
@@ -565,7 +566,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertEquals($shortcut->controlhub_id, $result['controlhub_id']);
     }
 
-    /** @test */
+    #[Test]
     public function job_update_partial_merge_only_updates_provided_fields(): void
     {
         Queue::fake([]);
@@ -601,7 +602,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertEquals('/usr/bin/chromium', $shortcut->linux_link);
     }
 
-    /** @test */
+    #[Test]
     public function job_update_fails_for_unknown_controlhub_id(): void
     {
         Queue::fake([]);
@@ -621,7 +622,7 @@ class ShortcutCrudTest extends TestCase
         $this->invokeExecute(new UpdateShortcutJob($task));
     }
 
-    /** @test */
+    #[Test]
     public function job_update_fails_for_non_global_shortcut(): void
     {
         Queue::fake([]);
@@ -643,7 +644,7 @@ class ShortcutCrudTest extends TestCase
         $this->invokeExecute(new UpdateShortcutJob($task));
     }
 
-    /** @test */
+    #[Test]
     public function job_update_non_global_does_not_change_name(): void
     {
         Queue::fake([]);
@@ -675,7 +676,7 @@ class ShortcutCrudTest extends TestCase
     // JOB EXECUTION TESTS - DELETE
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function job_delete_removes_shortcut_from_db(): void
     {
         Queue::fake([]);
@@ -700,7 +701,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertTrue($result['deleted']);
     }
 
-    /** @test */
+    #[Test]
     public function job_delete_by_name_when_no_controlhub_id(): void
     {
         Queue::fake([]);
@@ -723,7 +724,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertTrue($result['deleted']);
     }
 
-    /** @test */
+    #[Test]
     public function job_delete_fails_for_non_global_shortcut(): void
     {
         Queue::fake([]);
@@ -745,7 +746,7 @@ class ShortcutCrudTest extends TestCase
         $this->invokeExecute(new DeleteShortcutJob($task));
     }
 
-    /** @test */
+    #[Test]
     public function job_delete_non_global_does_not_remove(): void
     {
         Queue::fake([]);
@@ -777,7 +778,7 @@ class ShortcutCrudTest extends TestCase
     // NESTED PAYLOAD FORMAT TESTS (ControlHub format)
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function create_accepts_nested_payload_format(): void
     {
         $payload = [
@@ -818,7 +819,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertArrayNotHasKey('linux', $task->payload);
     }
 
-    /** @test */
+    #[Test]
     public function create_nested_format_with_icons_passes_validation(): void
     {
         $payload = [
@@ -862,7 +863,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertEquals('image/png', $task->payload['linux_icon']['mime']);
     }
 
-    /** @test */
+    #[Test]
     public function update_accepts_nested_payload_format(): void
     {
         $shortcut = $this->createShortcutInDb('Firefox');
@@ -899,7 +900,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertArrayNotHasKey('linux', $task->payload);
     }
 
-    /** @test */
+    #[Test]
     public function create_flat_format_still_works(): void
     {
         $payload = $this->createShortcutPayload('Firefox');
@@ -912,7 +913,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertEquals('C:\\Program Files\\App\\app.exe', $task->payload['windows_link']);
     }
 
-    /** @test */
+    #[Test]
     public function normalize_does_not_overwrite_flat_with_nested(): void
     {
         // If both flat and nested are provided, flat takes precedence
@@ -942,7 +943,7 @@ class ShortcutCrudTest extends TestCase
     // JOB EXECUTION TESTS - NESTED FORMAT WITH ICONS
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function job_create_with_nested_format_persists_correctly(): void
     {
         Queue::fake([]);
@@ -982,7 +983,7 @@ class ShortcutCrudTest extends TestCase
     // FULL LIFECYCLE TEST
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function full_crud_lifecycle(): void
     {
         Queue::fake([]);
@@ -1059,7 +1060,7 @@ class ShortcutCrudTest extends TestCase
     // API ENDPOINT TESTS - WORKSTATION GROUPS ASSOCIATION
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function create_with_valid_workstation_groups_dispatches_job(): void
     {
         $group1 = $this->createWorkstationGroupInDb('salle-info-101');
@@ -1089,7 +1090,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertContains($group2->id, $task->payload['resolved_workstation_group_ids']);
     }
 
-    /** @test */
+    #[Test]
     public function create_rejects_unknown_workstation_group(): void
     {
         $group1 = $this->createWorkstationGroupInDb('salle-info-101');
@@ -1117,7 +1118,7 @@ class ShortcutCrudTest extends TestCase
         Queue::assertNotPushed(CreateShortcutJob::class);
     }
 
-    /** @test */
+    #[Test]
     public function create_without_workstation_groups_still_works(): void
     {
         $payload = $this->createShortcutPayload('Firefox');
@@ -1130,7 +1131,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertArrayNotHasKey('resolved_workstation_group_ids', $task->payload);
     }
 
-    /** @test */
+    #[Test]
     public function create_rejects_workstation_group_without_controlhub_id(): void
     {
         $payload = $this->createShortcutPayload('Firefox', [
@@ -1146,7 +1147,7 @@ class ShortcutCrudTest extends TestCase
         $response->assertStatus(422);
     }
 
-    /** @test */
+    #[Test]
     public function update_with_valid_workstation_groups_dispatches_job(): void
     {
         $shortcut = $this->createShortcutInDb('Firefox');
@@ -1172,7 +1173,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertContains($group1->id, $task->payload['resolved_workstation_group_ids']);
     }
 
-    /** @test */
+    #[Test]
     public function update_rejects_unknown_workstation_group(): void
     {
         $shortcut = $this->createShortcutInDb('Firefox');
@@ -1201,7 +1202,7 @@ class ShortcutCrudTest extends TestCase
     // JOB EXECUTION TESTS - WORKSTATION GROUPS ASSOCIATION
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function job_create_syncs_workstation_groups(): void
     {
         Queue::fake([]);
@@ -1235,7 +1236,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertEquals(2, $result['workstation_groups_count']);
     }
 
-    /** @test */
+    #[Test]
     public function job_create_without_groups_has_no_associations(): void
     {
         Queue::fake([]);
@@ -1263,7 +1264,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertEquals(0, $shortcut->workstationGroups()->count());
     }
 
-    /** @test */
+    #[Test]
     public function job_update_syncs_workstation_groups(): void
     {
         Queue::fake([]);
@@ -1298,7 +1299,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertEquals(1, $result['workstation_groups_count']);
     }
 
-    /** @test */
+    #[Test]
     public function job_update_with_empty_groups_detaches_all(): void
     {
         Queue::fake([]);
@@ -1330,7 +1331,7 @@ class ShortcutCrudTest extends TestCase
         $this->assertEquals(0, $result['workstation_groups_count']);
     }
 
-    /** @test */
+    #[Test]
     public function job_update_without_groups_key_preserves_existing(): void
     {
         Queue::fake([]);
@@ -1367,7 +1368,7 @@ class ShortcutCrudTest extends TestCase
     // FULL LIFECYCLE WITH WORKSTATION GROUPS
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function full_lifecycle_with_workstation_groups(): void
     {
         Queue::fake([]);

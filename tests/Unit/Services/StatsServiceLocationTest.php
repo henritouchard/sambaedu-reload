@@ -5,6 +5,7 @@ namespace Tests\Unit\Services;
 use Tests\TestCase;
 use App\Services\StatsService;
 use Illuminate\Support\Facades\Config;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Tests unitaires pour StatsService - Fonctionnalités de localisation
@@ -27,9 +28,8 @@ class StatsServiceLocationTest extends TestCase
     /**
      * Test de getSystemStats() - Réutilisée dans getMetricsData()
      * 
-     * @test
-     * @group existing-methods
      */
+    #[Test]
     public function it_gets_system_stats_with_required_structure()
     {
         $stats = $this->statsService->getStats();
@@ -77,9 +77,8 @@ class StatsServiceLocationTest extends TestCase
     /**
      * Test de getServiceStats() - Réutilisée dans getHealthCheck()
      * 
-     * @test
-     * @group existing-methods
      */
+    #[Test]
     public function it_gets_service_stats_with_required_structure()
     {
         $stats = $this->statsService->getStats();
@@ -105,9 +104,8 @@ class StatsServiceLocationTest extends TestCase
     /**
      * Test de getDiskUsage() - Réutilisée dans getQuickSystemCheck()
      * 
-     * @test
-     * @group existing-methods
      */
+    #[Test]
     public function it_gets_disk_usage_with_required_structure()
     {
         // Utilisation d'une méthode protégée via réflexion
@@ -141,9 +139,8 @@ class StatsServiceLocationTest extends TestCase
     /**
      * Test de getMemoryUsage() - Réutilisée dans getQuickSystemCheck()
      * 
-     * @test
-     * @group existing-methods
      */
+    #[Test]
     public function it_gets_memory_usage_with_required_structure()
     {
         // Utilisation d'une méthode protégée via réflexion
@@ -165,9 +162,8 @@ class StatsServiceLocationTest extends TestCase
     /**
      * Test de getCpuUsage() - Réutilisée dans getQuickSystemCheck()
      * 
-     * @test
-     * @group existing-methods
      */
+    #[Test]
     public function it_gets_cpu_usage_with_required_type()
     {
         // Utilisation d'une méthode protégée via réflexion
@@ -187,9 +183,8 @@ class StatsServiceLocationTest extends TestCase
     /**
      * Test de getStaticData() - Collecte 1x
      * 
-     * @test
-     * @group new-methods
      */
+    #[Test]
     public function it_gets_static_data_with_correct_structure()
     {
         // Configuration de test
@@ -234,9 +229,8 @@ class StatsServiceLocationTest extends TestCase
     /**
      * Test de getHealthCheck() - Collecte 30s
      * 
-     * @test
-     * @group new-methods
      */
+    #[Test]
     public function it_gets_health_check_with_correct_structure()
     {
         Config::set('se4fs.establishment.uai', '0751234A');
@@ -280,9 +274,8 @@ class StatsServiceLocationTest extends TestCase
     /**
      * Test de getMetricsData() - Collecte 5min
      * 
-     * @test
-     * @group new-methods
      */
+    #[Test]
     public function it_gets_metrics_data_with_correct_structure()
     {
         Config::set('se4fs.establishment.uai', '0751234A');
@@ -329,9 +322,8 @@ class StatsServiceLocationTest extends TestCase
     /**
      * Test de getHistoricalData() - Collecte 1h
      * 
-     * @test
-     * @group new-methods
      */
+    #[Test]
     public function it_gets_historical_data_with_correct_structure()
     {
         Config::set('se4fs.establishment.uai', '0751234A');
@@ -394,9 +386,8 @@ class StatsServiceLocationTest extends TestCase
     /**
      * Test de getLocationSummary() - Découverte publique
      * 
-     * @test
-     * @group new-methods
      */
+    #[Test]
     public function it_gets_location_summary_with_correct_structure()
     {
         Config::set('se4fs.establishment.uai', '0751234A');
@@ -442,9 +433,8 @@ class StatsServiceLocationTest extends TestCase
     /**
      * Test de régression : getStats() doit continuer à fonctionner
      * 
-     * @test
-     * @group regression
      */
+    #[Test]
     public function it_maintains_backward_compatibility_for_existing_get_stats()
     {
         $stats = $this->statsService->getStats();
@@ -468,9 +458,8 @@ class StatsServiceLocationTest extends TestCase
     /**
      * Test de cohérence : Les nouvelles méthodes utilisent les mêmes sources
      * 
-     * @test
-     * @group consistency
      */
+    #[Test]
     public function it_maintains_consistency_between_old_and_new_methods()
     {
         $originalStats = $this->statsService->getStats();
@@ -513,9 +502,8 @@ class StatsServiceLocationTest extends TestCase
     /**
      * Test de validation : Configuration par défaut
      * 
-     * @test
-     * @group configuration
      */
+    #[Test]
     public function it_handles_missing_configuration_gracefully()
     {
         // Effacer toute configuration existante
@@ -542,9 +530,8 @@ class StatsServiceLocationTest extends TestCase
     /**
      * Test de performance : Les nouvelles méthodes ne doivent pas être trop lentes
      * 
-     * @test
-     * @group performance
      */
+    #[Test]
     public function it_performs_within_acceptable_limits()
     {
         $startTime = microtime(true);

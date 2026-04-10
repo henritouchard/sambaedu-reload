@@ -7,10 +7,11 @@ namespace Tests\Feature\Console;
 use App\Console\Kernel;
 use Illuminate\Console\Scheduling\Schedule;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class KernelScheduleTest extends TestCase
 {
-    /** @test */
+    #[Test]
     public function it_schedules_automatic_users_sync_from_ad(): void
     {
         $kernel = $this->app->make(Kernel::class);
@@ -27,7 +28,7 @@ class KernelScheduleTest extends TestCase
         $this->assertTrue($hasUsersSync, 'Le scheduler doit déclencher users:sync-from-ad automatiquement.');
     }
 
-    /** @test */
+    #[Test]
     public function it_schedules_automatic_user_groups_sync_from_ad(): void
     {
         $kernel = $this->app->make(Kernel::class);

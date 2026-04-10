@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Log;
 use Mockery;
 use Tests\TestCase;
 use Tests\Traits\MocksAdminUser;
+use PHPUnit\Framework\Attributes\Test;
 
 class UserServiceDisableDeleteTest extends TestCase
 {
@@ -67,7 +68,7 @@ class UserServiceDisableDeleteTest extends TestCase
     // Tests disableUser() — Permissions
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function disableUser_rejects_when_no_permission(): void
     {
         $result = $this->service->disableUser('testuser');
@@ -80,7 +81,7 @@ class UserServiceDisableDeleteTest extends TestCase
     // Tests disableUser() — Comptes système (D-3)
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function disableUser_rejects_system_account(): void
     {
         $this->actAsAdmin();
@@ -91,7 +92,7 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertStringContainsString('système', $result['message']);
     }
 
-    /** @test */
+    #[Test]
     public function disableUser_rejects_system_account_by_pattern(): void
     {
         $this->actAsAdmin();
@@ -106,7 +107,7 @@ class UserServiceDisableDeleteTest extends TestCase
     // Tests disableUser() — Fonctionnel
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function disableUser_sets_uac_to_514_and_returns_success(): void
     {
         $this->actAsAdmin();
@@ -136,7 +137,7 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertEquals(User::UAC_DISABLED, $setAttributes['useraccountcontrol']);
     }
 
-    /** @test */
+    #[Test]
     public function disableUser_returns_error_when_user_not_found(): void
     {
         $this->actAsAdmin();
@@ -151,7 +152,7 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertStringContainsString('introuvable', $result['message']);
     }
 
-    /** @test */
+    #[Test]
     public function disableUser_logs_action_with_archive_status(): void
     {
         $this->actAsAdmin();
@@ -183,7 +184,7 @@ class UserServiceDisableDeleteTest extends TestCase
     // Tests enableUser() — Permissions
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function enableUser_rejects_when_no_permission(): void
     {
         $result = $this->service->enableUser('dupont');
@@ -196,7 +197,7 @@ class UserServiceDisableDeleteTest extends TestCase
     // Tests enableUser() — Comptes système (D-3)
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function enableUser_rejects_system_account(): void
     {
         $this->actAsAdmin();
@@ -211,7 +212,7 @@ class UserServiceDisableDeleteTest extends TestCase
     // Tests enableUser() — Fonctionnel
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function enableUser_sets_uac_to_512_and_returns_success(): void
     {
         $this->actAsAdmin();
@@ -241,7 +242,7 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertEquals(User::UAC_ACTIVE, $setAttributes['useraccountcontrol']);
     }
 
-    /** @test */
+    #[Test]
     public function enableUser_returns_error_when_user_not_found(): void
     {
         $this->actAsAdmin();
@@ -256,7 +257,7 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertStringContainsString('introuvable', $result['message']);
     }
 
-    /** @test */
+    #[Test]
     public function enableUser_logs_action(): void
     {
         $this->actAsAdmin();
@@ -287,7 +288,7 @@ class UserServiceDisableDeleteTest extends TestCase
     // Tests deleteUserPermanently() — Permissions
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function deleteUserPermanently_rejects_when_no_permission(): void
     {
         $result = $this->service->deleteUserPermanently('dupont');
@@ -300,7 +301,7 @@ class UserServiceDisableDeleteTest extends TestCase
     // Tests deleteUserPermanently() — Comptes système (D-3)
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function deleteUserPermanently_rejects_system_account(): void
     {
         $this->actAsAdmin();
@@ -315,7 +316,7 @@ class UserServiceDisableDeleteTest extends TestCase
     // Tests deleteUserPermanently() — Suppression en deux temps
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function deleteUserPermanently_rejects_active_account(): void
     {
         $this->actAsAdmin();
@@ -335,7 +336,7 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertStringContainsString('désactiver', $result['message']);
     }
 
-    /** @test */
+    #[Test]
     public function deleteUserPermanently_rejects_when_ldap_user_not_found(): void
     {
         $this->actAsAdmin();
@@ -350,7 +351,7 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertStringContainsString('introuvable', $result['message']);
     }
 
-    /** @test */
+    #[Test]
     public function deleteUserPermanently_succeeds_when_account_disabled(): void
     {
         $this->actAsAdmin();
@@ -375,7 +376,7 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertStringContainsString('supprimé', $result['message']);
     }
 
-    /** @test */
+    #[Test]
     public function deleteUserPermanently_fails_when_ad_delete_fails(): void
     {
         $this->actAsAdmin();
@@ -396,7 +397,7 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertStringContainsString('suppression', $result['message']);
     }
 
-    /** @test */
+    #[Test]
     public function deleteUserPermanently_logs_with_timestamp(): void
     {
         $this->actAsAdmin();

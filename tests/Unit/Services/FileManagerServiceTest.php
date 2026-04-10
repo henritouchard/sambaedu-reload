@@ -7,6 +7,7 @@ namespace Tests\Unit\Services;
 use App\Services\FileManagerService;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class FileManagerServiceTest extends TestCase
 {
@@ -44,7 +45,7 @@ class FileManagerServiceTest extends TestCase
     // hashFile()
     // ========================================
 
-    /** @test */
+    #[Test]
     public function hash_file_returns_correct_sha256(): void
     {
         $filePath = $this->tmpDir . '/test.txt';
@@ -55,7 +56,7 @@ class FileManagerServiceTest extends TestCase
         $this->assertEquals(hash('sha256', 'hello world'), $hash);
     }
 
-    /** @test */
+    #[Test]
     public function hash_file_returns_correct_sha512(): void
     {
         $filePath = $this->tmpDir . '/test.txt';
@@ -66,7 +67,7 @@ class FileManagerServiceTest extends TestCase
         $this->assertEquals(hash('sha512', 'hello world'), $hash);
     }
 
-    /** @test */
+    #[Test]
     public function hash_file_returns_correct_md5(): void
     {
         $filePath = $this->tmpDir . '/test.txt';
@@ -77,7 +78,7 @@ class FileManagerServiceTest extends TestCase
         $this->assertEquals(md5('hello world'), $hash);
     }
 
-    /** @test */
+    #[Test]
     public function hash_file_throws_exception_for_missing_file(): void
     {
         $this->expectException(\RuntimeException::class);
@@ -90,7 +91,7 @@ class FileManagerServiceTest extends TestCase
     // downloadWithHash()
     // ========================================
 
-    /** @test */
+    #[Test]
     public function download_with_hash_succeeds_with_valid_hash(): void
     {
         $content = 'test xml content';
@@ -111,7 +112,7 @@ class FileManagerServiceTest extends TestCase
         $this->assertFileExists($targetPath);
     }
 
-    /** @test */
+    #[Test]
     public function download_with_hash_throws_on_hash_mismatch(): void
     {
         $content = 'test xml content';
@@ -131,7 +132,7 @@ class FileManagerServiceTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function download_with_hash_deletes_file_on_mismatch(): void
     {
         $content = 'test xml content';
@@ -154,7 +155,7 @@ class FileManagerServiceTest extends TestCase
         $this->assertFileDoesNotExist($targetPath);
     }
 
-    /** @test */
+    #[Test]
     public function download_with_hash_succeeds_without_hash_verification(): void
     {
         $content = 'test xml content';
@@ -173,7 +174,7 @@ class FileManagerServiceTest extends TestCase
         $this->assertFileExists($targetPath);
     }
 
-    /** @test */
+    #[Test]
     public function download_with_hash_creates_parent_directory(): void
     {
         $content = 'test xml content';
@@ -191,7 +192,7 @@ class FileManagerServiceTest extends TestCase
         $this->assertFileExists($targetPath);
     }
 
-    /** @test */
+    #[Test]
     public function download_with_hash_throws_on_http_error(): void
     {
         $targetPath = $this->tmpDir . '/download.xml';
@@ -209,7 +210,7 @@ class FileManagerServiceTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function download_with_hash_deletes_file_on_http_error(): void
     {
         $targetPath = $this->tmpDir . '/download.xml';

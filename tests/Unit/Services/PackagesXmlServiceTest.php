@@ -9,6 +9,7 @@ use App\Models\Application;
 use App\Services\AppStore\PackagesXmlService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class PackagesXmlServiceTest extends TestCase
 {
@@ -66,19 +67,19 @@ class PackagesXmlServiceTest extends TestCase
         rmdir($dir);
     }
 
-    /** @test */
+    #[Test]
     public function it_is_instantiable(): void
     {
         $this->assertInstanceOf(PackagesXmlService::class, $this->service);
     }
 
-    /** @test */
+    #[Test]
     public function it_has_regenerate_method(): void
     {
         $this->assertTrue(method_exists($this->service, 'regenerate'));
     }
 
-    /** @test */
+    #[Test]
     public function regenerate_creates_packages_xml_with_installed_apps(): void
     {
         Application::create([
@@ -99,7 +100,7 @@ class PackagesXmlServiceTest extends TestCase
         $this->assertStringContainsString('Test App', $content);
     }
 
-    /** @test */
+    #[Test]
     public function regenerate_creates_empty_xml_when_no_installed_apps(): void
     {
         // Ensure no installed apps
@@ -117,7 +118,7 @@ class PackagesXmlServiceTest extends TestCase
         $this->assertEquals(0, $root->childNodes->length);
     }
 
-    /** @test */
+    #[Test]
     public function regenerate_sorts_packages_alphabetically_by_app_id(): void
     {
         Application::where('status', ApplicationStatus::Installed)->delete();
@@ -153,7 +154,7 @@ class PackagesXmlServiceTest extends TestCase
         $this->assertEquals('zfirefox', $packages->item(2)->getAttribute('id'));
     }
 
-    /** @test */
+    #[Test]
     public function regenerate_strips_sambaedu_nodes_from_output(): void
     {
         Application::where('status', ApplicationStatus::Installed)->delete();
@@ -186,7 +187,7 @@ class PackagesXmlServiceTest extends TestCase
         $this->assertEquals(1, $dom->getElementsByTagName('install')->length);
     }
 
-    /** @test */
+    #[Test]
     public function regenerate_preserves_xml_recipe_in_database(): void
     {
         Application::where('status', ApplicationStatus::Installed)->delete();
@@ -216,7 +217,7 @@ class PackagesXmlServiceTest extends TestCase
         $this->assertStringContainsString('<unzip', $app->xml);
     }
 
-    /** @test */
+    #[Test]
     public function regenerate_uses_config_packages_xml_path(): void
     {
         $customPath = sys_get_temp_dir() . '/test-custom-wpkg-' . uniqid() . '/custom/packages.xml';

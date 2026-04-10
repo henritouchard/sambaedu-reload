@@ -7,10 +7,11 @@ namespace Tests\Feature\Console;
 use App\Services\UserSyncService;
 use Mockery\MockInterface;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class SyncUsersFromAdCommandTest extends TestCase
 {
-    /** @test */
+    #[Test]
     public function it_runs_users_sync_command_in_delta_mode_by_default(): void
     {
         $this->mock(UserSyncService::class, function (MockInterface $mock): void {
@@ -42,7 +43,7 @@ class SyncUsersFromAdCommandTest extends TestCase
             ->assertExitCode(0);
     }
 
-    /** @test */
+    #[Test]
     public function it_fails_with_invalid_scope(): void
     {
         $this->mock(UserSyncService::class, function (MockInterface $mock): void {
@@ -55,7 +56,7 @@ class SyncUsersFromAdCommandTest extends TestCase
             ->assertExitCode(1);
     }
 
-    /** @test */
+    #[Test]
     public function it_fails_with_invalid_mode(): void
     {
         $this->mock(UserSyncService::class, function (MockInterface $mock): void {

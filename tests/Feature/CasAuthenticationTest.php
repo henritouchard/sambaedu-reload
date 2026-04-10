@@ -107,9 +107,9 @@ class CasAuthenticationTest extends TestCase
     /**
      * handleCasAuthenticated() crée la session ENT + flag cas_auth_method pour un utilisateur connu.
      *
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
      */
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function test_cas_creates_ent_session_for_known_user(): void
     {
         $user = User::factory()->create(['login' => 'jdupont']);
@@ -130,9 +130,9 @@ class CasAuthenticationTest extends TestCase
      * Le logout CAS ne doit pas être déclenché pour une session OAuth2-ENT.
      * wasCasAuth doit se baser sur le flag cas_auth_method, pas sur isCasAuthAvailable().
      *
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
      */
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function test_cas_logout_not_triggered_for_oauth2_ent_session(): void
     {
         // Session OAuth2-ENT sans flag CAS

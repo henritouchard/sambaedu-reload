@@ -17,6 +17,7 @@ use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class UserGroupServiceLegacyCompatibilityTest extends TestCase
 {
@@ -45,7 +46,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         parent::tearDown();
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_three_sql_groups_for_classe_like_legacy(): void
     {
         $service = $this->makeService(
@@ -102,7 +103,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $this->assertSame(0, UserGroup::query()->where('name', 'PP_3emeA')->firstOrFail()->users()->count());
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_two_sql_groups_for_cours_like_legacy(): void
     {
         $service = $this->makeService(
@@ -131,7 +132,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $this->assertSame(['Cours_Maths5A', 'Equipe_Maths5A'], $names);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_matiere_classe_group_with_legacy_naming(): void
     {
         $service = $this->makeService(
@@ -155,7 +156,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $this->assertSame('matiere_classe', $group->type);
     }
 
-    /** @test */
+    #[Test]
     public function it_imports_ad_groups_with_legacy_type_detection_and_rights_exclusion(): void
     {
         $groupRows = collect([

@@ -19,6 +19,7 @@ use App\Services\UserService;
 use Illuminate\Support\Facades\Log;
 use Mockery;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class UserServiceCreateTest extends TestCase
 {
@@ -64,7 +65,7 @@ class UserServiceCreateTest extends TestCase
     // Tests createHomeDirectory()
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function createHomeDirectory_rejects_invalid_login_with_special_chars(): void
     {
         Log::shouldReceive('error')
@@ -77,7 +78,7 @@ class UserServiceCreateTest extends TestCase
         $this->assertTrue(true);
     }
 
-    /** @test */
+    #[Test]
     public function createHomeDirectory_rejects_login_with_path_traversal(): void
     {
         Log::shouldReceive('error')
@@ -90,7 +91,7 @@ class UserServiceCreateTest extends TestCase
         $this->assertTrue(true);
     }
 
-    /** @test */
+    #[Test]
     public function createHomeDirectory_accepts_valid_login_formats(): void
     {
         // Ces logins sont valides et ne doivent pas être rejetés par la regex
@@ -106,7 +107,7 @@ class UserServiceCreateTest extends TestCase
     // Tests PasswordService::determinePassword()
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function determinePassword_returns_provided_password_when_given(): void
     {
         $passwordService = new PasswordService();
@@ -116,7 +117,7 @@ class UserServiceCreateTest extends TestCase
         $this->assertEquals('MonMotDePasse!', $result);
     }
 
-    /** @test */
+    #[Test]
     public function determinePassword_returns_birthdate_when_no_password(): void
     {
         // Mock SEConfig pour retourner pwdPolicy = 0
@@ -136,7 +137,7 @@ class UserServiceCreateTest extends TestCase
         $this->assertEquals('20100315', $result);
     }
 
-    /** @test */
+    #[Test]
     public function determinePassword_generates_random_when_no_password_no_birthdate(): void
     {
         $passwordService = new PasswordService();
@@ -151,7 +152,7 @@ class UserServiceCreateTest extends TestCase
     // Tests generateLogin() via createUser() validation
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function createUser_fails_with_empty_nom(): void
     {
         $result = $this->service->createUser([
@@ -163,7 +164,7 @@ class UserServiceCreateTest extends TestCase
         $this->assertStringContainsString('nom', $result['message']);
     }
 
-    /** @test */
+    #[Test]
     public function createUser_fails_with_empty_prenom(): void
     {
         $result = $this->service->createUser([
@@ -175,7 +176,7 @@ class UserServiceCreateTest extends TestCase
         $this->assertStringContainsString('prénom', $result['message']);
     }
 
-    /** @test */
+    #[Test]
     public function createUser_fails_when_eleve_without_classes(): void
     {
         $result = $this->service->createUser([
@@ -189,7 +190,7 @@ class UserServiceCreateTest extends TestCase
         $this->assertStringContainsString('classe', strtolower($result['message']));
     }
 
-    /** @test */
+    #[Test]
     public function createUser_fails_when_administratif_without_fonction(): void
     {
         $result = $this->service->createUser([
@@ -203,7 +204,7 @@ class UserServiceCreateTest extends TestCase
         $this->assertStringContainsString('fonction', strtolower($result['message']));
     }
 
-    /** @test */
+    #[Test]
     public function createUser_fails_when_user_already_exists(): void
     {
         // Le user existe déjà dans LDAP
@@ -233,7 +234,7 @@ class UserServiceCreateTest extends TestCase
     // Tests persistUserToSql() - mapping rôle et données
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function roleMap_is_case_insensitive(): void
     {
         // Vérifier que le mapping catégorie→rôle fonctionne quelle que soit la casse
@@ -253,7 +254,7 @@ class UserServiceCreateTest extends TestCase
         $this->assertEquals('autre', $role);
     }
 
-    /** @test */
+    #[Test]
     public function fullname_is_trimmed_when_prenom_or_nom_empty(): void
     {
         // Vérifier que trim() empêche " Dupont" ou "Jean "
@@ -266,7 +267,7 @@ class UserServiceCreateTest extends TestCase
     // Tests createHomeDirectory() - copie skel avec dotfiles
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function skel_copy_uses_dot_not_glob_star(): void
     {
         // Le pattern /. copie les dotfiles, /* ne les copie pas.

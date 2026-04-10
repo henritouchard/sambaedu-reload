@@ -10,6 +10,7 @@ use App\Services\AppStore\DepotSyncService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class DepotSyncServiceTest extends TestCase
 {
@@ -23,25 +24,25 @@ class DepotSyncServiceTest extends TestCase
         $this->service = app(DepotSyncService::class);
     }
 
-    /** @test */
+    #[Test]
     public function it_is_instantiable(): void
     {
         $this->assertInstanceOf(DepotSyncService::class, $this->service);
     }
 
-    /** @test */
+    #[Test]
     public function it_has_sync_depot_method(): void
     {
         $this->assertTrue(method_exists($this->service, 'syncDepot'));
     }
 
-    /** @test */
+    #[Test]
     public function it_has_sync_all_depots_method(): void
     {
         $this->assertTrue(method_exists($this->service, 'syncAllDepots'));
     }
 
-    /** @test */
+    #[Test]
     public function sync_depot_fetches_xml_and_upserts_applications(): void
     {
         $depot = Depot::create([
@@ -73,7 +74,7 @@ class DepotSyncServiceTest extends TestCase
         $this->assertEquals('stable', $app7zip->branch);
     }
 
-    /** @test */
+    #[Test]
     public function sync_depot_skips_unchanged_xml(): void
     {
         $xmlContent = $this->getSampleXml();
@@ -96,7 +97,7 @@ class DepotSyncServiceTest extends TestCase
         $this->assertEquals(0, $result['updated']);
     }
 
-    /** @test */
+    #[Test]
     public function sync_depot_throws_on_http_error(): void
     {
         $depot = Depot::create([
@@ -115,7 +116,7 @@ class DepotSyncServiceTest extends TestCase
         $this->service->syncDepot($depot);
     }
 
-    /** @test */
+    #[Test]
     public function sync_all_depots_collects_stats(): void
     {
         Depot::query()->delete();
@@ -142,7 +143,7 @@ class DepotSyncServiceTest extends TestCase
         $this->assertEmpty($stats['errors']);
     }
 
-    /** @test */
+    #[Test]
     public function sync_all_depots_collects_errors_without_throwing(): void
     {
         Depot::query()->delete();
@@ -165,7 +166,7 @@ class DepotSyncServiceTest extends TestCase
         $this->assertNotEmpty($stats['errors']);
     }
 
-    /** @test */
+    #[Test]
     public function extract_icon_url_from_attribute(): void
     {
         $method = new \ReflectionMethod(DepotSyncService::class, 'extractIconUrl');
@@ -179,7 +180,7 @@ class DepotSyncServiceTest extends TestCase
         $this->assertEquals('http://cdn.example.com/icon.png', $result);
     }
 
-    /** @test */
+    #[Test]
     public function extract_icon_url_builds_relative(): void
     {
         $method = new \ReflectionMethod(DepotSyncService::class, 'extractIconUrl');
@@ -193,7 +194,7 @@ class DepotSyncServiceTest extends TestCase
         $this->assertEquals('http://depot.example.com/wpkg/icons/test.png', $result);
     }
 
-    /** @test */
+    #[Test]
     public function extract_icon_url_convention_from_app_id(): void
     {
         $method = new \ReflectionMethod(DepotSyncService::class, 'extractIconUrl');
@@ -207,7 +208,7 @@ class DepotSyncServiceTest extends TestCase
         $this->assertEquals('http://depot.example.com/wpkg/firefox/icon.png', $result);
     }
 
-    /** @test */
+    #[Test]
     public function sync_depot_purges_removed_applications(): void
     {
         $depot = Depot::create([
@@ -235,7 +236,7 @@ class DepotSyncServiceTest extends TestCase
         $this->assertEquals(2, DepotApplication::where('depot_id', $depot->id)->count());
     }
 
-    /** @test */
+    #[Test]
     public function sync_depot_purges_by_branch(): void
     {
         $depot = Depot::create([
@@ -267,7 +268,7 @@ class DepotSyncServiceTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function sync_depot_does_not_purge_on_parse_failure(): void
     {
         $depot = Depot::create([
@@ -295,7 +296,7 @@ class DepotSyncServiceTest extends TestCase
         $this->assertEquals(1, DepotApplication::where('depot_id', $depot->id)->count());
     }
 
-    /** @test */
+    #[Test]
     public function sync_depot_zero_purge_when_all_present(): void
     {
         $depot = Depot::create([
@@ -314,7 +315,7 @@ class DepotSyncServiceTest extends TestCase
         $this->assertEquals(0, $result['purged']);
     }
 
-    /** @test */
+    #[Test]
     public function sync_depot_skips_purge_when_xml_has_no_valid_packages(): void
     {
         $depot = Depot::create([

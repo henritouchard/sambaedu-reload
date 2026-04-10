@@ -7,6 +7,7 @@ use App\Models\Shortcut;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Test de création de raccourcis via l'interface locale (Livewire).
@@ -90,7 +91,7 @@ class ShortcutCreationTest extends TestCase
     // CREATION TESTS
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function create_shortcut_with_minimal_fields(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox');
@@ -102,7 +103,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertNull($shortcut->controlhub_id);
     }
 
-    /** @test */
+    #[Test]
     public function create_shortcut_with_windows_config(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox', [
@@ -116,7 +117,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals('C:\\Users\\$user\\Documents', $shortcut->windows_path);
     }
 
-    /** @test */
+    #[Test]
     public function create_shortcut_with_linux_config(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox', [
@@ -132,7 +133,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals('Firefox', $shortcut->linux_startupwmclass);
     }
 
-    /** @test */
+    #[Test]
     public function create_shortcut_with_full_config(): void
     {
         $shortcut = $this->createLocalShortcut('LibreOffice Writer', [
@@ -160,7 +161,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals('libreoffice-writer', $shortcut->linux_startupwmclass);
     }
 
-    /** @test */
+    #[Test]
     public function create_url_shortcut(): void
     {
         $shortcut = $this->createLocalShortcut('Pronote', [
@@ -171,7 +172,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertTrue($shortcut->isUrlShortcut());
     }
 
-    /** @test */
+    #[Test]
     public function create_non_url_shortcut(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox', [
@@ -182,7 +183,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertFalse($shortcut->isUrlShortcut());
     }
 
-    /** @test */
+    #[Test]
     public function create_shortcut_with_all_places(): void
     {
         $desktop = $this->createLocalShortcut('Desktop App', ['place' => 'desktop']);
@@ -199,7 +200,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals('Barre des tâches', $taskbar->getPlaceLabel());
     }
 
-    /** @test */
+    #[Test]
     public function create_shortcut_generates_unique_key(): void
     {
         $s1 = $this->createLocalShortcut('Firefox');
@@ -208,7 +209,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertNotEquals($s1->key, $s2->key);
     }
 
-    /** @test */
+    #[Test]
     public function create_shortcut_with_ad_assignments(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox', [
@@ -220,7 +221,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals(['Profs', 'Admins'], $shortcut->ad_user_groups);
     }
 
-    /** @test */
+    #[Test]
     public function ad_assignments_default_to_null(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox');
@@ -233,7 +234,7 @@ class ShortcutCreationTest extends TestCase
     // PERSISTENCE TESTS
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function shortcut_persists_in_database(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox', [
@@ -250,7 +251,7 @@ class ShortcutCreationTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function shortcut_findable_by_key(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox');
@@ -262,7 +263,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals('Firefox', $found->name);
     }
 
-    /** @test */
+    #[Test]
     public function shortcut_findable_by_name(): void
     {
         $this->createLocalShortcut('Firefox');
@@ -277,7 +278,7 @@ class ShortcutCreationTest extends TestCase
     // UPDATE TESTS
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function update_shortcut_fields(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox', [
@@ -302,7 +303,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals('/usr/bin/firefox-esr', $shortcut->linux_link);
     }
 
-    /** @test */
+    #[Test]
     public function update_ad_assignments(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox');
@@ -333,7 +334,7 @@ class ShortcutCreationTest extends TestCase
     // DELETE TESTS
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function delete_shortcut(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox');
@@ -349,7 +350,7 @@ class ShortcutCreationTest extends TestCase
     // SCOPE TESTS
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function scope_local_excludes_global(): void
     {
         $this->createLocalShortcut('Local App');
@@ -361,7 +362,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals('Local App', $locals->first()->name);
     }
 
-    /** @test */
+    #[Test]
     public function scope_global_excludes_local(): void
     {
         $this->createLocalShortcut('Local App');
@@ -373,7 +374,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals('Global App', $globals->first()->name);
     }
 
-    /** @test */
+    #[Test]
     public function scope_by_place_filters_correctly(): void
     {
         $this->createLocalShortcut('Desktop App', ['place' => 'desktop']);
@@ -389,7 +390,7 @@ class ShortcutCreationTest extends TestCase
     // MODEL METHODS TESTS
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function windows_config_returns_correct_array(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox', [
@@ -407,7 +408,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals('firefox.png', $config['icon']);
     }
 
-    /** @test */
+    #[Test]
     public function linux_config_returns_correct_array(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox', [
@@ -425,7 +426,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals('Firefox', $config['startupwmclass']);
     }
 
-    /** @test */
+    #[Test]
     public function legacy_format_roundtrip(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox', [
@@ -451,7 +452,7 @@ class ShortcutCreationTest extends TestCase
     // FULL CREATION FLOW (simulates Livewire save logic)
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function full_creation_flow_simulates_livewire_save(): void
     {
         // Simulates the logic in new/index.blade.php save() method
@@ -500,7 +501,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals($linuxStartupwmclass, $found->linux_startupwmclass);
     }
 
-    /** @test */
+    #[Test]
     public function full_update_flow_simulates_livewire_save(): void
     {
         // Create
@@ -533,7 +534,7 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals('firefox-esr', $found->linux_startupwmclass);
     }
 
-    /** @test */
+    #[Test]
     public function full_delete_flow_simulates_livewire_delete(): void
     {
         $shortcut = $this->createLocalShortcut('Firefox');

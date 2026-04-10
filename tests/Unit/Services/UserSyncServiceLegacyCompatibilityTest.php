@@ -12,6 +12,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class UserSyncServiceLegacyCompatibilityTest extends TestCase
 {
@@ -26,7 +27,7 @@ class UserSyncServiceLegacyCompatibilityTest extends TestCase
         $this->createSyncCursorsTable();
     }
 
-    /** @test */
+    #[Test]
     public function it_maps_ldap_user_to_typed_ad_user_like_legacy_rules(): void
     {
         $ldapUser = $this->mockLdapUser(
@@ -55,7 +56,7 @@ class UserSyncServiceLegacyCompatibilityTest extends TestCase
         $this->assertSame(['RefNum', 'DROIT_X'], $result->rights);
     }
 
-    /** @test */
+    #[Test]
     public function it_detects_establishment_membership_by_tree_or_memberof_like_legacy(): void
     {
         $establishmentDn = 'OU=0751234A,OU=Etablissements,DC=example,DC=local';
@@ -83,7 +84,7 @@ class UserSyncServiceLegacyCompatibilityTest extends TestCase
         $this->assertNull($this->invokePrivate($this->service, 'getEstablishmentMatchType', [$externalUser, $establishmentDn]));
     }
 
-    /** @test */
+    #[Test]
     public function it_upserts_sql_user_from_typed_ad_user(): void
     {
         $adUser = new AdUser(
@@ -121,7 +122,7 @@ class UserSyncServiceLegacyCompatibilityTest extends TestCase
         $this->assertSame('Marie L.', $row->fullname);
     }
 
-    /** @test */
+    #[Test]
     public function it_persists_and_reads_delta_cursor_whenchanged(): void
     {
         $this->invokePrivate($this->service, 'saveDeltaCursor', ['20260224103045.0Z']);

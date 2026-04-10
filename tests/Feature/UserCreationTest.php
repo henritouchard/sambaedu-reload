@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Tests d'intégration pour la création d'utilisateur (Story 2.1)
@@ -183,7 +184,7 @@ class UserCreationTest extends TestCase
     // Double-write PostgreSQL
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function persistUserToSql_creates_user_in_database(): void
     {
         $this->config->shouldReceive('ldap')->andReturn($this->makeFakeLdapConfig());
@@ -208,7 +209,7 @@ class UserCreationTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function persistUserToSql_maps_categories_to_correct_roles(): void
     {
         $this->config->shouldReceive('ldap')->andReturn($this->makeFakeLdapConfig());
@@ -239,7 +240,7 @@ class UserCreationTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function persistUserToSql_encodes_objectguid_as_hex(): void
     {
         $this->config->shouldReceive('ldap')->andReturn($this->makeFakeLdapConfig());
@@ -260,7 +261,7 @@ class UserCreationTest extends TestCase
         $this->assertEquals($expectedHex, $user->ad_guid, 'objectguid binaire doit être stocké en hex');
     }
 
-    /** @test */
+    #[Test]
     public function persistUserToSql_trims_fullname(): void
     {
         $this->config->shouldReceive('ldap')->andReturn($this->makeFakeLdapConfig());
@@ -279,7 +280,7 @@ class UserCreationTest extends TestCase
         $this->assertEquals('Dupont', $user->fullname);
     }
 
-    /** @test */
+    #[Test]
     public function persistUserToSql_uses_updateOrCreate_for_existing_login(): void
     {
         $this->config->shouldReceive('ldap')->andReturn($this->makeFakeLdapConfig());
@@ -309,7 +310,7 @@ class UserCreationTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function persistUserToSql_logs_error_on_db_failure_without_throwing(): void
     {
         $this->config->shouldReceive('ldap')->andReturn($this->makeFakeLdapConfig());
@@ -351,7 +352,7 @@ class UserCreationTest extends TestCase
     // Audit logging (NFR8)
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function creation_logs_audit_entry_with_action_and_operator(): void
     {
         $source = file_get_contents(app_path('Services/UserService.php'));
@@ -363,7 +364,7 @@ class UserCreationTest extends TestCase
     // Liaison groupes SQL (user_group_user pivot)
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function persistUserGroupsToSql_links_eleve_to_categorie_and_classe(): void
     {
         $this->config->shouldReceive('ldap')->andReturn($this->makeFakeLdapConfig());
@@ -393,7 +394,7 @@ class UserCreationTest extends TestCase
         $this->assertCount(2, $groupNames);
     }
 
-    /** @test */
+    #[Test]
     public function persistUserGroupsToSql_links_prof_to_categorie_and_classes(): void
     {
         $this->config->shouldReceive('ldap')->andReturn($this->makeFakeLdapConfig());
@@ -421,7 +422,7 @@ class UserCreationTest extends TestCase
         $this->assertCount(3, $groupNames);
     }
 
-    /** @test */
+    #[Test]
     public function persistUserGroupsToSql_is_case_insensitive_on_group_names(): void
     {
         $this->config->shouldReceive('ldap')->andReturn($this->makeFakeLdapConfig());
@@ -447,7 +448,7 @@ class UserCreationTest extends TestCase
         $this->assertContains('Classe_3emeA', $groupNames);
     }
 
-    /** @test */
+    #[Test]
     public function persistUserGroupsToSql_skips_missing_groups_without_error(): void
     {
         $this->config->shouldReceive('ldap')->andReturn($this->makeFakeLdapConfig());

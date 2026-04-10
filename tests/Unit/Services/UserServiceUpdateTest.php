@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Log;
 use Mockery;
 use Tests\TestCase;
 use Tests\Traits\MocksAdminUser;
+use PHPUnit\Framework\Attributes\Test;
 
 class UserServiceUpdateTest extends TestCase
 {
@@ -64,7 +65,7 @@ class UserServiceUpdateTest extends TestCase
     // Tests updatePersonalInfo() — Permissions (D1)
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function updatePersonalInfo_rejects_when_no_permission(): void
     {
         // Sans utilisateur authentifié, la policy refuse
@@ -82,7 +83,7 @@ class UserServiceUpdateTest extends TestCase
     // Tests validatePersonalInfo() — Validation (public, découplée)
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function validatePersonalInfo_requires_prenom(): void
     {
         $errors = $this->service->validatePersonalInfo(['prenom' => '', 'nom' => 'Dupont']);
@@ -90,7 +91,7 @@ class UserServiceUpdateTest extends TestCase
         $this->assertStringContainsString('prénom est requis', $errors[0]);
     }
 
-    /** @test */
+    #[Test]
     public function validatePersonalInfo_requires_nom(): void
     {
         $errors = $this->service->validatePersonalInfo(['prenom' => 'Jean', 'nom' => '']);
@@ -98,7 +99,7 @@ class UserServiceUpdateTest extends TestCase
         $this->assertStringContainsString('nom est requis', $errors[0]);
     }
 
-    /** @test */
+    #[Test]
     public function validatePersonalInfo_rejects_prenom_over_64_chars(): void
     {
         $errors = $this->service->validatePersonalInfo(['prenom' => str_repeat('A', 65), 'nom' => 'Dupont']);
@@ -107,7 +108,7 @@ class UserServiceUpdateTest extends TestCase
         $this->assertStringContainsString('64', $errors[0]);
     }
 
-    /** @test */
+    #[Test]
     public function validatePersonalInfo_rejects_nom_over_64_chars(): void
     {
         $errors = $this->service->validatePersonalInfo(['prenom' => 'Jean', 'nom' => str_repeat('A', 65)]);
@@ -116,7 +117,7 @@ class UserServiceUpdateTest extends TestCase
         $this->assertStringContainsString('64', $errors[0]);
     }
 
-    /** @test */
+    #[Test]
     public function validatePersonalInfo_rejects_whitespace_only_prenom(): void
     {
         $errors = $this->service->validatePersonalInfo(['prenom' => '   ', 'nom' => 'Dupont']);
@@ -124,7 +125,7 @@ class UserServiceUpdateTest extends TestCase
         $this->assertStringContainsString('prénom est requis', $errors[0]);
     }
 
-    /** @test */
+    #[Test]
     public function validatePersonalInfo_rejects_invalid_email(): void
     {
         $errors = $this->service->validatePersonalInfo(['prenom' => 'Jean', 'nom' => 'Dupont', 'email' => 'not-an-email']);
@@ -132,14 +133,14 @@ class UserServiceUpdateTest extends TestCase
         $this->assertStringContainsString('email', $errors[0]);
     }
 
-    /** @test */
+    #[Test]
     public function validatePersonalInfo_accepts_empty_email(): void
     {
         $errors = $this->service->validatePersonalInfo(['prenom' => 'Jean', 'nom' => 'Dupont', 'email' => '']);
         $this->assertEmpty($errors);
     }
 
-    /** @test */
+    #[Test]
     public function validatePersonalInfo_rejects_phone_over_20_chars(): void
     {
         $errors = $this->service->validatePersonalInfo(['prenom' => 'Jean', 'nom' => 'Dupont', 'phone' => str_repeat('1', 21)]);
@@ -147,7 +148,7 @@ class UserServiceUpdateTest extends TestCase
         $this->assertStringContainsString('téléphone', $errors[0]);
     }
 
-    /** @test */
+    #[Test]
     public function validatePersonalInfo_rejects_description_over_1000_chars(): void
     {
         $errors = $this->service->validatePersonalInfo(['prenom' => 'Jean', 'nom' => 'Dupont', 'description' => str_repeat('a', 1001)]);
@@ -159,7 +160,7 @@ class UserServiceUpdateTest extends TestCase
     // Tests updatePersonalInfo() — LDAP attributes mapping
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function updatePersonalInfo_sets_ldap_attributes_correctly(): void
     {
         $this->actAsAdmin();
@@ -200,7 +201,7 @@ class UserServiceUpdateTest extends TestCase
         $this->assertEquals('Prof maths', $setAttributes['description']);
     }
 
-    /** @test */
+    #[Test]
     public function updatePersonalInfo_returns_error_when_user_not_found(): void
     {
         $this->actAsAdmin();
@@ -218,7 +219,7 @@ class UserServiceUpdateTest extends TestCase
         $this->assertStringContainsString('introuvable', $result['message']);
     }
 
-    /** @test */
+    #[Test]
     public function updatePersonalInfo_invalidates_cache_after_save(): void
     {
         $this->actAsAdmin();
@@ -243,7 +244,7 @@ class UserServiceUpdateTest extends TestCase
         $this->assertTrue($result['success']);
     }
 
-    /** @test */
+    #[Test]
     public function updatePersonalInfo_handles_ldap_save_exception(): void
     {
         $this->actAsAdmin();
@@ -267,7 +268,7 @@ class UserServiceUpdateTest extends TestCase
         $this->assertStringNotContainsString('LDAP connection failed', $result['message']);
     }
 
-    /** @test */
+    #[Test]
     public function updatePersonalInfo_logs_action_with_sql_synced(): void
     {
         $this->actAsAdmin();
