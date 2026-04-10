@@ -7,6 +7,7 @@
 !/bootstrap/cache/.gitkeep
 .env
 .env.backup
+.env.testing
 .env.*.php
 .phpunit.result.cache
 Homestead.json
@@ -72,7 +73,6 @@ Desktop.ini
 *.temp
 *.bak
 
-_bmad*
 .claude*
 CLAUDE.md
 /sambaedu
