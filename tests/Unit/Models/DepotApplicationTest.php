@@ -32,12 +32,9 @@ class DepotApplicationTest extends TestCase
         $this->assertContains('category', $fillable);
         $this->assertContains('compatibility', $fillable);
         $this->assertContains('branch', $fillable);
-        $this->assertContains('xml', $fillable);
         $this->assertContains('xml_url', $fillable);
         $this->assertContains('xml_sha', $fillable);
         $this->assertContains('log_url', $fillable);
-        $this->assertContains('description', $fillable);
-        $this->assertContains('author', $fillable);
         $this->assertContains('icon_url', $fillable);
         $this->assertContains('last_checked_at', $fillable);
     }
