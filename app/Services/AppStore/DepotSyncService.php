@@ -25,11 +25,11 @@ class DepotSyncService
     /**
      * Synchronise le catalogue d'applications depuis tous les depots actifs
      *
-     * @return array{synced: int, new: int, updated: int, errors: array}
+     * @return array{synced: int, new: int, updated: int, purged: int, errors: array}
      */
     public function syncAllDepots(): array
     {
-        $stats = ['synced' => 0, 'new' => 0, 'updated' => 0, 'errors' => []];
+        $stats = ['synced' => 0, 'new' => 0, 'updated' => 0, 'purged' => 0, 'errors' => []];
 
         $depots = Depot::active()->get();
 
@@ -39,6 +39,7 @@ class DepotSyncService
                 $stats['synced']++;
                 $stats['new'] += $result['new'];
                 $stats['updated'] += $result['updated'];
+                $stats['purged'] += $result['purged'];
             } catch (\Exception $e) {
                 $stats['errors'][] = "Depot '{$depot->name}': " . $e->getMessage();
                 Log::error('[AppStore] Erreur sync depot', [
@@ -56,7 +57,7 @@ class DepotSyncService
     /**
      * Synchronise un depot specifique en recuperant son XML distant
      *
-     * @return array{new: int, updated: int}
+     * @return array{new: int, updated: int, purged: int}
      */
     public function syncDepot(Depot $depot): array
     {
@@ -77,7 +78,7 @@ class DepotSyncService
         // Verifier si le XML a change
         if ($depot->xml_hash === $newHash) {
             Log::debug('[AppStore] Depot inchange', ['depot' => $depot->name]);
-            return ['new' => 0, 'updated' => 0];
+            return ['new' => 0, 'updated' => 0, 'purged' => 0];
         }
 
         $stats = $this->parseAndUpsertApplications($depot, $xmlContent);
@@ -94,11 +95,11 @@ class DepotSyncService
      * Les applications sont stockees dans depot_applications (catalogue distant).
      * Elles ne sont copiees dans applications que lors de l'installation.
      *
-     * @return array{new: int, updated: int}
+     * @return array{new: int, updated: int, purged: int}
      */
     private function parseAndUpsertApplications(Depot $depot, string $xmlContent): array
     {
-        $stats = ['new' => 0, 'updated' => 0];
+        $stats = ['new' => 0, 'updated' => 0, 'purged' => 0];
 
         $xml = new \DOMDocument();
         $prev = libxml_use_internal_errors(true);
@@ -111,6 +112,7 @@ class DepotSyncService
 
         // Parcourir les branches pour extraire la branche parente de chaque package
         $branches = $xml->getElementsByTagName('branch');
+        $seenKeys = [];
 
         DB::beginTransaction();
         try {
@@ -156,6 +158,8 @@ class DepotSyncService
                         ]));
                         $stats['new']++;
                     }
+
+                    $seenKeys[] = $appId . '|' . $branchId;
                 }
             }
 
@@ -164,6 +168,21 @@ class DepotSyncService
             DB::rollBack();
             throw $e;
         }
+
+        // Purge des applications obsoletes (apres le commit du bloc upsert)
+        if (empty($seenKeys)) {
+            Log::warning('[AppStore] Aucun package valide trouvé, purge ignorée', ['depot' => $depot->name]);
+            return $stats;
+        }
+
+        $allForDepot = DepotApplication::where('depot_id', $depot->id)->get(['id', 'app_id', 'branch']);
+        $toDelete = $allForDepot->filter(fn($da) => !in_array($da->app_id . '|' . $da->branch, $seenKeys));
+        $purgedCount = $toDelete->count();
+        if ($purgedCount > 0) {
+            DepotApplication::whereIn('id', $toDelete->pluck('id'))->delete();
+            Log::info('[AppStore] Purge depot_applications', ['depot' => $depot->name, 'purged' => $purgedCount]);
+        }
+        $stats['purged'] = $purgedCount;
 
         return $stats;
     }

@@ -13,10 +13,12 @@ use Illuminate\Support\Facades\Log;
 class PackagesXmlService
 {
     private string $storagePath;
+    private string $packagesXmlPath;
 
     public function __construct()
     {
         $this->storagePath = config('sambaedu.wpkg.storage_path', '/var/se4fs/wpkg');
+        $this->packagesXmlPath = config('sambaedu.wpkg.packages_xml_path', $this->storagePath . '/packages.xml');
     }
 
     /**
@@ -24,7 +26,7 @@ class PackagesXmlService
      */
     public function regenerate(): void
     {
-        $installedApps = Application::installed()->get();
+        $installedApps = Application::installed()->orderBy('app_id')->get();
 
         $dom = new \DOMDocument('1.0', 'UTF-8');
         $dom->formatOutput = true;
@@ -45,17 +47,31 @@ class PackagesXmlService
                 }
 
                 $imported = $dom->importNode($fragment->documentElement, true);
+
+                // Supprimer les noeuds SambaEdu non compris par le client WPKG Windows
+                $sambaEduNodes = ['download', 'delete', 'untar', 'unzip'];
+                foreach ($sambaEduNodes as $nodeName) {
+                    $nodes = $imported->getElementsByTagName($nodeName);
+                    while ($nodes->length > 0) {
+                        $nodes->item(0)->parentNode->removeChild($nodes->item(0));
+                    }
+                }
+
                 $root->appendChild($imported);
             }
         }
 
-        $packagesXmlPath = $this->storagePath . '/packages.xml';
+        $packagesXmlPath = $this->packagesXmlPath;
         $dir = dirname($packagesXmlPath);
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
 
-        $dom->save($packagesXmlPath);
+        $tmpPath = $packagesXmlPath . '.tmp';
+        if ($dom->save($tmpPath) === false) {
+            throw new \RuntimeException("Impossible d'écrire packages.xml : {$packagesXmlPath}");
+        }
+        rename($tmpPath, $packagesXmlPath);
 
         Log::info('[AppStore] packages.xml local mis a jour', [
             'path' => $packagesXmlPath,
