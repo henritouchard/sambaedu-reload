@@ -9,6 +9,7 @@ use App\LdapModels\LdapUser;
 use App\Services\UserSyncService;
 use App\Types\User as AdUser;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -136,7 +137,7 @@ class UserSyncServiceLegacyCompatibilityTest extends TestCase
 
     private function createUsersTable(): void
     {
-        Schema::dropIfExists('users');
+        DB::statement('DROP TABLE IF EXISTS users CASCADE');
 
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
@@ -147,10 +148,12 @@ class UserSyncServiceLegacyCompatibilityTest extends TestCase
             $table->string('lastname')->nullable();
             $table->string('email')->nullable();
             $table->text('dn')->nullable();
+            $table->string('ad_guid')->nullable();
             $table->string('role')->default('autre');
+            $table->string('school_code')->nullable();
             $table->boolean('is_active')->default(true);
-            $table->json('ad_right_profiles')->nullable();
-            $table->integer('ad_rights_bitmask')->default(0);
+            $table->jsonb('ad_right_profiles')->nullable();
+            $table->unsignedInteger('ad_rights_bitmask')->default(0);
             $table->timestamp('ad_synced_at')->nullable();
             $table->timestamps();
         });

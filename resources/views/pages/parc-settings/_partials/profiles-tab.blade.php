@@ -73,6 +73,12 @@ new class extends Component
         $this->resetPage();
     }
 
+    #[On('reset-pagination')]
+    public function onResetPagination(): void
+    {
+        $this->resetPage();
+    }
+
     #[On('open-create-profile-modal')]
     public function openCreateModal(): void
     {
@@ -257,7 +263,7 @@ new class extends Component
                         @empty
                             <tr>
                                 <td colspan="6" class="text-center py-8 text-base-content/60">
-                                    <i class="fa-solid fa-layer-group text-4xl mb-2 opacity-30"></i>
+                                    <i class="fa-solid fa-cubes text-4xl mb-2 opacity-30"></i>
                                     <p>Aucun profil applicatif trouvé</p>
                                     @if ($profileSearch || $activeOnly !== null)
                                         <button type="button" class="btn btn-ghost btn-sm mt-2"

@@ -376,11 +376,15 @@ if (!function_exists('search_ad')) {
                     // pour matcher le format stocké en DB (iso avec boot.php qui fait strtolower($uuid)).
                     $normalized = strtolower($name);
                     $looksLikeUuid = preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $normalized);
-                    $query->where(function ($q) use ($name, $normalized, $looksLikeUuid) {
+                    $looksLikeIp = filter_var($name, FILTER_VALIDATE_IP) !== false;
+                    $query->where(function ($q) use ($name, $normalized, $looksLikeUuid, $looksLikeIp) {
                         $q->where('name', $name)
                           ->orWhere('mac', $normalized);
                         if ($looksLikeUuid) {
                             $q->orWhere('uuid', $normalized);
+                        }
+                        if ($looksLikeIp) {
+                            $q->orWhere('ip', $name);
                         }
                     });
                 }
@@ -462,7 +466,7 @@ if (!function_exists('search_machine')) {
     function search_machine(array $config, string $cn, bool $ip = false): array
     {
         $results = search_ad($config, $cn, 'machine');
-        if (!is_array($results) || empty($results)) {
+        if (!is_array($results) || empty($results) || ($results['count'] ?? 0) === 0) {
             return [];
         }
         return $results[0];

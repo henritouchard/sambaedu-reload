@@ -384,7 +384,7 @@ class UserServiceDisableDeleteTest extends TestCase
         $ldapUser->shouldReceive('getFirstAttribute')
             ->with('useraccountcontrol')
             ->andReturn(User::UAC_DISABLED);
-        $ldapUser->shouldReceive('delete')->once()->andReturn(false);
+        $ldapUser->shouldReceive('delete')->once()->andThrow(new \RuntimeException('LDAP delete failed'));
 
         $this->userRepository->shouldReceive('findLdapModelByLogin')
             ->with('dupont')
@@ -393,7 +393,7 @@ class UserServiceDisableDeleteTest extends TestCase
         $result = $this->service->deleteUserPermanently('dupont');
 
         $this->assertFalse($result['success']);
-        $this->assertStringContainsString('annuaire', $result['message']);
+        $this->assertStringContainsString('suppression', $result['message']);
     }
 
     /** @test */

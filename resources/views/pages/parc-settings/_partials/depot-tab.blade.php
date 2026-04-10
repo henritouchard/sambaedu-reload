@@ -1,6 +1,7 @@
 <?php
 
 use App\Components\Traits\WithToasts;
+use App\Models\Depot;
 use App\Models\DepotApplication;
 use App\Services\AppStore\AppStoreService;
 use Illuminate\Support\Facades\Log;
@@ -10,8 +11,7 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
-return new class extends Component
-{
+return new class extends Component {
     use WithPagination;
     use WithToasts;
 
@@ -42,6 +42,22 @@ return new class extends Component
 
     public ?string $depotSyncMessage = null;
 
+    // Modal création dépôt
+    public bool $showCreateDepotModal = false;
+
+    // Modal suppression dépôt
+    public bool $showDeleteDepotModal = false;
+
+    public ?int $deleteDepotId = null;
+
+    public string $deleteDepotName = '';
+
+    public string $newDepotName = '';
+
+    public string $newDepotUrl = '';
+
+    public bool $newDepotIsPrimary = false;
+
     public function boot(AppStoreService $appStoreService): void
     {
         $this->appStoreService = $appStoreService;
@@ -70,13 +86,7 @@ return new class extends Component
             return new \Illuminate\Pagination\LengthAwarePaginator([], 0, $this->depotPerPage);
         }
 
-        return $this->appStoreService->listDepotApplications(
-            depotId: $this->depotId,
-            perPage: $this->depotPerPage,
-            search: $this->depotSearch ?: null,
-            category: $this->depotCategoryFilter ?: null,
-            branch: $this->depotBranchFilter ?: null,
-        );
+        return $this->appStoreService->listDepotApplications(depotId: $this->depotId, perPage: $this->depotPerPage, search: $this->depotSearch ?: null, category: $this->depotCategoryFilter ?: null, branch: $this->depotBranchFilter ?: null);
     }
 
     #[Computed]
@@ -147,6 +157,12 @@ return new class extends Component
         $this->resetPage();
     }
 
+    #[On('reset-pagination')]
+    public function onResetPagination(): void
+    {
+        $this->resetPage();
+    }
+
     #[On('sync-current-depot')]
     public function syncCurrentDepot(): void
     {
@@ -154,7 +170,7 @@ return new class extends Component
 
         try {
             $depot = \App\Models\Depot::find($this->depotId);
-            if (! $depot) {
+            if (!$depot) {
                 $this->toastError('Dépôt non trouvé');
 
                 return;
@@ -165,8 +181,8 @@ return new class extends Component
             $this->depotSyncMessage = $message;
             $this->toastSuccess($message);
         } catch (\Exception $e) {
-            Log::error('[DepotTab] Erreur sync dépôt: '.$e->getMessage());
-            $this->toastError('Erreur lors de la synchronisation: '.$e->getMessage());
+            Log::error('[DepotTab] Erreur sync dépôt: ' . $e->getMessage());
+            $this->toastError('Erreur lors de la synchronisation: ' . $e->getMessage());
         } finally {
             $this->isDepotSyncing = false;
         }
@@ -193,7 +209,7 @@ return new class extends Component
                         $installed++;
                     }
                 } catch (\Exception $e) {
-                    Log::error("[DepotTab] Erreur installation app {$depotAppId}: ".$e->getMessage());
+                    Log::error("[DepotTab] Erreur installation app {$depotAppId}: " . $e->getMessage());
                     $errors++;
                 }
             }
@@ -207,7 +223,7 @@ return new class extends Component
 
             $this->selectedDepotInstallApps = [];
         } catch (\Exception $e) {
-            Log::error('[DepotTab] Erreur installation apps: '.$e->getMessage());
+            Log::error('[DepotTab] Erreur installation apps: ' . $e->getMessage());
             $this->toastError("Erreur lors de l'ajout");
         } finally {
             $this->isInstalling = false;
@@ -225,16 +241,105 @@ return new class extends Component
 
     public function selectAllDepotInstallApps(): void
     {
-        $this->selectedDepotInstallApps = $this->depotApplications
-            ->getCollection()
-            ->filter(fn ($app) => ! $app->is_installed)
-            ->pluck('id')
-            ->toArray();
+        $this->selectedDepotInstallApps = $this->depotApplications->getCollection()->filter(fn($app) => !$app->is_installed)->pluck('id')->toArray();
     }
 
     public function deselectAllDepotInstallApps(): void
     {
         $this->selectedDepotInstallApps = [];
+    }
+
+    #[On('open-create-depot-modal')]
+    public function openCreateDepotModal(): void
+    {
+        $this->newDepotName = '';
+        $this->newDepotUrl = '';
+        $this->newDepotIsPrimary = false;
+        $this->showCreateDepotModal = true;
+    }
+
+    public function closeCreateDepotModal(): void
+    {
+        $this->showCreateDepotModal = false;
+    }
+
+    #[On('open-delete-depot-modal')]
+    public function openDeleteDepotModal(): void
+    {
+        $depot = Depot::find($this->depotId);
+        if (!$depot) {
+            $this->toastError('Aucun dépôt sélectionné');
+            return;
+        }
+
+        $this->deleteDepotId = $depot->id;
+        $this->deleteDepotName = $depot->name;
+        $this->showDeleteDepotModal = true;
+    }
+
+    public function closeDeleteDepotModal(): void
+    {
+        $this->showDeleteDepotModal = false;
+        $this->deleteDepotId = null;
+        $this->deleteDepotName = '';
+    }
+
+    public function deleteDepot(): void
+    {
+        try {
+            $depot = Depot::find($this->deleteDepotId);
+            if (!$depot) {
+                $this->toastError('Dépôt non trouvé');
+                return;
+            }
+
+            $name = $depot->name;
+            $depot->update(['is_active' => false, 'is_primary' => false]);
+
+            $this->closeDeleteDepotModal();
+
+            // Basculer sur un autre dépôt actif
+            $defaultDepot = $this->appStoreService->getDefaultDepot();
+            $this->depotId = $defaultDepot?->id ?? 0;
+
+            $this->toastSuccess("Dépôt '{$name}' désactivé");
+        } catch (\Exception $e) {
+            Log::error('[DepotTab] Erreur désactivation dépôt: ' . $e->getMessage());
+            $this->toastError('Erreur lors de la désactivation du dépôt');
+        }
+    }
+
+    public function createDepot(): void
+    {
+        $this->validate([
+            'newDepotName' => 'required|string|max:255|unique:depots,name',
+            'newDepotUrl' => 'required|url|max:512',
+            'newDepotIsPrimary' => 'boolean',
+        ]);
+
+        try {
+            // Si marqué comme principal, retirer le flag des autres
+            if ($this->newDepotIsPrimary) {
+                Depot::where('is_primary', true)->update(['is_primary' => false]);
+            }
+
+            $depot = Depot::create([
+                'name' => $this->newDepotName,
+                'url' => $this->newDepotUrl,
+                'is_primary' => $this->newDepotIsPrimary,
+                'is_active' => true,
+            ]);
+
+            $this->depotId = $depot->id;
+            $this->closeCreateDepotModal();
+
+            // Synchroniser immédiatement pour remplir xml_hash et les applications
+            $result = $this->appStoreService->syncDepot($depot);
+            $this->toastSuccess("Dépôt '{$depot->name}' créé — {$result['new']} application(s) importée(s)");
+        } catch (\Exception $e) {
+            Log::error('[DepotTab] Erreur création dépôt: ' . $e->getMessage());
+            $this->toastError('Erreur lors de la création du dépôt: ' . $e->getMessage());
+        }
     }
 };
 ?>
@@ -359,17 +464,15 @@ return new class extends Component
                             <tr wire:key="depot-tab-app-{{ $app->id }}" class="hover cursor-pointer"
                                 wire:click="toggleDepotInstallAppSelection({{ $app->id }})">
                                 <td>
-                                    @if (! $app->is_installed)
+                                    @if (!$app->is_installed)
                                         <input type="checkbox" class="checkbox checkbox-sm"
                                             @if (in_array($app->id, $selectedDepotInstallApps)) checked @endif />
                                     @endif
                                 </td>
                                 <td>
                                     <div class="flex items-center gap-3">
-                                        <div class="avatar placeholder">
-                                            <div class="bg-primary/10 text-primary rounded w-10 h-10">
-                                                <i class="fa-solid fa-cube"></i>
-                                            </div>
+                                        <div class="text-primary ">
+                                            <i class="fa-solid fa-cubes-stacked text-xl"></i>
                                         </div>
                                         <div>
                                             <div class="font-medium">{{ $app->name }}</div>
@@ -479,6 +582,87 @@ return new class extends Component
                     </button>
                 </div>
             </div>
+        </div>
+    @endif
+
+    <!-- Modal création dépôt -->
+    @if ($showCreateDepotModal)
+        <div class="modal modal-open">
+            <div class="modal-box">
+                <h3 class="font-bold text-lg mb-4">Nouveau Dépôt</h3>
+                <form wire:submit="createDepot">
+                    <div class="form-control mb-4">
+                        <label class="label">
+                            <span class="label-text">Nom *</span>
+                        </label>
+                        <input type="text" wire:model="newDepotName" class="input input-bordered"
+                            placeholder="ex: SambaÉdu Officiel" required />
+                        @error('newDepotName')
+                            <label class="label">
+                                <span class="label-text-alt text-error">{{ $message }}</span>
+                            </label>
+                        @enderror
+                    </div>
+                    <div class="form-control mb-4">
+                        <label class="label">
+                            <span class="label-text">URL du dépôt *</span>
+                        </label>
+                        <input type="url" wire:model="newDepotUrl" class="input input-bordered"
+                            placeholder="https://wawadeb.crdp.ac-caen.fr/packages.xml" required />
+                        @error('newDepotUrl')
+                            <label class="label">
+                                <span class="label-text-alt text-error">{{ $message }}</span>
+                            </label>
+                        @enderror
+                    </div>
+                    <div class="form-control mb-4">
+                        <label class="label cursor-pointer justify-start gap-3">
+                            <input type="checkbox" wire:model="newDepotIsPrimary"
+                                class="checkbox checkbox-primary" />
+                            <span class="label-text">Dépôt principal</span>
+                        </label>
+                        <p class="text-xs text-base-content/60 ml-10">
+                            Le dépôt principal est sélectionné par défaut lors de la navigation.
+                        </p>
+                    </div>
+                    <div class="modal-action">
+                        <button type="button" class="btn" wire:click="closeCreateDepotModal">Annuler</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fa-solid fa-check mr-2"></i>
+                            Créer
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-backdrop" wire:click="closeCreateDepotModal"></div>
+        </div>
+    @endif
+
+    <!-- Modal suppression dépôt -->
+    @if ($showDeleteDepotModal)
+        <div class="modal modal-open">
+            <div class="modal-box">
+                <h3 class="font-bold text-lg mb-4 text-warning">
+                    <i class="fa-solid fa-triangle-exclamation mr-2"></i>
+                    Désactiver le dépôt
+                </h3>
+                <p class="mb-2">
+                    Êtes-vous sûr de vouloir désactiver le dépôt
+                    <strong>{{ $deleteDepotName }}</strong> ?
+                </p>
+                <p class="text-sm text-base-content/60 mb-4">
+                    Le dépôt ne sera plus visible et ne sera plus synchronisé.
+                    Les applications déjà installées dans le catalogue local ne seront pas affectées.
+                </p>
+                <div class="modal-action">
+                    <button type="button" class="btn" wire:click="closeDeleteDepotModal">Annuler</button>
+                    <button type="button" class="btn btn-warning" wire:click="deleteDepot">
+                        <i class="fa-solid fa-eye-slash mr-2"></i>
+                        Désactiver
+                    </button>
+                </div>
+            </div>
+            <div class="modal-backdrop" wire:click="closeDeleteDepotModal"></div>
         </div>
     @endif
 </div>

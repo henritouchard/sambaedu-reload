@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Config\SambaEduConfig;
 use App\Models\User;
 use App\Services\AuthenticationService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Mockery;
 use Tests\TestCase;
 
@@ -14,7 +14,7 @@ use Tests\TestCase;
  */
 class CasAuthenticationTest extends TestCase
 {
-    use RefreshDatabase;
+    use DatabaseTransactions;
 
     protected function setUp(): void
     {

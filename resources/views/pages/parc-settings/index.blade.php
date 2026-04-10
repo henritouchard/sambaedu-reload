@@ -52,7 +52,7 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
 
     public function setTab(string $tab): void
     {
-        $this->tab = $tab;
+        $this->redirect(route('app.parc-settings.index') . '?tab=' . $tab);
     }
 };
 ?>
@@ -85,9 +85,21 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                     </li>
                 @elseif ($tab === 'depot')
                     <li>
+                        <button type="button" wire:click="$dispatch('open-create-depot-modal')">
+                            <i class="fa-solid fa-plus"></i>
+                            Ajouter un dépôt
+                        </button>
+                    </li>
+                    <li>
                         <button type="button" wire:click="$dispatch('sync-current-depot')">
                             <i class="fa-solid fa-sync"></i>
                             Synchroniser le dépôt
+                        </button>
+                    </li>
+                    <li>
+                        <button type="button" class="text-warning" wire:click="$dispatch('open-delete-depot-modal')">
+                            <i class="fa-solid fa-eye-slash"></i>
+                            Désactiver le dépôt
                         </button>
                     </li>
                 @endif

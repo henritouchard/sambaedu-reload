@@ -1,6 +1,7 @@
 <?php
 
 use App\Components\Traits\WithToasts;
+use App\Enums\ApplicationStatus;
 use App\Models\Application;
 use App\Models\Depot;
 use App\Models\DepotApplication;
@@ -90,6 +91,70 @@ new class extends Component
         }
     }
 
+    #[Computed]
+    public function allSelectedAreError(): bool
+    {
+        if (empty($this->selectedApps)) {
+            return false;
+        }
+
+        return Application::whereIn('id', $this->selectedApps)
+            ->where('status', '!=', ApplicationStatus::Error)
+            ->doesntExist();
+    }
+
+    public function retryInstallation(): void
+    {
+        $apps = Application::whereIn('id', $this->selectedApps)
+            ->where('status', ApplicationStatus::Error)
+            ->get();
+
+        if ($apps->isEmpty()) {
+            $this->toastWarning('Aucune application en erreur sélectionnée');
+            return;
+        }
+
+        $retried = 0;
+        $errors = 0;
+
+        foreach ($apps as $app) {
+            try {
+                $depotApp = DepotApplication::where('app_id', $app->app_id)->first();
+                if (!$depotApp) {
+                    Log::warning("[ApplicationsTab] DepotApplication introuvable pour retry: {$app->app_id}");
+                    $errors++;
+                    continue;
+                }
+
+                $app->delete();
+                $this->appStoreService->installApplication($depotApp);
+                $retried++;
+            } catch (\Exception $e) {
+                Log::error("[ApplicationsTab] Erreur retry {$app->app_id}: " . $e->getMessage());
+                $errors++;
+            }
+        }
+
+        if ($retried > 0) {
+            $this->toastSuccess("{$retried} application(s) réinstallée(s)");
+        }
+        if ($errors > 0) {
+            $this->toastWarning("{$errors} erreur(s) lors de la réinstallation");
+        }
+
+        $this->selectedApps = [];
+    }
+
+    public function addAppsToProfile(): void
+    {
+        $this->toastWarning('Fonctionnalité non encore implémentée');
+    }
+
+    public function deployApps(): void
+    {
+        $this->toastWarning('Fonctionnalité non encore implémentée');
+    }
+
     public function resetAppFilters(): void
     {
         $this->appSearch = '';
@@ -99,6 +164,12 @@ new class extends Component
     }
 
     public function updatedAppsPerPage(): void
+    {
+        $this->resetPage();
+    }
+
+    #[On('reset-pagination')]
+    public function onResetPagination(): void
     {
         $this->resetPage();
     }
@@ -342,13 +413,16 @@ new class extends Component
                                 </td>
                                 <td>
                                     <div class="flex items-center gap-3">
-                                        <div class="avatar placeholder">
-                                            <div class="bg-primary/10 text-primary rounded w-10 h-10">
-                                                <i class="fa-solid fa-cube"></i>
-                                            </div>
+                                        <div class="{{ $app->status === \App\Enums\ApplicationStatus::Error ? 'text-error' : 'text-primary' }}">
+                                            <i class="fa-solid {{ $app->status === \App\Enums\ApplicationStatus::Error ? 'fa-triangle-exclamation' : 'fa-cube' }} text-xl"></i>
                                         </div>
                                         <div>
                                             <span class="font-medium">{{ $app->name }}</span>
+                                            @if ($app->status === \App\Enums\ApplicationStatus::Error)
+                                                <span class="badge badge-error badge-xs ml-1">erreur</span>
+                                            @elseif ($app->status === \App\Enums\ApplicationStatus::Downloading)
+                                                <span class="badge badge-warning badge-xs ml-1">en cours</span>
+                                            @endif
                                             @if ($app->branch && $app->branch !== 'stable')
                                                 <span
                                                     class="badge badge-{{ $app->branch === 'testing' ? 'warning' : 'info' }} badge-xs ml-1">
@@ -413,6 +487,21 @@ new class extends Component
                         {{ count($selectedApps) }} application(s) sélectionnée(s)
                     </span>
                     <div class="divider divider-horizontal m-0"></div>
+                    @if ($this->allSelectedAreError)
+                        <button type="button" class="btn btn-warning btn-sm"
+                            wire:click="retryInstallation"
+                            wire:loading.attr="disabled"
+                            wire:target="retryInstallation">
+                            <span wire:loading.remove wire:target="retryInstallation">
+                                <i class="fa-solid fa-rotate-right"></i>
+                                Réessayer l'installation
+                            </span>
+                            <span wire:loading wire:target="retryInstallation">
+                                <span class="loading loading-spinner loading-xs"></span>
+                                Réinstallation...
+                            </span>
+                        </button>
+                    @endif
                     <div class="dropdown dropdown-top">
                         <label tabindex="0" class="btn btn-primary btn-sm">
                             <i class="fa-solid fa-cog"></i>

@@ -631,9 +631,10 @@ class SqlShimTest extends TestCase
         $ws = $this->createWorkstation();
         $group = $this->createGroup();
         $group->workstations()->attach($ws->id);
+        $app = $this->makeApp();
         WorkstationApplicationStatus::create([
             'workstation_id' => $ws->id,
-            'application_id' => 1,
+            'application_id' => $app->id,
             'status' => 'installed',
         ]);
 

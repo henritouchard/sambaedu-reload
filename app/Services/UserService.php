@@ -1888,10 +1888,20 @@ class UserService
         array_shift($targetParts); // retirer CN=login
         $newParentDn = implode(',', $targetParts);
 
-        $result = @ldap_rename($connection, $oldDn, $newRdn, $newParentDn, true);
+        try {
+            $result = @ldap_rename($connection, $oldDn, $newRdn, $newParentDn, true);
+        } catch (\TypeError $e) {
+            Log::error('Échec ldap_rename (connexion invalide)', [
+                'login' => $login,
+                'old_dn' => $oldDn,
+                'target_dn' => $targetDn,
+                'error' => $e->getMessage(),
+            ]);
+            return ['success' => false, 'message' => 'Erreur LDAP lors du déplacement : connexion invalide'];
+        }
 
         if (!$result) {
-            $error = ldap_error($connection);
+            $error = @ldap_error($connection) ?: 'erreur inconnue';
             Log::error('Échec ldap_rename pour déplacement utilisateur', [
                 'login' => $login,
                 'old_dn' => $oldDn,

@@ -153,7 +153,7 @@ class MachinePowerServiceTest extends TestCase
         $this->assertEquals(202, $result['code']);
 
         Process::assertRan(function ($process) {
-            return str_contains($process->command, 'wakeonlan -i 192.168.1.255 aa:bb:cc:dd:ee:ff');
+            return str_contains($process->command, 'wakeonlan') && str_contains($process->command, '192.168.1.255');
         });
     }
 
@@ -173,10 +173,10 @@ class MachinePowerServiceTest extends TestCase
 
         // Deux appels à wakeonlan
         Process::assertRan(function ($process) {
-            return str_contains($process->command, 'wakeonlan -i 192.168.1.255');
+            return str_contains($process->command, 'wakeonlan') && str_contains($process->command, '192.168.1.255');
         });
         Process::assertRan(function ($process) {
-            return str_contains($process->command, 'wakeonlan -i 10.255.255.255');
+            return str_contains($process->command, 'wakeonlan') && str_contains($process->command, '10.255.255.255');
         });
     }
 

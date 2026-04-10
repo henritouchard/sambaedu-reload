@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Tests\Unit\Services;
 
 use App\Services\AppStore\AppStoreService;
+use App\Services\AppStore\DepotSyncService;
+use App\Services\AppStore\PackageInstallerService;
+use App\Services\AppStore\PackagesXmlService;
 use Tests\TestCase;
 
 /**
@@ -153,6 +156,50 @@ class AppStoreServiceTest extends TestCase
     public function service_is_instantiable(): void
     {
         $this->assertInstanceOf(AppStoreService::class, $this->service);
+    }
+
+    /** @test */
+    public function it_injects_sub_services_via_constructor(): void
+    {
+        $service = app(AppStoreService::class);
+        $this->assertInstanceOf(AppStoreService::class, $service);
+
+        // Verify sub-services are resolvable (DI works)
+        $this->assertInstanceOf(DepotSyncService::class, app(DepotSyncService::class));
+        $this->assertInstanceOf(PackagesXmlService::class, app(PackagesXmlService::class));
+        $this->assertInstanceOf(PackageInstallerService::class, app(PackageInstallerService::class));
+    }
+
+    /** @test */
+    public function it_still_exposes_sync_methods(): void
+    {
+        $this->assertTrue(method_exists($this->service, 'syncDepot'));
+        $this->assertTrue(method_exists($this->service, 'syncAllDepots'));
+    }
+
+    /** @test */
+    public function it_still_exposes_update_local_packages_xml(): void
+    {
+        $this->assertTrue(method_exists($this->service, 'updateLocalPackagesXml'));
+    }
+
+    /** @test */
+    public function it_still_exposes_consultation_methods(): void
+    {
+        $this->assertTrue(method_exists($this->service, 'listDepots'));
+        $this->assertTrue(method_exists($this->service, 'getDefaultDepot'));
+        $this->assertTrue(method_exists($this->service, 'listDepotApplications'));
+        $this->assertTrue(method_exists($this->service, 'getDepotStats'));
+        $this->assertTrue(method_exists($this->service, 'getDepotCategories'));
+        $this->assertTrue(method_exists($this->service, 'getDepotBranches'));
+        $this->assertTrue(method_exists($this->service, 'getStats'));
+    }
+
+    /** @test */
+    public function it_still_exposes_install_uninstall_methods(): void
+    {
+        $this->assertTrue(method_exists($this->service, 'installApplication'));
+        $this->assertTrue(method_exists($this->service, 'uninstallApplication'));
     }
 
     /**

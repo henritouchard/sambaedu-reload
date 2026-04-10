@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Exception;
 
@@ -376,6 +377,83 @@ class FileManagerService
             Log::error("Erreur lors de la récupération de la taille du fichier {$filePath}: " . $e->getMessage());
             return null;
         }
+    }
+
+    /**
+     * Calculer le hash d'un fichier
+     *
+     * @throws \RuntimeException Si le fichier n'existe pas
+     */
+    public function hashFile(string $path, string $algo = 'sha256'): string
+    {
+        if (!file_exists($path)) {
+            throw new \RuntimeException("Fichier introuvable pour le calcul de hash: {$path}");
+        }
+
+        return hash_file($algo, $path);
+    }
+
+    /**
+     * Telecharger un fichier avec verification optionnelle de hash
+     *
+     * Utilise le pattern sink pour eviter de charger le fichier en memoire.
+     * Cree le repertoire parent si inexistant.
+     *
+     * @throws \RuntimeException Si le telechargement echoue ou si le hash ne correspond pas
+     */
+    public function downloadWithHash(
+        string $url,
+        string $targetPath,
+        ?string $sha512 = null,
+        ?string $sha256 = null,
+        ?string $md5 = null,
+        int $timeout = 300,
+    ): string {
+        // Creer le repertoire parent si inexistant
+        $dir = dirname($targetPath);
+        if (!is_dir($dir) && !mkdir($dir, 0755, true)) {
+            throw new \RuntimeException("Impossible de creer le repertoire: {$dir}");
+        }
+
+        $response = Http::timeout($timeout)
+            ->withOptions(['sink' => $targetPath])
+            ->get($url);
+
+        if (!$response->successful()) {
+            @unlink($targetPath);
+            throw new \RuntimeException("Echec telechargement HTTP {$response->status()} pour {$url}");
+        }
+
+        if (!file_exists($targetPath)) {
+            throw new \RuntimeException("Echec telechargement: fichier non cree pour {$url}");
+        }
+
+        // Verifier les hash dans l'ordre de priorite
+        $checks = [
+            'sha512' => $sha512,
+            'sha256' => $sha256,
+            'md5' => $md5,
+        ];
+
+        foreach ($checks as $algo => $expected) {
+            if ($expected === null) {
+                continue;
+            }
+
+            $computed = hash_file($algo, $targetPath);
+            if ($computed === false) {
+                @unlink($targetPath);
+                throw new \RuntimeException("Impossible de calculer le hash {$algo} pour {$targetPath}");
+            }
+            if (strtolower($computed) !== strtolower($expected)) {
+                @unlink($targetPath);
+                throw new \RuntimeException(
+                    "Hash {$algo} invalide. Attendu: {$expected}, Calcule: {$computed}"
+                );
+            }
+        }
+
+        return $targetPath;
     }
 
     /**

@@ -264,8 +264,8 @@ class LdapShimTest extends TestCase
 
         $result = search_machine($this->config, '10.0.0.5', true);
 
-        $this->assertEquals(1, $result['count']);
-        $this->assertEquals('PC-01', $result[0]['cn']);
+        $this->assertNotEmpty($result);
+        $this->assertEquals('PC-01', $result['cn']);
     }
 
     // ─── Tests list_* functions ──────────────────────────────────────────────
@@ -342,7 +342,7 @@ class LdapShimTest extends TestCase
         $result = search_ad($this->config, 'test', 'delegation');
 
         $this->assertIsArray($result);
-        $this->assertEquals(0, $result['count']);
+        $this->assertEmpty($result);
         $this->assertDatabaseHas('error_logs', [
             'source' => 'legacy',
         ]);

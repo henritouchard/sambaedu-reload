@@ -23,12 +23,9 @@ use Livewire\Wireable;
  * @property string|null $category Catégorie
  * @property string|null $compatibility Compatibilité OS
  * @property string|null $branch Branche (stable, testing)
- * @property string|null $xml Contenu XML
  * @property string|null $xml_url URL du fichier XML
  * @property string|null $xml_sha Hash SHA du XML
  * @property string|null $log_url URL du log
- * @property string|null $description Description
- * @property string|null $author Auteur
  * @property string|null $icon_url URL de l'icône
  * @property \DateTime|null $last_checked_at Dernière vérification
  * @property \DateTime $created_at
@@ -46,12 +43,9 @@ class DepotApplication extends Model implements Wireable
         'category',
         'compatibility',
         'branch',
-        'xml',
         'xml_url',
         'xml_sha',
         'log_url',
-        'description',
-        'author',
         'icon_url',
         'last_checked_at',
     ];

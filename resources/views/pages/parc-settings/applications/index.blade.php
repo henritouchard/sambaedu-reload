@@ -4,7 +4,9 @@ use Livewire\Component;
 use Livewire\Attributes\Title;
 use App\Services\AppProfile\AppProfileService;
 use App\Components\Traits\WithToasts;
+use App\Enums\ApplicationStatus;
 use App\Models\Application;
+use App\Models\InstallationLog;
 use Illuminate\Support\Facades\Log;
 
 new #[Title('Détail de l\'Application - SE4FS')] class extends Component {
@@ -34,6 +36,11 @@ new #[Title('Détail de l\'Application - SE4FS')] class extends Component {
     {
         $this->application = $this->appProfileService->getApplication($this->applicationId);
     }
+
+    public function getLatestLogProperty(): ?InstallationLog
+    {
+        return $this->application?->installationLogs()->first();
+    }
 };
 ?>
 
@@ -41,6 +48,44 @@ new #[Title('Détail de l\'Application - SE4FS')] class extends Component {
     backUrl="{{ route('app.parc-settings.index', ['tab' => 'applications']) }}" backText="Retour au catalogue">
 
     @if ($application)
+        @php $latestLog = $this->latestLog; @endphp
+
+        {{-- Bandeau statut --}}
+        @if ($application->status === ApplicationStatus::Error)
+            <div role="alert" class="alert alert-error mb-6">
+                <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+                <div>
+                    <h3 class="font-bold">Installation en erreur</h3>
+                    @if ($latestLog?->message)
+                        <p class="text-sm">{{ $latestLog->message }}</p>
+                    @endif
+                    @if ($latestLog?->completed_at)
+                        <p class="text-xs opacity-70 mt-1">{{ $latestLog->completed_at->format('d/m/Y H:i:s') }}</p>
+                    @endif
+                </div>
+            </div>
+        @elseif ($application->status === ApplicationStatus::Downloading)
+            <div role="alert" class="alert alert-warning mb-6">
+                <span class="loading loading-spinner loading-sm"></span>
+                <div>
+                    <h3 class="font-bold">Installation en cours</h3>
+                    @if ($latestLog?->message)
+                        <p class="text-sm">{{ $latestLog->message }} ({{ $latestLog->progress ?? 0 }}%)</p>
+                    @endif
+                </div>
+            </div>
+        @elseif ($application->status === ApplicationStatus::Installed)
+            <div role="alert" class="alert alert-success mb-6">
+                <i class="fa-solid fa-circle-check text-lg"></i>
+                <div>
+                    <h3 class="font-bold">Installée</h3>
+                    @if ($application->installed_at)
+                        <p class="text-sm">Depuis le {{ $application->installed_at->format('d/m/Y H:i') }}</p>
+                    @endif
+                </div>
+            </div>
+        @endif
+
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <!-- Informations principales -->
             <div class="lg:col-span-2 space-y-6">
@@ -49,8 +94,8 @@ new #[Title('Détail de l\'Application - SE4FS')] class extends Component {
                     <div class="card-body">
                         <div class="flex items-start gap-4">
                             <div class="avatar placeholder">
-                                <div class="bg-primary/10 text-primary rounded-xl w-16 h-16">
-                                    <i class="fa-solid fa-cube text-2xl"></i>
+                                <div class="{{ $application->status === ApplicationStatus::Error ? 'bg-error/10 text-error' : 'bg-primary/10 text-primary' }} rounded-xl w-16 h-16">
+                                    <i class="fa-solid {{ $application->status === ApplicationStatus::Error ? 'fa-triangle-exclamation' : 'fa-cube' }} text-2xl"></i>
                                 </div>
                             </div>
                             <div class="flex-1">

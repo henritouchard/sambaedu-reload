@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services;
 
+use App\Config\LdapConfig;
 use App\Config\SambaEduConfig;
 use App\LdapModels\LdapUser;
 use App\LdapModels\SambaEduGroup;
@@ -121,10 +122,7 @@ class UserServiceRoleChangeTest extends TestCase
         $ldapUser->shouldReceive('getDn')->andReturn($oldDn);
 
         // buildUserDn retournera le même DN → pas de move
-        $ldapConfig = new \stdClass();
-        $ldapConfig->baseDn = 'DC=test,DC=local';
-        $ldapConfig->peopleRdn = 'OU=Utilisateurs';
-        $this->config->shouldReceive('ldap')->andReturn($ldapConfig);
+        $this->config->shouldReceive('ldap')->andReturn($this->makeLdapConfig());
 
         $this->establishmentRepository->shouldReceive('toUai')
             ->with(0)
@@ -145,8 +143,8 @@ class UserServiceRoleChangeTest extends TestCase
     {
         $oldDn = 'CN=jean.dupont,OU=Profs,OU=Utilisateurs,DC=test,DC=local';
 
-        $mockConnection = Mockery::mock();
-        $mockLdapConnection = 'fake_connection';
+        $mockLdapConnection = Mockery::mock(\LdapRecord\LdapInterface::class);
+        $mockConnection = Mockery::mock(\LdapRecord\Connection::class);
         $mockConnection->shouldReceive('getLdapConnection')->andReturn($mockLdapConnection);
 
         $ldapUser = Mockery::mock(LdapUser::class);
@@ -154,10 +152,7 @@ class UserServiceRoleChangeTest extends TestCase
         $ldapUser->shouldReceive('getDn')->andReturn($oldDn);
         $ldapUser->shouldReceive('getConnection')->andReturn($mockConnection);
 
-        $ldapConfig = new \stdClass();
-        $ldapConfig->baseDn = 'DC=test,DC=local';
-        $ldapConfig->peopleRdn = 'OU=Utilisateurs';
-        $this->config->shouldReceive('ldap')->andReturn($ldapConfig);
+        $this->config->shouldReceive('ldap')->andReturn($this->makeLdapConfig());
 
         $this->establishmentRepository->shouldReceive('toUai')
             ->with(0)
@@ -189,10 +184,7 @@ class UserServiceRoleChangeTest extends TestCase
         $ldapUser->shouldReceive('getLogin')->andReturn('jean.dupont');
         $ldapUser->shouldReceive('getDn')->andReturn($oldDn);
 
-        $ldapConfig = new \stdClass();
-        $ldapConfig->baseDn = 'DC=test,DC=local';
-        $ldapConfig->peopleRdn = 'OU=Utilisateurs';
-        $this->config->shouldReceive('ldap')->andReturn($ldapConfig);
+        $this->config->shouldReceive('ldap')->andReturn($this->makeLdapConfig());
 
         $this->establishmentRepository->shouldReceive('toUai')
             ->with(0)
@@ -203,8 +195,8 @@ class UserServiceRoleChangeTest extends TestCase
             ->with('Profs', 'Documentaliste', 0)
             ->once();
 
-        $mockConnection = Mockery::mock();
-        $mockLdapConnection = 'fake_connection';
+        $mockLdapConnection = Mockery::mock(\LdapRecord\LdapInterface::class);
+        $mockConnection = Mockery::mock(\LdapRecord\Connection::class);
         $mockConnection->shouldReceive('getLdapConnection')->andReturn($mockLdapConnection);
         $ldapUser->shouldReceive('getConnection')->andReturn($mockConnection);
 
@@ -225,10 +217,7 @@ class UserServiceRoleChangeTest extends TestCase
         $ldapUser->shouldReceive('getLogin')->andReturn('marie.martin');
         $ldapUser->shouldReceive('getDn')->andReturn($oldDn);
 
-        $ldapConfig = new \stdClass();
-        $ldapConfig->baseDn = 'DC=test,DC=local';
-        $ldapConfig->peopleRdn = 'OU=Utilisateurs';
-        $this->config->shouldReceive('ldap')->andReturn($ldapConfig);
+        $this->config->shouldReceive('ldap')->andReturn($this->makeLdapConfig());
 
         $this->establishmentRepository->shouldReceive('toUai')
             ->with(0)
@@ -239,8 +228,8 @@ class UserServiceRoleChangeTest extends TestCase
             ->with('Profs', 'AESH', 0)
             ->once();
 
-        $mockConnection = Mockery::mock();
-        $mockLdapConnection = 'fake_connection';
+        $mockLdapConnection = Mockery::mock(\LdapRecord\LdapInterface::class);
+        $mockConnection = Mockery::mock(\LdapRecord\Connection::class);
         $mockConnection->shouldReceive('getLdapConnection')->andReturn($mockLdapConnection);
         $ldapUser->shouldReceive('getConnection')->andReturn($mockConnection);
 
@@ -264,6 +253,36 @@ class UserServiceRoleChangeTest extends TestCase
         $this->markTestIncomplete(
             'syncRoleGroups repose sur des appels statiques SambaEduGroup — '
             . 'nécessite un test d\'intégration avec serveur LDAP réel.'
+        );
+    }
+
+    private function makeLdapConfig(): LdapConfig
+    {
+        return new LdapConfig(
+            url: 'ldaps://test.local',
+            port: 636,
+            baseDn: 'DC=test,DC=local',
+            adminName: 'admin',
+            adminPassword: 'password',
+            domain: 'test.local',
+            sambaDomain: 'TEST',
+            peopleRdn: 'OU=Utilisateurs',
+            groupsRdn: 'OU=Groupes',
+            computersRdn: 'OU=Computers',
+            parcsRdn: 'OU=Parcs',
+            classesRdn: 'OU=Classes',
+            equipesRdn: 'OU=Equipes',
+            matieresRdn: 'OU=Matieres',
+            coursRdn: 'OU=Cours',
+            projetsRdn: 'OU=Projets',
+            otherGroupsRdn: 'OU=Autres',
+            delegationsRdn: 'OU=Delegations',
+            equipementsRdn: 'OU=Equipements',
+            rightsRdn: 'OU=Rights',
+            trashRdn: 'OU=Corbeille',
+            etablissementsRdn: 'OU=Etablissements',
+            adminRdn: 'OU=Admin',
+            strictLocalAd: false,
         );
     }
 }
