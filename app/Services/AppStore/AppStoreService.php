@@ -141,17 +141,16 @@ class AppStoreService
                 'local_xml_path' => $xmlPath,
             ]);
 
-            // Etape 2 : Telecharger l'installeur
-            $log->update(['message' => 'Telechargement de l\'installeur...', 'progress' => 30]);
-            $installerPath = $this->downloadInstaller($application, $log);
+            // Etape 2 : Telecharger les fichiers du package (multi-download)
+            $log->update(['message' => 'Telechargement des fichiers...', 'progress' => 20]);
+            $this->packageInstallerService->downloadFiles($directives['downloads'], $log);
 
-            // Etape 3 : Verifier l'integrite SHA256
-            $log->update(['status' => InstallationStatus::Verifying, 'message' => 'Verification de l\'integrite SHA256...', 'progress' => 70]);
-            $this->verifyIntegrity($application, $installerPath, $log);
+            // Etape 3 : Post-traitement (delete, untar, unzip) — story 8.2.5
+            // Pas encore implemente
 
-            // Etape 4 : Installer (mettre a jour la base + packages.xml local)
+            // Etape 4 : Finaliser (mettre a jour la base + packages.xml local)
             $log->update(['status' => InstallationStatus::Installing, 'message' => 'Installation en cours...', 'progress' => 85]);
-            $this->finalizeInstallation($application, $xmlPath, $installerPath);
+            $this->finalizeInstallation($application, $xmlPath);
 
             // Succes
             $log->update([
@@ -220,85 +219,15 @@ class AppStoreService
     }
 
     /**
-     * Telecharge l'installeur de l'application
-     */
-    private function downloadInstaller(Application $application, InstallationLog $log): ?string
-    {
-        if (empty($application->installer_url)) {
-            Log::debug('[AppStore] Pas d\'installeur a telecharger', ['app_id' => $application->app_id]);
-            return null;
-        }
-
-        $dir = $this->getAppStoragePath($application);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-
-        $filename = $application->installer_filename ?: basename(parse_url($application->installer_url, PHP_URL_PATH));
-        $installerPath = $dir . '/' . $filename;
-
-        // Telechargement avec suivi de progression
-        $response = Http::timeout($this->downloadTimeout)
-            ->withOptions(['sink' => $installerPath])
-            ->get($application->installer_url);
-
-        if (!file_exists($installerPath)) {
-            throw new \RuntimeException("Echec telechargement installeur: fichier non cree");
-        }
-
-        $fileSize = filesize($installerPath);
-        $log->update([
-            'downloaded_bytes' => $fileSize,
-            'total_bytes' => $application->installer_size ?: $fileSize,
-        ]);
-
-        $application->update([
-            'local_installer_path' => $installerPath,
-        ]);
-
-        return $installerPath;
-    }
-
-    /**
-     * Verifie l'integrite SHA256 de l'installeur telecharge
-     */
-    private function verifyIntegrity(Application $application, ?string $installerPath, InstallationLog $log): void
-    {
-        if (!$installerPath || empty($application->installer_sha256)) {
-            Log::debug('[AppStore] Verification SHA256 ignoree (pas d\'installeur ou pas de hash)', [
-                'app_id' => $application->app_id,
-            ]);
-            $log->update(['sha256_verified' => true]);
-            return;
-        }
-
-        $computedHash = hash_file('sha256', $installerPath);
-        $log->update(['sha256_computed' => $computedHash]);
-
-        if (strtolower($computedHash) !== strtolower($application->installer_sha256)) {
-            $log->update(['sha256_verified' => false]);
-            // Supprimer le fichier corrompu
-            @unlink($installerPath);
-            throw new \RuntimeException(
-                "Integrite SHA256 invalide. Attendu: {$application->installer_sha256}, Calcule: {$computedHash}"
-            );
-        }
-
-        $log->update(['sha256_verified' => true]);
-        Log::info('[AppStore] Integrite SHA256 verifiee', ['app_id' => $application->app_id]);
-    }
-
-    /**
      * Finalise l'installation : met a jour la base et le packages.xml local
      */
-    private function finalizeInstallation(Application $application, string $xmlPath, ?string $installerPath): void
+    private function finalizeInstallation(Application $application, string $xmlPath): void
     {
         $application->update([
             'status' => ApplicationStatus::Installed,
             'installed_version' => $application->version,
             'installed_at' => now(),
             'local_xml_path' => $xmlPath,
-            'local_installer_path' => $installerPath,
         ]);
 
         // Mettre a jour le packages.xml local

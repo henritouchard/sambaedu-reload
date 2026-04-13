@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Tests\Unit\Services;
 
 use App\Models\DepotApplication;
+use App\Models\InstallationLog;
 use App\Services\AppStore\PackageInstallerService;
 use App\Services\FileManagerService;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
@@ -324,5 +326,329 @@ XML;
         $this->expectExceptionMessage('XML recipe invalide');
 
         $this->service->parseDirectives($filePath);
+    }
+
+    // ========================================
+    // downloadFiles()
+    // ========================================
+
+    private function createMockInstallationLog(): InstallationLog
+    {
+        $log = $this->createMock(InstallationLog::class);
+        $log->method('update')->willReturn(true);
+
+        return $log;
+    }
+
+    private function createSpyInstallationLog(): InstallationLog&\PHPUnit\Framework\MockObject\MockObject
+    {
+        $log = $this->createMock(InstallationLog::class);
+
+        return $log;
+    }
+
+    #[Test]
+    public function download_files_downloads_n_files_to_correct_paths(): void
+    {
+        $fileContent1 = 'installer content file 1';
+        $fileContent2 = 'installer content file 2';
+
+        Http::fake([
+            'example.com/setup.exe' => Http::response($fileContent1, 200),
+            'example.com/lang.msi' => Http::response($fileContent2, 200),
+        ]);
+
+        $downloads = [
+            ['url' => 'http://example.com/setup.exe', 'saveto' => 'wpkg/packages/firefox/setup.exe', 'md5sum' => null, 'sha256sum' => null],
+            ['url' => 'http://example.com/lang.msi', 'saveto' => 'wpkg/packages/firefox/lang.msi', 'md5sum' => null, 'sha256sum' => null],
+        ];
+
+        $log = $this->createMockInstallationLog();
+        $this->service->downloadFiles($downloads, $log);
+
+        $this->assertFileExists($this->tmpDir . '/wpkg/packages/firefox/setup.exe');
+        $this->assertFileExists($this->tmpDir . '/wpkg/packages/firefox/lang.msi');
+        $this->assertEquals($fileContent1, file_get_contents($this->tmpDir . '/wpkg/packages/firefox/setup.exe'));
+        $this->assertEquals($fileContent2, file_get_contents($this->tmpDir . '/wpkg/packages/firefox/lang.msi'));
+    }
+
+    #[Test]
+    public function download_files_uses_sha256_when_available(): void
+    {
+        $fileContent = 'test sha256 content';
+        $sha256 = hash('sha256', $fileContent);
+
+        Http::fake([
+            'example.com/setup.exe' => Http::response($fileContent, 200),
+        ]);
+
+        $downloads = [
+            ['url' => 'http://example.com/setup.exe', 'saveto' => 'wpkg/packages/app/setup.exe', 'md5sum' => 'ignored_md5', 'sha256sum' => $sha256],
+        ];
+
+        $log = $this->createMockInstallationLog();
+
+        // Ne doit pas lever d'exception — le hash SHA-256 est correct
+        $this->service->downloadFiles($downloads, $log);
+
+        $this->assertFileExists($this->tmpDir . '/wpkg/packages/app/setup.exe');
+    }
+
+    #[Test]
+    public function download_files_falls_back_to_md5_when_no_sha256(): void
+    {
+        $fileContent = 'test md5 content';
+        $md5 = hash('md5', $fileContent);
+
+        Http::fake([
+            'example.com/setup.exe' => Http::response($fileContent, 200),
+        ]);
+
+        $downloads = [
+            ['url' => 'http://example.com/setup.exe', 'saveto' => 'wpkg/packages/app/setup.exe', 'md5sum' => $md5, 'sha256sum' => null],
+        ];
+
+        $log = $this->createMockInstallationLog();
+
+        // Ne doit pas lever d'exception — le hash MD5 est correct
+        $this->service->downloadFiles($downloads, $log);
+
+        $this->assertFileExists($this->tmpDir . '/wpkg/packages/app/setup.exe');
+    }
+
+    #[Test]
+    public function download_files_skips_existing_file_with_correct_hash(): void
+    {
+        $fileContent = 'existing file content';
+        $sha256 = hash('sha256', $fileContent);
+
+        // Creer le fichier existant au chemin final
+        $finalDir = $this->tmpDir . '/wpkg/packages/app';
+        mkdir($finalDir, 0755, true);
+        file_put_contents($finalDir . '/setup.exe', $fileContent);
+
+        // Http::fake ne doit PAS etre appele
+        Http::fake([
+            'example.com/setup.exe' => Http::response('should not be downloaded', 200),
+        ]);
+
+        $downloads = [
+            ['url' => 'http://example.com/setup.exe', 'saveto' => 'wpkg/packages/app/setup.exe', 'md5sum' => null, 'sha256sum' => $sha256],
+        ];
+
+        Log::shouldReceive('info')
+            ->once()
+            ->withArgs(function ($message, $context) {
+                return str_contains($message, 'Skip fichier existant');
+            });
+
+        $updatedData = null;
+        $log = $this->createSpyInstallationLog();
+        $log->expects($this->once())
+            ->method('update')
+            ->willReturnCallback(function ($data) use (&$updatedData) {
+                $updatedData = $data;
+                return true;
+            });
+
+        $this->service->downloadFiles($downloads, $log);
+
+        // Le fichier doit etre inchange
+        $this->assertEquals($fileContent, file_get_contents($finalDir . '/setup.exe'));
+
+        // Aucun appel HTTP ne doit avoir ete fait
+        Http::assertNothingSent();
+
+        // Le log doit contenir progress, downloaded_bytes et message avec "(skip)"
+        $this->assertEquals(70, $updatedData['progress']);
+        $this->assertEquals(strlen($fileContent), $updatedData['downloaded_bytes']);
+        $this->assertStringContainsString('(skip)', $updatedData['message']);
+    }
+
+    #[Test]
+    public function download_files_redownloads_existing_file_with_wrong_hash(): void
+    {
+        $oldContent = 'old file content';
+        $newContent = 'new file content';
+        $newSha256 = hash('sha256', $newContent);
+
+        // Creer le fichier existant avec un contenu different
+        $finalDir = $this->tmpDir . '/wpkg/packages/app';
+        mkdir($finalDir, 0755, true);
+        file_put_contents($finalDir . '/setup.exe', $oldContent);
+
+        Http::fake([
+            'example.com/setup.exe' => Http::response($newContent, 200),
+        ]);
+
+        $downloads = [
+            ['url' => 'http://example.com/setup.exe', 'saveto' => 'wpkg/packages/app/setup.exe', 'md5sum' => null, 'sha256sum' => $newSha256],
+        ];
+
+        $log = $this->createMockInstallationLog();
+        $this->service->downloadFiles($downloads, $log);
+
+        // Le fichier doit avoir ete remplace
+        $this->assertEquals($newContent, file_get_contents($finalDir . '/setup.exe'));
+    }
+
+    #[Test]
+    public function download_files_throws_on_hash_mismatch_atomicity(): void
+    {
+        $fileContent1 = 'file 1 ok';
+        $fileContent2 = 'file 2 content';
+
+        Http::fake([
+            'example.com/file1.exe' => Http::response($fileContent1, 200),
+            'example.com/file2.exe' => Http::response($fileContent2, 200),
+        ]);
+
+        $downloads = [
+            ['url' => 'http://example.com/file1.exe', 'saveto' => 'wpkg/packages/app/file1.exe', 'md5sum' => null, 'sha256sum' => null],
+            ['url' => 'http://example.com/file2.exe', 'saveto' => 'wpkg/packages/app/file2.exe', 'md5sum' => null, 'sha256sum' => 'badhash_will_not_match'],
+        ];
+
+        $log = $this->createMockInstallationLog();
+
+        try {
+            $this->service->downloadFiles($downloads, $log);
+            $this->fail('Expected RuntimeException was not thrown');
+        } catch (\RuntimeException $e) {
+            // file1.exe (pas de hash, deja deplace vers final) doit toujours exister
+            $this->assertFileExists($this->tmpDir . '/wpkg/packages/app/file1.exe');
+            $this->assertEquals($fileContent1, file_get_contents($this->tmpDir . '/wpkg/packages/app/file1.exe'));
+
+            // file2.exe ne doit PAS exister au chemin final (echec hash)
+            $this->assertFileDoesNotExist($this->tmpDir . '/wpkg/packages/app/file2.exe');
+        }
+    }
+
+    #[Test]
+    public function download_files_updates_progress_between_20_and_70(): void
+    {
+        $fileContent1 = 'content 1';
+        $fileContent2 = 'content 2';
+        $fileContent3 = 'content 3';
+
+        Http::fake([
+            'example.com/f1.exe' => Http::response($fileContent1, 200),
+            'example.com/f2.exe' => Http::response($fileContent2, 200),
+            'example.com/f3.exe' => Http::response($fileContent3, 200),
+        ]);
+
+        $downloads = [
+            ['url' => 'http://example.com/f1.exe', 'saveto' => 'wpkg/packages/app/f1.exe', 'md5sum' => null, 'sha256sum' => null],
+            ['url' => 'http://example.com/f2.exe', 'saveto' => 'wpkg/packages/app/f2.exe', 'md5sum' => null, 'sha256sum' => null],
+            ['url' => 'http://example.com/f3.exe', 'saveto' => 'wpkg/packages/app/f3.exe', 'md5sum' => null, 'sha256sum' => null],
+        ];
+
+        $progressValues = [];
+        $downloadedBytesValues = [];
+        $messageValues = [];
+
+        $log = $this->createSpyInstallationLog();
+        $log->expects($this->exactly(3))
+            ->method('update')
+            ->willReturnCallback(function ($data) use (&$progressValues, &$downloadedBytesValues, &$messageValues) {
+                $progressValues[] = $data['progress'];
+                $downloadedBytesValues[] = $data['downloaded_bytes'];
+                $messageValues[] = $data['message'];
+                return true;
+            });
+
+        $this->service->downloadFiles($downloads, $log);
+
+        // Progress doit etre entre 20 et 70
+        foreach ($progressValues as $progress) {
+            $this->assertGreaterThanOrEqual(20, $progress);
+            $this->assertLessThanOrEqual(70, $progress);
+        }
+
+        // Le dernier progress doit etre 70 (20 + 50 * 3/3)
+        $this->assertEquals(70, end($progressValues));
+
+        // downloaded_bytes doit etre cumulatif et croissant
+        for ($i = 1; $i < count($downloadedBytesValues); $i++) {
+            $this->assertGreaterThan($downloadedBytesValues[$i - 1], $downloadedBytesValues[$i]);
+        }
+
+        // Messages doivent contenir le compteur N/M
+        $this->assertStringContainsString('1/3', $messageValues[0]);
+        $this->assertStringContainsString('2/3', $messageValues[1]);
+        $this->assertStringContainsString('3/3', $messageValues[2]);
+    }
+
+    #[Test]
+    public function download_files_creates_intermediate_directories(): void
+    {
+        $fileContent = 'nested file content';
+
+        Http::fake([
+            'example.com/setup.exe' => Http::response($fileContent, 200),
+        ]);
+
+        $downloads = [
+            ['url' => 'http://example.com/setup.exe', 'saveto' => 'wpkg/packages/deep/nested/dir/setup.exe', 'md5sum' => null, 'sha256sum' => null],
+        ];
+
+        $log = $this->createMockInstallationLog();
+        $this->service->downloadFiles($downloads, $log);
+
+        $this->assertFileExists($this->tmpDir . '/wpkg/packages/deep/nested/dir/setup.exe');
+    }
+
+    #[Test]
+    public function download_files_with_empty_array_does_nothing(): void
+    {
+        $log = $this->createSpyInstallationLog();
+        $log->expects($this->never())->method('update');
+
+        $this->service->downloadFiles([], $log);
+    }
+
+    #[Test]
+    public function download_files_throws_on_move_failure(): void
+    {
+        $fileContent = 'content to move';
+
+        $mockFileManager = $this->createMock(FileManagerService::class);
+        $mockFileManager->method('downloadWithHash')->willReturn('ignored');
+        $mockFileManager->method('move')->willReturn(false);
+
+        $this->app->instance(FileManagerService::class, $mockFileManager);
+        $service = app(PackageInstallerService::class);
+
+        $downloads = [
+            ['url' => 'http://example.com/setup.exe', 'saveto' => 'wpkg/packages/app/setup.exe', 'md5sum' => null, 'sha256sum' => null],
+        ];
+
+        $log = $this->createMockInstallationLog();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Echec deplacement');
+
+        $service->downloadFiles($downloads, $log);
+    }
+
+    #[Test]
+    public function download_files_handles_empty_string_hashes_as_no_hash(): void
+    {
+        $fileContent = 'content with empty hash strings';
+
+        Http::fake([
+            'example.com/setup.exe' => Http::response($fileContent, 200),
+        ]);
+
+        // empty string hashes — doivent etre traites comme "pas de hash"
+        $downloads = [
+            ['url' => 'http://example.com/setup.exe', 'saveto' => 'wpkg/packages/app/setup.exe', 'md5sum' => '', 'sha256sum' => ''],
+        ];
+
+        $log = $this->createMockInstallationLog();
+
+        // Ne doit pas lever d'exception (pas de verification de hash)
+        $this->service->downloadFiles($downloads, $log);
+
+        $this->assertFileExists($this->tmpDir . '/wpkg/packages/app/setup.exe');
     }
 }

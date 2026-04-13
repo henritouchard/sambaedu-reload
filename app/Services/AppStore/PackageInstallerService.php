@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Log;
 class PackageInstallerService
 {
     private string $storagePath;
+    private string $tmpPath;
     private int $downloadTimeout;
     private int $syncTimeout;
 
@@ -26,6 +27,7 @@ class PackageInstallerService
         private FileManagerService $fileManagerService,
     ) {
         $this->storagePath = config('sambaedu.wpkg.storage_path', '/var/sambaedu/unattended/install');
+        $this->tmpPath = $this->storagePath . '/wpkg/tmp2';
         $this->downloadTimeout = (int) config('sambaedu.wpkg.download_timeout', 300);
         $this->syncTimeout = (int) config('sambaedu.wpkg.sync_timeout', 30);
     }
@@ -36,6 +38,78 @@ class PackageInstallerService
     public function install(Application $application, InstallationLog $log): void
     {
         // Placeholder — le flow d'installation reste dans AppStoreService pour l'instant
+    }
+
+    /**
+     * Telecharge tous les fichiers d'un package avec verification de hash et skip intelligent
+     *
+     * Pour chaque fichier : verifie si le fichier final existe deja avec le bon hash (skip),
+     * sinon telecharge dans tmp2/ puis deplace vers le chemin final.
+     * En cas d'echec (hash mismatch, erreur HTTP), l'exception remonte — les fichiers
+     * deja dans tmp2/ restent (nettoyage en 8.2.6).
+     *
+     * @param array $downloads Tableau de directives download (url, saveto, sha256sum, md5sum)
+     * @param InstallationLog $log Log d'installation pour la progression
+     * @throws \RuntimeException Si un telechargement ou un deplacement echoue
+     */
+    public function downloadFiles(array $downloads, InstallationLog $log): void
+    {
+        $total = count($downloads);
+        if ($total === 0) {
+            return;
+        }
+
+        $cumulativeBytes = 0;
+
+        foreach ($downloads as $i => $download) {
+            $finalPath = $this->storagePath . '/' . $download['saveto'];
+            $filename = basename($download['saveto']);
+
+            // Determiner l'algo et le hash attendu (SHA-256 prioritaire, fallback MD5)
+            $expectedHash = !empty($download['sha256sum']) ? $download['sha256sum'] : null;
+            $algo = 'sha256';
+            if ($expectedHash === null) {
+                $expectedHash = !empty($download['md5sum']) ? $download['md5sum'] : null;
+                $algo = 'md5';
+            }
+
+            // Skip intelligent : fichier existant avec le bon hash
+            if (file_exists($finalPath) && $expectedHash !== null) {
+                $actualHash = $this->fileManagerService->hashFile($finalPath, $algo);
+                if (strtolower($actualHash) === strtolower($expectedHash)) {
+                    Log::info('[AppStore] Skip fichier existant avec hash correct', ['path' => $finalPath]);
+                    $cumulativeBytes += filesize($finalPath);
+                    $log->update([
+                        'progress' => 20 + (int) round(50 * ($i + 1) / $total),
+                        'downloaded_bytes' => $cumulativeBytes,
+                        'message' => "Telechargement " . ($i + 1) . "/{$total} : {$filename} (skip)",
+                    ]);
+                    continue;
+                }
+            }
+
+            // Telecharger vers tmp2/ (prefixe unique pour eviter les collisions de basename)
+            $tmpTarget = $this->tmpPath . '/' . str_replace('/', '_', $download['saveto']);
+            $this->fileManagerService->downloadWithHash(
+                url: $download['url'],
+                targetPath: $tmpTarget,
+                sha256: $expectedHash !== null && $algo === 'sha256' ? $expectedHash : null,
+                md5: $expectedHash !== null && $algo === 'md5' ? $expectedHash : null,
+                timeout: $this->downloadTimeout,
+            );
+
+            // Deplacer vers le chemin final
+            if (!$this->fileManagerService->move($tmpTarget, $finalPath)) {
+                throw new \RuntimeException("Echec deplacement de {$tmpTarget} vers {$finalPath}");
+            }
+
+            $cumulativeBytes += filesize($finalPath);
+            $log->update([
+                'progress' => 20 + (int) round(50 * ($i + 1) / $total),
+                'downloaded_bytes' => $cumulativeBytes,
+                'message' => "Telechargement " . ($i + 1) . "/{$total} : {$filename}...",
+            ]);
+        }
     }
 
     /**
