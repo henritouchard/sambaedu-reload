@@ -203,6 +203,26 @@ class AppStoreServiceTest extends TestCase
         $this->assertTrue(method_exists($this->service, 'uninstallApplication'));
     }
 
+    // ========================================
+    // Code mort supprimé (8.2.6)
+    // ========================================
+
+    #[Test]
+    public function download_package_xml_method_is_removed(): void
+    {
+        $this->assertFalse(method_exists($this->service, 'downloadPackageXml'));
+    }
+
+    #[Test]
+    public function get_app_storage_path_method_is_not_publicly_exposed(): void
+    {
+        // getAppStoragePath est toujours presente (utilisee par uninstallApplication)
+        // mais elle doit rester privee — non accessible depuis l'exterieur
+        $this->assertFalse(
+            (new \ReflectionMethod(AppStoreService::class, 'getAppStoragePath'))->isPublic()
+        );
+    }
+
     /**
      * Génère un XML de test avec plusieurs branches
      */

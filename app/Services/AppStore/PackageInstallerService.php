@@ -33,11 +33,12 @@ class PackageInstallerService
     }
 
     /**
-     * Installe une application (placeholder — sera implemente en 8.2.6)
+     * Placeholder — le flow d'installation est orchestre par AppStoreService::installApplication()
+     * qui appelle directement les methodes individuelles (downloadXmlRecipe, parseDirectives, etc.)
      */
     public function install(Application $application, InstallationLog $log): void
     {
-        // Placeholder — le flow d'installation reste dans AppStoreService pour l'instant
+        // Non utilise — voir AppStoreService::installApplication()
     }
 
     /**
@@ -46,7 +47,7 @@ class PackageInstallerService
      * Pour chaque fichier : verifie si le fichier final existe deja avec le bon hash (skip),
      * sinon telecharge dans tmp2/ puis deplace vers le chemin final.
      * En cas d'echec (hash mismatch, erreur HTTP), l'exception remonte — les fichiers
-     * deja dans tmp2/ restent (nettoyage en 8.2.6).
+     * deja dans tmp2/ restent pour diagnostic.
      *
      * @param array $downloads Tableau de directives download (url, saveto, sha256sum, md5sum)
      * @param InstallationLog $log Log d'installation pour la progression

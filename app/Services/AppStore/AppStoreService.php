@@ -11,7 +11,6 @@ use App\Models\Depot;
 use App\Models\DepotApplication;
 use App\Models\InstallationLog;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -135,10 +134,9 @@ class AppStoreService
                 'unzips' => count($directives['unzips']),
             ]);
 
-            // Stocker le contenu XML dans Application (comme avant)
+            // Stocker le contenu XML dans Application (le chemin tmp2 est ephemere — seul le contenu est persist)
             $application->update([
                 'xml' => file_get_contents($xmlPath),
-                'local_xml_path' => $xmlPath,
             ]);
 
             // Etape 2 : Telecharger les fichiers du package (multi-download)
@@ -153,7 +151,11 @@ class AppStoreService
 
             // Etape 4 : Finaliser (mettre a jour la base + packages.xml local)
             $log->update(['status' => InstallationStatus::Installing, 'message' => 'Installation en cours...', 'progress' => 85]);
-            $this->finalizeInstallation($application, $xmlPath);
+            $this->finalizeInstallation($application);
+
+            // Nettoyage : supprimer le XML recipe temporaire de tmp2/ (apres succes uniquement)
+            @unlink($xmlPath);
+            Log::debug('[AppStore] XML recipe temporaire nettoye', ['path' => $xmlPath]);
 
             // Succes
             $log->update([
@@ -190,47 +192,18 @@ class AppStoreService
     }
 
     /**
-     * Telecharge le fichier package.xml de l'application
-     */
-    private function downloadPackageXml(Application $application): string
-    {
-        if (empty($application->xml_url)) {
-            throw new \RuntimeException('URL du XML non definie pour ' . $application->app_id);
-        }
-
-        $response = Http::timeout($this->syncTimeout)->get($application->xml_url);
-
-        if (!$response->successful()) {
-            throw new \RuntimeException("Echec telechargement XML: HTTP {$response->status()}");
-        }
-
-        $dir = $this->getAppStoragePath($application);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-
-        $xmlPath = $dir . '/package.xml';
-        file_put_contents($xmlPath, $response->body());
-
-        // Stocker le contenu XML dans le modele
-        $application->update([
-            'xml' => $response->body(),
-            'local_xml_path' => $xmlPath,
-        ]);
-
-        return $xmlPath;
-    }
-
-    /**
      * Finalise l'installation : met a jour la base et le packages.xml local
+     *
+     * Note : local_xml_path est mis a null car le fichier XML recipe est dans tmp2/ (ephemere).
+     * Le contenu XML est deja persiste dans Application.xml avant appel de cette methode.
      */
-    private function finalizeInstallation(Application $application, string $xmlPath): void
+    private function finalizeInstallation(Application $application): void
     {
         $application->update([
             'status' => ApplicationStatus::Installed,
             'installed_version' => $application->version,
             'installed_at' => now(),
-            'local_xml_path' => $xmlPath,
+            'local_xml_path' => null,
         ]);
 
         // Mettre a jour le packages.xml local
