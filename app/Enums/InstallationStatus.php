@@ -10,6 +10,7 @@ enum InstallationStatus: string
     case Downloading = 'downloading';
     case Verifying = 'verifying';
     case Installing = 'installing';
+    case PostProcessing = 'post_processing';
     case Success = 'success';
     case Failed = 'failed';
 
@@ -20,6 +21,7 @@ enum InstallationStatus: string
             self::Downloading => 'Téléchargement',
             self::Verifying => 'Vérification',
             self::Installing => 'Installation',
+            self::PostProcessing => 'Post-traitement',
             self::Success => 'Succès',
             self::Failed => 'Échec',
         };
@@ -32,6 +34,7 @@ enum InstallationStatus: string
             self::Downloading => 'warning',
             self::Verifying => 'info',
             self::Installing => 'info',
+            self::PostProcessing => 'info',
             self::Success => 'success',
             self::Failed => 'error',
         };

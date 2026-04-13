@@ -457,6 +457,60 @@ class FileManagerService
     }
 
     /**
+     * Extraire une archive .tar.gz vers un répertoire cible
+     *
+     * @throws \RuntimeException Si l'archive est introuvable ou corrompue
+     */
+    public function extractTarGz(string $archivePath, string $targetDir): void
+    {
+        if (!file_exists($archivePath)) {
+            throw new \RuntimeException("Archive introuvable: {$archivePath}");
+        }
+
+        // exec('tar') plutot que PharData : plus fiable sur grosses archives (bug PharData PHP 8.2+)
+        if (!is_dir($targetDir) && !mkdir($targetDir, 0755, true)) {
+            throw new \RuntimeException("Impossible de creer le repertoire cible: {$targetDir}");
+        }
+
+        $escapedArchive = escapeshellarg($archivePath);
+        $escapedTarget = escapeshellarg($targetDir);
+
+        exec("tar xzf {$escapedArchive} -C {$escapedTarget} 2>&1", $output, $code);
+
+        if ($code !== 0) {
+            throw new \RuntimeException(
+                "Erreur extraction tar.gz {$archivePath}: " . implode("\n", $output)
+            );
+        }
+    }
+
+    /**
+     * Extraire une archive .zip vers un répertoire cible
+     *
+     * @throws \RuntimeException Si l'archive est introuvable ou corrompue
+     */
+    public function extractZip(string $archivePath, string $targetDir): void
+    {
+        if (!file_exists($archivePath)) {
+            throw new \RuntimeException("Archive introuvable: {$archivePath}");
+        }
+
+        if (!is_dir($targetDir) && !mkdir($targetDir, 0755, true)) {
+            throw new \RuntimeException("Impossible de creer le repertoire cible: {$targetDir}");
+        }
+
+        $zip = new \ZipArchive();
+        $result = $zip->open($archivePath);
+
+        if ($result !== true) {
+            throw new \RuntimeException("Archive ZIP corrompue ou invalide: {$archivePath} (code: {$result})");
+        }
+
+        $zip->extractTo($targetDir);
+        $zip->close();
+    }
+
+    /**
      * Obtenir la taille d'un fichier formatée (KB, MB, GB)
      */
     public function getFormattedSize(string $filePath): ?string

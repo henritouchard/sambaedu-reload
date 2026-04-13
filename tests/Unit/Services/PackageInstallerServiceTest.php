@@ -651,4 +651,103 @@ XML;
 
         $this->assertFileExists($this->tmpDir . '/wpkg/packages/app/setup.exe');
     }
+
+    // ========================================
+    // processDeletes()
+    // ========================================
+
+    #[Test]
+    public function process_deletes_deletes_existing_file(): void
+    {
+        $filePath = $this->tmpDir . '/to_delete.exe';
+        file_put_contents($filePath, 'content');
+
+        $this->service->processDeletes([
+            ['file' => 'to_delete.exe'],
+        ]);
+
+        $this->assertFileDoesNotExist($filePath);
+    }
+
+    #[Test]
+    public function process_deletes_handles_missing_file_silently(): void
+    {
+        $this->expectNotToPerformAssertions();
+
+        $this->service->processDeletes([
+            ['file' => 'nonexistent_file.exe'],
+        ]);
+    }
+
+    // ========================================
+    // processUntars()
+    // ========================================
+
+    #[Test]
+    public function process_untars_calls_extract_tar_gz_with_correct_paths(): void
+    {
+        $mockFileManager = $this->createMock(FileManagerService::class);
+        $mockFileManager->expects($this->once())
+            ->method('extractTarGz')
+            ->with(
+                $this->tmpDir . '/wpkg/packages/app/archive.tar.gz',
+                $this->tmpDir . '/wpkg/packages/app/out',
+            );
+
+        $this->app->instance(FileManagerService::class, $mockFileManager);
+        $service = app(PackageInstallerService::class);
+
+        $service->processUntars([
+            ['tarfile' => 'wpkg/packages/app/archive.tar.gz', 'target' => 'wpkg/packages/app/out'],
+        ]);
+    }
+
+    // ========================================
+    // processUnzips()
+    // ========================================
+
+    #[Test]
+    public function process_unzips_calls_extract_zip_with_correct_paths(): void
+    {
+        $mockFileManager = $this->createMock(FileManagerService::class);
+        $mockFileManager->expects($this->once())
+            ->method('extractZip')
+            ->with(
+                $this->tmpDir . '/wpkg/packages/app/archive.zip',
+                $this->tmpDir . '/wpkg/packages/app/out',
+            );
+
+        $this->app->instance(FileManagerService::class, $mockFileManager);
+        $service = app(PackageInstallerService::class);
+
+        $service->processUnzips([
+            ['zipfile' => 'wpkg/packages/app/archive.zip', 'target' => 'wpkg/packages/app/out'],
+        ]);
+    }
+
+    // ========================================
+    // resolveAndValidatePath() (via process*)
+    // ========================================
+
+    #[Test]
+    public function process_deletes_rejects_path_traversal(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Path traversal detecte');
+
+        $this->service->processDeletes([
+            ['file' => '../../etc/passwd'],
+        ]);
+    }
+
+    #[Test]
+    public function process_untars_rejects_path_traversal(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Path traversal detecte');
+
+        $this->service->processUntars([
+            ['tarfile' => '../../etc/archive.tar.gz', 'target' => 'wpkg/packages/app/'],
+        ]);
+    }
 }

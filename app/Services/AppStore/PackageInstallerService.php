@@ -240,4 +240,75 @@ class PackageInstallerService
 
         return $result;
     }
+
+    public function processDeletes(array $deletes): void
+    {
+        foreach ($deletes as $delete) {
+            $filePath = $this->resolveAndValidatePath($delete['file']);
+            if (!$this->fileManagerService->exists($filePath)) {
+                Log::debug('[AppStore] Fichier deja absent, skip', ['path' => $filePath]);
+                continue;
+            }
+            if (!$this->fileManagerService->delete($filePath)) {
+                Log::warning('[AppStore] Echec suppression fichier', ['path' => $filePath]);
+            } else {
+                Log::debug('[AppStore] Fichier supprime', ['path' => $filePath]);
+            }
+        }
+    }
+
+    public function processUntars(array $untars): void
+    {
+        foreach ($untars as $untar) {
+            $archivePath = $this->resolveAndValidatePath($untar['tarfile']);
+            $targetPath = $this->resolveAndValidatePath($untar['target']);
+            $this->fileManagerService->extractTarGz($archivePath, $targetPath);
+            Log::debug('[AppStore] Archive tar.gz extraite', [
+                'archive' => $untar['tarfile'],
+                'target' => $untar['target'],
+            ]);
+        }
+    }
+
+    public function processUnzips(array $unzips): void
+    {
+        foreach ($unzips as $unzip) {
+            $archivePath = $this->resolveAndValidatePath($unzip['zipfile']);
+            $targetPath = $this->resolveAndValidatePath($unzip['target']);
+            $this->fileManagerService->extractZip($archivePath, $targetPath);
+            Log::debug('[AppStore] Archive zip extraite', [
+                'archive' => $unzip['zipfile'],
+                'target' => $unzip['target'],
+            ]);
+        }
+    }
+
+    /**
+     * Resout un chemin relatif et verifie qu'il reste sous storagePath
+     *
+     * @throws \RuntimeException Si le chemin resolu sort du storagePath (path traversal)
+     */
+    private function resolveAndValidatePath(string $relativePath): string
+    {
+        $fullPath = $this->storagePath . '/' . $relativePath;
+        $resolved = realpath(dirname($fullPath));
+
+        if ($resolved === false) {
+            // Le repertoire parent n'existe pas encore — valider le chemin canonique
+            $normalized = str_replace(['/../', '/./'], '/', $fullPath);
+            if (str_contains($normalized, '/../') || str_contains($normalized, '/..')) {
+                throw new \RuntimeException("Path traversal detecte: {$relativePath}");
+            }
+            return $fullPath;
+        }
+
+        $resolvedFull = $resolved . '/' . basename($fullPath);
+        $storageReal = realpath($this->storagePath) ?: $this->storagePath;
+
+        if (!str_starts_with($resolvedFull, $storageReal)) {
+            throw new \RuntimeException("Path traversal detecte: {$relativePath}");
+        }
+
+        return $resolvedFull;
+    }
 }

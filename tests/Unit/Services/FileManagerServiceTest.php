@@ -230,4 +230,122 @@ class FileManagerServiceTest extends TestCase
 
         $this->assertFileDoesNotExist($targetPath);
     }
+
+    // ========================================
+    // extractTarGz()
+    // ========================================
+
+    private function createTarGz(string $dir, string $filename, string $content): string
+    {
+        $archivePath = $dir . '/' . $filename;
+        $tarPath = preg_replace('/\.gz$/', '', $archivePath);
+        $innerFile = $dir . '/inner.txt';
+
+        file_put_contents($innerFile, $content);
+
+        $tar = new \PharData($tarPath);
+        $tar->addFile($innerFile, 'inner.txt');
+        $tar->compress(\Phar::GZ);
+        unset($tar);
+
+        \Phar::unlinkArchive($tarPath);
+        unlink($innerFile);
+
+        return $archivePath;
+    }
+
+    #[Test]
+    public function extract_tar_gz_extracts_archive_correctly(): void
+    {
+        $archivePath = $this->createTarGz($this->tmpDir, 'archive.tar.gz', 'hello tar content');
+        $targetDir = $this->tmpDir . '/extracted';
+
+        $this->service->extractTarGz($archivePath, $targetDir);
+
+        $this->assertFileExists($targetDir . '/inner.txt');
+        $this->assertEquals('hello tar content', file_get_contents($targetDir . '/inner.txt'));
+    }
+
+    #[Test]
+    public function extract_tar_gz_throws_on_missing_archive(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Archive introuvable');
+
+        $this->service->extractTarGz($this->tmpDir . '/nonexistent.tar.gz', $this->tmpDir . '/out');
+    }
+
+    #[Test]
+    public function extract_tar_gz_creates_target_directory(): void
+    {
+        $archivePath = $this->createTarGz($this->tmpDir, 'archive.tar.gz', 'content');
+        $targetDir = $this->tmpDir . '/new_dir/nested';
+
+        $this->assertDirectoryDoesNotExist($targetDir);
+
+        $this->service->extractTarGz($archivePath, $targetDir);
+
+        $this->assertDirectoryExists($targetDir);
+    }
+
+    // ========================================
+    // extractZip()
+    // ========================================
+
+    private function createZip(string $dir, string $filename, string $content): string
+    {
+        $zipPath = $dir . '/' . $filename;
+        $zip = new \ZipArchive();
+        $zip->open($zipPath, \ZipArchive::CREATE);
+        $zip->addFromString('inner.txt', $content);
+        $zip->close();
+
+        return $zipPath;
+    }
+
+    #[Test]
+    public function extract_zip_extracts_archive_correctly(): void
+    {
+        $zipPath = $this->createZip($this->tmpDir, 'archive.zip', 'hello zip content');
+        $targetDir = $this->tmpDir . '/extracted';
+
+        $this->service->extractZip($zipPath, $targetDir);
+
+        $this->assertFileExists($targetDir . '/inner.txt');
+        $this->assertEquals('hello zip content', file_get_contents($targetDir . '/inner.txt'));
+    }
+
+    #[Test]
+    public function extract_zip_creates_target_directory(): void
+    {
+        $zipPath = $this->createZip($this->tmpDir, 'archive.zip', 'content');
+        $targetDir = $this->tmpDir . '/new_zip_dir/nested';
+
+        $this->assertDirectoryDoesNotExist($targetDir);
+
+        $this->service->extractZip($zipPath, $targetDir);
+
+        $this->assertDirectoryExists($targetDir);
+    }
+
+    #[Test]
+    public function extract_zip_throws_on_missing_archive(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Archive introuvable');
+
+        $this->service->extractZip($this->tmpDir . '/nonexistent.zip', $this->tmpDir . '/out');
+    }
+
+    #[Test]
+    public function extract_zip_throws_on_corrupted_archive(): void
+    {
+        $corruptPath = $this->tmpDir . '/corrupt.zip';
+        file_put_contents($corruptPath, 'not a zip file');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Archive ZIP corrompue ou invalide');
+
+        $this->service->extractZip($corruptPath, $this->tmpDir . '/out');
+    }
 }

@@ -145,8 +145,11 @@ class AppStoreService
             $log->update(['message' => 'Telechargement des fichiers...', 'progress' => 20]);
             $this->packageInstallerService->downloadFiles($directives['downloads'], $log);
 
-            // Etape 3 : Post-traitement (delete, untar, unzip) — story 8.2.5
-            // Pas encore implemente
+            // Etape 3 : Post-traitement (delete, untar, unzip)
+            $log->update(['status' => InstallationStatus::PostProcessing, 'message' => 'Post-traitement...', 'progress' => 75]);
+            $this->packageInstallerService->processDeletes($directives['deletes']);
+            $this->packageInstallerService->processUntars($directives['untars']);
+            $this->packageInstallerService->processUnzips($directives['unzips']);
 
             // Etape 4 : Finaliser (mettre a jour la base + packages.xml local)
             $log->update(['status' => InstallationStatus::Installing, 'message' => 'Installation en cours...', 'progress' => 85]);
