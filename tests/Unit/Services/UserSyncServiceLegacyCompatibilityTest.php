@@ -138,7 +138,7 @@ class UserSyncServiceLegacyCompatibilityTest extends TestCase
 
     private function createUsersTable(): void
     {
-        DB::statement('DROP TABLE IF EXISTS users CASCADE');
+        Schema::dropIfExists('users');
 
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
@@ -153,7 +153,7 @@ class UserSyncServiceLegacyCompatibilityTest extends TestCase
             $table->string('role')->default('autre');
             $table->string('school_code')->nullable();
             $table->boolean('is_active')->default(true);
-            $table->jsonb('ad_right_profiles')->nullable();
+            $table->json('ad_right_profiles')->nullable();
             $table->unsignedInteger('ad_rights_bitmask')->default(0);
             $table->timestamp('ad_synced_at')->nullable();
             $table->timestamps();

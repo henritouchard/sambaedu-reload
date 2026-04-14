@@ -7,21 +7,28 @@ namespace Tests\Unit\Services;
 use App\Models\Depot;
 use App\Models\DepotApplication;
 use App\Services\AppStore\DepotSyncService;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
+use Tests\Traits\CreatesAppStoreSchema;
 use PHPUnit\Framework\Attributes\Test;
 
 class DepotSyncServiceTest extends TestCase
 {
-    use DatabaseTransactions;
+    use CreatesAppStoreSchema;
 
     private DepotSyncService $service;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->createAppStoreSchema();
         $this->service = app(DepotSyncService::class);
+    }
+
+    protected function tearDown(): void
+    {
+        $this->dropAppStoreSchema();
+        parent::tearDown();
     }
 
     #[Test]

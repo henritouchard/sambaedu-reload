@@ -51,9 +51,23 @@ class ShortcutExportComparisonTest extends TestCase
         \Illuminate\Support\Facades\DB::purge('pgsql');
 
         $this->compiler = app(ShortcutCompilerService::class);
-        $this->legacyIncPath = base_path('../includes/shortcuts.inc.php');
+        // Le fichier legacy est dans le dossier sambaedu/ adjacent au reload/
+        // (legacy_path config). En dev/prod : /var/www/sambaedu/includes/.
+        $legacyBase = config('sambaedu.legacy_path', '/var/www/sambaedu');
+        $this->legacyIncPath = $legacyBase.'/includes/shortcuts.inc.php';
 
-        if (!function_exists('create_windows_lnk')) {
+        if (! file_exists($this->legacyIncPath)) {
+            $this->markTestSkipped("Legacy include introuvable ({$this->legacyIncPath}) — test de comparaison legacy/nouveau nécessite sambaedu/ legacy.");
+        }
+
+        // Vérifier qu'on a bien pu basculer sur Postgres (DB accessible).
+        try {
+            \Illuminate\Support\Facades\DB::connection('pgsql')->getPdo();
+        } catch (\Throwable $e) {
+            $this->markTestSkipped('Postgres inaccessible : '.$e->getMessage());
+        }
+
+        if (! function_exists('create_windows_lnk')) {
             require_once $this->legacyIncPath;
         }
     }

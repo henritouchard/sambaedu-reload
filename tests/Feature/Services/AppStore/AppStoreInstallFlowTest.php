@@ -12,11 +12,11 @@ use App\Models\DepotApplication;
 use App\Models\InstallationLog;
 use App\Services\AppStore\AppStoreService;
 use App\Services\AppStore\PackagesXmlService;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Mockery;
 use Tests\TestCase;
+use Tests\Traits\CreatesAppStoreSchema;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
@@ -32,7 +32,7 @@ use PHPUnit\Framework\Attributes\Test;
  */
 class AppStoreInstallFlowTest extends TestCase
 {
-    use DatabaseTransactions;
+    use CreatesAppStoreSchema;
 
     private string $tmpDir;
     private Depot $depot;
@@ -41,6 +41,7 @@ class AppStoreInstallFlowTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->createAppStoreSchema();
 
         // Répertoire temporaire isolé pour ce test
         $this->tmpDir = sys_get_temp_dir() . '/appstore_flow_test_' . uniqid();
@@ -82,6 +83,7 @@ class AppStoreInstallFlowTest extends TestCase
     {
         $this->cleanDir($this->tmpDir);
         Mockery::close();
+        $this->dropAppStoreSchema();
         parent::tearDown();
     }
 

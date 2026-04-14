@@ -7,13 +7,13 @@ namespace Tests\Unit\Services;
 use App\Enums\ApplicationStatus;
 use App\Models\Application;
 use App\Services\AppStore\PackagesXmlService;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
+use Tests\Traits\CreatesAppStoreSchema;
 use PHPUnit\Framework\Attributes\Test;
 
 class PackagesXmlServiceTest extends TestCase
 {
-    use DatabaseTransactions;
+    use CreatesAppStoreSchema;
 
     private PackagesXmlService $service;
     private string $testStoragePath;
@@ -23,6 +23,8 @@ class PackagesXmlServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->createAppStoreSchema();
 
         $this->testStoragePath = sys_get_temp_dir() . '/test-wpkg-' . uniqid();
         mkdir($this->testStoragePath, 0755, true);
@@ -44,6 +46,7 @@ class PackagesXmlServiceTest extends TestCase
         // Also clean any subdirectory-based paths
         $this->cleanDir($this->testStoragePath);
 
+        $this->dropAppStoreSchema();
         parent::tearDown();
     }
 

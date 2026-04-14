@@ -185,6 +185,7 @@ class WpkgReportsPageTest extends TestCase
      */
     public function test_filtering_by_hostname(): void
     {
+        $this->skipIfSqlite();
         $this->actingAsAdmin();
 
         $this->makeWorkstation('SALLE-A-01');
@@ -196,6 +197,13 @@ class WpkgReportsPageTest extends TestCase
         // SALLE-A-01 doit être visible via Livewire rendering
         // (le rendu complet dépend du driver HTTP — on vérifie juste le 200 et la présence des données)
         $response->assertSee('SALLE-A');
+    }
+
+    private function skipIfSqlite(): void
+    {
+        if (\DB::connection()->getDriverName() === 'sqlite') {
+            $this->markTestSkipped('Filtrage utilise ILIKE (Postgres only). Lancer contre Postgres pour ce test.');
+        }
     }
 
     /**
@@ -214,6 +222,7 @@ class WpkgReportsPageTest extends TestCase
      */
     public function test_filtering_by_package_param(): void
     {
+        $this->skipIfSqlite();
         $this->actingAsAdmin();
 
         $response = $this->get('/app/windows-deploy/reports?packageSearch=firefox');

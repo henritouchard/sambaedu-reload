@@ -272,6 +272,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
                 $table->string('display_name')->nullable();
                 $table->string('type');
                 $table->text('ad_dn')->nullable();
+                $table->string('ad_guid')->nullable();
                 $table->timestamps();
             });
             $this->createdTables = true;

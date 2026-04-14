@@ -200,10 +200,11 @@ class UserUpdateTest extends TestCase
         $this->userRepository->shouldReceive('invalidateCache')
             ->with('sqlfail');
 
-        // Ajoute une contrainte CHECK impossible pour forcer l'échec SQL
-        // NOT VALID = ne vérifie pas les rows existantes, bloque seulement INSERT/UPDATE
-        // (transactionnelle en PostgreSQL → rollback auto via DatabaseTransactions)
-        DB::statement('ALTER TABLE users ADD CONSTRAINT force_sql_fail CHECK (false) NOT VALID');
+        // Force l'échec SQL en supprimant la table users. Le service doit
+        // logger l'erreur et retourner success=true (AD = source de vérité).
+        // NB: en Postgres on utilisait un ALTER TABLE ADD CONSTRAINT CHECK (false)
+        // NOT VALID, mais cette syntaxe n'est pas supportée par SQLite.
+        Schema::drop('users');
 
         $result = $this->service->updatePersonalInfo('sqlfail', [
             'prenom' => 'Test',

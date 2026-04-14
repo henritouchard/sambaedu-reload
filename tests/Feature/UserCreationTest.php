@@ -485,9 +485,9 @@ class TestableUserService extends UserService
         $method->invoke($this, $ldapUser, $data);
     }
 
-    public function exposePersistUserGroupsToSql(string $login, string $categorie, array $classes): void
+    public function exposePersistUserGroupsToSql(string $login, string $categorie, array $classes, string $fonction = ''): void
     {
         $method = new \ReflectionMethod(UserService::class, 'persistUserGroupsToSql');
-        $method->invoke($this, $login, $categorie, $classes);
+        $method->invoke($this, $login, $categorie, $fonction, $classes);
     }
 }
