@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\v1\ControlHub\ApplicationController;
 use App\Http\Controllers\Api\v1\ControlHub\AppProfileController;
 use App\Http\Controllers\Api\v1\ControlHub\SyncManifestController;
 use App\Http\Controllers\Api\v1\ShortcutExportController;
+use App\Http\Controllers\Api\WpkgReportController;
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -121,6 +122,17 @@ Route::get('/health-check', [InstanceStatusController::class, 'check']);
 | Pas d'authentification : les postes ne sont pas encore connectés.
 | Remplace le legacy gpo/shortcuts_out.php.
 */
+/*
+|--------------------------------------------------------------------------
+| Routes WPKG — Ingestion des rapports d'installation
+|--------------------------------------------------------------------------
+| Appelées par le script WPKG en local (agent Windows ou cron).
+| Restreintes aux requêtes locales via le middleware local.request.
+*/
+Route::prefix('wpkg')->middleware('local.request')->group(function () {
+    Route::post('/reports/{hostname}', [WpkgReportController::class, 'store'])->name('wpkg.reports.store');
+});
+
 Route::prefix('v1/shortcuts/export')->name('shortcuts.export.')->group(function () {
     // Script complet (.cmd/.sh) pour un poste
     Route::match(['get', 'post'], '/script', [ShortcutExportController::class, 'script'])->name('script');

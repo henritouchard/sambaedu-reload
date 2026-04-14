@@ -239,4 +239,12 @@ class Application extends Model implements Wireable
     {
         return static::findOrFail($value['id']);
     }
+
+    /**
+     * Statuts d'installation sur les postes de travail
+     */
+    public function workstationStatuses(): HasMany
+    {
+        return $this->hasMany(WorkstationApplicationStatus::class);
+    }
 }

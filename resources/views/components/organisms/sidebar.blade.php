@@ -406,6 +406,9 @@
                             class="block px-4 py-2 text-sm hover:bg-base-300/70 rounded-lg transition-colors hover:translate-x-1">Gestion
                             des
                             postes</a>
+                        <a href="{{ route('app.windows-deploy.reports.index') }}"
+                            class="block px-4 py-2 text-sm hover:bg-base-300/70 rounded-lg transition-colors hover:translate-x-1">Rapports
+                            WPKG</a>
                     </div>
                 </div>
             </div>

@@ -1,0 +1,74 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\IpUtils;
+use Symfony\Component\HttpFoundation\Response;
+
+/**
+ * Middleware de restriction IP pour les endpoints d'ingestion locale.
+ *
+ * Autorise uniquement :
+ *   - 127.0.0.1 et ::1 (localhost)
+ *   - Les CIDR/IPs listés dans config('sambaedu.wpkg.report_ingestion_allowed_ips')
+ *
+ * Utilise Symfony\Component\HttpFoundation\IpUtils::checkIp() pour le support CIDR.
+ *
+ * En Phase 1, le worker tourne sur la même VM → pas d'exposition externe.
+ * En Phase 2, on ajoutera un check token machine ici sans toucher le controller/service.
+ */
+class EnsureLocalRequest
+{
+    /**
+     * IPs toujours autorisées (localhost IPv4 + IPv6).
+     */
+    private const ALWAYS_ALLOWED = ['127.0.0.1', '::1'];
+
+    public function handle(Request $request, Closure $next): Response
+    {
+        // REMOTE_ADDR : vraie IP TCP, non spoofable via X-Forwarded-For
+        // même si trusted_proxies = '*' (erreur de config fréquente).
+        $clientIp = $request->server('REMOTE_ADDR', '') ?? '';
+
+        if ($this->isAllowed($clientIp)) {
+            return $next($request);
+        }
+
+        return response()->json(
+            ['message' => 'Accès refusé : requête non locale.'],
+            403
+        );
+    }
+
+    private function isAllowed(string $ip): bool
+    {
+        // Localhost toujours autorisé
+        if (IpUtils::checkIp($ip, self::ALWAYS_ALLOWED)) {
+            return true;
+        }
+
+        // IPs/CIDRs supplémentaires depuis la config
+        $configIps = config('sambaedu.wpkg.report_ingestion_allowed_ips', '');
+        if (empty($configIps)) {
+            return false;
+        }
+
+        // Supporte une chaîne CSV ou un tableau
+        $allowedList = is_array($configIps)
+            ? $configIps
+            : array_map('trim', explode(',', $configIps));
+
+        // Filtrer les entrées vides
+        $allowedList = array_filter($allowedList, static fn(string $entry): bool => $entry !== '');
+
+        if (empty($allowedList)) {
+            return false;
+        }
+
+        return IpUtils::checkIp($ip, $allowedList);
+    }
+}

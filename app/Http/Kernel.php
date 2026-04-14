@@ -2,6 +2,7 @@
 
 namespace App\Http;
 
+use App\Http\Middleware\EnsureLocalRequest;
 use Illuminate\Foundation\Http\Kernel as HttpKernel;
 
 class Kernel extends HttpKernel
@@ -72,5 +73,8 @@ class Kernel extends HttpKernel
         
         // ControlHub middleware pour l'authentification API
         'controlhub.auth' => \App\Http\Middleware\ControlHubAuth::class,
+
+        // WPKG middleware — restreint aux requêtes locales
+        'local.request' => EnsureLocalRequest::class,
     ];
 }

@@ -1,0 +1,16 @@
+2024-01-15 08:30:00 PC-SALLE-01 AA:BB:CC:DD:EE:FF [10.0.0.50]
+ID: firefox
+Revision: 125.0
+Reboot: false
+Status: Installed
+---
+ID: libreoffice
+Revision: 7.6.0
+Reboot: false
+Status: Installed
+---
+ID: vlc
+Revision: 3.0.18
+Reboot: false
+Status: Not Installed
+---

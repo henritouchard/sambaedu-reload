@@ -1,0 +1,2 @@
+Ce fichier n'a pas de blocs valides et pas de séparateurs ---
+Juste du texte aléatoire sans structure WPKG

@@ -136,6 +136,14 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
         //     ->where('type', 'wallpaper|lockscreen')
         //     ->name('parc.wallpaper.thumbnail');
     });
+
+    // ========================================
+    // Déploiement Windows - Rapports WPKG
+    // ========================================
+    Route::prefix('windows-deploy')->name('windows-deploy.')->group(function () {
+        Route::livewire('/reports', 'pages::windows-deploy.reports.index')->name('reports.index');
+        Route::livewire('/reports/{workstation}', 'pages::windows-deploy.reports.[workstation].index')->name('reports.show');
+    });
 });
 
 /*

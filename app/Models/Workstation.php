@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Livewire\Wireable;
 
@@ -299,5 +300,13 @@ class Workstation extends Model implements Wireable
     public static function fromLivewire($value): static
     {
         return static::findOrFail($value['id']);
+    }
+
+    /**
+     * Statuts d'application liés à ce poste
+     */
+    public function applicationStatuses(): HasMany
+    {
+        return $this->hasMany(WorkstationApplicationStatus::class);
     }
 }
