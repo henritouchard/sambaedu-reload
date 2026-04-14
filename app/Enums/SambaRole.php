@@ -71,9 +71,9 @@ enum SambaRole: string
                 SambaPermission::WpkgAssign,
             ],
             self::ReferentNumerique => [
+                SambaPermission::UserRead,
+                SambaPermission::ShareView,
                 SambaPermission::ComputerView,
-                SambaPermission::WpkgAssign,
-                SambaPermission::WpkgAdd,
             ],
             self::ComputerAdmin => [
                 SambaPermission::ComputerView,
