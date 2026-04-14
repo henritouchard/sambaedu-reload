@@ -43,6 +43,11 @@ try {
     require_once __DIR__ . '/ldap.inc.php';
     require_once __DIR__ . '/wpkg_libsql.php';
 
+    // 5b. Stubs pour dépendances manquantes des includes GPO (story 1bis.18a)
+    //     guid(), roaming_profiles_stats(), search_parcs() — définis dans des
+    //     modules non encore chargés (printers, partages, parcs).
+    require_once __DIR__ . '/stubs/gpo_deps.inc.php';
+
     // 6. Include path legacy — les modules font des include("xxx.inc.php")
     //    qui doivent résoudre vers le dossier includes/ du legacy original.
     //    IMPORTANT : les stubs doivent être AVANT le legacy includes/ pour que
@@ -69,8 +74,16 @@ try {
         // Fonctions utilitaires globales (utilisées partout)
         require_once $legacyIncludesPath . '/functions.inc.php';
 
-        // Samba / AD tools
-        // require_once $legacyIncludesPath . '/samba-tool.inc.php';
+        // ─── GPO core includes (story 1bis.18a) ─────────────────────────
+        // Ordre critique — respecter les dépendances croisées :
+        // samba-tool (pas de dep sur gpo/delegations)
+        // → gpo (dep sur samba-tool: gpocreate, gpodel, etc.)
+        // → delegations (dep sur samba-tool + gpo)
+        // → gpo_ui (dep sur partages: roaming_profiles_stats — stubbée)
+        require_once $legacyIncludesPath . '/samba-tool.inc.php';
+        require_once $legacyIncludesPath . '/gpo.inc.php';
+        require_once $legacyIncludesPath . '/delegations.inc.php';
+        require_once $legacyIncludesPath . '/gpo_ui.inc.php';
 
         // DHCP
         // require_once $legacyIncludesPath . '/dhcpd.inc.php';
@@ -81,7 +94,7 @@ try {
         // Annuaire
         // require_once $legacyIncludesPath . '/annu.inc.php';
 
-        // Délégations
+        // Délégations — chargé ci-dessus avec les GPO includes
         // require_once $legacyIncludesPath . '/delegations.inc.php';
 
         // ENT (import GPEI, etc.)
