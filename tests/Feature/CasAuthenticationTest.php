@@ -7,6 +7,8 @@ use App\Models\User;
 use App\Services\AuthenticationService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Mockery;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use Tests\TestCase;
 
 /**
@@ -74,6 +76,8 @@ class CasAuthenticationTest extends TestCase
      * cas_port = '0' (falsy en PHP) ne doit pas être remplacé silencieusement par 443.
      * Le port doit être passé tel quel à phpCAS.
      */
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function test_init_cas_client_port_zero_is_not_overridden_to_443(): void
     {
         $mockConfig = Mockery::mock(SambaEduConfig::class)->makePartial();
