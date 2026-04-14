@@ -57,8 +57,13 @@ class LegacyGpoIncludesTest extends TestCase
         $this->assertTrue(function_exists('read_gpo_sysvol'), 'read_gpo_sysvol() doit exister');
         $this->assertTrue(function_exists('update_gpo_sysvol'), 'update_gpo_sysvol() doit exister');
         $this->assertTrue(function_exists('get_domain_sid'), 'get_domain_sid() doit exister');
-        $this->assertTrue(function_exists('get_sid_from_name'), 'get_sid_from_name() doit exister');
-        $this->assertTrue(function_exists('get_name_from_sid'), 'get_name_from_sid() doit exister');
+        // Le legacy expose get_sid() (nom court, version VM) ou
+        // get_sid_from_name()/get_name_from_sid() (version host plus récente).
+        // On tolère les deux tant que le lookup SID par nom est disponible.
+        $this->assertTrue(
+            function_exists('get_sid') || function_exists('get_sid_from_name'),
+            'get_sid() ou get_sid_from_name() doit exister'
+        );
     }
 
     /**
@@ -205,7 +210,11 @@ class LegacyGpoIncludesTest extends TestCase
 
         // delegations.inc.php dépend de gpo.inc.php
         $this->assertTrue(function_exists('read_gpo_sysvol'), 'read_gpo_sysvol() (gpo) doit être chargé avant delegations');
-        $this->assertTrue(function_exists('get_sid_from_name'), 'get_sid_from_name() (gpo) doit être chargé avant delegations');
+        // Lookup SID : get_sid (VM) ou get_sid_from_name (host)
+        $this->assertTrue(
+            function_exists('get_sid') || function_exists('get_sid_from_name'),
+            'get_sid() ou get_sid_from_name() (gpo) doit être chargé avant delegations'
+        );
 
         // delegations.inc.php dépend de stubs (guid)
         $this->assertTrue(function_exists('guid'), 'guid() (stub) doit être disponible pour delegations');
