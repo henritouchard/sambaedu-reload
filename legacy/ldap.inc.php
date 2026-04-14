@@ -1386,3 +1386,118 @@ if (!function_exists('lock_conf')) {
         return false;
     }
 }
+
+// ─── Shims des fonctions LDAP natives (ext-ldap) ────────────────────────────
+//
+// Story 1bis.18a — Filet de sécurité pour les appels ldap_*() des modules Tier 3
+// (samba-tool.inc.php, delegations.inc.php). $config['bind'] étant un
+// LdapShimConnection (objet factice), les fonctions natives ext-ldap
+// leveraient un TypeError. Ces shims ne sont définis QUE si ext-ldap n'est
+// pas chargé (fallback) — sinon les natives prennent le dessus et le crash
+// reste possible. L'objectif est d'éviter la régression quand l'extension
+// est désactivée ou dans les tests unitaires.
+
+if (!function_exists('ldap_add')) {
+    function ldap_add($ldap, string $dn, array $entry, ?array $controls = null): bool
+    {
+        _shim_log_unimplemented("ldap_add(dn={$dn})");
+        return false;
+    }
+}
+
+if (!function_exists('ldap_delete')) {
+    function ldap_delete($ldap, string $dn, ?array $controls = null): bool
+    {
+        _shim_log_unimplemented("ldap_delete(dn={$dn})");
+        return false;
+    }
+}
+
+if (!function_exists('ldap_mod_replace')) {
+    function ldap_mod_replace($ldap, string $dn, array $entry, ?array $controls = null): bool
+    {
+        _shim_log_unimplemented("ldap_mod_replace(dn={$dn})");
+        return false;
+    }
+}
+
+if (!function_exists('ldap_mod_add')) {
+    function ldap_mod_add($ldap, string $dn, array $entry, ?array $controls = null): bool
+    {
+        _shim_log_unimplemented("ldap_mod_add(dn={$dn})");
+        return false;
+    }
+}
+
+if (!function_exists('ldap_mod_del')) {
+    function ldap_mod_del($ldap, string $dn, array $entry, ?array $controls = null): bool
+    {
+        _shim_log_unimplemented("ldap_mod_del(dn={$dn})");
+        return false;
+    }
+}
+
+if (!function_exists('ldap_modify_batch')) {
+    function ldap_modify_batch($ldap, string $dn, array $modifications_info, ?array $controls = null): bool
+    {
+        _shim_log_unimplemented("ldap_modify_batch(dn={$dn})");
+        return false;
+    }
+}
+
+if (!function_exists('ldap_modify')) {
+    function ldap_modify($ldap, string $dn, array $entry, ?array $controls = null): bool
+    {
+        _shim_log_unimplemented("ldap_modify(dn={$dn})");
+        return false;
+    }
+}
+
+if (!function_exists('ldap_rename')) {
+    function ldap_rename($ldap, string $dn, string $new_rdn, string $new_parent, bool $delete_old_rdn, ?array $controls = null): bool
+    {
+        _shim_log_unimplemented("ldap_rename(dn={$dn})");
+        return false;
+    }
+}
+
+if (!function_exists('ldap_error')) {
+    function ldap_error($ldap): string
+    {
+        return 'Shim LDAP : opération non supportée (ext-ldap absent)';
+    }
+}
+
+if (!function_exists('ldap_errno')) {
+    function ldap_errno($ldap): int
+    {
+        return 0;
+    }
+}
+
+if (!defined('LDAP_DEREF_NEVER')) {
+    define('LDAP_DEREF_NEVER', 0);
+}
+
+if (!function_exists('ldap_read')) {
+    function ldap_read($ldap, $base, string $filter, array $attributes = [], int $attributes_only = 0, int $sizelimit = -1, int $timelimit = -1, int $deref = 0, ?array $controls = null)
+    {
+        _shim_log_unimplemented("ldap_read(filter={$filter})");
+        return false;
+    }
+}
+
+if (!function_exists('ldap_search')) {
+    function ldap_search($ldap, $base, string $filter, array $attributes = [], int $attributes_only = 0, int $sizelimit = -1, int $timelimit = -1, int $deref = 0, ?array $controls = null)
+    {
+        _shim_log_unimplemented("ldap_search(filter={$filter})");
+        return false;
+    }
+}
+
+if (!function_exists('ldap_get_entries')) {
+    function ldap_get_entries($ldap, $result): array
+    {
+        return ['count' => 0];
+    }
+}
