@@ -1216,8 +1216,48 @@ if (!function_exists('etab_suffix')) {
 if (!function_exists('ad_url')) {
     function ad_url(array $config, string $proto = 'ldaps', $ad = false): string
     {
-        // Shim — retourne une URL factice, aucune connexion LDAP réelle
-        $server = $config['se4ad_ip'] ?? 'localhost';
+        // Déterminer le serveur AD. Ordre de priorité :
+        //   1. FQDN depuis la config Laravel (se4ad_name + domain)
+        //   2. FQDN depuis /etc/sambaedu/sambaedu.conf (legacy, toujours
+        //      présent sur une VM SambaEdu déployée)
+        //   3. IP brute (Kerberos échouera : SPN par IP n'existe pas en AD)
+        //
+        // Kerberos (--use-kerberos=required) impose un FQDN — l'IP mène à
+        // NT_STATUS_INVALID_PARAMETER au stade SPNEGO.
+
+        $se4adName = $config['se4ad_name']
+            ?? config('sambaedu.se4ad_name', '');
+        $domain    = $config['domain']
+            ?? config('sambaedu.domain', '');
+
+        $fqdn = null;
+        if (!empty($se4adName) && !empty($domain)) {
+            $fqdn = $se4adName . '.' . $domain;
+        } else {
+            $legacyConfigFile = '/etc/sambaedu/sambaedu.conf';
+            if (is_file($legacyConfigFile) && is_readable($legacyConfigFile)) {
+                $content = @file_get_contents($legacyConfigFile);
+                if ($content !== false
+                    && preg_match('/^\s*se4ad_name\s*=\s*"?([^"\n]+)"?/m', $content, $nm)
+                    && preg_match('/^\s*domain\s*=\s*"?([^"\n]+)"?/m', $content, $dm)
+                ) {
+                    $fqdn = trim($nm[1]) . '.' . trim($dm[1]);
+                }
+            }
+        }
+
+        $server = $fqdn ?: (
+            !empty($config['se4ad_etab_ip'])
+                ? $config['se4ad_etab_ip']
+                : ($config['se4ad_ip'] ?? 'localhost')
+        );
+
+        // Mode sambatool : retourner l'option -H attendue par samba-tool
+        if ($proto === 'sambatool') {
+            return '-H ldap://' . $server . ' ';
+        }
+
+        // Modes ldap / ldaps : URL classique
         $port = ($proto === 'ldaps') ? 636 : 389;
         return "{$proto}://{$server}:{$port}";
     }

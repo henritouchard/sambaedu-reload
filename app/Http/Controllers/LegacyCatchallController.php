@@ -525,10 +525,11 @@ class LegacyCatchallController extends Controller
 
         // Réécrire les actions de formulaire pour le routage via le catchall
         // Actions absolues (commençant par /) : injecter le préfixe UAI
+        // Flag /i : le legacy mélange <form> et <FORM> (ex: gpo-maj.php)
         $uai = config('sambaedu.etab_ou', '');
         if (!empty($uai)) {
             $html = preg_replace(
-                '/(<form[^>]*\s)action\s*=\s*["\']\/([^"\']*\.php)["\']/',
+                '/(<form[^>]*\s)action\s*=\s*["\']\/([^"\']*\.php)["\']/i',
                 '$1action="/' . e($uai) . '/$2"',
                 $html
             );
@@ -537,7 +538,7 @@ class LegacyCatchallController extends Controller
         // ne saurait pas les résoudre correctement via le proxy)
         $currentUrl = url()->current();
         $html = preg_replace(
-            '/(<form[^>]*\s)action\s*=\s*["\'](?!\/|https?:)([^"\']*\.php)["\']/',
+            '/(<form[^>]*\s)action\s*=\s*["\'](?!\/|https?:)([^"\']*\.php)["\']/i',
             '$1action="' . e($currentUrl) . '"',
             $html
         );

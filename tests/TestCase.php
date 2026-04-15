@@ -13,6 +13,10 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
         $this->guardAgainstProductionDatabase();
+        // $_SESSION est un superglobal PHP qui persiste dans le process PHPUnit.
+        // Le bridge legacy (LegacyCatchallController::bridgeLegacySession) y écrit
+        // login/level/etab et fait fuiter l'état d'un test vers les suivants.
+        $_SESSION = [];
     }
 
     /**
