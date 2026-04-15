@@ -267,14 +267,11 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         : 'Détail du groupe de machines';
 @endphp
 
-<x-organisms.page title="{{ $group?->name ?? 'Groupe' }}" :scrollable="true" description="{{ $groupHeaderDescription }}">
+<x-organisms.page title="{{ $group?->name ?? 'Groupe' }}" :scrollable="true" description="{{ $groupHeaderDescription }}"
+    backUrl="{{ route('app.parc.index') }}" backText="Retour">
 
     <x-slot:actions>
         <div class="flex gap-2">
-            <a href="{{ route('app.parc.index') }}" class="btn btn-ghost">
-                <i class="fa-solid fa-arrow-left"></i>
-                Retour
-            </a>
             @if ($group)
                 @if ($group->is_physical)
                     <span class="badge badge-success badge-lg hidden lg:inline-flex">

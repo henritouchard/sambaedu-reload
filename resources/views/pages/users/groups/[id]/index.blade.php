@@ -193,7 +193,8 @@ new #[Title('Groupe utilisateur')] class extends Component {
 ?>
 
 <x-organisms.page :title="$editing ? 'Modifier le groupe' : ($displayName ?: $name)" :scrollable="false"
-    :description="$editing ? 'Éditez les informations et les membres du groupe' : null">
+    :description="$editing ? 'Éditez les informations et les membres du groupe' : null"
+    :backUrl="!$editing ? route('app.users') : null" backText="Retour">
     <x-slot:actions>
         <div class="flex items-center gap-2">
             @if ($editing)
@@ -202,10 +203,6 @@ new #[Title('Groupe utilisateur')] class extends Component {
                     Annuler
                 </button>
             @else
-                <a href="{{ route('app.users') }}" class="btn btn-ghost">
-                    <i class="fa-solid fa-arrow-left"></i>
-                    Retour
-                </a>
                 <div class="dropdown dropdown-left">
                     <label tabindex="0" class="btn btn-primary gap-2 min-w-32">
                         <i class="fa-solid fa-pen-to-square"></i>

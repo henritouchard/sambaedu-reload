@@ -288,15 +288,11 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 };
 ?>
 
-<x-organisms.page title="Détails du Poste" :scrollable="true" description="Détail du poste">
+<x-organisms.page title="Détails du Poste" :scrollable="true" description="Détail du poste"
+    backUrl="{{ route('app.parc.index') }}" backText="Retour">
 
     <x-slot:actions>
         <div class="flex gap-2">
-            <a href="{{ route('app.parc.index') }}" class="btn btn-ghost">
-                <i class="fa-solid fa-arrow-left"></i>
-                Retour
-            </a>
-
             @if ($workstation)
                 <div class="dropdown dropdown-end">
                     <label tabindex="0" class="btn btn-primary">

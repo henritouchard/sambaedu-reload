@@ -41,13 +41,8 @@ new #[Title('Création groupe utilisateur')] class extends Component {
 };
 ?>
 
-<x-organisms.page title="Créer un groupe utilisateur" :scrollable="false" description="Créez un groupe utilisateur">
-    <x-slot:actions>
-        <a href="{{ route('app.users') }}" class="btn btn-ghost">
-            <i class="fa-solid fa-arrow-left"></i>
-            Retour
-        </a>
-    </x-slot:actions>
+<x-organisms.page title="Créer un groupe utilisateur" :scrollable="false" description="Créez un groupe utilisateur"
+    backUrl="{{ route('app.users') }}" backText="Retour">
 
     <div class="max-w-4xl">
         <div class="card bg-base-100 shadow-sm">

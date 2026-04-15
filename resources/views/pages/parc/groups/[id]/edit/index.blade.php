@@ -129,14 +129,8 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
 ?>
 
 <x-organisms.page title="Modifier {{ $group?->name ?? 'Groupe' }}" :scrollable="true"
-    description="Modifier les informations du groupe">
-
-    <x-slot:actions>
-        <a href="{{ route('app.parc.groups.show', $id) }}" class="btn btn-ghost">
-            <i class="fa-solid fa-arrow-left"></i>
-            Retour
-        </a>
-    </x-slot:actions>
+    description="Modifier les informations du groupe"
+    backUrl="{{ route('app.parc.groups.show', $id) }}" backText="Retour">
 
     @if ($group)
         <div class="max-w-2xl mx-auto">
