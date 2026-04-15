@@ -3,31 +3,37 @@
 /**
  * Bootstrap PHPUnit — exécuté avant toute classe de test.
  *
- * Vérifie que les variables d'environnement DB pointent sur une base
- * de test (sqlite ou *_test) et pas sur la prod, AVANT que Laravel
- * ne soit bootstrappé et AVANT toute connexion DB.
- *
- * Cas typique d'accident : `php artisan config:cache` buildé depuis le
- * .env de prod → config() retourne pgsql/sambaedu même si phpunit.xml
- * set DB_CONNECTION=sqlite. Le cache prend la priorité sur les env vars
- * de phpunit.xml pour les appels config() mais pas pour les appels env().
+ * Vérifie que la base de données active n'est pas la prod, en lisant
+ * directement le config cache si présent (qui prend la priorité sur les
+ * env vars de phpunit.xml quand il existe).
  */
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
-// Les env vars de phpunit.xml sont injectées AVANT ce fichier via le
-// runner PHPUnit — on peut les lire directement.
-$connection = $_ENV['DB_CONNECTION'] ?? getenv('DB_CONNECTION') ?: 'pgsql';
-$database   = $_ENV['DB_DATABASE']   ?? getenv('DB_DATABASE')   ?: '';
+$cacheFile = __DIR__ . '/../bootstrap/cache/config.php';
+
+if (file_exists($cacheFile)) {
+    // Le cache existe → c'est lui que Laravel va utiliser, pas phpunit.xml.
+    // On le charge pour lire la vraie config DB.
+    $cached     = require $cacheFile;
+    $connection = $cached['database']['default'] ?? 'pgsql';
+    $database   = $cached['database']['connections'][$connection]['database'] ?? '';
+    $source     = 'config cache (bootstrap/cache/config.php)';
+} else {
+    // Pas de cache → Laravel lira .env.testing puis les env vars phpunit.xml.
+    // Les env vars phpunit.xml sont injectées par le runner avant ce fichier.
+    $connection = $_ENV['DB_CONNECTION'] ?? getenv('DB_CONNECTION') ?: 'pgsql';
+    $database   = $_ENV['DB_DATABASE']   ?? getenv('DB_DATABASE')   ?: '';
+    $source     = 'env vars (phpunit.xml / .env.testing)';
+}
 
 $isSafe = $connection === 'sqlite'
     || $database === ':memory:'
     || str_ends_with($database, '_test');
 
 if (! $isSafe) {
-    $cacheFile = __DIR__ . '/../bootstrap/cache/config.php';
     $hint = file_exists($cacheFile)
-        ? "\n  → Config caché détecté ! Lancez : php artisan config:clear"
+        ? "  → Lancez : php artisan config:clear"
         : '';
 
     fwrite(STDERR, implode("\n", [
@@ -36,6 +42,7 @@ if (! $isSafe) {
         '║  SÉCURITÉ : BASE DE DONNÉES DE PRODUCTION DÉTECTÉE          ║',
         '╚══════════════════════════════════════════════════════════════╝',
         '',
+        "  Source     : {$source}",
         "  Connection : {$connection}",
         "  Database   : {$database}",
         '',

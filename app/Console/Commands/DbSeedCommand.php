@@ -1,0 +1,67 @@
+<?php
+
+namespace App\Console\Commands;
+
+use Illuminate\Database\Console\Seeds\SeedCommand;
+use Illuminate\Database\ConnectionResolverInterface as Resolver;
+use Illuminate\Database\Eloquent\Model;
+
+/**
+ * Override de db:seed avec garde anti-production.
+ *
+ * Refuse de seeder si la base active ressemble à une base de prod
+ * (ni sqlite, ni suffixée _test). Utiliser -f / --force pour forcer.
+ *
+ * La détection vérifie d'abord le config cache (bootstrap/cache/config.php)
+ * s'il existe, car le cache prend la priorité sur les env vars et peut
+ * pointer vers la prod même si .env.testing dit autre chose.
+ */
+class DbSeedCommand extends SeedCommand
+{
+    protected $signature = 'db:seed
+        {--class=Database\\Seeders\\DatabaseSeeder : Le seeder à exécuter}
+        {--database= : La connexion à utiliser}
+        {--f|force : Forcer l\'exécution même sur une base de production}';
+
+    public function handle(): int
+    {
+        if (! $this->option('force') && $this->isProductionDatabase()) {
+            $connection = config('database.default');
+            $database   = config("database.connections.{$connection}.database", '?');
+            $cacheFile  = base_path('bootstrap/cache/config.php');
+            $hint       = file_exists($cacheFile)
+                ? '  → Config caché détecté ! Lancez : php artisan config:clear'
+                : '';
+
+            $this->components->error(implode("\n", array_filter([
+                'BASE DE DONNÉES DE PRODUCTION DÉTECTÉE — seed annulé.',
+                "  Connection : {$connection}",
+                "  Database   : {$database}",
+                '  Utilisez --force / -f pour forcer.',
+                $hint,
+            ])));
+
+            return self::FAILURE;
+        }
+
+        return parent::handle();
+    }
+
+    private function isProductionDatabase(): bool
+    {
+        // Lire le config cache en priorité s'il existe
+        $cacheFile = base_path('bootstrap/cache/config.php');
+        if (file_exists($cacheFile)) {
+            $cached     = require $cacheFile;
+            $connection = $cached['database']['default'] ?? config('database.default');
+            $database   = $cached['database']['connections'][$connection]['database'] ?? '';
+        } else {
+            $connection = config('database.default');
+            $database   = config("database.connections.{$connection}.database", '');
+        }
+
+        return $connection !== 'sqlite'
+            && $database !== ':memory:'
+            && ! str_ends_with($database, '_test');
+    }
+}
