@@ -21,13 +21,13 @@ class DepotSeeder extends Seeder
         $depots = [
             [
                 'name' => 'SambaEdu Stable',
-                'url' => 'https://wawadeb.crdp.ac-caen.fr/wpkg/stable/',
+                'url' => 'http://deb.sambaedu.org/wpkg/xml/packages.xml',
                 'is_primary' => true,
                 'is_active' => true,
             ],
             [
-                'name' => 'SambaEdu Testing',
-                'url' => 'https://wawadeb.crdp.ac-caen.fr/wpkg/testing/',
+                'name' => 'SambaEdu Dev',
+                'url' => 'http://deb.sambaedu.org/wpkg/xml/packages_dev.xml',
                 'is_primary' => false,
                 'is_active' => true,
             ],

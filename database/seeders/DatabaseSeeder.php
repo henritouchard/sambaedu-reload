@@ -15,8 +15,10 @@ class DatabaseSeeder extends Seeder
             PermissionSeeder::class,
             WorkstationSeeder::class,
             DepotSeeder::class,
+            DepotApplicationSeeder::class,
             AppProfileSeeder::class,
             ShortcutSeeder::class,
+            WpkgReportSeeder::class,
         ]);
     }
 }
