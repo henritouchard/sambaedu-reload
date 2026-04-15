@@ -328,7 +328,12 @@ class AppProfileService
         ?bool $activeOnly = true
     ): LengthAwarePaginator {
         $query = Application::query()
-            ->with('depot');
+            ->with('depot')
+            ->withCount([
+                'workstationStatuses as deployed_total_count' => fn ($q) => $q->whereIn('status', ['installed', 'error', 'not-installed']),
+                'workstationStatuses as deployed_installed_count' => fn ($q) => $q->where('status', 'installed'),
+                'workstationStatuses as deployed_error_count' => fn ($q) => $q->whereIn('status', ['error', 'not-installed']),
+            ]);
 
         if ($search) {
             $query->where(function ($q) use ($search) {

@@ -399,6 +399,7 @@ new class extends Component
                             <th>Catégorie</th>
                             <th class="text-center">Compatibilité</th>
                             <th class="text-center">Dépôt</th>
+                            <th class="text-center">Déploiement</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -451,10 +452,25 @@ new class extends Component
                                         {{ $app->depot?->name ?? '-' }}
                                     </span>
                                 </td>
+                                <td class="text-center">
+                                    @php
+                                        $deployTotal = ($app->deployed_total_count ?? 0);
+                                        $deployInstalled = ($app->deployed_installed_count ?? 0);
+                                    @endphp
+                                    @if ($deployTotal > 0)
+                                        @php $deployRate = round(($deployInstalled / $deployTotal) * 100); @endphp
+                                        <span class="text-sm font-medium {{ $deployRate === 100 ? 'text-success' : ($deployRate === 0 ? 'text-error' : 'text-warning') }}">
+                                            {{ $deployInstalled }}/{{ $deployTotal }}
+                                        </span>
+                                        <span class="text-xs text-base-content/50 ml-1">({{ $deployRate }}%)</span>
+                                    @else
+                                        <span class="text-base-content/30 text-sm">N/A</span>
+                                    @endif
+                                </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="text-center py-8 text-base-content/60">
+                                <td colspan="8" class="text-center py-8 text-base-content/60">
                                     <i class="fa-solid fa-cube text-4xl mb-2 opacity-30"></i>
                                     <p>Aucune application trouvée</p>
                                     @if ($appSearch || $categoryFilter)

@@ -5,18 +5,22 @@ use Livewire\Attributes\Title;
 use Livewire\Attributes\On;
 use App\Services\Parc\WorkstationGroupService;
 use App\Models\Workstation;
+use App\Models\WorkstationApplicationStatus;
 use App\Models\WorkstationGroup;
 use App\Components\Traits\WithToasts;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
 
-new #[Title('Détail de la Machine - SE4FS')] class extends Component {
+new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     use WithToasts;
 
     private WorkstationGroupService $parcService;
 
     public ?Workstation $workstation = null;
     public string|int $id;
+
+    public string $deploymentTab = 'errors';
+    public ?int $deploymentModalStatusId = null;
 
     // Pour la salle physique (unique)
     public ?int $selectedPhysicalRoomId = null;
@@ -38,6 +42,7 @@ new #[Title('Détail de la Machine - SE4FS')] class extends Component {
         $this->availableLogicalGroups = collect();
         $this->loadMachine();
         $this->loadAvailableGroups();
+        $this->initDeploymentTab();
 
         if (session()->has('toast')) {
             $toastData = session('toast');
@@ -214,6 +219,49 @@ new #[Title('Détail de la Machine - SE4FS')] class extends Component {
             ->values();
     }
 
+    public function getDeploymentStatusesProperty(): array
+    {
+        if (!$this->workstation) {
+            return ['success' => collect(), 'errors' => collect(), 'in_progress' => collect()];
+        }
+
+        $statuses = WorkstationApplicationStatus::query()
+            ->with('application')
+            ->where('workstation_id', $this->workstation->id)
+            ->get();
+
+        return [
+            'success'     => $statuses->filter(fn ($s) => $s->status === 'installed'),
+            'errors'      => $statuses->filter(fn ($s) => in_array($s->status, ['error', 'not-installed'])),
+            'in_progress' => $statuses->filter(fn ($s) => in_array($s->status, ['upgrading', 'downgrading'])),
+        ];
+    }
+
+    public function initDeploymentTab(): void
+    {
+        $deployment = $this->deploymentStatuses;
+        $this->deploymentTab = $deployment['errors']->isNotEmpty() ? 'errors' : 'success';
+    }
+
+    public function openDeploymentModal(int $statusId): void
+    {
+        $this->deploymentModalStatusId = $statusId;
+    }
+
+    public function closeDeploymentModal(): void
+    {
+        $this->deploymentModalStatusId = null;
+    }
+
+    public function getDeploymentModalStatusProperty(): ?WorkstationApplicationStatus
+    {
+        if (!$this->deploymentModalStatusId) {
+            return null;
+        }
+
+        return WorkstationApplicationStatus::with('application')->find($this->deploymentModalStatusId);
+    }
+
     /**
      * Gère la sélection d'un groupe de postes depuis le drawer
      */
@@ -240,7 +288,7 @@ new #[Title('Détail de la Machine - SE4FS')] class extends Component {
 };
 ?>
 
-<x-organisms.page title="{{ $workstation?->name ?? 'Poste' }}" :scrollable="true" description="Détail du poste">
+<x-organisms.page title="Détails du Poste" :scrollable="true" description="Détail du poste">
 
     <x-slot:actions>
         <div class="flex gap-2">
@@ -284,6 +332,11 @@ new #[Title('Détail de la Machine - SE4FS')] class extends Component {
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             @include('pages.parc.machines.[id]._partials.machine-info')
             @include('pages.parc.machines.[id]._partials.groups-list')
+        </div>
+
+        {{-- Card déploiement (pleine largeur) --}}
+        <div class="mt-6">
+            @include('pages.parc.machines.[id]._partials.deployment-card')
         </div>
 
         <!-- Drawer pour sélection de salle physique (unique) -->

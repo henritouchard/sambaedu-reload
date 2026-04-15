@@ -29,6 +29,7 @@ class WorkstationApplicationStatus extends Model implements Wireable
         'status',
         'reboot_required',
         'reported_at',
+        'message',
     ];
 
     protected $casts = [

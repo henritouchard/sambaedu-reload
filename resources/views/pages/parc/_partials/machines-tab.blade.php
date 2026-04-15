@@ -77,6 +77,7 @@
                             <th>IP</th>
                             <th>Dernier rapport</th>
                             <th>Statut</th>
+                            <th class="text-center">Déploiement</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -128,6 +129,18 @@
                                     <span class="badge {{ $statusClass }} badge-sm">
                                         {{ $machine->getStatusLabel() }}
                                     </span>
+                                </td>
+                                <td class="text-center">
+                                    @if (($machine->installed_apps_count ?? 0) > 0 || ($machine->error_apps_count ?? 0) > 0)
+                                        <span class="font-mono text-sm">
+                                            <span class="text-success">{{ $machine->installed_apps_count }} ✓</span>
+                                            @if ($machine->error_apps_count > 0)
+                                                <span class="text-error ml-1">{{ $machine->error_apps_count }} ✗</span>
+                                            @endif
+                                        </span>
+                                    @else
+                                        <span class="text-base-content/30">—</span>
+                                    @endif
                                 </td>
                             </tr>
                         @endforeach

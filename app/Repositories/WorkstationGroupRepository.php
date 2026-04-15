@@ -151,6 +151,11 @@ class WorkstationGroupRepository
             });
         }
 
+        $query->withCount([
+            'applicationStatuses as installed_apps_count' => fn ($q) => $q->where('status', 'installed'),
+            'applicationStatuses as error_apps_count' => fn ($q) => $q->whereIn('status', ['error', 'not-installed']),
+        ]);
+
         return $query->orderBy('name')->paginate($perPage);
     }
 
