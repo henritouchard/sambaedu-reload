@@ -72,10 +72,8 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     public function loadAvailableGroups(): void
     {
         try {
-            // Charger les salles physiques
             $this->availablePhysicalRooms = $this->parcService->getPhysicalRooms();
 
-            // Charger les groupes logiques (exclure ceux auxquels la machine appartient déjà)
             $currentGroupIds = $this->workstation ? $this->workstation->groups->pluck('id')->toArray() : [];
             $this->availableLogicalGroups = WorkstationGroup::logical()->active()->whereNotIn('id', $currentGroupIds)->orderBy('name')->get();
         } catch (\Exception $e) {
@@ -171,7 +169,6 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                 return;
             }
 
-            // Gestion spéciale pour l'accès distant
             if ($action === 'remote') {
                 $this->handleRemoteAccessResult($result);
                 return;
@@ -195,9 +192,6 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         }
     }
 
-    /**
-     * Gère le résultat de l'action d'accès distant
-     */
     private function handleRemoteAccessResult(array $result): void
     {
         if ($result['failed_count'] === 0 && $result['success_count'] > 0) {
@@ -262,9 +256,6 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         return WorkstationApplicationStatus::with('application')->find($this->deploymentModalStatusId);
     }
 
-    /**
-     * Gère la sélection d'un groupe de postes depuis le drawer
-     */
     #[On('workstation-group-selected')]
     public function handleGroupSelected(string $drawerId, int|array|null $selected): void
     {
@@ -325,15 +316,397 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     </x-slot:actions>
 
     @if ($workstation)
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            @include('pages.parc.machines.[id]._partials.machine-info')
-            @include('pages.parc.machines.[id]._partials.groups-list')
-        </div>
+        @php
+            $deployment = $this->deploymentStatuses;
+            $deploySuccess    = $deployment['success'];
+            $deployErrors     = $deployment['errors'];
+            $deployInProgress = $deployment['in_progress'];
+            $deployFinished   = $deploySuccess->count() + $deployErrors->count();
+            $deployRate       = $deployFinished > 0 ? round(($deploySuccess->count() / $deployFinished) * 100) : 0;
+            $statusClass = match ($workstation->status) {
+                1 => 'badge-success',
+                2 => 'badge-warning',
+                default => 'badge-error',
+            };
+        @endphp
 
-        {{-- Card déploiement (pleine largeur) --}}
-        <div class="mt-6">
-            @include('pages.parc.machines.[id]._partials.deployment-card')
-        </div>
+        <div class="space-y-6">
+
+            {{-- Card header : identité + salle physique + warning --}}
+            <div class="card bg-base-100 shadow-sm border border-base-200">
+                <div class="card-body">
+                    {{-- En-tête identité --}}
+                    <div class="flex items-start gap-4 mb-6">
+                            <div class="bg-primary/10 text-primary flex items-center justify-center rounded-xl w-16 h-16">
+                                <i class="fa-solid fa-computer text-2xl"></i>
+                            </div>
+                        <div class="flex-1">
+                            <h2 class="text-2xl font-bold">{{ $workstation->name }}</h2>
+                            <p class="text-base-content/60 mt-0.5">
+                                <code class="bg-base-200 px-2 py-0.5 rounded">{{ $workstation->os }}</code>
+                            </p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="badge badge-lg {{ $statusClass }}">
+                                {{ $workstation->getStatusLabel() }}
+                            </span>
+                            @if ($deployErrors->isNotEmpty())
+                                <span class="badge badge-lg badge-error">
+                                    <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+                                    {{ $deployErrors->count() }} échec{{ $deployErrors->count() > 1 ? 's' : '' }} de déploiement
+                                </span>
+                            @endif
+                        </div>
+                    </div>
+
+                    {{-- Salle physique --}}
+                    <div class="rounded-xl border border-base-200 p-4 mb-6">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="w-9 h-9 rounded-lg bg-warning/10 flex items-center justify-center">
+                                <i class="fa-solid fa-door-open text-warning"></i>
+                            </div>
+                            <div class="flex-1">
+                                <p class="text-xs uppercase tracking-wider text-base-content/50 font-semibold">
+                                    Salle physique
+                                </p>
+                                <p class="text-xs text-base-content/40">
+                                    Une machine ne peut appartenir qu'à une seule salle.
+                                </p>
+                            </div>
+                        </div>
+
+                        @if ($workstation->physicalRoom)
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <a href="{{ route('app.parc.groups.show', $workstation->physicalRoom->id) }}"
+                                    class="flex-1 min-w-[200px] flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/5 border border-warning/25 hover:border-warning/60 hover:bg-warning/10 transition-colors font-semibold text-warning truncate">
+                                    <i class="fa-solid fa-location-dot text-sm"></i>
+                                    <span class="truncate">{{ $workstation->physicalRoom->name }}</span>
+                                    <i class="fa-solid fa-arrow-up-right-from-square text-xs opacity-40 ml-auto"></i>
+                                </a>
+                                <button type="button"
+                                    wire:click="$dispatch('open-workstation-group-selector', { drawerId: 'change-physical-room', groups: {{ $availablePhysicalRooms->filter(fn($r) => $r->id !== $workstation->physical_room_id)->values()->toJson() }} })"
+                                    class="btn btn-warning btn-sm gap-2">
+                                    <i class="fa-solid fa-pen-to-square"></i>
+                                    Modifier
+                                </button>
+                                <button type="button"
+                                    class="btn btn-ghost btn-sm btn-square text-base-content/40 hover:text-error"
+                                    wire:click="removeFromPhysicalRoom"
+                                    wire:confirm="Retirer ce poste de la salle physique ?"
+                                    title="Retirer de la salle">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                        @else
+                            <button type="button"
+                                wire:click="$dispatch('open-workstation-group-selector', { drawerId: 'assign-physical-room', groups: {{ $availablePhysicalRooms->toJson() }} })"
+                                class="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border-2 border-dashed border-base-300 hover:border-warning hover:bg-warning/5 transition-all text-base-content/60 hover:text-warning font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-base-300 disabled:hover:bg-transparent disabled:hover:text-base-content/60"
+                                @disabled($availablePhysicalRooms->isEmpty())>
+                                <i class="fa-solid fa-plus"></i>
+                                Assigner une salle
+                            </button>
+                        @endif
+                    </div>
+
+                    {{-- Grille infos techniques --}}
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Système</span>
+                            <p class="font-medium mt-0.5">{{ $workstation->os ?: '—' }}</p>
+                        </div>
+                        <div>
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Adresse IP</span>
+                            <p class="font-mono font-medium mt-0.5">{{ $workstation->ip ?: '—' }}</p>
+                        </div>
+                        <div>
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Adresse MAC</span>
+                            <p class="font-mono text-sm mt-0.5">{{ $workstation->mac ?: '—' }}</p>
+                        </div>
+                        <div>
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Dernier rapport</span>
+                            <p class="font-medium mt-0.5">
+                                {{ $workstation->date_rapport_poste?->format('d/m/Y H:i') ?? '—' }}
+                            </p>
+                        </div>
+                    </div>
+
+                    @if ($workstation->ad_guid)
+                        <div class="mt-4">
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">AD GUID</span>
+                            <p class="font-mono text-xs bg-base-200 p-2 rounded mt-1 break-all">{{ $workstation->ad_guid }}</p>
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            {{-- Card groupes logiques --}}
+            <div class="card bg-base-100 shadow-sm border border-base-200">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="card-title text-base">
+                            <i class="fa-solid fa-layer-group text-primary"></i>
+                            Groupes logiques
+                            <span class="badge badge-ghost">{{ $workstation->groups->count() }}</span>
+                        </h3>
+                        @if ($availableLogicalGroups->isNotEmpty())
+                            <button type="button"
+                                wire:click="$dispatch('open-workstation-group-selector', { drawerId: 'add-logical-groups', groups: {{ $availableLogicalGroups->toJson() }} })"
+                                class="btn btn-primary btn-sm gap-2">
+                                <i class="fa-solid fa-plus"></i>
+                                Ajouter
+                            </button>
+                        @endif
+                    </div>
+
+                    <p class="text-sm text-base-content/60 mb-4">
+                        Une machine peut appartenir à plusieurs groupes logiques simultanément.
+                    </p>
+
+                    @if ($workstation->groups->isEmpty())
+                        <div class="flex flex-col items-center justify-center py-8 text-center">
+                            <div class="text-4xl mb-4 opacity-20">
+                                <i class="fa-solid fa-folder-open"></i>
+                            </div>
+                            <h4 class="text-base font-semibold mb-2">Aucun groupe logique</h4>
+                            <p class="text-base-content/60 text-sm max-w-sm">
+                                Ce poste n'appartient à aucun groupe logique.
+                            </p>
+                        </div>
+                    @else
+                        <div class="flex flex-wrap gap-2">
+                            @foreach ($workstation->groups as $group)
+                                <div class="flex items-center gap-2 pl-3 pr-1 py-1 rounded-lg border border-base-300 bg-base-200/40">
+                                    <i class="fa-solid fa-layer-group text-primary text-sm"></i>
+                                    <a href="{{ route('app.parc.groups.show', $group->id) }}"
+                                        class="font-medium text-sm hover:text-primary">
+                                        {{ $group->name }}
+                                    </a>
+                                    <button type="button" class="btn btn-ghost btn-xs btn-square text-error"
+                                        wire:click="removeFromLogicalGroup({{ $group->id }})"
+                                        wire:confirm="Retirer ce poste du groupe logique ?">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            {{-- Card déploiement --}}
+            @if ($deploySuccess->isNotEmpty() || $deployErrors->isNotEmpty() || $deployInProgress->isNotEmpty())
+                <div class="card bg-base-100 shadow-sm border border-base-200">
+                    <div class="card-body">
+                        <div class="flex items-center gap-4 mb-4">
+                            <h3 class="card-title text-base">
+                                <i class="fa-solid fa-chart-bar mr-2"></i>
+                                Déploiement des applications
+                            </h3>
+                            @if ($deployFinished > 0)
+                                <div class="flex items-center gap-2 max-w-[200px]">
+                                    <progress
+                                        class="progress progress-xs {{ $deployRate === 100 ? 'progress-success' : ($deployRate === 0 ? 'progress-error' : 'progress-warning') }} flex-1"
+                                        value="{{ $deployRate }}" max="100"></progress>
+                                    <span
+                                        class="text-xs font-semibold whitespace-nowrap {{ $deployRate === 100 ? 'text-success' : ($deployRate === 0 ? 'text-error' : 'text-warning') }}">
+                                        {{ $deploySuccess->count() }}/{{ $deployFinished }} ({{ $deployRate }}%)
+                                    </span>
+                                </div>
+                            @endif
+                        </div>
+
+                        {{-- Onglets --}}
+                        <div role="tablist" class="tabs tabs-boxed bg-base-200 w-fit mb-4 tabs-sm">
+                            <button type="button" role="tab"
+                                class="tab {{ $deploymentTab === 'success' ? 'tab-active' : '' }}"
+                                aria-selected="{{ $deploymentTab === 'success' ? 'true' : 'false' }}"
+                                wire:click="$set('deploymentTab', 'success')">
+                                <i class="fa-solid fa-check mr-1 text-success"></i>
+                                Succès
+                                <span
+                                    class="badge badge-xs ml-1 {{ $deploySuccess->isNotEmpty() ? 'badge-success' : 'badge-ghost' }}">{{ $deploySuccess->count() }}</span>
+                            </button>
+                            <button type="button" role="tab"
+                                class="tab {{ $deploymentTab === 'errors' ? 'tab-active' : '' }}"
+                                aria-selected="{{ $deploymentTab === 'errors' ? 'true' : 'false' }}"
+                                wire:click="$set('deploymentTab', 'errors')">
+                                <i class="fa-solid fa-xmark mr-1 text-error"></i>
+                                Échecs
+                                <span
+                                    class="badge badge-xs ml-1 {{ $deployErrors->isNotEmpty() ? 'badge-error' : 'badge-ghost' }}">{{ $deployErrors->count() }}</span>
+                            </button>
+                            <button type="button" role="tab"
+                                class="tab {{ $deploymentTab === 'in_progress' ? 'tab-active' : '' }}"
+                                aria-selected="{{ $deploymentTab === 'in_progress' ? 'true' : 'false' }}"
+                                wire:click="$set('deploymentTab', 'in_progress')">
+                                <i class="fa-solid fa-rotate mr-1 text-info"></i>
+                                En cours
+                                <span
+                                    class="badge badge-xs ml-1 {{ $deployInProgress->isNotEmpty() ? 'badge-info' : 'badge-ghost' }}">{{ $deployInProgress->count() }}</span>
+                            </button>
+                        </div>
+
+                        {{-- Contenu onglets --}}
+                        @php
+                            $items = match ($deploymentTab) {
+                                'success' => $deploySuccess,
+                                'in_progress' => $deployInProgress,
+                                default => $deployErrors,
+                            };
+                        @endphp
+                        @if ($items->isEmpty())
+                            <p class="text-base-content/50 text-sm py-4 text-center">Aucune application dans cette
+                                catégorie.</p>
+                        @else
+                            <div class="overflow-x-auto">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr class="bg-base-200">
+                                            <th>Application</th>
+                                            <th>Version installée</th>
+                                            <th class="text-center">Statut</th>
+                                            <th>Dernier rapport</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach ($items as $status)
+                                            <tr class="hover">
+                                                <td>
+                                                    @if ($status->application)
+                                                        <a href="{{ route('app.parc-settings.applications.show', $status->application->id) }}"
+                                                            class="font-medium hover:underline">
+                                                            {{ $status->application->name ?? $status->application->app_id }}
+                                                        </a>
+                                                        <div class="text-xs text-base-content/50 font-mono">
+                                                            {{ $status->application->app_id }}</div>
+                                                    @else
+                                                        <div class="font-medium">—</div>
+                                                    @endif
+                                                </td>
+                                                <td class="font-mono text-sm">{{ $status->installed_version ?: '—' }}
+                                                </td>
+                                                <td class="text-center">
+                                                    @if ($status->status === 'installed')
+                                                        <span class="badge badge-success badge-sm">Installé</span>
+                                                    @elseif ($status->status === 'upgrading')
+                                                        <span class="badge badge-info badge-sm">
+                                                            <span class="loading loading-spinner loading-xs mr-1"></span>
+                                                            Mise à jour
+                                                        </span>
+                                                    @elseif ($status->status === 'downgrading')
+                                                        <span class="badge badge-info badge-sm">
+                                                            <span class="loading loading-spinner loading-xs mr-1"></span>
+                                                            Rétrogradation
+                                                        </span>
+                                                    @elseif ($status->status === 'error')
+                                                        <button type="button"
+                                                            class="badge badge-error badge-sm cursor-pointer hover:badge-outline"
+                                                            wire:click="openDeploymentModal({{ $status->id }})"
+                                                            wire:loading.attr="disabled"
+                                                            wire:target="openDeploymentModal({{ $status->id }})">
+                                                            <span wire:loading.remove
+                                                                wire:target="openDeploymentModal({{ $status->id }})">Erreur
+                                                                ↗</span>
+                                                            <span wire:loading
+                                                                wire:target="openDeploymentModal({{ $status->id }})"><span
+                                                                    class="loading loading-spinner loading-xs"></span></span>
+                                                        </button>
+                                                    @else
+                                                        <button type="button"
+                                                            class="badge badge-warning badge-sm cursor-pointer hover:badge-outline"
+                                                            wire:click="openDeploymentModal({{ $status->id }})"
+                                                            wire:loading.attr="disabled"
+                                                            wire:target="openDeploymentModal({{ $status->id }})">
+                                                            <span wire:loading.remove
+                                                                wire:target="openDeploymentModal({{ $status->id }})">Non
+                                                                installé ↗</span>
+                                                            <span wire:loading
+                                                                wire:target="openDeploymentModal({{ $status->id }})"><span
+                                                                    class="loading loading-spinner loading-xs"></span></span>
+                                                        </button>
+                                                    @endif
+                                                </td>
+                                                <td class="text-sm text-base-content/60">
+                                                    {{ $status->reported_at?->format('d/m/Y H:i') ?? '—' }}
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            @endif
+
+            {{-- Modale détail déploiement --}}
+            @if ($deploymentModalStatusId)
+                @php $modalStatus = $this->deploymentModalStatus; @endphp
+                @teleport('body')
+                    <dialog class="modal modal-open">
+                        <div class="modal-box max-w-lg">
+                            <div class="flex items-start justify-between mb-4">
+                                <div>
+                                    <h3 class="font-bold text-lg">{{ $modalStatus?->application?->name ?? '—' }}</h3>
+                                    <p class="text-sm text-base-content/60 font-mono">
+                                        {{ $modalStatus?->application?->app_id ?? '' }}</p>
+                                </div>
+                                <button type="button" wire:click="closeDeploymentModal"
+                                    class="btn btn-sm btn-circle btn-ghost">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3 mb-4">
+                                <div class="bg-base-200 rounded-lg p-3">
+                                    <p class="text-xs text-base-content/60">Version installée</p>
+                                    <p class="font-mono font-medium">{{ $modalStatus?->installed_version ?: '—' }}</p>
+                                </div>
+                                <div class="bg-base-200 rounded-lg p-3">
+                                    <p class="text-xs text-base-content/60">Dernier rapport</p>
+                                    <p class="font-medium">
+                                        {{ $modalStatus?->reported_at?->format('d/m/Y H:i') ?? '—' }}</p>
+                                </div>
+                                <div class="bg-base-200 rounded-lg p-3">
+                                    <p class="text-xs text-base-content/60">Statut</p>
+                                    @php
+                                        $statusLabel = match ($modalStatus?->status) {
+                                            'error' => 'Erreur',
+                                            'not-installed' => 'Non installé',
+                                            default => $modalStatus?->status ?? '—',
+                                        };
+                                        $statusBadge =
+                                            $modalStatus?->status === 'error' ? 'badge-error' : 'badge-warning';
+                                    @endphp
+                                    <span class="badge {{ $statusBadge }}">{{ $statusLabel }}</span>
+                                </div>
+                                @if ($modalStatus?->reboot_required)
+                                    <div class="bg-warning/10 rounded-lg p-3">
+                                        <p class="text-xs text-base-content/60">Redémarrage</p>
+                                        <p class="font-medium text-warning">
+                                            <i class="fa-solid fa-rotate-right mr-1"></i>Requis
+                                        </p>
+                                    </div>
+                                @endif
+                            </div>
+
+                            <div class="bg-base-200 rounded-lg p-3 max-h-48 overflow-y-auto">
+                                <p class="text-xs text-base-content/60 mb-1">Détail</p>
+                                @if ($modalStatus?->message)
+                                    <pre class="text-xs font-mono whitespace-pre-wrap break-all">{{ $modalStatus->message }}</pre>
+                                @else
+                                    <p class="text-sm text-base-content/50 italic">Aucun détail disponible.</p>
+                                @endif
+                            </div>
+                        </div>
+                        <form method="dialog" class="modal-backdrop" wire:click="closeDeploymentModal">
+                            <button>close</button>
+                        </form>
+                    </dialog>
+                @endteleport
+            @endif
+
+        </div>{{-- /space-y-6 --}}
 
         <!-- Drawer pour sélection de salle physique (unique) -->
         <livewire:components::organisms.workstation-group-selector drawerId="assign-physical-room" :unique="true"
