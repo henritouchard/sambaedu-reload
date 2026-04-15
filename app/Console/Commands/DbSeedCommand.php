@@ -4,25 +4,22 @@ namespace App\Console\Commands;
 
 use Illuminate\Database\Console\Seeds\SeedCommand;
 use Illuminate\Database\ConnectionResolverInterface as Resolver;
-use Illuminate\Database\Eloquent\Model;
 
 /**
  * Override de db:seed avec garde anti-production.
  *
  * Refuse de seeder si la base active ressemble à une base de prod
- * (ni sqlite, ni suffixée _test). Utiliser -f / --force pour forcer.
+ * (ni sqlite, ni suffixée _test). Utiliser --force pour forcer.
  *
  * La détection vérifie d'abord le config cache (bootstrap/cache/config.php)
  * s'il existe, car le cache prend la priorité sur les env vars et peut
  * pointer vers la prod même si .env.testing dit autre chose.
+ *
+ * Note : --force est déjà défini par le parent (SeedCommand). On le réutilise
+ * pour notre garde — ne pas redéfinir $signature ni getOptions().
  */
 class DbSeedCommand extends SeedCommand
 {
-    protected $signature = 'db:seed
-        {--class=Database\\Seeders\\DatabaseSeeder : Le seeder à exécuter}
-        {--database= : La connexion à utiliser}
-        {--f|force : Forcer l\'exécution même sur une base de production}';
-
     public function handle(): int
     {
         if (! $this->option('force') && $this->isProductionDatabase()) {
@@ -37,7 +34,7 @@ class DbSeedCommand extends SeedCommand
                 'BASE DE DONNÉES DE PRODUCTION DÉTECTÉE — seed annulé.',
                 "  Connection : {$connection}",
                 "  Database   : {$database}",
-                '  Utilisez --force / -f pour forcer.',
+                '  Utilisez --force pour forcer.',
                 $hint,
             ])));
 
