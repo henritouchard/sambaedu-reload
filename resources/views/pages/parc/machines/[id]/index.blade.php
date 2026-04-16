@@ -20,7 +20,6 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     public string|int $id;
 
     public string $deploymentTab = 'errors';
-    public ?int $deploymentModalStatusId = null;
 
     // Pour la salle physique (unique)
     public ?int $selectedPhysicalRoomId = null;
@@ -235,25 +234,6 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     {
         $deployment = $this->deploymentStatuses;
         $this->deploymentTab = $deployment['errors']->isNotEmpty() ? 'errors' : 'success';
-    }
-
-    public function openDeploymentModal(int $statusId): void
-    {
-        $this->deploymentModalStatusId = $statusId;
-    }
-
-    public function closeDeploymentModal(): void
-    {
-        $this->deploymentModalStatusId = null;
-    }
-
-    public function getDeploymentModalStatusProperty(): ?WorkstationApplicationStatus
-    {
-        if (!$this->deploymentModalStatusId) {
-            return null;
-        }
-
-        return WorkstationApplicationStatus::with('application')->find($this->deploymentModalStatusId);
     }
 
     #[On('workstation-group-selected')]
@@ -601,28 +581,14 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                                                     @elseif ($status->status === 'error')
                                                         <button type="button"
                                                             class="badge badge-error badge-sm cursor-pointer hover:badge-outline"
-                                                            wire:click="openDeploymentModal({{ $status->id }})"
-                                                            wire:loading.attr="disabled"
-                                                            wire:target="openDeploymentModal({{ $status->id }})">
-                                                            <span wire:loading.remove
-                                                                wire:target="openDeploymentModal({{ $status->id }})">Erreur
-                                                                ↗</span>
-                                                            <span wire:loading
-                                                                wire:target="openDeploymentModal({{ $status->id }})"><span
-                                                                    class="loading loading-spinner loading-xs"></span></span>
+                                                            wire:click="$dispatch('open-install-log-modal', { statusId: {{ $status->id }} })">
+                                                            Erreur ↗
                                                         </button>
                                                     @else
                                                         <button type="button"
                                                             class="badge badge-warning badge-sm cursor-pointer hover:badge-outline"
-                                                            wire:click="openDeploymentModal({{ $status->id }})"
-                                                            wire:loading.attr="disabled"
-                                                            wire:target="openDeploymentModal({{ $status->id }})">
-                                                            <span wire:loading.remove
-                                                                wire:target="openDeploymentModal({{ $status->id }})">Non
-                                                                installé ↗</span>
-                                                            <span wire:loading
-                                                                wire:target="openDeploymentModal({{ $status->id }})"><span
-                                                                    class="loading loading-spinner loading-xs"></span></span>
+                                                            wire:click="$dispatch('open-install-log-modal', { statusId: {{ $status->id }} })">
+                                                            Non installé ↗
                                                         </button>
                                                     @endif
                                                 </td>
@@ -637,73 +603,6 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                         @endif
                     </div>
                 </div>
-            @endif
-
-            {{-- Modale détail déploiement --}}
-            @if ($deploymentModalStatusId)
-                @php $modalStatus = $this->deploymentModalStatus; @endphp
-                @teleport('body')
-                    <dialog class="modal modal-open">
-                        <div class="modal-box max-w-lg">
-                            <div class="flex items-start justify-between mb-4">
-                                <div>
-                                    <h3 class="font-bold text-lg">{{ $modalStatus?->application?->name ?? '—' }}</h3>
-                                    <p class="text-sm text-base-content/60 font-mono">
-                                        {{ $modalStatus?->application?->app_id ?? '' }}</p>
-                                </div>
-                                <button type="button" wire:click="closeDeploymentModal"
-                                    class="btn btn-sm btn-circle btn-ghost">
-                                    <i class="fa-solid fa-xmark"></i>
-                                </button>
-                            </div>
-
-                            <div class="grid grid-cols-2 gap-3 mb-4">
-                                <div class="bg-base-200 rounded-lg p-3">
-                                    <p class="text-xs text-base-content/60">Version installée</p>
-                                    <p class="font-mono font-medium">{{ $modalStatus?->installed_version ?: '—' }}</p>
-                                </div>
-                                <div class="bg-base-200 rounded-lg p-3">
-                                    <p class="text-xs text-base-content/60">Dernier rapport</p>
-                                    <p class="font-medium">
-                                        {{ $modalStatus?->reported_at?->format('d/m/Y H:i') ?? '—' }}</p>
-                                </div>
-                                <div class="bg-base-200 rounded-lg p-3">
-                                    <p class="text-xs text-base-content/60">Statut</p>
-                                    @php
-                                        $statusLabel = match ($modalStatus?->status) {
-                                            'error' => 'Erreur',
-                                            'not-installed' => 'Non installé',
-                                            default => $modalStatus?->status ?? '—',
-                                        };
-                                        $statusBadge =
-                                            $modalStatus?->status === 'error' ? 'badge-error' : 'badge-warning';
-                                    @endphp
-                                    <span class="badge {{ $statusBadge }}">{{ $statusLabel }}</span>
-                                </div>
-                                @if ($modalStatus?->reboot_required)
-                                    <div class="bg-warning/10 rounded-lg p-3">
-                                        <p class="text-xs text-base-content/60">Redémarrage</p>
-                                        <p class="font-medium text-warning">
-                                            <i class="fa-solid fa-rotate-right mr-1"></i>Requis
-                                        </p>
-                                    </div>
-                                @endif
-                            </div>
-
-                            <div class="bg-base-200 rounded-lg p-3 max-h-48 overflow-y-auto">
-                                <p class="text-xs text-base-content/60 mb-1">Détail</p>
-                                @if ($modalStatus?->message)
-                                    <pre class="text-xs font-mono whitespace-pre-wrap break-all">{{ $modalStatus->message }}</pre>
-                                @else
-                                    <p class="text-sm text-base-content/50 italic">Aucun détail disponible.</p>
-                                @endif
-                            </div>
-                        </div>
-                        <form method="dialog" class="modal-backdrop" wire:click="closeDeploymentModal">
-                            <button>close</button>
-                        </form>
-                    </dialog>
-                @endteleport
             @endif
 
         </div>{{-- /space-y-6 --}}
@@ -722,6 +621,9 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         <livewire:components::organisms.workstation-group-selector drawerId="add-logical-groups" :unique="false"
             title="Ajouter aux groupes logiques" buttonLabel="Ajouter" buttonIcon="fa-plus" buttonClass="btn-primary"
             :showTypeLabel="false" emptyMessage="Aucun groupe logique disponible" />
+
+        <!-- Modale log d'installation WPKG (partagée) -->
+        <livewire:components::organisms.install-log-modal />
     @else
         <div class="card bg-base-100 shadow-sm">
             <div class="card-body flex flex-col items-center justify-center py-16">

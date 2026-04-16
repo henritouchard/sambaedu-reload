@@ -181,9 +181,10 @@ return [
         // Chemin du fichier packages.xml local
         'packages_xml_path' => env('WPKG_PACKAGES_XML', '/var/sambaedu/unattended/install/wpkg/packages.xml'),
 
-        // Rapports d'installation WPKG
-        'reports_path'         => env('WPKG_REPORTS_PATH', '/var/sambaedu/unattended/logs/status'),
-        'reports_archive_path' => env('WPKG_REPORTS_ARCHIVE_PATH', '/var/sambaedu/unattended/logs/status/archive'),
+        // Rapports d'installation WPKG (rapports .txt + logs .log déposés via partage Samba [rapports])
+        // Path historique du legacy (cf. sambaedu/wpkg/log.php:14, depot_accueil.php:90).
+        'reports_path'         => env('WPKG_REPORTS_PATH', '/var/sambaedu/unattended/install/wpkg/rapports'),
+        'reports_archive_path' => env('WPKG_REPORTS_ARCHIVE_PATH', '/var/sambaedu/unattended/install/wpkg/rapports/archive'),
 
         // IPs autorisées à envoyer des rapports (API locale)
         'report_ingestion_allowed_ips' => array_filter(
