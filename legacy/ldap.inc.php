@@ -804,11 +804,16 @@ if (!function_exists('search_ad')) {
                 if ($name === '*' || $name === '') {
                     $filter = '(objectclass=Subnet)';
                 } else {
-                    $safe = $name;
-                    escape_ldap_name($safe);
-                    // Le filtre legacy accepte soit cn=<IP/CIDR>, soit siteobject
-                    // qui référence un site. On conserve la compatibilité.
-                    $filter = "(&(objectclass=Subnet)(|(cn={$safe})(siteobject=CN={$safe},CN=Sites,CN=Configuration," . ($config['ldap_base_dn'] ?? '') . ")))";
+                    // #5 — Le filtre utilise $name à la fois comme filter value
+                    // (cn=...) ET à l'intérieur d'un DN (siteobject=CN=...,...).
+                    // Ces deux contextes ont des règles d'escape différentes
+                    // (RFC 4515 vs RFC 4514). On produit donc deux variantes.
+                    $safeFilter = $name;
+                    escape_ldap_name($safeFilter);
+                    $safeDn = function_exists('ldap_escape')
+                        ? ldap_escape($name, '', LDAP_ESCAPE_DN)
+                        : $safeFilter; // fallback : escape filter (dégradé mais aligné legacy)
+                    $filter = "(&(objectclass=Subnet)(|(cn={$safeFilter})(siteobject=CN={$safeDn},CN=Sites,CN=Configuration," . ($config['ldap_base_dn'] ?? '') . ")))";
                 }
                 $subnetAttrs = ['cn', 'description', 'siteobject', 'location'];
                 if ($restrict_attrs && !empty($attrs)) {

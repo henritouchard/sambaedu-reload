@@ -577,9 +577,13 @@ class LegacyGpoShimsTest extends TestCase
 
         $this->assertTrue($ok);
 
-        // Le nom dans le path est sanitize (seulement [a-zA-Z0-9_{}.-]).
+        // Le nom dans le path est sanitize (seulement [a-zA-Z0-9_{}.-]),
+        // et suffixé par getmypid() . '_' . uniqid() (anti race condition).
+        // On localise le dossier via glob sur le préfixe.
         $safeCn = preg_replace('/[^a-zA-Z0-9_{}\.-]/', '_', $cnRaw);
-        $tmpDir = sys_get_temp_dir() . '/sambaedu_sysvol_' . $safeCn;
+        $candidates = glob(sys_get_temp_dir() . '/sambaedu_sysvol_' . $safeCn . '_*');
+        $this->assertCount(1, $candidates, 'Un seul tmpDir attendu pour ce CN unique');
+        $tmpDir = $candidates[0];
         $finalPath = $tmpDir . '/Registry.pol';
         $this->assertFileExists($finalPath);
         $this->assertEquals($data, file_get_contents($finalPath));
@@ -611,9 +615,12 @@ class LegacyGpoShimsTest extends TestCase
         $this->assertArrayHasKey('increment_user', $gpo);
         $this->assertTrue($gpo['increment_user']);
 
-        // Cleanup (chemin = sambaedu_sysvol_{cn-sanitized}).
+        // Cleanup : le suffixe PID+uniqid rend le chemin unique par appel.
         $safeCn = preg_replace('/[^a-zA-Z0-9_{}\.-]/', '_', $cnRaw);
-        @rmdir(sys_get_temp_dir() . '/sambaedu_sysvol_' . $safeCn);
+        foreach (glob(sys_get_temp_dir() . '/sambaedu_sysvol_' . $safeCn . '_*') as $dir) {
+            array_map('unlink', glob($dir . '/*') ?: []);
+            @rmdir($dir);
+        }
     }
 
     /**
@@ -776,6 +783,70 @@ class LegacyGpoShimsTest extends TestCase
         } else {
             $this->fail("Impossible d'extraire la portion (cn=...) du filtre : {$capturedFilter}");
         }
+    }
+
+    /**
+     * #5 — search_ad(type='subnet') construit un filtre qui insère $name à la
+     * fois comme filter value (cn=...) ET comme composante de DN
+     * (siteobject=CN=...,...). Les deux contextes ont des règles d'escape
+     * différentes. Avec une virgule dans $name, la partie DN doit être
+     * encodée en `\2C` (LDAP_ESCAPE_DN), pas laissée brute — sinon le filtre
+     * est malformé.
+     */
+    public function test_search_ad_subnet_escapes_dn_for_siteobject(): void
+    {
+        $capturedFilter = null;
+        $GLOBALS['__shim_ldap_call_override'] = function (string $fn, array $args) use (&$capturedFilter) {
+            if ($fn === 'ldap_search') {
+                $capturedFilter = $args[2];
+                return 'FAKE_LDAP_RESULT';
+            }
+            return match ($fn) {
+                'ldap_connect'     => 'FAKE_LDAP_CONN',
+                'ldap_set_option'  => true,
+                'ldap_bind'        => true,
+                'ldap_get_entries' => ['count' => 0],
+                'ldap_unbind'      => true,
+                default            => false,
+            };
+        };
+
+        // Nom de site avec virgule (= caractère DN-sensible).
+        search_ad($this->config, 'site,eastcampus', 'subnet');
+
+        $this->assertNotNull($capturedFilter, 'ldap_search doit avoir été appelé');
+
+        // Dans la partie `siteobject=CN=...,CN=Sites`, la virgule du nom doit
+        // être encodée en `\2c` (PHP ldap_escape produit du lowercase), sinon
+        // elle serait interprétée comme séparateur de RDN par le parseur LDAP
+        // et romprait la structure du DN.
+        $this->assertMatchesRegularExpression(
+            '/siteobject=CN=site\\\\2c(?i)eastcampus,CN=Sites/i',
+            $capturedFilter,
+            'La virgule du nom de site doit être encodée en `\\2c` (LDAP_ESCAPE_DN) dans la partie DN du filtre'
+        );
+    }
+
+    /**
+     * Manqué #3 — Deux appels successifs à _shim_gpo_safe_tmppath() avec la
+     * même GPO produisent des chemins DISTINCTS (suffix PID+uniqid). Évite la
+     * race condition entre workers PHP concurrents qui écriraient le même
+     * fichier SYSVOL en même temps.
+     */
+    public function test_sysvol_safe_tmppath_is_unique_per_call(): void
+    {
+        $gpo = ['cn' => '{FIXED-GUID-ABC}', 'displayname' => 'Same GPO'];
+
+        $path1 = _shim_gpo_safe_tmppath($gpo);
+        $path2 = _shim_gpo_safe_tmppath($gpo);
+
+        $this->assertNotSame($path1, $path2, 'Deux appels avec la même GPO doivent produire des paths distincts (anti-race)');
+        // Les deux doivent tout de même contenir le cn sanitize (anti path traversal).
+        $this->assertStringContainsString('{FIXED-GUID-ABC}', $path1);
+        $this->assertStringContainsString('{FIXED-GUID-ABC}', $path2);
+        // Et rester sous sys_get_temp_dir().
+        $this->assertStringStartsWith(sys_get_temp_dir() . '/sambaedu_sysvol_', $path1);
+        $this->assertStringStartsWith(sys_get_temp_dir() . '/sambaedu_sysvol_', $path2);
     }
 
     // ═══════════════════════════════════════════════════════════════════════

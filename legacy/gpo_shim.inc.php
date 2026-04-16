@@ -152,11 +152,18 @@ if (!function_exists('_shim_gpo_log_exec_failure')) {
 
 if (!function_exists('_shim_gpo_safe_tmppath')) {
     /**
-     * Helper interne : construit un chemin temporaire SYSVOL safe (anti path
-     * traversal). Cf. #M2 — un displayname avec "../" pourrait écrire hors
-     * sys_get_temp_dir() si on utilisait $gpo['displayname'] sans sanitize.
+     * Helper interne : construit un chemin temporaire SYSVOL safe.
      *
-     * Ordre de préférence :
+     * Deux protections :
+     *   #M2 — Anti path traversal : un displayname avec "../" pourrait
+     *         écrire hors sys_get_temp_dir() si on utilisait
+     *         $gpo['displayname'] sans sanitize.
+     *   Manqué #3 — Anti race condition : deux workers PHP qui écrivent
+     *         simultanément la même GPO chiseraient leurs temp files
+     *         dans le même dossier. On suffixe par PID+uniqid pour que
+     *         chaque worker ait son répertoire propre.
+     *
+     * Ordre de préférence du nom :
      *   1. $gpo['cn']         (GUID, toujours safe — `{XXXXXXXX-...-XXXX}`)
      *   2. $gpo['displayname'] (fallback, sanitize strict)
      *   3. 'gpo'              (ultime fallback)
@@ -171,7 +178,8 @@ if (!function_exists('_shim_gpo_safe_tmppath')) {
         if ($safeName === '' || $safeName === null) {
             $safeName = 'gpo';
         }
-        return sys_get_temp_dir() . '/sambaedu_sysvol_' . $safeName;
+        $unique = (function_exists('getmypid') ? getmypid() : '0') . '_' . uniqid();
+        return sys_get_temp_dir() . '/sambaedu_sysvol_' . $safeName . '_' . $unique;
     }
 }
 
