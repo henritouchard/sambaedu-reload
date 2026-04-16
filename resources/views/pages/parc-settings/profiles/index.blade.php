@@ -418,8 +418,8 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
 };
 ?>
 
-<x-organisms.page title="{{ $profile?->display_name ?? ($profile?->name ?? 'Profil') }}" :scrollable="false"
-    backUrl="{{ route('app.parc-settings.index') }}" backText="Retour aux paramètres">
+<x-organisms.page title="Profil applicatif" :scrollable="false" backUrl="{{ route('app.parc-settings.index') }}"
+    backText="Retour aux paramètres">
 
     <x-slot:actions>
         <div class="flex gap-2">
@@ -475,12 +475,17 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
                     @else
                         <div class="flex justify-between items-start">
                             <div>
-                                <h2 class="text-xl font-bold">{{ $profile->display_name ?? $profile->name }}</h2>
-                                @if ($profile->display_name)
-                                    <p class="text-sm text-base-content/60">
-                                        <code class="bg-base-200 px-2 py-0.5 rounded">{{ $profile->name }}</code>
-                                    </p>
-                                @endif
+                                <div class="flex items-center gap-4 mb-2">
+                                    <div class="bg-primary/10 text-primary rounded-xl w-16 h-16 flex items-center justify-center">
+                                        <i class="fa-solid fa-layer-group text-2xl"></i>
+                                    </div>
+                                    <h2 class="text-xl font-bold">{{ $profile->display_name ?? $profile->name }}</h2>
+                                    @if ($profile->display_name)
+                                        <p class="text-sm text-base-content/60">
+                                            <code class="bg-base-200 px-2 py-0.5 rounded">{{ $profile->name }}</code>
+                                        </p>
+                                    @endif
+                                </div>
                                 @if ($profile->description)
                                     <p class="mt-2 text-base-content/70">{{ $profile->description }}</p>
                                 @endif

@@ -18,11 +18,7 @@
                     class="flex items-center gap-3 p-3 hover:bg-base-200 cursor-pointer border-b border-base-200 last:border-b-0">
                     <input type="checkbox" class="checkbox checkbox-sm checkbox-primary"
                         wire:model.live="selectedAppsToAdd" value="{{ $app->id }}" />
-                    <div class="avatar placeholder">
-                        <div class="bg-primary/10 text-primary rounded w-8 h-8">
-                            <i class="fa-solid fa-cube text-sm"></i>
-                        </div>
-                    </div>
+                    <x-atoms.icon-avatar icon="fa-cube" bgColor="bg-primary/10" textColor="text-primary" size="w-8 h-8" iconSize="text-sm" />
                     <div class="flex-1">
                         <div class="font-medium">
                             {{ $app->name }}

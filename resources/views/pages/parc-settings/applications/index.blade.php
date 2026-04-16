@@ -82,10 +82,8 @@ new #[Title('Détails de l\'application - SE4FS')] class extends Component {
             <div class="card-body">
                 {{-- En-tête identité --}}
                 <div class="flex items-start gap-4 mb-6">
-                    <div class="avatar placeholder">
-                        <div class="{{ $application->status === ApplicationStatus::Error ? 'bg-error/10 text-error' : 'bg-primary/10 text-primary' }} rounded-xl w-16 h-16">
-                            <i class="fa-solid {{ $application->status === ApplicationStatus::Error ? 'fa-triangle-exclamation' : 'fa-cube' }} text-2xl"></i>
-                        </div>
+                    <div class="{{ $application->status === ApplicationStatus::Error ? 'bg-error/10 text-error' : 'bg-primary/10 text-primary' }} rounded-xl w-16 h-16">
+                        <i class="fa-solid {{ $application->status === ApplicationStatus::Error ? 'fa-triangle-exclamation' : 'fa-cube' }} text-2xl"></i>
                     </div>
                     <div class="flex-1">
                         <h2 class="text-2xl font-bold">{{ $application->name }}</h2>

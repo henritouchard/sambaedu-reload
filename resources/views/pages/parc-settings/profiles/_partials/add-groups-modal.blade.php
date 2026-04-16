@@ -15,11 +15,7 @@
                     class="flex items-center gap-3 p-3 hover:bg-base-200 cursor-pointer border-b border-base-200 last:border-b-0">
                     <input type="checkbox" class="checkbox checkbox-sm checkbox-primary"
                         wire:model="selectedGroupsToAdd" value="{{ $group->id }}" />
-                    <div class="avatar placeholder">
-                        <div class="bg-secondary/10 text-secondary rounded w-8 h-8">
-                            <i class="fa-solid fa-folder-tree text-sm"></i>
-                        </div>
-                    </div>
+                    <x-atoms.icon-avatar icon="fa-folder-tree" bgColor="bg-secondary/10" textColor="text-secondary" size="w-8 h-8" iconSize="text-sm" />
                     <div class="flex-1">
                         <div class="font-medium">{{ $group->name }}</div>
                         <div class="text-xs text-base-content/60">

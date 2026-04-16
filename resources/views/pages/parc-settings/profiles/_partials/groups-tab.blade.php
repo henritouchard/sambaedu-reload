@@ -36,11 +36,7 @@
                             <tr wire:key="profile-group-{{ $group->id }}">
                                 <td>
                                     <div class="flex items-center gap-3">
-                                        <div class="avatar placeholder">
-                                            <div class="bg-secondary/10 text-secondary rounded w-8 h-8">
-                                                <i class="fa-solid fa-folder-tree text-sm"></i>
-                                            </div>
-                                        </div>
+                                        <x-atoms.icon-avatar icon="fa-folder-tree" bgColor="bg-secondary/10" textColor="text-secondary" size="w-8 h-8" iconSize="text-sm" />
                                         <div>
                                             <a href="{{ route('app.parc.groups.show', $group->id) }}"
                                                 class="font-medium hover:text-primary">
@@ -103,11 +99,7 @@
                                 <tr wire:key="inherited-group-{{ $group->id }}" class="opacity-60 bg-base-200/30">
                                     <td>
                                         <div class="flex items-center gap-3">
-                                            <div class="avatar placeholder">
-                                                <div class="bg-base-300 text-base-content/50 rounded w-8 h-8">
-                                                    <i class="fa-solid fa-folder text-sm"></i>
-                                                </div>
-                                            </div>
+                                            <x-atoms.icon-avatar icon="fa-folder" bgColor="bg-base-300" textColor="text-base-content/50" size="w-8 h-8" iconSize="text-sm" />
                                             <div>
                                                 <a href="{{ route('app.parc.groups.show', $group->id) }}"
                                                     class="font-medium hover:text-primary">

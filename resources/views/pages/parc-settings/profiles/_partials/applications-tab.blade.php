@@ -30,11 +30,7 @@
                             <tr wire:key="profile-app-{{ $app->id }}">
                                 <td>
                                     <div class="flex items-center gap-3">
-                                        <div class="avatar placeholder">
-                                            <div class="bg-primary/10 text-primary rounded w-8 h-8">
-                                                <i class="fa-solid fa-cube text-sm"></i>
-                                            </div>
-                                        </div>
+                                        <x-atoms.icon-avatar icon="fa-cube" bgColor="bg-primary/10" textColor="text-primary" size="w-8 h-8" iconSize="text-sm" />
                                         <span class="font-medium">{{ $app->name }}</span>
                                         @if ($app->branch && $app->branch !== 'stable')
                                             <span class="badge badge-warning badge-xs" title="{{ $app->branch }}">
