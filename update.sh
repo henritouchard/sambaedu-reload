@@ -172,6 +172,21 @@ else
     print_success "Queue workers notifiés (soft restart — fin propre du job courant)"
 fi
 
+# 13. Cron scheduler Laravel
+print_status "Vérification du cron scheduler..."
+if ! sudo cmp -s "scripts/config/sambaedu-scheduler.cron" "/etc/cron.d/sambaedu-scheduler" 2>/dev/null; then
+    sudo install -m 644 -o root -g root "scripts/config/sambaedu-scheduler.cron" "/etc/cron.d/sambaedu-scheduler"
+    print_success "Cron scheduler mis à jour (/etc/cron.d/sambaedu-scheduler)"
+else
+    print_status "Cron scheduler inchangé"
+fi
+
+# Nettoyage de l'ancien cron user (évite la double exécution)
+if sudo crontab -u www-admin -l 2>/dev/null | grep -q "artisan schedule:run"; then
+    sudo crontab -u www-admin -l | grep -v "artisan schedule:run" | sudo crontab -u www-admin -
+    print_warning "Ancien cron schedule:run retiré du crontab www-admin"
+fi
+
 # Résumé
 echo ""
 echo "=============================="

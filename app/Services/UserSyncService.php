@@ -150,7 +150,7 @@ class UserSyncService
 
                 DB::commit();
 
-                $log('success', "Import terminé : {$stats['created']} créés, {$stats['updated']} mis à jour, {$stats['skipped']} inchangés, {$stats['errors']} erreurs");
+                $log('info', "Import terminé : {$stats['created']} créés, {$stats['updated']} mis à jour, {$stats['skipped']} inchangés, {$stats['errors']} erreurs");
 
             } catch (\Exception $e) {
                 DB::rollBack();
@@ -636,7 +636,7 @@ class UserSyncService
 
         $this->grantAdminRights($user);
 
-        $log('success', 'Compte admin configuré : rôle super-admin, ' . count(SambaPermission::cases()) . ' permissions');
+        $log('info', 'Compte admin configuré : rôle super-admin, ' . count(SambaPermission::cases()) . ' permissions');
     }
 
     /**

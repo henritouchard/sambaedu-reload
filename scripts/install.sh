@@ -691,6 +691,28 @@ install_queue_workers() {
   log_success "Queue workers actifs : ${services[*]}"
 }
 
+install_scheduler_cron() {
+  log "Installation du cron Laravel scheduler..."
+
+  local src="$APP_DIR/scripts/config/sambaedu-scheduler.cron"
+  local dst="/etc/cron.d/sambaedu-scheduler"
+
+  if [[ ! -f "$src" ]]; then
+    log_error "Fichier source manquant: $src"
+    return 1
+  fi
+
+  install -m 644 -o root -g root "$src" "$dst"
+  log_success "Cron scheduler installé dans $dst"
+
+  # Nettoyage de l'ancien crontab utilisateur (ligne schedule:run dans www-admin)
+  # pour éviter la double exécution.
+  if crontab -u www-admin -l 2>/dev/null | grep -q "artisan schedule:run"; then
+    crontab -u www-admin -l 2>/dev/null | grep -v "artisan schedule:run" | crontab -u www-admin -
+    log "  → ancien cron schedule:run retiré du crontab www-admin"
+  fi
+}
+
 # ============================================================================
 # Affichage du résumé
 # ============================================================================
@@ -832,6 +854,7 @@ main() {
   echo ""
 
   install_queue_workers
+  install_scheduler_cron
 
   # Résumé
   echo ""

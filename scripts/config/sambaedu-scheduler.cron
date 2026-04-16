@@ -1,0 +1,8 @@
+# Laravel scheduler for SambaEdu (sambaedu-reload)
+# Installé dans /etc/cron.d/sambaedu-scheduler par scripts/install.sh et update.sh
+# Ne pas éditer ce fichier manuellement sur la VM — source : scripts/config/sambaedu-scheduler.cron
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+* * * * * www-admin cd /var/www/sambaedu-reload && /usr/bin/php8.2 artisan schedule:run >/dev/null 2>&1
