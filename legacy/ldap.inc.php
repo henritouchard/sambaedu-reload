@@ -295,6 +295,323 @@ function _shim_log_unimplemented(string $functionName): void
     }
 }
 
+// ─── Helpers LDAP natifs pour les cases GPO/site/subnet (story 1bis.18g) ────
+//
+// Les cases 'gpo', 'site', 'subnet' de search_ad et 'gpo' de modify_ad NE
+// sont PAS shimmées vers Eloquent : SER n'est pas propriétaire de ces données.
+// La source de vérité est exclusivement l'AD Samba réel (cf. sprint-change
+// -proposal-2026-04-15 + feedback_gpo_real_ad_not_eloquent).
+//
+// Pour garantir la testabilité host-side (mock LDAP sans AD réel), toutes les
+// fonctions natives ext-ldap sont appelées à travers le wrapper
+// `_shim_ldap_call($fn, ...$args)`. Les tests surchargent ce wrapper via le
+// global $GLOBALS['__shim_ldap_call_override'] pour injecter des fausses
+// réponses sans toucher au driver LDAP.
+
+if (!function_exists('_shim_ldap_call')) {
+    /**
+     * Wrapper testable autour des fonctions ext-ldap natives.
+     *
+     * En production : appelle `$fn(...$args)` directement.
+     * En test : si `$GLOBALS['__shim_ldap_call_override']` est un callable,
+     *           il est invoqué à la place avec `($fn, $args)`.
+     *
+     * @param string $fn  Nom de la fonction ldap_* (ex: 'ldap_connect').
+     * @param mixed  ...$args
+     * @return mixed
+     */
+    function _shim_ldap_call(string $fn, ...$args)
+    {
+        $override = $GLOBALS['__shim_ldap_call_override'] ?? null;
+        if (is_callable($override)) {
+            return $override($fn, $args);
+        }
+        if (!function_exists($fn)) {
+            // ext-ldap non chargée — on log et on retourne false.
+            _shim_log_unimplemented("_shim_ldap_call: fonction native absente: {$fn}");
+            return false;
+        }
+        return $fn(...$args);
+    }
+}
+
+if (!function_exists('_shim_gpo_ldap_connect')) {
+    /**
+     * Ouvre une connexion LDAP réelle vers l'AD Samba pour les opérations GPO.
+     *
+     * Bind : par credentials admin (`$config['ldap_admin_name']` +
+     * `$config['ldap_admin_passwd']`) OU via GSSAPI/Kerberos si
+     * `$config['ldap_use_gssapi']` est `true` (alignement avec le bridge
+     * smbclient utilisé en Phase 4). Le pattern reflète
+     * `sambaedu/includes/config.inc.php:377-399` (legacy).
+     *
+     * @param array $config  Configuration legacy (doit contenir ldap_admin_name,
+     *                       ldap_admin_passwd, domain OU ldap_use_gssapi).
+     * @return resource|false  Handle LDAP (ou false si connexion/bind échoue).
+     */
+    function _shim_gpo_ldap_connect(array $config)
+    {
+        // #M8 — Refuser les bind anonymes silencieux : si pas de credentials
+        // et pas GSSAPI configuré, on log et on refuse la connexion.
+        if (empty($config['ldap_admin_passwd']) && empty($config['ldap_use_gssapi'])) {
+            _shim_log_unimplemented("_shim_gpo_ldap_connect: no credentials configured (ldap_admin_passwd empty, ldap_use_gssapi disabled)");
+            return false;
+        }
+
+        // #M10 — Guard `ad_url` par `function_exists` pour aligner avec le
+        // style défensif de `gpo_shim.inc.php`. Fallback sur ldaps://se4ad_ip
+        // si la fonction n'est pas encore chargée (ex. bootstrap minimal).
+        if (function_exists('ad_url')) {
+            $url = ad_url($config, 'ldaps', true);
+        } else {
+            $url = 'ldaps://' . ($config['se4ad_ip'] ?? $config['bind'] ?? 'localhost');
+        }
+        $ds = _shim_ldap_call('ldap_connect', $url);
+        if (!$ds) {
+            _shim_log_unimplemented("_shim_gpo_ldap_connect: ldap_connect({$url}) failed");
+            return false;
+        }
+
+        // Constantes ext-ldap : disponibles même si l'ext n'est pas chargée
+        // car on a nos propres fallbacks en bas du fichier.
+        $protocol = defined('LDAP_OPT_PROTOCOL_VERSION') ? LDAP_OPT_PROTOCOL_VERSION : 17;
+        $referrals = defined('LDAP_OPT_REFERRALS') ? LDAP_OPT_REFERRALS : 8;
+        $networkTimeout = defined('LDAP_OPT_NETWORK_TIMEOUT') ? LDAP_OPT_NETWORK_TIMEOUT : 0x5005;
+        $timeLimit = defined('LDAP_OPT_TIMELIMIT') ? LDAP_OPT_TIMELIMIT : 0x0004;
+        _shim_ldap_call('ldap_set_option', $ds, $protocol, 3);
+        _shim_ldap_call('ldap_set_option', $ds, $referrals, 0);
+        // Timeouts : DC Samba en localhost → latence quasi nulle en nominal,
+        // mais si le DC hang (panic, deadlock), un worker PHP-FPM bloqué
+        // indéfiniment peut saturer le pool et rendre tout le site
+        // inaccessible. 10s network = marge confortable ; 30s time-limit =
+        // recherches larges tolérées (listall GPO).
+        _shim_ldap_call('ldap_set_option', $ds, $networkTimeout, 10);
+        _shim_ldap_call('ldap_set_option', $ds, $timeLimit, 30);
+
+        if (!empty($config['ldap_use_gssapi'])) {
+            // Bind Kerberos/GSSAPI — suppose que KRB5CCNAME est positionné.
+            $ok = _shim_ldap_call('ldap_sasl_bind', $ds, null, null, 'GSSAPI');
+        } else {
+            $bindDn = ($config['ldap_admin_name'] ?? '')
+                . (empty($config['domain']) ? '' : '@' . $config['domain']);
+            $ok = _shim_ldap_call(
+                'ldap_bind',
+                $ds,
+                $bindDn,
+                $config['ldap_admin_passwd'] ?? ''
+            );
+        }
+
+        if (!$ok) {
+            _shim_log_unimplemented("_shim_gpo_ldap_connect: ldap_bind failed");
+            // Cleanup : fermer la connexion ouverte si le bind échoue.
+            _shim_ldap_call('ldap_unbind', $ds);
+            return false;
+        }
+        return $ds;
+    }
+}
+
+if (!function_exists('_shim_gpo_with_ldap')) {
+    /**
+     * Helper : ouvre une connexion LDAP GPO, exécute le callback, puis ferme
+     * la connexion dans un `try/finally` — garantit l'absence de fuite de
+     * connexion même si le callback lève une exception (#1 + #4).
+     *
+     * Le callback reçoit le handle LDAP (`$ds`) et doit retourner la valeur
+     * à propager au caller.
+     *
+     * Si la connexion ne peut pas être établie, le callback n'est pas appelé
+     * et la valeur `$onConnectFailure` est retournée (défaut : `false`).
+     *
+     * @param array    $config
+     * @param callable $fn                 function($ds): mixed
+     * @param mixed    $onConnectFailure   Valeur à retourner si la connexion échoue.
+     * @return mixed
+     */
+    function _shim_gpo_with_ldap(array $config, callable $fn, $onConnectFailure = false)
+    {
+        $ds = _shim_gpo_ldap_connect($config);
+        if (!$ds) {
+            return $onConnectFailure;
+        }
+        try {
+            return $fn($ds);
+        } finally {
+            // Ne pas avaler d'exception d'unbind : un mock test peut retourner
+            // true/null — c'est acceptable. En production ldap_unbind peut
+            // throw sur handle invalide, on silence pour ne pas masquer l'erreur
+            // du callback (qui est déjà remontée via la propagation).
+            @_shim_ldap_call('ldap_unbind', $ds);
+        }
+    }
+}
+
+if (!function_exists('_shim_gpo_search')) {
+    /**
+     * Effectue une recherche LDAP réelle et retourne les entrées au format
+     * legacy `[0 => [...], 1 => [...], 'count' => N]`.
+     *
+     * Distinction stricte (voir story 18g AC #1) :
+     * - LDAP OK, aucune entrée → retour `{count: 0}` (tableau contenant juste 'count').
+     * - LDAP down / bind échec → retour `false` (remontée de l'erreur).
+     *
+     * @param array    $config
+     * @param string   $branch  Base DN de recherche (ex: "CN=Policies,CN=System,{base_dn}").
+     * @param string   $filter  Filtre LDAP.
+     * @param string[] $attrs   Attributs à récupérer.
+     * @return array|false
+     */
+    function _shim_gpo_search(array $config, string $branch, string $filter, array $attrs)
+    {
+        // #1 + #4 — Utiliser le helper with_ldap pour garantir ldap_unbind
+        // dans un try/finally (absence de fuite de connexion).
+        return _shim_gpo_with_ldap($config, function ($ds) use ($branch, $filter, $attrs) {
+            $result = _shim_ldap_call('ldap_search', $ds, $branch, $filter, $attrs);
+            if ($result === false || $result === null) {
+                // #2 — ldap_search échoue → remonter `false` (pas `count:0`).
+                // Distinction AC #1 :
+                //   - LDAP OK + 0 entrées → ['count' => 0]
+                //   - ldap_search échec (base invalide, filtre rejeté, timeout)
+                //     → false (erreur réelle, à remonter à l'appelant).
+                _shim_log_unimplemented("_shim_gpo_search: ldap_search({$branch}, {$filter}) failed");
+                return false;
+            }
+
+            $entries = _shim_ldap_call('ldap_get_entries', $ds, $result);
+            if ($entries === false || $entries === null) {
+                // ldap_get_entries en échec = erreur réelle, pas "not found".
+                _shim_log_unimplemented("_shim_gpo_search: ldap_get_entries({$branch}) failed");
+                return false;
+            }
+            if (!is_array($entries)) {
+                return ['count' => 0];
+            }
+
+            // Format legacy : [0 => ..., 1 => ..., 'count' => N].
+            // ldap_get_entries retourne ['count' => N, 0 => ..., ...] avec chaque
+            // attribut sous forme `['count' => N, 0 => val1, 1 => val2]`.
+            $count = (int) ($entries['count'] ?? 0);
+            if ($count === 0) {
+                return ['count' => 0];
+            }
+
+            $out = ['count' => $count];
+            for ($i = 0; $i < $count; $i++) {
+                $src = $entries[$i] ?? [];
+                $row = [];
+                if (isset($src['dn'])) {
+                    $row['dn'] = $src['dn'];
+                    $row['etab'] = ldap_dn2uai($src['dn']);
+                }
+                foreach ($src as $key => $val) {
+                    if (!is_string($key)) {
+                        continue;
+                    }
+                    if ($key === 'dn' || $key === 'count') {
+                        continue;
+                    }
+                    if (is_array($val)) {
+                        // Format ext-ldap : ['count' => N, 0 => v1, 1 => v2, ...].
+                        $n = (int) ($val['count'] ?? 0);
+                        if ($n === 1) {
+                            $row[$key] = $val[0] ?? '';
+                        } else {
+                            $row[$key] = [];
+                            for ($j = 0; $j < $n; $j++) {
+                                $row[$key][] = $val[$j] ?? '';
+                            }
+                        }
+                    } else {
+                        $row[$key] = $val;
+                    }
+                }
+                $out[$i] = $row;
+            }
+            return $out;
+        });
+    }
+}
+
+if (!function_exists('_shim_gpo_modify_replace')) {
+    /**
+     * Applique un `ldap_mod_replace` sur l'AD Samba pour un DN de GPO.
+     *
+     * Accepte optionnellement un handle LDAP existant (`$ds`) pour éviter
+     * d'ouvrir une deuxième connexion quand le DN vient d'être résolu
+     * (cf. #4 : modify_ad(gpo) par nom faisait 2 connexions auparavant).
+     *
+     * @param array                        $config
+     * @param string                       $dn     DN de l'objet GPO (grouppolicycontainer).
+     * @param array                        $attrs  Attributs à modifier (format ext-ldap).
+     * @param \LDAP\Connection|resource|null $ds   Handle LDAP existant (optionnel).
+     * @return bool
+     */
+    function _shim_gpo_modify_replace(array $config, string $dn, array $attrs, $ds = null): bool
+    {
+        if ($ds !== null) {
+            $ok = _shim_ldap_call('ldap_mod_replace', $ds, $dn, $attrs);
+            if (!$ok) {
+                _shim_log_unimplemented("_shim_gpo_modify_replace: ldap_mod_replace({$dn}) failed");
+                return false;
+            }
+            return true;
+        }
+
+        return _shim_gpo_with_ldap($config, function ($ds) use ($dn, $attrs) {
+            $ok = _shim_ldap_call('ldap_mod_replace', $ds, $dn, $attrs);
+            if (!$ok) {
+                _shim_log_unimplemented("_shim_gpo_modify_replace: ldap_mod_replace({$dn}) failed");
+                return false;
+            }
+            return true;
+        });
+    }
+}
+
+if (!function_exists('_shim_gpo_resolve_dn')) {
+    /**
+     * Résout le DN d'une GPO à partir de son CN/displayname.
+     *
+     * Retourne le DN si trouvé, `false` si non trouvé ou LDAP down.
+     *
+     * Accepte optionnellement un handle LDAP existant (`$ds`) pour partager
+     * une connexion avec `_shim_gpo_modify_replace` (cf. #4).
+     *
+     * @param array                        $config
+     * @param string                       $name   CN ou displayname de la GPO.
+     * @param \LDAP\Connection|resource|null $ds   Handle LDAP existant (optionnel).
+     * @return string|false
+     */
+    function _shim_gpo_resolve_dn(array $config, string $name, $ds = null)
+    {
+        $safe = $name;
+        escape_ldap_name($safe);
+        $branch = 'CN=Policies,CN=System,' . ($config['ldap_base_dn'] ?? '');
+        $filter = "(&(objectclass=grouppolicycontainer)(|(cn={$safe})(displayname={$safe})))";
+
+        if ($ds !== null) {
+            // Utiliser la connexion existante — pas de re-open/close.
+            $result = _shim_ldap_call('ldap_search', $ds, $branch, $filter, ['cn', 'displayname']);
+            if ($result === false || $result === null) {
+                _shim_log_unimplemented("_shim_gpo_resolve_dn: ldap_search({$branch}, {$filter}) failed");
+                return false;
+            }
+            $entries = _shim_ldap_call('ldap_get_entries', $ds, $result);
+            if (!is_array($entries) || (int) ($entries['count'] ?? 0) === 0) {
+                return false;
+            }
+            return $entries[0]['dn'] ?? false;
+        }
+
+        $res = _shim_gpo_search($config, $branch, $filter, ['cn', 'displayname']);
+        if (!is_array($res) || (int) ($res['count'] ?? 0) === 0) {
+            return false;
+        }
+        return $res[0]['dn'] ?? false;
+    }
+}
+
 // ─── Fonctions de haut niveau shimmées ───────────────────────────────────────
 
 if (!function_exists('search_ad')) {
@@ -432,6 +749,81 @@ if (!function_exists('search_ad')) {
                     $results[] = _shim_user_to_ldap_entry($user, $config);
                 }
                 return _shim_wrap_results($results);
+
+            // ─── GPO / site / subnet : LDAP RÉEL (pas Eloquent) ────────────
+            // Voir story 1bis.18g : SER n'est pas propriétaire de ces données,
+            // la source de vérité est l'AD Samba. On interroge donc l'AD via
+            // `ldap_connect`+`ldap_bind`+`ldap_search` natifs (wrappés par
+            // `_shim_ldap_call` pour testabilité host-side).
+            case 'gpo':
+                if ($name === '*' || $name === '') {
+                    $filter = '(objectclass=grouppolicycontainer)';
+                } else {
+                    $safe = $name;
+                    escape_ldap_name($safe);
+                    $filter = "(&(objectclass=grouppolicycontainer)(|(cn={$safe})(displayname={$safe})))";
+                }
+                $gpoAttrs = [
+                    'cn',
+                    'displayname',
+                    'gpcfilesyspath',
+                    'versionnumber',
+                    'gpcuserextensionnames',
+                    'gpcmachineextensionnames',
+                    'gpcfunctionalityversion',
+                    'flags',
+                ];
+                if ($restrict_attrs && !empty($attrs)) {
+                    $gpoAttrs = $attrs;
+                } elseif (!empty($attrs)) {
+                    $gpoAttrs = array_values(array_unique(array_merge($gpoAttrs, $attrs)));
+                }
+                $gpoBranch = 'CN=Policies,CN=System,' . ($config['ldap_base_dn'] ?? '');
+                $gpoResult = _shim_gpo_search($config, $gpoBranch, $filter, $gpoAttrs);
+                return $gpoResult === false ? false : $gpoResult;
+
+            case 'site':
+                if ($name === '*' || $name === '') {
+                    $filter = '(objectclass=site)';
+                } else {
+                    $safe = $name;
+                    escape_ldap_name($safe);
+                    $filter = "(&(objectclass=site)(cn={$safe}))";
+                }
+                $siteAttrs = ['cn', 'description'];
+                if ($restrict_attrs && !empty($attrs)) {
+                    $siteAttrs = $attrs;
+                } elseif (!empty($attrs)) {
+                    $siteAttrs = array_values(array_unique(array_merge($siteAttrs, $attrs)));
+                }
+                $siteBranch = 'CN=Sites,CN=Configuration,' . ($config['ldap_base_dn'] ?? '');
+                $siteResult = _shim_gpo_search($config, $siteBranch, $filter, $siteAttrs);
+                return $siteResult === false ? false : $siteResult;
+
+            case 'subnet':
+                if ($name === '*' || $name === '') {
+                    $filter = '(objectclass=Subnet)';
+                } else {
+                    // #5 — Le filtre utilise $name à la fois comme filter value
+                    // (cn=...) ET à l'intérieur d'un DN (siteobject=CN=...,...).
+                    // Ces deux contextes ont des règles d'escape différentes
+                    // (RFC 4515 vs RFC 4514). On produit donc deux variantes.
+                    $safeFilter = $name;
+                    escape_ldap_name($safeFilter);
+                    $safeDn = function_exists('ldap_escape')
+                        ? ldap_escape($name, '', LDAP_ESCAPE_DN)
+                        : $safeFilter; // fallback : escape filter (dégradé mais aligné legacy)
+                    $filter = "(&(objectclass=Subnet)(|(cn={$safeFilter})(siteobject=CN={$safeDn},CN=Sites,CN=Configuration," . ($config['ldap_base_dn'] ?? '') . ")))";
+                }
+                $subnetAttrs = ['cn', 'description', 'siteobject', 'location'];
+                if ($restrict_attrs && !empty($attrs)) {
+                    $subnetAttrs = $attrs;
+                } elseif (!empty($attrs)) {
+                    $subnetAttrs = array_values(array_unique(array_merge($subnetAttrs, $attrs)));
+                }
+                $subnetBranch = 'CN=Subnets,CN=Sites,CN=Configuration,' . ($config['ldap_base_dn'] ?? '');
+                $subnetResult = _shim_gpo_search($config, $subnetBranch, $filter, $subnetAttrs);
+                return $subnetResult === false ? false : $subnetResult;
 
             default:
                 _shim_log_unimplemented("search_ad(type={$type})");
@@ -619,7 +1011,54 @@ if (!function_exists('modify_ad')) {
         string $mode = 'replace',
         bool $invalidate_cache = true
     ): bool {
-        _shim_log_unimplemented("modify_ad(name={$name}, type={$type}, mode={$mode})");
+        // Story 1bis.18g — case 'gpo' : LDAP RÉEL (pas Eloquent).
+        // Les autres types (user/group/machine/...) restent stubbés dans ce
+        // shim car leur source de vérité est Eloquent et les modifs transitent
+        // par les Repositories Laravel, pas par `modify_ad()`.
+        if ($type === 'gpo') {
+            if ($mode !== 'replace') {
+                _shim_log_unimplemented("modify_ad(gpo): mode '{$mode}' non supporté (seul 'replace' l'est)");
+                return false;
+            }
+            // Chemin rapide : DN direct (array['dn'] ou string "CN=...,...").
+            // Pas besoin d'ouvrir une connexion LDAP pour résoudre.
+            $directDn = null;
+            $resolveName = null;
+            if (is_array($name)) {
+                $directDn = $name['dn'] ?? null;
+                if (!$directDn && isset($name['cn'])) {
+                    $resolveName = (string) $name['cn'];
+                }
+            } elseif (is_string($name)) {
+                if (stripos($name, 'cn=') === 0 && stripos($name, ',') !== false) {
+                    $directDn = $name;
+                } else {
+                    $resolveName = $name;
+                }
+            }
+
+            if ($directDn !== null) {
+                return _shim_gpo_modify_replace($config, $directDn, $attrs);
+            }
+
+            if ($resolveName === null) {
+                _shim_log_unimplemented("modify_ad(gpo): DN introuvable pour '" . (is_array($name) ? json_encode($name) : (string) $name) . "'");
+                return false;
+            }
+
+            // #4 — Partager une seule connexion LDAP entre resolve_dn et
+            // modify_replace (évite la double connexion).
+            return _shim_gpo_with_ldap($config, function ($ds) use ($config, $resolveName, $attrs, $name) {
+                $dn = _shim_gpo_resolve_dn($config, $resolveName, $ds);
+                if (!$dn) {
+                    _shim_log_unimplemented("modify_ad(gpo): DN introuvable pour '" . (is_array($name) ? json_encode($name) : (string) $name) . "'");
+                    return false;
+                }
+                return _shim_gpo_modify_replace($config, $dn, $attrs, $ds);
+            });
+        }
+
+        _shim_log_unimplemented("modify_ad(name=" . (is_array($name) ? json_encode($name) : $name) . ", type={$type}, mode={$mode})");
         return false;
     }
 }

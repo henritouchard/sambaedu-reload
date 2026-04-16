@@ -102,6 +102,16 @@ try {
     }
     // ─── FIN LEGACY INCLUDES ─────────────────────────────────────────────
 
+    // ─── GPO shim (story 1bis.18g) ──────────────────────────────────────────
+    // Chargé APRÈS les includes legacy : les fonctions originelles (si les
+    // includes legacy ont été chargés) existent déjà donc les fallbacks shim
+    // — guardés par function_exists — ne s'activent pas en production VM. En
+    // tests host-side (où $legacyIncludesPath n'est pas un dir), les
+    // fallbacks shim prennent le relais.
+    // Le shim fournit aussi le bridge Kerberos (_shim_gpo_ensure_krb5ccname)
+    // et le wrapper testable _shim_gpo_exec.
+    require_once __DIR__ . '/gpo_shim.inc.php';
+
 } catch (\Throwable $e) {
     // Le bootstrap ne doit jamais faire tomber le site — remonter au controller
     if (function_exists('app') && app()->bound(\App\Services\ErrorLoggerService::class)) {
