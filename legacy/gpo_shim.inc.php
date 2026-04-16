@@ -178,7 +178,14 @@ if (!function_exists('_shim_gpo_safe_tmppath')) {
         if ($safeName === '' || $safeName === null) {
             $safeName = 'gpo';
         }
-        $unique = (function_exists('getmypid') ? getmypid() : '0') . '_' . uniqid();
+        // #M4 — Anti TOCTOU symlink : random_bytes(8) donne 2^64 candidats
+        // non prédictibles, l'attaquant ne peut pas pré-créer un symlink
+        // sur le path avant le mkdir. Fallback uniqid si random_bytes absent
+        // (jamais le cas sur PHP 7+, mais défense en profondeur).
+        $entropy = function_exists('random_bytes')
+            ? bin2hex(random_bytes(8))
+            : uniqid('', true);
+        $unique = (function_exists('getmypid') ? getmypid() : '0') . '_' . $entropy;
         return sys_get_temp_dir() . '/sambaedu_sysvol_' . $safeName . '_' . $unique;
     }
 }
