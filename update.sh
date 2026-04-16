@@ -149,6 +149,29 @@ fi
 print_status "Redémarrage PHP-FPM..."
 sudo systemctl reload php8.2-fpm 2>/dev/null || sudo systemctl reload php8.1-fpm 2>/dev/null || sudo systemctl reload php-fpm 2>/dev/null || true
 
+# 12. Queue workers systemd
+# Si les unit files ont changé → daemon-reload + hard restart.
+# Sinon → soft restart (queue:restart) pour que les workers reprennent avec le nouveau code
+#        après leur job courant.
+print_status "Vérification des queue workers systemd..."
+SERVICES_CHANGED=false
+for svc in laravel-queue-sync.service laravel-queue-worker.service laravel-queue-general.service; do
+    if ! sudo cmp -s "scripts/config/$svc" "/etc/systemd/system/$svc" 2>/dev/null; then
+        sudo cp "scripts/config/$svc" "/etc/systemd/system/$svc"
+        SERVICES_CHANGED=true
+        print_status "  → $svc mis à jour"
+    fi
+done
+
+if [ "$SERVICES_CHANGED" = true ]; then
+    sudo systemctl daemon-reload
+    sudo systemctl restart laravel-queue-sync laravel-queue-worker laravel-queue-general
+    print_success "Queue workers redémarrés (hard) avec la nouvelle config systemd"
+else
+    php artisan queue:restart
+    print_success "Queue workers notifiés (soft restart — fin propre du job courant)"
+fi
+
 # Résumé
 echo ""
 echo "=============================="

@@ -656,6 +656,42 @@ setup_acl_permissions() {
 }
 
 # ============================================================================
+# Queue workers systemd
+# ============================================================================
+
+install_queue_workers() {
+  log "Installation des queue workers systemd..."
+
+  local src="$APP_DIR/scripts/config"
+  local dst="/etc/systemd/system"
+  local services=(laravel-queue-sync.service laravel-queue-worker.service laravel-queue-general.service)
+  local changed=false
+
+  for svc in "${services[@]}"; do
+    if [[ ! -f "$src/$svc" ]]; then
+      log_error "Fichier source manquant: $src/$svc"
+      return 1
+    fi
+    if ! cmp -s "$src/$svc" "$dst/$svc" 2>/dev/null; then
+      cp "$src/$svc" "$dst/$svc"
+      changed=true
+      log "  → $svc installé/mis à jour"
+    fi
+  done
+
+  if [[ "$changed" == "true" ]]; then
+    systemctl daemon-reload
+  fi
+
+  for svc in "${services[@]}"; do
+    systemctl enable "$svc" >/dev/null 2>&1 || true
+    systemctl restart "$svc"
+  done
+
+  log_success "Queue workers actifs : ${services[*]}"
+}
+
+# ============================================================================
 # Affichage du résumé
 # ============================================================================
 
@@ -713,7 +749,7 @@ main() {
   relocate_if_needed "$@"
 
   # Phase 1: Vérifications
-  log "Phase 1/7: Vérifications initiales..."
+  log "Phase 1/8: Vérifications initiales..."
   echo ""
 
   check_existing_services
@@ -738,7 +774,7 @@ main() {
 
   # Phase 2: Docker et configuration
   echo ""
-  log "Phase 2/7: Configuration Docker et .env..."
+  log "Phase 2/8: Configuration Docker et .env..."
   echo ""
 
   generate_env
@@ -747,7 +783,7 @@ main() {
 
   # Phase 3: Dépendances
   echo ""
-  log "Phase 3/7: Installation des dépendances..."
+  log "Phase 3/8: Installation des dépendances..."
   echo ""
 
   install_composer
@@ -760,21 +796,21 @@ main() {
 
   # Phase 4: Base de données
   echo ""
-  log "Phase 4/7: Migration de la base de données..."
+  log "Phase 4/8: Migration de la base de données..."
   echo ""
 
   run_migrations
 
   # Phase 5: Optimisation
   echo ""
-  log "Phase 5/7: Optimisation applicative..."
+  log "Phase 5/8: Optimisation applicative..."
   echo ""
 
   run_application_update
 
   # Phase 6: Apache
   echo ""
-  log "Phase 6/7: Configuration Apache..."
+  log "Phase 6/8: Configuration Apache..."
   echo ""
 
   if [[ $apache_available == true ]]; then
@@ -785,10 +821,17 @@ main() {
 
   # Phase 7: Permissions
   echo ""
-  log "Phase 7/7: Configuration des permissions ACL..."
+  log "Phase 7/8: Configuration des permissions ACL..."
   echo ""
 
   setup_acl_permissions "$APP_DIR"
+
+  # Phase 8: Queue workers
+  echo ""
+  log "Phase 8/8: Installation des queue workers systemd..."
+  echo ""
+
+  install_queue_workers
 
   # Résumé
   echo ""

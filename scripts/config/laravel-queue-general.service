@@ -7,7 +7,8 @@ User=www-admin
 Group=www-admin
 Restart=always
 RestartSec=3
-WorkingDirectory=/var/www/sambaedu/laravel
+TimeoutStopSec=620
+WorkingDirectory=/var/www/sambaedu-reload
 ExecStart=/usr/bin/php8.2 artisan queue:work database --queue=default,high,low --sleep=3 --tries=3 --max-time=3600
 
 [Install]
