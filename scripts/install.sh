@@ -275,6 +275,17 @@ generate_env() {
     log_warning "UAI non trouvé dans /etc/sambaedu/sambaedu.conf"
     log_warning "APP_URL pré-remplie : https://URL_A_COMPLETER"
   fi
+
+  # Pré-remplir ESTABLISHMENT_NAME avec etab_name depuis /etc/sambaedu/sambaedu.conf
+  local etab_name=""
+  if [[ -f "/etc/sambaedu/sambaedu.conf" ]]; then
+    etab_name=$(grep -oP 'etab_name\s*=\s*"\K[^"]+' /etc/sambaedu/sambaedu.conf 2>/dev/null || echo "")
+  fi
+
+  if [[ -n "$etab_name" ]]; then
+    sed -i "s|^ESTABLISHMENT_NAME=.*|ESTABLISHMENT_NAME=\"${etab_name}\"|" "$APP_DIR/.env"
+    log "Nom de l'établissement détecté : $etab_name"
+  fi
 }
 
 interactive_env_validation() {

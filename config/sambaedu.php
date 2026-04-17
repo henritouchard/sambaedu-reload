@@ -26,6 +26,9 @@ return [
 
     // UAI de l'établissement — utilisé pour stripper le préfixe dans les URLs legacy
     'etab_ou' => env('SAMBAEDU_ETAB_OU', ''),
+
+    // Nom affiché de l'établissement (override admin possible via .env)
+    'establishment_name' => env('ESTABLISHMENT_NAME') ?: 'Mon établissement',
     
     'block_migrated_routes' => env('LEGACY_BLOCK_MIGRATED_ROUTES', true),
 
