@@ -118,7 +118,7 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
 };
 ?>
 
-<x-organisms.page title="Tableau de bord" description="Vue d'ensemble de votre infrastructure SambaEdu">
+<x-organisms.page title="{{ config('sambaedu.establishment_name') }}" description="Vue d'ensemble de votre infrastructure SambaEdu">
     <x-slot:actions>
         <button wire:click="refreshStats" wire:loading.attr="disabled" class="btn btn-outline btn-primary btn-sm">
             <i class="fas fa-refresh" wire:loading.class="fa-spin" wire:target="refreshStats"></i>

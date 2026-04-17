@@ -33,6 +33,7 @@ use Livewire\Wireable;
  * @property string|null $ad_guid
  * @property string $role
  * @property string|null $school_code
+ * @property string|null $school_name
  * @property bool $is_active
  * @property array|null $ad_right_profiles
  * @property int $ad_rights_bitmask
@@ -62,6 +63,7 @@ class User extends Authenticatable implements Wireable
         'ad_guid',
         'role',
         'school_code',
+        'school_name',
         'is_active',
         'ad_right_profiles',
         'ad_rights_bitmask',

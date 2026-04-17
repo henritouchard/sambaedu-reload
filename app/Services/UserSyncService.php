@@ -495,6 +495,7 @@ class UserSyncService
             lastname: $getValue('sn'),
             email: $getValue('mail'),
             etabCode: $businessObject->etabCode,
+            etabName: $businessObject->etabName,
             dn: $ldapUser->getDn(),
             groups: $groupNames,
             rights: $rightProfiles,
@@ -589,6 +590,7 @@ class UserSyncService
                 'ad_guid' => $adGuid,
                 'role' => $adUser->role,
                 'school_code' => $adUser->etabCode,
+                'school_name' => $adUser->etabName,
                 'is_active' => true,
                 'ad_synced_at' => now(),
             ]);
@@ -603,6 +605,7 @@ class UserSyncService
                 'ad_guid' => $adGuid ?? $user->ad_guid,
                 'role' => $adUser->role !== '' ? $adUser->role : $user->role,
                 'school_code' => ($adUser->etabCode !== null && $adUser->etabCode !== '') ? $adUser->etabCode : $user->school_code,
+                'school_name' => ($adUser->etabName !== null && $adUser->etabName !== '') ? $adUser->etabName : $user->school_name,
                 'ad_synced_at' => now(),
             ]);
         }
