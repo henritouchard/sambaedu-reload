@@ -116,6 +116,12 @@ try {
     // et le wrapper testable _shim_gpo_exec.
     require_once __DIR__ . '/gpo_shim.inc.php';
 
+    // ─── DHCP shim (story 1bis-16) ──────────────────────────────────────────
+    // Fournit les fonctions DHCP utilisées par legacy/modules/dhcp/ (export/import
+    // reservations, leases, MAC helpers). Sans lui, make_reservations.php produit
+    // un Fatal error Call to undefined function export_dhcp_reservations() en prod.
+    require_once __DIR__ . '/dhcp_shim.inc.php';
+
 } catch (\Throwable $e) {
     // Le bootstrap ne doit jamais faire tomber le site — remonter au controller
     if (function_exists('app') && app()->bound(\App\Services\ErrorLoggerService::class)) {
