@@ -124,6 +124,14 @@ class LegacyModuleGpoGestionTest extends TestCase
      */
     private function skipIfBootstrapUnavailable(): void
     {
+        if (defined('LEGACY_SKIP_LEGACY_INCLUDES')) {
+            $this->markTestSkipped(
+                'LEGACY_SKIP_LEGACY_INCLUDES actif (tests) : les modules legacy'
+                    . ' GPO nécessitent les includes legacy originaux (include "gpo.inc.php")'
+                    . ' qui redéclareraient les fonctions shim. Skip.'
+            );
+        }
+
         $gpoIncPath = $this->legacyIncludesPath . '/gpo.inc.php';
         if (!is_file($gpoIncPath)) {
             $this->markTestSkipped(

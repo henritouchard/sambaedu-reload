@@ -58,7 +58,13 @@ if (!defined('CACHE_DIR'))                    define('CACHE_DIR', '/tmp/phpcache
  */
 function legacy_build_config(): array
 {
-    $c = [];
+    // Hydrate toutes les clés brutes de /etc/sambaedu/sambaedu.conf — le legacy
+    // les consomme directement (samba_domain, cloud_name, proxy_*, pronote_*,
+    // openent_*, wpkg, dhcp, etc.). Sans ce merge, generalise_gpo /
+    // specialise_gpo produisent des substitutions vides → import/export GPO
+    // cassé. Les clés LDAP calculées ci-dessous écrasent celles du fichier.
+    $confPath = '/etc/sambaedu/sambaedu.conf';
+    $c = is_readable($confPath) ? (@parse_ini_file($confPath) ?: []) : [];
 
     // LDAP / AD — source unique : SambaEduConfig (/etc/sambaedu/sambaedu.conf)
     // partagée avec le reste de SER (ldap-record, AuthenticationService, etc.).

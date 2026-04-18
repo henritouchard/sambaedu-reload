@@ -77,7 +77,7 @@ class WorkstationLogReaderTest extends TestCase
     public function test_reads_cp850_file_with_accents(): void
     {
         // CP850 : 0x82 = é, 0x88 = ê, 0x85 = à, 0x8B = ï
-        $raw = "2026-04-14 10:32:15, DEBUG  : \x82l\x88ment install\x82\n"
+        $raw = "2026-04-14 10:32:15, DEBUG  : \x82l\x82ment install\x82\n"
             . "2026-04-14 10:32:17, INFO   : peut \x88tre requis\n"
             . "2026-04-14 10:32:47, ERROR  : \x85 la fin\n";
         $this->writeLogFile('PC01.log', $raw);

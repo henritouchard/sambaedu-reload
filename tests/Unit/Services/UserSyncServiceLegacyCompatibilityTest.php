@@ -152,6 +152,9 @@ class UserSyncServiceLegacyCompatibilityTest extends TestCase
             $table->string('ad_guid')->nullable();
             $table->string('role')->default('autre');
             $table->string('school_code')->nullable();
+            $table->string('school_name')->nullable();
+            $table->string('phone')->nullable();
+            $table->text('description')->nullable();
             $table->boolean('is_active')->default(true);
             $table->json('ad_right_profiles')->nullable();
             $table->unsignedInteger('ad_rights_bitmask')->default(0);

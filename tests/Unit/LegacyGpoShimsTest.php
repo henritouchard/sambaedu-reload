@@ -162,9 +162,11 @@ class LegacyGpoShimsTest extends TestCase
 
         $result = search_ad($this->config, 'Wallpaper', 'gpo');
 
+        // Post-fix 40e9b4b : search_ad() retire la clé 'count' pour matcher la
+        // sémantique legacy (callers utilisent count($result) > 0 et $result[0]).
         $this->assertIsArray($result);
-        $this->assertArrayHasKey('count', $result);
-        $this->assertEquals(1, $result['count']);
+        $this->assertArrayNotHasKey('count', $result);
+        $this->assertCount(1, $result);
         $this->assertEquals('{31B2F340-016D-11D2-945F-00C04FB984F9}', $result[0]['cn']);
         $this->assertEquals('Wallpaper', $result[0]['displayname']);
         $this->assertEquals('65537', $result[0]['versionnumber']);
@@ -181,8 +183,9 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #1 — Given la GPO n'existe pas, Then retour `{count: 0}`
-     * (et PAS un tableau vide qui confondrait "not found" et "unimplemented").
+     * AC #1 — Given la GPO n'existe pas, Then retour `[]` (tableau vide).
+     * Post-fix 40e9b4b : la clé 'count' est retirée, les callers legacy font
+     * count($result) > 0. Un false reste réservé aux erreurs LDAP (bind refusé).
      */
     public function test_search_ad_gpo_not_found_returns_count_zero(): void
     {
@@ -193,10 +196,9 @@ class LegacyGpoShimsTest extends TestCase
         $result = search_ad($this->config, 'DoesNotExist', 'gpo');
 
         $this->assertIsArray($result);
-        $this->assertArrayHasKey('count', $result);
-        $this->assertEquals(0, $result['count']);
-        // Distinction clé : résultat valide vide, PAS un tableau totalement vide
-        $this->assertNotEquals([], $result, 'Doit être {count:0}, pas []');
+        $this->assertArrayNotHasKey('count', $result);
+        $this->assertCount(0, $result);
+        $this->assertNotFalse($result, 'Doit rester un array, pas false (réservé aux erreurs LDAP)');
     }
 
     /**
@@ -254,7 +256,9 @@ class LegacyGpoShimsTest extends TestCase
 
         $result = search_ad($this->config, 'Default-First-Site-Name', 'site');
 
-        $this->assertEquals(1, $result['count']);
+        // Format legacy : pas de clé 'count' (shim aligne sur le legacy pour
+        // que les appelants `count($result) > 0` fonctionnent correctement).
+        $this->assertCount(1, $result);
         $this->assertEquals('Default-First-Site-Name', $result[0]['cn']);
 
         $searchCall = $this->findLdapCall('ldap_search');
@@ -281,9 +285,9 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #2 — search_ad(type='subnet', *) retourne tous les subnets.
+     * AC #2 — search_ad(type='subnet', *) retourne [] quand aucun résultat.
      */
-    public function test_search_ad_subnet_returns_empty_count_zero_when_none(): void
+    public function test_search_ad_subnet_returns_empty_array_when_none(): void
     {
         $this->mockLdap([
             'ldap_get_entries' => ['count' => 0],
@@ -291,7 +295,9 @@ class LegacyGpoShimsTest extends TestCase
 
         $result = search_ad($this->config, '*', 'subnet');
 
-        $this->assertEquals(0, $result['count']);
+        // Format legacy : tableau vide (count($result) === 0), pas ['count' => 0]
+        // qui ferait count() retourner 1 et casserait les `if (count($gpo) > 0)`.
+        $this->assertCount(0, $result);
     }
 
     // ═══════════════════════════════════════════════════════════════════════

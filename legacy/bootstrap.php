@@ -69,8 +69,12 @@ try {
     // Fichiers legacy chargés directement car utilisés par les modules.
     // SUPPRIMER chaque ligne au fur et à mesure que la fonction est shimmée
     // ou que le module qui l'utilise est réécrit en Livewire.
+    // En tests, la constante LEGACY_SKIP_LEGACY_INCLUDES (définie par
+    // tests/bootstrap.php) saute ce bloc : les shims if-guardés ci-dessous
+    // prennent le relais et évitent les exec(samba-tool) qui timeout sur
+    // Kerberos dans l'environnement de test.
     // ─────────────────────────────────────────────────────────────────────
-    if (is_dir($legacyIncludesPath)) {
+    if (is_dir($legacyIncludesPath) && ! defined('LEGACY_SKIP_LEGACY_INCLUDES')) {
         // Fonctions utilitaires globales (utilisées partout)
         require_once $legacyIncludesPath . '/functions.inc.php';
 

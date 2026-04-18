@@ -2,8 +2,10 @@
 
 namespace Tests;
 
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -13,10 +15,36 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
         $this->guardAgainstProductionDatabase();
+        $this->ensureErrorLogsTableOnSqlite();
         // $_SESSION est un superglobal PHP qui persiste dans le process PHPUnit.
         // Le bridge legacy (LegacyCatchallController::bridgeLegacySession) y écrit
         // login/level/etab et fait fuiter l'état d'un test vers les suivants.
         $_SESSION = [];
+    }
+
+    /**
+     * Crée la table `error_logs` en SQLite :memory: si absente.
+     *
+     * Plusieurs services (ErrorLoggerService, LegacyErrorHandler, middleware 404)
+     * écrivent dans `error_logs` sans que le test l'ait explicitement créée.
+     * En SQLite :memory: sans RefreshDatabase ni migrations, l'insert crashe
+     * avec `no such table: error_logs` et masque la vraie erreur du test.
+     * Cette garde minimale évite la cascade.
+     */
+    private function ensureErrorLogsTableOnSqlite(): void
+    {
+        if (config('database.default') !== 'sqlite') {
+            return;
+        }
+        if (Schema::hasTable('error_logs')) {
+            return;
+        }
+        Schema::create('error_logs', function (Blueprint $table) {
+            $table->id();
+            $table->string('source', 10);
+            $table->text('message');
+            $table->timestamp('created_at');
+        });
     }
 
     /**

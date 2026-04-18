@@ -17,6 +17,15 @@ class LegacyGpoIncludesTest extends TestCase
     {
         parent::setUp();
         $this->withoutVite();
+
+        if (defined('LEGACY_SKIP_LEGACY_INCLUDES')) {
+            $this->markTestSkipped(
+                'LEGACY_SKIP_LEGACY_INCLUDES actif (tests) : les includes legacy'
+                    . ' originaux (samba-tool.inc.php, gpo.inc.php, …) ne sont pas'
+                    . ' chargés pour éviter les exec(samba-tool) bloquants. Les'
+                    . ' fonctions testées ici proviennent précisément de ces includes.'
+            );
+        }
     }
 
     // ─── AC #1 : Chargement sans erreur fatale ─────────────────────────
