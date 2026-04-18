@@ -19,13 +19,13 @@ return [
     | Chemin absolu vers le répertoire legacy PHP SambAEdu.
     | Utilisé par LegacyCatchallController pour résoudre les routes non migrées.
     */
-    'legacy_path' => env('SAMBAEDU_LEGACY_PATH', '/var/www/sambaedu'),
+    'legacy_path' => env('LEGACY_PATH', '/var/www/sambaedu'),
 
-    'legacy_base_url' => env('SAMBAEDU_LEGACY_BASE_URL', 'http://127.0.0.1:80'),
+    'legacy_base_url' => env('LEGACY_BASE_URL', 'http://127.0.0.1:80'),
 
 
     // UAI de l'établissement — utilisé pour stripper le préfixe dans les URLs legacy
-    'etab_ou' => env('SAMBAEDU_ETAB_OU', ''),
+    'etab_ou' => env('ETAB_OU', ''),
 
     // Nom affiché de l'établissement (override admin possible via .env)
     'establishment_name' => env('ESTABLISHMENT_NAME') ?: 'Mon établissement',
@@ -62,20 +62,13 @@ return [
         '^/ipxe/',
     ],
 
-    'se4ad_ip' => env('SAMBAEDU_SE4AD_IP'),
-    'se4ad_etab_ip' => env('SAMBAEDU_SE4AD_ETAB_IP'),
-    'strict_local_ad' => env('SAMBAEDU_STRICT_LOCAL_AD', true),
+    'se4ad_ip' => env('SE4AD_IP'),
+    'se4ad_etab_ip' => env('SE4AD_ETAB_IP'),
+    'strict_local_ad' => env('STRICT_LOCAL_AD', true),
 
     'trusted_proxies' => env('TRUSTED_PROXIES'),
 
-    'legacy_ldap' => [
-        'server' => env('LDAP_SERVER', 'localhost'),
-        'port' => env('LDAP_PORT', 389),
-        'base_dn' => env('LDAP_BASE_DN', ''),
-        'bind_dn' => env('LDAP_BIND_DN', ''),
-        'bind_password' => env('LDAP_BIND_PASSWORD', ''),
-    ],
-    
+
     /*
     |--------------------------------------------------------------------------
     | Configuration SE4FS pour applications tierces
@@ -165,11 +158,11 @@ return [
     |
     */
 
-    'se4fs_ip'          => env('SAMBAEDU_SE4FS_IP', ''),
-    'se4fs_name'        => env('SAMBAEDU_SE4FS_NAME', ''),
-    'ipxe_url'          => env('SAMBAEDU_IPXE_URL', ''),
-    'se4install_name'   => env('SAMBAEDU_SE4INSTALL_NAME', ''),
-    'se4install_passwd' => env('SAMBAEDU_SE4INSTALL_PASSWD', ''),
+    'se4fs_ip'          => env('SE4FS_IP', ''),
+    'se4fs_name'        => env('SE4FS_NAME', ''),
+    'ipxe_url'          => env('IPXE_URL', ''),
+    'se4install_name'   => env('SE4INSTALL_NAME', ''),
+    'se4install_passwd' => env('SE4INSTALL_PASSWD', ''),
 
     'wpkg' => [
         // Chemin de stockage local des applications

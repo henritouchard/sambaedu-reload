@@ -8,7 +8,7 @@
 # 2. Crée le vhost SER sur port 80 (remplace l'ancien sambaedu)
 # 3. Crée le vhost legacy sur port 8082 (localhost only, pour le proxy catchall)
 # 4. Ajoute le port 8082 dans ports.conf
-# 5. Met à jour le .env de SER avec SAMBAEDU_LEGACY_BASE_URL
+# 5. Met à jour le .env de SER avec LEGACY_BASE_URL
 # 6. Désactive l'ancien vhost sambaedu-reload (port 8080) devenu inutile
 # 7. Reload Apache + clear caches Laravel
 #
@@ -239,16 +239,16 @@ echo "[6/7] Mise à jour .env SER"
 ENV_FILE="$SER_ROOT/.env"
 
 if [ -f "$ENV_FILE" ]; then
-    if grep -q "SAMBAEDU_LEGACY_BASE_URL" "$ENV_FILE"; then
-        sed -i "s|SAMBAEDU_LEGACY_BASE_URL=.*|SAMBAEDU_LEGACY_BASE_URL=http://127.0.0.1:${LEGACY_PORT}|" "$ENV_FILE"
+    if grep -q "^LEGACY_BASE_URL=" "$ENV_FILE"; then
+        sed -i "s|LEGACY_BASE_URL=.*|LEGACY_BASE_URL=http://127.0.0.1:${LEGACY_PORT}|" "$ENV_FILE"
     else
         echo "" >> "$ENV_FILE"
         echo "# URL interne du vhost legacy (proxy catchall)" >> "$ENV_FILE"
-        echo "SAMBAEDU_LEGACY_BASE_URL=http://127.0.0.1:${LEGACY_PORT}" >> "$ENV_FILE"
+        echo "LEGACY_BASE_URL=http://127.0.0.1:${LEGACY_PORT}" >> "$ENV_FILE"
     fi
-    echo "   SAMBAEDU_LEGACY_BASE_URL=http://127.0.0.1:${LEGACY_PORT}"
+    echo "   LEGACY_BASE_URL=http://127.0.0.1:${LEGACY_PORT}"
 else
-    echo "   WARN : $ENV_FILE non trouvé — penser à ajouter SAMBAEDU_LEGACY_BASE_URL manuellement"
+    echo "   WARN : $ENV_FILE non trouvé — penser à ajouter LEGACY_BASE_URL manuellement"
 fi
 
 # ─── 9. Vérifier la config Apache et recharger ──────────────────────────────

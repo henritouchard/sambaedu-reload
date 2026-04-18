@@ -2,14 +2,16 @@
 
 namespace Tests\Unit;
 
+use App\Config\LdapConfig;
+use App\Config\SambaEduConfig;
 use Illuminate\Support\Facades\Config;
 use Tests\TestCase;
 
 /**
  * Tests unitaires pour legacy/config.inc.php.
  *
- * Vérifie que les variables de configuration legacy sont
- * correctement alimentées depuis config('sambaedu.*').
+ * Vérifie que les variables de configuration legacy sont correctement
+ * alimentées depuis SambaEduConfig (source unique /etc/sambaedu/sambaedu.conf).
  *
  * Note : config.inc.php n'est chargé qu'une fois (guard LEGACY_CONFIG_LOADED),
  * mais legacy_build_config() est appelable à chaque test via reloadConfigBridge().
@@ -21,11 +23,38 @@ class LegacyConfigBridgeTest extends TestCase
         parent::setUp();
         $this->withoutVite();
 
-        // Configurer les valeurs Laravel avant d'appeler legacy_build_config()
-        Config::set('sambaedu.legacy_ldap.base_dn', 'DC=ecole,DC=local');
-        Config::set('sambaedu.legacy_ldap.bind_dn', 'administrator');
-        Config::set('sambaedu.legacy_ldap.bind_password', 'secret');
-        Config::set('sambaedu.se4ad_ip', '192.168.1.10');
+        // Bind un SambaEduConfig en dur pour les tests — pas de dépendance à /etc/
+        $fake = $this->createMock(SambaEduConfig::class);
+        $fake->method('ldap')->willReturn(new LdapConfig(
+            url: 'ldaps://ecole.local',
+            port: 636,
+            baseDn: 'DC=ecole,DC=local',
+            adminName: 'administrator',
+            adminPassword: 'secret',
+            domain: 'ecole.local',
+            sambaDomain: 'ecole',
+            peopleRdn: 'ou=Utilisateurs',
+            groupsRdn: 'ou=Groups',
+            computersRdn: 'ou=computers',
+            parcsRdn: 'ou=Parcs',
+            classesRdn: 'ou=classes',
+            equipesRdn: 'ou=equipes',
+            matieresRdn: 'ou=matieres',
+            coursRdn: 'ou=cours',
+            projetsRdn: 'ou=projets',
+            otherGroupsRdn: 'ou=autres',
+            delegationsRdn: 'ou=delegations',
+            equipementsRdn: 'ou=Materiels',
+            rightsRdn: 'ou=Rights',
+            trashRdn: 'ou=Trash',
+            etablissementsRdn: 'OU=etablissements',
+            adminRdn: 'cn=Users',
+            serverIp: '192.168.1.10',
+            etabServerIp: null,
+            strictLocalAd: false,
+        ));
+        $this->app->instance(SambaEduConfig::class, $fake);
+
         Config::set('sambaedu.etab_ou', '0991229Y');
 
         $this->reloadConfigBridge();

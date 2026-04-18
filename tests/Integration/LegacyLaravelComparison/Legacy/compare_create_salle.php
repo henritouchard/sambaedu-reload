@@ -31,15 +31,15 @@ $config = $legacyBridge->getConfig();
 // Vérifier que la config est chargée
 if (empty($config) || empty($config['ldap_base_dn'])) {
     echo "⚠ Configuration legacy non disponible depuis /etc/sambaedu/\n";
-    echo "  Utilisation de la configuration Laravel depuis .env\n\n";
+    echo "  Fallback vers SambaEduConfig (source unique) \n\n";
 
-    // Construire une config minimale depuis les variables d'environnement Laravel
+    $ldapCfg = $sambaConfig->ldap();
     $config = [
-        'ldap_url' => 'ldaps://' . env('SAMBAEDU_LDAP_HOST', 'localhost'),
-        'ldap_base_dn' => env('SAMBAEDU_LDAP_BASE_DN', 'dc=localdev,dc=fr'),
-        'ldap_admin_name' => env('SAMBAEDU_LDAP_ADMIN_USER', 'Administrator'),
-        'ldap_admin_passwd' => env('SAMBAEDU_LDAP_ADMIN_PASSWORD', ''),
-        'domain' => env('SAMBAEDU_LDAP_DOMAIN', 'localdev.fr'),
+        'ldap_url' => $ldapCfg->url,
+        'ldap_base_dn' => $ldapCfg->baseDn,
+        'ldap_admin_name' => $ldapCfg->adminName,
+        'ldap_admin_passwd' => $ldapCfg->adminPassword,
+        'domain' => $ldapCfg->domain,
         'parcs_rdn' => 'OU=Parcs',
         'suffix' => '$',
         'etab_ou' => '0',
@@ -52,8 +52,9 @@ if (empty($config) || empty($config['ldap_base_dn'])) {
 }
 
 // Vérifier la connexion LDAP
-$ldapHost = env('SAMBAEDU_LDAP_HOST', $config['se4ad_ip'] ?? 'localhost');
-$ldapPort = env('SAMBAEDU_LDAP_PORT', 636);
+$ldapCfg  = $sambaConfig->ldap();
+$ldapHost = $ldapCfg->etabServerIp ?: ($ldapCfg->serverIp ?: 'localhost');
+$ldapPort = $ldapCfg->port;
 
 echo "Configuration LDAP:\n";
 echo "  Host: $ldapHost:$ldapPort\n";

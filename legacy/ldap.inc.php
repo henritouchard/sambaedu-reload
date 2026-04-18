@@ -780,7 +780,14 @@ if (!function_exists('search_ad')) {
                 }
                 $gpoBranch = 'CN=Policies,CN=System,' . ($config['ldap_base_dn'] ?? '');
                 $gpoResult = _shim_gpo_search($config, $gpoBranch, $filter, $gpoAttrs);
-                return $gpoResult === false ? false : $gpoResult;
+                if ($gpoResult === false) {
+                    return false;
+                }
+                // Legacy search_ad retourne [] (pas ['count' => 0]) si pas de match,
+                // et [0 => row, ...] (sans clé 'count') sinon. Les appelants font
+                // count($result) > 0 — la clé 'count' casse cette sémantique.
+                unset($gpoResult['count']);
+                return $gpoResult;
 
             case 'site':
                 if ($name === '*' || $name === '') {
@@ -798,7 +805,11 @@ if (!function_exists('search_ad')) {
                 }
                 $siteBranch = 'CN=Sites,CN=Configuration,' . ($config['ldap_base_dn'] ?? '');
                 $siteResult = _shim_gpo_search($config, $siteBranch, $filter, $siteAttrs);
-                return $siteResult === false ? false : $siteResult;
+                if ($siteResult === false) {
+                    return false;
+                }
+                unset($siteResult['count']);
+                return $siteResult;
 
             case 'subnet':
                 if ($name === '*' || $name === '') {
@@ -823,7 +834,11 @@ if (!function_exists('search_ad')) {
                 }
                 $subnetBranch = 'CN=Subnets,CN=Sites,CN=Configuration,' . ($config['ldap_base_dn'] ?? '');
                 $subnetResult = _shim_gpo_search($config, $subnetBranch, $filter, $subnetAttrs);
-                return $subnetResult === false ? false : $subnetResult;
+                if ($subnetResult === false) {
+                    return false;
+                }
+                unset($subnetResult['count']);
+                return $subnetResult;
 
             default:
                 _shim_log_unimplemented("search_ad(type={$type})");
@@ -1694,6 +1709,11 @@ if (!function_exists('ad_url')) {
         // Mode sambatool : retourner l'option -H attendue par samba-tool
         if ($proto === 'sambatool') {
             return '-H ldap://' . $server . ' ';
+        }
+
+        // Mode dns : retourner juste le FQDN (utilisé pour smbclient //host/sysvol)
+        if ($proto === 'dns') {
+            return $server;
         }
 
         // Modes ldap / ldaps : URL classique

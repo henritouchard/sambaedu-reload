@@ -60,25 +60,15 @@ function legacy_build_config(): array
 {
     $c = [];
 
-    // LDAP / AD
-    $c['ldap_base_dn']      = config('sambaedu.legacy_ldap.base_dn', '');
-    $c['ldap_admin_name']   = config('sambaedu.legacy_ldap.bind_dn', '');
-    $c['ldap_admin_passwd'] = config('sambaedu.legacy_ldap.bind_password', '');
-    $c['se4ad_ip']          = config('sambaedu.se4ad_ip', '');
-    $c['se4ad_etab_ip']     = config('sambaedu.se4ad_etab_ip', '');
-
-    // Déduire le domaine depuis le base_dn (DC=ecole,DC=local → ecole.local)
-    $c['domain'] = '';
-    if (!empty($c['ldap_base_dn'])) {
-        $dcParts = [];
-        foreach (explode(',', $c['ldap_base_dn']) as $part) {
-            $part = trim($part);
-            if (stripos($part, 'DC=') === 0) {
-                $dcParts[] = substr($part, 3);
-            }
-        }
-        $c['domain'] = implode('.', $dcParts);
-    }
+    // LDAP / AD — source unique : SambaEduConfig (/etc/sambaedu/sambaedu.conf)
+    // partagée avec le reste de SER (ldap-record, AuthenticationService, etc.).
+    $ldap = app(\App\Config\SambaEduConfig::class)->ldap();
+    $c['ldap_base_dn']      = $ldap->baseDn;
+    $c['ldap_admin_name']   = $ldap->adminName;
+    $c['ldap_admin_passwd'] = $ldap->adminPassword;
+    $c['domain']            = $ldap->domain;
+    $c['se4ad_ip']          = $ldap->serverIp ?? '';
+    $c['se4ad_etab_ip']     = $ldap->etabServerIp ?? '';
 
     // Établissement
     $c['etab_ou'] = config('sambaedu.etab_ou', '');

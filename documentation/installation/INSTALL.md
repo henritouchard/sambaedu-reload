@@ -147,9 +147,12 @@ Fichier généré automatiquement par `scripts/install.sh`:
 
 **⚠️ À personnaliser:**
 - `APP_URL` - URL de l'application
-- `SAMBAEDU_SE4AD_IP` - IP du serveur Active Directory
-- `SAMBAEDU_LDAP_*` - Configuration LDAP
+- `SE4AD_IP` / `SE4AD_ETAB_IP` - IP du serveur Active Directory
 - Configuration SMTP (mail)
+
+La configuration LDAP (host, port, base_dn, admin user/password, domain) est
+lue directement par `SambaEduConfig` depuis `/etc/sambaedu/sambaedu.conf` —
+pas de duplication dans le `.env`.
 
 ---
 

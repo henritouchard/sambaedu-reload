@@ -615,12 +615,12 @@ VHOST_LEGACY
 
   # ── Mettre à jour .env ──
   if [[ -f "$APP_DIR/.env" ]]; then
-    if grep -q "SAMBAEDU_LEGACY_BASE_URL" "$APP_DIR/.env"; then
-      sed -i "s|SAMBAEDU_LEGACY_BASE_URL=.*|SAMBAEDU_LEGACY_BASE_URL=http://127.0.0.1:${legacy_port}|" "$APP_DIR/.env"
+    if grep -q "^LEGACY_BASE_URL=" "$APP_DIR/.env"; then
+      sed -i "s|LEGACY_BASE_URL=.*|LEGACY_BASE_URL=http://127.0.0.1:${legacy_port}|" "$APP_DIR/.env"
     else
       echo "" >> "$APP_DIR/.env"
       echo "# URL interne du vhost legacy (proxy catchall)" >> "$APP_DIR/.env"
-      echo "SAMBAEDU_LEGACY_BASE_URL=http://127.0.0.1:${legacy_port}" >> "$APP_DIR/.env"
+      echo "LEGACY_BASE_URL=http://127.0.0.1:${legacy_port}" >> "$APP_DIR/.env"
     fi
   fi
 

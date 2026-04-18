@@ -83,7 +83,7 @@ class LegacyCatchallController extends Controller
         $legacyBasePath = config('sambaedu.legacy_path');
 
         if (empty($legacyBasePath) || ! is_dir($legacyBasePath)) {
-            abort(500, 'SAMBAEDU_LEGACY_PATH est absent ou invalide. Vérifiez la configuration.');
+            abort(500, 'LEGACY_PATH est absent ou invalide. Vérifiez la configuration.');
         }
 
         $legacyPath = rtrim($legacyBasePath, '/') . '/' . $path;

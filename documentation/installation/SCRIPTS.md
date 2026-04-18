@@ -278,11 +278,13 @@ bash ./scripts/create-env.sh
    ```
 
 6. **Charge depuis `/etc/sambaedu/sambaedu.conf`** (si existe)
-   - `se4ad_ip` → `SAMBAEDU_SE4AD_IP`
-   - `ldap_*` → `SAMBAEDU_LDAP_*`
-   - `domain` → `SAMBAEDU_LDAP_DOMAIN`
+   - `se4ad_ip` → `SE4AD_IP`
+   - `se4ad_etab_ip` → `SE4AD_ETAB_IP`
    - `sql_passwd` → `DB_PASSWORD`
    - `se4_url` → `APP_URL`
+   - Les paramètres LDAP (host, port, base_dn, admin user/password, domain)
+     sont lus directement par `SambaEduConfig` depuis `/etc/sambaedu/sambaedu.conf`
+     sans passer par le `.env` (source de vérité unique).
 
 7. **Charge depuis `/etc/msmtprc`** (si existe)
    - Configuration SMTP automatique

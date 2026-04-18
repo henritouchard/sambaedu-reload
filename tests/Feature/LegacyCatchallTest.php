@@ -126,7 +126,7 @@ class LegacyCatchallTest extends TestCase
     }
 
     /**
-     * AC4 — SAMBAEDU_LEGACY_PATH invalide → erreur 500 explicite
+     * AC4 — LEGACY_PATH invalide → erreur 500 explicite
      */
     public function test_invalid_legacy_path_returns_500(): void
     {
@@ -138,7 +138,7 @@ class LegacyCatchallTest extends TestCase
     }
 
     /**
-     * AC4 — SAMBAEDU_LEGACY_PATH absent (null) → erreur 500 explicite
+     * AC4 — LEGACY_PATH absent (null) → erreur 500 explicite
      */
     public function test_missing_legacy_path_returns_500(): void
     {

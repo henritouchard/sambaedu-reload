@@ -57,11 +57,11 @@ if [[ -d "/etc/sambaedu/sambaedu.conf.d" ]]; then
     done
 fi
 
-[ -n "${se4ad_ip:-}" ] && sed -i "s|SAMBAEDU_SE4AD_IP=.*|SAMBAEDU_SE4AD_IP=$se4ad_ip|" .env
-[ -n "${se4fs_ip:-}" ] && sed -i "s|SAMBAEDU_SE4FS_IP=.*|SAMBAEDU_SE4FS_IP=$se4fs_ip|" .env
-[ -n "${se4fs_name:-}" ] && sed -i "s|SAMBAEDU_SE4FS_NAME=.*|SAMBAEDU_SE4FS_NAME=$se4fs_name|" .env
-[ -n "${ipxe_url:-}" ] && sed -i "s|SAMBAEDU_IPXE_URL=.*|SAMBAEDU_IPXE_URL=$ipxe_url|" .env
-[ -n "${se4install_name:-}" ] && sed -i "s|SAMBAEDU_SE4INSTALL_NAME=.*|SAMBAEDU_SE4INSTALL_NAME=$se4install_name|" .env
-[ -n "${se4install_passwd:-}" ] && sed -i "s|SAMBAEDU_SE4INSTALL_PASSWD=.*|SAMBAEDU_SE4INSTALL_PASSWD=$se4install_passwd|" .env
+[ -n "${se4ad_ip:-}" ] && sed -i "s|^SE4AD_IP=.*|SE4AD_IP=$se4ad_ip|" .env
+[ -n "${se4fs_ip:-}" ] && sed -i "s|^SE4FS_IP=.*|SE4FS_IP=$se4fs_ip|" .env
+[ -n "${se4fs_name:-}" ] && sed -i "s|^SE4FS_NAME=.*|SE4FS_NAME=$se4fs_name|" .env
+[ -n "${ipxe_url:-}" ] && sed -i "s|^IPXE_URL=.*|IPXE_URL=$ipxe_url|" .env
+[ -n "${se4install_name:-}" ] && sed -i "s|^SE4INSTALL_NAME=.*|SE4INSTALL_NAME=$se4install_name|" .env
+[ -n "${se4install_passwd:-}" ] && sed -i "s|^SE4INSTALL_PASSWD=.*|SE4INSTALL_PASSWD=$se4install_passwd|" .env
 
 log_success "Variables manquantes ajoutées au .env"

@@ -25,26 +25,23 @@ sed -i "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=$REDIS_PASSWORD|" .env
 if [ -f "/etc/sambaedu/sambaedu.conf" ]; then
     source <(grep -E '^[a-z_]+ = ' /etc/sambaedu/sambaedu.conf | sed 's/ = /=/g')
 
-    [ -n "$se4ad_ip" ] && sed -i "s|SAMBAEDU_SE4AD_IP=.*|SAMBAEDU_SE4AD_IP=$se4ad_ip|" .env
+    [ -n "$se4ad_ip" ] && sed -i "s|^SE4AD_IP=.*|SE4AD_IP=$se4ad_ip|" .env
 
     # SE4AD_ETAB_IP : utiliser se4ad_etab_ip si défini, sinon fallback à se4ad_ip
     se4ad_etab_ip_value="${se4ad_etab_ip:-$se4ad_ip}"
-    [ -n "$se4ad_etab_ip_value" ] && sed -i "s|SAMBAEDU_SE4AD_ETAB_IP=.*|SAMBAEDU_SE4AD_ETAB_IP=$se4ad_etab_ip_value|" .env
-    [ -n "$se4ad_etab_ip_value" ] && sed -i "s|SAMBAEDU_LDAP_HOST=.*|SAMBAEDU_LDAP_HOST=$se4ad_etab_ip_value|" .env
-    [ -n "$ldap_port" ] && sed -i "s|SAMBAEDU_LDAP_PORT=.*|SAMBAEDU_LDAP_PORT=$ldap_port|" .env
-    [ -n "$ldap_base_dn" ] && sed -i "s|SAMBAEDU_LDAP_BASE_DN=.*|SAMBAEDU_LDAP_BASE_DN=\"$ldap_base_dn\"|" .env
-    [ -n "$ldap_admin_name" ] && sed -i "s|SAMBAEDU_LDAP_ADMIN_USER=.*|SAMBAEDU_LDAP_ADMIN_USER=$ldap_admin_name|" .env
-    [ -n "$ldap_admin_passwd" ] && sed -i "s|SAMBAEDU_LDAP_ADMIN_PASSWORD=.*|SAMBAEDU_LDAP_ADMIN_PASSWORD=$ldap_admin_passwd|" .env
-    [ -n "$domain" ] && sed -i "s|SAMBAEDU_LDAP_DOMAIN=.*|SAMBAEDU_LDAP_DOMAIN=$domain|" .env
+    [ -n "$se4ad_etab_ip_value" ] && sed -i "s|^SE4AD_ETAB_IP=.*|SE4AD_ETAB_IP=$se4ad_etab_ip_value|" .env
+    # Les paramètres LDAP (host, port, base_dn, admin user/password, domain)
+    # sont lus par SambaEduConfig depuis /etc/sambaedu/sambaedu.conf directement,
+    # pas besoin de les recopier dans le .env.
     [ -n "$sql_passwd" ] && sed -i "s|DB_PASSWORD=.*|DB_PASSWORD=$sql_passwd|" .env
     [ -n "$se4_url" ] && sed -i "s|APP_URL=.*|APP_URL=http://$se4_url|" .env
 
     # iPXE / Déploiement réseau (peut être dans sambaedu.conf ou sambaedu.conf.d/)
-    [ -n "$se4fs_ip" ] && sed -i "s|SAMBAEDU_SE4FS_IP=.*|SAMBAEDU_SE4FS_IP=$se4fs_ip|" .env
-    [ -n "$se4fs_name" ] && sed -i "s|SAMBAEDU_SE4FS_NAME=.*|SAMBAEDU_SE4FS_NAME=$se4fs_name|" .env
-    [ -n "$ipxe_url" ] && sed -i "s|SAMBAEDU_IPXE_URL=.*|SAMBAEDU_IPXE_URL=$ipxe_url|" .env
-    [ -n "$se4install_name" ] && sed -i "s|SAMBAEDU_SE4INSTALL_NAME=.*|SAMBAEDU_SE4INSTALL_NAME=$se4install_name|" .env
-    [ -n "$se4install_passwd" ] && sed -i "s|SAMBAEDU_SE4INSTALL_PASSWD=.*|SAMBAEDU_SE4INSTALL_PASSWD=$se4install_passwd|" .env
+    [ -n "$se4fs_ip" ] && sed -i "s|^SE4FS_IP=.*|SE4FS_IP=$se4fs_ip|" .env
+    [ -n "$se4fs_name" ] && sed -i "s|^SE4FS_NAME=.*|SE4FS_NAME=$se4fs_name|" .env
+    [ -n "$ipxe_url" ] && sed -i "s|^IPXE_URL=.*|IPXE_URL=$ipxe_url|" .env
+    [ -n "$se4install_name" ] && sed -i "s|^SE4INSTALL_NAME=.*|SE4INSTALL_NAME=$se4install_name|" .env
+    [ -n "$se4install_passwd" ] && sed -i "s|^SE4INSTALL_PASSWD=.*|SE4INSTALL_PASSWD=$se4install_passwd|" .env
 fi
 
 # Charger les modules depuis /etc/sambaedu/sambaedu.conf.d/ (ipxe, wpkg, etc.)
@@ -55,11 +52,11 @@ if [ -d "/etc/sambaedu/sambaedu.conf.d" ]; then
     done
 
     # Ré-appliquer les variables iPXE (elles peuvent venir d'un module .conf.d/)
-    [ -n "$se4fs_ip" ] && sed -i "s|SAMBAEDU_SE4FS_IP=.*|SAMBAEDU_SE4FS_IP=$se4fs_ip|" .env
-    [ -n "$se4fs_name" ] && sed -i "s|SAMBAEDU_SE4FS_NAME=.*|SAMBAEDU_SE4FS_NAME=$se4fs_name|" .env
-    [ -n "$ipxe_url" ] && sed -i "s|SAMBAEDU_IPXE_URL=.*|SAMBAEDU_IPXE_URL=$ipxe_url|" .env
-    [ -n "$se4install_name" ] && sed -i "s|SAMBAEDU_SE4INSTALL_NAME=.*|SAMBAEDU_SE4INSTALL_NAME=$se4install_name|" .env
-    [ -n "$se4install_passwd" ] && sed -i "s|SAMBAEDU_SE4INSTALL_PASSWD=.*|SAMBAEDU_SE4INSTALL_PASSWD=$se4install_passwd|" .env
+    [ -n "$se4fs_ip" ] && sed -i "s|^SE4FS_IP=.*|SE4FS_IP=$se4fs_ip|" .env
+    [ -n "$se4fs_name" ] && sed -i "s|^SE4FS_NAME=.*|SE4FS_NAME=$se4fs_name|" .env
+    [ -n "$ipxe_url" ] && sed -i "s|^IPXE_URL=.*|IPXE_URL=$ipxe_url|" .env
+    [ -n "$se4install_name" ] && sed -i "s|^SE4INSTALL_NAME=.*|SE4INSTALL_NAME=$se4install_name|" .env
+    [ -n "$se4install_passwd" ] && sed -i "s|^SE4INSTALL_PASSWD=.*|SE4INSTALL_PASSWD=$se4install_passwd|" .env
 fi
 
 # Charger les valeurs depuis /etc/msmtprc (configuration SMTP)

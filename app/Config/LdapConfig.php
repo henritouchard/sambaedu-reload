@@ -136,7 +136,7 @@ final readonly class LdapConfig
             throw new \RuntimeException(
                 'AD établissement (se4ad_etab_ip) non configuré. ' .
                 'En mode strict, la connexion à l\'AD central est interdite. ' .
-                'Configurez SAMBAEDU_SE4AD_ETAB_IP dans le fichier .env'
+                'Configurez SE4AD_ETAB_IP dans le fichier .env'
             );
         }
 
