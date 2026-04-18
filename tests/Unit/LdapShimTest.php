@@ -447,4 +447,25 @@ class LdapShimTest extends TestCase
         $this->assertEquals('512', $resultActive[0]['useraccountcontrol']);
         $this->assertEquals('514', $resultInactive[0]['useraccountcontrol']);
     }
+
+    // ─── Tests ad_url ──────────────────────────────────────────────────────
+
+    public function test_ad_url_dns_mode_returns_bare_fqdn(): void
+    {
+        $config = ['se4ad_name' => 'se4ad', 'domain' => 'ecole.local'];
+        $this->assertEquals('se4ad.ecole.local', ad_url($config, 'dns'));
+    }
+
+    public function test_ad_url_sambatool_mode_returns_host_option(): void
+    {
+        $config = ['se4ad_name' => 'se4ad', 'domain' => 'ecole.local'];
+        $this->assertEquals('-H ldap://se4ad.ecole.local ', ad_url($config, 'sambatool'));
+    }
+
+    public function test_ad_url_ldap_mode_returns_url_with_port(): void
+    {
+        $config = ['se4ad_name' => 'se4ad', 'domain' => 'ecole.local'];
+        $this->assertEquals('ldap://se4ad.ecole.local:389', ad_url($config, 'ldap'));
+        $this->assertEquals('ldaps://se4ad.ecole.local:636', ad_url($config, 'ldaps'));
+    }
 }
