@@ -9,7 +9,7 @@ Restart=always
 RestartSec=3
 TimeoutStopSec=620
 WorkingDirectory=/var/www/sambaedu-reload
-ExecStart=/usr/bin/php8.2 artisan queue:work database --queue=sync --sleep=3 --tries=3 --max-time=3600
+ExecStart=__PHP_BIN__ artisan queue:work database --queue=sync --sleep=3 --tries=3 --max-time=3600
 
 [Install]
 WantedBy=multi-user.target

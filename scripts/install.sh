@@ -442,10 +442,18 @@ install_npm() {
 # ============================================================================
 
 run_migrations() {
-  log "Exécution des migrations de base de données..."
   cd "$APP_DIR"
 
-  php artisan migrate:fresh --seed
+  local app_env
+  app_env=$(php -r "require 'vendor/autoload.php'; (Dotenv\Dotenv::createImmutable(__DIR__))->safeLoad(); echo \$_ENV['APP_ENV'] ?? 'production';" 2>/dev/null)
+
+  if [[ "$app_env" == "production" ]]; then
+    log "APP_ENV=production → migrations sans seed ni drop (migrate --force)..."
+    php artisan migrate --force
+  else
+    log "APP_ENV=$app_env → migrate:fresh --seed (DROP + seed)..."
+    php artisan migrate:fresh --seed --force
+  fi
 
   log_success "Migrations OK"
 }
@@ -678,13 +686,26 @@ install_queue_workers() {
   local services=(laravel-queue-sync.service laravel-queue-worker.service laravel-queue-general.service)
   local changed=false
 
+  # Résoudre le binaire PHP absolu (évite /usr/bin/php8.2 hardcodé absent).
+  local php_bin
+  php_bin="$(command -v php || true)"
+  if [[ -z "$php_bin" ]]; then
+    log_error "Aucun binaire PHP trouvé dans le PATH"
+    return 1
+  fi
+  # systemd n'exécute pas via PATH : il faut un chemin absolu et réel.
+  php_bin="$(readlink -f "$php_bin")"
+  log "  → PHP détecté : $php_bin"
+
   for svc in "${services[@]}"; do
     if [[ ! -f "$src/$svc" ]]; then
       log_error "Fichier source manquant: $src/$svc"
       return 1
     fi
-    if ! cmp -s "$src/$svc" "$dst/$svc" 2>/dev/null; then
-      cp "$src/$svc" "$dst/$svc"
+    local rendered
+    rendered="$(sed "s|__PHP_BIN__|${php_bin}|g" "$src/$svc")"
+    if [[ ! -f "$dst/$svc" ]] || ! diff -q <(echo "$rendered") "$dst/$svc" >/dev/null 2>&1; then
+      echo "$rendered" > "$dst/$svc"
       changed=true
       log "  → $svc installé/mis à jour"
     fi
@@ -694,10 +715,31 @@ install_queue_workers() {
     systemctl daemon-reload
   fi
 
+  local failed=()
   for svc in "${services[@]}"; do
-    systemctl enable "$svc" >/dev/null 2>&1 || true
-    systemctl restart "$svc"
+    if ! systemctl enable "$svc" >/dev/null 2>&1; then
+      log_error "  → $svc: enable a échoué"
+      failed+=("$svc")
+      continue
+    fi
+    if ! systemctl restart "$svc"; then
+      log_error "  → $svc: restart a échoué"
+      failed+=("$svc")
+      continue
+    fi
+    # Laisser au service le temps de démarrer puis vérifier qu'il ne soit pas
+    # retombé (ExecStart introuvable → exit 203 immédiat, mais systemd retourne 0).
+    sleep 1
+    if ! systemctl is-active --quiet "$svc"; then
+      log_error "  → $svc: service inactif après restart (voir: journalctl -u $svc)"
+      failed+=("$svc")
+    fi
   done
+
+  if (( ${#failed[@]} > 0 )); then
+    log_error "Queue workers en échec : ${failed[*]}"
+    return 1
+  fi
 
   log_success "Queue workers actifs : ${services[*]}"
 }

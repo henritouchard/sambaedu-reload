@@ -172,6 +172,16 @@ update_systemd() {
         return
     fi
 
+    # Résoudre le binaire PHP absolu (cf. install.sh:install_queue_workers).
+    # La version peut changer entre deux updates (php8.2 → php8.4).
+    local php_bin
+    php_bin="$(command -v php || true)"
+    if [[ -z "$php_bin" ]]; then
+        log_error "Aucun binaire PHP trouvé dans le PATH"
+        return 1
+    fi
+    php_bin="$(readlink -f "$php_bin")"
+
     for source_file in "$SYSTEMD_SOURCE_DIR"/*.service; do
         [[ -e "$source_file" ]] || continue
 
@@ -179,9 +189,12 @@ update_systemd() {
         service="$(basename "$source_file")"
         local target_file="$SYSTEMD_TARGET_DIR/$service"
 
-        if [[ ! -f "$target_file" ]] || ! cmp -s "$source_file" "$target_file"; then
+        local rendered
+        rendered="$(sed "s|__PHP_BIN__|${php_bin}|g" "$source_file")"
+
+        if [[ ! -f "$target_file" ]] || ! diff -q <(echo "$rendered") "$target_file" >/dev/null 2>&1; then
             log "Mise à jour service systemd: $service"
-            cp "$source_file" "$target_file"
+            echo "$rendered" > "$target_file"
             changed=true
         fi
     done
@@ -193,14 +206,21 @@ update_systemd() {
         log_success "Services systemd déjà à jour"
     fi
 
-    # Redémarrer les workers
-    if systemctl is-enabled laravel-queue-general >/dev/null 2>&1; then
-        log "Redémarrage des workers..."
-        systemctl restart laravel-queue-general || true
-    fi
-    if systemctl is-enabled laravel-queue-sync >/dev/null 2>&1; then
-        systemctl restart laravel-queue-sync || true
-    fi
+    # Redémarrer les workers (les 3 : sync, worker, general).
+    local workers=(laravel-queue-sync laravel-queue-worker laravel-queue-general)
+    for svc in "${workers[@]}"; do
+        if systemctl is-enabled "$svc" >/dev/null 2>&1; then
+            log "Redémarrage $svc..."
+            if ! systemctl restart "$svc"; then
+                log_error "  → $svc: restart a échoué"
+                continue
+            fi
+            sleep 1
+            if ! systemctl is-active --quiet "$svc"; then
+                log_error "  → $svc: inactif après restart (voir: journalctl -u $svc)"
+            fi
+        fi
+    done
 }
 
 # ============================================================================
