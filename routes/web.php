@@ -84,6 +84,16 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
         ->middleware('sambaedu.admin')
         ->name('users.quota.update');
 
+    // Téléchargement des exports post-bulk-reset (token signé, TTL 20 min)
+    // IMPORTANT : ces routes DOIVENT être définies AVANT `/users/{login}`
+    // sinon Laravel va matcher `{login}` = "password-reset" en premier.
+    Route::get('/users/password-reset/{token}/pdf', [\App\Http\Controllers\PasswordResetExportController::class, 'downloadPdf'])
+        ->middleware('signed')
+        ->name('users.password-reset.pdf');
+    Route::get('/users/password-reset/{token}/csv', [\App\Http\Controllers\PasswordResetExportController::class, 'downloadCsv'])
+        ->middleware('signed')
+        ->name('users.password-reset.csv');
+
     // Utilisateur individuel
     Route::livewire('/users/{login}', 'pages::users.[login].index')->name('user.show');
 

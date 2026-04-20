@@ -221,6 +221,18 @@ new #[Title('Groupe utilisateur')] class extends Component {
                                 </div>
                             </button>
                         </li>
+                        @can('user.password.init')
+                            <li>
+                                <button type="button" class="flex items-center gap-3 w-full"
+                                    @click="Livewire.dispatch('open-password-reset-modal', { users: [], groups: [{{ $groupId }}] }); document.activeElement.blur();">
+                                    <i class="fa-solid fa-key w-4"></i>
+                                    <div class="flex flex-col items-start">
+                                        <span class="font-medium">Réinitialiser les mdp du groupe</span>
+                                        <span class="text-xs opacity-70">Membres directs uniquement</span>
+                                    </div>
+                                </button>
+                            </li>
+                        @endcan
                     </ul>
                 </div>
             @endif
@@ -233,4 +245,6 @@ new #[Title('Groupe utilisateur')] class extends Component {
         @include('pages.users.groups.[id]._partials.group-header')
         @include('pages.users.groups.[id]._partials.members-list')
     @endif
+
+    <livewire:components::organisms.password-reset-modal />
 </x-organisms.page>

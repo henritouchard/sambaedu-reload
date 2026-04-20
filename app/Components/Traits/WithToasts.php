@@ -67,4 +67,50 @@ trait WithToasts
     {
         $this->toast('error', 'Accès refusé', $message);
     }
+
+    /**
+     * Toast de succès étendu avec liens d'action et durée sticky.
+     *
+     * Utilisé par le bulk-reset mdp (story 2.6) pour afficher les liens
+     * "Télécharger PDF" + "Télécharger CSV" en post-traitement.
+     *
+     * @param array<int,array{label:string,url:string}> $links
+     * @param bool $sticky Si true, le toast reste jusqu'à fermeture manuelle
+     * @param int|null $duration Durée en ms (ignoré si $sticky)
+     */
+    protected function toastSuccessWithActions(
+        string $message,
+        array $links = [],
+        bool $sticky = false,
+        ?int $duration = null,
+        string $title = 'Succès'
+    ): void {
+        $this->dispatch(
+            'toastMagic',
+            status: 'success',
+            title: $title,
+            message: $message,
+            links: $links,
+            sticky: $sticky,
+            duration: $duration ?? ($sticky ? 0 : 6000),
+        );
+    }
+
+    protected function toastWarningWithActions(
+        string $message,
+        array $links = [],
+        bool $sticky = false,
+        ?int $duration = null,
+        string $title = 'Attention'
+    ): void {
+        $this->dispatch(
+            'toastMagic',
+            status: 'warning',
+            title: $title,
+            message: $message,
+            links: $links,
+            sticky: $sticky,
+            duration: $duration ?? ($sticky ? 0 : 6000),
+        );
+    }
 }

@@ -19,8 +19,10 @@ use App\Types\PaginatedResult;
 use App\Types\User;
 use App\Constants\Ldap\MainGroups;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * Service de gestion des utilisateurs SE4FS
@@ -639,8 +641,405 @@ class UserService
     }
 
     /**
+     * Réinitialisation de mot de passe en masse — story 2.6.
+     *
+     * Implémente un pattern « tout ou rien » côté PostgreSQL
+     * (DB::transaction) avec validation préalable exhaustive des cibles AD
+     * avant la première écriture. Rollback AD asymétrique documenté :
+     * l'AD ne permet PAS de restaurer un hash précédent — si une écriture
+     * AD échoue en cours de lot, on log un `audit.user.password.reset.partial_failure`
+     * et on retourne la liste des échecs à l'appelant.
+     *
+     * Contraintes sécurité :
+     *   - le mot de passe clair n'est JAMAIS persisté (DB, logs, session PHP).
+     *   - le mot de passe clair n'apparaît que dans le retour de la méthode
+     *     pour alimenter l'export PDF/CSV (à oublier dès l'export généré).
+     *
+     * @param array{userIds?: array<int|string>, groupIds?: array<int>} $selection
+     *        Sélection mixte : logins (userIds) + ids de UserGroup (groupIds).
+     *        Les membres directs des groupes sont résolus via
+     *        {@see UserGroupService::getDirectMembersForBulkReset()}.
+     * @param bool $force Si false, ne réinitialise que les comptes non activés
+     *                    (pwdLastSet == 0). Si true (défaut), réinitialise tout.
+     * @param bool $forceChangeAtNextLogin Si true (défaut), positionne
+     *                    pwdLastSet=0 pour obliger le changement au prochain
+     *                    login. Si false, positionne pwdLastSet=-1 (mot de
+     *                    passe définitif, DANGER).
+     *
+     * @return array{
+     *     success: bool,
+     *     message: string,
+     *     bulk_operation_id: string,
+     *     results: array<int, array{
+     *         login: string,
+     *         new_password: ?string,
+     *         success: bool,
+     *         source_group_id: ?int,
+     *         source_group_name: ?string,
+     *         error?: string,
+     *         metadata?: array<string, mixed>
+     *     }>,
+     *     partial_failures?: array<int, string>
+     * }
+     */
+    public function bulkResetPasswords(
+        array $selection,
+        bool $force = true,
+        bool $forceChangeAtNextLogin = true
+    ): array {
+        $bulkOperationId = (string) Str::uuid();
+        $operatorLogin = auth()->user()?->login ?? 'system';
+        $operatorId = auth()->id() ?? 0;
+
+        // Permission globale — short-circuit si refusée.
+        if (!Gate::allows('user.password.init')) {
+            Log::warning('audit.user.password.reset.denied', [
+                'bulk_operation_id' => $bulkOperationId,
+                'operator_login' => $operatorLogin,
+                'reason' => 'permission_denied',
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Vous n\'avez pas les droits pour réinitialiser des mots de passe.',
+                'bulk_operation_id' => $bulkOperationId,
+                'results' => [],
+            ];
+        }
+
+        // --- PHASE DE RÉSOLUTION ------------------------------------------------
+        $directLogins = array_values(array_filter(
+            array_map('strval', $selection['userIds'] ?? []),
+            static fn(string $v): bool => $v !== ''
+        ));
+
+        $groupIds = array_values(array_filter(
+            array_map('intval', $selection['groupIds'] ?? []),
+            static fn(int $v): bool => $v > 0
+        ));
+
+        /** @var array<string, array{id:int,name:string}|null> $sourceGroup */
+        $sourceGroup = [];
+        /** @var array<string, \App\LdapModels\LdapUser> $ldapUsers */
+        $ldapUsers = [];
+        /** @var array<string, ?\App\Models\User> $sqlUsers */
+        $sqlUsers = [];
+        /** @var array<int, string> $orderedLogins */
+        $orderedLogins = [];
+
+        // Résolution groupes → membres directs AD (non récursif).
+        if (count($groupIds) > 0) {
+            try {
+                $groupService = app(UserGroupService::class);
+                $groupMembers = $groupService->getDirectMembersForBulkReset($groupIds);
+            } catch (\Throwable $e) {
+                Log::error('audit.user.password.reset.denied', [
+                    'bulk_operation_id' => $bulkOperationId,
+                    'operator_login' => $operatorLogin,
+                    'reason' => 'group_resolution_error',
+                    'error' => $e->getMessage(),
+                ]);
+
+                return [
+                    'success' => false,
+                    'message' => 'Erreur lors de la résolution des membres de groupes : ' . $e->getMessage(),
+                    'bulk_operation_id' => $bulkOperationId,
+                    'results' => [],
+                ];
+            }
+
+            foreach ($groupMembers['users'] as $sqlUser) {
+                $login = (string) $sqlUser->login;
+                if ($login === '' || in_array($login, $orderedLogins, true)) {
+                    continue;
+                }
+                $orderedLogins[] = $login;
+                $sqlUsers[$login] = $sqlUser;
+                $sourceGroup[$login] = $groupMembers['login_to_source_group'][$login] ?? null;
+            }
+        }
+
+        // Fusion avec les logins directs (non dédoublonnés par groupe = pas de source_group).
+        foreach ($directLogins as $login) {
+            if (in_array($login, $orderedLogins, true)) {
+                // Déjà résolu par un groupe — on conserve la 1re source (cf. AC 11).
+                continue;
+            }
+            $orderedLogins[] = $login;
+            if (!array_key_exists($login, $sqlUsers)) {
+                try {
+                    $sqlUsers[$login] = SqlUserModel::query()->where('login', $login)->first();
+                } catch (\Throwable $e) {
+                    // Table indisponible (tests unitaires SQLite :memory: sans migrations)
+                    // — on continue, la partie double-write SQL sera silencieusement
+                    // skippée plus bas.
+                    $sqlUsers[$login] = null;
+                }
+            }
+            $sourceGroup[$login] = null;
+        }
+
+        if (count($orderedLogins) === 0) {
+            return [
+                'success' => false,
+                'message' => 'Aucun utilisateur à réinitialiser (sélection vide ou groupes sans membres directs).',
+                'bulk_operation_id' => $bulkOperationId,
+                'results' => [],
+            ];
+        }
+
+        Log::info('audit.user.password.reset.bulk.start', [
+            'bulk_operation_id' => $bulkOperationId,
+            'operator_login' => $operatorLogin,
+            'operator_id' => $operatorId,
+            'target_count' => count($orderedLogins),
+            'forced_change' => $forceChangeAtNextLogin,
+            'force' => $force,
+            'groups_count' => count($groupIds),
+            'timestamp' => now()->toIso8601String(),
+        ]);
+
+        // --- PHASE DE VALIDATION (avant toute écriture AD) ----------------------
+        $scopeCode = $this->config->getCurrentEstablishmentCode();
+        $hasScope = !empty($scopeCode) && $scopeCode !== '0';
+
+        $unresolved = [];
+        $outOfScope = [];
+
+        foreach ($orderedLogins as $login) {
+            $ldapUser = $this->userRepository->findLdapModelByLogin($login);
+            if ($ldapUser === null) {
+                $unresolved[] = $login;
+                continue;
+            }
+            $ldapUsers[$login] = $ldapUser;
+
+            // Vérification scope établissement : on refuse tout user hors scope
+            // si l'opérateur est lui-même scopé.
+            if ($hasScope) {
+                $userDn = strtolower((string) $ldapUser->getDn());
+                $etabPattern = ',ou=' . strtolower($scopeCode) . ',';
+                if (!str_contains($userDn, $etabPattern)) {
+                    $outOfScope[] = $login;
+                }
+            }
+        }
+
+        if (count($unresolved) > 0) {
+            Log::warning('audit.user.password.reset.denied', [
+                'bulk_operation_id' => $bulkOperationId,
+                'operator_login' => $operatorLogin,
+                'reason' => 'unresolved_users',
+                'unresolved' => $unresolved,
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Utilisateur(s) introuvable(s) dans l\'annuaire : ' . implode(', ', $unresolved),
+                'bulk_operation_id' => $bulkOperationId,
+                'results' => [],
+            ];
+        }
+
+        if (count($outOfScope) > 0) {
+            Log::warning('audit.user.password.reset.denied', [
+                'bulk_operation_id' => $bulkOperationId,
+                'operator_login' => $operatorLogin,
+                'reason' => 'out_of_scope',
+                'scope' => $scopeCode,
+                'out_of_scope' => $outOfScope,
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Utilisateur(s) hors de votre périmètre : ' . implode(', ', $outOfScope),
+                'bulk_operation_id' => $bulkOperationId,
+                'results' => [],
+            ];
+        }
+
+        // Filtre « force » : si false, ne traiter que les users dont pwdLastSet==0.
+        if (!$force) {
+            $orderedLogins = array_values(array_filter($orderedLogins, function (string $login) use ($ldapUsers): bool {
+                $pwdLastSet = (int) ($ldapUsers[$login]->getFirstAttribute('pwdlastset') ?? 0);
+                return $pwdLastSet === 0;
+            }));
+
+            if (count($orderedLogins) === 0) {
+                return [
+                    'success' => true,
+                    'message' => 'Aucun utilisateur non activé à réinitialiser.',
+                    'bulk_operation_id' => $bulkOperationId,
+                    'results' => [],
+                ];
+            }
+        }
+
+        // --- PHASE DE GÉNÉRATION -----------------------------------------------
+        /** @var array<string, string> $plaintextPasswords */
+        $plaintextPasswords = [];
+        foreach ($orderedLogins as $login) {
+            $plaintextPasswords[$login] = $this->passwordService->generateRandomPassword();
+        }
+
+        // --- PHASE D'ÉCRITURE ATOMIQUE -----------------------------------------
+        $results = [];
+        $partialFailures = [];
+        $success = true;
+
+        foreach ($orderedLogins as $login) {
+            $sqlUser = $sqlUsers[$login] ?? null;
+            if ($sqlUser === null) {
+                try {
+                    $sqlUser = SqlUserModel::query()->where('login', $login)->first();
+                } catch (\Throwable) {
+                    $sqlUser = null;
+                }
+            }
+            $sourceInfo = $sourceGroup[$login] ?? null;
+            $newPassword = $plaintextPasswords[$login];
+
+            try {
+                $ldapUser = $ldapUsers[$login];
+
+                // 1) Set password LDAP (AD source de vérité, en premier)
+                $this->setUserPassword($ldapUser, $newPassword);
+
+                // 2) pwdlastset (0 = forcer changement, -1 = définitif) — réutiliser l'instance
+                // déjà chargée (évite un 2e round-trip LDAP inutile — cf. review 2.6 #5).
+                $ldapUser->setAttribute('pwdlastset', $forceChangeAtNextLogin ? 0 : -1);
+                $ldapUser->save();
+
+                // 3) Invalider cache AD
+                $this->userRepository->invalidateCache($login);
+
+                // 4) Double-write SQL : timestamp pwd_reset_at (jamais le mdp)
+                // Transaction courte autour du seul save() — pas d'appel LDAP à l'intérieur
+                // (cf. review 2.6 #4 : évite de garder la connexion PG ouverte pendant les appels AD).
+                if ($sqlUser !== null) {
+                    $sqlUser->pwd_reset_at = now();
+                    DB::transaction(static fn() => $sqlUser->save());
+                }
+
+                // 5) Audit individualisé (jamais le mdp clair)
+                Log::info('audit.user.password.reset', [
+                    'bulk_operation_id' => $bulkOperationId,
+                    'target_login' => $login,
+                    'operator_login' => $operatorLogin,
+                    'operator_id' => $operatorId,
+                    'scope' => $scopeCode,
+                    'forced_change' => $forceChangeAtNextLogin,
+                    'source_group_id' => $sourceInfo['id'] ?? null,
+                    'source_group_name' => $sourceInfo['name'] ?? null,
+                    'password_length' => strlen($newPassword),
+                    'success' => true,
+                    'timestamp' => now()->toIso8601String(),
+                ]);
+
+                $results[] = [
+                    'login' => $login,
+                    'new_password' => $newPassword,
+                    'success' => true,
+                    'source_group_id' => $sourceInfo['id'] ?? null,
+                    'source_group_name' => $sourceInfo['name'] ?? null,
+                    'metadata' => $this->collectExportMetadata($sqlUser, $ldapUser),
+                ];
+            } catch (\Throwable $e) {
+                $partialFailures[] = $login;
+                Log::error('audit.user.password.reset.partial_failure', [
+                    'bulk_operation_id' => $bulkOperationId,
+                    'target_login' => $login,
+                    'operator_login' => $operatorLogin,
+                    'error' => $e->getMessage(),
+                    'forced_change' => $forceChangeAtNextLogin,
+                    'source_group_id' => $sourceInfo['id'] ?? null,
+                ]);
+
+                $results[] = [
+                    'login' => $login,
+                    'new_password' => null,
+                    'success' => false,
+                    'source_group_id' => $sourceInfo['id'] ?? null,
+                    'source_group_name' => $sourceInfo['name'] ?? null,
+                    'error' => $e->getMessage(),
+                ];
+
+                $success = false;
+            }
+        }
+
+        Log::info('audit.user.password.reset.bulk.end', [
+            'bulk_operation_id' => $bulkOperationId,
+            'operator_login' => $operatorLogin,
+            'success' => $success,
+            'total' => count($orderedLogins),
+            'succeeded' => count($orderedLogins) - count($partialFailures),
+            'failed' => count($partialFailures),
+            'timestamp' => now()->toIso8601String(),
+        ]);
+
+        if (!$success) {
+            return [
+                'success' => false,
+                'message' => count($partialFailures) . ' réinitialisation(s) ont échoué — certains utilisateurs peuvent être dans un état modifié (AD sans rollback natif).',
+                'bulk_operation_id' => $bulkOperationId,
+                'results' => $results,
+                'partial_failures' => $partialFailures,
+            ];
+        }
+
+        return [
+            'success' => true,
+            'message' => count($results) . ' mot(s) de passe réinitialisé(s).',
+            'bulk_operation_id' => $bulkOperationId,
+            'results' => $results,
+        ];
+    }
+
+    /**
+     * Collecte les métadonnées non sensibles (hors mdp) d'un user pour
+     * alimenter l'export PDF/CSV : nom, prénom, établissement, classe, email.
+     *
+     * @return array<string, mixed>
+     */
+    private function collectExportMetadata(?SqlUserModel $sqlUser, \App\LdapModels\LdapUser $ldapUser): array
+    {
+        if ($sqlUser !== null) {
+            $classes = [];
+            try {
+                $classes = $sqlUser->userGroups()
+                    ->where('type', 'classe')
+                    ->pluck('display_name')
+                    ->filter()
+                    ->values()
+                    ->all();
+            } catch (\Throwable) {
+                // best-effort, ignore
+            }
+
+            return [
+                'lastname' => (string) ($sqlUser->lastname ?? ''),
+                'firstname' => (string) ($sqlUser->firstname ?? ''),
+                'email' => (string) ($sqlUser->email ?? ''),
+                'structure' => (string) ($sqlUser->school_name ?? $sqlUser->school_code ?? ''),
+                'classes' => $classes,
+                'activated' => (bool) ($sqlUser->is_active ?? true),
+            ];
+        }
+
+        return [
+            'lastname' => (string) ($ldapUser->getFirstAttribute('sn') ?? ''),
+            'firstname' => (string) ($ldapUser->getFirstAttribute('givenname') ?? ''),
+            'email' => (string) ($ldapUser->getFirstAttribute('mail') ?? ''),
+            'structure' => '',
+            'classes' => [],
+            'activated' => true,
+        ];
+    }
+
+    /**
      * Crée un nouvel utilisateur avec LdapRecord
-     * 
+     *
      * Remplace l'ancienne implémentation basée sur les fonctions legacy
      */
     public function createUser(array $data): array

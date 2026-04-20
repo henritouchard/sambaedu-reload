@@ -68,6 +68,7 @@ class User extends Authenticatable implements Wireable
         'ad_right_profiles',
         'ad_rights_bitmask',
         'ad_synced_at',
+        'pwd_reset_at',
     ];
 
     protected $hidden = [
@@ -80,6 +81,7 @@ class User extends Authenticatable implements Wireable
         'ad_right_profiles' => 'array',
         'ad_rights_bitmask' => 'integer',
         'ad_synced_at' => 'datetime',
+        'pwd_reset_at' => 'datetime',
         'password' => 'hashed',
     ];
 

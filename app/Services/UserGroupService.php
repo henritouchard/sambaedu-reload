@@ -662,4 +662,110 @@ class UserGroupService
             substr($hex, 20, 12)
         ));
     }
+
+    /**
+     * Résout les membres directs (non récursif) d'une liste de groupes SQL
+     * pour une réinitialisation bulk. Reproduit la sémantique legacy
+     * `search_people_group($config, $groupsam, $recurse=false)` — si un groupe
+     * contient un sous-groupe, les utilisateurs du sous-groupe ne sont PAS
+     * ramenés (idempotence stricte vs `sambaedu/includes/ldap.inc.php:5872`).
+     *
+     * La source de vérité ici est l'AD (cf. mémoire projet
+     * `feedback_gpo_real_ad_not_eloquent.md`). Pour chaque groupe on
+     * interroge l'AD via {@see GroupRepository::getGroupMembers()} puis on
+     * valide l'existence SQL (sync si besoin) — sans synchro on perdrait
+     * les users AD jamais connectés via SER.
+     *
+     * @param array<int|string> $groupIds identifiants SQL des UserGroup
+     * @return array{
+     *     users: \Illuminate\Support\Collection<\App\Models\User>,
+     *     login_to_source_group: array<string, array{id: int, name: string}>
+     * }
+     */
+    public function getDirectMembersForBulkReset(array $groupIds): array
+    {
+        /** @var array<string, User> $byLogin */
+        $byLogin = [];
+        /** @var array<string, array{id:int, name:string}> $sourceGroup */
+        $sourceGroup = [];
+
+        $ids = collect($groupIds)
+            ->map(fn(mixed $id): int => (int) $id)
+            ->filter(fn(int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (count($ids) === 0) {
+            return [
+                'users' => collect([]),
+                'login_to_source_group' => [],
+            ];
+        }
+
+        $groups = UserGroup::query()->whereIn('id', $ids)->get();
+
+        foreach ($groups as $group) {
+            try {
+                $members = $this->groupRepository->getGroupMembers($group->name);
+            } catch (\Throwable $e) {
+                Log::warning('[UserGroupService] Lecture membres AD impossible pour bulk reset', [
+                    'group' => $group->name,
+                    'error' => $e->getMessage(),
+                ]);
+                continue;
+            }
+
+            if (!$members instanceof Collection || $members->isEmpty()) {
+                Log::info('[UserGroupService] Groupe sans membres directs', [
+                    'group' => $group->name,
+                ]);
+                continue;
+            }
+
+            foreach ($members as $member) {
+                // En AD, CN peut différer du sAMAccountName si le user a été renommé —
+                // on préfère samaccountname (login AD canonique) avec fallback sur cn.
+                $login = trim((string) ($member['samaccountname'] ?? $member['cn'] ?? ''));
+                if ($login === '') {
+                    Log::warning('[UserGroupService] Membre AD sans login résolvable', [
+                        'group' => $group->name,
+                        'member_keys' => array_keys((array) $member),
+                    ]);
+                    continue;
+                }
+
+                if (array_key_exists($login, $byLogin)) {
+                    // Dédup : on conserve le premier groupe qui a ramené ce user
+                    // (ordre d'itération sur $ids = ordre de la requête bulk).
+                    continue;
+                }
+
+                $sqlUser = User::query()->where('login', $login)->first();
+
+                if ($sqlUser === null) {
+                    // L'user AD n'est pas encore dans la table SQL : on tente
+                    // une synchro minimale. Si cela échoue on ignore ce user
+                    // (il sera remonté en erreur par la phase de validation
+                    // de UserService::bulkResetPasswords).
+                    Log::info('[UserGroupService] User AD absent en SQL, skip sync inline', [
+                        'login' => $login,
+                        'group' => $group->name,
+                    ]);
+                    continue;
+                }
+
+                $byLogin[$login] = $sqlUser;
+                $sourceGroup[$login] = [
+                    'id' => (int) $group->id,
+                    'name' => (string) ($group->display_name ?? $group->name),
+                ];
+            }
+        }
+
+        return [
+            'users' => collect(array_values($byLogin)),
+            'login_to_source_group' => $sourceGroup,
+        ];
+    }
 }

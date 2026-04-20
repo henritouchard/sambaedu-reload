@@ -558,7 +558,7 @@ new class extends Component {
                                 <i class="fa-solid fa-chevron-up ml-1"></i>
                             </label>
                             <ul tabindex="0"
-                                class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-56 border border-base-300 mb-2">
+                                class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-64 border border-base-300 mb-2">
                                 <li>
                                     <button type="button"
                                         @click="Livewire.dispatch('open-groups-drawer', { users: $wire.selectedUsers }); document.activeElement.blur();">
@@ -566,6 +566,15 @@ new class extends Component {
                                         Gérer les groupes
                                     </button>
                                 </li>
+                                @can('user.password.init')
+                                    <li>
+                                        <button type="button"
+                                            @click="Livewire.dispatch('open-password-reset-modal', { users: $wire.selectedUsers, groups: [] }); document.activeElement.blur();">
+                                            <i class="fa-solid fa-key"></i>
+                                            Réinitialiser les mots de passe
+                                        </button>
+                                    </li>
+                                @endcan
                             </ul>
                         </div>
                         <button type="button" class="btn btn-ghost btn-sm" wire:click="clearSelectedUsers">
@@ -652,13 +661,22 @@ new class extends Component {
                                 <i class="fa-solid fa-chevron-up ml-1"></i>
                             </label>
                             <ul tabindex="0"
-                                class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-56 border border-base-300 mb-2">
+                                class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-64 border border-base-300 mb-2">
                                 <li>
                                     <button type="button" wire:click="syncSelectedGroups">
                                         <i class="fa-solid fa-rotate text-info"></i>
                                         Resynchroniser AD
                                     </button>
                                 </li>
+                                @can('user.password.init')
+                                    <li>
+                                        <button type="button"
+                                            @click="Livewire.dispatch('open-password-reset-modal', { users: [], groups: $wire.selectedUserGroups }); document.activeElement.blur();">
+                                            <i class="fa-solid fa-key"></i>
+                                            Réinitialiser les mots de passe
+                                        </button>
+                                    </li>
+                                @endcan
                                 <div class="divider my-1"></div>
                                 <li>
                                     <button type="button" class="text-error" wire:click="deleteSelectedGroups"
@@ -680,4 +698,6 @@ new class extends Component {
     @endif
 
     <livewire:components::organisms.groups-drawer />
+    <livewire:components::organisms.password-reset-modal />
+    <livewire:components::organisms.password-reset-banner />
 </x-organisms.page>
