@@ -248,6 +248,8 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
     <livewire:components::organisms.groups-drawer />
     <!-- Composant Livewire de gestion des permissions -->
     <livewire:components::organisms.rights-drawer />
+    <!-- Composant Livewire de réinitialisation de mdp avec export (story 2.6) -->
+    <livewire:components::organisms.password-reset-modal />
 
     <x-slot:actions>
         <!-- Actions principales -->
@@ -282,6 +284,18 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                                     </div>
                                 </button>
                             </li>
+                            @can('user.password.init')
+                                <li>
+                                    <button type="button" class="flex items-center gap-3 w-full"
+                                        @click="Livewire.dispatch('open-password-reset-modal', { users: ['{{ $user->login }}'], groups: [] }); document.activeElement.blur();">
+                                        <i class="fa-solid fa-key"></i>
+                                        <div class="flex flex-col items-start">
+                                            <span class="font-medium">Réinit. mdp avec export</span>
+                                            <span class="text-xs opacity-70">PDF / CSV + audit</span>
+                                        </div>
+                                    </button>
+                                </li>
+                            @endcan
                             <li>
                                 <button type="button" class="flex items-center gap-3 w-full"
                                     @click="Livewire.dispatch('open-groups-drawer', { users: ['{{ $user->login }}'] }); document.activeElement.blur();">
