@@ -1118,13 +1118,6 @@ if (!function_exists('list_eleves')) {
     }
 }
 
-if (!function_exists('list_rights')) {
-    function list_rights(array $config, string $name, bool $deleg = false, bool $refresh = false): array
-    {
-        _shim_log_unimplemented('list_rights');
-        return _shim_wrap_results([]);
-    }
-}
 
 if (!function_exists('list_delegations')) {
     function list_delegations(array $config, string $login = 'login', bool $recurse = true, string $level = '', ?string $initial_login = null): array
