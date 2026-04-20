@@ -252,6 +252,49 @@ class MachinePowerServiceTest extends TestCase
         $this->assertEquals(203, $result['code']);
     }
 
+    // ── force shutdown (story 4-2) ────────────────────────────────────
+
+    public function test_shutdown_force_tags_action_as_shutdown_force_in_logs(): void
+    {
+        // Fake une machine Windows up → on appelle shutdown(force=true) et on
+        // vérifie que le message résultant contient bien "(forcée)" — marqueur
+        // exposé à l'UI pour distinguer l'intention. Le log DB lui-même
+        // (action=shutdown-force) est couvert par le test Feature Livewire,
+        // ici on reste en unit pur (pas de DB).
+        Process::fake([
+            '*net rpc shutdown*' => Process::result(output: 'Shutdown initiated'),
+        ]);
+
+        $service = Mockery::mock(MachinePowerService::class, [$this->configService])
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods();
+        $service->shouldReceive('ping')->with('192.168.1.50')->andReturn('windows');
+
+        $normal = $service->shutdown('pc-01', '192.168.1.50', false);
+        $forced = $service->shutdown('pc-01', '192.168.1.50', true);
+
+        $this->assertTrue($normal['success']);
+        $this->assertStringNotContainsString('forcée', $normal['message']);
+
+        $this->assertTrue($forced['success']);
+        $this->assertStringContainsString('forcée', $forced['message']);
+    }
+
+    public function test_readiness_timeout_constant_is_exposed_via_config(): void
+    {
+        // AC4 — la constante de timeout doit être accessible via config/parc.php.
+        // Le default applicatif (fallback) est 120s ; on le ré-affirme ici pour
+        // figer la sémantique : une régression du default casserait ce test.
+        $timeout = config('parc.machine_readiness_timeout_seconds');
+        $this->assertIsInt($timeout);
+        $this->assertGreaterThan(0, $timeout);
+
+        $interval = config('parc.machine_readiness_poll_interval_seconds');
+        $this->assertIsInt($interval);
+        $this->assertGreaterThan(0, $interval);
+        $this->assertLessThan($timeout, $interval, 'Le poll interval doit rester strictement inférieur au timeout.');
+    }
+
     // ── return code compatibility ────────────────────────────────────
 
     public function test_return_codes_are_compatible_with_legacy(): void

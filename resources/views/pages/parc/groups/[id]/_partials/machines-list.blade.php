@@ -131,14 +131,17 @@
                                                     @php
                                                         $confirmMessage = match ($action->key) {
                                                             'shutdown' => 'Confirmer l\'extinction de cette machine ?',
+                                                            'shutdown-force' => 'Forcer l\'extinction de cette machine ? Attention : un utilisateur peut perdre son travail non sauvegardé.',
                                                             'restart' => 'Confirmer le redémarrage de cette machine ?',
                                                             default => null,
                                                         };
+                                                        $isDangerous = $action->key === 'shutdown-force';
                                                     @endphp
                                                     <li>
                                                         <button type="button"
                                                             wire:click="executeMachineAction({{ $machine->id }}, '{{ $action->key }}')"
-                                                            @if ($confirmMessage) wire:confirm="{{ $confirmMessage }}" @endif>
+                                                            @if ($confirmMessage) wire:confirm="{{ $confirmMessage }}" @endif
+                                                            class="{{ $isDangerous ? 'text-error' : '' }}">
                                                             <i class="{{ $action->icon }}"></i>
                                                             {{ $action->label }}
                                                         </button>
@@ -183,15 +186,19 @@
                                                 $confirmMessage = match ($action->key) {
                                                     'shutdown'
                                                         => 'Confirmer l\'extinction des machines sélectionnées ?',
+                                                    'shutdown-force'
+                                                        => 'Forcer l\'extinction de TOUTES les machines sélectionnées ? Attention : les utilisateurs peuvent perdre leur travail non sauvegardé.',
                                                     'restart'
                                                         => 'Confirmer le redémarrage des machines sélectionnées ?',
                                                     default => null,
                                                 };
+                                                $isDangerous = $action->key === 'shutdown-force';
                                             @endphp
                                             <li>
                                                 <button type="button"
                                                     wire:click="executeSelectedGroupMachinesAction('{{ $action->key }}')"
-                                                    @if ($confirmMessage) wire:confirm="{{ $confirmMessage }}" @endif>
+                                                    @if ($confirmMessage) wire:confirm="{{ $confirmMessage }}" @endif
+                                                    class="{{ $isDangerous ? 'text-error' : '' }}">
                                                     <i class="{{ $action->icon }}"></i>
                                                     {{ $action->label }}
                                                 </button>
