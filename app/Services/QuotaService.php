@@ -698,4 +698,40 @@ class QuotaService
             QuotaRule::PARTITION_SAMBAEDU => 'Partages Classes/Docs (H:/I:)',
         ];
     }
+
+    /**
+     * Story 4.7 — true si l'utilisateur est en over-hard sur home OU sambaedu
+     * (blocage effectif). Utilisé par WallpaperComposer pour overrider en
+     * cartouche rouge « Stockage saturé ».
+     */
+    public function isUserOverQuota(string $username): bool
+    {
+        $usage = $this->getDiskUsage($username);
+        return ($usage['home']['is_over_hard'] ?? false)
+            || ($usage['sambaedu']['is_over_hard'] ?? false);
+    }
+
+    /**
+     * Story 4.7 — retourne la liste des partitions en over-quota (hard OU soft)
+     * avec label humain, valeurs Mo et grace_days pour affichage UI overlay.
+     *
+     * @return array<int,array{label:string,used_mb:int,soft_mb:int,grace_days:int|null}>
+     */
+    public function getOverQuotaPartitionsFormatted(string $username): array
+    {
+        $usage = $this->getDiskUsage($username);
+        $labels = ['home' => 'Espace perso', 'sambaedu' => 'Espace Classe'];
+        $result = [];
+        foreach ($usage as $partition => $info) {
+            if (($info['is_over_hard'] ?? false) || ($info['is_over_soft'] ?? false)) {
+                $result[] = [
+                    'label' => $labels[$partition] ?? $partition,
+                    'used_mb' => (int) ($info['used_mb'] ?? 0),
+                    'soft_mb' => (int) ($info['quota_soft_mb'] ?? 0),
+                    'grace_days' => $info['grace_days'] ?? null,
+                ];
+            }
+        }
+        return $result;
+    }
 }

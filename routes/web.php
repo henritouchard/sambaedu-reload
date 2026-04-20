@@ -114,6 +114,12 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
 
         // Applications
         Route::livewire('/applications/{id}', 'pages::parc-settings.applications.index')->name('applications.show');
+
+        // Fonds d'écran défauts établissement (story 4.7 AC 8)
+        // Gate wallpaper.manage — page admin (post-review #6).
+        Route::livewire('/wallpapers', 'pages::parc-settings.wallpapers.index')
+            ->middleware('can:wallpaper.manage')
+            ->name('wallpapers');
     });
 
     // // Gestion des parcs (Livewire)
@@ -137,15 +143,14 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
 
         // Machines
         Route::livewire('/machines/{id}', 'pages::parc.machines.[id].index')->name('machines.show');
-
-        // ParcTodo: à remettre en place
-        // Route::get('/parcs/{parc}/wallpaper/{type}', [WallpaperController::class, 'getImage'])
-        //     ->where('type', 'wallpaper|lockscreen')
-        //     ->name('parc.wallpaper.image');
-        // Route::get('/parc/{parc}/wallpaper/{type}/thumbnail', [WallpaperController::class, 'getThumbnail'])
-        //     ->where('type', 'wallpaper|lockscreen')
-        //     ->name('parc.wallpaper.thumbnail');
     });
+
+    // Miniature wallpaper (UI admin) — story 4.7 AC 8
+    // Gate wallpaper.manage (post-review #6) — principe least-privilege, même
+    // si le contenu n'est pas sensible.
+    Route::get('/wallpapers/{wallpaper}/thumbnail', [WallpaperController::class, 'thumbnail'])
+        ->middleware('can:wallpaper.manage')
+        ->name('wallpapers.thumbnail');
 
 });
 
@@ -232,6 +237,17 @@ Route::get('/shortcuts/icon/{name}', function (string $name) {
 */
 Route::match(['GET', 'POST'], 'gpo/shortcuts_out.php', [App\Http\Controllers\Api\v1\ShortcutExportController::class, 'legacyDispatch'])
     ->name('shortcuts.legacy');
+
+/*
+|--------------------------------------------------------------------------
+| Interception legacy gpo/wallpaper_out.php → nouveau système
+|--------------------------------------------------------------------------
+| Appelé par logon/startup scripts (Linux + Windows).
+| Actions : wallpaper, wallpaper-wait, lockscreen, veyon, icone.
+| Auth : $id md5 stocké dans APCu par applications.php.
+*/
+Route::match(['GET', 'POST'], 'gpo/wallpaper_out.php', [WallpaperController::class, 'legacyOut'])
+    ->name('wallpaper.legacy');
 
 /*
 |--------------------------------------------------------------------------
