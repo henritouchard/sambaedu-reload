@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- Badge multi-session — utilisateurs bleus #2980B9 -->
+  <circle cx="24" cy="24" r="21" fill="#2980B9" stroke="#ffffff" stroke-width="1.5"/>
+  <circle cx="18" cy="20" r="4.5" fill="#ffffff"/>
+  <path fill="#ffffff" d="M9 36 q0 -8 9 -8 q5 0 7.5 2.5 q-2 2.5 -2 5.5 v2 H9 Z"/>
+  <circle cx="30" cy="22" r="5" fill="#ffffff"/>
+  <path fill="#ffffff" d="M20 39 q0 -9 10 -9 q10 0 10 9 v1 H20 Z"/>
+</svg>

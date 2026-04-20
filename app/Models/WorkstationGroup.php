@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Eloquent\Builder;
 use Livewire\Wireable;
@@ -38,6 +40,8 @@ use App\Enums\LockReason;
  */
 class WorkstationGroup extends Model implements Wireable
 {
+    use HasFactory;
+
     /**
      * La table associée au modèle
      */
@@ -164,6 +168,11 @@ class WorkstationGroup extends Model implements Wireable
     public function physicalWorkstations(): HasMany
     {
         return $this->hasMany(Workstation::class, 'physical_room_id');
+    }
+
+    public function wallpapers(): MorphMany
+    {
+        return $this->morphMany(Wallpaper::class, 'owner');
     }
 
     /**

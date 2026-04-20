@@ -244,6 +244,34 @@ new #[Title('Groupe utilisateur')] class extends Component {
     @else
         @include('pages.users.groups.[id]._partials.group-header')
         @include('pages.users.groups.[id]._partials.members-list')
+
+        @can('wallpaper.manage')
+            <div class="card bg-base-100 shadow-sm mt-6">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="card-title text-base">
+                            <i class="fa-solid fa-image text-primary"></i>
+                            Fond d'écran du groupe
+                        </h3>
+                        <span class="badge badge-info badge-outline">Groupe : {{ $name }}</span>
+                    </div>
+                    <p class="text-sm text-base-content/60 mb-4">
+                        Appliqué aux membres du groupe au login. Le legacy ne supporte pas de
+                        lockscreen par groupe — seul le wallpaper est géré ici.
+                    </p>
+
+                    <div class="max-w-xl">
+                        <livewire:components.molecules.wallpaper-card
+                            type="wallpaper"
+                            :ownerType="App\Models\UserGroup::class"
+                            :ownerId="$groupId"
+                            title="Fond d'écran du groupe"
+                            description="Affiché aux membres de ce groupe quand aucun fond plus spécifique (utilisateur) n'est défini."
+                            :key="'wallpaper-group-' . $groupId" />
+                    </div>
+                </div>
+            </div>
+        @endcan
     @endif
 
     <livewire:components::organisms.password-reset-modal />

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- Badge quota-warning — triangle jaune #F39C12 -->
+  <path fill="#F39C12" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"
+    d="M24 5 L44 41 L4 41 Z"/>
+  <rect x="22" y="18" width="4" height="12" rx="1" fill="#ffffff"/>
+  <circle cx="24" cy="35" r="2.2" fill="#ffffff"/>
+</svg>

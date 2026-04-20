@@ -35,6 +35,9 @@ enum SambaPermission: string
     // Serveur
     case ServerAdmin = 'server.admin';
 
+    // Wallpapers (story 4.7)
+    case WallpaperManage = 'wallpaper.manage';
+
     // ========================================================================
     // MAPPING VERS LEGACY
     // ========================================================================
@@ -59,6 +62,10 @@ enum SambaPermission: string
             self::WpkgAdd => LegacyRight::WpkgAdd,
             self::WpkgCreate => LegacyRight::WpkgCreate,
             self::ServerAdmin => LegacyRight::ServerAdmin,
+            // WallpaperManage hérite du bitmask ServerAdmin (pas de bit legacy
+            // dédié — le wallpaper était géré par l'admin serveur dans
+            // l'UI legacy `gpo/wallpaper.php`). Story 4.7.
+            self::WallpaperManage => LegacyRight::ServerAdmin,
         };
     }
 
@@ -91,6 +98,7 @@ enum SambaPermission: string
             self::WpkgAdd => 'Ajouter des applications',
             self::WpkgCreate => 'Créer des recettes WPKG',
             self::ServerAdmin => 'Administration serveur',
+            self::WallpaperManage => 'Gérer les fonds d\'écran',
         };
     }
 
@@ -104,6 +112,7 @@ enum SambaPermission: string
             self::ComputerElevate, self::ComputerInstall => 'computer',
             self::WpkgAssign, self::WpkgAdd, self::WpkgCreate => 'wpkg',
             self::ServerAdmin => 'server',
+            self::WallpaperManage => 'wallpaper',
         };
     }
 
@@ -115,6 +124,7 @@ enum SambaPermission: string
             'computer' => 'Machines',
             'wpkg' => 'Applications WPKG',
             'server' => 'Serveur',
+            'wallpaper' => 'Fonds d\'écran',
             default => ucfirst($category),
         };
     }

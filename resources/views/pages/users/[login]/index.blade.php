@@ -447,6 +447,11 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
             @include('pages.users.[login]._partials.quota-info')
         </div>
 
+        <!-- Fond d'écran personnel (story 4.7 AC 11) -->
+        <div class="mb-6">
+            @include('pages.users.[login]._partials.wallpaper-info')
+        </div>
+
         <!-- Identifiants techniques et activité -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <!-- Identifiants techniques -->

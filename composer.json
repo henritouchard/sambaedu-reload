@@ -9,6 +9,8 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "ext-apcu": "*",
+        "ext-imagick": "*",
         "apereo/phpcas": "~1.6",
         "arthurhoaro/favicon": "~2.0",
         "czproject/git-php": "~4.3",

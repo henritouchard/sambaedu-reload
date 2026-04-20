@@ -325,6 +325,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 
     @if ($group)
         @include('pages.parc.groups.[id]._partials.machines-list')
+        @include('pages.parc.groups.[id]._partials.wallpaper-tab')
     @else
         <div class="card bg-base-100 shadow-sm">
             <div class="card-body flex flex-col items-center justify-center py-16">

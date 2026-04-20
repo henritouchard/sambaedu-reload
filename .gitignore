@@ -55,6 +55,9 @@ yarn-error.log*
 # Swagger / API docs générés
 /storage/api-docs/
 
+# Wallpaper previews (story 4.7 — WallpaperPreviewCommand)
+/storage/app/wallpaper-previews/
+
 # OS
 .DS_Store
 .AppleDouble

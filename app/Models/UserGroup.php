@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Builder;
 use Livewire\Wireable;
 
@@ -24,6 +26,8 @@ use Livewire\Wireable;
  */
 class UserGroup extends Model implements Wireable
 {
+    use HasFactory;
+
     protected $table = 'user_groups';
 
     protected $fillable = [
@@ -49,6 +53,11 @@ class UserGroup extends Model implements Wireable
             'user_group_id',
             'user_id'
         );
+    }
+
+    public function wallpapers(): MorphMany
+    {
+        return $this->morphMany(Wallpaper::class, 'owner');
     }
 
     // ========================================================================

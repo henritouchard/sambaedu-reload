@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Spatie\Permission\Traits\HasRoles;
@@ -129,6 +130,11 @@ class User extends Authenticatable implements Wireable
     public function grantedDelegations(): HasMany
     {
         return $this->hasMany(Delegation::class, 'granted_by');
+    }
+
+    public function wallpapers(): MorphMany
+    {
+        return $this->morphMany(Wallpaper::class, 'owner');
     }
 
     // ========================================================================

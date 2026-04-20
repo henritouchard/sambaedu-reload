@@ -169,6 +169,7 @@ return [
         App\Providers\RouteServiceProvider::class,
         App\Providers\ControlHubServiceProvider::class,
         App\Providers\LdapRecordServiceProvider::class,
+        App\Providers\WallpaperServiceProvider::class,
         ])->toArray(),
 
     /*
