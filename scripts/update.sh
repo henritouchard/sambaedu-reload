@@ -206,19 +206,24 @@ update_systemd() {
         log_success "Services systemd déjà à jour"
     fi
 
-    # Redémarrer les workers (les 3 : sync, worker, general).
+    # Enable + restart des workers (les 3 : sync, worker, general).
+    # On enable systématiquement : si l'install précédent a échoué,
+    # les services sont restés "disabled" et l'update doit réparer.
     local workers=(laravel-queue-sync laravel-queue-worker laravel-queue-general)
     for svc in "${workers[@]}"; do
-        if systemctl is-enabled "$svc" >/dev/null 2>&1; then
-            log "Redémarrage $svc..."
-            if ! systemctl restart "$svc"; then
-                log_error "  → $svc: restart a échoué"
-                continue
-            fi
-            sleep 1
-            if ! systemctl is-active --quiet "$svc"; then
-                log_error "  → $svc: inactif après restart (voir: journalctl -u $svc)"
-            fi
+        [[ -f "$SYSTEMD_TARGET_DIR/$svc.service" ]] || continue
+        if ! systemctl is-enabled "$svc" >/dev/null 2>&1; then
+            log "  → $svc: activation (disabled → enabled)"
+            systemctl enable "$svc" >/dev/null 2>&1 || log_error "  → $svc: enable a échoué"
+        fi
+        log "Redémarrage $svc..."
+        if ! systemctl restart "$svc"; then
+            log_error "  → $svc: restart a échoué"
+            continue
+        fi
+        sleep 1
+        if ! systemctl is-active --quiet "$svc"; then
+            log_error "  → $svc: inactif après restart (voir: journalctl -u $svc)"
         fi
     done
 }
