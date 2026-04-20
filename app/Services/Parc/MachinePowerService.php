@@ -119,19 +119,29 @@ class MachinePowerService
     /**
      * Éteint une machine (Windows via net rpc, Linux via SSH)
      *
+     * Sémantique de $force (cohérente avec le legacy start_machine_local() ligne 271) :
+     * - $force=false (défaut) : l'arrêt est conditionné à l'absence d'utilisateur
+     *   connecté. Le legacy appelait $machine['user'] — non porté côté Laravel,
+     *   donc en pratique l'arrêt part tout de même (comportement dégradé connu).
+     * - $force=true : court-circuite toute vérification "utilisateur connecté".
+     *   Côté Windows, le flag `-f` du `net rpc shutdown` ferme les sessions
+     *   interactives sans attendre (cf. manpage net(8)). Côté Linux, `shutdown -h now`
+     *   est déjà inconditionnel. L'action est loggée sous `shutdown-force` dans
+     *   `machine_boot_logs` pour audit trail (distinct de `shutdown` classique).
+     *
      * @param string $machineName Nom de la machine
      * @param string $ip Adresse IP
-     * @param bool $force Forcer même si un utilisateur est connecté
+     * @param bool $force Forcer l'arrêt même si un utilisateur est connecté
      * @return array{success: bool, code: int, message: string}
      */
-    // NOTE: $force est prévu pour conditionner l'arrêt à l'absence d'utilisateur connecté (AC3).
-    // Le legacy ne l'implémentait pas non plus. À traiter dans une story future si nécessaire.
     public function shutdown(string $machineName, string $ip, bool $force = false): array
     {
         $os = $this->ping($ip);
+        $logAction = $force ? 'shutdown-force' : 'shutdown';
+        $labelSuffix = $force ? ' (forcée)' : '';
 
         if ($os === false) {
-            $this->logAction($machineName, 'shutdown', false, null);
+            $this->logAction($machineName, $logAction, false, null);
             return [
                 'success' => false,
                 'code' => 203,
@@ -139,14 +149,22 @@ class MachinePowerService
             ];
         }
 
+        // Si non-force, on pourrait rejeter l'extinction quand un utilisateur est
+        // connecté. Le check "user connected" legacy n'étant pas porté côté SER,
+        // on continue dans tous les cas — $force sert aujourd'hui principalement
+        // à distinguer l'intention dans les logs et à verrouiller `-f` Windows.
+
         if ($os === 'windows') {
             $safeName = escapeshellarg($machineName);
+            // Note : le flag `-f` de net rpc shutdown force la fermeture des
+            // sessions interactives côté Windows ; il est historiquement toujours
+            // présent dans le legacy (comportement non régressé ici).
             $command = "/usr/bin/net rpc shutdown --use-kerberos=required -t 30 -f -C \"Arrêt demandé par SambaEdu\" -S {$safeName} 2>&1";
             $result = Process::run($command);
 
             if ($result->exitCode() !== 0) {
-                Log::warning("Échec shutdown Windows {$machineName}", ['output' => $result->output()]);
-                $this->logAction($machineName, 'shutdown', false, $os);
+                Log::warning("Échec shutdown Windows {$machineName}", ['output' => $result->output(), 'force' => $force]);
+                $this->logAction($machineName, $logAction, false, $os);
                 return [
                     'success' => false,
                     'code' => 203,
@@ -154,11 +172,11 @@ class MachinePowerService
                 ];
             }
 
-            $this->logAction($machineName, 'shutdown', true, $os);
+            $this->logAction($machineName, $logAction, true, $os);
             return [
                 'success' => true,
                 'code' => 201,
-                'message' => "Arrêt de {$machineName} (Windows) : " . trim($result->output()),
+                'message' => "Arrêt{$labelSuffix} de {$machineName} (Windows) : " . trim($result->output()),
             ];
         }
 
@@ -168,8 +186,8 @@ class MachinePowerService
         $result = Process::run($command);
 
         if ($result->exitCode() !== 0) {
-            Log::warning("Échec shutdown Linux {$machineName}", ['output' => $result->output()]);
-            $this->logAction($machineName, 'shutdown', false, $os);
+            Log::warning("Échec shutdown Linux {$machineName}", ['output' => $result->output(), 'force' => $force]);
+            $this->logAction($machineName, $logAction, false, $os);
             return [
                 'success' => false,
                 'code' => 203,
@@ -177,11 +195,11 @@ class MachinePowerService
             ];
         }
 
-        $this->logAction($machineName, 'shutdown', true, $os);
+        $this->logAction($machineName, $logAction, true, $os);
         return [
             'success' => true,
             'code' => 201,
-            'message' => "Arrêt de {$machineName} (Linux) : OK",
+            'message' => "Arrêt{$labelSuffix} de {$machineName} (Linux) : OK",
         ];
     }
 
@@ -326,6 +344,69 @@ class MachinePowerService
     }
 
     /**
+     * Logue un timeout de readiness post-WOL (AC4 story 4-2).
+     *
+     * Utilisé par le composant Livewire MachineShow quand le polling wire:poll.3s
+     * n'a pas détecté la machine comme disponible dans les
+     * MACHINE_READINESS_TIMEOUT_SECONDS (config/parc.php).
+     *
+     * Correction review #11 (2026-04-20) : on ferme le log WOL ouvert (stopped_at
+     * null) plutôt que de créer une nouvelle ligne — sinon (a) le log WOL initial
+     * reste ouvert indéfiniment et un futur shutdown le fermera erronément, (b)
+     * on perd le started_at d'origine et la durée d'attente devient incalculable.
+     * En fallback (aucun log ouvert trouvé — concurrence ou reset DB), on crée
+     * une ligne avec started_at/stopped_at cohérents pour préserver l'audit trail.
+     */
+    public function logReadinessTimeout(string $machineName, string $originalAction): void
+    {
+        try {
+            $normalizedName = strtolower($machineName);
+
+            // 1. Chercher un log WOL encore ouvert (started_at renseigné, stopped_at null)
+            //    pour le fermer avec le flag de timeout.
+            $openLog = MachineBootLog::where('machine_name', $normalizedName)
+                ->where('action', 'wake')
+                ->whereNotNull('started_at')
+                ->whereNull('stopped_at')
+                ->latest('started_at')
+                ->first();
+
+            if ($openLog) {
+                $openLog->update([
+                    'stopped_at' => now(),
+                    'success' => false,
+                    'error_flags' => 1,
+                ]);
+                return;
+            }
+
+            // 2. Fallback : pas de log ouvert trouvé — on crée une ligne dédiée
+            //    avec started_at calculé depuis le timeout configuré pour rester
+            //    cohérent (la durée d'attente observée côté UI).
+            $timeoutSeconds = (int) config('parc.machine_readiness_timeout_seconds', 120);
+            $workstation = Workstation::where('name', $normalizedName)->first();
+            $initiatedBy = auth()->user()?->name ?? session('login') ?? 'system';
+
+            MachineBootLog::create([
+                'workstation_id' => $workstation?->id,
+                'machine_name' => $normalizedName,
+                'action' => $originalAction,
+                'initiated_by' => $initiatedBy,
+                'success' => false,
+                'os' => null,
+                'started_at' => now()->subSeconds($timeoutSeconds),
+                'stopped_at' => now(),
+                // Bit 0 réservé pour le timeout readiness (schéma error_flags libre dans la table).
+                'error_flags' => 1,
+            ]);
+        } catch (\Exception $e) {
+            Log::warning("Impossible de logger le timeout readiness pour {$machineName}", [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
      * Logue une action power dans machine_boot_logs
      */
     private function logAction(string $machineName, string $action, bool $success, ?string $os = null): void
@@ -347,7 +428,7 @@ class MachinePowerService
                 $data['started_at'] = now();
             }
 
-            if (in_array($action, ['shutdown', 'reboot'], true) && $success) {
+            if (in_array($action, ['shutdown', 'shutdown-force', 'reboot'], true) && $success) {
                 // Fermer un éventuel log WOL ouvert
                 $openLog = MachineBootLog::where('machine_name', strtolower($machineName))
                     ->whereNotNull('started_at')

@@ -3,11 +3,15 @@
 use Livewire\Component;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\On;
+use App\Jobs\DispatchMachinePowerActionJob;
 use App\Services\Parc\WorkstationGroupService;
+use App\Services\Parc\MachinePowerService;
+use App\Models\MachinePowerActionTask;
 use App\Models\Workstation;
 use App\Models\WorkstationApplicationStatus;
 use App\Models\WorkstationGroup;
 use App\Components\Traits\WithToasts;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
 
@@ -15,6 +19,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     use WithToasts;
 
     private WorkstationGroupService $parcService;
+    private MachinePowerService $machinePowerService;
 
     public ?Workstation $workstation = null;
     public string|int $id;
@@ -29,9 +34,26 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     public array $selectedLogicalGroupIds = [];
     public Collection $availableLogicalGroups;
 
-    public function boot(WorkstationGroupService $parcService): void
+    // État de readiness post-action (AC2/AC3/AC4 — story 4-2).
+    // Ces 4 propriétés pilotent le polling Livewire `wire:poll.Ns` :
+    // le poll n'est rendu dans le Blade que si $statusRunning est vrai,
+    // ce qui arrête automatiquement l'interrogation du serveur dès que
+    // l'action est résolue (succès ou timeout).
+    //
+    // $currentTaskId : id de la ligne MachinePowerActionTask associée à
+    // l'action en cours (review #1 — corrections 2026-04-20). Permet à
+    // pollMachineReadiness() (a) de connaître l'état du job async, (b) de
+    // gérer la machine à états `restart_phase` pour éviter le faux succès
+    // du restart (review #2).
+    public bool $statusRunning = false;
+    public ?string $runningAction = null;
+    public ?string $runningActionStartedAt = null;
+    public ?int $currentTaskId = null;
+
+    public function boot(WorkstationGroupService $parcService, MachinePowerService $machinePowerService): void
     {
         $this->parcService = $parcService;
+        $this->machinePowerService = $machinePowerService;
     }
 
     public function mount(string|int $id): void
@@ -154,41 +176,237 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 
     public function executeMachinePowerAction(string $action): void
     {
+        // Guard review #14 (2026-04-20) : empêche de lancer une seconde action
+        // tant que la précédente n'est pas résolue. Indispensable car
+        // `@disabled` côté Blade ne protège pas d'une requête Livewire forgée
+        // manuellement (double-click rapide, dev tools, etc.).
+        if ($this->statusRunning && $action !== 'remote') {
+            $this->toastWarning('Une action est déjà en cours sur cette machine.');
+            return;
+        }
+
+        // La Workstation est Wireable et se rehydrate via findOrFail(id) entre
+        // les requêtes ; on recharge depuis le service en dernier recours pour
+        // garder le composant robuste si la rehydratation a échoué.
+        if (!$this->workstation) {
+            $this->loadMachine();
+        }
         if (!$this->workstation) {
             $this->toastError('Machine non trouvée');
             return;
         }
 
-        try {
-            $result = $this->parcService->executeMachineAction((int) $this->workstation->id, $action);
-            $actionLabel = $this->parcService->getMachineActionLabel($action);
-
-            if ($result['requested_count'] === 0) {
-                $this->toastWarning('Aucune machine valide à traiter');
-                return;
-            }
-
-            if ($action === 'remote') {
+        // L'accès distant reste synchrone — c'est une simple génération de
+        // token + redirection, pas une action power à suivre en readiness.
+        if ($action === 'remote') {
+            try {
+                $result = $this->parcService->executeMachineAction((int) $this->workstation->id, 'remote');
                 $this->handleRemoteAccessResult($result);
-                return;
+            } catch (\Exception $e) {
+                Log::error('[MachineShow] Erreur accès distant: ' . $e->getMessage(), [
+                    'machine_id' => $this->workstation->id,
+                ]);
+                $this->toastError('Erreur lors de la génération de la connexion à distance');
+            }
+            return;
+        }
+
+        // Review #1 (NFR2) — on dispatche le job async puis on retourne
+        // immédiatement. Le toast apparaît sans attendre ping/shell (< 500 ms).
+        try {
+            // Validation de l'action en amont (même logique que WorkstationGroupService).
+            if (!in_array($action, ['wake', 'shutdown', 'shutdown-force', 'restart'], true)) {
+                throw new \InvalidArgumentException("Action machine non supportée: {$action}");
             }
 
-            if ($result['failed_count'] === 0) {
-                $this->toastSuccess("Action de {$actionLabel} lancée avec succès");
-            } elseif ($result['success_count'] > 0) {
-                $this->toastWarning("Action partielle ({$actionLabel}) : {$result['success_count']}/{$result['requested_count']}");
-            } else {
-                $this->toastError("Échec de l'action de {$actionLabel} sur la machine");
-            }
+            $actionLabel = $this->parcService->getMachineActionLabel($action);
+            $initiatedBy = auth()->user()?->name ?? session('login') ?? 'system';
+
+            // Review #2 — pour un restart, on initialise la phase 'waiting-down'
+            // pour que le polling attende d'abord que la machine cesse de
+            // répondre avant de chercher son retour (évite le faux succès à t+3s).
+            $restartPhase = $action === 'restart'
+                ? MachinePowerActionTask::RESTART_PHASE_WAITING_DOWN
+                : null;
+
+            $task = MachinePowerActionTask::create([
+                'workstation_id' => (int) $this->workstation->id,
+                'action' => $action,
+                'status' => MachinePowerActionTask::STATUS_QUEUED,
+                'initiated_by' => $initiatedBy,
+                'initiated_at' => now(),
+                'restart_phase' => $restartPhase,
+            ]);
+
+            DispatchMachinePowerActionJob::dispatch($task->id);
+
+            // Bascule UI "en cours" — trigge le rendu du wire:poll qui appellera
+            // pollMachineReadiness() toutes les N secondes.
+            $this->statusRunning = true;
+            $this->runningAction = $action;
+            $this->runningActionStartedAt = now()->toIso8601String();
+            $this->currentTaskId = (int) $task->id;
+
+            $this->toastSuccess("Action de {$actionLabel} lancée");
         } catch (\InvalidArgumentException $e) {
+            $this->stopReadinessPolling();
             $this->toastError($e->getMessage());
         } catch (\Exception $e) {
-            Log::error('[MachineShow] Erreur action machine: ' . $e->getMessage(), [
+            $this->stopReadinessPolling();
+            Log::error('[MachineShow] Erreur dispatch action machine: ' . $e->getMessage(), [
                 'machine_id' => $this->workstation->id,
                 'action' => $action,
             ]);
-            $this->toastError('Erreur lors de l\'exécution de l\'action');
+            $this->toastError('Erreur lors du lancement de l\'action');
         }
+    }
+
+    /**
+     * Polling de readiness post-action (AC3/AC4 story 4-2).
+     *
+     * Appelé par wire:poll.{N}s sur la vue tant que $statusRunning est vrai.
+     *
+     * Responsabilités (review #1 & #2 — 2026-04-20) :
+     *  1. Consommer l'état de la task DB (MachinePowerActionTask) pour détecter
+     *     les échecs remontés par DispatchMachinePowerActionJob (MAC invalide,
+     *     shutdown sur machine off, exception, etc.).
+     *  2. Appliquer la machine à états `restart_phase` pour un reboot, afin
+     *     d'éviter le faux succès à t+3s (la machine répond encore car pas
+     *     encore éteinte).
+     *  3. Confirmer la readiness via ping selon l'action :
+     *     - wake                   : succès quand ping renvoie un OS (UP).
+     *     - shutdown/shutdown-force: succès quand ping renvoie false (DOWN).
+     *     - restart                : waiting-down → waiting-up → UP.
+     *  4. Couper le polling sur timeout (toast warning + log).
+     */
+    public function pollMachineReadiness(): void
+    {
+        if (!$this->statusRunning || !$this->workstation) {
+            return;
+        }
+
+        $startedAt = $this->runningActionStartedAt ? Carbon::parse($this->runningActionStartedAt) : null;
+        if (!$startedAt) {
+            $this->stopReadinessPolling();
+            return;
+        }
+
+        $elapsed = (int) now()->diffInSeconds($startedAt, true);
+        $timeout = (int) config('parc.machine_readiness_timeout_seconds', 120);
+        $machineName = (string) $this->workstation->name;
+        $actionInProgress = (string) ($this->runningAction ?? 'wake');
+
+        // (a) Timeout en premier — évite un ping réseau inutile quand on sait
+        // déjà qu'on va couper.
+        if ($elapsed >= $timeout) {
+            $this->machinePowerService->logReadinessTimeout($machineName, $actionInProgress);
+            // On marque aussi la task comme failed pour garder l'audit trail
+            // cohérent avec l'état UI (fallback silencieux si la task n'existe
+            // plus — edge case de rehydratation).
+            if ($this->currentTaskId) {
+                MachinePowerActionTask::where('id', $this->currentTaskId)
+                    ->whereIn('status', MachinePowerActionTask::ACTIVE_STATUSES)
+                    ->update([
+                        'status' => MachinePowerActionTask::STATUS_FAILED,
+                        'completed_at' => now(),
+                        'error_message' => "Readiness timeout ({$timeout}s)",
+                    ]);
+            }
+            $this->toastWarning(
+                "Machine {$machineName} non joignable après {$timeout}s — vérifiez l'alimentation, le câble réseau ou la MAC configurée",
+            );
+            $this->stopReadinessPolling();
+            return;
+        }
+
+        // (b) Consommation de l'état de la task — échecs remontés par le job.
+        //     Le job peut marquer 'failed' pour : MAC invalide, shutdown sur
+        //     machine off, exception. Dans ce cas on coupe le polling et
+        //     on affiche l'erreur remontée.
+        if ($this->currentTaskId) {
+            /** @var MachinePowerActionTask|null $task */
+            $task = MachinePowerActionTask::find($this->currentTaskId);
+
+            if ($task && $task->status === MachinePowerActionTask::STATUS_FAILED) {
+                $this->toastError($task->error_message ?? "Échec de l'action {$actionInProgress}");
+                $this->stopReadinessPolling();
+                return;
+            }
+
+            // Restart = machine à états (review #2).
+            // Tant qu'on est en 'waiting-down', on attend que la machine cesse
+            // de répondre. Une fois détectée offline on passe à 'waiting-up'.
+            // Une fois détectée online, on marque la task completed.
+            if ($task && $task->action === 'restart') {
+                $ip = (string) ($this->workstation->ip ?? $machineName);
+                $ping = $this->machinePowerService->ping($ip);
+
+                if ($task->restart_phase === MachinePowerActionTask::RESTART_PHASE_WAITING_DOWN) {
+                    if ($ping === false) {
+                        $task->update(['restart_phase' => MachinePowerActionTask::RESTART_PHASE_WAITING_UP]);
+                    }
+                    // Tant que la machine répond encore, on continue le poll
+                    // sans toaster — la machine est en train de redémarrer.
+                    return;
+                }
+
+                if ($task->restart_phase === MachinePowerActionTask::RESTART_PHASE_WAITING_UP) {
+                    if ($ping !== false) {
+                        $task->update([
+                            'status' => MachinePowerActionTask::STATUS_COMPLETED,
+                            'completed_at' => now(),
+                        ]);
+                        $this->toastSuccess("Redémarrage de {$machineName} confirmé (détectée en {$elapsed}s).");
+                        $this->stopReadinessPolling();
+                    }
+                    return;
+                }
+
+                // Phase inconnue — fail-safe : on coupe le polling pour éviter
+                // une boucle infinie.
+                $this->stopReadinessPolling();
+                return;
+            }
+        }
+
+        // (c) wake / shutdown / shutdown-force — readiness par ping simple.
+        $ip = (string) ($this->workstation->ip ?? $machineName);
+        $ping = $this->machinePowerService->ping($ip);
+
+        $isResolved = match ($actionInProgress) {
+            'wake' => $ping !== false,
+            'shutdown', 'shutdown-force' => $ping === false,
+            default => false,
+        };
+
+        if ($isResolved) {
+            if ($this->currentTaskId) {
+                MachinePowerActionTask::where('id', $this->currentTaskId)
+                    ->whereIn('status', MachinePowerActionTask::ACTIVE_STATUSES)
+                    ->update([
+                        'status' => MachinePowerActionTask::STATUS_COMPLETED,
+                        'completed_at' => now(),
+                    ]);
+            }
+            $label = $this->parcService->getMachineActionLabel($actionInProgress);
+            if ($actionInProgress === 'wake') {
+                $this->toastSuccess("Machine {$machineName} disponible (détectée en {$elapsed}s)");
+            } else {
+                $this->toastSuccess("Machine {$machineName} {$label} confirmée en {$elapsed}s");
+            }
+            $this->stopReadinessPolling();
+        }
+    }
+
+    /**
+     * Arrête le polling de readiness (stop le rendu de wire:poll côté Blade).
+     */
+    private function stopReadinessPolling(): void
+    {
+        $this->statusRunning = false;
+        $this->runningAction = null;
+        $this->runningActionStartedAt = null;
+        $this->currentTaskId = null;
     }
 
     private function handleRemoteAccessResult(array $result): void
@@ -263,7 +481,27 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     backUrl="{{ route('app.parc.index') }}" backText="Retour">
 
     <x-slot:actions>
-        <div class="flex gap-2">
+        <div class="flex gap-2 items-center">
+            {{--
+                Badge "action en cours" (AC2/AC3 story 4-2).
+                Ce wrapper est l'unique porteur de wire:poll : tant que
+                $statusRunning est vrai Livewire poll toutes les N secondes et
+                appelle pollMachineReadiness(). Quand l'action est résolue
+                (succès ou timeout), $statusRunning repasse à false, la partie
+                @if n'est plus rendue et Livewire cesse d'interroger le serveur.
+            --}}
+            @if ($statusRunning && $workstation)
+                @php
+                    $pollInterval = (int) config('parc.machine_readiness_poll_interval_seconds', 3);
+                    $runningLabel = $this->parcService->getMachineActionLabel($runningAction ?? 'wake');
+                @endphp
+                <div wire:poll.{{ $pollInterval }}s="pollMachineReadiness"
+                    class="flex items-center gap-2 px-3 py-2 rounded-lg bg-info/10 border border-info/30 text-info">
+                    <span class="loading loading-spinner loading-sm"></span>
+                    <span class="text-sm font-medium">{{ ucfirst($runningLabel) }} en cours…</span>
+                </div>
+            @endif
+
             @if ($workstation)
                 <div class="dropdown dropdown-end">
                     <label tabindex="0" class="btn btn-primary">
@@ -277,13 +515,18 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                             @php
                                 $confirmMessage = match ($action->key) {
                                     'shutdown' => 'Confirmer l\'extinction de cette machine ?',
+                                    'shutdown-force' => 'Forcer l\'extinction ? Attention : un utilisateur peut perdre son travail non sauvegardé.',
                                     'restart' => 'Confirmer le redémarrage de cette machine ?',
                                     default => null,
                                 };
+                                $isDangerous = $action->key === 'shutdown-force';
                             @endphp
                             <li>
-                                <button type="button" wire:click="executeMachinePowerAction('{{ $action->key }}')"
-                                    @if ($confirmMessage) wire:confirm="{{ $confirmMessage }}" @endif>
+                                <button type="button"
+                                    wire:click="executeMachinePowerAction('{{ $action->key }}')"
+                                    @if ($confirmMessage) wire:confirm="{{ $confirmMessage }}" @endif
+                                    @disabled($statusRunning && $action->key !== 'remote')
+                                    class="{{ $isDangerous ? 'text-error' : '' }} {{ $statusRunning && $action->key !== 'remote' ? 'opacity-50 cursor-not-allowed' : '' }}">
                                     <i class="{{ $action->icon }}"></i>
                                     {{ $action->label }}
                                 </button>

@@ -19,11 +19,13 @@ class WorkstationService
 {
     private const ACTION_WAKE = 'wake';
     private const ACTION_SHUTDOWN = 'shutdown';
+    private const ACTION_SHUTDOWN_FORCE = 'shutdown-force';
     private const ACTION_RESTART = 'restart';
 
     private const VALID_ACTIONS = [
         self::ACTION_WAKE,
         self::ACTION_SHUTDOWN,
+        self::ACTION_SHUTDOWN_FORCE,
         self::ACTION_RESTART,
     ];
 
@@ -186,7 +188,8 @@ class WorkstationService
 
                 $actionResult = match ($action) {
                     self::ACTION_WAKE => $this->machinePowerService->wakeOnLan($mac, $ip, $name),
-                    self::ACTION_SHUTDOWN => $this->machinePowerService->shutdown($name, $ip),
+                    self::ACTION_SHUTDOWN => $this->machinePowerService->shutdown($name, $ip, false),
+                    self::ACTION_SHUTDOWN_FORCE => $this->machinePowerService->shutdown($name, $ip, true),
                     self::ACTION_RESTART => $this->machinePowerService->reboot($name, $ip, $mac),
                 };
 

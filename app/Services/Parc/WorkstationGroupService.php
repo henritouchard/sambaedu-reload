@@ -26,12 +26,13 @@ use Illuminate\Support\Facades\Log;
 class WorkstationGroupService
 {
     /** @var array<int, string> */
-    private const SUPPORTED_MACHINE_ACTIONS = ['wake', 'shutdown', 'restart', 'remote'];
+    private const SUPPORTED_MACHINE_ACTIONS = ['wake', 'shutdown', 'shutdown-force', 'restart', 'remote'];
 
     /** @var array<string, string> */
     private const MACHINE_ACTION_LABELS = [
         'wake' => 'allumage',
         'shutdown' => 'extinction',
+        'shutdown-force' => 'extinction forcée',
         'restart' => 'redémarrage',
         'remote' => 'accès distant',
     ];
@@ -122,6 +123,12 @@ class WorkstationGroupService
                 'key' => 'shutdown',
                 'label' => 'Éteindre',
                 'icon' => 'fa-solid fa-stop',
+                'requires_confirmation' => true,
+            ],
+            [
+                'key' => 'shutdown-force',
+                'label' => 'Forcer l\'extinction',
+                'icon' => 'fa-solid fa-triangle-exclamation',
                 'requires_confirmation' => true,
             ],
             [

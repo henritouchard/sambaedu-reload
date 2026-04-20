@@ -55,13 +55,31 @@ class WorkstationServicePowerActionTest extends TestCase
         $this->workstationRepository->shouldReceive('findByName')->with('pc-01')->andReturn($machine);
 
         $this->machinePowerService->shouldReceive('shutdown')
-            ->with('pc-01', '192.168.1.50')
+            ->with('pc-01', '192.168.1.50', false)
             ->once()
             ->andReturn(['success' => true, 'code' => 201, 'message' => 'OK']);
 
         $result = $this->service->executePowerAction(['pc-01'], 'shutdown');
 
         $this->assertEquals(1, $result['success_count']);
+    }
+
+    public function test_execute_shutdown_force_dispatches_to_shutdown_with_force_true(): void
+    {
+        // AC6 story 4-2 — l'action `shutdown-force` doit arriver au service
+        // avec $force = true.
+        $machine = $this->mockMachine('pc-01', '192.168.1.50', 'aa:bb:cc:dd:ee:ff');
+        $this->workstationRepository->shouldReceive('findByName')->with('pc-01')->andReturn($machine);
+
+        $this->machinePowerService->shouldReceive('shutdown')
+            ->with('pc-01', '192.168.1.50', true)
+            ->once()
+            ->andReturn(['success' => true, 'code' => 201, 'message' => 'Arrêt (forcée) OK']);
+
+        $result = $this->service->executePowerAction(['pc-01'], 'shutdown-force');
+
+        $this->assertEquals(1, $result['success_count']);
+        $this->assertEquals(201, $result['results'][0]['code']);
     }
 
     public function test_execute_restart_action_dispatches_to_reboot(): void
