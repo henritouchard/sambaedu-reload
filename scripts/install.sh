@@ -755,8 +755,18 @@ install_scheduler_cron() {
     return 1
   fi
 
-  install -m 644 -o root -g root "$src" "$dst"
-  log_success "Cron scheduler installé dans $dst"
+  local php_bin
+  php_bin="$(command -v php || true)"
+  if [[ -z "$php_bin" ]]; then
+    log_error "Aucun binaire PHP trouvé dans le PATH"
+    return 1
+  fi
+  php_bin="$(readlink -f "$php_bin")"
+
+  sed "s|__PHP_BIN__|${php_bin}|g" "$src" > "$dst"
+  chown root:root "$dst"
+  chmod 644 "$dst"
+  log_success "Cron scheduler installé dans $dst (PHP: $php_bin)"
 
   # Nettoyage de l'ancien crontab utilisateur (ligne schedule:run dans www-admin)
   # pour éviter la double exécution.

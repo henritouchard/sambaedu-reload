@@ -226,6 +226,21 @@ update_systemd() {
             log_error "  → $svc: inactif après restart (voir: journalctl -u $svc)"
         fi
     done
+
+    # Cron du scheduler Laravel : même rendu __PHP_BIN__ que les unit files,
+    # et réinstallation idempotente (répare une install incomplète).
+    local cron_src="$APP_DIR/scripts/config/sambaedu-scheduler.cron"
+    local cron_dst="/etc/cron.d/sambaedu-scheduler"
+    if [[ -f "$cron_src" ]]; then
+        local rendered
+        rendered="$(sed "s|__PHP_BIN__|${php_bin}|g" "$cron_src")"
+        if [[ ! -f "$cron_dst" ]] || ! diff -q <(echo "$rendered") "$cron_dst" >/dev/null 2>&1; then
+            log "Mise à jour cron scheduler: $cron_dst"
+            echo "$rendered" > "$cron_dst"
+            chown root:root "$cron_dst"
+            chmod 644 "$cron_dst"
+        fi
+    fi
 }
 
 # ============================================================================

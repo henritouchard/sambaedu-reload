@@ -5,4 +5,4 @@
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-* * * * * www-admin cd /var/www/sambaedu-reload && /usr/bin/php8.2 artisan schedule:run >/dev/null 2>&1
+* * * * * www-admin cd /var/www/sambaedu-reload && __PHP_BIN__ artisan schedule:run >/dev/null 2>&1
