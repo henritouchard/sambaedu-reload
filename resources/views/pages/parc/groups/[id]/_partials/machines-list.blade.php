@@ -70,6 +70,10 @@
                     </p>
                 </div>
             @else
+                @php
+                    // Pré-calcul côté PHP pour éviter N+1 dans la boucle Blade (story 4-3).
+                    $machineActiveTasksById = $this->machineActiveTasksById;
+                @endphp
                 <div class="overflow-visible">
                     <table class="table table-zebra">
                         <thead>
@@ -81,12 +85,26 @@
                                 <th>OS</th>
                                 <th>IP</th>
                                 <th>Statut</th>
+                                <th>Action</th>
                                 <th class="w-20"></th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach ($group->workstations as $machine)
-                                <tr class="hover cursor-pointer"
+                                @php
+                                    $activeTask = $machineActiveTasksById[$machine->id] ?? null;
+                                    // Source unique de vérité : méthode helper côté composant (review #13).
+                                    $isTaskActive = $this->isMachineActionActive($machine->id);
+                                    $isTaskFailed = $activeTask && $activeTask->status === \App\Models\MachinePowerActionTask::STATUS_FAILED;
+                                    $isTaskCompleted = $activeTask && $activeTask->status === \App\Models\MachinePowerActionTask::STATUS_COMPLETED;
+                                    $rowHighlight = match (true) {
+                                        $isTaskActive => 'bg-info/5',
+                                        $isTaskCompleted => 'bg-success/10',
+                                        $isTaskFailed => 'bg-error/10',
+                                        default => '',
+                                    };
+                                @endphp
+                                <tr class="hover cursor-pointer {{ $rowHighlight }}"
                                     onclick="if (!event.target.closest('.checkbox-cell') && !event.target.closest('.action-cell')) window.location.href='{{ route('app.parc.machines.show', $machine->id) }}'">
                                     <td class="checkbox-cell p-0">
                                         <label
@@ -120,34 +138,77 @@
                                             {{ $machine->getStatusLabel() }}
                                         </span>
                                     </td>
+                                    <td>
+                                        {{-- Badge d'état de la task associée (story 4-3, AC3). --}}
+                                        @if ($activeTask)
+                                            @switch($activeTask->status)
+                                                @case(\App\Models\MachinePowerActionTask::STATUS_QUEUED)
+                                                    <span class="badge badge-ghost badge-sm">
+                                                        <i class="fa-solid fa-hourglass-start"></i>
+                                                        En file
+                                                    </span>
+                                                @break
+
+                                                @case(\App\Models\MachinePowerActionTask::STATUS_DISPATCHED)
+                                                @case(\App\Models\MachinePowerActionTask::STATUS_RUNNING)
+                                                    <span class="badge badge-info badge-sm">
+                                                        <span class="loading loading-spinner loading-xs"></span>
+                                                        En cours
+                                                    </span>
+                                                @break
+
+                                                @case(\App\Models\MachinePowerActionTask::STATUS_COMPLETED)
+                                                    <span class="badge badge-success badge-sm">
+                                                        <i class="fa-solid fa-check"></i>
+                                                        OK
+                                                    </span>
+                                                @break
+
+                                                @case(\App\Models\MachinePowerActionTask::STATUS_FAILED)
+                                                    <span class="badge badge-error badge-sm tooltip tooltip-left"
+                                                        data-tip="{{ $activeTask->error_message ?? 'Échec inconnu' }}">
+                                                        <i class="fa-solid fa-triangle-exclamation"></i>
+                                                        Échec
+                                                    </span>
+                                                @break
+                                            @endswitch
+                                        @else
+                                            <span class="text-base-content/30 text-sm">—</span>
+                                        @endif
+                                    </td>
                                     <td class="action-cell">
                                         <div class="dropdown dropdown-left">
-                                            <label tabindex="0" class="btn btn-ghost btn-sm btn-square">
+                                            <label tabindex="0" class="btn btn-ghost btn-sm btn-square
+                                                {{ $isTaskActive ? 'opacity-50 cursor-not-allowed' : '' }}">
                                                 <i class="fa-solid fa-ellipsis-vertical"></i>
                                             </label>
                                             <ul tabindex="0"
                                                 class="dropdown-content z-[60] menu p-2 shadow bg-base-100 rounded-box w-56 border border-base-300">
-                                                @foreach ($this->machineActions as $action)
-                                                    @php
-                                                        $confirmMessage = match ($action->key) {
-                                                            'shutdown' => 'Confirmer l\'extinction de cette machine ?',
-                                                            'shutdown-force' => 'Forcer l\'extinction de cette machine ? Attention : un utilisateur peut perdre son travail non sauvegardé.',
-                                                            'restart' => 'Confirmer le redémarrage de cette machine ?',
-                                                            default => null,
-                                                        };
-                                                        $isDangerous = $action->key === 'shutdown-force';
-                                                    @endphp
-                                                    <li>
-                                                        <button type="button"
-                                                            wire:click="executeMachineAction({{ $machine->id }}, '{{ $action->key }}')"
-                                                            @if ($confirmMessage) wire:confirm="{{ $confirmMessage }}" @endif
-                                                            class="{{ $isDangerous ? 'text-error' : '' }}">
-                                                            <i class="{{ $action->icon }}"></i>
-                                                            {{ $action->label }}
-                                                        </button>
-                                                    </li>
-                                                @endforeach
-                                                <div class="divider my-1"></div>
+                                                @can('computer.control')
+                                                    @foreach ($this->machineActions as $action)
+                                                        @php
+                                                            $confirmMessage = match ($action->key) {
+                                                                'shutdown' => 'Confirmer l\'extinction de cette machine ?',
+                                                                'shutdown-force' => 'Forcer l\'extinction de cette machine ? Attention : un utilisateur peut perdre son travail non sauvegardé.',
+                                                                'restart' => 'Confirmer le redémarrage de cette machine ?',
+                                                                default => null,
+                                                            };
+                                                            $isDangerous = $action->key === 'shutdown-force';
+                                                            $isActionDisabled = $isTaskActive && $action->key !== 'remote';
+                                                        @endphp
+                                                        <li>
+                                                            <button type="button"
+                                                                wire:click="executeMachineAction({{ $machine->id }}, '{{ $action->key }}')"
+                                                                @if ($confirmMessage) wire:confirm="{{ $confirmMessage }}" @endif
+                                                                @disabled($isActionDisabled)
+                                                                class="{{ $isDangerous ? 'text-error' : '' }} {{ $isActionDisabled ? 'opacity-50 cursor-not-allowed' : '' }}">
+                                                                <i class="{{ $action->icon }}"></i>
+                                                                {{ $action->label }}
+                                                            </button>
+                                                        </li>
+                                                    @endforeach
+                                                    <div class="divider my-1"></div>
+                                                @endcan
                                                 <li>
                                                     <button type="button" class="text-error"
                                                         wire:click="removeMachine({{ $machine->id }})"
@@ -173,39 +234,44 @@
                                     {{ count($selectedGroupMachineIds) }} machine(s) sélectionnée(s)
                                 </span>
                                 <div class="divider divider-horizontal m-0"></div>
-                                <div class="dropdown dropdown-top">
-                                    <label tabindex="0" class="btn btn-primary btn-sm">
-                                        <i class="fa-solid fa-bolt"></i>
-                                        Actions machine
-                                        <i class="fa-solid fa-chevron-up ml-1"></i>
-                                    </label>
-                                    <ul tabindex="0"
-                                        class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-60 border border-base-300 mb-2">
-                                        @foreach ($this->machineActions as $action)
-                                            @php
-                                                $confirmMessage = match ($action->key) {
-                                                    'shutdown'
-                                                        => 'Confirmer l\'extinction des machines sélectionnées ?',
-                                                    'shutdown-force'
-                                                        => 'Forcer l\'extinction de TOUTES les machines sélectionnées ? Attention : les utilisateurs peuvent perdre leur travail non sauvegardé.',
-                                                    'restart'
-                                                        => 'Confirmer le redémarrage des machines sélectionnées ?',
-                                                    default => null,
-                                                };
-                                                $isDangerous = $action->key === 'shutdown-force';
-                                            @endphp
-                                            <li>
-                                                <button type="button"
-                                                    wire:click="executeSelectedGroupMachinesAction('{{ $action->key }}')"
-                                                    @if ($confirmMessage) wire:confirm="{{ $confirmMessage }}" @endif
-                                                    class="{{ $isDangerous ? 'text-error' : '' }}">
-                                                    <i class="{{ $action->icon }}"></i>
-                                                    {{ $action->label }}
-                                                </button>
-                                            </li>
-                                        @endforeach
-                                    </ul>
-                                </div>
+                                @can('computer.control')
+                                    <div class="dropdown dropdown-top">
+                                        <label tabindex="0"
+                                            class="btn btn-primary btn-sm {{ $batchRunning ? 'btn-disabled opacity-50 cursor-not-allowed' : '' }}">
+                                            <i class="fa-solid fa-bolt"></i>
+                                            Actions machine
+                                            <i class="fa-solid fa-chevron-up ml-1"></i>
+                                        </label>
+                                        <ul tabindex="0"
+                                            class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-60 border border-base-300 mb-2">
+                                            {{-- batchMachineActions exclut `remote` (AC6 story 4-3). --}}
+                                            @foreach ($this->batchMachineActions as $action)
+                                                @php
+                                                    $confirmMessage = match ($action->key) {
+                                                        'shutdown'
+                                                            => 'Confirmer l\'extinction des machines sélectionnées ?',
+                                                        'shutdown-force'
+                                                            => 'Forcer l\'extinction de TOUTES les machines sélectionnées ? Attention : les utilisateurs peuvent perdre leur travail non sauvegardé.',
+                                                        'restart'
+                                                            => 'Confirmer le redémarrage des machines sélectionnées ?',
+                                                        default => null,
+                                                    };
+                                                    $isDangerous = $action->key === 'shutdown-force';
+                                                @endphp
+                                                <li>
+                                                    <button type="button"
+                                                        wire:click="executeSelectedGroupMachinesAction('{{ $action->key }}')"
+                                                        @if ($confirmMessage) wire:confirm="{{ $confirmMessage }}" @endif
+                                                        @disabled($batchRunning)
+                                                        class="{{ $isDangerous ? 'text-error' : '' }} {{ $batchRunning ? 'opacity-50 cursor-not-allowed' : '' }}">
+                                                        <i class="{{ $action->icon }}"></i>
+                                                        {{ $action->label }}
+                                                    </button>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    </div>
+                                @endcan
                                 <button type="button" class="btn btn-ghost btn-sm"
                                     wire:click="clearSelectedGroupMachines">
                                     <i class="fa-solid fa-xmark"></i>
