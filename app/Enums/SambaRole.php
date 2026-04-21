@@ -84,6 +84,7 @@ enum SambaRole: string
                 SambaPermission::WpkgAdd,
                 SambaPermission::WpkgCreate,
                 SambaPermission::WallpaperManage,
+                SambaPermission::AppCustomize,
             ],
             self::SuperAdmin => SambaPermission::cases(),
         };

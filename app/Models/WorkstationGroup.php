@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasAppCustomizations;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -41,6 +42,7 @@ use App\Enums\LockReason;
 class WorkstationGroup extends Model implements Wireable
 {
     use HasFactory;
+    use HasAppCustomizations;
 
     /**
      * La table associée au modèle

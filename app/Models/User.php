@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasAppCustomizations;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -46,6 +47,7 @@ class User extends Authenticatable implements Wireable
 {
     use HasFactory;
     use HasRoles;
+    use HasAppCustomizations;
 
     protected $guard_name = 'web';
 

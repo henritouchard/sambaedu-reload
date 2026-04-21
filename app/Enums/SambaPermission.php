@@ -38,6 +38,9 @@ enum SambaPermission: string
     // Wallpapers (story 4.7)
     case WallpaperManage = 'wallpaper.manage';
 
+    // Personnalisation applicative (story 4.8 — Firefox, Thunderbird, …)
+    case AppCustomize = 'app.customize';
+
     // ========================================================================
     // MAPPING VERS LEGACY
     // ========================================================================
@@ -66,6 +69,10 @@ enum SambaPermission: string
             // dédié — le wallpaper était géré par l'admin serveur dans
             // l'UI legacy `gpo/wallpaper.php`). Story 4.7.
             self::WallpaperManage => LegacyRight::ServerAdmin,
+            // AppCustomize hérite également du bitmask ServerAdmin
+            // (gpo/firefox.php et gpo/gestion_apps.php étaient gardés par
+            // SE_COMPUTER_ADMIN → mappé sur ServerAdmin en 4.8, cohérent 4.7).
+            self::AppCustomize => LegacyRight::ServerAdmin,
         };
     }
 
@@ -99,6 +106,7 @@ enum SambaPermission: string
             self::WpkgCreate => 'Créer des recettes WPKG',
             self::ServerAdmin => 'Administration serveur',
             self::WallpaperManage => 'Gérer les fonds d\'écran',
+            self::AppCustomize => 'Personnaliser les applications (Firefox, Thunderbird, …)',
         };
     }
 
@@ -113,6 +121,7 @@ enum SambaPermission: string
             self::WpkgAssign, self::WpkgAdd, self::WpkgCreate => 'wpkg',
             self::ServerAdmin => 'server',
             self::WallpaperManage => 'wallpaper',
+            self::AppCustomize => 'app-customization',
         };
     }
 
@@ -125,6 +134,7 @@ enum SambaPermission: string
             'wpkg' => 'Applications WPKG',
             'server' => 'Serveur',
             'wallpaper' => 'Fonds d\'écran',
+            'app-customization' => 'Personnalisation applications',
             default => ucfirst($category),
         };
     }

@@ -4,7 +4,9 @@ use Livewire\Component;
 use Livewire\Attributes\Title;
 use App\Services\AppProfile\AppProfileService;
 use App\Components\Traits\WithToasts;
+use App\Enums\AppKind;
 use App\Enums\ApplicationStatus;
+use App\Models\AppCustomization;
 use App\Models\Application;
 use App\Models\InstallationLog;
 use App\Models\WorkstationApplicationStatus;
@@ -54,6 +56,28 @@ new #[Title('Détails de l\'application - SE4FS')] class extends Component {
             ->get();
     }
 
+    /**
+     * AppKind correspondant à cette application (null si non personnalisable
+     * via le système 4.8). Match sur `app_id` normalisé (`firefox`, `thunderbird`).
+     */
+    public function getCustomizableKindProperty(): ?AppKind
+    {
+        if (! $this->application) {
+            return null;
+        }
+        return AppKind::tryFrom(strtolower((string) $this->application->app_id));
+    }
+
+    /** Customization établissement (default) si déjà définie. */
+    public function getCustomizationProperty(): ?AppCustomization
+    {
+        $kind = $this->customizableKind;
+        if ($kind === null) {
+            return null;
+        }
+        return AppCustomization::query()->ofKind($kind)->defaults()->first();
+    }
+
     public function initDeploymentTab(): void
     {
         $deployments = $this->workstationDeployments;
@@ -72,6 +96,36 @@ new #[Title('Détails de l\'application - SE4FS')] class extends Component {
 <x-organisms.page title="Détails de l'application" :scrollable="false"
     backUrl="{{ route('app.parc-settings.index', ['tab' => 'applications']) }}" backText="Retour au catalogue">
 
+    @php
+        $customizableKind = $this->customizableKind;
+        $existingCustomization = $this->customization;
+    @endphp
+
+    @if ($customizableKind && auth()->user()?->can('app.customize'))
+        <x-slot:actions>
+            <div class="dropdown dropdown-end">
+                <div tabindex="0" role="button" class="btn btn-primary">
+                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                    Actions
+                    <i class="fa-solid fa-chevron-down text-xs"></i>
+                </div>
+                <ul tabindex="0"
+                    class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-60 border border-base-300 mt-2">
+                    <li>
+                        <button type="button"
+                            wire:click="$dispatch('open-app-customize-modal', { appKind: '{{ $customizableKind->value }}' })">
+                            <i class="fa-solid fa-sliders"></i>
+                            <span class="flex-1 text-left">Paramétrer</span>
+                            @if ($existingCustomization)
+                                <span class="badge badge-xs badge-success">Personnalisé</span>
+                            @endif
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </x-slot:actions>
+    @endif
+
     @if ($application)
         @php $latestLog = $this->latestLog; @endphp
 
@@ -82,7 +136,7 @@ new #[Title('Détails de l\'application - SE4FS')] class extends Component {
             <div class="card-body">
                 {{-- En-tête identité --}}
                 <div class="flex items-start gap-4 mb-6">
-                    <div class="{{ $application->status === ApplicationStatus::Error ? 'bg-error/10 text-error' : 'bg-primary/10 text-primary' }} rounded-xl w-16 h-16">
+                    <div class="{{ $application->status === ApplicationStatus::Error ? 'bg-error/10 text-error' : 'bg-primary/10 text-primary' }} rounded-xl w-16 h-16 flex items-center justify-center">
                         <i class="fa-solid {{ $application->status === ApplicationStatus::Error ? 'fa-triangle-exclamation' : 'fa-cube' }} text-2xl"></i>
                     </div>
                     <div class="flex-1">
@@ -293,6 +347,11 @@ new #[Title('Détails de l\'application - SE4FS')] class extends Component {
 
         {{-- Modale log d'installation WPKG (partagée) --}}
         <livewire:components::organisms.install-log-modal />
+
+        {{-- Modale personnalisation applicative (story 4.8) — activée uniquement si l'app est personnalisable --}}
+        @if ($customizableKind)
+            <livewire:components::organisms.app-customize-modal :key="'app-customize-modal-app-'.$applicationId" />
+        @endif
 
         </div>{{-- /space-y-6 --}}
     @else

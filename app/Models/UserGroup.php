@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasAppCustomizations;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -27,6 +28,7 @@ use Livewire\Wireable;
 class UserGroup extends Model implements Wireable
 {
     use HasFactory;
+    use HasAppCustomizations;
 
     protected $table = 'user_groups';
 

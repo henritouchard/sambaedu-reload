@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Policies\AppCustomizationPolicy;
 use App\Policies\GroupPolicy;
 use App\Policies\UserPolicy;
 use App\Policies\WorkstationGroupPolicy;
@@ -39,6 +40,8 @@ class AuthServiceProvider extends ServiceProvider
         UserPolicy::registerGates();
         GroupPolicy::registerGates();
         WorkstationGroupPolicy::registerGates();
+        // Story 4.8 — personnalisation applicative
+        AppCustomizationPolicy::registerGates();
 
     }
 }

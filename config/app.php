@@ -170,6 +170,7 @@ return [
         App\Providers\ControlHubServiceProvider::class,
         App\Providers\LdapRecordServiceProvider::class,
         App\Providers\WallpaperServiceProvider::class,
+        App\Providers\AppCustomizationServiceProvider::class,
         ])->toArray(),
 
     /*

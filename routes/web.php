@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\ParcController;
+use App\Http\Controllers\AppPolicyController;
 use App\Http\Controllers\WallpaperController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChangePasswordController;
@@ -120,6 +121,11 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
         Route::livewire('/wallpapers', 'pages::parc-settings.wallpapers.index')
             ->middleware('can:wallpaper.manage')
             ->name('wallpapers');
+
+        // Personnalisation applications (story 4.8 — Firefox, Thunderbird…)
+        Route::livewire('/app-customizations', 'pages::parc-settings.app-customizations.index')
+            ->middleware('can:app.customize')
+            ->name('app-customizations');
     });
 
     // // Gestion des parcs (Livewire)
@@ -248,6 +254,37 @@ Route::match(['GET', 'POST'], 'gpo/shortcuts_out.php', [App\Http\Controllers\Api
 */
 Route::match(['GET', 'POST'], 'gpo/wallpaper_out.php', [WallpaperController::class, 'legacyOut'])
     ->name('wallpaper.legacy');
+
+/*
+|--------------------------------------------------------------------------
+| Interception legacy gpo/firefox_out.php + gpo/thunderbird_out.php
+|--------------------------------------------------------------------------
+| Story 4.8 — AC 9. Endpoints iso-contrat appelés par logon/startup
+| Linux/Windows avec id=<md5 APCu> + os=linux|windows (Firefox).
+| Pas d'auth (postes clients sans cookie). Throttle 300/min/IP
+| (300 postes derrière NAT peuvent se loguer simultanément sans 429).
+| Doivent être déclarés AVANT le catchall legacy.
+*/
+Route::match(['GET', 'POST'], 'gpo/firefox_out.php', [AppPolicyController::class, 'legacyFirefoxOut'])
+    ->middleware('throttle:300,1')
+    ->name('app-policy.firefox.legacy');
+
+Route::match(['GET', 'POST'], 'gpo/thunderbird_out.php', [AppPolicyController::class, 'legacyThunderbirdOut'])
+    ->middleware('throttle:300,1')
+    ->name('app-policy.thunderbird.legacy');
+
+/*
+|--------------------------------------------------------------------------
+| Route canonique /api/policies/{kind}/{id}
+|--------------------------------------------------------------------------
+| Story 4.8 — AC 10. Route alternative propre en parallèle des iso-contrat.
+| Placée dans web.php (pas api.php) pour éviter le préfixe /api/ global —
+| en réalité nous préfixons à la main pour que le routing corresponde à
+| `/api/policies/{kind}/{id}`. Pas d'auth (même design que iso-contrat).
+*/
+Route::get('api/policies/{kind}/{id}', [AppPolicyController::class, 'canonical'])
+    ->middleware('throttle:300,1')
+    ->name('app-policy.canonical');
 
 /*
 |--------------------------------------------------------------------------
