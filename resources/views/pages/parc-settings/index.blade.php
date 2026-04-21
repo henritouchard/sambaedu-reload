@@ -102,6 +102,15 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                             Désactiver le dépôt
                         </button>
                     </li>
+                @elseif ($tab === 'shortcuts')
+                    @can('create-shortcut')
+                        <li>
+                            <a href="{{ route('app.shortcuts.new') }}">
+                                <i class="fa-solid fa-plus"></i>
+                                Nouveau raccourci
+                            </a>
+                        </li>
+                    @endcan
                 @endif
             </ul>
         </div>
@@ -134,6 +143,11 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                 <i class="fa-solid fa-warehouse mr-2"></i>
                 Dépôt
             </button>
+            <button type="button" role="tab" class="tab {{ $tab === 'shortcuts' ? 'tab-active' : '' }}"
+                wire:click="setTab('shortcuts')">
+                <i class="fa-solid fa-arrow-up-right-from-square mr-2"></i>
+                Raccourcis
+            </button>
         </div>
 
         <!-- Contenu des onglets -->
@@ -144,6 +158,8 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                 <livewire:pages::parc-settings._partials.applications-tab />
             @elseif ($tab === 'depot')
                 <livewire:pages::parc-settings._partials.depot-tab />
+            @elseif ($tab === 'shortcuts')
+                <livewire:pages::parc-settings._partials.shortcuts-tab />
             @endif
         </div>
     </div>
