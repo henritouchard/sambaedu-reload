@@ -365,7 +365,19 @@ class ParcController extends Controller
     }
 
     /**
-     * Actions de masse sur les machines d'un parc
+     * Actions de masse sur les machines d'un parc (endpoint JSON legacy).
+     *
+     * ⚠️ Story 4-3 (D5) — Cet endpoint reste volontairement **synchrone** pour
+     * préserver la compatibilité avec les scripts externes et les crons legacy
+     * qui consomment la réponse JSON (code retour, results[] par machine).
+     *
+     * Le chemin UI moderne passe désormais par le composant Livewire
+     * `pages::parc.groups.[id].index` qui utilise
+     * `WorkstationGroupService::executeGroupMachinesAction()` avec dispatch
+     * async (1 `MachinePowerActionTask` par machine + `DispatchMachinePowerActionJob`).
+     *
+     * À terme (story ultérieure), migrer les consommateurs restants vers l'API
+     * ControlHub + `ControlHubTask`, puis déprécier ce endpoint.
      */
     public function massAction(Request $request, string $parcId): JsonResponse
     {

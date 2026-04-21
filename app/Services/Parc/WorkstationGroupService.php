@@ -3,8 +3,10 @@
 namespace App\Services\Parc;
 
 use App\Config\LdapDnHelper;
+use App\Jobs\DispatchMachinePowerActionJob;
 use App\LdapModels\DeviceGroupModel;
 use App\LdapModels\DeviceGroupTagModel;
+use App\Models\MachinePowerActionTask;
 use App\Services\WorkstationService;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
@@ -157,14 +159,21 @@ class WorkstationGroupService
     /**
      * Exécute une action de puissance sur une sélection de machines
      *
+     * Note story 4-3 : pour les actions power (`wake|shutdown|shutdown-force|restart`)
+     * le dispatch transite désormais par `DispatchMachinePowerActionJob` (1 task par
+     * machine), retourne immédiatement le contrat typé avec `results[i].task_id`
+     * pour permettre au composant Livewire appelant de poller l'état. L'action
+     * `remote` reste synchrone (génération de token Guacamole).
+     *
      * @param array<int|string> $machineIds
      * @return array{action: string, requested_count: int, success_count: int, failed_count: int, results: array<int, array{machine: string, success: bool, code: int}>}
      */
     public function executeMachinesAction(array $machineIds, string $action): array
     {
-        $machines = $this->repository->findMachinesByIds($this->normalizeMachineIds($machineIds));
+        $normalizedIds = $this->normalizeMachineIds($machineIds);
+        $machines = $this->repository->findMachinesByIds($normalizedIds);
 
-        return $this->executeMachineActionOnCollection($machines, $action);
+        return $this->executeMachineActionOnCollection($machines, $action, $normalizedIds);
     }
 
     /**
@@ -174,22 +183,39 @@ class WorkstationGroupService
      */
     public function executeMachineAction(int $machineId, string $action): array
     {
-        $machines = $this->repository->findMachinesByIds([$machineId]);
+        $normalizedIds = $this->normalizeMachineIds([$machineId]);
+        $machines = $this->repository->findMachinesByIds($normalizedIds);
 
-        return $this->executeMachineActionOnCollection($machines, $action);
+        return $this->executeMachineActionOnCollection($machines, $action, $normalizedIds);
     }
 
     /**
      * Exécute une action de puissance sur des machines appartenant à un groupe
+     *
+     * Story 4-3 : refonte du pipeline en async par machine pour les actions
+     * power. Pour chaque machine éligible (présente dans le groupe + pas de
+     * task active), on crée une ligne `machine_power_action_tasks` et on
+     * dispatche un `DispatchMachinePowerActionJob`. Les machines déjà en
+     * action (status ∈ ACTIVE_STATUSES) sont filtrées et comptées comme
+     * `failed_count` avec `code=409, reason='already-running'`.
+     *
+     * Contrat de retour strictement préservé : `{action, requested_count,
+     * success_count, failed_count, results[]}`. Enrichissements rétrocompat :
+     *   - `results[i].task_id` (int, présent pour les actions power dispatchées)
+     *   - `results[i].reason` (string, présent pour les échecs structurés)
+     *
+     * `action=remote` conserve le flux synchrone via `executeRemoteAccessAction`
+     * (D5 story 4-3).
      *
      * @param array<int|string> $machineIds
      * @return array{action: string, requested_count: int, success_count: int, failed_count: int, results: array<int, array{machine: string, success: bool, code: int}>}
      */
     public function executeGroupMachinesAction(int $groupId, array $machineIds, string $action): array
     {
-        $machines = $this->repository->findGroupMachinesByIds($groupId, $this->normalizeMachineIds($machineIds));
+        $normalizedIds = $this->normalizeMachineIds($machineIds);
+        $machines = $this->repository->findGroupMachinesByIds($groupId, $normalizedIds);
 
-        return $this->executeMachineActionOnCollection($machines, $action);
+        return $this->executeMachineActionOnCollection($machines, $action, $normalizedIds);
     }
 
     // ========================================
@@ -370,36 +396,151 @@ class WorkstationGroupService
     }
 
     /**
+     * @param array<int> $requestedIds IDs normalisés demandés initialement (pour calculer `requested_count` même si des IDs sont absents de la collection).
      * @return array{action: string, requested_count: int, success_count: int, failed_count: int, results: array<int, array{machine: string, success: bool, code: int}>}
      */
-    private function executeMachineActionOnCollection(Collection $machines, string $action): array
+    private function executeMachineActionOnCollection(Collection $machines, string $action, array $requestedIds = []): array
     {
         if (!in_array($action, self::SUPPORTED_MACHINE_ACTIONS, true)) {
             throw new \InvalidArgumentException("Action machine non supportée: {$action}");
         }
 
-        // Gestion spéciale pour l'accès distant
+        // Gestion spéciale pour l'accès distant — reste synchrone (token Guacamole).
         if ($action === 'remote') {
             return $this->executeRemoteAccessAction($machines);
         }
 
-        $machineNames = $machines
-            ->pluck('name')
-            ->filter(static fn (mixed $name): bool => is_string($name) && $name !== '')
+        // Story 4-3 : pipeline async par machine. Chaque machine résolue crée
+        // une MachinePowerActionTask + un DispatchMachinePowerActionJob. Les
+        // machines déjà en action (idempotence D4) sont skippées et remontées
+        // en failed_count avec code=409.
+        return $this->dispatchAsyncActionForMachines($machines, $action, $requestedIds);
+    }
+
+    /**
+     * Dispatch async d'une action power sur une collection de machines (story 4-3).
+     *
+     * - Crée une `MachinePowerActionTask` + dispatche un `DispatchMachinePowerActionJob`
+     *   pour chaque machine éligible.
+     * - Filtre en amont les machines qui ont déjà une task active (idempotence D4)
+     *   via un unique SELECT sur `machine_power_action_tasks` pour éviter les N+1.
+     * - Comptabilise les machines non résolues (ID demandé mais absent de la
+     *   collection — par ex. machine supprimée, ou pas dans le groupe) en
+     *   `failed_count` avec `code=404, reason='not-found'`.
+     *
+     * Contrat de retour préservé — seuls des champs rétrocompat sont ajoutés :
+     *   - `results[i].task_id` (int, si dispatché)
+     *   - `results[i].reason`  (string, si échec structuré)
+     *
+     * @param Collection<int, Workstation> $machines Machines résolues en DB (pouvant être un sous-ensemble des IDs demandés).
+     * @param array<int> $requestedIds IDs normalisés initialement demandés (pour le compte "not-found").
+     * @return array{action: string, requested_count: int, success_count: int, failed_count: int, results: array<int, array<string, mixed>>}
+     */
+    private function dispatchAsyncActionForMachines(Collection $machines, string $action, array $requestedIds): array
+    {
+        $resolvedIds = $machines
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
             ->values()
             ->all();
 
-        if (empty($machineNames)) {
-            return [
-                'action' => $action,
-                'requested_count' => 0,
-                'success_count' => 0,
-                'failed_count' => 0,
-                'results' => [],
-            ];
+        // Un seul SELECT pour repérer les machines déjà en action active
+        // (AC7 idempotence). whereIn sur la liste résolue, pluck les
+        // workstation_id. Si la liste est vide on saute le SELECT.
+        $alreadyRunningIds = [];
+        if (!empty($resolvedIds)) {
+            $alreadyRunningIds = MachinePowerActionTask::query()
+                ->whereIn('workstation_id', $resolvedIds)
+                ->whereIn('status', MachinePowerActionTask::ACTIVE_STATUSES)
+                ->pluck('workstation_id')
+                ->map(static fn (mixed $id): int => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
         }
 
-        return $this->workstationService->executePowerAction($machineNames, $action);
+        $initiatedBy = auth()->user()?->name ?? session('login') ?? 'system';
+        $restartPhase = $action === 'restart'
+            ? MachinePowerActionTask::RESTART_PHASE_WAITING_DOWN
+            : null;
+
+        $results = [];
+        $successCount = 0;
+        $failedCount = 0;
+
+        // 1. Traiter les machines effectivement résolues en DB.
+        foreach ($machines as $machine) {
+            $machineId = (int) $machine->id;
+            $machineName = (string) ($machine->name ?? "id:{$machineId}");
+
+            if (in_array($machineId, $alreadyRunningIds, true)) {
+                $results[] = [
+                    'machine' => $machineName,
+                    'success' => false,
+                    'code' => 409,
+                    'reason' => 'already-running',
+                ];
+                $failedCount++;
+                continue;
+            }
+
+            try {
+                $task = MachinePowerActionTask::create([
+                    'workstation_id' => $machineId,
+                    'action' => $action,
+                    'status' => MachinePowerActionTask::STATUS_QUEUED,
+                    'initiated_by' => $initiatedBy,
+                    'initiated_at' => now(),
+                    'restart_phase' => $restartPhase,
+                ]);
+
+                DispatchMachinePowerActionJob::dispatch($task->id);
+
+                $results[] = [
+                    'machine' => $machineName,
+                    'success' => true,
+                    'code' => 202,
+                    'task_id' => (int) $task->id,
+                ];
+                $successCount++;
+            } catch (\Throwable $e) {
+                Log::error('[WorkstationGroupService] Dispatch async action machine échoué', [
+                    'machine_id' => $machineId,
+                    'machine' => $machineName,
+                    'action' => $action,
+                    'error' => $e->getMessage(),
+                ]);
+                $results[] = [
+                    'machine' => $machineName,
+                    'success' => false,
+                    'code' => 500,
+                    'reason' => 'dispatch-failed',
+                ];
+                $failedCount++;
+            }
+        }
+
+        // 2. Comptabiliser les IDs demandés mais non résolus (404 not-found).
+        $unresolvedIds = array_values(array_diff($requestedIds, $resolvedIds));
+        foreach ($unresolvedIds as $missingId) {
+            $results[] = [
+                'machine' => "id:{$missingId}",
+                'success' => false,
+                'code' => 404,
+                'reason' => 'not-found',
+            ];
+            $failedCount++;
+        }
+
+        $requestedCount = !empty($requestedIds) ? count($requestedIds) : $machines->count();
+
+        return [
+            'action' => $action,
+            'requested_count' => $requestedCount,
+            'success_count' => $successCount,
+            'failed_count' => $failedCount,
+            'results' => $results,
+        ];
     }
 
     /**

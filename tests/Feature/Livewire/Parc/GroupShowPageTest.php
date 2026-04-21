@@ -4,15 +4,23 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Livewire\Parc;
 
+use App\Jobs\DispatchMachinePowerActionJob;
+use App\Models\MachinePowerActionTask;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
+use App\Services\Parc\MachinePowerService;
 use App\Services\Parc\WorkstationGroupService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
 use Mockery;
 use Tests\TestCase;
+use Tests\Traits\MocksAdminUser;
 
 /**
  * Tests Feature du composant Livewire `pages::parc.groups.[id].index`.
@@ -30,6 +38,7 @@ use Tests\TestCase;
 class GroupShowPageTest extends TestCase
 {
     use DatabaseTransactions;
+    use MocksAdminUser;
 
     private bool $createdTables = false;
 
@@ -41,15 +50,33 @@ class GroupShowPageTest extends TestCase
         }
         $this->withoutVite();
         $this->createTablesIfNeeded();
+
+        // Story 4-3 : Queue::fake() par défaut pour TOUS les tests de cette
+        // suite — sinon l'observer WorkstationGroupObserver dispatche un
+        // WorkstationGroupAdSyncJob qui tente d'écrire réellement dans l'AD
+        // (LDAP absent en CI/local). Neutraliser aussi les jobs avant les
+        // assertions DispatchMachinePowerActionJob est transparent (on compte
+        // les jobs par classe, pas par total).
+        Queue::fake();
+
+        // Le composant Livewire guard ses actions power via
+        // Gate::allows('computer.control'). MocksAdminUser pousse un
+        // Authenticatable mocké qui ->can() renvoie true (donc Gate::allows
+        // renvoie true pour toutes les abilities). On complète avec un
+        // Gate::before par sécurité (user=null dans certains flux).
+        $this->actAsAdmin();
+        Gate::before(fn ($user, string $ability) => $ability === 'computer.control' ? true : null);
     }
 
     protected function tearDown(): void
     {
         if ($this->createdTables) {
+            Schema::dropIfExists('machine_power_action_tasks');
             Schema::dropIfExists('workstation_group_workstation');
             Schema::dropIfExists('workstation_groups');
             Schema::dropIfExists('workstations');
         }
+        Carbon::setTestNow();
         parent::tearDown();
     }
 
@@ -99,6 +126,83 @@ class GroupShowPageTest extends TestCase
             });
             $this->createdTables = true;
         }
+
+        if (!Schema::hasTable('machine_power_action_tasks')) {
+            Schema::create('machine_power_action_tasks', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('workstation_id')->nullable();
+                $table->string('action', 32);
+                $table->string('status', 16)->default('queued');
+                $table->string('initiated_by', 100)->nullable();
+                $table->timestamp('initiated_at')->nullable();
+                $table->timestamp('dispatched_at')->nullable();
+                $table->timestamp('completed_at')->nullable();
+                $table->json('result')->nullable();
+                $table->text('error_message')->nullable();
+                $table->string('restart_phase', 16)->nullable();
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        if (!Schema::hasTable('machine_boot_logs')) {
+            Schema::create('machine_boot_logs', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('workstation_id')->nullable();
+                $table->string('machine_name');
+                $table->string('action')->nullable();
+                $table->string('initiated_by')->nullable();
+                $table->boolean('success')->nullable();
+                $table->timestamp('started_at')->nullable();
+                $table->timestamp('stopped_at')->nullable();
+                $table->string('os')->nullable();
+                $table->integer('wol_score')->nullable();
+                $table->integer('ipxe_score')->nullable();
+                $table->integer('error_flags')->nullable();
+                $table->integer('boot_speed')->nullable();
+                $table->string('vlan')->nullable();
+                $table->string('switch_port')->nullable();
+                $table->string('switch_ip')->nullable();
+                $table->string('switch_name')->nullable();
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+    }
+
+    private function makeGroupWithMachines(int $count): array
+    {
+        $group = WorkstationGroup::create([
+            'name' => 'lab-batch-' . uniqid(),
+            'is_physical' => true,
+            'is_active' => true,
+        ]);
+
+        $machines = [];
+        for ($i = 1; $i <= $count; $i++) {
+            $ws = Workstation::create([
+                'name' => "pc-batch-{$i}-" . uniqid(),
+                'os' => 'Windows 10',
+                'ip' => "192.168.100.{$i}",
+                'mac' => sprintf('aa:bb:cc:dd:ee:%02x', $i),
+                'status' => 1,
+            ]);
+            $ws->groups()->attach($group->id, ['physical' => true]);
+            $machines[] = $ws;
+        }
+
+        return [$group, $machines];
+    }
+
+    /**
+     * Laisse passer l'appel réel au service Laravel pour tester le pipeline
+     * async en bout-en-bout (vs. mock du service dans mockGroupService).
+     */
+    private function bindPowerServiceMock(): MachinePowerService
+    {
+        $mock = Mockery::mock(MachinePowerService::class);
+        $this->app->instance(MachinePowerService::class, $mock);
+        return $mock;
     }
 
     private function makeGroupWithMachine(): array
@@ -178,7 +282,8 @@ class GroupShowPageTest extends TestCase
                 'requested_count' => 1,
                 'success_count' => 1,
                 'failed_count' => 0,
-                'results' => [['machine' => 'pc-chimie-01', 'success' => true, 'code' => 201]],
+                // Contrat 4-3 : code=202 (dispatched async) + task_id renseigné.
+                'results' => [['machine' => 'pc-chimie-01', 'success' => true, 'code' => 202, 'task_id' => 99]],
             ]);
 
         Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
@@ -215,12 +320,269 @@ class GroupShowPageTest extends TestCase
                 'requested_count' => 1,
                 'success_count' => 1,
                 'failed_count' => 0,
-                'results' => [['machine' => 'pc-chimie-01', 'success' => true, 'code' => 201]],
+                // Contrat 4-3 : code=202 (dispatched async) + task_id renseigné
+                // → permet à executeSelectedGroupMachinesAction de basculer batchRunning=true.
+                'results' => [['machine' => 'pc-chimie-01', 'success' => true, 'code' => 202, 'task_id' => 99]],
             ]);
 
         Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
             ->set('selectedGroupMachineIds', [$machine->id])
             ->call('executeSelectedGroupMachinesAction', 'shutdown-force')
+            ->assertSet('batchRunning', true)
             ->assertDispatched('toastMagic', status: 'success');
+    }
+
+    // ─── Tests story 4-3 (pipeline async, polling, résumé, idempotence) ────
+    // Ces tests utilisent le vrai WorkstationGroupService (pas de mock) pour
+    // valider le pipeline end-to-end : création de MachinePowerActionTask,
+    // dispatch de DispatchMachinePowerActionJob, machine à états batch.
+
+    public function test_batch_dispatch_creates_one_task_per_machine_and_emits_success_toast(): void
+    {
+        Queue::fake();
+        $this->bindPowerServiceMock();
+
+        [$group, $machines] = $this->makeGroupWithMachines(3);
+        $machineIds = array_map(fn ($m) => $m->id, $machines);
+
+        $component = Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
+            ->set('selectedGroupMachineIds', $machineIds)
+            ->call('executeSelectedGroupMachinesAction', 'wake')
+            ->assertDispatched('toastMagic', status: 'success');
+
+        $this->assertEquals(3, MachinePowerActionTask::count());
+        foreach (MachinePowerActionTask::all() as $task) {
+            $this->assertEquals('wake', $task->action);
+            $this->assertEquals(MachinePowerActionTask::STATUS_QUEUED, $task->status);
+        }
+
+        Queue::assertPushed(DispatchMachinePowerActionJob::class, 3);
+
+        // Review #6 — la propriété pivot du polling doit contenir exactement
+        // les IDs des tasks créées pour les machines sélectionnées.
+        $taskIds = MachinePowerActionTask::query()
+            ->whereIn('workstation_id', $machineIds)
+            ->pluck('id')
+            ->sort()
+            ->values()
+            ->all();
+        $currentBatchTaskIds = collect($component->get('currentBatchTaskIds'))->sort()->values()->all();
+        $this->assertEquals($taskIds, $currentBatchTaskIds);
+    }
+
+    public function test_batch_sets_batch_running_state_and_disables_batch_dropdown(): void
+    {
+        Queue::fake();
+        $this->bindPowerServiceMock();
+
+        [$group, $machines] = $this->makeGroupWithMachines(2);
+        $ids = array_map(fn ($m) => $m->id, $machines);
+
+        $component = Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
+            ->set('selectedGroupMachineIds', $ids)
+            ->call('executeSelectedGroupMachinesAction', 'shutdown')
+            ->assertSet('batchRunning', true)
+            ->assertSet('batchActionKey', 'shutdown')
+            ->assertSet('batchSummaryVisible', true);
+
+        // La barre flottante ne s'affiche que quand il y a des machines
+        // sélectionnées ; après dispatch on purge la sélection, donc
+        // on ne teste pas la barre flottante mais le badge "en cours"
+        // dans le slot actions (présence du loading spinner).
+        $component->assertSeeHtml('loading loading-spinner');
+    }
+
+    public function test_poll_group_readiness_updates_task_statuses_and_stops_when_all_terminal(): void
+    {
+        Queue::fake();
+
+        [$group, $machines] = $this->makeGroupWithMachines(2);
+        $ids = array_map(fn ($m) => $m->id, $machines);
+
+        // Le power service doit retourner "linux" (machine up) → wake completed.
+        $power = $this->bindPowerServiceMock();
+        $power->shouldReceive('ping')->andReturn('linux');
+
+        $component = Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
+            ->set('selectedGroupMachineIds', $ids)
+            ->call('executeSelectedGroupMachinesAction', 'wake')
+            ->assertSet('batchRunning', true);
+
+        // Simuler que les jobs ont pris les tasks (status=running).
+        MachinePowerActionTask::query()->update(['status' => MachinePowerActionTask::STATUS_RUNNING]);
+
+        $component->call('pollGroupReadiness')
+            ->assertSet('batchRunning', false);
+
+        // Toutes les tasks doivent être completed.
+        foreach (MachinePowerActionTask::all() as $task) {
+            $this->assertEquals(MachinePowerActionTask::STATUS_COMPLETED, $task->status);
+            $this->assertNotNull($task->completed_at);
+        }
+    }
+
+    public function test_poll_group_readiness_times_out_all_active_tasks_after_configured_duration(): void
+    {
+        Queue::fake();
+        Config::set('parc.machine_readiness_timeout_seconds', 60);
+
+        [$group, $machines] = $this->makeGroupWithMachines(2);
+        $ids = array_map(fn ($m) => $m->id, $machines);
+
+        $power = $this->bindPowerServiceMock();
+        // Le ping NE DOIT PAS être appelé : le timeout doit court-circuiter
+        // avant toute tentative de ping (invariant important pour éviter
+        // des appels réseau inutiles après le cut-off).
+        $power->shouldNotReceive('ping');
+        $power->shouldReceive('logReadinessTimeout')->atLeast()->once();
+
+        $start = Carbon::parse('2026-04-21 10:00:00');
+        Carbon::setTestNow($start);
+
+        $component = Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
+            ->set('selectedGroupMachineIds', $ids)
+            ->call('executeSelectedGroupMachinesAction', 'wake')
+            ->assertSet('batchRunning', true);
+
+        // +61s → dépassement du timeout (60s).
+        Carbon::setTestNow($start->copy()->addSeconds(61));
+
+        $component->call('pollGroupReadiness')
+            ->assertSet('batchRunning', false)
+            ->assertSet('batchTimeoutFired', true)
+            ->assertDispatched('toastMagic', status: 'warning');
+
+        foreach (MachinePowerActionTask::all() as $task) {
+            $this->assertEquals(MachinePowerActionTask::STATUS_FAILED, $task->status);
+            $this->assertStringContainsString('timeout', strtolower((string) $task->error_message));
+        }
+    }
+
+    public function test_batch_summary_card_lists_failed_machines_with_error_messages(): void
+    {
+        Queue::fake();
+        $this->bindPowerServiceMock();
+
+        [$group, $machines] = $this->makeGroupWithMachines(2);
+        $ids = array_map(fn ($m) => $m->id, $machines);
+
+        $component = Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
+            ->set('selectedGroupMachineIds', $ids)
+            ->call('executeSelectedGroupMachinesAction', 'shutdown');
+
+        // Forcer une des tasks en failed avec un error_message humain.
+        $firstTask = MachinePowerActionTask::first();
+        $firstTask->update([
+            'status' => MachinePowerActionTask::STATUS_FAILED,
+            'completed_at' => now(),
+            'error_message' => "pc-batch-1 est deja eteinte, aucune action effectuee",
+        ]);
+
+        // Re-render le composant pour consommer l'update DB.
+        $component->call('$refresh');
+
+        $component->assertSeeHtml($firstTask->workstation->name);
+        $component->assertSeeHtml('est deja eteinte');
+    }
+
+    public function test_batch_summary_clear_button_resets_correlation_without_deleting_db_rows(): void
+    {
+        Queue::fake();
+        $this->bindPowerServiceMock();
+
+        [$group, $machines] = $this->makeGroupWithMachines(1);
+
+        $component = Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
+            ->set('selectedGroupMachineIds', [$machines[0]->id])
+            ->call('executeSelectedGroupMachinesAction', 'shutdown')
+            ->assertSet('batchSummaryVisible', true);
+
+        $this->assertEquals(1, MachinePowerActionTask::count());
+
+        $component->call('clearBatchSummary')
+            ->assertSet('batchSummaryVisible', false)
+            ->assertSet('currentBatchTaskIds', [])
+            ->assertSet('batchAction', null);
+
+        // Les rows DB sont conservées (audit trail).
+        $this->assertEquals(1, MachinePowerActionTask::count());
+    }
+
+    public function test_batch_skips_machines_with_active_tasks_and_warns(): void
+    {
+        // AC7 idempotence : relancer un batch sur des machines dont une task
+        // est déjà active doit skip ces machines et toaster warning.
+        Queue::fake();
+        $this->bindPowerServiceMock();
+
+        [$group, $machines] = $this->makeGroupWithMachines(2);
+        $ids = array_map(fn ($m) => $m->id, $machines);
+
+        // Simuler une task déjà active sur la première machine (ex. batch précédent en vol).
+        MachinePowerActionTask::create([
+            'workstation_id' => $machines[0]->id,
+            'action' => 'wake',
+            'status' => MachinePowerActionTask::STATUS_RUNNING,
+            'initiated_at' => now(),
+        ]);
+
+        Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
+            ->set('selectedGroupMachineIds', $ids)
+            ->call('executeSelectedGroupMachinesAction', 'wake')
+            ->assertDispatched('toastMagic', status: 'warning');
+
+        // 1 nouvelle task créée (pour machine 2), 1 pré-existante → total 2.
+        $this->assertEquals(2, MachinePowerActionTask::count());
+        Queue::assertPushed(DispatchMachinePowerActionJob::class, 1);
+    }
+
+    public function test_unit_action_from_group_view_respects_active_task_guard(): void
+    {
+        // Parité vue machine : une action unitaire sur une machine ayant
+        // déjà une task active doit être refusée (toast warning).
+        Queue::fake();
+        $this->bindPowerServiceMock();
+
+        [$group, $machines] = $this->makeGroupWithMachines(1);
+        $machine = $machines[0];
+
+        MachinePowerActionTask::create([
+            'workstation_id' => $machine->id,
+            'action' => 'wake',
+            'status' => MachinePowerActionTask::STATUS_RUNNING,
+            'initiated_at' => now(),
+        ]);
+
+        Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
+            ->call('executeMachineAction', $machine->id, 'shutdown')
+            ->assertDispatched('toastMagic', status: 'warning');
+
+        // Pas de nouvelle task créée.
+        $this->assertEquals(1, MachinePowerActionTask::count());
+        Queue::assertNotPushed(DispatchMachinePowerActionJob::class);
+    }
+
+    public function test_remote_action_not_in_batch_dropdown(): void
+    {
+        // AC6 : le dropdown BATCH ne doit PAS exposer l'action `remote`
+        // (inverse du dropdown unitaire qui la conserve). Assertions
+        // structurelles sur les wire:click exacts (review #4 — remplace
+        // un substr_count fragile qui cassait dès qu'on passait à 2 machines).
+        [$group, $machines] = $this->makeGroupWithMachines(1);
+        $machineId = $machines[0]->id;
+
+        $component = Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
+            ->set('selectedGroupMachineIds', [$machineId]);
+
+        // Entrée batch `remote` absente du dropdown batch.
+        $component->assertDontSeeHtml("wire:click=\"executeSelectedGroupMachinesAction('remote')\"");
+
+        // Entrée unitaire `remote` présente pour cette machine (dropdown par ligne).
+        $component->assertSeeHtml("wire:click=\"executeMachineAction({$machineId}, 'remote')\"");
+
+        // Les 4 actions batch supportées doivent rester présentes.
+        foreach (['wake', 'shutdown', 'shutdown-force', 'restart'] as $action) {
+            $component->assertSeeHtml("wire:click=\"executeSelectedGroupMachinesAction('{$action}')\"");
+        }
     }
 }

@@ -1,8 +1,8 @@
 # Domaine Parc — actions machines et feedback readiness
 
-_Dernière mise à jour : 2026-04-20 (story 4-2)._
+_Dernière mise à jour : 2026-04-21 (story 4-3 — actions batch sur un WorkstationGroup)._
 
-Ce document décrit la façon dont les actions unitaires sur une machine (`/parc/machines/{id}`) sont déclenchées, confirmées à l'utilisateur, et suivies jusqu'à réponse (ou timeout) de la machine cible.
+Ce document décrit la façon dont les actions **unitaires** sur une machine (`/parc/machines/{id}`, story 4-2) et les actions **batch** sur un WorkstationGroup (`/parc/groups/{id}`, story 4-3) sont déclenchées, confirmées à l'utilisateur, et suivies jusqu'à réponse (ou timeout) de chaque machine cible.
 
 ## Actions supportées
 
@@ -69,6 +69,82 @@ Rationale :
 - [`sambaedu/includes/parcs.inc.php:171-320`](../../sambaedu/includes/parcs.inc.php) — `start_machine_local($config, $action, $machine, $force, $silent)` : fonction pivot des actions power en legacy PHP. C'est cette fonction qui implémente le `$force` réel (bypass `count($machine['user']) == 0`).
 - [`sambaedu/includes/fonc_parc.inc.php:33-47`](../../sambaedu/includes/fonc_parc.inc.php) — `fping()` : détection OS par ports 22 (Linux) / 445 (Windows), portée intacte dans `MachinePowerService::ping()`.
 
-## Tester manuellement
+## Actions batch (story 4-3)
 
-Voir [`docs/qa/4-2-e2e-manual.md`](../qa/4-2-e2e-manual.md).
+La vue `/parc/groups/{id}` permet de lancer les 4 actions power (`wake`, `shutdown`, `shutdown-force`, `restart`) sur plusieurs machines simultanément. `remote` reste exclu du dropdown batch (AC6 — un token Guacamole est par machine et ouvrable individuellement).
+
+### Flow
+
+```mermaid
+sequenceDiagram
+    participant UI as Livewire GroupShow
+    participant Svc as WorkstationGroupService
+    participant DB as machine_power_action_tasks
+    participant Q as Queue worker
+    participant Power as MachinePowerService
+
+    UI->>Svc: executeGroupMachinesAction(groupId, [1,2,3,4,5], 'wake')
+    Svc->>DB: filtre idempotence (SELECT WHERE status IN ACTIVE_STATUSES)
+    Note over Svc,DB: Machine 4 déjà en action → skippée (code=409)
+    loop pour chaque machine éligible (1,2,3,5)
+        Svc->>DB: INSERT machine_power_action_tasks (status=queued)
+        Svc->>Q: dispatch DispatchMachinePowerActionJob(task_id)
+    end
+    Svc-->>UI: {action, requested_count:5, success_count:4, failed_count:1, results[]}
+    UI->>UI: batchRunning=true, currentBatchTaskIds=[t1,t2,t3,t5]<br/>toast "Action lancée sur 4 machine(s) — 1 déjà en cours"
+
+    loop toutes les 3 s, tant que batchRunning=true
+        UI->>Power: ping(ip) pour chaque task active
+        alt machine résolue
+            UI->>DB: UPDATE task SET status=completed
+        else restart phase waiting-down
+            UI->>DB: UPDATE task SET restart_phase=waiting-up
+        else timeout global (120s)
+            UI->>Power: logReadinessTimeout(machine, action)
+            UI->>DB: UPDATE task SET status=failed, error_message='Readiness timeout…'
+            UI->>UI: toast warning + batchRunning=false
+        end
+    end
+```
+
+### Garanties architecturales
+
+- **NFR2 — retour UI < 500 ms** : le composant Livewire ne fait que créer les rows `machine_power_action_tasks` et dispatcher les jobs. La réponse est émise avant que le worker queue ne touche la première machine.
+- **Idempotence multi-couches** :
+    1. Service : filtre `whereIn('workstation_id', $ids)->whereIn('status', ACTIVE_STATUSES)` avant dispatch → les machines déjà en action sont comptées `failed_count` avec `code=409, reason='already-running'`.
+    2. Livewire : guard `$batchRunning` en tête de `executeSelectedGroupMachinesAction()` → toast warning + return.
+    3. Blade : `@disabled($batchRunning)` sur le dropdown batch → désactive visuellement le bouton.
+    4. Gate : `Gate::allows('computer.control')` en tête de la méthode Livewire → guard serveur-side même si le Blade est contourné (devtools).
+- **Polling performant** : un SEUL `wire:poll` global (pas un par ligne). `pollGroupReadiness()` consomme les tasks du batch courant en un seul SELECT avec eager-loading (`with('workstation')`), puis applique la résolution par task en PHP.
+- **Résumé de fin de batch persistant** : l'encart `Résumé du batch` reste affiché tant que l'opérateur ne clique pas "Effacer". Les rows `machine_power_action_tasks` sont conservées en DB pour l'audit trail (pas purgées par `clearBatchSummary`).
+- **Une task par machine** : pas de "batch task" agrégée. Chaque task vit indépendamment avec son cycle `queued → running → completed|failed` — cohérent avec la vue machine 4-2, permet de ré-émettre une action sur une machine isolée sans artefact batch.
+
+### Contrat de retour (préservé depuis le backend synchrone initial)
+
+```php
+[
+    'action' => 'wake',
+    'requested_count' => 5,
+    'success_count' => 4,
+    'failed_count' => 1,
+    'results' => [
+        // dispatchés en async → code 202 + task_id (rétrocompat)
+        ['machine' => 'pc-01', 'success' => true, 'code' => 202, 'task_id' => 42],
+        ['machine' => 'pc-02', 'success' => true, 'code' => 202, 'task_id' => 43],
+        // skippé pour cause d'idempotence → code 409
+        ['machine' => 'pc-03', 'success' => false, 'code' => 409, 'reason' => 'already-running'],
+        // introuvable dans le groupe → code 404
+        ['machine' => 'id:99', 'success' => false, 'code' => 404, 'reason' => 'not-found'],
+    ],
+]
+```
+
+Les clés `task_id` et `reason` sont des **ajouts rétrocompat** : les consommateurs historiques qui lisent uniquement `{action, requested_count, success_count, failed_count, results[].machine/success/code}` continuent de fonctionner à l'identique.
+
+### `ParcController::massAction` reste synchrone
+
+L'endpoint JSON historique `POST /admin/parcs/{parc}/mass-action` (utilisé par scripts externes et crons legacy) n'est **PAS touché** par le refactor async (D5 story 4-3). Il route toujours via `WorkstationService::wakeOnLan / shutdownMachines / restartMachines` en synchrone. Pour les nouveaux développements **utiliser la vue Livewire** — l'endpoint JSON doit être considéré comme historique.
+
+### Tester manuellement
+
+Voir [`docs/qa/4-2-e2e-manual.md`](../qa/4-2-e2e-manual.md) (unitaire machine) et [`docs/qa/4-3-e2e-manual.md`](../qa/4-3-e2e-manual.md) (batch WorkstationGroup).
