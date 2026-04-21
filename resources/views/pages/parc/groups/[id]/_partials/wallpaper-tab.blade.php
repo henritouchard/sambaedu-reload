@@ -15,7 +15,7 @@
                 </p>
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <livewire:components.molecules.wallpaper-card
+                    <livewire:components::molecules.wallpaper-card
                         type="wallpaper"
                         :ownerType="App\Models\WorkstationGroup::class"
                         :ownerId="$group->id"
@@ -23,7 +23,7 @@
                         description="Affiché sur les postes de cette salle au login utilisateur."
                         :key="'wallpaper-salle-' . $group->id" />
 
-                    <livewire:components.molecules.wallpaper-card
+                    <livewire:components::molecules.wallpaper-card
                         type="lockscreen"
                         :ownerType="App\Models\WorkstationGroup::class"
                         :ownerId="$group->id"

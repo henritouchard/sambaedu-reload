@@ -74,12 +74,13 @@ class LegacyModulesIntegrationTest extends TestCase
     {
         $modulesBase = base_path('legacy/modules');
 
+        // Modules effectivement copiés dans legacy/modules/ (bootstrap direct).
+        // Les autres modules legacy (api/, user/, …) restent servis par proxy
+        // HTTP vers le vhost legacy — cf. test_api_ecowatt_module_accessible_via_catchall.
         $expectedModules = [
             'display/index.php',
             'display/screen.php',
             'display/config.php',
-            'api/ecowatt.php',
-            'user/index.php',
             'dossier_echange/dossier_echange.php',
         ];
 

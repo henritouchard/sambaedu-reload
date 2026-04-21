@@ -160,7 +160,8 @@ class GroupShowPageTest extends TestCase
         $this->mockGroupService($group);
 
         $component = Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id]);
-        $component->assertSeeHtml("Forcer l'extinction");
+        // Apostrophe HTML-encodée par Blade (e(...)) → matcher sur l'entité.
+        $component->assertSeeHtml('Forcer l&#039;extinction');
     }
 
     public function test_group_shutdown_force_dispatches_to_group_service_with_force_true(): void
@@ -195,8 +196,9 @@ class GroupShowPageTest extends TestCase
         $component = Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
             ->set('selectedGroupMachineIds', [$machine->id]);
 
-        // Le message de confirmation batch doit être présent dans le rendu.
-        $component->assertSeeHtml('Forcer l\'extinction de TOUTES les machines sélectionnées');
+        // Le message de confirmation batch doit être présent dans le rendu
+        // (apostrophes HTML-encodées par Blade via e(...)).
+        $component->assertSeeHtml('Forcer l&#039;extinction de TOUTES les machines sélectionnées');
         $component->assertSeeHtml('les utilisateurs peuvent perdre leur travail non sauvegardé');
     }
 

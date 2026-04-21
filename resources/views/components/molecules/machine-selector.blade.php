@@ -7,7 +7,7 @@
     // Charger les machines via le modèle si non fournies
     $machinesList = $machines;
     if (empty($machinesList)) {
-        $machinesList = \App\Models\Workstation::active()
+        $machinesList = \App\Models\Workstation::query()
             ->orderBy('name')
             ->limit(200)
             ->get()

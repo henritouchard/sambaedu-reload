@@ -25,7 +25,7 @@ use Livewire\WithFileUploads;
  *   - `description` : string (ex: « Affiché si aucun autre niveau ne matche »)
  *
  * Usage :
- *   <livewire:components.molecules.wallpaper-card
+ *   <livewire:components::molecules.wallpaper-card
  *     type="wallpaper"
  *     :ownerType="App\Models\WorkstationGroup::class"
  *     :ownerId="$group->id"

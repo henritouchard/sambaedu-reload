@@ -17,7 +17,7 @@
                     </p>
 
                     <div class="max-w-xl">
-                        <livewire:components.molecules.wallpaper-card
+                        <livewire:components::molecules.wallpaper-card
                             type="wallpaper"
                             :ownerType="App\Models\User::class"
                             :ownerId="$user->id"

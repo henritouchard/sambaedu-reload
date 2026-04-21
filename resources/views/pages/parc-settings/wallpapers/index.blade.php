@@ -42,14 +42,14 @@ new #[Title('Fonds d\'écran — SE4FS')] class extends Component {
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <livewire:components.molecules.wallpaper-card
+            <livewire:components::molecules.wallpaper-card
                 type="wallpaper"
                 :isDefault="true"
                 title="Fond d'écran par défaut"
                 description="Affiché sur tous les postes si aucune configuration plus spécifique n'existe."
                 :key="'wallpaper-default'" />
 
-            <livewire:components.molecules.wallpaper-card
+            <livewire:components::molecules.wallpaper-card
                 type="lockscreen"
                 :isDefault="true"
                 title="Écran de verrouillage par défaut"
