@@ -148,3 +148,80 @@ L'endpoint JSON historique `POST /admin/parcs/{parc}/mass-action` (utilisé par 
 ### Tester manuellement
 
 Voir [`docs/qa/4-2-e2e-manual.md`](../qa/4-2-e2e-manual.md) (unitaire machine) et [`docs/qa/4-3-e2e-manual.md`](../qa/4-3-e2e-manual.md) (batch WorkstationGroup).
+
+---
+
+## Programmations (story 4-4)
+
+_Ajout 2026-04-22 — story 4-4._
+
+Permet de programmer automatiquement l'allumage (`wake`) ou l'extinction (`shutdown`) d'un WorkstationGroup, soit à intervalle récurrent (jours de la semaine + heure), soit à une date/heure unique (one-shot).
+
+### Architecture `tick → enqueue → worker`
+
+```mermaid
+sequenceDiagram
+    participant Cron as Cron système (1 min)
+    participant Art as php artisan schedule:run
+    participant Cmd as parc:execute-group-schedules
+    participant Svc as WorkstationGroupScheduleService
+    participant WGS as WorkstationGroupService
+    participant Q as Queue laravel-queue-general
+    participant W as Worker
+
+    Cron->>Art: tick 1 min
+    Art->>Cmd: everyMinute()
+    Cmd->>Svc: executeDue(now)
+    Svc->>Svc: SELECT schedules WHERE enabled<br/>+ filtre PHP isDueNow() tz-aware
+    loop Par schedule dû
+        Svc->>Svc: guard exists() WGScheduleRun
+        Svc->>WGS: executeGroupMachinesAction(…, initiatedBy='schedule:<id>')
+        WGS->>Q: dispatch N DispatchMachinePowerActionJob
+        Svc->>Svc: INSERT WGScheduleRun (audit)<br/>IF one_shot → UPDATE enabled=false + completed_at
+    end
+    W->>Q: pick job
+    W->>W: WOL / shutdown réseau (worker habituel)
+```
+
+Points clés :
+
+- La commande artisan `parc:execute-group-schedules` (Kernel everyMinute) ne fait **que** lire les schedules dûs et enqueuer des jobs. **Aucune I/O réseau.**
+- Les workers `laravel-queue-general.service` (déjà packagés depuis 4.2) traitent les jobs — pas de nouveau worker à déployer.
+- Le champ `initiated_by` des `MachinePowerActionTask` vaut `schedule:<id>` pour les actions cron (vs `user:<id>` pour les actions manuelles) — utile pour l'audit.
+
+### Modes (D7)
+
+| Mode | Déclenchement | Auto-complétion |
+|---|---|---|
+| `recurring` | triplet `days_of_week` (ARRAY SMALLINT[] ISO 8601 : 1=lun … 7=dim) + `time_of_day` (TIME) + `timezone` (VARCHAR) | Non — re-tire chaque jour matchant |
+| `one_shot` | `run_at` (TIMESTAMPTZ unique, futur) | Oui — `enabled=false` + `completed_at=ran_at` après exécution |
+
+Contrainte CHECK DB `wgs_mode_exclusivity` garantit l'exclusivité au niveau stockage. Validation FormRequest conditionnelle en amont.
+
+### Idempotence multi-couches
+
+1. **Garde `exists()` côté service** (`WorkstationGroupScheduleService::runAlreadyExists`) : skip si run déjà existant pour `(schedule_id, ran_for_date, ran_for_time)`.
+2. **Index unique DB** `wgsr_schedule_date_time_unique` : anti double-fire race entre 2 workers.
+3. **`withoutOverlapping(5)` côté scheduler** : anti overlap si un run > 1 min.
+4. **Filtre 409 hérité 4.3** (`WorkstationGroupService`) : skip silencieux si une machine a déjà une task active.
+
+### Actions MVP (D5)
+
+Seules `wake` et `shutdown` sont autorisées (contrainte CHECK + enum modèle + validation FormRequest). `shutdown-force`, `restart`, `remote` sont exclus du scheduling — usage manuel uniquement.
+
+### Historique et rétention
+
+- Table `workstation_group_schedule_runs` : 1 row par exécution avec JSONB `summary` (success/failed/skipped + `task_ids[]` + `errors[]` + `drift_seconds?` pour one-shot rattrapé).
+- Rétention **30 jours** via `parc:prune-group-schedule-runs` (scheduler daily).
+- Visualisation : page `/parc/groups/{id}` — panneau Programmations (affichage mixte récurrents / one-shots futurs / one-shots terminés).
+
+### UI
+
+- Page `/parc/groups/{id}` — partiel `_partials/schedules-panel.blade.php`.
+- Modale de création/édition avec toggle `Récurrent / Date unique` (D7).
+- Bouton « Dupliquer » sur un one-shot terminé → nouveau schedule one-shot (non éditable via « Modifier »).
+- Permission Spatie `computer.control` (mêmes droits que les actions manuelles).
+
+### E2E manuel
+
+Voir [`docs/qa/4-4-e2e-manual.md`](../qa/4-4-e2e-manual.md) (10 scénarios VM, dont DST et one-shot rattrapé après downtime).

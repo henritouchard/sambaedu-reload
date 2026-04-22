@@ -18,6 +18,15 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping()
                  ->runInBackground();
 
+        // Story 4-4 : Exécution des programmations horaires WorkstationGroup (tick 1 min)
+        // Tick scheduler léger (1 SELECT + N enqueue) → les workers habituels
+        // (laravel-queue-general) traitent ensuite les DispatchMachinePowerActionJob.
+        // withoutOverlapping(5) : lock de 5 min max si un run dépasse (safety net).
+        $schedule->command('parc:execute-group-schedules')
+                 ->everyMinute()
+                 ->withoutOverlapping(5)
+                 ->runInBackground();
+
         // Rafraîchissement du cache des quotas - toutes les 5 minutes
         $schedule->command('quota:refresh-cache')
                  ->everyFiveMinutes()
@@ -38,6 +47,11 @@ class Kernel extends ConsoleKernel
 
         // Purge des error_logs de plus de 30 jours
         $schedule->command('error-logs:prune')
+                 ->daily()
+                 ->runInBackground();
+
+        // Story 4-4 : Purge des runs d'historique de programmations > 30 jours
+        $schedule->command('parc:prune-group-schedule-runs')
                  ->daily()
                  ->runInBackground();
     }

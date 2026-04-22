@@ -71,6 +71,8 @@ class GroupShowPageTest extends TestCase
     protected function tearDown(): void
     {
         if ($this->createdTables) {
+            Schema::dropIfExists('workstation_group_schedule_runs');
+            Schema::dropIfExists('workstation_group_schedules');
             Schema::dropIfExists('machine_power_action_tasks');
             Schema::dropIfExists('workstation_group_workstation');
             Schema::dropIfExists('workstation_groups');
@@ -165,6 +167,41 @@ class GroupShowPageTest extends TestCase
                 $table->string('switch_ip')->nullable();
                 $table->string('switch_name')->nullable();
                 $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        // Story 4-4 : schedules & runs (le partial schedules-panel est inclus
+        // dans la vue parent et exécute une query au rendu — sans ces 2 tables
+        // on obtient "no such table" à chaque assertSee() / call()).
+        if (!Schema::hasTable('workstation_group_schedules')) {
+            Schema::create('workstation_group_schedules', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('workstation_group_id');
+                $table->string('action', 16);
+                $table->string('mode', 16)->default('recurring');
+                $table->json('days_of_week')->nullable();
+                $table->time('time_of_day')->nullable();
+                $table->string('timezone', 64)->nullable();
+                $table->timestamp('run_at')->nullable();
+                $table->timestamp('completed_at')->nullable();
+                $table->boolean('enabled')->default(true);
+                $table->unsignedBigInteger('created_by_user_id')->nullable();
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        if (!Schema::hasTable('workstation_group_schedule_runs')) {
+            Schema::create('workstation_group_schedule_runs', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('schedule_id')->nullable();
+                $table->timestamp('ran_at');
+                $table->time('ran_for_time');
+                $table->date('ran_for_date');
+                $table->json('summary');
+                $table->timestamps();
+                $table->unique(['schedule_id', 'ran_for_date', 'ran_for_time'], 'wgsr_schedule_date_time_unique');
             });
             $this->createdTables = true;
         }

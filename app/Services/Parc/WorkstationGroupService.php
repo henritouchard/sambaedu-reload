@@ -168,12 +168,12 @@ class WorkstationGroupService
      * @param array<int|string> $machineIds
      * @return array{action: string, requested_count: int, success_count: int, failed_count: int, results: array<int, array{machine: string, success: bool, code: int}>}
      */
-    public function executeMachinesAction(array $machineIds, string $action): array
+    public function executeMachinesAction(array $machineIds, string $action, ?string $initiatedBy = null): array
     {
         $normalizedIds = $this->normalizeMachineIds($machineIds);
         $machines = $this->repository->findMachinesByIds($normalizedIds);
 
-        return $this->executeMachineActionOnCollection($machines, $action, $normalizedIds);
+        return $this->executeMachineActionOnCollection($machines, $action, $normalizedIds, $initiatedBy);
     }
 
     /**
@@ -181,12 +181,12 @@ class WorkstationGroupService
      *
      * @return array{action: string, requested_count: int, success_count: int, failed_count: int, results: array<int, array{machine: string, success: bool, code: int}>}
      */
-    public function executeMachineAction(int $machineId, string $action): array
+    public function executeMachineAction(int $machineId, string $action, ?string $initiatedBy = null): array
     {
         $normalizedIds = $this->normalizeMachineIds([$machineId]);
         $machines = $this->repository->findMachinesByIds($normalizedIds);
 
-        return $this->executeMachineActionOnCollection($machines, $action, $normalizedIds);
+        return $this->executeMachineActionOnCollection($machines, $action, $normalizedIds, $initiatedBy);
     }
 
     /**
@@ -199,6 +199,12 @@ class WorkstationGroupService
      * action (status ∈ ACTIVE_STATUSES) sont filtrées et comptées comme
      * `failed_count` avec `code=409, reason='already-running'`.
      *
+     * Story 4-4 (crons planifiés) : ajout du paramètre optionnel
+     * `$initiatedBy` pour permettre au scheduler cron de tracer l'origine
+     * des tasks (`'schedule:<id>'`) et les distinguer des actions manuelles
+     * (`'user:<id>'`). Backward-compat : si null, fallback sur auth()->user()->name
+     * ou session('login') — comportement historique.
+     *
      * Contrat de retour strictement préservé : `{action, requested_count,
      * success_count, failed_count, results[]}`. Enrichissements rétrocompat :
      *   - `results[i].task_id` (int, présent pour les actions power dispatchées)
@@ -210,12 +216,12 @@ class WorkstationGroupService
      * @param array<int|string> $machineIds
      * @return array{action: string, requested_count: int, success_count: int, failed_count: int, results: array<int, array{machine: string, success: bool, code: int}>}
      */
-    public function executeGroupMachinesAction(int $groupId, array $machineIds, string $action): array
+    public function executeGroupMachinesAction(int $groupId, array $machineIds, string $action, ?string $initiatedBy = null): array
     {
         $normalizedIds = $this->normalizeMachineIds($machineIds);
         $machines = $this->repository->findGroupMachinesByIds($groupId, $normalizedIds);
 
-        return $this->executeMachineActionOnCollection($machines, $action, $normalizedIds);
+        return $this->executeMachineActionOnCollection($machines, $action, $normalizedIds, $initiatedBy);
     }
 
     // ========================================
@@ -399,7 +405,7 @@ class WorkstationGroupService
      * @param array<int> $requestedIds IDs normalisés demandés initialement (pour calculer `requested_count` même si des IDs sont absents de la collection).
      * @return array{action: string, requested_count: int, success_count: int, failed_count: int, results: array<int, array{machine: string, success: bool, code: int}>}
      */
-    private function executeMachineActionOnCollection(Collection $machines, string $action, array $requestedIds = []): array
+    private function executeMachineActionOnCollection(Collection $machines, string $action, array $requestedIds = [], ?string $initiatedBy = null): array
     {
         if (!in_array($action, self::SUPPORTED_MACHINE_ACTIONS, true)) {
             throw new \InvalidArgumentException("Action machine non supportée: {$action}");
@@ -414,7 +420,7 @@ class WorkstationGroupService
         // une MachinePowerActionTask + un DispatchMachinePowerActionJob. Les
         // machines déjà en action (idempotence D4) sont skippées et remontées
         // en failed_count avec code=409.
-        return $this->dispatchAsyncActionForMachines($machines, $action, $requestedIds);
+        return $this->dispatchAsyncActionForMachines($machines, $action, $requestedIds, $initiatedBy);
     }
 
     /**
@@ -436,7 +442,7 @@ class WorkstationGroupService
      * @param array<int> $requestedIds IDs normalisés initialement demandés (pour le compte "not-found").
      * @return array{action: string, requested_count: int, success_count: int, failed_count: int, results: array<int, array<string, mixed>>}
      */
-    private function dispatchAsyncActionForMachines(Collection $machines, string $action, array $requestedIds): array
+    private function dispatchAsyncActionForMachines(Collection $machines, string $action, array $requestedIds, ?string $initiatedByOverride = null): array
     {
         $resolvedIds = $machines
             ->pluck('id')
@@ -459,7 +465,13 @@ class WorkstationGroupService
                 ->all();
         }
 
-        $initiatedBy = auth()->user()?->name ?? session('login') ?? 'system';
+        // Story 4-4 : si $initiatedByOverride est fourni (ex. 'schedule:<id>'
+        // par le scheduler cron), il prime sur la résolution auth() pour que
+        // l'audit trail distingue actions manuelles vs cron.
+        $initiatedBy = $initiatedByOverride
+            ?? auth()->user()?->name
+            ?? session('login')
+            ?? 'system';
         $restartPhase = $action === 'restart'
             ? MachinePowerActionTask::RESTART_PHASE_WAITING_DOWN
             : null;

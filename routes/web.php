@@ -147,6 +147,12 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
         Route::livewire('/groups/{id}', 'pages::parc.groups.[id].index')->name('groups.show');
         Route::livewire('/groups/{id}/edit', 'pages::parc.groups.[id].edit.index')->name('groups.edit');
 
+        // Historique d'exécution d'une programmation (story 4-4 AC9)
+        Route::livewire('/groups/{id}/schedules/{scheduleId}/runs', 'pages::parc.groups.[id].schedules.[scheduleId].runs.index')
+            ->whereNumber('id')
+            ->whereNumber('scheduleId')
+            ->name('groups.schedules.runs');
+
         // Machines
         Route::livewire('/machines/{id}', 'pages::parc.machines.[id].index')->name('machines.show');
     });

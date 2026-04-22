@@ -3,9 +3,11 @@
 use Livewire\Component;
 use Livewire\Attributes\Title;
 use App\Services\Parc\WorkstationGroupService;
+use App\Services\Parc\WorkstationGroupScheduleService;
 use App\Services\Parc\MachinePowerService;
 use App\Models\MachinePowerActionTask;
 use App\Models\WorkstationGroup;
+use App\Models\WorkstationGroupSchedule;
 use App\Components\Traits\WithToasts;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -18,6 +20,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 
     private WorkstationGroupService $parcService;
     private MachinePowerService $machinePowerService;
+    private WorkstationGroupScheduleService $scheduleService;
 
     public ?WorkstationGroup $group = null;
     public string|int $id;
@@ -25,6 +28,19 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     public bool $showAddMachinesModal = false;
     public array $selectedGroupMachineIds = [];
     public bool $allGroupMachinesSelected = false;
+
+    // ── État modale Programmations (story 4-4) ─────────────────────────────
+    public bool $scheduleModalOpen = false;
+    public ?int $editingScheduleId = null;
+    public string $formMode = 'recurring'; // 'recurring' | 'one_shot' (D7)
+    public string $formAction = 'wake'; // D5 : wake | shutdown
+    /** @var array<int, int> */
+    public array $formDaysOfWeek = [];
+    public string $formTimeOfDay = '08:00';
+    public string $formTimezone = 'Europe/Paris';
+    public ?string $formRunAtDate = null; // one-shot date (Y-m-d)
+    public string $formRunAtTime = '08:00'; // one-shot time (H:i)
+    public bool $formEnabled = true;
 
     // ── État batch async (story 4-3) ───────────────────────────────────────
     // Ces propriétés pilotent le polling Livewire `wire:poll.{N}s` de la
@@ -34,11 +50,11 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     // ou failed, ou timeoutées), $batchRunning repasse à false et Livewire
     // cesse d'interroger le serveur (le poll n'est plus rendu).
     public bool $batchRunning = false;
-    public ?string $batchAction = null;           // libellé FR humanisé ("extinction", "redémarrage", etc.)
+    public ?string $batchAction = null; // libellé FR humanisé ("extinction", "redémarrage", etc.)
     // Clé action brute ("wake" / "shutdown" / etc.) — conservée pour les tests Feature
     // et un futur filtrage/affichage granulaire côté UI (icône par action dans le badge).
     public ?string $batchActionKey = null;
-    public ?string $batchStartedAt = null;        // ISO 8601
+    public ?string $batchStartedAt = null; // ISO 8601
     /** @var array<int> */
     public array $currentBatchTaskIds = [];
     public bool $batchSummaryVisible = false;
@@ -50,10 +66,11 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     // un double SELECT par cycle de rendu. Réinitialisée en début de poll tick.
     private ?Collection $cachedBatchTasks = null;
 
-    public function boot(WorkstationGroupService $parcService, MachinePowerService $machinePowerService): void
+    public function boot(WorkstationGroupService $parcService, MachinePowerService $machinePowerService, WorkstationGroupScheduleService $scheduleService): void
     {
         $this->parcService = $parcService;
         $this->machinePowerService = $machinePowerService;
+        $this->scheduleService = $scheduleService;
     }
 
     public function mount(string|int $id): void
@@ -473,7 +490,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 
         // (c) Si plus aucune task active → couper le poll. On recalcule depuis
         //     la collection en mémoire (évite un second SELECT redondant).
-        $stillActive = $tasks->filter(fn (MachinePowerActionTask $t) => $t->isActive())->count();
+        $stillActive = $tasks->filter(fn(MachinePowerActionTask $t) => $t->isActive())->count();
 
         if ($stillActive === 0) {
             $this->stopBatchPolling();
@@ -495,10 +512,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             return $this->cachedBatchTasks = collect();
         }
 
-        return $this->cachedBatchTasks = MachinePowerActionTask::query()
-            ->whereIn('id', $this->currentBatchTaskIds)
-            ->with('workstation')
-            ->get();
+        return $this->cachedBatchTasks = MachinePowerActionTask::query()->whereIn('id', $this->currentBatchTaskIds)->with('workstation')->get();
     }
 
     /**
@@ -577,11 +591,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             return;
         }
 
-        $activeTasks = MachinePowerActionTask::query()
-            ->whereIn('id', $this->currentBatchTaskIds)
-            ->whereIn('status', MachinePowerActionTask::ACTIVE_STATUSES)
-            ->with('workstation')
-            ->get();
+        $activeTasks = MachinePowerActionTask::query()->whereIn('id', $this->currentBatchTaskIds)->whereIn('status', MachinePowerActionTask::ACTIVE_STATUSES)->with('workstation')->get();
 
         $timedOutCount = $activeTasks->count();
 
@@ -767,11 +777,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             return;
         }
 
-        $this->selectedGroupMachineIds = $this->group->workstations
-            ->pluck('id')
-            ->map(static fn(mixed $id): int => (int) $id)
-            ->values()
-            ->all();
+        $this->selectedGroupMachineIds = $this->group->workstations->pluck('id')->map(static fn(mixed $id): int => (int) $id)->values()->all();
 
         $this->executeSelectedGroupMachinesAction($action);
     }
@@ -784,6 +790,272 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     public function closeWallpaperModal(): void
     {
         $this->showWallpaperModal = false;
+    }
+
+    // ========================================
+    // Story 4-4 — Programmations (crons)
+    // ========================================
+
+    /**
+     * Computed : liste des schedules du groupe avec tri AC24.
+     *
+     * Ordre : récurrents actifs d'abord (par heure), puis one-shots futurs
+     * (par run_at asc), puis one-shots terminés (par completed_at desc).
+     */
+    public function getSchedulesProperty(): Collection
+    {
+        if (!$this->group) {
+            return collect();
+        }
+
+        return WorkstationGroupSchedule::query()->where('workstation_group_id', $this->id)->orderByRaw("CASE WHEN completed_at IS NOT NULL THEN 2 WHEN mode = 'one_shot' THEN 1 ELSE 0 END")->orderByRaw('time_of_day ASC NULLS LAST')->orderByRaw('run_at ASC NULLS LAST')->orderByDesc('completed_at')->get();
+    }
+
+    public function openScheduleModal(?int $scheduleId = null): void
+    {
+        if (!Gate::allows('computer.control')) {
+            $this->toastError('Accès refusé');
+            return;
+        }
+
+        if ($scheduleId !== null) {
+            $schedule = WorkstationGroupSchedule::find($scheduleId);
+            if (!$schedule || $schedule->workstation_group_id !== (int) $this->id) {
+                $this->toastError('Programmation introuvable');
+                return;
+            }
+            if (!$schedule->isEditable()) {
+                $this->toastError('Cette programmation est terminée et ne peut plus être modifiée.');
+                return;
+            }
+            $this->editingScheduleId = $schedule->id;
+            $this->formMode = $schedule->mode;
+            $this->formAction = $schedule->action;
+            $this->formDaysOfWeek = $schedule->days_of_week ?? [];
+            $this->formTimeOfDay = $schedule->time_of_day?->format('H:i') ?? '08:00';
+            $this->formTimezone = $schedule->timezone ?? 'Europe/Paris';
+            $this->formRunAtDate = $schedule->run_at?->format('d/m/Y');
+            $this->formRunAtTime = $schedule->run_at?->format('H:i') ?? '08:00';
+            $this->formEnabled = $schedule->enabled;
+        } else {
+            $this->resetScheduleForm();
+        }
+
+        $this->scheduleModalOpen = true;
+    }
+
+    public function closeScheduleModal(): void
+    {
+        $this->scheduleModalOpen = false;
+        $this->resetScheduleForm();
+    }
+
+    private function resetScheduleForm(): void
+    {
+        $this->editingScheduleId = null;
+        $this->formMode = 'recurring';
+        $this->formAction = 'wake';
+        $this->formDaysOfWeek = [];
+        $this->formTimeOfDay = '08:00';
+        $this->formTimezone = 'Europe/Paris';
+        $this->formRunAtDate = null;
+        $this->formRunAtTime = '08:00';
+        $this->formEnabled = true;
+    }
+
+    public function toggleDay(int $day): void
+    {
+        if (in_array($day, $this->formDaysOfWeek, true)) {
+            $this->formDaysOfWeek = array_values(array_diff($this->formDaysOfWeek, [$day]));
+        } else {
+            $this->formDaysOfWeek[] = $day;
+        }
+    }
+
+    public function toggleFormMode(string $mode): void
+    {
+        if (!in_array($mode, ['recurring', 'one_shot'], true)) {
+            return;
+        }
+        $this->formMode = $mode;
+
+        if ($mode === 'recurring') {
+            $this->formRunAtDate = null;
+            $this->formRunAtTime = '08:00';
+            if (empty($this->formDaysOfWeek)) {
+                $this->formDaysOfWeek = [];
+            }
+        } else {
+            $this->formDaysOfWeek = [];
+            $this->formTimeOfDay = '08:00';
+            $this->formTimezone = 'Europe/Paris';
+        }
+    }
+
+    public function saveSchedule(): void
+    {
+        if (!Gate::allows('computer.control')) {
+            $this->toastError('Accès refusé');
+            return;
+        }
+
+        try {
+            if ($this->formMode === 'recurring') {
+                $this->validate(
+                    [
+                        'formDaysOfWeek' => ['required', 'array', 'min:1', 'max:7'],
+                        'formDaysOfWeek.*' => ['integer', 'between:1,7'],
+                        'formTimeOfDay' => ['required', 'regex:/^\d{2}:\d{2}(:\d{2})?$/'],
+                        'formTimezone' => ['required', 'timezone'],
+                    ],
+                    [
+                        'formDaysOfWeek.required' => 'Au moins un jour de la semaine est requis.',
+                        'formDaysOfWeek.min' => 'Au moins un jour de la semaine est requis.',
+                        'formDaysOfWeek.*.between' => 'Chaque jour doit être entre 1 (lundi) et 7 (dimanche).',
+                        'formTimeOfDay.required' => "L'heure est requise.",
+                        'formTimeOfDay.regex' => "L'heure doit être au format HH:MM.",
+                        'formTimezone.required' => 'La timezone est requise.',
+                        'formTimezone.timezone' => 'Fuseau horaire invalide (ex : Europe/Paris, UTC).',
+                    ],
+                );
+
+                $days = array_values(array_map('intval', $this->formDaysOfWeek));
+
+                if ($this->editingScheduleId) {
+                    $this->scheduleService->update($this->editingScheduleId, [
+                        'mode' => 'recurring',
+                        'action' => $this->formAction,
+                        'days_of_week' => $days,
+                        'time_of_day' => $this->formTimeOfDay,
+                        'timezone' => $this->formTimezone,
+                        'run_at' => null,
+                        'enabled' => $this->formEnabled,
+                    ]);
+                    $this->toastSuccess('Programmation mise à jour');
+                } else {
+                    $this->scheduleService->createRecurring((int) $this->id, $this->formAction, $days, $this->formTimeOfDay, $this->formTimezone, ($uid = (int) auth()->id()) > 0 ? $uid : null);
+                    $this->toastSuccess('Programmation créée');
+                }
+            } else {
+                $this->validate(
+                    [
+                        'formRunAtDate' => ['required', 'date_format:d/m/Y'],
+                        'formRunAtTime' => ['required', 'regex:/^\d{2}:\d{2}$/'],
+                    ],
+                    [
+                        'formRunAtDate.required' => 'La date est requise.',
+                        'formRunAtDate.date_format' => 'Format attendu : JJ/MM/AAAA.',
+                        'formRunAtTime.required' => "L'heure est requise.",
+                        'formRunAtTime.regex' => "L'heure doit être au format HH:MM.",
+                    ],
+                );
+
+                $runAt = Carbon::createFromFormat('d/m/Y H:i', $this->formRunAtDate . ' ' . $this->formRunAtTime);
+
+                if (!$runAt->isFuture()) {
+                    $this->addError('formRunAtDate', "La date et l'heure d'exécution doivent être dans le futur.");
+                    return;
+                }
+
+                if ($this->editingScheduleId) {
+                    $this->scheduleService->update($this->editingScheduleId, [
+                        'mode' => 'one_shot',
+                        'action' => $this->formAction,
+                        'run_at' => $runAt,
+                        'days_of_week' => null,
+                        'time_of_day' => null,
+                        'timezone' => null,
+                        'enabled' => $this->formEnabled,
+                    ]);
+                    $this->toastSuccess('Programmation mise à jour');
+                } else {
+                    $this->scheduleService->createOneShot((int) $this->id, $this->formAction, $runAt, ($uid = (int) auth()->id()) > 0 ? $uid : null);
+                    $this->toastSuccess('Programmation one-shot créée');
+                }
+            }
+
+            $this->closeScheduleModal();
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\DomainException $e) {
+            $this->toastError($e->getMessage());
+        } catch (\InvalidArgumentException $e) {
+            $this->toastError($e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('[GroupShow] Erreur saveSchedule', ['error' => $e->getMessage()]);
+            $this->toastError("Échec de l'enregistrement de la programmation.");
+        }
+    }
+
+    public function toggleSchedule(int $scheduleId): void
+    {
+        if (!Gate::allows('computer.control')) {
+            $this->toastError('Accès refusé');
+            return;
+        }
+
+        try {
+            $schedule = WorkstationGroupSchedule::find($scheduleId);
+            if (!$schedule || $schedule->workstation_group_id !== (int) $this->id) {
+                $this->toastError('Programmation introuvable');
+                return;
+            }
+
+            $updated = $this->scheduleService->toggle($scheduleId);
+            $this->toastSuccess($updated->enabled ? 'Programmation activée' : 'Programmation désactivée');
+        } catch (\DomainException $e) {
+            $this->toastError($e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('[GroupShow] Erreur toggleSchedule', ['error' => $e->getMessage()]);
+            $this->toastError('Erreur lors du changement d\'état');
+        }
+    }
+
+    public function deleteSchedule(int $scheduleId): void
+    {
+        if (!Gate::allows('computer.control')) {
+            $this->toastError('Accès refusé');
+            return;
+        }
+
+        try {
+            $schedule = WorkstationGroupSchedule::find($scheduleId);
+            if (!$schedule || $schedule->workstation_group_id !== (int) $this->id) {
+                $this->toastError('Programmation introuvable');
+                return;
+            }
+
+            $this->scheduleService->delete($scheduleId);
+            $this->toastSuccess('Programmation supprimée');
+        } catch (\Throwable $e) {
+            Log::error('[GroupShow] Erreur deleteSchedule', ['error' => $e->getMessage()]);
+            $this->toastError('Erreur lors de la suppression');
+        }
+    }
+
+    public function cloneOneShot(int $scheduleId): void
+    {
+        if (!Gate::allows('computer.control')) {
+            $this->toastError('Accès refusé');
+            return;
+        }
+
+        try {
+            $schedule = WorkstationGroupSchedule::find($scheduleId);
+            if (!$schedule || $schedule->workstation_group_id !== (int) $this->id) {
+                $this->toastError('Programmation introuvable');
+                return;
+            }
+
+            $new = $this->scheduleService->cloneOneShot($scheduleId, auth()->id());
+            $this->toastSuccess('Programmation dupliquée — pensez à ajuster la date');
+            $this->openScheduleModal($new->id);
+        } catch (\InvalidArgumentException $e) {
+            $this->toastError($e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('[GroupShow] Erreur cloneOneShot', ['error' => $e->getMessage()]);
+            $this->toastError('Erreur lors de la duplication');
+        }
     }
 
     public function deleteGroup(): void
@@ -863,17 +1135,14 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                         <hr class="border-zinc-200 my-1">
                         @can('computer.control')
                             <li>
-                                <button type="button"
-                                    wire:click="executeGroupAction('wake')"
-                                    @disabled($batchRunning)
+                                <button type="button" wire:click="executeGroupAction('wake')" @disabled($batchRunning)
                                     class="{{ $batchRunning ? 'opacity-50 cursor-not-allowed' : '' }}">
                                     <i class="fa-solid fa-power-off"></i>
                                     Démarrer
                                 </button>
                             </li>
                             <li>
-                                <button type="button"
-                                    wire:click="executeGroupAction('shutdown')"
+                                <button type="button" wire:click="executeGroupAction('shutdown')"
                                     wire:confirm="Confirmer l'extinction de tous les postes du groupe ?"
                                     @disabled($batchRunning)
                                     class="{{ $batchRunning ? 'opacity-50 cursor-not-allowed' : '' }}">
@@ -882,12 +1151,14 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                                 </button>
                             </li>
                         @endcan
-                        <li>
-                            <span class="opacity-40 cursor-not-allowed">
-                                <i class="fa-regular fa-calendar-clock"></i>
-                                Programmer une action
-                            </span>
-                        </li>
+                        @can('computer.control')
+                            <li>
+                                <button type="button" wire:click="openScheduleModal" @disabled($batchRunning)>
+                                    <i class="fa-solid fa-calendar-day"></i>
+                                    Programmer une action
+                                </button>
+                            </li>
+                        @endcan
                         @if ($group->is_physical)
                             @can('wallpaper.manage')
                                 <hr class="border-zinc-200 my-1">
@@ -908,9 +1179,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                                     <i class="fa-solid fa-lock text-warning text-xs ml-auto"></i>
                                 </span>
                             @else
-                                <button type="button"
-                                    class="text-error"
-                                    wire:click="deleteGroup"
+                                <button type="button" class="text-error" wire:click="deleteGroup"
                                     wire:confirm="Êtes-vous sûr de vouloir supprimer ce groupe ?">
                                     <i class="fa-solid fa-trash"></i>
                                     Supprimer
@@ -924,132 +1193,143 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     </x-slot:actions>
 
     @if ($group)
-        {{-- Carte d'identité du groupe --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200 mb-6">
-            <div class="card-body">
-                <div class="flex items-start gap-4 mb-4">
-                    <div class="{{ $group->is_physical ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary' }} flex items-center justify-center rounded-xl w-16 h-16 shrink-0">
-                        <i class="fa-solid {{ $group->is_physical ? 'fa-door-open' : 'fa-layer-group' }} text-2xl"></i>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <h2 class="text-2xl font-bold">{{ $group->name }}</h2>
-                            @if ($group->is_physical)
-                                <span class="badge badge-success gap-1">
-                                    <i class="fa-solid fa-door-open text-xs"></i>
-                                    Salle physique
-                                </span>
-                            @else
-                                <span class="badge badge-info gap-1">
-                                    <i class="fa-solid fa-layer-group text-xs"></i>
-                                    Groupe logique
-                                </span>
-                            @endif
+        <div class="space-y-6">
+            {{-- Carte d'identité du groupe --}}
+            <div class="card bg-base-100 shadow-sm border border-base-200 mb-6">
+                <div class="card-body">
+                    <div class="flex items-start gap-4 mb-4">
+                        <div
+                            class="{{ $group->is_physical ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary' }} flex items-center justify-center rounded-xl w-16 h-16 shrink-0">
+                            <i
+                                class="fa-solid {{ $group->is_physical ? 'fa-door-open' : 'fa-layer-group' }} text-2xl"></i>
                         </div>
-                        @if ($group->description)
-                            <p class="text-base-content/60 mt-1 text-sm">{{ $group->description }}</p>
-                        @endif
-                    </div>
-                    @if ($group->isSyncedWithAd())
-                        <span class="badge badge-success badge-lg shrink-0">
-                            <i class="fa-solid fa-check text-xs mr-1"></i>
-                            Synchronisé AD
-                        </span>
-                    @else
-                        <span class="badge badge-warning badge-lg shrink-0">
-                            <i class="fa-solid fa-clock text-xs mr-1"></i>
-                            Sync AD en attente
-                        </span>
-                    @endif
-                </div>
-
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                        <span class="text-xs text-base-content/60 uppercase tracking-wide">Machines</span>
-                        <p class="font-medium mt-0.5">{{ $groupMachinesCount }}</p>
-                    </div>
-                    <div>
-                        <span class="text-xs text-base-content/60 uppercase tracking-wide">Sous-groupes</span>
-                        <p class="font-medium mt-0.5">{{ $groupChildrenCount }}</p>
-                    </div>
-                    @if ($group->parent)
-                        <div>
-                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Groupe parent</span>
-                            <a href="{{ route('app.parc.groups.show', $group->parent->id) }}" class="block font-medium mt-0.5 hover:text-primary truncate">
-                                {{ $group->parent->name }}
-                            </a>
-                        </div>
-                    @endif
-                    <div>
-                        <span class="text-xs text-base-content/60 uppercase tracking-wide">Créé le</span>
-                        <p class="font-medium mt-0.5">{{ $group->created_at->format('d/m/Y') }}</p>
-                    </div>
-                </div>
-
-                @if ($group->is_physical)
-                    @can('wallpaper.manage')
-                        @php
-                            $headerWallpaper = \App\Models\Wallpaper::where('type', 'wallpaper')
-                                ->where('owner_type', \App\Models\WorkstationGroup::class)
-                                ->where('owner_id', $group->id)
-                                ->first();
-                            $headerLockscreen = \App\Models\Wallpaper::where('type', 'lockscreen')
-                                ->where('owner_type', \App\Models\WorkstationGroup::class)
-                                ->where('owner_id', $group->id)
-                                ->first();
-                        @endphp
-                        @if ($headerWallpaper || $headerLockscreen)
-                            <div class="flex items-center gap-3 mt-4 pt-4 border-t border-base-200">
-                                <span class="text-xs text-base-content/50 uppercase tracking-wide shrink-0">Fonds d'écran</span>
-                                @if ($headerWallpaper)
-                                    <button type="button" wire:click="openWallpaperModal"
-                                        class="group relative rounded-lg overflow-hidden border border-base-300 hover:border-primary transition-colors"
-                                        title="Fond d'écran — cliquer pour gérer">
-                                        <img src="{{ route('app.wallpapers.thumbnail', $headerWallpaper->id) }}"
-                                            alt="Fond d'écran" class="w-16 h-10 object-cover">
-                                        <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                            <i class="fa-solid fa-pen text-white opacity-0 group-hover:opacity-100 text-xs"></i>
-                                        </div>
-                                        <span class="absolute bottom-0 left-0 right-0 text-[9px] text-center bg-black/50 text-white py-0.5">Bureau</span>
-                                    </button>
-                                @endif
-                                @if ($headerLockscreen)
-                                    <button type="button" wire:click="openWallpaperModal"
-                                        class="group relative rounded-lg overflow-hidden border border-base-300 hover:border-primary transition-colors"
-                                        title="Écran de verrouillage — cliquer pour gérer">
-                                        <img src="{{ route('app.wallpapers.thumbnail', $headerLockscreen->id) }}"
-                                            alt="Écran de verrouillage" class="w-16 h-10 object-cover">
-                                        <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                            <i class="fa-solid fa-pen text-white opacity-0 group-hover:opacity-100 text-xs"></i>
-                                        </div>
-                                        <span class="absolute bottom-0 left-0 right-0 text-[9px] text-center bg-black/50 text-white py-0.5">Verr.</span>
-                                    </button>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <h2 class="text-2xl font-bold">{{ $group->name }}</h2>
+                                @if ($group->is_physical)
+                                    <span class="badge badge-success gap-1">
+                                        <i class="fa-solid fa-door-open text-xs"></i>
+                                        Salle physique
+                                    </span>
+                                @else
+                                    <span class="badge badge-info gap-1">
+                                        <i class="fa-solid fa-layer-group text-xs"></i>
+                                        Groupe logique
+                                    </span>
                                 @endif
                             </div>
+                            @if ($group->description)
+                                <p class="text-base-content/60 mt-1 text-sm">{{ $group->description }}</p>
+                            @endif
+                        </div>
+                        @if ($group->isSyncedWithAd())
+                            <span class="badge badge-success badge-lg shrink-0">
+                                <i class="fa-solid fa-check text-xs mr-1"></i>
+                                Synchronisé AD
+                            </span>
+                        @else
+                            <span class="badge badge-warning badge-lg shrink-0">
+                                <i class="fa-solid fa-clock text-xs mr-1"></i>
+                                Sync AD en attente
+                            </span>
                         @endif
-                    @endcan
-                @endif
-            </div>
-        </div>
+                    </div>
 
-        @include('pages.parc.groups.[id]._partials.batch-summary')
-        @include('pages.parc.groups.[id]._partials.machines-list')
-        @include('pages.parc.groups.[id]._partials.wallpaper-modal')
-    @else
-        <div class="card bg-base-100 shadow-sm">
-            <div class="card-body flex flex-col items-center justify-center py-16">
-                <div class="text-6xl mb-6 opacity-20">
-                    <i class="fa-solid fa-folder-open"></i>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Machines</span>
+                            <p class="font-medium mt-0.5">{{ $groupMachinesCount }}</p>
+                        </div>
+                        <div>
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Sous-groupes</span>
+                            <p class="font-medium mt-0.5">{{ $groupChildrenCount }}</p>
+                        </div>
+                        @if ($group->parent)
+                            <div>
+                                <span class="text-xs text-base-content/60 uppercase tracking-wide">Groupe parent</span>
+                                <a href="{{ route('app.parc.groups.show', $group->parent->id) }}"
+                                    class="block font-medium mt-0.5 hover:text-primary truncate">
+                                    {{ $group->parent->name }}
+                                </a>
+                            </div>
+                        @endif
+                        <div>
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Créé le</span>
+                            <p class="font-medium mt-0.5">{{ $group->created_at->format('d/m/Y') }}</p>
+                        </div>
+                    </div>
+
+                    @if ($group->is_physical)
+                        @can('wallpaper.manage')
+                            @php
+                                $headerWallpaper = \App\Models\Wallpaper::where('type', 'wallpaper')
+                                    ->where('owner_type', \App\Models\WorkstationGroup::class)
+                                    ->where('owner_id', $group->id)
+                                    ->first();
+                                $headerLockscreen = \App\Models\Wallpaper::where('type', 'lockscreen')
+                                    ->where('owner_type', \App\Models\WorkstationGroup::class)
+                                    ->where('owner_id', $group->id)
+                                    ->first();
+                            @endphp
+                            @if ($headerWallpaper || $headerLockscreen)
+                                <div class="flex items-center gap-3 mt-4 pt-4 border-t border-base-200">
+                                    <span class="text-xs text-base-content/50 uppercase tracking-wide shrink-0">Fonds
+                                        d'écran</span>
+                                    @if ($headerWallpaper)
+                                        <button type="button" wire:click="openWallpaperModal"
+                                            class="group relative rounded-lg overflow-hidden border border-base-300 hover:border-primary transition-colors"
+                                            title="Fond d'écran — cliquer pour gérer">
+                                            <img src="{{ route('app.wallpapers.thumbnail', $headerWallpaper->id) }}"
+                                                alt="Fond d'écran" class="w-16 h-10 object-cover">
+                                            <div
+                                                class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                                <i
+                                                    class="fa-solid fa-pen text-white opacity-0 group-hover:opacity-100 text-xs"></i>
+                                            </div>
+                                            <span
+                                                class="absolute bottom-0 left-0 right-0 text-[9px] text-center bg-black/50 text-white py-0.5">Bureau</span>
+                                        </button>
+                                    @endif
+                                    @if ($headerLockscreen)
+                                        <button type="button" wire:click="openWallpaperModal"
+                                            class="group relative rounded-lg overflow-hidden border border-base-300 hover:border-primary transition-colors"
+                                            title="Écran de verrouillage — cliquer pour gérer">
+                                            <img src="{{ route('app.wallpapers.thumbnail', $headerLockscreen->id) }}"
+                                                alt="Écran de verrouillage" class="w-16 h-10 object-cover">
+                                            <div
+                                                class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                                <i
+                                                    class="fa-solid fa-pen text-white opacity-0 group-hover:opacity-100 text-xs"></i>
+                                            </div>
+                                            <span
+                                                class="absolute bottom-0 left-0 right-0 text-[9px] text-center bg-black/50 text-white py-0.5">Verr.</span>
+                                        </button>
+                                    @endif
+                                </div>
+                            @endif
+                        @endcan
+                    @endif
                 </div>
-                <h3 class="text-xl font-semibold mb-3">Groupe non trouvé</h3>
-                <p class="text-base-content/60 mb-6">
-                    Le groupe demandé n'existe pas ou a été supprimé.
-                </p>
-                <a href="{{ route('app.parc.index') }}" class="btn btn-primary">
-                    <i class="fa-solid fa-arrow-left"></i>
-                    Retour à la liste
-                </a>
             </div>
+
+            @include('pages.parc.groups.[id]._partials.batch-summary')
+            @include('pages.parc.groups.[id]._partials.machines-list')
+            @include('pages.parc.groups.[id]._partials.schedules-panel')
+            @include('pages.parc.groups.[id]._partials.wallpaper-modal')
+    </div @else <div class="card bg-base-100 shadow-sm">
+        <div class="card-body flex flex-col items-center justify-center py-16">
+            <div class="text-6xl mb-6 opacity-20">
+                <i class="fa-solid fa-folder-open"></i>
+            </div>
+            <h3 class="text-xl font-semibold mb-3">Groupe non trouvé</h3>
+            <p class="text-base-content/60 mb-6">
+                Le groupe demandé n'existe pas ou a été supprimé.
+            </p>
+            <a href="{{ route('app.parc.index') }}" class="btn btn-primary">
+                <i class="fa-solid fa-arrow-left"></i>
+                Retour à la liste
+            </a>
+        </div>
         </div>
     @endif
 </x-organisms.page>
