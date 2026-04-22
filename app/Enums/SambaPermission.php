@@ -69,10 +69,13 @@ enum SambaPermission: string
             // dédié — le wallpaper était géré par l'admin serveur dans
             // l'UI legacy `gpo/wallpaper.php`). Story 4.7.
             self::WallpaperManage => LegacyRight::ServerAdmin,
-            // AppCustomize hérite également du bitmask ServerAdmin
-            // (gpo/firefox.php et gpo/gestion_apps.php étaient gardés par
-            // SE_COMPUTER_ADMIN → mappé sur ServerAdmin en 4.8, cohérent 4.7).
-            self::AppCustomize => LegacyRight::ServerAdmin,
+            // AppCustomize : gpo/firefox.php et gpo/gestion_apps.php étaient
+            // gardés par SE_COMPUTER_ADMIN (composite 0xEF00). Convention de
+            // coexistence : on pointe sur un bit atomique du composite —
+            // ComputerInstall (0x800) — qui sert de représentant. Tout user
+            // avec SE_COMPUTER_ADMIN a ce bit, donc la perm Spatie est octroyée.
+            // Ce mapping disparaît avec Story 7.3 (sunset bitmask legacy).
+            self::AppCustomize => LegacyRight::ComputerInstall,
         };
     }
 
@@ -99,8 +102,8 @@ enum SambaPermission: string
             self::ShareRefresh => 'Actualiser les partages',
             self::ComputerView => 'Voir les machines',
             self::ComputerControl => 'Contrôle à distance',
-            self::ComputerElevate => 'Admin local (élévation)',
-            self::ComputerInstall => 'Installation automatisée',
+            self::ComputerElevate => 'Admin de poste',
+            self::ComputerInstall => 'Installer un poste',
             self::WpkgAssign => 'Affecter des applications',
             self::WpkgAdd => 'Ajouter des applications',
             self::WpkgCreate => 'Créer des recettes WPKG',
