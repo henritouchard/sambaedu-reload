@@ -43,6 +43,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     public array $currentBatchTaskIds = [];
     public bool $batchSummaryVisible = false;
     public bool $batchTimeoutFired = false;
+    public bool $showWallpaperModal = false;
 
     // Mémoïsation interne des tasks du batch courant — partagée entre les deux
     // propriétés computed (batchSummary + machineActiveTasksById) pour éviter
@@ -759,6 +760,32 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         return $this->machineActions->reject(static fn(object $action): bool => $action->key === 'remote')->values();
     }
 
+    public function executeGroupAction(string $action): void
+    {
+        if (!$this->group) {
+            $this->toastError('Groupe non trouvé');
+            return;
+        }
+
+        $this->selectedGroupMachineIds = $this->group->workstations
+            ->pluck('id')
+            ->map(static fn(mixed $id): int => (int) $id)
+            ->values()
+            ->all();
+
+        $this->executeSelectedGroupMachinesAction($action);
+    }
+
+    public function openWallpaperModal(): void
+    {
+        $this->showWallpaperModal = true;
+    }
+
+    public function closeWallpaperModal(): void
+    {
+        $this->showWallpaperModal = false;
+    }
+
     public function deleteGroup(): void
     {
         try {
@@ -789,20 +816,11 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         : 'Détail du groupe de machines';
 @endphp
 
-<x-organisms.page title="{{ $group?->name ?? 'Groupe' }}" :scrollable="true" description="{{ $groupHeaderDescription }}"
+<x-organisms.page title="{{ $group?->is_physical ? 'Salle' : 'Groupe de postes' }}" :scrollable="true"
     backUrl="{{ route('app.parc.index') }}" backText="Retour">
 
     <x-slot:actions>
         <div class="flex gap-2 items-center">
-            {{--
-                Badge "batch en cours" (AC2/AC3 story 4-3).
-                Unique porteur de wire:poll sur la vue groupe. Tant que
-                $batchRunning est true Livewire poll toutes les N secondes et
-                appelle pollGroupReadiness(). Quand toutes les tasks du batch
-                courant sont terminales (ou timeoutées), $batchRunning repasse
-                à false, la partie @if n'est plus rendue et Livewire cesse
-                d'interroger le serveur.
-            --}}
             @if ($batchRunning)
                 @php
                     $pollInterval = (int) config('parc.machine_readiness_poll_interval_seconds', 3);
@@ -819,60 +837,204 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             @endif
 
             @if ($group)
-                @if ($group->is_physical)
-                    <span class="badge badge-success badge-lg hidden lg:inline-flex">
-                        <i class="fa-solid fa-door-open text-xs"></i>
-                        Salle physique
-                    </span>
-                @else
-                    <span class="badge badge-info badge-lg hidden lg:inline-flex">
-                        <i class="fa-solid fa-layer-group text-xs"></i>
-                        Groupe logique
-                    </span>
-                @endif
-
-                @php
-                    $isLocked = $group->isLocked();
-                @endphp
-
-                <div class="relative group">
-                    <a href="{{ $isLocked ? '#' : route('app.parc.groups.edit', $group->id) }}"
-                        class="btn btn-outline {{ $isLocked ? 'btn-disabled pointer-events-none group-hover:opacity-40' : '' }}"
-                        @if ($isLocked) tabindex="-1" aria-disabled="true" @endif>
-                        <i class="fa-solid fa-pen"></i>
-                        Modifier
-                    </a>
-                    @if ($isLocked)
-                        <div class="group-hover:block hidden absolute left-1/2 top-2 tooltip tooltip-bottom"
-                            data-tip="{{ $group->getLockDescription() }}">
-                            <i class="fa-solid fa-lock text-warning text-xl"></i>
-                        </div>
-                    @endif
-                </div>
-
-                <div class="relative group">
-                    <button type="button"
-                        class="btn btn-error btn-outline {{ $isLocked ? 'btn-disabled group-hover:opacity-40' : '' }}"
-                        @if (!$isLocked) wire:click="deleteGroup" wire:confirm="Êtes-vous sûr de vouloir supprimer ce groupe ?" @endif
-                        @if ($isLocked) disabled @endif>
-                        <i class="fa-solid fa-trash"></i>
-                        Supprimer
-                    </button>
-                    @if ($isLocked)
-                        <div class="group-hover:block hidden absolute left-1/2 top-2 tooltip tooltip-bottom"
-                            data-tip="{{ $group->getLockDescription() }}">
-                            <i class="fa-solid fa-lock text-warning text-xl"></i>
-                        </div>
-                    @endif
+                @php $isLocked = $group->isLocked(); @endphp
+                <div class="dropdown dropdown-end">
+                    <label tabindex="0" class="btn btn-primary">
+                        <i class="fa-solid fa-bolt"></i>
+                        Actions
+                        <i class="fa-solid fa-chevron-down text-xs ml-1"></i>
+                    </label>
+                    <ul tabindex="0"
+                        class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-60 border border-base-300 mt-2">
+                        <li>
+                            @if ($isLocked)
+                                <span class="opacity-40 cursor-not-allowed">
+                                    <i class="fa-solid fa-pen"></i>
+                                    Modifier
+                                    <i class="fa-solid fa-lock text-warning text-xs ml-auto"></i>
+                                </span>
+                            @else
+                                <a href="{{ route('app.parc.groups.edit', $group->id) }}">
+                                    <i class="fa-solid fa-pen"></i>
+                                    Modifier
+                                </a>
+                            @endif
+                        </li>
+                        <hr class="border-zinc-200 my-1">
+                        @can('computer.control')
+                            <li>
+                                <button type="button"
+                                    wire:click="executeGroupAction('wake')"
+                                    @disabled($batchRunning)
+                                    class="{{ $batchRunning ? 'opacity-50 cursor-not-allowed' : '' }}">
+                                    <i class="fa-solid fa-power-off"></i>
+                                    Démarrer
+                                </button>
+                            </li>
+                            <li>
+                                <button type="button"
+                                    wire:click="executeGroupAction('shutdown')"
+                                    wire:confirm="Confirmer l'extinction de tous les postes du groupe ?"
+                                    @disabled($batchRunning)
+                                    class="{{ $batchRunning ? 'opacity-50 cursor-not-allowed' : '' }}">
+                                    <i class="fa-solid fa-stop"></i>
+                                    Éteindre
+                                </button>
+                            </li>
+                        @endcan
+                        <li>
+                            <span class="opacity-40 cursor-not-allowed">
+                                <i class="fa-regular fa-calendar-clock"></i>
+                                Programmer une action
+                            </span>
+                        </li>
+                        @if ($group->is_physical)
+                            @can('wallpaper.manage')
+                                <hr class="border-zinc-200 my-1">
+                                <li>
+                                    <button type="button" wire:click="openWallpaperModal">
+                                        <i class="fa-solid fa-image"></i>
+                                        Fonds d'écran
+                                    </button>
+                                </li>
+                            @endcan
+                        @endif
+                        <hr class="border-zinc-200 my-1">
+                        <li>
+                            @if ($isLocked)
+                                <span class="opacity-40 cursor-not-allowed text-error">
+                                    <i class="fa-solid fa-trash"></i>
+                                    Supprimer
+                                    <i class="fa-solid fa-lock text-warning text-xs ml-auto"></i>
+                                </span>
+                            @else
+                                <button type="button"
+                                    class="text-error"
+                                    wire:click="deleteGroup"
+                                    wire:confirm="Êtes-vous sûr de vouloir supprimer ce groupe ?">
+                                    <i class="fa-solid fa-trash"></i>
+                                    Supprimer
+                                </button>
+                            @endif
+                        </li>
+                    </ul>
                 </div>
             @endif
         </div>
     </x-slot:actions>
 
     @if ($group)
+        {{-- Carte d'identité du groupe --}}
+        <div class="card bg-base-100 shadow-sm border border-base-200 mb-6">
+            <div class="card-body">
+                <div class="flex items-start gap-4 mb-4">
+                    <div class="{{ $group->is_physical ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary' }} flex items-center justify-center rounded-xl w-16 h-16 shrink-0">
+                        <i class="fa-solid {{ $group->is_physical ? 'fa-door-open' : 'fa-layer-group' }} text-2xl"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <h2 class="text-2xl font-bold">{{ $group->name }}</h2>
+                            @if ($group->is_physical)
+                                <span class="badge badge-success gap-1">
+                                    <i class="fa-solid fa-door-open text-xs"></i>
+                                    Salle physique
+                                </span>
+                            @else
+                                <span class="badge badge-info gap-1">
+                                    <i class="fa-solid fa-layer-group text-xs"></i>
+                                    Groupe logique
+                                </span>
+                            @endif
+                        </div>
+                        @if ($group->description)
+                            <p class="text-base-content/60 mt-1 text-sm">{{ $group->description }}</p>
+                        @endif
+                    </div>
+                    @if ($group->isSyncedWithAd())
+                        <span class="badge badge-success badge-lg shrink-0">
+                            <i class="fa-solid fa-check text-xs mr-1"></i>
+                            Synchronisé AD
+                        </span>
+                    @else
+                        <span class="badge badge-warning badge-lg shrink-0">
+                            <i class="fa-solid fa-clock text-xs mr-1"></i>
+                            Sync AD en attente
+                        </span>
+                    @endif
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                        <span class="text-xs text-base-content/60 uppercase tracking-wide">Machines</span>
+                        <p class="font-medium mt-0.5">{{ $groupMachinesCount }}</p>
+                    </div>
+                    <div>
+                        <span class="text-xs text-base-content/60 uppercase tracking-wide">Sous-groupes</span>
+                        <p class="font-medium mt-0.5">{{ $groupChildrenCount }}</p>
+                    </div>
+                    @if ($group->parent)
+                        <div>
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Groupe parent</span>
+                            <a href="{{ route('app.parc.groups.show', $group->parent->id) }}" class="block font-medium mt-0.5 hover:text-primary truncate">
+                                {{ $group->parent->name }}
+                            </a>
+                        </div>
+                    @endif
+                    <div>
+                        <span class="text-xs text-base-content/60 uppercase tracking-wide">Créé le</span>
+                        <p class="font-medium mt-0.5">{{ $group->created_at->format('d/m/Y') }}</p>
+                    </div>
+                </div>
+
+                @if ($group->is_physical)
+                    @can('wallpaper.manage')
+                        @php
+                            $headerWallpaper = \App\Models\Wallpaper::where('type', 'wallpaper')
+                                ->where('owner_type', \App\Models\WorkstationGroup::class)
+                                ->where('owner_id', $group->id)
+                                ->first();
+                            $headerLockscreen = \App\Models\Wallpaper::where('type', 'lockscreen')
+                                ->where('owner_type', \App\Models\WorkstationGroup::class)
+                                ->where('owner_id', $group->id)
+                                ->first();
+                        @endphp
+                        @if ($headerWallpaper || $headerLockscreen)
+                            <div class="flex items-center gap-3 mt-4 pt-4 border-t border-base-200">
+                                <span class="text-xs text-base-content/50 uppercase tracking-wide shrink-0">Fonds d'écran</span>
+                                @if ($headerWallpaper)
+                                    <button type="button" wire:click="openWallpaperModal"
+                                        class="group relative rounded-lg overflow-hidden border border-base-300 hover:border-primary transition-colors"
+                                        title="Fond d'écran — cliquer pour gérer">
+                                        <img src="{{ route('app.wallpapers.thumbnail', $headerWallpaper->id) }}"
+                                            alt="Fond d'écran" class="w-16 h-10 object-cover">
+                                        <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                            <i class="fa-solid fa-pen text-white opacity-0 group-hover:opacity-100 text-xs"></i>
+                                        </div>
+                                        <span class="absolute bottom-0 left-0 right-0 text-[9px] text-center bg-black/50 text-white py-0.5">Bureau</span>
+                                    </button>
+                                @endif
+                                @if ($headerLockscreen)
+                                    <button type="button" wire:click="openWallpaperModal"
+                                        class="group relative rounded-lg overflow-hidden border border-base-300 hover:border-primary transition-colors"
+                                        title="Écran de verrouillage — cliquer pour gérer">
+                                        <img src="{{ route('app.wallpapers.thumbnail', $headerLockscreen->id) }}"
+                                            alt="Écran de verrouillage" class="w-16 h-10 object-cover">
+                                        <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                            <i class="fa-solid fa-pen text-white opacity-0 group-hover:opacity-100 text-xs"></i>
+                                        </div>
+                                        <span class="absolute bottom-0 left-0 right-0 text-[9px] text-center bg-black/50 text-white py-0.5">Verr.</span>
+                                    </button>
+                                @endif
+                            </div>
+                        @endif
+                    @endcan
+                @endif
+            </div>
+        </div>
+
         @include('pages.parc.groups.[id]._partials.batch-summary')
         @include('pages.parc.groups.[id]._partials.machines-list')
-        @include('pages.parc.groups.[id]._partials.wallpaper-tab')
+        @include('pages.parc.groups.[id]._partials.wallpaper-modal')
     @else
         <div class="card bg-base-100 shadow-sm">
             <div class="card-body flex flex-col items-center justify-center py-16">

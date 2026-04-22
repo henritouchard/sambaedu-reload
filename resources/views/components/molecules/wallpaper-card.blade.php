@@ -73,6 +73,13 @@ new class extends Component {
         return $query->first();
     }
 
+    public function updatedUpload(): void
+    {
+        if ($this->upload !== null) {
+            $this->save();
+        }
+    }
+
     public function save(): void
     {
         if (! Gate::allows('wallpaper.manage')) {
@@ -151,67 +158,62 @@ new class extends Component {
 };
 ?>
 
+@php $inputId = 'wp-' . $type . '-' . ($ownerId ?? 'default'); @endphp
+
 <div class="card bg-base-100 shadow-sm border border-base-300/60">
     <div class="card-body p-5">
-        <div class="flex items-start justify-between gap-4">
-            <div class="min-w-0">
-                <h3 class="font-semibold text-base">{{ $title ?: ucfirst($type) }}</h3>
-                @if ($description)
-                    <p class="text-sm text-base-content/60 mt-1">{{ $description }}</p>
-                @endif
-            </div>
-            <span class="badge {{ $type === 'lockscreen' ? 'badge-info' : 'badge-primary' }} badge-outline">
-                <i class="fa-solid {{ $type === 'lockscreen' ? 'fa-lock' : 'fa-image' }} mr-1"></i>
-                {{ $type === 'lockscreen' ? 'Verrouillage' : 'Bureau' }}
-            </span>
-        </div>
-
-        <div class="mt-3 aspect-video bg-base-200 rounded-lg overflow-hidden flex items-center justify-center">
-            @if ($this->wallpaper)
-                <img
-                    src="{{ route('app.wallpapers.thumbnail', ['wallpaper' => $this->wallpaper->id]) }}?v={{ $refreshToken }}"
-                    alt="Aperçu {{ $type }}"
-                    class="w-full h-full object-cover" />
-            @else
-                <div class="text-center text-base-content/50 py-6">
-                    <i class="fa-solid fa-image text-4xl mb-2 opacity-50"></i>
-                    <p class="text-sm">Aucun fond personnalisé</p>
-                </div>
-            @endif
-        </div>
+        <h3 class="font-semibold text-base mb-3">{{ $title ?: ucfirst($type) }}</h3>
 
         @can('wallpaper.manage')
-        <div class="mt-4 space-y-2">
-            <form wire:submit.prevent="save" class="flex flex-col sm:flex-row gap-2">
-                <input
-                    type="file"
-                    wire:model="upload"
+            <form>
+                <input type="file" id="{{ $inputId }}" wire:model="upload"
                     accept="image/jpeg,image/png,image/gif,image/bmp,image/webp"
-                    class="file-input file-input-bordered file-input-sm flex-1 text-xs" />
-                <button type="submit"
-                    class="btn btn-primary btn-sm"
-                    @disabled(empty($upload))
-                    wire:loading.attr="disabled">
-                    <i class="fa-solid fa-upload" wire:loading.class="hidden"></i>
-                    <i class="fa-solid fa-spinner fa-spin hidden" wire:loading.class.remove="hidden"></i>
-                    Remplacer
-                </button>
+                    class="hidden" />
+
+                <div class="group relative aspect-video bg-base-200 rounded-lg overflow-hidden flex items-center justify-center cursor-pointer">
+                    @if ($this->wallpaper)
+                        <img src="{{ route('app.wallpapers.thumbnail', ['wallpaper' => $this->wallpaper->id]) }}?v={{ $refreshToken }}"
+                            alt="Aperçu {{ $type }}" class="w-full h-full object-cover" />
+                    @else
+                        <div class="text-center text-base-content/50 py-6">
+                            <i class="fa-solid fa-image text-4xl mb-2 opacity-50"></i>
+                            <p class="text-sm">Aucun fond personnalisé</p>
+                        </div>
+                    @endif
+
+                    <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center justify-center gap-2">
+                        <label for="{{ $inputId }}" class="btn btn-sm btn-neutral text-white cursor-pointer" @click.stop>
+                            <i class="fa-solid fa-upload"></i>
+                            {{ $this->wallpaper ? 'Remplacer' : 'Ajouter' }}
+                        </label>
+                        @if ($this->wallpaper)
+                            <button type="button" class="btn btn-sm btn-error" @click.stop
+                                wire:click="remove" wire:confirm="Supprimer ce fond d'écran ?">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        @endif
+                    </div>
+
+                    <div wire:loading wire:target="save"
+                        class="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <span class="loading loading-spinner loading-md text-white"></span>
+                    </div>
+                </div>
+
+                @error('upload') <p class="text-xs text-error mt-2">{{ $message }}</p> @enderror
             </form>
-
-            @error('upload')
-                <p class="text-xs text-error">{{ $message }}</p>
-            @enderror
-
-            @if ($this->wallpaper)
-                <button type="button"
-                    class="btn btn-ghost btn-sm text-error w-full sm:w-auto"
-                    wire:click="remove"
-                    wire:confirm="Supprimer ce fond d'écran ?">
-                    <i class="fa-solid fa-trash"></i>
-                    Supprimer
-                </button>
-            @endif
-        </div>
+        @else
+            <div class="aspect-video bg-base-200 rounded-lg overflow-hidden flex items-center justify-center">
+                @if ($this->wallpaper)
+                    <img src="{{ route('app.wallpapers.thumbnail', ['wallpaper' => $this->wallpaper->id]) }}?v={{ $refreshToken }}"
+                        alt="Aperçu {{ $type }}" class="w-full h-full object-cover" />
+                @else
+                    <div class="text-center text-base-content/50 py-6">
+                        <i class="fa-solid fa-image text-4xl mb-2 opacity-50"></i>
+                        <p class="text-sm">Aucun fond personnalisé</p>
+                    </div>
+                @endif
+            </div>
         @endcan
     </div>
 </div>
