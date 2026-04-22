@@ -58,15 +58,6 @@
                         Applications
                     </a>
                 </li>
-                @can('wallpaper.manage')
-                <li>
-                    <a href="{{ route('app.parc-settings.wallpapers') }}"
-                        class="flex items-center gap-4 px-4 py-3 text-base font-medium {{ request()->is('app/parc-settings/wallpapers*') ? 'active bg-primary/20 text-primary shadow-lg' : 'hover:bg-base-200/70' }} rounded-xl transition-all duration-200 hover:shadow-md hover:scale-[1.02]">
-                        <i class="fa-solid fa-image text-xl"></i>
-                        Fonds d'écran
-                    </a>
-                </li>
-                @endcan
                 <li>
                     <a href="{{ route('admin.migrate') }}"
                         class="flex items-center gap-4 px-4 py-3 text-base font-medium {{ request()->is('admin/migrate*') ? 'active bg-primary/20 text-primary shadow-lg' : 'hover:bg-base-200/70' }} rounded-xl transition-all duration-200 hover:shadow-md hover:scale-[1.02]">
