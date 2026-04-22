@@ -13,6 +13,13 @@
  * wpkg_libsql.php — PHP refuse de redéfinir des fonctions déjà déclarées.
  */
 
+// NOTE: L'original `sambaedu/includes/wpkg_libsql.php` exécute deux side effects
+// au chargement qui ne sont PAS reproduits par ce shim :
+//   - test_mef($config)
+//   - $mise_en_forme_perso = mise_en_forme_personnalisee($config)
+// Non utilisés par 1bis-18e (associations_out.php). Dette à lever si un futur
+// module GPO shimmé dépend de `$mise_en_forme_perso`.
+
 use App\Models\Application;
 use App\Models\AppProfile;
 use App\Models\Depot;
