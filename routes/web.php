@@ -68,7 +68,11 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
     // });
 
     // Gestion des droits (nécessite droits admin)
-    Route::livewire('/rights-management', 'pages::rights-management.index')->name('rights-management');
+    // Story 7.1 — Review #5 : middleware `can:user.assign.right` pour bloquer
+    // tout accès à la page (y compris computed `historyEntries`) par un non-admin.
+    Route::livewire('/rights-management', 'pages::rights-management.index')
+        ->middleware('can:user.assign.right')
+        ->name('rights-management');
 
     // Groupes d'utilisateurs
     Route::livewire('/users/groups/new', 'pages::users.groups.new.index')->name('users.groups.new');

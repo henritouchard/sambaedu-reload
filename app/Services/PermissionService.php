@@ -6,6 +6,7 @@ use App\Enums\SambaPermission;
 use App\Enums\SambaRole;
 use App\Jobs\SyncGpoJob;
 use App\Models\Delegation;
+use App\Models\DelegationHistory;
 use App\Models\User;
 use App\Models\WorkstationGroup;
 use LogicException;
@@ -19,14 +20,40 @@ use Spatie\Permission\Models\Role;
  *
  * Orchestre les permissions Spatie (globales) et les délégations (scopées par WorkstationGroup).
  * Fournit la conversion bitmask ↔ permissions pour les besoins de compatibilité legacy.
- * 
+ *
  * Règle de conception : toute logique métier (Policies, Blade, middleware) doit utiliser
  * uniquement les permissions Spatie ($user->can(...)) et jamais les colonnes ad_* ni le bitmask.
+ *
+ * Story 7.1 : toute mutation d'une délégation (grant / revoke / negate) écrit une
+ * entrée dans `delegation_history` via `DelegationHistoryService`. Les signatures
+ * acceptent un `?User $actor = null` — fallback sur `auth()->user()` si null.
+ * Le paramètre étant optionnel, les appelants existants restent compatibles.
  */
 class PermissionService
 {
-    public function __construct()
+    /**
+     * Story 7.1 — Review #4 (décision Henri 2026-04-23, Option B) :
+     *   L'écriture d'audit est best-effort. Si `log()` retourne null, on signale
+     *   cet échec à l'appelant via cette propriété, qui sert à afficher un toast
+     *   warning côté UI ("délégation appliquée mais traçabilité non enregistrée").
+     *
+     *   Le flag est réinitialisé à `false` au début de chaque mutation
+     *   (grantDelegation / revokeDelegation / negateDelegation).
+     */
+    public bool $lastAuditFailed = false;
+
+    public function __construct(
+        private readonly ?DelegationHistoryService $historyService = null
+    ) {
+    }
+
+    /**
+     * Résout le service d'historique — fallback container Laravel si null
+     * (ctor peut être appelé sans injection dans l'existant legacy).
+     */
+    private function history(): DelegationHistoryService
     {
+        return $this->historyService ?? app(DelegationHistoryService::class);
     }
 
     // ========================================================================
@@ -35,7 +62,7 @@ class PermissionService
 
     /**
      * @deprecated Les droits web ne sont plus synchronisés depuis l'AD.
-     * 
+     *
      * @param string $login samAccountName de l'utilisateur
      * @param array $adData Données AD de l'utilisateur (fullname, dn, groups, rightProfiles, role)
      * @return User L'utilisateur synchronisé
@@ -84,7 +111,15 @@ class PermissionService
     // ========================================================================
 
     /**
-     * Accorde une délégation à un utilisateur sur un WorkstationGroup
+     * Accorde une délégation à un utilisateur sur un WorkstationGroup.
+     *
+     * Idempotent : appelée 2× avec les mêmes (user, group, permission, is_negative=false),
+     * une seule ligne existe en base (via `updateOrCreate`). L'entrée d'historique
+     * n'est créée QUE si `wasRecentlyCreated` est true — sinon on a déjà tracé
+     * le grant initial lors du 1er appel.
+     *
+     * Story 7.1 : le paramètre `$grantedBy` (déjà existant) sert de fallback si
+     * `auth()->user()` est null (ex. appel depuis un Job sans contexte HTTP).
      */
     public function grantDelegation(
         User $user,
@@ -93,6 +128,9 @@ class PermissionService
         ?User $grantedBy = null,
         ?\DateTimeInterface $expiresAt = null
     ): Delegation {
+        // Story 7.1 — Review #4 : reset du flag audit à chaque mutation.
+        $this->lastAuditFailed = false;
+
         $permission = Permission::findByName($permissionName, 'web');
 
         $delegation = Delegation::updateOrCreate(
@@ -115,6 +153,26 @@ class PermissionService
             'granted_by' => $grantedBy?->login,
         ]);
 
+        // AC5 / Tâche 2.4 : historique — uniquement si on vient de créer la ligne.
+        // `updateOrCreate` peut aussi mettre à jour `expires_at` ou `granted_by`
+        // sur une ligne existante — dans ce cas on ne retrace pas un nouveau `grant`.
+        if ($delegation->wasRecentlyCreated) {
+            $actor = $this->history()->resolveActor($grantedBy);
+            $historyEntry = $this->history()->log(
+                action: DelegationHistory::ACTION_GRANT,
+                actor: $actor,
+                target: $user,
+                group: $group,
+                permissionName: $permissionName,
+                isNegative: false,
+                context: $this->buildContext(),
+            );
+            // Story 7.1 — Review #4 : best-effort + signalisation. L'appelant
+            // (drawer / rights-management) consulte $lastAuditFailed pour émettre
+            // un toast warning quand la délégation est posée mais non tracée.
+            $this->lastAuditFailed = ($historyEntry === null);
+        }
+
         // Dispatch GPO sync si nécessaire (computer.elevate)
         $perm = SambaPermission::tryFrom($permissionName);
         if ($perm?->requiresGpoSync()) {
@@ -125,13 +183,21 @@ class PermissionService
     }
 
     /**
-     * Révoque une délégation
+     * Révoque une délégation (positive).
+     *
+     * Story 7.1 : `$actor` est optionnel — fallback sur `auth()->user()`.
+     * L'historique `revoke` n'est créé que si une ligne a bien été supprimée
+     * (sinon revoke sur néant = pas de trace à écrire).
      */
     public function revokeDelegation(
         User $user,
         string $permissionName,
-        WorkstationGroup $group
+        WorkstationGroup $group,
+        ?User $actor = null
     ): bool {
+        // Story 7.1 — Review #4 : reset du flag audit à chaque mutation.
+        $this->lastAuditFailed = false;
+
         $permission = Permission::findByName($permissionName, 'web');
 
         $deleted = Delegation::where('user_id', $user->id)
@@ -147,27 +213,49 @@ class PermissionService
             'deleted' => $deleted,
         ]);
 
-        // Dispatch GPO sync si nécessaire (computer.elevate)
-        $perm = SambaPermission::tryFrom($permissionName);
-        if ($deleted > 0 && $perm?->requiresGpoSync()) {
-            SyncGpoJob::dispatch($user->id, $group->id, 'revoke');
+        if ($deleted > 0) {
+            $resolvedActor = $this->history()->resolveActor($actor);
+            $historyEntry = $this->history()->log(
+                action: DelegationHistory::ACTION_REVOKE,
+                actor: $resolvedActor,
+                target: $user,
+                group: $group,
+                permissionName: $permissionName,
+                isNegative: false,
+                context: $this->buildContext(),
+            );
+            $this->lastAuditFailed = ($historyEntry === null);
+
+            // Dispatch GPO sync si nécessaire (computer.elevate)
+            $perm = SambaPermission::tryFrom($permissionName);
+            if ($perm?->requiresGpoSync()) {
+                SyncGpoJob::dispatch($user->id, $group->id, 'revoke');
+            }
         }
 
         return $deleted > 0;
     }
 
     /**
-     * Crée une délégation négative (exclusion)
+     * Crée une délégation négative (exclusion).
+     *
+     * Idempotent via la même clé unique composite que `grantDelegation`.
+     * Historique `negate` écrit uniquement lors de la création réelle.
+     *
+     * Story 7.1 : `$actor` optionnel — fallback sur `auth()->user()`.
      */
     public function negateDelegation(
         User $user,
         string $permissionName,
         WorkstationGroup $group,
-        ?User $grantedBy = null
+        ?User $actor = null
     ): Delegation {
+        // Story 7.1 — Review #4 : reset du flag audit à chaque mutation.
+        $this->lastAuditFailed = false;
+
         $permission = Permission::findByName($permissionName, 'web');
 
-        return Delegation::updateOrCreate(
+        $delegation = Delegation::updateOrCreate(
             [
                 'user_id' => $user->id,
                 'workstation_group_id' => $group->id,
@@ -175,14 +263,37 @@ class PermissionService
                 'is_negative' => true,
             ],
             [
-                'granted_by' => $grantedBy?->id,
+                'granted_by' => $actor?->id,
             ]
         );
+
+        Log::info('[PermissionService] Délégation négative créée', [
+            'user' => $user->login,
+            'permission' => $permissionName,
+            'workstation_group' => $group->name,
+            'granted_by' => $actor?->login,
+        ]);
+
+        if ($delegation->wasRecentlyCreated) {
+            $resolvedActor = $this->history()->resolveActor($actor);
+            $historyEntry = $this->history()->log(
+                action: DelegationHistory::ACTION_NEGATE,
+                actor: $resolvedActor,
+                target: $user,
+                group: $group,
+                permissionName: $permissionName,
+                isNegative: true,
+                context: $this->buildContext(),
+            );
+            $this->lastAuditFailed = ($historyEntry === null);
+        }
+
+        return $delegation;
     }
 
     /**
      * Vérifie si un utilisateur a une permission sur un WorkstationGroup
-     * 
+     *
      * Logique :
      * 1. Droit global Spatie → accès à tout
      * 2. Délégation positive active sur ce WorkstationGroup
@@ -207,11 +318,15 @@ class PermissionService
             return false;
         }
 
-        // 3. Vérifier qu'il n'y a pas de délégation négative
+        // 3. Vérifier qu'il n'y a pas de délégation négative active
+        // Story 7.1 — Review #3 : chaîner `.active()` pour qu'une négative
+        // expirée n'empêche plus l'accès (le jour où `negateDelegation` posera
+        // un `expires_at`, la logique reste cohérente).
         $hasNegative = Delegation::where('user_id', $user->id)
             ->where('workstation_group_id', $group->id)
             ->forPermission($permissionName)
             ->negative()
+            ->active()
             ->exists();
 
         return !$hasNegative;
@@ -256,9 +371,11 @@ class PermissionService
             ->active()
             ->pluck('workstation_group_id');
 
+        // Story 7.1 — Review #3 : ignorer les négatives expirées.
         $negativeGroupIds = Delegation::forUser($user)
             ->forPermission($permissionName)
             ->negative()
+            ->active()
             ->pluck('workstation_group_id');
 
         return WorkstationGroup::whereIn('id', $positiveGroupIds)
@@ -286,5 +403,26 @@ class PermissionService
     public static function bitmaskToPermissionName(int $bitmask): ?string
     {
         return SambaPermission::fromSingleBitmask($bitmask)?->value;
+    }
+
+    /**
+     * Contexte minimal à attacher aux entrées d'audit : IP + user-agent si dispo.
+     * Renvoie un tableau vide si aucune requête HTTP n'est en cours (CLI, job).
+     */
+    private function buildContext(): array
+    {
+        $ctx = [];
+        $request = request();
+        if ($request !== null) {
+            $ip = $request->ip();
+            $ua = $request->userAgent();
+            if ($ip) {
+                $ctx['ip'] = $ip;
+            }
+            if ($ua) {
+                $ctx['user_agent'] = mb_substr((string) $ua, 0, 500);
+            }
+        }
+        return $ctx;
     }
 }

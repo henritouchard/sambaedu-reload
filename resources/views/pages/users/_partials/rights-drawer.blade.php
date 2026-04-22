@@ -3,17 +3,22 @@
 use Livewire\Component;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Computed;
+use App\Components\Traits\WithToasts;
 use App\Enums\SambaPermission;
 use App\Enums\SambaRole;
 use App\Models\User as EloquentUser;
 use App\Models\WorkstationGroup;
 use App\Models\Delegation;
 use App\Services\PermissionService;
+use App\Services\UserService;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 
 new class extends Component {
+    use WithToasts;
+
     public bool $isOpen = false;
     public string $activeTab = 'roles';
 
@@ -33,10 +38,10 @@ new class extends Component {
     public ?int $selectedWorkstationGroupId = null;
     public array $selectedDelegationPermissions = [];
     public bool $removeDelegation = false;
-
-    // Feedback
-    public ?string $successMessage = null;
-    public ?string $errorMessage = null;
+    // Story 7.1 — AC9 : toggle exclusion/négative, exclusif avec $removeDelegation.
+    public bool $isNegative = false;
+    // Story 7.1 — recherche filtrable pour gros catalogue de salles (> 20).
+    public string $workstationGroupSearch = '';
 
     // Données chargées
     public array $availableRoles = [];
@@ -105,6 +110,10 @@ new class extends Component {
     #[On('open-rights-drawer')]
     public function open(array $users = []): void
     {
+        // Story 7.1 — Review #5b : guard serveur sur l'ouverture du drawer.
+        // Empêche un user non-admin de déclencher le drawer via `Livewire.dispatch`.
+        abort_unless(Gate::allows('user.assign.right'), 403);
+
         $this->selectedUsers = $users;
         $this->isOpen = true;
         $this->resetForm();
@@ -128,16 +137,32 @@ new class extends Component {
         $this->selectedWorkstationGroupId = null;
         $this->selectedDelegationPermissions = [];
         $this->removeDelegation = false;
-        $this->successMessage = null;
-        $this->errorMessage = null;
+        $this->isNegative = false;
+        $this->workstationGroupSearch = '';
         $this->processing = false;
     }
 
     public function switchTab(string $tab): void
     {
         $this->activeTab = $tab;
-        $this->successMessage = null;
-        $this->errorMessage = null;
+    }
+
+    /**
+     * Story 7.1 — AC9 : toggle négative exclusif avec toggle remove.
+     * Quand l'un est coché, l'autre se décoche automatiquement.
+     */
+    public function updatedIsNegative(bool $value): void
+    {
+        if ($value) {
+            $this->removeDelegation = false;
+        }
+    }
+
+    public function updatedRemoveDelegation(bool $value): void
+    {
+        if ($value) {
+            $this->isNegative = false;
+        }
     }
 
     // ========================================================================
@@ -146,18 +171,20 @@ new class extends Component {
 
     public function applyRoles(): void
     {
+        // Story 7.1 — Review #5b : guard serveur — bloque tout appel Livewire forgé.
+        abort_unless(Gate::allows('user.assign.right'), 403);
+
         if (empty($this->selectedUsers)) {
-            $this->errorMessage = 'Aucun utilisateur sélectionné.';
+            $this->toastError('Aucun utilisateur sélectionné.');
             return;
         }
 
         if ($this->selectedRole === null) {
-            $this->errorMessage = 'Veuillez sélectionner un rôle.';
+            $this->toastError('Veuillez sélectionner un rôle.');
             return;
         }
 
         $this->processing = true;
-        $permissionService = app(PermissionService::class);
         $count = 0;
         $errors = 0;
 
@@ -182,9 +209,12 @@ new class extends Component {
         }
 
         $action = $this->removeRole ? 'retiré de' : 'assigné à';
-        $this->successMessage = "Rôle '{$this->selectedRole}' {$action} {$count} utilisateur(s).";
+        $message = "Rôle '{$this->selectedRole}' {$action} {$count} utilisateur(s).";
         if ($errors > 0) {
-            $this->successMessage .= " ({$errors} erreur(s))";
+            $message .= " ({$errors} erreur(s))";
+            $this->toastWarning($message);
+        } else {
+            $this->toastSuccess($message);
         }
         $this->processing = false;
     }
@@ -204,13 +234,16 @@ new class extends Component {
 
     public function applyPermissions(): void
     {
+        // Story 7.1 — Review #5b : guard serveur.
+        abort_unless(Gate::allows('user.assign.right'), 403);
+
         if (empty($this->selectedUsers)) {
-            $this->errorMessage = 'Aucun utilisateur sélectionné.';
+            $this->toastError('Aucun utilisateur sélectionné.');
             return;
         }
 
         if (empty($this->selectedPermissions)) {
-            $this->errorMessage = 'Veuillez sélectionner au moins une permission.';
+            $this->toastError('Veuillez sélectionner au moins une permission.');
             return;
         }
 
@@ -240,9 +273,12 @@ new class extends Component {
 
         $nb = count($this->selectedPermissions);
         $action = $this->removePermissions ? 'retirée(s) de' : 'accordée(s) à';
-        $this->successMessage = "{$nb} permission(s) {$action} {$count} utilisateur(s).";
+        $message = "{$nb} permission(s) {$action} {$count} utilisateur(s).";
         if ($errors > 0) {
-            $this->successMessage .= " ({$errors} erreur(s))";
+            $message .= " ({$errors} erreur(s))";
+            $this->toastWarning($message);
+        } else {
+            $this->toastSuccess($message);
         }
         $this->processing = false;
     }
@@ -264,18 +300,21 @@ new class extends Component {
 
     public function applyDelegations(): void
     {
+        // Story 7.1 — Review #5b : guard serveur.
+        abort_unless(Gate::allows('user.assign.right'), 403);
+
         if (empty($this->selectedUsers)) {
-            $this->errorMessage = 'Aucun utilisateur sélectionné.';
+            $this->toastError('Aucun utilisateur sélectionné.');
             return;
         }
 
         if ($this->selectedWorkstationGroupId === null) {
-            $this->errorMessage = 'Veuillez sélectionner une salle.';
+            $this->toastError('Veuillez sélectionner une salle.');
             return;
         }
 
         if (empty($this->selectedDelegationPermissions)) {
-            $this->errorMessage = 'Veuillez sélectionner au moins une permission à déléguer.';
+            $this->toastError('Veuillez sélectionner au moins une permission à déléguer.');
             return;
         }
 
@@ -284,20 +323,31 @@ new class extends Component {
         $group = WorkstationGroup::find($this->selectedWorkstationGroupId);
 
         if (!$group || !$group->is_physical) {
-            $this->errorMessage = 'Salle invalide ou non physique.';
+            $this->toastError('Salle invalide ou non physique.');
             $this->processing = false;
             return;
         }
 
-        // Récupérer le granter (utilisateur connecté)
+        // Résolution du granter (utilisateur connecté).
+        // Le guard Laravel peut renvoyer un Authenticatable dont l'identifier
+        // est soit l'id Eloquent (nouvelle auth), soit le login AD (legacy).
+        // On fait un fallback `findByLogin` pour couvrir les deux cas.
         $granter = null;
         $authUser = auth()->user();
         if ($authUser) {
-            $granter = EloquentUser::where('login', $authUser->getAuthIdentifier())->first();
+            if ($authUser instanceof EloquentUser) {
+                $granter = $authUser;
+            } else {
+                $granter = EloquentUser::where('login', $authUser->getAuthIdentifier())->first();
+            }
         }
 
         $count = 0;
         $errors = 0;
+        // Story 7.1 — Review #4 (Option B) : capture du flag audit sur toute
+        // la boucle — si au moins une mutation n'a pas tracé l'opération, on
+        // affiche un toast warning unique en fin d'applyDelegations().
+        $anyAuditFailed = false;
 
         foreach ($this->selectedUsers as $login) {
             try {
@@ -308,10 +358,20 @@ new class extends Component {
                 }
 
                 foreach ($this->selectedDelegationPermissions as $permName) {
+                    // Story 7.1 — AC9 : routage selon les toggles.
+                    //  - removeDelegation  → revoke (supprime positive)
+                    //  - isNegative        → negate (crée exclusion)
+                    //  - défaut            → grant  (crée/maj positive)
                     if ($this->removeDelegation) {
-                        $permissionService->revokeDelegation($user, $permName, $group);
+                        $permissionService->revokeDelegation($user, $permName, $group, $granter);
+                    } elseif ($this->isNegative) {
+                        $permissionService->negateDelegation($user, $permName, $group, $granter);
                     } else {
                         $permissionService->grantDelegation($user, $permName, $group, $granter);
+                    }
+
+                    if ($permissionService->lastAuditFailed) {
+                        $anyAuditFailed = true;
                     }
                 }
                 $count++;
@@ -322,11 +382,26 @@ new class extends Component {
         }
 
         $nb = count($this->selectedDelegationPermissions);
-        $action = $this->removeDelegation ? 'retirée(s) de' : 'accordée(s) à';
-        $this->successMessage = "{$nb} délégation(s) sur '{$group->name}' {$action} {$count} utilisateur(s).";
-        if ($errors > 0) {
-            $this->successMessage .= " ({$errors} erreur(s))";
+        if ($this->removeDelegation) {
+            $action = 'retirée(s) de';
+        } elseif ($this->isNegative) {
+            $action = 'marquée(s) en exclusion sur';
+        } else {
+            $action = 'accordée(s) à';
         }
+        $message = "{$nb} délégation(s) sur '{$group->name}' {$action} {$count} utilisateur(s).";
+        if ($errors > 0) {
+            $message .= " ({$errors} erreur(s))";
+            $this->toastWarning($message);
+        } else {
+            $this->toastSuccess($message);
+        }
+
+        // Story 7.1 — Review #4 (Option B) : signalisation unique en fin d'applyDelegations.
+        if ($anyAuditFailed) {
+            $this->toastWarning("Délégation(s) appliquée(s) mais la traçabilité n'a pas été enregistrée pour une ou plusieurs opérations. Contactez l'administrateur.");
+        }
+
         $this->processing = false;
     }
 
@@ -336,22 +411,70 @@ new class extends Component {
 
     /**
      * Assure qu'un utilisateur Eloquent existe pour un login AD.
-     * Crée un enregistrement minimal si nécessaire (sera complété par sync-rights).
+     *
+     * Story 7.1 — Review #A : avant de créer un EloquentUser fantôme, on vérifie
+     * que le login existe réellement dans l'annuaire (AD). Sans ça, un admin
+     * peut injecter n'importe quel login dans `selectedUsers` → création d'un
+     * enregistrement DB orphelin (aucun objet AD correspondant).
+     *
+     * Comportement :
+     *  - login existe en base SQL → retourne l'user existant (fast path).
+     *  - login absent de la base SQL mais présent dans l'AD → création + return.
+     *  - login absent des deux → toast warning + return null (skip, l'appelant
+     *    incrémente `$errors`).
      */
     private function ensureEloquentUser(string $login): ?EloquentUser
     {
         $user = EloquentUser::where('login', $login)->first();
 
-        if (!$user) {
-            // Créer un enregistrement minimal — sera enrichi par sambaedu:sync-rights
-            $user = EloquentUser::create([
-                'login' => $login,
-                'role' => 'autre',
-                'is_active' => true,
-            ]);
+        if ($user) {
+            return $user;
         }
 
-        return $user;
+        // Vérification AD : le login existe-t-il dans l'annuaire ?
+        try {
+            $adUser = app(UserService::class)->getByLogin($login);
+        } catch (\Throwable $e) {
+            Log::warning("[RightsDrawer] Échec lookup AD pour {$login}: " . $e->getMessage());
+            $adUser = null;
+        }
+
+        if (!$adUser) {
+            $this->toastWarning("Utilisateur {$login} introuvable dans l'annuaire.");
+            return null;
+        }
+
+        // Créer un enregistrement minimal — sera enrichi par sambaedu:sync-rights
+        return EloquentUser::create([
+            'login' => $login,
+            'role' => 'autre',
+            'is_active' => true,
+        ]);
+    }
+
+    /**
+     * Story 7.1 — Liste filtrable des WorkstationGroups physiques disponibles.
+     *
+     * Si l'admin tape quelque chose dans `workstationGroupSearch`, on filtre sur
+     * name + display_name (case-insensitive). Sinon on retourne tout le catalogue.
+     */
+    #[Computed]
+    public function filteredWorkstationGroups(): array
+    {
+        if (empty($this->workstationGroupSearch)) {
+            return $this->availableWorkstationGroups;
+        }
+
+        $search = strtolower($this->workstationGroupSearch);
+
+        return array_values(array_filter(
+            $this->availableWorkstationGroups,
+            static function (array $wg) use ($search): bool {
+                $name = strtolower((string) ($wg['name'] ?? ''));
+                $display = strtolower((string) ($wg['display_name'] ?? ''));
+                return str_contains($name, $search) || str_contains($display, $search);
+            }
+        ));
     }
 
     #[Computed]
@@ -401,19 +524,7 @@ new class extends Component {
                     </div>
                 </div>
 
-                {{-- Messages --}}
-                @if ($successMessage)
-                    <div class="alert alert-success mx-4 mt-3 text-sm">
-                        <i class="fa-solid fa-check-circle"></i>
-                        <span>{{ $successMessage }}</span>
-                    </div>
-                @endif
-                @if ($errorMessage)
-                    <div class="alert alert-error mx-4 mt-3 text-sm">
-                        <i class="fa-solid fa-exclamation-circle"></i>
-                        <span>{{ $errorMessage }}</span>
-                    </div>
-                @endif
+                {{-- Story 7.1 : feedback via WithToasts (ToastMagic) — plus de bloc HTML local --}}
 
                 {{-- Tabs --}}
                 <div role="tablist" class="tabs tabs-bordered px-4 pt-2 shrink-0">
@@ -584,7 +695,7 @@ new class extends Component {
                     </p>
 
                     {{-- Toggle retirer --}}
-                    <div class="flex gap-3 shrink-0 mb-3">
+                    <div class="flex gap-3 shrink-0 mb-2">
                         <input type="checkbox" wire:model.live="removeDelegation"
                             class="toggle toggle-sm border-primary checked:border-error/50 checked:bg-error/50" />
                         <div class="text-sm font-medium">
@@ -592,13 +703,40 @@ new class extends Component {
                         </div>
                     </div>
 
+                    {{-- Story 7.1 — AC9 : toggle exclusion / délégation négative --}}
+                    <div class="flex gap-3 shrink-0 mb-3 items-start">
+                        <input type="checkbox" wire:model.live="isNegative"
+                            @disabled($removeDelegation)
+                            class="toggle toggle-sm border-primary checked:border-error/50 checked:bg-error/50" />
+                        <div class="text-sm">
+                            <div class="font-medium">Marquer comme exclusion (négative)</div>
+                            <div class="text-xs text-base-content/50">
+                                L'utilisateur perd le droit sur cette salle même s'il l'a via un rôle global.
+                            </div>
+                        </div>
+                    </div>
+
                     {{-- Sélection de la salle --}}
                     <div class="mb-3 shrink-0">
                         <label class="text-xs font-medium text-base-content/60 mb-1 block">Salle physique</label>
+                        @if (count($availableWorkstationGroups) > 20)
+                            {{-- Story 7.1 — combobox filtrable si > 20 salles --}}
+                            <label class="input input-sm w-full mb-2">
+                                <i class="fa-solid fa-magnifying-glass opacity-50"></i>
+                                <input type="text" wire:model.live.debounce.200ms="workstationGroupSearch"
+                                    placeholder="Rechercher une salle..." class="grow" />
+                                @if ($workstationGroupSearch)
+                                    <button type="button" wire:click="$set('workstationGroupSearch', '')"
+                                        class="btn btn-ghost btn-xs btn-circle">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                @endif
+                            </label>
+                        @endif
                         <select wire:model.live="selectedWorkstationGroupId"
                             class="select select-sm select-bordered w-full">
                             <option value="">-- Choisir une salle --</option>
-                            @foreach ($availableWorkstationGroups as $wg)
+                            @foreach ($this->filteredWorkstationGroups as $wg)
                                 <option value="{{ $wg['id'] }}">{{ $wg['display_name'] }}</option>
                             @endforeach
                         </select>
@@ -651,14 +789,30 @@ new class extends Component {
                     {{-- Actions --}}
                     <div class="flex justify-between items-center shrink-0 pt-3 border-t border-base-300">
                         <button type="button" class="btn btn-ghost btn-sm" wire:click="close">Annuler</button>
+                        @php
+                            // Story 7.1 — AC9 : styling bouton selon l'action effective.
+                            if ($removeDelegation) {
+                                $btnClass = 'btn-error';
+                                $btnIcon = 'fa-minus';
+                                $btnLabel = 'Retirer';
+                            } elseif ($isNegative) {
+                                $btnClass = 'btn-warning';
+                                $btnIcon = 'fa-ban';
+                                $btnLabel = 'Exclure';
+                            } else {
+                                $btnClass = 'btn-primary';
+                                $btnIcon = 'fa-check';
+                                $btnLabel = 'Accorder';
+                            }
+                        @endphp
                         <button type="button"
-                            class="btn btn-sm {{ $removeDelegation ? 'btn-error' : 'btn-primary' }}"
+                            class="btn btn-sm {{ $btnClass }}"
                             wire:click="applyDelegations"
                             wire:loading.attr="disabled"
                             @disabled($selectedWorkstationGroupId === null || count($selectedDelegationPermissions) === 0)>
                             <span wire:loading.remove wire:target="applyDelegations">
-                                <i class="fa-solid {{ $removeDelegation ? 'fa-minus' : 'fa-check' }}"></i>
-                                {{ $removeDelegation ? 'Retirer' : 'Accorder' }}
+                                <i class="fa-solid {{ $btnIcon }}"></i>
+                                {{ $btnLabel }}
                                 {{ count($selectedDelegationPermissions) }} délégation(s)
                             </span>
                             <span wire:loading wire:target="applyDelegations">
