@@ -27,12 +27,6 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping(5)
                  ->runInBackground();
 
-        // Rafraîchissement du cache des quotas - toutes les 5 minutes
-        $schedule->command('quota:refresh-cache')
-                 ->everyFiveMinutes()
-                 ->withoutOverlapping()
-                 ->runInBackground();
-
         // Synchronisation automatique des utilisateurs depuis l'AD
         $schedule->command('users:sync-from-ad --scope=all --mode=delta')
                  ->everyFiveMinutes()

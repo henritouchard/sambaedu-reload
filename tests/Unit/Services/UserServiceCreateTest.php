@@ -14,6 +14,7 @@ use App\Repositories\EstablishmentRepository;
 use App\Repositories\FunctionRepository;
 use App\Repositories\OrganizationalUnitRepository;
 use App\Repositories\UserRepository;
+use App\Services\Filesystem\HomeDirService;
 use App\Services\PasswordService;
 use App\Services\UserService;
 use Illuminate\Support\Facades\Log;
@@ -24,6 +25,7 @@ use PHPUnit\Framework\Attributes\Test;
 class UserServiceCreateTest extends TestCase
 {
     private UserService $service;
+    private HomeDirService $homeDirService;
     private UserRepository $userRepository;
     private OrganizationalUnitRepository $ouRepository;
     private EstablishmentRepository $establishmentRepository;
@@ -36,6 +38,7 @@ class UserServiceCreateTest extends TestCase
     {
         parent::setUp();
 
+        $this->homeDirService = new HomeDirService();
         $this->userRepository = Mockery::mock(UserRepository::class);
         $this->ouRepository = Mockery::mock(OrganizationalUnitRepository::class);
         $this->establishmentRepository = Mockery::mock(EstablishmentRepository::class);
@@ -51,7 +54,8 @@ class UserServiceCreateTest extends TestCase
             $this->functionRepository,
             $this->classRepository,
             $this->passwordService,
-            $this->config
+            $this->config,
+            $this->homeDirService
         );
     }
 
@@ -72,7 +76,7 @@ class UserServiceCreateTest extends TestCase
             ->once()
             ->withArgs(fn($msg) => str_contains($msg, 'login invalide'));
 
-        $this->service->createHomeDirectory('user; rm -rf /');
+        $this->homeDirService->createHomeDirectory('user; rm -rf /');
 
         // No exec should have been called — validated by absence of errors
         $this->assertTrue(true);
@@ -85,7 +89,7 @@ class UserServiceCreateTest extends TestCase
             ->once()
             ->withArgs(fn($msg) => str_contains($msg, 'login invalide'));
 
-        $this->service->createHomeDirectory('../etc/passwd');
+        $this->homeDirService->createHomeDirectory('../etc/passwd');
 
         // Mockery vérifie l'appel à Log::error dans tearDown
         $this->assertTrue(true);
@@ -94,13 +98,20 @@ class UserServiceCreateTest extends TestCase
     #[Test]
     public function createHomeDirectory_accepts_valid_login_formats(): void
     {
-        // Ces logins sont valides et ne doivent pas être rejetés par la regex
-        $validLogins = ['jean.dupont', 'j.dupont2', 'admin', 'Jean-Pierre_D'];
+        // Aucun log d'erreur "login invalide" ne doit être déclenché pour ces logins.
+        // Des warnings peuvent apparaître (skel absent, chown échoué en env de test) — tolérés.
+        Log::shouldReceive('error')
+            ->withArgs(fn($msg) => str_contains((string) $msg, 'login invalide'))
+            ->never();
+        Log::shouldReceive('error')->zeroOrMoreTimes();
+        Log::shouldReceive('warning')->zeroOrMoreTimes();
+        Log::shouldReceive('info')->zeroOrMoreTimes();
 
-        foreach ($validLogins as $login) {
-            $valid = (bool) preg_match('/^[a-zA-Z0-9._-]+$/', $login);
-            $this->assertTrue($valid, "Le login '$login' devrait être valide");
+        foreach (['jean.dupont', 'j.dupont2', 'admin', 'Jean-Pierre_D'] as $login) {
+            $this->homeDirService->createHomeDirectory($login);
         }
+
+        $this->assertTrue(true);
     }
 
     // =========================================================================
@@ -272,7 +283,7 @@ class UserServiceCreateTest extends TestCase
     {
         // Le pattern /. copie les dotfiles, /* ne les copie pas.
         // Ce test vérifie que le code source utilise le bon pattern.
-        $source = file_get_contents(app_path('Services/UserService.php'));
+        $source = file_get_contents(app_path('Services/Filesystem/HomeDirService.php'));
         $this->assertStringContainsString(
             "escapeshellarg(\$skelPath) . \"/. \"",
             $source,

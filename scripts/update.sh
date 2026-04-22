@@ -66,6 +66,12 @@ update_composer() {
 
     composer install --no-dev --optimize-autoloader --no-interaction
 
+    # Régénération forcée du classmap autoload : garantit que les classes
+    # renommées/supprimées entre deux déploiements (ex: refactor 5.1a
+    # QuotaService → XfsQuotaService) ne laissent pas d'entrées fantômes
+    # pointant sur des fichiers absents (Fatal error à l'autoload).
+    composer dump-autoload --optimize --no-interaction
+
     # S'assurer que vendor/ appartient à www-admin (groupe web)
     chown -R www-admin:www-admin "$APP_DIR/vendor"
 

@@ -1,29 +1,33 @@
 <?php
 
-namespace App\Services;
+namespace App\Services\Filesystem;
 
 use App\Models\QuotaRule;
 use App\Models\QuotaAuditLog;
 use App\Models\QuotaSetting;
 use App\Jobs\ApplyQuotaJob;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
 
 /**
- * Service de gestion des quotas disque
- * 
+ * Service de gestion des quotas disque XFS
+ *
  * Encapsule :
  * - Le calcul du quota effectif (héritage utilisateur > groupe > défaut)
  * - Les appels système XFS (lecture/écriture)
  * - La gestion des politiques par défaut
  * - L'audit des modifications
+ *
+ * Déplacé depuis App\Services\QuotaService (Story 5.1a).
+ * Le cache 5 min (Cache::remember) a été supprimé — les méthodes getDiskUsage
+ * et getPartitionInfo lisent directement XFS. Un snapshot BDD quotidien
+ * remplacera cette optimisation en Story 5.1b.
+ *
+ * Note : les préfixes de log « QuotaService: » sont conservés volontairement
+ * pour ne pas perturber les grep opérateurs sur /var/log/ (décision SM 5.1a).
  */
-class QuotaService
+class XfsQuotaService
 {
-    private const CACHE_PREFIX = 'quota_';
-    private const CACHE_TTL = 300; // 5 minutes
-
     private ?array $config = null;
 
     public function __construct()
@@ -37,7 +41,7 @@ class QuotaService
     private function loadLegacyConfig(): void
     {
         try {
-            $configPath = dirname(__DIR__, 3) . '/includes/config.inc.php';
+            $configPath = base_path('../includes/config.inc.php');
             if (file_exists($configPath) && function_exists('get_config')) {
                 $this->config = get_config();
             }
@@ -52,12 +56,12 @@ class QuotaService
 
     /**
      * Calcule le quota effectif pour un utilisateur sur une partition
-     * 
+     *
      * Ordre de priorité :
      * 1. Quota utilisateur explicite
      * 2. Plus grand quota parmi les groupes d'appartenance
      * 3. Politique par défaut selon le profil (élève/prof/admin)
-     * 
+     *
      * @param string $username Nom d'utilisateur
      * @param string $partition /home ou /var/sambaedu
      * @param array $userGroups Groupes AD de l'utilisateur (memberof)
@@ -152,21 +156,19 @@ class QuotaService
 
     /**
      * Lit l'utilisation disque actuelle d'un utilisateur via XFS
-     * 
+     *
+     * Lecture directe XFS (sans cache — Story 5.1a).
+     * Un snapshot BDD quotidien remplacera cette lecture directe en Story 5.1b.
+     *
      * @param string $username
      * @return array{home: array, sambaedu: array}
      */
     public function getDiskUsage(string $username): array
     {
-        $cacheKey = self::CACHE_PREFIX . 'usage_' . $username;
-
-        return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($username) {
-            $result = [
-                'home' => $this->readXfsQuota($username, QuotaRule::PARTITION_HOME),
-                'sambaedu' => $this->readXfsQuota($username, QuotaRule::PARTITION_SAMBAEDU),
-            ];
-            return $result;
-        });
+        return [
+            'home' => $this->readXfsQuota($username, QuotaRule::PARTITION_HOME),
+            'sambaedu' => $this->readXfsQuota($username, QuotaRule::PARTITION_SAMBAEDU),
+        ];
     }
 
     /**
@@ -188,7 +190,7 @@ class QuotaService
         $safePartition = escapeshellarg($partition);
 
         $command = "sudo quota -u {$safeUsername} -F xfs -p -v --show-mntpoint --hide-device 2>&1";
-        
+
         try {
             $output = [];
             $returnCode = 0;
@@ -245,35 +247,33 @@ class QuotaService
 
     /**
      * Lit les informations de quota d'une partition (état, période de grâce)
+     *
+     * Lecture directe XFS (sans cache — Story 5.1a).
      */
     public function getPartitionInfo(string $partition): array
     {
-        $cacheKey = self::CACHE_PREFIX . 'partition_info_' . md5($partition);
+        $safePartition = escapeshellarg($partition);
+        $command = "sudo xfs_quota -x -c 'state -u' {$safePartition} 2>&1";
 
-        return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($partition) {
-            $safePartition = escapeshellarg($partition);
-            $command = "sudo xfs_quota -x -c 'state -u' {$safePartition} 2>&1";
+        $output = [];
+        $returnCode = 0;
+        exec($command, $output, $returnCode);
 
-            $output = [];
-            $returnCode = 0;
-            exec($command, $output, $returnCode);
+        $info = [
+            'partition' => $partition,
+            'enabled' => false,
+            'grace_days' => 0,
+        ];
 
-            $info = [
-                'partition' => $partition,
-                'enabled' => false,
-                'grace_days' => 0,
-            ];
-
-            foreach ($output as $line) {
-                if (preg_match('/^Blocks grace time: \[(\d+) days\]$/', $line, $m)) {
-                    $info['grace_days'] = (int) $m[1];
-                } elseif (preg_match('/^\s*Enforcement: (.*)$/', $line, $m)) {
-                    $info['enabled'] = trim($m[1]) === 'ON';
-                }
+        foreach ($output as $line) {
+            if (preg_match('/^Blocks grace time: \[(\d+) days\]$/', $line, $m)) {
+                $info['grace_days'] = (int) $m[1];
+            } elseif (preg_match('/^\s*Enforcement: (.*)$/', $line, $m)) {
+                $info['enabled'] = trim($m[1]) === 'ON';
             }
+        }
 
-            return $info;
-        });
+        return $info;
     }
 
     // =========================================================================
@@ -282,7 +282,7 @@ class QuotaService
 
     /**
      * Crée ou met à jour une règle de quota
-     * 
+     *
      * @param string $type user, group, default_eleve, default_prof, default_admin
      * @param string|null $target Nom utilisateur ou groupe (null pour défaut)
      * @param string $partition
@@ -339,9 +339,6 @@ class QuotaService
             $this->dispatchApplyJob($rule, $performedBy);
         }
 
-        // Invalider le cache
-        $this->invalidateCache($target);
-
         return $rule;
     }
 
@@ -367,8 +364,6 @@ class QuotaService
         if ($rule->type === QuotaRule::TYPE_GROUP && $rule->target) {
             $this->dispatchRecalculateGroupJob($rule->target, $rule->partition, $performedBy);
         }
-
-        $this->invalidateCache($rule->target);
 
         return $rule->delete();
     }
@@ -407,7 +402,7 @@ class QuotaService
 
     /**
      * Applique un quota sur le filesystem XFS
-     * 
+     *
      * @param string $username
      * @param string $partition
      * @param int $quotaSoftMb
@@ -477,9 +472,6 @@ class QuotaService
             $setting = QuotaSetting::forPartition($partition);
             $setting->grace_period_days = $days;
             $setting->save();
-
-            // Invalider le cache
-            Cache::forget(self::CACHE_PREFIX . 'partition_info_' . md5($partition));
         }
 
         Log::info('QuotaService: Modification période de grâce', [
@@ -496,7 +488,7 @@ class QuotaService
     }
 
     // =========================================================================
-    // JOBS ET CACHE
+    // JOBS
     // =========================================================================
 
     /**
@@ -618,17 +610,6 @@ class QuotaService
             ]);
         }
         return 'eleve';
-    }
-
-    /**
-     * Invalide le cache pour un utilisateur ou globalement
-     */
-    private function invalidateCache(?string $target = null): void
-    {
-        if ($target) {
-            Cache::forget(self::CACHE_PREFIX . 'usage_' . $target);
-        }
-        // On pourrait aussi invalider le cache global si nécessaire
     }
 
     // =========================================================================

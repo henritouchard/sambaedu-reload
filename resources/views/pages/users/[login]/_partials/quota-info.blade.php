@@ -1,8 +1,8 @@
 @php
-    use App\Services\QuotaService;
+    use App\Services\Filesystem\XfsQuotaService;
     use App\Models\QuotaRule;
 
-    $quotaService = app(QuotaService::class);
+    $quotaService = app(XfsQuotaService::class);
 
     // Récupérer les groupes de l'utilisateur (noms simples)
     $userGroups = collect($user->groups ?? [])->map(function ($group) {

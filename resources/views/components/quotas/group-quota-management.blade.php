@@ -1,8 +1,8 @@
 @php
-    use App\Services\QuotaService;
+    use App\Services\Filesystem\XfsQuotaService;
     use App\Models\QuotaRule;
 
-    $quotaService = app(QuotaService::class);
+    $quotaService = app(XfsQuotaService::class);
     $groupName = $group['cn'] ?? '';
 
     // Récupérer les règles de quota existantes pour ce groupe

@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\QuotaAuditLog;
-use App\Services\QuotaService;
+use App\Services\Filesystem\XfsQuotaService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Job asynchrone pour appliquer un quota sur le filesystem XFS
  * 
- * Ce job est dispatché par le QuotaService lors de la création/modification
+ * Ce job est dispatché par XfsQuotaService lors de la création/modification
  * d'une règle de quota. Il permet de ne pas bloquer la requête HTTP.
  */
 class ApplyQuotaJob implements ShouldQueue
@@ -35,7 +35,7 @@ class ApplyQuotaJob implements ShouldQueue
         $this->onQueue('quotas');
     }
 
-    public function handle(QuotaService $quotaService): void
+    public function handle(XfsQuotaService $quotaService): void
     {
         Log::info('ApplyQuotaJob: Début application quota', [
             'username' => $this->username,
