@@ -6,7 +6,7 @@ namespace App\Console\Commands;
 
 use App\Dto\Wallpaper\WallpaperContext;
 use App\Dto\Wallpaper\WallpaperResolution;
-use App\Services\QuotaService;
+use App\Services\Filesystem\XfsQuotaService;
 use App\Services\Wallpaper\WallpaperComposer;
 use Illuminate\Console\Command;
 use Mockery;
@@ -57,12 +57,12 @@ class WallpaperPreviewCommand extends Command
             ownerName: 'salle_demo',
         );
 
-        $quotaBlock = Mockery::mock(QuotaService::class);
+        $quotaBlock = Mockery::mock(XfsQuotaService::class);
         $quotaBlock->shouldReceive('getOverQuotaPartitionsFormatted')->andReturn([
             ['label' => 'Espace perso', 'used_mb' => 1024, 'soft_mb' => 500, 'grace_days' => 3],
             ['label' => 'Espace Classe', 'used_mb' => 5120, 'soft_mb' => 4000, 'grace_days' => 7],
         ]);
-        $quotaSoftOnly = Mockery::mock(QuotaService::class);
+        $quotaSoftOnly = Mockery::mock(XfsQuotaService::class);
         $quotaSoftOnly->shouldReceive('isUserOverQuota')->andReturn(false);
         $quotaSoftOnly->shouldReceive('getDiskUsage')->andReturn([
             'home' => ['is_over_soft' => true, 'is_over_hard' => false],

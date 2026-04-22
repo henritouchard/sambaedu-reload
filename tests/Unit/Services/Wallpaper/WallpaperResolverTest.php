@@ -10,7 +10,7 @@ use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\Wallpaper;
 use App\Models\WorkstationGroup;
-use App\Services\QuotaService;
+use App\Services\Filesystem\XfsQuotaService;
 use App\Services\Wallpaper\WallpaperResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
@@ -97,7 +97,7 @@ class WallpaperResolverTest extends TestCase
         parent::tearDown();
     }
 
-    private function resolver(?QuotaService $quota = null): WallpaperResolver
+    private function resolver(?XfsQuotaService $quota = null): WallpaperResolver
     {
         return new WallpaperResolver($quota);
     }
@@ -385,7 +385,7 @@ class WallpaperResolverTest extends TestCase
     #[Test]
     public function quota_override_short_circuits(): void
     {
-        $quota = Mockery::mock(QuotaService::class);
+        $quota = Mockery::mock(XfsQuotaService::class);
         $quota->shouldReceive('isUserOverQuota')->with('jdoe')->andReturn(true);
 
         $ctx = $this->ctx();

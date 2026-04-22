@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\QuotaRule;
-use App\Services\QuotaService;
+use App\Services\Filesystem\XfsQuotaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 class QuotaController extends Controller
 {
     public function __construct(
-        private QuotaService $quotaService
+        private XfsQuotaService $quotaService
     ) {}
 
     /**

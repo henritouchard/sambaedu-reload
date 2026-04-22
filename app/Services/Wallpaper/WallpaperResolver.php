@@ -10,7 +10,7 @@ use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\Wallpaper;
 use App\Models\WorkstationGroup;
-use App\Services\QuotaService;
+use App\Services\Filesystem\XfsQuotaService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -38,7 +38,7 @@ use Illuminate\Support\Facades\Log;
 class WallpaperResolver
 {
     public function __construct(
-        private readonly ?QuotaService $quotaService = null,
+        private readonly ?XfsQuotaService $quotaService = null,
     ) {}
 
     /**

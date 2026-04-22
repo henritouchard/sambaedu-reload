@@ -4,12 +4,12 @@ use Livewire\Component;
 use Livewire\Attributes\On;
 use App\Models\QuotaRule;
 use App\Models\QuotaSetting;
-use App\Services\QuotaService;
+use App\Services\Filesystem\XfsQuotaService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 new class extends Component {
-    private QuotaService $quotaService;
+    private XfsQuotaService $quotaService;
 
     // Données chargées
     public bool $dataLoaded = false;
@@ -36,7 +36,7 @@ new class extends Component {
     public string $editingGracePartition = '';
     public int $editingGraceDays = 7;
 
-    public function boot(QuotaService $quotaService)
+    public function boot(XfsQuotaService $quotaService)
     {
         $this->quotaService = $quotaService;
     }

@@ -6,7 +6,7 @@ namespace Tests\Unit\Services\Wallpaper;
 
 use App\Dto\Wallpaper\WallpaperContext;
 use App\Dto\Wallpaper\WallpaperResolution;
-use App\Services\QuotaService;
+use App\Services\Filesystem\XfsQuotaService;
 use App\Services\UserSessionsService;
 use App\Services\Wallpaper\WallpaperComposer;
 use Mockery;
@@ -78,14 +78,14 @@ class WallpaperComposerTest extends TestCase
         );
     }
 
-    private function composer(?QuotaService $quota = null, ?UserSessionsService $sessions = null): WallpaperComposer
+    private function composer(?XfsQuotaService $quota = null, ?UserSessionsService $sessions = null): WallpaperComposer
     {
         return new WallpaperComposer($quota, $sessions);
     }
 
-    private function quotaOverSoftOnly(): QuotaService
+    private function quotaOverSoftOnly(): XfsQuotaService
     {
-        $quota = Mockery::mock(QuotaService::class);
+        $quota = Mockery::mock(XfsQuotaService::class);
         // Usage : home over soft (pas hard) → quota-warning actif
         $quota->shouldReceive('getDiskUsage')->andReturn([
             'home' => [
@@ -173,7 +173,7 @@ class WallpaperComposerTest extends TestCase
     #[Test]
     public function quota_bloque_renders_dark_red_fullscreen(): void
     {
-        $quota = Mockery::mock(QuotaService::class);
+        $quota = Mockery::mock(XfsQuotaService::class);
         $quota->shouldReceive('getOverQuotaPartitionsFormatted')
             ->andReturn([
                 ['label' => 'Espace perso', 'used_mb' => 1024, 'soft_mb' => 500, 'grace_days' => 3],
