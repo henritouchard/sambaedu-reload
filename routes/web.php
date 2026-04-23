@@ -54,10 +54,15 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
     Route::livewire('/workers', 'pages::workers.index')->name('workers.index');
     Route::livewire('/workers/{pid}', 'pages::workers.[pid].index')->whereNumber('pid')->name('workers.show');
 
-    Route::livewire('/users', 'pages::users.index')->name('users');
+    // Story 7.2 — AC8 : middleware can: sur routes sensibles.
+    Route::livewire('/users', 'pages::users.index')
+        ->middleware('can:user.read')
+        ->name('users');
 
     // Création d'utilisateur (Livewire, nécessite droits admin)
-    Route::livewire('/users/new', 'pages::users.new.index')->middleware(['sambaedu.auth', 'sambaedu.admin'])->name('users.new');
+    Route::livewire('/users/new', 'pages::users.new.index')
+        ->middleware(['sambaedu.auth', 'sambaedu.admin', 'can:user.modify'])
+        ->name('users.new');
 
     // // Actions groupées sur les utilisateurs (nécessite droits admin)
     // Route::middleware(['sambaedu.auth', 'sambaedu.admin'])->group(function () {
@@ -74,12 +79,17 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
         ->middleware('can:user.assign.right')
         ->name('rights-management');
 
-    // Groupes d'utilisateurs
-    Route::livewire('/users/groups/new', 'pages::users.groups.new.index')->name('users.groups.new');
+    // Groupes d'utilisateurs — Story 7.2 AC8 : middleware can: user.read
+    Route::livewire('/users/groups/new', 'pages::users.groups.new.index')
+        ->middleware('can:user.modify')
+        ->name('users.groups.new');
     Route::match(['GET', 'POST'], '/users/groups/legacy-new', [\App\Http\Controllers\LegacyEmbedController::class, 'show'])
         ->defaults('module', 'annu2/add_group.php')
         ->name('users.groups.legacy-new');
-    Route::livewire('/users/groups/{id}', 'pages::users.groups.[id].index')->whereNumber('id')->name('users.groups.edit');
+    Route::livewire('/users/groups/{id}', 'pages::users.groups.[id].index')
+        ->whereNumber('id')
+        ->middleware('can:user.read')
+        ->name('users.groups.edit');
     
     // Gestion des quotas (nécessite droits admin)
     Route::post('/users/groups/{groupCn}/quota', [\App\Http\Controllers\QuotaController::class, 'updateGroupQuota'])
@@ -99,8 +109,10 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
         ->middleware('signed')
         ->name('users.password-reset.csv');
 
-    // Utilisateur individuel
-    Route::livewire('/users/{login}', 'pages::users.[login].index')->name('user.show');
+    // Utilisateur individuel — Story 7.2 AC8.
+    Route::livewire('/users/{login}', 'pages::users.[login].index')
+        ->middleware('can:user.read')
+        ->name('user.show');
 
     // Routes Livewire pour les raccourcis
     Route::livewire('/shortcuts', 'pages::shortcuts.index')->name('shortcuts');
@@ -109,16 +121,23 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
 
     // ========================================
     // Paramètres du Parc - Profils applicatifs et catalogue
+    // Story 7.2 AC8 : can:computer.install sur l'index.
     // ========================================
     Route::prefix('parc-settings')->name('parc-settings.')->group(function () {
         // Page principale avec onglets profils/applications
-        Route::livewire('/', 'pages::parc-settings.index')->name('index');
+        Route::livewire('/', 'pages::parc-settings.index')
+            ->middleware('can:computer.install')
+            ->name('index');
 
         // Profils applicatifs
-        Route::livewire('/profiles/{id}', 'pages::parc-settings.profiles.index')->name('profiles.show');
+        Route::livewire('/profiles/{id}', 'pages::parc-settings.profiles.index')
+            ->middleware('can:computer.install')
+            ->name('profiles.show');
 
         // Applications
-        Route::livewire('/applications/{id}', 'pages::parc-settings.applications.index')->name('applications.show');
+        Route::livewire('/applications/{id}', 'pages::parc-settings.applications.index')
+            ->middleware('can:computer.install')
+            ->name('applications.show');
 
         // Fonds d'écran défauts établissement (story 4.7 AC 8)
         // Gate wallpaper.manage — page admin (post-review #6).
@@ -141,24 +160,37 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
 
     // ========================================
     // Gestion du Parc (Section 1 - MySQL source)
+    // Story 7.2 AC8 : can:computer.view sur index + visualisation.
+    // Actions fines (control, élévation) sont gardées au niveau Policy dans les composants.
     // ========================================
     Route::prefix('parc')->name('parc.')->group(function () {
         // Page principale avec onglets machines/groupes
-        Route::livewire('/', 'pages::parc.index')->name('index');
+        Route::livewire('/', 'pages::parc.index')
+            ->middleware('can:computer.view')
+            ->name('index');
 
-        // Groupes de machines
-        Route::livewire('/groups/new', 'pages::parc.groups.new.index')->name('groups.new');
-        Route::livewire('/groups/{id}', 'pages::parc.groups.[id].index')->name('groups.show');
-        Route::livewire('/groups/{id}/edit', 'pages::parc.groups.[id].edit.index')->name('groups.edit');
+        // Groupes de machines — scoping fin via WorkstationGroupPolicy dans le mount.
+        Route::livewire('/groups/new', 'pages::parc.groups.new.index')
+            ->middleware('can:computer.install')
+            ->name('groups.new');
+        Route::livewire('/groups/{id}', 'pages::parc.groups.[id].index')
+            ->middleware('can:computer.view')
+            ->name('groups.show');
+        Route::livewire('/groups/{id}/edit', 'pages::parc.groups.[id].edit.index')
+            ->middleware('can:computer.install')
+            ->name('groups.edit');
 
         // Historique d'exécution d'une programmation (story 4-4 AC9)
         Route::livewire('/groups/{id}/schedules/{scheduleId}/runs', 'pages::parc.groups.[id].schedules.[scheduleId].runs.index')
             ->whereNumber('id')
             ->whereNumber('scheduleId')
+            ->middleware('can:computer.view')
             ->name('groups.schedules.runs');
 
-        // Machines
-        Route::livewire('/machines/{id}', 'pages::parc.machines.[id].index')->name('machines.show');
+        // Machines — scoping fin via MachinePolicy (Story 7.2).
+        Route::livewire('/machines/{id}', 'pages::parc.machines.[id].index')
+            ->middleware('can:computer.view')
+            ->name('machines.show');
     });
 
     // Miniature wallpaper (UI admin) — story 4.7 AC 8
@@ -191,8 +223,10 @@ Route::prefix('admin')->middleware('sambaedu.admin')->name('admin.')->group(func
     // Navigation legacy (menus SE4FS)
     Route::livewire('/homelegacy', 'pages::homelegacy.index')->name('homelegacy');
 
-    // Synchronisation depuis l'AD (déplacé de /app)
-    Route::livewire('/sync-from-ad', 'pages::sync-from-ad.index')->name('sync-from-ad');
+    // Synchronisation depuis l'AD — Story 7.2 AC8 : can:server.admin (action critique).
+    Route::livewire('/sync-from-ad', 'pages::sync-from-ad.index')
+        ->middleware('can:server.admin')
+        ->name('sync-from-ad');
 
     // Routes de gestion des parcs
     Route::prefix('parcs')->name('parcs.')->group(function () {

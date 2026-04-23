@@ -25,7 +25,7 @@ class WorkstationGroupPolicy
      * Story 7.1 : ajout de `manage-workstationGroup` pour les opérations
      * de contrôle (batch actions, schedules, wallpaper...). Reprend
      * `computer.control` — délégation scopée OU droit global — plutôt que
-     * `computer.modify` (réservé à l'admin au niveau global).
+     * `computer.install` (réservé à l'admin au niveau global).
      */
     protected static array $gates = [
         'viewAny-workstationGroup' => 'viewAny',

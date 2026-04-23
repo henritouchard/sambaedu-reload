@@ -863,6 +863,55 @@ class UserService
             ];
         }
 
+        // --- FILTRE SCOPING CLASSE (review 7.2 #8) ------------------------------
+        // Defense-in-depth : même si l'UI bulk n'est aujourd'hui exposée qu'aux
+        // admins globaux (user.password.init + accès page bulk), on re-check
+        // `resetPassword` via la Policy pour chaque cible. Un Prof/EleveAdmin
+        // scopé classe ne pourra réinitialiser que les MDP des élèves de ses
+        // classes — iso-décision 7.2 (a).
+        $actor = auth()->user();
+        if ($actor !== null) {
+            $outOfClassScope = [];
+            foreach ($orderedLogins as $login) {
+                // Résout le User Eloquent cible (déjà mis en cache plus haut via $sqlUsers
+                // mais on ne peut pas garantir qu'il a été peuplé si la table n'est pas
+                // encore full — on re-query défensivement).
+                $sqlTarget = $sqlUsers[$login] ?? null;
+                if ($sqlTarget === null) {
+                    try {
+                        $sqlTarget = SqlUserModel::query()->where('login', $login)->first();
+                    } catch (\Throwable $e) {
+                        $sqlTarget = null;
+                    }
+                }
+                if ($sqlTarget === null) {
+                    // Pas de cache SQL pour ce user — on ne peut pas appliquer
+                    // la Policy, on laisse passer (l'AD sera la source). Comportement
+                    // identique à l'avant-correction.
+                    continue;
+                }
+                if (!Gate::forUser($actor)->check('resetPassword', $sqlTarget)) {
+                    $outOfClassScope[] = $login;
+                }
+            }
+
+            if (count($outOfClassScope) > 0) {
+                Log::warning('audit.user.password.reset.denied', [
+                    'bulk_operation_id' => $bulkOperationId,
+                    'operator_login' => $operatorLogin,
+                    'reason' => 'out_of_class_scope',
+                    'out_of_class_scope' => $outOfClassScope,
+                ]);
+
+                return [
+                    'success' => false,
+                    'message' => 'Utilisateur(s) hors de votre périmètre pédagogique : ' . implode(', ', $outOfClassScope),
+                    'bulk_operation_id' => $bulkOperationId,
+                    'results' => [],
+                ];
+            }
+        }
+
         // Filtre « force » : si false, ne traiter que les users dont pwdLastSet==0.
         if (!$force) {
             $orderedLogins = array_values(array_filter($orderedLogins, function (string $login) use ($ldapUsers): bool {

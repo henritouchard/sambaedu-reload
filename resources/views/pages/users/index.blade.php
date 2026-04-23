@@ -1,7 +1,9 @@
 <?php
 
+use App\Models\AuthUser;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Policies\UserPolicy;
 use App\Services\UserGroupService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -292,6 +294,35 @@ new class extends Component {
             $query->whereHas('userGroups', function (Builder $builder) {
                 $builder->whereIn('name', $this->group);
             });
+        }
+
+        // Correction review 7.2 #3 — RGPD : un Prof (ou EleveAdmin) scopé classe
+        // ne doit voir que les users de ses propres classes. Sans ce filtre
+        // Eloquent, le listing contourne la Policy `UserPolicy::view()` qui
+        // n'est appliquée que sur les targets individuels.
+        $actor = auth()->user();
+        if ($actor instanceof AuthUser) {
+            $actor = $actor->getEloquentUser();
+        }
+
+        if ($actor instanceof User
+            && $actor->hasAnyRole(['prof', 'eleve-admin'])
+            && !$actor->hasAnyRole(UserPolicy::GLOBAL_USER_ROLES)
+        ) {
+            $classIds = $actor->userGroups()
+                ->where('type', 'class')
+                ->pluck('user_groups.id');
+
+            if ($classIds->isEmpty()) {
+                // Acteur scopé classe sans classe attachée : aucun user visible.
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->whereHas(
+                    'userGroups',
+                    fn(Builder $q) => $q->whereIn('user_groups.id', $classIds)
+                        ->where('type', 'class')
+                );
+            }
         }
 
         return $query->orderByRaw("COALESCE(lastname, '')")->orderByRaw("COALESCE(firstname, '')")->orderBy('login')->paginate($this->perPage);

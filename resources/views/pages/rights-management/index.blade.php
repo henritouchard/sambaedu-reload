@@ -14,7 +14,9 @@ use App\Models\WorkstationGroup;
 use App\Services\PermissionService;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\PermissionRegistrar;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
     use WithToasts;
@@ -44,6 +46,16 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
     #[Url]
     public string $historyToFilter = '';
     public int $historyPerPage = 25;
+
+    // Story 7.2 — Onglet Profils (5ᵉ onglet)
+    public array $profilesList = [];
+    public array $groupedPermissions = [];
+    public bool $profileModalOpen = false;
+    public string $profileModalMode = 'create'; // create | edit
+    public string $profileFormName = '';
+    public array $profileFormPermissions = [];
+    public ?string $editingProfileOriginalName = null;
+    public bool $editingProfileIsSeeded = false;
 
     public function mount(): void
     {
@@ -325,6 +337,212 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         $this->resetPage('historyPage');
     }
 
+    // ========================================================================
+    // Story 7.2 — Onglet Profils (AC3)
+    // ========================================================================
+
+    /**
+     * Recharge la liste des profils et la structure groupée des permissions.
+     *
+     * Appelée à la 1ère ouverture de l'onglet et après chaque mutation.
+     */
+    public function loadProfiles(): void
+    {
+        $this->profilesList = Role::where('guard_name', 'web')
+            ->withCount(['users', 'permissions'])
+            ->orderBy('name')
+            ->get()
+            ->map(function (Role $r) {
+                $isSeeded = SambaRole::isSeeded($r->name);
+                $enumCase = SambaRole::tryFrom($r->name);
+                return [
+                    'name' => $r->name,
+                    'label' => $enumCase?->label() ?? $r->name,
+                    'is_seeded' => $isSeeded,
+                    'permissions_count' => $r->permissions_count,
+                    'users_count' => $r->users_count,
+                ];
+            })
+            ->toArray();
+
+        $this->groupedPermissions = collect(SambaPermission::groupedByCategory())
+            ->map(fn($cat) => [
+                'label' => $cat['label'],
+                'permissions' => array_map(
+                    fn(SambaPermission $p) => ['name' => $p->value, 'label' => $p->label()],
+                    $cat['permissions']
+                ),
+            ])
+            ->toArray();
+    }
+
+    public function openCreateProfileModal(): void
+    {
+        $this->profileModalMode = 'create';
+        $this->profileFormName = '';
+        $this->profileFormPermissions = [];
+        $this->editingProfileOriginalName = null;
+        $this->editingProfileIsSeeded = false;
+        $this->resetValidation();
+        $this->profileModalOpen = true;
+    }
+
+    public function openEditProfileModal(string $roleName): void
+    {
+        $role = Role::where('name', $roleName)->where('guard_name', 'web')->firstOrFail();
+        $this->profileModalMode = 'edit';
+        $this->profileFormName = $role->name;
+        $this->profileFormPermissions = $role->permissions->pluck('name')->toArray();
+        $this->editingProfileOriginalName = $role->name;
+        $this->editingProfileIsSeeded = SambaRole::isSeeded($role->name);
+        $this->resetValidation();
+        $this->profileModalOpen = true;
+    }
+
+    public function closeProfileModal(): void
+    {
+        $this->profileModalOpen = false;
+    }
+
+    /**
+     * Crée ou met à jour un profil selon `$profileModalMode`.
+     *
+     * AC3 — Validation :
+     *  - nom non vide + unique (sauf si on édite le même rôle)
+     *  - au moins une permission cochée (warning sinon mais accepté)
+     *  - nom interdit si tentative de création avec un nom seedé
+     */
+    public function saveProfile(): void
+    {
+        abort_unless(\Illuminate\Support\Facades\Gate::allows('user.assign.right'), 403);
+
+        $rules = [
+            'profileFormName' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('roles', 'name')
+                    ->where(fn($q) => $q->where('guard_name', 'web'))
+                    ->ignore(
+                        $this->editingProfileOriginalName
+                            ? Role::where('name', $this->editingProfileOriginalName)->first()?->id
+                            : null
+                    ),
+            ],
+            'profileFormPermissions' => ['array'],
+            'profileFormPermissions.*' => [
+                'string',
+                Rule::in(array_map(fn($p) => $p->value, SambaPermission::cases())),
+            ],
+        ];
+
+        $this->validate($rules, [
+            'profileFormName.required' => 'Le nom du profil est obligatoire.',
+            'profileFormName.unique' => 'Ce nom de profil est déjà utilisé.',
+        ]);
+
+        // Interdiction : on ne peut pas créer un profil portant le nom d'un rôle seedé.
+        if ($this->profileModalMode === 'create' && SambaRole::isSeeded($this->profileFormName)) {
+            $this->toastError("Ce nom est réservé à un profil seedé.");
+            return;
+        }
+
+        if ($this->profileModalMode === 'create') {
+            $role = Role::create(['name' => $this->profileFormName, 'guard_name' => 'web']);
+        } else {
+            // Édition : nom ne change pas pour les rôles seedés (frozen via UI).
+            $role = Role::where('name', $this->editingProfileOriginalName)->firstOrFail();
+            if (!$this->editingProfileIsSeeded && $role->name !== $this->profileFormName) {
+                $role->name = $this->profileFormName;
+                $role->save();
+            }
+        }
+
+        // Correction review 7.2 #M3 — Garde-fou serveur : les permissions d'un
+        // rôle seedé ne sont PAS éditables via l'UI. Récupération = relancer
+        // `php artisan db:seed --class=PermissionSeeder --force`. Sans ce guard,
+        // un admin peut se retirer `user.assign.right` de `SuperAdmin` et
+        // s'auto-DoS sur la page /app/rights-management.
+        if ($this->profileModalMode === 'edit' && $this->editingProfileIsSeeded) {
+            abort(403, 'Les permissions des rôles seedés ne sont pas éditables. Pour les modifier, éditez le seeder et relancez `php artisan db:seed --class=PermissionSeeder --force`.');
+        }
+
+        $role->syncPermissions($this->profileFormPermissions);
+
+        // Invalidation explicite du cache Spatie post-mutation (AC6).
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->toastSuccess(
+            $this->profileModalMode === 'create'
+                ? "Profil « {$role->name} » créé"
+                : "Profil « {$role->name} » mis à jour"
+        );
+
+        $this->profileModalOpen = false;
+        $this->loadProfiles();
+    }
+
+    /**
+     * Duplique un profil avec le suffixe `_copy` (conflit évité par timestamp).
+     */
+    public function duplicateProfile(string $roleName): void
+    {
+        abort_unless(\Illuminate\Support\Facades\Gate::allows('user.assign.right'), 403);
+
+        $source = Role::where('name', $roleName)->where('guard_name', 'web')->firstOrFail();
+        $newName = $source->name . '_copy';
+
+        // Si le nom existe déjà, suffixer par timestamp court.
+        if (Role::where('name', $newName)->exists()) {
+            $newName = $source->name . '_copy_' . substr((string) time(), -4);
+        }
+
+        $copy = Role::create(['name' => $newName, 'guard_name' => 'web']);
+        $copy->syncPermissions($source->permissions->pluck('name')->toArray());
+
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->toastSuccess("Profil dupliqué en « {$newName} »");
+        $this->loadProfiles();
+    }
+
+    /**
+     * Supprime un profil custom.
+     *
+     * Garde-fous :
+     *  - profil seedé : refus
+     *  - users assignés : refus avec message explicite
+     */
+    public function deleteProfile(string $roleName): void
+    {
+        abort_unless(\Illuminate\Support\Facades\Gate::allows('user.assign.right'), 403);
+
+        if (SambaRole::isSeeded($roleName)) {
+            $this->toastError("Le profil « {$roleName} » est seedé et ne peut pas être supprimé.");
+            return;
+        }
+
+        $role = Role::where('name', $roleName)->where('guard_name', 'web')->first();
+        if (!$role) {
+            $this->toastError("Profil introuvable.");
+            return;
+        }
+
+        $usersCount = $role->users()->count();
+        if ($usersCount > 0) {
+            $this->toastWarning(
+                "Impossible de supprimer : {$usersCount} utilisateur(s) portent ce profil. Retirez-le d'abord."
+            );
+            return;
+        }
+
+        $role->delete();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->toastSuccess("Profil « {$roleName} » supprimé.");
+        $this->loadProfiles();
+    }
+
 };
 ?>
 
@@ -354,6 +572,11 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
                 class="tab tab-lg {{ $activeTab === 'history' ? 'tab-active' : '' }}">
                 <i class="fa-solid fa-clock-rotate-left mr-2"></i>
                 Historique
+            </button>
+            <button wire:click="setActiveTab('profiles')"
+                class="tab tab-lg {{ $activeTab === 'profiles' ? 'tab-active' : '' }}">
+                <i class="fa-solid fa-id-card-clip mr-2"></i>
+                Profils
             </button>
         </div>
 
@@ -712,6 +935,15 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         {{-- ============================================================ --}}
         @if ($activeTab === 'history')
             @include('pages.rights-management._partials.history-tab')
+        @endif
+
+        {{-- ============================================================ --}}
+        {{-- ONGLET PROFILS — Story 7.2 (AC3) --}}
+        {{-- ============================================================ --}}
+        @if ($activeTab === 'profiles')
+            <div wire:init="loadProfiles">
+                @include('pages.rights-management._partials.profiles-tab')
+            </div>
         @endif
 
     </div>

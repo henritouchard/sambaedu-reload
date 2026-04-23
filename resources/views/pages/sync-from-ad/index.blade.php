@@ -129,6 +129,16 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 'error' => null,
                 'expanded' => false,
             ],
+            // Story 7.2 — AC4 : rapatriement non-destructif des profils LDAP custom.
+            'rights_profiles' => [
+                'id' => 'rights_profiles',
+                'title' => '8. Rapatrier les profils LDAP custom',
+                'description' => 'Scanne la branche Rights (rights_rdn) et crée côté SER les profils custom absents (non-destructif, n\'écrase jamais un profil existant)',
+                'status' => 'pending',
+                'stats' => null,
+                'error' => null,
+                'expanded' => false,
+            ],
         ];
 
         $this->stepLogs = [
@@ -139,6 +149,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             'logical_groups' => [],
             'app_profiles' => [],
             'shortcuts' => [],
+            'rights_profiles' => [],
         ];
     }
 
@@ -187,6 +198,9 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                     break;
                 case 'shortcuts':
                     $this->runShortcutsSync();
+                    break;
+                case 'rights_profiles':
+                    $this->runRightsProfilesSync();
                     break;
             }
 
@@ -323,6 +337,35 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
 
         $this->addLog('shortcuts', 'info', "{$stats['created']} créé(s), {$stats['updated']} mis à jour, {$stats['errors']} erreur(s)");
         $this->steps['shortcuts']['stats'] = $stats;
+    }
+
+    /**
+     * Story 7.2 — AC4 : rapatriement non-destructif des profils LDAP custom.
+     * Les profils seedés (5 profils livrés) sont ignorés — gérés par le
+     * `PermissionSeeder`. Les profils historiques (`sovajon_is_admin`, …)
+     * sont mappés vers leur rôle Spatie équivalent. Les profils custom
+     * "Animateur CDI" & co. sont créés côté SER s'ils n'existent pas, sans
+     * écraser les profils déjà en base.
+     */
+    private function runRightsProfilesSync(): void
+    {
+        $this->addLog('rights_profiles', 'info', 'Scan de la branche Rights de l\'AD…');
+
+        $permissionService = app(\App\Services\PermissionService::class);
+        $stats = $permissionService->importCustomProfilesFromAd(function (string $level, string $message): void {
+            $this->addLog('rights_profiles', $level, $message);
+        });
+
+        $this->addLog(
+            'rights_profiles',
+            'success',
+            sprintf(
+                '%d profils scannés, %d seedés ignorés, %d historiques mappés, %d nouveaux custom, %d custom inchangés',
+                $stats['scanned'], $stats['seeded_skipped'], $stats['historic_mapped'],
+                $stats['custom_new'], $stats['custom_unchanged']
+            )
+        );
+        $this->steps['rights_profiles']['stats'] = $stats;
     }
 
     private function addLog(string $stepId, string $level, string $message): void

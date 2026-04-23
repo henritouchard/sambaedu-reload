@@ -405,6 +405,172 @@ class PermissionService
         return SambaPermission::fromSingleBitmask($bitmask)?->value;
     }
 
+    // ========================================================================
+    // Story 7.2 — Rapatriement profils LDAP custom (AC4)
+    // ========================================================================
+
+    /**
+     * Noms des 5 profils seedés à l'installation, qu'on NE rapatrie PAS depuis
+     * l'AD (déjà gérés par `PermissionSeeder` via l'enum `SambaRole`).
+     *
+     * Source legacy : `sambaedu/includes/ldap.inc.php:739-743`.
+     */
+    private const SEEDED_PROFILE_NAMES = [
+        'se3_is_admin',
+        'computer_is_admin',
+        'Annu_is_admin',
+        'password_is_admin',
+        'RefNum',
+    ];
+
+    /**
+     * Mapping des profils legacy historiques (non seedés, mais reconnus par
+     * fallback dans `annu/profiles.php:56-63`) vers les rôles Spatie.
+     */
+    private const HISTORIC_PROFILE_TO_ROLE = [
+        'sovajon_is_admin'    => 'eleve-admin',       // → `SambaRole::EleveAdmin`
+        'annu_can_read'       => 'prof',              // → `SambaRole::Prof` (scoping classe)
+        'password_can_reinit' => null,                // délégation ciblée, pas un rôle
+    ];
+
+    /**
+     * Rapatrie les profils custom de la branche LDAP `rights_rdn` vers la base
+     * SER, sans écraser les profils existants.
+     *
+     * Story 7.2 (AC4) — Non-destructif strict :
+     *  - Un profil seedé (cf. `SEEDED_PROFILE_NAMES`) : ignoré (géré par le seeder).
+     *  - Un profil historique (cf. `HISTORIC_PROFILE_TO_ROLE`) : le rôle Spatie
+     *    correspondant est créé via `firstOrCreate` si absent, sans re-sync
+     *    des permissions.
+     *  - Un profil custom : `Role::firstOrCreate` + `syncPermissions(...)`
+     *    **seulement** si `wasRecentlyCreated` (première rencontre). Les
+     *    profils custom déjà en base SER ne sont jamais modifiés.
+     *  - Bug legacy fallback `Annu_is_admin` sans `info` → `SE_COMPUTER_ADMIN`
+     *    (cf. matrice §8 #6) : **ignoré**. On log `warning` + mapping forcé
+     *    sur `user-admin` (seed d'origine 0xFF) si ce cas se présente.
+     *
+     * @return array{
+     *   scanned: int,
+     *   seeded_skipped: int,
+     *   historic_mapped: int,
+     *   custom_new: int,
+     *   custom_unchanged: int,
+     *   errors: int,
+     * }
+     */
+    public function importCustomProfilesFromAd(?callable $logger = null, ?callable $profilesFetcher = null): array
+    {
+        $log = $logger ?? fn(string $lvl, string $msg) => Log::log($lvl, "[PermissionService/importCustomProfilesFromAd] {$msg}");
+
+        $stats = [
+            'scanned'          => 0,
+            'seeded_skipped'   => 0,
+            'historic_mapped'  => 0,
+            'custom_new'       => 0,
+            'custom_unchanged' => 0,
+            'errors'           => 0,
+        ];
+
+        // Story 7.2 — Tests : on injecte un fetcher de profils mocké. Par défaut,
+        // on utilise le shim AD réel via LdapRightGroup.
+        $fetcher = $profilesFetcher ?? fn() => \App\LdapModels\LdapRightGroup::getAllRightsValues();
+
+        try {
+            $rightsValues = $fetcher();
+        } catch (\Throwable $e) {
+            $log('error', "Impossible de scanner la branche Rights : " . $e->getMessage());
+            $stats['errors']++;
+            return $stats;
+        }
+
+        foreach ($rightsValues as $cn => $info) {
+            $stats['scanned']++;
+
+            try {
+                // Cas 1 : profil seedé — ignoré (géré par PermissionSeeder).
+                if (in_array($cn, self::SEEDED_PROFILE_NAMES, true)) {
+                    $stats['seeded_skipped']++;
+                    continue;
+                }
+
+                // Cas 2 : profil historique reconnu par mapping.
+                if (array_key_exists($cn, self::HISTORIC_PROFILE_TO_ROLE)) {
+                    $targetRole = self::HISTORIC_PROFILE_TO_ROLE[$cn];
+                    if ($targetRole !== null) {
+                        $role = Role::firstOrCreate(
+                            ['name' => $targetRole, 'guard_name' => 'web']
+                        );
+                        if ($role->wasRecentlyCreated) {
+                            // Seulement à la première création — attacher les perms canoniques.
+                            $sambaRole = SambaRole::tryFrom($targetRole);
+                            if ($sambaRole !== null) {
+                                $role->syncPermissions($sambaRole->permissionNames());
+                            }
+                        }
+                        $stats['historic_mapped']++;
+                    } else {
+                        // Correction review 7.2 #9 — `password_can_reinit` mappe
+                        // vers `null` (délégation ciblée, pas un rôle Spatie
+                        // unique). On log explicitement plutôt que d'ignorer
+                        // silencieusement pour que l'admin puisse les repérer
+                        // et faire l'import manuel.
+                        $log('warning', "Profil historique '{$cn}' mappé sur délégation ciblée — import manuel requis, profil non créé.");
+                    }
+                    continue;
+                }
+
+                // Cas 3 : profil custom.
+                $role = Role::firstOrCreate(
+                    ['name' => $cn, 'guard_name' => 'web']
+                );
+
+                if ($role->wasRecentlyCreated) {
+                    // Première apparition : attacher les perms depuis le bitmask.
+                    $bitmaskInt = (int) $info;
+                    $perms = SambaPermission::fromBitmask($bitmaskInt);
+
+                    // Correction review 7.2 #2 — Convention matrice §11 :
+                    // `AppCustomize` partage le bit 0x800 avec `ComputerInstall`.
+                    // On ne l'accorde à un profil custom QUE si le bitmask porte
+                    // la totalité du composite `ComputerAdmin` (iso `gpo/firefox.php`
+                    // qui était gardé par SE_COMPUTER_ADMIN). Sinon, un profil
+                    // custom avec juste 0x900 (View+Install) recevrait `app.customize`
+                    // par erreur.
+                    $computerAdminMask = \App\Enums\LegacyRight::computerAdmin();
+                    if (($bitmaskInt & $computerAdminMask) !== $computerAdminMask) {
+                        $perms = array_values(array_filter(
+                            $perms,
+                            fn(string $p) => $p !== SambaPermission::AppCustomize->value
+                        ));
+                    }
+
+                    if (!empty($perms)) {
+                        $role->syncPermissions($perms);
+                    }
+                    $stats['custom_new']++;
+                    $log('info', "Profil custom '{$cn}' rapatrié avec " . count($perms) . " permission(s) (info=0x" . dechex($bitmaskInt) . ")");
+                } else {
+                    // Déjà en base : on ne touche rien (strict non-destructif).
+                    $stats['custom_unchanged']++;
+                }
+            } catch (\Throwable $e) {
+                $stats['errors']++;
+                $log('warning', "Erreur sur le profil '{$cn}' : " . $e->getMessage());
+            }
+        }
+
+        // Invalide le cache Spatie pour que les nouveaux rôles soient visibles immédiatement.
+        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+
+        $log('info', sprintf(
+            "Rapatriement terminé : %d scannés, %d seedés ignorés, %d historiques mappés, %d custom nouveaux, %d custom inchangés, %d erreurs",
+            $stats['scanned'], $stats['seeded_skipped'], $stats['historic_mapped'],
+            $stats['custom_new'], $stats['custom_unchanged'], $stats['errors']
+        ));
+
+        return $stats;
+    }
+
     /**
      * Contexte minimal à attacher aux entrées d'audit : IP + user-agent si dispo.
      * Renvoie un tableau vide si aucune requête HTTP n'est en cours (CLI, job).
