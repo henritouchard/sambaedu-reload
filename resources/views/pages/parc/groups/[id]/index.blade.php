@@ -98,6 +98,29 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                     'message' => 'Groupe non trouvé',
                 ]);
                 $this->redirect(route('app.parc.index'));
+                return;
+            }
+
+            // Story 7.1 — AC3 : blocage d'accès direct hors périmètre.
+            // Si la Policy `view` refuse (ni droit global, ni délégation positive),
+            // on redirige silencieusement vers /parc + toast d'erreur, sans
+            // révéler l'existence du groupe (pas de 403 explicite).
+            if (!Gate::allows('view', $this->group)) {
+                $userLogin = auth()->user()?->login ?? 'unknown';
+                Log::info('[GroupShow] Accès refusé hors périmètre', [
+                    'user' => $userLogin,
+                    'group_id' => $this->id,
+                    'group_name' => $this->group->name,
+                    'url' => request()?->fullUrl(),
+                ]);
+
+                session()->flash('toast', [
+                    'type' => 'error',
+                    'title' => 'Accès refusé',
+                    'message' => 'Vous n\'avez pas accès à cette ressource.',
+                ]);
+                $this->redirect(route('app.parc.index'));
+                return;
             }
         } catch (\Exception $e) {
             Log::error('[GroupShow] Erreur chargement: ' . $e->getMessage());
@@ -119,6 +142,10 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 
     public function addMachines(): void
     {
+        // Story 7.1 — Gate serveur (review #1) : bloquer les mutations hors périmètre
+        // même si l'UI est masquée côté Blade. Throws AuthorizationException → 403.
+        Gate::authorize('update-workstationGroup', $this->group);
+
         if (empty($this->selectedMachines)) {
             $this->toastError('Aucune machine sélectionnée');
             return;
@@ -138,6 +165,9 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 
     public function removeMachine(int $machineId): void
     {
+        // Story 7.1 — Gate serveur (review #1) : bloquer les mutations hors périmètre.
+        Gate::authorize('update-workstationGroup', $this->group);
+
         try {
             $this->parcService->removeMachineFromGroup($machineId, $this->id);
             $this->toastSuccess('Machine retirée du groupe');
@@ -1060,6 +1090,9 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 
     public function deleteGroup(): void
     {
+        // Story 7.1 — Gate serveur (review #1) : bloquer la suppression hors périmètre.
+        Gate::authorize('delete-workstationGroup', $this->group);
+
         try {
             $this->parcService->deleteGroup($this->id);
 

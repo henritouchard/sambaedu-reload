@@ -10,7 +10,7 @@ use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
  * Policy pour la gestion des WorkstationGroups (salles/parcs)
- * 
+ *
  * Supporte les délégations scopées : un utilisateur peut avoir des droits
  * limités à un WorkstationGroup physique spécifique via le PermissionService.
  */
@@ -20,7 +20,12 @@ class WorkstationGroupPolicy
     use ChecksPermissions;
 
     /**
-     * Définition des gates pour cette policy
+     * Définition des gates pour cette policy.
+     *
+     * Story 7.1 : ajout de `manage-workstationGroup` pour les opérations
+     * de contrôle (batch actions, schedules, wallpaper...). Reprend
+     * `computer.control` — délégation scopée OU droit global — plutôt que
+     * `computer.modify` (réservé à l'admin au niveau global).
      */
     protected static array $gates = [
         'viewAny-workstationGroup' => 'viewAny',
@@ -28,6 +33,7 @@ class WorkstationGroupPolicy
         'create-workstationGroup' => 'create',
         'update-workstationGroup' => 'update',
         'delete-workstationGroup' => 'delete',
+        'manage-workstationGroup' => 'manage',
         'manage-workstationGroups' => 'viewAny',
     ];
 
@@ -40,8 +46,18 @@ class WorkstationGroupPolicy
     }
 
     /**
-     * Vérifie si l'utilisateur peut voir un WorkstationGroup spécifique
-     * Supporte les délégations scopées
+     * Vérifie si l'utilisateur peut voir un WorkstationGroup spécifique.
+     * Supporte les délégations scopées.
+     *
+     * Scoping intentionnel (Story 7.1, décision Henri 2026-04-23) :
+     *  - Groupes physiques : délégation scopée via `canOnWorkstationGroup`.
+     *  - Groupes logiques (conteneurs hiérarchiques non-physical) : accès
+     *    UNIQUEMENT via droit global `computer.view`. Un délégué sur un
+     *    groupe physique NE VOIT PAS les groupes logiques parents, même s'il
+     *    pourrait naviguer via breadcrumb. Ce comportement est volontaire :
+     *    les salles physiques ont des hiérarchies mais les groupes logiques
+     *    de rangement ne sont pas cible de délégation en 7.1.
+     *  - Cf. `docs/domains/rights-management.md` (section Limitations).
      */
     public function view(?Authenticatable $user, ?WorkstationGroup $group = null): bool
     {
@@ -75,6 +91,26 @@ class WorkstationGroupPolicy
     public function delete(?Authenticatable $user, ?WorkstationGroup $group = null): bool
     {
         return $this->canAdminComputers($user);
+    }
+
+    /**
+     * Story 7.1 — Vérifie si l'utilisateur peut gérer un WorkstationGroup
+     * (actions batch, schedules, …).
+     *
+     * Autorise si :
+     *  - l'utilisateur a le droit global `computer.control` via Spatie ;
+     *  - OU il a une délégation scopée `computer.control` active sur ce group.
+     *
+     * Sans group en paramètre → se rabat sur le droit global.
+     */
+    public function manage(?Authenticatable $user, ?WorkstationGroup $group = null): bool
+    {
+        if ($group !== null && $this->canCheckDelegation($user, $group)) {
+            return app(PermissionService::class)
+                ->canOnWorkstationGroup($user, 'computer.control', $group);
+        }
+
+        return $this->hasPermission($user, 'computer.control');
     }
 
     /**

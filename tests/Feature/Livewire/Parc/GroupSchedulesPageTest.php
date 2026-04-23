@@ -288,8 +288,10 @@ class GroupSchedulesPageTest extends TestCase
 
     public function test_non_admin_sees_read_only_view_without_crud_buttons(): void
     {
-        // Remplacer l'utilisateur mocké par un non-admin : ->can() retourne false
-        $this->swapAuthToNonAdmin();
+        // User non-admin MAIS avec computer.view (sinon la Policy `view` introduite
+        // en Story 7.1 redirige silencieusement hors périmètre — cf. AC3 7.1).
+        // Intention du test : le user voit la page en read-only, sans boutons CRUD.
+        $this->swapAuthToReadOnlyViewer();
 
         $group = $this->makeGroup();
         WorkstationGroupSchedule::create([
@@ -401,6 +403,59 @@ class GroupSchedulesPageTest extends TestCase
         // Réinitialise les callbacks Gate::before en recréant le Gate facade.
         // Dans Laravel 11, on ne peut pas "unregister" un before callback — on
         // remplace le Gate entier par un neuf.
+        $this->app->singleton(\Illuminate\Contracts\Auth\Access\Gate::class, function ($app) {
+            return new \Illuminate\Auth\Access\Gate(
+                $app,
+                fn () => $app['auth']->user(),
+            );
+        });
+        \Illuminate\Support\Facades\Gate::clearResolvedInstances();
+    }
+
+    /**
+     * Variant de swapAuthToNonAdmin : user non-admin MAIS avec computer.view accordé.
+     * Reproduit le cas "lecteur passif" attendu par la vue read-only : peut
+     * consulter mais pas modifier. Sans computer.view, la Policy 7.1 redirige
+     * silencieusement hors périmètre (AC3 Story 7.1).
+     */
+    private function swapAuthToReadOnlyViewer(): void
+    {
+        $this->app['auth']->forgetGuards();
+        $user = \Mockery::mock(
+            \Illuminate\Contracts\Auth\Authenticatable::class,
+            \Illuminate\Contracts\Auth\Access\Authorizable::class,
+        );
+        // computer.view → true ; tout le reste → false
+        $user->shouldReceive('can')
+            ->with('computer.view', \Mockery::any())
+            ->andReturn(true);
+        $user->shouldReceive('can')
+            ->with('computer.view')
+            ->andReturn(true);
+        $user->shouldReceive('can')->andReturn(false);
+        $user->shouldReceive('checkPermissionTo')
+            ->with('computer.view', \Mockery::any())
+            ->andReturn(true);
+        $user->shouldReceive('checkPermissionTo')
+            ->with('computer.view')
+            ->andReturn(true);
+        $user->shouldReceive('checkPermissionTo')->andReturn(false);
+        $user->shouldReceive('hasPermissionTo')
+            ->with('computer.view', \Mockery::any())
+            ->andReturn(true);
+        $user->shouldReceive('hasPermissionTo')
+            ->with('computer.view')
+            ->andReturn(true);
+        $user->shouldReceive('hasPermissionTo')->andReturn(false);
+        $user->shouldReceive('getAuthIdentifier')->andReturn(2);
+        $user->shouldReceive('getAuthIdentifierName')->andReturn('id');
+        $user->shouldReceive('getAuthPassword')->andReturn('');
+        $user->shouldReceive('getRememberToken')->andReturn('');
+        $user->shouldReceive('setRememberToken');
+        $user->shouldReceive('getRememberTokenName')->andReturn('');
+        $user->login = 'non-admin-viewer';
+        $this->actingAs($user);
+
         $this->app->singleton(\Illuminate\Contracts\Auth\Access\Gate::class, function ($app) {
             return new \Illuminate\Auth\Access\Gate(
                 $app,

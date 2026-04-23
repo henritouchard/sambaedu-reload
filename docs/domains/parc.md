@@ -225,3 +225,17 @@ Seules `wake` et `shutdown` sont autorisées (contrainte CHECK + enum modèle + 
 ### E2E manuel
 
 Voir [`docs/qa/4-4-e2e-manual.md`](../qa/4-4-e2e-manual.md) (10 scénarios VM, dont DST et one-shot rattrapé après downtime).
+
+## Scoping des listings (Story 7.1)
+
+Depuis la Story 7.1, `WorkstationGroupService::listGroups()` et `listMachines()` acceptent un paramètre optionnel `?User $scopeFor = null`. Dans `resources/views/pages/parc/index.blade.php`, on passe `auth()->user()` via un helper `scopedUser()` (qui vérifie `instanceof App\Models\User`).
+
+Comportement :
+
+- `scopeFor === null` → pas de restriction (comportement historique preserved pour les appelants non Livewire / jobs legacy).
+- `scopeFor` avec `computer.view` global via Spatie → pas de restriction (admin).
+- `scopeFor` sans droit global → restreint aux WorkstationGroups autorisés via délégation `computer.view` positive non négateée (cf. `PermissionService::getAuthorizedWorkstationGroups`).
+
+Voir [`docs/domains/rights-management.md`](rights-management.md) pour le détail du modèle de délégation.
+
+Sur `/parc/groups/{id}`, un check `Gate::allows('view', $group)` dans le `mount()` garantit le blocage silencieux (redirect + toast) en cas d'accès hors périmètre (AC3 Story 7.1).

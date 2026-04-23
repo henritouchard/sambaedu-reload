@@ -3,8 +3,11 @@
 use Livewire\Component;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
+use Livewire\WithPagination;
+use App\Components\Traits\WithToasts;
 use App\Enums\SambaPermission;
 use App\Enums\SambaRole;
+use App\Models\DelegationHistory;
 use App\Models\User as EloquentUser;
 use App\Models\Delegation;
 use App\Models\WorkstationGroup;
@@ -14,6 +17,8 @@ use Spatie\Permission\Models\Permission;
 use Illuminate\Support\Facades\Log;
 
 new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
+    use WithToasts;
+    use WithPagination;
 
     #[Url(as: 'tab')]
     public string $activeTab = 'overview';
@@ -28,6 +33,17 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
     public array $rolesOverview = [];
     public array $delegationsOverview = [];
     public bool $dataLoaded = false;
+
+    // Story 7.1 — Onglet Historique (4ᵉ onglet)
+    #[Url]
+    public string $historyActionFilter = '';
+    #[Url]
+    public string $historyTargetFilter = '';
+    #[Url]
+    public string $historyFromFilter = '';
+    #[Url]
+    public string $historyToFilter = '';
+    public int $historyPerPage = 25;
 
     public function mount(): void
     {
@@ -85,8 +101,12 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
             return;
         }
 
-        $this->foundUsers = EloquentUser::where('login', 'ILIKE', "%{$this->userSearch}%")
-            ->orWhere('fullname', 'ILIKE', "%{$this->userSearch}%")
+        // Story 7.1 — Review #8 : ILIKE n'existe pas en SQLite (CI/tests).
+        // On réutilise le même pattern qu'au niveau `getHistoryEntriesProperty`.
+        $likeOp = \Illuminate\Support\Facades\DB::getDriverName() === 'pgsql' ? 'ILIKE' : 'LIKE';
+
+        $this->foundUsers = EloquentUser::where('login', $likeOp, "%{$this->userSearch}%")
+            ->orWhere('fullname', $likeOp, "%{$this->userSearch}%")
             ->limit(10)
             ->get()
             ->map(fn(EloquentUser $u) => [
@@ -132,6 +152,23 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         // Bitmask legacy
         $bitmask = $permissionService->permissionsToBitmask($user);
 
+        // Story 7.1 — historique des 10 dernières opérations sur ce user cible.
+        $userHistory = DelegationHistory::forTarget($user)
+            ->with(['actor', 'workstationGroup'])
+            ->latest('created_at')
+            ->limit(10)
+            ->get()
+            ->map(fn(DelegationHistory $h) => [
+                'id' => $h->id,
+                'created_at' => $h->created_at?->format('d/m/Y H:i'),
+                'action' => $h->action,
+                'actor_login' => $h->actor?->login ?? '—',
+                'workstation_group' => $h->workstationGroup?->name ?? '—',
+                'permission_name' => $h->permission_name,
+                'is_negative' => $h->is_negative,
+            ])
+            ->toArray();
+
         $this->selectedUserDetails = [
             'login' => $user->login,
             'fullname' => $user->fullname ?? $user->login,
@@ -142,6 +179,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
             'role_permissions' => $rolePermissions,
             'all_permissions' => $allPermissions,
             'delegations' => $delegations,
+            'history' => $userHistory,
             'bitmask' => sprintf('0x%04X', $bitmask),
             'ad_synced_at' => $user->ad_synced_at?->format('d/m/Y H:i'),
         ];
@@ -158,6 +196,11 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
 
     public function revokeDelegation(int $delegationId): void
     {
+        // Story 7.1 — Review #C / #5c : defense-in-depth. Le middleware route
+        // bloque déjà l'accès à la page, mais un guard explicite protège contre
+        // un appel Livewire forgé côté admin compromis (log explicite + 403).
+        abort_unless(\Illuminate\Support\Facades\Gate::allows('user.assign.right'), 403);
+
         $delegation = Delegation::find($delegationId);
         if (!$delegation) {
             return;
@@ -168,7 +211,19 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         $group = $delegation->workstationGroup;
         $permName = $delegation->permission->name;
 
-        $permissionService->revokeDelegation($user, $permName, $group);
+        // Story 7.1 — passer l'acteur explicite (auth()->user()) pour l'historique.
+        $actor = auth()->user();
+        $actorEloquent = $actor instanceof EloquentUser ? $actor : null;
+
+        $permissionService->revokeDelegation($user, $permName, $group, $actorEloquent);
+
+        // Toast succès (WithToasts) — AC8
+        $this->toastSuccess("Délégation {$permName} révoquée sur {$group->name}");
+
+        // Story 7.1 — Review #4 (Option B) : alerte si l'audit best-effort a échoué.
+        if ($permissionService->lastAuditFailed) {
+            $this->toastWarning("Délégation révoquée mais la traçabilité n'a pas été enregistrée. Contactez l'administrateur.");
+        }
 
         // Rafraîchir les détails
         if ($this->selectedUserLogin) {
@@ -183,6 +238,91 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
     public function setActiveTab(string $tab): void
     {
         $this->activeTab = $tab;
+        $this->resetPage('historyPage');
+    }
+
+    // ========================================================================
+    // Story 7.1 — Onglet Historique (AC6)
+    // ========================================================================
+
+    /**
+     * Propriété computed : paginator de l'historique filtrable.
+     *
+     * Filtres disponibles :
+     *  - `historyActionFilter` : grant / revoke / negate / expire
+     *  - `historyTargetFilter` : login cible (LIKE)
+     *  - `historyFromFilter` / `historyToFilter` : bornes de date (YYYY-MM-DD)
+     */
+    public function getHistoryEntriesProperty()
+    {
+        $query = DelegationHistory::query()
+            ->with(['actor', 'target', 'workstationGroup']);
+
+        if (!empty($this->historyActionFilter)) {
+            $query->where('action', $this->historyActionFilter);
+        }
+
+        if (!empty($this->historyTargetFilter)) {
+            $search = "%{$this->historyTargetFilter}%";
+            $query->whereHas('target', function ($q) use ($search) {
+                // ILIKE n'existe pas en SQLite — fallback LIKE sans accents.
+                $op = \Illuminate\Support\Facades\DB::getDriverName() === 'pgsql' ? 'ILIKE' : 'LIKE';
+                $q->where('login', $op, $search);
+            });
+        }
+
+        if (!empty($this->historyFromFilter)) {
+            try {
+                $from = \Carbon\Carbon::parse($this->historyFromFilter)->startOfDay();
+                $query->where('created_at', '>=', $from);
+            } catch (\Exception $e) {
+                // Filtre ignoré si date invalide.
+            }
+        }
+
+        if (!empty($this->historyToFilter)) {
+            try {
+                $to = \Carbon\Carbon::parse($this->historyToFilter)->endOfDay();
+                $query->where('created_at', '<=', $to);
+            } catch (\Exception $e) {
+                // Filtre ignoré si date invalide.
+            }
+        }
+
+        return $query->orderByDesc('created_at')
+            ->paginate($this->historyPerPage, ['*'], 'historyPage');
+    }
+
+    /**
+     * Reset des filtres de l'onglet Historique.
+     */
+    public function resetHistoryFilters(): void
+    {
+        $this->historyActionFilter = '';
+        $this->historyTargetFilter = '';
+        $this->historyFromFilter = '';
+        $this->historyToFilter = '';
+        $this->resetPage('historyPage');
+    }
+
+    public function updatedHistoryActionFilter(): void
+    {
+        $this->resetPage('historyPage');
+    }
+
+    public function updatedHistoryTargetFilter(): void
+    {
+        $this->resetPage('historyPage');
+    }
+
+    public function updatedHistoryFromFilter(): void
+    {
+        $this->resetPage('historyPage');
+    }
+
+    public function updatedHistoryToFilter(): void
+    {
+        $this->resetPage('historyPage');
     }
 
 };
@@ -209,6 +349,11 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
                 class="tab tab-lg {{ $activeTab === 'delegations' ? 'tab-active' : '' }}">
                 <i class="fa-solid fa-building mr-2"></i>
                 Délégations actives
+            </button>
+            <button wire:click="setActiveTab('history')"
+                class="tab tab-lg {{ $activeTab === 'history' ? 'tab-active' : '' }}">
+                <i class="fa-solid fa-clock-rotate-left mr-2"></i>
+                Historique
             </button>
         </div>
 
@@ -429,6 +574,59 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
                                     <span class="text-sm text-base-content/40">Aucune délégation active</span>
                                 @endif
                             </div>
+
+                            {{-- Story 7.1 — Historique des 10 dernières opérations sur ce user cible (AC6) --}}
+                            <div>
+                                <h4 class="text-sm font-bold mb-2">
+                                    <i class="fa-solid fa-clock-rotate-left mr-1 text-info"></i>
+                                    Historique des délégations
+                                    <span class="text-xs text-base-content/40 font-normal">
+                                        (10 dernières opérations)
+                                    </span>
+                                </h4>
+                                @if (!empty($selectedUserDetails['history']))
+                                    <div class="overflow-x-auto">
+                                        <table class="table table-sm">
+                                            <thead>
+                                                <tr>
+                                                    <th>Date</th>
+                                                    <th>Acteur</th>
+                                                    <th>Action</th>
+                                                    <th>Salle</th>
+                                                    <th>Permission</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach ($selectedUserDetails['history'] as $h)
+                                                    <tr>
+                                                        <td class="text-xs text-base-content/70">{{ $h['created_at'] }}</td>
+                                                        <td class="text-xs font-mono">{{ $h['actor_login'] }}</td>
+                                                        <td>
+                                                            @php
+                                                                $badgeClass = match ($h['action']) {
+                                                                    'grant' => 'badge-success',
+                                                                    'revoke' => 'badge-warning',
+                                                                    'negate' => 'badge-error',
+                                                                    'expire' => 'badge-ghost',
+                                                                    default => 'badge-ghost',
+                                                                };
+                                                            @endphp
+                                                            <span class="badge {{ $badgeClass }} badge-xs">{{ $h['action'] }}</span>
+                                                            @if ($h['is_negative'])
+                                                                <span class="badge badge-error badge-xs ml-1">neg</span>
+                                                            @endif
+                                                        </td>
+                                                        <td class="text-xs">{{ $h['workstation_group'] }}</td>
+                                                        <td><span class="font-mono text-xs">{{ $h['permission_name'] }}</span></td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                @else
+                                    <span class="text-sm text-base-content/40">Aucun historique pour cet utilisateur</span>
+                                @endif
+                            </div>
                         </div>
                     @elseif (!$selectedUserLogin && empty($foundUsers))
                         <div class="text-center py-8">
@@ -507,6 +705,13 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
                     </div>
                 </div>
             @endif
+        @endif
+
+        {{-- ============================================================ --}}
+        {{-- ONGLET HISTORIQUE — Story 7.1 (AC6) --}}
+        {{-- ============================================================ --}}
+        @if ($activeTab === 'history')
+            @include('pages.rights-management._partials.history-tab')
         @endif
 
     </div>

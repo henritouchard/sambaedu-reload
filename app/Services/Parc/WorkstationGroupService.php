@@ -8,6 +8,8 @@ use App\LdapModels\DeviceGroupModel;
 use App\LdapModels\DeviceGroupTagModel;
 use App\Models\MachinePowerActionTask;
 use App\Services\WorkstationService;
+use App\Services\PermissionService;
+use App\Models\User;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Observers\WorkstationGroupObserver;
@@ -51,15 +53,54 @@ class WorkstationGroupService
     // ========================================
 
     /**
-     * Liste les machines avec filtres et pagination
+     * Liste les machines avec filtres et pagination.
+     *
+     * Story 7.1 — paramètre optionnel `$scopeFor` :
+     *  - `null` (défaut) : comportement historique, aucune restriction de périmètre.
+     *  - `User` fourni :
+     *      · si l'user a le droit global `computer.view` via Spatie → pas de
+     *        restriction (équivalent admin).
+     *      · sinon → restreindre aux machines appartenant aux WorkstationGroups
+     *        sur lesquels l'user a une délégation `computer.view` active et
+     *        non-négateée (via `PermissionService::getAuthorizedWorkstationGroups`).
+     *        Si la liste des groupes autorisés est vide → pagination vide.
+     *
+     * Les appelants existants qui n'injectent pas `$scopeFor` ne sont pas affectés
+     * (contrat backward-compat garanti).
      */
     public function listMachines(
         int $perPage = 20,
         ?string $search = null,
         ?string $os = null,
-        ?int $groupId = null
+        ?int $groupId = null,
+        ?User $scopeFor = null
     ): LengthAwarePaginator {
-        return $this->repository->getMachines($perPage, $search, $os, $groupId);
+        $authorizedGroupIds = $this->resolveAuthorizedGroupIds($scopeFor);
+
+        // $authorizedGroupIds === null : pas de scope demandé ou user a le droit
+        // global — on retombe sur le comportement historique.
+        if ($authorizedGroupIds === null) {
+            return $this->repository->getMachines($perPage, $search, $os, $groupId);
+        }
+
+        // Si un groupId explicite est demandé mais qu'il n'est pas dans le
+        // périmètre autorisé → retour vide (ne pas fuiter l'existence du group).
+        if ($groupId !== null && !in_array($groupId, $authorizedGroupIds, true)) {
+            return $this->emptyMachinesPaginator($perPage);
+        }
+
+        // Si aucun group autorisé → rien à afficher.
+        if (empty($authorizedGroupIds)) {
+            return $this->emptyMachinesPaginator($perPage);
+        }
+
+        return $this->repository->getMachinesScoped(
+            perPage: $perPage,
+            search: $search,
+            os: $os,
+            groupId: $groupId,
+            authorizedGroupIds: $authorizedGroupIds,
+        );
     }
 
     /**
@@ -229,15 +270,97 @@ class WorkstationGroupService
     // ========================================
 
     /**
-     * Liste les groupes avec filtres et pagination
+     * Liste les groupes avec filtres et pagination.
+     *
+     * Story 7.1 — paramètre optionnel `$scopeFor` : même sémantique que
+     * `listMachines()`. Si l'user délégué n'a pas le droit global
+     * `computer.view`, on contraint la liste aux WorkstationGroups sur
+     * lesquels il a une délégation positive active non-négateée.
+     * Le périmètre est calculé côté `PermissionService::getAuthorizedWorkstationGroups`.
+     *
+     * Appelants non-scopés (null) → comportement historique préservé.
      */
     public function listGroups(
         int $perPage = 20,
         ?string $search = null,
         ?int $parentId = null,
-        ?bool $isPhysical = null
+        ?bool $isPhysical = null,
+        ?User $scopeFor = null
     ): LengthAwarePaginator {
-        return $this->repository->getGroups($perPage, $search, $parentId, $isPhysical);
+        $authorizedGroupIds = $this->resolveAuthorizedGroupIds($scopeFor);
+
+        if ($authorizedGroupIds === null) {
+            return $this->repository->getGroups($perPage, $search, $parentId, $isPhysical);
+        }
+
+        if (empty($authorizedGroupIds)) {
+            return $this->emptyGroupsPaginator($perPage);
+        }
+
+        return $this->repository->getGroupsScoped(
+            perPage: $perPage,
+            search: $search,
+            parentId: $parentId,
+            isPhysical: $isPhysical,
+            authorizedGroupIds: $authorizedGroupIds,
+        );
+    }
+
+    /**
+     * Résout la liste d'IDs de WorkstationGroups autorisés pour un scope user.
+     *
+     * Retour :
+     *  - `null`   → pas de scope demandé (user null) OU user a le droit global
+     *               `computer.view` → aucun filtre à appliquer en aval.
+     *  - `int[]`  → liste (possiblement vide) des IDs autorisés par délégation.
+     *
+     * @return array<int,int>|null
+     */
+    private function resolveAuthorizedGroupIds(?User $scopeFor): ?array
+    {
+        if ($scopeFor === null) {
+            return null;
+        }
+
+        // Droit global Spatie → équivalent admin, pas de restriction.
+        if ($scopeFor->can('computer.view')) {
+            return null;
+        }
+
+        // Sinon, liste des WorkstationGroups autorisés par délégation.
+        return app(PermissionService::class)
+            ->getAuthorizedWorkstationGroups($scopeFor, 'computer.view')
+            ->pluck('id')
+            ->map(static fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * Construit un paginator vide (pour périmètre sans groupes autorisés).
+     */
+    private function emptyGroupsPaginator(int $perPage): LengthAwarePaginator
+    {
+        return new LengthAwarePaginator(
+            items: collect(),
+            total: 0,
+            perPage: $perPage,
+            currentPage: 1,
+            options: ['path' => request()?->url() ?? ''],
+        );
+    }
+
+    /**
+     * Construit un paginator vide (pour périmètre sans machines autorisées).
+     */
+    private function emptyMachinesPaginator(int $perPage): LengthAwarePaginator
+    {
+        return new LengthAwarePaginator(
+            items: collect(),
+            total: 0,
+            perPage: $perPage,
+            currentPage: 1,
+            options: ['path' => request()?->url() ?? ''],
+        );
     }
 
     /**
@@ -356,11 +479,39 @@ class WorkstationGroupService
     }
 
     /**
-     * Récupère les groupes racine pour les sélecteurs
+     * Récupère les groupes racine pour les sélecteurs.
+     *
+     * Story 7.1 — Review #7 : paramètre optionnel `$scopeFor` pour filtrer
+     * le dropdown "Filtrer par groupe" aux seuls groupes autorisés.
+     *  - `null` (défaut) : comportement historique, toutes les racines.
+     *  - `User` fourni :
+     *      · si l'user a le droit global `computer.view` via Spatie → pas de
+     *        restriction (équivalent admin).
+     *      · sinon → restreindre aux WorkstationGroups autorisés par délégation.
+     *        Si la liste des groupes autorisés est vide → collection vide.
+     *
+     * Contrairement à `listGroups`/`listMachines`, on filtre sur `id`
+     * directement (les racines autorisées peuvent figurer dans la liste
+     * déléguée — on n'essaye pas de remonter au root d'un sous-groupe délégué
+     * car la hiérarchie logique n'est pas cible de délégation en 7.1).
      */
-    public function getRootGroupsForSelect(): Collection
+    public function getRootGroupsForSelect(?User $scopeFor = null): Collection
     {
-        return $this->repository->getRootGroups();
+        $authorizedGroupIds = $this->resolveAuthorizedGroupIds($scopeFor);
+
+        // $authorizedGroupIds === null : pas de scope ou user admin → comportement historique.
+        if ($authorizedGroupIds === null) {
+            return $this->repository->getRootGroups();
+        }
+
+        // Liste vide : aucun groupe visible → collection vide (évite leak de noms).
+        if (empty($authorizedGroupIds)) {
+            return collect();
+        }
+
+        return $this->repository->getRootGroups()
+            ->filter(static fn (WorkstationGroup $g) => in_array((int) $g->id, $authorizedGroupIds, true))
+            ->values();
     }
 
     /**

@@ -78,7 +78,9 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     {
         try {
             $this->availableOs = $this->parcService->getAvailableOs()->toArray();
-            $this->availableGroups = $this->parcService->getRootGroupsForSelect();
+            // Story 7.1 — Review #7 : scoper le dropdown "Filtrer par groupe"
+            // au périmètre du user courant pour éviter la fuite des noms de salles.
+            $this->availableGroups = $this->parcService->getRootGroupsForSelect($this->scopedUser());
         } catch (\Exception $e) {
             Log::error('[Parc] Erreur chargement filtres: ' . $e->getMessage());
             $this->availableOs = [];
@@ -114,7 +116,15 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     public function getMachinesProperty()
     {
         try {
-            return $this->parcService->listMachines(perPage: $this->machinesPerPage, search: $this->machineSearch ?: null, os: $this->osFilter ?: null, groupId: $this->groupFilter);
+            // Story 7.1 : scope par user — les délégués ne voient que les machines
+            // des WorkstationGroups sur lesquels ils ont `computer.view`.
+            return $this->parcService->listMachines(
+                perPage: $this->machinesPerPage,
+                search: $this->machineSearch ?: null,
+                os: $this->osFilter ?: null,
+                groupId: $this->groupFilter,
+                scopeFor: $this->scopedUser(),
+            );
         } catch (\Exception $e) {
             Log::error('[Parc] Erreur chargement machines: ' . $e->getMessage());
             return collect();
@@ -124,11 +134,31 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     public function getGroupsProperty()
     {
         try {
-            return $this->parcService->listGroups(perPage: $this->groupsPerPage, search: $this->groupSearch ?: null, isPhysical: !$this->showLogical);
+            // Story 7.1 : scope par user — les délégués ne voient que leurs
+            // WorkstationGroups autorisés par délégation ou droit global.
+            return $this->parcService->listGroups(
+                perPage: $this->groupsPerPage,
+                search: $this->groupSearch ?: null,
+                isPhysical: !$this->showLogical,
+                scopeFor: $this->scopedUser(),
+            );
         } catch (\Exception $e) {
             Log::error('[Parc] Erreur chargement groupes: ' . $e->getMessage());
             return collect();
         }
+    }
+
+    /**
+     * Story 7.1 — Renvoie l'User Eloquent connecté pour le scoping des listings.
+     *
+     * Retour null si l'user courant n'est pas un `App\Models\User` (dans les
+     * cas où un guard legacy injecte un Authenticatable non-Eloquent) : le
+     * service retombe alors sur le comportement historique (aucune restriction).
+     */
+    private function scopedUser(): ?\App\Models\User
+    {
+        $user = auth()->user();
+        return $user instanceof \App\Models\User ? $user : null;
     }
 
     public function setTab(string $tab): void

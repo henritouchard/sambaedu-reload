@@ -45,6 +45,7 @@ enum SambaRole: string
             self::Eleve => [],
             self::Prof => [
                 SambaPermission::UserRead,
+                SambaPermission::UserPasswordInit,
             ],
             self::EleveAdmin => [
                 SambaPermission::UserPasswordInit,
@@ -71,9 +72,11 @@ enum SambaRole: string
                 SambaPermission::WpkgAssign,
             ],
             self::ReferentNumerique => [
+                SambaPermission::UserPasswordInit,
                 SambaPermission::UserRead,
-                SambaPermission::ShareView,
+                SambaPermission::UserCreateTemp,
                 SambaPermission::ComputerView,
+                SambaPermission::ComputerInstall,
             ],
             self::ComputerAdmin => [
                 SambaPermission::ComputerView,
@@ -83,7 +86,6 @@ enum SambaRole: string
                 SambaPermission::WpkgAssign,
                 SambaPermission::WpkgAdd,
                 SambaPermission::WpkgCreate,
-                SambaPermission::WallpaperManage,
                 SambaPermission::AppCustomize,
             ],
             self::SuperAdmin => SambaPermission::cases(),

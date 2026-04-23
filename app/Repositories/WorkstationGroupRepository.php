@@ -160,6 +160,47 @@ class WorkstationGroupRepository
     }
 
     /**
+     * Story 7.1 — variante scopée de `getMachines()` : restreint aux machines
+     * appartenant (via pivot `workstation_group_workstation`) à l'un des
+     * WorkstationGroups autorisés.
+     *
+     * @param array<int,int> $authorizedGroupIds
+     */
+    public function getMachinesScoped(
+        int $perPage = 20,
+        ?string $search = null,
+        ?string $os = null,
+        ?int $groupId = null,
+        array $authorizedGroupIds = []
+    ): LengthAwarePaginator {
+        $query = Workstation::query()
+            ->whereHas('groups', function (Builder $q) use ($authorizedGroupIds) {
+                $q->whereIn('workstation_groups.id', $authorizedGroupIds);
+            });
+
+        if ($search) {
+            $query->search($search);
+        }
+
+        if ($os) {
+            $query->where('os', $os);
+        }
+
+        if ($groupId) {
+            $query->whereHas('groups', function (Builder $q) use ($groupId) {
+                $q->where('workstation_groups.id', $groupId);
+            });
+        }
+
+        $query->withCount([
+            'applicationStatuses as installed_apps_count' => fn ($q) => $q->where('status', 'installed'),
+            'applicationStatuses as error_apps_count' => fn ($q) => $q->whereIn('status', ['error', 'not-installed']),
+        ]);
+
+        return $query->orderBy('name')->paginate($perPage);
+    }
+
+    /**
      * Récupère une machine par son ID
      */
     public function findMachine(int $id): ?Workstation
@@ -281,6 +322,36 @@ class WorkstationGroupRepository
         ?bool $isPhysical = null
     ): LengthAwarePaginator {
         $query = WorkstationGroup::query();
+
+        if ($search) {
+            $query->search($search);
+        }
+
+        if ($parentId !== null) {
+            $query->where('parent_id', $parentId);
+        }
+
+        if ($isPhysical !== null) {
+            $query->where('is_physical', $isPhysical);
+        }
+
+        return $query->orderBy('name')->paginate($perPage);
+    }
+
+    /**
+     * Story 7.1 — variante scopée de `getGroups()` : restreint aux IDs autorisés.
+     *
+     * @param array<int,int> $authorizedGroupIds IDs autorisés par délégation.
+     */
+    public function getGroupsScoped(
+        int $perPage = 20,
+        ?string $search = null,
+        ?int $parentId = null,
+        ?bool $isPhysical = null,
+        array $authorizedGroupIds = []
+    ): LengthAwarePaginator {
+        $query = WorkstationGroup::query()
+            ->whereIn('id', $authorizedGroupIds);
 
         if ($search) {
             $query->search($search);
