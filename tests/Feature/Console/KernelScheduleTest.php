@@ -78,4 +78,21 @@ class KernelScheduleTest extends TestCase
 
         $this->assertTrue($hasPruneCommand, 'Le scheduler doit déclencher parc:prune-group-schedule-runs (story 4-4).');
     }
+
+    #[Test]
+    public function it_does_not_schedule_quota_refresh_cache(): void
+    {
+        $kernel = $this->app->make(Kernel::class);
+        $schedule = $this->app->make(Schedule::class);
+
+        $scheduleMethod = new \ReflectionMethod($kernel, 'schedule');
+        $scheduleMethod->setAccessible(true);
+        $scheduleMethod->invoke($kernel, $schedule);
+
+        $hasQuotaRefresh = collect($schedule->events())->contains(
+            static fn ($event): bool => str_contains((string) $event->command, 'quota:refresh-cache')
+        );
+
+        $this->assertFalse($hasQuotaRefresh, 'Le scheduler ne doit plus déclencher quota:refresh-cache (supprimée en 5.1a, remplacée par snapshot BDD en 5.1b).');
+    }
 }

@@ -6,7 +6,7 @@ namespace App\Services\Wallpaper;
 
 use App\Dto\Wallpaper\WallpaperContext;
 use App\Dto\Wallpaper\WallpaperResolution;
-use App\Services\QuotaService;
+use App\Services\Filesystem\XfsQuotaService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -32,7 +32,7 @@ class WallpaperComposer
     private static bool $imagickLimitsConfigured = false;
 
     public function __construct(
-        private readonly ?QuotaService $quotaService = null,
+        private readonly ?XfsQuotaService $quotaService = null,
         private readonly ?\App\Services\UserSessionsService $sessions = null,
     ) {
         self::configureImagickLimits();

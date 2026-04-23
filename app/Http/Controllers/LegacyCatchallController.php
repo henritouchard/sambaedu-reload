@@ -287,6 +287,9 @@ class LegacyCatchallController extends Controller
         $targetFile = $isDirWithIndex ? $modulePath . '/index.php' : $modulePath;
 
         $originalCwd = getcwd() ?: base_path();
+        $originalPhpSelf = $_SERVER['PHP_SELF'] ?? '';
+        $originalPost = $_POST;
+        $originalGet = $_GET;
 
         try {
             // Charger le bootstrap legacy (idempotent)
@@ -301,14 +304,40 @@ class LegacyCatchallController extends Controller
             chdir($moduleDir);
 
             // Simuler PHP_SELF pour les forms legacy
-            $originalPhpSelf = $_SERVER['PHP_SELF'] ?? '';
             $_SERVER['PHP_SELF'] = $request->getPathInfo();
 
-            // Capturer la sortie du module legacy
+            // Bridge Request Laravel → superglobales legacy.
+            // En HTTP réel, PHP populate $_POST/$_GET automatiquement, mais
+            // pas via le test harness (Illuminate\Http\Request uniquement).
+            // Le legacy lit $_POST/$_GET directement → on doit les alimenter.
+            $_POST = $request->request->all();
+            $_GET = $request->query->all();
+
+            // Capturer la sortie du module legacy.
+            //
+            // Les pages legacy appellent fréquemment exit()/die() (veyon_out,
+            // associations_out, etc.). exit() est un construct PHP
+            // non-overridable qui termine le process, ce qui casse
+            // PHPUnit #[RunInSeparateProcess] (child process ended unexpectedly)
+            // et rend tests/runners unitaires impossibles.
+            //
+            // Shim : on réécrit `exit;`/`exit(…);`/`die;`/`die(…);` en
+            // `throw new \App\Exceptions\LegacyExitException(…);` à la volée
+            // via `eval()` du contenu du fichier, puis on catch la sentinelle
+            // comme une sortie normale.
             $initialObLevel = ob_get_level();
             ob_start();
-            require $targetFile;
-            $output = ob_get_clean() ?: '';
+            try {
+                $this->evalLegacyFile($targetFile);
+                $output = ob_get_clean() ?: '';
+            } catch (\App\Exceptions\LegacyExitException $exitE) {
+                // exit()/die() legacy capturé : output = ce qui a été écrit
+                // + (éventuellement) le message passé à exit()/die().
+                $output = ob_get_clean() ?: '';
+                if ($exitE->getMessage() !== '') {
+                    $output .= $exitE->getMessage();
+                }
+            }
 
             // Récupérer les headers envoyés par le module legacy (status, content-type, redirects)
             $statusCode = http_response_code() ?: 200;
@@ -322,9 +351,6 @@ class LegacyCatchallController extends Controller
                     }
                 }
             }
-
-            // Restaurer PHP_SELF
-            $_SERVER['PHP_SELF'] = $originalPhpSelf;
 
             // Détection : page web HTML → embed dans le layout SER
             if ($this->isHtmlWebPage($contentType, $output)) {
@@ -380,11 +406,104 @@ class LegacyCatchallController extends Controller
 
             abort(500, 'Erreur module legacy [' . basename(dirname($modulePath)) . ']: ' . $e->getMessage());
         } finally {
-            // Restaurer le CWD original
+            // Restaurer le CWD original et les superglobales
             if (is_dir($originalCwd)) {
                 chdir($originalCwd);
             }
+            $_SERVER['PHP_SELF'] = $originalPhpSelf;
+            $_POST = $originalPost;
+            $_GET = $originalGet;
         }
+    }
+
+    /**
+     * Exécute un fichier legacy via `eval()` après réécriture des `exit()`
+     * et `die()` en `throw new LegacyExitException(...)`.
+     *
+     * Motif : exit()/die() sont des constructs non-overridables qui
+     * terminent le process PHP, ce qui est fatal sous PHPUnit
+     * (#[RunInSeparateProcess] — « child process ended unexpectedly »).
+     * En réécrivant à la volée, le legacy continue de se comporter
+     * comme avant côté flow (sortie immédiate) mais le controller peut
+     * maintenant capturer l'output et finaliser la response proprement.
+     *
+     * Limites : on ne rewrite que les `exit`/`die` hors chaînes et
+     * commentaires (via parcours des tokens PHP). Les fichiers déjà
+     * require_once'd par le legacy (includes/*.inc.php) ne sont PAS
+     * re-rewrités — tout exit() qui s'y trouve garde son comportement
+     * natif. En pratique, les exit() visibles dans le legacy sambaedu
+     * sont tous dans les fichiers de module gpo/*.php directement.
+     */
+    private function evalLegacyFile(string $targetFile): void
+    {
+        $source = file_get_contents($targetFile);
+        if ($source === false) {
+            throw new \RuntimeException("Impossible de lire le fichier legacy : {$targetFile}");
+        }
+
+        $rewritten = $this->rewriteLegacySource($source, $targetFile);
+
+        // Retirer le tag d'ouverture <?php pour eval()
+        if (str_starts_with($rewritten, '<?php')) {
+            $rewritten = substr($rewritten, 5);
+        } elseif (str_starts_with($rewritten, '<?')) {
+            $rewritten = substr($rewritten, 2);
+        }
+
+        // eval() évalue le code dans le scope courant. Pour que les
+        // includes relatifs (require "config.inc.php") fonctionnent comme
+        // dans un require direct, on a déjà chdir() dans le moduleDir.
+        eval($rewritten);
+    }
+
+    /**
+     * Réécrit le source legacy pour eval() :
+     *  1. `exit`/`die` → `throw new \App\Exceptions\LegacyExitException(...)`
+     *     (via T_EXIT, qui couvre les 2 aliases).
+     *  2. `__FILE__` → chaîne littérale vers le vrai fichier
+     *  3. `__DIR__` → chaîne littérale vers le dossier du fichier
+     *
+     * Sans (2)/(3), un `require(dirname(__FILE__) . '/foo')` dans le legacy
+     * pointerait vers le fichier appelant `eval()` au lieu du fichier legacy
+     * d'origine (bug de path sur les includes relatifs type vendor/autoload).
+     *
+     * Utilise token_get_all() pour ne pas matcher dans chaînes/commentaires.
+     */
+    private function rewriteLegacySource(string $source, string $targetFile): string
+    {
+        $tokens = token_get_all($source);
+        $out = '';
+        $fileLiteral = var_export($targetFile, true);
+        $dirLiteral = var_export(dirname($targetFile), true);
+
+        foreach ($tokens as $token) {
+            if (is_array($token)) {
+                switch ($token[0]) {
+                    case T_EXIT:
+                        $out .= 'throw new \\App\\Exceptions\\LegacyExitException';
+                        continue 2;
+                    case T_FILE:
+                        $out .= $fileLiteral;
+                        continue 2;
+                    case T_DIR:
+                        $out .= $dirLiteral;
+                        continue 2;
+                }
+                $out .= $token[1];
+            } else {
+                $out .= $token;
+            }
+        }
+
+        // `exit;` (sans parenthèses) devient `throw new ...Exception;`
+        // → invalide. On normalise en `throw new ...Exception();`.
+        $out = preg_replace(
+            '/throw new \\\\App\\\\Exceptions\\\\LegacyExitException(\s*;)/',
+            'throw new \\App\\Exceptions\\LegacyExitException()$1',
+            $out
+        );
+
+        return $out;
     }
 
     /**

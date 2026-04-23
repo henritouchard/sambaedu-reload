@@ -196,7 +196,7 @@ class GroupSchedulesPageTest extends TestCase
         ]);
 
         Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
-            ->assertSee('Programmations')
+            ->assertSee('Actions Programmées')
             ->assertSee('Lun–Ven')
             ->assertSee('08:30');
     }
@@ -303,7 +303,7 @@ class GroupSchedulesPageTest extends TestCase
         ]);
 
         $html = Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
-            ->assertSee('Programmations')
+            ->assertSee('Actions Programmées')
             ->html();
 
         // Le bouton "Ajouter" ne doit pas être présent (guarded @can)
@@ -436,7 +436,7 @@ class GroupSchedulesPageTest extends TestCase
         }
 
         Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
-            ->assertSee('Programmations');
+            ->assertSee('Actions Programmées');
 
         $this->assertEquals(3, WorkstationGroupScheduleRun::count());
     }
@@ -478,14 +478,15 @@ class GroupSchedulesPageTest extends TestCase
     {
         $group = $this->makeGroup();
 
-        $futureDate = now()->addDays(2)->format('Y-m-d\TH:i');
+        $future = now()->addDays(2);
 
         Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
             ->call('openScheduleModal')
             ->call('toggleFormMode', 'one_shot')
             ->assertSet('formMode', 'one_shot')
             ->set('formAction', 'wake')
-            ->set('formRunAt', $futureDate)
+            ->set('formRunAtDate', $future->format('d/m/Y'))
+            ->set('formRunAtTime', $future->format('H:i'))
             ->call('saveSchedule')
             ->assertSet('scheduleModalOpen', false);
 
@@ -508,19 +509,22 @@ class GroupSchedulesPageTest extends TestCase
 
         $component->call('toggleFormMode', 'recurring')
             ->assertSet('formMode', 'recurring')
-            ->assertSet('formRunAt', null);
+            ->assertSet('formRunAtDate', null);
     }
 
     public function test_one_shot_with_run_at_in_past_shows_validation_error(): void
     {
         $group = $this->makeGroup();
 
+        $past = now()->subHour();
+
         Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
             ->call('openScheduleModal')
             ->call('toggleFormMode', 'one_shot')
-            ->set('formRunAt', now()->subHour()->format('Y-m-d\TH:i'))
+            ->set('formRunAtDate', $past->format('d/m/Y'))
+            ->set('formRunAtTime', $past->format('H:i'))
             ->call('saveSchedule')
-            ->assertHasErrors(['formRunAt']);
+            ->assertHasErrors(['formRunAtDate']);
 
         $this->assertEquals(0, WorkstationGroupSchedule::count());
     }
