@@ -95,4 +95,25 @@ class KernelScheduleTest extends TestCase
 
         $this->assertFalse($hasQuotaRefresh, 'Le scheduler ne doit plus déclencher quota:refresh-cache (supprimée en 5.1a, remplacée par snapshot BDD en 5.1b).');
     }
+
+    #[Test]
+    public function it_schedules_quota_snapshot_daily_at_03h(): void
+    {
+        $kernel = $this->app->make(Kernel::class);
+        $schedule = $this->app->make(Schedule::class);
+
+        $scheduleMethod = new \ReflectionMethod($kernel, 'schedule');
+        $scheduleMethod->setAccessible(true);
+        $scheduleMethod->invoke($kernel, $schedule);
+
+        $hasQuotaSnapshot = collect($schedule->events())->contains(
+            static fn ($event): bool => str_contains((string) $event->command, 'quota:snapshot')
+                && $event->expression === '0 3 * * *'
+        );
+
+        $this->assertTrue(
+            $hasQuotaSnapshot,
+            'Le scheduler doit déclencher quota:snapshot quotidiennement à 03h00 (story 5.1b).'
+        );
+    }
 }

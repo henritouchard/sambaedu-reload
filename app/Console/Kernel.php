@@ -48,6 +48,14 @@ class Kernel extends ConsoleKernel
         $schedule->command('parc:prune-group-schedule-runs')
                  ->daily()
                  ->runInBackground();
+
+        // Story 5.1b : Snapshot quotas XFS quotidien à 03h00
+        // Parse `xfs_quota -x -c 'report -a -N'` en une passe et alimente
+        // users.quota_snapshot. Remplace le cache 5 min supprimé en 5.1a.
+        $schedule->command('quota:snapshot')
+                 ->dailyAt('03:00')
+                 ->withoutOverlapping()
+                 ->runInBackground();
     }
 
     /**

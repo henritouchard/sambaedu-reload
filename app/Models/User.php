@@ -72,6 +72,7 @@ class User extends Authenticatable implements Wireable
         'ad_rights_bitmask',
         'ad_synced_at',
         'pwd_reset_at',
+        'quota_snapshot',
     ];
 
     protected $hidden = [
@@ -86,6 +87,10 @@ class User extends Authenticatable implements Wireable
         'ad_synced_at' => 'datetime',
         'pwd_reset_at' => 'datetime',
         'password' => 'hashed',
+        // Snapshot quota quotidien (story 5.1b) — structure documentée dans
+        // la migration `add_quota_snapshot_to_users_table` et dans la
+        // commande `QuotaSnapshotCommand`.
+        'quota_snapshot' => 'array',
     ];
 
     // ========================================================================

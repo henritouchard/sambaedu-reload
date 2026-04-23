@@ -248,7 +248,7 @@ new class extends Component {
     {
         $term = trim($this->search);
 
-        $query = User::query()->select(['id', 'login', 'firstname', 'lastname', 'fullname', 'is_active', 'school_code']);
+        $query = User::query()->select(['id', 'login', 'firstname', 'lastname', 'fullname', 'is_active', 'school_code', 'quota_snapshot']);
 
         if (mb_strlen($term) >= 4) {
             $normalizedSearch = '%' . mb_strtolower($term) . '%';
@@ -499,6 +499,7 @@ new class extends Component {
                             <th>Nom</th>
                             <th>Prénom</th>
                             <th>Login</th>
+                            <th>Utilisation</th>
                             <th>Statut</th>
                         </tr>
                     </thead>
@@ -516,6 +517,28 @@ new class extends Component {
                                 <td>{{ $user->firstname ?: '-' }}</td>
                                 <td class="font-mono text-sm">{{ $user->login }}</td>
                                 <td>
+                                    @php
+                                        // Story 5.1b — colonne Utilisation (D6 : /home uniquement).
+                                        // Lecture du snapshot JSON directement (zéro shellout).
+                                        $homeSnap = $user->quota_snapshot['home'] ?? null;
+                                        $percent = is_array($homeSnap) ? ($homeSnap['percent'] ?? null) : null;
+                                        $overSoft = is_array($homeSnap) ? (bool) ($homeSnap['is_over_soft'] ?? false) : false;
+                                        $badgeClass = 'badge-success';
+                                        if ($percent !== null) {
+                                            if ($percent >= 90 || $overSoft) {
+                                                $badgeClass = 'badge-error';
+                                            } elseif ($percent >= 70) {
+                                                $badgeClass = 'badge-warning';
+                                            }
+                                        }
+                                    @endphp
+                                    @if ($percent === null)
+                                        <span class="text-base-content/40" title="Aucun snapshot disponible">—</span>
+                                    @else
+                                        <span class="badge {{ $badgeClass }}" title="Utilisation /home">{{ $percent }}%</span>
+                                    @endif
+                                </td>
+                                <td>
                                     <div class="flex gap-1 flex-wrap">
                                         @if ($user->is_active)
                                             <span class="badge badge-success">Actif</span>
@@ -530,7 +553,7 @@ new class extends Component {
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="text-center py-8 text-base-content/60">
+                                <td colspan="6" class="text-center py-8 text-base-content/60">
                                     Aucun utilisateur trouvé.
                                 </td>
                             </tr>

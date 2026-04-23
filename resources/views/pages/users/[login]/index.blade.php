@@ -442,9 +442,9 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
             @include('pages.users.[login]._partials.permissions')
         </div>
 
-        <!-- Quotas disque -->
+        <!-- Quotas disque (story 5.1b) — Livewire SFC remplaçant le Blade pur -->
         <div class="mb-6">
-            @include('pages.users.[login]._partials.quota-info')
+            @livewire('pages::users.[login]._partials.quota-section', ['login' => $user->login], key('quota-'.$user->login))
         </div>
 
         <!-- Fond d'écran personnel (story 4.7 AC 11) -->
