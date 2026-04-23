@@ -9,6 +9,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Mode dev : conserve les require-dev (phpunit, etc.) pour pouvoir lancer
+# `php artisan test` après l'update. Off par défaut (déploiement prod).
+DEV_MODE=false
+
 # Configuration
 APACHE_CONF_SOURCE="$APP_DIR/config/apache/sambaedu.conf"
 APACHE_CONF_TARGET="/etc/apache2/sites-available/sambaedu.conf"
@@ -64,7 +68,14 @@ update_composer() {
     log "Mise à jour dépendances Composer..."
     cd "$APP_DIR"
 
-    composer install --no-dev --optimize-autoloader --no-interaction
+    local composer_flags=(--optimize-autoloader --no-interaction)
+    if [[ "$DEV_MODE" == true ]]; then
+        log "  → mode dev : require-dev conservés (phpunit, etc.)"
+    else
+        composer_flags+=(--no-dev)
+    fi
+
+    composer install "${composer_flags[@]}"
 
     # Régénération forcée du classmap autoload : garantit que les classes
     # renommées/supprimées entre deux déploiements (ex: refactor 5.1a
@@ -274,8 +285,39 @@ show_summary() {
 # Main
 # ============================================================================
 
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dev|-d)
+                DEV_MODE=true
+                ;;
+            -h|--help)
+                cat <<EOF
+Usage: $(basename "$0") [--dev]
+
+Options:
+  --dev, -d   Conserve les dépendances de dev (phpunit, etc.) pour pouvoir
+              lancer 'php artisan test' après l'update. Par défaut, le script
+              exécute 'composer install --no-dev' (déploiement prod).
+EOF
+                exit 0
+                ;;
+            *)
+                log_error "Option inconnue : $1 (voir --help)"
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}
+
 main() {
+    parse_args "$@"
+
     log "Démarrage de la mise à jour..."
+    if [[ "$DEV_MODE" == true ]]; then
+        log "Mode : dev (require-dev conservés)"
+    fi
     echo ""
 
     check_root

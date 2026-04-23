@@ -21,10 +21,15 @@ use App\Services\WindowsLnkGenerator;
  * - Interception legacy gpo/shortcuts_out.php → nouveau système
  * - Performance (benchmark optionnel via --group=benchmark)
  *
- * Lancer : php artisan test --filter=ShortcutExportComparisonTest
+ * Lancer : php artisan test --group=requires-postgres --filter=ShortcutExportComparisonTest
  *          php artisan shortcuts:test
  *          php artisan shortcuts:test --benchmark
+ *
+ * Exclus du run par défaut (`php artisan test`) via le groupe `requires-postgres` :
+ * ces tests tapent Postgres réel + HTTP + legacy sambaedu/ et ne peuvent pas
+ * être mockés (identité binaire .lnk, parité avec create_windows_lnk legacy).
  */
+#[Group('requires-postgres')]
 class ShortcutExportComparisonTest extends TestCase
 {
     private ShortcutCompilerService $compiler;
