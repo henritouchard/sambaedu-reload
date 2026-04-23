@@ -150,6 +150,12 @@ class PasswordResetExportService
             'forceChange' => (bool) ($options['force_change'] ?? true),
         ])->render();
 
+        // Les warnings PHP (notamment "Constant K_PATH_FONTS already defined" émis
+        // par tcpdf.config.php à chaque requête) sont promus en ErrorException par
+        // Laravel et feraient tomber tout l'export dans le fallback. On les neutralise
+        // le temps de la génération.
+        set_error_handler(static fn(): bool => true, E_WARNING | E_NOTICE | E_USER_WARNING | E_USER_NOTICE);
+
         try {
             $fontsDir = resource_path('fonts');
             \TCPDF_FONTS::addTTFfont("{$fontsDir}/OpenDyslexic-Regular.ttf", '', '', 32);
@@ -166,9 +172,15 @@ class PasswordResetExportService
             $pdf->writeHTML($html);
             $binary = $pdf->output('', 'S');
         } catch (\Throwable $e) {
-            // Fallback : si html2pdf explose (env CI sans binaire système),
-            // on renvoie un PDF minimal plutôt que d'exposer l'erreur.
+            \Illuminate\Support\Facades\Log::error('PasswordResetExportService: html2pdf failed, using fallback', [
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
             $binary = $this->fallbackPdf($html);
+        } finally {
+            restore_error_handler();
         }
 
         $filename = 'password-reset-' . now()->format('Ymd-His') . '.pdf';

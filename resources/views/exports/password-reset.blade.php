@@ -134,7 +134,7 @@ foreach ($results as $row) {
     @php $isFirstEtab = true; @endphp
     @foreach ($groupedByEtabClass as $etab => $byClasse)
         @if (!$isFirstEtab)
-            <pagebreak />
+            <div style="page-break-before: always;"></div>
         @endif
         @php $isFirstEtab = false; @endphp
 
@@ -143,7 +143,7 @@ foreach ($results as $row) {
         @php $isFirstClasse = true; @endphp
         @foreach ($byClasse as $classe => $users)
             @if (!$isFirstClasse)
-                <pagebreak />
+                <div style="page-break-before: always;"></div>
             @endif
             @php $isFirstClasse = false; @endphp
 

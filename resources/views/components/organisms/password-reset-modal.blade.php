@@ -9,22 +9,16 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 
 /**
- * Modale Livewire SFC — Réinitialisation bulk des mots de passe (story 2.6).
+ * Modale Livewire SFC — Réinitialisation des mots de passe (story 2.6).
  *
- * Déclenchée via les events :
- *   - `open-password-reset-modal` avec `{ users: [...logins], groups: [...ids] }`
+ * Déclenchée via `open-password-reset-modal` avec `{ users: [...logins], groups: [...ids] }`.
  *
- * Flux :
- *   1. Validation permission Gate `user.password.init` (defense in depth)
- *   2. Appel {@see UserService::bulkResetPasswords()} (transaction atomique,
- *      validation préalable AD, rollback SQL si échec)
- *   3. Stockage du listing chiffré dans le cache Redis via
- *      {@see BulkResetListingService::storeListing()} — TTL 20 min, token signé
- *   4. Dispatch event `password-reset-done` + toast + ouverture nouvelle
- *      fenêtre vers l'URL signée du format demandé (PDF/CSV).
- *
- * Sécurité : le mot de passe clair n'est jamais affiché côté UI. Il n'apparaît
- * que dans l'export téléchargé puis est purgé du cache serveur après TTL.
+ * Deux modes de restitution :
+ *   - `display` (mono-user uniquement) : flash le mdp en session et redirige
+ *     vers la fiche user qui l'affiche via user-header.blade.php.
+ *   - `export` : stocke un listing chiffré en cache (TTL 20 min), construit
+ *     une URL signée PDF/CSV, et déclenche un auto-download côté navigateur
+ *     via l'event `download-file` (listener Alpine dans ce composant).
  */
 new class extends Component {
     use WithToasts;
@@ -44,7 +38,10 @@ new class extends Component {
     /** Option legacy `force` : si false → ne réinitialise que les non activés (pwdLastSet==0) */
     public bool $onlyNonActivated = false;
 
-    /** Format demandé : 'pdf' ou 'csv' */
+    /** Mode de restitution : 'display' (affichage écran sur fiche user) ou 'export' (PDF/CSV) */
+    public string $deliveryMode = 'display';
+
+    /** Format demandé : 'pdf' ou 'csv' (uniquement si deliveryMode === 'export') */
     public string $exportFormat = 'pdf';
 
     private UserService $userService;
@@ -69,6 +66,9 @@ new class extends Component {
         $this->forceChangeAtNextLogin = true;
         $this->onlyNonActivated = false;
         $this->exportFormat = 'pdf';
+        // Affichage écran réservé aux sélections mono-user ; en multi on force l'export.
+        $isSingleDirect = count($this->targetLogins) === 1 && count($this->targetGroupIds) === 0;
+        $this->deliveryMode = $isSingleDirect ? 'display' : 'export';
         $this->isProcessing = false;
         $this->isOpen = true;
     }
@@ -117,32 +117,24 @@ new class extends Component {
             return;
         }
 
+        $isDisplayMode = $this->deliveryMode === 'display' && count($this->targetLogins) === 1 && count($this->targetGroupIds) === 0;
+
         if (!($result['success'] ?? false)) {
             $partialFailures = $result['partial_failures'] ?? [];
-            $successfulResults = array_values(array_filter(
-                $result['results'] ?? [],
-                static fn(array $r): bool => ($r['success'] ?? false) === true
-            ));
+            $successfulResults = array_values(array_filter($result['results'] ?? [], static fn(array $r): bool => ($r['success'] ?? false) === true));
 
             if (!empty($partialFailures) && !empty($successfulResults)) {
-                // Option A : listing partiel stocké — l'admin peut récupérer les mdp des users réussis
+                // Partiel : on force l'export (affichage écran non pertinent si multi-users).
                 $operatorId = (int) (auth()->id() ?? 0);
                 $token = $this->listingService->storeListing($operatorId, $successfulResults, [
                     'force_change' => $this->forceChangeAtNextLogin,
                     'bulk_operation_id' => $result['bulk_operation_id'],
                 ]);
-                $pdfUrl = $this->listingService->buildSignedUrl($token, 'pdf');
-                $csvUrl = $this->listingService->buildSignedUrl($token, 'csv');
+                $downloadUrl = $this->listingService->buildSignedUrl($token, $this->exportFormat === 'csv' ? 'csv' : 'pdf');
 
                 $this->dispatch('password-reset-done', token: $token);
-                $this->toastWarningWithActions(
-                    count($successfulResults) . ' réinitialisation(s) réussies, ' . count($partialFailures) . ' échouée(s) (' . implode(', ', $partialFailures) . '). Téléchargez maintenant — expire dans 20 min.',
-                    [
-                        ['label' => 'Télécharger PDF', 'url' => $pdfUrl],
-                        ['label' => 'Télécharger CSV', 'url' => $csvUrl],
-                    ],
-                    sticky: true
-                );
+                $this->dispatch('download-file', url: $downloadUrl);
+                $this->toastWarning(count($successfulResults) . ' réinitialisation(s) réussies, ' . count($partialFailures) . ' échouée(s) (' . implode(', ', $partialFailures) . '). Téléchargement démarré — lien valide 20 min.');
             } else {
                 $this->toastError($result['message'] ?? 'Erreur lors de la réinitialisation.');
             }
@@ -150,23 +142,39 @@ new class extends Component {
             return;
         }
 
-        // Stocker le listing chiffré en cache, retourne un token signé
+        // Mode "affichage écran" (mono-user) : flash le mdp en session et redirige vers la fiche user,
+        // qui affichera la cartouche password via user-header.blade.php.
+        if ($isDisplayMode) {
+            $entry = $result['results'][0] ?? null;
+            $newPassword = $entry['new_password'] ?? null;
+            $login = $entry['login'] ?? ($this->targetLogins[0] ?? null);
+
+            if ($newPassword === null || $login === null) {
+                $this->toastError('Réinitialisation effectuée mais impossible de récupérer le mot de passe généré.');
+                $this->isOpen = false;
+                $this->isProcessing = false;
+                return;
+            }
+
+            session()->flash('created_password', $newPassword);
+            $this->dispatch('password-reset-done');
+            $this->isOpen = false;
+            $this->isProcessing = false;
+            $this->redirect(route('app.user.show', $login), navigate: true);
+            return;
+        }
+
+        // Mode "export" : listing chiffré en cache + URL signée + auto-download côté navigateur.
         $operatorId = (int) (auth()->id() ?? 0);
         $token = $this->listingService->storeListing($operatorId, $result['results'], [
             'force_change' => $this->forceChangeAtNextLogin,
             'bulk_operation_id' => $result['bulk_operation_id'],
         ]);
 
-        $pdfUrl = $this->listingService->buildSignedUrl($token, 'pdf');
-        $csvUrl = $this->listingService->buildSignedUrl($token, 'csv');
+        $downloadUrl = $this->listingService->buildSignedUrl($token, $this->exportFormat === 'csv' ? 'csv' : 'pdf');
 
-        $downloadUrl = $this->exportFormat === 'csv' ? $csvUrl : $pdfUrl;
-
-        $successMessage = count($result['results']) . ' mot(s) de passe réinitialisé(s). Téléchargez le fichier maintenant — expire dans 20 min.';
-        $this->toastSuccessWithActions($successMessage, [
-            ['label' => 'Télécharger PDF', 'url' => $pdfUrl],
-            ['label' => 'Télécharger CSV', 'url' => $csvUrl],
-        ], sticky: true);
+        $successMessage = count($result['results']) . ' mot(s) de passe réinitialisé(s). Le téléchargement démarre — lien valide 20 min.';
+        $this->toastSuccess($successMessage);
 
         $this->dispatch('password-reset-done', token: $token);
         $this->dispatch('download-file', url: $downloadUrl);
@@ -176,21 +184,31 @@ new class extends Component {
 };
 ?>
 
-<div>
+<div x-data
+    @download-file.window="
+        const url = $event.detail?.url ?? $event.detail?.[0]?.url;
+        if (!url) return;
+        const a = document.createElement('a');
+        a.href = url;
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    ">
     <div class="dialog z-[70]" x-data="{ open: @entangle('isOpen') }" x-show="open" x-cloak>
         <div class="fixed inset-0 bg-black/50 z-[70]" x-show="open" @click="$wire.close()"></div>
         <div class="fixed inset-0 z-[71] flex items-center justify-center p-4" x-show="open">
-            <div class="bg-base-100 rounded-lg shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+            <div class="bg-base-100 rounded-lg shadow-xl w-full max-w-xl">
                 {{-- Header --}}
                 <div class="p-4 border-b border-base-300 flex items-center justify-between">
                     <div>
-                        <h3 class="text-lg font-semibold">
+                        <h3 class="text-base font-semibold">
                             Réinitialiser {{ $this->targetCount() }} mot(s) de passe
                         </h3>
-                        <p class="text-xs text-base-content/60 mt-1">
+                        <p class="text-xs text-base-content/50 mt-0.5">
                             {{ count($targetLogins) }} utilisateur(s) direct(s)
                             @if (count($targetGroupIds) > 0)
-                                + {{ count($targetGroupIds) }} groupe(s) (membres directs uniquement)
+                                + {{ count($targetGroupIds) }} groupe(s)
                             @endif
                         </p>
                     </div>
@@ -200,103 +218,110 @@ new class extends Component {
                 </div>
 
                 {{-- Body --}}
-                <div class="p-4 space-y-4">
+                <div class="p-4 space-y-3">
+                    <div class="text-xs mb-3 font-semibold text-base-content/50 uppercase tracking-wide">Utilisateurs
+                    </div>
                     {{-- Liste compacte des logins --}}
                     @if (count($targetLogins) > 0)
-                        <div class="bg-base-200 rounded p-3">
-                            <div class="text-xs font-semibold text-base-content/70 mb-1">
-                                Utilisateurs ciblés :
-                            </div>
-                            <div class="text-sm font-mono">
-                                @foreach (array_slice($targetLogins, 0, 10) as $login)
-                                    <span class="badge badge-outline badge-sm m-0.5">{{ $login }}</span>
-                                @endforeach
-                                @if (count($targetLogins) > 10)
-                                    <span class="text-xs text-base-content/60">
-                                        ... et {{ count($targetLogins) - 10 }} autre(s)
-                                    </span>
-                                @endif
-                            </div>
+                        <div class="bg-base-200 rounded px-2 mb-4 font-mono text-xs flex flex-wrap gap-1">
+                            @foreach (array_slice($targetLogins, 0, 10) as $login)
+                                <span class="badge badge-outline badge-xs">{{ $login }}</span>
+                            @endforeach
+                            @if (count($targetLogins) > 10)
+                                <span class="text-base-content/50">... +{{ count($targetLogins) - 10 }}</span>
+                            @endif
                         </div>
                     @endif
 
+
                     {{-- Option : force (non activés seulement) --}}
-                    <label class="flex gap-3 cursor-pointer">
+                    <div class="text-xs mb-3 font-semibold text-base-content/50 uppercase tracking-wide">Mode</div>
+                    <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" wire:model="onlyNonActivated" class="checkbox checkbox-sm" />
-                        <div class="flex-1">
-                            <div class="font-medium text-sm">Réinitialiser uniquement les non activés</div>
-                            <div class="text-xs text-base-content/60">
-                                Filtre sur <code>pwdLastSet == 0</code> — utile en rentrée scolaire
-                            </div>
+                        <span class="text-sm font-medium">Uniquement les non activés</span>
+                        <div class="tooltip tooltip-right"
+                            data-tip="Ne modifie le mot de passe que des utilisateurs qui n'ont jamais changé leur mot de passe.">
+                            <i class="fa-solid fa-circle-info text-base-content/30"></i>
                         </div>
                     </label>
 
                     {{-- Option : change (pwdLastSet 0 vs -1) --}}
                     <div class="space-y-2">
-                        <label class="flex gap-3 cursor-pointer">
+                        <label class="flex items-center gap-3 cursor-pointer">
                             <input type="radio" wire:model.live="forceChangeAtNextLogin" value="1"
                                 class="radio radio-sm radio-primary" />
-                            <div class="flex-1">
-                                <div class="font-medium text-sm">Forcer changement à la prochaine connexion
-                                    (recommandé)</div>
-                                <div class="text-xs text-base-content/60">
-                                    <code>pwdLastSet = 0</code>
-                                </div>
+                            <span class="text-sm font-medium">Forcer changement à la prochaine connexion</span>
+                            <div class="tooltip tooltip-right" data-tip="Recommandé">
+                                <i class="fa-solid fa-circle-info text-base-content/30 "></i>
                             </div>
                         </label>
-                        <label class="flex gap-3 cursor-pointer">
+                        <label class="flex items-center gap-3 cursor-pointer">
                             <input type="radio" wire:model.live="forceChangeAtNextLogin" value="0"
                                 class="radio radio-sm radio-error" />
-                            <div class="flex-1">
-                                <div class="font-medium text-sm text-error">
-                                    <i class="fa-solid fa-triangle-exclamation"></i>
-                                    Mot de passe définitif (DANGER)
-                                </div>
-                                <div class="text-xs text-error/80">
-                                    <code>pwdLastSet = -1</code> — l'utilisateur conserve le nouveau mot de passe
-                                    sans changement obligatoire. À utiliser uniquement en cas d'incident spécifique.
-                                </div>
+                            <span class="text-sm font-medium text-error">
+                                Mot de passe définitif
+                            </span>
+                            <div class="tooltip tooltip-left"
+                                data-tip="DANGER : l'utilisateur conserve le mot de passe sans changement obligatoire. Uniquement en cas d'incident spécifique.">
+                                <i class="fa-solid fa-circle-info text-base-content/30"></i>
+                            </div>
+                        </label>
+                    </div>
+
+                    {{-- Mode de restitution --}}
+                    @php
+                        $isSingleDirect = count($targetLogins) === 1 && count($targetGroupIds) === 0;
+                    @endphp
+                    <div class="space-y-2">
+                        <div class="text-xs mb-3 font-semibold text-base-content/50 uppercase tracking-wide">Restitution
+                        </div>
+                        <label
+                            class="flex items-center gap-3 {{ $isSingleDirect ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed' }}">
+                            <input type="radio" wire:model.live="deliveryMode" value="display"
+                                class="radio radio-sm radio-primary" @disabled(!$isSingleDirect) />
+                            <span class="text-sm font-medium">Affichage sur la fiche</span>
+                            <div class="tooltip tooltip-right"
+                                data-tip="{{ $isSingleDirect ? 'Le mot de passe apparaît sur la fiche utilisateur (copier/masquer).' : 'Indisponible en sélection multiple.' }}">
+                                <i class="fa-solid fa-circle-info text-base-content/30"></i>
+                            </div>
+                        </label>
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="radio" wire:model.live="deliveryMode" value="export"
+                                class="radio radio-sm radio-primary" />
+                            <span class="text-sm font-medium">Exporter dans un fichier</span>
+                            <div class="tooltip tooltip-right" data-tip="Fichier signé, lien valide 20 min.">
+                                <i class="fa-solid fa-circle-info text-base-content/30"></i>
                             </div>
                         </label>
                     </div>
 
                     {{-- Format export --}}
-                    <div>
-                        <div class="text-xs font-semibold text-base-content/70 mb-1">Format d'export :</div>
-                        <div class="flex gap-4">
-                            <label class="flex gap-2 cursor-pointer">
-                                <input type="radio" wire:model="exportFormat" value="pdf" class="radio radio-sm" />
-                                <span class="text-sm">PDF (cartouches imprimables)</span>
+                    @if ($deliveryMode === 'export')
+                        <div class="flex items-center gap-4 pl-1">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" wire:model="exportFormat" value="pdf" class="radio radio-xs" />
+                                <span class="text-sm">PDF</span>
                             </label>
-                            <label class="flex gap-2 cursor-pointer">
-                                <input type="radio" wire:model="exportFormat" value="csv" class="radio radio-sm" />
-                                <span class="text-sm">CSV (tableur)</span>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" wire:model="exportFormat" value="csv" class="radio radio-xs" />
+                                <span class="text-sm">CSV</span>
                             </label>
                         </div>
-                    </div>
-
-                    {{-- Note rollback AD --}}
-                    <div class="alert alert-info text-xs">
-                        <i class="fa-solid fa-info-circle"></i>
-                        <span>
-                            L'AD ne permet pas de rollback natif. Si une écriture échoue en cours de lot,
-                            les utilisateurs déjà modifiés conservent leur nouveau mot de passe —
-                            un rapport d'échec sera affiché.
-                        </span>
-                    </div>
+                    @endif
                 </div>
+
+                 <p class="px-4 text-xs text-base-content/80"> En cas d'échec partiel, les utilisateurs déjà modifiés conservent leur nouveau mot de passe.</p>
 
                 {{-- Footer --}}
                 <div class="p-4 border-t border-base-300 flex justify-between items-center">
-                    <button type="button" class="btn btn-ghost" wire:click="close" @disabled($isProcessing)>
+                    <button type="button" class="btn btn-ghost btn-sm" wire:click="close" @disabled($isProcessing)>
                         Annuler
                     </button>
-                    <button type="button" class="btn btn-primary" wire:click="performReset"
+                    <button type="button" class="btn btn-primary btn-sm" wire:click="performReset"
                         wire:loading.attr="disabled" wire:target="performReset" @disabled($isProcessing)>
-                        <span wire:loading wire:target="performReset"
-                            class="loading loading-spinner loading-sm"></span>
+                        <span wire:loading wire:target="performReset" class="loading loading-spinner loading-xs"></span>
                         <i wire:loading.remove wire:target="performReset" class="fa-solid fa-key"></i>
-                        Réinitialiser et télécharger
+                        {{ $deliveryMode === 'export' ? 'Réinitialiser et télécharger' : 'Réinitialiser et afficher' }}
                     </button>
                 </div>
             </div>
