@@ -100,6 +100,19 @@ class UserSyncService
             // S'assurer que les permissions et rôles Spatie existent
             $this->ensurePermissionsExist($log);
 
+            // Story 7.2 (AC4) — Rapatriement non-destructif des profils LDAP
+            // custom de la branche `rights_rdn`. Crée les rôles personnalisés
+            // (ex. "Animateur CDI") côté SER s'ils n'existent pas. Jamais
+            // destructif sur les rôles existants. En cas d'erreur LDAP (ex.
+            // branche absente, hors environnement de test), on passe silencieux.
+            try {
+                $customProfilesStats = app(PermissionService::class)->importCustomProfilesFromAd($log);
+                $stats['custom_profiles_rapatries'] = $customProfilesStats;
+            } catch (\Throwable $e) {
+                $log('warning', 'Rapatriement profils LDAP custom ignoré : ' . $e->getMessage());
+                $stats['custom_profiles_rapatries'] = ['errors' => 1];
+            }
+
             if ($deltaMode) {
                 $deltaCursorStart = $this->getDeltaCursor();
                 $stats['delta_cursor_start'] = $deltaCursorStart;
@@ -171,6 +184,20 @@ class UserSyncService
 
     /**
      * S'assure que toutes les permissions et rôles Spatie existent en base
+     *
+     * Story 7.2 (AC2) : NON-DESTRUCTIF.
+     *
+     * Cette méthode garantit la simple **existence** des tables :
+     *  - Les 19 permissions `SambaPermission` sont créées via `findOrCreate`.
+     *  - Les 9 rôles `SambaRole` sont créés via `firstOrCreate`.
+     *
+     * Elle NE synchronise PLUS les permissions des rôles à chaque sync AD.
+     * Ce comportement écrasait les profils personnalisés (rôles custom créés
+     * en UI, ou perms de rôles seedés édités par un admin).
+     *
+     * La synchro initiale des permissions de rôles est déléguée au
+     * `PermissionSeeder` (exécuté au premier déploiement). Sur les runs
+     * suivants, les rôles existants sont laissés intacts.
      */
     private function ensurePermissionsExist(callable $log): void
     {
@@ -192,12 +219,17 @@ class UserSyncService
             $role = Role::firstOrCreate(
                 ['name' => $sambaRole->value, 'guard_name' => 'web']
             );
-            $role->syncPermissions($sambaRole->permissionNames());
-            $createdRoles++;
+            // Story 7.2 — AC2 : on attache les permissions SEULEMENT si le rôle
+            // vient d'être créé. Sinon, préserver la configuration existante
+            // (édition admin via UI ou rapatriement LDAP custom).
+            if ($role->wasRecentlyCreated) {
+                $role->syncPermissions($sambaRole->permissionNames());
+                $createdRoles++;
+            }
         }
 
         if ($createdPerms > 0 || $createdRoles > 0) {
-            $log('info', "{$createdPerms} permission(s) créée(s), {$createdRoles} rôle(s) synchronisé(s)");
+            $log('info', "{$createdPerms} permission(s) créée(s), {$createdRoles} rôle(s) créé(s)");
         }
 
         app()[PermissionRegistrar::class]->forgetCachedPermissions();

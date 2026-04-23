@@ -103,6 +103,31 @@ enum SambaRole: string
     }
 
     /**
+     * Indique si un nom de rôle fait partie des rôles "seedés" par le socle
+     * d'application (profils livrés par défaut, source = cet enum).
+     *
+     * Story 7.2 : utilisé par :
+     *  - `PermissionSeeder` pour distinguer les rôles à re-synchroniser
+     *    (seulement ceux-là) des profils custom créés à l'UI ou rapatriés
+     *    depuis la branche LDAP `rights_rdn`.
+     *  - L'onglet "Profils" (/app/rights-management) pour afficher le badge
+     *    `seeded` vs `custom` et désactiver renommage / suppression sur les
+     *    rôles seedés.
+     *
+     * Cette méthode est la source de vérité : pas de colonne DB `origin` ajoutée
+     * (décision produit 0.9 du 2026-04-23).
+     */
+    public static function isSeeded(string $roleName): bool
+    {
+        foreach (self::cases() as $case) {
+            if ($case->value === $roleName) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Détermine le rôle le plus approprié pour un bitmask legacy
      */
     public static function fromBitmask(int $bitmask): ?self

@@ -186,7 +186,9 @@ class WorkstationGroupScopingTest extends TestCase
 
         Permission::firstOrCreate(['name' => 'computer.view', 'guard_name' => 'web']);
         Permission::firstOrCreate(['name' => 'computer.control', 'guard_name' => 'web']);
-        Permission::firstOrCreate(['name' => 'computer.modify', 'guard_name' => 'web']);
+        // Review 7.2 #1 : la perm existe déjà via le seeder (enum SambaPermission),
+        // on conserve ce firstOrCreate pour les cas de test isolé sans seeder.
+        Permission::firstOrCreate(['name' => 'computer.install', 'guard_name' => 'web']);
     }
 
     private function makeUser(string $login): User
@@ -297,9 +299,10 @@ class WorkstationGroupScopingTest extends TestCase
 
     /**
      * Story 7.1 — Review #1 : la gate `delete-workstationGroup` doit retomber
-     * sur `canAdminComputers` (droit global `computer.modify`). Un délégué
-     * sur un groupe physique ne peut PAS le supprimer, même s'il a la
-     * délégation `computer.view`.
+     * sur `canAdminComputers` (droit global `computer.install` — cf. review
+     * 7.2 #1 : la perm `computer.modify` n'existait pas dans l'enum). Un
+     * délégué sur un groupe physique ne peut PAS le supprimer, même s'il a
+     * la délégation `computer.view`.
      */
     public function test_delegated_user_cannot_delete_group(): void
     {
@@ -313,10 +316,10 @@ class WorkstationGroupScopingTest extends TestCase
         $this->assertFalse(Gate::forUser($user->fresh())->allows('update-workstationGroup', $group));
     }
 
-    public function test_admin_with_computer_modify_can_delete_group(): void
+    public function test_admin_with_computer_install_can_delete_group(): void
     {
         $admin = $this->makeUser('admin-can-delete');
-        $admin->givePermissionTo('computer.modify');
+        $admin->givePermissionTo('computer.install');
 
         $group = $this->makeGroup('del-admin-target');
 
