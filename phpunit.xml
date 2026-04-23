@@ -28,6 +28,7 @@
         <env name="APP_CONFIG_CACHE" value="bootstrap/cache/config-testing.php"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_DRIVER" value="array"/>
+        <env name="LOG_CHANNEL" value="null"/>
         <!-- Tests par défaut sur SQLite :memory: (schémas créés manuellement
              par setUp() des tests). Pour lancer contre Postgres sambaedu_test
              (nécessaire pour Windows/Wpkg), supprimer ces 2 lignes. -->

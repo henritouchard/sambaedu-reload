@@ -78,7 +78,7 @@ class RoutesProtectionTest extends TestCase
     }
 
     /**
-     * @dataProvider protectedRoutesProvider
+     *  dataProvider protectedRoutesProvider
      */
     public function test_route_returns_403_without_permission(string $url, string $permission): void
     {
@@ -95,7 +95,7 @@ class RoutesProtectionTest extends TestCase
     }
 
     /**
-     * @dataProvider protectedRoutesProvider
+     *  dataProvider protectedRoutesProvider
      */
     public function test_route_passes_permission_middleware_when_granted(string $url, string $permission): void
     {
