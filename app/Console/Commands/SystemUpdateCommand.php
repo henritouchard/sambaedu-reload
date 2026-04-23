@@ -10,6 +10,7 @@ class SystemUpdateCommand extends Command
 {
     protected $signature = 'sambaedu:app:update
                             {--skip-migrate : Ne pas exécuter les migrations}
+                            {--skip-seed : Ne pas exécuter les seeders idempotents (permissions/rôles Spatie)}
                             {--skip-livewire : Ne pas republier les assets Livewire}
                             {--skip-optimize : Ne pas reconstruire les caches}';
 
@@ -27,6 +28,11 @@ class SystemUpdateCommand extends Command
 
             if (!$this->option('skip-migrate')) {
                 $this->runArtisan('migrate --force');
+            }
+
+            if (!$this->option('skip-seed')) {
+                $this->runArtisan('db:seed --class=PermissionSeeder --force');
+                $this->runArtisan('permission:cache-reset');
             }
 
             if (!$this->option('skip-livewire')) {
