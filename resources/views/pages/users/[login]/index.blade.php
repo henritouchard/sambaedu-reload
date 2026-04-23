@@ -10,6 +10,7 @@ use App\Repositories\UserRepository;
 use App\Services\UserGroupService;
 use App\Models\User as SqlUserModel;
 use App\Models\UserGroup;
+use App\Models\Wallpaper;
 use Illuminate\Support\Facades\Gate;
 use Devrabiul\ToastMagic\Facades\ToastMagic;
 use App\Components\Traits\WithToasts;
@@ -20,6 +21,8 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
     public bool $accountDisabled = false;
     public bool $homeExists = true;
     public bool $isOwnProfile = false;
+    public bool $wallpaperSectionVisible = false;
+    /** Mot de passe fraîchement généré (lu depuis session flash après réinit en mode display). */
     private ?string $resetPasswordValue = null;
     public ?array $localAdminInfo = null;
     public array $listCurrentGroups = [];
@@ -61,6 +64,16 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
 
         // Statut du compte
         $this->accountDisabled = $this->user->isDisabled();
+
+        // Fond d'écran : visible si un wallpaper utilisateur est configuré
+        if (config('wallpapers.allow_per_user', true)) {
+            $sqlUser = SqlUserModel::query()->where('login', $this->user->login)->first();
+            $this->wallpaperSectionVisible = $sqlUser && Wallpaper::query()
+                ->where('owner_type', SqlUserModel::class)
+                ->where('owner_id', $sqlUser->id)
+                ->where('type', Wallpaper::TYPE_WALLPAPER)
+                ->exists();
+        }
 
         // Groupes et droits
         $this->listCurrentGroups = $this->user->groups;
@@ -142,27 +155,10 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
         ToastMagic::success('Groupes synchronisés depuis l\'AD.');
     }
 
-    public function resetPassword(): void
+    public function showWallpaperSection(): void
     {
-        if (!$this->user) {
-            ToastMagic::error('Utilisateur introuvable.');
-            return;
-        }
-
-        if (!Gate::allows('update-user')) {
-            ToastMagic::error('Vous n\'avez pas les droits pour cette action.');
-            return;
-        }
-
-        $result = $this->userService->resetPasswordInAd($this->user->login);
-
-        if (!($result['success'] ?? false)) {
-            ToastMagic::error($result['message'] ?? 'Erreur lors de la réinitialisation du mot de passe.');
-            return;
-        }
-
-        session()->flash('created_password', $result['password'] ?? null);
-        $this->redirect(route('app.user.show', $this->user->login), navigate: true);
+        $this->wallpaperSectionVisible = true;
+        $this->js("setTimeout(() => document.getElementById('wallpaper-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)");
     }
 
     public function getPasswordForDisplay(): ?string
@@ -271,27 +267,17 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                         </label>
                         <ul tabindex="0"
                             class="dropdown-content menu p-2 shadow-lg bg-base-100 rounded-box w-64 border border-base-200">
-                            <li>
-                                <button type="button" class="flex items-center gap-3 w-full" wire:click="resetPassword"
-                                    wire:confirm="Réinitialiser le mot de passe de cet utilisateur ?">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z">
-                                        </path>
-                                    </svg>
-                                    <div class="flex flex-col items-start">
-                                        <span class="font-medium">Réinitialiser le mot de passe</span>
-                                    </div>
-                                </button>
-                            </li>
                             @can('user.password.init')
                                 <li>
                                     <button type="button" class="flex items-center gap-3 w-full"
                                         @click="Livewire.dispatch('open-password-reset-modal', { users: ['{{ $user->login }}'], groups: [] }); document.activeElement.blur();">
-                                        <i class="fa-solid fa-key"></i>
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z">
+                                            </path>
+                                        </svg>
                                         <div class="flex flex-col items-start">
-                                            <span class="font-medium">Réinit. mdp avec export</span>
-                                            <span class="text-xs opacity-70">PDF / CSV + audit</span>
+                                            <span class="font-medium">Réinitialiser le mot de passe</span>
                                         </div>
                                     </button>
                                 </li>
@@ -302,7 +288,6 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                                     <i class="fas fa-users mr-1"></i>
                                     <div class="flex flex-col items-start">
                                         <span class="font-medium">Gérer les groupes</span>
-                                        <span class="text-xs opacity-70">Ajouter ou retirer des groupes</span>
                                     </div>
                                 </button>
                             </li>
@@ -316,10 +301,27 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                                     </svg>
                                     <div class="flex flex-col items-start">
                                         <span class="font-medium">Gérer les permissions</span>
-                                        <span class="text-xs opacity-70">Droits d'administration</span>
                                     </div>
                                 </button>
                             </li>
+                            @can('wallpaper.manage')
+                                @if (!$wallpaperSectionVisible && config('wallpapers.allow_per_user', true))
+                                <li>
+                                    <button type="button" class="flex items-center gap-3 w-full"
+                                        wire:click="showWallpaperSection" @click="document.activeElement.blur()">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z">
+                                            </path>
+                                        </svg>
+                                        <div class="flex flex-col items-start">
+                                            <span class="font-medium">Fond d'écran</span>
+                                            <span class="text-xs opacity-70">Configurer un fond personnalisé</span>
+                                        </div>
+                                    </button>
+                                </li>
+                                @endif
+                            @endcan
                             <li>
                                 <button type="button" class="flex items-center gap-3 w-full"
                                     wire:click="syncGroupsFromAd"
@@ -448,9 +450,11 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
         </div>
 
         <!-- Fond d'écran personnel (story 4.7 AC 11) -->
-        <div class="mb-6">
+        @if ($wallpaperSectionVisible)
+        <div id="wallpaper-section" class="mb-6">
             @include('pages.users.[login]._partials.wallpaper-info')
         </div>
+        @endif
 
         <!-- Identifiants techniques et activité -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

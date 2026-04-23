@@ -103,7 +103,7 @@
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 2xl:grid-cols-3 gap-6">
                         <!-- Login -->
                         <div
                             class="stat bg-gradient-to-br from-base-100 to-base-50 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 border border-base-200/30 hover:border-primary/20 group">
@@ -137,38 +137,6 @@
                             <div class="stat-title font-medium">Rôle</div>
                             <div class="stat-value text-info text-lg">{{ $roleLabel }}</div>
                         </div>
-
-                        <!-- Email -->
-                        @if (!empty($user->email))
-                            <div
-                                class="stat rounded-2xl shadow-lg hover:shadow-xl transition-all duration-500 border border-base-200/30 hover:border-secondary/20 group overflow-hidden">
-                                <div
-                                    class="stat-figure text-secondary group-hover:scale-110 transition-transform duration-300">
-                                    <div class="bg-secondary/10 p-3 rounded-xl">
-                                        <i class="text-2xl fa-regular fa-envelope"></i>
-                                    </div>
-                                </div>
-                                <div class="stat-title  font-medium">Adresse email</div>
-                                <div class="stat-value text-lg font-bold">
-                                    <div
-                                        class="inline-block max-w-full truncate text-sm text-secondary"
-                                        title="{{ $user->email }}">
-                                        {{ $user->email }}
-                                    </div>
-                                </div>
-                            </div>
-                        @else
-                            <div class="stat rounded-2xl shadow-lg border border-base-200/30">
-                                <div class="stat-figure ">
-                                    <div class="bg-base-200 p-3 rounded-xl">
-                                        <i class="text-2xl fa-regular fa-envelope"></i>
-                                    </div>
-                                </div>
-                                <div class="stat-title font-medium">Adresse email</div>
-                                <div class="stat-value text-lg ">Non définie</div>
-                                <div class="stat-desc ">Aucune adresse configurée</div>
-                            </div>
-                        @endif
 
                         <!-- Établissement -->
                             <div

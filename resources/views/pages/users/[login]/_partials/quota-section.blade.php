@@ -425,6 +425,11 @@ new class extends Component {
         return $mb >= 1024 ? round($mb / 1024, 1) . ' Go' : $mb . ' Mo';
     }
 
+    public function formatUsageMb(int $mb): string
+    {
+        return $mb >= 1024 ? round($mb / 1024, 1) . ' Go' : $mb . ' Mo';
+    }
+
     public function capturedAtFormatted(): ?string
     {
         $raw = $this->snapshot['captured_at'] ?? null;
@@ -516,7 +521,7 @@ new class extends Component {
                             <span class="text-2xl font-bold text-success">Illimité</span>
                             @if ($snap)
                                 <p class="text-sm opacity-70 mt-1">
-                                    Utilisé : {{ $this->formatQuotaMb((int) ($snap['used_mb'] ?? 0)) }}
+                                    Utilisé : {{ $this->formatUsageMb((int) ($snap['used_mb'] ?? 0)) }}
                                 </p>
                             @endif
                         </div>
@@ -535,7 +540,7 @@ new class extends Component {
                         <div class="space-y-2">
                             <div class="flex justify-between text-sm">
                                 <span>
-                                    {{ $this->formatQuotaMb($usedMb) }}
+                                    {{ $this->formatUsageMb($usedMb) }}
                                     /
                                     {{ $this->formatQuotaMb($softMb) }}
                                 </span>
