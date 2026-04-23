@@ -130,8 +130,7 @@ class AuthController extends Controller
                     ]);
 
                     // Vérifier si c'est un environnement "ent"
-                    $config = $this->authService->getConfig();
-                    if (isset($config['ent']) && $config['ent'] === true) {
+                    if ($this->sambaEduConfig->get('ent') === true) {
                         // Pour les environnements ENT, accepter la connexion même avec mot de passe non modifié
                         ToastMagic::info('Connexion', 'Connexion réussie (environnement ENT).');
                         return redirect()->intended(route('app.dashboard'));
