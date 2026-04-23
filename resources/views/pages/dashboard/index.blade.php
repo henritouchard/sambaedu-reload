@@ -3,19 +3,19 @@
 use Livewire\Component;
 use Livewire\Attributes\Title;
 use App\Components\Traits\WithToasts;
+use App\Models\MachineBootLog;
+use App\Models\User;
+use App\Models\Workstation;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
 new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
     use WithToasts;
 
-    // Statistiques
     public array $stats = [];
     public array $recentActivity = [];
     public array $mariaDbStatus = [];
     public array $user = [];
-
-    // État de chargement
     public bool $statsLoaded = false;
 
     public function mount()
@@ -23,29 +23,15 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
         $this->loadData();
     }
 
-    /**
-     * Charger les données du dashboard
-     */
     public function loadData()
     {
-        // Récupération des données utilisateur depuis la session
         $this->user = session('sambaedu_user', []);
-
-        // Statistiques du dashboard
         $this->stats = $this->getDashboardStats();
-
-        // Activité récente
         $this->recentActivity = $this->getRecentActivity();
-
-        // MariaDB status
-        $this->mariaDbStatus = ['status' => true, 'message' => 'OK', 'details' => []];
-
+        $this->mariaDbStatus = $this->getMariaDbStatus();
         $this->statsLoaded = true;
     }
 
-    /**
-     * Actualiser les statistiques
-     */
     public function refreshStats()
     {
         $this->statsLoaded = false;
@@ -53,14 +39,10 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
         $this->toastSuccess('Statistiques actualisées');
     }
 
-    /**
-     * Redémarrer les workers de queue
-     */
     public function restartQueueWorkers(): void
     {
         try {
             Artisan::call('queue:restart');
-
             $this->refreshStats();
             $this->toastSuccess('Signal de redémarrage envoyé aux workers de queue');
         } catch (\Throwable $exception) {
@@ -70,16 +52,31 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
 
     private function getDashboardStats(): array
     {
-        // TODO: Remplacer par de vraies données depuis les services SE4
+        $totalBytes = disk_total_space('/');
+        $freeBytes  = disk_free_space('/');
+        $diskPercent = $totalBytes ? round(($totalBytes - $freeBytes) / $totalBytes * 100, 1) : 0;
+
         return [
-            'active_users' => 89,
-            'online_machines' => 89,
-            'total_machines' => 120,
-            'disk_usage' => 78,
-            'queue_workers' => $this->getQueueWorkerCount(),
-            'pending_jobs' => DB::table('jobs')->count(),
-            'failed_jobs' => DB::table('failed_jobs')->count(),
+            'active_users'    => User::where('is_active', true)->count(),
+            'total_users'     => User::count(),
+            'online_machines' => Workstation::where('status', 'online')->count(),
+            'total_machines'  => Workstation::count(),
+            'disk_usage'      => $diskPercent,
+            'disk_free_gb'    => round($freeBytes / (1024 ** 3), 1),
+            'queue_workers'   => $this->getQueueWorkerCount(),
+            'pending_jobs'    => DB::table('jobs')->count(),
+            'failed_jobs'     => DB::table('failed_jobs')->count(),
         ];
+    }
+
+    private function getMariaDbStatus(): array
+    {
+        try {
+            DB::connection()->getPdo();
+            return ['status' => true, 'message' => 'Connecté', 'details' => []];
+        } catch (\Throwable $e) {
+            return ['status' => false, 'message' => $e->getMessage(), 'details' => ['error' => $e->getMessage()]];
+        }
     }
 
     private function getQueueWorkerCount(): int
@@ -90,30 +87,46 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
 
     private function getRecentActivity(): array
     {
-        // TODO: Implémenter la récupération de l'activité réelle
-        return [
-            [
-                'initials' => 'JD',
-                'name' => 'Jean Dupont',
-                'action' => 's\'est connecté',
-                'time_ago' => 'Il y a 5 minutes',
-                'color' => 'primary',
-            ],
-            [
-                'initials' => 'ML',
-                'name' => 'Marie Leblanc',
-                'action' => 'a imprimé un document',
-                'time_ago' => 'Il y a 12 minutes',
-                'color' => 'success',
-            ],
-            [
-                'initials' => 'PM',
-                'name' => 'Pierre Martin',
-                'action' => 'a créé un nouveau parc',
-                'time_ago' => 'Il y a 1 heure',
-                'color' => 'warning',
-            ],
-        ];
+        $activities = [];
+
+        foreach (MachineBootLog::with('workstation')->latest()->limit(5)->get() as $log) {
+            $actionLabel = match ($log->action) {
+                'wake'     => 'a été démarré',
+                'shutdown' => 'a été éteint',
+                'reboot'   => 'a redémarré',
+                default    => $log->action,
+            };
+            $activities[] = [
+                'initials' => strtoupper(substr($log->machine_name, 0, 2)),
+                'name'     => $log->machine_name,
+                'action'   => $actionLabel,
+                'time_ago' => $log->created_at->diffForHumans(),
+                'color'    => $log->action === 'wake' ? 'success' : 'warning',
+            ];
+        }
+
+        if (count($activities) < 5) {
+            $users = User::where('is_active', true)
+                ->whereNotNull('firstname')
+                ->orderBy('updated_at', 'desc')
+                ->limit(5 - count($activities))
+                ->get();
+
+            foreach ($users as $user) {
+                $initials = strtoupper(
+                    substr($user->firstname ?? '', 0, 1) . substr($user->lastname ?? '', 0, 1)
+                );
+                $activities[] = [
+                    'initials' => $initials ?: '??',
+                    'name'     => trim($user->firstname . ' ' . $user->lastname),
+                    'action'   => 'compte synchronisé',
+                    'time_ago' => $user->updated_at->diffForHumans(),
+                    'color'    => 'primary',
+                ];
+            }
+        }
+
+        return $activities;
     }
 };
 ?>
@@ -149,10 +162,6 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
                 </div>
                 <div class="stat-desc">
                     {{ $mariaDbStatus['message'] }}
-                    @if (isset($mariaDbStatus['details']['table_connexions']) && $mariaDbStatus['status'])
-                        <br><span class="opacity-70">Table connexions:
-                            {{ $mariaDbStatus['details']['table_connexions'] }}</span>
-                    @endif
                     @if (isset($mariaDbStatus['details']['error']) && !$mariaDbStatus['status'])
                         <br><span class="text-error">{{ $mariaDbStatus['details']['error'] }}</span>
                     @endif
@@ -180,7 +189,7 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-            <!-- Card 1 -->
+            <!-- Utilisateurs actifs -->
             <div class="card bg-base-100 shadow-sm border border-base-200">
                 <div class="card-body">
                     <h2 class="card-title text-primary">
@@ -192,11 +201,11 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
                         Utilisateurs Actifs
                     </h2>
                     <p class="text-3xl font-bold text-primary">{{ $stats['active_users'] }}</p>
-                    <p class="text-sm text-base-content/60">Connectés actuellement</p>
+                    <p class="text-sm text-base-content/60">Sur {{ $stats['total_users'] }} comptes au total</p>
                 </div>
             </div>
 
-            <!-- Card 2 -->
+            <!-- Machines -->
             <div class="card bg-base-100 shadow-sm border border-base-200">
                 <div class="card-body">
                     <h2 class="card-title text-success">
@@ -208,27 +217,29 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
                         Machines en Ligne
                     </h2>
                     <p class="text-3xl font-bold text-success">{{ $stats['online_machines'] }}</p>
-                    <p class="text-sm text-base-content/60">Sur {{ $stats['total_machines'] }} machines</p>
+                    <p class="text-sm text-base-content/60">Sur {{ $stats['total_machines'] }} machines inventoriées</p>
                 </div>
             </div>
 
-            <!-- Card 3 -->
+            <!-- Espace disque -->
             <div class="card bg-base-100 shadow-sm border border-base-200">
                 <div class="card-body">
-                    <h2 class="card-title text-warning">
+                    <h2 class="card-title @if ($stats['disk_usage'] >= 90) text-error @elseif ($stats['disk_usage'] >= 75) text-warning @else text-success @endif">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4">
                             </path>
                         </svg>
                         Espace Disque
                     </h2>
-                    <p class="text-3xl font-bold text-warning">{{ $stats['disk_usage'] }}%</p>
-                    <p class="text-sm text-base-content/60">Utilisation serveur</p>
+                    <p class="text-3xl font-bold @if ($stats['disk_usage'] >= 90) text-error @elseif ($stats['disk_usage'] >= 75) text-warning @else text-success @endif">
+                        {{ $stats['disk_usage'] }}%
+                    </p>
+                    <p class="text-sm text-base-content/60">{{ $stats['disk_free_gb'] }} Go disponibles</p>
                 </div>
             </div>
 
-            <!-- Card 4 - Queue Workers -->
+            <!-- Queue Workers -->
             <div class="card bg-base-100 shadow-sm border border-base-200">
                 <div class="card-body">
                     <div class="flex items-start justify-between gap-2">
@@ -284,10 +295,12 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
                 <div class="card-body">
                     <h2 class="card-title mb-4">Activité Récente</h2>
                     <div class="space-y-3">
-                        @foreach ($recentActivity as $activity)
+                        @forelse ($recentActivity as $activity)
                             <x-molecules.user-activity-item :initials="$activity['initials']" :name="$activity['name']" :action="$activity['action']"
                                 :time-ago="$activity['time_ago']" :color="$activity['color']" />
-                        @endforeach
+                        @empty
+                            <p class="text-sm text-base-content/50 italic">Aucune activité récente</p>
+                        @endforelse
                     </div>
                 </div>
             </div>
