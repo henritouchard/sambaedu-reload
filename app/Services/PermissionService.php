@@ -294,34 +294,20 @@ class PermissionService
     /**
      * Vérifie si un utilisateur a une permission sur un WorkstationGroup
      *
-     * Logique :
-     * 1. Droit global Spatie → accès à tout
-     * 2. Délégation positive active sur ce WorkstationGroup
-     * 3. Pas de délégation négative
+     * Hiérarchie (exclusion scopée > global > délégation positive scopée) :
+     * 1. Délégation négative active sur ce WorkstationGroup → refuse, même si droit global
+     * 2. Droit global Spatie → accès à tout (sauf exclusion ci-dessus)
+     * 3. Délégation positive active sur ce WorkstationGroup → accès scopé
+     * 4. Sinon → refus
+     *
+     * Why: l'UX du drawer promet qu'une exclusion "retire le droit même s'il est
+     * accordé via un rôle global". L'exclusion est toujours plus spécifique que
+     * le droit global qu'elle corrige.
      */
     public function canOnWorkstationGroup(User $user, string $permissionName, WorkstationGroup $group): bool
     {
-        // 1. Droit global → accès à tout
-        if ($user->can($permissionName)) {
-            return true;
-        }
-
-        // 2. Délégation positive active sur ce WorkstationGroup
-        $hasPositive = Delegation::where('user_id', $user->id)
-            ->where('workstation_group_id', $group->id)
-            ->forPermission($permissionName)
-            ->positive()
-            ->active()
-            ->exists();
-
-        if (!$hasPositive) {
-            return false;
-        }
-
-        // 3. Vérifier qu'il n'y a pas de délégation négative active
-        // Story 7.1 — Review #3 : chaîner `.active()` pour qu'une négative
-        // expirée n'empêche plus l'accès (le jour où `negateDelegation` posera
-        // un `expires_at`, la logique reste cohérente).
+        // 1. Exclusion scopée active → refus immédiat (prévaut sur global).
+        // Story 7.1 — Review #3 : `.active()` pour qu'une négative expirée ne bloque plus.
         $hasNegative = Delegation::where('user_id', $user->id)
             ->where('workstation_group_id', $group->id)
             ->forPermission($permissionName)
@@ -329,7 +315,22 @@ class PermissionService
             ->active()
             ->exists();
 
-        return !$hasNegative;
+        if ($hasNegative) {
+            return false;
+        }
+
+        // 2. Droit global → accès à tout (pas d'exclusion sur ce group).
+        if ($user->can($permissionName)) {
+            return true;
+        }
+
+        // 3. Délégation positive active sur ce WorkstationGroup.
+        return Delegation::where('user_id', $user->id)
+            ->where('workstation_group_id', $group->id)
+            ->forPermission($permissionName)
+            ->positive()
+            ->active()
+            ->exists();
     }
 
     /**
@@ -359,22 +360,26 @@ class PermissionService
      */
     public function getAuthorizedWorkstationGroups(User $user, string $permissionName): Collection
     {
-        // Si droit global, retourner tous les WorkstationGroups physiques
-        if ($user->can($permissionName)) {
-            return WorkstationGroup::physical()->active()->get();
-        }
-
-        // Sinon, retourner ceux avec une délégation positive active (sans négative)
-        $positiveGroupIds = Delegation::forUser($user)
-            ->forPermission($permissionName)
-            ->positive()
-            ->active()
-            ->pluck('workstation_group_id');
-
+        // Groupes exclus par une délégation négative active : filtrés dans tous les cas.
         // Story 7.1 — Review #3 : ignorer les négatives expirées.
         $negativeGroupIds = Delegation::forUser($user)
             ->forPermission($permissionName)
             ->negative()
+            ->active()
+            ->pluck('workstation_group_id');
+
+        // Droit global : tous les physiques sauf ceux portant une exclusion active.
+        if ($user->can($permissionName)) {
+            return WorkstationGroup::physical()
+                ->active()
+                ->whereNotIn('id', $negativeGroupIds)
+                ->get();
+        }
+
+        // Sinon : positives actives, hors exclusions.
+        $positiveGroupIds = Delegation::forUser($user)
+            ->forPermission($permissionName)
+            ->positive()
             ->active()
             ->pluck('workstation_group_id');
 

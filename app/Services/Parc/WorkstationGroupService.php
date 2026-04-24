@@ -322,12 +322,21 @@ class WorkstationGroupService
             return null;
         }
 
-        // Droit global Spatie → équivalent admin, pas de restriction.
-        if ($scopeFor->can('computer.view')) {
+        // Short-circuit admin : droit global ET aucune exclusion active → aucun filtre.
+        // Une exclusion scopée (is_negative) doit écraser le droit global sur un group
+        // précis, donc on ne peut pas retourner null si l'user en a au moins une.
+        $hasNegativeScope = \App\Models\Delegation::forUser($scopeFor)
+            ->forPermission('computer.view')
+            ->negative()
+            ->active()
+            ->exists();
+
+        if (!$hasNegativeScope && $scopeFor->can('computer.view')) {
             return null;
         }
 
-        // Sinon, liste des WorkstationGroups autorisés par délégation.
+        // Sinon, liste des WorkstationGroups autorisés (positives − négatives, ou
+        // "tout sauf exclusions" si droit global + exclusions actives).
         return app(PermissionService::class)
             ->getAuthorizedWorkstationGroups($scopeFor, 'computer.view')
             ->pluck('id')

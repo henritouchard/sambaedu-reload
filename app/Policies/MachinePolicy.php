@@ -86,16 +86,16 @@ class MachinePolicy
             return $this->hasPermission($user, $permissionName);
         }
 
-        // Shortcut : droit global → accès à tout.
-        if ($user->can($permissionName)) {
-            return true;
-        }
-
         $physicalGroups = $machine->groups()->where('is_physical', true)->get();
+
+        // Pas de rattachement physique → impossible de scoper, fallback sur le droit global.
         if ($physicalGroups->isEmpty()) {
-            return false;
+            return $this->hasPermission($user, $permissionName);
         }
 
+        // On délègue au PermissionService pour chaque group : il applique
+        // l'ordre exclusion scopée > global > délégation positive scopée.
+        // Autorisé dès qu'au moins un group parent accepte.
         $svc = app(PermissionService::class);
         foreach ($physicalGroups as $grp) {
             if ($svc->canOnWorkstationGroup($user, $permissionName, $grp)) {

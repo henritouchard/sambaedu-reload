@@ -697,6 +697,7 @@ new class extends Component {
                     {{-- Toggle retirer --}}
                     <div class="flex gap-3 shrink-0 mb-2">
                         <input type="checkbox" wire:model.live="removeDelegation"
+                            @disabled($isNegative)
                             class="toggle toggle-sm border-primary checked:border-error/50 checked:bg-error/50" />
                         <div class="text-sm font-medium">
                             {{ $removeDelegation ? 'Retirer les délégations' : 'Accorder les délégations' }}

@@ -394,6 +394,32 @@ class PermissionServiceTest extends TestCase
         );
     }
 
+    /**
+     * Story 7.1 — hiérarchie exclusion > global : une délégation négative
+     * sur un group doit écraser le droit global Spatie sur ce group précis.
+     * (Régression détectée en recette 7.1 : l'UX promet le comportement mais
+     * le code court-circuitait sur le global.)
+     */
+    public function test_negative_delegation_overrides_global_permission_on_group(): void
+    {
+        $user = $this->makeUser('prof-global-excluded');
+        $groupA = $this->makeGroup('A');
+        $groupB = $this->makeGroup('B');
+
+        $user->givePermissionTo('computer.view');
+        $this->service->negateDelegation($user->fresh(), 'computer.view', $groupA);
+
+        $user = $user->fresh();
+        $this->assertFalse(
+            $this->service->canOnWorkstationGroup($user, 'computer.view', $groupA),
+            'Exclusion scopée doit écraser le droit global sur ce group.'
+        );
+        $this->assertTrue(
+            $this->service->canOnWorkstationGroup($user, 'computer.view', $groupB),
+            'Droit global reste actif sur les groups sans exclusion.'
+        );
+    }
+
     public function test_can_on_workstation_group_with_expired_delegation(): void
     {
         $user = $this->makeUser('prof-exp');
@@ -475,5 +501,30 @@ class PermissionServiceTest extends TestCase
 
         $this->assertContains($groupA->id, $allowedIds);
         $this->assertContains($groupB->id, $allowedIds);
+    }
+
+    /**
+     * Story 7.1 — hiérarchie exclusion > global côté listing : un user avec le
+     * droit global mais une exclusion sur B ne doit pas voir B dans la liste
+     * des groupes autorisés.
+     */
+    public function test_get_authorized_workstation_groups_with_global_excludes_negatives(): void
+    {
+        $user = $this->makeUser('admin-partially-excluded');
+        $groupA = $this->makeGroup('A');
+        $groupB = $this->makeGroup('B');
+
+        $user->givePermissionTo('computer.view');
+        $this->service->negateDelegation($user->fresh(), 'computer.view', $groupB);
+
+        $allowed = $this->service->getAuthorizedWorkstationGroups($user->fresh(), 'computer.view');
+        $allowedIds = $allowed->pluck('id')->all();
+
+        $this->assertContains($groupA->id, $allowedIds);
+        $this->assertNotContains(
+            $groupB->id,
+            $allowedIds,
+            'Une exclusion scopée doit retirer le group du listing même avec droit global.'
+        );
     }
 }

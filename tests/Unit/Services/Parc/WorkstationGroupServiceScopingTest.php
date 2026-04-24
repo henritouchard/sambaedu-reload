@@ -322,6 +322,26 @@ class WorkstationGroupServiceScopingTest extends TestCase
         $this->assertContains($c->id, $ids);
     }
 
+    /**
+     * Story 7.1 — hiérarchie exclusion > global côté listing paginé : un admin
+     * avec droit global mais une exclusion sur B ne doit plus voir B.
+     */
+    public function test_list_groups_scoped_by_admin_excludes_negatives(): void
+    {
+        [$a, $b, $c] = $this->makeThreeGroupsWithMachines();
+        $admin = $this->makeUser('scoped-admin-excl');
+
+        $admin->givePermissionTo('computer.view');
+        $this->permissionService->negateDelegation($admin->fresh(), 'computer.view', $b);
+
+        $result = $this->service->listGroups(scopeFor: $admin->fresh());
+        $ids = $result->pluck('id')->all();
+
+        $this->assertContains($a->id, $ids);
+        $this->assertNotContains($b->id, $ids, 'Exclusion scopée doit retirer B même avec droit global.');
+        $this->assertContains($c->id, $ids);
+    }
+
     public function test_list_groups_scoped_by_user_with_no_delegation_returns_empty(): void
     {
         $this->makeThreeGroupsWithMachines();

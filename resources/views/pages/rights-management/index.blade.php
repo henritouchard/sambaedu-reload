@@ -835,7 +835,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
                                                                 };
                                                             @endphp
                                                             <span class="badge {{ $badgeClass }} badge-xs">{{ $h['action'] }}</span>
-                                                            @if ($h['is_negative'])
+                                                            @if ($h['is_negative'] && $h['action'] !== 'negate')
                                                                 <span class="badge badge-error badge-xs ml-1">neg</span>
                                                             @endif
                                                         </td>
