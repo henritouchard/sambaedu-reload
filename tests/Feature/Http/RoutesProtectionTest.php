@@ -7,6 +7,7 @@ namespace Tests\Feature\Http;
 use App\Models\User;
 use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
@@ -77,9 +78,7 @@ class RoutesProtectionTest extends TestCase
         ];
     }
 
-    /**
-     *  dataProvider protectedRoutesProvider
-     */
+    #[DataProvider('protectedRoutesProvider')]
     public function test_route_returns_403_without_permission(string $url, string $permission): void
     {
         $user = $this->makeUser('noperm-' . md5($url));
@@ -94,9 +93,7 @@ class RoutesProtectionTest extends TestCase
         $response->assertStatus(403);
     }
 
-    /**
-     *  dataProvider protectedRoutesProvider
-     */
+    #[DataProvider('protectedRoutesProvider')]
     public function test_route_passes_permission_middleware_when_granted(string $url, string $permission): void
     {
         $user = $this->makeUser('perm-' . md5($url), [$permission]);

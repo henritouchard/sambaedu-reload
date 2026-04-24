@@ -2,7 +2,6 @@
 
 namespace App\Policies;
 
-use App\Models\AuthUser;
 use App\Models\User;
 use App\Policies\Traits\ChecksPermissions;
 use App\Policies\Traits\RegistersGates;
@@ -174,21 +173,13 @@ class UserPolicy
     /**
      * Normalise l'acteur en `App\Models\User` Eloquent.
      *
-     * Correction review 7.2 #M1 : en production, `auth()->user()` retourne un
-     * `AuthUser` (provider LDAP custom). Les checks Spatie sont délégués au
-     * User Eloquent via `AuthUser::getEloquentUser()`. Sans cette résolution,
-     * les helpers `isClassScopedOnly` / `sharesClassWithTarget` renvoient
-     * systématiquement `false`, ce qui invalide le scoping classe en prod.
+     * Depuis 2026-04-24, `LdapUserProvider` renvoie directement un Eloquent
+     * User — cette méthode est donc un simple cast défensif (anciens tests
+     * ou appelants exotiques qui injectent un Authenticatable d'un autre type).
      */
     private function resolveEloquentActor(?Authenticatable $actor): ?User
     {
-        if ($actor instanceof User) {
-            return $actor;
-        }
-        if ($actor instanceof AuthUser) {
-            return $actor->getEloquentUser();
-        }
-        return null;
+        return $actor instanceof User ? $actor : null;
     }
 
     /**

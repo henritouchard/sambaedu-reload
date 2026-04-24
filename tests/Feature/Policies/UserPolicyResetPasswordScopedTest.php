@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Policies;
 
-use App\Models\AuthUser;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Observers\UserGroupObserver;
@@ -213,58 +212,28 @@ class UserPolicyResetPasswordScopedTest extends TestCase
     }
 
     /**
-     * Correction review 7.2 #M1 — En production, `auth()->user()` retourne un
-     * `AuthUser` (provider LDAP). La Policy doit résoudre le User Eloquent
-     * correspondant par login pour que le scoping classe fonctionne.
+     * Depuis 2026-04-24, `LdapUserProvider` renvoie directement un `User` Eloquent
+     * (fini le wrapper AuthUser injecté dans les policies). On valide que le
+     * scoping classe s'applique sur l'Eloquent sans bridge — cas reproduit de
+     * l'ancien test #M1 mais sans AuthUser.
      */
-    public function test_policy_resolves_authuser_to_eloquent_and_applies_scoping(): void
+    public function test_policy_applies_class_scoping_on_eloquent_actor(): void
     {
-        $profEloquent = $this->makeUser('prof-authuser');
-        $studentSame = $this->makeUser('eleve-same-authuser');
-        $studentOther = $this->makeUser('eleve-other-authuser');
-        $classA = $this->makeClass('classeA-authuser');
-        $classB = $this->makeClass('classeB-authuser');
+        $prof = $this->makeUser('prof-scope-direct');
+        $studentSame = $this->makeUser('eleve-same-direct');
+        $studentOther = $this->makeUser('eleve-other-direct');
+        $classA = $this->makeClass('classeA-direct');
+        $classB = $this->makeClass('classeB-direct');
 
-        $profEloquent->assignRole('prof');
-        $profEloquent->userGroups()->attach($classA->id);
+        $prof->assignRole('prof');
+        $prof->userGroups()->attach($classA->id);
         $studentSame->userGroups()->attach($classA->id);
         $studentOther->userGroups()->attach($classB->id);
 
-        // Simule ce que fait `LdapUserProvider::retrieveById` en prod :
-        // un `AuthUser` avec le même login que l'Eloquent User.
-        $authActor = new AuthUser(null, 'prof-authuser');
-
-        // Scoping classe appliqué : OK pour même classe, KO pour autre.
-        $this->assertTrue(
-            $this->policy->resetPassword($authActor, $studentSame),
-            'AuthUser doit être résolu vers User Eloquent et voir son scoping appliqué'
-        );
-        $this->assertFalse(
-            $this->policy->resetPassword($authActor, $studentOther),
-            'AuthUser scopé classe ne doit pas resetter un élève hors de ses classes'
-        );
-
-        // Idem pour view().
-        $this->assertTrue($this->policy->view($authActor, $studentSame));
-        $this->assertFalse($this->policy->view($authActor, $studentOther));
-    }
-
-    /**
-     * Correction review 7.2 #M1 — Défense en profondeur : un `AuthUser` dont
-     * le login n'a pas de correspondance en base Eloquent doit être refusé
-     * (fail-closed), plutôt que de tomber dans la branche globale.
-     */
-    public function test_policy_denies_authuser_without_eloquent_counterpart(): void
-    {
-        $student = $this->makeUser('e-target');
-        $class = $this->makeClass('c-tgt');
-        $student->userGroups()->attach($class->id);
-
-        // AuthUser sans User Eloquent correspondant → getEloquentUser() = null.
-        $orphanAuth = new AuthUser(null, 'unknown-login');
-
-        $this->assertFalse($this->policy->resetPassword($orphanAuth, $student));
-        $this->assertFalse($this->policy->view($orphanAuth, $student));
+        $this->assertTrue($this->policy->resetPassword($prof->fresh(), $studentSame));
+        $this->assertFalse($this->policy->resetPassword($prof->fresh(), $studentOther));
+        $this->assertTrue($this->policy->view($prof->fresh(), $studentSame));
+        $this->assertFalse($this->policy->view($prof->fresh(), $studentOther));
     }
 
     /**

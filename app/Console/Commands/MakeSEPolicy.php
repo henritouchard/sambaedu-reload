@@ -81,7 +81,7 @@ class MakeSEPolicy extends Command
 
 namespace App\Policies;
 
-use App\Models\AuthUser;
+use App\Models\User;
 use App\Config\SambaEduConfig;
 use App\Policies\Traits\RegistersGates;
 use Illuminate\Support\Facades\Log;
@@ -115,7 +115,7 @@ class {$name}Policy
     /**
      * Vérifie si l'utilisateur peut voir la liste
      */
-    public function viewAny(?AuthUser \$user): bool
+    public function viewAny(?User \$user): bool
     {
         // TODO: Implémenter la vérification des droits
         // return \$this->hasAdminRights(\$user);
@@ -125,7 +125,7 @@ class {$name}Policy
     /**
      * Vérifie si l'utilisateur peut voir un élément
      */
-    public function view(?AuthUser \$user): bool
+    public function view(?User \$user): bool
     {
         return true;
     }
@@ -133,7 +133,7 @@ class {$name}Policy
     /**
      * Vérifie si l'utilisateur peut créer
      */
-    public function create(?AuthUser \$user): bool
+    public function create(?User \$user): bool
     {
         return true;
     }
@@ -141,7 +141,7 @@ class {$name}Policy
     /**
      * Vérifie si l'utilisateur peut modifier
      */
-    public function update(?AuthUser \$user): bool
+    public function update(?User \$user): bool
     {
         return true;
     }
@@ -149,7 +149,7 @@ class {$name}Policy
     /**
      * Vérifie si l'utilisateur peut supprimer
      */
-    public function delete(?AuthUser \$user): bool
+    public function delete(?User \$user): bool
     {
         return true;
     }
@@ -157,9 +157,9 @@ class {$name}Policy
     /**
      * Vérifie si l'utilisateur a les droits d'administration
      * 
-     * @param AuthUser|null \$user L'utilisateur Laravel
+     * @param User|null \$user L'utilisateur Laravel
      */
-    private function hasAdminRights(?AuthUser \$user): bool
+    private function hasAdminRights(?User \$user): bool
     {
         try {
             // Récupérer le login depuis l'utilisateur Laravel ou la session

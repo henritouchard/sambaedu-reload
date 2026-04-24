@@ -7,7 +7,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
-use App\Models\AuthUser;
 use App\Models\User;
 use App\Services\AuthenticationService;
 use App\Services\UserSyncService;
@@ -72,10 +71,13 @@ class SambaEduAuthGuard implements AuthGuardInterface
         $this->ensureEloquentUser($login, $user);
 
         // Connecter l'utilisateur au système d'authentification Laravel
+        // auth()->user() renverra un `App\Models\User` Eloquent (source de vérité
+        // Spatie + délégations scopées). L'auto-provisioning DB est déjà fait
+        // ci-dessus par `ensureEloquentUser`.
         if (!Auth::check()) {
-            $laravelUser = AuthUser::findByLogin($login);
-            if ($laravelUser) {
-                Auth::login($laravelUser);
+            $eloquentUser = User::findByLogin($login);
+            if ($eloquentUser) {
+                Auth::login($eloquentUser);
             }
         }
         return $next($request);

@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\AuthUser;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Policies\UserPolicy;
@@ -301,9 +300,6 @@ new class extends Component {
         // Eloquent, le listing contourne la Policy `UserPolicy::view()` qui
         // n'est appliquée que sur les targets individuels.
         $actor = auth()->user();
-        if ($actor instanceof AuthUser) {
-            $actor = $actor->getEloquentUser();
-        }
 
         if ($actor instanceof User
             && $actor->hasAnyRole(['prof', 'eleve-admin'])

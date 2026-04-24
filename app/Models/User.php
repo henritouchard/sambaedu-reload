@@ -201,6 +201,103 @@ class User extends Authenticatable implements Wireable
         return $this->ad_synced_at !== null;
     }
 
+    // ========================================================================
+    // Helpers d'authentification (ex-AuthUser wrapper)
+    //
+    // Why: le guard web injecte désormais directement l'Eloquent User (cf.
+    // `LdapUserProvider`). Ces méthodes exposent l'API historique d'`AuthUser`
+    // pour que les consommateurs (@auth->user()->isAdmin(), getLogin(), …)
+    // continuent de fonctionner sans avoir à résoudre un Eloquent à la main.
+    // Les flags dynamiques (admin/prof/eleve) sont lazy-loadés depuis LDAP
+    // via `ldapBusinessObject()` avec cache par-request.
+    // ========================================================================
+
+    /** @var array<string, mixed> Cache LDAP par login, scope request. */
+    private static array $ldapCache = [];
+
+    public function getLogin(): string
+    {
+        return (string) $this->login;
+    }
+
+    public function getFullName(): string
+    {
+        return $this->fullname !== null && $this->fullname !== ''
+            ? $this->fullname
+            : (string) $this->login;
+    }
+
+    public function getFirstName(): ?string
+    {
+        return $this->firstname;
+    }
+
+    public function getLastName(): ?string
+    {
+        return $this->lastname;
+    }
+
+    public function getEmail(): ?string
+    {
+        return $this->email;
+    }
+
+    public function getRole(): string
+    {
+        return $this->role ?? 'autre';
+    }
+
+    public function isActive(): bool
+    {
+        return (bool) $this->is_active;
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->ldapBusinessObject()?->isAdmin() ?? false;
+    }
+
+    public function isProf(): bool
+    {
+        return $this->ldapBusinessObject()?->isProf() ?? ($this->role === 'prof');
+    }
+
+    public function isEleve(): bool
+    {
+        return $this->ldapBusinessObject()?->isEleve() ?? ($this->role === 'eleve');
+    }
+
+    public function getGroups(): array
+    {
+        $bo = $this->ldapBusinessObject();
+        return is_object($bo) && isset($bo->groups) && is_array($bo->groups) ? $bo->groups : [];
+    }
+
+    /**
+     * Charge (avec cache request-scope) le modèle LDAP sous-jacent.
+     * Retourne null si le user SQL n'a plus de correspondance AD.
+     */
+    public function getLdapUser(): ?\App\LdapModels\LdapUser
+    {
+        $key = 'ldap:' . $this->login;
+        if (!array_key_exists($key, self::$ldapCache)) {
+            self::$ldapCache[$key] = \App\LdapModels\LdapUser::findByLogin((string) $this->login);
+        }
+        return self::$ldapCache[$key];
+    }
+
+    /**
+     * Business object LDAP (DTO métier avec isAdmin/isProf/groups/…), lazy + cache.
+     */
+    public function ldapBusinessObject(): ?object
+    {
+        $key = 'bo:' . $this->login;
+        if (!array_key_exists($key, self::$ldapCache)) {
+            self::$ldapCache[$key] = $this->getLdapUser()?->toBusinessObject();
+        }
+        return self::$ldapCache[$key];
+    }
+
     /**
      * Vérifie si l'utilisateur est externe (rattaché à un autre établissement)
      */
