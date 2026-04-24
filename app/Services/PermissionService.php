@@ -237,18 +237,78 @@ class PermissionService
     }
 
     /**
+     * Lève une exclusion (supprime la ligne négative active).
+     *
+     * Story 7.1.bis — pendant symétrique de `revokeDelegation` côté exclusions.
+     * Trace `ACTION_REVOKE` avec `is_negative=true` pour que l'historique
+     * distingue clairement un retrait de positive (is_negative=false) d'une
+     * levée d'exclusion (is_negative=true).
+     *
+     * Dispatch GPO si la permission l'exige — lever une exclusion sur
+     * `computer.elevate` peut restaurer l'admin local que le global accorde.
+     */
+    public function revokeNegativeDelegation(
+        User $user,
+        string $permissionName,
+        WorkstationGroup $group,
+        ?User $actor = null
+    ): bool {
+        $this->lastAuditFailed = false;
+
+        $permission = Permission::findByName($permissionName, 'web');
+
+        $deleted = Delegation::where('user_id', $user->id)
+            ->where('workstation_group_id', $group->id)
+            ->where('permission_id', $permission->id)
+            ->where('is_negative', true)
+            ->delete();
+
+        Log::info('[PermissionService] Exclusion levée', [
+            'user' => $user->login,
+            'permission' => $permissionName,
+            'workstation_group' => $group->name,
+            'deleted' => $deleted,
+        ]);
+
+        if ($deleted > 0) {
+            $resolvedActor = $this->history()->resolveActor($actor);
+            $historyEntry = $this->history()->log(
+                action: DelegationHistory::ACTION_REVOKE,
+                actor: $resolvedActor,
+                target: $user,
+                group: $group,
+                permissionName: $permissionName,
+                isNegative: true,
+                context: $this->buildContext(),
+            );
+            $this->lastAuditFailed = ($historyEntry === null);
+
+            $perm = SambaPermission::tryFrom($permissionName);
+            if ($perm?->requiresGpoSync()) {
+                SyncGpoJob::dispatch($user->id, $group->id, 'revoke-negative');
+            }
+        }
+
+        return $deleted > 0;
+    }
+
+    /**
      * Crée une délégation négative (exclusion).
      *
      * Idempotent via la même clé unique composite que `grantDelegation`.
      * Historique `negate` écrit uniquement lors de la création réelle.
      *
      * Story 7.1 : `$actor` optionnel — fallback sur `auth()->user()`.
+     * Story 7.1.bis : `$expiresAt` optionnel pour les exclusions temporaires
+     * (suspension limitée dans le temps, examen, audit). Le scope `active()`
+     * des négatives filtre déjà les lignes expirées.
      */
     public function negateDelegation(
         User $user,
         string $permissionName,
         WorkstationGroup $group,
-        ?User $actor = null
+        ?User $actor = null,
+        ?\DateTimeInterface $expiresAt = null
     ): Delegation {
         // Story 7.1 — Review #4 : reset du flag audit à chaque mutation.
         $this->lastAuditFailed = false;
@@ -264,6 +324,7 @@ class PermissionService
             ],
             [
                 'granted_by' => $actor?->id,
+                'expires_at' => $expiresAt,
             ]
         );
 
@@ -331,6 +392,86 @@ class PermissionService
             ->positive()
             ->active()
             ->exists();
+    }
+
+    /**
+     * Résume l'état courant d'un utilisateur pour une (permission, salle) donnée
+     * et suggère l'action la plus probable attendue par l'admin.
+     *
+     * Story 7.1.bis — pilote la nouvelle UX état→action du drawer Délégations.
+     *
+     * Priorité des sources (la plus spécifique gagne) :
+     *   1. Exclusion scopée active        → source=delegation_negative, action=lift_negative
+     *   2. Délégation positive active      → source=delegation_positive, action=revoke
+     *   3. Permission directe globale      → source=global,              action=negate
+     *   4. Permission via rôle             → source=role,                action=negate
+     *   5. Aucun droit                     → source=none,                action=grant
+     *
+     * Note : si un user a à la fois une positive scopée et un droit global, la
+     * positive est prioritaire côté source (l'admin l'a posée explicitement).
+     * Révoquer ne retirera pas le droit effectif (le global reste) — c'est un
+     * comportement assumé, l'admin peut forcer `negate` via les options avancées.
+     *
+     * @return array{source:string, state:string, action_suggested:string}
+     */
+    public function getEffectiveAccessSummary(User $user, string $permissionName, WorkstationGroup $group): array
+    {
+        // 1. Exclusion scopée active → prévaut sur tout.
+        $hasNegative = Delegation::where('user_id', $user->id)
+            ->where('workstation_group_id', $group->id)
+            ->forPermission($permissionName)
+            ->negative()
+            ->active()
+            ->exists();
+
+        if ($hasNegative) {
+            return [
+                'source' => 'delegation_negative',
+                'state' => 'denied',
+                'action_suggested' => 'lift_negative',
+            ];
+        }
+
+        // 2. Délégation positive active.
+        $hasPositive = Delegation::where('user_id', $user->id)
+            ->where('workstation_group_id', $group->id)
+            ->forPermission($permissionName)
+            ->positive()
+            ->active()
+            ->exists();
+
+        if ($hasPositive) {
+            return [
+                'source' => 'delegation_positive',
+                'state' => 'granted',
+                'action_suggested' => 'revoke',
+            ];
+        }
+
+        // 3. Permission directe (globale non scopée).
+        if ($user->getDirectPermissions()->contains('name', $permissionName)) {
+            return [
+                'source' => 'global',
+                'state' => 'granted',
+                'action_suggested' => 'negate',
+            ];
+        }
+
+        // 4. Permission via rôle.
+        if ($user->getPermissionsViaRoles()->contains('name', $permissionName)) {
+            return [
+                'source' => 'role',
+                'state' => 'granted',
+                'action_suggested' => 'negate',
+            ];
+        }
+
+        // 5. Aucun droit.
+        return [
+            'source' => 'none',
+            'state' => 'none',
+            'action_suggested' => 'grant',
+        ];
     }
 
     /**

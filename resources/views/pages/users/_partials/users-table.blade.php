@@ -116,6 +116,14 @@
                                     Gérer les droits
                                 </button>
                             </li>
+                            <li>
+                                <button type="button"
+                                    class="text-sm cursor-pointer flex items-center gap-2 p-2 hover:bg-base-200 rounded text-primary"
+                                    @click="Livewire.dispatch('open-delegation-modal', { users: $wire.selectedUsers }); document.activeElement.blur();">
+                                    <i class="fa-solid fa-building w-4 h-4 flex items-center justify-center"></i>
+                                    Déléguer un droit sur une salle
+                                </button>
+                            </li>
 
                             <!-- Gestion du statut -->
                             <div class="divider">Statut</div>

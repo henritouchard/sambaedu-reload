@@ -222,15 +222,24 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         $user = $delegation->user;
         $group = $delegation->workstationGroup;
         $permName = $delegation->permission->name;
+        $isNegative = (bool) $delegation->is_negative;
 
         // Story 7.1 — passer l'acteur explicite (auth()->user()) pour l'historique.
         $actor = auth()->user();
         $actorEloquent = $actor instanceof EloquentUser ? $actor : null;
 
-        $permissionService->revokeDelegation($user, $permName, $group, $actorEloquent);
+        $deleted = $isNegative
+            ? $permissionService->revokeNegativeDelegation($user, $permName, $group, $actorEloquent)
+            : $permissionService->revokeDelegation($user, $permName, $group, $actorEloquent);
+
+        if (!$deleted) {
+            $this->toastError("Délégation introuvable ou déjà révoquée.");
+            return;
+        }
 
         // Toast succès (WithToasts) — AC8
-        $this->toastSuccess("Délégation {$permName} révoquée sur {$group->name}");
+        $label = $isNegative ? 'Exclusion' : 'Délégation';
+        $this->toastSuccess("{$label} {$permName} révoquée sur {$group->name}");
 
         // Story 7.1 — Review #4 (Option B) : alerte si l'audit best-effort a échoué.
         if ($permissionService->lastAuditFailed) {

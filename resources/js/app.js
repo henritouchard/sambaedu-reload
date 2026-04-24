@@ -1,5 +1,6 @@
 import './bootstrap';
 import './theme';
+import './dropdown-top-layer';
 
 window.copyToClipboard = function (text, btn = null) {
     const textarea = document.createElement('textarea');

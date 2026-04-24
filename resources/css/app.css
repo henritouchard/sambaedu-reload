@@ -168,6 +168,13 @@
     border: 1px solid var(--color-border-contrast) !important;
 }
 
+/* Variante "card-like" : dégradé coloré comme les .card du projet.
+   Spécificité 0,0,2,0 > 0,0,1,0 pour battre `.modal-box { background: ... }`. */
+.modal-box.modal-card {
+    @apply bg-gradient-to-br from-primary/10 via-secondary/5 to-accent/10;
+    background-color: var(--color-base-100);
+}
+
 .drawer-content {
     background: var(--gradient);
 }
@@ -189,6 +196,26 @@
     /* border: var(--border) solid var(--color-border) !important; */
     /* background: var(--gradient); */
     background-color: var(--color-base-100);
+}
+
+.dropdown-content {
+    @apply bg-gradient-to-br from-primary/10 via-secondary/5 to-accent/10 rounded-3xl border border-base-200/50 shadow-xl backdrop-blur-sm;
+    box-shadow: var(--shadow-m);
+}
+
+/* Dropdown promu dans le top-layer (voir resources/js/dropdown-top-layer.js).
+   Neutralise les styles UA du popover (inset:0; margin:auto; background:Canvas…)
+   pour laisser le positionnement calculé en JS et le fond DaisyUI s'appliquer. */
+.dropdown-content[popover] {
+    inset: auto;
+    margin: 0;
+    padding: 0;
+    color: inherit;
+    background-color: var(--color-base-100);
+}
+
+.dropdown-content[popover]:popover-open {
+    display: block;
 }
 
 .highlight {

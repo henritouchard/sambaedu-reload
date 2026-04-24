@@ -624,6 +624,13 @@ new class extends Component {
                                             Gérer les droits
                                         </button>
                                     </li>
+                                    <li>
+                                        <button type="button"
+                                            @click="Livewire.dispatch('open-delegation-modal', { users: $wire.selectedUsers }); document.activeElement.blur();">
+                                            <i class="fa-solid fa-building"></i>
+                                            Déléguer un droit sur une salle
+                                        </button>
+                                    </li>
                                 @endcan
                                 @can('user.password.init')
                                     <li>
@@ -758,6 +765,7 @@ new class extends Component {
 
     <livewire:components::organisms.groups-drawer />
     @livewire('pages::users._partials.rights-drawer')
+    <livewire:pages::users._partials.delegation-modal />
     <livewire:components::organisms.password-reset-modal />
     <livewire:components::organisms.password-reset-banner />
 </x-organisms.page>

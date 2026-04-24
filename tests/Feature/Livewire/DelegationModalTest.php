@@ -10,6 +10,7 @@ use App\Models\DelegationHistory;
 use App\Models\User;
 use App\Models\WorkstationGroup;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\PermissionService;
 use App\Services\UserService;
 use App\Types\User as AdUser;
 use Illuminate\Database\Schema\Blueprint;
@@ -22,16 +23,18 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Tests Feature Livewire du drawer `rights-drawer` (Story 7.1 — AC7, AC8, AC9, AC10).
+ * Tests Feature Livewire de la modale `delegation-modal` (Story 7.1.bis).
  *
+ * UX état→action mono-permission extraite de l'ancien tab Délégations du drawer.
  * Couvre :
- *  - applyDelegations : grant / remove / negate via toggles
- *  - dispatch GPO sync pour computer.elevate
- *  - auto-création User fallback (ensureEloquentUser)
- *  - toggle négative exclusif avec toggle remove (updatedIsNegative / updatedRemoveDelegation)
- *  - audit trail écrit en base
+ *  - applyDelegationActions : Auto selon l'état courant (grant / revoke / negate / lift_negative)
+ *  - forcedAction : override de la suggestion
+ *  - multi-user hétérogène
+ *  - dispatch GPO pour computer.elevate
+ *  - ensureEloquentUser : création / refus si AD absent
+ *  - guard `user.assign.right`
  */
-class UserRightsDrawerTest extends TestCase
+class DelegationModalTest extends TestCase
 {
     use DatabaseTransactions;
 
@@ -138,7 +141,7 @@ class UserRightsDrawerTest extends TestCase
                 $table->unsignedBigInteger('permission_id');
                 $table->string('model_type');
                 $table->unsignedBigInteger('model_id');
-                $table->primary(['permission_id', 'model_id', 'model_type'], 'mhp_drw');
+                $table->primary(['permission_id', 'model_id', 'model_type'], 'mhp_dmod');
             });
             $this->createdTables = true;
         }
@@ -148,7 +151,7 @@ class UserRightsDrawerTest extends TestCase
                 $table->unsignedBigInteger('role_id');
                 $table->string('model_type');
                 $table->unsignedBigInteger('model_id');
-                $table->primary(['role_id', 'model_id', 'model_type'], 'mhr_drw');
+                $table->primary(['role_id', 'model_id', 'model_type'], 'mhr_dmod');
             });
             $this->createdTables = true;
         }
@@ -174,7 +177,7 @@ class UserRightsDrawerTest extends TestCase
                 $table->timestamps();
                 $table->unique(
                     ['user_id', 'workstation_group_id', 'permission_id', 'is_negative'],
-                    'delegations_drw_unique'
+                    'delegations_dmod_unique'
                 );
             });
             $this->createdTables = true;
@@ -200,10 +203,6 @@ class UserRightsDrawerTest extends TestCase
         }
     }
 
-    /**
-     * Story 7.1 — Review #5 : tous les appels Livewire du drawer exigent
-     * `user.assign.right`. Ce helper l'accorde à l'admin donné.
-     */
     private function grantAdminPermission(User $admin): User
     {
         $admin->givePermissionTo('user.assign.right');
@@ -211,10 +210,6 @@ class UserRightsDrawerTest extends TestCase
     }
 
     /**
-     * Story 7.1 — Review #A : mock UserService::getByLogin pour simuler
-     * l'annuaire AD. Par défaut, tout login retourne un AdUser plausible
-     * (existence AD). Passer un login dans $missing pour simuler l'absence.
-     *
      * @param array<int, string> $missing  logins qui doivent retourner null (absents de l'AD)
      */
     private function mockAdUserService(array $missing = []): void
@@ -232,10 +227,9 @@ class UserRightsDrawerTest extends TestCase
         $this->app->instance(UserService::class, $mock);
     }
 
-    private function drawerComponent(): string
+    private function modalComponent(): string
     {
-        // Composant partial — slug filesystem Livewire.
-        return 'pages::users._partials.rights-drawer';
+        return 'pages::users._partials.delegation-modal';
     }
 
     private function makeUser(string $login): User
@@ -243,7 +237,7 @@ class UserRightsDrawerTest extends TestCase
         return User::create(['login' => $login, 'role' => 'prof', 'is_active' => true]);
     }
 
-    private function makeGroup(string $name = 'drawer-grp'): WorkstationGroup
+    private function makeGroup(string $name = 'dmod-grp'): WorkstationGroup
     {
         return WorkstationGroup::create([
             'name' => "{$name}-" . uniqid(),
@@ -253,22 +247,22 @@ class UserRightsDrawerTest extends TestCase
     }
 
     // ========================================================================
-    // applyDelegations (AC7, AC9)
+    // applyDelegationActions — Auto selon l'état courant
     // ========================================================================
 
-    public function test_apply_delegations_grant_creates_row_and_audit(): void
+    public function test_auto_grants_when_user_has_no_access(): void
     {
-        $admin = $this->grantAdminPermission($this->makeUser('drw-admin'));
-        $target = $this->makeUser('drw-target');
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-admin'));
+        $target = $this->makeUser('dmod-target');
         $group = $this->makeGroup();
         $this->actingAs($admin);
         $this->mockAdUserService();
 
-        Livewire::test($this->drawerComponent())
+        Livewire::test($this->modalComponent())
             ->call('open', [$target->login])
             ->set('selectedWorkstationGroupId', $group->id)
-            ->set('selectedDelegationPermissions', ['computer.view'])
-            ->call('applyDelegations');
+            ->set('selectedDelegationPermission', 'computer.view')
+            ->call('applyDelegationActions');
 
         $this->assertDatabaseHas('delegations', [
             'user_id' => $target->id,
@@ -282,25 +276,21 @@ class UserRightsDrawerTest extends TestCase
         );
     }
 
-    public function test_apply_delegations_remove_deletes_row_and_audits(): void
+    public function test_auto_revokes_when_user_has_positive_delegation(): void
     {
-        $admin = $this->grantAdminPermission($this->makeUser('drw-admin-rm'));
-        $target = $this->makeUser('drw-target-rm');
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-rm'));
+        $target = $this->makeUser('dmod-target-rm');
         $group = $this->makeGroup();
         $this->actingAs($admin);
         $this->mockAdUserService();
 
-        // Pré-création : d'abord grant
-        app(\App\Services\PermissionService::class)->grantDelegation($target, 'computer.view', $group, $admin);
-        $this->assertDatabaseHas('delegations', ['user_id' => $target->id]);
+        app(PermissionService::class)->grantDelegation($target, 'computer.view', $group, $admin);
 
-        // Maintenant remove via drawer
-        Livewire::test($this->drawerComponent())
+        Livewire::test($this->modalComponent())
             ->call('open', [$target->login])
             ->set('selectedWorkstationGroupId', $group->id)
-            ->set('selectedDelegationPermissions', ['computer.view'])
-            ->set('removeDelegation', true)
-            ->call('applyDelegations');
+            ->set('selectedDelegationPermission', 'computer.view')
+            ->call('applyDelegationActions');
 
         $this->assertDatabaseMissing('delegations', [
             'user_id' => $target->id,
@@ -309,24 +299,26 @@ class UserRightsDrawerTest extends TestCase
         $this->assertEquals(
             1,
             DelegationHistory::where('target_user_id', $target->id)
-                ->where('action', 'revoke')->count()
+                ->where('action', 'revoke')
+                ->where('is_negative', false)
+                ->count()
         );
     }
 
-    public function test_apply_delegations_negative_creates_row_with_is_negative_flag(): void
+    public function test_auto_negates_when_user_has_global_permission(): void
     {
-        $admin = $this->grantAdminPermission($this->makeUser('drw-admin-neg'));
-        $target = $this->makeUser('drw-target-neg');
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-neg'));
+        $target = $this->makeUser('dmod-target-neg');
+        $target->givePermissionTo('computer.view');
         $group = $this->makeGroup();
         $this->actingAs($admin);
         $this->mockAdUserService();
 
-        Livewire::test($this->drawerComponent())
+        Livewire::test($this->modalComponent())
             ->call('open', [$target->login])
             ->set('selectedWorkstationGroupId', $group->id)
-            ->set('selectedDelegationPermissions', ['computer.view'])
-            ->set('isNegative', true)
-            ->call('applyDelegations');
+            ->set('selectedDelegationPermission', 'computer.view')
+            ->call('applyDelegationActions');
 
         $this->assertDatabaseHas('delegations', [
             'user_id' => $target->id,
@@ -342,144 +334,254 @@ class UserRightsDrawerTest extends TestCase
         );
     }
 
-    public function test_apply_delegations_with_computer_elevate_dispatches_gpo_job(): void
+    public function test_auto_lifts_exclusion_when_user_has_negative(): void
     {
-        $admin = $this->grantAdminPermission($this->makeUser('drw-admin-gpo'));
-        $target = $this->makeUser('drw-target-gpo');
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-lift'));
+        $target = $this->makeUser('dmod-target-lift');
+        $group = $this->makeGroup();
+        app(PermissionService::class)->negateDelegation($target, 'computer.view', $group, $admin);
+        $this->actingAs($admin);
+        $this->mockAdUserService();
+
+        Livewire::test($this->modalComponent())
+            ->call('open', [$target->login])
+            ->set('selectedWorkstationGroupId', $group->id)
+            ->set('selectedDelegationPermission', 'computer.view')
+            ->call('applyDelegationActions');
+
+        $this->assertDatabaseMissing('delegations', [
+            'user_id' => $target->id,
+            'is_negative' => true,
+        ]);
+        $this->assertEquals(
+            1,
+            DelegationHistory::where('target_user_id', $target->id)
+                ->where('action', 'revoke')
+                ->where('is_negative', true)
+                ->count()
+        );
+    }
+
+    public function test_auto_multi_user_applies_correct_action_per_state(): void
+    {
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-multi'));
         $group = $this->makeGroup();
         $this->actingAs($admin);
         $this->mockAdUserService();
 
-        Livewire::test($this->drawerComponent())
+        $svc = app(PermissionService::class);
+        $userNone = $this->makeUser('u-none');
+        $userPositive = $this->makeUser('u-positive');
+        $svc->grantDelegation($userPositive, 'computer.view', $group);
+        $userNegative = $this->makeUser('u-negative');
+        $svc->negateDelegation($userNegative, 'computer.view', $group);
+        $userGlobal = $this->makeUser('u-global');
+        $userGlobal->givePermissionTo('computer.view');
+
+        Livewire::test($this->modalComponent())
+            ->call('open', ['u-none', 'u-positive', 'u-negative', 'u-global'])
+            ->set('selectedWorkstationGroupId', $group->id)
+            ->set('selectedDelegationPermission', 'computer.view')
+            ->call('applyDelegationActions');
+
+        $this->assertDatabaseHas('delegations', ['user_id' => $userNone->id, 'is_negative' => false]);
+        $this->assertDatabaseMissing('delegations', ['user_id' => $userPositive->id, 'is_negative' => false]);
+        $this->assertDatabaseMissing('delegations', ['user_id' => $userNegative->id, 'is_negative' => true]);
+        $this->assertDatabaseHas('delegations', ['user_id' => $userGlobal->id, 'is_negative' => true]);
+    }
+
+    public function test_unchecking_has_expiration_clears_the_date(): void
+    {
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-togexp'));
+        $this->actingAs($admin);
+        $this->mockAdUserService();
+
+        Livewire::test($this->modalComponent())
+            ->set('hasExpiration', true)
+            ->set('delegationExpiresAt', '2027-01-01T10:00')
+            ->set('hasExpiration', false)
+            ->assertSet('delegationExpiresAt', null);
+    }
+
+    public function test_negate_with_expiration_persists_expires_at(): void
+    {
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-negexp'));
+        $target = $this->makeUser('dmod-target-negexp');
+        $target->givePermissionTo('computer.view');
+        $group = $this->makeGroup();
+        $this->actingAs($admin);
+        $this->mockAdUserService();
+
+        $expiresAtIso = (new \DateTimeImmutable('+3 hours'))->format('Y-m-d\TH:i');
+
+        Livewire::test($this->modalComponent())
             ->call('open', [$target->login])
             ->set('selectedWorkstationGroupId', $group->id)
-            ->set('selectedDelegationPermissions', ['computer.elevate'])
-            ->call('applyDelegations');
+            ->set('selectedDelegationPermission', 'computer.view')
+            ->set('delegationExpiresAt', $expiresAtIso)
+            ->call('applyDelegationActions');
+
+        $delegation = Delegation::where('user_id', $target->id)
+            ->where('is_negative', true)
+            ->first();
+        $this->assertNotNull($delegation, 'Exclusion doit exister.');
+        $this->assertNotNull($delegation->expires_at, 'expires_at doit être persisté sur la négative.');
+    }
+
+    public function test_forced_action_overrides_auto_suggestion(): void
+    {
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-force'));
+        $target = $this->makeUser('dmod-target-force');
+        $group = $this->makeGroup();
+        app(PermissionService::class)->grantDelegation($target, 'computer.view', $group, $admin);
+        $this->actingAs($admin);
+        $this->mockAdUserService();
+
+        Livewire::test($this->modalComponent())
+            ->call('open', [$target->login])
+            ->set('selectedWorkstationGroupId', $group->id)
+            ->set('selectedDelegationPermission', 'computer.view')
+            ->set('forcedAction', 'negate')
+            ->call('applyDelegationActions');
+
+        $this->assertDatabaseHas('delegations', ['user_id' => $target->id, 'is_negative' => false]);
+        $this->assertDatabaseHas('delegations', ['user_id' => $target->id, 'is_negative' => true]);
+    }
+
+    public function test_auto_with_computer_elevate_dispatches_gpo_job(): void
+    {
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-gpo'));
+        $target = $this->makeUser('dmod-target-gpo');
+        $group = $this->makeGroup();
+        $this->actingAs($admin);
+        $this->mockAdUserService();
+
+        Livewire::test($this->modalComponent())
+            ->call('open', [$target->login])
+            ->set('selectedWorkstationGroupId', $group->id)
+            ->set('selectedDelegationPermission', 'computer.elevate')
+            ->call('applyDelegationActions');
 
         Queue::assertPushed(SyncGpoJob::class, 1);
     }
 
-    public function test_apply_delegations_for_nonexistent_user_creates_minimal_eloquent_user(): void
+    public function test_auto_for_nonexistent_user_creates_minimal_eloquent_user(): void
     {
-        // Story 7.1 — Review #A : comportement mis à jour. Si le login existe
-        // dans l'AD, on crée l'EloquentUser minimal. L'AD est simulé ici.
-        $admin = $this->grantAdminPermission($this->makeUser('drw-admin-newu'));
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-newu'));
         $group = $this->makeGroup();
         $this->actingAs($admin);
         $this->mockAdUserService();
 
-        $this->assertDatabaseMissing('users', ['login' => 'newly-created']);
+        $this->assertDatabaseMissing('users', ['login' => 'newly-created-dmod']);
 
-        Livewire::test($this->drawerComponent())
-            ->call('open', ['newly-created'])
+        Livewire::test($this->modalComponent())
+            ->call('open', ['newly-created-dmod'])
             ->set('selectedWorkstationGroupId', $group->id)
-            ->set('selectedDelegationPermissions', ['computer.view'])
-            ->call('applyDelegations');
+            ->set('selectedDelegationPermission', 'computer.view')
+            ->call('applyDelegationActions');
 
-        $this->assertDatabaseHas('users', ['login' => 'newly-created']);
-
-        $newUser = User::where('login', 'newly-created')->first();
+        $this->assertDatabaseHas('users', ['login' => 'newly-created-dmod']);
+        $newUser = User::where('login', 'newly-created-dmod')->first();
         $this->assertDatabaseHas('delegations', ['user_id' => $newUser->id]);
     }
 
-    /**
-     * Story 7.1 — Review #A : si le login cible n'existe pas dans l'AD,
-     * `ensureEloquentUser` refuse la création du user fantôme, affiche un
-     * toast warning et incrémente le compteur d'erreurs.
-     */
-    public function test_ensure_eloquent_user_rejects_unknown_ad_login(): void
+    public function test_auto_rejects_unknown_ad_login(): void
     {
-        $admin = $this->grantAdminPermission($this->makeUser('drw-admin-unk'));
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-unk'));
         $group = $this->makeGroup();
         $this->actingAs($admin);
-        $this->mockAdUserService(missing: ['ghost-login']);
+        $this->mockAdUserService(missing: ['ghost-login-dmod']);
 
-        Livewire::test($this->drawerComponent())
-            ->call('open', ['ghost-login'])
+        Livewire::test($this->modalComponent())
+            ->call('open', ['ghost-login-dmod'])
             ->set('selectedWorkstationGroupId', $group->id)
-            ->set('selectedDelegationPermissions', ['computer.view'])
-            ->call('applyDelegations');
+            ->set('selectedDelegationPermission', 'computer.view')
+            ->call('applyDelegationActions');
 
-        // Aucun user fantôme créé, aucune délégation.
-        $this->assertDatabaseMissing('users', ['login' => 'ghost-login']);
+        $this->assertDatabaseMissing('users', ['login' => 'ghost-login-dmod']);
         $this->assertEquals(0, Delegation::count());
     }
 
-    /**
-     * Story 7.1 — Review #5 : sans `user.assign.right`, applyDelegations
-     * doit lever 403 (HttpException via abort_unless). Livewire absorbe
-     * HttpException/AuthorizationException par défaut — on utilise
-     * `->assertStatus(403)` sur la réponse Livewire (vue rendue en 403).
-     */
-    public function test_delegated_user_cannot_apply_delegations_without_user_assign_right(): void
+    public function test_non_admin_cannot_apply_delegation_actions(): void
     {
-        $nonAdmin = $this->makeUser('drw-non-admin');
-        $admin = $this->grantAdminPermission($this->makeUser('drw-admin-step1'));
-        $target = $this->makeUser('drw-target-step1');
+        $nonAdmin = $this->makeUser('dmod-non-admin');
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-admin-step1'));
+        $target = $this->makeUser('dmod-target-step1');
         $group = $this->makeGroup();
         $this->mockAdUserService();
 
-        // Étape 1 : on ouvre le drawer en tant qu'admin légitime (pour mettre
-        // l'état Livewire à 'isOpen=true' + selectedUsers). Pas d'exception.
         $this->actingAs($admin);
-        $test = Livewire::test($this->drawerComponent())
+        $test = Livewire::test($this->modalComponent())
             ->call('open', [$target->login])
             ->set('selectedWorkstationGroupId', $group->id)
-            ->set('selectedDelegationPermissions', ['computer.view']);
+            ->set('selectedDelegationPermission', 'computer.view');
 
-        // Étape 2 : on change d'user (non admin). Livewire réinstancie la requête
-        // avec le user courant — applyDelegations doit lever 403.
         $this->actingAs($nonAdmin);
+        $test->call('applyDelegationActions')->assertStatus(403);
 
-        $test->call('applyDelegations')->assertStatus(403);
-
-        // Aucune délégation ne doit avoir été créée.
         $this->assertEquals(0, Delegation::count());
     }
 
     // ========================================================================
-    // Toggle exclusif isNegative / removeDelegation
+    // userSummaries
     // ========================================================================
 
-    public function test_toggling_is_negative_disables_remove(): void
+    public function test_user_summaries_reflects_current_state_per_user(): void
     {
-        // Pas de call() sensible ici → pas besoin de user.assign.right ni de mock AD.
-        $this->actingAs($this->makeUser('drw-toggle'));
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-sum-admin'));
+        $group = $this->makeGroup();
+        $svc = app(PermissionService::class);
+        $userPositive = $this->makeUser('sum-dmod-pos');
+        $svc->grantDelegation($userPositive, 'computer.view', $group);
+        $userNone = $this->makeUser('sum-dmod-none');
+        $this->actingAs($admin);
+        $this->mockAdUserService();
 
-        Livewire::test($this->drawerComponent())
-            ->set('removeDelegation', true)
-            ->set('isNegative', true)
-            ->assertSet('removeDelegation', false)
-            ->assertSet('isNegative', true);
+        $test = Livewire::test($this->modalComponent())
+            ->call('open', ['sum-dmod-pos', 'sum-dmod-none'])
+            ->set('selectedWorkstationGroupId', $group->id)
+            ->set('selectedDelegationPermission', 'computer.view');
+
+        $summaries = $test->instance()->userSummaries;
+
+        $this->assertEquals('delegation_positive', $summaries['sum-dmod-pos']['source']);
+        $this->assertEquals('revoke', $summaries['sum-dmod-pos']['action_suggested']);
+        $this->assertEquals('none', $summaries['sum-dmod-none']['source']);
+        $this->assertEquals('grant', $summaries['sum-dmod-none']['action_suggested']);
     }
 
-    public function test_toggling_remove_disables_is_negative(): void
-    {
-        $this->actingAs($this->makeUser('drw-toggle2'));
-
-        Livewire::test($this->drawerComponent())
-            ->set('isNegative', true)
-            ->set('removeDelegation', true)
-            ->assertSet('removeDelegation', true)
-            ->assertSet('isNegative', false);
-    }
-
     // ========================================================================
-    // Validations de formulaire
+    // Validations
     // ========================================================================
 
-    public function test_apply_delegations_without_users_does_nothing(): void
+    public function test_apply_without_users_does_nothing(): void
     {
-        $admin = $this->grantAdminPermission($this->makeUser('drw-empty'));
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-empty'));
         $group = $this->makeGroup();
         $this->actingAs($admin);
         $this->mockAdUserService();
 
-        Livewire::test($this->drawerComponent())
+        Livewire::test($this->modalComponent())
             ->set('selectedUsers', [])
             ->set('selectedWorkstationGroupId', $group->id)
-            ->set('selectedDelegationPermissions', ['computer.view'])
-            ->call('applyDelegations');
+            ->set('selectedDelegationPermission', 'computer.view')
+            ->call('applyDelegationActions');
+
+        $this->assertEquals(0, Delegation::count());
+    }
+
+    public function test_apply_without_permission_does_nothing(): void
+    {
+        $admin = $this->grantAdminPermission($this->makeUser('dmod-noperm'));
+        $target = $this->makeUser('dmod-target-noperm');
+        $group = $this->makeGroup();
+        $this->actingAs($admin);
+        $this->mockAdUserService();
+
+        Livewire::test($this->modalComponent())
+            ->call('open', [$target->login])
+            ->set('selectedWorkstationGroupId', $group->id)
+            ->call('applyDelegationActions');
 
         $this->assertEquals(0, Delegation::count());
     }

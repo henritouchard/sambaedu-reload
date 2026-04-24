@@ -7,15 +7,17 @@ use App\Components\Traits\WithToasts;
 use App\Enums\SambaPermission;
 use App\Enums\SambaRole;
 use App\Models\User as EloquentUser;
-use App\Models\WorkstationGroup;
-use App\Models\Delegation;
-use App\Services\PermissionService;
 use App\Services\UserService;
-use Spatie\Permission\Models\Role;
-use Spatie\Permission\Models\Permission;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * Drawer "Gérer les droits" : Rôles + Permissions globales non-scopées.
+ *
+ * Story 7.1.bis : le tab Délégations a été extrait dans la modale
+ * `pages/users/_partials/delegation-modal.blade.php` (UX état→action qui
+ * nécessitait un format plus large + un flux séquentiel distinct).
+ */
 new class extends Component {
     use WithToasts;
 
@@ -34,19 +36,9 @@ new class extends Component {
     public bool $removePermissions = false;
     public string $permissionSearch = '';
 
-    // Onglet Délégations
-    public ?int $selectedWorkstationGroupId = null;
-    public array $selectedDelegationPermissions = [];
-    public bool $removeDelegation = false;
-    // Story 7.1 — AC9 : toggle exclusion/négative, exclusif avec $removeDelegation.
-    public bool $isNegative = false;
-    // Story 7.1 — recherche filtrable pour gros catalogue de salles (> 20).
-    public string $workstationGroupSearch = '';
-
     // Données chargées
     public array $availableRoles = [];
     public array $availablePermissions = [];
-    public array $availableWorkstationGroups = [];
     public array $permissionCategories = [];
 
     // État de chargement
@@ -59,7 +51,6 @@ new class extends Component {
 
     private function loadAvailableData(): void
     {
-        // Rôles depuis SambaRole enum
         $this->availableRoles = collect(SambaRole::cases())
             ->map(fn(SambaRole $r) => [
                 'name' => $r->value,
@@ -69,7 +60,6 @@ new class extends Component {
             ])
             ->toArray();
 
-        // Permissions depuis SambaPermission enum
         $this->availablePermissions = collect(SambaPermission::cases())
             ->map(fn(SambaPermission $p) => [
                 'name' => $p->value,
@@ -80,7 +70,6 @@ new class extends Component {
             ])
             ->toArray();
 
-        // Grouper par catégorie
         $this->permissionCategories = collect(SambaPermission::groupedByCategory())
             ->map(fn(array $group) => [
                 'label' => $group['label'],
@@ -91,18 +80,6 @@ new class extends Component {
                         'category' => $p->category(),
                     ])
                     ->toArray(),
-            ])
-            ->toArray();
-
-        // WorkstationGroups physiques
-        $this->availableWorkstationGroups = WorkstationGroup::physical()
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get()
-            ->map(fn(WorkstationGroup $wg) => [
-                'id' => $wg->id,
-                'name' => $wg->name,
-                'display_name' => $wg->display_name ?? $wg->name,
             ])
             ->toArray();
     }
@@ -134,35 +111,12 @@ new class extends Component {
         $this->selectedPermissions = [];
         $this->removePermissions = false;
         $this->permissionSearch = '';
-        $this->selectedWorkstationGroupId = null;
-        $this->selectedDelegationPermissions = [];
-        $this->removeDelegation = false;
-        $this->isNegative = false;
-        $this->workstationGroupSearch = '';
         $this->processing = false;
     }
 
     public function switchTab(string $tab): void
     {
         $this->activeTab = $tab;
-    }
-
-    /**
-     * Story 7.1 — AC9 : toggle négative exclusif avec toggle remove.
-     * Quand l'un est coché, l'autre se décoche automatiquement.
-     */
-    public function updatedIsNegative(bool $value): void
-    {
-        if ($value) {
-            $this->removeDelegation = false;
-        }
-    }
-
-    public function updatedRemoveDelegation(bool $value): void
-    {
-        if ($value) {
-            $this->isNegative = false;
-        }
     }
 
     // ========================================================================
@@ -284,128 +238,6 @@ new class extends Component {
     }
 
     // ========================================================================
-    // ACTIONS : Délégations
-    // ========================================================================
-
-    public function toggleDelegationPermission(string $permissionName): void
-    {
-        if (in_array($permissionName, $this->selectedDelegationPermissions)) {
-            $this->selectedDelegationPermissions = array_values(
-                array_diff($this->selectedDelegationPermissions, [$permissionName])
-            );
-        } else {
-            $this->selectedDelegationPermissions[] = $permissionName;
-        }
-    }
-
-    public function applyDelegations(): void
-    {
-        // Story 7.1 — Review #5b : guard serveur.
-        abort_unless(Gate::allows('user.assign.right'), 403);
-
-        if (empty($this->selectedUsers)) {
-            $this->toastError('Aucun utilisateur sélectionné.');
-            return;
-        }
-
-        if ($this->selectedWorkstationGroupId === null) {
-            $this->toastError('Veuillez sélectionner une salle.');
-            return;
-        }
-
-        if (empty($this->selectedDelegationPermissions)) {
-            $this->toastError('Veuillez sélectionner au moins une permission à déléguer.');
-            return;
-        }
-
-        $this->processing = true;
-        $permissionService = app(PermissionService::class);
-        $group = WorkstationGroup::find($this->selectedWorkstationGroupId);
-
-        if (!$group || !$group->is_physical) {
-            $this->toastError('Salle invalide ou non physique.');
-            $this->processing = false;
-            return;
-        }
-
-        // Résolution du granter (utilisateur connecté).
-        // Le guard Laravel peut renvoyer un Authenticatable dont l'identifier
-        // est soit l'id Eloquent (nouvelle auth), soit le login AD (legacy).
-        // On fait un fallback `findByLogin` pour couvrir les deux cas.
-        $granter = null;
-        $authUser = auth()->user();
-        if ($authUser) {
-            if ($authUser instanceof EloquentUser) {
-                $granter = $authUser;
-            } else {
-                $granter = EloquentUser::where('login', $authUser->getAuthIdentifier())->first();
-            }
-        }
-
-        $count = 0;
-        $errors = 0;
-        // Story 7.1 — Review #4 (Option B) : capture du flag audit sur toute
-        // la boucle — si au moins une mutation n'a pas tracé l'opération, on
-        // affiche un toast warning unique en fin d'applyDelegations().
-        $anyAuditFailed = false;
-
-        foreach ($this->selectedUsers as $login) {
-            try {
-                $user = $this->ensureEloquentUser($login);
-                if (!$user) {
-                    $errors++;
-                    continue;
-                }
-
-                foreach ($this->selectedDelegationPermissions as $permName) {
-                    // Story 7.1 — AC9 : routage selon les toggles.
-                    //  - removeDelegation  → revoke (supprime positive)
-                    //  - isNegative        → negate (crée exclusion)
-                    //  - défaut            → grant  (crée/maj positive)
-                    if ($this->removeDelegation) {
-                        $permissionService->revokeDelegation($user, $permName, $group, $granter);
-                    } elseif ($this->isNegative) {
-                        $permissionService->negateDelegation($user, $permName, $group, $granter);
-                    } else {
-                        $permissionService->grantDelegation($user, $permName, $group, $granter);
-                    }
-
-                    if ($permissionService->lastAuditFailed) {
-                        $anyAuditFailed = true;
-                    }
-                }
-                $count++;
-            } catch (\Exception $e) {
-                Log::error("[RightsDrawer] Erreur délégation pour {$login}: " . $e->getMessage());
-                $errors++;
-            }
-        }
-
-        $nb = count($this->selectedDelegationPermissions);
-        if ($this->removeDelegation) {
-            $action = 'retirée(s) de';
-        } elseif ($this->isNegative) {
-            $action = 'marquée(s) en exclusion sur';
-        } else {
-            $action = 'accordée(s) à';
-        }
-        $message = "{$nb} délégation(s) sur '{$group->name}' {$action} {$count} utilisateur(s).";
-        if ($errors > 0) {
-            $message .= " ({$errors} erreur(s))";
-            $this->toastWarning($message);
-        } else {
-            $this->toastSuccess($message);
-        }
-
-        // Story 7.1 — Review #4 (Option B) : signalisation unique en fin d'applyDelegations.
-        if ($anyAuditFailed) {
-            $this->toastWarning("Délégation(s) appliquée(s) mais la traçabilité n'a pas été enregistrée pour une ou plusieurs opérations. Contactez l'administrateur.");
-        }
-
-        $this->processing = false;
-    }
-
-    // ========================================================================
     // HELPERS
     // ========================================================================
 
@@ -450,31 +282,6 @@ new class extends Component {
             'role' => 'autre',
             'is_active' => true,
         ]);
-    }
-
-    /**
-     * Story 7.1 — Liste filtrable des WorkstationGroups physiques disponibles.
-     *
-     * Si l'admin tape quelque chose dans `workstationGroupSearch`, on filtre sur
-     * name + display_name (case-insensitive). Sinon on retourne tout le catalogue.
-     */
-    #[Computed]
-    public function filteredWorkstationGroups(): array
-    {
-        if (empty($this->workstationGroupSearch)) {
-            return $this->availableWorkstationGroups;
-        }
-
-        $search = strtolower($this->workstationGroupSearch);
-
-        return array_values(array_filter(
-            $this->availableWorkstationGroups,
-            static function (array $wg) use ($search): bool {
-                $name = strtolower((string) ($wg['name'] ?? ''));
-                $display = strtolower((string) ($wg['display_name'] ?? ''));
-                return str_contains($name, $search) || str_contains($display, $search);
-            }
-        ));
     }
 
     #[Computed]
@@ -535,10 +342,6 @@ new class extends Component {
                     <a role="tab" class="tab {{ $activeTab === 'permissions' ? 'tab-active' : '' }}"
                         wire:click="switchTab('permissions')">
                         <i class="fa-solid fa-key mr-1"></i> Permissions
-                    </a>
-                    <a role="tab" class="tab {{ $activeTab === 'delegations' ? 'tab-active' : '' }}"
-                        wire:click="switchTab('delegations')">
-                        <i class="fa-solid fa-building mr-1"></i> Délégations
                     </a>
                 </div>
 
@@ -680,143 +483,6 @@ new class extends Component {
                                 {{ count($selectedPermissions) }} permission(s)
                             </span>
                             <span wire:loading wire:target="applyPermissions">
-                                <span class="loading loading-spinner loading-xs"></span> Traitement...
-                            </span>
-                        </button>
-                    </div>
-                </div>
-
-                {{-- ============================================================ --}}
-                {{-- ONGLET DÉLÉGATIONS --}}
-                {{-- ============================================================ --}}
-                <div class="flex-1 overflow-hidden flex flex-col p-4 {{ $activeTab !== 'delegations' ? 'hidden' : '' }}">
-                    <p class="text-sm text-base-content/70 mb-3">
-                        Déléguer des droits limités à une salle physique (WorkstationGroup).
-                    </p>
-
-                    {{-- Toggle retirer --}}
-                    <div class="flex gap-3 shrink-0 mb-2">
-                        <input type="checkbox" wire:model.live="removeDelegation"
-                            @disabled($isNegative)
-                            class="toggle toggle-sm border-primary checked:border-error/50 checked:bg-error/50" />
-                        <div class="text-sm font-medium">
-                            {{ $removeDelegation ? 'Retirer les délégations' : 'Accorder les délégations' }}
-                        </div>
-                    </div>
-
-                    {{-- Story 7.1 — AC9 : toggle exclusion / délégation négative --}}
-                    <div class="flex gap-3 shrink-0 mb-3 items-start">
-                        <input type="checkbox" wire:model.live="isNegative"
-                            @disabled($removeDelegation)
-                            class="toggle toggle-sm border-primary checked:border-error/50 checked:bg-error/50" />
-                        <div class="text-sm">
-                            <div class="font-medium">Marquer comme exclusion (négative)</div>
-                            <div class="text-xs text-base-content/50">
-                                L'utilisateur perd le droit sur cette salle même s'il l'a via un rôle global.
-                            </div>
-                        </div>
-                    </div>
-
-                    {{-- Sélection de la salle --}}
-                    <div class="mb-3 shrink-0">
-                        <label class="text-xs font-medium text-base-content/60 mb-1 block">Salle physique</label>
-                        @if (count($availableWorkstationGroups) > 20)
-                            {{-- Story 7.1 — combobox filtrable si > 20 salles --}}
-                            <label class="input input-sm w-full mb-2">
-                                <i class="fa-solid fa-magnifying-glass opacity-50"></i>
-                                <input type="text" wire:model.live.debounce.200ms="workstationGroupSearch"
-                                    placeholder="Rechercher une salle..." class="grow" />
-                                @if ($workstationGroupSearch)
-                                    <button type="button" wire:click="$set('workstationGroupSearch', '')"
-                                        class="btn btn-ghost btn-xs btn-circle">
-                                        <i class="fa-solid fa-xmark"></i>
-                                    </button>
-                                @endif
-                            </label>
-                        @endif
-                        <select wire:model.live="selectedWorkstationGroupId"
-                            class="select select-sm select-bordered w-full">
-                            <option value="">-- Choisir une salle --</option>
-                            @foreach ($this->filteredWorkstationGroups as $wg)
-                                <option value="{{ $wg['id'] }}">{{ $wg['display_name'] }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    {{-- Permissions à déléguer --}}
-                    <label class="text-xs font-medium text-base-content/60 mb-1 block shrink-0">
-                        Permissions à déléguer sur cette salle
-                    </label>
-
-                    @if (count($selectedDelegationPermissions) > 0)
-                        <div class="text-xs text-primary font-medium mb-2 shrink-0">
-                            {{ count($selectedDelegationPermissions) }} permission(s) sélectionnée(s)
-                        </div>
-                    @endif
-
-                    <div class="flex-1 overflow-y-auto min-h-0 space-y-1 mb-4 border rounded-lg bg-base-100 p-2">
-                        @php
-                            // Permissions pertinentes pour les délégations (machines uniquement)
-                            $delegatablePermissions = collect($availablePermissions)
-                                ->filter(fn($p) => in_array($p['category'], ['computer', 'wpkg']))
-                                ->toArray();
-                        @endphp
-                        @foreach ($delegatablePermissions as $perm)
-                            <label class="flex items-center gap-3 px-2 py-2 cursor-pointer hover:bg-base-200/50 rounded">
-                                <input type="checkbox"
-                                    wire:click="toggleDelegationPermission('{{ $perm['name'] }}')"
-                                    @checked(in_array($perm['name'], $selectedDelegationPermissions))
-                                    class="checkbox checkbox-sm checkbox-primary" />
-                                <div class="flex-1">
-                                    <div class="text-sm">{{ $perm['label'] }}</div>
-                                    <div class="text-xs text-base-content/40 font-mono">{{ $perm['name'] }}</div>
-                                </div>
-                                @if ($perm['name'] === 'computer.elevate')
-                                    <div class="badge badge-warning badge-xs">GPO</div>
-                                @endif
-                            </label>
-                        @endforeach
-                    </div>
-
-                    {{-- Info GPO --}}
-                    @if (in_array('computer.elevate', $selectedDelegationPermissions))
-                        <div class="alert alert-warning text-xs mb-3 shrink-0">
-                            <i class="fa-solid fa-triangle-exclamation"></i>
-                            <span>La permission <strong>computer.elevate</strong> déclenchera une synchronisation GPO
-                                pour accorder les droits admin locaux sur les machines de cette salle.</span>
-                        </div>
-                    @endif
-
-                    {{-- Actions --}}
-                    <div class="flex justify-between items-center shrink-0 pt-3 border-t border-base-300">
-                        <button type="button" class="btn btn-ghost btn-sm" wire:click="close">Annuler</button>
-                        @php
-                            // Story 7.1 — AC9 : styling bouton selon l'action effective.
-                            if ($removeDelegation) {
-                                $btnClass = 'btn-error';
-                                $btnIcon = 'fa-minus';
-                                $btnLabel = 'Retirer';
-                            } elseif ($isNegative) {
-                                $btnClass = 'btn-warning';
-                                $btnIcon = 'fa-ban';
-                                $btnLabel = 'Exclure';
-                            } else {
-                                $btnClass = 'btn-primary';
-                                $btnIcon = 'fa-check';
-                                $btnLabel = 'Accorder';
-                            }
-                        @endphp
-                        <button type="button"
-                            class="btn btn-sm {{ $btnClass }}"
-                            wire:click="applyDelegations"
-                            wire:loading.attr="disabled"
-                            @disabled($selectedWorkstationGroupId === null || count($selectedDelegationPermissions) === 0)>
-                            <span wire:loading.remove wire:target="applyDelegations">
-                                <i class="fa-solid {{ $btnIcon }}"></i>
-                                {{ $btnLabel }}
-                                {{ count($selectedDelegationPermissions) }} délégation(s)
-                            </span>
-                            <span wire:loading wire:target="applyDelegations">
                                 <span class="loading loading-spinner loading-xs"></span> Traitement...
                             </span>
                         </button>

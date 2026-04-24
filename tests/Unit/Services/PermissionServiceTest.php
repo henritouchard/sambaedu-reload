@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 /**
@@ -343,6 +344,54 @@ class PermissionServiceTest extends TestCase
         $this->assertEquals($actor->id, $entry->actor_user_id);
     }
 
+    /**
+     * Story 7.1.bis : exclusion temporaire. `negateDelegation` accepte
+     * désormais un `$expiresAt` — une fois la date passée, le scope `active()`
+     * cesse de filtrer le group et le droit global (s'il existe) reprend.
+     */
+    public function test_negate_delegation_persists_expires_at(): void
+    {
+        $target = $this->makeUser('target-neg-exp');
+        $group = $this->makeGroup();
+        $expiresAt = new \DateTimeImmutable('+2 hours');
+
+        $deleg = $this->service->negateDelegation(
+            $target,
+            'computer.view',
+            $group,
+            null,
+            $expiresAt
+        );
+
+        $this->assertNotNull($deleg->expires_at);
+        $this->assertEqualsWithDelta(
+            $expiresAt->getTimestamp(),
+            $deleg->expires_at->getTimestamp(),
+            5,
+            'expires_at doit être persisté à la seconde près.'
+        );
+    }
+
+    public function test_negate_delegation_with_past_expiry_does_not_block_access(): void
+    {
+        $user = $this->makeUser('user-neg-past');
+        $group = $this->makeGroup();
+
+        $user->givePermissionTo('computer.view');
+        $this->service->negateDelegation(
+            $user->fresh(),
+            'computer.view',
+            $group,
+            null,
+            new \DateTimeImmutable('-1 hour'),
+        );
+
+        $this->assertTrue(
+            $this->service->canOnWorkstationGroup($user->fresh(), 'computer.view', $group),
+            'Une exclusion déjà expirée ne doit pas bloquer le droit global.'
+        );
+    }
+
     // ========================================================================
     // canOnWorkstationGroup
     // ========================================================================
@@ -508,6 +557,160 @@ class PermissionServiceTest extends TestCase
      * droit global mais une exclusion sur B ne doit pas voir B dans la liste
      * des groupes autorisés.
      */
+    // ========================================================================
+    // getEffectiveAccessSummary (Story 7.1.bis)
+    // ========================================================================
+
+    public function test_effective_summary_returns_none_when_user_has_no_access(): void
+    {
+        $user = $this->makeUser('sum-none');
+        $group = $this->makeGroup();
+
+        $summary = $this->service->getEffectiveAccessSummary($user, 'computer.view', $group);
+
+        $this->assertEquals('none', $summary['source']);
+        $this->assertEquals('none', $summary['state']);
+        $this->assertEquals('grant', $summary['action_suggested']);
+    }
+
+    public function test_effective_summary_detects_positive_delegation(): void
+    {
+        $user = $this->makeUser('sum-pos');
+        $group = $this->makeGroup();
+
+        $this->service->grantDelegation($user, 'computer.view', $group);
+        $summary = $this->service->getEffectiveAccessSummary($user->fresh(), 'computer.view', $group);
+
+        $this->assertEquals('delegation_positive', $summary['source']);
+        $this->assertEquals('granted', $summary['state']);
+        $this->assertEquals('revoke', $summary['action_suggested']);
+    }
+
+    public function test_effective_summary_detects_negative_delegation(): void
+    {
+        $user = $this->makeUser('sum-neg');
+        $group = $this->makeGroup();
+
+        $this->service->negateDelegation($user, 'computer.view', $group);
+        $summary = $this->service->getEffectiveAccessSummary($user->fresh(), 'computer.view', $group);
+
+        $this->assertEquals('delegation_negative', $summary['source']);
+        $this->assertEquals('denied', $summary['state']);
+        $this->assertEquals('lift_negative', $summary['action_suggested']);
+    }
+
+    public function test_effective_summary_detects_direct_global_permission(): void
+    {
+        $user = $this->makeUser('sum-global-direct');
+        $group = $this->makeGroup();
+
+        $user->givePermissionTo('computer.view');
+        $summary = $this->service->getEffectiveAccessSummary($user->fresh(), 'computer.view', $group);
+
+        $this->assertEquals('global', $summary['source']);
+        $this->assertEquals('granted', $summary['state']);
+        $this->assertEquals('negate', $summary['action_suggested']);
+    }
+
+    public function test_effective_summary_detects_permission_via_role(): void
+    {
+        $user = $this->makeUser('sum-via-role');
+        $group = $this->makeGroup();
+
+        $role = Role::firstOrCreate(['name' => 'test-role', 'guard_name' => 'web']);
+        $role->givePermissionTo('computer.view');
+        $user->assignRole('test-role');
+
+        $summary = $this->service->getEffectiveAccessSummary($user->fresh(), 'computer.view', $group);
+
+        $this->assertEquals('role', $summary['source']);
+        $this->assertEquals('granted', $summary['state']);
+        $this->assertEquals('negate', $summary['action_suggested']);
+    }
+
+    public function test_effective_summary_negative_takes_priority_over_global(): void
+    {
+        $user = $this->makeUser('sum-priority');
+        $group = $this->makeGroup();
+
+        $user->givePermissionTo('computer.view');
+        $this->service->negateDelegation($user->fresh(), 'computer.view', $group);
+
+        $summary = $this->service->getEffectiveAccessSummary($user->fresh(), 'computer.view', $group);
+
+        $this->assertEquals('delegation_negative', $summary['source']);
+        $this->assertEquals('denied', $summary['state']);
+        $this->assertEquals('lift_negative', $summary['action_suggested']);
+    }
+
+    // ========================================================================
+    // revokeNegativeDelegation (Story 7.1.bis)
+    // ========================================================================
+
+    public function test_revoke_negative_deletes_exclusion_and_logs_revoke(): void
+    {
+        $user = $this->makeUser('lift-user');
+        $actor = $this->makeUser('lift-actor');
+        $group = $this->makeGroup();
+
+        $this->service->negateDelegation($user, 'computer.view', $group, $actor);
+        $this->assertEquals(1, Delegation::where('user_id', $user->id)->where('is_negative', true)->count());
+
+        $ok = $this->service->revokeNegativeDelegation($user, 'computer.view', $group, $actor);
+
+        $this->assertTrue($ok);
+        $this->assertEquals(0, Delegation::where('user_id', $user->id)->where('is_negative', true)->count());
+
+        // Trace `revoke` avec is_negative=true (distinguable d'un revoke de positive).
+        $this->assertEquals(
+            1,
+            DelegationHistory::where('target_user_id', $user->id)
+                ->where('action', DelegationHistory::ACTION_REVOKE)
+                ->where('is_negative', true)
+                ->count()
+        );
+    }
+
+    public function test_revoke_negative_without_existing_exclusion_is_noop(): void
+    {
+        $user = $this->makeUser('lift-noop');
+        $group = $this->makeGroup();
+
+        $ok = $this->service->revokeNegativeDelegation($user, 'computer.view', $group);
+
+        $this->assertFalse($ok);
+        $this->assertEquals(0, DelegationHistory::where('target_user_id', $user->id)->count());
+    }
+
+    public function test_revoke_negative_dispatches_gpo_for_computer_elevate(): void
+    {
+        $user = $this->makeUser('lift-gpo');
+        $group = $this->makeGroup();
+
+        $this->service->negateDelegation($user, 'computer.elevate', $group);
+        Queue::fake(); // reset pour n'observer que le revoke-negative
+
+        $this->service->revokeNegativeDelegation($user, 'computer.elevate', $group);
+
+        Queue::assertPushed(SyncGpoJob::class, 1);
+    }
+
+    public function test_revoke_negative_does_not_touch_positive_delegation(): void
+    {
+        $user = $this->makeUser('lift-preserve');
+        $group = $this->makeGroup();
+
+        $this->service->grantDelegation($user, 'computer.view', $group);
+        $this->service->negateDelegation($user, 'computer.view', $group);
+        $this->assertEquals(1, Delegation::where('user_id', $user->id)->where('is_negative', false)->count());
+
+        $this->service->revokeNegativeDelegation($user, 'computer.view', $group);
+
+        // Positive intacte, seule la négative a disparu.
+        $this->assertEquals(1, Delegation::where('user_id', $user->id)->where('is_negative', false)->count());
+        $this->assertEquals(0, Delegation::where('user_id', $user->id)->where('is_negative', true)->count());
+    }
+
     public function test_get_authorized_workstation_groups_with_global_excludes_negatives(): void
     {
         $user = $this->makeUser('admin-partially-excluded');
