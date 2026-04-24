@@ -97,11 +97,12 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
                 default    => $log->action,
             };
             $activities[] = [
-                'initials' => strtoupper(substr($log->machine_name, 0, 2)),
-                'name'     => $log->machine_name,
-                'action'   => $actionLabel,
-                'time_ago' => $log->created_at->diffForHumans(),
-                'color'    => $log->action === 'wake' ? 'success' : 'warning',
+                'initials'  => strtoupper(substr($log->machine_name, 0, 2)),
+                'name'      => $log->machine_name,
+                'action'    => $actionLabel,
+                'time_ago'  => $log->created_at->diffForHumans(),
+                'color'     => $log->action === 'wake' ? 'success' : 'warning',
+                'timestamp' => $log->created_at->getTimestamp(),
             ];
         }
 
@@ -117,16 +118,19 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
                     substr($user->firstname ?? '', 0, 1) . substr($user->lastname ?? '', 0, 1)
                 );
                 $activities[] = [
-                    'initials' => $initials ?: '??',
-                    'name'     => trim($user->firstname . ' ' . $user->lastname),
-                    'action'   => 'compte synchronisé',
-                    'time_ago' => $user->updated_at->diffForHumans(),
-                    'color'    => 'primary',
+                    'initials'  => $initials ?: '??',
+                    'name'      => trim($user->firstname . ' ' . $user->lastname),
+                    'action'    => 'compte synchronisé',
+                    'time_ago'  => $user->updated_at->diffForHumans(),
+                    'color'     => 'primary',
+                    'timestamp' => $user->updated_at->getTimestamp(),
                 ];
             }
         }
 
-        return $activities;
+        usort($activities, static fn(array $a, array $b): int => $b['timestamp'] <=> $a['timestamp']);
+
+        return array_slice($activities, 0, 5);
     }
 };
 ?>
@@ -291,9 +295,15 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <!-- Activité récente -->
-            <div class="card bg-base-100 shadow-sm border border-base-200">
+            <a href="{{ route('app.dashboard.activity') }}"
+                class="card bg-base-100 shadow-sm border border-base-200 hover:border-primary transition-colors">
                 <div class="card-body">
-                    <h2 class="card-title mb-4">Activité Récente</h2>
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="card-title">Activité Récente</h2>
+                        <span class="text-xs text-base-content/60 flex items-center gap-1">
+                            Voir tout <i class="fa-solid fa-chevron-right text-[10px]"></i>
+                        </span>
+                    </div>
                     <div class="space-y-3">
                         @forelse ($recentActivity as $activity)
                             <x-molecules.user-activity-item :initials="$activity['initials']" :name="$activity['name']" :action="$activity['action']"
@@ -303,7 +313,7 @@ new #[Title('Tableau de bord - Instance SE4FS')] class extends Component {
                         @endforelse
                     </div>
                 </div>
-            </div>
+            </a>
 
             <!-- Actions rapides -->
             <div class="card bg-base-100 shadow-sm border border-base-200">

@@ -620,6 +620,15 @@ new class extends Component {
                                         Gérer les groupes
                                     </button>
                                 </li>
+                                @can('user.assign.right')
+                                    <li>
+                                        <button type="button"
+                                            @click="Livewire.dispatch('open-rights-drawer', { users: $wire.selectedUsers }); document.activeElement.blur();">
+                                            <i class="fa-solid fa-shield-halved"></i>
+                                            Gérer les droits
+                                        </button>
+                                    </li>
+                                @endcan
                                 @can('user.password.init')
                                     <li>
                                         <button type="button"
@@ -752,6 +761,7 @@ new class extends Component {
     @endif
 
     <livewire:components::organisms.groups-drawer />
+    @livewire('pages::users._partials.rights-drawer')
     <livewire:components::organisms.password-reset-modal />
     <livewire:components::organisms.password-reset-banner />
 </x-organisms.page>

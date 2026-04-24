@@ -51,6 +51,7 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
     // Navigation legacy déplacée sous /admin/homelegacy
 
     Route::livewire('/dashboard', 'pages::dashboard.index')->name('dashboard');
+    Route::livewire('/dashboard/activity', 'pages::dashboard.activity.index')->name('dashboard.activity');
     Route::livewire('/workers', 'pages::workers.index')->name('workers.index');
     Route::livewire('/workers/{pid}', 'pages::workers.[pid].index')->whereNumber('pid')->name('workers.show');
 
