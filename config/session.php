@@ -31,7 +31,12 @@ return [
     |
     */
 
-    'lifetime' => env('SESSION_LIFETIME', 120),
+    // Aligné sur la session legacy SambaEdu (`AuthenticationService::ensureSession`,
+    // `cookie_lifetime: 86400` = 24h). Sans cet alignement, la session Laravel
+    // expire en 2h et le browser, encore "connecté" côté legacy, prend des 419
+    // sur les requêtes Livewire sans qu'aucune redirection login soit déclenchée
+    // (popup "This page has expired"). À ajuster si un retour terrain le justifie.
+    'lifetime' => 1440,
 
     'expire_on_close' => false,
 

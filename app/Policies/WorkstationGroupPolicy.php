@@ -38,11 +38,28 @@ class WorkstationGroupPolicy
     ];
 
     /**
-     * Vérifie si l'utilisateur peut voir la liste des WorkstationGroups
+     * Vérifie si l'utilisateur peut voir la liste des WorkstationGroups.
+     *
+     * Story 7.1 (QA e2e 2026-04-24) : accepte aussi les délégués scopés.
+     * Un user sans droit global `computer.view` mais avec au moins une
+     * délégation positive active sur une salle doit pouvoir ouvrir
+     * `/app/parc` — le listing est ensuite filtré par `scopedUser()` dans
+     * la page Livewire. Sans ça, le middleware `can:` ferme la porte avant
+     * même que le scoping n'entre en jeu.
      */
     public function viewAny(?Authenticatable $user): bool
     {
-        return $this->canViewComputers($user);
+        if ($this->canViewComputers($user)) {
+            return true;
+        }
+
+        if (!$user instanceof \App\Models\User) {
+            return false;
+        }
+
+        return app(PermissionService::class)
+            ->getAuthorizedWorkstationGroups($user, 'computer.view')
+            ->isNotEmpty();
     }
 
     /**

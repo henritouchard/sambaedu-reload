@@ -161,13 +161,16 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
 
     // ========================================
     // Gestion du Parc (Section 1 - MySQL source)
-    // Story 7.2 AC8 : can:computer.view sur index + visualisation.
+    // Story 7.2 AC8 : middleware `can:viewAny-workstationGroup` sur les routes
+    // de lecture — accepte les droits globaux ET les délégués scopés (au moins
+    // une délégation positive active). Le scoping fin par ressource est appliqué
+    // dans les mount Livewire via `Gate::allows('view', $group|$machine)`.
     // Actions fines (control, élévation) sont gardées au niveau Policy dans les composants.
     // ========================================
     Route::prefix('parc')->name('parc.')->group(function () {
         // Page principale avec onglets machines/groupes
         Route::livewire('/', 'pages::parc.index')
-            ->middleware('can:computer.view')
+            ->middleware('can:viewAny-workstationGroup')
             ->name('index');
 
         // Groupes de machines — scoping fin via WorkstationGroupPolicy dans le mount.
@@ -175,7 +178,7 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
             ->middleware('can:computer.install')
             ->name('groups.new');
         Route::livewire('/groups/{id}', 'pages::parc.groups.[id].index')
-            ->middleware('can:computer.view')
+            ->middleware('can:viewAny-workstationGroup')
             ->name('groups.show');
         Route::livewire('/groups/{id}/edit', 'pages::parc.groups.[id].edit.index')
             ->middleware('can:computer.install')
@@ -185,12 +188,12 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
         Route::livewire('/groups/{id}/schedules/{scheduleId}/runs', 'pages::parc.groups.[id].schedules.[scheduleId].runs.index')
             ->whereNumber('id')
             ->whereNumber('scheduleId')
-            ->middleware('can:computer.view')
+            ->middleware('can:viewAny-workstationGroup')
             ->name('groups.schedules.runs');
 
         // Machines — scoping fin via MachinePolicy (Story 7.2).
         Route::livewire('/machines/{id}', 'pages::parc.machines.[id].index')
-            ->middleware('can:computer.view')
+            ->middleware('can:viewAny-workstationGroup')
             ->name('machines.show');
     });
 

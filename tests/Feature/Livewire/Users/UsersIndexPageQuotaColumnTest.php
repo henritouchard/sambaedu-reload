@@ -50,6 +50,7 @@ class UsersIndexPageQuotaColumnTest extends TestCase
         if ($this->createdTables) {
             Schema::dropIfExists('user_group_user');
             Schema::dropIfExists('user_groups');
+            Schema::dropIfExists('workstation_groups');
             Schema::dropIfExists('users');
         }
         parent::tearDown();
@@ -101,6 +102,20 @@ class UsersIndexPageQuotaColumnTest extends TestCase
                 $table->unsignedBigInteger('user_id');
                 $table->unsignedBigInteger('user_group_id');
                 $table->primary(['user_id', 'user_group_id']);
+            });
+            $this->createdTables = true;
+        }
+
+        // La page users.index rend <livewire:pages::users._partials.delegation-modal />
+        // dont le mount() charge WorkstationGroup::physical()->where('is_active', true).
+        if (!Schema::hasTable('workstation_groups')) {
+            Schema::create('workstation_groups', function (Blueprint $table) {
+                $table->id();
+                $table->string('name', 100)->unique();
+                $table->string('display_name', 255)->nullable();
+                $table->boolean('is_physical')->default(false);
+                $table->boolean('is_active')->default(true);
+                $table->timestamps();
             });
             $this->createdTables = true;
         }
@@ -167,8 +182,9 @@ class UsersIndexPageQuotaColumnTest extends TestCase
 
         Livewire::test('pages::users.index')
             ->assertSee('no-snap')
-            // Pas de pourcentage ni de badge orange/rouge rendu pour le quota.
-            ->assertDontSee('badge-warning')
-            ->assertDontSee('badge-error');
+            // Marqueur explicite "aucun snapshot" rendu dans la cellule Utilisation
+            // (les classes badge-warning/error apparaissent ailleurs sur la page —
+            // modale de délégation, badges "Externe"/"Inactif" — donc pas d'assert global).
+            ->assertSeeHtml('title="Aucun snapshot disponible"');
     }
 }

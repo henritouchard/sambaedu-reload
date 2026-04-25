@@ -51,6 +51,7 @@ class UsersIndexPageNoShelloutTest extends TestCase
         if ($this->createdTables) {
             Schema::dropIfExists('user_group_user');
             Schema::dropIfExists('user_groups');
+            Schema::dropIfExists('workstation_groups');
             Schema::dropIfExists('users');
         }
         parent::tearDown();
@@ -99,6 +100,18 @@ class UsersIndexPageNoShelloutTest extends TestCase
             $table->unsignedBigInteger('user_id');
             $table->unsignedBigInteger('user_group_id');
             $table->primary(['user_id', 'user_group_id']);
+        });
+
+        // Table minimale pour la Livewire SFC `delegation-modal` dont le `mount()`
+        // interroge WorkstationGroup::physical(). On ne seed rien : la liste reste
+        // vide, ce qui suffit au rendu initial.
+        Schema::create('workstation_groups', function (Blueprint $table) {
+            $table->id();
+            $table->string('name', 100)->unique();
+            $table->string('display_name', 255)->nullable();
+            $table->boolean('is_physical')->default(false);
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
         });
 
         $this->createdTables = true;

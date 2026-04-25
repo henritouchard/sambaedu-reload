@@ -306,6 +306,123 @@ new class extends Component {
             ->toArray();
     }
 
+    /**
+     * Story 7.1.bis — état tri-state par permission pour les users sélectionnés.
+     *
+     * Pour chaque permission, décompte parmi `$selectedUsers` :
+     *   - direct : l'user l'a assignée directement (revokable)
+     *   - via_role : l'user l'a uniquement via un rôle (non revokable individuellement)
+     *   - none : l'user ne l'a pas
+     *
+     * L'état tri-state dérive du total avec/sans :
+     *   - 'none'  → 0 user l'a
+     *   - 'all'   → tous les users l'ont (direct OU via rôle)
+     *   - 'some'  → entre les deux (indeterminate)
+     *
+     * Les users absents de la table SQL (présents en AD mais non encore créés
+     * par `ensureEloquentUser`) sont comptés comme "sans permission" : c'est
+     * cohérent avec leur état Spatie réel (aucun rôle/perm attaché).
+     *
+     * @return array<string, array{state:string, direct:int, via_role:int, none:int, total:int}>
+     */
+    #[Computed]
+    public function permissionStates(): array
+    {
+        $total = count($this->selectedUsers);
+        if ($total === 0) {
+            return [];
+        }
+
+        $users = EloquentUser::whereIn('login', $this->selectedUsers)
+            ->with(['roles.permissions', 'permissions'])
+            ->get()
+            ->keyBy('login');
+
+        $states = [];
+        foreach (SambaPermission::cases() as $perm) {
+            $name = $perm->value;
+            $direct = 0;
+            $viaRole = 0;
+
+            foreach ($this->selectedUsers as $login) {
+                $user = $users->get($login);
+                if (!$user) {
+                    continue;
+                }
+                if ($user->permissions->contains('name', $name)) {
+                    $direct++;
+                    continue;
+                }
+                $hasViaRole = $user->roles->contains(
+                    fn($role) => $role->permissions->contains('name', $name)
+                );
+                if ($hasViaRole) {
+                    $viaRole++;
+                }
+            }
+
+            $has = $direct + $viaRole;
+            $state = match (true) {
+                $has === 0 => 'none',
+                $has === $total => 'all',
+                default => 'some',
+            };
+
+            $states[$name] = [
+                'state' => $state,
+                'direct' => $direct,
+                'via_role' => $viaRole,
+                'none' => $total - $has,
+                'total' => $total,
+            ];
+        }
+
+        return $states;
+    }
+
+    /**
+     * Story 7.1.bis — compte le nombre d'users sélectionnés ayant chaque rôle.
+     *
+     * @return array<string, array{state:string, has:int, total:int}>
+     */
+    #[Computed]
+    public function roleStates(): array
+    {
+        $total = count($this->selectedUsers);
+        if ($total === 0) {
+            return [];
+        }
+
+        $users = EloquentUser::whereIn('login', $this->selectedUsers)
+            ->with('roles')
+            ->get()
+            ->keyBy('login');
+
+        $states = [];
+        foreach (SambaRole::cases() as $role) {
+            $name = $role->value;
+            $has = 0;
+            foreach ($this->selectedUsers as $login) {
+                $user = $users->get($login);
+                if ($user && $user->roles->contains('name', $name)) {
+                    $has++;
+                }
+            }
+
+            $states[$name] = [
+                'state' => match (true) {
+                    $has === 0 => 'none',
+                    $has === $total => 'all',
+                    default => 'some',
+                },
+                'has' => $has,
+                'total' => $total,
+            ];
+        }
+
+        return $states;
+    }
+
 };
 ?>
 
@@ -365,13 +482,36 @@ new class extends Component {
                     {{-- Liste des rôles --}}
                     <div class="flex-1 overflow-y-auto min-h-0 space-y-2 mb-4">
                         @foreach ($availableRoles as $role)
+                            @php
+                                $rState = $this->roleStates[$role['name']] ?? ['state' => 'none', 'has' => 0, 'total' => count($selectedUsers)];
+                            @endphp
                             <label
                                 class="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors
                                     {{ $selectedRole === $role['name'] ? 'bg-primary/10 border border-primary/30' : 'bg-base-100 hover:bg-base-300/50 border border-transparent' }}">
                                 <input type="radio" wire:model.live="selectedRole" value="{{ $role['name'] }}"
                                     class="radio radio-primary radio-sm" />
                                 <div class="flex-1">
-                                    <div class="font-medium text-sm">{{ $role['label'] }}</div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-medium text-sm">{{ $role['label'] }}</span>
+                                        @if ($rState['total'] > 0)
+                                            @php
+                                                $badgeClass = match ($rState['state']) {
+                                                    'all' => 'badge-success',
+                                                    'some' => 'badge-warning',
+                                                    default => 'badge-ghost',
+                                                };
+                                                $badgeLabel = match ($rState['state']) {
+                                                    'all' => 'Tous',
+                                                    'none' => 'Aucun',
+                                                    default => $rState['has'] . '/' . $rState['total'],
+                                                };
+                                            @endphp
+                                            <span class="badge badge-xs {{ $badgeClass }}"
+                                                title="{{ $rState['has'] }}/{{ $rState['total'] }} utilisateur(s) ont ce rôle">
+                                                {{ $badgeLabel }}
+                                            </span>
+                                        @endif
+                                    </div>
                                     <div class="text-xs text-base-content/50">
                                         {{ $role['permissions_count'] }} permission(s) :
                                         {{ implode(', ', array_slice($role['permissions'], 0, 3)) }}
@@ -453,16 +593,66 @@ new class extends Component {
                                 </div>
                                 <div class="divide-y divide-base-200">
                                     @foreach ($category['permissions'] as $perm)
-                                        <label class="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-base-200/30">
+                                        @php
+                                            $pState = $this->permissionStates[$perm['name']] ?? ['state' => 'none', 'direct' => 0, 'via_role' => 0, 'none' => count($selectedUsers), 'total' => count($selectedUsers)];
+                                            $isSelected = in_array($perm['name'], $selectedPermissions);
+                                            // Mode Accorder : cliquer fait "passer à all" → cochée.
+                                            // Mode Retirer  : cliquer fait "passer à none" → décochée.
+                                            $effectiveChecked = $pState['state'] === 'all';
+                                            $effectiveIndeterminate = $pState['state'] === 'some';
+                                            $displayChecked = $isSelected ? !$removePermissions : $effectiveChecked;
+                                            $displayIndeterminate = $isSelected ? false : $effectiveIndeterminate;
+                                            $stateBadgeClass = match ($pState['state']) {
+                                                'all' => 'badge-success',
+                                                'some' => 'badge-warning',
+                                                default => 'badge-ghost',
+                                            };
+                                            $stateBadgeLabel = match ($pState['state']) {
+                                                'all' => 'Tous',
+                                                'none' => 'Aucun',
+                                                default => ($pState['direct'] + $pState['via_role']) . '/' . $pState['total'],
+                                            };
+                                            $tooltip = sprintf(
+                                                '%d direct · %d via rôle · %d sans',
+                                                $pState['direct'],
+                                                $pState['via_role'],
+                                                $pState['none'],
+                                            );
+                                        @endphp
+                                        <div wire:click="togglePermission('{{ $perm['name'] }}')"
+                                            class="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-base-200/30 transition-colors
+                                                {{ $isSelected ? 'bg-primary/5 border-l-4 border-primary' : 'border-l-4 border-transparent' }}">
                                             <input type="checkbox"
-                                                wire:click="togglePermission('{{ $perm['name'] }}')"
-                                                @checked(in_array($perm['name'], $selectedPermissions))
-                                                class="checkbox checkbox-sm checkbox-primary" />
-                                            <div class="flex-1">
-                                                <div class="text-sm">{{ $perm['label'] }}</div>
+                                                wire:key="perm-cb-{{ $perm['name'] }}-{{ $pState['state'] }}-{{ $isSelected ? ($removePermissions ? 'rm' : 'add') : 'off' }}"
+                                                x-data
+                                                x-init="$el.indeterminate = @js($displayIndeterminate)"
+                                                @checked($displayChecked)
+                                                class="checkbox checkbox-sm {{ $isSelected ? ($removePermissions ? 'checkbox-error' : 'checkbox-primary') : 'checkbox-primary' }} pointer-events-none"
+                                                tabindex="-1"
+                                                aria-label="État : {{ $stateBadgeLabel }}{{ $isSelected ? ($removePermissions ? ' — sera retirée' : ' — sera accordée') : '' }}" />
+                                            <div class="flex-1 min-w-0">
+                                                <div class="text-sm flex items-center gap-2 flex-wrap">
+                                                    <span>{{ $perm['label'] }}</span>
+                                                    @if ($pState['total'] > 0)
+                                                        <span class="badge badge-xs {{ $stateBadgeClass }}"
+                                                            title="{{ $tooltip }}">
+                                                            {{ $stateBadgeLabel }}
+                                                        </span>
+                                                    @endif
+                                                    @if ($pState['via_role'] > 0)
+                                                        <i class="fa-solid fa-shield-halved text-xs text-info/70"
+                                                            title="{{ $pState['via_role'] }}/{{ $pState['total'] }} via un rôle (non retirable individuellement)"></i>
+                                                    @endif
+                                                </div>
                                                 <div class="text-xs text-base-content/40 font-mono">{{ $perm['name'] }}</div>
                                             </div>
-                                        </label>
+                                            @if ($isSelected)
+                                                <span class="badge badge-sm {{ $removePermissions ? 'badge-error' : 'badge-primary' }} shrink-0"
+                                                    title="{{ $removePermissions ? 'Sera retirée' : 'Sera accordée' }}">
+                                                    <i class="fa-solid {{ $removePermissions ? 'fa-minus' : 'fa-plus' }}"></i>
+                                                </span>
+                                            @endif
+                                        </div>
                                     @endforeach
                                 </div>
                             </div>

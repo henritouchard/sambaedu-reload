@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Tests\Feature\Http;
 
 use App\Models\User;
+use App\Models\WorkstationGroup;
+use App\Services\PermissionService;
 use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
@@ -69,6 +72,7 @@ class RoutesProtectionTest extends TestCase
             'rights management' => ['/app/rights-management', 'user.assign.right'],
             'parc index'        => ['/app/parc', 'computer.view'],
             'parc group show'   => ['/app/parc/groups/1', 'computer.view'],
+            'parc machine show' => ['/app/parc/machines/1', 'computer.view'],
             'parc settings'     => ['/app/parc-settings', 'computer.install'],
             'sync from ad'      => ['/admin/sync-from-ad', 'server.admin'],
             // Review 7.2 #M4 : couverture explicite des 2 routes dont la perm a
@@ -107,5 +111,57 @@ class RoutesProtectionTest extends TestCase
         // 404 (cible absente pour /groups/1 etc.), ou 500 (composant Livewire
         // qui s'attend à des données LDAP) — mais pas 403.
         $this->assertNotEquals(403, $response->getStatusCode(), 'Le middleware can: ne doit pas bloquer quand la permission est accordée');
+    }
+
+    /**
+     * Provider : [url, permissionScoped] — sous-ensemble des routes
+     * `parc/*` qui doivent accepter une délégation positive scopée sur
+     * une WorkstationGroup physique (hiérarchie exclusion > global >
+     * délégation positive scopée, cf. `PermissionService`).
+     *
+     * Story 7.1 (QA e2e 2026-04-24) — comble le trou de couverture :
+     * les tests `test_route_returns_403_without_permission` et
+     * `test_route_passes_permission_middleware_when_granted` testaient
+     * uniquement les droits globaux Spatie. Un user avec UNIQUEMENT une
+     * délégation scopée passe par un chemin totalement différent
+     * (`PermissionService::getAuthorizedWorkstationGroups`), jamais
+     * exercé par ces deux tests.
+     */
+    public static function scopedParcRoutesProvider(): array
+    {
+        return [
+            'parc index'             => ['/app/parc', 'computer.view'],
+            'parc group show'        => ['/app/parc/groups/1', 'computer.view'],
+            'parc machine show'      => ['/app/parc/machines/1', 'computer.view'],
+            'parc schedules runs'    => ['/app/parc/groups/1/schedules/1/runs', 'computer.view'],
+        ];
+    }
+
+    #[DataProvider('scopedParcRoutesProvider')]
+    public function test_parc_route_is_accessible_with_scoped_delegation_only(string $url, string $permission): void
+    {
+        $user = $this->makeUser('scoped-' . md5($url));
+        // Le schéma de test n'a pas `ad_guid`/`ad_dn` ; on coupe les events pour
+        // éviter le job `WorkstationGroupAdSyncJob` déclenché par l'observer.
+        $room = WorkstationGroup::withoutEvents(fn () => WorkstationGroup::create([
+            'name' => 'salle-' . substr(md5($url), 0, 6),
+            'is_physical' => true,
+            'is_active' => true,
+        ]));
+
+        app(PermissionService::class)->grantDelegation($user, $permission, $room);
+
+        $this->actingAs($user);
+
+        $response = $this->withoutMiddleware([
+            \App\Http\Middleware\Auth\SambaEduAuth::class,
+            \App\Http\Middleware\RequireAdminRights::class,
+        ])->get($url);
+
+        $this->assertNotEquals(
+            403,
+            $response->getStatusCode(),
+            "Un délégué scopé sur une salle ({$permission}) doit pouvoir atteindre {$url} (middleware `can:viewAny-workstationGroup` doit accepter la délégation active)"
+        );
     }
 }

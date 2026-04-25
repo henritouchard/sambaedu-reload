@@ -45,7 +45,7 @@
                     <i class="fa-solid fa-arrow-left"></i>
                     Page précédente
                 </button>
-                <a href="{{ url('/') }}" class="btn btn-primary">
+                <a href="{{ route('app.dashboard') }}" class="btn btn-primary">
                     <i class="fa-solid fa-house"></i>
                     Retour à l'accueil
                 </a>
