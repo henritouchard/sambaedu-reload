@@ -268,6 +268,13 @@ new #[Title('Groupe utilisateur')] class extends Component {
             @include('pages.users.groups.[id]._partials.group-header')
             @include('pages.users.groups.[id]._partials.members-list')
 
+            {{-- Story 5.1c — Section Quota groupe (Livewire SFC).
+                 Insérée entre members-list et la wallpaper-card (D6=A — section
+                 verticale, pas d'onglets). Visible en lecture pour tout user, modifiable
+                 uniquement par server.admin (double guard UI + serveur). --}}
+            <livewire:pages::users.groups.[id]._partials.group-quota-section :groupId="$groupId"
+                :key="'group-quota-' . $groupId" />
+
             @can('wallpaper.manage')
                 @if ($this->hasWallpaper || $showWallpaperCard)
                     <div class="max-w-xl">

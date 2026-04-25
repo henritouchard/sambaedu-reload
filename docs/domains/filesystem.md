@@ -1,6 +1,6 @@
 # Domaine Filesystem — Quotas XFS
 
-> Dernière mise à jour : 2026-04-23 (story 5.1b).
+> Dernière mise à jour : 2026-04-25 (story 5.1c).
 
 ## Vue d'ensemble
 
@@ -176,11 +176,167 @@ www-data ALL=(root) NOPASSWD: /usr/sbin/xfs_quota
 www-data ALL=(root) NOPASSWD: /usr/bin/quota
 ```
 
+## Quota groupe — UI Livewire
+
+La fiche `/app/users/groups/[id]` expose une section "Quota du groupe" en
+Livewire SFC (`pages.users.groups.[id]._partials.group-quota-section`) livrée
+par la story 5.1c. Pattern décalqué 1:1 sur la section quota user (5.1b).
+
+Affichage par partition (`/home`, `/var/sambaedu`) :
+
+- **Aucune règle `QuotaRule::TYPE_GROUP`** pour ce groupe → label
+  "Hérité (défaut)" avec badge ghost. Les utilisateurs membres du groupe
+  héritent du quota par défaut de leur profil.
+- **Règle avec `quota_soft_mb=0 && quota_hard_mb=0`** → label "Illimité"
+  (badge success). Equivaut à pas de limite XFS pour ce groupe.
+- **Règle custom** → badge info avec format `{soft_mo} Mo (+{overage}%)`
+  (ou `{n} Go (+{overage}%)` si soft >= 1024).
+
+### Override quota groupe
+
+Réservé aux utilisateurs avec permission Spatie `server.admin` (cohérent
+avec override user). Double guard :
+
+- UI : `@can('server.admin')` conditionne le bouton "Modifier" + la modale.
+- Serveur : `Gate::allows('server.admin')` en première ligne d'`applyOverride()`
+  → `abort(403)` sinon (testé via `forged payload → 403`).
+
+L'override appelle, selon le type :
+
+- `inherited` → `XfsQuotaService::deleteQuotaRule($rule, $performedBy)` qui
+  dispatch en interne `dispatchRecalculateGroupJob` (XfsQuotaService:365).
+- `unlimited` → `setQuotaRule(TYPE_GROUP, $name, $partition, 0, 0, ..., applyImmediately=true)`.
+- `custom` → `setQuotaRule(TYPE_GROUP, $name, $partition, $soft, $hard, ..., applyImmediately=true)`
+  avec `$hard = round($soft * (1 + $overage/100))`. Validation serveur
+  `$soft >= 10 Mo` sur `/home`.
+
+Le SFC ne redispatcher PAS le recalcul groupe — `XfsQuotaService` le fait
+automatiquement quand `applyImmediately=true` ET `type=group`.
+
+## Réglages système — `/admin/settings` onglet "Quotas & FS"
+
+Page `pages.admin.settings.index` livrée par la story 5.1c. Scaffold à
+onglets extensible (pattern `parc-settings/index.blade.php` :
+`#[Url(keep:true)] $tab` + `setTab()`). En 5.1c : un seul onglet "Quotas & FS"
+visible (D3=A — interdiction stricte de placeholders).
+
+Route : `Route::livewire('/settings', 'pages::admin.settings.index')->middleware('can:server.admin')`
+dans le groupe `admin` (middleware `sambaedu.admin` hérité).
+
+L'onglet expose 3 sections (cards) :
+
+### Section 1 — Quotas par défaut (par profil)
+
+Pour chacun des 4 profils (`eleve`, `prof`, `admin`, `itinerant`) ET chacune
+des 2 partitions (`/home`, `/var/sambaedu`), un trio d'inputs : `soft_mb`,
+`overage_percent` (0-100), et `hard_mb` calculé read-only en live (Blade).
+
+Persistance : `SystemSetting::set('quota.defaults', [...])` (table K/V JSON).
+Structure persistée :
+
+```json
+{
+  "eleve":     {"home": {"soft_mb": 200, "overage_percent": 25}, "sambaedu": {...}},
+  "prof":      {"home": {...}, "sambaedu": {...}},
+  "admin":     {"home": {...}, "sambaedu": {...}},
+  "itinerant": {"home": {...}, "sambaedu": {...}}
+}
+```
+
+> **Note 5.1c** : le profil `itinerant` est PASSIVE en 5.1c. Les valeurs
+> sont persistées et un badge "Effectif en 5.1d" apparaît. La logique de
+> lecture (`XfsQuotaService::getEffectiveQuota` lit `quota.defaults.itinerant`
+> si `User::isExternal()`) sera livrée par la story 5.1d.
+
+Validation serveur : `soft_mb >= 10` sur `/home` (sauf 0 = illimité accepté).
+
+### Section 2 — Période de grâce
+
+2 inputs (1 par partition, 0-30 jours). Persistance double :
+
+1. `QuotaSetting::forPartition($partition)->update(['grace_period_days' => $n])`
+   (table existante `quota_settings`).
+2. Application synchrone post-save : `XfsQuotaService::setGracePeriod()`
+   (D4=A). Échec filesystem (XFS indisponible, sudoers manquant) ne bloque
+   PAS la persistance BDD — un toast info "application reportée" est émis.
+
+### Section 3 — Corbeille (`/home/trash`)
+
+Input TTL (1-365 jours) + toggle "Purge automatique". Persistance :
+`SystemSetting::set('quota.trash', ['ttl_days' => N, 'purge_auto' => bool])`.
+
+Banner info visible : "Cette configuration sera consommée par la commande
+`trash:purge` livrée dans la prochaine version (5.1d)." Aucune commande
+Artisan n'est exécutée en 5.1c — la persistance seule suffit. La commande
+`trash:purge` (5.1d) lira ces settings au runtime.
+
+### Sécurité
+
+Double guard sur chaque méthode publique du composant :
+- `mount()`, `setTab()`, `saveDefaults()`, `saveGrace()`, `saveTrash()`
+  appellent `Gate::allows('server.admin')` en première ligne → `abort(403)`.
+- Middleware route `can:server.admin` (cohérent avec `/admin/sync-from-ad`).
+
+## Toast over-quota au login
+
+Story 5.1c — listener `App\Listeners\NotifyQuotaOverageOnLogin` câblé sur
+l'event `Illuminate\Auth\Events\Login` dans `EventServiceProvider::$listen`.
+
+### Flux
+
+1. Utilisateur se connecte (handshake AD via `SambaEduAuthGuard`).
+2. `Auth::login($eloquentUser)` est appelé par le middleware → Laravel émet
+   `Login::class`.
+3. Le listener lit `$event->user->quota_snapshot` (cast 'array' sur User).
+4. Si une partition est `is_over_soft` OU `is_over_hard` → `ToastMagic::warning()`
+   est appelée (stockage session, rendu via `{!! ToastMagic::scripts() !!}`
+   déjà dans `layouts/app.blade.php`).
+5. Le toast apparaît au render de la première page post-login.
+
+### Idempotence (1×/session)
+
+Garantie naturellement par le pattern Login event :
+- Laravel n'émet `Login::class` qu'au PREMIER `Auth::login()` d'une session,
+  pas à chaque revalidation de cookie.
+- `SambaEduAuthGuard::handle()` ne re-call pas `Auth::login` quand
+  `Auth::check()` est déjà true (l. 77).
+
+### Format des messages
+
+- 1 partition over → `ToastMagic::warning("Votre espace {label} est dépassé.", "X Mo utilisés / Y Mo autorisés. Libérez de l'espace pour éviter les blocages.")`
+- 2 partitions over → 1 SEUL toast avec titre "Plusieurs espaces de stockage sont dépassés." + description multi-lignes (UX moins bruyante que 2 toasts séparés).
+
+### Sécurité défensive
+
+`handle()` est entièrement wrappé dans un try/catch global qui log
+silencieusement (`Log::warning('QuotaService: listener NotifyQuotaOverageOnLogin échoué', ...)`)
+sans relancer l'exception. **Un échec listener NE DOIT PAS empêcher le login**
+— le toast n'est qu'un bonus UX.
+
+## Modèle `SystemSetting` (story 5.1c)
+
+Pattern K/V JSON pour les paramètres applicatifs globaux. Utilisable au-delà
+des quotas (futurs onglets DHCP/CUPS/...).
+
+```php
+SystemSetting::get('quota.trash');                         // ?array
+SystemSetting::get('quota.defaults', $defaultStructure);   // mixed
+SystemSetting::set('quota.trash', ['ttl_days' => 30, 'purge_auto' => false]);
+SystemSetting::forget('quota.trash');                      // suppression
+```
+
+Migration `2026_04_25_100000_create_system_settings_table` :
+`key string(191) unique` + `value jsonb (pgsql) / json (sqlite)` conditionnel
+via `DB::getDriverName()` (cohérent avec `add_quota_snapshot` 5.1b et
+`delegation_history` 7.1). Cast `'value' => 'array'` sur le modèle.
+
 ## Références
 
 - Story 5.1a — refactor services filesystem
   (`_bmad-output/implementation-artifacts/5-1a-refactor-services-filesystem.md`)
 - Story 5.1b — snapshot quotas quotidien et UI user
   (`_bmad-output/implementation-artifacts/5-1b-snapshot-quotas-quotidien-et-ui-user.md`)
+- Story 5.1c — quotas groupes, /admin/settings scaffold et flash over-quota au login
+  (`_bmad-output/implementation-artifacts/5-1c-quotas-groupes-settings-flash-over-quota.md`)
 - Legacy : `sambaedu/includes/quotas.inc.php:96-137` (`repquota()`) — modèle
   pour le parser.

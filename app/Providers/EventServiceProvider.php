@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Listeners\NotifyQuotaOverageOnLogin;
+use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
@@ -17,6 +19,13 @@ class EventServiceProvider extends ServiceProvider
     protected $listen = [
         Registered::class => [
             SendEmailVerificationNotification::class,
+        ],
+
+        // Story 5.1c (D5=A) — Toast warning si user en dépassement quota
+        // (lecture `users.quota_snapshot`). Émis 1×/session naturellement
+        // (Login event = vrai login effectif, pas re-session cookie).
+        Login::class => [
+            NotifyQuotaOverageOnLogin::class,
         ],
     ];
 

@@ -232,6 +232,12 @@ Route::prefix('admin')->middleware('sambaedu.admin')->name('admin.')->group(func
         ->middleware('can:server.admin')
         ->name('sync-from-ad');
 
+    // Réglages système — Story 5.1c AC5/AC12 : can:server.admin (action critique).
+    // Page Livewire SFC à onglets extensible. Onglet unique en 5.1c : "Quotas & FS".
+    Route::livewire('/settings', 'pages::admin.settings.index')
+        ->middleware('can:server.admin')
+        ->name('settings');
+
     // Routes de gestion des parcs
     Route::prefix('parcs')->name('parcs.')->group(function () {
         // Actions de masse

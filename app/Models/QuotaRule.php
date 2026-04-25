@@ -45,6 +45,19 @@ class QuotaRule extends Model implements Wireable
     public const TYPE_DEFAULT_PROF = 'default_prof';
     public const TYPE_DEFAULT_ADMIN = 'default_admin';
 
+    /**
+     * Story 5.1c (D12=A) — Defaults pour utilisateurs itinérants (User::isExternal).
+     *
+     * Constante PASSIVE en 5.1c : permet à l'UI /admin/settings (onglet
+     * Quotas & FS) de persister les valeurs via le même formulaire que les
+     * autres profils. La logique de lecture (`getEffectiveQuota` doit appliquer
+     * cet override si `User::isExternal()`) est livrée par la story 5.1d.
+     *
+     * Tant que 5.1d n'est pas livrée, un row `TYPE_DEFAULT_ITINERANT` existe
+     * en BDD mais n'a aucun effet runtime — c'est volontaire.
+     */
+    public const TYPE_DEFAULT_ITINERANT = 'default_itinerant';
+
     // Partitions supportées
     public const PARTITION_HOME = '/home';
     public const PARTITION_SAMBAEDU = '/var/sambaedu';
@@ -91,6 +104,10 @@ class QuotaRule extends Model implements Wireable
 
     /**
      * Scope pour les politiques par défaut
+     *
+     * TYPE_DEFAULT_ITINERANT est listé dès 5.1c (D12=A) mais reste passif :
+     * `XfsQuotaService::getEffectiveQuota()` ne consomme pas encore ce type
+     * (fallback élève silent). 5.1d activera la lecture via `User::isExternal()`.
      */
     public function scopeDefaults($query)
     {
@@ -98,11 +115,14 @@ class QuotaRule extends Model implements Wireable
             self::TYPE_DEFAULT_ELEVE,
             self::TYPE_DEFAULT_PROF,
             self::TYPE_DEFAULT_ADMIN,
+            self::TYPE_DEFAULT_ITINERANT,
         ]);
     }
 
     /**
      * Vérifie si c'est une politique par défaut
+     *
+     * TYPE_DEFAULT_ITINERANT inclus dès 5.1c (D12=A) — actif en lecture en 5.1d.
      */
     public function isDefault(): bool
     {
@@ -110,6 +130,7 @@ class QuotaRule extends Model implements Wireable
             self::TYPE_DEFAULT_ELEVE,
             self::TYPE_DEFAULT_PROF,
             self::TYPE_DEFAULT_ADMIN,
+            self::TYPE_DEFAULT_ITINERANT,
         ]);
     }
 
@@ -143,6 +164,7 @@ class QuotaRule extends Model implements Wireable
             self::TYPE_DEFAULT_ELEVE => 'Défaut élèves',
             self::TYPE_DEFAULT_PROF => 'Défaut professeurs',
             self::TYPE_DEFAULT_ADMIN => 'Défaut administrateurs',
+            self::TYPE_DEFAULT_ITINERANT => 'Défaut itinérants',
             default => $this->type,
         };
     }
