@@ -29,8 +29,7 @@ use Livewire\Component;
  * Toasts : trait `WithToasts` — toastSuccess/toastError génériques (jamais
  * `$e->getMessage()` exposé — leçon 5.1b post-review #4).
  */
-new class extends Component
-{
+new class extends Component {
     use WithToasts;
 
     /**
@@ -51,6 +50,11 @@ new class extends Component
      */
     public array $trash = ['ttl_days' => 30, 'purge_auto' => false];
 
+    /** Snapshots pour détecter les changements (active/désactive le bouton Enregistrer). */
+    public array $originalDefaults = [];
+    public array $originalGrace = [];
+    public array $originalTrash = [];
+
     private XfsQuotaService $quotaService;
 
     public function boot(XfsQuotaService $quotaService): void
@@ -68,6 +72,47 @@ new class extends Component
         $this->loadDefaults();
         $this->loadGrace();
         $this->loadTrash();
+
+        $this->snapshotOriginals();
+    }
+
+    private function snapshotOriginals(): void
+    {
+        $this->originalDefaults = $this->defaults;
+        $this->originalGrace = $this->grace;
+        $this->originalTrash = $this->trash;
+    }
+
+    public function getDefaultsDirtyProperty(): bool
+    {
+        // Comparaison normalisée (cast int) pour ignorer "10" vs 10 venant de l'input texte.
+        return $this->normalizeDefaults($this->defaults) != $this->normalizeDefaults($this->originalDefaults);
+    }
+
+    public function getGraceDirtyProperty(): bool
+    {
+        return [(int) ($this->grace['home'] ?? 0), (int) ($this->grace['sambaedu'] ?? 0)]
+            != [(int) ($this->originalGrace['home'] ?? 0), (int) ($this->originalGrace['sambaedu'] ?? 0)];
+    }
+
+    public function getTrashDirtyProperty(): bool
+    {
+        return [(int) ($this->trash['ttl_days'] ?? 0), (bool) ($this->trash['purge_auto'] ?? false)]
+            != [(int) ($this->originalTrash['ttl_days'] ?? 0), (bool) ($this->originalTrash['purge_auto'] ?? false)];
+    }
+
+    private function normalizeDefaults(array $src): array
+    {
+        $out = [];
+        foreach (['eleve', 'prof', 'admin', 'itinerant'] as $profile) {
+            foreach (['home', 'sambaedu'] as $partKey) {
+                $out[$profile][$partKey] = [
+                    'soft_mb' => (int) ($src[$profile][$partKey]['soft_mb'] ?? 0),
+                    'overage_percent' => (int) ($src[$profile][$partKey]['overage_percent'] ?? 20),
+                ];
+            }
+        }
+        return $out;
     }
 
     // =========================================================================
@@ -132,6 +177,16 @@ new class extends Component
             abort(403);
         }
 
+        // Normalise input "" → 0 avant validation (champ texte = illimité).
+        foreach (['eleve', 'prof', 'admin', 'itinerant'] as $profile) {
+            foreach (['home', 'sambaedu'] as $partKey) {
+                foreach (['soft_mb', 'overage_percent'] as $field) {
+                    $val = $this->defaults[$profile][$partKey][$field] ?? 0;
+                    $this->defaults[$profile][$partKey][$field] = (int) $val;
+                }
+            }
+        }
+
         // Validation soft >= 10 Mo sur /home (cohérent QuotaController:84).
         $rules = [];
         foreach (['eleve', 'prof', 'admin', 'itinerant'] as $profile) {
@@ -140,16 +195,19 @@ new class extends Component
             $rules["defaults.$profile.sambaedu.soft_mb"] = ['required', 'integer', 'min:0'];
             $rules["defaults.$profile.sambaedu.overage_percent"] = ['required', 'integer', 'min:0', 'max:100'];
         }
-        $this->validate($rules);
+        try {
+            $this->validate($rules);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $this->toastError('Valeurs invalides — corrigez les champs en rouge.');
+            throw $e;
+        }
 
         // Soft check >= 10 Mo si > 0 sur /home (0 = illimité accepté).
         foreach (['eleve', 'prof', 'admin', 'itinerant'] as $profile) {
             $softHome = (int) ($this->defaults[$profile]['home']['soft_mb'] ?? 0);
             if ($softHome > 0 && $softHome < 10) {
-                $this->addError(
-                    "defaults.$profile.home.soft_mb",
-                    "Le quota /home pour le profil $profile doit être d'au moins 10 Mo (ou 0 pour illimité).",
-                );
+                $this->addError("defaults.$profile.home.soft_mb", "Le quota /home pour le profil $profile doit être d'au moins 10 Mo (ou 0 pour illimité).");
+                $this->toastError("Le quota /home pour le profil $profile doit être ≥ 10 Mo (ou 0 pour illimité).");
                 return;
             }
         }
@@ -170,6 +228,7 @@ new class extends Component
 
             SystemSetting::set('quota.defaults', $normalized);
             $this->defaults = $normalized;
+            $this->originalDefaults = $normalized;
 
             $this->toastSuccess('Réglages enregistrés');
         } catch (\Throwable $e) {
@@ -190,10 +249,15 @@ new class extends Component
             abort(403);
         }
 
-        $this->validate([
-            'grace.home' => ['required', 'integer', 'min:0', 'max:30'],
-            'grace.sambaedu' => ['required', 'integer', 'min:0', 'max:30'],
-        ]);
+        try {
+            $this->validate([
+                'grace.home' => ['required', 'integer', 'min:0', 'max:30'],
+                'grace.sambaedu' => ['required', 'integer', 'min:0', 'max:30'],
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $this->toastError('Période de grâce invalide (doit être entre 0 et 30 jours).');
+            throw $e;
+        }
 
         $performedBy = auth()->user()?->login ?? 'system';
 
@@ -211,16 +275,8 @@ new class extends Component
             // Échec n'invalide pas la persistance BDD — on log + toast info.
             $applyOk = true;
             try {
-                $resHome = $this->quotaService->setGracePeriod(
-                    QuotaRule::PARTITION_HOME,
-                    (int) $this->grace['home'],
-                    $performedBy,
-                );
-                $resSamba = $this->quotaService->setGracePeriod(
-                    QuotaRule::PARTITION_SAMBAEDU,
-                    (int) $this->grace['sambaedu'],
-                    $performedBy,
-                );
+                $resHome = $this->quotaService->setGracePeriod(QuotaRule::PARTITION_HOME, (int) $this->grace['home'], $performedBy);
+                $resSamba = $this->quotaService->setGracePeriod(QuotaRule::PARTITION_SAMBAEDU, (int) $this->grace['sambaedu'], $performedBy);
                 $applyOk = ($resHome['success'] ?? false) && ($resSamba['success'] ?? false);
             } catch (\Throwable $e) {
                 Log::warning('QuotaService: setGracePeriod sur filesystem échoué (BDD persistée)', [
@@ -228,6 +284,8 @@ new class extends Component
                 ]);
                 $applyOk = false;
             }
+
+            $this->originalGrace = $this->grace;
 
             if ($applyOk) {
                 $this->toastSuccess('Période de grâce mise à jour.');
@@ -252,10 +310,15 @@ new class extends Component
             abort(403);
         }
 
-        $this->validate([
-            'trash.ttl_days' => ['required', 'integer', 'min:1', 'max:365'],
-            'trash.purge_auto' => ['required', 'boolean'],
-        ]);
+        try {
+            $this->validate([
+                'trash.ttl_days' => ['required', 'integer', 'min:1', 'max:365'],
+                'trash.purge_auto' => ['required', 'boolean'],
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $this->toastError('Configuration corbeille invalide (TTL doit être entre 1 et 365 jours).');
+            throw $e;
+        }
 
         try {
             $payload = [
@@ -264,6 +327,7 @@ new class extends Component
             ];
             SystemSetting::set('quota.trash', $payload);
             $this->trash = $payload;
+            $this->originalTrash = $payload;
 
             $this->toastSuccess('Configuration corbeille enregistrée.');
         } catch (\Throwable $e) {
@@ -291,12 +355,7 @@ new class extends Component
      */
     public function profilesList(): array
     {
-        return [
-            ['key' => 'eleve', 'label' => 'Élève'],
-            ['key' => 'prof', 'label' => 'Professeur'],
-            ['key' => 'admin', 'label' => 'Administrateur'],
-            ['key' => 'itinerant', 'label' => 'Itinérant'],
-        ];
+        return [['key' => 'eleve', 'label' => 'Élève'], ['key' => 'prof', 'label' => 'Professeur'], ['key' => 'admin', 'label' => 'Administrateur'], ['key' => 'itinerant', 'label' => 'Itinérant']];
     }
 
     /**
@@ -304,10 +363,7 @@ new class extends Component
      */
     public function partitionsList(): array
     {
-        return [
-            ['key' => 'home', 'label' => '/home', 'partition' => QuotaRule::PARTITION_HOME],
-            ['key' => 'sambaedu', 'label' => '/var/sambaedu', 'partition' => QuotaRule::PARTITION_SAMBAEDU],
-        ];
+        return [['key' => 'home', 'label' => '/home', 'partition' => QuotaRule::PARTITION_HOME], ['key' => 'sambaedu', 'label' => '/var/sambaedu', 'partition' => QuotaRule::PARTITION_SAMBAEDU]];
     }
 };
 ?>
@@ -326,8 +382,9 @@ new class extends Component
             </div>
             <p class="text-sm opacity-70 mb-4">
                 Valeurs appliquées à tout utilisateur sans règle plus spécifique
-                (groupe ou personnel). Soft = quota nominal, Hard = soft + dépassement %
-                (au-delà : écriture bloquée).
+                (groupe ou personnel). <strong>Limite</strong> = quota nominal,
+                <strong>Tolérance</strong> = dépassement autorisé (%),
+                <strong>Blocage</strong> = seuil au-delà duquel l'écriture est interdite (calculé).
             </p>
 
             <form wire:submit.prevent="saveDefaults" class="space-y-6">
@@ -348,38 +405,67 @@ new class extends Component
                                     $overage = (int) ($defaults[$profile['key']][$pkey]['overage_percent'] ?? 20);
                                     $hard = $this->calculateHard($soft, $overage);
                                 @endphp
-                                <div class="space-y-2 bg-base-200 rounded-lg p-3">
-                                    <div class="font-medium text-sm">
-                                        <code class="text-xs opacity-80">{{ $partition['label'] }}</code>
+                                <div class="space-y-2 rounded-lg p-3 border-l-4 border-primary/60 bg-base-100">
+                                    <div class="flex items-center gap-2 pb-2 mb-1 border-b border-base-300">
+                                        <i
+                                            class="fa-solid {{ $pkey === 'home' ? 'fa-house' : 'fa-server' }} text-primary"></i>
+                                        <code class="text-sm font-bold tracking-wide">{{ $partition['label'] }}</code>
+                                        <span class="text-xs opacity-60 ml-auto">
+                                            {{ $pkey === 'home' ? 'Espace personnel' : 'Partages communs' }}
+                                        </span>
                                     </div>
 
-                                    <div class="grid grid-cols-3 gap-2">
-                                        <div>
-                                            <label class="label py-1">
-                                                <span class="label-text text-xs">Soft (Mo)</span>
+                                    <div class="grid grid-cols-3 gap-2 items-start">
+                                        <div class="bg-base-200 space-y-2 rounded-lg p-2">
+                                            <label class="label text-center py-1">
+                                                <span class="label-text text-xs">Limite (Mo)</span>
                                             </label>
-                                            <input type="number" min="0"
-                                                wire:model.live.debounce.300ms="defaults.{{ $profile['key'] }}.{{ $pkey }}.soft_mb"
-                                                class="input input-bordered input-sm w-full" />
+                                            <div class="relative" x-data="{ focused: false }">
+                                                <input type="text" inputmode="numeric" pattern="[0-9]*"
+                                                    x-on:focus="focused = true; if ($event.target.value === '0') $event.target.value = ''"
+                                                    x-on:blur="focused = false; if ($event.target.value === '') $event.target.value = '0'"
+                                                    wire:model.live.debounce.500ms="defaults.{{ $profile['key'] }}.{{ $pkey }}.soft_mb"
+                                                    class="input input-bordered input-sm w-full text-center"
+                                                    :class="{{ $soft === 0 ? "{ 'text-transparent': !focused }" : '{}' }}" />
+                                                @if ($soft === 0)
+                                                    <span x-show="!focused"
+                                                        class="pointer-events-none absolute inset-0 flex items-center justify-center text-xs font-semibold text-success">
+                                                        <i class="fa-solid fa-infinity mr-1"></i>Illimité
+                                                    </span>
+                                                @endif
+                                            </div>
                                             @error("defaults.{$profile['key']}.{$pkey}.soft_mb")
                                                 <span class="text-xs text-error mt-1 block">{{ $message }}</span>
                                             @enderror
                                         </div>
-                                        <div>
+                                        <div class="bg-base-200 space-y-2 rounded-lg p-2">
                                             <label class="label py-1">
-                                                <span class="label-text text-xs">Overage (%)</span>
+                                                <span class="label-text text-xs">Tolérance (%)</span>
                                             </label>
-                                            <input type="number" min="0" max="100"
-                                                wire:model.live.debounce.300ms="defaults.{{ $profile['key'] }}.{{ $pkey }}.overage_percent"
-                                                class="input input-bordered input-sm w-full" />
+                                            <input type="text" inputmode="numeric" pattern="[0-9]*"
+                                                x-on:focus="if ($event.target.value === '0') $event.target.value = ''"
+                                                x-on:blur="if ($event.target.value === '') $event.target.value = '0'"
+                                                wire:model.live.debounce.500ms="defaults.{{ $profile['key'] }}.{{ $pkey }}.overage_percent"
+                                                @disabled($soft === 0)
+                                                class="input input-bordered input-sm w-full text-center" />
                                         </div>
-                                        <div>
+                                        <div class="bg-base-200 space-y-2 rounded-lg p-2">
                                             <label class="label py-1">
-                                                <span class="label-text text-xs">Hard (Mo)</span>
+                                                <span class="label-text text-xs">Blocage</span>
                                             </label>
-                                            <input type="number" readonly tabindex="-1"
-                                                value="{{ $hard }}"
-                                                class="input input-bordered input-sm w-full bg-base-300/40" />
+                                            <div
+                                                class="relative h-8 flex items-center justify-center rounded border border-base-300 bg-base-300/30 text-sm font-semibold">
+                                                @if ($soft === 0)
+                                                    <span
+                                                        class="absolute inset-0 flex items-center justify-center text-base-content/50">
+                                                        Aucun
+                                                    </span>
+                                                @else
+                                                    <span>
+                                                        {{ number_format($hard, 0, ',', ' ') }} Mo
+                                                    </span>
+                                                @endif
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -390,6 +476,7 @@ new class extends Component
 
                 <div class="flex justify-end">
                     <button type="submit" class="btn btn-primary"
+                        @disabled(!$this->defaultsDirty)
                         wire:loading.attr="disabled" wire:target="saveDefaults">
                         <span wire:loading wire:target="saveDefaults" class="loading loading-spinner loading-xs"></span>
                         <i wire:loading.remove wire:target="saveDefaults" class="fa-solid fa-save"></i>
@@ -419,22 +506,34 @@ new class extends Component
 
             <form wire:submit.prevent="saveGrace" class="space-y-4">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="form-control">
-                        <label class="label">
-                            <span class="label-text">/home (jours)</span>
+                    <div class="form-control rounded-lg p-3 border-l-4 border-primary/60 bg-base-100">
+                        <div class="flex items-center gap-2 pb-2 mb-2 border-b border-base-300">
+                            <i class="fa-solid fa-house text-primary"></i>
+                            <code class="text-sm font-bold tracking-wide">/home</code>
+                            <span class="text-xs opacity-60 ml-auto">Espace personnel</span>
+                        </div>
+                        <label class="label py-1">
+                            <span class="label-text text-xs">Délai (jours)</span>
                         </label>
-                        <input type="number" min="0" max="30" wire:model="grace.home"
-                            class="input input-bordered" />
+                        <input type="number" min="0" max="30"
+                            wire:model.live.debounce.500ms="grace.home"
+                            class="input input-bordered input-sm" />
                         @error('grace.home')
                             <span class="text-xs text-error mt-1">{{ $message }}</span>
                         @enderror
                     </div>
-                    <div class="form-control">
-                        <label class="label">
-                            <span class="label-text">/var/sambaedu (jours)</span>
+                    <div class="form-control rounded-lg p-3 border-l-4 border-primary/60 bg-base-100">
+                        <div class="flex items-center gap-2 pb-2 mb-2 border-b border-base-300">
+                            <i class="fa-solid fa-server text-primary"></i>
+                            <code class="text-sm font-bold tracking-wide">/var/sambaedu</code>
+                            <span class="text-xs opacity-60 ml-auto">Partages communs</span>
+                        </div>
+                        <label class="label py-1">
+                            <span class="label-text text-xs">Délai (jours)</span>
                         </label>
-                        <input type="number" min="0" max="30" wire:model="grace.sambaedu"
-                            class="input input-bordered" />
+                        <input type="number" min="0" max="30"
+                            wire:model.live.debounce.500ms="grace.sambaedu"
+                            class="input input-bordered input-sm" />
                         @error('grace.sambaedu')
                             <span class="text-xs text-error mt-1">{{ $message }}</span>
                         @enderror
@@ -443,6 +542,7 @@ new class extends Component
 
                 <div class="flex justify-end">
                     <button type="submit" class="btn btn-primary"
+                        @disabled(!$this->graceDirty)
                         wire:loading.attr="disabled" wire:target="saveGrace">
                         <span wire:loading wire:target="saveGrace" class="loading loading-spinner loading-xs"></span>
                         <i wire:loading.remove wire:target="saveGrace" class="fa-solid fa-save"></i>
@@ -487,7 +587,8 @@ new class extends Component
                     <label class="label">
                         <span class="label-text">TTL avant purge définitive (jours)</span>
                     </label>
-                    <input type="number" min="1" max="365" wire:model="trash.ttl_days"
+                    <input type="number" min="1" max="365"
+                        wire:model.live.debounce.500ms="trash.ttl_days"
                         class="input input-bordered max-w-xs" />
                     @error('trash.ttl_days')
                         <span class="text-xs text-error mt-1">{{ $message }}</span>
@@ -496,14 +597,14 @@ new class extends Component
 
                 <div class="form-control">
                     <label class="label cursor-pointer max-w-xs justify-start gap-3">
-                        <input type="checkbox" wire:model="trash.purge_auto"
-                            class="toggle toggle-primary" />
+                        <input type="checkbox" wire:model.live="trash.purge_auto" class="toggle toggle-primary" />
                         <span class="label-text">Purge automatique</span>
                     </label>
                 </div>
 
                 <div class="flex justify-end">
                     <button type="submit" class="btn btn-primary"
+                        @disabled(!$this->trashDirty)
                         wire:loading.attr="disabled" wire:target="saveTrash">
                         <span wire:loading wire:target="saveTrash" class="loading loading-spinner loading-xs"></span>
                         <i wire:loading.remove wire:target="saveTrash" class="fa-solid fa-save"></i>

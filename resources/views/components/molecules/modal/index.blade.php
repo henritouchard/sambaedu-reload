@@ -43,6 +43,11 @@
       Le parent (composant Livewire SFC) expose `public bool $isOpen` et écoute
       l'événement d'ouverture via `#[On('open-xxx-modal')]`, exactement comme
       la delegation-modal actuelle. La modale est bindée ici via `wire:model`.
+
+    Containing block / @teleport :
+      Cette molecule ne teleporte PAS son `<dialog>`. Si le call site est
+      nesté dans une card / drawer / section avec `overflow`, c'est à lui
+      d'ajouter `@teleport('body')` autour de l'invocation.
 --}}
 @props([
     'title' => null,

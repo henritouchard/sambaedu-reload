@@ -64,7 +64,7 @@ new #[Title('Réglages système')] class extends Component
         </div>
 
         {{-- Contenu de l'onglet actif. --}}
-        <div class="flex-1 min-h-0 flex flex-col">
+        <div class="flex-1 min-h-0 flex flex-col overflow-y-auto">
             @if ($tab === 'quotas-fs')
                 <livewire:pages::admin.settings._partials.quotas-fs-tab />
             @endif

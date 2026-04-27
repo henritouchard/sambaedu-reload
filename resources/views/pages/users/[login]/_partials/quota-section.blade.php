@@ -594,89 +594,9 @@ new class extends Component {
 
         {{-- Modale d'override user — visible uniquement server.admin --}}
         @can('server.admin')
-            @teleport('body')
-                <dialog class="modal"
-                    x-data="{ open: @entangle('showOverrideModal') }"
-                    :class="{ 'modal-open': open }"
-                    x-cloak>
-                    <div class="modal-box max-w-2xl">
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-lg font-bold">Modifier le quota</h3>
-                            <button type="button" class="btn btn-sm btn-circle btn-ghost" wire:click="closeOverrideModal">
-                                <i class="fa-solid fa-xmark"></i>
-                            </button>
-                        </div>
-
-                        <div class="space-y-4">
-                            <div class="form-control">
-                                <label class="label">
-                                    <span class="label-text">Partition</span>
-                                </label>
-                                <select wire:model.live="overridePartition" class="select select-bordered">
-                                    <option value="/home">/home — Espace personnel (K:)</option>
-                                    <option value="/var/sambaedu">/var/sambaedu — Partages</option>
-                                </select>
-                            </div>
-
-                            <div class="form-control">
-                                <label class="label">
-                                    <span class="label-text">Type</span>
-                                </label>
-                                <div class="flex flex-col gap-2">
-                                    <label class="flex gap-2 cursor-pointer">
-                                        <input type="radio" wire:model.live="overrideType" value="inherited" class="radio radio-sm" />
-                                        <span>Hériter (règle groupe ou défaut)</span>
-                                    </label>
-                                    <label class="flex gap-2 cursor-pointer">
-                                        <input type="radio" wire:model.live="overrideType" value="unlimited" class="radio radio-sm" />
-                                        <span>Illimité</span>
-                                    </label>
-                                    <label class="flex gap-2 cursor-pointer">
-                                        <input type="radio" wire:model.live="overrideType" value="custom" class="radio radio-sm" />
-                                        <span>Personnalisé</span>
-                                    </label>
-                                </div>
-                            </div>
-
-                            @if ($overrideType === 'custom')
-                                <div class="grid grid-cols-2 gap-3">
-                                    <div class="form-control">
-                                        <label class="label py-1">
-                                            <span class="label-text text-xs">Quota soft (Mo)</span>
-                                        </label>
-                                        <input type="number" wire:model="overrideSoftMb"
-                                            class="input input-bordered input-sm" min="0" />
-                                        @error('overrideSoftMb')
-                                            <span class="text-xs text-error mt-1">{{ $message }}</span>
-                                        @enderror
-                                    </div>
-                                    <div class="form-control">
-                                        <label class="label py-1">
-                                            <span class="label-text text-xs">Dépassement (%)</span>
-                                        </label>
-                                        <input type="number" wire:model="overrideOveragePercent"
-                                            class="input input-bordered input-sm" min="0" max="100" />
-                                    </div>
-                                </div>
-                            @endif
-                        </div>
-
-                        <div class="modal-action">
-                            <button type="button" class="btn btn-ghost" wire:click="closeOverrideModal">Annuler</button>
-                            <button type="button" class="btn btn-primary"
-                                wire:click="applyOverride"
-                                wire:loading.attr="disabled"
-                                wire:target="applyOverride">
-                                <span wire:loading wire:target="applyOverride" class="loading loading-spinner loading-xs"></span>
-                                Appliquer
-                            </button>
-                        </div>
-                    </div>
-                    <form method="dialog" class="modal-backdrop">
-                        <button type="button" wire:click="closeOverrideModal">close</button>
-                    </form>
-                </dialog>
-            @endteleport
+            <x-organisms.quota-override-modal title="Modifier le quota"
+                inheritedLabel="Hériter (règle groupe ou défaut)"
+                :overridePartition="$overridePartition" :overrideType="$overrideType" />
         @endcan
     </div>
 </div>

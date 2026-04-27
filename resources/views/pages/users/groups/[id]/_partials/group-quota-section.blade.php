@@ -92,29 +92,17 @@ new class extends Component {
             return;
         }
 
-        $home = QuotaRule::query()
-            ->where('type', QuotaRule::TYPE_GROUP)
-            ->where('target', $this->groupName)
-            ->where('partition', QuotaRule::PARTITION_HOME)
-            ->first();
+        $home = QuotaRule::query()->where('type', QuotaRule::TYPE_GROUP)->where('target', $this->groupName)->where('partition', QuotaRule::PARTITION_HOME)->first();
 
-        $sambaedu = QuotaRule::query()
-            ->where('type', QuotaRule::TYPE_GROUP)
-            ->where('target', $this->groupName)
-            ->where('partition', QuotaRule::PARTITION_SAMBAEDU)
-            ->first();
+        $sambaedu = QuotaRule::query()->where('type', QuotaRule::TYPE_GROUP)->where('target', $this->groupName)->where('partition', QuotaRule::PARTITION_SAMBAEDU)->first();
 
         // Snapshots READ-ONLY destinés uniquement à l'affichage (badges/labels)
         // et au pré-remplissage initial de la modale d'override. Les writes
         // (`applyOverride`) reconstruisent le payload exclusivement à partir des
         // form fields validés `$override*` — ces snapshots ne sont JAMAIS
         // consommés par les mutations (cf. review 5.1c #10).
-        $this->homeRule = $home?->only([
-            'id', 'partition', 'quota_soft_mb', 'quota_hard_mb', 'is_active',
-        ]);
-        $this->sambaeduRule = $sambaedu?->only([
-            'id', 'partition', 'quota_soft_mb', 'quota_hard_mb', 'is_active',
-        ]);
+        $this->homeRule = $home?->only(['id', 'partition', 'quota_soft_mb', 'quota_hard_mb', 'is_active']);
+        $this->sambaeduRule = $sambaedu?->only(['id', 'partition', 'quota_soft_mb', 'quota_hard_mb', 'is_active']);
     }
 
     // =========================================================================
@@ -128,22 +116,15 @@ new class extends Component {
             return;
         }
 
-        $this->overridePartition = in_array(
-            $partition,
-            [QuotaRule::PARTITION_HOME, QuotaRule::PARTITION_SAMBAEDU],
-            true,
-        ) ? $partition : QuotaRule::PARTITION_HOME;
+        $this->overridePartition = in_array($partition, [QuotaRule::PARTITION_HOME, QuotaRule::PARTITION_SAMBAEDU], true) ? $partition : QuotaRule::PARTITION_HOME;
 
-        $current = $this->overridePartition === QuotaRule::PARTITION_HOME
-            ? $this->homeRule
-            : $this->sambaeduRule;
+        $current = $this->overridePartition === QuotaRule::PARTITION_HOME ? $this->homeRule : $this->sambaeduRule;
 
         if ($current === null) {
             $this->overrideType = 'inherited';
             $this->overrideSoftMb = 500;
             $this->overrideOveragePercent = 20;
-        } elseif ((int) ($current['quota_soft_mb'] ?? 0) === 0
-            && (int) ($current['quota_hard_mb'] ?? 0) === 0) {
+        } elseif ((int) ($current['quota_soft_mb'] ?? 0) === 0 && (int) ($current['quota_hard_mb'] ?? 0) === 0) {
             $this->overrideType = 'unlimited';
             $this->overrideSoftMb = 500;
             $this->overrideOveragePercent = 20;
@@ -152,9 +133,7 @@ new class extends Component {
             $hard = (int) ($current['quota_hard_mb'] ?? $soft);
             $this->overrideType = 'custom';
             $this->overrideSoftMb = max(0, $soft);
-            $this->overrideOveragePercent = $soft > 0
-                ? max(0, min(100, (int) round(($hard - $soft) / $soft * 100)))
-                : 20;
+            $this->overrideOveragePercent = $soft > 0 ? max(0, min(100, (int) round((($hard - $soft) / $soft) * 100))) : 20;
         }
 
         $this->showOverrideModal = true;
@@ -189,11 +168,7 @@ new class extends Component {
 
         try {
             if ($this->overrideType === 'inherited') {
-                $rule = QuotaRule::query()
-                    ->where('type', QuotaRule::TYPE_GROUP)
-                    ->where('target', $this->groupName)
-                    ->where('partition', $partition)
-                    ->first();
+                $rule = QuotaRule::query()->where('type', QuotaRule::TYPE_GROUP)->where('target', $this->groupName)->where('partition', $partition)->first();
 
                 if ($rule) {
                     // deleteQuotaRule dispatch automatiquement le recalcul
@@ -203,15 +178,7 @@ new class extends Component {
 
                 $this->toastSuccess("Quota {$partition} : retour à l'héritage.");
             } elseif ($this->overrideType === 'unlimited') {
-                $this->quotaService->setQuotaRule(
-                    QuotaRule::TYPE_GROUP,
-                    $this->groupName,
-                    $partition,
-                    0,
-                    0,
-                    $performedBy,
-                    applyImmediately: true,
-                );
+                $this->quotaService->setQuotaRule(QuotaRule::TYPE_GROUP, $this->groupName, $partition, 0, 0, $performedBy, applyImmediately: true);
                 $this->toastSuccess("Quota {$partition} : illimité.");
             } else {
                 $softMb = max(0, (int) $this->overrideSoftMb);
@@ -222,19 +189,13 @@ new class extends Component {
                 // illimité, alors qu'il a sélectionné "Personnalisé". Forcer
                 // l'utilisation explicite du type "Illimité" (cf. review 5.1c #6).
                 if ($softMb === 0) {
-                    $this->addError(
-                        'overrideSoftMb',
-                        'Pour un quota illimité, sélectionnez le type "Illimité".',
-                    );
+                    $this->addError('overrideSoftMb', 'Pour un quota illimité, sélectionnez le type "Illimité".');
                     return;
                 }
 
                 // Cohérent avec QuotaController::updateGroupQuota:84.
                 if ($partition === QuotaRule::PARTITION_HOME && $softMb < 10) {
-                    $this->addError(
-                        'overrideSoftMb',
-                        "Le quota sur /home doit être d'au moins 10 Mo.",
-                    );
+                    $this->addError('overrideSoftMb', "Le quota sur /home doit être d'au moins 10 Mo.");
                     return;
                 }
 
@@ -243,15 +204,7 @@ new class extends Component {
                 // setQuotaRule dispatch automatiquement le recalcul groupe en
                 // interne (XfsQuotaService:339 → dispatchApplyJob, et la
                 // logique de recalcul groupe est portée par le job consumer).
-                $this->quotaService->setQuotaRule(
-                    QuotaRule::TYPE_GROUP,
-                    $this->groupName,
-                    $partition,
-                    $softMb,
-                    $hardMb,
-                    $performedBy,
-                    applyImmediately: true,
-                );
+                $this->quotaService->setQuotaRule(QuotaRule::TYPE_GROUP, $this->groupName, $partition, $softMb, $hardMb, $performedBy, applyImmediately: true);
 
                 $label = $softMb >= 1024 ? round($softMb / 1024, 1) . ' Go' : $softMb . ' Mo';
                 $this->toastSuccess("Quota {$partition} : {$label} (+{$overage}% grâce).");
@@ -301,9 +254,7 @@ new class extends Component {
             return ['kind' => 'unlimited'];
         }
 
-        $overage = $soft > 0
-            ? max(0, (int) round(($hard - $soft) / $soft * 100))
-            : 0;
+        $overage = $soft > 0 ? max(0, (int) round((($hard - $soft) / $soft) * 100)) : 0;
 
         return [
             'kind' => 'custom',
@@ -332,20 +283,35 @@ new class extends Component {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 @php
                     $partitions = [
-                        ['key' => 'home', 'partition' => '/home', 'label' => 'Espace personnel (K:)', 'rule' => $homeRule],
-                        ['key' => 'sambaedu', 'partition' => '/var/sambaedu', 'label' => 'Partages (Classes/Docs)', 'rule' => $sambaeduRule],
+                        [
+                            'key' => 'home',
+                            'partition' => '/home',
+                            'label' => 'Espace personnel (K:)',
+                            'rule' => $homeRule,
+                        ],
+                        [
+                            'key' => 'sambaedu',
+                            'partition' => '/var/sambaedu',
+                            'label' => 'Partages (Classes/Docs)',
+                            'rule' => $sambaeduRule,
+                        ],
                     ];
                 @endphp
 
                 @foreach ($partitions as $p)
                     @php $desc = $this->describeRule($p['rule']); @endphp
-                    <div class="space-y-3">
+                    {{-- flex flex-col + flex-1 sur le carré état pour que les
+                         deux colonnes s'alignent à la hauteur du plus grand
+                         (sinon "Hérité (défaut)" + paragraphe explicatif est
+                         visiblement plus haut que "Illimité" seul). --}}
+                    <div class="flex flex-col gap-3">
                         <div class="flex items-center justify-between">
                             <span class="font-medium">{{ $p['label'] }}</span>
                             <code class="text-xs opacity-70">{{ $p['partition'] }}</code>
                         </div>
 
-                        <div class="bg-base-200 rounded-lg py-3 px-4 text-center">
+                        <div
+                            class="bg-base-200 rounded-lg py-3 px-4 text-center flex-1 flex flex-col justify-center items-center">
                             @if ($desc['kind'] === 'inherited')
                                 <span class="badge badge-ghost">Hérité (défaut)</span>
                                 <p class="text-xs opacity-70 mt-1">
@@ -353,9 +319,11 @@ new class extends Component {
                                     du quota par défaut de leur profil.
                                 </p>
                             @elseif ($desc['kind'] === 'unlimited')
-                                <span class="badge badge-success">Illimité</span>
+                                <span class="badge badge-success"> <i
+                                        class="fa-solid fa-infinity mr-2"></i>Illimité</span>
                             @else
                                 <span class="badge badge-info">
+                                    <i class="fa-solid fa-scale-balanced mr-2"></i>
                                     {{ $this->formatQuotaMb($desc['soft']) }}
                                     (+{{ $desc['overage'] }}%)
                                 </span>
@@ -363,8 +331,7 @@ new class extends Component {
                         </div>
 
                         @can('server.admin')
-                            <button type="button"
-                                class="btn btn-sm btn-outline w-full"
+                            <button type="button" class="btn btn-sm btn-outline w-full"
                                 wire:click="openOverrideModal('{{ $p['partition'] }}')">
                                 <i class="fa-solid fa-sliders"></i>
                                 Modifier
@@ -374,98 +341,10 @@ new class extends Component {
                 @endforeach
             </div>
 
-            {{-- Modale d'override groupe — visible uniquement server.admin
-                 (décalque exact pattern post-review 5.1b quota-section.blade.php). --}}
+            {{-- Modale d'override groupe — visible uniquement server.admin. --}}
             @can('server.admin')
-                @teleport('body')
-                    <dialog class="modal"
-                        x-data="{ open: @entangle('showOverrideModal') }"
-                        :class="{ 'modal-open': open }"
-                        x-cloak>
-                        <div class="modal-box max-w-2xl">
-                            <div class="flex items-center justify-between mb-4">
-                                <h3 class="text-lg font-bold">Modifier le quota du groupe</h3>
-                                <button type="button" class="btn btn-sm btn-circle btn-ghost"
-                                    wire:click="closeOverrideModal">
-                                    <i class="fa-solid fa-xmark"></i>
-                                </button>
-                            </div>
-
-                            <div class="space-y-4">
-                                <div class="form-control">
-                                    <label class="label">
-                                        <span class="label-text">Partition</span>
-                                    </label>
-                                    <select wire:model.live="overridePartition" class="select select-bordered">
-                                        <option value="/home">/home — Espace personnel (K:)</option>
-                                        <option value="/var/sambaedu">/var/sambaedu — Partages</option>
-                                    </select>
-                                </div>
-
-                                <div class="form-control">
-                                    <label class="label">
-                                        <span class="label-text">Type</span>
-                                    </label>
-                                    <div class="flex flex-col gap-2">
-                                        <label class="flex gap-2 cursor-pointer">
-                                            <input type="radio" wire:model.live="overrideType" value="inherited"
-                                                class="radio radio-sm" />
-                                            <span>Hériter (utiliser le défaut profil)</span>
-                                        </label>
-                                        <label class="flex gap-2 cursor-pointer">
-                                            <input type="radio" wire:model.live="overrideType" value="unlimited"
-                                                class="radio radio-sm" />
-                                            <span>Illimité</span>
-                                        </label>
-                                        <label class="flex gap-2 cursor-pointer">
-                                            <input type="radio" wire:model.live="overrideType" value="custom"
-                                                class="radio radio-sm" />
-                                            <span>Personnalisé</span>
-                                        </label>
-                                    </div>
-                                </div>
-
-                                @if ($overrideType === 'custom')
-                                    <div class="grid grid-cols-2 gap-3">
-                                        <div class="form-control">
-                                            <label class="label py-1">
-                                                <span class="label-text text-xs">Quota soft (Mo)</span>
-                                            </label>
-                                            <input type="number" wire:model="overrideSoftMb"
-                                                class="input input-bordered input-sm" min="0" />
-                                            @error('overrideSoftMb')
-                                                <span class="text-xs text-error mt-1">{{ $message }}</span>
-                                            @enderror
-                                        </div>
-                                        <div class="form-control">
-                                            <label class="label py-1">
-                                                <span class="label-text text-xs">Dépassement (%)</span>
-                                            </label>
-                                            <input type="number" wire:model="overrideOveragePercent"
-                                                class="input input-bordered input-sm" min="0" max="100" />
-                                        </div>
-                                    </div>
-                                @endif
-                            </div>
-
-                            <div class="modal-action">
-                                <button type="button" class="btn btn-ghost"
-                                    wire:click="closeOverrideModal">Annuler</button>
-                                <button type="button" class="btn btn-primary"
-                                    wire:click="applyOverride"
-                                    wire:loading.attr="disabled"
-                                    wire:target="applyOverride">
-                                    <span wire:loading wire:target="applyOverride"
-                                        class="loading loading-spinner loading-xs"></span>
-                                    Appliquer
-                                </button>
-                            </div>
-                        </div>
-                        <form method="dialog" class="modal-backdrop">
-                            <button type="button" wire:click="closeOverrideModal">close</button>
-                        </form>
-                    </dialog>
-                @endteleport
+                <x-organisms.quota-override-modal title="Modifier le quota du groupe"
+                    inheritedLabel="Hériter (utiliser le défaut profil)" :overridePartition="$overridePartition" :overrideType="$overrideType" />
             @endcan
         @endif
     </div>
