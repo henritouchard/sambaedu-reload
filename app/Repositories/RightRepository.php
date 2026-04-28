@@ -33,7 +33,13 @@ class RightRepository
 
     /**
      * Récupère toutes les valeurs des groupes de droits
-     * 
+     *
+     * @deprecated since 7.3 — lecture bitmask LDAP remplacée par Spatie via
+     * `RightsService::calculateRights()`. Plus consommé par RightsService ni
+     * RightsDrawer en runtime. Suppression programmée dans PR séparée
+     * post-stabilisation prod (≥ 2 semaines).
+     * Référence : `_bmad-output/implementation-artifacts/7-3-migration-bitmask-vers-spatie.md` §Sunset, matrice §11.
+     *
      * @return array<string, int> Mapping nom du groupe => valeur info (bitmask)
      */
     public function getAllRightsValues(): array
@@ -64,7 +70,12 @@ class RightRepository
 
     /**
      * Récupère la valeur d'un groupe de droits spécifique
-     * 
+     *
+     * @deprecated since 7.3 — lecture bitmask LDAP remplacée par Spatie via
+     * `RightsService::calculateRights()`. Suppression programmée dans PR séparée
+     * post-stabilisation prod (≥ 2 semaines).
+     * Référence : `_bmad-output/implementation-artifacts/7-3-migration-bitmask-vers-spatie.md` §Sunset, matrice §11.
+     *
      * @param string $groupName Nom du groupe de droits
      * @return int|null Valeur du droit ou null si non trouvé
      */

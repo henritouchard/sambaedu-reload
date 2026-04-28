@@ -26,6 +26,16 @@ enum SambaPermission: string
     case ComputerControl = 'computer.control';
     case ComputerElevate = 'computer.elevate';
     case ComputerInstall = 'computer.install';
+    /**
+     * Story 7.3 (décision Henri 2026-04-25 — option C) : permission dédiée
+     * pour la migration des délégations RDP legacy (`rdp_<parc>` /
+     * `no_rdp_<parc>`). Le legacy stockait le bitmask `SE_COMPUTER_CONTROL`
+     * (0x200) pour le profil `rdp` (cf. `OU=rights/rdp`), donc on partage le
+     * même bit atomique côté `legacyRight()`. Dans Spatie, la permission est
+     * distincte de `computer.control` pour permettre une gouvernance fine
+     * RDP (politique de sécurité d'établissement).
+     */
+    case ComputerRemoteRdp = 'computer.remote.rdp';
 
     // WPKG
     case WpkgAssign = 'wpkg.assign';
@@ -61,6 +71,12 @@ enum SambaPermission: string
             self::ComputerControl => LegacyRight::ComputerControl,
             self::ComputerElevate => LegacyRight::ComputerElevate,
             self::ComputerInstall => LegacyRight::ComputerInstall,
+            // Story 7.3 — `ComputerRemoteRdp` partage le bit `ComputerControl`
+            // (0x200) dans le legacy : le profil `OU=rights/rdp` stockait
+            // historiquement `SE_COMPUTER_CONTROL` (0x200) dans son `info`.
+            // Convention du mapping `bit représentant` (cf. matrice §11) :
+            // tout user avec ce bit obtient la perm Spatie après sync.
+            self::ComputerRemoteRdp => LegacyRight::ComputerControl,
             self::WpkgAssign => LegacyRight::WpkgAssign,
             self::WpkgAdd => LegacyRight::WpkgAdd,
             self::WpkgCreate => LegacyRight::WpkgCreate,
@@ -104,6 +120,7 @@ enum SambaPermission: string
             self::ComputerControl => 'Contrôle à distance',
             self::ComputerElevate => 'Admin de poste',
             self::ComputerInstall => 'Installer un poste',
+            self::ComputerRemoteRdp => 'Bureau à distance (RDP)',
             self::WpkgAssign => 'Affecter des applications',
             self::WpkgAdd => 'Ajouter des applications',
             self::WpkgCreate => 'Créer des recettes WPKG',
@@ -120,7 +137,8 @@ enum SambaPermission: string
             self::UserCreateTemp, self::UserAssignRight, self::UserDelegate => 'user',
             self::ShareView, self::ShareRefresh => 'share',
             self::ComputerView, self::ComputerControl,
-            self::ComputerElevate, self::ComputerInstall => 'computer',
+            self::ComputerElevate, self::ComputerInstall,
+            self::ComputerRemoteRdp => 'computer',
             self::WpkgAssign, self::WpkgAdd, self::WpkgCreate => 'wpkg',
             self::ServerAdmin => 'server',
             self::WallpaperManage => 'wallpaper',
@@ -159,14 +177,32 @@ enum SambaPermission: string
     // ========================================================================
 
     /**
+     * Indique si la permission est une « secondary bit permission » qui partage
+     * son bit legacy avec une permission atomique principale. Story 7.3 :
+     * `ComputerRemoteRdp` partage `0x200` avec `ComputerControl`. Ces
+     * permissions sont exclues des conversions bitmask ↔ permissions pour
+     * éviter de sur-élargir les profils custom rapatriés depuis le LDAP.
+     * Elles sont attribuées exclusivement par la migration des délégations
+     * legacy (`rdp_<parc>` → `computer.remote.rdp`) et par les rôles seedés
+     * éventuels.
+     */
+    private function isSecondaryBitPermission(): bool
+    {
+        return $this === self::ComputerRemoteRdp;
+    }
+
+    /**
      * Mapping bitmask → nom de permission Spatie
-     * 
+     *
      * @return array<int, string>
      */
     public static function bitmaskMapping(): array
     {
         $map = [];
         foreach (self::cases() as $perm) {
+            if ($perm->isSecondaryBitPermission()) {
+                continue;
+            }
             $map[$perm->bitmask()] = $perm->value;
         }
         return $map;
@@ -174,20 +210,24 @@ enum SambaPermission: string
 
     /**
      * Convertit un bitmask legacy en liste de noms de permissions Spatie
-     * 
+     *
      * @return string[]
      */
     public static function fromBitmask(int $bitmask): array
     {
         return array_values(array_map(
             fn(self $p) => $p->value,
-            array_filter(self::cases(), fn(self $p) => ($bitmask & $p->bitmask()) !== 0)
+            array_filter(
+                self::cases(),
+                fn(self $p) => ! $p->isSecondaryBitPermission()
+                    && ($bitmask & $p->bitmask()) !== 0
+            )
         ));
     }
 
     /**
      * Convertit une liste de noms de permissions en bitmask legacy
-     * 
+     *
      * @param string[] $permissionNames
      */
     public static function toBitmask(array $permissionNames): int
@@ -206,6 +246,9 @@ enum SambaPermission: string
     public static function fromSingleBitmask(int $bitmask): ?self
     {
         foreach (self::cases() as $perm) {
+            if ($perm->isSecondaryBitPermission()) {
+                continue;
+            }
             if ($perm->bitmask() === $bitmask) {
                 return $perm;
             }
