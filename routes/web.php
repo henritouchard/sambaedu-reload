@@ -79,6 +79,14 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
     Route::livewire('/rights-management', 'pages::rights-management.index')
         ->middleware('can:user.assign.right')
         ->name('rights-management');
+    // Story 7.2 — création / édition d'un profil (rôle Spatie).
+    Route::livewire('/rights-management/profiles/new', 'pages::rights-management.profiles.new.index')
+        ->middleware('can:user.assign.right')
+        ->name('rights-management.profiles.create');
+    Route::livewire('/rights-management/profiles/{id}', 'pages::rights-management.profiles.[id].index')
+        ->whereNumber('id')
+        ->middleware('can:user.assign.right')
+        ->name('rights-management.profiles.show');
 
     // Groupes d'utilisateurs — Story 7.2 AC8 : middleware can: user.read
     Route::livewire('/users/groups/new', 'pages::users.groups.new.index')
@@ -211,7 +219,7 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
 | Admin Routes - ControlHub Handshake Management
 |--------------------------------------------------------------------------
 */
-Route::prefix('admin')->middleware('sambaedu.admin')->name('admin.')->group(function () {
+Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin'])->name('admin.')->group(function () {
     // Control Hub - Livewire fullpage component
     Route::livewire('/control-hub', 'pages::control-hub.index')->name('controlHub.control-hub');
 

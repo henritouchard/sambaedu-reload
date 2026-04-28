@@ -1,9 +1,12 @@
 <?php
 use Livewire\Component;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\On;
+use Livewire\Attributes\Locked;
 use App\Services\UserService;
 use App\Services\AuthenticationService;
 use App\Services\AdDataTransformer;
+use App\Services\PermissionService;
 use App\Types\User;
 use App\Repositories\GroupRepository;
 use App\Repositories\UserRepository;
@@ -11,6 +14,7 @@ use App\Services\UserGroupService;
 use App\Models\User as SqlUserModel;
 use App\Models\UserGroup;
 use App\Models\Wallpaper;
+use App\Models\Delegation;
 use Illuminate\Support\Facades\Gate;
 use Devrabiul\ToastMagic\Facades\ToastMagic;
 use App\Components\Traits\WithToasts;
@@ -18,6 +22,8 @@ use App\Components\Traits\WithToasts;
 new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
     use WithToasts;
     public ?User $user = null;
+    #[Locked]
+    public ?SqlUserModel $sqlUserModel = null;
     public bool $accountDisabled = false;
     public bool $homeExists = true;
     public bool $isOwnProfile = false;
@@ -27,6 +33,13 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
     public ?array $localAdminInfo = null;
     public array $listCurrentGroups = [];
     public array $listCurrentRights = [];
+
+    // Story 7.x — Permissions Spatie + délégations (remplace le bitmask legacy
+    // pour la card "Permissions" de la page profil utilisateur).
+    public array $spatieRoles = [];
+    public array $directPermissions = [];
+    public array $rolePermissions = [];
+    public array $delegations = [];
 
     private UserService $userService;
     private AuthenticationService $authService;
@@ -53,6 +66,15 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
             abort(404);
         }
 
+        $this->sqlUserModel = SqlUserModel::query()->where('login', $this->user->login)->first();
+        if (!$this->sqlUserModel) {
+            abort(404);
+        }
+
+        // Story 7.2 — scoping classe : Prof/EleveAdmin ne consulte que ses élèves
+        // (rôles globaux bypass, sinon match Equipe_X/PP_X ↔ Classe_X).
+        Gate::authorize('view-user', $this->sqlUserModel);
+
         // Vérifier si c'est le profil de l'utilisateur connecté
         $currentLogin = $this->authService->getCurrentUser();
         $this->isOwnProfile = $currentLogin && $currentLogin === $this->user->login;
@@ -75,9 +97,64 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                 ->exists();
         }
 
-        // Groupes et droits
+        // Groupes et droits (legacy — toujours utilisé pour l'en-tête)
         $this->listCurrentGroups = $this->user->groups;
         $this->listCurrentRights = $this->user->rights;
+
+        // Story 7.x — charger l'état Spatie pour la card Permissions.
+        $this->loadSpatieState();
+    }
+
+    /**
+     * Recharge l'état Spatie + délégations affiché dans la card Permissions.
+     * Réagit aux events dispatchés par les drawers (rights-drawer pour rôles
+     * et permissions, delegation-modal pour délégations scopées).
+     */
+    public function loadSpatieState(): void
+    {
+        if (!$this->user) {
+            return;
+        }
+
+        $sqlUser = SqlUserModel::query()->where('login', $this->user->login)->first();
+        if (!$sqlUser) {
+            $this->spatieRoles = [];
+            $this->directPermissions = [];
+            $this->rolePermissions = [];
+            $this->delegations = [];
+            return;
+        }
+
+        $this->spatieRoles = $sqlUser->roles
+            ->map(fn($r) => ['id' => $r->id, 'name' => $r->name])
+            ->toArray();
+        $this->directPermissions = $sqlUser->getDirectPermissions()->pluck('name')->toArray();
+        $this->rolePermissions = $sqlUser->getPermissionsViaRoles()->pluck('name')->toArray();
+
+        $this->delegations = app(PermissionService::class)
+            ->getUserDelegations($sqlUser)
+            ->map(fn(Delegation $d) => [
+                'id' => $d->id,
+                'workstation_group' => $d->workstationGroup->name ?? '?',
+                'workstation_group_id' => $d->workstation_group_id,
+                'permission' => $d->permission->name ?? '?',
+                'is_negative' => (bool) $d->is_negative,
+                'expires_at' => $d->expires_at?->format('d/m/Y H:i'),
+                'expires_at_iso' => $d->expires_at?->toIso8601String(),
+            ])
+            ->toArray();
+    }
+
+    #[On('delegations-changed')]
+    public function onDelegationsChanged(): void
+    {
+        $this->loadSpatieState();
+    }
+
+    #[On('rights-applied')]
+    public function onRightsApplied(): void
+    {
+        $this->loadSpatieState();
     }
 
     public function removeFromGroup(string $group): void
@@ -242,16 +319,27 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
 
     <!-- Composant Livewire de gestion des groupes -->
     <livewire:components::organisms.groups-drawer />
-    <!-- Composant Livewire de gestion des permissions -->
-    <livewire:components::organisms.rights-drawer />
+    <!-- Story 7.x — drawer Spatie (rôles + permissions globales) + modale délégations
+         remplace l'ancien rights-drawer LDAP/bitmask. -->
+    <livewire:pages::users._partials.rights-drawer />
+    <livewire:pages::users._partials.delegation-modal />
     <!-- Composant Livewire de réinitialisation de mdp avec export (story 2.6) -->
     <livewire:components::organisms.password-reset-modal />
 
     <x-slot:actions>
         <!-- Actions principales -->
         <div class="flex flex-col gap-3 flex-shrink-0">
-            @can('update-user')
-                @if ($user->login !== 'Administrator')
+            @php
+                // Story 7.2 — scoping classe : un Prof n'a pas `user.modify` mais
+                // doit voir le menu pour réinitialiser le mdp de ses propres élèves.
+                // On ouvre le dropdown dès qu'au moins une action est autorisée.
+                $canShowActions = $user->login !== 'Administrator' && (
+                    Gate::allows('update-user')
+                    || Gate::allows('delete-user')
+                    || Gate::allows('resetPassword-user', $sqlUserModel)
+                );
+            @endphp
+            @if ($canShowActions)
                     <div class="dropdown dropdown-left">
                         <label tabindex="0" class="btn btn-primary gap-2 min-w-32">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -267,7 +355,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                         </label>
                         <ul tabindex="0"
                             class="dropdown-content menu p-2 shadow-lg bg-base-100 rounded-box w-64 border border-base-200">
-                            @can('user.password.init')
+                            @can('resetPassword-user', $sqlUserModel)
                                 <li>
                                     <button type="button" class="flex items-center gap-3 w-full"
                                         @click="Livewire.dispatch('open-password-reset-modal', { users: ['{{ $user->login }}'], groups: [] }); document.activeElement.blur();">
@@ -293,14 +381,21 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                             </li>
                             <li>
                                 <button type="button" class="flex items-center gap-3 w-full"
-                                    @click="Livewire.dispatch('open-rights-drawer', { login: '{{ $user->login }}' }); document.activeElement.blur();">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z">
-                                        </path>
-                                    </svg>
+                                    @click="Livewire.dispatch('open-rights-drawer', { users: ['{{ $user->login }}'] }); document.activeElement.blur();">
+                                    <i class="fa-solid fa-shield-halved w-4 h-4 flex items-center justify-center"></i>
                                     <div class="flex flex-col items-start">
-                                        <span class="font-medium">Gérer les permissions</span>
+                                        <span class="font-medium">Rôles & permissions</span>
+                                        <span class="text-xs opacity-70">Assigner un profil ou des permissions globales</span>
+                                    </div>
+                                </button>
+                            </li>
+                            <li>
+                                <button type="button" class="flex items-center gap-3 w-full"
+                                    @click="Livewire.dispatch('open-delegation-modal', { users: ['{{ $user->login }}'] }); document.activeElement.blur();">
+                                    <i class="fa-solid fa-building w-4 h-4 flex items-center justify-center"></i>
+                                    <div class="flex flex-col items-start">
+                                        <span class="font-medium">Délégation sur une salle</span>
+                                        <span class="text-xs opacity-70">Accorder ou exclure un droit scopé</span>
                                     </div>
                                 </button>
                             </li>
@@ -422,8 +517,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                             @endif
                         </ul>
                     </div>
-                @endif
-            @endcan
+            @endif
         </div>
     </x-slot:actions>
 

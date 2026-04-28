@@ -247,12 +247,12 @@ class RightsManagementPageTest extends TestCase
         $this->actingAs($admin);
 
         Livewire::test($this->pageComponent())
-            ->assertSet('activeTab', 'overview')
-            ->call('setActiveTab', 'user-lookup')
+            ->assertSet('activeTab', 'profiles')
+            ->set('activeTab', 'user-lookup')
             ->assertSet('activeTab', 'user-lookup')
-            ->call('setActiveTab', 'delegations')
+            ->set('activeTab', 'delegations')
             ->assertSet('activeTab', 'delegations')
-            ->call('setActiveTab', 'history')
+            ->set('activeTab', 'history')
             ->assertSet('activeTab', 'history');
     }
 
@@ -267,7 +267,7 @@ class RightsManagementPageTest extends TestCase
         $this->actingAs($actor);
 
         $component = Livewire::test($this->pageComponent())
-            ->call('setActiveTab', 'history');
+            ->set('activeTab', 'history');
 
         $entries = $component->get('historyEntries');
         $this->assertEquals(1, $entries->total());

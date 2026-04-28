@@ -2,40 +2,60 @@
 
 use Livewire\Component;
 use Livewire\Attributes\On;
-use App\Repositories\RightRepository;
+use App\Enums\SambaPermission;
+use App\Enums\SambaRole;
 use App\Repositories\UserRepository;
-use App\Services\RightsService;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Gate;
 use Devrabiul\ToastMagic\Facades\ToastMagic;
+use Spatie\Permission\Models\Role as SpatieRole;
 
+/**
+ * Drawer de gestion des rôles et permissions Spatie d'un utilisateur.
+ *
+ * Story 7.3 — Refactor UI Spatie (2026-04-25) :
+ *   La source de données est désormais Spatie (rôles + permissions effectives)
+ *   au lieu du bitmask hex LDAP. L'UX globale (drawer, structure, fermeture,
+ *   header) est préservée — c'est une refonte de la source et du rendu
+ *   cellule par cellule.
+ *
+ *   Affichage :
+ *     - Liste des rôles disponibles avec toggle (source = `SpatieRole` DB,
+ *       seedés `SambaRole::isSeeded()` + custom rapatriés 7.2).
+ *     - Pour chaque rôle : label lisible + permissions associées sous forme
+ *       de badges (labels FR depuis `SambaPermission::label()`).
+ *     - Permissions directes effectives de l'utilisateur (hors rôles) en
+ *       section dédiée.
+ *
+ *   Sauvegarde :
+ *     - Toggle d'un rôle → `$user->assignRole()` / `$user->removeRole()` sur
+ *       la table Spatie `model_has_roles`. Les permissions individuelles ne
+ *       sont pas modifiées ici — elles passent par le drawer délégations.
+ *     - Post-save : reload de la page pour refléter les nouvelles permissions.
+ *
+ * Plus aucune lecture LDAP runtime ni de bitmask hex affiché.
+ */
 new class extends Component {
     public bool $isOpen = false;
     public bool $isLoading = false;
 
     // Utilisateur ciblé
     public string $targetLogin = '';
-    public string $targetDn = '';
 
-    // Droits : groupCn => bool (activé/désactivé)
-    public array $rightsState = [];
+    // État des rôles : roleName => bool (assigné/non)
+    public array $rolesState = [];
+    public array $initialRolesState = [];
 
-    // État initial pour détecter les changements
-    public array $initialRightsState = [];
+    // Métadonnées pour le rendu : roleName => ['label', 'is_seeded', 'permissions' => [['name','label']]]
+    public array $rolesMeta = [];
 
-    // Définitions des droits pour l'affichage
-    public array $rightsDefinitions = [];
+    // Permissions directes effectives de l'utilisateur (hors rôles).
+    public array $directPermissions = [];
 
-    // Services
-    private RightRepository $rightRepository;
     private UserRepository $userRepository;
-    private RightsService $rightsService;
 
-    public function boot(RightRepository $rightRepository, UserRepository $userRepository, RightsService $rightsService)
+    public function boot(UserRepository $userRepository)
     {
-        $this->rightRepository = $rightRepository;
         $this->userRepository = $userRepository;
-        $this->rightsService = $rightsService;
     }
 
     #[On('open-rights-drawer')]
@@ -62,54 +82,61 @@ new class extends Component {
 
     private function loadRightsData(): void
     {
-        $ldapUser = $this->userRepository->findLdapModelByLogin($this->targetLogin);
-        if (!$ldapUser) {
-            ToastMagic::error('Utilisateur introuvable dans LDAP');
+        // On cherche le User Eloquent par login.
+        $user = \App\Models\User::where('login', $this->targetLogin)->first();
+        if ($user === null) {
+            ToastMagic::error('Utilisateur introuvable dans la base SER');
             $this->isOpen = false;
             return;
         }
-        $this->targetDn = $ldapUser->getDn();
 
-        $userRightGroups = $this->userRepository->findByLogin($this->targetLogin)?->rights ?? [];
+        $assignedRoleNames = $user->roles()->pluck('name')->toArray();
 
-        // Seuls les groupes référencés dans getAllRightsValues() sont de vrais groupes de droits
-        $knownRightsGroups = $this->rightRepository->getAllRightsValues();
-        $definitions = RightsService::getRightsDefinitions();
+        $this->rolesState = [];
+        $this->rolesMeta = [];
 
-        $this->rightsDefinitions = [];
-        $this->rightsState = [];
+        // Tous les rôles DB (seedés + custom rapatriés 7.2).
+        $allRoles = SpatieRole::where('guard_name', 'web')->orderBy('name')->get();
+        foreach ($allRoles as $role) {
+            $isSeeded = SambaRole::isSeeded($role->name);
+            $label = $isSeeded
+                ? (SambaRole::tryFrom($role->name)?->label() ?? $role->name)
+                : $role->name;
 
-        foreach ($knownRightsGroups as $cn => $bitmask) {
-            $rightGroup = $this->rightRepository->findByName($cn);
-            $description = $rightGroup?->getFirstAttribute('description') ?? '';
-            $isActive = in_array($cn, $userRightGroups);
+            $rolePermissions = $role->permissions()->pluck('name')->toArray();
+            $permsWithLabels = array_map(function (string $permName) {
+                $perm = SambaPermission::tryFrom($permName);
+                return [
+                    'name' => $permName,
+                    'label' => $perm?->label() ?? $permName,
+                ];
+            }, $rolePermissions);
 
-            // Trouver les labels correspondants au bitmask
-            $labels = [];
-            foreach ($definitions as $mask => $info) {
-                if ($bitmask > 0 && ($bitmask & $mask) > 0) {
-                    $labels[] = $info['label'];
-                }
-            }
-
-            $this->rightsDefinitions[$cn] = [
-                'cn' => $cn,
-                'description' => $description,
-                'bitmask' => $bitmask,
-                'bitmaskHex' => $bitmask > 0 ? '0x' . strtoupper(dechex($bitmask)) : '0x00',
-                'labels' => $labels,
+            $this->rolesMeta[$role->name] = [
+                'label' => $label,
+                'is_seeded' => $isSeeded,
+                'permissions' => $permsWithLabels,
             ];
-
-            $this->rightsState[$cn] = $isActive;
+            $this->rolesState[$role->name] = in_array($role->name, $assignedRoleNames, true);
         }
 
-        $this->initialRightsState = $this->rightsState;
+        $this->initialRolesState = $this->rolesState;
+
+        // Permissions directes effectives (hors rôles) — affichées en lecture seule.
+        $direct = $user->getDirectPermissions()->pluck('name')->toArray();
+        $this->directPermissions = array_map(function (string $permName) {
+            $perm = SambaPermission::tryFrom($permName);
+            return [
+                'name' => $permName,
+                'label' => $perm?->label() ?? $permName,
+            ];
+        }, $direct);
     }
 
-    public function toggleRight(string $groupCn): void
+    public function toggleRole(string $roleName): void
     {
-        if (isset($this->rightsState[$groupCn])) {
-            $this->rightsState[$groupCn] = !$this->rightsState[$groupCn];
+        if (isset($this->rolesState[$roleName])) {
+            $this->rolesState[$roleName] = !$this->rolesState[$roleName];
         }
     }
 
@@ -120,59 +147,44 @@ new class extends Component {
             return;
         }
 
+        $user = \App\Models\User::where('login', $this->targetLogin)->first();
+        if ($user === null) {
+            ToastMagic::error('Utilisateur introuvable');
+            return;
+        }
+
         $this->isLoading = true;
         $added = 0;
         $removed = 0;
-        $errors = 0;
 
-        foreach ($this->rightsState as $groupCn => $isActive) {
-            $wasActive = $this->initialRightsState[$groupCn] ?? false;
-
-            if ($isActive === $wasActive) {
+        foreach ($this->rolesState as $roleName => $isAssigned) {
+            $wasAssigned = $this->initialRolesState[$roleName] ?? false;
+            if ($isAssigned === $wasAssigned) {
                 continue;
             }
 
-            try {
-                $rightGroup = $this->rightRepository->findByName($groupCn);
-                if (!$rightGroup) {
-                    $errors++;
-                    continue;
-                }
-
-                $members = $rightGroup->getAttribute('member') ?? [];
-
-                if ($isActive && !in_array($this->targetDn, $members)) {
-                    $members[] = $this->targetDn;
-                    $rightGroup->member = $members;
-                    $rightGroup->save();
-                    $added++;
-                    Log::info('RightsDrawer: droit ajouté', ['group' => $groupCn, 'user' => $this->targetLogin]);
-                } elseif (!$isActive && in_array($this->targetDn, $members)) {
-                    $members = array_values(array_filter($members, fn($m) => $m !== $this->targetDn));
-                    $rightGroup->member = $members;
-                    $rightGroup->save();
-                    $removed++;
-                    Log::info('RightsDrawer: droit retiré', ['group' => $groupCn, 'user' => $this->targetLogin]);
-                }
-            } catch (\Exception $e) {
-                Log::error('RightsDrawer: erreur modification droit', [
-                    'group' => $groupCn,
-                    'error' => $e->getMessage(),
-                ]);
-                $errors++;
+            if ($isAssigned) {
+                $user->assignRole($roleName);
+                $added++;
+            } else {
+                $user->removeRole($roleName);
+                $removed++;
             }
         }
 
-        $this->rightsService->invalidateCache();
+        // Invalider le cache Spatie pour que les changements soient visibles
+        // dès la prochaine requête.
+        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+
         $this->userRepository->invalidateCache($this->targetLogin);
 
         $this->isLoading = false;
 
-        if ($errors > 0) {
-            ToastMagic::warning("{$added} ajoutée(s), {$removed} retirée(s), {$errors} erreur(s)");
+        $total = $added + $removed;
+        if ($total === 0) {
+            ToastMagic::info('Aucune modification à enregistrer');
         } else {
-            $total = $added + $removed;
-            ToastMagic::success("{$total} permission(s) modifiée(s) pour {$this->targetLogin}");
+            ToastMagic::success("{$total} rôle(s) modifié(s) pour {$this->targetLogin}");
         }
 
         $this->isOpen = false;
@@ -184,7 +196,7 @@ new class extends Component {
 <div>
     <dialog class="modal" x-data="{ open: @entangle('isOpen') }" :class="{ 'modal-open': open }" x-cloak>
         <div class="modal-box w-11/12 max-w-2xl">
-            <!-- Header -->
+            {{-- Header --}}
             <div class="flex items-center justify-between mb-4">
                 <div>
                     <h3 class="text-lg font-bold flex items-center gap-2">
@@ -204,55 +216,72 @@ new class extends Component {
                 </button>
             </div>
 
-            @if ($isLoading && empty($rightsDefinitions))
+            @if ($isLoading && empty($rolesMeta))
                 <div class="flex items-center justify-center py-12">
                     <span class="loading loading-spinner loading-lg text-warning"></span>
                 </div>
             @else
-                <!-- Liste des droits avec toggles -->
-                <div class="space-y-1 max-h-[60vh] overflow-y-auto pr-1">
-                    @foreach ($rightsDefinitions as $cn => $def)
+                {{-- Liste des rôles Spatie avec toggles --}}
+                <div class="space-y-1 max-h-[50vh] overflow-y-auto pr-1">
+                    @foreach ($rolesMeta as $roleName => $meta)
                         <div
                             class="flex items-center justify-between p-3 rounded-xl hover:bg-base-200/50 transition-colors border border-transparent hover:border-base-300">
                             <div class="flex-1 min-w-0 mr-4">
-                                <div class="flex items-center gap-2">
-                                    <span class="font-medium text-sm">{{ $cn }}</span>
-                                    <code
-                                        class="text-xs bg-base-200 px-1.5 py-0.5 rounded font-mono text-base-content/50">{{ $def['bitmaskHex'] }}</code>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="font-medium text-sm">{{ $meta['label'] }}</span>
+                                    @if ($meta['is_seeded'])
+                                        <span class="badge badge-xs badge-info">seed</span>
+                                    @else
+                                        <span class="badge badge-xs badge-ghost">custom</span>
+                                    @endif
+                                    <code class="text-xs text-base-content/40">{{ $roleName }}</code>
                                 </div>
-                                @if (!empty($def['labels']))
+                                @if (!empty($meta['permissions']))
                                     <div class="mt-1 flex flex-wrap gap-1">
-                                        @foreach ($def['labels'] as $label)
+                                        @foreach ($meta['permissions'] as $perm)
                                             <span
-                                                class="badge badge-xs badge-warning badge-outline">{{ $label }}</span>
+                                                class="badge badge-xs badge-warning badge-outline"
+                                                title="{{ $perm['name'] }}">{{ $perm['label'] }}</span>
                                         @endforeach
                                     </div>
                                 @endif
-                                @if (!empty($def['description']))
-                                    <p class="text-xs text-base-content/50 mt-1 truncate">{{ $def['description'] }}</p>
-                                @endif
                             </div>
-                            <input type="checkbox" wire:click="toggleRight('{{ $cn }}')"
-                                @checked($rightsState[$cn] ?? false) class="toggle toggle-warning" />
+                            <input type="checkbox" wire:click="toggleRole('{{ $roleName }}')"
+                                @checked($rolesState[$roleName] ?? false) class="toggle toggle-warning" />
                         </div>
                     @endforeach
                 </div>
 
-                @if (empty($rightsDefinitions))
+                @if (empty($rolesMeta))
                     <div class="text-center py-8 text-base-content/50">
                         <i class="fa-solid fa-shield-halved text-3xl mb-2"></i>
-                        <p>Aucun groupe de droits disponible</p>
+                        <p>Aucun rôle disponible</p>
                     </div>
+                @endif
+
+                {{-- Permissions directes (lecture seule) --}}
+                @if (!empty($directPermissions))
+                    <div class="divider my-3 text-xs text-base-content/50">Permissions directes</div>
+                    <div class="flex flex-wrap gap-1 mb-2">
+                        @foreach ($directPermissions as $perm)
+                            <span class="badge badge-sm badge-primary badge-outline"
+                                title="{{ $perm['name'] }}">{{ $perm['label'] }}</span>
+                        @endforeach
+                    </div>
+                    <p class="text-xs text-base-content/50">
+                        Ces permissions sont accordées directement (hors rôles) et se gèrent depuis
+                        <code class="text-xs">/app/rights-management</code>.
+                    </p>
                 @endif
             @endif
 
-            <!-- Footer -->
+            {{-- Footer --}}
             <div class="modal-action">
                 <button type="button" class="btn btn-ghost" wire:click="close">
                     Annuler
                 </button>
                 <button type="button" wire:click="saveChanges" wire:loading.attr="disabled" class="btn btn-warning"
-                    @disabled($rightsState === $initialRightsState)>
+                    @disabled($rolesState === $initialRolesState)>
                     <span wire:loading wire:target="saveChanges" class="loading loading-spinner loading-sm"></span>
                     <i wire:loading.remove wire:target="saveChanges" class="fa-solid fa-check"></i>
                     Enregistrer

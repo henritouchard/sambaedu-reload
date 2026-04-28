@@ -12,6 +12,7 @@ use App\Repositories\UserRepository;
 use App\Services\AuthenticationService;
 use Devrabiul\ToastMagic\Facades\ToastMagic;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use League\OAuth2\Client\Provider\GenericProvider;
 use phpCAS;
@@ -459,7 +460,7 @@ class AuthController extends Controller
     /**
      * Déconnecter l'utilisateur
      */
-    public function logout()
+    public function logout(Request $request)
     {
         try {
             // Lire le flag AVANT de détruire la session
@@ -467,6 +468,15 @@ class AuthController extends Controller
                 && (($_SESSION['cas_auth_method'] ?? '') === 'cas');
 
             $this->authService->logout();
+
+            // Le guard Laravel `web` ne suit pas la session LDAP : sans ce
+            // logout explicite + invalidate, le cookie web survit et la
+            // prochaine connexion LDAP réutilise l'ancien Eloquent User
+            // (cf. SambaEduAuthGuard::handle qui ne réaligne le guard que
+            // si Auth::check() est faux).
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
 
             if ($wasCasAuth) {
                 try {

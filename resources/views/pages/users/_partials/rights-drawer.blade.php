@@ -51,13 +51,25 @@ new class extends Component {
 
     private function loadAvailableData(): void
     {
-        $this->availableRoles = collect(SambaRole::cases())
-            ->map(fn(SambaRole $r) => [
-                'name' => $r->value,
-                'label' => $r->label(),
-                'permissions_count' => count($r->permissions()),
-                'permissions' => $r->permissionNames(),
-            ])
+        // Story 7.2 — la source des rôles est la table Spatie (et non plus
+        // l'enum statique SambaRole) pour inclure les profils customs créés
+        // depuis /app/rights-management ou rapatriés via la sync AD. Sans ça,
+        // un profil custom existait en base mais n'apparaissait pas ici, donc
+        // ne pouvait pas être assigné.
+        $this->availableRoles = \Spatie\Permission\Models\Role::where('guard_name', 'web')
+            ->with('permissions')
+            ->orderBy('name')
+            ->get()
+            ->map(function ($r) {
+                $enumCase = SambaRole::tryFrom($r->name);
+                return [
+                    'name' => $r->name,
+                    'label' => $enumCase?->label() ?? $r->name,
+                    'is_seeded' => SambaRole::isSeeded($r->name),
+                    'permissions_count' => $r->permissions->count(),
+                    'permissions' => $r->permissions->pluck('name')->toArray(),
+                ];
+            })
             ->toArray();
 
         $this->availablePermissions = collect(SambaPermission::cases())
@@ -170,6 +182,11 @@ new class extends Component {
         } else {
             $this->toastSuccess($message);
         }
+
+        // Notifie les pages parentes (ex: profil utilisateur) pour rafraîchir
+        // l'affichage des rôles/permissions sans rechargement complet.
+        $this->dispatch('rights-applied');
+
         $this->processing = false;
     }
 
@@ -234,6 +251,9 @@ new class extends Component {
         } else {
             $this->toastSuccess($message);
         }
+
+        $this->dispatch('rights-applied');
+
         $this->processing = false;
     }
 
@@ -398,9 +418,13 @@ new class extends Component {
             ->get()
             ->keyBy('login');
 
+        // Story 7.2 — itère sur tous les rôles Spatie connus, pas seulement
+        // les rôles seedés ; sinon les profils customs apparaissent toujours
+        // avec un badge "Aucun" même quand un user les porte.
+        $roleNames = array_column($this->availableRoles, 'name');
+
         $states = [];
-        foreach (SambaRole::cases() as $role) {
-            $name = $role->value;
+        foreach ($roleNames as $name) {
             $has = 0;
             foreach ($this->selectedUsers as $login) {
                 $user = $users->get($login);
@@ -493,6 +517,12 @@ new class extends Component {
                                 <div class="flex-1">
                                     <div class="flex items-center gap-2">
                                         <span class="font-medium text-sm">{{ $role['label'] }}</span>
+                                        @if (!($role['is_seeded'] ?? true))
+                                            <span class="badge badge-accent badge-xs"
+                                                title="Profil custom créé via /app/rights-management ou rapatrié AD">
+                                                custom
+                                            </span>
+                                        @endif
                                         @if ($rState['total'] > 0)
                                             @php
                                                 $badgeClass = match ($rState['state']) {

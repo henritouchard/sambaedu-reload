@@ -46,7 +46,12 @@ class LdapRightGroup extends BaseGroup
 
     /**
      * Récupère la valeur du droit (attribut info) sous forme d'entier
-     * 
+     *
+     * @deprecated since 7.3 — lecture bitmask LDAP remplacée par Spatie via
+     * `RightsService::calculateRights()`. Suppression programmée dans PR séparée
+     * post-stabilisation prod (≥ 2 semaines).
+     * Référence : `_bmad-output/implementation-artifacts/7-3-migration-bitmask-vers-spatie.md` §Sunset, matrice §11.
+     *
      * @return int
      */
     public function getRightValue(): int
@@ -67,7 +72,14 @@ class LdapRightGroup extends BaseGroup
 
     /**
      * Récupère tous les groupes de droits avec leurs valeurs
-     * 
+     *
+     * @deprecated since 7.3 — lecture bitmask LDAP remplacée par Spatie via
+     * `RightsService::calculateRights()`. Encore consommée par la commande
+     * one-shot `sambaedu:migrate-rights-to-spatie` et l'étape 8 de
+     * `/admin/sync-from-ad` (`importCustomProfilesFromAd`). Suppression
+     * programmée dans PR séparée post-stabilisation prod (≥ 2 semaines).
+     * Référence : `_bmad-output/implementation-artifacts/7-3-migration-bitmask-vers-spatie.md` §Sunset, matrice §11.
+     *
      * @return array<string, int> Mapping nom du groupe => valeur info
      */
     public static function getAllRightsValues(): array

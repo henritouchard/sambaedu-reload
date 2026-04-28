@@ -45,9 +45,9 @@
       la delegation-modal actuelle. La modale est bindée ici via `wire:model`.
 
     Containing block / @teleport :
-      Cette molecule ne teleporte PAS son `<dialog>`. Si le call site est
-      nesté dans une card / drawer / section avec `overflow`, c'est à lui
-      d'ajouter `@teleport('body')` autour de l'invocation.
+      Le `<dialog>` est teleporté vers `body` pour s'affranchir de tout
+      ancêtre `overflow`, `transform`, `filter` ou `contain` qui briserait
+      le `position: fixed` natif de `.modal`. Le call site n'a rien à faire.
 --}}
 @props([
     'title' => null,
@@ -65,9 +65,10 @@
 @endphp
 
 <div>
-    <dialog class="modal relative" x-data="{ open: @entangle($wireModel) }" :class="{ 'modal-open': open }" x-cloak>
-        <div
-            class="modal-box modal-card w-11/12 {{ $size }} {{ $height }} flex flex-col overflow-hidden p-0">
+    @teleport('body')
+        <dialog class="modal" x-data="{ open: @entangle($wireModel) }" :class="{ 'modal-open': open }" x-cloak>
+            <div
+                class="modal-box modal-card w-11/12 {{ $size }} {{ $height }} flex flex-col overflow-hidden p-0">
 
             {{-- Header (fixe) --}}
             <div class="shrink-0 flex items-start justify-between gap-3 px-6 pt-5 pb-3">
@@ -127,4 +128,5 @@
                 </form>
             </div>
         </dialog>
-    </div>
+    @endteleport
+</div>

@@ -51,12 +51,21 @@ class UsersListingScopedTest extends TestCase
         return User::create(['login' => $login, 'role' => $role, 'is_active' => true]);
     }
 
-    private function makeClass(string $name): UserGroup
+    private function makeClass(string $suffix): UserGroup
     {
         return UserGroup::create([
-            'name' => $name,
-            'display_name' => $name,
-            'type' => 'class',
+            'name' => 'Classe_' . $suffix,
+            'display_name' => 'Classe ' . $suffix,
+            'type' => 'classe',
+        ]);
+    }
+
+    private function makeTeam(string $suffix, string $prefix = 'Equipe'): UserGroup
+    {
+        return UserGroup::create([
+            'name' => $prefix . '_' . $suffix,
+            'display_name' => $prefix . ' ' . $suffix,
+            'type' => 'equipe',
         ]);
     }
 
@@ -65,13 +74,16 @@ class UsersListingScopedTest extends TestCase
         $prof = $this->makeUser('list-prof-1', 'prof');
         $prof->assignRole('prof');
 
+        // Convention legacy : prof rattaché à Equipe_X (type='equipe'),
+        // élèves rattachés à Classe_X (type='classe'), lien par suffixe.
+        $teamA = $this->makeTeam('list-classeA');
         $classA = $this->makeClass('list-classeA');
         $classB = $this->makeClass('list-classeB');
 
         $elSame = $this->makeUser('list-el-same');
         $elOther = $this->makeUser('list-el-other');
 
-        $prof->userGroups()->attach($classA->id);
+        $prof->userGroups()->attach($teamA->id);
         $elSame->userGroups()->attach($classA->id);
         $elOther->userGroups()->attach($classB->id);
 

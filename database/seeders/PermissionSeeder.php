@@ -18,8 +18,9 @@ use Spatie\Permission\PermissionRegistrar;
  * ============================================================================
  *
  * Règles d'or (AC1) :
- *  - Les 19 permissions de `SambaPermission::cases()` sont créées via
- *    `Permission::findOrCreate` (idempotent, aucune perte si elles existent).
+ *  - Les permissions de `SambaPermission::cases()` (20 depuis Story 7.3 avec
+ *    l'ajout de `computer.remote.rdp`) sont créées via `Permission::findOrCreate`
+ *    (idempotent, aucune perte si elles existent).
  *  - Les 9 rôles de `SambaRole::cases()` sont créés via `Role::firstOrCreate`.
  *    Leurs permissions sont resynchronisées via `syncPermissions(...)`
  *    UNIQUEMENT si le rôle vient d'être créé (`wasRecentlyCreated === true`)

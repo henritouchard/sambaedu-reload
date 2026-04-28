@@ -12,8 +12,9 @@ use Illuminate\Contracts\Auth\Authenticatable;
  *
  * Story 7.2 (AC7, décisions a/b du 2026-04-23) : `resetPassword` ET `view`
  * sont désormais **scopées classe** pour le rôle `Prof`. Un Prof ne peut
- * réinitialiser le mot de passe / consulter le profil que des users
- * partageant **au moins un `UserGroup` de `type='class'`** avec lui.
+ * réinitialiser le mot de passe / consulter le profil que des users membres
+ * d'une `Classe_X` (type='classe') dont il est rattaché à l'équipe pédagogique
+ * `Equipe_X` ou `PP_X` (type='equipe', lien par suffixe X).
  *
  * Ce comportement reproduit le check legacy `sovajon_is_admin` de
  * `sambaedu/annu/people.php:254-255` — plus restrictif et plus sûr que
@@ -80,14 +81,21 @@ class UserPolicy
      */
     public function view(?Authenticatable $actor, ?User $target = null): bool
     {
-        if (!$this->canReadUsers($actor)) {
-            return false;
-        }
-
         // Correction review 7.2 #M1 : en prod, `auth()->user()` = `AuthUser` LDAP.
         // Normaliser vers l'Eloquent User pour que le scoping classe fonctionne.
         $actor = $this->resolveEloquentActor($actor);
         if ($actor === null) {
+            return false;
+        }
+
+        // Self-view : tout utilisateur authentifié peut consulter son propre
+        // profil, indépendamment de la permission `user.read`. La page reste
+        // en lecture seule (édition gardée par `update-user` côté formulaires).
+        if ($target !== null && $actor->id === $target->id) {
+            return true;
+        }
+
+        if (!$this->canReadUsers($actor)) {
             return false;
         }
 
@@ -97,7 +105,7 @@ class UserPolicy
         }
 
         // Si l'acteur est scopé classe (Prof ou EleveAdmin) sans rôle admin
-        // global, scoping strict par partage de `UserGroup.type='class'`.
+        // global, scoping strict par lien Equipe_X/PP_X (acteur) ↔ Classe_X (cible).
         if ($this->isClassScopedOnly($actor)) {
             return $this->sharesClassWithTarget($actor, $target);
         }
@@ -220,11 +228,13 @@ class UserPolicy
     }
 
     /**
-     * Décisions (a) et (b) : deux users partagent une classe si l'intersection
-     * de leurs `userGroups()->where('type', 'class')` est non-vide.
+     * Décisions (a) et (b) : un prof voit une cible si la cible est membre
+     * d'une `Classe_X` (type='classe') dont le prof est lui-même rattaché à
+     * l'équipe pédagogique correspondante (`Equipe_X` ou `PP_X`, type='equipe').
      *
-     * Le champ `type` de `user_groups` est confirmé par Henri 2026-04-22 :
-     * `class` = classe scolaire (pivot `user_group_user`).
+     * Convention de nommage confirmée par Henri 2026-04-28 : un prof n'est
+     * jamais membre de `Classe_X` (réservé aux élèves) ; le lien se fait sur
+     * le suffixe X commun à `Equipe_X` / `PP_X` / `Classe_X`.
      */
     private function sharesClassWithTarget(?Authenticatable $actor, User $target): bool
     {
@@ -232,16 +242,31 @@ class UserPolicy
             return false;
         }
 
-        $actorClassIds = $actor->userGroups()->where('type', 'class')->pluck('user_groups.id');
-        if ($actorClassIds->isEmpty()) {
+        // ESCAPE '\' explicite : Postgres tolère LIKE 'Equipe\_%' avec son
+        // escape par défaut, mais SQLite (utilisé en tests) ne l'interprète
+        // pas — l'underscore reste alors un wildcard et le scoping casse.
+        $actorClassNames = $actor->userGroups()
+            ->where('type', 'equipe')
+            ->where(function ($sub) {
+                $sub->whereRaw("name LIKE 'Equipe\\_%' ESCAPE '\\'")
+                    ->orWhereRaw("name LIKE 'PP\\_%' ESCAPE '\\'");
+            })
+            ->pluck('name')
+            ->map(fn(string $n): string => 'Classe_' . preg_replace('/^(Equipe|PP)_/', '', $n))
+            ->unique();
+
+        if ($actorClassNames->isEmpty()) {
             return false;
         }
 
-        $targetClassIds = $target->userGroups()->where('type', 'class')->pluck('user_groups.id');
-        if ($targetClassIds->isEmpty()) {
+        $targetClassNames = $target->userGroups()
+            ->where('type', 'classe')
+            ->pluck('name');
+
+        if ($targetClassNames->isEmpty()) {
             return false;
         }
 
-        return $actorClassIds->intersect($targetClassIds)->isNotEmpty();
+        return $actorClassNames->intersect($targetClassNames)->isNotEmpty();
     }
 }

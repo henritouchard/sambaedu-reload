@@ -87,6 +87,11 @@ enum SambaRole: string
                 SambaPermission::WpkgAdd,
                 SambaPermission::WpkgCreate,
                 SambaPermission::AppCustomize,
+                // Story 7.3 (décision Henri 2026-04-25 — option C) : RDP est
+                // une élévation de `ComputerControl`. Le ComputerAdmin doit
+                // l'avoir par défaut pour préserver la couverture fonctionnelle
+                // de la migration legacy `rdp_<parc>`.
+                SambaPermission::ComputerRemoteRdp,
             ],
             self::SuperAdmin => SambaPermission::cases(),
         };
