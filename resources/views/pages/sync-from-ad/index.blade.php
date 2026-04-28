@@ -70,7 +70,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 'id' => 'users_establishment',
                 'title' => '1. Importer les utilisateurs de l\'établissement',
                 'description' => 'Importe tous les utilisateurs rattachés ou liés à l\'établissement (arborescence + memberOf)',
-                'status' => 'pending', // pending, running, success, error
+                'status' => 'pending', // pending, running, success, skipped, error
                 'stats' => null,
                 'error' => null,
                 'expanded' => false,
@@ -204,9 +204,14 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                     break;
             }
 
-            $this->steps[$stepId]['status'] = 'success';
-            $this->addLog($stepId, 'success', 'Import terminé avec succès');
-            $this->toastSuccess('Import terminé avec succès');
+            if (!empty($this->steps[$stepId]['stats']['already_imported'])) {
+                $this->steps[$stepId]['status'] = 'skipped';
+                $this->toastInfo('Étape déjà exécutée — sautée');
+            } else {
+                $this->steps[$stepId]['status'] = 'success';
+                $this->addLog($stepId, 'success', 'Import terminé avec succès');
+                $this->toastSuccess('Import terminé avec succès');
+            }
         } catch (\Exception $e) {
             $this->steps[$stepId]['status'] = 'error';
             $this->steps[$stepId]['error'] = $e->getMessage();
@@ -356,15 +361,23 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             $this->addLog('rights_profiles', $level, $message);
         });
 
-        $this->addLog(
-            'rights_profiles',
-            'success',
-            sprintf(
-                '%d profils scannés, %d seedés ignorés, %d historiques mappés, %d nouveaux custom, %d custom inchangés',
-                $stats['scanned'], $stats['seeded_skipped'], $stats['historic_mapped'],
-                $stats['custom_new'], $stats['custom_unchanged']
-            )
-        );
+        if (!empty($stats['already_imported'])) {
+            $this->addLog(
+                'rights_profiles',
+                'info',
+                'Import déjà effectué — étape sautée (les profils sont gérés en SQL).'
+            );
+        } else {
+            $this->addLog(
+                'rights_profiles',
+                'success',
+                sprintf(
+                    '%d profils scannés, %d seedés ignorés, %d historiques mappés, %d nouveaux custom, %d custom inchangés',
+                    $stats['scanned'], $stats['seeded_skipped'], $stats['historic_mapped'],
+                    $stats['custom_new'], $stats['custom_unchanged']
+                )
+            );
+        }
         $this->steps['rights_profiles']['stats'] = $stats;
     }
 
@@ -458,6 +471,12 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                                     @case('success')
                                         <div class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center">
                                             <i class="fa-solid fa-check text-success"></i>
+                                        </div>
+                                    @break
+
+                                    @case('skipped')
+                                        <div class="w-10 h-10 rounded-full bg-info/10 flex items-center justify-center" title="Étape déjà exécutée — sautée">
+                                            <i class="fa-solid fa-forward text-info"></i>
                                         </div>
                                     @break
 
@@ -593,7 +612,8 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
 
         {{-- Summary --}}
         @php
-            $completedSteps = collect($steps)->where('status', 'success')->count();
+            $completedSteps = collect($steps)->whereIn('status', ['success', 'skipped'])->count();
+            $skippedSteps = collect($steps)->where('status', 'skipped')->count();
             $totalSteps = count($steps);
             $hasErrors = collect($steps)->where('status', 'error')->count() > 0;
         @endphp
@@ -611,10 +631,18 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                             @if ($hasErrors)
                                 <p class="text-error font-medium">Synchronisation interrompue suite à une erreur</p>
                             @elseif ($completedSteps === $totalSteps)
-                                <p class="text-success font-medium">Synchronisation terminée avec succès !</p>
+                                <p class="text-success font-medium">Synchronisation terminée avec succès !
+                                    @if ($skippedSteps > 0)
+                                        <span class="text-info text-sm">({{ $skippedSteps }} étape(s) sautée(s))</span>
+                                    @endif
+                                </p>
                             @else
                                 <p class="text-base-content/70">{{ $completedSteps }} étape(s) sur {{ $totalSteps }}
-                                    terminée(s)</p>
+                                    terminée(s)
+                                    @if ($skippedSteps > 0)
+                                        <span class="text-info">— dont {{ $skippedSteps }} sautée(s)</span>
+                                    @endif
+                                </p>
                             @endif
                         </div>
                     </div>

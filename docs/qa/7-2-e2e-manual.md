@@ -15,30 +15,79 @@ valider le comportement production.
 
 1. Se connecter en SuperAdmin (`admin`).
 2. Naviguer vers `/app/rights-management`, onglet "Profils".
-3. Cliquer "Nouveau profil".
+3. Menu **Actions** (haut-droite) → **Nouveau profil** → la page
+   `/app/rights-management/profiles/new` s'ouvre.
 4. Nom = "Animateur CDI", cocher : `computer.view`, `computer.control`,
-   `user.read`. Valider.
-5. Vérifier : ligne apparue avec badge `custom` + "3 permissions".
-6. Assigner le profil à un user test via le drawer (onglet
-   "Droits d'un utilisateur").
+   `user.read`. Cliquer **Créer le profil**.
+5. Redirigé vers `/app/rights-management/profiles/Animateur CDI`,
+   confirmation "Profil créé". Retour onglet Profils → ligne apparue avec
+   badge `custom` + "3 permissions".
+6. Assigner le profil à un user test :
+   - Aller sur `/app/users`, cocher la ligne du user test.
+   - Cliquer **Actions** → **Gérer les droits** → drawer s'ouvre, onglet
+     **Rôles**.
+   - Vérifier que "Animateur CDI" apparaît dans la liste avec le badge
+     `custom` (sinon → bug, le drawer ne lit plus tous les rôles Spatie).
+   - Sélectionner "Animateur CDI", cliquer **Assigner le rôle**.
 7. Vérifier : l'user peut consulter `/app/parc` (si scoping via délégation
    autorise).
-8. Retourner onglet Profils, bouton **Supprimer** sur "Animateur CDI" →
-   garde-fou toast warning "Retirer d'abord ce rôle des 1 utilisateur(s)".
-9. Retirer le rôle du user → retourner et re-cliquer Supprimer → succès.
+8. Retourner sur `/app/rights-management`, onglet Profils, cocher la ligne
+   "Animateur CDI" et menu **Actions** → **Supprimer la sélection** →
+   toast error "1 profil(s) ignoré(s) car portés par des utilisateurs."
+9. Retirer le rôle du user (drawer côté `/app/users` → **Retirer le rôle**)
+   → revenir onglet Profils, re-cocher et re-cliquer **Supprimer la
+   sélection** → succès.
 
 ## Scénario 2 — Seed idempotent
 
-```bash
-ssh root@192.168.122.50 'cd /var/www/sambaedu-reload && php artisan db:seed --class=PermissionSeeder'
-```
+> **Note** : les profils seedés sont volontairement non-modifiables via l'UI
+> (rights-management → Profils). Ce scénario se vérifie donc en base directe
+> via `tinker`, et les stats du seeder sont émises via `Log::info` (et
+> retournées par `run()`) — il n'y a pas de sortie console formattée par
+> défaut. On lit `storage/logs/laravel.log` après chaque run.
+>
+> Pour forcer la resynchro des rôles seedés existants, le flag CLI `--force`
+> de `db:seed` n'est PAS propagé à `PermissionSeeder::run(bool $force)` ; il
+> faut appeler le seeder directement via tinker (cf. étape 5).
 
-- Première fois : "X permissions créées, Y rôles seedés".
-- Modifier à l'UI les permissions du rôle `computer-admin` (retirer
-  `computer.control`).
-- Relancer le seed → "0 nouveaux, N préservés".
-- Vérifier : `computer-admin` n'a plus `computer.control` (préservé).
-- Relancer avec `--force` (à adapter) → permissions restaurées selon enum.
+1. Lancer le seed et lire le log :
+
+   ```bash
+   ssh root@192.168.122.50 'cd /var/www/sambaedu-reload \
+     && php artisan db:seed --class=PermissionSeeder \
+     && tail -n 20 storage/logs/laravel.log | grep PermissionSeeder'
+   ```
+
+   Première fois sur une base vierge : la ligne de log contient
+   `permissions_created: 19, roles_seeded_new: 9, roles_seeded_preserved: 0,
+   roles_custom_preserved: 0`.
+
+2. Simuler une dérive (impossible via UI, donc via tinker) : retirer
+   `computer.control` du rôle `computer-admin`.
+
+   ```bash
+   ssh root@192.168.122.50 'cd /var/www/sambaedu-reload && php artisan tinker --execute="
+     \$r = Spatie\Permission\Models\Role::where(\"name\", \"computer-admin\")->firstOrFail();
+     \$r->revokePermissionTo(\"computer.control\");
+     echo \$r->permissions->pluck(\"name\")->implode(\",\");
+   "'
+   ```
+
+3. Relancer le seed et lire le log → `permissions_created: 0,
+   roles_seeded_new: 0, roles_seeded_preserved: 9` (la dérive est préservée).
+
+4. Vérifier en base que `computer-admin` n'a toujours pas `computer.control`.
+
+5. Relancer en mode forcé (resync des seedés selon enum) :
+
+   ```bash
+   ssh root@192.168.122.50 'cd /var/www/sambaedu-reload && php artisan tinker --execute="
+     print_r(app(Database\Seeders\PermissionSeeder::class)->run(true));
+   "'
+   ```
+
+   Le retour doit afficher `roles_seeded_synced_forced: 9` et
+   `computer-admin` retrouve `computer.control`.
 
 ## Scénario 3 — Sync AD non-destructif
 

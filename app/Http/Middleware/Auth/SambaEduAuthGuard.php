@@ -74,11 +74,14 @@ class SambaEduAuthGuard implements AuthGuardInterface
         // auth()->user() renverra un `App\Models\User` Eloquent (source de vérité
         // Spatie + délégations scopées). L'auto-provisioning DB est déjà fait
         // ci-dessus par `ensureEloquentUser`.
-        if (!Auth::check()) {
-            $eloquentUser = User::findByLogin($login);
-            if ($eloquentUser) {
-                Auth::login($eloquentUser);
-            }
+        //
+        // On réaligne le guard `web` à chaque requête où la session LDAP
+        // courante ne correspond pas à l'Eloquent connecté. Sans ce check,
+        // une session web résiduelle (logout LDAP sans Auth::logout) ferait
+        // passer les middlewares `can:*` sur l'identité du user précédent.
+        $eloquentUser = User::findByLogin($login);
+        if ($eloquentUser && Auth::id() !== $eloquentUser->id) {
+            Auth::login($eloquentUser);
         }
         return $next($request);
     }

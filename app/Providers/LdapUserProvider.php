@@ -35,7 +35,10 @@ class LdapUserProvider implements UserProvider
             return null;
         }
 
-        return $this->resolveUser((string) $identifier);
+        // L'identifier provient de Auth::login() → c'est la PK Eloquent (id),
+        // pas un login. Avant le passage à Eloquent (commit 56ba789), AuthUser
+        // utilisait le login comme identifier — d'où le résolveur par login.
+        return User::find($identifier);
     }
 
     public function retrieveByToken($identifier, $token): ?Authenticatable

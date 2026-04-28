@@ -50,7 +50,7 @@ class RequireAdminRights
 
         if (!$user) {
             Log::warning('RequireAdminRights: Aucun utilisateur trouvé');
-            return $this->unauthorized($request);
+            return $this->redirectToLogin($request);
         }
 
         // Vérifier les droits admin via le DTO User
@@ -125,5 +125,26 @@ class RequireAdminRights
         }
 
         return redirect()->back()->with('error', $message);
+    }
+
+    /**
+     * Redirige vers la page de login en mémorisant l'URL demandée.
+     * Utilisé quand aucun utilisateur n'est résolu — `back()` boucle dans ce
+     * cas (pas de Referer sur un accès direct → 302 vers la même URL).
+     */
+    private function redirectToLogin(Request $request): Response
+    {
+        if ($request->expectsJson() || $request->is('api/*')) {
+            return response()->json([
+                'error' => 'Unauthorized',
+                'message' => 'Authentification requise',
+            ], 401);
+        }
+
+        if ($request->hasSession()) {
+            $request->session()->put('url.intended', $request->fullUrl());
+        }
+
+        return redirect()->route('auth.login');
     }
 }

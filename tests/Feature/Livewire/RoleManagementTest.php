@@ -70,7 +70,6 @@ class RoleManagementTest extends TestCase
         $this->actingAs($admin);
 
         $component = Livewire::test($this->pageComponent())
-            ->call('setActiveTab', 'profiles')
             ->call('loadProfiles');
 
         $profiles = $component->get('profilesList');

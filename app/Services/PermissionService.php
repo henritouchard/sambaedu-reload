@@ -604,6 +604,15 @@ class PermissionService
      *   errors: int,
      * }
      */
+    /**
+     * Clé `system_settings` qui marque l'import unique des profils custom AD.
+     * Une fois posée, l'import devient un no-op : les profils de droits sont
+     * des permissions web — l'AD n'est plus la source de vérité après bootstrap.
+     * Pour ré-autoriser un import (cas exceptionnel), supprimer la clé via
+     * `SystemSetting::forget(self::CUSTOM_PROFILES_IMPORTED_KEY)`.
+     */
+    public const CUSTOM_PROFILES_IMPORTED_KEY = 'rights_profiles.imported_at';
+
     public function importCustomProfilesFromAd(?callable $logger = null, ?callable $profilesFetcher = null): array
     {
         $log = $logger ?? fn(string $lvl, string $msg) => Log::log($lvl, "[PermissionService/importCustomProfilesFromAd] {$msg}");
@@ -615,7 +624,18 @@ class PermissionService
             'custom_new'       => 0,
             'custom_unchanged' => 0,
             'errors'           => 0,
+            'already_imported' => false,
         ];
+
+        // Verrou one-shot : si l'import a déjà été effectué, no-op total. Les
+        // profils sont désormais des entités SQL pures (renommables, supprimables
+        // sans risque de doublon par ré-import depuis l'AD).
+        $importedAt = \App\Models\SystemSetting::get(self::CUSTOM_PROFILES_IMPORTED_KEY);
+        if ($importedAt !== null) {
+            $stats['already_imported'] = true;
+            $log('info', "Import déjà effectué le {$importedAt} — aucune action.");
+            return $stats;
+        }
 
         // Story 7.2 — Tests : on injecte un fetcher de profils mocké. Par défaut,
         // on utilise le shim AD réel via LdapRightGroup.
@@ -707,6 +727,15 @@ class PermissionService
 
         // Invalide le cache Spatie pour que les nouveaux rôles soient visibles immédiatement.
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+
+        // Pose le verrou one-shot. Tant qu'aucune erreur n'a interrompu
+        // l'import (try/catch interne par profil → on tolère les erreurs
+        // unitaires), on considère l'opération terminée et on bloque les
+        // ré-imports futurs.
+        \App\Models\SystemSetting::set(
+            self::CUSTOM_PROFILES_IMPORTED_KEY,
+            now()->toIso8601String()
+        );
 
         $log('info', sprintf(
             "Rapatriement terminé : %d scannés, %d seedés ignorés, %d historiques mappés, %d custom nouveaux, %d custom inchangés, %d erreurs",

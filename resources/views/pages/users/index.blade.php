@@ -9,6 +9,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -20,7 +21,9 @@ new class extends Component {
     public string $activeTab = 'users';
     public string $search = '';
     public string $groupsSearch = '';
+    #[Url(as: 'per')]
     public int $perPage = 20;
+    public const PER_PAGE_OPTIONS = [10, 20, 50, 100];
     public array $role = [];
     public array $status = [];
     public array $group = [];
@@ -60,6 +63,18 @@ new class extends Component {
     {
         $this->selectedUsers = [];
         $this->resetPage();
+    }
+
+    public function updatedPerPage(): void
+    {
+        if (!in_array($this->perPage, self::PER_PAGE_OPTIONS, true)) {
+            $this->perPage = 20;
+        }
+
+        $this->selectedUsers = [];
+        $this->selectedUserGroups = [];
+        $this->resetPage();
+        $this->resetPage(pageName: 'groupsPage');
     }
 
     public function updatedGroupsSearch(): void
@@ -296,27 +311,38 @@ new class extends Component {
         }
 
         // Correction review 7.2 #3 — RGPD : un Prof (ou EleveAdmin) scopé classe
-        // ne doit voir que les users de ses propres classes. Sans ce filtre
+        // ne doit voir que les élèves de ses propres classes. Sans ce filtre
         // Eloquent, le listing contourne la Policy `UserPolicy::view()` qui
         // n'est appliquée que sur les targets individuels.
+        //
+        // Un prof n'est PAS membre de `Classe_X` (réservé aux élèves) mais de
+        // `Equipe_X` et/ou `PP_X` (type='equipe'). Le lien équipe↔classe se
+        // fait par convention de nommage sur le suffixe X.
         $actor = auth()->user();
 
         if ($actor instanceof User
             && $actor->hasAnyRole(['prof', 'eleve-admin'])
             && !$actor->hasAnyRole(UserPolicy::GLOBAL_USER_ROLES)
         ) {
-            $classIds = $actor->userGroups()
-                ->where('type', 'class')
-                ->pluck('user_groups.id');
+            $classNames = $actor->userGroups()
+                ->where('type', 'equipe')
+                ->where(function (Builder $sub) {
+                    $sub->where('name', 'LIKE', 'Equipe\_%')
+                        ->orWhere('name', 'LIKE', 'PP\_%');
+                })
+                ->pluck('name')
+                ->map(fn(string $n): string => 'Classe_' . preg_replace('/^(Equipe|PP)_/', '', $n))
+                ->unique()
+                ->values();
 
-            if ($classIds->isEmpty()) {
-                // Acteur scopé classe sans classe attachée : aucun user visible.
+            if ($classNames->isEmpty()) {
+                // Acteur scopé classe sans équipe pédagogique attachée : aucun user visible.
                 $query->whereRaw('1 = 0');
             } else {
                 $query->whereHas(
                     'userGroups',
-                    fn(Builder $q) => $q->whereIn('user_groups.id', $classIds)
-                        ->where('type', 'class')
+                    fn(Builder $q) => $q->where('type', 'classe')
+                        ->whereIn('name', $classNames->all())
                 );
             }
         }
@@ -375,6 +401,11 @@ new class extends Component {
                 <div class="flex gap-2">
                     <input type="text" wire:model.live.debounce.350ms="search" class="input input-bordered w-full"
                         placeholder="Nom, prénom ou login..." />
+                    <select wire:model.live="perPage" class="select select-bordered w-auto" title="Lignes par page">
+                        @foreach (self::PER_PAGE_OPTIONS as $option)
+                            <option value="{{ $option }}">{{ $option }} / page</option>
+                        @endforeach
+                    </select>
                     <button type="button" class="btn btn-outline" wire:click="$dispatch('toggle-users-filters-modal')">
                         <i class="fa-solid fa-filter"></i>
                         Filtres
@@ -423,82 +454,45 @@ new class extends Component {
                 <div class="flex gap-2">
                     <input type="text" wire:model.live.debounce.300ms="groupsSearch"
                         class="input input-bordered w-full" placeholder="Nom, nom affiché ou type..." />
+                    <select wire:model.live="perPage" class="select select-bordered w-auto" title="Lignes par page">
+                        @foreach (self::PER_PAGE_OPTIONS as $option)
+                            <option value="{{ $option }}">{{ $option }} / page</option>
+                        @endforeach
+                    </select>
                 </div>
             @endif
         </div>
     </div>
 
     @if ($activeTab === 'users')
-        @teleport('body')
-            <dialog class="modal" x-data="{ open: @entangle('isFiltersModalOpen') }" :class="{ 'modal-open': open }" x-cloak>
-                <div class="modal-box max-w-2xl max-h-[85vh] overflow-y-auto">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="font-bold text-lg">Filtres utilisateurs</h3>
-                        <button type="button" class="btn btn-sm btn-circle btn-ghost"
-                            wire:click="closeFiltersModal">✕</button>
-                    </div>
+        <x-molecules.modal wire:model="isFiltersModalOpen" size="max-w-2xl" height="h-auto max-h-[85vh]"
+            title="Filtres utilisateurs" icon="fa-filter text-primary" closeMethod="closeFiltersModal">
+            <x-molecules.modal.section title="Rôles" icon="fa-user-tag text-primary">
+                <livewire:components::molecules.smart-select wire:model="role" :options="$this->roleFilterOptions"
+                    :multiple="true" :filterable="true" :clearable="true" :inline="true" :show-trigger="false"
+                    panel-class="border-0 rounded-none bg-transparent" list-class="p-0"
+                    placeholder="Sélectionner un ou plusieurs rôles" />
+            </x-molecules.modal.section>
 
-                    <div class="space-y-3">
-                        <details class="border border-base-300 rounded-lg bg-base-100" open>
-                            <summary class="px-4 py-3 cursor-pointer font-medium flex items-center justify-between">
-                                <span class="inline-flex items-center gap-2">
-                                    <i class="fa-solid fa-user-tag text-primary"></i>
-                                    Rôles
-                                </span>
-                                <i class="fa-solid fa-chevron-down text-xs opacity-70"></i>
-                            </summary>
-                            <div class="px-4 pb-4">
-                                <livewire:components::molecules.smart-select wire:model.live="role" :options="$this->roleFilterOptions"
-                                    :multiple="true" :filterable="true" :clearable="true" :inline="true"
-                                    :show-trigger="false" panel-class="border-0 rounded-none bg-transparent" list-class="p-0"
-                                    placeholder="Sélectionner un ou plusieurs rôles" />
-                            </div>
-                        </details>
+            <x-molecules.modal.section title="Statuts" icon="fa-toggle-on text-primary">
+                <livewire:components::molecules.smart-select wire:model="status" :options="$this->statusFilterOptions"
+                    :multiple="true" :filterable="true" :clearable="true" :inline="true" :show-trigger="false"
+                    panel-class="border-0 rounded-none bg-transparent" list-class="p-0"
+                    placeholder="Sélectionner un ou plusieurs statuts" />
+            </x-molecules.modal.section>
 
-                        <details class="border border-base-300 rounded-lg bg-base-100" open>
-                            <summary class="px-4 py-3 cursor-pointer font-medium flex items-center justify-between">
-                                <span class="inline-flex items-center gap-2">
-                                    <i class="fa-solid fa-toggle-on text-primary"></i>
-                                    Statuts
-                                </span>
-                                <i class="fa-solid fa-chevron-down text-xs opacity-70"></i>
-                            </summary>
-                            <div class="px-4 pb-4">
-                                <livewire:components::molecules.smart-select wire:model.live="status" :options="$this->statusFilterOptions"
-                                    :multiple="true" :filterable="true" :clearable="true" :inline="true"
-                                    :show-trigger="false" panel-class="border-0 rounded-none bg-transparent" list-class="p-0"
-                                    placeholder="Sélectionner un ou plusieurs statuts" />
-                            </div>
-                        </details>
+            <x-molecules.modal.section title="Groupes" icon="fa-users text-primary">
+                <livewire:components::molecules.smart-select wire:model="group" :options="$this->groupFilterOptions"
+                    :multiple="true" :filterable="true" :clearable="true" :inline="true" :show-trigger="false"
+                    panel-class="border-0 rounded-none bg-transparent" list-class="p-0"
+                    placeholder="Rechercher et sélectionner des groupes" />
+            </x-molecules.modal.section>
 
-                        <details class="border border-base-300 rounded-lg bg-base-100" open>
-                            <summary class="px-4 py-3 cursor-pointer font-medium flex items-center justify-between">
-                                <span class="inline-flex items-center gap-2">
-                                    <i class="fa-solid fa-users text-primary"></i>
-                                    Groupes
-                                </span>
-                                <i class="fa-solid fa-chevron-down text-xs opacity-70"></i>
-                            </summary>
-                            <div class="px-4 pb-4">
-                                <livewire:components::molecules.smart-select wire:model.live="group" :options="$this->groupFilterOptions"
-                                    :multiple="true" :filterable="true" :clearable="true" :inline="true"
-                                    :show-trigger="false" panel-class="border-0 rounded-none bg-transparent" list-class="p-0"
-                                    placeholder="Rechercher et sélectionner des groupes" />
-                            </div>
-                        </details>
-                    </div>
-
-                    <div class="modal-action">
-                        <button type="button" class="btn btn-ghost" wire:click="resetFilters">Réinitialiser</button>
-                        <button type="button" class="btn btn-primary" wire:click="closeFiltersModal">Appliquer</button>
-                    </div>
-                </div>
-
-                <form method="dialog" class="modal-backdrop">
-                    <button type="button" wire:click="closeFiltersModal">close</button>
-                </form>
-            </dialog>
-        @endteleport
+            <x-slot:footer>
+                <button type="button" class="btn btn-ghost" wire:click="resetFilters">Réinitialiser</button>
+                <button type="button" class="btn btn-primary" wire:click="closeFiltersModal">Appliquer</button>
+            </x-slot:footer>
+        </x-molecules.modal>
     @endif
 
     @if ($activeTab === 'users')

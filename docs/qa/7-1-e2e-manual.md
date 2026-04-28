@@ -11,52 +11,89 @@
 
 ---
 
-## Scénario 1 — Grant simple
+## Scénario 1 — Grant auto sur état vide (UX état→action)
 
 1. Se connecter en admin.
-2. Aller sur `/app/users`.
-3. Cocher `enseignant.test` dans la liste, cliquer sur "Gérer les droits".
-4. Dans le drawer → onglet "Délégations".
-5. Sélectionner la salle A dans le select.
-6. Cocher `computer.view` et `computer.control`.
-7. Cliquer "Accorder 2 délégation(s)".
+2. Aller sur `/app/users`, cocher `enseignant.test`, cliquer "Gérer les droits".
+3. Dans le drawer → onglet "Délégations".
+4. **Choisir salle A** dans le premier select.
+5. **Choisir `computer.view`** dans le second select.
+6. Observer le **tableau d'état** : colonne "Utilisateur" = `enseignant.test`, "Origine" = "Aucun droit", "État" = badge gris "Aucun", "Action Auto" = badge bleu "Accorder".
+7. Cliquer sur le bouton "Appliquer l'action suggérée".
 
 **Attendu** :
-- Toast vert "2 délégation(s) sur 'salle-A' accordée(s) à 1 utilisateur(s).".
+- Toast vert "Sur 'salle-A' (computer.view) : 1 accordée(s).".
 - Le drawer **ne se ferme pas** (AC7).
-- Sur `/rights-management` → onglet "Délégations actives" : 2 lignes avec badges verts "Accordée".
-- Onglet "Historique" : 2 entrées `grant` récentes (acteur = admin, cible = enseignant.test).
+- Recharger/ouvrir le drawer → l'état passe à "Délégation sur cette salle / Autorisé / Révoquer".
+- `/rights-management` → onglet "Délégations actives" : 1 ligne avec badge vert "Accordée".
+- Onglet "Historique" : 1 entrée `grant` récente (acteur = admin, cible = enseignant.test).
 
-## Scénario 2 — Grant multi-users en batch
+## Scénario 2 — Batch multi-user hétérogène
 
-1. Sur `/app/users`, sélectionner 3 utilisateurs (enseignant.test + 2 autres).
-2. Ouvrir le drawer, onglet Délégations.
-3. Salle A, permission `wpkg.assign`. Cliquer Accorder.
+**Préparation** :
+- `user.A` = pas de droit sur salle A / `computer.view`.
+- `user.B` = déjà une délégation positive sur salle A / `computer.view`.
+- `user.C` = permission globale `computer.view` (rôle ou perm directe).
+- `user.D` = exclusion active sur salle A / `computer.view`.
+
+1. Sur `/app/users`, sélectionner les 4 users, ouvrir le drawer, onglet Délégations.
+2. Choisir salle A + permission `computer.view`.
+3. Observer le tableau d'état :
+   - `user.A` → "Aucun droit" / "Accorder"
+   - `user.B` → "Délégation sur cette salle" / "Révoquer"
+   - `user.C` → "Permission globale directe" ou "Permission via rôle" / "Exclure"
+   - `user.D` → "Exclusion scopée" / "Lever l'exclusion"
+4. Cliquer "Appliquer l'action suggérée".
 
 **Attendu** :
-- Toast "1 délégation(s) sur 'salle-A' accordée(s) à 3 utilisateur(s).".
-- `/rights-management` → "Délégations actives" : 3 nouvelles lignes.
-- Historique : 3 entrées `grant` distinctes (target_user_id différent).
+- Toast vert avec synthèse du style "Sur 'salle-A' (computer.view) : 1 accordée(s), 1 révoquée(s), 1 exclusion(s) créée(s), 1 exclusion(s) levée(s).".
+- Historique : 4 entrées distinctes, chacune avec la bonne `action` et `is_negative`.
+- Rouvrir le drawer sur les mêmes 4 users → l'état reflète la nouvelle situation.
 
-## Scénario 3 — Grant négative (exclusion)
+## Scénario 3 — Exclusion forcée sur user ayant droit global
 
-1. Avant ce scénario, donner via seed ou directement `computer.view` global à `enseignant.test` (pour avoir un cas où il a accès global mais on veut l'exclure d'une salle précise).
+1. Donner à `enseignant.test` la permission globale `computer.view` (rôle prof ou perm directe).
 2. Ouvrir le drawer pour `enseignant.test`, onglet Délégations.
-3. **Cocher le toggle "Marquer comme exclusion (négative)"**.
-4. Vérifier que le toggle "Retirer les délégations" se décoche automatiquement.
-5. Sélectionner salle B, permission `computer.view`.
-6. Cliquer "Exclure 1 délégation(s)".
+3. Choisir salle B + `computer.view`.
+4. Vérifier dans le tableau : "Origine" = "Permission globale directe" (ou "via rôle"), "Action Auto" = "Exclure".
+5. Cliquer "Appliquer l'action suggérée".
 
 **Attendu** :
-- Toast vert "1 délégation(s) sur 'salle-B' marquée(s) en exclusion sur 1 utilisateur(s).".
-- `/rights-management` → onglet "Délégations actives" : nouvelle ligne avec badge rouge "Exclusion" sur salle-B.
+- Toast vert "Sur 'salle-B' (computer.view) : 1 exclusion(s) créée(s).".
+- `/rights-management` → nouvelle ligne avec badge rouge "Exclusion" sur salle-B.
 - Historique : entrée `negate` avec `is_negative=true`.
-- Test fonctionnel : se connecter en `enseignant.test`, aller sur `/parc` → voit toutes les salles SAUF B (ou B non-cliquable selon droit global restant). Essayer `/parc/groups/{idB}` → redirection `/parc` + toast "Vous n'avez pas accès à cette ressource.".
+- Test fonctionnel : se connecter en `enseignant.test`, aller sur `/parc` → ne voit pas salle B. `/parc/groups/{idB}` → redirection `/parc` + toast "Vous n'avez pas accès à cette ressource.".
 
-## Scénario 4 — Révocation unitaire depuis `/rights-management`
+## Scénario 4 — Lever une exclusion (restauration du droit global)
+
+1. Utiliser `enseignant.test` avec la config posée au scénario 3 (exclusion active sur salle B).
+2. Ouvrir le drawer, choisir salle B + `computer.view`.
+3. Vérifier dans le tableau : "Origine" = "Exclusion scopée", "État" = "Bloqué" (rouge), "Action Auto" = "Lever l'exclusion".
+4. Cliquer "Appliquer l'action suggérée".
+
+**Attendu** :
+- Toast vert "Sur 'salle-B' (computer.view) : 1 exclusion(s) levée(s).".
+- `/rights-management` : la ligne d'exclusion a disparu.
+- Historique : entrée `revoke` avec `is_negative=true`.
+- Test fonctionnel : `enseignant.test` voit de nouveau salle B dans `/parc` (le droit global reprend).
+
+## Scénario 4.bis — Option avancée "Forcer une action"
+
+1. Sélectionner `enseignant.test` (état : positive active sur salle A / `computer.view`).
+2. Ouvrir le drawer, choisir salle A + `computer.view`. "Action Auto" = "Révoquer".
+3. **Déplier "Options avancées"** → sélectionner "Exclure (toujours)".
+4. Observer que le libellé du bouton devient "Appliquer : Exclure".
+5. Cliquer.
+
+**Attendu** :
+- Toast vert "Sur 'salle-A' (computer.view) : 1 exclusion(s) créée(s).".
+- En base : la positive existe **toujours** + une nouvelle négative est créée (l'exclusion scopée prévaut sur la positive scopée → user bloqué en effet).
+- Historique : entrée `negate` (pas de revoke parallèle).
+
+## Scénario 4.ter — Révocation unitaire depuis `/rights-management`
 
 1. Sur `/rights-management` → onglet "Délégations actives".
-2. Sur la ligne `enseignant.test` / salle-A / `computer.view`, cliquer corbeille.
+2. Sur une ligne `enseignant.test` / salle-A / `computer.view`, cliquer corbeille.
 3. Confirmer le `wire:confirm`.
 
 **Attendu** :

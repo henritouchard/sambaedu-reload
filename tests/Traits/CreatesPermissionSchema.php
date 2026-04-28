@@ -182,6 +182,16 @@ trait CreatesPermissionSchema
             });
             $this->createdTables[] = 'delegation_history';
         }
+
+        if (!Schema::hasTable('system_settings')) {
+            Schema::create('system_settings', function (Blueprint $table) {
+                $table->id();
+                $table->string('key', 191)->unique();
+                $table->json('value')->nullable();
+                $table->timestamps();
+            });
+            $this->createdTables[] = 'system_settings';
+        }
     }
 
     protected function dropPermissionSchema(): void
@@ -192,6 +202,7 @@ trait CreatesPermissionSchema
         // delegations → model_has_* / roles / permissions → workstation_groups
         // → user_group_user → user_groups → users).
         $dropOrder = [
+            'system_settings',
             'delegation_history',
             'delegations',
             'model_has_permissions',

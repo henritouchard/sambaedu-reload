@@ -70,8 +70,19 @@ new class extends Component {
             ->toArray();
     }
 
+    /**
+     * Ouvre la modale. Story 7.2 — accepte optionnellement un triplet
+     * (workstationGroupId, permission, expiresAt) pour pré-remplir la modale
+     * en mode "édition" d'une délégation existante (clic ligne dans le tableau
+     * Délégations actives de /app/rights-management).
+     */
     #[On('open-delegation-modal')]
-    public function open(array $users = []): void
+    public function open(
+        array $users = [],
+        ?int $workstationGroupId = null,
+        ?string $permission = null,
+        ?string $expiresAt = null,
+    ): void
     {
         abort_unless(Gate::allows('user.assign.right'), 403);
 
@@ -79,6 +90,17 @@ new class extends Component {
         $this->isOpen = true;
         $this->resetForm();
         $this->loadAvailableData();
+
+        if ($workstationGroupId !== null) {
+            $this->selectedWorkstationGroupId = $workstationGroupId;
+        }
+        if ($permission !== null) {
+            $this->selectedDelegationPermission = $permission;
+        }
+        if ($expiresAt !== null) {
+            $this->hasExpiration = true;
+            $this->delegationExpiresAt = $expiresAt;
+        }
     }
 
     public function close(): void
@@ -344,6 +366,10 @@ new class extends Component {
         if ($anyAuditFailed) {
             $this->toastWarning("Action(s) appliquée(s) mais la traçabilité n'a pas été enregistrée pour une ou plusieurs opérations. Contactez l'administrateur.");
         }
+
+        // Story 7.2 — notifier les pages parentes (rights-management) pour
+        // qu'elles puissent rafraîchir leur tableau de délégations actives.
+        $this->dispatch('delegations-changed');
 
         $this->processing = false;
     }

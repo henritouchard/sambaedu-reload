@@ -250,11 +250,18 @@ class SyncAllFromAdJob implements ShouldQueue
      */
     private function syncWorkstationGroups(array $groupesAd): void
     {
+        $byGuid = WorkstationGroup::whereNotNull('ad_guid')->get()->keyBy('ad_guid');
+        $byName = WorkstationGroup::whereNull('ad_guid')->get()->keyBy(fn($g) => strtolower($g->name));
+
         foreach ($groupesAd as $groupeAd) {
             $name = $groupeAd['name'];
+            $guid = $groupeAd['uuid'] ?? null;
 
-            // Utiliser updateOrCreate pour éviter les violations de contrainte unique
-            $group = WorkstationGroup::where('name', $name)->first();
+            // Match GUID en priorité (clé immutable côté AD), fallback nom uniquement
+            // pour les groupes locaux pas encore liés à un GUID AD.
+            $group = ($guid && $byGuid->has($guid))
+                ? $byGuid->get($guid)
+                : $byName->get(strtolower($name));
 
             if ($group) {
                 // Mise à jour si nécessaire
@@ -301,15 +308,21 @@ class SyncAllFromAdJob implements ShouldQueue
      */
     private function syncAppProfiles(array $parcsAd): void
     {
-        $existingProfiles = AppProfile::all()->keyBy(fn($p) => strtolower($p->name));
+        $byGuid = AppProfile::whereNotNull('ad_guid')->get()->keyBy('ad_guid');
+        $byName = AppProfile::whereNull('ad_guid')->get()->keyBy(fn($p) => strtolower($p->name));
 
         foreach ($parcsAd as $parcAd) {
             $name = $parcAd['name'];
-            $nameLower = strtolower($name);
+            $guid = $parcAd['uuid'] ?? null;
 
-            if ($existingProfiles->has($nameLower)) {
-                // Mise à jour si nécessaire
-                $profile = $existingProfiles->get($nameLower);
+            // Match GUID en priorité (clé immutable côté AD). Fallback nom
+            // uniquement pour les profils locaux pas encore liés à un GUID AD —
+            // permet le bootstrap d'une base existante sans créer de doublons.
+            $profile = ($guid && $byGuid->has($guid))
+                ? $byGuid->get($guid)
+                : $byName->get(strtolower($name));
+
+            if ($profile) {
                 $updated = false;
 
                 if (empty($profile->ad_guid) && !empty($parcAd['uuid'])) {
@@ -377,15 +390,18 @@ class SyncAllFromAdJob implements ShouldQueue
      */
     private function syncWorkstations(array $machinesAd): void
     {
-        $existingWorkstations = Workstation::all()->keyBy(fn($w) => strtolower($w->name));
+        $byGuid = Workstation::whereNotNull('ad_guid')->get()->keyBy('ad_guid');
+        $byName = Workstation::whereNull('ad_guid')->get()->keyBy(fn($w) => strtolower($w->name));
 
         foreach ($machinesAd as $machineAd) {
             $name = $machineAd['name'];
-            $nameLower = strtolower($name);
+            $guid = $machineAd['uuid'] ?? null;
 
-            if ($existingWorkstations->has($nameLower)) {
-                // Mise à jour si nécessaire
-                $workstation = $existingWorkstations->get($nameLower);
+            $workstation = ($guid && $byGuid->has($guid))
+                ? $byGuid->get($guid)
+                : $byName->get(strtolower($name));
+
+            if ($workstation) {
                 $updated = false;
 
                 if (empty($workstation->ad_guid) && !empty($machineAd['uuid'])) {

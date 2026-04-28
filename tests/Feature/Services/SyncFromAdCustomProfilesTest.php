@@ -88,12 +88,13 @@ class SyncFromAdCustomProfilesTest extends TestCase
         $this->assertEquals(0, $stats['custom_new']);
     }
 
-    public function test_never_rewrites_existing_custom_profile(): void
+    public function test_lock_prevents_second_import_from_touching_existing_profiles(): void
     {
-        // 1er passage : crée le rôle avec un bitmask précis.
+        // 1er passage : crée le rôle avec un bitmask précis et pose le verrou.
         $fetcher1 = fn() => ['Animateur CDI' => 0x100]; // ComputerView
         $stats1 = $this->service()->importCustomProfilesFromAd(null, $fetcher1);
         $this->assertEquals(1, $stats1['custom_new']);
+        $this->assertFalse($stats1['already_imported']);
 
         $role = Role::where('name', 'Animateur CDI')->first();
         $this->assertEquals(1, $role->permissions->count());
@@ -104,12 +105,14 @@ class SyncFromAdCustomProfilesTest extends TestCase
             SambaPermission::UserRead->value,
         ]);
 
-        // 2ᵉ passage : bitmask différent dans l'AD.
-        $fetcher2 = fn() => ['Animateur CDI' => 0xFF00]; // pleins d'autres perms
+        // 2ᵉ passage : bitmask différent dans l'AD → no-op total via verrou.
+        $fetcher2 = fn() => ['Animateur CDI' => 0xFF00];
         $stats2 = $this->service()->importCustomProfilesFromAd(null, $fetcher2);
 
+        $this->assertTrue($stats2['already_imported']);
+        $this->assertEquals(0, $stats2['scanned']);
         $this->assertEquals(0, $stats2['custom_new']);
-        $this->assertEquals(1, $stats2['custom_unchanged']);
+        $this->assertEquals(0, $stats2['custom_unchanged']);
 
         $role->refresh();
         // Les permissions éditées par l'admin sont préservées.
@@ -117,6 +120,24 @@ class SyncFromAdCustomProfilesTest extends TestCase
         $permsNames = $role->permissions->pluck('name')->toArray();
         $this->assertContains('user.modify', $permsNames);
         $this->assertContains('user.read', $permsNames);
+    }
+
+    public function test_lock_prevents_renamed_profile_from_being_recreated(): void
+    {
+        // Reproduit le scénario utilisateur : import → rename UI → réimport AD
+        // ne doit PAS recréer un rôle avec l'ancien nom.
+        $fetcher = fn() => ['Animateur CDI' => 0x100];
+        $this->service()->importCustomProfilesFromAd(null, $fetcher);
+
+        $role = Role::where('name', 'Animateur CDI')->firstOrFail();
+        $role->name = 'Animateur Documentaliste';
+        $role->save();
+
+        $stats = $this->service()->importCustomProfilesFromAd(null, $fetcher);
+
+        $this->assertTrue($stats['already_imported']);
+        $this->assertNull(Role::where('name', 'Animateur CDI')->first());
+        $this->assertNotNull(Role::where('name', 'Animateur Documentaliste')->first());
     }
 
     public function test_historic_sovajon_is_admin_maps_to_eleve_admin_role(): void
@@ -137,7 +158,7 @@ class SyncFromAdCustomProfilesTest extends TestCase
         );
     }
 
-    public function test_idempotent_on_multiple_runs(): void
+    public function test_subsequent_runs_are_noop(): void
     {
         $fetcher = fn() => [
             'Animateur CDI' => 0x300,
@@ -150,9 +171,12 @@ class SyncFromAdCustomProfilesTest extends TestCase
         $stats3 = $this->service()->importCustomProfilesFromAd(null, $fetcher);
 
         $this->assertEquals(2, $stats1['custom_new']);
-        $this->assertEquals(0, $stats2['custom_new']);
-        $this->assertEquals(2, $stats2['custom_unchanged']);
-        $this->assertEquals(0, $stats3['custom_new']);
+        $this->assertFalse($stats1['already_imported']);
+
+        $this->assertTrue($stats2['already_imported']);
+        $this->assertEquals(0, $stats2['scanned']);
+        $this->assertTrue($stats3['already_imported']);
+        $this->assertEquals(0, $stats3['scanned']);
 
         $this->assertNotNull(Role::where('name', 'Animateur CDI')->first());
         $this->assertNotNull(Role::where('name', 'Référent RGPD')->first());
