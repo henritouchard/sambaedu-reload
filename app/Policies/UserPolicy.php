@@ -242,11 +242,14 @@ class UserPolicy
             return false;
         }
 
+        // ESCAPE '\' explicite : Postgres tolère LIKE 'Equipe\_%' avec son
+        // escape par défaut, mais SQLite (utilisé en tests) ne l'interprète
+        // pas — l'underscore reste alors un wildcard et le scoping casse.
         $actorClassNames = $actor->userGroups()
             ->where('type', 'equipe')
             ->where(function ($sub) {
-                $sub->where('name', 'LIKE', 'Equipe\_%')
-                    ->orWhere('name', 'LIKE', 'PP\_%');
+                $sub->whereRaw("name LIKE 'Equipe\\_%' ESCAPE '\\'")
+                    ->orWhereRaw("name LIKE 'PP\\_%' ESCAPE '\\'");
             })
             ->pluck('name')
             ->map(fn(string $n): string => 'Classe_' . preg_replace('/^(Equipe|PP)_/', '', $n))

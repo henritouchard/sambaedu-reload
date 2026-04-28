@@ -324,11 +324,13 @@ new class extends Component {
             && $actor->hasAnyRole(['prof', 'eleve-admin'])
             && !$actor->hasAnyRole(UserPolicy::GLOBAL_USER_ROLES)
         ) {
+            // ESCAPE '\' explicite : nécessaire pour SQLite (tests) qui ne
+            // reconnaît pas l'escape par défaut Postgres.
             $classNames = $actor->userGroups()
                 ->where('type', 'equipe')
                 ->where(function (Builder $sub) {
-                    $sub->where('name', 'LIKE', 'Equipe\_%')
-                        ->orWhere('name', 'LIKE', 'PP\_%');
+                    $sub->whereRaw("name LIKE 'Equipe\\_%' ESCAPE '\\'")
+                        ->orWhereRaw("name LIKE 'PP\\_%' ESCAPE '\\'");
                 })
                 ->pluck('name')
                 ->map(fn(string $n): string => 'Classe_' . preg_replace('/^(Equipe|PP)_/', '', $n))
