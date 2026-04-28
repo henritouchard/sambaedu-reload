@@ -2,20 +2,22 @@
 
 namespace App\Policies;
 
+use App\Models\Printer;
 use App\Policies\Traits\ChecksPermissions;
 use App\Policies\Traits\RegistersGates;
 use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
- * Story 7.2 (AC5) — Policy pour les imprimantes (Epic 6 backlog).
+ * Story 7.2 (AC5) + Story 6.1 — Policy pour les imprimantes.
  *
- * Décision produit (0.8) : réutilise `server.admin` — les actions sur les
- * imprimantes étaient gardées par `SE_SERVER_ADMIN` en legacy et sur le
- * module printers back-office (cf. `sambaedu/gpo/printers.php`).
+ * Décision produit (fix #11) : seuls les administrateurs globaux (`server.admin`)
+ * et les « Référents numériques » (qui reçoivent `server.admin` via leur profil)
+ * peuvent modifier les imprimantes. Les délégués scopés n'ont pas ce droit.
  *
  * Gates :
- *  - `viewAny-printer` : `server.admin` (consultation back-office admin).
- *  - `manage-printer`  : `server.admin` (modification/suppression).
+ *  - `viewAny-printer` : `server.admin` global (consultation back-office admin).
+ *  - `manage-printer`  : `server.admin` global uniquement.
+ *    Toutes les instances (y compris orphan) sont accessibles à l'admin global.
  */
 class PrinterPolicy
 {
@@ -32,7 +34,15 @@ class PrinterPolicy
         return $this->hasPermission($user, 'server.admin');
     }
 
-    public function manage(?Authenticatable $user): bool
+    /**
+     * Gestion d'une imprimante — réservée aux administrateurs globaux.
+     *
+     * La vérification est intentionnellement simple : pas de logique scopée.
+     * Les délégués (server.admin scopé sur un parc) peuvent VOIR les imprimantes
+     * de leur parc via `viewAny-printer`/`hasAnyDelegation()`, mais ne peuvent
+     * pas les modifier (décision produit 2026-04-28).
+     */
+    public function manage(?Authenticatable $user, ?Printer $printer = null): bool
     {
         return $this->hasPermission($user, 'server.admin');
     }

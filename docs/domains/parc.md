@@ -239,3 +239,16 @@ Comportement :
 Voir [`docs/domains/rights-management.md`](rights-management.md) pour le détail du modèle de délégation.
 
 Sur `/parc/groups/{id}`, un check `Gate::allows('view', $group)` dans le `mount()` garantit le blocage silencieux (redirect + toast) en cas d'accès hors périmètre (AC3 Story 7.1).
+
+## Onglet Imprimantes (Story 6.1)
+
+Depuis la Story 6.1, `/parc?tab=printers` expose un troisième onglet (entre `Groupes` et `Postes`) qui liste les imprimantes CUPS, permet le CRUD complet (ajout / configuration / suppression / toggle enable/disable), et porte le **rattachement N:N à un ou plusieurs `WorkstationGroup`** via la table pivot `printer_workstation_group`.
+
+Détails techniques (Service `CupsPrinterService`, modèle Eloquent `Printer`, commande `printers:sync`, cascade FK pivot, sudoers, scope délégué Epic 7) : voir [`docs/domains/printers.md`](printers.md).
+
+Cohérence scope :
+- Admin global (`server.admin`) → toutes les imprimantes (y compris orphan, avec filtres dédiés).
+- Délégué scopé Epic 7 (`server.admin` scopé sur ≥ 1 parc) → uniquement les imprimantes rattachées à un de ses parcs (les orphans ne lui sont jamais visibles).
+- Utilisateur lambda → vide.
+
+E2E manuel : voir [`docs/qa/domains/printers.md`](../qa/domains/printers.md) (20 scénarios dont drift CUPS↔SER, restauration orphan, validation injection).

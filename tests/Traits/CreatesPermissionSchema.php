@@ -89,6 +89,7 @@ trait CreatesPermissionSchema
             Schema::create('workstation_groups', function (Blueprint $table) {
                 $table->id();
                 $table->string('name');
+                $table->string('display_name')->nullable();
                 $table->boolean('is_physical')->default(false);
                 $table->boolean('is_active')->default(true);
                 $table->unsignedBigInteger('parent_id')->nullable();
@@ -97,6 +98,12 @@ trait CreatesPermissionSchema
                 $table->timestamps();
             });
             $this->createdTables[] = 'workstation_groups';
+        } elseif (!Schema::hasColumn('workstation_groups', 'display_name')) {
+            // Cas où la table a été créée par un autre test sans display_name :
+            // on la complète pour permettre les factories `WorkstationGroupFactory`.
+            Schema::table('workstation_groups', function (Blueprint $table) {
+                $table->string('display_name')->nullable();
+            });
         }
 
         if (!Schema::hasTable('permissions')) {

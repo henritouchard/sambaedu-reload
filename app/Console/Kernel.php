@@ -56,6 +56,15 @@ class Kernel extends ConsoleKernel
                  ->dailyAt('03:00')
                  ->withoutOverlapping()
                  ->runInBackground();
+
+        // Story 6.1 : Réconciliation imprimantes CUPS ↔ table SER `printers` à 03h30
+        // Idempotente : ajoute les CUPS détectés hors SER, marque orphan les rows
+        // SER absents de CUPS (sans delete pour préserver les rattachements parc),
+        // restaure orphan=false à la réintroduction.
+        $schedule->command('printers:sync')
+                 ->dailyAt('03:30')
+                 ->withoutOverlapping()
+                 ->runInBackground();
     }
 
     /**

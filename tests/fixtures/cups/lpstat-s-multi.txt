@@ -1,0 +1,4 @@
+system default destination: PDF
+device for PDF: cups-pdf:/
+device for hp1: socket://192.168.1.10:9100
+device for hp2: ipp://printer.example.com/ipp/print

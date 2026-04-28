@@ -360,12 +360,19 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
                 <i class="fa-solid fa-computer mr-2"></i>
                 Postes
             </button>
+            <button type="button" role="tab" class="tab {{ $tab === 'printers' ? 'tab-active' : '' }}"
+                wire:click="setTab('printers')">
+                <i class="fa-solid fa-print mr-2"></i>
+                Imprimantes
+            </button>
         </div>
 
         <!-- Contenu des onglets -->
         <div class="flex-1 min-h-0 flex flex-col">
             @if ($tab === 'machines')
                 @include('pages.parc._partials.machines-tab')
+            @elseif ($tab === 'printers')
+                <livewire:pages::parc._partials.printers-tab />
             @else
                 {{-- Vérification synchronisation AD/SQL --}}
                 <div class="flex-shrink-0">

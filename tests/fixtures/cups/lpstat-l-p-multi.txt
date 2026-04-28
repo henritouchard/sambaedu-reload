@@ -1,0 +1,16 @@
+printer PDF is idle.  enabled since Mon Apr 27 21:24:17 2026
+	Form mounted:
+	Description: PDF
+	Location:
+	Connection: direct
+	Interface: /etc/cups/ppd/PDF.ppd
+printer hp1 is now printing job 12.  enabled since Mon Apr 27 21:24:17 2026
+	Description: HP Salle A
+	Location: Salle A
+	Connection: direct
+	Interface: /etc/cups/ppd/hp1.ppd
+printer hp2 disabled since Mon Apr 27 22:00:00 2026
+	Description: HP Salle B
+	Location: Salle B
+	Connection: direct
+	Interface: /etc/cups/ppd/hp2.ppd

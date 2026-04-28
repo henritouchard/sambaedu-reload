@@ -1,0 +1,31 @@
+
+drv:///sample.drv/dymo.ppd DYMO Label Printer
+drv:///sample.drv/epson9.ppd Epson 9-Pin Series
+drv:///sample.drv/epson24.ppd Epson 24-Pin Series
+lsb/usr/cupsfilters/Fuji_Xerox-DocuPrint_CM305_df-PDF.ppd Fuji Xerox DocuPrint CM305 df PDF
+drv:///generic-brf.drv/gen-brf.ppd Generic Braille embosser, 1.0
+lsb/usr/cups-pdf/CUPS-PDF_noopt.ppd Generic CUPS-PDF Printer (no options)
+lsb/usr/cups-pdf/CUPS-PDF_opt.ppd Generic CUPS-PDF Printer (w/ options)
+drv:///cupsfilters.drv/pwgrast.ppd Generic IPP Everywhere Printer
+drv:///sample.drv/generpcl.ppd Generic PCL Laser Printer
+lsb/usr/cupsfilters/Generic-PDF_Printer-PDF.ppd Generic PDF Printer
+drv:///sample.drv/generic.ppd Generic PostScript Printer
+drv:///cupsfilters.drv/textonly.ppd Generic Text-Only Printer
+drv:///generic-ubrl.drv/gen-ubrl.ppd Generic UBRL generator, 1.0
+lsb/usr/cupsfilters/HP-Color_LaserJet_CM3530_MFP-PDF.ppd HP Color LaserJet CM3530 MFP PDF
+lsb/usr/cupsfilters/pxlcolor.ppd HP Color LaserJet Series PCL 6 CUPS
+drv:///cupsfilters.drv/dsgnjt600pcl.ppd HP DesignJet 600 pcl, 1.0
+drv:///cupsfilters.drv/dsgnjt750cpcl.ppd HP DesignJet 750c pcl, 1.0
+drv:///cupsfilters.drv/dsgnjt1050cpcl.ppd HP DesignJet 1050c pcl, 1.0
+drv:///cupsfilters.drv/dsgnjt4000pcl.ppd HP DesignJet 4000 pcl, 1.0
+drv:///cupsfilters.drv/dsgnjtt790pcl.ppd HP DesignJet T790 pcl, 1.0
+drv:///cupsfilters.drv/dsgnjtt1100pcl.ppd HP DesignJet T1100 pcl, 1.0
+drv:///sample.drv/deskjet.ppd HP DeskJet Series
+drv:///sample.drv/laserjet.ppd HP LaserJet Series PCL 4/5
+lsb/usr/cupsfilters/pxlmono.ppd HP LaserJet Series PCL 6 CUPS
+drv:///indexv3.drv/i4waves3.ppd Index 4-Waves PRO, 1.0
+drv:///indexv3.drv/i4x4pro3.ppd Index 4x4 PRO V3, 1.0
+drv:///indexv3.drv/ibasicd3.ppd Index Basic-D V3, 1.0
+drv:///indexv4.drv/ibasicd4.ppd Index Basic-D V4/V5, 1.0
+drv:///indexv3.drv/ibasics3.ppd Index Basic-S V3, 1.0
+drv:///indexv4.drv/ibasics4.ppd Index Basic-S V4/V5, 1.0

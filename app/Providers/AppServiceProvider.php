@@ -106,6 +106,13 @@ class AppServiceProvider extends ServiceProvider
             \App\Http\Middleware\Auth\SambaEduAuthGuard::class
         );
 
+        // Story 6.1 — CommandRunner injectable pour les services CUPS.
+        // Permet de mocker les exec dans les tests via FakeCommandRunner.
+        $this->app->bind(
+            \App\Services\Print\Contracts\CommandRunner::class,
+            \App\Services\Print\RealCommandRunner::class,
+        );
+
         // Alias pour faciliter l'utilisation via app('sambaedu.config') qui fournit l'instance singleton de SambaeduConfig
         $this->app->alias(AdDataTransformer::class, 'sambaedu.transformer');
         $this->app->alias(AuthenticationService::class, 'sambaedu.auth');

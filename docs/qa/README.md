@@ -28,6 +28,7 @@ domaine plutôt que par story.
 | Domaine     | Fichier                          | Stories couvertes |
 |-------------|----------------------------------|-------------------|
 | Filesystem  | `domains/filesystem.md`          | 5.1c              |
+| Imprimantes | `domains/printers.md`            | 6.1               |
 
 ## Pré-requis communs
 

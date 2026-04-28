@@ -1,0 +1,22 @@
+
+printer PDF is idle.  enabled since Mon Apr 27 21:24:17 2026
+	Form mounted:
+	Content types: any
+	Printer types: unknown
+	Description: PDF
+	Alerts: none
+	Location: 
+	Connection: direct
+	Interface: /etc/cups/ppd/PDF.ppd
+	On fault: no alert
+	After fault: continue
+	Users allowed:
+		(all)
+	Forms allowed:
+		(none)
+	Banner required
+	Charset sets:
+		(none)
+	Default pitch:
+	Default page size:
+	Default port settings:
