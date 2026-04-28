@@ -6,6 +6,7 @@ use App\Services\UserSyncService;
 use App\Services\UserGroupService;
 use App\Jobs\SyncAllFromAdJob;
 use App\Services\ShortcutsService;
+use App\Services\Permissions\RightsMigrationService;
 use App\Facades\SEConfig;
 use App\Repositories\EstablishmentRepository;
 use App\Components\Traits\WithToasts;
@@ -139,6 +140,18 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 'error' => null,
                 'expanded' => false,
             ],
+            // Story 7.3 — migration one-shot bitmask → Spatie (rôles + délégations scopées).
+            // L'étape affiche deux boutons : Aperçu (dry-run) et Exécuter.
+            // Dans « Tout exécuter », seul le dry-run est lancé automatiquement.
+            'rights_migration' => [
+                'id' => 'rights_migration',
+                'title' => '9. Migrer les droits legacy → Spatie',
+                'description' => 'Migration one-shot : lit les assignations bitmask de l\'AD (rights_rdn + delegations_rdn) et les pose dans Spatie. Lancez d\'abord l\'Aperçu, puis Exécuter pour appliquer.',
+                'status' => 'pending',
+                'stats' => null,
+                'error' => null,
+                'expanded' => false,
+            ],
         ];
 
         $this->stepLogs = [
@@ -150,6 +163,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             'app_profiles' => [],
             'shortcuts' => [],
             'rights_profiles' => [],
+            'rights_migration' => [],
         ];
     }
 
@@ -238,7 +252,13 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
         $this->initializeSteps();
 
         foreach (array_keys($this->steps) as $stepId) {
-            $this->runStep($stepId);
+            // Étape 9 : dry-run automatique en mode « Tout exécuter »,
+            // l'opérateur doit cliquer « Exécuter » manuellement après vérification.
+            if ($stepId === 'rights_migration') {
+                $this->executeMigrationStep(dryRun: true);
+            } else {
+                $this->runStep($stepId);
+            }
 
             // Arrêter si une étape échoue
             if ($this->steps[$stepId]['status'] === 'error') {
@@ -246,6 +266,95 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 break;
             }
         }
+    }
+
+    public function runMigrationDryRun(): void
+    {
+        $this->executeMigrationStep(dryRun: true);
+    }
+
+    public function runMigrationExecute(): void
+    {
+        $this->executeMigrationStep(dryRun: false);
+    }
+
+    private function executeMigrationStep(bool $dryRun): void
+    {
+        if ($this->isRunning) {
+            $this->toastWarning('Une synchronisation est déjà en cours');
+            return;
+        }
+
+        $stepId = 'rights_migration';
+        $this->isRunning = true;
+        $this->currentStep = $stepId;
+        $this->steps[$stepId]['status'] = 'running';
+        $this->steps[$stepId]['error'] = null;
+        $this->steps[$stepId]['stats'] = null;
+        $this->stepLogs[$stepId] = [];
+
+        try {
+            $this->addLog($stepId, 'info', $dryRun ? 'Aperçu (dry-run) en cours…' : 'Migration en cours…');
+            $this->runRightsMigrationSync($dryRun);
+
+            if ($dryRun) {
+                $this->steps[$stepId]['status'] = 'dry_run_done';
+                $this->addLog($stepId, 'info', 'Aperçu terminé — vérifiez les résultats puis cliquez « Exécuter » pour appliquer.');
+                $this->toastInfo('Aperçu terminé');
+            } else {
+                $this->steps[$stepId]['status'] = 'success';
+                $this->addLog($stepId, 'success', 'Migration appliquée avec succès');
+                $this->toastSuccess('Migration des droits terminée');
+            }
+        } catch (\Exception $e) {
+            $this->steps[$stepId]['status'] = 'error';
+            $this->steps[$stepId]['error'] = $e->getMessage();
+            $this->addLog($stepId, 'error', 'Erreur : ' . $e->getMessage());
+            $this->toastError('Erreur lors de la migration : ' . $e->getMessage());
+            Log::error('[SyncFromAD] Erreur étape ' . $stepId, [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        } finally {
+            $this->isRunning = false;
+            $this->currentStep = null;
+            $this->steps[$stepId]['expanded'] = true;
+        }
+    }
+
+    private function runRightsMigrationSync(bool $dryRun): void
+    {
+        $stepId = 'rights_migration';
+        $service = app(RightsMigrationService::class);
+
+        $report = $service->migrate(dryRun: $dryRun);
+
+        $prefix = $dryRun ? '[DRY-RUN] ' : '';
+
+        $this->addLog($stepId, 'info', "{$prefix}Utilisateurs scannés : {$report['users_scanned']}");
+        $this->addLog($stepId, 'info', "{$prefix}Rôles assignés : {$report['roles_assigned']}");
+        $this->addLog($stepId, 'info', "{$prefix}Délégations positives : {$report['delegations_created']}");
+
+        if ($report['negatives_created'] > 0) {
+            $this->addLog($stepId, 'info', "{$prefix}Délégations négatives : {$report['negatives_created']}");
+        }
+
+        if ($report['fallbacks_ignored'] > 0) {
+            $this->addLog($stepId, 'warning', "{$prefix}Fallbacks buggés ignorés : {$report['fallbacks_ignored']}");
+        }
+
+        foreach ($report['warnings'] as $warning) {
+            $this->addLog($stepId, 'warning', "{$prefix}{$warning}");
+        }
+
+        if (!empty($report['unmappable'])) {
+            $this->addLog($stepId, 'warning', "{$prefix}Cas non mappables : " . count($report['unmappable']));
+            foreach ($report['unmappable'] as $item) {
+                $this->addLog($stepId, 'warning', "  [{$item['kind']}] {$item['reason']}");
+            }
+        }
+
+        $this->steps[$stepId]['stats'] = $report;
     }
 
     private function runUsersEstablishmentSync(): void
@@ -480,6 +589,12 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                                         </div>
                                     @break
 
+                                    @case('dry_run_done')
+                                        <div class="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center" title="Aperçu effectué — cliquez Exécuter pour appliquer">
+                                            <i class="fa-solid fa-magnifying-glass text-warning"></i>
+                                        </div>
+                                    @break
+
                                     @case('error')
                                         <div class="w-10 h-10 rounded-full bg-error/10 flex items-center justify-center">
                                             <i class="fa-solid fa-xmark text-error"></i>
@@ -538,20 +653,63 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                                         @if (isset($step['stats']['admin_granted']) && $step['stats']['admin_granted'])
                                             <span class="badge badge-accent badge-sm">admin</span>
                                         @endif
+                                        {{-- Badges spécifiques étape 9 (migration rights) --}}
+                                        @if ($stepId === 'rights_migration')
+                                            @if (isset($step['stats']['users_scanned']) && $step['stats']['users_scanned'] > 0)
+                                                <span class="badge badge-neutral font-bold h-12">{{ $step['stats']['users_scanned'] }} users</span>
+                                            @endif
+                                            @if (isset($step['stats']['roles_assigned']) && $step['stats']['roles_assigned'] > 0)
+                                                <span class="badge badge-success font-bold h-12">+{{ $step['stats']['roles_assigned'] }} rôles</span>
+                                            @endif
+                                            @if (isset($step['stats']['delegations_created']) && $step['stats']['delegations_created'] > 0)
+                                                <span class="badge badge-info font-bold h-12">+{{ $step['stats']['delegations_created'] }} délég.</span>
+                                            @endif
+                                            @if (isset($step['stats']['negatives_created']) && $step['stats']['negatives_created'] > 0)
+                                                <span class="badge badge-warning font-bold h-12">{{ $step['stats']['negatives_created'] }} excl.</span>
+                                            @endif
+                                            @if (isset($step['stats']['unmappable']) && count($step['stats']['unmappable']) > 0)
+                                                <span class="badge badge-error font-bold h-12">{{ count($step['stats']['unmappable']) }} non mappés</span>
+                                            @endif
+                                        @endif
                                     </div>
                                 @endif
 
-                                {{-- Run button --}}
-                                <button type="button" wire:click="runStep('{{ $stepId }}')"
-                                    class="btn btn-sm btn-outline btn-primary" wire:loading.attr="disabled"
-                                    wire:target="runStep('{{ $stepId }}')" {{ $isRunning ? 'disabled' : '' }}>
-                                    <span wire:loading.remove wire:target="runStep('{{ $stepId }}')">
-                                        <i class="fa-solid fa-play"></i>
-                                    </span>
-                                    <span wire:loading wire:target="runStep('{{ $stepId }}')">
-                                        <span class="loading loading-spinner loading-xs"></span>
-                                    </span>
-                                </button>
+                                {{-- Run button (ou deux boutons pour l'étape 9) --}}
+                                @if ($stepId === 'rights_migration')
+                                    <button type="button" wire:click="runMigrationDryRun"
+                                        class="btn btn-sm btn-outline btn-warning" wire:loading.attr="disabled"
+                                        wire:target="runMigrationDryRun, runMigrationExecute" {{ $isRunning ? 'disabled' : '' }}
+                                        title="Aperçu sans écriture">
+                                        <span wire:loading.remove wire:target="runMigrationDryRun">
+                                            <i class="fa-solid fa-magnifying-glass"></i> Aperçu
+                                        </span>
+                                        <span wire:loading wire:target="runMigrationDryRun">
+                                            <span class="loading loading-spinner loading-xs"></span>
+                                        </span>
+                                    </button>
+                                    <button type="button" wire:click="runMigrationExecute"
+                                        class="btn btn-sm btn-outline btn-primary" wire:loading.attr="disabled"
+                                        wire:target="runMigrationDryRun, runMigrationExecute" {{ $isRunning ? 'disabled' : '' }}
+                                        title="Appliquer la migration">
+                                        <span wire:loading.remove wire:target="runMigrationExecute">
+                                            <i class="fa-solid fa-play"></i> Exécuter
+                                        </span>
+                                        <span wire:loading wire:target="runMigrationExecute">
+                                            <span class="loading loading-spinner loading-xs"></span>
+                                        </span>
+                                    </button>
+                                @else
+                                    <button type="button" wire:click="runStep('{{ $stepId }}')"
+                                        class="btn btn-sm btn-outline btn-primary" wire:loading.attr="disabled"
+                                        wire:target="runStep('{{ $stepId }}')" {{ $isRunning ? 'disabled' : '' }}>
+                                        <span wire:loading.remove wire:target="runStep('{{ $stepId }}')">
+                                            <i class="fa-solid fa-play"></i>
+                                        </span>
+                                        <span wire:loading wire:target="runStep('{{ $stepId }}')">
+                                            <span class="loading loading-spinner loading-xs"></span>
+                                        </span>
+                                    </button>
+                                @endif
 
                                 {{-- Toggle logs --}}
                                 <button type="button" wire:click="toggleExpanded('{{ $stepId }}')"
