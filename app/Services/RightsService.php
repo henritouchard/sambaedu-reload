@@ -3,16 +3,39 @@
 namespace App\Services;
 
 use App\Enums\LegacyRight;
+use App\Enums\SambaPermission;
+use App\Models\Delegation;
+use App\Models\User;
+use App\Models\WorkstationGroup;
 use App\Repositories\RightRepository;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Service de gestion des droits SambaEdu
- * 
- * Calcule les droits d'un utilisateur à partir de ses groupes de droits LDAP.
- * Les droits sont des bitmasks stockés dans l'attribut 'info' des groupes de la branche rights.
- * 
- * Utilise RightRepository pour accéder aux données LDAP.
+ *
+ * Story 7.3 — Refactor Spatie-only (2026-04-25) :
+ *  - `calculateRights()` ne lit plus les groupes LDAP (attribut `info`). Il
+ *    reconstruit le bitmask uniquement à partir de Spatie (rôles + permissions
+ *    individuelles + délégations scopées OR positifs / AND-NOT négatifs).
+ *  - Le contrat public de retour (`int` bitmask) est préservé — aucun appelant
+ *    n'a à modifier son code. La signature `(array $rightGroups, string $login)`
+ *    est aussi préservée pour rétro-compatibilité.
+ *  - Le bit `SE_COMPUTER_VIEW` est filtré systématiquement (droit web pur qui
+ *    n'est jamais remonté au bitmask LDAP, cf. shim `legacy/ldap.inc.php:50`
+ *    et legacy `sambaedu/includes/ldap.inc.php:2963`).
+ *
+ * Les appels legacy qui passent encore `(array $rightGroups, string $login)`
+ * continuent de marcher :
+ *  - `$login === 'admin'` → `SE_ADMIN (0xFFFF)` (cas spécial historique).
+ *  - Autrement, on résout le `User` Eloquent via `$login` et on calcule son
+ *    bitmask Spatie-only. Les `$rightGroups` en argument sont ignorés par
+ *    7.3 — c'était une dépendance sur la lecture LDAP qui n'a plus de sens.
+ *
+ * Les anciennes méthodes statiques (`getRightDescription`, `getRightDetails`,
+ * `getRightsDefinitions`) restent disponibles via `LegacyRight` pour le
+ * rendu UI. Elles sont marquées `@deprecated` — la sunset sera effective
+ * dans une PR séparée post-stabilisation prod (≥ 2 semaines).
  */
 class RightsService
 {
@@ -52,50 +75,137 @@ class RightsService
     public const SE_ADMIN = 0xFFFF;
 
     /**
-     * Calcule le bitmask de droits pour un utilisateur
-     * 
-     * @param array $rightGroups Liste des noms de groupes de droits (CN)
-     * @param string $login Login de l'utilisateur (pour le cas spécial 'admin')
-     * @return int Bitmask des droits
+     * Calcule le bitmask de droits pour un utilisateur (Spatie-only, Story 7.3).
+     *
+     * Contrat (inchangé depuis 7.1) :
+     *  - Entrée : liste des groupes LDAP legacy (ignorée en 7.3 — conservée pour rétro-compat signature) + login
+     *  - Sortie : `int` bitmask des droits applicatifs
+     *
+     * Pipeline interne (7.3) :
+     *  1. Cas spécial `admin` / root → `SE_ADMIN`.
+     *  2. Résolution du User Eloquent via `$login`.
+     *  3. Récupération des permissions effectives Spatie (`getAllPermissions`).
+     *  4. Projection vers bitmask via `SambaPermission::toBitmask`.
+     *  5. Filtre `SE_COMPUTER_VIEW` (jamais bitmasqué — droit web pur).
+     *
+     * Aucune lecture LDAP/`RightRepository` n'est effectuée — garanti par le
+     * test `RightsServiceSpatieRefactorTest::it_works_even_if_ldap_is_down`.
+     *
+     * @param  array<int,string>  $rightGroups  Legacy — ignoré en 7.3 (conservé signature)
+     * @param  string  $login  Login de l'utilisateur
+     * @return int  Bitmask agrégé
      */
     public function calculateRights(array $rightGroups, string $login = ''): int
     {
-        // Cas spécial : l'utilisateur 'admin' a tous les droits
+        // Cas spécial root/admin : `SE_ADMIN` (tous les droits).
         if ($login === 'admin') {
             return LegacyRight::admin();
         }
 
-        if (empty($rightGroups)) {
+        if ($login === '') {
             return LegacyRight::none();
         }
 
-        // Charger les valeurs info des groupes de droits via le repository
-        $rightsValues = $this->rightRepository->getAllRightsValues();
+        // Résolution robuste : si la table `users` n'existe pas (tests legacy
+        // sans schéma Spatie) ou si l'user est introuvable, on retourne `none`.
+        try {
+            $user = User::where('login', $login)->first();
+        } catch (Throwable $e) {
+            Log::debug('[RightsService] Résolution User Eloquent impossible', [
+                'login' => $login,
+                'error' => $e->getMessage(),
+            ]);
 
-        $rights = 0;
-        $negativeRights = 0;
+            return LegacyRight::none();
+        }
 
-        foreach ($rightGroups as $groupName) {
-            // Les groupes préfixés par 'no_' annulent des droits
-            if (str_starts_with($groupName, 'no_')) {
-                $baseGroupName = substr($groupName, 3);
-                if (isset($rightsValues[$baseGroupName])) {
-                    $negativeRights |= $rightsValues[$baseGroupName];
+        if ($user === null) {
+            return LegacyRight::none();
+        }
+
+        return $this->calculateRightsForUser($user);
+    }
+
+    /**
+     * Calcule le bitmask effectif d'un User Eloquent depuis Spatie uniquement.
+     *
+     * Accepte optionnellement un `WorkstationGroup` pour scope les délégations
+     * (ajoute les positives actives sur ce scope, retranche les négatives
+     * actives — sémantique AND-NOT cf. matrice §7).
+     *
+     * @param  User  $user  Utilisateur cible (Eloquent)
+     * @param  WorkstationGroup|null  $scope  Scope optionnel pour délégations
+     */
+    public function calculateRightsForUser(User $user, ?WorkstationGroup $scope = null): int
+    {
+        // 1. Permissions effectives Spatie (rôles + directes).
+        $permissionNames = [];
+        try {
+            $permissionNames = $user->getAllPermissions()->pluck('name')->toArray();
+        } catch (Throwable $e) {
+            Log::warning('[RightsService] getAllPermissions a échoué', [
+                'user' => $user->login ?? '?',
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $bitmask = SambaPermission::toBitmask($permissionNames);
+
+        // 2. Délégations scopées (seulement si scope fourni — matrice §7).
+        if ($scope !== null) {
+            try {
+                // Positives actives sur ce scope → OR au bitmask.
+                $positivePerms = Delegation::forUser($user)
+                    ->where('workstation_group_id', $scope->id)
+                    ->positive()
+                    ->active()
+                    ->with('permission')
+                    ->get()
+                    ->pluck('permission.name')
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->toArray();
+
+                if (! empty($positivePerms)) {
+                    $bitmask |= SambaPermission::toBitmask($positivePerms);
                 }
-            } else {
-                if (isset($rightsValues[$groupName])) {
-                    $rights |= $rightsValues[$groupName];
+
+                // Négatives actives sur ce scope → AND-NOT au bitmask.
+                $negativePerms = Delegation::forUser($user)
+                    ->where('workstation_group_id', $scope->id)
+                    ->negative()
+                    ->active()
+                    ->with('permission')
+                    ->get()
+                    ->pluck('permission.name')
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->toArray();
+
+                if (! empty($negativePerms)) {
+                    $bitmask &= ~SambaPermission::toBitmask($negativePerms);
                 }
+            } catch (Throwable $e) {
+                Log::warning('[RightsService] Lecture délégations scopées a échoué', [
+                    'user' => $user->login ?? '?',
+                    'scope' => $scope->name ?? '?',
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 
-        // Appliquer les droits négatifs
-        return $rights & ~$negativeRights;
+        // 3. Filtre SE_COMPUTER_VIEW (jamais bitmasqué — droit web pur).
+        //    Cf. shim `legacy/ldap.inc.php:50` et legacy `ldap.inc.php:2963`.
+        $bitmask &= ~LegacyRight::ComputerView->value;
+
+        return $bitmask;
     }
 
     /**
      * Vérifie si un bitmask de droits contient un droit spécifique
-     * 
+     *
      * @param int $userRights Bitmask des droits de l'utilisateur
      * @param int $requiredRight Droit requis à vérifier
      * @param bool $or Si true, vérifie si AU MOINS UN des bits est présent
@@ -114,6 +224,9 @@ class RightsService
 
     /**
      * Invalide le cache des groupes de droits
+     *
+     * @deprecated since 7.3 — le calcul ne passe plus par le cache LDAP. Gardé
+     * pour rétro-compat des appelants qui invalident après édition LDAP.
      */
     public function invalidateCache(): void
     {

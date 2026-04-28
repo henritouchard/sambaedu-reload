@@ -260,6 +260,186 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 'cd /var/www/sambaedu-reload && ph
 
 ---
 
+## Section 5 — Migration bitmask → Spatie + Refactor calculateRights() (Story 7.3, 2026-04-25)
+
+### 5.1 Dry-run de la commande de migration
+
+**Préconditions** :
+- Branche LDAP `rights_rdn` peuplée (groupes `<profile>` avec `info`).
+- Tables Spatie déjà seedées (run `db:seed --class=PermissionSeeder`).
+
+**Étapes** :
+1. SSH sur la VM : `ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50`
+2. `cd /var/www/sambaedu-reload && php artisan sambaedu:migrate-rights-to-spatie --dry-run`
+
+**Attendu** :
+- Mode `DRY-RUN (aucune écriture)` affiché en en-tête.
+- Tableau de synthèse : `Users scannés / Rôles attribués / Délégations créées (positives, négatives) / Fallbacks buggés ignorés / Cas non mappables / Warnings`.
+- **Aucune ligne ajoutée** dans `model_has_roles` ni `delegations` (vérifier en DB).
+- Exit code = 0.
+
+### 5.2 Run effectif + idempotence
+
+**Préconditions** : 5.1 OK.
+
+**Étapes** :
+1. `php artisan sambaedu:migrate-rights-to-spatie` (run réel).
+2. Vérifier le rapport stdout + le fichier persisté `storage/logs/migrate-rights-to-spatie-<timestamp>.log`.
+3. Re-jouer immédiatement : `php artisan sambaedu:migrate-rights-to-spatie`.
+4. Comparer : aucun nouvel enregistrement n'a été ajouté (idempotence).
+
+**Attendu** :
+- 1er run : `roles_assigned > 0`, `delegations_created` selon présence en `delegations_rdn`.
+- 2e run : mêmes compteurs, aucun doublon dans `model_has_roles` ni `delegations`.
+- Exit code = 0 dans les deux cas.
+
+### 5.3 Bug `Annu_is_admin` sans `info` → fallback ignoré
+
+**Préconditions** : un groupe LDAP `Annu_is_admin` existe avec `info` absent / null / 0 (cas reproductible en peuplement test).
+
+**Étapes** :
+1. Créer dans LDAP un groupe `Annu_is_admin` sans attribut `info` ou `info=0`, avec un user membre.
+2. `php artisan sambaedu:migrate-rights-to-spatie`.
+3. Inspecter `storage/logs/laravel.log` ou `storage/logs/migrate-rights-to-spatie-*.log`.
+
+**Attendu** :
+- Warning loggé : `[MigrateRightsToSpatie] Annu_is_admin sans info — fallback buggé ignoré, assignation alignée sur le seed d'origine SE_USER_ADMIN`.
+- Le user reçoit `SambaRole::UserAdmin` (`user-admin` en DB), **PAS** `SambaRole::ComputerAdmin`.
+- Compteur `Fallbacks buggés ignorés` ≥ 1 dans le rapport stdout.
+
+### 5.4 Délégations scopées `<level>_<parc>` migrées
+
+> **Mise à jour post-review batch corrections (2026-04-25)** : le format CN
+> legacy réel est `(no_)?(manage|view|rdp)_<parc>` (cf. `sambaedu/includes/ldap.inc.php:4396-4426`),
+> pas `<spatie-perm-name>_<parc>`. Mappings appliqués par la migration :
+> `manage→computer.elevate`, `view→computer.view`, `rdp→computer.remote.rdp` (nouvelle perm Story 7.3).
+
+**Préconditions** :
+- Branche `delegations_rdn` (`ou=delegations`) contient au moins :
+  - Un groupe `cn=manage_<parc-existant>` avec un user DN dans `member`.
+  - Un groupe `cn=no_manage_<parc-existant>` avec un user DN dans `member`.
+  - (Optionnel pour valider RDP) Un groupe `cn=rdp_<parc-existant>`.
+- Les `WorkstationGroup` correspondant à `<parc-existant>` sont en DB SER (`workstation_groups.name`).
+
+**Étapes** :
+1. `php artisan sambaedu:migrate-rights-to-spatie`.
+2. Vérifier `delegations` :
+   - `SELECT * FROM delegations WHERE user_id = <user> AND workstation_group_id = <wg> AND is_negative = false;`
+   - `SELECT * FROM delegations WHERE user_id = <user> AND workstation_group_id = <wg> AND is_negative = true;`
+
+**Attendu** :
+- Les lignes positive (issue de `manage_<parc>`) et négative (issue de `no_manage_<parc>`)
+  existent. `permission_id` pointe sur `computer.elevate` (les deux pointent sur la
+  même permission, le flag `is_negative` distingue le sens).
+- Si `rdp_<parc>` était présent : `permission_id` pointe sur `computer.remote.rdp`
+  (PAS sur `computer.control` — vérification post-review #10).
+- Un parc nommé avec underscores (ex. `manage_salle_info_bat_A`) doit être
+  correctement migré vers le `WorkstationGroup` `salle_info_bat_A` (vérifié
+  post-review #2).
+- L'historique `delegation_history` contient les actions correspondantes
+  (`grant` + `negate`) avec `actor_user_id = NULL` mais `context.source =
+  'migration-7.3'` et `context.message = 'Migration legacy 7.3 - aucun
+  acteur humain'` (post-review #8).
+
+### 5.4.bis Re-run préserve `granted_by` d'une délégation manuelle (post-review #11)
+
+**Préconditions** :
+- Migration 5.4 OK.
+- Un admin `henri` pose **manuellement** via UI `/rights-management` une
+  délégation `bob` × `computer.elevate` × `salle-X` après le 1er run de
+  migration. La ligne en DB a `granted_by = <henri.id>`.
+
+**Étapes** :
+1. Re-jouer la commande de migration : `php artisan sambaedu:migrate-rights-to-spatie`.
+2. Vérifier en DB : `SELECT granted_by FROM delegations WHERE user_id = <bob.id> AND workstation_group_id = <salle-X.id>;`
+
+**Attendu** :
+- `granted_by` reste pointé sur `<henri.id>` — la migration n'écrase PAS
+  l'acteur humain (passage de `updateOrCreate` → `firstOrCreate`).
+- Aucune nouvelle entrée `delegation_history` n'est créée (la ligne existait
+  déjà, la migration est idempotente sur cet aspect).
+
+### 5.4.ter `password_is_admin` migré vers permission directe (post-review #1, anti-escalade)
+
+**Préconditions** :
+- Branche `rights_rdn` contient un groupe `password_is_admin` avec au moins
+  un user membre.
+- Tables Spatie seedées (`db:seed --class=PermissionSeeder`).
+
+**Étapes** :
+1. `php artisan sambaedu:migrate-rights-to-spatie`.
+2. Vérifier en DB pour le user concerné :
+   ```sql
+   SELECT name FROM permissions p
+   JOIN model_has_permissions m ON m.permission_id = p.id
+   WHERE m.model_id = <user.id> AND m.model_type = 'App\\Models\\User';
+   ```
+3. Vérifier qu'aucun rôle Spatie n'a été attribué :
+   ```sql
+   SELECT name FROM roles r
+   JOIN model_has_roles m ON m.role_id = r.id
+   WHERE m.model_id = <user.id> AND m.model_type = 'App\\Models\\User';
+   ```
+
+**Attendu** :
+- L'user a `user.password.init` en **permission directe** (model_has_permissions).
+- L'user n'a **AUCUN** rôle Spatie (ni `user-admin`, ni autre — c'est l'objet
+  de la correction #1 anti-escalade : un user qui n'avait que `SE_USER_PASSWORD_INIT`
+  (0x01) ne doit pas se retrouver avec les 8 droits de `UserAdmin` (0xFF)).
+- L'user **n'a pas** `user.assign.right` ni `user.delegate` (vérifiable via
+  `php artisan tinker` → `$u->can('user.assign.right')` retourne `false`).
+
+### 5.5 `RightsService::calculateRights()` Spatie-only avec LDAP down
+
+**Préconditions** : un user a au moins un rôle Spatie assigné en DB.
+
+**Étapes** :
+1. Sur la VM, simuler une coupure LDAP (par exemple : modifier `LDAP_HOST` dans `.env` vers une IP injoignable, ou couper le réseau LDAP).
+2. Tester `php artisan tinker` :
+   ```php
+   $u = App\Models\User::where('login', '<login_test>')->first();
+   $r = app(App\Services\RightsService::class);
+   $r->calculateRightsForUser($u); // doit retourner un int bitmask cohérent
+   ```
+3. Vérifier `storage/logs/laravel.log` : aucune trace `LdapRightGroup::getAllRightsValues` ou `RightRepository::getAllRightsValues`.
+
+**Attendu** :
+- Le bitmask retourné est cohérent avec les rôles Spatie de l'user.
+- `SE_COMPUTER_VIEW` (0x100) est toujours absent du bitmask retourné.
+- Aucune erreur LDAP en logs runtime (la fonction ne consulte plus le LDAP).
+
+### 5.6 Drawer `rights-drawer` Spatie
+
+**Préconditions** : un user existe en DB SER avec rôles assignés.
+
+**Étapes** :
+1. Connexion en admin avec permission `manage-rights`.
+2. Aller sur `/app/users/<login>` → cliquer "Gérer les permissions".
+3. Inspecter le contenu du drawer.
+
+**Attendu** :
+- Liste des rôles disponibles (seedés + custom) avec toggle.
+- Pour chaque rôle : badge `seed` ou `custom`, label FR, code interne en code, badges des permissions associées avec labels FR (ex. `Voir les utilisateurs`).
+- Section "Permissions directes" si l'user a des permissions individuelles.
+- **Aucun bitmask hex `0x...`** dans le rendu HTML.
+- Toggle d'un rôle + Enregistrer → assignation Spatie modifiée + reload page.
+
+### 5.7 Round-trip identité bitmask LDAP-source vs Spatie-source
+
+**Préconditions** : 5.2 OK (migration effectuée).
+
+**Étapes** :
+1. Pour chaque profil seedé représentatif (`se3_is_admin`, `computer_is_admin`, `Annu_is_admin`, `password_is_admin`, `RefNum`) avec un user de test rattaché :
+   - Capturer le bitmask attendu depuis l'enum (`SambaRole::<Role>->permissions()` → `SambaPermission::toBitmask()`).
+   - Lancer `RightsService::calculateRightsForUser($user)`.
+2. Comparer.
+
+**Attendu** :
+- Tous les bits attendus (hors `SE_COMPUTER_VIEW` et `SE_SERVER_ADMIN` hors `SuperAdmin`) sont présents dans le bitmask Spatie.
+- Le rôle `SuperAdmin` (`se3_is_admin`) couvre 100 % des bits avec filtre `SE_COMPUTER_VIEW`.
+
+---
+
 ## Post-correctifs & non-régressions
 
 ### Post-correctifs Story 7.2 (review 2026-04-23)
@@ -320,6 +500,17 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 'cd /var/www/sambaedu-reload && ph
 - [ ] 4.2 Routes `/parc/groups/new` + `/edit` accessibles (fix #1)
 - [ ] 4.3 Revocation effective sans logout
 - [ ] 4.4 Performance listing (pas de N+1)
+
+**Section 5 — Migration bitmask → Spatie (Story 7.3, 9 scénarios)**
+- [ ] 5.1 Dry-run de la commande `sambaedu:migrate-rights-to-spatie`
+- [ ] 5.2 Run effectif + idempotence (re-run = même rapport)
+- [ ] 5.3 Bug `Annu_is_admin` sans `info` → fallback ignoré (UserAdmin pas ComputerAdmin)
+- [ ] 5.4 Délégations scopées `<level>_<parc>` migrées (manage/view/rdp avec mapping correct, parc à underscores OK)
+- [ ] 5.4.bis Re-run préserve `granted_by` d'une délégation manuelle (`firstOrCreate`)
+- [ ] 5.4.ter `password_is_admin` → permission directe `user.password.init`, **pas** rôle UserAdmin (anti-escalade #1)
+- [ ] 5.5 `RightsService::calculateRights()` fonctionne avec LDAP down
+- [ ] 5.6 Drawer `rights-drawer` affiche rôles + permissions Spatie (zéro hex)
+- [ ] 5.7 Round-trip identité bitmask LDAP-source vs Spatie-source
 
 **Non-régressions**
 - [ ] Drawer Rôles + Permissions

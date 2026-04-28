@@ -361,3 +361,135 @@ wrapper `sambaedu.can` dédié.
 | 0.7 | Wrapper `sambaedu.can`              | Non — `can:` Laravel suffit                        |
 | 0.8 | Perms `printer.manage`/`dhcp.manage` | Réutiliser `server.admin` (pas de nouvelle perm)   |
 | 0.9 | Colonne `origin` sur `roles`         | Non — `SambaRole::isSeeded()` en enum             |
+
+---
+
+## Story 7.3 — Migration bitmask → Spatie + Refactor calculateRights() (2026-04-25)
+
+### Contexte produit
+
+Pivot suite à audit consommateurs externes : **zéro lecteur de l'attribut LDAP `info`** hors PHP (pas de shell / Python / GPO / SYSVOL / cron / API). Le shim `have_right()` / `list_rights()` (`legacy/ldap.inc.php:937-1014`) utilise déjà une table locale `$_spatie_role_to_bitmask` — il ne lit plus le LDAP.
+
+**Décision produit (Henri 2026-04-25)** :
+- Spatie devient la **seule source de vérité runtime** des droits applicatifs.
+- Pas d'Observer / pas de projection Spatie → bitmask AD inverse (supprimé du scope).
+- `RightsService::calculateRights()` reste le **point d'entrée centralisé** (utilisé partout dans les `@can` Blade et Policies). Son contrat de retour `int` bitmask est **préservé** — refactor interne uniquement.
+
+### Commande artisan one-shot
+
+`php artisan sambaedu:migrate-rights-to-spatie [--dry-run]`
+
+Service d'orchestration : `app/Services/Permissions/RightsMigrationService.php`.
+
+**Volet 1 — Assignations user → rôle Spatie** :
+- Scan de la branche LDAP `rights_rdn` (groupes `<profile>`, attribut `info` = bitmask).
+- Pour chaque membre du groupe, résolution `User` Eloquent (par `dn` puis fallback par `login` extrait du DN).
+- Mapping vers le rôle Spatie selon matrice §5.3 :
+  - `se3_is_admin` (0xFFFF) → `SuperAdmin`
+  - `computer_is_admin` (0xEF00) → `ComputerAdmin`
+  - `Annu_is_admin` (0xFF) → `UserAdmin`
+  - `password_is_admin` (0x01) → **permission directe `user.password.init`** via `givePermissionTo` (pas de rôle, anti-escalade — décision Henri 2026-04-25 post-review #1)
+  - `RefNum` (0x90B) → `ReferentNumerique`
+- Profils custom rapatriés en 7.2 (créés par `importCustomProfilesFromAd`) → résolution **par nom de rôle exact**.
+- Profils non rapatriés → fallback `SambaRole::fromBitmask($info)`.
+
+**Bug `Annu_is_admin` ignoré** (matrice §8 #6) : si `info` est absent / null / 0, le service NE reproduit PAS le fallback buggé `annu/profiles.php:58` (qui remappait à tort vers `SE_COMPUTER_ADMIN`). Il assigne `UserAdmin` (seed d'origine `SE_USER_ADMIN = 0xFF`) et logge un warning explicite.
+
+**Volet 2 — Délégations scopées legacy → `Delegation` Spatie** :
+- Scan de la branche `delegations_rdn` (`ou=delegations`).
+- **Format CN legacy** (confirmé `sambaedu/includes/ldap.inc.php:4396-4426`) :
+  `(no_)?(manage|view|rdp)_<parc>` — `level` est l'un de `manage` / `view` / `rdp`.
+  Le `<parc>` peut contenir des underscores (parsing par regex strict, pas
+  par `strrpos('_')` — corrections post-review #2 et #10).
+- **Mapping `level` → permission Spatie** :
+  - `manage` → `computer.elevate` (admin de poste, 0x400)
+  - `view`   → `computer.view` (consultation parc, 0x100)
+  - `rdp`    → `computer.remote.rdp` (**nouvelle permission Spatie** créée en 7.3
+    pour cette migration — décision Henri 2026-04-25 option C, gouvernance fine RDP)
+- Membres LDAP = `[user DN, parc DN]`. Le DN du parc est filtré explicitement
+  via `WorkstationGroup::findByAdDn()` ou via comparaison `CN=` (correction
+  post-review #4) plutôt qu'une heuristique sur l'OU.
+- Persistance : `Delegation::firstOrCreate` (correction post-review #11) — au
+  re-run de la migration, `granted_by` n'est PAS écrasé sur les délégations
+  posées manuellement par un admin entre deux runs.
+- Audit : entrées `delegation_history` créées avec `actor=null` (commande de
+  migration) mais `context.source='migration-7.3'` + `context.message='Migration
+  legacy 7.3 - aucun acteur humain'` (correction post-review #8) pour traçabilité.
+- Si la branche est vide / inexistante : **no-op documenté** + warning rapport.
+
+**Idempotence** :
+- `assignRole` Spatie : pas de doublon dans `model_has_roles`.
+- Délégations : clé unique composite `(user_id, workstation_group_id, permission_id, is_negative)`.
+
+**Rapport final** :
+- Tableau tabulé sur stdout (`users_scanned`, `roles_assigned`, `delegations_created`, `negatives_created`, `fallbacks_ignored`, `unmappable[]`, `warnings[]`).
+- Persistance dans `storage/logs/migrate-rights-to-spatie-<timestamp>.log` en run effectif (écriture atomique temp + rename).
+
+### Refactor `RightsService::calculateRights()` Spatie-only
+
+`RightsService::calculateRights(array $rightGroups, string $login)` (signature publique préservée) calcule désormais le bitmask **uniquement depuis Spatie** :
+
+1. Cas spécial `admin` → `SE_ADMIN` (raccourci historique).
+2. Résolution `User::where('login', $login)`.
+3. `$user->getAllPermissions()->pluck('name')` → liste de permissions effectives Spatie (rôles + directes).
+4. Projection : `SambaPermission::toBitmask($permissionNames)`.
+5. Filtre `SE_COMPUTER_VIEW` (jamais bitmasqué — droit web pur, cf. shim `legacy/ldap.inc.php:50`).
+
+Une nouvelle méthode `calculateRightsForUser(User $user, ?WorkstationGroup $scope = null): int` permet de passer un User Eloquent directement et un scope optionnel pour les délégations :
+- Délégations positives actives sur le scope → OR au bitmask.
+- Délégations négatives actives → AND-NOT (sémantique matrice §7).
+
+**Aucune lecture LDAP en runtime**. Garanti par le test `RightsServiceSpatieRefactorTest::it_works_even_if_ldap_is_down` (mock `RightRepository` qui lève à chaque accès — la méthode doit retourner correctement).
+
+### Refactor UI `rights-drawer`
+
+`resources/views/components/organisms/rights-drawer.blade.php` :
+- Source de données = Spatie (rôles + permissions effectives), plus aucune lecture `RightRepository::getAllRightsValues()`.
+- Affichage des rôles avec badge `seed` / `custom` + label FR (via `SambaRole::label()`).
+- Permissions associées affichées en badges avec labels FR (via `SambaPermission::label()`).
+- Permissions directes (hors rôles) affichées en lecture seule.
+- Plus aucun bitmask hex `0x...` dans le rendu (assertion test `RightsDrawerSpatieTest::rendered_output_contains_readable_permission_labels_not_bitmask_hex`).
+
+### Sunset progressif (post-7.3, PR séparée)
+
+Marquées `@deprecated` en 7.3 (suppression effective post-stabilisation prod ≥ 2 semaines) :
+- `RightRepository::getAllRightsValues()` / `getRightValue()`
+- `LdapRightGroup::getAllRightsValues()` / `getRightValue()`
+
+**Conservées** en 7.3 (encore consommées par la commande one-shot et `importCustomProfilesFromAd`) :
+- `SambaPermission::toBitmask()` / `permissionsToBitmask()` (utilisées par `calculateRights()` refactoré)
+- `LegacyRight::*`
+- `SambaPermission::fromBitmask()` / `fromSingleBitmask()` / `bitmaskMapping()` / `legacyRight()` / `bitmask()`
+
+### Décisions produit 2026-04-25 actées
+
+| # | Décision                                      | Choix retenu                                                |
+| - | --------------------------------------------- | ----------------------------------------------------------- |
+| 1 | Scope migration vs profils custom 7.2         | 7.3 pose les assignations user→rôle (7.2 a créé les rôles) |
+| 2 | Format délégations scopées sur la VM          | Format réel `(no_)?(manage\|view\|rdp)_<parc>`, parsing regex strict |
+| 3 | Sunset bitmask                                | `@deprecated` en 7.3, suppression PR séparée post-stabilisation |
+
+### Nouvelle permission Spatie `computer.remote.rdp` (post-review #10, décision Henri 2026-04-25)
+
+**Origine** : migration des délégations RDP legacy (`OU=delegations` groupes
+`rdp_<parc>` / `no_rdp_<parc>`). Le legacy stockait dans `OU=rights/rdp` un
+profil dont le bitmask portait `SE_COMPUTER_CONTROL` (0x200). Plutôt que de
+réutiliser `computer.control` (qui aurait fusionné contrôle à distance VNC et
+RDP en une seule perm), une **option C** a été retenue : créer une permission
+Spatie distincte `computer.remote.rdp` pour permettre une gouvernance fine
+RDP par établissement (politique de sécurité, MFA, restrictions horaires).
+
+**Caractéristiques** :
+- `value = 'computer.remote.rdp'`, label « Bureau à distance (RDP) », catégorie `computer`
+- Bit legacy partagé avec `ComputerControl` (`0x200`) côté `legacyRight()` —
+  suit la convention du « bit représentant » (matrice §11). Côté static
+  helpers `fromBitmask()` / `bitmaskMapping()` / `fromSingleBitmask()`,
+  cette permission est **filtrée** (cf. `isSecondaryBitPermission()`) pour
+  éviter la sur-élévation des profils custom narrow lors du rapatriement 7.2.
+- Attribuée par défaut à `SambaRole::ComputerAdmin` (cohérent avec la
+  couverture du legacy `manage` + `rdp` côté admin de poste) et donc à
+  `SuperAdmin` (qui dérive `SambaPermission::cases()`).
+- **Délégable** (catégorie `computer`).
+
+**Sunset** : aucun. Cette permission survit au sunset bitmask (Story 7.3.bis)
+puisqu'elle n'est pas dérivée du mapping legacy.
