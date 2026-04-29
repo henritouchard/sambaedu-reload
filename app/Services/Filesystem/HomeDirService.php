@@ -2,6 +2,7 @@
 
 namespace App\Services\Filesystem;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -90,6 +91,10 @@ class HomeDirService
 
     /**
      * Archive le home directory : /home/{login} → /home/trash/{login}
+     *
+     * Verrou (Story 5.1d Q3, 2026-04-29) : `Cache::lock('trash:action:'.$login, 60)`
+     * pour éviter la race avec `restoreHomeDirectory` et `trash:purge`. Si le
+     * lock est indisponible, on retourne false + log warning.
      */
     public function archiveHomeDirectory(string $login): bool
     {
@@ -98,35 +103,50 @@ class HomeDirService
             return false;
         }
 
-        $homePath = "/home/" . $login;
-        $trashPath = "/home/trash/" . $login;
-
-        if (!is_dir($homePath)) {
-            Log::warning("archiveHomeDirectory: home inexistant", ['path' => $homePath]);
+        $lock = Cache::lock('trash:action:' . $login, 60);
+        if (!$lock->get()) {
+            Log::warning('archiveHomeDirectory: dossier verrouillé par une opération en cours', ['login' => $login]);
             return false;
         }
 
-        // Créer /home/trash/ si inexistant
-        if (!is_dir('/home/trash')) {
-            exec("sudo mkdir -p /home/trash 2>&1", $output, $rc);
-            if ($rc !== 0) {
-                Log::error("archiveHomeDirectory: échec création /home/trash", ['output' => implode("\n", $output)]);
+        try {
+            $homePath = "/home/" . $login;
+            $trashPath = "/home/trash/" . $login;
+
+            if (!is_dir($homePath)) {
+                Log::warning("archiveHomeDirectory: home inexistant", ['path' => $homePath]);
                 return false;
             }
-        }
 
-        exec("sudo mv " . escapeshellarg($homePath) . " " . escapeshellarg($trashPath) . " 2>&1", $output, $rc);
-        if ($rc !== 0) {
-            Log::error("archiveHomeDirectory: échec mv", ['login' => $login, 'output' => implode("\n", $output)]);
-            return false;
-        }
+            // Créer /home/trash/ si inexistant
+            if (!is_dir('/home/trash')) {
+                exec("sudo mkdir -p /home/trash 2>&1", $output, $rc);
+                if ($rc !== 0) {
+                    Log::error("archiveHomeDirectory: échec création /home/trash", ['output' => implode("\n", $output)]);
+                    return false;
+                }
+            }
 
-        Log::info("Home directory archivé", ['login' => $login, 'from' => $homePath, 'to' => $trashPath]);
-        return true;
+            exec("sudo mv " . escapeshellarg($homePath) . " " . escapeshellarg($trashPath) . " 2>&1", $output, $rc);
+            if ($rc !== 0) {
+                Log::error("archiveHomeDirectory: échec mv", ['login' => $login, 'output' => implode("\n", $output)]);
+                return false;
+            }
+
+            Log::info("Home directory archivé", ['login' => $login, 'from' => $homePath, 'to' => $trashPath]);
+            return true;
+        } finally {
+            $lock->release();
+        }
     }
 
     /**
      * Restaure le home directory : /home/trash/{login} → /home/{login}
+     *
+     * Verrou (Story 5.1d Q3, 2026-04-29) : `Cache::lock('trash:action:'.$login, 60)`
+     * pour éviter la race avec `trash:purge` (cron 02h00) et `archiveHomeDirectory`.
+     * Si le lock est indisponible (autre opération en cours), retourne false +
+     * log warning.
      */
     public function restoreHomeDirectory(string $login): bool
     {
@@ -135,22 +155,32 @@ class HomeDirService
             return false;
         }
 
-        $trashPath = "/home/trash/" . $login;
-        $homePath = "/home/" . $login;
-
-        if (!is_dir($trashPath)) {
-            Log::warning("restoreHomeDirectory: archive inexistante", ['path' => $trashPath]);
+        $lock = Cache::lock('trash:action:' . $login, 60);
+        if (!$lock->get()) {
+            Log::warning('restoreHomeDirectory: dossier verrouillé par une opération en cours', ['login' => $login]);
             return false;
         }
 
-        exec("sudo mv " . escapeshellarg($trashPath) . " " . escapeshellarg($homePath) . " 2>&1", $output, $rc);
-        if ($rc !== 0) {
-            Log::error("restoreHomeDirectory: échec mv", ['login' => $login, 'output' => implode("\n", $output)]);
-            return false;
-        }
+        try {
+            $trashPath = "/home/trash/" . $login;
+            $homePath = "/home/" . $login;
 
-        Log::info("Home directory restauré", ['login' => $login, 'from' => $trashPath, 'to' => $homePath]);
-        return true;
+            if (!is_dir($trashPath)) {
+                Log::warning("restoreHomeDirectory: archive inexistante", ['path' => $trashPath]);
+                return false;
+            }
+
+            exec("sudo mv " . escapeshellarg($trashPath) . " " . escapeshellarg($homePath) . " 2>&1", $output, $rc);
+            if ($rc !== 0) {
+                Log::error("restoreHomeDirectory: échec mv", ['login' => $login, 'output' => implode("\n", $output)]);
+                return false;
+            }
+
+            Log::info("Home directory restauré", ['login' => $login, 'from' => $trashPath, 'to' => $homePath]);
+            return true;
+        } finally {
+            $lock->release();
+        }
     }
 
     /**

@@ -5,23 +5,26 @@ use App\Models\QuotaRule;
 use App\Models\QuotaSetting;
 use App\Models\SystemSetting;
 use App\Services\Filesystem\XfsQuotaService;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Livewire\Component;
 
 /**
- * Story 5.1c — Onglet "Quotas & FS" de la page /admin/settings.
+ * Story 5.1c (initial) + 5.1d (extension) — Onglet "Quotas & FS" de
+ * `/admin/settings`.
  *
  * 3 sections (cards) :
  *   1. Defaults par profil   — élève / prof / admin / itinérant × /home + /var/sambaedu
  *      (soft Mo, overage %, hard Mo calculé read-only). Persisté via
- *      SystemSetting::set('quota.defaults', [...]).
+ *      SystemSetting::set('quota.defaults', [...]). La règle itinérante est
+ *      consommée par `XfsQuotaService::getEffectiveQuota` depuis 5.1d.
  *   2. Période de grâce      — 1 input par partition. Persiste dans
  *      `quota_settings` (existant) ET tente d'appliquer
  *      `XfsQuotaService::setGracePeriod` synchrone post-save (D4=A).
  *   3. Corbeille             — TTL jours + toggle purge auto, persistés via
- *      SystemSetting::set('quota.trash', [...]). Banner info "consommée par
- *      `trash:purge` 5.1d" — aucune commande exécutée en 5.1c.
+ *      SystemSetting::set('quota.trash', [...]). Bouton "Purger maintenant"
+ *      ajouté en 5.1d → `Artisan::call('trash:purge')` synchrone (D3=A).
  *
  * Sécurité : double guard sur chaque méthode publique (Gate `server.admin` +
  * abort(403) en première ligne).
@@ -338,6 +341,71 @@ new class extends Component {
         }
     }
 
+    /**
+     * Story 5.1d — Bouton "Purger maintenant" (D3=A : sync Artisan::call).
+     *
+     * Sécurité : double guard `Gate::allows('server.admin')` cohérent
+     * saveDefaults/saveGrace/saveTrash. Le payload Livewire forgé par un user
+     * non-admin déclenche `abort(403)` avant tout I/O.
+     *
+     * Exécution synchrone via `Artisan::call('trash:purge')` — purge légère
+     * (≤50 dossiers en moyenne sur SER) acceptable inline. Si volume prod
+     * monte, basculer async via Job dans une story future.
+     *
+     * Le compteur "Purgé : N" est extrait de l'output via regex tolérante
+     * (singulier "dossier" ET pluriel "dossier(s)"), avec fallback à 0 si le
+     * format évolue.
+     */
+    public function purgeNow(): void
+    {
+        if (!Gate::allows('server.admin')) {
+            abort(403);
+        }
+
+        // Pré-check TTL : la commande retourne SUCCESS + count=0 quand TTL <= 0
+        // (no-op safe D2=A). Sans ce garde-fou côté UI, l'admin verrait un toast
+        // VERT "Corbeille purgée — 0 dossier supprimé" alors qu'aucune purge n'a
+        // eu lieu (faux succès trompeur — review #5).
+        $cfg = SystemSetting::get('quota.trash', null);
+        $ttlDays = is_array($cfg) ? (int) ($cfg['ttl_days'] ?? 0) : 0;
+        if ($ttlDays <= 0) {
+            $this->toastError('Corbeille non purgée — TTL non configuré (saisir un TTL > 0 dans la section Corbeille).');
+            return;
+        }
+
+        try {
+            $performedBy = auth()->user()?->login ?? 'admin';
+            // Trace l'origine de la purge dans QuotaAuditLog : utile pour distinguer
+            // les purges manuelles (UI) des purges automatiques (cron).
+            $exitCode = Artisan::call('trash:purge', [
+                '--performed-by' => 'ui:' . $performedBy,
+            ]);
+            $output = Artisan::output();
+
+            $count = preg_match('/Purgé\s*:\s*(\d+)/u', $output, $m) ? (int) $m[1] : 0;
+            $errors = preg_match('/Erreurs\s*:\s*(\d+)/u', $output, $me) ? (int) $me[1] : 0;
+
+            if ($exitCode === 0) {
+                if ($errors > 0) {
+                    $this->toastInfo(sprintf(
+                        'Corbeille purgée — %d dossier(s) supprimé(s), %d erreur(s). Consultez les logs.',
+                        $count,
+                        $errors,
+                    ));
+                } else {
+                    $this->toastSuccess(sprintf('Corbeille purgée — %d dossier(s) supprimé(s).', $count));
+                }
+            } else {
+                $this->toastError('Échec de la purge — voir les logs.');
+            }
+        } catch (\Throwable $e) {
+            Log::error('QuotaService: purgeNow échec', [
+                'error' => $e->getMessage(),
+            ]);
+            $this->toastError('Échec de la purge — voir les logs.');
+        }
+    }
+
     // =========================================================================
     // HELPERS RENDU
     // =========================================================================
@@ -392,9 +460,6 @@ new class extends Component {
                     <div class="border border-base-300 rounded-lg p-4">
                         <h4 class="font-semibold mb-3 text-base">
                             {{ $profile['label'] }}
-                            @if ($profile['key'] === 'itinerant')
-                                <span class="badge badge-warning badge-sm ml-2">Effectif en 5.1d</span>
-                            @endif
                         </h4>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -569,19 +634,6 @@ new class extends Component {
                 utilisateurs.
             </p>
 
-            <div class="alert alert-info mb-4">
-                <i class="fa-solid fa-circle-info"></i>
-                <div>
-                    <span class="font-medium">Configuration mise en attente.</span>
-                    <p class="text-sm">
-                        Cette configuration sera consommée par la commande
-                        <code class="text-xs">trash:purge</code> livrée dans la
-                        prochaine version (5.1d). Les valeurs renseignées ici
-                        sont persistées mais sans effet immédiat.
-                    </p>
-                </div>
-            </div>
-
             <form wire:submit.prevent="saveTrash" class="space-y-4">
                 <div class="form-control">
                     <label class="label">
@@ -598,11 +650,21 @@ new class extends Component {
                 <div class="form-control">
                     <label class="label cursor-pointer max-w-xs justify-start gap-3">
                         <input type="checkbox" wire:model.live="trash.purge_auto" class="toggle toggle-primary" />
-                        <span class="label-text">Purge automatique</span>
+                        <span class="label-text">Purge automatique (cron 02h00)</span>
                     </label>
                 </div>
 
-                <div class="flex justify-end">
+                <div class="flex justify-between items-center gap-2 flex-wrap">
+                    {{-- Story 5.1d — Bouton "Purger maintenant" (sync Artisan::call). --}}
+                    <button type="button" class="btn btn-outline btn-warning"
+                        wire:click="purgeNow"
+                        wire:confirm="Purger maintenant la corbeille ? Les dossiers /home/trash plus vieux que le TTL configuré seront supprimés définitivement."
+                        wire:loading.attr="disabled" wire:target="purgeNow">
+                        <span wire:loading wire:target="purgeNow" class="loading loading-spinner loading-xs"></span>
+                        <i wire:loading.remove wire:target="purgeNow" class="fa-solid fa-broom"></i>
+                        Purger maintenant
+                    </button>
+
                     <button type="submit" class="btn btn-primary"
                         @disabled(!$this->trashDirty)
                         wire:loading.attr="disabled" wire:target="saveTrash">

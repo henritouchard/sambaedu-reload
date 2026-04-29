@@ -10,7 +10,7 @@ use Livewire\Wireable;
  * Modèle Eloquent pour les règles de quotas
  * 
  * @property int $id
- * @property string $type user, group, default_eleve, default_prof, default_admin
+ * @property string $type user, group, default_eleve, default_prof, default_admin, default_itinerant
  * @property string|null $target Nom utilisateur ou groupe AD
  * @property string $partition /home ou /var/sambaedu
  * @property int $quota_soft_mb Quota soft en Mo (0 = illimité)
@@ -46,15 +46,14 @@ class QuotaRule extends Model implements Wireable
     public const TYPE_DEFAULT_ADMIN = 'default_admin';
 
     /**
-     * Story 5.1c (D12=A) — Defaults pour utilisateurs itinérants (User::isExternal).
+     * Defaults pour utilisateurs itinérants (User::isExternal).
      *
-     * Constante PASSIVE en 5.1c : permet à l'UI /admin/settings (onglet
-     * Quotas & FS) de persister les valeurs via le même formulaire que les
-     * autres profils. La logique de lecture (`getEffectiveQuota` doit appliquer
-     * cet override si `User::isExternal()`) est livrée par la story 5.1d.
-     *
-     * Tant que 5.1d n'est pas livrée, un row `TYPE_DEFAULT_ITINERANT` existe
-     * en BDD mais n'a aucun effet runtime — c'est volontaire.
+     * Introduit en 5.1c (D12=A) comme constante persistée par l'UI
+     * `/admin/settings` (onglet Quotas & FS), ACTIF en lecture depuis la
+     * story 5.1d (livrée 2026-04-27) : `XfsQuotaService::getEffectiveQuota()`
+     * applique cet override quand `User::isExternal()` retourne `true` ET
+     * qu'aucune règle USER/GROUP ne s'applique. La règle itinérante prime
+     * sur le default profil (élève/prof/admin) — D9 confirmée Henri.
      */
     public const TYPE_DEFAULT_ITINERANT = 'default_itinerant';
 
@@ -105,9 +104,9 @@ class QuotaRule extends Model implements Wireable
     /**
      * Scope pour les politiques par défaut
      *
-     * TYPE_DEFAULT_ITINERANT est listé dès 5.1c (D12=A) mais reste passif :
-     * `XfsQuotaService::getEffectiveQuota()` ne consomme pas encore ce type
-     * (fallback élève silent). 5.1d activera la lecture via `User::isExternal()`.
+     * TYPE_DEFAULT_ITINERANT inclus depuis 5.1c (D12=A) et ACTIF en lecture
+     * depuis 5.1d (2026-04-27) : `XfsQuotaService::getEffectiveQuota()`
+     * applique l'override itinérant quand `User::isExternal()` retourne `true`.
      */
     public function scopeDefaults($query)
     {
@@ -122,7 +121,8 @@ class QuotaRule extends Model implements Wireable
     /**
      * Vérifie si c'est une politique par défaut
      *
-     * TYPE_DEFAULT_ITINERANT inclus dès 5.1c (D12=A) — actif en lecture en 5.1d.
+     * TYPE_DEFAULT_ITINERANT inclus dès 5.1c (D12=A), actif en lecture
+     * depuis 5.1d (2026-04-27).
      */
     public function isDefault(): bool
     {

@@ -5,6 +5,7 @@ namespace App\Services\Filesystem;
 use App\Models\QuotaRule;
 use App\Models\QuotaAuditLog;
 use App\Models\QuotaSetting;
+use App\Models\User;
 use App\Jobs\ApplyQuotaJob;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
@@ -57,10 +58,15 @@ class XfsQuotaService
     /**
      * Calcule le quota effectif pour un utilisateur sur une partition
      *
-     * Ordre de priorité :
-     * 1. Quota utilisateur explicite
-     * 2. Plus grand quota parmi les groupes d'appartenance
-     * 3. Politique par défaut selon le profil (élève/prof/admin)
+     * Ordre de priorité (mis à jour Story 5.1d) :
+     * 1. Quota utilisateur explicite (TYPE_USER)
+     * 2. Plus grand quota parmi les groupes d'appartenance (TYPE_GROUP)
+     * 2.5. Si l'utilisateur est externe (User::isExternal() == true) ET aucune
+     *     règle USER/GROUP applicable : tenter TYPE_DEFAULT_ITINERANT — 5.1d (D5=A,D9).
+     *     Lookup interne `User::where('login', $username)` pour préserver la
+     *     signature publique (D5=A) et éviter de propager `isExternal` aux 6+
+     *     call sites externes (snapshot, wallpaper, controllers, livewire).
+     * 3. Politique par défaut selon le profil (élève/prof/admin) — fallback final
      *
      * @param string $username Nom d'utilisateur
      * @param string $partition /home ou /var/sambaedu
@@ -120,6 +126,41 @@ class XfsQuotaService
                     'is_unlimited' => false,
                 ];
             }
+        }
+
+        // 2.5 (Story 5.1d, D5=A + D9) — Si l'utilisateur est externe (rattaché à
+        // un autre établissement), tenter d'appliquer la règle TYPE_DEFAULT_ITINERANT
+        // AVANT le default profil. Lookup interne préserve la signature publique
+        // (D5=A) — le coût (~0.5ms primary key SELECT) est négligeable comparé
+        // aux shellouts XFS qui dominent les call paths.
+        try {
+            $user = User::query()
+                ->select(['login', 'school_code'])
+                ->where('login', $username)
+                ->first();
+        } catch (\Throwable $e) {
+            // Connexion BDD indispo / table absente : on continue silencieusement
+            // sur le default profil pour ne pas casser les chemins downstream.
+            $user = null;
+        }
+
+        if ($user !== null && $user->isExternal()) {
+            $itinerantRule = QuotaRule::active()
+                ->forPartition($partition)
+                ->where('type', QuotaRule::TYPE_DEFAULT_ITINERANT)
+                ->first();
+
+            if ($itinerantRule) {
+                return [
+                    'source' => 'default',
+                    'source_name' => $itinerantRule->getTypeLabel(),
+                    'quota_soft_mb' => $itinerantRule->quota_soft_mb,
+                    'quota_hard_mb' => $itinerantRule->quota_hard_mb,
+                    'is_unlimited' => $itinerantRule->isUnlimited(),
+                ];
+            }
+            // Fallback silencieux : pas de règle itinérante configurée → on
+            // poursuit vers le default profil ci-dessous (cohérent AC 2).
         }
 
         // 3. Appliquer la politique par défaut selon le profil

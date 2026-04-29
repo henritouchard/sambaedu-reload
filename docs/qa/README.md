@@ -5,7 +5,7 @@ Checklist par domaine métier. À dérouler avant une mise en production importa
 ## Domaines couverts
 
 - [ ] [rights-management](domains/rights-management.md) — Droits applicatifs, rôles Spatie, permissions, délégations périmétrées, scoping classe, profils CRUD _(Stories 7.1, 7.2)_
-- [ ] [filesystem](domains/filesystem.md) — Quotas, snapshot, trash, home dirs _(Story 5.1c)_
+- [ ] [filesystem](domains/filesystem.md) — Quotas, snapshot, trash, home dirs _(Stories 5.1c, 5.1d)_
 
 ## À créer au fil des prochaines stories
 

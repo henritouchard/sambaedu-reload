@@ -49,6 +49,29 @@ class Kernel extends ConsoleKernel
                  ->daily()
                  ->runInBackground();
 
+        // Story 5.1d : Purge corbeille `/home/trash/*` quotidiennement à 02h00.
+        // Conditionné par le toggle `quota.trash.purge_auto` (SystemSetting),
+        // évalué à chaque tick via `->when(closure)`. Si le toggle est false,
+        // la commande n'est pas exécutée — décision admin prise dans
+        // /admin/settings → Quotas & FS, prise d'effet immédiate sans redéploiement.
+        // Placée à 02h00 pour précéder le snapshot 03h00 (purge → état stable
+        // pour le rapport XFS).
+        $schedule->command('trash:purge')
+                 ->dailyAt('02:00')
+                 ->withoutOverlapping()
+                 ->runInBackground()
+                 ->when(function (): bool {
+                     try {
+                         $cfg = \App\Models\SystemSetting::get('quota.trash', null);
+                         return is_array($cfg) && (bool) ($cfg['purge_auto'] ?? false);
+                     } catch (\Throwable $e) {
+                         // BDD indispo / table absente : on ne planifie pas
+                         // (interprétation prudente — pas de purge muette en cas
+                         // de doute sur la config).
+                         return false;
+                     }
+                 });
+
         // Story 5.1b : Snapshot quotas XFS quotidien à 03h00
         // Parse `xfs_quota -x -c 'report -a -N'` en une passe et alimente
         // users.quota_snapshot. Remplace le cache 5 min supprimé en 5.1a.

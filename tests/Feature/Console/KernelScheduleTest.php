@@ -5,12 +5,34 @@ declare(strict_types=1);
 namespace Tests\Feature\Console;
 
 use App\Console\Kernel;
+use App\Models\SystemSetting;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 use PHPUnit\Framework\Attributes\Test;
 
 class KernelScheduleTest extends TestCase
 {
+    use DatabaseTransactions;
+
+    protected function tearDown(): void
+    {
+        // Story 5.1d — code review #8 : éviter qu'un SystemSetting `quota.trash`
+        // posé par un test perturbe les autres tests si l'ordre est aléatoire.
+        // DatabaseTransactions rollback les rows, mais on appelle aussi
+        // `SystemSetting::forget()` pour purger d'éventuels caches statiques
+        // si le modèle en ajoute à l'avenir (defensive).
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('system_settings')) {
+                SystemSetting::forget('quota.trash');
+            }
+        } catch (\Throwable) {
+            // No-op : la table peut ne pas exister selon l'ordre des tests.
+        }
+
+        parent::tearDown();
+    }
+
     #[Test]
     public function it_schedules_automatic_users_sync_from_ad(): void
     {
@@ -115,5 +137,94 @@ class KernelScheduleTest extends TestCase
             $hasQuotaSnapshot,
             'Le scheduler doit déclencher quota:snapshot quotidiennement à 03h00 (story 5.1b).'
         );
+    }
+
+    // =========================================================================
+    // Story 5.1d — trash:purge à 02h00 + ->when() conditionné par SystemSetting
+    // =========================================================================
+
+    #[Test]
+    public function it_schedules_trash_purge_daily_at_02h(): void
+    {
+        $kernel = $this->app->make(Kernel::class);
+        $schedule = $this->app->make(Schedule::class);
+
+        $scheduleMethod = new \ReflectionMethod($kernel, 'schedule');
+        $scheduleMethod->setAccessible(true);
+        $scheduleMethod->invoke($kernel, $schedule);
+
+        $hasTrashPurge = collect($schedule->events())->contains(
+            static fn ($event): bool => str_contains((string) $event->command, 'trash:purge')
+                && $event->expression === '0 2 * * *'
+        );
+
+        $this->assertTrue(
+            $hasTrashPurge,
+            'Le scheduler doit déclencher trash:purge quotidiennement à 02h00 (story 5.1d).'
+        );
+    }
+
+    #[Test]
+    public function it_does_not_run_trash_purge_when_auto_disabled(): void
+    {
+        // Crée la table system_settings + insère purge_auto=false.
+        if (!\Illuminate\Support\Facades\Schema::hasTable('system_settings')) {
+            \Illuminate\Support\Facades\Schema::create('system_settings', function (\Illuminate\Database\Schema\Blueprint $table) {
+                $table->id();
+                $table->string('key', 191)->unique();
+                $table->json('value')->nullable();
+                $table->timestamps();
+            });
+        }
+        \App\Models\SystemSetting::set('quota.trash', ['ttl_days' => 30, 'purge_auto' => false]);
+
+        $kernel = $this->app->make(Kernel::class);
+        $schedule = $this->app->make(Schedule::class);
+
+        $scheduleMethod = new \ReflectionMethod($kernel, 'schedule');
+        $scheduleMethod->setAccessible(true);
+        $scheduleMethod->invoke($kernel, $schedule);
+
+        $trashEvent = collect($schedule->events())->first(
+            static fn ($event): bool => str_contains((string) $event->command, 'trash:purge')
+        );
+
+        $this->assertNotNull($trashEvent);
+        $this->assertFalse(
+            $trashEvent->filtersPass($this->app),
+            'Avec purge_auto=false, la closure ->when() doit retourner false (event non exécuté).',
+        );
+    }
+
+    #[Test]
+    public function it_runs_trash_purge_when_auto_enabled(): void
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasTable('system_settings')) {
+            \Illuminate\Support\Facades\Schema::create('system_settings', function (\Illuminate\Database\Schema\Blueprint $table) {
+                $table->id();
+                $table->string('key', 191)->unique();
+                $table->json('value')->nullable();
+                $table->timestamps();
+            });
+        }
+        \App\Models\SystemSetting::set('quota.trash', ['ttl_days' => 30, 'purge_auto' => true]);
+
+        $kernel = $this->app->make(Kernel::class);
+        $schedule = $this->app->make(Schedule::class);
+
+        $scheduleMethod = new \ReflectionMethod($kernel, 'schedule');
+        $scheduleMethod->setAccessible(true);
+        $scheduleMethod->invoke($kernel, $schedule);
+
+        $trashEvent = collect($schedule->events())->first(
+            static fn ($event): bool => str_contains((string) $event->command, 'trash:purge')
+        );
+
+        $this->assertNotNull($trashEvent);
+        $this->assertTrue(
+            $trashEvent->filtersPass($this->app),
+            'Avec purge_auto=true, la closure ->when() doit retourner true (event éligible).',
+        );
+        // Cleanup : assuré par tearDown() + DatabaseTransactions rollback.
     }
 }

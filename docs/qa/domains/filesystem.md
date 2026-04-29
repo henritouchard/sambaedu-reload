@@ -100,8 +100,7 @@ groupe "test-classe-6a").
 
 1. Sur `/admin/settings?tab=quotas-fs`, section "Quotas par défaut".
 2. Pour chaque profil (élève / prof / admin / itinérant) × 2 partitions
-   (`/home`, `/var/sambaedu`) : 3 inputs visibles (Soft Mo, Overage %, Hard Mo
-   read-only).
+   (`/home`, `/var/sambaedu`) : 2 inputs visibles (Soft Mo, Overage %).
 3. Le profil "Itinérant" affiche un badge "Effectif en 5.1d".
 4. Modifier élève /home soft = 200, overage = 25 → Hard se met à jour live à 250.
 5. Cliquer "Enregistrer les defaults" → toast success "Réglages enregistrés".
@@ -198,3 +197,175 @@ $u->update(['quota_snapshot' => [
 3. Le login réussit (redirection vers dashboard normale).
 4. Aucun toast.
 5. Logs : `Log::warning('QuotaService: listener NotifyQuotaOverageOnLogin échoué', ...)`.
+
+---
+
+## Story 5.1d — `default_itinerant`, `trash:purge`, seed legacy
+
+**Date livraison** : 2026-04-27 par claude-opus-4-7.
+
+**Migrations à appliquer** : aucune (champ `quota_rules.type` est déjà
+`string(20)` qui accepte `default_itinerant`).
+
+**Pré-requis** :
+- Snapshot quotas opérationnel (5.1b).
+- Onglet `/admin/settings → Quotas & FS` opérationnel (5.1c).
+- Connexion `legacy_mysql` configurée dans `.env` (variables `LEGACY_DB_*`)
+  uniquement pour le scénario 5.1d-7/8.
+
+### Scénario 5.1d-1 — User externe sans règle reçoit `default_itinerant`
+
+1. **Préparation** : sur la VM, dans tinker :
+   ```php
+   App\Models\QuotaRule::create([
+       'type' => App\Models\QuotaRule::TYPE_DEFAULT_ITINERANT,
+       'target' => null,
+       'partition' => '/home',
+       'quota_soft_mb' => 200,
+       'quota_hard_mb' => 240,
+       'is_active' => true,
+   ]);
+   App\Models\QuotaRule::create([
+       'type' => App\Models\QuotaRule::TYPE_DEFAULT_ELEVE,
+       'target' => null,
+       'partition' => '/home',
+       'quota_soft_mb' => 500,
+       'quota_hard_mb' => 600,
+       'is_active' => true,
+   ]);
+   $u = App\Models\User::where('login', 'alice')->first();
+   $u->school_code = '0770001a'; // différent de l'établissement courant
+   $u->save();
+   ```
+2. Aller sur `/app/users/alice` (ou équivalent fiche user).
+3. **Attendu** : la section quota indique `Source : Défaut itinérants`,
+   `Soft : 200 Mo`, `Hard : 240 Mo`.
+4. Si on enlève la règle `TYPE_DEFAULT_ITINERANT` puis relance :
+   `Source : Défaut élèves` (fallback profil silencieux).
+
+### Scénario 5.1d-2 — User externe avec règle USER ignore `default_itinerant`
+
+1. Suite du scénario précédent. Ajouter une règle USER explicite :
+   ```php
+   App\Models\QuotaRule::create([
+       'type' => App\Models\QuotaRule::TYPE_USER,
+       'target' => 'alice',
+       'partition' => '/home',
+       'quota_soft_mb' => 1500,
+       'quota_hard_mb' => 1800,
+       'is_active' => true,
+   ]);
+   ```
+2. Recharger la fiche `/app/users/alice`.
+3. **Attendu** : `Source : Utilisateur (alice)`, `Soft : 1500`, `Hard : 1800`.
+   La règle USER prime sur `default_itinerant`.
+
+### Scénario 5.1d-3 — `trash:purge --dry-run`
+
+1. Sur la VM : `cd /var/www/sambaedu-reload`.
+2. Configurer le TTL : `php artisan tinker --execute="App\Models\SystemSetting::set('quota.trash', ['ttl_days' => 30, 'purge_auto' => false]);"`.
+3. Créer 2 dossiers de test :
+   ```bash
+   sudo mkdir -p /home/trash/{old-test,recent-test}
+   sudo touch -d '60 days ago' /home/trash/old-test
+   sudo touch -d '5 days ago' /home/trash/recent-test
+   ```
+4. `php artisan trash:purge --dry-run`.
+5. **Attendu** : tableau listant `old-test (À PURGER)` et `recent-test
+   (conservé)`, message `[DRY-RUN] Candidats à purger : 1. Conservés : 1.
+   Aucune modification effectuée.`. Les 2 dossiers existent toujours.
+
+### Scénario 5.1d-4 — `trash:purge` réel
+
+1. Suite du scénario précédent.
+2. `php artisan trash:purge`.
+3. **Attendu** : `Purgé : 1 dossier(s). Conservé : 1 dossier(s). Erreurs : 0.`
+4. `ls /home/trash/` → seul `recent-test` reste.
+5. Vérifier l'audit :
+   ```php
+   App\Models\QuotaAuditLog::where('target_type', 'trash')->latest()->first();
+   // → action='delete', target_name='old-test', performed_by='trash:purge'
+   ```
+
+### Scénario 5.1d-5 — Bouton "Purger maintenant" UI
+
+1. Re-créer un dossier vieux : `sudo mkdir /home/trash/manual-test && sudo touch -d '60 days ago' /home/trash/manual-test`.
+2. Aller sur `/admin/settings?tab=quotas-fs` (en tant que `server.admin`).
+3. Section "Corbeille (/home/trash)" — cliquer sur **Purger maintenant**.
+4. Confirmer la modale `wire:confirm`.
+5. **Attendu** :
+   - Toast vert "Corbeille purgée — 1 dossier(s) supprimé(s)."
+   - `ls /home/trash/` ne contient plus `manual-test`.
+   - `QuotaAuditLog::where('performed_by', 'ui:<login_admin>')->latest()->first();`
+     trace l'action.
+
+### Scénario 5.1d-6 — Planification automatique à 02h00
+
+1. Activer le toggle dans `/admin/settings → Quotas & FS` :
+   `Purge automatique (cron 02h00)` → on.
+2. Vérifier l'event scheduler : `php artisan schedule:list | grep trash:purge`.
+3. **Attendu** : entrée `0 2 * * * php artisan trash:purge` listée.
+4. Désactiver le toggle. Re-vérifier `schedule:list`.
+5. **Attendu** : la commande **est toujours listée** (planification fixe)
+   mais elle ne s'exécutera pas (le filtre `->when()` retourne false). Pour
+   tester sans attendre 24h, modifier temporairement le `dailyAt('02:00')`
+   en `everyMinute()` et observer les logs.
+
+### Scénario 5.1d-7 — `quota:seed-from-legacy --dry-run`
+
+1. Configurer `.env` avec les variables `LEGACY_DB_*` pointant vers la
+   base MySQL legacy de l'établissement.
+2. `php artisan config:clear`.
+3. `php artisan quota:seed-from-legacy --dry-run`.
+4. **Attendu** : rapport texte
+   ```
+   [DRY-RUN] Seed quotas legacy → SambaEdu Reload
+   ─────────────────────────────────────
+   Source : legacy_mysql.quotas (N rows)
+   Importées : X user / Y group
+   ...
+   Mode dry-run actif — aucune modification BDD effectuée.
+   ```
+5. Vérifier `QuotaRule::count()` → inchangé.
+6. Vérifier `QuotaAuditLog::where('performed_by', 'quota:seed-from-legacy')->count()` → 0.
+
+### Scénario 5.1d-8 — `quota:seed-from-legacy` run réel
+
+1. Suite du scénario précédent. Si le dry-run est OK :
+   `php artisan quota:seed-from-legacy`.
+2. **Attendu** : rapport similaire sans `[DRY-RUN]`. Les règles sont créées.
+3. `QuotaRule::where('type', 'user')->count()` → reflète les imports.
+4. `QuotaAuditLog::where('performed_by', 'quota:seed-from-legacy')->count()`
+   → > 0.
+5. Lancer une 2e fois SANS `--force` :
+   - Les règles existantes sont skipped (log info), 0 INSERT additionnel.
+6. Lancer une 3e fois AVEC `--force` :
+   - Les règles existantes sont mises à jour (audit `update`).
+
+### Scénario 5.1d-9 — `quota:seed-from-legacy` connexion absente
+
+1. Vider les variables `LEGACY_DB_*` dans `.env`.
+2. `php artisan config:clear`.
+3. `php artisan quota:seed-from-legacy`.
+4. **Attendu** :
+   - Exit code 1 (FAILURE).
+   - Message stdout :
+     `Connexion legacy non configurée — ajouter LEGACY_DB_HOST/DATABASE/USERNAME/PASSWORD dans .env`
+   - Aucune modification BDD.
+   - Log Laravel : `QuotaService: connexion legacy_mysql non configurée`.
+
+### Scénario 5.1d-10 — Init defaults profils si absents
+
+1. Sur une BDD vide de defaults :
+   `QuotaRule::whereIn('type', ['default_eleve','default_prof','default_admin','default_itinerant'])->delete();`
+2. Configurer `.env` avec une connexion `legacy_mysql` vide ou pointant
+   sur une table `quotas` vide.
+3. `php artisan quota:seed-from-legacy`.
+4. **Attendu** : 8 règles defaults créées (4 profils × 2 partitions),
+   avec les valeurs prévues (élève 500/600 — prof 1000/1200 — admin
+   2000/2400 — itinérant 200/240). Aucune écrasement si l'admin a déjà
+   personnalisé via l'onglet UI (sauf `--force`).
+
+---
+
+*Dernière mise à jour : 2026-04-27 (Story 5.1d)*

@@ -243,10 +243,13 @@ Structure persistée :
 }
 ```
 
-> **Note 5.1c** : le profil `itinerant` est PASSIVE en 5.1c. Les valeurs
-> sont persistées et un badge "Effectif en 5.1d" apparaît. La logique de
-> lecture (`XfsQuotaService::getEffectiveQuota` lit `quota.defaults.itinerant`
-> si `User::isExternal()`) sera livrée par la story 5.1d.
+> **Note 5.1d (2026-04-27)** : le profil `itinerant` est ACTIF depuis la
+> story 5.1d. `XfsQuotaService::getEffectiveQuota()` applique la règle
+> `QuotaRule::TYPE_DEFAULT_ITINERANT` quand `User::isExternal()` retourne
+> `true` ET qu'aucune règle USER/GROUP ne s'applique (la résolution se fait
+> via lookup interne `User::where('login', $username)` — D5=A signature
+> publique préservée). La règle itinérante prime sur le default profil
+> (D9=A confirmée Henri).
 
 Validation serveur : `soft_mb >= 10` sur `/home` (sauf 0 = illimité accepté).
 
@@ -265,10 +268,17 @@ Validation serveur : `soft_mb >= 10` sur `/home` (sauf 0 = illimité accepté).
 Input TTL (1-365 jours) + toggle "Purge automatique". Persistance :
 `SystemSetting::set('quota.trash', ['ttl_days' => N, 'purge_auto' => bool])`.
 
-Banner info visible : "Cette configuration sera consommée par la commande
-`trash:purge` livrée dans la prochaine version (5.1d)." Aucune commande
-Artisan n'est exécutée en 5.1c — la persistance seule suffit. La commande
-`trash:purge` (5.1d) lira ces settings au runtime.
+Depuis la story 5.1d (2026-04-27) :
+- Commande `trash:purge` planifiée à 02h00 quotidiennement, **conditionnée**
+  par le toggle `purge_auto` via `->when(closure)` dans `Console\Kernel`
+  (la closure lit `SystemSetting::get('quota.trash')` à chaque tick — prise
+  d'effet immédiate du toggle UI sans redéploiement).
+- Bouton "Purger maintenant" disponible dans la card Corbeille : appel
+  synchrone `Artisan::call('trash:purge', ['--performed-by' => 'ui:<login>'])`
+  avec parsing du compteur "Purgé : N" + toast WithToasts succès/info/erreur.
+  Pré-check TTL côté UI : si `ttl_days <= 0`, toast d'erreur explicite
+  ("Corbeille non purgée — TTL non configuré") sans appel Artisan.
+- Le banner info "à venir 5.1d" a été retiré (la commande est livrée).
 
 ### Sécurité
 
@@ -330,6 +340,159 @@ Migration `2026_04_25_100000_create_system_settings_table` :
 via `DB::getDriverName()` (cohérent avec `add_quota_snapshot` 5.1b et
 `delegation_history` 7.1). Cast `'value' => 'array'` sur le modèle.
 
+## Story 5.1d — `default_itinerant`, `trash:purge`, seed legacy
+
+Livré le **2026-04-27** par claude-opus-4-7. Trois volets indépendants qui
+clôturent la Story 5.1 splittée.
+
+### Volet 1 — `default_itinerant` actif dans `getEffectiveQuota`
+
+`XfsQuotaService::getEffectiveQuota()` applique désormais la règle
+`QuotaRule::TYPE_DEFAULT_ITINERANT` quand l'utilisateur est externe
+(`User::isExternal() == true`) ET qu'aucune règle USER/GROUP ne s'applique.
+La règle itinérante est **prioritaire** sur le default profil
+(élève/prof/admin) — D9 confirmée par Henri.
+
+Ordre de résolution mis à jour :
+
+1. `TYPE_USER` (règle utilisateur explicite)
+2. `TYPE_GROUP` (plus grand quota parmi les groupes)
+3. **NOUVEAU** : `TYPE_DEFAULT_ITINERANT` si `isExternal()` et règle existe
+4. `TYPE_DEFAULT_<eleve|prof|admin>` (fallback profil)
+
+**Décision D5=A** : la signature publique de `getEffectiveQuota` est
+préservée — un lookup interne `User::where('login', $username)->first()`
+résout `isExternal` sans propager le coût aux 6+ call sites externes
+(snapshot, wallpaper, livewire, controllers). Coût négligeable
+(~0.5ms primary key SELECT).
+
+Fallback silencieux : si `isExternal()=true` mais aucune règle
+`TYPE_DEFAULT_ITINERANT` n'existe pour la partition, on poursuit vers le
+default profil. Aucun warning (la règle est optionnelle).
+
+### Volet 2 — Commande `trash:purge`
+
+Commande Artisan `php artisan trash:purge {--dry-run} {--force}` qui purge
+les sous-dossiers de `/home/trash/*` plus vieux que `quota.trash.ttl_days`.
+
+**Configuration** :
+- TTL et toggle auto persistés dans `SystemSetting::get('quota.trash')`
+  (table `system_settings` — story 5.1c).
+- Si `ttl_days <= 0` ou clé absente : **no-op safe** (D2=A) — log warning
+  + exit SUCCESS, aucun dossier supprimé.
+- `--force` ignore ce garde-fou (utilisé par le bouton "Purger maintenant"
+  pour permettre une purge ad-hoc si l'admin a oublié de configurer le TTL).
+
+**Comportement** :
+- Énumère `/home/trash/*` (1 niveau, dossiers seulement).
+- Anti-injection : regex `[a-zA-Z0-9._-]+` sur chaque nom — les dossiers
+  au nom suspect sont skipped (Log::warning) sans suppression.
+- Pour chaque dossier expiré : appel `HomeDirService::deleteHomeDirectoryPermanently()`
+  (réutilisation 5.1a — 41 tests anti-injection éprouvés).
+- **Audit** (D6=A) : chaque suppression réussie écrit dans `quota_audit_logs`
+  avec `target_type='trash'`, `action='delete'`, `performed_by='trash:purge'`
+  (ou `'ui:<login>'` si déclenché par le bouton UI). `old_values`
+  contient le path, mtime et age_days.
+
+> **Note `quota_audit_logs.target_type`** : la colonne est un `string` libre
+> (pas d'enum SQL — cf. migration `2026_02_20_100000_create_quota_tables.php`).
+> Les valeurs effectivement émises par le code applicatif au 2026-04-27 sont :
+> `user`, `group`, `default_eleve`, `default_prof`, `default_admin`,
+> `default_itinerant`, `trash`. Le commentaire historique de la migration
+> n'inclut pas `default_itinerant` ni `trash` — c'est une dette doc connue,
+> pas de re-migration nécessaire (la colonne accepte déjà ces valeurs).
+
+**Fail-soft** (cohérent 5.1b D3) : un échec sur un dossier ne bloque pas
+les suivants. Exit `Command::FAILURE` UNIQUEMENT si TOUTES les suppressions
+candidates ont échoué.
+
+**Planification** : `Console\Kernel::schedule()` à 02h00 quotidiennement,
+**conditionné** par le toggle `quota.trash.purge_auto` via `->when(closure)`.
+La closure est ré-évaluée à chaque tick (1 minute) — coût négligeable
+(1 SELECT primary key). Prise d'effet immédiate du toggle UI sans
+redéploiement.
+
+**Bouton "Purger maintenant"** dans `/admin/settings → Quotas & FS`
+section Corbeille : appel `Artisan::call('trash:purge', ['--performed-by' => 'ui:<login>'])`
+synchrone (D3=A — volume faible ≤50 dossiers, feedback immédiat). Toast
+WithToasts de succès ou d'erreur selon l'exit code, avec parsing du
+compteur "Purgé : N" pour afficher le nombre exact.
+
+### Volet 3 — Commande `quota:seed-from-legacy`
+
+Commande Artisan one-shot `php artisan quota:seed-from-legacy {--dry-run}
+{--force}` qui importe les règles depuis la table MySQL legacy `quotas`
+(schéma `nom string, quotasoft int (KB), quotahard int (KB), partition string`).
+
+**Connexion legacy** : nouvelle entrée `legacy_mysql` dans
+`config/database.php` (D1=A), lue via `env('LEGACY_DB_*')`. Si la
+connexion n'est pas configurée (database/username vides), la commande
+log `Log::error` + affiche un message stdout explicite ("Connexion legacy
+non configurée — ajouter LEGACY_DB_*…") et retourne `Command::FAILURE`
+(AC 14).
+
+**Discrimination user/group** : `UserGroup::where('name', $nom)->exists()`.
+Si match → `TYPE_GROUP`, sinon → `TYPE_USER`. Convention métier : les
+groupes synchronisés depuis l'AD sont la source de vérité.
+
+**Conversion KB → MB** : `round($quotasoft / 1024)` — le legacy stocke en
+KB, SambaEdu Reload utilise des MB partout.
+
+**Idempotence** :
+- Sans `--force` : skip silencieux des règles déjà présentes (log info).
+- Avec `--force` : `update` au lieu de `firstOrCreate` — réécrit les
+  valeurs existantes.
+
+**Init defaults profils** (D4 confirmée) : à chaque exécution, vérifie
+qu'il existe une règle `TYPE_DEFAULT_<eleve|prof|admin|itinerant>` × deux
+partitions (`/home`, `/var/sambaedu`). Si absente, la crée avec les
+valeurs raisonnables :
+
+| Profil       | Soft Mo | Hard Mo |
+|--------------|--------:|--------:|
+| élève        |     500 |     600 |
+| prof         |    1000 |    1200 |
+| admin        |    2000 |    2400 |
+| itinérant    |     200 |     240 |
+
+Mêmes valeurs sur `/home` et `/var/sambaedu` — les partages classes/docs
+sont gros, pas de raison de les diviser. Sans `--force`, les defaults
+existants ne sont pas écrasés (l'admin peut les avoir personnalisés via
+l'onglet `/admin/settings → Quotas & FS`).
+
+**Audit** : chaque INSERT/UPDATE est tracé dans `quota_audit_logs` avec
+`performed_by='quota:seed-from-legacy'`.
+
+> **Note ops (review #M8)** : la commande `quota:seed-from-legacy` doit
+> être exécutée en tant que **root ou www-data** sur la VM (équivalent
+> `php artisan ...`). Aucun guard d'authentification utilisateur n'est
+> implémenté — la commande est destinée aux ops uniquement. La protection
+> repose sur les permissions Unix sur l'`artisan` binary et la connexion
+> `legacy_mysql` (mots de passe stockés dans `.env` non lisible par les
+> autres comptes).
+
+**Mode `--dry-run`** : preview tabulaire des candidats sans toucher BDD.
+
+**Variables `.env` à configurer en prod** :
+
+```env
+LEGACY_DB_HOST=127.0.0.1
+LEGACY_DB_PORT=3306
+LEGACY_DB_DATABASE=sambaedu
+LEGACY_DB_USERNAME=root
+LEGACY_DB_PASSWORD=...
+LEGACY_DB_SOCKET=
+```
+
+### Aucune migration nouvelle en 5.1d
+
+Le champ `quota_rules.type` est `string(20)` — la constante
+`TYPE_DEFAULT_ITINERANT = 'default_itinerant'` (16 chars) tient dans la
+limite et était déjà persistable depuis 5.1c. Aucune migration
+nécessaire.
+
+---
+
 ## Références
 
 - Story 5.1a — refactor services filesystem
@@ -338,5 +501,13 @@ via `DB::getDriverName()` (cohérent avec `add_quota_snapshot` 5.1b et
   (`_bmad-output/implementation-artifacts/5-1b-snapshot-quotas-quotidien-et-ui-user.md`)
 - Story 5.1c — quotas groupes, /admin/settings scaffold et flash over-quota au login
   (`_bmad-output/implementation-artifacts/5-1c-quotas-groupes-settings-flash-over-quota.md`)
+- Story 5.1d — gaps produits filesystem (default_itinerant, purge trash, seed legacy)
+  (`_bmad-output/implementation-artifacts/5-1d-gaps-produits-itinerant-purge-seed.md`)
 - Legacy : `sambaedu/includes/quotas.inc.php:96-137` (`repquota()`) — modèle
   pour le parser.
+- Legacy : `sambaedu/includes/quotas.inc.php:172` — schéma table `quotas`
+  legacy (source du seed 5.1d Volet 3).
+
+---
+
+*Dernière mise à jour : 2026-04-27 (Story 5.1d)*

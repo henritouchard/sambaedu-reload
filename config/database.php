@@ -93,6 +93,35 @@ return [
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
         ],
 
+        // Story 5.1d (D1=A) — Connexion lecture seule vers la base MySQL legacy
+        // de SambaEdu. Consommée UNIQUEMENT par la commande
+        // `quota:seed-from-legacy` (one-shot post-déploiement). Si les variables
+        // LEGACY_DB_* ne sont pas configurées, la commande retourne FAILURE
+        // explicite avec message clair (cf. AC 14).
+        // strict=false pour tolérer les schémas legacy non-conformes au mode
+        // strict moderne.
+        'legacy_mysql' => [
+            'driver' => 'mysql',
+            'host' => env('LEGACY_DB_HOST', '127.0.0.1'),
+            'port' => env('LEGACY_DB_PORT', '3306'),
+            'database' => env('LEGACY_DB_DATABASE', ''),
+            'username' => env('LEGACY_DB_USERNAME', ''),
+            'password' => env('LEGACY_DB_PASSWORD', ''),
+            'unix_socket' => env('LEGACY_DB_SOCKET', ''),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'strict' => false,
+            'engine' => null,
+            // Story 5.1d code review #M6 — timeout PDO 5s pour ne pas bloquer
+            // la commande `quota:seed-from-legacy` si la base legacy est
+            // injoignable (host down / firewall). Sans cette option, le PDO
+            // peut attendre la valeur par défaut OS (~75s sur Linux).
+            'options' => [
+                \PDO::ATTR_TIMEOUT => 5,
+            ],
+        ],
+
     ],
 
     /*

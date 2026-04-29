@@ -10,8 +10,10 @@ use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
+use Mockery;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -335,5 +337,68 @@ class AdminSettingsQuotasFsTabTest extends TestCase
 
             $component->call($method)->assertStatus(403);
         }
+    }
+
+    // =========================================================================
+    // Story 5.1d — Bouton "Purger maintenant" (AC 9)
+    // =========================================================================
+
+    public function test_it_purges_now_via_button_when_admin(): void
+    {
+        $admin = $this->makeAdmin('admin-purge-now');
+        $this->actingAs($admin);
+
+        // Story 5.1d code review #5 — pré-check TTL côté UI : sans config
+        // valide, purgeNow() retourne un toast d'erreur AVANT d'appeler Artisan.
+        SystemSetting::set('quota.trash', ['ttl_days' => 30, 'purge_auto' => false]);
+
+        // Mock Artisan::call — pas de vrai appel à trash:purge.
+        Artisan::shouldReceive('call')
+            ->once()
+            ->with('trash:purge', Mockery::any())
+            ->andReturn(0);
+        Artisan::shouldReceive('output')
+            ->andReturn('Purgé : 5 dossier(s). Conservé : 12 dossier(s). Erreurs : 0.');
+
+        Livewire::test($this->componentPath())
+            ->call('purgeNow')
+            ->assertDispatched('toastMagic');
+    }
+
+    public function test_it_blocks_purge_now_without_server_admin(): void
+    {
+        // Le mount lui-même bloque (Gate::allows mount), mais la défense en
+        // profondeur exige qu'un appel direct à purgeNow sur un Livewire
+        // déjà mount par un admin puis re-auth en non-admin échoue aussi.
+        $admin = $this->makeAdmin('admin-purge-revoke');
+        $this->actingAs($admin);
+
+        $component = Livewire::test($this->componentPath());
+
+        $admin->revokePermissionTo('server.admin');
+        $admin->refresh();
+        $this->actingAs($admin);
+
+        $component->call('purgeNow')->assertStatus(403);
+    }
+
+    public function test_it_emits_error_toast_when_purge_command_fails(): void
+    {
+        $admin = $this->makeAdmin('admin-purge-fail');
+        $this->actingAs($admin);
+
+        // Pré-check TTL côté UI (review #5).
+        SystemSetting::set('quota.trash', ['ttl_days' => 30, 'purge_auto' => false]);
+
+        Artisan::shouldReceive('call')
+            ->once()
+            ->with('trash:purge', Mockery::any())
+            ->andReturn(1); // FAILURE
+        Artisan::shouldReceive('output')
+            ->andReturn('Purgé : 0 dossier(s). Erreurs : 3.');
+
+        Livewire::test($this->componentPath())
+            ->call('purgeNow')
+            ->assertDispatched('toastMagic');
     }
 }
