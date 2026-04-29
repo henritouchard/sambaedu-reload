@@ -15,12 +15,19 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Tests Feature — onglet "Profils" dans /app/rights-management (Story 7.2, AC3).
+ * Tests Feature — gestion des profils dans /app/rights-management (Story 7.2, AC3).
  *
- * Couvre CRUD profils dynamiques :
- *  - liste avec badge seeded/custom
- *  - création / édition / duplication / suppression
- *  - garde-fous (rôle seedé non supprimable, users assignés bloquent suppression)
+ * Architecture post-refonte 7.2 (commit 9ef7627) : la modale inline a été
+ * remplacée par 3 composants Livewire SFC distincts :
+ *  - `pages::rights-management.index`              → liste + bulk delete
+ *  - `pages::rights-management.profiles.new`       → création
+ *  - `pages::rights-management.profiles.[id]`      → édition + suppression unitaire
+ *
+ * Couvre :
+ *  - liste avec badge seeded/custom (loadProfiles)
+ *  - création / édition / suppression unitaire / suppression bulk
+ *  - garde-fous (rôle seedé non éditable + non supprimable, users assignés
+ *    bloquent suppression)
  *  - invalidation cache Spatie post-mutation
  */
 class RoleManagementTest extends TestCase
@@ -57,9 +64,19 @@ class RoleManagementTest extends TestCase
         return $admin;
     }
 
-    private function pageComponent(): string
+    private function indexPage(): string
     {
         return 'pages::rights-management.index';
+    }
+
+    private function newProfilePage(): string
+    {
+        return 'pages::rights-management.profiles.new';
+    }
+
+    private function editProfilePage(): string
+    {
+        return 'pages::rights-management.profiles.[id]';
     }
 
     public function test_load_profiles_lists_all_seeded_and_custom_roles(): void
@@ -69,7 +86,7 @@ class RoleManagementTest extends TestCase
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 
-        $component = Livewire::test($this->pageComponent())
+        $component = Livewire::test($this->indexPage())
             ->call('loadProfiles');
 
         $profiles = $component->get('profilesList');
@@ -94,15 +111,13 @@ class RoleManagementTest extends TestCase
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 
-        Livewire::test($this->pageComponent())
-            ->call('openCreateProfileModal')
-            ->set('profileFormName', 'Animateur CDI')
-            ->set('profileFormPermissions', [
+        Livewire::test($this->newProfilePage())
+            ->set('name', 'Animateur CDI')
+            ->set('permissions', [
                 SambaPermission::ComputerView->value,
                 SambaPermission::ComputerControl->value,
             ])
-            ->call('saveProfile')
-            ->assertSet('profileModalOpen', false);
+            ->call('save');
 
         $role = Role::where('name', 'Animateur CDI')->where('guard_name', 'web')->first();
         $this->assertNotNull($role);
@@ -114,13 +129,11 @@ class RoleManagementTest extends TestCase
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 
-        Livewire::test($this->pageComponent())
-            ->call('openCreateProfileModal')
-            ->set('profileFormName', SambaRole::SuperAdmin->value)
-            ->set('profileFormPermissions', [SambaPermission::UserRead->value])
-            ->call('saveProfile')
-            // Validation `unique` sur roles.name, le form ne ferme pas.
-            ->assertSet('profileModalOpen', true);
+        Livewire::test($this->newProfilePage())
+            ->set('name', SambaRole::SuperAdmin->value)
+            ->set('permissions', [SambaPermission::UserRead->value])
+            ->call('save')
+            ->assertHasErrors(['name' => 'unique']);
     }
 
     public function test_edit_profile_updates_permissions(): void
@@ -131,16 +144,16 @@ class RoleManagementTest extends TestCase
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 
-        Livewire::test($this->pageComponent())
-            ->call('openEditProfileModal', 'Animateur CDI')
-            ->assertSet('profileFormName', 'Animateur CDI')
-            ->set('profileFormPermissions', [
+        Livewire::test($this->editProfilePage(), ['id' => $role->id])
+            ->assertSet('name', 'Animateur CDI')
+            ->assertSet('isSeeded', false)
+            ->set('permissions', [
                 SambaPermission::ComputerView->value,
                 SambaPermission::ComputerControl->value,
                 SambaPermission::UserRead->value,
             ])
-            ->call('saveProfile')
-            ->assertSet('profileModalOpen', false);
+            ->call('save')
+            ->assertHasNoErrors();
 
         $role->refresh();
         $this->assertEquals(3, $role->permissions->count());
@@ -156,69 +169,18 @@ class RoleManagementTest extends TestCase
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 
-        // Capture l'état initial des permissions du rôle seedé.
-        $seedRoleBefore = Role::findByName(SambaRole::Technicien->value, 'web');
-        $permsBefore = $seedRoleBefore->permissions->pluck('name')->sort()->values()->toArray();
+        $seedRole = Role::findByName(SambaRole::Technicien->value, 'web');
+        $permsBefore = $seedRole->permissions->pluck('name')->sort()->values()->toArray();
 
-        Livewire::test($this->pageComponent())
-            ->call('openEditProfileModal', SambaRole::Technicien->value)
-            ->assertSet('editingProfileIsSeeded', true)
-            ->set('profileFormName', SambaRole::Technicien->value)
-            // Tentative de vider les permissions — doit être refusée.
-            ->set('profileFormPermissions', [SambaPermission::ComputerView->value])
-            ->call('saveProfile')
+        Livewire::test($this->editProfilePage(), ['id' => $seedRole->id])
+            ->assertSet('isSeeded', true)
+            ->set('permissions', [SambaPermission::ComputerView->value])
+            ->call('save')
             ->assertStatus(403);
 
-        // Les permissions d'origine doivent être intactes.
-        $seedRoleAfter = Role::findByName(SambaRole::Technicien->value, 'web');
-        $permsAfter = $seedRoleAfter->permissions->pluck('name')->sort()->values()->toArray();
+        $seedRole->refresh();
+        $permsAfter = $seedRole->permissions->pluck('name')->sort()->values()->toArray();
         $this->assertEquals($permsBefore, $permsAfter);
-    }
-
-    /**
-     * Review 7.2 #M3 — La duplication d'un rôle seedé reste autorisée :
-     * le duplicata devient un rôle custom, pleinement éditable.
-     */
-    public function test_duplicated_seeded_role_can_be_edited(): void
-    {
-        $admin = $this->makeAdmin();
-        $this->actingAs($admin);
-
-        // Duplique `Technicien` → `Technicien_copy`.
-        Livewire::test($this->pageComponent())
-            ->call('duplicateProfile', SambaRole::Technicien->value);
-
-        $copy = Role::where('name', SambaRole::Technicien->value . '_copy')->first();
-        $this->assertNotNull($copy);
-
-        // On peut éditer les permissions du duplicata.
-        Livewire::test($this->pageComponent())
-            ->call('openEditProfileModal', $copy->name)
-            ->assertSet('editingProfileIsSeeded', false)
-            ->set('profileFormPermissions', [SambaPermission::ComputerView->value])
-            ->call('saveProfile')
-            ->assertSet('profileModalOpen', false);
-
-        $copy->refresh();
-        $this->assertEquals(1, $copy->permissions->count());
-        $this->assertEquals(SambaPermission::ComputerView->value, $copy->permissions->first()->name);
-    }
-
-    public function test_duplicate_profile_creates_copy_with_same_permissions(): void
-    {
-        $admin = $this->makeAdmin();
-        $this->actingAs($admin);
-
-        Livewire::test($this->pageComponent())
-            ->call('duplicateProfile', SambaRole::Technicien->value);
-
-        $copy = Role::where('name', SambaRole::Technicien->value . '_copy')->first();
-        $this->assertNotNull($copy, 'Le profil dupliqué doit exister');
-        $original = Role::findByName(SambaRole::Technicien->value, 'web');
-        $this->assertEquals(
-            $original->permissions->pluck('name')->sort()->values()->toArray(),
-            $copy->permissions->pluck('name')->sort()->values()->toArray()
-        );
     }
 
     public function test_delete_custom_profile_succeeds(): void
@@ -228,8 +190,8 @@ class RoleManagementTest extends TestCase
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 
-        Livewire::test($this->pageComponent())
-            ->call('deleteProfile', 'Animateur CDI');
+        Livewire::test($this->editProfilePage(), ['id' => $role->id])
+            ->call('delete');
 
         $this->assertNull(Role::where('name', 'Animateur CDI')->first());
     }
@@ -239,10 +201,12 @@ class RoleManagementTest extends TestCase
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 
-        Livewire::test($this->pageComponent())
-            ->call('deleteProfile', SambaRole::SuperAdmin->value);
+        $seedRole = Role::findByName(SambaRole::SuperAdmin->value, 'web');
 
-        // Le rôle seed doit toujours exister.
+        Livewire::test($this->editProfilePage(), ['id' => $seedRole->id])
+            ->call('delete');
+
+        // Toast d'erreur affiché, pas de redirect, le rôle est intact.
         $this->assertNotNull(Role::findByName(SambaRole::SuperAdmin->value, 'web'));
     }
 
@@ -256,11 +220,42 @@ class RoleManagementTest extends TestCase
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 
-        Livewire::test($this->pageComponent())
-            ->call('deleteProfile', 'Animateur CDI');
+        Livewire::test($this->editProfilePage(), ['id' => $role->id])
+            ->assertSet('usersCount', 1)
+            ->call('delete');
 
-        // Le rôle doit toujours exister (bloqué par le garde-fou).
         $this->assertNotNull(Role::where('name', 'Animateur CDI')->first());
+    }
+
+    /**
+     * Bulk delete depuis la liste (sélection multiple via checkboxes) —
+     * remplace l'ancien `deleteProfile` unitaire de la modale.
+     */
+    public function test_bulk_delete_profiles_skips_seeded_and_assigned(): void
+    {
+        $custom = Role::create(['name' => 'Animateur CDI', 'guard_name' => 'web']);
+        $assigned = Role::create(['name' => 'Bibliothécaire', 'guard_name' => 'web']);
+
+        $user = User::create(['login' => 'biblio-1', 'role' => 'prof', 'is_active' => true]);
+        $user->assignRole('Bibliothécaire');
+
+        $admin = $this->makeAdmin();
+        $this->actingAs($admin);
+
+        Livewire::test($this->indexPage())
+            ->set('selectedProfiles', [
+                'Animateur CDI',
+                'Bibliothécaire',
+                SambaRole::SuperAdmin->value,
+            ])
+            ->call('deleteSelectedProfiles');
+
+        // Custom sans assignation supprimé.
+        $this->assertNull(Role::where('name', 'Animateur CDI')->first());
+        // Custom assigné conservé (skip).
+        $this->assertNotNull(Role::where('name', 'Bibliothécaire')->first());
+        // Seedé conservé (skip).
+        $this->assertNotNull(Role::findByName(SambaRole::SuperAdmin->value, 'web'));
     }
 
     public function test_non_admin_cannot_save_profile(): void
@@ -268,17 +263,17 @@ class RoleManagementTest extends TestCase
         $notAdmin = User::create(['login' => 'not-admin', 'role' => 'prof', 'is_active' => true]);
         $this->actingAs($notAdmin);
 
-        Livewire::test($this->pageComponent())
-            ->set('profileFormName', 'Profil Pirate')
-            ->set('profileFormPermissions', [SambaPermission::UserRead->value])
-            ->call('saveProfile')
+        Livewire::test($this->newProfilePage())
+            ->set('name', 'Profil Pirate')
+            ->set('permissions', [SambaPermission::UserRead->value])
+            ->call('save')
             ->assertStatus(403);
     }
 
     /**
-     * Review 7.2 #7 — `saveProfile` invalide le cache Spatie : après ajout
-     * d'une permission au rôle custom, un `$user->can()` sur un fresh model
-     * reflète l'ajout à la requête suivante (pas de cache stale).
+     * Review 7.2 #7 — `save()` invalide le cache Spatie : après ajout d'une
+     * permission au rôle custom, un `$user->can()` sur un fresh model reflète
+     * l'ajout à la requête suivante (pas de cache stale).
      */
     public function test_saveProfile_invalidates_spatie_cache_end_to_end(): void
     {
@@ -290,21 +285,20 @@ class RoleManagementTest extends TestCase
         // 2. Prime le cache : aucune perm user.modify.
         $this->assertFalse($user->can('user.modify'));
 
-        // 3. L'admin ajoute user.modify au rôle via l'UI.
+        // 3. L'admin ajoute user.modify au rôle via la page d'édition.
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 
-        Livewire::test($this->pageComponent())
-            ->call('openEditProfileModal', 'Animateur CDI')
-            ->set('profileFormPermissions', [SambaPermission::UserModify->value])
-            ->call('saveProfile')
-            ->assertSet('profileModalOpen', false);
+        Livewire::test($this->editProfilePage(), ['id' => $role->id])
+            ->set('permissions', [SambaPermission::UserModify->value])
+            ->call('save')
+            ->assertHasNoErrors();
 
         // 4. Fresh fetch : la permission doit être visible grâce à l'invalidation.
         $freshUser = User::find($user->id);
         $this->assertTrue(
             $freshUser->can('user.modify'),
-            'Le cache Spatie doit être invalidé après saveProfile (review 7.2 #7)'
+            'Le cache Spatie doit être invalidé après save (review 7.2 #7)'
         );
     }
 }

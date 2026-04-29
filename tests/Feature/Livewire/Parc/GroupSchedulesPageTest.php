@@ -341,7 +341,11 @@ class GroupSchedulesPageTest extends TestCase
 
     public function test_non_admin_cannot_forge_livewire_call_to_create_schedule(): void
     {
-        $this->swapAuthToNonAdmin();
+        // Story 7.1 — un user sans `computer.view` est redirigé au mount() avant
+        // même que la méthode forgée soit atteinte. On utilise le viewer
+        // read-only pour cibler spécifiquement le 2ᵉ étage de défense (guard
+        // dans openScheduleModal qui requiert `computer.control`).
+        $this->swapAuthToReadOnlyViewer();
 
         $group = $this->makeGroup();
 
@@ -365,7 +369,9 @@ class GroupSchedulesPageTest extends TestCase
             'enabled' => true,
         ]);
 
-        $this->swapAuthToNonAdmin();
+        // Voir commentaire ci-dessus : viewer read-only pour atteindre le guard
+        // serveur-side dans toggleSchedule.
+        $this->swapAuthToReadOnlyViewer();
 
         Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
             ->call('toggleSchedule', $schedule->id);
@@ -387,7 +393,9 @@ class GroupSchedulesPageTest extends TestCase
             'enabled' => true,
         ]);
 
-        $this->swapAuthToNonAdmin();
+        // Voir commentaire ci-dessus : viewer read-only pour atteindre le guard
+        // serveur-side dans deleteSchedule.
+        $this->swapAuthToReadOnlyViewer();
 
         Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
             ->call('deleteSchedule', $schedule->id);
