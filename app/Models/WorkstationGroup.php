@@ -275,6 +275,18 @@ class WorkstationGroup extends Model implements Wireable
         )->withTimestamps();
     }
 
+    public function printers(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            \App\Models\Printer::class,
+            'printer_workstation_group',
+            'workstation_group_id',
+            'cups_name',
+            'id',
+            'cups_name'
+        )->withPivot('attached_at', 'attached_by_user_id');
+    }
+
     /**
      * Scope pour filtrer les groupes actifs
      */

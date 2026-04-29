@@ -6,12 +6,11 @@ namespace Tests\Feature\Livewire\Users;
 
 use App\Config\SambaEduConfig;
 use App\Models\User;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
-use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
 use Mockery;
 use Tests\TestCase;
+use Tests\Traits\CreatesPermissionSchema;
 
 /**
  * Tests Feature Livewire de la colonne Utilisation sur le listing /users
@@ -25,8 +24,7 @@ use Tests\TestCase;
 class UsersIndexPageQuotaColumnTest extends TestCase
 {
     use DatabaseTransactions;
-
-    private bool $createdTables = false;
+    use CreatesPermissionSchema;
 
     protected function setUp(): void
     {
@@ -36,7 +34,11 @@ class UsersIndexPageQuotaColumnTest extends TestCase
             config(['app.key' => 'base64:' . base64_encode(random_bytes(32))]);
         }
 
-        $this->createTablesIfNeeded();
+        // Le trait crée le schéma users + user_groups + workstation_groups +
+        // les tables Spatie (roles, permissions, …) nécessaires au rendu du
+        // <livewire:pages::users._partials.rights-drawer /> dont le mount()
+        // interroge Role::where('guard_name', 'web').
+        $this->createPermissionSchema();
 
         // Mock SEConfig — retourne null (pas de code établissement) pour
         // désactiver la branche "Externe" qui complexifierait le test.
@@ -47,78 +49,8 @@ class UsersIndexPageQuotaColumnTest extends TestCase
 
     protected function tearDown(): void
     {
-        if ($this->createdTables) {
-            Schema::dropIfExists('user_group_user');
-            Schema::dropIfExists('user_groups');
-            Schema::dropIfExists('workstation_groups');
-            Schema::dropIfExists('users');
-        }
+        $this->dropPermissionSchema();
         parent::tearDown();
-    }
-
-    private function createTablesIfNeeded(): void
-    {
-        if (!Schema::hasTable('users')) {
-            Schema::create('users', function (Blueprint $table) {
-                $table->id();
-                $table->string('login', 255)->unique();
-                $table->string('password', 255)->nullable();
-                $table->string('fullname', 255)->nullable();
-                $table->string('firstname', 255)->nullable();
-                $table->string('lastname', 255)->nullable();
-                $table->string('email', 255)->nullable();
-                $table->string('phone', 50)->nullable();
-                $table->text('description')->nullable();
-                $table->string('dn', 500)->nullable();
-                $table->string('ad_guid', 100)->nullable();
-                $table->string('school_code', 100)->nullable();
-                $table->string('school_name', 255)->nullable();
-                $table->string('role', 50)->default('autre');
-                $table->boolean('is_active')->default(true);
-                $table->json('ad_right_profiles')->nullable();
-                $table->unsignedInteger('ad_rights_bitmask')->default(0);
-                $table->timestamp('ad_synced_at')->nullable();
-                $table->timestamp('pwd_reset_at')->nullable();
-                $table->string('remember_token', 100)->nullable();
-                $table->json('quota_snapshot')->nullable();
-                $table->timestamps();
-            });
-            $this->createdTables = true;
-        }
-
-        if (!Schema::hasTable('user_groups')) {
-            Schema::create('user_groups', function (Blueprint $table) {
-                $table->id();
-                $table->string('name');
-                $table->string('type')->nullable();
-                $table->string('display_name')->nullable();
-                $table->timestamps();
-            });
-            $this->createdTables = true;
-        }
-
-        if (!Schema::hasTable('user_group_user')) {
-            Schema::create('user_group_user', function (Blueprint $table) {
-                $table->unsignedBigInteger('user_id');
-                $table->unsignedBigInteger('user_group_id');
-                $table->primary(['user_id', 'user_group_id']);
-            });
-            $this->createdTables = true;
-        }
-
-        // La page users.index rend <livewire:pages::users._partials.delegation-modal />
-        // dont le mount() charge WorkstationGroup::physical()->where('is_active', true).
-        if (!Schema::hasTable('workstation_groups')) {
-            Schema::create('workstation_groups', function (Blueprint $table) {
-                $table->id();
-                $table->string('name', 100)->unique();
-                $table->string('display_name', 255)->nullable();
-                $table->boolean('is_physical')->default(false);
-                $table->boolean('is_active')->default(true);
-                $table->timestamps();
-            });
-            $this->createdTables = true;
-        }
     }
 
     private function makeUserWithPercent(string $login, ?int $percent, bool $overSoft = false): User

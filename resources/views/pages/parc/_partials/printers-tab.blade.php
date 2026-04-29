@@ -576,12 +576,6 @@ new class extends Component {
 @endphp
 
 <div class="flex-1 min-h-0 flex flex-col gap-4">
-    <!-- Banner info migration -->
-    <div class="alert alert-info">
-        <i class="fa-solid fa-circle-info"></i>
-        <span>Cette interface remplace l'ancienne page de gestion des imprimantes.</span>
-    </div>
-
     @unless ($cupsAvailable)
         <div class="alert alert-warning">
             <i class="fa-solid fa-triangle-exclamation"></i>

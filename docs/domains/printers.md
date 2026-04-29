@@ -199,7 +199,7 @@ Composant Livewire SFC `resources/views/pages/parc/_partials/printers-tab.blade.
 
 ### Banner d'info (transition)
 
-Au sommet de l'onglet : « Cette interface remplace l'ancienne page de gestion des imprimantes. » Le shim legacy `legacy/modules/printers/` reste accessible jusqu'à la fin d'Epic 6 (story 6.2 supprimera le lien sidebar legacy).
+Au sommet de l'onglet : « Cette interface remplace l'ancienne page de gestion des imprimantes. » Le shim legacy `legacy/modules/printers/` a été supprimé le 2026-04-29 (refonte native 6.1 livrée).
 
 ---
 
@@ -220,7 +220,7 @@ Au sommet de l'onglet : « Cette interface remplace l'ancienne page de gestion d
 
 - **Story 6.2** : pilotes Windows (`cupsaddsmb`, fichiers `.inf`, `rpcclient enumdrivers/getdriver/setdriver`) → `App\Services\Print\PrintDriverService`.
 - **Story 6.3 (potentielle)** : annulation jobs (`/usr/bin/cancel`) côté UI.
-- **Epic 9** : suppression du shim legacy `legacy/modules/printers/`.
+- ~~**Epic 9** : suppression du shim legacy~~ — fait le 2026-04-29 (`legacy/modules/printers/` + `legacy/stubs/printers.inc.php` + `tests/Feature/LegacyModulePrintersTest.php` retirés).
 
 ---
 

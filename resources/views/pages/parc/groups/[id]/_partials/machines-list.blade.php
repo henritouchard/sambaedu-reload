@@ -1,7 +1,24 @@
-<!-- Liste des machines -->
-<div>
+<!-- Onglets Postes / Imprimantes -->
+<div x-data="{ tab: 'postes' }">
     <div class="card bg-base-100 shadow-sm">
         <div class="card-body">
+            <div role="tablist" class="tabs tabs-bordered mb-4">
+                <a role="tab" class="tab" :class="{ 'tab-active': tab === 'postes' }"
+                    @click="tab = 'postes'">
+                    <i class="fa-solid fa-computer mr-2"></i>
+                    Postes
+                    <span class="badge badge-ghost badge-sm ml-2">{{ $group->workstations->count() }}</span>
+                </a>
+                <a role="tab" class="tab" :class="{ 'tab-active': tab === 'imprimantes' }"
+                    @click="tab = 'imprimantes'">
+                    <i class="fa-solid fa-print mr-2"></i>
+                    Imprimantes
+                    <span class="badge badge-ghost badge-sm ml-2">{{ $group->printers->count() }}</span>
+                </a>
+            </div>
+
+            {{-- Onglet Postes --}}
+            <div x-show="tab === 'postes'" x-cloak>
             <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <h3 class="card-title text-base">
                     <i class="fa-solid fa-computer text-primary"></i>
@@ -281,6 +298,12 @@
                     </div>
                 @endif
             @endif
+            </div>{{-- /onglet Postes --}}
+
+            {{-- Onglet Imprimantes --}}
+            <div x-show="tab === 'imprimantes'" x-cloak>
+                @include('pages.parc.groups.[id]._partials.printers-list')
+            </div>
         </div>
     </div>
 </div>

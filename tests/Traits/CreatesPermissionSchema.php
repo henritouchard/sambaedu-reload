@@ -58,6 +58,7 @@ trait CreatesPermissionSchema
                 $table->integer('ad_rights_bitmask')->default(0);
                 $table->timestamp('ad_synced_at')->nullable();
                 $table->timestamp('pwd_reset_at')->nullable();
+                $table->json('quota_snapshot')->nullable();
                 $table->timestamps();
             });
             $this->createdTables[] = 'users';

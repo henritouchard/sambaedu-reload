@@ -71,6 +71,8 @@ class GroupShowPageTest extends TestCase
     protected function tearDown(): void
     {
         if ($this->createdTables) {
+            Schema::dropIfExists('printer_workstation_group');
+            Schema::dropIfExists('printers');
             Schema::dropIfExists('workstation_group_schedule_runs');
             Schema::dropIfExists('workstation_group_schedules');
             Schema::dropIfExists('machine_power_action_tasks');
@@ -202,6 +204,31 @@ class GroupShowPageTest extends TestCase
                 $table->json('summary');
                 $table->timestamps();
                 $table->unique(['schedule_id', 'ran_for_date', 'ran_for_time'], 'wgsr_schedule_date_time_unique');
+            });
+            $this->createdTables = true;
+        }
+
+        // Story 6.1 — l'onglet Imprimantes du partial machines-list invoque
+        // $group->printers->count() au rendu, donc il faut a minima les 2
+        // tables même vides pour que le rendu de la vue groupe ne casse pas.
+        if (!Schema::hasTable('printers')) {
+            Schema::create('printers', function (Blueprint $table) {
+                $table->string('cups_name', 15)->primary();
+                $table->unsignedBigInteger('created_by_user_id')->nullable();
+                $table->boolean('orphan')->default(false);
+                $table->text('description_ser')->nullable();
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        if (!Schema::hasTable('printer_workstation_group')) {
+            Schema::create('printer_workstation_group', function (Blueprint $table) {
+                $table->string('cups_name', 15);
+                $table->unsignedBigInteger('workstation_group_id');
+                $table->timestamp('attached_at')->useCurrent();
+                $table->unsignedBigInteger('attached_by_user_id')->nullable();
+                $table->primary(['cups_name', 'workstation_group_id'], 'pwg_pk');
             });
             $this->createdTables = true;
         }

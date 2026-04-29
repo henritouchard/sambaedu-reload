@@ -6,13 +6,12 @@ namespace Tests\Feature\Livewire\Users;
 
 use App\Config\SambaEduConfig;
 use App\Models\User;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Process;
-use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
 use Mockery;
 use Tests\TestCase;
+use Tests\Traits\CreatesPermissionSchema;
 
 /**
  * Story 5.1b — AC 11 : aucun shellout `xfs_quota` / `quota` ne doit
@@ -28,8 +27,7 @@ use Tests\TestCase;
 class UsersIndexPageNoShelloutTest extends TestCase
 {
     use DatabaseTransactions;
-
-    private bool $createdTables = false;
+    use CreatesPermissionSchema;
 
     protected function setUp(): void
     {
@@ -39,7 +37,11 @@ class UsersIndexPageNoShelloutTest extends TestCase
             config(['app.key' => 'base64:' . base64_encode(random_bytes(32))]);
         }
 
-        $this->createTablesIfNeeded();
+        // Le trait crée le schéma users + user_groups + workstation_groups +
+        // les tables Spatie (roles, permissions, …) nécessaires au rendu du
+        // <livewire:pages::users._partials.rights-drawer /> dont le mount()
+        // interroge Role::where('guard_name', 'web').
+        $this->createPermissionSchema();
 
         $seMock = Mockery::mock(SambaEduConfig::class);
         $seMock->shouldReceive('getCurrentEstablishmentCode')->andReturn(null);
@@ -48,73 +50,8 @@ class UsersIndexPageNoShelloutTest extends TestCase
 
     protected function tearDown(): void
     {
-        if ($this->createdTables) {
-            Schema::dropIfExists('user_group_user');
-            Schema::dropIfExists('user_groups');
-            Schema::dropIfExists('workstation_groups');
-            Schema::dropIfExists('users');
-        }
+        $this->dropPermissionSchema();
         parent::tearDown();
-    }
-
-    private function createTablesIfNeeded(): void
-    {
-        if (Schema::hasTable('users')) {
-            return;
-        }
-
-        Schema::create('users', function (Blueprint $table) {
-            $table->id();
-            $table->string('login', 255)->unique();
-            $table->string('password', 255)->nullable();
-            $table->string('fullname', 255)->nullable();
-            $table->string('firstname', 255)->nullable();
-            $table->string('lastname', 255)->nullable();
-            $table->string('email', 255)->nullable();
-            $table->string('phone', 50)->nullable();
-            $table->text('description')->nullable();
-            $table->string('dn', 500)->nullable();
-            $table->string('ad_guid', 100)->nullable();
-            $table->string('school_code', 100)->nullable();
-            $table->string('school_name', 255)->nullable();
-            $table->string('role', 50)->default('autre');
-            $table->boolean('is_active')->default(true);
-            $table->json('ad_right_profiles')->nullable();
-            $table->unsignedInteger('ad_rights_bitmask')->default(0);
-            $table->timestamp('ad_synced_at')->nullable();
-            $table->timestamp('pwd_reset_at')->nullable();
-            $table->string('remember_token', 100)->nullable();
-            $table->json('quota_snapshot')->nullable();
-            $table->timestamps();
-        });
-
-        Schema::create('user_groups', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->string('type')->nullable();
-            $table->string('display_name')->nullable();
-            $table->timestamps();
-        });
-
-        Schema::create('user_group_user', function (Blueprint $table) {
-            $table->unsignedBigInteger('user_id');
-            $table->unsignedBigInteger('user_group_id');
-            $table->primary(['user_id', 'user_group_id']);
-        });
-
-        // Table minimale pour la Livewire SFC `delegation-modal` dont le `mount()`
-        // interroge WorkstationGroup::physical(). On ne seed rien : la liste reste
-        // vide, ce qui suffit au rendu initial.
-        Schema::create('workstation_groups', function (Blueprint $table) {
-            $table->id();
-            $table->string('name', 100)->unique();
-            $table->string('display_name', 255)->nullable();
-            $table->boolean('is_physical')->default(false);
-            $table->boolean('is_active')->default(true);
-            $table->timestamps();
-        });
-
-        $this->createdTables = true;
     }
 
     public function test_no_xfs_shellout_is_triggered_when_rendering_users_listing(): void
