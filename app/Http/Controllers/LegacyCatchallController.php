@@ -34,6 +34,21 @@ class LegacyCatchallController extends Controller
             $path = '';
         }
 
+        // 0bis. Redirections natives (story 1bis.18f — pivot 2026-04-27).
+        // Pages legacy `gpo/no_roam.php`, `gpo/user_profile_stats.php` et
+        // `gpo/del_roam.php` remplacées par la page admin native
+        // /admin/settings?tab=profils-itinerants + endpoint script natif.
+        // Early-return STRICTEMENT avant tout pipeline d'exécution legacy
+        // pour préserver les bookmarks navigateurs sans toucher
+        // gestion_gpo.php (byte-identique préservé).
+        if ($path === 'gpo/no_roam.php' || $path === 'gpo/user_profile_stats.php') {
+            return redirect()->to('/admin/settings?tab=profils-itinerants');
+        }
+        if ($path === 'gpo/del_roam.php') {
+            $qs = $request->getQueryString();
+            return redirect()->to('/admin/gpo/del-roam.sh' . ($qs ? ('?' . $qs) : ''));
+        }
+
         // 1. Dossiers sensibles interdits
         $forbidden = ['laravel', 'vendor', 'node_modules', '.git', '.env'];
         foreach ($forbidden as $dir) {

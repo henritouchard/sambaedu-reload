@@ -319,6 +319,22 @@ Route::match(['GET', 'POST'], 'gpo/wallpaper_out.php', [WallpaperController::cla
 
 /*
 |--------------------------------------------------------------------------
+| Endpoint script de purge profils itinérants (story 1bis.18f)
+|--------------------------------------------------------------------------
+| GET /admin/gpo/del-roam.sh — script bash text/plain consommé par les
+| logon scripts. Auth via middleware AllowSe4FsScript (whitelist IP
+| `se4fs_ip` OU paramètre query `se4_key`).
+|
+| Hors du groupe `sambaedu.admin` car les scripts logon n'ont pas de
+| session web admin — l'auth IP/clé est suffisante (port natif du
+| legacy `header_authorize_script`).
+*/
+Route::get('admin/gpo/del-roam.sh', [\App\Http\Controllers\Admin\RoamingProfileController::class, 'delRoamScript'])
+    ->middleware(\App\Http\Middleware\AllowSe4FsScript::class)
+    ->name('admin.gpo.del-roam-script');
+
+/*
+|--------------------------------------------------------------------------
 | Interception legacy gpo/firefox_out.php + gpo/thunderbird_out.php
 |--------------------------------------------------------------------------
 | Story 4.8 — AC 9. Endpoints iso-contrat appelés par logon/startup

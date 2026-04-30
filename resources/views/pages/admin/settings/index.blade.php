@@ -12,9 +12,10 @@ use Livewire\Component;
  * Scaffold à onglets extensible décalqué sur `pages/parc-settings/index.blade.php`
  * (pattern `#[Url(keep: true)] public string $tab` + `setTab()` + tablist).
  *
- * Onglet unique en 5.1c : "Quotas & FS" (D3=A — interdiction stricte de
- * placeholders "coming soon"). Les futurs onglets (DHCP, CUPS, Profils, ...)
- * seront ajoutés dans leurs Epics respectives.
+ * Onglets :
+ *   - "Quotas & FS" (5.1c — D3=A interdiction stricte de placeholders "coming soon").
+ *   - "Profils itinérants" (1bis.18f — gestion ExcludeProfileDirs + stats roaming).
+ * Futurs onglets (DHCP, CUPS, ...) ajoutés dans leurs Epics respectives.
  *
  * Sécurité : middleware `can:server.admin` sur la route + double guard serveur
  * `Gate::allows('server.admin')` ici (paranoïa AC 12).
@@ -54,12 +55,17 @@ new #[Title('Réglages système')] class extends Component
     description="Configuration système globale — quotas, période de grâce, corbeille">
 
     <div class="h-full flex flex-col gap-4">
-        {{-- Onglets : un seul onglet visible en 5.1c (D3=A — pas de placeholders). --}}
+        {{-- Onglets de la page settings. --}}
         <div role="tablist" class="tabs tabs-boxed bg-base-200 w-fit">
             <button type="button" role="tab" class="tab {{ $tab === 'quotas-fs' ? 'tab-active' : '' }}"
                 wire:click="setTab('quotas-fs')">
                 <i class="fa-solid fa-hard-drive mr-2"></i>
                 Quotas & FS
+            </button>
+            <button type="button" role="tab" class="tab {{ $tab === 'profils-itinerants' ? 'tab-active' : '' }}"
+                wire:click="setTab('profils-itinerants')">
+                <i class="fa-solid fa-users-gear mr-2"></i>
+                Profils itinérants
             </button>
         </div>
 
@@ -67,6 +73,8 @@ new #[Title('Réglages système')] class extends Component
         <div class="flex-1 min-h-0 flex flex-col overflow-y-auto">
             @if ($tab === 'quotas-fs')
                 <livewire:pages::admin.settings._partials.quotas-fs-tab />
+            @elseif ($tab === 'profils-itinerants')
+                <livewire:pages::admin.settings._partials.profils-itinerants-tab />
             @endif
         </div>
     </div>
