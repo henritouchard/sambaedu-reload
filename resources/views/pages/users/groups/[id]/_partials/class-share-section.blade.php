@@ -259,15 +259,24 @@ new class extends Component {
                                         <span>_profs (privé enseignants)</span>
                                     </div>
                                     <div class="flex items-center gap-2">
-                                        <i
-                                            class="fa-solid fa-{{ $subdirs['_echange'] ?? false ? 'check text-success' : 'xmark text-base-content/40' }} w-4"></i>
-                                        <span>_echange
+                                        @if ($subdirs['_echange'] ?? false)
                                             @if ($echangeActive === true)
-                                                <span class="badge badge-success badge-sm ml-1">activé</span>
+                                                <i class="fa-solid fa-circle-check text-success w-4"></i>
+                                                <span>_echange</span>
+                                                <span class="badge badge-success badge-sm">activé</span>
                                             @elseif ($echangeActive === false)
-                                                <span class="badge badge-ghost badge-sm ml-1">désactivé</span>
+                                                <i class="fa-solid fa-circle-pause text-warning w-4"></i>
+                                                <span>_echange</span>
+                                                <span class="badge badge-warning badge-sm">désactivé</span>
+                                            @else
+                                                <i class="fa-solid fa-circle-question text-base-content/40 w-4"></i>
+                                                <span>_echange</span>
+                                                <span class="badge badge-ghost badge-sm">ACL non détectée</span>
                                             @endif
-                                        </span>
+                                        @else
+                                            <i class="fa-solid fa-xmark text-base-content/40 w-4"></i>
+                                            <span>_echange</span>
+                                        @endif
                                     </div>
                                 </div>
                             @else
@@ -306,16 +315,23 @@ new class extends Component {
                                         <i class="fa-solid fa-arrows-rotate"></i>
                                         Réappliquer les ACLs
                                     </button>
-                                    <button type="button" class="btn btn-outline btn-sm w-full"
-                                        wire:click="toggleEchange" wire:loading.attr="disabled"
-                                        wire:target="toggleEchange">
-                                        <i class="fa-solid fa-arrows-left-right"></i>
-                                        @if ($echangeActive === true)
-                                            Désactiver le dossier d'échange
-                                        @else
-                                            Activer le dossier d'échange
-                                        @endif
-                                    </button>
+                                    @if ($echangeActive === true)
+                                        <button type="button"
+                                            class="btn btn-warning btn-outline btn-sm w-full"
+                                            wire:click="toggleEchange" wire:loading.attr="disabled"
+                                            wire:target="toggleEchange">
+                                            <i class="fa-solid fa-toggle-on"></i>
+                                            Désactiver l'échange
+                                        </button>
+                                    @else
+                                        <button type="button"
+                                            class="btn btn-success btn-outline btn-sm w-full"
+                                            wire:click="toggleEchange" wire:loading.attr="disabled"
+                                            wire:target="toggleEchange">
+                                            <i class="fa-solid fa-toggle-off"></i>
+                                            Activer l'échange
+                                        </button>
+                                    @endif
                                 @endif
                             @else
                                 <p class="text-xs opacity-70">
