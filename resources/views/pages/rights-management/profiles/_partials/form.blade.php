@@ -19,7 +19,9 @@
             Pour modifier les défauts, éditez
             <code>database/seeders/PermissionSeeder.php</code>
             puis relancez
-            <code>php artisan db:seed --class=PermissionSeeder --force</code>.
+            <code>php artisan sambaedu:app:update --resync-seeded-roles</code>
+            (le simple <code>db:seed --force</code> ne re-synchronise PAS les rôles seedés
+            existants — son <code>--force</code> sert seulement à bypasser le prompt prod).
         </div>
     </div>
 @endif

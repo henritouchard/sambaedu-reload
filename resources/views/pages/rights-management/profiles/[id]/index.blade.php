@@ -90,7 +90,8 @@ new #[Title('Édition d\'un profil — Gestion des droits')] class extends Compo
 
         // Garde-fou : un rôle seedé ne peut pas être modifié via l'UI. Pour
         // changer ses permissions, éditer le PermissionSeeder puis relancer
-        // `php artisan db:seed --class=PermissionSeeder --force`.
+        // `php artisan sambaedu:app:update --resync-seeded-roles` (le simple
+        // `db:seed --force` ne re-synchronise PAS les rôles existants).
         if ($this->isSeeded) {
             abort(403, 'Les permissions des rôles seedés ne sont pas éditables via l\'UI.');
         }

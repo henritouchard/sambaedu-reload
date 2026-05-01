@@ -146,6 +146,39 @@ class ShareServiceTest extends TestCase
         $this->assertNull($this->service->escapeAclClassName('Classe;rm -rf'));
     }
 
+    #[Test]
+    public function it_strips_classe_prefix_before_lowercasing_for_acl(): void
+    {
+        // Le SER stocke le CN brut AD `Classe_3eme3` dans user_groups.name.
+        // L'ACL doit cibler `classe_3eme3` (pas `classe_classe_3eme3`).
+        $this->assertSame('3eme3', $this->service->escapeAclClassName('Classe_3eme3'));
+        // Préfixe case-insensitive (cohérent regex /^Classe_/i).
+        $this->assertSame('3eme3', $this->service->escapeAclClassName('classe_3eme3'));
+        // Pas de préfixe : pass-through (compat legacy ancien).
+        $this->assertSame('6a', $this->service->escapeAclClassName('6A'));
+    }
+
+    #[Test]
+    public function bare_class_name_preserves_case_and_strips_prefix(): void
+    {
+        $this->assertSame('3emeA', $this->service->bareClassName('Classe_3emeA'));
+        $this->assertSame('3emeA', $this->service->bareClassName('3emeA'));
+        $this->assertNull($this->service->bareClassName('.cachee'));
+        // Préfixe `Classe_` requalifie le 1er char de la partie restante :
+        // un nom comme `Classe_.x` est dépréfixé en `.x`, refusé (1er char `.`).
+        $this->assertNull($this->service->bareClassName('Classe_.x'));
+    }
+
+    #[Test]
+    public function it_resolves_class_path_without_double_prefix_when_name_starts_with_classe(): void
+    {
+        // Régression : avant le fix, name="Classe_3eme3" produisait
+        // `/var/sambaedu/Classes/Classe_Classe_3eme3` (double préfixe).
+        $group = $this->makeClasse('Classe_3eme3');
+        $path = $this->service->resolveClassPath($group);
+        $this->assertSame($this->tempRoot . '/Classe_3eme3', $path);
+    }
+
     public static function rejectedClassNameProvider(): array
     {
         return [
@@ -232,6 +265,23 @@ class ShareServiceTest extends TestCase
                 && str_contains($p->command, 'group:classe_6a:rwx')
                 && str_contains($p->command, '_echange');
         });
+    }
+
+    #[Test]
+    public function it_writes_acls_with_bare_name_when_group_name_is_prefixed(): void
+    {
+        // Régression critique : avec name="Classe_3eme3", l'ACL doit cibler
+        // `classe_3eme3` (groupe AD réel) et NON `classe_classe_3eme3`.
+        $group = $this->makeClasse('Classe_3eme3');
+        $this->service->createClassShare($group, performedBy: 'admin');
+
+        Process::assertRan(fn ($p) => str_contains($p->command, 'setfacl')
+            && str_contains($p->command, 'group:equipe_3eme3:rwx'));
+        Process::assertRan(fn ($p) => str_contains($p->command, 'setfacl')
+            && str_contains($p->command, 'group:classe_3eme3:rwx')
+            && str_contains($p->command, '_echange'));
+        Process::assertNotRan(fn ($p) => str_contains($p->command, 'classe_classe_'));
+        Process::assertNotRan(fn ($p) => str_contains($p->command, 'Classe_Classe_'));
     }
 
     #[Test]

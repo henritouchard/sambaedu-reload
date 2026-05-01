@@ -70,15 +70,25 @@ class ShareService
     // =========================================================================
 
     /**
-     * Convertit un nom de classe brut en sa forme canonique pour les ACLs :
-     * lowercase + escape `\040` pour les espaces (cohérent legacy l. 344).
+     * Dépouille le préfixe `Classe_` (case-insensitive) si présent et applique
+     * la regex de durcissement (alphanum + `._-`, 1er char != `.`).
      *
-     * Note : retourne `null` si le nom contient des caractères non autorisés
-     * (regex stricte alphanum + `._-` + espace) — refus en amont avant tout
-     * shell call.
+     * Cohérent avec le legacy : `ldap.inc.php::list_classes` (l. 5187) extrait
+     * la partie après le premier `_` du CN AD ; `partages.inc.php::update_classes`
+     * (l. 459) re-préfixe ensuite `"Classe_" . $Classe` pour construire le path.
+     * Le SER a une copie SQL `user_groups.name` qui peut être stockée préfixée
+     * (CN brut) OU non (legacy ancien). On normalise ici une fois pour toutes,
+     * pour éviter le double préfixe (`Classe_Classe_3eme3`) et la mauvaise clé
+     * ACL (`classe_classe_3eme3` au lieu de `classe_3eme3`).
+     *
+     * Casse préservée : `bareClassName('Classe_3emeA')` → `'3emeA'`.
+     *
+     * @return string|null Nom court (casse préservée) ou null si invalide.
      */
-    public function escapeAclClassName(string $rawName): ?string
+    public function bareClassName(string $rawName): ?string
     {
+        $bare = preg_match('/^Classe_(.+)$/i', $rawName, $m) ? $m[1] : $rawName;
+
         // Review 5.2 #12 (durcissement préventif) : refuser les noms
         // commençant par `.` (les classes admin n'ont pas besoin de noms
         // cachés, et `archiveClassShare` réserve le préfixe `.` à l'archive).
@@ -86,14 +96,27 @@ class ShareService
         // racine FS `Classe_<name>` est ensuite passée à `validatePath` qui
         // les rejette de toute façon — cohérence et simplicité).
         // Caractères autorisés : alphanum + . _ - (1er char != `.`).
-        if (! preg_match('/^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/', $rawName)) {
+        if (! preg_match('/^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/', $bare)) {
             return null;
         }
-        // Note : la regex ci-dessus rejette les espaces (review 5.2 #15) ; on
-        // n'a donc plus besoin d'échapper en `\\040` ici. L'escape espace est
-        // conservé dans `buildXxxAcls()` pour `domain admins` (groupe AD avec
-        // espace, hors scope nom de classe).
-        return strtolower($rawName);
+        return $bare;
+    }
+
+    /**
+     * Convertit un nom de classe brut en sa forme canonique pour les ACLs :
+     * nom court (sans préfixe `Classe_`) lowercase. Cohérent avec les groupes
+     * AD `classe_<bare>` / `equipe_<bare>` posés par `buildXxxAcls()`.
+     *
+     * Note : retourne `null` si le nom contient des caractères non autorisés.
+     * L'escape `\040` n'est plus nécessaire ici (la regex de
+     * {@see bareClassName()} rejette les espaces) ; il est conservé dans
+     * `buildXxxAcls()` pour `domain admins` (groupe AD avec espace, hors
+     * scope nom de classe).
+     */
+    public function escapeAclClassName(string $rawName): ?string
+    {
+        $bare = $this->bareClassName($rawName);
+        return $bare !== null ? strtolower($bare) : null;
     }
 
     /**
@@ -101,7 +124,10 @@ class ShareService
      *
      * Refuse si :
      *  - `$group->type !== 'classe'` ;
-     *  - `$group->name` contient des caractères suspects (cf. {@see escapeAclClassName()}).
+     *  - `$group->name` contient des caractères suspects (cf. {@see bareClassName()}).
+     *
+     * Le `Classe_` préfixe stocké en DB (cas SER) est dé-préfixé puis re-préfixé
+     * une seule fois — pas de doublon `Classe_Classe_X`.
      *
      * @return string|null Path absolu ou `null` si refusé.
      */
@@ -110,12 +136,11 @@ class ShareService
         if ($group->type !== 'classe') {
             return null;
         }
-        // Réutilise la regex naming via escapeAclClassName comme guard
-        // (mais conserve la casse originale dans le path FS, cohérent legacy).
-        if ($this->escapeAclClassName($group->name) === null) {
+        $bare = $this->bareClassName($group->name);
+        if ($bare === null) {
             return null;
         }
-        $path = $this->classesRoot() . '/Classe_' . $group->name;
+        $path = $this->classesRoot() . '/Classe_' . $bare;
         if (! $this->aclService->validatePath($path)) {
             return null;
         }

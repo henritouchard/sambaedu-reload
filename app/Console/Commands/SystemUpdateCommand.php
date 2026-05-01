@@ -11,6 +11,7 @@ class SystemUpdateCommand extends Command
     protected $signature = 'sambaedu:app:update
                             {--skip-migrate : Ne pas exécuter les migrations}
                             {--skip-seed : Ne pas exécuter les seeders idempotents (permissions/rôles Spatie)}
+                            {--resync-seeded-roles : Re-synchroniser les permissions des rôles seedés sur leur définition canonique (écrase les customs UI)}
                             {--skip-livewire : Ne pas republier les assets Livewire}
                             {--skip-optimize : Ne pas reconstruire les caches}';
 
@@ -31,7 +32,13 @@ class SystemUpdateCommand extends Command
             }
 
             if (!$this->option('skip-seed')) {
-                $this->runArtisan('db:seed --class=PermissionSeeder --force');
+                if ($this->option('resync-seeded-roles')) {
+                    $this->line('> PermissionSeeder::run(force: true)');
+                    $stats = (new \Database\Seeders\PermissionSeeder())->run(force: true);
+                    $this->line(json_encode($stats, JSON_UNESCAPED_SLASHES));
+                } else {
+                    $this->runArtisan('db:seed --class=PermissionSeeder --force');
+                }
                 $this->runArtisan('permission:cache-reset');
             }
 

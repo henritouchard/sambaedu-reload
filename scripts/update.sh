@@ -117,7 +117,13 @@ run_laravel_update() {
     log "Exécution de la mise à jour applicative..."
     cd "$APP_DIR"
 
-    php artisan sambaedu:app:update
+    # `--resync-seeded-roles` : re-synchronise les permissions des rôles
+    # seedés (SambaRole::*) sur leur définition canonique enum. Nécessaire
+    # quand une nouvelle permission est ajoutée à un rôle déjà présent en DB
+    # (le seeder est non-destructif par défaut). N'affecte ni les permissions
+    # directes des users (model_has_permissions), ni l'attribution des rôles
+    # (model_has_roles), ni les rôles custom créés via l'UI Profils.
+    php artisan sambaedu:app:update --resync-seeded-roles
 
     log_success "Mise à jour Laravel OK"
 }
