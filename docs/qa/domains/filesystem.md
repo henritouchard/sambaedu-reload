@@ -368,4 +368,244 @@ $u->update(['quota_snapshot' => [
 
 ---
 
-*Dernière mise à jour : 2026-04-27 (Story 5.1d)*
+## Story 5.2 — Partages classe + ACLs POSIX
+
+**Date livraison** : 2026-04-30
+**Migrations à appliquer** : aucune (D1=A — FS source de vérité, table polyvalente
+`quota_audit_logs` réutilisée avec `target_type='share'`).
+
+**Pré-requis VM** :
+
+- Sudoers (D7) : `/etc/sudoers.d/sambaedu` doit contenir
+  ```
+  www-data ALL=(root) NOPASSWD: /usr/bin/setfacl, /usr/bin/getfacl, /bin/mkdir, /bin/mv, /bin/chown, /bin/chgrp, /bin/rm
+  ```
+  Si manquant : escalader à Henri AVANT de jouer le runbook.
+- `smb.conf` (D8) : la section globale `[classes]` doit pointer
+  `/var/sambaedu/Classes` (vue VM 2026-04-30, aucune modif requise par 5.2).
+  ```bash
+  grep -A6 '^\[classes\]' /etc/samba/smb.conf
+  ```
+- Racine FS : `/var/sambaedu/Classes/` existe, owner `www-admin`, groupe
+  `domain admins`. Sinon `sudo mkdir -p /var/sambaedu/Classes && sudo chown www-admin:'domain admins' /var/sambaedu/Classes`.
+- Permissions seedées : `php artisan db:seed --class=PermissionSeeder`
+  (idempotent — ajoute `share.manage` aux rôles `ShareAdmin`, `UserAdmin`,
+  `SuperAdmin`).
+- Cache Spatie : `php artisan permission:cache-reset` après seed.
+
+### Scénario 5.2-1 — Création partage classe nominal (avec membres)
+
+**Pré-requis** : un `UserGroup::create(['name'=>'TEST6A','type'=>'classe'])`
+sans dossier FS associé, et 2 élèves rattachés (`alice`, `bob`).
+
+1. Se connecter en `admin` (rôle ShareAdmin / UserAdmin / SuperAdmin —
+   tous trois possèdent `share.manage`).
+2. Naviguer vers `/app/users/groups/{id}` du groupe `TEST6A`.
+3. **Attendu UI** : la section "Partage de classe" s'affiche entre
+   `members-list` et `group-quota-section`, badge orange "Non créé",
+   bouton "Créer le partage" actif.
+4. Cliquer "Créer le partage". Toast success "Partage de classe créé /
+   ACLs réappliquées."
+5. **Attendu FS** :
+   ```bash
+   ls -la /var/sambaedu/Classes/Classe_TEST6A/
+   # → racine + _travail/ + _profs/ + _echange/ + alice/ + bob/
+   getfacl /var/sambaedu/Classes/Classe_TEST6A/
+   # → user::rwx, group::---, group:equipe_test6a:r-x, group:Classe_test6a:r-x,
+   #    group:domain admins:rwx, mask::rwx, other::---
+   #    + default:* identiques (héritage)
+   getfacl /var/sambaedu/Classes/Classe_TEST6A/_echange/
+   # → group:Classe_test6a:rwx (D6=A activé par défaut)
+   getfacl /var/sambaedu/Classes/Classe_TEST6A/alice/
+   # → user:alice:rwx, group:equipe_test6a:rwx, group:domain admins:rwx
+   ```
+6. Audit BDD : `SELECT * FROM quota_audit_logs WHERE action='create_share'
+   ORDER BY id DESC LIMIT 1` → 1 row `target_type='share'`,
+   `target_name='TEST6A'`, `partition='/var/sambaedu'`, `new_values` JSON
+   contient `members_count: 2`.
+
+### Scénario 5.2-2 — Réapplication ACLs idempotente
+
+**Pré-requis** : Scénario 5.2-1 OK. ACL altérée manuellement :
+```bash
+sudo setfacl -m group:nobody:rwx /var/sambaedu/Classes/Classe_TEST6A/
+```
+
+1. Sur la même page, cliquer "Réappliquer les ACLs".
+2. **Attendu UI** : toast success identique.
+3. `getfacl` ne montre plus `group:nobody:rwx` — set canonique restauré.
+4. Aucune data dans `_travail/_profs/_echange/alice/bob` n'a été altérée.
+5. Audit : 2e row `action='create_share'` (idempotent : 2 audits, pas de
+   différence sémantique).
+
+### Scénario 5.2-3 — Toggle dossier d'échange on/off
+
+**Pré-requis** : Scénario 5.2-1 OK, `_echange` actif.
+
+1. Sur la même page, badge `_echange` = "activé". Cliquer
+   "Désactiver le dossier d'échange".
+2. Toast "Dossier d'échange désactivé (data préservée mais invisible aux membres)."
+3. `getfacl /var/sambaedu/Classes/Classe_TEST6A/_echange/` → `group:Classe_test6a:---`
+   (et `default:group:Classe_test6a:---`).
+4. Ré-activer via le bouton — retour `rwx`. Audit : 2 rows
+   `action='toggle_echange'` (un par toggle).
+
+### Scénario 5.2-4 — Changement de classe d'un élève (sync)
+
+**Pré-requis** : Scénarios 5.2-1 OK pour `TEST6A` et `TEST5B` (créer une
+2e classe). Élève `alice` rattaché à `TEST6A`.
+
+1. Naviguer `/app/users/{alice_id}/edit`. Décocher la classe `TEST6A`,
+   cocher `TEST5B`. Sauvegarder.
+2. **Attendu hook Observer pivot (D5=A)** : Laravel detache la pivot
+   `(alice, TEST6A)` puis attache `(alice, TEST5B)`. L'Observer
+   `UserGroupUserPivotObserver` invoque
+   `ShareService::syncUserClassMemberships(alice, [oldId], [newId])`.
+3. **Attendu FS** :
+   ```bash
+   ls /var/sambaedu/Classes/Classe_TEST5B/alice/Archives/
+   # → contient les anciens fichiers (D3=A : déplacement vers Archives/)
+   ls /var/sambaedu/Classes/Classe_TEST5B/alice/
+   # → nouveau dossier vide (sauf Archives/) + ACLs canoniques.
+   ls /var/sambaedu/Classes/Classe_TEST6A/alice/
+   # → SOIT inexistant SOIT vide (mv déjà appliqué).
+   ```
+4. Audit : row `action='sync_user'`, `target_name='alice'`,
+   `new_values.added=[TEST5B_id]`, `new_values.removed=[TEST6A_id]`.
+
+### Scénario 5.2-5 — Suppression d'une classe (archive `mv`)
+
+**Pré-requis** : `Classe_TEST6A/` existe sur FS.
+
+1. **D4=A** — pas d'UI dédiée pour la suppression. Tinker :
+   ```bash
+   php artisan tinker --execute='\App\Services\Filesystem\ShareService;
+   $g = \App\Models\UserGroup::where("name","TEST6A")->where("type","classe")->first();
+   app(\App\Services\Filesystem\ShareService::class)->archiveClassShare($g);'
+   ```
+2. **Attendu FS** :
+   ```bash
+   ls -la /var/sambaedu/Classes/ | grep TEST6A
+   # → .Classe_TEST6A (préfixé d'un point, soft-archive — invisible aux
+   #    clients SMB)
+   ```
+3. Audit : row `action='archive_share'` avec `from`/`to` dans `new_values`.
+4. Restauration manuelle si besoin :
+   `sudo mv /var/sambaedu/Classes/.Classe_TEST6A /var/sambaedu/Classes/Classe_TEST6A`.
+
+### Scénario 5.2-6 — Bypass Gate `manage-share` via payload forgé → 403
+
+**Pré-requis** : un user `viewer` avec `share.view` UNIQUEMENT (pas
+`share.manage`).
+
+1. Se connecter en `viewer`.
+2. Naviguer `/app/users/groups/{TEST6A_id}`. La section "Partage de
+   classe" est visible MAIS les boutons sont masqués (`@can('manage-share')`
+   garde la zone d'action).
+3. Forger un payload Livewire (browser devtools) `wire:click="createShare"`
+   sur un bouton existant. Le serveur doit renvoyer **HTTP 403**
+   (`Gate::authorize('manage-share', $group)` première ligne du handler).
+4. Aucune modif FS (`getfacl` inchangé).
+
+### Scénario 5.2-7 — Anti-injection path (UserGroup::name malicieux)
+
+**Pré-requis** : un admin avec `share.manage`.
+
+1. Tenter via tinker :
+   ```bash
+   php artisan tinker --execute='
+   $g = \App\Models\UserGroup::create([
+     "name" => "../etc",
+     "type" => "classe",
+   ]);
+   echo app(\App\Services\Filesystem\ShareService::class)->createClassShare($g) ? "OK" : "REFUSÉ";
+   ';
+   ```
+2. **Attendu** : `REFUSÉ` (false). Aucun setfacl/mkdir exécuté
+   (`AclService::validatePath()` rejette via regex anti-traversal).
+3. Log Laravel `AclService:` ou `ShareService:` : `path invalide` ou
+   `createClassShare refusé (type ou nom invalide)`.
+4. `ls /var/sambaedu/Classes/ | grep -E '\.\.|etc'` → 0 hit.
+
+### Scénario 5.2-8 — Commande `shares:resync-class` smoke VM
+
+1. **Dry-run global** (sans modif) :
+   ```bash
+   php artisan shares:resync-class --dry-run
+   ```
+   **Attendu** : tableau listant toutes les classes (id, name, path FS,
+   nb membres). Exit 0. Aucune commande shell `setfacl` n'est
+   journalisée.
+
+2. **Run ciblé sur une classe** (test de régression non destructif) :
+   ```bash
+   php artisan shares:resync-class --class=TEST6A --performed-by=qa-runbook
+   ```
+   **Attendu** :
+   - stdout : `[OK] TEST6A (id=…) re-synchronisée.` puis
+     `Classes : 1 traitée(s). Re-synchronisées : 1. Échecs : 0.`
+   - exit 0.
+   - `quota_audit_logs` : 1 row `action='create_share'` (par
+     ShareService) + 1 row `action='resync_class'` (consolidé par la
+     commande, `performed_by='qa-runbook'`).
+
+3. **Run global** (TOUTES les classes) — réservé aux fenêtres de
+   maintenance, peut prendre plusieurs minutes :
+   ```bash
+   php artisan shares:resync-class --performed-by=admin-bulk
+   ```
+   **Attendu** : compteur final `Re-synchronisées: N` cohérent avec le
+   nombre de UserGroup type=classe.
+
+4. **Tentative injection** (refus immédiat) :
+   ```bash
+   php artisan shares:resync-class --class='Classe;rm -rf /'
+   ```
+   **Attendu** : exit 1 + message `--class invalide (regex /^[A-Za-z0-9_. -]+$/)`.
+
+---
+
+### Post-correctifs review 2026-04-30 (Story 5.2)
+
+13 corrections review appliquées (cf. `_bmad-output/codeReviews/5-2.md` status `to-validate`). Les scénarios précédents restent valables et ne nécessitent pas d'ajustement, **sauf** :
+
+#### Codes de retour `shares:resync-class` (review #2 / Q3)
+
+La commande retourne désormais 3 codes distincts (mise à jour `--description` Artisan) :
+
+| Code | Sens | Cron monitoring |
+|------|------|------------------|
+| `0`  | Au moins 1 classe re-synchronisée OU aucune classe à traiter | OK |
+| `1`  | Au moins 1 classe en erreur (`failed > 0`) | Alerter |
+| `2`  | Toutes les classes étaient verrouillées (`resynced=0 && failed=0 && locked>0`) | Alerter (race chronique ou lock orphelin) |
+
+#### Scénario 5.2-9 — Anti symlink traversal (review #3)
+
+**Pré-requis** : Scénario 5.2-1 OK pour `TEST6A` ; un dossier élève `TEST6A/alice/` créé.
+
+**Étapes** :
+
+1. Plante un symlink dans le dossier élève (sur la VM, en élève) :
+   ```bash
+   ln -s /etc /var/sambaedu/Classes/Classe_TEST6A/alice/evil
+   ```
+2. Lance un resync admin :
+   ```bash
+   php artisan shares:resync-class --class=TEST6A --performed-by=qa-9
+   ```
+3. Vérifie qu'aucune ACL n'a été posée dans `/etc/` :
+   ```bash
+   getfacl /etc/passwd /etc/shadow
+   ```
+   **Attendu** : aucune entrée `group:equipe_test6a` ou `group:Classe_test6a` dans la sortie. Le `setfacl -R -P` (option `-P` ajoutée en review #3) a refusé de suivre le symlink. Le legacy `partages.inc.php` faisait déjà ainsi (l. 372/492/498/506) — la review #3 a comblé une régression sécurité du dev initial.
+
+#### Notes additionnelles
+
+- **#11 archive `.Classe_X` déjà existante** : `archiveClassShare` log `Log::warning 'ShareService: archiveClassShare cible déjà existante, mv refusé'` avec `classe`/`from`/`target` dans le contexte, et retourne false. Aucune perte de data — l'admin doit supprimer l'archive précédente manuellement avant de re-archiver. Décalque legacy strict (Q2).
+- **#15 noms de classe avec espaces** : non supportés (cohérence FS path / `validatePath`). Exemple : un UserGroup `name='Seconde B'` est refusé en `escapeAclClassName` → `createClassShare` retourne false. Cf. `docs/domains/filesystem.md`.
+- **#13 cache UI 60s** : invalidé automatiquement après chaque mutation `ShareService` (createClassShare / toggleEchange / archiveClassShare / syncUserClassMemberships) via `Cache::forget('share-status:'.$id)`. L'UI Livewire voit donc un état frais après une opération Artisan d'un autre admin (sans attendre l'expiration TTL).
+- **#1 hook UserService → ShareService** (Q1=Option B) : le changement de classe d'un élève via la fiche LDAP (`UserService::modifyUser` → `persistUserGroupsToSql`) déclenche désormais l'archivage `Classe_<old>/<eleve> → Classe_<new>/<eleve>/Archives/` en passant par un call EXPLICIT à `ShareService::syncUserClassMemberships($user, $oldClassIds, $newClassIds)` — l'Observer pivot est désactivé pendant le sync atomique pour éviter le doublon (events `created`/`deleted` séparés).
+
+---
+
+*Dernière mise à jour : 2026-04-30 (Story 5.2 + corrections review)*

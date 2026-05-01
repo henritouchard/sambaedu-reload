@@ -200,6 +200,34 @@ trait CreatesPermissionSchema
             });
             $this->createdTables[] = 'system_settings';
         }
+
+        // Story 5.2 — la table polyvalente d'audit accueille aussi les
+        // opérations partages (target_type='share'). Story 5.1c+5.1d
+        // l'utilisaient déjà pour les quotas. On la crée localement pour
+        // les tests qui touchent aux services Filesystem partages.
+        if (!Schema::hasTable('quota_audit_logs')) {
+            Schema::create('quota_audit_logs', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('quota_rule_id')->nullable();
+                // Review 5.2 #9 — alignement test/prod : la migration
+                // `2026_02_20_100000_create_quota_tables.php` utilise
+                // `action(20)` et `target_type(20)`. Les actions Story 5.2
+                // tiennent toutes dans 20 caractères (`create_share`=12,
+                // `toggle_echange`=14, `archive_share`=13, `resync_class`=12,
+                // `sync_user`=9). Aligner évite la dette de divergence.
+                $table->string('action', 20);
+                $table->string('performed_by', 255);
+                $table->string('target_type', 20);
+                $table->string('target_name', 255)->nullable();
+                $table->string('partition', 50);
+                $table->json('old_values')->nullable();
+                $table->json('new_values')->nullable();
+                $table->boolean('fs_applied')->default(false);
+                $table->text('fs_error')->nullable();
+                $table->timestamp('created_at')->nullable();
+            });
+            $this->createdTables[] = 'quota_audit_logs';
+        }
     }
 
     protected function dropPermissionSchema(): void
@@ -210,6 +238,7 @@ trait CreatesPermissionSchema
         // delegations → model_has_* / roles / permissions → workstation_groups
         // → user_group_user → user_groups → users).
         $dropOrder = [
+            'quota_audit_logs',
             'system_settings',
             'delegation_history',
             'delegations',

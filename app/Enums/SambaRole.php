@@ -55,6 +55,12 @@ enum SambaRole: string
             self::ShareAdmin => [
                 SambaPermission::ShareView,
                 SambaPermission::ShareRefresh,
+                // Story 5.2 (D2=A) — ShareAdmin gère les partages classes
+                // (création, ACLs, toggle échange). Le bit legacy
+                // `SE_SHARE_REFRESH` couvrait l'ensemble du périmètre dans
+                // `partages/rep_classes.php`, donc ShareAdmin reçoit la
+                // permission Spatie `share.manage` par défaut.
+                SambaPermission::ShareManage,
             ],
             self::UserAdmin => [
                 SambaPermission::UserPasswordInit,
@@ -65,6 +71,10 @@ enum SambaRole: string
                 SambaPermission::UserDelegate,
                 SambaPermission::ShareView,
                 SambaPermission::ShareRefresh,
+                // Story 5.2 (D2=A) — UserAdmin gère aussi les partages
+                // classes (cohérent : un changement de classe d'élève via
+                // la page utilisateur peut nécessiter un sync ACLs partage).
+                SambaPermission::ShareManage,
             ],
             self::Technicien => [
                 SambaPermission::ComputerView,

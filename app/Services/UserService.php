@@ -1387,7 +1387,20 @@ class UserService
     }
 
     /**
-     * Lie l'utilisateur SQL à ses groupes dans la table pivot user_group_user
+     * Lie l'utilisateur SQL à ses groupes dans la table pivot user_group_user.
+     *
+     * Story 5.2 review #1 (Q1=Option B) — sync de classes :
+     *   - On capture les classes Eloquent AVANT le sync (`$oldClassIds`).
+     *   - On `sync()` les classes (au lieu de `syncWithoutDetaching`) pour
+     *     permettre la détection de detach (changement 6A → 5B). Les groupes
+     *     non-classes (catégorie + fonction) sont gérés via
+     *     `syncWithoutDetaching` (préservation des autres rattachements).
+     *   - L'Observer pivot est désactivé pendant le sync atomique : on appelle
+     *     ensuite `ShareService::syncUserClassMemberships($user, $oldClassIds,
+     *     $newClassIds)` UNE FOIS pour orchestrer l'archivage `Classe_<old>/<eleve>
+     *     → Classe_<new>/<eleve>/Archives/` (D3=A) avec les deux listes en main.
+     *   - L'Observer reste actif pour les attach/detach ad-hoc (UI debug,
+     *     scripts d'import bulk, futures stories).
      */
     private function persistUserGroupsToSql(string $login, string $categorie, string $fonction, array $classes): void
     {
@@ -1397,23 +1410,96 @@ class UserService
                 return;
             }
 
-            // Noms des groupes : catégorie + fonction + classes
-            $groupNames = array_merge(
+            // 1. Groupes non-classes (catégorie + fonction) — syncWithoutDetaching.
+            //    On les distingue des classes par convention de nommage
+            //    (`Classe_*`) pour être tolérant aux fixtures historiques
+            //    qui utilisent `type='class'` au lieu de `type='classe'`.
+            $nonClasseNames = array_merge(
                 [$categorie],
                 !empty($fonction) ? [$fonction] : [],
-                array_map(fn($c) => 'Classe_' . $c, $classes),
             );
-
-            $groupIds = \App\Models\UserGroup::where(function ($q) use ($groupNames) {
-                foreach ($groupNames as $name) {
+            $nonClasseIds = \App\Models\UserGroup::where(function ($q) use ($nonClasseNames) {
+                foreach ($nonClasseNames as $name) {
                     $q->orWhereRaw('LOWER(name) = ?', [strtolower($name)]);
                 }
             })->pluck('id');
 
-            if ($groupIds->isNotEmpty()) {
-                $sqlUser->groups()->syncWithoutDetaching($groupIds);
-                Log::info("Groupes SQL liés pour $login", ['groups' => $groupNames]);
+            if ($nonClasseIds->isNotEmpty()) {
+                $sqlUser->groups()->syncWithoutDetaching($nonClasseIds);
             }
+
+            // 2. Classes — sync atomique (detach implicite des classes absentes).
+            //    Détection par préfixe `Classe_` ET/OU type='classe' pour
+            //    tolérer les deux conventions (legacy=`class`, refactor=`classe`).
+            //    On résout les nouveaux IDs APRÈS avoir capturé les anciens.
+            $oldClassIds = $sqlUser->groups()
+                ->where(function ($q) {
+                    $q->where('type', 'classe')
+                      ->orWhere('name', 'like', 'Classe_%');
+                })
+                ->pluck('user_groups.id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            $newClasseNames = array_map(fn ($c) => 'Classe_' . $c, $classes);
+            $newClassIds = $newClasseNames === []
+                ? collect()
+                : \App\Models\UserGroup::where(function ($q) use ($newClasseNames) {
+                    foreach ($newClasseNames as $name) {
+                        $q->orWhereRaw('LOWER(name) = ?', [strtolower($name)]);
+                    }
+                })->pluck('id');
+            $newClassIdsArr = $newClassIds->map(fn ($id) => (int) $id)->all();
+
+            // Désactivation de l'Observer pivot pendant le sync atomique (cf.
+            // review 5.2 #1 Q1). L'Observer reçoit des events atomiques
+            // (`created`/`deleted` séparés) — il ne peut pas voir oldIds ET
+            // newIds en même temps, donc l'archivage D3=A
+            // `Classe_<old>/<eleve> → Classe_<new>/<eleve>/Archives/` lui est
+            // impossible. On détache l'observer pendant le sync, puis on
+            // appelle explicitement `syncUserClassMemberships` après avec les
+            // deux listes en main.
+            \App\Observers\UserGroupUserPivotObserver::disableSync();
+            try {
+                // Sync ciblé classes-only : on retire les anciennes classes
+                // qui ne sont plus dans la nouvelle liste, on attache les
+                // nouvelles. Les groupes role/function ne sont PAS impactés.
+                $toDetach = array_values(array_diff($oldClassIds, $newClassIdsArr));
+                if ($toDetach !== []) {
+                    $sqlUser->groups()->detach($toDetach);
+                }
+                if ($newClassIdsArr !== []) {
+                    $sqlUser->groups()->syncWithoutDetaching($newClassIdsArr);
+                }
+            } finally {
+                \App\Observers\UserGroupUserPivotObserver::enableSync();
+            }
+
+            // 3. Hook ShareService (D5=A explicit) — orchestrer l'archivage et
+            //    la création/retrait des dossiers élèves en une passe avec les
+            //    deux listes anciennes/nouvelles.
+            if ($oldClassIds !== $newClassIdsArr) {
+                try {
+                    app(\App\Services\Filesystem\ShareService::class)->syncUserClassMemberships(
+                        $sqlUser,
+                        oldClassIds: $oldClassIds,
+                        newClassIds: $newClassIdsArr,
+                    );
+                } catch (\Throwable $e) {
+                    Log::error('UserService: ShareService::syncUserClassMemberships échec', [
+                        'login' => $login,
+                        'old' => $oldClassIds,
+                        'new' => $newClassIdsArr,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            Log::info("Groupes SQL liés pour $login", [
+                'non_classe' => $nonClasseNames,
+                'classes_old' => $oldClassIds,
+                'classes_new' => $newClassIdsArr,
+            ]);
         } catch (\Exception $e) {
             Log::error("Échec liaison groupes SQL (AD = source de vérité, on continue)", [
                 'login' => $login,

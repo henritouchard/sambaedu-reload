@@ -268,6 +268,14 @@ new #[Title('Groupe utilisateur')] class extends Component {
             @include('pages.users.groups.[id]._partials.group-header')
             @include('pages.users.groups.[id]._partials.members-list')
 
+            {{-- Story 5.2 — Section Partage de classe (Livewire SFC).
+                 Visible UNIQUEMENT si $type === 'classe' (le SFC fait aussi
+                 son propre check en mount + retourne un div vide sinon).
+                 Position : entre members-list et group-quota-section. --}}
+            @if ($type === 'classe')
+                @livewire('pages::users.groups.[id]._partials.class-share-section', ['groupId' => $groupId], key('class-share-' . $groupId))
+            @endif
+
             {{-- Story 5.1c — Section Quota groupe (Livewire SFC).
                  Insérée entre members-list et la wallpaper-card (D6=A — section
                  verticale, pas d'onglets). Visible en lecture pour tout user, modifiable

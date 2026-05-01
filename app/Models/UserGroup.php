@@ -46,6 +46,11 @@ class UserGroup extends Model implements Wireable
 
     /**
      * Relation N:N avec les utilisateurs
+     *
+     * Story 5.2 (D5=A) — `->using(UserGroupUserPivot::class)` active les events
+     * Eloquent sur les rows pivot pour l'Observer
+     * `UserGroupUserPivotObserver` qui synchronise les ACLs FS lors d'un
+     * changement de classe d'élève.
      */
     public function users(): BelongsToMany
     {
@@ -54,7 +59,7 @@ class UserGroup extends Model implements Wireable
             'user_group_user',
             'user_group_id',
             'user_id'
-        );
+        )->using(\App\Models\Pivot\UserGroupUserPivot::class);
     }
 
     public function wallpapers(): MorphMany

@@ -107,11 +107,16 @@ class User extends Authenticatable implements Wireable
             'user_group_user',
             'user_id',
             'user_group_id'
-        );
+        )->using(\App\Models\Pivot\UserGroupUserPivot::class);
     }
 
     /**
      * Groupes d'utilisateurs (classes, équipes, etc.)
+     *
+     * Story 5.2 (D5=A) — `->using(UserGroupUserPivot::class)` permet à
+     * `App\Observers\UserGroupUserPivotObserver` d'écouter les events
+     * `created`/`deleted` sur les rows pivot. Aucune autre conséquence
+     * fonctionnelle (le pivot ne porte ni timestamps ni colonnes additionnelles).
      */
     public function groups(): BelongsToMany
     {
@@ -120,7 +125,7 @@ class User extends Authenticatable implements Wireable
             'user_group_user',
             'user_id',
             'user_group_id'
-        );
+        )->using(\App\Models\Pivot\UserGroupUserPivot::class);
     }
 
     /**

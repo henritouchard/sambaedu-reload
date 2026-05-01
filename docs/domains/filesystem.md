@@ -493,6 +493,175 @@ nécessaire.
 
 ---
 
+## Story 5.2 — Partages classe + ACLs POSIX
+
+**Date livraison** : 2026-04-30
+**Décisions kickoff** : D1=A, D2=A, D3=A, D4=A, D5=A+D, D6=A, D7=A, D8=A,
+D9=A, D10=A, D11=A, D12=A, D13=A, D14=A (toutes recommandations SM
+appliquées telles quelles).
+
+### Architecture
+
+5.2 ajoute deux services dans `App\Services\Filesystem\` qui rejoignent
+`HomeDirService` (5.1a) et `XfsQuotaService` (5.1a) :
+
+- **`AclService`** (bas niveau) — encapsule `setfacl`/`getfacl` via la
+  facade `Process` Laravel + `escapeshellarg` + regex anti-injection
+  `validatePath()`. Méthodes `setAcls`, `getFacl`, `addAcl`, `removeAcl`,
+  `checkAcls`, `validatePath`. Décalque fidèle de
+  `sambaedu/includes/partages.inc.php` (legacy).
+- **`ShareService`** (métier) — orchestre la création/suppression/sync
+  des partages classes via DI sur `AclService`. Méthodes publiques :
+  `createClassShare`, `syncUserClassMemberships`, `toggleEchange`,
+  `archiveClassShare`, `getStatus` (lecture pour UI).
+
+### Schéma ACLs canonique
+
+Reproduit fidèlement de `partages.inc.php::update_classes` (l. 452-580).
+Pour une classe `name='6A'` (lower = `6a`) :
+
+**Racine `Classe_6A/`** :
+```
+user::rwx
+group::---
+group:equipe_6a:r-x          (ajusté de :rwx canonique → :rx via -m)
+group:Classe_6a:r-x          (ajout après wipe)
+group:domain admins:rwx
+mask::rwx
+other::---
+default:* (mêmes 7 entrées)
+```
+
+**`_travail/`** : ajout `group:Classe_6a:r-x` (lecture seule élève).
+
+**`_profs/`** : héritage default racine — privé enseignants
+(`equipe_6a:rwx`).
+
+**`_echange/`** : `group:Classe_6a:rwx` (D6=A activé) ou
+`group:Classe_6a:---` (désactivé via `toggleEchange()`).
+
+**`<eleve>/`** : `user:<login>:rwx` + `group:equipe_6a:rwx`
++ `group:domain admins:rwx`.
+
+> **Convention naming legacy** : tous les noms de groupe ACL sont
+> lowercase + espaces remplacés par `\\040` (cf.
+> `ShareService::escapeAclClassName()`). Le path FS lui conserve la
+> casse originale (`Classe_6A`).
+
+### Hook changement de classe (D5=A)
+
+Pour synchroniser les ACLs FS lors d'un changement d'effectif Story 2.2,
+on utilise un **modèle pivot custom** :
+
+- `App\Models\Pivot\UserGroupUserPivot` étend `Illuminate\Database\Eloquent\Relations\Pivot`,
+  configuré sur `user_group_user` (PK composite, pas de timestamps).
+- `User::groups()` et `UserGroup::users()` ajoutent `->using(UserGroupUserPivot::class)`
+  pour qu'Eloquent dispatche les events `created`/`deleted` sur les rows pivot.
+- `App\Observers\UserGroupUserPivotObserver` filtre `$group->type === 'classe'`
+  et délègue à `ShareService::syncUserClassMemberships()` (synchrone).
+  Désactivable globalement (`UserGroupUserPivotObserver::disableSync()`)
+  pour les imports massifs.
+- Enregistrement dans `AppServiceProvider::boot()` :
+  `UserGroupUserPivot::observe(UserGroupUserPivotObserver::class)`.
+
+**Filet de sécurité bulk (D5=D)** : `php artisan shares:resync-class
+[--class=<name>] [--dry-run]` re-applique idempotemment les ACLs sur
+toutes les classes (ou une seule). Cohérent pattern legacy "bouton
+Mise à jour des classes" (`partages/rep_classes.php`).
+
+### Sudoers VM (D7)
+
+`/etc/sudoers.d/sambaedu` doit contenir :
+```
+www-data ALL=(root) NOPASSWD: /usr/bin/setfacl, /usr/bin/getfacl, /bin/mkdir, /bin/mv, /bin/chown, /bin/chgrp, /bin/rm
+```
+
+Story 5.1a/5.1d déjà actifs en prod (`sudo rm` pour
+`HomeDirService::archiveHomeDirectory`). 5.2 ajoute `setfacl`,
+`getfacl`, `mv`, `chown`, `chgrp` (déjà présents pour `HomeDirService`
+côté legacy 1bis, à confirmer côté refactor au déploiement).
+
+### `smb.conf` (D8=A)
+
+**Aucune écriture** dans `/etc/samba/smb.conf` par 5.2. La section
+globale `[classes]` (path=`/var/sambaedu/Classes`, vue VM 2026-04-30)
+expose tous les sous-dossiers `Classe_*/` automatiquement. Aucun
+`smbcontrol reload-config` requis.
+
+### Archives élève changement de classe (D3=A)
+
+Quand un élève change de classe :
+1. La pivot row `(user, oldClassId)` est detachée → Observer dispatche
+   `syncUserClassMemberships(user, [oldId], [])` ; le service retire
+   l'ACL `user:<login>` du dossier de l'ancienne classe (le dossier
+   élève n'est PAS supprimé — data préservée).
+2. La pivot row `(user, newClassId)` est attachée → Observer dispatche
+   `syncUserClassMemberships(user, [], [newId])` ; le service crée
+   `Classe_<new>/<login>/` + déplace `Classe_<old>/<login>` →
+   `Classe_<new>/<login>/Archives/` (mv sudo).
+3. Si `Archives/` existe déjà : suppression de l'ancien dossier (legacy
+   l. 354 — pas d'écrasement, on log warning).
+
+### Permission Spatie `share.manage` (D2=A)
+
+- Enum : `App\Enums\SambaPermission::ShareManage = 'share.manage'`.
+- Mapping legacy : `legacyRight()` retourne `LegacyRight::ShareRefresh`
+  (le bit `SE_SHARE_REFRESH` couvrait l'ensemble du périmètre dans
+  `partages/rep_classes.php`).
+- Marquée `isSecondaryBitPermission()` = `true` pour ne PAS être
+  sur-attribuée par `fromBitmask()` (sinon tout user `share.refresh`
+  recevrait `share.manage`).
+- Rôles seedés : `ShareAdmin`, `UserAdmin`, `SuperAdmin` (cf.
+  `App\Enums\SambaRole`).
+- Gate Policy : `manage-share` enregistré dans
+  `App\Policies\SharePolicy::$gates` ; signature
+  `manage(?Authenticatable, ?UserGroup $classe = null)`.
+
+### Path FS root (D13=A)
+
+Property statique `ShareService::$classesRoot = '/var/sambaedu/Classes'`
+overridable en tests. La méthode `classesRoot()` consulte aussi
+`config('filesystem.classes_root')` si défini (flexibilité multi-tenant
+future). Cohérent avec `AclService::$classesRoot` et le pattern
+`TrashPurgeCommand::$trashDir` (5.1d).
+
+### Audit log (D10=A)
+
+Réutilisation de la table polyvalente `quota_audit_logs` avec
+`target_type='share'`. Actions :
+- `create_share` (par classe, écrit par `ShareService::createClassShare`).
+- `sync_user` (par changement de classe, écrit par
+  `syncUserClassMemberships`).
+- `toggle_echange` (par toggle, écrit par `toggleEchange`).
+- `archive_share` (par archivage, écrit par `archiveClassShare`).
+- `resync_class` (consolidé, écrit par la commande Artisan).
+
+### Sécurité — triple garde anti-injection
+
+Cohérent `HomeDirService` (5.1a) :
+
+1. **Regex de validation** : `AclService::validatePath()` enforce
+   regex stricte `/^<classes_root>/[A-Za-z0-9_./-]+$/` + check
+   profondeur ≤ 3 niveaux + refus `..`/`.`. 14 patterns malicieux
+   testés en DataProvider (cf. `AclServiceTest::maliciousPathProvider`).
+2. **`escapeshellarg`** sur path ET arguments ACL.
+3. **Sudo whitelist** : binaires explicitement listés dans
+   `/etc/sudoers.d/sambaedu` (cf. ci-dessus).
+
+### Hors scope 5.2 (à porter dans des stories futures)
+
+- Pas de migration `smb.conf` (D8=A — section globale `[classes]` suffit).
+- Pas de gestion `acls.php` legacy (module CANCELLED — cf. epics.md:794).
+- Pas de UI de suppression de classe (D4=A — méthode exposée mais aucun
+  appel automatique). Future story devra ajouter Observer
+  `UserGroup::deleting` + UI.
+- Pas d'onglet `/admin/settings → Partages` (D11=A — la gestion est
+  par-classe, pas globale).
+- Pas de cleanup legacy `sambaedu/partages/`, `sambaedu/dossier_echange/`,
+  `sambaedu/acls/` (defer story future, post-confiance).
+
+---
+
 ## Références
 
 - Story 5.1a — refactor services filesystem
@@ -503,11 +672,16 @@ nécessaire.
   (`_bmad-output/implementation-artifacts/5-1c-quotas-groupes-settings-flash-over-quota.md`)
 - Story 5.1d — gaps produits filesystem (default_itinerant, purge trash, seed legacy)
   (`_bmad-output/implementation-artifacts/5-1d-gaps-produits-itinerant-purge-seed.md`)
+- Story 5.2 — partages de classe + ACLs POSIX
+  (`_bmad-output/implementation-artifacts/5-2-partages-de-classe-et-gestion-des-acls-posix.md`)
 - Legacy : `sambaedu/includes/quotas.inc.php:96-137` (`repquota()`) — modèle
   pour le parser.
 - Legacy : `sambaedu/includes/quotas.inc.php:172` — schéma table `quotas`
   legacy (source du seed 5.1d Volet 3).
+- Legacy : `sambaedu/includes/partages.inc.php:14-580` — fonctions
+  `set_acls`/`add_acl`/`remove_acl`/`check_acls`/`get_facl`/`update_classes`/`cree_rep`/`update_eleve`
+  décalquées vers `AclService` + `ShareService` (Story 5.2).
 
 ---
 
-*Dernière mise à jour : 2026-04-27 (Story 5.1d)*
+*Dernière mise à jour : 2026-04-30 (Story 5.2)*

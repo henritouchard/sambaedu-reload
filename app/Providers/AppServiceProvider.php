@@ -201,6 +201,12 @@ class AppServiceProvider extends ServiceProvider
         AppProfile::observe(AppProfileObserver::class);
         Shortcut::observe(ShortcutObserver::class);
 
+        // Story 5.2 (D5=A) — Observer sur le pivot user_group_user pour
+        // synchroniser les ACLs FS lors d'un changement de classe d'élève.
+        \App\Models\Pivot\UserGroupUserPivot::observe(
+            \App\Observers\UserGroupUserPivotObserver::class
+        );
+
         // Forcer l'URL root et HTTPS pour le reverse proxy
         if ($appUrl = config('app.url')) {
             $parsedUrl = parse_url($appUrl);

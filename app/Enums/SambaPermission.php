@@ -20,6 +20,18 @@ enum SambaPermission: string
     // Partages
     case ShareView = 'share.view';
     case ShareRefresh = 'share.refresh';
+    /**
+     * Story 5.2 (D2=A) — Gestion complète des partages de classe : création
+     * du dossier `/var/sambaedu/Classes/Classe_<name>/`, application des ACLs
+     * canoniques (racine + `_travail`/`_profs`/`_echange` + dossiers élèves),
+     * toggle dossier d'échange, archivage. Mappée sur le bit legacy
+     * `SE_SHARE_REFRESH` (le legacy `partages/rep_classes.php:58` couvrait
+     * déjà l'ensemble du périmètre via ce même bit). Le mapping `legacyRight()`
+     * partage donc 0x40 avec `ShareRefresh` (cf. `bitmaskMapping()` qui
+     * dédoublonne via `isSecondaryBitPermission()` — `ShareManage` y est
+     * déclarée pour éviter qu'un import bitmask la sur-active).
+     */
+    case ShareManage = 'share.manage';
 
     // Machines
     case ComputerView = 'computer.view';
@@ -67,6 +79,12 @@ enum SambaPermission: string
             self::UserDelegate => LegacyRight::UserDelegate,
             self::ShareView => LegacyRight::ShareView,
             self::ShareRefresh => LegacyRight::ShareRefresh,
+            // Story 5.2 (D2=A) — partage le bit legacy `SE_SHARE_REFRESH`
+            // avec `ShareRefresh`. Marquée `isSecondaryBitPermission()` pour
+            // ne PAS être sur-attribuée par `fromBitmask()` (sinon tout user
+            // ayant `share.refresh` recevrait `share.manage` après import
+            // bitmask). Attribuée explicitement par seeder/UI rights mgmt.
+            self::ShareManage => LegacyRight::ShareRefresh,
             self::ComputerView => LegacyRight::ComputerView,
             self::ComputerControl => LegacyRight::ComputerControl,
             self::ComputerElevate => LegacyRight::ComputerElevate,
@@ -116,6 +134,7 @@ enum SambaPermission: string
             self::UserDelegate => 'Déléguer des droits',
             self::ShareView => 'Voir les partages',
             self::ShareRefresh => 'Actualiser les partages',
+            self::ShareManage => 'Gérer les partages de classe (ACLs POSIX)',
             self::ComputerView => 'Voir les machines',
             self::ComputerControl => 'Contrôle à distance',
             self::ComputerElevate => 'Admin de poste',
@@ -135,7 +154,7 @@ enum SambaPermission: string
         return match ($this) {
             self::UserPasswordInit, self::UserRead, self::UserModify,
             self::UserCreateTemp, self::UserAssignRight, self::UserDelegate => 'user',
-            self::ShareView, self::ShareRefresh => 'share',
+            self::ShareView, self::ShareRefresh, self::ShareManage => 'share',
             self::ComputerView, self::ComputerControl,
             self::ComputerElevate, self::ComputerInstall,
             self::ComputerRemoteRdp => 'computer',
@@ -188,7 +207,10 @@ enum SambaPermission: string
      */
     private function isSecondaryBitPermission(): bool
     {
-        return $this === self::ComputerRemoteRdp;
+        // Story 5.2 — `ShareManage` partage le bit legacy `ShareRefresh`
+        // (cf. mapping ci-dessus). Exclu du bitmask mapping pour ne pas
+        // sur-élargir les profils custom rapatriés depuis le LDAP.
+        return $this === self::ComputerRemoteRdp || $this === self::ShareManage;
     }
 
     /**
