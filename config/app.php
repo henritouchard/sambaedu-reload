@@ -171,6 +171,7 @@ return [
         App\Providers\LdapRecordServiceProvider::class,
         App\Providers\WallpaperServiceProvider::class,
         App\Providers\AppCustomizationServiceProvider::class,
+        App\Providers\WpkgDeploymentServiceProvider::class,
         ])->toArray(),
 
     /*

@@ -45,9 +45,9 @@ class WorkstationLogReader
         }
 
         // 4. Base dir : refus explicite des valeurs dégénérées
-        $baseDir = rtrim((string) config('sambaedu.wpkg.reports_path', ''), '/');
+        $baseDir = rtrim((string) config('sambaedu.wpkg.reports_inbox', ''), '/');
         if ($baseDir === '' || $baseDir === '/' || !is_dir($baseDir)) {
-            Log::warning('[WorkstationLog] reports_path invalide', [
+            Log::warning('[WorkstationLog] reports_inbox invalide', [
                 'workstation_id' => $ws->id,
                 'base_dir'       => $baseDir,
             ]);

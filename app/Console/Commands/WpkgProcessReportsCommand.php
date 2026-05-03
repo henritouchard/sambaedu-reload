@@ -15,9 +15,9 @@ use Illuminate\Support\Facades\Log;
  * Signature : wpkg:process-reports {--path= : Override du chemin rapports}
  *
  * Comportement :
- *   1. Scan du répertoire (config('sambaedu.wpkg.reports_path') ou --path)
+ *   1. Scan du répertoire (config('sambaedu.wpkg.reports_inbox') ou --path)
  *   2. Pour chaque fichier .txt → extrait hostname → POST vers /api/wpkg/reports/{hostname}
- *   3. Si 200 (traité ou inchangé d'après body JSON) → fichier archivé dans reports_archive_path/
+ *   3. Si 200 (traité ou inchangé d'après body JSON) → fichier archivé dans reports_archive/
  *   4. Si erreur → log + fichier laissé en place (retry au prochain run)
  *   5. Log des compteurs : traités, inchangés, erreurs
  *
@@ -36,10 +36,10 @@ class WpkgProcessReportsCommand extends Command
     public function handle(): int
     {
         $reportsPath = $this->option('path')
-            ?? config('sambaedu.wpkg.reports_path', '/var/sambaedu/unattended/install/wpkg/rapports');
+            ?? config('sambaedu.wpkg.reports_inbox', '/var/sambaedu/unattended/install/wpkg/rapports');
 
         $archivePath = config(
-            'sambaedu.wpkg.reports_archive_path',
+            'sambaedu.wpkg.reports_archive',
             $reportsPath . '/processed'
         );
 
@@ -48,7 +48,7 @@ class WpkgProcessReportsCommand extends Command
             return Command::FAILURE;
         }
 
-        // Sécurité : évite une boucle infinie si archive_path = reports_path
+        // Sécurité : évite une boucle infinie si reports_archive = reports_inbox
         if (realpath($archivePath) !== false && realpath($archivePath) === realpath($reportsPath)) {
             $this->error("Le répertoire d'archive ne peut pas être identique au répertoire des rapports : {$archivePath}");
             return Command::FAILURE;

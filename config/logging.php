@@ -128,6 +128,16 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Channel dédié pipeline déploiement WPKG (Story 15.1).
+        // Niveau ajustable sans redeploy via WPKG_DEPLOY_LOG_LEVEL.
+        'wpkg-deploy' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/wpkg-deploy/deploy.log'),
+            'level' => env('WPKG_DEPLOY_LOG_LEVEL', 'info'),
+            'days' => (int) env('WPKG_DEPLOY_LOG_DAYS', 30),
+            'replace_placeholders' => true,
+        ],
+
         'null' => [
             'driver' => 'monolog',
             'handler' => NullHandler::class,
