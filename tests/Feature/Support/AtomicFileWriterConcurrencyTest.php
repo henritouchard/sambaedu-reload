@@ -111,9 +111,46 @@ class AtomicFileWriterConcurrencyTest extends TestCase
             exit($partials === 0 ? 0 : 1);
         }
 
-        // Parent : attend les deux enfants.
-        pcntl_waitpid($producerPid, $producerStatus);
-        pcntl_waitpid($readerPid, $readerStatus);
+        // Parent : attend les deux enfants avec un hard-timeout pour éviter
+        // qu'un fork bloqué fige le runner CI. Marge = $deadline + 5s ; au-delà,
+        // SIGKILL forcé sur les enfants encore vivants.
+        $hardDeadline = $deadline + 5.0;
+        $producerStatus = -1;
+        $readerStatus = -1;
+        $producerDone = false;
+        $readerDone = false;
+        while (microtime(true) < $hardDeadline) {
+            if (! $producerDone) {
+                $r = pcntl_waitpid($producerPid, $producerStatus, WNOHANG);
+                if ($r === $producerPid) {
+                    $producerDone = true;
+                } elseif ($r === -1) {
+                    $producerDone = true;
+                }
+            }
+            if (! $readerDone) {
+                $r = pcntl_waitpid($readerPid, $readerStatus, WNOHANG);
+                if ($r === $readerPid) {
+                    $readerDone = true;
+                } elseif ($r === -1) {
+                    $readerDone = true;
+                }
+            }
+            if ($producerDone && $readerDone) {
+                break;
+            }
+            usleep(50_000);
+        }
+        if (! $producerDone) {
+            @posix_kill($producerPid, SIGKILL);
+            pcntl_waitpid($producerPid, $producerStatus);
+            $this->fail('Producer fork dépassé hardDeadline — SIGKILL appliqué.');
+        }
+        if (! $readerDone) {
+            @posix_kill($readerPid, SIGKILL);
+            pcntl_waitpid($readerPid, $readerStatus);
+            $this->fail('Reader fork dépassé hardDeadline — SIGKILL appliqué.');
+        }
 
         $sentinel = $this->tmpDir . '/reader-status.txt';
         $stats = file_exists($sentinel) ? file_get_contents($sentinel) : 'unavailable';

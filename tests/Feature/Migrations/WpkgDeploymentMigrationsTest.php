@@ -36,8 +36,8 @@ class WpkgDeploymentMigrationsTest extends TestCase
         $this->createShimTablesForForeignKeys();
 
         $this->migrations = [
-            require __DIR__ . '/../../../database/migrations/2026_05_03_100000_create_wpkg_deployments_table.php',
-            require __DIR__ . '/../../../database/migrations/2026_05_03_100100_create_wpkg_deployment_workstation_status_table.php',
+            require base_path('database/migrations/2026_05_03_100000_create_wpkg_deployments_table.php'),
+            require base_path('database/migrations/2026_05_03_100100_create_wpkg_deployment_workstation_status_table.php'),
         ];
 
         foreach ($this->migrations as $migration) {

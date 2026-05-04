@@ -22,6 +22,13 @@ use Symfony\Component\Finder\Finder;
  * La synchro AD → Eloquent est un job périodique (Story 15.3) et constitue
  * la seule exception whitelistée.
  *
+ * **Limitation connue** : seuls les `use` statements (Use_, GroupUse) sont
+ * scannés. Les usages inline FQCN (`new \LdapRecord\Connection()`,
+ * `\App\Services\Ad\AdService::call()`, `class_exists('\\LdapRecord\\…')`)
+ * ne sont pas détectés. Idem pour un alias `use Foo as Bar; new Bar();`
+ * détecté côté `use` mais pas côté usage. La couverture complète est
+ * prévue avec une PHPStan rule dédiée (ticket tooling — voir @todo).
+ *
  * @todo Migrer vers ArchTest / PHPStan rule lorsqu'un de ces outils sera
  *       introduit dans le projet (ticket tooling séparé hors scope 15.1).
  */
