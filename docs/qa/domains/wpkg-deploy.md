@@ -23,7 +23,7 @@ assignation, ingestion, dashboard, retrait shim legacy)._
 
 - VM SER accessible : `ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50`
 - `scripts/update.sh` exécuté (migrations appliquées)
-- User PHP-FPM cible : `www-data` (vérifier `ps -o user -p $(pgrep -f php-fpm | head -1)`)
+- User PHP-FPM cible : `www-admin` (vérifier `ps -o user -p $(pgrep -f php-fpm | head -1)`)
 - Partages Samba existants (parité legacy) :
   - `/var/sambaedu/unattended/install/wpkg`
   - `/var/sambaedu/unattended/install/wpkg/ini`
@@ -40,13 +40,23 @@ assignation, ingestion, dashboard, retrait shim legacy)._
    ```bash
    php artisan tinker
    >>> Log::channel('wpkg-deploy')->withContext(['deployment_id' => 'qa-smoke-001'])->info('smoke test');
+   >>> exit
    ```
-2. Vérifier que `storage/logs/wpkg-deploy/deploy-{date}.log` existe.
+   _Tinker affiche `null` — c'est normal, `Log::info()` ne retourne rien.
+   Le succès se vérifie côté filesystem (étapes suivantes), pas dans
+   tinker. Une vraie erreur de config Monolog lèverait une exception
+   explicite type `InvalidArgumentException: Log [wpkg-deploy] is not
+   defined`._
+2. Vérifier que `storage/logs/wpkg-deploy/deploy-{date}.log` existe :
+   ```bash
+   ls -la storage/logs/wpkg-deploy/
+   ```
 3. `tail -1 storage/logs/wpkg-deploy/deploy-*.log` → la ligne contient
-   `smoke test` ET `deployment_id`.
+   `smoke test` ET `"deployment_id":"qa-smoke-001"` dans le payload JSON.
 
 **Attendu** : fichier créé, ligne tracée, contexte `deployment_id` propagé
-dans le payload Monolog.
+dans le payload Monolog. Format ligne typique :
+`[2026-05-04 14:32:15] production.INFO: smoke test {"deployment_id":"qa-smoke-001"}`
 
 **Pourquoi ce scénario** : valider qu'aucune erreur de config Monolog ne
 casse silencieusement le routage (la suite des logs Story 15.2+ part de là).
@@ -113,15 +123,36 @@ chmod / encoding du fichier exporté.
 
 ### Scénario 1.5 — Check démarrage `WpkgDeploymentServiceProvider`
 
-1. Renommer temporairement un des partages :
-   `mv /var/sambaedu/unattended/install/wpkg/ini /var/sambaedu/unattended/install/wpkg/ini.bak`
-2. Recharger l'app : `php artisan config:clear && curl -sf http://localhost > /dev/null`
-3. `tail storage/logs/wpkg-deploy/deploy-*.log`
-4. Restaurer : `mv /var/sambaedu/unattended/install/wpkg/ini.bak /var/sambaedu/unattended/install/wpkg/ini`
+Le ServiceProvider tente de **créer automatiquement** les chemins manquants
+(`mkdir -p`, mode `0755`) et ne log un warning que si la création échoue
+ou si les permissions résultantes restent insuffisantes. Les admins SER
+n'ont donc pas à provisionner manuellement l'arborescence.
 
-**Attendu** : un warning `[wpkg-deploy] chemin partage inaccessible` avec
-`config_key=sambaedu.wpkg.ini_path` est tracé. Le boot Laravel n'est pas
-bloqué.
+**1.5a — Création auto d'un dossier manquant**
+
+1. Supprimer un partage : `rm -rf /var/sambaedu/unattended/install/wpkg/rapports/archive`
+2. Recharger : `php artisan config:clear && curl -sf http://localhost/ > /dev/null`
+3. Vérifier que le dossier a été recréé : `ls -ld /var/sambaedu/unattended/install/wpkg/rapports/archive`
+4. `tail storage/logs/wpkg-deploy/deploy-*.log`
+
+**Attendu** : dossier recréé (mode `755`, owner = user PHP-FPM `www-admin`),
+**aucun warning** dans le channel `wpkg-deploy`.
+
+**1.5b — Création impossible (permission insuffisante sur le parent)**
+
+1. Sauvegarder la config et basculer vers un chemin dont le parent est
+   non-écrivable :
+   ```bash
+   php artisan tinker
+   >>> Config::set('sambaedu.wpkg.deploy_path', '/root/wpkg-test-readonly');
+   >>> app(App\Providers\WpkgDeploymentServiceProvider::class)->ensurePaths(['sambaedu.wpkg.deploy_path']);
+   >>> exit
+   ```
+2. `tail storage/logs/wpkg-deploy/deploy-*.log`
+
+**Attendu** : warning `[wpkg-deploy] chemin partage inaccessible` avec
+`create_attempted=true`, `create_succeeded=false`, `exists=false`. Le boot
+Laravel n'est pas bloqué.
 
 ---
 

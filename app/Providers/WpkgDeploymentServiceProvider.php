@@ -10,9 +10,14 @@ use Illuminate\Support\ServiceProvider;
 /**
  * Service Provider du pipeline déploiement WPKG (Story 15.1).
  *
- * Au boot : vérifie que les 4 chemins partage WPKG (deploy / ini / inbox /
- * archive) sont accessibles en lecture/écriture par le user PHP-FPM, sinon
- * émet un warning explicite sur le channel `wpkg-deploy`.
+ * Au boot : tente de créer les 4 chemins partage WPKG (deploy / ini / inbox /
+ * archive) s'ils n'existent pas, puis vérifie qu'ils sont accessibles en
+ * lecture/écriture par le user PHP-FPM. Toute violation (création échouée
+ * ou permission insuffisante) émet un warning explicite sur le channel
+ * `wpkg-deploy`.
+ *
+ * La création évite que les admins SER aient à provisionner manuellement
+ * l'arborescence (parité legacy : les anciens scripts shell le faisaient).
  *
  * Le check est non-bloquant : le boot Laravel doit toujours réussir, même
  * sans les partages Samba. Le but est de fournir un signal clair en logs.
@@ -27,6 +32,9 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
         'sambaedu.wpkg.reports_archive',
     ];
 
+    /** Mode des dossiers créés (rwxr-xr-x — owner PHP-FPM, group + others read+exec). */
+    private const DIR_MODE = 0755;
+
     public function boot(): void
     {
         // Skip en environnement de test : les chemins legacy n'existent pas
@@ -35,7 +43,7 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
             return;
         }
 
-        foreach ($this->checkPaths(self::PATH_KEYS) as $violation) {
+        foreach ($this->ensurePaths(self::PATH_KEYS) as $violation) {
             Log::channel('wpkg-deploy')->warning(
                 '[wpkg-deploy] chemin partage inaccessible',
                 $violation,
@@ -44,14 +52,14 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
     }
 
     /**
-     * Inspecte la liste des clés config et retourne un tableau de violations
-     * (chemins non R/W). Méthode pure — pas d'effet de bord, pas d'I/O log :
-     * permet le test unitaire de la logique de détection (cf. AC4.1).
+     * Pour chaque clé config : tente `mkdir -p` si absent, puis vérifie R/W.
+     * Retourne la liste des chemins toujours en violation après tentative
+     * (création impossible ou permissions insuffisantes).
      *
      * @param  list<string>  $keys
      * @return list<array<string,mixed>>
      */
-    public function checkPaths(array $keys): array
+    public function ensurePaths(array $keys): array
     {
         $violations = [];
 
@@ -59,6 +67,16 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
             $path = (string) config($key, '');
             if ($path === '') {
                 continue;
+            }
+
+            $createAttempted = false;
+            $createSucceeded = null;
+            if (! is_dir($path)) {
+                $createAttempted = true;
+                // @ : on absorbe les warnings PHP, le résultat false suffit
+                // pour reporter la violation. Le warning utile est tracé
+                // par notre code, pas par PHP.
+                $createSucceeded = @mkdir($path, self::DIR_MODE, true) || is_dir($path);
             }
 
             $exists = is_dir($path);
@@ -75,6 +93,8 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
                 'exists' => $exists,
                 'readable' => $isReadable,
                 'writable' => $isWritable,
+                'create_attempted' => $createAttempted,
+                'create_succeeded' => $createSucceeded,
                 'php_user' => function_exists('posix_getpwuid') && function_exists('posix_geteuid')
                     ? (posix_getpwuid(posix_geteuid())['name'] ?? null)
                     : null,
