@@ -159,13 +159,18 @@ Les fichiers `hosts.xml` et `profiles.xml` se trouvent **dans** `deploy_path`
 
 ### Check de démarrage
 
-Le `App\Providers\WpkgDeploymentServiceProvider::ensurePaths()` itère ces
-4 chemins au boot (hors environnement de test) et :
+Le `App\Providers\WpkgDeploymentServiceProvider` au boot (hors environnement
+de test) :
 
-1. **Crée** le dossier manquant via `mkdir -p` (mode `0755`) — évite que
-   les admins SER aient à provisionner manuellement l'arborescence.
-2. **Vérifie** R/W par le user PHP-FPM.
-3. **Log** un warning sur `wpkg-deploy` si la création a échoué ou si les
+1. **Crée le dossier `storage/logs/wpkg-deploy/`** s'il n'existe pas
+   (`storage/logs/` est git-ignored, donc absent sur une nouvelle install).
+   Sans ça, Monolog plante au premier write — fait avant tout autre log
+   sur le channel `wpkg-deploy`.
+2. **Crée les 4 chemins partage** WPKG manquants via `mkdir -p` (mode
+   `0755`) — évite que les admins SER aient à provisionner manuellement
+   l'arborescence.
+3. **Vérifie** R/W par le user PHP-FPM sur chacun.
+4. **Log** un warning sur `wpkg-deploy` si la création a échoué ou si les
    permissions restent insuffisantes (`create_attempted`, `create_succeeded`,
    `exists`, `readable`, `writable` propagés dans le contexte Monolog).
 

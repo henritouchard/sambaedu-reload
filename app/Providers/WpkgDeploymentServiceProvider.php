@@ -43,11 +43,40 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
             return;
         }
 
+        // Ordre critique : on prépare le dossier de logs `wpkg-deploy` AVANT
+        // d'écrire dans le channel — sinon Monolog plante au premier write
+        // (RotatingFileHandler ne crée pas le dossier parent).
+        $this->ensureLogChannelDirectory();
+
         foreach ($this->ensurePaths(self::PATH_KEYS) as $violation) {
             Log::channel('wpkg-deploy')->warning(
                 '[wpkg-deploy] chemin partage inaccessible',
                 $violation,
             );
+        }
+    }
+
+    /**
+     * Crée le dossier `storage/logs/wpkg-deploy/` si absent. `storage/logs/`
+     * est git-ignored donc le dossier n'est pas propagé par `git clone` /
+     * déploiement — il faut le provisionner au boot.
+     *
+     * Failover : on logge sur le channel par défaut (pas sur `wpkg-deploy`,
+     * sinon chicken-and-egg).
+     */
+    private function ensureLogChannelDirectory(): void
+    {
+        $logDir = storage_path('logs/wpkg-deploy');
+        if (is_dir($logDir)) {
+            return;
+        }
+        if (! @mkdir($logDir, self::DIR_MODE, true) && ! is_dir($logDir)) {
+            Log::warning('[wpkg-deploy] impossible de créer le dossier de logs', [
+                'path' => $logDir,
+                'php_user' => function_exists('posix_getpwuid') && function_exists('posix_geteuid')
+                    ? (posix_getpwuid(posix_geteuid())['name'] ?? null)
+                    : null,
+            ]);
         }
     }
 
