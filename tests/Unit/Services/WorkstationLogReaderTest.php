@@ -30,7 +30,7 @@ class WorkstationLogReaderTest extends TestCase
         $this->tmpDir = sys_get_temp_dir() . '/wpkg-log-test-' . uniqid();
         mkdir($this->tmpDir, 0755, true);
 
-        Config::set('sambaedu.wpkg.reports_path', $this->tmpDir);
+        Config::set('sambaedu.wpkg.reports_inbox', $this->tmpDir);
         Cache::flush();
 
         $this->reader = new WorkstationLogReader();
@@ -239,16 +239,16 @@ class WorkstationLogReaderTest extends TestCase
     }
 
     // ------------------------------------------------------------------
-    // reports_path vide → missing + Log::warning
+    // reports_inbox vide → missing + Log::warning
     // ------------------------------------------------------------------
 
-    public function test_empty_reports_path_returns_missing_with_warning(): void
+    public function test_empty_reports_inbox_returns_missing_with_warning(): void
     {
-        Config::set('sambaedu.wpkg.reports_path', '');
+        Config::set('sambaedu.wpkg.reports_inbox', '');
 
         Log::shouldReceive('warning')
             ->once()
-            ->with('[WorkstationLog] reports_path invalide', \Mockery::any());
+            ->with('[WorkstationLog] reports_inbox invalide', \Mockery::any());
 
         $ws = $this->makeWorkstation('PC07.log');
         $result = $this->reader->read($ws);
@@ -257,16 +257,16 @@ class WorkstationLogReaderTest extends TestCase
     }
 
     // ------------------------------------------------------------------
-    // reports_path = '/' → missing + Log::warning
+    // reports_inbox = '/' → missing + Log::warning
     // ------------------------------------------------------------------
 
-    public function test_root_reports_path_returns_missing_with_warning(): void
+    public function test_root_reports_inbox_returns_missing_with_warning(): void
     {
-        Config::set('sambaedu.wpkg.reports_path', '/');
+        Config::set('sambaedu.wpkg.reports_inbox', '/');
 
         Log::shouldReceive('warning')
             ->once()
-            ->with('[WorkstationLog] reports_path invalide', \Mockery::any());
+            ->with('[WorkstationLog] reports_inbox invalide', \Mockery::any());
 
         $ws = $this->makeWorkstation('PC08.log');
         $result = $this->reader->read($ws);

@@ -38,8 +38,8 @@ class WpkgProcessReportsCommandTest extends TestCase
 
         mkdir($this->tmpDir, 0755, true);
 
-        Config::set('sambaedu.wpkg.reports_path', $this->tmpDir);
-        Config::set('sambaedu.wpkg.reports_archive_path', $this->archiveDir);
+        Config::set('sambaedu.wpkg.reports_inbox', $this->tmpDir);
+        Config::set('sambaedu.wpkg.reports_archive', $this->archiveDir);
         Config::set('app.url', 'http://127.0.0.1');
     }
 

@@ -167,20 +167,25 @@ return [
     'wpkg' => [
         // Chemin de stockage local des applications
         'storage_path' => env('WPKG_STORAGE_PATH', '/var/sambaedu/unattended/install'),
-        
+
         // Timeout pour le téléchargement des installeurs (secondes)
         'download_timeout' => env('WPKG_DOWNLOAD_TIMEOUT', 300),
-        
+
         // Timeout pour la synchronisation des dépôts (secondes)
         'sync_timeout' => env('WPKG_SYNC_TIMEOUT', 30),
-        
+
         // Chemin du fichier packages.xml local
         'packages_xml_path' => env('WPKG_PACKAGES_XML', '/var/sambaedu/unattended/install/wpkg/packages.xml'),
 
-        // Rapports d'installation WPKG (rapports .txt + logs .log déposés via partage Samba [rapports])
-        // Path historique du legacy (cf. sambaedu/wpkg/log.php:14, depot_accueil.php:90).
-        'reports_path'         => env('WPKG_REPORTS_PATH', '/var/sambaedu/unattended/install/wpkg/rapports'),
-        'reports_archive_path' => env('WPKG_REPORTS_ARCHIVE_PATH', '/var/sambaedu/unattended/install/wpkg/rapports/archive'),
+        // Pipeline déploiement WPKG (Story 15.1) — chemins **en dur** : décision
+        // 2026-05-03, pas de variables d'env dédiées. Les ops modifient ce
+        // fichier de config si une customisation par environnement est
+        // nécessaire (cf. docs/wpkg-deploy/architecture.md § Migration .env).
+        // Parité legacy : sambaedu/wpkg/log.php:14, depot_accueil.php:90.
+        'deploy_path'     => '/var/sambaedu/unattended/install/wpkg',
+        'ini_path'        => '/var/sambaedu/unattended/install/wpkg/ini',
+        'reports_inbox'   => '/var/sambaedu/unattended/install/wpkg/rapports',
+        'reports_archive' => '/var/sambaedu/unattended/install/wpkg/rapports/archive',
 
         // IPs autorisées à envoyer des rapports (API locale)
         'report_ingestion_allowed_ips' => array_filter(

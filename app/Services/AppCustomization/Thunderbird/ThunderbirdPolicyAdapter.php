@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AppCustomization\Thunderbird;
 
 use App\Services\AppCustomization\Contracts\AppPolicyAdapter;
-use App\Services\AppCustomization\Support\AtomicFileWriter;
+use App\Support\AtomicFileWriter;
 use Illuminate\Support\Facades\Log;
 
 /**
