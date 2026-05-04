@@ -159,10 +159,18 @@ Les fichiers `hosts.xml` et `profiles.xml` se trouvent **dans** `deploy_path`
 
 ### Check de démarrage
 
-Le `App\Providers\WpkgDeploymentServiceProvider` itère ces 4 chemins au boot
-(hors environnement de test) et émet un `Log::channel('wpkg-deploy')->warning`
-explicite si l'un n'est pas accessible en R/W par le user PHP-FPM. Le check
-est non-bloquant.
+Le `App\Providers\WpkgDeploymentServiceProvider::ensurePaths()` itère ces
+4 chemins au boot (hors environnement de test) et :
+
+1. **Crée** le dossier manquant via `mkdir -p` (mode `0755`) — évite que
+   les admins SER aient à provisionner manuellement l'arborescence.
+2. **Vérifie** R/W par le user PHP-FPM.
+3. **Log** un warning sur `wpkg-deploy` si la création a échoué ou si les
+   permissions restent insuffisantes (`create_attempted`, `create_succeeded`,
+   `exists`, `readable`, `writable` propagés dans le contexte Monolog).
+
+Le check est **non-bloquant** : le boot Laravel réussit toujours, même si
+un partage Samba est inaccessible.
 
 ## Atomic write
 
