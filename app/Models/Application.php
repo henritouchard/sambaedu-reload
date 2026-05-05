@@ -247,4 +247,45 @@ class Application extends Model implements Wireable
     {
         return $this->hasMany(WorkstationApplicationStatus::class);
     }
+
+    /**
+     * Story 15.2 — Postes ayant cette appli rattachée directement.
+     */
+    public function workstations(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            Workstation::class,
+            'application_workstation',
+            'application_id',
+            'workstation_id'
+        )->withTimestamps();
+    }
+
+    /**
+     * Story 15.2 — Parcs ayant cette appli rattachée directement.
+     */
+    public function workstationGroups(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            WorkstationGroup::class,
+            'application_workstation_group',
+            'application_id',
+            'workstation_group_id'
+        )->withTimestamps();
+    }
+
+    /**
+     * Story 15.2 — Dépendances applicatives transitives (parité legacy
+     * table `dependance(id_app, id_app_requise)`). Auto-référence via le
+     * pivot `application_dependencies(application_id, required_application_id)`.
+     */
+    public function dependencies(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            self::class,
+            'application_dependencies',
+            'application_id',
+            'required_application_id'
+        )->withTimestamps();
+    }
 }

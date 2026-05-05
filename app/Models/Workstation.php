@@ -309,4 +309,41 @@ class Workstation extends Model implements Wireable
     {
         return $this->hasMany(WorkstationApplicationStatus::class);
     }
+
+    /**
+     * Story 15.2 — AppProfiles assignés directement à ce poste (pivot
+     * `app_profile_workstation`).
+     */
+    public function appProfiles(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            AppProfile::class,
+            'app_profile_workstation',
+            'workstation_id',
+            'app_profile_id'
+        )->withTimestamps();
+    }
+
+    /**
+     * Story 15.2 — Apps WPKG rattachées directement à ce poste (pivot
+     * `application_workstation`, équivalent legacy
+     * `applications_profile.type_entite='poste'`).
+     */
+    public function applications(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            Application::class,
+            'application_workstation',
+            'workstation_id',
+            'application_id'
+        )->withTimestamps();
+    }
+
+    /**
+     * Story 15.2 — Overrides des options `.ini` WPKG pour ce poste.
+     */
+    public function wpkgOptions(): HasMany
+    {
+        return $this->hasMany(\App\Wpkg\Deployment\Models\WpkgWorkstationOption::class);
+    }
 }

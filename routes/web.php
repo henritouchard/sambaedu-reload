@@ -366,6 +366,22 @@ Route::get('api/policies/{kind}/{id}', [AppPolicyController::class, 'canonical']
 
 /*
 |--------------------------------------------------------------------------
+| Story 15.2 — Endpoints HTTP WPKG hosts.xml / profiles.xml (parité legacy)
+|--------------------------------------------------------------------------
+| Pas de middleware web/auth/sambaedu.admin : confiance LAN, parité legacy
+| stricte (décision user 2026-05-04 #3). Un middleware machine optionnel
+| pourra être ajouté en Story 15.5.
+| Doivent rester déclarés AVANT la catchall legacy ci-dessous.
+*/
+Route::get('/wpkg/hosts.xml', \App\Wpkg\Deployment\Http\Controllers\HostsXmlController::class)
+    ->name('wpkg.hosts-xml')
+    ->withoutMiddleware(['web']);
+Route::get('/wpkg/profiles.xml', \App\Wpkg\Deployment\Http\Controllers\ProfilesXmlController::class)
+    ->name('wpkg.profiles-xml')
+    ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
 | Legacy PHP Fallback Route (DOIT ÊTRE EN DERNIER)
 |--------------------------------------------------------------------------
 | Cette route catch-all délègue au LegacyCatchallController :
