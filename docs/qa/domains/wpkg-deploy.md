@@ -28,7 +28,7 @@ assignation, ingestion, dashboard, retrait shim legacy)._
   - `/var/sambaedu/unattended/install/wpkg`
   - `/var/sambaedu/unattended/install/wpkg/ini`
   - `/var/sambaedu/unattended/install/wpkg/rapports`
-  - `/var/sambaedu/unattended/install/wpkg/archive`
+  - `/var/sambaedu/unattended/install/wpkg/rapports/archive`
 
 ---
 
@@ -79,14 +79,26 @@ créés (vérifier via `psql -c "\d wpkg_deployment_workstation_status"`).
 
 1. Aller sur `/app/parc/customizations/firefox/<id>/edit`, modifier la
    homepage et sauver.
-2. Sur la VM, vérifier le fichier exporté (selon emplacement configuré
-   `app-customizations.template_paths.firefox` — souvent
-   `/etc/sambaedu/applications/firefox/policies.json`).
-3. `cat <path>/policies.json | jq .` → JSON valide.
+2. Sur la VM, vérifier le fichier exporté. Le chemin est
+   `<fs_base_path>/<kind>/<key>.json` où :
+   - `fs_base_path` = `config('app-customizations.fs_base_path')` (par défaut
+     `/etc/sambaedu/applications`, override via `APP_CUSTOMIZATIONS_FS_BASE`)
+   - `<kind>` = `firefox`
+   - `<key>` = `default` pour le scope global (NULL/NULL, is_default=true),
+     `<owner->login>` pour un User, `<owner->name>` pour UserGroup /
+     WorkstationGroup.
+
+   En pratique pour le scope global :
+   `/etc/sambaedu/applications/firefox/default.json`.
+   _Attention : `app-customizations.template_paths.firefox` pointe au
+   contraire sur le template système en lecture seule
+   (`/usr/share/sambaedu/applications/firefox/default.json`) — ce n'est
+   PAS le fichier écrit par `savePolicies()`._
+3. `cat <path>/<key>.json | jq .` → JSON valide.
 4. Pendant l'écriture, en parallèle dans un autre terminal, faire des reads
    en boucle :
    ```bash
-   while true; do cat <path>/policies.json > /dev/null && echo OK || echo PARTIAL; done
+   while true; do cat <path>/<key>.json > /dev/null && echo OK || echo PARTIAL; done
    ```
 5. Sauver plusieurs fois la customization → aucune lecture `PARTIAL`.
 
@@ -113,7 +125,8 @@ chmod / encoding du fichier exporté.
    php artisan wpkg:process-reports
    ```
 3. Le rapport doit être archivé dans
-   `/var/sambaedu/unattended/install/wpkg/archive/QA-PC_<timestamp>.txt`.
+   `/var/sambaedu/unattended/install/wpkg/rapports/archive/QA-PC_<timestamp>.txt`
+   (chemin défini par `config('sambaedu.wpkg.reports_archive')`).
 4. Vérifier le `.env` de production : retirer les éventuelles variables
    `WPKG_REPORTS_PATH` et `WPKG_REPORTS_ARCHIVE_PATH` qui ne sont **plus
    consommées** (cf. `docs/wpkg-deploy/architecture.md` § Migration `.env`).
@@ -145,7 +158,9 @@ n'ont donc pas à provisionner manuellement l'arborescence.
    ```bash
    php artisan tinker
    >>> Config::set('sambaedu.wpkg.deploy_path', '/root/wpkg-test-readonly');
-   >>> app(App\Providers\WpkgDeploymentServiceProvider::class)->ensurePaths(['sambaedu.wpkg.deploy_path']);
+   >>> $provider = new App\Providers\WpkgDeploymentServiceProvider(app());
+   >>> $violations = $provider->ensurePaths(['sambaedu.wpkg.deploy_path']);
+   >>> foreach ($violations as $v) { Log::channel('wpkg-deploy')->warning('[wpkg-deploy] chemin partage inaccessible', $v); }
    >>> exit
    ```
 2. `tail storage/logs/wpkg-deploy/deploy-*.log`
