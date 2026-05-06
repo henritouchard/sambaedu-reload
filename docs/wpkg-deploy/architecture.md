@@ -22,12 +22,14 @@ Le pipeline orchestre la distribution effective WPKG sur les postes Windows :
 
 ## Garde-fous transversaux Epic 15
 
-- **Eloquent first** : aucune lecture AD/LDAP en hot path — la sync AD →
-  Eloquent est un job périodique (`WpkgAdReconciliationJob`, Story 15.3).
-  Le namespace `App\Wpkg\Deployment` est verrouillé par
+- **Eloquent first (chemin critique)** : aucune lecture AD/LDAP en chemin
+  critique — la sync AD → Eloquent est **un outil de remédiation manuelle**
+  (`App\Jobs\SyncAllFromAdJob`, Story 15.3 — voir section dédiée plus bas).
+  Le namespace `App\Wpkg\*` est verrouillé par
   `tests/Architecture/WpkgDeploymentNamespaceTest.php` qui interdit l'import
-  de `LdapRecord\*` ou `App\Services\Ad\*`. Whitelist explicite : la classe
-  `Jobs\WpkgAdReconciliationJob` (Story 15.3).
+  de `LdapRecord\*`, `App\LdapModels\*` ou `App\Services\Ad\*`. **Aucune
+  whitelist** : la mention initiale `Jobs\WpkgAdReconciliationJob` a été
+  supprimée par 15.3 (job abandonné).
 - **Atomic write** : tout fichier consommé par un client externe transite par
   `App\Support\AtomicFileWriter` (`temp + fsync + rename`, suffixe `pid`,
   même filesystem que la cible).
@@ -210,3 +212,100 @@ les garanties suivantes :
 > Migration future : le test architecture ad-hoc sera porté vers ArchTest /
 > PHPStan rule lorsqu'un de ces outils sera installé (ticket tooling séparé,
 > hors scope 15.1).
+
+## Sync AD → Eloquent : remédiation manuelle (Story 15.3)
+
+> **Direction d'écriture canonique** : Eloquent → AD via observers
+> (`WorkstationGroupObserver::created/updated/deleted`,
+> `AppProfileObserver`, `WorkstationObserver`). Les observers dispatchent
+> des `*AdSyncJob` sortants qui propagent vers l'AD.
+
+La sync entrante (AD → Eloquent) est **uniquement un outil de remédiation
+drift** — bootstrap initial post-migration prod (peuplement `ad_guid`)
+ou correction ponctuelle après un changement AD réalisé hors UI.
+
+### Job durci `App\Jobs\SyncAllFromAdJob` (15.3)
+
+**Pas un cron.** Déclenché humainement :
+- UI Livewire `/admin/sync-from-ad`, étape « 10. Remédiation drift WPKG ».
+- CLI : `php artisan sync:from-ad [--dry-run]`.
+
+**Architecture en 2 passes strictes** (atomicité) :
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ PASSE 1 — Lecture AD (aucune écriture DB)                    │
+│   ├── fetchParcsFromAd()      OU=Parcs   → DeviceGroupTagModel│
+│   └── fetchGroupesFromAd()    OU=Computers → DeviceGroupModel │
+│   Si exception mid-passe → log warning, abort, 0 écriture    │
+└──────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ (passe 1 OK)
+┌──────────────────────────────────────────────────────────────┐
+│ PASSE 2 — Écriture (DB::transaction global, observers OFF)   │
+│   ├── WorkstationGroupObserver::disableSync()                │
+│   ├── WorkstationObserver::disableSync()                     │
+│   ├── syncWorkstationGroups($groupesAd)                      │
+│   ├── syncAppProfiles($parcsAd)                              │
+│   ├── syncProfileGroupLinks()                                │
+│   ├── archivage des orphelins (archived_at = now())          │
+│   └── enableSync() en finally (invariant fort à NE PAS perdre)│
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Anti-double-clic : `Cache::lock`
+
+`Cache::lock('wpkg:sync-all-from-ad', config('sambaedu.wpkg.sync.lock_ttl_seconds', 600))`.
+Si le lock n'est pas acquis (UI cliquée 2 fois ou 2 onglets ouverts) →
+log info `skip` + return rapport `idempotent=true, skipped_lock=true`.
+Lock libéré en `finally`. **Pas un anti-cron** (il n'y a pas de cron) —
+strictement anti-doubleclic.
+
+### Mode `--dry-run` (Aperçu)
+
+Same algo, écritures DB skippées (`if ($applyWrites) { ... }`). Le
+rapport stats reflète ce qui **aurait été** écrit (`created`,
+`updated`, `archived`, `skipped`). Permet à l'opérateur de vérifier
+le diff AD vs Eloquent avant d'appliquer.
+
+### Archivage logique (15.3 / AC3.4)
+
+Une entité présente en SQL mais absente AD → `archived_at = now()` au
+lieu de `DELETE`. Restauration manuelle possible (`archived_at = null`,
+cf. procédure dans `docs/qa/domains/wpkg-deploy.md` Section 3). Le scope
+`notArchived()` est appliqué au resolver et aux listings UI 15.4 — les
+entités archivées sont des fantômes côté pipeline (D8).
+
+### Match strict premier run (15.3 / AC3.7)
+
+Au premier run post-`migrate` (cas `ad_guid IS NULL` partout) :
+1. **Match GUID** en priorité (clé immutable AD).
+2. Fallback **`name` lower-case + scope OU précis** :
+   - Pour les `WorkstationGroup` (OU=Computers), on n'accepte le match
+     nom que si le DN AD contient `,OU=Computers,`.
+   - Pour les `AppProfile` (OU=Parcs), idem `,OU=Parcs,`.
+3. **Jamais d'écrasement** d'un `ad_guid` déjà posé.
+
+Cas faux positif protégé : 2 rows AD homonymes dans des OU différentes
++ 1 row DB → seule la row AD du bon scope est rapprochée (ou aucune).
+
+### Procédure ops finale de bascule prod (runbook 15.7)
+
+```
+1. php artisan migrate              # ad_guid NULL au départ
+2. /admin/sync-from-ad              # UI Livewire
+3. Cliquer "Aperçu (dry-run)"       # vérifier le diff AD vs SQL
+4. Cliquer "Exécuter"               # peuple ad_guid + sync drift
+```
+
+### Migrations 15.3 (volet 2)
+
+| Migration | Tables impactées | Colonnes ajoutées |
+|---|---|---|
+| `2026_05_06_100000_add_archived_at_to_workstations_and_groups` | `workstations`, `workstation_groups` | `archived_at` (timestamp nullable + index) |
+| `2026_05_06_100100_add_archived_at_and_ad_dn_to_app_profiles` | `app_profiles` | `ad_dn` (varchar(512) nullable — H1 partiellement réfutée à l'audit T0), `archived_at` (timestamp nullable + index) |
+
+> **Décision post-review (Q1, 2026-05-06)** : la colonne `last_seen_at`
+> initialement prévue a été retirée du scope 15.3 — pas de besoin métier
+> (l'archivage des orphans est calculé dans le même run du
+> `SyncAllFromAdJob` via diff `preExistingGuidIds` ↔ `matchedDbIds`).

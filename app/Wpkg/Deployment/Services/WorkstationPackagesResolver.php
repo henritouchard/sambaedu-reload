@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Log;
  *
  * Story 15.2 — Résout la liste des `package-id` applicables à un poste.
  *
- * Eloquent-only (invariant fort Epic 15) : aucune lecture LDAP/AD en hot path.
+ * Eloquent-only (invariant fort Epic 15) : aucune lecture LDAP/AD en chemin critique.
  * La synchro AD → Eloquent est un job périodique (Story 15.3).
  *
  * Sources unionnées (cf. AC2.2) :
@@ -74,6 +74,14 @@ final class WorkstationPackagesResolver
     /**
      * Calcul Eloquent (4 sources + dépendances transitives + dédup + tri).
      *
+     * Story 15.3 / D8 — Les postes, groupes et profils marqués `archived_at`
+     * (archivage logique introduit par 15.3 AC3.4) sont **silencieusement
+     * ignorés** : on les traite comme des fantômes côté pipeline. Cela
+     * évite que des packages zombies remontent dans `profiles.xml` après
+     * archivage par le `SyncAllFromAdJob` durci. Filtre non-breaking : un
+     * archivage manuel (UPDATE SQL) suffit à exclure proprement une
+     * entité du déploiement, sans la supprimer ni casser ses pivots.
+     *
      * @return Collection<int, string>
      */
     private function computePackages(string $hostname): Collection
@@ -81,9 +89,13 @@ final class WorkstationPackagesResolver
         /** @var Workstation|null $workstation */
         $workstation = Workstation::query()
             ->where('name', $hostname)
+            ->whereNull('archived_at')
             ->with([
+                'appProfiles' => fn ($q) => $q->whereNull('archived_at'),
                 'appProfiles.applications:id,app_id',
                 'applications:id,app_id',
+                'groups' => fn ($q) => $q->whereNull('archived_at'),
+                'groups.appProfiles' => fn ($q) => $q->whereNull('archived_at'),
                 'groups.appProfiles.applications:id,app_id',
                 'groups.applications:id,app_id',
             ])

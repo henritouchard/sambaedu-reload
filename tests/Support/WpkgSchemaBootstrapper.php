@@ -39,6 +39,14 @@ final class WpkgSchemaBootstrapper
                 $table->id();
                 $table->string('name', 100);
                 $table->string('status', 32)->default('active');
+                $table->string('ad_dn', 512)->nullable();
+                $table->string('ad_guid', 36)->nullable();
+                // Story 15.3 — colonne d'archivage logique (cf.
+                // 2026_05_06_100000_add_archived_at_to_workstations_and_groups).
+                // Présente en bootstrap shim pour que les requêtes
+                // resolver/listener filtrant `archived_at IS NULL`
+                // tournent en SQLite :memory:.
+                $table->timestamp('archived_at')->nullable();
                 $table->timestamps();
             });
         }
@@ -49,6 +57,11 @@ final class WpkgSchemaBootstrapper
                 $table->string('name', 100);
                 $table->boolean('is_physical')->default(false);
                 $table->boolean('is_active')->default(true);
+                $table->string('ad_dn', 512)->nullable();
+                $table->string('ad_guid', 36)->nullable();
+                $table->string('display_name', 255)->nullable();
+                $table->text('description')->nullable();
+                $table->timestamp('archived_at')->nullable();
                 $table->timestamps();
             });
         }
@@ -67,6 +80,11 @@ final class WpkgSchemaBootstrapper
                 $table->id();
                 $table->string('name', 100);
                 $table->boolean('is_active')->default(true);
+                $table->string('ad_dn', 512)->nullable();
+                $table->string('ad_guid', 36)->nullable();
+                $table->string('display_name', 255)->nullable();
+                $table->text('description')->nullable();
+                $table->timestamp('archived_at')->nullable();
                 $table->timestamps();
             });
         }

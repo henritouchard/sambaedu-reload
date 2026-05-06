@@ -32,6 +32,7 @@ use Livewire\Wireable;
  * @property string|null $ad_dn Distinguished Name dans AD
  * @property string|null $ad_guid objectGUID dans AD
  * @property bool $managed_by_control_hub
+ * @property \DateTimeInterface|null $archived_at Archivage logique (Story 15.3, AC3.4)
  * @property \DateTime $created_at
  * @property \DateTime $updated_at
  */
@@ -60,6 +61,7 @@ class Workstation extends Model implements Wireable
         'ad_dn',
         'ad_guid',
         'managed_by_control_hub',
+        'archived_at',
     ];
 
     /**
@@ -69,6 +71,7 @@ class Workstation extends Model implements Wireable
         'last_report_at' => 'datetime',
         'physical_room_id' => 'integer',
         'managed_by_control_hub' => 'boolean',
+        'archived_at' => 'datetime',
     ];
 
     /**
@@ -239,6 +242,18 @@ class Workstation extends Model implements Wireable
     public function scopeSyncedWithAd(Builder $query): Builder
     {
         return $query->whereNotNull('ad_guid');
+    }
+
+    /**
+     * Story 15.3 / AC3.4 — Scope pour exclure les postes archivés.
+     *
+     * Filtre par défaut à appliquer dans les listings UI (Story 15.4) et
+     * dans le pipeline de déploiement (`WorkstationPackagesResolver`,
+     * décision D8 actée pendant T1).
+     */
+    public function scopeNotArchived(Builder $query): Builder
+    {
+        return $query->whereNull('archived_at');
     }
 
     /**

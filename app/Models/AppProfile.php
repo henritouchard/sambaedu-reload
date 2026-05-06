@@ -27,7 +27,9 @@ use App\Models\Workstation;
  * @property string|null $display_name
  * @property string|null $description
  * @property string|null $ad_guid GUID dans AD (après synchronisation)
+ * @property string|null $ad_dn Distinguished Name dans AD (Story 15.3)
  * @property bool $is_active
+ * @property \DateTimeInterface|null $archived_at Archivage logique (Story 15.3, AC3.4)
  * @property \DateTime $created_at
  * @property \DateTime $updated_at
  */
@@ -48,7 +50,9 @@ class AppProfile extends Model implements Wireable
         'display_name',
         'description',
         'ad_guid',
+        'ad_dn',
         'is_active',
+        'archived_at',
     ];
 
     /**
@@ -58,6 +62,7 @@ class AppProfile extends Model implements Wireable
         'controlhub_id' => 'string',
         'controlhub_version' => 'datetime',
         'is_active' => 'boolean',
+        'archived_at' => 'datetime',
     ];
 
     /**
@@ -157,6 +162,23 @@ class AppProfile extends Model implements Wireable
     public static function findByName(string $name): ?self
     {
         return static::where('name', $name)->first();
+    }
+
+    /**
+     * Story 15.3 — Trouve un profil par son AD DN (symétrie
+     * `WorkstationGroup::findByAdDn()`).
+     */
+    public static function findByAdDn(string $adDn): ?self
+    {
+        return static::where('ad_dn', $adDn)->first();
+    }
+
+    /**
+     * Story 15.3 / AC3.4 — Scope pour exclure les profils archivés.
+     */
+    public function scopeNotArchived(Builder $query): Builder
+    {
+        return $query->whereNull('archived_at');
     }
 
     /**

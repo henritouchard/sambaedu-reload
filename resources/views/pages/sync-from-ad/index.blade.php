@@ -152,6 +152,20 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 'error' => null,
                 'expanded' => false,
             ],
+            // Story 15.3 / AC3.1 — Outil de remédiation drift `SyncAllFromAdJob`
+            // durci : couvre parcs (OU=Parcs), groupes physiques (OU=Computers)
+            // et liens profil↔groupe en une passe atomique 2-phases.
+            // Pattern Aperçu/Exécuter (cohérence avec rights_migration).
+            // Dans « Tout exécuter », seul le dry-run est lancé automatiquement.
+            'wpkg_remediation' => [
+                'id' => 'wpkg_remediation',
+                'title' => '10. Remédiation drift WPKG (SyncAllFromAdJob)',
+                'description' => 'Outil de remédiation drift AD ↔ Eloquent (Story 15.3) : 2 passes atomiques + lock anti-double-clic + archivage logique des entités orphelines. Lancez d\'abord l\'Aperçu pour vérifier le diff, puis Exécuter pour appliquer (peuple les ad_guid manquants au premier run).',
+                'status' => 'pending',
+                'stats' => null,
+                'error' => null,
+                'expanded' => false,
+            ],
         ];
 
         $this->stepLogs = [
@@ -164,6 +178,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             'shortcuts' => [],
             'rights_profiles' => [],
             'rights_migration' => [],
+            'wpkg_remediation' => [],
         ];
     }
 
@@ -252,10 +267,12 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
         $this->initializeSteps();
 
         foreach (array_keys($this->steps) as $stepId) {
-            // Étape 9 : dry-run automatique en mode « Tout exécuter »,
+            // Étape 9 + 10 : dry-run automatique en mode « Tout exécuter »,
             // l'opérateur doit cliquer « Exécuter » manuellement après vérification.
             if ($stepId === 'rights_migration') {
                 $this->executeMigrationStep(dryRun: true);
+            } elseif ($stepId === 'wpkg_remediation') {
+                $this->executeWpkgRemediationStep(dryRun: true);
             } else {
                 $this->runStep($stepId);
             }
@@ -265,6 +282,86 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 $this->toastError('Synchronisation interrompue suite à une erreur');
                 break;
             }
+        }
+    }
+
+    public function runWpkgRemediationDryRun(): void
+    {
+        $this->executeWpkgRemediationStep(dryRun: true);
+    }
+
+    public function runWpkgRemediationExecute(): void
+    {
+        $this->executeWpkgRemediationStep(dryRun: false);
+    }
+
+    private function executeWpkgRemediationStep(bool $dryRun): void
+    {
+        if ($this->isRunning) {
+            $this->toastWarning('Une synchronisation est déjà en cours');
+            return;
+        }
+
+        $stepId = 'wpkg_remediation';
+        $this->isRunning = true;
+        $this->currentStep = $stepId;
+        $this->steps[$stepId]['status'] = 'running';
+        $this->steps[$stepId]['error'] = null;
+        $this->steps[$stepId]['stats'] = null;
+        $this->stepLogs[$stepId] = [];
+
+        try {
+            $this->addLog($stepId, 'info', $dryRun ? 'Aperçu (dry-run) en cours…' : 'Remédiation drift en cours…');
+
+            $job = new SyncAllFromAdJob(dryRun: $dryRun);
+            $stats = $job->handle();
+
+            $this->steps[$stepId]['stats'] = $stats;
+
+            if (! empty($stats['skipped_lock'])) {
+                $this->steps[$stepId]['status'] = 'skipped';
+                $this->addLog($stepId, 'warning', 'Sync déjà en cours (lock anti-double-clic) — étape sautée.');
+                $this->toastInfo('Sync déjà en cours');
+                return;
+            }
+
+            if (! empty($stats['aborted_reason'])) {
+                throw new \RuntimeException($stats['aborted_reason']);
+            }
+
+            $prefix = $dryRun ? '[DRY-RUN] ' : '';
+            $wg = $stats['workstation_groups'];
+            $ap = $stats['app_profiles'];
+            $this->addLog($stepId, 'info', "{$prefix}WorkstationGroups : +{$wg['created']} / ~{$wg['updated']} / archivés {$wg['archived']} / ignorés {$wg['skipped']}");
+            $this->addLog($stepId, 'info', "{$prefix}AppProfiles : +{$ap['created']} / ~{$ap['updated']} / archivés {$ap['archived']} / ignorés {$ap['skipped']}");
+            $this->addLog($stepId, 'info', "{$prefix}Liens Profile-Group : +{$stats['profile_group_links']['created']} / ignorés {$stats['profile_group_links']['skipped']}");
+
+            if ($dryRun) {
+                $this->steps[$stepId]['status'] = 'dry_run_done';
+                $this->addLog($stepId, 'info', 'Aperçu terminé — vérifiez les résultats puis cliquez « Exécuter » pour appliquer.');
+                $this->toastInfo('Aperçu terminé');
+            } elseif ($stats['idempotent']) {
+                $this->steps[$stepId]['status'] = 'success';
+                $this->addLog($stepId, 'success', 'Aucune écriture nécessaire (idempotent).');
+                $this->toastSuccess('Remédiation : déjà à jour');
+            } else {
+                $this->steps[$stepId]['status'] = 'success';
+                $this->addLog($stepId, 'success', 'Remédiation appliquée avec succès');
+                $this->toastSuccess('Remédiation drift terminée');
+            }
+        } catch (\Exception $e) {
+            $this->steps[$stepId]['status'] = 'error';
+            $this->steps[$stepId]['error'] = $e->getMessage();
+            $this->addLog($stepId, 'error', 'Erreur : ' . $e->getMessage());
+            $this->toastError('Erreur lors de la remédiation : ' . $e->getMessage());
+            Log::channel('wpkg-deploy')->error('[SyncFromAD] Erreur étape ' . $stepId, [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        } finally {
+            $this->isRunning = false;
+            $this->currentStep = null;
+            $this->steps[$stepId]['expanded'] = true;
         }
     }
 
@@ -674,7 +771,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                                     </div>
                                 @endif
 
-                                {{-- Run button (ou deux boutons pour l'étape 9) --}}
+                                {{-- Run button (ou deux boutons pour les étapes 9 et 10) --}}
                                 @if ($stepId === 'rights_migration')
                                     <button type="button" wire:click="runMigrationDryRun"
                                         class="btn btn-sm btn-outline btn-warning" wire:loading.attr="disabled"
@@ -695,6 +792,29 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                                             <i class="fa-solid fa-play"></i> Exécuter
                                         </span>
                                         <span wire:loading wire:target="runMigrationExecute">
+                                            <span class="loading loading-spinner loading-xs"></span>
+                                        </span>
+                                    </button>
+                                @elseif ($stepId === 'wpkg_remediation')
+                                    <button type="button" wire:click="runWpkgRemediationDryRun"
+                                        class="btn btn-sm btn-outline btn-warning" wire:loading.attr="disabled"
+                                        wire:target="runWpkgRemediationDryRun, runWpkgRemediationExecute" {{ $isRunning ? 'disabled' : '' }}
+                                        title="Aperçu sans écriture (dry-run)">
+                                        <span wire:loading.remove wire:target="runWpkgRemediationDryRun">
+                                            <i class="fa-solid fa-magnifying-glass"></i> Aperçu
+                                        </span>
+                                        <span wire:loading wire:target="runWpkgRemediationDryRun">
+                                            <span class="loading loading-spinner loading-xs"></span>
+                                        </span>
+                                    </button>
+                                    <button type="button" wire:click="runWpkgRemediationExecute"
+                                        class="btn btn-sm btn-outline btn-primary" wire:loading.attr="disabled"
+                                        wire:target="runWpkgRemediationDryRun, runWpkgRemediationExecute" {{ $isRunning ? 'disabled' : '' }}
+                                        title="Appliquer la remédiation drift">
+                                        <span wire:loading.remove wire:target="runWpkgRemediationExecute">
+                                            <i class="fa-solid fa-play"></i> Exécuter
+                                        </span>
+                                        <span wire:loading wire:target="runWpkgRemediationExecute">
                                             <span class="loading loading-spinner loading-xs"></span>
                                         </span>
                                     </button>
