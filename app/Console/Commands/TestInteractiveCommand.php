@@ -12,7 +12,7 @@ use function Laravel\Prompts\note;
 
 class TestInteractiveCommand extends Command
 {
-    protected $signature = 'test:interactive {--quick : Lancer rapidement tous les tests de comparaison}';
+    protected $signature = 'tests:interactive {--quick : Lancer rapidement tous les tests de comparaison}';
     protected $description = 'Console interactive pour lancer les tests SambaEdu';
 
     private array $comparisonTests = [

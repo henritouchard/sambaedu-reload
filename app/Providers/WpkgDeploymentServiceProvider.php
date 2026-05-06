@@ -4,6 +4,16 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Wpkg\Deployment\Events\AppProfileApplicationChanged;
+use App\Wpkg\Deployment\Events\AppProfileWorkstationChanged;
+use App\Wpkg\Deployment\Events\AppProfileWorkstationGroupChanged;
+use App\Wpkg\Deployment\Events\WorkstationActivated;
+use App\Wpkg\Deployment\Events\WorkstationArchived;
+use App\Wpkg\Deployment\Events\WorkstationGroupMembershipChanged;
+use App\Wpkg\Deployment\Events\WorkstationOptionsChanged;
+use App\Wpkg\Deployment\Listeners\InvalidateWorkstationPackagesCache;
+use App\Wpkg\Deployment\Listeners\RegenerateWorkstationIniOnOptionsChanged;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 
@@ -37,6 +47,12 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Story 15.2 — Listeners du pipeline (cache invalidation + regen .ini).
+        // Enregistrés ici plutôt que dans EventServiceProvider pour garder la
+        // cohésion namespace `App\Wpkg\Deployment`. Actifs en testing aussi
+        // pour permettre le test feature dispatch sans fake.
+        $this->registerWpkgListeners();
+
         // Skip en environnement de test : les chemins legacy n'existent pas
         // sur les CI / runners locaux et le warning est bruyant sans valeur.
         if ($this->app->environment('testing')) {
@@ -78,6 +94,26 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
                     : null,
             ]);
         }
+    }
+    
+    /**
+     * Story 15.2 / AC4.5 — Routing des events WPKG vers leurs listeners.
+     */
+    private function registerWpkgListeners(): void
+    {
+        $cacheInvalidator = [InvalidateWorkstationPackagesCache::class, 'handle'];
+
+        Event::listen(AppProfileWorkstationGroupChanged::class, $cacheInvalidator);
+        Event::listen(AppProfileWorkstationChanged::class, $cacheInvalidator);
+        Event::listen(AppProfileApplicationChanged::class, $cacheInvalidator);
+        Event::listen(WorkstationGroupMembershipChanged::class, $cacheInvalidator);
+        Event::listen(WorkstationActivated::class, $cacheInvalidator);
+        Event::listen(WorkstationArchived::class, $cacheInvalidator);
+
+        Event::listen(
+            WorkstationOptionsChanged::class,
+            [RegenerateWorkstationIniOnOptionsChanged::class, 'handle'],
+        );
     }
 
     /**

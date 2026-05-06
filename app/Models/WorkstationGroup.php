@@ -275,6 +275,21 @@ class WorkstationGroup extends Model implements Wireable
         )->withTimestamps();
     }
 
+    /**
+     * Story 15.2 — Apps WPKG rattachées directement à ce parc (pivot
+     * `application_workstation_group`, équivalent legacy
+     * `applications_profile.type_entite='parc'`).
+     */
+    public function applications(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            Application::class,
+            'application_workstation_group',
+            'workstation_group_id',
+            'application_id'
+        )->withTimestamps();
+    }
+
     public function printers(): BelongsToMany
     {
         return $this->belongsToMany(

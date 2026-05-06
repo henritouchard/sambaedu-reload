@@ -147,4 +147,46 @@ class WpkgDeploymentNamespaceTest extends TestCase
             "Violations garde-fou Eloquent first détectées :\n  - " . implode("\n  - ", $violations),
         );
     }
+
+    /**
+     * Story 15.2 / AC7.6 — extension : vérifie que le scan couvre bien les
+     * sous-namespaces livrés par 15.2 (Services, Http\Controllers, Generators,
+     * Listeners) en plus de Events / Models / Jobs / Support.
+     *
+     * On vérifie que pour CHAQUE sous-dossier déclaré dans le namespace au
+     * moins un fichier `.php` est trouvé par `Symfony\Finder` — sinon le
+     * garde-fou ne couvrirait pas effectivement ces classes.
+     */
+    #[Test]
+    public function scan_covers_all_15_2_subnamespaces(): void
+    {
+        $namespaceRoot = realpath(__DIR__ . '/../../app/Wpkg/Deployment');
+        if ($namespaceRoot === false) {
+            self::fail('Le dossier app/Wpkg/Deployment est introuvable.');
+        }
+
+        $expectedSubdirs = [
+            'Services',
+            'Http/Controllers',
+            'Generators',
+            'Listeners',
+            'Events',
+            'Models',
+        ];
+
+        foreach ($expectedSubdirs as $relative) {
+            $finder = (new Finder())
+                ->files()
+                ->in($namespaceRoot . '/' . $relative)
+                ->name('*.php');
+
+            self::assertTrue(
+                $finder->hasResults(),
+                sprintf(
+                    'Sous-dossier %s/ vide : test archi ne le couvre pas (Story 15.2 / AC7.6).',
+                    $relative,
+                ),
+            );
+        }
+    }
 }

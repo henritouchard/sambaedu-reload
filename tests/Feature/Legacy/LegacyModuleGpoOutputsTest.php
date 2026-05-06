@@ -114,6 +114,26 @@ class LegacyModuleGpoOutputsTest extends TestCase
                 $table->timestamps();
             });
         }
+
+        // Le legacy network_out.php écrit des logs prévisibles dans /tmp
+        // (cf. legacy/modules/gpo/network_out.php — invariant T4.2 byte-pour-byte
+        // avec sambaedu/gpo/, donc non patchable). On purge les résidus
+        // appartenant aux IDs de fixture pour éviter EACCES si un fichier
+        // pré-existant n'appartient pas à l'utilisateur courant.
+        $this->cleanupLegacyNetworkLogs();
+    }
+
+    protected function tearDown(): void
+    {
+        $this->cleanupLegacyNetworkLogs();
+        parent::tearDown();
+    }
+
+    private function cleanupLegacyNetworkLogs(): void
+    {
+        foreach (glob('/tmp/network-*-dummy_*.log') ?: [] as $f) {
+            @unlink($f);
+        }
     }
 
     /**

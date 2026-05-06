@@ -171,6 +171,140 @@ Laravel n'est pas bloqué.
 
 ---
 
+## Section 2 — Generators XML/INI per-poste (Story 15.2)
+
+**Stories couvertes** : 15.2 (endpoints HTTP `hosts.xml` / `profiles.xml`,
+service `WorkstationPackagesResolver` Eloquent-only, cache key-value 1000 s,
+events + listeners d'invalidation, `WorkstationIniGenerator`, 3 commandes
+Artisan utilitaires).
+
+**Code de référence** :
+- `app/Wpkg/Deployment/Http/Controllers/{Hosts,Profiles}XmlController.php`
+- `app/Wpkg/Deployment/Services/WorkstationPackagesResolver.php`
+- `app/Wpkg/Deployment/Generators/WorkstationIniGenerator.php`
+- `app/Wpkg/Deployment/Events/*` + `Listeners/*`
+- `app/Console/Commands/Wpkg{Cache{Warmup,Flush},IniRegenerate}Command.php`
+- `routes/web.php` — bloc `Story 15.2 — Endpoints HTTP WPKG`
+- Migrations `2026_05_05_100000_add_wpkg_resolver_pivots.php` + `2026_05_05_100100_create_wpkg_workstation_options_table.php`
+
+### Pré-requis section 2
+
+- Section 1 validée (canal `wpkg-deploy` vivant, migrations 15.1 OK).
+- Ces 2 migrations 15.2 jouées : `php artisan migrate:status | grep wpkg`.
+- Au moins une `Workstation` avec un `name` (hostname) en BDD pour les
+  scénarios 2.3 / 2.4.
+
+### Scénario 2.1 — `?poste=HOSTNAME` valide → XML conforme
+
+1. Sur la VM : `curl -s "http://localhost/wpkg/hosts.xml?poste=PCEXEMPLE"`.
+2. Vérifier que la réponse :
+   - HTTP 200, `Content-Type: text/xml; charset=UTF-8`
+   - contient `<host name="PCEXEMPLE" profile-id="PCEXEMPLE"/>`
+   - contient le commentaire ` Fichier genere par SambaEdu. Ne pas modifier. `
+   - parse correctement avec `xmllint --noout -`
+3. Idem `curl -s "http://localhost/wpkg/profiles.xml?poste=PCEXEMPLE"`.
+
+**Attendu** : XML strictement conforme à
+`tests/Fixtures/wpkg/expected/hosts-PCEXEMPLE.xml` (à divergence whitespace
+près). Aucune redirect / 401 / 403 (parité legacy AC1.5).
+
+### Scénario 2.2 — Hostname inconnu → profile vide silencieux
+
+1. Choisir un hostname jamais inscrit en BDD : `NOPOSTEDB`.
+2. `curl -s "http://localhost/wpkg/profiles.xml?poste=NOPOSTEDB"`.
+
+**Attendu** : HTTP 200, body contient `<profile id="NOPOSTEDB"/>` sans
+aucun `<package…/>`. Pas de 404 (parité legacy AC1.3).
+
+3. Idem `hosts.xml?poste=NOPOSTEDB` → renvoie quand même
+   `<host name="NOPOSTEDB" profile-id="NOPOSTEDB"/>` (legacy parity AC1.3 :
+   `hosts_xml_out.php` ne consulte pas la BDD).
+
+### Scénario 2.3 — Poste avec apps directes + parc → vérif union
+
+1. Tinker :
+   ```php
+   $w = \App\Models\Workstation::firstWhere('name', '<HOSTNAME>');
+   $g = $w->groups->first();
+   $a1 = \App\Models\Application::firstWhere('app_id', '<APPID_DIRECT_POSTE>');
+   $a2 = \App\Models\Application::firstWhere('app_id', '<APPID_PARC>');
+   $w->applications()->syncWithoutDetaching([$a1->id]);
+   $g->applications()->syncWithoutDetaching([$a2->id]);
+   ```
+2. `php artisan wpkg:cache:flush --workstation=<HOSTNAME>` (purge cache).
+3. `curl -s "http://localhost/wpkg/profiles.xml?poste=<HOSTNAME>"`.
+
+**Attendu** : la réponse contient `<package package-id="<APPID_DIRECT_POSTE>"/>`
+ET `<package package-id="<APPID_PARC>"/>`. Si une dépendance applicative
+existe (table `application_dependencies`), elle apparaît également.
+La liste est triée alpha ASC (déterminisme).
+
+### Scénario 2.4 — Dispatch event manuel → cache invalidé → second appel reflète la modif
+
+1. Pré-requis : poste `<HOSTNAME>` avec quelques packages.
+2. `curl -s "http://localhost/wpkg/profiles.xml?poste=<HOSTNAME>" > /tmp/avant.xml`.
+3. Vérifier que `Cache::has("wpkg:packages:<lower(HOSTNAME)>")` retourne `true`
+   en tinker.
+4. Modifier l'assignation :
+   ```php
+   $w->applications()->detach($a1);
+   event(new \App\Wpkg\Deployment\Events\AppProfileWorkstationChanged(0, $w->id, 'detached'));
+   // Note : l'event AppProfileWorkstationChanged invalide bien le poste cible
+   // (`workstationId`). Pour un detach `Application` directe, on peut
+   // également utiliser `WorkstationGroupMembershipChanged` ou
+   // `WorkstationActivated/Archived` (tous routent vers le poste cible).
+   ```
+5. Vérifier que `Cache::has("wpkg:packages:<lower(HOSTNAME)>")` retourne `false`.
+6. `curl -s "http://localhost/wpkg/profiles.xml?poste=<HOSTNAME>" > /tmp/apres.xml`.
+7. `diff /tmp/avant.xml /tmp/apres.xml` → la nouvelle composition est servie.
+
+**Attendu** : pas de stale. La log `wpkg-deploy` contient une ligne
+`[InvalidateWorkstationPackagesCache] cache invalidé` et une ligne
+`[WorkstationPackagesResolver] cache miss` au scénario 6.
+
+> **Note importante** : l'émetteur réel des events (services métier /
+> observers Eloquent / UI) est livré en **Story 15.4**. Ce scénario de QA
+> dispatche les events manuellement pour tester le câblage.
+
+### Scénario 2.5 — `WorkstationOptionsChanged` → `.ini` régénéré
+
+1. Pré-requis : `<HOSTNAME>` connu, fichier
+   `<config('sambaedu.wpkg.ini_path')>/<HOSTNAME>.ini` initialement absent
+   ou aux valeurs `false` par défaut.
+2. Tinker :
+   ```php
+   $w = \App\Models\Workstation::firstWhere('name', '<HOSTNAME>');
+   \App\Wpkg\Deployment\Models\WpkgWorkstationOption::updateOrCreate(
+       ['workstation_id' => $w->id, 'option_key' => 'debug'],
+       ['option_value' => 'true']
+   );
+   event(new \App\Wpkg\Deployment\Events\WorkstationOptionsChanged($w->id, ['debug']));
+   ```
+3. Inspecter le fichier `.ini` correspondant :
+   `cat /var/sambaedu/unattended/install/wpkg/ini/<HOSTNAME>.ini | xxd | head -2`.
+
+**Attendu** :
+- 8 lignes terminées par `\r\n` (CRLF strict, parité legacy AC5.4).
+- 1ère ligne `debug=true ' Permet d'avoir des logs plus détaillés.\r\n`.
+- Les 7 autres lignes `…=false ' …\r\n` (defaults).
+- Atomic write : aucune persistance d'un `.tmp.<pid>.<hex>` à côté.
+- Logs `wpkg-deploy` : ligne `Génération .ini` avec
+  `workstation_id` + `hostname` + `target` + `success=true`.
+
+4. Régénération idempotente : `php artisan wpkg:ini:regenerate --workstation=<HOSTNAME>`
+   exécuté 2× → `md5sum <path>` identique.
+
+### Commandes Artisan utilitaires
+
+- `php artisan wpkg:cache:warmup --all` — pré-calcul cache pour tous les postes
+  (progress bar). Utile post-flush ou après une mutation bulk.
+- `php artisan wpkg:cache:flush [--workstation=H]` — vide le cache (ciblé ou
+  global) ; équivalent legacy `apcu_delete_multi('#^wpkg_#')` mais ciblé.
+- `php artisan wpkg:ini:regenerate --all` — régénère le `.ini` per-poste
+  (utile après bascule prod ou changement de format).
+
+---
+
 ## Checklist rapide (relecteur)
 
 - [ ] Scénario 1.1 — channel `wpkg-deploy` vivant
@@ -178,3 +312,8 @@ Laravel n'est pas bloqué.
 - [ ] Scénario 1.3 — atomic write Firefox/Thunderbird sans lecture partielle
 - [ ] Scénario 1.4 — rename clés config OK, ingestion rapports OK
 - [ ] Scénario 1.5 — warning chemins inaccessibles tracé en logs
+- [ ] Scénario 2.1 — `?poste=` valide → XML conforme (hosts + profiles)
+- [ ] Scénario 2.2 — hostname inconnu → profile vide silencieux (pas de 404)
+- [ ] Scénario 2.3 — union poste/parc/dépendances dans `profiles.xml`
+- [ ] Scénario 2.4 — invalidation cache via event → pas de stale
+- [ ] Scénario 2.5 — `WorkstationOptionsChanged` → `.ini` régénéré (CRLF)
