@@ -9,6 +9,7 @@ sections au fil de leur livraison (générateurs XML/.ini, sync AD, UI
 assignation, ingestion, dashboard, retrait shim legacy)._
 
 **Code de référence** :
+
 - `config/logging.php` — channel `wpkg-deploy`
 - `config/sambaedu.php` — bloc `wpkg` (4 chemins en dur)
 - `app/Providers/WpkgDeploymentServiceProvider.php` — check démarrage
@@ -37,20 +38,25 @@ assignation, ingestion, dashboard, retrait shim legacy)._
 ### Scénario 1.1 — Channel logs `wpkg-deploy` vivant
 
 1. Sur la VM, lancer un tinker :
+
    ```bash
    php artisan tinker
    >>> Log::channel('wpkg-deploy')->withContext(['deployment_id' => 'qa-smoke-001'])->info('smoke test');
    >>> exit
    ```
+
    _Tinker affiche `null` — c'est normal, `Log::info()` ne retourne rien.
    Le succès se vérifie côté filesystem (étapes suivantes), pas dans
    tinker. Une vraie erreur de config Monolog lèverait une exception
    explicite type `InvalidArgumentException: Log [wpkg-deploy] is not
-   defined`._
+defined`._
+
 2. Vérifier que `storage/logs/wpkg-deploy/deploy-{date}.log` existe :
+
    ```bash
    ls -la storage/logs/wpkg-deploy/
    ```
+
 3. `tail -1 storage/logs/wpkg-deploy/deploy-*.log` → la ligne contient
    `smoke test` ET `"deployment_id":"qa-smoke-001"` dans le payload JSON.
 
@@ -81,6 +87,7 @@ créés (vérifier via `psql -c "\d wpkg_deployment_workstation_status"`).
    homepage et sauver.
 2. Sur la VM, vérifier le fichier exporté. Le chemin est
    `<fs_base_path>/<kind>/<key>.json` où :
+
    - `fs_base_path` = `config('app-customizations.fs_base_path')` (par défaut
      `/etc/sambaedu/applications`, override via `APP_CUSTOMIZATIONS_FS_BASE`)
    - `<kind>` = `firefox`
@@ -94,12 +101,15 @@ créés (vérifier via `psql -c "\d wpkg_deployment_workstation_status"`).
    contraire sur le template système en lecture seule
    (`/usr/share/sambaedu/applications/firefox/default.json`) — ce n'est
    PAS le fichier écrit par `savePolicies()`._
+
 3. `cat <path>/<key>.json | jq .` → JSON valide.
 4. Pendant l'écriture, en parallèle dans un autre terminal, faire des reads
    en boucle :
+
    ```bash
    while true; do cat <path>/<key>.json > /dev/null && echo OK || echo PARTIAL; done
    ```
+
 5. Sauver plusieurs fois la customization → aucune lecture `PARTIAL`.
 
 **Attendu** : aucune lecture partielle, le rename atomique tient. Le tmp
@@ -114,16 +124,21 @@ chmod / encoding du fichier exporté.
 ### Scénario 1.4 — Rename clés config sans casse runtime
 
 1. Sur la VM, vérifier que les anciennes clés ne sont **plus** consommées :
+
    ```bash
    grep -rn "reports_path\|reports_archive_path" /var/www/sambaedu-reload/app /var/www/sambaedu-reload/config
    ```
+
    → aucun résultat (ou uniquement nom de tests).
+
 2. Lancer la commande de traitement des rapports avec un fichier de test :
+
    ```bash
    echo "DUMMY" > /var/sambaedu/unattended/install/wpkg/rapports/QA-PC.txt
    touch -d "1 minute ago" /var/sambaedu/unattended/install/wpkg/rapports/QA-PC.txt
    php artisan wpkg:process-reports
    ```
+
 3. Le rapport doit être archivé dans
    `/var/sambaedu/unattended/install/wpkg/rapports/archive/QA-PC_<timestamp>.txt`
    (chemin défini par `config('sambaedu.wpkg.reports_archive')`).
@@ -155,6 +170,7 @@ n'ont donc pas à provisionner manuellement l'arborescence.
 
 1. Sauvegarder la config et basculer vers un chemin dont le parent est
    non-écrivable :
+
    ```bash
    php artisan tinker
    >>> Config::set('sambaedu.wpkg.deploy_path', '/root/wpkg-test-readonly');
@@ -163,6 +179,7 @@ n'ont donc pas à provisionner manuellement l'arborescence.
    >>> foreach ($violations as $v) { Log::channel('wpkg-deploy')->warning('[wpkg-deploy] chemin partage inaccessible', $v); }
    >>> exit
    ```
+
 2. `tail storage/logs/wpkg-deploy/deploy-*.log`
 
 **Attendu** : warning `[wpkg-deploy] chemin partage inaccessible` avec
@@ -179,6 +196,7 @@ events + listeners d'invalidation, `WorkstationIniGenerator`, 3 commandes
 Artisan utilitaires).
 
 **Code de référence** :
+
 - `app/Wpkg/Deployment/Http/Controllers/{Hosts,Profiles}XmlController.php`
 - `app/Wpkg/Deployment/Services/WorkstationPackagesResolver.php`
 - `app/Wpkg/Deployment/Generators/WorkstationIniGenerator.php`
@@ -196,12 +214,12 @@ Artisan utilitaires).
 
 ### Scénario 2.1 — `?poste=HOSTNAME` valide → XML conforme
 
-1. Sur la VM : `curl -s "http://localhost/wpkg/hosts.xml?poste=PCEXEMPLE"`.
+1. Sur la VM : `curl -s -v "http://localhost/wpkg/hosts.xml?poste=PCEXEMPLE"`.
 2. Vérifier que la réponse :
    - HTTP 200, `Content-Type: text/xml; charset=UTF-8`
    - contient `<host name="PCEXEMPLE" profile-id="PCEXEMPLE"/>`
-   - contient le commentaire ` Fichier genere par SambaEdu. Ne pas modifier. `
-   - parse correctement avec `xmllint --noout -`
+   - contient le commentaire `Fichier genere par SambaEdu. Ne pas modifier.`
+   - parse correctement : `curl -s "<http://se4fs/wpkg/hosts.xml?poste=pc-cdi-07>" | xmllint --noout -`
 3. Idem `curl -s "http://localhost/wpkg/profiles.xml?poste=PCEXEMPLE"`.
 
 **Attendu** : XML strictement conforme à
@@ -216,47 +234,85 @@ près). Aucune redirect / 401 / 403 (parité legacy AC1.5).
 **Attendu** : HTTP 200, body contient `<profile id="NOPOSTEDB"/>` sans
 aucun `<package…/>`. Pas de 404 (parité legacy AC1.3).
 
-3. Idem `hosts.xml?poste=NOPOSTEDB` → renvoie quand même
+1. Idem `hosts.xml?poste=NOPOSTEDB` → renvoie quand même
    `<host name="NOPOSTEDB" profile-id="NOPOSTEDB"/>` (legacy parity AC1.3 :
    `hosts_xml_out.php` ne consulte pas la BDD).
 
 ### Scénario 2.3 — Poste avec apps directes + parc → vérif union
 
-1. Tinker :
-   ```php
-   $w = \App\Models\Workstation::firstWhere('name', '<HOSTNAME>');
-   $g = $w->groups->first();
-   $a1 = \App\Models\Application::firstWhere('app_id', '<APPID_DIRECT_POSTE>');
-   $a2 = \App\Models\Application::firstWhere('app_id', '<APPID_PARC>');
-   $w->applications()->syncWithoutDetaching([$a1->id]);
-   $g->applications()->syncWithoutDetaching([$a2->id]);
-   ```
-2. `php artisan wpkg:cache:flush --workstation=<HOSTNAME>` (purge cache).
-3. `curl -s "http://localhost/wpkg/profiles.xml?poste=<HOSTNAME>"`.
+**Poste de référence** : `NOM_DU_POSTE` (membre du groupe `windows-all`).
 
-**Attendu** : la réponse contient `<package package-id="<APPID_DIRECT_POSTE>"/>`
-ET `<package package-id="<APPID_PARC>"/>`. Si une dépendance applicative
-existe (table `application_dependencies`), elle apparaît également.
-La liste est triée alpha ASC (déterminisme).
+1. Dans l'interface SambaEdu, aller sur **Paramètres du parc**
+   (`/app/parc-settings`) → onglet **Profils** → ouvrir le profil `dev-tools`.
+
+   - Onglet **Postes** → **Ajouter** → sélectionner `NOM_DU_POSTE` → **Confirmer**.
+
+   \_Résultat attendu : `NOM_DU_POSTE` est maintenant assigné directement au
+   profil `dev-tools` (apps : `notepadpp`, `vscode`, `python3`) — source 1
+   (AppProfile direct poste). Le profil `base-windows` est déjà assigné au
+   groupe `windows-all`, ce qui couvre `NOM_DU_POSTE` via source 2 (apps :
+   `firefox`, `libreoffice`, `vlc`, `7zip`).
+
+2. Sur la VM, purger le cache :
+
+   ```bash
+   php artisan wpkg:cache:flush --workstation=NOM_DU_POSTE
+   ```
+
+3. `curl -s "http://localhost/wpkg/profiles.xml?poste=NOM_DU_POSTE"`.
+
+**Attendu** : la réponse contient à la fois `<package package-id="notepadpp"/>`
+(depuis `dev-tools` direct sur le poste) ET `<package package-id="firefox"/>`
+(depuis `base-windows` sur le groupe `windows-all`). La liste est triée alpha
+ASC (déterminisme).
+
+_Nettoyage après test : retirer `NOM_DU_POSTE` de `dev-tools` via l'onglet
+**Postes** du même profil._
 
 ### Scénario 2.4 — Dispatch event manuel → cache invalidé → second appel reflète la modif
 
-1. Pré-requis : poste `<HOSTNAME>` avec quelques packages.
-2. `curl -s "http://localhost/wpkg/profiles.xml?poste=<HOSTNAME>" > /tmp/avant.xml`.
-3. Vérifier que `Cache::has("wpkg:packages:<lower(HOSTNAME)>")` retourne `true`
-   en tinker.
-4. Modifier l'assignation :
-   ```php
-   $w->applications()->detach($a1);
-   event(new \App\Wpkg\Deployment\Events\AppProfileWorkstationChanged(0, $w->id, 'detached'));
-   // Note : l'event AppProfileWorkstationChanged invalide bien le poste cible
-   // (`workstationId`). Pour un detach `Application` directe, on peut
-   // également utiliser `WorkstationGroupMembershipChanged` ou
-   // `WorkstationActivated/Archived` (tous routent vers le poste cible).
+1. Pré-requis : poste `<HOSTNAME>` avec au moins un AppProfile assigné
+   (directement ou via groupe), donc `profiles.xml?poste=<HOSTNAME>` retourne
+   au moins un `<package…/>`.
+2. `curl -s "http://localhost/wpkg/profiles.xml?poste=<HOSTNAME>" > /tmp/avant.xml`
+   (ce hit HTTP **doit** précéder l'étape 3 — c'est lui qui peuple le cache).
+3. Vérifier que la clé cache existe en tinker. La clé est
+   `wpkg:packages:` + `strtolower($hostname)` (cf.
+   `WorkstationPackagesResolver::cacheKey()`). Pour `pc-cdi-07` →
+   `wpkg:packages:pc-cdi-07` (déjà en minuscules) :
+
+   ```bash
+   php artisan tinker --execute='echo Cache::has("wpkg:packages:pc-cdi-07") ? "HIT" : "MISS";'
    ```
-5. Vérifier que `Cache::has("wpkg:packages:<lower(HOSTNAME)>")` retourne `false`.
-6. `curl -s "http://localhost/wpkg/profiles.xml?poste=<HOSTNAME>" > /tmp/apres.xml`.
-7. `diff /tmp/avant.xml /tmp/apres.xml` → la nouvelle composition est servie.
+
+   → attendu `HIT`.
+4. Modifier l'assignation **via l'UI** : aller sur **Paramètres du parc**
+   (`/app/parc-settings`) → onglet **Profils** → ouvrir un profil actuellement
+   assigné à `<HOSTNAME>` → onglet **Postes** → retirer `<HOSTNAME>` de la
+   liste → **Confirmer**.
+5. Dispatcher l'event manuellement (l'émetteur réel arrive en Story 15.4) :
+
+   ```php
+   php artisan tinker
+   >>> $w = \App\Models\Workstation::firstWhere('name', '<HOSTNAME>');
+   >>> event(new \App\Wpkg\Deployment\Events\AppProfileWorkstationChanged(0, $w->id, 'detached'));
+   >>> exit
+   ```
+
+   _Note : `AppProfileWorkstationChanged` invalide bien le poste cible
+   (`workstationId`). Pour un changement de groupe ou une (dé)activation, on
+   peut également utiliser `WorkstationGroupMembershipChanged` ou
+   `WorkstationActivated/Archived` (tous routent vers le poste cible)._
+
+6. Vérifier que la clé cache a été invalidée :
+
+   ```bash
+   php artisan tinker --execute='echo Cache::has("wpkg:packages:pc-cdi-07") ? "HIT" : "MISS";'
+   ```
+
+   → attendu `MISS` (remplacer `pc-cdi-07` par `strtolower(<HOSTNAME>)`).
+7. `curl -s "http://localhost/wpkg/profiles.xml?poste=<HOSTNAME>" > /tmp/apres.xml`.
+8. `diff /tmp/avant.xml /tmp/apres.xml` → la nouvelle composition est servie.
 
 **Attendu** : pas de stale. La log `wpkg-deploy` contient une ligne
 `[InvalidateWorkstationPackagesCache] cache invalidé` et une ligne
@@ -268,10 +324,13 @@ La liste est triée alpha ASC (déterminisme).
 
 ### Scénario 2.5 — `WorkstationOptionsChanged` → `.ini` régénéré
 
+curl -s "<http://se4fs/wpkg/profiles.xml?poste=pc-cdi-07>"
+
 1. Pré-requis : `<HOSTNAME>` connu, fichier
    `<config('sambaedu.wpkg.ini_path')>/<HOSTNAME>.ini` initialement absent
    ou aux valeurs `false` par défaut.
 2. Tinker :
+
    ```php
    $w = \App\Models\Workstation::firstWhere('name', '<HOSTNAME>');
    \App\Wpkg\Deployment\Models\WpkgWorkstationOption::updateOrCreate(
@@ -280,10 +339,12 @@ La liste est triée alpha ASC (déterminisme).
    );
    event(new \App\Wpkg\Deployment\Events\WorkstationOptionsChanged($w->id, ['debug']));
    ```
+
 3. Inspecter le fichier `.ini` correspondant :
    `cat /var/sambaedu/unattended/install/wpkg/ini/<HOSTNAME>.ini | xxd | head -2`.
 
 **Attendu** :
+
 - 8 lignes terminées par `\r\n` (CRLF strict, parité legacy AC5.4).
 - 1ère ligne `debug=true ' Permet d'avoir des logs plus détaillés.\r\n`.
 - Les 7 autres lignes `…=false ' …\r\n` (defaults).
@@ -291,7 +352,7 @@ La liste est triée alpha ASC (déterminisme).
 - Logs `wpkg-deploy` : ligne `Génération .ini` avec
   `workstation_id` + `hostname` + `target` + `success=true`.
 
-4. Régénération idempotente : `php artisan wpkg:ini:regenerate --workstation=<HOSTNAME>`
+1. Régénération idempotente : `php artisan wpkg:ini:regenerate --workstation=<HOSTNAME>`
    exécuté 2× → `md5sum <path>` identique.
 
 ### Commandes Artisan utilitaires
