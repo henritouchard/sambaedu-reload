@@ -431,10 +431,10 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
 
     private function runAppProfilesSync(): void
     {
-        // Utiliser le service pour l'import
-        $appProfileService = app(\App\Services\AppProfile\AppProfileService::class);
+        // Utiliser l'importeur AD dédié (extrait d'AppProfileService dans le cadre 15.4)
+        $importer = app(\App\Services\AppProfile\AppProfileAdImporter::class);
 
-        $stats = $appProfileService->importFromAd(function (string $level, string $message) {
+        $stats = $importer->importFromAd(function (string $level, string $message) {
             $this->addLog('app_profiles', $level, $message);
         });
 

@@ -4,13 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\AppProfile;
 
-use App\Config\LdapDnHelper;
-use App\LdapModels\DeviceGroupTagModel;
 use App\Models\AppProfile;
 use App\Models\Application;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
-use App\Observers\AppProfileObserver;
 use App\Wpkg\Deployment\Events\AppProfileApplicationsChanged;
 use App\Wpkg\Deployment\Events\AppProfileWorkstationChanged;
 use App\Wpkg\Deployment\Events\AppProfileWorkstationGroupChanged;
@@ -30,7 +27,7 @@ use Illuminate\Support\Str;
  * à plusieurs WorkstationGroups (parcs). Cette architecture remplace
  * le système polymorphique legacy de applications_profile.
  */
-class AppProfileService
+final class AppProfileService
 {
     /**
      * Liste tous les profils applicatifs avec pagination
@@ -811,152 +808,4 @@ class AppProfileService
         })->get();
     }
 
-    // ========================================
-    // IMPORT DEPUIS L'AD (MIGRATION INITIALE)
-    // ========================================
-
-    /**
-     * Importe les profils applicatifs depuis l'Active Directory vers la base de données SQL.
-     * 
-     * ⚠️ WARNING: Cette méthode ne devrait être utilisée QUE pour l'initialisation initiale
-     * de la base de données Laravel. Une fois l'import effectué, SQL devient la source de vérité
-     * et les modifications doivent être faites via l'interface Laravel, qui synchronisera
-     * automatiquement vers l'AD via les observers.
-     * 
-     * @deprecated Utiliser uniquement pour la migration initiale AD → SQL
-     * @param callable|null $logCallback Callback pour les logs (fn(string $level, string $message) => void)
-     * @return array Statistiques d'import ['created' => int, 'updated' => int, 'skipped' => int, 'linked_groups' => int, 'errors' => array]
-     */
-    public function importFromAd(?callable $logCallback = null): array
-    {
-        Log::warning('AppProfileService::importFromAd() appelé - Cette méthode ne devrait être utilisée que pour l\'initialisation initiale. SQL est la source de vérité.');
-
-        $log = $logCallback ?? fn(string $level, string $message) => Log::log($level, $message);
-        
-        $stats = [
-            'created' => 0,
-            'updated' => 0,
-            'skipped' => 0,
-            'linked_groups' => 0,
-            'errors' => [],
-        ];
-
-        try {
-            $dnHelper = app(LdapDnHelper::class);
-            $parcsDn = $dnHelper->parcsDn();
-            $log('info', "Recherche dans: {$parcsDn}");
-
-            // Récupérer les parcs depuis l'AD
-            $parcsAd = DeviceGroupTagModel::in($parcsDn)->get();
-            $log('info', count($parcsAd) . ' profils trouvés dans l\'AD');
-
-            // Désactiver la synchronisation AD pendant l'import
-            AppProfileObserver::disableSync();
-
-            try {
-                DB::beginTransaction();
-
-                // Pré-charger les groupes pour les liens
-                $groups = WorkstationGroup::all()->keyBy(fn($g) => strtolower($g->name));
-
-                foreach ($parcsAd as $parc) {
-                    try {
-                        $name = $parc->getParcName();
-                        if (empty($name)) {
-                            continue;
-                        }
-
-                        $rawGuid = $parc->getFirstAttribute('objectguid');
-                        $uuid = $rawGuid ? $this->convertGuidToString($rawGuid) : null;
-                        $description = $parc->getDescription();
-
-                        $existing = AppProfile::where('name', $name)->first();
-
-                        if ($existing) {
-                            $updated = false;
-                            if (empty($existing->ad_guid) && !empty($uuid)) {
-                                $existing->ad_guid = $uuid;
-                                $updated = true;
-                            }
-                            if ($updated) {
-                                $existing->save();
-                                $stats['updated']++;
-                                $log('info', "Mis à jour: {$name}");
-                            } else {
-                                $stats['skipped']++;
-                            }
-
-                            // Lier au groupe de même nom si pas déjà fait
-                            if ($groups->has(strtolower($name))) {
-                                $group = $groups->get(strtolower($name));
-                                if (!$existing->workstationGroups()->where('workstation_group_id', $group->id)->exists()) {
-                                    $existing->workstationGroups()->attach($group->id);
-                                    $stats['linked_groups']++;
-                                }
-                            }
-                        } else {
-                            $profile = AppProfile::create([
-                                'name' => $name,
-                                'display_name' => $description ?? $name,
-                                'description' => $description,
-                                'ad_guid' => $uuid,
-                                'is_active' => true,
-                            ]);
-
-                            // Lier au groupe de même nom
-                            if ($groups->has(strtolower($name))) {
-                                $group = $groups->get(strtolower($name));
-                                $profile->workstationGroups()->attach($group->id);
-                                $stats['linked_groups']++;
-                            }
-
-                            $stats['created']++;
-                            $log('success', "Créé: {$name}");
-                        }
-                    } catch (\Exception $e) {
-                        $parcName = $parc->getParcName() ?? 'inconnu';
-                        $stats['errors'][] = "Erreur pour {$parcName}: " . $e->getMessage();
-                        $log('error', "Erreur pour {$parcName}: " . $e->getMessage());
-                    }
-                }
-
-                DB::commit();
-
-            } finally {
-                AppProfileObserver::enableSync();
-            }
-
-            $log('info', "Résultat: {$stats['created']} créés, {$stats['updated']} mis à jour, {$stats['skipped']} ignorés, {$stats['linked_groups']} liés");
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            $stats['errors'][] = 'Erreur globale: ' . $e->getMessage();
-            $log('error', 'Erreur lors de l\'import: ' . $e->getMessage());
-            Log::error('AppProfileService::importFromAd erreur', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-        }
-
-        return $stats;
-    }
-
-    /**
-     * Convertit un GUID binaire en chaîne formatée
-     */
-    private function convertGuidToString(string $binaryGuid): string
-    {
-        $hex = bin2hex($binaryGuid);
-        if (strlen($hex) !== 32) {
-            return $hex;
-        }
-        return sprintf(
-            '%s%s%s%s-%s%s-%s%s-%s-%s',
-            substr($hex, 6, 2), substr($hex, 4, 2), substr($hex, 2, 2), substr($hex, 0, 2),
-            substr($hex, 10, 2), substr($hex, 8, 2),
-            substr($hex, 14, 2), substr($hex, 12, 2),
-            substr($hex, 16, 4),
-            substr($hex, 20, 12)
-        );
-    }
 }
