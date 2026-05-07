@@ -1,23 +1,33 @@
+@props([
+    'title' => 'Ajouter des postes',
+    'items' => [],
+    'searchProperty' => 'addWorkstationSearch',
+    'selectionProperty' => 'selectedWorkstationsToAdd',
+    'searchValue' => '',
+    'closeMethod' => 'closeAddWorkstationsModal',
+    'confirmMethod' => 'addSelectedWorkstations',
+    'selectionCount' => 0,
+    'keyPrefix' => 'add-ws',
+])
 <div class="modal modal-open">
     <div class="modal-box max-w-2xl">
         <h3 class="font-bold text-lg mb-4">
             <i class="fa-solid fa-computer mr-2"></i>
-            Ajouter des postes au profil
+            {{ $title }}
         </h3>
 
-        <!-- Recherche -->
         <div class="form-control mb-4">
-            <input type="text" wire:model.live.debounce.300ms="addWorkstationSearch" class="input input-bordered"
+            <input type="text" wire:model.live.debounce.300ms="{{ $searchProperty }}"
+                class="input input-bordered"
                 placeholder="Rechercher un poste..." />
         </div>
 
-        <!-- Liste des postes disponibles -->
         <div class="max-h-80 overflow-y-auto border border-base-200 rounded-lg">
-            @if ($this->availableWorkstations->isEmpty())
+            @if (count($items) === 0)
                 <div class="p-8 text-center text-base-content/60">
                     <i class="fa-solid fa-computer text-3xl mb-2 opacity-30"></i>
                     <p>Aucun poste disponible</p>
-                    @if ($addWorkstationSearch)
+                    @if (!empty($searchValue))
                         <p class="text-sm mt-1">Essayez avec d'autres termes de recherche</p>
                     @endif
                 </div>
@@ -32,12 +42,12 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach ($this->availableWorkstations as $workstation)
-                            <tr wire:key="add-ws-{{ $workstation->id }}" class="hover:bg-base-200">
+                        @foreach ($items as $workstation)
+                            <tr wire:key="{{ $keyPrefix }}-{{ $workstation->id }}" class="hover:bg-base-200">
                                 <td>
                                     <label class="cursor-pointer">
                                         <input type="checkbox" class="checkbox checkbox-sm checkbox-primary"
-                                            wire:model.live="selectedWorkstationsToAdd"
+                                            wire:model.live="{{ $selectionProperty }}"
                                             value="{{ $workstation->id }}" />
                                     </label>
                                 </td>
@@ -60,26 +70,20 @@
             @endif
         </div>
 
-        <!-- Sélection -->
-        @if (count($selectedWorkstationsToAdd) > 0)
+        @if ($selectionCount > 0)
             <div class="mt-4 p-2 bg-primary/10 rounded-lg">
-                <span class="text-sm font-medium">
-                    {{ count($selectedWorkstationsToAdd) }} poste(s) sélectionné(s)
-                </span>
+                <span class="text-sm font-medium">{{ $selectionCount }} poste(s) sélectionné(s)</span>
             </div>
         @endif
 
-        <!-- Actions -->
         <div class="modal-action">
-            <button type="button" class="btn btn-ghost" wire:click="closeAddWorkstationsModal">
-                Annuler
-            </button>
-            <button type="button" class="btn btn-primary" wire:click="addSelectedWorkstations"
-                @if (count($selectedWorkstationsToAdd) === 0) disabled @endif>
+            <button type="button" class="btn btn-ghost" wire:click="{{ $closeMethod }}">Annuler</button>
+            <button type="button" class="btn btn-primary" wire:click="{{ $confirmMethod }}"
+                @disabled($selectionCount === 0)>
                 <i class="fa-solid fa-plus mr-1"></i>
                 Ajouter
             </button>
         </div>
     </div>
-    <div class="modal-backdrop bg-black/50" wire:click="closeAddWorkstationsModal"></div>
+    <div class="modal-backdrop bg-black/50" wire:click="{{ $closeMethod }}"></div>
 </div>

@@ -90,3 +90,62 @@ legacy (Story 15.7).
 | `wpkg:cache:warmup [--all\|--workstation=H]` | Pré-remplit le cache `wpkg:packages:*` pour un poste ou tous.         |
 | `wpkg:cache:flush [--workstation=H]`         | Vide le cache pour un poste ou tous.                                 |
 | `wpkg:ini:regenerate [--all\|--workstation=H]` | Régénère le `.ini` per-poste en atomic write.                       |
+
+## UI admin (Story 15.4)
+
+L'UI admin pilote les mutations WPKG depuis 2 surfaces existantes (Décision A
+2026-05-07 — pas de routes Livewire dédiées) :
+
+- Onglet « Applications WPKG » sur la fiche parc :
+  `pages/parc/groups/[id]/index.blade.php?tab=wpkg` →
+  `pages/parc/groups/[id]/_partials/wpkg-assignment-tab.blade.php`,
+  `wpkg-bulk-category-modal.blade.php`, `wpkg-clone-modal.blade.php`.
+- Onglet « Applications WPKG » sur la fiche poste :
+  `pages/parc/machines/[id]/index.blade.php?tab=wpkg` → `_partials/wpkg-assignment-tab.blade.php`
+  + sous-onglet `_partials/wpkg-options-tab.blade.php`.
+
+Les 3 modales d'attach (apps / groupes / postes) sont mutualisées sous
+`resources/views/components/organisms/wpkg/attach-{apps,groups,workstations}-modal.blade.php`
+(Décision B). Elles sont **réutilisées** par la fiche profil
+`pages/parc-settings/profiles/index.blade.php` (test de non-régression
+`tests/Feature/AppProfile/ProfileAttachModalsRegressionTest.php`).
+
+Permission : `wpkg.assign` (existant `SambaPermission::WpkgAssign`). Lecture
+libre via `viewAny-workstationGroup` (Gate route-level), Gate method-level
+`Gate::authorize('wpkg.assign')` sur les mutations.
+
+## Events émis par les services métier (Story 15.4 / AC6)
+
+| Méthode service                                                        | Event émis                                                  |
+|------------------------------------------------------------------------|-------------------------------------------------------------|
+| `AppProfileService::addApplications($pid, $appIds)`                    | `AppProfileApplicationsChanged($pid, $appIds, 'attached')`  |
+| `AppProfileService::removeApplications($pid, $appIds)`                 | `AppProfileApplicationsChanged($pid, $appIds, 'detached')`  |
+| `AppProfileService::addWorkstationGroups($pid, $gIds)`                 | N × `AppProfileWorkstationGroupChanged($pid, $gId, 'attached')` |
+| `AppProfileService::removeWorkstationGroups($pid, $gIds)`              | N × `AppProfileWorkstationGroupChanged($pid, $gId, 'detached')` |
+| `AppProfileService::addWorkstations($pid, $wIds)`                      | N × `AppProfileWorkstationChanged($pid, $wId, 'attached')`  |
+| `AppProfileService::removeWorkstations($pid, $wIds)`                   | N × `AppProfileWorkstationChanged($pid, $wId, 'detached')`  |
+| `AppProfileService::addApplicationsToWorkstationGroup($gId, $appIds)`  | `WorkstationGroupApplicationsChanged($gId, $attached, 'attached')` (si non vide) |
+| `AppProfileService::removeApplicationsFromWorkstationGroup($gId, $aId)` | `WorkstationGroupApplicationsChanged($gId, $aIds, 'detached')` |
+| `AppProfileService::addApplicationsToWorkstation($wId, $appIds)`       | `WorkstationApplicationsChanged($wId, $attached, 'attached')` |
+| `AppProfileService::removeApplicationsFromWorkstation($wId, $appIds)`  | `WorkstationApplicationsChanged($wId, $appIds, 'detached')` |
+| `AppProfileService::cloneConfiguration($srcId, $tgtId)`                | N × `AppProfileWorkstationGroupChanged` (par profil ajouté/retiré) + jusqu'à 2 `WorkstationGroupApplicationsChanged` (1 attached + 1 detached) + insertion `wpkg_deployments` UUID |
+| `WorkstationOptionsService::update($wId, $changes)`                    | `WorkstationOptionsChanged($wId, $changedKeys)` (si keys non vides) |
+| `WorkstationOptionsService::resetToDefaults($wId)`                     | `WorkstationOptionsChanged($wId, $allLegacyKeys)` (si lignes supprimées) |
+
+**Pattern dispatch post-commit** : tous les events sont dispatchés **après**
+la fermeture de `DB::transaction(...)` — invariant AC6.3 (aucun event sur
+échec DB). Aucun dispatch depuis observers Eloquent (cohérence décision SM
+15.2 + helper `WpkgSchemaBootstrapper` qui flush les observers métier en
+testing).
+
+## Mapping legacy → reload (Story 15.4 / AC8.1)
+
+| Legacy                                                | Reload                                                                                                |
+|-------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| `sambaedu/wpkg/parc_maintenance_apps.php`             | Onglet `?tab=wpkg` sur `pages/parc/groups/[id]/index.blade.php`                                       |
+| `sambaedu/wpkg/poste_maintenance_apps.php`            | Onglet `?tab=wpkg` sur `pages/parc/machines/[id]/index.blade.php`                                     |
+| `sambaedu/wpkg/poste_maintenance_options.php` (UI)    | Sous-onglet « Options .ini » de l'onglet WPKG du poste (`_partials/wpkg-options-tab.blade.php`)       |
+| `set_entite_apps()` (`wpkg_libsql.php:1379`)          | `AppProfileService::add*` / `remove*` + dispatch event + `Log::channel('wpkg-deploy')`                |
+| `apcu_delete("wpkg_poste_*")` post-mutation           | Listener `InvalidateWorkstationPackagesCache` (câblé sur 9 events Laravel)                            |
+| Bulk catégorie legacy (manuel SQL)                    | `bulkCategory*` + Décision C (1 event pluriel `AppProfileApplicationsChanged`)                        |
+| Clone parc → parc (manuel SQL)                        | `AppProfileService::cloneConfiguration` synchrone + ligne `wpkg_deployments` UUID + diff retourné     |

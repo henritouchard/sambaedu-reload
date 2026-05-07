@@ -3,15 +3,23 @@
 use Livewire\Component;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Url;
 use App\Jobs\DispatchMachinePowerActionJob;
 use App\Services\Parc\WorkstationGroupService;
 use App\Services\Parc\MachinePowerService;
+use App\Services\AppProfile\AppProfileService;
+use App\Models\AppProfile;
+use App\Models\Application;
 use App\Models\MachinePowerActionTask;
 use App\Models\Workstation;
 use App\Models\WorkstationApplicationStatus;
 use App\Models\WorkstationGroup;
 use App\Components\Traits\WithToasts;
+use App\Wpkg\Deployment\Generators\WorkstationIniGenerator;
+use App\Wpkg\Deployment\Services\WorkstationOptionsService;
 use Carbon\Carbon;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
 
@@ -25,6 +33,26 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     public string|int $id;
 
     public string $deploymentTab = 'errors';
+
+    // Story 15.4 / Décision A 2026-05-07 — onglet de premier niveau (général | wpkg).
+    // Le sous-onglet `wpkgSubTab` bascule entre assignation et options `.ini`.
+    #[Url(as: 'tab')]
+    public string $tab = 'general';
+
+    public string $wpkgSubTab = 'assignment';
+
+    // ── Modales WPKG (assignation directe poste) ───────────────────────────
+    public bool $showAttachWpkgProfileModal = false;
+    public array $selectedWpkgProfileIdsToAdd = [];
+    public string $wpkgProfileSearch = '';
+
+    public bool $showAttachWpkgAppModal = false;
+    public array $selectedWpkgAppIdsToAdd = [];
+    public string $wpkgAppSearch = '';
+
+    // Options `.ini` per-poste — état UI lu/écrit depuis WpkgWorkstationOption.
+    /** @var array<string,bool> */
+    public array $wpkgOptionsState = [];
 
     // Pour la salle physique (unique)
     public ?int $selectedPhysicalRoomId = null;
@@ -64,6 +92,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         $this->loadMachine();
         $this->loadAvailableGroups();
         $this->initDeploymentTab();
+        $this->loadWpkgOptionsState();
 
         if (session()->has('toast')) {
             $toastData = session('toast');
@@ -474,6 +503,287 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                 break;
         }
     }
+
+    // ============================================================
+    // Story 15.4 — Onglet Applications WPKG (Décision A)
+    // ============================================================
+
+    public function setTab(string $tab): void
+    {
+        $allowed = ['general', 'wpkg'];
+        $this->tab = in_array($tab, $allowed, true) ? $tab : 'general';
+    }
+
+    public function setWpkgSubTab(string $sub): void
+    {
+        $allowed = ['assignment', 'options'];
+        $this->wpkgSubTab = in_array($sub, $allowed, true) ? $sub : 'assignment';
+    }
+
+    public function loadWpkgOptionsState(): void
+    {
+        $this->wpkgOptionsState = [];
+
+        if (! $this->workstation) {
+            return;
+        }
+
+        $overrides = $this->workstation->wpkgOptions()->pluck('option_value', 'option_key');
+
+        foreach (WorkstationIniGenerator::LEGACY_OPTIONS as $opt) {
+            $key = $opt['name'];
+            $this->wpkgOptionsState[$key] = ($overrides[$key] ?? 'false') === 'true';
+        }
+    }
+
+    /**
+     * Calcule la liste des AppProfiles attachés (directs + hérités via parcs)
+     * pour affichage badges « hérité » vs « direct ».
+     *
+     * @return array{direct: \Illuminate\Support\Collection, inherited: \Illuminate\Support\Collection}
+     */
+    public function getWpkgAttachedProfilesProperty(): array
+    {
+        if (! $this->workstation) {
+            return ['direct' => collect(), 'inherited' => collect()];
+        }
+
+        $this->workstation->loadMissing(['appProfiles', 'groups.appProfiles']);
+
+        $direct = $this->workstation->appProfiles;
+        $inherited = collect();
+
+        foreach ($this->workstation->groups as $group) {
+            foreach ($group->appProfiles as $profile) {
+                $existing = $inherited->firstWhere('id', $profile->id);
+                if ($existing === null) {
+                    $profile->_inheritedFromGroup = $group;
+                    $inherited->push($profile);
+                }
+            }
+        }
+
+        return ['direct' => $direct, 'inherited' => $inherited];
+    }
+
+    /**
+     * Apps directes au poste vs héritées (parcs).
+     *
+     * @return array{direct: \Illuminate\Support\Collection, inherited: \Illuminate\Support\Collection}
+     */
+    public function getWpkgAttachedApplicationsProperty(): array
+    {
+        if (! $this->workstation) {
+            return ['direct' => collect(), 'inherited' => collect()];
+        }
+
+        $this->workstation->loadMissing(['applications', 'groups.applications']);
+
+        $direct = $this->workstation->applications;
+        $inherited = collect();
+
+        foreach ($this->workstation->groups as $group) {
+            foreach ($group->applications as $app) {
+                if ($inherited->firstWhere('id', $app->id) === null) {
+                    $app->_inheritedFromGroup = $group;
+                    $inherited->push($app);
+                }
+            }
+        }
+
+        return ['direct' => $direct, 'inherited' => $inherited];
+    }
+
+    public function getAvailableWpkgProfilesProperty()
+    {
+        if (! $this->workstation) {
+            return collect();
+        }
+        $existing = $this->workstation->appProfiles()->pluck('app_profiles.id')->toArray();
+        // Story 15.4 / Correction post-review #2 : eager-load `applications`
+        // pour le sous-texte « N application(s) » de attach-profiles-modal
+        // (évite le N+1).
+        $query = AppProfile::query()
+            ->where('is_active', true)
+            ->whereNotIn('id', $existing)
+            ->with('applications:id');
+        if ($this->wpkgProfileSearch !== '') {
+            $query->where(function ($q) {
+                $q->where('name', 'LIKE', "%{$this->wpkgProfileSearch}%")
+                    ->orWhere('display_name', 'LIKE', "%{$this->wpkgProfileSearch}%");
+            });
+        }
+
+        return $query->orderBy('name')->limit(50)->get();
+    }
+
+    public function getAvailableWpkgApplicationsProperty()
+    {
+        if (! $this->workstation) {
+            return collect();
+        }
+        $existing = $this->workstation->applications()->pluck('applications.id')->toArray();
+        $query = Application::query()->whereNotIn('id', $existing);
+        if ($this->wpkgAppSearch !== '') {
+            $query->where(function ($q) {
+                $q->where('name', 'LIKE', "%{$this->wpkgAppSearch}%")
+                    ->orWhere('app_id', 'LIKE', "%{$this->wpkgAppSearch}%");
+            });
+        }
+
+        return $query->orderBy('name')->limit(50)->get();
+    }
+
+    // Modales — open/close
+    public function openAttachWpkgProfileModal(): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        $this->selectedWpkgProfileIdsToAdd = [];
+        $this->wpkgProfileSearch = '';
+        $this->showAttachWpkgProfileModal = true;
+    }
+
+    public function closeAttachWpkgProfileModal(): void
+    {
+        $this->showAttachWpkgProfileModal = false;
+    }
+
+    public function openAttachWpkgAppModal(): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        $this->selectedWpkgAppIdsToAdd = [];
+        $this->wpkgAppSearch = '';
+        $this->showAttachWpkgAppModal = true;
+    }
+
+    public function closeAttachWpkgAppModal(): void
+    {
+        $this->showAttachWpkgAppModal = false;
+    }
+
+    public function attachWpkgProfiles(AppProfileService $appProfileService): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+
+        if (empty($this->selectedWpkgProfileIdsToAdd)) {
+            $this->toastError('Aucun profil sélectionné');
+            return;
+        }
+
+        try {
+            foreach ($this->selectedWpkgProfileIdsToAdd as $profileId) {
+                $appProfileService->addWorkstations((int) $profileId, [$this->workstation->id]);
+            }
+            $this->toastSuccess(count($this->selectedWpkgProfileIdsToAdd).' profil(s) ajouté(s) au poste');
+            $this->closeAttachWpkgProfileModal();
+            $this->loadMachine();
+        } catch (\Exception $e) {
+            Log::error('[MachineWpkg] Erreur attach profils: '.$e->getMessage());
+            $this->toastError('Erreur lors de l\'ajout des profils');
+        }
+    }
+
+    public function detachWpkgProfile(int $profileId, AppProfileService $appProfileService): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        try {
+            $appProfileService->removeWorkstations($profileId, [$this->workstation->id]);
+            $this->toastSuccess('Profil retiré du poste');
+            $this->loadMachine();
+        } catch (\Exception $e) {
+            Log::error('[MachineWpkg] Erreur detach profil: '.$e->getMessage());
+            $this->toastError('Erreur lors du retrait du profil');
+        }
+    }
+
+    public function attachWpkgApplications(AppProfileService $appProfileService): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+
+        if (empty($this->selectedWpkgAppIdsToAdd)) {
+            $this->toastError('Aucune application sélectionnée');
+            return;
+        }
+
+        try {
+            $appProfileService->addApplicationsToWorkstation(
+                $this->workstation->id,
+                $this->selectedWpkgAppIdsToAdd,
+            );
+            $this->toastSuccess(count($this->selectedWpkgAppIdsToAdd).' application(s) ajoutée(s)');
+            $this->closeAttachWpkgAppModal();
+            $this->loadMachine();
+        } catch (\Exception $e) {
+            Log::error('[MachineWpkg] Erreur attach apps: '.$e->getMessage());
+            $this->toastError('Erreur lors de l\'ajout des applications');
+        }
+    }
+
+    public function detachWpkgApplication(int $applicationId, AppProfileService $appProfileService): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        try {
+            $appProfileService->removeApplicationsFromWorkstation(
+                $this->workstation->id,
+                [$applicationId],
+            );
+            $this->toastSuccess('Application retirée du poste');
+            $this->loadMachine();
+        } catch (\Exception $e) {
+            Log::error('[MachineWpkg] Erreur detach app: '.$e->getMessage());
+            $this->toastError('Erreur lors du retrait de l\'application');
+        }
+    }
+
+    public function toggleWpkgOption(string $key): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        if (! array_key_exists($key, $this->wpkgOptionsState)) {
+            return;
+        }
+        $this->wpkgOptionsState[$key] = ! ($this->wpkgOptionsState[$key] ?? false);
+    }
+
+    public function saveWpkgOptions(WorkstationOptionsService $service): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        try {
+            $changed = $service->update($this->workstation->id, $this->wpkgOptionsState);
+            $count = count($changed);
+            $this->loadWpkgOptionsState();
+            if ($count === 0) {
+                $this->toast('info', 'Options WPKG', 'Aucune modification à enregistrer.');
+                return;
+            }
+            $this->toastSuccess("Options WPKG mises à jour ({$count} modification(s))");
+        } catch (\Throwable $e) {
+            Log::error('[MachineWpkg] Erreur save options: '.$e->getMessage());
+            $this->toastError($e->getMessage());
+        }
+    }
+
+    public function resetWpkgOptions(WorkstationOptionsService $service): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        try {
+            $service->resetToDefaults($this->workstation->id);
+            $this->loadWpkgOptionsState();
+            $this->toastSuccess('Options WPKG réinitialisées aux défauts');
+        } catch (\Throwable $e) {
+            Log::error('[MachineWpkg] Erreur reset options: '.$e->getMessage());
+            $this->toastError('Erreur lors de la réinitialisation');
+        }
+    }
+
+    private function ensureWpkgAssignAuthorized(): void
+    {
+        try {
+            Gate::authorize('wpkg.assign');
+        } catch (AuthorizationException $e) {
+            $this->toastError('Vous n\'avez pas la permission de modifier les assignations WPKG.');
+            throw $e;
+        }
+    }
 };
 ?>
 
@@ -662,6 +972,27 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                 </div>
             </div>
 
+            {{-- Story 15.4 / Décision A — Onglets de premier niveau (général | wpkg).
+                 Accès deep-link via ?tab=wpkg. La card header reste visible
+                 dans les 2 modes (identité + statut sont communs). --}}
+            <div role="tablist" class="tabs tabs-boxed bg-base-200 w-fit">
+                <button type="button" role="tab"
+                    class="tab {{ $tab === 'general' ? 'tab-active' : '' }}"
+                    wire:click="setTab('general')">
+                    <i class="fa-solid fa-circle-info mr-2"></i>
+                    Général
+                </button>
+                <button type="button" role="tab"
+                    class="tab {{ $tab === 'wpkg' ? 'tab-active' : '' }}"
+                    wire:click="setTab('wpkg')">
+                    <i class="fa-solid fa-cube mr-2"></i>
+                    Applications WPKG
+                </button>
+            </div>
+
+            @if ($tab === 'wpkg')
+                @include('pages.parc.machines.[id]._partials.wpkg-assignment-tab')
+            @else
             {{-- Card groupes logiques --}}
             <div class="card bg-base-100 shadow-sm border border-base-200">
                 <div class="card-body">
@@ -847,8 +1178,36 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                     </div>
                 </div>
             @endif
+            @endif {{-- /tab === wpkg --}}
 
         </div>{{-- /space-y-6 --}}
+
+        {{-- Story 15.4 — Modales WPKG (toujours rendues si flag actif) --}}
+        @if ($showAttachWpkgProfileModal)
+            <x-organisms.wpkg.attach-profiles-modal
+                title="Ajouter des profils applicatifs au poste"
+                :items="$this->availableWpkgProfiles"
+                searchProperty="wpkgProfileSearch"
+                selectionProperty="selectedWpkgProfileIdsToAdd"
+                :searchValue="$wpkgProfileSearch"
+                closeMethod="closeAttachWpkgProfileModal"
+                confirmMethod="attachWpkgProfiles"
+                :selectionCount="count($selectedWpkgProfileIdsToAdd)"
+                keyPrefix="ws-wpkg-profile" />
+        @endif
+        @if ($showAttachWpkgAppModal)
+            <x-organisms.wpkg.attach-apps-modal
+                title="Ajouter des applications directement au poste"
+                :items="$this->availableWpkgApplications"
+                searchProperty="wpkgAppSearch"
+                selectionProperty="selectedWpkgAppIdsToAdd"
+                :searchValue="$wpkgAppSearch"
+                closeMethod="closeAttachWpkgAppModal"
+                confirmMethod="attachWpkgApplications"
+                :selectionCount="count($selectedWpkgAppIdsToAdd)"
+                keyPrefix="ws-wpkg-app"
+                context="workstation" />
+        @endif
 
         <!-- Drawer pour sélection de salle physique (unique) -->
         <livewire:components::organisms.workstation-group-selector drawerId="assign-physical-room" :unique="true"

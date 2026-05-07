@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Wpkg\Deployment\Events\AppProfileApplicationChanged;
+use App\Wpkg\Deployment\Events\AppProfileApplicationsChanged;
 use App\Wpkg\Deployment\Events\AppProfileWorkstationChanged;
 use App\Wpkg\Deployment\Events\AppProfileWorkstationGroupChanged;
 use App\Wpkg\Deployment\Events\WorkstationActivated;
+use App\Wpkg\Deployment\Events\WorkstationApplicationsChanged;
 use App\Wpkg\Deployment\Events\WorkstationArchived;
+use App\Wpkg\Deployment\Events\WorkstationGroupApplicationsChanged;
 use App\Wpkg\Deployment\Events\WorkstationGroupMembershipChanged;
 use App\Wpkg\Deployment\Events\WorkstationOptionsChanged;
 use App\Wpkg\Deployment\Listeners\InvalidateWorkstationPackagesCache;
@@ -109,6 +112,11 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
         Event::listen(WorkstationGroupMembershipChanged::class, $cacheInvalidator);
         Event::listen(WorkstationActivated::class, $cacheInvalidator);
         Event::listen(WorkstationArchived::class, $cacheInvalidator);
+
+        // Story 15.4 / AC4.0 — events additifs.
+        Event::listen(AppProfileApplicationsChanged::class, $cacheInvalidator);
+        Event::listen(WorkstationGroupApplicationsChanged::class, $cacheInvalidator);
+        Event::listen(WorkstationApplicationsChanged::class, $cacheInvalidator);
 
         Event::listen(
             WorkstationOptionsChanged::class,

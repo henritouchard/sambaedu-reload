@@ -8,10 +8,13 @@ use App\Models\AppProfile;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Wpkg\Deployment\Events\AppProfileApplicationChanged;
+use App\Wpkg\Deployment\Events\AppProfileApplicationsChanged;
 use App\Wpkg\Deployment\Events\AppProfileWorkstationChanged;
 use App\Wpkg\Deployment\Events\AppProfileWorkstationGroupChanged;
 use App\Wpkg\Deployment\Events\WorkstationActivated;
+use App\Wpkg\Deployment\Events\WorkstationApplicationsChanged;
 use App\Wpkg\Deployment\Events\WorkstationArchived;
+use App\Wpkg\Deployment\Events\WorkstationGroupApplicationsChanged;
 use App\Wpkg\Deployment\Events\WorkstationGroupMembershipChanged;
 use App\Wpkg\Deployment\Services\WorkstationPackagesResolver;
 use Illuminate\Support\Facades\Cache;
@@ -40,6 +43,13 @@ final class InvalidateWorkstationPackagesCache
                 => $this->hostnamesForWorkstationGroup($event->workstationGroupId),
             $event instanceof AppProfileApplicationChanged
                 => $this->hostnamesForAppProfile($event->appProfileId),
+            // Story 15.4 / AC4.0 — variantes pluriel + assignations directes parc/poste.
+            $event instanceof AppProfileApplicationsChanged
+                => $this->hostnamesForAppProfile($event->appProfileId),
+            $event instanceof WorkstationGroupApplicationsChanged
+                => $this->hostnamesForWorkstationGroup($event->workstationGroupId),
+            $event instanceof WorkstationApplicationsChanged
+                => $this->hostnamesForWorkstation($event->workstationId),
             default => [],
         };
 

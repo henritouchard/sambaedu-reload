@@ -366,6 +366,122 @@ curl -s "<http://se4fs/wpkg/profiles.xml?poste=pc-cdi-07>"
 
 ---
 
+## Section 4 — UI admin assignation apps WPKG (Story 15.4)
+
+> **Convention 2026-05-07** : numérotation **stable et append-only**. Les sections
+> sont conservées même si une section précédente est retirée (cf. Section 3 drift
+> `SyncAllFromAdJob` 15.3 supprimée 2026-05-08 — numéro non réutilisé).
+> Les 5 scénarios 4.1 → 4.5 ne doivent plus jamais être renumérotés.
+
+### Pré-requis Section 4
+
+- VM avec branche `wpkg` checkée (la VM dev tournait sur `main` au moment de la livraison
+  initiale — voir Dev Agent Record 15.4 pour le statut).
+- User admin avec permission Spatie `wpkg.assign` (`SambaPermission::WpkgAssign`).
+- Au moins 1 `WorkstationGroup` actif et 1 `Workstation` rattachée.
+- Au moins 2 `AppProfile` actifs et 3 `Application` (idéalement avec `category` non null).
+- Endpoint `/wpkg/profiles.xml?poste=<HOSTNAME>` joignable (cf. Section 2 — pré-requis).
+
+### Scénario 4.1 — Vue parc / ajout AppProfile → cache invalidé sans flush manuel
+
+**Objectif** : vérifier que l'assignation d'un profil à un parc invalide
+automatiquement le cache `wpkg:packages:{hostname}` pour tous les postes du
+parc, sans intervention `php artisan wpkg:cache:flush`.
+
+1. Naviguer vers `/app/parc/groups/{id}?tab=wpkg` → onglet « Applications WPKG ».
+2. Sur le sous-onglet par défaut « Assignations », cliquer « Ajouter » sur la card
+   « Profils applicatifs ».
+3. Cocher 1 profil non encore rattaché, cliquer « Ajouter ».
+4. Toast vert : « 1 profil(s) ajouté(s) au parc ».
+5. Sur la VM, `tail` sur les logs `wpkg-deploy` :
+   `tail -f storage/logs/wpkg-deploy/wpkg-deploy-*.log` — doit contenir
+   `[InvalidateWorkstationPackagesCache] cache invalidé` avec le bon `event`.
+6. `curl http://<vm>/wpkg/profiles.xml?poste=<hostname>` (un poste du parc) :
+   le XML doit lister les apps du nouveau profil (premier appel = MISS cache,
+   reflète la modif).
+
+### Scénario 4.2 — Vue poste / override profil direct
+
+**Objectif** : un profil peut être à la fois hérité (via parc) ET direct sur
+le poste — la dédup UI affiche les deux badges, le cache est invalidé.
+
+1. Pour un poste membre d'un parc auquel un profil P est déjà rattaché, naviguer
+   `/app/parc/machines/{id}?tab=wpkg`.
+2. P apparaît avec badge « hérité (via parc XYZ) ».
+3. Cliquer « Ajouter directement » sur la card profils → cocher P → confirmer.
+4. P apparaît désormais 2 fois dans la liste : une ligne « hérité » + une ligne
+   « direct » avec bouton de retrait.
+5. Logs `wpkg-deploy` : 1 ligne d'invalidation pour le hostname du poste.
+6. `curl /wpkg/profiles.xml?poste=<hostname>` : pas de doublon dans le XML
+   (l'union métier dédupplique côté `WorkstationPackagesResolver`).
+
+### Scénario 4.3 — Bulk catégorie → 1 event pluriel + cache invalidé
+
+**Objectif** : valider la Décision C 2026-05-07 (1 event pluriel
+`AppProfileApplicationsChanged` plutôt que N events).
+
+1. Sur `/app/parc/groups/{id}?tab=wpkg`, cliquer le bouton « Bulk catégorie ».
+2. Sélectionner une catégorie (ex. `browsers`) avec ≥ 3 apps.
+3. Choisir « Créer un nouveau profil » — laisser le nom par défaut.
+4. Confirmer.
+5. Toast vert : « N application(s) de la catégorie "browsers" assignées au profil ».
+6. Logs `wpkg-deploy` :
+   - 1 ligne `Bulk catégorie` avec `apps_count: N`, `target_type: group`, `profile_id`.
+   - **1 seule** ligne `[InvalidateWorkstationPackagesCache]` avec
+     `event: App\\Wpkg\\Deployment\\Events\\AppProfileApplicationsChanged`
+     (pas N lignes).
+7. Vérifier en BDD : `select count(*) from app_profile_application where app_profile_id = <new>` = N.
+
+### Scénario 4.4 — Clone parc → parc → diff appliqué + ligne `wpkg_deployments`
+
+**Objectif** : valider l'AC4 — clone synchrone, transaction, ligne
+`wpkg_deployments` UUID, events ciblés.
+
+1. Sur `/app/parc/groups/{src}?tab=wpkg`, cliquer « Cloner cette configuration vers... ».
+2. Dans la modale, sélectionner un parc cible {tgt}.
+3. La preview affiche le diff (Ajouts vs Retraits, profils + apps directes).
+4. Confirmer (wire:confirm).
+5. Toast vert récapitule le diff.
+6. En BDD :
+   `select id, status, target_scope, summary from wpkg_deployments order by created_at desc limit 1`
+   doit retourner 1 ligne avec :
+   - `id` = UUID v4
+   - `status` = `completed`
+   - `target_scope` = `{"workstation_group_ids":[<tgt>]}`
+   - `summary` JSON avec `source_group_id` et les arrays `added`/`removed`.
+7. Logs `wpkg-deploy` : 2 lignes (« Clone configuration parc — début » + « terminé »)
+   partageant le même `deployment_id`.
+8. Sur la fiche du parc cible, l'onglet WPKG reflète exactement la config source.
+
+### Scénario 4.5 — Modif option `.ini` → fichier régénéré sur disque
+
+**Objectif** : valider l'AC5 — toggle option → event `WorkstationOptionsChanged`
+→ listener regen `.ini` via `WorkstationIniGenerator` + `AtomicFileWriter`.
+
+1. Sur `/app/parc/machines/{id}?tab=wpkg`, basculer le sous-onglet « Options .ini ».
+2. Noter mtime initial du fichier `.ini` :
+   `ls -la $(php artisan tinker --execute='echo config("sambaedu.wpkg.ini_path");')/<HOSTNAME>.ini`.
+3. Toggler l'option `debug` (off → on).
+4. Cliquer « Enregistrer ».
+5. Toast vert : « Options WPKG mises à jour (1 modification) ».
+6. Re-vérifier mtime : il doit avoir changé.
+7. `cat <ini_path>/<HOSTNAME>.ini` : la ligne doit contenir
+   `debug=true ' Permet d'avoir...` (CRLF strict, ordre des 8 options stable).
+8. Sur la BDD : `select * from wpkg_workstation_options where workstation_id = <id>`
+   contient une ligne `option_key=debug, option_value=true`.
+9. Toggle débugger off → enregistrer → la ligne BDD est **supprimée** (parité legacy
+   « ne stocker que les overrides »), le `.ini` repasse à `debug=false ' …`.
+10. Test « Réinitialiser aux défauts » : toutes les lignes BDD du poste sont
+    supprimées en une fois, le `.ini` reflète tous les défauts.
+
+### Checklist rapide Section 4 (relecteur)
+
+- [ ] Scénario 4.1 — Vue parc / ajout profil → invalidation auto cache hostname
+- [ ] Scénario 4.2 — Vue poste / héritage + override coexistent (badges UI)
+- [ ] Scénario 4.3 — Bulk catégorie → 1 event pluriel (pas N)
+- [ ] Scénario 4.4 — Clone parc → ligne `wpkg_deployments` UUID + diff
+- [ ] Scénario 4.5 — Toggle option → mtime `.ini` change + format CRLF stable
+
 ---
 
 ## Checklist rapide (relecteur)
@@ -380,3 +496,4 @@ curl -s "<http://se4fs/wpkg/profiles.xml?poste=pc-cdi-07>"
 - [ ] Scénario 2.3 — union poste/parc/dépendances dans `profiles.xml`
 - [ ] Scénario 2.4 — invalidation cache via event → pas de stale
 - [ ] Scénario 2.5 — `WorkstationOptionsChanged` → `.ini` régénéré (CRLF)
+- [ ] Scénarios 4.1 → 4.5 — UI admin assignation apps WPKG (Story 15.4)

@@ -2,15 +2,21 @@
 
 use Livewire\Component;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
 use App\Services\Parc\WorkstationGroupService;
 use App\Services\Parc\WorkstationGroupScheduleService;
 use App\Services\Parc\MachinePowerService;
+use App\Services\AppProfile\AppProfileService;
+use App\Models\AppProfile;
+use App\Models\Application;
 use App\Models\MachinePowerActionTask;
+use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Models\WorkstationGroupSchedule;
 use App\Components\Traits\WithToasts;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
@@ -60,6 +66,32 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     public bool $batchSummaryVisible = false;
     public bool $batchTimeoutFired = false;
     public bool $showWallpaperModal = false;
+
+    // ── Story 15.4 / Décision A — Onglet « Applications WPKG » ─────────────
+    #[Url(as: 'tab')]
+    public string $tab = 'general';
+
+    public bool $showAttachWpkgProfileModal = false;
+    public array $selectedWpkgProfileIdsToAdd = [];
+    public string $wpkgProfileSearch = '';
+
+    public bool $showAttachWpkgAppModal = false;
+    public array $selectedWpkgAppIdsToAdd = [];
+    public string $wpkgAppSearch = '';
+
+    public bool $showCloneModal = false;
+    public ?int $cloneTargetGroupId = null;
+    public string $cloneTargetSearch = '';
+    /** @var array{profiles: array{added: list<int>, removed: list<int>}, applications: array{added: list<int>, removed: list<int>}}|null */
+    public ?array $clonePreview = null;
+
+    public bool $showBulkCategoryModal = false;
+    public string $bulkCategory = '';
+    public string $bulkProfileMode = 'create'; // 'create' | 'existing'
+    public ?int $bulkExistingProfileId = null;
+    public string $bulkNewProfileName = '';
+    /** @var list<int> */
+    public array $bulkPreviewAppIds = [];
 
     // Mémoïsation interne des tasks du batch courant — partagée entre les deux
     // propriétés computed (batchSummary + machineActiveTasksById) pour éviter
@@ -1108,6 +1140,383 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             $this->toastError($e->getMessage());
         }
     }
+
+    // ============================================================
+    // Story 15.4 — Onglet Applications WPKG (Décision A)
+    // ============================================================
+
+    public function setTab(string $tab): void
+    {
+        $allowed = ['general', 'wpkg'];
+        $this->tab = in_array($tab, $allowed, true) ? $tab : 'general';
+    }
+
+    public function getWpkgAttachedProfilesProperty()
+    {
+        if (! $this->group) {
+            return collect();
+        }
+        return $this->group->appProfiles()->orderBy('name')->get();
+    }
+
+    public function getWpkgAttachedApplicationsProperty()
+    {
+        if (! $this->group) {
+            return collect();
+        }
+        return $this->group->applications()->orderBy('name')->get();
+    }
+
+    public function getAvailableWpkgProfilesProperty()
+    {
+        if (! $this->group) {
+            return collect();
+        }
+        $existing = $this->group->appProfiles()->pluck('app_profiles.id')->toArray();
+        // Story 15.4 / Correction post-review #2 : eager-load `applications`
+        // pour le sous-texte « N application(s) » de attach-profiles-modal
+        // (évite le N+1).
+        $query = AppProfile::query()
+            ->where('is_active', true)
+            ->whereNotIn('id', $existing)
+            ->with('applications:id');
+        if ($this->wpkgProfileSearch !== '') {
+            $query->where(function ($q) {
+                $q->where('name', 'LIKE', "%{$this->wpkgProfileSearch}%")
+                    ->orWhere('display_name', 'LIKE', "%{$this->wpkgProfileSearch}%");
+            });
+        }
+
+        return $query->orderBy('name')->limit(50)->get();
+    }
+
+    public function getAvailableWpkgApplicationsProperty()
+    {
+        if (! $this->group) {
+            return collect();
+        }
+        $existing = $this->group->applications()->pluck('applications.id')->toArray();
+        $query = Application::query()->whereNotIn('id', $existing);
+        if ($this->wpkgAppSearch !== '') {
+            $query->where(function ($q) {
+                $q->where('name', 'LIKE', "%{$this->wpkgAppSearch}%")
+                    ->orWhere('app_id', 'LIKE', "%{$this->wpkgAppSearch}%");
+            });
+        }
+
+        return $query->orderBy('name')->limit(50)->get();
+    }
+
+    public function getAvailableCloneTargetsProperty()
+    {
+        if (! $this->group) {
+            return collect();
+        }
+        $query = WorkstationGroup::query()
+            ->where('id', '!=', $this->group->id)
+            ->where('is_active', true)
+            ->orderBy('name');
+        if ($this->cloneTargetSearch !== '') {
+            $query->where('name', 'LIKE', "%{$this->cloneTargetSearch}%");
+        }
+
+        return $query->limit(50)->get();
+    }
+
+    public function getWpkgCategoriesProperty(AppProfileService $appProfileService)
+    {
+        return $appProfileService->getCategories();
+    }
+
+    /**
+     * Story 15.4 / Correction post-review #M1 — Liste des AppProfile actifs
+     * pour le sélecteur « Profil existant » de la modale bulk catégorie.
+     * Extraction de la query Eloquent inline qui était dans la vue
+     * `_partials/wpkg-bulk-category-modal.blade.php` (anti-pattern : query
+     * exécutée à chaque render Livewire).
+     */
+    public function getBulkProfileOptionsProperty(): Collection
+    {
+        return AppProfile::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'display_name']);
+    }
+
+    // Modales — open/close
+
+    public function openAttachWpkgProfileModal(): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        $this->selectedWpkgProfileIdsToAdd = [];
+        $this->wpkgProfileSearch = '';
+        $this->showAttachWpkgProfileModal = true;
+    }
+
+    public function closeAttachWpkgProfileModal(): void
+    {
+        $this->showAttachWpkgProfileModal = false;
+    }
+
+    public function openAttachWpkgAppModal(): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        $this->selectedWpkgAppIdsToAdd = [];
+        $this->wpkgAppSearch = '';
+        $this->showAttachWpkgAppModal = true;
+    }
+
+    public function closeAttachWpkgAppModal(): void
+    {
+        $this->showAttachWpkgAppModal = false;
+    }
+
+    // Mutations attach/detach
+
+    public function attachWpkgProfiles(AppProfileService $appProfileService): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        if (empty($this->selectedWpkgProfileIdsToAdd)) {
+            $this->toastError('Aucun profil sélectionné');
+            return;
+        }
+        try {
+            // Une mutation par profil pour rester aligné avec la signature
+            // historique de `AppProfileService::addWorkstationGroups`
+            // (profileId, [groupIds]).
+            foreach ($this->selectedWpkgProfileIdsToAdd as $profileId) {
+                $appProfileService->addWorkstationGroups((int) $profileId, [$this->group->id]);
+            }
+            $this->toastSuccess(count($this->selectedWpkgProfileIdsToAdd).' profil(s) ajouté(s) au parc');
+            $this->closeAttachWpkgProfileModal();
+            $this->loadGroup();
+        } catch (\Throwable $e) {
+            Log::error('[GroupWpkg] Erreur attach profils: '.$e->getMessage());
+            $this->toastError('Erreur lors de l\'ajout des profils');
+        }
+    }
+
+    public function detachWpkgProfile(int $profileId, AppProfileService $appProfileService): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        try {
+            $appProfileService->removeWorkstationGroups($profileId, [$this->group->id]);
+            $this->toastSuccess('Profil retiré du parc');
+            $this->loadGroup();
+        } catch (\Throwable $e) {
+            Log::error('[GroupWpkg] Erreur detach profil: '.$e->getMessage());
+            $this->toastError('Erreur lors du retrait');
+        }
+    }
+
+    public function attachWpkgApplications(AppProfileService $appProfileService): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        if (empty($this->selectedWpkgAppIdsToAdd)) {
+            $this->toastError('Aucune application sélectionnée');
+            return;
+        }
+        try {
+            $appProfileService->addApplicationsToWorkstationGroup(
+                $this->group->id,
+                $this->selectedWpkgAppIdsToAdd,
+            );
+            $this->toastSuccess(count($this->selectedWpkgAppIdsToAdd).' application(s) ajoutée(s)');
+            $this->closeAttachWpkgAppModal();
+            $this->loadGroup();
+        } catch (\Throwable $e) {
+            Log::error('[GroupWpkg] Erreur attach apps: '.$e->getMessage());
+            $this->toastError('Erreur lors de l\'ajout');
+        }
+    }
+
+    public function detachWpkgApplication(int $applicationId, AppProfileService $appProfileService): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        try {
+            $appProfileService->removeApplicationsFromWorkstationGroup(
+                $this->group->id,
+                [$applicationId],
+            );
+            $this->toastSuccess('Application retirée du parc');
+            $this->loadGroup();
+        } catch (\Throwable $e) {
+            Log::error('[GroupWpkg] Erreur detach app: '.$e->getMessage());
+            $this->toastError('Erreur lors du retrait');
+        }
+    }
+
+    // Bulk catégorie
+
+    public function openBulkCategoryModal(): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        $this->bulkCategory = '';
+        $this->bulkProfileMode = 'create';
+        $this->bulkExistingProfileId = null;
+        $this->bulkNewProfileName = '';
+        $this->bulkPreviewAppIds = [];
+        $this->showBulkCategoryModal = true;
+    }
+
+    public function closeBulkCategoryModal(): void
+    {
+        $this->showBulkCategoryModal = false;
+    }
+
+    public function previewBulkCategory(): void
+    {
+        if ($this->bulkCategory === '') {
+            $this->bulkPreviewAppIds = [];
+            return;
+        }
+        $this->bulkPreviewAppIds = Application::query()
+            ->where('category', $this->bulkCategory)
+            ->orderBy('app_id')
+            ->pluck('id')
+            ->map('intval')
+            ->all();
+    }
+
+    public function executeBulkCategory(AppProfileService $appProfileService): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+
+        if ($this->bulkCategory === '' || $this->bulkPreviewAppIds === []) {
+            $this->toastError('Sélectionnez une catégorie avec au moins une application.');
+            return;
+        }
+
+        try {
+            // Vérifs hors transaction (early-return propre, pas de rollback inutile).
+            if ($this->bulkProfileMode === 'existing') {
+                if (! $this->bulkExistingProfileId) {
+                    $this->toastError('Sélectionnez un profil existant.');
+                    return;
+                }
+                if (! AppProfile::whereKey($this->bulkExistingProfileId)->exists()) {
+                    $this->toastError('Profil introuvable.');
+                    return;
+                }
+            }
+
+            // Story 15.4 / Correction post-review #M2 : atomicité bulk catégorie.
+            // L'enchaînement createProfile (ou find) + addApplications + addWorkstationGroups
+            // doit être atomique : en cas d'échec d'une mutation, rien ne doit être persisté
+            // (sinon état corrompu : profil créé sans rattachement, ou apps attachées sans
+            // lien parc).
+            $profile = DB::transaction(function () use ($appProfileService) {
+                if ($this->bulkProfileMode === 'create') {
+                    $name = trim($this->bulkNewProfileName) ?: ('Categorie-'.$this->bulkCategory);
+                    $profile = $appProfileService->createProfile([
+                        'name' => $name,
+                        'display_name' => $name,
+                        'description' => "Profil créé automatiquement (bulk catégorie {$this->bulkCategory})",
+                        'is_active' => true,
+                    ]);
+                } else {
+                    $profile = AppProfile::find($this->bulkExistingProfileId);
+                }
+
+                $appProfileService->addApplications($profile->id, $this->bulkPreviewAppIds);
+                $appProfileService->addWorkstationGroups($profile->id, [$this->group->id]);
+
+                return $profile;
+            });
+
+            Log::channel('wpkg-deploy')->info('Bulk catégorie', [
+                'category' => $this->bulkCategory,
+                'target_type' => 'group',
+                'target_id' => $this->group->id,
+                'apps_count' => count($this->bulkPreviewAppIds),
+                'profile_id' => $profile->id,
+            ]);
+
+            $this->toastSuccess(sprintf(
+                '%d application(s) de la catégorie "%s" assignées au profil "%s".',
+                count($this->bulkPreviewAppIds),
+                $this->bulkCategory,
+                $profile->display_name ?? $profile->name,
+            ));
+            $this->closeBulkCategoryModal();
+            $this->loadGroup();
+        } catch (\Throwable $e) {
+            Log::error('[GroupWpkg] Erreur bulk catégorie: '.$e->getMessage());
+            $this->toastError('Erreur lors de l\'opération bulk : '.$e->getMessage());
+        }
+    }
+
+    // Clone parc → parc
+
+    public function openCloneModal(): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        $this->cloneTargetGroupId = null;
+        $this->cloneTargetSearch = '';
+        $this->clonePreview = null;
+        $this->showCloneModal = true;
+    }
+
+    public function closeCloneModal(): void
+    {
+        $this->showCloneModal = false;
+    }
+
+    /**
+     * Story 15.4 — Preview du diff clone parc → parc.
+     *
+     * @note Race condition (Correction post-review #6) : le diff affiché ici
+     *       est indicatif. Entre cette preview et l'execute (executeClone()),
+     *       un autre admin peut modifier source ou cible. L'execute recalcule
+     *       systématiquement le diff depuis la BDD ; le toast de confirmation
+     *       affiche le delta réel (potentiellement différent du preview).
+     *       Mitigation hash de config hors scope MVP — voir review 15.4 #6.
+     */
+    public function previewCloneTo(int $targetGroupId, AppProfileService $appProfileService): void
+    {
+        $this->cloneTargetGroupId = $targetGroupId;
+        $this->clonePreview = $appProfileService->previewCloneConfiguration(
+            $this->group->id,
+            $targetGroupId,
+        );
+    }
+
+    public function executeClone(AppProfileService $appProfileService): void
+    {
+        $this->ensureWpkgAssignAuthorized();
+        if (! $this->cloneTargetGroupId) {
+            $this->toastError('Sélectionnez un parc cible.');
+            return;
+        }
+        try {
+            $result = $appProfileService->cloneConfiguration(
+                $this->group->id,
+                $this->cloneTargetGroupId,
+            );
+            $this->toastSuccess(sprintf(
+                'Configuration clonée : %d profil(s) ajouté(s), %d retiré(s) ; %d app(s) ajoutée(s), %d retirée(s).',
+                count($result['profiles']['added']),
+                count($result['profiles']['removed']),
+                count($result['applications']['added']),
+                count($result['applications']['removed']),
+            ));
+            $this->closeCloneModal();
+            $this->loadGroup();
+        } catch (\Throwable $e) {
+            Log::error('[GroupWpkg] Erreur clone: '.$e->getMessage());
+            $this->toastError('Erreur lors du clone : '.$e->getMessage());
+        }
+    }
+
+    private function ensureWpkgAssignAuthorized(): void
+    {
+        try {
+            Gate::authorize('wpkg.assign');
+        } catch (AuthorizationException $e) {
+            $this->toastError('Vous n\'avez pas la permission de modifier les assignations WPKG.');
+            throw $e;
+        }
+    }
 };
 ?>
 
@@ -1345,10 +1754,65 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                 </div>
             </div>
 
-            @include('pages.parc.groups.[id]._partials.batch-summary')
-            @include('pages.parc.groups.[id]._partials.machines-list')
-            @include('pages.parc.groups.[id]._partials.schedules-panel')
-            @include('pages.parc.groups.[id]._partials.wallpaper-modal')
+            {{-- Story 15.4 / Décision A — Onglets de premier niveau (général | wpkg). --}}
+            <div role="tablist" class="tabs tabs-boxed bg-base-200 w-fit">
+                <button type="button" role="tab"
+                    class="tab {{ $tab === 'general' ? 'tab-active' : '' }}"
+                    wire:click="setTab('general')">
+                    <i class="fa-solid fa-circle-info mr-2"></i>
+                    Général
+                </button>
+                <button type="button" role="tab"
+                    class="tab {{ $tab === 'wpkg' ? 'tab-active' : '' }}"
+                    wire:click="setTab('wpkg')">
+                    <i class="fa-solid fa-cube mr-2"></i>
+                    Applications WPKG
+                </button>
+            </div>
+
+            @if ($tab === 'wpkg')
+                @include('pages.parc.groups.[id]._partials.wpkg-assignment-tab')
+
+                @if ($showAttachWpkgProfileModal)
+                    <x-organisms.wpkg.attach-profiles-modal
+                        title="Ajouter des profils applicatifs au parc"
+                        :items="$this->availableWpkgProfiles"
+                        searchProperty="wpkgProfileSearch"
+                        selectionProperty="selectedWpkgProfileIdsToAdd"
+                        :searchValue="$wpkgProfileSearch"
+                        closeMethod="closeAttachWpkgProfileModal"
+                        confirmMethod="attachWpkgProfiles"
+                        :selectionCount="count($selectedWpkgProfileIdsToAdd)"
+                        keyPrefix="grp-wpkg-profile" />
+                @endif
+
+                @if ($showAttachWpkgAppModal)
+                    <x-organisms.wpkg.attach-apps-modal
+                        title="Ajouter des applications directement au parc"
+                        :items="$this->availableWpkgApplications"
+                        searchProperty="wpkgAppSearch"
+                        selectionProperty="selectedWpkgAppIdsToAdd"
+                        :searchValue="$wpkgAppSearch"
+                        closeMethod="closeAttachWpkgAppModal"
+                        confirmMethod="attachWpkgApplications"
+                        :selectionCount="count($selectedWpkgAppIdsToAdd)"
+                        keyPrefix="grp-wpkg-app"
+                        context="group" />
+                @endif
+
+                @if ($showBulkCategoryModal)
+                    @include('pages.parc.groups.[id]._partials.wpkg-bulk-category-modal')
+                @endif
+
+                @if ($showCloneModal)
+                    @include('pages.parc.groups.[id]._partials.wpkg-clone-modal')
+                @endif
+            @else
+                @include('pages.parc.groups.[id]._partials.batch-summary')
+                @include('pages.parc.groups.[id]._partials.machines-list')
+                @include('pages.parc.groups.[id]._partials.schedules-panel')
+                @include('pages.parc.groups.[id]._partials.wallpaper-modal')
+            @endif
     </div @else <div class="card bg-base-100 shadow-sm">
         <div class="card-body flex flex-col items-center justify-center py-16">
             <div class="text-6xl mb-6 opacity-20">

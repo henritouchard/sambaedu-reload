@@ -544,19 +544,48 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
             </div>
         </div>
 
-        <!-- Modal ajout applications -->
+        {{-- Story 15.4 / Décision B 2026-05-07 — Modales partagées sous
+             `components/organisms/wpkg/`. Comportement strictement équivalent
+             aux anciens partials @include (test de non-régression
+             ProfileAttachModalsRegressionTest). --}}
         @if ($showAddAppsModal)
-            @include('pages.parc-settings.profiles._partials.add-apps-modal')
+            <x-organisms.wpkg.attach-apps-modal
+                title="Ajouter des applications au profil"
+                :items="$this->availableApplications"
+                searchProperty="addAppSearch"
+                selectionProperty="selectedAppsToAdd"
+                :searchValue="$addAppSearch"
+                closeMethod="closeAddAppsModal"
+                confirmMethod="addSelectedApps"
+                :selectionCount="count($selectedAppsToAdd)"
+                keyPrefix="add-app"
+                context="profile" />
         @endif
 
-        <!-- Modal ajout groupes -->
         @if ($showAddGroupsModal)
-            @include('pages.parc-settings.profiles._partials.add-groups-modal')
+            <x-organisms.wpkg.attach-groups-modal
+                title="Ajouter des groupes au profil"
+                :items="$this->availableGroups"
+                searchProperty="addGroupSearch"
+                selectionProperty="selectedGroupsToAdd"
+                :searchValue="$addGroupSearch"
+                closeMethod="closeAddGroupsModal"
+                confirmMethod="addSelectedGroups"
+                :selectionCount="count($selectedGroupsToAdd)"
+                keyPrefix="add-group" />
         @endif
 
-        <!-- Modal ajout postes -->
         @if ($showAddWorkstationsModal)
-            @include('pages.parc-settings.profiles._partials.add-workstations-modal')
+            <x-organisms.wpkg.attach-workstations-modal
+                title="Ajouter des postes au profil"
+                :items="$this->availableWorkstations"
+                searchProperty="addWorkstationSearch"
+                selectionProperty="selectedWorkstationsToAdd"
+                :searchValue="$addWorkstationSearch"
+                closeMethod="closeAddWorkstationsModal"
+                confirmMethod="addSelectedWorkstations"
+                :selectionCount="count($selectedWorkstationsToAdd)"
+                keyPrefix="add-ws" />
         @endif
     @else
         <div class="alert alert-error">
