@@ -10,6 +10,7 @@ use App\Services\Permissions\RightsMigrationService;
 use App\Facades\SEConfig;
 use App\Repositories\EstablishmentRepository;
 use App\Components\Traits\WithToasts;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 
 new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
@@ -297,6 +298,8 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
 
     private function executeWpkgRemediationStep(bool $dryRun): void
     {
+        Gate::authorize('server.admin');
+
         if ($this->isRunning) {
             $this->toastWarning('Une synchronisation est déjà en cours');
             return;

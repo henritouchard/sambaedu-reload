@@ -727,6 +727,12 @@ class SyncAllFromAdJob implements ShouldQueue
             ->get()
             ->keyBy(fn ($g) => strtolower($g->name));
 
+        $existingLinks = DB::table('app_profile_workstation_group')
+            ->select('app_profile_id', 'workstation_group_id')
+            ->get()
+            ->groupBy('app_profile_id')
+            ->map(fn ($rows) => array_flip($rows->pluck('workstation_group_id')->map(fn ($id) => (int) $id)->all()));
+
         foreach ($profiles as $profile) {
             $nameLower = strtolower($profile->name);
 
@@ -735,8 +741,9 @@ class SyncAllFromAdJob implements ShouldQueue
             }
 
             $group = $groups->get($nameLower);
+            $linkedGroupIds = $existingLinks->get($profile->id, []);
 
-            if (! $profile->workstationGroups()->where('workstation_group_id', $group->id)->exists()) {
+            if (! isset($linkedGroupIds[$group->id])) {
                 if ($applyWrites) {
                     $profile->workstationGroups()->attach($group->id);
                 }
