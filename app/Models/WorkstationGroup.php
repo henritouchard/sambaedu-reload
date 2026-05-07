@@ -36,6 +36,7 @@ use App\Enums\LockReason;
  * @property bool $is_active
  * @property string|null $locked Raison du verrouillage (si non-null, empêche modification/suppression)
  * @property bool $managed_by_control_hub
+ * @property \DateTimeInterface|null $archived_at Archivage logique (Story 15.3, AC3.4)
  * @property \DateTime|null $created_at
  * @property \DateTime|null $updated_at
  */
@@ -72,6 +73,7 @@ class WorkstationGroup extends Model implements Wireable
         'managed_by_control_hub',
         'controlhub_id',
         'controlhub_version',
+        'archived_at',
     ];
 
     /**
@@ -85,6 +87,7 @@ class WorkstationGroup extends Model implements Wireable
         'locked' => 'string',
         'managed_by_control_hub' => 'boolean',
         'controlhub_version' => 'datetime',
+        'archived_at' => 'datetime',
     ];
 
     /**
@@ -396,6 +399,14 @@ class WorkstationGroup extends Model implements Wireable
     public function scopeSyncedWithAd(Builder $query): Builder
     {
         return $query->whereNotNull('ad_guid');
+    }
+
+    /**
+     * Story 15.3 / AC3.4 — Scope pour exclure les groupes archivés.
+     */
+    public function scopeNotArchived(Builder $query): Builder
+    {
+        return $query->whereNull('archived_at');
     }
 
     /**

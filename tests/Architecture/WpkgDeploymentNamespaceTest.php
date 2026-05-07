@@ -15,19 +15,31 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Garde-fou architectural Epic 15 (Story 15.1 / AC2.1).
+ * Garde-fou architectural Epic 15 (Story 15.1 / AC2.1, étendu Story 15.2 / AC7.6,
+ * durci Story 15.3 / AC4.1, AC5.4).
  *
- * Vérifie qu'aucune classe sous `App\Wpkg\Deployment\*` n'importe `LdapRecord\*`
- * ni `App\Services\Ad\*` (rappel garde-fou Epic 15 : *Eloquent first*).
- * La synchro AD → Eloquent est un job périodique (Story 15.3) et constitue
- * la seule exception whitelistée.
+ * Vérifie qu'aucune classe sous `App\Wpkg\*` n'importe `LdapRecord\*`,
+ * `App\LdapModels\*` ou `App\Services\Ad\*` (rappel garde-fou Epic 15 :
+ * *Eloquent first* en chemin critique). La sync AD → Eloquent reste
+ * **un outil de remédiation manuelle** (`App\Jobs\SyncAllFromAdJob`,
+ * Story 15.3) — déclenché humainement, hors namespace `App\Wpkg\*`.
+ *
+ * **Whitelist supprimée par 15.3** : la mention de
+ * `WpkgAdReconciliationJob` (job périodique entrant initialement prévu)
+ * a été retirée. Le job est définitivement abandonné par décision de
+ * cadrage 2026-05-05/06 (race silencieuse avec observers `*AdSyncJob`
+ * sortants). Aucune exception n'est tolérée par défaut.
+ *
+ * **Cas exceptionnel chemin froid** : si une classe `App\Wpkg\*` doit
+ * légitimement importer un de ces préfixes pour un usage chemin froid,
+ * un commentaire `// @chemin-froid: <justification>` doit précéder
+ * l'import. Le test ne valide pas ce commentaire automatiquement (couvert
+ * en code review) mais signale la classe via le message d'erreur.
  *
  * **Limitation connue** : seuls les `use` statements (Use_, GroupUse) sont
  * scannés. Les usages inline FQCN (`new \LdapRecord\Connection()`,
- * `\App\Services\Ad\AdService::call()`, `class_exists('\\LdapRecord\\…')`)
- * ne sont pas détectés. Idem pour un alias `use Foo as Bar; new Bar();`
- * détecté côté `use` mais pas côté usage. La couverture complète est
- * prévue avec une PHPStan rule dédiée (ticket tooling — voir @todo).
+ * `class_exists('\\LdapRecord\\…')`) ne sont pas détectés. Couverture
+ * runtime complémentaire : `EloquentFirstChemiCritiqueTest` (Story 15.3 / T5).
  *
  * @todo Migrer vers ArchTest / PHPStan rule lorsqu'un de ces outils sera
  *       introduit dans le projet (ticket tooling séparé hors scope 15.1).
@@ -35,20 +47,25 @@ use Symfony\Component\Finder\Finder;
 class WpkgDeploymentNamespaceTest extends TestCase
 {
     /**
-     * Préfixes interdits dans les `use` du namespace `App\Wpkg\Deployment`.
+     * Préfixes interdits dans les `use` du namespace `App\Wpkg\*`.
+     *
+     * Story 15.3 / AC4.1 — `App\LdapModels\*` ajouté à la liste : les
+     * modèles LdapRecord internes (MachineModel, DeviceGroupModel, etc.)
+     * sont aussi proscrits en chemin critique.
      */
     private const FORBIDDEN_PREFIXES = [
         'LdapRecord\\',
+        'App\\LdapModels\\',
         'App\\Services\\Ad\\',
     ];
 
     /**
-     * Classes autorisées à enfreindre la règle (FQN complet).
-     * Justification : sync AD → Eloquent périodique hors hot path.
+     * Aucune classe whitelistée par défaut (Story 15.3 / AC4.1).
+     * La whitelist `WpkgAdReconciliationJob` (Story 15.1 / 15.2) a été
+     * supprimée car le job est abandonné — la sync AD → Eloquent reste
+     * `App\Jobs\SyncAllFromAdJob`, hors namespace `App\Wpkg\*`.
      */
-    private const WHITELISTED_CLASSES = [
-        'App\\Wpkg\\Deployment\\Jobs\\WpkgAdReconciliationJob',
-    ];
+    private const WHITELISTED_CLASSES = [];
 
     #[Test]
     public function no_class_in_wpkg_deployment_imports_ad_or_ldap_record(): void

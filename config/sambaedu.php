@@ -191,5 +191,25 @@ return [
         'report_ingestion_allowed_ips' => array_filter(
             explode(',', env('WPKG_ALLOWED_IPS', '127.0.0.1,::1'))
         ),
+
+        /*
+        |----------------------------------------------------------------------
+        | Story 15.3 — Sync AD → Eloquent (outil de remédiation manuelle)
+        |----------------------------------------------------------------------
+        | Pas de cron entrant : `SyncAllFromAdJob` est l'outil unique de
+        | bootstrap/remédiation drift, déclenché humainement (UI ou
+        | artisan). Le lock anti-double-clic empêche deux exécutions
+        | concurrentes (cf. AC3.2).
+        */
+        'sync' => [
+            // TTL du lock anti-double-clic (`Cache::lock('wpkg:sync-all-from-ad')`).
+            // Doit rester >= au $timeout du job (300s par défaut).
+            'lock_ttl_seconds' => env('WPKG_SYNC_LOCK_TTL_SECONDS', 600),
+
+            // Valeur par défaut du flag dry-run quand non précisé par le caller.
+            // Les callers (UI, CLI, services) passent un flag explicite ;
+            // cette clé n'est pas un toggle global mais un fallback testable.
+            'dry_run_default' => env('WPKG_SYNC_DRY_RUN_DEFAULT', false),
+        ],
     ],
 ]; 

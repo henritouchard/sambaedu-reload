@@ -366,6 +366,189 @@ curl -s "<http://se4fs/wpkg/profiles.xml?poste=pc-cdi-07>"
 
 ---
 
+---
+
+## Section 3 — Remédiation drift `SyncAllFromAdJob` (Story 15.3)
+
+**Stories couvertes** : 15.3 (modèle Eloquent suffisant + outil de
+remédiation drift). Sync AD → Eloquent **manuelle uniquement** (pas de
+cron — décision de cadrage 2026-05-05/06).
+
+**Code de référence** :
+- `app/Jobs/SyncAllFromAdJob.php` — job durci (dry-run, lock, 2 passes,
+  archivage, idempotence, match strict premier run).
+- `app/Console/Commands/SyncFromAd.php` — CLI `php artisan sync:from-ad [--dry-run]`.
+- `resources/views/pages/sync-from-ad/index.blade.php` — UI Livewire,
+  étape « 10. Remédiation drift WPKG » (boutons Aperçu / Exécuter).
+- `config/sambaedu.php` § `wpkg.sync` — `lock_ttl_seconds` (défaut 600),
+  `dry_run_default` (défaut false).
+- `database/migrations/2026_05_06_*` — colonnes lifecycle (15.3 / AC2.1).
+
+### Pré-requis Section 3
+
+- Migrations 15.3 jouées :
+  ```bash
+  php artisan migrate:status | grep "add_lifecycle_attrs"
+  ```
+  → 2 lignes `Y` (Ran).
+- Au moins un parc AD (`OU=parc-test,OU=Parcs,…`) accessible via le
+  contexte établissement courant (vérifier la liste déroulante en haut
+  de `/admin/sync-from-ad`).
+
+### Scénario 3.1 — Aperçu (dry-run) sans écriture
+
+1. Aller sur `/admin/sync-from-ad`, étape « 10. Remédiation drift WPKG ».
+2. Cliquer **« Aperçu »**.
+3. Constater dans les logs de l'étape (volet déroulant) :
+   - Lignes `[DRY-RUN] WorkstationGroups : +N / ~N / archivés N / ignorés N`.
+   - Status icone passe à `dry_run_done` (loupe orange).
+4. Vérifier en base que **rien n'a été écrit** :
+   ```bash
+   psql -c "SELECT COUNT(*) FROM workstation_groups WHERE archived_at IS NOT NULL;"
+   ```
+   → identique avant/après l'Aperçu.
+
+**Attendu** : aucune mutation SQL, le rapport stats remonté affiche les
+counters `created/updated/archived` qui **auraient été** appliqués.
+
+### Scénario 3.2 — Exécuter (apply) après Aperçu
+
+1. Après scénario 3.1, cliquer **« Exécuter »**.
+2. Lignes log sans préfixe `[DRY-RUN]`.
+3. Status icone passe à `success` (✓ vert) ou `success` avec message
+   « idempotent : aucune écriture nécessaire ».
+4. `tail storage/logs/wpkg-deploy/deploy-*.log` :
+   - Lignes `[SyncAllFromAd] Démarrage de la synchronisation` avec
+     `run_id` (UUID) + `dry_run=false`.
+   - Si archivage : ligne `warning [SyncAllFromAd] WorkstationGroup archivé`
+     avec `id`, `name`, `ad_guid` en context.
+
+**Attendu** : commit transactionnel, observers réactivés en `finally`
+(le test est : un `WorkstationGroup::create()` ultérieur déclenche bien
+un `*AdSyncJob` sortant).
+
+### Scénario 3.3 — Anti-double-clic (lock)
+
+1. Sur `/admin/sync-from-ad`, ouvrir 2 onglets.
+2. Cliquer « Exécuter » dans les 2 onglets simultanément.
+3. Le 2e clic doit afficher un toast info « Sync déjà en cours » et
+   l'étape passer en status `skipped` (icone forward bleu).
+
+**Attendu** : log `info [SyncAllFromAd] Lock non acquis — synchronisation
+déjà en cours, skip.` Pas de double exécution. Le lock est libéré en
+`finally` (en CLI : `php artisan sync:from-ad` 2 fois → 2e dit
+« Synchronisation déjà en cours — exécution sautée »).
+
+### Scénario 3.4 — Idempotence
+
+1. Lancer 2 fois **« Exécuter »** consécutifs (sans changement AD entre
+   les deux).
+2. Le 2e run doit afficher « Aucune écriture nécessaire (idempotent). »
+
+**Attendu** : 2e run = 0 `created` / 0 `updated` / 0 `archived`. Logs en
+mode `info` final uniquement (pas de `debug` par row).
+
+### Scénario 3.5 — AD partiel mid-pass (atomicité 2 passes)
+
+> Test difficile à reproduire en QA manuel — couvert par tests feature
+> (`SyncAllFromAdJobTest::pass1_failure_aborts_without_writes`).
+> Procédure manuelle si besoin :
+
+1. Bloquer temporairement la lecture `OU=Computers` (par ex. via firewall
+   sortant ou pause du domaine SambaEdu).
+2. Cliquer « Exécuter ».
+3. L'étape doit passer en `error` avec message `pass1_failed: ...`.
+4. Vérifier qu'**aucun archivage n'a eu lieu** : les rows DB GUID-ées
+   restent `archived_at = NULL` malgré la lecture AD partielle.
+
+**Attendu** : atomicité stricte. La passe 2 ne démarre pas si la passe 1
+a échoué.
+
+### Scénario 3.6 — Premier run post-migration prod (peuplement `ad_guid`)
+
+> Procédure ops finale de bascule prod (runbook 15.7).
+
+1. Sur une base SQL où certains `WorkstationGroup` / `AppProfile` ont
+   `ad_guid IS NULL` (cas typique post-migration legacy → reload) :
+   ```bash
+   psql -c "SELECT name, ad_guid FROM workstation_groups WHERE ad_guid IS NULL LIMIT 5;"
+   ```
+2. Cliquer **« Aperçu »** sur l'étape 10 → vérifier dans les logs que
+   les rows attendues remontent en `~updated` (les `ad_guid` seront posés).
+3. Cliquer **« Exécuter »**.
+4. Re-vérifier :
+   ```bash
+   psql -c "SELECT name, ad_guid FROM workstation_groups WHERE ad_guid IS NULL;"
+   ```
+   → uniquement les groupes vraiment absents AD (à archiver manuellement
+   ou à laisser en l'état si bootstrap incomplet).
+
+**Attendu — match strict** : un nom homonyme dans deux OU différentes
+(ex. un parc « pc01 » sous OU=Parcs **et** un groupe « pc01 » sous
+OU=Computers) ne doit jamais matcher cross-OU. Si le DN AD ne contient
+pas `,OU=Computers,`, le match nom est refusé pour les
+`WorkstationGroup`. Si le DN ne contient pas `,OU=Parcs,`, refusé pour
+les `AppProfile`. Aucun `ad_guid` mauvais ne doit être écrit.
+
+### Scénario 3.7 — Conflit `objectGUID` (corruption historique)
+
+> Cas R3 du tableau de risques.
+
+Si la base contient deux rows DB avec le **même `ad_guid`** (corruption
+historique) :
+
+1. La query `WorkstationGroup::whereNotNull('ad_guid')->get()->keyBy('ad_guid')`
+   conserve la dernière (perte silencieuse). Le job ne crashe pas mais
+   produit un mismatch.
+
+**Procédure de remédiation** :
+```sql
+-- Identifier les doublons
+SELECT ad_guid, COUNT(*) AS n
+FROM workstation_groups
+WHERE ad_guid IS NOT NULL
+GROUP BY ad_guid
+HAVING COUNT(*) > 1;
+
+-- Pour chaque doublon : choisir la row à conserver, désaffecter l'autre
+UPDATE workstation_groups SET ad_guid = NULL, ad_dn = NULL
+ WHERE id = <id_de_la_row_perdante>;
+```
+
+Puis relancer **« Aperçu »** → le dédoublonnage se fera sans risque (le
+match strict premier run rebindera proprement).
+
+### Scénario 3.8 — Restauration d'une row archivée
+
+1. Identifier une row archivée :
+   ```sql
+   SELECT id, name FROM workstation_groups WHERE archived_at IS NOT NULL;
+   ```
+2. Si l'entité réapparaît dans l'AD → le prochain run du job la
+   **restaure automatiquement** (`archived_at = NULL` + counter
+   `updated`). Cf. test `SyncAllFromAdJobTest::archived_row_is_restored_when_reappears_in_ad`.
+3. Restauration manuelle possible :
+   ```sql
+   UPDATE workstation_groups SET archived_at = NULL WHERE id = ?;
+   ```
+
+**Attendu** : la row redevient visible en chemin critique (resolver,
+listings UI). Le pipeline 15.2 honore le scope `notArchived()` (cf.
+décision D8).
+
+### Checklist rapide Section 3 (relecteur)
+
+- [ ] Scénario 3.1 — Aperçu sans écriture
+- [ ] Scénario 3.2 — Exécuter applique avec logs structurés `wpkg-deploy`
+- [ ] Scénario 3.3 — Lock anti-double-clic skip + toast
+- [ ] Scénario 3.4 — Idempotence 2e run no-op silencieux
+- [ ] Scénario 3.5 — AD partiel mid-pass : 0 écriture (atomicité)
+- [ ] Scénario 3.6 — Premier run post-migration peuple `ad_guid` sans faux positifs cross-OU
+- [ ] Scénario 3.7 — Procédure conflit `objectGUID` documentée
+- [ ] Scénario 3.8 — Restauration archived auto + manuelle
+
+---
+
 ## Checklist rapide (relecteur)
 
 - [ ] Scénario 1.1 — channel `wpkg-deploy` vivant
@@ -378,3 +561,4 @@ curl -s "<http://se4fs/wpkg/profiles.xml?poste=pc-cdi-07>"
 - [ ] Scénario 2.3 — union poste/parc/dépendances dans `profiles.xml`
 - [ ] Scénario 2.4 — invalidation cache via event → pas de stale
 - [ ] Scénario 2.5 — `WorkstationOptionsChanged` → `.ini` régénéré (CRLF)
+- [ ] Scénarios 3.1 → 3.8 — remédiation drift `SyncAllFromAdJob` (Story 15.3)
