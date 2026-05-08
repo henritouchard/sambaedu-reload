@@ -369,15 +369,15 @@ class ManualSyncTest extends TestCase
             if ($ou) {
                 $ou->delete();
             }
-        } catch (\Exception $e) {
-            // Ignorer
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('group/AD', $name, $e);
         }
 
         // Supprimer en SQL
         try {
             WorkstationGroup::where('name', $name)->delete();
-        } catch (\Exception $e) {
-            // Ignorer
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('group/SQL', $name, $e);
         }
     }
 
@@ -392,15 +392,26 @@ class ManualSyncTest extends TestCase
             if ($cn) {
                 $cn->delete();
             }
-        } catch (\Exception $e) {
-            // Ignorer
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('profile/AD', $name, $e);
         }
 
         // Supprimer en SQL
         try {
             AppProfile::where('name', $name)->delete();
-        } catch (\Exception $e) {
-            // Ignorer
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('profile/SQL', $name, $e);
         }
+    }
+
+    private function reportCleanupFailure(string $kind, string $name, \Throwable $e): void
+    {
+        fwrite(STDERR, sprintf(
+            "[%s] cleanup %s '%s' failed: %s\n",
+            static::class,
+            $kind,
+            $name,
+            $e->getMessage()
+        ));
     }
 }

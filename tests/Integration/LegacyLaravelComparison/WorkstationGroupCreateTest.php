@@ -263,38 +263,51 @@ class WorkstationGroupCreateTest extends TestCase
     }
 
     /**
-     * Nettoie un groupe de test
+     * Nettoie un groupe de test. Les exceptions sont logguées sur STDERR
+     * (visibles en CI / PHPUnit) sans échouer le tearDown, pour qu'un
+     * cleanup partiel n'avale plus silencieusement les résidus AD.
      */
     private function cleanupGroup(string $name): void
     {
         try {
             $this->adSyncService->deleteWorkstationGroupByName($name);
-        } catch (\Exception $e) {
-            // Ignorer
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('group/AD', $name, $e);
         }
 
         try {
             WorkstationGroup::where('name', $name)->delete();
-        } catch (\Exception $e) {
-            // Ignorer
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('group/SQL', $name, $e);
         }
     }
 
     /**
-     * Nettoie un profil de test
+     * Nettoie un profil de test (idem politique de logging).
      */
     private function cleanupProfile(string $name): void
     {
         try {
             $this->appProfileAdSyncService->deleteAppProfile($name);
-        } catch (\Exception $e) {
-            // Ignorer
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('profile/AD', $name, $e);
         }
 
         try {
             AppProfile::where('name', $name)->delete();
-        } catch (\Exception $e) {
-            // Ignorer
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('profile/SQL', $name, $e);
         }
+    }
+
+    private function reportCleanupFailure(string $kind, string $name, \Throwable $e): void
+    {
+        fwrite(STDERR, sprintf(
+            "[%s] cleanup %s '%s' failed: %s\n",
+            static::class,
+            $kind,
+            $name,
+            $e->getMessage()
+        ));
     }
 }

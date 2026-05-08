@@ -15,20 +15,14 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Garde-fou architectural Epic 15 (Story 15.1 / AC2.1, étendu Story 15.2 / AC7.6,
- * durci Story 15.3 / AC4.1, AC5.4).
+ * Garde-fou architectural Epic 15 (Story 15.1 / AC2.1, étendu Story 15.2 / AC7.6).
  *
  * Vérifie qu'aucune classe sous `App\Wpkg\*` n'importe `LdapRecord\*`,
  * `App\LdapModels\*` ou `App\Services\Ad\*` (rappel garde-fou Epic 15 :
- * *Eloquent first* en chemin critique). La sync AD → Eloquent reste
- * **un outil de remédiation manuelle** (`App\Jobs\SyncAllFromAdJob`,
- * Story 15.3) — déclenché humainement, hors namespace `App\Wpkg\*`.
- *
- * **Whitelist supprimée par 15.3** : la mention de
- * `WpkgAdReconciliationJob` (job périodique entrant initialement prévu)
- * a été retirée. Le job est définitivement abandonné par décision de
- * cadrage 2026-05-05/06 (race silencieuse avec observers `*AdSyncJob`
- * sortants). Aucune exception n'est tolérée par défaut.
+ * *Eloquent first* en chemin critique). La direction d'écriture canonique
+ * est Eloquent → AD via observers `*AdSyncJob` sortants. La sync entrante
+ * (AD → Eloquent) est limitée aux imports manuels `/admin/sync-from-ad`,
+ * tous hors du namespace `App\Wpkg\*`.
  *
  * **Cas exceptionnel chemin froid** : si une classe `App\Wpkg\*` doit
  * légitimement importer un de ces préfixes pour un usage chemin froid,
@@ -48,10 +42,8 @@ class WpkgDeploymentNamespaceTest extends TestCase
 {
     /**
      * Préfixes interdits dans les `use` du namespace `App\Wpkg\*`.
-     *
-     * Story 15.3 / AC4.1 — `App\LdapModels\*` ajouté à la liste : les
-     * modèles LdapRecord internes (MachineModel, DeviceGroupModel, etc.)
-     * sont aussi proscrits en chemin critique.
+     * Couvre LdapRecord et les modèles LDAP internes (MachineModel,
+     * DeviceGroupModel, etc.) proscrits en chemin critique.
      */
     private const FORBIDDEN_PREFIXES = [
         'LdapRecord\\',
@@ -60,10 +52,7 @@ class WpkgDeploymentNamespaceTest extends TestCase
     ];
 
     /**
-     * Aucune classe whitelistée par défaut (Story 15.3 / AC4.1).
-     * La whitelist `WpkgAdReconciliationJob` (Story 15.1 / 15.2) a été
-     * supprimée car le job est abandonné — la sync AD → Eloquent reste
-     * `App\Jobs\SyncAllFromAdJob`, hors namespace `App\Wpkg\*`.
+     * Aucune classe whitelistée par défaut.
      */
     private const WHITELISTED_CLASSES = [];
 

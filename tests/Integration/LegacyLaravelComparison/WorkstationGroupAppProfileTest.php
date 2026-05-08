@@ -466,42 +466,55 @@ class WorkstationGroupAppProfileTest extends TestCase
     // ========================================================================
 
     /**
-     * Nettoie un groupe de test (WorkstationGroup et AD)
+     * Nettoie un groupe de test (WorkstationGroup et AD). Les exceptions
+     * sont logguées sur STDERR au lieu d'être avalées silencieusement,
+     * pour qu'un cleanup partiel n'accumule plus de résidus dans l'AD.
      */
     private function cleanupGroup(string $name): void
     {
         try {
             // Supprimer de l'AD (OU dans OU=Computers)
             $this->adSyncService->deleteWorkstationGroupByName($name);
-        } catch (\Exception $e) {
-            // Ignorer les erreurs de nettoyage AD
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('group/AD', $name, $e);
         }
-        
+
         try {
             // Supprimer le WorkstationGroup de la base
             WorkstationGroup::where('name', $name)->delete();
-        } catch (\Exception $e) {
-            // Ignorer
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('group/SQL', $name, $e);
         }
     }
 
     /**
-     * Nettoie un profil de test (AppProfile et AD)
+     * Nettoie un profil de test (AppProfile et AD).
      */
     private function cleanupProfile(string $name): void
     {
         try {
             // Supprimer de l'AD (CN dans OU=Parcs)
             $this->appProfileAdSyncService->deleteAppProfile($name);
-        } catch (\Exception $e) {
-            // Ignorer les erreurs de nettoyage AD
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('profile/AD', $name, $e);
         }
-        
+
         try {
             // Supprimer le AppProfile de la base
             AppProfile::where('name', $name)->delete();
-        } catch (\Exception $e) {
-            // Ignorer
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('profile/SQL', $name, $e);
         }
+    }
+
+    private function reportCleanupFailure(string $kind, string $name, \Throwable $e): void
+    {
+        fwrite(STDERR, sprintf(
+            "[%s] cleanup %s '%s' failed: %s\n",
+            static::class,
+            $kind,
+            $name,
+            $e->getMessage()
+        ));
     }
 }

@@ -40,49 +40,29 @@ legacy (Story 15.7).
 
 - `Services/`         — services applicatifs (orchestration, resolver, ingestion, dashboard).
 - `Generators/`       — générateurs de fichiers (`WorkstationIniGenerator` — Story 15.2).
-- `Jobs/`             — jobs queue chemin critique (ingestion — Story 15.5). **Pas** la sync AD : elle vit dans `App\Jobs\SyncAllFromAdJob`, hors namespace (chemin froid).
+- `Jobs/`             — jobs queue chemin critique (ingestion — Story 15.5).
 - `Models/`           — modèles Eloquent dédiés au pipeline (`WpkgWorkstationOption` — Story 15.2 ; tracking deployments — Story 15.5).
 - `Events/`           — events Laravel déclenchés par le pipeline (assignations, options, membership — Story 15.2).
 - `Listeners/`        — listeners (invalidation cache, regen `.ini` — Story 15.2).
 - `Http/Controllers/` — endpoints HTTP servant des artefacts WPKG (`HostsXmlController`, `ProfilesXmlController` — Story 15.2).
 - `Support/`          — utilitaires propres au pipeline. **Ne pas y introduire de classe `AtomicFileWriter`** : utiliser `App\Support\AtomicFileWriter`.
 
-## Sync AD → Eloquent : outil de remédiation manuelle (Story 15.3)
+## Sync AD ↔ Eloquent
 
-> **Rappel direction d'écriture** : Eloquent → AD via observers. La sync
-> entrante (AD → Eloquent) est **uniquement un outil de remédiation
-> drift**, déclenché humainement.
+> **Rappel direction d'écriture** : Eloquent → AD via observers
+> `*AdSyncJob` sortants. Postgres reste l'unique source de vérité.
 
-- **Cron entrant : aucun.** Définitivement abandonné par décision de
-  cadrage 2026-05-05/06 (race silencieuse avec les jobs `*AdSyncJob`
-  sortants : un cron qui lit AD pendant qu'un job sortant en queue n'a
-  pas encore appliqué sa mutation lit l'état AD pas-encore-mis-à-jour
-  et écrase la mutation en SQL → perte d'écritures métier silencieuse).
-- **Outil unique** : `App\Jobs\SyncAllFromAdJob` — durci en 15.3. Couvre
-  le **bootstrap initial** post-migration prod (peuple les `ad_guid`
-  manquants au premier run) **et** la remédiation drift ponctuelle.
-- **Garanties 15.3** : mode `--dry-run` (lecture + diff sans écriture),
-  lock anti-double-clic (`Cache::lock('wpkg:sync-all-from-ad', $ttl)`),
-  lecture AD en 2 passes atomiques, archivage logique (`archived_at` au
-  lieu de `DELETE`), idempotence stricte, match strict premier run par
-  `name` lower-case **+ scope OU précis** (jamais d'écrasement d'un
-  `ad_guid` déjà posé).
-- **Invariant à NE PAS casser** : le job désactive
-  `WorkstationGroupObserver::disableSync()` /
-  `WorkstationObserver::disableSync()` au début de la passe écriture et
-  les réactive en `finally`. Sans ça, les écritures déclencheraient des
-  `*AdSyncJob` sortants qui réécriraient en AD ce qu'on vient de lire.
-
-### Procédure ops bascule prod (à reporter en runbook 15.7)
-
-```
-1. php artisan migrate              # applique les migrations volet 2 (ad_guid NULL au départ)
-2. Aller sur /admin/sync-from-ad    # UI Livewire
-3. Cliquer "Aperçu (dry-run)"       # vérifier le diff AD vs SQL avant écriture
-4. Cliquer "Exécuter"               # applique : peuple ad_guid + sync drift
-```
-
-Alternative CLI : `php artisan sync:from-ad --dry-run` puis sans flag.
+- **Cron entrant : aucun.** Race silencieuse possible avec les jobs
+  sortants en queue (un cron qui lit AD pendant qu'une mutation sortante
+  n'a pas encore été appliquée écraserait l'état SQL → perte d'écritures
+  silencieuse).
+- **Sync entrante** : limitée aux **imports manuels** depuis
+  `/admin/sync-from-ad` (workstation_groups, app_profiles, users, etc.)
+  pour le bootstrap initial post-migration legacy.
+- **Drift après bootstrap** : si une divergence AD ↔ Eloquent apparaît
+  malgré la direction canonique, la réconciliation se fait
+  **manuellement par entité** (UI flash cards sur les pages
+  `/app/parc/*`, `/app/app-profiles/*`, etc.) — pas via un sync global.
 
 ## Mapping legacy → reload (Story 15.2 / AC8.1)
 
@@ -97,7 +77,7 @@ Alternative CLI : `php artisan sync:from-ad --dry-run` puis sans flag.
 | `delete_ini_poste()`                                | (intentionnellement non porté — stratégie 15.2 = régénérer, pas supprimer)                      |
 | Constante 8 options legacy + descriptions           | Constante PHP `WorkstationIniGenerator::LEGACY_OPTIONS` (pas de stockage des descriptions en BDD) |
 
-**Invariant Eloquent first** : `WorkstationPackagesResolver` n'importe ni `LdapRecord\*` ni `App\LdapModels\*` ni `App\Services\Ad\*`. La résolution métier est 100% Eloquent. La sync AD vit hors namespace (`App\Jobs\SyncAllFromAdJob`, chemin froid, déclenché humainement).
+**Invariant Eloquent first** : `WorkstationPackagesResolver` n'importe ni `LdapRecord\*` ni `App\LdapModels\*` ni `App\Services\Ad\*`. La résolution métier est 100% Eloquent.
 
 **Routing** : `routes/web.php` expose `/wpkg/hosts.xml` et `/wpkg/profiles.xml` sans middleware `web`/`auth` (parité legacy stricte — décision user 2026-05-04 #3).
 

@@ -26,15 +26,32 @@ class WorkstationGroupDeleteTest extends TestCase
     protected AdSyncService $adSyncService;
     protected LdapDnHelper $dnHelper;
 
+    /**
+     * @var array<int,string> Noms des groupes créés. Les tests les
+     * suppriment eux-mêmes en chemin nominal ; ce tableau alimente un
+     * filet de sécurité au tearDown si une assertion échoue avant la
+     * suppression et laisse un résidu dans l'AD.
+     */
+    protected array $createdGroups = [];
+
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         $this->workstationGroupService = app(WorkstationGroupService::class);
         $this->adSyncService = app(AdSyncService::class);
         $this->dnHelper = app(LdapDnHelper::class);
-        
+
         Queue::fake();
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ($this->createdGroups as $name) {
+            $this->cleanupGroup($name);
+        }
+
+        parent::tearDown();
     }
 
     /**
@@ -45,7 +62,8 @@ class WorkstationGroupDeleteTest extends TestCase
     public function test_delete_workstation_group_via_service(): void
     {
         $groupName = 'TestDeleteGroup_' . uniqid();
-        
+        $this->createdGroups[] = $groupName;
+
         // 1. Créer le groupe via le service
         $workstationGroup = $this->workstationGroupService->createGroup([
             'name' => $groupName,
@@ -101,7 +119,9 @@ class WorkstationGroupDeleteTest extends TestCase
     {
         $parentName = 'TestDeleteParent_' . uniqid();
         $childName = 'TestDeleteChild_' . uniqid();
-        
+        $this->createdGroups[] = $parentName;
+        $this->createdGroups[] = $childName;
+
         // 1. Créer le parent et l'enfant via le service
         $parentGroup = $this->workstationGroupService->createGroup([
             'name' => $parentName,
@@ -176,5 +196,38 @@ class WorkstationGroupDeleteTest extends TestCase
             ->first();
 
         $this->assertNull($ou, "L'OU '$name' ne doit plus exister dans OU=Computers");
+    }
+
+    /**
+     * Cleanup helper — symétrique avec les autres tests Legacy/Comparison.
+     * Le test supprime déjà le groupe en chemin nominal ; ce helper rattrape
+     * uniquement les cas où une assertion échoue avant la suppression. Une
+     * « not found » au cleanup d'un test passant est attendue (logguée mais
+     * inoffensive).
+     */
+    private function cleanupGroup(string $name): void
+    {
+        try {
+            $this->adSyncService->deleteWorkstationGroupByName($name);
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('group/AD', $name, $e);
+        }
+
+        try {
+            WorkstationGroup::where('name', $name)->delete();
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('group/SQL', $name, $e);
+        }
+    }
+
+    private function reportCleanupFailure(string $kind, string $name, \Throwable $e): void
+    {
+        fwrite(STDERR, sprintf(
+            "[%s] cleanup %s '%s' failed: %s\n",
+            static::class,
+            $kind,
+            $name,
+            $e->getMessage()
+        ));
     }
 }

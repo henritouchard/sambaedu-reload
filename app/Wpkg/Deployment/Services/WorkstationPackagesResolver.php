@@ -74,13 +74,12 @@ final class WorkstationPackagesResolver
     /**
      * Calcul Eloquent (4 sources + dépendances transitives + dédup + tri).
      *
-     * Story 15.3 / D8 — Les postes, groupes et profils marqués `archived_at`
-     * (archivage logique introduit par 15.3 AC3.4) sont **silencieusement
-     * ignorés** : on les traite comme des fantômes côté pipeline. Cela
-     * évite que des packages zombies remontent dans `profiles.xml` après
-     * archivage par le `SyncAllFromAdJob` durci. Filtre non-breaking : un
-     * archivage manuel (UPDATE SQL) suffit à exclure proprement une
-     * entité du déploiement, sans la supprimer ni casser ses pivots.
+     * Les postes, groupes et profils marqués `archived_at` sont
+     * **silencieusement ignorés** : on les traite comme des fantômes
+     * côté pipeline. Cela évite que des packages zombies remontent dans
+     * `profiles.xml` après archivage. Filtre non-breaking : un archivage
+     * manuel (UPDATE SQL ou flash card UI) suffit à exclure proprement
+     * une entité du déploiement, sans la supprimer ni casser ses pivots.
      *
      * @return Collection<int, string>
      */

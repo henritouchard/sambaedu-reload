@@ -34,23 +34,40 @@ class WorkstationMembershipAddTest extends TestCase
     protected LdapDnHelper $dnHelper;
     protected array $config;
 
+    /** @var array<int,string> Noms des groupes créés, nettoyés en tearDown (filet de sécurité). */
+    protected array $createdGroups = [];
+    /** @var array<int,string> Noms des profils créés, nettoyés en tearDown (filet de sécurité). */
+    protected array $createdProfiles = [];
+
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Charger la config legacy pour les tests AD
         $legacy_base = '/var/www/sambaedu';
         require_once $legacy_base . '/includes/config.inc.php';
         require_once $legacy_base . '/includes/ldap.inc.php';
         require_once $legacy_base . '/includes/samba-tool.inc.php';
-        
+
         $this->config = get_config();
         $this->workstationGroupService = app(WorkstationGroupService::class);
         $this->adSyncService = app(AdSyncService::class);
         $this->appProfileAdSyncService = app(AppProfileAdSyncService::class);
         $this->dnHelper = app(LdapDnHelper::class);
-        
+
         Queue::fake();
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ($this->createdGroups as $name) {
+            $this->cleanupGroup($name);
+        }
+        foreach ($this->createdProfiles as $name) {
+            $this->cleanupProfile($name);
+        }
+
+        parent::tearDown();
     }
 
     /**
@@ -62,7 +79,9 @@ class WorkstationMembershipAddTest extends TestCase
     public function test_add_machine_to_group_with_app_profile(): void
     {
         $groupName = 'TestAddMachineWithProfile_' . uniqid();
-        
+        $this->createdGroups[] = $groupName;
+        $this->createdProfiles[] = $groupName;
+
         // 0. Nettoyer
         WorkstationGroup::where('name', 'like', 'TestAddMachineWithProfile_%')->delete();
         AppProfile::where('name', 'like', 'TestAddMachineWithProfile_%')->delete();
@@ -128,7 +147,11 @@ class WorkstationMembershipAddTest extends TestCase
     public function test_add_machine_to_group_without_app_profile(): void
     {
         $groupName = 'TestAddMachineNoProfile_' . uniqid();
-        
+        $this->createdGroups[] = $groupName;
+        // Les groupes physiques sans app_profile_name produisent quand même
+        // un CN dans OU=Parcs (créé par syncToAd) — à nettoyer aussi.
+        $this->createdProfiles[] = $groupName;
+
         // 0. Nettoyer
         WorkstationGroup::where('name', 'like', 'TestAddMachineNoProfile_%')->delete();
         
@@ -233,5 +256,51 @@ class WorkstationMembershipAddTest extends TestCase
             ->first();
 
         $this->assertNull($cn, "Le CN '$name' ne doit PAS exister dans OU=Parcs");
+    }
+
+    /**
+     * Cleanup helpers — symétriques avec WorkstationGroupCreateTest /
+     * WorkstationGroupAppProfileTest. Les exceptions sont logguées sur
+     * STDERR plutôt qu'avalées : un cleanup partiel est visible en CI.
+     */
+    private function cleanupGroup(string $name): void
+    {
+        try {
+            $this->adSyncService->deleteWorkstationGroupByName($name);
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('group/AD', $name, $e);
+        }
+
+        try {
+            WorkstationGroup::where('name', $name)->delete();
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('group/SQL', $name, $e);
+        }
+    }
+
+    private function cleanupProfile(string $name): void
+    {
+        try {
+            $this->appProfileAdSyncService->deleteAppProfile($name);
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('profile/AD', $name, $e);
+        }
+
+        try {
+            AppProfile::where('name', $name)->delete();
+        } catch (\Throwable $e) {
+            $this->reportCleanupFailure('profile/SQL', $name, $e);
+        }
+    }
+
+    private function reportCleanupFailure(string $kind, string $name, \Throwable $e): void
+    {
+        fwrite(STDERR, sprintf(
+            "[%s] cleanup %s '%s' failed: %s\n",
+            static::class,
+            $kind,
+            $name,
+            $e->getMessage()
+        ));
     }
 }
