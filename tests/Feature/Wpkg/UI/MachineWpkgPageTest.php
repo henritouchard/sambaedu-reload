@@ -25,7 +25,7 @@ class MachineWpkgPageTest extends TestCase
     private Workstation $workstation;
     private WorkstationGroup $group;
     private AppProfile $profile;
-    private Application $app;
+    private Application $application;
 
     protected function setUp(): void
     {
@@ -40,7 +40,7 @@ class MachineWpkgPageTest extends TestCase
         $this->group = WorkstationGroup::create(['name' => 'parc-1']);
         $this->workstation->groups()->attach($this->group);
         $this->profile = AppProfile::create(['name' => 'p-1', 'is_active' => true]);
-        $this->app = Application::create(['app_id' => 'firefox', 'name' => 'Firefox']);
+        $this->application = Application::create(['app_id' => 'firefox', 'name' => 'Firefox']);
     }
 
     protected function tearDown(): void
@@ -69,7 +69,7 @@ class MachineWpkgPageTest extends TestCase
         Event::fake([WorkstationApplicationsChanged::class]);
 
         $svc = app(AppProfileService::class);
-        $svc->addApplicationsToWorkstation($this->workstation->id, [$this->app->id]);
+        $svc->addApplicationsToWorkstation($this->workstation->id, [$this->application->id]);
 
         Event::assertDispatched(WorkstationApplicationsChanged::class);
         self::assertSame(1, $this->workstation->applications()->count());

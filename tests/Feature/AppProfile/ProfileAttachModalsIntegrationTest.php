@@ -32,9 +32,9 @@ use Tests\TestCase;
 class ProfileAttachModalsIntegrationTest extends TestCase
 {
     private AppProfile $profile;
-    private Application $app;
     private WorkstationGroup $group;
     private Workstation $workstation;
+    private Application $application;
 
     protected function setUp(): void
     {
@@ -55,7 +55,7 @@ class ProfileAttachModalsIntegrationTest extends TestCase
             'name' => 'integration-test-profile',
             'is_active' => true,
         ]);
-        $this->app = Application::create([
+        $this->application = Application::create([
             'app_id' => 'firefox',
             'name' => 'Firefox',
         ]);
@@ -78,13 +78,13 @@ class ProfileAttachModalsIntegrationTest extends TestCase
         Event::fake([AppProfileApplicationsChanged::class]);
 
         Livewire::test('pages::parc-settings.profiles.index', ['id' => $this->profile->id])
-            ->set('selectedAppsToAdd', [$this->app->id])
+            ->set('selectedAppsToAdd', [$this->application->id])
             ->call('addSelectedApps');
 
         Event::assertDispatched(AppProfileApplicationsChanged::class, function ($e) {
             return $e->appProfileId === $this->profile->id
                 && $e->direction === 'attached'
-                && in_array($this->app->id, $e->applicationIds, true);
+                && in_array($this->application->id, $e->applicationIds, true);
         });
 
         // Persistance effective.

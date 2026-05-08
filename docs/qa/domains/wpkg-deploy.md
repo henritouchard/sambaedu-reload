@@ -484,6 +484,118 @@ le poste — la dédup UI affiche les deux badges, le cache est invalidé.
 
 ---
 
+## Section 5 — Pipeline rapports clients + Dashboard (Story 15.5)
+
+> **Cadre** : ingestion durcie (auth Bearer machine, archivage brut, corrélation
+> `deployment_id`), parser graceful, dashboard global `/app/wpkg/deployments`,
+> commandes Artisan de provisioning des secrets, rotation archives 90j.
+
+### Scénario 5.1 — Provisioning d'un secret machine + premier POST
+
+1. Sur la VM, provisionner un secret pour un poste de test :
+   ```bash
+   php artisan wpkg:provision-secrets --force | grep '^PC-TEST'
+   ```
+   _Sortie attendue : `PC-TEST,xxxxxxxxxxxx...32chars` (CSV)_.
+2. Sauvegarder le secret affiché (il ne sera plus affiché ailleurs).
+3. POST un rapport via la route alias v1 avec Bearer :
+   ```bash
+   curl -X POST http://localhost/api/v1/wpkg/reports/PC-TEST \
+     -H 'Authorization: Bearer <secret>' \
+     -H 'Content-Type: text/plain' \
+     --data-binary @rapport.txt
+   ```
+4. Réponse 200 `{"status":"processed",...}`.
+5. Naviguer vers `/app/wpkg/deployments` → la KPI « Sains » a augmenté.
+6. `tail -1 storage/logs/wpkg-deploy/deploy-*.log` → ligne contient
+   `event=wpkg_report_ingested workstation_id=...`.
+
+### Scénario 5.2 — Token expiré → 401
+
+1. Faire une rotation (le secret reste valide 7j en chevauchement) :
+   ```bash
+   php artisan wpkg:rotate-secret PC-TEST
+   ```
+2. Tinker : forcer `previous_valid_until` dans le passé pour simuler
+   l'expiration de la fenêtre :
+   ```bash
+   php artisan tinker
+   >>> \App\Wpkg\Deployment\Models\WorkstationApiSecret::where('workstation_id', $id)->update(['previous_valid_until' => now()->subDay()]);
+   ```
+3. POST avec l'ancien secret → 401.
+4. Log `wpkg-deploy` : `event=wpkg_auth_failed reason=bearer_invalid`.
+
+### Scénario 5.3 — Rapport corrélé à un clone parc 15.4
+
+1. Depuis `/app/parc/groups/{id}` → cloner la config parc → noter le
+   `deployment_id` UUID dans le toast.
+2. Forcer un poste à pousser un rapport (curl + Bearer comme 5.1).
+3. Tinker :
+   ```bash
+   php artisan tinker
+   >>> \App\Wpkg\Deployment\Models\WpkgDeploymentWorkstationStatus::where('workstation_id', $id)->latest()->first();
+   ```
+4. `client_status` reflète le rapport, `deployment_id` matche le clone.
+5. `wpkg_deployments.summary->reported` incrémenté de 1.
+6. Si `total_targets <= reported` → status passé à `completed`.
+
+### Scénario 5.4 — Rapport spontané (sans déploiement actif)
+
+1. Forcer un POST rapport sur un poste **sans** déploiement actif.
+2. `wpkg_deployment_workstation_status` n'a **pas** de nouvelle ligne.
+3. `workstation_application_status` (table 9.4) est mise à jour normalement.
+4. Log : `event=wpkg_report_ingested deployment_id=null`.
+
+### Scénario 5.5 — Bouton « Forcer une re-évaluation »
+
+1. Pré-condition : user avec permission `wpkg.assign`.
+2. Naviguer vers `/app/wpkg/deployments/workstation/{id}`.
+3. Cliquer « Forcer une re-évaluation » → modale de confirmation.
+4. Confirmer → toast vert.
+5. Vérifier en log `wpkg-deploy` :
+   - `event=wpkg_manual_reevaluation triggered_by_user_id=...`
+   - `event=wpkg_manual_reevaluation_ini_regenerated`
+6. `Cache::has("wpkg:packages:{hostname}")` retourne false (cache purgé).
+7. Le fichier `.ini` du poste a un mtime récent (régénération).
+
+### Scénario 5.6 — Rotation des archives 90j
+
+1. Pré-condition : `config('sambaedu.wpkg.reports_archive_retention_days')`
+   = 90.
+2. Créer un fichier d'archive vieux de 100 jours :
+   ```bash
+   touch -d '100 days ago' "$(php artisan tinker --execute='echo config("sambaedu.wpkg.reports_archive");')/2026/01/01/PC-OLD_old.txt"
+   ```
+3. Lancer en dry-run pour audit :
+   ```bash
+   php artisan wpkg:reports:archive:rotate --dry-run
+   ```
+   Sortie : `[DRY-RUN] 1 fichier(s) sélectionné(s), … libéré(s).`.
+4. Run réel : `php artisan wpkg:reports:archive:rotate`.
+5. Le fichier vieux a disparu, les fichiers récents sont conservés.
+6. Off-by-one : un fichier de pile 90 jours est CONSERVÉ (strict `<`).
+
+### Checklist rapide Section 5 (relecteur)
+
+- [ ] Scénario 5.1 — Provisioning + premier POST → 200 + dashboard reflète
+- [ ] Scénario 5.2 — Token expiré → 401 + log warning
+- [ ] Scénario 5.3 — Rapport corrélé clone parc 15.4 → status_row + summary
+- [ ] Scénario 5.4 — Rapport spontané → uniquement `workstation_application_status`
+- [ ] Scénario 5.5 — Bouton re-évaluation → cache purgé + `.ini` régénéré
+- [ ] Scénario 5.6 — Rotation archives 90j → fichiers anciens supprimés
+
+### Post-correctifs & non-régressions (Story 15.5 — étape 8 dev-cycle)
+
+Suite à la code review adversariale + corrections appliquées, vérifications QA manuelles à effectuer en plus des scénarios 5.1–5.6 :
+
+- [ ] **Fix #1 (sécurité Livewire)** — sur la vue détail poste `/app/wpkg/deployments/{workstation}` : connecté en user **sans** `wpkg.assign`, s'assurer (i) que le bouton « Forcer une re-évaluation » n'apparaît pas, (ii) qu'un appel direct à la méthode Livewire `forceReevaluation()` (ex. via DevTools) renvoie **403** (et pas une simple toast d'erreur). Côté user **avec** la permission : le bouton fonctionne et déclenche bien le listener.
+- [ ] **Fix #2 (logs channel `wpkg-deploy`)** — ingérer un rapport contenant des bytes invalides (UTF-16 / latin1) **ET** un rapport référençant des `app_id` absents de la table `applications`. Vérifier que les warnings apparaissent dans `storage/logs/wpkg-deploy*.log` (PAS dans le channel par défaut), avec les clés structurées `event=wpkg_report_invalid_utf8` / `event=wpkg_report_unknown_apps_ignored` et `workstation_id` + `hostname` renseignés.
+- [ ] **Fix #9 (fanout `total_targets`)** — créer un déploiement WPKG via clone parc (15.4) ciblant un parc de N postes (≥ 5). Avant qu'aucun rapport n'arrive, vérifier dans le dashboard que la barre de progression annonce `0/N` (et non `0/0`). Recevoir 1 rapport → vérifier `1/N` (pas `1/1`). Status doit rester `running` tant que `reported < total_targets`.
+- [ ] **Fix #11 (dédup incidents 24h)** — provoquer 3 rapports `failed` consécutifs sur le même poste (ex. réinstall manuelle 3× du même paquet). Sur `/app/wpkg/deployments`, la table « Incidents 24h » doit afficher **1 seule ligne** pour ce poste (avec le timestamp du dernier rapport), pas 3. Filtre `severity` (partial/failed/unknown) toujours fonctionnel.
+- [ ] **Fix #12 (jointure `profileAggregates`)** — créer un AppProfile P avec : 1 lien direct sur poste actif Wa, 1 lien via groupe G contenant un poste actif Wb + un poste **archivé** Wc. Sur le dashboard / onglet « par profil », le total du profil P doit être `2` (Wa + Wb), **pas 3** (Wc archivé exclu).
+
+---
+
 ## Checklist rapide (relecteur)
 
 - [ ] Scénario 1.1 — channel `wpkg-deploy` vivant
@@ -497,3 +609,4 @@ le poste — la dédup UI affiche les deux badges, le cache est invalidé.
 - [ ] Scénario 2.4 — invalidation cache via event → pas de stale
 - [ ] Scénario 2.5 — `WorkstationOptionsChanged` → `.ini` régénéré (CRLF)
 - [ ] Scénarios 4.1 → 4.5 — UI admin assignation apps WPKG (Story 15.4)
+- [ ] Scénarios 5.1 → 5.6 — Pipeline rapports + Dashboard (Story 15.5)

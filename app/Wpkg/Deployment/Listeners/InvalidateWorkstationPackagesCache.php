@@ -16,6 +16,7 @@ use App\Wpkg\Deployment\Events\WorkstationApplicationsChanged;
 use App\Wpkg\Deployment\Events\WorkstationArchived;
 use App\Wpkg\Deployment\Events\WorkstationGroupApplicationsChanged;
 use App\Wpkg\Deployment\Events\WorkstationGroupMembershipChanged;
+use App\Wpkg\Deployment\Events\WorkstationManualReevaluationRequested;
 use App\Wpkg\Deployment\Services\WorkstationPackagesResolver;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -49,6 +50,9 @@ final class InvalidateWorkstationPackagesCache
             $event instanceof WorkstationGroupApplicationsChanged
                 => $this->hostnamesForWorkstationGroup($event->workstationGroupId),
             $event instanceof WorkstationApplicationsChanged
+                => $this->hostnamesForWorkstation($event->workstationId),
+            // Story 15.5 / AC4.4 — re-évaluation manuelle depuis le dashboard.
+            $event instanceof WorkstationManualReevaluationRequested
                 => $this->hostnamesForWorkstation($event->workstationId),
             default => [],
         };

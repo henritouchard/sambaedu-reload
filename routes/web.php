@@ -205,6 +205,30 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
             ->name('machines.show');
     });
 
+    // ========================================
+    // Story 15.5 — Dashboard d'état déploiement WPKG (transversal aux parcs).
+    // Permission lecture : viewAny-workstationGroup (cohérence 15.4).
+    // Permission re-évaluation : wpkg.assign (drill-down vue détail poste).
+    // ========================================
+    Route::prefix('wpkg/deployments')->name('wpkg.deployments')->group(function () {
+        // /app/wpkg/deployments
+        Route::livewire('/', 'pages::wpkg.deployments.index')
+            ->middleware('can:viewAny-workstationGroup')
+            ->name('');
+
+        // /app/wpkg/deployments/list
+        Route::livewire('/list', 'pages::wpkg.deployments.list')
+            ->middleware('can:viewAny-workstationGroup')
+            ->name('.list');
+
+        // /app/wpkg/deployments/workstation/{workstation}
+        // Drill-down depuis le dashboard. ID numérique uniquement.
+        Route::livewire('/workstation/{workstation}', 'pages::wpkg.deployments.[workstation].index')
+            ->whereNumber('workstation')
+            ->middleware('can:viewAny-workstationGroup')
+            ->name('.workstation');
+    });
+
     // Miniature wallpaper (UI admin) — story 4.7 AC 8
     // Gate wallpaper.manage (post-review #6) — principe least-privilege, même
     // si le contenu n'est pas sensible.

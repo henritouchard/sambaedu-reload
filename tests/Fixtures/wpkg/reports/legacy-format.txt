@@ -1,0 +1,11 @@
+2026-05-08 09:30:00 PC-FIXTURE-01 AA:BB:CC:DD:EE:FF [10.0.0.42]
+ID: firefox
+Revision: 115.0
+Reboot: false
+Status: Installed
+---
+ID: thunderbird
+Revision: 102.0
+Reboot: false
+Status: Installed
+---

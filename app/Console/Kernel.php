@@ -88,6 +88,15 @@ class Kernel extends ConsoleKernel
                  ->dailyAt('03:30')
                  ->withoutOverlapping()
                  ->runInBackground();
+
+        // Story 15.5 : Rotation quotidienne des archives brutes des rapports WPKG.
+        // Supprime les fichiers > config('sambaedu.wpkg.reports_archive_retention_days')
+        // (90 jours par défaut). Best-effort : si le dossier d'archive est absent,
+        // la commande retourne 0 sans erreur.
+        $schedule->command('wpkg:reports:archive:rotate')
+                 ->dailyAt('03:45')
+                 ->withoutOverlapping()
+                 ->runInBackground();
     }
 
     /**

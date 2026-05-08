@@ -31,8 +31,8 @@ class ParcGroupWpkgPageTest extends TestCase
 {
     private AppProfile $profile;
     private WorkstationGroup $group;
-    private Application $app;
     private User $admin;
+    private Application $application;
 
     protected function setUp(): void
     {
@@ -44,7 +44,7 @@ class ParcGroupWpkgPageTest extends TestCase
 
         $this->profile = AppProfile::create(['name' => 'p-1', 'is_active' => true]);
         $this->group = WorkstationGroup::create(['name' => 'parc-1']);
-        $this->app = Application::create(['app_id' => 'firefox', 'name' => 'Firefox']);
+        $this->application = Application::create(['app_id' => 'firefox', 'name' => 'Firefox']);
 
         // Stub Gate `wpkg.assign` à allow / deny selon les tests.
         Gate::define('wpkg.assign', fn ($user) => true);
@@ -103,9 +103,9 @@ class ParcGroupWpkgPageTest extends TestCase
         Event::fake([WorkstationGroupApplicationsChanged::class]);
 
         $svc = app(\App\Services\AppProfile\AppProfileService::class);
-        $attached = $svc->addApplicationsToWorkstationGroup($this->group->id, [$this->app->id]);
+        $attached = $svc->addApplicationsToWorkstationGroup($this->group->id, [$this->application->id]);
 
-        self::assertSame([$this->app->id], $attached);
+        self::assertSame([$this->application->id], $attached);
         Event::assertDispatched(WorkstationGroupApplicationsChanged::class);
         self::assertSame(1, $this->group->applications()->count());
     }

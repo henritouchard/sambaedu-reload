@@ -32,7 +32,7 @@ class AppProfileServiceEventsTest extends TestCase
     private AppProfile $profile;
     private Workstation $workstation;
     private WorkstationGroup $group;
-    private Application $app;
+    private Application $application;
 
     protected function setUp(): void
     {
@@ -43,7 +43,7 @@ class AppProfileServiceEventsTest extends TestCase
         $this->profile = AppProfile::create(['name' => 'p-1', 'is_active' => true]);
         $this->workstation = Workstation::create(['name' => 'PCT1', 'status' => 'active']);
         $this->group = WorkstationGroup::create(['name' => 'parc-1']);
-        $this->app = Application::create(['app_id' => 'firefox', 'name' => 'Firefox']);
+        $this->application = Application::create(['app_id' => 'firefox', 'name' => 'Firefox']);
     }
 
     protected function tearDown(): void
@@ -57,11 +57,11 @@ class AppProfileServiceEventsTest extends TestCase
     {
         Event::fake([AppProfileApplicationsChanged::class]);
 
-        $this->service->addApplications($this->profile->id, [$this->app->id]);
+        $this->service->addApplications($this->profile->id, [$this->application->id]);
 
         Event::assertDispatched(AppProfileApplicationsChanged::class, function ($e) {
             return $e->appProfileId === $this->profile->id
-                && $e->applicationIds === [$this->app->id]
+                && $e->applicationIds === [$this->application->id]
                 && $e->direction === 'attached';
         });
     }
@@ -69,14 +69,14 @@ class AppProfileServiceEventsTest extends TestCase
     #[Test]
     public function remove_applications_dispatches_plural_event_with_detached_direction(): void
     {
-        $this->profile->applications()->attach([$this->app->id]);
+        $this->profile->applications()->attach([$this->application->id]);
         Event::fake([AppProfileApplicationsChanged::class]);
 
-        $this->service->removeApplications($this->profile->id, [$this->app->id]);
+        $this->service->removeApplications($this->profile->id, [$this->application->id]);
 
         Event::assertDispatched(AppProfileApplicationsChanged::class, function ($e) {
             return $e->direction === 'detached'
-                && $e->applicationIds === [$this->app->id];
+                && $e->applicationIds === [$this->application->id];
         });
     }
 
@@ -110,9 +110,9 @@ class AppProfileServiceEventsTest extends TestCase
     {
         Event::fake([WorkstationGroupApplicationsChanged::class]);
 
-        $attached = $this->service->addApplicationsToWorkstationGroup($this->group->id, [$this->app->id]);
+        $attached = $this->service->addApplicationsToWorkstationGroup($this->group->id, [$this->application->id]);
 
-        self::assertSame([$this->app->id], $attached);
+        self::assertSame([$this->application->id], $attached);
         Event::assertDispatched(WorkstationGroupApplicationsChanged::class, function ($e) {
             return $e->workstationGroupId === $this->group->id
                 && $e->direction === 'attached';
@@ -122,10 +122,10 @@ class AppProfileServiceEventsTest extends TestCase
     #[Test]
     public function add_applications_to_workstation_group_idempotent_no_event_when_already_attached(): void
     {
-        $this->group->applications()->attach([$this->app->id]);
+        $this->group->applications()->attach([$this->application->id]);
         Event::fake([WorkstationGroupApplicationsChanged::class]);
 
-        $attached = $this->service->addApplicationsToWorkstationGroup($this->group->id, [$this->app->id]);
+        $attached = $this->service->addApplicationsToWorkstationGroup($this->group->id, [$this->application->id]);
 
         self::assertSame([], $attached);
         Event::assertNotDispatched(WorkstationGroupApplicationsChanged::class);
@@ -136,9 +136,9 @@ class AppProfileServiceEventsTest extends TestCase
     {
         Event::fake([WorkstationApplicationsChanged::class]);
 
-        $attached = $this->service->addApplicationsToWorkstation($this->workstation->id, [$this->app->id]);
+        $attached = $this->service->addApplicationsToWorkstation($this->workstation->id, [$this->application->id]);
 
-        self::assertSame([$this->app->id], $attached);
+        self::assertSame([$this->application->id], $attached);
         Event::assertDispatched(WorkstationApplicationsChanged::class);
     }
 
@@ -148,13 +148,13 @@ class AppProfileServiceEventsTest extends TestCase
         Event::fake([WorkstationApplicationsChanged::class]);
 
         // Pas de pivot → pas d'event.
-        $count = $this->service->removeApplicationsFromWorkstation($this->workstation->id, [$this->app->id]);
+        $count = $this->service->removeApplicationsFromWorkstation($this->workstation->id, [$this->application->id]);
         self::assertSame(0, $count);
         Event::assertNotDispatched(WorkstationApplicationsChanged::class);
 
         // Avec pivot → event détaché.
-        $this->workstation->applications()->attach([$this->app->id]);
-        $count = $this->service->removeApplicationsFromWorkstation($this->workstation->id, [$this->app->id]);
+        $this->workstation->applications()->attach([$this->application->id]);
+        $count = $this->service->removeApplicationsFromWorkstation($this->workstation->id, [$this->application->id]);
         self::assertSame(1, $count);
         Event::assertDispatched(WorkstationApplicationsChanged::class, function ($e) {
             return $e->direction === 'detached';
@@ -166,7 +166,7 @@ class AppProfileServiceEventsTest extends TestCase
     {
         Event::fake([AppProfileApplicationsChanged::class]);
 
-        $ok = $this->service->addApplications(99999, [$this->app->id]);
+        $ok = $this->service->addApplications(99999, [$this->application->id]);
 
         self::assertFalse($ok);
         Event::assertNotDispatched(AppProfileApplicationsChanged::class);
@@ -186,7 +186,7 @@ class AppProfileServiceEventsTest extends TestCase
     {
         $g2 = WorkstationGroup::create(['name' => 'parc-2']);
         $this->group->appProfiles()->attach([$this->profile->id]);
-        $this->group->applications()->attach([$this->app->id]);
+        $this->group->applications()->attach([$this->application->id]);
 
         // Crée le shim wpkg_deployments si absent (15.1 — non couvert par bootstrapper 15.2).
         if (! \Illuminate\Support\Facades\Schema::hasTable('wpkg_deployments')) {
@@ -210,7 +210,7 @@ class AppProfileServiceEventsTest extends TestCase
 
         self::assertNotEmpty($result['deployment_id']);
         self::assertSame([$this->profile->id], $result['profiles']['added']);
-        self::assertSame([$this->app->id], $result['applications']['added']);
+        self::assertSame([$this->application->id], $result['applications']['added']);
 
         // Ligne wpkg_deployments insérée
         self::assertSame(1, DB::table('wpkg_deployments')->count());
@@ -250,7 +250,7 @@ class AppProfileServiceEventsTest extends TestCase
 
         DB::beginTransaction();
         try {
-            $this->service->addApplications($this->profile->id, [$this->app->id]);
+            $this->service->addApplications($this->profile->id, [$this->application->id]);
         } finally {
             DB::rollBack();
         }

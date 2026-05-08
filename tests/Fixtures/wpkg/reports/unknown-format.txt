@@ -1,0 +1,8 @@
+2026-05-08 09:30:00 PC-FIXTURE-03 AA:BB:CC:DD:EE:FF [10.0.0.44]
+ID: firefox
+Revision: 115.0
+Reboot: false
+Status: Installed
+WeirdNewKey: SomeValue
+NonStandardLineWithoutColon
+---

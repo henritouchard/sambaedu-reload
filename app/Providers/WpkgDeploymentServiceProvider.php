@@ -13,8 +13,14 @@ use App\Wpkg\Deployment\Events\WorkstationApplicationsChanged;
 use App\Wpkg\Deployment\Events\WorkstationArchived;
 use App\Wpkg\Deployment\Events\WorkstationGroupApplicationsChanged;
 use App\Wpkg\Deployment\Events\WorkstationGroupMembershipChanged;
+use App\Wpkg\Deployment\Events\WorkstationManualReevaluationRequested;
 use App\Wpkg\Deployment\Events\WorkstationOptionsChanged;
+use App\Wpkg\Deployment\Console\Commands\ProvisionWorkstationSecretsCommand;
+use App\Wpkg\Deployment\Console\Commands\RevokeWorkstationSecretCommand;
+use App\Wpkg\Deployment\Console\Commands\RotateWorkstationSecretCommand;
+use App\Wpkg\Deployment\Console\Commands\RotateWpkgReportArchivesCommand;
 use App\Wpkg\Deployment\Listeners\InvalidateWorkstationPackagesCache;
+use App\Wpkg\Deployment\Listeners\RegenerateWorkstationIniOnManualReevaluation;
 use App\Wpkg\Deployment\Listeners\RegenerateWorkstationIniOnOptionsChanged;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
@@ -55,6 +61,18 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
         // cohésion namespace `App\Wpkg\Deployment`. Actifs en testing aussi
         // pour permettre le test feature dispatch sans fake.
         $this->registerWpkgListeners();
+
+        // Story 15.5 — Commandes Artisan dédiées au pipeline 15.x. Enregistrées
+        // ici (et non par auto-load) pour rester dans le namespace
+        // `App\Wpkg\Deployment\Console\Commands` (cohérence test archi).
+        if ($this->app->runningInConsole()) {
+            $this->commands([
+                ProvisionWorkstationSecretsCommand::class,
+                RotateWorkstationSecretCommand::class,
+                RevokeWorkstationSecretCommand::class,
+                RotateWpkgReportArchivesCommand::class,
+            ]);
+        }
 
         // Skip en environnement de test : les chemins legacy n'existent pas
         // sur les CI / runners locaux et le warning est bruyant sans valeur.
@@ -121,6 +139,16 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
         Event::listen(
             WorkstationOptionsChanged::class,
             [RegenerateWorkstationIniOnOptionsChanged::class, 'handle'],
+        );
+
+        // Story 15.5 / AC4.4 — re-évaluation manuelle depuis le dashboard.
+        // Cache packages purgé par `InvalidateWorkstationPackagesCache` (étendu)
+        // ET .ini régénéré par un listener dédié (sémantique distincte des
+        // events 15.2/15.4 — origine manuelle traçable).
+        Event::listen(WorkstationManualReevaluationRequested::class, $cacheInvalidator);
+        Event::listen(
+            WorkstationManualReevaluationRequested::class,
+            [RegenerateWorkstationIniOnManualReevaluation::class, 'handle'],
         );
     }
 

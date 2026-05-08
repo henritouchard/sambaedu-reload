@@ -191,5 +191,15 @@ return [
         'report_ingestion_allowed_ips' => array_filter(
             explode(',', env('WPKG_ALLOWED_IPS', '127.0.0.1,::1'))
         ),
+
+        // Story 15.5 — Rétention des archives brutes des rapports (en jours).
+        // La commande `wpkg:reports:archive:rotate` (schedulée daily 03:45)
+        // supprime les fichiers d'archive plus anciens que cette valeur.
+        'reports_archive_retention_days' => (int) env('WPKG_REPORTS_ARCHIVE_RETENTION_DAYS', 90),
+
+        // Story 15.5 — Durée de validité d'un ancien secret après rotation
+        // (chevauchement). Permet aux postes pas encore mis à jour de
+        // continuer à pousser leurs rapports.
+        'secret_rotation_overlap_days' => (int) env('WPKG_SECRET_ROTATION_OVERLAP_DAYS', 7),
     ],
 ]; 

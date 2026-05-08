@@ -149,3 +149,91 @@ testing).
 | `apcu_delete("wpkg_poste_*")` post-mutation           | Listener `InvalidateWorkstationPackagesCache` (câblé sur 9 events Laravel)                            |
 | Bulk catégorie legacy (manuel SQL)                    | `bulkCategory*` + Décision C (1 event pluriel `AppProfileApplicationsChanged`)                        |
 | Clone parc → parc (manuel SQL)                        | `AppProfileService::cloneConfiguration` synchrone + ligne `wpkg_deployments` UUID + diff retourné     |
+
+## Pipeline d'ingestion (Story 15.5)
+
+### Vue d'ensemble du flux
+
+```
+Client Windows (script wpkg.js / GPO startup)
+        │
+        │ POST /api/v1/wpkg/reports/{hostname}
+        │ Authorization: Bearer <secret>
+        │ Content-Type: text/plain
+        ▼
+WorkstationBearerAuth (middleware Phase 2)
+  ├── Bearer présent : verify() vs `workstation_api_secrets.secret_hash`
+  │                    + couvre rotation 7j (`previous_secret_hash`)
+  └── Bearer absent  : fallback Phase 1 IP allowlist (jusqu'à 15.7)
+        │
+        ▼
+WpkgReportController::store()
+        │
+        ▼
+WpkgReportIngestionService::ingest()
+  ├─ SHA256 (idempotence — skip si identique)
+  ├─ WpkgReportArchiver::archive() — atomic write Y/m/d/{host}_{ts}_{sha8}.txt
+  ├─ parseReport() — graceful unknown (warning + best-effort)
+  ├─ updateWorkstationReport() — workstation_application_status (9.4)
+  │                              + workstations.last_report_at + report_sha
+  ├─ ActiveDeploymentForWorkstationQuery::find() — 3 axes :
+  │     workstation_ids / group_ids / profile_ids (héritage groupe + direct)
+  ├─ upsert wpkg_deployment_workstation_status (15.1, agrégat)
+  └─ recalcule wpkg_deployments.summary + transition status
+        │
+        ▼
+Log structured `wpkg-deploy` channel :
+  event=wpkg_report_ingested | wpkg_auth_failed | wpkg_report_parser_warning
+        │
+        ▼
+Dashboard `/app/wpkg/deployments` lit l'agrégat via WpkgDashboardQueryService
+  (DISTINCT ON / ROW_NUMBER OVER PARTITION pour portabilité PG/SQLite).
+```
+
+### Commandes Artisan
+
+| Commande                                             | Rôle                                                                 |
+|------------------------------------------------------|----------------------------------------------------------------------|
+| `wpkg:provision-secrets [--force]`                   | Provisionne un secret Bearer par poste actif (CSV stdout `hostname,secret`). Refuse hors TTY sauf `--unsafe-output-secrets`. |
+| `wpkg:rotate-secret {hostname\|id}`                  | Rote le secret d'un poste avec fenêtre de chevauchement 7j.          |
+| `wpkg:revoke-secret {hostname\|id}`                  | Révoque définitivement le secret. Toute requête future → 401.        |
+| `wpkg:reports:archive:rotate [--days=N] [--dry-run]` | Supprime les archives plus anciennes que N jours (90 par défaut). Schedulée daily 03:00. |
+
+### Mapping legacy → reload (Story 15.5 / AC7.1)
+
+| Legacy                                                  | Reload                                                                                              |
+|---------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
+| `sambaedu/wpkg/wpkg_rapport.php`                        | `App\Http\Controllers\Api\WpkgReportController` (étendu 15.5) + `WpkgReportIngestionService`        |
+| (cron systemd / SMB lecture)                            | Endpoint HTTP direct depuis client Windows (Phase 2 Bearer) + worker `wpkg:process-reports` (9.4 transition) |
+| `sambaedu/wpkg/log.php`                                 | route `windows-deploy.reports.log` (9.5) — non modifié 15.5                                        |
+| (aucun dashboard global)                                | `pages/wpkg/deployments/index.blade.php` (Story 15.5)                                              |
+| (aucune corrélation deployment → rapports)              | `ActiveDeploymentForWorkstationQuery` + `wpkg_deployment_workstation_status` (15.1 alimentée)      |
+| (auth IP allowlist seule)                               | Auth Bearer machine + table `workstation_api_secrets` (Phase 2, fallback Phase 1 jusqu'à 15.7)     |
+| (pas d'archive brute)                                   | `WpkgReportArchiver` + atomic write `Y/m/d/{host}_{ts}_{sha8}.txt` + rotation 90j                  |
+
+### Composants 15.5 ajoutés au namespace
+
+| Catégorie       | Classe                                                            |
+|-----------------|-------------------------------------------------------------------|
+| Models          | `WorkstationApiSecret`, `WpkgDeployment`, `WpkgDeploymentWorkstationStatus` |
+| Services        | `WpkgReportArchiver`, `WpkgDashboardQueryService`                |
+| Queries         | `ActiveDeploymentForWorkstationQuery`                            |
+| Events          | `WorkstationManualReevaluationRequested`                         |
+| Listeners       | `RegenerateWorkstationIniOnManualReevaluation` (+ extension `InvalidateWorkstationPackagesCache`) |
+| Commands        | `ProvisionWorkstationSecretsCommand`, `RotateWorkstationSecretCommand`, `RevokeWorkstationSecretCommand`, `RotateWpkgReportArchivesCommand` |
+
+### Décisions dev (Story 15.5)
+
+- **Rotation secrets** : option « colonne » (`previous_secret_hash` + `previous_valid_until`)
+  plutôt que table historique. Simple + suffit au cas d'usage (un seul ancien secret valide
+  à la fois).
+- **Listener manuel re-évaluation** : nouveau listener dédié
+  `RegenerateWorkstationIniOnManualReevaluation` (sémantique distincte des events
+  15.2/15.4 — origine manuelle traçable via `triggeredByUserId`).
+- **AC2.2 format `<package>`** : descopé. L'audit du code legacy local
+  (`legacy/wpkg_libsql.php`) ne montre aucune trace de ce format. Le parser reste
+  graceful (AC2.3) — un rapport au format inattendu sera archivé brut + warning,
+  pas bloqué.
+- **NFR1 < 2s sur 500 postes** : indices DB + SQL agrégé suffisent. Pas de Redis
+  cache layer. Portabilité PG/SQLite via `DB::getDriverName()` dans
+  `WpkgDashboardQueryService` (PG `DISTINCT ON` ↔ SQLite `ROW_NUMBER OVER PARTITION`).

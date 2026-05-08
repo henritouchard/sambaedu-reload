@@ -28,7 +28,7 @@ class CloneGroupConfigTest extends TestCase
     private WorkstationGroup $source;
     private WorkstationGroup $target;
     private AppProfile $profile;
-    private Application $app;
+    private Application $application;
 
     protected function setUp(): void
     {
@@ -39,10 +39,10 @@ class CloneGroupConfigTest extends TestCase
         $this->source = WorkstationGroup::create(['name' => 'src']);
         $this->target = WorkstationGroup::create(['name' => 'tgt']);
         $this->profile = AppProfile::create(['name' => 'p-1', 'is_active' => true]);
-        $this->app = Application::create(['app_id' => 'firefox', 'name' => 'Firefox']);
+        $this->application = Application::create(['app_id' => 'firefox', 'name' => 'Firefox']);
 
         $this->source->appProfiles()->attach([$this->profile->id]);
-        $this->source->applications()->attach([$this->app->id]);
+        $this->source->applications()->attach([$this->application->id]);
     }
 
     protected function tearDown(): void
@@ -92,7 +92,7 @@ class CloneGroupConfigTest extends TestCase
         // Diff retourné : 1 profil ajouté, 1 app ajoutée.
         self::assertSame([$this->profile->id], $result['profiles']['added']);
         self::assertSame([], $result['profiles']['removed']);
-        self::assertSame([$this->app->id], $result['applications']['added']);
+        self::assertSame([$this->application->id], $result['applications']['added']);
         self::assertSame([], $result['applications']['removed']);
 
         // wpkg_deployments : 1 ligne avec status completed + UUID partagé.

@@ -127,10 +127,20 @@ Route::get('/health-check', [InstanceStatusController::class, 'check']);
 | Routes WPKG — Ingestion des rapports d'installation
 |--------------------------------------------------------------------------
 | Appelées par le script WPKG en local (agent Windows ou cron).
-| Restreintes aux requêtes locales via le middleware local.request.
+|
+| Story 9.4 — middleware Phase 1 `local.request` (IP allowlist).
+| Story 15.5 — middleware Phase 2 `workstation.bearer` qui accepte un Bearer
+|              secret machine ET retombe sur l'IP allowlist Phase 1 en
+|              fallback (transition jusqu'à 15.7). Les deux routes pointent
+|              vers le MÊME contrôleur ; la route v1 est l'alias canonique
+|              pour la convention `routes/api.php` (cf. `prefix('v1')`).
 */
-Route::prefix('wpkg')->middleware('local.request')->group(function () {
+Route::prefix('wpkg')->middleware('workstation.bearer')->group(function () {
     Route::post('/reports/{hostname}', [WpkgReportController::class, 'store'])->name('wpkg.reports.store');
+});
+
+Route::prefix('v1/wpkg')->middleware('workstation.bearer')->group(function () {
+    Route::post('/reports/{hostname}', [WpkgReportController::class, 'store'])->name('api.v1.wpkg.reports.store');
 });
 
 Route::prefix('v1/shortcuts/export')->name('shortcuts.export.')->group(function () {
