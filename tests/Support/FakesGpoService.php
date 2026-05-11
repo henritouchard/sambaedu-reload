@@ -4,35 +4,52 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Gpo\Dto\GpoLink;
+use App\Gpo\Dto\GpoSummary;
 use App\Gpo\Services\GpoService;
 use App\Gpo\Support\SambaToolRunner;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Process;
+use Mockery;
+use Mockery\MockInterface;
 
 /**
  * Helper de test pour les services consommant {@see GpoService} (Story 16.1).
  *
- * Fournit des fixtures réutilisables (output simulé `samba-tool gpo listall`,
- * etc.) et un wireup minimal de `Process::fake()` pour les tests unitaires
- * qui veulent injecter un comportement déterministe sans toucher au binaire
- * réel `samba-tool`.
+ * Fournit deux modes d'utilisation :
  *
- * Exemples d'utilisation :
+ * 1. **Outputs samba-tool fixtures statiques** (`listallOutput()`,
+ *    `showOutput()`, etc.) — pour tester `GpoService` lui-même via
+ *    `Process::fake()`.
+ *
+ * 2. **Builder fluide de mock** (`make()->withGpos(...)->bind()`) — pour les
+ *    tests Feature Livewire qui n'ont besoin que de stubber les méthodes
+ *    publiques de `GpoService` sans toucher au binaire. Évite la duplication
+ *    de boilerplate Mockery dans chaque test (Story 16.2 fix #11).
+ *
+ * Exemples :
  *
  * ```php
- * // Dans un test :
- * use Tests\Support\FakesGpoService;
- *
+ * // Mode fixtures samba-tool :
  * Process::fake([
  *     '*samba-tool* gpo listall *' => Process::result(FakesGpoService::listallOutput()),
  * ]);
- *
  * $service = FakesGpoService::makeService();
- * $gpos = $service->list();
- * $this->assertCount(3, $gpos);
+ *
+ * // Mode mock fluide pour tests Feature :
+ * FakesGpoService::make()
+ *     ->withGpos([$gpo1, $gpo2])
+ *     ->withGpo('{guid}', $gpo1)
+ *     ->withContainersFor('{guid}', ['OU=Salles,DC=ex,DC=org'])
+ *     ->withLinksFor('OU=Salles,DC=ex,DC=org', [$link1])
+ *     ->withInheritanceFor('OU=Salles,DC=ex,DC=org', true)
+ *     ->bind($this->app);
  * ```
  */
 final class FakesGpoService
 {
+    private ?MockInterface $mock = null;
+
     /**
      * Output typique de `samba-tool gpo listall` — 3 GPOs simulées
      * couvrant les cas standard (default + custom + une avec accents).
@@ -127,5 +144,140 @@ OUT;
     public static function makeService(?SambaToolRunner $runner = null): GpoService
     {
         return new GpoService($runner ?? new SambaToolRunner());
+    }
+
+    // -------------------------------------------------------------------------
+    // Builder fluide de mock (Story 16.2 fix #11)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Démarre la construction d'un mock fluide de {@see GpoService}.
+     */
+    public static function make(): self
+    {
+        $f = new self();
+        $f->mock = Mockery::mock(GpoService::class);
+        return $f;
+    }
+
+    /**
+     * Stub `list()` → Collection des GPOs fournies.
+     *
+     * @param iterable<GpoSummary> $gpos
+     */
+    public function withGpos(iterable $gpos): self
+    {
+        $collection = $gpos instanceof Collection ? $gpos : collect($gpos);
+        $this->mock->shouldReceive('list')->andReturn($collection);
+        return $this;
+    }
+
+    /**
+     * Force `list()` à lever une exception (pour tester AC1.7).
+     */
+    public function withListThrowing(\Throwable $exception): self
+    {
+        $this->mock->shouldReceive('list')->andThrow($exception);
+        return $this;
+    }
+
+    /**
+     * Stub `get($name)` → le GpoSummary fourni (ou null pour 404).
+     */
+    public function withGpo(string $name, ?GpoSummary $gpo): self
+    {
+        $this->mock->shouldReceive('get')->with($name)->andReturn($gpo);
+        return $this;
+    }
+
+    /**
+     * Force `get($name)` à lever une exception.
+     */
+    public function withGetThrowing(string $name, \Throwable $exception): self
+    {
+        $this->mock->shouldReceive('get')->with($name)->andThrow($exception);
+        return $this;
+    }
+
+    /**
+     * Stub `listContainers($name)` → liste de DNs.
+     *
+     * @param list<string> $containerDns
+     */
+    public function withContainersFor(string $name, array $containerDns): self
+    {
+        $this->mock->shouldReceive('listContainers')->with($name)->andReturn($containerDns);
+        return $this;
+    }
+
+    /**
+     * Stub `getLinks($dn)` → liste de GpoLink.
+     *
+     * @param list<GpoLink> $links
+     */
+    public function withLinksFor(string $containerDn, array $links): self
+    {
+        $this->mock->shouldReceive('getLinks')->with($containerDn)->andReturn($links);
+        return $this;
+    }
+
+    /**
+     * Stub `getInheritance($dn)` → bool.
+     */
+    public function withInheritanceFor(string $containerDn, bool $inherit): self
+    {
+        $this->mock->shouldReceive('getInheritance')->with($containerDn)->andReturn($inherit);
+        return $this;
+    }
+
+    /**
+     * Catch-all : tout appel à getLinks/getInheritance non explicitement
+     * configuré retournera la valeur fournie. Évite les "should not receive"
+     * inattendus quand le test n'a pas besoin de granularité par DN.
+     */
+    public function withDefaultLinks(array $links = []): self
+    {
+        $this->mock->shouldReceive('getLinks')->andReturn($links);
+        return $this;
+    }
+
+    public function withDefaultInheritance(bool $inherit = true): self
+    {
+        $this->mock->shouldReceive('getInheritance')->andReturn($inherit);
+        return $this;
+    }
+
+    /**
+     * Affirme qu'aucune méthode de lecture ne sera appelée. Utile pour les
+     * tests de validation qui doivent rejeter les inputs avant tout dispatch.
+     */
+    public function expectNoCalls(): self
+    {
+        $this->mock->shouldNotReceive('list');
+        $this->mock->shouldNotReceive('get');
+        $this->mock->shouldNotReceive('listContainers');
+        $this->mock->shouldNotReceive('getLinks');
+        $this->mock->shouldNotReceive('getInheritance');
+        return $this;
+    }
+
+    /**
+     * Bind le mock dans le container de l'application Laravel passé.
+     *
+     * @param \Illuminate\Contracts\Foundation\Application $app
+     */
+    public function bind($app): MockInterface
+    {
+        $mock = $this->mock;
+        $app->bind(GpoService::class, fn() => $mock);
+        return $mock;
+    }
+
+    /**
+     * Retourne le mock sous-jacent (pour ajouter des `shouldReceive` ad-hoc).
+     */
+    public function mock(): MockInterface
+    {
+        return $this->mock;
     }
 }

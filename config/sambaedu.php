@@ -43,6 +43,10 @@ return [
         '^annu2/annu\.php' => 'app/users',
         'parcs/show_parc.php' => 'app/parcs',
         'gpo/shortcuts_out\.php' => 'app/shortcuts',
+        // Story 16.2 — Décision SM D5 : bloquer uniquement la page d'index legacy.
+        // Les pages d'édition (gpo-maj.php, gpo-export.php, wine.php, etc.) restent
+        // accessibles pour la cohabitation jusqu'aux Stories 16.3/16.4/16.5.
+        '^gpo/gestion_gpo\.php$' => 'app/gpo',
     ],
 
     /*

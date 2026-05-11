@@ -236,6 +236,26 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
         ->middleware('can:wallpaper.manage')
         ->name('wallpapers.thumbnail');
 
+    // ========================================
+    // GPO — Epic 16, Story 16.2
+    // Listing et détail lecture seule des GPOs Active Directory.
+    // Permission server.admin (Décision D4). Route /app/gpo (Décision D1).
+    //
+    // La regex stricte du GUID (format Microsoft, accolades optionnelles)
+    // dans where('guid', ...) bloque toute valeur non conforme au niveau du
+    // routeur (404 retourné avant tout dispatch Livewire). C'est cette regex
+    // qui constitue la défense principale contre les injections — la
+    // validation défensive dans mount() n'est qu'un filet de sécurité.
+    // ========================================
+    Route::livewire('/gpo/{guid}', 'pages::app.gpo.[guid].index')
+        ->where('guid', '\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?')
+        ->middleware('can:server.admin')
+        ->name('gpo.show');
+
+    Route::livewire('/gpo', 'pages::app.gpo.index')
+        ->middleware('can:server.admin')
+        ->name('gpo.index');
+
 });
 
 /*
