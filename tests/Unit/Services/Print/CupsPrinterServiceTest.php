@@ -175,8 +175,20 @@ class CupsPrinterServiceTest extends TestCase
     public function it_throws_daemon_down_exception_when_lpstat_fails(): void
     {
         $this->runner->whenContains('lpstat -s', '', 1, 'lpstat: No connections to server');
+        $this->runner->whenContains('lpstat -r', '', 1, 'lpstat: No connections to server');
         $this->expectException(CupsDaemonDownException::class);
         $this->service->listPrinters();
+    }
+
+    #[Test]
+    public function it_returns_empty_when_no_destinations_but_daemon_up(): void
+    {
+        // `lpstat -s` retourne RC=1 quand aucune imprimante n'est configurée
+        // ("lpstat: No destinations added."). Le daemon répond pourtant à `lpstat -r`.
+        // On doit distinguer ce cas de CUPS-down (fix bannière "CUPS injoignable").
+        $this->runner->whenContains('lpstat -s', '', 1, 'lpstat: No destinations added.');
+        $this->runner->whenContains('lpstat -r', 'scheduler is running', 0);
+        $this->assertSame([], $this->service->listPrinters());
     }
 
     #[Test]

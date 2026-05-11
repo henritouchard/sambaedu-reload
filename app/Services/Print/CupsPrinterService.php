@@ -110,7 +110,16 @@ class CupsPrinterService
     {
         $sList = $this->runQuiet('lpstat -s');
         if ($sList['returnCode'] !== 0) {
-            Log::error('CupsPrinterService: lpstat -s échoué — daemon CUPS injoignable', [
+            // RC≠0 ambigu : daemon down OU aucune destination configurée
+            // (`lpstat: No destinations added.` → RC=1 alors que CUPS tourne).
+            // On lève l'ambiguïté via `lpstat -r` (isHealthy).
+            if ($this->isHealthy()) {
+                Log::info('CupsPrinterService: lpstat -s RC≠0 mais daemon up — aucune imprimante configurée', [
+                    'stderr' => $sList['stderr'],
+                ]);
+                return [];
+            }
+            Log::error('CupsPrinterService: daemon CUPS injoignable', [
                 'stderr' => $sList['stderr'],
                 'returnCode' => $sList['returnCode'],
             ]);
