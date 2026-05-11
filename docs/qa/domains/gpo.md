@@ -142,3 +142,78 @@
 2. Attendu : **0 entrée** `[AllowSe4FsScript] Accès autorisé` au niveau `info` (le canal Monolog par défaut filtre `debug` en prod).
 3. Si le log channel est temporairement abaissé en `debug` (debug d'incident), les entrées apparaissent — c'est le comportement souhaité.
 4. Les refus d'accès (`Log::warning`) restent visibles en prod par défaut → vérifier qu'une tentative depuis une IP non-whitelistée + clé invalide produit bien `[AllowSe4FsScript] Accès refusé`.
+
+---
+
+## Story 16.1 — Fondations GPO natives + audit legacy
+
+**Date livraison** : 2026-05-11
+**Migrations à appliquer** : aucune (décision SM D3 — pas de tables Eloquent)
+**Permission requise** : aucune (story d'infrastructure, pas d'UI utilisateur)
+
+> Story d'infrastructure pure : pose les rails du namespace `App\Gpo`, du
+> channel logs `gpo`, du runner `samba-tool`, des garde-fous archi. **Aucune
+> capacité utilisateur livrée** — les smoke tests valident l'infrastructure.
+
+### Scénario 16.1-1 — Channel logs `gpo` opérationnel
+
+1. Sur la VM : `sudo systemctl restart php8.4-fpm nginx` (rebuild containers).
+2. Vérifier que le dossier `/var/www/sambaedu-reload/storage/logs/gpo/` est créé automatiquement au boot :
+   ```bash
+   ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50
+   ls -la /var/www/sambaedu-reload/storage/logs/gpo/
+   ```
+   → doit exister (créé par `GpoServiceProvider::ensureLogChannelDirectory()`).
+3. Émettre un log de test depuis tinker :
+   ```bash
+   cd /var/www/sambaedu-reload && php artisan tinker
+   >>> use App\Gpo\Support\GpoLogger;
+   >>> $log = GpoLogger::action('gpo.list'); $log->step('test'); $log->success(['count' => 0]);
+   ```
+4. Vérifier que `storage/logs/gpo/gpo-YYYY-MM-DD.log` contient bien 3 lignes JSON avec `action_type=gpo.list`, `operation_id` UUID, `outcome=start|step|success`.
+
+### Scénario 16.1-2 — `GpoService::list()` retourne la liste des GPOs
+
+1. Sur la VM (Samba AD opérationnel) :
+   ```bash
+   cd /var/www/sambaedu-reload && php artisan tinker
+   >>> $gpos = app(App\Gpo\Services\GpoService::class)->list();
+   >>> $gpos->count();  // doit retourner ≥ 2 (Default Domain Policy + Default DC Policy + GPOs SE4)
+   >>> $gpos->first()->displayName;
+   ```
+2. Vérifier que `storage/logs/gpo/gpo-YYYY-MM-DD.log` contient :
+   - 1 log `[gpo] gpo.list start`
+   - 1 log `[gpo] samba-tool exec` (debug) avec `command: ["/usr/bin/samba-tool","gpo","listall","--use-kerberos=required"]`
+   - 1 log `[gpo] gpo.list success` avec `count: N`.
+
+### Scénario 16.1-3 — Stubs d'écriture lèvent RuntimeException
+
+1. Tinker :
+   ```bash
+   php artisan tinker
+   >>> app(App\Gpo\Services\GpoService::class)->create('test-gpo');
+   ```
+2. Attendu : `RuntimeException` avec message contenant `not implemented yet — see Story 16.4`.
+3. Vérifier que le log `gpo.create` est bien émis avec `outcome=failure` et `error.class=RuntimeException`.
+
+### Scénario 16.1-4 — `GpoSyncService` legacy reste fonctionnel (non-régression)
+
+1. Sur la VM, créer une délégation `computer.elevate` pour un user via la page `/admin/delegations` (ou via tinker `app(GpoSyncService::class)->syncGpoForGrant($user, $group)`).
+2. Vérifier que l'AD est bien mis à jour : `samba-tool gpo listall | grep <delegation-name>` retourne une entrée.
+3. Vérifier qu'aucune erreur n'est apparue dans `storage/logs/laravel.log` ni dans `storage/logs/gpo/gpo-YYYY-MM-DD.log` (le service legacy n'écrit pas dans le channel `gpo`).
+
+### Scénario 16.1-5 — Boot warnings cohérents si Samba absent
+
+1. Sur un environnement sans Samba (dev local) ou en modifiant temporairement `config('sambaedu.gpo.bin_path')` vers un path inexistant.
+2. Vérifier que `storage/logs/gpo/gpo-YYYY-MM-DD.log` contient au boot un warning `[gpo] binaire samba-tool introuvable` avec le contexte `config_key` et `path`.
+3. Vérifier que le boot Laravel ne casse pas (la page d'accueil reste accessible).
+
+### Checklist rapide Story 16.1
+
+- [ ] `storage/logs/gpo/` créé automatiquement au boot
+- [ ] Channel `gpo` enregistré dans `config/logging.php`
+- [ ] `GpoService::list()` retourne `Collection<GpoSummary>` non vide en VM
+- [ ] Stubs écriture (`create`, `delete`, etc.) lèvent `RuntimeException` avec ref Story 16.4/16.5
+- [ ] `GpoSyncService` legacy (`computer.elevate`) reste fonctionnel
+- [ ] Aucun appel `exec()` direct détecté hors `SambaToolRunner` (test archi `GpoNamespaceTest`)
+- [ ] Aucun `require_once 'legacy/*'` depuis `app/Gpo/*` (test archi `GpoLegacyIsolationTest`)

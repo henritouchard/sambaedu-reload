@@ -10,12 +10,23 @@ use Illuminate\Support\Facades\Process;
 
 /**
  * Service de synchronisation GPO pour les délégations computer.elevate
- * 
+ *
  * Conception unidirectionnelle SQL → AD : ce service écrit dans l'AD,
  * jamais l'inverse. Il restera identique après la transition source de vérité.
- * 
+ *
  * Ne concerne que la permission 'computer.elevate' (admin local temporaire).
  * Les autres permissions sont vérifiées côté web uniquement.
+ *
+ * @deprecated Story 16.1 (Epic 16) — sera replié dans
+ *             {@see \App\Gpo\Services\GpoService} à partir de Story 16.4+.
+ *             Ne pas ajouter de nouvelle logique métier dans cette classe :
+ *             toute évolution doit aller dans le namespace `App\Gpo`.
+ *             Le service reste vivant pendant toute la transition Epic 16
+ *             pour ne pas casser les délégations `computer.elevate` existantes
+ *             (Spatie\Permission). Suppression effective : Story 16.4+ après
+ *             implémentation du volet écriture (`create`, `setLink`, etc.).
+ * @see \App\Gpo\Services\GpoService
+ * @see _bmad-output/implementation-artifacts/16-1-fondations-gpo-natives-audit-legacy.md AC3.4
  */
 class GpoSyncService
 {

@@ -172,6 +172,7 @@ return [
         App\Providers\WallpaperServiceProvider::class,
         App\Providers\AppCustomizationServiceProvider::class,
         App\Providers\WpkgDeploymentServiceProvider::class,
+        App\Providers\GpoServiceProvider::class,
         ])->toArray(),
 
     /*

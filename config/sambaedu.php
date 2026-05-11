@@ -202,4 +202,44 @@ return [
         // continuer à pousser leurs rapports.
         'secret_rotation_overlap_days' => (int) env('WPKG_SECRET_ROTATION_OVERLAP_DAYS', 7),
     ],
-]; 
+
+    /*
+    |--------------------------------------------------------------------------
+    | Configuration GPO (Epic 16, Story 16.1)
+    |--------------------------------------------------------------------------
+    |
+    | Valeurs **en dur** (pas de env(...)) — décision SM D8 / cohérence Story 15.1
+    | AC4.1. Si une customisation par environnement est nécessaire, modifier
+    | ce fichier directement (les ops auront un patch isolé à appliquer).
+    |
+    | Exceptions : GPO_LOG_LEVEL et GPO_LOG_DAYS restent paramétrables par env
+    | (config/logging.php — verbosité ajustable sans redeploy en phase de
+    | transition Epic 16).
+    |
+    | Parité legacy : sambaedu/includes/samba-tool.inc.php:69 (bin /usr/bin/samba-tool),
+    | gpo.inc.php:1053 (policies temp dir), samba-tool.inc.php:62
+    | (--use-kerberos=required).
+    */
+
+    'gpo' => [
+        // Chemin absolu du binaire samba-tool.
+        'bin_path' => '/usr/bin/samba-tool',
+
+        // Chemin SYSVOL local (partage Samba). Utilisé pour lecture/écriture
+        // des fichiers .pol / .xml / .ini de policies (Stories 16.3, 16.4).
+        'sysvol_path' => '/var/lib/samba/sysvol',
+
+        // Répertoire de travail pour `samba-tool gpo fetch` — parité legacy
+        // gpo.inc.php:1053. À garder lisible/écrivable par le user PHP-FPM.
+        'policies_temp_path' => '/var/www/sambaedu/temp/policies',
+
+        // Timeout (secondes) appliqué à chaque appel `samba-tool` via
+        // SambaToolRunner. Override possible avec ->withTimeout() côté caller.
+        'samba_tool_timeout' => 30,
+
+        // Argument d'authentification global passé à toutes les commandes
+        // samba-tool (parité legacy samba-tool.inc.php:62).
+        // Sera enrichi quand on supportera l'authentification par compte stocké.
+        'kerb_option' => '--use-kerberos=required',
+    ],
+];
