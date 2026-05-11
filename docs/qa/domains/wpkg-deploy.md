@@ -375,8 +375,6 @@ curl -s "<http://se4fs/wpkg/profiles.xml?poste=pc-cdi-07>"
 
 ### Pré-requis Section 4
 
-- VM avec branche `wpkg` checkée (la VM dev tournait sur `main` au moment de la livraison
-  initiale — voir Dev Agent Record 15.4 pour le statut).
 - User admin avec permission Spatie `wpkg.assign` (`SambaPermission::WpkgAssign`).
 - Au moins 1 `WorkstationGroup` actif et 1 `Workstation` rattachée.
 - Au moins 2 `AppProfile` actifs et 3 `Application` (idéalement avec `category` non null).
@@ -486,62 +484,42 @@ le poste — la dédup UI affiche les deux badges, le cache est invalidé.
 
 ## Section 5 — Pipeline rapports clients + Dashboard (Story 15.5)
 
-> **Cadre** : ingestion durcie (auth Bearer machine, archivage brut, corrélation
-> `deployment_id`), parser graceful, dashboard global `/app/wpkg/deployments`,
-> commandes Artisan de provisioning des secrets, rotation archives 90j.
+> **Cadre** : ingestion via worker `wpkg:process-reports` (Story 9.4), archivage
+> brut, corrélation `deployment_id`, parser graceful, dashboard global
+> `/app/wpkg/deployments`, rotation archives 90j.
 
-### Scénario 5.1 — Provisioning d'un secret machine + premier POST
-
-1. Sur la VM, provisionner un secret pour un poste de test :
-   ```bash
-   php artisan wpkg:provision-secrets --force | grep '^PC-TEST'
-   ```
-   _Sortie attendue : `PC-TEST,xxxxxxxxxxxx...32chars` (CSV)_.
-2. Sauvegarder le secret affiché (il ne sera plus affiché ailleurs).
-3. POST un rapport via la route alias v1 avec Bearer :
-   ```bash
-   curl -X POST http://localhost/api/v1/wpkg/reports/PC-TEST \
-     -H 'Authorization: Bearer <secret>' \
-     -H 'Content-Type: text/plain' \
-     --data-binary @rapport.txt
-   ```
-4. Réponse 200 `{"status":"processed",...}`.
-5. Naviguer vers `/app/wpkg/deployments` → la KPI « Sains » a augmenté.
-6. `tail -1 storage/logs/wpkg-deploy/deploy-*.log` → ligne contient
-   `event=wpkg_report_ingested workstation_id=...`.
-
-### Scénario 5.2 — Token expiré → 401
-
-1. Faire une rotation (le secret reste valide 7j en chevauchement) :
-   ```bash
-   php artisan wpkg:rotate-secret PC-TEST
-   ```
-2. Tinker : forcer `previous_valid_until` dans le passé pour simuler
-   l'expiration de la fenêtre :
-   ```bash
-   php artisan tinker
-   >>> \App\Wpkg\Deployment\Models\WorkstationApiSecret::where('workstation_id', $id)->update(['previous_valid_until' => now()->subDay()]);
-   ```
-3. POST avec l'ancien secret → 401.
-4. Log `wpkg-deploy` : `event=wpkg_auth_failed reason=bearer_invalid`.
+> **Note 2026-05-11 — retour iso-legacy auth** : les scénarios 5.1 (provisioning
+> secret Bearer) et 5.2 (token expiré → 401) ont été supprimés suite au retour
+> au mode d'auth legacy (jointure AD + ACL Samba sur le partage `rapports/`).
+> Les numéros 5.1 et 5.2 **ne sont pas réutilisés** (convention append-only).
+> Les scénarios suivants déclenchent l'ingestion via le worker
+> `php artisan wpkg:process-reports` après dépôt d'un fichier `.txt` dans le
+> partage SMB.
 
 ### Scénario 5.3 — Rapport corrélé à un clone parc 15.4
 
-1. Depuis `/app/parc/groups/{id}` → cloner la config parc → noter le
-   `deployment_id` UUID dans le toast.
-2. Forcer un poste à pousser un rapport (curl + Bearer comme 5.1).
-3. Tinker :
+1. Pré-condition : un poste de test `PC-TEST` actif en BDD.
+2. Depuis `/app/parc/groups/{id}` → cloner la config parc vers un parc
+   contenant `PC-TEST` → noter le `deployment_id` UUID dans le toast.
+3. Déposer un rapport sur le partage SMB, puis déclencher l'ingestion :
+   ```bash
+   cp rapport.txt /var/sambaedu/unattended/install/wpkg/rapports/PC-TEST.txt
+   touch -d "1 minute ago" /var/sambaedu/unattended/install/wpkg/rapports/PC-TEST.txt
+   php artisan wpkg:process-reports
+   ```
+4. Tinker :
    ```bash
    php artisan tinker
    >>> \App\Wpkg\Deployment\Models\WpkgDeploymentWorkstationStatus::where('workstation_id', $id)->latest()->first();
    ```
-4. `client_status` reflète le rapport, `deployment_id` matche le clone.
-5. `wpkg_deployments.summary->reported` incrémenté de 1.
-6. Si `total_targets <= reported` → status passé à `completed`.
+5. `client_status` reflète le rapport, `deployment_id` matche le clone.
+6. `wpkg_deployments.summary->reported` incrémenté de 1.
+7. Si `total_targets <= reported` → status passé à `completed`.
 
 ### Scénario 5.4 — Rapport spontané (sans déploiement actif)
 
-1. Forcer un POST rapport sur un poste **sans** déploiement actif.
+1. Sur un poste **sans** déploiement actif : déposer un rapport sur le partage
+   SMB et lancer `php artisan wpkg:process-reports`.
 2. `wpkg_deployment_workstation_status` n'a **pas** de nouvelle ligne.
 3. `workstation_application_status` (table 9.4) est mise à jour normalement.
 4. Log : `event=wpkg_report_ingested deployment_id=null`.
@@ -577,8 +555,6 @@ le poste — la dédup UI affiche les deux badges, le cache est invalidé.
 
 ### Checklist rapide Section 5 (relecteur)
 
-- [ ] Scénario 5.1 — Provisioning + premier POST → 200 + dashboard reflète
-- [ ] Scénario 5.2 — Token expiré → 401 + log warning
 - [ ] Scénario 5.3 — Rapport corrélé clone parc 15.4 → status_row + summary
 - [ ] Scénario 5.4 — Rapport spontané → uniquement `workstation_application_status`
 - [ ] Scénario 5.5 — Bouton re-évaluation → cache purgé + `.ini` régénéré
@@ -586,7 +562,7 @@ le poste — la dédup UI affiche les deux badges, le cache est invalidé.
 
 ### Post-correctifs & non-régressions (Story 15.5 — étape 8 dev-cycle)
 
-Suite à la code review adversariale + corrections appliquées, vérifications QA manuelles à effectuer en plus des scénarios 5.1–5.6 :
+Suite à la code review adversariale + corrections appliquées, vérifications QA manuelles à effectuer en plus des scénarios 5.3–5.6 :
 
 - [ ] **Fix #1 (sécurité Livewire)** — sur la vue détail poste `/app/wpkg/deployments/{workstation}` : connecté en user **sans** `wpkg.assign`, s'assurer (i) que le bouton « Forcer une re-évaluation » n'apparaît pas, (ii) qu'un appel direct à la méthode Livewire `forceReevaluation()` (ex. via DevTools) renvoie **403** (et pas une simple toast d'erreur). Côté user **avec** la permission : le bouton fonctionne et déclenche bien le listener.
 - [ ] **Fix #2 (logs channel `wpkg-deploy`)** — ingérer un rapport contenant des bytes invalides (UTF-16 / latin1) **ET** un rapport référençant des `app_id` absents de la table `applications`. Vérifier que les warnings apparaissent dans `storage/logs/wpkg-deploy*.log` (PAS dans le channel par défaut), avec les clés structurées `event=wpkg_report_invalid_utf8` / `event=wpkg_report_unknown_apps_ignored` et `workstation_id` + `hostname` renseignés.
@@ -609,4 +585,4 @@ Suite à la code review adversariale + corrections appliquées, vérifications Q
 - [ ] Scénario 2.4 — invalidation cache via event → pas de stale
 - [ ] Scénario 2.5 — `WorkstationOptionsChanged` → `.ini` régénéré (CRLF)
 - [ ] Scénarios 4.1 → 4.5 — UI admin assignation apps WPKG (Story 15.4)
-- [ ] Scénarios 5.1 → 5.6 — Pipeline rapports + Dashboard (Story 15.5)
+- [ ] Scénarios 5.3 → 5.6 — Pipeline rapports + Dashboard (Story 15.5)

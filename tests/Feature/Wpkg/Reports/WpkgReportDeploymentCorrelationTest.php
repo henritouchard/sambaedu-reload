@@ -6,13 +6,11 @@ namespace Tests\Feature\Wpkg\Reports;
 
 use App\Models\Application;
 use App\Models\Workstation;
-use App\Wpkg\Deployment\Models\WorkstationApiSecret;
 use App\Wpkg\Deployment\Models\WpkgDeploymentWorkstationStatus;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Test;
@@ -50,7 +48,6 @@ final class WpkgReportDeploymentCorrelationTest extends TestCase
         if ($this->createdTables) {
             Schema::dropIfExists('wpkg_deployment_workstation_status');
             Schema::dropIfExists('wpkg_deployments');
-            Schema::dropIfExists('workstation_api_secrets');
             Schema::dropIfExists('workstation_application_status');
             Schema::dropIfExists('applications');
             Schema::dropIfExists('app_profile_workstation_group');
@@ -144,18 +141,6 @@ final class WpkgReportDeploymentCorrelationTest extends TestCase
             $t->unique(['workstation_id', 'application_id']);
         });
 
-        Schema::create('workstation_api_secrets', function (Blueprint $t) {
-            $t->id();
-            $t->unsignedBigInteger('workstation_id')->unique();
-            $t->string('secret_hash', 255);
-            $t->string('previous_secret_hash', 255)->nullable();
-            $t->timestamp('previous_valid_until')->nullable();
-            $t->timestamp('last_used_at')->nullable();
-            $t->timestamp('rotated_at')->nullable();
-            $t->timestamp('revoked_at')->nullable();
-            $t->timestamps();
-        });
-
         Schema::create('wpkg_deployments', function (Blueprint $t) {
             $t->uuid('id')->primary();
             $t->unsignedBigInteger('triggered_by')->nullable();
@@ -183,7 +168,7 @@ final class WpkgReportDeploymentCorrelationTest extends TestCase
     {
         return $this->call(
             'POST',
-            "/api/v1/wpkg/reports/{$hostname}",
+            "/api/wpkg/reports/{$hostname}",
             [],
             [],
             [],

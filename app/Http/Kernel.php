@@ -76,9 +76,5 @@ class Kernel extends HttpKernel
 
         // WPKG middleware — restreint aux requêtes locales
         'local.request' => EnsureLocalRequest::class,
-
-        // WPKG Story 15.5 — auth Phase 2 secret partagé par machine (Bearer)
-        // avec fallback Phase 1 IP allowlist (transitoire jusqu'à 15.7).
-        'workstation.bearer' => \App\Http\Middleware\WorkstationBearerAuth::class,
     ];
 }

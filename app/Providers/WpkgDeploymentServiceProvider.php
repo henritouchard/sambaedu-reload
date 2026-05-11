@@ -15,9 +15,6 @@ use App\Wpkg\Deployment\Events\WorkstationGroupApplicationsChanged;
 use App\Wpkg\Deployment\Events\WorkstationGroupMembershipChanged;
 use App\Wpkg\Deployment\Events\WorkstationManualReevaluationRequested;
 use App\Wpkg\Deployment\Events\WorkstationOptionsChanged;
-use App\Wpkg\Deployment\Console\Commands\ProvisionWorkstationSecretsCommand;
-use App\Wpkg\Deployment\Console\Commands\RevokeWorkstationSecretCommand;
-use App\Wpkg\Deployment\Console\Commands\RotateWorkstationSecretCommand;
 use App\Wpkg\Deployment\Console\Commands\RotateWpkgReportArchivesCommand;
 use App\Wpkg\Deployment\Listeners\InvalidateWorkstationPackagesCache;
 use App\Wpkg\Deployment\Listeners\RegenerateWorkstationIniOnManualReevaluation;
@@ -67,9 +64,6 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
         // `App\Wpkg\Deployment\Console\Commands` (cohérence test archi).
         if ($this->app->runningInConsole()) {
             $this->commands([
-                ProvisionWorkstationSecretsCommand::class,
-                RotateWorkstationSecretCommand::class,
-                RevokeWorkstationSecretCommand::class,
                 RotateWpkgReportArchivesCommand::class,
             ]);
         }
