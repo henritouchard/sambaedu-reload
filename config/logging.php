@@ -138,6 +138,17 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Story 8.1 — Channel dédié réseau (DHCP + DNS futur). Aligné sur
+        // `wpkg-deploy` (driver daily, rotation 7j par défaut). Niveau
+        // ajustable sans redeploy via NETWORK_LOG_LEVEL.
+        'network' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/network/network.log'),
+            'level' => env('NETWORK_LOG_LEVEL', 'debug'),
+            'days' => (int) env('NETWORK_LOG_DAYS', 7),
+            'replace_placeholders' => true,
+        ],
+
         'null' => [
             'driver' => 'monolog',
             'handler' => NullHandler::class,

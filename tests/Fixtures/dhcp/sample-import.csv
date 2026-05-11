@@ -1,0 +1,8 @@
+name,mac,ip,description
+posteSalle1,00:11:22:33:44:55,10.0.0.50,Salle informatique poste #1
+imprimanteCDI,AA:BB:CC:DD:EE:FF,10.0.0.30,Imprimante CDI
+posteBadMac,zz:zz:zz:zz:zz:zz,10.0.0.51,MAC invalide
+posteBadIp,00:11:22:33:44:99,not-an-ip,IP invalide
+
+# Ligne commentaire qui doit être ignorée
+posteOk2,11:22:33:44:55:66,10.0.0.52,Poste valide

@@ -151,6 +151,18 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 'error' => null,
                 'expanded' => false,
             ],
+            // Story 8.1 — AC9 : import one-shot du fichier legacy
+            // /etc/sambaedu/reservations.inc dans la table dhcp_reservations.
+            // Lecture seule du fichier, idempotent, rejouable.
+            'dhcp_reservations' => [
+                'id' => 'dhcp_reservations',
+                'title' => '10. Importer les réservations DHCP',
+                'description' => 'Parse /etc/sambaedu/reservations.inc et crée les réservations DHCP côté SER (one-shot migration legacy, lecture seule, rejouable)',
+                'status' => 'pending',
+                'stats' => null,
+                'error' => null,
+                'expanded' => false,
+            ],
         ];
 
         $this->stepLogs = [
@@ -163,6 +175,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             'shortcuts' => [],
             'rights_profiles' => [],
             'rights_migration' => [],
+            'dhcp_reservations' => [],
         ];
     }
 
@@ -214,6 +227,9 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                     break;
                 case 'rights_profiles':
                     $this->runRightsProfilesSync();
+                    break;
+                case 'dhcp_reservations':
+                    $this->runDhcpReservationsSync();
                     break;
             }
 
@@ -493,6 +509,53 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
         $this->steps['rights_profiles']['stats'] = $stats;
     }
 
+    /**
+     * Story 8.1 — AC9 / T8b : import one-shot du fichier legacy
+     * /etc/sambaedu/reservations.inc dans la table dhcp_reservations.
+     *
+     * Lecture seule du fichier conf (pas de reload DHCP déclenché).
+     * Idempotent : un rejeu donne created=0, updated=N.
+     */
+    private function runDhcpReservationsSync(): void
+    {
+        $path = (string) config('sambaedu.dhcp.reservations_file', '/etc/sambaedu/reservations.inc');
+        $this->addLog('dhcp_reservations', 'info', 'Lecture de ' . $path);
+
+        $service = app(\App\Services\Network\DhcpService::class);
+        $stats = $service->importFromLegacyFile($path, function (string $level, string $message): void {
+            $this->addLog('dhcp_reservations', $level, $message);
+        });
+
+        $this->steps['dhcp_reservations']['stats'] = $stats;
+
+        $errorsCount = is_array($stats['errors'] ?? null) ? count($stats['errors']) : 0;
+        $this->addLog(
+            'dhcp_reservations',
+            'success',
+            sprintf(
+                "Bilan : %d parsé(s), %d créé(s), %d mis à jour, %d ignoré(s), %d erreur(s)",
+                $stats['parsed'] ?? 0,
+                $stats['created'] ?? 0,
+                $stats['updated'] ?? 0,
+                $stats['skipped'] ?? 0,
+                $errorsCount,
+            ),
+        );
+
+        // Détail des erreurs (max 20 — au-delà on coupe pour ne pas saturer
+        // l'UI ; tout est dans le log network channel).
+        if ($errorsCount > 0) {
+            $shown = 0;
+            foreach ($stats['errors'] as $err) {
+                if ($shown++ >= 20) {
+                    $this->addLog('dhcp_reservations', 'warning', "… et " . ($errorsCount - $shown) . " autres erreurs (voir log channel network)");
+                    break;
+                }
+                $this->addLog('dhcp_reservations', 'warning', "Ligne {$err['line']} : {$err['reason']}");
+            }
+        }
+    }
+
     private function addLog(string $stepId, string $level, string $message): void
     {
         $this->stepLogs[$stepId][] = [
@@ -655,6 +718,21 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                                         @endif
                                         @if (isset($step['stats']['admin_granted']) && $step['stats']['admin_granted'])
                                             <span class="badge badge-accent badge-sm">admin</span>
+                                        @endif
+                                        {{-- Badges spécifiques étape 10 (DHCP legacy migration) --}}
+                                        @if ($stepId === 'dhcp_reservations')
+                                            @if (isset($step['stats']['parsed']) && $step['stats']['parsed'] > 0)
+                                                <span class="badge badge-neutral font-bold h-12">{{ $step['stats']['parsed'] }} parsés</span>
+                                            @endif
+                                            @if (isset($step['stats']['created']) && $step['stats']['created'] > 0)
+                                                <span class="badge badge-success font-bold h-12">+{{ $step['stats']['created'] }} créées</span>
+                                            @endif
+                                            @if (isset($step['stats']['updated']) && $step['stats']['updated'] > 0)
+                                                <span class="badge badge-info font-bold h-12">~{{ $step['stats']['updated'] }} màj</span>
+                                            @endif
+                                            @if (isset($step['stats']['skipped']) && $step['stats']['skipped'] > 0)
+                                                <span class="badge badge-ghost font-bold h-12">{{ $step['stats']['skipped'] }} ignorées</span>
+                                            @endif
                                         @endif
                                         {{-- Badges spécifiques étape 9 (migration rights) --}}
                                         @if ($stepId === 'rights_migration')
