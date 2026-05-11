@@ -3,10 +3,12 @@
 namespace App\Services\Parc;
 
 use App\Config\LdapDnHelper;
+use App\Facades\SEConfig;
 use App\Jobs\DispatchMachinePowerActionJob;
 use App\LdapModels\DeviceGroupModel;
 use App\LdapModels\DeviceGroupTagModel;
 use App\Models\MachinePowerActionTask;
+use App\Services\Ldap\EstablishmentWorkstationScope;
 use App\Services\WorkstationService;
 use App\Services\PermissionService;
 use App\Models\User;
@@ -1020,6 +1022,7 @@ class WorkstationGroupService
             'updated' => 0,
             'skipped' => 0,
             'linked' => 0,
+            'etab_excluded' => 0,
             'errors' => [],
         ];
 
@@ -1027,6 +1030,25 @@ class WorkstationGroupService
             $dnHelper = app(LdapDnHelper::class);
             $computersDn = $dnHelper->computers();
             $log('info', "Recherche dans: {$computersDn}");
+
+            $establishmentCode = SEConfig::getCurrentEstablishmentCode();
+            $establishmentDn = null;
+            $allowedOuNames = null; // null = pas de filtrage, sinon set de noms d'OU lowercase autorisés
+            $scopedWorkstationDns = null;
+            if (! empty($establishmentCode) && $establishmentCode !== '0') {
+                $establishmentDn = SEConfig::ldap()->etablissementDn($establishmentCode);
+                $scope = app(EstablishmentWorkstationScope::class);
+                $allowedOuNames = array_flip($scope->parentOuNames($establishmentDn));
+                $scopedWorkstationDns = array_flip($scope->workstationDns($establishmentDn));
+                $log('info', sprintf(
+                    'Filtre établissement actif: %s (%d OU autorisées, %d postes scopés)',
+                    $establishmentCode,
+                    count($allowedOuNames),
+                    count($scopedWorkstationDns)
+                ));
+            } else {
+                $log('info', 'Aucun établissement sélectionné — import en mode domaine entier');
+            }
 
             // Récupérer les OU depuis l'AD
             $groupsAd = DeviceGroupModel::in($computersDn)->get();
@@ -1043,6 +1065,11 @@ class WorkstationGroupService
                     try {
                         $name = $group->getGroupName();
                         if (empty($name)) {
+                            continue;
+                        }
+
+                        if ($allowedOuNames !== null && ! isset($allowedOuNames[strtolower($name)])) {
+                            $stats['etab_excluded']++;
                             continue;
                         }
 
@@ -1125,6 +1152,10 @@ class WorkstationGroupService
                 $workstations = Workstation::whereNotNull('ad_dn')->get();
                 $stats['workstation_links'] = 0;
                 foreach ($workstations as $workstation) {
+                    // Si l'on a un scope étab actif, ne lier que les postes appartenant à l'étab.
+                    if ($scopedWorkstationDns !== null && ! isset($scopedWorkstationDns[strtolower(trim((string) $workstation->ad_dn))])) {
+                        continue;
+                    }
                     $groupName = $this->extractParentGroupFromDn($workstation->ad_dn);
                     if ($groupName && $allGroups->has(strtolower($groupName))) {
                         $group = $allGroups->get(strtolower($groupName));
@@ -1181,6 +1212,7 @@ class WorkstationGroupService
             'created' => 0,
             'updated' => 0,
             'skipped' => 0,
+            'etab_excluded' => 0,
             'errors' => [],
         ];
 
@@ -1188,6 +1220,22 @@ class WorkstationGroupService
             $dnHelper = app(LdapDnHelper::class);
             $parcsDn = $dnHelper->parcs();
             $log('info', "Recherche des groupes logiques dans: {$parcsDn}");
+
+            $establishmentCode = SEConfig::getCurrentEstablishmentCode();
+            $establishmentDn = null;
+            $scopedWorkstationDns = null;
+            if (! empty($establishmentCode) && $establishmentCode !== '0') {
+                $establishmentDn = SEConfig::ldap()->etablissementDn($establishmentCode);
+                $scope = app(EstablishmentWorkstationScope::class);
+                $scopedWorkstationDns = array_flip($scope->workstationDns($establishmentDn));
+                $log('info', sprintf(
+                    'Filtre établissement actif: %s (%d postes scopés)',
+                    $establishmentCode,
+                    count($scopedWorkstationDns)
+                ));
+            } else {
+                $log('info', 'Aucun établissement sélectionné — import en mode domaine entier');
+            }
 
             // Récupérer les groupes depuis OU=Parcs
             $groupsAd = DeviceGroupTagModel::in($parcsDn)->get();
@@ -1202,6 +1250,11 @@ class WorkstationGroupService
                     try {
                         $name = $group->getParcName();
                         if (empty($name)) {
+                            continue;
+                        }
+
+                        if ($scopedWorkstationDns !== null && ! $this->parcHasScopedMember($group, $scopedWorkstationDns)) {
+                            $stats['etab_excluded']++;
                             continue;
                         }
 
@@ -1362,6 +1415,35 @@ class WorkstationGroupService
      * Pour une OU: OU=chimie1,OU=labos,OU=Computers,DC=... => labos
      * Pour une machine: CN=pc-xxx,OU=techno,OU=Computers,DC=... => techno
      */
+    /**
+     * Indique si un parc (CN sous OU=Parcs) contient au moins un member appartenant
+     * au set de DN postes scopés pour l'établissement courant.
+     *
+     * @param  array<string,int>  $scopedWorkstationDns  Map DN lowercase → 1
+     */
+    private function parcHasScopedMember(DeviceGroupTagModel $parc, array $scopedWorkstationDns): bool
+    {
+        $members = $parc->getAttribute('member') ?? [];
+        if (is_array($members) && isset($members['count'])) {
+            unset($members['count']);
+            $members = array_values($members);
+        }
+        if (! is_array($members)) {
+            $members = [$members];
+        }
+
+        foreach ($members as $memberDn) {
+            if (! is_string($memberDn) || $memberDn === '') {
+                continue;
+            }
+            if (isset($scopedWorkstationDns[strtolower(trim($memberDn))])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function extractParentGroupFromDn(string $dn): ?string
     {
         // Pour une machine (CN=...,OU=groupe,...)

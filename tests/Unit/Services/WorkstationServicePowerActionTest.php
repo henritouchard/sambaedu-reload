@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services;
 
+use App\Config\LdapDnHelper;
 use App\LdapModels\MachineModel;
 use App\Repositories\WorkstationRepository;
 use App\Services\Parc\MachinePowerService;
@@ -27,6 +28,7 @@ class WorkstationServicePowerActionTest extends TestCase
         $this->service = new WorkstationService(
             $this->workstationRepository,
             $this->machinePowerService,
+            Mockery::mock(LdapDnHelper::class),
         );
     }
 

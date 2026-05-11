@@ -358,7 +358,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
 
     private function runUsersEstablishmentSync(): void
     {
-        $this->ensureEstablishmentSelectedForScopedUsersImport();
+        $this->ensureEstablishmentContextSelected();
 
         $userSyncService = app(UserSyncService::class);
 
@@ -384,7 +384,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
         $this->steps['user_groups']['stats'] = $stats;
     }
 
-    private function ensureEstablishmentSelectedForScopedUsersImport(): void
+    private function ensureEstablishmentContextSelected(): void
     {
         $establishmentCode = SEConfig::getCurrentEstablishmentCode();
 
@@ -395,7 +395,8 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
 
     private function runPhysicalGroupsSync(): void
     {
-        // Importer les groupes physiques (OU dans OU=Computers)
+        $this->ensureEstablishmentContextSelected();
+
         $workstationGroupService = app(\App\Services\Parc\WorkstationGroupService::class);
 
         $stats = $workstationGroupService->importFromAd(function (string $level, string $message) {
@@ -407,7 +408,8 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
 
     private function runLogicalGroupsSync(): void
     {
-        // Importer les groupes logiques (CN dans OU=Parcs)
+        $this->ensureEstablishmentContextSelected();
+
         $workstationGroupService = app(\App\Services\Parc\WorkstationGroupService::class);
 
         $stats = $workstationGroupService->importLogicalGroupsFromAd(function (string $level, string $message) {
@@ -419,7 +421,8 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
 
     private function runWorkstationsSync(): void
     {
-        // Utiliser le service pour l'import
+        $this->ensureEstablishmentContextSelected();
+
         $workstationService = app(\App\Services\WorkstationService::class);
 
         $stats = $workstationService->importFromAd(function (string $level, string $message) {
@@ -431,7 +434,8 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
 
     private function runAppProfilesSync(): void
     {
-        // Utiliser l'importeur AD dédié (extrait d'AppProfileService dans le cadre 15.4)
+        $this->ensureEstablishmentContextSelected();
+
         $importer = app(\App\Services\AppProfile\AppProfileAdImporter::class);
 
         $stats = $importer->importFromAd(function (string $level, string $message) {

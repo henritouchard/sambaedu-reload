@@ -451,30 +451,13 @@ class UserSyncService
      */
     private function getEstablishmentMatchType(LdapUser $ldapUser, ?string $establishmentDn): ?string
     {
-        if (empty($establishmentDn)) {
-            return 'all';
-        }
+        $memberOf = $ldapUser->getAttribute('memberof');
 
-        $normalizedEtabDn = strtolower(trim($establishmentDn));
-
-        $userDn = strtolower((string) ($ldapUser->getDn() ?? ''));
-        if ($userDn !== '' && str_contains($userDn, ',' . $normalizedEtabDn)) {
-            return 'tree';
-        }
-
-        $memberOf = $ldapUser->getAttribute('memberof') ?? [];
-        if (is_array($memberOf) && isset($memberOf['count'])) {
-            unset($memberOf['count']);
-            $memberOf = array_values($memberOf);
-        }
-
-        foreach ($memberOf as $groupDn) {
-            if (strtolower((string) $groupDn) === $normalizedEtabDn) {
-                return 'memberOf';
-            }
-        }
-
-        return null;
+        return \App\Services\Ldap\EstablishmentMatcher::match(
+            $ldapUser->getDn(),
+            is_array($memberOf) ? $memberOf : null,
+            $establishmentDn
+        );
     }
 
     /**

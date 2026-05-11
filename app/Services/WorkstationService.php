@@ -2,10 +2,13 @@
 
 namespace App\Services;
 
+use App\Config\LdapDnHelper;
+use App\Facades\SEConfig;
 use App\LdapModels\MachineModel;
 use App\Models\Workstation;
 use App\Observers\WorkstationObserver;
 use App\Repositories\WorkstationRepository;
+use App\Services\Ldap\EstablishmentMatcher;
 use App\Services\Parc\MachinePowerService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -32,6 +35,7 @@ class WorkstationService
     public function __construct(
         private WorkstationRepository $workstationRepository,
         private MachinePowerService $machinePowerService,
+        private LdapDnHelper $dnHelper,
     ) {
     }
 
@@ -345,24 +349,32 @@ class WorkstationService
             'created' => 0,
             'updated' => 0,
             'skipped' => 0,
+            'etab_tree' => 0,
+            'etab_member_of' => 0,
+            'etab_excluded' => 0,
             'errors' => [],
         ];
 
         try {
-            // Construire le DN directement depuis la config pour éviter les effets de bord
-            $baseDn = config('sambaedu.ldap.base_dn');
-            $computersDn = 'OU=Computers,' . $baseDn;
+            $computersDn = $this->dnHelper->computers();
             $log('info', "Recherche dans: {$computersDn}");
 
-            // Utiliser la connexion LdapRecord directement avec un filtre simple
-            // ATTENTION: Ici on utilise 
+            $establishmentCode = SEConfig::getCurrentEstablishmentCode();
+            $establishmentDn = null;
+            if (! empty($establishmentCode) && $establishmentCode !== '0') {
+                $establishmentDn = SEConfig::ldap()->etablissementDn($establishmentCode);
+                $log('info', "Filtre établissement actif: {$establishmentCode}");
+            } else {
+                $log('info', 'Aucun établissement sélectionné — import en mode domaine entier');
+            }
+
             $connection = \LdapRecord\Container::getDefaultConnection();
             $machinesAd = $connection->query()
                 ->in($computersDn)
                 ->rawFilter('(objectclass=computer)')
-                ->select(['cn', 'objectguid', 'iphostnumber', 'networkaddress', 'operatingsystem', 'description'])
+                ->select(['cn', 'objectguid', 'iphostnumber', 'networkaddress', 'operatingsystem', 'description', 'memberof'])
                 ->get();
-            
+
             $log('info', count($machinesAd) . ' machines trouvées dans l\'AD');
 
             // Désactiver la synchronisation AD pendant l'import pour éviter les boucles
@@ -381,6 +393,19 @@ class WorkstationService
                         $name = strtolower($name);
 
                         $dn = $machine['dn'] ?? '';
+                        $memberOf = is_array($machine['memberof'] ?? null) ? $machine['memberof'] : [];
+
+                        $matchType = EstablishmentMatcher::match($dn, $memberOf, $establishmentDn);
+                        if ($matchType === null) {
+                            $stats['etab_excluded']++;
+                            continue;
+                        }
+                        if ($matchType === EstablishmentMatcher::MATCH_TREE) {
+                            $stats['etab_tree']++;
+                        } elseif ($matchType === EstablishmentMatcher::MATCH_MEMBER_OF) {
+                            $stats['etab_member_of']++;
+                        }
+
                         $rawGuid = $machine['objectguid'][0] ?? null;
                         $uuid = $rawGuid ? $this->convertGuidToString($rawGuid) : null;
 
@@ -449,6 +474,14 @@ class WorkstationService
                 WorkstationObserver::enableSync();
             }
 
+            if ($establishmentDn !== null) {
+                $log('info', sprintf(
+                    'Filtre établissement: %d via arborescence, %d via memberOf, %d exclu(s)',
+                    $stats['etab_tree'],
+                    $stats['etab_member_of'],
+                    $stats['etab_excluded']
+                ));
+            }
             $log('info', "Résultat: {$stats['created']} créés, {$stats['updated']} mis à jour, {$stats['skipped']} ignorés");
 
         } catch (\Exception $e) {

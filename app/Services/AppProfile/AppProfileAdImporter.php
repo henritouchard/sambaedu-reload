@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Services\AppProfile;
 
 use App\Config\LdapDnHelper;
+use App\Facades\SEConfig;
 use App\LdapModels\DeviceGroupTagModel;
 use App\Models\AppProfile;
 use App\Models\WorkstationGroup;
 use App\Observers\AppProfileObserver;
+use App\Services\Ldap\EstablishmentWorkstationScope;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -24,8 +26,10 @@ use Illuminate\Support\Facades\Log;
  */
 final class AppProfileAdImporter
 {
-    public function __construct(private readonly LdapDnHelper $dnHelper)
-    {
+    public function __construct(
+        private readonly LdapDnHelper $dnHelper,
+        private readonly EstablishmentWorkstationScope $scope,
+    ) {
     }
 
     /**
@@ -45,12 +49,28 @@ final class AppProfileAdImporter
             'updated' => 0,
             'skipped' => 0,
             'linked_groups' => 0,
+            'etab_excluded' => 0,
             'errors' => [],
         ];
 
         try {
             $parcsDn = $this->dnHelper->parcsDn();
             $log('info', "Recherche dans: {$parcsDn}");
+
+            $establishmentCode = SEConfig::getCurrentEstablishmentCode();
+            $establishmentDn = null;
+            $scopedWorkstationDns = null;
+            if (! empty($establishmentCode) && $establishmentCode !== '0') {
+                $establishmentDn = SEConfig::ldap()->etablissementDn($establishmentCode);
+                $scopedWorkstationDns = array_flip($this->scope->workstationDns($establishmentDn));
+                $log('info', sprintf(
+                    'Filtre établissement actif: %s (%d postes scopés)',
+                    $establishmentCode,
+                    count($scopedWorkstationDns)
+                ));
+            } else {
+                $log('info', 'Aucun établissement sélectionné — import en mode domaine entier');
+            }
 
             $parcsAd = DeviceGroupTagModel::in($parcsDn)->get();
             $log('info', count($parcsAd).' profils trouvés dans l\'AD');
@@ -66,6 +86,11 @@ final class AppProfileAdImporter
                     try {
                         $name = $parc->getParcName();
                         if (empty($name)) {
+                            continue;
+                        }
+
+                        if ($scopedWorkstationDns !== null && ! $this->parcHasScopedMember($parc, $scopedWorkstationDns)) {
+                            $stats['etab_excluded']++;
                             continue;
                         }
 
@@ -138,6 +163,32 @@ final class AppProfileAdImporter
         }
 
         return $stats;
+    }
+
+    /**
+     * @param  array<string,int>  $scopedWorkstationDns
+     */
+    private function parcHasScopedMember(DeviceGroupTagModel $parc, array $scopedWorkstationDns): bool
+    {
+        $members = $parc->getAttribute('member') ?? [];
+        if (is_array($members) && isset($members['count'])) {
+            unset($members['count']);
+            $members = array_values($members);
+        }
+        if (! is_array($members)) {
+            $members = [$members];
+        }
+
+        foreach ($members as $memberDn) {
+            if (! is_string($memberDn) || $memberDn === '') {
+                continue;
+            }
+            if (isset($scopedWorkstationDns[strtolower(trim($memberDn))])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function convertGuidToString(string $binaryGuid): string
