@@ -56,6 +56,7 @@ class MachineShowPageTest extends TestCase
     protected function tearDown(): void
     {
         if ($this->createdTables) {
+            Schema::dropIfExists('wpkg_workstation_options');
             Schema::dropIfExists('machine_power_action_tasks');
             Schema::dropIfExists('machine_boot_logs');
             Schema::dropIfExists('workstation_group_workstation');
@@ -166,6 +167,18 @@ class MachineShowPageTest extends TestCase
                 $table->json('result')->nullable();
                 $table->text('error_message')->nullable();
                 $table->string('restart_phase', 16)->nullable();
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        // Story 15.4 — la fiche machine lit `$workstation->wpkgOptions()` au render.
+        if (!Schema::hasTable('wpkg_workstation_options')) {
+            Schema::create('wpkg_workstation_options', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('workstation_id');
+                $table->string('option_key', 64);
+                $table->string('option_value', 255);
                 $table->timestamps();
             });
             $this->createdTables = true;

@@ -130,7 +130,13 @@ class ParcGroupWpkgPageTest extends TestCase
         // Re-define Gate to deny for any user.
         Gate::define('wpkg.assign', fn ($user) => false);
 
-        $svc = app(\App\Services\AppProfile\AppProfileService::class);
+        // Le `before` hook de Spatie\Permission interroge la table `permissions`
+        // dès qu'un User authentifié traverse Gate::authorize. Ici on n'a pas
+        // bootstrappé le schéma Spatie (hors-scope WpkgSchemaBootstrapper) — on
+        // se déconnecte donc pour que Laravel skip le before-hook (signature
+        // `Authorizable $user` non-nullable) et tombe directement sur le Gate
+        // défini ci-dessus.
+        \Illuminate\Support\Facades\Auth::logout();
 
         // Le service lui-même ne vérifie pas le Gate (c'est fait dans le composant
         // Livewire). On vérifie ici que `Gate::authorize('wpkg.assign')` lève bien

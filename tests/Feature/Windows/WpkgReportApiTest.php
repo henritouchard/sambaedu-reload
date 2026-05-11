@@ -49,6 +49,13 @@ class WpkgReportApiTest extends TestCase
     protected function tearDown(): void
     {
         if ($this->createdTables) {
+            Schema::dropIfExists('wpkg_deployment_workstation_status');
+            Schema::dropIfExists('wpkg_deployments');
+            Schema::dropIfExists('app_profile_workstation_group');
+            Schema::dropIfExists('app_profile_workstation');
+            Schema::dropIfExists('app_profiles');
+            Schema::dropIfExists('workstation_group_workstation');
+            Schema::dropIfExists('workstation_groups');
             Schema::dropIfExists('workstation_application_status');
             Schema::dropIfExists('applications');
             Schema::dropIfExists('workstations');
@@ -103,6 +110,66 @@ class WpkgReportApiTest extends TestCase
             $table->timestamp('reported_at')->nullable();
             $table->timestamps();
             $table->unique(['workstation_id', 'application_id']);
+        });
+
+        // Story 15.5 — corrélation rapport → déploiement actif via
+        // ActiveDeploymentForWorkstationQuery (eager-load groups + appProfiles).
+        Schema::create('workstation_groups', function (Blueprint $table) {
+            $table->id();
+            $table->string('name', 100);
+            $table->timestamp('archived_at')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('workstation_group_workstation', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('workstation_id');
+            $table->unsignedBigInteger('workstation_group_id');
+            $table->timestamps();
+        });
+
+        Schema::create('app_profiles', function (Blueprint $table) {
+            $table->id();
+            $table->string('name', 100);
+            $table->boolean('is_active')->default(true);
+            $table->timestamp('archived_at')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('app_profile_workstation', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('app_profile_id');
+            $table->unsignedBigInteger('workstation_id');
+            $table->timestamps();
+        });
+
+        Schema::create('app_profile_workstation_group', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('app_profile_id');
+            $table->unsignedBigInteger('workstation_group_id');
+            $table->timestamps();
+        });
+
+        Schema::create('wpkg_deployments', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->unsignedBigInteger('triggered_by')->nullable();
+            $table->timestamp('triggered_at');
+            $table->json('target_scope')->nullable();
+            $table->string('status', 20)->default('pending');
+            $table->json('summary')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('wpkg_deployment_workstation_status', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->uuid('deployment_id');
+            $table->unsignedBigInteger('workstation_id');
+            $table->unsignedBigInteger('app_profile_id')->nullable();
+            $table->timestamp('client_reported_at')->nullable();
+            $table->string('client_status', 20)->default('pending');
+            $table->json('details')->nullable();
+            $table->text('error_message')->nullable();
+            $table->timestamps();
         });
     }
 
