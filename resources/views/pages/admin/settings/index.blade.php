@@ -54,7 +54,20 @@ new #[Title('Réglages système')] class extends Component
 <x-organisms.page title="Réglages" :scrollable="false"
     description="Configuration système globale — quotas, période de grâce, corbeille">
 
+    {{--
+        Story 16.3a — AC4.2 / Piège 3 : breadcrumb retour GPO affiché UNIQUEMENT
+        quand l'onglet actif est 'profils-itinerants' (évite la pollution sur autres tabs).
+        Placé dans le slot `actions` (header droit) pour cohérence avec les 3 autres
+        pages cibles wallpapers / app-customizations / shortcuts (review 16.3a #4).
+    --}}
+    @if ($tab === 'profils-itinerants')
+        <x-slot:actions>
+            <x-molecules.gpo-back-link />
+        </x-slot:actions>
+    @endif
+
     <div class="h-full flex flex-col gap-4">
+
         {{-- Onglets de la page settings. --}}
         <div role="tablist" class="tabs tabs-boxed bg-base-200 w-fit">
             <button type="button" role="tab" class="tab {{ $tab === 'quotas-fs' ? 'tab-active' : '' }}"

@@ -289,7 +289,9 @@ new #[Title('Raccourcis - Instance SE4FS')] class extends Component {
     description="Recherchez, ajoutez, modifiez et supprimez des raccourcis">
 
     <x-slot:actions>
-        <div class="flex gap-2">
+        <div class="flex gap-2 items-center">
+            {{-- Breadcrumb de retour GPO (Story 16.3a, AC4.2) — affiché uniquement si ?from_gpo présent --}}
+            <x-molecules.gpo-back-link />
             @can('create-shortcut')
                 <a href="{{ route('app.shortcuts.new') }}" class="btn highlight btn-primary">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

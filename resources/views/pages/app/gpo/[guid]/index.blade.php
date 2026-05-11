@@ -4,6 +4,7 @@ use App\Components\Traits\WithToasts;
 use App\Gpo\Services\GpoService;
 use App\Gpo\Dto\GpoSummary;
 use App\Gpo\Dto\GpoLink;
+use App\Gpo\Support\NativeSectionResolver;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
@@ -13,40 +14,15 @@ use Livewire\Component;
  * Story 16.2 — AC Volet 2. Convention maison filesystem-based router.
  * Consomme GpoService::get/listContainers/getLinks/getInheritance (Story 16.1).
  * Périmètre : lecture seule. Bouton "Éditer dans l'ancienne UI" (Décision D2).
+ *
+ * Story 16.3a — Enrichissement :
+ * - L'heuristique `NATIVE_SECTIONS_HEURISTICS` est migrée vers NativeSectionResolver (AC1.1/AC1.2).
+ * - CTAs natifs primaires en header (AC2.1).
+ * - Bouton legacy dégradé en secondaire si match (AC2.2).
+ * - Encart 16.2 enrichi avec paramètre ?from_gpo (AC2.3).
  */
 new #[Title('Détail GPO - SE4FS')] class extends Component {
     use WithToasts;
-
-    /**
-     * Heuristique displayName → URL native (AC2.4, Décision D9).
-     * Chaque entrée : clé = label, valeur = [patterns (lowercase contains), url].
-     */
-    private const NATIVE_SECTIONS_HEURISTICS = [
-        'profils-itinerants' => [
-            'patterns' => ['redirections', 'roaming', 'profil', 'no_roam'],
-            'url' => '/admin/settings?tab=profils-itinerants',
-            'label' => 'Gérer les profils itinérants nativement',
-            'icon' => 'fa-users-gear',
-        ],
-        'wallpapers' => [
-            'patterns' => ['wallpaper', 'fond-ecran', 'fond_ecran', 'lockscreen'],
-            'url' => '/app/parc-settings/wallpapers',
-            'label' => 'Gérer les fonds d\'écran',
-            'icon' => 'fa-image',
-        ],
-        'app-customizations' => [
-            'patterns' => ['firefox', 'thunderbird', 'app-custom', 'applications'],
-            'url' => '/app/parc-settings/app-customizations',
-            'label' => 'Personnaliser les applications',
-            'icon' => 'fa-puzzle-piece',
-        ],
-        'shortcuts' => [
-            'patterns' => ['shortcut', 'raccourci', 'shortcuts_out'],
-            'url' => '/app/shortcuts',
-            'label' => 'Gérer les raccourcis',
-            'icon' => 'fa-link',
-        ],
-    ];
 
     // --- Propriétés ---
     public string $guid = '';
@@ -196,25 +172,15 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
         $this->loadContainerDetails($this->desiredContainers());
     }
 
-    /** Retourne les sections natives matchant le displayName (AC2.4). */
+    /**
+     * Retourne les sections natives matchant le displayName (AC2.4 / Story 16.3a).
+     *
+     * Délègue à NativeSectionResolver::resolve() — AC1.2 (refactor heuristique).
+     * Perf : calcul purement en mémoire, aucun appel I/O.
+     */
     public function nativeSectionLinks(): array
     {
-        if (!isset($this->gpo['displayName'])) {
-            return [];
-        }
-        $displayName = strtolower($this->gpo['displayName']);
-        $matches = [];
-
-        foreach (self::NATIVE_SECTIONS_HEURISTICS as $key => $heuristic) {
-            foreach ($heuristic['patterns'] as $pattern) {
-                if (str_contains($displayName, $pattern)) {
-                    $matches[$key] = $heuristic;
-                    break;
-                }
-            }
-        }
-
-        return $matches;
+        return NativeSectionResolver::resolve($this->gpo['displayName'] ?? '');
     }
 
     public function legacyEditUrl(): string
@@ -237,6 +203,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
 
 @php
     $nativeLinks = $this->nativeSectionLinks();
+    $isLegacySecondary = count($nativeLinks) > 0;
     $displayedContainers = $showAllContainers ? $containers : array_slice($containers, 0, 5);
     $hasMoreContainers = count($containers) > 5;
     $gpoVersion = $this->formatVersion($gpo['versionNumber'] ?? null);
@@ -244,35 +211,56 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
 @endphp
 
 <x-organisms.page :title="$gpo['displayName'] ?? 'Détail GPO'" :scrollable="true"
-    description="Détail de la Group Policy Object — lecture seule. L'édition native arrive dans les prochaines stories.">
+    description="Détail de la Group Policy Object — lecture seule.">
 
     <x-slot:actions>
-        <div class="flex gap-2 items-center">
+        <div class="flex flex-wrap gap-2 items-center">
             <a href="{{ route('app.gpo.index') }}" class="btn btn-outline btn-sm">
                 <i class="fa-solid fa-arrow-left"></i>
                 Retour au listing
             </a>
-            <a href="{{ $this->legacyEditUrl() }}" target="_blank" rel="noopener noreferrer"
-                class="btn btn-primary btn-sm">
-                <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                Éditer dans l'ancienne UI
-            </a>
+
+            {{-- CTAs natifs primaires (Story 16.3a — AC2.1) --}}
+            {{-- Affichés avant le bouton legacy si l'heuristique matche --}}
+            @foreach ($nativeLinks as $key => $link)
+                <a href="{{ \App\Gpo\Support\NativeSectionResolver::buildUrl($key, $this->guid) }}"
+                    class="btn btn-success btn-sm"
+                    data-testid="native-cta-{{ $key }}">
+                    <i class="fa-solid {{ $link['icon'] }}"></i>
+                    {{ $link['label'] }}
+                </a>
+            @endforeach
+
+            {{-- Bouton legacy — dégradé en secondaire si match natif (AC2.2 / D5) --}}
+            <div class="flex flex-col items-end gap-0.5">
+                <a href="{{ $this->legacyEditUrl() }}" target="_blank" rel="noopener noreferrer"
+                    class="{{ $isLegacySecondary ? 'btn btn-ghost btn-xs' : 'btn btn-primary btn-sm' }}"
+                    data-testid="legacy-edit-button">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                    Éditer dans l'ancienne UI
+                </a>
+                @if ($isLegacySecondary)
+                    <span class="text-xs text-base-content/50 text-right">Non recommandé — utilisez les CTAs natifs ci-dessus.</span>
+                @endif
+            </div>
         </div>
     </x-slot:actions>
 
     <div class="space-y-6">
 
-        {{-- Note transition --}}
-        <div class="alert alert-info shadow-sm">
-            <i class="fa-solid fa-circle-info"></i>
-            <div>
-                <p class="text-sm">
-                    Cette page est en <strong>lecture seule</strong>.
-                    L'édition native arrive dans les prochaines stories de l'Epic 16.
-                    Utilisez le bouton <strong>"Éditer dans l'ancienne UI"</strong> ci-dessus pour modifier cette GPO.
-                </p>
+        {{-- Note transition (adaptée Story 16.3a : présence CTAs natifs si match) --}}
+        @if (!$isLegacySecondary)
+            <div class="alert alert-info shadow-sm">
+                <i class="fa-solid fa-circle-info"></i>
+                <div>
+                    <p class="text-sm">
+                        Cette page est en <strong>lecture seule</strong>.
+                        L'édition native de cette section arrive dans les prochaines stories de l'Epic 16.
+                        Utilisez le bouton <strong>"Éditer dans l'ancienne UI"</strong> ci-dessus pour modifier cette GPO.
+                    </p>
+                </div>
             </div>
-        </div>
+        @endif
 
         {{-- Erreurs partielles --}}
         @if (count($loadErrors) > 0)
@@ -342,7 +330,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
             </div>
         </div>
 
-        {{-- Encart sections gérables nativement (AC2.4) --}}
+        {{-- Encart sections gérables nativement (AC2.4 / enrichi AC2.3 : ?from_gpo) --}}
         @if (count($nativeLinks) > 0)
             <div class="alert alert-success shadow-sm">
                 <i class="fa-solid fa-circle-check"></i>
@@ -350,7 +338,9 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
                     <p class="font-medium">Sections de cette GPO gérables nativement</p>
                     <div class="flex flex-wrap gap-2 mt-2">
                         @foreach ($nativeLinks as $key => $link)
-                            <a href="{{ url($link['url']) }}" class="btn btn-sm btn-outline btn-success">
+                            {{-- URL enrichie avec ?from_gpo pour le breadcrumb de retour (Story 16.3a — AC2.3) --}}
+                            <a href="{{ \App\Gpo\Support\NativeSectionResolver::buildUrl($key, $this->guid) }}"
+                                class="btn btn-sm btn-outline btn-success">
                                 <i class="fa-solid {{ $link['icon'] }}"></i>
                                 {{ $link['label'] }}
                             </a>

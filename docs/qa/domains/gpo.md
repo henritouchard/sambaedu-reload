@@ -348,3 +348,110 @@
 - [ ] Encart "sections natives" présent pour GPO `redirections`
 - [ ] Logs `gpo.list`, `gpo.show`, `gpo.containers.list` visibles en VM
 - [ ] Sidebar → lien "Gestion des GPOs" pointe vers `/app/gpo` (pas l'ancienne URL)
+
+---
+
+## Section 3 — Liens profonds sections natives (Story 16.3a)
+
+**Date livraison** : 2026-05-11
+**Migrations à appliquer** : aucune (story de pure navigation UI)
+**Permission requise** : `server.admin` (pages GPO) + permissions propres aux pages cibles
+**Pages enrichies** :
+- `/app/gpo` — nouvelle colonne "Édition native"
+- `/app/gpo/{guid}` — CTAs natifs primaires + bouton legacy dégradé
+**Pages cibles breadcrumb** :
+- `/app/parc-settings/wallpapers`
+- `/app/parc-settings/app-customizations`
+- `/app/shortcuts`
+- `/admin/settings?tab=profils-itinerants`
+
+> Story de pure navigation : résolution heuristique via `NativeSectionResolver` (classe
+> stateless) sur le `displayName` de la GPO. Aucun appel `samba-tool` additionnel.
+> Breadcrumb de retour déclenché par le paramètre `?from_gpo={guid}` dans l'URL.
+
+**Pré-requis supplémentaires** :
+- Au moins 1 GPO avec `displayName` contenant l'un des mots-clés : `firefox`, `thunderbird`,
+  `wallpaper`, `shortcut`, `raccourci`, `redirections`, `roaming`, `profil`, `no_roam`.
+- Sur la VM : GPO nommée `firefox-policy-test` ou `wallpaper-default` pour tester le chip.
+- Permission `wallpaper.manage` pour accéder à `/app/parc-settings/wallpapers`.
+- Permission `app.customize` pour accéder à `/app/parc-settings/app-customizations`.
+
+### Scénario 3.1 — Chip "Édition native" visible dans le listing
+
+1. Se connecter en `admin` (`server.admin`).
+2. Naviguer vers `/app/gpo`.
+3. Localiser une GPO dont le `displayName` contient `firefox`, `wallpaper`, `shortcut` ou `roaming`
+   (ex. `firefox-policy`, `wallpaper-default`, `shortcuts-eleves`, `redirections`).
+4. Vérifier la colonne **"Édition native"** (avant "Actions") :
+   - Un chip `badge-success` vert est affiché avec le nombre de sections (ex. "1 section").
+   - Au survol, un tooltip affiche le libellé de la section.
+5. Sur une GPO sans nom reconnu (ex. `Default Domain Policy`), vérifier que la cellule affiche
+   uniquement un tiret gris — **aucun chip vert**.
+
+### Scénario 3.2 — Clic sur le chip → navigation vers la section native avec breadcrumb
+
+1. Sur `/app/gpo`, localiser une GPO avec `displayName=wallpaper-default` (ou similaire).
+2. Cliquer sur le chip "1 section" dans la colonne "Édition native".
+3. Vérifier la navigation vers `/app/parc-settings/wallpapers?from_gpo={GUID}`.
+4. Sur la page wallpapers, vérifier la présence du **breadcrumb** :
+   - Bouton "← Retour à la GPO «wallpaper-default»" en haut de la page.
+   - Le bouton pointe vers `/app/gpo/{GUID}`.
+5. Cliquer le breadcrumb → retour sur la page détail de la GPO d'origine (contexte préservé).
+
+### Scénario 3.3 — GPO sans match → bouton legacy primaire, pas de CTAs natifs
+
+1. Sur `/app/gpo`, cliquer sur une GPO dont le nom n'est pas reconnu (ex. `Default Domain Policy`).
+2. Sur la page détail `/app/gpo/{guid}` :
+   - Vérifier que l'encart "Sections de cette GPO gérables nativement" **n'apparaît pas**.
+   - Vérifier que le bouton "Éditer dans l'ancienne UI" est en **style primaire** (`btn-primary btn-sm`).
+   - Vérifier qu'aucun sous-texte "Non recommandé" n'est affiché.
+
+### Scénario 3.4 — Multi-match : plusieurs CTAs natifs en page détail
+
+1. Sur la VM, créer (ou localiser) une GPO avec `displayName=firefox-wallpaper-test`
+   (matche à la fois `firefox` → app-customizations et `wallpaper` → wallpapers).
+2. Naviguer vers `/app/gpo/{guid}` (détail de cette GPO).
+3. Vérifier que **2 boutons CTA natifs** sont présents en header (avant le bouton legacy) :
+   - "Gérer les fonds d'écran" → `/app/parc-settings/wallpapers?from_gpo={GUID}`
+   - "Personnaliser les applications" → `/app/parc-settings/app-customizations?from_gpo={GUID}`
+4. Vérifier que le bouton "Éditer dans l'ancienne UI" est **dégradé** (`btn-ghost btn-xs`)
+   avec le sous-texte "Non recommandé — utilisez les CTAs natifs ci-dessus."
+5. Dans le listing `/app/gpo`, vérifier que la colonne "Édition native" affiche un **dropdown**
+   ("2 sections") avec les 2 liens listés à l'intérieur.
+
+### Scénario 3.5 — Breadcrumb de retour : navigation complète A→B→A
+
+1. Depuis `/app/gpo/{guid}` (GPO `redirections`), cliquer le CTA natif "Gérer les profils itinérants".
+2. Vérifier l'arrivée sur `/admin/settings?tab=profils-itinerants&from_gpo={GUID}`.
+3. Vérifier que le breadcrumb "← Retour à la GPO «redirections»" s'affiche **uniquement**
+   quand l'onglet actif est "Profils itinérants" (pas sur l'onglet "Quotas & FS").
+4. Changer d'onglet (cliquer "Quotas & FS") → vérifier que le breadcrumb **disparaît**.
+5. Cliquer le breadcrumb → retour sur `/app/gpo/{GUID}` (page détail de la GPO).
+
+### Scénario 3.6 — Fallback breadcrumb si la GPO référencée a été supprimée
+
+1. Construire une URL manuelle : `/app/parc-settings/wallpapers?from_gpo=%7BDEADBEEF-0000-0000-0000-000000000000%7D`
+   (GUID inexistant dans l'AD).
+2. Naviguer vers cette URL.
+3. Vérifier que **le fallback générique** s'affiche : "← Retour à la liste des GPOs"
+   (et non une erreur 500 ou un crash de la page).
+4. Vérifier que la page wallpapers est **totalement fonctionnelle** malgré le GUID invalide.
+5. Cliquer le lien fallback → navigation vers `/app/gpo` (liste principale).
+
+### Checklist rapide Story 16.3a
+
+- [ ] Colonne "Édition native" visible dans le tableau `/app/gpo`
+- [ ] Chip `badge-success` affiché pour GPOs avec displayName matchant l'heuristique
+- [ ] Cellule vide (tiret) pour GPOs sans match
+- [ ] Match unique → lien direct cliquable sur le chip
+- [ ] Multi-match → dropdown DaisyUI avec N liens
+- [ ] Page détail `/app/gpo/{guid}` : CTAs natifs primaires visibles si match
+- [ ] Plusieurs CTAs côte à côte pour multi-match
+- [ ] Bouton legacy dégradé (`btn-ghost btn-xs`) + sous-texte "Non recommandé" si match
+- [ ] Bouton legacy reste primaire si pas de match (non-régression 16.2)
+- [ ] Paramètre `?from_gpo={guid}` présent dans les URLs CTAs (page détail + listing)
+- [ ] Breadcrumb "Retour à la GPO" affiché sur wallpapers, app-customizations, shortcuts
+- [ ] Breadcrumb sur admin/settings **uniquement** sur tab `profils-itinerants`
+- [ ] Fallback générique "Retour à la liste des GPOs" si GUID introuvable
+- [ ] Page cible toujours fonctionnelle si `?from_gpo` est invalide (pas de 500)
+- [ ] Tests `php artisan test tests/Feature/Gpo tests/Unit/Gpo` → 100% vert

@@ -9,7 +9,6 @@ use App\Gpo\Dto\GpoSummary;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Livewire\Livewire;
 use Mockery;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Concerns\BootstrapsSpatieTables;
 use Tests\Support\FakesGpoService;
@@ -273,52 +272,79 @@ class GpoDetailPageTest extends TestCase
     }
 
     // =========================================================================
-    // AC5.4 / Fix #7 — Heuristique sections natives, validée sur la SFC réelle
+    // AC1.4 / Story 16.3a — Test smoke : SFC utilise bien NativeSectionResolver
     // =========================================================================
 
     /**
-     * Reproduit le test unitaire supprimé (NativeSectionHeuristicsTest), mais
-     * cette fois en faisant le rendu effectif de la SFC pour qu'aucune
-     * divergence silencieuse de constante ne soit possible.
+     * Test smoke : la page détail utilise NativeSectionResolver (AC1.4).
      *
-     * @param list<string|null> $expectedNativeLabelsFragments
+     * Vérifie que la SFC câble correctement le resolver — si nativeSectionLinks()
+     * retourne des matches, les CTAs natifs primaires sont bien présents dans
+     * le rendu (cf. AC2.1). La couverture exhaustive des patterns est dans
+     * NativeSectionResolverTest (tests Unit purs).
+     *
+     * Migre la couverture du dataProvider 5-cas supprimé (Story 16.2 AC5.4 / Fix #7).
      */
     #[Test]
-    #[DataProvider('nativeSectionsProvider')]
-    public function it_renders_correct_native_section_for_display_name(
-        string $displayName,
-        ?string $expectedFragment,
-    ): void {
-        $admin = $this->makeAdmin('admin-native-' . substr(md5($displayName), 0, 8));
+    public function it_uses_native_section_resolver_for_links(): void
+    {
+        $admin = $this->makeAdmin('admin-resolver-smoke');
         $this->actingAs($admin);
 
+        // GPO dont le displayName matche 'profils-itinerants' via 'redirections'
         FakesGpoService::make()
-            ->withGpo(self::VALID_GUID, $this->makeGpoSummary($displayName))
+            ->withGpo(self::VALID_GUID, $this->makeGpoSummary('redirections-test'))
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        $component = Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID]);
+        $rendered = Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+            ->assertStatus(200)
+            // L'encart "sections natives" est affiché
+            ->assertSee('Sections de cette GPO gérables nativement')
+            // Le libellé de la section profils-itinerants est visible
+            ->assertSee('profils itinérants')
+            // CTA natif identifié par data-testid (review 16.3a #6).
+            ->assertSee('data-testid="native-cta-profils-itinerants"', false)
+            ->assertSee('Gérer les profils itinérants nativement')
+            // L'URL contient le paramètre from_gpo (AC2.3 — encart enrichi)
+            ->assertSee('from_gpo=', false)
+            ->assertSee('Non recommandé', false);
 
-        if ($expectedFragment === null) {
-            $component->assertDontSee('Sections de cette GPO gérables nativement');
-        } else {
-            $component
-                ->assertSee('Sections de cette GPO gérables nativement')
-                ->assertSee($expectedFragment);
-        }
+        // Bouton legacy dégradé — assertion ciblée sur les classes du bouton identifié.
+        $html = $rendered->html();
+        $this->assertMatchesRegularExpression(
+            '/data-testid="legacy-edit-button"[^>]*class="[^"]*btn-ghost btn-xs/',
+            $html,
+            'Bouton legacy doit être dégradé (btn-ghost btn-xs) sur une GPO matchant une section native',
+        );
     }
 
     /**
-     * @return array<string, array{0:string, 1:?string}>
+     * Test smoke no-match : GPO sans section native → bouton legacy primaire.
      */
-    public static function nativeSectionsProvider(): array
+    #[Test]
+    public function it_keeps_legacy_button_primary_when_no_native_match(): void
     {
-        return [
-            'firefox-conf → app-customizations' => ['Firefox - Conf', 'Personnaliser les applications'],
-            'wallpaper-default → wallpapers' => ['Wallpaper - default', 'fonds d\'écran'],
-            'redirections → profils-itinerants' => ['Redirections - users', 'profils itinérants'],
-            'shortcut-labo → shortcuts' => ['Shortcuts - labo', 'raccourcis'],
-            'gpo sans match → aucun encart' => ['GPO sans match', null],
-        ];
+        $admin = $this->makeAdmin('admin-no-native-smoke');
+        $this->actingAs($admin);
+
+        FakesGpoService::make()
+            ->withGpo(self::VALID_GUID, $this->makeGpoSummary('default-domain-policy'))
+            ->withContainersFor(self::VALID_GUID, [])
+            ->bind($this->app);
+
+        $rendered = Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+            ->assertStatus(200)
+            ->assertDontSee('Sections de cette GPO gérables nativement')
+            ->assertSee('data-testid="legacy-edit-button"', false)
+            ->assertDontSee('Non recommandé');
+
+        // Bouton legacy primaire — assertion ciblée sur le bouton identifié.
+        $html = $rendered->html();
+        $this->assertMatchesRegularExpression(
+            '/data-testid="legacy-edit-button"[^>]*class="[^"]*btn-primary btn-sm/',
+            $html,
+            'Bouton legacy doit rester primaire (btn-primary btn-sm) sur une GPO sans section native',
+        );
     }
 }

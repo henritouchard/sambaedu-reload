@@ -28,6 +28,11 @@ new #[Title('Fonds d\'écran — SE4FS')] class extends Component {
     :scrollable="true"
     description="Paramétrez les fonds d'écran et écrans de verrouillage par défaut de l'établissement.">
 
+    {{-- Breadcrumb de retour GPO (Story 16.3a, AC4.1) — affiché uniquement si ?from_gpo présent --}}
+    <x-slot:actions>
+        <x-molecules.gpo-back-link />
+    </x-slot:actions>
+
     <div class="space-y-6">
         <div class="alert alert-info shadow-sm">
             <i class="fa-solid fa-circle-info"></i>

@@ -303,8 +303,13 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
 
             {{-- Tableau ou état vide --}}
             @if (count($paginatedItems) > 0)
+                {{--
+                    Story 16.3a — AC3.1/AC3.3 : Colonne "Édition native" ajoutée avant "Actions".
+                    Résolution NativeSectionResolver sur $paginatedItems (déjà paginé en mémoire) —
+                    aucun appel samba-tool additionnel, O(N) sur ≤ perPage GPOs.
+                --}}
                 <x-organisms.data-table
-                    colgroup="<colgroup><col style='width:28%'><col style='width:12%'><col style='width:10%'><col style='width:30%'><col style='width:20%'></colgroup>">
+                    colgroup="<colgroup><col style='width:24%'><col style='width:10%'><col style='width:8%'><col style='width:24%'><col style='width:18%'><col style='width:16%'></colgroup>">
                     <x-slot:header>
                         <th>
                             <button type="button" class="flex items-center gap-1 hover:text-primary"
@@ -330,6 +335,13 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
                         </th>
                         <th>GUID</th>
                         <th>Path SYSVOL</th>
+                        {{-- Story 16.3a — Colonne "Édition native" (AC3.1) --}}
+                        <th>
+                            <span class="flex items-center gap-1">
+                                <i class="fa-solid fa-circle-check text-success text-xs"></i>
+                                Édition native
+                            </span>
+                        </th>
                         <th>Actions</th>
                     </x-slot:header>
 
@@ -339,6 +351,10 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
                             $isActive = $version > 0;
                             $detailUrl = route('app.gpo.show', ['guid' => $gpo['name']]);
                             $legacyUrl = url('/gpo/gestion_gpo.php') . '?' . http_build_query(['selectionne' => $gpo['displayName']]);
+                            // Story 16.3a — AC3.1/AC3.3 : résolution heuristique sur la collection
+                            // paginée (déjà en mémoire) — aucun appel I/O supplémentaire.
+                            $nativeMatches = \App\Gpo\Support\NativeSectionResolver::resolve($gpo['displayName'] ?? '');
+                            $nativeCount = count($nativeMatches);
                         @endphp
                         <tr class="hover:bg-sky-50">
                             <td>
@@ -381,6 +397,54 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
                                     <span class="text-base-content/30 text-xs">—</span>
                                 @endif
                             </td>
+
+                            {{-- Story 16.3a — Colonne "Édition native" (AC3.1 / D3) --}}
+                            <td class="native-edit-cell" data-testid="native-edit-cell">
+                                @if ($nativeCount === 0)
+                                    {{-- Pas de match → cellule vide discrète --}}
+                                    <span class="text-base-content/30" data-testid="native-empty">—</span>
+                                @elseif ($nativeCount === 1)
+                                    {{-- Match unique → lien direct (AC3.1) --}}
+                                    @php
+                                        $singleKey = array_key_first($nativeMatches);
+                                        $singleSection = $nativeMatches[$singleKey];
+                                    @endphp
+                                    <x-atoms.tooltip position="top">
+                                        <x-slot name="trigger">
+                                            <a href="{{ \App\Gpo\Support\NativeSectionResolver::buildUrl($singleKey, $gpo['name']) }}"
+                                                class="badge badge-success badge-sm gap-1 hover:badge-outline cursor-pointer"
+                                                data-testid="native-chip-single">
+                                                <i class="fa-solid {{ $singleSection['icon'] }} text-xs"></i>
+                                                1 section
+                                            </a>
+                                        </x-slot>
+                                        <span class="text-xs">{{ $singleSection['label'] }} — cliquer pour éditer nativement</span>
+                                    </x-atoms.tooltip>
+                                @else
+                                    {{-- Multi-match → dropdown DaisyUI (AC3.1 / D3) --}}
+                                    <details class="dropdown dropdown-end" data-testid="native-chip-multi">
+                                        <summary class="badge badge-success badge-sm gap-1 cursor-pointer list-none hover:badge-outline">
+                                            <i class="fa-solid fa-circle-check text-xs"></i>
+                                            {{ $nativeCount }} sections
+                                        </summary>
+                                        <ul class="dropdown-content z-10 menu p-2 shadow bg-base-100 rounded-box w-64 border border-base-200 mt-1">
+                                            <li class="menu-title text-xs opacity-60">Sections gérables nativement</li>
+                                            @foreach ($nativeMatches as $key => $section)
+                                                <li>
+                                                    <a href="{{ \App\Gpo\Support\NativeSectionResolver::buildUrl($key, $gpo['name']) }}"
+                                                        class="text-sm"
+                                                        data-testid="native-multi-link-{{ $key }}">
+                                                        <i class="fa-solid {{ $section['icon'] }} w-4"></i>
+                                                        {{ $section['label'] }}
+                                                    </a>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    </details>
+                                @endif
+                            </td>
+
+                            {{-- Colonne "Actions" — inchangée (AC3.2) --}}
                             <td class="actions-cell">
                                 <div class="flex gap-2 items-center">
                                     <a href="{{ $detailUrl }}"
