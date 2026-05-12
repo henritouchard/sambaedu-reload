@@ -1,0 +1,9 @@
+{
+    "AccessControl": {
+        "AccessControlRulesEnabled": true,
+        "UserGroupsBackend": "ldap"
+    },
+    "Service": {
+        "AutostartService": true
+    }
+}

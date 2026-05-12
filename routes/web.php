@@ -397,6 +397,22 @@ Route::match(['GET', 'POST'], 'gpo/thunderbird_out.php', [AppPolicyController::c
 
 /*
 |--------------------------------------------------------------------------
+| Interception legacy gpo/network_out.php + gpo/veyon_out.php (Story 16.3b)
+|--------------------------------------------------------------------------
+| Endpoints runtime postes clients : script bash réseau (network_out)
+| et config JSON Veyon (veyon_out). Pattern iso 4.7/4.8.
+| Throttle 300/min/IP. Pas d'auth web (id md5 APCu = garde effective).
+| Doivent être déclarés AVANT le catchall legacy.
+*/
+Route::match(['GET', 'POST'], 'gpo/network_out.php', [\App\Http\Controllers\Gpo\NetworkOutController::class, 'legacyOut'])
+    ->middleware('throttle:300,1')
+    ->name('gpo.network-out.legacy');
+Route::match(['GET', 'POST'], 'gpo/veyon_out.php', [\App\Http\Controllers\Gpo\VeyonOutController::class, 'legacyOut'])
+    ->middleware('throttle:300,1')
+    ->name('gpo.veyon-out.legacy');
+
+/*
+|--------------------------------------------------------------------------
 | Route canonique /api/policies/{kind}/{id}
 |--------------------------------------------------------------------------
 | Story 4.8 — AC 10. Route alternative propre en parallèle des iso-contrat.

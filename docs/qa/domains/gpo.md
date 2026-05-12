@@ -455,3 +455,141 @@
 - [ ] Fallback générique "Retour à la liste des GPOs" si GUID introuvable
 - [ ] Page cible toujours fonctionnelle si `?from_gpo` est invalide (pas de 500)
 - [ ] Tests `php artisan test tests/Feature/Gpo tests/Unit/Gpo` → 100% vert
+
+---
+
+## Section 4 — Endpoints runtime postes clients : network_out / veyon_out (Story 16.3b)
+
+**Date livraison** : 2026-05-12
+**Migrations à appliquer** : aucune
+**Permission requise** : aucune (endpoints publics ; garde = `id` md5 APCu)
+**Routes ajoutées** :
+- `Route::match(['GET','POST'], 'gpo/network_out.php', NetworkOutController@legacyOut)` (`throttle:300,1`)
+- `Route::match(['GET','POST'], 'gpo/veyon_out.php', VeyonOutController@legacyOut)` (`throttle:300,1`)
+
+**Contexte** : ces 2 endpoints sont consommés au startup/logon par les postes
+Linux via la GPO `se4_applications`. Iso-contrat URL legacy obligatoire (les
+URLs sont en dur dans des scripts déployés sur le parc).
+
+**Pré-requis** :
+- VM SambaEdu accessible : `ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50`
+- Au moins 1 poste Linux joint au domaine pour le smoke « depuis poste »
+- Optionnel : un poste avec Veyon Master installé (scénario 4.2 supervision)
+- Variables `$VALID_ID` capturée via `apcu_fetch` (cf. récupération scénario 4.0)
+
+### Scénario 4.0 — Récupération d'un `id` valide (pré-requis tous scénarios)
+
+1. Sur la VM, faire boot ou logon d'un poste test → l'`id` md5 32 hex est posé
+   en APCu (clé `apps.$id`, TTL 1800s).
+2. Récupérer un `id` actif :
+   ```bash
+   # Via le legacy logs ou un dump apcu :
+   apcu-cli getall | grep '^apps\.' | head -1
+   # Sinon depuis les logs poste : /tmp/network-startup-*.log
+   ls -t /tmp/network-startup-*.log | head -1 | sed 's|.*startup-\(.*\)\.log|\1|'
+   ```
+3. Exporter `VALID_ID=<l'id récupéré>` pour les scénarios suivants.
+
+### Scénario 4.1 — `network_out.php` startup Linux → script bash valide
+
+1. `curl -s -X POST -d "action=startup" -d "os=linux" -d "id=$VALID_ID" http://localhost/gpo/network_out.php`
+2. Vérifier `Content-Type: text/plain; charset=utf-8`.
+3. Vérifier que le body **commence** par `#!/bin/bash\n#startup\n# script de configuration du reseau Linux\n`.
+4. Vérifier l'absence de `\r\n` : `curl ... | file -` ne mentionne pas `CRLF`.
+5. Passer le script en mode syntax check : `curl ... | bash -n` → exit 0
+   (pas d'erreur de syntaxe bash).
+6. Vérifier que `/tmp/network-startup-$VALID_ID.log` est écrit avec le même contenu.
+
+### Scénario 4.2 — `network_out.php` logon Linux → gnome_proxy
+
+1. `curl -s -X POST -d "action=logon" -d "os=linux" -d "id=$VALID_ID" http://localhost/gpo/network_out.php`
+2. Vérifier que le body contient `gsettings set org.gnome.system.proxy mode` (mode = `none`, `manual` ou `auto` selon config).
+3. Vérifier que `/tmp/network-logon-$VALID_ID.log` est écrit.
+
+### Scénario 4.3 — `network_out.php` os=windows → body vide (iso-legacy bug)
+
+1. `curl -s -o /dev/null -w "%{http_code}\n" -X POST -d "action=startup" -d "os=windows" -d "id=$VALID_ID" http://localhost/gpo/network_out.php`
+2. Vérifier code `200` et body vide. **C'est un bug legacy reproduit intentionnellement** (cf. story 16.3b AC1.6 + post-review 2026-05-12 : 200 strict iso-legacy, pas 204).
+
+### Scénario 4.4 — `network_out.php` id invalide → 200 body vide sans side effect
+
+1. `curl -s -o /dev/null -w "%{http_code}\n" -X POST -d "action=startup" -d "os=linux" -d "id=INJECTION" http://localhost/gpo/network_out.php`
+2. Vérifier code `200` (post-review 2026-05-12 : iso-legacy strict).
+3. Vérifier qu'aucun fichier `/tmp/network-startup-INJECTION.log` n'est créé.
+4. Vérifier dans les logs Laravel qu'aucun appel `apcu_fetch` n'a eu lieu pour cet id.
+
+### Scénario 4.5 — `veyon_out.php` cas nominal → JSON parseable
+
+1. `curl -s -X POST -d "id=$VALID_ID" http://localhost/gpo/veyon_out.php | jq .`
+2. Vérifier `Content-Type: application/json; charset=utf-8`.
+3. Vérifier la présence des clés : `.LDAP.BaseDN`, `.LDAP.BindDN`, `.LDAP.BindPassword`, `.LDAP.ServerHost`, `.LDAP.ServerPort = 389`, `.AccessControl.AuthorizedUserGroups`.
+4. Vérifier que `.LDAP.BindPassword` est une chaîne hex (`[0-9a-f]+`).
+
+### Scénario 4.6 — Création AD `read.user{suffix}` au 1er appel
+
+1. **Pré-requis** : `read_ldap_password` vide en config (`grep read_ldap_password /etc/sambaedu/sambaedu.conf*`).
+2. Premier appel : `curl -s -X POST -d "id=$VALID_ID" http://localhost/gpo/veyon_out.php > /tmp/veyon-out.json`
+3. Vérifier la création AD : `ldapsearch -H ldap://localhost -b "$(grep ldap_base_dn /etc/sambaedu/sambaedu.conf | cut -d= -f2- | tr -d ' \"')" "(cn=read.user*)" cn`
+   → 1 entrée retournée.
+4. Vérifier que `read_ldap_password` est désormais persistée en config.
+5. Vérifier `tail /var/log/sambaedu/laravel.log` → `[ReadUserManager] read.user created`.
+
+### Scénario 4.7 — Race condition multi-postes simultanés
+
+1. **Pré-requis** : `read_ldap_password` vide (supprimer la clé en config si besoin pour rejouer).
+2. Lancer 20 requêtes parallèles :
+   ```bash
+   seq 1 20 | xargs -P 20 -I{} curl -s -X POST -d "id=$VALID_ID" http://localhost/gpo/veyon_out.php -o /tmp/veyon-{}.json
+   ```
+3. Vérifier qu'**une seule entrée** AD `read.user*` existe :
+   `ldapsearch ... "(cn=read.user*)" | grep -c "^dn:"` doit retourner 1.
+4. Vérifier dans les logs : 1 seul log `[ReadUserManager] read.user created`,
+   les 19 autres prennent le path « réutilise password existant ».
+
+### Scénario 4.8 — `veyon_out.php?licence=1` → fichier vlf
+
+1. **Avec fichier présent** : `ls /etc/sambaedu/applications/veyon/licence.vlf` (créer un fichier test si absent).
+2. `curl -s -X POST -d "licence=1" http://localhost/gpo/veyon_out.php -o /tmp/lic.vlf`
+3. Vérifier `Content-Type: application/octet-stream`.
+4. Vérifier que `diff /tmp/lic.vlf /etc/sambaedu/applications/veyon/licence.vlf` est silencieux (contenu identique).
+5. **Sans fichier** : renommer temporairement → re-curl → body vide, status 200 octet-stream.
+
+### Scénario 4.9 — Veyon Master réel consomme la config
+
+1. Sur un poste Veyon Master : `Configuration → Importer depuis fichier` → charger `/tmp/veyon-out.json`.
+2. Vérifier que la salle (parc) du poste apparaît dans l'arborescence.
+3. Sélectionner 1 poste → cliquer « Démo prof » → vérifier la connexion VNC réussie.
+4. **Si échec bind LDAP** : vérifier dans Veyon Master logs que `BindPassword` est bien la valeur retournée (déchiffrement OAEP côté Veyon doit fonctionner).
+
+### Scénario 4.10 — Interception native prioritaire sur catchall legacy
+
+1. `curl -s -o /dev/null -w "Server: %{http_connect}\nName: %{header_x-laravel-route}\n" http://localhost/gpo/network_out.php?id=INJECTION`
+2. Vérifier que la route Laravel matchée est bien `gpo.network-out.legacy` (et non le catchall).
+3. Smoke alternatif : `php artisan route:list | grep gpo/network_out.php` doit lister une seule entrée pointant vers `NetworkOutController@legacyOut`.
+
+### Checklist rapide Story 16.3b
+
+- [ ] Scénarios 4.1 / 4.2 passent (bash valide, syntax check OK)
+- [ ] `/tmp/network-{action}-{id}.log` écrit avec le contenu retourné
+- [ ] `os=windows` retourne **200 body vide** (legacy bug iso reproduit, post-review : 200 strict)
+- [ ] `id` malformé retourne **200 body vide** sans appel APCu / exec / LDAP
+- [ ] `veyon_out.php` cas nominal retourne JSON parseable avec section LDAP complète
+- [ ] Création AD `read.user{suffix}` se produit sur 1er appel sans `read_ldap_password`
+- [ ] Stress test 20 requêtes parallèles → 1 seul compte AD créé (lock OK)
+- [ ] `BindPassword` est hex et décodable PKCS1_OAEP avec la clé privée correspondante
+- [ ] `licence=1` retourne le fichier `.vlf` raw quand présent, vide sinon
+- [ ] Veyon Master importe la config → salle visible + connexion VNC OK
+- [ ] Routes natives interceptent AVANT catchall (`php artisan route:list`)
+- [ ] Tests `php artisan test tests/Feature/Gpo tests/Unit/Gpo tests/Unit/Ldap tests/Unit/Config` → 100% vert
+
+### Post-correctifs Story 16.3b (review fixes 2026-05-12)
+
+> Décision Henri **option A complète** : `AdUserManager` natif + `SambaEduConfig::set` natif. Scénarios QA ajoutés pour valider la création native + drift recovery.
+
+| # | Incident review | Scénario QA |
+|---|-----------------|-------------|
+| #1+#2 | Création AD native (shim non-fonctionnel remplacé par `AdUserManager`) | **Installation vierge sans `read_ldap_password`** : (1) sur la VM, supprimer la ligne `read_ldap_password` de `/etc/sambaedu/sambaedu.conf` ; (2) premier `curl -X POST -d "id=$VALID_ID" http://localhost/gpo/veyon_out.php` ; (3) vérifier création AD via `samba-tool user list \| grep read.user` ; (4) vérifier persistance config `grep read_ldap_password /etc/sambaedu/sambaedu.conf` ; (5) vérifier log `tail /var/log/sambaedu/laravel.log \| grep '[AdUserManager] user created'` (channel `gpo`). |
+| #M1 | Drift recovery silencieux → désormais bruyant (retour `null`) | **Forcer reset manuel pwd AD `read.user`** : (1) `samba-tool user setpassword read.user --newpassword=Different-Pwd-12345` (sans toucher la config Laravel) ; (2) `curl -X POST -d "id=$VALID_ID" http://localhost/gpo/veyon_out.php > /tmp/veyon-drift.json` ; (3) attendu : la recovery tente un re-push via `AdUserManager::setPassword`. Si elle échoue (ex : politique pwd violée par la valeur en config), le JSON est servi **sans `BindPassword`** (`jq '.LDAP \| has("BindPassword")'` → `false`) ; (4) vérifier log `error` visible `tail /var/log/sambaedu/laravel.log \| grep 'drift recovery failed'`. |
+| #M3 | `Cache-Control: no-store` sur licence fallback | (1) Sans fichier `licence.vlf` : `curl -i -X POST -d "licence=1" http://localhost/gpo/veyon_out.php` → vérifier header `Cache-Control: no-store, no-cache, must-revalidate` (évite cache proxy de la réponse vide). |
+| #M4 | `Log::debug` (vs `info`) sur context expiré | Reproduire 50 requêtes avec `id` md5 random valide (mais absent d'APCu) → vérifier que les 50 logs ne pollutent pas `laravel.log` au niveau `info` (le channel `daily` n'enregistre debug que si `LOG_LEVEL=debug`). |
+| #4/#5 | HTTP 200 iso-legacy strict | Re-tester scénarios 4.3, 4.4 : le code HTTP **doit être 200** (et plus 204). `curl -s -o /dev/null -w "%{http_code}\n"` doit retourner `200` pour tous les paths body vide. |

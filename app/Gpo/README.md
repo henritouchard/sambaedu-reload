@@ -119,3 +119,30 @@ Le but : tracer la dette restante et faciliter le tri lors du retrait du shim
 - Le shim 1bis.18 (`legacy/modules/gpo/`) reste actif pendant tout Epic 16.
   Chaque story 16.x livrant une page native décide story-par-story de cohabiter
   ou d'override le catchall.
+
+## Endpoints runtime postes clients (Story 16.3b)
+
+Endpoints HTTP iso-contrat consommés par les postes clients Linux au
+startup/logon via la GPO `se4_applications`. **Pas d'UI admin** — ces routes
+servent uniquement des artefacts (script bash / config JSON) lus par des
+clients automates (bash, client Veyon C++).
+
+| URL                       | Controller                                                       | Service métier                       | Side effect AD                                    | Channel logs |
+|---------------------------|------------------------------------------------------------------|--------------------------------------|---------------------------------------------------|--------------|
+| `/gpo/network_out.php`    | `App\Http\Controllers\Gpo\NetworkOutController::legacyOut`       | `App\Gpo\Services\NetworkScriptGenerator` | aucun                                            | `daily` standard |
+| `/gpo/veyon_out.php`      | `App\Http\Controllers\Gpo\VeyonOutController::legacyOut`         | `App\Gpo\Services\VeyonConfigGenerator` + `App\Gpo\Services\ReadUserManager` | création AD `read.user{suffix}` si absent (sous lock) | `daily` standard |
+| `/gpo/veyon_out.php?licence=1` | idem (sous-action)                                          | sert `/etc/sambaedu/applications/veyon/licence.vlf` raw | aucun                                            | `daily` standard |
+
+**Auth** : pas d'auth web (postes clients sans cookie Laravel). Garde effective =
+`id` md5 32 hex présent dans APCu (`apps.$id` posée par
+`legacy/modules/gpo/applications.php`, TTL 1800s — entropie effective 64 bits).
+Throttle `300,1` par IP (parité firefox_out.php).
+
+**Iso-bytes** : sortie strictement comparable byte-à-byte au legacy (modulo
+`BindPassword` chiffré OAEP non-déterministe pour Veyon). Pas de `\r\n`, pas
+de gzip, pas de cache.
+
+**Fallback shim `@legacy-port`** : `ReadUserManager` délègue à
+`create_ad_user`, `set_config`, `user_valid_passwd`, `usersetpassword` du
+shim 1bis-18g (chargés via `legacy/bootstrap.php`). Story 16.4 portera ces
+opérations en service AD natif propre.

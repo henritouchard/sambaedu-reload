@@ -1243,8 +1243,48 @@ if (!function_exists('filter_group_autres')) {
 // ─── Fonctions de création (non shimmées — logguent l'appel) ────────────────
 
 if (!function_exists('create_ad_user')) {
+    /**
+     * Délègue à `App\Ldap\AdUserManager` natif (Story 16.3b correctifs
+     * post-review 2026-05-12). Le tableau `$user` legacy expose le DN complet
+     * et `cn` — on extrait le samAccountName depuis `cn` (parité
+     * `gpo/veyon_out.php:37-38` qui pose `$user['cn'] = "read.user" . $config['suffix']`).
+     * Le password est extrait depuis `unicodepwd` (encodage UTF-16LE entre
+     * guillemets — on déchiffre pour passer en clair à `samba-tool user create`).
+     *
+     * Fallback log si l'`AdUserManager` n'est pas bindable (cas test sans
+     * container Laravel actif).
+     */
     function create_ad_user(array $config, array $user): bool
     {
+        try {
+            if (function_exists('app') && app()->bound(\App\Ldap\AdUserManager::class)) {
+                $samaccountname = (string) ($user['cn'] ?? '');
+                $password = '';
+                if (isset($user['unicodepwd']) && is_string($user['unicodepwd'])) {
+                    // unicodepwd legacy = `iconv("UTF-8", "UTF-16LE", "\"$password\"")` → on
+                    // inverse pour récupérer le clear-text.
+                    $decoded = @iconv('UTF-16LE', 'UTF-8', $user['unicodepwd']);
+                    if (is_string($decoded)) {
+                        $password = trim($decoded, "\"");
+                    }
+                }
+
+                if ($samaccountname === '' || $password === '') {
+                    _shim_log_unimplemented('create_ad_user (missing cn/unicodepwd)');
+                    return false;
+                }
+
+                /** @var \App\Ldap\AdUserManager $manager */
+                $manager = app(\App\Ldap\AdUserManager::class);
+                return $manager->create($samaccountname, $password, [
+                    'description' => (string) ($user['displayname'] ?? ''),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            _shim_log_unimplemented('create_ad_user (delegate threw: ' . $e->getMessage() . ')');
+            return false;
+        }
+
         _shim_log_unimplemented('create_ad_user');
         return false;
     }
@@ -1617,8 +1657,32 @@ if (!function_exists('get_config_file')) {
 }
 
 if (!function_exists('set_config')) {
+    /**
+     * Délègue à `App\Config\SambaEduConfig::set` natif (Story 16.3b
+     * correctifs post-review 2026-05-12). Module `sambaedu` uniquement
+     * (parité legacy : module `sambaedu` écrit dans `/etc/sambaedu/sambaedu.conf`).
+     * Pour les autres modules → fallback log shim (à porter plus tard).
+     *
+     * Retour : tableau `$config` mis à jour en mémoire (parité legacy
+     * signature), même si la persistance disque a échoué — le caller décide
+     * de la propagation.
+     */
     function set_config($config, $param, $value = '', $module = 'sambaedu'): array
     {
+        if ($module === 'sambaedu') {
+            try {
+                if (function_exists('app') && app()->bound(\App\Config\SambaEduConfig::class)) {
+                    /** @var \App\Config\SambaEduConfig $cfg */
+                    $cfg = app(\App\Config\SambaEduConfig::class);
+                    $cfg->set($param, $value);
+                    $config[$param] = $value;
+                    return $config;
+                }
+            } catch (\Throwable $e) {
+                _shim_log_unimplemented("set_config(param={$param}, delegate threw: " . $e->getMessage() . ')');
+            }
+        }
+
         _shim_log_unimplemented("set_config(param={$param})");
         $config[$param] = $value;
         return $config;
