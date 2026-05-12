@@ -247,6 +247,15 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
     // qui constitue la défense principale contre les injections — la
     // validation défensive dans mount() n'est qu'un filet de sécurité.
     // ========================================
+    // Story 16.3c — Page admin native Wine (UI Livewire SFC).
+    // Permission server.admin (cohérence 16.2). Déclarée AVANT
+    // `/gpo/{guid}` pour éviter qu'elle ne tente d'être matchée comme GUID
+    // (la regex stricte de `{guid}` ne matche pas `wine`, mais on évite
+    // la dépendance à l'ordre via une déclaration explicite prioritaire).
+    Route::livewire('/gpo/wine', 'pages::app.gpo.wine.index')
+        ->middleware('can:server.admin')
+        ->name('gpo.wine');
+
     Route::livewire('/gpo/{guid}', 'pages::app.gpo.[guid].index')
         ->where('guid', '\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?')
         ->middleware('can:server.admin')
@@ -398,9 +407,11 @@ Route::match(['GET', 'POST'], 'gpo/thunderbird_out.php', [AppPolicyController::c
 /*
 |--------------------------------------------------------------------------
 | Interception legacy gpo/network_out.php + gpo/veyon_out.php (Story 16.3b)
+| + gpo/associations_out.php (Story 16.3c)
 |--------------------------------------------------------------------------
-| Endpoints runtime postes clients : script bash réseau (network_out)
-| et config JSON Veyon (veyon_out). Pattern iso 4.7/4.8.
+| Endpoints runtime postes clients : script bash réseau (network_out),
+| config JSON Veyon (veyon_out) et JSON des associations d'extensions
+| (associations_out). Pattern iso 4.7/4.8.
 | Throttle 300/min/IP. Pas d'auth web (id md5 APCu = garde effective).
 | Doivent être déclarés AVANT le catchall legacy.
 */
@@ -410,6 +421,11 @@ Route::match(['GET', 'POST'], 'gpo/network_out.php', [\App\Http\Controllers\Gpo\
 Route::match(['GET', 'POST'], 'gpo/veyon_out.php', [\App\Http\Controllers\Gpo\VeyonOutController::class, 'legacyOut'])
     ->middleware('throttle:300,1')
     ->name('gpo.veyon-out.legacy');
+// Story 16.3c — POST uniquement (legacy `associations_out.php` n'expose pas GET ;
+// le body `$_POST['list']` est obligatoire — un GET sans `list` retournerait 400).
+Route::match(['POST'], 'gpo/associations_out.php', [\App\Http\Controllers\Gpo\AssociationsOutController::class, 'legacyOut'])
+    ->middleware('throttle:300,1')
+    ->name('gpo.associations-out.legacy');
 
 /*
 |--------------------------------------------------------------------------

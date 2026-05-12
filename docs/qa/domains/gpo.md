@@ -593,3 +593,182 @@ URLs sont en dur dans des scripts déployés sur le parc).
 | #M3 | `Cache-Control: no-store` sur licence fallback | (1) Sans fichier `licence.vlf` : `curl -i -X POST -d "licence=1" http://localhost/gpo/veyon_out.php` → vérifier header `Cache-Control: no-store, no-cache, must-revalidate` (évite cache proxy de la réponse vide). |
 | #M4 | `Log::debug` (vs `info`) sur context expiré | Reproduire 50 requêtes avec `id` md5 random valide (mais absent d'APCu) → vérifier que les 50 logs ne pollutent pas `laravel.log` au niveau `info` (le channel `daily` n'enregistre debug que si `LOG_LEVEL=debug`). |
 | #4/#5 | HTTP 200 iso-legacy strict | Re-tester scénarios 4.3, 4.4 : le code HTTP **doit être 200** (et plus 204). `curl -s -o /dev/null -w "%{http_code}\n"` doit retourner `200` pour tous les paths body vide. |
+
+---
+
+## Story 16.3c — Wine (UI admin native) + Associations apps (endpoint runtime)
+
+**Date livraison** : 2026-05-12
+**Migrations à appliquer** : aucune
+**Permission requise** : `server.admin` (UI Wine) / aucune (endpoint runtime Associations)
+
+### Scénario 5.1 — Endpoint `associations_out.php` : cas nominal
+
+1. Sur la VM, identifier un id valide en cours dans APCu :
+   `php -r 'foreach (apcu_cache_info()["cache_list"] as $e) if (strpos($e["info"], "apps.") === 0) echo $e["info"] . PHP_EOL;'`
+2. Capturer un `list` JSON minimal côté poste : `LIST='{"file":[".html,FirefoxHTML"]}'`
+3. Exécuter :
+   `curl -s -X POST -d "id=$VALID_ID" --data-urlencode "list=$LIST" http://localhost/gpo/associations_out.php`
+4. Attendu : status `200`, header `Content-Type: text/json`, body JSON parseable
+   avec section `result` contenant les associations à appliquer côté poste
+   (delta vs `$LIST`).
+5. Vérifier `/tmp/assoc_result.json` est écrit après l'appel.
+
+### Scénario 5.2 — Endpoint `associations_out.php` : id invalide → 400
+
+1. `curl -i -X POST -d "id=INJECTION" -d "list={}" http://localhost/gpo/associations_out.php`
+2. Attendu : status `400 Bad request`, body vide. Aucun appel `apcu_fetch` /
+   `WorkstationPackagesResolver` / `DOMDocument` dans les logs.
+
+### Scénario 5.3 — Endpoint `associations_out.php` : list absent → 400
+
+1. `curl -i -X POST -d "id=$VALID_ID" http://localhost/gpo/associations_out.php`
+2. Attendu : status `400`, body vide.
+
+### Scénario 5.4 — Endpoint `associations_out.php` : list > 10 Ko → 400
+
+1. `LIST=$(printf '%.0s.x,Y\n' {1..5000})`
+2. `curl -i -X POST -d "id=$VALID_ID" --data-urlencode "list=$LIST" http://localhost/gpo/associations_out.php`
+3. Attendu : status `400` (validation taille AVANT json_decode).
+
+### Scénario 5.5 — Endpoint `associations_out.php` : APCu expiré → 400
+
+1. Forcer expiration : `apcu_delete "apps.$VALID_ID"` côté VM
+2. `curl -i -X POST -d "id=$VALID_ID" -d "list={}" http://localhost/gpo/associations_out.php`
+3. Attendu : status `400`, body vide, log `daily` debug `context expired`
+   (pas info — éviter pollution boot de masse).
+
+### Scénario 5.6 — Endpoint `associations_out.php` : `packages.xml` absent → gracieux
+
+1. Renommer temporairement le `packages.xml` :
+   `mv /var/sambaedu/unattended/install/wpkg/packages.xml{,.bak}`
+2. `curl -X POST -d "id=$VALID_ID" -d "list={}" http://localhost/gpo/associations_out.php`
+3. Attendu : status `200`, body `{"result": {}}` (parité legacy gracieux).
+4. Log `daily` warning `packages.xml absent`.
+5. Restaurer : `mv /var/sambaedu/unattended/install/wpkg/packages.xml{.bak,}`
+
+### Scénario 5.7 — UI Wine : accès admin
+
+1. Se connecter en `admin` avec permission `server.admin`.
+2. Naviguer vers `/app/gpo/wine`.
+3. Attendu : page rendue avec :
+   - Sidebar GPO (cohérence 16.2)
+   - Bandeau d'info expliquant l'activation Wine sur les postes Linux
+   - `<select>` avec « Conteneur par défaut (.wine) » + N options `wine-<X>`
+     correspondant au scan FS de `/var/sambaedu/unattended/install/wine/`
+   - 2 boutons « Générer l'image » (primary) et « Générer les raccourcis » (secondary)
+4. Vérifier l'attribut `selected` posé sur la bonne option (bug `wine.php:52`
+   NON reproduit).
+
+### Scénario 5.8 — UI Wine : 403 sans permission `server.admin`
+
+1. Se connecter en user lambda (élève, prof, sans `server.admin`).
+2. `GET /app/gpo/wine`
+3. Attendu : `403 Forbidden`.
+
+### Scénario 5.9 — UI Wine : génération image (Job dispatché)
+
+1. En admin, naviguer vers `/app/gpo/wine`.
+2. Sélectionner un conteneur dans le `<select>` (ou laisser défaut).
+3. Cliquer « Générer l'image ».
+4. Modale de confirmation s'ouvre : « La génération peut prendre ~10 minutes…
+   Confirmer ? ». Cliquer « Lancer la génération ».
+5. Toast info « L'image Wine est en cours de génération (≈ 10 min)… operation_id `<UUID>` ».
+6. Vérifier : `php artisan queue:work --once` consomme le Job, lance
+   `/usr/share/sambaedu/scripts/make_wine_image.sh <prefix>`.
+7. Vérifier les logs : `tail -f storage/logs/gpo/*.log` doit afficher :
+   - `[gpo] gpo.wine.image.generate start` (sub `queuer.dispatch`)
+   - `[gpo] gpo.wine.image.generate step: queued`
+   - `[gpo] gpo.wine.image.generate success`
+   - `[gpo] gpo.wine.image.generate start` (sub `job.handle`, même `operation_id`)
+   - `[gpo] gpo.wine.image.generate step: invoking make_wine_image.sh`
+   - `[gpo] gpo.wine.image.generate success`
+
+### Scénario 5.10 — UI Wine : idempotence (lock anti-double-dispatch)
+
+1. Cliquer « Générer l'image » pour `firefox`, confirmer.
+2. Sans attendre la fin du Job, cliquer **à nouveau** « Générer l'image »
+   pour le même `firefox`.
+3. Attendu : toast **warning** « Une génération est déjà en cours pour ce
+   conteneur. Réessayez à la fin du Job actuel… »
+4. Vérifier : un seul Job en queue (`php artisan queue:monitor`).
+5. À la fin du Job (success ou failure), le lock est libéré → relance OK.
+
+### Scénario 5.11 — UI Wine : génération raccourcis
+
+1. Pré-requis : avoir un conteneur Wine installé sur la VM avec des
+   raccourcis `.desktop` dans `/home/se4install/Bureau/`.
+2. En admin, sélectionner ce conteneur, cliquer « Générer les raccourcis ».
+3. Attendu : toast success « X raccourci(s) Wine ajouté(s) à `shortcuts.json` ».
+4. Vérifier : `/etc/sambaedu/applications/shortcuts/shortcuts.json` enrichi.
+5. Vérifier l'atomic write : `ls -la /etc/sambaedu/applications/shortcuts/*.tmp*`
+   ne doit retourner aucun fichier orphelin.
+
+### Scénario 5.12 — UI Wine : sécurité whitelist regex
+
+1. Tentative d'injection : ouvrir DevTools, modifier la valeur du `<select>`
+   (Livewire wire:model) en `; rm -rf /`.
+2. Cliquer « Générer l'image ».
+3. Attendu : toast error « Conteneur Wine invalide. Caractères autorisés :
+   lettres, chiffres, point, tiret, underscore. ». **Aucun Job dispatché**.
+4. Vérifier les logs : pas d'`action_type: gpo.wine.image.generate`.
+
+### Scénario 5.13 — Redirect `/gpo/wine.php` → `/app/gpo/wine`
+
+1. `curl -i -L --max-redirs 1 http://localhost/gpo/wine.php`
+2. Attendu : `302 Found` → `Location: /app/gpo/wine`.
+3. Idem avec query string : `curl -i http://localhost/gpo/wine.php?action=foo`
+   → `302` vers `/app/gpo/wine`.
+
+### Scénario 5.14 — Route native `associations_out.php` prioritaire sur catchall
+
+1. `php artisan route:list | grep associations_out`
+2. Attendu : une seule entrée `POST gpo/associations_out.php` pointant vers
+   `AssociationsOutController@legacyOut` (pas catchall).
+3. Smoke alternatif : `curl -s -o /dev/null -w "%{http_code}\n" -X GET
+   http://localhost/gpo/associations_out.php` → status défini par le catchall
+   (legacy ou 404), **pas** 200 native.
+
+### Scénario 5.15 — Catalogue logs gpo : Wine vs Associations
+
+1. Wine (admin audit) : `grep 'gpo.wine.image.generate' /var/log/sambaedu/gpo*.log`
+   → channel `gpo`, formatage 3 logs `start`/`step`/`end` avec `operation_id`.
+2. Associations (runtime poste) : `grep 'AssociationsOutController' /var/log/sambaedu/laravel.log`
+   → channel `daily`, niveau `debug` (context expired) ou `error` (exception
+   resolve). PAS de format `[gpo] action_type:...` (parité runtime endpoints).
+
+### Scénario 5.16 — `apps.$id` toujours posé par `applications.php` (chaîne intacte)
+
+1. Sur le poste, déclencher un logon → `applications.php` shim s'exécute.
+2. Sur la VM : `php -r 'echo apcu_fetch("apps.<id>") !== false ? "OK" : "EXPIRED" . PHP_EOL;'`
+3. Attendu : `OK` (la chaîne shim 1bis-18e n'a pas régressé). Si `EXPIRED`,
+   les endpoints 4.7/4.8/16.3b/16.3c retomberont silencieusement sur leurs
+   paths dégénérés (200 body vide ou 400) — **incident bloquant** à signaler.
+
+### Checklist rapide Story 16.3c
+
+- [ ] Scénarios 5.1 / 5.7 passent (associations endpoint nominal + UI Wine accessible)
+- [ ] `id` malformé / `list` absent / `list > 10Ko` retournent **400 body vide** sans accès APCu/Eloquent
+- [ ] `packages.xml` absent retourne `{"result": {}}` (status 200 gracieux)
+- [ ] `/tmp/assoc_result.json` écrit après cas nominal, **pas** les 3 autres legacy
+- [ ] Page `/app/gpo/wine` accessible avec `server.admin`, 403 sinon
+- [ ] Click « Générer l'image » → modale confirmation → Job en queue → script shell exécuté par worker
+- [ ] Double-click rapide « Générer l'image » → 2ᵉ refusé (toast warning lock idempotence)
+- [ ] Click « Générer les raccourcis » → `shortcuts.json` enrichi (atomic write OK)
+- [ ] Injection `; rm -rf /` dans `selectedApplication` → toast error, aucun Job dispatché
+- [ ] Redirect `/gpo/wine.php` → `/app/gpo/wine` (302)
+- [ ] Route native `associations_out.php` (POST) prioritaire sur catchall
+- [ ] `apps.$id` toujours posé par `applications.php` shim (chaîne intacte)
+- [ ] Tests `php artisan test tests/Feature/Gpo tests/Unit/Gpo tests/Feature/ShortcutsService tests/Architecture` → 100% vert
+
+### Post-correctifs & non-régressions (Story 16.3c)
+
+Append-only. Incidents/correctifs post-review claude-opus-4-7 (2026-05-12) couverts par les fixes — cf. `_bmad-output/codeReviews/16-3c.md`.
+
+| Scénario              | Incident d'origine                                                                                                                                                | Couverture / non-régression                                                                                                                                                  |
+|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 5.17 Dead code Wine   | `WineController.php` jamais appelé (route Livewire filesystem-router) → dette d'entretien + ambiguïté pattern.                                                    | Fichier supprimé. `grep -rn "WineController" app/ docs/` doit retourner 0 résultat. README `app/Gpo/README.md` mentionne désormais explicitement la route Livewire native.   |
+| 5.18 Throttle endpoint Associations | Pas de test fonctionnel `throttle:300,1` côté `AssociationsOutEndpointTest` (présent dans 16.3b NetworkOut).                                            | Test `it_applies_throttle_300_per_minute` ajouté (smoke iso pattern 16.3b). Existence middleware couverte par `AssociationsOutRouteRegistrationTest`.                        |
+| 5.19 Fixture comparison iso sample XML | Fixture `legacy-associations-out.json` artisanal incomplet vs `packages-xml-sample.xml` (manquait `.htm`/`https`) → `AssociationsOutComparisonTest` cassé en CI. | Fixture régénéré cohérent (5 entries : `.jpg` default.xml + `.html`/`.htm`/`http`/`https` firefox). Marker `requires-fixture-capture` conservé (rappel capture VM réelle future). |
+| 5.20 Regex `parseLocalAssocs` greedy iso-legacy | Regex native `^\s*(.*?)\s*,\s*(.*?)\s*$` (non-greedy) ≠ legacy greedy → input `".html,Foo,Bar"` capturait `(".html", "Foo,Bar")` au lieu de `(".html,Foo", "Bar")`. | Regex passée en greedy `/^\s*(.*)\s*,\s*(.*)$/`. Test unit `parse_local_assocs_uses_greedy_split_on_last_comma_iso_legacy` valide la sémantique iso-bytes parc-wide.        |
+

@@ -54,10 +54,17 @@ class GpoNamespaceTest extends TestCase
 
     /**
      * Fichiers (basename) whitelistés pour exec/shell_exec/etc. — seul
-     * `SambaToolRunner` est autorisé à utiliser `Illuminate\Support\Facades\Process`.
+     * `SambaToolRunner` (16.1) et `GenerateWineImageJob` (16.3c) sont
+     * autorisés à utiliser `Illuminate\Support\Facades\Process`.
+     *
+     * `GenerateWineImageJob` invoque `make_wine_image.sh` en mode array
+     * (audit §6.F F7 corrigé) — pas une commande samba-tool, pas le bon
+     * niveau d'abstraction pour `SambaToolRunner`. Garde-fou maintenu via
+     * `it_uses_process_in_array_mode_in_generate_wine_image_job`.
      */
     private const SHELL_WHITELIST_FILES = [
         'SambaToolRunner.php',
+        'GenerateWineImageJob.php',
     ];
 
     /**
@@ -242,6 +249,87 @@ class GpoNamespaceTest extends TestCase
             [],
             $violations,
             "Violations garde-fou Epic 16 (shell execution hors SambaToolRunner) :\n  - " . implode("\n  - ", $violations),
+        );
+    }
+
+    /**
+     * Story 16.3c — AC6.9. Vérifie que les fichiers sous `app/Gpo/Jobs/` :
+     *  - ne contiennent aucune référence à `LdapRecord\*` (pas d'AD direct
+     *    dans les Jobs Wine — `GenerateWineImageJob` est pure FS + Process).
+     *  - ne mentionnent ni `samba-tool` ni `samba_tool` (pas d'écriture AD
+     *    déclenchée par les Jobs Wine).
+     */
+    #[Test]
+    public function jobs_directory_has_no_ldap_or_samba_tool_references(): void
+    {
+        $jobsDir = realpath(__DIR__ . '/../../app/Gpo/Jobs');
+        if ($jobsDir === false) {
+            self::assertTrue(true, 'app/Gpo/Jobs/ pas encore créé — garde-fou inactif');
+            return;
+        }
+
+        $finder = (new Finder())->files()->in($jobsDir)->name('*.php');
+        if (! $finder->hasResults()) {
+            self::assertTrue(true);
+            return;
+        }
+
+        $violations = [];
+        foreach ($finder as $file) {
+            $code = $file->getContents();
+            // Strip commentaires.
+            $stripped = preg_replace('!/\*.*?\*/!s', '', $code) ?? $code;
+            $stripped = preg_replace('/^\s*\/\/.*$/m', '', $stripped) ?? $stripped;
+
+            if (preg_match('/\\bLdapRecord\\\\/', $stripped) === 1) {
+                $violations[] = sprintf('%s référence LdapRecord\\* — interdit dans Jobs/', $file->getRelativePathname());
+            }
+            if (preg_match('/samba[-_]tool/i', $stripped) === 1) {
+                $violations[] = sprintf('%s mentionne samba-tool/samba_tool — interdit dans Jobs/', $file->getRelativePathname());
+            }
+        }
+
+        self::assertSame(
+            [],
+            $violations,
+            "Violations garde-fou Epic 16 — Jobs/ pas de side-effect AD :\n  - " . implode("\n  - ", $violations),
+        );
+    }
+
+    /**
+     * Story 16.3c — AC6.9. Vérifie que `GenerateWineImageJob` invoque
+     * `Process::run(...)` ou `Process::timeout(...)->run(...)` en mode **array**
+     * (pas de concaténation shell — audit §6.F F7 corrigé).
+     */
+    #[Test]
+    public function it_uses_process_in_array_mode_in_generate_wine_image_job(): void
+    {
+        $path = realpath(__DIR__ . '/../../app/Gpo/Jobs/GenerateWineImageJob.php');
+        if ($path === false) {
+            self::markTestSkipped('GenerateWineImageJob.php pas encore créé');
+            return;
+        }
+
+        $code = (string) file_get_contents($path);
+        // Strip commentaires pour limiter faux positifs.
+        $stripped = preg_replace('!/\*.*?\*/!s', '', $code) ?? $code;
+        $stripped = preg_replace('/^\s*\/\/.*$/m', '', $stripped) ?? $stripped;
+
+        // 1. Doit contenir un appel `Process::...->run([...])` (mode array).
+        $hasArrayMode = preg_match('/Process::[A-Za-z0-9_:>()\\s,.]*run\s*\(\s*\[/s', $stripped) === 1
+            || preg_match('/Process::[A-Za-z0-9_:>()\\s,.]*run\s*\(\s*\$[A-Za-z_]+\s*\)/s', $stripped) === 1;
+
+        self::assertTrue(
+            $hasArrayMode,
+            'GenerateWineImageJob doit invoquer Process::run(...) en mode array (variable list<string> ou littéral [...]).',
+        );
+
+        // 2. NE DOIT PAS concaténer le nom de l'application en string shell.
+        // Patterns interdits : `Process::*run("...".$this->application)`.
+        $forbiddenConcat = preg_match('/Process::[A-Za-z0-9_:>()\\s,.]*run\s*\(\s*["\']/s', $stripped) === 1;
+        self::assertFalse(
+            $forbiddenConcat,
+            'GenerateWineImageJob ne doit pas invoquer Process::run avec une string (concaténation shell interdite).',
         );
     }
 

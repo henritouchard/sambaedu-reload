@@ -44,9 +44,13 @@ return [
         'parcs/show_parc.php' => 'app/parcs',
         'gpo/shortcuts_out\.php' => 'app/shortcuts',
         // Story 16.2 — Décision SM D5 : bloquer uniquement la page d'index legacy.
-        // Les pages d'édition (gpo-maj.php, gpo-export.php, wine.php, etc.) restent
-        // accessibles pour la cohabitation jusqu'aux Stories 16.3/16.4/16.5.
+        // Les pages d'édition (gpo-maj.php, gpo-export.php, etc.) restent
+        // accessibles pour la cohabitation jusqu'aux Stories 16.4/16.5.
         '^gpo/gestion_gpo\.php$' => 'app/gpo',
+        // Story 16.3c — Wine UI native. La page `/gpo/wine.php` legacy est
+        // remplacée par `/app/gpo/wine` (Livewire SFC + Job queue). Redirect
+        // 302 (pattern iso 16.2 D5).
+        '^gpo/wine\.php(?:\?.*)?$' => 'app/gpo/wine',
     ],
 
     /*
@@ -245,5 +249,18 @@ return [
         // samba-tool (parité legacy samba-tool.inc.php:62).
         // Sera enrichi quand on supportera l'authentification par compte stocké.
         'kerb_option' => '--use-kerberos=required',
+
+        // Story 16.3c — Sous-config Wine (UI admin + Job queue).
+        'wine' => [
+            // Dossier de base scanné pour lister les conteneurs Wine partagés
+            // (`wine-<application>` → option du `<select>` UI). Iso-legacy
+            // path = `/var/sambaedu/unattended/install/wine` (cf. `gpo/wine.php:43`).
+            'prefix_base' => '/var/sambaedu/unattended/install/wine',
+
+            // Path du script shell exécuté par `GenerateWineImageJob` —
+            // documentaire (le script est en dur dans la const du Job pour
+            // éviter qu'un override config ouvre une injection).
+            'image_script' => '/usr/share/sambaedu/scripts/make_wine_image.sh',
+        ],
     ],
 ];

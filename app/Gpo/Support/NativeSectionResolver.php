@@ -56,6 +56,17 @@ final class NativeSectionResolver
             'label' => 'Gérer les raccourcis',
             'icon' => 'fa-link',
         ],
+        // Story 16.3c — UI admin native Wine (apps Windows sur postes Linux).
+        // Decision SM D10. Pattern `wine` substring match — cohérence avec les
+        // entrées existantes (firefox/thunderbird matchent aussi substring).
+        // Risque marginal de faux positif sur GPO `wineries` (très peu probable
+        // sur un parc SE4FS) — accepté.
+        'wine' => [
+            'patterns' => ['wine'],
+            'url' => '/app/gpo/wine',
+            'label' => 'Gérer les apps Wine (Linux/Windows)',
+            'icon' => 'fa-wine-glass',
+        ],
     ];
 
     /**

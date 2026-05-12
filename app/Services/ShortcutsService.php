@@ -353,6 +353,212 @@ class ShortcutsService
     }
 
     /**
+     * Importe les raccourcis Wine depuis le scan du dossier Wine partagé.
+     *
+     * Story 16.3c — AC1.4, AC2.2.
+     *
+     * Délègue à `get_wine_shortcuts($config, $application)` legacy (port en
+     * shim `@legacy-port` — `@todo Story 16.4` reprise native). Le helper
+     * legacy scanne `/home/{se4install_name}/Bureau/*.desktop`, parse les
+     * containers Wine et copie les icônes dans
+     * `/etc/sambaedu/applications/shortcuts/`.
+     *
+     * Merge dans `/etc/sambaedu/applications/shortcuts/shortcuts.json` :
+     * - Lecture JSON existant (gracieux si fichier absent)
+     * - `array_merge` iso-legacy `gpo/wine.php:67`
+     * - Atomic write : `flock(LOCK_EX)` + tmp + rename (parité Story 15.1
+     *   `AtomicFileWriter`, anti-corruption si 2 admins lancent simultanément)
+     *
+     * Retour : nombre de raccourcis Wine ajoutés (= `count($newShortcuts)`).
+     *
+     * @param string $application Nom du conteneur Wine (sans le préfixe `wine-`).
+     *                            Chaîne vide = conteneur par défaut `.wine`.
+     * @return int Nombre de raccourcis Wine ajoutés au merge.
+     * @throws \RuntimeException Si l'atomic write échoue après lock acquis.
+     *
+     * @legacy-port path="sambaedu/includes/shortcuts.inc.php:523"
+     * @todo Story 16.4 — porter `get_wine_shortcuts` en service natif (scan
+     *       FS direct + parsing .desktop sans dépendre du legacy bootstrap).
+     */
+    public function importWineShortcuts(string $application): int
+    {
+        $log = \App\Gpo\Support\GpoLogger::action('gpo.wine.shortcuts.generate', null, [
+            'application' => $application,
+        ]);
+
+        try {
+            $log->step('loading wine shortcuts via legacy shim');
+
+            $newShortcuts = $this->fetchWineShortcutsLegacy($application);
+            $addedCount = count($newShortcuts);
+
+            $log->step('merging shortcuts.json', [
+                'added_count' => $addedCount,
+            ]);
+
+            $this->atomicMergeShortcuts($newShortcuts);
+
+            $log->success([
+                'added_count' => $addedCount,
+                'application' => $application,
+            ]);
+
+            return $addedCount;
+        } catch (\Throwable $e) {
+            $log->failure($e);
+            throw $e;
+        }
+    }
+
+    /**
+     * Récupère les raccourcis Wine via le helper legacy `get_wine_shortcuts`.
+     *
+     * Charge `shortcuts.inc.php` à la demande si la fonction n'est pas
+     * disponible (cas testing — `legacy/bootstrap.php` skippé). Override
+     * possible via container binding pour les tests :
+     * ```php
+     * app()->bind('legacy.get_wine_shortcuts', fn() => fn($app) => [...]);
+     * ```
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchWineShortcutsLegacy(string $application): array
+    {
+        // Hook test override : binding container `legacy.get_wine_shortcuts`.
+        if (app()->bound('legacy.get_wine_shortcuts')) {
+            $fn = app('legacy.get_wine_shortcuts');
+            if (is_callable($fn)) {
+                $result = $fn($application);
+                return is_array($result) ? $result : [];
+            }
+        }
+
+        // Chargement conditionnel iso-legacy : requiert config + bootstrap legacy.
+        if (! function_exists('get_wine_shortcuts')) {
+            $this->loadLegacyShortcuts();
+        }
+
+        if (! function_exists('get_wine_shortcuts')) {
+            throw new \RuntimeException(
+                'ShortcutsService::importWineShortcuts: legacy function get_wine_shortcuts() unavailable. '
+                . 'Vérifier que legacy/bootstrap.php a chargé shortcuts.inc.php.',
+            );
+        }
+
+        $config = $this->resolveLegacyConfig();
+        $shortcuts = call_user_func('get_wine_shortcuts', $config, $application);
+        return is_array($shortcuts) ? $shortcuts : [];
+    }
+
+    /**
+     * Charge `shortcuts.inc.php` legacy à la demande.
+     *
+     * @legacy-port path="sambaedu/includes/shortcuts.inc.php"
+     */
+    private function loadLegacyShortcuts(): void
+    {
+        $legacyPath = config('sambaedu.legacy_path', '/var/www/sambaedu');
+        $shortcutsInc = rtrim($legacyPath, '/') . '/includes/shortcuts.inc.php';
+
+        if (is_file($shortcutsInc) && is_readable($shortcutsInc)) {
+            require_once $shortcutsInc;
+        }
+    }
+
+    /**
+     * Récupère le `$config` legacy (dict) requis par `get_wine_shortcuts`.
+     *
+     * Délègue à `get_config()` du legacy si la fonction existe, sinon
+     * fallback minimal avec `se4install_name` depuis env/config.
+     *
+     * @return array<string, mixed>
+     */
+    private function resolveLegacyConfig(): array
+    {
+        if (function_exists('get_config')) {
+            $config = call_user_func('get_config');
+            return is_array($config) ? $config : [];
+        }
+
+        return [
+            'se4install_name' => config('sambaedu.se4install_name', 'se4install'),
+        ];
+    }
+
+    /**
+     * Merge atomique `$newShortcuts` dans `$this->shortcutsFile` avec `flock`.
+     *
+     * Iso-legacy merge `array_merge($shortcuts, get_wine_shortcuts(...))`.
+     * Atomic write iso pattern Story 15.1 :
+     *   1. Acquire `flock(LOCK_EX)` sur le fichier
+     *   2. Lire le contenu actuel
+     *   3. Écrire le merge dans `<filename>.tmp.<pid>`
+     *   4. `rename()` atomique tmp → final
+     *   5. Release lock
+     *
+     * @param array<int, array<string, mixed>> $newShortcuts
+     */
+    private function atomicMergeShortcuts(array $newShortcuts): void
+    {
+        $file = $this->shortcutsFile;
+        $dir = dirname($file);
+
+        if (! is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+
+        // Ouvre ou crée le fichier verrou (mode 'c+' = read/write, create if missing).
+        $fh = @fopen($file, 'c+');
+        if ($fh === false) {
+            throw new \RuntimeException("ShortcutsService::importWineShortcuts: cannot open {$file} for locking");
+        }
+
+        try {
+            if (! flock($fh, LOCK_EX)) {
+                throw new \RuntimeException("ShortcutsService::importWineShortcuts: cannot acquire flock on {$file}");
+            }
+
+            // Re-lire le fichier sous lock (anti-race).
+            $existingJson = stream_get_contents($fh);
+            $existing = [];
+            if (is_string($existingJson) && $existingJson !== '') {
+                $decoded = json_decode($existingJson, true);
+                if (is_array($decoded)) {
+                    $existing = $decoded;
+                }
+            }
+
+            // Iso-legacy merge `array_merge($shortcuts, get_wine_shortcuts(...))`.
+            $merged = array_merge($existing, $newShortcuts);
+
+            $encoded = json_encode(
+                $merged,
+                JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
+            );
+            if ($encoded === false) {
+                throw new \RuntimeException("ShortcutsService::importWineShortcuts: json_encode failed");
+            }
+
+            // Atomic write : tmp + rename. tmp dans le même dossier (sinon
+            // rename cross-FS échoue).
+            $tmp = $file . '.tmp.' . getmypid();
+            $bytes = @file_put_contents($tmp, $encoded);
+            if ($bytes === false) {
+                throw new \RuntimeException("ShortcutsService::importWineShortcuts: write failed on {$tmp}");
+            }
+
+            if (! @rename($tmp, $file)) {
+                @unlink($tmp);
+                throw new \RuntimeException("ShortcutsService::importWineShortcuts: rename {$tmp} → {$file} failed");
+            }
+        } finally {
+            // Release lock + close.
+            @flock($fh, LOCK_UN);
+            @fclose($fh);
+        }
+    }
+
+    /**
      * Importe les raccourcis depuis le fichier JSON vers la base de données.
      * Utilisé par la page sync-from-ad pour peupler la table shortcuts.
      *

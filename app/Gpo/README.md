@@ -72,6 +72,9 @@ les champs systématiques `operation_id` (UUID), `action_type`, `gpo_name` /
 | `gpo.sysvol.write`     | Écriture fichier `.pol` / `.xml` / `.ini` SYSVOL           | 16.3, 16.4                   |
 | `gpo.sambatool.exec`   | Exécution brute d'une commande `samba-tool` (niveau debug) | tous                         |
 | `gpo.audit.legacy`     | Trace de portage d'un fichier legacy                       | 16.1 (audit)                 |
+| `gpo.wine.prefixes.list` | Scan FS des conteneurs Wine partagés                     | 16.3c                        |
+| `gpo.wine.image.generate` | Dispatch + handle Job `GenerateWineImageJob`            | 16.3c                        |
+| `gpo.wine.shortcuts.generate` | Import raccourcis Wine via `ShortcutsService::importWineShortcuts` | 16.3c                |
 
 ### Règles supplémentaires
 
@@ -132,6 +135,7 @@ clients automates (bash, client Veyon C++).
 | `/gpo/network_out.php`    | `App\Http\Controllers\Gpo\NetworkOutController::legacyOut`       | `App\Gpo\Services\NetworkScriptGenerator` | aucun                                            | `daily` standard |
 | `/gpo/veyon_out.php`      | `App\Http\Controllers\Gpo\VeyonOutController::legacyOut`         | `App\Gpo\Services\VeyonConfigGenerator` + `App\Gpo\Services\ReadUserManager` | création AD `read.user{suffix}` si absent (sous lock) | `daily` standard |
 | `/gpo/veyon_out.php?licence=1` | idem (sous-action)                                          | sert `/etc/sambaedu/applications/veyon/licence.vlf` raw | aucun                                            | `daily` standard |
+| `/gpo/associations_out.php` (POST only) | `App\Http\Controllers\Gpo\AssociationsOutController::legacyOut` | `App\Gpo\Services\AssociationsResolver` + `App\Gpo\Services\PackagesXmlAssociationsReader` + `App\Wpkg\Deployment\Services\WorkstationPackagesResolver` (15.2) | aucun (lecture seule)                          | `daily` standard (Story 16.3c D9) |
 
 **Auth** : pas d'auth web (postes clients sans cookie Laravel). Garde effective =
 `id` md5 32 hex présent dans APCu (`apps.$id` posée par
@@ -146,3 +150,55 @@ de gzip, pas de cache.
 `create_ad_user`, `set_config`, `user_valid_passwd`, `usersetpassword` du
 shim 1bis-18g (chargés via `legacy/bootstrap.php`). Story 16.4 portera ces
 opérations en service AD natif propre.
+
+**Spécificité `associations_out.php` (Story 16.3c)** :
+- Endpoint **POST only** — le legacy n'accepte pas GET (body `list` obligatoire).
+- Réponse 400 (et non 200 body=""), iso-legacy `associations_out.php:25-26`
+  `header("HTTP/1.1 400 Bad request"); exit()`. La sémantique est différente
+  des autres endpoints : un poste qui reçoit `{}` perd ses associations →
+  400 explicite est préférable à un fallback silencieux.
+- Iso-bytes : `Content-Type: text/json` (non-standard, conservé pour parité
+  legacy ligne 170) + body `json_encode(['result' => $result], JSON_PRETTY_PRINT)`.
+- Source apps installées = `WorkstationPackagesResolver::resolve($machineName)`
+  (Story 15.2, pendant natif Eloquent de `info_poste_applications`). Pas de
+  shim mysqli (Décision Henri 15.2 #5).
+- `packages.xml` lu via `config('sambaedu.wpkg.deploy_path').'/packages.xml'`.
+  Fichier absent → log warning + retour `{"result": {}}` gracieux.
+- Debug `/tmp/assoc_result.json` (parité partielle D5 — les 3 autres writes
+  legacy `assoc_local.json`/`assoc_app.json`/`assoc_wpkg.json` sont skippés).
+  Skip total en `app()->environment('testing')`.
+
+## UI admin native Wine (Story 16.3c)
+
+Page Livewire SFC `/app/gpo/wine` qui remplace `legacy/modules/gpo/wine.php`
+(79 lignes). Permission `server.admin` (Spatie). Channel logs `gpo` (audit
+admin auditable). Pattern iso `/app/gpo` (Story 16.2).
+
+| Élément                  | Path / nom                                                          |
+|--------------------------|---------------------------------------------------------------------|
+| URL native               | `/app/gpo/wine`                                                     |
+| Route                    | `Route::livewire('/gpo/wine', 'pages::app.gpo.wine.index')` (filesystem-router, pas de Controller) |
+| Vue Livewire SFC         | `resources/views/pages/app/gpo/wine/index.blade.php`                |
+| Service scan FS          | `App\Gpo\Services\WinePrefixScanner` (`list()` / `exists()`)        |
+| Service queuer           | `App\Gpo\Services\WineImageQueuer::dispatch`                        |
+| Job queue Laravel        | `App\Gpo\Jobs\GenerateWineImageJob` (tries=1, timeout=1800)         |
+| Extension ShortcutsService | `App\Services\ShortcutsService::importWineShortcuts`              |
+| Redirect catchall legacy | `/gpo/wine.php` → `/app/gpo/wine` (config `blocked_legacy_routes`)  |
+
+**Sécurité audit §6.F F7 corrigé** :
+- Whitelist regex `^[a-zA-Z0-9._\-]*$` sur `$application` (input UI), appliquée
+  côté Livewire + côté queuer + côté Job constructeur (défense en profondeur).
+- `Process::run(['/usr/share/sambaedu/scripts/make_wine_image.sh', $application])`
+  en **mode array** (pas de concaténation shell). Le test architecture
+  `GpoNamespaceTest::it_uses_process_in_array_mode_in_generate_wine_image_job`
+  garantit cette propriété.
+- `GenerateWineImageJob.php` est whitelist dans `GpoNamespaceTest::SHELL_WHITELIST_FILES`
+  (seul autre point autorisé à invoquer `Illuminate\Support\Facades\Process`
+  hors `SambaToolRunner`).
+
+**Idempotence (discrepance SM (a))** : `Cache::lock('gpo:wine:generate-image:{application}', 1800)`
+non-bloquant côté queuer. Si déjà détenu, `WineImageAlreadyQueuedException`
+remontée → toast warning UI. Lock libéré par le Job (`handle()` + `failed()`).
+
+**Bug legacy `wine.php:52` NON reproduit** : l'attribut `selected` est posé
+sur l'option strictement égale (`==`), pas via assignment.
