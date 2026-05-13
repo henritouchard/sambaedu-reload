@@ -427,6 +427,12 @@ Route::match(['POST'], 'gpo/associations_out.php', [\App\Http\Controllers\Gpo\As
     ->middleware('throttle:300,1')
     ->name('gpo.associations-out.legacy');
 
+// Story 16.7 — endpoint amont qui POSE la session APCu `apps.$id` consommée
+// par tous les endpoints out précédents. Doit être déclaré AVANT le catchall.
+Route::match(['GET', 'POST'], 'gpo/applications.php', [\App\Http\Controllers\Gpo\ApplicationsScriptsController::class, 'generate'])
+    ->middleware('throttle:300,1')
+    ->name('gpo.applications.legacy');
+
 /*
 |--------------------------------------------------------------------------
 | Route canonique /api/policies/{kind}/{id}

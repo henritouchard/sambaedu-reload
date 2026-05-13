@@ -6,8 +6,10 @@ namespace App\Providers;
 
 use App\Policies\AppCustomizationPolicy;
 use App\Services\AppCustomization\ApcuAppContextRepository;
+use App\Services\AppCustomization\ApcuAppContextWriter;
 use App\Services\AppCustomization\AppPolicyRegistry;
 use App\Services\AppCustomization\Contracts\AppContextRepository;
+use App\Services\AppCustomization\Contracts\AppContextWriter;
 use Illuminate\Support\ServiceProvider;
 
 /**
@@ -24,6 +26,12 @@ class AppCustomizationServiceProvider extends ServiceProvider
         $this->app->bind(
             AppContextRepository::class,
             ApcuAppContextRepository::class,
+        );
+
+        // Story 16.7 — pendant écriture du repository (4.8 = lecture).
+        $this->app->bind(
+            AppContextWriter::class,
+            ApcuAppContextWriter::class,
         );
 
         $this->app->singleton(AppPolicyRegistry::class, function ($app) {

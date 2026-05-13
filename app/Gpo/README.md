@@ -202,3 +202,83 @@ remontée → toast warning UI. Lock libéré par le Job (`handle()` + `failed()
 
 **Bug legacy `wine.php:52` NON reproduit** : l'attribut `selected` est posé
 sur l'option strictement égale (`==`), pas via assignment.
+
+
+## Endpoint `applications.php` — Story 16.7
+
+**Position critique dans la chaîne native** : c'est l'endpoint amont qui
+**POSE** la session APCu `apps.$id` (TTL 1800s) consommée par les endpoints
+runtime déjà portés (`wallpaper_out` 4.7, `firefox_out`/`thunderbird_out` 4.8,
+`network_out`/`veyon_out` 16.3b, `associations_out` 16.3c).
+
+| Élément                  | Description                                                       |
+|--------------------------|-------------------------------------------------------------------|
+| Route                    | `Route::match(['GET', 'POST'], 'gpo/applications.php', ...)` + `throttle:300,1` |
+| Controller               | `App\Http\Controllers\Gpo\ApplicationsScriptsController::generate` |
+| Orchestrateur résolution | `App\Gpo\Services\ApplicationScriptsGenerator` (port `get_app_scripts_info`) |
+| Assembleur scripts       | `App\Gpo\Services\ApplicationScriptsAssembler` (ports `make_*` + 12 fonctions) |
+| Scanner FS               | `App\Gpo\Services\ApplicationTemplatesScanner` (port `read_application_scripts`) |
+| Logger                   | `App\Gpo\Services\ApplicationLoggerService` (port `log_application_scripts`) |
+| Surface AD writeback     | `App\Ldap\AdMachineManager` (4 méthodes : check/registerHardware/setOs/listRemoteConnexion) |
+| Pose APCu                | `App\Services\AppCustomization\ApcuAppContextWriter` (interface `AppContextWriter`) |
+| Enum bitmask erreurs     | `App\Gpo\Enums\ApplicationActionError` (7 cas iso `SAMBAEDU_*_APP_ERROR`) |
+| Config substitutions     | `config/sambaedu.gpo.applications.substitutions.php` (whitelist statique) |
+
+### Architecture hybride (DO2 option (c))
+
+Le port natif des 13 fonctions legacy a été réalisé selon l'option hybride :
+
+- **Un orchestrateur résolution** (`ApplicationScriptsGenerator`) port pur de
+  `get_app_scripts_info` (LDAP + AD writeback + pose APCu).
+- **Un assembleur scripts** (`ApplicationScriptsAssembler`) port pur de 11
+  fonctions d'assemblage (`make_application_scripts`, `add_scripts`,
+  `header_scripts`, `footer_scripts`, `once_scripts`, `redirect_scripts`,
+  `sudo_scripts`, `wpkg_scripts`, `apt_scripts`, `local_admin_scripts`,
+  `powershell_scripts` + `applySubstitutions`).
+- **Un service logger** (`ApplicationLoggerService`) port de `log_application_scripts`.
+- **Un service scanner** (`ApplicationTemplatesScanner`) port de `read_application_scripts`.
+
+**Pourquoi pas 13 services individuels (option a)** : trop de fragmentation
+pour des fonctions très courtes et inter-dépendantes (les séparateurs
+`addScripts` sont consommés par 5+ autres fonctions). L'option hybride
+préserve la testabilité (chaque méthode est testable isolément via
+`ApplicationScriptsAssembler` injecté) sans démultiplier les classes.
+
+### Sécurité défense en profondeur (Volet 6)
+
+1. **Régex stricte** sur tous inputs HTTP AVANT side effects :
+   - `machine` : `^[a-z0-9._\-$]{1,64}$`
+   - `user`    : `^[A-Za-z0-9_.\-$]{1,64}$`
+   - `uuid`    : `^[a-f0-9\-]{0,36}$`
+   - `action`  : `^((remote)-)?([a-z]*)(-(system|server|once))?$`
+   - `id`      : `^([a-f0-9]{32})?$`
+   - `os`      : enum `{windows, linux}`
+   - `interpreter` : enum `{cmd, bash, ps1, powershell, redirects, apt}`
+2. **Whitelist substitutions** (`config/sambaedu.gpo.applications.substitutions.php`) :
+   - Seules les clés explicitement listées (`SE4FS_NAME`, `DOMAIN`, `UAI`,
+     `NETLOGON_PATH`, `WPKG_URL`, `SAMBA_DOMAIN`, `TMP_DIR`, `CLOUD_PERSO_NAME`)
+     sont substituées. Aucun input user (`machine`, `user`, `action`) ne peut
+     servir de clé de substitution.
+   - Clés hors whitelist restent inchangées dans la sortie (warning log).
+3. **Path traversal templates** :
+   - Paths scannés hardcodés (`/etc/sambaedu/applications/`, `/usr/share/sambaedu/applications/`).
+   - Validation `realpath()` sur chaque sous-dossier app (rejet symlink hors préfixe).
+4. **`SambaToolRunner` mode array** dans `AdMachineManager` (jamais de concat shell).
+5. **Throttle 300/min/IP** sur la route.
+6. **Test architecture `LdapNamespaceTest`** garantit ces propriétés.
+
+### Catalogue `action_type` enrichi (Story 16.1 AC1.3)
+
+| Action type                       | Description                                                  | Channel |
+|-----------------------------------|--------------------------------------------------------------|---------|
+| `gpo.applications.script.generate` | Génération nominale d'un script Cmd/Bash pour un poste       | `daily` |
+| `gpo.applications.context.put`     | Pose APCu `apps.$id` (consommée par 4.7/4.8/16.3b/16.3c)     | `gpo`   |
+| `ad.machine.check`                 | Vérification existence machine AD + auto-création startup    | `gpo`   |
+| `ad.machine.hardware.register`     | Écriture `netbootGUID` LDAP (UUID BIOS)                      | `gpo`   |
+| `ad.machine.os.set`                | Ajout membre groupe parc `linux`/`windows`                   | `gpo`   |
+| `ad.machine.remote.list`           | Requête connexion Guacamole (shim fallback en 16.7)          | `gpo`   |
+
+**Channels duals iso pattern Story 16.3b** :
+- `gpo` (audit) : actions AD writeback + pose APCu (auditabilité Epic 16).
+- `daily` (runtime) : génération scripts, validation inputs, warnings runtime
+  (volume élevé ~300 logs/min boot de masse rentrée scolaire).

@@ -91,3 +91,94 @@ ou (b) accéder au SYSVOL local (mount Samba) en filesystem direct.
   TODO à clarifier.
 - Avant de marquer Epic 16 terminé, ce registre doit être vide (ou tous les
   items doivent porter une note explicite « conservée volontairement »).
+
+
+## Story 16.7 — Portage natif `applications.php` (2026-05-13)
+
+### `AdMachineManager::listRemoteConnexion` — shim fallback Guacamole
+
+`App\Ldap\AdMachineManager::listRemoteConnexion()` retourne actuellement `''`
+quand `config('sambaedu.guacamole_url')` est non vide. Le portage natif
+complet (lecture du groupe AD `remote_<machineCn>` objectClass
+`guacConfigGroup`) requiert un `RemoteConnectionRepository` natif (LdapModel
++ Repository) qui n'est pas dans le scope 16.7.
+
+**Impact iso-legacy** : le legacy renvoyait `'rdp'`/`'vnc'`/`'ssh'` selon
+le `guacConfigProtocol`. Conséquence : les utilisateurs RDP n'auront pas
+l'élément `remote_user` injecté dans `list_u`/`list_ue` côté natif. Les
+scripts conditionnels sur `remote_user` (filtres include `'remote_user'`)
+seront donc rendus comme « non remote » par défaut.
+
+Sortie prévue : story dédiée Epic Guacamole (post-Epic 16) ou Epic 17.
+
+### `local_admin_scripts` — droits AD `have_right`/`have_delegation`/`get_local_admin_right`
+
+Le port natif `ApplicationScriptsAssembler::localAdminScripts()` est
+**simplifié** par rapport au legacy : il ne convertit plus les utilisateurs
+en administrateurs locaux Windows (`net localgroup administrateurs`) car les
+fonctions legacy `have_right`/`have_delegation`/`get_local_admin_right`
+(Story 7.x) n'ont pas d'équivalent natif Spatie exposé proprement.
+
+**Impact** : les utilisateurs avec délégation `SE_COMPUTER_ADMIN` ne seront
+plus élevés en admin local Windows/Linux par le script généré. Les autres
+mécanismes d'élévation (GPO, etc.) restent fonctionnels.
+
+Sortie prévue : Story 7.x dédiée OU shim `@legacy-port` ad hoc dans
+`ApplicationScriptsAssembler::localAdminScripts()` selon retour smoke VM
+T9 Henri.
+
+### `header_scripts` — `domainsid` runtime
+
+Le legacy `applications.inc.php:362` lit `$domainsid` via `exec("sudo net
+getdomainsid | grep domain | cut -d' ' -f6")`. Le port natif ne reproduit
+PAS cet appel (sécurité shell + testabilité) — `SET DOMAINSID=` reste vide
+côté script généré.
+
+**Impact iso-bytes** : le diff `cmp -b` retournera ≥1 byte de différence
+sur les scripts startup Windows si la VM legacy peuplait ce champ. Si
+impact détecté à T8 smoke VM (Henri), on portera la lecture native via
+un `DomainInfoRepository` (samba-tool show domaininfo) — story dédiée.
+
+Sortie prévue : selon retour T8 smoke VM. Acceptable côté postes : le
+script généré reste exécutable, juste `%DOMAINSID%` reste vide.
+
+### `register_machine_hardware` — branchement `add` vs `replace` simplifié
+
+Le legacy distingue 2 cas (`netbootguid` absent → `add`, présent et différent
+→ `replace` avec trigger_error). Le port natif utilise `--set-attribute=` qui
+est idempotent côté samba-tool (équivalent replace) — perd la trace warning
+quand l'UUID change. Compromis pragmatique : un log `gpo` `[gpo]
+ad.machine.hardware.register success` est émis à chaque appel, l'audit reste
+possible via diff sur logs successifs.
+
+Sortie prévue : itération si demande métier explicite.
+
+### `get_machine_status` — pas porté natif
+
+Le legacy `log_application_scripts:780` consulte `get_machine_status` pour
+détecter le changement d'OS (dual boot). Le port natif passe systématiquement
+par `AdMachineManager::setOs()` (idempotent — déjà membre = no-op). Impact
+zéro côté AD, perte d'optimisation côté code.
+
+### Mockery `final` — limite env CI sans uopz/runkit
+
+Plusieurs services 16.7 (`AdMachineManager`, `ApcuAppContextWriter`,
+`ApplicationLoggerService`, `ApplicationScriptsGenerator`) sont déclarés
+`final` (ou ont des dépendances `final` non mockables sans extension PHP).
+Pour les tests Unit nécessitant mock de `SambaToolRunner` (final), on
+utilise `Process::fake()` Laravel à la place (pattern AdMachineManagerTest).
+Pour les autres, `AdMachineManager` a été déclaré `class` (sans `final`)
+pour permettre le mock dans `ApplicationScriptsGeneratorTest`.
+
+Sortie prévue : non-bloquante. Installation de `uopz` ou `runkit` côté CI
+résoudrait globalement (cf. discrepance générale Epic 16).
+
+### Fixtures comparison VM non capturées en CI
+
+`tests/Feature/Gpo/ApplicationsScriptsComparisonTest` est marqué
+`@group requires-fixture-capture` et skippé tant que Henri n'a pas capturé
+`legacy-applications-startup-windows.cmd` + `legacy-applications-logon-linux.sh`
+depuis la VM legacy. Procédure documentée dans `docs/qa/domains/gpo.md`
+section 6.8.
+
+Sortie prévue : action Henri T9 smoke VM post-merge 16.7.

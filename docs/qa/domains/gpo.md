@@ -772,3 +772,105 @@ Append-only. Incidents/correctifs post-review claude-opus-4-7 (2026-05-12) couve
 | 5.19 Fixture comparison iso sample XML | Fixture `legacy-associations-out.json` artisanal incomplet vs `packages-xml-sample.xml` (manquait `.htm`/`https`) → `AssociationsOutComparisonTest` cassé en CI. | Fixture régénéré cohérent (5 entries : `.jpg` default.xml + `.html`/`.htm`/`http`/`https` firefox). Marker `requires-fixture-capture` conservé (rappel capture VM réelle future). |
 | 5.20 Regex `parseLocalAssocs` greedy iso-legacy | Regex native `^\s*(.*?)\s*,\s*(.*?)\s*$` (non-greedy) ≠ legacy greedy → input `".html,Foo,Bar"` capturait `(".html", "Foo,Bar")` au lieu de `(".html,Foo", "Bar")`. | Regex passée en greedy `/^\s*(.*)\s*,\s*(.*)$/`. Test unit `parse_local_assocs_uses_greedy_split_on_last_comma_iso_legacy` valide la sémantique iso-bytes parc-wide.        |
 
+
+## Section 6 — Story 16.7 : Portage natif `gpo/applications.php` (endpoint amont)
+
+Story 16.7 (2026-05-13) porte natif l'endpoint le plus complexe d'Epic 16 :
+l'endpoint serveur qui POSE `apps.$id` consommé par tous les out précédents
+(`firefox_out` 4.8, `wallpaper_out` 4.7, `network_out`/`veyon_out` 16.3b,
+`associations_out` 16.3c).
+
+### 6.1 Boot poste Windows à froid (action Henri)
+
+**Setup** :
+- 1 poste Windows joint au domaine SE4FS, parc `windows`.
+- Logs server : `tail -F storage/logs/laravel-*.log /var/log/sambaedu/gpo-*.log`.
+
+**Étapes** :
+1. Démarrer le poste (cold boot).
+2. Au boot `startup` : la GPO `se4_applications` appelle `curl http://se4fs/gpo/applications.php`.
+3. **Vérifier** côté serveur :
+   - HTTP 200 avec body cmd (vérifier `/tmp/applications-startup-*.cmd` côté serveur).
+   - APCu : `apcu_fetch("apps.<id>")` retourne dict avec `machine.cn`, `os: 'windows'`, `action: 'startup'`.
+   - `MachineBootLog` : ligne créée avec `error_flags = 256` (SAMBAEDU_STARTUP_APP_ERROR) au début, mis à 0 en fin.
+   - Log `gpo` : `action_type = ad.machine.check` step `create` ou `exists` selon état AD initial.
+   - Log `gpo` : `action_type = gpo.applications.context.put` avec `operation_id` UUID.
+4. **Vérifier** côté poste : le `.cmd` est téléchargé dans `%windir%`, exécuté, le script appelle ensuite `firefox_out`/`network_out` etc.
+
+### 6.2 Boot poste Linux LTSP
+
+**Setup** : 1 poste Linux LTSP, hostname `l-pc-test` (le préfixe `l-` est strippé natif iso-legacy).
+
+**Vérifier** :
+- Recherche LDAP via `pc-test` (sans `l-`).
+- Output `text/plain; charset=utf-8`, body bash `#!/bin/bash`...
+- `liste_applications` consommée par les services suivants (firefox_out/etc.) — pas d'"edge" pour Linux.
+
+### 6.3 Logon utilisateur (Windows)
+
+**Étapes** :
+1. Ouvrir une session avec un user AD (`jdupont`).
+2. La GPO appelle `applications.php?action=logon&user=jdupont&machine=pc01`.
+3. **Vérifier** :
+   - **AUCUN** appel `AdMachineManager::check/registerHardware/setOs` (startup-only).
+   - **UN seul** appel `AdMachineManager::listRemoteConnexion` (logon-only).
+   - APCu `apps.$id` mis à jour avec `user.cn = 'jdupont'`, `list_u` contenant les groupes AD du user.
+   - `MachineBootLog` ligne créée `action = 'logon'`, `error_flags = 1024`.
+
+### 6.4 Logoff utilisateur — clean-up APCu
+
+**Étapes** :
+1. Fermer la session, attendre l'appel `applications.php?action=logoff&ret=0`.
+2. **Vérifier** : `apcu_fetch("apps.$id")` retourne `false` (entrée supprimée par `AppContextWriter::forget`).
+3. `apcu_fetch("scripts.$id")` aussi supprimé.
+
+### 6.5 logon-system (poste Linux LTSP boot sans user)
+
+**Étapes** :
+1. Boot poste Linux LTSP, action `logon-system` (script admin exécuté en root après login user).
+2. **Vérifier** : context = `system`, `local_admin_scripts` invoqué.
+
+### 6.6 Injection regex bloquée AVANT toute exec
+
+**Étapes** :
+1. `curl -X POST http://se4fs/gpo/applications.php -F "machine=; rm -rf /" -F "action=startup"`.
+2. **Vérifier** : 400 Bad Request, **aucun** log `samba-tool` exec, **aucune** mutation AD/FS/APCu.
+
+### 6.7 Boot de masse parc (stress test ~20 postes simultanés)
+
+**Setup** : 20 postes bootant ensemble (rentrée scolaire).
+
+**Vérifier** :
+- Aucun lock APCu (`apcu_store` atomique).
+- Throttle `300/min/IP` ne bloque pas un boot normal (chaque poste fait ~5 requêtes max).
+- `AdMachineManager::check` idempotent (`already exists` géré silencieusement).
+- `MachineBootLog` ligne par poste/action sans collision.
+
+### 6.8 Comparaison iso-bytes avec capture fixture legacy
+
+**Action Henri** : capturer 2 scripts générés par le legacy AVANT bascule (poste de test reproductible) :
+```
+# Capture legacy startup Windows
+curl -F "machine=pc-test" -F "action=startup" -F "os=windows" \
+     http://se4fs-legacy/gpo/applications.php > tests/Fixtures/Gpo/legacy-applications-startup-windows.cmd
+
+# Capture legacy logon Linux
+curl -F "machine=pc-test" -F "action=logon" -F "os=linux" -F "user=jdupont" \
+     http://se4fs-legacy/gpo/applications.php > tests/Fixtures/Gpo/legacy-applications-logon-linux.sh
+```
+
+Comparer ensuite avec sortie native (même inputs) par `cmp -b`. Diff = 0 byte → iso-bytes OK.
+
+### Checklist rapide Story 16.7
+
+- [ ] Scénario 6.1 passe (boot Windows : MachineBootLog + APCu + script .cmd OK)
+- [ ] Scénario 6.2 passe (boot Linux LTSP : préfixe `l-` strippé, UTF-8)
+- [ ] Scénario 6.3 passe (logon : pas de side effect startup AD, listRemoteConnexion appelé)
+- [ ] Scénario 6.4 passe (logoff/shutdown clean APCu)
+- [ ] Scénario 6.6 passe (injection bloquée 400 SANS appel AD)
+- [ ] Scénario 6.7 passe (boot 20 postes sans race APCu / throttle ne bloque pas)
+- [ ] Scénario 6.8 fixtures capturées (action Henri)
+- [ ] `tail -F storage/logs/gpo-*.log` ne contient AUCUN `action_type = gpo.applications.context.put` avec keys inattendues
+- [ ] Chaîne native intacte : `POST applications.php` + `GET firefox_out.php?id=...` retourne bien la policy attendue (test AC7.5)
+- [ ] `php artisan test tests/Unit/Gpo tests/Unit/Ldap tests/Feature/Gpo tests/Architecture` 100% vert (hors limitations env Mockery uopz/runkit)
+
