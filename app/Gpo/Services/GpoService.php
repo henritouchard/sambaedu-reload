@@ -10,6 +10,7 @@ use App\Gpo\Support\GpoActionLog;
 use App\Gpo\Support\GpoLogger;
 use App\Gpo\Support\SambaToolRunner;
 use Illuminate\Support\Collection;
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
@@ -253,57 +254,416 @@ class GpoService
     /**
      * Lie une GPO à un container AD (`samba-tool gpo setlink`).
      *
-     * @throws RuntimeException  Stub : implémentation déléguée à Story 16.5.
+     * Story 16.5 — AC1.1. Implémentation native via `SambaToolRunner` mode array
+     * (pas de concat shell). Inputs validés par regex stricte AVANT side effect.
+     *
+     * Idempotence : si la liaison existe déjà (`samba-tool` retourne exit != 0
+     * avec message « already »), on considère l'opération comme succès. Cela
+     * couvre la race-condition multi-admin et permet à `reorderLinks` de
+     * recréer un lien sans se soucier de l'état initial.
+     *
+     * @param  string  $containerDn  DN du container AD cible.
+     * @param  string  $gpoName      GUID de la GPO au format `{XXXX-...-XXXX}`.
+     * @param  bool    $enforce      Liaison `enforced` (héritage obligatoire).
+     * @param  bool    $disable      Liaison `disabled` (la GPO ne s'applique pas).
+     *
+     * @throws InvalidArgumentException Si $containerDn ou $gpoName n'a pas un
+     *                                   format valide (regex stricte AVANT exec).
+     * @throws RuntimeException          Si l'exécution `samba-tool` échoue pour
+     *                                   une raison autre qu'« already exists ».
      */
     public function setLink(string $containerDn, string $gpoName, bool $enforce = false, bool $disable = false): bool
     {
-        $log = GpoLogger::action('gpo.link.set', context: [
+        self::assertValidGuid($gpoName);
+        self::assertValidContainerDn($containerDn);
+
+        $log = GpoLogger::action('gpo.link.add', context: [
             'target_dn' => $containerDn,
             'gpo_name' => $gpoName,
             'enforce' => $enforce,
             'disable' => $disable,
         ]);
-        $log->step('stub — implementation pending Story 16.5');
-        $e = new RuntimeException('GpoService::setLink() — not implemented yet, see Story 16.5');
-        $log->failure($e);
 
-        throw $e;
+        try {
+            $args = ['gpo', 'setlink', $containerDn, $gpoName];
+            if ($enforce) {
+                $args[] = '--enforce';
+            }
+            if ($disable) {
+                $args[] = '--disable';
+            }
+
+            $log->step('samba-tool gpo setlink invoked');
+            $result = $this->runner->run($args, $log);
+
+            if ($result->successful()) {
+                $log->success();
+                return true;
+            }
+
+            // Idempotence : already exists / already linked → succès silencieux
+            $stderr = (string) $result->errorOutput();
+            if (self::looksLikeIdempotentLinkError($stderr)) {
+                $log->step('idempotent: link déjà présent — succès silencieux', ['stderr_excerpt' => substr($stderr, 0, 200)]);
+                $log->success(['idempotent' => true]);
+                return true;
+            }
+
+            throw new RuntimeException(sprintf(
+                'samba-tool gpo setlink failed (exit=%d): %s',
+                $result->exitCode() ?? -1,
+                $stderr,
+            ));
+        } catch (\Throwable $e) {
+            $log->failure($e);
+            throw $e;
+        }
     }
 
     /**
      * Supprime une liaison GPO ↔ container (`samba-tool gpo dellink`).
      *
-     * @throws RuntimeException  Stub : implémentation déléguée à Story 16.5.
+     * Story 16.5 — AC1.2. Idempotent : si le lien n'existe pas, l'opération
+     * retourne `true` (parité avec le legacy `gpodellink` qui ne signale pas
+     * cette condition au caller).
+     *
+     * @throws InvalidArgumentException Inputs invalides (validation AVANT exec).
+     * @throws RuntimeException          Échec exec autre qu'« does not exist ».
      */
     public function removeLink(string $containerDn, string $gpoName): bool
     {
+        self::assertValidGuid($gpoName);
+        self::assertValidContainerDn($containerDn);
+
         $log = GpoLogger::action('gpo.link.remove', context: [
             'target_dn' => $containerDn,
             'gpo_name' => $gpoName,
         ]);
-        $log->step('stub — implementation pending Story 16.5');
-        $e = new RuntimeException('GpoService::removeLink() — not implemented yet, see Story 16.5');
-        $log->failure($e);
 
-        throw $e;
+        try {
+            $log->step('samba-tool gpo dellink invoked');
+            $result = $this->runner->run(['gpo', 'dellink', $containerDn, $gpoName], $log);
+
+            if ($result->successful()) {
+                $log->success();
+                return true;
+            }
+
+            $stderr = (string) $result->errorOutput();
+            if (self::looksLikeIdempotentUnlinkError($stderr)) {
+                $log->step('idempotent: lien absent — succès silencieux', ['stderr_excerpt' => substr($stderr, 0, 200)]);
+                $log->success(['idempotent' => true]);
+                return true;
+            }
+
+            throw new RuntimeException(sprintf(
+                'samba-tool gpo dellink failed (exit=%d): %s',
+                $result->exitCode() ?? -1,
+                $stderr,
+            ));
+        } catch (\Throwable $e) {
+            $log->failure($e);
+            throw $e;
+        }
     }
 
     /**
      * Définit l'héritage GPO sur un container (`samba-tool gpo setinheritance`).
      *
-     * @throws RuntimeException  Stub : implémentation déléguée à Story 16.5.
+     * Story 16.5 — AC1.3. **NE PAS reproduire le bug legacy
+     * `samba-tool.inc.php:1027-1030`** (qui concaténait `inherit` sur la string
+     * `$message` au lieu de `$command`). Notre mode array bypass naturellement
+     * le bug : le 4ème argument est typé et passé au binaire intact.
+     *
+     * @throws InvalidArgumentException Input DN invalide.
+     * @throws RuntimeException          Échec exec.
      */
     public function setInheritance(string $containerDn, bool $enabled): bool
     {
+        self::assertValidContainerDn($containerDn);
+
         $log = GpoLogger::action('gpo.inheritance.set', context: [
             'target_dn' => $containerDn,
             'enabled' => $enabled,
         ]);
-        $log->step('stub — implementation pending Story 16.5');
-        $e = new RuntimeException('GpoService::setInheritance() — not implemented yet, see Story 16.5');
-        $log->failure($e);
 
-        throw $e;
+        try {
+            $arg = $enabled ? 'inherit' : 'block';
+            $log->step('samba-tool gpo setinheritance invoked', ['mode' => $arg]);
+            $result = $this->runner->run(['gpo', 'setinheritance', $containerDn, $arg], $log);
+
+            if (! $result->successful()) {
+                throw new RuntimeException(sprintf(
+                    'samba-tool gpo setinheritance failed (exit=%d): %s',
+                    $result->exitCode() ?? -1,
+                    $result->errorOutput(),
+                ));
+            }
+
+            $log->success();
+            return true;
+        } catch (\Throwable $e) {
+            $log->failure($e);
+            throw $e;
+        }
+    }
+
+    /**
+     * Réordonne les liaisons GPO d'un container AD (Story 16.5 — AC1.4 / D3).
+     *
+     * `samba-tool gpo setlink` ne supporte pas le réordonnancement natif —
+     * on simule donc une transaction logique :
+     *   1. Lit l'état initial (`getLinks`) et le mémorise pour rollback.
+     *   2. Supprime tous les liens existants (`removeLink` séquentiel).
+     *   3. Ré-applique les liens dans l'ordre voulu (`setLink` séquentiel,
+     *      en préservant les flags enforced/disabled de l'état initial).
+     *
+     * **Non-atomique** : si une étape échoue à mi-parcours, on tente un
+     * rollback best effort (re-setLink avec l'ordre initial). Si le rollback
+     * lui-même échoue, on lève `RuntimeException` — l'état AD est alors
+     * potentiellement incohérent (cf. TD-16.5-1 dans `docs/tech-debt-gpo.md`).
+     *
+     * @param  string        $containerDn       DN du container AD.
+     * @param  list<string>  $orderedGpoNames   Liste ordonnée des GUIDs (la première position = plus prioritaire / appliquée en dernier).
+     *
+     * @throws InvalidArgumentException Input invalide ou GPO de la liste non liée actuellement.
+     * @throws RuntimeException          Si rollback échoué — état AD potentiellement incohérent.
+     */
+    public function reorderLinks(string $containerDn, array $orderedGpoNames): bool
+    {
+        self::assertValidContainerDn($containerDn);
+        foreach ($orderedGpoNames as $g) {
+            self::assertValidGuid($g);
+        }
+
+        $log = GpoLogger::action('gpo.link.order.update', context: [
+            'target_dn' => $containerDn,
+            'order_target' => $orderedGpoNames,
+        ]);
+
+        try {
+            // 1. Lecture état initial (pour rollback éventuel + flags enforce/disable).
+            $log->step('reading current links for rollback');
+            $initial = $this->getLinks($containerDn);
+
+            // Indexer par GUID pour préserver flags + valider que tous les GUIDs
+            // demandés sont actuellement liés.
+            /** @var array<string, GpoLink> $byGuid */
+            $byGuid = [];
+            foreach ($initial as $link) {
+                $byGuid[$link->gpoName] = $link;
+            }
+
+            foreach ($orderedGpoNames as $guid) {
+                if (! isset($byGuid[$guid])) {
+                    throw new InvalidArgumentException(sprintf(
+                        'reorderLinks: GPO %s n\'est pas actuellement liée à %s — impossible de la réordonner.',
+                        $guid,
+                        $containerDn,
+                    ));
+                }
+            }
+
+            // Story 16.5 review #S3 : exiger une PERMUTATION COMPLÈTE de l'état
+            // initial. Une liste tronquée provoquerait une suppression silencieuse
+            // de liens (remove all → re-setlink uniquement les listés).
+            // Combiné à #7 (Locked) = défense en profondeur côté service.
+            $initialGuids = array_keys($byGuid);
+            sort($initialGuids);
+            $orderedSorted = $orderedGpoNames;
+            sort($orderedSorted);
+            if ($initialGuids !== $orderedSorted) {
+                throw new InvalidArgumentException(sprintf(
+                    'reorderLinks: la liste passée doit contenir exactement tous les liens actuels (permutation complète requise). Attendu %d GUIDs, reçu %d.',
+                    count($initialGuids),
+                    count($orderedGpoNames),
+                ));
+            }
+
+            $orderBefore = array_map(fn (GpoLink $l) => $l->gpoName, $initial);
+            $log->diff('order', $orderBefore, $orderedGpoNames);
+
+            // 2. Supprime tous les liens existants.
+            $log->step('removing existing links', ['count' => count($initial)]);
+            $removed = [];
+            foreach ($initial as $link) {
+                $this->removeLinkUnaudited($containerDn, $link->gpoName);
+                $removed[] = $link;
+            }
+
+            // 3. Re-applique dans l'ordre cible (chaque GUID conservant ses flags initiaux).
+            $log->step('adding links in target order', ['count' => count($orderedGpoNames)]);
+            $applied = [];
+            try {
+                foreach ($orderedGpoNames as $guid) {
+                    $link = $byGuid[$guid];
+                    $this->setLinkUnaudited($containerDn, $guid, $link->enforced, $link->disabled);
+                    $applied[] = $link;
+                }
+            } catch (\Throwable $applyError) {
+                // Rollback best effort : recréer les liens initiaux dans leur ordre originel.
+                $log->step('apply phase failed — initiating rollback', [
+                    'applied_count' => count($applied),
+                    'error' => $applyError->getMessage(),
+                ]);
+
+                try {
+                    // D'abord nettoyer ce qui a été ré-appliqué (sinon doublons).
+                    foreach ($applied as $link) {
+                        $this->removeLinkUnaudited($containerDn, $link->gpoName);
+                    }
+                    // Puis recréer l'ordre initial.
+                    foreach ($initial as $link) {
+                        $this->setLinkUnaudited($containerDn, $link->gpoName, $link->enforced, $link->disabled);
+                    }
+                    $log->step('rollback succeeded — état initial restauré');
+                    $log->failure($applyError);
+                    return false;
+                } catch (\Throwable $rollbackError) {
+                    $log->step('rollback FAILED — état AD potentiellement incohérent', [
+                        'rollback_error' => $rollbackError->getMessage(),
+                    ]);
+                    $combined = new RuntimeException(sprintf(
+                        'reorderLinks: échec apply (%s) ET rollback (%s) — état AD incohérent sur %s.',
+                        $applyError->getMessage(),
+                        $rollbackError->getMessage(),
+                        $containerDn,
+                    ), 0, $applyError);
+                    $log->failure($combined);
+                    throw $combined;
+                }
+            }
+
+            $log->success(['count' => count($applied)]);
+            return true;
+        } catch (\Throwable $e) {
+            $log->failure($e);
+            throw $e;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers internes Story 16.5 — validation + helpers samba-tool sans
+    // log haut niveau (utilisés par reorderLinks pour éviter de poluer le
+    // catalogue avec N actions `gpo.link.add` quand on réordonne).
+    // -----------------------------------------------------------------------
+
+    /**
+     * Valide qu'une string est un GUID GPO au format Microsoft strict
+     * avec accolades. Lève `InvalidArgumentException` sinon.
+     */
+    public static function assertValidGuid(string $gpoName): void
+    {
+        $pattern = '/^\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}$/';
+        if (preg_match($pattern, $gpoName) !== 1) {
+            throw new InvalidArgumentException(sprintf(
+                'GUID GPO invalide : %s — attendu format Microsoft {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}.',
+                substr($gpoName, 0, 80),
+            ));
+        }
+    }
+
+    /**
+     * Valide qu'un DN container AD a un format plausible (commence par
+     * `XX=...` où XX est OU/CN/DC). Garde-fou défensif — `SambaToolRunner`
+     * mode array protège déjà contre l'injection shell.
+     */
+    public static function assertValidContainerDn(string $dn): void
+    {
+        if ($dn === '' || strlen($dn) > 1024) {
+            throw new InvalidArgumentException('DN container vide ou trop long.');
+        }
+        if (preg_match('/^[A-Za-z]+=[^,]+(,[A-Za-z]+=[^,]+)*$/', $dn) !== 1) {
+            throw new InvalidArgumentException(sprintf(
+                'DN container invalide : %s — attendu format LDAP `OU=...,DC=...,DC=...`.',
+                substr($dn, 0, 200),
+            ));
+        }
+    }
+
+    /**
+     * Heuristique stderr legacy : détecte « already exists / linked » pour
+     * traiter l'erreur comme idempotente (succès silencieux).
+     *
+     * Story 16.5 review #3 : `'object class violation'` retiré — c'est une
+     * erreur LDAP générique de schéma, pas un signe de lien déjà existant.
+     * Cf. TD-16.5-4 pour la fragilité résiduelle des heuristiques stderr.
+     */
+    private static function looksLikeIdempotentLinkError(string $stderr): bool
+    {
+        $lower = strtolower($stderr);
+        return str_contains($lower, 'already')
+            || str_contains($lower, 'gplink already');
+    }
+
+    /**
+     * Heuristique stderr legacy : détecte « does not exist / not linked » pour
+     * traiter le dellink comme idempotent.
+     *
+     * Story 16.5 review #3 : `'no such'` (générique) restreint à
+     * `'no such gp link'` — le match large interceptait `'no such attribute'`
+     * (vraie erreur LDAP). Cf. TD-16.5-4.
+     */
+    private static function looksLikeIdempotentUnlinkError(string $stderr): bool
+    {
+        $lower = strtolower($stderr);
+        return str_contains($lower, 'no such gp link')
+            || str_contains($lower, 'does not exist')
+            || str_contains($lower, 'not linked')
+            || str_contains($lower, 'no link')
+            || str_contains($lower, 'no entry');
+    }
+
+    /**
+     * Variant `setLink` qui ne crée pas sa propre action `gpo.link.add` —
+     * utilisé par `reorderLinks` pour ne pas spammer le catalogue.
+     *
+     * Lève RuntimeException sur échec (gère idempotence comme setLink).
+     */
+    private function setLinkUnaudited(string $containerDn, string $gpoName, bool $enforce, bool $disable): void
+    {
+        $args = ['gpo', 'setlink', $containerDn, $gpoName];
+        if ($enforce) {
+            $args[] = '--enforce';
+        }
+        if ($disable) {
+            $args[] = '--disable';
+        }
+        $result = $this->runner->run($args);
+        if ($result->successful()) {
+            return;
+        }
+        $stderr = (string) $result->errorOutput();
+        if (self::looksLikeIdempotentLinkError($stderr)) {
+            return;
+        }
+        throw new RuntimeException(sprintf(
+            'reorderLinks: setlink %s échoué (exit=%d): %s',
+            $gpoName,
+            $result->exitCode() ?? -1,
+            $stderr,
+        ));
+    }
+
+    /**
+     * Variant `removeLink` sans log d'action propre.
+     */
+    private function removeLinkUnaudited(string $containerDn, string $gpoName): void
+    {
+        $result = $this->runner->run(['gpo', 'dellink', $containerDn, $gpoName]);
+        if ($result->successful()) {
+            return;
+        }
+        $stderr = (string) $result->errorOutput();
+        if (self::looksLikeIdempotentUnlinkError($stderr)) {
+            return;
+        }
+        throw new RuntimeException(sprintf(
+            'reorderLinks: dellink %s échoué (exit=%d): %s',
+            $gpoName,
+            $result->exitCode() ?? -1,
+            $stderr,
+        ));
     }
 
     // -----------------------------------------------------------------------

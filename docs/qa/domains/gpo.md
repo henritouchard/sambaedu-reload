@@ -874,3 +874,166 @@ Comparer ensuite avec sortie native (même inputs) par `cmp -b`. Diff = 0 byte �
 - [ ] Chaîne native intacte : `POST applications.php` + `GET firefox_out.php?id=...` retourne bien la policy attendue (test AC7.5)
 - [ ] `php artisan test tests/Unit/Gpo tests/Unit/Ldap tests/Feature/Gpo tests/Architecture` 100% vert (hors limitations env Mockery uopz/runkit)
 
+
+## Section 7 — Story 16.5 : Liaison GPO ↔ OU AD + propagation
+
+Story 16.5 (2026-05-13) est la **première story write AD** d'Epic 16. Elle
+implémente les 3 stubs `setLink` / `removeLink` / `setInheritance` de
+`GpoService` (Story 16.1) + ajoute une nouvelle méthode `reorderLinks` non
+atomique (rollback best effort). UI Livewire SFC dédiée
+`/app/gpo/{guid}/links` + enrichissement du détail GPO (CTA + encart Impact).
+
+### Scénario 7.1 — Naviguer vers la page liaisons et vérifier l'affichage
+
+**Setup** : 1 GPO de test (« redirections-test ») liée à 1 OU AD (`OU=Test,DC=…`),
+avec quelques postes Eloquent dans cette OU.
+
+**Étapes** :
+1. Se connecter avec un user `server.admin`.
+2. Naviguer vers `/app/gpo/{GUID}/links`.
+3. **Vérifier** :
+   - HTTP 200, header avec displayName + GUID.
+   - Section "Liens actuels" liste l'OU avec : nom OU, DN tronqué, badge
+     "Héritage actif", badge "Position 1 / 1", badge "Actif" (ou Forcé /
+     Désactivé selon flags).
+   - Bouton "Ajouter une liaison" présent.
+   - Encart "Création GPO" pied de page avec lien vers
+     `/gpo/gpo-maj.php` (target=_blank).
+   - Total agrégé en bas de la section indiquant le nombre de postes.
+
+### Scénario 7.2 — Ajouter une liaison vers une nouvelle OU
+
+**Étapes** :
+1. Cliquer "Ajouter une liaison".
+2. La modale `<x-molecules.modal>` s'ouvre avec :
+   - Champ recherche OU (filtre côté Livewire).
+   - `<select>` listant toutes les OUs candidates (hors celles déjà liées).
+3. Sélectionner `OU=Test2,DC=…` et cliquer "Confirmer".
+4. **Vérifier** :
+   - Toast vert "Liaison créée — GPO liée à l'OU avec succès."
+   - Log `storage/logs/gpo/gpo-{date}.log` : `action_type=gpo.link.add`,
+     `target_dn=OU=Test2,DC=…`, `gpo_name={GUID}`, `outcome=success`.
+   - Côté AD : `samba-tool gpo getlink OU=Test2,DC=…` retourne la GPO.
+   - Section "Liens actuels" rechargée affiche maintenant 2 OUs.
+
+### Scénario 7.3 — Désactiver une liaison (toggle disabled)
+
+**Étapes** :
+1. Sur l'OU `OU=Test,DC=…`, cliquer "Désactiver" (le bouton power-off).
+2. Modale de confirmation avec message contextualisé.
+3. Cliquer "Confirmer".
+4. **Vérifier** :
+   - Toast vert "Liaison mise à jour — Liaison désactivée."
+   - Logs `gpo` : 1 × `gpo.link.remove` + 1 × `gpo.link.add` (avec `disable=true`)
+     + 1 × `gpo.link.toggle.disabled` (avec `from=false`, `to=true`).
+   - Badge "Désactivé" remplace "Actif" dans l'UI.
+   - Sur un poste de test : `gpupdate /force` puis `gpresult /r` →
+     la GPO « redirections-test » n'est plus dans la liste appliquée.
+
+### Scénario 7.4 — Forcer une liaison (toggle enforced)
+
+**Étapes** :
+1. Sur une liaison non forcée, cliquer "Forcer".
+2. Modale → Confirmer.
+3. **Vérifier** :
+   - Logs `gpo.link.toggle.enforced` avec `from=false`, `to=true`.
+   - Badge "Forcé" apparaît.
+   - Les OUs enfants ne peuvent plus surclasser cette GPO (mécanique
+     Windows GPO standard).
+
+### Scénario 7.5 — Réordonner deux liaisons sur une OU
+
+**Setup** : `OU=Test,DC=…` a 2 GPOs liées (position 1 et 2). Notre GPO de
+test est en position 2.
+
+**Étapes** :
+1. Cliquer "↑ Monter" sur notre GPO.
+2. Modale → Confirmer.
+3. **Vérifier** :
+   - Logs `gpo` : `action_type=gpo.link.order.update`, `step` détaillé
+     ("reading current links for rollback", "removing existing links",
+     "adding links in target order"), `outcome=success`.
+   - Côté AD : `samba-tool gpo getlink OU=Test,DC=…` retourne nos 2 GPOs
+     dans le NOUVEL ordre (notre GPO en première position).
+   - UI rechargée affiche "Position 1 / 2" sur notre GPO.
+
+### Scénario 7.6 — Délier une GPO d'une OU
+
+**Étapes** :
+1. Cliquer "Délier" sur une OU.
+2. Modale de confirmation avec bouton **rouge** "Confirmer".
+3. **Vérifier** :
+   - Toast vert "Liaison supprimée".
+   - Log `gpo.link.remove` `outcome=success`.
+   - L'OU disparaît de la section "Liens actuels".
+   - Sur poste de test : `gpupdate /force` puis `gpresult /r` → la GPO
+     n'est plus appliquée aux postes de cette OU.
+
+### Scénario 7.7 — Bloquer l'héritage sur une OU
+
+**Étapes** :
+1. Sur une OU, cliquer le badge "Héritage actif" (devient bouton).
+2. Modale → Confirmer.
+3. **Vérifier** :
+   - Logs `gpo.inheritance.set` avec `enabled=false`.
+   - Badge "Héritage bloqué" remplace "Héritage actif".
+   - Sur poste de test dans cette OU : `gpresult /r` → les GPOs des
+     OUs parents ne s'appliquent plus (sauf liaisons forcées).
+
+### Scénario 7.8 — Tentative d'accès sans permission `server.admin`
+
+**Étapes** :
+1. Se connecter avec un user `eleve` (sans permission).
+2. Tenter d'accéder à `/app/gpo/{GUID}/links`.
+3. **Vérifier** : HTTP 403 (middleware route + `mount()` abort_unless).
+
+### Scénario 7.9 — Input malformé (GUID invalide)
+
+**Étapes** :
+1. Avec un user admin, naviguer vers `/app/gpo/INJECTION_ATTACK/links`.
+2. **Vérifier** :
+   - HTTP 404 (rejeté par la regex de route).
+   - **Aucun** log `gpo.sambatool.exec` n'apparaît (input rejeté en amont).
+   - **Aucun** log `gpo.link.*`.
+
+### Scénario 7.10 — Vérification rollback `reorderLinks` en cas d'erreur
+
+**Setup** synthétique : provoquer un échec mi-rollback (ex. supprimer
+manuellement les droits du compte sur l'OU via `samba-tool gpo setinheritance`
+juste après le premier `dellink`).
+
+**Vérifier** :
+- Le service tente le rollback (logs `step: apply phase failed — initiating
+  rollback`).
+- Si rollback OK : retour `false`, état initial restauré, toast `error`
+  utilisateur — état AD cohérent.
+- Si rollback KO : `RuntimeException` levée, log `step: rollback FAILED — état
+  AD potentiellement incohérent`. Action manuelle requise (cf. TD-16.5-1).
+
+### Scénario 7.11 — Redirection vers shim pour création GPO
+
+**Étapes** :
+1. Sur la page `/app/gpo/{GUID}/links`, vérifier que l'encart en pied de page
+   indique « Vous souhaitez créer, dupliquer ou supprimer une GPO ? ».
+2. Cliquer le bouton "Ouvrir dans l'ancienne UI".
+3. **Vérifier** : ouverture nouvel onglet sur `/gpo/gpo-maj.php` (shim legacy
+   1bis-18, cohabitation 16-4 paused).
+
+### Checklist rapide Story 16.5
+
+- [ ] Scénario 7.1 passe (page rendue avec liens existants + badges)
+- [ ] Scénario 7.2 passe (ajout liaison → AD writeback + log + UI refresh)
+- [ ] Scénario 7.3 passe (toggle disabled propage en `gpupdate`)
+- [ ] Scénario 7.5 passe (réordonnancement effectif côté AD)
+- [ ] Scénario 7.6 passe (suppression liaison propage)
+- [ ] Scénario 7.7 passe (bloquer héritage propage)
+- [ ] Scénario 7.8 passe (403 sans permission)
+- [ ] Scénario 7.9 passe (404 input invalide SANS appel samba-tool)
+- [ ] Scénario 7.10 testé une fois (rollback `reorderLinks`)
+- [ ] Logs `storage/logs/gpo/gpo-*.log` contiennent les 6 nouveaux
+      `action_type` (`gpo.link.add`, `gpo.link.remove`, `gpo.link.order.update`,
+      `gpo.link.toggle.disabled`, `gpo.link.toggle.enforced`, `gpo.inheritance.set`)
+- [ ] `php artisan test tests/Unit/Gpo/GpoServiceWriteTest tests/Feature/Gpo/GpoLinksPageTest
+      tests/Feature/Gpo/GpoLinksPagePermissionTest tests/Architecture/GpoNamespaceTest`
+      100% vert.
+

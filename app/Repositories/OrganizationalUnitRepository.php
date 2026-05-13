@@ -139,6 +139,43 @@ class OrganizationalUnitRepository
     }
 
     /**
+     * Liste toutes les OUs du domaine (Story 16.5 — UI liaison GPO ↔ OU).
+     *
+     * Retourne un tableau associatif `[dn => displayName]` trié alphabétiquement
+     * par displayName. Mise en cache 5 min pour éviter de bombarder l'AD à
+     * chaque rendu de page.
+     *
+     * @return array<string,string>  DN → displayName
+     */
+    public function listAll(int $cacheSeconds = 300): array
+    {
+        $cacheKey = 'gpo:16-5:ous-all';
+        $resolver = function (): array {
+            $out = [];
+            try {
+                $ous = OrganizationalUnitModel::query()->get();
+                foreach ($ous as $ou) {
+                    $dn = (string) $ou->getDn();
+                    $name = OrganizationalUnitModel::extractOuNameFromDn($dn);
+                    $out[$dn] = $name !== '' ? $name : $dn;
+                }
+            } catch (\Throwable $e) {
+                Log::warning('OrganizationalUnitRepository::listAll a échoué — retourne liste vide', [
+                    'error' => $e->getMessage(),
+                ]);
+                return [];
+            }
+            asort($out, SORT_NATURAL | SORT_FLAG_CASE);
+            return $out;
+        };
+
+        if ($cacheSeconds <= 0) {
+            return $resolver();
+        }
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, $cacheSeconds, $resolver);
+    }
+
+    /**
      * Supprime une OU (attention: doit être vide)
      * 
      * @param string $dn

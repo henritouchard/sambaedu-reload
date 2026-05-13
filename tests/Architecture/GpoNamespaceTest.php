@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Architecture;
 
+use App\Gpo\Services\GpoService;
 use PhpParser\Node;
 use PhpParser\Node\Stmt\GroupUse;
 use PhpParser\Node\Stmt\Use_;
@@ -331,6 +332,86 @@ class GpoNamespaceTest extends TestCase
             $forbiddenConcat,
             'GenerateWineImageJob ne doit pas invoquer Process::run avec une string (concaténation shell interdite).',
         );
+    }
+
+    /**
+     * Story 16.5 — AC1.5 / AC6.4.
+     *
+     * Vérifie que les méthodes d'écriture de `GpoService` (setLink, removeLink,
+     * setInheritance, reorderLinks + helpers privés setLinkUnaudited /
+     * removeLinkUnaudited) passent **exclusivement** par `SambaToolRunner`
+     * (pas de `Process::` direct, pas de `exec`, pas de shell concat).
+     *
+     * Garde-fou architectural : empêche une régression où un dev contournerait
+     * la couche `SambaToolRunner` (mode array + logging + dry-run) pour
+     * écrire `gpLink` directement via LdapRecord ou Process facade.
+     */
+    #[Test]
+    public function it_validates_gpo_write_methods_use_samba_tool_runner(): void
+    {
+        $path = realpath(__DIR__ . '/../../app/Gpo/Services/GpoService.php');
+        if ($path === false) {
+            self::fail('GpoService.php introuvable.');
+        }
+        $code = (string) file_get_contents($path);
+        // Strip commentaires.
+        $stripped = preg_replace('!/\*.*?\*/!s', '', $code) ?? $code;
+        $stripped = preg_replace('/^\s*\/\/.*$/m', '', $stripped) ?? $stripped;
+
+        // 1. Pas d'import facade Process (déjà couvert par le test global,
+        //    mais on re-vérifie pour clarté).
+        self::assertSame(
+            0,
+            preg_match('/use\s+Illuminate\\\\Support\\\\Facades\\\\Process/', $stripped),
+            'GpoService ne doit JAMAIS importer Illuminate\\Support\\Facades\\Process — utiliser SambaToolRunner.',
+        );
+
+        // 2. Aucune concat string passée à Process / exec / shell_exec.
+        //    Pattern ciblé : Process::run/start avec un argument string commençant
+        //    par `'samba-tool` ou `"samba-tool` (mode shell concat interdit).
+        //    Note : les `sprintf('samba-tool gpo X failed', ...)` dans les messages
+        //    d'exception sont OK — ils ne sont pas passés au shell.
+        self::assertSame(
+            0,
+            preg_match('/Process::[A-Za-z_]+\s*\(\s*[\'"]samba-tool/', $stripped),
+            'GpoService ne doit JAMAIS appeler Process avec une string "samba-tool ..." — mode array exclusif via SambaToolRunner.',
+        );
+
+        // 3. Aucun appel `exec`/`shell_exec` (déjà global mais on s'assure ici aussi).
+        foreach (['exec', 'shell_exec', 'passthru', 'proc_open'] as $forbidden) {
+            self::assertSame(
+                0,
+                preg_match('/\b' . preg_quote($forbidden, '/') . '\s*\(/', $stripped),
+                sprintf('GpoService ne doit jamais appeler %s() — toujours via SambaToolRunner.', $forbidden),
+            );
+        }
+
+        // 4. Les méthodes write doivent toutes invoquer `$this->runner->run(`.
+        //    On vérifie au moins une occurrence du runner par méthode.
+        $writeMethods = ['setLink', 'removeLink', 'setInheritance', 'reorderLinks'];
+        foreach ($writeMethods as $method) {
+            // Capture le corps de la méthode entre `public function NAME` et la
+            // prochaine `public function` ou fin de classe (regex grossière OK
+            // pour ce garde-fou).
+            $matches = [];
+            $pattern = '/public function ' . preg_quote($method, '/') . '\b.*?(?=public function |private function |}\s*$)/s';
+            if (preg_match($pattern, $stripped, $matches) !== 1) {
+                self::fail(sprintf('Méthode %s::%s introuvable dans GpoService.', GpoService::class, $method));
+            }
+            $body = $matches[0];
+
+            // setLink/removeLink/setInheritance peuvent déléguer à des helpers
+            // (setLinkUnaudited/removeLinkUnaudited) → on accepte aussi cette
+            // route, mais elle doit elle-même appeler `$this->runner->run(`.
+            $hasRunnerCall = str_contains($body, '$this->runner->run(')
+                || str_contains($body, 'setLinkUnaudited(')
+                || str_contains($body, 'removeLinkUnaudited(');
+
+            self::assertTrue(
+                $hasRunnerCall,
+                sprintf('La méthode %s doit invoquer $this->runner->run() (ou déléguer à un helper qui le fait).', $method),
+            );
+        }
     }
 
     #[Test]

@@ -196,3 +196,114 @@ depuis la VM legacy. Procédure documentée dans `docs/qa/domains/gpo.md`
 section 6.8.
 
 Sortie prévue : action Henri T9 smoke VM post-merge 16.7.
+
+---
+
+## Dettes Story 16.5 — Liaison GPO ↔ OU AD
+
+### TD-16.5-1 — `reorderLinks` non atomique (rollback best effort)
+
+`GpoService::reorderLinks(string $containerDn, array $orderedGuids)` orchestre
+N appels `samba-tool gpo dellink` puis M appels `samba-tool gpo setlink` pour
+réécrire l'ordre. Cette transaction logique **n'est pas atomique au sens
+LDAP** :
+
+- Si l'un des `setlink` échoue au milieu, le service tente un rollback best
+  effort (dellink des liens applied + re-setlink dans l'ordre initial).
+- Si le rollback réussit → retour `false`, état initial restauré, état AD
+  cohérent.
+- Si le rollback **échoue lui-même** (cas exceptionnel : crash réseau, ACLs
+  modifiées entre-temps) → `RuntimeException` levée avec message
+  « état AD potentiellement incohérent ». Action manuelle requise via
+  `samba-tool gpo getlink {ouDn}` puis correction admin.
+
+**Sortie prévue** : non-bloquante en pratique (action rare admin, ~10/jour
+parc typique selon D7). Si Henri rapporte des cas réels d'incohérence,
+story de suivi possible avec lock LDAP côté AD (`samba-tool gpo` ne
+l'expose pas nativement — il faudrait ajouter une `OptimisticLock` autour
+de l'attribut `gpLink` sur l'OU).
+
+### TD-16.5-2 — Comptage postes par OU via suffix-match SQL
+
+La table `workstations` (Eloquent — Epic 4 / Story 4.x) expose une colonne
+`ad_dn` (DN complet du poste, ex. `CN=PC-001,OU=Test,DC=example,DC=org`)
+mais **pas de colonne `ou_dn` dédiée**. La Story 16.5 utilise donc un
+suffix-match SQL :
+
+```sql
+SELECT COUNT(*) FROM workstations
+WHERE ad_dn ILIKE '%,<OU_DN>' AND archived_at IS NULL;
+```
+
+**Limitations** :
+
+1. Un poste dont `ad_dn` est NULL ou désynchronisé ne sera pas compté
+   (faux négatif). Le comptage est une **estimation opérationnelle**, pas
+   une source de vérité AD.
+2. La requête `ILIKE '%,...'` n'utilise pas d'index — coût O(N) sur la
+   table. Acceptable jusqu'à ~10k postes ; au-delà, ajouter un index
+   fonctionnel sur le suffixe ou créer une colonne `ou_dn` matérialisée.
+3. SQLite (env tests) n'a pas `ILIKE` natif — fallback `LIKE` (case-sensitive
+   sur SQLite, insensitive sur PostgreSQL via collation).
+4. **Scope sous-OU inclus** (review #4) : le pattern `ad_dn ILIKE '%,<OU_DN>'`
+   matche aussi les postes des **sous-OUs imbriquées** d'une OU liée. Exemple :
+   un poste `CN=pc01,OU=SubSalles,OU=Salles,DC=...` est compté dans l'impact
+   d'une GPO liée à `OU=Salles`. Sémantique cohérente avec l'héritage GPO
+   AD natif (la GPO est effectivement appliquée aux postes des sous-OUs sauf
+   blocage d'héritage), mais ce comportement n'est pas explicité dans l'UI.
+   Si on souhaite un compte strict "OU = parent direct seulement", il faudrait
+   filtrer par regex DN (coûteux) ou matérialiser une colonne `parent_ou_dn`.
+   **Pending décision Henri** (cf. review 16-5 question #1).
+5. **Wildcards SQL `%` / `_` échappés** (review #4 corrigé) : le DN injecté
+   dans le pattern ILIKE est désormais échappé via `str_replace` (backslash
+   en premier). Pas de risque d'injection (validation regex DN amont), mais
+   garde-fou défensif contre des matches erratiques sur DN exotiques.
+
+**Sortie prévue** : non-bloquante. Si une story de suivi (Epic 4 ou 15)
+ajoute une colonne `ou_dn` Eloquent peuplée par l'observer
+`WorkstationObserver`, basculer le comptage est trivial.
+
+### TD-16.5-4 — Heuristiques stderr `looksLikeIdempotentLinkError` / `Unlink`
+
+`GpoService` utilise deux heuristiques stderr pour détecter une erreur
+samba-tool **idempotente** (le lien existait/n'existait pas déjà) afin de
+ne pas remonter d'erreur à l'utilisateur dans ces cas légitimes :
+
+- `looksLikeIdempotentLinkError` : matche `'already'` et `'gplink already'`
+- `looksLikeIdempotentUnlinkError` : matche `'no such gp link'`,
+  `'does not exist'`, `'not linked'`, `'no link'`, `'no entry'`
+
+**Fragilité résiduelle** : ces patterns dépendent de la formulation des
+messages stderr de `samba-tool gpo setlink/dellink`. Une mise à jour
+samba-tool changeant la chaîne d'erreur (locale FR, nouveau wording)
+pourrait casser la détection idempotente, provoquant des toasts erreur
+sur des cas en réalité succès silencieux. Review #3 a déjà retiré les
+matches trop génériques (`'object class violation'` et `'no such'`) qui
+masquaient de vraies erreurs LDAP.
+
+**Mitigation envisagée si problème en prod** :
+- Tests d'intégration VM avec samba-tool réel (Story 9.4 environnement)
+- Migration vers parsing structuré des erreurs si samba-tool gagne un
+  output JSON (`--show-result-as-json` non disponible aujourd'hui)
+- Alternative LDAP directe (rejetée D2 — parité legacy stricte)
+
+**Sortie prévue** : non-bloquante. Suivre via logs `gpo.link.add` /
+`gpo.link.remove` failure pour détecter une régression silencieuse.
+
+### TD-16.5-3 — Flat list OUs domaine (DO4)
+
+`OrganizationalUnitRepository::listAll()` retourne un tableau flat
+`DN => display_name` trié alphabétiquement. Le sélecteur OU dans la
+modale d'ajout est un simple `<select>` HTML avec recherche textuelle
+côté Livewire.
+
+**Limitations** :
+
+- Pas d'arbre hiérarchique → UX dégradée si parc avec **>50 OUs** (scroll
+  long, hiérarchie non visible).
+- Pas de lazy-loading → tout est rendu dans le DOM initial.
+
+**Sortie prévue** : non-bloquante en première itération (parité legacy
+qui n'a pas non plus d'arbre). Story de suivi 16.5b éventuelle si Henri
+rapporte des frictions UX.
+

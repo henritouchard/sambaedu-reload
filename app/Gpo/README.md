@@ -66,9 +66,12 @@ les champs systématiques `operation_id` (UUID), `action_type`, `gpo_name` /
 | `gpo.duplicate`        | Duplication par copie d'arbre policy                       | 16.4                         |
 | `gpo.section.read`     | Lecture d'une section (Firefox, Veyon, Wine…)              | 16.3                         |
 | `gpo.section.write`    | Édition d'une section (avec diff before/after)             | 16.3                         |
-| `gpo.link.set`         | Liaison GPO ↔ OU / WorkstationGroup                        | 16.5                         |
-| `gpo.link.remove`      | Suppression de liaison                                     | 16.5                         |
-| `gpo.inheritance.set`  | Modification de l'héritage OU                              | 16.5                         |
+| `gpo.link.add`         | Création d'une liaison GPO ↔ OU (`samba-tool gpo setlink`) | 16.5 ✅ implémenté            |
+| `gpo.link.remove`      | Suppression de liaison (`samba-tool gpo dellink`)          | 16.5 ✅ implémenté            |
+| `gpo.link.order.update` | Réordonnancement des liaisons (`reorderLinks` non atomique) | 16.5 ✅ implémenté           |
+| `gpo.link.toggle.disabled` | Toggle flag `disabled` (D4 — dellink + setlink avec flag) | 16.5 ✅ implémenté        |
+| `gpo.link.toggle.enforced` | Toggle flag `enforced` (D4 — idem)                     | 16.5 ✅ implémenté            |
+| `gpo.inheritance.set`  | Modification de l'héritage OU (`samba-tool gpo setinheritance`) | 16.5 ✅ implémenté       |
 | `gpo.sysvol.write`     | Écriture fichier `.pol` / `.xml` / `.ini` SYSVOL           | 16.3, 16.4                   |
 | `gpo.sambatool.exec`   | Exécution brute d'une commande `samba-tool` (niveau debug) | tous                         |
 | `gpo.audit.legacy`     | Trace de portage d'un fichier legacy                       | 16.1 (audit)                 |
@@ -321,3 +324,74 @@ applicatifs via la variable `%admin%`.
 **Mécanisme legacy non porté** : l'élévation **temporaire** posée par
 `set_local_admin_right($user, $duration = 7200)` (paramètre
 `local_admin_<user>`). Cf. `docs/tech-debt-gpo.md` section dédiée.
+
+## Story 16.5 — Liaison GPO ↔ OU AD
+
+Première story **write AD** d'Epic 16. Implémente les 3 stubs Story 16.1
+`setLink` / `removeLink` / `setInheritance` + nouvelle méthode `reorderLinks`
+(non atomique avec rollback best effort — TD-16.5-1).
+
+### Méthodes write GpoService
+
+| Méthode                                                            | Wrapper samba-tool             | `action_type`              | Contrat                                                                                                                                            |
+|--------------------------------------------------------------------|--------------------------------|----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
+| `setLink(string $dn, string $guid, bool $enforce, bool $disable)` | `gpo setlink [--enforce] [--disable]` | `gpo.link.add`             | Validation regex GUID + DN AVANT exec. Idempotent (already linked → succès silencieux). Lève `InvalidArgumentException` sur input invalide.       |
+| `removeLink(string $dn, string $guid)`                             | `gpo dellink`                  | `gpo.link.remove`          | Idempotent (lien absent → succès silencieux). Mêmes garanties d'input.                                                                            |
+| `setInheritance(string $dn, bool $enabled)`                        | `gpo setinheritance inherit\|block` | `gpo.inheritance.set`     | **Ne reproduit PAS le bug legacy** `samba-tool.inc.php:1027` (concat `$message` au lieu `$command`). Mode array bypass naturellement.              |
+| `reorderLinks(string $dn, array $orderedGuids)`                    | `gpo dellink` puis `gpo setlink` séquentiel | `gpo.link.order.update` | Non atomique. Rollback best effort si étape KO. Lève `RuntimeException` si rollback lui-même KO (état AD potentiellement incohérent — TD-16.5-1). |
+
+Toggle disabled / enforced (boutons UI) = `removeLink` puis `setLink` avec
+flag adapté. Loggé sous `gpo.link.toggle.disabled` / `gpo.link.toggle.enforced`
+(en plus des logs implicites `gpo.link.add` / `gpo.link.remove` émis par les
+helpers sous-jacents).
+
+### UI native
+
+| URL                                | Composant Livewire SFC                                  | Description                                                                   |
+|------------------------------------|---------------------------------------------------------|-------------------------------------------------------------------------------|
+| `/app/gpo/{guid}/links`           | `pages::app.gpo.[guid].links.index`                     | Page dédiée gestion liaisons (DO3) — flat list OUs (DO4), 4 actions par lien |
+| `/app/gpo/{guid}` (enrichi)        | `pages::app.gpo.[guid].index`                           | Ajout CTA "Gérer les liaisons" + encart "Impact" comptage postes par OU      |
+
+### Décisions structurantes (D1-D10, voir story 16.5)
+
+- **D1** : OU AD uniquement en première itération — pas de mapping
+  `WorkstationGroup` (story 16.5b éventuelle).
+- **D2** : Écriture exclusivement via `samba-tool gpo setlink` (pas
+  `LdapRecord::update` direct sur `gpLink`).
+- **D3** : Précédence via réordonnancement explicite (`reorderLinks`).
+- **D4** : Désactivation et suppression exposées séparément (toggle disabled +
+  délier).
+- **D5** : Graphe d'impact = arbre HTML 2 niveaux + comptage postes (KISS).
+- **D6** : Modales `<x-molecules.modal>` obligatoires sur toute action write.
+- **D7** : Channel `gpo` exclusif pour les writes AD (volume faible).
+- **D8** : Iso-bytes non applicable (UI admin, pas endpoint runtime).
+- **D9** : Tests Unit ≥12 + Feature ≥10 + Architecture +1 + smoke VM.
+- **D10** : Frontière Epic 17 stricte (16.5 = liaisons, 17 = scripts Windows).
+
+### Comptage postes par OU (DO2)
+
+La table `workstations` n'expose pas de colonne `ou_dn` dédiée — on utilise
+un suffix-match SQL sur `ad_dn` (le DN complet du poste se termine par
+`,<ou_dn>` si le poste est dans l'OU). Cf. `docs/tech-debt-gpo.md` TD-16.5-2.
+
+```sql
+SELECT COUNT(*) FROM workstations
+WHERE ad_dn ILIKE '%,<OU_DN>' AND archived_at IS NULL;
+```
+
+### Liste OUs domaine (DO4)
+
+`OrganizationalUnitRepository::listAll(int $cacheSeconds = 300)` retourne un
+tableau associatif `DN => display_name` trié alphabétiquement. Cache 5 min
+pour éviter de bombarder l'AD à chaque rendu (LDAP `query()->get()` peut être
+lent sur parc large).
+
+### Limitations (cf. `docs/tech-debt-gpo.md`)
+
+- **TD-16.5-1** : `reorderLinks` non atomique. Rollback best effort
+  uniquement — risque résiduel si crash mi-rollback.
+- **TD-16.5-2** : Comptage postes via suffix-match `ad_dn` (pas de colonne
+  `ou_dn` dédiée — poste non synchronisé AD ne sera pas compté).
+- **TD-16.5-3** : Flat list OUs domaine (pas d'arbre hiérarchique) — UX
+  dégradée si parc avec >50 OUs.
+

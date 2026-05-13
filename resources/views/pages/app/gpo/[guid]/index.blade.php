@@ -5,6 +5,7 @@ use App\Gpo\Services\GpoService;
 use App\Gpo\Dto\GpoSummary;
 use App\Gpo\Dto\GpoLink;
 use App\Gpo\Support\NativeSectionResolver;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
@@ -33,6 +34,12 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
     public bool $showAllContainers = false;
     public array $loadErrors = [];
     public bool $hasError = false;
+
+    /**
+     * Comptage postes par OU (Story 16.5 — AC3.2).
+     * @var array<string,int>
+     */
+    public array $workstationCountByOu = [];
 
     private GpoService $gpoService;
 
@@ -112,6 +119,57 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
 
         // 3. Charger links + héritage pour les containers à afficher.
         $this->loadContainerDetails($this->desiredContainers());
+
+        // 4. Story 16.5 — Comptage postes par OU pour l'encart Impact.
+        $this->workstationCountByOu = $this->countWorkstationsByOu($this->containers);
+    }
+
+    /**
+     * Story 16.5 — AC3.2. Comptage postes via suffix-match sur `ad_dn`
+     * (Eloquent — cf. T0.4 / DO2 / TD-16.5-2). Pas de colonne `ou_dn`
+     * dédiée — on utilise le suffixe DN du poste.
+     *
+     * @param  list<string>  $ouDns
+     * @return array<string,int>
+     */
+    private function countWorkstationsByOu(array $ouDns): array
+    {
+        $out = [];
+        foreach ($ouDns as $dn) {
+            if ($dn === '' || $dn === null) {
+                continue;
+            }
+            // Story 16.5 review #4 : échapper wildcards SQL `%` / `_` avant
+            // concaténation. Clause `ESCAPE '\'` explicite pour cohérence
+            // SQLite (env tests) — PostgreSQL prod accepte l'échappement
+            // backslash nativement.
+            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $dn);
+            $pattern = '%,' . $escaped;
+            try {
+                $out[$dn] = DB::table('workstations')
+                    ->whereRaw('ad_dn ILIKE ? ESCAPE ?', [$pattern, '\\'])
+                    ->whereNull('archived_at')
+                    ->count();
+            } catch (\Throwable) {
+                try {
+                    $out[$dn] = DB::table('workstations')
+                        ->whereRaw('ad_dn LIKE ? ESCAPE ?', [$pattern, '\\'])
+                        ->whereNull('archived_at')
+                        ->count();
+                } catch (\Throwable) {
+                    $out[$dn] = 0;
+                }
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Story 16.5 — AC3.2. Total agrégé des postes potentiellement affectés.
+     */
+    public function getTotalImpactProperty(): int
+    {
+        return array_sum($this->workstationCountByOu);
     }
 
     /**
@@ -219,6 +277,16 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
                 <i class="fa-solid fa-arrow-left"></i>
                 Retour au listing
             </a>
+
+            {{-- CTA "Gérer les liaisons" (Story 16.5 — AC3.1) --}}
+            @can('server.admin')
+                <a href="{{ url('/app/gpo/' . $this->guid . '/links') }}"
+                    class="btn btn-primary btn-sm"
+                    data-testid="cta-manage-links">
+                    <i class="fa-solid fa-link"></i>
+                    Gérer les liaisons
+                </a>
+            @endcan
 
             {{-- CTAs natifs primaires (Story 16.3a — AC2.1) --}}
             {{-- Affichés avant le bouton legacy si l'heuristique matche --}}
@@ -349,6 +417,52 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
                 </div>
             </div>
         @endif
+
+        {{-- Encart "Impact" — Story 16.5 / AC3.2 / D5 --}}
+        <div class="card bg-base-100 shadow-sm border border-base-200" data-testid="impact-card">
+            <div class="card-body">
+                <h3 class="card-title text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-bullseye text-warning"></i>
+                    Impact de cette GPO
+                </h3>
+                @if (count($containers) === 0)
+                    <div class="text-center py-6 text-base-content/60" data-testid="impact-empty">
+                        <i class="fa-solid fa-link-slash text-2xl mb-2"></i>
+                        <p class="text-sm">Cette GPO n'a aucun impact — elle n'est liée à aucune OU.</p>
+                        @can('server.admin')
+                            <a href="{{ url('/app/gpo/' . $this->guid . '/links') }}"
+                                class="btn btn-sm btn-primary mt-3">
+                                <i class="fa-solid fa-link"></i>
+                                Lier maintenant
+                            </a>
+                        @endcan
+                    </div>
+                @else
+                    <ul class="space-y-1 mt-2 text-sm">
+                        @foreach ($containers as $dn)
+                            <li class="flex items-center justify-between gap-3 px-2 py-1.5 rounded hover:bg-base-200/50">
+                                <span class="font-mono text-xs text-base-content/70 truncate flex-1" title="{{ $dn }}">{{ $dn }}</span>
+                                <span class="badge badge-ghost badge-sm">
+                                    <i class="fa-solid fa-desktop mr-1"></i>
+                                    {{ $workstationCountByOu[$dn] ?? 0 }} poste(s)
+                                </span>
+                            </li>
+                        @endforeach
+                    </ul>
+                    <div class="flex items-center justify-between mt-3 pt-3 border-t border-base-300">
+                        <p class="text-sm font-medium">
+                            <strong>{{ $this->totalImpact }}</strong> poste(s) potentiellement affecté(s)
+                        </p>
+                        @can('server.admin')
+                            <a href="{{ url('/app/gpo/' . $this->guid . '/links') }}"
+                                class="btn btn-sm btn-outline btn-primary" data-testid="cta-detail-impact">
+                                Voir l'impact détaillé
+                            </a>
+                        @endcan
+                    </div>
+                @endif
+            </div>
+        </div>
 
         {{-- Containers liés --}}
         <div class="card bg-base-100 shadow-sm border border-base-200">

@@ -261,6 +261,15 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
         ->middleware('can:server.admin')
         ->name('gpo.show');
 
+    // Story 16.5 — Page de gestion des liaisons GPO ↔ OU AD.
+    // Route plus profonde — segments distincts (/links après {guid}), ordre de
+    // déclaration sans incidence (Laravel matche le path le plus long en premier
+    // pour des segments littéraux distincts).
+    Route::livewire('/gpo/{guid}/links', 'pages::app.gpo.[guid].links.index')
+        ->where('guid', '\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?')
+        ->middleware('can:server.admin')
+        ->name('gpo.links');
+
     Route::livewire('/gpo', 'pages::app.gpo.index')
         ->middleware('can:server.admin')
         ->name('gpo.index');

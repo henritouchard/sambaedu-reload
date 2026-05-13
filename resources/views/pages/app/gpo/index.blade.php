@@ -228,6 +228,16 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
 
     <x-slot:actions>
         <div class="flex gap-2">
+            {{-- Story 16.5 — AC7.2 : encart "Créer une GPO (ancienne UI)".
+                 Création GPO native en pause (Story 16-4) — on expose le shim
+                 legacy en bouton secondaire visible du header listing. --}}
+            @can('server.admin')
+                <a href="{{ url('/gpo/gpo-maj.php') }}" target="_blank" rel="noopener noreferrer"
+                    class="btn btn-outline btn-sm" data-testid="create-gpo-legacy-cta">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                    Créer une GPO (ancienne UI)
+                </a>
+            @endcan
             <button type="button" class="btn btn-outline btn-sm" wire:click="refresh" wire:loading.attr="disabled">
                 <span wire:loading.remove wire:target="refresh">
                     <i class="fa-solid fa-arrows-rotate"></i>

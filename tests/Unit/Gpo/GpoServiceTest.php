@@ -157,8 +157,10 @@ class GpoServiceTest extends TestCase
     }
 
     /**
-     * Toutes les méthodes d'écriture (stubs) doivent lever RuntimeException
-     * avec un message qui pointe vers la story qui les implémentera.
+     * Méthodes d'écriture encore en stub (CRUD GPO — Story 16.4 paused).
+     * `setLink` / `removeLink` / `setInheritance` ont été implémentées
+     * par Story 16.5 — elles ont leur propre suite Unit
+     * ({@see GpoServiceWriteTest}).
      *
      * @return iterable<string, array{0: string, 1: array<int,mixed>, 2: string}>
      */
@@ -167,9 +169,6 @@ class GpoServiceTest extends TestCase
         yield 'create' => ['create', ['my-gpo'], 'Story 16.4'];
         yield 'delete' => ['delete', ['{AAAA-BBBB}'], 'Story 16.4'];
         yield 'fetch' => ['fetch', ['{AAAA-BBBB}', '/tmp/policies'], 'Story 16.3/16.4'];
-        yield 'setLink' => ['setLink', ['DC=example,DC=org', '{AAAA-BBBB}'], 'Story 16.5'];
-        yield 'removeLink' => ['removeLink', ['DC=example,DC=org', '{AAAA-BBBB}'], 'Story 16.5'];
-        yield 'setInheritance' => ['setInheritance', ['DC=example,DC=org', true], 'Story 16.5'];
     }
 
     #[Test]

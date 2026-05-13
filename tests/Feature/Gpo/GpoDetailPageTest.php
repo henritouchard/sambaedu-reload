@@ -6,7 +6,10 @@ namespace Tests\Feature\Gpo;
 
 use App\Gpo\Dto\GpoLink;
 use App\Gpo\Dto\GpoSummary;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
@@ -38,13 +41,42 @@ class GpoDetailPageTest extends TestCase
         }
 
         $this->bootstrapSpatieTables();
+        // Story 16.5 review #10 : bootstrap workstations pour les tests Impact
+        // (countWorkstationsByOu interroge la table — sans ce bootstrap les tests
+        // retournaient 0 silencieusement via try/catch).
+        $this->bootstrapWorkstationsTable();
     }
 
     protected function tearDown(): void
     {
         Mockery::close();
+        $this->cleanupWorkstationsTable();
         $this->cleanupSpatieTables();
         parent::tearDown();
+    }
+
+    private bool $workstationsCreated = false;
+
+    private function bootstrapWorkstationsTable(): void
+    {
+        if (! Schema::hasTable('workstations')) {
+            Schema::create('workstations', function (Blueprint $t) {
+                $t->id();
+                $t->string('name')->nullable();
+                $t->string('ad_dn')->nullable();
+                $t->timestamp('archived_at')->nullable();
+                $t->timestamps();
+            });
+            $this->workstationsCreated = true;
+        }
+    }
+
+    private function cleanupWorkstationsTable(): void
+    {
+        if ($this->workstationsCreated) {
+            Schema::dropIfExists('workstations');
+            $this->workstationsCreated = false;
+        }
     }
 
     private function makeAdmin(string $login = 'admin-detail-test'): User
@@ -317,6 +349,78 @@ class GpoDetailPageTest extends TestCase
             $html,
             'Bouton legacy doit être dégradé (btn-ghost btn-xs) sur une GPO matchant une section native',
         );
+    }
+
+    // =========================================================================
+    // Story 16.5 — AC6.3 : Enrichissement détail (CTA + encart Impact)
+    // =========================================================================
+
+    #[Test]
+    public function it_shows_manage_links_cta_for_server_admin(): void
+    {
+        $admin = $this->makeAdmin('admin-detail-cta-links');
+        $this->actingAs($admin);
+
+        FakesGpoService::make()
+            ->withGpo(self::VALID_GUID, $this->makeGpoSummary())
+            ->withContainersFor(self::VALID_GUID, [])
+            ->bind($this->app);
+
+        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+            ->assertStatus(200)
+            ->assertSee('data-testid="cta-manage-links"', false)
+            ->assertSee('Gérer les liaisons');
+    }
+
+    #[Test]
+    public function it_shows_impact_card_with_workstation_counts_per_ou(): void
+    {
+        $admin = $this->makeAdmin('admin-detail-impact');
+        $this->actingAs($admin);
+
+        // Story 16.5 review #10 : insérer fixtures réelles pour valider que
+        // countWorkstationsByOu retourne bien un compte non-zéro (suffix match
+        // sur ad_dn). 3 postes dans DN_1, 1 archivé (exclu), 1 hors DN_1.
+        $now = now();
+        DB::table('workstations')->insert([
+            ['name' => 'pc-01', 'ad_dn' => 'CN=pc-01,' . self::DN_1, 'archived_at' => null, 'created_at' => $now, 'updated_at' => $now],
+            ['name' => 'pc-02', 'ad_dn' => 'CN=pc-02,' . self::DN_1, 'archived_at' => null, 'created_at' => $now, 'updated_at' => $now],
+            ['name' => 'pc-archived', 'ad_dn' => 'CN=pc-archived,' . self::DN_1, 'archived_at' => $now, 'created_at' => $now, 'updated_at' => $now],
+            ['name' => 'pc-other', 'ad_dn' => 'CN=pc-other,OU=Autre,DC=example,DC=org', 'archived_at' => null, 'created_at' => $now, 'updated_at' => $now],
+        ]);
+
+        FakesGpoService::make()
+            ->withGpo(self::VALID_GUID, $this->makeGpoSummary())
+            ->withContainersFor(self::VALID_GUID, [self::DN_1])
+            ->withDefaultLinks([])
+            ->withDefaultInheritance(true)
+            ->bind($this->app);
+
+        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+            ->assertStatus(200)
+            ->assertSee('data-testid="impact-card"', false)
+            ->assertSee('Impact de cette GPO')
+            ->assertSee(self::DN_1)
+            ->assertSee('poste(s)')
+            // 2 postes non archivés ds DN_1 (le 3e archivé exclu, le 4e hors DN).
+            ->assertSet('workstationCountByOu.' . self::DN_1, 2);
+    }
+
+    #[Test]
+    public function it_shows_impact_empty_state_when_gpo_is_not_linked(): void
+    {
+        $admin = $this->makeAdmin('admin-detail-impact-empty');
+        $this->actingAs($admin);
+
+        FakesGpoService::make()
+            ->withGpo(self::VALID_GUID, $this->makeGpoSummary())
+            ->withContainersFor(self::VALID_GUID, [])
+            ->bind($this->app);
+
+        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+            ->assertStatus(200)
+            ->assertSee('data-testid="impact-empty"', false)
+            ->assertSee('aucun impact');
     }
 
     /**

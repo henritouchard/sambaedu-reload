@@ -247,6 +247,68 @@ OUT;
         return $this;
     }
 
+    // -------------------------------------------------------------------------
+    // Builders write — Story 16.5 (setLink / removeLink / setInheritance / reorderLinks)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Stub `setLink()` → retourne le bool fourni (true par défaut = succès).
+     * Sans argument, accepte n'importe quelle combinaison de params.
+     */
+    public function withSetLinkResult(bool $result = true): self
+    {
+        $this->mock->shouldReceive('setLink')->andReturn($result);
+        return $this;
+    }
+
+    /**
+     * Force `setLink()` à lever une exception (test gestion d'erreur UI).
+     */
+    public function withSetLinkThrowing(\Throwable $e): self
+    {
+        $this->mock->shouldReceive('setLink')->andThrow($e);
+        return $this;
+    }
+
+    /**
+     * Stub `removeLink()` → retourne le bool fourni.
+     */
+    public function withRemoveLinkResult(bool $result = true): self
+    {
+        $this->mock->shouldReceive('removeLink')->andReturn($result);
+        return $this;
+    }
+
+    public function withRemoveLinkThrowing(\Throwable $e): self
+    {
+        $this->mock->shouldReceive('removeLink')->andThrow($e);
+        return $this;
+    }
+
+    /**
+     * Stub `setInheritance()` → retourne le bool fourni.
+     */
+    public function withSetInheritanceResult(bool $result = true): self
+    {
+        $this->mock->shouldReceive('setInheritance')->andReturn($result);
+        return $this;
+    }
+
+    /**
+     * Stub `reorderLinks()` → retourne le bool fourni.
+     */
+    public function withReorderLinksResult(bool $result = true): self
+    {
+        $this->mock->shouldReceive('reorderLinks')->andReturn($result);
+        return $this;
+    }
+
+    public function withReorderLinksThrowing(\Throwable $e): self
+    {
+        $this->mock->shouldReceive('reorderLinks')->andThrow($e);
+        return $this;
+    }
+
     /**
      * Affirme qu'aucune méthode de lecture ne sera appelée. Utile pour les
      * tests de validation qui doivent rejeter les inputs avant tout dispatch.
@@ -258,6 +320,10 @@ OUT;
         $this->mock->shouldNotReceive('listContainers');
         $this->mock->shouldNotReceive('getLinks');
         $this->mock->shouldNotReceive('getInheritance');
+        $this->mock->shouldNotReceive('setLink');
+        $this->mock->shouldNotReceive('removeLink');
+        $this->mock->shouldNotReceive('setInheritance');
+        $this->mock->shouldNotReceive('reorderLinks');
         return $this;
     }
 
