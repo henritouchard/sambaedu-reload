@@ -5,15 +5,7 @@
       - $serviceStatus : ['active' => bool, 'details' => string]
 --}}
 
-@if ($serviceStatus['active'])
-    <div class="alert alert-success">
-        <i class="fa-solid fa-circle-check text-lg"></i>
-        <div>
-            <h3 class="font-bold">Service DHCP actif</h3>
-            <p class="text-sm">isc-dhcp-server.service répond.</p>
-        </div>
-    </div>
-@else
+@unless ($serviceStatus['active'])
     <div class="alert alert-error">
         <i class="fa-solid fa-triangle-exclamation text-lg"></i>
         <div>
@@ -25,4 +17,4 @@
             </p>
         </div>
     </div>
-@endif
+@endunless

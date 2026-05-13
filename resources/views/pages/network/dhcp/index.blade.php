@@ -300,28 +300,14 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
     description="Gestion native des réservations et baux DHCP (FR20 + FR22)">
 
     <x-slot:actions>
-        <div class="flex gap-2">
-            <a href="{{ route('app.network.dhcp.import') }}" class="btn btn-outline">
-                <i class="fa-solid fa-file-import"></i>
-                Importer CSV
-            </a>
-            <button type="button" wire:click="openCreateModal" class="btn btn-primary"
-                @cannot('manage-dhcp') disabled @endcannot>
-                <i class="fa-solid fa-plus"></i>
-                Nouvelle réservation
-            </button>
-        </div>
+        <button type="button" wire:click="openCreateModal" class="btn btn-primary"
+            @cannot('manage-dhcp') disabled @endcannot>
+            <i class="fa-solid fa-plus"></i>
+            Nouvelle réservation
+        </button>
     </x-slot:actions>
 
     <div class="space-y-4">
-        {{-- Review code 8.1 #6 (Q2) — Bandeau R6 « éditions croisées legacy ». --}}
-        <div class="alert alert-warning">
-            <i class="fa-solid fa-triangle-exclamation"></i>
-            <div>
-                <strong>Transition legacy en cours.</strong> Le module DHCP historique reste accessible via les anciens menus pendant la phase de bascule. Éviter d'éditer une même réservation depuis les deux interfaces simultanément (risque de divergence AD ↔ table SQL).
-            </div>
-        </div>
-
         @include('pages.network.dhcp._partials.service-status-banner')
 
         {{-- Recherche --}}
@@ -385,8 +371,10 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
         </form>
 
         <x-slot:footer>
-            <button type="button" wire:click="close" class="btn btn-ghost">Annuler</button>
-            <button type="button" wire:click="save" class="btn btn-primary">
+            <button type="button" wire:click="close" class="btn btn-ghost" wire:loading.attr="disabled" wire:target="save">Annuler</button>
+            <button type="button" wire:click="save" class="btn btn-primary"
+                wire:loading.attr="disabled" wire:target="save">
+                <span wire:loading wire:target="save" class="loading loading-spinner loading-sm"></span>
                 {{ $editing ? 'Enregistrer' : 'Créer' }}
             </button>
         </x-slot:footer>
@@ -400,9 +388,11 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
             Le service DHCP sera rechargé pour prendre en compte la suppression.
         </p>
         <x-slot:footer>
-            <button type="button" wire:click="close" class="btn btn-ghost">Annuler</button>
-            <button type="button" wire:click="deleteConfirmed" class="btn btn-error">
-                <i class="fa-solid fa-trash"></i> Supprimer
+            <button type="button" wire:click="close" class="btn btn-ghost" wire:loading.attr="disabled" wire:target="deleteConfirmed">Annuler</button>
+            <button type="button" wire:click="deleteConfirmed" class="btn btn-error"
+                wire:loading.attr="disabled" wire:target="deleteConfirmed">
+                <span wire:loading wire:target="deleteConfirmed" class="loading loading-spinner loading-sm"></span>
+                <i wire:loading.remove wire:target="deleteConfirmed" class="fa-solid fa-trash"></i> Supprimer
             </button>
         </x-slot:footer>
     </x-molecules.modal>

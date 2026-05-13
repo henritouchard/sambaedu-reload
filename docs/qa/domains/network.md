@@ -3,18 +3,17 @@
 > Runbook E2E pour le domaine réseau SE4FS. Append-only : chaque story
 > ajoute une section avec ses scénarios numérotés stables.
 
-**Stories couvertes** : 8.1 (DHCP — FR20 + FR22). _Stories futures Epic 8.2
-ajouteront DNS (FR21 reporté) et multi-VLAN._
+**Stories couvertes** : 8.1 (DHCP — FR20). _Import CSV (FR22) désactivé.
+Stories futures Epic 8.2 ajouteront DNS (FR21 reporté) et multi-VLAN._
 
 **Code de référence (Story 8.1)** :
 
 - `app/Models/DhcpReservation.php` — modèle Eloquent
 - `app/Services/Network/DhcpService.php` — service shellout + parsing
-- `app/Services/Network/DhcpImportService.php` — pipeline import CSV
 - `database/migrations/2026_05_11_120000_create_dhcp_reservations_table.php`
 - `config/sambaedu.php` — section `dhcp` (paths + script + service)
 - `config/logging.php` — channel `network`
-- `resources/views/pages/network/dhcp/` — pages Livewire (index, import)
+- `resources/views/pages/network/dhcp/` — page Livewire (index)
 - `resources/views/pages/sync-from-ad/index.blade.php` — étape 10 (migration legacy)
 - `app/Policies/DhcpPolicy.php` — gates `viewAny-dhcp` / `manage-dhcp`
 
@@ -109,7 +108,7 @@ L'opérateur de test doit avoir la permission Spatie **`server.admin`**
    - Bannière **verte** "Service DHCP actif" (ou rouge si service down — cf. Section 4).
    - Section **"Réservations"** avec le compteur entre parenthèses (0 si DB vide).
    - Section **"Baux actifs"** (peut être vide si pas de client DHCP connecté).
-   - Boutons **"Nouvelle réservation"** + **"Importer CSV"** dans l'en-tête.
+   - Bouton **"Nouvelle réservation"** dans l'en-tête (le bouton "Importer CSV" est désactivé — FR22 reporté).
 5. Vérifier les logs : `tail -n 5 storage/logs/network/network-$(date +%Y-%m-%d).log` ne montre
    pas d'erreur à la consultation simple.
 
@@ -198,55 +197,11 @@ L'opérateur de test doit avoir la permission Spatie **`server.admin`**
 
 ---
 
-### Section 3 — Import CSV (FR22)
+### Section 3 — Import CSV (FR22) — DÉSACTIVÉ
 
-#### Scénario 8.1-3.1 — Import nominal
-
-1. Préparer un fichier CSV local `reservations-test.csv` :
-   ```
-   name,mac,ip,description
-   posteSalle1,00:11:22:33:44:55,10.0.0.60,Salle informatique poste #1
-   imprimanteCDI,AA:BB:CC:DD:EE:FF,10.0.0.30,Imprimante CDI
-   posteOk2,11:22:33:44:55:66,10.0.0.61,Poste valide
-   ```
-2. Sur `/app/network/dhcp`, cliquer **"Importer CSV"**.
-3. Sélectionner le fichier, cliquer **"Importer"**.
-4. Toast sticky avec lien **"Voir le rapport"** : "3 réservation(s) importée(s), 0 mise(s) à jour, 0 erreur(s), 0 ligne(s) ignorée(s)."
-5. La page redirige vers `/app/network/dhcp/import/{uuid}`.
-6. Vérifier les statistiques (3 OK, 0 update, 0 erreurs, 0 ignorées) et le tableau détaillé.
-7. Revenir à `/app/network/dhcp` → les 3 réservations apparaissent avec badge `import` (cyan).
-
-#### Scénario 8.1-3.2 — Import avec erreurs (collecte exhaustive)
-
-1. Préparer un CSV avec lignes valides + erreurs mixées :
-   ```
-   name,mac,ip,description
-   posteOk1,00:11:22:33:44:01,10.0.0.70,desc1
-   posteBadMac,zz:zz:zz:zz:zz:zz,10.0.0.71,bad mac
-   posteBadIp,00:11:22:33:44:02,not-an-ip,bad ip
-
-   # commentaire ignoré
-   posteOk2,00:11:22:33:44:03,10.0.0.72,desc2
-   ```
-2. Importer → toast "2 réservation(s) importée(s), 0 mise(s) à jour, 2 erreur(s), 2 ligne(s) ignorée(s)."
-3. Sur la page rapport : 4 lignes status `ok`, `error`, `error`, `skipped` (en plus de la ligne vide).
-4. Vérifier qu'aucune erreur **n'a interrompu** l'import (les 2 lignes OK
-   après les erreurs sont bien créées).
-5. Vérifier la **présence d'un seul reload** dans les logs :
-   `grep "make_dhcpd_conf" storage/logs/network/network-*.log | wc -l` → 1 par import (et non 1 par ligne).
-
-#### Scénario 8.1-3.3 — Header CSV invalide
-
-1. CSV : `wrong,header,values\nposteX,00:11:22:33:44:99,10.0.0.99,desc`
-2. Importer → toast "0 importées, 1 erreur".
-3. Rapport : 1 ligne `error` "Header CSV invalide. Attendu : 'name,mac,ip,description'".
-4. **Aucune** insertion BD.
-
-#### Scénario 8.1-3.4 — Rapport expiré
-
-1. Récupérer un UUID d'import du jour : `/app/network/dhcp/import/{uuid}` → 200 OK.
-2. Vider le cache : `php artisan cache:clear` (ou attendre 24h).
-3. Recharger l'URL → 404 "Rapport d'import introuvable ou expiré (24h)."
+> Feature retirée du scope 8.1 livré. Le bouton "Importer CSV" et les routes
+> `/app/network/dhcp/import/*` sont désactivés en production. Scénarios QA
+> retirés. Voir éventuellement la story de réactivation à venir.
 
 ---
 
@@ -367,7 +322,6 @@ L'opérateur de test doit avoir la permission Spatie **`server.admin`**
 - [ ] Service `isc-dhcp-server` actif, fichier `reservations.inc` writable par www-data
 - [ ] Section 1 (CRUD) verte
 - [ ] Section 2 (Baux) verte
-- [ ] Section 3 (Import CSV) verte (3 scénarios)
 - [ ] Section 4 (Mode dégradé) verte — réservation persiste même reload échoué
 - [ ] Section 5 (Concurrence) verte — pas de fichier corrompu
 - [ ] Section 6 (Migration legacy via /sync-from-ad) verte — idempotente, lien Workstation OK, source préservée

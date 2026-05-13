@@ -93,9 +93,8 @@ class DhcpImportReportPageTest extends TestCase
     {
         $this->actingAs($this->makeAdmin('admin-report-2'));
 
-        $this->expectException(\Symfony\Component\HttpKernel\Exception\NotFoundHttpException::class);
-
-        Livewire::test('pages::network.dhcp.import.[uuid].index', ['uuid' => 'not-a-real-uuid-12345']);
+        Livewire::test('pages::network.dhcp.import.[uuid].index', ['uuid' => 'not-a-real-uuid-12345'])
+            ->assertStatus(404);
     }
 
     public function test_non_admin_cannot_view_report(): void
