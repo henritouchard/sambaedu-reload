@@ -4,7 +4,12 @@ declare(strict_types=1);
 
 namespace App\Gpo\Services;
 
+use App\Models\User;
+use App\Models\Workstation;
+use App\Models\WorkstationGroup;
+use App\Services\PermissionService;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Orchestrateur de génération des scripts applications.
@@ -38,6 +43,37 @@ final class ApplicationScriptsAssembler
 {
     /** Liste blanche des clés de substitution (chargée depuis config). */
     private ?array $substitutionsCache = null;
+
+    /**
+     * Story 16.7 post-review #4 (2026-05-13) : permission Spatie native qui
+     * remplace le composite legacy `SE_COMPUTER_ADMIN` (0xEF00) dans la
+     * condition d'élévation locale `local_admin_scripts`.
+     *
+     * Choix `computer.elevate` (et non `computer.install`) :
+     *  - `SambaPermission::ComputerElevate` est la seule permission qui
+     *    déclare `requiresGpoSync() === true` (cf. `app/Enums/SambaPermission.php:189`)
+     *    — c'est sa raison d'être : élever l'utilisateur en admin local Windows.
+     *  - Le composite legacy `SE_COMPUTER_ADMIN` contient `SE_COMPUTER_ELEVATE`
+     *    (cf. `legacy/ldap.inc.php:2973`), donc tout user porteur de l'ancien
+     *    bit composite avait aussi `0x400` → mappé sur `computer.elevate`.
+     *  - `PermissionService::canOnWorkstationGroup($user, 'computer.elevate', $group)`
+     *    couvre déjà l'équivalent natif de `have_delegation($machine, SE_COMPUTER_ADMIN, $user)`.
+     *
+     * Référence : matrice rôles × permissions
+     * `_bmad-output/planning-artifacts/profiles-rights-matrix.md`.
+     */
+    private const LOCAL_ADMIN_PERMISSION = 'computer.elevate';
+
+    /**
+     * Story 16.7 post-review #4 (2026-05-13) : injection du `PermissionService`
+     * Spatie pour câbler `localAdminScripts` au pendant natif des fonctions
+     * legacy `have_right`/`have_delegation`. Optionnel pour rétro-compat des
+     * appelants existants qui construisaient l'Assembler sans DI — fallback
+     * sur le container Laravel via {@see resolvePermissionService()}.
+     */
+    public function __construct(
+        private readonly ?PermissionService $permissionService = null,
+    ) {}
 
     /**
      * Assemble les scripts pour tous les interpréteurs (cmd/bash/powershell/server).
@@ -581,11 +617,26 @@ final class ApplicationScriptsAssembler
     /**
      * Port `local_admin_scripts()` legacy (`:692-773`).
      *
-     * Note : les fonctions legacy `have_right`/`have_delegation`/
-     * `get_local_admin_right` (Story 7.x) ne sont pas (encore) exposées
-     * proprement nativement → fallback gracieux iso-legacy : on suppose
-     * pas d'admin (admin=0) jusqu'à ce qu'une story dédiée porte ces droits.
-     * Cf. tech-debt-gpo.md.
+     * Story 16.7 post-review #4 (2026-05-13) : élévation locale câblée aux
+     * services Spatie natifs Epic 7 (`done` 2026-04-29). Les fonctions legacy
+     * `have_right(SE_COMPUTER_ADMIN)` et `have_delegation($machine, SE_COMPUTER_ADMIN)`
+     * sont désormais traduites en {@see resolveLocalAdminRight()} :
+     *  - global : `User::hasPermissionTo('computer.elevate')`
+     *  - scopé : `PermissionService::canOnWorkstationGroup($user, 'computer.elevate', $group)`
+     *
+     * **Note sémantique** : le legacy gardait aussi un test
+     * `get_local_admin_right > 0` qui correspond à un mécanisme d'élévation
+     * **temporaire** (paramètre `local_admin_<user>` posé par
+     * `set_local_admin_right` legacy — cf. `sambaedu/includes/ldap.inc.php:3319-3354`).
+     * Ce mécanisme n'a pas (encore) d'équivalent natif et est donc ignoré ici ;
+     * en pratique la condition cumulée legacy retombait toujours sur
+     * `have_right || have_delegation` pour décider de l'`/add` au logon (le
+     * gating `get_local_admin_right != 0` était davantage une porte
+     * fonctionnelle qu'un filtre métier — un user élevable mais sans entrée
+     * `local_admin_*` n'aurait jamais reçu d'`/add`). Le portage natif retient
+     * donc la condition fonctionnelle principale (`computer.elevate` global OU
+     * scopé) et trace en `tech-debt-gpo.md` la perte de l'élévation temporaire
+     * jusqu'à ce qu'un mécanisme dédié soit défini (Epic 7 itération future).
      *
      * @return array{interpreter: string, script: list<string>}
      */
@@ -633,19 +684,184 @@ final class ApplicationScriptsAssembler
                         . "if exist \"%TEMP%\\applications-" . $action . "-system-%userlogin%.cmd\" (call \"%TEMP%\\applications-" . $action . "-system-%userlogin%.cmd\")\r\n";
                 }
             } else {
-                // @legacy-port — fallback no-op tant que `have_right`/`have_delegation`
-                // natifs ne sont pas exposés (cf. tech-debt-gpo.md). On reste en
-                // interpreter `cmd` (contexte Windows) pour ne pas injecter dans
-                // le mauvais bucket — corrige review code #7.
+                // Branche standard `os=windows && userprofile !== ''` : élévation
+                // locale au logon, retrait systématique au logoff (parité legacy
+                // `:740-751`). Le retrait au logoff est inconditionnel iso-legacy
+                // — pas de check droits — pour assurer le cleanup même si les
+                // droits ont changé entre logon et logoff.
                 $interpreter = 'cmd';
+                if ($userCn !== '' && in_array($action, ['logon', 'logoff'], true)) {
+                    if ($action === 'logon' && $this->resolveLocalAdminRight($info)) {
+                        $script .= 'net localgroup administrateurs "' . $sambaDomain . '\\' . $userCn . '" /add' . "\r\n"
+                            . 'set admin=1' . "\r\n";
+                    } elseif ($action === 'logoff') {
+                        $script .= 'net localgroup administrateurs "' . $sambaDomain . '\\' . $userCn . '" /delete' . "\r\n";
+                    }
+                }
             }
         } else {
+            // Linux : élévation via `/etc/sudoers.d/<user>` (parité legacy
+            // `:754-765`). L'utilisateur réel doit pouvoir devenir sudo si
+            // `computer.elevate` global ou délégué ; logoff = retrait fichier
+            // sudoers (inconditionnel iso-legacy).
             $interpreter = 'bash';
-            // Linux : pareil — fallback no-op tant qu'on n'a pas
-            // `get_local_admin_right`/`have_right` natifs.
+            if ($userCn !== '' && in_array($action, ['logon', 'logoff'], true)) {
+                // Iso-legacy : `$u = strtr($userCn, '.', '_')` — le nom du fichier
+                // sudoers ne tolère pas le `.` (collision avec extension implicite).
+                $u = strtr($userCn, '.', '_');
+                if ($action === 'logon' && $this->resolveLocalAdminRight($info)) {
+                    $script .= 'echo "' . $userCn . ' ALL=(ALL:ALL) ALL " > /etc/sudoers.d/' . $u . "\n"
+                        . 'chmod 0440 /etc/sudoers.d/' . $u . "\n";
+                } elseif ($action === 'logoff') {
+                    $script .= '[ -f /etc/sudoers.d/' . $u . ' ] && rm -f /etc/sudoers.d/' . $u . "\n";
+                }
+            }
         }
 
         return ['interpreter' => $interpreter, 'script' => [$script]];
+    }
+
+    /**
+     * Story 16.7 post-review #4 (2026-05-13) — pendant natif Epic 7 de la
+     * condition legacy `have_right(SE_COMPUTER_ADMIN, $userCn)
+     * || have_delegation($machineCn, SE_COMPUTER_ADMIN, $userCn)` :
+     *
+     *  1. Résout l'utilisateur Eloquent (`App\Models\User::findByLogin`).
+     *  2. Si rôle/permission directe globale `computer.elevate` → autorise.
+     *  3. Sinon, résout le `WorkstationGroup` natif lié à la machine
+     *     (via la relation Eloquent `Workstation::groups` si la machine est
+     *     synchronisée SQL, fallback `WorkstationGroup::whereIn('name', $parcs)`
+     *     pour les parcs extraits du `memberof` LDAP iso-legacy).
+     *  4. Pour chaque groupe candidat, teste
+     *     `PermissionService::canOnWorkstationGroup($user, 'computer.elevate', $group)`
+     *     qui prend déjà en compte les exclusions négatives (matrice §7).
+     *
+     * Retour `false` si user introuvable, schéma SQL absent (tests legacy), ou
+     * si la résolution lance une exception — dégradation gracieuse (pas
+     * d'élévation par défaut, jamais d'élévation par bug).
+     *
+     * @param  array<string,mixed>  $info  Contexte de la requête.
+     */
+    public function resolveLocalAdminRight(array $info): bool
+    {
+        $userCn = (string) ($info['user']['cn'] ?? '');
+        $machineCn = (string) ($info['machine']['cn'] ?? '');
+
+        if ($userCn === '' || $machineCn === '') {
+            return false;
+        }
+
+        try {
+            $user = User::findByLogin($userCn);
+        } catch (Throwable $e) {
+            Log::channel('daily')->debug('[ApplicationScriptsAssembler] User Eloquent introuvable', [
+                'user' => $userCn,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+
+        if ($user === null) {
+            return false;
+        }
+
+        // 1. Droit global Spatie (parité `have_right(SE_COMPUTER_ADMIN, $user)`).
+        try {
+            if ($user->hasPermissionTo(self::LOCAL_ADMIN_PERMISSION)) {
+                return true;
+            }
+        } catch (Throwable $e) {
+            // Permission absente du registre Spatie (ex. tests sans seed) :
+            // on tombe sur la résolution scopée. Pas de log warning ici, c'est
+            // un cas attendu hors prod.
+        }
+
+        // 2. Droit scopé sur WorkstationGroup (parité
+        // `have_delegation($machineCn, SE_COMPUTER_ADMIN, $user)`).
+        $groups = $this->resolveWorkstationGroupsForMachine($machineCn, $info);
+        if ($groups === []) {
+            return false;
+        }
+
+        $permissionService = $this->resolvePermissionService();
+        if ($permissionService === null) {
+            return false;
+        }
+
+        foreach ($groups as $group) {
+            try {
+                if ($permissionService->canOnWorkstationGroup($user, self::LOCAL_ADMIN_PERMISSION, $group)) {
+                    return true;
+                }
+            } catch (Throwable $e) {
+                Log::channel('daily')->debug('[ApplicationScriptsAssembler] canOnWorkstationGroup a échoué', [
+                    'user' => $userCn,
+                    'group' => $group->name ?? '?',
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Résout la liste des `WorkstationGroup` candidats pour une machine.
+     *
+     * Combine deux sources iso-legacy :
+     *  - Eloquent : si la machine est synchronisée SQL (`Workstation`), on lit
+     *    sa relation `groups` (BelongsToMany pivot `workstation_group_workstation`).
+     *  - Fallback LDAP : les noms de parcs sont déjà extraits dans `$info['parcs']`
+     *    par `ApplicationScriptsGenerator::extractParcs()` (issus du `memberof`
+     *    de la machine LDAP) — on les rattache aux `WorkstationGroup` natifs
+     *    via la colonne `name`.
+     *
+     * @param  array<string,mixed>  $info
+     * @return list<WorkstationGroup>
+     */
+    private function resolveWorkstationGroupsForMachine(string $machineCn, array $info): array
+    {
+        $groups = [];
+
+        try {
+            $workstation = Workstation::where('name', strtolower($machineCn))->first();
+            if ($workstation !== null) {
+                foreach ($workstation->groups as $group) {
+                    $groups[$group->id] = $group;
+                }
+            }
+        } catch (Throwable $e) {
+            // Schema SQL absent (tests legacy) — on continue avec le fallback LDAP.
+        }
+
+        $parcs = array_values(array_filter((array) ($info['parcs'] ?? []), 'is_string'));
+        if ($parcs !== []) {
+            try {
+                $byName = WorkstationGroup::whereIn('name', $parcs)->get();
+                foreach ($byName as $group) {
+                    $groups[$group->id] = $group;
+                }
+            } catch (Throwable $e) {
+                // Idem — dégradation gracieuse.
+            }
+        }
+
+        return array_values($groups);
+    }
+
+    /**
+     * Résout `PermissionService` (DI explicite ou container Laravel).
+     */
+    private function resolvePermissionService(): ?PermissionService
+    {
+        if ($this->permissionService !== null) {
+            return $this->permissionService;
+        }
+        try {
+            return app(PermissionService::class);
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     /**

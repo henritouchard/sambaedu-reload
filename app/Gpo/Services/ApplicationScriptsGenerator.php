@@ -43,6 +43,7 @@ final class ApplicationScriptsGenerator
         private readonly UserRepository $users,
         private readonly AdMachineManager $adMachines,
         private readonly AppContextWriter $contextWriter,
+        private readonly ?ApplicationScriptsAssembler $assembler = null,
     ) {}
 
     /**
@@ -203,11 +204,22 @@ final class ApplicationScriptsGenerator
             'list_ue' => $listUe,
             'list_m' => $listM,
             'liste_applications' => $listeApplications,
-            'admin' => 0, // @legacy-port : have_right natif non disponible — cf. tech-debt-gpo.md.
+            'admin' => 0, // Posé ci-dessous après injection des parcs (parité legacy `:936`).
             'os' => $os,
             'time' => time(),
             'parcs' => $parcs,
         ];
+
+        // Story 16.7 post-review #4 (2026-05-13) — parité legacy `:936` :
+        // `$info['admin'] = 1` ssi user a `have_right(SE_COMPUTER_ADMIN)` ou
+        // `have_delegation($machine, SE_COMPUTER_ADMIN, $user)`. Le contexte
+        // `parcs` doit être présent pour la résolution scopée — d'où le
+        // calcul après assignation `$info`. Sécurité : pas d'élévation pour
+        // les connexions « système » (user == machine) ni pour les sessions
+        // sans user résolu (`userl['cn'] = 'nobody'` legacy `:955`).
+        if (! $userIsMachine && $userLdap !== null) {
+            $info['admin'] = $this->resolveAdminFlag($info);
+        }
 
         // Pose APCu (TTL 1800s iso-legacy :998).
         $this->contextWriter->write($id, $info, 1800);
@@ -219,6 +231,33 @@ final class ApplicationScriptsGenerator
         $info['userprofile'] = $userprofile;
 
         return $info;
+    }
+
+    /**
+     * Story 16.7 post-review #4 — pose `$info['admin']` (1/0) via le pendant
+     * natif d'Epic 7 (`PermissionService::canOnWorkstationGroup` + permission
+     * Spatie `computer.elevate`). Délégation à
+     * {@see ApplicationScriptsAssembler::resolveLocalAdminRight()} pour
+     * mutualiser la logique de résolution avec `localAdminScripts`.
+     *
+     * Best-effort : toute exception (ex. tests sans Spatie seedé) retourne `0`
+     * — l'admin n'est jamais accordé en cas d'incertitude.
+     *
+     * @param  array<string,mixed>  $info
+     */
+    private function resolveAdminFlag(array $info): int
+    {
+        try {
+            $assembler = $this->assembler ?? app(ApplicationScriptsAssembler::class);
+            return $assembler->resolveLocalAdminRight($info) ? 1 : 0;
+        } catch (\Throwable $e) {
+            Log::channel('daily')->debug('[ApplicationScriptsGenerator] resolveAdminFlag failed', [
+                'user' => $info['user']['cn'] ?? '?',
+                'machine' => $info['machine']['cn'] ?? '?',
+                'error' => $e->getMessage(),
+            ]);
+            return 0;
+        }
     }
 
     /**

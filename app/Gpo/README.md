@@ -282,3 +282,42 @@ préserve la testabilité (chaque méthode est testable isolément via
 - `gpo` (audit) : actions AD writeback + pose APCu (auditabilité Epic 16).
 - `daily` (runtime) : génération scripts, validation inputs, warnings runtime
   (volume élevé ~300 logs/min boot de masse rentrée scolaire).
+
+### Élévation admin local Windows / Linux (Story 16.7 review #4 corrigée)
+
+Le port natif de `local_admin_scripts` legacy s'appuie sur les services
+Spatie natifs Epic 7 (`done` 2026-04-29). Mapping legacy → Spatie :
+
+| Legacy                                            | Pendant natif Spatie                                                  |
+|---------------------------------------------------|------------------------------------------------------------------------|
+| `have_right(SE_COMPUTER_ADMIN, $userCn)`          | `$user->hasPermissionTo('computer.elevate')`                          |
+| `have_delegation($machineCn, SE_COMPUTER_ADMIN)`  | `PermissionService::canOnWorkstationGroup($user, 'computer.elevate', $group)` |
+
+**Choix `computer.elevate`** (et non `computer.install`) : c'est la seule
+permission qui déclare `requiresGpoSync() === true` dans
+`App\Enums\SambaPermission::requiresGpoSync()` — sa raison d'être est
+explicitement d'élever un utilisateur en admin local. Le composite legacy
+`SE_COMPUTER_ADMIN` (0xEF00) contient `SE_COMPUTER_ELEVATE` (0x400), donc
+tout user porteur du composite avait aussi ce bit.
+
+**Comportement par OS** :
+
+- **Windows logon** (`os=windows && userprofile !== '' && action=logon`) :
+  si user élevable → `net localgroup administrateurs "<SAMBA_DOMAIN>\<user>"
+  /add` + `set admin=1` (parité legacy `:747-749`).
+- **Windows logoff** (`action=logoff`) : inconditionnel
+  `net localgroup administrateurs "<SAMBA_DOMAIN>\<user>" /delete` (parité
+  legacy `:743` — cleanup safety même si droits changés entre logon/logoff).
+- **Linux logon** : si user élevable → `/etc/sudoers.d/<user>` créé avec
+  `chmod 0440` (parité legacy `:759-760`). Le `.` du login est remplacé par
+  `_` dans le nom de fichier.
+- **Linux logoff** : inconditionnel `rm -f /etc/sudoers.d/<user>`.
+
+**Pose `$info['admin']`** : `ApplicationScriptsGenerator::resolveAdminFlag()`
+positionne `$info['admin'] = 1` ssi la même résolution réussit — parité
+legacy `applications.inc.php:936`. Ce flag est consommé par les scripts
+applicatifs via la variable `%admin%`.
+
+**Mécanisme legacy non porté** : l'élévation **temporaire** posée par
+`set_local_admin_right($user, $duration = 7200)` (paramètre
+`local_admin_<user>`). Cf. `docs/tech-debt-gpo.md` section dédiée.

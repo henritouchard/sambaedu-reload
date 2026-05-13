@@ -111,21 +111,35 @@ seront donc rendus comme « non remote » par défaut.
 
 Sortie prévue : story dédiée Epic Guacamole (post-Epic 16) ou Epic 17.
 
-### `local_admin_scripts` — droits AD `have_right`/`have_delegation`/`get_local_admin_right`
+### `local_admin_scripts` — élévation temporaire `get_local_admin_right` non portée
 
-Le port natif `ApplicationScriptsAssembler::localAdminScripts()` est
-**simplifié** par rapport au legacy : il ne convertit plus les utilisateurs
-en administrateurs locaux Windows (`net localgroup administrateurs`) car les
-fonctions legacy `have_right`/`have_delegation`/`get_local_admin_right`
-(Story 7.x) n'ont pas d'équivalent natif Spatie exposé proprement.
+**Status** : ✅ Story 16.7 review #4 corrigée 2026-05-13 — l'élévation
+admin local Windows (`net localgroup administrateurs ... /add` au logon,
+`/delete` au logoff) et Linux (`/etc/sudoers.d/<user>`) est désormais
+câblée aux services Spatie natifs Epic 7 :
 
-**Impact** : les utilisateurs avec délégation `SE_COMPUTER_ADMIN` ne seront
-plus élevés en admin local Windows/Linux par le script généré. Les autres
-mécanismes d'élévation (GPO, etc.) restent fonctionnels.
+- `have_right(SE_COMPUTER_ADMIN, $user)` → `$user->hasPermissionTo('computer.elevate')`
+- `have_delegation($machineCn, SE_COMPUTER_ADMIN, $user)` →
+  `PermissionService::canOnWorkstationGroup($user, 'computer.elevate', $group)`
 
-Sortie prévue : Story 7.x dédiée OU shim `@legacy-port` ad hoc dans
-`ApplicationScriptsAssembler::localAdminScripts()` selon retour smoke VM
-T9 Henri.
+Cf. `app/Gpo/Services/ApplicationScriptsAssembler.php::resolveLocalAdminRight()`
++ `app/Gpo/Services/ApplicationScriptsGenerator.php::resolveAdminFlag()`
+(pose `$info['admin']`, parité legacy `applications.inc.php:936`).
+
+**Reste en dette** : le mécanisme legacy d'**élévation temporaire**
+`set_local_admin_right($user, $duration)` qui posait un paramètre
+`local_admin_<user>` consulté par `get_local_admin_right` (cf.
+`sambaedu/includes/ldap.inc.php:3319-3354`) n'a pas d'équivalent natif.
+En pratique, la condition cumulée legacy `:742-747` (`get_local_admin_right
+!= 0 && (have_right || have_delegation)`) retombait toujours sur la branche
+`have_right || have_delegation` pour déclencher l'`/add` — donc le portage
+natif conserve la sémantique fonctionnelle principale. L'élévation
+temporaire (par exemple « rendre cet utilisateur admin de ce poste pendant
+2h ») devra faire l'objet d'une itération dédiée si le besoin remonte
+métier (Epic 7 sub-story).
+
+**Sortie prévue** : itération Epic 7 si besoin d'élévation temporaire ;
+sinon dette acceptable et documentée.
 
 ### `header_scripts` — `domainsid` runtime
 
