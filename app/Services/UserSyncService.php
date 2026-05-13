@@ -86,6 +86,7 @@ class UserSyncService
             'admin_granted' => false,
             'total_ad' => 0,
             'etab_tree' => 0,
+            'etab_ou_tree' => 0,
             'etab_member_of' => 0,
             'etab_excluded' => 0,
             'delta_mode' => $deltaMode,
@@ -130,6 +131,7 @@ class UserSyncService
             $adUsers = $fetchResult['users'];
             $stats['total_ad'] = count($adUsers);
             $stats['etab_tree'] = $fetchResult['establishment']['tree'];
+            $stats['etab_ou_tree'] = $fetchResult['establishment']['ou_tree'];
             $stats['etab_member_of'] = $fetchResult['establishment']['member_of'];
             $stats['etab_excluded'] = $fetchResult['establishment']['excluded'];
             $log('info', count($adUsers) . ' utilisateurs trouvés dans l\'AD');
@@ -251,6 +253,7 @@ class UserSyncService
         $users = [];
         $seenIdentifiers = [];
         $establishmentMatchedByTree = 0;
+        $establishmentMatchedByOuTree = 0;
         $establishmentMatchedByMemberOf = 0;
         $establishmentExcluded = 0;
         $maxWhenChanged = $changedSince;
@@ -278,6 +281,7 @@ class UserSyncService
                 'users' => [],
                 'establishment' => [
                     'tree' => 0,
+                    'ou_tree' => 0,
                     'member_of' => 0,
                     'excluded' => 0,
                 ],
@@ -326,9 +330,11 @@ class UserSyncService
                         continue;
                     }
 
-                    if ($establishmentMatchType === 'tree') {
+                    if ($establishmentMatchType === \App\Services\Ldap\EstablishmentMatcher::MATCH_TREE) {
                         $establishmentMatchedByTree++;
-                    } elseif ($establishmentMatchType === 'memberOf') {
+                    } elseif ($establishmentMatchType === \App\Services\Ldap\EstablishmentMatcher::MATCH_OU_TREE) {
+                        $establishmentMatchedByOuTree++;
+                    } elseif ($establishmentMatchType === \App\Services\Ldap\EstablishmentMatcher::MATCH_MEMBER_OF) {
                         $establishmentMatchedByMemberOf++;
                     }
 
@@ -358,8 +364,9 @@ class UserSyncService
             $log(
                 'info',
                 sprintf(
-                    'Filtre établissement: %d utilisateur(s) via arborescence, %d via memberOf, %d exclu(s)',
+                    'Filtre établissement: %d via CN-arbo, %d via OU-arbo, %d via memberOf, %d exclu(s)',
                     $establishmentMatchedByTree,
+                    $establishmentMatchedByOuTree,
                     $establishmentMatchedByMemberOf,
                     $establishmentExcluded
                 )
@@ -370,6 +377,7 @@ class UserSyncService
             'users' => $users,
             'establishment' => [
                 'tree' => $establishmentMatchedByTree,
+                'ou_tree' => $establishmentMatchedByOuTree,
                 'member_of' => $establishmentMatchedByMemberOf,
                 'excluded' => $establishmentExcluded,
             ],

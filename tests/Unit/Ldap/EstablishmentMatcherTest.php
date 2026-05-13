@@ -118,4 +118,45 @@ class EstablishmentMatcherTest extends TestCase
             EstablishmentMatcher::match($dn, $memberOf, self::ETAB_DN)
         );
     }
+
+    public function test_matches_by_ou_tree_when_code_appears_in_dn(): void
+    {
+        // Convention observée sur les postes d'AD central : OU=<code> dans le parent.
+        $dn = 'CN=vm-w11-e1-1229y,OU=base,OU=0991229y,OU=computers,DC=lab1,DC=irundo,DC=fr';
+
+        $this->assertSame(
+            EstablishmentMatcher::MATCH_OU_TREE,
+            EstablishmentMatcher::match($dn, [], self::ETAB_DN)
+        );
+    }
+
+    public function test_ou_tree_match_is_case_insensitive(): void
+    {
+        $dn = 'CN=pc-1,OU=base,OU=0991229Y,OU=Computers,DC=lab1,DC=irundo,DC=fr';
+
+        $this->assertSame(
+            EstablishmentMatcher::MATCH_OU_TREE,
+            EstablishmentMatcher::match($dn, [], self::ETAB_DN)
+        );
+    }
+
+    public function test_ou_tree_not_matched_when_code_is_not_an_ou_component(): void
+    {
+        // "0991229y" apparaît dans le CN mais pas comme composant OU isolé.
+        $dn = 'CN=test-0991229y,OU=computers,DC=lab1,DC=irundo,DC=fr';
+
+        $this->assertNull(
+            EstablishmentMatcher::match($dn, [], self::ETAB_DN)
+        );
+    }
+
+    public function test_cn_tree_takes_precedence_over_ou_tree(): void
+    {
+        $dn = 'CN=pc-1,OU=0991229y,' . self::ETAB_DN;
+
+        $this->assertSame(
+            EstablishmentMatcher::MATCH_TREE,
+            EstablishmentMatcher::match($dn, [], self::ETAB_DN)
+        );
+    }
 }

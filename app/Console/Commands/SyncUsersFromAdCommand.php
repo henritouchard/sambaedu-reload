@@ -72,6 +72,7 @@ class SyncUsersFromAdCommand extends Command
                     ['errors', (string) $stats['errors']],
                     ['total_ad', (string) $stats['total_ad']],
                     ['etab_tree', (string) $stats['etab_tree']],
+                    ['etab_ou_tree', (string) ($stats['etab_ou_tree'] ?? 0)],
                     ['etab_member_of', (string) $stats['etab_member_of']],
                     ['etab_excluded', (string) $stats['etab_excluded']],
                     ['delta_cursor_start', (string) ($stats['delta_cursor_start'] ?? '')],

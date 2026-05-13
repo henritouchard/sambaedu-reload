@@ -622,8 +622,12 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                                                 AD</span>
                                         @endif
                                         @if (isset($step['stats']['etab_tree']) && $step['stats']['etab_tree'] > 0)
-                                            <span class="badge badge-primary badge-sm">Etab/arbo
+                                            <span class="badge badge-primary badge-sm">Etab/CN-arbo
                                                 {{ $step['stats']['etab_tree'] }}</span>
+                                        @endif
+                                        @if (isset($step['stats']['etab_ou_tree']) && $step['stats']['etab_ou_tree'] > 0)
+                                            <span class="badge badge-primary badge-sm">Etab/OU-arbo
+                                                {{ $step['stats']['etab_ou_tree'] }}</span>
                                         @endif
                                         @if (isset($step['stats']['etab_member_of']) && $step['stats']['etab_member_of'] > 0)
                                             <span class="badge badge-secondary badge-sm">Etab/memberOf

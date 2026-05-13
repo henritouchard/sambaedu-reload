@@ -350,6 +350,7 @@ class WorkstationService
             'updated' => 0,
             'skipped' => 0,
             'etab_tree' => 0,
+            'etab_ou_tree' => 0,
             'etab_member_of' => 0,
             'etab_excluded' => 0,
             'errors' => [],
@@ -402,6 +403,8 @@ class WorkstationService
                         }
                         if ($matchType === EstablishmentMatcher::MATCH_TREE) {
                             $stats['etab_tree']++;
+                        } elseif ($matchType === EstablishmentMatcher::MATCH_OU_TREE) {
+                            $stats['etab_ou_tree']++;
                         } elseif ($matchType === EstablishmentMatcher::MATCH_MEMBER_OF) {
                             $stats['etab_member_of']++;
                         }
@@ -476,8 +479,9 @@ class WorkstationService
 
             if ($establishmentDn !== null) {
                 $log('info', sprintf(
-                    'Filtre établissement: %d via arborescence, %d via memberOf, %d exclu(s)',
+                    'Filtre établissement: %d via CN-arbo, %d via OU-arbo, %d via memberOf, %d exclu(s)',
                     $stats['etab_tree'],
+                    $stats['etab_ou_tree'],
                     $stats['etab_member_of'],
                     $stats['etab_excluded']
                 ));
