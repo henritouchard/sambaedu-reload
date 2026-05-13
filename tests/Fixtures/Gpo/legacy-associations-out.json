@@ -1,0 +1,24 @@
+{
+    "result": {
+        ".jpg": {
+            "ProgId": "WindowsPhotoViewer",
+            "type": "file"
+        },
+        ".html": {
+            "ProgId": "FirefoxHTML",
+            "type": "file"
+        },
+        ".htm": {
+            "ProgId": "FirefoxHTML",
+            "type": "file"
+        },
+        "http": {
+            "ProgId": "FirefoxURL",
+            "type": "protocol"
+        },
+        "https": {
+            "ProgId": "FirefoxURL",
+            "type": "protocol"
+        }
+    }
+}

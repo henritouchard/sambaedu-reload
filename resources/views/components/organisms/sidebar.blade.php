@@ -315,7 +315,7 @@
                 </div>
                 <div class="collapse-content px-4 pb-4">
                     <div class="space-y-2">
-                        <a href="{{ url('/gpo/gestion_gpo.php') }}"
+                        <a href="{{ route('app.gpo.index') }}"
                             class="block px-4 py-2 text-sm hover:bg-base-300/70 rounded-lg transition-colors hover:translate-x-1">Gestion
                             des
                             GPOs</a>

@@ -221,6 +221,120 @@ class SambaEduConfig
     }
 
     /**
+     * Persiste une clé/valeur dans `/etc/sambaedu/sambaedu.conf` (natif).
+     *
+     * Story 16.3b (correctifs post-review 2026-05-12, décision Henri option A
+     * complète) : remplacer le shim `set_config` non-persistant
+     * (`_shim_log_unimplemented` qui modifie le tableau en mémoire uniquement)
+     * par une implémentation native qui écrit réellement sur disque.
+     *
+     * **Stratégie d'écriture** : iso-legacy `set_config` (sambaedu/includes/config.inc.php:434)
+     * = on relit l'INI brut, on modifie la clé, on réécrit le fichier dans son
+     * intégralité. **Trade-off** : les commentaires originaux sont perdus car
+     * `parse_ini_file` n'expose pas la trivia. Comportement identique au legacy
+     * — pas de régression fonctionnelle.
+     *
+     * **Concurrence** : lock fichier `flock` exclusif autour de la séquence
+     * read-modify-write pour éviter les écritures concurrentes (parité legacy
+     * `lock_conf(LOCK_EX)`).
+     *
+     * **Atomicité** : write dans un fichier temporaire `.tmp` puis `rename()`
+     * atomique pour éviter qu'un crash en milieu d'écriture laisse un fichier
+     * tronqué (amélioration vs legacy qui écrivait directement).
+     *
+     * **Permissions** : le user `www-data` doit pouvoir écrire dans le fichier
+     * cible (mode `0660 root:www-data` typique SambaEdu). Si l'écriture
+     * échoue, on log error et retourne sans throw — le caller décide si
+     * fail-fast ou retry au prochain appel. Le legacy fait `die()` en cas
+     * d'échec, ce qui bypass `finally` (cf. tech-debt #3) — on évite ce
+     * comportement.
+     *
+     * **Cache** : `reload()` invalide le cache statique pour que la valeur
+     * écrite soit lue à la prochaine lecture (même process).
+     *
+     * @param  string  $key   Clé de configuration (sans section).
+     * @param  mixed   $value Valeur. Si vide/null, la clé est supprimée du fichier.
+     * @throws \RuntimeException si l'écriture échoue (lock ou rename).
+     */
+    public function set(string $key, mixed $value): void
+    {
+        if ($key === '' || str_contains($key, "\n") || str_contains($key, '=')) {
+            throw new \InvalidArgumentException('Invalid config key: ' . $key);
+        }
+
+        $file = self::MAIN_CONFIG_FILE;
+
+        if (! is_file($file)) {
+            // Création initiale tolérée (premiers déploiements).
+            @touch($file);
+        }
+
+        $handle = @fopen($file, 'c+');
+        if ($handle === false) {
+            Log::error('SambaEduConfig::set: cannot open config file for writing', [
+                'file' => $file,
+                'key' => $key,
+            ]);
+            throw new \RuntimeException('Cannot open ' . $file . ' for writing');
+        }
+
+        try {
+            if (! @flock($handle, LOCK_EX)) {
+                throw new \RuntimeException('Cannot acquire exclusive lock on ' . $file);
+            }
+
+            // Read everything, then re-parse.
+            $current = @parse_ini_file($file) ?: [];
+
+            // Apply mutation iso-legacy `set_config`.
+            if ($value === null || $value === '' || $value === false) {
+                unset($current[$key]);
+            } else {
+                $current[$key] = is_scalar($value) ? (string) $value : (string) json_encode($value);
+            }
+
+            // Render INI body. Skip nested arrays / `dn` / `login` (parité legacy).
+            $body = '';
+            foreach ($current as $k => $v) {
+                if ($k === '' || $k === 'dn' || $k === 'login' || is_array($v)) {
+                    continue;
+                }
+                $serialised = is_scalar($v) ? (string) $v : '';
+                if ($serialised === '') {
+                    continue;
+                }
+                // Échapper guillemets et passages à la ligne dans la valeur.
+                $escaped = str_replace(['"', "\n", "\r"], ['\"', ' ', ''], $serialised);
+                $body .= $k . ' = "' . $escaped . '"' . "\n";
+            }
+
+            // Atomic write : tmp file in same dir + rename.
+            $tmp = $file . '.tmp';
+            if (@file_put_contents($tmp, $body, LOCK_EX) === false) {
+                throw new \RuntimeException('Cannot write tmp ' . $tmp);
+            }
+
+            // Preserve original mode/owner si possible.
+            $stat = @stat($file);
+            if (is_array($stat)) {
+                @chmod($tmp, $stat['mode'] & 0o7777);
+            }
+
+            if (! @rename($tmp, $file)) {
+                @unlink($tmp);
+                throw new \RuntimeException('Cannot rename ' . $tmp . ' → ' . $file);
+            }
+
+            // Invalidate static cache so subsequent reads see the new value.
+            self::$rawConfig = null;
+            $this->reload();
+        } finally {
+            @flock($handle, LOCK_UN);
+            @fclose($handle);
+        }
+    }
+
+    /**
      * Retourne toute la configuration brute
      * 
      * @return array<string, mixed>

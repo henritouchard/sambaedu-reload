@@ -149,6 +149,20 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Channel dédié module GPO (Story 16.1 — Epic 16).
+        // Couvre toutes les actions GPO (lecture, écriture, sync, audit, déploiement)
+        // — channel « large » : décision Henri 2026-05-11, pas `gpo-deploy` trop étroit.
+        // Verbosité élevée volontaire (`debug` par défaut) en phase de transition
+        // Epic 16. Sera bumpée à `info` une fois l'epic stabilisé.
+        // Convention de logging par `action_type` documentée dans app/Gpo/README.md.
+        'gpo' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/gpo/gpo.log'),
+            'level' => env('GPO_LOG_LEVEL', 'debug'),
+            'days' => (int) env('GPO_LOG_DAYS', 30),
+            'replace_placeholders' => true,
+        ],
+
         'null' => [
             'driver' => 'monolog',
             'handler' => NullHandler::class,

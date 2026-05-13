@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<packages>
+  <package id="firefox" name="Mozilla Firefox" revision="1">
+    <Association ProgId="FirefoxHTML" Identifier=".html" type="file"/>
+    <Association ProgId="FirefoxHTML" Identifier=".htm" type="file"/>
+    <Association ProgId="FirefoxURL" Identifier="http" type="protocol"/>
+    <Association ProgId="FirefoxURL" Identifier="https" type="protocol"/>
+  </package>
+  <package id="thunderbird" name="Mozilla Thunderbird" revision="1">
+    <Association ProgId="ThunderbirdEml" Identifier=".eml" type="file"/>
+    <Association ProgId="ThunderbirdURL" Identifier="mailto" type="protocol"/>
+  </package>
+  <package id="libreoffice" name="LibreOffice" revision="1">
+    <Association ProgId="LO_ODT" Identifier=".odt" type="file"/>
+    <Association ProgId="LO_ODS" Identifier=".ods" type="file"/>
+  </package>
+</packages>

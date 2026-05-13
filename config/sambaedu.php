@@ -43,6 +43,14 @@ return [
         '^annu2/annu\.php' => 'app/users',
         'parcs/show_parc.php' => 'app/parcs',
         'gpo/shortcuts_out\.php' => 'app/shortcuts',
+        // Story 16.2 — Décision SM D5 : bloquer uniquement la page d'index legacy.
+        // Les pages d'édition (gpo-maj.php, gpo-export.php, etc.) restent
+        // accessibles pour la cohabitation jusqu'aux Stories 16.4/16.5.
+        '^gpo/gestion_gpo\.php$' => 'app/gpo',
+        // Story 16.3c — Wine UI native. La page `/gpo/wine.php` legacy est
+        // remplacée par `/app/gpo/wine` (Livewire SFC + Job queue). Redirect
+        // 302 (pattern iso 16.2 D5).
+        '^gpo/wine\.php(?:\?.*)?$' => 'app/gpo/wine',
     ],
 
     /*
@@ -225,4 +233,79 @@ return [
         // continuer à pousser leurs rapports.
         'secret_rotation_overlap_days' => (int) env('WPKG_SECRET_ROTATION_OVERLAP_DAYS', 7),
     ],
-]; 
+
+    /*
+    |--------------------------------------------------------------------------
+    | Configuration GPO (Epic 16, Story 16.1)
+    |--------------------------------------------------------------------------
+    |
+    | Valeurs **en dur** (pas de env(...)) — décision SM D8 / cohérence Story 15.1
+    | AC4.1. Si une customisation par environnement est nécessaire, modifier
+    | ce fichier directement (les ops auront un patch isolé à appliquer).
+    |
+    | Exceptions : GPO_LOG_LEVEL et GPO_LOG_DAYS restent paramétrables par env
+    | (config/logging.php — verbosité ajustable sans redeploy en phase de
+    | transition Epic 16).
+    |
+    | Parité legacy : sambaedu/includes/samba-tool.inc.php:69 (bin /usr/bin/samba-tool),
+    | gpo.inc.php:1053 (policies temp dir), samba-tool.inc.php:62
+    | (--use-kerberos=required).
+    */
+
+    'gpo' => [
+        // Chemin absolu du binaire samba-tool.
+        'bin_path' => '/usr/bin/samba-tool',
+
+        // Chemin SYSVOL local (partage Samba). Utilisé pour lecture/écriture
+        // des fichiers .pol / .xml / .ini de policies (Stories 16.3, 16.4).
+        'sysvol_path' => '/var/lib/samba/sysvol',
+
+        // Répertoire de travail pour `samba-tool gpo fetch` — parité legacy
+        // gpo.inc.php:1053. À garder lisible/écrivable par le user PHP-FPM.
+        'policies_temp_path' => '/var/www/sambaedu/temp/policies',
+
+        // Timeout (secondes) appliqué à chaque appel `samba-tool` via
+        // SambaToolRunner. Override possible avec ->withTimeout() côté caller.
+        'samba_tool_timeout' => 30,
+
+        // Argument d'authentification global passé à toutes les commandes
+        // samba-tool (parité legacy samba-tool.inc.php:62).
+        // Sera enrichi quand on supportera l'authentification par compte stocké.
+        'kerb_option' => '--use-kerberos=required',
+
+        // Story 16.6 — Sous-config WPKG GPO synchronizer (`WpkgGpoSynchronizer`).
+        // Toutes les valeurs sont overridables via env() pour permettre un
+        // déploiement Ansible / tuning prod sans patcher le code.
+        //
+        // - `template_path` : path du template officiel `.zip` (parité legacy
+        //   `/usr/share/sambaedu/gpo/se4_wpkg.zip`). Overridable pour tests
+        //   et installations atypiques.
+        // - `bearer_required` : feature flag Phase 2 (Story 15.5). Par défaut
+        //   `false` (mode tolérant — TD-16.6-3). Passe à `true` pour bumper
+        //   la sévérité Error/Warning quand des postes liés sont sans secret.
+        // - `lock_timeout` : TTL du `Cache::lock('gpo:wpkg:sync', N)`. 300 s
+        //   par défaut (review fix #10 — 60 s trop court pour absorber un
+        //   `import_gpo` lent : extraction + spécialisation + `smbclient put`).
+        // - `lock_wait` : délai max d'attente bloquante pour acquérir le lock
+        //   (`$lock->block(N)`). 30 s par défaut (review fix #4).
+        'wpkg_sync' => [
+            'template_path' => env('GPO_WPKG_TEMPLATE_PATH', '/usr/share/sambaedu/gpo/se4_wpkg.zip'),
+            'bearer_required' => (bool) env('GPO_WPKG_BEARER_REQUIRED', false),
+            'lock_timeout' => (int) env('GPO_WPKG_LOCK_TIMEOUT', 300),
+            'lock_wait' => (int) env('GPO_WPKG_LOCK_WAIT', 30),
+        ],
+
+        // Story 16.3c — Sous-config Wine (UI admin + Job queue).
+        'wine' => [
+            // Dossier de base scanné pour lister les conteneurs Wine partagés
+            // (`wine-<application>` → option du `<select>` UI). Iso-legacy
+            // path = `/var/sambaedu/unattended/install/wine` (cf. `gpo/wine.php:43`).
+            'prefix_base' => '/var/sambaedu/unattended/install/wine',
+
+            // Path du script shell exécuté par `GenerateWineImageJob` —
+            // documentaire (le script est en dur dans la const du Job pour
+            // éviter qu'un override config ouvre une injection).
+            'image_script' => '/usr/share/sambaedu/scripts/make_wine_image.sh',
+        ],
+    ],
+];
