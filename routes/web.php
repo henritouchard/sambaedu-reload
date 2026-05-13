@@ -206,6 +206,32 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
     });
 
     // ========================================
+    // Story 8.1 — Réseau / DHCP (FR20 + FR22)
+    // Permissions :
+    //   - viewAny-dhcp (= server.admin) : lecture liste + baux + rapport.
+    //   - manage-dhcp  (= server.admin) : create / edit / delete / import.
+    // (cf. App\Policies\DhcpPolicy, Story 7.2 / Epic 7)
+    // ========================================
+    Route::prefix('network/dhcp')->name('network.dhcp')->group(function () {
+        Route::livewire('/', 'pages::network.dhcp.index')
+            ->middleware('can:viewAny-dhcp')
+            ->name('');
+
+        // Review code 8.1 #7 (Q3) : page `/new` supprimée — la modale
+        // create/edit de `/index` est la voie unique pour créer une
+        // réservation (pas de duplication).
+
+        Route::livewire('/import', 'pages::network.dhcp.import.index')
+            ->middleware('can:manage-dhcp')
+            ->name('.import');
+
+        // Rapport d'import : viewAny-dhcp suffit (lecture seule).
+        Route::livewire('/import/{uuid}', 'pages::network.dhcp.import.[uuid].index')
+            ->middleware('can:viewAny-dhcp')
+            ->name('.import.report');
+    });
+
+    // ========================================
     // Story 15.5 — Dashboard d'état déploiement WPKG (transversal aux parcs).
     // Permission lecture : viewAny-workstationGroup (cohérence 15.4).
     // Permission re-évaluation : wpkg.assign (drill-down vue détail poste).

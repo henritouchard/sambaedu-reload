@@ -164,6 +164,29 @@ return [
     'se4install_name'   => env('SE4INSTALL_NAME', ''),
     'se4install_passwd' => env('SE4INSTALL_PASSWD', ''),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Story 8.1 — Réseau / DHCP (FR20 + FR22)
+    |--------------------------------------------------------------------------
+    | Configuration du service DHCP géré nativement par SER. Les chemins sont
+    | overridables par .env pour les environnements de test (où l'on ne veut
+    | pas écrire dans `/etc/sambaedu`).
+    |
+    | `reload_command` : script shell legacy `/usr/share/sambaedu/sbin/make_dhcpd_conf.sh`
+    | qui régénère `dhcpd.conf` puis recharge `isc-dhcp-server`. **Attention** :
+    | le legacy contient le bug `/sh/share/...` (cf. `dhcpd.inc.php:733`)
+    | **à ne PAS reproduire**.
+    |
+    | Sudoers attendu sur la VM (cf. `docs/qa/domains/network.md`) :
+    |   www-data ALL=(root) NOPASSWD: /usr/bin/systemctl is-active isc-dhcp-server.service, /usr/share/sambaedu/sbin/make_dhcpd_conf.sh
+    */
+    'dhcp' => [
+        'reservations_file' => env('DHCP_RESERVATIONS_FILE', '/etc/sambaedu/reservations.inc'),
+        'leases_file' => env('DHCP_LEASES_FILE', '/var/lib/dhcp/dhcpd.leases'),
+        'reload_command' => env('DHCP_RELOAD_COMMAND', '/usr/share/sambaedu/sbin/make_dhcpd_conf.sh'),
+        'service_name' => env('DHCP_SERVICE_NAME', 'isc-dhcp-server.service'),
+    ],
+
     'wpkg' => [
         // Chemin de stockage local des applications
         'storage_path' => env('WPKG_STORAGE_PATH', '/var/sambaedu/unattended/install'),

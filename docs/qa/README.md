@@ -8,6 +8,7 @@ Checklist par domaine métier. À dérouler avant une mise en production importa
 - [ ] [filesystem](domains/filesystem.md) — Quotas, snapshot, trash, home dirs _(Stories 5.1c, 5.1d)_
 - [ ] [gpo](domains/gpo.md) — Group Policy Objects, profils itinérants, redirections _(Story 1bis.18f)_
 - [ ] [wpkg-deploy](domains/wpkg-deploy.md) — Pipeline déploiement WPKG (logs, migrations, atomic write, chemins config) _(Story 15.1)_
+- [ ] [network](domains/network.md) — Réservations DHCP, baux actifs, import CSV, migration legacy via `/sync-from-ad` _(Story 8.1)_
 
 ## À créer au fil des prochaines stories
 

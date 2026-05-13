@@ -1,0 +1,48 @@
+# /var/lib/dhcp/dhcpd.leases — fixture Story 8.1 (parsing leases AC1).
+# Format ISC DHCP standard.
+
+lease 10.0.0.100 {
+  starts 2 2026/05/10 09:00:00;
+  ends 2 2026/05/10 10:00:00;
+  binding state active;
+  hardware ethernet 00:11:22:aa:bb:01;
+  client-hostname "client-old";
+}
+
+# Bail plus récent pour la même IP : doit écraser le précédent (dédup par IP)
+lease 10.0.0.100 {
+  starts 2 2026/05/11 09:00:00;
+  ends 2 2026/05/11 10:00:00;
+  binding state active;
+  hardware ethernet 00:11:22:aa:bb:01;
+  client-hostname "client-recent";
+}
+
+# Bail free → conservé (binding state ∈ {active, free})
+lease 10.0.0.101 {
+  starts 1 2026/05/10 08:00:00;
+  ends 1 2026/05/10 09:00:00;
+  binding state free;
+  hardware ethernet 00:11:22:aa:bb:02;
+  client-hostname "client-free";
+}
+
+# Bail "expired" → ignoré (binding state hors filtre)
+lease 10.0.0.102 {
+  starts 0 2026/05/01 00:00:00;
+  ends 0 2026/05/02 00:00:00;
+  binding state expired;
+  hardware ethernet 00:11:22:aa:bb:03;
+}
+
+# Bail sans hostname → toléré
+lease 10.0.0.103 {
+  binding state active;
+  hardware ethernet 00:11:22:aa:bb:04;
+}
+
+# Bail avec MAC invalide → ignoré (silencieusement)
+lease 10.0.0.104 {
+  binding state active;
+  hardware ethernet zz:zz:zz:zz:zz:zz;
+}

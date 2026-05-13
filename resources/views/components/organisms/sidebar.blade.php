@@ -65,6 +65,17 @@
                         Migration
                     </a>
                 </li>
+                @can('viewAny-dhcp')
+                    {{-- Story 8.1 — Réseau / DHCP. Visible uniquement server.admin
+                         (gate viewAny-dhcp mappée sur server.admin). --}}
+                    <li>
+                        <a href="{{ route('app.network.dhcp') }}"
+                            class="flex items-center gap-4 px-4 py-3 text-base font-medium {{ request()->is('app/network/dhcp*') ? 'active bg-primary/20 text-primary shadow-lg' : 'hover:bg-base-200/70' }} rounded-xl transition-all duration-200 hover:shadow-md hover:scale-[1.02]">
+                            <i class="fa-solid fa-network-wired text-xl"></i>
+                            Réseau (DHCP)
+                        </a>
+                    </li>
+                @endcan
                 @can('server.admin')
                     {{-- Story 5.1c (D8=A) : lien Réglages — visible uniquement server.admin
                          (action critique). Onglet unique en 5.1c : Quotas & FS. --}}
