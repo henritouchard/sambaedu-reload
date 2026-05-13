@@ -414,6 +414,106 @@ class GpoNamespaceTest extends TestCase
         }
     }
 
+    /**
+     * Story 16.6 — AC5.5 (corrigé post-review #3).
+     *
+     * Le `WpkgGpoSynchronizer` est la **frontière unique** entre la couche
+     * native Epic 16 et le shim legacy `import_gpo` (l'appel séparé à
+     * `specialise_gpo` a été supprimé : `import_gpo` enchaîne déjà
+     * `unzip_gpo → specialise_gpo → sysvol_put` en interne, TD-16.6-1).
+     * Garde-fou architectural :
+     *  1. n'importe pas `LdapRecord\*` direct.
+     *  2. n'utilise pas `exec`/`shell_exec`/`passthru`/`proc_open`.
+     *  3. tout appel au shim legacy passe par `app('legacy.import_gpo')`
+     *     (jamais `require_once` direct ou `\import_gpo()` FQCN hard-coded au
+     *     niveau classe — la résolution dynamique via fonction globale après
+     *     `function_exists()` reste tolérée pour le fallback production).
+     */
+    #[Test]
+    public function wpkg_gpo_synchronizer_respects_native_frontier(): void
+    {
+        $path = realpath(__DIR__ . '/../../app/Gpo/Services/WpkgGpoSynchronizer.php');
+        if ($path === false) {
+            self::markTestSkipped('WpkgGpoSynchronizer.php pas encore créé');
+            return;
+        }
+        $code = (string) file_get_contents($path);
+        $stripped = preg_replace('!/\*.*?\*/!s', '', $code) ?? $code;
+        $stripped = preg_replace('/^\s*\/\/.*$/m', '', $stripped) ?? $stripped;
+
+        // 1. Pas de Ldap direct.
+        self::assertSame(
+            0,
+            preg_match('/\\bLdapRecord\\\\/', $stripped),
+            'WpkgGpoSynchronizer ne doit pas importer LdapRecord directement — passer par GpoService.',
+        );
+
+        // 2. Pas d'exec/shell/passthru.
+        foreach (['exec', 'shell_exec', 'passthru', 'proc_open'] as $f) {
+            self::assertSame(
+                0,
+                preg_match('/\\b' . preg_quote($f, '/') . '\\s*\\(/', $stripped),
+                sprintf('WpkgGpoSynchronizer ne doit JAMAIS appeler %s() — passer par GpoService/SambaToolRunner.', $f),
+            );
+        }
+
+        // 3. Pas d'import facade Process direct (whitelist limitée à SambaToolRunner).
+        self::assertSame(
+            0,
+            preg_match('/use\\s+Illuminate\\\\Support\\\\Facades\\\\Process/', $stripped),
+            'WpkgGpoSynchronizer ne doit pas importer la facade Process.',
+        );
+
+        // 4. Le shim doit être invoqué via app('legacy.import_gpo')
+        //    (pattern iso 16.3c `legacy.get_wine_shortcuts`). Le fallback `call_user_func`
+        //    via fonction globale reste autorisé (production VM avec legacy/bootstrap.php).
+        //
+        // Note review fix #3 : l'appel séparé à `specialise_gpo` a été supprimé
+        // (TD-16.6-1 corrigée) — `import_gpo` enchaîne déjà la spécialisation en
+        // interne. On ne vérifie donc plus que le binding `legacy.import_gpo`.
+        self::assertSame(
+            1,
+            preg_match('/legacy\\.import_gpo/', $stripped) > 0 ? 1 : 0,
+            'WpkgGpoSynchronizer doit déclarer le binding container `legacy.import_gpo`.',
+        );
+    }
+
+    /**
+     * Story 16.6 — AC5.5 (cumulé). Le shim legacy doit être appelé **uniquement**
+     * via le binding container ou la fonction globale après chargement
+     * `legacy/bootstrap.php`. Aucun autre fichier de `app/Gpo/` ne doit faire
+     * référence à `import_gpo`/`specialise_gpo` directement — seul
+     * `WpkgGpoSynchronizer` est autorisé (frontière propre).
+     */
+    #[Test]
+    public function only_wpkg_gpo_synchronizer_references_legacy_import_gpo(): void
+    {
+        $namespaceRoot = realpath(__DIR__ . '/../../app/Gpo');
+        if ($namespaceRoot === false) {
+            self::markTestSkipped('app/Gpo introuvable');
+            return;
+        }
+        $finder = (new \Symfony\Component\Finder\Finder())->files()->in($namespaceRoot)->name('*.php');
+        $violations = [];
+        foreach ($finder as $file) {
+            $name = $file->getBasename();
+            if ($name === 'WpkgGpoSynchronizer.php') {
+                continue;
+            }
+            $stripped = preg_replace('!/\*.*?\*/!s', '', $file->getContents()) ?? '';
+            $stripped = preg_replace('/^\s*\/\/.*$/m', '', $stripped) ?? $stripped;
+            if (preg_match('/\\b(import_gpo|specialise_gpo)\\s*\\(/', $stripped) === 1) {
+                $violations[] = $file->getRelativePathname();
+            }
+        }
+        self::assertSame(
+            [],
+            $violations,
+            "Frontière 16.6 cassée — seul WpkgGpoSynchronizer doit appeler `import_gpo`/`specialise_gpo` :\n  - "
+            . implode("\n  - ", $violations),
+        );
+    }
+
     #[Test]
     public function no_call_to_legacy_sambatool_function(): void
     {

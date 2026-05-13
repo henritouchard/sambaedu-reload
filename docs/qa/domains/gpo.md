@@ -1037,3 +1037,190 @@ juste après le premier `dellink`).
       tests/Feature/Gpo/GpoLinksPagePermissionTest tests/Architecture/GpoNamespaceTest`
       100% vert.
 
+
+---
+
+## Section 8 — Hook GPO ↔ WPKG (Story 16.6)
+
+**Date livraison** : 2026-05-13
+**Migrations à appliquer** : aucune (lecture seule sauf via shim `import_gpo`).
+**Permission requise** : `server.admin`
+**Pré-requis** :
+- Template officiel `/usr/share/sambaedu/gpo/se4_wpkg.zip` présent.
+- Endpoints `/wpkg/hosts.xml` et `/wpkg/profiles.xml` actifs (Story 15.2 done).
+- Shim legacy `legacy/bootstrap.php` chargé (`sambaedu/includes/gpo.inc.php`
+  expose `import_gpo` et `specialise_gpo`).
+
+### Scénario 8.1 — Audit initial sur VM réelle
+
+**Étapes** :
+1. Sur la VM `/vm`, lancer `php artisan wpkg:gpo:sync --audit-only`.
+2. **Vérifier** :
+   - Exit code 0 (severity `ok`) si la GPO `se4_wpkg` existe et est liée.
+   - Tableau affiché contenant `gpoExists=true`, `gpoGuid={...}`,
+     `linkedOus=[OU=Computers,...]`, `templateExists=true`.
+   - URLs `expectedHostsXmlUrl` et `expectedProfilesXmlUrl` pointent vers le
+     domaine `SE4FS_NAME` configuré (ex. `http://se4fs.lycee.example/wpkg/...`).
+
+### Scénario 8.2 — Audit initial via UI Livewire
+
+**Étapes** :
+1. Se connecter en admin (`server.admin`), naviguer vers
+   `/app/gpo/wpkg-deployment`.
+2. **Vérifier** :
+   - Badge sévérité affiché en haut (`OK` vert si tout est en ordre).
+   - 4 tableaux : État GPO / Liaisons / URLs serveur attendues / Couverture Bearer.
+   - `operation_id` UUID affiché en pied du bloc statut.
+   - Bouton "Re-publier la GPO `se4_wpkg`" rouge danger présent.
+
+### Scénario 8.3 — Audit GPO non liée → warning visible
+
+**Setup** : depuis `/app/gpo/{guid}/links`, dé-lier la GPO `se4_wpkg` de toutes
+les OUs (clic "Délier" + confirmation modale).
+
+**Étapes** :
+1. Naviguer vers `/app/gpo/wpkg-deployment`.
+2. **Vérifier** :
+   - Badge sévérité passe à `WARNING`.
+   - Encart "GPO non liée — aucun poste ne déclenchera `wpkg.js`" visible.
+   - Bouton "Lier maintenant" présent qui redirige vers `/app/gpo/{guid}/links`.
+3. Re-lier la GPO et confirmer que l'audit repasse à `OK`.
+
+### Scénario 8.4 — Re-publication forcée (`--force`)
+
+**Étapes** :
+1. Sur la VM, lancer `php artisan wpkg:gpo:sync --force`.
+2. **Vérifier** :
+   - Logs `storage/logs/gpo/gpo-*.log` contiennent au moins 4 entrées avec
+     les `action_type` : `gpo.wpkg.sync.start`, `gpo.wpkg.template.spec`,
+     `gpo.wpkg.publish`, `gpo.wpkg.sync.end`.
+   - Tous les logs partagent le même `operation_id` UUID.
+   - SYSVOL est mis à jour : `ls -lat /var/lib/samba/sysvol/<domain>/Policies/{GUID}`
+     montre des fichiers récents (mtime).
+   - Exit code 0.
+3. Re-lancer `--force` immédiatement → la GPO est re-importée idempotemment
+   (le shim legacy `import_gpo` gère le `update=true`).
+
+### Scénario 8.5 — Smoke poste Windows réel
+
+**Pré-requis** : un poste Windows lié à une OU sur laquelle la GPO `se4_wpkg`
+est appliquée.
+
+**Étapes** :
+1. Sur la VM, lancer `php artisan wpkg:gpo:sync --force`.
+2. Sur le poste Windows : `gpupdate /force` (PowerShell admin).
+3. Redémarrer le poste.
+4. **Vérifier** :
+   - Pendant le boot, le script `.cmd` startup est exécuté (le client
+     `cscript wpkg.js /server=<SE4FS_NAME> /profile=<hostname>` se déclenche).
+   - Côté serveur : `tail -f /var/log/nginx/access.log | grep wpkg` montre
+     des hits sur `/wpkg/hosts.xml?poste=<hostname>` et
+     `/wpkg/profiles.xml?poste=<hostname>` venant de l'IP du poste.
+   - `tail -f storage/logs/wpkg-deploy/deploy-*.log` montre la réception du
+     rapport POST `/api/v1/wpkg/reports/<hostname>` (Story 15.5).
+
+### Scénario 8.6 — Bearer manquant signalé (mode tolérant DO2)
+
+**Pré-requis** : table `workstation_api_secrets` migrée (Story 15.5 Phase 2).
+
+**Étapes** :
+1. Sur la VM, révoquer le secret d'un poste lié : la table
+   `workstation_api_secrets.revoked_at IS NOT NULL` pour ce poste.
+2. Recharger `/app/gpo/wpkg-deployment`.
+3. **Vérifier** :
+   - Section "Couverture Bearer Phase 2" affiche `N-1/N postes couverts`.
+   - Mode tolérant par défaut (`bearer_required = false`) → severity reste `OK`
+     ou `WARNING` selon le contexte, **pas** `ERROR`.
+   - Détail expandable liste le nom du poste sans secret.
+4. Activer `sambaedu.gpo.wpkg_sync.bearer_required = true` dans la config →
+   severity bumpe à `WARNING` (≤10% manquant) ou `ERROR` (>10% manquant).
+
+### Scénario 8.7 — Template absent → message d'erreur explicite
+
+**Étapes** :
+1. Sur la VM, renommer temporairement le template :
+   `mv /usr/share/sambaedu/gpo/se4_wpkg.zip /tmp/se4_wpkg.zip.bak`.
+2. Recharger `/app/gpo/wpkg-deployment`.
+3. **Vérifier** :
+   - Badge sévérité passe à `ERROR`.
+   - Tableau "État GPO" affiche `Template présent ? : Absent` (badge error).
+   - Message diagnostic : « Template officiel `/usr/share/sambaedu/gpo/se4_wpkg.zip`
+     non trouvé sur le serveur ».
+4. Lancer `php artisan wpkg:gpo:sync --force` → exit code 3 +
+   `RuntimeException: Template officiel ... introuvable`.
+5. Restaurer le template : `mv /tmp/se4_wpkg.zip.bak /usr/share/sambaedu/gpo/se4_wpkg.zip`.
+
+### Scénario 8.8 — Concurrence : lock `gpo:wpkg:sync` bloque le 2e processus
+
+**Étapes** :
+1. Ouvrir 2 terminaux SSH sur la VM.
+2. Terminal 1 : `php artisan wpkg:gpo:sync --force` (laisser tourner).
+3. Terminal 2 : `php artisan wpkg:gpo:sync --force` immédiatement.
+4. **Vérifier** :
+   - Terminal 2 reçoit `RuntimeException: Synchronisation GPO se4_wpkg déjà en
+     cours par un autre processus (lock indisponible après 10s)`.
+   - Exit code 3.
+   - Pas de double-import SYSVOL (Terminal 1 termine proprement).
+
+### Scénario 8.9 — Permission 403 sans `server.admin`
+
+**Étapes** :
+1. Avec un user `eleve` (sans permission), accéder à `/app/gpo/wpkg-deployment`.
+2. **Vérifier** : HTTP 403 (middleware route + `abort_unless` dans `mount()`).
+3. Vérifier qu'aucun log `gpo.wpkg.sync.*` n'est émis (mock should-not-receive).
+
+### Scénario 8.10 — Sortie JSON cron-friendly
+
+**Étapes** :
+1. Sur la VM, lancer `php artisan wpkg:gpo:sync --audit-only --json | jq .`.
+2. **Vérifier** :
+   - Sortie JSON bien formée parsable par `jq`.
+   - Contient les clés : `gpoExists`, `gpoGuid`, `linkedOus`, `severity`,
+     `templatePath`, `expectedHostsXmlUrl`, `messages`, `operationId`.
+   - Exit code mappé sur severity (0/1/2 selon `ok`/`warning`/`error`).
+
+### Checklist rapide Story 16.6
+
+- [ ] Scénario 8.1 passe (audit CLI exit 0 + tableau lisible).
+- [ ] Scénario 8.2 passe (UI Livewire affiche 4 tableaux + badge OK).
+- [ ] Scénario 8.3 passe (warning non liée → CTA "Lier maintenant").
+- [ ] Scénario 8.4 passe (re-publish + 4 action_type cumulés dans log channel `gpo`).
+- [ ] Scénario 8.5 passe (poste Windows réel hit `/wpkg/hosts.xml` après reboot).
+- [ ] Scénario 8.6 passe (couverture Bearer signalée — mode tolérant).
+- [ ] Scénario 8.7 passe (template renommé → erreur explicite UI + CLI).
+- [ ] Scénario 8.8 passe (lock concurrent bloque correctement).
+- [ ] Scénario 8.9 passe (403 sans `server.admin`).
+- [ ] Scénario 8.10 passe (JSON parsable + exit code mappé sévérité).
+- [ ] `php artisan test tests/Unit/Gpo/WpkgGpoSynchronizerTest tests/Unit/Gpo/Dto/WpkgGpoSyncReportTest
+      tests/Feature/Gpo/WpkgDeploymentPageTest tests/Feature/Gpo/WpkgDeploymentPagePermissionTest
+      tests/Feature/Console/Wpkg/WpkgGpoSyncCommandTest tests/Architecture/GpoNamespaceTest`
+      100% vert.
+
+### Post-correctifs & non-régressions (2026-05-13)
+
+Suite à la review adversariale, les changements de comportement
+suivants sont à valider en T8 :
+
+- **#3 (T8.1 critique)** : l'appel séparé à `specialise_gpo` côté natif
+  a été supprimé. `WpkgGpoSynchronizer::publish()` n'invoque plus que
+  `legacy.import_gpo` qui enchaîne en interne `unzip_gpo → specialise_gpo →
+  sysvol_put`. **Impact attendu : zéro** côté postes (le legacy continue
+  de faire la spécialisation correctement). À confirmer T8.1 : après
+  `php artisan wpkg:gpo:sync --force`, inspecter le contenu d'un fichier
+  spécialisé sous `\\<DC>\sysvol\<domain>\Policies\{GUID}\Machine\Scripts\Startup\wpkg.cmd`
+  → vérifier que `###_SE4FS_NAME_###` est bien substitué par la valeur
+  réelle (et idem pour `DOMAIN`, `DOMAIN_SID`, etc.).
+- **#10/#4** : `Cache::lock('gpo:wpkg:sync', N)` utilise désormais
+  N=300 s (TTL) et 30 s (wait) par défaut. Au lieu de 60/10. Le lock est
+  configurable via `GPO_WPKG_LOCK_TIMEOUT` / `GPO_WPKG_LOCK_WAIT` env
+  vars. Smoke T8.6 (lock concurrence) : ouvrir 2 sessions admin et
+  vérifier que la 2e attend jusqu'à 30 s avant `RuntimeException`.
+- **#1** : 4 clés `config('sambaedu.gpo.wpkg_sync.*')` désormais
+  déclarées dans `config/sambaedu.php` (`template_path`, `bearer_required`,
+  `lock_timeout`, `lock_wait`). Override possible via env vars. Aucun
+  smoke supplémentaire — déjà couvert par le test unitaire
+  `publish_lock_values_are_configurable`.
+- **#C / #D / #F** : garde-fous défensifs (zip bomb / utf16 decode /
+  workstation truncation) avec logs warning sur le channel `gpo`.
+  Smoke T8.4 : vérifier l'absence de warnings sur un template VM
+  réel (`se4_wpkg.zip` ≤ quelques Mo, pas d'utf16 mixte attendu).

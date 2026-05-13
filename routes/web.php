@@ -256,6 +256,16 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
         ->middleware('can:server.admin')
         ->name('gpo.wine');
 
+    // Story 16.6 — Hook GPO ↔ WPKG (jonction Epic 15). Audit + re-publication
+    // de la GPO `se4_wpkg` qui déclenche `cscript wpkg.js` côté postes Windows.
+    // Permission `server.admin` iso 16.2/16.5. Déclarée AVANT `/app/gpo/{guid}`
+    // pour éviter interception par le segment paramétrique GUID (review fix #2 :
+    // la regex GUID ne matche pas `wpkg-deployment`, mais on rend l'ordre
+    // explicite plutôt que dépendre du préfixe regex).
+    Route::livewire('/gpo/wpkg-deployment', 'pages::app.gpo.wpkg-deployment.index')
+        ->middleware('can:server.admin')
+        ->name('gpo.wpkg-deployment');
+
     Route::livewire('/gpo/{guid}', 'pages::app.gpo.[guid].index')
         ->where('guid', '\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?')
         ->middleware('can:server.admin')

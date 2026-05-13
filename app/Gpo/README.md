@@ -78,6 +78,10 @@ les champs systématiques `operation_id` (UUID), `action_type`, `gpo_name` /
 | `gpo.wine.prefixes.list` | Scan FS des conteneurs Wine partagés                     | 16.3c                        |
 | `gpo.wine.image.generate` | Dispatch + handle Job `GenerateWineImageJob`            | 16.3c                        |
 | `gpo.wine.shortcuts.generate` | Import raccourcis Wine via `ShortcutsService::importWineShortcuts` | 16.3c                |
+| `gpo.wpkg.sync.start`  | Démarrage `audit()` ou `publish()` du `WpkgGpoSynchronizer` | 16.6 ✅ implémenté            |
+| `gpo.wpkg.sync.end`    | Clôture symétrique avec outcome (success/noop/failure)     | 16.6 ✅ implémenté            |
+| `gpo.wpkg.template.spec` | Spécialisation des placeholders du template `se4_wpkg.zip` via shim legacy `specialise_gpo` (loggé en sous-étape par `import_gpo` côté legacy uniquement — plus invoqué séparément côté natif depuis le post-review #3 de la 16.6) | 16.6 ✅ implémenté |
+| `gpo.wpkg.publish`     | Import SYSVOL via shim legacy `import_gpo` (write GPO + ré-import idempotent) | 16.6 ✅ implémenté |
 
 ### Règles supplémentaires
 
@@ -395,3 +399,147 @@ lent sur parc large).
 - **TD-16.5-3** : Flat list OUs domaine (pas d'arbre hiérarchique) — UX
   dégradée si parc avec >50 OUs.
 
+
+
+## Story 16.6 — Hook GPO ↔ invocation `wpkg.js` côté client (jonction Epic 15)
+
+Outil d'audit et de (re-)publication de la GPO `se4_wpkg` qui déclenche
+`cscript wpkg.js /server=<SE4FS_NAME>` sur les postes Windows au boot machine.
+Garantit la cohérence entre la GPO (côté SYSVOL) et les endpoints serveur
+`/wpkg/hosts.xml` + `/wpkg/profiles.xml` (Story 15.2) + l'auth Bearer Phase 2
+(Story 15.5 lecture seule).
+
+**Frontière nette** : 16.6 **ne crée pas** la GPO from scratch (= Epic 17.1).
+Il consomme le template officiel `/usr/share/sambaedu/gpo/se4_wpkg.zip` et
+re-spécialise ses placeholders (`###_SE4FS_NAME_###`, `###_DOMAIN_###`, etc.).
+
+### Classes
+
+| Type     | Path                                                          | Rôle                                                                                  |
+|----------|---------------------------------------------------------------|---------------------------------------------------------------------------------------|
+| Service  | `app/Gpo/Services/WpkgGpoSynchronizer.php`                    | Cœur métier : `audit(): WpkgGpoSyncReport` (readonly) + `publish(force): WpkgGpoSyncReport` (lock anti-race + shim legacy). |
+| Enum     | `app/Gpo/Enums/WpkgGpoSyncSeverity.php`                       | Sévérité `ok`/`info`/`warning`/`error` avec helpers `merge()`/`exitCode()`/`rank()`.  |
+| DTO      | `app/Gpo/Dto/WpkgGpoSyncReport.php`                           | Photographie immutable de l'état GPO + URLs attendues + couverture Bearer.            |
+| Command  | `app/Wpkg/Deployment/Console/Commands/WpkgGpoSyncCommand.php` | `wpkg:gpo:sync {--audit-only} {--force} {--json}` — cron-friendly + déploiement.      |
+| Livewire | `resources/views/pages/app/gpo/wpkg-deployment/index.blade.php` | Page admin SFC `/app/gpo/wpkg-deployment` (badge sévérité + 4 tableaux + modale publish). |
+
+### URL & route
+
+- `/app/gpo/wpkg-deployment` — name `app.gpo.wpkg-deployment`, middleware
+  `web` + `sambaedu.auth` (via groupe `/app`) + `can:server.admin`.
+- Déclarée AVANT le catchall + AVANT `/gpo/{guid}` (segment statique
+  `wpkg-deployment` ne matche pas la regex GUID, mais ordre explicite pour
+  clarté).
+
+### Architecture
+
+```
+[Admin /app/gpo/wpkg-deployment]               [Cron / Ansible]
+            │                                          │
+            ▼                                          ▼
+    pages::app.gpo.wpkg-deployment.index   wpkg:gpo:sync (artisan)
+            │                                          │
+            └───────────► WpkgGpoSynchronizer ◄────────┘
+                                  │
+              ┌───────────────────┼──────────────────┐
+              │                   │                  │
+              ▼                   ▼                  ▼
+       GpoService          ZipArchive scan      Cache::lock
+       (list/getLinks)     placeholders        gpo:wpkg:sync
+              │                   │                  │
+              ▼                   ▼                  │
+     samba-tool gpo *    Whitelist substitutions     │
+                         (config 16.7)              ▼
+                                              legacy.import_gpo
+                                              (binding container +
+                                               fallback fn globale ;
+                                               enchaîne en interne
+                                               unzip_gpo → specialise_gpo
+                                               → sysvol_put)
+                                                     │
+                                                     ▼
+                                              SYSVOL Policies/{GUID}
+```
+
+### Sécurité (défense en profondeur)
+
+| Niveau              | Mécanisme                                                                                    |
+|---------------------|----------------------------------------------------------------------------------------------|
+| Permission          | `SambaPermission::ServerAdmin` (`server.admin`) Spatie — middleware route + `abort_unless` dans `mount()`. |
+| Path traversal      | `realpath()` du template + préfixe autorisé `/usr/share/sambaedu/gpo/` (skip en `testing`).  |
+| Lock anti-race      | `Cache::lock('gpo:wpkg:sync', 60)->block(10)` bloquant — `RuntimeException` après 10s.       |
+| Injection shell     | Aucun input user concaténé : le shim `import_gpo` est invoqué via fonction PHP (jamais exec). |
+| Frontière legacy    | Binding container `legacy.import_gpo` (orchestre seul `unzip_gpo → specialise_gpo → sysvol_put`) + test architecture qui interdit l'invocation hors `WpkgGpoSynchronizer`. |
+| Audit trail         | Channel `gpo` exclusif + 4 nouveaux `action_type` + `operation_id` UUID propagé.             |
+
+### Décisions structurantes (D1-D10, voir story 16.6)
+
+- **D1** : Périmètre = audit + republish (pas de génération from scratch = Epic 17.1).
+- **D2** : URL serveur via `URL::route('wpkg.hosts-xml')` / `wpkg.profiles-xml` (single source of truth de 15.2).
+- **D3** : Service métier avec `audit()` + `publish(force)` — pattern iso `ReadUserManager` 16.3b.
+- **D4** : UI Livewire SFC + commande artisan double accès.
+- **D5** : Modale `<x-molecules.modal>` confirmation obligatoire sur publish.
+- **D6** : Fallback shim `@legacy-port` autorisé (`import_gpo`/`specialise_gpo`) — pas de portage natif.
+- **D7** : Channel `gpo` exclusif + 4 nouveaux `action_type`.
+- **D8** : Permission `server.admin` (iso 16.2/16.5).
+- **D9** : Bearer machine lecture seule (diagnostic, pas de provisioning).
+- **D10** : Pas de catchall override (encart « Création GPO paused » 16-5 D11 reste pour les autres GPOs).
+
+### Discrepances ouvertes tranchées (T0)
+
+- **DO1 — Placeholders template `se4_wpkg.zip`** : 8 clés natives héritées de
+  `specialise_gpo` (legacy `sambaedu/includes/gpo.inc.php:621-630`) :
+  `domain`, `samba_domain`, `se4fs_name`, `se4ad_name`, `domain_sid`,
+  `se4install_name`, `ldap_base_dn`, `cloud_name`. URL serveur **implicite** via
+  `###_SE4FS_NAME_###` — pas de placeholder URL explicite dans le template.
+  Henri vérifiera VM-side (T8.1) que `se4_wpkg.zip` n'introduit aucun placeholder
+  hors whitelist.
+- **DO2 — Bearer Phase 2** : `bearer_required = false` par défaut (mode tolérant
+  Phase 1). Bumper à `true` post-15.5 done (TD-16.6-3).
+- **DO3 — Atomicité `import_gpo`** : best effort. Lock applicatif + log `critical`
+  sur échec mid-publish (TD-16.6-1).
+- **DO4 — Auto-link** : pas d'auto-link au publish — séparation responsabilité
+  16.6 publication / 16.5 liaisons. UI signale via warning + CTA vers
+  `/app/gpo/{guid}/links`.
+
+### Limitations (cf. `docs/tech-debt-gpo.md`)
+
+- **TD-16.6-1** : `import_gpo` best effort, pas de rollback automatique
+  (SYSVOL peut être incohérent en cas d'échec mid-publish). ✅ **Post-review
+  fix #3 (2026-05-13)** : la source du risque la plus prégnante (l'appel
+  séparé à `specialise_gpo` côté natif qui spécialisait `/tmp/<gpo>/` puis se
+  faisait écraser par le tarball brut de `unzip_gpo`) a été supprimée. Le
+  shim `import_gpo` reste seul point d'orchestration et enchaîne
+  `unzip_gpo → specialise_gpo → sysvol_put` en interne. Le risque résiduel
+  d'incohérence SYSVOL en cas de panne sur `sysvol_put` reste valide (lock +
+  log critical conservés).
+- **TD-16.6-2** : Shim `legacy/bootstrap.php` `import_gpo`/`specialise_gpo`
+  pas porté natif (Story 16.4 paused).
+- **TD-16.6-3** : Bearer Phase 2 mode tolérant par défaut. Bumper post-15.5
+  done. ✅ **Post-review fix (2026-05-13)** : la clé
+  `config('sambaedu.gpo.wpkg_sync.bearer_required')` est désormais déclarée
+  explicitement dans `config/sambaedu.php` (avec env var
+  `GPO_WPKG_BEARER_REQUIRED`) — bascule simple sans patch code.
+
+### Post-review fixes (2026-05-13)
+
+Corrections automatiques post-review (claude-opus-4-7, modèle adverse
+sonnet) appliquées :
+
+| # | Problème | Correction |
+|---|----------|-----------|
+| #3 (critique) | Appel séparé `invokeSpecialise()` redondant et casse-tête (spécialisation `/tmp/<gpo>` écrasée par `unzip_gpo` côté `import_gpo`) | **Supprimé** : `WpkgGpoSynchronizer::publish()` n'invoque plus que `legacy.import_gpo` qui enchaîne en interne `unzip_gpo → specialise_gpo → sysvol_put`. Binding `legacy.specialise_gpo` supprimé. Tests architecture + Unit + Feature adaptés. |
+| #1 | Clés `config('sambaedu.gpo.wpkg_sync.*')` lues partout mais jamais déclarées en config dédiée | Ajout sous-section `wpkg_sync` dans `config/sambaedu.php` (4 clés env-overridables : `template_path`, `bearer_required`, `lock_timeout`, `lock_wait`) |
+| #2 | Ordre routes `/gpo/wpkg-deployment` après `/gpo/{guid}` (fragile à la regex GUID) | Route déplacée AVANT `/gpo/{guid}` |
+| #4 / #10 | `LOCK_TIMEOUT_SECONDS=60` + `LOCK_WAIT_SECONDS=10` trop courts pour absorber un `import_gpo` lent | Bumpés en valeurs par défaut 300 / 30 + rendus configurables (`lock_timeout`/`lock_wait`) |
+| #8 | Branche `auditBearerCoverage` `Schema::hasTable=true` jamais couverte par les tests | 3 nouveaux tests Unit : OK 100%, partiel tolérant, error required |
+| #C | Pas de cap sur `numFiles` / `getFromIndex` du ZIP (zip bomb) | `MAX_ZIP_FILES=1000` + `MAX_ZIP_ENTRY_BYTES=10MB` + log warning sur skip |
+| #D | `mb_convert_encoding` échoué silencieusement | Log warning `gpo.wpkg.template.scan` + fallback brut |
+| #F | Cap `limit(200)` workstations par OU sans signalement | Log warning + message DTO « Liste tronquée » |
+| #H | Test `publish_runs_initial_when_gpo_absent` swallow Throwable | Test ré-écrit : assert explicite sur shim called + severity Error post-audit |
+
+Non-actions tranchées :
+- **#5 (log level `info`)** : conservé iso Epic 16.
+- **#6 (mount-only iso 16.5)** : aucun changement requis.
+- **#E (test path-traversal hors testing)** : laissé en TD (refacto invasive
+  requise pour injecter l'environnement — pattern à généraliser plus tard).

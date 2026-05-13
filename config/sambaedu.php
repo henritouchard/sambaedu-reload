@@ -250,6 +250,28 @@ return [
         // Sera enrichi quand on supportera l'authentification par compte stocké.
         'kerb_option' => '--use-kerberos=required',
 
+        // Story 16.6 — Sous-config WPKG GPO synchronizer (`WpkgGpoSynchronizer`).
+        // Toutes les valeurs sont overridables via env() pour permettre un
+        // déploiement Ansible / tuning prod sans patcher le code.
+        //
+        // - `template_path` : path du template officiel `.zip` (parité legacy
+        //   `/usr/share/sambaedu/gpo/se4_wpkg.zip`). Overridable pour tests
+        //   et installations atypiques.
+        // - `bearer_required` : feature flag Phase 2 (Story 15.5). Par défaut
+        //   `false` (mode tolérant — TD-16.6-3). Passe à `true` pour bumper
+        //   la sévérité Error/Warning quand des postes liés sont sans secret.
+        // - `lock_timeout` : TTL du `Cache::lock('gpo:wpkg:sync', N)`. 300 s
+        //   par défaut (review fix #10 — 60 s trop court pour absorber un
+        //   `import_gpo` lent : extraction + spécialisation + `smbclient put`).
+        // - `lock_wait` : délai max d'attente bloquante pour acquérir le lock
+        //   (`$lock->block(N)`). 30 s par défaut (review fix #4).
+        'wpkg_sync' => [
+            'template_path' => env('GPO_WPKG_TEMPLATE_PATH', '/usr/share/sambaedu/gpo/se4_wpkg.zip'),
+            'bearer_required' => (bool) env('GPO_WPKG_BEARER_REQUIRED', false),
+            'lock_timeout' => (int) env('GPO_WPKG_LOCK_TIMEOUT', 300),
+            'lock_wait' => (int) env('GPO_WPKG_LOCK_WAIT', 30),
+        ],
+
         // Story 16.3c — Sous-config Wine (UI admin + Job queue).
         'wine' => [
             // Dossier de base scanné pour lister les conteneurs Wine partagés

@@ -307,3 +307,81 @@ côté Livewire.
 qui n'a pas non plus d'arbre). Story de suivi 16.5b éventuelle si Henri
 rapporte des frictions UX.
 
+
+## Dettes Story 16.6 — Hook GPO ↔ WPKG (2026-05-13)
+
+### TD-16.6-1 — `import_gpo` legacy best effort (pas de rollback automatique)
+
+✅ **Racine du risque #3 supprimée (post-review 2026-05-13)** : l'appel
+séparé à `legacy.specialise_gpo` côté natif (`WpkgGpoSynchronizer::publish()`)
+spécialisait `/tmp/<gpo>/` puis se faisait écraser par le tarball brut
+décompressé par `unzip_gpo` côté `import_gpo`. Cet appel a été supprimé —
+le shim `import_gpo` reste désormais seul point d'orchestration et
+enchaîne déjà `unzip_gpo → specialise_gpo → sysvol_put` en interne. La TD
+résiduelle ci-dessous (non-atomicité de `sysvol_put`) reste valide mais
+hors-scope 16.6.
+
+Le shim legacy `sambaedu/includes/gpo.inc.php::import_gpo` (chargé via
+`legacy/bootstrap.php`) enchaîne `unzip_gpo` → `specialise_gpo` →
+`sysvol_put` (smbclient) sans transaction. En cas d'échec mi-parcours
+(spécialisation OK mais `sysvol_put` KO par exemple), SYSVOL peut se
+retrouver dans un état intermédiaire incohérent (placeholders
+spécialisés mais fichiers partiellement copiés).
+
+**Mitigation actuelle** :
+- Lock applicatif `Cache::lock('gpo:wpkg:sync', 60)->block(10)` empêche
+  les exécutions concurrentes (anti race admin double-clic).
+- Log `level=critical` channel `gpo` émis explicitement avec le message
+  « État SYSVOL potentiellement incohérent — vérifier manuellement »
+  pour permettre une recovery manuelle (samba-tool gpo listall +
+  inspection SYSVOL).
+- `RuntimeException` propagée → toast UI rouge + non-réussite signalée
+  côté commande artisan (exit code 3).
+
+**Sortie prévue** : non-bloquante en production. Pattern iso 16.5 DO1
+(`reorderLinks` best effort). Le portage natif `import_gpo` qui
+permettrait un vrai rollback transactionnel est hors scope (Story 16.4
+paused — décision Henri 2026-05-13).
+
+### TD-16.6-2 — Shim `import_gpo` / `specialise_gpo` non porté natif
+
+Le synchronizer `WpkgGpoSynchronizer::publish()` invoque les fonctions
+legacy `import_gpo` et `specialise_gpo` via :
+1. Binding container `legacy.import_gpo` / `legacy.specialise_gpo` (cas
+   testing — pattern iso 16.3c `legacy.get_wine_shortcuts`).
+2. Fonction PHP globale chargée par `legacy/bootstrap.php` (production
+   VM).
+
+Cette dépendance shim est explicite (`@legacy-port` sur les call sites)
+et garantie par le test architecture
+`only_wpkg_gpo_synchronizer_references_legacy_import_gpo` qui interdit
+toute autre classe `App\Gpo\*` d'invoquer ces fonctions.
+
+**Portage natif** : repoussé tant que Story 16.4 (CRUD GPO natif) reste
+`paused` — décision Henri 2026-05-13 : la gestion CRUD des GPOs reste
+dans le shim legacy. Le portage de `import_gpo` couvrirait à la fois
+16.4 et 16.6, donc pas de duplication.
+
+**Sortie prévue** : non-bloquante. Réactiver si la branche 16.4 reprend.
+
+### TD-16.6-3 — Bearer Phase 2 mode tolérant par défaut (DO2)
+
+✅ **Post-review 2026-05-13** : la config est désormais déclarée
+explicitement sous `config/sambaedu.php → gpo.wpkg_sync.bearer_required`
+(env var `GPO_WPKG_BEARER_REQUIRED`). Bascule sans patch code.
+
+`WpkgGpoSynchronizer::auditBearerCoverage()` s'appuie sur la config
+`sambaedu.gpo.wpkg_sync.bearer_required` (default `false`). Tant que la
+Story 15.5 n'est pas `done` (statut `review` au cadrage 16.6), la
+couverture Bearer est signalée informationnellement sans bumper la
+sévérité globale.
+
+**Migration prévue post-15.5 done** :
+- Bumper `bearer_required = true` via env var `GPO_WPKG_BEARER_REQUIRED=1`
+  (ou patcher `config/sambaedu.php`).
+- Seuil de bump : >10% des postes liés sans secret → severity `ERROR`
+  (sinon `WARNING`).
+- Smoke VM nécessaire pour valider la cohérence en mode strict.
+
+**Sortie prévue** : tracking dans le statut sprint 15.5 → done. Action
+manuelle d'Henri.
