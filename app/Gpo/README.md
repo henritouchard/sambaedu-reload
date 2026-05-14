@@ -229,7 +229,7 @@ runtime déjà portés (`wallpaper_out` 4.7, `firefox_out`/`thunderbird_out` 4.8
 | Surface AD writeback     | `App\Ldap\AdMachineManager` (4 méthodes : check/registerHardware/setOs/listRemoteConnexion) |
 | Pose APCu                | `App\Services\AppCustomization\ApcuAppContextWriter` (interface `AppContextWriter`) |
 | Enum bitmask erreurs     | `App\Gpo\Enums\ApplicationActionError` (7 cas iso `SAMBAEDU_*_APP_ERROR`) |
-| Config substitutions     | `config/sambaedu.gpo.applications.substitutions.php` (whitelist statique) |
+| Config substitutions     | `config/sambaedu.php` clé `gpo.applications.substitutions.whitelist` (whitelist statique) |
 
 ### Architecture hybride (DO2 option (c))
 
@@ -261,7 +261,7 @@ préserve la testabilité (chaque méthode est testable isolément via
    - `id`      : `^([a-f0-9]{32})?$`
    - `os`      : enum `{windows, linux}`
    - `interpreter` : enum `{cmd, bash, ps1, powershell, redirects, apt}`
-2. **Whitelist substitutions** (`config/sambaedu.gpo.applications.substitutions.php`) :
+2. **Whitelist substitutions** (`config/sambaedu.php` → `gpo.applications.substitutions.whitelist`) :
    - Seules les clés explicitement listées (`SE4FS_NAME`, `DOMAIN`, `UAI`,
      `NETLOGON_PATH`, `WPKG_URL`, `SAMBA_DOMAIN`, `TMP_DIR`, `CLOUD_PERSO_NAME`)
      sont substituées. Aucun input user (`machine`, `user`, `action`) ne peut

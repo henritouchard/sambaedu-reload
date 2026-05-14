@@ -295,6 +295,87 @@ return [
             'lock_wait' => (int) env('GPO_WPKG_LOCK_WAIT', 30),
         ],
 
+        // Story 16.7 — Whitelist des substitutions `###_KEY_###` autorisées
+        // dans les templates de scripts applications (`.windows`, `.linux`,
+        // `scripts.json`). Décision user D3 (2026-05-12) : config statique.
+        //
+        // Sécurité (audit F3 audit-gpo-legacy adressé) :
+        //  - Whitelist immuable : seules les clés explicitement listées peuvent
+        //    être substituées.
+        //  - Aucun input user (machine, user, action, uuid…) injectable comme
+        //    clé : la map est strictement statique et lue par
+        //    `ApplicationScriptsAssembler::applySubstitutions()`.
+        //  - Les placeholders hors whitelist restent inchangés (warning log
+        //    channel `daily`) → ne casse pas iso-bytes legacy
+        //    (`traitement_data.inc.php::write_param()` ne substituait que les
+        //    clés de config présentes).
+        //
+        // Format des specs (sérialisable — compatible `php artisan config:cache`) :
+        //  - ['config' => 'path', 'env' => 'VAR', 'default' => 'fallback']
+        //    Chaîne de résolution : config() → env() → default. Une valeur
+        //    vide ('') est traitée comme manquante (fall-through).
+        //  - ['value' => 'static'] : valeur littérale (utilisée pour `TMP_DIR`).
+        //  - Une spec qui résout à null est ignorée (placeholder laissé
+        //    inchangé dans la sortie).
+        //
+        // @legacy-port path="sambaedu/includes/traitement_data.inc.php (write_param)"
+        // @see \App\Gpo\Services\ApplicationScriptsAssembler::resolveSubstitutionValue
+        'applications' => [
+            'substitutions' => [
+                'whitelist' => [
+                    // Identifiant DNS du serveur SE4FS (utilisé dans curl URL des
+                    // scripts cmd/bash, cf. legacy `applications.inc.php:399,405,423`).
+                    'SE4FS_NAME' => [
+                        'config' => 'sambaedu.se4fs_name',
+                        'env' => 'SE4FS_NAME',
+                    ],
+
+                    // Domaine DNS de l'établissement (suffixe utilisé dans
+                    // `applications.inc.php:405,426`).
+                    'DOMAIN' => [
+                        'config' => 'sambaedu.domain',
+                        'env' => 'SE4FS_DOMAIN',
+                    ],
+
+                    // Identifiant établissement (UAI / RNE) — utilisé dans header
+                    // `cmd` `applications.inc.php:368` (`SET TAG=...`).
+                    'UAI' => [
+                        'config' => 'sambaedu.uai',
+                        'env' => 'SE4FS_UAI',
+                    ],
+
+                    // Chemin partage NETLOGON (déploiement scripts/exécutables Windows).
+                    'NETLOGON_PATH' => [
+                        'config' => 'sambaedu.netlogon_path',
+                        'env' => 'NETLOGON_PATH',
+                        'default' => '/var/lib/samba/sysvol',
+                    ],
+
+                    // URL/base du dépôt WPKG (consommée par `wpkg_scripts` côté legacy).
+                    'WPKG_URL' => [
+                        'config' => 'sambaedu.wpkg.base_url',
+                        'default' => '',
+                    ],
+
+                    // Domaine Samba (NetBIOS) — utilisé dans `local_admin_scripts`
+                    // pour `net localgroup administrateurs <DOMAIN>\<user>`.
+                    'SAMBA_DOMAIN' => [
+                        'config' => 'sambaedu.samba_domain',
+                        'env' => 'SAMBA_DOMAIN',
+                    ],
+
+                    // Dossier temporaire serveur (parité legacy `sys_get_temp_dir()`).
+                    'TMP_DIR' => ['value' => '/tmp'],
+
+                    // Nom UI du dossier "Mes Documents" (legacy `applications.inc.php:291`).
+                    'CLOUD_PERSO_NAME' => [
+                        'config' => 'sambaedu.cloud_perso_name',
+                        'default' => 'Mes Documents',
+                    ],
+                ],
+            ],
+        ],
+
         // Story 16.3c — Sous-config Wine (UI admin + Job queue).
         'wine' => [
             // Dossier de base scanné pour lister les conteneurs Wine partagés

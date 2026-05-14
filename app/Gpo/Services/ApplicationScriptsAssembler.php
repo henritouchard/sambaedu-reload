@@ -965,18 +965,6 @@ final class ApplicationScriptsAssembler
         }
         $config = config('sambaedu.gpo.applications.substitutions.whitelist');
         if (! is_array($config)) {
-            // Fallback : lecture directe du fichier de config dédié (le merge
-            // dans `config/sambaedu.php` n'est pas requis — la config est
-            // chargée séparément via le path).
-            $path = base_path('config/sambaedu.gpo.applications.substitutions.php');
-            if (is_file($path)) {
-                $loaded = require $path;
-                if (is_array($loaded) && isset($loaded['whitelist']) && is_array($loaded['whitelist'])) {
-                    $config = $loaded['whitelist'];
-                }
-            }
-        }
-        if (! is_array($config)) {
             $config = [];
         }
         $this->substitutionsCache = $config;

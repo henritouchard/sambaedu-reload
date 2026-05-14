@@ -308,7 +308,7 @@ class WpkgGpoSynchronizer
             try {
                 [$detectedPlaceholders, $unknownPlaceholders] = $this->scanTemplatePlaceholders($templatePath, $operationId);
                 if ($unknownPlaceholders !== []) {
-                    $messages[] = 'Placeholders détectés mais hors whitelist `config/sambaedu.gpo.applications.substitutions.php` : '
+                    $messages[] = 'Placeholders détectés mais hors whitelist `config/sambaedu.php` (clé `gpo.applications.substitutions.whitelist`) : '
                         . implode(', ', $unknownPlaceholders) . ' — la spécialisation laissera ces marqueurs intacts (pipeline cassé côté postes).';
                     $severity = $severity->merge(WpkgGpoSyncSeverity::Error);
                 }
@@ -348,7 +348,8 @@ class WpkgGpoSynchronizer
 
     /**
      * Scan ZIP — extrait l'arborescence virtuelle et liste les placeholders
-     * `###_KEY_###` détectés. Compare à la whitelist `config/sambaedu.gpo.applications.substitutions.php`.
+     * `###_KEY_###` détectés. Compare à la whitelist `config/sambaedu.php`
+     * (clé `gpo.applications.substitutions.whitelist`).
      *
      * **Mode dégradé** : si le path pointe sur un **répertoire** (cas testing
      * sans `ext-zip`), on scanne récursivement les fichiers texte. La parité
