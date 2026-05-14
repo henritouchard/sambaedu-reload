@@ -53,6 +53,37 @@ class VeyonConfigGeneratorTest extends TestCase
         parent::tearDown();
     }
 
+    private function makeLdapConfig(string $baseDn): LdapConfig
+    {
+        return new LdapConfig(
+            url: 'ldaps://test.local',
+            port: 636,
+            baseDn: $baseDn,
+            adminName: 'admin',
+            adminPassword: 'pwd',
+            domain: 'example.local',
+            sambaDomain: 'EXAMPLE',
+            peopleRdn: 'ou=Utilisateurs',
+            groupsRdn: 'ou=Groupes',
+            computersRdn: 'ou=Computers',
+            parcsRdn: 'ou=Parcs',
+            classesRdn: 'ou=Classes',
+            equipesRdn: 'ou=Equipes',
+            matieresRdn: 'ou=Matieres',
+            coursRdn: 'ou=Cours',
+            projetsRdn: 'ou=Projets',
+            otherGroupsRdn: 'ou=AutresGroupes',
+            delegationsRdn: 'ou=Delegations',
+            equipementsRdn: 'ou=Equipements',
+            rightsRdn: 'ou=Droits',
+            trashRdn: 'ou=Trash',
+            etablissementsRdn: 'ou=Etablissements',
+            adminRdn: 'cn=Administrator',
+            etabServerIp: '127.0.0.1',
+            strictLocalAd: false,
+        );
+    }
+
     private function makeConfig(array $kv): SambaEduConfig
     {
         /** @var SambaEduConfig&\Mockery\MockInterface $mock */
@@ -65,9 +96,7 @@ class VeyonConfigGeneratorTest extends TestCase
             ->andReturnUsing(fn(string $key) => array_key_exists($key, $kv));
         $mock->shouldReceive('all')->andReturn($kv);
 
-        $ldap = Mockery::mock(LdapConfig::class);
-        $ldap->baseDn = $kv['ldap_base_dn'] ?? 'dc=example,dc=local';
-        $mock->shouldReceive('ldap')->andReturn($ldap);
+        $mock->shouldReceive('ldap')->andReturn($this->makeLdapConfig($kv['ldap_base_dn'] ?? 'dc=example,dc=local'));
 
         return $mock;
     }

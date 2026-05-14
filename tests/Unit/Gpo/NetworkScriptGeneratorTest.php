@@ -130,12 +130,14 @@ class NetworkScriptGeneratorTest extends TestCase
         ]));
         $out = $generator->systemProxy();
 
-        $this->assertStringContainsString('http_proxy="http://10.0.0.42:8080"', $out);
+        // Les variables shell exportées sont émises via `echo "key=\"value\""` —
+        // les guillemets sont échappés (bash) dans le script généré.
+        $this->assertStringContainsString('http_proxy=\\"http://10.0.0.42:8080\\"', $out);
         $this->assertStringContainsString('https_proxy = http://10.0.0.42:8080', $out);
         // apt_proxy explicite est utilisé prioritairement.
-        $this->assertStringContainsString('Acquire::http::proxy "http://apt.proxy.local:3142";', $out);
+        $this->assertStringContainsString('Acquire::http::proxy \\"http://apt.proxy.local:3142\\";', $out);
         // no_proxy fallback = .domain,se4fs_name
-        $this->assertStringContainsString('no_proxy="' . '.example.local,se4fs' . '"', $out);
+        $this->assertStringContainsString('no_proxy=\\".example.local,se4fs\\"', $out);
     }
 
     #[Test]

@@ -112,8 +112,11 @@ class SambaToolRunnerTest extends TestCase
         $result = $runner->run(['gpo', 'listall']);
 
         $this->assertSame(42, $result->exitCode());
-        $this->assertSame('standard output', $result->output());
-        $this->assertSame('standard error', $result->errorOutput());
+        // Laravel 12 `FakeProcessResult::output()` normalise toujours avec un
+        // `\n` final (`rtrim($output, "\n")."\n"`), même si la valeur d'origine
+        // n'en a pas. On compare donc en trim.
+        $this->assertSame('standard output', trim($result->output()));
+        $this->assertSame('standard error', trim($result->errorOutput()));
         $this->assertFalse($result->successful());
     }
 

@@ -30,7 +30,7 @@ use Illuminate\Support\Facades\Log;
  *
  * @legacy-port path="sambaedu/gpo/associations_out.php:41-66"
  */
-final class PackagesXmlAssociationsReader
+class PackagesXmlAssociationsReader
 {
     /**
      * Lit le fichier `packages.xml` et retourne le mapping

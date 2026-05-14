@@ -879,7 +879,7 @@ final class ApplicationScriptsAssembler
         $search = [];
         $replace = [];
         foreach ($whitelist as $key => $resolver) {
-            $value = $resolver();
+            $value = $this->resolveSubstitutionValue($resolver);
             if ($value === null) {
                 continue;
             }
@@ -903,7 +903,60 @@ final class ApplicationScriptsAssembler
     }
 
     /**
-     * @return array<string, callable(): ?string>
+     * Résout la valeur d'une entrée de whitelist. Supporte trois formats :
+     *  - `callable(): ?string` (rétro-compat tests qui injectent des closures
+     *    via `config()->set()`)
+     *  - `string` (valeur littérale)
+     *  - `array{config?: string, env?: string, default?: ?string, value?: ?string}`
+     *    (spec déclarative sérialisable — requis pour `config:cache`)
+     */
+    private function resolveSubstitutionValue(mixed $spec): ?string
+    {
+        if (is_callable($spec)) {
+            $resolved = $spec();
+            return $resolved === null ? null : (string) $resolved;
+        }
+        if (is_string($spec)) {
+            return $spec;
+        }
+        if (! is_array($spec)) {
+            return null;
+        }
+        if (array_key_exists('value', $spec)) {
+            return $spec['value'] === null ? null : (string) $spec['value'];
+        }
+        // Itère config → env → default. Une chaîne vide est traitée comme
+        // "non trouvé" (iso-legacy `?:` qui retombe sur null) — sauf si une
+        // `default` explicite (même vide) la fournit, ce qui permet à
+        // `WPKG_URL` de produire '' au lieu de laisser le placeholder.
+        $found = false;
+        $value = null;
+        if (isset($spec['config'])) {
+            $v = config($spec['config']);
+            if ($v !== null && $v !== '') {
+                $value = $v;
+                $found = true;
+            }
+        }
+        if (! $found && isset($spec['env'])) {
+            $v = env($spec['env']);
+            if ($v !== null && $v !== false && $v !== '') {
+                $value = $v;
+                $found = true;
+            }
+        }
+        if (! $found && array_key_exists('default', $spec)) {
+            $value = $spec['default'];
+            $found = true;
+        }
+        if (! $found || $value === null) {
+            return null;
+        }
+        return (string) $value;
+    }
+
+    /**
+     * @return array<string, callable(): ?string|string|array<string, mixed>>
      */
     private function loadWhitelist(): array
     {

@@ -41,7 +41,7 @@ class AdUserManagerTest extends TestCase
         $runner = Mockery::mock(SambaToolRunner::class);
         $runner->shouldReceive('run')
             ->once()
-            ->with(['user', 'list'], Mockery::any())
+            ->with(['user', 'list'])
             ->andReturn($this->makeResult(0, "Administrator\nread.user\nguest\n"));
 
         $manager = new AdUserManager($runner);
@@ -107,8 +107,7 @@ class AdUserManagerTest extends TestCase
                         && $args[2] === 'read.user'
                         && $args[3] === 'Super-Secret-Pwd-1234'
                         && in_array('--use-username-as-cn', $args, true);
-                }),
-                Mockery::any()
+                })
             )
             ->andReturn($this->makeResult(0));
 
@@ -125,8 +124,7 @@ class AdUserManagerTest extends TestCase
             ->with(
                 Mockery::on(function (array $args): bool {
                     return in_array('--description=compte service AD', $args, true);
-                }),
-                Mockery::any()
+                })
             )
             ->andReturn($this->makeResult(0));
 
@@ -144,10 +142,10 @@ class AdUserManagerTest extends TestCase
         // 1er appel = create() retourne "already exists" + non-zero.
         // 2ème appel (depuis exists() côté re-check) = user list contient le compte.
         $runner->shouldReceive('run')
-            ->with(Mockery::on(fn(array $args): bool => $args[1] === 'create'), Mockery::any())
+            ->with(Mockery::on(fn(array $args): bool => $args[1] === 'create'))
             ->andReturn($this->makeResult(255, '', 'ERROR: User read.user already exists'));
         $runner->shouldReceive('run')
-            ->with(Mockery::on(fn(array $args): bool => $args[1] === 'list'), Mockery::any())
+            ->with(Mockery::on(fn(array $args): bool => $args[1] === 'list'))
             ->andReturn($this->makeResult(0, "read.user\n"));
 
         $manager = new AdUserManager($runner);
@@ -190,8 +188,7 @@ class AdUserManagerTest extends TestCase
                         && $args[1] === 'setpassword'
                         && $args[2] === 'read.user'
                         && in_array('--newpassword=NewPwd-1234567', $args, true);
-                }),
-                Mockery::any()
+                })
             )
             ->andReturn($this->makeResult(0));
 

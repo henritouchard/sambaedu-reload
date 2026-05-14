@@ -36,7 +36,7 @@ use Illuminate\Support\Facades\Log;
  * @since Story 16.3b
  * @see SambaToolRunner pour l'exécution shell sécurisée.
  */
-final class AdUserManager
+class AdUserManager
 {
     /** Caractères AD valides pour un samAccountName : `A-Z a-z 0-9 _ - . $`. */
     private const SAMACCOUNTNAME_REGEX = '/^[A-Za-z0-9_\-\.\$]+$/';

@@ -32,7 +32,7 @@ use Illuminate\Support\Facades\Log;
  *
  * Cache key-value `wpkg:packages:{strtolower($hostname)}`, TTL 1000s (parité APCu legacy).
  */
-final class WorkstationPackagesResolver
+class WorkstationPackagesResolver
 {
     /** TTL cache, en secondes (parité legacy APCu, cf. wpkg_libsql.php). */
     public const CACHE_TTL = 1000;

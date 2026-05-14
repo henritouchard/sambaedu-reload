@@ -99,6 +99,10 @@ class GpoLoggerTest extends TestCase
     #[Test]
     public function action_emits_failure_with_error_details(): void
     {
+        // `trace` n'est inclus qu'au niveau debug (cf. GpoActionLog::isDebugLevel,
+        // protection prod contre la pollution des logs par les stacktraces).
+        config()->set('logging.channels.'.GpoLogger::CHANNEL.'.level', 'debug');
+
         $log = GpoLogger::action('gpo.create', context: ['display_name' => 'foo']);
         $log->failure(new RuntimeException('boom'));
 

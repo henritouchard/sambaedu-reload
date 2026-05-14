@@ -18,7 +18,7 @@ namespace App\Gpo\Services;
  *
  * @legacy-port path="sambaedu/gpo/wine.php:43-49"
  */
-final class WinePrefixScanner
+class WinePrefixScanner
 {
     /**
      * Path par défaut iso-legacy. Override via

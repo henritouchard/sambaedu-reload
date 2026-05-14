@@ -35,6 +35,37 @@ class ReadUserManagerTest extends TestCase
         parent::tearDown();
     }
 
+    private function makeLdapConfig(string $baseDn): LdapConfig
+    {
+        return new LdapConfig(
+            url: 'ldaps://test.local',
+            port: 636,
+            baseDn: $baseDn,
+            adminName: 'admin',
+            adminPassword: 'pwd',
+            domain: 'example.local',
+            sambaDomain: 'EXAMPLE',
+            peopleRdn: 'ou=Utilisateurs',
+            groupsRdn: 'ou=Groupes',
+            computersRdn: 'ou=Computers',
+            parcsRdn: 'ou=Parcs',
+            classesRdn: 'ou=Classes',
+            equipesRdn: 'ou=Equipes',
+            matieresRdn: 'ou=Matieres',
+            coursRdn: 'ou=Cours',
+            projetsRdn: 'ou=Projets',
+            otherGroupsRdn: 'ou=AutresGroupes',
+            delegationsRdn: 'ou=Delegations',
+            equipementsRdn: 'ou=Equipements',
+            rightsRdn: 'ou=Droits',
+            trashRdn: 'ou=Trash',
+            etablissementsRdn: 'ou=Etablissements',
+            adminRdn: 'cn=Administrator',
+            etabServerIp: '127.0.0.1',
+            strictLocalAd: false,
+        );
+    }
+
     private function makeConfig(array $kv, ?array $reloadKv = null): SambaEduConfig
     {
         /** @var SambaEduConfig&\Mockery\MockInterface $mock */
@@ -58,13 +89,9 @@ class ReadUserManagerTest extends TestCase
             $state['data'][$k] = $v;
         });
 
-        $ldap = Mockery::mock(LdapConfig::class);
-        $ldap->baseDn = $kv['ldap_base_dn'] ?? 'dc=example,dc=local';
-        $mock->shouldReceive('ldap')->andReturn($ldap);
+        $mock->shouldReceive('ldap')->andReturn($this->makeLdapConfig($kv['ldap_base_dn'] ?? 'dc=example,dc=local'));
 
-        $policy = Mockery::mock(PasswordPolicyConfig::class);
-        $policy->minLength = 8;
-        $mock->shouldReceive('passwordPolicy')->andReturn($policy);
+        $mock->shouldReceive('passwordPolicy')->andReturn(new PasswordPolicyConfig(minLength: 8));
 
         return $mock;
     }

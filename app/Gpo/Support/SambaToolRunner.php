@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\Process;
  * - Tous les appels sont logués sur le channel `gpo` (action_type
  *   `gpo.sambatool.exec` — niveau debug) avec stdout/stderr tronqués à 8 Ko.
  */
-final class SambaToolRunner
+class SambaToolRunner
 {
     /** Valeur de timeout en secondes, ou null pour utiliser la config. */
     private ?int $timeoutOverride = null;
