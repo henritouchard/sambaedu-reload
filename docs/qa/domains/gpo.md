@@ -1272,4 +1272,4 @@ Code de retour : `0` si exit propre, `1` sinon. À lancer manuellement avant cha
 - Volet A (`SE4FS` nu) : **0 occurrence critique** dans le code source. Tous les usages sont via substitution dynamique (`$config['se4fs_name']` / `%SE4FS%` env Windows / `###_SE4FS_NAME_###` placeholder).
 - Volet B (shims 1bis.18) : 6 fichiers retirables maintenant (16.13), 3 conditionnels (Phase 3+), 2 services Laravel natifs encore dépendants de fonctions shim (`RoamingProfileService`, `WpkgGpoSynchronizer`).
 - **GO 16.10 / 16.9** : aucun blocage iso-legacy identifié.
-- **Action court terme avant 16.10** : refaire l'audit SYSVOL sur un serveur de prod (la VM dev n'a pas Samba AD DC actif).
+- **Action court terme avant 16.10** : refaire l'audit SYSVOL sur un serveur de **prod déployé**. Le DC dev `192.168.122.60` (domaine `localdev.fr`, credentials `.env`) est accessible via SMB mais ses 14 GPO sont vides de contenu (uniquement les `GPT.INI` metadata) — env dev propre, GPO non spécialisées. Le grep réel sur GPO peuplées doit être fait en prod.
