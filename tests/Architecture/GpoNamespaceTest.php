@@ -54,18 +54,39 @@ class GpoNamespaceTest extends TestCase
     ];
 
     /**
-     * Fichiers (basename) whitelistés pour exec/shell_exec/etc. — seul
-     * `SambaToolRunner` (16.1) et `GenerateWineImageJob` (16.3c) sont
-     * autorisés à utiliser `Illuminate\Support\Facades\Process`.
+     * Fichiers (basename) whitelistés pour la facade `Process` — utilisations
+     * légitimes hors `SambaToolRunner` :
      *
-     * `GenerateWineImageJob` invoque `make_wine_image.sh` en mode array
-     * (audit §6.F F7 corrigé) — pas une commande samba-tool, pas le bon
-     * niveau d'abstraction pour `SambaToolRunner`. Garde-fou maintenu via
-     * `it_uses_process_in_array_mode_in_generate_wine_image_job`.
+     * - `SambaToolRunner.php` (16.1) : point d'entrée samba-tool.
+     * - `GenerateWineImageJob.php` (16.3c) : invoque `make_wine_image.sh` en
+     *   mode array (audit §6.F F7). Pas une commande samba-tool, pas le bon
+     *   niveau d'abstraction pour `SambaToolRunner`. Garde-fou de mode array
+     *   maintenu via `it_uses_process_in_array_mode_in_generate_wine_image_job`.
+     * - `ApplicationScriptsGenerator.php` (16.7) : invoque les scripts
+     *   `pre-app.sh`/`post-app.sh`/`as-user.sh` (paramètres `$script, $user`)
+     *   en mode array — `Process::timeout(10)->run([$script, $user])`. Iso-legacy
+     *   `app_$type_${id}_$application.sh`. Pas une commande samba-tool.
      */
     private const SHELL_WHITELIST_FILES = [
         'SambaToolRunner.php',
         'GenerateWineImageJob.php',
+        'ApplicationScriptsGenerator.php',
+    ];
+
+    /**
+     * Fichiers exemptés des règles FORBIDDEN_EVERYWHERE (exec/shell_exec/...).
+     * Cas exceptionnel : portage iso-legacy d'une commande shell (avec pipe)
+     * non trivialement convertible à `Process::run(array)` ou samba-tool.
+     *
+     * - `NetworkScriptGenerator.php` : invoque `ssh ... pdbedit -Lw | cut -d: -f4`
+     *   pour récupérer la clé machine. Le pipe `|` impose le mode shell. Sera
+     *   migré à `samba-tool user getpassword` ou requête LDAP `dBCSPwd` en
+     *   Story 16.4 (cf. `@todo` dans le fichier). Vulnérabilité injection
+     *   identifiée audit §6.F, mitigée par validation `samAccountName` stricte
+     *   (regex amont) + `escapeshellarg` défense en profondeur.
+     */
+    private const EXEC_WHITELIST_FILES = [
+        'NetworkScriptGenerator.php',
     ];
 
     /**
@@ -219,13 +240,18 @@ class GpoNamespaceTest extends TestCase
 
             // Règles interdites PARTOUT (exec/shell_exec/passthru/proc_open) —
             // même SambaToolRunner doit passer exclusivement par la facade Process.
-            foreach (self::FORBIDDEN_EVERYWHERE as $rule) {
-                if (preg_match($rule['pattern'], $stripped) === 1) {
-                    $violations[] = sprintf(
-                        '%s utilise %s — interdit partout dans app/Gpo (utiliser Illuminate\\Support\\Facades\\Process via SambaToolRunner)',
-                        $file->getRelativePathname(),
-                        $rule['label'],
-                    );
+            // Exception : fichiers explicitement listés dans EXEC_WHITELIST_FILES
+            // (portage iso-legacy avec pipe shell, replan story dédiée).
+            $isExecWhitelisted = in_array($basename, self::EXEC_WHITELIST_FILES, true);
+            if (! $isExecWhitelisted) {
+                foreach (self::FORBIDDEN_EVERYWHERE as $rule) {
+                    if (preg_match($rule['pattern'], $stripped) === 1) {
+                        $violations[] = sprintf(
+                            '%s utilise %s — interdit partout dans app/Gpo (utiliser Illuminate\\Support\\Facades\\Process via SambaToolRunner)',
+                            $file->getRelativePathname(),
+                            $rule['label'],
+                        );
+                    }
                 }
             }
 
@@ -317,8 +343,11 @@ class GpoNamespaceTest extends TestCase
         $stripped = preg_replace('/^\s*\/\/.*$/m', '', $stripped) ?? $stripped;
 
         // 1. Doit contenir un appel `Process::...->run([...])` (mode array).
-        $hasArrayMode = preg_match('/Process::[A-Za-z0-9_:>()\\s,.]*run\s*\(\s*\[/s', $stripped) === 1
-            || preg_match('/Process::[A-Za-z0-9_:>()\\s,.]*run\s*\(\s*\$[A-Za-z_]+\s*\)/s', $stripped) === 1;
+        // La classe `[^)]*` tolère `$this->timeout` (etc.) dans l'enchaînement
+        // `Process::timeout($this->timeout)->run(...)` — l'ancienne classe
+        // `[A-Za-z0-9_:>()\s,.]` excluait le `$` et faisait faux négatif.
+        $hasArrayMode = preg_match('/Process::[^)]*\)?\s*(?:->[A-Za-z_]+\([^)]*\)\s*)*->\s*run\s*\(\s*\[/s', $stripped) === 1
+            || preg_match('/Process::[^)]*\)?\s*(?:->[A-Za-z_]+\([^)]*\)\s*)*->\s*run\s*\(\s*\$[A-Za-z_]+\s*\)/s', $stripped) === 1;
 
         self::assertTrue(
             $hasArrayMode,
