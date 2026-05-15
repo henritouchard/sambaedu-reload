@@ -38,6 +38,14 @@ class LegacyModuleGpoOutputsTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Désactivé : portage natif Laravel des modules legacy GPO en cours
+        // (Epic 16/17). Les pages output (network_out.php, veyon_out.php,
+        // associations_out.php, ...) sont remplacées par leurs équivalents
+        // natifs ; les tests Feature dédiés couvrent la nouvelle implémentation
+        // (cf. tests/Feature/Gpo/NetworkOut*Test, VeyonOut*Test, etc.).
+        $this->markTestSkipped('Désactivé pendant le portage natif Laravel des modules legacy GPO (Epic 16/17).');
+
         $this->withoutVite();
 
         Config::set('sambaedu.block_migrated_routes', false);
@@ -234,40 +242,6 @@ class LegacyModuleGpoOutputsTest extends TestCase
             );
         }
         $this->assertFileExists($networkInc, 'network.inc.php introuvable via legacy_path');
-    }
-
-    // ─── AC #2 / T4.3 : network_out.php — script text/plain ────────────────
-
-    #[RunInSeparateProcess]
-    #[PreserveGlobalState(false)]
-    public function test_network_out_returns_plain_text_script(): void
-    {
-        $this->skipIfBootstrapUnavailable();
-
-        $admin = $this->createAdmin();
-        $this->actingAs($admin);
-
-        $response = $this->post('/gpo/network_out.php', [
-            'action' => 'startup',
-            'os'     => 'linux',
-            'id'     => 'dummy_test_id',
-        ]);
-
-        $response->assertStatus(200);
-
-        // Le body doit contenir #!/bin/bash (header script bash)
-        $body = $response->getContent() ?: '';
-        $this->assertStringContainsString('#!/bin/bash', $body,
-            'network_out.php startup linux doit retourner un script bash');
-
-        // Le body NE DOIT PAS contenir du layout SER (assertion de non-wrapping
-        // plus fiable que le Content-Type : en mode CLI, PHP's header() ne
-        // populate pas headers_list(), donc le controller ne capte pas le
-        // "Content-type: text/plain" appelé par le legacy → le Content-Type
-        // resterait text/html par défaut en test même si la production le
-        // renverrait correctement en text/plain).
-        $this->assertStringNotContainsString('<html', strtolower($body),
-            'network_out.php ne doit pas être wrappé dans le layout SER');
     }
 
     // ─── AC #2 / T4.4 : network_out.php sans action — gracieux ─────────────

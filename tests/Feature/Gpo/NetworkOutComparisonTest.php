@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Gpo;
 
-use App\Config\LdapConfig;
-use App\Config\PasswordPolicyConfig;
-use App\Config\SambaEduConfig;
 use App\Dto\AppCustomization\AppContext;
 use App\Services\AppCustomization\Contracts\AppContextRepository;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Concerns\MakesGpoConfigFakes;
 use Tests\TestCase;
 
 /**
@@ -24,6 +22,8 @@ use Tests\TestCase;
  */
 class NetworkOutComparisonTest extends TestCase
 {
+    use MakesGpoConfigFakes;
+
     private const FIXTURE_PATH = 'tests/Fixtures/Gpo/legacy-network-out-startup-linux.txt';
     private const VALID_ID = 'cccccccccccccccccccccccccccccccc';
 
@@ -64,18 +64,7 @@ class NetworkOutComparisonTest extends TestCase
 
     private function bindFakeConfig(array $kv): void
     {
-        $mock = Mockery::mock(SambaEduConfig::class);
-        $mock->shouldReceive('get')->andReturnUsing(fn($k, $d = null) => $kv[$k] ?? $d);
-        $mock->shouldReceive('has')->andReturnUsing(fn($k) => array_key_exists($k, $kv));
-        $mock->shouldReceive('all')->andReturn($kv);
-        $mock->shouldReceive('reload')->andReturnNull();
-        $ldap = Mockery::mock(LdapConfig::class);
-        $ldap->baseDn = 'dc=example,dc=local';
-        $mock->shouldReceive('ldap')->andReturn($ldap);
-        $policy = Mockery::mock(PasswordPolicyConfig::class);
-        $policy->minLength = 8;
-        $mock->shouldReceive('passwordPolicy')->andReturn($policy);
-        $this->app->instance(SambaEduConfig::class, $mock);
+        $this->bindFakeSambaEduConfig($kv);
     }
 
     private function seedContext(string $id): void

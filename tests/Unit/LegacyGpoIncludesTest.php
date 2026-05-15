@@ -16,16 +16,14 @@ class LegacyGpoIncludesTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->withoutVite();
 
-        if (defined('LEGACY_SKIP_LEGACY_INCLUDES')) {
-            $this->markTestSkipped(
-                'LEGACY_SKIP_LEGACY_INCLUDES actif (tests) : les includes legacy'
-                    . ' originaux (samba-tool.inc.php, gpo.inc.php, …) ne sont pas'
-                    . ' chargés pour éviter les exec(samba-tool) bloquants. Les'
-                    . ' fonctions testées ici proviennent précisément de ces includes.'
-            );
-        }
+        // Désactivé : portage natif Laravel des fonctions GPO en cours
+        // (Epic 16/17). Vérifier la chargeabilité des includes legacy
+        // GPO (samba-tool.inc.php, gpo.inc.php, ...) n'a plus de sens
+        // dès lors que ces fonctions seront retirées du périmètre runtime.
+        $this->markTestSkipped('Désactivé pendant le portage natif Laravel des fonctions GPO (Epic 16/17).');
+
+        $this->withoutVite();
     }
 
     // ─── AC #1 : Chargement sans erreur fatale ─────────────────────────

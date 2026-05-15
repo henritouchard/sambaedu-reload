@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Gpo;
 
-use App\Config\LdapConfig;
-use App\Config\PasswordPolicyConfig;
-use App\Config\SambaEduConfig;
 use App\Services\AppCustomization\Contracts\AppContextRepository;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Concerns\MakesGpoConfigFakes;
 use Tests\TestCase;
 
 /**
@@ -21,6 +20,8 @@ use Tests\TestCase;
  */
 class NetworkOutSecurityTest extends TestCase
 {
+    use MakesGpoConfigFakes;
+
     /** @var array<int,string> */
     public static array $resolveCalls = [];
 
@@ -41,20 +42,7 @@ class NetworkOutSecurityTest extends TestCase
             };
         });
 
-        // Config minimale.
-        /** @var SambaEduConfig&\Mockery\MockInterface $mock */
-        $mock = Mockery::mock(SambaEduConfig::class);
-        $mock->shouldReceive('get')->andReturnUsing(fn($k, $d = null) => $d);
-        $mock->shouldReceive('has')->andReturn(false);
-        $mock->shouldReceive('all')->andReturn([]);
-        $mock->shouldReceive('reload')->andReturnNull();
-        $ldap = Mockery::mock(LdapConfig::class);
-        $ldap->baseDn = 'dc=x';
-        $mock->shouldReceive('ldap')->andReturn($ldap);
-        $policy = Mockery::mock(PasswordPolicyConfig::class);
-        $policy->minLength = 8;
-        $mock->shouldReceive('passwordPolicy')->andReturn($policy);
-        $this->app->instance(SambaEduConfig::class, $mock);
+        $this->bindFakeSambaEduConfig(ldapOverrides: ['baseDn' => 'dc=x']);
     }
 
     protected function tearDown(): void
@@ -80,10 +68,8 @@ class NetworkOutSecurityTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider maliciousIdsProvider
-     */
     #[Test]
+    #[DataProvider('maliciousIdsProvider')]
     public function it_rejects_malicious_id_with_empty_ok_and_no_repository_lookup(string $maliciousId): void
     {
         // Décision Henri 2026-05-12 post-review : iso-legacy 200 body=""

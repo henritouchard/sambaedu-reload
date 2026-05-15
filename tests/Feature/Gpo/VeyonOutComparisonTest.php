@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Gpo;
 
-use App\Config\LdapConfig;
-use App\Config\PasswordPolicyConfig;
-use App\Config\SambaEduConfig;
 use App\Dto\AppCustomization\AppContext;
 use App\Gpo\Services\ReadUserManager;
 use App\Services\AppCustomization\Contracts\AppContextRepository;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Concerns\MakesGpoConfigFakes;
 use Tests\TestCase;
 
 /**
@@ -30,6 +28,8 @@ use Tests\TestCase;
  */
 class VeyonOutComparisonTest extends TestCase
 {
+    use MakesGpoConfigFakes;
+
     private const FIXTURE_PATH = 'tests/Fixtures/Gpo/legacy-veyon-out.json';
     private const VALID_ID = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 
@@ -91,21 +91,7 @@ class VeyonOutComparisonTest extends TestCase
 
     private function bindFakeConfig(array $kv): void
     {
-        $mock = Mockery::mock(SambaEduConfig::class);
-        $mock->shouldReceive('get')->andReturnUsing(fn($k, $d = null) => $kv[$k] ?? $d);
-        $mock->shouldReceive('has')->andReturnUsing(fn($k) => array_key_exists($k, $kv));
-        $mock->shouldReceive('all')->andReturn($kv);
-        $mock->shouldReceive('reload')->andReturnNull();
-
-        $ldap = Mockery::mock(LdapConfig::class);
-        $ldap->baseDn = $kv['ldap_base_dn'] ?? 'dc=example,dc=local';
-        $mock->shouldReceive('ldap')->andReturn($ldap);
-
-        $policy = Mockery::mock(PasswordPolicyConfig::class);
-        $policy->minLength = 8;
-        $mock->shouldReceive('passwordPolicy')->andReturn($policy);
-
-        $this->app->instance(SambaEduConfig::class, $mock);
+        $this->bindFakeSambaEduConfig($kv);
     }
 
     private function bindReadUser(?string $password): void

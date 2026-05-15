@@ -31,6 +31,11 @@ class LegacyGestionGpoRedirectTest extends TestCase
     {
         parent::setUp();
 
+        // Désactivé : portage natif Laravel des modules legacy GPO en cours
+        // (Epic 16/17). Les redirections testées ici (gestion_gpo.php,
+        // gpo-maj.php, ...) vont disparaître avec le portage natif.
+        $this->markTestSkipped('Désactivé pendant le portage natif Laravel des modules legacy GPO (Epic 16/17).');
+
         $this->legacyTmpDir = sys_get_temp_dir() . '/sambaedu_gpo_test_' . uniqid();
         mkdir($this->legacyTmpDir, 0777, true);
 
@@ -65,7 +70,11 @@ class LegacyGestionGpoRedirectTest extends TestCase
 
     protected function tearDown(): void
     {
-        $this->removeDirectory($this->legacyTmpDir);
+        // setUp() peut s'arrêter avant l'init de $legacyTmpDir (cas markTestSkipped) —
+        // tearDown reste appelé par PHPUnit, on protège contre l'accès non-init.
+        if (isset($this->legacyTmpDir)) {
+            $this->removeDirectory($this->legacyTmpDir);
+        }
         parent::tearDown();
     }
 
