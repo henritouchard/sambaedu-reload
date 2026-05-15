@@ -1224,3 +1224,52 @@ suivants sont à valider en T8 :
   workstation truncation) avec logs warning sur le channel `gpo`.
   Smoke T8.4 : vérifier l'absence de warnings sur un template VM
   réel (`se4_wpkg.zip` ≤ quelques Mo, pas d'utf16 mixte attendu).
+
+---
+
+## Story 16.8 — Stabilisation Phase 1 + audit iso-legacy (2026-05-15)
+
+### Procédure d'exécution des tests Phase 1
+
+Script reproductible `scripts/run-tests.sh` ajouté au dépôt :
+
+```bash
+# Suite Phase 1 (Architecture + Unit/Gpo + Unit/Ldap + Feature/Gpo) :
+ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 \
+  'cd /var/www/sambaedu-reload && bash scripts/run-tests.sh --phase1-only'
+
+# Suite complète (Architecture + Unit + Feature) :
+ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 \
+  'cd /var/www/sambaedu-reload && bash scripts/run-tests.sh'
+```
+
+Le script produit :
+
+- `storage/logs/tests/run-YYYY-MM-DDTHH-MM-SS.log` — sortie complète horodatée
+- `storage/logs/tests/last-run-summary.json` — résumé synthétique (passed/failed/errors/skipped/risky/duration/exit_code)
+
+Code de retour : `0` si exit propre, `1` sinon. À lancer manuellement avant chaque PR Phase 2.
+
+### Seuil de fail acceptable
+
+- **Tests Phase 1 (D4 16.8)** : 0 fail toléré. Tous les tests `tests/Architecture/`, `tests/Unit/Gpo/`, `tests/Unit/Ldap/`, `tests/Feature/Gpo/` doivent passer.
+- **Tests non-Phase 1** : decision-log obligatoire pour chaque skip/delete, mais pas de fix obligatoire (cf. story 16.8 §D4).
+- **Tests `@group requires-postgres`** : exclus par défaut (`phpunit.xml`).
+- **Tests `@group requires-fixture-capture`** : restent skippés (capture fixtures = action Henri sur VM réelle, hors-scope dev).
+
+### Baseline 2026-05-15 (HEAD `0a4609c`)
+
+| Run | Scope | Passed | Failed | Skipped | Risky | Durée | Exit |
+|---|---|---|---|---|---|---|---|
+| Phase 1 only | 16.8 T6 | **474** | **0** | 15 | 3 | 19s | 0 |
+| Suite complète | 16.8 T6.1 | 2074 | 18 (non-Phase 1) | 103 | 4 | 99s | 1 |
+
+**18 failures non-Phase 1** = bug d'isolation pré-existant à 16.8 (les tests `LegacyBootstrapShimsTest`, `LegacyBootstrapCatchallTest`, `LegacyModulePrintersTest` passent isolément `68 passed/0 failed` mais pas dans la suite Feature complète — pollution `include_path` + fonctions globales). Hors-scope 16.8, à traiter en story dédiée tech-debt test-infra.
+
+### Audit iso-legacy associé
+
+- Rapport : `_bmad-output/planning-artifacts/audit-iso-legacy-2026-05-15.md`
+- Volet A (`SE4FS` nu) : **0 occurrence critique** dans le code source. Tous les usages sont via substitution dynamique (`$config['se4fs_name']` / `%SE4FS%` env Windows / `###_SE4FS_NAME_###` placeholder).
+- Volet B (shims 1bis.18) : 6 fichiers retirables maintenant (16.13), 3 conditionnels (Phase 3+), 2 services Laravel natifs encore dépendants de fonctions shim (`RoamingProfileService`, `WpkgGpoSynchronizer`).
+- **GO 16.10 / 16.9** : aucun blocage iso-legacy identifié.
+- **Action court terme avant 16.10** : refaire l'audit SYSVOL sur un serveur de prod (la VM dev n'a pas Samba AD DC actif).
