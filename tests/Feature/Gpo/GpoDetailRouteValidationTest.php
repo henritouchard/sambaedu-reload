@@ -133,8 +133,12 @@ class GpoDetailRouteValidationTest extends TestCase
         // Fix #9 + #1 : la regex de route accepte le GUID sans accolades ;
         // au niveau HTTP, la route doit donc dispatcher (200 ou 404 métier
         // selon le retour du service) — pas un 404 routeur.
+        // Bypass sambaedu.auth (vérifie $_SESSION['login'], non touché par
+        // `actingAs`) — on garde `can:server.admin` actif pour valider la
+        // chaîne route → middleware perm → composant.
         $admin = $this->makeAdmin('admin-route-nobrace');
         $this->actingAs($admin);
+        $this->withoutMiddleware(\App\Http\Middleware\Auth\SambaEduAuth::class);
 
         FakesGpoService::make()
             ->withGpo(self::VALID_GUID, null) // null → 404 métier propre

@@ -298,7 +298,9 @@ class GpoDetailPageTest extends TestCase
             ->bind($this->app);
 
         Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
-            ->assertSee('Éditer dans l\'ancienne UI')
+            // escape=false : l'apostrophe `'` est littérale dans le blade, donc le rendu
+            // HTML la conserve ; `assertSee` escape=true chercherait `&#039;` et ne match pas.
+            ->assertSee("Éditer dans l'ancienne UI", false)
             ->assertSee('target="_blank"', false)
             ->assertSee('gestion_gpo.php', false);
     }
@@ -343,9 +345,11 @@ class GpoDetailPageTest extends TestCase
             ->assertSee('Non recommandé', false);
 
         // Bouton legacy dégradé — assertion ciblée sur les classes du bouton identifié.
+        // L'ordre des attributs `class` vs `data-testid` n'est pas garanti (le blade
+        // émet `class` avant `data-testid`), on couvre les 2 sens.
         $html = $rendered->html();
         $this->assertMatchesRegularExpression(
-            '/data-testid="legacy-edit-button"[^>]*class="[^"]*btn-ghost btn-xs/',
+            '/(data-testid="legacy-edit-button"[^>]*class="[^"]*btn-ghost btn-xs)|(class="[^"]*btn-ghost btn-xs[^"]*"[^>]*data-testid="legacy-edit-button")/s',
             $html,
             'Bouton legacy doit être dégradé (btn-ghost btn-xs) sur une GPO matchant une section native',
         );
@@ -444,9 +448,10 @@ class GpoDetailPageTest extends TestCase
             ->assertDontSee('Non recommandé');
 
         // Bouton legacy primaire — assertion ciblée sur le bouton identifié.
+        // L'ordre des attributs `class` vs `data-testid` n'est pas garanti.
         $html = $rendered->html();
         $this->assertMatchesRegularExpression(
-            '/data-testid="legacy-edit-button"[^>]*class="[^"]*btn-primary btn-sm/',
+            '/(data-testid="legacy-edit-button"[^>]*class="[^"]*btn-primary btn-sm)|(class="[^"]*btn-primary btn-sm[^"]*"[^>]*data-testid="legacy-edit-button")/s',
             $html,
             'Bouton legacy doit rester primaire (btn-primary btn-sm) sur une GPO sans section native',
         );

@@ -144,7 +144,10 @@ class GpoNativeSectionLinksTest extends TestCase
             ->assertStatus(200)
             // CTA natif présent et identifié par data-testid (review 16.3a #6).
             ->assertSee('data-testid="native-cta-wallpapers"', false)
-            ->assertSee('Gérer les fonds d\'écran', false)
+            // escape=true (default) : l'apostrophe est rendue via `{{ $link['label'] }}`
+            // qui passe par `e()` → le HTML contient `&#039;`, on doit chercher la
+            // version escapée. Avec `false`, le test cherche `'` littéral et fail.
+            ->assertSee("Gérer les fonds d'écran")
             // Vérifie l'ordre : CTA natif AVANT le bouton legacy (assertSeeInOrder).
             ->assertSeeInOrder([
                 'data-testid="native-cta-wallpapers"',
@@ -232,14 +235,16 @@ class GpoNativeSectionLinksTest extends TestCase
 
         // Vérifie spécifiquement que le bouton legacy porte les classes secondaires
         // (btn-ghost btn-xs) et NON pas primaires — sans coupler à une chaîne CSS générique.
+        // L'ordre des attributs `class` vs `data-testid` n'est pas garanti (le blade
+        // émet `class` avant `data-testid`), on couvre les 2 sens.
         $html = $rendered->html();
         $this->assertMatchesRegularExpression(
-            '/data-testid="legacy-edit-button"[^>]*class="[^"]*btn-ghost btn-xs/',
+            '/(data-testid="legacy-edit-button"[^>]*class="[^"]*btn-ghost btn-xs)|(class="[^"]*btn-ghost btn-xs[^"]*"[^>]*data-testid="legacy-edit-button")/s',
             $html,
             'Le bouton legacy doit avoir les classes secondaires btn-ghost btn-xs',
         );
         $this->assertDoesNotMatchRegularExpression(
-            '/data-testid="legacy-edit-button"[^>]*class="[^"]*btn-primary btn-sm/',
+            '/(data-testid="legacy-edit-button"[^>]*class="[^"]*btn-primary btn-sm)|(class="[^"]*btn-primary btn-sm[^"]*"[^>]*data-testid="legacy-edit-button")/s',
             $html,
             'Le bouton legacy ne doit PAS être primaire sur une GPO matchant une section native',
         );

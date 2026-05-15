@@ -28,8 +28,15 @@ class GpoLoggingChannelTest extends TestCase
         $this->assertSame('daily', $cfg['driver'] ?? null);
 
         // Path attendu : storage/logs/gpo/gpo.log (rotation daily ajoute la date).
+        // En environnement de test, Laravel override `storage_path()` vers
+        // `storage/testing/logs/...` — on tolère donc les 2 formes.
         $this->assertIsString($cfg['path'] ?? null);
-        $this->assertStringEndsWith('storage/logs/gpo/gpo.log', str_replace('\\', '/', $cfg['path']));
+        $normalized = str_replace('\\', '/', $cfg['path']);
+        $this->assertMatchesRegularExpression(
+            '#storage/(?:testing/)?logs/gpo/gpo\.log$#',
+            $normalized,
+            "Le path doit se terminer par storage/[testing/]logs/gpo/gpo.log, reçu : {$normalized}"
+        );
     }
 
     #[Test]
