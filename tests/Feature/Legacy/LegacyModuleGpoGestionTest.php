@@ -42,6 +42,7 @@ class LegacyModuleGpoGestionTest extends TestCase
         // (Epic 16/17). Les pages legacy (`gestion_gpo.php`, `gpo-maj.php`,
         // `gpo-export.php`) sont remplacées par leurs équivalents natifs ;
         // tester leur invocation via le catchall n'a plus vocation à durer.
+        // @todo Supprimer ce test lors de story 16.13 (retrait des shims GPO).
         $this->markTestSkipped('Désactivé pendant le portage natif Laravel des modules legacy GPO (Epic 16/17).');
 
         $this->withoutVite();

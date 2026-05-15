@@ -36,6 +36,7 @@ class GpoLegacyIsolationTest extends TestCase
         // (Epic 16/17). Le garde-fou architectural shim/natif n'est plus
         // pertinent une fois le portage natif complet — la frontière qu'il
         // protège disparaît avec le shim.
+        // @todo Supprimer ce test lors de story 16.13 (retrait des shims GPO).
         $this->markTestSkipped('Désactivé pendant le portage natif Laravel des fonctions GPO (Epic 16/17).');
     }
 

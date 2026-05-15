@@ -21,6 +21,7 @@ class LegacyGpoIncludesTest extends TestCase
         // (Epic 16/17). Vérifier la chargeabilité des includes legacy
         // GPO (samba-tool.inc.php, gpo.inc.php, ...) n'a plus de sens
         // dès lors que ces fonctions seront retirées du périmètre runtime.
+        // @todo Supprimer ce test lors de story 16.13 (retrait des shims GPO).
         $this->markTestSkipped('Désactivé pendant le portage natif Laravel des fonctions GPO (Epic 16/17).');
 
         $this->withoutVite();

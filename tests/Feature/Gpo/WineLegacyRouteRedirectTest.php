@@ -23,6 +23,7 @@ class WineLegacyRouteRedirectTest extends TestCase
         // Désactivé : portage natif Laravel des modules legacy GPO en cours
         // (Epic 16/17). Les redirections testées ici (wine.php, ...) vont
         // disparaître avec le portage natif.
+        // @todo Supprimer ce test lors de story 16.13 (retrait des shims GPO).
         $this->markTestSkipped('Désactivé pendant le portage natif Laravel des modules legacy GPO (Epic 16/17).');
     }
 

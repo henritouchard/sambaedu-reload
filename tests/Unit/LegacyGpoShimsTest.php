@@ -48,6 +48,7 @@ class LegacyGpoShimsTest extends TestCase
         // (Epic 16/17). Le shim `legacy/gpo_shim.inc.php` n'a plus vocation
         // à être maintenu une fois le portage complet — voir mémoire
         // [[feedback_guacamole_scope]] (analogue : supporter, pas refondre).
+        // @todo Supprimer ce test lors de story 16.13 (retrait des shims GPO).
         $this->markTestSkipped('Désactivé pendant le portage natif Laravel des fonctions GPO (Epic 16/17).');
 
         $this->withoutVite();

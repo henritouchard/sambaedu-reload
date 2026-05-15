@@ -68,7 +68,9 @@ START_EPOCH=$(date +%s)
 set +e
 php artisan test "${TEST_ARGS[@]}" 2>&1 | tee "$LOG_FILE"
 EXIT_CODE=${PIPESTATUS[0]}
+TEE_CODE=${PIPESTATUS[1]}
 set -e
+[[ "$TEE_CODE" -ne 0 ]] && echo "WARN: tee failed (code $TEE_CODE) — log peut être tronqué : $LOG_FILE" >&2
 END_EPOCH=$(date +%s)
 DURATION=$((END_EPOCH - START_EPOCH))
 
@@ -85,7 +87,7 @@ extract_n() {
     # Cherche "<N> <label>" insensible casse dans le tail.
     local label="$1"
     local n
-    n=$(tail -40 "$LOG_FILE" | grep -oE "[0-9]+ ${label}" | tail -1 | awk '{print $1}' || true)
+    n=$(tail -40 "$LOG_FILE" | sed 's/\x1b\[[0-9;]*m//g' | grep -oE "[0-9]+ ${label}" | tail -1 | awk '{print $1}' || true)
     echo "${n:-0}"
 }
 
@@ -101,25 +103,26 @@ WARNINGS=$(extract_n warnings)
 # Le total agrégé doit refléter la réalité ; à défaut, somme des composantes.
 TOTAL=$((PASSED + FAILED + ERRORS + SKIPPED + RISKY))
 
+# Échapper les guillemets et backslashes pour JSON valide.
+ARGS_JSON="$(printf '%s' "${TEST_ARGS[*]:-}" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+
 cat > "$SUMMARY_FILE" <<EOF
 {
   "run_id": "$RUN_ID",
   "scope": "$SCOPE",
-  "args": "${TEST_ARGS[*]:-}",
+  "args": "$ARGS_JSON",
   "log_file": "$LOG_FILE",
   "exit_code": $EXIT_CODE,
   "duration_seconds": $DURATION,
-  "totals": {
-    "total": $TOTAL,
-    "passed": $PASSED,
-    "failed": $FAILED,
-    "errors": $ERRORS,
-    "skipped": $SKIPPED,
-    "risky": $RISKY,
-    "deprecated": $DEPRECATED,
-    "notices": $NOTICES,
-    "warnings": $WARNINGS
-  }
+  "passed": $PASSED,
+  "failed": $FAILED,
+  "errors": $ERRORS,
+  "skipped": $SKIPPED,
+  "risky": $RISKY,
+  "total": $TOTAL,
+  "deprecated": $DEPRECATED,
+  "notices": $NOTICES,
+  "warnings": $WARNINGS
 }
 EOF
 

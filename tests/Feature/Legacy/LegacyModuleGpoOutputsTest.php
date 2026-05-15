@@ -44,6 +44,7 @@ class LegacyModuleGpoOutputsTest extends TestCase
         // associations_out.php, ...) sont remplacées par leurs équivalents
         // natifs ; les tests Feature dédiés couvrent la nouvelle implémentation
         // (cf. tests/Feature/Gpo/NetworkOut*Test, VeyonOut*Test, etc.).
+        // @todo Supprimer ce test lors de story 16.13 (retrait des shims GPO).
         $this->markTestSkipped('Désactivé pendant le portage natif Laravel des modules legacy GPO (Epic 16/17).');
 
         $this->withoutVite();

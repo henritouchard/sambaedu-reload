@@ -62,6 +62,13 @@ trait MakesGpoConfigFakes
             'strictLocalAd' => false,
         ];
 
+        $unknown = array_diff_key($overrides, $defaults);
+        if ($unknown !== []) {
+            throw new \InvalidArgumentException(
+                'MakesGpoConfigFakes::makeLdapConfig — clés inconnues dans $overrides : ' . implode(', ', array_keys($unknown))
+            );
+        }
+
         return new LdapConfig(...array_merge($defaults, $overrides));
     }
 
@@ -73,6 +80,13 @@ trait MakesGpoConfigFakes
         $defaults = [
             'minLength' => 8,
         ];
+
+        $unknown = array_diff_key($overrides, $defaults);
+        if ($unknown !== []) {
+            throw new \InvalidArgumentException(
+                'MakesGpoConfigFakes::makePasswordPolicyConfig — clés inconnues dans $overrides : ' . implode(', ', array_keys($unknown))
+            );
+        }
 
         return new PasswordPolicyConfig(...array_merge($defaults, $overrides));
     }
@@ -98,7 +112,7 @@ trait MakesGpoConfigFakes
         /** @var SambaEduConfig&\Mockery\MockInterface $mock */
         $mock = Mockery::mock(SambaEduConfig::class);
         $mock->shouldReceive('get')
-            ->andReturnUsing(fn(string $key, mixed $default = null): mixed => $kv[$key] ?? $default);
+            ->andReturnUsing(fn(string $key, mixed $default = null): mixed => array_key_exists($key, $kv) ? $kv[$key] : $default);
         $mock->shouldReceive('has')
             ->andReturnUsing(fn(string $key) => array_key_exists($key, $kv));
         $mock->shouldReceive('all')->andReturn($kv);
