@@ -359,7 +359,10 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
                         @php
                             $version = $gpo['versionNumber'] ?? 0;
                             $isActive = $version > 0;
-                            $detailUrl = route('app.gpo.show', ['guid' => $gpo['name']]);
+                            // Strip accolades du GUID Microsoft `{...}` : Laravel/Symfony UrlGenerator
+                            // ré-interprète les `{` `}` de la valeur substituée comme placeholders
+                            // et lève UrlGenerationException. La regex de la route accepte les 2 formes.
+                            $detailUrl = route('app.gpo.show', ['guid' => trim((string) $gpo['name'], '{}')]);
                             $legacyUrl = url('/gpo/gestion_gpo.php') . '?' . http_build_query(['selectionne' => $gpo['displayName']]);
                             // Story 16.3a — AC3.1/AC3.3 : résolution heuristique sur la collection
                             // paginée (déjà en mémoire) — aucun appel I/O supplémentaire.

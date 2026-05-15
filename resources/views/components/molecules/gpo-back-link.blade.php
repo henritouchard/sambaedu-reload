@@ -52,8 +52,10 @@
 @endphp
 
 @if ($guid !== null && $displayName)
-    {{-- Lien complet avec displayName résolu --}}
-    <a href="{{ route('app.gpo.show', ['guid' => $guid]) }}" class="btn btn-ghost btn-sm">
+    {{-- Lien complet avec displayName résolu.
+         Strip accolades : Laravel/Symfony UrlGenerator ré-interprète les `{` `}` de la
+         valeur comme placeholders. La regex de la route accepte les 2 formes. --}}
+    <a href="{{ route('app.gpo.show', ['guid' => trim((string) $guid, '{}')]) }}" class="btn btn-ghost btn-sm">
         <i class="fa-solid fa-arrow-left"></i>
         Retour à la GPO «{{ $displayName }}»
     </a>
