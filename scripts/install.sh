@@ -472,6 +472,32 @@ run_application_update() {
 }
 
 # ============================================================================
+# Initialisation PKI Auth V1 (Story 16.10)
+# ============================================================================
+# Génère, si absents, le CA root local + le cert serveur + la paire JWT
+# RS256 utilisés par l'API `/api/v1/agent/*`. Commande idempotente :
+# une réexécution est un no-op si les artefacts existent et que le cert
+# serveur n'expire pas dans les 30 jours. À relancer après remplacement
+# matériel ou rotation manuelle (`--force` régénère tout — option catastrophe).
+
+init_auth_v1_pki() {
+  log "Initialisation PKI Auth V1 (Story 16.10)..."
+  cd "$APP_DIR"
+
+  if ! php artisan list 2>/dev/null | grep -q 'auth:ca:init'; then
+    log_warning "Commande auth:ca:init non disponible (Story 16.10 pas déployée) — étape ignorée"
+    return 0
+  fi
+
+  if ! php artisan auth:ca:init --no-interaction; then
+    log_error "Échec init PKI Auth V1 — vérifier storage/keys/ + extension OpenSSL"
+    return 1
+  fi
+
+  log_success "PKI Auth V1 prête (CA root + cert serveur + paire JWT)"
+}
+
+# ============================================================================
 # Configuration Apache
 # ============================================================================
 
@@ -888,10 +914,11 @@ main() {
 
   # Phase 5: Optimisation
   echo ""
-  log "Phase 5/8: Optimisation applicative..."
+  log "Phase 5/8: Optimisation applicative + PKI Auth V1..."
   echo ""
 
   run_application_update
+  init_auth_v1_pki
 
   # Phase 6: Apache
   echo ""
