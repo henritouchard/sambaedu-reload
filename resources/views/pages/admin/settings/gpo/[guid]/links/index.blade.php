@@ -12,9 +12,10 @@ use Livewire\Component;
 
 /**
  * Page Livewire SFC — Gestion des liaisons GPO ↔ OU (Story 16.5 / Volet 2).
+ * Story 16.9 — déplacement sous `/admin/settings/gpo/{guid}/links`.
  *
  * Pattern strict iso-Story 16.2 (page détail) :
- *  - filesystem-based router (`/app/gpo/{guid}/links`)
+ *  - filesystem-based router (`/admin/settings/gpo/{guid}/links`)
  *  - `boot(GpoService, OrganizationalUnitRepository)` DI Livewire
  *  - `mount(string $guid)` avec normalizeGuid + abort_unless permission
  *  - regex GUID tolérante (16.2 fix #9)
@@ -550,11 +551,11 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
 
     <x-slot:actions>
         <div class="flex flex-wrap gap-2 items-center">
-            <a href="{{ url('/app/gpo/' . $this->guid) }}" class="btn btn-outline btn-sm">
+            <a href="{{ route('admin.gpo.show', ['guid' => trim((string) $this->guid, '{}')]) }}" class="btn btn-outline btn-sm">
                 <i class="fa-solid fa-arrow-left"></i>
                 Retour à la GPO
             </a>
-            <a href="{{ route('app.gpo.index') }}" class="btn btn-ghost btn-sm">
+            <a href="{{ route('admin.gpo.index') }}" class="btn btn-ghost btn-sm">
                 <i class="fa-solid fa-list"></i>
                 Liste des GPOs
             </a>

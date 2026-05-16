@@ -16,7 +16,7 @@ use Tests\Concerns\BootstrapsSpatieTables;
 use Tests\TestCase;
 
 /**
- * Tests Feature permission `/app/gpo/wpkg-deployment` — Story 16.6 (AC5.2, AC3.5).
+ * Tests Feature permission `/admin/settings/gpo/wpkg-deployment` — Story 16.6 (AC5.2, AC3.5) + Story 16.9.
  *
  * 4 cas iso 16.5 : 200 admin / 403 user / 403 unauthenticated / 403 route HTTP.
  */
@@ -91,7 +91,7 @@ class WpkgDeploymentPagePermissionTest extends TestCase
         $this->actingAs($this->makeAdmin('admin-wpkg-perm-ok'));
         $this->bindSyncOk();
 
-        Livewire::test('pages::app.gpo.wpkg-deployment.index')
+        Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->assertStatus(200);
     }
 
@@ -102,7 +102,7 @@ class WpkgDeploymentPagePermissionTest extends TestCase
         $this->bindSyncExpectNoCalls();
 
         try {
-            Livewire::test('pages::app.gpo.wpkg-deployment.index');
+            Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index');
             $this->fail('Expected 403 abort');
         } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
             $this->assertSame(403, $e->getStatusCode());
@@ -118,7 +118,7 @@ class WpkgDeploymentPagePermissionTest extends TestCase
         $this->actingAs($user);
         $this->bindSyncExpectNoCalls();
 
-        $response = $this->get('/app/gpo/wpkg-deployment');
+        $response = $this->get('/admin/settings/gpo/wpkg-deployment');
         $this->assertContains($response->getStatusCode(), [403, 302, 500], 'Réponse non-200 attendue pour non-admin.');
         $this->assertNotEquals(200, $response->getStatusCode());
     }
@@ -129,7 +129,7 @@ class WpkgDeploymentPagePermissionTest extends TestCase
         $this->bindSyncExpectNoCalls();
 
         try {
-            Livewire::test('pages::app.gpo.wpkg-deployment.index');
+            Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index');
             $this->fail('Expected 403 abort for unauthenticated');
         } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
             $this->assertSame(403, $e->getStatusCode());

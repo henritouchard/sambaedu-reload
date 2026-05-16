@@ -17,7 +17,7 @@ use Tests\TestCase;
 use App\Models\User;
 
 /**
- * Tests Feature Livewire — Page listing GPO `/app/gpo` (Story 16.2, AC5.1).
+ * Tests Feature Livewire — Page listing GPO `/admin/settings/gpo` (Story 16.2 + 16.9, AC5.1).
  *
  * Stratégie mock : helper {@see FakesGpoService} → binding container Laravel.
  * Pas d'appel `samba-tool` réel.
@@ -97,7 +97,7 @@ class GpoIndexPageTest extends TestCase
 
         FakesGpoService::make()->withGpos($this->makeGpoCollection())->bind($this->app);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->assertStatus(200)
             ->assertSee('Gestion des GPOs');
     }
@@ -108,7 +108,7 @@ class GpoIndexPageTest extends TestCase
         $user = $this->makeUser('user-403-listing');
         $this->actingAs($user);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->assertStatus(403);
     }
 
@@ -120,7 +120,7 @@ class GpoIndexPageTest extends TestCase
 
         FakesGpoService::make()->withGpos($this->makeGpoCollection())->bind($this->app);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->assertSee('Default Domain Policy')
             ->assertSee('Default Domain Controllers Policy')
             ->assertSee('redirections');
@@ -134,7 +134,7 @@ class GpoIndexPageTest extends TestCase
 
         FakesGpoService::make()->withGpos($this->makeGpoCollection())->bind($this->app);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->set('search', 'redirections')
             ->assertSee('redirections')
             ->assertDontSee('Default Domain Policy');
@@ -148,7 +148,7 @@ class GpoIndexPageTest extends TestCase
 
         FakesGpoService::make()->withGpos($this->makeGpoCollection())->bind($this->app);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->set('statusFilter', 'active')
             ->assertSee('Default Domain Policy')      // version=65539 > 0
             ->assertSee('Default Domain Controllers Policy')  // version=12 > 0
@@ -163,7 +163,7 @@ class GpoIndexPageTest extends TestCase
 
         FakesGpoService::make()->withGpos($this->makeGpoCollection())->bind($this->app);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->set('statusFilter', 'inactive')
             ->assertSee('redirections')                // version=0
             ->assertDontSee('Default Domain Policy');  // version=65539
@@ -177,7 +177,7 @@ class GpoIndexPageTest extends TestCase
 
         FakesGpoService::make()->withGpos($this->makeGpoCollection())->bind($this->app);
 
-        $component = Livewire::test('pages::app.gpo.index');
+        $component = Livewire::test('pages::admin.settings.gpo.index');
         $component->assertSet('sortBy', 'displayName');
         $component->assertSet('sortDirection', 'asc');
     }
@@ -194,7 +194,7 @@ class GpoIndexPageTest extends TestCase
         $fake->mock()->shouldReceive('list')->twice()->andReturn($this->makeGpoCollection());
         $fake->bind($this->app);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->call('refresh');
     }
 
@@ -208,7 +208,7 @@ class GpoIndexPageTest extends TestCase
             ->withListThrowing(new \RuntimeException('samba-tool unavailable'))
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->assertSet('hasError', true)
             ->assertSet('gpos', []);
     }
@@ -221,7 +221,7 @@ class GpoIndexPageTest extends TestCase
 
         FakesGpoService::make()->withGpos(collect([]))->bind($this->app);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->assertSet('totalGpos', 0)
             ->assertSee('Aucune GPO');
     }
@@ -245,7 +245,7 @@ class GpoIndexPageTest extends TestCase
         // header (slot:actions) qui rend le CTA legacy.
         FakesGpoService::make()->withGpos(collect([]))->bind($this->app);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->assertStatus(200)
             ->assertSee('data-testid="create-gpo-legacy-cta"', false)
             ->assertSee('Créer une GPO (ancienne UI)')
@@ -265,7 +265,7 @@ class GpoIndexPageTest extends TestCase
 
         FakesGpoService::make()->withGpos($this->makeGpoCollection())->bind($this->app);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->set('search', 'redirections')
             ->set('statusFilter', 'active')
             ->assertSet('search', 'redirections')

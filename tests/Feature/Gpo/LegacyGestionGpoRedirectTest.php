@@ -12,10 +12,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Feature — Catchall override `gpo/gestion_gpo.php` → `/app/gpo` (AC3.1, AC5.3).
+ * Tests Feature — Catchall override `gpo/gestion_gpo.php` → `/admin/settings/gpo` (AC3.1, AC5.3, maj Story 16.9 D7).
  *
  * Vérifie :
- * - AC3.1 : GET `gpo/gestion_gpo.php` → 302 vers `/app/gpo`.
+ * - AC3.1 : GET `gpo/gestion_gpo.php` → 302 vers `/admin/settings/gpo` (renommé par 16.9).
  * - AC3.2 : Les pages en cohabitation (`gpo/wine.php`, `gpo/gpo-maj.php`, etc.)
  *   ne sont PAS bloquées (restent accessibles par le shim legacy).
  * - Décision D5 : bloquer uniquement la page d'index, pas les pages d'édition.
@@ -45,7 +45,7 @@ class LegacyGestionGpoRedirectTest extends TestCase
         Config::set('sambaedu.block_migrated_routes', true);
         Config::set('sambaedu.allowed_legacy_routes', []);
         Config::set('sambaedu.blocked_legacy_routes', [
-            '^gpo/gestion_gpo\.php$' => 'app/gpo',
+            '^gpo/gestion_gpo\.php$' => 'admin/settings/gpo',
         ]);
 
         // Créer la table log si absente
@@ -99,24 +99,24 @@ class LegacyGestionGpoRedirectTest extends TestCase
     // =========================================================================
 
     #[Test]
-    public function it_redirects_gestion_gpo_php_to_app_gpo(): void
+    public function it_redirects_gestion_gpo_php_to_admin_settings_gpo(): void
     {
         $response = $this->get('/gpo/gestion_gpo.php');
 
-        // Doit retourner une redirection (301 ou 302) vers /app/gpo
+        // Doit retourner une redirection (301 ou 302) vers /admin/settings/gpo (16.9).
         $this->assertContains($response->getStatusCode(), [301, 302],
-            'GET /gpo/gestion_gpo.php doit être redirigé vers /app/gpo');
+            'GET /gpo/gestion_gpo.php doit être redirigé vers /admin/settings/gpo');
 
         $location = $response->headers->get('Location', '');
-        $this->assertStringContainsString('app/gpo', $location,
-            "L'en-tête Location doit pointer vers app/gpo, obtenu : {$location}");
+        $this->assertStringContainsString('admin/settings/gpo', $location,
+            "L'en-tête Location doit pointer vers admin/settings/gpo, obtenu : {$location}");
     }
 
     #[Test]
     public function it_does_not_redirect_legacy_section_pages(): void
     {
         // wine.php doit passer en mode cohabitation (proxy legacy ou 404/500 OK,
-        // mais PAS une redirection vers /app/gpo).
+        // mais PAS une redirection vers /admin/settings/gpo, 16.9 D7).
         Http::preventStrayRequests();
         Http::fake([
             '*' => Http::response('legacy wine content', 200, ['Content-Type' => 'text/html']),
@@ -127,12 +127,12 @@ class LegacyGestionGpoRedirectTest extends TestCase
         $statusCode = $response->getStatusCode();
         $location = $response->headers->get('Location', '');
 
-        // Le code ne doit PAS être une redirection vers /app/gpo
-        $isRedirectToAppGpo = in_array($statusCode, [301, 302])
-            && str_contains($location, 'app/gpo');
+        // Le code ne doit PAS être une redirection vers /admin/settings/gpo (16.9).
+        $isRedirectToAdminGpo = in_array($statusCode, [301, 302])
+            && str_contains($location, 'admin/settings/gpo');
 
-        $this->assertFalse($isRedirectToAppGpo,
-            "gpo/wine.php ne doit PAS être redirigé vers /app/gpo (cohabitation D5). "
+        $this->assertFalse($isRedirectToAdminGpo,
+            "gpo/wine.php ne doit PAS être redirigé vers /admin/settings/gpo (cohabitation D5). "
             . "Status: {$statusCode}, Location: {$location}");
     }
 
@@ -150,10 +150,10 @@ class LegacyGestionGpoRedirectTest extends TestCase
         $statusCode = $response->getStatusCode();
         $location = $response->headers->get('Location', '');
 
-        $isRedirectToAppGpo = in_array($statusCode, [301, 302])
-            && str_contains($location, 'app/gpo');
+        $isRedirectToAdminGpo = in_array($statusCode, [301, 302])
+            && str_contains($location, 'admin/settings/gpo');
 
-        $this->assertFalse($isRedirectToAppGpo,
-            "gpo/gpo-maj.php ne doit PAS être redirigé vers /app/gpo (cohabitation D5).");
+        $this->assertFalse($isRedirectToAdminGpo,
+            "gpo/gpo-maj.php ne doit PAS être redirigé vers /admin/settings/gpo (cohabitation D5).");
     }
 }

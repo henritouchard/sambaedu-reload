@@ -88,7 +88,7 @@ class WineSecurityTest extends TestCase
         $this->mockScanner(['firefox']);
         $this->actingAs($this->makeAdmin());
 
-        Livewire::test('pages::app.gpo.wine.index')
+        Livewire::test('pages::admin.settings.gpo.wine.index')
             ->set('selectedApplication', $payload)
             ->call('generateImage');
 

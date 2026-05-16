@@ -20,7 +20,7 @@ use Tests\TestCase;
 /**
  * Story 16.5 — AC5.2 / Volet 5.
  *
- * Tests Feature de la garde `can:server.admin` sur la page `/app/gpo/{guid}/links`
+ * Tests Feature de la garde `can:server.admin` sur la page `/admin/settings/gpo/{guid}/links` (16.9)
  * (defense in depth : middleware route + abort_unless dans `mount()`).
  */
 class GpoLinksPagePermissionTest extends TestCase
@@ -106,7 +106,7 @@ class GpoLinksPagePermissionTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->assertStatus(200);
     }
 
@@ -119,7 +119,7 @@ class GpoLinksPagePermissionTest extends TestCase
         FakesGpoService::make()->expectNoCalls()->bind($this->app);
 
         try {
-            Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID]);
+            Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID]);
             $this->fail('Expected 403 abort');
         } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
             $this->assertSame(403, $e->getStatusCode());
@@ -140,7 +140,7 @@ class GpoLinksPagePermissionTest extends TestCase
 
         FakesGpoService::make()->expectNoCalls()->bind($this->app);
 
-        $response = $this->get('/app/gpo/' . self::VALID_GUID . '/links');
+        $response = $this->get('/admin/settings/gpo/' . self::VALID_GUID . '/links');
         $this->assertContains($response->getStatusCode(), [403, 302, 500], 'Réponse non-200 attendue pour non-admin (middleware ou exception).');
         $this->assertNotEquals(200, $response->getStatusCode());
     }
@@ -153,7 +153,7 @@ class GpoLinksPagePermissionTest extends TestCase
         FakesGpoService::make()->expectNoCalls()->bind($this->app);
 
         try {
-            Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID]);
+            Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID]);
             $this->fail('Expected 403 abort for unauthenticated');
         } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
             $this->assertSame(403, $e->getStatusCode());

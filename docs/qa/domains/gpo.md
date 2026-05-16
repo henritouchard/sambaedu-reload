@@ -1273,3 +1273,152 @@ Code de retour : `0` si exit propre, `1` sinon. À lancer manuellement avant cha
 - Volet B (shims 1bis.18) : 6 fichiers retirables maintenant (16.13), 3 conditionnels (Phase 3+), 2 services Laravel natifs encore dépendants de fonctions shim (`RoamingProfileService`, `WpkgGpoSynchronizer`).
 - **GO 16.10 / 16.9** : aucun blocage iso-legacy identifié.
 - **Action court terme avant 16.10** : refaire l'audit SYSVOL sur un serveur de **prod déployé**. Le DC dev `192.168.122.60` (domaine `localdev.fr`, credentials `.env`) est accessible via SMB mais ses 14 GPO sont vides de contenu (uniquement les `GPT.INI` metadata) — env dev propre, GPO non spécialisées. Le grep réel sur GPO peuplées doit être fait en prod.
+
+---
+
+## Section 9 — Exposition UI admin GPO sous `/admin/settings/gpo` (Story 16.9)
+
+**Date livraison** : 2026-05-16 (dev claude-opus-4-7, modèle adverse pour review : sonnet).
+**Migrations à appliquer** : aucune (story structurelle, pas de schéma DB modifié).
+**Permission requise** : `server.admin` (Spatie) + middlewares groupe `admin` (`sambaedu.auth + sambaedu.admin`).
+
+Cette section couvre le déplacement des **5 pages Livewire SFC GPO** depuis `/app/gpo/*` vers `/admin/settings/gpo/*` (Tech Spec §4 D2 — alignement « réglages système administrateur »). Les anciennes URLs `/app/gpo/*` continuent de fonctionner via **redirections 301 permanentes** : aucun action utilisateur n'est requise pour les bookmarks existants.
+
+### Mapping des routes (avant → après)
+
+| Ancienne URL                       | Nouvelle URL (16.9)                          | Mécanisme cohabitation                        |
+|------------------------------------|----------------------------------------------|-----------------------------------------------|
+| `/app/gpo`                         | `/admin/settings/gpo`                        | `Route::permanentRedirect` (HTTP 301)         |
+| `/app/gpo/{guid}`                  | `/admin/settings/gpo/{guid}`                 | Closure `Route::get → redirect(..., 301)` (regex GUID iso 16.2 fix #9) |
+| `/app/gpo/{guid}/links`            | `/admin/settings/gpo/{guid}/links`           | Closure idem                                  |
+| `/app/gpo/wine`                    | `/admin/settings/gpo/wine`                   | `Route::permanentRedirect` (HTTP 301)         |
+| `/app/gpo/wpkg-deployment`         | `/admin/settings/gpo/wpkg-deployment`        | `Route::permanentRedirect` (HTTP 301)         |
+
+**Note importante sur les noms de routes Laravel** : les noms `app.gpo.*` (ex. `app.gpo.index`, `app.gpo.show`) **continuent de résoudre** — ils pointent maintenant vers les routes de redirection ci-dessus. Un appel `route('app.gpo.index')` retourne `/app/gpo` qui redirige vers `/admin/settings/gpo` (1 hop HTTP supplémentaire). Cette conservation évite un big-bang sur 30+ callsites. Toutes les callsites internes du code projet ont néanmoins été migrées vers `route('admin.gpo.*)` (vérifié par grep T8.4).
+
+### Pré-requis spécifiques 16.9
+
+- VM accessible (`ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50`).
+- Cache Spatie reset : `php artisan permission:cache-reset`.
+- Compte admin avec permission `server.admin` (cf. pré-requis communs).
+- Cache routes invalidé : `php artisan route:clear` après pull du code.
+
+### Scénario 16.9-1 — Ouverture index GPO sous `/admin/settings/gpo`
+
+**Objectif** : vérifier que la nouvelle page index est servie sous le nouveau path et est fonctionnellement identique à l'ancienne.
+
+1. Se connecter avec un compte admin (`server.admin`).
+2. Taper `https://<VM>/admin/settings/gpo` dans le navigateur.
+3. La page se charge (HTTP 200) avec le titre « Gestion des GPOs ».
+4. Le tableau liste les GPOs (mêmes colonnes qu'avant : Nom, Version, GUID, Path SYSVOL, **Édition native** (16.3a), Actions).
+5. Les filtres (recherche, statut Active/Inactive, tri colonnes, pagination) fonctionnent.
+6. Le bouton « Créer une GPO (ancienne UI) » (16.5 AC7.2) est présent et pointe vers `/gpo/gpo-maj.php` (shim legacy inchangé — cohabitation Phase 2).
+
+**Attendu** : page identique au listing servi historiquement sous `/app/gpo` (modulo l'URL dans la barre d'adresse). Aucune régression visuelle/comportementale.
+
+### Scénario 16.9-2 — Navigation détail → liens
+
+**Objectif** : vérifier la chaîne nav détail → liens sous la nouvelle arborescence.
+
+1. Depuis le listing (scénario 16.9-1), cliquer sur une GPO (lien du nom OU bouton « Détail »).
+2. URL devient `/admin/settings/gpo/{GUID}` (avec ou sans accolades — la regex GUID accepte les 2 formes).
+3. Page détail s'affiche : encart Impact (16.5), containers liés, CTAs natifs si match (16.3a).
+4. Cliquer le bouton « Gérer les liaisons ».
+5. URL devient `/admin/settings/gpo/{GUID}/links`.
+6. Page liens s'affiche : liste OUs liées + boutons d'action (ajout, suppression, toggle disabled/enforced, move up/down, toggle inheritance) + modale de confirmation `<x-molecules.modal>`.
+7. Cliquer « Retour à la GPO » → revient sur `/admin/settings/gpo/{GUID}`.
+8. Cliquer « Liste des GPOs » (badge ghost) → revient sur `/admin/settings/gpo`.
+
+**Attendu** : navigation fluide, breadcrumbs cohérents, aucun lien cassé.
+
+### Scénario 16.9-3 — Sidebar : nouveau bloc « GPO » sous « Réglages »
+
+**Objectif** : vérifier que la sidebar reflète la nouvelle hiérarchie navigationnelle (D4).
+
+1. Se connecter avec un compte admin (`server.admin`).
+2. Ouvrir la sidebar (drawer) si elle est repliée.
+3. Identifier le lien « Réglages » (qui pointe toujours vers `/admin/settings?tab=quotas-fs` — comportement inchangé, AC3.1).
+4. **Juste en dessous de « Réglages »**, voir un nouveau bloc collapsible « GPO » (icône `fa-shield-halved`, indentation `ml-4`).
+5. Cliquer pour déplier le bloc.
+6. Le bloc contient 3 liens :
+   - « Toutes les GPOs » → `route('admin.gpo.index')` (= `/admin/settings/gpo`)
+   - « Wine — Apps Linux » → `route('admin.gpo.wine')`
+   - « WPKG — Pipeline » → `route('admin.gpo.wpkg-deployment')`
+7. Cliquer chaque lien — chacun atterrit sur la page correspondante.
+8. La classe active visuelle (`bg-primary/10 text-primary`) s'applique au lien correspondant à l'URL courante.
+9. Naviguer vers `/admin/settings/gpo/{GUID}` ou `/admin/settings/gpo/{GUID}/links` : le bloc reste auto-déplié (`@checked(request()->is('admin/settings/gpo*'))`) mais aucun lien direct vers ces sous-pages paramétrées GUID n'est exposé dans la sidebar (iso-Phase 1).
+
+**Attendu** : sidebar lisible, hiérarchie cohérente, pas de duplication avec le bloc legacy « Clients et applications » (qui reste à 4 liens `.php` legacy + le lien GPOs maj vers `admin.gpo.index` pour ce sous-bloc commenté/désactivé).
+
+### Scénario 16.9-4 — Redirection 301 ancien bookmark
+
+**Objectif** : vérifier la backward-compat pour les bookmarks utilisateurs (D3).
+
+Test 1 — `/app/gpo` (statique) :
+
+1. Ouvrir un onglet privé / clear cache navigateur (pour ne pas suivre la redirection cachée).
+2. Activer les DevTools Network panel.
+3. Taper `https://<VM>/app/gpo` dans la barre d'adresse.
+4. Première requête : HTTP **301 Moved Permanently** avec `Location: /admin/settings/gpo`.
+5. Le navigateur suit automatiquement → seconde requête HTTP 200 sur `/admin/settings/gpo`.
+6. La page index GPO s'affiche normalement.
+7. La barre d'adresse affiche la nouvelle URL `/admin/settings/gpo`.
+
+Test 2 — `/app/gpo/wine` :
+
+1. Idem onglet privé.
+2. Taper `https://<VM>/app/gpo/wine`.
+3. 301 → 200 sur `/admin/settings/gpo/wine`.
+
+Test 3 — `/app/gpo/{GUID}` (route paramétrée) :
+
+1. Taper `https://<VM>/app/gpo/{8625C81D-89B0-4502-9DC5-7BFD7B8C7C42}` (ou un GUID valide local).
+2. 301 → 302 (auth si non connecté) ou 200 sur `/admin/settings/gpo/{GUID}` (connecté admin).
+3. Le GUID est préservé dans la redirection.
+
+Test 4 — open-redirect bloqué :
+
+1. Taper `https://<VM>/app/gpo/INJECTION`.
+2. Réponse HTTP **404 Not Found** (la regex GUID stricte refuse `INJECTION`).
+3. AUCUN `Location:` vers `/admin/settings/gpo/INJECTION` n'est généré (anti open-redirect garanti).
+
+**Attendu** : aucun bookmark cassé. Les utilisateurs peuvent transitionner sans intervention.
+
+### Scénario 16.9-5 — Lien d'erreur `WpkgGpoSynchronizer`
+
+**Objectif** : vérifier que le message diagnostic du synchronizer pointe vers la nouvelle URL (D9).
+
+1. Sur la VM, déclencher un état où la GPO `se4_wpkg` existe mais n'a aucune liaison (cf. Story 16.6 — environnement DC dev avec GPO publiée mais sans `setlink`).
+2. Soit via l'UI : se rendre sur `/admin/settings/gpo/wpkg-deployment`, déclencher « Re-auditer ».
+3. Soit via CLI : `php artisan wpkg:gpo:sync --audit-only --json`.
+4. Inspecter les `messages[]` de la sortie ou de la page (section Diagnostics).
+5. Le message diagnostic doit contenir : `Allez sur /admin/settings/gpo/<GUID>/links pour la lier.`
+6. Aucune occurrence `/app/gpo/` dans les messages.
+
+**Attendu** : message à jour avec la nouvelle URL. L'admin peut cliquer-coller le path directement sans 1 hop redirect.
+
+### Scénario 16.9-6 — Deep link `NativeSectionResolver` pour Wine
+
+**Objectif** : vérifier que le mapping heuristique des sections natives pointe vers la nouvelle URL (D8).
+
+1. Se rendre sur `/admin/settings/gpo` (listing).
+2. Localiser une GPO dont le `displayName` contient `wine` (ex. `se4_wine`, `wine_apps_lin`).
+3. Dans la colonne « Édition native » (16.3a), un chip vert avec icône `fa-wine-glass` apparaît.
+4. Cliquer le chip.
+5. Atterrir sur `/admin/settings/gpo/wine?from_gpo=<GUID>` (URL avec query param `from_gpo` pour le breadcrumb).
+6. La page Wine s'affiche normalement, le breadcrumb « Retour aux GPOs » (en haut à gauche) pointe vers `route('admin.gpo.index')`.
+
+**Attendu** : navigation entre listing → édition native Wine sans 1 hop redirect, breadcrumb cohérent.
+
+### Checklist rapide Story 16.9
+
+- [ ] **16.9-1** Index GPO accessible sous `/admin/settings/gpo` (HTTP 200, contenu identique à l'ancien `/app/gpo`).
+- [ ] **16.9-2** Navigation détail → liens fonctionne sous le nouveau préfixe.
+- [ ] **16.9-3** Sidebar : nouveau bloc collapsible « GPO » sous « Réglages », 3 liens fonctionnels, classe active OK.
+- [ ] **16.9-4a** `/app/gpo` redirige 301 vers `/admin/settings/gpo` (DevTools Network).
+- [ ] **16.9-4b** `/app/gpo/wine` redirige 301 vers `/admin/settings/gpo/wine`.
+- [ ] **16.9-4c** `/app/gpo/{GUID}` redirige 301 vers `/admin/settings/gpo/{GUID}` (GUID préservé).
+- [ ] **16.9-4d** `/app/gpo/INJECTION` retourne 404 (anti open-redirect).
+- [ ] **16.9-5** Message d'erreur `WpkgGpoSynchronizer` contient `/admin/settings/gpo/<GUID>/links`.
+- [ ] **16.9-6** Deep link Wine depuis listing : chip → `/admin/settings/gpo/wine?from_gpo=<GUID>` (1 hop, pas 2).
+- [ ] **Régression Phase 1** : suite `scripts/run-tests.sh phase1` passe exit 0.

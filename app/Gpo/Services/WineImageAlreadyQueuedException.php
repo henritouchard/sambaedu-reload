@@ -9,7 +9,7 @@ namespace App\Gpo\Services;
  * génération d'image Wine est déjà en queue / en cours pour la même
  * application (Cache::lock détenu).
  *
- * Capturée par le SFC Livewire `/app/gpo/wine` → toast warning.
+ * Capturée par le SFC Livewire `/admin/settings/gpo/wine` → toast warning.
  *
  * Story 16.3c — discrepance SM (a) tranchement.
  */

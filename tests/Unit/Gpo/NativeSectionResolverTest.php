@@ -251,14 +251,14 @@ class NativeSectionResolverTest extends TestCase
     /**
      * Story 16.3c — T6.1 / D10 : enrichissement `NativeSectionResolver::MAPPING`
      * pour Wine. Le GPO `se4_wine` (et toute GPO contenant `wine`) doit
-     * pointer vers `/app/gpo/wine`.
+     * pointer vers `/admin/settings/gpo/wine` (renommé par Story 16.9 D8).
      */
     #[Test]
-    public function it_matches_wine_gpo_to_native_app_gpo_wine(): void
+    public function it_matches_wine_gpo_to_native_admin_settings_gpo_wine(): void
     {
         $result = NativeSectionResolver::resolve('se4_wine');
         self::assertArrayHasKey('wine', $result);
-        self::assertSame('/app/gpo/wine', $result['wine']['url']);
+        self::assertSame('/admin/settings/gpo/wine', $result['wine']['url']);
         self::assertSame('fa-wine-glass', $result['wine']['icon']);
     }
 
@@ -266,6 +266,6 @@ class NativeSectionResolverTest extends TestCase
     public function it_builds_native_url_with_from_gpo_param_for_wine(): void
     {
         $url = NativeSectionResolver::buildUrl('wine', '{ABCD1234-5678-9012-3456-789012345678}');
-        self::assertStringContainsString('/app/gpo/wine?from_gpo=', $url);
+        self::assertStringContainsString('/admin/settings/gpo/wine?from_gpo=', $url);
     }
 }

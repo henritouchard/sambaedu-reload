@@ -17,7 +17,7 @@ use Tests\Concerns\BootstrapsSpatieTables;
 use Tests\TestCase;
 
 /**
- * Tests Feature page Livewire `/app/gpo/wpkg-deployment` — Story 16.6 (AC3.*, AC5.2).
+ * Tests Feature page Livewire `/admin/settings/gpo/wpkg-deployment` — Story 16.6 (AC3.*, AC5.2) + Story 16.9.
  */
 class WpkgDeploymentPageTest extends TestCase
 {
@@ -90,7 +90,7 @@ class WpkgDeploymentPageTest extends TestCase
         $this->actingAs($this->makeAdmin());
         $this->bindSync($this->makeReport());
 
-        Livewire::test('pages::app.gpo.wpkg-deployment.index')
+        Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->assertStatus(200)
             ->assertSee('se4_wpkg')
             ->assertSee('OU=Computers,DC=example,DC=org')
@@ -111,7 +111,7 @@ class WpkgDeploymentPageTest extends TestCase
             'messages' => ['GPO `se4_wpkg` introuvable dans l\'AD — publication initiale requise.'],
         ]));
 
-        Livewire::test('pages::app.gpo.wpkg-deployment.index')
+        Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->assertStatus(200)
             ->assertSee('introuvable')
             ->assertSeeHtml('badge-error');
@@ -127,7 +127,7 @@ class WpkgDeploymentPageTest extends TestCase
             'messages' => ['GPO `se4_wpkg` existe mais n\'est liée à aucune OU.'],
         ]));
 
-        Livewire::test('pages::app.gpo.wpkg-deployment.index')
+        Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->assertStatus(200)
             ->assertSee('GPO non liée')
             ->assertSeeHtml('badge-warning');
@@ -139,7 +139,7 @@ class WpkgDeploymentPageTest extends TestCase
         $this->actingAs($this->makeAdmin());
         $this->bindSync($this->makeReport());
 
-        Livewire::test('pages::app.gpo.wpkg-deployment.index')
+        Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->call('refresh')
             ->assertStatus(200)
             ->assertSet('hasError', false);
@@ -151,7 +151,7 @@ class WpkgDeploymentPageTest extends TestCase
         $this->actingAs($this->makeAdmin());
         $this->bindSync($this->makeReport());
 
-        Livewire::test('pages::app.gpo.wpkg-deployment.index')
+        Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->call('openPublishModal')
             ->assertSet('isPublishModalOpen', true)
             ->assertSet('forceFlag', false);
@@ -165,7 +165,7 @@ class WpkgDeploymentPageTest extends TestCase
         $published = $this->makeReport(['operationId' => 'pub-op-1', 'severity' => WpkgGpoSyncSeverity::Ok]);
         $this->bindSync($audit, $published);
 
-        Livewire::test('pages::app.gpo.wpkg-deployment.index')
+        Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->call('openPublishModal')
             ->set('forceFlag', true)
             ->call('confirmPublish')
@@ -192,7 +192,7 @@ class WpkgDeploymentPageTest extends TestCase
             });
         $this->app->bind(WpkgGpoSynchronizer::class, fn () => $mock);
 
-        Livewire::test('pages::app.gpo.wpkg-deployment.index')
+        Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->set('forceFlag', true)
             ->call('confirmPublish');
 
@@ -206,7 +206,7 @@ class WpkgDeploymentPageTest extends TestCase
         $audit = $this->makeReport();
         $this->bindSync($audit, null, new \RuntimeException('lock indisponible'));
 
-        Livewire::test('pages::app.gpo.wpkg-deployment.index')
+        Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->call('confirmPublish')
             ->assertSet('isPublishing', false)
             ->assertSet('isPublishModalOpen', false);

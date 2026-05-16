@@ -8,7 +8,8 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Page Livewire SFC — Hook GPO ↔ WPKG (Story 16.6).
+ * Page Livewire SFC — Hook GPO ↔ WPKG (Story 16.6 + Story 16.9).
+ * Servie sous `/admin/settings/gpo/wpkg-deployment`.
  *
  * Affiche l'état de cohérence entre la GPO `se4_wpkg` qui déclenche
  * `cscript wpkg.js /server=...` côté postes Windows et les endpoints serveur
@@ -172,7 +173,7 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
                 <i class="fa-solid fa-arrows-rotate"></i>
                 Re-auditer
             </button>
-            <a href="{{ route('app.gpo.index') }}" class="btn btn-ghost btn-sm">
+            <a href="{{ route('admin.gpo.index') }}" class="btn btn-ghost btn-sm">
                 <i class="fa-solid fa-list"></i>
                 Liste des GPOs
             </a>
@@ -291,7 +292,7 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
                             <div>
                                 <p class="font-medium">GPO non liée — aucun poste ne déclenchera `wpkg.js`.</p>
                                 @if ($report['gpoGuid'])
-                                    <a href="{{ url('/app/gpo/' . $report['gpoGuid'] . '/links') }}"
+                                    <a href="{{ route('admin.gpo.links', ['guid' => trim((string) $report['gpoGuid'], '{}')]) }}"
                                         class="btn btn-primary btn-sm mt-2" data-testid="link-now-cta">
                                         <i class="fa-solid fa-plus"></i>
                                         Lier maintenant
@@ -309,7 +310,7 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
                             @endforeach
                         </ul>
                         @if ($report['gpoGuid'])
-                            <a href="{{ url('/app/gpo/' . $report['gpoGuid'] . '/links') }}"
+                            <a href="{{ route('admin.gpo.links', ['guid' => trim((string) $report['gpoGuid'], '{}')]) }}"
                                 class="btn btn-ghost btn-sm mt-3">
                                 <i class="fa-solid fa-pen-to-square"></i>
                                 Gérer les liaisons
@@ -441,7 +442,7 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
             </div>
             <p class="text-xs text-base-content/60 mt-2">
                 Note : aucune liaison automatique aux OUs n'est créée. Après publication, allez sur
-                <code class="font-mono">/app/gpo/{guid}/links</code> pour lier la GPO aux OUs ciblées.
+                <code class="font-mono">/admin/settings/gpo/{guid}/links</code> pour lier la GPO aux OUs ciblées.
             </p>
         </x-molecules.modal.section>
 

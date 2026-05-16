@@ -81,10 +81,39 @@
                          (action critique). Onglet unique en 5.1c : Quotas & FS. --}}
                     <li>
                         <a href="{{ route('admin.settings') }}"
-                            class="flex items-center gap-4 px-4 py-3 text-base font-medium {{ request()->is('admin/settings*') ? 'active bg-primary/20 text-primary shadow-lg' : 'hover:bg-base-200/70' }} rounded-xl transition-all duration-200 hover:shadow-md hover:scale-[1.02]">
+                            class="flex items-center gap-4 px-4 py-3 text-base font-medium {{ request()->is('admin/settings*') && ! request()->is('admin/settings/gpo*') ? 'active bg-primary/20 text-primary shadow-lg' : 'hover:bg-base-200/70' }} rounded-xl transition-all duration-200 hover:shadow-md hover:scale-[1.02]">
                             <i class="fa-solid fa-cog text-xl"></i>
                             Réglages
                         </a>
+                    </li>
+                    {{-- Story 16.9 — Bloc GPO sous Réglages système (sous-routes
+                         /admin/settings/gpo/*). Iso-pattern « Clients et applications »
+                         (collapse DaisyUI), simplifié et indenté ml-4 pour signifier la
+                         hiérarchie « sous Réglages ». --}}
+                    <li class="ml-4">
+                        <div class="collapse collapse-arrow bg-gradient-to-r from-base-200/60 to-base-100/40 backdrop-blur-sm border border-base-300/50 rounded-xl overflow-hidden">
+                            <input type="checkbox" class="peer" @checked(request()->is('admin/settings/gpo*')) />
+                            <div class="collapse-title text-sm font-medium flex items-center gap-2 px-3 py-2 hover:bg-base-200/50 transition-colors">
+                                <i class="fa-solid fa-file-code text-base"></i>
+                                GPO
+                            </div>
+                            <div class="collapse-content px-3 pb-3">
+                                <div class="space-y-1">
+                                    <a href="{{ route('admin.gpo.index') }}"
+                                        class="block px-3 py-1.5 text-sm hover:bg-base-300/70 rounded-md transition-colors {{ request()->is('admin/settings/gpo') ? 'bg-primary/10 text-primary' : '' }}">
+                                        Toutes les GPOs
+                                    </a>
+                                    <a href="{{ route('admin.gpo.wine') }}"
+                                        class="block px-3 py-1.5 text-sm hover:bg-base-300/70 rounded-md transition-colors {{ request()->is('admin/settings/gpo/wine') ? 'bg-primary/10 text-primary' : '' }}">
+                                        Wine — Apps Linux
+                                    </a>
+                                    <a href="{{ route('admin.gpo.wpkg-deployment') }}"
+                                        class="block px-3 py-1.5 text-sm hover:bg-base-300/70 rounded-md transition-colors {{ request()->is('admin/settings/gpo/wpkg-deployment') ? 'bg-primary/10 text-primary' : '' }}">
+                                        WPKG — Pipeline
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                     </li>
                 @endcan
                 {{-- <li>
@@ -315,7 +344,7 @@
                 </div>
                 <div class="collapse-content px-4 pb-4">
                     <div class="space-y-2">
-                        <a href="{{ route('app.gpo.index') }}"
+                        <a href="{{ route('admin.gpo.index') }}"
                             class="block px-4 py-2 text-sm hover:bg-base-300/70 rounded-lg transition-colors hover:translate-x-1">Gestion
                             des
                             GPOs</a>

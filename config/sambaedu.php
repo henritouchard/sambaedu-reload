@@ -46,11 +46,13 @@ return [
         // Story 16.2 — Décision SM D5 : bloquer uniquement la page d'index legacy.
         // Les pages d'édition (gpo-maj.php, gpo-export.php, etc.) restent
         // accessibles pour la cohabitation jusqu'aux Stories 16.4/16.5.
-        '^gpo/gestion_gpo\.php$' => 'app/gpo',
+        // Story 16.9 — cible migrée vers `admin/settings/gpo` (l'UI vit
+        // désormais sous le groupe admin, cf. routes/web.php).
+        '^gpo/gestion_gpo\.php$' => 'admin/settings/gpo',
         // Story 16.3c — Wine UI native. La page `/gpo/wine.php` legacy est
-        // remplacée par `/app/gpo/wine` (Livewire SFC + Job queue). Redirect
-        // 302 (pattern iso 16.2 D5).
-        '^gpo/wine\.php(?:\?.*)?$' => 'app/gpo/wine',
+        // remplacée par `/admin/settings/gpo/wine` (Livewire SFC + Job queue,
+        // renommée par Story 16.9). Redirect 302 (pattern iso 16.2 D5).
+        '^gpo/wine\.php(?:\?.*)?$' => 'admin/settings/gpo/wine',
     ],
 
     /*

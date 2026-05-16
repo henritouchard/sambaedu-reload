@@ -93,7 +93,7 @@ class GpoBackLinkComponentTest extends TestCase
         $this->assertStringContainsString('Retour à la GPO', $html);
         $this->assertStringContainsString('redirections', $html);
         $this->assertStringContainsString('fa-arrow-left', $html);
-        $this->assertStringContainsString('/app/gpo/', $html);
+        $this->assertStringContainsString('/admin/settings/gpo/', $html);
     }
 
     // =========================================================================

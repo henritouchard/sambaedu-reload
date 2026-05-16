@@ -22,7 +22,7 @@ use Tests\TestCase;
 /**
  * Story 16.5 — AC6.2 / Volet 6.
  *
- * Tests Feature de la page Livewire `/app/gpo/{guid}/links`.
+ * Tests Feature de la page Livewire `/admin/settings/gpo/{guid}/links` (renommée par 16.9).
  *
  * Stratégie : `FakesGpoService` builder fluide + container binding (iso Story
  * 16.2 / `GpoDetailPageTest`). `OrganizationalUnitRepository` est mocké
@@ -139,7 +139,7 @@ class GpoLinksPageTest extends TestCase
             ->withInheritanceFor(self::DN_SALLES, true)
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             ->assertSee('Liens actuels')
             ->assertSee('Ajouter une liaison');
@@ -157,7 +157,7 @@ class GpoLinksPageTest extends TestCase
         // (le handler par défaut tente de rendre une vue d'erreur qui
         // dépend de Vite — pas dispo en env test pur).
         try {
-            Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => 'INJECTION_ATTACK']);
+            Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => 'INJECTION_ATTACK']);
             $this->fail('Expected 404 abort');
         } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
             $this->assertSame(404, $e->getStatusCode());
@@ -180,7 +180,7 @@ class GpoLinksPageTest extends TestCase
             ->bind($this->app);
 
         try {
-            Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID]);
+            Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID]);
             $this->fail('Expected 404 abort');
         } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
             $this->assertSame(404, $e->getStatusCode());
@@ -206,7 +206,7 @@ class GpoLinksPageTest extends TestCase
             ->withInheritanceFor(self::DN_SALLES, true)
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             ->assertSee(self::DN_SALLES)
             ->assertSee('Forcé')
@@ -224,7 +224,7 @@ class GpoLinksPageTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             ->assertSee('data-testid="empty-links"', false)
             ->assertSee('liée à aucune OU');
@@ -246,7 +246,7 @@ class GpoLinksPageTest extends TestCase
             ->withSetLinkResult(true)
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->call('openAddLinkModal')
             ->assertSet('isModalOpen', true)
             ->assertSet('pendingActionType', 'add')
@@ -269,7 +269,7 @@ class GpoLinksPageTest extends TestCase
             ->withRemoveLinkResult(true)
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->call('openRemoveLinkModal', self::DN_SALLES)
             ->assertSet('isModalOpen', true)
             ->assertSet('pendingActionType', 'remove')
@@ -296,7 +296,7 @@ class GpoLinksPageTest extends TestCase
             ->withSetLinkResult(true)
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->call('openToggleDisabledModal', self::DN_SALLES, true)
             ->assertSet('pendingActionType', 'toggleDisabled')
             ->call('confirmPendingAction')
@@ -318,7 +318,7 @@ class GpoLinksPageTest extends TestCase
             ->withSetLinkResult(true)
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->call('openToggleEnforcedModal', self::DN_SALLES, true)
             ->assertSet('pendingActionType', 'toggleEnforced')
             ->call('confirmPendingAction')
@@ -356,7 +356,7 @@ class GpoLinksPageTest extends TestCase
             ->withReorderLinksResult(true)
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->call('openMoveLinkModal', self::DN_SALLES, 0, 1)
             ->assertSet('pendingActionType', 'move')
             ->call('confirmPendingAction')
@@ -381,7 +381,7 @@ class GpoLinksPageTest extends TestCase
             ->withSetInheritanceResult(true)
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->call('openToggleInheritanceModal', self::DN_SALLES, false)
             ->assertSet('pendingActionType', 'toggleInheritance')
             ->call('confirmPendingAction')
@@ -404,7 +404,7 @@ class GpoLinksPageTest extends TestCase
             ->withSetLinkThrowing(new \RuntimeException('AD writeback denied'))
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->call('openAddLinkModal')
             ->set('selectedOuForAdd', self::DN_PROFS)
             ->call('confirmPendingAction')
@@ -445,7 +445,7 @@ class GpoLinksPageTest extends TestCase
             ->withInheritanceFor($weirdDn, true)
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             // Sans échappement : 2 matches (faux positif). Avec échappement : 1.
             ->assertSet('workstationCountByOu.' . $weirdDn, 1);
     }
@@ -479,7 +479,7 @@ class GpoLinksPageTest extends TestCase
 
         $fake->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->call('openToggleDisabledModal', self::DN_SALLES, true)
             ->call('confirmPendingAction')
             // Modale fermée, toast erreur émis, loadAll() rappelé pour rafraîchir l'état.
@@ -510,7 +510,7 @@ class GpoLinksPageTest extends TestCase
 
         $fake->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->call('openToggleEnforcedModal', self::DN_SALLES, true)
             ->call('confirmPendingAction')
             ->assertSet('isModalOpen', false);
@@ -537,7 +537,7 @@ class GpoLinksPageTest extends TestCase
         $fake->mock()->shouldNotReceive('setLink');
         $fake->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->call('openAddLinkModal')
             ->set('selectedOuForAdd', self::DN_SALLES) // OU déjà liée
             ->call('confirmPendingAction')
@@ -559,7 +559,7 @@ class GpoLinksPageTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             ->assertSee('data-testid="create-gpo-notice"', false)
             ->assertSee('gpo-maj.php');

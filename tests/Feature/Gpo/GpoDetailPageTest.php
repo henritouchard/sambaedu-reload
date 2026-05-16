@@ -19,7 +19,7 @@ use Tests\TestCase;
 use App\Models\User;
 
 /**
- * Tests Feature Livewire — Page détail GPO `/app/gpo/{guid}` (Story 16.2, AC5.2).
+ * Tests Feature Livewire — Page détail GPO `/admin/settings/gpo/{guid}` (Story 16.2 + 16.9, AC5.2).
  *
  * Stratégie mock : helper {@see FakesGpoService} → binding container Laravel.
  */
@@ -117,7 +117,7 @@ class GpoDetailPageTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             ->assertSee('redirections');
     }
@@ -130,7 +130,7 @@ class GpoDetailPageTest extends TestCase
 
         FakesGpoService::make()->expectNoCalls()->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => 'INJECTION_ATTACK'])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => 'INJECTION_ATTACK'])
             ->assertStatus(404);
     }
 
@@ -150,7 +150,7 @@ class GpoDetailPageTest extends TestCase
             ->bind($this->app);
 
         $guidWithoutBraces = 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE';
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => $guidWithoutBraces])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => $guidWithoutBraces])
             ->assertStatus(200)
             ->assertSet('guid', self::VALID_GUID); // normalisé avec accolades
     }
@@ -167,7 +167,7 @@ class GpoDetailPageTest extends TestCase
         $fake->mock()->shouldNotReceive('listContainers');
         $fake->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(404);
     }
 
@@ -184,7 +184,7 @@ class GpoDetailPageTest extends TestCase
             ->withGetThrowing(self::VALID_GUID, new \RuntimeException('samba-tool unreachable'))
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             ->assertSet('hasError', true);
     }
@@ -195,7 +195,7 @@ class GpoDetailPageTest extends TestCase
         $user = $this->makeUser('user-detail-403');
         $this->actingAs($user);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(403);
     }
 
@@ -212,7 +212,7 @@ class GpoDetailPageTest extends TestCase
             ->withDefaultInheritance(true)
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertSet('containers', [self::DN_1, self::DN_2, 'DC=example,DC=org'])
             ->assertSee('OU=Salles');
     }
@@ -247,7 +247,7 @@ class GpoDetailPageTest extends TestCase
             ->withInheritanceFor(self::DN_1, true)
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertSee('redirections')
             ->assertSee('Default Domain Policy');
     }
@@ -265,7 +265,7 @@ class GpoDetailPageTest extends TestCase
             ->withInheritanceFor(self::DN_1, false) // bloqué
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertSet('inheritanceByContainer', [self::DN_1 => false])
             ->assertSee('Héritage bloqué');
     }
@@ -281,7 +281,7 @@ class GpoDetailPageTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertSee('Sections de cette GPO gérables nativement')
             ->assertSee('profils-itinerants');
     }
@@ -297,7 +297,7 @@ class GpoDetailPageTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             // escape=false : l'apostrophe `'` est littérale dans le blade, donc le rendu
             // HTML la conserve ; `assertSee` escape=true chercherait `&#039;` et ne match pas.
             ->assertSee("Éditer dans l'ancienne UI", false)
@@ -331,7 +331,7 @@ class GpoDetailPageTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        $rendered = Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        $rendered = Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             // L'encart "sections natives" est affiché
             ->assertSee('Sections de cette GPO gérables nativement')
@@ -370,7 +370,7 @@ class GpoDetailPageTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             ->assertSee('data-testid="cta-manage-links"', false)
             ->assertSee('Gérer les liaisons');
@@ -400,7 +400,7 @@ class GpoDetailPageTest extends TestCase
             ->withDefaultInheritance(true)
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             ->assertSee('data-testid="impact-card"', false)
             ->assertSee('Impact de cette GPO')
@@ -421,7 +421,7 @@ class GpoDetailPageTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             ->assertSee('data-testid="impact-empty"', false)
             ->assertSee('aucun impact');
@@ -441,7 +441,7 @@ class GpoDetailPageTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        $rendered = Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        $rendered = Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             ->assertDontSee('Sections de cette GPO gérables nativement')
             ->assertSee('data-testid="legacy-edit-button"', false)

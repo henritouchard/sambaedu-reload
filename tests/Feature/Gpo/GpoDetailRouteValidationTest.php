@@ -73,7 +73,7 @@ class GpoDetailRouteValidationTest extends TestCase
 
         FakesGpoService::make()->expectNoCalls()->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => 'INJECTION; rm -rf /'])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => 'INJECTION; rm -rf /'])
             ->assertStatus(404);
     }
 
@@ -88,7 +88,7 @@ class GpoDetailRouteValidationTest extends TestCase
 
         FakesGpoService::make()->expectNoCalls()->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => 'ZZZZZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZZZZZZZZZ'])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => 'ZZZZZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZZZZZZZZZ'])
             ->assertStatus(404);
     }
 
@@ -104,7 +104,7 @@ class GpoDetailRouteValidationTest extends TestCase
         $fake->mock()->shouldNotReceive('listContainers');
         $fake->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(404);
     }
 
@@ -123,7 +123,7 @@ class GpoDetailRouteValidationTest extends TestCase
 
         FakesGpoService::make()->expectNoCalls()->bind($this->app);
 
-        $this->get('/app/gpo/INJECTION-NOT-A-GUID')
+        $this->get('/admin/settings/gpo/INJECTION-NOT-A-GUID')
             ->assertStatus(404);
     }
 
@@ -146,7 +146,7 @@ class GpoDetailRouteValidationTest extends TestCase
 
         // La route a matché (sinon le service ne serait pas instancié) ;
         // Statut 404 métier car get() retourne null.
-        $response = $this->get('/app/gpo/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE');
+        $response = $this->get('/admin/settings/gpo/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE');
         $this->assertSame(404, $response->getStatusCode(),
             'GUID sans accolades → la route doit matcher et appeler le service '
             . '(qui répond null → abort(404) propre).');

@@ -177,20 +177,21 @@ opérations en service AD natif propre.
 
 ## UI admin native Wine (Story 16.3c)
 
-Page Livewire SFC `/app/gpo/wine` qui remplace `legacy/modules/gpo/wine.php`
-(79 lignes). Permission `server.admin` (Spatie). Channel logs `gpo` (audit
-admin auditable). Pattern iso `/app/gpo` (Story 16.2).
+Page Livewire SFC `/admin/settings/gpo/wine` (renommée depuis `/app/gpo/wine`
+par Story 16.9) qui remplace `legacy/modules/gpo/wine.php` (79 lignes).
+Permission `server.admin` (Spatie). Channel logs `gpo` (audit admin
+auditable). Pattern iso `/admin/settings/gpo` (Story 16.2 + 16.9).
 
 | Élément                  | Path / nom                                                          |
 |--------------------------|---------------------------------------------------------------------|
-| URL native               | `/app/gpo/wine`                                                     |
-| Route                    | `Route::livewire('/gpo/wine', 'pages::app.gpo.wine.index')` (filesystem-router, pas de Controller) |
-| Vue Livewire SFC         | `resources/views/pages/app/gpo/wine/index.blade.php`                |
+| URL native               | `/admin/settings/gpo/wine` (16.9)                                   |
+| Route                    | `Route::livewire('/wine', 'pages::admin.settings.gpo.wine.index')` (sous-groupe `admin.gpo`, filesystem-router, pas de Controller) |
+| Vue Livewire SFC         | `resources/views/pages/admin/settings/gpo/wine/index.blade.php`     |
 | Service scan FS          | `App\Gpo\Services\WinePrefixScanner` (`list()` / `exists()`)        |
 | Service queuer           | `App\Gpo\Services\WineImageQueuer::dispatch`                        |
 | Job queue Laravel        | `App\Gpo\Jobs\GenerateWineImageJob` (tries=1, timeout=1800)         |
 | Extension ShortcutsService | `App\Services\ShortcutsService::importWineShortcuts`              |
-| Redirect catchall legacy | `/gpo/wine.php` → `/app/gpo/wine` (config `blocked_legacy_routes`)  |
+| Redirect catchall legacy | `/gpo/wine.php` → `/admin/settings/gpo/wine` (config `blocked_legacy_routes`) |
 
 **Sécurité audit §6.F F7 corrigé** :
 - Whitelist regex `^[a-zA-Z0-9._\-]*$` sur `$application` (input UI), appliquée
@@ -351,10 +352,13 @@ helpers sous-jacents).
 
 ### UI native
 
-| URL                                | Composant Livewire SFC                                  | Description                                                                   |
-|------------------------------------|---------------------------------------------------------|-------------------------------------------------------------------------------|
-| `/app/gpo/{guid}/links`           | `pages::app.gpo.[guid].links.index`                     | Page dédiée gestion liaisons (DO3) — flat list OUs (DO4), 4 actions par lien |
-| `/app/gpo/{guid}` (enrichi)        | `pages::app.gpo.[guid].index`                           | Ajout CTA "Gérer les liaisons" + encart "Impact" comptage postes par OU      |
+(Routes renommées en `/admin/settings/gpo/{guid}/...` par Story 16.9 ; les anciens
+chemins `/app/gpo/{guid}/...` redirigent 301 pour compat bookmarks.)
+
+| URL                                          | Composant Livewire SFC                              | Description                                                                   |
+|----------------------------------------------|-----------------------------------------------------|-------------------------------------------------------------------------------|
+| `/admin/settings/gpo/{guid}/links` (16.9)   | `pages::admin.settings.gpo.[guid].links.index`     | Page dédiée gestion liaisons (DO3) — flat list OUs (DO4), 4 actions par lien |
+| `/admin/settings/gpo/{guid}` (enrichi, 16.9) | `pages::admin.settings.gpo.[guid].index`           | Ajout CTA "Gérer les liaisons" + encart "Impact" comptage postes par OU      |
 
 ### Décisions structurantes (D1-D10, voir story 16.5)
 
@@ -421,23 +425,24 @@ re-spécialise ses placeholders (`###_SE4FS_NAME_###`, `###_DOMAIN_###`, etc.).
 | Enum     | `app/Gpo/Enums/WpkgGpoSyncSeverity.php`                       | Sévérité `ok`/`info`/`warning`/`error` avec helpers `merge()`/`exitCode()`/`rank()`.  |
 | DTO      | `app/Gpo/Dto/WpkgGpoSyncReport.php`                           | Photographie immutable de l'état GPO + URLs attendues + couverture Bearer.            |
 | Command  | `app/Wpkg/Deployment/Console/Commands/WpkgGpoSyncCommand.php` | `wpkg:gpo:sync {--audit-only} {--force} {--json}` — cron-friendly + déploiement.      |
-| Livewire | `resources/views/pages/app/gpo/wpkg-deployment/index.blade.php` | Page admin SFC `/app/gpo/wpkg-deployment` (badge sévérité + 4 tableaux + modale publish). |
+| Livewire | `resources/views/pages/admin/settings/gpo/wpkg-deployment/index.blade.php` | Page admin SFC `/admin/settings/gpo/wpkg-deployment` (renommée par 16.9 ; badge sévérité + 4 tableaux + modale publish). |
 
 ### URL & route
 
-- `/app/gpo/wpkg-deployment` — name `app.gpo.wpkg-deployment`, middleware
-  `web` + `sambaedu.auth` (via groupe `/app`) + `can:server.admin`.
-- Déclarée AVANT le catchall + AVANT `/gpo/{guid}` (segment statique
-  `wpkg-deployment` ne matche pas la regex GUID, mais ordre explicite pour
-  clarté).
+- `/admin/settings/gpo/wpkg-deployment` (16.9) — name `admin.gpo.wpkg-deployment`,
+  middleware `web` + `sambaedu.auth` + `sambaedu.admin` (via groupe `/admin`)
+  + `can:server.admin`.
+- Déclarée AVANT `/{guid}` paramétré (segment statique `wpkg-deployment` ne
+  matche pas la regex GUID, mais ordre explicite pour clarté).
+- L'ancien chemin `/app/gpo/wpkg-deployment` redirige 301 (compat Phase 2).
 
 ### Architecture
 
 ```
-[Admin /app/gpo/wpkg-deployment]               [Cron / Ansible]
+[Admin /admin/settings/gpo/wpkg-deployment]    [Cron / Ansible]
             │                                          │
             ▼                                          ▼
-    pages::app.gpo.wpkg-deployment.index   wpkg:gpo:sync (artisan)
+ pages::admin.settings.gpo.wpkg-deployment.index   wpkg:gpo:sync (artisan)
             │                                          │
             └───────────► WpkgGpoSynchronizer ◄────────┘
                                   │
@@ -500,7 +505,7 @@ re-spécialise ses placeholders (`###_SE4FS_NAME_###`, `###_DOMAIN_###`, etc.).
   sur échec mid-publish (TD-16.6-1).
 - **DO4 — Auto-link** : pas d'auto-link au publish — séparation responsabilité
   16.6 publication / 16.5 liaisons. UI signale via warning + CTA vers
-  `/app/gpo/{guid}/links`.
+  `/admin/settings/gpo/{guid}/links` (renommé par 16.9).
 
 ### Limitations (cf. `docs/tech-debt-gpo.md`)
 

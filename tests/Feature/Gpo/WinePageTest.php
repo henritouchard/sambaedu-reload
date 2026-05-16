@@ -19,7 +19,7 @@ use Tests\Concerns\BootstrapsSpatieTables;
 use Tests\TestCase;
 
 /**
- * Tests Feature Livewire — Page admin Wine `/app/gpo/wine` (Story 16.3c AC6.1).
+ * Tests Feature Livewire — Page admin Wine `/admin/settings/gpo/wine` (Story 16.3c AC6.1 + Story 16.9).
  */
 class WinePageTest extends TestCase
 {
@@ -71,7 +71,7 @@ class WinePageTest extends TestCase
     #[Test]
     public function it_redirects_unauthenticated_to_login(): void
     {
-        $resp = $this->get('/app/gpo/wine');
+        $resp = $this->get('/admin/settings/gpo/wine');
         // sambaedu.auth middleware → redirect (302) ou 401
         $this->assertContains($resp->status(), [302, 401], 'Expected 302/401 for unauthenticated');
     }
@@ -85,7 +85,7 @@ class WinePageTest extends TestCase
         $this->mockScanner([]);
         $this->actingAs($this->makeUser());
         $this->withoutMiddleware(\App\Http\Middleware\Auth\SambaEduAuth::class);
-        $resp = $this->get('/app/gpo/wine');
+        $resp = $this->get('/admin/settings/gpo/wine');
         $resp->assertForbidden();
     }
 
@@ -95,7 +95,7 @@ class WinePageTest extends TestCase
         $this->mockScanner(['firefox', 'libreoffice']);
         $this->actingAs($this->makeAdmin());
 
-        Livewire::test('pages::app.gpo.wine.index')
+        Livewire::test('pages::admin.settings.gpo.wine.index')
             ->assertSee('Wine')
             ->assertSee('firefox')
             ->assertSee('libreoffice')
@@ -108,7 +108,7 @@ class WinePageTest extends TestCase
         $this->mockScanner(['photoshop', 'autocad']);
         $this->actingAs($this->makeAdmin());
 
-        $component = Livewire::test('pages::app.gpo.wine.index');
+        $component = Livewire::test('pages::admin.settings.gpo.wine.index');
         $this->assertSame(['photoshop', 'autocad'], $component->get('prefixes'));
     }
 
@@ -119,7 +119,7 @@ class WinePageTest extends TestCase
         $this->mockScanner(['firefox']);
         $this->actingAs($this->makeAdmin());
 
-        Livewire::test('pages::app.gpo.wine.index')
+        Livewire::test('pages::admin.settings.gpo.wine.index')
             ->set('selectedApplication', 'firefox')
             ->call('generateImage');
 
@@ -135,7 +135,7 @@ class WinePageTest extends TestCase
         $this->mockScanner(['firefox']);
         $this->actingAs($this->makeAdmin());
 
-        Livewire::test('pages::app.gpo.wine.index')
+        Livewire::test('pages::admin.settings.gpo.wine.index')
             ->set('selectedApplication', '; rm -rf /')
             ->call('generateImage');
 
@@ -152,7 +152,7 @@ class WinePageTest extends TestCase
 
         $this->actingAs($this->makeAdmin());
 
-        Livewire::test('pages::app.gpo.wine.index')
+        Livewire::test('pages::admin.settings.gpo.wine.index')
             ->set('selectedApplication', 'firefox')
             ->call('generateShortcuts');
     }
@@ -165,12 +165,12 @@ class WinePageTest extends TestCase
         $this->actingAs($this->makeAdmin());
 
         // 1er dispatch.
-        Livewire::test('pages::app.gpo.wine.index')
+        Livewire::test('pages::admin.settings.gpo.wine.index')
             ->set('selectedApplication', 'firefox')
             ->call('generateImage');
 
         // 2ᵉ dispatch consécutif → lock détenu → toast warning.
-        Livewire::test('pages::app.gpo.wine.index')
+        Livewire::test('pages::admin.settings.gpo.wine.index')
             ->set('selectedApplication', 'firefox')
             ->call('generateImage')
             ->assertDispatched('toastMagic'); // toast warning émis

@@ -8,11 +8,11 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Test Feature route redirect Wine — Story 16.3c AC1.7 / AC4.4.
+ * Test Feature route redirect Wine — Story 16.3c AC1.7 / AC4.4 (maj Story 16.9 D7).
  *
- * Vérifie que `/gpo/wine.php` (legacy) est redirigé vers `/app/gpo/wine`
- * (native) via le catchall + `blocked_legacy_routes`. Pattern iso 16.2 D5
- * (`gestion_gpo.php`).
+ * Vérifie que `/gpo/wine.php` (legacy) est redirigé vers
+ * `/admin/settings/gpo/wine` (native, renommée par 16.9) via le catchall +
+ * `blocked_legacy_routes`. Pattern iso 16.2 D5 (`gestion_gpo.php`).
  */
 class WineLegacyRouteRedirectTest extends TestCase
 {
@@ -28,14 +28,14 @@ class WineLegacyRouteRedirectTest extends TestCase
     }
 
     #[Test]
-    public function it_redirects_legacy_wine_php_to_native_app_gpo_wine(): void
+    public function it_redirects_legacy_wine_php_to_native_admin_settings_gpo_wine(): void
     {
         $resp = $this->get('/gpo/wine.php');
 
-        // Pattern legacy catchall : 302 redirect vers /app/gpo/wine.
+        // Pattern legacy catchall : 302 redirect vers /admin/settings/gpo/wine (16.9 D7).
         $resp->assertRedirect();
         $location = (string) $resp->headers->get('Location');
-        $this->assertStringContainsString('/app/gpo/wine', $location);
+        $this->assertStringContainsString('/admin/settings/gpo/wine', $location);
     }
 
     #[Test]
@@ -45,6 +45,6 @@ class WineLegacyRouteRedirectTest extends TestCase
 
         $resp->assertRedirect();
         $location = (string) $resp->headers->get('Location');
-        $this->assertStringContainsString('/app/gpo/wine', $location);
+        $this->assertStringContainsString('/admin/settings/gpo/wine', $location);
     }
 }

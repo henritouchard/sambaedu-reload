@@ -10,9 +10,10 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Page Livewire SFC — UI admin native Wine (`/app/gpo/wine`).
+ * Page Livewire SFC — UI admin native Wine (`/admin/settings/gpo/wine`).
  *
- * Story 16.3c — Volet 1 (AC1.1 → AC1.7).
+ * Story 16.3c — Volet 1 (AC1.1 → AC1.7). Story 16.9 — déplacement
+ * sous `/admin/settings/gpo/wine` (groupe admin).
  *
  * Remplace le legacy `gpo/wine.php` (79 lignes) :
  *  - Form de sélection du conteneur Wine (scan FS `/var/sambaedu/unattended/install/wine`)
@@ -152,7 +153,7 @@ new #[Title('Wine — Gestion des images partagées | SE4FS')] class extends Com
     description="Gérez la génération de l'image Wine partagée et l'import des raccourcis Wine pour les postes Linux.">
 
     <x-slot:actions>
-        <a href="{{ route('app.gpo.index') }}" class="btn btn-outline btn-sm">
+        <a href="{{ route('admin.gpo.index') }}" class="btn btn-outline btn-sm">
             <i class="fa-solid fa-arrow-left"></i>
             Retour aux GPOs
         </a>

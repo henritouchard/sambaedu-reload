@@ -91,7 +91,7 @@ class GpoNativeSectionLinksTest extends TestCase
             ->withGpos($this->makeGpoCollection('firefox-policy'))
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->assertStatus(200)
             // Cible spécifiquement le chip natif via data-testid (review 16.3a #6).
             ->assertSee('data-testid="native-chip-single"', false)
@@ -115,7 +115,7 @@ class GpoNativeSectionLinksTest extends TestCase
             ->withGpos($this->makeGpoCollection('gpo-custom-foo'))
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->assertStatus(200)
             ->assertSee('Édition native', false)
             // Cellule vide pour cette ligne (review 16.3a #6) — pas de chip natif.
@@ -140,7 +140,7 @@ class GpoNativeSectionLinksTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             // CTA natif présent et identifié par data-testid (review 16.3a #6).
             ->assertSee('data-testid="native-cta-wallpapers"', false)
@@ -171,7 +171,7 @@ class GpoNativeSectionLinksTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        $rendered = Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        $rendered = Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             // Les 3 CTAs natifs identifiés via data-testid (review 16.3a #6).
             ->assertSee('data-testid="native-cta-wallpapers"', false)
@@ -205,7 +205,7 @@ class GpoNativeSectionLinksTest extends TestCase
         // Le GUID URL-encodé attendu dans le href du CTA.
         $encodedGuid = rawurlencode(self::VALID_GUID);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             // Vérification précise (review 16.3a #6) — URL CTA complète attendue.
             ->assertSee('/app/parc-settings/wallpapers?from_gpo=' . $encodedGuid, false);
@@ -226,7 +226,7 @@ class GpoNativeSectionLinksTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        $rendered = Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        $rendered = Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             // Bouton legacy identifié via data-testid (review 16.3a #6/#9).
             ->assertSee('data-testid="legacy-edit-button"', false)
@@ -264,7 +264,7 @@ class GpoNativeSectionLinksTest extends TestCase
             ->withGpos($this->makeGpoCollection('firefox-policy'))
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->assertStatus(200)
             ->assertSee('Édition native', false);
     }
@@ -284,7 +284,7 @@ class GpoNativeSectionLinksTest extends TestCase
             ->withGpos($this->makeGpoCollection('firefox-wallpaper-conf'))
             ->bind($this->app);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->assertStatus(200)
             ->assertSee('sections', false);
     }

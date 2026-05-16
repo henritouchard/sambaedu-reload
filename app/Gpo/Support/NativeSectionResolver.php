@@ -63,7 +63,7 @@ final class NativeSectionResolver
         // sur un parc SE4FS) — accepté.
         'wine' => [
             'patterns' => ['wine'],
-            'url' => '/app/gpo/wine',
+            'url' => '/admin/settings/gpo/wine',
             'label' => 'Gérer les apps Wine (Linux/Windows)',
             'icon' => 'fa-wine-glass',
         ],

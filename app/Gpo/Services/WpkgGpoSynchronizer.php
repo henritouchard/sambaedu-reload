@@ -274,7 +274,7 @@ class WpkgGpoSynchronizer
             }
 
             if ($linkedOus === []) {
-                $messages[] = 'GPO `se4_wpkg` existe mais n\'est liée à aucune OU — le pipeline WPKG n\'est déclenché sur aucun poste. Allez sur /app/gpo/'
+                $messages[] = 'GPO `se4_wpkg` existe mais n\'est liée à aucune OU — le pipeline WPKG n\'est déclenché sur aucun poste. Allez sur /admin/settings/gpo/'
                     . $gpoGuid . '/links pour la lier.';
                 $severity = $severity->merge(WpkgGpoSyncSeverity::Warning);
             }

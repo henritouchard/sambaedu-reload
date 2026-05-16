@@ -82,7 +82,7 @@ class GpoPagePermissionTest extends TestCase
         $this->actingAs($admin);
         $this->bindMockService();
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->assertStatus(200);
     }
 
@@ -92,7 +92,7 @@ class GpoPagePermissionTest extends TestCase
         $user = $this->makeUser('perm-user-listing-403');
         $this->actingAs($user);
 
-        Livewire::test('pages::app.gpo.index')
+        Livewire::test('pages::admin.settings.gpo.index')
             ->assertStatus(403);
     }
 
@@ -103,7 +103,7 @@ class GpoPagePermissionTest extends TestCase
         $this->actingAs($admin);
         $this->bindMockService();
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200);
     }
 
@@ -113,7 +113,7 @@ class GpoPagePermissionTest extends TestCase
         $user = $this->makeUser('perm-user-detail-403');
         $this->actingAs($user);
 
-        Livewire::test('pages::app.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(403);
     }
 }

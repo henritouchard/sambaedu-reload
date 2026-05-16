@@ -263,51 +263,42 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
         ->name('wallpapers.thumbnail');
 
     // ========================================
-    // GPO — Epic 16, Story 16.2
-    // Listing et détail lecture seule des GPOs Active Directory.
-    // Permission server.admin (Décision D4). Route /app/gpo (Décision D1).
+    // Story 16.9 — Redirections 301 des anciennes URLs /app/gpo/* vers
+    // /admin/settings/gpo/* (les vues Livewire vivent désormais sous le
+    // groupe admin, cf. plus bas).
     //
-    // La regex stricte du GUID (format Microsoft, accolades optionnelles)
-    // dans where('guid', ...) bloque toute valeur non conforme au niveau du
-    // routeur (404 retourné avant tout dispatch Livewire). C'est cette regex
-    // qui constitue la défense principale contre les injections — la
-    // validation défensive dans mount() n'est qu'un filet de sécurité.
+    // Conservation des noms `app.gpo.*` pour ne pas casser les appels
+    // existants `route('app.gpo.index')` qui sont en cours de migration vers
+    // `route('admin.gpo.index')`. Les redirections sont permanentes (301)
+    // car aucun retour arrière n'est prévu.
+    //
+    // Ordre critique : routes statiques (wine, wpkg-deployment) AVANT la route
+    // paramétrée `/gpo/{guid}` (iso-Piège 1 / Story 16.6 fix #2). La regex
+    // GUID ne matche pas `wine`/`wpkg-deployment` mais on rend l'ordre
+    // explicite.
+    //
+    // Sécurité anti open-redirect : la regex GUID stricte (iso-Story 16.2
+    // fix #9) est appliquée AUSSI sur les routes de redirection paramétrées
+    // pour bloquer toute valeur arbitraire (sinon `/app/gpo/INJECTION`
+    // construirait un redirect vers `/admin/settings/gpo/INJECTION`).
     // ========================================
-    // Story 16.3c — Page admin native Wine (UI Livewire SFC).
-    // Permission server.admin (cohérence 16.2). Déclarée AVANT
-    // `/gpo/{guid}` pour éviter qu'elle ne tente d'être matchée comme GUID
-    // (la regex stricte de `{guid}` ne matche pas `wine`, mais on évite
-    // la dépendance à l'ordre via une déclaration explicite prioritaire).
-    Route::livewire('/gpo/wine', 'pages::app.gpo.wine.index')
-        ->middleware('can:server.admin')
+    Route::permanentRedirect('/gpo/wine', '/admin/settings/gpo/wine')
         ->name('gpo.wine');
 
-    // Story 16.6 — Hook GPO ↔ WPKG (jonction Epic 15). Audit + re-publication
-    // de la GPO `se4_wpkg` qui déclenche `cscript wpkg.js` côté postes Windows.
-    // Permission `server.admin` iso 16.2/16.5. Déclarée AVANT `/app/gpo/{guid}`
-    // pour éviter interception par le segment paramétrique GUID (review fix #2 :
-    // la regex GUID ne matche pas `wpkg-deployment`, mais on rend l'ordre
-    // explicite plutôt que dépendre du préfixe regex).
-    Route::livewire('/gpo/wpkg-deployment', 'pages::app.gpo.wpkg-deployment.index')
-        ->middleware('can:server.admin')
+    Route::permanentRedirect('/gpo/wpkg-deployment', '/admin/settings/gpo/wpkg-deployment')
         ->name('gpo.wpkg-deployment');
 
-    Route::livewire('/gpo/{guid}', 'pages::app.gpo.[guid].index')
+    // Routes paramétrées : closure pour interpoler le `{guid}` (Route::permanentRedirect
+    // ne supporte pas l'interpolation des paramètres). Regex GUID iso 16.2 fix #9.
+    Route::get('/gpo/{guid}', fn (string $guid) => redirect('/admin/settings/gpo/' . $guid, 301))
         ->where('guid', '\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?')
-        ->middleware('can:server.admin')
         ->name('gpo.show');
 
-    // Story 16.5 — Page de gestion des liaisons GPO ↔ OU AD.
-    // Route plus profonde — segments distincts (/links après {guid}), ordre de
-    // déclaration sans incidence (Laravel matche le path le plus long en premier
-    // pour des segments littéraux distincts).
-    Route::livewire('/gpo/{guid}/links', 'pages::app.gpo.[guid].links.index')
+    Route::get('/gpo/{guid}/links', fn (string $guid) => redirect('/admin/settings/gpo/' . $guid . '/links', 301))
         ->where('guid', '\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?')
-        ->middleware('can:server.admin')
         ->name('gpo.links');
 
-    Route::livewire('/gpo', 'pages::app.gpo.index')
-        ->middleware('can:server.admin')
+    Route::permanentRedirect('/gpo', '/admin/settings/gpo')
         ->name('gpo.index');
 
 });
@@ -343,6 +334,48 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin'])->name('a
     Route::livewire('/settings', 'pages::admin.settings.index')
         ->middleware('can:server.admin')
         ->name('settings');
+
+    // ========================================
+    // Story 16.9 — Exposition UI admin GPO sous `/admin/settings/gpo/*`.
+    // Déplacement structurel des 5 pages Livewire SFC GPO livrées en Phase 1
+    // (Stories 16.2, 16.3c, 16.5, 16.6) depuis `/app/gpo/*`. Permission
+    // `can:server.admin` (iso-Phase 1) + middlewares de groupe `admin`
+    // (`sambaedu.auth + sambaedu.admin`). Ordre critique : routes statiques
+    // (wine, wpkg-deployment) AVANT la route paramétrée `{guid}` (Piège 1 /
+    // iso-pattern Story 16.6 fix #2).
+    // Les anciennes URLs `/app/gpo/*` sont conservées en redirection 301
+    // permanente (cf. groupe `app/` plus haut dans ce fichier).
+    // ========================================
+    Route::prefix('settings/gpo')->name('gpo.')->group(function () {
+        // Routes statiques Wine et WPKG-deployment AVANT la route {guid} paramétrée.
+        Route::livewire('/wine', 'pages::admin.settings.gpo.wine.index')
+            ->middleware('can:server.admin')
+            ->name('wine');
+
+        Route::livewire('/wpkg-deployment', 'pages::admin.settings.gpo.wpkg-deployment.index')
+            ->middleware('can:server.admin')
+            ->name('wpkg-deployment');
+
+        // Route détail paramétrée {guid} (regex Microsoft GUID, accolades
+        // optionnelles — iso-pattern Story 16.2 fix #9 anti open-redirect).
+        Route::livewire('/{guid}', 'pages::admin.settings.gpo.[guid].index')
+            ->where('guid', '\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?')
+            ->middleware('can:server.admin')
+            ->name('show');
+
+        // Route détail liaisons (segments distincts /links — ordre sans
+        // incidence par rapport à `/{guid}`).
+        Route::livewire('/{guid}/links', 'pages::admin.settings.gpo.[guid].links.index')
+            ->where('guid', '\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?')
+            ->middleware('can:server.admin')
+            ->name('links');
+
+        // Route listing (collection — déclarée en dernier, le préfixe `/`
+        // ne matche pas les segments statiques au-dessus).
+        Route::livewire('/', 'pages::admin.settings.gpo.index')
+            ->middleware('can:server.admin')
+            ->name('index');
+    });
 
     // Routes de gestion des parcs
     Route::prefix('parcs')->name('parcs.')->group(function () {

@@ -55,13 +55,13 @@
     {{-- Lien complet avec displayName résolu.
          Strip accolades : Laravel/Symfony UrlGenerator ré-interprète les `{` `}` de la
          valeur comme placeholders. La regex de la route accepte les 2 formes. --}}
-    <a href="{{ route('app.gpo.show', ['guid' => trim((string) $guid, '{}')]) }}" class="btn btn-ghost btn-sm">
+    <a href="{{ route('admin.gpo.show', ['guid' => trim((string) $guid, '{}')]) }}" class="btn btn-ghost btn-sm">
         <i class="fa-solid fa-arrow-left"></i>
         Retour à la GPO «{{ $displayName }}»
     </a>
 @elseif ($guid !== null)
     {{-- Fallback générique : guid présent mais GPO introuvable (AC4.3) --}}
-    <a href="{{ route('app.gpo.index') }}" class="btn btn-ghost btn-sm">
+    <a href="{{ route('admin.gpo.index') }}" class="btn btn-ghost btn-sm">
         <i class="fa-solid fa-arrow-left"></i>
         Retour à la liste des GPOs
     </a>

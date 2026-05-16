@@ -12,7 +12,8 @@ use Livewire\Component;
 /**
  * Page Livewire SFC — Détail d'une GPO Active Directory.
  *
- * Story 16.2 — AC Volet 2. Convention maison filesystem-based router.
+ * Story 16.2 + Story 16.9 — Détail GPO sous `/admin/settings/gpo/{guid}`.
+ * Convention maison filesystem-based router.
  * Consomme GpoService::get/listContainers/getLinks/getInheritance (Story 16.1).
  * Périmètre : lecture seule. Bouton "Éditer dans l'ancienne UI" (Décision D2).
  *
@@ -273,14 +274,14 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
 
     <x-slot:actions>
         <div class="flex flex-wrap gap-2 items-center">
-            <a href="{{ route('app.gpo.index') }}" class="btn btn-outline btn-sm">
+            <a href="{{ route('admin.gpo.index') }}" class="btn btn-outline btn-sm">
                 <i class="fa-solid fa-arrow-left"></i>
                 Retour au listing
             </a>
 
             {{-- CTA "Gérer les liaisons" (Story 16.5 — AC3.1) --}}
             @can('server.admin')
-                <a href="{{ url('/app/gpo/' . $this->guid . '/links') }}"
+                <a href="{{ route('admin.gpo.links', ['guid' => trim((string) $this->guid, '{}')]) }}"
                     class="btn btn-primary btn-sm"
                     data-testid="cta-manage-links">
                     <i class="fa-solid fa-link"></i>
@@ -430,7 +431,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
                         <i class="fa-solid fa-link-slash text-2xl mb-2"></i>
                         <p class="text-sm">Cette GPO n'a aucun impact — elle n'est liée à aucune OU.</p>
                         @can('server.admin')
-                            <a href="{{ url('/app/gpo/' . $this->guid . '/links') }}"
+                            <a href="{{ route('admin.gpo.links', ['guid' => trim((string) $this->guid, '{}')]) }}"
                                 class="btn btn-sm btn-primary mt-3">
                                 <i class="fa-solid fa-link"></i>
                                 Lier maintenant
@@ -454,7 +455,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
                             <strong>{{ $this->totalImpact }}</strong> poste(s) potentiellement affecté(s)
                         </p>
                         @can('server.admin')
-                            <a href="{{ url('/app/gpo/' . $this->guid . '/links') }}"
+                            <a href="{{ route('admin.gpo.links', ['guid' => trim((string) $this->guid, '{}')]) }}"
                                 class="btn btn-sm btn-outline btn-primary" data-testid="cta-detail-impact">
                                 Voir l'impact détaillé
                             </a>

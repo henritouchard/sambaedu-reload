@@ -11,7 +11,8 @@ use Livewire\Component;
 /**
  * Page Livewire SFC — Listing des GPOs Active Directory.
  *
- * Story 16.2 — AC Volet 1. Convention maison filesystem-based router.
+ * Story 16.2 + Story 16.9 — Listing GPO sous `/admin/settings/gpo`.
+ * Convention maison filesystem-based router.
  * Consomme GpoService::list() (posé par Story 16.1).
  * Périmètre : lecture seule. Les mutations passent par le shim legacy (bouton dédié page détail).
  */
@@ -362,7 +363,7 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
                             // Strip accolades du GUID Microsoft `{...}` : Laravel/Symfony UrlGenerator
                             // ré-interprète les `{` `}` de la valeur substituée comme placeholders
                             // et lève UrlGenerationException. La regex de la route accepte les 2 formes.
-                            $detailUrl = route('app.gpo.show', ['guid' => trim((string) $gpo['name'], '{}')]);
+                            $detailUrl = route('admin.gpo.show', ['guid' => trim((string) $gpo['name'], '{}')]);
                             $legacyUrl = url('/gpo/gestion_gpo.php') . '?' . http_build_query(['selectionne' => $gpo['displayName']]);
                             // Story 16.3a — AC3.1/AC3.3 : résolution heuristique sur la collection
                             // paginée (déjà en mémoire) — aucun appel I/O supplémentaire.
