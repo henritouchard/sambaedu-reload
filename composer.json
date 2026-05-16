@@ -19,6 +19,7 @@
         "directorytree/ldaprecord": "^3.8",
         "directorytree/ldaprecord-laravel": "^3.4",
         "ezyang/htmlpurifier": "~4.12",
+        "firebase/php-jwt": "^6.10 || ^7.0",
         "flynsarmy/slim-monolog": "~1.0",
         "fortawesome/font-awesome": "^7.0",
         "google/apiclient": "~2.7",

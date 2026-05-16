@@ -9,6 +9,7 @@ Checklist par domaine métier. À dérouler avant une mise en production importa
 - [ ] [gpo](domains/gpo.md) — Group Policy Objects, profils itinérants, redirections, fondations natives `App\Gpo` _(Stories 1bis.18f, 16.1)_
 - [ ] [wpkg-deploy](domains/wpkg-deploy.md) — Pipeline déploiement WPKG (logs, migrations, atomic write, chemins config) _(Story 15.1)_
 - [ ] [network](domains/network.md) — Réservations DHCP, baux actifs, import CSV, migration legacy via `/sync-from-ad` _(Story 8.1)_
+- [ ] [auth](domains/auth.md) — Plateforme HTTPS + JWT v1 poste↔serveur local (PKI locale, enrollment, refresh, révocation) _(Story 16.10)_
 
 ## À créer au fil des prochaines stories
 
@@ -17,7 +18,7 @@ Checklist par domaine métier. À dérouler avant une mise en production importa
 - [ ] `ad-sync.md` — `/admin/sync-from-ad`, rapatriement profils LDAP
 - [ ] `bootstrap-update.md` — `scripts/update.sh`, migrations, seed auto, cache reset
 - [ ] `legacy-shims.md` — routes catchall legacy, modules GPO / iPXE / DHCP / BBB / imprimantes
-- [ ] `auth.md` — login LDAP, sessions, `AuthUser` ↔ `User`, CAS / OAuth2
+- [ ] _(auth.md ajouté Story 16.10 — couvrira aussi `users.md` et `legacy auth/CAS/OAuth2` au fil des prochaines stories Phase 2/3)_
 
 ## Convention
 
