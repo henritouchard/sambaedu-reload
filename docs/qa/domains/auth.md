@@ -387,31 +387,31 @@ différent).
 
 ### Section 6 — Révocation par UUID
 
-> ⚠️ **Limitation Phase 2 — `workstation:revoke` est `refresh-only`**
+> ✅ **`workstation:revoke` révoque effectivement TOUS les tokens du poste** (Phase 2, révision Q3 16.10)
 >
-> La commande `php artisan workstation:revoke {uuid}` révoque tous les **refresh tokens**
-> actifs du poste, mais **n'invalide pas les access tokens JWT en cours d'usage**
-> (les `jti` des access tokens ne sont pas tracés en DB — seuls les `jti` explicitement
-> mis en blacklist par cette commande le sont, et le marker inséré ici est synthétique).
+> La commande `php artisan workstation:revoke {uuid}` invalide :
 >
-> **Conséquence opérationnelle** : après `workstation:revoke`, un poste compromis avec un
-> access token déjà émis peut continuer d'appeler `/api/v1/agent/*` jusqu'à expiration
-> de ce token (TTL configuré dans `auth_v1.jwt.access_ttl`, défaut 24h).
+> 1. **Tous les refresh tokens actifs** du poste (révocation DB immédiate).
+> 2. **Tous les access JWT en cours** émis avant la commande (effet ≤ 60s — TTL cache
+>    APCu workstation-wide). Le middleware `EnsureWorkstationJwt` rejette désormais en
+>    `jwt.revoked` tout JWT dont l'`iat <= revoked_at` du marker workstation-wide.
 >
-> **Pour une révocation totale immédiate** (cas vol de poste, compromission CA root,
-> incident critique), 3 options par ordre de préférence :
+> **Mécanisme** : la commande insère une row marker `workstation_jwt_revocations
+> (workstation_uuid, revoked_at = now())` + push le cache APCu `jwt:revoked_ws:<uuid>`
+> (TTL 3600s par défaut). Le `WorkstationJwtRevocationChecker::isRevoked($jti, $sub, $iat)`
+> compare l'`iat` du JWT au `revoked_at` cutoff workstation.
 >
-> 1. **Couper l'accès réseau du poste** (DHCP lease revoke, switch port disable, firewall
->    rule). Effet immédiat, scope ciblé sur le poste compromis.
-> 2. **Régénérer la paire JWT** avec `php artisan auth:ca:init --force` puis reload
->    serveur : invalide **tous** les access tokens de **tous** les postes d'un coup
->    (kid disparaît de la keymap → 401 `jwt.signature_invalid`). Les postes
->    légitimes devront re-bootstrap. Effet immédiat, scope global → option de catastrophe.
-> 3. **Attendre l'expiration naturelle** (≤ access_ttl). Acceptable si la compromission
->    est mineure et le risque de fuite limité.
+> **TTL access token** : défaut 10h (révision review — couvre journée scolaire avec
+> marge, réduit la fenêtre d'exposition vs 24h précédent).
 >
-> Le retrait définitif du shim bootstrap md5 + traçage `jti` access en DB (Phase 3+)
-> permettra une révocation ciblée immédiate du poste — pas en Phase 2.
+> **Fenêtre résiduelle ≤ 60s** : c'est le délai max entre `workstation:revoke` et
+> propagation effective sur tous les workers PHP-FPM (cache APCu négatif TTL 60s).
+> Pour une révocation **strictement immédiate** :
+>
+> - `php artisan cache:clear` après `workstation:revoke` (flush APCu — propagation < 1s).
+> - **Ou** `php artisan auth:ca:init --force` (régénère la paire JWT, invalide TOUS les
+>   tokens de TOUS les postes d'un coup — option catastrophe, postes doivent re-bootstrap).
+> - **Ou** couper l'accès réseau du poste (DHCP lease revoke, firewall rule).
 
 #### Scénario 16.10-20 — `php artisan workstation:revoke <uuid>`
 

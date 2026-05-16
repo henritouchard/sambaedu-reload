@@ -30,7 +30,9 @@ return [
     |--------------------------------------------------------------------------
     |
     | - `algorithm` : RS256 imposé (asymétrique, lib `firebase/php-jwt:^6.10`).
-    | - `access_ttl`  : TTL access token (24h — Tech Spec §5.2).
+    | - `access_ttl`  : TTL access token (10h — révision review 16.10, couvre
+    |                   journée scolaire avec marge ; ancien 24h fenêtre trop
+    |                   large vs limitation `workstation:revoke` cache 60s).
     | - `refresh_ttl` : TTL refresh token (30j).
     | - `active_kid` : identifiant de la clé active utilisée par
     |                  `WorkstationJwtIssuer` lors de la signature.
@@ -48,8 +50,10 @@ return [
     'jwt' => [
         'algorithm' => 'RS256',
 
-        // Access TTL : 24h (cf. Tech Spec §5.2 — décision dev notes story).
-        'access_ttl' => (int) env('AUTH_V1_JWT_ACCESS_TTL', 86400),
+        // Access TTL : 10h (révision review 16.10 — Henri 2026-05-16).
+        // Couvre une journée scolaire (8h + marge) avec 1 refresh entre 2 sessions.
+        // Réduit la fenêtre d'exposition après compromission de 24h → 10h.
+        'access_ttl' => (int) env('AUTH_V1_JWT_ACCESS_TTL', 36000),
 
         // Refresh TTL : 30j (cf. Tech Spec §5.2).
         'refresh_ttl' => (int) env('AUTH_V1_JWT_REFRESH_TTL', 2592000),

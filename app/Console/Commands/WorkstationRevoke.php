@@ -22,17 +22,18 @@ use Illuminate\Support\Str;
  *  - Marque révoqués **tous** les refresh tokens actifs du `workstation_uuid`
  *    via `WorkstationJwtRefreshService::revokeAllRefreshesForWorkstation`.
  *  - Insère une entrée `workstation_jwt_revocations` "marker" par workstation
- *    (jti = workstation_uuid pattern impossible — on génère un jti
- *    synthétique unique).
- *  - Push le flag cache APCu pour invalidation rapide multi-workers (TTL
- *    `manual_revoke_cache_ttl`, default 3600s).
+ *    (jti synthétique unique + `revoked_at = now()` qui sert de cutoff pour
+ *    le check workstation-wide du `WorkstationJwtRevocationChecker` — Q3
+ *    review 16.10).
+ *  - Push le flag cache APCu workstation-wide (clé `jwt:revoked_ws:<uuid>`
+ *    valeur = timestamp `revoked_at`, TTL `manual_revoke_cache_ttl` default
+ *    3600s) pour invalidation rapide multi-workers.
  *
- * **Limitation acceptée** : on ne révoque pas les `jti` des access tokens
- * en cours d'usage (pas tracés en DB — un access peut avoir N>1 utilisations
- * jusqu'à expiration). Les access tokens existants resteront valides
- * jusqu'à leur `exp` (≤24h). Mitigation Phase 3+ : ajouter une table
- * `workstation_jwt_emissions` pour tracking exhaustif. En Phase 2 on
- * accepte la fenêtre 24h.
+ * **Effet sur les access tokens en cours (Q3 review 16.10)** : grâce au
+ * check workstation-wide du Checker (`isRevoked($jti, $sub, $iat)`), tous
+ * les JWT émis avec `iat <= revoked_at` pour ce poste sont désormais
+ * invalidés en moins de 60s (TTL cache APCu). Plus de fenêtre 10h résiduelle
+ * sur des access tokens en cours.
  *
  * Options :
  *
@@ -97,7 +98,7 @@ class WorkstationRevoke extends Command
 
         $this->info(sprintf('Revoked %d refresh token(s) for workstation %s', $count, $uuid));
         $this->line('');
-        $this->warn('Note : in-flight access tokens (jti not tracked) will remain valid until their exp claim (max 24h).');
+        $this->info('All in-flight access tokens for this workstation are also invalidated within ≤60s (cache TTL) via workstation-wide revocation marker.');
 
         Log::channel('auth-v1')->info('[WorkstationRevoke] auth.workstation.revoked', [
             'action_type' => 'auth.workstation.revoked',
@@ -127,14 +128,15 @@ class WorkstationRevoke extends Command
                 'revoked_at' => $now,
                 'reason' => $reason,
                 'revoked_by' => $by,
-                // Marker expire dans 24h (= max access TTL)
+                // Marker expire dans access_ttl (= max access TTL)
                 'expires_at' => $now->copy()->addSeconds(
-                    (int) config('auth_v1.jwt.access_ttl', 86400)
+                    (int) config('auth_v1.jwt.access_ttl', 36000)
                 ),
             ]);
         });
 
-        // Push cache APCu (clé `jwt:revoked:<jti_marker>`)
+        // Push cache APCu — clés jti ET workstation-wide.
         $checker->pushRevocation($jti);
+        $checker->pushWorkstationRevocation($uuid, $now->timestamp);
     }
 }

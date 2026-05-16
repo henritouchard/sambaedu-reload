@@ -110,8 +110,10 @@ class WorkstationJwtVerifier
             throw InvalidJwtException::wrongTier($expectedTier, $tier);
         }
 
-        // Vérifie la révocation (cache APC + fallback DB)
-        if ($this->revocationChecker->isRevoked($jti)) {
+        // Vérifie la révocation (cache APC + fallback DB).
+        // Q3 review 16.10 : check workstation-wide via `sub` + `iat` — un JWT
+        // émis avant un `workstation:revoke` est désormais effectivement invalidé.
+        if ($this->revocationChecker->isRevoked($jti, $sub, $iat)) {
             $this->logRejection('jwt.revoked', $jwt, ['jti' => $jti, 'sub' => $sub]);
             throw InvalidJwtException::revoked();
         }
