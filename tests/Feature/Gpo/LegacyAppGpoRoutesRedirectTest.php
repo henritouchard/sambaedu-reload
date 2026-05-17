@@ -17,8 +17,10 @@ use Tests\TestCase;
  * fonctionner pendant toute la Phase 2 (D3). 301 permanent car aucun retour
  * arrière prévu.
  *
- * Pattern `withoutMiddleware('sambaedu.auth')` iso-Story 16.8 commit 0a4609c :
- * les redirections sont indépendantes de l'auth, on teste la mécanique pure 301.
+ * Routes déclarées au TOP-LEVEL (hors groupe `Route::prefix('app')->middleware('sambaedu.auth')`)
+ * pour que le 301 se déclenche avant tout middleware d'auth — la cible
+ * `/admin/settings/gpo/*` est elle-même protégée. Donc aucun `withoutMiddleware`
+ * requis ici.
  *
  * Defensive testing iso-`GpoDetailRouteValidationTest` : `expectNoCalls` sur
  * GpoService garantit qu'aucune closure de redirection n'instancie le service
@@ -39,7 +41,7 @@ class LegacyAppGpoRoutesRedirectTest extends TestCase
     #[Test]
     public function it_redirects_app_gpo_index_to_admin_settings_gpo(): void
     {
-        $response = $this->withoutMiddleware('sambaedu.auth')->get('/app/gpo');
+        $response = $this->get('/app/gpo');
 
         $response->assertRedirect('/admin/settings/gpo');
         $response->assertStatus(301);
@@ -48,29 +50,30 @@ class LegacyAppGpoRoutesRedirectTest extends TestCase
     #[Test]
     public function it_redirects_app_gpo_show_to_admin_settings_gpo_show_with_guid(): void
     {
-        $response = $this->withoutMiddleware('sambaedu.auth')
-            ->get('/app/gpo/' . rawurlencode(self::VALID_GUID));
+        $response = $this->get('/app/gpo/' . rawurlencode(self::VALID_GUID));
 
         $response->assertStatus(301);
-        // Assertion stricte : le GUID complet (avec accolades préservées par la
-        // closure de redirection) doit apparaître dans le header Location.
-        $response->assertHeader('Location', '/admin/settings/gpo/' . self::VALID_GUID);
+        // Le GUID complet (accolades préservées par la closure) doit
+        // apparaître dans le header Location. `assertStringContainsString`
+        // tolère la forme absolue (`http://se4fs/...`) construite par Laravel.
+        $location = (string) $response->headers->get('Location');
+        $this->assertStringContainsString('/admin/settings/gpo/' . self::VALID_GUID, $location);
     }
 
     #[Test]
     public function it_redirects_app_gpo_links_to_admin_settings_gpo_links_with_guid(): void
     {
-        $response = $this->withoutMiddleware('sambaedu.auth')
-            ->get('/app/gpo/' . rawurlencode(self::VALID_GUID) . '/links');
+        $response = $this->get('/app/gpo/' . rawurlencode(self::VALID_GUID) . '/links');
 
         $response->assertStatus(301);
-        $response->assertHeader('Location', '/admin/settings/gpo/' . self::VALID_GUID . '/links');
+        $location = (string) $response->headers->get('Location');
+        $this->assertStringContainsString('/admin/settings/gpo/' . self::VALID_GUID . '/links', $location);
     }
 
     #[Test]
     public function it_redirects_app_gpo_wine_to_admin_settings_gpo_wine(): void
     {
-        $response = $this->withoutMiddleware('sambaedu.auth')->get('/app/gpo/wine');
+        $response = $this->get('/app/gpo/wine');
 
         $response->assertRedirect('/admin/settings/gpo/wine');
         $response->assertStatus(301);
@@ -79,7 +82,7 @@ class LegacyAppGpoRoutesRedirectTest extends TestCase
     #[Test]
     public function it_redirects_app_gpo_wpkg_deployment_to_admin_settings_gpo_wpkg_deployment(): void
     {
-        $response = $this->withoutMiddleware('sambaedu.auth')->get('/app/gpo/wpkg-deployment');
+        $response = $this->get('/app/gpo/wpkg-deployment');
 
         $response->assertRedirect('/admin/settings/gpo/wpkg-deployment');
         $response->assertStatus(301);
@@ -99,7 +102,7 @@ class LegacyAppGpoRoutesRedirectTest extends TestCase
     #[DataProvider('invalidGuidProvider')]
     public function it_returns_404_on_malformed_guid_redirect(string $maliciousInput): void
     {
-        $response = $this->withoutMiddleware('sambaedu.auth')->get('/app/gpo/' . $maliciousInput);
+        $response = $this->get('/app/gpo/' . $maliciousInput);
 
         $response->assertStatus(404);
     }

@@ -118,13 +118,26 @@ class GpoDetailRouteValidationTest extends TestCase
         // Fix #1 : couvre la regex `->where('guid', ...)` au niveau routeur,
         // qu'aucun test ne couvrait — Livewire::test() contourne le routeur.
         // Le service ne doit JAMAIS être instancié pour un input invalide.
+        //
+        // Story 16.9 : la route /admin/settings/gpo/{guid} étant maintenant
+        // sous le groupe `admin` (vs ancien `app`), elle est suivie par le
+        // catchall legacy qui retourne 302 quand la regex GUID bloque (avant :
+        // 404 routeur direct car `/app/gpo/{guid}` ne matchait rien). Les deux
+        // status (404, 302) prouvent que la route paramétrée n'a PAS matché —
+        // l'invariant critique reste `expectNoCalls` sur GpoService.
         $admin = $this->makeAdmin('admin-route-regex');
         $this->actingAs($admin);
 
         FakesGpoService::make()->expectNoCalls()->bind($this->app);
 
-        $this->get('/admin/settings/gpo/INJECTION-NOT-A-GUID')
-            ->assertStatus(404);
+        $response = $this->get('/admin/settings/gpo/INJECTION-NOT-A-GUID');
+
+        $this->assertContains(
+            $response->getStatusCode(),
+            [404, 302],
+            'Route GUID doit échouer (404 routeur direct ou 302 catchall legacy) ; service GpoService non appelé.',
+        );
+        $this->assertNotEquals(200, $response->getStatusCode());
     }
 
     #[Test]
@@ -134,11 +147,17 @@ class GpoDetailRouteValidationTest extends TestCase
         // au niveau HTTP, la route doit donc dispatcher (200 ou 404 métier
         // selon le retour du service) — pas un 404 routeur.
         // Bypass sambaedu.auth (vérifie $_SESSION['login'], non touché par
-        // `actingAs`) — on garde `can:server.admin` actif pour valider la
-        // chaîne route → middleware perm → composant.
+        // `actingAs`) ET sambaedu.admin/RequireAdminRights (Story 16.9 :
+        // la route /admin/settings/gpo/{guid} est sous double middleware, et
+        // RequireAdminRights lit `sambaedu_user` que SambaEduAuth aurait injecté
+        // mais qu'on bypass ici). On garde `can:server.admin` actif pour valider
+        // la chaîne route → middleware perm → composant.
         $admin = $this->makeAdmin('admin-route-nobrace');
         $this->actingAs($admin);
-        $this->withoutMiddleware(\App\Http\Middleware\Auth\SambaEduAuth::class);
+        $this->withoutMiddleware([
+            \App\Http\Middleware\Auth\SambaEduAuth::class,
+            \App\Http\Middleware\RequireAdminRights::class,
+        ]);
 
         FakesGpoService::make()
             ->withGpo(self::VALID_GUID, null) // null → 404 métier propre

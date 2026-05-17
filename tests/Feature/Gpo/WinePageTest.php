@@ -80,11 +80,16 @@ class WinePageTest extends TestCase
     public function it_returns_403_for_user_without_server_admin(): void
     {
         // Bypass sambaedu.auth (vérifie $_SESSION['login'], non touché par
-        // `actingAs`) — on garde `can:server.admin` actif pour valider que
-        // l'utilisateur eleve reçoit bien un 403 et pas un 302 d'auth.
+        // `actingAs`) ET sambaedu.admin/RequireAdminRights (Story 16.9 :
+        // la route /admin/settings/gpo/wine est désormais dans le groupe
+        // admin avec double middleware — bypass des deux pour atteindre
+        // le `can:server.admin` qui doit retourner 403 pour user lambda).
         $this->mockScanner([]);
         $this->actingAs($this->makeUser());
-        $this->withoutMiddleware(\App\Http\Middleware\Auth\SambaEduAuth::class);
+        $this->withoutMiddleware([
+            \App\Http\Middleware\Auth\SambaEduAuth::class,
+            \App\Http\Middleware\RequireAdminRights::class,
+        ]);
         $resp = $this->get('/admin/settings/gpo/wine');
         $resp->assertForbidden();
     }

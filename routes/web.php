@@ -262,46 +262,50 @@ Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function 
         ->middleware('can:wallpaper.manage')
         ->name('wallpapers.thumbnail');
 
-    // ========================================
-    // Story 16.9 — Redirections 301 des anciennes URLs /app/gpo/* vers
-    // /admin/settings/gpo/* (les vues Livewire vivent désormais sous le
-    // groupe admin, cf. plus bas).
-    //
-    // Conservation des noms `app.gpo.*` pour ne pas casser les appels
-    // existants `route('app.gpo.index')` qui sont en cours de migration vers
-    // `route('admin.gpo.index')`. Les redirections sont permanentes (301)
-    // car aucun retour arrière n'est prévu.
-    //
-    // Ordre critique : routes statiques (wine, wpkg-deployment) AVANT la route
-    // paramétrée `/gpo/{guid}` (iso-Piège 1 / Story 16.6 fix #2). La regex
-    // GUID ne matche pas `wine`/`wpkg-deployment` mais on rend l'ordre
-    // explicite.
-    //
-    // Sécurité anti open-redirect : la regex GUID stricte (iso-Story 16.2
-    // fix #9) est appliquée AUSSI sur les routes de redirection paramétrées
-    // pour bloquer toute valeur arbitraire (sinon `/app/gpo/INJECTION`
-    // construirait un redirect vers `/admin/settings/gpo/INJECTION`).
-    // ========================================
-    Route::permanentRedirect('/gpo/wine', '/admin/settings/gpo/wine')
-        ->name('gpo.wine');
-
-    Route::permanentRedirect('/gpo/wpkg-deployment', '/admin/settings/gpo/wpkg-deployment')
-        ->name('gpo.wpkg-deployment');
-
-    // Routes paramétrées : closure pour interpoler le `{guid}` (Route::permanentRedirect
-    // ne supporte pas l'interpolation des paramètres). Regex GUID iso 16.2 fix #9.
-    Route::get('/gpo/{guid}', fn (string $guid) => redirect('/admin/settings/gpo/' . $guid, 301))
-        ->where('guid', '\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?')
-        ->name('gpo.show');
-
-    Route::get('/gpo/{guid}/links', fn (string $guid) => redirect('/admin/settings/gpo/' . $guid . '/links', 301))
-        ->where('guid', '\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?')
-        ->name('gpo.links');
-
-    Route::permanentRedirect('/gpo', '/admin/settings/gpo')
-        ->name('gpo.index');
-
 });
+
+// ========================================
+// Story 16.9 — Redirections 301 des anciennes URLs /app/gpo/* vers
+// /admin/settings/gpo/* (les vues Livewire vivent désormais sous le
+// groupe admin, cf. plus bas).
+//
+// Déclarées AU TOP-LEVEL (hors du groupe `app/` middleware `sambaedu.auth`)
+// car les redirections HTTP 301 sont publiques par nature — protéger le
+// /app/gpo legacy par sambaedu.auth ferait que le middleware intercept la
+// requête (302 vers /authentication/login) AVANT que le 301 ne se déclenche.
+// La cible /admin/settings/gpo/* est elle-même protégée par sambaedu.auth +
+// sambaedu.admin + can:server.admin, donc aucune perte de sécurité.
+//
+// Conservation des noms `app.gpo.*` pour ne pas casser les appels existants
+// `route('app.gpo.index')` qui sont en cours de migration vers
+// `route('admin.gpo.index')`. Permanent (301) — aucun retour arrière prévu.
+//
+// Ordre critique : routes statiques (wine, wpkg-deployment) AVANT la route
+// paramétrée `/app/gpo/{guid}` (iso-Piège 1 / Story 16.6 fix #2). La regex
+// GUID ne matche pas `wine`/`wpkg-deployment` mais on rend l'ordre explicite.
+//
+// Sécurité anti open-redirect : la regex GUID stricte (iso-Story 16.2 fix
+// #9) est appliquée AUSSI sur les routes de redirection paramétrées pour
+// bloquer toute valeur arbitraire.
+// ========================================
+Route::permanentRedirect('/app/gpo/wine', '/admin/settings/gpo/wine')
+    ->name('app.gpo.wine');
+
+Route::permanentRedirect('/app/gpo/wpkg-deployment', '/admin/settings/gpo/wpkg-deployment')
+    ->name('app.gpo.wpkg-deployment');
+
+// Routes paramétrées : closure pour interpoler le `{guid}` (Route::permanentRedirect
+// ne supporte pas l'interpolation des paramètres). Regex GUID iso 16.2 fix #9.
+Route::get('/app/gpo/{guid}', fn (string $guid) => redirect('/admin/settings/gpo/' . $guid, 301))
+    ->where('guid', '\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?')
+    ->name('app.gpo.show');
+
+Route::get('/app/gpo/{guid}/links', fn (string $guid) => redirect('/admin/settings/gpo/' . $guid . '/links', 301))
+    ->where('guid', '\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?')
+    ->name('app.gpo.links');
+
+Route::permanentRedirect('/app/gpo', '/admin/settings/gpo')
+    ->name('app.gpo.index');
 
 /*
 |--------------------------------------------------------------------------
