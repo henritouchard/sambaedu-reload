@@ -777,6 +777,36 @@ install_scheduler_cron() {
 }
 
 # ============================================================================
+# Vérification des pré-requis environnementaux (doctor)
+# ============================================================================
+
+run_doctor_check() {
+  log "Vérification des pré-requis environnementaux (sambaedu:doctor)..."
+  cd "$APP_DIR"
+
+  local doctor_user="root"
+  if id www-admin >/dev/null 2>&1; then
+    doctor_user="www-admin"
+  else
+    log_warning "User www-admin absent — doctor lancé en root (résultats moins représentatifs du runtime PHP-FPM)"
+  fi
+
+  local exit_code=0
+  if [[ "$doctor_user" == "www-admin" ]]; then
+    sudo -u www-admin php artisan sambaedu:doctor || exit_code=$?
+  else
+    php artisan sambaedu:doctor || exit_code=$?
+  fi
+
+  case "$exit_code" in
+    0) log_success "Doctor : tous les pré-requis OK" ;;
+    1) log_warning "Doctor : warnings détectés (voir ci-dessus) — non bloquant" ;;
+    2) log_warning "Doctor : erreurs détectées (voir ci-dessus) — corriger avant utilisation, puis relancer 'sudo -u www-admin php artisan sambaedu:doctor'" ;;
+    *) log_warning "Doctor : exit code inattendu ($exit_code)" ;;
+  esac
+}
+
+# ============================================================================
 # Affichage du résumé
 # ============================================================================
 
@@ -834,7 +864,7 @@ main() {
   relocate_if_needed "$@"
 
   # Phase 1: Vérifications
-  log "Phase 1/8: Vérifications initiales..."
+  log "Phase 1/9: Vérifications initiales..."
   echo ""
 
   check_existing_services
@@ -859,7 +889,7 @@ main() {
 
   # Phase 2: Docker et configuration
   echo ""
-  log "Phase 2/8: Configuration Docker et .env..."
+  log "Phase 2/9: Configuration Docker et .env..."
   echo ""
 
   generate_env
@@ -868,7 +898,7 @@ main() {
 
   # Phase 3: Dépendances
   echo ""
-  log "Phase 3/8: Installation des dépendances..."
+  log "Phase 3/9: Installation des dépendances..."
   echo ""
 
   install_composer
@@ -881,21 +911,21 @@ main() {
 
   # Phase 4: Base de données
   echo ""
-  log "Phase 4/8: Migration de la base de données..."
+  log "Phase 4/9: Migration de la base de données..."
   echo ""
 
   run_migrations
 
   # Phase 5: Optimisation
   echo ""
-  log "Phase 5/8: Optimisation applicative..."
+  log "Phase 5/9: Optimisation applicative..."
   echo ""
 
   run_application_update
 
   # Phase 6: Apache
   echo ""
-  log "Phase 6/8: Configuration Apache..."
+  log "Phase 6/9: Configuration Apache..."
   echo ""
 
   if [[ $apache_available == true ]]; then
@@ -906,18 +936,25 @@ main() {
 
   # Phase 7: Permissions
   echo ""
-  log "Phase 7/8: Configuration des permissions ACL..."
+  log "Phase 7/9: Configuration des permissions ACL..."
   echo ""
 
   setup_acl_permissions "$APP_DIR"
 
   # Phase 8: Queue workers
   echo ""
-  log "Phase 8/8: Installation des queue workers systemd..."
+  log "Phase 8/9: Installation des queue workers systemd..."
   echo ""
 
   install_queue_workers
   install_scheduler_cron
+
+  # Phase 9: Doctor (vérification post-install)
+  echo ""
+  log "Phase 9/9: Vérification des pré-requis environnementaux..."
+  echo ""
+
+  run_doctor_check
 
   # Résumé
   echo ""

@@ -128,6 +128,32 @@ run_laravel_update() {
     log_success "Mise à jour Laravel OK"
 }
 
+run_doctor_check() {
+    log "Vérification des pré-requis environnementaux (sambaedu:doctor)..."
+    cd "$APP_DIR"
+
+    local doctor_user="root"
+    if id www-admin >/dev/null 2>&1; then
+        doctor_user="www-admin"
+    else
+        log_warning "User www-admin absent — doctor lancé en root (résultats moins représentatifs du runtime PHP-FPM)"
+    fi
+
+    local exit_code=0
+    if [[ "$doctor_user" == "www-admin" ]]; then
+        sudo -u www-admin php artisan sambaedu:doctor || exit_code=$?
+    else
+        php artisan sambaedu:doctor || exit_code=$?
+    fi
+
+    case "$exit_code" in
+        0) log_success "Doctor : tous les pré-requis OK" ;;
+        1) log_warning "Doctor : warnings détectés (voir ci-dessus) — non bloquant" ;;
+        2) log_warning "Doctor : erreurs détectées (voir ci-dessus) — corriger avant utilisation, puis relancer 'sudo -u www-admin php artisan sambaedu:doctor'" ;;
+        *) log_warning "Doctor : exit code inattendu ($exit_code)" ;;
+    esac
+}
+
 update_env() {
     bash "$SCRIPT_DIR/updateEnv.sh"
 }
@@ -346,6 +372,9 @@ main() {
 
     echo ""
     update_systemd
+
+    echo ""
+    run_doctor_check
 
     echo ""
     show_summary
