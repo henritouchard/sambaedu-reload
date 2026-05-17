@@ -15,7 +15,13 @@ use Livewire\Component;
  * Story 16.2 + Story 16.9 — Détail GPO sous `/admin/settings/gpo/{guid}`.
  * Convention maison filesystem-based router.
  * Consomme GpoService::get/listContainers/getLinks/getInheritance (Story 16.1).
- * Périmètre : lecture seule. Bouton "Éditer dans l'ancienne UI" (Décision D2).
+ * Périmètre : lecture seule. CTAs natifs vers les sections gérables (Firefox /
+ * Wallpaper / Shortcuts / Wine / Profils itinérants) via NativeSectionResolver
+ * quand l'heuristique sur le displayName matche (Story 16.3a). Le bouton
+ * "Éditer dans l'ancienne UI" a été retiré : `gestion_gpo.php` est un menu
+ * de maintenance legacy (maj base, export) qui ignore tout paramètre de
+ * sélection — l'admin doit passer par les CTAs natifs ou la création
+ * legacy (gpo-maj.php depuis le listing).
  *
  * Story 16.3a — Enrichissement :
  * - L'heuristique `NATIVE_SECTIONS_HEURISTICS` est migrée vers NativeSectionResolver (AC1.1/AC1.2).
@@ -242,12 +248,6 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
         return NativeSectionResolver::resolve($this->gpo['displayName'] ?? '');
     }
 
-    public function legacyEditUrl(): string
-    {
-        $displayName = $this->gpo['displayName'] ?? '';
-        return url('/gpo/gestion_gpo.php') . '?' . http_build_query(['selectionne' => $displayName]);
-    }
-
     public function formatVersion(?int $version): string
     {
         if ($version === null) {
@@ -262,7 +262,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
 
 @php
     $nativeLinks = $this->nativeSectionLinks();
-    $isLegacySecondary = count($nativeLinks) > 0;
+    $hasNativeLinks = count($nativeLinks) > 0;
     $displayedContainers = $showAllContainers ? $containers : array_slice($containers, 0, 5);
     $hasMoreContainers = count($containers) > 5;
     $gpoVersion = $this->formatVersion($gpo['versionNumber'] ?? null);
@@ -290,7 +290,6 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
             @endcan
 
             {{-- CTAs natifs primaires (Story 16.3a — AC2.1) --}}
-            {{-- Affichés avant le bouton legacy si l'heuristique matche --}}
             @foreach ($nativeLinks as $key => $link)
                 <a href="{{ \App\Gpo\Support\NativeSectionResolver::buildUrl($key, $this->guid) }}"
                     class="btn btn-success btn-sm"
@@ -299,33 +298,20 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
                     {{ $link['label'] }}
                 </a>
             @endforeach
-
-            {{-- Bouton legacy — dégradé en secondaire si match natif (AC2.2 / D5) --}}
-            <div class="flex flex-col items-end gap-0.5">
-                <a href="{{ $this->legacyEditUrl() }}" target="_blank" rel="noopener noreferrer"
-                    class="{{ $isLegacySecondary ? 'btn btn-ghost btn-xs' : 'btn btn-primary btn-sm' }}"
-                    data-testid="legacy-edit-button">
-                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                    Éditer dans l'ancienne UI
-                </a>
-                @if ($isLegacySecondary)
-                    <span class="text-xs text-base-content/50 text-right">Non recommandé — utilisez les CTAs natifs ci-dessus.</span>
-                @endif
-            </div>
         </div>
     </x-slot:actions>
 
     <div class="space-y-6">
 
-        {{-- Note transition (adaptée Story 16.3a : présence CTAs natifs si match) --}}
-        @if (!$isLegacySecondary)
+        {{-- Note transition : si aucun match natif, signaler que l'édition
+             native n'est pas encore disponible pour cette section. --}}
+        @if (!$hasNativeLinks)
             <div class="alert alert-info shadow-sm">
                 <i class="fa-solid fa-circle-info"></i>
                 <div>
                     <p class="text-sm">
                         Cette page est en <strong>lecture seule</strong>.
                         L'édition native de cette section arrive dans les prochaines stories de l'Epic 16.
-                        Utilisez le bouton <strong>"Éditer dans l'ancienne UI"</strong> ci-dessus pour modifier cette GPO.
                     </p>
                 </div>
             </div>

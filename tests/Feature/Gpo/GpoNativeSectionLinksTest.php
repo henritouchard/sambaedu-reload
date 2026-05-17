@@ -147,12 +147,7 @@ class GpoNativeSectionLinksTest extends TestCase
             // escape=true (default) : l'apostrophe est rendue via `{{ $link['label'] }}`
             // qui passe par `e()` → le HTML contient `&#039;`, on doit chercher la
             // version escapée. Avec `false`, le test cherche `'` littéral et fail.
-            ->assertSee("Gérer les fonds d'écran")
-            // Vérifie l'ordre : CTA natif AVANT le bouton legacy (assertSeeInOrder).
-            ->assertSeeInOrder([
-                'data-testid="native-cta-wallpapers"',
-                'data-testid="legacy-edit-button"',
-            ], false);
+            ->assertSee("Gérer les fonds d'écran");
     }
 
     // =========================================================================
@@ -209,45 +204,6 @@ class GpoNativeSectionLinksTest extends TestCase
             ->assertStatus(200)
             // Vérification précise (review 16.3a #6) — URL CTA complète attendue.
             ->assertSee('/app/parc-settings/wallpapers?from_gpo=' . $encodedGuid, false);
-    }
-
-    // =========================================================================
-    // AC4.4 — Test 6 : bouton legacy en btn-ghost btn-xs + sous-texte "non recommandé"
-    // =========================================================================
-
-    #[Test]
-    public function it_displays_secondary_legacy_button_when_native_match(): void
-    {
-        $admin = $this->makeAdmin('admin-legacy-secondary');
-        $this->actingAs($admin);
-
-        FakesGpoService::make()
-            ->withGpo(self::VALID_GUID, $this->makeGpoSummary('wallpaper-default'))
-            ->withContainersFor(self::VALID_GUID, [])
-            ->bind($this->app);
-
-        $rendered = Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
-            ->assertStatus(200)
-            // Bouton legacy identifié via data-testid (review 16.3a #6/#9).
-            ->assertSee('data-testid="legacy-edit-button"', false)
-            ->assertSee('Non recommandé', false)
-            ->assertSee('Éditer dans l\'ancienne UI', false);
-
-        // Vérifie spécifiquement que le bouton legacy porte les classes secondaires
-        // (btn-ghost btn-xs) et NON pas primaires — sans coupler à une chaîne CSS générique.
-        // L'ordre des attributs `class` vs `data-testid` n'est pas garanti (le blade
-        // émet `class` avant `data-testid`), on couvre les 2 sens.
-        $html = $rendered->html();
-        $this->assertMatchesRegularExpression(
-            '/(data-testid="legacy-edit-button"[^>]*class="[^"]*btn-ghost btn-xs)|(class="[^"]*btn-ghost btn-xs[^"]*"[^>]*data-testid="legacy-edit-button")/s',
-            $html,
-            'Le bouton legacy doit avoir les classes secondaires btn-ghost btn-xs',
-        );
-        $this->assertDoesNotMatchRegularExpression(
-            '/(data-testid="legacy-edit-button"[^>]*class="[^"]*btn-primary btn-sm)|(class="[^"]*btn-primary btn-sm[^"]*"[^>]*data-testid="legacy-edit-button")/s',
-            $html,
-            'Le bouton legacy ne doit PAS être primaire sur une GPO matchant une section native',
-        );
     }
 
     // =========================================================================

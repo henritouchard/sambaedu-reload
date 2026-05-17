@@ -233,7 +233,7 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
                  Création GPO native en pause (Story 16-4) — on expose le shim
                  legacy en bouton secondaire visible du header listing. --}}
             @can('server.admin')
-                <a href="{{ url('/gpo/gpo-maj.php') }}" target="_blank" rel="noopener noreferrer"
+                <a href="{{ legacy_url('/gpo/gpo-maj.php') }}" target="_blank" rel="noopener noreferrer"
                     class="btn btn-outline btn-sm" data-testid="create-gpo-legacy-cta">
                     <i class="fa-solid fa-arrow-up-right-from-square"></i>
                     Créer une GPO (ancienne UI)
@@ -364,7 +364,6 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
                             // ré-interprète les `{` `}` de la valeur substituée comme placeholders
                             // et lève UrlGenerationException. La regex de la route accepte les 2 formes.
                             $detailUrl = route('admin.gpo.show', ['guid' => trim((string) $gpo['name'], '{}')]);
-                            $legacyUrl = url('/gpo/gestion_gpo.php') . '?' . http_build_query(['selectionne' => $gpo['displayName']]);
                             // Story 16.3a — AC3.1/AC3.3 : résolution heuristique sur la collection
                             // paginée (déjà en mémoire) — aucun appel I/O supplémentaire.
                             $nativeMatches = \App\Gpo\Support\NativeSectionResolver::resolve($gpo['displayName'] ?? '');
@@ -458,20 +457,13 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
                                 @endif
                             </td>
 
-                            {{-- Colonne "Actions" — inchangée (AC3.2) --}}
+                            {{-- Colonne "Actions" --}}
                             <td class="actions-cell">
                                 <div class="flex gap-2 items-center">
                                     <a href="{{ $detailUrl }}"
                                         class="btn btn-xs btn-outline btn-primary">
                                         <i class="fa-solid fa-eye text-xs"></i>
                                         Détail
-                                    </a>
-                                    <a href="{{ $legacyUrl }}"
-                                        target="_blank" rel="noopener noreferrer"
-                                        class="btn btn-xs btn-ghost"
-                                        title="Ouvrir l'ancienne UI dans un nouvel onglet">
-                                        <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
-                                        Ancienne UI
                                     </a>
                                 </div>
                             </td>
@@ -513,7 +505,7 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
                                     Effacer les filtres
                                 </button>
                             @endif
-                            <a href="{{ url('/gpo/gestion_gpo.php') }}" target="_blank" rel="noopener noreferrer"
+                            <a href="{{ legacy_url('/gpo/gpo-maj.php') }}" target="_blank" rel="noopener noreferrer"
                                 class="btn btn-primary btn-sm">
                                 <i class="fa-solid fa-arrow-up-right-from-square"></i>
                                 Créer une GPO dans l'ancienne UI

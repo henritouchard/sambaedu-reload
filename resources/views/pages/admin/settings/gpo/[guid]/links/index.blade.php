@@ -741,7 +741,7 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
                 <p class="text-xs text-base-content/60 mt-1">
                     La création de GPOs sera portée nativement dans une story future (16-4 actuellement en pause).
                 </p>
-                <a href="{{ url('/gpo/gpo-maj.php') }}" target="_blank" rel="noopener noreferrer"
+                <a href="{{ legacy_url('/gpo/gpo-maj.php') }}" target="_blank" rel="noopener noreferrer"
                     class="btn btn-sm btn-outline mt-2">
                     <i class="fa-solid fa-arrow-up-right-from-square"></i>
                     Ouvrir dans l'ancienne UI

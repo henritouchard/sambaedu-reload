@@ -228,8 +228,15 @@
 **Pages livrées** : `/app/gpo` (listing) + `/app/gpo/{guid}` (détail lecture seule)
 
 > Story utilisateur : première capacité native GPO. Listing filtrable + page détail
-> avec containers, liens AD, héritage, encart "sections natives". Bouton "Éditer dans
-> l'ancienne UI" (shim legacy) présent sur chaque GPO.
+> avec containers, liens AD, héritage, encart "sections natives".
+>
+> ⚠️ **Post-16.9 (cleanup 2026-05-17)** : le bouton "Éditer dans l'ancienne UI" (qui
+> pointait vers `gpo/gestion_gpo.php?selectionne=<nom>`) a été retiré. Le legacy
+> `gestion_gpo.php` est un menu de maintenance (maj base + export) qui ignore tout
+> paramètre de sélection — le lien était trompeur. L'admin passe désormais par les
+> CTAs natifs (16.3a) sur les GPOs matchant Firefox/Wallpaper/Shortcuts/Wine/Profils
+> itinérants, ou par "Créer une GPO dans l'ancienne UI" (lien direct vers `gpo-maj.php`)
+> depuis le listing.
 
 **Pré-requis supplémentaires** :
 - Au moins 1 GPO créée dans l'AD (ex. la GPO `redirections` installée par défaut SE_FS).
@@ -268,17 +275,21 @@
    - Titre H2 : `redirections`.
    - Version format `major.minor` (ex. `0.3`).
    - Bouton "Retour au listing" → ramène à `/app/gpo`.
-   - Bouton "Éditer dans l'ancienne UI" → présent.
+   - Bouton "Gérer les liaisons" (icône lien) → présent pour `server.admin`.
 4. Vérifier la section "Containers liés" : liste des OUs/Sites/Domain.
 5. Pour chaque container affiché : badge "Héritage actif" ou "Héritage bloqué" visible.
+6. Si la GPO ne matche aucune section native (heuristique 16.3a) : encart d'info
+   "Cette page est en **lecture seule**. L'édition native arrive dans les prochaines
+   stories de l'Epic 16." Sinon : un ou plusieurs CTAs natifs verts (cf. scénario 3.x).
 
-### Scénario 2.5 — Bouton "Éditer dans l'ancienne UI" (Décision D2)
+### Scénario 2.5 — ~~Bouton "Éditer dans l'ancienne UI"~~ (RETIRÉ post-16.9)
 
-1. Sur `/app/gpo/{guid}` (page détail d'une GPO), cliquer le bouton "Éditer dans l'ancienne UI".
-2. Vérifier qu'un **nouvel onglet** s'ouvre (attribut `target="_blank"`).
-3. Vérifier que l'URL ouverte contient `/gpo/gestion_gpo.php?selectionne=<nom-encodé>`.
-4. L'onglet legacy doit charger la page d'édition correspondante (ou l'index si le paramètre
-   `selectionne` n'est pas supporté par le shim — c'est acceptable).
+⚠️ **Scénario obsolète** — le bouton a été retiré (cleanup 2026-05-17) car le
+paramètre `?selectionne=` qu'il transmettait à `gestion_gpo.php` n'est en réalité
+**pas reconnu par le legacy** (0 occurrence de `selectionne` dans `sambaedu/gpo/`).
+L'admin atterrissait sur le menu de maintenance générique, jamais sur l'édition
+de la GPO sélectionnée. Pour éditer une GPO : utiliser les CTAs natifs (Firefox /
+Wallpaper / Shortcuts / Wine / Profils itinérants) quand l'heuristique matche.
 
 ### Scénario 2.6 — Catchall redirect `gpo/gestion_gpo.php` → `/app/gpo`
 
@@ -341,7 +352,7 @@
 - [ ] Filtre statut Active/Inactive cohérent avec `versionNumber`
 - [ ] Clic sur GPO → page détail `/app/gpo/{guid}` (200)
 - [ ] Détail : containers, liens, héritage affichés correctement
-- [ ] Bouton "Éditer dans l'ancienne UI" ouvre l'onglet legacy (`target=_blank`)
+- [ ] Bouton "Éditer dans l'ancienne UI" : ~~présent~~ **retiré post-16.9** (cf. scénario 2.5)
 - [ ] `gpo/gestion_gpo.php` → redirection 302 vers `/app/gpo`
 - [ ] `gpo/wine.php` → NE PAS être redirigé (cohabitation D5)
 - [ ] GUID malformé `/app/gpo/injection` → 404 sans log GPO

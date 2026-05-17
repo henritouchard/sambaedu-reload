@@ -76,6 +76,11 @@ return [
     'se4ad_etab_ip' => env('SE4AD_ETAB_IP'),
     'strict_local_ad' => env('STRICT_LOCAL_AD', true),
 
+    // Port HTTP du legacy SambaEdu (vhost séparé). Utilisé par le helper
+    // `legacy_url()` pour construire les liens vers les pages legacy depuis
+    // les vues Laravel (cf. Story 16.9 — UI admin GPO sous /admin/settings/gpo).
+    'legacy_port' => (int) env('SAMBAEDU_LEGACY_PORT', 8082),
+
     'trusted_proxies' => env('TRUSTED_PROXIES'),
 
 

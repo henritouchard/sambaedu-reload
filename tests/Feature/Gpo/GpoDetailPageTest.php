@@ -286,25 +286,6 @@ class GpoDetailPageTest extends TestCase
             ->assertSee('profils-itinerants');
     }
 
-    #[Test]
-    public function it_shows_edit_legacy_button_with_target_blank(): void
-    {
-        $admin = $this->makeAdmin('admin-legacy-button');
-        $this->actingAs($admin);
-
-        FakesGpoService::make()
-            ->withGpo(self::VALID_GUID, $this->makeGpoSummary('redirections'))
-            ->withContainersFor(self::VALID_GUID, [])
-            ->bind($this->app);
-
-        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
-            // escape=false : l'apostrophe `'` est littérale dans le blade, donc le rendu
-            // HTML la conserve ; `assertSee` escape=true chercherait `&#039;` et ne match pas.
-            ->assertSee("Éditer dans l'ancienne UI", false)
-            ->assertSee('target="_blank"', false)
-            ->assertSee('gestion_gpo.php', false);
-    }
-
     // =========================================================================
     // AC1.4 / Story 16.3a — Test smoke : SFC utilise bien NativeSectionResolver
     // =========================================================================
@@ -331,7 +312,7 @@ class GpoDetailPageTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        $rendered = Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             // L'encart "sections natives" est affiché
             ->assertSee('Sections de cette GPO gérables nativement')
@@ -341,18 +322,7 @@ class GpoDetailPageTest extends TestCase
             ->assertSee('data-testid="native-cta-profils-itinerants"', false)
             ->assertSee('Gérer les profils itinérants nativement')
             // L'URL contient le paramètre from_gpo (AC2.3 — encart enrichi)
-            ->assertSee('from_gpo=', false)
-            ->assertSee('Non recommandé', false);
-
-        // Bouton legacy dégradé — assertion ciblée sur les classes du bouton identifié.
-        // L'ordre des attributs `class` vs `data-testid` n'est pas garanti (le blade
-        // émet `class` avant `data-testid`), on couvre les 2 sens.
-        $html = $rendered->html();
-        $this->assertMatchesRegularExpression(
-            '/(data-testid="legacy-edit-button"[^>]*class="[^"]*btn-ghost btn-xs)|(class="[^"]*btn-ghost btn-xs[^"]*"[^>]*data-testid="legacy-edit-button")/s',
-            $html,
-            'Bouton legacy doit être dégradé (btn-ghost btn-xs) sur une GPO matchant une section native',
-        );
+            ->assertSee('from_gpo=', false);
     }
 
     // =========================================================================
@@ -428,10 +398,11 @@ class GpoDetailPageTest extends TestCase
     }
 
     /**
-     * Test smoke no-match : GPO sans section native → bouton legacy primaire.
+     * Test smoke no-match : GPO sans section native → encart d'info "lecture
+     * seule" affiché (et pas d'encart CTAs natifs).
      */
     #[Test]
-    public function it_keeps_legacy_button_primary_when_no_native_match(): void
+    public function it_shows_readonly_alert_when_no_native_match(): void
     {
         $admin = $this->makeAdmin('admin-no-native-smoke');
         $this->actingAs($admin);
@@ -441,19 +412,10 @@ class GpoDetailPageTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
 
-        $rendered = Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
+        Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
             ->assertDontSee('Sections de cette GPO gérables nativement')
-            ->assertSee('data-testid="legacy-edit-button"', false)
-            ->assertDontSee('Non recommandé');
-
-        // Bouton legacy primaire — assertion ciblée sur le bouton identifié.
-        // L'ordre des attributs `class` vs `data-testid` n'est pas garanti.
-        $html = $rendered->html();
-        $this->assertMatchesRegularExpression(
-            '/(data-testid="legacy-edit-button"[^>]*class="[^"]*btn-primary btn-sm)|(class="[^"]*btn-primary btn-sm[^"]*"[^>]*data-testid="legacy-edit-button")/s',
-            $html,
-            'Bouton legacy doit rester primaire (btn-primary btn-sm) sur une GPO sans section native',
-        );
+            ->assertSee('lecture seule')
+            ->assertSee('L\'édition native de cette section arrive', false);
     }
 }
