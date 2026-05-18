@@ -276,9 +276,19 @@ return [
         'samba_tool_timeout' => 30,
 
         // Argument d'authentification global passé à toutes les commandes
-        // samba-tool (parité legacy samba-tool.inc.php:62).
-        // Sera enrichi quand on supportera l'authentification par compte stocké.
-        'kerb_option' => '--use-kerberos=required',
+        // samba-tool. Valeurs possibles :
+        //  - `--use-kerberos=required` : strict (parité legacy samba-tool.inc.php:62)
+        //    — exige un ccache Kerberos valide pour www-admin (kinit ou keytab).
+        //  - `--use-kerberos=desired` : tente Kerberos, fallback NTLM via
+        //    `passdb.tdb` (compte machine). C'est le défaut ici car la
+        //    plupart des déploiements n'ont pas de keytab/cron kinit
+        //    configuré, et passdb.tdb est lisible par www-admin (cf. check
+        //    `Samba private files`). Niveau de sécu équivalent en LAN
+        //    établissement (legacy SambaEdu utilise déjà NTLM sur certaines
+        //    opérations).
+        //  - `--use-kerberos=off` : NTLM only (debug / setups dégradés).
+        // Overridable via env GPO_KERB_OPTION.
+        'kerb_option' => env('GPO_KERB_OPTION', '--use-kerberos=desired'),
 
         // Story 16.6 — Sous-config WPKG GPO synchronizer (`WpkgGpoSynchronizer`).
         // Toutes les valeurs sont overridables via env() pour permettre un

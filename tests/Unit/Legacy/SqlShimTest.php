@@ -39,6 +39,15 @@ class SqlShimTest extends TestCase
         WorkstationGroup::unsetEventDispatcher();
         Workstation::unsetEventDispatcher();
 
+        // Le shim `info_poste_statut()` cache ses résultats en APCu sous une
+        // clé md5(id_poste + serialize(list_app)). Avec DatabaseTransactions,
+        // les IDs SQLite repartent à 1 à chaque test → même clé md5 → cache
+        // hit du test précédent. On purge à chaque setUp pour garantir
+        // l'isolation des tests.
+        if (function_exists('apcu_clear_cache') && apcu_enabled()) {
+            apcu_clear_cache();
+        }
+
         $this->loadShim();
     }
 

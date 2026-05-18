@@ -21,9 +21,12 @@ class EnsureSecureApiHeadersTest extends TestCase
         $req = Request::create('/api/v1/agent/ping', 'GET');
         $res = (new EnsureSecureApiHeaders())->handle($req, fn () => new Response('ok', 200));
 
-        $this->assertSame(
-            'no-store, no-cache, must-revalidate, private',
-            $res->headers->get('Cache-Control'),
+        // Symfony normalise l'ordre des directives Cache-Control (tri alpha),
+        // on assertit donc l'ensemble plutôt que la string brute.
+        $directives = array_map('trim', explode(',', (string) $res->headers->get('Cache-Control')));
+        $this->assertEqualsCanonicalizing(
+            ['no-store', 'no-cache', 'must-revalidate', 'private'],
+            $directives,
         );
         $this->assertSame('no-cache', $res->headers->get('Pragma'));
     }

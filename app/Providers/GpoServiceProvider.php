@@ -97,7 +97,10 @@ class GpoServiceProvider extends ServiceProvider
     /**
      * Vérifie que le chemin SYSVOL est accessible en lecture.
      *
-     * En dev / sans Samba AD, ce chemin n'existe pas — le warning est attendu.
+     * Sur un DC (path local présent), on warn si non lisible. Sur un serveur
+     * membre AD (path absent), SYSVOL est hébergé par le DC et accédé via SMB
+     * — pas de warning ici, le diagnostic complet est délégué au Doctor
+     * (cf. {@see \App\Doctor\Checks\Gpo\SysvolPathCheck}).
      */
     private function checkSysvolPath(): void
     {
@@ -107,11 +110,6 @@ class GpoServiceProvider extends ServiceProvider
         }
 
         if (! is_dir($sysvol)) {
-            Log::channel('gpo')->warning('[gpo] chemin SYSVOL introuvable', [
-                'config_key' => 'sambaedu.gpo.sysvol_path',
-                'path' => $sysvol,
-            ]);
-
             return;
         }
 
