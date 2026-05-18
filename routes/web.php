@@ -381,6 +381,23 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin'])->name('a
             ->name('index');
     });
 
+    // ========================================
+    // Story 16.12 — UI Livewire de consultation des logs d'exécution scripts.
+    // `/admin/settings/scripts-logs/` (index paginé + bandeau indicateurs)
+    // `/admin/settings/scripts-logs/{id}` (détail UUID-format constraint).
+    // Permission `server.admin` (iso 16.9) + double check dans mount().
+    // ========================================
+    Route::prefix('settings/scripts-logs')->name('scripts-logs.')->group(function () {
+        Route::livewire('/', 'pages::admin.settings.scripts-logs.index')
+            ->middleware('can:server.admin')
+            ->name('index');
+
+        Route::livewire('/{id}', 'pages::admin.settings.scripts-logs.[id].index')
+            ->where('id', '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')
+            ->middleware('can:server.admin')
+            ->name('show');
+    });
+
     // Routes de gestion des parcs
     Route::prefix('parcs')->name('parcs.')->group(function () {
         // Actions de masse

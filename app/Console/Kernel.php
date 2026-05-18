@@ -107,6 +107,12 @@ class Kernel extends ConsoleKernel
                  ->daily()
                  ->withoutOverlapping()
                  ->runInBackground();
+
+        // Story 16.12 — Archivage daily des logs d'exécution scripts > 90j (timing 04:00 post code-review F1 : éviter collision avec printers:sync 03:30 et wpkg:reports:archive:rotate 03:45)
+        $schedule->command('script-logs:archive:rotate')
+                 ->dailyAt('04:00')
+                 ->withoutOverlapping()
+                 ->runInBackground();
     }
 
     /**

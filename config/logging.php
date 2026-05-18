@@ -187,6 +187,26 @@ return [
             'replace_placeholders' => false,
         ],
 
+        // Story 16.12 — Channel dédié logs d'exécution scripts centralisés.
+        // Couvre : ingestion endpoint, idempotence, archivage job daily,
+        // rendu du wrapper. Pas de secret loggé (jamais d'access_token,
+        // jamais de stdout/stderr complets — uniquement des counts/metadata).
+        // Convention de events documentée dans story 16.12 D8 :
+        //  - scriptsos.ingest.success
+        //  - scriptsos.ingest.idempotent_skip
+        //  - scriptsos.ingest.idempotent_skip_race
+        //  - scriptsos.ingest.validation_failed
+        //  - scriptsos.wrapper.rendered
+        //  - scriptsos.archive.rotated
+        //  - scriptsos.archive.failed
+        'scriptsos' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/scriptsos/scriptsos.log'),
+            'level' => env('SCRIPTSOS_LOG_LEVEL', 'debug'),
+            'days' => (int) env('SCRIPTSOS_LOG_RETENTION', 30),
+            'replace_placeholders' => true,
+        ],
+
         'null' => [
             'driver' => 'monolog',
             'handler' => NullHandler::class,

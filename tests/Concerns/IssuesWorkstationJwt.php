@@ -183,5 +183,34 @@ trait IssuesWorkstationJwt
                 $table->timestamps();
             });
         }
+
+        // Story 16.12 — table logs d'exécution scripts centralisés. Schéma
+        // dégradé SQLite : timestampTz → timestamp (SQLite n'a pas TZ natif),
+        // UNIQUE composite standard (pas le partial WHERE pgsql).
+        if (! Schema::hasTable('script_execution_logs')) {
+            Schema::create('script_execution_logs', function (Blueprint $table): void {
+                $table->string('id', 36)->primary();
+                $table->string('workstation_uuid', 36);
+                $table->unsignedBigInteger('script_id')->nullable();
+                $table->string('script_source', 32);
+                $table->string('action', 16);
+                $table->string('os', 8);
+                $table->string('status', 16);
+                $table->integer('exit_code')->nullable();
+                $table->text('stdout_excerpt')->nullable();
+                $table->text('stderr_excerpt')->nullable();
+                $table->timestamp('started_at');
+                $table->integer('duration_ms');
+                $table->timestamp('reported_at');
+                $table->string('correlation_id', 36)->nullable();
+                $table->timestamps();
+                $table->index('workstation_uuid');
+                $table->index('script_id');
+                $table->index('correlation_id');
+                $table->index(['workstation_uuid', 'started_at'], 'sel_ws_started_idx');
+                $table->index(['status', 'started_at'], 'sel_status_started_idx');
+                $table->unique(['workstation_uuid', 'correlation_id'], 'sel_ws_corr_unique');
+            });
+        }
     }
 }
