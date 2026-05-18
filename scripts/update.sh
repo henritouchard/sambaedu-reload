@@ -133,6 +133,65 @@ update_env() {
 }
 
 # ============================================================================
+# PKI Auth V1 (Story 16.10) — init conditionnelle
+# ============================================================================
+# Lance `php artisan auth:ca:init --no-interaction` UNIQUEMENT si :
+#  - le CA root est absent (première install ou réinstallation),
+#  - le CA root expire dans <30j,
+#  - aucun cert serveur n'est trouvé,
+#  - ou le cert serveur expire dans <30j.
+# Sinon, no-op silencieux. La commande artisan est elle-même idempotente,
+# mais ce pré-check évite un appel inutile à chaque update et fournit un
+# log explicite du statut PKI pour les ops.
+
+ensure_auth_v1_pki() {
+    log "Vérification PKI Auth V1..."
+    cd "$APP_DIR"
+
+    if ! php artisan list 2>/dev/null | grep -q 'auth:ca:init'; then
+        log_warning "Commande auth:ca:init non disponible (Story 16.10 pas déployée) — étape ignorée"
+        return 0
+    fi
+
+    local pki_dir="$APP_DIR/storage/keys/pki"
+    local ca_cert="$pki_dir/ca/ca-cert.pem"
+    local renewal_threshold_days=30
+    local renewal_threshold_seconds=$((renewal_threshold_days * 86400))
+    local needs_init=false
+    local reason=""
+
+    if [[ ! -f "$ca_cert" ]]; then
+        needs_init=true
+        reason="CA root absent ($ca_cert)"
+    elif ! openssl x509 -in "$ca_cert" -checkend "$renewal_threshold_seconds" -noout >/dev/null 2>&1; then
+        needs_init=true
+        reason="CA root expire dans moins de ${renewal_threshold_days}j"
+    else
+        # CA root OK → on vérifie aussi un éventuel cert serveur
+        local server_cert
+        server_cert="$(find "$pki_dir/server" -maxdepth 1 -name '*-cert.pem' -type f 2>/dev/null | head -1)"
+        if [[ -z "$server_cert" ]]; then
+            needs_init=true
+            reason="aucun cert serveur dans $pki_dir/server/"
+        elif ! openssl x509 -in "$server_cert" -checkend "$renewal_threshold_seconds" -noout >/dev/null 2>&1; then
+            needs_init=true
+            reason="cert serveur $(basename "$server_cert") expire dans moins de ${renewal_threshold_days}j"
+        fi
+    fi
+
+    if [[ "$needs_init" == true ]]; then
+        log "(Re)génération PKI Auth V1 — raison : $reason"
+        if ! php artisan auth:ca:init --no-interaction; then
+            log_error "Échec init/renouvellement PKI Auth V1 — vérifier storage/keys/ + extension OpenSSL"
+            return 1
+        fi
+        log_success "PKI Auth V1 (re)générée"
+    else
+        log_success "PKI Auth V1 OK (CA + cert serveur valides >${renewal_threshold_days}j)"
+    fi
+}
+
+# ============================================================================
 # Mise à jour Apache
 # ============================================================================
 
@@ -282,6 +341,7 @@ show_summary() {
     echo "  ✓ Composer"
     echo "  ✓ NPM/Build frontend"
     echo "  ✓ Laravel update"
+    echo "  ✓ PKI Auth V1"
     echo "  ✓ Apache"
     echo "  ✓ Services systemd"
     echo ""
@@ -340,6 +400,9 @@ main() {
 
     echo ""
     run_laravel_update
+
+    echo ""
+    ensure_auth_v1_pki
 
     echo ""
     update_apache
