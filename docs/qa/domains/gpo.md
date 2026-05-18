@@ -235,8 +235,14 @@
 > `gestion_gpo.php` est un menu de maintenance (maj base + export) qui ignore tout
 > paramètre de sélection — le lien était trompeur. L'admin passe désormais par les
 > CTAs natifs (16.3a) sur les GPOs matchant Firefox/Wallpaper/Shortcuts/Wine/Profils
-> itinérants, ou par "Créer une GPO dans l'ancienne UI" (lien direct vers `gpo-maj.php`)
-> depuis le listing.
+> itinérants.
+>
+> ⚠️ **Post 2026-05-18 (Story 16-4 cancelled)** : tous les boutons/encarts UI native
+> pointant vers `gpo/gpo-maj.php` (création/duplication/suppression de GPO) ont été
+> retirés. Plus aucun lien UI native vers ce shim. La création de GPO se fait
+> uniquement via admin SSH (`samba-tool gpo create`) ou en tapant directement l'URL
+> legacy `/gpo/gpo-maj.php` dans la barre d'adresse (cohabitation Phase 2 conservée
+> mais non promue).
 
 **Pré-requis supplémentaires** :
 - Au moins 1 GPO créée dans l'AD (ex. la GPO `redirections` installée par défaut SE_FS).
@@ -335,13 +341,19 @@ Wallpaper / Shortcuts / Wine / Profils itinérants) quand l'heuristique matche.
    - Log `outcome=failure` dans `storage/logs/gpo/gpo-*.log`.
 4. Restaurer : `mv /usr/bin/samba-tool.bak /usr/bin/samba-tool`.
 
-### Scénario 2.10 — Encart "Sections gérables nativement" (heuristique D9)
+### Scénario 2.10 — CTA natif en header (heuristique D9)
 
-1. Sur `/app/gpo`, cliquer sur la GPO nommée `redirections`.
-2. Vérifier la présence de l'encart "Sections de cette GPO gérables nativement"
-   avec un bouton "Gérer les profils itinérants nativement" → lien `/admin/settings?tab=profils-itinerants`.
+> ⚠️ **Post 2026-05-18** : l'encart body "Sections de cette GPO gérables nativement" a
+> été retiré (doublon avec les chips header). La heuristique reste, exposée
+> uniquement via les chips verts dans `<x-slot:actions>` (haut droite).
+
+1. Sur `/admin/settings/gpo`, cliquer sur la GPO nommée `redirections`.
+2. Vérifier en **haut à droite** de la page détail la présence d'un bouton vert
+   `btn-success` "Gérer les profils itinérants nativement" → lien
+   `/admin/settings?tab=profils-itinerants?from_gpo={GUID}`.
 3. Sur une GPO custom sans nom reconnu (ex. `Default Domain Policy`),
-   vérifier que l'encart **n'apparaît pas** (aucune heuristique matchante).
+   vérifier qu'**aucun chip vert** n'apparaît dans le header (aucune heuristique matchante)
+   et que l'alert bleu "lecture seule" est présente à la place.
 
 ### Checklist rapide Story 16.2
 
@@ -356,7 +368,7 @@ Wallpaper / Shortcuts / Wine / Profils itinérants) quand l'heuristique matche.
 - [ ] `gpo/gestion_gpo.php` → redirection 302 vers `/app/gpo`
 - [ ] `gpo/wine.php` → NE PAS être redirigé (cohabitation D5)
 - [ ] GUID malformé `/app/gpo/injection` → 404 sans log GPO
-- [ ] Encart "sections natives" présent pour GPO `redirections`
+- [ ] Chip natif `btn-success` présent dans le header pour GPO `redirections` (encart body retiré post 2026-05-18)
 - [ ] Logs `gpo.list`, `gpo.show`, `gpo.containers.list` visibles en VM
 - [ ] Sidebar → lien "Gestion des GPOs" pointe vers `/app/gpo` (pas l'ancienne URL)
 
@@ -413,9 +425,8 @@ Wallpaper / Shortcuts / Wine / Profils itinérants) quand l'heuristique matche.
 
 1. Sur `/app/gpo`, cliquer sur une GPO dont le nom n'est pas reconnu (ex. `Default Domain Policy`).
 2. Sur la page détail `/app/gpo/{guid}` :
-   - Vérifier que l'encart "Sections de cette GPO gérables nativement" **n'apparaît pas**.
-   - Vérifier que le bouton "Éditer dans l'ancienne UI" est en **style primaire** (`btn-primary btn-sm`).
-   - Vérifier qu'aucun sous-texte "Non recommandé" n'est affiché.
+   - Vérifier qu'**aucun chip vert** `btn-success` natif n'apparaît dans le header (heuristique vide).
+   - Vérifier que l'alert bleu "lecture seule" est présente en haut du body.
 
 ### Scénario 3.4 — Multi-match : plusieurs CTAs natifs en page détail
 
@@ -908,8 +919,6 @@ avec quelques postes Eloquent dans cette OU.
      "Héritage actif", badge "Position 1 / 1", badge "Actif" (ou Forcé /
      Désactivé selon flags).
    - Bouton "Ajouter une liaison" présent.
-   - Encart "Création GPO" pied de page avec lien vers
-     `/gpo/gpo-maj.php` (target=_blank).
    - Total agrégé en bas de la section indiquant le nombre de postes.
 
 ### Scénario 7.2 — Ajouter une liaison vers une nouvelle OU
@@ -1021,14 +1030,12 @@ juste après le premier `dellink`).
 - Si rollback KO : `RuntimeException` levée, log `step: rollback FAILED — état
   AD potentiellement incohérent`. Action manuelle requise (cf. TD-16.5-1).
 
-### Scénario 7.11 — Redirection vers shim pour création GPO
+### Scénario 7.11 — ~~Redirection vers shim pour création GPO~~ (RETIRÉ 2026-05-18)
 
-**Étapes** :
-1. Sur la page `/app/gpo/{GUID}/links`, vérifier que l'encart en pied de page
-   indique « Vous souhaitez créer, dupliquer ou supprimer une GPO ? ».
-2. Cliquer le bouton "Ouvrir dans l'ancienne UI".
-3. **Vérifier** : ouverture nouvel onglet sur `/gpo/gpo-maj.php` (shim legacy
-   1bis-18, cohabitation 16-4 paused).
+Scénario obsolète depuis l'abandon de la story 16-4 (CRUD GPO natif) le
+2026-05-18. L'encart « Vous souhaitez créer, dupliquer ou supprimer une GPO ? »
+et son bouton "Ouvrir dans l'ancienne UI" ont été supprimés de la page liens.
+Plus aucun lien UI native vers `gpo/gpo-maj.php`.
 
 ### Checklist rapide Story 16.5
 
@@ -1323,7 +1330,7 @@ Cette section couvre le déplacement des **5 pages Livewire SFC GPO** depuis `/a
 3. La page se charge (HTTP 200) avec le titre « Gestion des GPOs ».
 4. Le tableau liste les GPOs (mêmes colonnes qu'avant : Nom, Version, GUID, Path SYSVOL, **Édition native** (16.3a), Actions).
 5. Les filtres (recherche, statut Active/Inactive, tri colonnes, pagination) fonctionnent.
-6. Le bouton « Créer une GPO (ancienne UI) » (16.5 AC7.2) est présent et pointe vers `/gpo/gpo-maj.php` (shim legacy inchangé — cohabitation Phase 2).
+6. ~~Le bouton « Créer une GPO (ancienne UI) »~~ — RETIRÉ 2026-05-18 (Story 16-4 cancelled). Aucun bouton de création GPO dans le header ; l'admin passe par SSH `samba-tool gpo create` ou tape directement `/gpo/gpo-maj.php` (cohabitation Phase 2 conservée mais non promue).
 
 **Attendu** : page identique au listing servi historiquement sous `/app/gpo` (modulo l'URL dans la barre d'adresse). Aucune régression visuelle/comportementale.
 

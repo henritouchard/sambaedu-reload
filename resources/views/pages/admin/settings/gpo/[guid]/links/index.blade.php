@@ -730,24 +730,6 @@ new #[Title('Liaisons GPO - SE4FS')] class extends Component {
             </div>
         </div>
 
-        {{-- Encart "Création GPO" — Volet 7 --}}
-        <div class="alert alert-info shadow-sm" data-testid="create-gpo-notice">
-            <i class="fa-solid fa-circle-info"></i>
-            <div>
-                <p class="text-sm">
-                    Vous souhaitez <strong>créer, dupliquer ou supprimer</strong> une GPO ? Cette fonctionnalité reste
-                    disponible dans l'ancienne interface.
-                </p>
-                <p class="text-xs text-base-content/60 mt-1">
-                    La création de GPOs sera portée nativement dans une story future (16-4 actuellement en pause).
-                </p>
-                <a href="{{ legacy_url('/gpo/gpo-maj.php') }}" target="_blank" rel="noopener noreferrer"
-                    class="btn btn-sm btn-outline mt-2">
-                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                    Ouvrir dans l'ancienne UI
-                </a>
-            </div>
-        </div>
     </div>
 
     {{-- Modale de confirmation (D6) --}}

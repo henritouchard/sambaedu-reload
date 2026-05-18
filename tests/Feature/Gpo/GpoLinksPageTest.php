@@ -544,24 +544,4 @@ class GpoLinksPageTest extends TestCase
             ->assertSet('isModalOpen', false);
     }
 
-    // =====================================================================
-    // Volet 7 — Encart "Création GPO paused"
-    // =====================================================================
-
-    #[Test]
-    public function it_displays_create_gpo_legacy_notice(): void
-    {
-        $this->actingAs($this->makeAdmin('admin-links-notice'));
-        $this->bindOuRepo([]);
-
-        FakesGpoService::make()
-            ->withGpo(self::VALID_GUID, $this->makeGpo())
-            ->withContainersFor(self::VALID_GUID, [])
-            ->bind($this->app);
-
-        Livewire::test('pages::admin.settings.gpo.[guid].links.index', ['guid' => self::VALID_GUID])
-            ->assertStatus(200)
-            ->assertSee('data-testid="create-gpo-notice"', false)
-            ->assertSee('gpo-maj.php');
-    }
 }

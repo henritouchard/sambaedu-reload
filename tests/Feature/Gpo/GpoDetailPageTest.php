@@ -271,7 +271,7 @@ class GpoDetailPageTest extends TestCase
     }
 
     #[Test]
-    public function it_shows_native_sections_encart_when_display_name_matches_heuristic(): void
+    public function it_shows_native_section_cta_in_header_when_display_name_matches_heuristic(): void
     {
         $admin = $this->makeAdmin('admin-heuristic');
         $this->actingAs($admin);
@@ -282,8 +282,8 @@ class GpoDetailPageTest extends TestCase
             ->bind($this->app);
 
         Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
-            ->assertSee('Sections de cette GPO gérables nativement')
-            ->assertSee('profils-itinerants');
+            ->assertSee('data-testid="native-cta-profils-itinerants"', false)
+            ->assertSee('Gérer les profils itinérants nativement');
     }
 
     // =========================================================================
@@ -314,14 +314,10 @@ class GpoDetailPageTest extends TestCase
 
         Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
-            // L'encart "sections natives" est affiché
-            ->assertSee('Sections de cette GPO gérables nativement')
-            // Le libellé de la section profils-itinerants est visible
-            ->assertSee('profils itinérants')
-            // CTA natif identifié par data-testid (review 16.3a #6).
+            // CTA natif primaire dans le header (identifié par data-testid, review 16.3a #6).
             ->assertSee('data-testid="native-cta-profils-itinerants"', false)
             ->assertSee('Gérer les profils itinérants nativement')
-            // L'URL contient le paramètre from_gpo (AC2.3 — encart enrichi)
+            // L'URL contient le paramètre from_gpo (AC2.3 — breadcrumb retour)
             ->assertSee('from_gpo=', false);
     }
 
@@ -414,7 +410,7 @@ class GpoDetailPageTest extends TestCase
 
         Livewire::test('pages::admin.settings.gpo.[guid].index', ['guid' => self::VALID_GUID])
             ->assertStatus(200)
-            ->assertDontSee('Sections de cette GPO gérables nativement')
+            ->assertDontSee('data-testid="native-cta-', false)
             ->assertSee('lecture seule')
             ->assertSee('L\'édition native de cette section arrive', false);
     }

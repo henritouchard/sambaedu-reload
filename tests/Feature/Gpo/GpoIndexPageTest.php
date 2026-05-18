@@ -227,33 +227,6 @@ class GpoIndexPageTest extends TestCase
     }
 
     // =========================================================================
-    // Story 16.5 — AC7.2 : encart "Créer une GPO (ancienne UI)" header listing
-    // =========================================================================
-
-    #[Test]
-    public function it_shows_create_gpo_legacy_cta_in_header_for_server_admin(): void
-    {
-        // Le `mount()` aborte 403 si l'utilisateur n'a pas `server.admin`,
-        // donc la garde `@can` du template ne peut pas être testée en absence
-        // sans bypass de mount. Ce test couvre la branche "présent" : un admin
-        // server.admin voit bien le CTA dans le header avec lien shim legacy.
-        $admin = $this->makeAdmin('admin-cta-create-legacy');
-        $this->actingAs($admin);
-
-        // Collection vide → état vide, on évite ainsi le rendu de la data-table
-        // qui dépend du context de routing complet ; on valide uniquement le
-        // header (slot:actions) qui rend le CTA legacy.
-        FakesGpoService::make()->withGpos(collect([]))->bind($this->app);
-
-        Livewire::test('pages::admin.settings.gpo.index')
-            ->assertStatus(200)
-            ->assertSee('data-testid="create-gpo-legacy-cta"', false)
-            ->assertSee('Créer une GPO (ancienne UI)')
-            ->assertSee('/gpo/gpo-maj.php', false)
-            ->assertSee('target="_blank"', false);
-    }
-
-    // =========================================================================
     // Fix #4 — méthode clearFilters() reset les deux filtres
     // =========================================================================
 

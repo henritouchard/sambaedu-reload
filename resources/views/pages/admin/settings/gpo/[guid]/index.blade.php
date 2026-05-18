@@ -385,26 +385,6 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
             </div>
         </div>
 
-        {{-- Encart sections gérables nativement (AC2.4 / enrichi AC2.3 : ?from_gpo) --}}
-        @if (count($nativeLinks) > 0)
-            <div class="alert alert-success shadow-sm">
-                <i class="fa-solid fa-circle-check"></i>
-                <div class="flex-1">
-                    <p class="font-medium">Sections de cette GPO gérables nativement</p>
-                    <div class="flex flex-wrap gap-2 mt-2">
-                        @foreach ($nativeLinks as $key => $link)
-                            {{-- URL enrichie avec ?from_gpo pour le breadcrumb de retour (Story 16.3a — AC2.3) --}}
-                            <a href="{{ \App\Gpo\Support\NativeSectionResolver::buildUrl($key, $this->guid) }}"
-                                class="btn btn-sm btn-outline btn-success">
-                                <i class="fa-solid {{ $link['icon'] }}"></i>
-                                {{ $link['label'] }}
-                            </a>
-                        @endforeach
-                    </div>
-                </div>
-            </div>
-        @endif
-
         {{-- Encart "Impact" — Story 16.5 / AC3.2 / D5 --}}
         <div class="card bg-base-100 shadow-sm border border-base-200" data-testid="impact-card">
             <div class="card-body">
