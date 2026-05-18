@@ -13,6 +13,11 @@ APP_DIR="$(dirname "$SCRIPT_DIR")"
 # `php artisan test` après l'update. Off par défaut (déploiement prod).
 DEV_MODE=false
 
+# Flag positionné par `ensure_auth_v1_pki` quand un cert a été (re)généré.
+# `reload_apache_after_pki_renewal` reload Apache dans ce cas-là uniquement
+# (sinon Apache continue à servir l'ancien cert chargé en mémoire au boot).
+AUTH_V1_PKI_REGENERATED=false
+
 # Configuration
 APACHE_CONF_SOURCE="$APP_DIR/config/apache/sambaedu.conf"
 APACHE_CONF_TARGET="/etc/apache2/sites-available/sambaedu.conf"
@@ -156,6 +161,98 @@ run_doctor_check() {
 
 update_env() {
     bash "$SCRIPT_DIR/updateEnv.sh"
+}
+
+# ============================================================================
+# PKI Auth V1 (Story 16.10) — init conditionnelle
+# ============================================================================
+# Lance `php artisan auth:ca:init --no-interaction` UNIQUEMENT si :
+#  - le CA root est absent (première install ou réinstallation),
+#  - le CA root expire dans <30j,
+#  - aucun cert serveur n'est trouvé,
+#  - ou le cert serveur expire dans <30j.
+# Sinon, no-op silencieux. La commande artisan est elle-même idempotente,
+# mais ce pré-check évite un appel inutile à chaque update et fournit un
+# log explicite du statut PKI pour les ops.
+
+ensure_auth_v1_pki() {
+    log "Vérification PKI Auth V1..."
+    cd "$APP_DIR"
+
+    if ! php artisan list 2>/dev/null | grep -q 'auth:ca:init'; then
+        log_warning "Commande auth:ca:init non disponible (Story 16.10 pas déployée) — étape ignorée"
+        return 0
+    fi
+
+    local pki_dir="$APP_DIR/storage/keys/pki"
+    local ca_cert="$pki_dir/ca/ca-cert.pem"
+    local renewal_threshold_days=30
+    local renewal_threshold_seconds=$((renewal_threshold_days * 86400))
+    local needs_init=false
+    local reason=""
+
+    if [[ ! -f "$ca_cert" ]]; then
+        needs_init=true
+        reason="CA root absent ($ca_cert)"
+    elif ! openssl x509 -in "$ca_cert" -checkend "$renewal_threshold_seconds" -noout >/dev/null 2>&1; then
+        needs_init=true
+        reason="CA root expire dans moins de ${renewal_threshold_days}j"
+    else
+        # CA root OK → on vérifie aussi un éventuel cert serveur
+        local server_cert
+        server_cert="$(find "$pki_dir/server" -maxdepth 1 -name '*-cert.pem' -type f 2>/dev/null | head -1)"
+        if [[ -z "$server_cert" ]]; then
+            needs_init=true
+            reason="aucun cert serveur dans $pki_dir/server/"
+        elif ! openssl x509 -in "$server_cert" -checkend "$renewal_threshold_seconds" -noout >/dev/null 2>&1; then
+            needs_init=true
+            reason="cert serveur $(basename "$server_cert") expire dans moins de ${renewal_threshold_days}j"
+        fi
+    fi
+
+    if [[ "$needs_init" == true ]]; then
+        log "(Re)génération PKI Auth V1 — raison : $reason"
+        if ! php artisan auth:ca:init --no-interaction; then
+            log_error "Échec init/renouvellement PKI Auth V1 — vérifier storage/keys/ + extension OpenSSL"
+            return 1
+        fi
+        AUTH_V1_PKI_REGENERATED=true
+        log_success "PKI Auth V1 (re)générée"
+    else
+        log_success "PKI Auth V1 OK (CA + cert serveur valides >${renewal_threshold_days}j)"
+    fi
+}
+
+# ============================================================================
+# Reload Apache après renouvellement cert serveur
+# ============================================================================
+# Apache lit les certs SSL au démarrage et les garde en mémoire. Quand
+# `ensure_auth_v1_pki` régénère le fichier `.pem`, Apache continue à servir
+# l'ancien cert jusqu'au reload. On ne reload que si nécessaire (flag positionné
+# par `ensure_auth_v1_pki`) — pas à chaque update.
+
+reload_apache_after_pki_renewal() {
+    if [[ "$AUTH_V1_PKI_REGENERATED" != true ]]; then
+        return 0
+    fi
+
+    if ! command -v apache2ctl >/dev/null 2>&1; then
+        log_warning "apache2ctl non disponible — reload Apache à faire manuellement après régénération PKI"
+        return 0
+    fi
+
+    log "Cert serveur régénéré — vérification config Apache et reload..."
+    if ! apache2ctl configtest 2>&1; then
+        log_error "apache2ctl configtest a échoué — reload SKIPPED. Vérifiez la config manuellement."
+        return 1
+    fi
+
+    if systemctl reload apache2; then
+        log_success "Apache rechargé — nouveau cert serveur actif"
+    else
+        log_error "Échec du reload Apache (systemctl reload apache2)"
+        return 1
+    fi
 }
 
 # ============================================================================
@@ -308,6 +405,7 @@ show_summary() {
     echo "  ✓ Composer"
     echo "  ✓ NPM/Build frontend"
     echo "  ✓ Laravel update"
+    echo "  ✓ PKI Auth V1"
     echo "  ✓ Apache"
     echo "  ✓ Services systemd"
     echo ""
@@ -368,7 +466,13 @@ main() {
     run_laravel_update
 
     echo ""
+    ensure_auth_v1_pki
+
+    echo ""
     update_apache
+
+    echo ""
+    reload_apache_after_pki_renewal
 
     echo ""
     update_systemd

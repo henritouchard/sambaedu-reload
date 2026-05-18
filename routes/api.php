@@ -15,6 +15,11 @@ use App\Http\Controllers\Api\v1\ControlHub\AppProfileController;
 use App\Http\Controllers\Api\v1\ControlHub\SyncManifestController;
 use App\Http\Controllers\Api\v1\ShortcutExportController;
 use App\Http\Controllers\Api\WpkgReportController;
+
+// Story 16.10 — Auth v1 poste ↔ serveur local (HTTPS + JWT RS256)
+use App\Auth\V1\Http\Controllers\EnrollController as AuthV1EnrollController;
+use App\Auth\V1\Http\Controllers\RefreshController as AuthV1RefreshController;
+use App\Auth\V1\Http\Controllers\PingController as AuthV1PingController;
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -134,6 +139,38 @@ Route::get('/health-check', [InstanceStatusController::class, 'check']);
 Route::prefix('wpkg')->middleware('local.request')->group(function () {
     Route::post('/reports/{hostname}', [WpkgReportController::class, 'store'])->name('wpkg.reports.store');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Story 16.10 — Auth v1 poste ↔ serveur local (HTTPS + JWT RS256)
+|--------------------------------------------------------------------------
+| Endpoints `/api/v1/agent/*` — discrimination par claim `tier=workstation`.
+| Cohabite avec `/api/v1/snapshot` (controlHub) sans collision (sous-namespace
+| dédié `/agent`).
+|
+| - `POST /enroll`  : protégé `auth.v1.bootstrap` (X-Bootstrap-Token md5) + throttle 10/min
+| - `POST /refresh` : protégé `auth.v1.refresh` (refresh_token DB) + throttle 30/min + replay detection
+| - `GET /ping`     : protégé `auth.v1.workstation` (JWT RS256 valid + tier=workstation)
+*/
+Route::prefix('v1/agent')->name('agent.v1.')
+    // Headers de sécurité (Cache-Control no-store + HSTS + nosniff) sur toutes les
+    // réponses agent — les responses enroll/refresh portent des tokens clear, on
+    // doit empêcher tout caching intermédiaire. Cf. review 16.10 finding #A.
+    ->middleware('auth.v1.secure-headers')
+    ->group(function () {
+        Route::post('/enroll', [AuthV1EnrollController::class, 'store'])
+            ->middleware(['auth.v1.bootstrap', 'throttle:10,1'])
+            ->name('enroll');
+
+        Route::post('/refresh', [AuthV1RefreshController::class, 'store'])
+            ->middleware(['auth.v1.refresh', 'throttle:30,1'])
+            ->name('refresh');
+
+        Route::middleware('auth.v1.workstation')->group(function () {
+            Route::get('/ping', [AuthV1PingController::class, 'show'])->name('ping');
+            // Futurs endpoints (16.12 logs, futures stories scripts) ajoutent leurs routes ici.
+        });
+    });
 
 Route::prefix('v1/shortcuts/export')->name('shortcuts.export.')->group(function () {
     // Script complet (.cmd/.sh) pour un poste

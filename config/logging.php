@@ -163,6 +163,30 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Channel dédié plateforme auth v1 — JWT + PKI + middlewares
+        // (Story 16.10 — Epic 16 Phase 2). Couvre toutes les actions
+        // d'authentification poste↔serveur local : émission/refresh/révocation
+        // JWT, init CA, bootstrap, replay detection. Verbosité élevée volontaire
+        // (`debug` par défaut) pour faciliter le diagnostic des bascules de
+        // postes en Phase 2 ; bumper `info` une fois la migration terminée.
+        // Convention de logging par `action_type` documentée dans
+        // app/Auth/V1/README.md (catalogue auth.ca.*, auth.bootstrap.*,
+        // auth.enroll.*, auth.token.*).
+        // ⚠️ AUCUN secret ne doit jamais transiter par ce channel : clé privée,
+        // refresh_token clear, JWT signé complet sont INTERDITS. Seuls les
+        // identifiants opaques (workstation_uuid, jti, kid, exp, mac, hostname)
+        // sont loggables.
+        'auth-v1' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/auth-v1/auth-v1.log'),
+            'level' => env('AUTH_V1_LOG_LEVEL', 'debug'),
+            'days' => (int) env('AUTH_V1_LOG_DAYS', 30),
+            // Channel sécurité-critique : pas de remplacement de placeholders depuis
+            // le context (évite tout risque d'injection si une string contrôlable
+            // contenait des `{placeholder}`).
+            'replace_placeholders' => false,
+        ],
+
         'null' => [
             'driver' => 'monolog',
             'handler' => NullHandler::class,

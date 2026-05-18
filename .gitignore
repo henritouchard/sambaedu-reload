@@ -3,6 +3,8 @@
 /public/hot
 /public/storage
 /storage/*.key
+# Story 16.10 — PKI locale + JWT (clés privées sensibles, jamais en VCS)
+/storage/keys/
 /bootstrap/cache/
 !/bootstrap/cache/.gitkeep
 .env

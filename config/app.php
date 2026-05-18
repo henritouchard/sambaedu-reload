@@ -173,6 +173,7 @@ return [
         App\Providers\AppCustomizationServiceProvider::class,
         App\Providers\WpkgDeploymentServiceProvider::class,
         App\Providers\GpoServiceProvider::class,
+        App\Providers\AuthV1ServiceProvider::class,
         ])->toArray(),
 
     /*
