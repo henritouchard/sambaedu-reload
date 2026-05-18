@@ -57,7 +57,12 @@ class BootstrapScriptControllerTest extends TestCase
         $res->assertStatus(200);
         $contentType = (string) $res->headers->get('Content-Type');
         $this->assertStringStartsWith('text/plain', $contentType);
-        $this->assertSame('no-store, no-cache, must-revalidate, private', $res->headers->get('Cache-Control'));
+        // Symfony normalise (tri alpha) les directives Cache-Control — on assert
+        // la présence individuelle plutôt qu'une string strictement égale.
+        $cacheControl = (string) $res->headers->get('Cache-Control');
+        foreach (['no-store', 'no-cache', 'must-revalidate', 'private'] as $directive) {
+            $this->assertStringContainsString($directive, $cacheControl);
+        }
 
         $body = $res->getContent();
         $this->assertStringContainsString('@echo off', $body);

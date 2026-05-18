@@ -7,6 +7,7 @@ namespace Tests\Feature\Auth\V1;
 use App\Auth\V1\Http\Middleware\InjectBootstrapFragment;
 use App\Auth\V1\Models\WorkstationMigrationStatus;
 use Illuminate\Http\Response;
+use Illuminate\Routing\RouteCollection;
 use Illuminate\Support\Facades\Route;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Concerns\IssuesWorkstationJwt;
@@ -58,6 +59,32 @@ class InjectBootstrapFragmentIntegrationTest extends TestCase
                 ->header('Content-Type', 'text/plain; charset=utf-8'))
                 ->name('test.error');
         });
+
+        // ⚠ routes/web.php termine par un catchall `{path}` (regex `.*`)
+        // qui est registered AVANT les routes ci-dessus (ajoutées dynamiquement
+        // en setUp). Le RouteCollection matche dans l'ordre d'insertion donc
+        // /test-inject/* serait happé par le catchall (404). On reconstruit le
+        // collection avec les routes test-inject en tête.
+        $this->moveTestRoutesAhead();
+    }
+
+    private function moveTestRoutesAhead(): void
+    {
+        $router = $this->app['router'];
+        $head = [];
+        $tail = [];
+        foreach ($router->getRoutes() as $route) {
+            if (str_starts_with($route->uri(), 'test-inject')) {
+                $head[] = $route;
+            } else {
+                $tail[] = $route;
+            }
+        }
+        $new = new RouteCollection();
+        foreach ([...$head, ...$tail] as $route) {
+            $new->add($route);
+        }
+        $router->setRoutes($new);
     }
 
     #[Test]

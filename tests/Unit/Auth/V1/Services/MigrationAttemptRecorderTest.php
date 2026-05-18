@@ -153,7 +153,15 @@ class MigrationAttemptRecorderTest extends TestCase
         // Simuler une exception DB : drop la table avant l'appel.
         \Schema::drop('workstation_migration_attempts');
 
-        Log::spy();
+        // Log::spy() seul ne suffit pas : Log::channel('auth-v1')->error(...)
+        // chaîne deux appels — un spy nu retourne null sur channel() et le
+        // ->error() crashe avec "Call to member function on null". On mocke
+        // explicitement la chaîne channel()->error() via andReturnSelf().
+        Log::shouldReceive('channel')
+            ->with('auth-v1')
+            ->atLeast()->once()
+            ->andReturnSelf();
+        Log::shouldReceive('error')->atLeast()->once();
 
         $recorder = new MigrationAttemptRecorder();
         // Ne doit PAS throw — best-effort.
@@ -164,8 +172,6 @@ class MigrationAttemptRecorderTest extends TestCase
 
         // Restaure la table pour la suite (tearDown).
         $this->ensureAuthV1Tables();
-
-        Log::shouldHaveReceived('channel')->with('auth-v1')->atLeast()->once();
     }
 
     #[Test]
