@@ -1015,3 +1015,249 @@ La sortie définitive de cette limitation est documentée dans `docs/tech-debt-a
 - [ ] Smoke poste Linux réel (Section 13) : `/var/lib/sambaedu/auth.json` 0600 + systemd timer actif.
 - [ ] Logs `auth-v1` du jour contiennent au moins `auth.bootstrap.script.served` (info, depuis smoke `bootstrap.{cmd,sh}`) + `auth.bootstrap.lan_blocked` (warning, depuis smoke override LAN). Les events `auth.bootstrap.fragment.injected` + `auth.migration.success` apparaissent en prod sur les flots E2E réels (Section 13).
 
+---
+
+## Story 16.12 — Logs exécution centralisés
+
+**Date livraison** : 2026-05-18 (implémentation)
+**Migrations à appliquer** : `2026_05_19_120000_create_script_execution_logs_table.php`
+**Permissions requises** : `server.admin` (pour l'UI Livewire `/admin/settings/scripts-logs/`)
+
+### Section 16 — Endpoint POST /api/v1/script-execution-logs (happy path + auth)
+
+#### Scénario 16.12-1 — POST avec JWT workstation valide → 201 + row + log info
+
+```bash
+TOKEN="<jwt workstation valide>"
+CORR=$(uuidgen)
+curl -k -i -X POST "https://$(hostname -f)/api/v1/script-execution-logs" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "script_source": "managed_script",
+    "action": "logon",
+    "os": "windows",
+    "status": "success",
+    "exit_code": 0,
+    "stdout": "hello",
+    "started_at": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+    "duration_ms": 1250,
+    "correlation_id": "'$CORR'"
+  }'
+```
+
+Attendu : HTTP 201 sans body, 1 row créée en DB, log info `scriptsos.ingest.success` dans `storage/logs/scriptsos/scriptsos-YYYY-MM-DD.log`.
+
+#### Scénario 16.12-2 — POST sans header `Authorization` → 401 `jwt.missing`
+
+```bash
+curl -k -i -X POST "https://$(hostname -f)/api/v1/script-execution-logs" \
+  -H "Content-Type: application/json" -d '{}'
+```
+
+Attendu : HTTP 401 + JSON `{error: "unauthorized", code: "jwt.missing", ...}`.
+
+#### Scénario 16.12-3 — POST avec JWT `tier=controlhub` (mauvais tier) → 401 `jwt.wrong_tier`
+
+```bash
+TOKEN="<jwt avec claim tier=controlhub>"
+curl -k -i -X POST "https://$(hostname -f)/api/v1/script-execution-logs" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}'
+```
+
+Attendu : HTTP 401 + code `jwt.wrong_tier`.
+
+#### Scénario 16.12-4 — POST avec JWT expiré → 401 `jwt.expired`
+
+Émettre un JWT avec `exp < now`. Attendu : 401 code `jwt.expired`.
+
+### Section 17 — Validation FormRequest
+
+#### Scénario 16.12-5 — POST sans champ `action` → 422 + erreur `action: required`
+
+Payload sans `action`. Attendu : HTTP 422 + JSON `{message, errors: {action: ["..."]}}`.
+
+#### Scénario 16.12-6 — POST avec `status=foobar` (enum invalide) → 422
+
+Payload `status=foobar`. Attendu : HTTP 422 + erreur sur `status`.
+
+#### Scénario 16.12-7 — POST avec `started_at` futur > 5 min → 422 + code `started_at.future`
+
+```bash
+FUTURE=$(date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%SZ)
+curl -k -i ... -d "{..., \"started_at\": \"$FUTURE\", ...}"
+```
+
+Attendu : HTTP 422 + `errors.started_at` contient `started_at.future`.
+
+#### Scénario 16.12-8 — POST avec `started_at` < 7 jours → 422 + code `started_at.too_old`
+
+```bash
+OLD=$(date -u -d '-10 days' +%Y-%m-%dT%H:%M:%SZ)
+curl -k -i ... -d "{..., \"started_at\": \"$OLD\", ...}"
+```
+
+Attendu : HTTP 422 + `errors.started_at` contient `started_at.too_old`.
+
+#### Scénario 16.12-9 — POST avec stdout 12 KB → 201 mais row.stdout_excerpt tronqué ≤ 8 KB
+
+Payload `stdout = repeat('x', 12000)`. Attendu : 201, row.stdout_excerpt ≤ 8192 bytes, contient `[...truncated]`.
+
+### Section 18 — Idempotence correlation_id
+
+#### Scénario 16.12-10 — 2 POST consécutifs avec même correlation_id → 1 seule row + 201/201
+
+```bash
+CORR=$(uuidgen)
+# 1er POST
+curl -k -i -X POST ... -d "{..., \"correlation_id\": \"$CORR\", ...}"
+# 2ème POST identique
+curl -k -i -X POST ... -d "{..., \"correlation_id\": \"$CORR\", ...}"
+
+# Vérification
+psql -U sambaedu -d sambaedu -c "SELECT COUNT(*) FROM script_execution_logs WHERE correlation_id = '$CORR'"
+```
+
+Attendu : 2× HTTP 201, exactement 1 row en DB, log `scriptsos.ingest.idempotent_skip` au 2ème.
+
+### Section 19 — UI Livewire /admin/settings/scripts-logs
+
+#### Scénario 16.12-11 — GET `/admin/settings/scripts-logs` admin → 200 + bandeau + tableau
+
+Connexion admin Henri → navigation. Attendu : 200, bandeau d'indicateurs visible (taux échec, top 5 postes/scripts), tableau paginé 50/page.
+
+#### Scénario 16.12-12 — GET en non-admin → 403
+
+Connexion user lambda (sans `server.admin`). Attendu : 403.
+
+#### Scénario 16.12-13 — Filtrage `?filterStatus=failure` → seules les rows failure
+
+```
+https://$(hostname -f)/admin/settings/scripts-logs?filterStatus=failure
+```
+
+Attendu : seuls les logs `status=failure` affichés.
+
+#### Scénario 16.12-14 — Filtrage `?filterWorkstationUuid=<uuid>` → seules les rows du poste
+
+Attendu : seuls les logs du poste cible.
+
+#### Scénario 16.12-15 — GET `/admin/settings/scripts-logs/{id}` valide → 200 + détail
+
+Attendu : 200, métadonnées affichées + stdout/stderr `<pre>` + boutons "Copier".
+
+#### Scénario 16.12-16 — GET `/admin/settings/scripts-logs/<inexistant>` → 404
+
+Attendu : 404.
+
+### Section 20 — Wrapper script renderer (consommable par 17.3)
+
+#### Scénario 16.12-17 — Render wrapper Windows depuis tinker
+
+```bash
+php artisan tinker --execute='
+  $renderer = app(\App\ScriptsOs\Services\WrapperScriptRenderer::class);
+  echo $renderer->wrap(
+    "echo hello",
+    \App\ScriptsOs\Enums\ScriptExecutionAction::LOGON,
+    \App\ScriptsOs\Enums\ScriptExecutionOs::WINDOWS
+  );
+'
+```
+
+Attendu : contient `Invoke-RestMethod`, un correlation_id UUID, l'URL absolue `/api/v1/script-execution-logs`, `certutil -decode`, `Bearer `, retry 3×.
+
+#### Scénario 16.12-18 — Render wrapper Linux
+
+Idem avec `ScriptExecutionOs::LINUX`. Attendu : contient `curl -fsS -X POST` (post review Q5 — sans `-k`, TLS strict Phase 2), `jq`, `base64 -d`, `/var/lib/sambaedu/auth.json`, retry `for i in 1 2 3`.
+
+### Section 21 — Job artisan archivage
+
+#### Scénario 16.12-19 — Archivage : 50 rows > 90j + 10 récentes → archive créée + 50 supprimées
+
+```bash
+# Seed
+php artisan tinker --execute='
+  App\ScriptsOs\Models\ScriptExecutionLog::factory()->state(["started_at" => now()->subDays(95)])->count(50)->create();
+  App\ScriptsOs\Models\ScriptExecutionLog::factory()->recent(1)->count(10)->create();
+'
+
+php artisan script-logs:archive:rotate
+
+ls -la storage/archives/
+psql -U sambaedu -d sambaedu -c "SELECT COUNT(*) FROM script_execution_logs"
+```
+
+Attendu : 1 fichier `script-execution-logs-YYYY-MM.jsonl.gz`, 10 rows DB restantes, log info `scriptsos.archive.rotated`.
+
+#### Scénario 16.12-20 — `php artisan schedule:list | grep script-logs`
+
+Attendu : ligne mentionnant `script-logs:archive:rotate` à `04:00` (post review F1 Q1 — décalé de 03:30 pour éviter collision avec `printers:sync` 03:30 et `wpkg:reports:archive:rotate` 03:45).
+
+### Section 22 — Smoke poste réel (post-VM up, action Henri)
+
+#### Scénario 16.12-21 — Poste Windows migré exécute un wrapper → ligne dans `script_execution_logs`
+
+Sur un poste Windows réel migré (16.11 OK), déclencher l'exécution d'un script user wrappé (Story 17.3 fournira). Attendu : 1 row insérée dans `script_execution_logs` avec status `success` et duration_ms cohérent.
+
+#### Scénario 16.12-22 — Poste Linux migré idem
+
+Sur un poste Linux réel migré, idem. Attendu : 1 row insérée.
+
+### Section 23 — Non-régression
+
+#### Scénario 16.12-23 — Re-jouer 16.11-1 à 16.11-20 → tous verts
+
+Vérifier que l'ajout de `/api/v1/script-execution-logs` n'a pas impacté les routes 16.11 (auto-bootstrap, migration:health-check, fragment injection).
+
+#### Scénario 16.12-24 — Re-jouer 16.10-1 à 16.10-24 → tous verts
+
+Vérifier que l'ajout du nouveau bloc Route group `Route::prefix('v1')` n'a pas impacté les routes 16.10 (`/agent/enroll`, `/agent/refresh`, `/agent/ping`).
+
+### Section 24 — Vérification TLS stricte Phase 2 (post-review Q5)
+
+> Note post-review 2026-05-18 — décision Henri Q5 : retrait `-k` curl (Linux) + `-SkipCertificateCheck` PowerShell (Windows) dans le wrapper.
+
+Le wrapper Windows (`Invoke-RestMethod`) **et** Linux (`curl --max-time 10 ...` sans `-k`) exigent désormais la **validation stricte de la chaîne CA SambaEdu**. Le CA root est installé sur chaque poste lors du bootstrap 16.11 :
+
+- **Windows** : `certutil -addstore Root <ca.crt>` exécuté par le fragment bootstrap (Story 16.11 D4 + D11).
+- **Linux** : copie dans `/usr/local/share/ca-certificates/sambaedu-ca.crt` puis `update-ca-certificates` (idem 16.11 D4 Linux).
+
+#### Comportement attendu
+
+Si un poste n'a pas le CA root SambaEdu :
+
+- Windows : `Invoke-RestMethod` lève `WebException: Could not establish trust relationship` → le `catch` du retry-3x consomme l'erreur, après 3 tentatives le wrapper logue `[sambaedu-wrapper] POST failed after 3 attempts` dans `%TEMP%\sambaedu-wrapper-retry.log` et exit avec l'exit_code du script user (pas de bruit côté GPO).
+- Linux : `curl --max-time 10` retourne exit code 60 (`SSL certificate problem`) → idem retry 3x puis log `/tmp/sambaedu-wrapper-retry.log`.
+
+#### Pourquoi fail-closed plutôt qu'opportunistic TLS
+
+Décision **fail-closed volontaire** pour empêcher tout MitM L2 sur le LAN scolaire (réseau partagé élèves + admin). Mieux vaut une panne silencieuse de la remontée logs qu'une compromission silencieuse via un attaquant interne qui injecte son CA dans la chaîne.
+
+Si terrain remonte des postes hors-rotation sans CA root (postes oubliés du bootstrap, postes nouvellement rattachés avant 16.11) :
+
+1. `tail -F storage/logs/scriptsos-*.log` côté serveur — on **ne verra rien** pour ce poste (POST ne passe pas).
+2. Diagnostiquer le poste via `Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -Match SambaEdu` (Windows) ou `awk -v cmd='openssl x509 -noout -subject' '/-----BEGIN/,/-----END/' /etc/ssl/certs/ca-certificates.crt | grep -i sambaedu` (Linux).
+3. Re-trigger le bootstrap manuellement (cf. runbook 16.11 Section 14).
+
+#### Mitigation Phase 3+
+
+Cert pinning explicite (épingler le SHA256 du CA SambaEdu dans le wrapper) — différé Phase 3. La validation stricte CA est déjà supérieure à l'ancien comportement `-k` / `-SkipCertificateCheck`.
+
+## Checklist rapide 16.12
+
+- [ ] Migration `2026_05_19_120000` jouée sur la VM.
+- [ ] Table `script_execution_logs` existe + indexes `sel_ws_started_idx`, `sel_status_started_idx`, `sel_ws_corr_unique`.
+- [ ] `php artisan schedule:list` mentionne `script-logs:archive:rotate` à 04:00 (post review F1 Q1 — décalé de 03:30 pour éviter collision printers:sync).
+- [ ] POST `/api/v1/script-execution-logs` avec JWT valide → 201 + row insérée.
+- [ ] POST sans JWT → 401 `jwt.missing`.
+- [ ] POST avec `status=invalid` → 422 standard Laravel `{message, errors}`.
+- [ ] 2 POST avec même correlation_id → 1 seule row + log idempotent_skip.
+- [ ] UI `/admin/settings/scripts-logs` accessible admin, 403 non-admin.
+- [ ] Détail `/admin/settings/scripts-logs/{id}` → stdout/stderr en `<pre>` escape XSS strict.
+- [ ] Job `script-logs:archive:rotate` archive en JSONL gzip mensuel + purge DB.
+- [ ] Channel logs `scriptsos` reçoit `ingest.success`, `archive.rotated`, `wrapper.rendered`.
+- [ ] Wrapper Windows : `Invoke-RestMethod` (sans `-SkipCertificateCheck` post Q5) + DPAPI lecture token + retry 3×.
+- [ ] Wrapper Linux : `curl -fsS` (sans `-k` post Q5) + `jq` fallback `python3` + retry `for i in 1 2 3`.
+- [ ] Vérification TLS stricte Phase 2 : `Invoke-RestMethod`/`curl` fail-closed si CA root SambaEdu absent du poste (cf. Section 24 post-review Q5).
+

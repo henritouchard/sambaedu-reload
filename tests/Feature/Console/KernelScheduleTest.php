@@ -220,6 +220,31 @@ class KernelScheduleTest extends TestCase
         );
     }
 
+    // =========================================================================
+    // Story 16.12 — script-logs:archive:rotate schedulé daily 04:00 (post review F1)
+    // =========================================================================
+
+    #[Test]
+    public function it_schedules_script_logs_archive_rotate_daily_at_0400(): void
+    {
+        $kernel = $this->app->make(Kernel::class);
+        $schedule = $this->app->make(Schedule::class);
+
+        $scheduleMethod = new \ReflectionMethod($kernel, 'schedule');
+        $scheduleMethod->setAccessible(true);
+        $scheduleMethod->invoke($kernel, $schedule);
+
+        $hasScriptLogsArchive = collect($schedule->events())->contains(
+            static fn ($event): bool => str_contains((string) $event->command, 'script-logs:archive:rotate')
+                && $event->expression === '0 4 * * *'
+        );
+
+        $this->assertTrue(
+            $hasScriptLogsArchive,
+            'Le scheduler doit déclencher script-logs:archive:rotate quotidiennement à 04h00 (story 16.12, post review F1 décalage Q1 de 03:30 → 04:00 pour éviter collision printers:sync).',
+        );
+    }
+
     #[Test]
     public function it_runs_trash_purge_when_auto_enabled(): void
     {

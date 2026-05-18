@@ -22,6 +22,8 @@ use App\Auth\V1\Http\Controllers\RefreshController as AuthV1RefreshController;
 use App\Auth\V1\Http\Controllers\PingController as AuthV1PingController;
 // Story 16.11 — Auto-bootstrap migration postes
 use App\Auth\V1\Http\Controllers\BootstrapScriptController as AuthV1BootstrapScriptController;
+// Story 16.12 — Ingestion logs exécution scripts
+use App\ScriptsOs\Http\Controllers\ScriptExecutionLogIngestionController as ScriptsOsIngestionController;
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -186,6 +188,28 @@ Route::prefix('v1/agent')->name('agent.v1.')
             Route::get('/bootstrap.sh', [AuthV1BootstrapScriptController::class, 'sh'])
                 ->name('bootstrap.sh');
         });
+    });
+
+/*
+|--------------------------------------------------------------------------
+| Story 16.12 — Ingestion des logs d'exécution scripts (POST workstation)
+|--------------------------------------------------------------------------
+| Endpoint `/api/v1/script-execution-logs` — POST-only, protégé par JWT
+| workstation (16.10 middleware réutilisé tel quel). Throttle 60/min par IP
+| (un poste en boot peut générer ~5-10 logs : startup + logon + shortcuts +
+| wallpaper + associations).
+|
+| Note : à la racine `/api/v1/` (PAS sous `/agent/`) — c'est un endpoint
+| d'INGESTION pas d'ENRÔLEMENT (D3). Cohérent avec Tech Spec §5.4.
+*/
+Route::prefix('v1')
+    ->middleware(['auth.v1.secure-headers', 'auth.v1.workstation', 'throttle:60,1'])
+    ->name('scriptsos.')
+    ->group(function () {
+        Route::post('/script-execution-logs', [
+            ScriptsOsIngestionController::class,
+            'store',
+        ])->name('logs.ingest');
     });
 
 Route::prefix('v1/shortcuts/export')->name('shortcuts.export.')->group(function () {
