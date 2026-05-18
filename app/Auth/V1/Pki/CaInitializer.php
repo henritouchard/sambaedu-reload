@@ -342,6 +342,9 @@ class CaInitializer
 
             $this->writeSecureFile($this->path('ca_root_key'), $keyPem, self::PRIVATE_KEY_MODE);
             $this->writeSecureFile($this->path('ca_root_crt'), $crtPem, self::PUBLIC_MODE);
+            // ca-root.crt est lu par PHP/Apache (renvoyé dans la réponse enroll
+            // `ca_cert_pem`). ca-root.key reste root-only — jamais besoin par le web.
+            $this->applyWebOwnership($this->path('ca_root_crt'));
         } finally {
             @unlink($caConfPath);
         }
@@ -449,6 +452,9 @@ class CaInitializer
 
             $this->writeSecureFile($this->path('server_key'), $keyPem, self::PRIVATE_KEY_MODE);
             $this->writeSecureFile($this->path('server_crt'), $crtPem, self::PUBLIC_MODE);
+            // server.key + server.crt lus par Apache HTTPS vhost.
+            $this->applyWebOwnership($this->path('server_key'));
+            $this->applyWebOwnership($this->path('server_crt'));
         } finally {
             @unlink($serverConfPath);
         }
@@ -495,6 +501,10 @@ class CaInitializer
 
         $this->writeSecureFile($jwtPriv, $privPem, self::PRIVATE_KEY_MODE);
         $this->writeSecureFile($jwtPub, $pubPem, self::PUBLIC_MODE);
+        // JWT keypair lue par WorkstationJwtIssuer/Validator (process PHP/Apache).
+        $this->applyWebOwnership($jwtPriv);
+        $this->applyWebOwnership($jwtPub);
+        $this->applyWebOwnership($jwtDir);
     }
 
     // =========================================================================
@@ -581,6 +591,46 @@ class CaInitializer
                 }
             }
             @chmod($dir, self::DIR_MODE);
+            // Les dossiers contiennent des fichiers que PHP/Apache doit lire —
+            // ils doivent être traversables par le runtime web. Le chown ici
+            // garantit que la traversée 0700 ne bloque pas le web user.
+            $this->applyWebOwnership($dir);
+        }
+    }
+
+    /**
+     * Aligne la propriété du fichier/dossier sur le user runtime du serveur web
+     * (PHP-FPM / Apache mod_php) pour qu'il puisse lire les certs et clés JWT.
+     *
+     * Sambaedu utilise un pool PHP-FPM custom `www-admin`, distinct du défaut
+     * Debian `www-data`. Sans ce chown, `auth:ca:init` (lancé en root via
+     * `update.sh`) produit des fichiers `root:root 0600` illisibles par le web.
+     *
+     * No-op si `auth_v1.pki.web_owner` est vide, si posix n'est pas dispo (Mac
+     * dev / Win), ou si l'user n'existe pas (log warning).
+     */
+    private function applyWebOwnership(string $path): void
+    {
+        $webOwner = (string) config('auth_v1.pki.web_owner', '');
+        if ($webOwner === '' || ! function_exists('posix_getpwnam')) {
+            return;
+        }
+        $info = @posix_getpwnam($webOwner);
+        if ($info === false) {
+            Log::channel('auth-v1')->warning('[CaInitializer] web_owner unknown — skip chown', [
+                'web_owner' => $webOwner,
+                'path' => $path,
+            ]);
+            return;
+        }
+        if (! @chown($path, $info['uid']) || ! @chgrp($path, $info['gid'])) {
+            Log::channel('auth-v1')->warning('[CaInitializer] chown to web_owner failed', [
+                'web_owner' => $webOwner,
+                'uid' => $info['uid'],
+                'gid' => $info['gid'],
+                'path' => $path,
+                'errno' => error_get_last()['message'] ?? null,
+            ]);
         }
     }
 

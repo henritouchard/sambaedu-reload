@@ -133,6 +133,60 @@ run_laravel_update() {
     log_success "Mise à jour Laravel OK"
 }
 
+# ============================================================================
+# APCu CLI — activation automatique
+# ============================================================================
+# APCu est typiquement installé pour PHP-FPM mais désactivé en CLI sur
+# Debian/Ubuntu (`apc.enable_cli=0` par défaut). Conséquence : `php artisan`
+# perd les caches APCu (sambaedu:doctor le diagnostique). On active la
+# directive en CLI uniquement, de manière idempotente.
+
+ensure_apcu_cli() {
+    log "Vérification APCu CLI..."
+
+    if ! command -v php >/dev/null 2>&1; then
+        log_warning "php absent — APCu CLI ignoré"
+        return 0
+    fi
+
+    if php -r 'exit(function_exists("apcu_enabled") && apcu_enabled() ? 0 : 1);' 2>/dev/null; then
+        log_success "APCu CLI déjà actif"
+        return 0
+    fi
+
+    # Glob sur tous les `*apcu*.ini` des conf.d CLI (Debian/Ubuntu place le
+    # fichier sous `/etc/php/<version>/cli/conf.d/`).
+    shopt -s nullglob
+    local conf_files=(/etc/php/*/cli/conf.d/*apcu*.ini)
+    shopt -u nullglob
+
+    if [[ ${#conf_files[@]} -eq 0 ]]; then
+        log_warning "Aucun fichier conf APCu CLI trouvé — extension probablement non installée (`apt install php-apcu`)"
+        return 0
+    fi
+
+    local changed=false
+    for conf in "${conf_files[@]}"; do
+        if grep -qE '^[[:space:]]*apc\.enable_cli[[:space:]]*=' "$conf"; then
+            if ! grep -qE '^[[:space:]]*apc\.enable_cli[[:space:]]*=[[:space:]]*1' "$conf"; then
+                sed -i 's/^[[:space:]]*apc\.enable_cli[[:space:]]*=.*/apc.enable_cli=1/' "$conf"
+                log "  → $conf : apc.enable_cli forcé à 1"
+                changed=true
+            fi
+        else
+            echo "apc.enable_cli=1" >> "$conf"
+            log "  → $conf : apc.enable_cli=1 ajouté"
+            changed=true
+        fi
+    done
+
+    if [[ "$changed" == true ]]; then
+        log_success "APCu CLI activé (effectif au prochain lancement PHP)"
+    else
+        log_success "APCu CLI déjà configuré"
+    fi
+}
+
 run_doctor_check() {
     log "Vérification des pré-requis environnementaux (sambaedu:doctor)..."
     cd "$APP_DIR"
@@ -184,8 +238,11 @@ ensure_auth_v1_pki() {
         return 0
     fi
 
+    # Chemins iso config/auth_v1.php (ca_root_crt / server_crt). Si on change
+    # AUTH_V1_PKI_CA_CRT ou AUTH_V1_PKI_SERVER_CRT en env, mettre à jour ici.
     local pki_dir="$APP_DIR/storage/keys/pki"
-    local ca_cert="$pki_dir/ca/ca-cert.pem"
+    local ca_cert="$pki_dir/ca-root.crt"
+    local server_cert="$pki_dir/server.crt"
     local renewal_threshold_days=30
     local renewal_threshold_seconds=$((renewal_threshold_days * 86400))
     local needs_init=false
@@ -197,17 +254,12 @@ ensure_auth_v1_pki() {
     elif ! openssl x509 -in "$ca_cert" -checkend "$renewal_threshold_seconds" -noout >/dev/null 2>&1; then
         needs_init=true
         reason="CA root expire dans moins de ${renewal_threshold_days}j"
-    else
-        # CA root OK → on vérifie aussi un éventuel cert serveur
-        local server_cert
-        server_cert="$(find "$pki_dir/server" -maxdepth 1 -name '*-cert.pem' -type f 2>/dev/null | head -1)"
-        if [[ -z "$server_cert" ]]; then
-            needs_init=true
-            reason="aucun cert serveur dans $pki_dir/server/"
-        elif ! openssl x509 -in "$server_cert" -checkend "$renewal_threshold_seconds" -noout >/dev/null 2>&1; then
-            needs_init=true
-            reason="cert serveur $(basename "$server_cert") expire dans moins de ${renewal_threshold_days}j"
-        fi
+    elif [[ ! -f "$server_cert" ]]; then
+        needs_init=true
+        reason="cert serveur absent ($server_cert)"
+    elif ! openssl x509 -in "$server_cert" -checkend "$renewal_threshold_seconds" -noout >/dev/null 2>&1; then
+        needs_init=true
+        reason="cert serveur expire dans moins de ${renewal_threshold_days}j"
     fi
 
     if [[ "$needs_init" == true ]]; then
@@ -476,6 +528,9 @@ main() {
 
     echo ""
     update_systemd
+
+    echo ""
+    ensure_apcu_cli
 
     echo ""
     run_doctor_check

@@ -557,7 +557,36 @@ grep -E 'BEGIN PRIVATE KEY|BEGIN RSA' storage/logs/auth-v1/*.log
 
 ## Post-correctifs & non-régressions
 
-*(vide pour l'instant — sera enrichie après chaque code review post-merge)*
+### 2026-05-18 — Fix `CaInitializer` ownership runtime web (`auth_v1.pki.web_owner`)
+
+**Finding bloquant identifié pendant la QA §2** : `auth:ca:init` lancé en root
+(via `update.sh` ou SSH) produisait des fichiers PKI `root:root 0600`, illisibles
+par le runtime PHP-FPM Sambaedu (`www-admin`, pas le défaut Debian `www-data`).
+Toute la chaîne auth v1 retombait en HTTP 500 *"JWT private key not found or
+not readable"* sur les endpoints `/api/v1/agent/*`.
+
+**Patch** : ajout config `auth_v1.pki.web_owner` (env `AUTH_V1_PKI_WEB_OWNER`,
+défaut `www-admin` pour Sambaedu, peut être overridé en `www-data` pour install
+standard Debian) + helper `CaInitializer::applyWebOwnership($path)` appelé après
+chaque écriture web-readable :
+
+- `storage/keys/pki/ca-root.crt` (servi via réponse enroll `ca_cert_pem`)
+- `storage/keys/pki/server.crt` + `server.key` (Apache HTTPS vhost)
+- `storage/keys/jwt/private.pem` + `public.pem` (JWT signing/verification)
+- `storage/keys/pki/` + `storage/keys/jwt/` (traversée)
+
+`storage/keys/pki/ca-root.key` reste root-only — jamais lu par le web (utilisé
+uniquement par `CaInitializer` lui-même pour signer de nouveaux certs serveur).
+
+**Pourquoi pas ACL setfacl ?** Le pattern chown est plus simple et survit aux
+`chmod` ultérieurs (les ACL avec mask `---` deviennent ineffectives après
+`chmod 0600` — piège connu). Le runtime web obtient l'ownership direct, root
+conserve l'accès via CAP_DAC_OVERRIDE.
+
+**Action prod** : après merge, vérifier que `AUTH_V1_PKI_WEB_OWNER` est défini
+(ou laissé à `www-admin` par défaut) dans le `.env`, puis lancer
+`php artisan auth:ca:init --force` pour ré-appliquer la propriété aux fichiers
+existants (l'idempotente `auth:ca:init` ne touchera pas les fichiers).
 
 ---
 

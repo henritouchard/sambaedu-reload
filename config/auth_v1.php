@@ -110,6 +110,13 @@ return [
         'subject_organization' => env('AUTH_V1_PKI_ORG', 'SambaEdu'),
         'subject_country' => env('AUTH_V1_PKI_COUNTRY', 'FR'),
         'subject_locality' => env('AUTH_V1_PKI_LOCALITY', ''),
+
+        // Propriétaire web auquel les fichiers PKI lisibles par le serveur HTTP
+        // doivent appartenir (server.crt, server.key, ca-root.crt, jwt private/public).
+        // Sambaedu utilise un pool PHP-FPM custom `www-admin`. Le défaut Debian
+        // `www-data` reste valide pour les installs standard.
+        // Set to empty string pour désactiver le chown (env testing / Mac dev).
+        'web_owner' => env('AUTH_V1_PKI_WEB_OWNER', 'www-admin'),
     ],
 
     /*

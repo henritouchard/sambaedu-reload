@@ -35,8 +35,7 @@ class AuthCaInit extends Command
     /** @var string */
     protected $signature = 'auth:ca:init
         {--force : Régénère tout (CA + serveur + JWT). Demande confirmation.}
-        {--regenerate-server-only : Régénère uniquement le cert serveur.}
-        {--no-interaction : Refuse les prompts (mode script).}';
+        {--regenerate-server-only : Régénère uniquement le cert serveur.}';
 
     /** @var string */
     protected $description = 'Initialise la PKI locale (CA root + cert serveur HTTPS) + paire JWT RS256.';
