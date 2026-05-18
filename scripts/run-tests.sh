@@ -67,8 +67,8 @@ echo "============================================================"
 START_EPOCH=$(date +%s)
 set +e
 php artisan test "${TEST_ARGS[@]}" 2>&1 | tee "$LOG_FILE"
-EXIT_CODE=${PIPESTATUS[0]}
-TEE_CODE=${PIPESTATUS[1]}
+EXIT_CODE=${PIPESTATUS[0]:-0}
+TEE_CODE=${PIPESTATUS[1]:-0}
 set -e
 [[ "$TEE_CODE" -ne 0 ]] && echo "WARN: tee failed (code $TEE_CODE) — log peut être tronqué : $LOG_FILE" >&2
 END_EPOCH=$(date +%s)
