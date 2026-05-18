@@ -31,6 +31,10 @@ final class JwtErrorCodes
     public const BOOTSTRAP_TOKEN_MISSING = 'bootstrap_token.missing';
     public const BOOTSTRAP_TOKEN_INVALID = 'bootstrap_token.invalid';
 
+    // --- Bootstrap durci 16.11 (couple token↔UUID + LAN whitelist) ---
+    public const BOOTSTRAP_TOKEN_UUID_MISMATCH = 'bootstrap_token.uuid_mismatch';
+    public const BOOTSTRAP_NOT_LAN = 'bootstrap.not_lan';
+
     // --- Refresh token (DB) ---
     public const REFRESH_MISSING = 'refresh.missing';
     public const REFRESH_INVALID = 'refresh.invalid';
@@ -55,6 +59,8 @@ final class JwtErrorCodes
             self::JWT_UNKNOWN_WORKSTATION,
             self::BOOTSTRAP_TOKEN_MISSING,
             self::BOOTSTRAP_TOKEN_INVALID,
+            self::BOOTSTRAP_TOKEN_UUID_MISMATCH,
+            self::BOOTSTRAP_NOT_LAN,
             self::REFRESH_MISSING,
             self::REFRESH_INVALID,
             self::REFRESH_EXPIRED,

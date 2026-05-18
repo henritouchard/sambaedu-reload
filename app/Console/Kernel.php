@@ -97,6 +97,16 @@ class Kernel extends ConsoleKernel
                  ->dailyAt('03:45')
                  ->withoutOverlapping()
                  ->runInBackground();
+
+        // Story 16.11 : Alerte santé migration auto-bootstrap.
+        // Calcule le ratio d'échecs des tentatives auto-bootstrap sur 7 jours
+        // glissants. Si ratio > 5% → log critical `auth.migration.health.alert`
+        // sur channel `auth-v1`. Henri tail les logs (Phase 3+ : intégration
+        // mail/webhook). Commande informative — exit 0 même en alerte.
+        $schedule->command('migration:health-check')
+                 ->daily()
+                 ->withoutOverlapping()
+                 ->runInBackground();
     }
 
     /**

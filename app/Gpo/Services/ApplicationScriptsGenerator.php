@@ -103,8 +103,17 @@ final class ApplicationScriptsGenerator
         }
 
         // Si APCu déjà peuplé, on retourne tel quel (économie LDAP — pattern legacy :880).
+        // Story 16.11 Q1.a — si le payload mis en cache antérieurement n'avait
+        // pas d'uuid (versions pré-16.11), on le ré-écrit avec l'uuid courant
+        // pour que `RequireBootstrapToken::checkMismatch()` puisse valider.
         $cached = $this->fetchCached($id);
         if ($cached !== null) {
+            if (! array_key_exists('uuid', $cached) && $uuid !== '') {
+                $cached['uuid'] = $uuid;
+                // Best-effort : repousse en APCu pour que les requêtes suivantes
+                // bénéficient de l'uuid (sinon, perte de l'info à chaque hit).
+                $this->contextWriter->write($id, $cached, 1800);
+            }
             $cached['interpreter'] = $interpreter;
             $cached['speed'] = $speed;
             $cached['uuid'] = $uuid;
@@ -208,6 +217,14 @@ final class ApplicationScriptsGenerator
             'os' => $os,
             'time' => time(),
             'parcs' => $parcs,
+            // Story 16.11 Q1.a — `uuid` doit être posé AVANT `contextWriter->write()`
+            // pour que `RequireBootstrapToken::checkMismatch()` (validator
+            // durci `LegacyBootstrapTokenValidator::payloadMatchesUuid`) puisse
+            // valider le couple token↔uuid lors de l'enroll auto-bootstrap.
+            // Sans cette ligne, 100% des enrolls 16.11 échouent en
+            // `bootstrap_token.invalid` car la clé `uuid` n'est jamais peuplée
+            // dans le payload APCu côté lecteur.
+            'uuid' => $uuid,
         ];
 
         // Story 16.7 post-review #4 (2026-05-13) — parité legacy `:936` :
@@ -222,12 +239,18 @@ final class ApplicationScriptsGenerator
         }
 
         // Pose APCu (TTL 1800s iso-legacy :998).
+        // Story 16.11 Q1.a — `uuid` est désormais inclus dans `$info` ci-dessus
+        // (avant ce `write()`) pour permettre au validator bootstrap-token de
+        // valider le couple token↔uuid. Conséquence : la clé `uuid` est
+        // maintenant **persistée** en APCu (pas seulement passthrough).
         $this->contextWriter->write($id, $info, 1800);
 
-        // Champs non cachables (iso-legacy :1000-1004).
+        // Champs non cachables (iso-legacy :1000-1004). `uuid` reste posé
+        // ici pour parité legacy (re-écrit avec la valeur courante non
+        // normalisée par le caller, alors que la version cachée a déjà été
+        // normalisée `strtolower` ligne 76).
         $info['interpreter'] = $interpreter;
         $info['speed'] = $speed;
-        $info['uuid'] = $uuid;
         $info['userprofile'] = $userprofile;
 
         return $info;

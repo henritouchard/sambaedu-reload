@@ -20,6 +20,8 @@ use App\Http\Controllers\Api\WpkgReportController;
 use App\Auth\V1\Http\Controllers\EnrollController as AuthV1EnrollController;
 use App\Auth\V1\Http\Controllers\RefreshController as AuthV1RefreshController;
 use App\Auth\V1\Http\Controllers\PingController as AuthV1PingController;
+// Story 16.11 — Auto-bootstrap migration postes
+use App\Auth\V1\Http\Controllers\BootstrapScriptController as AuthV1BootstrapScriptController;
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -143,14 +145,19 @@ Route::prefix('wpkg')->middleware('local.request')->group(function () {
 /*
 |--------------------------------------------------------------------------
 | Story 16.10 — Auth v1 poste ↔ serveur local (HTTPS + JWT RS256)
+| Story 16.11 — Auto-bootstrap migration postes (+ LAN whitelist sur enroll/bootstrap)
 |--------------------------------------------------------------------------
 | Endpoints `/api/v1/agent/*` — discrimination par claim `tier=workstation`.
 | Cohabite avec `/api/v1/snapshot` (controlHub) sans collision (sous-namespace
 | dédié `/agent`).
 |
-| - `POST /enroll`  : protégé `auth.v1.bootstrap` (X-Bootstrap-Token md5) + throttle 10/min
-| - `POST /refresh` : protégé `auth.v1.refresh` (refresh_token DB) + throttle 30/min + replay detection
-| - `GET /ping`     : protégé `auth.v1.workstation` (JWT RS256 valid + tier=workstation)
+| - `POST /enroll`           : `auth.v1.lan-only` + `auth.v1.bootstrap` + throttle 10/min
+|                              (16.11 D1 — LAN whitelist + couple token↔UUID)
+| - `POST /refresh`          : `auth.v1.refresh` + throttle 30/min + replay detection
+|                              (PAS de lan-only — un poste en VPN admin peut refresh)
+| - `GET /ping`              : `auth.v1.workstation` (JWT RS256 + tier=workstation)
+| - `GET /bootstrap.cmd|sh`  : `auth.v1.lan-only` + `auth.v1.secure-headers` (D4)
+|                              (sert le script de bootstrap OS-spécifique, public-non-auth)
 */
 Route::prefix('v1/agent')->name('agent.v1.')
     // Headers de sécurité (Cache-Control no-store + HSTS + nosniff) sur toutes les
@@ -159,7 +166,7 @@ Route::prefix('v1/agent')->name('agent.v1.')
     ->middleware('auth.v1.secure-headers')
     ->group(function () {
         Route::post('/enroll', [AuthV1EnrollController::class, 'store'])
-            ->middleware(['auth.v1.bootstrap', 'throttle:10,1'])
+            ->middleware(['auth.v1.lan-only', 'auth.v1.bootstrap', 'throttle:10,1'])
             ->name('enroll');
 
         Route::post('/refresh', [AuthV1RefreshController::class, 'store'])
@@ -169,6 +176,15 @@ Route::prefix('v1/agent')->name('agent.v1.')
         Route::middleware('auth.v1.workstation')->group(function () {
             Route::get('/ping', [AuthV1PingController::class, 'show'])->name('ping');
             // Futurs endpoints (16.12 logs, futures stories scripts) ajoutent leurs routes ici.
+        });
+
+        // Story 16.11 — endpoints publics bootstrap (LAN-only, pas d'auth).
+        // throttle:30,1 → max 30 requêtes/min par IP (protection scan réseau LAN).
+        Route::middleware(['auth.v1.lan-only', 'throttle:30,1'])->group(function () {
+            Route::get('/bootstrap.cmd', [AuthV1BootstrapScriptController::class, 'cmd'])
+                ->name('bootstrap.cmd');
+            Route::get('/bootstrap.sh', [AuthV1BootstrapScriptController::class, 'sh'])
+                ->name('bootstrap.sh');
         });
     });
 

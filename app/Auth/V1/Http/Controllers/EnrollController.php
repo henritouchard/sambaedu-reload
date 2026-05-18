@@ -7,9 +7,13 @@ namespace App\Auth\V1\Http\Controllers;
 use App\Auth\V1\Http\Requests\EnrollAgentRequest;
 use App\Auth\V1\Jwt\WorkstationJwtIssuer;
 use App\Auth\V1\Jwt\WorkstationJwtRefreshService;
+use App\Auth\V1\Models\WorkstationMigrationAttempt;
+use App\Auth\V1\Models\WorkstationMigrationStatus;
 use App\Auth\V1\Pki\CaInitializer;
+use App\Auth\V1\Services\MigrationAttemptRecorder;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -48,6 +52,12 @@ use RuntimeException;
  *
  * `success` + `message` ajoutés (cf. convention `architecture.md` —
  * réponse API toujours avec `success: true|false` + `message`).
+ *
+ * **Story 16.11 — upsert migration status** : en fin de flot enroll réussi,
+ * upsert dans `workstations_migration_status` (unique sur `workstation_uuid`)
+ * + insertion d'une row `workstation_migration_attempts` (status='enrolled').
+ * Le middleware `InjectBootstrapFragment` consulte cette table pour décider
+ * de no-op (poste déjà migré) sur les prochaines requêtes legacy.
  */
 class EnrollController extends Controller
 {
@@ -55,6 +65,7 @@ class EnrollController extends Controller
         private readonly WorkstationJwtIssuer $issuer,
         private readonly WorkstationJwtRefreshService $refreshService,
         private readonly CaInitializer $caInitializer,
+        private readonly MigrationAttemptRecorder $attemptRecorder,
     ) {
     }
 
@@ -101,6 +112,15 @@ class EnrollController extends Controller
             // En prod : 503 strict — un enrollment sans CA root expose le poste à du MitM
             // (il pourrait basculer en mode skip-CA-verify, accepter n'importe quel cert).
             if (! app()->environment(['testing', 'local'])) {
+                // Story 16.11 Q2 (Opus-B) — tracer comme failed pour health-check.
+                $this->attemptRecorder->recordFailure(
+                    $request,
+                    'pki.not_initialized',
+                    $workstationUuid,
+                    'PKI CA cert not available: ' . $e->getMessage(),
+                    $os,
+                );
+
                 return response()->json([
                     'success' => false,
                     'message' => 'PKI not initialized — run php artisan auth:ca:init on the local server',
@@ -113,6 +133,9 @@ class EnrollController extends Controller
 
         // 4. Server base URL
         $serverBaseUrl = $this->resolveServerBaseUrl();
+
+        // Story 16.11 — upsert workstations_migration_status + log migration.
+        $this->recordMigrationSuccess($request, $workstationUuid, $os, (string) $access['jti']);
 
         Log::channel('auth-v1')->info('[EnrollController] auth.enroll.success', [
             'action_type' => 'auth.enroll.success',
@@ -166,5 +189,60 @@ class EnrollController extends Controller
         }
 
         return 'https://localhost';
+    }
+
+    /**
+     * Story 16.11 — upsert `workstations_migration_status` + insert attempt
+     * `enrolled` après un enroll réussi. Best-effort : si DB indispo, on log
+     * et on ne fait pas crasher l'enroll lui-même.
+     *
+     * Note : l'exception est intentionnellement absorbée pour ne pas casser
+     * le flot enroll — le poste recevra son JWT et repartira normalement.
+     * En revanche l'absence de row en DB est détectée via les error logs
+     * `auth-v1` (`auth.migration.persist_failed`) pour l'audit forensique.
+     * Le poste re-tentera le bootstrap à la prochaine requête legacy (idempotence).
+     */
+    private function recordMigrationSuccess(
+        \Illuminate\Http\Request $request,
+        string $workstationUuid,
+        string $os,
+        string $jti,
+    ): void {
+        try {
+            WorkstationMigrationStatus::updateOrCreate(
+                ['workstation_uuid' => $workstationUuid],
+                [
+                    'migrated_at' => Carbon::now(),
+                    'access_token_emitted_jti' => $jti,
+                    'bootstrap_token_hash_prefix' => substr(hash('sha256', (string) $request->header('X-Bootstrap-Token', '')), 0, 16),
+                    'os' => $os,
+                    'se4fs_name' => (string) config('sambaedu.se4fs_name', ''),
+                ],
+            );
+
+            WorkstationMigrationAttempt::create([
+                'workstation_uuid' => $workstationUuid,
+                'started_at' => Carbon::now(),
+                'finished_at' => Carbon::now(),
+                'status' => WorkstationMigrationAttempt::STATUS_ENROLLED,
+                'client_ip' => (string) ($request->server('REMOTE_ADDR', '') ?? $request->ip() ?? '127.0.0.1'),
+                'user_agent' => substr((string) $request->userAgent(), 0, 1024),
+                'os' => $os,
+            ]);
+
+            Log::channel('auth-v1')->info('[EnrollController] auth.migration.success', [
+                'action_type' => 'auth.migration.success',
+                'workstation_uuid' => $workstationUuid,
+                'os' => $os,
+            ]);
+        } catch (\Throwable $e) {
+            Log::channel('auth-v1')->error('[EnrollController] auth.migration.persist_failed', [
+                'action_type' => 'auth.migration.persist_failed',
+                'workstation_uuid' => $workstationUuid,
+                'error_class' => $e::class,
+                'error' => $e->getMessage(),
+                'trace' => array_slice(explode("\n", $e->getTraceAsString()), 0, 10),
+            ]);
+        }
     }
 }

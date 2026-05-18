@@ -32,9 +32,19 @@ use Illuminate\Support\Facades\Log;
  *  - `time`   : `int` (timestamp)
  *
  * Les autres clés (`list`, `list_ue`, `list_m`, `parcs`, `liste_applications`,
- * `action`, `context`, `remote`, `interpreter`, `speed`, `uuid`,
- * `userprofile`, `admin`, `cloud`, `id`) sont **passthrough** : conservées
- * telles quelles dans `raw` (cf. `AppContext::raw`).
+ * `action`, `context`, `remote`, `interpreter`, `speed`, `userprofile`,
+ * `admin`, `cloud`, `id`) sont **passthrough** : conservées telles quelles
+ * dans `raw` (cf. `AppContext::raw`).
+ *
+ * **Story 16.11 Q1.a — `uuid` désormais TOUJOURS posé** : la clé `uuid` était
+ * historiquement listée comme passthrough (Story 16.7) mais en pratique
+ * jamais posée par `ApplicationScriptsGenerator` avant le `write()`. Depuis
+ * Q1.a (2026-05-18), `ApplicationScriptsGenerator::resolveInfo()` injecte
+ * systématiquement `uuid` (lowercase normalisé) dans `$info` AVANT l'appel
+ * à `write()`. Conséquence : tous les nouveaux payloads `apps.$id` portent
+ * la clé `uuid`. Les anciens payloads (cache hit pré-Q1.a) sont migrés
+ * automatiquement par `ApplicationScriptsGenerator::fetchCached()` qui
+ * ré-écrit le payload avec l'uuid courant si absent.
  *
  * Dégradation gracieuse : si APCu indisponible (CLI sans extension), log
  * warning et no-op (parité iso-legacy `apcu_store()` qui retourne `false`).

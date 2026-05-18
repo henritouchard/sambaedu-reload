@@ -432,25 +432,44 @@ Route::get('/shortcuts/icon/{name}', function (string $name) {
 
 /*
 |--------------------------------------------------------------------------
-| Interception legacy gpo/shortcuts_out.php → nouveau système
+| Story 16.11 — Auto-bootstrap migration postes existants
 |--------------------------------------------------------------------------
-| Les postes Windows/Linux appellent gpo/shortcuts_out.php via les GPO.
-| Le fichier legacy a été renommé en .legacy, cette route intercepte
-| les appels et les redirige vers ShortcutExportController.
+| Les 8 routes legacy `*_out.php` sont wrappées dans un group qui injecte
+| un fragment de bootstrap en préfixe de leur réponse (uniquement si le
+| poste n'est pas encore migré — lookup `workstations_migration_status`).
+|
+| Le middleware `inject.bootstrap-fragment` :
+|   - skip si Content-Type response != text/plain (cas associations_out.php JSON, D6)
+|   - skip si status 4xx/5xx
+|   - skip si pas d'uuid dans la requête (poste pré-bootstrap)
+|   - skip si poste déjà dans `workstations_migration_status`
+|   - sinon : préfixe le body avec le fragment cmd/sh (selon OS détecté)
+|
+| Les controllers eux-mêmes restent inchangés (middleware-only, D14).
 */
-Route::match(['GET', 'POST'], 'gpo/shortcuts_out.php', [App\Http\Controllers\Api\v1\ShortcutExportController::class, 'legacyDispatch'])
-    ->name('shortcuts.legacy');
+Route::middleware('inject.bootstrap-fragment')->group(function () {
+    /*
+    |--------------------------------------------------------------------------
+    | Interception legacy gpo/shortcuts_out.php → nouveau système
+    |--------------------------------------------------------------------------
+    | Les postes Windows/Linux appellent gpo/shortcuts_out.php via les GPO.
+    | Le fichier legacy a été renommé en .legacy, cette route intercepte
+    | les appels et les redirige vers ShortcutExportController.
+    */
+    Route::match(['GET', 'POST'], 'gpo/shortcuts_out.php', [App\Http\Controllers\Api\v1\ShortcutExportController::class, 'legacyDispatch'])
+        ->name('shortcuts.legacy');
 
-/*
-|--------------------------------------------------------------------------
-| Interception legacy gpo/wallpaper_out.php → nouveau système
-|--------------------------------------------------------------------------
-| Appelé par logon/startup scripts (Linux + Windows).
-| Actions : wallpaper, wallpaper-wait, lockscreen, veyon, icone.
-| Auth : $id md5 stocké dans APCu par applications.php.
-*/
-Route::match(['GET', 'POST'], 'gpo/wallpaper_out.php', [WallpaperController::class, 'legacyOut'])
-    ->name('wallpaper.legacy');
+    /*
+    |--------------------------------------------------------------------------
+    | Interception legacy gpo/wallpaper_out.php → nouveau système
+    |--------------------------------------------------------------------------
+    | Appelé par logon/startup scripts (Linux + Windows).
+    | Actions : wallpaper, wallpaper-wait, lockscreen, veyon, icone.
+    | Auth : $id md5 stocké dans APCu par applications.php.
+    */
+    Route::match(['GET', 'POST'], 'gpo/wallpaper_out.php', [WallpaperController::class, 'legacyOut'])
+        ->name('wallpaper.legacy');
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -477,43 +496,51 @@ Route::get('admin/gpo/del-roam.sh', [\App\Http\Controllers\Admin\RoamingProfileC
 | Pas d'auth (postes clients sans cookie). Throttle 300/min/IP
 | (300 postes derrière NAT peuvent se loguer simultanément sans 429).
 | Doivent être déclarés AVANT le catchall legacy.
+|
+| Story 16.11 — wrappé dans `inject.bootstrap-fragment` (préfixe le fragment
+| de migration auto-bootstrap si poste non migré).
 */
-Route::match(['GET', 'POST'], 'gpo/firefox_out.php', [AppPolicyController::class, 'legacyFirefoxOut'])
-    ->middleware('throttle:300,1')
-    ->name('app-policy.firefox.legacy');
+Route::middleware('inject.bootstrap-fragment')->group(function () {
+    Route::match(['GET', 'POST'], 'gpo/firefox_out.php', [AppPolicyController::class, 'legacyFirefoxOut'])
+        ->middleware('throttle:300,1')
+        ->name('app-policy.firefox.legacy');
 
-Route::match(['GET', 'POST'], 'gpo/thunderbird_out.php', [AppPolicyController::class, 'legacyThunderbirdOut'])
-    ->middleware('throttle:300,1')
-    ->name('app-policy.thunderbird.legacy');
+    Route::match(['GET', 'POST'], 'gpo/thunderbird_out.php', [AppPolicyController::class, 'legacyThunderbirdOut'])
+        ->middleware('throttle:300,1')
+        ->name('app-policy.thunderbird.legacy');
 
-/*
-|--------------------------------------------------------------------------
-| Interception legacy gpo/network_out.php + gpo/veyon_out.php (Story 16.3b)
-| + gpo/associations_out.php (Story 16.3c)
-|--------------------------------------------------------------------------
-| Endpoints runtime postes clients : script bash réseau (network_out),
-| config JSON Veyon (veyon_out) et JSON des associations d'extensions
-| (associations_out). Pattern iso 4.7/4.8.
-| Throttle 300/min/IP. Pas d'auth web (id md5 APCu = garde effective).
-| Doivent être déclarés AVANT le catchall legacy.
-*/
-Route::match(['GET', 'POST'], 'gpo/network_out.php', [\App\Http\Controllers\Gpo\NetworkOutController::class, 'legacyOut'])
-    ->middleware('throttle:300,1')
-    ->name('gpo.network-out.legacy');
-Route::match(['GET', 'POST'], 'gpo/veyon_out.php', [\App\Http\Controllers\Gpo\VeyonOutController::class, 'legacyOut'])
-    ->middleware('throttle:300,1')
-    ->name('gpo.veyon-out.legacy');
-// Story 16.3c — POST uniquement (legacy `associations_out.php` n'expose pas GET ;
-// le body `$_POST['list']` est obligatoire — un GET sans `list` retournerait 400).
-Route::match(['POST'], 'gpo/associations_out.php', [\App\Http\Controllers\Gpo\AssociationsOutController::class, 'legacyOut'])
-    ->middleware('throttle:300,1')
-    ->name('gpo.associations-out.legacy');
+    /*
+    |--------------------------------------------------------------------------
+    | Interception legacy gpo/network_out.php + gpo/veyon_out.php (Story 16.3b)
+    | + gpo/associations_out.php (Story 16.3c)
+    |--------------------------------------------------------------------------
+    | Endpoints runtime postes clients : script bash réseau (network_out),
+    | config JSON Veyon (veyon_out) et JSON des associations d'extensions
+    | (associations_out). Pattern iso 4.7/4.8.
+    | Throttle 300/min/IP. Pas d'auth web (id md5 APCu = garde effective).
+    | Doivent être déclarés AVANT le catchall legacy.
+    |
+    | Note 16.11 : `associations_out.php` renvoie `text/json` — le middleware
+    | détecte le Content-Type et skip l'injection (D6).
+    */
+    Route::match(['GET', 'POST'], 'gpo/network_out.php', [\App\Http\Controllers\Gpo\NetworkOutController::class, 'legacyOut'])
+        ->middleware('throttle:300,1')
+        ->name('gpo.network-out.legacy');
+    Route::match(['GET', 'POST'], 'gpo/veyon_out.php', [\App\Http\Controllers\Gpo\VeyonOutController::class, 'legacyOut'])
+        ->middleware('throttle:300,1')
+        ->name('gpo.veyon-out.legacy');
+    // Story 16.3c — POST uniquement (legacy `associations_out.php` n'expose pas GET ;
+    // le body `$_POST['list']` est obligatoire — un GET sans `list` retournerait 400).
+    Route::match(['POST'], 'gpo/associations_out.php', [\App\Http\Controllers\Gpo\AssociationsOutController::class, 'legacyOut'])
+        ->middleware('throttle:300,1')
+        ->name('gpo.associations-out.legacy');
 
-// Story 16.7 — endpoint amont qui POSE la session APCu `apps.$id` consommée
-// par tous les endpoints out précédents. Doit être déclaré AVANT le catchall.
-Route::match(['GET', 'POST'], 'gpo/applications.php', [\App\Http\Controllers\Gpo\ApplicationsScriptsController::class, 'generate'])
-    ->middleware('throttle:300,1')
-    ->name('gpo.applications.legacy');
+    // Story 16.7 — endpoint amont qui POSE la session APCu `apps.$id` consommée
+    // par tous les endpoints out précédents. Doit être déclaré AVANT le catchall.
+    Route::match(['GET', 'POST'], 'gpo/applications.php', [\App\Http\Controllers\Gpo\ApplicationsScriptsController::class, 'generate'])
+        ->middleware('throttle:300,1')
+        ->name('gpo.applications.legacy');
+});
 
 /*
 |--------------------------------------------------------------------------

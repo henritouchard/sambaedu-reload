@@ -153,5 +153,35 @@ trait IssuesWorkstationJwt
                 $table->timestamps();
             });
         }
+
+        // Story 16.11 — tables migration auto-bootstrap.
+        if (! Schema::hasTable('workstations_migration_status')) {
+            Schema::create('workstations_migration_status', function (Blueprint $table): void {
+                $table->bigIncrements('id');
+                $table->string('workstation_uuid', 36)->unique();
+                $table->timestamp('migrated_at');
+                $table->string('access_token_emitted_jti', 36)->nullable();
+                $table->string('bootstrap_token_hash_prefix', 16)->nullable();
+                $table->string('os', 16);
+                $table->string('se4fs_name', 255)->nullable();
+                $table->timestamps();
+            });
+        }
+
+        if (! Schema::hasTable('workstation_migration_attempts')) {
+            Schema::create('workstation_migration_attempts', function (Blueprint $table): void {
+                $table->bigIncrements('id');
+                $table->string('workstation_uuid', 36)->nullable()->index();
+                $table->timestamp('started_at');
+                $table->timestamp('finished_at')->nullable();
+                $table->string('status', 16);
+                $table->string('error_code', 64)->nullable();
+                $table->text('error_message')->nullable();
+                $table->string('client_ip', 45);
+                $table->text('user_agent')->nullable();
+                $table->string('os', 16)->nullable();
+                $table->timestamps();
+            });
+        }
     }
 }

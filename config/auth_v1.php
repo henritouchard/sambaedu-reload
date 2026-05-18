@@ -170,6 +170,28 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Story 16.11 — Auto-bootstrap migration postes
+    |--------------------------------------------------------------------------
+    |
+    | - `allowed_subnets` : whitelist CIDR consommée par `EnsureLanIp` sur
+    |   `/api/v1/agent/enroll` et `/api/v1/agent/bootstrap.{cmd,sh}`. Default
+    |   RFC1918 + localhost (couvre la quasi-totalité des LANs scolaires).
+    |   Override via env CSV `AUTH_V1_BOOTSTRAP_ALLOWED_SUBNETS=192.168.0.0/16,10.0.0.0/8`.
+    |   ⚠️ Une valeur vide (admin override volontaire) verrouille TOUT
+    |   l'accès (fail-closed) — il faut alors fournir au moins un subnet
+    |   pour autoriser `/enroll`.
+    |
+    */
+
+    'bootstrap' => [
+        'allowed_subnets' => env(
+            'AUTH_V1_BOOTSTRAP_ALLOWED_SUBNETS',
+            '192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,127.0.0.0/8,::1/128',
+        ),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Server base URL — Renvoyé dans la réponse enroll
     |--------------------------------------------------------------------------
     |
