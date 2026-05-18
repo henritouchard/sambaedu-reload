@@ -638,3 +638,365 @@ TOKEN=$(php artisan tinker --execute='
 grep -A1 "16-10-securisation" _bmad-output/implementation-artifacts/sprint-status.yaml
 # → doit montrer `review` (ou `done` si Henri a fait la review)
 ```
+
+---
+
+## Story 16.11 — Auto-bootstrap migration postes existants
+
+> **Scope** : bascule transparente du parc Windows/Linux des endpoints legacy `/gpo/*_out.php` HTTP md5/APCu vers `/api/v1/*` HTTPS+JWT, sans intervention admin. Implémente l'injection d'un fragment de bootstrap idempotent dans les réponses legacy + 2 endpoints publics `bootstrap.{cmd,sh}` + durcissement du couple token↔UUID + IP whitelist LAN + commande artisan `migration:health-check`.
+
+### Pré-requis communs
+
+- SE4FS up + accessible LAN (parité 16.10 smoke).
+- Migrations `php artisan migrate` exécutées (16.10 + 16.11 ⇒ tables `workstations_migration_status` + `workstation_migration_attempts`).
+- PKI initialisée via `php artisan auth:ca:init` (16.10 prérequis).
+- Channel logs `auth-v1` actif dans `config/logging.php`.
+
+### Section 9 — Durcissement bootstrap token + couple UUID (16.11 D1)
+
+#### Scénario 16.11-1 — Enroll happy path avec uuid matching context APCu
+
+```bash
+# 1. Poser manuellement un contexte APCu avec uuid (simule applications.php legacy)
+TOKEN=$(php -r 'echo md5("smoke-bootstrap-16-11-1");')
+UUID="11111111-1111-4111-8111-111111111111"
+php artisan tinker --execute='
+  apcu_store("apps.'"$TOKEN"'", [
+    "uuid" => "'"$UUID"'",
+    "user" => "jdoe",
+    "machine" => "pc-smoke-1",
+  ], 1800);
+'
+
+# 2. Enroll avec le bon uuid (depuis IP LAN)
+curl -k -i -X POST https://$(hostname -f)/api/v1/agent/enroll \
+  -H "Content-Type: application/json" \
+  -H "X-Bootstrap-Token: $TOKEN" \
+  -d "{\"uuid\":\"$UUID\",\"mac\":\"AA:BB:CC:DD:EE:FF\",\"hostname\":\"pc-smoke-1\",\"os\":\"linux\"}"
+# Attendu : HTTP 200 + access_token + refresh_token + ca_cert_pem + server_base_url
+```
+
+#### Scénario 16.11-2 — Enroll avec uuid mismatch (attaque fixation simulée)
+
+```bash
+TOKEN=$(php -r 'echo md5("smoke-bootstrap-16-11-2");')
+LEGIT_UUID="22222222-2222-4222-8222-222222222222"
+ATTACKER_UUID="99999999-9999-4999-8999-999999999999"
+
+php artisan tinker --execute='apcu_store("apps.'"$TOKEN"'", ["uuid" => "'"$LEGIT_UUID"'"], 1800);'
+
+curl -k -i -X POST https://$(hostname -f)/api/v1/agent/enroll \
+  -H "Content-Type: application/json" \
+  -H "X-Bootstrap-Token: $TOKEN" \
+  -d "{\"uuid\":\"$ATTACKER_UUID\",\"mac\":\"FF:FF:FF:FF:FF:FF\",\"hostname\":\"pc-attacker\",\"os\":\"linux\"}"
+# Attendu : HTTP 401 + JSON {"code":"bootstrap_token.uuid_mismatch", "message":"Bootstrap token does not match declared workstation_uuid"}
+# Log : auth.bootstrap.uuid_mismatch warning dans storage/logs/auth-v1/auth-v1-$(date +%F).log
+```
+
+#### Scénario 16.11-3 — Enroll avec context APCu sans clé uuid → 401 fail-closed
+
+```bash
+TOKEN=$(php -r 'echo md5("smoke-bootstrap-16-11-3");')
+php artisan tinker --execute='apcu_store("apps.'"$TOKEN"'", ["user" => "jdoe", "machine" => "pc-x"], 1800);'  # PAS de clé uuid
+
+curl -k -i -X POST https://$(hostname -f)/api/v1/agent/enroll \
+  -H "Content-Type: application/json" \
+  -H "X-Bootstrap-Token: $TOKEN" \
+  -d '{"uuid":"11111111-1111-4111-8111-111111111111","mac":"AA:BB:CC:DD:EE:FF","hostname":"pc-x","os":"linux"}'
+# Attendu : HTTP 401 — fail-closed (le validator ne fait pas confiance à un contexte sans uuid)
+# Log : auth.bootstrap.context_missing_uuid warning
+```
+
+### Section 10 — IP whitelist LAN (16.11 D1 partie B)
+
+#### Scénario 16.11-4 — Enroll depuis IP LAN (192.168.X.Y) → 200
+
+```bash
+# Le smoke 16.11-1 vérifie déjà ce point depuis une IP LAN.
+# Vérifier que les subnets default RFC1918 sont chargés :
+php artisan tinker --execute='echo config("auth_v1.bootstrap.allowed_subnets");'
+# Attendu : "192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,127.0.0.0/8,::1/128"
+```
+
+#### Scénario 16.11-5 — Enroll depuis IP publique simulée → 403
+
+```bash
+# Override config pour bloquer 127.0.0.1
+php artisan tinker --execute='
+  config(["auth_v1.bootstrap.allowed_subnets" => "8.8.8.8/32"]);
+'
+curl -k -i -X POST https://$(hostname -f)/api/v1/agent/enroll \
+  -H "Content-Type: application/json" \
+  -H "X-Bootstrap-Token: $(php -r 'echo md5("any-token");')" \
+  -d '{"uuid":"11111111-1111-4111-8111-111111111111","mac":"AA:BB:CC:DD:EE:FF","hostname":"pc-x","os":"linux"}'
+# Attendu : HTTP 403 + JSON {"success":false,"error":"forbidden","code":"bootstrap.not_lan"}
+# Log : auth.bootstrap.lan_blocked warning
+
+# Restaurer config par défaut
+php artisan config:clear
+```
+
+#### Scénario 16.11-6 — Refresh depuis IP publique simulée → 200/401 (pas de LAN block, cf. D1)
+
+```bash
+# /refresh n'est PAS protégé par auth.v1.lan-only — un poste en VPN admin peut refresh.
+curl -k -i -X POST https://$(hostname -f)/api/v1/agent/refresh -H "Content-Type: application/json" -d '{}'
+# Attendu : HTTP 401 refresh.missing (pas 403 bootstrap.not_lan) → preuve que le LAN-only n'est pas appliqué à /refresh
+```
+
+### Section 11 — Auto-bootstrap fragment injection (16.11 D2 + D5 + D6)
+
+#### Scénario 16.11-7 — Poste Windows non-migré → hit `gpo/wallpaper_out.php` → fragment cmd en préfixe
+
+```bash
+TEST_UUID="33333333-3333-4333-8333-333333333333"
+# S'assurer que le poste n'est pas dans workstations_migration_status
+php artisan tinker --execute='
+  \App\Auth\V1\Models\WorkstationMigrationStatus::where("workstation_uuid", "'"$TEST_UUID"'")->delete();
+'
+
+curl -k -s "https://$(hostname -f)/gpo/wallpaper_out.php?id=any-md5-id&os=windows&uuid=$TEST_UUID" | head -8
+# Attendu : premières lignes contiennent "@echo off" + "SambaEdu auto-bootstrap" + curl pipe
+#          PUIS le body wallpaper habituel
+```
+
+#### Scénario 16.11-8 — Poste Linux non-migré → hit `gpo/firefox_out.php` → fragment sh en préfixe
+
+```bash
+TEST_UUID="44444444-4444-4444-8444-444444444444"
+php artisan tinker --execute='\App\Auth\V1\Models\WorkstationMigrationStatus::where("workstation_uuid", "'"$TEST_UUID"'")->delete();'
+
+curl -k -s "https://$(hostname -f)/gpo/firefox_out.php?os=linux&uuid=$TEST_UUID" | head -5
+# Attendu : commence par "# === SambaEdu auto-bootstrap" puis `if [ ! -f /var/lib/sambaedu/auth.json ]`
+```
+
+#### Scénario 16.11-9 — Poste déjà migré → pas de fragment
+
+```bash
+TEST_UUID="55555555-5555-4555-8555-555555555555"
+php artisan tinker --execute='
+  \App\Auth\V1\Models\WorkstationMigrationStatus::updateOrCreate(
+    ["workstation_uuid" => "'"$TEST_UUID"'"],
+    ["migrated_at" => now(), "os" => "windows", "se4fs_name" => "se4fs-test"]
+  );
+'
+
+curl -k -s "https://$(hostname -f)/gpo/wallpaper_out.php?id=any&os=windows&uuid=$TEST_UUID" | head -3
+# Attendu : pas de "@echo off" en préfixe → directement le body wallpaper
+```
+
+#### Scénario 16.11-10 — Poste hit `gpo/associations_out.php` (JSON) → pas de fragment (D6)
+
+```bash
+TEST_UUID="66666666-6666-4666-8666-666666666666"
+php artisan tinker --execute='\App\Auth\V1\Models\WorkstationMigrationStatus::where("workstation_uuid", "'"$TEST_UUID"'")->delete();'
+
+curl -k -s -X POST "https://$(hostname -f)/gpo/associations_out.php" \
+  -d "list=app1&os=linux&uuid=$TEST_UUID"
+# Attendu : JSON parseable (pas de fragment en préfixe — Content-Type=text/json est skippé par le middleware)
+# Vérifier : la 1ère ligne doit commencer par "{" ou "[" — pas par "# ===" ou "@echo off"
+```
+
+### Section 12 — Endpoints publics bootstrap.{cmd,sh}
+
+#### Scénario 16.11-11 — `GET /api/v1/agent/bootstrap.cmd` depuis LAN → 200 + body cmd
+
+```bash
+curl -k -i "https://$(hostname -f)/api/v1/agent/bootstrap.cmd" | head -20
+# Attendu : HTTP 200 + Content-Type "text/plain; charset=utf-8" + Cache-Control "no-store, no-cache, ..."
+# Body contient : "@echo off", "Invoke-RestMethod", "ProtectedData::Protect", "schtasks /create"
+# Inserts une row dans workstation_migration_attempts (status='started', os='windows')
+```
+
+#### Scénario 16.11-12 — `GET /api/v1/agent/bootstrap.sh` depuis LAN → 200 + body sh
+
+```bash
+curl -k -i "https://$(hostname -f)/api/v1/agent/bootstrap.sh" | head -20
+# Attendu : HTTP 200 + Content-Type "text/plain"
+# Body contient : "#!/bin/bash", "set -e", "update-ca-certificates", "chmod 0600", "systemctl enable sambaedu-refresh.timer"
+```
+
+#### Scénario 16.11-13 — bootstrap depuis IP publique → 403
+
+```bash
+# Override config pour bloquer 127.0.0.1
+php artisan tinker --execute='config(["auth_v1.bootstrap.allowed_subnets" => "8.8.8.8/32"]);'
+curl -k -i "https://$(hostname -f)/api/v1/agent/bootstrap.cmd"
+# Attendu : HTTP 403 + JSON {"code":"bootstrap.not_lan"}
+php artisan config:clear
+```
+
+### Section 13 — Smoke poste réel (action Henri post-VM up)
+
+> Ces scénarios doivent être exécutés sur de vrais postes Windows et Linux non migrés. Ils valident DPAPI, certutil, update-ca-certificates, systemd timer — choses qui ne sont pas testables côté serveur Laravel.
+
+#### Scénario 16.11-14 — Poste Windows réel jamais migré
+
+1. Sur un poste Windows propre (jamais migré, registry HKLM\SOFTWARE\SambaEdu absente), provoquer un logon utilisateur.
+2. La GPO Windows déclenche `gpo/applications.php` → réponse = fragment cmd + script habituel.
+3. Le fragment exécute `curl -kfsS https://se4fs-XXX/api/v1/agent/bootstrap.cmd | cmd`.
+4. Vérifier sur la VM Sambaedu :
+   ```bash
+   php artisan tinker --execute='
+     echo "Status: ", json_encode(\App\Auth\V1\Models\WorkstationMigrationStatus::orderByDesc("id")->first()), PHP_EOL;
+     echo "Attempts: ", \App\Auth\V1\Models\WorkstationMigrationAttempt::recent(1)->count(), PHP_EOL;
+   '
+   ```
+   Attendu : 1 status (uuid+os=windows), N attempts (started + enrolled).
+5. Sur le poste Windows, vérifier registry :
+   ```cmd
+   reg query HKLM\SOFTWARE\SambaEdu\AuthV1 /v Migrated
+   reg query HKLM\SOFTWARE\SambaEdu\AuthV1 /v AccessTokenProtected
+   ```
+   Attendu : `Migrated = 0x1`, `AccessTokenProtected` REG_BINARY.
+6. Vérifier tâche planifiée :
+   ```cmd
+   schtasks /query /tn SambaEdu-RefreshTokens
+   ```
+
+#### Scénario 16.11-15 — Poste Linux réel jamais migré
+
+1. Sur un poste Linux propre (jamais migré, `/var/lib/sambaedu/auth.json` absent), provoquer un boot/logon.
+2. Le fragment sh `update-ca-certificates` + `systemctl enable sambaedu-refresh.timer`.
+3. Vérifier :
+   ```bash
+   ls -la /var/lib/sambaedu/   # auth.json mode 0600 root:root + migrated touch
+   ls /usr/local/share/ca-certificates/sambaedu-ca.crt
+   systemctl status sambaedu-refresh.timer
+   cat /var/lib/sambaedu/auth.json | jq .
+   ```
+
+#### Scénario 16.11-16 — Idempotence : 2ème reboot
+
+1. Reboot du poste migré (Win ou Linux).
+2. Le fragment se relance mais détecte la signature locale (`Migrated=1` registry / `migrated` touch file).
+3. Vérifier dans la VM :
+   ```bash
+   php artisan tinker --execute='
+     echo \App\Auth\V1\Models\WorkstationMigrationAttempt::recent(1)->count();
+   '
+   ```
+   Attendu : le compteur n'a pas augmenté significativement (juste les `started` du fragment serveur, mais aucun nouvel `enrolled`).
+
+### Section 14 — Health check daily
+
+#### Scénario 16.11-17 — `php artisan migration:health-check --days=7` sur table vide → OK
+
+```bash
+php artisan tinker --execute='\App\Auth\V1\Models\WorkstationMigrationAttempt::truncate();'
+php artisan migration:health-check --days=7
+# Attendu : output "[OK] No attempts in last 7 days" + exit 0
+```
+
+#### Scénario 16.11-18 — Seuil dépassé → log critical
+
+```bash
+php artisan tinker --execute='
+  for ($i = 0; $i < 100; $i++) {
+    \App\Auth\V1\Models\WorkstationMigrationAttempt::factory()->failed()->create();
+  }
+  \App\Auth\V1\Models\WorkstationMigrationAttempt::factory()->succeeded()->count(10)->create();
+'
+
+php artisan migration:health-check --threshold=0.05
+# Attendu : output "[CRITICAL] Failure ratio 90.91% exceeds threshold 5.00%" + exit 0
+tail -100 storage/logs/auth-v1/auth-v1-$(date +%F).log | grep "auth.migration.health.alert"
+# Attendu : 1 entry CRITICAL avec context total/failed/ratio/threshold/days/top_errors
+```
+
+#### Scénario 16.11-19 — Schedule list mentionne migration:health-check daily
+
+```bash
+php artisan schedule:list | grep migration
+# Attendu : "0 0 * * * migration:health-check ........... Next Due: ..."
+```
+
+### Section 15 — Non-régression
+
+#### Scénario 16.11-20 — Re-jouer les scénarios 16.10-8 à 16.10-22
+
+Après attachement du middleware `inject.bootstrap-fragment` aux 8 routes legacy, vérifier que :
+- les tests Feature 16.3-16.7 restent verts (`./scripts/run-tests.sh --phase1-only`)
+- les scénarios 16.10-8 à 16.10-22 (Section 2-7 ci-dessus) restent verts
+
+Les requêtes qui n'incluent pas `uuid` dans la query → middleware no-op silencieux. Les requêtes avec uuid valide mais content-type non text/plain (associations_out.php JSON) → middleware no-op silencieux.
+
+### Limitation Phase 2 — fenêtre MITM courte au bootstrap
+
+**Statut** : limitation acceptée 2026-05-18 par Henri (Q3 post-review 16.11).
+**Sortie prévue** : Phase 3 (pré-déploiement CA root via WPKG/GPO machine — cf. TD-16.11-MITM dans `docs/tech-debt-auth.md`).
+
+#### Modèle de menace
+
+Le fragment de migration injecté par `InjectBootstrapFragment` (Story 16.11) télécharge le script complet de bootstrap via `curl -k --insecure` (cf. `resources/views/auth/v1/bootstrap-fragment-{cmd,sh}.blade.php`). Le `-k` est nécessaire **par construction** car le CA root du serveur Sambaedu n'est **pas encore installé** côté poste au moment de cette première requête (chicken-and-egg : le bootstrap installe le CA, donc avant le bootstrap il n'est pas pinned).
+
+Conséquences attaque LAN :
+
+1. Un attaquant LAN (insider — élève sur Wi-Fi école, technicien malveillant, poste compromis) capable d'effectuer un **ARP spoof** ou de tenir un proxy transparent peut :
+   - Intercepter la requête `curl -k https://se4fs-XXX/api/v1/agent/bootstrap.cmd` du poste.
+   - Servir un script `bootstrap.cmd` malicieux qui installe **son propre CA root** dans le `Trusted Root` store machine du poste.
+   - À partir de là, le poste fait confiance au CA de l'attaquant → MITM permanent sur toutes les communications HTTPS suivantes (`/enroll`, `/refresh`, `/ping`, futur `/api/v1/*`).
+
+2. La fenêtre d'attaque est **courte** (durée du premier boot/logon post-déploiement Phase 2 d'un poste donné) mais **persistante** une fois exploitée (le CA root malicieux reste installé jusqu'à intervention manuelle).
+
+#### Mitigations Phase 2
+
+- **EnsureLanIp /24** : les endpoints `/bootstrap.{cmd,sh}` + `/enroll` sont restreints au LAN scolaire (RFC1918 par défaut, configurable via `AUTH_V1_BOOTSTRAP_ALLOWED_SUBNETS`). L'attaquant doit déjà être sur le LAN — pas d'attaque depuis Internet.
+- **Observabilité** : tous les rejets bootstrap sont tracés dans `workstation_migration_attempts` (Q2 post-review). Un attaquant qui spam le LAN crée des rows traçables — `migration:health-check` daily alerte sur ratio failed > 5%.
+- **Audit fingerprint post-migration** : voir scénario ci-dessous.
+
+#### Scénario de détection post-migration — fingerprint CA root check
+
+Pour détecter si un poste a installé un CA root **différent** du CA officiel du serveur (signe d'un MITM exploité au bootstrap), comparer le fingerprint :
+
+**Côté serveur** — fingerprint du CA officiel :
+
+```bash
+# Sur la VM Sambaedu (/vm)
+openssl x509 -in storage/keys/ca/ca.crt -noout -fingerprint -sha256
+# Attendu : SHA256 Fingerprint=XX:XX:XX:...
+```
+
+**Côté poste Windows migré** — fingerprint du CA pinné dans le `Trusted Root` machine :
+
+```powershell
+# Sur le poste Windows
+Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like '*SambaEdu*' } | Select-Object Subject, Thumbprint
+# Le Thumbprint doit matcher la version SHA1/SHA256 du CA serveur.
+```
+
+**Côté poste Linux migré** — fingerprint du CA pinné :
+
+```bash
+# Sur le poste Linux
+openssl x509 -in /usr/local/share/ca-certificates/sambaedu-ca.crt -noout -fingerprint -sha256
+# Doit matcher EXACTEMENT la valeur côté serveur.
+```
+
+**Procédure d'audit en cas de doute** (campagne périodique, ou suite à alerte `migration:health-check`) :
+
+1. Récupérer le fingerprint serveur (commande ci-dessus).
+2. Pour chaque poste migré sensible (postes admin, postes salle examen), comparer son fingerprint via PowerShell remoting (Win) ou SSH (Linux).
+3. Tout mismatch déclenche une procédure d'incident :
+   - Re-déploiement complet du poste (réinstallation OS) — un CA root malicieux installé n'est pas révocable sans intervention système complète.
+   - Forensique réseau LAN (ARP table, switch logs) pour identifier l'attaquant ayant servi le mauvais CA.
+
+#### Pointeur Phase 3+
+
+La sortie définitive de cette limitation est documentée dans `docs/tech-debt-auth.md` → `TD-16.11-MITM`. Elle consiste à pré-déployer le CA root **avant** le premier bootstrap (via WPKG machine ou GPO Computer Configuration), supprimant ainsi le besoin de `curl -k`.
+
+## Checklist rapide 16.11
+
+- [ ] Migrations `2026_05_18_120000` + `2026_05_18_120100` jouées sur la VM.
+- [ ] `php artisan migration:health-check` retourne `[OK]` sur table fraîche.
+- [ ] `php artisan schedule:list` mentionne `migration:health-check`.
+- [ ] Endpoints `GET /api/v1/agent/bootstrap.{cmd,sh}` répondent 200 depuis LAN, 403 hors LAN.
+- [ ] `POST /api/v1/agent/enroll` avec uuid mismatch → 401 + `code=bootstrap_token.uuid_mismatch`.
+- [ ] `POST /api/v1/agent/enroll` depuis IP hors `allowed_subnets` → 403 + `code=bootstrap.not_lan`.
+- [ ] `GET /gpo/wallpaper_out.php?uuid=<non-migré>` → fragment cmd en préfixe.
+- [ ] `GET /gpo/wallpaper_out.php?uuid=<déjà-migré>` → pas de fragment.
+- [ ] `POST /gpo/associations_out.php?uuid=<non-migré>` → JSON parseable (pas de fragment, D6).
+- [ ] Smoke poste Windows réel : `Migrated=1` après reboot + tokens DPAPI HKLM stockés.
+- [ ] Smoke poste Linux réel : `/var/lib/sambaedu/auth.json` 0600 + systemd timer actif.
+- [ ] Logs `auth-v1` contiennent `auth.bootstrap.fragment.injected` info + `auth.migration.success` info.
+

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Auth\V1\Http\Middleware\EnsureLanIp;
 use App\Auth\V1\Http\Middleware\EnsureRefreshToken;
 use App\Auth\V1\Http\Middleware\EnsureSecureApiHeaders;
 use App\Auth\V1\Http\Middleware\EnsureWorkstationJwt;
+use App\Auth\V1\Http\Middleware\InjectBootstrapFragment;
 use App\Auth\V1\Http\Middleware\RequireBootstrapToken;
 use App\Auth\V1\Jwt\WorkstationJwtIssuer;
 use App\Auth\V1\Jwt\WorkstationJwtRefreshService;
@@ -14,6 +16,7 @@ use App\Auth\V1\Jwt\WorkstationJwtRevocationChecker;
 use App\Auth\V1\Jwt\WorkstationJwtVerifier;
 use App\Auth\V1\Pki\CaInitializer;
 use App\Auth\V1\Services\LegacyBootstrapTokenValidator;
+use App\Auth\V1\Services\MigrationAttemptRecorder;
 use App\Console\Commands\AuthCaInit;
 use App\Console\Commands\WorkstationJwtRotateKeys;
 use App\Console\Commands\WorkstationRevoke;
@@ -59,6 +62,7 @@ class AuthV1ServiceProvider extends ServiceProvider
         $this->app->singleton(WorkstationJwtRevocationChecker::class, fn () => new WorkstationJwtRevocationChecker());
         $this->app->singleton(LegacyBootstrapTokenValidator::class, fn () => new LegacyBootstrapTokenValidator());
         $this->app->singleton(WorkstationJwtIssuer::class, fn () => new WorkstationJwtIssuer());
+        $this->app->singleton(MigrationAttemptRecorder::class, fn () => new MigrationAttemptRecorder());
 
         $this->app->singleton(WorkstationJwtVerifier::class, fn ($app) => new WorkstationJwtVerifier(
             $app->make(WorkstationJwtRevocationChecker::class),
@@ -86,6 +90,10 @@ class AuthV1ServiceProvider extends ServiceProvider
         $router->aliasMiddleware('auth.v1.bootstrap', RequireBootstrapToken::class);
         $router->aliasMiddleware('auth.v1.refresh', EnsureRefreshToken::class);
         $router->aliasMiddleware('auth.v1.secure-headers', EnsureSecureApiHeaders::class);
+
+        // Story 16.11 — aliases pour le LAN whitelist + injection fragment.
+        $router->aliasMiddleware('auth.v1.lan-only', EnsureLanIp::class);
+        $router->aliasMiddleware('inject.bootstrap-fragment', InjectBootstrapFragment::class);
 
         if ($this->app->environment('testing')) {
             return;

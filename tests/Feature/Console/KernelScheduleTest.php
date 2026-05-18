@@ -196,6 +196,30 @@ class KernelScheduleTest extends TestCase
         );
     }
 
+    // =========================================================================
+    // Story 16.11 — migration:health-check schedulé daily
+    // =========================================================================
+
+    #[Test]
+    public function it_schedules_migration_health_check_daily(): void
+    {
+        $kernel = $this->app->make(Kernel::class);
+        $schedule = $this->app->make(Schedule::class);
+
+        $scheduleMethod = new \ReflectionMethod($kernel, 'schedule');
+        $scheduleMethod->setAccessible(true);
+        $scheduleMethod->invoke($kernel, $schedule);
+
+        $hasMigrationHealthCheck = collect($schedule->events())->contains(
+            static fn ($event): bool => str_contains((string) $event->command, 'migration:health-check')
+        );
+
+        $this->assertTrue(
+            $hasMigrationHealthCheck,
+            'Le scheduler doit déclencher migration:health-check quotidiennement (story 16.11).',
+        );
+    }
+
     #[Test]
     public function it_runs_trash_purge_when_auto_enabled(): void
     {

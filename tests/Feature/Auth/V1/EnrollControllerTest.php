@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Auth\V1;
 
+use App\Auth\V1\Models\WorkstationMigrationAttempt;
 use App\Auth\V1\Models\WorkstationRefreshToken;
 use App\Auth\V1\Pki\CaInitializer;
 use App\Auth\V1\Services\LegacyBootstrapTokenValidator;
@@ -50,6 +51,9 @@ class EnrollControllerTest extends TestCase
         config([
             'sambaedu.se4fs_name' => 'se4fs-test001',
             'auth_v1.server.host_suffix' => 'lab.local',
+            // Story 16.11 — Loopback 127.0.0.1 doit passer le LAN whitelist
+            // pour les tests Feature.
+            'auth_v1.bootstrap.allowed_subnets' => '127.0.0.0/8,192.168.0.0/16,10.0.0.0/8',
         ]);
     }
 
@@ -61,11 +65,30 @@ class EnrollControllerTest extends TestCase
 
     /**
      * Mock `LegacyBootstrapTokenValidator` pour fixer la décision.
+     *
+     * Le mock accepte 1 ou 2 arguments (story 16.10 et 16.11) — par défaut
+     * `isValid` retourne `$valid` pour toute combinaison d'arguments.
      */
     private function bootstrapTokenValid(bool $valid): void
     {
         $mock = Mockery::mock(LegacyBootstrapTokenValidator::class);
         $mock->shouldReceive('isValid')->andReturn($valid);
+        // checkMismatch ne sera pas appelé si isValid retourne true ; sinon
+        // il retourne false par défaut (= comportement legacy 16.10).
+        $mock->shouldReceive('checkMismatch')->andReturn(false);
+        $this->app->instance(LegacyBootstrapTokenValidator::class, $mock);
+    }
+
+    /**
+     * Mock du validator avec discrimination explicite mismatch vs invalid.
+     *
+     * @param array{is_valid: bool, mismatch?: bool} $opts
+     */
+    private function bootstrapTokenWithMismatch(array $opts): void
+    {
+        $mock = Mockery::mock(LegacyBootstrapTokenValidator::class);
+        $mock->shouldReceive('isValid')->andReturn($opts['is_valid']);
+        $mock->shouldReceive('checkMismatch')->andReturn($opts['mismatch'] ?? false);
         $this->app->instance(LegacyBootstrapTokenValidator::class, $mock);
     }
 
@@ -208,5 +231,119 @@ class EnrollControllerTest extends TestCase
                 ->whereNull('revoked_at')
                 ->count(),
         );
+    }
+
+    // ====================================================================
+    // Story 16.11 — couple token↔UUID + LAN whitelist (AC3.1 / AC3.2)
+    // ====================================================================
+
+    #[Test]
+    public function it_rejects_enroll_when_uuid_does_not_match_bootstrap_context(): void
+    {
+        // Token valide en APCu mais uuid déclaré ≠ uuid du contexte.
+        $this->bootstrapTokenWithMismatch(['is_valid' => false, 'mismatch' => true]);
+
+        $body = $this->validBody();
+        $res = $this->postJson('/api/v1/agent/enroll', $body, [
+            'X-Bootstrap-Token' => md5('mismatch-test-token'),
+        ]);
+
+        $res->assertStatus(401)
+            ->assertJson(['code' => \App\Auth\V1\Support\JwtErrorCodes::BOOTSTRAP_TOKEN_UUID_MISMATCH]);
+
+        // Aucun refresh ne doit avoir été créé.
+        $this->assertSame(
+            0,
+            WorkstationRefreshToken::query()->where('workstation_uuid', $body['uuid'])->count(),
+        );
+    }
+
+    #[Test]
+    public function it_rejects_enroll_from_non_lan_ip(): void
+    {
+        // Restreint à 192.168.99.0/24 → testserver 127.0.0.1 hors LAN.
+        config([
+            'auth_v1.bootstrap.allowed_subnets' => '192.168.99.0/24',
+        ]);
+
+        $res = $this->postJson('/api/v1/agent/enroll', $this->validBody(), [
+            'X-Bootstrap-Token' => md5('valid-but-non-lan'),
+        ]);
+
+        $res->assertStatus(403)
+            ->assertJson([
+                'success' => false,
+                'error' => 'forbidden',
+                'code' => 'bootstrap.not_lan',
+            ]);
+    }
+
+    #[Test]
+    public function refresh_route_is_not_lan_restricted(): void
+    {
+        // Restreint enroll à un subnet impossible → enroll devrait être 403,
+        // mais /refresh ne doit PAS être impacté (D1 — pas de lan-only).
+        // On vérifie ici juste que /refresh retourne une réponse non-403-lan
+        // (le 401 refresh.missing est attendu sans body refresh).
+        config([
+            'auth_v1.bootstrap.allowed_subnets' => '192.168.99.0/24',
+        ]);
+
+        $res = $this->postJson('/api/v1/agent/refresh', []);
+
+        $this->assertNotSame(403, $res->getStatusCode());
+    }
+
+    // ====================================================================
+    // Q2 (Opus-B + Opus-D) — `failed` attempts insérés sur rejets
+    // ====================================================================
+
+    #[Test]
+    public function uuid_mismatch_inserts_a_failed_attempt(): void
+    {
+        $this->bootstrapTokenWithMismatch(['is_valid' => false, 'mismatch' => true]);
+
+        $body = $this->validBody();
+        $this->postJson('/api/v1/agent/enroll', $body, [
+            'X-Bootstrap-Token' => md5('mismatch-test'),
+        ])->assertStatus(401);
+
+        $attempt = WorkstationMigrationAttempt::query()
+            ->where('error_code', JwtErrorCodes::BOOTSTRAP_TOKEN_UUID_MISMATCH)
+            ->first();
+        $this->assertNotNull($attempt, 'A failed attempt must be inserted on uuid_mismatch');
+        $this->assertSame(WorkstationMigrationAttempt::STATUS_FAILED, $attempt->status);
+        $this->assertSame($body['uuid'], $attempt->workstation_uuid);
+    }
+
+    #[Test]
+    public function missing_bootstrap_token_inserts_a_failed_attempt(): void
+    {
+        $body = $this->validBody();
+        $this->postJson('/api/v1/agent/enroll', $body, [])->assertStatus(401);
+
+        $attempt = WorkstationMigrationAttempt::query()
+            ->where('error_code', JwtErrorCodes::BOOTSTRAP_TOKEN_MISSING)
+            ->first();
+        $this->assertNotNull($attempt, 'A failed attempt must be inserted on missing token');
+        $this->assertSame(WorkstationMigrationAttempt::STATUS_FAILED, $attempt->status);
+    }
+
+    #[Test]
+    public function non_lan_request_inserts_a_failed_attempt(): void
+    {
+        config([
+            'auth_v1.bootstrap.allowed_subnets' => '192.168.99.0/24',
+        ]);
+
+        $this->postJson('/api/v1/agent/enroll', $this->validBody(), [
+            'X-Bootstrap-Token' => md5('whatever'),
+        ])->assertStatus(403);
+
+        $attempt = WorkstationMigrationAttempt::query()
+            ->where('error_code', JwtErrorCodes::BOOTSTRAP_NOT_LAN)
+            ->first();
+        $this->assertNotNull($attempt, 'A failed attempt must be inserted on LAN block');
+        $this->assertSame(WorkstationMigrationAttempt::STATUS_FAILED, $attempt->status);
     }
 }

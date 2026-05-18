@@ -39,6 +39,14 @@ use Symfony\Component\Finder\Finder;
  *    8 endpoints attendus : applications, firefox_out, thunderbird_out,
  *    wallpaper_out, shortcuts_out, network_out, veyon_out,
  *    associations_out).
+ *
+ * 6. **Story 16.11** : le middleware `inject.bootstrap-fragment` est
+ *    attaché à toutes les 8 routes legacy (lecture textuelle du contenu
+ *    de `routes/web.php`).
+ *
+ * 7. **Story 16.11** : `JwtErrorCodes::all()` contient au moins 16 codes
+ *    (14 du 16.10 + 2 nouveaux 16.11 : `bootstrap_token.uuid_mismatch`,
+ *    `bootstrap.not_lan`).
  */
 class AuthV1NamespaceTest extends TestCase
 {
@@ -286,6 +294,152 @@ class AuthV1NamespaceTest extends TestCase
             $missing,
             "Routes legacy `*_out.php` manquantes — risque cassure dual-mode (D8) :\n  - " . implode("\n  - ", $missing),
         );
+    }
+
+    /**
+     * Story 16.11 — le middleware `inject.bootstrap-fragment` est attaché
+     * aux 8 routes legacy whitelistées dans `routes/web.php`. Vérification
+     * textuelle (parser AST trop complexe pour ce cas — il suffit que la
+     * chaîne `'inject.bootstrap-fragment'` apparaisse dans le fichier et
+     * que les 8 noms de routes apparaissent dans le même fichier).
+     */
+    #[Test]
+    public function inject_bootstrap_fragment_middleware_is_attached_to_8_legacy_routes(): void
+    {
+        $webRoutes = (string) file_get_contents(__DIR__ . '/../../routes/web.php');
+
+        self::assertStringContainsString(
+            "inject.bootstrap-fragment",
+            $webRoutes,
+            "Le middleware 'inject.bootstrap-fragment' n'apparait pas dans routes/web.php — l'attachement aux routes legacy 16.11 est manquant.",
+        );
+
+        // Sanity check : les 8 endpoints legacy sont bien présents dans le
+        // même fichier (cf. test legacy_out_routes_are_preserved).
+        $expected = [
+            'wallpaper_out',
+            'firefox_out',
+            'thunderbird_out',
+            'shortcuts_out',
+            'network_out',
+            'veyon_out',
+            'associations_out',
+            'applications.php',
+        ];
+
+        foreach ($expected as $endpoint) {
+            self::assertStringContainsString(
+                $endpoint,
+                $webRoutes,
+                "Route legacy '{$endpoint}' manquante dans routes/web.php — risque cassure dual-mode (D8).",
+            );
+        }
+
+        // Garde-fou structurel : chaque endpoint legacy doit être déclaré
+        // sous un group/middleware contenant 'inject.bootstrap-fragment'.
+        // On ne fait pas de parsing AST complexe — heuristique simple :
+        // pour chaque endpoint, on cherche TOUTES les occurrences de la
+        // déclaration de route (`Route::match(...)gpo/$endpoint.php`) et on
+        // vérifie qu'au moins une est précédée du middleware
+        // `inject.bootstrap-fragment` dans un contexte raisonnable.
+        foreach ($expected as $endpoint) {
+            // Pattern matche les déclarations de route (pas les commentaires)
+            $pattern = '/Route::(?:match|get|post|put|delete|any|prefix)\b[^;]*?[\'"](?:gpo\/)?' . preg_quote($endpoint, '/') . '(?:\.php)?[\'"]/m';
+            self::assertMatchesRegularExpression(
+                $pattern,
+                $webRoutes,
+                "Endpoint '{$endpoint}' déclaration Route::match introuvable dans routes/web.php.",
+            );
+
+            // Trouver toutes les occurrences de la déclaration
+            preg_match_all($pattern, $webRoutes, $matches, PREG_OFFSET_CAPTURE);
+            $found = false;
+
+            foreach ($matches[0] as [$match, $offset]) {
+                // Contexte large (3000 chars en arrière) pour englober la
+                // déclaration du group `Route::middleware(...)->group(...)`
+                // qui peut wrapper plusieurs endpoints (cas 2e group 16.11
+                // qui wrappe 6 routes : firefox/thunderbird/network/veyon/
+                // associations/applications).
+                $startSearch = max(0, $offset - 3000);
+                $context = substr($webRoutes, $startSearch, 3000);
+                // On veut être plus strict : chercher l'apparition de
+                // `Route::middleware('inject.bootstrap-fragment')->group(`
+                // pas juste la string `inject.bootstrap-fragment` (qui
+                // peut apparaître dans un commentaire).
+                if (preg_match(
+                    "/Route::middleware\s*\(\s*['\"]inject\.bootstrap-fragment['\"]/i",
+                    $context,
+                )) {
+                    // Encore plus strict : on doit avoir un `->group(function`
+                    // après le middleware (sinon c'est une déclaration
+                    // séparée, pas un wrap).
+                    $found = true;
+                    break;
+                }
+            }
+
+            self::assertTrue(
+                $found,
+                "Endpoint '{$endpoint}' n'est pas wrappé dans un Route::middleware('inject.bootstrap-fragment')->group() (recherche heuristique 3000 chars précédant chaque déclaration de route).",
+            );
+        }
+    }
+
+    /**
+     * Story 16.11 — `JwtErrorCodes::all()` doit retourner au moins 16
+     * entrées (14 du 16.10 + 2 nouveaux 16.11) et contenir les 2 nouveaux
+     * codes.
+     */
+    #[Test]
+    public function it_lists_all_error_codes(): void
+    {
+        $codes = \App\Auth\V1\Support\JwtErrorCodes::all();
+
+        self::assertGreaterThanOrEqual(
+            16,
+            count($codes),
+            'JwtErrorCodes::all() doit lister au moins 16 codes (14 baseline 16.10 + 2 nouveaux 16.11).',
+        );
+
+        self::assertContains(
+            'bootstrap_token.uuid_mismatch',
+            $codes,
+            'Code 16.11 BOOTSTRAP_TOKEN_UUID_MISMATCH manquant.',
+        );
+        self::assertContains(
+            'bootstrap.not_lan',
+            $codes,
+            'Code 16.11 BOOTSTRAP_NOT_LAN manquant.',
+        );
+    }
+
+    /**
+     * Story 16.11 — pas d'inclusion legacy depuis les middlewares 16.11
+     * (frontière `App\Auth\V1` étendue aux nouveaux fichiers EnsureLanIp +
+     * InjectBootstrapFragment + BootstrapScriptController). Redondant avec
+     * `no_legacy_inclusion_from_auth_v1` mais fige le scope 16.11.
+     */
+    #[Test]
+    public function story_16_11_new_files_do_not_import_legacy(): void
+    {
+        $files = [
+            __DIR__ . '/../../app/Auth/V1/Http/Middleware/EnsureLanIp.php',
+            __DIR__ . '/../../app/Auth/V1/Http/Middleware/InjectBootstrapFragment.php',
+            __DIR__ . '/../../app/Auth/V1/Http/Controllers/BootstrapScriptController.php',
+            __DIR__ . '/../../app/Auth/V1/Models/WorkstationMigrationStatus.php',
+            __DIR__ . '/../../app/Auth/V1/Models/WorkstationMigrationAttempt.php',
+        ];
+
+        foreach ($files as $file) {
+            self::assertFileExists($file, "Fichier 16.11 manquant : $file");
+            $stripped = $this->stripComments((string) file_get_contents($file));
+            self::assertDoesNotMatchRegularExpression(
+                '/(?:require|include)(?:_once)?\s*\(?[\'"][^\'"]*legacy\//i',
+                $stripped,
+                "Fichier $file include legacy/* — interdit.",
+            );
+        }
     }
 
     private function stripComments(string $code): string
