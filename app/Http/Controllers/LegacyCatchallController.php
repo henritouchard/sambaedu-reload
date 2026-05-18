@@ -340,6 +340,18 @@ class LegacyCatchallController extends Controller
             // `throw new \App\Exceptions\LegacyExitException(…);` à la volée
             // via `eval()` du contenu du fichier, puis on catch la sentinelle
             // comme une sortie normale.
+
+            // Reset l'état HTTP global PHP avant chaque exécution legacy.
+            // Les modules legacy appellent `header()` / `http_response_code()`
+            // nativement (ex: ipxe/Win10/action.php → 403, associations_out.php
+            // → 400). Dans les processus PHP long-running (PHPUnit, ou réutilisation
+            // de worker php-fpm), cet état persiste entre requêtes et pollue le
+            // status code lu plus bas — on capturait alors le code d'un module
+            // précédent. Un vhost classique repart d'un état neuf à chaque
+            // requête : on reproduit la même garantie ici.
+            @header_remove();
+            http_response_code(200);
+
             $initialObLevel = ob_get_level();
             ob_start();
             try {
