@@ -37,7 +37,9 @@ class IpxeAdminEndpointTest extends TestCase
         self::assertStringContainsString('chain --replace --autofree admin##params', $body);
         self::assertStringContainsString('text/plain', (string) $response->headers->get('Content-Type'));
         // Fix review #6 — assertions headers sécurité complètes au niveau Feature.
-        $response->assertHeader('Cache-Control', 'no-store');
+        // Symfony normalise `no-store` en `no-store, private` au send (cf.
+        // ResponseHeaderBag::computeCacheControlValue) ; on assert l'inclusion.
+        self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
         $response->assertHeader('X-Robots-Tag', 'noindex');
     }
 

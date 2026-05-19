@@ -356,7 +356,10 @@ class IpxeNamespaceTest extends TestCase
         ];
 
         foreach ($routes as $route) {
-            $pattern = '/Route::(?:match|get|post)\s*\([^;]*?' . $route['needle'] . '/';
+            // Délimiteur `@` (pas `/`) — les `needle` contiennent `/ipxe/...`
+            // qui sinon fermerait prématurément la regex et laisserait
+            // `ipxe/admin['"]` comme modifiers invalides (preg_match → false).
+            $pattern = '@Route::(?:match|get|post)\s*\([^;]*?' . $route['needle'] . '@';
             self::assertSame(
                 1,
                 preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE),

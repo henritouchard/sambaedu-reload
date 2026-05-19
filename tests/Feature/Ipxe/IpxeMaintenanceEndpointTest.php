@@ -35,7 +35,9 @@ class IpxeMaintenanceEndpointTest extends TestCase
         $body = (string) $response->getContent();
         self::assertStringContainsString('chain --replace --autofree maintenance##params', $body);
         // Fix review #6 — assertions headers sécurité complètes au niveau Feature.
-        $response->assertHeader('Cache-Control', 'no-store');
+        // Symfony normalise `no-store` en `no-store, private` au send (cf.
+        // ResponseHeaderBag::computeCacheControlValue) ; on assert l'inclusion.
+        self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
         $response->assertHeader('X-Robots-Tag', 'noindex');
     }
 

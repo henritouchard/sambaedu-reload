@@ -32,9 +32,13 @@ class IpxeActionResolverTest extends TestCase
 
     private function makeRequest(array $params = []): Request
     {
-        $request = Request::create('/ipxe/action/rescuecd', 'POST', $params);
+        // URL absolue : `Request::create('/ipxe/...')` parserait avec
+        // `http://localhost` et un `server->set('HTTP_HOST', ...)` ultérieur
+        // ne propage pas au headers bag — `getSchemeAndHttpHost()` resterait
+        // localhost. On passe l'host directement dans l'URL pour qu'il soit
+        // cohérent sur server + headers + parsed-host.
+        $request = Request::create('http://se4fs.lan/ipxe/action/rescuecd', 'POST', $params);
         $request->server->set('REMOTE_ADDR', '192.168.1.42');
-        $request->server->set('HTTP_HOST', 'se4fs.lan');
 
         return $request;
     }
