@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Gpo;
 
 use App\Gpo\Services\ReadUserManager;
 use App\Gpo\Services\VeyonConfigGenerator;
+use App\Gpo\Services\WorkstationConfigContextResolver;
 use App\Http\Controllers\Controller;
 use App\Services\AppCustomization\Contracts\AppContextRepository;
 use Illuminate\Http\Request;
@@ -96,6 +97,88 @@ class VeyonOutController extends Controller
             }
             Log::error('[VeyonOutController] serving JSON without BindPassword (read.user creation failed)', [
                 'id' => $id,
+            ]);
+        }
+
+        $body = (string) json_encode($json, JSON_PRETTY_PRINT);
+
+        return response($body, 200, [
+            'Content-Type' => 'application/json; charset=utf-8',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate',
+            'Pragma' => 'no-cache',
+        ]);
+    }
+
+    /**
+     * Story 16.13 — endpoint natif `GET /api/v1/workstation-config/veyon`.
+     *
+     * Pattern iso 16.12 strict : `workstation_uuid` extrait EXCLUSIVEMENT
+     * du JWT via `$request->attributes->get('auth_v1.workstation_uuid')`.
+     *
+     * Sous-action `licence=1` : sert le fichier licence raw (parité
+     * `serveLicence()`). Sinon : reconstruit le contexte via le resolver
+     * et délègue à `VeyonConfigGenerator::generate()`.
+     *
+     * Iso-fonctionnel avec `legacyOut()` : même Content-Type
+     * (`application/json; charset=utf-8` ou `application/octet-stream`
+     * pour licence), mêmes status. Déviation D5 : 404 explicite si
+     * `workstation_uuid` JWT inconnu en DB.
+     */
+    public function apiV1(Request $request, WorkstationConfigContextResolver $resolver): Response
+    {
+        // Sous-action `licence=1` — parité legacy (pas de JWT requis côté
+        // logique métier mais auth JWT déjà appliquée par le middleware).
+        $licence = (string) $request->input('licence', '');
+        if ($licence === '1') {
+            return $this->serveLicence();
+        }
+
+        $workstationUuid = (string) $request->attributes->get('auth_v1.workstation_uuid', '');
+        $userLogin = (string) $request->input('user', '');
+        $os = (string) $request->input('os', 'linux');
+        $userProfile = (string) $request->input('userprofile', '');
+
+        $context = $resolver->toAppContext($workstationUuid, $os, $userLogin, $userProfile);
+        if ($context === null) {
+            Log::channel('auth-v1')->warning('[VeyonOutController] workstation not found', [
+                'action_type' => 'agent.v1.config.workstation_not_found',
+                'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
+                'endpoint' => '/api/v1/workstation-config/veyon',
+            ]);
+            // Format JSON unifié post-review (Henri Q2).
+            return response()->json(['error' => 'workstation_not_found'], 404);
+        }
+
+        if ($context->machineName === '') {
+            return $this->emptyOk();
+        }
+
+        try {
+            $readPassword = $this->readUser->ensurePassword();
+        } catch (\Throwable $e) {
+            Log::error('[VeyonOutController] read.user resolution threw (apiV1)', [
+                'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
+                'error' => $e->getMessage(),
+            ]);
+            $readPassword = null;
+        }
+
+        try {
+            $json = $this->generator->generate($context, $readPassword ?? '');
+        } catch (\Throwable $e) {
+            Log::error('[VeyonOutController] generate failed (apiV1)', [
+                'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
+                'error' => $e->getMessage(),
+            ]);
+            return $this->emptyOk();
+        }
+
+        if ($readPassword === null) {
+            if (isset($json['LDAP']) && is_array($json['LDAP'])) {
+                unset($json['LDAP']['BindPassword']);
+            }
+            Log::error('[VeyonOutController] serving JSON without BindPassword (apiV1)', [
+                'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
             ]);
         }
 

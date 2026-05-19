@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Gpo;
 
 use App\Gpo\Services\NetworkScriptGenerator;
+use App\Gpo\Services\WorkstationConfigContextResolver;
 use App\Http\Controllers\Controller;
 use App\Services\AppCustomization\Contracts\AppContextRepository;
 use Illuminate\Http\Request;
@@ -87,6 +88,68 @@ class NetworkOutController extends Controller
         // @todo Story 16.4 : supprimer ce write debug (legacy debt).
         if (! app()->environment('testing')) {
             @file_put_contents('/tmp/network-' . $action . '-' . $id . '.log', $body);
+        }
+
+        return response($body, 200, [
+            'Content-Type' => 'text/plain; charset=utf-8',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate',
+            'Pragma' => 'no-cache',
+        ]);
+    }
+
+    /**
+     * Story 16.13 — endpoint natif `GET /api/v1/workstation-config/network`.
+     *
+     * Pattern iso 16.12 strict : `workstation_uuid` extrait EXCLUSIVEMENT
+     * du JWT via `$request->attributes->get('auth_v1.workstation_uuid')`.
+     * Aucun lookup APCu md5 — résolution serveur DB via
+     * `WorkstationConfigContextResolver`.
+     *
+     * Iso-fonctionnel avec `legacyOut()` : mêmes Content-Type
+     * (`text/plain; charset=utf-8`), mêmes status (200 + body=""), mêmes
+     * actions (startup/logon), même restriction OS=linux. Déviation D5 :
+     * 404 explicite si `workstation_uuid` JWT inconnu en DB (vs 200 vide
+     * legacy).
+     */
+    public function apiV1(Request $request, WorkstationConfigContextResolver $resolver): Response
+    {
+        $workstationUuid = (string) $request->attributes->get('auth_v1.workstation_uuid', '');
+        $action = (string) $request->input('action', '');
+        $os = (string) $request->input('os', 'linux');
+        $userLogin = (string) $request->input('user', '');
+        $userProfile = (string) $request->input('userprofile', '');
+
+        // Iso-legacy : action ∉ {startup, logon} ou os ≠ linux → body vide.
+        if (! in_array($action, ['startup', 'logon'], true) || $os !== 'linux') {
+            return $this->emptyOk();
+        }
+
+        $context = $resolver->toAppContext($workstationUuid, $os, $userLogin, $userProfile);
+        if ($context === null) {
+            // Déviation D5 — observabilité admin.
+            Log::channel('auth-v1')->warning('[NetworkOutController] workstation not found', [
+                'action_type' => 'agent.v1.config.workstation_not_found',
+                'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
+                'endpoint' => '/api/v1/workstation-config/network',
+            ]);
+            // Format JSON unifié post-review (Henri Q2).
+            return response()->json(['error' => 'workstation_not_found'], 404);
+        }
+
+        try {
+            $body = match ($action) {
+                'startup' => $this->generator->buildStartup($context, $os),
+                'logon' => $this->generator->buildLogon($context, $os),
+                default => '',
+            };
+        } catch (\Throwable $e) {
+            Log::error('[NetworkOutController] apiV1 failed', [
+                'action' => $action,
+                'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
+                'os' => $os,
+                'error' => $e->getMessage(),
+            ]);
+            return $this->emptyOk();
         }
 
         return response($body, 200, [

@@ -1261,3 +1261,261 @@ Cert pinning explicite (épingler le SHA256 du CA SambaEdu dans le wrapper) — 
 - [ ] Wrapper Linux : `curl -fsS` (sans `-k` post Q5) + `jq` fallback `python3` + retry `for i in 1 2 3`.
 - [ ] Vérification TLS stricte Phase 2 : `Invoke-RestMethod`/`curl` fail-closed si CA root SambaEdu absent du poste (cf. Section 24 post-review Q5).
 
+## Story 16.13 — Exposition endpoints natifs `/api/v1/workstation-config/*`
+
+> Append-only — 8 endpoints natifs réutilisant les controllers 4.7 / 4.8 / 16.3a/b/c / 16.7. Authentification JWT `auth.v1.workstation` (16.10), `workstation_uuid` extrait du claim `sub` (pattern iso 16.12 strict — jamais depuis query/body user-controlled). Les endpoints legacy `*_out.php` restent inchangés (transformés en `MigrationController` en 16.13bis).
+>
+> **Note post-review 2026-05-19 (Henri Q4)** : préfixe des routes mis à jour de `/api/v1/{...}` plat vers `/api/v1/workstation-config/{...}` pour désambiguïser avec ControlHub et matérialiser la nature « configuration poste » des endpoints. Les URLs ci-dessous reflètent le préfixe final.
+
+### Pré-requis communs 16.13
+
+- VM up + composer install à jour + `php artisan migrate` (les tables `workstations`, `workstation_groups`, `users` existent et sont seedées).
+- JWT de test émis via tinker :
+  ```bash
+  php artisan tinker
+  $issuer = app(\App\Auth\V1\Jwt\WorkstationJwtIssuer::class);
+  $jwt = $issuer->issue('<uuid-poste-valide>', 'workstation');
+  echo $jwt['access_token'];
+  ```
+- Au moins une `Workstation` en base avec `uuid` matchant le claim JWT `sub`.
+- Pour les scénarios « parité legacy » : avoir un `id` md5 APCu encore valide (poste en cours de boot legacy — la session APCu expire en 1800s).
+
+### Section 24 — Endpoints `/api/v1/workstation-config/*` happy path + auth
+
+#### Scénario 16.13-1 — Happy path wallpaper
+
+```bash
+JWT=<token>
+UUID=<uuid-poste>
+curl -s -o /tmp/wp.png -w "%{http_code} %{content_type}\n" \
+  -H "Authorization: Bearer $JWT" \
+  "https://localhost/api/v1/workstation-config/wallpaper?action=wallpaper&os=linux&format=png"
+file /tmp/wp.png
+```
+
+Attendu :
+- HTTP `200`, Content-Type `image/png`
+- `file /tmp/wp.png` → `PNG image data`
+- Header `Cache-Control: no-store, no-cache, must-revalidate, private` (posé par middleware `auth.v1.secure-headers` 16.10)
+
+#### Scénario 16.13-2 — Endpoint sans Authorization (jwt.missing)
+
+```bash
+curl -s -o /tmp/resp.json -w "%{http_code}\n" \
+  "https://localhost/api/v1/workstation-config/firefox"
+cat /tmp/resp.json
+```
+
+Attendu :
+- HTTP `401`
+- Body JSON `{"error":"unauthorized","message":"Missing Authorization header","code":"jwt.missing"}`
+
+#### Scénario 16.13-3 — JWT expiré (jwt.expired)
+
+Émettre un JWT avec `exp` passé (`-2 days`) via tinker :
+```bash
+php artisan tinker
+$payload = [
+    'iss' => 'sambaedu-test',
+    'sub' => '<uuid>',
+    'iat' => now()->subDays(2)->timestamp,
+    'exp' => now()->subDay()->timestamp,
+    'jti' => \Illuminate\Support\Str::uuid()->toString(),
+    'tier' => 'workstation',
+    'kid' => config('auth_v1.jwt.active_kid'),
+];
+$priv = file_get_contents(config('auth_v1.jwt.keys.'.config('auth_v1.jwt.active_kid').'.private'));
+echo \Firebase\JWT\JWT::encode($payload, $priv, 'RS256', $payload['kid']);
+```
+
+Puis :
+```bash
+curl -s -H "Authorization: Bearer $JWT_EXPIRED" \
+  "https://localhost/api/v1/workstation-config/network?action=startup&os=linux"
+```
+
+Attendu : HTTP `401` + `code: jwt.expired`.
+
+#### Scénario 16.13-4 — JWT tier=controlhub (jwt.wrong_tier)
+
+Émettre un JWT avec `tier=controlhub` puis :
+```bash
+curl -s -H "Authorization: Bearer $JWT_CTRLHUB" \
+  "https://localhost/api/v1/workstation-config/veyon"
+```
+
+Attendu : HTTP `401` + `code: jwt.wrong_tier`.
+
+#### Scénario 16.13-4bis — JWT révoqué (jwt.revoked) — AC2.5 (post-review F1 + Q1)
+
+Émettre un JWT valide puis enregistrer son `jti` en
+`workstation_jwt_revocations` (via tinker `\App\Auth\V1\Models\WorkstationJwtRevocation::create(...)`).
+
+```bash
+curl -s -H "Authorization: Bearer $JWT_REVOKED" \
+  "https://localhost/api/v1/workstation-config/wallpaper"
+```
+
+Attendu : HTTP `401` + body JSON `{"code":"jwt.revoked", ...}` (le middleware
+`auth.v1.workstation` 16.10 lit DB + cache APCu).
+
+### Section 25 — Résolution serveur du contexte (workstation_uuid JWT)
+
+#### Scénario 16.13-5 — `workstation_uuid` query string ignoré (preuve binaire forte)
+
+> Post-review F5 + Opus-21 : preuve binaire forte. Le JWT signe UUID_A
+> (poste seedé). On passe UUID_B **non seedé** en query. Si la query
+> était lue → 404. Si le JWT prime → 200 image.
+
+```bash
+# JWT signe sub=UUID_A (poste seedé en DB)
+JWT=<token-pour-UUID_A>
+# UUID_B inexistant en DB
+UUID_B=99999999-9999-4999-9999-999999999999
+curl -s -H "Authorization: Bearer $JWT" \
+  "https://localhost/api/v1/workstation-config/wallpaper?workstation_uuid=$UUID_B&action=wallpaper&os=linux&format=jpg" \
+  -o /tmp/wallpaper-jwt-vs-query.jpg -w "%{http_code} %{content_type}\n"
+file /tmp/wallpaper-jwt-vs-query.jpg
+```
+
+Attendu :
+- HTTP `200`, Content-Type `image/jpeg`
+- `file` → `JPEG image data` (preuve forte : UUID_A résolu via JWT, UUID_B query ignoré)
+
+#### Scénario 16.13-6 — UUID JWT inconnu en DB → 404 + log warning
+
+```bash
+JWT_UNKNOWN=<token-pour-uuid-inexistant>
+curl -s -H "Authorization: Bearer $JWT_UNKNOWN" \
+  -o /tmp/notfound.json -w "%{http_code} %{content_type}\n" \
+  "https://localhost/api/v1/workstation-config/wallpaper?action=wallpaper&os=linux"
+cat /tmp/notfound.json
+```
+
+Attendu :
+- HTTP `404`, Content-Type `application/json`
+- Body JSON `{"error":"workstation_not_found"}` (format unifié post-review Henri Q2)
+- `tail storage/logs/auth-v1/*.log` contient `agent.v1.config.workstation_not_found` + `workstation_uuid_prefix=<8-chars>`
+
+### Section 26 — Parité iso-fonctionnelle legacy vs natif
+
+#### Scénario 16.13-7 — `/api/v1/workstation-config/wallpaper` vs `/sambaedu/gpo/wallpaper_out.php`
+
+Pour un poste en cours de boot legacy (id md5 APCu encore valide) :
+```bash
+ID_MD5=<md5-valide>
+curl -s "https://localhost/sambaedu/gpo/wallpaper_out.php?action=wallpaper&id=$ID_MD5&format=png" -o /tmp/wp-legacy.png
+curl -s -H "Authorization: Bearer $JWT" \
+  "https://localhost/api/v1/workstation-config/wallpaper?action=wallpaper&os=linux&format=png" -o /tmp/wp-native.png
+
+file /tmp/wp-legacy.png /tmp/wp-native.png
+ls -l /tmp/wp-legacy.png /tmp/wp-native.png
+```
+
+Attendu :
+- Les 2 fichiers sont des `PNG image data`
+- Tailles **équivalentes** (variations admises si user/salle diffèrent — sinon strictement égales)
+- Les 2 endpoints retournent Content-Type `image/png` + Cache-Control `no-store`
+
+#### Scénario 16.13-8 — `/api/v1/workstation-config/network` vs `/sambaedu/gpo/network_out.php`
+
+```bash
+curl -s "https://localhost/sambaedu/gpo/network_out.php?action=startup&id=$ID_MD5&os=linux" -o /tmp/net-legacy.sh
+curl -s -H "Authorization: Bearer $JWT" \
+  "https://localhost/api/v1/workstation-config/network?action=startup&os=linux&user=jdoe" -o /tmp/net-native.sh
+diff /tmp/net-legacy.sh /tmp/net-native.sh
+```
+
+Attendu :
+- Les 2 scripts sont des `text/plain` bash
+- Diff vide ou différences cosmétiques uniquement (timestamps de generation)
+
+### Section 27 — Non-régression legacy et 16.10/16.11/16.12
+
+#### Scénario 16.13-9 — Fragment injection sur `wallpaper_out` (non-régression 16.11-3/4)
+
+Re-jouer scénarios 16.11-7 (Windows) et 16.11-8 (Linux) :
+- Poste non-migré hit `gpo/wallpaper_out.php` → fragment cmd/sh injecté en préfixe
+- Poste déjà migré hit `gpo/wallpaper_out.php` → pas de fragment
+
+Attendu : comportement inchangé par la story 16.13.
+
+#### Scénario 16.13-10 — `/api/v1/script-execution-logs` (non-régression 16.12-1)
+
+```bash
+curl -s -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+  -X POST -d '{"script_name":"test","status":"success","started_at":"2026-05-19T10:00:00Z","exit_code":0,"workstation_uuid":"<uuid>"}' \
+  "https://localhost/api/v1/script-execution-logs"
+```
+
+Attendu : HTTP `201` + idempotence via `correlation_id` (relance = `201` quand-même iso 16.12).
+
+#### Scénario 16.13-11 — `/api/v1/agent/ping` (non-régression 16.10-5/6)
+
+```bash
+curl -s -H "Authorization: Bearer $JWT" "https://localhost/api/v1/agent/ping"
+```
+
+Attendu : HTTP `200` + body JSON `{success: true, workstation_uuid, api_version: "v1", ...}`.
+
+### Section 28 — Smoke route registry
+
+#### Scénario 16.13-12 — `php artisan route:list | grep "workstation-config"`
+
+```bash
+php artisan route:list | grep "workstation-config"
+```
+
+Attendu (les 8 nouvelles routes 16.13 sous le nouveau préfixe Q4) :
+```
+GET      api/v1/workstation-config/wallpaper                ............... agent.v1.config.wallpaper            › WallpaperController@apiV1
+GET      api/v1/workstation-config/firefox                  ............... agent.v1.config.firefox              › AppPolicyController@apiV1Firefox
+GET      api/v1/workstation-config/thunderbird              ............... agent.v1.config.thunderbird          › AppPolicyController@apiV1Thunderbird
+GET      api/v1/workstation-config/shortcuts                ............... agent.v1.config.shortcuts            › Api\v1\ShortcutExportController@apiV1
+GET      api/v1/workstation-config/network                  ............... agent.v1.config.network              › Gpo\NetworkOutController@apiV1
+GET      api/v1/workstation-config/veyon                    ............... agent.v1.config.veyon                › Gpo\VeyonOutController@apiV1
+GET|POST api/v1/workstation-config/associations             ............... agent.v1.config.associations         › Gpo\AssociationsOutController@apiV1
+GET      api/v1/workstation-config/applications-scripts     ............... agent.v1.config.applications-scripts › Gpo\ApplicationsScriptsController@apiV1
+```
+
++ 4 routes 16.10/16.11 sous `agent.v1.*` (enroll, refresh, ping, bootstrap.cmd, bootstrap.sh) + 1 route 16.12 (`scriptsos.logs.ingest`).
+
+Vérification anti-régression Q4 : aucune route plate ne doit subsister :
+```bash
+php artisan route:list | grep -E "api/v1/(wallpaper|firefox|thunderbird|shortcuts|network|veyon|associations|applications-scripts)$"
+```
+Attendu : `0` résultat.
+
+## Checklist rapide 16.13
+
+- [ ] `php artisan route:list | grep "workstation-config"` affiche les 8 routes nommées `agent.v1.config.*` sous `/api/v1/workstation-config/`.
+- [ ] `curl https://localhost/api/v1/workstation-config/wallpaper` (sans Auth) → `401` + `code: jwt.missing`.
+- [ ] `curl -H "Authorization: Bearer <JWT_EXPIRED>" /api/v1/workstation-config/network` → `401` + `code: jwt.expired`.
+- [ ] `curl -H "Authorization: Bearer <JWT_tier=controlhub>" /api/v1/workstation-config/veyon` → `401` + `code: jwt.wrong_tier`.
+- [ ] `curl -H "Authorization: Bearer <JWT_REVOKED>" /api/v1/workstation-config/wallpaper` → `401` + `code: jwt.revoked` (post-review F1/Q1).
+- [ ] `curl -H "Authorization: Bearer <JWT_UNKNOWN_UUID>" /api/v1/workstation-config/wallpaper?action=wallpaper` → `404` + body JSON `{"error":"workstation_not_found"}` (post-review Q2).
+- [ ] Happy path JWT valide + Workstation seedée → `200` + Content-Type attendu (jpeg/png/json/text/plain selon endpoint).
+- [ ] `workstation_uuid` query string ignoré (post-review F5 : UUID_A seedé via JWT + UUID_B inexistant en query → 200 image, preuve binaire forte).
+- [ ] Legacy `*_out.php` répondent toujours (non-régression 16.10/16.11 — re-jouer 16.10-22 et 16.11-7/8).
+- [ ] `/api/v1/agent/ping` répond `200` (non-régression 16.10).
+- [ ] `/api/v1/script-execution-logs` répond `201` (non-régression 16.12).
+- [ ] `tail storage/logs/auth-v1/*.log` mentionne `agent.v1.config.workstation_not_found` aux 404 (observabilité D5).
+- [ ] `grep -rn "input('workstation_uuid'\|query('workstation_uuid'" app/Http/Controllers app/Gpo` → 0 résultat (AC2.6).
+
+## Post-correctifs 2026-05-19 (review code-review 16.13)
+
+| Item | Description | Statut |
+|---|---|---|
+| F1 + Q1 | Test JWT révoqué AC2.5 explicite | Corrigé — `ApiV1ConfigSecurityTest::revoked_jwt_returns_401_revoked` |
+| F2 | Double lookup `AppPolicyController::resolveNative` | Corrigé — unique appel `resolver->resolve()` puis `resolveAppPolicyScope` |
+| F3 | Commentaire trompeur `composeWallpaperResponse` | Corrigé — PHPDoc clarifié |
+| F4 | `$resolver` inutilisé `ShortcutExportController::apiV1` | Corrigé — lookup via resolver, import `Workstation` supprimé |
+| F5 + Opus-21 | Test `workstation_uuid_query_is_ignored` preuve faible | Corrigé — refactor wallpaper UUID_A seedé vs UUID_B inexistant |
+| F6 | Couverture repository fail-fast 2/6 endpoints | Corrigé — 6 endpoints + 3 mocks fail-fast |
+| F7 + Q2 | Format 404 incohérent (text/plain vs JSON) | Corrigé — JSON unifié `{"error":"workstation_not_found"}` sur 7 controllers |
+| F8 | Tests Wallpaper skip global Imagick | Corrigé — check déporté dans 3 tests |
+| Q4 | Préfixe routes `/api/v1/workstation-config/*` | Corrigé — 8 routes + 9 tests + archi + runbook QA |
+| Opus-11 | Cache-Control redondant controllers | Corrigé — header délégué au middleware `auth.v1.secure-headers` |
+| Opus-14 | Garde-fou SQLite resolver test | Corrigé — `markTestSkipped` si non-sqlite |
+| Q3 | Validation regex inputs query | **Différé** — story hardening dédiée post-16.13 |
+
