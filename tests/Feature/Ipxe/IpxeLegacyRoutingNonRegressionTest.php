@@ -118,4 +118,70 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
             . 'legacy (sera réécrit par Story 3.4).',
         );
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.2 — AC6.2 / T6.6 — non-régression catchall pour les routes
+     * 3.3-3.7 + court-circuit pour les routes natives 3.2.
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_serves_ipxe_admin_natively_not_via_catchall(): void
+    {
+        $countBefore = \App\Models\LegacyCatchallLog::query()->count();
+
+        $this->get('/ipxe/admin');
+
+        $countAfter = \App\Models\LegacyCatchallLog::query()->count();
+
+        self::assertSame(
+            $countBefore,
+            $countAfter,
+            'La route native /ipxe/admin (3.2) a généré une row dans legacy_catchall_logs '
+            . '— ordre des routes incorrect (route 3.2 derrière le catchall ?).',
+        );
+    }
+
+    #[Test]
+    public function it_serves_ipxe_maintenance_natively_not_via_catchall(): void
+    {
+        $countBefore = \App\Models\LegacyCatchallLog::query()->count();
+
+        $this->get('/ipxe/maintenance');
+
+        self::assertSame(
+            $countBefore,
+            \App\Models\LegacyCatchallLog::query()->count(),
+            '/ipxe/maintenance (3.2) ne doit pas passer par le catchall',
+        );
+    }
+
+    #[Test]
+    public function it_serves_ipxe_action_natively_not_via_catchall(): void
+    {
+        $countBefore = \App\Models\LegacyCatchallLog::query()->count();
+
+        $this->get('/ipxe/action/rescuecd');
+
+        self::assertSame(
+            $countBefore,
+            \App\Models\LegacyCatchallLog::query()->count(),
+            '/ipxe/action/rescuecd (3.2) ne doit pas passer par le catchall',
+        );
+    }
+
+    #[Test]
+    public function it_still_serves_ipxe_clonage_via_catchall(): void
+    {
+        $this->get('/ipxe/clonage.php');
+
+        $found = \App\Models\LegacyCatchallLog::query()
+            ->where('path', 'like', '%ipxe/clonage.php%')
+            ->exists();
+
+        self::assertTrue(
+            $found,
+            '/ipxe/clonage.php devrait continuer à être servi par le catchall '
+            . 'jusqu\'à la Story 3.7.',
+        );
+    }
 }

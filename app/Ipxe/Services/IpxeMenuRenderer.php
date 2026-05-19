@@ -47,11 +47,24 @@ final class IpxeMenuRenderer
      * Rend le préambule iPXE de premier appel (handshake — sans paramètres).
      *
      * Iso-legacy `boot.php:26-35`.
+     *
+     * Story 3.2 — D5 / AC4.1 — extension rétrocompat avec un paramètre
+     * optionnel `$chainTarget` :
+     *
+     *  - `null` (défaut)      → rendu iso-3.1 `chain --replace --autofree boot##params`.
+     *  - `'admin'`            → `chain ... admin##params` (handshake `/ipxe/admin`).
+     *  - `'maintenance'`      → `chain ... maintenance##params` (handshake `/ipxe/maintenance`).
+     *  - `'action/rescuecd'`  → `chain ... action/rescuecd##params` (handshake
+     *     d'une action spécifique).
+     *
+     * Pas de logique côté renderer — la substitution est entièrement déléguée
+     * au template Blade qui lit `$chainTarget ?? 'boot'`.
      */
-    public function renderHandshake(): string
+    public function renderHandshake(?string $chainTarget = null): string
     {
         return $this->viewFactory->make('ipxe.menu.handshake', [
             'shebang' => self::IPXE_SHEBANG,
+            'chainTarget' => $chainTarget,
         ])->render();
     }
 
@@ -121,6 +134,78 @@ final class IpxeMenuRenderer
             'resolutionPng' => $this->resolveBackgroundPng(),
             'menuTimeoutMs' => (int) config('ipxe.menu.default_timeout_ms', 5000),
             'menuDefault' => $sanitizedAction !== null ? 'action' : 'default',
+            'bootDiskFallback' => $this->renderBootDiskFallback(),
+        ])->render();
+    }
+
+    /**
+     * Story 3.2 — AC4.2 — Rend le menu admin natif
+     * (`resources/views/ipxe/menu/admin.blade.php`).
+     *
+     * Port simplifié du legacy `sambaedu/ipxe/admin.php` :
+     *
+     *  - **Items connus** ($ws non null) : maintenance + retour boot + shell
+     *    + exit.
+     *  - **Items inconnus** ($ws null — D7) : message neutre + exit + retour
+     *    boot (pas d'item maintenance, pas d'enrollment — déféré 3.3).
+     *
+     * **Anti-pattern** : pas de login AD ici (parité D3/D8 de 3.1 — un
+     * firmware iPXE n'a pas de notion de session).
+     *
+     * @param  Workstation|null  $ws            Poste résolu via {@see WorkstationLocator}.
+     * @param  string  $ip                      Adresse IP du poste.
+     * @param  string  $serverBaseUrl           URL de base du SE4FS pour les
+     *                                          chains iPXE.
+     */
+    public function renderAdminMenu(?Workstation $ws, string $ip, string $serverBaseUrl): string
+    {
+        $isKnown = $ws !== null;
+
+        return $this->viewFactory->make('ipxe.menu.admin', [
+            'shebang' => self::IPXE_SHEBANG,
+            'workstationName' => $isKnown
+                ? $this->sanitizeAscii((string) ($ws->name ?? 'unknown'))
+                : 'unknown',
+            'ip' => $ip,
+            'mac' => $isKnown ? (string) ($ws->mac ?? '') : '',
+            'uuid' => $isKnown ? $this->sanitizeAscii((string) ($ws->uuid ?? '')) : '',
+            'serverBaseUrl' => rtrim($serverBaseUrl, '/'),
+            'resolutionX' => (int) config('ipxe.menu.resolution_x', 1024),
+            'resolutionY' => (int) config('ipxe.menu.resolution_y', 768),
+            'resolutionPng' => $this->resolveBackgroundPng(),
+            'menuTimeoutMs' => (int) config('ipxe.admin.menu_timeout_ms', 30000),
+            'bootDiskFallback' => $this->renderBootDiskFallback(),
+            'isKnown' => $isKnown,
+        ])->render();
+    }
+
+    /**
+     * Story 3.2 — AC4.3 — Rend le menu maintenance natif
+     * (`resources/views/ipxe/menu/maintenance.blade.php`).
+     *
+     * Port du legacy `sambaedu/ipxe/maintenance.php` :
+     *
+     *  - Items rendus identiques quelle que soit la résolution Workstation
+     *    (parité legacy `maintenance.php:15` qui ne bloque pas un poste
+     *    inconnu — un poste neuf en factory_reset n'a pas d'enrollment).
+     *  - 6 items : rescuecd, winpe, factory_reset, shell, retour /ipxe/admin,
+     *    exit.
+     */
+    public function renderMaintenanceMenu(?Workstation $ws, string $ip, string $serverBaseUrl): string
+    {
+        return $this->viewFactory->make('ipxe.menu.maintenance', [
+            'shebang' => self::IPXE_SHEBANG,
+            'workstationName' => $ws !== null
+                ? $this->sanitizeAscii((string) ($ws->name ?? 'unknown'))
+                : 'unknown',
+            'ip' => $ip,
+            'mac' => $ws !== null ? (string) ($ws->mac ?? '') : '',
+            'uuid' => $ws !== null ? $this->sanitizeAscii((string) ($ws->uuid ?? '')) : '',
+            'serverBaseUrl' => rtrim($serverBaseUrl, '/'),
+            'resolutionX' => (int) config('ipxe.menu.resolution_x', 1024),
+            'resolutionY' => (int) config('ipxe.menu.resolution_y', 768),
+            'resolutionPng' => (string) config('ipxe.maintenance.background_png', 'png/sysrescuecd.png'),
+            'menuTimeoutMs' => (int) config('ipxe.maintenance.menu_timeout_ms', 10000),
             'bootDiskFallback' => $this->renderBootDiskFallback(),
         ])->render();
     }

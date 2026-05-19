@@ -69,8 +69,11 @@ class IpxeMenuRendererTest extends TestCase
     }
 
     #[Test]
-    public function it_renders_known_menu_contains_login_and_default_items(): void
+    public function it_renders_known_menu_with_login_chain_to_native_admin(): void
     {
+        // Story 3.2 — AC4.4 — la chain `:login` cible maintenant la route
+        // native `/ipxe/admin` (sans `.php`) au lieu du legacy
+        // `/ipxe/admin.php`. Test mis à jour iso AC4.4.
         $ws = Workstation::create([
             'name' => 'PC-SALLE-101',
             'uuid' => 'abcdef12-3456-7890-abcd-ef1234567890',
@@ -87,7 +90,10 @@ class IpxeMenuRendererTest extends TestCase
         self::assertStringContainsString('item --key 3 default', $body);
         self::assertStringContainsString(':login', $body);
         self::assertStringContainsString(':default', $body);
-        self::assertStringContainsString('http://se4fs.lan/ipxe/admin.php', $body);
+        // Story 3.2 — la cible native :
+        self::assertStringContainsString('http://se4fs.lan/ipxe/admin##params', $body);
+        // Story 3.2 — l'ancienne cible legacy NE DOIT PLUS être présente :
+        self::assertStringNotContainsString('/ipxe/admin.php##params', $body);
     }
 
     #[Test]
@@ -151,6 +157,218 @@ class IpxeMenuRendererTest extends TestCase
         self::assertStringNotContainsString('<?php', $body);
         self::assertStringNotContainsString('<?=', $body);
         self::assertStringNotContainsString('?>', $body);
+    }
+
+    /* ------------------------------------------------------------------
+     * Story 3.2 — AC4.1 / AC4.2 / AC4.3 — handshake parametré + admin + maintenance
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_renders_handshake_without_target_iso_31(): void
+    {
+        // Non-régression critique : renderHandshake() sans param doit
+        // continuer à rendre la chaîne `chain ... boot##params` iso-3.1.
+        $body = $this->renderer->renderHandshake();
+
+        self::assertStringContainsString('chain --replace --autofree boot##params', $body);
+        self::assertStringNotContainsString('admin##params', $body);
+        self::assertStringNotContainsString('maintenance##params', $body);
+    }
+
+    #[Test]
+    public function it_renders_handshake_with_admin_target_chains_to_admin(): void
+    {
+        $body = $this->renderer->renderHandshake('admin');
+
+        self::assertStringContainsString('chain --replace --autofree admin##params', $body);
+        self::assertStringNotContainsString('boot##params', $body);
+    }
+
+    #[Test]
+    public function it_renders_handshake_with_maintenance_target(): void
+    {
+        $body = $this->renderer->renderHandshake('maintenance');
+
+        self::assertStringContainsString('chain --replace --autofree maintenance##params', $body);
+    }
+
+    #[Test]
+    public function it_renders_handshake_with_action_target_chains_to_action_path(): void
+    {
+        $body = $this->renderer->renderHandshake('action/rescuecd');
+
+        self::assertStringContainsString('chain --replace --autofree action/rescuecd##params', $body);
+    }
+
+    #[Test]
+    public function it_renders_admin_menu_for_known_workstation(): void
+    {
+        $ws = Workstation::create([
+            'name' => 'PC-SALLE-101',
+            'uuid' => 'abcdef12-3456-7890-abcd-ef1234567890',
+            'mac' => 'aa:bb:cc:dd:ee:ff',
+            'status' => 'active',
+        ]);
+
+        $body = $this->renderer->renderAdminMenu($ws, '192.168.1.42', 'http://se4fs.lan');
+
+        self::assertStringStartsWith('#!ipxe', $body);
+        self::assertStringContainsString('PC-SALLE-101', $body);
+        self::assertStringContainsString('item --key m maintenance', $body);
+        self::assertStringContainsString('item --key x exit', $body);
+        self::assertStringContainsString('item --key r retour', $body);
+        // Chain vers /ipxe/maintenance natif.
+        self::assertStringContainsString(':maintenance', $body);
+        self::assertStringContainsString('http://se4fs.lan/ipxe/maintenance##params', $body);
+        // Chain retour vers /ipxe/boot.
+        self::assertStringContainsString('http://se4fs.lan/ipxe/boot##params', $body);
+        // Pas d'item enrollment (= scope 3.3).
+        self::assertStringNotContainsString('item --key n set-name', $body);
+    }
+
+    #[Test]
+    public function it_renders_admin_menu_minimal_for_unknown(): void
+    {
+        $body = $this->renderer->renderAdminMenu(null, '192.168.1.42', 'http://se4fs.lan');
+
+        self::assertStringStartsWith('#!ipxe', $body);
+        // Message neutre poste non enregistre.
+        self::assertStringContainsString('Poste non enregistre', $body);
+        self::assertStringContainsString('Story 3.3', $body);
+        // Items exit + retour toujours présents.
+        self::assertStringContainsString('item --key x exit', $body);
+        self::assertStringContainsString('item --key r retour', $body);
+        // Pas d'item maintenance (poste inconnu).
+        self::assertStringNotContainsString('item --key m maintenance', $body);
+    }
+
+    #[Test]
+    public function it_renders_admin_menu_with_timeout_from_config(): void
+    {
+        \Illuminate\Support\Facades\Config::set('ipxe.admin.menu_timeout_ms', 30000);
+
+        $ws = Workstation::create([
+            'name' => 'PC-X',
+            'uuid' => 'aaaa1111-bbbb-cccc-dddd-eeeeffffaaaa',
+            'mac' => 'aa:bb:cc:dd:ee:ff',
+            'status' => 'active',
+        ]);
+
+        $body = $this->renderer->renderAdminMenu($ws, '192.168.1.42', 'http://se4fs.lan');
+
+        self::assertStringContainsString('set menu-timeout 30000', $body);
+    }
+
+    #[Test]
+    public function it_renders_maintenance_menu_with_all_items(): void
+    {
+        $ws = Workstation::create([
+            'name' => 'PC-MNT-1',
+            'uuid' => 'bbbbcccc-1111-2222-3333-444455556666',
+            'mac' => 'aa:bb:cc:dd:ee:01',
+            'status' => 'active',
+        ]);
+
+        $body = $this->renderer->renderMaintenanceMenu($ws, '192.168.1.50', 'http://se4fs.lan');
+
+        self::assertStringStartsWith('#!ipxe', $body);
+        self::assertStringContainsString('item --key c rescuecd', $body);
+        self::assertStringContainsString('item --key w winpe', $body);
+        self::assertStringContainsString('item --key f factory_reset', $body);
+        self::assertStringContainsString('item --key s shell', $body);
+        self::assertStringContainsString('item --key r retour', $body);
+        self::assertStringContainsString('item --key x exit', $body);
+
+        // Chains vers actions natives.
+        self::assertStringContainsString('http://se4fs.lan/ipxe/action/rescuecd##params', $body);
+        self::assertStringContainsString('http://se4fs.lan/ipxe/action/winpe##params', $body);
+        self::assertStringContainsString('http://se4fs.lan/ipxe/action/factory_reset##params', $body);
+        // Chain retour vers /ipxe/admin (pas /ipxe/boot).
+        self::assertStringContainsString('http://se4fs.lan/ipxe/admin##params', $body);
+    }
+
+    #[Test]
+    public function it_renders_maintenance_menu_uses_sysrescuecd_background(): void
+    {
+        $body = $this->renderer->renderMaintenanceMenu(null, '192.168.1.50', 'http://se4fs.lan');
+
+        self::assertStringContainsString('png/sysrescuecd.png', $body);
+    }
+
+    #[Test]
+    public function it_renders_maintenance_menu_serves_unknown_workstation(): void
+    {
+        // Parité legacy `maintenance.php:15` — un poste inconnu peut consulter
+        // le menu maintenance (notamment factory_reset pour un poste neuf).
+        $body = $this->renderer->renderMaintenanceMenu(null, '192.168.1.50', 'http://se4fs.lan');
+
+        self::assertStringContainsString('item --key c rescuecd', $body);
+        self::assertStringContainsString('item --key f factory_reset', $body);
+    }
+
+    #[Test]
+    public function it_renders_admin_and_maintenance_templates_have_no_php_tags(): void
+    {
+        $ws = Workstation::create([
+            'name' => 'PC-T',
+            'uuid' => '11111111-1111-1111-1111-111111111111',
+            'mac' => 'aa:bb:cc:dd:ee:f2',
+            'status' => 'active',
+        ]);
+
+        $admin = $this->renderer->renderAdminMenu($ws, '192.168.1.10', 'http://se4fs.lan');
+        $mnt = $this->renderer->renderMaintenanceMenu($ws, '192.168.1.10', 'http://se4fs.lan');
+
+        foreach ([$admin, $mnt] as $body) {
+            self::assertStringNotContainsString('<?php', $body);
+            self::assertStringNotContainsString('<?=', $body);
+            self::assertStringNotContainsString('?>', $body);
+        }
+    }
+
+    /* ------------------------------------------------------------------
+     * Story 3.2 — Correctif review #1 (params block iso-legacy)
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_renders_admin_menu_with_params_block_for_chain_namespace(): void
+    {
+        // Fix review #1 / pertinence 3 — sans bloc params en tête, les chain
+        // ##params injectent un namespace vide → MachineBootLog audit cassé.
+        // Iso-legacy `sambaedu/ipxe/admin.php:69-74`.
+        $ws = Workstation::create([
+            'name' => 'PC-PARAMS-A',
+            'uuid' => 'abcdef12-3456-7890-abcd-ef1234567890',
+            'mac' => 'aa:bb:cc:dd:ee:ff',
+            'status' => 'active',
+        ]);
+
+        $body = $this->renderer->renderAdminMenu($ws, '192.168.1.42', 'http://se4fs.lan');
+
+        self::assertStringContainsString('param mac ', $body);
+        self::assertStringContainsString('param uuid ', $body);
+        // Les valeurs (mac + uuid) doivent bien apparaitre dans le bloc params.
+        self::assertStringContainsString('param mac aa:bb:cc:dd:ee:ff', $body);
+        self::assertStringContainsString('param uuid abcdef12-3456-7890-abcd-ef1234567890', $body);
+    }
+
+    #[Test]
+    public function it_renders_maintenance_menu_with_params_block_for_chain_namespace(): void
+    {
+        // Fix review #1 — iso-legacy `sambaedu/ipxe/maintenance.php:19-22`.
+        $ws = Workstation::create([
+            'name' => 'PC-PARAMS-M',
+            'uuid' => 'bbbbcccc-1111-2222-3333-444455556666',
+            'mac' => 'aa:bb:cc:dd:ee:01',
+            'status' => 'active',
+        ]);
+
+        $body = $this->renderer->renderMaintenanceMenu($ws, '192.168.1.50', 'http://se4fs.lan');
+
+        self::assertStringContainsString('param mac ', $body);
+        self::assertStringContainsString('param uuid ', $body);
+        self::assertStringContainsString('param mac aa:bb:cc:dd:ee:01', $body);
+        self::assertStringContainsString('param uuid bbbbcccc-1111-2222-3333-444455556666', $body);
     }
 
     #[Test]

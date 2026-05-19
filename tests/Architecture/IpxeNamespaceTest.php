@@ -323,6 +323,133 @@ class IpxeNamespaceTest extends TestCase
         );
     }
 
+    /* ------------------------------------------------------------------
+     * Story 3.2 — AC6.1 / AC8.3 — extension du garde-fou architectural
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Vérifie que les 3 routes natives 3.2 (`/ipxe/admin`,
+     * `/ipxe/maintenance`, `/ipxe/action/{action}`) sont déclarées AVANT le
+     * catchall legacy `{path}` dans `routes/web.php`. Si elles sont après,
+     * le catchall capture les requêtes et les routes natives deviennent
+     * inaccessibles.
+     */
+    #[Test]
+    public function ipxe_3_2_routes_are_declared_before_catchall(): void
+    {
+        $routesFile = realpath(__DIR__ . '/../../routes/web.php');
+        self::assertNotFalse($routesFile);
+        $content = (string) file_get_contents($routesFile);
+
+        $catchallPattern = "/Route::match\s*\([^)]*['\"]\\{path\\}['\"]/";
+        self::assertSame(
+            1,
+            preg_match($catchallPattern, $content, $catchallMatches, PREG_OFFSET_CAPTURE),
+            'Catchall legacy {path} introuvable',
+        );
+        $catchallOffset = $catchallMatches[0][1];
+
+        $routes = [
+            ['needle' => "['\"]/ipxe/admin['\"]", 'name' => '/ipxe/admin'],
+            ['needle' => "['\"]/ipxe/maintenance['\"]", 'name' => '/ipxe/maintenance'],
+            ['needle' => "['\"]/ipxe/action/\\{action\\}['\"]", 'name' => '/ipxe/action/{action}'],
+        ];
+
+        foreach ($routes as $route) {
+            $pattern = '/Route::(?:match|get|post)\s*\([^;]*?' . $route['needle'] . '/';
+            self::assertSame(
+                1,
+                preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE),
+                'Route 3.2 ' . $route['name'] . ' non déclarée',
+            );
+            self::assertLessThan(
+                $catchallOffset,
+                $matches[0][1],
+                'ORDRE INVALIDE : la route 3.2 ' . $route['name'] . ' doit être AVANT le catchall',
+            );
+        }
+
+        // Vérification middleware par route : chaque déclaration 3.2 doit
+        // porter `auth.v1.lan-only`.
+        $statements = explode(';', $content);
+        $ipxeStatements = array_values(array_filter(
+            $statements,
+            static fn (string $stmt): bool => preg_match(
+                "@['\"]/ipxe/(admin|maintenance|action/\\{action\\})['\"]@",
+                $stmt,
+            ) === 1,
+        ));
+
+        self::assertGreaterThanOrEqual(
+            3,
+            count($ipxeStatements),
+            'Les 3 routes 3.2 doivent être déclarées',
+        );
+
+        foreach ($ipxeStatements as $stmt) {
+            self::assertMatchesRegularExpression(
+                '/auth\.v1\.lan-only/',
+                $stmt,
+                'Chaque route 3.2 doit attacher auth.v1.lan-only — bloc fautif : '
+                . substr(trim($stmt), 0, 200),
+            );
+        }
+
+        // Filtre regex sur `{action}` (rejette caractères dangereux).
+        self::assertMatchesRegularExpression(
+            "/->where\(\s*['\"]action['\"]\s*,\s*['\"]\[a-z_\]\+['\"]/",
+            $content,
+            'La route /ipxe/action/{action} doit avoir le filtre regex `[a-z_]+` '
+            . 'pour bloquer les caractères dangereux (`/`, `..`, `;`, `&`, etc.).',
+        );
+    }
+
+    #[Test]
+    public function it_lists_all_ipxe_3_2_controllers_under_correct_namespace(): void
+    {
+        $root = realpath(__DIR__ . '/../../app/Ipxe');
+        self::assertNotFalse($root);
+
+        $required = [
+            $root . '/Http/Controllers/IpxeAdminController.php',
+            $root . '/Http/Controllers/IpxeMaintenanceController.php',
+            $root . '/Http/Controllers/IpxeActionController.php',
+            $root . '/Http/Requests/IpxeAdminRequest.php',
+            $root . '/Http/Requests/IpxeMaintenanceRequest.php',
+            $root . '/Http/Requests/IpxeActionRequest.php',
+            $root . '/Services/IpxeActionResolver.php',
+            $root . '/Enums/IpxeAdminAction.php',
+        ];
+
+        foreach ($required as $file) {
+            self::assertFileExists($file, "Fichier 3.2 manquant : {$file}");
+        }
+
+        $routesContent = (string) file_get_contents(__DIR__ . '/../../routes/web.php');
+        self::assertStringContainsString('App\\Ipxe\\Http\\Controllers\\IpxeAdminController', $routesContent);
+        self::assertStringContainsString('App\\Ipxe\\Http\\Controllers\\IpxeMaintenanceController', $routesContent);
+        self::assertStringContainsString('App\\Ipxe\\Http\\Controllers\\IpxeActionController', $routesContent);
+    }
+
+    #[Test]
+    public function ipxe_admin_action_enum_has_exactly_three_cases_in_story_3_2(): void
+    {
+        // D9 — Story 3.2 — élargir si nouvelle action (3.4 / 3.5 / 3.7).
+        // Ce test doit être renommé/relaxé par chaque story qui ouvre la
+        // whitelist avec un commentaire explicite.
+        $cases = \App\Ipxe\Enums\IpxeAdminAction::cases();
+        self::assertCount(
+            3,
+            $cases,
+            'Story 3.2 — la whitelist IpxeAdminAction doit contenir exactement 3 cases '
+            . '(rescuecd, winpe, factory_reset). Tout élargissement doit être documenté.',
+        );
+
+        $values = array_map(static fn ($c) => $c->value, $cases);
+        sort($values);
+        self::assertSame(['factory_reset', 'rescuecd', 'winpe'], $values);
+    }
+
     private function stripComments(string $code): string
     {
         $code = preg_replace('!/\*.*?\*/!s', '', $code) ?? $code;

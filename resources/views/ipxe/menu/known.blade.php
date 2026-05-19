@@ -21,7 +21,7 @@ param uuid {{ $uuid }}
 param username ${username}
 param password ${password:base64}
 param ${platform}
-chain --replace --autofree {{ $serverBaseUrl }}/ipxe/admin.php##params
+chain --replace --autofree {{ $serverBaseUrl }}/ipxe/admin##params
  || sleep 10
 
 @if($action)

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Ipxe\Services\IpxeActionResolver;
 use App\Ipxe\Services\IpxeMenuRenderer;
 use App\Ipxe\Services\IpxeService;
 use App\Ipxe\Services\WorkstationLocator;
@@ -57,9 +58,16 @@ class IpxeServiceProvider extends ServiceProvider
             $app->make(ViewFactory::class),
         ));
 
+        // Story 3.2 — D9 / AC9.2 — résolveur d'actions whitelistées rendant
+        // les templates `ipxe.actions.*`.
+        $this->app->singleton(IpxeActionResolver::class, fn ($app) => new IpxeActionResolver(
+            $app->make(ViewFactory::class),
+        ));
+
         $this->app->singleton(IpxeService::class, fn ($app) => new IpxeService(
             $app->make(WorkstationLocator::class),
             $app->make(IpxeMenuRenderer::class),
+            $app->make(IpxeActionResolver::class),
         ));
     }
 

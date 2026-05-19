@@ -58,4 +58,48 @@ class IpxeConfigTest extends TestCase
     {
         self::assertSame('ipxe', config('ipxe.log.channel'));
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.2 — AC9.1 / T1.4 — sections admin / maintenance / actions
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_loads_admin_menu_timeout_30000_ms(): void
+    {
+        self::assertSame(30000, (int) config('ipxe.admin.menu_timeout_ms'));
+    }
+
+    #[Test]
+    public function it_loads_maintenance_menu_timeout_10000_ms(): void
+    {
+        self::assertSame(10000, (int) config('ipxe.maintenance.menu_timeout_ms'));
+    }
+
+    #[Test]
+    public function it_loads_maintenance_background_png_default(): void
+    {
+        self::assertSame('png/sysrescuecd.png', (string) config('ipxe.maintenance.background_png'));
+    }
+
+    #[Test]
+    public function it_loads_actions_os_url_default_null(): void
+    {
+        // Par défaut null (fallback dynamique via Request::getSchemeAndHttpHost).
+        self::assertNull(config('ipxe.actions.os_url'));
+    }
+
+    #[Test]
+    public function it_loads_actions_script_url_default_null(): void
+    {
+        self::assertNull(config('ipxe.actions.script_url'));
+    }
+
+    #[Test]
+    public function it_loads_actions_se4install_passwd_config_key(): void
+    {
+        self::assertSame(
+            'sambaedu.se4install_passwd',
+            (string) config('ipxe.actions.se4install_passwd_config_key'),
+        );
+    }
 }

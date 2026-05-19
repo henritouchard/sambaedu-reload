@@ -627,6 +627,51 @@ Route::get('/ipxe/boot.ipxe', [
 
 /*
 |--------------------------------------------------------------------------
+| Story 3.2 — Menu Admin + Maintenance + Action iPXE (D2)
+|--------------------------------------------------------------------------
+| Remplace les endpoints legacy `/ipxe/admin.php`, `/ipxe/maintenance.php`
+| et `/ipxe/action.php` par 3 routes natives. Les autres `/ipxe/*` continuent
+| à passer par le catchall jusqu'aux stories 3.3-3.7.
+|
+| **ORDRE STRICT** : ce bloc doit rester AVANT le catchall ci-dessous —
+| sinon la route `{path}` capture toutes les requêtes `/ipxe/*` et rend
+| ces routes natives inaccessibles. Cf. test
+| `IpxeNamespaceTest::ipxe_3_2_routes_are_declared_before_catchall`.
+|
+| **Sécurité** : middleware `auth.v1.lan-only` (16.11) — restreint au LAN
+| scolaire RFC1918. Pas de JWT (parité 3.1 D3/D8).
+|
+| **Whitelist action** : `IpxeAdminAction` enum (3 cases stricts en 3.2 —
+| rescuecd, winpe, factory_reset). Toute autre valeur retourne 404 + log
+| warning `ipxe.action.unknown_action`.
+*/
+Route::match(['GET', 'POST'], '/ipxe/admin', [
+    \App\Ipxe\Http\Controllers\IpxeAdminController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.admin')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/maintenance', [
+    \App\Ipxe\Http\Controllers\IpxeMaintenanceController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.maintenance')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/action/{action}', [
+    \App\Ipxe\Http\Controllers\IpxeActionController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->where('action', '[a-z_]+')
+    ->name('ipxe.action')
+    ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
 | Legacy PHP Fallback Route (DOIT ÊTRE EN DERNIER)
 |--------------------------------------------------------------------------
 | Cette route catch-all délègue au LegacyCatchallController :
