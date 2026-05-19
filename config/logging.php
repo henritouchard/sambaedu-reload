@@ -207,6 +207,28 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Story 3.1 — D7 — Channel dédié iPXE (boot réseau + déploiement OS).
+        // Couvre toutes les actions du domaine iPXE : handshake, résolution
+        // poste (known/unknown), erreurs de rendu Blade, insert
+        // MachineBootLog. Verbosité élevée volontaire (`debug` par défaut)
+        // en phase de transition Epic 3 ; bumper à `info` une fois l'epic
+        // stabilisé.
+        // Convention de logging par `action_type` documentée — catalogue :
+        // ipxe.boot.handshake, ipxe.boot.known_workstation,
+        // ipxe.boot.unknown_workstation, ipxe.boot.invalid_input,
+        // ipxe.boot.render_error, ipxe.boot.machine_boot_log_failure.
+        // Décision DO-12 : `replace_placeholders => false` (iso pattern
+        // auth-v1) — évite l'injection si une string contrôlable (product
+        // hardware) contient `{placeholder}`. Pas de secret loggé : MAC/UUID/
+        // product tronqués à 6-8 chars (D7 + AC7.3).
+        'ipxe' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/ipxe/ipxe.log'),
+            'level' => env('IPXE_LOG_LEVEL', 'debug'),
+            'days' => (int) env('IPXE_LOG_DAYS', 14),
+            'replace_placeholders' => false,
+        ],
+
         'null' => [
             'driver' => 'monolog',
             'handler' => NullHandler::class,

@@ -590,6 +590,43 @@ Route::get('/wpkg/profiles.xml', \App\Wpkg\Deployment\Http\Controllers\ProfilesX
 
 /*
 |--------------------------------------------------------------------------
+| Story 3.1 — iPXE Service Core (endpoint natif de premier boot iPXE)
+|--------------------------------------------------------------------------
+| Remplace le legacy `/ipxe/boot.php` pour le menu de premier appel iPXE.
+| Les autres URLs `/ipxe/*` (admin.php, installation-linux.php,
+| enregistrement.php, clonezilla.php, Win10/*, diconf/*, png/*) continuent
+| à passer par le catchall legacy jusqu'aux stories 3.2-3.7.
+|
+| **ORDRE STRICT** : ce bloc doit rester AVANT le catchall ci-dessous —
+| sinon la route `{path}` capture toutes les requêtes `/ipxe/*` et rend
+| ces 2 routes natives inaccessibles. Cf. test
+| `IpxeNamespaceTest::ipxe_boot_route_is_declared_before_catchall`.
+|
+| **Sécurité** : middleware `auth.v1.lan-only` (16.11) — restreint au LAN
+| scolaire RFC1918. Pas de JWT (un firmware iPXE n'a pas d'OS qui puisse
+| porter un Authorization Bearer — cf. D3/D8).
+|
+| **Throttle 600/min/IP** : un poste qui retry iPXE peut générer 5-10
+| calls en 10s ; 600/min couvre 60 postes simultanés × 10 retries chacun.
+*/
+Route::match(['GET', 'POST'], '/ipxe/boot', [
+    \App\Ipxe\Http\Controllers\IpxeBootController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.boot')
+    ->withoutMiddleware(['web']);
+
+Route::get('/ipxe/boot.ipxe', [
+    \App\Ipxe\Http\Controllers\IpxeBootController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.boot.alias')
+    ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
 | Legacy PHP Fallback Route (DOIT ÊTRE EN DERNIER)
 |--------------------------------------------------------------------------
 | Cette route catch-all délègue au LegacyCatchallController :
