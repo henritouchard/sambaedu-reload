@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Livewire\Admin;
 
-use App\Models\User;
 use App\ScriptsOs\Models\ScriptExecutionLog;
+use Illuminate\Contracts\Auth\Access\Authorizable;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
+use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
@@ -34,19 +36,32 @@ class ScriptLogsIndexTest extends TestCase
         config(['cache.default' => 'array']);
     }
 
-    private function asAdmin(): User
+    private function asAdmin(): Authenticatable
     {
-        $user = User::factory()->create();
-        Gate::define('server.admin', fn ($user) => true);
-        $this->actingAs($user);
-
-        return $user;
+        return $this->mockAuthAs(true);
     }
 
-    private function asNonAdmin(): User
+    private function asNonAdmin(): Authenticatable
     {
-        $user = User::factory()->create();
-        Gate::define('server.admin', fn ($user) => false);
+        return $this->mockAuthAs(false);
+    }
+
+    private function mockAuthAs(bool $isAdmin): Authenticatable
+    {
+        // Pas de table `users` en SQLite :memory: (cf. phpunit.xml — schémas
+        // créés à la main par les traits). On suit le pattern repo
+        // `Tests\Traits\MocksAdminUser` : mock Authenticatable + Authorizable,
+        // `actingAs()` + `Gate::define()` pour la policy `server.admin`.
+        $user = Mockery::mock(Authenticatable::class, Authorizable::class);
+        $user->shouldReceive('getAuthIdentifier')->andReturn(1);
+        $user->shouldReceive('getAuthIdentifierName')->andReturn('id');
+        $user->shouldReceive('getAuthPassword')->andReturn('');
+        $user->shouldReceive('getRememberToken')->andReturn('');
+        $user->shouldReceive('setRememberToken');
+        $user->shouldReceive('getRememberTokenName')->andReturn('');
+        $user->shouldReceive('can')->andReturn($isAdmin);
+
+        Gate::define('server.admin', fn ($u) => $isAdmin);
         $this->actingAs($user);
 
         return $user;
@@ -76,13 +91,7 @@ class ScriptLogsIndexTest extends TestCase
     {
         $this->asNonAdmin();
 
-        $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
-        try {
-            Livewire::test($this->componentName);
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
-            self::assertSame(403, $e->getStatusCode());
-            throw $e;
-        }
+        Livewire::test($this->componentName)->assertStatus(403);
     }
 
     #[Test]

@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Livewire\Admin;
 
-use App\Models\User;
 use App\ScriptsOs\Models\ScriptExecutionLog;
+use Illuminate\Contracts\Auth\Access\Authorizable;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Livewire;
+use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
@@ -29,10 +31,24 @@ class ScriptLogsDetailTest extends TestCase
         Cache::store('array')->flush();
     }
 
-    private function asAdmin(): User
+    private function asAdmin(): Authenticatable
     {
-        $user = User::factory()->create();
-        Gate::define('server.admin', fn ($u) => true);
+        return $this->mockAuthAs(true);
+    }
+
+    private function mockAuthAs(bool $isAdmin): Authenticatable
+    {
+        // cf. ScriptLogsIndexTest::mockAuthAs — pattern iso MocksAdminUser.
+        $user = Mockery::mock(Authenticatable::class, Authorizable::class);
+        $user->shouldReceive('getAuthIdentifier')->andReturn(1);
+        $user->shouldReceive('getAuthIdentifierName')->andReturn('id');
+        $user->shouldReceive('getAuthPassword')->andReturn('');
+        $user->shouldReceive('getRememberToken')->andReturn('');
+        $user->shouldReceive('setRememberToken');
+        $user->shouldReceive('getRememberTokenName')->andReturn('');
+        $user->shouldReceive('can')->andReturn($isAdmin);
+
+        Gate::define('server.admin', fn ($u) => $isAdmin);
         $this->actingAs($user);
 
         return $user;
@@ -62,13 +78,8 @@ class ScriptLogsDetailTest extends TestCase
         $this->asAdmin();
         $unknownUuid = '00000000-0000-4000-8000-000000000000';
 
-        $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
-        try {
-            Livewire::test($this->componentName, ['id' => $unknownUuid]);
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
-            self::assertSame(404, $e->getStatusCode());
-            throw $e;
-        }
+        Livewire::test($this->componentName, ['id' => $unknownUuid])
+            ->assertStatus(404);
     }
 
     #[Test]
@@ -104,18 +115,11 @@ class ScriptLogsDetailTest extends TestCase
     #[Test]
     public function non_admin_is_forbidden(): void
     {
-        $user = User::factory()->create();
-        Gate::define('server.admin', fn ($u) => false);
-        $this->actingAs($user);
+        $this->mockAuthAs(false);
 
         $log = ScriptExecutionLog::factory()->create();
 
-        $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
-        try {
-            Livewire::test($this->componentName, ['id' => $log->id]);
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
-            self::assertSame(403, $e->getStatusCode());
-            throw $e;
-        }
+        Livewire::test($this->componentName, ['id' => $log->id])
+            ->assertStatus(403);
     }
 }

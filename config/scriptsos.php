@@ -22,8 +22,11 @@ return [
     'retention_days' => (int) env('SCRIPTSOS_RETENTION_DAYS', 90),
 
     'archive' => [
-        // Dossier de stockage des archives gzip JSONL mensuelles.
-        'path' => env('SCRIPTSOS_ARCHIVE_PATH', storage_path('archives')),
+        // Dossier de stockage des archives gzip JSONL mensuelles. On utilise
+        // `?:` plutôt que le 2ᵉ argument de env() : si la variable existe
+        // mais vide (cas `SCRIPTSOS_ARCHIVE_PATH=` dans `.env`), env() renvoie
+        // `''` au lieu du default, ce qui ferait écrire à la racine du FS.
+        'path' => env('SCRIPTSOS_ARCHIVE_PATH') ?: storage_path('archives'),
 
         // Pattern de nommage. {YYYY} et {MM} sont substitués au runtime.
         'filename_pattern' => 'script-execution-logs-{YYYY}-{MM}.jsonl.gz',

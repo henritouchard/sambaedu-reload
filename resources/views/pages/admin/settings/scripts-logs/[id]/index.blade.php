@@ -69,8 +69,32 @@ new #[Title('Détail log exécution - SE4FS')] class extends Component {
         };
     @endphp
 
-    <div class="space-y-6" x-data="{}"
-        @copy-to-clipboard.window="navigator.clipboard?.writeText($event.detail.text)">
+    <div class="space-y-6"
+        x-data="{
+            copy(text) {
+                // `navigator.clipboard` n'est dispo qu'en secure context
+                // (HTTPS ou localhost). En LAN HTTP (cas se4fs.localdev.fr
+                // côté admin), on fallback sur `document.execCommand('copy')`
+                // via une textarea hors-écran — déprécié mais toujours
+                // largement supporté.
+                if (window.isSecureContext && navigator.clipboard?.writeText) {
+                    navigator.clipboard.writeText(text).catch((e) => console.error('clipboard failed', e));
+                    return;
+                }
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.setAttribute('readonly', '');
+                ta.style.position = 'fixed';
+                ta.style.top = '0';
+                ta.style.left = '0';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); } catch (e) { console.error('execCommand copy failed', e); }
+                document.body.removeChild(ta);
+            }
+        }"
+        @copy-to-clipboard.window="copy($event.detail.text)">
 
         {{-- Header status --}}
         <div class="card bg-base-100 shadow-sm border border-base-200">

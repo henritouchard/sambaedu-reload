@@ -354,11 +354,15 @@ new #[Title('Logs exécution scripts - SE4FS')] class extends Component {
         </div>
 
         {{-- ================ Tableau ================ --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
-            <div class="card-body p-0">
-                <div class="overflow-x-auto">
-                    <table class="table table-sm" data-testid="logs-table">
-                        <thead>
+        <div class="card bg-base-100 shadow-sm overflow-hidden">
+            <div class="px-4 py-3 border-b border-base-300 text-sm text-base-content/70">
+                Affichage des logs d'exécution ({{ $logs->total() }} résultat{{ $logs->total() > 1 ? 's' : '' }} —
+                page {{ $logs->currentPage() }}/{{ max(1, $logs->lastPage()) }})
+            </div>
+
+            <div class="overflow-auto max-h-[60vh]">
+                <table class="table table-zebra" data-testid="logs-table">
+                        <thead class="sticky top-0 z-10 bg-base-100 shadow-sm">
                             <tr>
                                 <th><button type="button" class="link link-hover"
                                     wire:click="sortByColumn('started_at')">
@@ -392,13 +396,12 @@ new #[Title('Logs exécution scripts - SE4FS')] class extends Component {
                                         default => 'badge-ghost',
                                     };
                                 @endphp
-                                <tr class="hover" data-testid="log-row">
-                                    <td class="font-mono text-xs whitespace-nowrap">
-                                        <a href="{{ route('admin.scripts-logs.show', ['id' => $log->id]) }}"
-                                           class="link link-hover"
-                                           title="{{ $log->started_at?->toIso8601String() }}">
-                                            {{ $log->started_at?->diffForHumans() }}
-                                        </a>
+                                <tr class="hover:bg-sky-50 cursor-pointer"
+                                    onclick="window.location.href='{{ route('admin.scripts-logs.show', ['id' => $log->id]) }}'"
+                                    data-testid="log-row">
+                                    <td class="font-mono text-xs whitespace-nowrap"
+                                        title="{{ $log->started_at?->toIso8601String() }}">
+                                        {{ $log->started_at?->diffForHumans() }}
                                     </td>
                                     <td class="font-mono text-xs">
                                         {{ \Illuminate\Support\Str::limit($log->workstation_uuid, 16, '…') }}
@@ -428,15 +431,12 @@ new #[Title('Logs exécution scripts - SE4FS')] class extends Component {
                                     </td>
                                 </tr>
                             @endforelse
-                        </tbody>
-                    </table>
-                </div>
+                    </tbody>
+                </table>
+            </div>
 
-                @if ($logs->hasPages())
-                    <div class="p-4">
-                        {{ $logs->links() }}
-                    </div>
-                @endif
+            <div class="px-4 py-3 border-t border-base-300">
+                {{ $logs->links() }}
             </div>
         </div>
 

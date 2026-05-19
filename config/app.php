@@ -174,6 +174,7 @@ return [
         App\Providers\WpkgDeploymentServiceProvider::class,
         App\Providers\GpoServiceProvider::class,
         App\Providers\AuthV1ServiceProvider::class,
+        App\Providers\ScriptsOsServiceProvider::class,
         ])->toArray(),
 
     /*
