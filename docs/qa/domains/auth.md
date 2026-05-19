@@ -652,6 +652,19 @@ grep -A1 "16-10-securisation" _bmad-output/implementation-artifacts/sprint-statu
 - PKI initialisée via `php artisan auth:ca:init` (16.10 prérequis).
 - Channel logs `auth-v1` actif dans `config/logging.php`.
 
+> **Note infra HTTPS (16.10 prérequis effectif)** — les scénarios smoke ci-dessous utilisent `https://$(hostname -f)/...`. Si le module Apache `ssl` n'est pas activé sur la VM (cas observé sur certaines VM de dev où la config HTTPS de 16.10 n'a pas été appliquée), tous les smoke 16.11 restent valides en `http://` (port 80). Vérifier : `a2query -m ssl`. Le LAN-only et l'injection fragment fonctionnent indifféremment HTTP/HTTPS — seule la fenêtre MITM bootstrap (cf. §"Limitation Phase 2") suppose HTTPS en prod.
+
+> **⚠️ Limite smoke APCu CLI/FPM (impacte 16.11-1, 16.11-2, 16.11-3)** — `php artisan tinker` (CLI) et FPM utilisent par défaut **deux segments APCu séparés**. Une clé `apcu_store("apps.$TOKEN", ...)` posée via tinker n'est **pas visible** côté FPM. Conséquence : un enroll lancé via curl après seed tinker renvoie `401 bootstrap_token.invalid` (token absent côté FPM), **pas** `uuid_mismatch`. Trois options :
+>
+> 1. **Méthode canonique (recommandée)** — exécuter les tests équivalents en process unique :
+>    ```bash
+>    php artisan test \
+>      --filter='EnrollControllerTest::(it_rejects_enroll_when_uuid_does_not_match_bootstrap_context|it_rejects_enroll_from_non_lan_ip)|LegacyBootstrapTokenValidatorTest::isvalid_with_payload_missing_uuid_returns_false_fail_closed'
+>    ```
+>    Couvre 16.11-2 (uuid mismatch) + 16.11-3 (context sans clé uuid, fail-closed) + 16.11-5 (enroll non-LAN).
+> 2. **Seed APCu côté FPM** — déclencher un appel HTTP qui passe par `ApcuAppContextWriter` (typiquement `gpo/applications.php` avec un `uuid` + `user`/`machine` AD valides), puis curl `/enroll`. Pratique uniquement avec un AD configuré sur la VM.
+> 3. **Smoke iso-runbook** — possible si la VM a `apc.enable_cli=1` ET un segment APCu partagé CLI↔FPM (configuration non-standard).
+
 ### Section 9 — Durcissement bootstrap token + couple UUID (16.11 D1)
 
 #### Scénario 16.11-1 — Enroll happy path avec uuid matching context APCu
@@ -746,55 +759,58 @@ curl -k -i -X POST https://$(hostname -f)/api/v1/agent/refresh -H "Content-Type:
 
 ### Section 11 — Auto-bootstrap fragment injection (16.11 D2 + D5 + D6)
 
-#### Scénario 16.11-7 — Poste Windows non-migré → hit `gpo/wallpaper_out.php` → fragment cmd en préfixe
+> **⚠️ Validation E2E par test Feature (méthode canonique)** — l'injection du fragment ne peut pas être validée par un simple curl sur un endpoint legacy `/gpo/*_out.php`, pour deux raisons cumulatives :
+>
+> 1. Les endpoints text/plain (`network_out.php`, `firefox_out.php`, `applications.php`, …) exigent un contexte APCu posé **côté FPM** par un appel amont. Le seed via `php artisan tinker` n'est pas visible côté FPM (cf. limite APCu CLI/FPM en intro Section 9). Sans contexte valide, ces endpoints renvoient body vide (parité legacy stricte) ou 4xx → le middleware skip.
+> 2. Les endpoints non text/plain sont volontairement skippés (D6) : `wallpaper_out.php` renvoie un BLOB image (JPEG/PNG), `associations_out.php` du JSON. Le précédent runbook ciblait `wallpaper_out.php` par erreur — le middleware skip cet endpoint en permanence (Content-Type ≠ text/plain), ce qui rend les scénarios non discriminants.
+>
+> Le test Feature `InjectBootstrapFragmentIntegrationTest` couvre les **7 cas** du périmètre en process unique (middleware exécuté contre un controller de test text/plain) :
+>
+> ```bash
+> php artisan test tests/Feature/Auth/V1/InjectBootstrapFragmentIntegrationTest.php
+> ```
+>
+> Cas couverts :
+> - `fragment_inject_for_non_migrated_windows_workstation` (= ex 16.11-7)
+> - `fragment_inject_for_non_migrated_linux_workstation` (= ex 16.11-8)
+> - `fragment_skip_for_migrated_workstation` (= ex 16.11-9)
+> - `fragment_skip_for_json_content_type` (= ex 16.11-10, JSON)
+> - `fragment_skip_for_4xx_response`
+> - `fragment_skip_when_no_uuid_in_request`
+> - `fragment_substitutes_server_base_url`
+>
+> Pour un smoke en conditions réelles, voir Section 13 — Smoke poste réel (action Henri post-VM up).
+
+#### Scénario 16.11-7 — Poste Windows non-migré → fragment cmd en préfixe (PHPUnit Feature)
 
 ```bash
-TEST_UUID="33333333-3333-4333-8333-333333333333"
-# S'assurer que le poste n'est pas dans workstations_migration_status
-php artisan tinker --execute='
-  \App\Auth\V1\Models\WorkstationMigrationStatus::where("workstation_uuid", "'"$TEST_UUID"'")->delete();
-'
-
-curl -k -s "https://$(hostname -f)/gpo/wallpaper_out.php?id=any-md5-id&os=windows&uuid=$TEST_UUID" | head -8
-# Attendu : premières lignes contiennent "@echo off" + "SambaEdu auto-bootstrap" + curl pipe
-#          PUIS le body wallpaper habituel
+php artisan test --filter='InjectBootstrapFragmentIntegrationTest::fragment_inject_for_non_migrated_windows_workstation'
+# Attendu : PASS. Le test instancie un controller text/plain, simule un poste non-migré
+# (UUID absent de workstations_migration_status), capture la response et vérifie la présence
+# du préfixe "@echo off" + "SambaEdu auto-bootstrap" + curl pipe.
 ```
 
-#### Scénario 16.11-8 — Poste Linux non-migré → hit `gpo/firefox_out.php` → fragment sh en préfixe
+#### Scénario 16.11-8 — Poste Linux non-migré → fragment sh en préfixe (PHPUnit Feature)
 
 ```bash
-TEST_UUID="44444444-4444-4444-8444-444444444444"
-php artisan tinker --execute='\App\Auth\V1\Models\WorkstationMigrationStatus::where("workstation_uuid", "'"$TEST_UUID"'")->delete();'
-
-curl -k -s "https://$(hostname -f)/gpo/firefox_out.php?os=linux&uuid=$TEST_UUID" | head -5
-# Attendu : commence par "# === SambaEdu auto-bootstrap" puis `if [ ! -f /var/lib/sambaedu/auth.json ]`
+php artisan test --filter='InjectBootstrapFragmentIntegrationTest::fragment_inject_for_non_migrated_linux_workstation'
+# Attendu : PASS. Vérifie le préfixe "# === SambaEdu auto-bootstrap" + curl pipe Linux.
 ```
 
-#### Scénario 16.11-9 — Poste déjà migré → pas de fragment
+#### Scénario 16.11-9 — Poste déjà migré → pas de fragment (PHPUnit Feature)
 
 ```bash
-TEST_UUID="55555555-5555-4555-8555-555555555555"
-php artisan tinker --execute='
-  \App\Auth\V1\Models\WorkstationMigrationStatus::updateOrCreate(
-    ["workstation_uuid" => "'"$TEST_UUID"'"],
-    ["migrated_at" => now(), "os" => "windows", "se4fs_name" => "se4fs-test"]
-  );
-'
-
-curl -k -s "https://$(hostname -f)/gpo/wallpaper_out.php?id=any&os=windows&uuid=$TEST_UUID" | head -3
-# Attendu : pas de "@echo off" en préfixe → directement le body wallpaper
+php artisan test --filter='InjectBootstrapFragmentIntegrationTest::fragment_skip_for_migrated_workstation'
+# Attendu : PASS. Le test seed une row `workstations_migration_status` pour l'UUID,
+# appelle l'endpoint, vérifie que la response sort intacte (pas de préfixe).
 ```
 
-#### Scénario 16.11-10 — Poste hit `gpo/associations_out.php` (JSON) → pas de fragment (D6)
+#### Scénario 16.11-10 — Content-Type JSON → pas de fragment (D6, PHPUnit Feature)
 
 ```bash
-TEST_UUID="66666666-6666-4666-8666-666666666666"
-php artisan tinker --execute='\App\Auth\V1\Models\WorkstationMigrationStatus::where("workstation_uuid", "'"$TEST_UUID"'")->delete();'
-
-curl -k -s -X POST "https://$(hostname -f)/gpo/associations_out.php" \
-  -d "list=app1&os=linux&uuid=$TEST_UUID"
-# Attendu : JSON parseable (pas de fragment en préfixe — Content-Type=text/json est skippé par le middleware)
-# Vérifier : la 1ère ligne doit commencer par "{" ou "[" — pas par "# ===" ou "@echo off"
+php artisan test --filter='InjectBootstrapFragmentIntegrationTest::fragment_skip_for_json_content_type'
+# Attendu : PASS. Le middleware skip toute response dont le Content-Type ne commence pas
+# par `text/plain` (associations_out.php JSON, wallpaper_out.php image/jpeg, etc.).
 ```
 
 ### Section 12 — Endpoints publics bootstrap.{cmd,sh}
@@ -987,16 +1003,15 @@ La sortie définitive de cette limitation est documentée dans `docs/tech-debt-a
 
 ## Checklist rapide 16.11
 
-- [ ] Migrations `2026_05_18_120000` + `2026_05_18_120100` jouées sur la VM.
+- [ ] Migrations `2026_05_18_120000` + `2026_05_18_120100` jouées sur la VM (`migrate:status`).
 - [ ] `php artisan migration:health-check` retourne `[OK]` sur table fraîche.
-- [ ] `php artisan schedule:list` mentionne `migration:health-check`.
-- [ ] Endpoints `GET /api/v1/agent/bootstrap.{cmd,sh}` répondent 200 depuis LAN, 403 hors LAN.
-- [ ] `POST /api/v1/agent/enroll` avec uuid mismatch → 401 + `code=bootstrap_token.uuid_mismatch`.
-- [ ] `POST /api/v1/agent/enroll` depuis IP hors `allowed_subnets` → 403 + `code=bootstrap.not_lan`.
-- [ ] `GET /gpo/wallpaper_out.php?uuid=<non-migré>` → fragment cmd en préfixe.
-- [ ] `GET /gpo/wallpaper_out.php?uuid=<déjà-migré>` → pas de fragment.
-- [ ] `POST /gpo/associations_out.php?uuid=<non-migré>` → JSON parseable (pas de fragment, D6).
-- [ ] Smoke poste Windows réel : `Migrated=1` après reboot + tokens DPAPI HKLM stockés.
-- [ ] Smoke poste Linux réel : `/var/lib/sambaedu/auth.json` 0600 + systemd timer actif.
-- [ ] Logs `auth-v1` contiennent `auth.bootstrap.fragment.injected` info + `auth.migration.success` info.
+- [ ] `php artisan schedule:list` mentionne `migration:health-check` daily.
+- [ ] Endpoints `GET /api/v1/agent/bootstrap.{cmd,sh}` répondent 200 depuis LAN (HTTP ou HTTPS selon config Apache) — body conforme (`@echo off` / `#!/bin/bash`), 1 row `started` inséré par appel dans `workstation_migration_attempts`.
+- [ ] `GET /api/v1/agent/bootstrap.cmd` hors LAN (override `AUTH_V1_BOOTSTRAP_ALLOWED_SUBNETS=8.8.8.8/32` + `config:clear` + reload php-fpm) → 403 + `code=bootstrap.not_lan`.
+- [ ] PHPUnit `EnrollControllerTest::it_rejects_enroll_when_uuid_does_not_match_bootstrap_context` PASS (uuid mismatch → 401 `bootstrap_token.uuid_mismatch`).
+- [ ] PHPUnit `EnrollControllerTest::it_rejects_enroll_from_non_lan_ip` PASS (403 `bootstrap.not_lan`).
+- [ ] PHPUnit `InjectBootstrapFragmentIntegrationTest` → 7/7 PASS (cover non-migré Win + non-migré Linux + déjà-migré skip + JSON skip + 4xx skip + no-uuid skip + server_base_url).
+- [ ] Smoke poste Windows réel (Section 13) : `Migrated=1` après reboot + tokens DPAPI HKLM stockés.
+- [ ] Smoke poste Linux réel (Section 13) : `/var/lib/sambaedu/auth.json` 0600 + systemd timer actif.
+- [ ] Logs `auth-v1` du jour contiennent au moins `auth.bootstrap.script.served` (info, depuis smoke `bootstrap.{cmd,sh}`) + `auth.bootstrap.lan_blocked` (warning, depuis smoke override LAN). Les events `auth.bootstrap.fragment.injected` + `auth.migration.success` apparaissent en prod sur les flots E2E réels (Section 13).
 
