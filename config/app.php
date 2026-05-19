@@ -175,6 +175,7 @@ return [
         App\Providers\GpoServiceProvider::class,
         App\Providers\AuthV1ServiceProvider::class,
         App\Providers\ScriptsOsServiceProvider::class,
+        App\Providers\IpxeServiceProvider::class,
         ])->toArray(),
 
     /*

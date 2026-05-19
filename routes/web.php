@@ -590,6 +590,88 @@ Route::get('/wpkg/profiles.xml', \App\Wpkg\Deployment\Http\Controllers\ProfilesX
 
 /*
 |--------------------------------------------------------------------------
+| Story 3.1 — iPXE Service Core (endpoint natif de premier boot iPXE)
+|--------------------------------------------------------------------------
+| Remplace le legacy `/ipxe/boot.php` pour le menu de premier appel iPXE.
+| Les autres URLs `/ipxe/*` (admin.php, installation-linux.php,
+| enregistrement.php, clonezilla.php, Win10/*, diconf/*, png/*) continuent
+| à passer par le catchall legacy jusqu'aux stories 3.2-3.7.
+|
+| **ORDRE STRICT** : ce bloc doit rester AVANT le catchall ci-dessous —
+| sinon la route `{path}` capture toutes les requêtes `/ipxe/*` et rend
+| ces 2 routes natives inaccessibles. Cf. test
+| `IpxeNamespaceTest::ipxe_boot_route_is_declared_before_catchall`.
+|
+| **Sécurité** : middleware `auth.v1.lan-only` (16.11) — restreint au LAN
+| scolaire RFC1918. Pas de JWT (un firmware iPXE n'a pas d'OS qui puisse
+| porter un Authorization Bearer — cf. D3/D8).
+|
+| **Throttle 600/min/IP** : un poste qui retry iPXE peut générer 5-10
+| calls en 10s ; 600/min couvre 60 postes simultanés × 10 retries chacun.
+*/
+Route::match(['GET', 'POST'], '/ipxe/boot', [
+    \App\Ipxe\Http\Controllers\IpxeBootController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.boot')
+    ->withoutMiddleware(['web']);
+
+Route::get('/ipxe/boot.ipxe', [
+    \App\Ipxe\Http\Controllers\IpxeBootController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.boot.alias')
+    ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
+| Story 3.2 — Menu Admin + Maintenance + Action iPXE (D2)
+|--------------------------------------------------------------------------
+| Remplace les endpoints legacy `/ipxe/admin.php`, `/ipxe/maintenance.php`
+| et `/ipxe/action.php` par 3 routes natives. Les autres `/ipxe/*` continuent
+| à passer par le catchall jusqu'aux stories 3.3-3.7.
+|
+| **ORDRE STRICT** : ce bloc doit rester AVANT le catchall ci-dessous —
+| sinon la route `{path}` capture toutes les requêtes `/ipxe/*` et rend
+| ces routes natives inaccessibles. Cf. test
+| `IpxeNamespaceTest::ipxe_3_2_routes_are_declared_before_catchall`.
+|
+| **Sécurité** : middleware `auth.v1.lan-only` (16.11) — restreint au LAN
+| scolaire RFC1918. Pas de JWT (parité 3.1 D3/D8).
+|
+| **Whitelist action** : `IpxeAdminAction` enum (3 cases stricts en 3.2 —
+| rescuecd, winpe, factory_reset). Toute autre valeur retourne 404 + log
+| warning `ipxe.action.unknown_action`.
+*/
+Route::match(['GET', 'POST'], '/ipxe/admin', [
+    \App\Ipxe\Http\Controllers\IpxeAdminController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.admin')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/maintenance', [
+    \App\Ipxe\Http\Controllers\IpxeMaintenanceController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.maintenance')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/action/{action}', [
+    \App\Ipxe\Http\Controllers\IpxeActionController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->where('action', '[a-z_]+')
+    ->name('ipxe.action')
+    ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
 | Legacy PHP Fallback Route (DOIT ÊTRE EN DERNIER)
 |--------------------------------------------------------------------------
 | Cette route catch-all délègue au LegacyCatchallController :

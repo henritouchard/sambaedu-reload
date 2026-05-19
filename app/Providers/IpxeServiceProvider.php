@@ -1,0 +1,105 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Providers;
+
+use App\Ipxe\Services\IpxeActionResolver;
+use App\Ipxe\Services\IpxeMenuRenderer;
+use App\Ipxe\Services\IpxeService;
+use App\Ipxe\Services\WorkstationLocator;
+use Illuminate\Contracts\View\Factory as ViewFactory;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\ServiceProvider;
+
+/**
+ * Story 3.1 — D1 — IpxeServiceProvider.
+ *
+ * Service Provider du module iPXE (boot réseau + déploiement OS — Epic 3).
+ *
+ * **Décision DO-1** : le provider est placé dans `App\Providers\` (et non
+ * `App\Ipxe\`) pour cohérence stricte avec les autres modules namespacés
+ * du projet : `AuthV1ServiceProvider`, `GpoServiceProvider`,
+ * `WpkgDeploymentServiceProvider`. Cela facilite la lecture de
+ * `config/app.php` qui liste les providers d'application au même endroit.
+ *
+ * **Au boot** :
+ *
+ *  1. Binde les 3 services principaux en singletons (stateless réutilisables) :
+ *      - `WorkstationLocator` — résolution PostgreSQL MAC/UUID → Workstation.
+ *      - `IpxeMenuRenderer` — rendu des 3 templates Blade.
+ *      - `IpxeService` — orchestrateur de l'endpoint `/ipxe/boot`.
+ *  2. Merge config — pas de mergeConfigFrom (le fichier `config/ipxe.php` est
+ *     directement chargé par Laravel via le mécanisme standard).
+ *  3. **Crée le dossier `storage/logs/ipxe/`** si absent (parité
+ *     `GpoServiceProvider`/`AuthV1ServiceProvider`) — sinon Monolog plante au
+ *     premier write sur le channel `ipxe` (RotatingFileHandler ne crée pas
+ *     le dossier parent).
+ *
+ * Skip création dossier en environnement `testing` (pattern iso
+ * `GpoServiceProvider` — pas de warning bruyant sur runners CI).
+ */
+class IpxeServiceProvider extends ServiceProvider
+{
+    /** Mode des dossiers de logs créés (rwxr-xr-x). */
+    private const DIR_MODE_LOGS = 0755;
+
+    public function register(): void
+    {
+        $this->mergeConfigFrom(
+            base_path('config/ipxe.php'),
+            'ipxe',
+        );
+
+        // Services stateless réutilisables (parité 16.10/16.12).
+        $this->app->singleton(WorkstationLocator::class, fn () => new WorkstationLocator());
+
+        $this->app->singleton(IpxeMenuRenderer::class, fn ($app) => new IpxeMenuRenderer(
+            $app->make(ViewFactory::class),
+        ));
+
+        // Story 3.2 — D9 / AC9.2 — résolveur d'actions whitelistées rendant
+        // les templates `ipxe.actions.*`.
+        $this->app->singleton(IpxeActionResolver::class, fn ($app) => new IpxeActionResolver(
+            $app->make(ViewFactory::class),
+        ));
+
+        $this->app->singleton(IpxeService::class, fn ($app) => new IpxeService(
+            $app->make(WorkstationLocator::class),
+            $app->make(IpxeMenuRenderer::class),
+            $app->make(IpxeActionResolver::class),
+        ));
+    }
+
+    public function boot(): void
+    {
+        if ($this->app->environment('testing')) {
+            return;
+        }
+
+        $this->ensureLogChannelDirectory();
+    }
+
+    /**
+     * Crée `storage/logs/ipxe/` si absent. `storage/logs/` est git-ignored
+     * donc le dossier n'est pas propagé par un déploiement neuf.
+     *
+     * Failover : si la création échoue, on logue sur le channel par défaut
+     * (pas sur `ipxe`, sinon chicken-and-egg).
+     */
+    private function ensureLogChannelDirectory(): void
+    {
+        $logDir = storage_path('logs/ipxe');
+        if (is_dir($logDir)) {
+            return;
+        }
+        if (! @mkdir($logDir, self::DIR_MODE_LOGS, true) && ! is_dir($logDir)) {
+            Log::warning('[ipxe] impossible de créer le dossier de logs', [
+                'path' => $logDir,
+                'php_user' => function_exists('posix_getpwuid') && function_exists('posix_geteuid')
+                    ? (posix_getpwuid(posix_geteuid())['name'] ?? null)
+                    : null,
+            ]);
+        }
+    }
+}
