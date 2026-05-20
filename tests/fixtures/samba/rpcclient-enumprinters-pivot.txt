@@ -1,0 +1,9 @@
+	flags:[0x800000]
+	name:[\\W10PIVOT\Generic PS]
+	description:[\\W10PIVOT\Generic PS,Generic / Generic PostScript Printer,Imprimante PostScript locale]
+	comment:[Imprimante PostScript locale]
+
+	flags:[0x800000]
+	name:[\\W10PIVOT\HP-4500]
+	description:[\\W10PIVOT\HP-4500,HP Universal Printing PCL 6,HP OfficeJet 4500 partagee]
+	comment:[HP OfficeJet 4500 partagee]

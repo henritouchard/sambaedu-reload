@@ -1,0 +1,12 @@
+[Windows x64]
+Printer Driver Info 1:
+	Driver Name: [Generic / Generic PostScript Printer]
+
+Printer Driver Info 1:
+	Driver Name: [HP Universal Printing PCL 6]
+
+Printer Driver Info 1:
+	Driver Name: [Microsoft XPS Document Writer v4]
+
+Printer Driver Info 1:
+	Driver Name: [Brother HL-L2350DW series]

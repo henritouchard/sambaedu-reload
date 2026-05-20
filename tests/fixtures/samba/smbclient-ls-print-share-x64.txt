@@ -1,0 +1,9 @@
+Domain=[SE4] OS=[Unix] Server=[Samba 4.17.12]
+  .                                   D        0  Tue May 20 09:00:00 2026
+  ..                                  D        0  Tue May 20 09:00:00 2026
+  pscript5.dll                        A   312824  Wed May 14 10:32:08 2025
+  PSCRIPT.PPD                         A    52416  Wed May 14 10:32:08 2025
+  ps5ui.dll                           A   249024  Wed May 14 10:32:08 2025
+  pscript.hlp                         A    81920  Wed May 14 10:32:08 2025
+
+		29384192 blocks of size 1024. 9210234 blocks available

@@ -89,6 +89,14 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping()
                  ->runInBackground();
 
+        // Story 6.2 : Réconciliation pilotes Windows ↔ table SER `printer_drivers` à 03h35
+        // (5 min après printers:sync — monitoring séparé, D7 6.2). Idempotente.
+        // Skip orphan-marking si Samba injoignable (cohérent fix #12 6.1).
+        $schedule->command('printer-drivers:sync')
+                 ->dailyAt('03:35')
+                 ->withoutOverlapping()
+                 ->runInBackground();
+
         // Story 15.5 : Rotation quotidienne des archives brutes des rapports WPKG.
         // Supprime les fichiers > config('sambaedu.wpkg.reports_archive_retention_days')
         // (90 jours par défaut). Best-effort : si le dossier d'archive est absent,
