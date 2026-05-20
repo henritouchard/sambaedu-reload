@@ -29,7 +29,7 @@ use Illuminate\Support\Facades\Log;
  * @legacy-port path="sambaedu/includes/applications.inc.php:39-189 (read_application_scripts)"
  * @see WinePrefixScanner Pattern similaire scan FS (Story 16.3c).
  */
-final class ApplicationTemplatesScanner
+class ApplicationTemplatesScanner
 {
     /** Chemin distribution (lu en premier — surchargé par /etc/). */
     public const DEFAULT_PACKAGE_PATH = '/usr/share/sambaedu/applications/';

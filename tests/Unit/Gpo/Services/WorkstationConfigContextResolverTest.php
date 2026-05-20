@@ -10,6 +10,7 @@ use App\Gpo\Services\WorkstationConfigContextResolver;
 use App\Models\User;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
+use App\Observers\WorkstationGroupObserver;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
@@ -42,6 +43,12 @@ class WorkstationConfigContextResolverTest extends TestCase
         }
 
         Model::unguard();
+
+        // Neutralise les jobs AdSync dispatchés par WorkstationGroupObserver
+        // (queue sync en test → écrirait ad_guid/ad_dn sur le schéma inline
+        // minimal créé plus bas, qui n'a pas ces colonnes). Iso pattern
+        // PermissionServiceUnionTest / PrinterTest.
+        WorkstationGroupObserver::disableSync();
 
         Schema::dropIfExists('workstation_group_workstation');
         Schema::dropIfExists('workstation_groups');
@@ -86,6 +93,12 @@ class WorkstationConfigContextResolverTest extends TestCase
             $t->unsignedBigInteger('workstation_group_id');
             $t->timestamps();
         });
+    }
+
+    protected function tearDown(): void
+    {
+        WorkstationGroupObserver::enableSync();
+        parent::tearDown();
     }
 
     private function resolver(): WorkstationConfigContextResolver

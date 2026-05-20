@@ -26,7 +26,7 @@ use Throwable;
  * @legacy-port path="sambaedu/includes/applications.inc.php:775-824"
  * @legacy-port path="sambaedu/includes/logs.inc.php (log_connexion)"
  */
-final class ApplicationLoggerService
+class ApplicationLoggerService
 {
     public function __construct(
         private readonly AppContextWriter $contextWriter,

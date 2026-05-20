@@ -10,6 +10,7 @@ use App\Models\Wallpaper;
 use App\Services\Wallpaper\Contracts\WallpaperContextRepository;
 use App\Services\Wallpaper\WallpaperComposer;
 use App\Services\Wallpaper\WallpaperResolver;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -112,7 +113,7 @@ class WallpaperController extends Controller
      * 404 explicite si `workstation_uuid` JWT inconnu en DB (vs 200
      * empty / 404 « Context expired » legacy).
      */
-    public function apiV1(Request $request, WorkstationConfigContextResolver $resolver): Response
+    public function apiV1(Request $request, WorkstationConfigContextResolver $resolver): Response|JsonResponse
     {
         $workstationUuid = (string) $request->attributes->get('auth_v1.workstation_uuid', '');
 

@@ -8,6 +8,7 @@ use App\Gpo\Services\AssociationsResolver;
 use App\Gpo\Services\WorkstationConfigContextResolver;
 use App\Http\Controllers\Controller;
 use App\Services\AppCustomization\Contracts\AppContextRepository;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -127,7 +128,7 @@ class AssociationsOutController extends Controller
      * décodable). Déviation D5 : 404 explicite si `workstation_uuid` JWT
      * inconnu en DB (vs 400 legacy).
      */
-    public function apiV1(Request $request, WorkstationConfigContextResolver $resolver): Response
+    public function apiV1(Request $request, WorkstationConfigContextResolver $resolver): Response|JsonResponse
     {
         $listRaw = (string) $request->input('list', '');
 

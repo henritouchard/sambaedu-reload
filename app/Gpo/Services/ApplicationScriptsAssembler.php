@@ -39,7 +39,7 @@ use Throwable;
  *
  * @legacy-port path="sambaedu/includes/applications.inc.php (13 fonctions assemblage)"
  */
-final class ApplicationScriptsAssembler
+class ApplicationScriptsAssembler
 {
     /** Liste blanche des clés de substitution (chargée depuis config). */
     private ?array $substitutionsCache = null;

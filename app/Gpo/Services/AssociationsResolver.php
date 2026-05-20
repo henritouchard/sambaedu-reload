@@ -40,7 +40,7 @@ use Illuminate\Support\Facades\Log;
  *
  * @legacy-port path="sambaedu/gpo/associations_out.php:1-173"
  */
-final class AssociationsResolver
+class AssociationsResolver
 {
     /**
      * Paths iso-legacy. **Hardcodés** (pas paramètres user — défense path

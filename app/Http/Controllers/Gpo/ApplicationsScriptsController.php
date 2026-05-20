@@ -10,6 +10,7 @@ use App\Gpo\Services\ApplicationScriptsGenerator;
 use App\Gpo\Services\ApplicationTemplatesScanner;
 use App\Http\Controllers\Controller;
 use App\Models\Workstation;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -228,7 +229,7 @@ class ApplicationsScriptsController extends Controller
      * (400/200/200-vide). Déviation D5 : 404 explicite si
      * `workstation_uuid` JWT inconnu en DB (vs 200 vide legacy).
      */
-    public function apiV1(Request $request): Response
+    public function apiV1(Request $request): Response|JsonResponse
     {
         $workstationUuid = (string) $request->attributes->get('auth_v1.workstation_uuid', '');
 

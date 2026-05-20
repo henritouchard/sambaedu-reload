@@ -115,7 +115,9 @@ class AssociationsApiV1Test extends TestCase
         );
 
         $response->assertOk();
-        $this->assertSame('text/json', (string) $response->headers->get('Content-Type'));
+        // Symfony Response ajoute `; charset=utf-8` aux Content-Type text/*
+        // (iso-legacy header `text/json` non-standard préservé en préfixe).
+        $this->assertStringStartsWith('text/json', (string) $response->headers->get('Content-Type'));
         $payload = json_decode($response->getContent(), true);
         $this->assertIsArray($payload);
         $this->assertArrayHasKey('result', $payload);

@@ -8,6 +8,7 @@ use App\Gpo\Services\NetworkScriptGenerator;
 use App\Gpo\Services\WorkstationConfigContextResolver;
 use App\Http\Controllers\Controller;
 use App\Services\AppCustomization\Contracts\AppContextRepository;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -111,7 +112,7 @@ class NetworkOutController extends Controller
      * 404 explicite si `workstation_uuid` JWT inconnu en DB (vs 200 vide
      * legacy).
      */
-    public function apiV1(Request $request, WorkstationConfigContextResolver $resolver): Response
+    public function apiV1(Request $request, WorkstationConfigContextResolver $resolver): Response|JsonResponse
     {
         $workstationUuid = (string) $request->attributes->get('auth_v1.workstation_uuid', '');
         $action = (string) $request->input('action', '');

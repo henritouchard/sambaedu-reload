@@ -33,7 +33,7 @@ use Illuminate\Support\Facades\Process;
  *
  * @legacy-port path="sambaedu/includes/applications.inc.php:826-1007 (get_app_scripts_info)"
  */
-final class ApplicationScriptsGenerator
+class ApplicationScriptsGenerator
 {
     /** Liste utilisateurs « système » sans script (logon/logoff iso-legacy :856). */
     private const SYSTEM_USERS = ['Debian-gdm', 'root'];
