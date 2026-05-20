@@ -224,6 +224,12 @@ class PrintDriverService
                 'Nom de driver invalide : seuls lettres / chiffres / espace / `._-()/` sont autorisés (max 255 caractères).'
             );
         }
+        if (str_contains($name, '..')) {
+            Log::warning('PrintDriverService: nom de driver path-traversal détecté', ['name' => $name]);
+            throw new InvalidArgumentException(
+                'Nom de driver invalide : séquence `..` interdite (path traversal).'
+            );
+        }
     }
 
     /**
@@ -496,7 +502,7 @@ class PrintDriverService
             // Non-greedy : Samba sépare strictement les 3 champs par
             // virgule. Si un champ contient une virgule (ex.
             // `Acme, Inc Printer`), le legacy ne le parse pas non plus.
-            if (preg_match('/^\s*description:\s*\[.*\\\\([^,]+),([^,]+),([^,]+)\]\s*$/', $line, $m) === 1) {
+            if (preg_match('/^\s*description:\s*\[.*\\\\([^,]+),([^,]*),([^,]*)\]\s*$/', $line, $m) === 1) {
                 $printers[] = [
                     'smb_name' => trim($m[1]),
                     'smb_driver' => trim($m[2]),
@@ -551,7 +557,7 @@ class PrintDriverService
 
         foreach ($result['stdout'] as $line) {
             // Non-greedy : cf. note `listPrintersOnPivot`.
-            if (preg_match('/^\s*description:\s*\[([^,]+),([^,]+),([^,]+)\]\s*$/', $line, $m) === 1) {
+            if (preg_match('/^\s*description:\s*\[([^,]+),([^,]*),([^,]*)\]\s*$/', $line, $m) === 1) {
                 return [
                     'smb_name' => trim($m[1]),
                     'smb_driver' => trim($m[2]),

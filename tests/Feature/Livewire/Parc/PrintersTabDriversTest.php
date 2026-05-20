@@ -100,7 +100,7 @@ class PrintersTabDriversTest extends TestCase
         $mock = Mockery::mock(PrintDriverService::class);
         // valeurs par défaut souples — les tests précisent leurs attentes
         $mock->shouldReceive('listDriversForPrinter')->andReturn(['samba' => null, 'ser' => []])->byDefault();
-        $mock->shouldReceive('getServerName')->andReturn('se4fs')->byDefault();
+        $mock->shouldReceive('unlinkDriverFiles')->andReturn(['removed' => [], 'failed' => []])->byDefault();
         $this->app->instance(PrintDriverService::class, $mock);
         return $mock;
     }
