@@ -237,17 +237,11 @@ final class IpxeEnrollmentMenuBuilder
     }
 
     /**
-     * Iso {@see IpxeMenuRenderer::sanitizeAscii()} — un firmware iPXE rejette
-     * l'ASCII étendu. Tout caractère hors `0x20-0x7E` (et tab) est remplacé
-     * par `?`.
-     *
-     * Doublon documenté avec IpxeHostnameSanitizer::sanitizeForIpxeOutput —
-     * refacto trait LogsIpxeEvents/HasIpxeAsciiSanitizer reportée post-3.3 (F15 review).
+     * Délègue à l'implémentation canonique {@see IpxeHostnameSanitizer::sanitizeForIpxeOutput()}
+     * — Unicode-aware + fail-closed sur UTF-8 invalide (cf. F15 review).
      */
     private function sanitizeAscii(string $value): string
     {
-        $clean = preg_replace('/[^\x20-\x7E\t]/', '?', $value);
-
-        return $clean ?? $value;
+        return IpxeHostnameSanitizer::sanitizeForIpxeOutput($value);
     }
 }

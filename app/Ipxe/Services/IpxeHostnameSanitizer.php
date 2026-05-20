@@ -178,8 +178,20 @@ final class IpxeHostnameSanitizer
      */
     public static function sanitizeForIpxeOutput(string $value): string
     {
-        $clean = preg_replace('/[^\x20-\x7E\t]/', '?', $value);
+        // Flag `/u` : remplace chaque char Unicode multi-octets par un seul `?`
+        // (sans `/u`, un `é` UTF-8 produit `??` au lieu de `?`).
+        // Fallback fail-closed : si `preg_replace` retourne null (UTF-8 invalide
+        // → PREG_BAD_UTF8_ERROR), on remplace l'intégralité de la chaîne par des
+        // `?` plutôt que de réinjecter du brut non-sanitisé dans le template iPXE.
+        $clean = preg_replace('/[^\x20-\x7E\t]/u', '?', $value);
+        if ($clean !== null) {
+            return $clean;
+        }
 
-        return $clean ?? $value;
+        // UTF-8 invalide : on retombe en mode bytes pour garantir la sanitization,
+        // puis on rebascule en fail-closed `?` si même cette passe échoue.
+        $bytewise = preg_replace('/[^\x20-\x7E\t]/', '?', $value);
+
+        return $bytewise ?? str_repeat('?', strlen($value));
     }
 }

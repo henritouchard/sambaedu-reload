@@ -81,7 +81,7 @@ class IpxeEnrollmentByodEndpointTest extends TestCase
             'name' => 'pc-known-001',
             'mac' => 'AA:BB:CC:DD:EE:CC',
             'uuid' => 'cccccccc-cccc-cccc-cccc-cccccccccccc',
-            'is_active' => true,
+            'status' => 'active',
         ]);
 
         $logsBefore = MachineBootLog::query()->where('action', 'ipxe_enroll_byod')->count();

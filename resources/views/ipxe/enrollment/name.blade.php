@@ -37,7 +37,11 @@ sleep 5
 chain --replace --autofree {{ $serverBaseUrl }}/ipxe/admin##params
 @break
 @default
+@if($result->sanitizedName !== '')
 echo ERREUR ! enregistrement {{ $result->sanitizedName }} echoue: {{ $result->reasonLabel }}
+@else
+echo ERREUR ! enregistrement refuse: {{ $result->reasonLabel }}
+@endif
 sleep 5
 chain --replace --autofree {{ $serverBaseUrl }}/ipxe/admin##params
 @endswitch

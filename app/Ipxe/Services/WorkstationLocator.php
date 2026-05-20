@@ -82,7 +82,11 @@ final class WorkstationLocator
             }
         }
 
-        // Étape 2 — fallback MAC.
+        // Étape 2 — fallback MAC. `$normalizedMac` est garanti lowercase par
+        // `MacAddressNormalizer::normalize()` ; la DB est garantie lowercase par
+        // le mutator `Workstation::setMacAttribute` + la migration de
+        // normalisation 2026_05_20_120000 — donc `=` strict suffit (index B-tree
+        // utilisable, lookup déterministe).
         if ($normalizedMac !== null) {
             $ws = Workstation::query()
                 ->with($relations)

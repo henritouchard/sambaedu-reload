@@ -396,15 +396,11 @@ final class IpxeMenuRenderer
     }
 
     /**
-     * Strip les caractères non ASCII (le firmware iPXE rend mal l'ASCII
-     * étendu — accents fr cassent le menu).
+     * Délègue à l'implémentation canonique {@see IpxeHostnameSanitizer::sanitizeForIpxeOutput()}
+     * — Unicode-aware + fail-closed sur UTF-8 invalide (cf. F15 review).
      */
     private function sanitizeAscii(string $value): string
     {
-        // Convertit en ASCII en supprimant les chars > 0x7E (et < 0x20 sauf
-        // tab/newline pour éviter d'éventuels artefacts).
-        $clean = preg_replace('/[^\x20-\x7E\t]/', '?', $value);
-
-        return $clean ?? $value;
+        return IpxeHostnameSanitizer::sanitizeForIpxeOutput($value);
     }
 }

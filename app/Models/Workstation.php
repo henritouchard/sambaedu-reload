@@ -75,6 +75,17 @@ class Workstation extends Model implements Wireable
     ];
 
     /**
+     * Mutator : force `mac` en lowercase canonique iso
+     * {@see \App\Ipxe\Support\MacAddressNormalizer::normalize()}.
+     * Précondition du fallback MAC lookup indexé (cf. migration
+     * `2026_05_20_120000_normalize_workstations_mac_lowercase`).
+     */
+    public function setMacAttribute(?string $value): void
+    {
+        $this->attributes['mac'] = $value !== null ? strtolower($value) : null;
+    }
+
+    /**
      * Relation N:1 avec la salle physique où se trouve la machine
      * Une machine ne peut être que dans une seule salle physique
      */

@@ -162,14 +162,11 @@ final class IpxeActionResolver
     }
 
     /**
-     * Iso {@see IpxeMenuRenderer::sanitizeAscii()} — un firmware iPXE rejette
-     * l'ASCII étendu. Tout caractère hors `0x20-0x7E` (et tab) est remplacé
-     * par `?`.
+     * Délègue à l'implémentation canonique {@see IpxeHostnameSanitizer::sanitizeForIpxeOutput()}
+     * — Unicode-aware + fail-closed sur UTF-8 invalide (cf. F15 review).
      */
     private function sanitizeAscii(string $value): string
     {
-        $clean = preg_replace('/[^\x20-\x7E\t]/', '?', $value);
-
-        return $clean ?? $value;
+        return IpxeHostnameSanitizer::sanitizeForIpxeOutput($value);
     }
 }

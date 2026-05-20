@@ -347,7 +347,9 @@ class SqlShimTest extends TestCase
         $this->assertEquals(strtolower($ws->name), $entry['nom_poste']);
         $this->assertEquals('Windows 10', $entry['OS_poste']);
         $this->assertEquals('192.168.1.100', $entry['IP_poste']);
-        $this->assertEquals('AA:BB:CC:DD:EE:FF', $entry['mac_address_poste']);
+        // Le mutator Workstation::setMacAttribute force le lowercase canonique
+        // (iso MacAddressNormalizer). Ce shim retourne la valeur DB telle quelle.
+        $this->assertEquals('aa:bb:cc:dd:ee:ff', $entry['mac_address_poste']);
         $this->assertEquals('sha256test', $entry['sha_rapport_poste']);
         $this->assertEquals('/var/log/test.log', $entry['file_log_poste']);
         $this->assertEquals('/var/rapport/test.xml', $entry['file_rapport_poste']);

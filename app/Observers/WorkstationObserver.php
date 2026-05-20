@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Observers;
 
-use App\Jobs\AdSync\WorkstationMembershipAdSyncJob;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use Illuminate\Support\Facades\Log;
@@ -39,7 +38,12 @@ class WorkstationObserver
     }
 
     /**
-     * Appelé après l'ajout d'une machine à un groupe (pivot attach)
+     * Appelé après l'ajout d'une machine à un groupe (pivot attach).
+     *
+     * Audit-only depuis 2026-05-20 : la sync AD machine→groupe a été retirée
+     * (décision Epic 4 — `WorkstationMembershipAdSyncJob` ne supporte plus
+     * `add`/`remove`, seul `move` salle subsiste). Le pivot SQL est la source
+     * de vérité unique pour l'appartenance aux groupes logiques (parcs).
      */
     public static function onGroupAttached(Workstation $workstation, int $groupId): void
     {
@@ -60,12 +64,12 @@ class WorkstationObserver
             'machine' => $workstation->name,
             'group' => $group->name
         ]);
-
-        dispatch(WorkstationMembershipAdSyncJob::add($workstation->id, $groupId));
     }
 
     /**
-     * Appelé après le retrait d'une machine d'un groupe (pivot detach)
+     * Appelé après le retrait d'une machine d'un groupe (pivot detach).
+     *
+     * Audit-only — voir {@see onGroupAttached()} pour la note archi.
      */
     public static function onGroupDetached(Workstation $workstation, int $groupId): void
     {
@@ -86,8 +90,6 @@ class WorkstationObserver
             'machine' => $workstation->name,
             'group' => $group->name
         ]);
-
-        dispatch(WorkstationMembershipAdSyncJob::remove($workstation->id, $groupId));
     }
 
     /**

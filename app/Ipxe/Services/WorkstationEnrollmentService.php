@@ -109,7 +109,7 @@ final class WorkstationEnrollmentService
                     'attempted_name_prefix' => substr($sanitized, 0, 8),
                 ], 'warning');
 
-                return EnrollNameResult::dbError($sanitized, 'nom invalide');
+                return EnrollNameResult::dbError('', 'nom invalide');
             }
 
             // 3) Résolution Workstation par UUID (priorité — parité legacy).
@@ -394,12 +394,18 @@ final class WorkstationEnrollmentService
     }
 
     /**
-     * Story 3.3 — AC2.7.
+     * Story 3.3 — AC2.7 (amendée post-merge 2026-05-20).
      *
      * Attache un poste à un parc logique (`WorkstationGroup::is_physical = false`).
-     * Délègue à {@see Workstation::attachGroups()} qui déclenche l'observer
-     * existant `WorkstationObserver::onGroupAttached` → sync AD asynchrone
-     * via `WorkstationMembershipAdSyncJob`.
+     * Délègue à {@see Workstation::attachGroups()}.
+     *
+     * **Note archi (décision Epic 4 antérieure à 3.3)** : l'appartenance machine→
+     * groupe logique (parc) est désormais gérée **uniquement en SQL** —
+     * {@see \App\Jobs\AdSync\WorkstationMembershipAdSyncJob} ne supporte plus
+     * d'action `add`/`remove` (seul `move` salle subsiste). Le texte original
+     * d'AC2.7 mentionnant la sync AD via observer est donc obsolète : pas de
+     * dispatch AD ici, le pivot `workstation_group_workstation` est la source de
+     * vérité unique.
      */
     public function attachGroup(Workstation $ws, int $groupId, string $ip = ''): bool
     {
@@ -456,6 +462,8 @@ final class WorkstationEnrollmentService
 
     /**
      * Story 3.3 — AC2.7 — symétrique de {@see attachGroup()}.
+     *
+     * Idem note archi : SQL only, pas de dispatch AD.
      */
     public function detachGroup(Workstation $ws, int $groupId, string $ip = ''): bool
     {
