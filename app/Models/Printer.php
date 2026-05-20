@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Story 6.1 — Modèle SER pour les imprimantes CUPS.
@@ -73,6 +74,21 @@ class Printer extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    /**
+     * Story 6.2 — Pilotes Windows associés à cette imprimante (HasMany).
+     *
+     * 1:N par construction (`printer_drivers.printer_cups_name` FK CASCADE
+     * depuis `printers.cups_name`) : un même driver peut équiper plusieurs
+     * imprimantes, mais chaque ligne `printer_drivers` est rattachée à une
+     * seule imprimante CUPS. La suppression d'une imprimante CUPS supprime
+     * en cascade les lignes SER drivers correspondantes (sémantique
+     * acceptée — le driver Samba reste publié, juste plus rattaché).
+     */
+    public function drivers(): HasMany
+    {
+        return $this->hasMany(PrinterDriver::class, 'printer_cups_name', 'cups_name');
     }
 
     // ========================================================================

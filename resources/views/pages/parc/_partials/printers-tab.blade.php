@@ -2,10 +2,17 @@
 
 use App\Components\Traits\WithToasts;
 use App\Models\Printer;
+use App\Models\PrinterDriver;
 use App\Models\WorkstationGroup;
 use App\Services\PermissionService;
 use App\Services\Print\CupsPrinterService;
 use App\Services\Print\Exceptions\CupsCommandException;
+use App\Services\Print\Exceptions\KerberosTicketException;
+use App\Services\Print\Exceptions\PrintDriverException;
+use App\Services\Print\Exceptions\SambaUnavailableException;
+use App\Services\Print\Exceptions\WindowsPivotUnreachableException;
+use App\Services\Print\PrintDriverService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -29,6 +36,7 @@ new class extends Component {
 
     private CupsPrinterService $cupsService;
     private PermissionService $permissionService;
+    private PrintDriverService $driverService;
 
     /** @var array<int, array{cups_name:string,uri:?string,state:string,description:?string,location:?string,model:?string,jobs_count:int,description_ser:?string,is_orphan:bool,is_attached:bool,workstation_groups:array<int, array{id:int,name:string}>}> */
     public array $printers = [];
@@ -66,10 +74,36 @@ new class extends Component {
     public array $editWorkstationGroupIds = [];
     public string $editUri = '';
 
-    public function boot(CupsPrinterService $cupsService, PermissionService $permissionService): void
-    {
+    // ===== Story 6.2 — Drivers Windows =====
+    /** @var array{samba: ?array{smb_name:string,smb_driver:string,smb_comment:string}, ser: list<array<string,mixed>>} */
+    public array $printerDrivers = ['samba' => null, 'ser' => []];
+
+    public bool $sambaAvailable = true;
+    public bool $showUploadDriverModal = false;
+    public string $newDriverPivot = '';
+    public string $newDriverName = '';
+    public string $newDriverDisplayName = '';
+
+    /** @var array<int, array{smb_name:string,smb_driver:string,smb_comment:string}> */
+    public array $availableDriversOnPivot = [];
+
+    /**
+     * Q3A — état partiel récupérable après registerDriver OK + étape attach KO.
+     * Quand non-null, l'UI propose un bouton « Réessayer association »
+     * dans la section drivers de la modale d'édit.
+     *
+     * @var array{driver_name:string,display_name:string}|null
+     */
+    public ?array $pendingAttachDriver = null;
+
+    public function boot(
+        CupsPrinterService $cupsService,
+        PermissionService $permissionService,
+        PrintDriverService $driverService,
+    ): void {
         $this->cupsService = $cupsService;
         $this->permissionService = $permissionService;
+        $this->driverService = $driverService;
     }
 
     public function mount(): void
@@ -392,13 +426,45 @@ new class extends Component {
             ? $printer->workstationGroups->pluck('id')->all()
             : [];
 
+        // Story 6.2 — charger la section drivers Windows. Fail-soft sur
+        // SambaUnavailableException : la modale s'ouvre, banner affiché,
+        // actions désactivées (cohérent fix #1 6.1).
+        $this->loadPrinterDrivers($cupsName);
+
         $this->showEditModal = true;
+    }
+
+    /**
+     * Story 6.2 — Charge la liste des drivers Samba+SER pour l'imprimante éditée.
+     */
+    private function loadPrinterDrivers(string $cupsName): void
+    {
+        try {
+            $this->printerDrivers = $this->driverService->listDriversForPrinter($cupsName);
+            $this->sambaAvailable = true;
+        } catch (SambaUnavailableException $e) {
+            Log::warning('PrintersTab: Samba injoignable pour drivers', ['cups_name' => $cupsName]);
+            $this->printerDrivers = ['samba' => null, 'ser' => []];
+            $this->sambaAvailable = false;
+        } catch (KerberosTicketException $e) {
+            Log::warning('PrintersTab: Kerberos KO pour drivers', ['cups_name' => $cupsName]);
+            $this->printerDrivers = ['samba' => null, 'ser' => []];
+            $this->sambaAvailable = false;
+        } catch (\Throwable $e) {
+            Log::error('PrintersTab: erreur lecture drivers', [
+                'cups_name' => $cupsName,
+                'error' => $e->getMessage(),
+            ]);
+            $this->printerDrivers = ['samba' => null, 'ser' => []];
+            $this->sambaAvailable = false;
+        }
     }
 
     public function closeEditModal(): void
     {
         $this->showEditModal = false;
         $this->editingCupsName = null;
+        $this->pendingAttachDriver = null;
     }
 
     public function updatePrinter(): void
@@ -568,6 +634,418 @@ new class extends Component {
 
         $this->loadPrinters();
     }
+
+    // ========================================================================
+    // STORY 6.2 — UPLOAD / DETACH / DELETE DRIVERS WINDOWS
+    // ========================================================================
+
+    public function openUploadDriverModal(): void
+    {
+        if (!Gate::allows('manage-printer')) {
+            $this->toastAccessDenied();
+            return;
+        }
+        if ($this->editingCupsName === null) {
+            $this->toastError("Sélectionner d'abord une imprimante.");
+            return;
+        }
+        $this->resetUploadDriverForm();
+        $this->showUploadDriverModal = true;
+    }
+
+    public function closeUploadDriverModal(): void
+    {
+        $this->showUploadDriverModal = false;
+        $this->resetUploadDriverForm();
+    }
+
+    private function resetUploadDriverForm(): void
+    {
+        $this->newDriverPivot = '';
+        $this->newDriverName = '';
+        $this->newDriverDisplayName = '';
+        $this->availableDriversOnPivot = [];
+        $this->resetErrorBag(['newDriverPivot', 'newDriverName', 'newDriverDisplayName']);
+    }
+
+    public function listDriversOnPivot(): void
+    {
+        if (!Gate::allows('manage-printer')) {
+            $this->toastAccessDenied();
+            return;
+        }
+        $this->validate([
+            'newDriverPivot' => [
+                'required',
+                'string',
+                'regex:' . PrintDriverService::HOSTNAME_REGEX,
+            ],
+        ], [], ['newDriverPivot' => 'hostname du poste pivot']);
+
+        try {
+            $this->availableDriversOnPivot = $this->driverService->listPrintersOnPivot($this->newDriverPivot);
+            if (empty($this->availableDriversOnPivot)) {
+                $this->toastInfo("Aucune imprimante partagée détectée sur {$this->newDriverPivot}.");
+            }
+        } catch (WindowsPivotUnreachableException $e) {
+            $this->toastError("Poste pivot {$this->newDriverPivot} injoignable — vérifier qu'il est allumé.");
+            $this->availableDriversOnPivot = [];
+        } catch (KerberosTicketException $e) {
+            $this->toastError('Authentification Samba expirée — contacter l\'admin système.');
+            $this->availableDriversOnPivot = [];
+        } catch (SambaUnavailableException $e) {
+            $this->toastError('Service Samba injoignable — impossible de lister les drivers du pivot.');
+            $this->availableDriversOnPivot = [];
+        } catch (PrintDriverException $e) {
+            $this->toastError('Erreur Samba : ' . $e->firstStderrLine());
+            $this->availableDriversOnPivot = [];
+        } catch (\InvalidArgumentException $e) {
+            $this->toastError($e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('PrintersTab: erreur listage drivers pivot', [
+                'pivot' => $this->newDriverPivot,
+                'error' => $e->getMessage(),
+            ]);
+            $this->toastError('Une erreur interne est survenue lors du listage des drivers du pivot.');
+        }
+    }
+
+    public function uploadDriver(): void
+    {
+        // Fix #15 — re-valider l'imprimante cible avant tout. Un
+        // editingCupsName forgé via $wire.set sur un printer supprimé
+        // entretemps doit échouer tôt et lisiblement (pas un INSERT
+        // silencieusement catché en générique).
+        if ($this->editingCupsName === null) {
+            $this->toastError("Aucune imprimante cible sélectionnée.");
+            return;
+        }
+        $printer = Printer::find($this->editingCupsName);
+        if ($printer === null) {
+            $this->toastError("Imprimante {$this->editingCupsName} introuvable.");
+            return;
+        }
+        Gate::authorize('manage-printer', $printer);
+
+        $this->validate([
+            'newDriverPivot' => ['required', 'string', 'regex:' . PrintDriverService::HOSTNAME_REGEX],
+            'newDriverName' => ['required', 'string', 'regex:' . PrintDriverService::DRIVER_NAME_REGEX, 'max:255'],
+            'newDriverDisplayName' => ['nullable', 'string', 'max:255'],
+        ], [], [
+            'newDriverPivot' => 'hostname du poste pivot',
+            'newDriverName' => 'nom du driver',
+        ]);
+
+        // Q4A — verrou anti-concurrence inter-admins par imprimante cible
+        // (deux uploads simultanés sur la même imprimante = race condition
+        // sur les fichiers + Samba).
+        $lock = Cache::lock('printer-drivers-upload-' . $this->editingCupsName, 120);
+        if (!$lock->get()) {
+            $this->toastWarning('Un autre téléversement de driver est déjà en cours pour cette imprimante.');
+            return;
+        }
+
+        $copiedFiles = [];
+        $driverRegistered = false;
+        $registeredDriverName = null;
+        $driverDisplayName = $this->newDriverDisplayName;
+
+        try {
+            // Étape 1 — lecture définition driver sur pivot.
+            $driverDef = $this->driverService->getDriverDefinition($this->newDriverPivot, $this->newDriverName);
+
+            // Étape 2 — copie fichiers depuis pivot vers /var/lib/samba/printers/x64/.
+            $filesToCopy = array_filter([
+                $driverDef['Driver Path'] ?? null,
+                $driverDef['Datafile'] ?? null,
+                $driverDef['Configfile'] ?? null,
+                $driverDef['Helpfile'] ?? null,
+            ], fn($f) => is_string($f) && $f !== '' && $f !== 'NULL');
+            foreach ($driverDef['Dependentfiles'] ?? [] as $dep) {
+                if (is_string($dep) && $dep !== '' && $dep !== 'NULL') {
+                    $filesToCopy[] = $dep;
+                }
+            }
+            $filesToCopy = array_values(array_unique($filesToCopy));
+
+            foreach ($filesToCopy as $file) {
+                $this->driverService->copyDriverFile($this->newDriverPivot, $file);
+                $copiedFiles[] = $file;
+            }
+
+            // Étape 3 — registerDriver côté Samba.
+            $this->driverService->registerDriver($driverDef);
+            $driverRegistered = true;
+            $registeredDriverName = $driverDef['Driver Name'];
+
+            // Étapes 4-5 — INSERT SER puis attach, transactionnels. Si
+            // attach échoue, la transaction roll-back l'INSERT et on
+            // tombe dans le catch — l'état partiel (driver Samba
+            // enregistré sans association) est exposé via
+            // `$pendingAttachDriver` pour bouton « Réessayer ».
+            DB::transaction(function () use ($driverDef) {
+                PrinterDriver::create([
+                    'printer_cups_name' => $this->editingCupsName,
+                    'architecture' => 'x64',
+                    'driver_name' => $driverDef['Driver Name'],
+                    'source' => 'upload-w10',
+                    'orphan' => false,
+                    'notes' => $this->newDriverDisplayName !== '' ? $this->newDriverDisplayName : null,
+                    'created_by_user_id' => auth()->id(),
+                ]);
+                $this->driverService->attachDriverToPrinter($this->editingCupsName, $driverDef['Driver Name']);
+            });
+
+            $this->toastSuccess("Driver {$driverDef['Driver Name']} téléversé et associé à {$this->editingCupsName}.");
+            $this->closeUploadDriverModal();
+            $this->loadPrinterDrivers($this->editingCupsName);
+        } catch (WindowsPivotUnreachableException $e) {
+            $this->driverService->unlinkDriverFiles($copiedFiles);
+            $this->toastError("Poste pivot {$this->newDriverPivot} injoignable — vérifier qu'il est allumé.");
+        } catch (KerberosTicketException $e) {
+            if ($driverRegistered && $registeredDriverName !== null) {
+                $this->offerRetryAttach($registeredDriverName, $driverDisplayName);
+                return;
+            }
+            $this->driverService->unlinkDriverFiles($copiedFiles);
+            $this->toastError('Authentification Samba expirée — contacter l\'admin système.');
+        } catch (SambaUnavailableException $e) {
+            if ($driverRegistered && $registeredDriverName !== null) {
+                $this->offerRetryAttach($registeredDriverName, $driverDisplayName);
+                return;
+            }
+            $this->driverService->unlinkDriverFiles($copiedFiles);
+            $this->toastError('Service Samba injoignable — téléversement annulé.');
+        } catch (PrintDriverException $e) {
+            if ($driverRegistered && $registeredDriverName !== null) {
+                $this->offerRetryAttach($registeredDriverName, $driverDisplayName);
+                return;
+            }
+            $this->driverService->unlinkDriverFiles($copiedFiles);
+            $this->toastError('Erreur Samba : ' . $e->firstStderrLine());
+        } catch (\InvalidArgumentException $e) {
+            $this->driverService->unlinkDriverFiles($copiedFiles);
+            $this->toastError($e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('PrintersTab: erreur upload driver', [
+                'pivot' => $this->newDriverPivot,
+                'driver' => $this->newDriverName,
+                'cups_name' => $this->editingCupsName,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            if ($driverRegistered && $registeredDriverName !== null) {
+                $this->offerRetryAttach($registeredDriverName, $driverDisplayName);
+                return;
+            }
+            $this->driverService->unlinkDriverFiles($copiedFiles);
+            $this->toastError('Une erreur interne est survenue lors du téléversement du driver.');
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Q3A — bascule en état partiel récupérable : driver enregistré côté
+     * Samba mais étape 4-5 (INSERT SER + attach) échouée. L'UI affiche
+     * un bouton « Réessayer association » dans la section drivers de
+     * la modale d'édit.
+     */
+    private function offerRetryAttach(string $driverName, string $displayName): void
+    {
+        $this->pendingAttachDriver = [
+            'driver_name' => $driverName,
+            'display_name' => $displayName,
+        ];
+        $this->toastWarning(sprintf(
+            'Driver « %s » enregistré côté Samba mais association à %s échouée. Utilisez « Réessayer association » dans la section drivers.',
+            $driverName,
+            $this->editingCupsName,
+        ));
+        $this->closeUploadDriverModal();
+        if ($this->editingCupsName !== null) {
+            $this->loadPrinterDrivers($this->editingCupsName);
+        }
+    }
+
+    /**
+     * Q3A — réessaie l'INSERT SER + attach pour un driver dans l'état
+     * partiel `$pendingAttachDriver`. Idempotent : si la ligne SER
+     * existe déjà (race), on log et on tente quand même `attachDriverToPrinter`.
+     */
+    public function retryAttachDriver(): void
+    {
+        if ($this->pendingAttachDriver === null || $this->editingCupsName === null) {
+            return;
+        }
+        $printer = Printer::find($this->editingCupsName);
+        if ($printer === null) {
+            $this->toastError("Imprimante {$this->editingCupsName} introuvable.");
+            $this->pendingAttachDriver = null;
+            return;
+        }
+        Gate::authorize('manage-printer', $printer);
+
+        $driverName = $this->pendingAttachDriver['driver_name'];
+        $displayName = $this->pendingAttachDriver['display_name'];
+
+        try {
+            DB::transaction(function () use ($driverName, $displayName) {
+                $existing = PrinterDriver::query()
+                    ->where('printer_cups_name', $this->editingCupsName)
+                    ->where('architecture', 'x64')
+                    ->where('driver_name', $driverName)
+                    ->first();
+                if ($existing === null) {
+                    PrinterDriver::create([
+                        'printer_cups_name' => $this->editingCupsName,
+                        'architecture' => 'x64',
+                        'driver_name' => $driverName,
+                        'source' => 'upload-w10',
+                        'orphan' => false,
+                        'notes' => $displayName !== '' ? $displayName : null,
+                        'created_by_user_id' => auth()->id(),
+                    ]);
+                }
+                $this->driverService->attachDriverToPrinter($this->editingCupsName, $driverName);
+            });
+            $this->toastSuccess("Driver {$driverName} associé à {$this->editingCupsName}.");
+            $this->pendingAttachDriver = null;
+            $this->loadPrinterDrivers($this->editingCupsName);
+        } catch (KerberosTicketException $e) {
+            $this->toastError('Authentification Samba expirée — contacter l\'admin système.');
+        } catch (SambaUnavailableException $e) {
+            $this->toastError('Service Samba injoignable — réessai annulé.');
+        } catch (PrintDriverException $e) {
+            $this->toastError('Erreur Samba : ' . $e->firstStderrLine());
+        } catch (\Throwable $e) {
+            Log::error('PrintersTab: retry attach échoué', [
+                'driver' => $driverName,
+                'cups_name' => $this->editingCupsName,
+                'error' => $e->getMessage(),
+            ]);
+            $this->toastError('Réessai association échoué.');
+        }
+    }
+
+    /**
+     * Story 6.2 — Détache un driver de l'imprimante éditée (`setdriver
+     * "<printer>" ""`). Supprime la ligne SER `printer_drivers`
+     * correspondante (le driver Samba reste publié — il peut être
+     * réattaché ailleurs).
+     */
+    public function detachDriver(string $driverName, string $architecture = 'x64'): void
+    {
+        $printer = $this->editingCupsName !== null
+            ? Printer::find($this->editingCupsName)
+            : null;
+        Gate::authorize('manage-printer', $printer);
+
+        if ($this->editingCupsName === null) {
+            $this->toastError("Aucune imprimante cible sélectionnée.");
+            return;
+        }
+
+        try {
+            $this->driverService->detachDriverFromPrinter($this->editingCupsName);
+
+            // Supprime la ligne SER (par PK composite — Query Builder).
+            PrinterDriver::query()
+                ->where('printer_cups_name', $this->editingCupsName)
+                ->where('architecture', $architecture)
+                ->where('driver_name', $driverName)
+                ->delete();
+
+            $this->toastSuccess("Driver détaché de {$this->editingCupsName}.");
+            $this->loadPrinterDrivers($this->editingCupsName);
+        } catch (KerberosTicketException $e) {
+            $this->toastError('Authentification Samba expirée — contacter l\'admin système.');
+        } catch (SambaUnavailableException $e) {
+            $this->toastError('Service Samba injoignable — détachement annulé.');
+        } catch (PrintDriverException $e) {
+            $this->toastError('Erreur Samba : ' . $e->firstStderrLine());
+        } catch (\InvalidArgumentException $e) {
+            $this->toastError($e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('PrintersTab: erreur détachement driver', [
+                'driver' => $driverName,
+                'cups_name' => $this->editingCupsName,
+                'error' => $e->getMessage(),
+            ]);
+            $this->toastError('Une erreur interne est survenue lors du détachement du driver.');
+        }
+    }
+
+    /**
+     * Story 6.2 — Supprime un driver Samba via `rpcclient deldriver`.
+     * Protection D8 : refuse si le driver est rattaché à ≥ 1 imprimante
+     * dans la table SER `printer_drivers` (l'admin doit détacher d'abord).
+     */
+    public function deleteDriver(string $driverName, string $architecture = 'x64'): void
+    {
+        Gate::authorize('manage-printer');
+
+        // D8 — protection rattachements.
+        $attached = PrinterDriver::query()
+            ->where('driver_name', $driverName)
+            ->where('architecture', $architecture)
+            ->pluck('printer_cups_name')
+            ->all();
+        if (!empty($attached)) {
+            $list = implode(', ', $attached);
+            $this->toastError("Détacher d'abord le driver de toutes les imprimantes : {$list}");
+            return;
+        }
+
+        try {
+            // Récupération de la définition driver (pour connaître les
+            // fichiers à `unlink` post-deldriver). Best-effort — si
+            // getdriver échoue, on supprime quand même côté Samba sans
+            // unlink (le sync rattrapera l'orphan).
+            $files = [];
+            try {
+                $def = $this->driverService->getDriverDefinitionFromSe4fs($driverName);
+                foreach (['Driver Path', 'Datafile', 'Configfile', 'Helpfile'] as $key) {
+                    if (!empty($def[$key]) && $def[$key] !== 'NULL') {
+                        $files[] = $def[$key];
+                    }
+                }
+                foreach ($def['Dependentfiles'] ?? [] as $dep) {
+                    if ($dep !== '' && $dep !== 'NULL') {
+                        $files[] = $dep;
+                    }
+                }
+                $files = array_values(array_unique($files));
+            } catch (\Throwable $e) {
+                Log::warning('PrintersTab: lecture definition driver avant delete échouée', [
+                    'driver' => $driverName,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            $this->driverService->deleteDriver($driverName, $architecture, $files);
+            $this->toastSuccess("Driver {$driverName} supprimé.");
+
+            if ($this->editingCupsName !== null) {
+                $this->loadPrinterDrivers($this->editingCupsName);
+            }
+        } catch (KerberosTicketException $e) {
+            $this->toastError('Authentification Samba expirée — contacter l\'admin système.');
+        } catch (SambaUnavailableException $e) {
+            $this->toastError('Service Samba injoignable — suppression driver annulée.');
+        } catch (PrintDriverException $e) {
+            $this->toastError('Erreur Samba : ' . $e->firstStderrLine());
+        } catch (\InvalidArgumentException $e) {
+            $this->toastError($e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('PrintersTab: erreur suppression driver', [
+                'driver' => $driverName,
+                'error' => $e->getMessage(),
+            ]);
+            $this->toastError('Une erreur interne est survenue lors de la suppression du driver.');
+        }
+    }
+
 };
 ?>
 
@@ -854,6 +1332,119 @@ new class extends Component {
                         @endforelse
                     </div>
                 </x-molecules.modal.section>
+
+                {{-- Story 6.2 — Drivers Windows (section dans modale édit) --}}
+                @can('manage-printer')
+                    <x-molecules.modal.section title="Drivers Windows">
+                        @unless ($sambaAvailable)
+                            <div class="alert alert-warning mb-3">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                                <span>Samba injoignable — drivers indisponibles. Vérifier l'état du service et le ticket
+                                    Kerberos du compte machine.</span>
+                            </div>
+                        @endunless
+
+                        {{-- Q3A — état partiel récupérable après registerDriver OK + attach KO --}}
+                        @if ($pendingAttachDriver !== null)
+                            <div class="alert alert-warning mb-3">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                                <div class="flex-1">
+                                    <p>
+                                        Driver <span class="font-mono">{{ $pendingAttachDriver['driver_name'] }}</span>
+                                        enregistré côté Samba mais non associé à
+                                        <span class="font-mono">{{ $editingCupsName }}</span>.
+                                    </p>
+                                    <button type="button" class="btn btn-sm btn-warning mt-2"
+                                        @if (!$sambaAvailable) disabled @endif
+                                        wire:click="retryAttachDriver">
+                                        <i class="fa-solid fa-rotate"></i>
+                                        Réessayer association
+                                    </button>
+                                </div>
+                            </div>
+                        @endif
+
+                        @php
+                            $samba = $printerDrivers['samba'] ?? null;
+                            $ser = $printerDrivers['ser'] ?? [];
+                        @endphp
+
+                        @if ($sambaAvailable && empty($ser) && $samba === null)
+                            <p class="text-sm text-base-content/60 mb-3">
+                                Aucun driver Windows associé — utilisez « Téléverser un driver » pour permettre
+                                l'installation automatique sur les postes Windows.
+                            </p>
+                        @endif
+
+                        @if ($samba !== null)
+                            <div class="text-xs mb-2 font-mono text-base-content/70">
+                                <span class="font-semibold">Samba :</span>
+                                driver actif côté SE4FS = « {{ $samba['smb_driver'] }} »
+                            </div>
+                        @endif
+
+                        @if (!empty($ser))
+                            <div class="overflow-x-auto">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Nom Samba</th>
+                                            <th>Arch.</th>
+                                            <th>Source</th>
+                                            <th>Statut</th>
+                                            <th class="text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach ($ser as $drv)
+                                            <tr
+                                                wire:key="drv-{{ $drv['driver_name'] }}-{{ $drv['architecture'] }}">
+                                                <td class="text-xs font-mono">{{ $drv['driver_name'] }}</td>
+                                                <td><span class="badge badge-ghost badge-sm">{{ $drv['architecture'] }}</span></td>
+                                                <td class="text-xs">{{ $drv['source'] }}</td>
+                                                <td>
+                                                    @if ($drv['orphan'])
+                                                        <span class="badge badge-error badge-sm">orphan</span>
+                                                    @else
+                                                        <span class="badge badge-success badge-sm">actif</span>
+                                                    @endif
+                                                </td>
+                                                <td class="text-right">
+                                                    <div class="join">
+                                                        <button type="button"
+                                                            class="join-item btn btn-xs btn-ghost"
+                                                            @if (!$sambaAvailable) disabled @endif
+                                                            wire:click="detachDriver('{{ $drv['driver_name'] }}', '{{ $drv['architecture'] }}')"
+                                                            wire:confirm="Détacher le driver {{ $drv['driver_name'] }} de l'imprimante {{ $editingCupsName }} ?"
+                                                            title="Détacher de cette imprimante">
+                                                            <i class="fa-solid fa-link-slash"></i>
+                                                        </button>
+                                                        <button type="button"
+                                                            class="join-item btn btn-xs btn-ghost text-error"
+                                                            @if (!$sambaAvailable) disabled @endif
+                                                            wire:click="deleteDriver('{{ $drv['driver_name'] }}', '{{ $drv['architecture'] }}')"
+                                                            wire:confirm="Supprimer définitivement le driver {{ $drv['driver_name'] }} de Samba ? Cette action est irréversible."
+                                                            title="Supprimer le driver de Samba">
+                                                            <i class="fa-solid fa-trash"></i>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        @endif
+
+                        <div class="mt-3">
+                            <button type="button" class="btn btn-sm btn-outline" wire:click="openUploadDriverModal"
+                                @if (!$sambaAvailable) disabled @endif>
+                                <i class="fa-solid fa-upload"></i>
+                                Téléverser un driver
+                            </button>
+                        </div>
+                    </x-molecules.modal.section>
+                @endcan
             @endif
 
             <x-slot:footer>
@@ -865,4 +1456,7 @@ new class extends Component {
             </x-slot:footer>
         </x-molecules.modal>
     @endteleport
+
+    {{-- Story 6.2 — Modale upload driver (partial dédié) --}}
+    @include('pages.parc._partials.upload-driver-modal')
 </div>

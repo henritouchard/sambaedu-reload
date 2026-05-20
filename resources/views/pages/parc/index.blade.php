@@ -365,6 +365,13 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
                 <i class="fa-solid fa-print mr-2"></i>
                 Imprimantes
             </button>
+            @can('manage-printer')
+                <button type="button" role="tab" class="tab {{ $tab === 'drivers' ? 'tab-active' : '' }}"
+                    wire:click="setTab('drivers')">
+                    <i class="fa-solid fa-floppy-disk mr-2"></i>
+                    Drivers
+                </button>
+            @endcan
         </div>
 
         <!-- Contenu des onglets -->
@@ -373,6 +380,8 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
                 @include('pages.parc._partials.machines-tab')
             @elseif ($tab === 'printers')
                 <livewire:pages::parc._partials.printers-tab />
+            @elseif ($tab === 'drivers')
+                <livewire:pages::parc._partials.drivers-tab />
             @else
                 {{-- Vérification synchronisation AD/SQL --}}
                 <div class="flex-shrink-0">

@@ -244,11 +244,25 @@ Sur `/parc/groups/{id}`, un check `Gate::allows('view', $group)` dans le `mount(
 
 Depuis la Story 6.1, `/parc?tab=printers` expose un troisième onglet (entre `Groupes` et `Postes`) qui liste les imprimantes CUPS, permet le CRUD complet (ajout / configuration / suppression / toggle enable/disable), et porte le **rattachement N:N à un ou plusieurs `WorkstationGroup`** via la table pivot `printer_workstation_group`.
 
-Détails techniques (Service `CupsPrinterService`, modèle Eloquent `Printer`, commande `printers:sync`, cascade FK pivot, sudoers, scope délégué Epic 7) : voir [`docs/domains/printers.md`](printers.md).
+**Story 6.2 (2026-05-20)** enrichit la modale édit avec une nouvelle section
+« Drivers Windows » (visible admin only) qui permet :
+- de lister les drivers Samba rattachés à l'imprimante (croisement
+  `rpcclient getprinter` + table SER `printer_drivers`),
+- de téléverser un nouveau driver depuis un poste W10 pivot (modale
+  dédiée `upload-driver-modal.blade.php`),
+- de détacher un driver de l'imprimante (`rpcclient setdriver "<printer>" ""`),
+- de supprimer définitivement un driver de Samba (`rpcclient deldriver`),
+  avec protection D8 : refus si le driver est rattaché à ≥ 1 imprimante.
+
+Et **un 4e onglet « Drivers »** (admin only) sur `/parc?tab=drivers` qui
+expose la vue inverse : tous les drivers Samba publiés + enrichissement SER
+(audit, rattachements multi-imprimantes, filtres orphan/source).
+
+Détails techniques (Service `CupsPrinterService`, modèle Eloquent `Printer`, commande `printers:sync`, cascade FK pivot, sudoers, scope délégué Epic 7 ; Service `PrintDriverService`, modèle `PrinterDriver` PK composite, commande `printer-drivers:sync` 03:35, sudoers v2 enrichis) : voir [`docs/domains/printers.md`](printers.md).
 
 Cohérence scope :
-- Admin global (`server.admin`) → toutes les imprimantes (y compris orphan, avec filtres dédiés).
-- Délégué scopé Epic 7 (`server.admin` scopé sur ≥ 1 parc) → uniquement les imprimantes rattachées à un de ses parcs (les orphans ne lui sont jamais visibles).
+- Admin global (`server.admin`) → toutes les imprimantes (y compris orphan, avec filtres dédiés) + accès complet aux drivers Windows (téléversement, détachement, suppression).
+- Délégué scopé Epic 7 (`server.admin` scopé sur ≥ 1 parc) → uniquement les imprimantes rattachées à un de ses parcs ; **PAS** d'accès à la gestion des drivers Windows (D3 6.2 — décision produit Henri).
 - Utilisateur lambda → vide.
 
-E2E manuel : voir [`docs/qa/domains/printers.md`](../qa/domains/printers.md) (20 scénarios dont drift CUPS↔SER, restauration orphan, validation injection).
+E2E manuel : voir [`docs/qa/domains/printers.md`](../qa/domains/printers.md) (20 scénarios 6.1 + 16 scénarios 6.2 dont drift CUPS↔SER, drift Samba↔SER, restauration orphan, validation injection, workflow upload pivot W10).

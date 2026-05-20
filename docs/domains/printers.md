@@ -1,6 +1,6 @@
-# Domaine Imprimantes — gestion CUPS et rattachement parc
+# Domaine Imprimantes — gestion CUPS, rattachement parc et pilotes Windows
 
-_Dernière mise à jour : 2026-04-27 (story 6.1 — consultation, gestion et rattachement parc des imprimantes CUPS)._
+_Dernière mise à jour : 2026-05-20 (story 6.2 — gestion des pilotes Windows)._
 
 Ce document décrit l'architecture du domaine **Imprimantes** côté SER : encapsulation des appels CUPS, modélisation Eloquent SER (`Printer`, pivot `printer_workstation_group`), commande de réconciliation `printers:sync`, sudoers et cross-références au legacy.
 
@@ -245,8 +245,331 @@ Au sommet de l'onglet : « Cette interface remplace l'ancienne page de gestion d
 ## Références
 
 - [Story 6.1](../../_bmad-output/implementation-artifacts/6-1-consultation-et-gestion-des-imprimantes-cups.md)
+- [Story 6.2](../../_bmad-output/implementation-artifacts/6-2-gestion-des-pilotes-windows.md)
 - [Epic 6 — Impression SER](../../_bmad-output/planning-artifacts/epics.md#epic-6)
 - [PRD FR17-19](../../_bmad-output/planning-artifacts/prd.md#fr17-19)
 - [Architecture — `App\Services\Print\`](../../_bmad-output/planning-artifacts/architecture.md)
 - [Pattern shellout sudo — `XfsQuotaService` (5.1a)](filesystem.md)
+
+---
+
+## Pilotes Windows (Story 6.2)
+
+### Architecture deux couches : Samba (runtime) vs SER (DB)
+
+```
+┌───────────────────────────────────────────┐
+│  Samba (runtime)                          │
+│  /etc/samba/smb.conf [print$]             │
+│  /var/lib/samba/printers/x64/*.dll/.ppd   │
+│  - rpcclient enumdrivers                  │
+│  - rpcclient getdriver "<name>"           │
+│  - rpcclient adddriver / deldriver        │
+│  - rpcclient setdriver "<printer>" ""     │
+│  - smbclient //pivot/print$ -c get …      │
+└──────────────────┬────────────────────────┘
+                   │ enrichissement runtime
+                   │ via PrintDriverService
+                   ▼
+┌───────────────────────────────────────────┐
+│  SER (DB) — table printer_drivers         │
+│  PK composite (printer_cups_name,         │
+│                architecture)              │
+│  + audit (created_at/_by_user_id)         │
+│  + source (upload-w10|synced|manual-cli)  │
+│  + notes + orphan                         │
+│  + FK CASCADE depuis printers.cups_name   │
+└──────────────────┬────────────────────────┘
+                   │ scope manage-printer
+                   ▼
+   UI /parc?tab=printers (modale édit)
+        + /parc?tab=drivers (Option A)
+```
+
+**Principe** : Samba reste source de vérité runtime de la liste publiée
+(`rpcclient enumdrivers` est appelé à chaque ouverture de modale et par la
+commande sync). La table SER `printer_drivers` complète Samba avec ce
+qu'il ne sait pas exposer : qui a uploadé, quand, depuis quelle source,
+notes métier, rattachement métier driver↔imprimante.
+
+### Workflow upload depuis poste pivot W10 (D2 6.2)
+
+Le workflow décalqué iso-legacy (pas d'upload binaire HTTP) :
+
+1. L'admin installe le driver Windows localement sur un poste W10 dédié
+   (« pivot »), partage une imprimante locale qui utilise ce driver.
+2. UI SE5 → modale édit imprimante CUPS → section « Drivers Windows » →
+   bouton « Téléverser un driver » → modale upload :
+   - saisit hostname du pivot W10,
+   - clique « Lister les drivers » → `rpcclient enumprinters <pivot>`,
+   - sélectionne le driver (radio button),
+   - clique « Téléverser et associer ».
+3. Backend :
+   1. `getDriverDefinition($pivot, $driverName)` → lit la définition driver
+      via `rpcclient getdriver "<name>" <pivot>` (parse legacy l. 47-58).
+   2. Pour chaque fichier listé : `copyDriverFile($pivot, $file)` =
+      `smbclient //pivot/print$ -c 'cd x64\3;get <file> /var/lib/samba/printers/x64/<file>'`
+      puis `sudo chown www-admin:www-admin <dest>`.
+   3. `registerDriver($driverDef)` =
+      `rpcclient adddriver "Windows x64" "<DriverName>:<Path>:<Datafile>:<Configfile>:<Helpfile>:NULL:NULL:<deps>" "3"`.
+      Format strict legacy l. 110-112. Les fields vides sont passés en
+      string littéral `"NULL"`, pas en `null` PHP.
+   4. INSERT SER ligne `printer_drivers` (source=`upload-w10`,
+      `created_by_user_id=auth()->id()`).
+   5. `attachDriverToPrinter($cupsName, $driverName)` =
+      `rpcclient setdriver "<printer>" "<driver>"`.
+
+**Rollback best-effort (D9)** : si étape K échoue, on tente de rembobiner
+les étapes 1..K-1 sans interrompre le toast d'erreur — le driver Samba
+ajouté mais non attaché reste visible dans l'onglet `/parc?tab=drivers`,
+récupérable manuellement.
+
+### Distinction PPD CUPS (Linux) vs driver SMB (Windows)
+
+| Aspect | PPD CUPS (Story 6.1) | Driver SMB (Story 6.2) |
+|---|---|---|
+| Cible | Imprimante côté Linux | Postes Windows clients |
+| Commande | `lpadmin -p <name> -m <ppd>` | `rpcclient setdriver "<printer>" "<driver>"` |
+| Stockage | `/etc/cups/ppd/<name>.ppd` | `/var/lib/samba/printers/x64/*` |
+| UI 6.1 | Champ « Modèle » dans modale ajout/édit | — |
+| UI 6.2 | — | Section « Drivers Windows » + onglet `/parc?tab=drivers` |
+| Sync | `printers:sync` 03:30 | `printer-drivers:sync` 03:35 |
+
+Les deux couches sont **indépendantes** : une imprimante peut avoir un
+PPD CUPS sans driver SMB (les postes Windows demanderont alors le
+driver manuellement) ou inversement (rare, mais possible pour des
+imprimantes Windows-only proxysées par Samba).
+
+### Architecture Service `App\Services\Print\PrintDriverService`
+
+Wrappe les binaires Samba derrière une API typée. Décalque le pattern
+6.1 `CupsPrinterService` :
+
+- **`escapeshellarg()` systématique** sur tous les arguments
+  user-controlled (`printer_name`, `server_pivot`, `driver_name`,
+  `architecture`, file names).
+- **Re-validation regex côté Service** :
+  - `DRIVER_NAME_REGEX = /^[a-zA-Z0-9 ._\-()\/]{1,255}$/`
+  - `HOSTNAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,14}$/` (NetBIOS)
+  - `FILE_NAME_REGEX = /^[a-zA-Z0-9._\-]{1,255}$/` (anti path-traversal,
+    + `basename()` PHP forcé)
+  - `ARCHITECTURE_ALLOWED = ['x64']` (D5 — `x86` reporté Story 6.2bis)
+- **Centralisation Kerberos** : tous les `rpcclient` / `smbclient`
+  passent `--use-kerberos=required` (centralisé `buildRpcclientCommand`
+  / `buildSmbclientCommand`). Pas de fallback NTLM.
+- **`LC_ALL=C` centralisé** dans `RealCommandRunner::run()` (héritage 6.1
+  fix #14).
+- **Préfixe logs `PrintDriverService:`** strictement.
+
+#### Méthodes publiques
+
+| Méthode | Rôle | Légende erreur |
+|---|---|---|
+| `isSambaHealthy()` | Pré-flight `rpcclient srvinfo` | retourne bool, ne lève pas |
+| `isPivotReachable(string)` | `smbclient -L //pivot` | retourne bool |
+| `validateCupsName(string)` | Defense in depth — regex CUPS (avec underscore) | `InvalidArgumentException` |
+| `listAllDrivers()` | `rpcclient enumdrivers se4fs` | `SambaUnavailableException`/`KerberosTicketException`/`PrintDriverException` |
+| `getDriverDefinition(string, string)` | `rpcclient getdriver "<name>" <pivot>` | + `WindowsPivotUnreachableException` |
+| `getDriverDefinitionFromSe4fs(string)` | Sucre : `getDriverDefinition(SE4FS, $name)` (évite d'exposer la config) | idem |
+| `listPrintersOnPivot(string)` | `rpcclient enumprinters <pivot>` | idem ci-dessus |
+| `listPrintersOnSe4fs()` | Sucre : `listPrintersOnPivot(SE4FS)` — utilisé par `printer-drivers:sync` pour le rattachement auto AC4 (Q1A) | idem |
+| `getDriverForPrinter(string)` | `rpcclient getprinter "<name>"` (retourne null si absent) | `SambaUnavailableException` |
+| `listDriversForPrinter(string)` | Combine Samba + SER | idem |
+| `copyDriverFile(string, string, string)` | `smbclient //pivot/print$ -c 'cd x64\3;get <file>'` + `chown` post-copy | `InvalidArgumentException`/`WindowsPivotUnreachableException`/`PrintDriverException` |
+| `registerDriver(array)` | `rpcclient adddriver "Windows x64" "<payload>" "3"` | idem (sans pivot exception) |
+| `attachDriverToPrinter(string, string)` | `rpcclient setdriver "<printer>" "<driver>"` | idem |
+| `detachDriverFromPrinter(string)` | `rpcclient setdriver "<printer>" ""` | idem |
+| `deleteDriver(string, string, string[])` | `rpcclient deldriver "<name>"` puis `rm` sudo path-restricted | idem |
+| `unlinkDriverFiles(string[])` | `sudo rm` sudo path-restricted sans deldriver — rollback fichiers orphelins (D9) | retourne `['removed' => [], 'failed' => []]`, best-effort |
+
+**Distinction `validatePivotHostname` vs `validateCupsName`** : les
+deux regex divergent volontairement. `HOSTNAME_REGEX` est strict NetBIOS
+(15 chars, alphanum + tiret, pas d'underscore) — utilisé pour les
+hostnames de pivot W10 et le serveur SE4FS. `CUPS_NAME_REGEX` autorise
+l'underscore (cohérent {@see CupsPrinterService::NAME_REGEX} 6.1, qui
+laisse créer `imp_salle_a`). Le mélange des deux dans la 6.2 initiale
+était un bug bloquant pour les imprimantes nommées avec underscore (cf.
+review finding #1, fixé 2026-05-20).
+
+#### Exceptions structurées
+
+- **`PrintDriverException`** (extends `RuntimeException`) — erreur métier
+  de commande individuelle. Méthodes `getCommand`, `getStderr`,
+  `getReturnCode`, `firstStderrLine` (pour toast court). Décalque
+  `CupsCommandException` 6.1.
+- **`SambaUnavailableException`** — daemon Samba HS. Utilisé par
+  `PrinterDriversSyncCommand` pour skip orphan-marking (fix #12
+  décalqué).
+- **`WindowsPivotUnreachableException`** (extends
+  `PrintDriverException`) — sous-type pour les pannes côté pivot
+  (poste éteint, partage non publié). Toast dédié.
+- **`KerberosTicketException`** (extends `RuntimeException`) — ticket
+  expiré / KRB5_KT_NOTFOUND. Le message d'exception est lisible
+  utilisateur (« Authentification Samba expirée — contacter l'admin
+  système »).
+
+### Modèle Eloquent `App\Models\PrinterDriver`
+
+**PK composite** `(printer_cups_name, architecture)`. Eloquent ne gère
+pas nativement les PK composites : `$primaryKey = null` désactive les
+helpers qui supposent une clé scalaire (`find()`, route model binding,
+`save()` sur instance fraîche). Helper statique `findByKey()` exposé
++ Query Builder pour les mises à jour ciblées.
+
+| Champ | Type | Rôle |
+|---|---|---|
+| `printer_cups_name` | string(15) | FK CASCADE vers `printers.cups_name` |
+| `architecture` | string(16) | `x64` (D5) |
+| `driver_name` | string(255) | Nom Samba canonique |
+| `source` | string(32) | `upload-w10` / `synced` / `manual-cli` |
+| `orphan` | boolean | True si présent SER mais absent Samba |
+| `notes` | text nullable | Nom interne / mémo admin |
+| `created_by_user_id` | bigint FK | NULL si créé par sync |
+
+**Scopes** :
+- `nonOrphan()` / `orphans()` — symétriques 6.1 `Printer`.
+- `forArchitecture(string)` — filtre x64/x86.
+- `bySource(string)` — filtre par provenance.
+
+**Relations** :
+- `printer(): BelongsTo` → `Printer::class, 'printer_cups_name', 'cups_name'`.
+- `createdBy(): BelongsTo` → `User::class`.
+
+Et côté `Printer` (6.1, modifié 6.2) : `drivers(): HasMany` (1:N).
+
+### Commande Artisan `printer-drivers:sync`
+
+Signature : `php artisan printer-drivers:sync [--dry-run]`.
+
+Planifiée quotidienne à **03:35** (5 min après `printers:sync` 03:30 —
+monitoring séparé, D7 6.2).
+
+**Algorithme symétrique 6.1** (idempotent) :
+1. Pré-flight `isSambaHealthy()` ; si false → log error +
+   `Command::FAILURE` + AUCUN row marqué orphan (fix #12 6.1 décalqué).
+2. `listAllDrivers()` → index Samba `(driver_name|architecture)`.
+3. `PrinterDriver::all()` → index SER `(driver_name|architecture)`.
+4. `listPrintersOnSe4fs()` → associations effectives
+   `(cups_name → driver_name)` côté Samba (cf. Q1A — décision Henri
+   2026-05-20, alignement AC4 strict).
+5. Diff :
+   - SER non-orphan absent Samba → UPDATE `orphan=true` (audit
+     préservé). Le compteur affiché vient de la valeur retournée par
+     `UPDATE` (multi-rows si un même driver_name est rattaché à plusieurs
+     imprimantes — fix #5 review 2026-05-20).
+   - SER orphan présent Samba → UPDATE `orphan=false` (restauration).
+   - Association Samba (`cups_name`, `driver_name`) sans ligne SER ET
+     `Printer` existe en SER → INSERT auto (`source=synced`,
+     `created_by_user_id=null`).
+   - Association Samba (`cups_name`, `driver_name`) sans ligne SER ET
+     `Printer` absent → log warning « cups_name absent SER, rattachement
+     manuel requis ».
+6. Logs préfixés `[printer-drivers:sync]`.
+
+### Sudoers v2 (Story 6.2)
+
+À ajouter dans `/etc/sudoers.d/sambaedu-cups` (déploiement effectif =
+follow-up `[PROD]` via `scripts/update.sh`) :
+
+```
+www-admin ALL=(root) NOPASSWD: /usr/bin/rpcclient
+www-admin ALL=(root) NOPASSWD: /usr/bin/smbclient
+www-admin ALL=(root) NOPASSWD: /bin/chown www-admin\:www-admin /var/lib/samba/printers/x64/*
+www-admin ALL=(root) NOPASSWD: /bin/rm /var/lib/samba/printers/x64/*
+```
+
+**Restrictions strictes** :
+- Whitelist binaire (`/usr/bin/rpcclient`, `/usr/bin/smbclient`) sans
+  wildcard de chemin — évite le RCE via `rpcclient -c "system <cmd>"`.
+- `chown` cible **hardcodée** `www-admin:www-admin` + path préfixé
+  `/var/lib/samba/printers/x64/` — empêche un `chown www-admin
+  /etc/passwd`.
+- `rm` strictement scopé `/var/lib/samba/printers/x64/` — empêche un
+  `rm /etc/sudoers`.
+
+Test sudoers (cf. runbook QA scénario 6.2-14) : `sudo -l -U www-admin`
+doit lister exactement ces 4 entrées 6.2 en plus des 6.1.
+
+**Note sur `chown` post-copy** : le `chown www-admin:www-admin` après
+`smbclient get` est best-effort et logué en warning sans bloquer. En
+pratique le risque opérationnel est faible : `sudo /bin/rm
+/var/lib/samba/printers/x64/<file>` outrepasse l'ownership (l'effective
+UID est root via sudo), donc même si le fichier reste root-owned, le
+nettoyage ultérieur fonctionne. Si la sudoers drift et que le chown
+échoue systématiquement, c'est néanmoins un signal opérateur à investiguer
+(scénario QA 6.2-14).
+
+### Path `/var/lib/samba/printers/x64/` + ACL POSIX
+
+Le dossier doit avoir des ACLs POSIX permissives pour permettre la
+lecture des fichiers par `smbd` (qui sert le partage `[print$]`) et
+l'écriture par `www-admin` (process PHP-FPM). Le legacy
+`list_printers.php:45-60` les restaure idempotemment à chaque page —
+6.2 ne porte PAS cette logique en PHP (anti-pattern : c'est de la
+config système). On délègue au script bash legacy déjà maintenu par
+l'équipe systèmes :
+
+```bash
+sudo /usr/share/sambaedu/sbin/rest_rights.sh -p
+```
+
+**Quand exécuter** : à chaque déploiement, ou en cas de drift visible
+(scénario QA `6.2-Sudoers` détecte les chown errors). Une commande
+opérateur, pas une commande SE5.
+
+### Sécurité — Non-vérification de signature driver (D12)
+
+**WARNING** : Story 6.2 **ne vérifie pas la signature Authenticode** des
+drivers Windows téléversés. Un driver malicieux (rootkit, keylogger,
+ransomware) peut techniquement être distribué via SE5 aux postes
+Windows.
+
+**Justification du choix** :
+1. Surface d'attaque limitée — le driver vient d'un poste W10 « pivot »
+   où l'admin l'a installé volontairement (chaîne de confiance manuelle).
+2. Windows refuse en mode UAC strict les drivers non signés (défense
+   côté client).
+3. Le parsing Authenticode côté serveur PHP serait monstrueusement
+   complexe (PKCS#7, certificats X.509, CRL, OCSP) — surface d'attaque
+   PHP > sécurité gagnée.
+
+**Recommandations opérationnelles** :
+- Documenter dans le guide opérateur les sources fiables de drivers
+  Windows (sites constructeurs, Windows Update Catalog).
+- N'installer un driver sur le pivot W10 qu'après vérification de
+  l'origine (signature visible via Explorer > Propriétés > Signatures
+  numériques).
+- En cas de doute, utiliser le driver universel « Generic / Generic
+  PostScript Printer » (Microsoft, signé Microsoft).
+
+### Tests
+
+| Suite | Localisation | Coverage |
+|---|---|---|
+| Unit Service PrintDriverService | `tests/Unit/Services/Print/PrintDriverServiceTest.php` | 28 tests — parsing fixtures, escapeshellarg, format adddriver strict, mapping erreurs (Kerberos/pivot/Samba), 3 data-providers sécurité ≥ 8 payloads chacun. |
+| Unit Modèle PrinterDriver | `tests/Unit/Models/PrinterDriverTest.php` | 8 tests — PK composite, findByKey, scopes (nonOrphan/orphans/bySource), relations (printer, createdBy), HasMany inverse depuis Printer. |
+| Feature commande sync | `tests/Feature/Console/PrinterDriversSyncCommandTest.php` | 7 tests — dry-run, marquage orphan + audit préservé, restauration, idempotence, skip si Samba down, warning Samba-sans-SER, rapport combiné. |
+| Feature Livewire | `tests/Feature/Livewire/Parc/PrintersTabDriversTest.php` | 9 tests — section visible admin / masquée lambda, banner Samba down, upload happy-path + insertion SER, pivot unreachable, validation forge, detach, delete protection rattachement, gate forgé. |
+
+#### Helpers de test
+
+- `tests/Traits/CreatesPrinterDriversSchema.php` — Crée `printer_drivers`
+  en SQLite mémoire pour Unit / Feature tests.
+- `tests/fixtures/samba/*.txt` — Fixtures synthétiques annotées
+  `SYNTHETIC.md` (D13 fallback : VM injoignable au dev 2026-05-20,
+  formats basés sur le legacy `printers.inc.php`).
+
+### Cross-références legacy 6.2
+
+| Fichier legacy | Description | Statut 6.2 |
+|---|---|---|
+| `sambaedu/printers/add_driver.php` | UI workflow upload pivot W10 | **porté** dans modale `upload-driver-modal.blade.php` |
+| `sambaedu/includes/printers.inc.php:45-86` | `get_printer_driver` + `copy_driver_file` | **porté** dans `PrintDriverService::getDriverDefinition` + `copyDriverFile` |
+| `sambaedu/includes/printers.inc.php:99-131` | `upload_printer_driver` (5 étapes) | **porté** orchestré côté SFC `uploadDriver` |
+| `sambaedu/includes/printers.inc.php:432-443` | `set_smb_driver` | **porté** dans `attachDriverToPrinter` |
+| `sambaedu/includes/printers.inc.php:469-487` | `list_smb_drivers` | **porté** dans `listAllDrivers` |
+| `sambaedu/includes/printers.inc.php:530-552` | `get_smb_printer` | **porté** dans `getDriverForPrinter` |
+| `sambaedu/includes/printers.inc.php:560-585` | `enum_smb_printers` | **porté** dans `listPrintersOnPivot` |
+| `sambaedu/printers/list_printers.php:45-60` | Restauration ACL POSIX `/var/lib/samba/printers/` | **NON porté** — délégué au script bash `rest_rights.sh -p` |
+| Legacy `escapeshellarg` faille (`get_printer_driver` n'échappe pas `$printer` ni `$server`) | Faille pré-existante | **corrigée** systématiquement dans `PrintDriverService` |
 - [Domaine Parc (cross-ref onglet imprimantes)](parc.md)
