@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Enums\AppKind;
+use App\Gpo\Services\WorkstationConfigContextResolver;
 use App\Models\User;
 use App\Models\WorkstationGroup;
 use App\Services\AppCustomization\AppCustomizationService;
@@ -65,6 +66,88 @@ class AppPolicyController extends Controller
 
         $request->merge(['id' => $id]);
         return $this->resolve($request, $appKind, $os);
+    }
+
+    /**
+     * Story 16.13 — endpoint natif `GET /api/v1/workstation-config/firefox`.
+     *
+     * Pattern iso 16.12 strict : `workstation_uuid` extrait EXCLUSIVEMENT
+     * du JWT via `$request->attributes->get('auth_v1.workstation_uuid')`.
+     * Aucun lookup APCu — résolution serveur DB via
+     * `WorkstationConfigContextResolver`.
+     *
+     * Iso-fonctionnel avec `legacyFirefoxOut()` : mêmes Content-Type
+     * (`application/json;charset=utf-8`), mêmes status codes (200/404),
+     * même body JSON.
+     */
+    public function apiV1Firefox(Request $request, WorkstationConfigContextResolver $resolver): Response|JsonResponse
+    {
+        $os = (string) $request->input('os', 'linux');
+        return $this->resolveNative($request, AppKind::Firefox, $os, $resolver);
+    }
+
+    /**
+     * Story 16.13 — endpoint natif `GET /api/v1/workstation-config/thunderbird`.
+     * Iso-fonctionnel avec `legacyThunderbirdOut()`. OS toujours linux
+     * (parité legacy).
+     */
+    public function apiV1Thunderbird(Request $request, WorkstationConfigContextResolver $resolver): Response|JsonResponse
+    {
+        return $this->resolveNative($request, AppKind::Thunderbird, 'linux', $resolver);
+    }
+
+    /**
+     * Résolution native /api/v1/* — chaîne identique à `resolve()` legacy
+     * mais sans lookup APCu : le contexte est reconstruit via le resolver
+     * à partir du JWT `workstation_uuid` + query params (os, user).
+     *
+     * Déviation D5 : 404 explicite si `workstation_uuid` JWT inconnu en DB
+     * (vs 200 vide legacy id='' ou 404 « context_expired » legacy).
+     */
+    private function resolveNative(
+        Request $request,
+        AppKind $kind,
+        string $os,
+        WorkstationConfigContextResolver $resolver,
+    ): Response|JsonResponse {
+        $workstationUuid = (string) $request->attributes->get('auth_v1.workstation_uuid', '');
+        $userLogin = (string) $request->input('user', '');
+
+        // F2 (review post-merge) — unique lookup via resolver. Si le poste
+        // est introuvable en base, `resolve()` retourne null ; on évite le
+        // double lookup `resolveAppPolicyScope` + `Workstation::where()` qui
+        // ouvrait une race condition + double query.
+        $ctx = $resolver->resolve($workstationUuid, $os, $userLogin);
+        if ($ctx === null) {
+            // Déviation D5 — observabilité admin.
+            Log::channel('auth-v1')->warning('[AppPolicyController] workstation not found', [
+                'action_type' => 'agent.v1.config.workstation_not_found',
+                'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
+                'endpoint' => '/api/v1/workstation-config/' . strtolower($kind->value),
+            ]);
+            return response()->json(['error' => 'workstation_not_found'], 404, $this->baseHeaders());
+        }
+
+        $scope = $resolver->resolveAppPolicyScope($workstationUuid, $userLogin);
+
+        try {
+            $policies = $this->service->resolvePoliciesForMachine($scope['wg'], $scope['user'], $kind, $os);
+
+            return response()->json(
+                $policies,
+                200,
+                $this->baseHeaders(),
+                JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
+            );
+        } catch (\Throwable $e) {
+            Log::error('[AppPolicyController] resolveNative failed', [
+                'kind' => $kind->value,
+                'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
+                'os' => $os,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['error' => 'internal_error'], 500, $this->baseHeaders());
+        }
     }
 
     /**

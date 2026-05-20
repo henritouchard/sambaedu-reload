@@ -24,6 +24,13 @@ use App\Auth\V1\Http\Controllers\PingController as AuthV1PingController;
 use App\Auth\V1\Http\Controllers\BootstrapScriptController as AuthV1BootstrapScriptController;
 // Story 16.12 — Ingestion logs exécution scripts
 use App\ScriptsOs\Http\Controllers\ScriptExecutionLogIngestionController as ScriptsOsIngestionController;
+// Story 16.13 — Exposition endpoints natifs /api/v1/*
+use App\Http\Controllers\WallpaperController;
+use App\Http\Controllers\AppPolicyController;
+use App\Http\Controllers\Gpo\NetworkOutController;
+use App\Http\Controllers\Gpo\VeyonOutController;
+use App\Http\Controllers\Gpo\AssociationsOutController;
+use App\Http\Controllers\Gpo\ApplicationsScriptsController;
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -210,6 +217,42 @@ Route::prefix('v1')
             ScriptsOsIngestionController::class,
             'store',
         ])->name('logs.ingest');
+    });
+        
+/*
+|--------------------------------------------------------------------------
+| Story 16.13 — Exposition endpoints natifs /api/v1/workstation-config/*
+|--------------------------------------------------------------------------
+| 8 endpoints natifs équivalents aux *_out.php legacy, protégés par
+| auth.v1.workstation (JWT RS256 + tier=workstation, livré par 16.10).
+| workstation_uuid extrait du claim sub (pattern iso 16.12 strict —
+| jamais depuis query/body user-controlled).
+|
+| Les endpoints legacy `*_out.php` restent inchangés (transformés en
+| MigrationController en 16.13bis).
+|
+| Préfixe `/api/v1/workstation-config/*` (post-review code-review 16.13,
+| arbitrage Henri Q4 2026-05-19) : namespace dédié qui évite toute
+| ambiguïté avec ControlHub (`/api/v1/snapshot`, `/api/v1/shortcuts/sync`,
+| `/api/v1/applications/...`) et matérialise explicitement la nature
+| « configuration poste » des endpoints.
+|
+| Méthode HTTP : 7 GET + 1 GET|POST pour /associations (parité legacy
+| `associations_out.php` accepte body `list` POST).
+| Throttle 300/min/IP iso pattern 16.3b legacy.
+*/
+Route::prefix('v1/workstation-config')
+    ->middleware(['auth.v1.secure-headers', 'auth.v1.workstation', 'throttle:300,1'])
+    ->name('agent.v1.config.')
+    ->group(function () {
+        Route::get('/wallpaper',            [WallpaperController::class,           'apiV1'])->name('wallpaper');
+        Route::get('/firefox',              [AppPolicyController::class,           'apiV1Firefox'])->name('firefox');
+        Route::get('/thunderbird',          [AppPolicyController::class,           'apiV1Thunderbird'])->name('thunderbird');
+        Route::get('/shortcuts',            [ShortcutExportController::class,      'apiV1'])->name('shortcuts');
+        Route::get('/network',              [NetworkOutController::class,          'apiV1'])->name('network');
+        Route::get('/veyon',                [VeyonOutController::class,            'apiV1'])->name('veyon');
+        Route::match(['GET', 'POST'], '/associations', [AssociationsOutController::class, 'apiV1'])->name('associations');
+        Route::get('/applications-scripts', [ApplicationsScriptsController::class, 'apiV1'])->name('applications-scripts');
     });
 
 Route::prefix('v1/shortcuts/export')->name('shortcuts.export.')->group(function () {

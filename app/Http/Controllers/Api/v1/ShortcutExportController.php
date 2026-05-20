@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers\Api\v1;
 
+use App\Gpo\Services\WorkstationConfigContextResolver;
 use App\Http\Controllers\Controller;
 use App\Models\Shortcut;
 use App\Services\ShortcutCompilerService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -39,6 +41,63 @@ class ShortcutExportController extends Controller
      * Paramètres legacy (POST ou GET) :
      * - action, os, user, machine, shortcut (nom), userprofile, id
      */
+    /**
+     * Story 16.13 — endpoint natif `GET /api/v1/workstation-config/shortcuts`.
+     *
+     * Pattern iso 16.12 strict : `workstation_uuid` extrait EXCLUSIVEMENT
+     * du JWT via `$request->attributes->get('auth_v1.workstation_uuid')`.
+     *
+     * Le `machine` est résolu serveur via `WorkstationConfigContextResolver`
+     * (lookup Workstation Eloquent par uuid). Les autres params (`action`,
+     * `os`, `user`, `shortcut`, `userprofile`) restent en query (parité
+     * legacy).
+     *
+     * Iso-fonctionnel avec `legacyDispatch()` : même switch action, mêmes
+     * Content-Type, mêmes status. Déviation D5 : 404 explicite si
+     * `workstation_uuid` JWT inconnu en DB.
+     */
+    public function apiV1(Request $request, WorkstationConfigContextResolver $resolver): Response|\Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $workstationUuid = (string) $request->attributes->get('auth_v1.workstation_uuid', '');
+        $os = (string) $request->input('os', 'linux');
+        $userLogin = (string) $request->input('user', '');
+        $userProfile = (string) $request->input('userprofile', '');
+
+        // F4 (review post-merge) — résolution unifiée via resolver (D4).
+        // Le DTO `WorkstationConfigContext` porte `machineName` (= Workstation::name
+        // Eloquent) ; pas besoin de second lookup direct.
+        $ctx = $resolver->resolve($workstationUuid, $os, $userLogin, $userProfile);
+        if ($ctx === null) {
+            Log::channel('auth-v1')->warning('[ShortcutExportController] workstation not found', [
+                'action_type' => 'agent.v1.config.workstation_not_found',
+                'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
+                'endpoint' => '/api/v1/workstation-config/shortcuts',
+            ]);
+            // Format JSON unifié post-review (Henri Q2).
+            return response()->json(['error' => 'workstation_not_found'], 404);
+        }
+
+        $action = (string) $request->input('action', '');
+        $shortcutName = (string) $request->input('shortcut', '');
+
+        // Injecte le `machine` résolu serveur dans la requête, écrasant tout
+        // input user-controlled éventuel — pour que les méthodes
+        // partagées `script()` / `file()` / `icon()` lisent le bon nom
+        // sans altération de leur signature legacy.
+        $request->merge(['machine' => $ctx->machineName]);
+
+        if ($action === '' || $os === '') {
+            return response('', 400);
+        }
+
+        return match ($action) {
+            'logon', 'logoff', 'startup', 'shutdown' => $this->script($request),
+            'file' => $this->legacyFile($request, $shortcutName, $os),
+            'icon' => $this->icon($request->merge(['name' => urldecode($shortcutName)])),
+            default => response('Unknown action', 400),
+        };
+    }
+
     public function legacyDispatch(Request $request): Response|\Symfony\Component\HttpFoundation\BinaryFileResponse
     {
         $action = $request->input('action', '');

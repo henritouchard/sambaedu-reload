@@ -9,6 +9,7 @@ use App\Gpo\Services\ApplicationScriptsAssembler;
 use App\Gpo\Services\ApplicationScriptsGenerator;
 use App\Gpo\Services\ApplicationTemplatesScanner;
 use App\Http\Controllers\Controller;
+use App\Models\Workstation;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -197,6 +198,163 @@ class ApplicationsScriptsController extends Controller
             'action_type' => 'gpo.applications.script.generate',
             'action' => $action,
             'machine' => $machine,
+            'id' => $info['id'] ?? null,
+            'interpreter' => $interpreterKey,
+            'os' => $os,
+            'bytes' => strlen($body),
+        ]);
+
+        return response($body, 200, [
+            'Content-Type' => $this->resolveContentType($os),
+            'Cache-Control' => 'no-store, no-cache, must-revalidate',
+            'Pragma' => 'no-cache',
+        ]);
+    }
+
+    /**
+     * Story 16.13 — endpoint natif `GET /api/v1/workstation-config/applications-scripts`.
+     *
+     * Pattern iso 16.12 strict : `workstation_uuid` extrait EXCLUSIVEMENT
+     * du JWT via `$request->attributes->get('auth_v1.workstation_uuid')`.
+     *
+     * Cette méthode reprend l'intégralité de la chaîne `generate()` legacy
+     * en injectant le `uuid` JWT (et non plus le query input `uuid` qui est
+     * **ignoré**). Le `machine` est lu en query (`%COMPUTERNAME%` /
+     * `$HOSTNAME` côté poste) mais cross-checké en best-effort avec le nom
+     * Eloquent du `Workstation` résolu par UUID pour traçabilité.
+     *
+     * Iso-fonctionnel avec `generate()` : mêmes validations regex, mêmes
+     * Content-Type (text/plain cp1252 Win / utf-8 Linux), mêmes status
+     * (400/200/200-vide). Déviation D5 : 404 explicite si
+     * `workstation_uuid` JWT inconnu en DB (vs 200 vide legacy).
+     */
+    public function apiV1(Request $request): Response
+    {
+        $workstationUuid = (string) $request->attributes->get('auth_v1.workstation_uuid', '');
+
+        $workstation = Workstation::query()->where('uuid', $workstationUuid)->first();
+        if ($workstation === null) {
+            Log::channel('auth-v1')->warning('[ApplicationsScriptsController] workstation not found', [
+                'action_type' => 'agent.v1.config.workstation_not_found',
+                'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
+                'endpoint' => '/api/v1/workstation-config/applications-scripts',
+            ]);
+            // Format JSON unifié post-review (Henri Q2).
+            return response()->json(['error' => 'workstation_not_found'], 404);
+        }
+
+        // ── Validation stricte iso-legacy (mêmes regex que `generate()`)
+        // — on lit les query params poste comme la méthode legacy, à
+        // l'exception du `uuid` qui est **ignoré** en faveur du claim JWT.
+        $machine = strtolower((string) $request->input('machine', ''));
+        $action = (string) $request->input('action', '');
+        $os = (string) $request->input('os', 'windows');
+        $user = (string) $request->input('user', '');
+        $interpreter = (string) $request->input('interpreter', '');
+        $id = (string) $request->input('id', '');
+        $ret = (int) $request->input('ret', 1);
+        $application = (string) $request->input('application', '');
+        $userprofile = (string) $request->input('userprofile', '');
+        $speed = (int) $request->input('speed', 0);
+
+        if ($machine !== '' && preg_match(self::MACHINE_REGEX, $machine) !== 1) {
+            return $this->badRequest('machine', $machine, $request);
+        }
+        if ($action !== '' && preg_match(self::ACTION_REGEX, $action) !== 1) {
+            return $this->badRequest('action', $action, $request);
+        }
+        if (! in_array($os, self::SUPPORTED_OS, true)) {
+            return $this->badRequest('os', $os, $request);
+        }
+        if ($user !== '' && preg_match(self::USER_REGEX, $user) !== 1) {
+            return $this->badRequest('user', $user, $request);
+        }
+        if ($interpreter !== '' && ! in_array($interpreter, self::SUPPORTED_INTERPRETERS, true)) {
+            return $this->badRequest('interpreter', $interpreter, $request);
+        }
+        if ($id !== '' && preg_match(self::ID_REGEX, $id) !== 1) {
+            return $this->badRequest('id', $id, $request);
+        }
+        if ($ret < 0) {
+            return $this->badRequest('ret', (string) $ret, $request);
+        }
+        if ($application !== '' && preg_match(self::APPLICATION_REGEX, $application) !== 1) {
+            return $this->badRequest('application', $application, $request);
+        }
+        if ($userprofile !== '' && preg_match(self::USERPROFILE_REGEX, $userprofile) !== 1) {
+            return $this->badRequest('userprofile', $userprofile, $request);
+        }
+
+        // Reconstruction du contexte iso-legacy via `resolveInfo` (même
+        // chaîne que `generate()`). Le `uuid` est passé depuis le JWT
+        // — c'est la seule différence comportementale.
+        $info = $this->generator->resolveInfo([
+            'machine' => $machine !== '' ? $machine : strtolower((string) ($workstation->name ?? '')),
+            'action' => $action,
+            'application' => $application,
+            'os' => $os,
+            'uuid' => $workstationUuid, // ← claim JWT, pas query
+            'interpreter' => $interpreter,
+            'speed' => $speed,
+            'user' => $user,
+            'id' => $id,
+            'userprofile' => $userprofile,
+        ]);
+
+        if ($info === []) {
+            return $this->emptyOk($this->resolveContentType($os));
+        }
+
+        try {
+            $shouldGenerate = $this->logger->logScripts($info, $ret);
+        } catch (\Throwable $e) {
+            Log::channel('daily')->error('[ApplicationsScriptsController] logScripts threw (apiV1)', [
+                'action' => $action,
+                'machine' => $machine,
+                'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
+                'error' => $e->getMessage(),
+            ]);
+            return $this->emptyOk($this->resolveContentType($os));
+        }
+
+        if (! $shouldGenerate) {
+            return $this->emptyOk($this->resolveContentType($os));
+        }
+
+        $scriptCacheKey = 'scripts.' . (string) ($info['id'] ?? '');
+        $cached = function_exists('apcu_fetch') ? @apcu_fetch($scriptCacheKey) : false;
+        if (is_array($cached)) {
+            $texts = $cached;
+        } else {
+            try {
+                $scripts = $this->scanner->scan();
+                $texts = $this->assembler->assemble($info, $scripts);
+            } catch (\Throwable $e) {
+                Log::channel('daily')->error('[ApplicationsScriptsController] assemble threw (apiV1)', [
+                    'action' => $action,
+                    'machine' => $machine,
+                    'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
+                    'error' => $e->getMessage(),
+                ]);
+                return $this->emptyOk($this->resolveContentType($os));
+            }
+            if (function_exists('apcu_store') && ($info['id'] ?? '') !== '') {
+                @apcu_store($scriptCacheKey, $texts, 300);
+            }
+        }
+
+        $interpreterKey = $info['interpreter'] ?? ($os === 'linux' ? 'bash' : 'cmd');
+        $body = (string) ($texts[$interpreterKey] ?? '');
+
+        if (! app()->environment('testing')) {
+            $this->writeDebugFile($info, $body);
+        }
+
+        Log::channel('daily')->info('[gpo] gpo.applications.script.generate (apiV1)', [
+            'action_type' => 'gpo.applications.script.generate',
+            'action' => $action,
+            'machine' => $machine,
+            'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
             'id' => $info['id'] ?? null,
             'interpreter' => $interpreterKey,
             'os' => $os,

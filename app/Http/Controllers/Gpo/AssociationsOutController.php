@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Gpo;
 
 use App\Gpo\Services\AssociationsResolver;
+use App\Gpo\Services\WorkstationConfigContextResolver;
 use App\Http\Controllers\Controller;
 use App\Services\AppCustomization\Contracts\AppContextRepository;
 use Illuminate\Http\Request;
@@ -107,6 +108,65 @@ class AssociationsOutController extends Controller
                 self::DEBUG_RESULT_PATH,
                 json_encode($result, JSON_PRETTY_PRINT),
             );
+        }
+
+        return $this->jsonOk($result);
+    }
+
+    /**
+     * Story 16.13 — endpoint natif `GET|POST /api/v1/workstation-config/associations`.
+     *
+     * Pattern iso 16.12 strict : `workstation_uuid` extrait EXCLUSIVEMENT
+     * du JWT via `$request->attributes->get('auth_v1.workstation_uuid')`.
+     * Aucun lookup APCu md5 — résolution serveur DB via
+     * `WorkstationConfigContextResolver`.
+     *
+     * Iso-fonctionnel avec `legacyOut()` : même Content-Type
+     * (`text/json` non-standard iso-legacy), même body
+     * `{"result": {...}}`, même validation `list` (taille ≤ 10 Ko, JSON
+     * décodable). Déviation D5 : 404 explicite si `workstation_uuid` JWT
+     * inconnu en DB (vs 400 legacy).
+     */
+    public function apiV1(Request $request, WorkstationConfigContextResolver $resolver): Response
+    {
+        $listRaw = (string) $request->input('list', '');
+
+        // AC3.3 — Validation list présent + taille ≤ 10 Ko.
+        if ($listRaw === '' || strlen($listRaw) > self::LIST_MAX_BYTES) {
+            return $this->badRequest();
+        }
+
+        $listDecoded = json_decode($listRaw, true);
+        if (! is_array($listDecoded)) {
+            return $this->badRequest();
+        }
+
+        $workstationUuid = (string) $request->attributes->get('auth_v1.workstation_uuid', '');
+        $userLogin = (string) $request->input('user', '');
+        $os = (string) $request->input('os', 'linux');
+        $userProfile = (string) $request->input('userprofile', '');
+
+        $context = $resolver->toAppContext($workstationUuid, $os, $userLogin, $userProfile);
+        if ($context === null) {
+            Log::channel('auth-v1')->warning('[AssociationsOutController] workstation not found', [
+                'action_type' => 'agent.v1.config.workstation_not_found',
+                'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
+                'endpoint' => '/api/v1/workstation-config/associations',
+            ]);
+            // Format JSON unifié post-review (Henri Q2).
+            return response()->json(['error' => 'workstation_not_found'], 404);
+        }
+
+        try {
+            $localAssocs = $this->resolver->parseLocalAssocs($listDecoded);
+            $result = $this->resolver->resolve($context, $localAssocs);
+        } catch (\Throwable $e) {
+            Log::error('[AssociationsOutController] resolve failed (apiV1)', [
+                'workstation_uuid_prefix' => substr($workstationUuid, 0, 8),
+                'machine' => $context->machineName,
+                'error' => $e->getMessage(),
+            ]);
+            return $this->jsonOk([]);
         }
 
         return $this->jsonOk($result);
