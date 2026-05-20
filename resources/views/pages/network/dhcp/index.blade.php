@@ -10,6 +10,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -17,6 +18,8 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
     use WithPagination, WithToasts;
 
     // === État UI ===
+    #[Url]
+    public string $tab = 'reservations';
     public string $search = '';
     public bool $modalOpen = false;
     public bool $editing = false;
@@ -63,6 +66,12 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
 
     public function updatedSearch(): void
     {
+        $this->resetPage();
+    }
+
+    public function setTab(string $tab): void
+    {
+        $this->tab = $tab;
         $this->resetPage();
     }
 
@@ -310,19 +319,31 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
     <div class="space-y-4">
         @include('pages.network.dhcp._partials.service-status-banner')
 
-        {{-- Recherche --}}
-        <div class="form-control">
-            <input type="text" wire:model.live.debounce.300ms="search"
-                placeholder="Rechercher par nom, MAC, IP, description…" class="input input-bordered w-full max-w-md" />
+        {{-- Onglets --}}
+        <div role="tablist" class="tabs tabs-boxed bg-base-200 w-fit">
+            <button type="button" role="tab" class="tab {{ $tab === 'reservations' ? 'tab-active' : '' }}"
+                wire:click="setTab('reservations')">
+                <i class="fa-solid fa-bookmark mr-2"></i>
+                Réservations ({{ $reservations->total() }})
+            </button>
+            <button type="button" role="tab" class="tab {{ $tab === 'leases' ? 'tab-active' : '' }}"
+                wire:click="setTab('leases')">
+                <i class="fa-solid fa-network-wired mr-2"></i>
+                Baux actifs{{ $leasesAvailable ? ' (' . $leases->count() . ')' : '' }}
+            </button>
         </div>
 
-        {{-- Réservations --}}
-        <h2 class="text-xl font-bold mt-4">Réservations ({{ $reservations->total() }})</h2>
-        @include('pages.network.dhcp._partials.reservations-table', ['reservations' => $reservations])
-
-        {{-- Baux actifs --}}
-        <h2 class="text-xl font-bold mt-6">Baux actifs</h2>
-        @include('pages.network.dhcp._partials.leases-table', ['leases' => $leases, 'leasesAvailable' => $leasesAvailable])
+        {{-- Contenu des onglets --}}
+        @if ($tab === 'leases')
+            @include('pages.network.dhcp._partials.leases-table', ['leases' => $leases, 'leasesAvailable' => $leasesAvailable])
+        @else
+            {{-- Recherche (réservations uniquement) --}}
+            <div class="form-control">
+                <input type="text" wire:model.live.debounce.300ms="search"
+                    placeholder="Rechercher par nom, MAC, IP, description…" class="input input-bordered w-full max-w-md" />
+            </div>
+            @include('pages.network.dhcp._partials.reservations-table', ['reservations' => $reservations])
+        @endif
     </div>
 
     {{-- Modale création / édition --}}
