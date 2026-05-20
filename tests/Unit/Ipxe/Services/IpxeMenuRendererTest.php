@@ -222,24 +222,59 @@ class IpxeMenuRendererTest extends TestCase
         self::assertStringContainsString('http://se4fs.lan/ipxe/maintenance##params', $body);
         // Chain retour vers /ipxe/boot.
         self::assertStringContainsString('http://se4fs.lan/ipxe/boot##params', $body);
-        // Pas d'item enrollment (= scope 3.3).
-        self::assertStringNotContainsString('item --key n set-name', $body);
+        // Story 3.3 — AC6.6 — items enrollment activés pour poste connu.
+        self::assertStringContainsString('item --key n set-name', $body);
+        self::assertStringContainsString('item --key a salle', $body);
+        self::assertStringContainsString('item --key p parcs', $body);
+        self::assertStringContainsString('item --key e enleveparc', $body);
+        // Sections de chain enrollment.
+        self::assertStringContainsString('http://se4fs.lan/ipxe/enrollment/name##params', $body);
+        self::assertStringContainsString('http://se4fs.lan/ipxe/enrollment/room##params', $body);
+        self::assertStringContainsString('http://se4fs.lan/ipxe/enrollment/parc-add##params', $body);
+        self::assertStringContainsString('http://se4fs.lan/ipxe/enrollment/parc-remove##params', $body);
     }
 
     #[Test]
     public function it_renders_admin_menu_minimal_for_unknown(): void
     {
+        // Story 3.3 — AC6.6 / T6.8 — la branche poste inconnu rend l'item
+        // `(n) set-name` (remplace le message neutre 3.2) + chain enrollment.
         $body = $this->renderer->renderAdminMenu(null, '192.168.1.42', 'http://se4fs.lan');
 
         self::assertStringStartsWith('#!ipxe', $body);
-        // Message neutre poste non enregistre.
-        self::assertStringContainsString('Poste non enregistre', $body);
-        self::assertStringContainsString('Story 3.3', $body);
-        // Items exit + retour toujours présents.
+        self::assertStringContainsString('item --key n set-name', $body);
         self::assertStringContainsString('item --key x exit', $body);
         self::assertStringContainsString('item --key r retour', $body);
-        // Pas d'item maintenance (poste inconnu).
+        // Pas d'item maintenance ni salle/parc (poste inconnu — flow seulement
+        // `name` ouvre l'enrollment initial).
         self::assertStringNotContainsString('item --key m maintenance', $body);
+        self::assertStringNotContainsString('item --key a salle', $body);
+        self::assertStringNotContainsString('item --key p parcs', $body);
+        // Chain vers l'endpoint d'enrollment.
+        self::assertStringContainsString('http://se4fs.lan/ipxe/enrollment/name##params', $body);
+    }
+
+    #[Test]
+    public function it_renders_admin_menu_hides_enrollment_items_when_disabled(): void
+    {
+        // Story 3.3 — D11 — feature flag `ipxe.enrollment.enabled = false`
+        // masque tous les items enrollment côté template admin.
+        \Illuminate\Support\Facades\Config::set('ipxe.enrollment.enabled', false);
+
+        $ws = Workstation::create([
+            'name' => 'PC-DISABLED',
+            'uuid' => 'cccc1111-bbbb-cccc-dddd-eeeeffff1111',
+            'mac' => 'aa:bb:cc:dd:ee:de',
+            'status' => 'active',
+        ]);
+
+        $body = $this->renderer->renderAdminMenu($ws, '192.168.1.42', 'http://se4fs.lan');
+
+        self::assertStringNotContainsString('item --key n set-name', $body);
+        self::assertStringNotContainsString('item --key a salle', $body);
+        self::assertStringNotContainsString('item --key p parcs', $body);
+        // Mais maintenance reste accessible (poste connu).
+        self::assertStringContainsString('item --key m maintenance', $body);
     }
 
     #[Test]
@@ -394,5 +429,202 @@ class IpxeMenuRendererTest extends TestCase
                 . 'le firmware iPXE rejette l\'ASCII étendu.',
             );
         }
+    }
+
+    /* ------------------------------------------------------------------
+     * Story 3.3 — AC5.1 — renderEnrollment*Menu (5 nouveaux templates)
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_renders_enrollment_name_menu_with_read_name_prompt(): void
+    {
+        $vars = [
+            'mac' => 'aa:bb:cc:dd:ee:11',
+            'uuid' => '11111111-1111-1111-1111-111111111111',
+            'platform' => 'legacy',
+            'ip' => '192.168.1.10',
+            'currentName' => '',
+            'serverBaseUrl' => 'http://se4fs.lan',
+            'resolutionX' => 1024,
+            'resolutionY' => 768,
+            'resolutionPng' => 'png/ipxe-se4.png',
+            'menuTimeoutMs' => 10000,
+        ];
+
+        $body = $this->renderer->renderEnrollmentNameMenu($vars, null);
+
+        self::assertStringStartsWith('#!ipxe', $body);
+        self::assertStringContainsString('read name', $body);
+        self::assertStringContainsString('ipxe/enrollment/name##params', $body);
+    }
+
+    #[Test]
+    public function it_renders_enrollment_name_menu_with_success_message_when_created(): void
+    {
+        $ws = Workstation::create([
+            'name' => 'pc-3-3',
+            'uuid' => '22222222-2222-2222-2222-222222222222',
+            'mac' => 'aa:bb:cc:dd:ee:22',
+            'status' => 'active',
+        ]);
+        $result = \App\Ipxe\Support\EnrollNameResult::created($ws, 'pc-3-3', true);
+        $vars = [
+            'mac' => 'aa:bb:cc:dd:ee:22',
+            'uuid' => '22222222-2222-2222-2222-222222222222',
+            'platform' => 'legacy',
+            'ip' => '192.168.1.11',
+            'currentName' => 'pc-3-3',
+            'serverBaseUrl' => 'http://se4fs.lan',
+            'resolutionX' => 1024,
+            'resolutionY' => 768,
+            'resolutionPng' => 'png/ipxe-se4.png',
+            'menuTimeoutMs' => 10000,
+        ];
+
+        $body = $this->renderer->renderEnrollmentNameMenu($vars, $result);
+
+        self::assertStringContainsString('OK ! nom pc-3-3 reserve', $body);
+        self::assertStringContainsString('/ipxe/admin##params', $body);
+    }
+
+    #[Test]
+    public function it_renders_enrollment_name_menu_with_same_name_message(): void
+    {
+        $ws = Workstation::create([
+            'name' => 'pc-idem',
+            'uuid' => '33333333-3333-3333-3333-333333333333',
+            'mac' => 'aa:bb:cc:dd:ee:33',
+            'status' => 'active',
+        ]);
+        $result = \App\Ipxe\Support\EnrollNameResult::sameName($ws, 'pc-idem');
+        $vars = [
+            'mac' => 'aa:bb:cc:dd:ee:33',
+            'uuid' => '33333333-3333-3333-3333-333333333333',
+            'platform' => 'legacy',
+            'ip' => '192.168.1.12',
+            'currentName' => 'pc-idem',
+            'serverBaseUrl' => 'http://se4fs.lan',
+            'resolutionX' => 1024,
+            'resolutionY' => 768,
+            'resolutionPng' => 'png/ipxe-se4.png',
+            'menuTimeoutMs' => 10000,
+        ];
+
+        $body = $this->renderer->renderEnrollmentNameMenu($vars, $result);
+
+        self::assertStringContainsString('deja enregistree', $body);
+    }
+
+    #[Test]
+    public function it_renders_enrollment_room_menu_with_available_rooms(): void
+    {
+        $vars = [
+            'mac' => 'aa:bb:cc:dd:ee:44',
+            'uuid' => '44444444-4444-4444-4444-444444444444',
+            'workstationName' => 'pc-room',
+            'availableRooms' => [
+                ['id' => 1, 'name' => 'salle-A', 'display_name' => 'Salle A', 'is_current' => false],
+                ['id' => 2, 'name' => 'salle-B', 'display_name' => 'Salle B', 'is_current' => true],
+            ],
+            'currentRoom' => ['id' => 2, 'name' => 'salle-B'],
+            'serverBaseUrl' => 'http://se4fs.lan',
+            'resolutionX' => 1024,
+            'resolutionY' => 768,
+            'resolutionPng' => 'png/ipxe-se4.png',
+            'menuTimeoutMs' => 10000,
+            'truncated' => false,
+        ];
+
+        $body = $this->renderer->renderEnrollmentRoomMenu($vars, null, false);
+
+        self::assertStringContainsString('Enregistrement de la salle pour pc-room', $body);
+        self::assertStringContainsString('item r-1', $body);
+        self::assertStringContainsString('Salle A', $body);
+        // salle-B est current → marquée `** deja dans **`.
+        self::assertStringContainsString('** deja dans salle-B **', $body);
+        self::assertStringContainsString('ipxe/enrollment/room##params', $body);
+    }
+
+    #[Test]
+    public function it_renders_enrollment_parc_add_menu_with_available_parcs(): void
+    {
+        $vars = [
+            'mac' => 'aa:bb:cc:dd:ee:55',
+            'uuid' => '55555555-5555-5555-5555-555555555555',
+            'workstationName' => 'pc-parc',
+            'availableParcs' => [
+                ['id' => 10, 'name' => 'parc-x', 'display_name' => 'Parc X', 'is_current' => false],
+            ],
+            'serverBaseUrl' => 'http://se4fs.lan',
+            'resolutionX' => 1024,
+            'resolutionY' => 768,
+            'resolutionPng' => 'png/ipxe-se4.png',
+            'menuTimeoutMs' => 10000,
+            'truncated' => false,
+        ];
+
+        $body = $this->renderer->renderEnrollmentParcAddMenu($vars, null, false);
+
+        self::assertStringContainsString("Ajout d'un parc pour pc-parc", $body);
+        self::assertStringContainsString('item p-10', $body);
+        self::assertStringContainsString('Parc X', $body);
+        self::assertStringContainsString('ipxe/enrollment/parc-add##params', $body);
+    }
+
+    #[Test]
+    public function it_renders_enrollment_parc_remove_menu_with_current_parcs_only(): void
+    {
+        $vars = [
+            'mac' => 'aa:bb:cc:dd:ee:66',
+            'uuid' => '66666666-6666-6666-6666-666666666666',
+            'workstationName' => 'pc-rm-parc',
+            'currentParcs' => [
+                ['id' => 20, 'name' => 'parc-y', 'display_name' => 'Parc Y', 'is_current' => false],
+            ],
+            'serverBaseUrl' => 'http://se4fs.lan',
+            'resolutionX' => 1024,
+            'resolutionY' => 768,
+            'resolutionPng' => 'png/ipxe-se4.png',
+            'menuTimeoutMs' => 10000,
+            'truncated' => false,
+        ];
+
+        $body = $this->renderer->renderEnrollmentParcRemoveMenu($vars, null, false);
+
+        self::assertStringContainsString("Retrait d'un parc pour pc-rm-parc", $body);
+        self::assertStringContainsString('item p-20', $body);
+        self::assertStringContainsString('ipxe/enrollment/parc-remove##params', $body);
+    }
+
+    #[Test]
+    public function it_renders_enrollment_unknown_workstation_error_chain_admin(): void
+    {
+        $body = $this->renderer->renderEnrollmentUnknownWorkstation('http://se4fs.lan');
+
+        self::assertStringStartsWith('#!ipxe', $body);
+        self::assertStringContainsString('poste non encore enregistre', $body);
+        self::assertStringContainsString('http://se4fs.lan/ipxe/admin##params', $body);
+    }
+
+    #[Test]
+    public function it_renders_enrollment_byod_menu_with_success_when_logged(): void
+    {
+        $vars = [
+            'mac' => 'aa:bb:cc:dd:ee:77',
+            'uuid' => '77777777-7777-7777-7777-777777777777',
+            'platform' => 'legacy',
+            'ip' => '192.168.1.20',
+            'currentName' => '',
+            'serverBaseUrl' => 'http://se4fs.lan',
+            'resolutionX' => 1024,
+            'resolutionY' => 768,
+            'resolutionPng' => 'png/ipxe-se4.png',
+            'menuTimeoutMs' => 10000,
+        ];
+
+        $body = $this->renderer->renderEnrollmentByodMenu($vars, true, 'student-pc');
+
+        self::assertStringContainsString('BYOD enregistre pour student-pc', $body);
+        self::assertStringContainsString('/ipxe/admin##params', $body);
     }
 }

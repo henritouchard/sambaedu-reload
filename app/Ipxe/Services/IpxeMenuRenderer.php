@@ -160,6 +160,7 @@ final class IpxeMenuRenderer
     public function renderAdminMenu(?Workstation $ws, string $ip, string $serverBaseUrl): string
     {
         $isKnown = $ws !== null;
+        $base = rtrim($serverBaseUrl, '/');
 
         return $this->viewFactory->make('ipxe.menu.admin', [
             'shebang' => self::IPXE_SHEBANG,
@@ -169,7 +170,10 @@ final class IpxeMenuRenderer
             'ip' => $ip,
             'mac' => $isKnown ? (string) ($ws->mac ?? '') : '',
             'uuid' => $isKnown ? $this->sanitizeAscii((string) ($ws->uuid ?? '')) : '',
-            'serverBaseUrl' => rtrim($serverBaseUrl, '/'),
+            'serverBaseUrl' => $base,
+            // Story 3.3 — D11 / AC5.2 — variables enrollment.
+            'enrollmentBaseUrl' => $base . '/ipxe/enrollment',
+            'isEnrollmentActive' => (bool) config('ipxe.enrollment.enabled', true),
             'resolutionX' => (int) config('ipxe.menu.resolution_x', 1024),
             'resolutionY' => (int) config('ipxe.menu.resolution_y', 768),
             'resolutionPng' => $this->resolveBackgroundPng(),
@@ -177,6 +181,147 @@ final class IpxeMenuRenderer
             'bootDiskFallback' => $this->renderBootDiskFallback(),
             'isKnown' => $isKnown,
         ])->render();
+    }
+
+    /**
+     * Story 3.3 — AC5.1 — Rend le menu d'enrollment "name"
+     * (`resources/views/ipxe/enrollment/name.blade.php`).
+     *
+     * Le menu a 3 modes (déterminés côté template) :
+     *
+     *  - saisie initiale (`$result === null`) : prompt `read name` iPXE.
+     *  - confirmation (`$result->status === SameName`) : echo "deja
+     *    enregistree" + chain admin.
+     *  - succès création/rename (`Created`/`Renamed`) : echo OK + chain admin.
+     *  - erreur (`NameTaken`/`DbError`/`AdError`) : echo ERREUR + chain admin.
+     *
+     * @param  array<string,mixed>  $variables  Construit via
+     *           {@see \App\Ipxe\Services\IpxeEnrollmentMenuBuilder::buildNameMenuVariables()}.
+     * @param  \App\Ipxe\Support\EnrollNameResult|null  $result  Résultat
+     *           du service (null = première saisie).
+     */
+    public function renderEnrollmentNameMenu(
+        array $variables,
+        ?\App\Ipxe\Support\EnrollNameResult $result = null,
+    ): string {
+        return $this->viewFactory->make('ipxe.enrollment.name', array_merge(
+            $variables,
+            [
+                'shebang' => self::IPXE_SHEBANG,
+                'result' => $result,
+                'newName' => $result?->sanitizedName ?? '',
+            ],
+        ))->render();
+    }
+
+    /**
+     * Story 3.3 — AC5.1 — Rend le menu d'enrollment "byod" (variant simplifié
+     * de `name` — pas de gestion `NAME_TAKEN`).
+     *
+     * @param  array<string,mixed>  $variables
+     */
+    public function renderEnrollmentByodMenu(
+        array $variables,
+        bool $logged = false,
+        string $sanitizedName = '',
+        bool $denied = false,
+    ): string {
+        return $this->viewFactory->make('ipxe.enrollment.byod', array_merge(
+            $variables,
+            [
+                'shebang' => self::IPXE_SHEBANG,
+                'logged' => $logged,
+                'sanitizedName' => $sanitizedName,
+                'denied' => $denied,
+            ],
+        ))->render();
+    }
+
+    /**
+     * Story 3.3 — AC5.1 — Rend le menu interactif d'affectation à une salle
+     * physique.
+     *
+     * 3 modes (déterminés par les paramètres) :
+     *  - menu listing (`$assignedRoomName === null` + `$failed === false`).
+     *  - succès assignation (`$assignedRoomName !== null`).
+     *  - échec (`$failed === true`).
+     *
+     * @param  array<string,mixed>  $variables
+     */
+    public function renderEnrollmentRoomMenu(
+        array $variables,
+        ?string $assignedRoomName = null,
+        bool $failed = false,
+    ): string {
+        return $this->viewFactory->make('ipxe.enrollment.room', array_merge(
+            $variables,
+            [
+                'shebang' => self::IPXE_SHEBANG,
+                'assignedRoomName' => $assignedRoomName,
+                'failed' => $failed,
+            ],
+        ))->render();
+    }
+
+    /**
+     * Story 3.3 — AC5.1 — Rend le menu interactif d'ajout à un parc logique.
+     *
+     * @param  array<string,mixed>  $variables
+     */
+    public function renderEnrollmentParcAddMenu(
+        array $variables,
+        ?string $attachedParcName = null,
+        bool $failed = false,
+    ): string {
+        return $this->viewFactory->make('ipxe.enrollment.parc-add', array_merge(
+            $variables,
+            [
+                'shebang' => self::IPXE_SHEBANG,
+                'attachedParcName' => $attachedParcName,
+                'failed' => $failed,
+            ],
+        ))->render();
+    }
+
+    /**
+     * Story 3.3 — AC5.1 — Rend le menu interactif de retrait d'un parc logique.
+     *
+     * @param  array<string,mixed>  $variables
+     */
+    public function renderEnrollmentParcRemoveMenu(
+        array $variables,
+        ?string $detachedParcName = null,
+        bool $failed = false,
+    ): string {
+        return $this->viewFactory->make('ipxe.enrollment.parc-remove', array_merge(
+            $variables,
+            [
+                'shebang' => self::IPXE_SHEBANG,
+                'detachedParcName' => $detachedParcName,
+                'failed' => $failed,
+            ],
+        ))->render();
+    }
+
+    /**
+     * Story 3.3 — Helper : rend un menu d'erreur générique pour les flows
+     * room/parc-add/parc-remove quand le poste est inconnu (D7 —
+     * « Erreur poste non enregistre »).
+     *
+     * Permet aux controllers de garder un code uniforme sans dupliquer le
+     * fallback texte.
+     */
+    public function renderEnrollmentUnknownWorkstation(string $serverBaseUrl): string
+    {
+        $base = rtrim($serverBaseUrl, '/');
+        $body = self::IPXE_SHEBANG . "\n"
+            . "params\n"
+            . "echo Erreur - poste non encore enregistre.\n"
+            . "echo Utilisez (n) Nommer le poste avant d'affecter une salle ou un parc.\n"
+            . "sleep 5\n"
+            . "chain --replace --autofree {$base}/ipxe/admin##params\n";
+
+        return $body;
     }
 
     /**

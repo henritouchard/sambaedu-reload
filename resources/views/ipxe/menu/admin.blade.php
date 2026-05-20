@@ -9,16 +9,37 @@ set menu-default exit
 set menu-timeout {{ $menuTimeoutMs }}
 item --gap -- ----------------------------------------------------------------------
 @if($isKnown)
+@if($isEnrollmentActive)
+item --key n set-name (n) Renommer le poste : {{ $workstationName }}
+item --key a salle (a) Affecter a une salle physique
+item --key p parcs (p) Ajouter a un parc logique
+item --key e enleveparc (e) Retirer d'un parc logique
+@endif
 item --key m maintenance (m) Outils de maintenance (rescuecd, winpe, factory reset)
 @else
-echo Poste non enregistre, fonctions de maintenance indisponibles.
-echo Story 3.3 enrollment a venir.
+@if($isEnrollmentActive)
+item --key n set-name (n) Nommer le poste (enregistrement)
+@else
+echo Poste non enregistre, enrollment desactive (voir admin SE5).
 sleep 3
+@endif
 @endif
 item --key r retour (r) Retour au menu de boot
 item --key s shell (s) iPXE shell
 item --key x exit (x) Quitter iPXE et booter le disque dur
 choose --default ${menu-default} --timeout ${menu-timeout} selected && goto ${selected} || exit 0
+
+:set-name
+chain --replace --autofree {{ $enrollmentBaseUrl }}/name##params
+
+:salle
+chain --replace --autofree {{ $enrollmentBaseUrl }}/room##params
+
+:parcs
+chain --replace --autofree {{ $enrollmentBaseUrl }}/parc-add##params
+
+:enleveparc
+chain --replace --autofree {{ $enrollmentBaseUrl }}/parc-remove##params
 
 :maintenance
 chain --replace --autofree {{ $serverBaseUrl }}/ipxe/maintenance##params

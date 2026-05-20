@@ -73,6 +73,9 @@ class IpxeServiceAdminTest extends TestCase
     #[Test]
     public function it_returns_minimal_admin_menu_for_unknown_workstation(): void
     {
+        // Story 3.3 — AC6.6 / T6.8 — la modification de `admin.blade.php`
+        // remplace le message neutre 3.2 par l'item enrollment `(n) set-name`.
+        // Item maintenance reste absent pour poste inconnu (parité 3.2 D7).
         $response = $this->service->handleAdmin($this->makeRequest([
             'mac' => 'aa:bb:cc:dd:ee:99',
             'uuid' => '99999999-9999-9999-9999-999999999999',
@@ -80,7 +83,8 @@ class IpxeServiceAdminTest extends TestCase
 
         self::assertSame(200, $response->getStatusCode());
         $body = (string) $response->getContent();
-        self::assertStringContainsString('Poste non enregistre', $body);
+        self::assertStringContainsString('item --key n set-name', $body);
+        self::assertStringContainsString('/ipxe/enrollment/name##params', $body);
         self::assertStringNotContainsString('item --key m maintenance', $body);
     }
 

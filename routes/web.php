@@ -672,6 +672,67 @@ Route::match(['GET', 'POST'], '/ipxe/action/{action}', [
 
 /*
 |--------------------------------------------------------------------------
+| Story 3.3 — Enrollment Machine — Parcs, Salles, Nommage (D2)
+|--------------------------------------------------------------------------
+| Remplace les endpoints legacy `/ipxe/enregistrement.php`,
+| `/ipxe/enregistrement_byod.php`, `/ipxe/salles.php`, `/ipxe/parcs.php`
+| et `/ipxe/enleveparc.php` par 5 routes natives sous `/ipxe/enrollment/*`.
+| Les routes legacy `.php` continuent d'être servies par le catchall jusqu'à
+| la story 3.7 cleanup.
+|
+| **ORDRE STRICT** : ce bloc doit rester AVANT le catchall ci-dessous —
+| sinon la route `{path}` capture toutes les requêtes `/ipxe/*` et rend
+| ces 5 routes natives inaccessibles. Cf. test
+| `IpxeNamespaceTest::ipxe_3_3_enrollment_routes_are_declared_before_catchall`.
+|
+| **Sécurité** : middleware `auth.v1.lan-only` (16.11) — restreint au LAN
+| scolaire RFC1918. Pas de JWT (parité 3.1/3.2 D3 — un firmware iPXE n'a pas
+| d'OS qui puisse porter un Authorization Bearer).
+|
+| **Throttle 600/min/IP** : iso 3.1/3.2.
+*/
+Route::match(['GET', 'POST'], '/ipxe/enrollment/name', [
+    \App\Ipxe\Http\Controllers\IpxeEnrollmentNameController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.enrollment.name')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/enrollment/byod', [
+    \App\Ipxe\Http\Controllers\IpxeEnrollmentByodController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.enrollment.byod')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/enrollment/room', [
+    \App\Ipxe\Http\Controllers\IpxeEnrollmentRoomController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.enrollment.room')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/enrollment/parc-add', [
+    \App\Ipxe\Http\Controllers\IpxeEnrollmentParcAddController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.enrollment.parc-add')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/enrollment/parc-remove', [
+    \App\Ipxe\Http\Controllers\IpxeEnrollmentParcRemoveController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.enrollment.parc-remove')
+    ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
 | Legacy PHP Fallback Route (DOIT ÊTRE EN DERNIER)
 |--------------------------------------------------------------------------
 | Cette route catch-all délègue au LegacyCatchallController :

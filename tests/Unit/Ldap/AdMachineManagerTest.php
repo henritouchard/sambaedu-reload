@@ -240,4 +240,112 @@ class AdMachineManagerTest extends TestCase
         $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo());
         self::assertSame('', $manager->listRemoteConnexion('PC-001', '; rm -rf /'));
     }
+
+    // ────────────────────────── renameComputer() — Story 3.3 / D14 / AC3.1 ──────────────────────────
+
+    #[Test]
+    public function rename_computer_runs_delete_then_create_via_samba_tool(): void
+    {
+        Process::fake([
+            '*' => Process::result(exitCode: 0),
+        ]);
+        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo());
+
+        self::assertTrue($manager->renameComputer('PC-OLD', 'PC-NEW'));
+
+        // Vérifie qu'un appel `computer delete PC-OLD` ET `computer create PC-NEW`
+        // ont bien été lancés (séquentialité best-effort, parité D14 plan B).
+        $sawDelete = false;
+        $sawCreate = false;
+        Process::assertRan(function ($process) use (&$sawDelete, &$sawCreate) {
+            $cmd = is_array($process->command) ? $process->command : [];
+            if (in_array('computer', $cmd, true) && in_array('delete', $cmd, true) && in_array('PC-OLD', $cmd, true)) {
+                $sawDelete = true;
+            }
+            if (in_array('computer', $cmd, true) && in_array('create', $cmd, true) && in_array('PC-NEW', $cmd, true)) {
+                $sawCreate = true;
+            }
+            return true;
+        });
+        self::assertTrue($sawDelete, 'samba-tool computer delete PC-OLD attendu');
+        self::assertTrue($sawCreate, 'samba-tool computer create PC-NEW attendu');
+    }
+
+    #[Test]
+    public function rename_computer_returns_true_when_old_name_already_absent(): void
+    {
+        // Delete retourne exit 1 + "no such object", create retourne 0.
+        // Iso-legacy : tolérance — le rename est satisfait si le nouveau compte existe.
+        Process::fake([
+            '*' => Process::sequence()
+                ->push(Process::result(errorOutput: 'no such object', exitCode: 1))
+                ->push(Process::result(exitCode: 0)),
+        ]);
+        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo());
+
+        self::assertTrue($manager->renameComputer('PC-MISSING', 'PC-NEW'));
+    }
+
+    #[Test]
+    public function rename_computer_returns_true_when_new_name_already_exists(): void
+    {
+        // Delete OK, create retourne "already exists" → idempotent succès.
+        Process::fake([
+            '*' => Process::sequence()
+                ->push(Process::result(exitCode: 0))
+                ->push(Process::result(errorOutput: 'ldb: Already exists in DB.', exitCode: 1)),
+        ]);
+        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo());
+
+        self::assertTrue($manager->renameComputer('PC-OLD', 'PC-RACE'));
+    }
+
+    #[Test]
+    public function rename_computer_returns_false_when_create_fails_with_other_error(): void
+    {
+        Process::fake([
+            '*' => Process::sequence()
+                ->push(Process::result(exitCode: 0))
+                ->push(Process::result(errorOutput: 'access denied', exitCode: 1)),
+        ]);
+        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo());
+
+        self::assertFalse($manager->renameComputer('PC-OLD', 'PC-DENIED'));
+    }
+
+    #[Test]
+    public function rename_computer_rejects_invalid_names_without_exec(): void
+    {
+        Process::fake();
+        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo());
+
+        self::assertFalse($manager->renameComputer('; rm -rf /', 'PC-NEW'));
+        self::assertFalse($manager->renameComputer('PC-OLD', '; rm -rf /'));
+        self::assertFalse($manager->renameComputer('', 'PC-NEW'));
+        self::assertFalse($manager->renameComputer('PC-OLD', ''));
+        Process::assertNothingRan();
+    }
+
+    #[Test]
+    public function rename_computer_is_noop_when_old_and_new_are_identical(): void
+    {
+        Process::fake();
+        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo());
+
+        self::assertTrue($manager->renameComputer('PC-SAME', 'PC-SAME'));
+        // Case-insensitive (parité legacy).
+        self::assertTrue($manager->renameComputer('pc-same', 'PC-SAME'));
+        Process::assertNothingRan();
+    }
+
+    #[Test]
+    public function rename_computer_skips_se4fs_se4ad_servers(): void
+    {
+        Process::fake();
+        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo());
+
+        self::assertTrue($manager->renameComputer('se4fs-master', 'se4fs-new'));
+        self::assertTrue($manager->renameComputer('se4ad01', 'se4ad02'));
+        Process::assertNothingRan();
+    }
 }

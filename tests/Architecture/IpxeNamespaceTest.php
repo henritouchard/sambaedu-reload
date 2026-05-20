@@ -440,6 +440,8 @@ class IpxeNamespaceTest extends TestCase
         // D9 — Story 3.2 — élargir si nouvelle action (3.4 / 3.5 / 3.7).
         // Ce test doit être renommé/relaxé par chaque story qui ouvre la
         // whitelist avec un commentaire explicite.
+        // Story 3.3 : pas d'extension de cet enum (l'enrollment passe par des
+        // routes dédiées `/ipxe/enrollment/*`, pas via `/ipxe/action/{action}`).
         $cases = \App\Ipxe\Enums\IpxeAdminAction::cases();
         self::assertCount(
             3,
@@ -451,6 +453,143 @@ class IpxeNamespaceTest extends TestCase
         $values = array_map(static fn ($c) => $c->value, $cases);
         sort($values);
         self::assertSame(['factory_reset', 'rescuecd', 'winpe'], $values);
+    }
+
+    /* ------------------------------------------------------------------
+     * Story 3.3 — AC9.3 / AC8.1 — extension du garde-fou architectural
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Vérifie que les 5 routes natives 3.3 (`/ipxe/enrollment/{name,byod,room,
+     * parc-add,parc-remove}`) sont déclarées AVANT le catchall legacy.
+     */
+    #[Test]
+    public function ipxe_3_3_enrollment_routes_are_declared_before_catchall(): void
+    {
+        $routesFile = realpath(__DIR__ . '/../../routes/web.php');
+        self::assertNotFalse($routesFile);
+        $content = (string) file_get_contents($routesFile);
+
+        $catchallPattern = "/Route::match\s*\([^)]*['\"]\\{path\\}['\"]/";
+        self::assertSame(
+            1,
+            preg_match($catchallPattern, $content, $catchallMatches, PREG_OFFSET_CAPTURE),
+            'Catchall legacy {path} introuvable',
+        );
+        $catchallOffset = $catchallMatches[0][1];
+
+        $routes = [
+            ['needle' => "['\"]/ipxe/enrollment/name['\"]", 'name' => '/ipxe/enrollment/name'],
+            ['needle' => "['\"]/ipxe/enrollment/byod['\"]", 'name' => '/ipxe/enrollment/byod'],
+            ['needle' => "['\"]/ipxe/enrollment/room['\"]", 'name' => '/ipxe/enrollment/room'],
+            ['needle' => "['\"]/ipxe/enrollment/parc-add['\"]", 'name' => '/ipxe/enrollment/parc-add'],
+            ['needle' => "['\"]/ipxe/enrollment/parc-remove['\"]", 'name' => '/ipxe/enrollment/parc-remove'],
+        ];
+
+        foreach ($routes as $route) {
+            $pattern = '@Route::(?:match|get|post)\s*\([^;]*?' . $route['needle'] . '@';
+            self::assertSame(
+                1,
+                preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE),
+                'Route 3.3 ' . $route['name'] . ' non déclarée',
+            );
+            self::assertLessThan(
+                $catchallOffset,
+                $matches[0][1],
+                'ORDRE INVALIDE : la route 3.3 ' . $route['name'] . ' doit être AVANT le catchall',
+            );
+        }
+
+        // Vérification middleware : chaque route 3.3 doit porter
+        // `auth.v1.lan-only` (D3).
+        $statements = explode(';', $content);
+        $ipxeStatements = array_values(array_filter(
+            $statements,
+            static fn (string $stmt): bool => preg_match(
+                "@['\"]/ipxe/enrollment/(name|byod|room|parc-add|parc-remove)['\"]@",
+                $stmt,
+            ) === 1,
+        ));
+
+        self::assertGreaterThanOrEqual(
+            5,
+            count($ipxeStatements),
+            'Les 5 routes 3.3 doivent être déclarées',
+        );
+
+        foreach ($ipxeStatements as $stmt) {
+            self::assertMatchesRegularExpression(
+                '/auth\.v1\.lan-only/',
+                $stmt,
+                'Chaque route 3.3 doit attacher auth.v1.lan-only — bloc fautif : '
+                . substr(trim($stmt), 0, 200),
+            );
+        }
+    }
+
+    #[Test]
+    public function it_lists_all_ipxe_3_3_controllers_and_services_under_correct_namespace(): void
+    {
+        $root = realpath(__DIR__ . '/../../app/Ipxe');
+        self::assertNotFalse($root);
+
+        $required = [
+            $root . '/Http/Controllers/IpxeEnrollmentNameController.php',
+            $root . '/Http/Controllers/IpxeEnrollmentByodController.php',
+            $root . '/Http/Controllers/IpxeEnrollmentRoomController.php',
+            $root . '/Http/Controllers/IpxeEnrollmentParcAddController.php',
+            $root . '/Http/Controllers/IpxeEnrollmentParcRemoveController.php',
+            $root . '/Http/Requests/IpxeEnrollmentNameRequest.php',
+            $root . '/Http/Requests/IpxeEnrollmentByodRequest.php',
+            $root . '/Http/Requests/IpxeEnrollmentRoomRequest.php',
+            $root . '/Http/Requests/IpxeEnrollmentParcRequest.php',
+            $root . '/Services/IpxeHostnameSanitizer.php',
+            $root . '/Services/IpxeEnrollmentMenuBuilder.php',
+            $root . '/Services/IpxeEnrollmentOrchestrator.php',
+            $root . '/Services/WorkstationEnrollmentService.php',
+            $root . '/Enums/EnrollNameStatus.php',
+            $root . '/Enums/IpxeEnrollmentFlow.php',
+            $root . '/Support/EnrollNameResult.php',
+        ];
+
+        foreach ($required as $file) {
+            self::assertFileExists($file, "Fichier 3.3 manquant : {$file}");
+        }
+
+        $routesContent = (string) file_get_contents(__DIR__ . '/../../routes/web.php');
+        self::assertStringContainsString('App\\Ipxe\\Http\\Controllers\\IpxeEnrollmentNameController', $routesContent);
+        self::assertStringContainsString('App\\Ipxe\\Http\\Controllers\\IpxeEnrollmentByodController', $routesContent);
+        self::assertStringContainsString('App\\Ipxe\\Http\\Controllers\\IpxeEnrollmentRoomController', $routesContent);
+        self::assertStringContainsString('App\\Ipxe\\Http\\Controllers\\IpxeEnrollmentParcAddController', $routesContent);
+        self::assertStringContainsString('App\\Ipxe\\Http\\Controllers\\IpxeEnrollmentParcRemoveController', $routesContent);
+    }
+
+    /**
+     * Story 3.3 — Re-validation : aucun fichier du namespace App\Ipxe 3.3
+     * n'importe `LdapRecord\*`. L'accès AD doit passer exclusivement par
+     * `App\Ldap\AdMachineManager` (D5 / D14).
+     */
+    #[Test]
+    public function ipxe_3_3_files_do_not_import_ldap_record(): void
+    {
+        // Hérite du check global `it_does_not_import_ldap_record_in_ipxe_namespace`
+        // qui scanne tout app/Ipxe (donc nos 5 controllers + services 3.3 inclus).
+        // Re-test explicite pour traçabilité 3.3 dans le rapport phpunit.
+        $files = [
+            __DIR__ . '/../../app/Ipxe/Services/WorkstationEnrollmentService.php',
+            __DIR__ . '/../../app/Ipxe/Services/IpxeEnrollmentOrchestrator.php',
+            __DIR__ . '/../../app/Ipxe/Services/IpxeEnrollmentMenuBuilder.php',
+            __DIR__ . '/../../app/Ipxe/Services/IpxeHostnameSanitizer.php',
+        ];
+
+        foreach ($files as $f) {
+            $content = (string) file_get_contents($f);
+            self::assertStringNotContainsString(
+                'use LdapRecord\\',
+                $content,
+                basename($f) . ' ne doit pas importer LdapRecord (D5/D14 — passage exclusif par AdMachineManager)',
+            );
+        }
     }
 
     private function stripComments(string $code): string

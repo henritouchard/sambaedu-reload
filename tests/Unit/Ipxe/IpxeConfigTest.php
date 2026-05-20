@@ -102,4 +102,32 @@ class IpxeConfigTest extends TestCase
             (string) config('ipxe.actions.se4install_passwd_config_key'),
         );
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.3 — AC10.1 / T2.2 — section enrollment
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_loads_enrollment_enabled_true_by_default(): void
+    {
+        self::assertTrue((bool) config('ipxe.enrollment.enabled'));
+    }
+
+    #[Test]
+    public function it_loads_enrollment_menu_timeout_10000_ms(): void
+    {
+        self::assertSame(10000, (int) config('ipxe.enrollment.menu_timeout_ms'));
+    }
+
+    #[Test]
+    public function it_loads_enrollment_max_rooms_in_menu_50(): void
+    {
+        self::assertSame(50, (int) config('ipxe.enrollment.max_rooms_in_menu'));
+    }
+
+    #[Test]
+    public function it_loads_enrollment_max_parcs_in_menu_50(): void
+    {
+        self::assertSame(50, (int) config('ipxe.enrollment.max_parcs_in_menu'));
+    }
 }

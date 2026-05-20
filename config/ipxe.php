@@ -155,6 +155,37 @@ return [
     |                                  Lecture via `config(<clé>)` côté serveur
     |                                  uniquement, jamais dans les logs.
     */
+    /*
+    |--------------------------------------------------------------------------
+    | Story 3.3 — Enrollment Machine (D11)
+    |--------------------------------------------------------------------------
+    |
+    | Paramètres pour les 5 endpoints `/ipxe/enrollment/*` (name, byod, room,
+    | parc-add, parc-remove) — port natif des fichiers legacy
+    | `sambaedu/ipxe/{enregistrement,enregistrement_byod,salles,parcs,enleveparc}.php`.
+    |
+    | Le suffix de hostname iso-legacy (`add_hostname_suffix()`) reste lu
+    | via `config('sambaedu.legacy_ldap.suffix')` qui existe depuis 16.3b
+    | — pas de duplication ici.
+    */
+    'enrollment' => [
+        // Active la branche enrollment depuis le menu admin (3.3). Si false,
+        // l'item `(n)` nommer / `(a)` salle / `(p)` parcs est masqué — utile
+        // pour freezer une VM de tests en pré-prod.
+        'enabled' => filter_var(env('IPXE_ENROLLMENT_ENABLED', true), FILTER_VALIDATE_BOOL),
+
+        // Timeout des menus enrollment (10s — iso-legacy salles.php:15).
+        'menu_timeout_ms' => (int) env('IPXE_ENROLLMENT_TIMEOUT_MS', 10000),
+
+        // Limite de salles physiques affichées dans le menu interactif
+        // (cas pathologique > 50 salles). Au-delà, on tronque + affiche un
+        // item "** voir UI admin SE5 **" (placeholder Phase 3).
+        'max_rooms_in_menu' => (int) env('IPXE_ENROLLMENT_MAX_ROOMS', 50),
+
+        // Limite de parcs logiques affichés idem.
+        'max_parcs_in_menu' => (int) env('IPXE_ENROLLMENT_MAX_PARCS', 50),
+    ],
+
     'actions' => [
         'os_url' => env('IPXE_OS_URL', null),
         'script_url' => env('IPXE_SCRIPT_URL', null),

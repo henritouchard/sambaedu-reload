@@ -184,4 +184,81 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
             . 'jusqu\'à la Story 3.7.',
         );
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.3 — AC8.2 / T6.7 — non-régression catchall pour les 5
+     * routes legacy `.php` + court-circuit pour les 5 routes natives 3.3.
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_serves_ipxe_enrollment_name_natively_not_via_catchall(): void
+    {
+        $countBefore = \App\Models\LegacyCatchallLog::query()->count();
+        $this->get('/ipxe/enrollment/name');
+
+        self::assertSame(
+            $countBefore,
+            \App\Models\LegacyCatchallLog::query()->count(),
+            '/ipxe/enrollment/name (3.3) ne doit pas passer par le catchall',
+        );
+    }
+
+    #[Test]
+    public function it_serves_ipxe_enrollment_room_natively_not_via_catchall(): void
+    {
+        $countBefore = \App\Models\LegacyCatchallLog::query()->count();
+        $this->get('/ipxe/enrollment/room');
+
+        self::assertSame(
+            $countBefore,
+            \App\Models\LegacyCatchallLog::query()->count(),
+            '/ipxe/enrollment/room (3.3) ne doit pas passer par le catchall',
+        );
+    }
+
+    #[Test]
+    public function it_still_serves_ipxe_enregistrement_php_via_catchall(): void
+    {
+        $this->get('/ipxe/enregistrement.php');
+
+        $found = \App\Models\LegacyCatchallLog::query()
+            ->where('path', 'like', '%ipxe/enregistrement.php%')
+            ->exists();
+
+        self::assertTrue(
+            $found,
+            '/ipxe/enregistrement.php (legacy `.php`) doit continuer à être servi '
+            . 'par le catchall jusqu\'à la Story 3.7 cleanup.',
+        );
+    }
+
+    #[Test]
+    public function it_still_serves_ipxe_salles_php_via_catchall(): void
+    {
+        $this->get('/ipxe/salles.php');
+
+        $found = \App\Models\LegacyCatchallLog::query()
+            ->where('path', 'like', '%ipxe/salles.php%')
+            ->exists();
+
+        self::assertTrue(
+            $found,
+            '/ipxe/salles.php (legacy `.php`) doit continuer à être servi par le catchall.',
+        );
+    }
+
+    #[Test]
+    public function it_still_serves_ipxe_parcs_php_via_catchall(): void
+    {
+        $this->get('/ipxe/parcs.php');
+
+        $found = \App\Models\LegacyCatchallLog::query()
+            ->where('path', 'like', '%ipxe/parcs.php%')
+            ->exists();
+
+        self::assertTrue(
+            $found,
+            '/ipxe/parcs.php (legacy `.php`) doit continuer à être servi par le catchall.',
+        );
+    }
 }

@@ -5,9 +5,14 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Ipxe\Services\IpxeActionResolver;
+use App\Ipxe\Services\IpxeEnrollmentMenuBuilder;
+use App\Ipxe\Services\IpxeEnrollmentOrchestrator;
+use App\Ipxe\Services\IpxeHostnameSanitizer;
 use App\Ipxe\Services\IpxeMenuRenderer;
 use App\Ipxe\Services\IpxeService;
+use App\Ipxe\Services\WorkstationEnrollmentService;
 use App\Ipxe\Services\WorkstationLocator;
+use App\Ldap\AdMachineManager;
 use Illuminate\Contracts\View\Factory as ViewFactory;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
@@ -68,6 +73,24 @@ class IpxeServiceProvider extends ServiceProvider
             $app->make(WorkstationLocator::class),
             $app->make(IpxeMenuRenderer::class),
             $app->make(IpxeActionResolver::class),
+        ));
+
+        // Story 3.3 — D5/D6 — bindings enrollment.
+        $this->app->singleton(IpxeHostnameSanitizer::class, fn () => new IpxeHostnameSanitizer());
+
+        $this->app->singleton(IpxeEnrollmentMenuBuilder::class, fn () => new IpxeEnrollmentMenuBuilder());
+
+        $this->app->singleton(WorkstationEnrollmentService::class, fn ($app) => new WorkstationEnrollmentService(
+            $app->make(AdMachineManager::class),
+            $app->make(IpxeHostnameSanitizer::class),
+        ));
+
+        $this->app->singleton(IpxeEnrollmentOrchestrator::class, fn ($app) => new IpxeEnrollmentOrchestrator(
+            $app->make(WorkstationLocator::class),
+            $app->make(WorkstationEnrollmentService::class),
+            $app->make(IpxeEnrollmentMenuBuilder::class),
+            $app->make(IpxeMenuRenderer::class),
+            $app->make(IpxeHostnameSanitizer::class),
         ));
     }
 

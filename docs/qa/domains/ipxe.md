@@ -544,6 +544,289 @@ grep -c 'ipxe.action.factory_reset_dispatched' /var/www/sambaedu-reload/storage/
 
 ---
 
+## Story 3.3 — Enrollment Machine — Parcs, Salles, Nommage
+
+**Date livraison** : 2026-05-20
+**Migrations à appliquer** : aucune (D9 — réutilisation `Workstation` / `WorkstationGroup` / `MachineBootLog` existants ; 5 nouvelles valeurs `action` ≤16 chars passent dans `varchar(20)` sans CHECK)
+**Permissions requises** : aucune (cf. Story 3.1/3.2 — `auth.v1.lan-only` seul)
+**Décision D14 retenue** : `AdMachineManager::renameComputer()` = plan B = **delete+recreate** (samba-tool computer move ne supporte que le déplacement OU). Conséquence : `netbootGUID` est perdu côté ancien compte → le service `WorkstationEnrollmentService::enrollName()` cas RENAMED ne re-register pas automatiquement le netbootGUID sur le nouveau nom — TODO documenté pour Story 3.4 si nécessaire (en pratique le rename est rare dans le flow iPXE).
+
+### Section 12 — Endpoints natifs `/ipxe/enrollment/*`
+
+#### Scénario 3.3-1 — Handshake `/ipxe/enrollment/name` (sans paramètres)
+
+```bash
+curl -sS http://192.168.122.50/ipxe/enrollment/name
+```
+
+**Critères d'acceptation** :
+- HTTP 200 + `Content-Type: text/plain; charset=utf-8`.
+- Body commence par `#!ipxe`.
+- Contient `chain --replace --autofree ipxe/enrollment/name##params` (handshake `IpxeMenuRenderer::renderHandshake('ipxe/enrollment/name')`).
+- Headers : `Cache-Control: no-store`, `X-Robots-Tag: noindex`.
+
+#### Scénario 3.3-2 — Saisie nom — poste neuf (création AD + DB)
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/enrollment/name \
+  -d 'mac=aa:bb:cc:dd:ee:99&uuid=12345678-1234-1234-1234-000000000099&new_name=pc-test-33-1&platform=legacy'
+```
+
+**Critères d'acceptation** :
+- Body contient `echo OK ! nom pc-test-33-1 reserve pour 12345678-1234-1234-1234-000000000099`.
+- Body contient `chain --replace --autofree http://192.168.122.50/ipxe/admin##params`.
+- PostgreSQL :
+  ```bash
+  sudo -u postgres psql -d sambaedu -c \
+    "SELECT id, name, uuid, mac FROM workstations WHERE uuid='12345678-1234-1234-1234-000000000099';"
+  ```
+  → 1 ligne avec `name=pc-test-33-1`.
+- AD :
+  ```bash
+  samba-tool computer show pc-test-33-1
+  ```
+  → succès (compte machine créé).
+- `MachineBootLog` : row avec `action='ipxe_enroll_name'`, `initiated_by='ipxe'`.
+- Log channel `ipxe` : event `ipxe.enrollment.name.success` avec `status='created'` + `ad_result='success'`.
+
+#### Scénario 3.3-3 — Saisie nom — même nom déjà enregistré (idempotent)
+
+```bash
+# Réutilise le poste seedé scénario 3.3-2.
+curl -sS -X POST http://192.168.122.50/ipxe/enrollment/name \
+  -d 'mac=aa:bb:cc:dd:ee:99&uuid=12345678-1234-1234-1234-000000000099&new_name=pc-test-33-1&platform=legacy'
+```
+
+**Critères d'acceptation** :
+- Body contient `echo La machine est deja enregistree sous ce nom pc-test-33-1`.
+- Pas de nouvel appel `samba-tool` (vérifier `auth.log` côté AD).
+- PostgreSQL : aucun changement (`updated_at` inchangé).
+
+#### Scénario 3.3-4 — Saisie nom — nom déjà pris par un autre poste
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/enrollment/name \
+  -d 'mac=aa:bb:cc:dd:ee:88&uuid=12345678-1234-1234-1234-000000000088&new_name=pc-test-33-1&platform=legacy'
+```
+
+**Critères d'acceptation** :
+- Body contient `echo ERREUR ! nom pc-test-33-1 indisponible: nom deja pris`.
+- PostgreSQL : aucune nouvelle Workstation pour l'UUID `...088`.
+- AD : pas de nouveau compte machine.
+- Log channel `ipxe` : event `ipxe.enrollment.name.name_taken` niveau `warning`.
+
+#### Scénario 3.3-5 — Saisie nom — renommage (UUID connu, nouveau nom libre)
+
+```bash
+# Pré-condition : poste pc-test-33-1 existe (scénario 3.3-2). On le renomme.
+curl -sS -X POST http://192.168.122.50/ipxe/enrollment/name \
+  -d 'mac=aa:bb:cc:dd:ee:99&uuid=12345678-1234-1234-1234-000000000099&new_name=pc-renamed-33-1&platform=legacy'
+```
+
+**Critères d'acceptation** :
+- Body contient `echo OK ! nom pc-renamed-33-1 reserve pour ...`.
+- PostgreSQL : `name='pc-renamed-33-1'` (UPDATE, pas INSERT — id inchangé).
+- AD : ancien compte `pc-test-33-1` supprimé (plan B D14), nouveau `pc-renamed-33-1` créé.
+- Log channel `ipxe` : event `ipxe.enrollment.name.success` avec `status='renamed'`.
+
+> **Fenêtre temporelle AD rename (~1-2s)** : `renameComputer()` plan B (delete+recreate) crée une fenêtre pendant laquelle ni l'ancien ni le nouveau compte AD n'existent. Tout poste qui tente bind LDAP / auth Kerberos sur l'ancien nom durant cette fenêtre échouera. **Recommandation opérationnelle** : effectuer les renommages hors heures de boot massif (avant 8h ou après 17h).
+
+#### Scénario 3.3-6 — Affectation salle (poste connu)
+
+```bash
+# Pré-condition : seed une salle physique en base.
+sudo -u postgres psql -d sambaedu -c \
+  "INSERT INTO workstation_groups (name, is_physical, is_active, created_at, updated_at) VALUES ('salle-test-33-A', true, true, NOW(), NOW()) RETURNING id;"
+
+ROOM_ID=42  # remplacer par l'id renvoyé
+
+curl -sS -X POST http://192.168.122.50/ipxe/enrollment/room \
+  -d "mac=aa:bb:cc:dd:ee:99&uuid=12345678-1234-1234-1234-000000000099&room=${ROOM_ID}"
+```
+
+**Critères d'acceptation** :
+- Body contient `echo La machine a ete ajoutee a la salle salle-test-33-A`.
+- PostgreSQL : `workstations.physical_room_id = ${ROOM_ID}` pour le poste.
+- Observer `WorkstationObserver` déclenché → job `WorkstationMembershipAdSyncJob` ou équivalent dispatché (vérifier `php artisan queue:work --once`).
+- Log channel `ipxe` : event `ipxe.enrollment.room.success`.
+
+#### Scénario 3.3-7 — Affectation salle — poste inconnu
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/enrollment/room \
+  -d 'mac=00:00:00:00:00:00&uuid=00000000-0000-0000-0000-000000000000&room=1'
+```
+
+**Critères d'acceptation** :
+- Body contient `echo Erreur - poste non encore enregistre.`
+- Body contient `chain --replace --autofree http://192.168.122.50/ipxe/admin##params`.
+- PostgreSQL : aucune création.
+
+#### Scénario 3.3-8 — Ajout à un parc logique (poste connu)
+
+```bash
+sudo -u postgres psql -d sambaedu -c \
+  "INSERT INTO workstation_groups (name, is_physical, is_active, created_at, updated_at) VALUES ('parc-test-33-X', false, true, NOW(), NOW()) RETURNING id;"
+
+PARC_ID=43  # remplacer
+
+curl -sS -X POST http://192.168.122.50/ipxe/enrollment/parc-add \
+  -d "mac=aa:bb:cc:dd:ee:99&uuid=12345678-1234-1234-1234-000000000099&parc=${PARC_ID}"
+```
+
+**Critères d'acceptation** :
+- Body contient `echo La machine a ete ajoutee au parc parc-test-33-X`.
+- PostgreSQL : row dans `workstation_group_workstation` avec `workstation_id` et `workstation_group_id=${PARC_ID}`.
+- Log channel `ipxe` : event `ipxe.enrollment.parc.added`.
+
+#### Scénario 3.3-9 — Retrait d'un parc logique (poste connu)
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/enrollment/parc-remove \
+  -d "mac=aa:bb:cc:dd:ee:99&uuid=12345678-1234-1234-1234-000000000099&parc=${PARC_ID}"
+```
+
+**Critères d'acceptation** :
+- Body contient `echo La machine a ete enlevee du parc parc-test-33-X`.
+- PostgreSQL : row supprimée de `workstation_group_workstation`.
+- Log channel `ipxe` : event `ipxe.enrollment.parc.removed`.
+
+#### Scénario 3.3-10 — Anti-injection nom (sécurité)
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/enrollment/name \
+  -d "mac=aa:bb:cc:dd:ee:99&uuid=12345678-1234-1234-1234-000000000099&new_name=evil%3B%20rm%20-rf%20%2F"
+```
+
+**Critères d'acceptation** :
+- HTTP 200 (pas 422 — un firmware iPXE doit recevoir un menu).
+- Body contient `echo ERREUR` + `nom invalide` (ou variante).
+- Body **ne contient PAS** `rm -rf` (sanitize).
+- PostgreSQL : aucune Workstation créée pour `new_name=evil...`.
+- AD : aucun nouveau compte.
+- Log channel `ipxe` : event `ipxe.enrollment.name.rejected_invalid` (warning) avec `reason=invalid_hostname` + `attempted_name_prefix` tronqué (renommé post-review 3.3 F7 — vs `name_taken` pré-correctif).
+
+#### Scénario 3.3-11 — Non-régression menu admin natif (3.2 → 3.3)
+
+```bash
+# Poste connu — vérifier les items enrollment activés.
+curl -sS -X POST http://192.168.122.50/ipxe/admin \
+  -d 'mac=aa:bb:cc:dd:ee:99&uuid=12345678-1234-1234-1234-000000000099'
+
+# Poste inconnu — vérifier l'item set-name (au lieu du message neutre 3.2).
+curl -sS -X POST http://192.168.122.50/ipxe/admin \
+  -d 'mac=00:00:00:00:00:00&uuid=00000000-0000-0000-0000-000000000000'
+```
+
+**Critères d'acceptation** (poste connu) :
+- Body contient `item --key n set-name` (Story 3.3).
+- Body contient `item --key a salle` + `item --key p parcs` + `item --key e enleveparc` (Story 3.3).
+- Body contient `item --key m maintenance` (non-régression 3.2).
+- Sections de chain `:set-name`, `:salle`, `:parcs`, `:enleveparc` présentes.
+
+**Critères d'acceptation** (poste inconnu) :
+- Body contient `item --key n set-name` (au lieu du message neutre 3.2).
+- Body ne contient PAS `item --key m maintenance`.
+- Body contient `chain --replace --autofree http://192.168.122.50/ipxe/enrollment/name##params`.
+
+#### Scénario 3.3-12 — Non-régression catchall legacy `/ipxe/enregistrement.php`
+
+```bash
+curl -sS http://192.168.122.50/ipxe/enregistrement.php | head -20
+# Idem pour /ipxe/salles.php, /ipxe/parcs.php, /ipxe/enleveparc.php, /ipxe/enregistrement_byod.php
+```
+
+**Critères d'acceptation** :
+- 200 servi par le catchall legacy (= row insérée dans `legacy_catchall_logs`).
+- Body legacy PHP procédural (ancien format `#!ipxe\nconsole ... param mac ...`).
+- Non-régression : les routes legacy `.php` continuent jusqu'à la Story 3.7 cleanup.
+
+#### Scénario 3.3-13 — `MachineBootLog` peuplé pour les 5 endpoints enrollment
+
+```bash
+# Après quelques appels aux scénarios 3.3-2/6/8/9 et un BYOD :
+curl -sS -X POST http://192.168.122.50/ipxe/enrollment/byod \
+  -d 'mac=aa:bb:cc:dd:ee:bb&uuid=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb&new_name=student-pc'
+
+sudo -u postgres psql -d sambaedu -c \
+  "SELECT action, machine_name, initiated_by, success, started_at FROM machine_boot_logs WHERE action LIKE 'ipxe_enroll%' OR action LIKE 'ipxe_parc%' ORDER BY id DESC LIMIT 10;"
+```
+
+**Critères d'acceptation** :
+- Au moins 5 rows distinctes avec actions :
+  - `ipxe_enroll_name` (scénario 3.3-2/5)
+  - `ipxe_enroll_byod` (scénario BYOD ci-dessus)
+  - `ipxe_enroll_room` (scénario 3.3-6)
+  - `ipxe_parc_add` (scénario 3.3-8)
+  - `ipxe_parc_remove` (scénario 3.3-9)
+- `initiated_by='ipxe'` pour tous.
+- `success=true` (sauf si AD échoue → reste true côté DB mais event log warning).
+- `machine_name` : hostname ou `byod:<name>` pour le flow BYOD.
+
+#### Scénario 3.3-14 — Flow BYOD (audit-only — pas d'AD, pas de Workstation)
+
+```bash
+COUNT_WS=$(sudo -u postgres psql -d sambaedu -tA -c 'SELECT COUNT(*) FROM workstations;')
+curl -sS -X POST http://192.168.122.50/ipxe/enrollment/byod \
+  -d 'mac=aa:bb:cc:dd:ee:bd&uuid=bbbbbbbb-1111-bbbb-2222-bbbbbbbbbbbb&new_name=student-laptop-byod'
+
+# Vérification : aucune Workstation créée.
+COUNT_WS_AFTER=$(sudo -u postgres psql -d sambaedu -tA -c 'SELECT COUNT(*) FROM workstations;')
+[ "$COUNT_WS" = "$COUNT_WS_AFTER" ] && echo OK || echo FAIL
+
+# Vérification : log audit présent.
+sudo -u postgres psql -d sambaedu -c \
+  "SELECT * FROM machine_boot_logs WHERE machine_name='byod:student-laptop-byod';"
+```
+
+**Critères d'acceptation** :
+- Body contient `echo BYOD enregistre pour student-laptop-byod`.
+- Workstation count : inchangé (D5 — BYOD = audit-only en 3.3).
+- `MachineBootLog` : 1 row avec `action='ipxe_enroll_byod'`, `workstation_id=null`, `machine_name='byod:student-laptop-byod'`.
+- Aucun appel `samba-tool` (vérifier `auth.log`).
+- Log channel `ipxe` : event `ipxe.enrollment.byod.logged` (info).
+
+#### Scénario 3.3-15 — Feature-flag `ipxe.enrollment.enabled = false`
+
+```bash
+# En .env : IPXE_ENROLLMENT_ENABLED=false
+php artisan config:clear
+
+curl -sS -X POST http://192.168.122.50/ipxe/admin \
+  -d 'mac=aa:bb:cc:dd:ee:99&uuid=12345678-1234-1234-1234-000000000099'
+```
+
+**Critères d'acceptation** :
+- Body NE contient PAS `item --key n set-name`, `item --key a salle`, `item --key p parcs`, `item --key e enleveparc`.
+- Body contient `item --key m maintenance` (poste connu — maintenance reste accessible).
+- Body contient `item --key x exit` (toujours accessible).
+
+#### (Optionnel) Scénario 3.3-16 — Smoke poste réel (PXE boot enrollment complet)
+
+> **À jouer en pré-prod uniquement, sur poste de test (jamais sur poste prod)**.
+
+```
+1. Brancher un poste neuf sur LAN scolaire.
+2. Configurer PXE boot prioritaire en BIOS.
+3. Reboot → préambule iPXE 3.1 → menu known/unknown selon résolution.
+4. Choisir option login admin (`1` ou similaire) → /ipxe/admin natif.
+5. Choisir `(n) Nommer le poste` → saisie hostname (ex. pc-smoke-33-1).
+6. Vérifier le menu de succès → chain admin.
+7. Choisir `(a) Affecter a une salle` → liste de salles → choisir une.
+8. Vérifier le succès → chain admin.
+9. Choisir `(p) Ajouter a un parc` → liste de parcs → choisir un.
+10. Vérifier le succès → chain admin.
+11. Choisir `(x) exit` → boot disque.
+
+Vérifications post-smoke :
+- `samba-tool computer show pc-smoke-33-1` → présent + netbootGUID renseigné.
+- `SELECT * FROM workstations WHERE name='pc-smoke-33-1';` → ligne complète avec `physical_room_id`.
+- `SELECT * FROM workstation_group_workstation WHERE workstation_id=...;` → row ajoutée.
+- `tail -f storage/logs/ipxe/ipxe-$(date +%F).log` → events `ipxe.enrollment.*.success`.
+```
+
+---
+
 ## Checklist rapide (avant merge `main` → prod)
 
 - [ ] Scénario 3.1-1 (handshake) : `curl /ipxe/boot` → préambule iPXE OK
@@ -557,7 +840,7 @@ grep -c 'ipxe.action.factory_reset_dispatched' /var/www/sambaedu-reload/storage/
 - [ ] Scénario 3.1-9 (smoke poste réel) — optionnel, valide en pré-prod
 - [ ] Scénario 3.2-1 (handshake /ipxe/admin) : préambule + chain admin##params
 - [ ] Scénario 3.2-2 (menu admin poste connu) : item maintenance + exit + retour
-- [ ] Scénario 3.2-3 (menu admin poste inconnu) : message neutre + pas d'item maintenance
+- [ ] Scénario 3.2-3 (menu admin poste inconnu) : item --key n set-name + pas d'item maintenance (modifié 3.3 — voir Scénario 3.3-1)
 - [ ] Scénario 3.2-4 (handshake /ipxe/maintenance)
 - [ ] Scénario 3.2-5 (menu maintenance) : rescuecd + winpe + factory_reset
 - [ ] Scénario 3.2-6 (action rescuecd) : kernel sysresccd + 3 initrds
@@ -571,6 +854,22 @@ grep -c 'ipxe.action.factory_reset_dispatched' /var/www/sambaedu-reload/storage/
 - [ ] Scénario 3.2-14 (post-correctif #1 — params block admin+maintenance) : `params\nparam mac\nparam uuid` en tête, pas de row `unknown:<ip>` après chain
 - [ ] Scénario 3.2-15 (post-correctif #2 — whitelist version winpe) : injection `version=Win11\nkernel http://evil` → fallback Win11 pur
 - [ ] Scénario 3.2-16 (post-correctif #3 — warning factory_reset) : event `ipxe.action.factory_reset_dispatched` niveau warning
+- [ ] Scénario 3.3-1 (handshake enrollment/name) : préambule + chain
+- [ ] Scénario 3.3-2 (création poste neuf) : Workstation + AD samba-tool computer create + netbootGUID
+- [ ] Scénario 3.3-3 (idempotent same name) : message "deja enregistree"
+- [ ] Scénario 3.3-4 (nom déjà pris) : ERREUR + pas de modification
+- [ ] Scénario 3.3-5 (renommage delete+recreate AD plan B D14)
+- [ ] Scénario 3.3-6 (affectation salle physique)
+- [ ] Scénario 3.3-7 (room — poste inconnu) : erreur + chain admin
+- [ ] Scénario 3.3-8 (ajout parc logique) : pivot + observer
+- [ ] Scénario 3.3-9 (retrait parc logique)
+- [ ] Scénario 3.3-10 (anti-injection nom) : 200 + ERREUR + pas de samba-tool
+- [ ] Scénario 3.3-11 (non-régression menu admin natif — items enrollment)
+- [ ] Scénario 3.3-12 (non-régression catchall `/ipxe/enregistrement.php` legacy)
+- [ ] Scénario 3.3-13 (MachineBootLog peuplé pour 5 actions enrollment)
+- [ ] Scénario 3.3-14 (BYOD audit-only — pas de Workstation ni AD)
+- [ ] Scénario 3.3-15 (feature-flag enrollment.enabled=false)
+- [ ] Scénario 3.3-16 (smoke poste réel — optionnel pré-prod)
 
 > Smoke automatisable : voir Story 3.1 et 3.2 § "Smoke test à exécuter quand VM up"
 > dans `_bmad-output/implementation-artifacts/3-1-ipxe-service-core.md`.

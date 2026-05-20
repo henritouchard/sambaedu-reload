@@ -337,6 +337,154 @@ class AdMachineManager
         return '';
     }
 
+    /**
+     * Story 3.3 — D14 / AC3.1.
+     *
+     * Renomme un compte machine dans l'AD — port natif de la branche
+     * `move_ad($config, $oldName, "cn=$newName,$ou", "computer")` legacy
+     * `enregistrement.php:56`.
+     *
+     * **Plan B retenu (delete + recreate)** : `samba-tool computer move` ne
+     * supporte que le déplacement OU (changement `parent DN`), pas le
+     * renommage CN. La voie pragmatique est de supprimer le compte machine
+     * sous l'ancien nom puis le recréer sous le nouveau. Conséquence
+     * documentée : `netbootGUID` est perdu côté ancien compte → un appel
+     * `{@see registerHardware()}` est nécessaire **après** ce rename pour
+     * réenregistrer l'UUID hardware sur le nouveau compte (le service
+     * `WorkstationEnrollmentService` orchestre cette séquence dans le cas
+     * `RENAMED`).
+     *
+     * Idempotence :
+     *  - Si `$oldName` n'existe pas → on tente quand même le delete (samba-tool
+     *    retourne en général exit 0 + warning, ou exit 1 + "object not found"
+     *    qu'on traite comme succès silencieux).
+     *  - Si le delete réussit mais le create échoue → log error + retour false.
+     *
+     * @return bool `true` si le nouveau compte machine existe à la fin, `false`
+     *              sinon.
+     */
+    public function renameComputer(string $oldName, string $newName): bool
+    {
+        if (! $this->isValidMachineName($oldName)) {
+            Log::channel('gpo')->warning('[AdMachineManager] renameComputer() invalid old name', [
+                'action_type' => 'ad.machine.rename',
+                'machine' => $oldName,
+                'step' => 'rejected_old',
+            ]);
+            return false;
+        }
+        if (! $this->isValidMachineName($newName)) {
+            Log::channel('gpo')->warning('[AdMachineManager] renameComputer() invalid new name', [
+                'action_type' => 'ad.machine.rename',
+                'machine' => $newName,
+                'step' => 'rejected_new',
+            ]);
+            return false;
+        }
+
+        // Cas dégénéré : oldName == newName → no-op idempotent.
+        if (strcasecmp($oldName, $newName) === 0) {
+            Log::channel('gpo')->debug('[gpo] ad.machine.rename noop', [
+                'action_type' => 'ad.machine.rename',
+                'machine' => $oldName,
+                'step' => 'same_name',
+            ]);
+            return true;
+        }
+
+        // Iso-legacy : ne pas tenter de renommer un serveur interne SE4FS/SE4AD.
+        if (preg_match('/^(se4fs|se4ad)/i', $oldName) === 1) {
+            Log::channel('gpo')->info('[gpo] ad.machine.rename skip server', [
+                'action_type' => 'ad.machine.rename',
+                'machine' => $oldName,
+                'step' => 'skip_se4_server',
+            ]);
+            return true;
+        }
+
+        Log::channel('gpo')->info('[gpo] ad.machine.rename start (delete+create)', [
+            'action_type' => 'ad.machine.rename',
+            'old' => $oldName,
+            'new' => $newName,
+            'step' => 'start',
+        ]);
+
+        // Étape 1 — delete (tolérant aux échecs "object not found").
+        try {
+            $deleteResult = $this->runner->run(['computer', 'delete', $oldName]);
+            if ($deleteResult->exitCode() !== 0) {
+                $stderr = (string) $deleteResult->errorOutput();
+                // Tolérance : l'ancien compte n'existe peut-être pas (race
+                // condition, base AD désynchronisée). On log warning et on
+                // continue avec le create — l'important est que le nouveau
+                // compte existe à la fin.
+                if (stripos($stderr, 'no such object') === false
+                    && stripos($stderr, 'not found') === false) {
+                    Log::channel('gpo')->warning('[AdMachineManager] renameComputer() delete failed (continuing)', [
+                        'action_type' => 'ad.machine.rename',
+                        'old' => $oldName,
+                        'exit_code' => $deleteResult->exitCode(),
+                        'stderr' => $this->truncate($stderr),
+                        'step' => 'delete_failed_continue',
+                    ]);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::channel('gpo')->warning('[AdMachineManager] renameComputer() delete threw (continuing)', [
+                'action_type' => 'ad.machine.rename',
+                'old' => $oldName,
+                'error' => $e->getMessage(),
+                'step' => 'delete_threw_continue',
+            ]);
+        }
+
+        // Étape 2 — create du nouveau compte.
+        try {
+            $createResult = $this->runner->run(['computer', 'create', $newName]);
+        } catch (\Throwable $e) {
+            Log::channel('gpo')->error('[AdMachineManager] renameComputer() create threw', [
+                'action_type' => 'ad.machine.rename',
+                'old' => $oldName,
+                'new' => $newName,
+                'error' => $e->getMessage(),
+                'step' => 'create_threw',
+            ]);
+            return false;
+        }
+
+        if ($createResult->exitCode() !== 0) {
+            $stderr = (string) $createResult->errorOutput();
+            // Idempotence sur la deuxième étape : si le nouveau nom existe déjà
+            // (race), on considère que le rename est satisfait.
+            if (stripos($stderr, 'already exists') !== false) {
+                Log::channel('gpo')->info('[AdMachineManager] renameComputer() create idempotent', [
+                    'action_type' => 'ad.machine.rename',
+                    'old' => $oldName,
+                    'new' => $newName,
+                    'step' => 'create_already_exists',
+                ]);
+                return true;
+            }
+            Log::channel('gpo')->error('[AdMachineManager] renameComputer() create failed', [
+                'action_type' => 'ad.machine.rename',
+                'old' => $oldName,
+                'new' => $newName,
+                'exit_code' => $createResult->exitCode(),
+                'stderr' => $this->truncate($stderr),
+                'step' => 'create_failed',
+            ]);
+            return false;
+        }
+
+        Log::channel('gpo')->info('[gpo] ad.machine.rename success', [
+            'action_type' => 'ad.machine.rename',
+            'old' => $oldName,
+            'new' => $newName,
+            'step' => 'success',
+        ]);
+        return true;
+    }
+
     private function isValidMachineName(string $name): bool
     {
         return $name !== '' && (bool) preg_match(self::MACHINE_REGEX, $name);

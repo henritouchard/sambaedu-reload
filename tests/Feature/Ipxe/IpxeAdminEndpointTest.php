@@ -67,6 +67,11 @@ class IpxeAdminEndpointTest extends TestCase
     #[Test]
     public function it_returns_minimal_menu_for_unknown_workstation(): void
     {
+        // Story 3.3 — AC6.6 / T6.8 — la modification de `admin.blade.php`
+        // remplace le message neutre 3.2 ("Poste non enregistre, fonctions de
+        // maintenance indisponibles") par l'item enrollment `(n) Nommer le poste`.
+        // L'item maintenance reste absent (poste inconnu ne peut pas faire de
+        // maintenance — parité 3.2 D7).
         $response = $this->post('/ipxe/admin', [
             'mac' => 'aa:bb:cc:dd:ee:99',
             'uuid' => '99999999-9999-9999-9999-999999999999',
@@ -74,7 +79,8 @@ class IpxeAdminEndpointTest extends TestCase
 
         $response->assertStatus(200);
         $body = (string) $response->getContent();
-        self::assertStringContainsString('Poste non enregistre', $body);
+        self::assertStringContainsString('item --key n set-name', $body);
+        self::assertStringContainsString('/ipxe/enrollment/name##params', $body);
         self::assertStringNotContainsString('item --key m maintenance', $body);
     }
 
