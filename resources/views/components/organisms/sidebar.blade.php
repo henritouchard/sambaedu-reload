@@ -99,9 +99,22 @@
                             </div>
                             <div class="collapse-content px-3 pb-3">
                                 <div class="space-y-1">
+                                    {{-- Toutes les GPOs --}}
                                     <a href="{{ route('admin.gpo.index') }}"
-                                        class="block px-3 py-1.5 text-sm hover:bg-base-300/70 rounded-md transition-colors {{ request()->is('admin/settings/gpo') ? 'bg-primary/10 text-primary' : '' }}">
+                                        class="block px-3 py-1.5 text-sm hover:bg-base-300/70 rounded-md transition-colors {{ request()->is('admin/settings/gpo') && !request()->is('admin/settings/gpo/*') ? 'bg-primary/10 text-primary' : '' }}">
                                         Toutes les GPOs
+                                    </a>
+                                    {{-- Story 16.14 — Vue par OU (C) --}}
+                                    <a href="{{ route('admin.gpo.by-ou') }}"
+                                        class="block px-3 py-1.5 text-sm hover:bg-base-300/70 rounded-md transition-colors {{ request()->is('admin/settings/gpo/by-ou') ? 'bg-primary/10 text-primary' : '' }}">
+                                        <i class="fa-solid fa-sitemap fa-xs mr-1 opacity-60"></i>
+                                        Vue par OU
+                                    </a>
+                                    {{-- Story 16.14 — Sections natives (D) --}}
+                                    <a href="{{ route('admin.gpo.sections') }}"
+                                        class="block px-3 py-1.5 text-sm hover:bg-base-300/70 rounded-md transition-colors {{ request()->is('admin/settings/gpo/sections') ? 'bg-primary/10 text-primary' : '' }}">
+                                        <i class="fa-solid fa-puzzle-piece fa-xs mr-1 opacity-60"></i>
+                                        Sections natives
                                     </a>
                                     <a href="{{ route('admin.gpo.wine') }}"
                                         class="block px-3 py-1.5 text-sm hover:bg-base-300/70 rounded-md transition-colors {{ request()->is('admin/settings/gpo/wine') ? 'bg-primary/10 text-primary' : '' }}">
@@ -110,6 +123,26 @@
                                     <a href="{{ route('admin.gpo.wpkg-deployment') }}"
                                         class="block px-3 py-1.5 text-sm hover:bg-base-300/70 rounded-md transition-colors {{ request()->is('admin/settings/gpo/wpkg-deployment') ? 'bg-primary/10 text-primary' : '' }}">
                                         WPKG — Pipeline
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </li>
+
+                    {{-- Story 16.14 — Bloc « Système » (E — jobs dashboard, D11 — nouveau bloc collapse) --}}
+                    <li class="ml-4">
+                        <div class="collapse collapse-arrow bg-gradient-to-r from-base-200/60 to-base-100/40 backdrop-blur-sm border border-base-300/50 rounded-xl overflow-hidden">
+                            <input type="checkbox" class="peer" @checked(request()->is('admin/settings/system*')) />
+                            <div class="collapse-title text-sm font-medium flex items-center gap-2 px-3 py-2 hover:bg-base-200/50 transition-colors">
+                                <i class="fa-solid fa-gears text-base"></i>
+                                Système
+                            </div>
+                            <div class="collapse-content px-3 pb-3">
+                                <div class="space-y-1">
+                                    <a href="{{ route('admin.system.jobs.index') }}"
+                                        class="block px-3 py-1.5 text-sm hover:bg-base-300/70 rounded-md transition-colors {{ request()->is('admin/settings/system/jobs') ? 'bg-primary/10 text-primary' : '' }}">
+                                        <i class="fa-solid fa-list-check fa-xs mr-1 opacity-60"></i>
+                                        Jobs système
                                     </a>
                                 </div>
                             </div>

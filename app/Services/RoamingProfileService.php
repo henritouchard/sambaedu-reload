@@ -241,6 +241,16 @@ class RoamingProfileService
                 if (function_exists('increment_gpo_sysvol')) {
                     increment_gpo_sysvol($config, $gpo, USER_GPO);
                 }
+
+                // Story 16.14 Q2 — invalider le cache santé GPO après bump version.
+                // Le `$gpo` legacy ne nous donne pas un GUID au format Microsoft
+                // exploitable directement → flush global (acceptable car action
+                // admin rare). Best-effort silencieux.
+                try {
+                    app(\App\Gpo\Support\CachedGpoLookups::class)->forgetAll();
+                } catch (\Throwable) {
+                    // pas d'impact métier.
+                }
             }
         } catch (\Throwable $e) {
             Log::error('[RoamingProfileService] Erreur setExclusions', [

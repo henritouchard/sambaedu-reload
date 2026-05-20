@@ -1440,3 +1440,302 @@ Test 4 — open-redirect bloqué :
 - [ ] **16.9-5** Message d'erreur `WpkgGpoSynchronizer` contient `/admin/settings/gpo/<GUID>/links`.
 - [ ] **16.9-6** Deep link Wine depuis listing : chip → `/admin/settings/gpo/wine?from_gpo=<GUID>` (1 hop, pas 2).
 - [ ] **Régression Phase 1** : suite `scripts/run-tests.sh phase1` passe exit 0.
+
+---
+
+## Section 16.14 — Story 16.14 Améliorations UX UI admin GPO
+
+> Append 2026-05-20 — améliorations UX Phase 2 (A card hero, B filtres+exports, C vue inverse, D sections, E jobs).
+> Scénarios numérotés stables — NE PAS renuméroter.
+
+### Nouvelles routes livrées
+
+| Route | Composant | Story |
+|---|---|---|
+| `/admin/settings/gpo` (enrichi) | `pages::admin.settings.gpo.index` | 16.14 A+B |
+| `/admin/settings/gpo/by-ou` | `pages::admin.settings.gpo.by-ou.index` | 16.14 C |
+| `/admin/settings/gpo/sections` | `pages::admin.settings.gpo.sections.index` | 16.14 D |
+| `/admin/settings/system/jobs` | `pages::admin.settings.system.jobs.index` | 16.14 E |
+
+### Pré-requis spécifiques 16.14
+
+- VM accessible avec Samba AD opérationnel.
+- Queue driver `database` configuré (sinon dashboard jobs affiche encart D15).
+- Au moins 1 GPO dans l'AD (vérifier avec `samba-tool gpo listall`).
+- Au moins 1 OU dans l'AD (vérifier avec `samba-tool ou list`).
+
+---
+
+### Scénario 16.14-1 — Card hero onboarding + dismiss
+
+**Pré-requis** : Connecté en `server.admin`. Nouvelle session (cookies vidés).
+
+**Étapes** :
+1. Accéder à `/admin/settings/gpo`.
+2. Vérifier que la card hero « Gestion des GPO Active Directory » est visible en haut de page.
+3. Vérifier les 3 sous-cards : Consulter/Inspecter (lien vers `#listing-gpos`), Lier une GPO à une OU (vers `/by-ou`), Éditer une section native (vers `/sections`).
+4. Cliquer sur le bouton croix (masquer) de la card hero.
+5. Vérifier que la card disparaît et qu'un bouton « Afficher l'aide » apparaît.
+6. Cliquer sur « Afficher l'aide » → la card réapparaît.
+7. Fermer et rouvrir la session → la card hero est réaffichée (comportement session).
+
+**Résultat attendu** : Card hero affichée + dismissible + persistance par session uniquement.
+
+---
+
+### Scénario 16.14-2 — Filtres avancés (type + natif)
+
+**Pré-requis** : GPOs variées dans l'AD (dont au moins 1 `se4_machine_*`, 1 `se4_user_*`).
+
+**Étapes** :
+1. Accéder à `/admin/settings/gpo`.
+2. Cliquer sur « Filtres avancés » pour ouvrir le panneau (fermé par défaut).
+3. Sélectionner « Machine » dans le filtre Type.
+4. Vérifier que seules les GPOs `se4_machine_*` / `se4_app_*` sont listées.
+5. Cocher « Avec sections natives uniquement ».
+6. Vérifier que le listing se restreint aux GPOs matchant `NativeSectionResolver`.
+7. Cliquer « Réinitialiser » → tous les filtres avancés vidés, listing complet.
+
+**Résultat attendu** : Filtres AND, compteur « N actifs », reset en 1 clic.
+
+---
+
+### Scénario 16.14-3 — Export CSV
+
+**Pré-requis** : Listing GPO chargé (au moins 2 GPOs).
+
+**Étapes** :
+1. Accéder à `/admin/settings/gpo`.
+2. Optionnellement filtrer par type pour réduire le listing.
+3. Cliquer « CSV » (bouton en haut à droite).
+4. Vérifier que le fichier `gpo-export-YYYY-MM-DD-HHMMSS.csv` est téléchargé.
+5. Ouvrir dans Excel/LibreOffice → vérifier BOM UTF-8 (pas de corruption), colonnes correctes.
+6. Vérifier que le nombre de lignes = nombre de GPOs filtrées (pas tout le parc).
+
+**Résultat attendu** : CSV téléchargé, BOM UTF-8, colonnes D3, périmètre filtré.
+
+---
+
+### Scénario 16.14-4 — Export JSON
+
+**Pré-requis** : Listing GPO chargé.
+
+**Étapes** :
+1. Accéder à `/admin/settings/gpo`.
+2. Cliquer « JSON » (bouton en haut à droite).
+3. Vérifier que le fichier `gpo-export-YYYY-MM-DD-HHMMSS.json` est téléchargé.
+4. Vérifier que le contenu est pretty-printed, accents non échappés, clés snake_case.
+
+**Résultat attendu** : JSON pretty-print D3, unicodé, périmètre filtré.
+
+---
+
+### Scénario 16.14-5 — Vue inverse OU → GPOs
+
+**Pré-requis** : Au moins 1 OU dans l'AD avec au moins 1 GPO liée.
+
+**Étapes** :
+1. Accéder à `/admin/settings/gpo/by-ou`.
+2. Taper les premières lettres du DN d'une OU dans le sélecteur.
+3. Vérifier que des suggestions apparaissent (auto-complete substring).
+4. Sélectionner une OU.
+5. Vérifier le tableau des GPOs avec colonnes : Nom, Origine (Directe/Héritée), Enforced, Disabled, Actions.
+6. Pour une OU enfant avec OU parent, vérifier que les GPOs parentes sont listées avec mention « Héritée ».
+7. Si une OU a le blocage héritage, vérifier le badge « Héritage bloqué ».
+
+**Résultat attendu** : Vue inverse fonctionnelle, héritage correctement affiché.
+
+---
+
+### Scénario 16.14-6 — Catalogue sections natives
+
+**Pré-requis** : Connecté en `server.admin`.
+
+**Étapes** :
+1. Accéder à `/admin/settings/gpo/sections`.
+2. Vérifier que 5 cards sont affichées : Profils itinérants, Fonds d'écran, Personnalisation apps, Raccourcis, Apps Wine.
+3. Vérifier que chaque card a un compteur d'entités (ou `—` si N/A).
+4. Cliquer sur « Fonds d'écran » → navigue vers `/app/parc-settings/wallpapers`.
+5. Cliquer sur « Apps Wine (Linux) » → navigue vers `/admin/settings/gpo/wine`.
+6. Vérifier la note « Source de vérité : NativeSectionResolver::MAPPING ».
+
+**Résultat attendu** : 5 cards cliquables, compteurs, liens vers bonne destination.
+
+---
+
+### Scénario 16.14-7 — Dashboard jobs polling
+
+**Pré-requis** : Driver queue `database` configuré sur la VM.
+
+**Étapes** :
+1. Accéder à `/admin/settings/system/jobs`.
+2. Vérifier la puce verte clignotante « Rafraîchissement automatique toutes les 5 secondes ».
+3. Déclencher un job Wine : `/admin/settings/gpo/wine` → générer une image.
+4. Revenir sur le dashboard → le job doit apparaître dans la liste en attente ou en cours.
+5. Attendre la complétion → le job disparaît de la liste.
+
+**Résultat attendu** : Liste se rafraîchit automatiquement, job visible.
+
+---
+
+### Scénario 16.14-8 — Retry / Cancel job
+
+**Pré-requis** : Au moins 1 job échoué (`failed_jobs`) ou pending (`jobs`) GPO/WPKG.
+
+**Étapes** :
+1. Accéder à `/admin/settings/system/jobs`.
+2. Pour un job échoué : cliquer « Retry » → toast « Job remis en queue », job disparaît de la liste failed.
+3. Pour un job pending (non réservé) : cliquer « Annuler » → toast « Job annulé », job disparaît.
+4. Simuler job en cours de réservation + cliquer « Annuler » → toast warning « Le job était déjà en cours ».
+
+**Résultat attendu** : Retry/Cancel fonctionnels avec toasts appropriés.
+
+---
+
+### Scénario 16.14-9 — Permissions : 403 sur nouvelles routes
+
+**Pré-requis** : Utilisateur sans `server.admin`.
+
+**Étapes** :
+1. Se connecter avec un compte non-admin.
+2. Tenter d'accéder à `/admin/settings/gpo/by-ou` → HTTP 403.
+3. Tenter d'accéder à `/admin/settings/gpo/sections` → HTTP 403.
+4. Tenter d'accéder à `/admin/settings/system/jobs` → HTTP 403.
+
+**Résultat attendu** : 403 sur les 3 nouvelles routes pour non-admin.
+
+---
+
+### Scénario 16.14-10 — Non-régression listing 16.2
+
+**Pré-requis** : Connecté en `server.admin`.
+
+**Étapes** :
+1. Accéder à `/admin/settings/gpo`.
+2. Vérifier que le listing existant (filtres 16.2 : recherche, statut actif/inactif, tri) fonctionne normalement.
+3. Vérifier les colonnes : Nom, Version, GUID, Path SYSVOL, Édition native.
+4. Vérifier la pagination.
+5. Vérifier le lien vers le détail GPO.
+6. Vérifier que les chips « Édition native » (16.3a) fonctionnent.
+
+**Résultat attendu** : Aucune régression sur le listing existant.
+
+---
+
+### Checklist rapide Story 16.14
+
+- [ ] **16.14-1** Card hero visible + dismiss + réaffichage aide.
+- [ ] **16.14-2** Filtres avancés (type machine/user/logon, natif) + AND logic + reset.
+- [ ] **16.14-3** Export CSV téléchargé, BOM UTF-8, colonnes correctes.
+- [ ] **16.14-4** Export JSON pretty-print, accents OK.
+- [ ] **16.14-5** Vue inverse OU→GPOs : auto-complete, héritage, badge bloqué.
+- [ ] **16.14-6** Catalogue sections : 5 cards, compteurs, liens OK.
+- [ ] **16.14-7** Dashboard jobs : polling 5s, job visible après dispatch.
+- [ ] **16.14-8** Retry job échoué + cancel job pending + warning si running.
+- [ ] **16.14-9** 403 sur /by-ou + /sections + /system/jobs pour non-admin.
+- [ ] **16.14-10** Non-régression listing 16.2 + chips 16.3a.
+- [ ] **Régression 16.9** : sidebar GPO (Toutes, Vue par OU, Sections natives, Wine, WPKG) + bloc Système.
+
+---
+
+## Section 16.14bis — Post-arbitrage Q1-Q5 (cache santé, filtres, pagination, exports)
+
+> Scénarios ajoutés suite aux arbitrages Henri 2026-05-20 sur les corrections post-review Q1-Q5.
+
+**Pré-requis communs** : VM up, `php artisan gpo:warm-cache --force` exécuté au moins une fois, connecté en `server.admin`.
+
+---
+
+### Scénario 16.14-11 — Warm-up cache santé GPO
+
+**Commandes** :
+```bash
+php artisan gpo:warm-cache --force
+php artisan schedule:list | grep gpo:warm-cache
+```
+
+**Résultat attendu** :
+- La commande affiche : `X GPO(s) warmed in Y ms (0 erreur)`.
+- Le log `storage/logs/gpo/gpo-YYYY-MM-DD.log` contient une entrée `gpo.cache.warm` avec `count` et `duration_ms`.
+- `schedule:list` affiche la commande avec heure `22:00` et `runInBackground`.
+
+---
+
+### Scénario 16.14-12 — Invalidation cache après modification lien GPO
+
+**Étapes** :
+1. `php artisan gpo:warm-cache --force` (cache chaud).
+2. Via `/admin/settings/gpo/{guid}/links`, link ou unlink une GPO d'une OU.
+3. Consulter `storage/logs/gpo/gpo-YYYY-MM-DD.log`.
+
+**Résultat attendu** :
+- Log `gpo.cache.invalidate` présent avec `guid` de la GPO modifiée.
+- Au prochain chargement du listing, le statut santé de cette GPO est recalculé (nouveau lookup samba-tool).
+- Le bouton "Rafraîchir cache santé" dans le panneau filtres avancés du listing produit un toast info + log `gpo.cache.flush`.
+
+---
+
+### Scénario 16.14-13 — Filtre statut santé multi-valeur (Q1)
+
+**Pré-requis** : Au moins 1 GPO orpheline (pas liée à une OU) + 1 GPO stale (versionNumber=0) + 1 GPO healthy.
+
+**Étapes** :
+1. Accéder au listing `/admin/settings/gpo`, ouvrir le panneau filtres avancés.
+2. Cocher à la fois `orphaned` et `stale` dans le groupe de checkboxes "Statut santé".
+3. Vérifier le résultat.
+4. Cocher uniquement `healthy`, vérifier.
+5. Cliquer "Tout effacer" (bouton global reset).
+
+**Résultat attendu** :
+- Étape 2 : listing affiche les GPOs orphelines ET stale simultanément (union, pas intersection).
+- Étape 4 : listing affiche uniquement les GPOs healthy.
+- Étape 5 : toutes les checkboxes décochées, listing complet.
+
+---
+
+### Scénario 16.14-14 — Filtre "OU liée" fonctionnel dans le listing principal (Q3)
+
+**Pré-requis** : Cache warm (`gpo:warm-cache --force`). Au moins 2 GPOs liées à des OUs distinctes.
+
+**Étapes** :
+1. Accéder au listing `/admin/settings/gpo`, ouvrir le panneau filtres avancés.
+2. Saisir le DN d'une OU connue dans le champ "OU liée" (auto-complete).
+3. Vérifier que seules les GPOs liées à cette OU (ou ses parents) apparaissent.
+4. Saisir une OU à laquelle aucune GPO n'est liée.
+
+**Résultat attendu** :
+- Étape 3 : filtrage correct (≠ comportement précédent toujours vide).
+- Étape 4 : listing vide + message "Aucune GPO ne correspond aux filtres".
+- En cas de valeur invalide (hors whitelist OUs known) : filtre ignoré silencieusement, listing complet.
+
+---
+
+### Scénario 16.14-15 — Pagination dashboard jobs 20/page (Q4) + colonnes version export (Q5)
+
+**Sous-scénario 15a — Pagination jobs** :
+```bash
+# Seed 25 jobs GPO en base
+php artisan tinker --execute='for($i=0;$i<25;$i++) \DB::table("jobs")->insert(["queue"=>"default","payload"=>json_encode(["displayName"=>"App\\\\Gpo\\\\Jobs\\\\GenerateWineImageJob"]),"attempts"=>0,"available_at"=>time(),"created_at"=>time()-$i]);'
+```
+1. Accéder à `/admin/settings/system/jobs`.
+2. Vérifier que la page 1 affiche 20 jobs et que le composant de pagination indique "page 1/2".
+3. Naviguer en page 2, vérifier 5 jobs.
+4. Supprimer les jobs de test après (`\DB::table('jobs')->delete()`).
+
+**Sous-scénario 15b — Colonne `version_status` dans exports** :
+1. Accéder au listing `/admin/settings/gpo`.
+2. Déclencher export CSV.
+3. Ouvrir le fichier CSV : vérifier la présence de la colonne `version_status` (`known` ou `unknown`).
+4. Si cache chaud (`gpo:warm-cache --force` exécuté) : `version_status` = `known`, `version_major`/`version_minor` > 0 pour les GPOs actives.
+5. Si cache vide : `version_status` = `unknown`, `version_major` = 0.
+
+---
+
+### Checklist rapide post-arbitrage Q1-Q5
+
+- [ ] **16.14-11** `gpo:warm-cache --force` : affiche count+duration, log `gpo.cache.warm`, schedule 22:00.
+- [ ] **16.14-12** Modif lien GPO via UI → log `gpo.cache.invalidate` immédiat + bouton refresh → toast + log `gpo.cache.flush`.
+- [ ] **16.14-13** Filtre santé multi-checkbox : `orphaned` + `stale` simultanés → union correcte, `healthy` seul → filtre correct, "Tout effacer" → reset complet.
+- [ ] **16.14-14** Filtre OU listing fonctionnel (cache Q2) : DN OU valide → filtre correct, valeur invalide → listing complet silencieux.
+- [ ] **16.14-15a** Dashboard jobs 25 seeds → page 1 = 20, page 2 = 5.
+- [ ] **16.14-15b** Export CSV : colonne `version_status` présente, `known` si cache chaud.

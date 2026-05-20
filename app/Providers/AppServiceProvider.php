@@ -97,6 +97,9 @@ class AppServiceProvider extends ServiceProvider
         // Services Parc
         $this->app->singleton(MachinePowerService::class);
 
+        // Story 16.14 Q2 — cache santé GPO 24h + warm-up 22h (singleton).
+        $this->app->singleton(\App\Gpo\Support\CachedGpoLookups::class);
+
         // Service de pont legacy pour les parcs
         $this->app->singleton(LegacyParcBridgeService::class);
 

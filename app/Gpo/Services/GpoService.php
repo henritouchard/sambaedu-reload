@@ -298,6 +298,8 @@ class GpoService
 
             if ($result->successful()) {
                 $log->success();
+                // Story 16.14 Q2 — invalider cache santé pour cette GPO.
+                $this->invalidateCacheFor($gpoName);
                 return true;
             }
 
@@ -306,6 +308,8 @@ class GpoService
             if (self::looksLikeIdempotentLinkError($stderr)) {
                 $log->step('idempotent: link déjà présent — succès silencieux', ['stderr_excerpt' => substr($stderr, 0, 200)]);
                 $log->success(['idempotent' => true]);
+                // Story 16.14 Q2 — même en idempotent : le set a peut-être été demandé pour bumper.
+                $this->invalidateCacheFor($gpoName);
                 return true;
             }
 
@@ -346,6 +350,8 @@ class GpoService
 
             if ($result->successful()) {
                 $log->success();
+                // Story 16.14 Q2 — invalider cache santé pour cette GPO.
+                $this->invalidateCacheFor($gpoName);
                 return true;
             }
 
@@ -353,6 +359,7 @@ class GpoService
             if (self::looksLikeIdempotentUnlinkError($stderr)) {
                 $log->step('idempotent: lien absent — succès silencieux', ['stderr_excerpt' => substr($stderr, 0, 200)]);
                 $log->success(['idempotent' => true]);
+                // Pas d'invalidation cache : aucun changement effectif.
                 return true;
             }
 
@@ -401,6 +408,9 @@ class GpoService
             }
 
             $log->success();
+            // Story 16.14 Q2 — setInheritance affecte toutes les GPOs liées à l'OU.
+            // On ne connait pas précisément les GUIDs concernés ici → flush global.
+            $this->invalidateCacheAll();
             return true;
         } catch (\Throwable $e) {
             $log->failure($e);
@@ -535,10 +545,42 @@ class GpoService
             }
 
             $log->success(['count' => count($applied)]);
+            // Story 16.14 Q2 — invalider toutes les GPOs réordonnées (leurs links changent d'ordre).
+            foreach ($orderedGpoNames as $guid) {
+                $this->invalidateCacheFor($guid);
+            }
             return true;
         } catch (\Throwable $e) {
             $log->failure($e);
             throw $e;
+        }
+    }
+
+    /**
+     * Story 16.14 Q2 — Hook d'invalidation du cache santé pour une GPO précise.
+     *
+     * Utilise un lazy lookup via `app()` pour éviter une dépendance circulaire
+     * dans le constructeur. Best-effort : un échec d'invalidation ne doit pas
+     * casser l'opération métier (samba-tool a déjà réussi).
+     */
+    private function invalidateCacheFor(string $guid): void
+    {
+        try {
+            app(\App\Gpo\Support\CachedGpoLookups::class)->forgetGpo($guid);
+        } catch (\Throwable) {
+            // log silencieux — l'invalidation cache ne doit jamais bloquer.
+        }
+    }
+
+    /**
+     * Story 16.14 Q2 — Hook d'invalidation globale du cache santé.
+     */
+    private function invalidateCacheAll(): void
+    {
+        try {
+            app(\App\Gpo\Support\CachedGpoLookups::class)->forgetAll();
+        } catch (\Throwable) {
+            // log silencieux.
         }
     }
 

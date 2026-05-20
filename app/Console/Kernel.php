@@ -121,6 +121,15 @@ class Kernel extends ConsoleKernel
                  ->dailyAt('04:00')
                  ->withoutOverlapping()
                  ->runInBackground();
+
+        // Story 16.14 Q2 — Warm-up cache santé GPO daily 22:00.
+        // Pré-charge `getLinks` + `versionNumber` pour chaque GPO du domaine
+        // (TTL 24 h) — évite N appels samba-tool sur le listing admin matinal.
+        // `runInBackground` + `withoutOverlapping` : pas de blocage du tick scheduler.
+        $schedule->command('gpo:warm-cache')
+                 ->dailyAt('22:00')
+                 ->withoutOverlapping()
+                 ->runInBackground();
     }
 
     /**

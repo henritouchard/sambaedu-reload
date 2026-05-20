@@ -113,6 +113,16 @@ class GenerateWineImageJob implements ShouldQueue
                 'exit_code' => $result->exitCode(),
                 'stdout_size_bytes' => strlen($result->output()),
             ]);
+
+            // Story 16.14 Q2 — invalider le cache santé GPO après la génération
+            // de l'image Wine (le script `make_wine_image.sh` peut modifier la GPO
+            // se4_wine côté SYSVOL). On ne sait pas précisément quelle GPO →
+            // flush global. Best-effort silencieux.
+            try {
+                app(\App\Gpo\Support\CachedGpoLookups::class)->forgetAll();
+            } catch (Throwable) {
+                // log silencieux — n'affecte pas le succès du Job.
+            }
         } catch (Throwable $e) {
             $log->failure($e, [
                 'stderr_truncated' => $this->extractStderrFromException($e),

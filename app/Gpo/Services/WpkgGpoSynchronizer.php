@@ -204,6 +204,17 @@ class WpkgGpoSynchronizer
                 'severity' => $post->severity->value,
             ])->success();
 
+            // Story 16.14 Q2 — invalider le cache santé pour la GPO `se4_wpkg`
+            // après une republication réussie (le versionNumber a été bumpé par
+            // `import_gpo` côté shim legacy).
+            if ($post->gpoGuid !== null) {
+                try {
+                    app(\App\Gpo\Support\CachedGpoLookups::class)->forgetGpo($post->gpoGuid);
+                } catch (\Throwable) {
+                    // best-effort — ne doit pas masquer le succès métier.
+                }
+            }
+
             return $post;
         } catch (\Throwable $e) {
             $log->failure($e);

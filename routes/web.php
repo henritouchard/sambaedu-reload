@@ -362,6 +362,22 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin'])->name('a
             ->middleware('can:server.admin')
             ->name('wpkg-deployment');
 
+        // ============================================================
+        // Story 16.14 — Nouvelles routes statiques AVANT /{guid}.
+        // Ordre critique (anti-régression piège 1 de 16.9) :
+        // les routes statiques DOIVENT précéder la route paramétrée.
+        // ============================================================
+
+        // C — Vue inverse OU → GPOs (AC3.1).
+        Route::livewire('/by-ou', 'pages::admin.settings.gpo.by-ou.index')
+            ->middleware('can:server.admin')
+            ->name('by-ou');
+
+        // D — Catalogue sections natives (AC4.1).
+        Route::livewire('/sections', 'pages::admin.settings.gpo.sections.index')
+            ->middleware('can:server.admin')
+            ->name('sections');
+
         // Route détail paramétrée {guid} (regex Microsoft GUID, accolades
         // optionnelles — iso-pattern Story 16.2 fix #9 anti open-redirect).
         Route::livewire('/{guid}', 'pages::admin.settings.gpo.[guid].index')
@@ -381,6 +397,16 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin'])->name('a
         Route::livewire('/', 'pages::admin.settings.gpo.index')
             ->middleware('can:server.admin')
             ->name('index');
+    });
+
+    // ============================================================
+    // Story 16.14 — E : Dashboard jobs système (AC5.1).
+    // Nouveau groupe settings/system — extensible (futures 16.12/16.13bis).
+    // ============================================================
+    Route::prefix('settings/system')->name('system.')->group(function () {
+        Route::livewire('/jobs', 'pages::admin.settings.system.jobs.index')
+            ->middleware('can:server.admin')
+            ->name('jobs.index');
     });
 
     // ========================================
