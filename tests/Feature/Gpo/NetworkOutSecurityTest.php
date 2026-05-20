@@ -28,6 +28,10 @@ class NetworkOutSecurityTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Story 16.13bis — `gpo/network_out.php` et `gpo/veyon_out.php`
+        // transformées en MigrationController::serveFragment ; tests Feature
+        // URL caducs (R6).
+        $this->markTestSkipped('Story 16.13bis : routes legacy transformées en MigrationController (R6).');
 
         // Tracker spy : compte les appels findById
         self::$resolveCalls = [];

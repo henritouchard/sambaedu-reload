@@ -16,9 +16,14 @@ use Illuminate\Support\Carbon;
  *
  * Modèle Eloquent pour la table `workstations_migration_status`.
  *
- * Source de vérité pour le middleware `InjectBootstrapFragment` (un poste
- * dont l'`workstation_uuid` apparaît dans cette table est considéré comme
- * **déjà migré** — pas de re-injection du fragment).
+ * Source de vérité pour `App\Auth\V1\Migration\Services\MigrationStatusChecker`
+ * (un poste dont l'`workstation_uuid` apparaît dans cette table est
+ * considéré comme **déjà migré** — `MigrationController::serveFragment`
+ * renvoie un fragment-noop).
+ *
+ * Story 16.13bis : à l'origine cette table servait au middleware
+ * `InjectBootstrapFragment` (16.11). Le middleware a été supprimé, la
+ * logique est désormais portée par le contrôleur dédié `MigrationController`.
  *
  * Conventions :
  *

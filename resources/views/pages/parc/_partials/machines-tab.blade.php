@@ -32,7 +32,15 @@
                         @endforeach
                     </select>
                 </div>
-                @if ($machineSearch || $osFilter || $groupFilter)
+                {{-- Story 16.13bis — filtre par statut de migration SE4 → SE5 --}}
+                <div class="form-control w-48">
+                    <select wire:model.live="migrationFilter" class="select select-bordered" aria-label="Statut migration">
+                        <option value="">Migration : tous</option>
+                        <option value="migrated">Migrés</option>
+                        <option value="not-migrated">Non migrés</option>
+                    </select>
+                </div>
+                @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter)
                     <button type="button" class="btn btn-ghost btn-sm" wire:click="resetMachineFilters">
                         <i class="fa-solid fa-eraser"></i>
                     </button>
@@ -50,13 +58,13 @@
                 </div>
                 <h3 class="text-xl font-semibold mb-3">Aucun poste trouvé</h3>
                 <p class="text-base-content/60 text-center max-w-md">
-                    @if ($machineSearch || $osFilter || $groupFilter)
+                    @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter)
                         Aucun poste ne correspond aux critères de recherche.
                     @else
                         Aucun poste n'est enregistré dans le système.
                     @endif
                 </p>
-                @if ($machineSearch || $osFilter || $groupFilter)
+                @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter)
                     <button type="button" class="btn btn-outline mt-4" wire:click="resetMachineFilters">
                         <i class="fa-solid fa-eraser"></i>
                         Effacer les filtres
@@ -77,6 +85,8 @@
                             <th>IP</th>
                             <th>Dernier rapport</th>
                             <th>Statut</th>
+                            {{-- Story 16.13bis — colonne migration SE4 → SE5 --}}
+                            <th class="text-center">Migration</th>
                             <th class="text-center">Déploiement</th>
                         </tr>
                     </thead>
@@ -128,6 +138,20 @@
                                     @endphp
                                     <span class="badge {{ $statusClass }} badge-sm">
                                         {{ $machine->getStatusLabel() }}
+                                    </span>
+                                </td>
+                                {{-- Story 16.13bis — badge migration ✅/❌ --}}
+                                <td class="text-center">
+                                    @php
+                                        $isMigrated = $machine->migrated;
+                                        $migrationBadge = $isMigrated
+                                            ? ['class' => 'badge-success', 'icon' => '✅', 'label' => 'Migré']
+                                            : ['class' => 'badge-ghost', 'icon' => '❌', 'label' => 'Non migré'];
+                                    @endphp
+                                    <span class="badge {{ $migrationBadge['class'] }} badge-sm"
+                                          title="{{ $migrationBadge['label'] }}"
+                                          aria-label="{{ $migrationBadge['label'] }}">
+                                        {{ $migrationBadge['icon'] }}
                                     </span>
                                 </td>
                                 <td class="text-center">

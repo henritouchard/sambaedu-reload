@@ -6,6 +6,8 @@ use App\Http\Controllers\AppPolicyController;
 use App\Http\Controllers\WallpaperController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChangePasswordController;
+// Story 16.13bis — Module migration SE4 → SE5 (App\Auth\V1\Migration).
+use App\Auth\V1\Migration\Http\Controllers\MigrationController as AuthV1MigrationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -449,44 +451,39 @@ Route::get('/shortcuts/icon/{name}', function (string $name) {
 
 /*
 |--------------------------------------------------------------------------
-| Story 16.11 — Auto-bootstrap migration postes existants
+| Story 16.13bis — Migration SE4 → SE5 (fragment+reboot stateless)
 |--------------------------------------------------------------------------
-| Les 8 routes legacy `*_out.php` sont wrappées dans un group qui injecte
-| un fragment de bootstrap en préfixe de leur réponse (uniquement si le
-| poste n'est pas encore migré — lookup `workstations_migration_status`).
+| Les 8 routes legacy `gpo/*_out.php` (+ `gpo/applications.php`) sont
+| transformées en endpoints servant un **fragment de migration** texte
+| (cmd Windows ou sh Linux) via `MigrationController::serveFragment` :
 |
-| Le middleware `inject.bootstrap-fragment` :
-|   - skip si Content-Type response != text/plain (cas associations_out.php JSON, D6)
-|   - skip si status 4xx/5xx
-|   - skip si pas d'uuid dans la requête (poste pré-bootstrap)
-|   - skip si poste déjà dans `workstations_migration_status`
-|   - sinon : préfixe le body avec le fragment cmd/sh (selon OS détecté)
+|   - Poste non-migré : fragment complet (download CA, enroll JWT,
+|     write registre/endpoints.conf, shutdown /r /t 30).
+|   - Poste déjà migré (lookup `workstations_migration_status`) :
+|     fragment no-op (`exit 0` — pas de reboot intempestif).
 |
-| Les controllers eux-mêmes restent inchangés (middleware-only, D14).
+| Le middleware `inject.bootstrap-fragment` 16.11 a été **supprimé** par
+| la Story 16.13bis : la logique d'injection en préfixe d'une réponse
+| legacy fonctionnelle est remplacée par un fragment autonome qui
+| **remplace** la réponse legacy. Les méthodes `legacyOut` /
+| `legacyDispatch` / `generate` des controllers métier deviennent code
+| mort sur la route legacy (les appels en direct restent possibles via
+| les méthodes `apiV1` 16.13 sur `/api/v1/workstation-config/*`).
+|
+| Pas d'auth, pas de check uuid bloquant : un poste non-migré n'a pas
+| encore de JWT, c'est précisément le rôle du fragment d'enrôler.
+| Throttle `300,1` conservé (parité rentrée scolaire 300 postes
+| simultanés).
 */
-Route::middleware('inject.bootstrap-fragment')->group(function () {
-    /*
-    |--------------------------------------------------------------------------
-    | Interception legacy gpo/shortcuts_out.php → nouveau système
-    |--------------------------------------------------------------------------
-    | Les postes Windows/Linux appellent gpo/shortcuts_out.php via les GPO.
-    | Le fichier legacy a été renommé en .legacy, cette route intercepte
-    | les appels et les redirige vers ShortcutExportController.
-    */
-    Route::match(['GET', 'POST'], 'gpo/shortcuts_out.php', [App\Http\Controllers\Api\v1\ShortcutExportController::class, 'legacyDispatch'])
-        ->name('shortcuts.legacy');
+Route::match(['GET', 'POST'], 'gpo/shortcuts_out.php',
+    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'shortcuts'))
+    ->middleware('throttle:300,1')
+    ->name('migration.legacy.shortcuts');
 
-    /*
-    |--------------------------------------------------------------------------
-    | Interception legacy gpo/wallpaper_out.php → nouveau système
-    |--------------------------------------------------------------------------
-    | Appelé par logon/startup scripts (Linux + Windows).
-    | Actions : wallpaper, wallpaper-wait, lockscreen, veyon, icone.
-    | Auth : $id md5 stocké dans APCu par applications.php.
-    */
-    Route::match(['GET', 'POST'], 'gpo/wallpaper_out.php', [WallpaperController::class, 'legacyOut'])
-        ->name('wallpaper.legacy');
-});
+Route::match(['GET', 'POST'], 'gpo/wallpaper_out.php',
+    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'wallpaper'))
+    ->middleware('throttle:300,1')
+    ->name('migration.legacy.wallpaper');
 
 /*
 |--------------------------------------------------------------------------
@@ -506,58 +503,59 @@ Route::get('admin/gpo/del-roam.sh', [\App\Http\Controllers\Admin\RoamingProfileC
 
 /*
 |--------------------------------------------------------------------------
-| Interception legacy gpo/firefox_out.php + gpo/thunderbird_out.php
+| Story 16.13bis — Migration SE4 → SE5 : 6 routes legacy restantes
 |--------------------------------------------------------------------------
-| Story 4.8 — AC 9. Endpoints iso-contrat appelés par logon/startup
-| Linux/Windows avec id=<md5 APCu> + os=linux|windows (Firefox).
-| Pas d'auth (postes clients sans cookie). Throttle 300/min/IP
-| (300 postes derrière NAT peuvent se loguer simultanément sans 429).
-| Doivent être déclarés AVANT le catchall legacy.
+| Suite du bloc transformé ci-dessus (shortcuts + wallpaper) : firefox,
+| thunderbird, network, veyon, associations, applications.
 |
-| Story 16.11 — wrappé dans `inject.bootstrap-fragment` (préfixe le fragment
-| de migration auto-bootstrap si poste non migré).
+| Les 8 endpoints renvoient désormais **un fragment de migration**
+| (cmd Windows ou sh Linux) via `MigrationController::serveFragment`.
+| Les noms de routes deviennent `migration.legacy.{endpoint}` (les
+| anciens noms `wallpaper.legacy`, `app-policy.firefox.legacy`, etc.
+| sont supprimés — grep le repo pour adapter les call-sites).
+|
+| Note D13 (option β) : `gpo/applications.php` est aussi transformé en
+| fragment — la pose APCu `apps.<md5>` côté legacy disparaît (le poste
+| migré utilise JWT 16.10, plus md5 APCu). Les méthodes `apiV1` 16.13
+| des controllers continuent de servir `/api/v1/workstation-config/*`
+| sans modification.
+|
+| Pas d'auth (poste non-migré sans JWT). Throttle `300,1` préservé.
 */
-Route::middleware('inject.bootstrap-fragment')->group(function () {
-    Route::match(['GET', 'POST'], 'gpo/firefox_out.php', [AppPolicyController::class, 'legacyFirefoxOut'])
-        ->middleware('throttle:300,1')
-        ->name('app-policy.firefox.legacy');
+Route::match(['GET', 'POST'], 'gpo/firefox_out.php',
+    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'firefox'))
+    ->middleware('throttle:300,1')
+    ->name('migration.legacy.firefox');
 
-    Route::match(['GET', 'POST'], 'gpo/thunderbird_out.php', [AppPolicyController::class, 'legacyThunderbirdOut'])
-        ->middleware('throttle:300,1')
-        ->name('app-policy.thunderbird.legacy');
+Route::match(['GET', 'POST'], 'gpo/thunderbird_out.php',
+    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'thunderbird'))
+    ->middleware('throttle:300,1')
+    ->name('migration.legacy.thunderbird');
 
-    /*
-    |--------------------------------------------------------------------------
-    | Interception legacy gpo/network_out.php + gpo/veyon_out.php (Story 16.3b)
-    | + gpo/associations_out.php (Story 16.3c)
-    |--------------------------------------------------------------------------
-    | Endpoints runtime postes clients : script bash réseau (network_out),
-    | config JSON Veyon (veyon_out) et JSON des associations d'extensions
-    | (associations_out). Pattern iso 4.7/4.8.
-    | Throttle 300/min/IP. Pas d'auth web (id md5 APCu = garde effective).
-    | Doivent être déclarés AVANT le catchall legacy.
-    |
-    | Note 16.11 : `associations_out.php` renvoie `text/json` — le middleware
-    | détecte le Content-Type et skip l'injection (D6).
-    */
-    Route::match(['GET', 'POST'], 'gpo/network_out.php', [\App\Http\Controllers\Gpo\NetworkOutController::class, 'legacyOut'])
-        ->middleware('throttle:300,1')
-        ->name('gpo.network-out.legacy');
-    Route::match(['GET', 'POST'], 'gpo/veyon_out.php', [\App\Http\Controllers\Gpo\VeyonOutController::class, 'legacyOut'])
-        ->middleware('throttle:300,1')
-        ->name('gpo.veyon-out.legacy');
-    // Story 16.3c — POST uniquement (legacy `associations_out.php` n'expose pas GET ;
-    // le body `$_POST['list']` est obligatoire — un GET sans `list` retournerait 400).
-    Route::match(['POST'], 'gpo/associations_out.php', [\App\Http\Controllers\Gpo\AssociationsOutController::class, 'legacyOut'])
-        ->middleware('throttle:300,1')
-        ->name('gpo.associations-out.legacy');
+Route::match(['GET', 'POST'], 'gpo/network_out.php',
+    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'network'))
+    ->middleware('throttle:300,1')
+    ->name('migration.legacy.network');
 
-    // Story 16.7 — endpoint amont qui POSE la session APCu `apps.$id` consommée
-    // par tous les endpoints out précédents. Doit être déclaré AVANT le catchall.
-    Route::match(['GET', 'POST'], 'gpo/applications.php', [\App\Http\Controllers\Gpo\ApplicationsScriptsController::class, 'generate'])
-        ->middleware('throttle:300,1')
-        ->name('gpo.applications.legacy');
-});
+Route::match(['GET', 'POST'], 'gpo/veyon_out.php',
+    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'veyon'))
+    ->middleware('throttle:300,1')
+    ->name('migration.legacy.veyon');
+
+// Story 16.3c — POST uniquement legacy ; on garde POST uniquement pour
+// parité fonctionnelle (un GET sans `list` retournait 400 legacy). Le
+// fragment de migration ne consomme pas le body, mais on préserve la
+// shape de la route pour ne pas créer un GET nouveau qui exposerait le
+// chemin à d'autres clients.
+Route::match(['POST'], 'gpo/associations_out.php',
+    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'associations'))
+    ->middleware('throttle:300,1')
+    ->name('migration.legacy.associations');
+
+Route::match(['GET', 'POST'], 'gpo/applications.php',
+    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'applications'))
+    ->middleware('throttle:300,1')
+    ->name('migration.legacy.applications');
 
 /*
 |--------------------------------------------------------------------------

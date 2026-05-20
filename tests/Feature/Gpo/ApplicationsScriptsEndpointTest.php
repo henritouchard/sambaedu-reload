@@ -31,6 +31,9 @@ class ApplicationsScriptsEndpointTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Story 16.13bis — `gpo/applications.php` transformée en
+        // MigrationController::serveFragment ; tests Feature URL caducs (R6).
+        $this->markTestSkipped('Story 16.13bis : route legacy transformée en MigrationController (R6).');
         // Bind mocks par défaut — aucun side effect réel.
         $this->bindNoOpServices();
     }

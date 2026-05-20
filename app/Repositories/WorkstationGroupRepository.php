@@ -133,7 +133,8 @@ class WorkstationGroupRepository
         int $perPage = 20,
         ?string $search = null,
         ?string $os = null,
-        ?int $groupId = null
+        ?int $groupId = null,
+        ?string $migrationFilter = null
     ): LengthAwarePaginator {
         $query = Workstation::query();
 
@@ -151,12 +152,37 @@ class WorkstationGroupRepository
             });
         }
 
+        // Story 16.13bis — filtre par statut de migration SE4 → SE5.
+        $this->applyMigrationFilter($query, $migrationFilter);
+
         $query->withCount([
             'applicationStatuses as installed_apps_count' => fn ($q) => $q->where('status', 'installed'),
             'applicationStatuses as error_apps_count' => fn ($q) => $q->whereIn('status', ['error', 'not-installed']),
         ]);
 
+        // Story 16.13bis — eager loading de la relation pour éviter N+1
+        // dans le rendu du badge ✅/❌ par row.
+        $query->with('migrationStatus');
+
         return $query->orderBy('name')->paginate($perPage);
+    }
+
+    /**
+     * Story 16.13bis — applique le filtre `migrationFilter` à la query.
+     */
+    private function applyMigrationFilter(Builder $query, ?string $migrationFilter): void
+    {
+        if ($migrationFilter === null || $migrationFilter === '') {
+            return;
+        }
+        if ($migrationFilter === 'migrated') {
+            $query->migrated();
+
+            return;
+        }
+        if ($migrationFilter === 'not-migrated') {
+            $query->notMigrated();
+        }
     }
 
     /**
@@ -171,7 +197,8 @@ class WorkstationGroupRepository
         ?string $search = null,
         ?string $os = null,
         ?int $groupId = null,
-        array $authorizedGroupIds = []
+        array $authorizedGroupIds = [],
+        ?string $migrationFilter = null
     ): LengthAwarePaginator {
         $query = Workstation::query()
             ->whereHas('groups', function (Builder $q) use ($authorizedGroupIds) {
@@ -192,10 +219,16 @@ class WorkstationGroupRepository
             });
         }
 
+        // Story 16.13bis — filtre par statut de migration SE4 → SE5.
+        $this->applyMigrationFilter($query, $migrationFilter);
+
         $query->withCount([
             'applicationStatuses as installed_apps_count' => fn ($q) => $q->where('status', 'installed'),
             'applicationStatuses as error_apps_count' => fn ($q) => $q->whereIn('status', ['error', 'not-installed']),
         ]);
+
+        // Story 16.13bis — eager loading pour éviter N+1.
+        $query->with('migrationStatus');
 
         return $query->orderBy('name')->paginate($perPage);
     }

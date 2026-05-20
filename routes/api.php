@@ -21,7 +21,10 @@ use App\Auth\V1\Http\Controllers\EnrollController as AuthV1EnrollController;
 use App\Auth\V1\Http\Controllers\RefreshController as AuthV1RefreshController;
 use App\Auth\V1\Http\Controllers\PingController as AuthV1PingController;
 // Story 16.11 — Auto-bootstrap migration postes
-use App\Auth\V1\Http\Controllers\BootstrapScriptController as AuthV1BootstrapScriptController;
+//  Note Story 16.13bis : `BootstrapScriptController` + routes
+//  `agent.v1.bootstrap.{cmd,sh}` ont été supprimés ; la logique fragment
+//  est portée par `App\Auth\V1\Migration\Http\Controllers\MigrationController`
+//  directement sur les routes legacy `gpo/*_out.php` (web.php).
 // Story 16.12 — Ingestion logs exécution scripts
 use App\ScriptsOs\Http\Controllers\ScriptExecutionLogIngestionController as ScriptsOsIngestionController;
 // Story 16.13 — Exposition endpoints natifs /api/v1/*
@@ -165,8 +168,11 @@ Route::prefix('wpkg')->middleware('local.request')->group(function () {
 | - `POST /refresh`          : `auth.v1.refresh` + throttle 30/min + replay detection
 |                              (PAS de lan-only — un poste en VPN admin peut refresh)
 | - `GET /ping`              : `auth.v1.workstation` (JWT RS256 + tier=workstation)
-| - `GET /bootstrap.cmd|sh`  : `auth.v1.lan-only` + `auth.v1.secure-headers` (D4)
-|                              (sert le script de bootstrap OS-spécifique, public-non-auth)
+|
+| Note Story 16.13bis : les routes `GET /bootstrap.{cmd,sh}` (16.11) ont
+| été retirées — la logique de bootstrap est maintenant intégrée au
+| fragment de migration servi par `MigrationController::serveFragment`
+| sur les routes legacy `gpo/*_out.php` (web.php).
 */
 Route::prefix('v1/agent')->name('agent.v1.')
     // Headers de sécurité (Cache-Control no-store + HSTS + nosniff) sur toutes les
@@ -187,14 +193,9 @@ Route::prefix('v1/agent')->name('agent.v1.')
             // Futurs endpoints (16.12 logs, futures stories scripts) ajoutent leurs routes ici.
         });
 
-        // Story 16.11 — endpoints publics bootstrap (LAN-only, pas d'auth).
-        // throttle:30,1 → max 30 requêtes/min par IP (protection scan réseau LAN).
-        Route::middleware(['auth.v1.lan-only', 'throttle:30,1'])->group(function () {
-            Route::get('/bootstrap.cmd', [AuthV1BootstrapScriptController::class, 'cmd'])
-                ->name('bootstrap.cmd');
-            Route::get('/bootstrap.sh', [AuthV1BootstrapScriptController::class, 'sh'])
-                ->name('bootstrap.sh');
-        });
+        // Story 16.13bis — les routes `GET /bootstrap.{cmd,sh}` (16.11) ont
+        // été supprimées : la logique est portée par `MigrationController`
+        // sur les routes legacy `gpo/*_out.php` (web.php).
     });
 
 /*

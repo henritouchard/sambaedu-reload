@@ -23,6 +23,11 @@ class AppPolicyLegacyEndpointTest extends TestCase
     {
         parent::setUp();
 
+        // Story 16.13bis — routes legacy `gpo/{firefox,thunderbird}_out.php`
+        // transformées en `MigrationController::serveFragment` (R6 / Option a
+        // sélective). Tests Feature URL caducs jusqu'à cleanup Phase 3.
+        $this->markTestSkipped('Story 16.13bis : routes legacy gpo/{firefox,thunderbird}_out.php transformées en MigrationController (R6).');
+
         Model::unguard();
         \App\Models\WorkstationGroup::flushEventListeners();
         \App\Models\UserGroup::flushEventListeners();

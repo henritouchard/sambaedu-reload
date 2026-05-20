@@ -23,6 +23,9 @@ class NetworkOutEndpointTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Story 16.13bis — `gpo/network_out.php` transformée en
+        // MigrationController::serveFragment ; tests Feature URL caducs (R6).
+        $this->markTestSkipped('Story 16.13bis : route legacy transformée en MigrationController (R6).');
         $this->bindFakeConfig([
             'proxy_type' => 'aucun',
             'domain' => 'example.local',

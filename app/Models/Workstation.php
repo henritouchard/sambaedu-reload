@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Auth\V1\Models\WorkstationMigrationStatus;
 use App\Observers\WorkstationObserver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Livewire\Wireable;
 
@@ -371,5 +373,53 @@ class Workstation extends Model implements Wireable
     public function wpkgOptions(): HasMany
     {
         return $this->hasMany(\App\Wpkg\Deployment\Models\WpkgWorkstationOption::class);
+    }
+
+    /**
+     * Story 16.13bis — relation HasOne vers `workstations_migration_status`
+     * (table livrée par 16.11). FK `workstation_uuid` ↔ PK locale `uuid`.
+     *
+     * Note : pas de FK SQL formelle côté DB (cf. 16.11 D7) — un poste peut
+     * apparaître dans `workstations_migration_status` avant d'exister dans
+     * `workstations` (cas d'un poste qui s'enrôle avant d'être déclaré
+     * côté admin).
+     */
+    public function migrationStatus(): HasOne
+    {
+        return $this->hasOne(WorkstationMigrationStatus::class, 'workstation_uuid', 'uuid');
+    }
+
+    /**
+     * Story 16.13bis — Accessor booléen : poste basculé SE5 si présence
+     * d'une row `workstation_migration_status` matching son UUID.
+     */
+    public function getMigratedAttribute(): bool
+    {
+        if (empty($this->uuid)) {
+            return false;
+        }
+
+        // Si la relation est déjà eager-loadée, on évite la requête.
+        if (array_key_exists('migrationStatus', $this->relations)) {
+            return $this->getRelation('migrationStatus') !== null;
+        }
+
+        return $this->migrationStatus()->exists();
+    }
+
+    /**
+     * Story 16.13bis — Scope : postes ayant une row migration_status.
+     */
+    public function scopeMigrated(Builder $query): Builder
+    {
+        return $query->whereHas('migrationStatus');
+    }
+
+    /**
+     * Story 16.13bis — Scope : postes sans row migration_status.
+     */
+    public function scopeNotMigrated(Builder $query): Builder
+    {
+        return $query->whereDoesntHave('migrationStatus');
     }
 }

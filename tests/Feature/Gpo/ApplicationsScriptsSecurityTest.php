@@ -26,6 +26,9 @@ class ApplicationsScriptsSecurityTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Story 16.13bis — `gpo/applications.php` transformée en
+        // MigrationController::serveFragment ; tests Feature URL caducs (R6).
+        $this->markTestSkipped('Story 16.13bis : route legacy transformée en MigrationController (R6).');
 
         // Mocks STRICTS qui ne doivent JAMAIS être appelés si validation OK.
         $ws = Mockery::mock(WorkstationRepository::class);

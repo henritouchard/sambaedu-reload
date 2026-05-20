@@ -106,16 +106,15 @@ try {
     }
     // ─── FIN LEGACY INCLUDES ─────────────────────────────────────────────
 
-    // ─── GPO shim (story 1bis.18g) ──────────────────────────────────────────
-    // Chargé APRÈS les includes legacy : les fonctions originelles (si les
-    // includes legacy ont été chargés) existent déjà donc les fallbacks shim
-    // — guardés par function_exists — ne s'activent pas en production VM. En
-    // tests host-side (où $legacyIncludesPath n'est pas un dir), les
-    // fallbacks shim prennent le relais.
-    // Le shim fournit aussi le bridge Kerberos (_shim_gpo_ensure_krb5ccname)
-    // et le wrapper testable _shim_gpo_exec.
-    require_once __DIR__ . '/gpo_shim.inc.php';
-
+    // ─── GPO shim (story 1bis.18g) — RETIRÉ par Story 16.13bis ─────────────
+    // Le `gpo_shim.inc.php` a été archivé dans
+    // `legacy/archived/gpo-shim-2026-05-20/` car le modèle de migration
+    // SE4 → SE5 bascule en fragment+reboot stateless via
+    // `App\Auth\V1\Migration` : les fallbacks SYSVOL + Kerberos bridge ne
+    // sont plus utilisés. Les helpers `_shim_gpo_*` définis dans
+    // `legacy/ldap.inc.php` restent en place (guardés par function_exists,
+    // pas d'impact à l'init).
+    //
     // ─── DHCP shim (story 1bis-16) ──────────────────────────────────────────
     // Fournit les fonctions DHCP utilisées par legacy/modules/dhcp/ (export/import
     // reservations, leases, MAC helpers). Sans lui, make_reservations.php produit

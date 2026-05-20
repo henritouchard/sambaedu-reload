@@ -250,10 +250,13 @@ class AuthV1NamespaceTest extends TestCase
     }
 
     /**
-     * Garde-fou D8 — dual-mode legacy. Les routes legacy `*_out.php` restent
-     * en HTTP md5/APCu pendant toute la Phase 2 (16.13 les retirera). On
-     * vérifie ici que la suite 16.10 ne les a pas accidentellement
-     * supprimées des fichiers de routes.
+     * Story 16.13bis — Les 8 chemins URI `gpo/*_out.php` doivent toujours
+     * être enregistrés dans `routes/web.php` mais leur target controller a
+     * changé : ils pointent désormais vers
+     * `App\Auth\V1\Migration\Http\Controllers\MigrationController::serveFragment`
+     * (transformé par closure D2) au lieu des controllers métier originels.
+     * Ce test ne vérifie plus l'identité du controller cible — voir
+     * `tests/Architecture/Migration/MigrationModuleArchitectureTest`.
      */
     #[Test]
     public function legacy_out_routes_are_preserved(): void
@@ -262,14 +265,6 @@ class AuthV1NamespaceTest extends TestCase
         $apiRoutes = (string) file_get_contents(__DIR__ . '/../../routes/api.php');
         $allRoutes = $webRoutes . "\n" . $apiRoutes;
 
-        // 8 endpoints legacy qui doivent rester (cf. D8 + audit 16.8).
-        // wallpaper_out.php — Story 4.7
-        // firefox_out.php + thunderbird_out.php — Story 4.8
-        // shortcuts_out.php — Story 16.3a / 1bis.18e
-        // network_out.php + veyon_out.php — Story 16.3b
-        // associations_out.php — Story 16.3c
-        // applications.php (sans _out) — Story 16.7 : distribue les bootstrap tokens md5/APCu
-        //   consommés par /api/v1/agent/enroll. Si elle saute, toute la chaîne d'enrôlement casse.
         $expected = [
             'wallpaper_out',
             'firefox_out',
@@ -283,7 +278,6 @@ class AuthV1NamespaceTest extends TestCase
 
         $missing = [];
         foreach ($expected as $endpoint) {
-            // Tolère soit l'URL `/gpo/<endpoint>.php`, soit le nom de méthode `legacy<Endpoint>Out`
             if (! str_contains($allRoutes, $endpoint)) {
                 $missing[] = $endpoint;
             }
@@ -292,98 +286,27 @@ class AuthV1NamespaceTest extends TestCase
         self::assertSame(
             [],
             $missing,
-            "Routes legacy `*_out.php` manquantes — risque cassure dual-mode (D8) :\n  - " . implode("\n  - ", $missing),
+            "Chemins URI legacy `*_out.php` manquants — la transformation Story 16.13bis doit préserver les URIs :\n  - " . implode("\n  - ", $missing),
         );
     }
 
     /**
-     * Story 16.11 — le middleware `inject.bootstrap-fragment` est attaché
-     * aux 8 routes legacy whitelistées dans `routes/web.php`. Vérification
-     * textuelle (parser AST trop complexe pour ce cas — il suffit que la
-     * chaîne `'inject.bootstrap-fragment'` apparaisse dans le fichier et
-     * que les 8 noms de routes apparaissent dans le même fichier).
+     * Story 16.13bis — le middleware `inject.bootstrap-fragment` 16.11 a
+     * été SUPPRIMÉ. Garde-fou : aucune déclaration
+     * `Route::middleware('inject.bootstrap-fragment')` ne doit subsister
+     * dans `routes/web.php`. Le test détaillé non-régression vit dans
+     * `tests/Architecture/Migration/MigrationModuleArchitectureTest`.
      */
     #[Test]
-    public function inject_bootstrap_fragment_middleware_is_attached_to_8_legacy_routes(): void
+    public function inject_bootstrap_fragment_middleware_is_not_attached_to_routes_anymore(): void
     {
         $webRoutes = (string) file_get_contents(__DIR__ . '/../../routes/web.php');
 
-        self::assertStringContainsString(
-            "inject.bootstrap-fragment",
+        self::assertDoesNotMatchRegularExpression(
+            "/Route::middleware\s*\(\s*['\"]inject\.bootstrap-fragment['\"]/i",
             $webRoutes,
-            "Le middleware 'inject.bootstrap-fragment' n'apparait pas dans routes/web.php — l'attachement aux routes legacy 16.11 est manquant.",
+            "Story 16.13bis : aucune Route::middleware('inject.bootstrap-fragment')->group(...) ne doit subsister dans routes/web.php.",
         );
-
-        // Sanity check : les 8 endpoints legacy sont bien présents dans le
-        // même fichier (cf. test legacy_out_routes_are_preserved).
-        $expected = [
-            'wallpaper_out',
-            'firefox_out',
-            'thunderbird_out',
-            'shortcuts_out',
-            'network_out',
-            'veyon_out',
-            'associations_out',
-            'applications.php',
-        ];
-
-        foreach ($expected as $endpoint) {
-            self::assertStringContainsString(
-                $endpoint,
-                $webRoutes,
-                "Route legacy '{$endpoint}' manquante dans routes/web.php — risque cassure dual-mode (D8).",
-            );
-        }
-
-        // Garde-fou structurel : chaque endpoint legacy doit être déclaré
-        // sous un group/middleware contenant 'inject.bootstrap-fragment'.
-        // On ne fait pas de parsing AST complexe — heuristique simple :
-        // pour chaque endpoint, on cherche TOUTES les occurrences de la
-        // déclaration de route (`Route::match(...)gpo/$endpoint.php`) et on
-        // vérifie qu'au moins une est précédée du middleware
-        // `inject.bootstrap-fragment` dans un contexte raisonnable.
-        foreach ($expected as $endpoint) {
-            // Pattern matche les déclarations de route (pas les commentaires)
-            $pattern = '/Route::(?:match|get|post|put|delete|any|prefix)\b[^;]*?[\'"](?:gpo\/)?' . preg_quote($endpoint, '/') . '(?:\.php)?[\'"]/m';
-            self::assertMatchesRegularExpression(
-                $pattern,
-                $webRoutes,
-                "Endpoint '{$endpoint}' déclaration Route::match introuvable dans routes/web.php.",
-            );
-
-            // Trouver toutes les occurrences de la déclaration
-            preg_match_all($pattern, $webRoutes, $matches, PREG_OFFSET_CAPTURE);
-            $found = false;
-
-            foreach ($matches[0] as [$match, $offset]) {
-                // Contexte large (3000 chars en arrière) pour englober la
-                // déclaration du group `Route::middleware(...)->group(...)`
-                // qui peut wrapper plusieurs endpoints (cas 2e group 16.11
-                // qui wrappe 6 routes : firefox/thunderbird/network/veyon/
-                // associations/applications).
-                $startSearch = max(0, $offset - 3000);
-                $context = substr($webRoutes, $startSearch, 3000);
-                // On veut être plus strict : chercher l'apparition de
-                // `Route::middleware('inject.bootstrap-fragment')->group(`
-                // pas juste la string `inject.bootstrap-fragment` (qui
-                // peut apparaître dans un commentaire).
-                if (preg_match(
-                    "/Route::middleware\s*\(\s*['\"]inject\.bootstrap-fragment['\"]/i",
-                    $context,
-                )) {
-                    // Encore plus strict : on doit avoir un `->group(function`
-                    // après le middleware (sinon c'est une déclaration
-                    // séparée, pas un wrap).
-                    $found = true;
-                    break;
-                }
-            }
-
-            self::assertTrue(
-                $found,
-                "Endpoint '{$endpoint}' n'est pas wrappé dans un Route::middleware('inject.bootstrap-fragment')->group() (recherche heuristique 3000 chars précédant chaque déclaration de route).",
-            );
-        }
     }
 
     /**

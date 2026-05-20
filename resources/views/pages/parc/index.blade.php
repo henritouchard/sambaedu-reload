@@ -28,6 +28,10 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     public string $osFilter = '';
     #[Url]
     public ?int $groupFilter = null;
+    // Story 16.13bis — filtre par statut de migration SE4 → SE5.
+    // Valeurs admises : '' (tous), 'migrated', 'not-migrated'.
+    #[Url]
+    public string $migrationFilter = '';
 
     // Filtres groupes
     #[Url]
@@ -102,7 +106,14 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
         }
 
         try {
-            $this->machineStats = $this->parcService->getMachineStats();
+            // Story 16.13bis — Correction Q2 / Opus-A (2026-05-20) : on passe
+            // les filtres actifs au service pour scoper le compteur "Postes
+            // migrés" + le total (cohérence visuelle avec le listing).
+            $this->machineStats = $this->parcService->getMachineStats(
+                os: $this->osFilter ?: null,
+                groupId: $this->groupFilter,
+                migrationFilter: $this->migrationFilter ?: null,
+            );
             $this->groupStats = $this->parcService->getGroupStats();
             $this->statsLoaded = true;
         } catch (\Exception $e) {
@@ -111,6 +122,26 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
             $this->groupStats = [];
             $this->statsLoaded = true;
         }
+    }
+
+    /**
+     * Story 16.13bis — Correction Q2 / Opus-A : invalider le cache stats
+     * dès qu'un filtre machines change pour que le compteur "Postes migrés"
+     * suive l'UI.
+     */
+    public function updatedOsFilter(): void
+    {
+        $this->statsLoaded = false;
+    }
+
+    public function updatedGroupFilter(): void
+    {
+        $this->statsLoaded = false;
+    }
+
+    public function updatedMigrationFilter(): void
+    {
+        $this->statsLoaded = false;
     }
 
     public function getMachinesProperty()
@@ -124,6 +155,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
                 os: $this->osFilter ?: null,
                 groupId: $this->groupFilter,
                 scopeFor: $this->scopedUser(),
+                migrationFilter: $this->migrationFilter ?: null,
             );
         } catch (\Exception $e) {
             Log::error('[Parc] Erreur chargement machines: ' . $e->getMessage());
@@ -172,7 +204,11 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
         $this->machineSearch = '';
         $this->osFilter = '';
         $this->groupFilter = null;
+        $this->migrationFilter = '';
         $this->selectedMachines = [];
+        // Story 16.13bis — Correction Q2 / Opus-A : recharger les stats
+        // pour refléter le nouveau périmètre global après reset.
+        $this->statsLoaded = false;
         $this->resetPage();
     }
 

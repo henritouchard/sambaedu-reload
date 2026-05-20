@@ -221,15 +221,27 @@ class ApiV1ConfigRoutesTest extends TestCase
     }
 
     #[Test]
-    public function inject_bootstrap_fragment_middleware_still_attached_to_legacy_routes(): void
+    public function legacy_routes_now_point_to_migration_controller(): void
     {
-        // Non-régression 16.11 D2.
-        $webRoutes = (string) file_get_contents(__DIR__ . '/../../routes/web.php');
-        self::assertStringContainsString(
-            'inject.bootstrap-fragment',
-            $webRoutes,
-            'Le middleware inject.bootstrap-fragment doit rester attaché aux routes legacy 16.11.',
-        );
+        // Story 16.13bis — bascule D2 : le middleware
+        // `inject.bootstrap-fragment` 16.11 a été supprimé ; les 8 routes
+        // legacy pointent désormais vers `MigrationController::serveFragment`.
+        // Les noms de routes sont `migration.legacy.*`.
+        foreach ([
+            'migration.legacy.shortcuts',
+            'migration.legacy.wallpaper',
+            'migration.legacy.firefox',
+            'migration.legacy.thunderbird',
+            'migration.legacy.network',
+            'migration.legacy.veyon',
+            'migration.legacy.associations',
+            'migration.legacy.applications',
+        ] as $name) {
+            self::assertNotNull(
+                Route::getRoutes()->getByName($name),
+                "Route `{$name}` doit être enregistrée après transformation Story 16.13bis (D2).",
+            );
+        }
     }
 
     #[Test]

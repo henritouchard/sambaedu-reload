@@ -23,6 +23,15 @@ class LegacyOutEndpointTest extends TestCase
     {
         parent::setUp();
 
+        // Story 16.13bis — la route legacy `gpo/wallpaper_out.php` a été
+        // transformée en `MigrationController::serveFragment` (R6 / Option a
+        // sélective). Les tests Feature qui appellent cette URL via HTTP
+        // n'invoquent plus `WallpaperController::legacyOut` — la méthode
+        // reste appelable programmatiquement mais la route HTTP renvoie un
+        // fragment de migration. Skip tant qu'une story de cleanup Phase 3
+        // n'a pas retiré ces tests devenus sans objet.
+        $this->markTestSkipped('Story 16.13bis : route legacy `gpo/wallpaper_out.php` transformée en MigrationController, tests Feature URL caducs (R6).');
+
         if (! class_exists('Imagick')) {
             $this->markTestSkipped('Imagick non disponible.');
         }

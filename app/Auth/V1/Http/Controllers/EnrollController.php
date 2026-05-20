@@ -56,8 +56,10 @@ use RuntimeException;
  * **Story 16.11 — upsert migration status** : en fin de flot enroll réussi,
  * upsert dans `workstations_migration_status` (unique sur `workstation_uuid`)
  * + insertion d'une row `workstation_migration_attempts` (status='enrolled').
- * Le middleware `InjectBootstrapFragment` consulte cette table pour décider
- * de no-op (poste déjà migré) sur les prochaines requêtes legacy.
+ * Story 16.13bis : `MigrationController::serveFragment` consulte cette table
+ * pour décider de no-op (poste déjà migré) sur les prochaines requêtes
+ * legacy `gpo/*_out.php`. Le middleware `InjectBootstrapFragment` 16.11
+ * a été supprimé — la logique est portée par `MigrationController`.
  */
 class EnrollController extends Controller
 {

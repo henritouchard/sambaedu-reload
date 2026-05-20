@@ -28,6 +28,9 @@ class AssociationsOutEndpointTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Story 16.13bis — `gpo/associations_out.php` transformée en
+        // MigrationController::serveFragment ; tests Feature URL caducs (R6).
+        $this->markTestSkipped('Story 16.13bis : route legacy transformée en MigrationController (R6).');
 
         $this->packagesXml = sys_get_temp_dir() . '/packages-' . bin2hex(random_bytes(4)) . '.xml';
         file_put_contents($this->packagesXml, <<<'XML'

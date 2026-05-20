@@ -1519,3 +1519,320 @@ Attendu : `0` résultat.
 | Opus-14 | Garde-fou SQLite resolver test | Corrigé — `markTestSkipped` si non-sqlite |
 | Q3 | Validation regex inputs query | **Différé** — story hardening dédiée post-16.13 |
 
+
+---
+
+## Story 16.13bis — Module migration simplifié (SE4 → SE5)
+
+> Sprint Change Proposal 2026-05-19. Story 16.13bis transforme les 8
+> endpoints legacy `/sambaedu/gpo/*_out.php` (+ `gpo/applications.php`)
+> en **fragment+reboot stateless** servi par
+> `App\Auth\V1\Migration\Http\Controllers\MigrationController`. Le
+> middleware `InjectBootstrapFragment` 16.11 et le controller
+> `BootstrapScriptController` 16.11 sont supprimés. Le shim 1bis.18g
+> (`legacy/gpo_shim.inc.php`) est archivé dans
+> `legacy/archived/gpo-shim-2026-05-20/`.
+
+### Section 29 — Endpoints legacy transformés en MigrationController
+
+Les 8 routes `gpo/*_out.php` (+ `gpo/applications.php`) renvoient
+maintenant un script `text/plain` (cmd Windows ou sh Linux) selon la
+detection OS (priorité query `?os=`, fallback User-Agent, default
+`windows`). Les noms de routes deviennent `migration.legacy.*`.
+
+**Scénario 16.13bis-1 — smoke fragment Windows complet**
+```bash
+curl -s "http://localhost/sambaedu/gpo/wallpaper_out.php?os=windows&uuid=11111111-1111-4111-8111-111111111111" | head -40
+# attendu : @echo off + chcp 65001 + HKLM\SOFTWARE\SambaEdu\AuthV1\Migrated
+#           + certutil + Invoke-RestMethod + ProtectedData + shutdown /r /t 30
+```
+
+**Scénario 16.13bis-2 — smoke fragment Linux complet**
+```bash
+curl -s "http://localhost/sambaedu/gpo/network_out.php?os=linux&uuid=22222222-2222-4222-8222-222222222222" | head -40
+# attendu : #!/bin/bash + set -e + update-ca-certificates + curl -fsS -X POST
+#           + chmod 0600 + /etc/sambaedu/endpoints.conf
+#           + (sleep 30 && /sbin/shutdown -r now) &
+```
+
+**Scénario 16.13bis-3 — Content-Type & headers**
+```bash
+curl -sI "http://localhost/sambaedu/gpo/firefox_out.php?os=windows"
+# attendu : Content-Type: text/plain; charset=utf-8
+#           Cache-Control: no-store, no-cache, must-revalidate, private
+#           X-Migration-Fragment: full
+```
+
+### Section 30 — Fragment Windows complet (download CA + enroll + reboot)
+
+Le fragment Windows réalise séquentiellement : idempotence (check
+`HKLM\SOFTWARE\SambaEdu\AuthV1\Migrated`), décode du CA root inline
+base64 via PowerShell, install dans `Cert:\LocalMachine\Root` via
+`certutil -addstore Root`, collecte UUID/MAC/hostname, POST
+`/api/v1/agent/enroll` via `Invoke-RestMethod` (HTTPS strict — pas de
+`-SkipCertificateCheck`), stockage tokens DPAPI machine, écriture du
+sous-arbre registre `HKLM\SOFTWARE\SambaEdu\AuthV1\Endpoints` pointant
+vers les 8 URLs `/api/v1/workstation-config/*`, marquage `Migrated=1`,
+puis `shutdown /r /t 30 /c "SambaEdu : migration terminée…"`.
+
+**Scénario 16.13bis-4 — vérification absence de skip TLS**
+```bash
+curl -s "http://localhost/sambaedu/gpo/wallpaper_out.php?os=windows" \
+  | grep -E "SkipCertificateCheck|TrustAllCertificate|allow_self_signed"
+# attendu : 0 résultat (fail-closed 16.12 Q5)
+```
+
+### Section 31 — Fragment Linux complet
+
+Le fragment Linux : idempotence (`[ -f /var/lib/sambaedu/migrated ]`),
+decode CA via `base64 -d`, `cp /usr/local/share/ca-certificates/` +
+`update-ca-certificates`, collecte UUID/MAC/hostname, POST enroll via
+`curl -fsS` (pas de `-k`), parse JSON via `jq` (fallback `python3`),
+écriture `/var/lib/sambaedu/auth.json` (`chmod 0600 chown root:root`),
+écriture `/etc/sambaedu/endpoints.conf` avec les 8 URLs, systemd timer
+refresh quotidien, `touch /var/lib/sambaedu/migrated`, `wall` +
+`(sleep 30 && /sbin/shutdown -r now) &` (D14 — confirmé Henri 30s exact
+iso Windows).
+
+**Scénario 16.13bis-5 — vérification non-utilisation de curl -k**
+```bash
+curl -s "http://localhost/sambaedu/gpo/network_out.php?os=linux" \
+  | grep -E "curl -k|--insecure"
+# attendu : 0 résultat
+```
+
+### Section 32 — Idempotence (poste déjà migré → noop)
+
+`MigrationController` consulte `workstations_migration_status` via
+`MigrationStatusChecker::isMigrated($uuid)`. Si la row existe, le
+controller renvoie un fragment-noop (`exit /b 0` ou `exit 0`) au lieu
+du fragment complet. Le header `X-Migration-Fragment: noop` est posé en
+réponse pour faciliter le diagnostic.
+
+**Scénario 16.13bis-6 — fragment-noop après seed migration_status**
+```bash
+php artisan tinker
+\App\Auth\V1\Models\WorkstationMigrationStatus::create([
+    'workstation_uuid' => '33333333-3333-4333-8333-333333333333',
+    'os' => 'windows',
+    'migrated_at' => now(),
+]);
+exit
+curl -s "http://localhost/sambaedu/gpo/wallpaper_out.php?os=windows&uuid=33333333-3333-4333-8333-333333333333"
+# attendu (Windows) : @echo off + chcp + echo SambaEdu : poste deja migre + exit /b 0
+#                     PAS de certutil, PAS de shutdown
+```
+
+**Scénario 16.13bis-7 — fragment-noop Linux**
+```bash
+curl -s "http://localhost/sambaedu/gpo/network_out.php?os=linux&uuid=33333333-3333-4333-8333-333333333333"
+# attendu : #!/bin/bash + echo "SambaEdu : déjà migré, no-op." + exit 0
+```
+
+**Scénario 16.13bis-8 — header X-Migration-Fragment**
+```bash
+curl -sI "http://localhost/sambaedu/gpo/wallpaper_out.php?os=windows&uuid=33333333-..."
+# attendu : X-Migration-Fragment: noop (vs full pour un poste non-migré)
+```
+
+### Section 33 — UI admin Parc : colonne + filtre + compteur
+
+Le composant Livewire `/parc` (page `app.parc.index`, partial
+`machines-tab.blade.php`) ajoute :
+
+- **Colonne « Migration »** entre Statut et Déploiement, avec badge
+  ✅ (Migré) / ❌ (Non migré) basé sur l'accessor `$machine->migrated`
+  (présence row `workstation_migration_status`).
+- **Filtre dropdown « Migration »** (`migrationFilter` Livewire URL
+  binding) : `''` (tous) / `migrated` / `not-migrated`. La logique
+  passe au `WorkstationGroupService::listMachines` qui propage au
+  `WorkstationGroupRepository`.
+- **Card « Postes migrés »** dans `stats-cards.blade.php` (5e card) :
+  format `X/Y` (`$machineStats['migrated']` / `$machineStats['total']`).
+- **Eager loading** : `Workstation::query()->with('migrationStatus')`
+  côté repository pour éviter N+1 sur le rendu de la table.
+
+**Scénario 16.13bis-9 — UI parc colonne Migration**
+```bash
+# Naviguer sur https://se4fs.localdev.fr/parc (onglet "Postes")
+# attendu : colonne "Migration" entre "Statut" et "Déploiement"
+# avec ✅ pour les postes ayant une row workstation_migration_status
+```
+
+**Scénario 16.13bis-10 — UI parc filtre Migration**
+```bash
+# Sélectionner "Migration : Migrés" dans le dropdown filtre
+# attendu : seules les machines avec status row apparaissent
+# Idem "Non migrés" : seules les machines sans row.
+```
+
+**Scénario 16.13bis-11 — UI parc compteur X/Y**
+```bash
+# attendu : card "Postes migrés" affiche par exemple "12/25"
+# où 12 = Workstation::migrated()->count() et 25 = Workstation::count()
+```
+
+### Section 34 — Non-régression 16.13 + ControlHub + suppression artefacts 16.11
+
+**Scénario 16.13bis-12 — non-régression /api/v1/workstation-config/***
+```bash
+# Émettre un JWT pour un poste UUID seedé
+php artisan tinker
+$tokens = app(\App\Auth\V1\Jwt\WorkstationJwtIssuer::class)
+    ->issue('33333333-3333-4333-8333-333333333333', 'workstation');
+echo $tokens['access_token'];
+exit
+
+curl -s -H "Authorization: Bearer $JWT" \
+    "https://localhost/api/v1/workstation-config/wallpaper?os=linux" -o /tmp/wp.png
+file /tmp/wp.png
+# attendu : PNG/JPEG image data (16.13 endpoints natifs toujours servis).
+```
+
+**Scénario 16.13bis-13 — non-régression ControlHub**
+```bash
+curl -s -H "X-API-Key: $CONTROLHUB_KEY" "https://localhost/api/v1/snapshot" | jq .
+# attendu : 200 + JSON snapshot complet (parité 16.13).
+```
+
+**Scénario 16.13bis-14 — absence routes bootstrap.cmd|.sh**
+```bash
+php artisan route:list | grep "bootstrap\.cmd\|bootstrap\.sh"
+# attendu : 0 ligne (routes supprimées par Story 16.13bis D3).
+```
+
+**Scénario 16.13bis-15 — absence middleware inject.bootstrap-fragment**
+```bash
+php artisan route:list --columns=uri,name,middleware | grep "inject\.bootstrap-fragment"
+# attendu : 0 ligne (alias et application middleware supprimés).
+```
+
+**Scénario 16.13bis-16 — archive shim 1bis.18**
+```bash
+ls -la legacy/archived/gpo-shim-2026-05-20/
+# attendu : gpo_shim.inc.php + README.md
+grep "require_once.*gpo_shim" legacy/bootstrap.php
+# attendu : 0 occurrence
+```
+
+**Scénario 16.13bis-17 — smoke poste réel (action terrain Henri)**
+
+Validation E2E sur un déploiement parc réel, hors-scope dev :
+1. Poste Windows SE4 boote → script logon GPO appelle
+   `gpo/wallpaper_out.php` → reçoit fragment migration complet →
+   exécute (download CA + enroll + write registre + shutdown 30s) →
+   redémarre.
+2. Au boot suivant, le poste est marqué `Migrated=1`. Tout nouvel
+   appel de `gpo/*_out.php` (par les scripts logon legacy qui n'ont
+   pas encore été régénérés Phase 3) reçoit le fragment-noop —
+   `exit /b 0` immédiat.
+3. Poste Linux SE4 idem (avec `/var/lib/sambaedu/migrated`).
+4. Logs serveur `storage/logs/auth-v1/auth-v1-*.log` montrent la
+   séquence `migration.attempt.created → migration.fragment.served →
+   enroll.success → migration_status row created → migration.fragment.noop`.
+
+### Checklist rapide Story 16.13bis (validation Henri post-merge)
+
+- [ ] `composer install --no-dev --optimize-autoloader` OK
+- [ ] `php artisan route:list | grep migration.legacy` → 8 lignes
+- [ ] `php artisan route:list | grep bootstrap.cmd\|bootstrap.sh` → 0 ligne
+- [ ] `ls legacy/archived/gpo-shim-2026-05-20/` → 2 fichiers
+- [ ] `grep gpo_shim legacy/bootstrap.php` → 0 occurrence
+- [ ] Smoke 16.13bis-1 fragment Windows OK
+- [ ] Smoke 16.13bis-2 fragment Linux OK
+- [ ] Smoke 16.13bis-6 fragment-noop Windows OK
+- [ ] Smoke 16.13bis-12 non-régression `/api/v1/workstation-config/*` OK
+- [ ] Smoke 16.13bis-13 non-régression ControlHub OK
+- [ ] UI Parc : colonne Migration visible
+- [ ] UI Parc : filtre Migration fonctionne (Migrés / Non migrés)
+- [ ] UI Parc : compteur "Postes migrés" X/Y affiché
+- [ ] `tail storage/logs/auth-v1/*.log | grep migration` → événements
+      `migration.fragment.served` / `migration.fragment.noop` visibles
+- [ ] Suite Pest `./vendor/bin/pest tests/Feature/Auth/V1/Migration tests/Architecture/Migration tests/Unit/Auth/V1/Migration tests/Unit/Models/WorkstationMigrationTest.php tests/Feature/Pages/Parc/MigrationUiTest.php` → 100% verts
+
+### Post-correctifs (à enrichir après code review 16.13bis)
+
+| Item | Description | Statut |
+|---|---|---|
+| — | (sera enrichi post-review) | — |
+
+## Post-correctifs Story 16.13bis (2026-05-20)
+
+> Append-only — corrections appliquées après code-review sonnet 4.6 + 2e avis opus 4.7. Arbitrage Henri : Q1=Option A (mint serveur APCu) + Q2=Option α (compteur scoped). 5 corrections auto-corrigeables retenues.
+
+### Tableau incidents couverts
+
+| Item | Sévérité initiale | Description | Correctif appliqué | Test couvrant |
+|---|---|---|---|---|
+| #1 (Q1) | 🔴 | BOOTSTRAP_TOKEN absent du fragment → boucle 401 sur 100% des postes vierges | Mint serveur via `MigrationFragmentRenderer::mintBootstrapToken()` (clé APCu `apps.<token>` TTL 1800s, payload `['uuid' => $declaredUuid, 'time' => time()]`). Injection variable Blade `bootstrap_token` dans fragment-cmd (`set "BOOTSTRAP_TOKEN=..."`) et fragment-sh (`export BOOTSTRAP_TOKEN="..."`) AVANT l'appel enroll. | `MigrationFragmentRendererTest::render_full_fragment_{windows,linux}_injects_bootstrap_token` + `MigrationControllerTest::serve_fragment_{cmd,sh}_contains_minted_bootstrap_token` |
+| #2 | 🟠 | Test E2E court-circuitait `WorkstationMigrationStatus::create()` direct (masquait #1) | Étape 2 = POST réel `/api/v1/agent/enroll` avec `X-Bootstrap-Token` extrait du fragment | `MigrationE2EScenarioTest::{windows,linux}_workstation_migrates_via_fragment_then_*` |
+| #10 | 🟡 | Étape 3 = check archi `Route::getByName(...)` insuffisant pour AC7 | GET réel `/api/v1/workstation-config/wallpaper` avec JWT émis pour l'UUID enrôlé | idem |
+| Opus-B | 🟠 | Fragment Windows continuait silencieusement avec CA vide → certutil échouait après installation tronquée | Côté serveur : 503 explicite si CA absent en `environment=production` via `CaUnavailableException` (capturée par `MigrationController`). Côté Windows : `for %%S in ("%CA_TMP%") do if %%~zS LSS 100 ( ... exit /b 2 )` après `WriteAllBytes` | `MigrationFragmentRendererTest::render_full_fragment_throws_in_production_when_ca_missing` + scénario QA 16.13bis-CA |
+| Opus-D | 🟡 | `findstr /C:"Migrated"` matchait n'importe quelle valeur → admin ne pouvait pas relancer manuellement | `findstr /R "0x1$"` parse REG_DWORD = 1 strict | scénario QA 16.13bis-RELANCE |
+| Opus-E | 🟡 | Test APCu vérifiait textuel (`assertStringNotContainsString`) au lieu du side-effect | Mock `AppContextWriter::shouldNotReceive('write')` via DI | `MigrationE2EScenarioTest::applications_endpoint_no_longer_sets_apcu_context` |
+| Q2 / Opus-A | 🟡 | Compteur "X/Y postes migrés" non scoped aux filtres UI (X/Y global même en filtrant Linux) | `WorkstationGroupService::getMachineStats($os, $groupId, $migrationFilter)` accepte les filtres + Livewire passe les filtres actifs + `updatedXxxFilter()` invalide le cache stats | smoke UI 16.13bis-COMPTEUR |
+
+### Scénarios additionnels (16.13bis-CA + 16.13bis-RELANCE + 16.13bis-COMPTEUR)
+
+#### Scénario 16.13bis-CA — Fragment retourne 503 si CA absent en production
+
+```bash
+ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50
+cd /var/www/sambaedu-reload
+
+# Simuler CA absent (renommer temporairement) — APP_ENV=production
+mv storage/keys/pki/ca-root.crt storage/keys/pki/ca-root.crt.bak
+APP_ENV=production php artisan tinker
+# >>> app(\App\Auth\V1\Migration\Services\MigrationFragmentRenderer::class)->renderFullFragment('windows', '11111111-1111-4111-8111-111111111111');
+# >>> // attendu : App\Auth\V1\Migration\Exceptions\CaUnavailableException
+
+# Curl direct sur la route /gpo/wallpaper_out.php (depuis le LAN)
+APP_ENV=production curl -sS -i "https://localhost/gpo/wallpaper_out.php?os=windows&uuid=11111111-1111-4111-8111-111111111111"
+# attendu : HTTP/1.1 503 + X-Migration-Fragment: error-ca-missing + body text/plain
+#   "SambaEdu : CA root indisponible cote serveur. Contactez l'administrateur."
+# Log auth-v1 : action_type=migration.fragment.ca_missing visible
+
+# Restaurer
+mv storage/keys/pki/ca-root.crt.bak storage/keys/pki/ca-root.crt
+```
+
+#### Scénario 16.13bis-RELANCE — Admin peut relancer la migration manuellement
+
+```bat
+:: Sur un poste Windows déjà migré (HKLM\SOFTWARE\SambaEdu\AuthV1\Migrated=1)
+reg query "HKLM\SOFTWARE\SambaEdu\AuthV1" /v Migrated
+:: attendu : Migrated REG_DWORD 0x1
+
+:: Forcer remise à 0 pour relance
+reg add "HKLM\SOFTWARE\SambaEdu\AuthV1" /v Migrated /t REG_DWORD /d 0 /f
+
+:: Récupérer + exécuter le fragment depuis le serveur
+curl -fsS https://se4fs.lab.local/gpo/wallpaper_out.php?os=windows -o C:\Temp\fragment.cmd
+cmd /c C:\Temp\fragment.cmd
+:: attendu : NON exit /b 0 immédiat. Le fragment ré-exécute toute la migration.
+```
+
+Avant la correction Opus-D, `reg add ... Migrated /d 0` n'avait aucun effet — le `findstr /C:"Migrated"` matchait le nom de la clé peu importe la valeur.
+
+#### Scénario 16.13bis-COMPTEUR — Compteur "Postes migrés" scoped aux filtres UI
+
+```text
+1. Naviguer vers /app/parc
+2. Vérifier card "Postes migrés" = X/Y où Y = total des postes du parc complet.
+3. Sélectionner filtre OS = "windows"
+4. Vérifier card "Postes migrés" se met à jour : X' = nb postes Windows migrés,
+   Y' = nb postes Windows totaux. X' ≤ X et Y' ≤ Y.
+5. Ajouter filtre Migration = "Non migrés"
+6. Vérifier X'' = 0 (intersection vide) / Y'' = nb postes Windows non-migrés.
+7. Click "Réinitialiser filtres" → card revient à X/Y global.
+```
+
+### Checklist post-correctifs Henri
+
+- [ ] Smoke 16.13bis-CA — 503 fragment en prod sans CA
+- [ ] Smoke 16.13bis-RELANCE — relance manuelle Migrated=0 fonctionne
+- [ ] Smoke 16.13bis-COMPTEUR — compteur "Postes migrés" suit les filtres
+- [ ] Smoke 16.13bis-17 — poste réel Windows : fragment contient `set "BOOTSTRAP_TOKEN=<hex32>"` + l'enroll réussit côté serveur (auth-v1 log `auth.enroll.success` visible)
+- [ ] Smoke 16.13bis-17 (Linux) — fragment contient `export BOOTSTRAP_TOKEN="<hex32>"` + curl enroll réussit
+- [ ] APCu inspection : `php -r 'var_dump(apcu_fetch("apps.<token-vu-dans-fragment>"));'` retourne le payload `['uuid' => '...', 'time' => ...]`
+

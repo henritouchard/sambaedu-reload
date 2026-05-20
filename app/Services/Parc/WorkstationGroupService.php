@@ -75,14 +75,15 @@ class WorkstationGroupService
         ?string $search = null,
         ?string $os = null,
         ?int $groupId = null,
-        ?User $scopeFor = null
+        ?User $scopeFor = null,
+        ?string $migrationFilter = null
     ): LengthAwarePaginator {
         $authorizedGroupIds = $this->resolveAuthorizedGroupIds($scopeFor);
 
         // $authorizedGroupIds === null : pas de scope demandé ou user a le droit
         // global — on retombe sur le comportement historique.
         if ($authorizedGroupIds === null) {
-            return $this->repository->getMachines($perPage, $search, $os, $groupId);
+            return $this->repository->getMachines($perPage, $search, $os, $groupId, $migrationFilter);
         }
 
         // Si un groupId explicite est demandé mais qu'il n'est pas dans le
@@ -102,6 +103,7 @@ class WorkstationGroupService
             os: $os,
             groupId: $groupId,
             authorizedGroupIds: $authorizedGroupIds,
+            migrationFilter: $migrationFilter,
         );
     }
 
@@ -122,24 +124,125 @@ class WorkstationGroupService
     }
 
     /**
-     * Récupère les statistiques des machines
+     * Récupère les statistiques des machines.
+     *
+     * Story 16.13bis — Correction Q2 / Opus-A (2026-05-20) : `$os`, `$groupId`
+     * et `$migrationFilter` permettent de **scoper** le compteur "Postes
+     * migrés" + le total aux mêmes filtres que ceux appliqués au listing
+     * Livewire (cohérence UX). Les autres compteurs (active, without_group,
+     * by_os, salles physiques, parcs logiques) restent globaux car ils
+     * répondent à des questions d'inventaire transverses.
+     *
+     * Le `$scopeFor` reste géré côté composant Livewire qui n'appelle
+     * `getMachineStats()` qu'une fois — les filtres d'autorisation par
+     * délégation n'altèrent pas le compteur global de migration (un admin
+     * non-délégué voit "X/Y postes du parc complet").
+     *
+     * Compat : appelants sans arg → comportement historique (compteurs globaux).
+     *
+     * @param string|null $os              Filtre OS actif ('windows', 'linux', etc.).
+     * @param int|null    $groupId         Filtre groupe actif (ID WorkstationGroup).
+     * @param string|null $migrationFilter '', 'migrated', 'not-migrated'.
      */
-    public function getMachineStats(): array
-    {
+    public function getMachineStats(
+        ?string $os = null,
+        ?int $groupId = null,
+        ?string $migrationFilter = null,
+    ): array {
         $total = $this->repository->countMachines();
         $withoutGroup = $this->repository->getMachinesWithoutGroup()->count();
         $osList = $this->repository->getDistinctOs();
 
         $osCounts = [];
-        foreach ($osList as $os) {
-            $osCounts[$os] = Workstation::where('os', $os)->count();
+        foreach ($osList as $osName) {
+            $osCounts[$osName] = Workstation::where('os', $osName)->count();
         }
 
+        // Story 16.13bis — compteur X/Y postes migrés scoped aux filtres actifs.
+        // Si aucun filtre actif → comptage global (parité legacy).
+        // Best-effort try/catch si la table `workstations_migration_status`
+        // n'existe pas (cas tests non-16.11).
+        $migrated = 0;
+        $scopedTotal = $total;
+        try {
+            $hasScope = ($os !== null && $os !== '')
+                || ($groupId !== null)
+                || ($migrationFilter !== null && $migrationFilter !== '');
+
+            if ($hasScope) {
+                $scopedQuery = $this->buildScopedMachineQuery($os, $groupId);
+                // Le compteur "Postes migrés" est toujours l'intersection
+                // (filtres actifs) ∩ (migrated). Si l'admin a aussi pose
+                // migrationFilter='not-migrated', l'intersection est 0 (cohérent).
+                $migratedQuery = (clone $scopedQuery)->migrated();
+                if ($migrationFilter === 'not-migrated') {
+                    $migrated = 0;
+                } else {
+                    $migrated = $migratedQuery->count();
+                }
+                // Le total visible = total après application des filtres
+                // (OS / groupe / migration) — c'est le dénominateur cohérent
+                // avec la pagination Livewire.
+                $scopedTotal = $this->applyMigrationFilterToQuery(
+                    $this->buildScopedMachineQuery($os, $groupId),
+                    $migrationFilter,
+                )->count();
+            } else {
+                $migrated = Workstation::migrated()->count();
+            }
+        } catch (\Throwable $e) {
+            $migrated = 0;
+        }
+
+        $active = Workstation::where('status', 'active')->orWhere('status', 1)->count();
+
         return [
-            'total' => $total,
+            'total' => $scopedTotal,
+            'active' => $active,
             'without_group' => $withoutGroup,
             'by_os' => $osCounts,
+            'migrated' => $migrated,
         ];
+    }
+
+    /**
+     * Story 16.13bis — Correction Q2 / Opus-A : construit une query Workstation
+     * avec les filtres OS + groupe actifs (sans migrationFilter — appliqué
+     * séparément). Utilisé par `getMachineStats()` pour scoper le compteur.
+     */
+    private function buildScopedMachineQuery(?string $os, ?int $groupId): \Illuminate\Database\Eloquent\Builder
+    {
+        $query = Workstation::query();
+
+        if ($os !== null && $os !== '') {
+            $query->where('os', $os);
+        }
+
+        if ($groupId !== null) {
+            $query->whereHas('groups', function ($q) use ($groupId): void {
+                $q->where('workstation_groups.id', $groupId);
+            });
+        }
+
+        return $query;
+    }
+
+    /**
+     * Applique le `$migrationFilter` à la query Workstation passée en
+     * argument (idem `WorkstationGroupRepository::applyMigrationFilter`).
+     */
+    private function applyMigrationFilterToQuery(
+        \Illuminate\Database\Eloquent\Builder $query,
+        ?string $migrationFilter,
+    ): \Illuminate\Database\Eloquent\Builder {
+        if ($migrationFilter === 'migrated') {
+            return $query->migrated();
+        }
+        if ($migrationFilter === 'not-migrated') {
+            return $query->notMigrated();
+        }
+
+        return $query;
     }
 
     /**
