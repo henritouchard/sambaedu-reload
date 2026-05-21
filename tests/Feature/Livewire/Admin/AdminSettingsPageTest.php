@@ -13,11 +13,15 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 5.1c — Tests Feature Livewire de la page /admin/settings (scaffold).
+ * Tests Feature Livewire de la page /admin/settings.
  *
- * Couvre AC 13 #9-10 :
- *   9. rendu mono-onglet "Quotas & FS" (assertSee + assertDontSee placeholders)
- *  10. accès bloqué sans server.admin (mount + payload Livewire forgé → 403)
+ * Refonte : la page n'est plus à onglets — c'est désormais une landing
+ * regroupant en sections (Système / GPO / Migration / Réseau) des cards
+ * pointant vers les sous-pages de configuration.
+ *
+ * Garde :
+ *   - rendu landing : sections + cards principales visibles
+ *   - accès bloqué sans server.admin (mount → 403)
  */
 class AdminSettingsPageTest extends TestCase
 {
@@ -148,28 +152,35 @@ class AdminSettingsPageTest extends TestCase
         return $u;
     }
 
-    // =========================================================================
-    // AC 13 #9
-    // =========================================================================
-
-    public function test_it_renders_single_tab_quotas_fs(): void
+    public function test_it_renders_landing_with_all_sections(): void
     {
-        $admin = $this->makeAdmin('admin-singletab');
+        $admin = $this->makeAdmin('admin-landing');
         $this->actingAs($admin);
 
         Livewire::test('pages::admin.settings.index')
-            ->assertSet('tab', 'quotas-fs')
-            // 'Quotas' apparaît dans l'onglet — le `&` est HTML-escaped donc
-            // on évite la chaîne complète qui dépend de l'escape.
-            ->assertSee('Quotas')
+            ->assertSee('Système')
+            ->assertSee('GPO Active Directory')
+            ->assertSee('Migration')
+            ->assertSee('Réseau')
             ->assertDontSee('coming soon')
             ->assertDontSee('Bientôt disponible')
             ->assertDontSee('Placeholder');
     }
 
-    // =========================================================================
-    // AC 13 #10
-    // =========================================================================
+    public function test_it_renders_landing_with_key_cards(): void
+    {
+        $admin = $this->makeAdmin('admin-cards');
+        $this->actingAs($admin);
+
+        Livewire::test('pages::admin.settings.index')
+            ->assertSee('Quotas')
+            ->assertSee('Profils itinérants')
+            ->assertSee('Toutes les GPOs')
+            ->assertSee('Sync from AD')
+            ->assertSee('Error Logger')
+            ->assertSee('Legacy Monitor')
+            ->assertSee('ControlHub');
+    }
 
     public function test_it_blocks_access_without_server_admin(): void
     {
@@ -178,24 +189,5 @@ class AdminSettingsPageTest extends TestCase
 
         Livewire::test('pages::admin.settings.index')
             ->assertStatus(403);
-    }
-
-    /**
-     * AC 12 — bypass tentatives sur méthode publique `setTab` également bloquées.
-     */
-    public function test_it_blocks_set_tab_without_server_admin(): void
-    {
-        $viewer = User::query()->create(['login' => 'viewer-bypass-settab', 'role' => 'eleve', 'is_active' => true]);
-
-        // On crée un admin pour pouvoir mount le composant (mount() guard)
-        // puis on bascule vers viewer non-admin pour tester le call('setTab').
-        $admin = $this->makeAdmin('admin-mount-only');
-        $this->actingAs($admin);
-
-        $component = Livewire::test('pages::admin.settings.index');
-
-        // Bascule d'identité sans re-mount.
-        $this->actingAs($viewer);
-        $component->call('setTab', 'quotas-fs')->assertStatus(403);
     }
 }

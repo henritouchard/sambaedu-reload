@@ -324,9 +324,6 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin'])->name('a
     // Error Logger - Erreurs capturées (legacy PHP & exceptions Laravel)
     Route::livewire('/error-logger', 'pages::admin.error-logger.index')->name('error-logger');
 
-    // Migration - Dashboard d'assistance
-    Route::livewire('/migrate', 'pages::admin.migrate.index')->name('migrate');
-
     // Navigation legacy (menus SE4FS)
     Route::livewire('/homelegacy', 'pages::homelegacy.index')->name('homelegacy');
 
@@ -335,11 +332,26 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin'])->name('a
         ->middleware('can:server.admin')
         ->name('sync-from-ad');
 
-    // Réglages système — Story 5.1c AC5/AC12 : can:server.admin (action critique).
-    // Page Livewire SFC à onglets extensible. Onglet unique en 5.1c : "Quotas & FS".
+    // /admin/settings — Landing « Réglages ».
+    // Page d'index regroupant en sections (Système / GPO / Migration / Réseau)
+    // les liens vers les pages de configuration. Les ex-onglets Quotas & FS et
+    // Profils itinérants sont désormais leurs propres routes (cf. ci-dessous).
+    // La page /admin/migrate a été absorbée par la section Migration de ce landing.
     Route::livewire('/settings', 'pages::admin.settings.index')
         ->middleware('can:server.admin')
         ->name('settings');
+
+    // /admin/quotas — Ex-onglet Quotas & FS (Story 5.1c) promu en route racine.
+    Route::livewire('/quotas', 'pages::admin.quotas.index')
+        ->middleware('can:server.admin')
+        ->name('quotas');
+
+    // /admin/settings/profils-itinerants — Ex-onglet Profils itinérants (1bis.18f)
+    // promu en sous-route de /admin/settings (cohérent avec /admin/settings/gpo/*
+    // et /admin/settings/system/*).
+    Route::livewire('/settings/profils-itinerants', 'pages::admin.settings.profils-itinerants.index')
+        ->middleware('can:server.admin')
+        ->name('settings.profils-itinerants');
 
     // ========================================
     // Story 16.9 — Exposition UI admin GPO sous `/admin/settings/gpo/*`.
