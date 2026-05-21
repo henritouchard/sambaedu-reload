@@ -58,6 +58,8 @@ trait CreatesPermissionSchema
                 $table->integer('ad_rights_bitmask')->default(0);
                 $table->timestamp('ad_synced_at')->nullable();
                 $table->timestamp('pwd_reset_at')->nullable();
+                // Story 14.4 — AC1 : colonne password_changed_at pour les filtres audit
+                $table->timestamp('password_changed_at')->nullable();
                 $table->json('quota_snapshot')->nullable();
                 $table->timestamps();
             });

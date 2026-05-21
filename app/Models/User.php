@@ -72,6 +72,7 @@ class User extends Authenticatable implements Wireable
         'ad_rights_bitmask',
         'ad_synced_at',
         'pwd_reset_at',
+        'password_changed_at',
         'quota_snapshot',
     ];
 
@@ -86,6 +87,9 @@ class User extends Authenticatable implements Wireable
         'ad_rights_bitmask' => 'integer',
         'ad_synced_at' => 'datetime',
         'pwd_reset_at' => 'datetime',
+        // Timestamp du dernier changement de mdp effectif (depuis pwdLastSet AD).
+        // NULL = jamais changé ou pwdLastSet=0 (filtre « mdp par défaut » D3/D7 — story 14.4).
+        'password_changed_at' => 'datetime',
         'password' => 'hashed',
         // Snapshot quota quotidien (story 5.1b) — structure documentée dans
         // la migration `add_quota_snapshot_to_users_table` et dans la

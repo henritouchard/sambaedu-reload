@@ -27,6 +27,9 @@ new class extends Component {
     public array $role = [];
     public array $status = [];
     public array $group = [];
+    // Story 14.4 — filtres audit (D12 : props bool directes, pas array)
+    public bool $quotaOverflow = false;
+    public bool $passwordDefault = false;
     public array $selectedUsers = [];
     public array $selectedUserGroups = [];
     public bool $isFiltersModalOpen = false;
@@ -166,6 +169,11 @@ new class extends Component {
         $this->role = [];
         $this->status = [];
         $this->group = [];
+        // Story 14.4 — Tâche 5.3
+        $this->quotaOverflow = false;
+        $this->passwordDefault = false;
+        // Post-review #3 : reset selectedUsers (parité avec les updated* qui le font déjà)
+        $this->selectedUsers = [];
         $this->resetPage();
     }
 
@@ -195,6 +203,35 @@ new class extends Component {
     public function removeGroupFilter(string $value): void
     {
         $this->group = array_values(array_filter($this->group, fn(string $item) => $item !== $value));
+        $this->resetPage();
+    }
+
+    // Story 14.4 — méthodes updated* + remove pour les filtres audit
+    // Post-review #3 : reset selectedUsers pour parité avec updatedRole/Status/Group
+    // (évite l'état incohérent si une bulk action est en cours pendant un changement de filtre).
+    public function updatedQuotaOverflow(): void
+    {
+        $this->selectedUsers = [];
+        $this->resetPage();
+    }
+
+    public function updatedPasswordDefault(): void
+    {
+        $this->selectedUsers = [];
+        $this->resetPage();
+    }
+
+    public function removeQuotaOverflowFilter(): void
+    {
+        $this->quotaOverflow = false;
+        $this->selectedUsers = [];
+        $this->resetPage();
+    }
+
+    public function removePasswordDefaultFilter(): void
+    {
+        $this->passwordDefault = false;
+        $this->selectedUsers = [];
         $this->resetPage();
     }
 
@@ -310,6 +347,23 @@ new class extends Component {
             });
         }
 
+        // Story 14.4 — Tâche 5.4 : filtres audit (D1/D2 quota, D3 mdp)
+        if ($this->quotaOverflow) {
+            // D1 : OR sur is_over_soft|is_over_hard sur les 2 partitions (home + sambaedu)
+            // D2 : les users avec quota_snapshot IS NULL sont exclus implicitement (comparaison JSON = true ne matche pas NULL)
+            $query->where(function (Builder $b) {
+                $b->where('quota_snapshot->home->is_over_soft', true)
+                    ->orWhere('quota_snapshot->home->is_over_hard', true)
+                    ->orWhere('quota_snapshot->sambaedu->is_over_soft', true)
+                    ->orWhere('quota_snapshot->sambaedu->is_over_hard', true);
+            });
+        }
+
+        if ($this->passwordDefault) {
+            // D3 : NULL inclus (= « jamais changé » présumé)
+            $query->whereNull('password_changed_at');
+        }
+
         // Correction review 7.2 #3 — RGPD : un Prof (ou EleveAdmin) scopé classe
         // ne doit voir que les élèves de ses propres classes. Sans ce filtre
         // Eloquent, le listing contourne la Policy `UserPolicy::view()` qui
@@ -410,7 +464,7 @@ new class extends Component {
                     </button>
                 </div>
 
-                @if (!empty($role) || !empty($status) || !empty($group))
+                @if (!empty($role) || !empty($status) || !empty($group) || $quotaOverflow || $passwordDefault)
                     <div class="mt-3 flex flex-wrap items-center gap-2">
                         <span class="text-xs text-base-content/60">Filtres actifs :</span>
 
@@ -437,6 +491,23 @@ new class extends Component {
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                             </button>
                         @endforeach
+
+                        {{-- Story 14.4 — Tâche 5.6 : chips actifs filtres audit --}}
+                        @if ($quotaOverflow)
+                            <button type="button" class="badge badge-outline gap-1"
+                                wire:click="removeQuotaOverflowFilter">
+                                audit: quota dépassé
+                                <i class="fa-solid fa-xmark text-[10px]"></i>
+                            </button>
+                        @endif
+
+                        @if ($passwordDefault)
+                            <button type="button" class="badge badge-outline gap-1"
+                                wire:click="removePasswordDefaultFilter">
+                                audit: mdp par défaut
+                                <i class="fa-solid fa-xmark text-[10px]"></i>
+                            </button>
+                        @endif
 
                         <button type="button" class="btn btn-ghost btn-xs" wire:click="resetFilters">
                             Tout effacer
@@ -484,6 +555,20 @@ new class extends Component {
                     :multiple="true" :filterable="true" :clearable="true" :inline="true" :show-trigger="false"
                     panel-class="border-0 rounded-none bg-transparent" list-class="p-0"
                     placeholder="Rechercher et sélectionner des groupes" />
+            </x-molecules.modal.section>
+
+            {{-- Story 14.4 — Tâche 5.5 : section Audit avec 2 toggles --}}
+            <x-molecules.modal.section title="Audit" icon="fa-shield-halved text-primary">
+                <div class="form-control">
+                    <label class="label cursor-pointer justify-start gap-3">
+                        <input type="checkbox" class="toggle toggle-primary" wire:model.live="quotaOverflow">
+                        <span class="label-text">Quota dépassé</span>
+                    </label>
+                    <label class="label cursor-pointer justify-start gap-3">
+                        <input type="checkbox" class="toggle toggle-primary" wire:model.live="passwordDefault">
+                        <span class="label-text">Mot de passe par défaut</span>
+                    </label>
+                </div>
             </x-molecules.modal.section>
 
             <x-slot:footer>

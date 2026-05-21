@@ -2,6 +2,7 @@
 
 namespace App\Types;
 
+use Carbon\Carbon;
 use Livewire\Wireable;
 
 /**
@@ -49,6 +50,14 @@ class User implements Wireable
         public readonly string $role = 'autre',       // Rôle: eleves, profs, administratifs, autre
         public readonly bool $isActiveUser = true,    // Utilisateur actif (pas dans corbeille)
         public readonly bool $isTrash = false,        // Utilisateur dans la corbeille
+
+        // ============================================
+        // SYNCHRO AD — story 14.4
+        // ============================================
+        // Timestamp du dernier changement de mot de passe effectif (depuis pwdLastSet AD).
+        // NULL = jamais changé ou pwdLastSet == 0 (filtre « mdp par défaut » D3/D7).
+        // Additive, défaut null pour ne pas casser les consumers existants (Tâche 4.1).
+        public readonly ?Carbon $passwordChangedAt = null,
 
         // ============================================
         // IDENTIFIANTS EXTERNES (données techniques)
@@ -383,6 +392,10 @@ class User implements Wireable
             'isActiveUser' => $this->isActiveUser,
             'isTrash' => $this->isTrash,
 
+            // Story 14.4 (post-review #11) — round-trip Livewire de passwordChangedAt.
+            // Sérialisation ISO8601 (Carbon natif), parsing miroir dans fromLivewire().
+            'passwordChangedAt' => $this->passwordChangedAt?->toIso8601String(),
+
             // Identifiants externes
             'objectGuid' => $this->objectGuid,
             'objectGuidDisplay' => $this->objectGuidDisplay,
@@ -432,6 +445,8 @@ class User implements Wireable
             role: $value['role'] ?? 'autre',
             isActiveUser: $value['isActiveUser'] ?? true,
             isTrash: $value['isTrash'] ?? false,
+            // Story 14.4 (post-review #11) — parsing miroir de toArray() ISO8601.
+            passwordChangedAt: !empty($value['passwordChangedAt']) ? Carbon::parse($value['passwordChangedAt']) : null,
             // Identifiants externes
             objectGuid: $value['objectGuid'] ?? null,
             objectGuidDisplay: $value['objectGuidDisplay'] ?? null,

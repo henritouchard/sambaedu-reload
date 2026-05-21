@@ -11,6 +11,7 @@ use App\Facades\SEConfig;
 use App\LdapModels\LdapUser;
 use App\LdapModels\SambaEduGroup;
 use App\Models\User as UserModel;
+use App\Services\Concerns\ResolvesPwdLastSet;
 use App\Types\User as AdUser;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -31,6 +32,8 @@ use Spatie\Permission\PermissionRegistrar;
  */
 class UserSyncService
 {
+    use ResolvesPwdLastSet;
+
     private const ESTABLISHMENT_SCOPE_ALL = 'all';
     private const ESTABLISHMENT_SCOPE_TREE = 'tree';
     private const ESTABLISHMENT_SCOPE_MEMBER_OF = 'memberOf';
@@ -511,6 +514,11 @@ class UserSyncService
 
         $businessObject = $ldapUser->toBusinessObject();
 
+        // Lecture pwdLastSet via le trait ResolvesPwdLastSet (story 14.4 — AC3 / Tâche 4.2)
+        $pwdLastSetRaw = $ldapUser->getFirstAttribute('pwdlastset');
+        $pwdLastSetInt = $this->resolvePwdLastSetRaw($pwdLastSetRaw);
+        $passwordChangedAt = self::pwdLastSetToCarbon($pwdLastSetInt);
+
         return new AdUser(
             login: (string) ($ldapUser->getLogin() ?? ''),
             fullname: $getValue('displayname') ?? $getValue('cn') ?? '',
@@ -524,6 +532,7 @@ class UserSyncService
             rights: $rightProfiles,
             role: $role,
             objectGuid: $this->convertAdGuidToString($ldapUser->getFirstAttribute('objectguid')),
+            passwordChangedAt: $passwordChangedAt,
         );
     }
 
@@ -616,6 +625,8 @@ class UserSyncService
                 'school_name' => $adUser->etabName,
                 'is_active' => true,
                 'ad_synced_at' => now(),
+                // Story 14.4 — AC3 / Tâche 4.3 : backfill password_changed_at depuis pwdLastSet AD
+                'password_changed_at' => $adUser->passwordChangedAt,
             ]);
         } else {
             $user->update([
@@ -630,6 +641,12 @@ class UserSyncService
                 'school_code' => ($adUser->etabCode !== null && $adUser->etabCode !== '') ? $adUser->etabCode : $user->school_code,
                 'school_name' => ($adUser->etabName !== null && $adUser->etabName !== '') ? $adUser->etabName : $user->school_name,
                 'ad_synced_at' => now(),
+                // Story 14.4 — AC3 / Tâche 4.3 : mise à jour password_changed_at.
+                // Préserve la date SQL existante si l'AD répond null
+                // (ex: pwdLastSet absent/filtré côté replica LDAP, ACL, etc.).
+                // D6 + R3 affinée post-review Opus 14.4 #2 : on évite d'écraser
+                // une vraie date persistée au login par un null transitoire de sync AD.
+                'password_changed_at' => $adUser->passwordChangedAt ?? $user->password_changed_at,
             ]);
         }
 

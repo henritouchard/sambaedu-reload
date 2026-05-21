@@ -11,10 +11,11 @@ Checklist par domaine métier. À dérouler avant une mise en production importa
 - [ ] [network](domains/network.md) — Réservations DHCP, baux actifs, import CSV, migration legacy via `/sync-from-ad` _(Story 8.1)_
 - [ ] [auth](domains/auth.md) — Plateforme HTTPS + JWT v1 poste↔serveur local (PKI locale, enrollment, refresh, révocation) _(Story 16.10)_
 - [ ] [ipxe](domains/ipxe.md) — Boot iPXE, résolution MAC/UUID, fondations Services Laravel _(Stories 3.1+)_
+- [ ] [users](domains/users.md) — Listing /users, filtres audit (quota dépassé, mdp par défaut), synchro password_changed_at AD _(Story 14.4)_
 
 ## À créer au fil des prochaines stories
 
-- [ ] `users.md` — création / modification / suppression / bulk reset MDP / itinérant
+- [x] `users.md` — créé story 14.4 (filtres audit). À compléter : création / modification / suppression / bulk reset MDP / itinérant
 - [ ] `parc.md` — actions machine / batch groupes / schedules / wallpapers / AppProfiles
 - [ ] `ad-sync.md` — `/admin/sync-from-ad`, rapatriement profils LDAP
 - [ ] `bootstrap-update.md` — `scripts/update.sh`, migrations, seed auto, cache reset

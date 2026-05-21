@@ -4,13 +4,17 @@ namespace App\Services;
 
 use App\Config\SambaEduConfig;
 use App\Constants\Errors\AuthenticationErrors;
+use App\Models\User as UserModel;
 use App\Repositories\UserRepository;
+use App\Services\Concerns\ResolvesPwdLastSet;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\Request;
 
 class AuthenticationService
 {
+    use ResolvesPwdLastSet;
+
     private ?array $configCache = null;
     private UserRepository $userRepository;
     private SambaEduConfig $sambaEduConfig;
@@ -243,12 +247,12 @@ class AuthenticationService
 
     /**
      * Vérifie la validité du mot de passe d'un utilisateur
-     * 
+     *
      * Utilise LdapRecord pour authentifier l'utilisateur via bind LDAP
-     * 
+     *
      * @param string $login Login de l'utilisateur
      * @param string $password Mot de passe à vérifier
-     * @return int 
+     * @return int
      *   - 1 : Authentification réussie
      *   - -1 : Authentification réussie mais changement de mot de passe obligatoire (pwdlastset == 0)
      *   - -2 : Authentification échouée mais changement de mot de passe obligatoire (pwdlastset == 0)
@@ -268,42 +272,9 @@ class AuthenticationService
                 return 0;
             }
 
-            // Récupérer pwdlastset
-            // LdapRecord peut retourner un objet Carbon pour les dates LDAP
-            // Utiliser getFirstAttribute() pour obtenir la valeur brute avant conversion
-            try {
-                $pwdLastSetRaw = $ldapUser->getFirstAttribute('pwdlastset');
-
-                // Si c'est null ou vide, considérer comme 0
-                if ($pwdLastSetRaw === null || $pwdLastSetRaw === '') {
-                    $pwdLastSet = 0;
-                } elseif ($pwdLastSetRaw instanceof \Carbon\Carbon) {
-                    // LdapRecord peut convertir automatiquement en Carbon
-                    $pwdLastSet = $pwdLastSetRaw->getTimestamp() > 0 ? 1 : 0;
-                } else {
-                    // Convertir en int directement depuis la valeur brute
-                    $pwdLastSet = (int) $pwdLastSetRaw;
-                }
-            } catch (\Exception $e) {
-                // En cas d'erreur, essayer avec getAttribute() et gérer Carbon
-                $pwdLastSet = $ldapUser->getAttribute('pwdlastset');
-
-                if ($pwdLastSet instanceof \Carbon\Carbon) {
-                    // Si c'est un Carbon valide, ce n'est pas 0 (changement obligatoire)
-                    // pwdlastset = 0 signifie "changement obligatoire au prochain login"
-                    // Un Carbon valide signifie qu'une date est définie, donc ce n'est pas 0
-                    $pwdLastSet = 1; // Pas 0, donc pas de changement obligatoire
-                } elseif (is_array($pwdLastSet)) {
-                    $pwdLastSet = $pwdLastSet[0] ?? 0;
-                    if ($pwdLastSet instanceof \Carbon\Carbon) {
-                        $pwdLastSet = 1; // Pas 0, donc pas de changement obligatoire
-                    } else {
-                        $pwdLastSet = (int) $pwdLastSet;
-                    }
-                } else {
-                    $pwdLastSet = (int) $pwdLastSet;
-                }
-            }
+            // Récupérer pwdlastset via le trait ResolvesPwdLastSet (D7 — story 14.4)
+            $pwdLastSetRaw = $ldapUser->getFirstAttribute('pwdlastset');
+            $pwdLastSet = $this->resolvePwdLastSetRaw($pwdLastSetRaw);
 
             // Utiliser directement le DN pour le bind, comme le fait le legacy
             // Le legacy utilise toujours $user['dn'] pour le bind dans user_valid_passwd()
@@ -325,6 +296,8 @@ class AuthenticationService
                     $ldapUser->save();
 
                     if ($authenticated) {
+                        // Auth OK avec mdp par défaut → password_changed_at reste NULL (D7)
+                        $this->persistPasswordChangedAt($login, 0);
                         return -1; // Authentification réussie mais changement obligatoire
                     } else {
                         return -2; // Authentification échouée mais changement obligatoire
@@ -351,7 +324,12 @@ class AuthenticationService
                 // Cas normal : authentification simple
                 $authenticated = $this->attemptBind($bindUsername, $password);
 
-                return $authenticated ? 1 : 0;
+                if ($authenticated) {
+                    $this->persistPasswordChangedAt($login, $pwdLastSet);
+                    return 1;
+                }
+
+                return 0;
             }
 
         } catch (\Exception $e) {
@@ -360,6 +338,40 @@ class AuthenticationService
                 'error' => $e->getMessage(),
             ]);
             return 0;
+        }
+    }
+
+    /**
+     * Persiste password_changed_at au moment de l'authentification.
+     *
+     * Enveloppé dans try/catch \Throwable pour ne JAMAIS faire échouer le login (D5).
+     * Si le User Eloquent n'existe pas encore (premier login avant ensureEloquentUser),
+     * l'update retourne 0 — on log en debug et on continue.
+     *
+     * Story 14.4 — AC2 / Tâche 3.2
+     */
+    private function persistPasswordChangedAt(string $login, int $pwdLastSet): void
+    {
+        try {
+            $value = self::pwdLastSetToCarbon($pwdLastSet);
+
+            $affected = UserModel::where('login', $login)->update(['password_changed_at' => $value]);
+
+            if ($affected === 0) {
+                Log::debug('AuthService: aucune row SQL affectée pour password_changed_at (premier login avant ensureEloquentUser)', [
+                    'login' => $login,
+                ]);
+            } else {
+                Log::debug('AuthService: password_changed_at synchronisé', [
+                    'login' => $login,
+                    'value' => $value?->toIso8601String(),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('AuthService: échec synchro password_changed_at (login non bloqué)', [
+                'login' => $login,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

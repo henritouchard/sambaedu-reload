@@ -54,6 +54,59 @@ class UsersIndexPageNoShelloutTest extends TestCase
         parent::tearDown();
     }
 
+    /**
+     * Story 14.4 — AC9 / Tâche 6.2 :
+     * Les filtres audit (quotaOverflow + passwordDefault) ne déclenchent
+     * aucun shellout via la façade Process (ni xfs_quota, ni smbclient, ni autre).
+     */
+    public function test_audit_filters_dont_trigger_shellouts(): void
+    {
+        User::query()->create([
+            'login' => 'audit-test-user',
+            'firstname' => 'Audit',
+            'lastname' => 'Test',
+            'role' => 'eleve',
+            'is_active' => true,
+            'password_changed_at' => null,
+            'quota_snapshot' => [
+                'home' => [
+                    'used_kb' => 95000,
+                    'soft_kb' => 100000,
+                    'hard_kb' => 120000,
+                    'used_mb' => 93,
+                    'soft_mb' => 98,
+                    'hard_mb' => 117,
+                    'percent' => 95,
+                    'is_over_soft' => true,
+                    'is_over_hard' => false,
+                    'grace_days' => null,
+                ],
+                'sambaedu' => [
+                    'used_kb' => 100,
+                    'soft_kb' => 100000,
+                    'hard_kb' => 120000,
+                    'used_mb' => 0,
+                    'soft_mb' => 98,
+                    'hard_mb' => 117,
+                    'percent' => 0,
+                    'is_over_soft' => false,
+                    'is_over_hard' => false,
+                    'grace_days' => null,
+                ],
+                'captured_at' => '2026-04-23T03:00:00+02:00',
+            ],
+        ]);
+
+        Process::fake();
+
+        Livewire::test('pages::users.index')
+            ->set('quotaOverflow', true)
+            ->set('passwordDefault', true);
+
+        // Aucun shellout via la façade Process ne doit avoir été exécuté.
+        Process::assertNothingRan();
+    }
+
     public function test_no_xfs_shellout_is_triggered_when_rendering_users_listing(): void
     {
         // Seed 25 users (plus d'une page) avec un snapshot varié.
