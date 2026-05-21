@@ -351,4 +351,210 @@ class ApplicationScriptsAssemblerTest extends TestCase
             'machine' => ['cn' => ''],
         ]));
     }
+
+    // ───────────────────────── Story 17.2 — Tests whitelist étendue ───────────
+
+    /**
+     * AC1.3 — Les 8 nouvelles clés whitelist sont substituées via config().
+     */
+    #[Test]
+    public function it_substitutes_all_8_new_whitelist_keys_via_config(): void
+    {
+        // Positionne les 8 nouvelles clés en config.
+        config(['sambaedu.windows.adminse_name' => 'ADMINSE_TEST']);
+        config(['sambaedu.dhcp_masque' => '255.255.255.0']);
+        config(['sambaedu.dhcp_reseau' => '192.168.1.0']);
+        config(['sambaedu.glpi_url' => 'https://glpi.example.com']);
+        config(['sambaedu.no_internet' => 'pasInternet']);
+        config(['sambaedu.se4ad_ip' => '192.168.122.60']);
+        config(['sambaedu.se4fs_ip' => '192.168.1.10']);
+        config(['sambaedu.se4install_name' => 'se4install']);
+
+        $assembler = new ApplicationScriptsAssembler();
+        // Réinitialise le cache whitelist de l'instance pour prendre les config() à jour.
+        $this->resetAssemblerCache($assembler);
+
+        $template = '###_ADMINSE_NAME_###|###_DHCP_MASQUE_###|###_DHCP_RESEAU_###'
+            . '|###_GLPI_URL_###|###_NO_INTERNET_###|###_SE4AD_IP_###'
+            . '|###_SE4FS_IP_###|###_SE4INSTALL_NAME_###';
+
+        $result = $assembler->applySubstitutions($template);
+
+        self::assertSame(
+            'ADMINSE_TEST|255.255.255.0|192.168.1.0|https://glpi.example.com|pasInternet|192.168.122.60|192.168.1.10|se4install',
+            $result,
+        );
+    }
+
+    /**
+     * AC1.3 chemin (b) — fallback env quand config retourne null/vide.
+     */
+    #[Test]
+    public function it_falls_back_to_env_when_config_null(): void
+    {
+        // Efface la valeur config pour forcer le fallback env.
+        config(['sambaedu.glpi_url' => null]);
+        config(['sambaedu.no_internet' => null]);
+        config(['sambaedu.dhcp_reseau' => null]);
+        config(['sambaedu.dhcp_masque' => null]);
+
+        // Reset le repository statique de l'Env Laravel pour qu'il relise getenv()
+        // sans interférence avec le cache immutable (fix review 17.2 #4).
+        \Illuminate\Support\Env::enablePutenv();
+
+        putenv('SAMBAEDU_GLPI_URL=https://glpi-env.example.com');
+        putenv('SAMBAEDU_NO_INTERNET=pasInternetEnv');
+        putenv('SAMBAEDU_DHCP_RESEAU=10.0.0.0');
+        putenv('SAMBAEDU_DHCP_MASQUE=255.0.0.0');
+
+        $assembler = new ApplicationScriptsAssembler();
+        $this->resetAssemblerCache($assembler);
+
+        $template = '###_GLPI_URL_###|###_NO_INTERNET_###|###_DHCP_RESEAU_###|###_DHCP_MASQUE_###';
+        $result = $assembler->applySubstitutions($template);
+
+        // Nettoie les env après test et reset le repository.
+        putenv('SAMBAEDU_GLPI_URL');
+        putenv('SAMBAEDU_NO_INTERNET');
+        putenv('SAMBAEDU_DHCP_RESEAU');
+        putenv('SAMBAEDU_DHCP_MASQUE');
+        \Illuminate\Support\Env::enablePutenv(); // reset repository → prochain test repart propre
+
+        self::assertSame(
+            'https://glpi-env.example.com|pasInternetEnv|10.0.0.0|255.0.0.0',
+            $result,
+        );
+    }
+
+    /**
+     * AC1.3 chemin (c) — default fallback quand config ET env sont null.
+     */
+    #[Test]
+    public function it_falls_back_to_default_when_config_and_env_null(): void
+    {
+        // Force config null pour les clés avec default.
+        config(['sambaedu.windows.adminse_name' => null]);
+        config(['sambaedu.dhcp_reseau' => null]);
+        config(['sambaedu.glpi_url' => null]);
+        config(['sambaedu.no_internet' => null]);
+        config(['sambaedu.dhcp_masque' => null]);
+
+        // Reset le repository + s'assure qu'aucun putenv résiduel ne masque le défaut.
+        \Illuminate\Support\Env::enablePutenv();
+        putenv('SAMBAEDU_ADMINSE_NAME');
+        putenv('SAMBAEDU_DHCP_RESEAU');
+        putenv('SAMBAEDU_GLPI_URL');
+        putenv('SAMBAEDU_NO_INTERNET');
+        putenv('SAMBAEDU_DHCP_MASQUE');
+
+        $assembler = new ApplicationScriptsAssembler();
+        $this->resetAssemblerCache($assembler);
+
+        // ADMINSE_NAME → default 'adminse', DHCP_RESEAU → default '', GLPI_URL → default '', NO_INTERNET → default '', DHCP_MASQUE → default ''.
+        $template = '###_ADMINSE_NAME_###|###_DHCP_RESEAU_###';
+        $result = $assembler->applySubstitutions($template);
+
+        self::assertSame('adminse|', $result);
+    }
+
+    /**
+     * AC4.1 — Un placeholder hors whitelist reste inchangé + warning log.
+     */
+    #[Test]
+    public function it_keeps_unknown_placeholders_unchanged_and_logs_warning(): void
+    {
+        \Illuminate\Support\Facades\Log::shouldReceive('channel')
+            ->with('daily')
+            ->once()
+            ->andReturnSelf();
+        \Illuminate\Support\Facades\Log::shouldReceive('warning')
+            ->once()
+            ->withArgs(function ($msg, $ctx) {
+                return str_contains($msg, 'unwhitelisted substitution keys ignored')
+                    && in_array('INVENTE', $ctx['keys'] ?? [], true);
+            });
+
+        $assembler = new ApplicationScriptsAssembler();
+        $this->resetAssemblerCache($assembler);
+
+        $result = $assembler->applySubstitutions('avant###_INVENTE_###apres');
+
+        self::assertSame('avant###_INVENTE_###apres', $result);
+    }
+
+    /**
+     * AC4.2 — Les 11 placeholders connus n'émettent AUCUN warning log.
+     */
+    #[Test]
+    public function it_does_not_warn_on_the_11_known_placeholders(): void
+    {
+        // Configure toutes les 11 clés connues.
+        config([
+            'sambaedu.se4fs_name' => 'se4fs.local',
+            'sambaedu.domain' => 'etablissement.fr',
+            'sambaedu.uai' => 'UAI0001',
+            'sambaedu.windows.adminse_name' => 'adminse',
+            'sambaedu.dhcp_masque' => '255.255.0.0',
+            'sambaedu.dhcp_reseau' => '192.168.0.0',
+            'sambaedu.glpi_url' => 'https://glpi.local',
+            'sambaedu.no_internet' => '',
+            'sambaedu.se4ad_ip' => '192.168.0.1',
+            'sambaedu.se4fs_ip' => '192.168.0.2',
+            'sambaedu.se4install_name' => 'se4install',
+        ]);
+
+        // S'assure que warning n'est JAMAIS appelé.
+        \Illuminate\Support\Facades\Log::shouldReceive('channel')->andReturnSelf()->byDefault();
+        \Illuminate\Support\Facades\Log::shouldReceive('warning')->never();
+
+        $assembler = new ApplicationScriptsAssembler();
+        $this->resetAssemblerCache($assembler);
+
+        $template = '###_SE4FS_NAME_###|###_DOMAIN_###|###_UAI_###'
+            . '|###_ADMINSE_NAME_###|###_DHCP_MASQUE_###|###_DHCP_RESEAU_###'
+            . '|###_GLPI_URL_###|###_NO_INTERNET_###|###_SE4AD_IP_###'
+            . '|###_SE4FS_IP_###|###_SE4INSTALL_NAME_###';
+
+        $result = $assembler->applySubstitutions($template);
+
+        // Vérifie également que les placeholders sont bien substitués (pas de ###_ résiduel)
+        self::assertStringNotContainsString('###_', $result, 'Tous les 11 placeholders connus doivent être substitués.');
+    }
+
+    /**
+     * Fix 17.2 #5 — `localAdminScripts` retourne `script: []` (tableau vide) quand
+     * l'utilisateur n'a pas les droits, et non `['']` qui produirait un séparateur vide
+     * dans `addScripts()` (bug latent 16.7 — parité legacy).
+     *
+     * Distinction critique : `implode('', [''])` === '' (masqué par le test précédent),
+     * mais `addScripts()` itère sur le tableau et pourrait insérer un séparateur parasite
+     * si l'array n'est pas strictement vide.
+     */
+    #[Test]
+    public function it_returns_empty_script_array_when_user_has_no_admin_rights(): void
+    {
+        $this->makeUser('noright');
+
+        $perm = Mockery::mock(PermissionService::class);
+        $perm->shouldReceive('canOnWorkstationGroup')->andReturn(false)->byDefault();
+
+        $assembler = new ApplicationScriptsAssembler($perm);
+        $info = $this->infoLogonWindows('noright', 'pc-noright');
+
+        $result = $this->invokeLocalAdmin($assembler, $info);
+
+        self::assertSame([], $result['script'],
+            'localAdminScripts doit retourner [] (pas [\'\']), pour que addScripts() skip le séparateur (fix bug 16.7 latent, 17.2).'
+        );
+    }
+
+    /**
+     * Réinitialise le cache de whitelist interne de l'Assembler via réflexion.
+     * Nécessaire car `substitutionsCache` est mémoïsé (null → chargé une fois).
+     */
+    private function resetAssemblerCache(ApplicationScriptsAssembler $assembler): void
+    {
+        $ref = new \ReflectionProperty($assembler, 'substitutionsCache');
+        $ref->setValue($assembler, null);
+    }
 }

@@ -14,6 +14,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Story 17.2 — Wrapping scripts applications (logging centralisé 17.5)
+    |--------------------------------------------------------------------------
+    | Quand true, chaque interpréteur cmd/bash est wrappé avec WrapperScriptRenderer
+    | (prefix setup + suffix POST vers /api/v1/script-execution-logs).
+    | Default false → comportement iso-legacy.
+    */
+    'scripts' => [
+        'logging' => [
+            'enabled' => (bool) env('SAMBAEDU_SCRIPTS_LOGGING_ENABLED', false),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Legacy Catchall
     |--------------------------------------------------------------------------
     | Chemin absolu vers le répertoire legacy PHP SambAEdu.
@@ -178,6 +192,31 @@ return [
     'ipxe_url'          => env('IPXE_URL', ''),
     'se4install_name'   => env('SE4INSTALL_NAME', ''),
     'se4install_passwd' => env('SE4INSTALL_PASSWD', ''),
+
+    // Story 17.2 — AC1.2 — Variables nouvelles consommées par les scripts GPO
+    // applications. Iso-legacy `applications.inc.php` → `write_param()`.
+
+    // URL du serveur GLPI Agent — consommée par `glpi/startup.linux`.
+    // Iso-legacy `$config['glpi_url']` (sambaedu.conf). Vide par défaut :
+    // le script GLPI sera généré sans URL valide si non configuré.
+    'glpi_url' => env('SAMBAEDU_GLPI_URL', ''),
+
+    // Nom du groupe AD « pas d'internet » — consommée par
+    // `firewall/logon-system.windows` + `firewall/startup.windows`.
+    // Iso-legacy `$config['no_internet']` (`user.interface.inc.php:409-410`).
+    // String vide = pas de groupe configuré → condition firewall inopérante.
+    'no_internet' => env('SAMBAEDU_NO_INTERNET', ''),
+
+    // Adresse réseau DHCP (forme simple) — consommée par
+    // `firewall/startup.windows`. Iso-legacy `$config['dhcp_reseau']`.
+    // Note: cas multi-VLAN (`dhcp_reseau_0`, `dhcp_reseau_1`) non géré ici
+    // (cf. décision Q-2 2026-05-21). Ticket Phase 3 si terrain remonte.
+    'dhcp_reseau' => env('SAMBAEDU_DHCP_RESEAU', ''),
+
+    // Masque sous-réseau DHCP (forme simple) — consommée par
+    // `firewall/startup.windows`. Iso-legacy `$config['dhcp_masque']`.
+    // Symétrique à `dhcp_reseau` — cf. Q-2 pour multi-VLAN.
+    'dhcp_masque' => env('SAMBAEDU_DHCP_MASQUE', ''),
 
     /*
     |--------------------------------------------------------------------------
@@ -484,6 +523,82 @@ return [
                     'CLOUD_PERSO_NAME' => [
                         'config' => 'sambaedu.cloud_perso_name',
                         'default' => 'Mes Documents',
+                    ],
+
+                    // ── Story 17.2 — 8 nouvelles clés (audit Section B) ──────────
+
+                    // Nom de l'admin local Windows créé sur chaque poste installé.
+                    // Iso-legacy `applications.inc.php` → `$config['adminse_name']`.
+                    // Consommé par : `folders/clean_profiles` (risque bloquant :
+                    // suppression dossier admin local si vide — cf. audit Section A).
+                    // Default 'adminse' évite ce risque en absence de configuration.
+                    'ADMINSE_NAME' => [
+                        'config' => 'sambaedu.windows.adminse_name',
+                        'env' => 'SAMBAEDU_ADMINSE_NAME',
+                        'default' => 'adminse',
+                    ],
+
+                    // Masque sous-réseau DHCP (forme simple).
+                    // Iso-legacy `$config['dhcp_masque']` (sambaedu.conf).
+                    // Consommé par : `firewall/startup.windows` (règles netsh).
+                    // Décision Q-2 : forme simple (pas multi-VLAN indexé).
+                    'DHCP_MASQUE' => [
+                        'config' => 'sambaedu.dhcp_masque',
+                        'env' => 'SAMBAEDU_DHCP_MASQUE',
+                        'default' => '',
+                    ],
+
+                    // Adresse réseau DHCP (forme simple).
+                    // Iso-legacy `$config['dhcp_reseau']` (sambaedu.conf).
+                    // Consommé par : `firewall/startup.windows` (règles netsh).
+                    // Décision Q-2 : forme simple (pas multi-VLAN indexé).
+                    'DHCP_RESEAU' => [
+                        'config' => 'sambaedu.dhcp_reseau',
+                        'env' => 'SAMBAEDU_DHCP_RESEAU',
+                        'default' => '',
+                    ],
+
+                    // URL du serveur GLPI Agent.
+                    // Iso-legacy `$config['glpi_url']` (sambaedu.conf).
+                    // Consommé par : `glpi/startup.linux` (config GLPI Agent invalide si vide).
+                    'GLPI_URL' => [
+                        'config' => 'sambaedu.glpi_url',
+                        'env' => 'SAMBAEDU_GLPI_URL',
+                        'default' => '',
+                    ],
+
+                    // Nom du groupe AD « pas d'internet ».
+                    // Iso-legacy `$config['no_internet']` (`user.interface.inc.php:409-410`).
+                    // Consommé par : `firewall/startup.windows`, `firewall/logon-system.windows`.
+                    // String vide → condition `IF NOT []==[]` → inopérante (iso-legacy si non configuré).
+                    'NO_INTERNET' => [
+                        'config' => 'sambaedu.no_internet',
+                        'env' => 'SAMBAEDU_NO_INTERNET',
+                        'default' => '',
+                    ],
+
+                    // IP du serveur AD Samba (SE4AD).
+                    // Iso-legacy `$config['se4ad_ip']` (sambaedu.conf).
+                    // Consommé par : `firewall/startup.windows` (règles netsh).
+                    'SE4AD_IP' => [
+                        'config' => 'sambaedu.se4ad_ip',
+                        'env' => 'SE4AD_IP',
+                    ],
+
+                    // IP du serveur SE4FS (serveur de fichiers).
+                    // Iso-legacy `$config['se4fs_ip']` (sambaedu.conf).
+                    // Consommé par : `firewall/startup.windows` (règles netsh).
+                    'SE4FS_IP' => [
+                        'config' => 'sambaedu.se4fs_ip',
+                        'env' => 'SE4FS_IP',
+                    ],
+
+                    // Nom du serveur d'installation SE4 (partage Wine/Wallpaper/etc).
+                    // Iso-legacy `$config['se4install_name']` (sambaedu.conf).
+                    // Consommé par : `wallpaper/logon.windows`, `wine/startup.linux`.
+                    'SE4INSTALL_NAME' => [
+                        'config' => 'sambaedu.se4install_name',
+                        'env' => 'SE4INSTALL_NAME',
                     ],
                 ],
             ],

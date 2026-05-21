@@ -7,6 +7,10 @@ namespace App\Gpo\Services;
 use App\Models\User;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
+use App\ScriptsOs\Enums\ScriptExecutionAction;
+use App\ScriptsOs\Enums\ScriptExecutionOs;
+use App\ScriptsOs\Enums\ScriptExecutionSource;
+use App\ScriptsOs\Services\WrapperScriptRenderer;
 use App\Services\PermissionService;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -70,9 +74,16 @@ class ApplicationScriptsAssembler
      * legacy `have_right`/`have_delegation`. Optionnel pour rétro-compat des
      * appelants existants qui construisaient l'Assembler sans DI — fallback
      * sur le container Laravel via {@see resolvePermissionService()}.
+     *
+     * Story 17.2 — D5 : injection optionnelle du `WrapperScriptRenderer` pour
+     * l'enveloppement opt-in des scripts `cmd`/`bash` (contrôlé par le flag
+     * `config('sambaedu.scripts.logging.enabled', false)`). Argument optionnel
+     * null pour rétro-compat renforcée — le service est résolu via le container
+     * Laravel lors de l'activation du flag (fallback `app(WrapperScriptRenderer::class)`).
      */
     public function __construct(
         private readonly ?PermissionService $permissionService = null,
+        private readonly ?WrapperScriptRenderer $wrapper = null,
     ) {}
 
     /**
@@ -180,6 +191,11 @@ class ApplicationScriptsAssembler
             $merged = array_merge($head, $body, $foot);
             $texts[$interp] = $this->applySubstitutions(implode('', $merged));
         }
+
+        // Story 17.2 — D5 : enveloppement opt-in `cmd`/`bash` via WrapperScriptRenderer.
+        // Activé uniquement si `config('sambaedu.scripts.logging.enabled', false)` est true.
+        // Flag désactivé par défaut → parité bytes iso-legacy préservée (AC3.2).
+        $texts = $this->wrapInterpreters($texts, $info);
 
         return $texts;
     }
@@ -718,7 +734,8 @@ class ApplicationScriptsAssembler
             }
         }
 
-        return ['interpreter' => $interpreter, 'script' => [$script]];
+        // 17.2: return [] not [''] so addScripts() skips the separator (legacy parity for users without admin rights)
+        return ['interpreter' => $interpreter, 'script' => $script !== '' ? [$script] : []];
     }
 
     /**
@@ -862,6 +879,77 @@ class ApplicationScriptsAssembler
         } catch (Throwable) {
             return null;
         }
+    }
+
+    // ────────────────────── Story 17.2 — Wrapper opt-in ──────────────────────
+
+    /**
+     * Story 17.2 — D5 / AC3.1.
+     *
+     * Enveloppe les interpréteurs `cmd` et `bash` avec `WrapperScriptRenderer`
+     * si le flag `sambaedu.scripts.logging.enabled` est vrai.
+     *
+     * Les interpréteurs `powershell`, `apt`, `server` ne sont PAS wrappés
+     * (D5 — justification : wrapping uniquement pour interpréteurs de scripts
+     * application ; `powershell` est pour scripts de gestion système,
+     * `apt`/`server` sont des listes de paquets / commandes serveur).
+     *
+     * @param  array<string,string>  $texts  Indexé par interpréteur.
+     * @param  array<string,mixed>   $info   Contexte CacheAppContextWriter.
+     * @return array<string,string>
+     */
+    private function wrapInterpreters(array $texts, array $info): array
+    {
+        if (! config('sambaedu.scripts.logging.enabled', false)) {
+            return $texts;
+        }
+
+        $action = $this->mapAction($info['action'] ?? 'startup');
+        $renderer = $this->wrapper ?? app(WrapperScriptRenderer::class);
+
+        // 17.2 fix #1 : $os est dérivé de l'interpréteur, pas de $info['os'].
+        // headerScripts() populate 'bash' même quand info.os='windows' (shebang
+        // common) → wrapper ne doit PAS envelopper bash avec un wrapper Windows.
+        $osMap = [
+            'cmd'  => ScriptExecutionOs::WINDOWS,
+            'bash' => ScriptExecutionOs::LINUX,
+        ];
+
+        foreach ($osMap as $interp => $os) {
+            if (isset($texts[$interp]) && $texts[$interp] !== '') {
+                $texts[$interp] = $renderer->wrap(
+                    $texts[$interp],
+                    $action,
+                    $os,
+                    null,
+                    ScriptExecutionSource::GPO_APPLICATIONS,
+                );
+            }
+        }
+
+        return $texts;
+    }
+
+    /**
+     * Story 17.2 — D5.
+     *
+     * Projette les actions legacy (`logon-system`, `logoff-system`, `wpkg`)
+     * non représentées dans `ScriptExecutionAction` vers `STARTUP`.
+     *
+     * Décision SM documentée : `logon-system` / `logoff-system` / `wpkg`
+     * s'exécutent en contexte SYSTEM (avant logon utilisateur) → sémantique
+     * `STARTUP` cohérente. Si Epic 17 étend l'enum, refactor minimal de
+     * cette méthode uniquement.
+     */
+    private function mapAction(string $action): ScriptExecutionAction
+    {
+        return match ($action) {
+            'logon' => ScriptExecutionAction::LOGON,
+            'logoff' => ScriptExecutionAction::LOGOFF,
+            'shutdown' => ScriptExecutionAction::SHUTDOWN,
+            'startup', 'logon-system', 'logoff-system', 'wpkg' => ScriptExecutionAction::STARTUP,
+            default => ScriptExecutionAction::STARTUP,
+        };
     }
 
     /**
