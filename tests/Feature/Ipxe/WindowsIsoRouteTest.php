@@ -94,6 +94,14 @@ class WindowsIsoRouteTest extends TestCase
     {
         $this->actingAs($this->makeAdmin());
 
+        // sambaedu.auth lit $_SESSION (non touché par actingAs) et RequireAdminRights
+        // lit `sambaedu_user` posé par SambaEduAuth — bypass des deux pour atteindre
+        // le `can:server.admin` (iso-pattern WinePageTest, Story 16.9).
+        $this->withoutMiddleware([
+            \App\Http\Middleware\Auth\SambaEduAuth::class,
+            \App\Http\Middleware\RequireAdminRights::class,
+        ]);
+
         $response = $this->get('/admin/ipxe/iso-windows');
 
         $response->assertOk();

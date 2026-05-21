@@ -983,7 +983,9 @@ class IpxeNamespaceTest extends TestCase
                 }
             };
 
-            (new NodeTraverser())->addVisitor($collector)->traverse($ast);
+            $traverser = new NodeTraverser();
+            $traverser->addVisitor($collector);
+            $traverser->traverse($ast);
 
             foreach ($collector->uses as $imported) {
                 if (in_array($imported, $forbidden, true)) {

@@ -134,9 +134,9 @@ class WindowsIsoWindowsLivewireTest extends TestCase
     public function it_aborts_with_403_when_user_lacks_server_admin_permission(): void
     {
         $this->actingAs($this->makeTeacher());
-        $this->expectExceptionMessage('server.admin');
 
-        Livewire::test('pages::admin.ipxe.iso-windows.index');
+        Livewire::test('pages::admin.ipxe.iso-windows.index')
+            ->assertStatus(403);
     }
 
     #[Test]
@@ -344,9 +344,8 @@ class WindowsIsoWindowsLivewireTest extends TestCase
     public function it_aborts_with_403_for_anonymous_user(): void
     {
         // PAS de `actingAs()` — user anonyme.
-        $this->expectExceptionMessage('server.admin');
-
-        Livewire::test('pages::admin.ipxe.iso-windows.index');
+        Livewire::test('pages::admin.ipxe.iso-windows.index')
+            ->assertStatus(403);
     }
 
     /**
