@@ -232,10 +232,10 @@ class WindowsInstallBatBuilderTest extends TestCase
             'ipxe.log.channel' => 'ipxe',
         ]);
 
+        // Push un TestHandler Monolog sur le logger existant du channel `ipxe`.
         $handler = new \Monolog\Handler\TestHandler();
-        $monolog = new \Monolog\Logger('ipxe-test', [$handler]);
-        \Illuminate\Support\Facades\Log::extend('ipxe', static fn () => new \Illuminate\Log\Logger($monolog));
-        \Illuminate\Support\Facades\Log::forgetChannel('ipxe');
+        $logger = \Illuminate\Support\Facades\Log::channel('ipxe');
+        $logger->getLogger()->pushHandler($handler);
 
         $ws = $this->makeWorkstation();
         $bash = $this->service->build(

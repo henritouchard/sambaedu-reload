@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Ipxe\Http\Requests;
 
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Http\Response;
 use Illuminate\Validation\Rule;
 
 /**
@@ -47,5 +50,21 @@ class IpxeWindowsUnattendRequest extends FormRequest
             'disk' => ['nullable'],
             'perso' => ['nullable'],
         ];
+    }
+
+    /**
+     * Override le comportement Laravel par défaut (redirect 302 sur route web)
+     * pour renvoyer 422 text/plain — l'endpoint sert un text/plain consommé
+     * par WinPE/iPXE, pas du HTML.
+     */
+    protected function failedValidation(Validator $validator): void
+    {
+        throw new HttpResponseException(
+            new Response('', Response::HTTP_UNPROCESSABLE_ENTITY, [
+                'Content-Type' => 'text/plain; charset=utf-8',
+                'Cache-Control' => 'no-store',
+                'X-Robots-Tag' => 'noindex',
+            ]),
+        );
     }
 }

@@ -110,7 +110,11 @@ class WindowsPostInstallTrackerTest extends TestCase
     #[Test]
     public function it_records_unknown_workstation_with_log_only(): void
     {
-        Log::spy();
+        // `Log::spy()` ne mock pas les channels via `Log::channel(...)` — on
+        // stub explicitement le channel ipxe pour retourner self afin que
+        // `->warning(...)` soit chainable.
+        Log::shouldReceive('channel')->andReturnSelf();
+        Log::shouldReceive('warning');
 
         $this->tracker->recordUnknown(
             '12345678-1234-1234-1234-aaaaaaaaaaaa',
@@ -121,8 +125,8 @@ class WindowsPostInstallTrackerTest extends TestCase
         // Aucun MachineBootLog inséré.
         self::assertSame(0, MachineBootLog::count());
 
-        // Log warning émis.
-        Log::shouldHaveReceived('channel')->with('stack');
+        Log::shouldHaveReceived('channel')->atLeast()->once();
+        Log::shouldHaveReceived('warning')->atLeast()->once();
     }
 
     #[Test]

@@ -51,7 +51,8 @@ class IpxeLinuxAutorunEndpointTest extends TestCase
     #[Test]
     public function it_sanitizes_shell_injection_in_name(): void
     {
-        $response = $this->get('/ipxe/linux/autorun?name=pc; rm -rf /');
+        // URL-encode l'injection (Symfony rejette les chars de contrôle bruts).
+        $response = $this->get('/ipxe/linux/autorun?name=' . urlencode('pc; rm -rf /'));
 
         $response->assertStatus(200);
         $body = (string) $response->getContent();

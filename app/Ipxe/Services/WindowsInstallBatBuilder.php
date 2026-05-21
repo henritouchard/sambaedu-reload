@@ -70,8 +70,9 @@ final class WindowsInstallBatBuilder
         $domain = WindowsXmlPlaceholders::sanitizeShellArg(
             (string) config('sambaedu.domain', ''),
         );
+        // Convention SambaEdu : hostnames toujours lowercase.
         $hostname = WindowsXmlPlaceholders::sanitizeShellArg(
-            IpxeHostnameSanitizer::sanitizeForIpxeOutput((string) ($workstation->name ?? '')),
+            strtolower(IpxeHostnameSanitizer::sanitizeForIpxeOutput((string) ($workstation->name ?? ''))),
         );
         $versionStr = WindowsXmlPlaceholders::sanitizeShellArg($version->value);
 

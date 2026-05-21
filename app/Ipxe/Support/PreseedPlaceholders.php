@@ -115,7 +115,11 @@ final class PreseedPlaceholders
         $str = preg_replace('/[\r\n]+/', ' ', $str) ?? $str;
 
         // Replace chars non ASCII 0x20-0x7E + TAB par `?`.
-        $str = preg_replace('/[^\x09\x20-\x7E]/', '?', $str) ?? $str;
+        // Flag `/u` : un char Unicode multi-octets (ex: `é` UTF-8 = 0xC3 0xA9)
+        // est remplacé par UN seul `?` au lieu de 2 (un par byte). Fallback
+        // bytewise si UTF-8 invalide (preg_replace retourne null).
+        $clean = preg_replace('/[^\x09\x20-\x7E]/u', '?', $str);
+        $str = $clean ?? (preg_replace('/[^\x09\x20-\x7E]/', '?', $str) ?? $str);
 
         return $str;
     }

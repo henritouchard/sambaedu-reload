@@ -115,7 +115,8 @@ class IpxeServiceInstallationWindowsTest extends TestCase
         $response = $this->service->handleInstallationWindowsMenu($request);
 
         self::assertSame('text/plain; charset=utf-8', $response->headers->get('Content-Type'));
-        self::assertSame('no-store', $response->headers->get('Cache-Control'));
+        // Tolérant : Laravel middleware peut ajouter `, private` au Cache-Control.
+        self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
         self::assertSame('noindex', $response->headers->get('X-Robots-Tag'));
     }
 

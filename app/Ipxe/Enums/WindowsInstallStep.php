@@ -38,8 +38,16 @@ enum WindowsInstallStep: string
      */
     public static function fromString(string $raw): ?self
     {
-        $normalized = strtolower(trim($raw));
+        // Post-review : anti-injection (cf. WindowsVersion::fromString).
+        // Strip whitespace SAFE → check chars printables → tryFrom.
+        $stripped = preg_replace('/^\s+|\s+$/u', '', $raw);
+        if ($stripped === null) {
+            return null;
+        }
+        if (preg_match('/[^\x20-\x7E]/', $stripped) === 1) {
+            return null;
+        }
 
-        return self::tryFrom($normalized);
+        return self::tryFrom(strtolower($stripped));
     }
 }

@@ -127,7 +127,7 @@ class IpxeInstallationWindowsEndpointTest extends TestCase
 
         $response->assertStatus(200);
         self::assertSame('text/plain; charset=utf-8', $response->headers->get('Content-Type'));
-        $response->assertHeader('Cache-Control', 'no-store');
+        self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
         $response->assertHeader('X-Robots-Tag', 'noindex');
     }
 

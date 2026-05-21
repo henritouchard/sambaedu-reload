@@ -305,14 +305,19 @@ final class WindowsUnattendBuilder
 
         // 5. ComputerName partout (offlineServicing + specialize + oobeSystem).
         $rawHostname = (string) ($workstation->name ?? '');
-        $hostname = IpxeHostnameSanitizer::sanitizeForIpxeOutput($rawHostname);
+        // Convention SambaEdu : hostnames toujours lowercase (cohérent avec
+        // MachineBootLog.machine_name, AD computer CN lowercase, etc.).
+        $hostname = strtolower(IpxeHostnameSanitizer::sanitizeForIpxeOutput($rawHostname));
         if ($hostname === '') {
             $hostname = '*';
         }
         $computerNodes = $xpath->query('/ns:unattend/ns:settings/ns:component/ns:ComputerName');
         if ($computerNodes !== false) {
             foreach ($computerNodes as $node) {
-                $node->nodeValue = $hostname;
+                // Post-review #3 : `nodeValue =` attend du XML escapé.
+                // `sanitizeForIpxeOutput()` autorise `&` (ASCII printable)
+                // → passer par sanitize() pour escape XML.
+                $node->nodeValue = WindowsXmlPlaceholders::sanitize($hostname);
             }
         }
 
@@ -390,11 +395,14 @@ final class WindowsUnattendBuilder
             );
         }
 
-        // 10. AdministratorPassword.
+        // 10. AdministratorPassword = adminse_passwd (toujours, peu importe
+        // perso). Bug post-review : le code utilisait `$localPasswd` qui en
+        // mode perso=1 vaut `win_user_passwd` au lieu de `adminse_passwd`.
+        $adminsePasswd = (string) config('sambaedu.windows.adminse_passwd', '');
         $this->setNodeValue(
             $xpath,
             '/ns:unattend/ns:settings/ns:component/ns:UserAccounts/ns:AdministratorPassword/ns:Value',
-            $localPasswd,
+            $adminsePasswd,
         );
 
         // 11. Interpolation CommandLine + Path nodes

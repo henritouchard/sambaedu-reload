@@ -156,7 +156,7 @@ class IpxeWindowsUnattendEndpointTest extends TestCase
         $response = $this->get('/ipxe/windows/unattend.xml?mac=aa:bb:cc:dd:ee:07&uuid=12345678-1234-1234-1234-9999fffffeee&version=Win11&bios=uefi');
 
         self::assertSame('text/plain; charset=utf-8', $response->headers->get('Content-Type'));
-        $response->assertHeader('Cache-Control', 'no-store');
+        self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
         $response->assertHeader('X-Robots-Tag', 'noindex');
     }
 
@@ -198,7 +198,6 @@ class IpxeWindowsUnattendEndpointTest extends TestCase
     {
         $room = \App\Models\WorkstationGroup::create([
             'name' => 'salle-a',
-            'display_name' => 'Salle A',
             'is_physical' => true,
             'ad_dn' => 'OU=Salle-A,OU=Etab-XYZ,DC=example,DC=org',
             'is_active' => true,

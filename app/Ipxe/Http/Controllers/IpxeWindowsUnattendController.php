@@ -65,7 +65,9 @@ class IpxeWindowsUnattendController extends Controller
                 'uuid_prefix' => $uuid !== '' ? substr($uuid, 0, 8) : '',
             ]);
 
-            throw new NotFoundHttpException('Workstation inconnue pour cet unattend.');
+            // Renvoie 404 text/plain (pas Page HTML d'erreur Laravel qui
+            // déclencherait Vite manifest lookup en testing).
+            return $this->respondPlain('', 404);
         }
 
         // 2. Parse version via enum whitelist.
@@ -82,6 +84,13 @@ class IpxeWindowsUnattendController extends Controller
 
         // 3. Résolution OU AD du poste — fallback config.
         $ou = $this->resolveOu($workstation);
+
+        // TODO 3.7 (post-review code-review #N2) : porter `remove_dual_boot()`
+        // legacy (`sambaedu/ipxe/Win10/unattend.xml.php:30`). Si un poste avait
+        // précédemment été en dual-boot (entrée `boot.php` legacy), la réinstall
+        // Windows ne nettoie pas le marqueur côté serveur. Acceptable pour 3.5
+        // (scope minimal), à porter quand le flow `boot.php` dual-boot sera
+        // migré SE5 (probablement en même temps que la story 3.7 clonage).
 
         // 4. Génération XML.
         try {

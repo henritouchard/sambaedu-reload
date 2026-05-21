@@ -73,17 +73,17 @@ class IpxeAdminActionTest extends TestCase
     #[Test]
     public function it_resolves_install_deb_variants_with_debian_distribution_meta(): void
     {
-        foreach (
-            [
-                IpxeAdminAction::InstallDebBase => 'base',
-                IpxeAdminAction::InstallDebCinnamon => 'cinnamon',
-                IpxeAdminAction::InstallDebGnome => 'gnome',
-                IpxeAdminAction::InstallDebKde => 'kde',
-                IpxeAdminAction::InstallDebLxde => 'lxde',
-                IpxeAdminAction::InstallDebMate => 'mate',
-                IpxeAdminAction::InstallDebXfce => 'xfce',
-            ] as $case => $expectedVariant
-        ) {
+        // PHP n'autorise pas les enums comme clés d'array → tuples.
+        $cases = [
+            [IpxeAdminAction::InstallDebBase, 'base'],
+            [IpxeAdminAction::InstallDebCinnamon, 'cinnamon'],
+            [IpxeAdminAction::InstallDebGnome, 'gnome'],
+            [IpxeAdminAction::InstallDebKde, 'kde'],
+            [IpxeAdminAction::InstallDebLxde, 'lxde'],
+            [IpxeAdminAction::InstallDebMate, 'mate'],
+            [IpxeAdminAction::InstallDebXfce, 'xfce'],
+        ];
+        foreach ($cases as [$case, $expectedVariant]) {
             $meta = $case->linuxMeta();
             self::assertNotNull($meta, "linuxMeta() must not be null for {$case->value}");
             self::assertSame('debian', $meta['distribution']);

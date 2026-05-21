@@ -21,14 +21,25 @@ class WindowsXmlPlaceholdersTest extends TestCase
 {
     /* ----------------------------- catalog ---------------------------- */
 
+    /**
+     * Post-review code-review #7 : le catalog mappe UNIQUEMENT les
+     * placeholders config-based (lus via `config(...)`). Les placeholders
+     * par-poste (`###_NAME_###`) sont gérés par
+     * {@see WindowsUnattendBuilder} qui lit le modèle Workstation.
+     *
+     * Cf. docstring `WindowsXmlPlaceholders::catalog()` pour le détail.
+     */
     #[Test]
-    public function it_lists_the_3_placeholder_keys(): void
+    public function it_lists_the_2_config_placeholder_keys(): void
     {
         $catalog = WindowsXmlPlaceholders::catalog();
+        self::assertCount(2, $catalog);
         self::assertArrayHasKey('ADMINSE_NAME', $catalog);
         self::assertArrayHasKey('SE4FS_NAME', $catalog);
         self::assertSame('sambaedu.windows.adminse_name', $catalog['ADMINSE_NAME']);
         self::assertSame('sambaedu.se4fs_name', $catalog['SE4FS_NAME']);
+        // `###_NAME_###` n'est PAS dans ce catalog — géré par le builder.
+        self::assertArrayNotHasKey('NAME', $catalog);
     }
 
     /* ---------------------------- sanitize ---------------------------- */
@@ -199,8 +210,8 @@ class WindowsXmlPlaceholdersTest extends TestCase
     {
         // Char \x00 + \x07 (BEL) remplacés par espace.
         $input = "PC\x00-\x07101";
-        self::assertSame('PC -101', WindowsXmlPlaceholders::sanitizeForTextContent($input)
-        );
+        // \x00 → ' ', '-' reste, \x07 → ' ', '101' reste → "PC - 101"
+        self::assertSame('PC - 101', WindowsXmlPlaceholders::sanitizeForTextContent($input));
     }
 
     #[Test]

@@ -39,8 +39,9 @@ final class WindowsInstallMenuBuilder
 
         // Sanitization defense-in-depth du nom du poste (iso 3.3 — un nom AD
         // avec caractères iPXE-special casserait le rendu).
+        // Convention SambaEdu : hostnames toujours lowercase.
         $workstationName = $isKnown
-            ? IpxeHostnameSanitizer::sanitizeForIpxeOutput((string) ($workstation->name ?? 'unknown'))
+            ? strtolower(IpxeHostnameSanitizer::sanitizeForIpxeOutput((string) ($workstation->name ?? 'unknown')))
             : 'unknown';
 
         return [

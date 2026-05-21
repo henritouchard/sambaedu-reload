@@ -111,9 +111,12 @@ class PreseedPlaceholdersTest extends TestCase
         $result = PreseedPlaceholders::interpolate($template, [
             'hostname' => "PC-101\nROOT_PASSWD=evil",
         ]);
-        // Le newline injecté DOIT être strippé (injection bloquée).
-        self::assertStringNotContainsString("ROOT_PASSWD=evil\n", $result);
-        self::assertStringContainsString('PC-101 ROOT_PASSWD=evil', $result);
+        // Le newline injecté entre PC-101 et ROOT_PASSWD DOIT être strippé
+        // (sinon une ligne preseed supplémentaire serait injectée). Le `\n`
+        // final du template reste légitime.
+        self::assertStringNotContainsString("PC-101\nROOT_PASSWD", $result);
+        // Tout est sur la même ligne avec un espace au milieu.
+        self::assertStringContainsString('hostname=PC-101 ROOT_PASSWD=evil', $result);
     }
 
     #[Test]

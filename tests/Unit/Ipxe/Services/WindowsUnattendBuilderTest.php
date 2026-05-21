@@ -72,8 +72,8 @@ class WindowsUnattendBuilderTest extends TestCase
         self::assertStringContainsString('<DiskConfiguration>', $xml);
         // Legacy bios → 1 seule CreatePartition.
         self::assertStringContainsString('<Label>OS</Label>', $xml);
-        // ComputerName injecté.
-        self::assertStringContainsString('PC-101', $xml);
+        // ComputerName injecté (lowercase — convention SambaEdu).
+        self::assertStringContainsString('pc-101', $xml);
     }
 
     #[Test]
@@ -259,7 +259,12 @@ class WindowsUnattendBuilderTest extends TestCase
     {
         config(['ipxe.windows.unattend_template_path' => '/nonexistent/path/unattend.xml']);
 
-        Log::spy();
+        // `Log::spy()` ne mock pas les channels — on stub explicitement.
+        Log::shouldReceive('channel')->andReturnSelf();
+        Log::shouldReceive('error');
+        Log::shouldReceive('info');
+        Log::shouldReceive('warning');
+
         try {
             $this->service->build(
                 $this->makeWorkstation(),
@@ -270,7 +275,8 @@ class WindowsUnattendBuilderTest extends TestCase
             // ok.
         }
 
-        Log::shouldHaveReceived('channel')->with('stack');
+        Log::shouldHaveReceived('channel')->atLeast()->once();
+        Log::shouldHaveReceived('error')->atLeast()->once();
     }
 
     #[Test]
@@ -340,7 +346,10 @@ class WindowsUnattendBuilderTest extends TestCase
         // 2. Les credentials sont présents (encodés correctement).
         // `<` et `&` sont escapés à la sérialisation par DOMDocument.
         self::assertStringContainsString('P&amp;ssw0rd&lt;test&gt;', $xml);
-        self::assertStringContainsString('foo&quot;bar', $xml);
+        // Note : DOMDocument décode `&quot;` à l'assignation `nodeValue =`
+        // puis ne ré-escape pas `"` en text content (caractère valide).
+        // Le test asserte donc la version brute, pas l'entité.
+        self::assertStringContainsString('foo"bar', $xml);
     }
 
     /**
@@ -389,12 +398,11 @@ class WindowsUnattendBuilderTest extends TestCase
             'ipxe.log.channel' => 'ipxe',
         ]);
 
-        // Substitution du logger du channel `ipxe` par un Monolog équipé
-        // d'un TestHandler — pattern iso LinuxPreseedServiceTest.
+        // Push un TestHandler Monolog sur le logger existant du channel `ipxe`
+        // (channel `daily` côté config — Log::extend ne fonctionne pas).
         $handler = new \Monolog\Handler\TestHandler();
-        $monolog = new \Monolog\Logger('ipxe-test', [$handler]);
-        \Illuminate\Support\Facades\Log::extend('ipxe', static fn () => new \Illuminate\Log\Logger($monolog));
-        \Illuminate\Support\Facades\Log::forgetChannel('ipxe');
+        $logger = \Illuminate\Support\Facades\Log::channel('ipxe');
+        $logger->getLogger()->pushHandler($handler);
 
         $ws = $this->makeWorkstation();
         $xml = $this->service->build(

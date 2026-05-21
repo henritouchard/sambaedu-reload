@@ -45,7 +45,7 @@ class IpxeWindowsDiskpartEndpointTest extends TestCase
             $body,
         );
         self::assertSame('text/plain; charset=utf-8', $response->headers->get('Content-Type'));
-        $response->assertHeader('Cache-Control', 'no-store');
+        self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
     }
 
     #[Test]

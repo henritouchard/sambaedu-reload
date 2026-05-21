@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Ipxe\Http\Requests;
 
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Http\Response;
 use Illuminate\Validation\Rule;
 
 /**
@@ -49,5 +52,20 @@ class IpxeWindowsInstallBatRequest extends FormRequest
             'perso' => ['nullable'],
             'action' => ['nullable', 'string', 'max:32'],
         ];
+    }
+
+    /**
+     * Override Laravel par défaut pour renvoyer 422 text/plain (l'endpoint
+     * sert un .bat consommé par WinPE, pas du HTML).
+     */
+    protected function failedValidation(Validator $validator): void
+    {
+        throw new HttpResponseException(
+            new Response('', Response::HTTP_UNPROCESSABLE_ENTITY, [
+                'Content-Type' => 'text/plain; charset=utf-8',
+                'Cache-Control' => 'no-store',
+                'X-Robots-Tag' => 'noindex',
+            ]),
+        );
     }
 }

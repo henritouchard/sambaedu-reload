@@ -298,14 +298,12 @@ class LinuxPreseedServiceTest extends TestCase
             'sambaedu.linux.token' => 'CANARY-token-xyz',
         ]);
 
-        // Substitution complète du logger du channel `ipxe` par un Monolog
-        // équipé d'un TestHandler. Pattern iso `Log::spy()` mais on capture
-        // structurellement.
+        // Push un TestHandler Monolog sur le logger existant du channel `ipxe`
+        // (configuré en `driver: daily` dans config/logging.php — `Log::extend`
+        // ne fonctionne pas dans ce cas car Laravel résout via le driver).
         $handler = new \Monolog\Handler\TestHandler();
-        $monolog = new \Monolog\Logger('ipxe-test', [$handler]);
-        \Illuminate\Support\Facades\Log::extend('ipxe', static fn () => new \Illuminate\Log\Logger($monolog));
-        // Force la résolution future du channel — invalide le cache éventuel.
-        \Illuminate\Support\Facades\Log::forgetChannel('ipxe');
+        $logger = \Illuminate\Support\Facades\Log::channel('ipxe');
+        $logger->getLogger()->pushHandler($handler);
 
         $ws = $this->makeWorkstation();
         $preseed = $this->service->generate(

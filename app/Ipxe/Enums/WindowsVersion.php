@@ -41,11 +41,24 @@ enum WindowsVersion: string
      */
     public static function fromString(string $raw): ?self
     {
-        // Trim + case preservation : la valeur est case-sensitive (parité
-        // legacy `unattend.xml.php:17` qui pose `Win11` puis utilise `Win10`
-        // côté URL — la string Win10/Win11 est imposée par le firmware).
-        $normalized = trim($raw);
+        // Post-review : anti-injection. `trim()` strip silencieusement le
+        // null byte `\x00` et les newlines `\r\n` → un input
+        // `"Win11\x00"` ou `"Win11\nkernel http://evil"` matcherait
+        // `tryFrom('Win11')` après trim. Stratégie :
+        //  1. Strip uniquement les whitespace ASCII SAFE en début/fin
+        //     ([\t\n\r ] via \s).
+        //  2. Après strip : si la string contient encore un char
+        //     non-imprimable (hors 0x20-0x7E), c'est une injection.
+        $stripped = preg_replace('/^\s+|\s+$/u', '', $raw);
+        if ($stripped === null) {
+            return null;
+        }
+        if (preg_match('/[^\x20-\x7E]/', $stripped) === 1) {
+            return null;
+        }
 
-        return self::tryFrom($normalized);
+        // Case preservation : la valeur est case-sensitive (parité legacy
+        // `unattend.xml.php:17` qui pose `Win11` puis utilise `Win10` côté URL).
+        return self::tryFrom($stripped);
     }
 }
