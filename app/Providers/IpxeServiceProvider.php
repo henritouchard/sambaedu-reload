@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Ipxe\Iso\Services\WindowsIsoDownloadOrchestrator;
+use App\Ipxe\Iso\Services\WindowsIsoSourcesReader;
+use App\Ipxe\Iso\Services\WindowsIsoUrlValidator;
 use App\Ipxe\Services\IpxeActionResolver;
 use App\Ipxe\Services\IpxeEnrollmentMenuBuilder;
 use App\Ipxe\Services\IpxeEnrollmentOrchestrator;
@@ -21,6 +24,7 @@ use App\Ipxe\Services\WorkstationEnrollmentService;
 use App\Ipxe\Services\WorkstationLocator;
 use App\Ldap\AdMachineManager;
 use Illuminate\Contracts\View\Factory as ViewFactory;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 
@@ -112,6 +116,16 @@ class IpxeServiceProvider extends ServiceProvider
         $this->app->singleton(WindowsInstallBatBuilder::class, fn () => new WindowsInstallBatBuilder());
         $this->app->singleton(WindowsInstallMenuBuilder::class, fn () => new WindowsInstallMenuBuilder());
         $this->app->singleton(WindowsPostInstallTracker::class, fn () => new WindowsPostInstallTracker());
+
+        // Story 3.6 — D7 / AC6.4 — bindings gestion ISO Windows (sous-namespace
+        // dédié `App\Ipxe\Iso\*` pour cohérence frontière D1).
+        $this->app->singleton(WindowsIsoUrlValidator::class, fn () => new WindowsIsoUrlValidator());
+        $this->app->singleton(WindowsIsoSourcesReader::class, fn ($app) => new WindowsIsoSourcesReader(
+            $app->make(Filesystem::class),
+        ));
+        $this->app->singleton(WindowsIsoDownloadOrchestrator::class, fn ($app) => new WindowsIsoDownloadOrchestrator(
+            $app->make(WindowsIsoUrlValidator::class),
+        ));
     }
 
     public function boot(): void

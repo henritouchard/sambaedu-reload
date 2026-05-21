@@ -366,4 +366,65 @@ return [
             resource_path('ipxe/windows/unattend.xml'),
         ),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Story 3.6 — Gestion ISO Windows (D11)
+    |--------------------------------------------------------------------------
+    |
+    | Paramètres de la page admin web SE5 `/admin/ipxe/iso-windows` qui porte
+    | nativement `sambaedu/ipxe/Win10/win_iso.php`. Cette section configure
+    | la double validation URL (anti-SSRF allowlist host Microsoft) + le Job
+    | Laravel Queue qui exécute `curl` + `sudo install-win-iso.sh` + le lock
+    | global Cache::lock (1 instance vivante max).
+    |
+    | Tous les paths sont overridables via `.env` pour les environnements de
+    | test (où l'on ne veut pas écrire dans `/var/sambaedu/...`).
+    */
+    'iso_management' => [
+        // Master switch — si false, la page Livewire renvoie un message
+        // explicite "fonctionnalité désactivée" + le bouton de submit est
+        // masqué. Utile pour freezer la VM en pré-prod le temps de poser
+        // sudoers + worker queue.
+        'enabled' => filter_var(env('IPXE_ISO_MANAGEMENT_ENABLED', true), FILTER_VALIDATE_BOOL),
+
+        // Path filesystem où sont stockées les ISO téléchargées + le rooting
+        // des dossiers `Win{10,11}{,-old}/` extraits par install-win-iso.sh.
+        'deployed_os_base_path' => env('IPXE_ISO_DEPLOYED_OS_BASE', '/var/sambaedu/unattended/install/os'),
+        'iso_storage_path'      => env('IPXE_ISO_STORAGE_PATH', '/var/sambaedu/unattended/install/os/iso'),
+
+        // Nom du fichier "version" qui contient le nom de l'iso source
+        // ("Win11_24H2.iso") — écrit par install-win-iso.sh après extraction.
+        'version_file_name' => env('IPXE_ISO_VERSION_FILE', 'version'),
+
+        // Allowlist anti-SSRF — host de l'URL Microsoft saisie par l'admin.
+        // CSV via env, sinon défauts iso-projet (3 hostnames Microsoft connus
+        // pour servir les ISO en direct + sous-domaines via str_ends_with()).
+        //
+        // **Anti-pattern strict** : ne PAS étendre cette liste à `microsoft.com`
+        // bare — un attaquant qui compromet une sous-page `microsoft.com/foo.iso`
+        // pourrait pousser un fake ISO.
+        'allowed_url_hosts' => explode(',', (string) env(
+            'IPXE_ISO_ALLOWED_HOSTS',
+            'software-static.download.prss.microsoft.com,software-download.microsoft.com,download.microsoft.com',
+        )),
+
+        // Timeouts process (secondes) — passés en arg `--max-time` à curl
+        // et `Process::timeout()` côté Job.
+        'download_timeout_seconds' => (int) env('IPXE_ISO_DOWNLOAD_TIMEOUT', 7200),  // 2h curl
+        'extract_timeout_seconds'  => (int) env('IPXE_ISO_EXTRACT_TIMEOUT', 1800),   // 30min install-win-iso.sh
+
+        // Nom de la queue Laravel dédiée. Doit matcher l'argument
+        // `--queue=ipxe_iso_downloads` du worker systemd (T0.5).
+        'queue_name' => env('IPXE_ISO_QUEUE', 'ipxe_iso_downloads'),
+
+        // Cache::lock global (D15) — defense in depth couche 1 vs
+        // `WithoutOverlapping` Job middleware couche 2.
+        // TTL aligné sur curl 7200 + marge.
+        'global_lock_key' => env('IPXE_ISO_LOCK_KEY', 'ipxe.iso.download.global'),
+        'global_lock_ttl' => (int) env('IPXE_ISO_LOCK_TTL', 7200),
+
+        // Nombre de rows historiques affichées dans la card "Historique".
+        'history_limit' => (int) env('IPXE_ISO_HISTORY_LIMIT', 10),
+    ],
 ];

@@ -352,6 +352,31 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin'])->name('a
     Route::livewire('/settings/profils-itinerants', 'pages::admin.settings.profils-itinerants.index')
         ->middleware('can:server.admin')
         ->name('settings.profils-itinerants');
+    /*
+    |--------------------------------------------------------------------------
+    | Story 3.6 — Gestion ISO Windows (D2)
+    |--------------------------------------------------------------------------
+    | Page admin web SE5 native qui porte iso-fonctionnellement
+    | `sambaedu/ipxe/Win10/win_iso.php` (110 LOC) : listing des versions
+    | Win{10,11}{,-old} déployées + formulaire URL Microsoft + dispatch async
+    | Job Laravel queue (curl + sudo install-win-iso.sh) + polling Livewire
+    | conditionnel + modale confirm + annulation.
+    |
+    | Sécurité : `sambaedu.auth + sambaedu.admin + can:server.admin` —
+    | parité iso `/admin/sync-from-ad` et `/admin/settings`.
+    |
+    | Note : aucune route iPXE firmware n'est touchée — 3.6 est une page admin
+    | web SE5, pas un endpoint firmware. Les routes 3.1-3.5 sous le namespace
+    | `/ipxe/*` LAN-only restent inchangées.
+    |
+    | Une seule route Livewire fullpage (D2 décision finale) — les méthodes
+    | `submitDownload()`, `confirmDownload()`, `cancelDownload($id)` sont des
+    | méthodes intra-composant (parité iso `/admin/sync-from-ad`).
+    */
+    Route::livewire('/ipxe/iso-windows', 'pages::admin.ipxe.iso-windows.index')
+        ->middleware('can:server.admin')
+        ->name('ipxe.iso-windows');
+
 
     // ========================================
     // Story 16.9 — Exposition UI admin GPO sous `/admin/settings/gpo/*`.

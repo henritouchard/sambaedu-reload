@@ -873,6 +873,188 @@ class IpxeNamespaceTest extends TestCase
         }
     }
 
+    /* ------------------------------------------------------------------
+     * Story 3.6 — AC7.1 — extension du garde-fou architectural
+     * ------------------------------------------------------------------
+     *
+     * Sous-namespace `App\Ipxe\Iso\*` strict — frontière D1 vs firmware
+     * iPXE 3.1-3.5 (`App\Ipxe\Services\*`).
+     */
+
+    /**
+     * Story 3.6 — Vérifie que les classes ISO Windows vivent bien sous
+     * `App\Ipxe\Iso\*` (sous-namespace dédié — frontière D1).
+     */
+    #[Test]
+    public function it_lists_all_ipxe_3_6_iso_classes_under_correct_sub_namespace(): void
+    {
+        $root = realpath(__DIR__ . '/../../app/Ipxe/Iso');
+        self::assertNotFalse($root, 'app/Ipxe/Iso introuvable — sous-namespace 3.6 doit exister.');
+
+        $required = [
+            $root . '/Services/WindowsIsoUrlValidator.php',
+            $root . '/Services/WindowsIsoSourcesReader.php',
+            $root . '/Services/WindowsIsoDownloadOrchestrator.php',
+            $root . '/Jobs/DownloadWindowsIsoJob.php',
+            $root . '/Enums/WindowsIsoDownloadStatus.php',
+            $root . '/Exceptions/WindowsIsoValidationException.php',
+            $root . '/Exceptions/WindowsIsoLockException.php',
+        ];
+
+        foreach ($required as $file) {
+            self::assertFileExists($file, "Fichier 3.6 manquant : {$file}");
+        }
+
+        // Le modèle Eloquent reste sous App\Models (cohérence MachineBootLog).
+        self::assertFileExists(
+            realpath(__DIR__ . '/../../app/Models') . '/WindowsIsoDownload.php',
+            'WindowsIsoDownload doit être dans App\\Models (cohérence MachineBootLog).',
+        );
+    }
+
+    /**
+     * Story 3.6 — Vérifie que le Job 3.6 implémente `ShouldQueue`.
+     */
+    #[Test]
+    public function it_ensures_download_windows_iso_job_implements_should_queue(): void
+    {
+        self::assertTrue(
+            in_array(
+                \Illuminate\Contracts\Queue\ShouldQueue::class,
+                class_implements(\App\Ipxe\Iso\Jobs\DownloadWindowsIsoJob::class) ?: [],
+                true,
+            ),
+            'DownloadWindowsIsoJob doit implémenter ShouldQueue (D4).',
+        );
+    }
+
+    /**
+     * Story 3.6 — Vérifie que les classes 3.6 sous `App\Ipxe\Iso\*` ne
+     * dépendent PAS de `App\Ipxe\Services\IpxeMenuRenderer` ni d'autres
+     * services firmware iPXE 3.1-3.5 (frontière D1).
+     */
+    #[Test]
+    public function it_ensures_iso_namespace_does_not_depend_on_ipxe_firmware_services(): void
+    {
+        $root = realpath(__DIR__ . '/../../app/Ipxe/Iso');
+        self::assertNotFalse($root);
+
+        $finder = (new Finder())->files()->in($root)->name('*.php');
+        $parser = (new ParserFactory())->createForNewestSupportedVersion();
+        $violations = [];
+
+        $forbidden = [
+            'App\\Ipxe\\Services\\IpxeMenuRenderer',
+            'App\\Ipxe\\Services\\IpxeService',
+            'App\\Ipxe\\Services\\IpxeActionResolver',
+            'App\\Ipxe\\Services\\IpxeEnrollmentOrchestrator',
+            'App\\Ipxe\\Services\\WindowsInstallMenuBuilder',
+            'App\\Ipxe\\Services\\WindowsUnattendBuilder',
+            'App\\Ipxe\\Services\\WindowsInstallBatBuilder',
+            'App\\Ipxe\\Services\\LinuxInstallMenuBuilder',
+            'App\\Ipxe\\Services\\LinuxPreseedService',
+        ];
+
+        foreach ($finder as $file) {
+            $ast = $parser->parse($file->getContents());
+            if ($ast === null) {
+                continue;
+            }
+
+            $collector = new class extends NodeVisitorAbstract {
+                /** @var list<string> */
+                public array $uses = [];
+
+                public function enterNode(Node $node): null
+                {
+                    if ($node instanceof Use_) {
+                        foreach ($node->uses as $use) {
+                            $this->uses[] = $use->name->toString();
+                        }
+                    }
+                    if ($node instanceof GroupUse) {
+                        $prefix = $node->prefix->toString();
+                        foreach ($node->uses as $use) {
+                            $this->uses[] = $prefix . '\\' . $use->name->toString();
+                        }
+                    }
+
+                    return null;
+                }
+            };
+
+            (new NodeTraverser())->addVisitor($collector)->traverse($ast);
+
+            foreach ($collector->uses as $imported) {
+                if (in_array($imported, $forbidden, true)) {
+                    $violations[] = sprintf(
+                        '%s importe %s — frontière D1 cassée (Iso\\* ne doit pas dépendre du firmware iPXE)',
+                        $file->getRelativePathname(),
+                        $imported,
+                    );
+                }
+            }
+        }
+
+        self::assertSame(
+            [],
+            $violations,
+            "Violations frontière D1 (App\\Ipxe\\Iso\\* ↔ App\\Ipxe\\Services\\*) :\n  - "
+            . implode("\n  - ", $violations),
+        );
+    }
+
+    /**
+     * Story 3.6 — Vérifie que la route admin `/admin/ipxe/iso-windows` est
+     * déclarée dans `routes/web.php` sous le groupe `admin` avec les
+     * middlewares stricts `sambaedu.auth + sambaedu.admin + can:server.admin`.
+     */
+    #[Test]
+    public function ipxe_3_6_iso_windows_route_is_in_admin_group_with_strict_middlewares(): void
+    {
+        $routesFile = realpath(__DIR__ . '/../../routes/web.php');
+        self::assertNotFalse($routesFile);
+        $content = (string) file_get_contents($routesFile);
+
+        // 1) La route est déclarée.
+        self::assertMatchesRegularExpression(
+            "@Route::livewire\(\s*['\"]/ipxe/iso-windows['\"]@",
+            $content,
+            'La route /admin/ipxe/iso-windows doit être déclarée dans routes/web.php',
+        );
+
+        // 2) Elle porte le middleware can:server.admin.
+        $statements = explode(';', $content);
+        $isoStatement = null;
+        foreach ($statements as $stmt) {
+            if (preg_match("@['\"]/ipxe/iso-windows['\"]@", $stmt) === 1) {
+                $isoStatement = $stmt;
+                break;
+            }
+        }
+        self::assertNotNull($isoStatement, 'Statement de la route /admin/ipxe/iso-windows introuvable');
+
+        self::assertMatchesRegularExpression(
+            "/can:server\.admin/",
+            $isoStatement,
+            'La route /admin/ipxe/iso-windows doit porter can:server.admin (D3).',
+        );
+
+        // 3) Elle est dans le groupe `admin` (parité sync-from-ad / settings).
+        // On vérifie que le contenu autour mentionne `prefix('admin')` ET
+        // `sambaedu.auth + sambaedu.admin`.
+        $adminGroupPos = strpos($content, "prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin']");
+        self::assertNotFalse($adminGroupPos, 'Le groupe admin (sambaedu.auth + sambaedu.admin) doit exister');
+
+        $isoRoutePos = strpos($content, "/ipxe/iso-windows");
+        self::assertNotFalse($isoRoutePos);
+        self::assertGreaterThan(
+            $adminGroupPos,
+            $isoRoutePos,
+            'La route /ipxe/iso-windows doit être DANS le groupe admin (donc après son ouverture).',
+        );
+    }
+
     private function stripComments(string $code): string
     {
         $code = preg_replace('!/\*.*?\*/!s', '', $code) ?? $code;

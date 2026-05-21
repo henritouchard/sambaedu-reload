@@ -258,4 +258,56 @@ class IpxeConfigTest extends TestCase
         self::assertNotNull($paths['debian'] ?? null);
         self::assertNotNull($paths['ubuntu'] ?? null);
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.6 — AC6.2 / AC6.3 — section iso_management + windows_iso
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_loads_iso_management_enabled_by_default(): void
+    {
+        self::assertTrue((bool) config('ipxe.iso_management.enabled'));
+    }
+
+    #[Test]
+    public function it_loads_iso_management_deployed_os_base_path_default(): void
+    {
+        self::assertSame('/var/sambaedu/unattended/install/os', config('ipxe.iso_management.deployed_os_base_path'));
+        self::assertSame('/var/sambaedu/unattended/install/os/iso', config('ipxe.iso_management.iso_storage_path'));
+    }
+
+    #[Test]
+    public function it_loads_iso_management_timeouts(): void
+    {
+        self::assertSame(7200, (int) config('ipxe.iso_management.download_timeout_seconds'));
+        self::assertSame(1800, (int) config('ipxe.iso_management.extract_timeout_seconds'));
+    }
+
+    #[Test]
+    public function it_loads_iso_management_allowed_url_hosts_with_microsoft_defaults(): void
+    {
+        $hosts = (array) config('ipxe.iso_management.allowed_url_hosts');
+        self::assertContains('software-static.download.prss.microsoft.com', $hosts);
+        self::assertContains('software-download.microsoft.com', $hosts);
+        self::assertContains('download.microsoft.com', $hosts);
+    }
+
+    #[Test]
+    public function it_loads_iso_management_queue_and_lock_config(): void
+    {
+        self::assertSame('ipxe_iso_downloads', config('ipxe.iso_management.queue_name'));
+        self::assertSame('ipxe.iso.download.global', config('ipxe.iso_management.global_lock_key'));
+        self::assertSame(7200, (int) config('ipxe.iso_management.global_lock_ttl'));
+        self::assertSame(10, (int) config('ipxe.iso_management.history_limit'));
+    }
+
+    #[Test]
+    public function it_loads_sambaedu_windows_iso_install_script_default(): void
+    {
+        self::assertSame(
+            '/usr/share/sambaedu/scripts/install-win-iso.sh',
+            config('sambaedu.windows_iso.install_script'),
+        );
+        self::assertSame('www-admin', config('sambaedu.windows_iso.sudoers_user'));
+    }
 }

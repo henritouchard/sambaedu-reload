@@ -384,4 +384,49 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
 
         self::assertTrue($found, '/ipxe/clonage.php doit continuer via catchall (Story 3.7)');
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.6 — AC7.2 — non-régression catchall pour `/ipxe/Win10/win_iso.php`
+     * legacy + court-circuit pour `/admin/ipxe/iso-windows` native.
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_still_serves_legacy_win_iso_php_via_catchall(): void
+    {
+        // Le legacy `Win10/win_iso.php` continue d'être servi par catchall
+        // jusqu'à Story 3.7 cleanup (3.6 livre la page admin web SE5 native
+        // sous `/admin/ipxe/iso-windows` mais ne RETIRE pas la route legacy).
+        $this->get('/ipxe/Win10/win_iso.php');
+
+        $found = \App\Models\LegacyCatchallLog::query()
+            ->where('path', 'like', '%ipxe/Win10/win_iso.php%')
+            ->exists();
+
+        self::assertTrue(
+            $found,
+            '/ipxe/Win10/win_iso.php doit continuer à être servi par le catchall '
+            . '(parité legacy — cleanup en Story 3.7).',
+        );
+    }
+
+    #[Test]
+    public function it_serves_new_admin_ipxe_iso_windows_natively_not_via_catchall(): void
+    {
+        // La nouvelle page admin SE5 `/admin/ipxe/iso-windows` est servie
+        // nativement par Laravel Livewire — pas par le catchall.
+        // Le middleware `sambaedu.auth` redirige vers le login (302), ce qui
+        // est attendu côté non-authentifié — le but du test est de vérifier
+        // qu'AUCUNE row legacy_catchall_logs n'est créée (= route déclarée
+        // AVANT le catchall).
+        $countBefore = \App\Models\LegacyCatchallLog::query()->count();
+
+        $this->get('/admin/ipxe/iso-windows');
+
+        self::assertSame(
+            $countBefore,
+            \App\Models\LegacyCatchallLog::query()->count(),
+            '/admin/ipxe/iso-windows (3.6) ne doit pas passer par le catchall — la route '
+            . 'doit être déclarée AVANT le catchall dans routes/web.php.',
+        );
+    }
 }

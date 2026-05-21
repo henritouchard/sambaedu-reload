@@ -502,4 +502,44 @@ return [
             'image_script' => '/usr/share/sambaedu/scripts/make_wine_image.sh',
         ],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Story 3.6 — Script externe d'extraction ISO Windows (D11)
+    |--------------------------------------------------------------------------
+    |
+    | `install-win-iso.sh` vit sous `/usr/share/sambaedu/scripts/` côté VM
+    | (paquet sambaedu). SE5 ne le porte pas — l'invoque via `sudo` depuis
+    | le Job `DownloadWindowsIsoJob`. Prérequis sudoers à valider en T0.5 :
+    |
+    |   # /etc/sudoers.d/sambaedu-iso-install
+    |   www-admin ALL=(root) NOPASSWD: /usr/share/sambaedu/scripts/install-win-iso.sh
+    |
+    | Sans cette règle : le Job échoue avec exit_code 1 + stderr
+    | "no tty present and no askpass program specified" — la story 3.6 gère
+    | ce cas avec un toast utilisateur clair (cf. AC4.4 + AC4.5).
+    |
+    | **Pas de wildcard sudo** — la règle DOIT cibler le path strict
+    | `/usr/share/sambaedu/scripts/install-win-iso.sh` (defense in depth vs
+    | un attaquant qui poserait un script malveillant ailleurs).
+    */
+    'windows_iso' => [
+        // Path absolu du script shell d'extraction. Override possible via
+        // env pour les environnements de test (où l'on stubbe le script).
+        /* SÉCURITÉ (review post-3.6, #11 / #2 rejeté) : ce path est
+         * sudo-allowlisté dans `/etc/sudoers.d/sambaedu-iso-install` (path
+         * strict, pas de wildcard). Modifier cette valeur (config ou env
+         * `SAMBAEDU_INSTALL_WIN_ISO_SCRIPT`) sans MAJ correspondante du
+         * fichier sudoers casse l'install Windows (Job échoue `exit_code 1`
+         * + stderr "a password is required") — defense in depth implicite.
+         * Tout changement ici DOIT être accompagné d'une coordination Ops. */
+        'install_script' => env(
+            'SAMBAEDU_INSTALL_WIN_ISO_SCRIPT',
+            '/usr/share/sambaedu/scripts/install-win-iso.sh',
+        ),
+
+        // User sudoers documentaire (informatif uniquement — le Job ne lit
+        // pas ce champ, il est consommé par le runbook QA Section 15).
+        'sudoers_user' => env('SAMBAEDU_INSTALL_WIN_ISO_SUDO_USER', 'www-admin'),
+    ],
 ];

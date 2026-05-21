@@ -1306,6 +1306,308 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://192.168.122.50/ipxe/installatio
 
 ---
 
+## Story 3.6 — Gestion ISO Windows
+
+**Date livraison** : 2026-05-21
+**Migrations à appliquer** : 1 nouvelle migration `2026_05_21_120000_create_windows_iso_downloads_table.php` (table dédiée audit téléchargements — D9)
+**Permissions requises** : `server.admin` (Spatie — iso `/admin/sync-from-ad`, `/admin/settings`)
+**Variables `.env` à vérifier** :
+- `IPXE_ISO_MANAGEMENT_ENABLED=true` (master switch — défaut `true`)
+- `IPXE_ISO_DEPLOYED_OS_BASE=/var/sambaedu/unattended/install/os`
+- `IPXE_ISO_STORAGE_PATH=/var/sambaedu/unattended/install/os/iso`
+- `IPXE_ISO_ALLOWED_HOSTS=software-static.download.prss.microsoft.com,software-download.microsoft.com,download.microsoft.com`
+- `IPXE_ISO_QUEUE=ipxe_iso_downloads`
+- `IPXE_ISO_DOWNLOAD_TIMEOUT=7200`, `IPXE_ISO_EXTRACT_TIMEOUT=1800`
+- `SAMBAEDU_INSTALL_WIN_ISO_SCRIPT=/usr/share/sambaedu/scripts/install-win-iso.sh`
+- `SAMBAEDU_INSTALL_WIN_ISO_SUDO_USER=www-admin` (informatif uniquement)
+- `CACHE_DRIVER` doit autoriser `Cache::lock()` (file/redis OK — pas array en prod)
+
+**Décisions ratifiées** : D1 sous-namespace `App\Ipxe\Iso\*`, D2 1 route Livewire fullpage `/admin/ipxe/iso-windows`, D3 `can:server.admin`, D4 Laravel Queue (pas `batch_command` legacy), D5 2 couches validation URL anti-SSRF/RCE, D6 lecture filesystem best-effort, D7 orchestrator entry-point Livewire, D8 Job Process curl + sudo install-win-iso.sh + escapeshellarg, D9 nouvelle table `windows_iso_downloads`, D10 Livewire SFC iso `/admin/sync-from-ad`, D11 configs `ipxe.iso_management` + `sambaedu.windows_iso`, D12 pas d'extension `MachineBootLog`, D13 pas d'item menu iPXE firmware, D14 5 events log channel `ipxe`, D15 `Cache::lock` global 7200s + `WithoutOverlapping` Job defense-in-depth
+
+### Section 15 — Page admin web SE5 `/admin/ipxe/iso-windows`
+
+#### Prérequis VM (T0.5 actions Henri pré-merge)
+
+> 4 points à valider AVANT le premier smoke test 3.6 — si l'un manque, le Job échouera avec un message clair côté toast (ex. "no tty present and no askpass program specified" = sudoers manquant).
+
+1. **Worker queue systemd** — créer `/etc/systemd/system/laravel-queue-ipxe-iso.service` :
+   ```ini
+   [Unit]
+   Description=Laravel Queue worker — ipxe_iso_downloads
+   After=network.target postgresql.service
+
+   [Service]
+   User=www-admin
+   Group=www-admin
+   Restart=always
+   WorkingDirectory=/var/www/sambaedu-reload
+   ExecStart=/usr/bin/php artisan queue:work --queue=ipxe_iso_downloads --tries=1 --timeout=7500 --memory=512
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   Puis `systemctl daemon-reload && systemctl enable --now laravel-queue-ipxe-iso.service`.
+2. **Sudoers `www-admin → install-win-iso.sh NOPASSWD`** — créer `/etc/sudoers.d/sambaedu-iso-install` :
+   ```
+   www-admin ALL=(root) NOPASSWD: /usr/share/sambaedu/scripts/install-win-iso.sh
+   ```
+   Permissions strictes : `chmod 0440 /etc/sudoers.d/sambaedu-iso-install` puis `visudo -c` pour valider.
+3. **Filesystem `/var/sambaedu/unattended/install/os/iso/` writable par `www-admin`** :
+   ```bash
+   mkdir -p /var/sambaedu/unattended/install/os/iso
+   chown -R www-admin:www-admin /var/sambaedu/unattended/install/os/iso
+   chmod 0755 /var/sambaedu/unattended/install/os/iso
+   ```
+4. **Audit contrat `install-win-iso.sh`** : confirmer présence + exécutable + signature
+   ```bash
+   ls -la /usr/share/sambaedu/scripts/install-win-iso.sh
+   sudo -u www-admin sudo -n /usr/share/sambaedu/scripts/install-win-iso.sh --help 2>&1 || true
+   ```
+   Le script doit accepter `<version_num> <iso_name>` en arguments positionnels (10|11 + nom du fichier ISO sous `iso/`).
+
+#### Scénario 3.6-1 — Page admin accessible (auth admin)
+
+```bash
+# Pré-condition : admin authentifié avec `server.admin` Spatie.
+curl -sS -b cookies.jar http://192.168.122.50/admin/ipxe/iso-windows
+```
+
+**Critères d'acceptation** :
+- HTTP 200.
+- Body contient `<h1>` ou heading "Gestion ISO Windows".
+- Body contient les 4 sections : "Versions Windows déployées", "Nouveau téléchargement", "Historique", (et conditionnel "Téléchargement en cours" si run actif).
+- Body contient le formulaire `<input type="url">` + bouton "Télécharger l'ISO".
+- Pas de row dans `legacy_catchall_logs` pour `/admin/ipxe/iso-windows` (court-circuit natif).
+
+#### Scénario 3.6-2 — 403 si user non-admin (teacher / student)
+
+```bash
+# Pré-condition : user `prof` authentifié sans permission `server.admin`.
+curl -sS -b cookies-teacher.jar -w '\n%{http_code}\n' http://192.168.122.50/admin/ipxe/iso-windows
+```
+
+**Critères d'acceptation** :
+- HTTP **403** (Spatie can:server.admin refuse).
+- Body contient un message d'erreur d'autorisation.
+- Pas de row insertion dans `windows_iso_downloads`.
+
+#### Scénario 3.6-3 — Redirect 302 login si user anonyme
+
+```bash
+# Pas de cookie session.
+curl -sS -I http://192.168.122.50/admin/ipxe/iso-windows
+```
+
+**Critères d'acceptation** :
+- HTTP 302 (middleware `sambaedu.auth` redirige).
+- Header `Location` pointe vers `/authentication/login` (ou équivalent SSO).
+
+#### Scénario 3.6-4 — Liste versions avec filesystem peuplé
+
+```bash
+# Pré-condition (SSH VM côté Henri) :
+sudo -u www-admin tee /var/sambaedu/unattended/install/os/Win10/version <<< 'Win10_22H2.iso'
+sudo -u www-admin tee /var/sambaedu/unattended/install/os/Win11/version <<< 'Win11_24H2.iso'
+sudo -u www-admin tee /var/sambaedu/unattended/install/os/Win11-old/version <<< 'Win11_23H2.iso'
+
+# Smoke admin :
+curl -sS -b cookies.jar http://192.168.122.50/admin/ipxe/iso-windows | grep -E 'Win10_22H2|Win11_24H2|Win11_23H2'
+```
+
+**Critères d'acceptation** :
+- 3 occurrences visibles : Win10_22H2.iso (current), Win11_24H2.iso (current), Win11_23H2.iso (old).
+- Win10-old slot = "non déployée" (badge ghost).
+
+#### Scénario 3.6-5 — Liste versions filesystem absent (VM neuve)
+
+```bash
+# Pré-condition : aucun dossier Win{10,11}{,-old}/ sous /var/sambaedu/unattended/install/os/
+sudo rm -rf /var/sambaedu/unattended/install/os/Win*
+
+# Smoke admin :
+curl -sS -b cookies.jar http://192.168.122.50/admin/ipxe/iso-windows
+```
+
+**Critères d'acceptation** :
+- 4× badge "non déployée" (badge-ghost) dans la card "Versions Windows déployées".
+- Log channel `ipxe` : 1× warning `ipxe.iso.sources.base_path_missing` à chaque mount() de la page (acceptable Phase 2 — non spammé car page humaine pas firmware).
+- Pas d'erreur 500.
+
+#### Scénario 3.6-6 — Submit URL valide → row pending + Job dispatched
+
+```bash
+# Action UI : admin clique "Télécharger l'ISO" avec
+# url='https://software-static.download.prss.microsoft.com/.../Win11_24H2.iso'
+# → modale confirm → bouton "Lancer le téléchargement"
+
+# Vérifications côté serveur :
+sudo -u postgres psql -d sambaedu -c "SELECT id, version, iso_name, status, source_url, initiated_by_user_id, host_ip FROM windows_iso_downloads ORDER BY id DESC LIMIT 1;"
+tail -f /var/www/sambaedu-reload/storage/logs/ipxe/ipxe-$(date +%Y-%m-%d).log
+```
+
+**Critères d'acceptation** :
+- 1 nouvelle row `windows_iso_downloads` avec `status='pending'` + `version='Win11'` + `iso_name='Win11_24H2.iso'` + `initiated_by_user_id` du current admin + `host_ip` du client.
+- Log channel `ipxe` : event `ipxe.iso.download.submitted` avec context complet (download_id, iso_name, version, source_url, user_id, host_ip).
+- Toast UI "Téléchargement lancé pour « Win11_24H2.iso » — suivi en bas de page.".
+- Champ `url` Livewire reset (vide).
+- La card "Téléchargement en cours" devient visible.
+- `wire:poll.5s` actif sur cette card uniquement.
+- Worker queue pickup : transition `pending` → `downloading` visible en DB < 30s.
+
+#### Scénario 3.6-7 — Submit URL invalide (HTTP au lieu de HTTPS)
+
+```bash
+# Action UI : admin saisit url='http://download.microsoft.com/Win11.iso' puis clique "Télécharger l'ISO".
+```
+
+**Critères d'acceptation** :
+- La validation Livewire `rules()` couche 1 refuse (regex `https://...iso`).
+- Si bypass UI (POST direct via curl avec CSRF), le service couche 2 lève `WindowsIsoValidationException` "Scheme HTTPS obligatoire".
+- Toast UI error.
+- 0 row insertée dans `windows_iso_downloads`.
+- 0 Job dispatché dans la queue `ipxe_iso_downloads`.
+
+#### Scénario 3.6-8 — Submit URL hors allowlist host (anti-SSRF)
+
+```bash
+# Action UI : admin saisit url='https://evil.com/Win11_24H2.iso'.
+```
+
+**Critères d'acceptation** :
+- Toast UI error : "Host 'evil.com' non autorisé (allowlist Microsoft uniquement).".
+- 0 row insert.
+- 0 Job dispatché.
+- Log channel `ipxe` : optionnel event `ipxe.iso.submit.exception` si exception remontée (selon le path UI).
+
+#### Scénario 3.6-9 — Submit double soumission concurrente (Cache::lock global)
+
+```bash
+# Pré-condition : un download est déjà en cours (status `downloading`).
+# Action UI : un 2e admin (ou même admin via 2e onglet) tente une nouvelle soumission.
+```
+
+**Critères d'acceptation** :
+- Toast UI error "Un téléchargement est déjà en cours, attendez sa fin ou annulez-le.".
+- 0 nouvelle row insertée.
+- 0 nouveau Job dispatché.
+- Log channel `ipxe` : event `ipxe.iso.download.rejected_locked`.
+
+#### Scénario 3.6-10 — Cancel d'un download en cours
+
+```bash
+# Pré-condition : 1 row `windows_iso_downloads` status='downloading' avec curl en cours.
+# Action UI : admin clique bouton "Annuler" sur la card "Téléchargement en cours".
+```
+
+**Critères d'acceptation** :
+- Row `status` mise à jour `cancelled` + `completed_at` non-null.
+- Toast UI info "Téléchargement annulé. Le process en cours continuera jusqu'à sa fin naturelle.".
+- Cache::lock global release (vérifiable en relançant un download après → pas de toast "déjà en cours").
+- Log channel `ipxe` : event `ipxe.iso.download.cancelled`.
+- Le polling `wire:poll.5s` stoppe automatiquement (card "en cours" disparaît).
+- **Limitation connue** : le curl/install-win-iso.sh en cours continue jusqu'à fin naturelle ou son timeout (parité legacy — pas de SIGTERM Phase 2). Le Job détectera la transition `cancelled` à la prochaine `refresh()` et bypassera la suite.
+
+#### Scénario 3.6-11 — (optionnel pré-prod) Smoke téléchargement réel ISO Microsoft
+
+> **À exécuter UNIQUEMENT en pré-prod** : ~6 Go DL réseau microsoft.com → 30-60 min.
+
+```bash
+# Pré-condition : T0.5 actions Henri toutes validées (worker + sudoers + filesystem + script).
+# Action UI : admin saisit une URL Microsoft réelle (ex. Win11_24H2 du site officiel).
+
+# Surveillance Henri :
+watch -n5 'sudo -u postgres psql -d sambaedu -t -c "SELECT id, status, exit_code, error FROM windows_iso_downloads ORDER BY id DESC LIMIT 1"'
+sudo tail -f /var/www/sambaedu-reload/storage/logs/ipxe/ipxe-$(date +%Y-%m-%d).log
+sudo ls -la /var/sambaedu/unattended/install/os/iso/
+```
+
+**Critères d'acceptation** :
+- Phase 1 (curl) : `ls -la /var/.../iso/Win11_24H2.iso` grossit progressivement (taille en MB visibles).
+- Transition `downloading` → `extracting` après ~30-60 min selon bande passante.
+- Phase 2 (extract) : log channel `ipxe` event `install-win-iso: <log shell>`.
+- Transition `extracting` → `success` après ~3-5 min selon CPU.
+- Rotation : `/var/sambaedu/unattended/install/os/Win11/version` mis à jour avec le nouveau iso_name + ancienne Win11 renommée Win11-old.
+- Toast UI success "ISO « Win11_24H2.iso » déployée avec succès.".
+- Polling Livewire stoppe automatiquement.
+
+#### Scénario 3.6-12 — (optionnel) Échec sudoers absent (T0.5 manquant)
+
+> Test délibéré de robustesse — provoquer le cas "sudoers manquant" pour vérifier le message d'erreur côté UI.
+
+```bash
+# Pré-condition : retirer temporairement la règle sudoers.
+sudo rm /etc/sudoers.d/sambaedu-iso-install
+
+# Action UI : lancer un nouveau téléchargement (étape curl OK puis échec sudo).
+
+# Restauration immédiate après le test :
+sudo tee /etc/sudoers.d/sambaedu-iso-install <<'EOF'
+www-admin ALL=(root) NOPASSWD: /usr/share/sambaedu/scripts/install-win-iso.sh
+EOF
+sudo chmod 0440 /etc/sudoers.d/sambaedu-iso-install
+```
+
+**Critères d'acceptation** :
+- Transition `downloading` → `extracting` → `failed` (le curl réussit, l'extract échoue).
+- `exit_code = 1` (ou code spécifique de `sudo -n` quand pas de tty/password).
+- `error` contient `"sudo: a password is required"` ou `"no tty present and no askpass program specified"` (ou variante distro).
+- Toast UI error "Échec du téléchargement de « <iso_name> » (exit 1). Consultez l'historique.".
+- Cache::lock global release (vérifiable en relançant un download → pas de blocage).
+
+#### Scénario 3.6-13 — (corrections post-review) Sous-domaine Microsoft accepté
+
+> Documentation explicite : `*.download.microsoft.com` (ex. `secure.download.microsoft.com`) est **intentionnellement** accepté par le validator (design D5, cf. revue code 3-6.md #3 / #12 rejetés).
+>
+> Justification : Microsoft contrôle ses sous-domaines, et l'admin doit posséder la permission `server.admin` (rôle ultra-restreint). Le risque résiduel `attacker.download.microsoft.com` est jugé acceptable Phase 2.
+
+```bash
+# Test ad hoc en VM (depuis tinker) :
+php artisan tinker
+>>> $v = app(App\Ipxe\Iso\Services\WindowsIsoUrlValidator::class);
+>>> $v->validate('https://secure.download.microsoft.com/path/Win11_25H1.iso');
+# Doit retourner : ['url' => ..., 'iso_name' => 'Win11_25H1.iso', 'version' => 'Win11', 'version_num' => '11']
+```
+
+**Critères d'acceptation** :
+- `secure.download.microsoft.com/Win11.iso` → ✅ accepté (sous-domaine Microsoft).
+- `microsoft.com.evil.com/Win11.iso` → ❌ rejeté ("non autorisé") — attaque fake-subdomain bloquée.
+- `microsoft.com/Win11.iso` → ❌ rejeté (host bare Microsoft hors allowlist).
+- Si terrain demande de restreindre davantage : passer `IPXE_ISO_ALLOWED_HOSTS` env à la liste exacte sans `download.microsoft.com` parent → ouvrir une story dédiée.
+
+#### Note — Accès à la page (D13 — pas de lien sidebar)
+
+> #13 (post-review 2026-05-21, hors-scope D13) : l'accès à `/admin/ipxe/iso-windows` se fait par **URL directe** ou par bookmark navigateur — **aucun lien sidebar n'est livré en 3.6** (hors-scope strict — cf. D13).
+>
+> **Follow-up post-3.6** : Henri arbitre l'ajout d'un item sidebar dans `_layouts/partials/sidebar.blade.php` (section "iPXE" ou "Système") si besoin terrain. Une story de polishing UX peut être ouverte ; pour l'instant, l'URL est à communiquer aux admins via documentation interne.
+
+### Limitations connues — Story 3.6
+
+#### Pas de SIGTERM sur process en cours lors du cancel
+
+L'admin qui clique "Annuler" met le row à `cancelled` mais le `curl` ou `install-win-iso.sh` continue jusqu'à fin naturelle / son timeout (parité legacy — `batch_command` ne SIGTERMait pas non plus). Le Job détectera la transition à la prochaine `refresh()` et bypassera la suite. Acceptable Phase 2.
+
+#### Pas de housekeeping des rows orphelines
+
+Si le worker queue crash sans release du lock global, le row `pending` reste indéfiniment. TTL 7200s du Cache::lock garantit qu'un nouveau download sera possible après 2h. Workaround manuel : annuler via UI ou `php artisan cache:clear` côté Henri. Cron de cleanup `cleanup-stuck-iso-downloads` Phase 3.
+
+#### Pas de validation SHA256/checksum
+
+Le legacy ne le fait pas non plus — parité stricte. Si besoin terrain (ISO Microsoft modifiée par MITM), ouvrir une story dédiée Phase 2/3.
+
+#### Pas d'upload multipart HTTP de l'ISO
+
+Parité legacy stricte — le legacy ne fait que `curl` depuis une URL publique. Si besoin terrain (admin sans Internet sortant), ouvrir une story dédiée.
+
+#### Pas d'item menu iPXE firmware
+
+3.6 livre une page admin **web** SE5, pas un menu firmware iPXE. L'item `/ipxe/admin` reste inchangé (D13). L'admin accède à la page via la sidebar SE5 (à ajouter par Henri post-3.6).
+
+#### Pas de retrait du fichier legacy `Win10/win_iso.php`
+
+Le catchall continue de servir l'URL legacy `/ipxe/Win10/win_iso.php` — cleanup global Story 3.7. Risque accepté : un admin pourrait utiliser la version legacy par habitude. Documentation interne à propager.
+
+---
+
 ## Limitations connues — Story 3.5
 
 ### MachineBootLog Windows : pas de déduplication
@@ -1427,6 +1729,19 @@ Un poste avec `status='protected'` qui termine une install Linux **conserve** so
 - [ ] Scénario 3.5-16 (sécurité LAN) : 403 hors LAN
 - [ ] Scénario 3.5-17 (non-régression catchall `.php`) : Win10/repair.bat.php + clonage.php + installation-windows.php restent via catchall
 - [ ] Scénario 3.5-18 (smoke poste réel install Win11) — optionnel pré-prod
+- [ ] Scénario 3.6-1 (page admin accessible auth admin) : 200 + 4 cards visibles
+- [ ] Scénario 3.6-2 (403 user non-admin)
+- [ ] Scénario 3.6-3 (redirect 302 login si anonyme)
+- [ ] Scénario 3.6-4 (liste versions filesystem peuplé) : 3 versions visibles + 1 "non déployée"
+- [ ] Scénario 3.6-5 (filesystem absent) : 4× "non déployée" + log warning
+- [ ] Scénario 3.6-6 (submit URL valide) : row pending + Job dispatch + toast success
+- [ ] Scénario 3.6-7 (URL HTTP au lieu HTTPS) : toast error + pas d'insert
+- [ ] Scénario 3.6-8 (URL hors allowlist host) : toast error "Host non autorisé"
+- [ ] Scénario 3.6-9 (double soumission concurrente) : Cache::lock rejette + log rejected_locked
+- [ ] Scénario 3.6-10 (cancel running) : status→cancelled + lock release + toast info
+- [ ] Scénario 3.6-11 (téléchargement réel ISO) — optionnel pré-prod uniquement
+- [ ] Scénario 3.6-12 (sudoers manquant) — optionnel robustesse
+- [ ] Scénario 3.6-13 (sous-domaine Microsoft accepté D5) — corrections post-review #3/#12
 
 > Smoke automatisable : voir Story 3.1 et 3.2 § "Smoke test à exécuter quand VM up"
 > dans `_bmad-output/implementation-artifacts/3-1-ipxe-service-core.md`.
