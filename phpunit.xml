@@ -31,6 +31,7 @@
         <env name="APP_CONFIG_CACHE" value="bootstrap/cache/config-testing.php"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_DRIVER" value="array"/>
+        <env name="APP_CONTEXT_CACHE_DRIVER" value="array"/><!-- Story 16.15 : store dédié app_context forcé en array pour les tests -->
         <env name="LOG_CHANNEL" value="null"/>
         <!-- Tests par défaut sur SQLite :memory: (schémas créés manuellement
              par setUp() des tests). Pour lancer contre Postgres sambaedu_test

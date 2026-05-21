@@ -5,15 +5,19 @@ declare(strict_types=1);
 namespace App\Services\AppCustomization;
 
 use App\Services\AppCustomization\Contracts\AppContextWriter;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Pendant écriture de `ApcuAppContextRepository` (Story 4.8).
+ * Pendant écriture de `CacheAppContextRepository` (Story 16.15).
  *
- * Story 16.7 — AC2.2.
+ * Story 16.7 — AC2.2 (origine). Story 16.15 — AC3 (migration Cache).
  *
- * Écrit la clé `apps.$id` consommée par les endpoints natifs runtime déjà
- * portés :
+ * Écrit la clé `apps.$id` via `Cache::store('app_context')` — store dédié
+ * avec `prefix => ''` (interop legacy : le shim `LegacyBootstrapTokenValidator`
+ * continue de lire la clé brute en direct via la couche bas-niveau, hors-scope
+ * D11, et accède donc à la même donnée). Clé consommée par les endpoints
+ * natifs runtime déjà portés :
  *
  *  - `wallpaper_out.php`  → Story 4.7 (`WallpaperController::legacyOut`)
  *  - `firefox_out.php`    → Story 4.8 (`AppPolicyController::legacyFirefoxOut`)
@@ -46,42 +50,26 @@ use Illuminate\Support\Facades\Log;
  * automatiquement par `ApplicationScriptsGenerator::fetchCached()` qui
  * ré-écrit le payload avec l'uuid courant si absent.
  *
- * Dégradation gracieuse : si APCu indisponible (CLI sans extension), log
- * warning et no-op (parité iso-legacy `apcu_store()` qui retourne `false`).
- *
- * @legacy-port path="sambaedu/includes/applications.inc.php:998 (apcu_store)"
- * @see \App\Services\AppCustomization\ApcuAppContextRepository Lecteur (Story 4.8).
+ * @legacy-port path="sambaedu/includes/applications.inc.php:998 (cache write — historiquement apcu)"
+ * @see \App\Services\AppCustomization\CacheAppContextRepository Lecteur (Story 16.15).
  */
-final class ApcuAppContextWriter implements AppContextWriter
+final class CacheAppContextWriter implements AppContextWriter
 {
     /** @inheritDoc */
     public function write(string $id, array $context, int $ttl = 1800): void
     {
-        // Validation md5 stricte — même garde que le lecteur 4.8
-        // (`ApcuAppContextRepository::findById` :24).
+        // Validation md5 stricte — même garde que le lecteur
+        // (`CacheAppContextRepository::findById`).
         if ($id === '' || ! preg_match('/^[a-f0-9]{32}$/i', $id)) {
-            Log::channel('gpo')->warning('[ApcuAppContextWriter] invalid id format', [
+            Log::channel('gpo')->warning('[CacheAppContextWriter] invalid id format', [
                 'id_hash' => substr(hash('sha256', $id), 0, 12),
             ]);
             return;
         }
 
-        if (! $this->apcuAvailable()) {
-            Log::channel('gpo')->warning('[ApcuAppContextWriter] APCu unavailable, context not persisted', [
-                'id' => $id,
-            ]);
-            return;
-        }
-
         // Iso-legacy : clé `apps.$id`, TTL 1800s (cf. `applications.inc.php:998`).
-        $ok = apcu_store('apps.' . $id, $context, $ttl);
-        if ($ok !== true) {
-            Log::channel('gpo')->warning('[ApcuAppContextWriter] apcu_store returned false', [
-                'id' => $id,
-                'ttl' => $ttl,
-            ]);
-            return;
-        }
+        // Cache::store('app_context') — store dédié avec prefix '' pour interop legacy.
+        Cache::store('app_context')->put('apps.' . $id, $context, $ttl);
 
         Log::channel('gpo')->info('[gpo] gpo.applications.context.put success', [
             'action_type' => 'gpo.applications.context.put',
@@ -97,17 +85,7 @@ final class ApcuAppContextWriter implements AppContextWriter
         if ($id === '' || ! preg_match('/^[a-f0-9]{32}$/i', $id)) {
             return;
         }
-        if (! $this->apcuAvailable()) {
-            return;
-        }
-        @apcu_delete('apps.' . $id);
-        @apcu_delete('scripts.' . $id);
-    }
-
-    private function apcuAvailable(): bool
-    {
-        return function_exists('apcu_store')
-            && function_exists('apcu_enabled')
-            && apcu_enabled();
+        Cache::store('app_context')->forget('apps.' . $id);
+        Cache::store('app_context')->forget('scripts.' . $id);
     }
 }

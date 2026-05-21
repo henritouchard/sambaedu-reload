@@ -13,6 +13,7 @@ use App\Models\Workstation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -163,11 +164,11 @@ class ApplicationsScriptsController extends Controller
             return $this->emptyOk($this->resolveContentType($os));
         }
 
-        // ── Volet 5 : assemblage scripts (avec cache APCu `scripts.$id`,
-        // parité legacy `:203-304` — économise scan FS + assemblage sur boot
-        // de masse, review #3).
+        // ── Volet 5 : assemblage scripts (avec cache `scripts.$id` via
+        // Cache::store('app_context'), parité legacy `:203-304` — économise
+        // scan FS + assemblage sur boot de masse, review #3 / Story 16.15).
         $scriptCacheKey = 'scripts.' . (string) ($info['id'] ?? '');
-        $cached = function_exists('apcu_fetch') ? @apcu_fetch($scriptCacheKey) : false;
+        $cached = Cache::store('app_context')->get($scriptCacheKey);
         if (is_array($cached)) {
             $texts = $cached;
         } else {
@@ -182,8 +183,9 @@ class ApplicationsScriptsController extends Controller
                 ]);
                 return $this->emptyOk($this->resolveContentType($os));
             }
-            if (function_exists('apcu_store') && ($info['id'] ?? '') !== '') {
-                @apcu_store($scriptCacheKey, $texts, 300);
+            $cacheId = (string) ($info['id'] ?? '');
+            if ($cacheId !== '' && preg_match('/^[a-f0-9]{32}$/i', $cacheId)) {
+                Cache::store('app_context')->put($scriptCacheKey, $texts, 300);
             }
         }
 
@@ -323,7 +325,7 @@ class ApplicationsScriptsController extends Controller
         }
 
         $scriptCacheKey = 'scripts.' . (string) ($info['id'] ?? '');
-        $cached = function_exists('apcu_fetch') ? @apcu_fetch($scriptCacheKey) : false;
+        $cached = Cache::store('app_context')->get($scriptCacheKey);
         if (is_array($cached)) {
             $texts = $cached;
         } else {
@@ -339,8 +341,9 @@ class ApplicationsScriptsController extends Controller
                 ]);
                 return $this->emptyOk($this->resolveContentType($os));
             }
-            if (function_exists('apcu_store') && ($info['id'] ?? '') !== '') {
-                @apcu_store($scriptCacheKey, $texts, 300);
+            $cacheId = (string) ($info['id'] ?? '');
+            if ($cacheId !== '' && preg_match('/^[a-f0-9]{32}$/i', $cacheId)) {
+                Cache::store('app_context')->put($scriptCacheKey, $texts, 300);
             }
         }
 

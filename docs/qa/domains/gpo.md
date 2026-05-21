@@ -1739,3 +1739,101 @@ php artisan tinker --execute='for($i=0;$i<25;$i++) \DB::table("jobs")->insert(["
 - [ ] **16.14-14** Filtre OU listing fonctionnel (cache Q2) : DN OU valide → filtre correct, valeur invalide → listing complet silencieux.
 - [ ] **16.14-15a** Dashboard jobs 25 seeds → page 1 = 20, page 2 = 5.
 - [ ] **16.14-15b** Export CSV : colonne `version_status` présente, `known` si cache chaud.
+
+---
+
+## Story 16.15 — Migration cache Laravel
+
+**Date livraison** : 2026-05-21
+**Migrations à appliquer** : aucune (refactor interne — pas de changement de schéma)
+**Pré-requis complémentaires** :
+- Driver APCu chargé en PHP-FPM (`php -r "echo apcu_enabled();"` → `1`).
+- `CACHE_DRIVER=apc` dans `/var/www/sambaedu-reload/.env` (défaut prod après 16.15).
+- `php artisan config:clear && php artisan cache:clear` (après deploy).
+
+### Scénario 16.15-1 — Vérification store `app_context` déclaré et configuré
+
+1. SSH sur la VM : `ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50`.
+2. `cd /var/www/sambaedu-reload && php artisan tinker --execute='print_r(config("cache.stores.app_context"));'`
+3. Vérifier la sortie :
+   - `driver` = `apc` (ou valeur de `APP_CONTEXT_CACHE_DRIVER` / `CACHE_DRIVER` env).
+   - `prefix` = `''` (chaîne vide — **critique** pour interop legacy D5).
+4. Vérifier que `config('cache.default')` = `apc` (fallback configuré).
+
+**Attendu** : tableau `['driver' => 'apc', 'prefix' => '']`.
+
+---
+
+### Scénario 16.15-2 — Dégradation gracieuse avec `CACHE_DRIVER=array`
+
+1. Éditer `/var/www/sambaedu-reload/.env` : `CACHE_DRIVER=array`.
+2. `php artisan config:clear`.
+3. Déclencher un hit `/gpo/applications.php?machine=pc01&action=startup&os=windows`.
+4. Vérifier que l'endpoint répond 200 (vide ou scripté — pas de 500).
+5. Vérifier que le log `storage/logs/gpo.log` ne contient pas d'exception APCu.
+6. Remettre `CACHE_DRIVER=apc` + `php artisan config:clear`.
+
+**Attendu** : 200 sans erreur — dégradation gracieuse (store array ne persiste rien, mais ne lève pas d'exception).
+
+---
+
+### Scénario 16.15-3 — Interop legacy : lecture APCu direct après écriture Cache
+
+1. `CACHE_DRIVER=apc` dans `.env` + `php artisan config:clear`.
+2. Déclencher un appel POST `/gpo/applications.php` avec une machine et un user AD valides (uuid connu).
+3. Récupérer l'`id` (md5) depuis `storage/logs/gpo.log` (champ `id` du log `gpo.applications.context.put`).
+4. Vérifier la clé APCu brute :
+   ```bash
+   php -r 'echo print_r(apcu_fetch("apps.<id>"), true);'
+   ```
+5. Vérifier que le tableau retourné contient les clés `user`, `machine`, `salle`, `os`.
+
+**Attendu** : `apcu_fetch("apps.<id>")` retourne le payload complet — interop bidirectionnelle confirmée (D3/D4/D5 Story 16.15).
+
+---
+
+### Scénario 16.15-4 — Bench micro-régression latence (AC9.1.4)
+
+1. `CACHE_DRIVER=apc` dans `.env` + `php artisan config:clear`.
+2. Mesurer 100 hits `/gpo/applications.php` post-16.15 (avec un uuid valide déjà en cache) :
+   ```bash
+   ab -n 100 -c 1 'http://localhost/gpo/applications.php?machine=pc01&action=startup&os=windows&uuid=<id>'
+   ```
+3. Comparer avec la baseline post-16.7 (si disponible) ou noter le `Time per request` moyen.
+4. Vérifier que la latence moyenne < 110 % de la baseline (écart < 5 % accepté — overhead Cache facade ~1-5 µs/appel).
+
+**Attendu** : pas de régression observable > 5 %. Driver APCu reste physiquement identique — l'overhead est uniquement le routing facade Laravel.
+
+---
+
+### Scénario 16.15-5 — Interop bi-directionnelle tinker + APCu CLI
+
+1. Sur la VM :
+   ```bash
+   cd /var/www/sambaedu-reload
+   php artisan tinker
+   ```
+2. Dans tinker :
+   ```php
+   Cache::store('app_context')->put('apps.12a734d9823e7d7ee4fc700dd595f391', ['x' => 1], 60);
+   apcu_fetch('apps.12a734d9823e7d7ee4fc700dd595f391');
+   ```
+3. Vérifier que `apcu_fetch` retourne `['x' => 1]`.
+4. Inverse :
+   ```php
+   apcu_store('apps.7a6253c7145453d2d17e918796ae9994', ['y' => 2], 60);
+   Cache::store('app_context')->get('apps.7a6253c7145453d2d17e918796ae9994');
+   ```
+5. Vérifier que `Cache::store('app_context')->get(...)` retourne `['y' => 2]`.
+
+**Attendu** : lecture/écriture croisée APCu direct ↔ Cache::store('app_context') transparente (preuve que `prefix => ''` est effectif).
+
+---
+
+### Checklist rapide 16.15 — post-deploy
+
+- [ ] **16.15-1** Store `app_context` déclaré : driver = `apc`, prefix = `''`.
+- [ ] **16.15-2** Dégradation gracieuse `CACHE_DRIVER=array` → 200 sans exception.
+- [ ] **16.15-3** Interop legacy : `apcu_fetch("apps.<id>")` retourne le payload écrit par l'endpoint natif.
+- [ ] **16.15-4** Bench 100 hits : latence < 110 % baseline (overhead Cache facade < 5 %).
+- [ ] **16.15-5** Tinker bi-directionnel : `Cache::store('app_context')` ↔ `apcu_fetch` transparent.

@@ -80,7 +80,7 @@ class ApplicationScriptsAssembler
      *
      * Retourne un dict indexé par interpréteur, valeurs = string concaténée.
      *
-     * @param  array<string,mixed>  $info  Contexte ApcuAppContextWriter.
+     * @param  array<string,mixed>  $info  Contexte CacheAppContextWriter (Story 16.15).
      * @param  list<array<string,mixed>>  $scripts  Sortie de ApplicationTemplatesScanner::scan.
      * @return array<string,string>  ['cmd' => "...", 'bash' => "...", 'powershell' => "...", 'server' => "..."]
      */

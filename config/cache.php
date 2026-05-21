@@ -37,6 +37,23 @@ return [
             'driver' => 'apc',
         ],
 
+        // Store dédié contexte applicatif GPO/AppCustomization/Wallpaper.
+        // prefix => '' : clés brutes `apps.$id` / `scripts.$id` pour interop
+        // avec le shim legacy `LegacyBootstrapTokenValidator` qui fait
+        // `apcu_fetch('apps.'.$id)` en direct (cf. D5 Story 16.15 + D3/D4).
+        // APP_CONTEXT_CACHE_DRIVER permet de découpler ce store du store
+        // général (utile si Phase 3 bascule general sur redis, app_context
+        // reste apc local pour interop legacy).
+        // Note (review #10) : on court-circuite intentionnellement `CACHE_DRIVER`
+        // ici — un `CACHE_DRIVER=file` global ne doit PAS faire basculer
+        // app_context sur driver `file` (round-trip FS = régression perf boot
+        // masse, exactement le risque listé au cadrage initial). Pour override
+        // ce store, utiliser explicitement APP_CONTEXT_CACHE_DRIVER.
+        'app_context' => [
+            'driver' => env('APP_CONTEXT_CACHE_DRIVER', 'apc'),
+            'prefix' => '', // iso-legacy : clés brutes `apps.$id`, `scripts.$id`
+        ],
+
         'array' => [
             'driver' => 'array',
             'serialize' => false,

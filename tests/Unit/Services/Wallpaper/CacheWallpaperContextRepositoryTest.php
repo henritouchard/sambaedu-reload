@@ -9,17 +9,21 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests unit parsing APCu → WallpaperContext.
+ * Tests unit parsing cache payload → WallpaperContext.
  *
  * Story 4.7 — AC 3, correction post-review #1 : la structure réelle en prod
  * est `'user' => [...]` / `'machine' => [...]` arrays LDAP, pas des strings.
+ *
+ * Story 16.15 — AC7.4 : renommage de classe (CacheWallpaperContextRepositoryTest).
+ * Le DTO `WallpaperContext::fromApcuArray` est conservé tel quel (nom historique
+ * lié à la structure du payload, pas au mécanisme de stockage — cf. D10).
  */
-class ApcuWallpaperContextRepositoryTest extends TestCase
+class CacheWallpaperContextRepositoryTest extends TestCase
 {
     #[Test]
-    public function parses_real_apcu_structure_user_and_machine_as_arrays(): void
+    public function parses_real_cache_structure_user_and_machine_as_arrays(): void
     {
-        // Structure réelle posée par applications.inc.php::get_apps() :
+        // Structure réelle posée par CacheAppContextWriter (Story 16.15) :
         //   $info['user'] = search_user(...)  (array LDAP avec cn, fullname, …)
         //   $info['machine'] = search_machine(...)  (array LDAP avec cn, …)
         //   $info['salle'] = ldap_dn2cn(...)  (string)

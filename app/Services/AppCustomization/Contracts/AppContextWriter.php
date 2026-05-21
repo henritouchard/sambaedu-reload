@@ -12,7 +12,7 @@ namespace App\Services\AppCustomization\Contracts;
  * du Controller `ApplicationsScriptsController`.
  *
  * @see \App\Services\AppCustomization\Contracts\AppContextRepository Lecteur (Story 4.8).
- * @see \App\Services\AppCustomization\ApcuAppContextWriter Implémentation par défaut.
+ * @see \App\Services\AppCustomization\CacheAppContextWriter Implémentation par défaut (Story 16.15).
  */
 interface AppContextWriter
 {

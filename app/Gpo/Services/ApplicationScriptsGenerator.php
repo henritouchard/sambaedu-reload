@@ -9,6 +9,7 @@ use App\Ldap\AdMachineManager;
 use App\Repositories\UserRepository;
 use App\Repositories\WorkstationRepository;
 use App\Services\AppCustomization\Contracts\AppContextWriter;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
@@ -311,18 +312,20 @@ class ApplicationScriptsGenerator
     }
 
     /**
-     * Lecture APCu côté générateur (best-effort).
+     * Lecture cache côté générateur (best-effort).
+     *
+     * Utilise `Cache::store('app_context')` (store dédié avec `prefix => ''`)
+     * pour garantir interop legacy shim (D3/D5 Story 16.15).
      *
      * @return array<string,mixed>|null
      */
     private function fetchCached(string $id): ?array
     {
-        if (! function_exists('apcu_fetch') || ! function_exists('apcu_enabled') || ! apcu_enabled()) {
+        if ($id === '' || ! preg_match('/^[a-f0-9]{32}$/i', $id)) {
             return null;
         }
-        $success = false;
-        $payload = apcu_fetch('apps.' . $id, $success);
-        if ($success !== true || ! is_array($payload)) {
+        $payload = Cache::store('app_context')->get('apps.' . $id);
+        if (! is_array($payload)) {
             return null;
         }
         return $payload;

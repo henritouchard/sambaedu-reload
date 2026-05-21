@@ -12,6 +12,7 @@ use App\Ldap\AdMachineManager;
 use App\Repositories\UserRepository;
 use App\Repositories\WorkstationRepository;
 use App\Services\AppCustomization\Contracts\AppContextWriter;
+use Illuminate\Support\Facades\Cache;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -216,8 +217,9 @@ class ApplicationsScriptsEndpointTest extends TestCase
     }
 
     #[Test]
-    public function it_writes_apcu_context_on_successful_resolution(): void
+    public function it_writes_cache_context_on_successful_resolution(): void
     {
+        // Story 16.15 — AC7.5 : vérifie l'appel via Cache::store('app_context').
         // Réécrit le mock writer pour vérifier l'appel.
         $writer = Mockery::mock(AppContextWriter::class);
         $writer->shouldReceive('write')->atLeast()->once();
