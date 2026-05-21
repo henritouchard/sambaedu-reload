@@ -306,11 +306,11 @@ class UserSyncServicePasswordChangedAtTest extends TestCase
             static fn(string $attribute) => $attributes[$attribute] ?? null
         );
 
-        // Stub toBusinessObject() → objet minimal avec etabCode/etabName
-        $ldapUser->method('toBusinessObject')->willReturn(new class {
-            public ?string $etabCode = null;
-            public ?string $etabName = null;
-        });
+        // Stub toBusinessObject() → DTO App\Types\User minimal (etabCode/etabName null)
+        $ldapUser->method('toBusinessObject')->willReturn(new AdUser(
+            login: $login,
+            fullname: $login,
+        ));
 
         return $ldapUser;
     }

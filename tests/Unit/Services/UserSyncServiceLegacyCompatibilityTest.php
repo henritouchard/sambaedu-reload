@@ -159,6 +159,7 @@ class UserSyncServiceLegacyCompatibilityTest extends TestCase
             $table->json('ad_right_profiles')->nullable();
             $table->unsignedInteger('ad_rights_bitmask')->default(0);
             $table->timestamp('ad_synced_at')->nullable();
+            $table->timestamp('password_changed_at')->nullable();
             $table->timestamps();
         });
     }
