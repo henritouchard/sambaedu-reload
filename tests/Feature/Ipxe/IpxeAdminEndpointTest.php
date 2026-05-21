@@ -165,4 +165,85 @@ class IpxeAdminEndpointTest extends TestCase
         $body = (string) $response->getContent();
         self::assertStringNotContainsString('item --key l install-linux', $body);
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.5 — AC7.3 — item Installation Windows + non-régression
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_shows_install_windows_item_when_enabled(): void
+    {
+        config(['ipxe.windows.enabled' => true]);
+        Workstation::create([
+            'name' => 'PC-ADMIN-WIN',
+            'uuid' => '12345678-1234-1234-1234-aaaa00000003',
+            'mac' => 'aa:bb:cc:dd:ee:03',
+            'status' => 'active',
+        ]);
+
+        $response = $this->post('/ipxe/admin', [
+            'mac' => 'aa:bb:cc:dd:ee:03',
+            'uuid' => '12345678-1234-1234-1234-aaaa00000003',
+        ]);
+
+        $response->assertStatus(200);
+        $body = (string) $response->getContent();
+        self::assertStringContainsString('item --key w install-windows', $body);
+        self::assertStringContainsString('/ipxe/installation-windows##params', $body);
+    }
+
+    #[Test]
+    public function it_hides_install_windows_item_when_disabled(): void
+    {
+        config(['ipxe.windows.enabled' => false]);
+        Workstation::create([
+            'name' => 'PC-ADMIN-NOWIN',
+            'uuid' => '12345678-1234-1234-1234-aaaa00000004',
+            'mac' => 'aa:bb:cc:dd:ee:04',
+            'status' => 'active',
+        ]);
+
+        $response = $this->post('/ipxe/admin', [
+            'mac' => 'aa:bb:cc:dd:ee:04',
+            'uuid' => '12345678-1234-1234-1234-aaaa00000004',
+        ]);
+
+        $response->assertStatus(200);
+        $body = (string) $response->getContent();
+        self::assertStringNotContainsString('item --key w install-windows', $body);
+    }
+
+    #[Test]
+    public function it_shows_all_3_2_3_3_3_4_3_5_items_together_for_known_workstation(): void
+    {
+        // Non-régression : tous les items des stories 3.2-3.5 cohabitent
+        // dans le menu admin connu (avec leurs feature flags activés).
+        config([
+            'ipxe.enrollment.enabled' => true,
+            'ipxe.linux.enabled' => true,
+            'ipxe.windows.enabled' => true,
+        ]);
+        Workstation::create([
+            'name' => 'PC-ADMIN-ALL',
+            'uuid' => '12345678-1234-1234-1234-aaaa00000005',
+            'mac' => 'aa:bb:cc:dd:ee:05',
+            'status' => 'active',
+        ]);
+
+        $response = $this->post('/ipxe/admin', [
+            'mac' => 'aa:bb:cc:dd:ee:05',
+            'uuid' => '12345678-1234-1234-1234-aaaa00000005',
+        ]);
+
+        $response->assertStatus(200);
+        $body = (string) $response->getContent();
+        // Enrollment 3.3.
+        self::assertStringContainsString('item --key n set-name', $body);
+        // Install Linux 3.4.
+        self::assertStringContainsString('item --key l install-linux', $body);
+        // Install Windows 3.5.
+        self::assertStringContainsString('item --key w install-windows', $body);
+        // Maintenance 3.2 (toujours présent).
+        self::assertStringContainsString('item --key m maintenance', $body);
+    }
 }

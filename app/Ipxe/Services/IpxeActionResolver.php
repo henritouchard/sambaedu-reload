@@ -111,6 +111,11 @@ final class IpxeActionResolver
         // les 3 actions historiques 3.2 (rescuecd, winpe, factory_reset).
         $linuxVariables = $this->resolveLinuxVariables($action, $mac, $uuid, $scriptUrl, $perso);
 
+        // Story 3.5 — AC6.2 / AC7.1 — variables Windows install pour les
+        // templates `ipxe.actions.install_win*`. windowsMeta() retourne null
+        // pour les 12 cases hors install_win*.
+        $windowsVariables = $this->resolveWindowsVariables($action, $scriptUrl);
+
         return $this->viewFactory->make($action->template(), array_merge([
             'shebang' => self::IPXE_SHEBANG,
             'mac' => $mac,
@@ -125,7 +130,56 @@ final class IpxeActionResolver
             'debug' => $debug,
             'disk' => $disk,
             'perso' => $perso,
-        ], $linuxVariables))->render();
+        ], $linuxVariables, $windowsVariables))->render();
+    }
+
+    /**
+     * Story 3.5 — AC6.2 / AC7.1 — Construit les variables Blade pour les
+     * templates `ipxe.actions.install_win*`.
+     *
+     * Pour les actions hors install_win* : retourne un tableau vide (les
+     * templates correspondants n'utilisent pas ces variables).
+     *
+     * Pour les actions install_win* :
+     *  - `$windowsVersion`        : `'Win10'` ou `'Win11'`.
+     *  - `$winAction`             : `'wimboot10'` ou `'wimboot11'` (param
+     *    iso-legacy).
+     *  - `$winDebug` / `$winDisk` / `$winPerso` : flags 0/1.
+     *  - `$installBatUrl`         : URL `/ipxe/windows/install.bat`.
+     *  - `$unattendXmlUrl`        : URL `/ipxe/windows/unattend.xml`.
+     *  - `$winAssetsBase`         : `'Win10'` (legacy wimboot/winpeshl partagés
+     *    Win10/Win11 — parité `wimboot11.php:7` `kernel Win10/wimboot`).
+     *
+     * @return array<string, mixed>
+     */
+    private function resolveWindowsVariables(
+        IpxeAdminAction $action,
+        string $scriptUrl,
+    ): array {
+        $meta = $action->windowsMeta();
+        if ($meta === null) {
+            return [];
+        }
+
+        $installBatUrl = $scriptUrl . '/ipxe/windows/install.bat';
+        $unattendXmlUrl = $scriptUrl . '/ipxe/windows/unattend.xml';
+
+        // `winAssetsBase` = chemin des assets wimboot/winpeshl statiques
+        // (iso-legacy `actions/wimboot10.php:6` + `wimboot11.php:6` qui
+        // pointent tous les deux sur `Win10/wimboot` + `Win10/winpeshl.ini`).
+        // Override-able via config si Win11 a son propre wimboot.
+        $winAssetsBase = (string) config('ipxe.windows.assets_paths.wimboot_base', 'Win10');
+
+        return [
+            'windowsVersion' => $meta['version'],
+            'winAction' => $meta['action'],
+            'winDebug' => $meta['debug'],
+            'winDisk' => $meta['disk'],
+            'winPerso' => $meta['perso'],
+            'installBatUrl' => $installBatUrl,
+            'unattendXmlUrl' => $unattendXmlUrl,
+            'winAssetsBase' => $winAssetsBase,
+        ];
     }
 
     /**

@@ -438,6 +438,59 @@ final class IpxeService
     }
 
     /**
+     * Story 3.5 — D2 / AC4.1 — Orchestre la route native
+     * `GET|POST /ipxe/installation-windows`.
+     *
+     * Flow iso 3.4 `handleInstallationLinuxMenu()` :
+     *
+     *  1. Extrait `mac`/`uuid`/`product`/`ip`.
+     *  2. Handshake si MAC/UUID manquant (chainTarget=`'installation-windows'`).
+     *  3. Résolution `WorkstationLocator`. Poste inconnu = menu erreur D7
+     *     (délégué au renderer qui rend l'écran d'erreur si `$ws === null`).
+     *  4. Log structuré `ipxe.install_windows.menu_rendered` + insert
+     *     `MachineBootLog` (`action='ipxe_install_win'`).
+     *  5. Headers iso D10 (`text/plain`, `no-store`, `noindex`).
+     *  6. safeRender wrap — fallback minimal iPXE en cas d'exception template.
+     */
+    public function handleInstallationWindowsMenu(Request $request): Response
+    {
+        $mac = (string) $request->input('mac', '');
+        $uuid = (string) $request->input('uuid', '');
+        $product = (string) $request->input('product', '');
+        $ip = (string) ($request->ip() ?? '');
+
+        if ($mac === '' || $uuid === '') {
+            Log::channel($this->channel())->info('ipxe.install_windows.handshake', [
+                'action_type' => 'ipxe.install_windows.handshake',
+                'ip' => $ip,
+                'user_agent' => substr((string) $request->userAgent(), 0, 200),
+            ]);
+
+            return $this->safeRender(
+                fn (): string => $this->renderer->renderHandshake('installation-windows'),
+                $ip,
+                $mac,
+                $uuid,
+                IpxeMenuKind::InstallationWindowsHandshake,
+            );
+        }
+
+        $workstation = $this->locator->locate($mac, $uuid, $product);
+        $this->logMenuRendered('ipxe.install_windows.menu_rendered', $workstation, $mac, $uuid, $ip);
+        $this->persistEndpointLog($workstation, $ip, 'ipxe_install_win', 'ipxe');
+
+        $baseUrl = $this->resolveServerBaseUrl($request);
+
+        return $this->safeRender(
+            fn (): string => $this->renderer->renderInstallationWindowsMenu($workstation, $ip, $baseUrl),
+            $ip,
+            $mac,
+            $uuid,
+            IpxeMenuKind::InstallationWindowsMenu,
+        );
+    }
+
+    /**
      * Story 3.1 — AC4.2.
      *
      * **Placeholder** historique pour le mécanisme `action` programmée

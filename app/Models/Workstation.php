@@ -119,6 +119,17 @@ class Workstation extends Model implements Wireable
     }
 
     /**
+     * Retourne l'OU AD du poste pour le join domain (unattend.xml
+     * `MachineObjectOU`). Source de vérité = `physicalRoom->ad_dn` (alimenté
+     * par l'enrollment 3-3 ou la sync AD). Le caller utilise un fallback
+     * `config('sambaedu.computers_rdn', 'CN=Computers')` si null.
+     */
+    public function getAdOu(): ?string
+    {
+        return $this->physicalRoom?->ad_dn;
+    }
+
+    /**
      * Assigne la machine à une salle physique
      * 
      * @param int|null $roomId ID de la salle physique (null pour retirer)

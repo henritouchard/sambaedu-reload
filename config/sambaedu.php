@@ -193,6 +193,46 @@ return [
     | text/plain renvoyé au poste LAN qui boot. Mitigation = auth.v1.lan-only
     | + MAC/UUID matching strict (cf. story 3.4 D3).
     */
+    /*
+    |--------------------------------------------------------------------------
+    | Story 3.5 — Variables Windows unattend + install.bat (D11)
+    |--------------------------------------------------------------------------
+    |
+    | Variables consommées par WindowsUnattendBuilder (XML DOMDocument) et
+    | WindowsInstallBatBuilder (bash WinPE). Toutes ces valeurs DOIVENT être
+    | lues depuis `.env` (jamais hardcodées) — elles contiennent des secrets
+    | (mots de passe admin local Windows, clé produit).
+    |
+    | Convention : tous les SECRETS sont rendus en clair dans l'unattend.xml +
+    | install.bat text/plain renvoyés au poste LAN qui boot. Mitigation =
+    | auth.v1.lan-only + MAC/UUID matching strict (cf. story 3.5 D3).
+    */
+    'windows' => [
+        // Nom de l'admin local Windows créé sur chaque poste installé.
+        // Iso-legacy `windows.inc.php:304` `$config['adminse_name']`.
+        'adminse_name' => env('SAMBAEDU_ADMINSE_NAME', 'adminse'),
+
+        // Mot de passe de l'admin local Windows (SECRET).
+        // Iso-legacy `windows.inc.php:305` `$config['adminse_passwd']`.
+        'adminse_passwd' => env('SAMBAEDU_ADMINSE_PASSWD', ''),
+
+        // Product Key Windows par défaut (KMS generic Win10/11) — utilisé
+        // comme fallback si pas de clé spécifique fournie. Iso-legacy
+        // `windows.inc.php:265`.
+        'win_key' => env('SAMBAEDU_WIN_KEY', 'VK7JG-NPHTM-C97JM-9MPGT-3V66T'),
+
+        // User local Windows pour le mode `perso=1` (pc perso hors domaine).
+        // Iso-legacy `windows.inc.php:234` chain `win_user ?? perso_user ?? linux_user`.
+        'win_user' => env('SAMBAEDU_WIN_USER', ''),
+
+        // Mot de passe du user perso (SECRET).
+        'win_user_passwd' => env('SAMBAEDU_WIN_USER_PASSWD', ''),
+
+        // Flag autologon (LogonCount = 4294967295 si !join && win_autologon == 1).
+        // Iso-legacy `windows.inc.php:335-339`.
+        'win_autologon' => (int) env('SAMBAEDU_WIN_AUTOLOGON', 0),
+    ],
+
     'linux' => [
         'locale' => env('SAMBAEDU_LINUX_LOCALE', 'fr_FR'),
         'keyboard' => env('SAMBAEDU_LINUX_KEYBOARD', 'fr(latin9)'),

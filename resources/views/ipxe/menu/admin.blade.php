@@ -18,6 +18,9 @@ item --key e enleveparc (e) Retirer d'un parc logique
 @if($isInstallLinuxActive)
 item --key l install-linux (l) Installation Linux (Debian/Ubuntu)
 @endif
+@if($isInstallWindowsActive)
+item --key w install-windows (w) Installation Windows (Win10/Win11)
+@endif
 item --key m maintenance (m) Outils de maintenance (rescuecd, winpe, factory reset)
 @else
 @if($isEnrollmentActive)
@@ -46,6 +49,9 @@ chain --replace --autofree {{ $enrollmentBaseUrl }}/parc-remove##params
 
 :install-linux
 chain --replace --autofree {{ $installLinuxBaseUrl }}##params
+
+:install-windows
+chain --replace --autofree {{ $installWindowsBaseUrl }}##params
 
 :maintenance
 chain --replace --autofree {{ $serverBaseUrl }}/ipxe/maintenance##params

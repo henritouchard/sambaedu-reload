@@ -11,6 +11,7 @@ use Tests\TestCase;
 /**
  * Story 3.2 — AC1.1 / T1.2.
  * Story 3.4 — AC1.1 — extension +9 cases install_*.
+ * Story 3.5 — AC1.1 — extension +7 cases install_win*.
  *
  * Tests unitaires de la whitelist enum {@see IpxeAdminAction} (D9 — sécurité
  * critique : empêche l'exécution de scripts arbitraires).
@@ -18,14 +19,14 @@ use Tests\TestCase;
 class IpxeAdminActionTest extends TestCase
 {
     #[Test]
-    public function it_lists_exactly_twelve_cases_after_3_4(): void
+    public function it_lists_exactly_nineteen_cases_after_3_5(): void
     {
         $cases = IpxeAdminAction::cases();
         self::assertCount(
-            12,
+            19,
             $cases,
-            'Story 3.4 : la whitelist doit contenir exactement 12 cases (3 historiques + 9 install_*).'
-            . ' Tout ajout doit être documenté par une nouvelle story (3.5/3.7) et ce test relaxé.',
+            'Story 3.5 : la whitelist doit contenir exactement 19 cases (3 historiques + 9 install_* + 7 install_win*).'
+            . ' Tout ajout doit être documenté par une nouvelle story (3.7) et ce test relaxé.',
         );
     }
 
@@ -121,5 +122,105 @@ class IpxeAdminActionTest extends TestCase
         self::assertSame(IpxeAdminAction::InstallDebGnome, IpxeAdminAction::tryFrom('install_deb_gnome'));
         self::assertSame(IpxeAdminAction::InstallUbuntu64, IpxeAdminAction::tryFrom('install_ubuntu64'));
         self::assertSame(IpxeAdminAction::InstallNird, IpxeAdminAction::tryFrom('install_nird'));
+    }
+
+    /* ------------------------------------------------------------------
+     * Story 3.5 — AC1.1 — extension +7 cases install_win*.
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_resolves_install_win11_to_correct_template(): void
+    {
+        self::assertSame('ipxe.actions.install_win11', IpxeAdminAction::InstallWin11->template());
+        self::assertSame('ipxe.actions.install_win10', IpxeAdminAction::InstallWin10->template());
+        self::assertSame('ipxe.actions.install_win10_debug', IpxeAdminAction::InstallWin10Debug->template());
+        self::assertSame('ipxe.actions.install_win10_disk', IpxeAdminAction::InstallWin10Disk->template());
+        self::assertSame('ipxe.actions.install_win10_perso', IpxeAdminAction::InstallWin10Perso->template());
+        self::assertSame('ipxe.actions.install_win11_disk', IpxeAdminAction::InstallWin11Disk->template());
+        self::assertSame('ipxe.actions.install_win11_perso', IpxeAdminAction::InstallWin11Perso->template());
+    }
+
+    #[Test]
+    public function it_resolves_install_win10_perso_with_perso_flag(): void
+    {
+        $meta = IpxeAdminAction::InstallWin10Perso->windowsMeta();
+        self::assertNotNull($meta);
+        self::assertSame('Win10', $meta['version']);
+        self::assertSame('wimboot10', $meta['action']);
+        self::assertSame(0, $meta['debug']);
+        self::assertSame(0, $meta['disk']);
+        self::assertSame(1, $meta['perso']);
+    }
+
+    #[Test]
+    public function it_resolves_install_win10_disk_with_disk_flag(): void
+    {
+        $meta = IpxeAdminAction::InstallWin10Disk->windowsMeta();
+        self::assertNotNull($meta);
+        self::assertSame(0, $meta['perso']);
+        self::assertSame(1, $meta['disk']);
+        self::assertSame(0, $meta['debug']);
+    }
+
+    #[Test]
+    public function it_resolves_install_win10_debug_with_debug_flag(): void
+    {
+        $meta = IpxeAdminAction::InstallWin10Debug->windowsMeta();
+        self::assertNotNull($meta);
+        self::assertSame(1, $meta['debug']);
+        self::assertSame(0, $meta['disk']);
+        self::assertSame(0, $meta['perso']);
+    }
+
+    #[Test]
+    public function it_resolves_install_win11_default_with_no_flags(): void
+    {
+        $meta = IpxeAdminAction::InstallWin11->windowsMeta();
+        self::assertNotNull($meta);
+        self::assertSame('Win11', $meta['version']);
+        self::assertSame('wimboot11', $meta['action']);
+        self::assertSame(0, $meta['debug']);
+        self::assertSame(0, $meta['disk']);
+        self::assertSame(0, $meta['perso']);
+    }
+
+    #[Test]
+    public function it_returns_null_windows_meta_for_non_windows_cases(): void
+    {
+        self::assertNull(IpxeAdminAction::Rescuecd->windowsMeta());
+        self::assertNull(IpxeAdminAction::Winpe->windowsMeta());
+        self::assertNull(IpxeAdminAction::FactoryReset->windowsMeta());
+        self::assertNull(IpxeAdminAction::InstallDebGnome->windowsMeta());
+        self::assertNull(IpxeAdminAction::InstallNird->windowsMeta());
+        self::assertNull(IpxeAdminAction::InstallUbuntu64->windowsMeta());
+    }
+
+    #[Test]
+    public function it_returns_null_linux_meta_for_install_win_cases(): void
+    {
+        // Non-régression 3.4 : linuxMeta retourne null pour les nouveaux cases.
+        self::assertNull(IpxeAdminAction::InstallWin10->linuxMeta());
+        self::assertNull(IpxeAdminAction::InstallWin10Debug->linuxMeta());
+        self::assertNull(IpxeAdminAction::InstallWin11->linuxMeta());
+        self::assertNull(IpxeAdminAction::InstallWin11Perso->linuxMeta());
+    }
+
+    #[Test]
+    public function it_returns_correct_log_name_for_install_win_cases(): void
+    {
+        self::assertSame('install_win10', IpxeAdminAction::InstallWin10->logName());
+        self::assertSame('install_win11', IpxeAdminAction::InstallWin11->logName());
+        self::assertSame('install_win11_perso', IpxeAdminAction::InstallWin11Perso->logName());
+    }
+
+    #[Test]
+    public function it_resolves_install_win_strings_via_try_from(): void
+    {
+        self::assertSame(IpxeAdminAction::InstallWin10, IpxeAdminAction::tryFrom('install_win10'));
+        self::assertSame(IpxeAdminAction::InstallWin11, IpxeAdminAction::tryFrom('install_win11'));
+        self::assertSame(IpxeAdminAction::InstallWin11Disk, IpxeAdminAction::tryFrom('install_win11_disk'));
+        // Anti-injection sur valeur hors whitelist.
+        self::assertNull(IpxeAdminAction::tryFrom('install_win11_old'));
+        self::assertNull(IpxeAdminAction::tryFrom('install_win12'));
     }
 }

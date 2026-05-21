@@ -435,17 +435,19 @@ class IpxeNamespaceTest extends TestCase
     }
 
     #[Test]
-    public function ipxe_admin_action_enum_has_exactly_twelve_cases_in_story_3_4(): void
+    public function ipxe_admin_action_enum_has_exactly_nineteen_cases_in_story_3_5(): void
     {
         // D9 — Story 3.2 — élargir si nouvelle action (3.4 / 3.5 / 3.7).
-        // Story 3.4 : whitelist élargie à 12 cases (3 historiques + 9
-        // install_*). Tout élargissement futur doit être documenté.
+        // Story 3.5 : whitelist élargie à 19 cases (3 historiques + 9
+        // install_* Linux + 7 install_win* Windows). Tout élargissement
+        // futur doit être documenté.
         $cases = \App\Ipxe\Enums\IpxeAdminAction::cases();
         self::assertCount(
-            12,
+            19,
             $cases,
-            'Story 3.4 — la whitelist IpxeAdminAction doit contenir exactement 12 cases '
-            . '(rescuecd, winpe, factory_reset + 9 install_*). Tout élargissement doit être documenté.',
+            'Story 3.5 — la whitelist IpxeAdminAction doit contenir exactement 19 cases '
+            . '(rescuecd, winpe, factory_reset + 9 install_* + 7 install_win*). '
+            . 'Tout élargissement doit être documenté.',
         );
 
         $values = array_map(static fn ($c) => $c->value, $cases);
@@ -461,6 +463,13 @@ class IpxeNamespaceTest extends TestCase
             'install_deb_xfce',
             'install_nird',
             'install_ubuntu64',
+            'install_win10',
+            'install_win10_debug',
+            'install_win10_disk',
+            'install_win10_perso',
+            'install_win11',
+            'install_win11_disk',
+            'install_win11_perso',
             'rescuecd',
             'winpe',
         ], $values);
@@ -754,6 +763,114 @@ class IpxeNamespaceTest extends TestCase
             $violations,
             "Violations conventions templates ipxe (scan dynamique) :\n  - " . implode("\n  - ", $violations),
         );
+    }
+
+    /* ------------------------------------------------------------------
+     * Story 3.5 — AC8.1 / AC9.3 — extension du garde-fou
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Vérifie que les 6 routes natives 3.5 (`/ipxe/installation-windows`,
+     * `/ipxe/windows/{install.bat,unattend.xml,diskpart.txt,sysprep.xml,action}`)
+     * sont déclarées AVANT le catchall legacy.
+     */
+    #[Test]
+    public function ipxe_3_5_routes_are_declared_before_catchall(): void
+    {
+        $routesFile = realpath(__DIR__ . '/../../routes/web.php');
+        self::assertNotFalse($routesFile);
+        $content = (string) file_get_contents($routesFile);
+
+        $catchallPattern = "/Route::match\s*\([^)]*['\"]\\{path\\}['\"]/";
+        self::assertSame(
+            1,
+            preg_match($catchallPattern, $content, $catchallMatches, PREG_OFFSET_CAPTURE),
+            'Catchall legacy {path} introuvable',
+        );
+        $catchallOffset = $catchallMatches[0][1];
+
+        $routes = [
+            ['needle' => "['\"]/ipxe/installation-windows['\"]", 'name' => '/ipxe/installation-windows'],
+            ['needle' => "['\"]/ipxe/windows/install\\.bat['\"]", 'name' => '/ipxe/windows/install.bat'],
+            ['needle' => "['\"]/ipxe/windows/unattend\\.xml['\"]", 'name' => '/ipxe/windows/unattend.xml'],
+            ['needle' => "['\"]/ipxe/windows/diskpart\\.txt['\"]", 'name' => '/ipxe/windows/diskpart.txt'],
+            ['needle' => "['\"]/ipxe/windows/sysprep\\.xml['\"]", 'name' => '/ipxe/windows/sysprep.xml'],
+            ['needle' => "['\"]/ipxe/windows/action['\"]", 'name' => '/ipxe/windows/action'],
+        ];
+
+        foreach ($routes as $route) {
+            $pattern = '@Route::(?:match|get|post)\s*\([^;]*?' . $route['needle'] . '@';
+            self::assertSame(
+                1,
+                preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE),
+                'Route 3.5 ' . $route['name'] . ' non déclarée',
+            );
+            self::assertLessThan(
+                $catchallOffset,
+                $matches[0][1],
+                'ORDRE INVALIDE : la route 3.5 ' . $route['name'] . ' doit être AVANT le catchall',
+            );
+        }
+
+        // Vérification middleware : chaque route 3.5 doit porter
+        // `auth.v1.lan-only` (D3).
+        $statements = explode(';', $content);
+        $ipxeStatements = array_values(array_filter(
+            $statements,
+            static fn (string $stmt): bool => preg_match(
+                "@['\"]/ipxe/(installation-windows|windows/(install\\.bat|unattend\\.xml|diskpart\\.txt|sysprep\\.xml|action))['\"]@",
+                $stmt,
+            ) === 1,
+        ));
+
+        self::assertGreaterThanOrEqual(
+            6,
+            count($ipxeStatements),
+            'Les 6 routes 3.5 doivent être déclarées',
+        );
+
+        foreach ($ipxeStatements as $stmt) {
+            self::assertMatchesRegularExpression(
+                '/auth\.v1\.lan-only/',
+                $stmt,
+                'Chaque route 3.5 doit attacher auth.v1.lan-only — bloc fautif : '
+                . substr(trim($stmt), 0, 200),
+            );
+        }
+    }
+
+    #[Test]
+    public function it_lists_all_ipxe_3_5_controllers_and_services_under_correct_namespace(): void
+    {
+        $root = realpath(__DIR__ . '/../../app/Ipxe');
+        self::assertNotFalse($root);
+
+        $required = [
+            $root . '/Http/Controllers/IpxeInstallationWindowsController.php',
+            $root . '/Http/Controllers/IpxeWindowsInstallBatController.php',
+            $root . '/Http/Controllers/IpxeWindowsUnattendController.php',
+            $root . '/Http/Controllers/IpxeWindowsDiskpartController.php',
+            $root . '/Http/Controllers/IpxeWindowsSysprepController.php',
+            $root . '/Http/Controllers/IpxeWindowsActionController.php',
+            $root . '/Http/Requests/IpxeInstallationWindowsRequest.php',
+            $root . '/Http/Requests/IpxeWindowsInstallBatRequest.php',
+            $root . '/Http/Requests/IpxeWindowsUnattendRequest.php',
+            $root . '/Http/Requests/IpxeWindowsDiskpartRequest.php',
+            $root . '/Http/Requests/IpxeWindowsSysprepRequest.php',
+            $root . '/Http/Requests/IpxeWindowsActionRequest.php',
+            $root . '/Services/WindowsUnattendBuilder.php',
+            $root . '/Services/WindowsInstallBatBuilder.php',
+            $root . '/Services/WindowsInstallMenuBuilder.php',
+            $root . '/Services/WindowsPostInstallTracker.php',
+            $root . '/Enums/WindowsVersion.php',
+            $root . '/Enums/WindowsInstallStep.php',
+            $root . '/Support/WindowsXmlPlaceholders.php',
+            $root . '/Exceptions/UnattendGenerationException.php',
+        ];
+
+        foreach ($required as $file) {
+            self::assertFileExists($file, "Fichier 3.5 manquant : {$file}");
+        }
     }
 
     private function stripComments(string $code): string

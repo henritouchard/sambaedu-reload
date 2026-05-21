@@ -808,6 +808,75 @@ Route::match(['GET', 'POST'], '/ipxe/linux/autorun', [
 
 /*
 |--------------------------------------------------------------------------
+| Story 3.5 — Installation Windows (Win10/Win11) (D2)
+|--------------------------------------------------------------------------
+| Remplace les endpoints legacy `/ipxe/installation-windows.php`,
+| `/ipxe/Win10/install.bat.php`, `/ipxe/Win10/unattend.xml.php`,
+| `/ipxe/Win10/diskpart.php`, `/ipxe/Win10/sysprep.xml.php` et
+| `/ipxe/Win10/action.php` (partiel — winpe/oobe seulement, autres
+| étapes déférées 3.7) par 6 routes natives.
+|
+| **ORDRE STRICT** : ce bloc doit rester AVANT le catchall ci-dessous —
+| sinon la route `{path}` capture toutes les requêtes `/ipxe/*` et rend
+| ces routes natives inaccessibles. Cf. test
+| `IpxeNamespaceTest::ipxe_3_5_routes_are_declared_before_catchall`.
+|
+| **Sécurité** : middleware `auth.v1.lan-only` (16.11) — restreint au LAN
+| scolaire RFC1918. Parité 3.1-3.4 D3/D8 — pas de JWT.
+|
+| **Throttle** : 600/min/IP iso 3.1-3.4 (suffisant pour ~50 postes
+| simultanés à la rentrée scolaire).
+*/
+Route::match(['GET', 'POST'], '/ipxe/installation-windows', [
+    \App\Ipxe\Http\Controllers\IpxeInstallationWindowsController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.installation-windows')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/windows/install.bat', [
+    \App\Ipxe\Http\Controllers\IpxeWindowsInstallBatController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.windows.install-bat')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/windows/unattend.xml', [
+    \App\Ipxe\Http\Controllers\IpxeWindowsUnattendController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.windows.unattend')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/windows/diskpart.txt', [
+    \App\Ipxe\Http\Controllers\IpxeWindowsDiskpartController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.windows.diskpart')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/windows/sysprep.xml', [
+    \App\Ipxe\Http\Controllers\IpxeWindowsSysprepController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.windows.sysprep')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/windows/action', [
+    \App\Ipxe\Http\Controllers\IpxeWindowsActionController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.windows.action')
+    ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
 | Legacy PHP Fallback Route (DOIT ÊTRE EN DERNIER)
 |--------------------------------------------------------------------------
 | Cette route catch-all délègue au LegacyCatchallController :

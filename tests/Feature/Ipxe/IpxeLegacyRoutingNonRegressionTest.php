@@ -294,8 +294,11 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
     }
 
     #[Test]
-    public function it_still_serves_ipxe_installation_windows_via_catchall(): void
+    public function it_still_serves_ipxe_installation_windows_php_via_catchall(): void
     {
+        // L'URL legacy avec `.php` (`installation-windows.php`) reste servie
+        // par le catchall après 3.5 (clean-up = 3.7). Seule la version sans
+        // `.php` (route native 3.5) court-circuite le catchall.
         $this->get('/ipxe/installation-windows.php');
 
         $found = \App\Models\LegacyCatchallLog::query()
@@ -305,7 +308,80 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
         self::assertTrue(
             $found,
             '/ipxe/installation-windows.php doit continuer à être servi par le catchall '
-            . '(sera réécrit par Story 3.5).',
+            . '(legacy URL avec .php — cleanup 3.7).',
         );
+    }
+
+    /* ------------------------------------------------------------------
+     * Story 3.5 — AC8.2 — non-régression catchall sur les 6 routes natives
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_serves_ipxe_installation_windows_natively_not_via_catchall(): void
+    {
+        $countBefore = \App\Models\LegacyCatchallLog::query()->count();
+        $this->get('/ipxe/installation-windows');
+
+        self::assertSame(
+            $countBefore,
+            \App\Models\LegacyCatchallLog::query()->count(),
+            '/ipxe/installation-windows (3.5) ne doit pas passer par le catchall',
+        );
+    }
+
+    #[Test]
+    public function it_serves_ipxe_windows_unattend_natively_not_via_catchall(): void
+    {
+        $countBefore = \App\Models\LegacyCatchallLog::query()->count();
+        $this->get('/ipxe/windows/unattend.xml?mac=&uuid=');
+
+        self::assertSame(
+            $countBefore,
+            \App\Models\LegacyCatchallLog::query()->count(),
+            '/ipxe/windows/unattend.xml (3.5) ne doit pas passer par le catchall',
+        );
+    }
+
+    #[Test]
+    public function it_serves_ipxe_windows_install_bat_natively_not_via_catchall(): void
+    {
+        $countBefore = \App\Models\LegacyCatchallLog::query()->count();
+        $this->get('/ipxe/windows/install.bat?mac=&uuid=');
+
+        self::assertSame(
+            $countBefore,
+            \App\Models\LegacyCatchallLog::query()->count(),
+            '/ipxe/windows/install.bat (3.5) ne doit pas passer par le catchall',
+        );
+    }
+
+    #[Test]
+    public function it_still_serves_ipxe_win10_repair_bat_php_via_catchall(): void
+    {
+        // Le legacy `Win10/repair.bat.php` continue d'être servi par catchall
+        // (utilisé par action winpe réparation 3.2 — non touché 3.5).
+        $this->get('/ipxe/Win10/repair.bat.php');
+
+        $found = \App\Models\LegacyCatchallLog::query()
+            ->where('path', 'like', '%ipxe/Win10/repair.bat.php%')
+            ->exists();
+
+        self::assertTrue(
+            $found,
+            '/ipxe/Win10/repair.bat.php doit continuer à être servi par le catchall '
+            . '(utilisé par action winpe 3.2 réparation — non touché 3.5).',
+        );
+    }
+
+    #[Test]
+    public function it_still_serves_ipxe_clonage_php_via_catchall(): void
+    {
+        $this->get('/ipxe/clonage.php');
+
+        $found = \App\Models\LegacyCatchallLog::query()
+            ->where('path', 'like', '%ipxe/clonage.php%')
+            ->exists();
+
+        self::assertTrue($found, '/ipxe/clonage.php doit continuer via catchall (Story 3.7)');
     }
 }

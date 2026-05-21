@@ -188,6 +188,54 @@ class IpxeConfigTest extends TestCase
         self::assertContains('cinnamon', $allowed);
     }
 
+    /* ------------------------------------------------------------------
+     * Story 3.5 — AC9.1 / AC9.4 — section windows.
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_loads_windows_enabled_true_by_default(): void
+    {
+        self::assertTrue((bool) config('ipxe.windows.enabled'));
+    }
+
+    #[Test]
+    public function it_loads_windows_menu_timeout_10000(): void
+    {
+        self::assertSame(10000, (int) config('ipxe.windows.menu_timeout_ms'));
+    }
+
+    #[Test]
+    public function it_loads_windows_default_variant_install_win11(): void
+    {
+        self::assertSame('install_win11', config('ipxe.windows.default_variant'));
+    }
+
+    #[Test]
+    public function it_loads_seven_windows_menu_items(): void
+    {
+        $items = (array) config('ipxe.windows.menu_items');
+        self::assertCount(7, $items);
+        $enums = array_column($items, 'enum');
+        self::assertContains('install_win10', $enums);
+        self::assertContains('install_win11', $enums);
+        self::assertContains('install_win11_perso', $enums);
+    }
+
+    #[Test]
+    public function it_loads_windows_allowed_versions_whitelist(): void
+    {
+        $allowed = (array) config('ipxe.windows.allowed_versions');
+        self::assertSame(['Win10', 'Win11'], $allowed);
+    }
+
+    #[Test]
+    public function it_loads_windows_unattend_template_path(): void
+    {
+        $path = (string) config('ipxe.windows.unattend_template_path');
+        self::assertNotSame('', $path);
+        self::assertFileExists($path, 'Template unattend.xml doit exister à la config path');
+    }
+
     /**
      * Post-review #M8 — défense en profondeur sur `ipxe.linux.kernel_paths.nird`.
      *

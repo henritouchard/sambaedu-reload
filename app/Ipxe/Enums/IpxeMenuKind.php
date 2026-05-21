@@ -34,6 +34,9 @@ namespace App\Ipxe\Enums;
  * Story 3.4 — extension +2 cases (`installation_linux_handshake`,
  *   `installation_linux_menu`) pour l'endpoint `/ipxe/installation-linux`.
  *
+ * Story 3.5 — extension +2 cases (`installation_windows_handshake`,
+ *   `installation_windows_menu`) pour l'endpoint `/ipxe/installation-windows`.
+ *
  * Extensible Stories 3.3+ (enrollment, install, clonezilla).
  */
 enum IpxeMenuKind: string
@@ -54,4 +57,8 @@ enum IpxeMenuKind: string
     // Story 3.4 — D1.
     case InstallationLinuxHandshake = 'installation_linux_handshake';
     case InstallationLinuxMenu = 'installation_linux_menu';
+
+    // Story 3.5 — D1.
+    case InstallationWindowsHandshake = 'installation_windows_handshake';
+    case InstallationWindowsMenu = 'installation_windows_menu';
 }

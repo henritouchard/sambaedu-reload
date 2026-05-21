@@ -298,4 +298,72 @@ return [
             'focal', 'jammy',
         ],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Story 3.5 — Installation Windows (D11)
+    |--------------------------------------------------------------------------
+    |
+    | Paramètres pour les 6 endpoints `/ipxe/installation-windows`,
+    | `/ipxe/windows/{install.bat,unattend.xml,diskpart.txt,sysprep.xml,action}`
+    | — port natif des fichiers legacy `sambaedu/ipxe/installation-windows.php`,
+    | `Win10/install.bat.php`, `Win10/unattend.xml.php`, `Win10/diskpart.php`,
+    | `Win10/sysprep.xml.php` (stub), `Win10/action.php` (partiel winpe/oobe).
+    */
+    'windows' => [
+        // Active la branche Installation Windows depuis le menu admin (3.5).
+        // Si false, l'item (w) Installation Windows est masqué dans /ipxe/admin.
+        'enabled' => filter_var(env('IPXE_INSTALL_WINDOWS_ENABLED', true), FILTER_VALIDATE_BOOL),
+
+        // Timeout du menu installation-windows (10s — iso-legacy
+        // installation-windows.php:9).
+        'menu_timeout_ms' => (int) env('IPXE_INSTALL_WIN_TIMEOUT_MS', 10000),
+
+        // Background PNG affiché par la console iPXE (iso-legacy
+        // installation-windows.php:24).
+        'background_png' => env('IPXE_INSTALL_WIN_BG_PNG', 'png/windows10.png'),
+
+        // Variante par défaut sélectionnée (iso-legacy
+        // installation-windows.php:28 — install Win11 auto).
+        'default_variant' => env('IPXE_INSTALL_WIN_DEFAULT', 'install_win11'),
+
+        // Liste des 7 items menu (whitelist enum + labels iPXE-safe ASCII).
+        // Pour ajouter/retirer un item, éditer ce tableau + le case enum
+        // correspondant dans IpxeAdminAction.
+        'menu_items' => [
+            ['enum' => 'install_win10',       'label' => 'Installation de Windows 10 (auto)'],
+            ['enum' => 'install_win10_debug', 'label' => 'Installation W10 en mode debug des drivers'],
+            ['enum' => 'install_win10_disk',  'label' => 'Installation W10 avec choix du partitionnement (double boot)'],
+            ['enum' => 'install_win10_perso', 'label' => 'Installation W10 pour pc perso (hors domaine)'],
+            ['enum' => 'install_win11',       'label' => 'Installation de Windows 11 (auto - defaut)'],
+            ['enum' => 'install_win11_disk',  'label' => 'Installation W11 avec choix du partitionnement'],
+            ['enum' => 'install_win11_perso', 'label' => 'Installation W11 pour pc perso (hors domaine)'],
+        ],
+
+        // Whitelist stricte des versions acceptées par
+        // /ipxe/windows/{install.bat,unattend.xml,diskpart.txt}.
+        // Cf. enum WindowsVersion.
+        'allowed_versions' => ['Win10', 'Win11'],
+
+        // Paths des assets statiques Windows servis par Apache via catchall.
+        // `wimboot_base` : préfixe partagé Win10/Win11 (iso-legacy
+        // `actions/wimboot10.php:6` + `wimboot11.php:6` qui pointent tous
+        // les deux sur `Win10/wimboot`).
+        'assets_paths' => [
+            'wimboot_base' => env('IPXE_WIN_WIMBOOT_BASE', 'Win10'),
+            'wimboot' => env('IPXE_WIN_WIMBOOT_PATH', 'Win10/wimboot'),
+            'winpeshl' => env('IPXE_WIN_WINPESHL_PATH', 'Win10/winpeshl.ini'),
+            'bcd' => env('IPXE_WIN_BCD_PATH', '{version}/boot/bcd'),
+            'boot_sdi' => env('IPXE_WIN_BOOT_SDI_PATH', '{version}/boot/boot.sdi'),
+            'boot_wim' => env('IPXE_WIN_BOOT_WIM_PATH', '{version}/sources/boot.wim'),
+        ],
+
+        // Chemin du template unattend.xml (asset projet sous version control).
+        // Décision D11 — copier le template depuis sambaedu/ipxe/Win10/unattend.xml
+        // vers resources/ipxe/windows/unattend.xml pour mise sous VC.
+        'unattend_template_path' => env(
+            'IPXE_WIN_UNATTEND_TEMPLATE',
+            resource_path('ipxe/windows/unattend.xml'),
+        ),
+    ],
 ];

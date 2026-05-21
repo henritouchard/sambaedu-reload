@@ -627,4 +627,125 @@ class IpxeMenuRendererTest extends TestCase
         self::assertStringContainsString('BYOD enregistre pour student-pc', $body);
         self::assertStringContainsString('/ipxe/admin##params', $body);
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.5 — AC6.1 — renderInstallationWindowsMenu().
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_renders_installation_windows_menu_for_known_workstation(): void
+    {
+        $ws = Workstation::create([
+            'name' => 'PC-WIN-RENDER',
+            'uuid' => '12345678-1234-1234-1234-aaaaaaaaaaaa',
+            'mac' => 'aa:bb:cc:dd:ee:01',
+            'status' => 'active',
+        ]);
+
+        $body = $this->renderer->renderInstallationWindowsMenu($ws, '192.168.1.42', 'http://se4fs.lan');
+
+        self::assertStringStartsWith('#!ipxe', $body);
+        self::assertStringContainsString('install_win10', $body);
+        self::assertStringContainsString('install_win11', $body);
+        self::assertStringContainsString('install_win11_perso', $body);
+        // 7 sections de chain.
+        self::assertStringContainsString(':install_win11', $body);
+        self::assertStringContainsString('/ipxe/action/install_win11##params', $body);
+        // Default = install_win11.
+        self::assertStringContainsString('set menu-default install_win11', $body);
+        // Exit + fallback boot disk.
+        self::assertStringContainsString(':exit', $body);
+        self::assertStringContainsString('sanboot', $body);
+    }
+
+    #[Test]
+    public function it_renders_installation_windows_error_menu_for_unknown_workstation(): void
+    {
+        $body = $this->renderer->renderInstallationWindowsMenu(null, '192.168.1.42', 'http://se4fs.lan');
+
+        self::assertStringStartsWith('#!ipxe', $body);
+        self::assertStringContainsString('Erreur - poste non encore enregistre', $body);
+        self::assertStringContainsString('chain --replace --autofree http://se4fs.lan/ipxe/admin##params', $body);
+        // Pas d'items install_win* en mode erreur.
+        self::assertStringNotContainsString(':install_win11', $body);
+        self::assertStringNotContainsString(':menu', $body);
+    }
+
+    #[Test]
+    public function it_renders_installation_windows_menu_ascii_strict(): void
+    {
+        $ws = Workstation::create([
+            'name' => 'PC-WIN-ASCII',
+            'uuid' => '12345678-1234-1234-1234-bbbbbbbbbbbb',
+            'mac' => 'aa:bb:cc:dd:ee:02',
+            'status' => 'active',
+        ]);
+
+        $body = $this->renderer->renderInstallationWindowsMenu($ws, '192.168.1.42', 'http://se4fs.lan');
+
+        // ASCII strict (sauf TAB/newlines).
+        self::assertSame(
+            0,
+            preg_match('/[^\x09\x0A\x0D\x20-\x7E]/', $body),
+            'Le menu installation-windows ne doit contenir que de l\'ASCII printable.',
+        );
+        // Pas de balise PHP.
+        self::assertStringNotContainsString('<?php', $body);
+    }
+
+    #[Test]
+    public function it_renders_installation_windows_menu_with_7_items(): void
+    {
+        $ws = Workstation::create([
+            'name' => 'PC-WIN-7ITEMS',
+            'uuid' => '12345678-1234-1234-1234-cccccccccccc',
+            'mac' => 'aa:bb:cc:dd:ee:03',
+            'status' => 'active',
+        ]);
+
+        $body = $this->renderer->renderInstallationWindowsMenu($ws, '192.168.1.42', 'http://se4fs.lan');
+
+        // 7 sections `:install_win*`.
+        $matches = [];
+        preg_match_all('/^:install_win\w+$/m', $body, $matches);
+        self::assertCount(7, $matches[0], '7 sections install_win* attendues');
+    }
+
+    #[Test]
+    public function it_renders_admin_menu_with_install_windows_url(): void
+    {
+        // Story 3.5 — non-régression menu admin : nouvelle var
+        // `$installWindowsBaseUrl` exposée.
+        $ws = Workstation::create([
+            'name' => 'PC-ADMIN-WIN',
+            'uuid' => '12345678-1234-1234-1234-dddddddddddd',
+            'mac' => 'aa:bb:cc:dd:ee:04',
+            'status' => 'active',
+        ]);
+
+        config(['ipxe.windows.enabled' => true]);
+        $body = $this->renderer->renderAdminMenu($ws, '192.168.1.42', 'http://se4fs.lan');
+
+        self::assertStringContainsString('item --key w install-windows', $body);
+        self::assertStringContainsString(
+            'chain --replace --autofree http://se4fs.lan/ipxe/installation-windows##params',
+            $body,
+        );
+    }
+
+    #[Test]
+    public function it_renders_admin_menu_hides_install_windows_when_disabled(): void
+    {
+        $ws = Workstation::create([
+            'name' => 'PC-ADMIN-NOWIN',
+            'uuid' => '12345678-1234-1234-1234-eeeeeeeeeeee',
+            'mac' => 'aa:bb:cc:dd:ee:05',
+            'status' => 'active',
+        ]);
+
+        config(['ipxe.windows.enabled' => false]);
+        $body = $this->renderer->renderAdminMenu($ws, '192.168.1.42', 'http://se4fs.lan');
+
+        self::assertStringNotContainsString('item --key w install-windows', $body);
+    }
 }

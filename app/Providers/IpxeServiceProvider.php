@@ -13,6 +13,10 @@ use App\Ipxe\Services\IpxeService;
 use App\Ipxe\Services\LinuxInstallMenuBuilder;
 use App\Ipxe\Services\LinuxPostInstallTracker;
 use App\Ipxe\Services\LinuxPreseedService;
+use App\Ipxe\Services\WindowsInstallBatBuilder;
+use App\Ipxe\Services\WindowsInstallMenuBuilder;
+use App\Ipxe\Services\WindowsPostInstallTracker;
+use App\Ipxe\Services\WindowsUnattendBuilder;
 use App\Ipxe\Services\WorkstationEnrollmentService;
 use App\Ipxe\Services\WorkstationLocator;
 use App\Ldap\AdMachineManager;
@@ -65,6 +69,7 @@ class IpxeServiceProvider extends ServiceProvider
         $this->app->singleton(IpxeMenuRenderer::class, fn ($app) => new IpxeMenuRenderer(
             $app->make(ViewFactory::class),
             $app->make(LinuxInstallMenuBuilder::class),
+            $app->make(WindowsInstallMenuBuilder::class),
         ));
 
         // Story 3.2 — D9 / AC9.2 — résolveur d'actions whitelistées rendant
@@ -101,6 +106,12 @@ class IpxeServiceProvider extends ServiceProvider
         $this->app->singleton(LinuxPreseedService::class, fn () => new LinuxPreseedService());
         $this->app->singleton(LinuxInstallMenuBuilder::class, fn () => new LinuxInstallMenuBuilder());
         $this->app->singleton(LinuxPostInstallTracker::class, fn () => new LinuxPostInstallTracker());
+
+        // Story 3.5 — D11 / AC9.3 — bindings installation Windows.
+        $this->app->singleton(WindowsUnattendBuilder::class, fn () => new WindowsUnattendBuilder());
+        $this->app->singleton(WindowsInstallBatBuilder::class, fn () => new WindowsInstallBatBuilder());
+        $this->app->singleton(WindowsInstallMenuBuilder::class, fn () => new WindowsInstallMenuBuilder());
+        $this->app->singleton(WindowsPostInstallTracker::class, fn () => new WindowsPostInstallTracker());
     }
 
     public function boot(): void

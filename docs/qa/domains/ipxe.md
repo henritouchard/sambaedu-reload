@@ -1047,6 +1047,293 @@ Vérifications post-smoke :
 - `samba-tool computer show PC-XXX` → poste joint au domaine AD.
 ```
 
+## Story 3.5 — Installation Windows (Sysprep/Wimboot)
+
+**Date livraison** : 2026-05-21
+**Migrations à appliquer** : aucune (D9/D12 — réutilisation `Workstation` + `MachineBootLog` ; 5 nouvelles valeurs `action` ≤17 chars dans varchar(20) sans CHECK)
+**Permissions requises** : aucune (cf. Story 3.1-3.4 — `auth.v1.lan-only` seul)
+**Variables `.env` à vérifier** : `SAMBAEDU_ADMINSE_NAME`, `SAMBAEDU_ADMINSE_PASSWD`, `SAMBAEDU_WIN_KEY`, `SAMBAEDU_WIN_USER`, `SAMBAEDU_WIN_USER_PASSWD`, `SAMBAEDU_WIN_AUTOLOGON`, `SE4INSTALL_NAME`, `SE4INSTALL_PASSWD`, `SAMBAEDU_DOMAIN`, `SE4FS_IP`, `SE4FS_NAME` (cf. story 3.5 § D11)
+**Décisions ratifiées** : D14 `installw11old` déférée 3.7, D15 `/ipxe/windows/sysprep.xml` = stub minimal (body vide + log), D10 `unattend.xml`/`install.bat`/`diskpart.txt` = NON Blade (DOMDocument + string concat), D7 CRLF `\r\n` strict pour WinPE, D3 secrets `unattend`/`install.bat` acceptés sur LAN (auth.v1.lan-only seul)
+
+### Section 14 — Endpoints natifs `/ipxe/installation-windows` + `/ipxe/windows/*`
+
+#### Scénario 3.5-1 — Menu installation-windows rendu (poste connu)
+
+```bash
+# Pré-condition : poste seedé en base.
+curl -sS -X POST http://192.168.122.50/ipxe/installation-windows \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa'
+```
+
+**Critères d'acceptation** :
+- HTTP 200 + `Content-Type: text/plain; charset=utf-8`.
+- Body commence par `#!ipxe`.
+- Body contient les 7 items : `item install_win10 ...`, `item install_win10_debug ...`, `item install_win10_disk ...`, `item install_win10_perso ...`, `item install_win11 ...`, `item install_win11_disk ...`, `item install_win11_perso ...`.
+- Body contient `set menu-default install_win11` (D11 default).
+- Body contient sections `:install_win11\nchain --replace --autofree http://.../ipxe/action/install_win11##params`.
+- Body contient `:exit\n...sanboot...` (fallback boot disk).
+- Headers : `Cache-Control: no-store`, `X-Robots-Tag: noindex`.
+- Log channel `ipxe` : event `ipxe.install_windows.menu_rendered` avec `menu_variant='known'`.
+- `MachineBootLog` : row avec `action='ipxe_install_win'`.
+
+#### Scénario 3.5-2 — Menu installation-windows poste inconnu
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/installation-windows \
+  -d 'mac=00:00:00:00:00:00&uuid=00000000-0000-0000-0000-000000000000'
+```
+
+**Critères d'acceptation** :
+- Body contient `echo Erreur - poste non encore enregistre`.
+- Body contient `chain --replace --autofree http://192.168.122.50/ipxe/admin##params`.
+- Body NE contient PAS `item install_win*` (menu erreur masque les items).
+- Log channel `ipxe` : event `ipxe.install_windows.menu_rendered` avec `menu_variant='unknown'`.
+
+#### Scénario 3.5-3 — Item `(w) Installation Windows` visible dans /ipxe/admin
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/admin \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa'
+```
+
+**Critères d'acceptation** :
+- Body contient `item --key w install-windows (w) Installation Windows (Win10/Win11)`.
+- Body contient section `:install-windows\nchain --replace --autofree http://192.168.122.50/ipxe/installation-windows##params`.
+
+**Feature-flag** : `IPXE_INSTALL_WINDOWS_ENABLED=false` dans `.env` → item absent (testé via `IpxeAdminEndpointTest::it_hides_install_windows_item_when_disabled`).
+
+#### Scénario 3.5-4 — Action `install_win11` rendue (kernel cmdline)
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/action/install_win11 \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa'
+```
+
+**Critères d'acceptation** :
+- Body commence par `#!ipxe`.
+- Body contient `kernel Win10/wimboot` (iso-legacy — assets partagés Win10/Win11).
+- Body contient `initrd --name winpeshl.ini Win10/winpeshl.ini winpeshl.ini`.
+- Body contient `param version Win11` + `param action wimboot11` + `param debug 0`.
+- Body contient `initrd --name install.bat http://.../ipxe/windows/install.bat##params install.bat`.
+- Body contient `initrd --name unattend.xml http://.../ipxe/windows/unattend.xml##params unattend.xml`.
+- Body contient `initrd --name BCD Win11/boot/bcd BCD`.
+- Body contient `initrd --name boot.wim Win11/sources/boot.wim boot.wim`.
+- Body se termine par `boot\n`.
+
+#### Scénario 3.5-5 — Action `install_win10_perso` rendue avec perso=1
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/action/install_win10_perso \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa'
+```
+
+**Critères d'acceptation** :
+- Body contient `param version Win10` + `param perso 1`.
+- Body contient `initrd --name BCD Win10/boot/bcd` (Win10 assets).
+
+#### Scénario 3.5-6 — Action `install_win11_disk` rendue avec disk=1
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/action/install_win11_disk \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa'
+```
+
+**Critères d'acceptation** :
+- Body contient `param version Win11` + `param disk 1`.
+
+#### Scénario 3.5-7 — install.bat WinPE généré
+
+```bash
+curl -sS 'http://192.168.122.50/ipxe/windows/install.bat?mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa&version=Win11&bios=uefi'
+```
+
+**Critères d'acceptation** :
+- HTTP 200 + `Content-Type: text/plain; charset=utf-8`.
+- Body commence par `::cmd\r\n` (iso-legacy install.bat.php:13).
+- Toutes les lignes finissent par `\r\n` (CRLF strict — critique WinPE).
+- Body contient `wpeutil InitializeNetwork\r\n`, `IPCONFIG /RENEW\r\n`, `@PING <se4fs_ip>\r\n`.
+- Body contient `@net use z: \\<se4fs_name>\install /user:<se4install_name>@<domain> <se4install_passwd>\r\n`.
+- Body contient `z:\os\Win11\sources\setup.exe /unattend:x:\windows\system32\unattend.xml\r\n`.
+- Body contient `curl ... -F "etape=winpe" -F "name=<PC-101>" -F "ret=0" http://<se4fs_name>/ipxe/windows/action` (URL native — pas `.php`).
+- Si `bios=uefi` : body contient `%windir%\system32\bcdboot c:\windows /addlast\r\n`.
+- Si `debug=1` : body contient `PAUSE\r\n` après chaque section critique.
+- Log channel `ipxe` : event `ipxe.windows.install_bat.generated` avec `bash_sha256`, `bash_size_bytes`, `version`, `debug`. **PAS** de log du contenu bash.
+- `MachineBootLog` : row avec `action='ipxe_win_install'`.
+
+#### Scénario 3.5-8 — unattend.xml généré pour Win11 UEFI
+
+```bash
+curl -sS 'http://192.168.122.50/ipxe/windows/unattend.xml?mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa&version=Win11&bios=uefi&disk=0&perso=0'
+```
+
+**Critères d'acceptation** :
+- HTTP 200 + `Content-Type: text/plain; charset=utf-8`.
+- Body commence par `<?xml version="1.0"`.
+- Body parsable via `DOMDocument::loadXML()` sans erreur.
+- Body contient `BypassTPMCheck`, `BypassSecureBootCheck`, `BypassRAMCheck`, `BypassCPUCheck`, `BypassStorageCheck` (Win11).
+- Body contient `<Type>EFI</Type>` et `<Label>Windows</Label>` (DiskConfiguration UEFI).
+- Body contient `<ComputerName>pc-101</ComputerName>` (interpolation hostname lowercase).
+- Body contient `Microsoft-Windows-UnattendedJoin` avec `<JoinDomain>example.org</JoinDomain>` et `<MachineObjectOU>...</MachineObjectOU>`.
+- Body contient `<LocalAccount>...adminse...</LocalAccount>`.
+- AUCUN placeholder résiduel `###_..._###`.
+- `MachineBootLog` : row avec `action='ipxe_win_unattend'`.
+- Log channel `ipxe` : event `ipxe.windows.unattend.generated` avec `xml_sha256`, `xml_size_bytes`, `version`, `bios`, `join`. **PAS** de log du contenu XML (secrets).
+
+#### Scénario 3.5-9 — unattend.xml poste inconnu (404)
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  'http://192.168.122.50/ipxe/windows/unattend.xml?mac=00:00:00:00:00:00&uuid=99999999-9999-9999-9999-999999999999&version=Win11&bios=uefi'
+```
+
+**Critères d'acceptation** :
+- HTTP 404.
+- Log channel `ipxe` : event `ipxe.windows.unattend.unknown_workstation` niveau warning + `mac_prefix=00:00:` + `uuid_prefix=99999999`.
+
+#### Scénario 3.5-10 — unattend.xml version hors whitelist (422)
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  'http://192.168.122.50/ipxe/windows/unattend.xml?mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa&version=Win99&bios=uefi'
+```
+
+**Critères d'acceptation** :
+- HTTP 422 (FormRequest Rule::in bloque + defense in depth controller).
+
+#### Scénario 3.5-11 — Hook `/ipxe/windows/action` étape `winpe`
+
+```bash
+curl -sS -F 'etape=winpe' -F 'ret=0' -F 'uuid=12345678-1234-1234-1234-aaaaaaaaaaaa' -F 'name=PC-101' \
+  http://192.168.122.50/ipxe/windows/action
+```
+
+**Critères d'acceptation** :
+- HTTP 200 + body vide.
+- `SELECT status FROM workstations WHERE uuid='12345678-1234-1234-1234-aaaaaaaaaaaa'` retourne `'installation WinPE'`.
+- `MachineBootLog` : row avec `action='ipxe_win_install'`.
+- Log channel `ipxe` : event `ipxe.windows.action.winpe_start`.
+
+#### Scénario 3.5-12 — Hook `/ipxe/windows/action` étape `oobe`
+
+```bash
+curl -sS -F 'etape=oobe' -F 'ret=0' -F 'uuid=12345678-1234-1234-1234-aaaaaaaaaaaa' -F 'name=PC-101' \
+  http://192.168.122.50/ipxe/windows/action
+```
+
+**Critères d'acceptation** :
+- HTTP 200 + body vide.
+- `SELECT os FROM workstations WHERE uuid='12345678-1234-1234-1234-aaaaaaaaaaaa'` retourne `'windows'`.
+- `SELECT status FROM workstations WHERE uuid='...'` retourne `'installation Windows terminee'`.
+- `SELECT last_report_at FROM workstations WHERE uuid='...'` retourne `NOW()` (à 1s près).
+- `MachineBootLog` : row avec `action='ipxe_win_report'`.
+- Log channel `ipxe` : event `ipxe.windows.action.oobe_complete`.
+
+#### Scénario 3.5-13 — Hook étape déférée 3.7 (`sysprep`/`join`/etc.)
+
+```bash
+curl -sS -F 'etape=sysprep' -F 'ret=0' -F 'uuid=12345678-1234-1234-1234-aaaaaaaaaaaa' \
+  http://192.168.122.50/ipxe/windows/action
+```
+
+**Critères d'acceptation** :
+- HTTP 200 + body vide.
+- Log channel `ipxe` : event `ipxe.windows.action.unsupported_step` niveau warning + `raw_etape='sysprep'`.
+- `Workstation::status` inchangé (étape non gérée scope 3.5).
+
+#### Scénario 3.5-14 — diskpart.txt servi (body iso-legacy)
+
+```bash
+curl -sS 'http://192.168.122.50/ipxe/windows/diskpart.txt?mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa'
+```
+
+**Critères d'acceptation** :
+- HTTP 200 + body strict `select disk O\r\nselect partition 1\r\nassign letter=U\r\n`.
+- Headers : `text/plain`, `no-store`.
+- `MachineBootLog` : row avec `action='ipxe_win_diskpart'`.
+
+#### Scénario 3.5-15 — sysprep.xml stub (body vide)
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  'http://192.168.122.50/ipxe/windows/sysprep.xml?name=PC-101'
+```
+
+**Critères d'acceptation** :
+- HTTP 200 + body vide (stub D15).
+- Log channel `ipxe` : event `ipxe.windows.sysprep.stub_served`.
+- AUCUN insert `MachineBootLog` (stub minimal).
+
+#### Scénario 3.5-16 — Sécurité LAN (depuis IP publique)
+
+```bash
+# Simule un appel hors LAN (depuis 1.2.3.4 via X-Forwarded-For — devrait être ignoré).
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  -H 'X-Forwarded-For: 1.2.3.4' \
+  http://192.168.122.50/ipxe/installation-windows
+```
+
+**Critères d'acceptation** :
+- HTTP 403 + code `bootstrap.not_lan` (cf. middleware `auth.v1.lan-only`).
+
+#### Scénario 3.5-17 — Non-régression catchall (routes `.php` legacy)
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' http://192.168.122.50/ipxe/Win10/repair.bat.php
+curl -sS -o /dev/null -w '%{http_code}\n' http://192.168.122.50/ipxe/clonage.php
+curl -sS -o /dev/null -w '%{http_code}\n' http://192.168.122.50/ipxe/installation-windows.php
+```
+
+**Critères d'acceptation** :
+- Les 3 URLs retournent un body legacy (via catchall).
+- `SELECT path FROM legacy_catchall_logs WHERE path LIKE '%Win10/repair.bat.php%'` → ≥1 row.
+
+#### Scénario 3.5-18 — (Optionnel pré-prod) Smoke poste réel boot PXE → install Win11
+
+**Pré-conditions** :
+- Poste de test inscrit en base PostgreSQL + AD via Story 3.3.
+- Assets binaires VM : `Win10/wimboot`, `Win10/winpeshl.ini`, `Win11/boot/bcd`, `Win11/boot/boot.sdi`, `Win11/sources/boot.wim` présents sous `/var/sambaedu/unattended/install/os/`.
+- Variables `.env` Win configurées : `SAMBAEDU_ADMINSE_*`, `SAMBAEDU_WIN_KEY`, `SE4INSTALL_*`.
+
+**Procédure** :
+1. Boot le poste de test en mode PXE.
+2. Au menu iPXE : choisir `(1) Login admin` → `(w) Installation Windows` → `Installation Win11 (auto)`.
+3. WinPE charge wimboot + winpeshl + install.bat + unattend.xml.
+4. WinPE monte `\\se4fs\install` et lance `setup.exe /unattend:unattend.xml`.
+5. Windows install se déroule (~15-30 min).
+6. Premier reboot → OOBE → 1st logon → curl hook OOBE.
+7. Vérifier `SELECT os FROM workstations WHERE name='<hostname>'` = `'windows'`.
+8. Vérifier `SELECT status FROM workstations WHERE name='<hostname>'` = `'installation Windows terminee'`.
+
+---
+
+## Limitations connues — Story 3.5
+
+### MachineBootLog Windows : pas de déduplication
+
+Iso 3.4 — un poste qui redémarre plusieurs fois pendant une install échouée crée 1 row par fetch unattend/install.bat. Pas de dédup en Phase 2.
+
+### Hook OOBE peut être reçu sans `winpe` préalable
+
+Si un poste est ré-imaginé manuellement (Clonezilla sans passer par le menu iPXE), le hook OOBE arrive sans `winpe_start` préalable. `recordOobeComplete()` accepte cet état (idempotent — set os/status/last_report_at directement).
+
+### Étapes post-install Windows complètes : déférées 3.7
+
+Les étapes `sysprep`, `nosysprep`, `join`, `renomme`, `post`, `wpkg` du legacy `Win10/action.php` (lignes 411-720) ne sont **pas** portées en 3.5. Elles dépendent de `IpxeProgrammedActionResolver` non porté (GLM `actions[]` LDAP). Story 3.7 enrichira `WindowsPostInstallTracker`.
+
+### Variante `installw11old` : déférée 3.7 (D14)
+
+Si besoin terrain confirmé (`/var/sambaedu/unattended/install/os/Win11-old` présent + utilisé), ouvrir une story dédiée qui ajoute un case enum `install_win11_old` + asset path config-driven.
+
+### sysprep.xml : stub minimal (D15)
+
+`/ipxe/windows/sysprep.xml` retourne 200 + body vide tant que Story 3.7 n'enrichit pas `IpxeProgrammedActionResolver`. Le legacy `Win10/sysprep.xml.php` reste accessible via catchall (cleanup 3.7).
+
+### Assets binaires Windows : servis par Apache via catchall
+
+Les fichiers statiques `Win10/wimboot`, `Win10/winpeshl.ini`, `Win{10,11}/boot/bcd`, `Win{10,11}/boot/boot.sdi`, `Win{10,11}/sources/boot.wim` restent servis par Apache via catchall (non versionnés dans le repo SE5). Phase 2 acceptable.
+
+---
+
 ## Limitations connues — Story 3.4
 
 ### MachineBootLog preseed : pas de déduplication
@@ -1122,6 +1409,24 @@ Un poste avec `status='protected'` qui termine une install Linux **conserve** so
 - [ ] Scénario 3.4-12 (sécurité LAN) : 403 hors LAN
 - [ ] Scénario 3.4-13 (non-régression menu admin) — optionnel : items 3.2+3.3+3.4 cohabitent
 - [ ] Scénario 3.4-14 (smoke poste réel install Debian) — optionnel pré-prod
+- [ ] Scénario 3.5-1 (menu installation-windows poste connu) : 7 items install_win*
+- [ ] Scénario 3.5-2 (menu installation-windows poste inconnu) : message erreur + chain admin
+- [ ] Scénario 3.5-3 (item `(w)` Installation Windows dans /ipxe/admin) : visible si enabled, masqué si IPXE_INSTALL_WINDOWS_ENABLED=false
+- [ ] Scénario 3.5-4 (action install_win11) : kernel Win10/wimboot + initrds + BCD/boot.wim Win11
+- [ ] Scénario 3.5-5 (action install_win10_perso) : perso=1 dans cmdline
+- [ ] Scénario 3.5-6 (action install_win11_disk) : disk=1 dans cmdline
+- [ ] Scénario 3.5-7 (install.bat Win11 UEFI) : CRLF strict + setup.exe + URL native action
+- [ ] Scénario 3.5-8 (unattend.xml Win11 UEFI) : DOMDocument valid + BypassTPM + UnattendedJoin + ComputerName
+- [ ] Scénario 3.5-9 (unattend.xml poste inconnu) : 404 + log warning
+- [ ] Scénario 3.5-10 (unattend.xml version hors whitelist) : 422 + log warning
+- [ ] Scénario 3.5-11 (hook /ipxe/windows/action winpe) : Workstation.status='installation WinPE' + MachineBootLog
+- [ ] Scénario 3.5-12 (hook /ipxe/windows/action oobe) : Workstation.os='windows' + status='installation Windows terminee'
+- [ ] Scénario 3.5-13 (hook étape déférée sysprep) : 200 + log warning unsupported_step
+- [ ] Scénario 3.5-14 (diskpart.txt iso-legacy) : body strict + MachineBootLog
+- [ ] Scénario 3.5-15 (sysprep.xml stub) : 200 + body vide + log info stub_served
+- [ ] Scénario 3.5-16 (sécurité LAN) : 403 hors LAN
+- [ ] Scénario 3.5-17 (non-régression catchall `.php`) : Win10/repair.bat.php + clonage.php + installation-windows.php restent via catchall
+- [ ] Scénario 3.5-18 (smoke poste réel install Win11) — optionnel pré-prod
 
 > Smoke automatisable : voir Story 3.1 et 3.2 § "Smoke test à exécuter quand VM up"
 > dans `_bmad-output/implementation-artifacts/3-1-ipxe-service-core.md`.
