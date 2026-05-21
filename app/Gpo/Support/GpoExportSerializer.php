@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Gpo\Support;
 
+use App\Gpo\Dto\GpoSummary;
 use App\Gpo\Enums\GpoHealthStatus;
 use Illuminate\Support\Collection;
 
@@ -59,6 +60,32 @@ final class GpoExportSerializer
     }
 
     /**
+     * Normalise un item GPO (DTO ou array) en tableau associatif uniforme.
+     * Permet aux helpers d'accepter `Collection<GpoSummary>` (services natifs)
+     * comme `Collection<array>` (état Livewire sérialisé) sans duplication.
+     *
+     * @return array{name:string,displayName:string,versionNumber:?int,path:?string}
+     */
+    private static function normalizeItem(mixed $gpo): array
+    {
+        if ($gpo instanceof GpoSummary) {
+            return [
+                'name' => $gpo->name,
+                'displayName' => $gpo->displayName,
+                'versionNumber' => $gpo->versionNumber,
+                'path' => $gpo->path,
+            ];
+        }
+
+        return [
+            'name' => $gpo['name'] ?? '',
+            'displayName' => $gpo['displayName'] ?? '',
+            'versionNumber' => $gpo['versionNumber'] ?? null,
+            'path' => $gpo['path'] ?? null,
+        ];
+    }
+
+    /**
      * Sérialise une collection de GPOs en tableau de lignes CSV.
      *
      * @param  Collection<int,array{name:string,displayName:string,versionNumber:?int,dn:?string,path:?string}>  $gpos
@@ -74,8 +101,9 @@ final class GpoExportSerializer
         $rows = [];
 
         foreach ($gpos as $gpo) {
-            $guid = $gpo['name'] ?? '';
-            $rawVersion = $gpo['versionNumber'] ?? null;
+            $item = self::normalizeItem($gpo);
+            $guid = $item['name'];
+            $rawVersion = $item['versionNumber'];
             // Story 16.14 Q5 — version_status reflète si la valeur est connue.
             if ($rawVersion === null) {
                 $major = 0;
@@ -86,16 +114,16 @@ final class GpoExportSerializer
                 $minor = $rawVersion & 0xFFFF;
                 $versionStatus = 'known';
             }
-            $sections = NativeSectionResolver::resolve($gpo['displayName'] ?? '');
+            $sections = NativeSectionResolver::resolve($item['displayName']);
             $status = $healthStatusByGuid[$guid] ?? GpoHealthStatus::Healthy;
 
             $rows[] = [
-                self::escapeCsvCell($gpo['displayName'] ?? ''),
+                self::escapeCsvCell($item['displayName']),
                 self::escapeCsvCell(trim($guid, '{}')),
                 $major,
                 $minor,
                 $versionStatus,
-                self::escapeCsvCell($gpo['path'] ?? ''),
+                self::escapeCsvCell($item['path'] ?? ''),
                 $linksCountByGuid[$guid] ?? 0,
                 self::escapeCsvCell($status->value),
                 count($sections),
@@ -121,8 +149,9 @@ final class GpoExportSerializer
         $items = [];
 
         foreach ($gpos as $gpo) {
-            $guid = $gpo['name'] ?? '';
-            $rawVersion = $gpo['versionNumber'] ?? null;
+            $item = self::normalizeItem($gpo);
+            $guid = $item['name'];
+            $rawVersion = $item['versionNumber'];
             // Story 16.14 Q5 — version_status reflète si la valeur est connue.
             if ($rawVersion === null) {
                 $major = 0;
@@ -133,16 +162,16 @@ final class GpoExportSerializer
                 $minor = $rawVersion & 0xFFFF;
                 $versionStatus = 'known';
             }
-            $sections = NativeSectionResolver::resolve($gpo['displayName'] ?? '');
+            $sections = NativeSectionResolver::resolve($item['displayName']);
             $status = $healthStatusByGuid[$guid] ?? GpoHealthStatus::Healthy;
 
             $items[] = [
-                'display_name'          => $gpo['displayName'] ?? '',
+                'display_name'          => $item['displayName'],
                 'guid'                  => trim($guid, '{}'),
                 'version_major'         => $major,
                 'version_minor'         => $minor,
                 'version_status'        => $versionStatus,
-                'path_sysvol'           => $gpo['path'] ?? '',
+                'path_sysvol'           => $item['path'] ?? '',
                 'ou_links_count'        => $linksCountByGuid[$guid] ?? 0,
                 'health_status'         => $status->value,
                 'native_sections_count' => count($sections),

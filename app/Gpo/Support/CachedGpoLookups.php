@@ -35,7 +35,7 @@ use Throwable;
  * **Warm-up** : `gpo:warm-cache` planifié 22:00 chaque jour repeuple le cache
  * avant la journée admin (cf. `app/Console/Kernel.php`).
  */
-final class CachedGpoLookups
+class CachedGpoLookups
 {
     /** Préfixe des clés de cache liens par GUID. */
     private const KEY_LINKS_PREFIX = 'gpo:links:';

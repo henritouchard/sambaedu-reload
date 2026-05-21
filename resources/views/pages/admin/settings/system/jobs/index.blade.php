@@ -206,9 +206,26 @@ new #[Title('Jobs système - SE4FS')] class extends Component {
      */
     private function isWatchedJob(string $payload): bool
     {
-        foreach (self::WATCHED_CLASS_PREFIXES as $prefix) {
-            if (str_contains($payload, $prefix)) {
-                return true;
+        // Le `displayName` Laravel est sérialisé en JSON : chaque `\` du FQCN
+        // PHP devient `\\` dans la chaîne stockée. Décoder avant comparaison
+        // pour matcher de façon fiable, indépendamment de l'encodage JSON.
+        $decoded = json_decode($payload, true);
+        if (!is_array($decoded)) {
+            return false;
+        }
+        $candidates = [
+            $decoded['displayName'] ?? null,
+            $decoded['job'] ?? null,
+            $decoded['data']['commandName'] ?? null,
+        ];
+        foreach ($candidates as $name) {
+            if (!is_string($name)) {
+                continue;
+            }
+            foreach (self::WATCHED_CLASS_PREFIXES as $prefix) {
+                if (str_starts_with($name, $prefix)) {
+                    return true;
+                }
             }
         }
         return false;

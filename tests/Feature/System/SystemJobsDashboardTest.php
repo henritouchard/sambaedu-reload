@@ -63,6 +63,13 @@ class SystemJobsDashboardTest extends TestCase
         $admin = $this->makeAdmin('admin-jobs-200');
         $this->actingAs($admin);
 
+        // sambaedu.auth lit $_SESSION (non touché par actingAs), bypass requis
+        // pour atteindre la page — iso-pattern WinePageTest (Story 16.9).
+        $this->withoutMiddleware([
+            \App\Http\Middleware\Auth\SambaEduAuth::class,
+            \App\Http\Middleware\RequireAdminRights::class,
+        ]);
+
         $response = $this->get('/admin/settings/system/jobs');
         $response->assertStatus(200);
     }
@@ -72,6 +79,11 @@ class SystemJobsDashboardTest extends TestCase
     {
         $user = $this->makeUser('user-jobs-403');
         $this->actingAs($user);
+
+        $this->withoutMiddleware([
+            \App\Http\Middleware\Auth\SambaEduAuth::class,
+            \App\Http\Middleware\RequireAdminRights::class,
+        ]);
 
         $response = $this->get('/admin/settings/system/jobs');
         $response->assertStatus(403);
@@ -145,9 +157,10 @@ class SystemJobsDashboardTest extends TestCase
         $this->actingAs($admin);
 
         $component = Livewire::test('pages::admin.settings.system.jobs.index');
-        $component->assertMethodExists('cancelJob');
-        $component->assertMethodExists('retryJob');
-        $component->assertMethodExists('refreshJobs');
+        $reflection = new \ReflectionClass($component->instance());
+        self::assertTrue($reflection->hasMethod('cancelJob'));
+        self::assertTrue($reflection->hasMethod('retryJob'));
+        self::assertTrue($reflection->hasMethod('refreshJobs'));
     }
 
     /**
@@ -202,7 +215,16 @@ class SystemJobsDashboardTest extends TestCase
             'created_at'   => time(),
         ]);
 
-        Log::spy();
+        // Log::channel('gpo')->log(...) chaîne deux appels : un simple
+        // `Log::spy()` retourne null sur `channel()` et casse l'enchaînement.
+        // On expose un Mockery::self pour que `channel()` retourne un objet
+        // chainable supportant `->log()` (et autres niveaux).
+        Log::shouldReceive('channel')->andReturnSelf();
+        Log::shouldReceive('log')->andReturnNull();
+        Log::shouldReceive('debug')->andReturnNull();
+        Log::shouldReceive('info')->andReturnNull();
+        Log::shouldReceive('warning')->andReturnNull();
+        Log::shouldReceive('error')->andReturnNull();
 
         // cancelJob(8888) doit réussir (job supprimé) → toast success
         Livewire::test('pages::admin.settings.system.jobs.index')
@@ -277,7 +299,16 @@ class SystemJobsDashboardTest extends TestCase
             'created_at'   => time(),
         ]);
 
-        Log::spy();
+        // Log::channel('gpo')->log(...) chaîne deux appels : un simple
+        // `Log::spy()` retourne null sur `channel()` et casse l'enchaînement.
+        // On expose un Mockery::self pour que `channel()` retourne un objet
+        // chainable supportant `->log()` (et autres niveaux).
+        Log::shouldReceive('channel')->andReturnSelf();
+        Log::shouldReceive('log')->andReturnNull();
+        Log::shouldReceive('debug')->andReturnNull();
+        Log::shouldReceive('info')->andReturnNull();
+        Log::shouldReceive('warning')->andReturnNull();
+        Log::shouldReceive('error')->andReturnNull();
 
         // cancelJob(9999) doit émettre un warning (toast) car reserved_at != null
         // Et log failure (finding #11 : échec sémantique sur no-op)

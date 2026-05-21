@@ -58,6 +58,13 @@ class GpoSectionsPageTest extends TestCase
         $admin = $this->makeAdmin('admin-sections-200');
         $this->actingAs($admin);
 
+        // sambaedu.auth lit $_SESSION (non touché par actingAs), bypass requis
+        // pour atteindre la page — iso-pattern WinePageTest (Story 16.9).
+        $this->withoutMiddleware([
+            \App\Http\Middleware\Auth\SambaEduAuth::class,
+            \App\Http\Middleware\RequireAdminRights::class,
+        ]);
+
         $response = $this->get('/admin/settings/gpo/sections');
         $response->assertStatus(200);
     }
@@ -67,6 +74,11 @@ class GpoSectionsPageTest extends TestCase
     {
         $user = $this->makeUser('user-sections-403');
         $this->actingAs($user);
+
+        $this->withoutMiddleware([
+            \App\Http\Middleware\Auth\SambaEduAuth::class,
+            \App\Http\Middleware\RequireAdminRights::class,
+        ]);
 
         $response = $this->get('/admin/settings/gpo/sections');
         $response->assertStatus(403);

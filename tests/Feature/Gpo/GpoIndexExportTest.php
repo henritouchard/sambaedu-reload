@@ -204,13 +204,24 @@ class GpoIndexExportTest extends TestCase
 
         FakesGpoService::make()->withGpos($this->makeGpoCollection())->bind($this->app);
 
-        Log::spy();
+        $channels = [];
+        // Log::channel('gpo')->log(...) chaîne deux appels — on capture les
+        // arguments via un callback et on assert ensuite (sinon shouldHave*
+        // n'incrémente pas le compteur d'assertions PHPUnit → test risky).
+        Log::shouldReceive('channel')->andReturnUsing(function ($name) use (&$channels) {
+            $channels[] = $name;
+            return Log::getFacadeRoot();
+        });
+        Log::shouldReceive('log')->andReturnNull();
+        Log::shouldReceive('debug')->andReturnNull();
+        Log::shouldReceive('info')->andReturnNull();
+        Log::shouldReceive('warning')->andReturnNull();
+        Log::shouldReceive('error')->andReturnNull();
 
         Livewire::test('pages::admin.settings.gpo.index')
             ->call('exportCsv');
 
-        // Vérifier qu'un log contenant 'gpo.export.csv' a été émis (GpoLogger émet '[gpo] gpo.export.csv start')
-        Log::shouldHaveReceived('channel')->with('gpo')->atLeast()->once();
+        self::assertContains('gpo', $channels, "Log::channel('gpo') doit être appelé pendant exportCsv.");
     }
 
     #[Test]
@@ -222,12 +233,21 @@ class GpoIndexExportTest extends TestCase
 
         FakesGpoService::make()->withGpos($this->makeGpoCollection())->bind($this->app);
 
-        Log::spy();
+        $channels = [];
+        Log::shouldReceive('channel')->andReturnUsing(function ($name) use (&$channels) {
+            $channels[] = $name;
+            return Log::getFacadeRoot();
+        });
+        Log::shouldReceive('log')->andReturnNull();
+        Log::shouldReceive('debug')->andReturnNull();
+        Log::shouldReceive('info')->andReturnNull();
+        Log::shouldReceive('warning')->andReturnNull();
+        Log::shouldReceive('error')->andReturnNull();
 
         Livewire::test('pages::admin.settings.gpo.index')
             ->call('exportJson');
 
-        Log::shouldHaveReceived('channel')->with('gpo')->atLeast()->once();
+        self::assertContains('gpo', $channels, "Log::channel('gpo') doit être appelé pendant exportJson.");
     }
 
     // -------------------------------------------------------------------------
