@@ -181,6 +181,62 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Story 3.4 — Variables Linux preseed (D11)
+    |--------------------------------------------------------------------------
+    |
+    | Variables consommées par LinuxPreseedService pour interpoler les
+    | placeholders ###_<KEY>_### dans les fragments preseed. Toutes ces
+    | valeurs DOIVENT être lues depuis `.env` (jamais hardcodées) — elles
+    | contiennent des secrets (mots de passe root, clés AD, tokens).
+    |
+    | Convention : tous les SECRETS sont rendus en clair dans le preseed
+    | text/plain renvoyé au poste LAN qui boot. Mitigation = auth.v1.lan-only
+    | + MAC/UUID matching strict (cf. story 3.4 D3).
+    */
+    'linux' => [
+        'locale' => env('SAMBAEDU_LINUX_LOCALE', 'fr_FR'),
+        'keyboard' => env('SAMBAEDU_LINUX_KEYBOARD', 'fr(latin9)'),
+        'interface' => env('SAMBAEDU_LINUX_INTERFACE', 'auto'),
+        'user' => env('SAMBAEDU_LINUX_USER', ''),
+        'user_passwd' => env('SAMBAEDU_LINUX_USER_PASSWD', ''), // SECRET
+        'version_debian' => env('SAMBAEDU_LINUX_VERSION_DEBIAN', 'trixie'),
+        'apt_proxy' => env('SAMBAEDU_LINUX_APT_PROXY', ''),
+        'server_proxy' => env('SAMBAEDU_LINUX_SERVER_PROXY', ''),
+        'proxy_type' => env('SAMBAEDU_LINUX_PROXY_TYPE', 'none'),
+        'proxy_address' => env('SAMBAEDU_LINUX_PROXY_ADDRESS', ''),
+        'proxy_port' => env('SAMBAEDU_LINUX_PROXY_PORT', ''),
+        'proxy_url' => env('SAMBAEDU_LINUX_PROXY_URL', ''),
+        'token' => env('SAMBAEDU_LINUX_TOKEN', ''), // SECRET
+        'depot_type' => env('SAMBAEDU_LINUX_DEPOT_TYPE', 'main'),
+        'commande_fin_preseed' => env('SAMBAEDU_LINUX_COMMANDE_FIN', ''),
+        'disk' => env('SAMBAEDU_LINUX_DISK', ''), // optionnel — force /dev/sdX si défini
+        'mask' => env('SAMBAEDU_LINUX_MASK', ''),
+        'gateway' => env('SAMBAEDU_LINUX_GATEWAY', ''),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Story 3.4 — Variables AD/LDAP consommées par le preseed (D11)
+    |--------------------------------------------------------------------------
+    | Ces variables sont interpolées dans les fragments preseed via
+    | LinuxPreseedService + PreseedPlaceholders. Toutes sont overridables
+    | via .env. Les SECRETS (passwd, token) restent vides par défaut pour
+    | éviter d'embarquer des credentials dans le repo.
+    */
+    'ldap_port' => env('SAMBAEDU_LDAP_PORT', 636),
+    'ldap_admin_passwd' => env('SAMBAEDU_LDAP_ADMIN_PASSWD', ''), // SECRET
+    'ldap_admin_name' => env('SAMBAEDU_LDAP_ADMIN_NAME', 'Administrator'),
+    'ldap_base_dn' => env('SAMBAEDU_LDAP_BASE_DN', ''),
+    'computers_rdn' => env('SAMBAEDU_COMPUTERS_RDN', 'CN=Computers'),
+    'admin_rdn' => env('SAMBAEDU_ADMIN_RDN', 'CN=Users'),
+    'admin_passwd' => env('SAMBAEDU_ADMIN_PASSWD', ''), // SECRET
+    'samba_domain' => env('SAMBAEDU_SAMBA_DOMAIN', ''),
+    'se4ad_name' => env('SAMBAEDU_SE4AD_NAME', ''),
+    'se4_pub_key' => env('SAMBAEDU_SE4_PUB_KEY', ''),
+    'domain' => env('SAMBAEDU_DOMAIN', ''),
+
+    /*
+    |--------------------------------------------------------------------------
     | Story 8.1 — Réseau / DHCP (FR20 + FR22)
     |--------------------------------------------------------------------------
     | Configuration du service DHCP géré nativement par SER. Les chemins sont

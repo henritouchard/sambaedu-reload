@@ -40,6 +40,7 @@ final class IpxeMenuRenderer
 
     public function __construct(
         private readonly ViewFactory $viewFactory,
+        private readonly LinuxInstallMenuBuilder $linuxMenuBuilder,
     ) {
     }
 
@@ -174,6 +175,9 @@ final class IpxeMenuRenderer
             // Story 3.3 — D11 / AC5.2 — variables enrollment.
             'enrollmentBaseUrl' => $base . '/ipxe/enrollment',
             'isEnrollmentActive' => (bool) config('ipxe.enrollment.enabled', true),
+            // Story 3.4 — D11 / AC7.3 — variables installation Linux.
+            'installLinuxBaseUrl' => $base . '/ipxe/installation-linux',
+            'isInstallLinuxActive' => (bool) config('ipxe.linux.enabled', true),
             'resolutionX' => (int) config('ipxe.menu.resolution_x', 1024),
             'resolutionY' => (int) config('ipxe.menu.resolution_y', 768),
             'resolutionPng' => $this->resolveBackgroundPng(),
@@ -181,6 +185,37 @@ final class IpxeMenuRenderer
             'bootDiskFallback' => $this->renderBootDiskFallback(),
             'isKnown' => $isKnown,
         ])->render();
+    }
+
+    /**
+     * Story 3.4 — D10 / AC6.1 — Rend le menu interactif d'installation
+     * Linux (`resources/views/ipxe/menu/installation-linux.blade.php`).
+     *
+     * Délègue la construction du payload de variables à
+     * {@see LinuxInstallMenuBuilder::build()} pour permettre le test unit
+     * isolé.
+     *
+     * **Modes** :
+     *  - poste connu (`$ws !== null`)   : menu complet avec 9 items
+     *    `install_*` (D11 — config-driven liste).
+     *  - poste inconnu (`$ws === null`) : menu erreur D7 + chain
+     *    `/ipxe/admin`.
+     */
+    public function renderInstallationLinuxMenu(
+        ?Workstation $ws,
+        string $ip,
+        string $serverBaseUrl,
+    ): string {
+        // Post-review #5 — DI directe via constructeur (plus de service locator).
+        $variables = $this->linuxMenuBuilder->build($ws, $serverBaseUrl, $ip);
+
+        return $this->viewFactory->make('ipxe.menu.installation-linux', array_merge(
+            $variables,
+            [
+                'shebang' => self::IPXE_SHEBANG,
+                'bootDiskFallback' => $this->renderBootDiskFallback(),
+            ],
+        ))->render();
     }
 
     /**

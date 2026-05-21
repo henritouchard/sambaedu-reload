@@ -221,4 +221,81 @@ return [
             'allowed_versions' => ['Win10', 'Win11'],
         ],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Story 3.4 — Installation Linux (D11)
+    |--------------------------------------------------------------------------
+    |
+    | Paramètres pour les 4 endpoints `/ipxe/installation-linux`,
+    | `/ipxe/linux/{preseed,action,autorun}` — port natif des fichiers legacy
+    | `sambaedu/ipxe/installation-linux.php` + `linux/*.php` +
+    | `actions/{deb_*,ubuntu64,nird}.php`.
+    */
+    'linux' => [
+        // Active la branche Installation Linux depuis le menu admin (3.4).
+        // Si false, l'item (l) Installation Linux est masqué dans /ipxe/admin.
+        'enabled' => filter_var(env('IPXE_INSTALL_LINUX_ENABLED', true), FILTER_VALIDATE_BOOL),
+
+        // Timeout du menu installation-linux (10s — iso-legacy installation-linux.php:9).
+        'menu_timeout_ms' => (int) env('IPXE_INSTALL_LINUX_TIMEOUT_MS', 10000),
+
+        // Background PNG affiché par la console iPXE du menu installation-linux.
+        'background_png' => env('IPXE_INSTALL_LINUX_BG_PNG', 'png/linux2.png'),
+
+        // Variante par défaut sélectionnée (iso-legacy installation-linux.php:29).
+        'default_variant' => env('IPXE_INSTALL_LINUX_DEFAULT', 'install_deb_gnome'),
+
+        // Liste des items menu (whitelist enum + labels iPXE-safe ASCII).
+        // Pour ajouter/retirer un item, éditer ce tableau + le case enum
+        // correspondant dans IpxeAdminAction.
+        'menu_items' => [
+            ['enum' => 'install_deb_base',     'label' => 'Debian base (sans desktop)'],
+            ['enum' => 'install_deb_gnome',    'label' => 'Debian + GNOME (defaut)'],
+            ['enum' => 'install_deb_lxde',     'label' => 'Debian + LXDE'],
+            ['enum' => 'install_deb_kde',      'label' => 'Debian + KDE'],
+            ['enum' => 'install_deb_mate',     'label' => 'Debian + MATE'],
+            ['enum' => 'install_deb_xfce',     'label' => 'Debian + XFCE'],
+            ['enum' => 'install_deb_cinnamon', 'label' => 'Debian + Cinnamon'],
+            ['enum' => 'install_nird',         'label' => 'NIRD (Debian derivee primaire)'],
+            ['enum' => 'install_ubuntu64',     'label' => 'Ubuntu 20.04 (hors domaine)'],
+        ],
+
+        // Préfixe URL des assets debian-installer/ubuntu-installer servis via
+        // l'OS_URL résolu (cf. config/ipxe.php section actions).
+        // Iso-legacy `actions/deb_*.php:8` : `{os_url}/debian-installer/amd64/linux`.
+        'kernel_paths' => [
+            'debian' => env('IPXE_LINUX_DEBIAN_KERNEL', '/debian-installer/amd64/linux'),
+            'debian_initrd' => env('IPXE_LINUX_DEBIAN_INITRD', '/debian-installer/amd64/initrd.gz'),
+            'ubuntu' => env('IPXE_LINUX_UBUNTU_KERNEL', '/ubuntu-installer/amd64/linux'),
+            'ubuntu_initrd' => env('IPXE_LINUX_UBUNTU_INITRD', '/ubuntu-installer/amd64/initrd.gz'),
+            'nird' => env('IPXE_LINUX_NIRD_KERNEL', '/nird/casper/vmlinuz'),
+            'nird_initrd' => env('IPXE_LINUX_NIRD_INITRD', '/nird/casper/initrd.gz'),
+        ],
+
+        // Chemin du dossier de fragments preseed (assets statiques projet).
+        // Décision D11 — copier les fragments depuis sambaedu/ipxe/linux/*.cfg
+        // vers resources/ipxe/linux/*.cfg pour mise sous version control.
+        'preseed_fragments_path' => env(
+            'IPXE_LINUX_PRESEED_FRAGMENTS',
+            resource_path('ipxe/linux'),
+        ),
+
+        // Whitelist stricte des distributions acceptées par /ipxe/linux/preseed.
+        // Cf. enum LinuxDistribution.
+        'allowed_distributions' => ['debian', 'ubuntu', 'nird'],
+
+        // Whitelist stricte des variantes desktop acceptées par
+        // /ipxe/linux/preseed. Cf. enum LinuxDesktopVariant.
+        'allowed_variants' => ['base', 'gnome', 'lxde', 'kde', 'mate', 'xfce', 'cinnamon'],
+
+        // Whitelist stricte des versions Debian/Ubuntu acceptées (au-delà,
+        // fallback config('sambaedu.linux.version_debian') par défaut).
+        // Pour ajouter une version, éditer ici ET les assets servis par Apache.
+        'allowed_os_versions' => [
+            'debian', 'ubuntu', 'nird',
+            'trixie', 'bookworm', 'bullseye',
+            'focal', 'jammy',
+        ],
+    ],
 ];

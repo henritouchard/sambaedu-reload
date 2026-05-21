@@ -827,6 +827,244 @@ Vérifications post-smoke :
 
 ---
 
+## Story 3.4 — Installation Linux (Debian/Ubuntu)
+
+**Date livraison** : 2026-05-20
+**Migrations à appliquer** : aucune (D9/D12 — réutilisation `Workstation` + `MachineBootLog` ; 3 nouvelles valeurs `action` ≤18 chars dans varchar(20) sans CHECK)
+**Permissions requises** : aucune (cf. Story 3.1-3.3 — `auth.v1.lan-only` seul)
+**Variables `.env` à vérifier** : `SAMBAEDU_LINUX_LOCALE`, `SAMBAEDU_LDAP_ADMIN_PASSWD`, `SAMBAEDU_ADMIN_PASSWD`, `SAMBAEDU_DOMAIN`, `SAMBAEDU_LDAP_BASE_DN`, `SAMBAEDU_SAMBA_DOMAIN`, `SAMBAEDU_LDAP_PORT`, `SAMBAEDU_SE4AD_NAME`, `SAMBAEDU_SE4_PUB_KEY` (cf. story 3.4 § D11)
+**Décisions ratifiées** : D14 variantes hors-scope déférées Phase 3 (se4ad/se4fs/deb_serv/kiosk/nextcloud/gnome_perso/primtux), D3 secrets preseed acceptés sur LAN (auth.v1.lan-only seul), D15 endpoint `/ipxe/linux/autorun` = stub minimal, `Workstation::status` minimal (`installation Linux terminee` ou `installation Linux echouee (ret=X)`)
+
+### Section 13 — Endpoints natifs `/ipxe/installation-linux` + `/ipxe/linux/*`
+
+#### Scénario 3.4-1 — Menu installation-linux rendu (poste connu)
+
+```bash
+# Pré-condition : poste seedé en base.
+curl -sS -X POST http://192.168.122.50/ipxe/installation-linux \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa'
+```
+
+**Critères d'acceptation** :
+- HTTP 200 + `Content-Type: text/plain; charset=utf-8`.
+- Body commence par `#!ipxe`.
+- Body contient `item install_deb_gnome Debian + GNOME` (défaut menu).
+- Body contient `item install_ubuntu64 Ubuntu 20.04`.
+- Body contient `item install_nird NIRD`.
+- Body contient sections `:install_deb_gnome\nchain --replace --autofree http://.../ipxe/action/install_deb_gnome##params`.
+- Body contient `:exit\n...sanboot...` (fallback boot disk).
+- Headers : `Cache-Control: no-store`, `X-Robots-Tag: noindex`.
+- Log channel `ipxe` : event `ipxe.install_linux.menu_rendered` avec `menu_variant='known'`.
+- `MachineBootLog` : row avec `action='ipxe_install_linux'`.
+
+#### Scénario 3.4-2 — Menu installation-linux poste inconnu
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/installation-linux \
+  -d 'mac=00:00:00:00:00:00&uuid=00000000-0000-0000-0000-000000000000'
+```
+
+**Critères d'acceptation** :
+- Body contient `echo Erreur - poste non encore enregistre`.
+- Body contient `chain --replace --autofree http://192.168.122.50/ipxe/admin##params`.
+- Body NE contient PAS `item install_deb_*` (le menu erreur masque les items).
+- Log channel `ipxe` : event `ipxe.install_linux.menu_rendered` avec `menu_variant='unknown'`.
+
+#### Scénario 3.4-3 — Item `(l) Installation Linux` visible dans /ipxe/admin
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/admin \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa'
+```
+
+**Critères d'acceptation** :
+- Body contient `item --key l install-linux (l) Installation Linux (Debian/Ubuntu)`.
+- Body contient section `:install-linux\nchain --replace --autofree http://192.168.122.50/ipxe/installation-linux##params`.
+
+**Feature-flag** : `IPXE_INSTALL_LINUX_ENABLED=false` dans `.env` → item absent (testé via test feature `IpxeAdminEndpointTest::it_hides_install_linux_item_when_disabled`).
+
+#### Scénario 3.4-4 — Action `install_deb_gnome` rendue (kernel cmdline)
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/action/install_deb_gnome \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa'
+```
+
+**Critères d'acceptation** :
+- Body commence par `#!ipxe`.
+- Body contient `kernel http://192.168.122.50/ipxe/debian-installer/amd64/linux` (ou OS_URL configuré).
+- Body contient `initrd --name initrd.gz http://.../debian-installer/amd64/initrd.gz`.
+- Body contient `imgargs linux initrd=initrd.gz auto=true hostname=PC-XXX priority=critical auto url=http://.../ipxe/linux/preseed?mac=...&uuid=...&os=trixie&type=gnome`.
+- Body se termine par `boot\n`.
+
+#### Scénario 3.4-5 — Action `install_ubuntu64` rendue
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/action/install_ubuntu64 \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa'
+```
+
+**Critères d'acceptation** :
+- `kernel http://.../ubuntu-installer/amd64/linux` (paths Ubuntu, pas Debian).
+- `imgargs ... url=...?os=ubuntu&type=base&perso=1` (Ubuntu = perso=1, parité legacy).
+
+#### Scénario 3.4-6 — Action `install_nird` rendue
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/action/install_nird \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa'
+```
+
+**Critères d'acceptation** :
+- `kernel http://.../nird/casper/vmlinuz` (paths Nird/casper).
+- `imgargs vmlinuz initrd=initrd.gz root=/dev/nfs boot=casper netboot=nfs nfsroot=<se4fs_ip>:/var/sambaedu/unattended/install/os/nird root ip=dhcp ... url=...?os=debian&type=base&perso=1`.
+
+#### Scénario 3.4-7 — Preseed généré (debian/gnome)
+
+```bash
+curl -sS 'http://192.168.122.50/ipxe/linux/preseed?mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa&os=trixie&type=gnome'
+```
+
+**Critères d'acceptation** :
+- HTTP 200 + `Content-Type: text/plain; charset=utf-8`.
+- Body ~4000 chars, commence par `### Fichier de réponses préconfigurées`.
+- Body contient `tasksel tasksel/first multiselect standard, desktop, gnome-desktop, print-server, ssh-server` (iso `debian_gnome.cfg`).
+- Body contient `d-i netcfg/get_hostname string pc-XXX` (interpolation hostname lowercase).
+- Body contient `d-i passwd/root-password password <admin-passwd>` (secret de la `.env`).
+- Body contient `partman-auto/method string regular` (simple_boot.cfg).
+- AUCUN placeholder résiduel `###_..._###`.
+- `MachineBootLog` : row avec `action='ipxe_linux_preseed'`.
+- Log channel `ipxe` : event `ipxe.linux.preseed.generated` avec `preseed_sha256`, `preseed_size_bytes`, `distribution`, `variant`. **PAS** de log du contenu du preseed.
+
+#### Scénario 3.4-8 — Preseed poste inconnu
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  'http://192.168.122.50/ipxe/linux/preseed?mac=00:00:00:00:00:00&uuid=99999999-9999-9999-9999-999999999999&os=trixie&type=gnome'
+```
+
+**Critères d'acceptation** :
+- HTTP 404.
+- Log channel `ipxe` : event `ipxe.linux.preseed.unknown_workstation` niveau warning + `mac_prefix=00:00:` + `uuid_prefix=99999999`.
+
+#### Scénario 3.4-9 — Preseed os/type hors whitelist
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  'http://192.168.122.50/ipxe/linux/preseed?mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa&os=macos&type=gnome'
+```
+
+**Critères d'acceptation** :
+- HTTP 422.
+- Log channel `ipxe` : event `ipxe.linux.preseed.invalid_distribution` (ou `invalid_variant` selon le champ rejeté).
+- `raw_distribution` (tronqué 32 chars + sanitize ASCII).
+
+**Variante anti-path-traversal** :
+```bash
+curl -sS '.../linux/preseed?...&os=../../../etc/passwd&type=gnome'
+```
+→ 422 (Rule::in de la FormRequest rejette).
+
+#### Scénario 3.4-10 — Hook `/ipxe/linux/action` (fin install ret=0)
+
+```bash
+curl -sS -X POST \
+  -F 'ret=0' \
+  -F 'uuid=12345678-1234-1234-1234-aaaaaaaaaaaa' \
+  -F 'name=PC-XXX' \
+  http://192.168.122.50/ipxe/linux/action
+```
+
+**Critères d'acceptation** :
+- HTTP 200 + body vide (parité legacy `action.php:39`).
+- PostgreSQL : `SELECT os, status FROM workstations WHERE uuid='12345678-1234-1234-1234-aaaaaaaaaaaa'` → `os='linux'`, `status='installation Linux terminee'`.
+- `last_report_at` mis à jour à maintenant.
+- `MachineBootLog` : row avec `action='ipxe_linux_report'` + `success=true`.
+- Log channel `ipxe` : event `ipxe.linux.action.success` niveau info.
+
+**Variante échec** (`ret=99`) → `status='installation Linux echouee (ret=99)'` + event `ipxe.linux.action.failure` niveau warning.
+
+#### Scénario 3.4-11 — Stub `/ipxe/linux/autorun` (D15)
+
+```bash
+curl -sS 'http://192.168.122.50/ipxe/linux/autorun?mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa&name=PC-XXX'
+```
+
+**Critères d'acceptation** :
+- HTTP 200 + `Content-Type: text/plain; charset=utf-8`.
+- Body commence par `#!/bin/bash`.
+- Body contient `echo 'install Linux completed for PC-XXX (12345678-1234-1234-1234-aaaaaaaaaaaa)'`.
+- Body se termine par `exit 0\n`.
+- Log channel `ipxe` : event `ipxe.linux.autorun.served` niveau info.
+
+#### Scénario 3.4-12 — Sécurité LAN (depuis IP publique)
+
+```bash
+# Simulation d'appel depuis une IP publique (ex: 8.8.8.8 via REMOTE_ADDR spoofing
+# côté Apache pour test — en pratique impossible en LAN scolaire).
+curl -sS -H 'X-Forwarded-For: 8.8.8.8' -o /dev/null -w '%{http_code}\n' \
+  http://192.168.122.50/ipxe/installation-linux
+```
+
+**Critères d'acceptation** :
+- HTTP 403 + body contient code `bootstrap.not_lan` (iso 16.11).
+- AUCUN preseed ni menu ne fuit (le middleware bloque avant le controller).
+
+#### (Optionnel) Scénario 3.4-13 — Non-régression menu admin 3.2 + items enrollment 3.3
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/admin \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa'
+```
+
+**Critères d'acceptation** :
+- Body contient l'item enrollment 3.3 `item --key n set-name` (non-régression).
+- Body contient l'item maintenance 3.2 `item --key m maintenance` (non-régression).
+- Body contient l'item installation Linux 3.4 `item --key l install-linux` (nouveau).
+- Body contient le retour `item --key r retour` (toujours présent).
+
+#### (Optionnel) Scénario 3.4-14 — Smoke poste réel (install Debian complète)
+
+> **À jouer en pré-prod uniquement, sur poste de test sans données importantes**.
+
+```
+1. Brancher un poste neuf (ou existant en base) sur LAN scolaire.
+2. PXE boot → préambule iPXE 3.1 → menu known.
+3. Choisir option login admin → /ipxe/admin natif (3.2).
+4. Choisir `(l) Installation Linux` → /ipxe/installation-linux (3.4).
+5. Choisir un item (ex: `install_deb_gnome` Debian + GNOME).
+6. Le firmware iPXE charge `kernel http://.../debian-installer/amd64/linux`.
+7. Debian-installer boot et fetch `/ipxe/linux/preseed?mac=...&os=trixie&type=gnome`.
+8. Installation Debian se déroule sans intervention (~30-60 min).
+9. À la fin du preseed, `late_command` exécute `curl -F 'ret=0' .../ipxe/linux/action`.
+10. Le poste reboot sur le disque.
+
+Vérifications post-smoke :
+- `SELECT os, status, last_report_at FROM workstations WHERE name='PC-XXX';` → `os='linux'`, `status='installation Linux terminee'`.
+- `SELECT count(*) FROM machine_boot_logs WHERE workstation_id=... AND action LIKE 'ipxe_linux_%';` → ≥2 (1× preseed + 1× report).
+- `tail storage/logs/ipxe/ipxe-$(date +%F).log` → events `ipxe.install_linux.menu_rendered`, `ipxe.linux.preseed.generated`, `ipxe.linux.action.success`.
+- `ssh root@PC-XXX 'uname -a'` → Debian trixie installé.
+- `samba-tool computer show PC-XXX` → poste joint au domaine AD.
+```
+
+## Limitations connues — Story 3.4
+
+### MachineBootLog preseed : pas de déduplication
+
+Un poste qui redémarre plusieurs fois pendant une install échouée crée 1 row `ipxe_linux_preseed` par fetch preseed du d-i. Pas de déduplication. Comportement iso-legacy (parité `preseed.php` qui faisait pire — pas de log du tout).
+
+- **Impact estimé** : 50 postes × 5 retries → ~250 lignes parasites/jour en rentrée scolaire.
+- **Décision Phase 2** : laisser. Rouvrir si la table explose (Phase 3 = check `started_at > now() - 30s`).
+
+### Status `protected` post-install : préservé (post-review #M3)
+
+Un poste avec `status='protected'` qui termine une install Linux **conserve** son status `protected` (au lieu d'être écrasé par `installation Linux terminee`). Les autres effets (`os='linux'`, `last_report_at`, `MachineBootLog`) sont conservés.
+
+- **Traçabilité** : event log info `ipxe.linux.action.protected_preserved` avec `workstation_id`, `mac`, `ret`.
+- **Justification** : le legacy `flag_poste=1` ne bloque JAMAIS la réinstall iPXE (vérifié) — il sert uniquement de protection anti-suppression DB lors des resync AD.
+
+---
+
 ## Checklist rapide (avant merge `main` → prod)
 
 - [ ] Scénario 3.1-1 (handshake) : `curl /ipxe/boot` → préambule iPXE OK
@@ -870,6 +1108,20 @@ Vérifications post-smoke :
 - [ ] Scénario 3.3-14 (BYOD audit-only — pas de Workstation ni AD)
 - [ ] Scénario 3.3-15 (feature-flag enrollment.enabled=false)
 - [ ] Scénario 3.3-16 (smoke poste réel — optionnel pré-prod)
+- [ ] Scénario 3.4-1 (menu installation-linux poste connu) : 9 items install_*
+- [ ] Scénario 3.4-2 (menu installation-linux poste inconnu) : message erreur + chain admin
+- [ ] Scénario 3.4-3 (item `(l)` Installation Linux dans /ipxe/admin) : visible si enabled, masqué si IPXE_INSTALL_LINUX_ENABLED=false
+- [ ] Scénario 3.4-4 (action install_deb_gnome) : kernel debian-installer + URL preseed avec os=trixie&type=gnome
+- [ ] Scénario 3.4-5 (action install_ubuntu64) : kernel ubuntu-installer + perso=1
+- [ ] Scénario 3.4-6 (action install_nird) : kernel /nird/casper + NFS root
+- [ ] Scénario 3.4-7 (preseed debian/gnome) : ~4000 chars + tasksel gnome-desktop + hostname interpolé + audit MachineBootLog
+- [ ] Scénario 3.4-8 (preseed poste inconnu) : 404 + log warning
+- [ ] Scénario 3.4-9 (preseed os/type hors whitelist) : 422 + log warning invalid_distribution|invalid_variant
+- [ ] Scénario 3.4-10 (hook /ipxe/linux/action ret=0) : Workstation.os='linux' + status='installation Linux terminee' + MachineBootLog
+- [ ] Scénario 3.4-11 (stub /ipxe/linux/autorun) : #!/bin/bash + echo + exit 0
+- [ ] Scénario 3.4-12 (sécurité LAN) : 403 hors LAN
+- [ ] Scénario 3.4-13 (non-régression menu admin) — optionnel : items 3.2+3.3+3.4 cohabitent
+- [ ] Scénario 3.4-14 (smoke poste réel install Debian) — optionnel pré-prod
 
 > Smoke automatisable : voir Story 3.1 et 3.2 § "Smoke test à exécuter quand VM up"
 > dans `_bmad-output/implementation-artifacts/3-1-ipxe-service-core.md`.

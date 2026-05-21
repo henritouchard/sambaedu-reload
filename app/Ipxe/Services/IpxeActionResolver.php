@@ -106,7 +106,12 @@ final class IpxeActionResolver
         $disk = (int) $request->input('disk', 0);
         $perso = (int) $request->input('perso', 0);
 
-        return $this->viewFactory->make($action->template(), [
+        // Story 3.4 — AC6.2 / AC7.1 — variables Linux install pour les
+        // templates `ipxe.actions.install_*`. linuxMeta() retourne null pour
+        // les 3 actions historiques 3.2 (rescuecd, winpe, factory_reset).
+        $linuxVariables = $this->resolveLinuxVariables($action, $mac, $uuid, $scriptUrl, $perso);
+
+        return $this->viewFactory->make($action->template(), array_merge([
             'shebang' => self::IPXE_SHEBANG,
             'mac' => $mac,
             'uuid' => $uuid,
@@ -120,7 +125,95 @@ final class IpxeActionResolver
             'debug' => $debug,
             'disk' => $disk,
             'perso' => $perso,
-        ])->render();
+        ], $linuxVariables))->render();
+    }
+
+    /**
+     * Story 3.4 — AC6.2 / AC7.1 — Construit les variables Blade pour les
+     * templates `ipxe.actions.install_*`.
+     *
+     * Pour les actions hors install_* (rescuecd, winpe, factory_reset) :
+     * retourne un tableau vide (les templates correspondants n'utilisent pas
+     * ces variables).
+     *
+     * Pour les actions install_* :
+     *  - `$osVersion`   : version Debian (`trixie`) ou `'ubuntu'` selon
+     *    distribution.
+     *  - `$installType` : variante desktop (`gnome`, `lxde`, ..., `base`).
+     *  - `$preseedUrl`  : URL preseed avec params (`mac`, `uuid`, `os`,
+     *    `type`, `perso` pour Nird).
+     *  - `$kernelPath`  : chemin kernel selon distribution (Debian/Ubuntu/Nird).
+     *  - `$initrdPath`  : chemin initrd selon distribution.
+     *  - `$nfsRoot`     : root NFS pour Nird uniquement (parité legacy).
+     *
+     * @return array<string, mixed>
+     */
+    private function resolveLinuxVariables(
+        IpxeAdminAction $action,
+        string $mac,
+        string $uuid,
+        string $scriptUrl,
+        int $perso,
+    ): array {
+        $meta = $action->linuxMeta();
+        if ($meta === null) {
+            return [];
+        }
+
+        $distribution = $meta['distribution'];
+        $variant = $meta['variant'];
+
+        // Détermine la version OS selon la distribution.
+        if ($distribution === 'ubuntu') {
+            $osVersion = 'ubuntu';
+        } elseif ($distribution === 'nird') {
+            // Nird = installé via preseed Debian dérivé avec perso=1 — la
+            // valeur `os=debian` passe à l'URL preseed (parité legacy
+            // `nird.php:5` `$os = "debian"`).
+            $osVersion = 'debian';
+        } else {
+            $osVersion = (string) config('sambaedu.linux.version_debian', 'trixie');
+        }
+
+        // Build preseed URL — parité legacy `actions/deb_*.php:6`.
+        // Le `perso=1` est forcé pour Nird (parité `nird.php:5`).
+        $persoFlag = ($distribution === 'nird' || $perso === 1) ? 1 : 0;
+        $preseedUrl = $scriptUrl . '/ipxe/linux/preseed?mac=' . rawurlencode($mac)
+            . '&uuid=' . rawurlencode($uuid)
+            . '&os=' . rawurlencode($osVersion)
+            . '&type=' . rawurlencode($variant);
+        if ($persoFlag === 1) {
+            $preseedUrl .= '&perso=1';
+        }
+
+        // Résolution kernel/initrd paths selon distribution.
+        $kernelPaths = (array) config('ipxe.linux.kernel_paths', []);
+        if ($distribution === 'ubuntu') {
+            $kernelPath = (string) ($kernelPaths['ubuntu'] ?? '/ubuntu-installer/amd64/linux');
+            $initrdPath = (string) ($kernelPaths['ubuntu_initrd'] ?? '/ubuntu-installer/amd64/initrd.gz');
+        } elseif ($distribution === 'nird') {
+            $kernelPath = (string) ($kernelPaths['nird'] ?? '/nird/casper/vmlinuz');
+            $initrdPath = (string) ($kernelPaths['nird_initrd'] ?? '/nird/casper/initrd.gz');
+        } else {
+            $kernelPath = (string) ($kernelPaths['debian'] ?? '/debian-installer/amd64/linux');
+            $initrdPath = (string) ($kernelPaths['debian_initrd'] ?? '/debian-installer/amd64/initrd.gz');
+        }
+
+        // NFS root pour Nird uniquement (parité legacy `nird.php:11`).
+        $se4fsIp = (string) config('sambaedu.se4fs_ip', '');
+        $nfsRoot = $se4fsIp !== ''
+            ? $se4fsIp . ':/var/sambaedu/unattended/install/os/nird root'
+            : 'se4fs:/var/sambaedu/unattended/install/os/nird root';
+
+        return [
+            'osVersion' => $osVersion,
+            'installType' => $variant,
+            'preseedUrl' => $preseedUrl,
+            'kernelPath' => $kernelPath,
+            'initrdPath' => $initrdPath,
+            'nfsRoot' => $nfsRoot,
+            'distribution' => $distribution,
+        ];
     }
 
     /**

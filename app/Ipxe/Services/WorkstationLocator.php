@@ -44,6 +44,15 @@ final class WorkstationLocator
     /**
      * Tente de résoudre la Workstation correspondant aux identifiants iPXE.
      *
+     * **Contrat UUID-only utilisé par 3.4 (post-review #M5)** : si
+     * `$mac === ''` (ou null) ET `$uuid !== ''`, la résolution doit toujours
+     * fonctionner en se contentant de l'UUID. C'est notamment le cas du
+     * controller {@see \App\Ipxe\Http\Controllers\IpxeLinuxActionController}
+     * — le hook `late_command` posté par debian-installer ne possède pas la
+     * MAC du poste (parité legacy `preseed.cfg:83`). Toute évolution de
+     * `locate()` doit préserver ce contrat (test feature
+     * `IpxeLinuxActionEndpointTest::it_resolves_workstation_by_uuid_only_when_mac_is_empty`).
+     *
      * @param  string|null  $mac      Adresse MAC brute (formats variés).
      * @param  string|null  $uuid     UUID brut (peut être malformé/mixed case).
      * @param  string|null  $product  Modèle matériel optionnel — déclenche la

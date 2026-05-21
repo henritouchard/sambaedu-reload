@@ -384,6 +384,60 @@ final class IpxeService
     }
 
     /**
+     * Story 3.4 — D2 / AC4.1 — Orchestre la route native
+     * `GET|POST /ipxe/installation-linux`.
+     *
+     * Flow iso 3.2/3.3 :
+     *
+     *  1. Extrait `mac`/`uuid`/`product`/`ip`.
+     *  2. Handshake si MAC/UUID manquant (chainTarget=`'installation-linux'`).
+     *  3. Résolution `WorkstationLocator`. Poste inconnu = menu erreur D7
+     *     (délégué au renderer `renderInstallationLinuxMenu` qui rend l'écran
+     *     d'erreur si `$ws === null`).
+     *  4. Log structuré `ipxe.install_linux.menu_rendered` + insert
+     *     `MachineBootLog` (`action='ipxe_install_linux'`).
+     *  5. Headers iso D10 (`text/plain`, `no-store`, `noindex`).
+     *  6. safeRender wrap — fallback minimal iPXE en cas d'exception template.
+     */
+    public function handleInstallationLinuxMenu(Request $request): Response
+    {
+        $mac = (string) $request->input('mac', '');
+        $uuid = (string) $request->input('uuid', '');
+        $product = (string) $request->input('product', '');
+        $ip = (string) ($request->ip() ?? '');
+
+        if ($mac === '' || $uuid === '') {
+            Log::channel($this->channel())->info('ipxe.install_linux.handshake', [
+                'action_type' => 'ipxe.install_linux.handshake',
+                'ip' => $ip,
+                'user_agent' => substr((string) $request->userAgent(), 0, 200),
+            ]);
+
+            return $this->safeRender(
+                fn (): string => $this->renderer->renderHandshake('installation-linux'),
+                $ip,
+                $mac,
+                $uuid,
+                IpxeMenuKind::InstallationLinuxHandshake,
+            );
+        }
+
+        $workstation = $this->locator->locate($mac, $uuid, $product);
+        $this->logMenuRendered('ipxe.install_linux.menu_rendered', $workstation, $mac, $uuid, $ip);
+        $this->persistEndpointLog($workstation, $ip, 'ipxe_install_linux', 'ipxe');
+
+        $baseUrl = $this->resolveServerBaseUrl($request);
+
+        return $this->safeRender(
+            fn (): string => $this->renderer->renderInstallationLinuxMenu($workstation, $ip, $baseUrl),
+            $ip,
+            $mac,
+            $uuid,
+            IpxeMenuKind::InstallationLinuxMenu,
+        );
+    }
+
+    /**
      * Story 3.1 — AC4.2.
      *
      * **Placeholder** historique pour le mécanisme `action` programmée

@@ -261,4 +261,51 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
             '/ipxe/parcs.php (legacy `.php`) doit continuer à être servi par le catchall.',
         );
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.4 — AC8.2 / T7.6 — non-régression catchall pour les
+     * routes legacy `.php` + court-circuit pour les 4 routes natives 3.4.
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_serves_ipxe_installation_linux_natively_not_via_catchall(): void
+    {
+        $countBefore = \App\Models\LegacyCatchallLog::query()->count();
+        $this->get('/ipxe/installation-linux');
+
+        self::assertSame(
+            $countBefore,
+            \App\Models\LegacyCatchallLog::query()->count(),
+            '/ipxe/installation-linux (3.4) ne doit pas passer par le catchall',
+        );
+    }
+
+    #[Test]
+    public function it_serves_ipxe_linux_preseed_natively_not_via_catchall(): void
+    {
+        $countBefore = \App\Models\LegacyCatchallLog::query()->count();
+        $this->get('/ipxe/linux/preseed?mac=&uuid=');
+
+        self::assertSame(
+            $countBefore,
+            \App\Models\LegacyCatchallLog::query()->count(),
+            '/ipxe/linux/preseed (3.4) ne doit pas passer par le catchall',
+        );
+    }
+
+    #[Test]
+    public function it_still_serves_ipxe_installation_windows_via_catchall(): void
+    {
+        $this->get('/ipxe/installation-windows.php');
+
+        $found = \App\Models\LegacyCatchallLog::query()
+            ->where('path', 'like', '%ipxe/installation-windows.php%')
+            ->exists();
+
+        self::assertTrue(
+            $found,
+            '/ipxe/installation-windows.php doit continuer à être servi par le catchall '
+            . '(sera réécrit par Story 3.5).',
+        );
+    }
 }

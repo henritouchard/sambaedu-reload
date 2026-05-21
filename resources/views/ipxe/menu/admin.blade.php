@@ -15,6 +15,9 @@ item --key a salle (a) Affecter a une salle physique
 item --key p parcs (p) Ajouter a un parc logique
 item --key e enleveparc (e) Retirer d'un parc logique
 @endif
+@if($isInstallLinuxActive)
+item --key l install-linux (l) Installation Linux (Debian/Ubuntu)
+@endif
 item --key m maintenance (m) Outils de maintenance (rescuecd, winpe, factory reset)
 @else
 @if($isEnrollmentActive)
@@ -40,6 +43,9 @@ chain --replace --autofree {{ $enrollmentBaseUrl }}/parc-add##params
 
 :enleveparc
 chain --replace --autofree {{ $enrollmentBaseUrl }}/parc-remove##params
+
+:install-linux
+chain --replace --autofree {{ $installLinuxBaseUrl }}##params
 
 :maintenance
 chain --replace --autofree {{ $serverBaseUrl }}/ipxe/maintenance##params

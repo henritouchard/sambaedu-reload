@@ -130,4 +130,84 @@ class IpxeConfigTest extends TestCase
     {
         self::assertSame(50, (int) config('ipxe.enrollment.max_parcs_in_menu'));
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.4 — AC9.4 / T7.7 — section linux
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_loads_linux_enabled_true_by_default(): void
+    {
+        self::assertTrue((bool) config('ipxe.linux.enabled'));
+    }
+
+    #[Test]
+    public function it_loads_linux_menu_timeout_10000_ms(): void
+    {
+        self::assertSame(10000, (int) config('ipxe.linux.menu_timeout_ms'));
+    }
+
+    #[Test]
+    public function it_loads_linux_default_variant_install_deb_gnome(): void
+    {
+        self::assertSame('install_deb_gnome', (string) config('ipxe.linux.default_variant'));
+    }
+
+    #[Test]
+    public function it_loads_linux_menu_items_with_nine_entries(): void
+    {
+        $items = (array) config('ipxe.linux.menu_items');
+        self::assertCount(9, $items);
+        $enums = array_map(static fn ($i) => $i['enum'] ?? '', $items);
+        self::assertContains('install_deb_gnome', $enums);
+        self::assertContains('install_ubuntu64', $enums);
+        self::assertContains('install_nird', $enums);
+    }
+
+    #[Test]
+    public function it_loads_linux_kernel_paths(): void
+    {
+        $paths = (array) config('ipxe.linux.kernel_paths');
+        self::assertSame('/debian-installer/amd64/linux', $paths['debian']);
+        self::assertSame('/ubuntu-installer/amd64/linux', $paths['ubuntu']);
+    }
+
+    #[Test]
+    public function it_loads_linux_allowed_distributions(): void
+    {
+        $allowed = (array) config('ipxe.linux.allowed_distributions');
+        self::assertSame(['debian', 'ubuntu', 'nird'], $allowed);
+    }
+
+    #[Test]
+    public function it_loads_linux_allowed_variants(): void
+    {
+        $allowed = (array) config('ipxe.linux.allowed_variants');
+        self::assertContains('gnome', $allowed);
+        self::assertContains('base', $allowed);
+        self::assertContains('cinnamon', $allowed);
+    }
+
+    /**
+     * Post-review #M8 — défense en profondeur sur `ipxe.linux.kernel_paths.nird`.
+     *
+     * `IpxeActionResolver::resolveNird()` lit cette clé avec un fallback
+     * inline `/nird/casper/vmlinuz`. Si la clé est retirée par mégarde,
+     * l'install Nird casse silencieusement (le fallback masque). On gèle
+     * la présence + la cohérence (chemin absolu, et clés `debian`/`ubuntu`
+     * également définies).
+     */
+    #[Test]
+    public function it_defines_nird_kernel_paths(): void
+    {
+        $paths = (array) config('ipxe.linux.kernel_paths');
+        self::assertNotNull($paths['nird'] ?? null, 'config ipxe.linux.kernel_paths.nird est absente');
+        $nird = (string) $paths['nird'];
+        self::assertNotSame('', $nird);
+        self::assertStringStartsWith('/', $nird, 'kernel_paths.nird doit etre un chemin absolu');
+
+        // Consistency : les paires debian/ubuntu doivent aussi etre presentes.
+        self::assertNotNull($paths['debian'] ?? null);
+        self::assertNotNull($paths['ubuntu'] ?? null);
+    }
 }

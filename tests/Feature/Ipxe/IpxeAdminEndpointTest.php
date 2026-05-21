@@ -118,4 +118,51 @@ class IpxeAdminEndpointTest extends TestCase
 
         $response->assertStatus(422);
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.4 — AC7.3 — item Installation Linux dans le menu admin.
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_shows_install_linux_item_when_enabled(): void
+    {
+        config(['ipxe.linux.enabled' => true]);
+        Workstation::create([
+            'name' => 'PC-ADMIN-LINUX',
+            'uuid' => '12345678-1234-1234-1234-aaaa00000001',
+            'mac' => 'aa:bb:cc:dd:ee:01',
+            'status' => 'active',
+        ]);
+
+        $response = $this->post('/ipxe/admin', [
+            'mac' => 'aa:bb:cc:dd:ee:01',
+            'uuid' => '12345678-1234-1234-1234-aaaa00000001',
+        ]);
+
+        $response->assertStatus(200);
+        $body = (string) $response->getContent();
+        self::assertStringContainsString('item --key l install-linux', $body);
+        self::assertStringContainsString('/ipxe/installation-linux##params', $body);
+    }
+
+    #[Test]
+    public function it_hides_install_linux_item_when_disabled(): void
+    {
+        config(['ipxe.linux.enabled' => false]);
+        Workstation::create([
+            'name' => 'PC-ADMIN-NOLINUX',
+            'uuid' => '12345678-1234-1234-1234-aaaa00000002',
+            'mac' => 'aa:bb:cc:dd:ee:02',
+            'status' => 'active',
+        ]);
+
+        $response = $this->post('/ipxe/admin', [
+            'mac' => 'aa:bb:cc:dd:ee:02',
+            'uuid' => '12345678-1234-1234-1234-aaaa00000002',
+        ]);
+
+        $response->assertStatus(200);
+        $body = (string) $response->getContent();
+        self::assertStringNotContainsString('item --key l install-linux', $body);
+    }
 }

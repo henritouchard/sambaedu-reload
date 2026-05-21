@@ -435,24 +435,35 @@ class IpxeNamespaceTest extends TestCase
     }
 
     #[Test]
-    public function ipxe_admin_action_enum_has_exactly_three_cases_in_story_3_2(): void
+    public function ipxe_admin_action_enum_has_exactly_twelve_cases_in_story_3_4(): void
     {
         // D9 — Story 3.2 — élargir si nouvelle action (3.4 / 3.5 / 3.7).
-        // Ce test doit être renommé/relaxé par chaque story qui ouvre la
-        // whitelist avec un commentaire explicite.
-        // Story 3.3 : pas d'extension de cet enum (l'enrollment passe par des
-        // routes dédiées `/ipxe/enrollment/*`, pas via `/ipxe/action/{action}`).
+        // Story 3.4 : whitelist élargie à 12 cases (3 historiques + 9
+        // install_*). Tout élargissement futur doit être documenté.
         $cases = \App\Ipxe\Enums\IpxeAdminAction::cases();
         self::assertCount(
-            3,
+            12,
             $cases,
-            'Story 3.2 — la whitelist IpxeAdminAction doit contenir exactement 3 cases '
-            . '(rescuecd, winpe, factory_reset). Tout élargissement doit être documenté.',
+            'Story 3.4 — la whitelist IpxeAdminAction doit contenir exactement 12 cases '
+            . '(rescuecd, winpe, factory_reset + 9 install_*). Tout élargissement doit être documenté.',
         );
 
         $values = array_map(static fn ($c) => $c->value, $cases);
         sort($values);
-        self::assertSame(['factory_reset', 'rescuecd', 'winpe'], $values);
+        self::assertSame([
+            'factory_reset',
+            'install_deb_base',
+            'install_deb_cinnamon',
+            'install_deb_gnome',
+            'install_deb_kde',
+            'install_deb_lxde',
+            'install_deb_mate',
+            'install_deb_xfce',
+            'install_nird',
+            'install_ubuntu64',
+            'rescuecd',
+            'winpe',
+        ], $values);
     }
 
     /* ------------------------------------------------------------------
@@ -590,6 +601,159 @@ class IpxeNamespaceTest extends TestCase
                 basename($f) . ' ne doit pas importer LdapRecord (D5/D14 — passage exclusif par AdMachineManager)',
             );
         }
+    }
+
+    /* ------------------------------------------------------------------
+     * Story 3.4 — AC8.1 / AC7.4 / T7.5 — extension du garde-fou
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Vérifie que les 4 routes natives 3.4 (`/ipxe/installation-linux`,
+     * `/ipxe/linux/{preseed,action,autorun}`) sont déclarées AVANT le
+     * catchall legacy.
+     */
+    #[Test]
+    public function ipxe_3_4_routes_are_declared_before_catchall(): void
+    {
+        $routesFile = realpath(__DIR__ . '/../../routes/web.php');
+        self::assertNotFalse($routesFile);
+        $content = (string) file_get_contents($routesFile);
+
+        $catchallPattern = "/Route::match\s*\([^)]*['\"]\\{path\\}['\"]/";
+        self::assertSame(
+            1,
+            preg_match($catchallPattern, $content, $catchallMatches, PREG_OFFSET_CAPTURE),
+            'Catchall legacy {path} introuvable',
+        );
+        $catchallOffset = $catchallMatches[0][1];
+
+        $routes = [
+            ['needle' => "['\"]/ipxe/installation-linux['\"]", 'name' => '/ipxe/installation-linux'],
+            ['needle' => "['\"]/ipxe/linux/preseed['\"]", 'name' => '/ipxe/linux/preseed'],
+            ['needle' => "['\"]/ipxe/linux/action['\"]", 'name' => '/ipxe/linux/action'],
+            ['needle' => "['\"]/ipxe/linux/autorun['\"]", 'name' => '/ipxe/linux/autorun'],
+        ];
+
+        foreach ($routes as $route) {
+            $pattern = '@Route::(?:match|get|post)\s*\([^;]*?' . $route['needle'] . '@';
+            self::assertSame(
+                1,
+                preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE),
+                'Route 3.4 ' . $route['name'] . ' non déclarée',
+            );
+            self::assertLessThan(
+                $catchallOffset,
+                $matches[0][1],
+                'ORDRE INVALIDE : la route 3.4 ' . $route['name'] . ' doit être AVANT le catchall',
+            );
+        }
+
+        // Vérification middleware : chaque route 3.4 doit porter
+        // `auth.v1.lan-only` (D3).
+        $statements = explode(';', $content);
+        $ipxeStatements = array_values(array_filter(
+            $statements,
+            static fn (string $stmt): bool => preg_match(
+                "@['\"]/ipxe/(installation-linux|linux/(preseed|action|autorun))['\"]@",
+                $stmt,
+            ) === 1,
+        ));
+
+        self::assertGreaterThanOrEqual(
+            4,
+            count($ipxeStatements),
+            'Les 4 routes 3.4 doivent être déclarées',
+        );
+
+        foreach ($ipxeStatements as $stmt) {
+            self::assertMatchesRegularExpression(
+                '/auth\.v1\.lan-only/',
+                $stmt,
+                'Chaque route 3.4 doit attacher auth.v1.lan-only — bloc fautif : '
+                . substr(trim($stmt), 0, 200),
+            );
+        }
+    }
+
+    #[Test]
+    public function it_lists_all_ipxe_3_4_controllers_and_services_under_correct_namespace(): void
+    {
+        $root = realpath(__DIR__ . '/../../app/Ipxe');
+        self::assertNotFalse($root);
+
+        $required = [
+            $root . '/Http/Controllers/IpxeInstallationLinuxController.php',
+            $root . '/Http/Controllers/IpxeLinuxPreseedController.php',
+            $root . '/Http/Controllers/IpxeLinuxActionController.php',
+            $root . '/Http/Controllers/IpxeLinuxAutorunController.php',
+            $root . '/Http/Requests/IpxeInstallationLinuxRequest.php',
+            $root . '/Http/Requests/IpxeLinuxPreseedRequest.php',
+            $root . '/Http/Requests/IpxeLinuxActionRequest.php',
+            $root . '/Http/Requests/IpxeLinuxAutorunRequest.php',
+            $root . '/Services/LinuxPreseedService.php',
+            $root . '/Services/LinuxInstallMenuBuilder.php',
+            $root . '/Services/LinuxPostInstallTracker.php',
+            $root . '/Enums/LinuxDistribution.php',
+            $root . '/Enums/LinuxDesktopVariant.php',
+            $root . '/Support/PreseedPlaceholders.php',
+            $root . '/Exceptions/PreseedGenerationException.php',
+        ];
+
+        foreach ($required as $file) {
+            self::assertFileExists($file, "Fichier 3.4 manquant : {$file}");
+        }
+    }
+
+    /**
+     * Story 3.4 — AC7.4 — Tous les templates Blade `resources/views/ipxe/`
+     * respectent les conventions ASCII strict + pas de balises PHP +
+     * newline final.
+     *
+     * Post-review #M6 — scan dynamique via `Finder` au lieu d'une liste
+     * hardcodée. Tout nouveau template ajouté sous `resources/views/ipxe/`
+     * est automatiquement couvert par ce test.
+     */
+    #[Test]
+    public function story_3_4_templates_are_ascii_strict_and_no_php(): void
+    {
+        $viewsRoot = realpath(__DIR__ . '/../../resources/views/ipxe');
+        self::assertNotFalse($viewsRoot, 'Dossier resources/views/ipxe introuvable');
+
+        $finder = Finder::create()
+            ->files()
+            ->in($viewsRoot)
+            ->name('*.blade.php');
+
+        $violations = [];
+        $count = 0;
+        foreach ($finder as $file) {
+            $count++;
+            $content = (string) $file->getContents();
+            $rel = $file->getRelativePathname();
+
+            // Pas de balise PHP.
+            if (preg_match('/<\?php|<\?=|\?>/', $content) === 1) {
+                $violations[] = $rel . ' contient des balises PHP';
+            }
+
+            // ASCII strict (sauf TAB + newline). Tolère un \r éventuel pour
+            // Windows line endings.
+            if (preg_match('/[^\x09\x0A\x0D\x20-\x7E]/', $content) === 1) {
+                $violations[] = $rel . ' contient des chars non-ASCII';
+            }
+
+            // Newline final.
+            if (! str_ends_with($content, "\n")) {
+                $violations[] = $rel . ' ne se termine pas par un newline';
+            }
+        }
+
+        self::assertGreaterThan(0, $count, 'Aucun template trouvé sous resources/views/ipxe — finder cassé ?');
+        self::assertSame(
+            [],
+            $violations,
+            "Violations conventions templates ipxe (scan dynamique) :\n  - " . implode("\n  - ", $violations),
+        );
     }
 
     private function stripComments(string $code): string

@@ -10,6 +10,9 @@ use App\Ipxe\Services\IpxeEnrollmentOrchestrator;
 use App\Ipxe\Services\IpxeHostnameSanitizer;
 use App\Ipxe\Services\IpxeMenuRenderer;
 use App\Ipxe\Services\IpxeService;
+use App\Ipxe\Services\LinuxInstallMenuBuilder;
+use App\Ipxe\Services\LinuxPostInstallTracker;
+use App\Ipxe\Services\LinuxPreseedService;
 use App\Ipxe\Services\WorkstationEnrollmentService;
 use App\Ipxe\Services\WorkstationLocator;
 use App\Ldap\AdMachineManager;
@@ -61,6 +64,7 @@ class IpxeServiceProvider extends ServiceProvider
 
         $this->app->singleton(IpxeMenuRenderer::class, fn ($app) => new IpxeMenuRenderer(
             $app->make(ViewFactory::class),
+            $app->make(LinuxInstallMenuBuilder::class),
         ));
 
         // Story 3.2 — D9 / AC9.2 — résolveur d'actions whitelistées rendant
@@ -92,6 +96,11 @@ class IpxeServiceProvider extends ServiceProvider
             $app->make(IpxeMenuRenderer::class),
             $app->make(IpxeHostnameSanitizer::class),
         ));
+
+        // Story 3.4 — D11 / AC9.3 — bindings installation Linux.
+        $this->app->singleton(LinuxPreseedService::class, fn () => new LinuxPreseedService());
+        $this->app->singleton(LinuxInstallMenuBuilder::class, fn () => new LinuxInstallMenuBuilder());
+        $this->app->singleton(LinuxPostInstallTracker::class, fn () => new LinuxPostInstallTracker());
     }
 
     public function boot(): void

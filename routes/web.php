@@ -757,6 +757,57 @@ Route::match(['GET', 'POST'], '/ipxe/enrollment/parc-remove', [
 
 /*
 |--------------------------------------------------------------------------
+| Story 3.4 — Installation Linux (Debian/Ubuntu/NIRD) (D2)
+|--------------------------------------------------------------------------
+| Remplace les endpoints legacy `/ipxe/installation-linux.php`,
+| `/ipxe/linux/preseed.php`, `/ipxe/linux/action.php`,
+| `/ipxe/linux/autorun.php` par 4 routes natives.
+|
+| **ORDRE STRICT** : ce bloc doit rester AVANT le catchall ci-dessous —
+| sinon la route `{path}` capture toutes les requêtes `/ipxe/*` et rend
+| ces routes natives inaccessibles. Cf. test
+| `IpxeNamespaceTest::ipxe_3_4_routes_are_declared_before_catchall`.
+|
+| **Sécurité** : middleware `auth.v1.lan-only` (16.11) — restreint au LAN
+| scolaire RFC1918. Parité 3.1-3.3 D3/D8 — pas de JWT.
+|
+| **Throttle** : 600/min/IP iso 3.1-3.3 (suffisant pour ~50 postes qui
+| re-fetch leur preseed en parallèle à la rentrée).
+*/
+Route::match(['GET', 'POST'], '/ipxe/installation-linux', [
+    \App\Ipxe\Http\Controllers\IpxeInstallationLinuxController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.installation-linux')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/linux/preseed', [
+    \App\Ipxe\Http\Controllers\IpxeLinuxPreseedController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.linux.preseed')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/linux/action', [
+    \App\Ipxe\Http\Controllers\IpxeLinuxActionController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.linux.action')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/linux/autorun', [
+    \App\Ipxe\Http\Controllers\IpxeLinuxAutorunController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.linux.autorun')
+    ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
 | Legacy PHP Fallback Route (DOIT ÊTRE EN DERNIER)
 |--------------------------------------------------------------------------
 | Cette route catch-all délègue au LegacyCatchallController :

@@ -31,6 +31,9 @@ namespace App\Ipxe\Enums;
  * - `action`               : rendu d'un script d'action whitelisté.
  * - `action_handshake`     : handshake de l'endpoint `/ipxe/action/{action}`.
  *
+ * Story 3.4 — extension +2 cases (`installation_linux_handshake`,
+ *   `installation_linux_menu`) pour l'endpoint `/ipxe/installation-linux`.
+ *
  * Extensible Stories 3.3+ (enrollment, install, clonezilla).
  */
 enum IpxeMenuKind: string
@@ -47,4 +50,8 @@ enum IpxeMenuKind: string
     case MaintenanceMenu = 'maintenance_menu';
     case Action = 'action';
     case ActionHandshake = 'action_handshake';
+
+    // Story 3.4 — D1.
+    case InstallationLinuxHandshake = 'installation_linux_handshake';
+    case InstallationLinuxMenu = 'installation_linux_menu';
 }
