@@ -67,6 +67,7 @@ class WorkstationGroupServiceScopingTest extends TestCase
             Schema::dropIfExists('role_has_permissions');
             Schema::dropIfExists('permissions');
             Schema::dropIfExists('roles');
+            Schema::dropIfExists('workstations_migration_status');
             Schema::dropIfExists('workstation_application_status');
             Schema::dropIfExists('workstation_group_workstation');
             Schema::dropIfExists('workstation_groups');
@@ -144,6 +145,22 @@ class WorkstationGroupServiceScopingTest extends TestCase
                 $table->unsignedBigInteger('workstation_id');
                 $table->unsignedBigInteger('application_id')->nullable();
                 $table->string('status', 32)->nullable();
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        // Story 16.13bis — table consultée par l'eager-load `migrationStatus`
+        // ajouté à paginateMachines (Workstation::with('migrationStatus')).
+        if (!Schema::hasTable('workstations_migration_status')) {
+            Schema::create('workstations_migration_status', function (Blueprint $table) {
+                $table->bigIncrements('id');
+                $table->string('workstation_uuid', 36)->unique();
+                $table->timestamp('migrated_at');
+                $table->string('access_token_emitted_jti', 36)->nullable();
+                $table->string('bootstrap_token_hash_prefix', 16)->nullable();
+                $table->string('os', 16);
+                $table->string('se4fs_name', 255)->nullable();
                 $table->timestamps();
             });
             $this->createdTables = true;

@@ -102,6 +102,19 @@ class DeploymentReportsIntegrationTest extends TestCase
             $table->timestamps();
             $table->unique(['workstation_id', 'application_id']);
         });
+
+        // Story 16.13bis — table consultée par l'eager-load `migrationStatus`
+        // du repo paginateMachines (Workstation::with('migrationStatus')).
+        Schema::create('workstations_migration_status', function (Blueprint $table) {
+            $table->bigIncrements('id');
+            $table->string('workstation_uuid', 36)->unique();
+            $table->timestamp('migrated_at');
+            $table->string('access_token_emitted_jti', 36)->nullable();
+            $table->string('bootstrap_token_hash_prefix', 16)->nullable();
+            $table->string('os', 16);
+            $table->string('se4fs_name', 255)->nullable();
+            $table->timestamps();
+        });
     }
 
     private function makeWorkstation(string $name): Workstation

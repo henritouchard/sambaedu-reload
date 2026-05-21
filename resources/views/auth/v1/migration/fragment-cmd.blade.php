@@ -72,7 +72,7 @@ for /f "tokens=*" %%U in ('powershell -NoProfile -Command "(Get-CimInstance Win3
 for /f "tokens=*" %%M in ('powershell -NoProfile -Command "(Get-NetAdapter -Physical | Where-Object Status -eq 'Up' | Select-Object -First 1).MacAddress"') do set "MACHINE_MAC=%%M"
 set "MACHINE_HOSTNAME=%COMPUTERNAME%"
 
-REM --- 5. POST /api/v1/agent/enroll (HTTPS strict, sans -SkipCertificateCheck) ---
+REM --- 5. POST /api/v1/agent/enroll (HTTPS strict, validation cert obligatoire) ---
 REM Le BOOTSTRAP_TOKEN a ete pose en debut de script via "set" (cf. Story
 REM 16.13bis Correction Q1 Option A). PowerShell le recupere via $env:BOOTSTRAP_TOKEN
 REM (set propage l'env vers les sous-processus). Si APCu cote serveur a

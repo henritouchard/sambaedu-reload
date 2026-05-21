@@ -338,18 +338,16 @@ class AuthV1NamespaceTest extends TestCase
     }
 
     /**
-     * Story 16.11 — pas d'inclusion legacy depuis les middlewares 16.11
-     * (frontière `App\Auth\V1` étendue aux nouveaux fichiers EnsureLanIp +
-     * InjectBootstrapFragment + BootstrapScriptController). Redondant avec
-     * `no_legacy_inclusion_from_auth_v1` mais fige le scope 16.11.
+     * Story 16.11 — pas d'inclusion legacy depuis les fichiers 16.11.
+     * Story 16.13bis (2026-05-20) : `InjectBootstrapFragment` et
+     * `BootstrapScriptController` supprimés au profit de `MigrationController`,
+     * retirés de la liste.
      */
     #[Test]
     public function story_16_11_new_files_do_not_import_legacy(): void
     {
         $files = [
             __DIR__ . '/../../app/Auth/V1/Http/Middleware/EnsureLanIp.php',
-            __DIR__ . '/../../app/Auth/V1/Http/Middleware/InjectBootstrapFragment.php',
-            __DIR__ . '/../../app/Auth/V1/Http/Controllers/BootstrapScriptController.php',
             __DIR__ . '/../../app/Auth/V1/Models/WorkstationMigrationStatus.php',
             __DIR__ . '/../../app/Auth/V1/Models/WorkstationMigrationAttempt.php',
         ];

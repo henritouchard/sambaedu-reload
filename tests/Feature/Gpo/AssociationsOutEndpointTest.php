@@ -57,7 +57,10 @@ class AssociationsOutEndpointTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (is_file($this->packagesXml)) @unlink($this->packagesXml);
+        // Story 16.13bis — setUp() skip avant init de $packagesXml.
+        if (isset($this->packagesXml) && is_file($this->packagesXml)) {
+            @unlink($this->packagesXml);
+        }
         Mockery::close();
         parent::tearDown();
     }

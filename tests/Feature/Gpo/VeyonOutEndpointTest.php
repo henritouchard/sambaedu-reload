@@ -62,8 +62,13 @@ class VeyonOutEndpointTest extends TestCase
     protected function tearDown(): void
     {
         Mockery::close();
-        @unlink($this->pubKeyPath);
-        @unlink($this->privKeyPath);
+        // Story 16.13bis — setUp() skip avant init des paths PEM.
+        if (isset($this->pubKeyPath)) {
+            @unlink($this->pubKeyPath);
+        }
+        if (isset($this->privKeyPath)) {
+            @unlink($this->privKeyPath);
+        }
         parent::tearDown();
     }
 

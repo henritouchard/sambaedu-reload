@@ -1,14 +1,15 @@
-#!/bin/bash
+{{-- Story 16.13bis : shebang prefixée par MigrationFragmentRenderer
+     (PHP strip le `#!` initial d'un fichier compilé Blade). --}}
 # ===================================================================
-# SambaEdu — Fragment migration SE4 -> SE5 (Story 16.13bis)
-# Module App\Auth\V1\Migration — auto-obsolescence quand plus aucun
+# SambaEdu - Fragment migration SE4 -> SE5 (Story 16.13bis)
+# Module App\Auth\V1\Migration - auto-obsolescence quand plus aucun
 # deploiement SE4 actif n'existe (Sprint Change Proposal 2026-05-19).
 # ===================================================================
 # Etapes :
 #   1. Idempotence : exit si /var/lib/sambaedu/migrated existe
 #   2. Decode & install CA root local (update-ca-certificates)
 #   3. Collecte UUID / MAC / hostname locaux
-#   4. POST /api/v1/agent/enroll (HTTPS strict, sans curl -k)
+#   4. POST /api/v1/agent/enroll (HTTPS strict, sans skip-TLS)
 #   5. Stockage tokens dans /var/lib/sambaedu/auth.json (0600 root:root)
 #   6. Ecriture /etc/sambaedu/endpoints.conf pour pointer les futurs
 #      appels vers /api/v1/workstation-config/*

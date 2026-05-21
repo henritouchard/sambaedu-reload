@@ -38,8 +38,10 @@ return new class extends Migration
             $table->index('name');
         });
 
-        // Ajouter un commentaire sur la table
-        DB::statement("COMMENT ON TABLE depot_applications IS 'Applications disponibles sur le dépôt distant, non installées sur l''instance'");
+        // COMMENT ON TABLE est Postgres-only, skipper sur SQLite (tests).
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement("COMMENT ON TABLE depot_applications IS 'Applications disponibles sur le dépôt distant, non installées sur l''instance'");
+        }
     }
 
     /**

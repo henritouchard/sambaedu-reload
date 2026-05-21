@@ -15,11 +15,16 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('workstation_groups', function (Blueprint $table) {
-            // Ajouter le champ app_profile_name (nullable)
-            // Si rempli, un AppProfile sera créé avec ce nom
             $table->string('app_profile_name')->nullable()->after('description');
-            
-            // Retirer la colonne is_physical_room
+        });
+
+        // SQLite refuse de dropper une colonne indexée — dropper l'index d'abord
+        // (créé par 2026_01_30_000000_create_unified_schema.php:99).
+        Schema::table('workstation_groups', function (Blueprint $table) {
+            $table->dropIndex(['is_physical_room']);
+        });
+
+        Schema::table('workstation_groups', function (Blueprint $table) {
             $table->dropColumn('is_physical_room');
         });
     }

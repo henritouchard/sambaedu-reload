@@ -41,6 +41,10 @@ class AssociationsOutComparisonTest extends TestCase
     #[Test]
     public function native_output_diff_matches_legacy_fixture_structurally(): void
     {
+        // Story 16.13bis : route legacy `gpo/associations_out.php` transformée
+        // en MigrationController::serveFragment ; comparaison fixture caduque (R6).
+        $this->markTestSkipped('Story 16.13bis : route legacy transformée en MigrationController (R6).');
+
         if (! is_file(self::FIXTURE_PATH)) {
             $this->markTestSkipped('Fixture legacy non capturé sur VM (T0.10 — action Henri).');
         }

@@ -126,6 +126,11 @@ final class MigrationFragmentRenderer
         try {
             $vars = $this->resolveTemplateVariables($declaredUuid);
             $body = View::make($template, $vars)->render();
+            // Story 16.13bis : PHP strip la shebang `#!/...` initiale d'un fichier
+            // compilé Blade — on la préfixe ici pour les fragments Linux.
+            if ($os === 'linux') {
+                $body = "#!/bin/bash\n" . $body;
+            }
         } catch (CaUnavailableException $e) {
             // Story 16.13bis — Correction Opus-B : en production, CA absent
             // → on remonte au controller pour 503 explicite. Pas de fallback
@@ -171,6 +176,10 @@ final class MigrationFragmentRenderer
             $body = View::make($template, [
                 'noop_message' => $os === 'linux' ? MigrationMessages::NOOP_FR_LINUX : MigrationMessages::NOOP_FR_WIN,
             ])->render();
+            // Story 16.13bis : voir renderFullFragment — shebang préfixée en PHP.
+            if ($os === 'linux') {
+                $body = "#!/bin/bash\n" . $body;
+            }
         } catch (Throwable $e) {
             Log::channel('auth-v1')->error(
                 '[MigrationFragmentRenderer] migration.fragment.noop_render_failed',
