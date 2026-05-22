@@ -61,4 +61,8 @@ enum IpxeMenuKind: string
     // Story 3.5 — D1.
     case InstallationWindowsHandshake = 'installation_windows_handshake';
     case InstallationWindowsMenu = 'installation_windows_menu';
+
+    // Story 3.7 — AC2.1.
+    case ClonezillaMenu = 'clonezilla_menu';
+    case ClonezillaMenuHandshake = 'clonezilla_menu_handshake';
 }

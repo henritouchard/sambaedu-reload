@@ -283,6 +283,69 @@ final class IpxeService
     }
 
     /**
+     * Story 3.7 — AC4.1 — Orchestre la route native
+     * `GET|POST /ipxe/clonezilla-menu`.
+     *
+     * Flow iso `handleMaintenance` (3.2) :
+     *
+     *  1. Handshake si MAC/UUID manquant (chainTarget='clonezilla-menu').
+     *  2. Résolution Workstation via {@see WorkstationLocator}.
+     *  3. Log handshake `ipxe.clonezilla.handshake` (D9 — pattern aligné
+     *     Epic 3 post-review #8 : `ipxe.<domain>.handshake`).
+     *  4. Rendu via {@see IpxeMenuRenderer::renderClonezillaMenu()} (AC4.2).
+     *  5. Log render `ipxe.clonezilla.menu_rendered` (pattern aligné Epic 3
+     *     post-review #8 : `ipxe.<domain>.menu_rendered`).
+     *  6. safeRender wrap.
+     */
+    public function handleClonezillaMenu(Request $request): Response
+    {
+        $mac = (string) $request->input('mac', '');
+        $uuid = (string) $request->input('uuid', '');
+        $product = (string) $request->input('product', '');
+        $ip = (string) ($request->ip() ?? '');
+
+        if ($mac === '' || $uuid === '') {
+            // Post-review #8 — pattern Epic 3 aligné : `ipxe.<domain>.handshake`.
+            Log::channel($this->channel())->info('ipxe.clonezilla.handshake', [
+                'action_type' => 'ipxe.clonezilla.handshake',
+                'ip' => $ip,
+                'user_agent' => substr((string) $request->userAgent(), 0, 200),
+            ]);
+
+            return $this->safeRender(
+                fn (): string => $this->renderer->renderHandshake('clonezilla-menu'),
+                $ip,
+                $mac,
+                $uuid,
+                IpxeMenuKind::ClonezillaMenuHandshake,
+            );
+        }
+
+        $workstation = $this->locator->locate($mac, $uuid, $product);
+        // Post-review #8 — pattern Epic 3 aligné : `ipxe.<domain>.menu_rendered`
+        // (iso `ipxe.admin.menu_rendered`, `ipxe.maintenance.menu_rendered`,
+        // `ipxe.install_linux.menu_rendered`, `ipxe.install_windows.menu_rendered`).
+        $this->logMenuRendered('ipxe.clonezilla.menu_rendered', $workstation, $mac, $uuid, $ip);
+        $this->persistEndpointLog($workstation, $ip, 'ipxe_clonezilla_menu', 'ipxe');
+
+        $baseUrl = $this->resolveServerBaseUrl($request);
+
+        return $this->safeRender(
+            fn (): string => $this->renderer->renderClonezillaMenu([
+                'workstationName' => (string) ($workstation?->name ?? 'unknown'),
+                'ip' => $ip,
+                'mac' => $mac,
+                'uuid' => $uuid,
+                'serverBaseUrl' => $baseUrl,
+            ]),
+            $ip,
+            $mac,
+            $uuid,
+            IpxeMenuKind::ClonezillaMenu,
+        );
+    }
+
+    /**
      * Story 3.2 — AC3.3 — Orchestre la route native
      * `GET|POST /ipxe/action/{action}`.
      *
@@ -367,10 +430,14 @@ final class IpxeService
             ]);
         }
 
+        // Story 3.7 — D11 / AC8.1-8.4 — utiliser bootLogAction() pour les actions
+        // 3.7 (clonezilla/gparted/hdt/memtest) afin d'obtenir des valeurs
+        // distinctes dans machine_boot_logs.action. Les actions 3.2-3.5 conservent
+        // 'ipxe_action' (pattern historique — pas de migration).
         $this->persistEndpointLog(
             $workstation,
             $ip,
-            'ipxe_action',
+            $adminAction->bootLogAction(),
             'ipxe:' . $adminAction->value,
         );
 

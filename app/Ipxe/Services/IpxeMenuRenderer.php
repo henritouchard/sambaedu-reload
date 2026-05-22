@@ -425,6 +425,44 @@ final class IpxeMenuRenderer
     }
 
     /**
+     * Story 3.7 — AC4.2 — Rend le sous-menu Clonezilla natif
+     * (`resources/views/ipxe/menu/clonezilla.blade.php`).
+     *
+     * Port du legacy `sambaedu/ipxe/clonezilla_menu.php` (80 LOC) — iso
+     * `renderMaintenanceMenu` (3.2) :
+     *
+     *  - 5 items : clonezilla_live, clonezilla_save_sda1_sda2,
+     *    clonezilla_restore_sda2_sda1, retour /ipxe/maintenance, exit.
+     *  - AC4.5 : poste inconnu (ws=null) → items identiques (parité legacy
+     *    `clonezilla_menu.php` qui n'authentifie pas le poste — le menu est
+     *    fonctionnel même sans enrollment).
+     *  - Timeout = config('ipxe.clonezilla.menu_timeout_ms', 10000) (AC4.3).
+     *  - Background PNG = config('ipxe.clonezilla.background_png') (AC4.4).
+     *
+     * @param  array{workstationName?:string, ip:string, mac?:string, uuid?:string, serverBaseUrl:string}  $context
+     */
+    public function renderClonezillaMenu(array $context): string
+    {
+        $serverBaseUrl = rtrim((string) ($context['serverBaseUrl'] ?? ''), '/');
+
+        return $this->viewFactory->make('ipxe.menu.clonezilla', [
+            'shebang' => self::IPXE_SHEBANG,
+            'workstationName' => isset($context['workstationName'])
+                ? $this->sanitizeAscii($context['workstationName'])
+                : 'unknown',
+            'ip' => (string) ($context['ip'] ?? ''),
+            'mac' => isset($context['mac']) ? $this->sanitizeAscii($context['mac']) : '',
+            'uuid' => isset($context['uuid']) ? $this->sanitizeAscii($context['uuid']) : '',
+            'serverBaseUrl' => $serverBaseUrl,
+            'resolutionX' => (int) config('ipxe.menu.resolution_x', 1024),
+            'resolutionY' => (int) config('ipxe.menu.resolution_y', 768),
+            'resolutionPng' => (string) config('ipxe.clonezilla.background_png', 'png/clonezilla.png'),
+            'menuTimeoutMs' => (int) config('ipxe.clonezilla.menu_timeout_ms', 10000),
+            'bootDiskFallback' => $this->renderBootDiskFallback(),
+        ])->render();
+    }
+
+    /**
      * Rend la chaîne `iseq ${platform} efi && goto uefi || goto legacy ...`
      * iso-legacy `boot_disk()` (`sambaedu/includes/ipxe_functions.inc.php:14-46`).
      *

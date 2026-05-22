@@ -53,6 +53,61 @@ return [
         // remplacée par `/admin/settings/gpo/wine` (Livewire SFC + Job queue,
         // renommée par Story 16.9). Redirect 302 (pattern iso 16.2 D5).
         '^gpo/wine\.php(?:\?.*)?$' => 'admin/settings/gpo/wine',
+
+        // Story 3.7 — D10 — Cleanup final catchall Epic 3 (decis. Henri Q-1).
+        // Convention `gone:<message>` : le firmware iPXE ne suit pas les 302,
+        // on retourne 410 Gone + corps iPXE explicite (cf. LegacyCatchallController).
+        // Les assets statiques (png/, bin/, Win10/sources/) restent accessibles
+        // via direct_legacy_routes `^/ipxe/` — seules les routes .php migreees
+        // 3.1-3.7 sont bloquees ici.
+        //
+        // 3.1 — boot
+        '^ipxe/boot\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/boot natif SE5',
+        // 3.2 — admin + maintenance
+        '^ipxe/admin\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/admin natif SE5',
+        '^ipxe/maintenance\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/maintenance natif SE5',
+        // 3.3 — enrollment
+        '^ipxe/enregistrement\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/enrollment/name natif SE5',
+        '^ipxe/enregistrement_byod\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/enrollment/byod natif SE5',
+        '^ipxe/salles\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/enrollment/room natif SE5',
+        '^ipxe/parcs\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/enrollment/parc-add natif SE5',
+        '^ipxe/enleveparc\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/enrollment/parc-remove natif SE5',
+        // 3.4 — installation Linux
+        '^ipxe/installation-linux\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/installation-linux natif SE5',
+        // 3.5 — installation Windows
+        '^ipxe/installation-windows\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/installation-windows natif SE5',
+        // 3.6 — gestion ISO Windows
+        '^ipxe/Win10/win_iso\.php(?:\?.*)?$' => 'gone:utiliser /admin/ipxe/iso-windows natif SE5',
+        // 3.7 — clonezilla + outils diagnostic
+        '^ipxe/clonezilla_menu\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/clonezilla-menu natif SE5',
+        '^ipxe/clonezilla\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/clonezilla_live natif SE5',
+        '^ipxe/gparted\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/gparted natif SE5',
+        '^ipxe/hdt\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/hdt natif SE5',
+        '^ipxe/memtest86plus\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/memtest86plus natif SE5',
+        '^ipxe/actions/clonezilla_live\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/clonezilla_live natif SE5',
+        '^ipxe/actions/clz_sav_sda1_sur_sda2\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/clonezilla_save_sda1_sda2 natif SE5',
+        '^ipxe/actions/clz_rest_sda2_sur_sda1\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/clonezilla_restore_sda2_sda1 natif SE5',
+        '^ipxe/actions/rescuecd\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/rescuecd natif SE5',
+        '^ipxe/actions/gparted\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/gparted natif SE5',
+        '^ipxe/actions/hdt\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/hdt natif SE5',
+        '^ipxe/actions/memtest86plus\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/memtest86plus natif SE5',
+        // Sécurité — catchall pour l'endpoint natif /ipxe/action/{action} :
+        // toute requête qui n'a pas été servie nativement (action inconnue ou
+        // format invalide) reçoit 410 Gone au lieu d'être proxiée vers le legacy.
+        // Les actions valides ([a-z0-9_]+) matchent la route native AVANT le catchall.
+        //
+        // **Pattern volontairement large (D10 cleanup strict — review 3.7 #2)** :
+        // Toute URL `/ipxe/action/<x>` qui n'a pas matché la route native est
+        // bloquée — il n'y a PAS de fallback vers le legacy `clonage.php` /
+        // `action.php` (lesquels utilisent `?action=xyz`, donc path
+        // `ipxe/action.php` non-matché par ce pattern). Les postes terrain
+        // doivent être à jour 16.11 — un poste vieux qui appellerait
+        // `/ipxe/action/clonezilla_live/` (trailing slash) ou
+        // `/ipxe/action/clonezilla_live;jsessionid=…` (suffixe firmware buggé)
+        // tomberait sur ce catchall et recevrait 410. À valider en smoke avant
+        // prod sur les postes non-mis-à-jour (cf. `docs/qa/domains/ipxe.md`
+        // Section 16 « Compat postes legacy »).
+        '^ipxe/action/' => 'gone:action iPXE inconnue ou format invalide - utiliser /ipxe/action/{action} valide',
     ],
 
     /*

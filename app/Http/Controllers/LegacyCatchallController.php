@@ -61,6 +61,25 @@ class LegacyCatchallController extends Controller
         if (config('sambaedu.block_migrated_routes', true)) {
             $redirect = $this->findBlockedRouteRedirect($path);
             if ($redirect !== null) {
+                // Story 3.7 — Q-1 Henri — convention `gone:<message>` : retourner
+                // 410 Gone + corps iPXE explicite (le firmware iPXE ne suit pas les
+                // redirects 302 — il faut un message textuel). Les routes iPXE legacy
+                // migrées en 3.1-3.7 utilisent cette convention.
+                if (str_starts_with($redirect, 'gone:')) {
+                    $message = substr($redirect, 5);
+                    Log::channel('legacylog')->info('legacy.catchall.ipxe_gone', [
+                        'path' => $path,
+                        'message' => $message,
+                        'ip' => $request->ip(),
+                    ]);
+
+                    return new Response(
+                        "#!ipxe\necho ERREUR - Route legacy obsolete : {$message}\nsleep 5\nexit",
+                        410,
+                        ['Content-Type' => 'text/plain'],
+                    );
+                }
+
                 // Pas de log pour les redirections SER
                 return redirect($redirect);
             }

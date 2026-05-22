@@ -310,4 +310,42 @@ class IpxeConfigTest extends TestCase
         );
         self::assertSame('www-admin', config('sambaedu.windows_iso.sudoers_user'));
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.7 — AC6.1 / AC6.2 / T5.3 — sections clonezilla + tools.
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_loads_clonezilla_config_section(): void
+    {
+        // AC6.1 — section clonezilla (3 cles D8).
+        self::assertTrue(filter_var(config('ipxe.clonezilla.enabled'), FILTER_VALIDATE_BOOL));
+        self::assertSame(10000, (int) config('ipxe.clonezilla.menu_timeout_ms'));
+        self::assertSame('png/clonezilla.png', config('ipxe.clonezilla.background_png'));
+    }
+
+    #[Test]
+    public function it_loads_gparted_tools_config_section(): void
+    {
+        // AC6.2 — section tools.gparted.
+        self::assertTrue(filter_var(config('ipxe.tools.gparted.enabled'), FILTER_VALIDATE_BOOL));
+        self::assertStringStartsWith('/bin/gparted/', (string) config('ipxe.tools.gparted.kernel_path'));
+        self::assertStringStartsWith('/bin/gparted/', (string) config('ipxe.tools.gparted.initrd_path'));
+    }
+
+    #[Test]
+    public function it_loads_hdt_tools_config_section(): void
+    {
+        // AC6.2 — section tools.hdt.
+        self::assertTrue(filter_var(config('ipxe.tools.hdt.enabled'), FILTER_VALIDATE_BOOL));
+        self::assertSame('/bin/pxelinux.0', config('ipxe.tools.hdt.pxelinux0_path'));
+    }
+
+    #[Test]
+    public function it_loads_memtest86plus_tools_config_section(): void
+    {
+        // AC6.2 — section tools.memtest86plus.
+        self::assertTrue(filter_var(config('ipxe.tools.memtest86plus.enabled'), FILTER_VALIDATE_BOOL));
+        self::assertSame('/bin/pxelinux.0', config('ipxe.tools.memtest86plus.pxelinux0_path'));
+    }
 }

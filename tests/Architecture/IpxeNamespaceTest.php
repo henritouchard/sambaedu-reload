@@ -399,10 +399,12 @@ class IpxeNamespaceTest extends TestCase
         }
 
         // Filtre regex sur `{action}` (rejette caractères dangereux).
+        // Story 3.7 : le filtre autorise les chiffres (clonezilla_save_sda1_sda2,
+        // clonezilla_restore_sda2_sda1, memtest86plus) → [a-z0-9_]+.
         self::assertMatchesRegularExpression(
-            "/->where\(\s*['\"]action['\"]\s*,\s*['\"]\[a-z_\]\+['\"]/",
+            "/->where\(\s*['\"]action['\"]\s*,\s*['\"]\[a-z0-9_\]\+['\"]/",
             $content,
-            'La route /ipxe/action/{action} doit avoir le filtre regex `[a-z_]+` '
+            'La route /ipxe/action/{action} doit avoir le filtre regex `[a-z0-9_]+` '
             . 'pour bloquer les caractères dangereux (`/`, `..`, `;`, `&`, etc.).',
         );
     }
@@ -438,22 +440,25 @@ class IpxeNamespaceTest extends TestCase
     public function ipxe_admin_action_enum_has_exactly_nineteen_cases_in_story_3_5(): void
     {
         // D9 — Story 3.2 — élargir si nouvelle action (3.4 / 3.5 / 3.7).
-        // Story 3.5 : whitelist élargie à 19 cases (3 historiques + 9
-        // install_* Linux + 7 install_win* Windows). Tout élargissement
-        // futur doit être documenté.
+        // Story 3.7 : whitelist élargie à 25 cases (+6 clonezilla/diagnostic).
         $cases = \App\Ipxe\Enums\IpxeAdminAction::cases();
         self::assertCount(
-            19,
+            25,
             $cases,
-            'Story 3.5 — la whitelist IpxeAdminAction doit contenir exactement 19 cases '
-            . '(rescuecd, winpe, factory_reset + 9 install_* + 7 install_win*). '
+            'Story 3.7 — la whitelist IpxeAdminAction doit contenir exactement 25 cases '
+            . '(3 historiques + 9 install_* + 7 install_win* + 6 clonezilla/diagnostic). '
             . 'Tout élargissement doit être documenté.',
         );
 
         $values = array_map(static fn ($c) => $c->value, $cases);
         sort($values);
         self::assertSame([
+            'clonezilla_live',
+            'clonezilla_restore_sda2_sda1',
+            'clonezilla_save_sda1_sda2',
             'factory_reset',
+            'gparted',
+            'hdt',
             'install_deb_base',
             'install_deb_cinnamon',
             'install_deb_gnome',
@@ -470,6 +475,7 @@ class IpxeNamespaceTest extends TestCase
             'install_win11',
             'install_win11_disk',
             'install_win11_perso',
+            'memtest86plus',
             'rescuecd',
             'winpe',
         ], $values);
@@ -983,7 +989,9 @@ class IpxeNamespaceTest extends TestCase
                 }
             };
 
-            (new NodeTraverser())->addVisitor($collector)->traverse($ast);
+            $traverser = new NodeTraverser();
+            $traverser->addVisitor($collector);
+            $traverser->traverse($ast);
 
             foreach ($collector->uses as $imported) {
                 if (in_array($imported, $forbidden, true)) {
@@ -1053,6 +1061,239 @@ class IpxeNamespaceTest extends TestCase
             $isoRoutePos,
             'La route /ipxe/iso-windows doit être DANS le groupe admin (donc après son ouverture).',
         );
+    }
+
+    /* ------------------------------------------------------------------
+     * Story 3.7 — AC9.1-9.4 / D12 — Garde-fous architecturaux.
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Story 3.7 — AC9.1 — Vérifie que la route `/ipxe/clonezilla-menu`
+     * est déclarée AVANT le catchall legacy `{path}` dans `routes/web.php`.
+     */
+    #[Test]
+    public function ipxe_3_7_routes_are_declared_before_catchall(): void
+    {
+        $routesFile = realpath(__DIR__ . '/../../routes/web.php');
+        self::assertNotFalse($routesFile);
+        $content = (string) file_get_contents($routesFile);
+
+        $catchallPattern = "/Route::match\s*\([^)]*['\"]\\{path\\}['\"]/";
+        self::assertSame(
+            1,
+            preg_match($catchallPattern, $content, $catchallMatches, PREG_OFFSET_CAPTURE),
+            'Catchall legacy {path} introuvable',
+        );
+        $catchallOffset = $catchallMatches[0][1];
+
+        $pattern = "@Route::(?:match|get|post)\s*\([^;]*?['\"]/ipxe/clonezilla-menu['\"]@";
+        self::assertSame(
+            1,
+            preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE),
+            'Route 3.7 /ipxe/clonezilla-menu non declaree',
+        );
+        self::assertLessThan(
+            $catchallOffset,
+            $matches[0][1],
+            'ORDRE INVALIDE : la route 3.7 /ipxe/clonezilla-menu doit etre AVANT le catchall',
+        );
+
+        // Verification middleware auth.v1.lan-only.
+        $statements = explode(';', $content);
+        $clzStmt = null;
+        foreach ($statements as $stmt) {
+            if (preg_match("@['\"]\/ipxe\/clonezilla-menu['\"]@", $stmt) === 1) {
+                $clzStmt = $stmt;
+                break;
+            }
+        }
+        self::assertNotNull($clzStmt, 'Statement de la route /ipxe/clonezilla-menu introuvable');
+        self::assertMatchesRegularExpression(
+            '/auth\.v1\.lan-only/',
+            $clzStmt,
+            'La route /ipxe/clonezilla-menu doit attacher auth.v1.lan-only (D5).',
+        );
+    }
+
+    /**
+     * Story 3.7 — AC9.2 — Vérifie que les 6 nouveaux templates Blade
+     * d'actions existent sous `resources/views/ipxe/actions/`.
+     */
+    #[Test]
+    public function it_ensures_6_new_actions_have_blade_template_in_ipxe_actions_namespace(): void
+    {
+        $viewsRoot = realpath(__DIR__ . '/../../resources/views/ipxe/actions');
+        self::assertNotFalse($viewsRoot, 'resources/views/ipxe/actions introuvable');
+
+        $expectedTemplates = [
+            'clonezilla_live.blade.php',
+            'clonezilla_save_sda1_sda2.blade.php',
+            'clonezilla_restore_sda2_sda1.blade.php',
+            'gparted.blade.php',
+            'hdt.blade.php',
+            'memtest86plus.blade.php',
+        ];
+
+        foreach ($expectedTemplates as $tpl) {
+            self::assertFileExists(
+                $viewsRoot . '/' . $tpl,
+                "Template 3.7 manquant : resources/views/ipxe/actions/{$tpl}",
+            );
+        }
+
+        // Menu clonezilla également.
+        $menuRoot = realpath(__DIR__ . '/../../resources/views/ipxe/menu');
+        self::assertNotFalse($menuRoot);
+        self::assertFileExists(
+            $menuRoot . '/clonezilla.blade.php',
+            'Template 3.7 manquant : resources/views/ipxe/menu/clonezilla.blade.php',
+        );
+    }
+
+    /**
+     * Story 3.7 — AC9.3 / D2 — Vérifie que `factory_reset.blade.php` et
+     * `clonezilla_restore_sda2_sda1.blade.php` ont la MÊME cmdline kernel
+     * (parité iso-legacy — ce test doit échouer si future divergence justifiée).
+     */
+    #[Test]
+    public function it_ensures_factory_reset_and_clonezilla_restore_have_same_kernel_cmdline(): void
+    {
+        $actionsRoot = realpath(__DIR__ . '/../../resources/views/ipxe/actions');
+        self::assertNotFalse($actionsRoot);
+
+        $factoryResetContent = (string) file_get_contents($actionsRoot . '/factory_reset.blade.php');
+        $clzRestoreContent = (string) file_get_contents($actionsRoot . '/clonezilla_restore_sda2_sda1.blade.php');
+
+        // Extraire la ligne kernel de chaque template.
+        preg_match('/^kernel .+$/m', $factoryResetContent, $frMatches);
+        preg_match('/^kernel .+$/m', $clzRestoreContent, $clzMatches);
+
+        self::assertNotEmpty($frMatches, 'factory_reset.blade.php ne contient pas de ligne kernel');
+        self::assertNotEmpty($clzMatches, 'clonezilla_restore_sda2_sda1.blade.php ne contient pas de ligne kernel');
+
+        // Normalisation : remplacer $osUrl et $serverBaseUrl variables Blade par un placeholder.
+        $normalize = static fn (string $line): string => (string) preg_replace(
+            '/\{\{[^}]+\}\}/',
+            '{{URL}}',
+            $line,
+        );
+
+        self::assertSame(
+            $normalize($frMatches[0]),
+            $normalize($clzMatches[0]),
+            'D2 — factory_reset et clonezilla_restore_sda2_sda1 doivent avoir la meme cmdline kernel. '
+            . 'Casser ce test uniquement si une divergence future est justifiee et documentee.',
+        );
+    }
+
+    /**
+     * Story 3.7 — AC9.4 / D6 — Vérifie qu'aucun des 6 nouveaux templates
+     * Blade `actions/*.blade.php` n'injecte de variable user (`$mac`, `$uuid`,
+     * `$workstationName`, `$ip`) dans une ligne `kernel ` ou `initrd `.
+     * (Prévention iPXE injection — RCE poste potentiel).
+     *
+     * Post-review #11 (2026-05-22) — regex renforcée pour matcher :
+     *  - sigil PHP brut : `$mac`, `$ uuid` (espaces optionnels).
+     *  - sigil Blade : `{{ $mac }}`, `{{$mac}}`, `{!! $mac !!}`,
+     *    `{{ Str::lower($mac) }}` (variable user passée via expression Blade).
+     *
+     * Le test est volontairement strict — toute variable user dans une cmdline
+     * kernel/initrd casse le test. Pour autoriser une exception future (ex:
+     * un mac sanitizé + asserté safe), il faudra justifier explicitement.
+     */
+    #[Test]
+    public function it_ensures_no_user_variable_in_action_kernel_lines(): void
+    {
+        $actionsRoot = realpath(__DIR__ . '/../../resources/views/ipxe/actions');
+        self::assertNotFalse($actionsRoot);
+
+        $templates37 = [
+            'clonezilla_live.blade.php',
+            'clonezilla_save_sda1_sda2.blade.php',
+            'clonezilla_restore_sda2_sda1.blade.php',
+            'gparted.blade.php',
+            'hdt.blade.php',
+            'memtest86plus.blade.php',
+        ];
+
+        // Regex strict — capture les variables user (`$mac`, `$uuid`,
+        // `$workstationName`, `$ip`) qu'elles apparaissent en sigil PHP brut
+        // OU à l'intérieur d'une expression Blade `{{ ... }}` / `{!! ... !!}`.
+        // L'ancre `(?<![A-Za-z0-9_])` empêche les faux positifs sur
+        // `$ipxe`/`$ipQuery`/`$macAddress` etc.
+        $userVarPattern = '/(?<![A-Za-z0-9_])\$\s*(mac|uuid|workstationName|ip)(?![A-Za-z0-9_])/';
+        $violations = [];
+
+        foreach ($templates37 as $tpl) {
+            $path = $actionsRoot . '/' . $tpl;
+            if (! is_file($path)) {
+                $violations[] = "{$tpl} : fichier manquant";
+                continue;
+            }
+
+            $lines = file($path, FILE_IGNORE_NEW_LINES) ?: [];
+            foreach ($lines as $lineNo => $line) {
+                $trimmed = ltrim($line);
+                if (
+                    (str_starts_with($trimmed, 'kernel ') || str_starts_with($trimmed, 'initrd '))
+                    && preg_match($userVarPattern, $line) === 1
+                ) {
+                    $violations[] = "{$tpl}:{$lineNo} — variable user dans cmdline kernel/initrd : {$trimmed}";
+                }
+            }
+        }
+
+        self::assertSame(
+            [],
+            $violations,
+            "D6 — Violations securite (variable user dans cmdline kernel/initrd) :\n  - "
+            . implode("\n  - ", $violations),
+        );
+    }
+
+    /**
+     * Post-review #11 (2026-05-22) — Test du test (auto-validation regex).
+     *
+     * On vérifie que la regex `$userVarPattern` matche bien les patterns Blade
+     * et PHP avant de s'appuyer sur elle dans le test précédent. Sinon, le
+     * test `it_ensures_no_user_variable_in_action_kernel_lines` serait un
+     * faux positif vert (cf. review #11).
+     */
+    #[Test]
+    public function it_validates_user_variable_regex_matches_blade_and_php_sigils(): void
+    {
+        $userVarPattern = '/(?<![A-Za-z0-9_])\$\s*(mac|uuid|workstationName|ip)(?![A-Za-z0-9_])/';
+
+        $shouldMatch = [
+            'kernel http://foo/{{ $mac }}.img',
+            'kernel http://foo/$mac.img',
+            'initrd {!! $uuid !!}',
+            'kernel foo {{$workstationName}}',
+            'kernel {{ Str::lower($ip) }}',
+            'kernel {{ $mac }} bar',
+        ];
+        foreach ($shouldMatch as $line) {
+            self::assertSame(
+                1,
+                preg_match($userVarPattern, $line),
+                "Le regex DOIT matcher la variable user dans : `{$line}`",
+            );
+        }
+
+        $shouldNotMatch = [
+            'kernel http://foo/ipxe/vmlinuz',         // `ipxe` mot complet, pas variable.
+            'kernel {{ $serverBaseUrl }}/foo',         // variable non-sensible.
+            'kernel {{ $osUrl }}/clonezilla/vmlinuz',  // variable non-sensible.
+            'set 209:string $macAddress',              // `$macAddress` — extension lexicale.
+            'echo $ipxeVersion',                        // `$ipxeVersion` — extension lexicale.
+        ];
+        foreach ($shouldNotMatch as $line) {
+            self::assertSame(
+                0,
+                preg_match($userVarPattern, $line),
+                "Le regex NE DOIT PAS matcher : `{$line}` (faux positif)",
+            );
+        }
     }
 
     private function stripComments(string $code): string
