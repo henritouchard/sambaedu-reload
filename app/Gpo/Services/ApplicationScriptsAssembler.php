@@ -87,6 +87,26 @@ class ApplicationScriptsAssembler
     ) {}
 
     /**
+     * Story 17.3 D4 option A.2 — résolution dynamique de l'URL native endpoint
+     * `agent.v1.config.applications-scripts` (route api.php:256 Story 16.13).
+     * Référencée comme `default` callable dans la whitelist substitutions de
+     * la clé `APPLICATIONS_SCRIPTS_URL` (cf. `config/sambaedu.php`).
+     *
+     * Pourquoi pas une closure inline dans `config/sambaedu.php` ? Les closures
+     * ne sont pas sérialisables par `var_export` et cassent `php artisan
+     * config:cache`. Une paire `[Classe::class, 'méthode']` est is_callable=true
+     * ET sérialisable — pattern propre et compatible production.
+     */
+    public static function resolveApplicationsScriptsUrl(): string
+    {
+        return \Illuminate\Support\Facades\URL::route(
+            'agent.v1.config.applications-scripts',
+            [],
+            absolute: true,
+        );
+    }
+
+    /**
      * Assemble les scripts pour tous les interpréteurs (cmd/bash/powershell/server).
      *
      * Retourne un dict indexé par interpréteur, valeurs = string concaténée.
@@ -1034,7 +1054,20 @@ class ApplicationScriptsAssembler
             }
         }
         if (! $found && array_key_exists('default', $spec)) {
-            $value = $spec['default'];
+            $default = $spec['default'];
+            // Story 17.3 D4 option A.2 — supporte un `default` callable
+            // (closure/paire `[Classe::class, 'method']`) pour résolution
+            // dynamique (cf. `APPLICATIONS_SCRIPTS_URL` →
+            // `URL::route('agent.v1.config.applications-scripts', [], absolute: true)`).
+            // Le filtre `is_array || Closure` exclut strictement les chaînes
+            // nom-de-fonction PHP (`'strlen'`, `'phpinfo'`, etc.) — surface
+            // d'attaque RCE potentielle si une env var compromise injectait un
+            // nom de fonction. Post-review 17.3 #2 (scoping au chemin default).
+            if (is_callable($default) && (is_array($default) || $default instanceof \Closure)) {
+                $value = $default();
+            } else {
+                $value = $default;
+            }
             $found = true;
         }
         if (! $found || $value === null) {
