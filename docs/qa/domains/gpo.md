@@ -1837,3 +1837,259 @@ php artisan tinker --execute='for($i=0;$i<25;$i++) \DB::table("jobs")->insert(["
 - [ ] **16.15-3** Interop legacy : `apcu_fetch("apps.<id>")` retourne le payload écrit par l'endpoint natif.
 - [ ] **16.15-4** Bench 100 hits : latence < 110 % baseline (overhead Cache facade < 5 %).
 - [ ] **16.15-5** Tinker bi-directionnel : `Cache::store('app_context')` ↔ `apcu_fetch` transparent.
+
+---
+
+## Story 17.3 — Compat GPO orchestratrice `se4_applications`
+
+**Date livraison** : 2026-05-22
+**Migrations à appliquer** : aucune (audit + extension whitelist + doc — pas de changement de schéma)
+**Pré-requis complémentaires** :
+- Paquet Debian `sambaedu-gpo` installé (template `/usr/share/sambaedu/gpo/se4_applications.zip` ou répertoire `/usr/share/sambaedu/gpo/sambaedu-gpo/se4_applications/`).
+- Stories 16.10 + 16.11 done (JWT généralisé côté postes — pré-requis Q-1 résolution).
+- Story 16.13 done (endpoint natif `/api/v1/workstation-config/applications-scripts` exposé).
+
+### Objectif
+
+Cette story garantit que les `.cmd` orchestrateurs embarqués dans le template GPO
+`se4_applications` (Machine/Scripts/{Startup,Shutdown} + User/Scripts/{Logon,Logoff})
+appellent l'**endpoint natif** Story 16.13 (`/api/v1/workstation-config/applications-scripts`)
+et **non plus** l'endpoint legacy `gpo/applications.php` (shim PHP-FPM 1bis-11
+destiné à disparaître). Deux stratégies combinées (Q-3 résolue Henri 2026-05-22) :
+
+**Stratégie A.1 — Patch upstream Debian** (filière long terme) :
+Le patch git est livré dans `_bmad-output/implementation-artifacts/17-3-upstream-se4_applications.diff`
+et doit être appliqué côté repo `sambaedu-gpo` (GitLab interne) puis release Debian
+propagée. Effet : remplace l'URL hardcodée `http://%SE4FS%.###_DOMAIN_###/gpo/applications.php`
+par le placeholder substituable `###_APPLICATIONS_SCRIPTS_URL_###` dans les 4
+`.cmd` orchestrateurs.
+
+**Stratégie A.2 — Substitution post-extraction whitelist** (filière immédiate) :
+La clé `APPLICATIONS_SCRIPTS_URL` est ajoutée à la whitelist
+`config('sambaedu.gpo.applications.substitutions.whitelist')` avec une résolution
+dynamique via `URL::route('agent.v1.config.applications-scripts', [], absolute: true)`.
+Le shim legacy `specialise_gpo` substitue automatiquement le placeholder au moment
+d'`import_gpo` dans SYSVOL. Cette filière est active **dès le déploiement 17.3**,
+mais reste **sans effet tant que les `.cmd` upstream contiennent encore l'URL
+hardcodée** — c'est précisément pour cela que la combinaison A.1+A.2 est nécessaire.
+
+### Procédure opérateur
+
+**1. Audit du template installé sur le serveur** (lecture pure, idempotente) :
+
+```bash
+# Mode humain (table ASCII) :
+sudo -u www-admin php artisan gpo:applications:audit
+
+# Mode JSON (CI / pipe machine-readable) :
+sudo -u www-admin php artisan gpo:applications:audit --json | jq .
+
+# Path override (testing) :
+sudo -u www-admin php artisan gpo:applications:audit --path=/tmp/custom_template/
+```
+
+**Exit codes** :
+- `0` : OK — aucune URL legacy détectée, aucun placeholder hors whitelist.
+- `2` : WARNING — au moins une URL `gpo/applications.php` détectée OU au moins un
+  placeholder `###_KEY_###` hors whitelist (cas où le template upstream introduit
+  une nouvelle clé non documentée — bloquant parc-wide).
+- `1` : ERROR — template absent / ZIP corrompu / `ZipArchive::open` échec.
+
+**Output JSON attendu** (structure stable pour CI) :
+```json
+{
+  "template_path": "/usr/share/sambaedu/gpo/se4_applications.zip",
+  "files": [
+    {
+      "path": "Machine/Scripts/Startup/startup.cmd",
+      "urls": ["http://%SE4FS%.###_DOMAIN_###/gpo/applications.php"],
+      "placeholders": ["DOMAIN", "SE4FS_NAME"],
+      "legacy_match": true,
+      "recommendation": "substitute_post_extraction"
+    }
+  ],
+  "summary": {
+    "total_files": 4,
+    "legacy_count": 4,
+    "ok_count": 0,
+    "unknown_placeholders_count": 0
+  },
+  "unknown_placeholders": []
+}
+```
+
+**2. Application Stratégie A.1 (patch upstream)** — pré-requis : accès repo
+`sambaedu-gpo` :
+
+```bash
+cd /usr/share/sambaedu/gpo/sambaedu-gpo/   # ou clone du repo GitLab
+git apply 17-3-upstream-se4_applications.diff
+git commit -m "fix(se4_applications): URL legacy → placeholder ###_APPLICATIONS_SCRIPTS_URL_### (Story 17.3)"
+# → push + release Debian + apt-get install --reinstall sambaedu-gpo en prod
+```
+
+**3. Re-import du template GPO dans SYSVOL** (manuel, out-of-scope automatisation 17.3 — cf. D7) :
+```
+# Via UI legacy `gpo/gpo-maj.php` → bouton "Re-importer la GPO se4_applications"
+# OU manuellement via PHP CLI :
+sudo -u www-admin php -r "require '/var/www/sambaedu/includes/gpo.inc.php'; import_gpo('se4_applications');"
+```
+
+Le shim `import_gpo` enchaîne `unzip_gpo → specialise_gpo → sysvol_put`. La
+`specialise_gpo` lit la whitelist `config('sambaedu.gpo.applications.substitutions.whitelist')`
+et substitue `###_APPLICATIONS_SCRIPTS_URL_###` par l'URL native résolue
+(`https://<se4fs>.<domain>/api/v1/workstation-config/applications-scripts`).
+
+**4. Vérification post-déploiement** :
+```bash
+# Re-audit du template — doit retourner exit 0 et `legacy_count: 0` :
+sudo -u www-admin php artisan gpo:applications:audit
+# Inspect le contenu SYSVOL substitué :
+sudo cat "/var/lib/samba/sysvol/<domain>/Policies/{<GUID>}/Machine/Scripts/Startup/startup.cmd"
+# → Doit contenir l'URL native, pas /gpo/applications.php
+```
+
+### Override testing/CI
+
+Variables d'environnement (cf. `.env.example`) :
+
+```env
+# Path template (par défaut /usr/share/sambaedu/gpo/se4_applications.zip)
+GPO_APPLICATIONS_TEMPLATE_PATH=/tmp/custom_template/
+
+# Override URL endpoint natif (par défaut résolu via URL::route)
+SAMBAEDU_APPLICATIONS_SCRIPTS_URL=https://proxy.example.test/v1/apps
+```
+
+### Référence Q-1 (URL directe vs migration)
+
+**Décision Henri 2026-05-22** : URL **directe API v1**. JWT généralisé
+(16.10 + 16.11 done). Les `.cmd` orchestrateurs pointent directement sur
+`/api/v1/workstation-config/applications-scripts`, **pas** sur l'URL legacy
+`gpo/applications.php` ré-routée par `MigrationController::serveFragment(applications)`
+(route web.php:618 option β 16.13bis). La route Migration **reste active**
+comme filet de sécurité pour les postes pas encore JWT-migrés au moment où
+le `.cmd` initial est encore distribué (Phase de transition).
+
+### Transition JWT — fallback legacy (post-review 17.3 Q3)
+
+**Décision Henri 2026-05-22 (résolution Q3 review)** : « done côté code » ne
+signifie pas « 100% du parc JWT-migré au runtime ». Tant que tous les postes
+Windows ne sont pas effectivement basculés JWT, conserver le double pattern
+sans casser les postes non-migrés.
+
+**Pattern par défaut** (recommandé quand le parc est entièrement JWT-migré) :
+- Aucune env var posée → `resolveSubstitutionValue` appelle la closure
+  `URL::route('agent.v1.config.applications-scripts', [], absolute: true)`
+  qui résout vers l'URL native API v1 (`https://<se4fs>.<domain>/api/v1/workstation-config/applications-scripts`).
+- Le `.cmd` orchestrateur fait `curl.exe -o ... "<URL native>?os=...&action=..."` (GET).
+- Auth : middleware `auth.v1.workstation` (JWT machine).
+
+**Pattern transition JWT** (recommandé tant que `feedback_auth_iso_legacy`
+s'applique — postes Windows pas tous migrés) :
+- Override env :
+  ```env
+  SAMBAEDU_APPLICATIONS_SCRIPTS_URL=http://se4fs.<domain>/gpo/applications.php
+  ```
+- Le `.cmd` orchestrateur fait `curl.exe -o ... "http://se4fs.<domain>/gpo/applications.php?os=...&action=..."`.
+- Cette URL est captée par `Route::match(['GET','POST'], 'gpo/applications.php', ...)`
+  → `MigrationController::serveFragment(applications)` (option β 16.13bis,
+  `routes/web.php:618`) qui sert le bon fragment selon l'état JWT du poste
+  (migration auto si poste non-bootstrappé).
+- Le `.diff` upstream 17.3 (qui patche les `.cmd` template) est compatible
+  avec les deux URLs : la substitution `###_APPLICATIONS_SCRIPTS_URL_###`
+  peut résoudre vers l'une ou l'autre sans toucher au `.cmd`.
+
+**Bascule définitive** :
+1. Quand 100% du parc est JWT-migré (cf. tableau de bord 16.11 / monitoring
+   migrations bootstrap), retirer `SAMBAEDU_APPLICATIONS_SCRIPTS_URL` du
+   `.env` de production.
+2. Re-`import_gpo` du template → la substitution applique automatiquement
+   l'URL native API v1.
+3. `php artisan gpo:applications:audit` → vérifier exit code 0 + détection
+   du placeholder `APPLICATIONS_SCRIPTS_URL` substitué.
+4. À terme (TD-17.3) : retirer la route Migration legacy
+   `gpo/applications.php` (out-of-scope 17.3 — déféré).
+
+### Scénarios QA manuels
+
+#### Scénario 17.3-1 — Audit template legacy détecte les `.cmd` orchestrateurs
+
+**Pré-condition** : Template Debian `sambaedu-gpo` installé non patché côté
+upstream (URL hardcodée présente).
+
+**Étapes** :
+1. SSH sur la VM serveur, user `www-admin`.
+2. `php artisan gpo:applications:audit`
+
+**Attendu** :
+- Exit code 2 (warning).
+- Tableau ASCII liste 4 fichiers : `Machine/Scripts/Startup/startup.cmd`,
+  `Machine/Scripts/Shutdown/shutdown.cmd`, `User/Scripts/Logon/logon.cmd`,
+  `User/Scripts/Logoff/logoff.cmd`.
+- Pour chaque : `legacy_match=true`, `recommendation=substitute_post_extraction`.
+- Placeholders détectés : `SE4FS_NAME`, `DOMAIN` (les 2 sont dans la whitelist legacy).
+- Aucun placeholder hors whitelist.
+
+#### Scénario 17.3-2 — Mode JSON consommable par CI
+
+**Étapes** :
+1. `php artisan gpo:applications:audit --json | jq '.summary'`
+
+**Attendu** :
+```json
+{
+  "total_files": 4,
+  "legacy_count": 4,
+  "ok_count": 0,
+  "unknown_placeholders_count": 0
+}
+```
+
+#### Scénario 17.3-3 — Whitelist `APPLICATIONS_SCRIPTS_URL` résolue dynamiquement
+
+**Pré-condition** : Template patché upstream A.1 (placeholder
+`###_APPLICATIONS_SCRIPTS_URL_###` présent dans les `.cmd`).
+
+**Étapes** :
+1. `php artisan tinker` puis :
+   ```php
+   app(\App\Gpo\Services\ApplicationScriptsAssembler::class)
+       ->applySubstitutions('url=###_APPLICATIONS_SCRIPTS_URL_###');
+   ```
+
+**Attendu** : `'url=https://<se4fs>.<domain>/api/v1/workstation-config/applications-scripts'`
+(URL résolue dynamiquement par `URL::route()`).
+
+#### Scénario 17.3-4 — Override env `SAMBAEDU_APPLICATIONS_SCRIPTS_URL`
+
+**Étapes** :
+1. Définir `SAMBAEDU_APPLICATIONS_SCRIPTS_URL=https://proxy.test/v1` dans `.env`.
+2. `php artisan config:clear && php artisan config:cache`.
+3. `php artisan gpo:applications:audit --json` (doit fonctionner — la closure
+   est sérialisable via `[Classe::class, 'method']`).
+
+**Attendu** : `config:cache` réussit (compatible production), et la substitution
+retourne la valeur env override.
+
+#### Scénario 17.3-5 — Re-audit post-patch upstream
+
+**Pré-condition** : Patch A.1 appliqué côté upstream + `apt-get install
+--reinstall sambaedu-gpo` exécuté + `import_gpo` réinvoqué.
+
+**Étapes** :
+1. `php artisan gpo:applications:audit`
+
+**Attendu** :
+- Exit code 0 (OK).
+- 4 fichiers détectés, `legacy_match=false`, `recommendation=ok` pour tous.
+- Placeholder `APPLICATIONS_SCRIPTS_URL` détecté (dans whitelist, pas inconnu).
+
+### Checklist rapide 17.3 — post-deploy
+
+- [ ] **17.3-1** Commande `php artisan gpo:applications:audit` retourne exit 2 sur template non patché upstream (URL legacy détectée).
+- [ ] **17.3-2** Mode `--json` produit la structure documentée (`template_path`, `files`, `summary`, `unknown_placeholders`).
+- [ ] **17.3-3** Whitelist `APPLICATIONS_SCRIPTS_URL` résolue dynamiquement via `URL::route()` quand config + env vides.
+- [ ] **17.3-4** `php artisan config:cache` réussit (callable sérialisable `[Classe::class, 'method']`).
+- [ ] **17.3-5** Patch upstream `17-3-upstream-se4_applications.diff` transmis à Henri pour push côté repo Debian.
+- [ ] **17.3-6** Post-patch + re-`import_gpo` : `php artisan gpo:applications:audit` retourne exit 0 et `legacy_count=0`.

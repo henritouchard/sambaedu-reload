@@ -655,8 +655,35 @@ return [
                         'config' => 'sambaedu.se4install_name',
                         'env' => 'SE4INSTALL_NAME',
                     ],
+
+                    // 17.3 — URL endpoint natif Story 16.13 substituée dans les .cmd
+                    // orchestrateurs GPO se4_applications (Stratégie A.2). Résolution
+                    // dynamique via `URL::route('agent.v1.config.applications-scripts',
+                    // [], absolute: true)` quand config + env sont vides. Le `default`
+                    // est une **paire callable array** `[Classe::class, 'méthode']` —
+                    // is_callable=true ET sérialisable par `var_export` (compatible
+                    // `php artisan config:cache`). Le `resolveSubstitutionValue` 17.3
+                    // exécute la callable et matérialise la string URL au runtime.
+                    // Override testing/CI via `SAMBAEDU_APPLICATIONS_SCRIPTS_URL`.
+                    'APPLICATIONS_SCRIPTS_URL' => [
+                        'config' => 'sambaedu.gpo.applications_scripts_url',
+                        'env' => 'SAMBAEDU_APPLICATIONS_SCRIPTS_URL',
+                        'default' => [\App\Gpo\Services\ApplicationScriptsAssembler::class, 'resolveApplicationsScriptsUrl'],
+                    ],
                 ],
             ],
+        ],
+
+        // Story 17.3 — Sous-config audit GPO `se4_applications` (template officiel
+        // livré par le paquet Debian `sambaedu-gpo`). Iso pattern `wpkg_sync.template_path`
+        // 16.6 — overridable via env pour testing/CI ou installation atypique.
+        //
+        // Important : sur la VM dev (sambaedu-gpo packagé), le template est un
+        // **répertoire** `sambaedu-gpo/se4_applications/`, pas un `.zip`. La
+        // commande `gpo:applications:audit` détecte automatiquement le mode
+        // (fichier vs répertoire) via `is_dir()` / `is_file()` — iso 16.6 D6.
+        'applications_template' => [
+            'path' => env('GPO_APPLICATIONS_TEMPLATE_PATH', '/usr/share/sambaedu/gpo/se4_applications.zip'),
         ],
 
         // Story 16.3c — Sous-config Wine (UI admin + Job queue).

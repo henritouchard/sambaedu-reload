@@ -548,6 +548,116 @@ class ApplicationScriptsAssemblerTest extends TestCase
         );
     }
 
+    // ───────────────────────── Story 17.3 — Whitelist APPLICATIONS_SCRIPTS_URL ───
+    //
+    // Couvre la nouvelle clé `APPLICATIONS_SCRIPTS_URL` (17.3 D4 option A.2)
+    // résolue dynamiquement via `URL::route('agent.v1.config.applications-scripts',
+    // [], absolute: true)` quand config et env sont vides — pattern callable
+    // sérialisable (paire `[Classe::class, 'method']`) compatible config:cache.
+
+    /**
+     * AC2.2 — La résolution du `default` callable est exécutée par
+     * `resolveSubstitutionValue` quand config et env sont vides. URL::route
+     * matérialise l'URL native du endpoint Story 16.13.
+     */
+    #[Test]
+    public function it_substitutes_applications_scripts_url_via_route_fallback(): void
+    {
+        // Force config + env vides pour tomber sur le default callable.
+        config(['sambaedu.gpo.applications_scripts_url' => null]);
+        \Illuminate\Support\Env::enablePutenv();
+        putenv('SAMBAEDU_APPLICATIONS_SCRIPTS_URL');
+
+        $assembler = new ApplicationScriptsAssembler();
+        $this->resetAssemblerCache($assembler);
+
+        $template = 'cmd-url=###_APPLICATIONS_SCRIPTS_URL_###';
+        $result = $assembler->applySubstitutions($template);
+
+        $expected = 'cmd-url=' . \Illuminate\Support\Facades\URL::route(
+            'agent.v1.config.applications-scripts',
+            [],
+            absolute: true,
+        );
+        self::assertSame($expected, $result,
+            'APPLICATIONS_SCRIPTS_URL doit être résolu via URL::route() (default callable).');
+        self::assertStringContainsString('/api/v1/workstation-config/applications-scripts', $result);
+    }
+
+    /**
+     * AC2.2 chemin (b) — l'env `SAMBAEDU_APPLICATIONS_SCRIPTS_URL` override le
+     * default callable. Cas testing/CI ou bascule manuelle vers un proxy.
+     */
+    #[Test]
+    public function it_overrides_applications_scripts_url_via_env(): void
+    {
+        config(['sambaedu.gpo.applications_scripts_url' => null]);
+        \Illuminate\Support\Env::enablePutenv();
+        putenv('SAMBAEDU_APPLICATIONS_SCRIPTS_URL=https://proxy.example.test/v1/apps');
+
+        $assembler = new ApplicationScriptsAssembler();
+        $this->resetAssemblerCache($assembler);
+
+        $result = $assembler->applySubstitutions('###_APPLICATIONS_SCRIPTS_URL_###');
+
+        // Cleanup env pour ne pas polluer les tests suivants.
+        putenv('SAMBAEDU_APPLICATIONS_SCRIPTS_URL');
+
+        self::assertSame('https://proxy.example.test/v1/apps', $result,
+            'L\'env SAMBAEDU_APPLICATIONS_SCRIPTS_URL doit override le default callable.');
+    }
+
+    /**
+     * AC2.2 chemin (a) — `config('sambaedu.gpo.applications_scripts_url')`
+     * override l'env et le default callable.
+     */
+    #[Test]
+    public function it_overrides_applications_scripts_url_via_config(): void
+    {
+        config(['sambaedu.gpo.applications_scripts_url' => 'https://from-config.example.test/v1']);
+        \Illuminate\Support\Env::enablePutenv();
+        putenv('SAMBAEDU_APPLICATIONS_SCRIPTS_URL=https://proxy.example.test/v1');
+
+        $assembler = new ApplicationScriptsAssembler();
+        $this->resetAssemblerCache($assembler);
+
+        $result = $assembler->applySubstitutions('###_APPLICATIONS_SCRIPTS_URL_###');
+
+        putenv('SAMBAEDU_APPLICATIONS_SCRIPTS_URL');
+
+        self::assertSame('https://from-config.example.test/v1', $result,
+            'config() doit gagner sur env() et default — chaîne court-circuit 16.7 D3.');
+    }
+
+    /**
+     * AC2.2 — La modification 17.3 `is_callable($value)` dans
+     * `resolveSubstitutionValue` doit aussi fonctionner avec une closure
+     * inline (pas seulement la paire array callable utilisée dans la
+     * config). Cas générique pour permettre futures specs custom.
+     */
+    #[Test]
+    public function it_resolves_callable_default_in_substitution_whitelist(): void
+    {
+        // Mock une whitelist custom avec un default closure inline.
+        config([
+            'sambaedu.gpo.applications.substitutions.whitelist' => [
+                'CUSTOM_DYNAMIC' => [
+                    'config' => 'sambaedu.nonexistent_config_key',
+                    'env' => 'SAMBAEDU_NONEXISTENT_ENV_VAR',
+                    'default' => static fn (): string => 'resolved-at-runtime-' . PHP_VERSION_ID,
+                ],
+            ],
+        ]);
+
+        $assembler = new ApplicationScriptsAssembler();
+        $this->resetAssemblerCache($assembler);
+
+        $result = $assembler->applySubstitutions('value=###_CUSTOM_DYNAMIC_###');
+
+        self::assertSame('value=resolved-at-runtime-' . PHP_VERSION_ID, $result,
+            'Un default callable (closure ou array callable) doit être exécuté par resolveSubstitutionValue.');
+    }
+
     /**
      * Réinitialise le cache de whitelist interne de l'Assembler via réflexion.
      * Nécessaire car `substitutionsCache` est mémoïsé (null → chargé une fois).

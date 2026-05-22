@@ -230,7 +230,8 @@ runtime déjà portés (`wallpaper_out` 4.7, `firefox_out`/`thunderbird_out` 4.8
 | Surface AD writeback     | `App\Ldap\AdMachineManager` (4 méthodes : check/registerHardware/setOs/listRemoteConnexion) |
 | Pose cache               | `App\Services\AppCustomization\CacheAppContextWriter` (interface `AppContextWriter`) |
 | Enum bitmask erreurs     | `App\Gpo\Enums\ApplicationActionError` (7 cas iso `SAMBAEDU_*_APP_ERROR`) |
-| Config substitutions     | `config/sambaedu.php` clé `gpo.applications.substitutions.whitelist` (whitelist statique) |
+| Config substitutions     | `config/sambaedu.php` clé `gpo.applications.substitutions.whitelist` (whitelist statique — étendue Story 17.3 d'1 clé `APPLICATIONS_SCRIPTS_URL`) |
+| Commande audit template (17.3) | `php artisan gpo:applications:audit [--json] [--path=<dir|.zip>]` — scan lecture pure du template GPO `se4_applications` Debian (`app/Console/Commands/AuditApplicationsGpoTemplateCommand.php`) ; détecte les `.cmd` orchestrateurs hardcodant `gpo/applications.php` legacy + placeholders hors whitelist. Cf. `docs/qa/domains/gpo.md` § 17.3. |
 
 ### Architecture hybride (DO2 option (c))
 
