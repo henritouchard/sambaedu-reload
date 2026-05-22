@@ -19,14 +19,14 @@ use Tests\TestCase;
 class IpxeAdminActionTest extends TestCase
 {
     #[Test]
-    public function it_lists_exactly_nineteen_cases_after_3_5(): void
+    public function it_lists_exactly_twentyfive_cases_after_3_7(): void
     {
         $cases = IpxeAdminAction::cases();
         self::assertCount(
-            19,
+            25,
             $cases,
-            'Story 3.5 : la whitelist doit contenir exactement 19 cases (3 historiques + 9 install_* + 7 install_win*).'
-            . ' Tout ajout doit être documenté par une nouvelle story (3.7) et ce test relaxé.',
+            'Story 3.7 : la whitelist doit contenir exactement 25 cases (3 historiques + 9 install_* + 7 install_win* + 6 clonezilla/diagnostic).'
+            . ' Tout ajout doit être documenté par une nouvelle story.',
         );
     }
 
@@ -222,5 +222,165 @@ class IpxeAdminActionTest extends TestCase
         // Anti-injection sur valeur hors whitelist.
         self::assertNull(IpxeAdminAction::tryFrom('install_win11_old'));
         self::assertNull(IpxeAdminAction::tryFrom('install_win12'));
+    }
+
+    /* ------------------------------------------------------------------
+     * Story 3.7 — AC1.1 / AC1.2 / AC1.3 / AC1.4 — extension +6 cases.
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_resolves_3_7_clonezilla_cases_to_correct_templates(): void
+    {
+        self::assertSame('ipxe.actions.clonezilla_live', IpxeAdminAction::ClonezillaLive->template());
+        self::assertSame('ipxe.actions.clonezilla_save_sda1_sda2', IpxeAdminAction::ClonezillaSaveSda1Sda2->template());
+        self::assertSame('ipxe.actions.clonezilla_restore_sda2_sda1', IpxeAdminAction::ClonezillaRestoreSda2Sda1->template());
+        self::assertSame('ipxe.actions.gparted', IpxeAdminAction::Gparted->template());
+        self::assertSame('ipxe.actions.hdt', IpxeAdminAction::Hdt->template());
+        self::assertSame('ipxe.actions.memtest86plus', IpxeAdminAction::Memtest86plus->template());
+    }
+
+    #[Test]
+    public function it_resolves_3_7_cases_via_try_from(): void
+    {
+        self::assertSame(IpxeAdminAction::ClonezillaLive, IpxeAdminAction::tryFrom('clonezilla_live'));
+        self::assertSame(IpxeAdminAction::ClonezillaSaveSda1Sda2, IpxeAdminAction::tryFrom('clonezilla_save_sda1_sda2'));
+        self::assertSame(IpxeAdminAction::ClonezillaRestoreSda2Sda1, IpxeAdminAction::tryFrom('clonezilla_restore_sda2_sda1'));
+        self::assertSame(IpxeAdminAction::Gparted, IpxeAdminAction::tryFrom('gparted'));
+        self::assertSame(IpxeAdminAction::Hdt, IpxeAdminAction::tryFrom('hdt'));
+        self::assertSame(IpxeAdminAction::Memtest86plus, IpxeAdminAction::tryFrom('memtest86plus'));
+    }
+
+    #[Test]
+    public function it_returns_null_linux_and_windows_meta_for_3_7_cases(): void
+    {
+        // AC1.4 — les 6 nouveaux cases 3.7 retournent null pour linuxMeta() et windowsMeta().
+        $cases37 = [
+            IpxeAdminAction::ClonezillaLive,
+            IpxeAdminAction::ClonezillaSaveSda1Sda2,
+            IpxeAdminAction::ClonezillaRestoreSda2Sda1,
+            IpxeAdminAction::Gparted,
+            IpxeAdminAction::Hdt,
+            IpxeAdminAction::Memtest86plus,
+        ];
+
+        foreach ($cases37 as $case) {
+            self::assertNull($case->linuxMeta(), "linuxMeta() doit retourner null pour {$case->value}");
+            self::assertNull($case->windowsMeta(), "windowsMeta() doit retourner null pour {$case->value}");
+        }
+    }
+
+    #[Test]
+    public function it_returns_correct_log_name_for_3_7_cases(): void
+    {
+        // AC1.3 — logName() retourne la valeur snake_case de l'enum (pas de modif requise).
+        self::assertSame('clonezilla_live', IpxeAdminAction::ClonezillaLive->logName());
+        self::assertSame('gparted', IpxeAdminAction::Gparted->logName());
+        self::assertSame('memtest86plus', IpxeAdminAction::Memtest86plus->logName());
+    }
+
+    #[Test]
+    public function it_returns_distinct_boot_log_actions_for_3_7_cases(): void
+    {
+        // D11 / AC8.1-8.4 — bootLogAction() retourne les valeurs distinctes pour l'audit.
+        self::assertSame('ipxe_clonezilla', IpxeAdminAction::ClonezillaLive->bootLogAction());
+        self::assertSame('ipxe_clonezilla', IpxeAdminAction::ClonezillaSaveSda1Sda2->bootLogAction());
+        self::assertSame('ipxe_clonezilla', IpxeAdminAction::ClonezillaRestoreSda2Sda1->bootLogAction());
+        self::assertSame('ipxe_gparted', IpxeAdminAction::Gparted->bootLogAction());
+        self::assertSame('ipxe_hdt', IpxeAdminAction::Hdt->bootLogAction());
+        self::assertSame('ipxe_memtest', IpxeAdminAction::Memtest86plus->bootLogAction());
+    }
+
+    #[Test]
+    public function it_returns_ipxe_action_boot_log_for_legacy_3_2_cases(): void
+    {
+        // Non-régression : les 3 cases 3.2 (rescuecd/winpe/factory_reset) conservent
+        // `'ipxe_action'` (compat historique — voir PHPDoc bootLogAction()).
+        // **D2 — divergence intentionnelle** : FactoryReset garde `ipxe_action`
+        // alors que ClonezillaRestoreSda2Sda1 prend `ipxe_clonezilla` malgré
+        // une cmdline identique. Cf. doc IpxeAdminAction::bootLogAction().
+        self::assertSame('ipxe_action', IpxeAdminAction::Rescuecd->bootLogAction());
+        self::assertSame('ipxe_action', IpxeAdminAction::Winpe->bootLogAction());
+        self::assertSame('ipxe_action', IpxeAdminAction::FactoryReset->bootLogAction());
+    }
+
+    /**
+     * Post-review #7 — extension `bootLogAction()` aux cases install_* (3.4)
+     * pour audit fin. Le data provider couvre les 9 mappings + flag distro.
+     *
+     * @return array<string, array{0:IpxeAdminAction, 1:string}>
+     */
+    public static function installLinuxBootLogMappingProvider(): array
+    {
+        return [
+            'deb_base' => [IpxeAdminAction::InstallDebBase, 'ipxe_deb_base'],
+            'deb_cinnamon' => [IpxeAdminAction::InstallDebCinnamon, 'ipxe_deb_cinnamon'],
+            'deb_gnome' => [IpxeAdminAction::InstallDebGnome, 'ipxe_deb_gnome'],
+            'deb_kde' => [IpxeAdminAction::InstallDebKde, 'ipxe_deb_kde'],
+            'deb_lxde' => [IpxeAdminAction::InstallDebLxde, 'ipxe_deb_lxde'],
+            'deb_mate' => [IpxeAdminAction::InstallDebMate, 'ipxe_deb_mate'],
+            'deb_xfce' => [IpxeAdminAction::InstallDebXfce, 'ipxe_deb_xfce'],
+            'nird' => [IpxeAdminAction::InstallNird, 'ipxe_nird'],
+            'ubuntu64' => [IpxeAdminAction::InstallUbuntu64, 'ipxe_ubuntu64'],
+        ];
+    }
+
+    #[Test]
+    #[\PHPUnit\Framework\Attributes\DataProvider('installLinuxBootLogMappingProvider')]
+    public function it_returns_distinct_boot_log_action_for_install_linux_cases(
+        IpxeAdminAction $case,
+        string $expectedLabel,
+    ): void {
+        self::assertSame($expectedLabel, $case->bootLogAction());
+    }
+
+    /**
+     * Post-review #7 — extension `bootLogAction()` aux cases install_win*
+     * (3.5) pour audit fin.
+     *
+     * @return array<string, array{0:IpxeAdminAction, 1:string}>
+     */
+    public static function installWindowsBootLogMappingProvider(): array
+    {
+        return [
+            'win10' => [IpxeAdminAction::InstallWin10, 'ipxe_win10'],
+            'win10_debug' => [IpxeAdminAction::InstallWin10Debug, 'ipxe_win10_debug'],
+            'win10_disk' => [IpxeAdminAction::InstallWin10Disk, 'ipxe_win10_disk'],
+            'win10_perso' => [IpxeAdminAction::InstallWin10Perso, 'ipxe_win10_perso'],
+            'win11' => [IpxeAdminAction::InstallWin11, 'ipxe_win11'],
+            'win11_disk' => [IpxeAdminAction::InstallWin11Disk, 'ipxe_win11_disk'],
+            'win11_perso' => [IpxeAdminAction::InstallWin11Perso, 'ipxe_win11_perso'],
+        ];
+    }
+
+    #[Test]
+    #[\PHPUnit\Framework\Attributes\DataProvider('installWindowsBootLogMappingProvider')]
+    public function it_returns_distinct_boot_log_action_for_install_windows_cases(
+        IpxeAdminAction $case,
+        string $expectedLabel,
+    ): void {
+        self::assertSame($expectedLabel, $case->bootLogAction());
+    }
+
+    /**
+     * Post-review #7 — garde-fou strict VARCHAR(20).
+     *
+     * Toutes les valeurs retournées par `bootLogAction()` doivent tenir dans
+     * `machine_boot_logs.action` (varchar(20)) — si un futur dev ajoute un
+     * case install_* avec un label trop long, la migration silencieuse
+     * tronquerait la valeur en DB et casserait l'audit. Ce test gèle la
+     * contrainte au niveau enum.
+     */
+    #[Test]
+    public function it_ensures_all_boot_log_actions_fit_in_varchar_20(): void
+    {
+        foreach (IpxeAdminAction::cases() as $case) {
+            $label = $case->bootLogAction();
+            self::assertLessThanOrEqual(
+                20,
+                strlen($label),
+                "bootLogAction() pour {$case->value} = '{$label}' (" . strlen($label) . " chars) > 20 chars. "
+                . 'La colonne machine_boot_logs.action est varchar(20) — soit raccourcir le label, soit créer une migration dédiée (HORS-SCOPE 3.7 D11).',
+            );
+        }
     }
 }

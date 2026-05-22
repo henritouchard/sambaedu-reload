@@ -78,6 +78,7 @@ final class IpxeActionResolver
 
         $osUrl = $this->resolveOsUrl($request);
         $scriptUrl = $this->resolveScriptUrl($osUrl);
+        $serverBaseUrl = $this->resolveServerBaseUrl($request);
 
         $autorunUrl = $scriptUrl . '/sysrescuecd/autorun.php?mac=' . rawurlencode($mac)
             . '&uuid=' . rawurlencode($uuid);
@@ -116,6 +117,13 @@ final class IpxeActionResolver
         // pour les 12 cases hors install_win*.
         $windowsVariables = $this->resolveWindowsVariables($action, $scriptUrl);
 
+        // Story 3.7 — post-review #12 — variables config-driven pour les
+        // templates « tools » (gparted/hdt/memtest86plus). Injectées ici
+        // (resolver) plutôt qu'appelées via `config()` dans le Blade — pattern
+        // Epic 3 standard, facilite les tests + override sans toucher la
+        // config globale.
+        $toolsVariables = $this->resolveToolsVariables();
+
         return $this->viewFactory->make($action->template(), array_merge([
             'shebang' => self::IPXE_SHEBANG,
             'mac' => $mac,
@@ -124,13 +132,14 @@ final class IpxeActionResolver
             'action' => $action->value,
             'osUrl' => $osUrl,
             'scriptUrl' => $scriptUrl,
+            'serverBaseUrl' => $serverBaseUrl,
             'autorunUrl' => $autorunUrl,
             'se4installPasswd' => $se4installPasswd,
             'version' => $version,
             'debug' => $debug,
             'disk' => $disk,
             'perso' => $perso,
-        ], $linuxVariables, $windowsVariables))->render();
+        ], $linuxVariables, $windowsVariables, $toolsVariables))->render();
     }
 
     /**
@@ -306,6 +315,77 @@ final class IpxeActionResolver
         }
 
         return $osUrl;
+    }
+
+    /**
+     * Story 3.7 — D8 — Résout l'URL de base du serveur (scheme + host, sans
+     * le suffixe `/ipxe`). Utilisée par les templates des outils de diagnostic
+     * (gparted, hdt, memtest86plus) dont les assets sont servis depuis la
+     * racine du serveur Apache (`/bin/gparted/`, `/bin/hdt/`, etc.) et non
+     * depuis `/ipxe/`.
+     *
+     * Post-review #5 (2026-05-22) — **clé config canonique unifiée** avec
+     * {@see IpxeService::resolveServerBaseUrl()} et
+     * {@see \App\Ipxe\Services\IpxeEnrollmentOrchestrator} : on lit
+     * `ipxe.se4fs_url` (override env `IPXE_SE4FS_URL`) — auparavant on lisait
+     * `ipxe.actions.server_base_url` (clé orpheline), ce qui ignorait
+     * silencieusement les overrides ops. La clé legacy reste tolérée en
+     * fallback secondaire pour compatibilité descendante (deprecated, sera
+     * retirée Phase 3).
+     *
+     * Priorité : `config('ipxe.se4fs_url')` (override env canonique) →
+     * `config('ipxe.actions.server_base_url')` (fallback deprecated) →
+     * `Request` scheme+host → `http://se4fs`.
+     */
+    private function resolveServerBaseUrl(Request $request): string
+    {
+        $configured = (string) config('ipxe.se4fs_url', '');
+        if ($configured === '') {
+            // Compat descendante — clé orpheline livrée 3.7. Fallback secondaire
+            // pour ne pas casser un override prod éventuel posé avant le fix.
+            $configured = (string) config('ipxe.actions.server_base_url', '');
+        }
+        if ($configured !== '') {
+            return rtrim($configured, '/');
+        }
+
+        $schemeAndHost = (string) ($request->getSchemeAndHttpHost() ?? '');
+        if ($schemeAndHost !== '') {
+            return rtrim($schemeAndHost, '/');
+        }
+
+        return 'http://se4fs';
+    }
+
+    /**
+     * Story 3.7 — post-review #12 (2026-05-22).
+     *
+     * Construit les variables Blade `$gpartedKernelPath`, `$gpartedInitrdPath`,
+     * `$gpartedFilesystemPath`, `$hdtPxelinux0Path`, `$hdtPxelinuxCfg`,
+     * `$memtestPxelinux0Path`, `$memtestPxelinuxCfg` lues par les 3 templates
+     * « tools » (`gparted.blade.php`, `hdt.blade.php`, `memtest86plus.blade.php`).
+     *
+     * Avant le fix, ces templates appelaient `config('ipxe.tools.*.kernel_path')`
+     * directement — couplage caché, non testable sans modif config globale, et
+     * divergence du pattern Epic 3 « resolver injecte, Blade consomme ».
+     *
+     * Tableau retourné systématiquement (pas de short-circuit) — les 3 templates
+     * ont leurs variables, mais celles non utilisées sont simplement ignorées
+     * par le Blade.
+     *
+     * @return array<string, string>
+     */
+    private function resolveToolsVariables(): array
+    {
+        return [
+            'gpartedKernelPath' => (string) config('ipxe.tools.gparted.kernel_path', '/bin/gparted/vmlinuz'),
+            'gpartedInitrdPath' => (string) config('ipxe.tools.gparted.initrd_path', '/bin/gparted/initrd.img'),
+            'gpartedFilesystemPath' => (string) config('ipxe.tools.gparted.filesystem_path', '/bin/gparted/filesystem.squashfs'),
+            'hdtPxelinux0Path' => (string) config('ipxe.tools.hdt.pxelinux0_path', '/bin/pxelinux.0'),
+            'hdtPxelinuxCfg' => (string) config('ipxe.tools.hdt.pxelinux_cfg', '/bin/pxelinux.cfg/hdt.cfg'),
+            'memtestPxelinux0Path' => (string) config('ipxe.tools.memtest86plus.pxelinux0_path', '/bin/pxelinux.0'),
+            'memtestPxelinuxCfg' => (string) config('ipxe.tools.memtest86plus.pxelinux_cfg', '/bin/pxelinux.cfg/memtest86plus.cfg'),
+        ];
     }
 
     /**

@@ -1745,3 +1745,268 @@ Un poste avec `status='protected'` qui termine une install Linux **conserve** so
 
 > Smoke automatisable : voir Story 3.1 et 3.2 § "Smoke test à exécuter quand VM up"
 > dans `_bmad-output/implementation-artifacts/3-1-ipxe-service-core.md`.
+
+---
+
+## Story 3.7 — Clonage et Maintenance
+
+**Date livraison** : 2026-05-22
+**Migrations à appliquer** : aucune (D11 — colonne `machine_boot_logs.action` VARCHAR(20) suffisante pour les nouvelles valeurs `ipxe_clonezilla`, `ipxe_gparted`, `ipxe_hdt`, `ipxe_memtest`)
+**Permissions requises** : aucune (firmware iPXE LAN-only — middleware `auth.v1.lan-only`)
+**Variables `.env` à vérifier** :
+- `IPXE_CLONEZILLA_ENABLED=true` (master switch clonezilla — défaut `true`)
+- `IPXE_CLONEZILLA_TIMEOUT_MS=10000` (timeout menu clonezilla en ms)
+- `IPXE_GPARTED_ENABLED=true` / `IPXE_HDT_ENABLED=true` / `IPXE_MEMTEST_ENABLED=true`
+- `IPXE_GPARTED_KERNEL=/bin/gparted/vmlinuz` — chemin kernel GParted relatif racine web
+- `IPXE_HDT_PXELINUX0=/bin/pxelinux.0` / `IPXE_HDT_CFG=/bin/pxelinux.cfg/hdt.cfg`
+- `IPXE_MEMTEST_PXELINUX0=/bin/pxelinux.0` / `IPXE_MEMTEST_CFG=/bin/pxelinux.cfg/memtest86plus.cfg`
+
+**Décisions ratifiées** : D1 410 Gone + iPXE body (firmware ne suit pas les 302), D2 idem factory_reset pour clonezilla restore, D3 paths binaires dans `config/ipxe.php` section `tools`, D4 valeurs distinctes boot_log (`ipxe_clonezilla`, `ipxe_gparted`, `ipxe_hdt`, `ipxe_memtest`), D5 `direct_legacy_routes: ^/ipxe/` conservé, D6 gparted/hdt/memtest86+ servis depuis racine web (pas `/ipxe/` prefix — chemin Apache catchall), D7 clonezilla non-batché (parité legacy), D8 enum `IpxeAdminAction` whitelist sécurité critique, D9 enum `IpxeMenuKind` alignement pattern 3.2/3.4/3.5, D10 cleanup catchall Epic 3 closure, D11 pas de migration, D12 regex route `[a-z0-9_]+` étendue (chiffres dans noms d'action), D13 catchall bloque `^ipxe/action/` avec 410 pour actions invalides
+
+### Section 16 — Story 3.7 — Clonage et Maintenance
+
+#### Prérequis VM (T0.6 actions Henri pré-smoke)
+
+> 3 points à valider AVANT le premier smoke test 3.7.
+
+1. **Binaires clonezilla disponibles** : `ls /var/www/sambaedu/clonezilla/vmlinuz` et `initrd.img` + `filesystem.squashfs`
+2. **Binaires GParted** : `ls /var/www/sambaedu/bin/gparted/vmlinuz` (si `IPXE_GPARTED_ENABLED=true`)
+3. **pxelinux.0 disponible** : `ls /var/www/sambaedu/bin/pxelinux.0` + cfg `hdt.cfg` / `memtest86plus.cfg`
+4. **Cache reset** : `php artisan config:cache && php artisan route:cache && php artisan view:cache`
+
+#### Scénario 3.7-1 — Handshake clonezilla-menu (sans paramètres)
+
+```bash
+# Depuis la VM ou LAN — GET sans mac/uuid
+curl -sS http://192.168.122.50/ipxe/clonezilla-menu
+```
+
+**Attendu** :
+- HTTP 200, `Content-Type: text/plain`
+- Body contient `#!ipxe`
+- Body contient `chain --replace --autofree clonezilla-menu##params`
+- Pas de menu complet (comportement handshake)
+
+#### Scénario 3.7-2 — Menu clonezilla complet (POST avec mac/uuid connu)
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/clonezilla-menu \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=11111111-1111-1111-1111-111111111111'
+```
+
+**Attendu** :
+- HTTP 200, `Content-Type: text/plain`
+- Body contient `#!ipxe`
+- Body contient `item --key l clonezilla_live`
+- Body contient `item --key s clonezilla_save`
+- Body contient `item --key r clonezilla_restore`
+- Body contient `item --key b retour`
+- Body contient `item --key x exit`
+- Body contient `chain --replace --autofree` vers `/ipxe/maintenance##params` (retour)
+
+#### Scénario 3.7-3 — Menu maintenance étendu (4 nouveaux items)
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/maintenance \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=11111111-1111-1111-1111-111111111111'
+```
+
+**Attendu** :
+- Body contient `item --key z clonezilla` (sous-menu clonezilla)
+- Body contient `item --key g gparted`
+- Body contient `item --key h hdt`
+- Body contient `item --key t memtest`
+- Body contient `chain --replace --autofree` vers `/ipxe/clonezilla-menu##params` (item z)
+- Body contient `chain --replace --autofree` vers `/ipxe/action/gparted##params` (item g)
+
+#### Scénario 3.7-4 — Action clonezilla_live
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/action/clonezilla_live \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=11111111-1111-1111-1111-111111111111'
+```
+
+**Attendu** :
+- HTTP 200
+- Body contient `kernel` + `clonezilla/vmlinuz`
+- Body contient `initrd` + `clonezilla/initrd.img`
+- Body contient `fetch=` + `clonezilla/filesystem.squashfs`
+- Body se termine par `boot`
+- `machine_boot_logs` : nouvelle ligne avec `action='ipxe_clonezilla'`, `initiated_by='ipxe:clonezilla_live'`
+
+#### Scénario 3.7-5 — Action clonezilla_save_sda1_sda2
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/action/clonezilla_save_sda1_sda2 \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=11111111-1111-1111-1111-111111111111'
+```
+
+**Attendu** :
+- HTTP 200
+- Body contient `saveparts savesda1 sda1` (commande ocs-sr sauvegarde)
+- Body contient `ocs_prerun="mount -t auto /dev/sda2 /home/partimag/"`
+- Boot log `action='ipxe_clonezilla'`, `initiated_by='ipxe:clonezilla_save_sda1_sda2'`
+
+#### Scénario 3.7-6 — Action clonezilla_restore_sda2_sda1
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/action/clonezilla_restore_sda2_sda1 \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=11111111-1111-1111-1111-111111111111'
+```
+
+**Attendu** :
+- HTTP 200
+- Body contient `restoreparts savesda1 sda1` (commande ocs-sr restauration)
+- Même noyau/initrd/filesystem que clonezilla_live (D2)
+- Boot log `action='ipxe_clonezilla'`
+
+#### Scénario 3.7-7 — Actions diagnostic (gparted, hdt, memtest86plus)
+
+```bash
+# GParted
+curl -sS -X POST http://192.168.122.50/ipxe/action/gparted \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=11111111-1111-1111-1111-111111111111'
+# HDT
+curl -sS -X POST http://192.168.122.50/ipxe/action/hdt \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=11111111-1111-1111-1111-111111111111'
+# Memtest86+
+curl -sS -X POST http://192.168.122.50/ipxe/action/memtest86plus \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=11111111-1111-1111-1111-111111111111'
+```
+
+**Attendu gparted** :
+- HTTP 200, body contient `gparted` + `filesystem.squashfs` + `vmlinuz` (depuis racine web, pas `/ipxe/`)
+- Boot log `action='ipxe_gparted'`
+
+**Attendu hdt** :
+- HTTP 200, body contient `set 209:string` + `pxelinux.cfg/hdt.cfg`
+- Body contient `chain --replace --autofree` vers `pxelinux.0`
+- Boot log `action='ipxe_hdt'`
+
+**Attendu memtest86plus** :
+- HTTP 200, body contient `pxelinux.cfg/memtest86plus.cfg`
+- Boot log `action='ipxe_memtest'`
+
+#### Scénario 3.7-8 — Catchall bloqué (routes legacy 3.7 répondent 410)
+
+```bash
+# Clonezilla legacy
+curl -sS -o /dev/null -w "%{http_code}" http://192.168.122.50/ipxe/clonezilla_menu.php
+curl -sS -o /dev/null -w "%{http_code}" http://192.168.122.50/ipxe/clonezilla.php
+curl -sS -o /dev/null -w "%{http_code}" http://192.168.122.50/ipxe/gparted.php
+curl -sS -o /dev/null -w "%{http_code}" http://192.168.122.50/ipxe/hdt.php
+curl -sS -o /dev/null -w "%{http_code}" http://192.168.122.50/ipxe/memtest86plus.php
+```
+
+**Attendu** : chaque commande retourne `410`
+- Body contient `#!ipxe` + message d'erreur explicite
+- Log `legacylog` contient `legacy.catchall.ipxe_gone` avec chemin et message
+
+#### Scénario 3.7-9 — Poste inconnu (menu clonezilla rendu quand même)
+
+```bash
+curl -sS -X POST http://192.168.122.50/ipxe/clonezilla-menu \
+  -d 'mac=ff:ff:ff:ff:ff:ff&uuid=ffffffff-ffff-ffff-ffff-ffffffffffff'
+```
+
+**Attendu** :
+- HTTP 200 (parité legacy clonezilla_menu.php — menu rendu même pour poste inconnu)
+- Body contient `#!ipxe` + `:menu`
+
+#### Scénario 3.7-10 — Non-régression factory_reset et actions existantes (3.2)
+
+```bash
+# Vérifier que les actions 3.2 ne sont pas cassées par les ajouts 3.7
+curl -sS -X POST http://192.168.122.50/ipxe/action/factory_reset \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=11111111-1111-1111-1111-111111111111'
+curl -sS -X POST http://192.168.122.50/ipxe/action/rescuecd \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=11111111-1111-1111-1111-111111111111'
+```
+
+**Attendu** :
+- factory_reset : `restoreparts savesda1 sda1` (identique à 3.2)
+- rescuecd : `sysresccd/boot/x86_64/vmlinuz`
+- Boot log `action='ipxe_action'` pour ces actions legacy (pas `ipxe_clonezilla`)
+
+> **Divergence intentionnelle D2 (post-review 3.7 #1)** : `factory_reset` (3.2)
+> et `clonezilla_restore_sda2_sda1` (3.7) partagent la **même cmdline iPXE**
+> (parité kernel garantie par le test architecture
+> `it_ensures_factory_reset_and_clonezilla_restore_have_same_kernel_cmdline`),
+> mais leurs labels boot_log divergent volontairement :
+>
+> | Endpoint                                          | `machine_boot_logs.action` |
+> | ------------------------------------------------- | -------------------------- |
+> | `/ipxe/action/factory_reset` (3.2)                | `ipxe_action`              |
+> | `/ipxe/action/clonezilla_restore_sda2_sda1` (3.7) | `ipxe_clonezilla`          |
+>
+> Permet de distinguer en audit quel chemin UX (menu factory_reset 3.2 vs
+> sous-menu clonezilla 3.7) a déclenché la même opération de restauration.
+> Le test non-régression
+> `IpxeActionEndpointTest::it_persists_ipxe_action_label_for_factory_reset_post_3_7`
+> gèle ce comportement.
+
+> **Audit fin étendu (post-review 3.7 #7)** : depuis les correctifs 2026-05-22,
+> `bootLogAction()` retourne des labels distincts pour les 16 cases install_*
+> (3.4) et install_win* (3.5) — exemples : `ipxe_deb_gnome`, `ipxe_ubuntu64`,
+> `ipxe_win10_perso`, `ipxe_nird`. Le test garde-fou
+> `IpxeAdminActionTest::it_ensures_all_boot_log_actions_fit_in_varchar_20`
+> bloque toute valeur > 20 chars. Toutes les valeurs respectent la limite
+> `machine_boot_logs.action` (varchar(20)). Auparavant tous ces cases étaient
+> indistinguables (`ipxe_action`) — désormais l'audit Loki/Grafana peut
+> ventiler par distribution / variant / version.
+
+#### Scénario 3.7-11 — Action format invalide (uppercase → 410)
+
+```bash
+curl -sS -o /dev/null -w "%{http_code}" -X POST http://192.168.122.50/ipxe/action/RESCUECD \
+  -d 'mac=aa:bb:cc:dd:ee:01&uuid=11111111-1111-1111-1111-111111111111'
+```
+
+**Attendu** :
+- HTTP 410 (catchall bloque `^ipxe/action/` après échec regex route `[a-z0-9_]+`)
+- Body contient `#!ipxe` + message erreur
+
+#### Compat postes legacy (post-review 3.7 #2)
+
+> Le pattern catchall `^ipxe/action/` (D10) est volontairement large : toute
+> URL `/ipxe/action/<x>` qui n'a pas matché la route native `[a-z0-9_]+`
+> retourne 410 Gone, **sans fallback vers le legacy**. Conséquence pour les
+> postes terrain :
+
+**Postes à risque** : firmwares iPXE buggés qui appendent un suffixe non-canonique
+(`/ipxe/action/clonezilla_live/`, `/ipxe/action/clonezilla_live;jsessionid=...`)
+ou postes très anciens NON-mis-à-jour 16.11 qui hardcodent une URL camelCase
+(`/ipxe/action/Rescuecd`). Tous tomberont sur le catchall 410 Gone — le boot
+échouera côté poste (firmware iPXE arrête sur la 410).
+
+**Smoke à valider avant prod** :
+
+```bash
+# Simuler un poste legacy non-mis-à-jour
+curl -sS -o /dev/null -w "%{http_code}\n" http://192.168.122.50/ipxe/action/Rescuecd
+# Attendu : 410 (avant 3.7 c'était 404 Laravel → catchall direct_legacy_routes → 200 legacy)
+
+curl -sS -o /dev/null -w "%{http_code}\n" http://192.168.122.50/ipxe/action/clonezilla_live/
+# Attendu : 410 (trailing slash non matché par la route native [a-z0-9_]+)
+```
+
+**Mitigation si régression terrain** : `IPXE_LEGACY_BLOCKED_FALLBACK=true` n'est PAS
+exposé en 3.7 — le seul rollback est d'éditer manuellement `config/sambaedu.php`
+pour commenter le pattern `^ipxe/action/`. Décision Henri post-prod si remontée.
+
+### Checklist smoke test VM (Story 3.7)
+
+- [ ] Scénario 3.7-1 (handshake clonezilla-menu) : 200 + chain##params
+- [ ] Scénario 3.7-2 (menu clonezilla complet POST) : 200 + 5 items (l/s/r/b/x)
+- [ ] Scénario 3.7-3 (menu maintenance étendu) : 200 + 4 nouveaux items (z/g/h/t)
+- [ ] Scénario 3.7-4 (action clonezilla_live) : 200 + kernel + initrd + boot log ipxe_clonezilla
+- [ ] Scénario 3.7-5 (action clonezilla_save) : 200 + saveparts + boot log ipxe_clonezilla
+- [ ] Scénario 3.7-6 (action clonezilla_restore) : 200 + restoreparts + boot log ipxe_clonezilla
+- [ ] Scénario 3.7-7 (actions diagnostic gparted/hdt/memtest) : 200 + chemin correct + boot log distinct
+- [ ] Scénario 3.7-8 (catchall bloqué routes legacy) : 410 + body iPXE
+- [ ] Scénario 3.7-9 (poste inconnu clonezilla-menu) : 200 + menu rendu
+- [ ] Scénario 3.7-10 (non-régression factory_reset/rescuecd) : 200 + cmdline inchangée
+- [ ] Scénario 3.7-11 (format invalide RESCUECD) : 410 gone
+
+> Smoke automatisable : voir Story 3.1 et 3.2 § "Smoke test à exécuter quand VM up"
+> dans `_bmad-output/implementation-artifacts/3-1-ipxe-service-core.md`.

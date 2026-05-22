@@ -427,4 +427,44 @@ return [
         // Nombre de rows historiques affichées dans la card "Historique".
         'history_limit' => (int) env('IPXE_ISO_HISTORY_LIMIT', 10),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Story 3.7 — Sous-menu Clonezilla (D8)
+    |--------------------------------------------------------------------------
+    */
+    'clonezilla' => [
+        'enabled' => filter_var(env('IPXE_CLONEZILLA_ENABLED', true), FILTER_VALIDATE_BOOL),
+        'menu_timeout_ms' => (int) env('IPXE_CLONEZILLA_TIMEOUT_MS', 10000),
+        'background_png' => env('IPXE_CLONEZILLA_BG_PNG', 'png/clonezilla.png'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Story 3.7 — Outils diagnostic (D8)
+    |--------------------------------------------------------------------------
+    | Chemins relatifs (depuis la racine Apache) des binaires des outils de
+    | diagnostic. Servis statiquement par Apache via catchall direct_legacy_routes.
+    | Si chemins divergent du defaut iso-legacy → adapter via .env.
+    |
+    | path iso-legacy SambaEdu, a valider VM Henri smoke test.
+    */
+    'tools' => [
+        'gparted' => [
+            'enabled' => filter_var(env('IPXE_GPARTED_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'kernel_path' => env('IPXE_GPARTED_KERNEL', '/bin/gparted/vmlinuz'),
+            'initrd_path' => env('IPXE_GPARTED_INITRD', '/bin/gparted/initrd.img'),
+            'filesystem_path' => env('IPXE_GPARTED_FILESYSTEM', '/bin/gparted/filesystem.squashfs'),
+        ],
+        'hdt' => [
+            'enabled' => filter_var(env('IPXE_HDT_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'pxelinux0_path' => env('IPXE_HDT_PXELINUX0', '/bin/pxelinux.0'),
+            'pxelinux_cfg' => env('IPXE_HDT_CFG', '/bin/pxelinux.cfg/hdt.cfg'),
+        ],
+        'memtest86plus' => [
+            'enabled' => filter_var(env('IPXE_MEMTEST_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'pxelinux0_path' => env('IPXE_MEMTEST_PXELINUX0', '/bin/pxelinux.0'),
+            'pxelinux_cfg' => env('IPXE_MEMTEST_CFG', '/bin/pxelinux.cfg/memtest86plus.cfg'),
+        ],
+    ],
 ];

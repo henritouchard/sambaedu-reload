@@ -727,7 +727,7 @@ Route::match(['GET', 'POST'], '/ipxe/action/{action}', [
     'handle',
 ])
     ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
-    ->where('action', '[a-z_]+')
+    ->where('action', '[a-z0-9_]+')
     ->name('ipxe.action')
     ->withoutMiddleware(['web']);
 
@@ -910,6 +910,27 @@ Route::match(['GET', 'POST'], '/ipxe/windows/action', [
 ])
     ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
     ->name('ipxe.windows.action')
+    ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
+| Story 3.7 — Clonage et Maintenance (D4)
+|--------------------------------------------------------------------------
+| Ajout d'1 endpoint LAN-only natif `/ipxe/clonezilla-menu` (port iso
+| `sambaedu/ipxe/clonezilla_menu.php`). Les 6 nouvelles actions (clonezilla
+| live/save/restore + gparted/hdt/memtest86plus) sont servies par l'endpoint
+| generique existant `/ipxe/action/{action}` (3.2) — la whitelist enum
+| `IpxeAdminAction` (+6 cases D2) est l'autorite finale.
+|
+| ORDRE STRICT : ce bloc DOIT rester AVANT le catchall ci-dessous.
+| Test garde-fou : `IpxeNamespaceTest::ipxe_3_7_routes_are_declared_before_catchall`.
+*/
+Route::match(['GET', 'POST'], '/ipxe/clonezilla-menu', [
+    \App\Ipxe\Http\Controllers\IpxeClonezillaMenuController::class,
+    'handle',
+])
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.clonezilla-menu')
     ->withoutMiddleware(['web']);
 
 /*

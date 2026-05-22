@@ -429,4 +429,122 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
             . 'doit être déclarée AVANT le catchall dans routes/web.php.',
         );
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.7 — D10 / AC7.1 / AC7.2 — cleanup final catchall Epic 3.
+     * Les routes iPXE legacy migreees 3.1-3.7 retournent 410 Gone.
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_serves_ipxe_clonezilla_menu_natively_not_via_catchall(): void
+    {
+        // La route native /ipxe/clonezilla-menu (3.7) ne doit pas passer par le catchall.
+        $countBefore = \App\Models\LegacyCatchallLog::query()->count();
+
+        $this->get('/ipxe/clonezilla-menu');
+
+        self::assertSame(
+            $countBefore,
+            \App\Models\LegacyCatchallLog::query()->count(),
+            '/ipxe/clonezilla-menu (3.7) ne doit pas passer par le catchall.',
+        );
+    }
+
+    #[Test]
+    public function it_blocks_ipxe_clonezilla_menu_php_with_410_gone(): void
+    {
+        // AC7.2 — Q-1 Henri = 410 Gone + corps iPXE pour les routes legacy migreees.
+        // block_migrated_routes=true (defaut) doit intercepter ces requetes.
+        Config::set('sambaedu.block_migrated_routes', true);
+
+        $response = $this->get('/ipxe/clonezilla_menu.php');
+
+        self::assertSame(
+            410,
+            $response->status(),
+            '/ipxe/clonezilla_menu.php (legacy) doit retourner 410 Gone (D10 Q-1 Henri).',
+        );
+        self::assertStringContainsString('#!ipxe', (string) $response->getContent());
+    }
+
+    #[Test]
+    public function it_blocks_ipxe_clonezilla_php_with_410_gone(): void
+    {
+        Config::set('sambaedu.block_migrated_routes', true);
+
+        $response = $this->get('/ipxe/clonezilla.php');
+
+        self::assertSame(410, $response->status());
+        self::assertStringContainsString('#!ipxe', (string) $response->getContent());
+    }
+
+    #[Test]
+    public function it_blocks_ipxe_gparted_php_with_410_gone(): void
+    {
+        Config::set('sambaedu.block_migrated_routes', true);
+
+        $response = $this->get('/ipxe/gparted.php');
+
+        self::assertSame(410, $response->status());
+        self::assertStringContainsString('#!ipxe', (string) $response->getContent());
+    }
+
+    #[Test]
+    public function it_blocks_ipxe_hdt_php_with_410_gone(): void
+    {
+        Config::set('sambaedu.block_migrated_routes', true);
+
+        $response = $this->get('/ipxe/hdt.php');
+
+        self::assertSame(410, $response->status());
+        // Post-review #13 — cohérence couverture body iPXE iso autres tests blocked.
+        self::assertStringContainsString('#!ipxe', (string) $response->getContent());
+    }
+
+    #[Test]
+    public function it_blocks_ipxe_memtest86plus_php_with_410_gone(): void
+    {
+        Config::set('sambaedu.block_migrated_routes', true);
+
+        $response = $this->get('/ipxe/memtest86plus.php');
+
+        self::assertSame(410, $response->status());
+        // Post-review #13 — cohérence couverture body iPXE iso autres tests blocked.
+        self::assertStringContainsString('#!ipxe', (string) $response->getContent());
+    }
+
+    #[Test]
+    public function it_blocks_ipxe_admin_php_with_410_gone(): void
+    {
+        Config::set('sambaedu.block_migrated_routes', true);
+
+        $response = $this->get('/ipxe/admin.php');
+
+        self::assertSame(410, $response->status());
+        self::assertStringContainsString('#!ipxe', (string) $response->getContent());
+    }
+
+    #[Test]
+    public function it_blocks_ipxe_maintenance_php_with_410_gone(): void
+    {
+        Config::set('sambaedu.block_migrated_routes', true);
+
+        $response = $this->get('/ipxe/maintenance.php');
+
+        self::assertSame(410, $response->status());
+        // Post-review #13 — cohérence couverture body iPXE iso autres tests blocked.
+        self::assertStringContainsString('#!ipxe', (string) $response->getContent());
+    }
+
+    #[Test]
+    public function it_blocks_ipxe_actions_clonezilla_live_php_with_410_gone(): void
+    {
+        Config::set('sambaedu.block_migrated_routes', true);
+
+        $response = $this->get('/ipxe/actions/clonezilla_live.php');
+
+        self::assertSame(410, $response->status());
+        // Post-review #13 — cohérence couverture body iPXE iso autres tests blocked.
+        self::assertStringContainsString('#!ipxe', (string) $response->getContent());
+    }
 }

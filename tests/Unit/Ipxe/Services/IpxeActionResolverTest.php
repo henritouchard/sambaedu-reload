@@ -349,6 +349,62 @@ class IpxeActionResolverTest extends TestCase
         self::assertStringContainsString('debian-installer', $body);
     }
 
+    /**
+     * Post-review #5 — cohérence `resolveServerBaseUrl()` entre `IpxeService`
+     * et `IpxeActionResolver`. Si Henri pose `IPXE_SE4FS_URL=http://proxy.lan`
+     * (ou `config('ipxe.se4fs_url')`), les deux résolveurs doivent retourner
+     * la MÊME URL — sinon les templates des outils diagnostic (gparted, hdt,
+     * memtest) auraient des chemins kernel cassés en prod.
+     *
+     * On exerce le comportement via `IpxeActionResolver::resolve()` (la
+     * propriété `serverBaseUrl` apparaît dans `gparted.blade.php` ligne
+     * `kernel http://proxy.lan/bin/gparted/...`), et on observe le préfixe
+     * URL. La cohérence côté `IpxeService` est garantie par lecture de la
+     * MÊME clé `ipxe.se4fs_url`.
+     */
+    #[Test]
+    public function it_uses_canonical_ipxe_se4fs_url_for_server_base_url(): void
+    {
+        Config::set('ipxe.se4fs_url', 'http://proxy.lan');
+        Config::set('ipxe.actions.server_base_url', ''); // legacy clé vide.
+
+        $request = $this->makeRequest([
+            'mac' => 'aa:bb:cc:dd:ee:ff',
+            'uuid' => '12345678-1234-1234-1234-aaaa00000000',
+        ]);
+
+        $body = $this->resolver->resolve(IpxeAdminAction::Gparted, null, $request);
+
+        self::assertStringContainsString(
+            'http://proxy.lan/',
+            $body,
+            '`IpxeActionResolver` doit honorer `ipxe.se4fs_url` (clé canonique unifiée — fix review #5).',
+        );
+        // Sanity : on ne tombe pas sur le fallback `http://se4fs`.
+        self::assertStringNotContainsString('http://se4fs/', $body);
+    }
+
+    /**
+     * Post-review #5 — fallback deprecated `ipxe.actions.server_base_url`
+     * tolère encore les déploiements qui auraient configuré l'ancienne clé
+     * (compat descendante). À retirer en Phase 3.
+     */
+    #[Test]
+    public function it_falls_back_to_legacy_actions_server_base_url_when_canonical_empty(): void
+    {
+        Config::set('ipxe.se4fs_url', '');
+        Config::set('ipxe.actions.server_base_url', 'http://legacy-proxy.lan');
+
+        $request = $this->makeRequest([
+            'mac' => 'aa:bb:cc:dd:ee:ff',
+            'uuid' => '12345678-1234-1234-1234-aaaa00000000',
+        ]);
+
+        $body = $this->resolver->resolve(IpxeAdminAction::Gparted, null, $request);
+
+        self::assertStringContainsString('http://legacy-proxy.lan/', $body);
+    }
+
     #[Test]
     public function it_renders_install_win11_template_with_all_7_blade_files(): void
     {

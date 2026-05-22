@@ -28,6 +28,12 @@
     <php>
         <server name="APP_ENV" value="testing"/>
         <env name="APP_ENV" value="testing"/>
+        <!-- TEST KEY ONLY — NEVER use in production.
+             Test stability requires a deterministic APP_KEY in CI/local (avoids
+             EncrypterMissingKeyException when running tests without `.env`).
+             Cette clé ne déchiffre AUCUN secret de prod. Ne jamais la copier
+             dans `.env` ni dans un environnement réel. — Post-review 3.7 #6. -->
+        <env name="APP_KEY" value="base64:ffV+ltRrvfh14I7SufozBkRu/+HIvXwDmmJDoGCbbS4="/>
         <env name="APP_CONFIG_CACHE" value="bootstrap/cache/config-testing.php"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_DRIVER" value="array"/>

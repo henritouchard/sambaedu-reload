@@ -11,6 +11,16 @@ item --gap -- ------------------------------------------------------------------
 item --key c rescuecd (c) Utilisation de SystemRescueCD
 item --key w winpe (w) Reparation Windows (WinPE)
 item --key f factory_reset (f) ATTENTION - Restauration usine (efface le disque)
+item --key z clonezilla (z) Sous-menu Clonezilla (live/sauvegarde/restauration)
+@if(config('ipxe.tools.gparted.enabled', true))
+item --key g gparted (g) GParted Live (partitionnement)
+@endif
+@if(config('ipxe.tools.hdt.enabled', true))
+item --key h hdt (h) Hardware Detection Tool (diagnostic materiel)
+@endif
+@if(config('ipxe.tools.memtest86plus.enabled', true))
+item --key t memtest (t) Memtest86+ (test memoire)
+@endif
 item --key s shell (s) iPXE shell
 item --key r retour (r) Retour au menu admin
 item --key x exit (x) Boot sur disque dur
@@ -24,6 +34,18 @@ chain --replace --autofree {{ $serverBaseUrl }}/ipxe/action/winpe##params
 
 :factory_reset
 chain --replace --autofree {{ $serverBaseUrl }}/ipxe/action/factory_reset##params
+
+:clonezilla
+chain --replace --autofree {{ $serverBaseUrl }}/ipxe/clonezilla-menu##params
+
+:gparted
+chain --replace --autofree {{ $serverBaseUrl }}/ipxe/action/gparted##params
+
+:hdt
+chain --replace --autofree {{ $serverBaseUrl }}/ipxe/action/hdt##params
+
+:memtest
+chain --replace --autofree {{ $serverBaseUrl }}/ipxe/action/memtest86plus##params
 
 :retour
 chain --replace --autofree {{ $serverBaseUrl }}/ipxe/admin##params
