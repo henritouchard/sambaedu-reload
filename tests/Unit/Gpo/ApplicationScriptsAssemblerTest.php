@@ -402,6 +402,15 @@ class ApplicationScriptsAssemblerTest extends TestCase
         // sans interférence avec le cache immutable (fix review 17.2 #4).
         \Illuminate\Support\Env::enablePutenv();
 
+        // EnvConstAdapter ($_ENV) et ServerConstAdapter ($_SERVER) ont priorité
+        // sur PutenvAdapter dans le repository Laravel. Si le `.env` chargé au
+        // bootstrap a positionné ces clés (même vides), $_ENV='' shadow le
+        // putenv() ci-dessous → on les neutralise pour vraiment exercer le
+        // fallback env du resolver.
+        foreach (['SAMBAEDU_GLPI_URL', 'SAMBAEDU_NO_INTERNET', 'SAMBAEDU_DHCP_RESEAU', 'SAMBAEDU_DHCP_MASQUE'] as $k) {
+            unset($_ENV[$k], $_SERVER[$k]);
+        }
+
         putenv('SAMBAEDU_GLPI_URL=https://glpi-env.example.com');
         putenv('SAMBAEDU_NO_INTERNET=pasInternetEnv');
         putenv('SAMBAEDU_DHCP_RESEAU=10.0.0.0');
