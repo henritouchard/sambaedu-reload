@@ -1,0 +1,2 @@
+REM pour les applications portables installees avec winget, il faut reset les acls sur le dossier d'install
+IF EXIST "%ProgramFiles%\WinGet\Packages" (icacls "%ProgramFiles%\WinGet\Packages\*" /reset /T /C /Q)

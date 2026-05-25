@@ -1,0 +1,11 @@
+REM bureau et DL sur le serveur se4fs
+REM creation des dossiers
+IF NOT EXIST "\\%se4fs%\users\%USERNAME%\Telechargements" (MD "\\%se4fs%\users\%USERNAME%\Telechargements")
+IF NOT EXIST "\\%se4fs%\users\%USERNAME%\Bureau" (MD "\\%se4fs%\users\%USERNAME%\Bureau")
+
+REM conf des dossiers
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v Downloads /d "\\%se4fs%\users\%USERNAME%\Telechargements" /t REG_EXPAND_SZ /f
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v Desktop /d "\\%se4fs%\users\%USERNAME%\Bureau" /t REG_EXPAND_SZ /f
+
+REM cache les .desktop
+attrib.exe +H "\\%se4fs%\users\%USERNAME%\Bureau\*.desktop"

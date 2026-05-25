@@ -1,0 +1,3 @@
+REM Desactivation machins barre des taches
+reg.exe add "HKCU\Software\Microsoft\Windows\CurrentVersion\Feeds" /v "ShellFeedsTaskbarViewMode" /d 2 /T REG_DWORD /F
+reg.exe add "HKCU\SOFTWARE\Policies\Microsoft\Windows\Windows Feeds" /v "EnableFeeds" /d 0 /T REG_DWORD /F

@@ -1,0 +1,19 @@
+echo "Mise en place du fond d'ecran"
+
+#until systemctl --user is-active gnome-session.target; do
+#    sleep 1
+#done
+echo "wallpaper gnome"
+file=$(dbus-launch gsettings get org.gnome.desktop.background picture-uri-dark | sed "s|'file:///\(.*\)'|\1|")
+machine=$(hostname)
+curl -s -o /home/$USER/.config/wallpaper-$machine.jpg -F "action=wallpaper" -F "id=$id" http://###_SE4FS_NAME_###.###_DOMAIN_###/gpo/wallpaper_out.php
+curl -s -o /home/$USER/.config/wallpaper-veyon.jpg -F "action=veyon" -F "id=$id" http://###_SE4FS_NAME_###.###_DOMAIN_###/gpo/wallpaper_out.php
+
+dbus-launch gsettings set org.gnome.desktop.background picture-options 'stretched' 2>&1
+
+if [ "$XDG_SESSION_DESKTOP" == "mate" ]; then
+    curl -s -o /home/$USER/.config/wallpaper-$machine.jpg -F "action=wallpaper" -F "id=$id" http://###_SE4FS_NAME_###.###_DOMAIN_###/gpo/wallpaper_out.php
+    [ -f "/home/$USER/.config/wallpaper.jpg" ] && dbus-launch gsettings set org.mate.background picture-filename /home/$USER/.config/wallpaper.jpg
+    gsettings set org.mate.background picture-options 'stretched'
+fi
+# fin de la configuration du fond d'écran

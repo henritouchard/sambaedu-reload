@@ -1,0 +1,3 @@
+echo "mise en place des raccourcis de logon"
+scripts=$(/usr/bin/curl -s -F "id=${id}" -F "action=logon" -F "os=linux" http://###_SE4FS_NAME_###.###_DOMAIN_###/gpo/shortcuts_out.php)
+eval "$scripts"

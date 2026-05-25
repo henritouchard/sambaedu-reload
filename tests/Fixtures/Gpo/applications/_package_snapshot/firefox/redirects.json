@@ -1,0 +1,19 @@
+{
+	"Firefox": {
+		"app": "Firefox",
+		"excludes": [
+			"port_perdir",
+			"portables"
+		],
+		"link": "AppData\\Roaming\\Mozilla\\Firefox\\sambaedu.default",
+		"server": ".mozilla\\firefox\\sambaedu.default"
+	},
+	"Firefox_local": {
+		"app": "Firefox",
+		"includes": [
+			"port_perdir",
+			"portables"
+		],
+		"dest": "AppData\\Roaming\\Mozilla\\Firefox\\sambaedu.default"
+	}
+}

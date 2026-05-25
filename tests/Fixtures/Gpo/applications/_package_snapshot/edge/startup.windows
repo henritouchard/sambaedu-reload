@@ -1,0 +1,7 @@
+REM desactivation de l'assistant de demarrage Edge
+reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v "HideFirstRunExperience" /d 1 /t REG_DWORD /f
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v HubsSidebarEnabled /d 0 /t REG_DWORD /f
+REG ADD "HKLM\SOFTWARE\Policies\Microsoft\Edge\Recommended" /V "ScarewareBlockerProtectionEnabled" /D 0 /T REG_DWORD /F
+REG ADD "HKLM\SOFTWARE\Policies\Microsoft\Edge\Recommended" /V "GenAILocalFoundationalModelSettings" /D 1 /T REG_DWORD /F
+REM Edge Cache en local HKLM
+reg.exe add "HKLM\Software\Policies\Microsoft\Edge" /v "DiskCacheDir" /d "${local_app_data}\EdgeCache" /t REG_EXPAND_SZ /f

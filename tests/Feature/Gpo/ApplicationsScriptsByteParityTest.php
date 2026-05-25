@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Gpo;
 
-use App\Gpo\Services\ApplicationScriptsAssembler;
 use App\Gpo\Services\ApplicationTemplatesScanner;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Concerns\AssertsScriptParity;
 use Tests\TestCase;
 
 /**
@@ -23,129 +23,30 @@ use Tests\TestCase;
  * Capturées sur VM legacy (paquet `sambaedu` 4.17.285) le 2026-05-21.
  * Procédure de (re)capture : `tests/Fixtures/Gpo/applications/README.md`.
  *
- * **Normalisation** :
- *  - `SET DOMAINSID=<valeur>` → `SET DOMAINSID=__SID__`
- *    (le natif génère DOMAINSID vide, le legacy appelle `net getdomainsid` —
- *    divergence documentée dans `ApplicationScriptsAssembler::headerScripts` ligne ~306)
- *  - Aucune autre normalisation n'est autorisée (CR/LF, charset, séparateurs préservés).
+ * **Post-review 17.4 P6** : le helper de parité (`assertScriptParity()`,
+ * `buildLineDiff()`, `configureForFixtures()`, `makeAssembler()`) est désormais
+ * consommé depuis le trait partagé `Tests\Concerns\AssertsScriptParity` (plus de
+ * copie inline divergente). Les normalizers `id` additionnels du trait (header
+ * bash + `-F "id=…"`) sont **no-op** sur 17.2 : l'`$info['id']` est figé à la
+ * valeur de capture, donc la même valeur est normalisée des deux côtés
+ * (expected == actual avant normalisation pour ces tokens).
  *
- * **Prérequis** :
- *  - Les scripts `/usr/share/sambaedu/applications/` doivent être présents sur la VM.
- *  - Config `sambaedu.*` doit être positionnée via `config()->set()` dans les tests.
+ * **Source des scripts** : 17.2 reste VM-only (`/usr/share/sambaedu/applications/`,
+ * groupe `requires-fixture-capture`). Le snapshot portable P3 est exploité par
+ * `ApplicationsScriptsCriticalParityTest` (17.4) uniquement.
  *
  * Si les fixtures ne sont pas présentes (ex. CI sans VM), les tests sont skippés
  * avec `markTestSkipped` (groupe `requires-fixture-capture`).
- *
- * **Comment régénérer les fixtures** : voir `tests/Fixtures/Gpo/applications/README.md`.
  */
 #[Group('requires-fixture-capture')]
 class ApplicationsScriptsByteParityTest extends TestCase
 {
+    use AssertsScriptParity;
+
     private const FIXTURES_DIR = __DIR__ . '/../../Fixtures/Gpo/applications';
 
     private const PACKAGE_PATH = '/usr/share/sambaedu/applications/';
     private const LOCAL_PATH   = '/etc/sambaedu/applications/';
-
-    /**
-     * Normalise `SET DOMAINSID=<valeur>` → `SET DOMAINSID=__SID__`
-     * pour absorber la divergence natif (vide) vs legacy (valeur réelle).
-     *
-     * @param list<array{pattern: string, replacement: string}> $extra
-     */
-    private function assertScriptParity(string $expected, string $actual, array $extra = []): void
-    {
-        $normalizers = array_merge(
-            [
-                // DOMAINSID — valeur lue via `net getdomainsid` dans le legacy ;
-                // le natif génère une string vide. Une regex unique capture toutes les valeurs.
-                ['pattern' => '/SET DOMAINSID=[^\r\n]*/', 'replacement' => 'SET DOMAINSID=__SID__'],
-            ],
-            $extra,
-        );
-
-        $normExpected = $expected;
-        $normActual   = $actual;
-
-        foreach ($normalizers as $n) {
-            $normExpected = preg_replace($n['pattern'], $n['replacement'], $normExpected);
-            $normActual   = preg_replace($n['pattern'], $n['replacement'], $normActual);
-        }
-
-        if ($normExpected !== $normActual) {
-            $diff = $this->buildLineDiff($normExpected, $normActual);
-            self::fail("Script parity failed.\n\nDiff (expected vs actual):\n" . $diff);
-        }
-
-        self::assertSame($normExpected, $normActual);
-    }
-
-    /**
-     * Génère un diff ligne-par-ligne lisible pour faciliter le debug.
-     */
-    private function buildLineDiff(string $expected, string $actual): string
-    {
-        $expLines = explode("\n", $expected);
-        $actLines = explode("\n", $actual);
-        $maxLines = max(count($expLines), count($actLines));
-
-        $diff = '';
-        $diffs = 0;
-        for ($i = 0; $i < $maxLines; $i++) {
-            $e = $expLines[$i] ?? '[EOF]';
-            $a = $actLines[$i] ?? '[EOF]';
-            if ($e !== $a) {
-                $diff .= sprintf("Line %d:\n  expected: %s\n  actual  : %s\n", $i + 1, var_export($e, true), var_export($a, true));
-                $diffs++;
-                if ($diffs >= 20) {
-                    $diff .= "... (diff truncated after 20 lines)\n";
-                    break;
-                }
-            }
-        }
-
-        return $diff ?: '(no line diff found — possible binary difference)';
-    }
-
-    /**
-     * Prépare l'assembleur natif avec la configuration iso-legacy
-     * (identique aux valeurs injectées dans `$config` lors de la capture fixtures).
-     */
-    private function configureForFixtures(): void
-    {
-        config([
-            // Valeurs du legacy sambaedu.conf sur la VM de test
-            'sambaedu.se4fs_name'           => 'se4fs',
-            'sambaedu.se4fs_ip'             => '192.168.122.50',
-            'sambaedu.domain'               => 'localdev.fr',
-            'sambaedu.uai'                  => '0000000x',
-            'sambaedu.samba_domain'         => 'LOCALDEV',
-            'sambaedu.se4ad_ip'             => '192.168.122.60',
-            'sambaedu.se4install_name'      => 'se4install',
-            // Valeurs injectées pour couvrir les 8 nouvelles clés (Story 17.2)
-            'sambaedu.windows.adminse_name' => 'adminse',
-            'sambaedu.glpi_url'             => 'http://glpi.test.fr',
-            'sambaedu.no_internet'          => 'pasInternet',
-            'sambaedu.dhcp_reseau'          => '192.168.1.0',
-            'sambaedu.dhcp_masque'          => '255.255.255.0',
-            'sambaedu.cloud_perso_name'     => 'Mes Documents',
-            'sambaedu.netlogon_path'        => '/var/lib/samba/sysvol',
-            'sambaedu.wpkg.base_url'        => '',
-            // Wrapper désactivé pour les tests de parité (flag false = iso-legacy)
-            'sambaedu.scripts.logging.enabled' => false,
-        ]);
-    }
-
-    /**
-     * Crée un Assembler natif avec cache whitelist réinitialisé.
-     */
-    private function makeAssembler(): ApplicationScriptsAssembler
-    {
-        $assembler = new ApplicationScriptsAssembler();
-        $ref = new \ReflectionProperty($assembler, 'substitutionsCache');
-        $ref->setValue($assembler, null);
-
-        return $assembler;
-    }
 
     /**
      * AC2.2 — Scénario 1 : Windows logon utilisateur standard.
@@ -193,7 +94,7 @@ class ApplicationsScriptsByteParityTest extends TestCase
 
         $out      = $assembler->assemble($info, $scripts);
         $actual   = $out['cmd'];
-        $expected = file_get_contents($fixture);
+        $expected = (string) file_get_contents($fixture);
 
         $this->assertScriptParity($expected, $actual);
     }
@@ -244,7 +145,7 @@ class ApplicationsScriptsByteParityTest extends TestCase
 
         $out      = $assembler->assemble($info, $scripts);
         $actual   = $out['cmd'];
-        $expected = file_get_contents($fixture);
+        $expected = (string) file_get_contents($fixture);
 
         $this->assertScriptParity($expected, $actual);
     }
@@ -294,7 +195,7 @@ class ApplicationsScriptsByteParityTest extends TestCase
 
         $out      = $assembler->assemble($info, $scripts);
         $actual   = $out['bash'];
-        $expected = file_get_contents($fixture);
+        $expected = (string) file_get_contents($fixture);
 
         $this->assertScriptParity($expected, $actual);
     }

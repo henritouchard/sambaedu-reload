@@ -1,0 +1,34 @@
+echo "Mise en place profil utilisateur firefox pour Linux"
+if [ ! -d "/tmp/cacheFirefox/$USER" ]; then
+   mkdir -p "/tmp/cacheFirefox/$USER"
+fi
+
+chmod 700 "/tmp/cacheFirefox/$USER"
+
+if [ ! -d "~/.mozilla/firefox/sambaedu.default" ]; then
+   mkdir -p ~/.mozilla/firefox/sambaedu.default
+fi
+
+# a faire avec une page php ?
+build="3B6073811A6ABF12"
+
+echo "[Profile0]
+Name=sambaedu
+IsRelative=1
+Path=sambaedu.default
+
+[General]
+StartWithLastProfile=1
+Version=2
+
+[Install${build}]
+Default=sambaedu.default
+Locked=1
+" > ~/.mozilla/firefox/profiles.ini
+
+echo "[${build}]
+Default=sambaedu.default
+Locked=1
+" > ~/.mozilla/firefox/installs.ini
+
+# fin de la configuration de firefox

@@ -1,0 +1,19 @@
+{
+	"Edge": {
+		"app": "Edge",
+		"excludes": [
+			"port_perdir",
+			"portables"
+		],
+		"link": "AppData\\Local\\Microsoft\\Edge",
+		"dest": "AppData\\Roaming\\Microsoft\\Edge",
+		"server": ".config\\Edge"
+	},
+	"Edge_local": {
+		"app": "Edge",
+		"includes": [
+			"port_perdir",
+			"portables"
+		]
+	}
+}

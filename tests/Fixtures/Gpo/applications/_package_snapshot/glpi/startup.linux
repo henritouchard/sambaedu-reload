@@ -1,0 +1,3 @@
+echo "server = ###_GLPI_URL_###
+tag = ###_UAI_###
+" > /etc/glpi-agent/conf.d/local.cfg

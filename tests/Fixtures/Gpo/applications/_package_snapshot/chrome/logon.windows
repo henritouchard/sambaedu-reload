@@ -1,0 +1,2 @@
+REM Chrome Cache en local HKCU
+reg.exe add "HKCU\Software\Google\Chrome" /v "DiskCacheDir" /d "${local_app_data}\GoogleCache" /t REG_EXPAND_SZ /f

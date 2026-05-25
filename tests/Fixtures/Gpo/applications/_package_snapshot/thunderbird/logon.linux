@@ -1,0 +1,28 @@
+echo "Mise en place profil utilisateur thunderbird pour Linux"
+if [ ! -d "~/.thunderbird/Profiles/sambaedu.default" ]; then
+    mkdir -p ~/.thunderbird/Profiles/sambaedu.default
+fi
+
+# a faire avec une page php ?
+build="FDC34C9F024745EB"
+
+echo "[Profile0]
+Name=sambaedu
+IsRelative=1
+Path=Profiles/sambaedu.default
+
+[General]
+StartWithLastProfile=1
+Version=2
+
+[Install${build}]
+Default=Profiles/sambaedu.default
+Locked=1
+" > ~/.thunderbird/profiles.ini
+
+echo "[${build}]
+Default=Profiles/sambaedu.default
+Locked=1
+" > ~/.thunderbird/installs.ini
+
+# fin de la configuration de thunderbird

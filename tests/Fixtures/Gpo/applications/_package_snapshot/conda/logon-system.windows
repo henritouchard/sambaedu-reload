@@ -1,0 +1,4 @@
+IF EXIST "%PROGRAMDATA%\Anaconda3\" (
+    IF NOT EXIST "\\%SE4FS%\users\%USERLOGIN%\.conda\" (MD "\\%SE4FS%\users\%USERLOGIN%\.conda\")
+    IF NOT EXIST "%HOMEPATH%\.conda\" (MKLINK /D "%HOMEPATH%\.conda\" "\\%SE4FS%\users\%USERLOGIN%\.conda\")
+)

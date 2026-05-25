@@ -1,0 +1,56 @@
+{
+	"policies": {
+		"AppAutoUpdate": false,
+		"BlockAboutAddons": true,
+		"DisplayBookmarksToolbar": true,
+		"Bookmarks": [
+			{
+				"Title": "Sully",
+				"URL": "http://www.clg-sully-rosny.ac-versailles.fr/",
+				"Favicon": "http://www.clg-sully-rosny.ac-versailles.fr/plugins/scolaspip_4_0/favicon.ico",
+				"Placement": "toolbar"
+			},
+			{
+				"Title": "ENT",
+				"URL": "https://ozecollege.yvelines.fr/",
+				"Favicon": "https://ozecollege.yvelines.fr/YVELINESNUM/public/share/oze_v16/favicon.png",
+				"Placement": "toolbar"
+			}
+		],
+		"SearchEngines": {
+			"Default": "DuckDuckGo",
+			"Add": [
+				{
+					"Name": "DuckDukGo",
+					"URLTemplate": "https://duckduckgo.com/?q={searchTerms}",
+					"IconURL": "https://duckduckgo.com/favicon.ico",
+					"PostData": "name=value&q={searchTerms}"
+				},
+				{
+					"Name": "Vikidia",
+					"URLTemplate": "https://fr.vikidia.org/?q={searchTerms}",
+					"IconURL": "https://fr.vikidia.org/favicon.ico",
+					"PostData": "name=value&q={searchTerms}"
+				},
+				{
+					"Name": "CNTLR",
+					"URLTemplate": "https://www.cnrtl.fr/",
+					"IconURL": "https://www.cnrtl.fr//favicon.ico",
+					"PostData": "name=value&q={searchTerms}"
+				}
+			],
+			"Remove": [
+				"Google",
+				"Bing",
+				"Amazon.fr",
+				"eBay",
+				"Qwant"
+			]
+		},
+		"Homepage": {
+			"URL": "http://www.clg-sully-rosny.ac-versailles.fr/",
+			"Locked": true,
+			"StartPage": "homepage"
+		}
+	}
+}

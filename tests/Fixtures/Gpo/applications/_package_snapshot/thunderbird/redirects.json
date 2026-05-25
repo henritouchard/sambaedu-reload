@@ -1,0 +1,19 @@
+{
+	"thunderbird": {
+		"app": "thunderbird",
+		"excludes": [
+			"port_perdir",
+			"portables"
+		],
+		"link": "AppData\\Roaming\\Thunderbird\\sambaedu.default",
+		"server": ".thunderbird\\Profiles\\sambaedu.default"
+	},
+	"thunderbird_local": {
+		"app": "thunderbird",
+		"includes": [
+			"port_perdir",
+			"portables"
+		],
+		"dest": "AppData\\Roaming\\Thunderbird\\sambaedu.default"
+	}
+}

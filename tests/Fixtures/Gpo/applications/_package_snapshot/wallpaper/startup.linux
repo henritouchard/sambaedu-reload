@@ -1,0 +1,24 @@
+echo "Mise en place du splash"
+if [ ! -d "/usr/share/plymouth/themes/sambaedu" ]; then
+    mkdir -p /usr/share/plymouth/themes/sambaedu
+fi
+/usr/bin/curl -o /usr/share/plymouth/themes/sambaedu/lockscreen.png -F "action=lockscreen" -F "format=png" -F "id=$id" http://###_SE4FS_NAME_###.###_DOMAIN_###/gpo/wallpaper_out.php || true
+if [ -d /run/ltsp/client ]; then
+    /usr/share/sambaedu/scripts/set-gdm-wallpaper.sh /usr/share/plymouth/themes/sambaedu/lockscreen.png || true
+fi
+
+h=$(identify -format "%#" /usr/share/plymouth/themes/sambaedu/lockscreen.png)
+if [ "$(cat /etc/sambaedu/applications/lockscreen.hash)" != "$h" ] ; then
+    echo $h > "/etc/sambaedu/applications/lockscreen.hash"
+    # md5sum  /usr/share/plymouth/themes/sambaedu/lockscreen.png > "/etc/sambaedu/applications/lockscreen.md5"
+    plymouth-set-default-theme -R sambaedu || true
+    sed -i "s!^#background=.*$!background=/usr/share/plymouth/themes/sambaedu/lockscreen.png!" /etc/lightdm/lightdm-gtk-greeter.conf || true
+    /usr/share/sambaedu/scripts/set-gdm-wallpaper.sh /usr/share/plymouth/themes/sambaedu/lockscreen.png || true
+    # conf splashscreen
+    grep -q "^GRUB_TIMEOUT=5" /etc/default/grub && sed -i "s/^GRUB_TIMEOUT=5/GRUB_TIMEOUT=0/" /etc/default/grub || true
+    grep -q "quiet splash" /etc/default/grub || sed -i "s/quiet/quiet splash/" /etc/default/grub || true
+    grep -q "GRUB_GFXMODE=1024x786" /etc/default/grub || echo "GRUB_GFXMODE=1024x786" >> /etc/default/grub || true
+    grep -q "GRUB_BACKGROUND=" /etc/default/grub || echo "GRUB_BACKGROUND=\"/usr/share/plymouth/themes/sambaedu/lockscreen.png\"" >> /etc/default/grub || true
+    update-grub
+fi
+# fin de la configuration du splash

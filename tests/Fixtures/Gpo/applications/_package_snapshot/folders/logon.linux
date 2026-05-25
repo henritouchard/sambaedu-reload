@@ -1,0 +1,15 @@
+echo "Configuration des dossier et du bureau"
+
+# xdg-mime default nemo.desktop inode/directory
+
+# effacement des bookmarks de nemo si besoin
+if grep -q "Images" ~/.config/gtk-3.0/bookmarks > /dev/null 2>&1; then
+ rm -f ~/.config/gtk-3.0/bookmarks
+echo "file:///home/$USER/Docs
+file:///home/$USER/Telechargements
+file:///home/$USER/Musique
+file:///home/$USER/Photos
+file:///home/$USER/Vid%C3%A9os
+">~/.config/gtk-3.0/bookmarks
+fi
+# fin de la configuration du bureau

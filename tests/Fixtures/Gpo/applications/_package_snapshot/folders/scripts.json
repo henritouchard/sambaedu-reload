@@ -1,0 +1,78 @@
+[
+	{
+		"os": "windows",
+		"action": "logon",
+		"includes": [],
+		"excludes": [],
+		"file": "clean_explorer"
+	},
+	{
+		"os": "linux",
+		"action": "logon",
+		"includes": [],
+		"excludes": [],
+		"file": "clean_desktop"
+	},
+	{
+		"os": "windows",
+		"action": "logon",
+		"includes": [],
+		"excludes": [
+			"Port_perdir"
+		],
+		"file": "bureau_samba"
+	},
+	{
+		"os": "windows",
+		"action": "logon",
+		"interpreter": "powershell",
+		"includes": [],
+		"excludes": [
+			"Port_perdir"
+		],
+		"file": "bureau_samba.ps1"
+	},
+	{
+		"os": "windows",
+		"action": "logon",
+		"excludes": [],
+		"includes": [
+			"Port_perdir"
+		],
+		"file": "bureau_local"
+	},
+	{
+		"os": "windows",
+		"action": "logon",
+		"includes": [
+			"Port_perdir"
+		],
+		"excludes": [
+			"Cloud_drive.monlycee.net",
+			"Cloud_etab",
+			"Cloud_nuage.apps"
+		],
+		"file": "docs_local"
+	},
+	{
+		"os": "windows",
+		"action": "logon",
+		"includes": [],
+		"excludes": [
+			"Cloud_drive.monlycee.net",
+			"Cloud_etab",
+			"Cloud_nuage.apps",
+			"Port_perdir"
+		],
+		"file": "docs_samba"
+	},
+	{
+		"os": "windows",
+		"action": "startup",
+		"includes": [],
+		"excludes": [
+			"port_perdir"
+		],
+		"file": "clean_profiles"
+	}
+]

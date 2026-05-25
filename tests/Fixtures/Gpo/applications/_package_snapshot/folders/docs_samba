@@ -1,0 +1,12 @@
+REM creation des dossiers sur le serveur se4 (sans cloud actif pour l'utilisateur)
+IF NOT EXIST "\\%se4fs%\users\%USERNAME%\Docs" (MD "\\%se4fs%\users\%USERNAME%\Docs")
+IF NOT EXIST "\\%se4fs%\users\%USERNAME%\Images" (MD "\\%se4fs%\users\%USERNAME%\Images")
+IF NOT EXIST "\\%se4fs%\users\%USERNAME%\Videos" (MD "\\%se4fs%\users\%USERNAME%\Videos")
+
+REM conf des dossiers
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v Personal /d "\\%se4fs%\users\%USERNAME%\Docs" /t REG_EXPAND_SZ /f
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v "My Pictures" /d "\\%se4fs%\users\%USERNAME%\Images" /t REG_EXPAND_SZ /f
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v "My Video" /d "\\%se4fs%\users\%USERNAME%\Videos" /t REG_EXPAND_SZ /f
+
+REM pin bureau et telechargements
+pwsh -noprofile -executionpolicy bypass -command "$Q = New-Object -ComObject shell.application;$Path = $Q.Namespace('shell:Personal');$Path.Self.Path;if(-not ($Q.Namespace('shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}').Items() | ? {$_.Path -eq $Path.Self.Path})){$Path.Self.InvokeVerb('pintohome')}"

@@ -1,0 +1,16 @@
+echo "Mise en place config veyon"
+if [ -f '/usr/bin/veyon-cli' ]; then
+    /usr/bin/veyon-cli config clear
+    curl -o /tmp/global.json -F "id=$id" http://###_SE4FS_NAME_###.###_DOMAIN_###/gpo/veyon_out.php
+    curl -o /tmp/licence.vlf -F "licence=1" http://###_SE4FS_NAME_###.###_DOMAIN_###/gpo/veyon_out.php
+    if [ -f /tmp/global.json ]; then
+        /usr/bin/veyon-cli config import /tmp/global.json
+    fi
+# Gestion d'une eventuelle license de plugin
+    if [ -f /tmp/licence.vlf ]; then
+        /usr/bin/veyon-cli licensing add /tmp/licence.vlf
+    fi
+# Redemarrage du service
+#   /usr/bin/veyon-cli service restart
+fi
+# fin de conf veyon

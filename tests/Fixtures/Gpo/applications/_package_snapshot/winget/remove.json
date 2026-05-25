@@ -1,0 +1,62 @@
+[
+    {
+        "Name": "Cortana",
+        "Id": "Microsoft.549981C3F5F10_8wekyb3d8bbwe"
+    },
+    {
+        "Name": "Actualit\u00e9s",
+        "Id": "Microsoft.BingNews_8wekyb3d8bbwe"
+    },
+{
+        "Name": "Xbox",
+        "Id": "Microsoft.GamingApp_8wekyb3d8bbwe"
+    },
+    {
+        "Name": "Solitaire & Casual Games",
+        "Id": "Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe"
+    },
+    {
+        "Name": "Hub de commentaires",
+        "Id": "Microsoft.WindowsFeedbackHub_8wekyb3d8bbwe"
+    },
+    {
+        "Name": "Xbox TCUI",
+        "Id": "Microsoft.Xbox.TCUI_8wekyb3d8bbwe"
+    },
+    {
+        "Name": "Xbox Game Bar Plugin",
+        "Id": "Microsoft.XboxGameOverlay_8wekyb3d8bbwe"
+    },
+    {
+        "Name": "Game Bar",
+        "Id": "Microsoft.XboxGamingOverlay_8wekyb3d8bbwe"
+    },
+    {
+        "Name": "Xbox Identity Provider",
+        "Id": "Microsoft.XboxIdentityProvider_8wekyb3d8bbwe"
+    },
+    {
+        "Name": "Windows Web Experience Pack",
+        "Id": "MicrosoftWindows.Client.WebExperience_cw5n1h2txyewy"
+    },
+    {
+        "Name": "Assistance rapide",
+        "Id": "MicrosoftCorporationII.QuickAssist_8wekyb3d8bbwe"
+    },
+    {
+        "Name": "Xbox Game Speech Window",
+        "Id": "Microsoft.XboxSpeechToTextOverlay_8wekyb3d8bbwe"
+    },
+    {
+        "Name": "Microsoft.OneDriveSync",
+        "Id": "Microsoft.OneDriveSync_8wekyb3d8bbwe"
+    },
+    {
+        "Name": "Films et TV",
+        "Id": "Microsoft.ZuneVideo_8wekyb3d8bbwe"
+    },
+    {
+        "Name": "Bonjour",
+        "Id": "Apple.Bonjour"
+    }
+]

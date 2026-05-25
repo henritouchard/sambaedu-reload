@@ -1,0 +1,14 @@
+reg add "HKCU\SOFTWARE\Policies\Windows\WindowsCopilot" /v TurnOffWindowsCopilot /d 1 /t REG_DWORD /f
+reg add "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\SearchSettings" /v IsDynamicSearchBoxEnabled /d 0 /t REG_DWORD /f
+reg add "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Search" /v BingSearchEnabled /d 0 /t REG_DWORD /f
+reg add "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer" /v DisableSearchBoxSuggestions /d 1 /t REG_DWORD /f
+reg add "HKCU\SOFTWARE\Microsoft\office\16.0\common\privacy" /v usercontentdisabled /d 2 /t REG_DWORD /f
+reg add "HKCU\SOFTWARE\Microsoft\Windows\WindowsAI" /v DisableAIDataAnalysis /d 1 /t REG_DWORD /f
+reg add "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsAI" /v AllowRecallEnablement /d 0 /t REG_DWORD /f
+
+REM suppr widgets taskbar
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarDa /t REG_DWORD /d 0 /f
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications" /v ToastEnabled /t REG_DWORD /d 0 /f
+
+REM cache lien onedrive
+reg add "HKCR\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}" /v System.IsPinnedToNameSpaceTree /t REG_DWORD /d 0 /f

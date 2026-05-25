@@ -1,0 +1,12 @@
+{
+	"OpenBoard": {
+		"app": "OpenBoard",
+		"excludes": [
+			"port_perdir",
+			"portables"
+		],
+		"link": "AppData\\Local\\OpenBoard",
+		"dest": "AppData\\Roaming\\OpenBoard",
+		"server": ".config\\OpenBoard"
+	}
+}

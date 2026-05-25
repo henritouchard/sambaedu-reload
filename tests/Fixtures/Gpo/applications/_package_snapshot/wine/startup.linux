@@ -1,0 +1,10 @@
+echo "Mise en place wine"
+dpkg --add-architecture i386
+# on fait un miroir sur deb.sambaedu.org, donc plus la peine de définir de dépôt tiers !
+if [ -f "/etc/apt/sources.list.d/winehq.list" ]; then
+	mv "/etc/apt/sources.list.d/winehq.list" "/etc/apt/sources.list.d/winehq.list.save"
+fi
+if [ -z "$config_se4install_name" ]; then
+        set_config sambaedu se4install_name ###_SE4INSTALL_NAME_###
+fi
+# fin de conf wine

@@ -1,0 +1,7 @@
+{
+	"Filius": {
+		"app": "Filius",
+		"link": ".filius",
+		"server": ".config\\Filius"
+	}
+}

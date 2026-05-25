@@ -1,0 +1,15 @@
+REM Debut des associations des applications par defaut
+IF NOT EXIST "%WINDIR%\Web\SE4\" (MKDIR "%WINDIR%\Web\SE4")
+REM ancien mode via gpo
+IF EXIST "%WINDIR%\install\packages\associations\associations.xml" (
+    COPY /Y "%WINDIR%\install\packages\associations\associations.xml" "%WINDIR%\Web\SE4\associations.xml"
+) ELSE (
+    DEL /F /S /Q "%WINDIR%\Web\SE4\associations.xml"
+)
+REM desactivation protection associations
+
+sc config UCPD start=disabled​
+sc stop UCPD​
+schtasks /change /Disable /TN "\Microsoft\Windows\AppxDeploymentClient\UCPD velocity"​
+
+REM Fin des associations des applications par defaut

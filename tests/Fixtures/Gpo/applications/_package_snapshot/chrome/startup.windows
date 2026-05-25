@@ -1,0 +1,2 @@
+REM Chrome Cache en local HKLM
+reg.exe add "HKLM\Software\Policies\Google\Chrome" /v "DiskCacheDir" /d "${local_app_data}\GoogleCache" /t REG_EXPAND_SZ /f

@@ -1,0 +1,7 @@
+{
+	"OnlyOffice": {
+		"app": "OnlyOffice",
+		"link": "AppData\\Local\\ONLYOFFICE",
+		"dest": "AppData\\Roaming\\ONLYOFFICE"
+	}
+}

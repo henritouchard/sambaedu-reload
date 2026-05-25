@@ -1,0 +1,8 @@
+REM montage auto des partages de l'utilisateur dans un répertoire du profil local
+SET rc_config=\\%SE4FS%\users\%username%\.config\rclone\rclone.conf
+IF EXIST %rc_config% (
+    curl -o %temp%\rclone.cmd -F "os=windows" -F "id=%id%" "http://###_SE4FS_NAME_###/partages/cloud_out.php">NUL
+    IF EXIST %temp%\rclone.cmd (
+        START /B %temp%\rclone.cmd
+    )
+)

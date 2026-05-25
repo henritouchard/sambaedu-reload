@@ -1,0 +1,12 @@
+[
+    {
+        "Name": "PowerShell",
+        "Id": "Microsoft.PowerShell",
+        "Source": "winget"
+    },
+    {
+        "Name": "App Installer",
+        "Id": "Microsoft.AppInstaller",
+        "Source": "winget"
+    }
+]

@@ -1,0 +1,1 @@
+reg.exe add "HKLM\SOFTWARE\GLPI-Agent" /v "tag" /D %TAG% /F

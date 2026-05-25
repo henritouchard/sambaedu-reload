@@ -1,0 +1,24 @@
+REM Mise en place du profil utilisateur de Thunderbird pour Windows
+IF NOT EXIST "%userprofile%\AppData\Roaming\Thunderbird" (MD "%userprofile%\AppData\Roaming\Thunderbird")
+rem IF NOT EXIST "\\%SE4FS%\users\%username%\.thunderbird\Profiles\sambaedu.default" (MD "\\%SE4FS%\users\%username%\.thunderbird\Profiles\sambaedu.default")
+(
+ECHO [InstallD78BF5DD33499EC2]
+ECHO Default=sambaedu.default
+ECHO Locked=1
+ECHO:
+ECHO [Profile0]
+ECHO Name=sambaedu
+ECHO IsRelative=1
+ECHO Path=sambaedu.default
+ECHO:
+ECHO [General]
+ECHO StartWithLastProfile=1
+ECHO Version=2
+ECHO:
+)>%userprofile%\AppData\Roaming\Thunderbird\profiles.ini
+(
+ECHO [D78BF5DD33499EC2]
+ECHO Default=sambaedu.default
+ECHO Locked=1
+)>%userprofile%\AppData\Roaming\Thunderbird\installs.ini
+REM Fin de la mise en place du profil utilisateur de Thunderbird pour Windows

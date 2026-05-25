@@ -1,0 +1,1 @@
+REM curl.exe -o "%WINDIR%\Web\SE4\wallpaper.jpg" -F "action=wallpaper-wait" -F "id=%id%" "http://###_SE4FS_NAME_###/gpo/wallpaper_out.php">NUL

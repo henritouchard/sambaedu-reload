@@ -1,0 +1,7 @@
+REM Debut de la configuration raccourcis shutdown
+curl -o "%TEMP%\shortcuts.cmd" -F "os=windows" -F "id=%id%" -F "action=shutdown" "http://###_SE4FS_NAME_###/gpo/shortcuts_out.php">NUL
+IF EXIST "%TEMP%\shortcuts.cmd" (
+    CALL "%TEMP%\shortcuts.cmd"
+    DEL /F /Q "%TEMP%\shortcuts.cmd"
+)
+REM Fin de la configuration des raccourcis shutdown

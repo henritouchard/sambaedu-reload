@@ -1,0 +1,19 @@
+REM effacement si besoin des dossiers cache pour les postes en resau samba
+FOR /D %%U IN (C:\Users\*) DO (
+    IF /I NOT [%%U]==[C:\Users\Default] (
+        IF /I NOT [%%U]==[C:\Users\###_ADMINSE_NAME_###] (
+            IF /I NOT [%%U]==[%USERPROFILE%] (
+                IF /I NOT [%%U]==[C:\Users\Public] (
+                    RMDIR /S /Q %%U
+                )
+            )
+        )
+    )
+)
+
+setlocal enabledelayedexpansion
+FOR /f "tokens=*" %%A IN ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList" ^| findstr /r "!DOMAINSID!-.*"') DO (
+    ECHO Deleting %%A
+    reg delete "%%A" /f
+)
+endlocal

@@ -1,0 +1,12 @@
+REM Debut de la configuration post-wpkg de Firefox
+IF EXIST "%PROGRAMFILES%\Mozilla Firefox\" (
+    IF NOT EXIST "%PROGRAMFILES%\Mozilla Firefox\distribution\" (MD "%PROGRAMFILES%\Mozilla Firefox\distribution")
+    IF EXIST "%PROGRAMFILES%\Mozilla Firefox\distribution\policies.json" (DEL /F /Q "%PROGRAMFILES%\Mozilla Firefox\distribution\policies.json")
+    curl -o "%PROGRAMFILES%\Mozilla Firefox\distribution\policies.json" -F "id=%id%" -F "os=windows" "http://###_SE4FS_NAME_###.###_DOMAIN_###/gpo/firefox_out.php">NUL
+)
+IF EXIST "%PROGRAMFILES(x86)%\Mozilla Firefox\" (
+    IF NOT EXIST "%PROGRAMFILES(x86)%\Mozilla Firefox\distribution\" (MD "%PROGRAMFILES(x86)%\Mozilla Firefox\distribution")
+    IF EXIST "%PROGRAMFILES(x86)%\Mozilla Firefox\distribution\policies.json" (DEL /F /Q "%PROGRAMFILES(x86)%\Mozilla Firefox\distribution\policies.json")
+    curl -o "%PROGRAMFILES(x86)%\Mozilla Firefox\distribution\policies.json" -F "id=%id%" -F "os=windows" "http://###_SE4FS_NAME_###.###_DOMAIN_###/gpo/firefox_out.php">NUL
+)
+REM Fin de la configuration post-wpkg de Firefox

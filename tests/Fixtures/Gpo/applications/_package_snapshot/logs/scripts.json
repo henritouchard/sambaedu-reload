@@ -1,0 +1,10 @@
+[
+	{
+		"os": "windows",
+		"action": "logon",
+		"interpreter": "cmd",
+		"includes": [],
+		"excludes": [],
+		"file": "ping"
+	}
+]

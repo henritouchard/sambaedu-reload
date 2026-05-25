@@ -1,0 +1,285 @@
+{
+    "AccessControl": {
+        "AccessControlRules": {
+            "JsonStoreArray": [
+                {
+                    "Action": 2,
+                    "Description": "",
+                    "IgnoreConditions": false,
+                    "InvertConditions": false,
+                    "Name": "On interdit à un élève de lancer Veyon-Master",
+                    "Parameters": [
+                        {
+                            "Argument": "CN=Eleves,OU=Groups",
+                            "Condition": 1,
+                            "Enabled": true,
+                            "Subject": 1
+                        }
+                    ]
+                },
+                {
+                    "Action": 1,
+                    "Description": "",
+                    "IgnoreConditions": false,
+                    "InvertConditions": true,
+                    "Name": "Tout le monde peut surveiller sauf les élèves",
+                    "Parameters": [
+                        {
+                            "Argument": "CN=Eleves,OU=Groups",
+                            "Condition": 1,
+                            "Enabled": true,
+                            "Subject": 1
+                        }
+                    ]
+                },
+                {
+                    "Action": 1,
+                    "Description": "",
+                    "IgnoreConditions": false,
+                    "InvertConditions": false,
+                    "Name": "On surveille les postes en attente de login",
+                    "Parameters": [
+                        {
+                            "Argument": "",
+                            "Condition": 4,
+                            "Enabled": true,
+                            "Subject": 0
+                        },
+                        {
+                            "Argument": "",
+                            "Condition": 8,
+                            "Enabled": true,
+                            "Subject": 0
+                        }
+                    ]
+                },
+                {
+                    "Action": 1,
+                    "Description": "",
+                    "IgnoreConditions": false,
+                    "InvertConditions": false,
+                    "Name": "On surveille les comptes élèves dans la même salle",
+                    "Parameters": [
+                        {
+                            "Argument": "CN=Eleves,OU=Groups",
+                            "Condition": 1,
+                            "Enabled": true,
+                            "Subject": 3
+                        },
+                        {
+                            "Argument": "",
+                            "Condition": 4,
+                            "Enabled": true,
+                            "Subject": 0
+                        }
+                    ]
+                },
+                {
+                    "Action": 2,
+                    "Description": "",
+                    "IgnoreConditions": false,
+                    "InvertConditions": false,
+                    "Name": "On ne surveille pas les comptes profs",
+                    "Parameters": [
+                        {
+                            "Argument": "CN=Profs,OU=Groups",
+                            "Condition": 1,
+                            "Enabled": true,
+                            "Subject": 3
+                        }
+                    ]
+                },
+                {
+                    "Action": 2,
+                    "Description": "",
+                    "IgnoreConditions": false,
+                    "InvertConditions": false,
+                    "Name": "On ne surveille pas les comptes administratifs",
+                    "Parameters": [
+                        {
+                            "Argument": "CN=Administratifs,OU=Groups",
+                            "Condition": 1,
+                            "Enabled": true,
+                            "Subject": 3
+                        }
+                    ]
+                }
+            ]
+        },
+        "AccessControlRulesProcessingEnabled": "true",
+        "AccessRestrictedToUserGroups": "false",
+        "AuthorizedUserGroups": [
+            "CN=Admins,OU=Groups",
+            "CN=Profs,OU=Groups",
+            "CN=Administratifs,OU=Groups",
+            "CN=computer_is_admin,OU=Rights"
+        ],
+        "DataBackend": "{6f0a491e-c1c6-4338-8244-f823b0bf8670}"
+    },
+    "Authentication": {
+        "KeyAuthenticationEnabled": "false",
+        "LogonAuthenticationEnabled": "true",
+        "Method": "0",
+        "PrivateKeyBaseDir": "%GLOBALAPPDATA%\\keys\\private",
+        "PublicKeyBaseDir": "%GLOBALAPPDATA%\\keys\\public"
+    },
+    "BuiltinDirectory": {
+        "NetworkObjects": {
+            "JsonStoreArray": [
+            ]
+        }
+    },
+    "Core": {
+        "ApplicationVersion": 9,
+        "InstallationID": "00000000-0000-0000-0000-000000000000",
+        "PluginVersions": {
+            "JsonStoreObject": {
+                "{06645e43-080a-491d-95c4-d350802b6009}": "1.0",
+                "{14bacaaa-ebe5-449c-b881-5b382f952571}": "1.1",
+                "{179e836a-b5c4-44df-a1fc-4a9e0e2174e4}": "1.0",
+                "{1b08265b-348f-4978-acaa-45d4f6b90bd9}": "1.1",
+                "{1baa01e0-02d6-4494-a766-788f5b225991}": "1.1",
+                "{1bdb0d1c-f8eb-4d21-a093-d555a10f3975}": "1.1",
+                "{217249ca-3777-421d-bf35-f0de557e78db}": "1.0",
+                "{2917cdeb-ac13-4099-8715-20368254a367}": "1.1",
+                "{2ad98ccb-e9a5-43ef-8c4c-876ac5efbcb1}": "1.1",
+                "{32936536-1f76-4d03-be95-6b843a2af484}": "1.0",
+                "{387a0c43-1355-4ff6-9e1f-d098e9ce5127}": "1.1",
+                "{39d7a07f-94db-4912-aa1a-c4df8aee3879}": "1.1",
+                "{4122e8ca-b617-4e36-b851-8e050ed2d82e}": "1.2",
+                "{4790bad8-4c56-40d5-8361-099a68f0c24b}": "1.1",
+                "{6091c556-af1f-4ab8-9756-0258f3068ddb}": "1.0",
+                "{67b96a77-c108-4ecf-b153-2c281ca5e1ad}": "2.0",
+                "{67dfc1c1-8f37-4539-a298-16e74e34fd8b}": "1.1",
+                "{69516973-1ce1-4102-8d2a-af9504af9509}": "1.0",
+                "{6f0a491e-c1c6-4338-8244-f823b0bf8670}": "1.2",
+                "{7009f6b4-8bdd-4700-b0d1-15a45ba0c0da}": "1.0",
+                "{80580500-2e59-4297-9e35-e53959b028cd}": "1.2",
+                "{84a1bbcd-0821-459e-be23-8c1ff69790c8}": "1.1",
+                "{85f6c631-e75a-4c78-8cb2-a7f3f502015a}": "1.1",
+                "{8ae6668b-9c12-4b29-9bfc-ff89f6604164}": "1.1",
+                "{a54ee018-42bf-4569-90c7-0d8470125ccf}": "2.0",
+                "{b47bcae0-24ff-4bf5-869c-484d64af5c4c}": "1.1",
+                "{d4bb9c42-9eef-4ecb-8dd5-dfd84b355481}": "1.0",
+                "{df906327-c1e9-47bb-80c1-27ffa6a2af5a}": "1.0",
+                "{e11bee03-b99c-465c-bf90-7e5339b83f6b}": "1.0",
+                "{ee322521-f4fb-482d-b082-82a79003afa7}": "1.1",
+                "{f626f759-7691-45c0-bd4a-37171d98d219}": "1.0"
+            }
+        }
+    },
+    "Demo": {
+        "FramebufferUpdateInterval": "100",
+        "KeyFrameInterval": "10",
+        "MemoryLimit": "128"
+    },
+    "DesktopServices": {
+        "PredefinedPrograms": {
+            "JsonStoreArray": [
+            ]
+        },
+        "PredefinedWebsites": {
+            "JsonStoreArray": [
+            ]
+        }
+    },
+    "Directories": {
+        "Screenshots": "%APPDATA%\\Screenshots",
+        "UserConfiguration": "%APPDATA%\\Config"
+    },
+    "InternetAccessControl": {
+        "Backend": "6091c556-af1f-4ab8-9756-0258f3068ddb",
+        "ExceptionNetworks": "",
+        "UnblockOnServiceStart": "true"
+    },
+    "Logging": {
+        "LogFileDirectory": "$TEMP",
+        "LogFileRotationCount": "10",
+        "LogFileRotationEnabled": "false",
+        "LogFileSizeLimit": "100",
+        "LogFileSizeLimitEnabled": "false",
+        "LogLevel": "4",
+        "LogToStdErr": "true",
+        "LogToSystem": "false",
+        "LogToWindowsEventLog": "false"
+    },
+    "Master": {
+        "AccessControlForMasterEnabled": "true",
+        "AllowAddingHiddenLocations": "false",
+        "AutoAdjustGridSize": "true",
+        "AutoAdjustMonitoringIconSize": "true",
+        "AutoOpenComputerSelectPanel": "true",
+        "AutoSelectCurrentLocation": "true",
+        "AutoSwitchToCurrentRoom": "true",
+        "ComputerDoubleClickFeature": "ca00ad68-1709-4abe-85e2-48dff6ccf8a2",
+        "ComputerMonitoringBackgroundColor": "#ffffff",
+        "ComputerMonitoringTextColor": "#000000",
+        "ComputerMonitoringUpdateInterval": "1000",
+        "ConfirmUnsafeActions": "false",
+        "EmptyRoomsHidden": "true",
+        "HideComputerFilter": "false",
+        "HideEmptyLocations": "true",
+        "HideLocalComputer": "true",
+        "LocalComputerHidden": "true",
+        "OnlyCurrentRoomVisible": "false",
+        "ShowCurrentLocationOnly": "false"
+    },
+    "Network": {
+        "DemoServerPort": "11400",
+        "FeatureWorkerManagerPort": "11300",
+        "FirewallExceptionEnabled": "true",
+        "PrimaryServicePort": "11100",
+        "VeyonServerPort": "11100",
+        "VncServerPort": "11200"
+    },
+    "NetworkDiscovery": {
+        "ParallelScans": "10",
+        "ScanCustomSubnet": "true",
+        "ScanLocalSubnets": "false",
+        "ScanNetworkRanges": "false"
+    },
+    "NetworkObjectDirectory": {
+        "Plugin": "6f0a491e-c1c6-4338-8244-f823b0bf8670",
+        "UpdateInterval": "1800"
+    },
+    "Service": {
+        "Arguments": "",
+        "Autostart": "true",
+        "FailedAuthenticationNotifications": "false",
+        "HideTrayIcon": "false",
+        "MaximumSessionCount": "1",
+        "MultiSession": "true",
+        "RemoteConnectionNotifications": "false",
+        "SoftwareSASEnabled": "true"
+    },
+    "UI": {
+        "ApplicationName": "",
+        "EnableHighDPIScaling": "false",
+        "Language": ""
+    },
+    "UltraVNC": {
+        "CaptureLayeredWindows": "true",
+        "Configured": "true",
+        "LowAccuracy": "true",
+        "PollFullScreen": "true"
+    },
+    "UserGroups": {
+        "Backend": "6f0a491e-c1c6-4338-8244-f823b0bf8670",
+        "UseDomainUserGroups": "true"
+    },
+    "VncServer": {
+        "Plugin": "39d7a07f-94db-4912-aa1a-c4df8aee3879"
+    },
+    "WebTabs": {
+        "Tabs": {
+            "JsonStoreArray": [
+            ]
+        }
+    },
+    "Windows": {
+        "DisableSSPIBasedUserAuthentication": "true",
+        "HideDesktopForScreenLock": "true",
+        "LogonConfirmLegalNotice": "false",
+        "SoftwareSASEnabled": "1"
+    }
+}

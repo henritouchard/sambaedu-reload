@@ -1,0 +1,10 @@
+REM Debut de la configuration des fonds d'ecrans logon
+curl.exe -o "%WINDIR%\Web\SE4\wallpaper.jpg" -F "action=wallpaper" -F "id=%id%" "http://###_SE4FS_NAME_###/gpo/wallpaper_out.php">NUL
+curl.exe -o "%WINDIR%\Web\SE4\veyon.jpg" -F "action=veyon" -F "id=%id%" "http://###_SE4FS_NAME_###/gpo/wallpaper_out.php">NUL
+REM Pas de taskkill pour SE4INSTALL
+IF EXIST "%PROGRAMFILES%\SambaEdu\SetWallpaper.ps1" (
+    START /B powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PROGRAMFILES%\SambaEdu\SetWallpaper.ps1"
+) ELSE (
+    (taskkill /F /IM explorer.exe /FI "USERNAME ne ###_SE4INSTALL_NAME_###") & (explorer.exe)
+)
+REM Fin de la configuration des fonds d'ecrans logon

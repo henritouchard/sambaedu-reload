@@ -1,0 +1,3 @@
+# Debut de la configuration de Firefox lors de la deconnexion
+rm -rf "/tmp/cacheFirefox/$USER/"
+# Fin de la configuration de Firefox lors de la deconnexion

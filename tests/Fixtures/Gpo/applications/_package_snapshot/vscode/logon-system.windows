@@ -1,0 +1,4 @@
+IF EXIST "%PROGRAMDATA%\Microsoft\Windows\Start Menu\Programs\Visual Studio Code\" (
+    IF NOT EXIST "\\%SE4FS%\users\%USERLOGIN%\.vscode\" (MD "\\%SE4FS%\users\%USERLOGIN%\.vscode\")
+    IF NOT EXIST "%HOMEPATH%\.vscode\" (MKLINK /D "%HOMEPATH%\.vscode\" "\\%SE4FS%\users\%USERLOGIN%\.vscode\")
+)

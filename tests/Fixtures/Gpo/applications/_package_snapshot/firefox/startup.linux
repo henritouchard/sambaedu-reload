@@ -1,0 +1,9 @@
+echo "Mise en place config Firefox"
+if [ ! -d "/etc/firefox" ]; then
+    mkdir -p /etc/firefox/policies
+fi
+if [ -f "/etc/firefox/policies/policies.json" ]; then
+    rm -f "/etc/firefox/policies/policies.json"
+fi
+/usr/bin/curl -o /etc/firefox/policies/policies.json -F "id=$id" -F "os=linux" http://###_SE4FS_NAME_###.###_DOMAIN_###/gpo/firefox_out.php
+# fin de la configuration de firefox

@@ -1,0 +1,71 @@
+{
+	"policies":
+	{
+		"AppAutoUpdate": false,
+		"BlockAboutAddons": false,
+		"DisplayBookmarksToolbar": true,
+		"DisableAppUpdate": true,
+		"DontCheckDefaultBrowser": true,
+		"SanitizeOnShutdown":
+		{
+			"Cache": true,
+			"Cookies": false,
+			"Downloads": true,
+			"FormData": false,
+			"History": false,
+			"Sessions": false,
+			"SiteSettings": false,
+			"OfflineApps": true,
+			"Locked": false
+		},
+		"Cookies": {
+			"Allow": ["https://index-education.net/"]
+		},
+
+		"Preferences":
+		{
+			"browser.cache.disk.enable": false,
+			"browser.vpn_promo.enabled": false,
+			"browser.ml.enable": false,
+			"browser.ml.chat.enabled": false,
+			"browser.ml.chat.menu": false,
+			"browser.ml.chat.page": false,
+			"browser.ml.chat.page.footerBadge": false,
+			"browser.ml.chat.page.menuBadge": false,
+			"browser.ml.linkPreview.enabled": false,
+			"browser.ml.pageAssist.enabled": false,
+			"browser.tabs.groups.smart.enabled": false,
+			"browser.tabs.groups.smart.userEnabled": false,
+			"extensions.ml.enabled": false,
+			"browser.search.visualSearch.featureGate": false,
+			"sidebar.revamp": false,
+			"browser.startup.windowsLaunchOnLogin.enabled": false
+		},
+
+		"FirefoxHome":
+		{
+			"SponsoredTopSites": false,
+			"Pocket": false,
+			"SponsoredPocket": false
+		},
+
+		"ExtensionSettings":
+		{
+			"*":
+			{
+				"blocked_install_message": "L'installation de cette extension n'est pas autorisée.",
+				"installation_mode": "allowed",
+				"allowed_types":
+				[
+					"extension",
+					"dictionary",
+					"locale"
+				]
+			},
+			"companion@pix.fr": {
+				"installation_mode": "force_installed",
+				"install_url": "https://addons.mozilla.org/firefox/downloads/latest/pix-companion/latest.xpi"
+			}
+		}
+	}
+}

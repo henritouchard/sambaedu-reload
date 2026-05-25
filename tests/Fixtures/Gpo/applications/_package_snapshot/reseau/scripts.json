@@ -1,0 +1,34 @@
+[
+	{
+		"os": "windows",
+		"action": "startup",
+		"interpreter": "powershell",
+		"includes": [],
+		"excludes": [],
+		"file": "networkInfo.ps1"
+	},
+		{
+		"os": "linux",
+		"action": "startup",
+		"interpreter": "bash",
+		"includes": [],
+		"excludes": [],
+		"file": "networkManager.bash"
+	},
+	{
+		"os": "linux",
+		"action": "startup",
+		"interpreter": "bash",
+		"includes": [],
+		"excludes": [],
+		"file": "networkInfo.bash"
+	},
+	{
+		"os": "linux",
+		"action": "logon",
+		"interpreter": "bash",
+		"includes": [],
+		"excludes": [],
+		"file": "gnome.bash"
+	}
+]

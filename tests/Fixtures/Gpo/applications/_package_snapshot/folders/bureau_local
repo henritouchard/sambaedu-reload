@@ -1,0 +1,8 @@
+REM bureau et DL sur le profil local pour les ordis portables
+REM creation des dossiers
+IF NOT EXIST "%userprofile%\Telechargements" (MD "%userprofile%\Telechargements")
+IF NOT EXIST "%userprofile%\Bureau" (MD "%userprofile%\Bureau")
+
+REM conf des dossiers
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v Downloads /d "%userprofile%\Telechargements" /t REG_EXPAND_SZ /f
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v Desktop /d "%userprofile%\Bureau" /t REG_EXPAND_SZ /f

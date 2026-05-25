@@ -1,0 +1,5 @@
+echo "lancement veyon"
+if [ -f '/usr/bin/veyon-server' ]; then
+    systemctl restart veyon.service
+fi
+# fin de conf veyon utilisateur

@@ -1,0 +1,5 @@
+echo "configuration gdm"
+if [ "$USER" == "Debian-gdm" ]; then
+    dbus-launch gsettings set org.gnome.settings-daemon.peripherals.keyboard numlock-state 'on' || true
+fi
+# fin de la configuration gdm

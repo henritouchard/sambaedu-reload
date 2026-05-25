@@ -1,0 +1,42 @@
+REM Debut de la configuration au demarrage de Veyon
+IF EXIST "%PROGRAMFILES%\Veyon\veyon-cli.exe" (
+    "%PROGRAMFILES%\Veyon\veyon-cli.exe" config clear
+    curl -o "%TEMP%\global.json" -F "id=%id%" "http://###_SE4FS_NAME_###/gpo/veyon_out.php">NUL
+    IF EXIST "%TEMP%\global.json" "%PROGRAMFILES%\Veyon\veyon-cli.exe" config import "%TEMP%\global.json"
+    REM Gestion d"une eventuelle license de plugin
+    curl -o "%TEMP%\licence.vlf" -F "licence=1" "http://###_SE4FS_NAME_###/gpo/veyon_out.php">NUL
+    IF EXIST "%TEMP%\licence.vlf" (for /f %%i in ("%TEMP%\licence.vlf") do if %%~zi gtr 0 "%PROGRAMFILES%\Veyon\veyon-cli.exe" licensing add "%TEMP%\licence.vlf")
+    REM Redemarrage du service
+    "%PROGRAMFILES%\Veyon\veyon-cli.exe" service restart
+)
+REM ajout des remoteapps pour rebond
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList" /v "CentralLicensing" /t REG_DWORD /d 0 /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList" /v "CustomRDPSettings" /d "authentication level:i:2" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList" /v "fDisabledAllowList" /t REG_DWORD /d 0 /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList" /v "fHasCertificate" /t REG_DWORD /d 0 /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList" /v "LicensingType" /t REG_DWORD /d 5 /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList" /v "LicenseServers" /t REG_BINARY /d 00 /f
+
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Master" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Master" /v "Name" /d "Veyon Master" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Master" /v "Path" /d "Powershell.exe" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Master" /v "VPath" /d "Powershell.exe" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Master" /v "RequiredCommandLine" /d "-ExecutionPolicy bypass -File \"C:\Program Files\Sambaedu\veyon-master.ps1\"" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Master" /v "CommandLineSetting" /d 2 /t REG_DWORD /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Master" /v "IconPath" /d "C:\Program Files\Veyon\veyon-master.exe" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Master" /v "IconIndex" /d 0 /t REG_DWORD /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Master" /v "ShowInTSWA" /d 0 /t REG_DWORD /f
+
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Poste" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Poste" /v "Name" /d "Veyon Poste" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Poste" /v "Path" /d "C:\Program Files\Veyon\veyon-cli.exe" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Poste" /v "VPath" /d "C:\Program Files\Veyon\veyon-cli.exe" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Poste" /v "RequiredCommandLine" /d "" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Poste" /v "CommandLineSetting" /d 1 /t REG_DWORD /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Poste" /v "IconPath" /d "C:\Program Files\Veyon\veyon-cli.exe" /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Poste" /v "IconIndex" /d 0 /t REG_DWORD /f
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Terminal Server\TSAppAllowList\Applications\Veyon Poste" /v "ShowInTSWA" /d 0 /t REG_DWORD /f
+
+REM Fin de la configuration au demarrage de Veyon

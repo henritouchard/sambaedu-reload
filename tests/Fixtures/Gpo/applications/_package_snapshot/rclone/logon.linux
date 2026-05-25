@@ -1,0 +1,10 @@
+# montage auto des partages de l'utilisateur dans un répertoire du home
+rc_config=$HOME/.config/rclone/rclone.conf
+mkdir -p $HOME/.config/systemd/user
+rm -f $HOME/.config/systemd/user/*.service
+mkdir -p $HOME/nuages
+if [ -f  $rc_config ]; then
+    /usr/bin/curl -o /tmp/cloud_$USER.sh -s -F "id=${id}" -F "os=linux" http://###_SE4FS_NAME_###.###_DOMAIN_###/partages/cloud_out.php
+    #eval $(/usr/bin/curl -s -F "id=${id}" -F "os=linux" http://###_SE4FS_NAME_###.###_DOMAIN_###/partages/cloud_out.php)
+    chmod u+x /tmp/cloud_$USER.sh && /tmp/cloud_$USER.sh
+fi

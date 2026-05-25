@@ -1,0 +1,12 @@
+REM Debut de la configuration au demarrage de Thunderbird
+IF EXIST "%PROGRAMFILES%\Mozilla Thunderbird\" (
+    IF NOT EXIST "%PROGRAMFILES%\Mozilla Thunderbird\distribution\" (MD "%PROGRAMFILES%\Mozilla Thunderbird\distribution")
+    IF EXIST "%PROGRAMFILES%\Mozilla Thunderbird\distribution\policies.json" (DEL /F /Q "%PROGRAMFILES%\Mozilla Thunderbird\distribution\policies.json")
+    curl -o "%PROGRAMFILES%\Mozilla Thunderbird\distribution\policies.json" -F "id=%id%" "http://###_SE4FS_NAME_###/gpo/thunderbird_out.php">NUL
+)
+IF EXIST "%PROGRAMFILES(x86)%\Mozilla Thunderbird\" (
+    IF NOT EXIST "%PROGRAMFILES(x86)%\Mozilla Thunderbird\distribution\" (MD "%PROGRAMFILES(x86)%\Mozilla Thunderbird\distribution")
+    IF EXIST "%PROGRAMFILES(x86)%\Mozilla Thunderbird\distribution\policies.json" (DEL /F /Q "%PROGRAMFILES(x86)%\Mozilla Thunderbird\distribution\policies.json")
+    curl -o "%PROGRAMFILES(x86)%\Mozilla Thunderbird\distribution\policies.json" -F "id=%id%" "http://###_SE4FS_NAME_###/gpo/thunderbird_out.php">NUL
+)
+REM Fin de la configuration au demarrage de Thunderbird

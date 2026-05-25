@@ -1,0 +1,2 @@
+# cache les .lnk
+find ~/Bureau -maxdepth 1 \( -iname "*.lnk" -o -iname "*.ini" -o -iname "*.BIN" -o -iname "*.url" \) -exec basename {} \; > ~/Bureau/.hidden

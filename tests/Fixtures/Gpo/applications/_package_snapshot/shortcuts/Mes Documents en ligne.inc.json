@@ -1,0 +1,34 @@
+[
+	{
+		"name": "Mes Documents en ligne",
+		"place": "desktop",
+		"owner": "$cloud",
+		"windows": {
+			"link": "$userprofile\\nuages",
+			"args": "",
+			"path": "",
+			"icon": ""
+		},
+		"linux": {
+			"link": "nautilus",
+			"args": "/home/$user/nuages",
+			"path": ""
+		}
+	},
+	{
+		"name": "Reconnexion",
+		"place": "desktop",
+		"owner": "$cloud",
+		"windows": {
+			"link": "$userprofile\\AppData\\Local\\Temp\\applications-logon.cmd",
+			"args": "",
+			"path": "",
+			"icon": ""
+		},
+		"linux": {
+			"link": "",
+			"args": "",
+			"path": ""
+		}
+	}
+]

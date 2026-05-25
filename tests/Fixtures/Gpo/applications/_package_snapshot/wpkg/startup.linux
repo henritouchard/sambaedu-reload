@@ -1,0 +1,15 @@
+echo "Installation des logiciels via wpkg"
+#packages=$(dpkg-query -W --showformat '${binary:Package} ')
+packages=$(curl -s -F "id=$id"  http://###_SE4FS_NAME_###.###_DOMAIN_###/wpkg/linux_out.php)
+packages+=" $local_packages"
+OLDIFS=$IFS
+IFS=" "
+for p in $packages; do
+    if apt-cache policy $p 2>/dev/null | grep -q "[^N:]"; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q $p || true
+    fi    
+done
+#DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y -q
+DEBIAN_FRONTEND=noninteractive apt-get autoremove -y -q
+IFS=$OLDIFS
+#

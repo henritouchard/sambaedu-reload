@@ -1,0 +1,12 @@
+rem Debut de la configuration post-wpkg de Veyon
+IF EXIST "%PROGRAMFILES%\Veyon\veyon-cli.exe" (
+    "%PROGRAMFILES%\Veyon\veyon-cli.exe" config clear
+    curl -o "%TEMP%\global.json" -F "id=%id%" "http://###_SE4FS_NAME_###/gpo/veyon_out.php">NUL
+    IF EXIST "%TEMP%\global.json" "%PROGRAMFILES%\Veyon\veyon-cli.exe" config import "%TEMP%\global.json"
+    REM Gestion d"une eventuelle license de plugin
+    curl -o "%TEMP%\licence.vlf" -F "licence=1" "http://###_SE4FS_NAME_###/gpo/veyon_out.php">NUL
+    IF EXIST "%TEMP%\licence.vlf" (for /f %%i in ("%TEMP%\licence.vlf") do if %%~zi gtr 0 "%PROGRAMFILES%\Veyon\veyon-cli.exe" licensing add "%TEMP%\licence.vlf")
+    REM Redemarrage du service
+    "%PROGRAMFILES%\Veyon\veyon-cli.exe" service restart
+)
+rem Fin de la configuration post-wpkg de Veyon

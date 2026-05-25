@@ -2093,3 +2093,129 @@ retourne la valeur env override.
 - [ ] **17.3-4** `php artisan config:cache` réussit (callable sérialisable `[Classe::class, 'method']`).
 - [ ] **17.3-5** Patch upstream `17-3-upstream-se4_applications.diff` transmis à Henri pour push côté repo Debian.
 - [ ] **17.3-6** Post-patch + re-`import_gpo` : `php artisan gpo:applications:audit` retourne exit 0 et `legacy_count=0`.
+
+---
+
+## Story 17.4 — Tests d'intégration runtime VM (5 scripts critiques + endpoint natif)
+
+**Date livraison** : 2026-05-25
+**Stories dépendantes** : 17.2 (done), 17.3 (review)
+**Suite de tests** : `./vendor/bin/phpunit --testsuite Feature --filter 'ApplicationsScripts'`
+
+> Cette section documente les scénarios de vérification **runtime sur VM** pour les
+> 5 scripts critiques identifiés par l'audit 17.1 Section A, ainsi que les mécanismes
+> transverses (surcharges `/etc/`, placeholders, endpoint natif GET).
+
+### Pré-requis spécifiques 17.4 (post-review)
+
+- **Snapshot portable P3** : `tests/Fixtures/Gpo/applications/_package_snapshot/` (byte-identique
+  au paquet `sambaedu 4.17.285`, SHA256 `8e0b5be2…`) — committé, **les tests de parité 17.4
+  n'exigent PLUS `/usr/share/sambaedu/applications/`** (portables CI / host / VM).
+- Fixtures conservées : `tests/Fixtures/Gpo/applications/windows_logon_wallpaper/` (blob logon/windows),
+  `linux_logon_firefox/` (logon/linux). *(Fixtures `windows_logon_shortcuts`, `windows_logon_firefox`,
+  `windows_startup_wpkg` supprimées — byte-identiques redondantes, cf. README P1/P2.)*
+- Clés auth-v1 présentes : `tests/fixtures/auth-v1/private.pem` + `public.pem`
+
+### Scénario 17.4-1 — Suite de tests parité bytes (PORTABLE CI via snapshot P3)
+
+**Objectif** : Vérifier que les contextes critiques sont assemblés iso-legacy byte-par-byte
++ que chaque fragment critique est présent/substitué (assertions ciblées).
+
+**Exécution** (host CI **ou** VM — identique, le snapshot rend le test portable) :
+```bash
+./vendor/bin/phpunit --filter 'ApplicationsScriptsCriticalParityTest'
+# ou sur VM :
+ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 \
+  "cd /var/www/sambaedu-reload && ./vendor/bin/phpunit --filter 'ApplicationsScriptsCriticalParityTest'"
+```
+
+**Attendu** (9 tests, 0 skip — y compris hors VM grâce au snapshot) :
+- `it_matches_legacy_bytes_for_windows_logon_context` → PASS (parité byte blob logon/windows)
+- `it_matches_legacy_bytes_for_linux_logon_firefox` → PASS (parité byte, UTF-8, pas de CRLF)
+- `it_includes_robocopy_deploy_fragment_for_wpkg_startup` → PASS (ligne ROBOCOPY complète : `netinst` + `%ProgramFiles%\SambaEdu`)
+- `it_substitutes_se4install_name_in_wallpaper_logon` → PASS (ligne `taskkill … "USERNAME ne se4install"` complète)
+- `it_includes_firefox_profiles_ini_fragment_in_windows_logon` → PASS (heredoc profiles.ini)
+- `it_includes_shortcuts_out_fragment_in_windows_logon` → PASS (curl `shortcuts_out.php`, SE4FS_NAME substitué)
+- `it_has_no_residual_placeholder_in_critical_context` (3 contextes) → PASS
+
+**Si un test échoue** :
+- Parité bytes non-évidente → **ne pas patcher le code** → signaler Henri (D1 story 17.4)
+- Placeholder résiduel → trou whitelist 17.2 → escalade Henri
+- Échec post-bump paquet → régénérer le snapshot ET les fixtures (cf. README).
+
+### Scénario 17.4-2 — Endpoint natif GET /api/v1/workstation-config/applications-scripts
+
+**Objectif** : Vérifier que l'endpoint natif répond correctement (auth JWT, charset, **body non vide**, 401/404).
+
+**Exécution** (portable CI — pas de VM requise) :
+```bash
+./vendor/bin/phpunit --filter 'Tests\\Feature\\Gpo\\ApplicationsScriptsApiV1'
+```
+
+**Attendu** (post-review P5 — body NON vide prouvé via seeding cache `apps.<id>`) :
+- `it_returns_200_non_empty_body_for_authenticated_windows_logon` → PASS (200 + cp1252 + body non vide, marqueur `REM`)
+- `it_returns_200_non_empty_body_for_authenticated_windows_startup` → PASS (200 + cp1252 + body non vide)
+- `it_returns_200_non_empty_body_for_authenticated_linux_logon` → PASS (200 + utf-8 + body non vide, `#!/bin/bash`)
+- `it_returns_401_without_jwt` → PASS (401 sans Bearer)
+- `it_returns_404_for_unknown_workstation_uuid` → PASS (404 + `{"error":"workstation_not_found"}`)
+- `it_documents_template_http_method_or_skips` → SKIP si template `se4_applications/` absent (sous-cas VM-dépendant)
+
+**Note méthode HTTP D5** : l'endpoint natif est `Route::get(...)` uniquement. Les `.cmd` orchestrateurs
+legacy utilisent POST multipart (`-F "action=..."`). Pendant la transition, `gpo/applications.php`
+accepte GET + POST (`Route::match`). Le patch POST→GET est dans `17-3-upstream-se4_applications.diff`.
+
+**Note runbook endpoints aval (Q-2 story 17.4)** : `wallpaper/logon.windows` et `shortcuts/logon.windows`
+appellent au runtime des endpoints aval (`wallpaper_out.php` → `/api/v1/workstation-config/wallpaper`,
+`shortcuts_out.php` → `/api/v1/workstation-config/shortcuts`). La joignabilité de ces endpoints aval
+(image `wallpaper.jpg` téléchargée, `.lnk` générés) est du ressort de leurs propres stories (16.13/17.6).
+Pour validation terrain E2E complète, tester manuellement depuis un poste joint au domaine.
+
+### Scénario 17.4-3 — Surcharges admin /etc/sambaedu/applications/
+
+**Objectif** : Vérifier que les surcharges admin `/etc/` prennent priorité sur `/usr/share/`.
+
+**Test portable CI** (sans VM) :
+```bash
+./vendor/bin/phpunit --testsuite Feature --filter 'ApplicationsScriptsLocalOverrideTest::it_local_override_wins_over_package'
+./vendor/bin/phpunit --testsuite Feature --filter 'ApplicationsScriptsLocalOverrideTest::it_unoverridden_package_scripts_unchanged'
+```
+
+**Attendu** :
+- `it_local_override_wins_over_package` → PASS : contenu local (`REM OVERRIDE_LOCAL_17_4`) présent, contenu package absent
+- `it_unoverridden_package_scripts_unchanged` → PASS : scripts non surchargés restent depuis le package (merge incrémental)
+- `it_real_vm_local_overrides_present_or_skipped` → SKIP si `/etc/sambaedu/applications/` vide ou uniquement ressources
+
+**État observé VM 2026-05-25** : `/etc/sambaedu/applications/` contient 6 sous-dossiers (firefox, once,
+shortcuts, thunderbird, veyon, wallpaper) avec uniquement des ressources (images .jpg, default.json).
+Aucune surcharge script active. Cas nominal (H.2) : surcharges peu utilisées en parc standard.
+
+**Note F10 (risque upgrade)** : lors d'un upgrade du paquet `sambaedu-reload`, préserver
+`/etc/sambaedu/applications/` (ne pas écraser lors du `apt upgrade`). C'est une responsabilité
+du packaging Debian `sambaedu-reload`, hors scope tests 17.4.
+
+### Scénario 17.4-4 — Placeholder SE4INSTALL_NAME (risque bloquant)
+
+**Objectif** : Garantir que `SE4INSTALL_NAME` est substitué dans `wallpaper/logon.windows`.
+
+**Risque** : si `###_SE4INSTALL_NAME_###` subsiste, `taskkill /FI "USERNAME ne ###_SE4INSTALL_NAME_###"`
+tuerait explorer.exe pour TOUS les utilisateurs (audit Section A ligne 645).
+
+**Vérification manuelle** :
+```bash
+ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 \
+  "cat /usr/share/sambaedu/applications/wallpaper/logon.windows | grep -i 'se4install\|taskkill'"
+```
+
+**Attendu** : présence de `se4install` (valeur de `sambaedu.se4install_name` config), absence de `###_SE4INSTALL_NAME_###`.
+
+### Checklist rapide 17.4 — post-deploy (post-review)
+
+- [ ] **17.4-1** Suite `./vendor/bin/phpunit --filter 'ApplicationsScriptsCriticalParity'` : 9 PASS, 0 skip **même hors VM** (snapshot P3)
+- [ ] **17.4-2** Suite `./vendor/bin/phpunit --filter 'Tests\Feature\Gpo\ApplicationsScriptsApiV1'` : 200+cp1252, 200+utf8, **body non vide** (P5), 401, 404 tous PASS
+- [ ] **17.4-3** Suite `./vendor/bin/phpunit --filter 'ApplicationsScriptsLocalOverride'` : surcharge locale gagne (portable CI)
+- [ ] **17.4-4** Aucun placeholder `###_…_###` résiduel dans les 3 contextes critiques (DataProvider)
+- [ ] **17.4-5** `SE4INSTALL_NAME` substitué dans wallpaper — ligne `taskkill … "USERNAME ne se4install"` complète (P8)
+- [ ] **17.4-6** Script Linux `firefox/logon.linux` : UTF-8, pas de CRLF, parité bytes OK
+- [ ] **17.4-7** Tests 17.2 non régressés (`ApplicationsScriptsByteParityTest` : 3/3 PASS, trait factorisé P6)
+- [ ] **17.4-8** ROBOCOPY : ligne complète `"%WinDir%\install\os\netinst" "%ProgramFiles%\SambaEdu"` (P4 — `netinst` = réf VM validée Henri)
+- [ ] **17.4-9** (VM, optionnel) `gio trash`/cleanup manuel des fixtures fantômes sur VM (`windows_logon_shortcuts/`, `windows_logon_firefox/`, `windows_startup_wpkg/`) — inotify ne propage pas les deletes

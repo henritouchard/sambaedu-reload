@@ -1,0 +1,9 @@
+echo "Mise en place config thunderbird"
+if [ ! -d "/etc/thunderbird" ]; then
+   mkdir -p /etc/thunderbird/policies
+fi
+if [ -f "/etc/thunderbird/policies/policies.json" ]; then
+   rm  -f "/etc/thunderbird/policies/policies.json"
+fi
+/usr/bin/curl -o /etc/thunderbird/policies/policies.json -F "id=$id" http://###_SE4FS_NAME_###.###_DOMAIN_###/gpo/thunderbird_out.php
+# fin de la configuration de thunderbird

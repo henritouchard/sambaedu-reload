@@ -1,0 +1,25 @@
+[
+	{
+		"os": "windows",
+		"action": "logon",
+		"context": "system",
+		"includes": ["remote_user"],
+		"excludes": [],
+		"file": "desactivate.cmd"
+	},
+	{
+		"os": "windows",
+		"action": "logoff",
+		"context": "system",
+		"includes": [],
+		"excludes": [],
+		"file": "activate.cmd"
+	},
+	{
+		"os": "windows",
+		"action": "startup",
+		"includes": [],
+		"excludes": [],
+		"file": "activate.cmd"
+	}
+]

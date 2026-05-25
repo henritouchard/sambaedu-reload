@@ -185,16 +185,34 @@ scp -i ~/.ssh/id_se4fs_vm root@192.168.122.50:/tmp/fixture-<scenario>.<ext> \
 
 Les tests appliquent les normalisations suivantes **avant** `assertSame` :
 
+Le trait partagé `tests/Concerns/AssertsScriptParity::assertScriptParity()`
+applique ces normalisations **avant** `assertSame` (post-review 17.4 P7 — regex
+`id` **restreintes aux contextes session connus**, pour ne PAS masquer un hash
+non-session) :
+
 | Pattern à remplacer | Remplacement | Raison |
 |---|---|---|
-| `id=[0-9a-f]{32}` | `id=__ID__` | L'ID est un `md5()` calculé à la volée — doit être fixé via `$info['id']` fixe dans le test |
-| `SET id=[0-9a-f]{32}` | `SET id=__ID__` | Idem dans les headers cmd |
-| `SET DOMAINSID=S-1-5-21-[0-9-]+` | `SET DOMAINSID=__SID__` | SID domaine lu via `net getdomainsid` — varie selon instance |
+| `SET DOMAINSID=…` | `SET DOMAINSID=__SID__` | SID domaine lu via `net getdomainsid` — varie selon instance |
+| `SET id=[a-f0-9]{32}` | `SET id=__ID__` | id md5 session — header cmd Windows startup |
+| `^id=[a-f0-9]{32}` (début de ligne) | `id=__ID__` | id md5 session — header bash Linux |
+| `-F "id=[a-f0-9]{32}"` | `-F "id=__ID__"` | id md5 session — footer / DL powershell (cmd + bash) |
 
-**Note** : dans les tests de parité, l'`$info['id']` est fixé à la même
-valeur que celle utilisée lors de la capture (valeur md5 statique ci-dessus)
-pour éviter tout écart d'ID. Le DOMAINSID est normalisé car il dépend du SID
-Samba de l'instance VM (non portable).
+**Note P7 — innocuité de la normalisation `id`** : l'audit des 5 fragments
+critiques + headers/footers montre qu'aucun hash 32-hex *non-session* n'apparaît
+dans ces 3 contextes ancrés :
+- le hash Firefox hardcodé est `308046B0AF4A39CB` (16 chars **MAJUSCULES**) → hors
+  champ de `[a-f0-9]{32}` (lowercase + longueur 32) ;
+- les `md5_file()` du mécanisme `once` produisent un md5 mais ne sont jamais
+  préfixés par `id=` / `SET id=` / `-F "id="` (ils sont en nom de fichier `.md5`
+  ou en comparaison `local_md5`).
+La regex large `\bid=([a-f0-9]{32})\b` de la version 17.4 pré-review est donc
+remplacée par trois ancres de contexte explicites (aucune divergence réelle
+masquée).
+
+**Note `$info['id']`** : dans les tests de parité, l'`$info['id']` est fixé à la
+même valeur que celle utilisée lors de la capture (valeur md5 statique) pour
+éviter tout écart d'ID. Le DOMAINSID est normalisé car il dépend du SID Samba de
+l'instance VM (non portable).
 
 ## Régénération des fixtures
 
@@ -203,3 +221,180 @@ fixtures en relançant les commandes ci-dessus sur la VM après `apt upgrade sam
 
 **Ne jamais modifier manuellement les fixtures** — elles doivent refléter
 exactement la sortie du legacy PHP.
+
+---
+
+## Snapshot portable du package (Story 17.4 P3) — `_package_snapshot/`
+
+> **Post-review 17.4 P3** — pour rendre les tests de parité **portables CI**
+> (exécutables sans dépendre du chemin système `/usr/share/sambaedu/applications/`),
+> un **snapshot byte-identique** du package est committé sous
+> `tests/Fixtures/Gpo/applications/_package_snapshot/`.
+
+| Champ | Valeur |
+|---|---|
+| **Provenance** | `/usr/share/sambaedu/applications/` (VM `root@192.168.122.50`) |
+| **Version paquet** | `sambaedu 4.17.285` (capturé 2026-05-25, identique à 17.2) |
+| **SHA256 agrégé** | `8e0b5be2498b000762af4de89141023e62d9cf5e75713e982169d50a0f8c280e` (identique à la table 17.2) |
+| **Périmètre** | arborescence **complète** (97 fichiers, ~1.4 Mo, 28 apps) |
+
+**Pourquoi l'arborescence complète et pas un sous-ensemble ?**
+`ApplicationScriptsAssembler::assemble()` concatène **tous** les fragments
+applicables d'un contexte (`logon/windows`, `startup/windows`, `logon/linux`) :
+un snapshot partiel produirait un blob différent → casserait la parité byte.
+Le snapshot complet est donc requis pour reproduire le blob exact des fixtures.
+Taille maîtrisée (les 3 plus gros fichiers sont des images wallpaper ~262 Ko,
+ressources légitimes de distribution ; le seul `.pem` est une **clé publique**
+Veyon — aucun secret).
+
+**Le test pointe sur le snapshot, pas sur le système** : le trait
+`AssertsScriptParity::applicationsScriptsSource()` retourne le snapshot **en
+priorité** (fallback `/usr/share/…` seulement s'il est absent). Vérifié : les
+tests de parité 17.4 passent **sur un host sans `/usr/share/sambaedu/applications/`**.
+
+**Régénérer le snapshot** (après bump paquet) :
+```bash
+ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 \
+  "cd /usr/share/sambaedu/applications && tar -cf /tmp/apps_snapshot.tar ."
+scp -i ~/.ssh/id_se4fs_vm root@192.168.122.50:/tmp/apps_snapshot.tar /tmp/
+rm -rf tests/Fixtures/Gpo/applications/_package_snapshot/* \
+  && tar -xf /tmp/apps_snapshot.tar -C tests/Fixtures/Gpo/applications/_package_snapshot/
+# Puis recapturer les fixtures expected.* sur le MÊME paquet (cohérence byte).
+```
+
+---
+
+## Scénarios Story 17.4 — parité par CONTEXTE + assertions ciblées
+
+> Capture réalisée le **2026-05-25** sur la VM, paquet `sambaedu 4.17.285` (SHA256 identique à 17.2).
+
+**Post-review P1/P2 — granularité de la couverture** : `assemble()` ne sait pas
+isoler un script (il concatène tous les fragments d'un contexte). Les 5 scripts
+critiques se répartissent sur seulement **3 contextes distincts** :
+
+| Contexte | Fixture de parité byte | Fragments critiques couverts |
+|---|---|---|
+| `startup/windows` | *(aucune — byte-identique à `windows_startup_firewall` 17.2)* | `wpkg/startup.windows` |
+| `logon/windows` | `windows_logon_wallpaper/expected.cmd` | `wallpaper`, `shortcuts`, `firefox` (logon.windows) |
+| `logon/linux` | `linux_logon_firefox/expected.sh` | `firefox/logon.linux` |
+
+**Fixtures supprimées (P1/P2 — byte-identiques après normalisation, redondantes)** :
+- `windows_logon_shortcuts/` et `windows_logon_firefox/` → md5 normalisé identique à
+  `windows_logon_wallpaper` (`23eac4c1…`). Une seule fixture conservée pour le
+  blob `logon/windows` ; l'isolation par script est assurée par des **assertions
+  ciblées de fragment** dans `ApplicationsScriptsCriticalParityTest`.
+- `windows_startup_wpkg/` → md5 normalisé identique à `windows_startup_firewall`
+  17.2 (`240afc13…`). Parité `startup/windows` déjà couverte par 17.2 ; ici seule
+  l'**assertion ROBOCOPY ligne complète** (P4) est conservée.
+
+### Fixture conservée — `windows_logon_wallpaper` (référence blob `logon/windows`)
+
+**Fichier** : `windows_logon_wallpaper/expected.cmd`
+**Couvre le blob** : `wallpaper` + `shortcuts` + `firefox` (logon.windows).
+
+**Contexte `$info`** :
+```php
+[
+    'os'          => 'windows',
+    'action'      => 'logon',
+    'interpreter' => 'cmd',
+    'context'     => '',
+    'remote'      => false,
+    'machine'     => ['cn' => 'pc-test', 'dn' => 'cn=pc-test,ou=salle01,...', 'memberof' => [...]],
+    'user'        => ['cn' => 'testuser', 'memberof' => []],
+    'userprofile' => 'C:\\Users\\testuser',
+    'salle'       => 'salle01',
+    'parcs'       => ['salle01'],
+    'list'        => ['testuser', 'salle01', 'pc-test'],
+    'admin'       => 0,
+    'id'          => md5('testuserpc-testlogonwallpaper'),
+    'speed'       => 0,
+]
+```
+
+**Assertions ciblées de fragment (isolation par script)** :
+- **wallpaper** (P8) : ligne **complète** `taskkill /F /IM explorer.exe /FI "USERNAME ne se4install"`
+  (`SE4INSTALL_NAME` substitué ; risque audit Section A ligne 645).
+- **firefox** : heredoc `profiles.ini` (marqueur `[Install308046B0AF4A39CB]` + `)>…\Firefox\profiles.ini`).
+- **shortcuts** : appel curl `http://se4fs/gpo/shortcuts_out.php` (`SE4FS_NAME` substitué).
+  > Note : le fragment `shortcuts/logon.windows` réel **n'utilise pas** `mklink`/`.lnk`
+  > (l'audit P1 le supposait) mais télécharge le `.cmd` de raccourcis via
+  > `shortcuts_out.php` — marqueur vérifié sur le contenu réel de la fixture.
+
+### Fragment `wpkg/startup.windows` — assertion ROBOCOPY (P4)
+
+Pas de fixture de parité dédiée (P2). Assertion **ligne ROBOCOPY complète** via
+`assertMatchesRegularExpression` :
+```
+ROBOCOPY "%WinDir%\install\os\netinst" "%ProgramFiles%\SambaEdu"
+```
+**VM = référence légitime (validé Henri P4)** : la source est `install\os\netinst`
+(l'audit H.3 mentionnait `install\os\SambaEdu` — imprécision audit, pas un bug).
+L'assertion verrouille la ligne entière (source + destination) pour détecter tout
+changement de l'un ou l'autre.
+
+### Fixture conservée — `linux_logon_firefox` (parité byte isolée nouvelle)
+
+**Fichier** : `linux_logon_firefox/expected.sh`
+**Script couvert** : `firefox/logon.linux` (seul contexte avec une parité byte
+isolée nouvelle, distinct de tout contexte 17.2).
+
+**Fichier** : `linux_logon_firefox/expected.sh`
+
+**Script couvert** : `firefox/logon.linux`
+
+**Contexte `$info`** :
+```php
+[
+    'os'          => 'linux',
+    'action'      => 'logon',
+    'interpreter' => 'bash',
+    'context'     => '',
+    'remote'      => false,
+    'machine'     => ['cn' => 'pc-test', 'dn' => 'cn=pc-test,ou=salle01,...', 'memberof' => []],
+    'user'        => ['cn' => 'testuser', 'memberof' => []],
+    'userprofile' => '',
+    'salle'       => 'salle01',
+    'parcs'       => [],
+    'list'        => ['testuser', 'salle01', 'pc-test'],
+    'admin'       => 0,
+    'id'          => md5('testuserpc-testlogonlinuxfirefox'),
+    'speed'       => 0,
+]
+```
+
+**Clés couvertes** : aucun placeholder (script heredoc `profiles.ini` bash statique).
+
+**Charset** : UTF-8, pas de CRLF Windows (LF uniquement).
+
+---
+
+### Commande de capture Story 17.4 (fixtures conservées)
+
+```bash
+# Copier le script de capture sur la VM
+scp /tmp/capture_fixtures_17_4.php root@192.168.122.50:/tmp/
+ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 "php /tmp/capture_fixtures_17_4.php"
+# Rapatrier en base64 (préserve CRLF/charset) — seules 2 fixtures conservées :
+ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 "base64 /tmp/fixture-windows_logon_wallpaper.cmd" \
+  | base64 -d > tests/Fixtures/Gpo/applications/windows_logon_wallpaper/expected.cmd
+ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 "base64 /tmp/fixture-linux_logon_firefox.sh" \
+  | base64 -d > tests/Fixtures/Gpo/applications/linux_logon_firefox/expected.sh
+```
+
+### Notes de capture 17.4 (post-review)
+
+- Paquet `sambaedu 4.17.285` — identique à 17.2, pas de bump version/SHA256.
+- Capture réalisée le 2026-05-25 sur VM `root@192.168.122.50`.
+- **Snapshot P3** : `_package_snapshot/` byte-identique au package (SHA256 `8e0b5be2…`),
+  permet les tests de parité portables CI (cf. section dédiée ci-dessus).
+- **Fixtures supprimées (P1/P2)** : `windows_logon_shortcuts/`, `windows_logon_firefox/`,
+  `windows_startup_wpkg/` — byte-identiques après normalisation, remplacées par des
+  assertions ciblées de fragment (cf. section « Scénarios 17.4 »).
+- `/etc/sambaedu/applications/` : 6 sous-dossiers (firefox, once, shortcuts, thunderbird,
+  veyon, wallpaper) avec **uniquement des ressources** (images .jpg, default.json) — aucun
+  fichier script reconnu. Pas de surcharges scripts déployées sur ce serveur (H.2).
+- Template GPO `se4_applications` : `/usr/share/sambaedu/gpo/sambaedu-gpo/se4_applications/`
+  absent sur cette VM (test AC2.3 skippé — sous-cas VM-dépendant légitime).
+- Divergence audit H.3 (P4) : `wpkg/startup.windows` utilise `install\os\netinst`
+  (non `install\os\SambaEdu`) — **VM = référence validée Henri**.

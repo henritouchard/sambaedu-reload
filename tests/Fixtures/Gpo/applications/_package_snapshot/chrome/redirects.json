@@ -1,0 +1,12 @@
+{
+	"GoogleChrome": {
+		"app": "GoogleChrome",
+		"excludes": [
+			"port_perdir",
+			"portables"
+		],
+		"link": "AppData\\Local\\Google\\Chrome",
+		"dest": "AppData\\Roaming\\Google\\Chrome",
+		"server": ".config\\Chrome"
+	}
+}

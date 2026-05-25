@@ -1,0 +1,18 @@
+[
+	{
+		"name": "Se deconnecter",
+		"place": "desktop",
+		"owner": "windows",
+		"windows": {
+			"link": "C:\\Windows\\System32\\shutdown.exe",
+			"args": "-l",
+			"path": "",
+			"icon": ""
+		},
+		"linux": {
+			"link": "",
+			"args": "",
+			"path": ""
+		}
+	}
+]

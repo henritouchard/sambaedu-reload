@@ -1,0 +1,134 @@
+[
+	{
+		"name": "Nettoyage WPKG",
+		"place": "desktop",
+		"owner": "admin",
+		"windows": {
+			"link": "C:\\Program Files\\Sambaedu\\Nettoyage WPKG.cmd",
+			"args": "",
+			"path": "",
+			"icon": ""
+		}
+	},
+	{
+		"name": "Nettoyage Windows Update",
+		"place": "desktop",
+		"owner": "admin",
+		"windows": {
+			"link": "C:\\Program Files\\Sambaedu\\Nettoyage Windows Update.cmd",
+			"args": "",
+			"path": "",
+			"icon": ""
+		}
+	},
+	{
+		"name": "Nettoyage Windows SFC",
+		"place": "desktop",
+		"owner": "admin",
+		"windows": {
+			"link": "C:\\Program Files\\Sambaedu\\Nettoyage Windows SFC.cmd",
+			"args": "",
+			"path": "",
+			"icon": ""
+		}
+	},
+	{
+		"name": "Nettoyage Windows DISM",
+		"place": "desktop",
+		"owner": "admin",
+		"windows": {
+			"link": "C:\\Program Files\\Sambaedu\\Nettoyage Windows DISM.cmd",
+			"args": "",
+			"path": "",
+			"icon": ""
+		}
+	},
+	{
+		"name": "Nettoyage GPOs",
+		"place": "desktop",
+		"owner": "admin",
+		"windows": {
+			"link": "C:\\Program Files\\Sambaedu\\Nettoyage GPOs.cmd",
+			"args": "",
+			"path": "",
+			"icon": ""
+		}
+	},
+	{
+		"name": "Nettoyage applications-startup",
+		"place": "desktop",
+		"owner": "admin",
+		"windows": {
+			"link": "C:\\Program Files\\Sambaedu\\Nettoyage applications-startup.cmd",
+			"args": "",
+			"path": "",
+			"icon": ""
+		}
+	},
+	{
+		"name": "Nettoyage applications-logon",
+		"place": "desktop",
+		"owner": "admin",
+		"windows": {
+			"link": "C:\\Program Files\\Sambaedu\\Nettoyage applications-logon.cmd",
+			"args": "",
+			"path": "",
+			"icon": ""
+		}
+	},
+	{
+		"name": "Installation outils RSAT",
+		"place": "desktop",
+		"owner": "admin",
+		"windows": {
+			"link": "C:\\Program Files\\Sambaedu\\Installation outils RSAT.cmd",
+			"args": "",
+			"path": "",
+			"icon": ""
+		}
+	},
+	{
+		"name": "wpkg",
+		"place": "desktop",
+		"owner": "admin",
+		"windows": {
+			"link": "C:\\Program Files\\Sambaedu\\wpkg.cmd",
+			"args": "",
+			"path": "",
+			"icon": ""
+		}
+	},
+	{
+		"name": "Wintail",
+		"place": "desktop",
+		"owner": "admin",
+		"windows": {
+			"link": "C:\\Program Files\\Sambaedu\\wintail.exe",
+			"args": "C:\\Windows\\wpkg.log",
+			"path": "C:\\Program Files\\Sambaedu\\",
+			"icon": ""
+		}
+	},
+	{
+		"name": "Configurer les associations par defaut (obsolete)",
+		"place": "desktop",
+		"owner": "admin",
+		"windows": {
+			"link": "C:\\Program Files\\Sambaedu\\Configurer les associations aux applications par defaut.cmd",
+			"args": "",
+			"path": "",
+			"icon": ""
+		}
+	},
+	{
+		"name": "Diagnostic GPOs - GPResult",
+		"place": "desktop",
+		"owner": "admin",
+		"windows": {
+			"link": "C:\\Program Files\\Sambaedu\\Diagnostic GPOs - GPResult.cmd",
+			"args": "",
+			"path": "",
+			"icon": ""
+		}
+	}
+]

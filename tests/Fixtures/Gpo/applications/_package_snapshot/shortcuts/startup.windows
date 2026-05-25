@@ -1,0 +1,7 @@
+rem Debut de la configuration raccourcis startup
+curl -o "%TEMP%\shortcuts.cmd" -F "os=windows" -F "id=%id%" -F "action=startup" "http://###_SE4FS_NAME_###/gpo/shortcuts_out.php">NUL
+if exist "%TEMP%\shortcuts.cmd" (
+	call "%TEMP%\shortcuts.cmd"
+	del /f /q "%TEMP%\shortcuts.cmd"
+)
+rem Fin de la configuration des raccourcis startup

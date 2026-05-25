@@ -1,0 +1,3 @@
+REM scripts divers utiles pour sambaedu
+IF NOT EXIST "%ProgramFiles%\SambaEdu" (MD "%ProgramFiles%\SambaEdu")
+ROBOCOPY "%WinDir%\install\os\netinst" "%ProgramFiles%\SambaEdu"

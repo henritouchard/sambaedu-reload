@@ -1,0 +1,26 @@
+REM Mise en place du profil utilisateur de Firefox pour Windows
+IF NOT EXIST "%userprofile%\AppData\Local\cacheFirefox\" (MD "%userprofile%\AppData\Local\cacheFirefox\")
+IF NOT EXIST "%userprofile%\AppData\Roaming\Mozilla\Firefox" (MD "%userprofile%\AppData\Roaming\Mozilla\Firefox")
+rem IF NOT EXIST "%userprofile%\AppData\Roaming\Mozilla\Firefox\sambaedu.default" (MD "%userprofile%\AppData\Roaming\Mozilla\Firefox\sambaedu.default")
+rem IF NOT EXIST "\\%SE4FS%\users\%username%\.mozilla\firefox\sambaedu.default" (MD "\\%SE4FS%\users\%username%\.mozilla\firefox\sambaedu.default")
+(
+ECHO [Install308046B0AF4A39CB]
+ECHO Default=sambaedu.default
+ECHO Locked=1
+ECHO:
+ECHO [Profile0]
+ECHO Name=sambaedu
+ECHO IsRelative=1
+ECHO Path=sambaedu.default
+ECHO Default=1
+ECHO:
+ECHO [General]
+ECHO StartWithLastProfile=1
+ECHO Version=2
+)>%userprofile%\AppData\Roaming\Mozilla\Firefox\profiles.ini
+(
+ECHO [308046B0AF4A39CB]
+ECHO Default=sambaedu.default
+ECHO Locked=1
+)>%userprofile%\AppData\Roaming\Mozilla\Firefox\installs.ini
+REM Fin de la mise en place du profil utilisateur de Firefox pour Windows
