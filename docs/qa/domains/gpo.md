@@ -2219,3 +2219,71 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 \
 - [ ] **17.4-7** Tests 17.2 non régressés (`ApplicationsScriptsByteParityTest` : 3/3 PASS, trait factorisé P6)
 - [ ] **17.4-8** ROBOCOPY : ligne complète `"%WinDir%\install\os\netinst" "%ProgramFiles%\SambaEdu"` (P4 — `netinst` = réf VM validée Henri)
 - [ ] **17.4-9** (VM, optionnel) `gio trash`/cleanup manuel des fixtures fantômes sur VM (`windows_logon_shortcuts/`, `windows_logon_firefox/`, `windows_startup_wpkg/`) — inotify ne propage pas les deletes
+
+## Story 17.5 — Bascule opérateur du logging centralisé des scripts (`winscript-logs:*`)
+
+> Append-only. Story de complétion : le pipeline wrapper (`ApplicationScriptsAssembler::wrapInterpreters()`)
+> et le flag config `sambaedu.scripts.logging.enabled` ont été livrés par 17.2 ; l'infra logs
+> (table `script_execution_logs`, endpoint `POST /api/v1/script-execution-logs`, service
+> `WrapperScriptRenderer`) par 16.12. 17.5 ajoute UNIQUEMENT les 3 commandes artisan d'activation
+> opérateur (`winscript-logs:enable` / `:disable` / `:status`) + la persistance non destructive du
+> flag dans le `.env`.
+
+**Pré-requis spécifiques** :
+- Accès VM : `ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50`, projet `/var/www/sambaedu-reload`.
+- Le `.env` du projet contient (ou non) `SAMBAEDU_SCRIPTS_LOGGING_ENABLED` (défaut : `false` / absent).
+- **⚠ Ces commandes mutent le `.env` réel sur la VM** — exécuter sur un environnement de test/préprod,
+  ou prévoir un retour `winscript-logs:disable` après la vérification.
+
+### Scénario 17.5-1 — Activation via `winscript-logs:enable`
+
+1. État initial : `php artisan winscript-logs:status` → affiche « Logging des scripts d'applications : DÉSACTIVÉ »
+   + l'URL d'ingestion résolue (`https://<host>/api/v1/script-execution-logs`).
+2. Exécuter `php artisan winscript-logs:enable`.
+3. **Attendu** :
+   - Message « Logging des scripts d'applications ACTIVÉ. » + rappel POST vers `/api/v1/script-execution-logs`.
+   - Si un cache config était présent (`bootstrap/cache/config.php`), warning « cache vidé (config:clear) »
+     + invitation à relancer `php artisan config:cache`.
+   - Dans le `.env` : la ligne `SAMBAEDU_SCRIPTS_LOGGING_ENABLED=true` est présente une seule fois
+     (`grep -c '^SAMBAEDU_SCRIPTS_LOGGING_ENABLED=' .env` → `1`).
+   - Toutes les autres variables du `.env` (APP_KEY, DB_*, …) sont intactes (diff `.env` avant/après =
+     uniquement la ligne du flag).
+   - Log `winscript-logs.enabled` dans `storage/logs/scriptsos/scriptsos.log`.
+
+### Scénario 17.5-2 — Un script assemblé est effectivement wrappé (flag ON)
+
+1. Avec le flag activé (scénario 17.5-1) et un cache config relancé si besoin
+   (`php artisan config:cache`), provoquer l'assemblage d'un script d'applications
+   (endpoint runtime `gpo/applications` ou tinker `app(ApplicationScriptsAssembler::class)->assemble($info, [])`).
+2. **Attendu** : la sortie `cmd` contient le préfixe de setup + le suffixe d'appel
+   `Invoke-RestMethod` vers l'endpoint d'ingestion ; la sortie `bash` contient `curl -fsS -X POST`.
+   (Comportement livré 17.2 — vérifié ici de bout en bout, post-bascule CLI.)
+3. Vérifier qu'une exécution réelle du script sur un poste produit une ligne dans
+   `script_execution_logs` (UI `/admin/settings/scripts-logs`, livrée 16.12).
+
+### Scénario 17.5-3 — Désactivation via `winscript-logs:disable` (retour iso-legacy)
+
+1. Exécuter `php artisan winscript-logs:disable`.
+2. **Attendu** :
+   - Message « Logging des scripts d'applications DÉSACTIVÉ. » + « Retour au comportement iso-legacy
+     (parité bytes). »
+   - `.env` : `SAMBAEDU_SCRIPTS_LOGGING_ENABLED=false` (une seule ligne).
+   - Après `config:clear` (+ `config:cache` si prod), un nouvel assemblage produit une sortie strictement
+     iso-legacy (non wrappée — parité bytes, cf. suite `ApplicationsScriptsByteParityTest`).
+
+### Scénario 17.5-4 — Idempotence et non destruction du `.env`
+
+1. Exécuter `php artisan winscript-logs:enable` deux fois de suite.
+2. **Attendu** : la 2ᵉ exécution affiche « était déjà activé — flag réécrit (idempotent) » ;
+   `grep -c '^SAMBAEDU_SCRIPTS_LOGGING_ENABLED=' .env` → toujours `1` (aucune duplication).
+3. Symétrique pour `winscript-logs:disable` ré-exécuté quand le flag est déjà `false`.
+4. **Attendu** : aucune ligne orpheline, aucun commentaire/variable tiers altéré.
+
+### Checklist rapide 17.5
+
+- [ ] **17.5-1** `winscript-logs:enable` → `.env` `=true` (1 ligne), autres variables intactes, cache config vidé si présent
+- [ ] **17.5-2** `winscript-logs:status` reflète l'état effectif (config) SANS écrire le `.env`
+- [ ] **17.5-3** Flag ON → scripts `cmd`/`bash` wrappés (POST `/api/v1/script-execution-logs`)
+- [ ] **17.5-4** `winscript-logs:disable` → `.env` `=false`, sortie iso-legacy (parité bytes) restaurée
+- [ ] **17.5-5** Idempotence enable/disable : aucune duplication de la variable, `.env` non destructif
+- [ ] **17.5-6** Tests automatisés verts : `php artisan test --filter WinscriptLogsCommands` (9 PASS, fixture `.env` isolée)
