@@ -2010,3 +2010,252 @@ pour commenter le pattern `^ipxe/action/`. Décision Henri post-prod si remonté
 
 > Smoke automatisable : voir Story 3.1 et 3.2 § "Smoke test à exécuter quand VM up"
 > dans `_bmad-output/implementation-artifacts/3-1-ipxe-service-core.md`.
+
+---
+
+## Section 17 — Story 3.8 — Installation Windows post-OOBE flows
+
+> **Périmètre** : endpoint `POST /ipxe/windows/action` étendu aux 6 étapes post-OOBE (`sysprep`, `nosysprep`, `join`, `renomme`, `post`, `wpkg`). Comble le trou fonctionnel post-3.7 (postes natifs 3.5 étaient muets sur le post-OOBE).
+>
+> **Périmètre HORS-SCOPE** : retrait fallback `direct_legacy_routes ^/ipxe/` (postes pré-3.5 continuent legacy intact — Q-5 confirmé), refonte UX/UI Livewire (pas d'UI native pour ces flows firmware iPXE), drivers DISM Phase 3, port scripts shell SE5 (`driversAuto.ps1`, `sysprep.ps1`, etc. — restent côté SMB `\\<se4fs>\install\os\netinst\`), workflow stateful clonage UDP-multicast (Phase 3 dédiée), DNS samba/bind update explicite post-rename (Samba 4 auto — Q-4).
+
+### Pré-requis VM (action Henri post-merge)
+
+```bash
+# SSH /vm
+cd /var/www/sambaedu-reload
+composer install
+php artisan migrate                        # Applique 2026_05_22_120000_add_progress_and_programmed_action_to_workstations
+php artisan optimize:clear
+systemctl reload php8.2-fpm@www-admin
+
+# Vérifier qu'aucun poste pré-3.8 in-progress n'a été cassé
+sudo -u postgres psql sambaedu -c "\d workstations" | grep -E 'progress|programmed_action'
+# attendu : progress varchar(8), programmed_action jsonb (default '{}'::jsonb)
+
+# Vérifier APCu CLI vs FPM séparés (rappel)
+# Toute programmation type=clonage doit passer par le menu admin web SE5 (FPM) — pas par tinker CLI
+```
+
+### Pré-requis annexes
+
+- Vérifier `\\<se4fs>\install\os\netinst\` contient `sysprep.ps1`, `driversAuto.ps1`, `winget-install.ps1`, `SetWallpaper.ps1`, `Nettoyage WPKG.cmd` (action T0.5 dev — restent côté SMB legacy).
+- Vérifier `.env` AD sensibles : `SE4INSTALL_NAME`, `SE4INSTALL_PASSWD`, `SAMBAEDU_ADMINSE_NAME`, `SAMBAEDU_ADMINSE_PASSWD`, `SAMBAEDU_LDAP_DOMAIN`, `SAMBAEDU_SE4FS_NAME` (si une manquante → builder émet `BatPlaceholderInjectionException` sur valeur vide → fail-safe mais install KO).
+- `AdMachineManager::renameComputer` (3.3 D14 plan B = delete+recreate) supporté — risque netbootGUID à surveiller terrain (cf. scénario 3.8-9 ci-dessous).
+
+### Rollback runtime (en cas de régression)
+
+```bash
+# SSH /vm
+echo "IPXE_WIN_POST_INSTALL_ENABLED=false" >> /var/www/sambaedu-reload/.env
+php artisan config:clear
+# Revient au comportement 3.5 (body vide + log warning sur step non-{winpe,oobe})
+```
+
+Rollback fine-grained (1 étape spécifique) :
+
+```bash
+echo "IPXE_WIN_JOIN_ENABLED=false" >> .env    # ou autre étape : SYSPREP, NOSYSPREP, RENOMME, POST, WPKG
+php artisan config:clear
+```
+
+### Scénarios stables 3.8
+
+> **Convention** : un poste neuf Win11 installé via la pipeline 3.5 (iPXE → install.bat → unattend.xml) sert de base. Les scénarios 3.8-* exercent les étapes post-OOBE séquentielles. Les scénarios marqués _smoke curl_ peuvent être exécutés en isolation via curl direct (pas besoin d'un poste réel).
+
+#### Section 17.1 — Smoke curl par étape (isolation)
+
+- [ ] **Scénario 3.8-1** (smoke curl `etape=sysprep` poste en mode clonage) :
+  ```bash
+  # Programmer pc-test en type=clonage via menu admin web SE5 (UI hors-scope 3.8)
+  curl --data 'name=pc-test&uuid=12345678-1234-1234-1234-123456789012&etape=sysprep&mac=AA:BB:CC:DD:EE:FF' \
+       http://192.168.122.50/ipxe/windows/action
+  # Attendu : 200 + Content-Type text/plain; charset=utf-8 + body non vide + CRLF strict
+  # Body doit contenir : "REM", "for /f", ":uuid", ":gpo", ":autologon", "sysprep.exe /generalize /oobe", "curl -F \"etape=sysprep\" -F \"ret=1\""
+  # DB : workstations.programmed_action.etape='sysprep', programmed_action.type='clonage2', programmed_action.role='modele', progress=0%, status="préparation 1er boot"
+  # Log channel ipxe : ipxe.windows.action.sysprep.dispatched
+  ```
+
+- [ ] **Scénario 3.8-2** (smoke curl `etape=nosysprep&ret=0` — Q-2 refacto clarté) :
+  ```bash
+  curl --data 'name=pc-test&uuid=...&etape=nosysprep&ret=0&mac=...' http://192.168.122.50/ipxe/windows/action
+  # Attendu : 200 + body vide (validation state machine) + log info ipxe.windows.action.nosysprep.advanced
+  # DB : workstations.progress=50%, programmed_action.etape='nosysprep'
+  # NOTE : Q-2 refacto clarté — le SE5 utilise etape=nosysprep distinct (PAS etape=sysprep&ret=2 legacy)
+  ```
+
+- [ ] **Scénario 3.8-3** (smoke curl `etape=join` premier appel) :
+  ```bash
+  curl --data 'name=pc-test&uuid=...&etape=join&mac=...' http://192.168.122.50/ipxe/windows/action
+  # Attendu : 200 + body = cmd_join (~3.7 KB CRLF strict)
+  # Body doit contenir : :gpo, :autologon, powershell Add-Computer -DomainName, curl ret=1
+  # DB : status="mise au domaine v2", progress=0%, programmed_action.role='windows', programmed_action.etape='join'
+  # Log : ipxe.windows.action.join.dispatched
+  # Parité bit-équivalence : assertCmdBodyEquivalent(body, fixture tests/fixtures/ipxe/legacy-cmd-action/join.txt)
+  ```
+
+- [ ] **Scénario 3.8-4** (smoke curl `etape=renomme&ret=0` — AD rename intégration) :
+  ```bash
+  # Pré-requis : programmed_action.role='nouveau-nom-pc' (set précédemment via menu admin web)
+  curl --data 'name=pc-test&uuid=...&etape=renomme&ret=0&mac=...' http://192.168.122.50/ipxe/windows/action
+  # Attendu : 200 + body vide (validation) + AD rename invoqué via AdMachineManager::renameComputer
+  # Si succès AD rename : status="renommage dans AD OK", progress=60%, log ipxe.windows.action.renomme.ad_rename_success
+  # Si échec AD rename (exception) : status="ERREUR renommage AD impossible", progress=40%, log ipxe.windows.action.renomme.ad_rename_failure
+  # DNS Samba auto (Q-4) — pas de helper DNS explicite SE5
+  # Vérifier ldapsearch : CN=<nouveau-nom-pc>,OU=...,DC=localdev,DC=fr existe + ancien CN supprimé
+  ```
+
+- [ ] **Scénario 3.8-5** (smoke curl `etape=post` premier appel + ret=0 récursif) :
+  ```bash
+  # 1er appel
+  curl --data 'name=pc-test&uuid=...&etape=post&mac=...' http://192.168.122.50/ipxe/windows/action
+  # Attendu : body cmd_post + status="post-mise au domaine manuelle", progress=20%
+  # 2e appel (autologon récursif — branche B legacy)
+  curl --data 'name=pc-test&uuid=...&etape=post&ret=0&mac=...' http://192.168.122.50/ipxe/windows/action
+  # Attendu : body cmd_post + status="script de demarrage post-install OK", progress=50% (re-render body pour 2e tour)
+  # 3e appel (validation finale)
+  curl --data 'name=pc-test&uuid=...&etape=post&ret=1&mac=...' http://192.168.122.50/ipxe/windows/action
+  # Attendu : body vide + progress=100% + programmed_action.etape='default'
+  ```
+
+- [ ] **Scénario 3.8-6** (smoke curl `etape=wpkg` séquence complète) :
+  ```bash
+  curl --data 'name=pc-test&uuid=...&etape=wpkg&mac=...' ...   # body cmd_wpkg, progress=10%, status="lancement wpkg interactif"
+  curl --data '...etape=wpkg&ret=0&mac=...' ...                # body vide, progress=50%, programmed_action.role='windows', programmed_action.etape='wpkg'
+  curl --data '...etape=wpkg&ret=1&mac=...' ...                # body vide, progress=100%, status="exec wpkg fini", programmed_action.etape='default'
+  ```
+
+#### Section 17.2 — Non-régression 3.5 (winpe / oobe)
+
+- [ ] **Scénario 3.8-7** (winpe inchangé 3.5) :
+  ```bash
+  curl --data 'name=pc-test&uuid=...&etape=winpe&mac=...' http://192.168.122.50/ipxe/windows/action
+  # Attendu : 200 + body vide + recordWinpeStart (iso 3.5 — pas de régression)
+  # Workstation.status='installation Windows en cours', os='windows', progress=10%
+  ```
+
+- [ ] **Scénario 3.8-8** (oobe inchangé 3.5) :
+  ```bash
+  curl --data 'name=pc-test&uuid=...&etape=oobe&ret=0&mac=...' http://192.168.122.50/ipxe/windows/action
+  # Attendu : 200 + body vide + recordOobeComplete (iso 3.5)
+  # Workstation.status='installation Windows terminee', progress=100%
+  # NOTE : la fixture oobe.txt sert de référence non-régression (parité avec legacy cmd_oobe sur 1er appel sans ret)
+  ```
+
+#### Section 17.3 — Sécurité et rollback
+
+- [ ] **Scénario 3.8-9** (injection cmd.exe tentative — D9 sécurité critique) :
+  ```bash
+  # Tenter d'injecter via name="; calc.exe; rem"
+  curl --data 'name=pc; calc.exe ;rem&uuid=...&etape=join&mac=...' http://192.168.122.50/ipxe/windows/action
+  # Attendu : 200 + body vide + log warning ipxe.windows.action.placeholder_injection_attempt
+  # PAS de cmd.exe lancé côté serveur (BatPlaceholderInjectionException catché par controller)
+  # Note : la 1ère validation FormRequest (max:32, Rule::in 8 cases) capture déjà beaucoup
+  ```
+
+- [ ] **Scénario 3.8-10** (rollback runtime D13) :
+  ```bash
+  # SSH /vm
+  echo "IPXE_WIN_POST_INSTALL_ENABLED=false" >> /var/www/sambaedu-reload/.env
+  php artisan config:clear
+  curl --data '...etape=join&mac=...' http://192.168.122.50/ipxe/windows/action
+  # Attendu : 200 + body vide + log warning ipxe.windows.action.post_install_disabled (comportement 3.5 strict)
+  # Restore :
+  sed -i '/IPXE_WIN_POST_INSTALL_ENABLED/d' .env
+  php artisan config:clear
+  ```
+
+- [ ] **Scénario 3.8-11** (rollback fine-grained par étape) :
+  ```bash
+  echo "IPXE_WIN_JOIN_ENABLED=false" >> .env && php artisan config:clear
+  curl --data '...etape=join&mac=...' ...
+  # Attendu : 200 + body vide + log warning ipxe.windows.action.step_disabled
+  # Autres étapes non affectées (renomme, post, wpkg, sysprep, nosysprep restent actives)
+  ```
+
+#### Section 17.4 — Install Windows complète (poste réel)
+
+- [ ] **Scénario 3.8-12** (install Windows complète mode standard) :
+  ```
+  1. Démarrer poste neuf via iPXE chain boot.ipxe (Story 3.1).
+  2. Menu admin web SE5 : choisir "Install Windows" pour le poste (Story 3.2 menu — UI hors-scope 3.8).
+  3. Le poste télécharge WinPE → install.bat → unattend.xml → diskpart.txt (Story 3.5 done).
+  4. Setup Windows s'exécute via setup.exe /unattend:unattend.xml.
+  5. Au FirstLogonCommands, curl etape=oobe&ret=0 → recordOobeComplete (3.5).
+  6. Reboot, poste démarre en se4install autologon → curl etape=join → cmd_join → join AD → curl etape=join&ret=1.
+  7. Reboot, poste démarre, curl etape=post → cmd_post → wpkg + scripts post-install → curl etape=post&ret=0 puis &ret=1.
+  8. Vérifier final : Workstation.status='terminé', progress=100%, os='windows', programmed_action.etape='default'.
+  9. Vérifier AD : CN=<poste>,OU=<établissement>,OU=computers,DC=localdev,DC=fr présent + memberOf=<groupes> conformes.
+  10. Vérifier DNS : nslookup <poste>.localdev.fr → IP poste (Samba 4 auto Q-4).
+  ```
+
+- [ ] **Scénario 3.8-13** (install Windows mode clonage maître) :
+  ```
+  1. Programmer le poste maître en type=clonage via menu admin web SE5.
+  2. Suivre le flow d'install Windows (iso 3.8-12).
+  3. Sur curl etape=sysprep → body cmd_sysprep (PAS le legacy dead-code mais le port SE5 — voir _README.md fixtures).
+  4. Au reboot, autologon se4install → sysprep.exe /generalize /oobe → curl etape=sysprep&ret=1 → recordSysprepGeneralized.
+  5. Reboot final, poste prêt pour clonage externe (sysrescuecd ou outil tiers — Phase 3 workflow stateful).
+  6. Si sysprep KO (sysprep.exe fail) → fallback cmd_nosysprep → Remove-Computer (sortie domaine) → reboot adminse → curl etape=sysprep&ret=2 → recordSysprepNoneClone (backup compat conservé DO-7).
+  ```
+
+#### Section 17.5 — Concurrence + edge cases
+
+- [ ] **Scénario 3.8-14** (2 POST simultanés même poste — concurrence) :
+  ```bash
+  # 2 curls en parallèle sur le même poste
+  curl ...etape=sysprep... &
+  curl ...etape=sysprep... &
+  wait
+  # Attendu : les 2 requêtes terminent OK (DB::transaction + lockForUpdate dans tracker — D7 + DO-5)
+  # 1 seule ligne MachineBootLog peut être insérée si lockForUpdate empêche le double-insert (ou 2 lignes si la fenêtre lock est trop courte — observer)
+  # Workstation.programmed_action cohérent (pas de corruption JSON merge)
+  ```
+
+- [ ] **Scénario 3.8-15** (payload `etape` arbitrary rejeté par FormRequest) :
+  ```bash
+  curl --data 'name=pc-test&uuid=...&etape=arbitrary_value&mac=...' http://192.168.122.50/ipxe/windows/action
+  # Attendu : 422 (FormRequest Rule::in 8 cases rejette)
+  # Defense in depth : si la Rule::in était bypassée, l'enum WindowsInstallStep::fromString rejetterait aussi → 200 + log warning unsupported_step (iso 3.5)
+  ```
+
+### Checklist rapide (avant déclaration done)
+
+- [ ] Migration appliquée (`workstations.progress varchar(8)`, `workstations.programmed_action jsonb`)
+- [ ] Index GIN `workstations_pa_etape_idx` créé (`\d workstations` montre l'index)
+- [ ] Smoke curl 3.8-3 (join) OK + parité bit-équivalence avec `tests/fixtures/ipxe/legacy-cmd-action/join.txt`
+- [ ] Smoke 3.8-7 + 3.8-8 (winpe + oobe) **non-régression 3.5**
+- [ ] Smoke 3.8-9 (injection rejeté) — sécurité critique
+- [ ] Smoke 3.8-10 (rollback runtime) — toggle config opérationnel
+- [ ] Scénario 3.8-12 install complète sur **au moins 1 poste réel** (Win11)
+- [ ] PHPUnit Feature 3.5/3.7 verts (non-régression)
+
+### Post-correctifs & non-régressions
+
+> Cette section est enrichie post-review/post-incident.
+
+| Incident | Story | Symptôme | Correctif | Scénario test ajouté |
+|---|---|---|---|---|
+| #3 (review) — join OU perdu au 2e curl | 3.8 | Au 2e curl join (`ret=0`), le poste ne re-envoie pas `role`/`ou` → `Add-Computer -OUPath ''` → poste joint dans `CN=Computers` au lieu de l'OU cible → GPOs non appliquées (régression silencieuse, install passe 200 OK) | `recordJoinInitiated` persiste `ou`+`join_role` dans `programmed_action` JSONB ; `handleJoin` ret=0/1 résout depuis la DB via `resolveJoinRoleOu()` (parité legacy APCu serveur-side) | `it_persists_and_resolves_join_ou_across_curl_steps` (Feature) + scénario manuel 3.8-16 ci-dessous |
+
+#### Scénario 3.8-16 — Non-régression join OU multi-curl (incident #3)
+
+- [ ] **Scénario 3.8-16** (l'OU cible survit au reboot entre les curls join) :
+  ```bash
+  # 1er curl (admin programme l'OU cible via menu web, puis poste démarre join)
+  curl --data 'name=pc-test&uuid=...&etape=join&ou=OU=salle1,OU=computers,DC=localdev,DC=fr&mac=...' \
+       http://192.168.122.50/ipxe/windows/action
+  # Vérifier DB : workstations.programmed_action->>'ou' = 'OU=salle1,OU=computers,DC=localdev,DC=fr'
+
+  # 2e curl (le poste rebooté re-curl SANS ou — simule join.blade.php ligne 21)
+  curl --data 'name=pc-test&uuid=...&etape=join&ret=0&mac=...' \
+       http://192.168.122.50/ipxe/windows/action
+  # Vérifier : body contient -OUPath 'OU=salle1,OU=computers,DC=localdev,DC=fr' (PAS -OUPath '')
+
+  # Vérification finale post-install AD
+  # ldapsearch : le poste doit être dans CN=pc-test,OU=salle1,OU=computers,DC=localdev,DC=fr
+  # PAS dans CN=pc-test,CN=Computers,DC=localdev,DC=fr
+  ```
+
+> Smoke automatisable : voir Story 3.1 et 3.2 § "Smoke test à exécuter quand VM up"
+> dans `_bmad-output/implementation-artifacts/3-1-ipxe-service-core.md`.

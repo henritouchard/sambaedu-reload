@@ -100,18 +100,25 @@ class IpxeWindowsActionEndpointTest extends TestCase
     }
 
     #[Test]
-    public function it_logs_warning_for_unsupported_step(): void
+    public function it_rejects_unsupported_step(): void
     {
+        // Review #8 — MAJ post-3.8 : 'sysprep' est désormais un step VALIDE
+        // (étendu en 3.8, plus "déférée 3.7"). Ce test cible donc un step qui
+        // restera toujours inconnu ('unknown_v3') pour préserver son intent de
+        // non-régression : un step hors des 8 cases enum est rejeté par le
+        // FormRequest (Rule::in) → 422, sans toucher la Workstation.
         $ws = $this->seedWorkstation();
 
-        $response = $this->post('/ipxe/windows/action', [
+        // postJson → 422 JSON (cohérent avec le test 3.8 it_rejects_etape_arbitrary_with_422 ;
+        // un POST form classique ferait un redirect 302 web).
+        $response = $this->postJson('/ipxe/windows/action', [
             'uuid' => $ws->uuid,
             'name' => 'pc-win',
-            'etape' => 'sysprep',  // déférée 3.7
+            'etape' => 'unknown_v3',
             'ret' => '0',
         ]);
 
-        $response->assertStatus(200);
+        $response->assertStatus(422);
         // Workstation status unchanged (le tracker n'est pas appelé).
         $ws->refresh();
         self::assertNotSame('installation WinPE', $ws->status);

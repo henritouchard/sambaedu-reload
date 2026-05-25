@@ -1,0 +1,34 @@
+REM cmd
+REM  script de demarrage genere automatiquement
+REM  pour pc-techno-25, default, , default, , oobe, default, -1
+REM 
+for /f "delims=" %%a in ('powershell -NoLogo -NoProfile -Command "(Get-CimInstance -Class Win32_ComputerSystemProduct).UUID"') do (set "UUID=%%a"
+goto uuid)
+:uuid
+if [%username%]==[se4install] (goto admin) else (goto fin)
+:admin
+reg.exe add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "AutoLogonCount" /d 0 /F >NUL
+reg.exe delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "DefaultPassword" /F>NUL
+reg.exe delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "AutoAdminLogon" /F >NUL
+if exist %windir%\autorun.cmd (del /F /S /Q %windir%\autorun.cmd)
+REM  pose probleme ?
+REM  net time /set /yes
+setx SE4FS se4fs /m
+setx SE4FS se4fs
+set SE4FS=se4fs
+if not exist  "%PROGRAMFILES%\SambaEdu" (md "%PROGRAMFILES%\SambaEdu")
+robocopy c:\Netinst "%PROGRAMFILES%\SambaEdu" /MOVE
+gpupdate /force /target:computer
+if exist "%PROGRAMFILES%\SambaEdu\SetWallpaper.ps1" (copy /y "%PROGRAMFILES%\SambaEdu\SetWallpaper.ps1" %WINDIR%\Web\SE4\SetWallpaper.ps1)
+powershell -noprofile -noninteractive -executionpolicy bypass -file "%PROGRAMFILES%\SambaEdu\driversAuto.ps1"
+powershell -noprofile -noninteractive -executionpolicy bypass -file "%PROGRAMFILES%\SambaEdu\winget-install.ps1"
+rem DISM /Online /Add-Capability /CapabilityName:WMIC~~~~
+powercfg /hibernate off
+schtasks /run /tn wpkg4
+%windir%\system32\bcdboot c:\windows /addlast
+curl -F "etape=oobe" -F "ret=0" -F "uuid=%UUID%"  -F "name=pc-techno-25" http://se4fs/ipxe/Win10/action.php
+echo install finie>c:\Netinst\install.log
+%SystemRoot%\system32\shutdown.exe -r
+:fin
+if  exist %windir%\gpo.txt (del /F /S /Q %windir%\gpo.txt)
+if  exist c:\Netinst\nowpkg.txt (del /f /q c:\Netinst\nowpkg.txt)

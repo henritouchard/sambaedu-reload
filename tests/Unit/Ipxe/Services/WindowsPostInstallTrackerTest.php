@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Tests\Unit\Ipxe\Services;
 
 use App\Ipxe\Services\WindowsPostInstallTracker;
+use App\Ldap\AdMachineManager;
 use App\Models\MachineBootLog;
 use App\Models\Workstation;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
@@ -223,5 +225,432 @@ class WindowsPostInstallTrackerTest extends TestCase
             ->where('workstation_id', $ws->id)
             ->count();
         self::assertSame(1, $count);
+    }
+
+    /* ==================================================================
+     * Story 3.8 — AC5.1-5.7 / T4.4 — Tests des 14+ méthodes record*.
+     * ================================================================== */
+
+    #[Test]
+    public function it_records_sysprep_initiated_with_clonage_type(): void
+    {
+        $ws = $this->makeWorkstation();
+        $ws->programmed_action = ['type' => 'clonage'];
+        $ws->save();
+
+        $this->tracker->recordSysprepInitiated($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('preparation 1er boot', $fresh->status);
+        self::assertSame('0%', $fresh->progress);
+        $pa = $fresh->programmed_action;
+        self::assertSame('clonage', $pa['type']);
+        self::assertSame('modele', $pa['role']);
+        self::assertSame('sysprep', $pa['etape']);
+        self::assertSame(1, MachineBootLog::where('action', 'ipxe_win_sysprep')->count());
+    }
+
+    #[Test]
+    public function it_records_sysprep_initiated_without_clonage_keeps_status(): void
+    {
+        $ws = $this->makeWorkstation();
+
+        $this->tracker->recordSysprepInitiated($ws);
+
+        $fresh = $ws->fresh();
+        // Status non modifié (legacy : seul progress=0%).
+        self::assertSame('active', $fresh->status);
+        self::assertSame('0%', $fresh->progress);
+        // etape ajouté dans programmed_action.
+        self::assertSame('sysprep', $fresh->programmed_action['etape']);
+    }
+
+    #[Test]
+    public function it_records_sysprep_gpo_start_with_clonage2(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordSysprepGpoStart($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('preparation image', $fresh->status);
+        self::assertSame('50%', $fresh->progress);
+        $pa = $fresh->programmed_action;
+        self::assertSame('clonage2', $pa['type']);
+        self::assertSame('modele', $pa['role']);
+        self::assertSame('windows', $pa['script']);
+        self::assertSame(0, $pa['ret']);
+    }
+
+    #[Test]
+    public function it_records_sysprep_generalized(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordSysprepGeneralized($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('sysprep generalisation', $fresh->status);
+        self::assertSame('50%', $fresh->progress);
+        $pa = $fresh->programmed_action;
+        self::assertSame('modele', $pa['role']);
+        self::assertSame('rescuecd', $pa['script']);
+        self::assertSame(-1, $pa['ret']);
+        self::assertSame('init-modele', $pa['etape']);
+    }
+
+    #[Test]
+    public function it_records_sysprep_none_clone(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordSysprepNoneClone($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('clonage sans sysprep', $fresh->status);
+        self::assertSame('100%', $fresh->progress);
+        $pa = $fresh->programmed_action;
+        self::assertSame('clonage2', $pa['type']);
+        self::assertSame('rescuecd', $pa['script']);
+        self::assertSame('init-modele', $pa['etape']);
+    }
+
+    #[Test]
+    public function it_records_nosysprep_with_etape_distinct_q2(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordNosysprep($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('50%', $fresh->progress);
+        // Q-2 refacto clarté — etape='nosysprep' distinct (PAS sysprep).
+        self::assertSame('nosysprep', $fresh->programmed_action['etape']);
+        self::assertSame(1, MachineBootLog::where('action', 'ipxe_win_nosysprep')->count());
+    }
+
+    #[Test]
+    public function it_records_join_initiated(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordJoinInitiated($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('mise au domaine v2', $fresh->status);
+        self::assertSame('0%', $fresh->progress);
+        self::assertSame('windows', $fresh->programmed_action['role']);
+        self::assertSame('join', $fresh->programmed_action['etape']);
+    }
+
+    #[Test]
+    public function it_records_join_adminse_started_ret_0(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordJoinAdminseStarted($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('renommage sans sysprep OK', $fresh->status);
+        self::assertSame('30%', $fresh->progress);
+        $pa = $fresh->programmed_action;
+        self::assertSame('clonage2', $pa['type']);
+        self::assertSame(0, $pa['ret']);
+    }
+
+    #[Test]
+    public function it_records_join_domained_ret_1(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordJoinDomained($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('mise au domaine sans sysprep OK', $fresh->status);
+        self::assertSame('60%', $fresh->progress);
+        self::assertSame(1, $fresh->programmed_action['ret']);
+    }
+
+    #[Test]
+    public function it_records_join_complete_ret_2(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordJoinComplete($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('clonage termine', $fresh->status);
+        self::assertSame('100%', $fresh->progress);
+        self::assertSame('default', $fresh->programmed_action['etape']);
+        self::assertSame(-1, $fresh->programmed_action['ret']);
+    }
+
+    #[Test]
+    public function it_records_renomme_initiated(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordRenommeInitiated($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('renommage au domaine', $fresh->status);
+        self::assertSame('20%', $fresh->progress);
+        self::assertSame('renomme', $fresh->programmed_action['etape']);
+    }
+
+    #[Test]
+    public function it_records_renomme_ad_renamed_success(): void
+    {
+        $ws = $this->makeWorkstation();
+
+        $adManager = Mockery::mock(AdMachineManager::class);
+        $adManager->shouldReceive('renameComputer')
+            ->once()
+            ->with('PC-101', 'pc-renamed-01')
+            ->andReturn(true);
+
+        $this->tracker->recordRenommeAdRenamed($ws, $adManager, 'pc-renamed-01');
+
+        $fresh = $ws->fresh();
+        self::assertSame('renommage dans AD OK', $fresh->status);
+        self::assertSame('60%', $fresh->progress);
+        $pa = $fresh->programmed_action;
+        self::assertSame('renomme', $pa['type']);
+        self::assertSame('pc-renamed-01', $pa['role']);
+        self::assertSame(0, $pa['ret']);
+    }
+
+    #[Test]
+    public function it_records_renomme_ad_renamed_failure(): void
+    {
+        $ws = $this->makeWorkstation();
+
+        $adManager = Mockery::mock(AdMachineManager::class);
+        $adManager->shouldReceive('renameComputer')
+            ->once()
+            ->andReturn(false);
+
+        $this->tracker->recordRenommeAdRenamed($ws, $adManager, 'pc-renamed-01');
+
+        $fresh = $ws->fresh();
+        self::assertSame('ERREUR renommage AD impossible', $fresh->status);
+        self::assertSame('40%', $fresh->progress);
+    }
+
+    #[Test]
+    public function it_records_renomme_ad_renamed_throws_handled_as_failure(): void
+    {
+        $ws = $this->makeWorkstation();
+
+        $adManager = Mockery::mock(AdMachineManager::class);
+        $adManager->shouldReceive('renameComputer')
+            ->once()
+            ->andThrow(new \RuntimeException('samba-tool not available'));
+
+        $this->tracker->recordRenommeAdRenamed($ws, $adManager, 'pc-renamed-01');
+
+        $fresh = $ws->fresh();
+        // Exception catched + traité comme failure (40%).
+        self::assertSame('ERREUR renommage AD impossible', $fresh->status);
+        self::assertSame('40%', $fresh->progress);
+    }
+
+    #[Test]
+    public function it_records_renomme_ad_renamed_with_empty_role(): void
+    {
+        $ws = $this->makeWorkstation();
+        $adManager = Mockery::mock(AdMachineManager::class);
+        // renameComputer NE DOIT PAS être appelé si role vide.
+        $adManager->shouldNotReceive('renameComputer');
+
+        $this->tracker->recordRenommeAdRenamed($ws, $adManager, '');
+
+        $fresh = $ws->fresh();
+        self::assertSame('ERREUR pas de nouveau nom', $fresh->status);
+        self::assertSame('20%', $fresh->progress);
+    }
+
+    #[Test]
+    public function it_records_renomme_finished(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordRenommeFinished($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('Renommage termine', $fresh->status);
+        self::assertSame('100%', $fresh->progress);
+        self::assertSame('default', $fresh->programmed_action['type']);
+        self::assertSame(-1, $fresh->programmed_action['ret']);
+    }
+
+    #[Test]
+    public function it_records_post_initiated(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordPostInitiated($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('post-mise au domaine manuelle', $fresh->status);
+        self::assertSame('20%', $fresh->progress);
+        self::assertSame('post', $fresh->programmed_action['etape']);
+    }
+
+    #[Test]
+    public function it_records_post_autologon(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordPostAutologon($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('script de demarrage post-install OK', $fresh->status);
+        self::assertSame('50%', $fresh->progress);
+        self::assertSame(0, $fresh->programmed_action['ret']);
+    }
+
+    #[Test]
+    public function it_records_post_finished(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordPostFinished($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('100%', $fresh->progress);
+        self::assertSame(-1, $fresh->programmed_action['ret']);
+    }
+
+    #[Test]
+    public function it_records_wpkg_initiated(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordWpkgInitiated($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('lancement de wpkg en mode interactif', $fresh->status);
+        self::assertSame('10%', $fresh->progress);
+        self::assertSame('wpkg', $fresh->programmed_action['etape']);
+    }
+
+    #[Test]
+    public function it_records_wpkg_autologon(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordWpkgAutologon($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('lancement de wpkg interactif', $fresh->status);
+        self::assertSame('50%', $fresh->progress);
+        self::assertSame(0, $fresh->programmed_action['ret']);
+    }
+
+    #[Test]
+    public function it_records_wpkg_finished(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordWpkgFinished($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('exec wpkg fini', $fresh->status);
+        self::assertSame('100%', $fresh->progress);
+        self::assertSame(-1, $fresh->programmed_action['ret']);
+    }
+
+    #[Test]
+    public function it_records_default_sets_os_windows_and_termine(): void
+    {
+        $ws = $this->makeWorkstation();
+        $this->tracker->recordDefault($ws);
+
+        $fresh = $ws->fresh();
+        self::assertSame('windows', $fresh->os);
+        self::assertSame('termine', $fresh->status);
+        self::assertSame('100%', $fresh->progress);
+        self::assertSame('default', $fresh->programmed_action['etape']);
+        self::assertSame(-1, $fresh->programmed_action['ret']);
+    }
+
+    #[Test]
+    public function it_merges_programmed_action_preserves_unrelated_keys(): void
+    {
+        $ws = $this->makeWorkstation();
+        // Pre-existing custom key in programmed_action.
+        $ws->programmed_action = ['custom_field' => 'preserved', 'type' => 'old'];
+        $ws->save();
+
+        $this->tracker->recordJoinInitiated($ws);
+
+        $fresh = $ws->fresh();
+        $pa = $fresh->programmed_action;
+        // Custom key préservé (merge sémantique cohérent).
+        self::assertSame('preserved', $pa['custom_field']);
+        // type 'old' aussi préservé (recordJoinInitiated ne touche pas 'type').
+        self::assertSame('old', $pa['type']);
+        // Nouvelles clés ajoutées.
+        self::assertSame('windows', $pa['role']);
+        self::assertSame('join', $pa['etape']);
+    }
+
+    #[Test]
+    public function it_preserves_protected_status_on_sysprep_initiated(): void
+    {
+        $ws = Workstation::create([
+            'name' => 'PC-101',
+            'uuid' => '12345678-1234-1234-1234-bbbbbbbbbbbb',
+            'mac' => 'aa:bb:cc:dd:ee:02',
+            'status' => 'protected',
+            'programmed_action' => ['type' => 'clonage'],
+        ]);
+
+        $this->tracker->recordSysprepInitiated($ws);
+
+        $fresh = $ws->fresh();
+        // Status 'protected' préservé malgré l'update logique.
+        self::assertSame('protected', $fresh->status);
+        // Mais progress + programmed_action mis à jour.
+        self::assertSame('0%', $fresh->progress);
+        self::assertSame('modele', $fresh->programmed_action['role']);
+    }
+
+    #[Test]
+    public function it_preserves_protected_status_on_renomme_ad_renamed(): void
+    {
+        $ws = Workstation::create([
+            'name' => 'PC-101',
+            'uuid' => '12345678-1234-1234-1234-cccccccccccc',
+            'mac' => 'aa:bb:cc:dd:ee:03',
+            'status' => 'protected',
+        ]);
+
+        $adManager = Mockery::mock(AdMachineManager::class);
+        $adManager->shouldReceive('renameComputer')->andReturn(true);
+
+        $this->tracker->recordRenommeAdRenamed($ws, $adManager, 'pc-renamed-01');
+
+        $fresh = $ws->fresh();
+        // Status 'protected' préservé.
+        self::assertSame('protected', $fresh->status);
+        self::assertSame('60%', $fresh->progress);
+    }
+
+    #[Test]
+    public function it_persists_six_distinct_machine_boot_log_labels(): void
+    {
+        // Validation D11 — les 6 labels sont émis distinctement.
+        $ws = $this->makeWorkstation();
+
+        $this->tracker->recordSysprepInitiated($ws);
+        $this->tracker->recordNosysprep($ws);
+        $this->tracker->recordJoinInitiated($ws);
+        $this->tracker->recordRenommeInitiated($ws);
+        $this->tracker->recordPostInitiated($ws);
+        $this->tracker->recordWpkgInitiated($ws);
+
+        self::assertSame(1, MachineBootLog::where('action', 'ipxe_win_sysprep')->count());
+        self::assertSame(1, MachineBootLog::where('action', 'ipxe_win_nosysprep')->count());
+        self::assertSame(1, MachineBootLog::where('action', 'ipxe_win_join')->count());
+        self::assertSame(1, MachineBootLog::where('action', 'ipxe_win_renomme')->count());
+        self::assertSame(1, MachineBootLog::where('action', 'ipxe_win_post')->count());
+        self::assertSame(1, MachineBootLog::where('action', 'ipxe_win_wpkg')->count());
+
+        // Tous ≤ 20 chars (varchar(20) parité D11).
+        foreach (['ipxe_win_sysprep', 'ipxe_win_nosysprep', 'ipxe_win_join', 'ipxe_win_renomme', 'ipxe_win_post', 'ipxe_win_wpkg'] as $label) {
+            self::assertLessThanOrEqual(20, strlen($label), "Label {$label} > 20 chars (varchar(20) overflow).");
+        }
+    }
+
+    protected function tearDown(): void
+    {
+        Mockery::close();
+        parent::tearDown();
     }
 }

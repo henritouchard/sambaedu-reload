@@ -365,6 +365,34 @@ return [
             'IPXE_WIN_UNATTEND_TEMPLATE',
             resource_path('ipxe/windows/unattend.xml'),
         ),
+
+        /*
+        |--------------------------------------------------------------------------
+        | Story 3.8 — D13 / AC9.1 — Post-OOBE flows (sysprep/nosysprep/join/
+        | renomme/post/wpkg)
+        |--------------------------------------------------------------------------
+        |
+        | Toggle global + flags par étape pour rollback rapide en cas de
+        | régression terrain :
+        |   - `IPXE_WIN_POST_INSTALL_ENABLED=false` → comportement 3.5 (body
+        |     vide + log warning step_disabled). Les postes pré-3.5 continuent
+        |     via fallback `direct_legacy_routes ^/ipxe/` (D-A12).
+        |   - Flags individuels désactivent une étape spécifique (granularité
+        |     fine pour rollback sur 1 flow en cas de bug terrain).
+        |
+        | Note : winpe + oobe restent toujours actifs (comportement 3.5 préservé
+        | strict — pas de toggle car ce sont les flows critiques d'install
+        | initiale).
+        */
+        'post_install' => [
+            'enabled' => filter_var(env('IPXE_WIN_POST_INSTALL_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'sysprep_enabled' => filter_var(env('IPXE_WIN_SYSPREP_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'nosysprep_enabled' => filter_var(env('IPXE_WIN_NOSYSPREP_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'join_enabled' => filter_var(env('IPXE_WIN_JOIN_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'renomme_enabled' => filter_var(env('IPXE_WIN_RENOMME_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'post_enabled' => filter_var(env('IPXE_WIN_POST_ENABLED', true), FILTER_VALIDATE_BOOL),
+            'wpkg_enabled' => filter_var(env('IPXE_WIN_WPKG_ENABLED', true), FILTER_VALIDATE_BOOL),
+        ],
     ],
 
     /*

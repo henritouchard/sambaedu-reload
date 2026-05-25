@@ -220,4 +220,90 @@ class WindowsXmlPlaceholdersTest extends TestCase
         self::assertSame('', WindowsXmlPlaceholders::sanitizeForTextContent(null));
         self::assertSame('42', WindowsXmlPlaceholders::sanitizeForTextContent(42));
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.8 — D9 / AC8.1 / AC8.3 — sanitizeBatPlaceholder (0-trust).
+     *
+     * Stratégie 0-trust : tout char d'injection cmd.exe lève
+     * `BatPlaceholderInjectionException`. Couvre les vecteurs RCE poste
+     * Windows en SYSTEM via les .cmd batch.
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function bat_placeholder_passes_through_safe_ascii_values(): void
+    {
+        self::assertSame('PC-101', WindowsXmlPlaceholders::sanitizeBatPlaceholder('PC-101'));
+        self::assertSame('adminse', WindowsXmlPlaceholders::sanitizeBatPlaceholder('adminse'));
+        self::assertSame('pc-techno-25', WindowsXmlPlaceholders::sanitizeBatPlaceholder('pc-techno-25'));
+        self::assertSame('192.168.122.50', WindowsXmlPlaceholders::sanitizeBatPlaceholder('192.168.122.50'));
+        self::assertSame('localdev.fr', WindowsXmlPlaceholders::sanitizeBatPlaceholder('localdev.fr'));
+        // Letters + digits + dash + dot + underscore + plus etc. = OK.
+        self::assertSame('PC_TEST-2026.local', WindowsXmlPlaceholders::sanitizeBatPlaceholder('PC_TEST-2026.local'));
+    }
+
+    #[Test]
+    public function bat_placeholder_trims_whitespace_safely(): void
+    {
+        self::assertSame('PC-101', WindowsXmlPlaceholders::sanitizeBatPlaceholder('  PC-101  '));
+        self::assertSame('PC-101', WindowsXmlPlaceholders::sanitizeBatPlaceholder("\tPC-101\t"));
+    }
+
+    #[Test]
+    public function bat_placeholder_returns_empty_for_empty_or_whitespace(): void
+    {
+        self::assertSame('', WindowsXmlPlaceholders::sanitizeBatPlaceholder(''));
+        self::assertSame('', WindowsXmlPlaceholders::sanitizeBatPlaceholder('  '));
+        self::assertSame('', WindowsXmlPlaceholders::sanitizeBatPlaceholder("\t\t"));
+    }
+
+    /**
+     * Data provider : 10+ vecteurs d'injection cmd.exe (AC8.3).
+     *
+     * @return array<string, array{string, string}>
+     */
+    public static function injectionVectorsProvider(): array
+    {
+        return [
+            'semicolon command sep' => [';calc.exe', 'semicolon'],
+            'ampersand command sep' => ['&dir', 'ampersand'],
+            'pipe' => ['foo|bar', 'pipe'],
+            'backtick PowerShell sub' => ['`whoami`', 'backtick'],
+            'dollar PowerShell var' => ['$env:PATH', 'dollar'],
+            'percent cmd var' => ['%COMSPEC%', 'percent'],
+            'double quote' => ['"injection"', 'double quote'],
+            'single quote' => ["'injection'", 'single quote'],
+            'backslash' => ['foo\\bar', 'backslash'],
+            'newline' => ["foo\nbar", 'newline'],
+            'CR newline' => ["foo\r\nbar", 'CR newline'],
+            'null byte' => ["foo\x00bar", 'null byte'],
+            'BEL char' => ["foo\x07bar", 'BEL'],
+            'DEL char' => ["foo\x7Fbar", 'DEL'],
+            'composite RCE' => ['";calc.exe;rem', 'composite injection'],
+            'composite mixed shell' => ['foo;bar|baz&qux', 'composite chain'],
+        ];
+    }
+
+    /**
+     * @param  string  $payload  Vecteur d'injection à tester.
+     * @param  string  $label    Description du vecteur (pour message d'erreur).
+     */
+    #[Test]
+    #[\PHPUnit\Framework\Attributes\DataProvider('injectionVectorsProvider')]
+    public function bat_placeholder_rejects_cmd_injection_vector(string $payload, string $label): void
+    {
+        $this->expectException(\App\Ipxe\Exceptions\BatPlaceholderInjectionException::class);
+        WindowsXmlPlaceholders::sanitizeBatPlaceholder($payload);
+    }
+
+    #[Test]
+    public function bat_placeholder_exception_message_is_informative(): void
+    {
+        try {
+            WindowsXmlPlaceholders::sanitizeBatPlaceholder(';calc.exe');
+            self::fail('Expected BatPlaceholderInjectionException not thrown');
+        } catch (\App\Ipxe\Exceptions\BatPlaceholderInjectionException $e) {
+            self::assertStringContainsString('cmd.exe', $e->getMessage());
+            self::assertStringContainsString('0-trust', $e->getMessage());
+        }
+    }
 }

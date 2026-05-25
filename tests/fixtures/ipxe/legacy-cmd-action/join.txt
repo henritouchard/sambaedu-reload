@@ -1,0 +1,53 @@
+REM cmd
+REM  script de demarrage genere automatiquement
+REM  pour pc-techno-25, default, , default, , join, default, -1
+REM 
+REM 
+for /f "delims=" %%a in ('powershell -NoLogo -NoProfile -Command "(Get-CimInstance -Class Win32_ComputerSystemProduct).UUID"') do (set "UUID=%%a"
+goto uuid)
+
+:uuid
+if [%username%]==[se4install] (goto autologon)
+if [%username%]==[admin] (goto join) else (goto fin)
+:join
+if exist "%windir%\gpo.txt" (goto domaine)
+powershell -command "Rename-Computer -NewName pc-techno-25"
+echo OK> %windir%\gpo.txt
+curl -F "etape=join" -F "ret=0" -F "uuid=%UUID%" -F "name=pc-techno-25" http://se4fs/ipxe/Win10/action.php
+%SystemRoot%\system32\shutdown.exe -r  -t 5 -c "Le poste  pc-techno-25 va redemarrer pour se mettre au domaine"
+goto fin
+
+:domaine
+reg.exe add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "DefaultUserName" /d "se4install" /F >NUL
+reg.exe add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "DefaultDomainName" /d "localdev.fr" /F >NUL
+reg.exe add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "DefaultPassword" /d "Deux+Chapeau0" /F >NUL
+reg.exe add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "AutoAdminLogon" /d 1 /F >NUL
+reg.exe add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "AutoLogonCount" /d 1 /F >NUL
+reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "action" /d  "powershell -Command start cmd -v runAs -f %windir%\autorun.cmd" /F >NUL
+echo 1> c:\Netinst\nowpkg.txt
+schtasks /end /tn wpkg4
+schtasks /delete  /F /tn wpkg4
+rem powershell -command "$User = 'localdev.fr\se4install';$PWord = ConvertTo-SecureString -String 'Deux+Chapeau0' -AsPlainText -Force;$Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $User, $PWord;Add-Computer -NewName pc-techno-25 -Credential $Credential -DomainName localdev.fr -OUPath 'OU=techno,OU=computers,DC=localdev,DC=fr' -Force"
+powershell -command "$User = 'localdev.fr\se4install';$PWord = ConvertTo-SecureString -String 'Deux+Chapeau0' -AsPlainText -Force;$Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $User, $PWord;Add-Computer -Credential $Credential -DomainName localdev.fr -OUPath 'OU=techno,OU=computers,DC=localdev,DC=fr' -Force"
+RD /S /Q %WinDir%\System32\GroupPolicyUsers
+RD /S /Q %WinDir%\System32\GroupPolicy
+curl -F "etape=join" -F "ret=1" -F "uuid=%UUID%" -F "name=pc-techno-25" http://se4fs/ipxe/Win10/action.php
+%SystemRoot%\system32\shutdown.exe -r  -t 5 -c "Le poste  pc-techno-25 va redemarrer en se4install pour terminer la mise au domaine"
+goto fin
+
+:autologon
+%SystemRoot%\system32\shutdown.exe /a
+reg.exe delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "action" /F >NUL
+reg.exe delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "DefaultPassword" /F>NUL
+reg.exe delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "AutoAdminLogon" /F >NUL
+gpupdate /force /target:computer
+REM  les fichiers ont ete copies lors de l'installation
+if not exist %WINDIR%\Web\SE4\ (md %WINDIR%\Web\SE4)
+if exist "%PROGRAMFILES%\SambaEdu\SetWallpaper.ps1" (copy /y "%PROGRAMFILES%\SambaEdu\SetWallpaper.ps1" %WINDIR%\Web\SE4\SetWallpaper.ps1)
+if  exist c:\Netinst\nowpkg.txt (del /f /q c:\Netinst\nowpkg.txt)
+schtasks /run /tn wpkg4
+curl -F "etape=join" -F "ret=2" -F "uuid=%UUID%"  -F "name=pc-techno-25" http://se4fs/ipxe/Win10/action.php
+echo install finie>c:\Netinst\install.log
+%SystemRoot%\system32\shutdown.exe /t 5 /r
+:fin
+rem if  exist %windir%\gpo.txt (del /F /S /Q %windir%\gpo.txt)

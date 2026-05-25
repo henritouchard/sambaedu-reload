@@ -348,4 +348,64 @@ class IpxeConfigTest extends TestCase
         self::assertTrue(filter_var(config('ipxe.tools.memtest86plus.enabled'), FILTER_VALIDATE_BOOL));
         self::assertSame('/bin/pxelinux.0', config('ipxe.tools.memtest86plus.pxelinux0_path'));
     }
+
+    /* ------------------------------------------------------------------
+     * Story 3.8 — AC9.1 / AC9.3 — section windows.post_install (D13).
+     * ------------------------------------------------------------------ */
+
+    #[Test]
+    public function it_loads_windows_post_install_enabled_true_by_default(): void
+    {
+        self::assertTrue((bool) config('ipxe.windows.post_install.enabled'));
+    }
+
+    #[Test]
+    public function it_loads_windows_post_install_sysprep_enabled_true_by_default(): void
+    {
+        self::assertTrue((bool) config('ipxe.windows.post_install.sysprep_enabled'));
+    }
+
+    #[Test]
+    public function it_loads_windows_post_install_nosysprep_enabled_true_by_default(): void
+    {
+        self::assertTrue((bool) config('ipxe.windows.post_install.nosysprep_enabled'));
+    }
+
+    #[Test]
+    public function it_loads_windows_post_install_join_enabled_true_by_default(): void
+    {
+        self::assertTrue((bool) config('ipxe.windows.post_install.join_enabled'));
+    }
+
+    #[Test]
+    public function it_loads_windows_post_install_renomme_enabled_true_by_default(): void
+    {
+        self::assertTrue((bool) config('ipxe.windows.post_install.renomme_enabled'));
+    }
+
+    #[Test]
+    public function it_loads_windows_post_install_post_enabled_true_by_default(): void
+    {
+        self::assertTrue((bool) config('ipxe.windows.post_install.post_enabled'));
+    }
+
+    #[Test]
+    public function it_loads_windows_post_install_wpkg_enabled_true_by_default(): void
+    {
+        self::assertTrue((bool) config('ipxe.windows.post_install.wpkg_enabled'));
+    }
+
+    #[Test]
+    public function it_loads_windows_post_install_has_seven_keys(): void
+    {
+        $section = (array) config('ipxe.windows.post_install');
+        self::assertCount(7, $section, 'windows.post_install doit avoir exactement 7 clés (enabled + 6 flags)');
+        self::assertArrayHasKey('enabled', $section);
+        self::assertArrayHasKey('sysprep_enabled', $section);
+        self::assertArrayHasKey('nosysprep_enabled', $section);
+        self::assertArrayHasKey('join_enabled', $section);
+        self::assertArrayHasKey('renomme_enabled', $section);
+        self::assertArrayHasKey('post_enabled', $section);
+        self::assertArrayHasKey('wpkg_enabled', $section);
+    }
 }

@@ -57,6 +57,9 @@ final class IpxeSchemaBootstrapper
                 $table->string('mac', 32)->nullable();
                 $table->string('uuid', 64)->nullable();
                 $table->string('status', 32)->default('active');
+                // Story 3.8 — D12 — colonnes progress + programmed_action.
+                $table->string('progress', 8)->nullable();
+                $table->text('programmed_action')->nullable();
                 $table->timestamp('last_report_at')->nullable();
                 $table->string('report_sha', 128)->nullable();
                 $table->string('log_path', 512)->nullable();
@@ -68,6 +71,19 @@ final class IpxeSchemaBootstrapper
                 $table->timestamp('archived_at')->nullable();
                 $table->timestamps();
             });
+        } else {
+            // Story 3.8 — D12 — ajout colonnes sur table provisionnée
+            // antérieurement par un autre test (idempotent).
+            if (! Schema::hasColumn('workstations', 'progress')) {
+                Schema::table('workstations', function (Blueprint $table): void {
+                    $table->string('progress', 8)->nullable();
+                });
+            }
+            if (! Schema::hasColumn('workstations', 'programmed_action')) {
+                Schema::table('workstations', function (Blueprint $table): void {
+                    $table->text('programmed_action')->nullable();
+                });
+            }
         }
 
         if (! Schema::hasTable('workstation_groups')) {

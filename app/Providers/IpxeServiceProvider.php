@@ -16,6 +16,7 @@ use App\Ipxe\Services\IpxeService;
 use App\Ipxe\Services\LinuxInstallMenuBuilder;
 use App\Ipxe\Services\LinuxPostInstallTracker;
 use App\Ipxe\Services\LinuxPreseedService;
+use App\Ipxe\Services\WindowsActionCmdBuilder;
 use App\Ipxe\Services\WindowsInstallBatBuilder;
 use App\Ipxe\Services\WindowsInstallMenuBuilder;
 use App\Ipxe\Services\WindowsPostInstallTracker;
@@ -116,6 +117,12 @@ class IpxeServiceProvider extends ServiceProvider
         $this->app->singleton(WindowsInstallBatBuilder::class, fn () => new WindowsInstallBatBuilder());
         $this->app->singleton(WindowsInstallMenuBuilder::class, fn () => new WindowsInstallMenuBuilder());
         $this->app->singleton(WindowsPostInstallTracker::class, fn () => new WindowsPostInstallTracker());
+
+        // Story 3.8 — D8 / AC3.6 / AC9.2 — orchestrateur 6 builders cmd batch
+        // post-OOBE Windows (sysprep/nosysprep/join/renomme/post/wpkg).
+        $this->app->singleton(WindowsActionCmdBuilder::class, fn ($app) => new WindowsActionCmdBuilder(
+            $app->make(ViewFactory::class),
+        ));
 
         // Story 3.6 — D7 / AC6.4 — bindings gestion ISO Windows (sous-namespace
         // dédié `App\Ipxe\Iso\*` pour cohérence frontière D1).

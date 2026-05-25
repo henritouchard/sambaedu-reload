@@ -1296,6 +1296,155 @@ class IpxeNamespaceTest extends TestCase
         }
     }
 
+    /* ------------------------------------------------------------------
+     * Story 3.8 — AC10.1-10.4 / D15 — Tests architecture post-OOBE.
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Story 3.8 — AC10.1 / D15 — Enum WindowsInstallStep doit lister
+     * exactement 8 cases (Winpe + Oobe + 6 nouveaux post-OOBE).
+     */
+    #[Test]
+    public function it_ensures_windows_install_step_enum_has_8_cases(): void
+    {
+        $cases = \App\Ipxe\Enums\WindowsInstallStep::cases();
+        self::assertCount(8, $cases, 'Story 3.8 — WindowsInstallStep doit avoir 8 cases (2 historiques 3.5 + 6 nouveaux 3.8).');
+
+        $values = array_map(static fn ($c) => $c->value, $cases);
+        sort($values);
+        self::assertSame([
+            'join',
+            'nosysprep',
+            'oobe',
+            'post',
+            'renomme',
+            'sysprep',
+            'winpe',
+            'wpkg',
+        ], $values);
+    }
+
+    /**
+     * Story 3.8 — AC10.2 / D15 — Vérifie les 6 templates Blade cmd exist
+     * sous `resources/views/ipxe/windows/cmd/`.
+     */
+    #[Test]
+    public function it_ensures_6_cmd_blade_templates_exist_in_windows_cmd_namespace(): void
+    {
+        $root = realpath(__DIR__ . '/../../resources/views/ipxe/windows/cmd');
+        self::assertNotFalse($root, 'Dossier resources/views/ipxe/windows/cmd doit exister (Story 3.8)');
+
+        foreach (['sysprep', 'nosysprep', 'join', 'renomme', 'post', 'wpkg'] as $step) {
+            self::assertFileExists(
+                $root . '/' . $step . '.blade.php',
+                "Template Blade 3.8 manquant : resources/views/ipxe/windows/cmd/{$step}.blade.php"
+            );
+        }
+    }
+
+    /**
+     * Story 3.8 — AC10.3 / D15 — Vérifie qu'aucun template Blade cmd ne
+     * contient `{!! $... !!}` (interpolation non-échappée = vecteur RCE).
+     */
+    #[Test]
+    public function it_ensures_no_unescaped_interpolation_in_cmd_templates(): void
+    {
+        $root = realpath(__DIR__ . '/../../resources/views/ipxe/windows/cmd');
+        self::assertNotFalse($root);
+
+        $violations = [];
+        foreach (['sysprep', 'nosysprep', 'join', 'renomme', 'post', 'wpkg'] as $step) {
+            $path = $root . '/' . $step . '.blade.php';
+            if (! is_file($path)) {
+                continue;
+            }
+            $content = (string) file_get_contents($path);
+            if (preg_match('/\{!!\s*\$\w+/', $content) === 1) {
+                $violations[] = "{$step}.blade.php : contient une interpolation non-échappée {!! \$... !!}";
+            }
+        }
+
+        self::assertSame(
+            [],
+            $violations,
+            "Story 3.8 D15 — interpolation non-échappée détectée :\n  - " . implode("\n  - ", $violations)
+        );
+    }
+
+    /**
+     * Story 3.8 — AC10.4 / D15 — Vérifie que `WindowsActionCmdBuilder` invoke
+     * `sanitizeBatPlaceholder` dans son code (defense in depth — assurance
+     * qu'aucun input dynamique ne traverse au Blade sans sanitize).
+     *
+     * Le code utilise une closure helper `$sanitize = ... sanitizeBatPlaceholder(...)`
+     * dans `commonVars()` qui est appliquée à tous les inputs.
+     */
+    #[Test]
+    public function it_ensures_windows_action_cmd_builder_uses_sanitize_bat_placeholder(): void
+    {
+        $path = realpath(__DIR__ . '/../../app/Ipxe/Services/WindowsActionCmdBuilder.php');
+        self::assertNotFalse($path, 'WindowsActionCmdBuilder.php introuvable');
+
+        $content = (string) file_get_contents($path);
+
+        // Le builder DOIT importer WindowsXmlPlaceholders.
+        self::assertStringContainsString(
+            'use App\\Ipxe\\Support\\WindowsXmlPlaceholders;',
+            $content,
+            'WindowsActionCmdBuilder doit importer WindowsXmlPlaceholders pour utiliser sanitizeBatPlaceholder.'
+        );
+
+        // Et appeler sanitizeBatPlaceholder au moins une fois.
+        self::assertMatchesRegularExpression(
+            '/WindowsXmlPlaceholders::sanitizeBatPlaceholder\s*\(/',
+            $content,
+            'WindowsActionCmdBuilder doit invoquer WindowsXmlPlaceholders::sanitizeBatPlaceholder() (defense in depth).'
+        );
+
+        // Et catch BatPlaceholderInjectionException ou la propager au caller.
+        self::assertStringContainsString(
+            'BatPlaceholderInjectionException',
+            $content,
+            'WindowsActionCmdBuilder doit référencer BatPlaceholderInjectionException pour signaler les rejets sanitize.'
+        );
+    }
+
+    /**
+     * Story 3.8 — AC7.4 / T1.3 — Vérifie que la migration 3.8 déclare les
+     * 2 nouvelles colonnes `progress` et `programmed_action` sur `workstations`.
+     *
+     * Test statique (lecture du fichier migration) — l'extension `TestCase`
+     * de PHPUnit standard ne fournit pas le runtime Laravel/Schema. Pour la
+     * validation runtime, voir `WindowsPostInstallTrackerTest` qui crée des
+     * Workstations avec ces colonnes via `IpxeSchemaBootstrapper`.
+     */
+    #[Test]
+    public function it_has_progress_and_programmed_action_columns_migration(): void
+    {
+        $migrationPath = realpath(__DIR__ . '/../../database/migrations/2026_05_22_120000_add_progress_and_programmed_action_to_workstations.php');
+        self::assertNotFalse($migrationPath, 'Story 3.8 — migration 2026_05_22_120000 introuvable.');
+
+        $content = (string) file_get_contents($migrationPath);
+
+        // Vérifie la déclaration des colonnes.
+        self::assertMatchesRegularExpression(
+            "/->string\(['\"]progress['\"],\s*8\)/",
+            $content,
+            'Story 3.8 — migration doit créer colonne progress varchar(8).'
+        );
+        self::assertMatchesRegularExpression(
+            "/programmed_action/",
+            $content,
+            'Story 3.8 — migration doit créer colonne programmed_action.'
+        );
+        // Vérifie l'idempotence via Schema::hasColumn check.
+        self::assertStringContainsString(
+            "Schema::hasColumn('workstations', 'progress')",
+            $content,
+            'Story 3.8 — migration doit checker Schema::hasColumn pour idempotence.'
+        );
+    }
+
     private function stripComments(string $code): string
     {
         $code = preg_replace('!/\*.*?\*/!s', '', $code) ?? $code;

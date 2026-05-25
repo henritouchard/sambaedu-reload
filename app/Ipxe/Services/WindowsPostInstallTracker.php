@@ -4,35 +4,46 @@ declare(strict_types=1);
 
 namespace App\Ipxe\Services;
 
+use App\Ldap\AdMachineManager;
 use App\Models\MachineBootLog;
 use App\Models\Workstation;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
  * Story 3.5 — D7 / AC3.3.
+ * Story 3.8 — D7 / AC5.1-5.7 — étendu avec 14 méthodes record* pour les
+ * flows post-OOBE (port complet legacy action.php dispatcher).
  *
  * Hook étapes Windows post-install : reçoit les callbacks `curl
  * /ipxe/windows/action` émis (a) depuis WinPE en début d'install
- * (`etape=winpe&ret=0`) et (b) depuis le 1er logon OOBE (`etape=oobe&ret=0`)
- * via `FirstLogonCommands` injecté dans `unattend.xml`.
+ * (`etape=winpe&ret=0`), (b) depuis le 1er logon OOBE (`etape=oobe&ret=0`)
+ * via `FirstLogonCommands` injecté dans `unattend.xml`, et (c, story 3.8)
+ * depuis les 6 flows post-OOBE (sysprep, nosysprep, join, renomme, post, wpkg).
  *
- * **Port natif PARTIEL** de `sambaedu/ipxe/Win10/action.php` (736 LOC).
+ * **Port natif COMPLET** de `legacy/modules/ipxe/Win10/action.php` (733 LOC) :
  *
- * **Scope 3.5** : seuls 2 étapes tracées :
+ *  - Branche A (premier appel `ret < 0`) : `record{Sysprep,Join,Renomme,Post,
+ *    Wpkg}Initiated` + `recordNosysprep`.
+ *  - Branche D (validation state machine) : `record{Sysprep,Join,Renomme,
+ *    Post,Wpkg}{...}` selon le tuple (etape, ret).
  *
- *  - `winpe` : set status `installation WinPE` + progress 5%.
- *  - `oobe`  : set os `windows` + status `installation Windows terminee` +
- *              progress 100% + last_report_at.
+ * **Idempotence + concurrence** (D7 / AC5.2) : chaque méthode wrap dans
+ * `DB::transaction()` + `Workstation::lockForUpdate()` — protège contre les
+ * doubles updates concurrents (2 POSTes simultanés `etape=sysprep` sur même
+ * poste).
  *
- * **HORS-SCOPE 3.5** (déférée 3.7) : flows complets `sysprep`/`nosysprep`/
- * `join`/`renomme`/`post`/`wpkg` qui dépendent de
- * `IpxeProgrammedActionResolver` (GLM `actions[]` LDAP non porté SE5).
+ * **Preserve `protected`** (D7 / AC5.5) : pattern 3.4 #M3 + 3.5 — toute
+ * méthode qui touche `Workstation::status` doit préserver `protected` si
+ * c'était le status pré-update.
  *
- * **Idempotence** : l'update `os`/`status` est idempotent (UPDATE WHERE),
- * mais l'insert `MachineBootLog` ajoute une ligne par appel — acceptable
- * Phase 2 (audit traçabilité).
+ * **Audit MachineBootLog** (D11 / AC5.3) : insert d'une ligne par étape
+ * avec label `ipxe_win_{step}` (6 nouveaux labels ≤ varchar(20)).
+ *
+ * **Logging** (D10 / AC5.4) : channel `ipxe` events
+ * `ipxe.windows.action.<step>.<state>` (pas de secrets clairs).
  */
 final class WindowsPostInstallTracker
 {
@@ -58,36 +69,18 @@ final class WindowsPostInstallTracker
 
     /**
      * Enregistre le début d'install WinPE pour un poste donné.
-     *
-     * **Workflow** (parité legacy `action.php:411-491` étape `winpe`) :
-     *  1. Set `$workstation->status = 'installation WinPE'`.
-     *  2. Save Workstation.
-     *  3. Insert MachineBootLog `action='ipxe_win_install'`.
-     *  4. Log info `ipxe.windows.action.winpe_start`.
-     *
-     * @param  Workstation  $workstation  Poste résolu via {@see WorkstationLocator}.
-     * @param  string  $name              Nom du poste rapporté par WinPE
-     *                                    (déjà sanitizé par le controller).
-     * @param  string  $ip                IP du poste appelant (pour log audit).
      */
     public function recordWinpeStart(
         Workstation $workstation,
         string $name = '',
         string $ip = '',
     ): void {
-        // Parité 3.4 post-review #M3 (Linux) : préserver `status='protected'`.
-        // Le marqueur `protected` sert d'anti-suppression DB lors des resync
-        // AD et ne doit pas être écrasé silencieusement par un boot WinPE.
         $wasProtected = $workstation->status === 'protected';
-
         $workstation->status = self::STATUS_WINPE;
-
         if ($wasProtected) {
             $workstation->status = 'protected';
         }
-
         $workstation->save();
-
         if ($wasProtected) {
             Log::channel($this->channel())->info('ipxe.windows.action.protected_preserved', [
                 'action_type' => 'ipxe.windows.action.protected_preserved',
@@ -96,9 +89,7 @@ final class WindowsPostInstallTracker
                 'step' => 'winpe',
             ]);
         }
-
         $this->persistMachineBootLog($workstation, 'ipxe_win_install', true, $ip);
-
         Log::channel($this->channel())->info('ipxe.windows.action.winpe_start', [
             'action_type' => 'ipxe.windows.action.winpe_start',
             'ip' => $ip,
@@ -110,38 +101,20 @@ final class WindowsPostInstallTracker
 
     /**
      * Enregistre la fin d'install Windows (1er logon OOBE) pour un poste.
-     *
-     * **Workflow** (parité legacy `action.php:720-730` default branch) :
-     *  1. Set `$workstation->os = 'windows'`.
-     *  2. Set `$workstation->status = 'installation Windows terminee'`.
-     *  3. Set `$workstation->last_report_at = now()`.
-     *  4. Save Workstation.
-     *  5. Insert MachineBootLog `action='ipxe_win_report'`.
-     *  6. Log info `ipxe.windows.action.oobe_complete`.
-     *
-     * **Idempotent** : un poste déjà en `os='windows'` est mis à jour sans
-     * incident (last_report_at refreshe la timestamp).
      */
     public function recordOobeComplete(
         Workstation $workstation,
         string $name = '',
         string $ip = '',
     ): void {
-        // Parité 3.4 post-review #M3 (Linux) : préserver `status='protected'`
-        // post-install — l'install a quand même eu lieu (os/last_report_at à
-        // jour) mais on ne perd pas la protection anti-suppression DB.
         $wasProtected = $workstation->status === 'protected';
-
         $workstation->os = 'windows';
         $workstation->status = self::STATUS_OOBE_COMPLETE;
         $workstation->last_report_at = Carbon::now();
-
         if ($wasProtected) {
             $workstation->status = 'protected';
         }
-
         $workstation->save();
-
         if ($wasProtected) {
             Log::channel($this->channel())->info('ipxe.windows.action.protected_preserved', [
                 'action_type' => 'ipxe.windows.action.protected_preserved',
@@ -150,9 +123,7 @@ final class WindowsPostInstallTracker
                 'step' => 'oobe',
             ]);
         }
-
         $this->persistMachineBootLog($workstation, 'ipxe_win_report', true, $ip);
-
         Log::channel($this->channel())->info('ipxe.windows.action.oobe_complete', [
             'action_type' => 'ipxe.windows.action.oobe_complete',
             'ip' => $ip,
@@ -163,12 +134,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Enregistre la génération du install.bat WinPE (acknowledgement du début
-     * d'install par le serveur lui-même, avant le hook winpe du poste).
-     *
-     * **Workflow** : insert MachineBootLog `action='ipxe_win_install'` (audit).
-     * **Pas** d'update `status` (le poste posera son ack winpe = recordWinpeStart
-     * peu après — éviter double-écriture).
+     * Enregistre la génération du install.bat WinPE.
      */
     public function recordInstallBatGenerated(Workstation $workstation, string $ip = ''): void
     {
@@ -176,11 +142,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Émet le log warning `ipxe.windows.action.unknown_workstation` quand le
-     * controller a appelé sans pouvoir résoudre la Workstation (poste non
-     * enregistré qui rapporte un install — cas edge rare).
-     *
-     * Pas d'update DB, pas d'insert MachineBootLog (D4 — silent).
+     * Émet le log warning `ipxe.windows.action.unknown_workstation`.
      */
     public function recordUnknown(string $uuid, string $name, string $ip): void
     {
@@ -189,6 +151,587 @@ final class WindowsPostInstallTracker
             'ip' => $ip,
             'uuid_prefix' => $uuid !== '' ? substr($uuid, 0, 8) : '',
             'reported_name_prefix' => $name !== '' ? substr($name, 0, 6) : '',
+        ]);
+    }
+
+    /* ==================================================================
+     * Story 3.8 — D7 / AC5.1 — 14+ méthodes record* post-OOBE.
+     *
+     * Mapping iso-legacy lignes 408-727 (dispatcher branches A + D).
+     * ================================================================== */
+
+    /**
+     * Story 3.8 — sysprep branche A (`ret<0` premier appel).
+     *
+     * Parité legacy lignes 415-428 :
+     *  - Si `type ∈ {clonage, clonage2}` → status="préparation 1er boot",
+     *    progress=0%, programmed_action.role=modele.
+     *  - Sinon → progress=0% (status inchangé).
+     */
+    public function recordSysprepInitiated(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $pa = $this->paOf($ws);
+            $type = (string) ($pa['type'] ?? 'default');
+            $updates = ['etape' => 'sysprep'];
+
+            if ($type === 'clonage' || $type === 'clonage2') {
+                $updates['type'] = $type;
+                $updates['role'] = 'modele';
+                $this->updateStatus($ws, 'preparation 1er boot');
+            }
+            $ws->progress = '0%';
+            $this->mergeProgrammedAction($ws, $updates);
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_sysprep', true, $ip);
+        });
+        $this->logState($workstation, 'sysprep', 'initiated', $ip);
+    }
+
+    /**
+     * Story 3.8 — sysprep ret=0 (branche D ligne 527-538).
+     */
+    public function recordSysprepGpoStart(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, [
+                'type' => 'clonage2',
+                'role' => 'modele',
+                'script' => 'windows',
+                'ret' => 0,
+            ]);
+            $this->updateStatus($ws, 'preparation image');
+            $ws->progress = '50%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_sysprep', true, $ip);
+        });
+        $this->logState($workstation, 'sysprep', 'gpo_start', $ip);
+    }
+
+    /**
+     * Story 3.8 — sysprep ret=1 (branche D ligne 539-550).
+     */
+    public function recordSysprepGeneralized(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, [
+                'role' => 'modele',
+                'script' => 'rescuecd',
+                'ret' => -1,
+                'etape' => 'init-modele',
+            ]);
+            $this->updateStatus($ws, 'sysprep generalisation');
+            $ws->progress = '50%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_sysprep', true, $ip);
+        });
+        $this->logState($workstation, 'sysprep', 'generalized', $ip);
+    }
+
+    /**
+     * Story 3.8 — sysprep ret=2 (branche D ligne 551-562).
+     */
+    public function recordSysprepNoneClone(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, [
+                'type' => 'clonage2',
+                'role' => 'modele',
+                'script' => 'rescuecd',
+                'ret' => -1,
+                'etape' => 'init-modele',
+            ]);
+            $this->updateStatus($ws, 'clonage sans sysprep');
+            $ws->progress = '100%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_sysprep', true, $ip);
+        });
+        $this->logState($workstation, 'sysprep', 'none_clone', $ip);
+    }
+
+    /**
+     * Story 3.8 — Q-2 refacto clarté — `etape=nosysprep&ret=0` SE5 distinct.
+     *
+     * Branche A (premier appel) : status inchangé, progress=50%, etape=nosysprep.
+     * Branche D (ret=0) : update etape, log advanced.
+     */
+    public function recordNosysprep(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, ['etape' => 'nosysprep']);
+            $ws->progress = '50%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_nosysprep', true, $ip);
+        });
+        $this->logState($workstation, 'nosysprep', 'initiated', $ip);
+    }
+
+    /**
+     * Story 3.8 — join branche A (`ret<0`) — port legacy lignes 436-446.
+     *
+     * Review #3 — persiste l'OU cible (`$ou`) et le role de jonction
+     * (`$role`) dans `programmed_action`. Le poste ne re-envoie PAS ces
+     * paramètres dans les curls internes `ret=0/1` (cf. `join.blade.php`) ;
+     * sans persistance serveur-side, le 2e render ferait `Add-Computer
+     * -OUPath ''` → poste joint dans `CN=Computers` au lieu de l'OU cible.
+     * Le legacy résolvait via APCu (`actions[uuid][role]`) ; SE5 utilise la
+     * colonne JSONB `programmed_action` dédiée (D7).
+     */
+    public function recordJoinInitiated(
+        Workstation $workstation,
+        string $role = '',
+        string $ou = '',
+        string $ip = '',
+    ): void {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($role, $ou, $ip): void {
+            $updates = [
+                'role' => 'windows',
+                'etape' => 'join',
+            ];
+            // Review #3 — persister OU cible + role jonction (lus aux ret=0/1).
+            if ($ou !== '') {
+                $updates['ou'] = $ou;
+            }
+            if ($role !== '') {
+                $updates['join_role'] = $role;
+            }
+            $this->mergeProgrammedAction($ws, $updates);
+            $this->updateStatus($ws, 'mise au domaine v2');
+            $ws->progress = '0%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_join', true, $ip);
+        });
+        $this->logState($workstation, 'join', 'initiated', $ip);
+    }
+
+    /**
+     * Story 3.8 — join ret=0 (branche D ligne 567-577).
+     */
+    public function recordJoinAdminseStarted(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, [
+                'type' => 'clonage2',
+                'role' => 'windows',
+                'script' => 'default',
+                'ret' => 0,
+            ]);
+            $this->updateStatus($ws, 'renommage sans sysprep OK');
+            $ws->progress = '30%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_join', true, $ip);
+        });
+        $this->logState($workstation, 'join', 'adminse_started', $ip);
+    }
+
+    /**
+     * Story 3.8 — join ret=1 (branche D ligne 578-588).
+     */
+    public function recordJoinDomained(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, [
+                'type' => 'clonage2',
+                'role' => 'windows',
+                'script' => 'default',
+                'ret' => 1,
+            ]);
+            $this->updateStatus($ws, 'mise au domaine sans sysprep OK');
+            $ws->progress = '60%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_join', true, $ip);
+        });
+        $this->logState($workstation, 'join', 'domained', $ip);
+    }
+
+    /**
+     * Story 3.8 — join ret=2 (branche D ligne 589-600).
+     */
+    public function recordJoinComplete(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, [
+                'type' => 'clonage2',
+                'role' => 'windows',
+                'script' => 'default',
+                'etape' => 'default',
+                'ret' => -1,
+            ]);
+            $this->updateStatus($ws, 'clonage termine');
+            $ws->progress = '100%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_join', true, $ip);
+        });
+        $this->logState($workstation, 'join', 'complete', $ip);
+    }
+
+    /**
+     * Story 3.8 — renomme branche A (`ret<0`) — port legacy lignes 447-456.
+     */
+    public function recordRenommeInitiated(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, ['etape' => 'renomme']);
+            $this->updateStatus($ws, 'renommage au domaine');
+            $ws->progress = '20%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_renomme', true, $ip);
+        });
+        $this->logState($workstation, 'renomme', 'initiated', $ip);
+    }
+
+    /**
+     * Story 3.8 — renomme ret=0 (branche D lignes 671-700) — AD rename.
+     *
+     * **Logique parité legacy** :
+     *  - Si `role` non vide → AdMachineManager::renameComputer (3.3 D14 plan B).
+     *    - Si OK → status="renommage dans AD OK", progress=60%.
+     *    - Si KO → status="ERREUR renommage AD impossible", progress=40%.
+     *  - Si `role` vide → status="ERREUR pas de nouveau nom", progress=20%.
+     *
+     * **DNS** : Q-4 Henri = Samba 4 met à jour DNS auto. Pas de helper DNS
+     * explicite ici (D-A6 + Q-4).
+     *
+     * **netbootGUID** : AdMachineManager plan B = delete+recreate → l'ancien
+     * netbootGUID est perdu côté nouveau compte machine. Documenté dans
+     * Doc QA Section 17 — rebuild manuel `register_machine_hardware` post-rename
+     * recommandé.
+     */
+    public function recordRenommeAdRenamed(
+        Workstation $workstation,
+        AdMachineManager $adManager,
+        string $role = '',
+        string $ip = '',
+    ): void {
+        if ($role === '') {
+            $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+                $this->updateStatus($ws, 'ERREUR pas de nouveau nom');
+                $ws->progress = '20%';
+                $this->saveWithProtected($ws);
+                $this->persistMachineBootLog($ws, 'ipxe_win_renomme', false, $ip);
+            });
+            Log::channel($this->channel())->warning('ipxe.windows.action.renomme.ad_rename_no_role', [
+                'action_type' => 'ipxe.windows.action.renomme.ad_rename_no_role',
+                'workstation_id' => $workstation->id ?? null,
+                'ip' => $ip,
+            ]);
+
+            return;
+        }
+
+        // Invocation AdMachineManager en best-effort hors-transaction (les
+        // appels samba-tool peuvent durer plusieurs secondes — ne pas tenir
+        // le lock DB pendant).
+        $renameOk = false;
+        $renameError = null;
+        try {
+            $renameOk = $adManager->renameComputer((string) ($workstation->name ?? ''), $role);
+        } catch (Throwable $e) {
+            $renameError = $e;
+            $renameOk = false;
+        }
+
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($renameOk, $role, $ip): void {
+            $this->mergeProgrammedAction($ws, [
+                'type' => 'renomme',
+                'id' => $ws->id ?? null,
+                'role' => $role,
+                'script' => 'default',
+                'etape' => 'default',
+                'ret' => 0,
+            ]);
+            if ($renameOk) {
+                $this->updateStatus($ws, 'renommage dans AD OK');
+                $ws->progress = '60%';
+            } else {
+                $this->updateStatus($ws, 'ERREUR renommage AD impossible');
+                $ws->progress = '40%';
+            }
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_renomme', $renameOk, $ip);
+        });
+
+        if ($renameOk) {
+            Log::channel($this->channel())->info('ipxe.windows.action.renomme.ad_rename_success', [
+                'action_type' => 'ipxe.windows.action.renomme.ad_rename_success',
+                'workstation_id' => $workstation->id ?? null,
+                'ip' => $ip,
+                'old_name_prefix' => substr((string) ($workstation->name ?? ''), 0, 6),
+                'new_name_prefix' => substr($role, 0, 6),
+            ]);
+        } else {
+            Log::channel($this->channel())->warning('ipxe.windows.action.renomme.ad_rename_failure', [
+                'action_type' => 'ipxe.windows.action.renomme.ad_rename_failure',
+                'workstation_id' => $workstation->id ?? null,
+                'ip' => $ip,
+                'old_name_prefix' => substr((string) ($workstation->name ?? ''), 0, 6),
+                'new_name_prefix' => substr($role, 0, 6),
+                'exception_class' => $renameError !== null ? $renameError::class : null,
+                'exception_msg' => $renameError !== null ? substr($renameError->getMessage(), 0, 200) : null,
+            ]);
+        }
+    }
+
+    /**
+     * Story 3.8 — renomme ret=1 (branche D ligne 702-712).
+     */
+    public function recordRenommeFinished(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, [
+                'type' => 'default',
+                'script' => 'default',
+                'etape' => 'default',
+                'ret' => -1,
+            ]);
+            $this->updateStatus($ws, 'Renommage termine');
+            $ws->progress = '100%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_renomme', true, $ip);
+        });
+        $this->logState($workstation, 'renomme', 'finished', $ip);
+    }
+
+    /**
+     * Story 3.8 — post branche A (`ret<0`) — port legacy lignes 457-465.
+     */
+    public function recordPostInitiated(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, ['etape' => 'post']);
+            $this->updateStatus($ws, 'post-mise au domaine manuelle');
+            $ws->progress = '20%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_post', true, $ip);
+        });
+        $this->logState($workstation, 'post', 'initiated', $ip);
+    }
+
+    /**
+     * Story 3.8 — post ret=0 (branche D ligne 619-629).
+     */
+    public function recordPostAutologon(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, [
+                'role' => 'windows',
+                'script' => 'default',
+                'ret' => 0,
+            ]);
+            $this->updateStatus($ws, 'script de demarrage post-install OK');
+            $ws->progress = '50%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_post', true, $ip);
+        });
+        $this->logState($workstation, 'post', 'autologon', $ip);
+    }
+
+    /**
+     * Story 3.8 — post ret=1 (branche D ligne 630-640).
+     */
+    public function recordPostFinished(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, [
+                'role' => 'windows',
+                'script' => 'default',
+                'etape' => 'default',
+                'ret' => -1,
+            ]);
+            $this->updateStatus($ws, 'script de demarrage post-install OK');
+            $ws->progress = '100%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_post', true, $ip);
+        });
+        $this->logState($workstation, 'post', 'finished', $ip);
+    }
+
+    /**
+     * Story 3.8 — wpkg branche A (`ret<0`) — port legacy lignes 466-474.
+     */
+    public function recordWpkgInitiated(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, ['etape' => 'wpkg']);
+            $this->updateStatus($ws, 'lancement de wpkg en mode interactif');
+            $ws->progress = '10%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_wpkg', true, $ip);
+        });
+        $this->logState($workstation, 'wpkg', 'initiated', $ip);
+    }
+
+    /**
+     * Story 3.8 — wpkg ret=0 (branche D ligne 644-655).
+     */
+    public function recordWpkgAutologon(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, [
+                'role' => 'windows',
+                'script' => 'default',
+                'etape' => 'wpkg',
+                'ret' => 0,
+            ]);
+            $this->updateStatus($ws, 'lancement de wpkg interactif');
+            $ws->progress = '50%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_wpkg', true, $ip);
+        });
+        $this->logState($workstation, 'wpkg', 'autologon', $ip);
+    }
+
+    /**
+     * Story 3.8 — wpkg ret=1 (branche D ligne 656-666).
+     */
+    public function recordWpkgFinished(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, [
+                'role' => 'windows',
+                'script' => 'default',
+                'etape' => 'default',
+                'ret' => -1,
+            ]);
+            // Note: legacy ligne 664 a une typo « d'exec » avec apostrophe —
+            // SE5 simplifie en ASCII pur.
+            $this->updateStatus($ws, 'exec wpkg fini');
+            $ws->progress = '100%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_wpkg', true, $ip);
+        });
+        $this->logState($workstation, 'wpkg', 'finished', $ip);
+    }
+
+    /**
+     * Story 3.8 — default branche D (ligne 716-727) — fin process.
+     *
+     * Parité legacy : os='windows', progress=100%, status='termine'.
+     *
+     * @internal Review #6 — non dispatchée par le controller 3.8 :
+     * l'étape `default` (= step inconnu) est rejetée 422 par
+     * {@see \App\Ipxe\Http\Requests\IpxeWindowsActionRequest} (Rule::in 8 cases)
+     * AVANT d'atteindre le controller. Méthode conservée pour symétrie avec le
+     * pattern tracker legacy + testabilité directe.
+     */
+    public function recordDefault(Workstation $workstation, string $ip = ''): void
+    {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
+            $this->mergeProgrammedAction($ws, [
+                'type' => 'default',
+                'script' => 'default',
+                'etape' => 'default',
+                'ret' => -1,
+            ]);
+            $ws->os = 'windows';
+            $this->updateStatus($ws, 'termine');
+            $ws->progress = '100%';
+            $this->saveWithProtected($ws);
+            $this->persistMachineBootLog($ws, 'ipxe_win_report', true, $ip);
+        });
+        $this->logState($workstation, 'default', 'finished', $ip);
+    }
+
+    /* ==================================================================
+     * Helpers privés Story 3.8 — D7.
+     * ================================================================== */
+
+    /**
+     * Wrap une closure dans `DB::transaction()` + `lockForUpdate()` sur la
+     * Workstation (D7 / AC5.2) — defense in depth contre les doubles updates
+     * concurrents.
+     *
+     * Cas test (SQLite :memory:) : `lockForUpdate` est silencieusement
+     * ignoré par SQLite — le wrapping reste cohérent côté API.
+     *
+     * Review #4 — note : si la Workstation est supprimée entre la résolution
+     * par {@see \App\Ipxe\Services\WorkstationLocator} et le lock (race
+     * < 100ms), la closure abort silencieusement MAIS le `logState()` appelé
+     * par la méthode `record*` après s'exécute quand même (log "phantom" sur
+     * une instance non persistée). Accepté en v1 : risque quasi-inexistant en
+     * prod, log inoffensif (audit only). À revoir si la rigueur d'audit
+     * l'exige (retourner un bool depuis cette méthode + conditionner logState).
+     *
+     * @param  callable(Workstation): void  $closure
+     */
+    private function wrapTransaction(Workstation $workstation, callable $closure): void
+    {
+        DB::transaction(function () use ($workstation, $closure): void {
+            // Re-fetch + lock (defense in depth contre les doubles updates).
+            $locked = Workstation::query()
+                ->whereKey($workstation->getKey())
+                ->lockForUpdate()
+                ->first();
+
+            if ($locked === null) {
+                // Workstation supprimée entre-temps — abort silent.
+                return;
+            }
+            $closure($locked);
+            // Sync l'instance reçue en paramètre (le caller peut s'attendre
+            // à voir les changements via refresh).
+            $workstation->fill($locked->getAttributes())->exists = true;
+        });
+    }
+
+    /**
+     * Update `status` en préservant `protected` (pattern 3.4 #M3 + 3.5).
+     */
+    private function updateStatus(Workstation $workstation, string $newStatus): void
+    {
+        $wasProtected = $workstation->status === 'protected';
+        $workstation->status = $newStatus;
+        if ($wasProtected) {
+            // Mémorise le status réel via `_protected_status` (non-fillable —
+            // utilisé uniquement par saveWithProtected).
+            $workstation->setAttribute('status', 'protected');
+        }
+    }
+
+    /**
+     * Save Workstation (le `updateStatus` a déjà géré la préservation
+     * `protected`).
+     */
+    private function saveWithProtected(Workstation $workstation): void
+    {
+        $workstation->save();
+    }
+
+    /**
+     * Lit `programmed_action` comme array (cast `array` du model).
+     *
+     * @return array<string, mixed>
+     */
+    private function paOf(Workstation $workstation): array
+    {
+        $pa = $workstation->programmed_action ?? [];
+
+        return is_array($pa) ? $pa : [];
+    }
+
+    /**
+     * Merge programmed_action JSON cohérent (préserve clés non touchées).
+     * D7 / T4.2.
+     *
+     * @param  array<string, mixed>  $updates
+     */
+    private function mergeProgrammedAction(Workstation $workstation, array $updates): void
+    {
+        $current = $this->paOf($workstation);
+        $merged = array_merge($current, $updates);
+        $workstation->programmed_action = $merged;
+    }
+
+    /**
+     * Log info channel `ipxe` event `ipxe.windows.action.<step>.<state>` (D10).
+     */
+    private function logState(Workstation $workstation, string $step, string $state, string $ip): void
+    {
+        Log::channel($this->channel())->info("ipxe.windows.action.{$step}.{$state}", [
+            'action_type' => "ipxe.windows.action.{$step}.{$state}",
+            'workstation_id' => $workstation->id ?? null,
+            'ip' => $ip,
+            'workstation_name_prefix' => substr((string) ($workstation->name ?? ''), 0, 6),
         ]);
     }
 

@@ -134,6 +134,64 @@ final class WindowsXmlPlaceholders
     }
 
     /**
+     * Story 3.8 — D9 / AC8.1.
+     *
+     * Sanitize une valeur avant injection dans un cmd batch Windows
+     * (`.cmd`/`.bat`). Stratégie 0-trust : tout caractère d'injection cmd.exe
+     * lève {@see \App\Ipxe\Exceptions\BatPlaceholderInjectionException}.
+     *
+     * **Rationale** : les .cmd batch s'exécutent en SYSTEM côté Windows post-
+     * reboot. Un `name=";calc.exe;rem"` (poste compromis qui POST un nom forgé)
+     * provoquerait une RCE côté poste. {@see sanitizeShellArg()} replace les
+     * chars par `_` (escape light) — `sanitizeBatPlaceholder()` REJETTE
+     * (defense in depth maximale pour le contexte cmd batch).
+     *
+     * **Règles de rejet** (regex `[\x00-\x1F\x7F;&|`$%"'\\]`) :
+     *  - Chars non-printables (`\x00-\x1F`, `\x7F`) — newlines, NUL, BEL...
+     *  - `;`, `&`, `|` — séparateurs cmd.exe / PowerShell.
+     *  - `` ` `` — backtick (substitution PowerShell).
+     *  - `$` — substitution variable PowerShell.
+     *  - `%` — substitution variable cmd.exe (un placeholder Blade ne doit
+     *    JAMAIS contenir `%` — les variables cmd `%UUID%` etc. sont littérales
+     *    côté template, pas issues d'inputs).
+     *  - `"`, `'` — quotes (échappement argument quoted).
+     *  - `\` — backslash (escape cmd.exe).
+     *
+     * **Whitespace trim** : leading/trailing whitespace est strip avant test
+     * (parité `WindowsInstallStep::fromString`).
+     *
+     * **Empty string** : retour `''` (les builders gèrent — ex: `$ou=''`
+     * → branche `:gpo` skip rename).
+     *
+     * @param  string  $raw  Valeur brute (nom poste, role, OU, etc.).
+     * @return string        Valeur bat-safe (= identique si valide).
+     *
+     * @throws \App\Ipxe\Exceptions\BatPlaceholderInjectionException Si le
+     *         placeholder contient un char d'injection cmd.exe.
+     */
+    public static function sanitizeBatPlaceholder(string $raw): string
+    {
+        // Trim whitespace SAFE (parité enum::fromString — un placeholder
+        // `  PC-101  ` est valide post-trim).
+        $stripped = preg_replace('/^\s+|\s+$/u', '', $raw);
+        if ($stripped === null || $stripped === '') {
+            return '';
+        }
+
+        // 0-trust : refus strict si tout char d'injection cmd.exe présent.
+        // Note : `\` est inclus car en cmd batch `\` séparateur path est
+        // toujours littéral côté template (jamais issu d'un input user — les
+        // paths `%windir%\autorun.cmd` sont hardcodés dans le Blade).
+        if (preg_match('/[\x00-\x1F\x7F;&|`$%"\'\\\\]/u', $stripped) === 1) {
+            throw new \App\Ipxe\Exceptions\BatPlaceholderInjectionException(
+                'Placeholder contient des chars d\'injection cmd.exe interdits (sanitizeBatPlaceholder 0-trust).'
+            );
+        }
+
+        return $stripped;
+    }
+
+    /**
      * Sanitize une valeur destinée à être assignée via `DOMNode::textContent =`
      * (qui escape NATIVEMENT les caractères XML lors de la sérialisation).
      *

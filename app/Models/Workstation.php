@@ -55,6 +55,8 @@ class Workstation extends Model implements Wireable
         'mac',
         'uuid',
         'status',
+        'progress',
+        'programmed_action',
         'last_report_at',
         'report_sha',
         'log_path',
@@ -68,12 +70,17 @@ class Workstation extends Model implements Wireable
 
     /**
      * Les attributs qui doivent être castés
+     *
+     * Story 3.8 — D3 / AC7.3 : `programmed_action` cast en `array` —
+     * sérialisation JSON applicative (compatible JSONB Postgres + fallback
+     * text SQLite/MySQL via migration 2026_05_22_120000).
      */
     protected $casts = [
         'last_report_at' => 'datetime',
         'physical_room_id' => 'integer',
         'managed_by_control_hub' => 'boolean',
         'archived_at' => 'datetime',
+        'programmed_action' => 'array',
     ];
 
     /**
