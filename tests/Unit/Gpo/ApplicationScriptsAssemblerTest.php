@@ -601,6 +601,14 @@ class ApplicationScriptsAssemblerTest extends TestCase
     public function it_overrides_applications_scripts_url_via_env(): void
     {
         config(['sambaedu.gpo.applications_scripts_url' => null]);
+
+        // Si le `.env` runtime pré-set la variable (même à chaîne vide),
+        // phpdotenv la fixe dans $_ENV/$_SERVER au boot → l'adapter immutable
+        // retourne Some('') et court-circuite le PutenvAdapter activé ci-dessous.
+        $serverBackup = $_SERVER['SAMBAEDU_APPLICATIONS_SCRIPTS_URL'] ?? null;
+        $envBackup = $_ENV['SAMBAEDU_APPLICATIONS_SCRIPTS_URL'] ?? null;
+        unset($_SERVER['SAMBAEDU_APPLICATIONS_SCRIPTS_URL'], $_ENV['SAMBAEDU_APPLICATIONS_SCRIPTS_URL']);
+
         \Illuminate\Support\Env::enablePutenv();
         putenv('SAMBAEDU_APPLICATIONS_SCRIPTS_URL=https://proxy.example.test/v1/apps');
 
@@ -611,6 +619,12 @@ class ApplicationScriptsAssemblerTest extends TestCase
 
         // Cleanup env pour ne pas polluer les tests suivants.
         putenv('SAMBAEDU_APPLICATIONS_SCRIPTS_URL');
+        if ($serverBackup !== null) {
+            $_SERVER['SAMBAEDU_APPLICATIONS_SCRIPTS_URL'] = $serverBackup;
+        }
+        if ($envBackup !== null) {
+            $_ENV['SAMBAEDU_APPLICATIONS_SCRIPTS_URL'] = $envBackup;
+        }
 
         self::assertSame('https://proxy.example.test/v1/apps', $result,
             'L\'env SAMBAEDU_APPLICATIONS_SCRIPTS_URL doit override le default callable.');
