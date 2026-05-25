@@ -95,6 +95,11 @@ final class WpkgSchemaBootstrapper
                 $table->string('app_id', 100);
                 $table->string('name', 100)->default('');
                 $table->string('status', 32)->default('available');
+                // Story 17.6 — fragment XML `<package>` lu par
+                // LinuxOutController / WingetPackagesResolver (extraction des
+                // noeuds <linux type=apt> / <windows type=winget>). Nullable :
+                // non-breaking pour les tests 15.2 qui ne le renseignent pas.
+                $table->text('xml')->nullable();
                 $table->timestamps();
             });
         }

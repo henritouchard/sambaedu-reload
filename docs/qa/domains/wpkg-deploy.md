@@ -586,3 +586,132 @@ Suite à la code review adversariale + corrections appliquées, vérifications Q
 - [ ] Scénario 2.5 — `WorkstationOptionsChanged` → `.ini` régénéré (CRLF)
 - [ ] Scénarios 4.1 → 4.5 — UI admin assignation apps WPKG (Story 15.4)
 - [ ] Scénarios 5.3 → 5.6 — Pipeline rapports + Dashboard (Story 15.5)
+- [ ] Scénarios 6.1 → 6.5 — Endpoints natifs `/wpkg/{linux,winget}_out.php` (Story 17.6)
+
+---
+
+## Section 6 — Endpoints natifs `linux_out` / `winget_out` (Story 17.6)
+
+> Porte nativement (Laravel) les 2 derniers endpoints `*_out.php` encore servis
+> par le shim PHP-FPM legacy (catchall), non couverts par 16.13 :
+>
+> - `/wpkg/linux_out.php` — consommé par `applications/wpkg/startup.linux`.
+>   Résout les paquets APT applicables au poste → plain-text `"pkg1 pkg2 pkg3"`.
+> - `/wpkg/winget_out.php` — consommé par `install/os/SambaEdu/install.ps1`.
+>   Mappe `Application::xml` + `add.json`/`remove.json` → JSON
+>   `{install?, upgrade?, uninstall?}`.
+>
+> **Pas d'auth JWT** (D2) : postes pas encore enrôlés au boot/install. Protection
+> = `local.request` (allowlist LAN) + `throttle:300,1`. Routes déclarées dans
+> `routes/web.php` AVANT le catchall legacy (chemins littéraux `.php`).
+>
+> **Pré-requis** :
+> - `WPKG_WINGET_ENABLED=true` dans `.env` (sinon `winget_out` renvoie 400).
+>   Catalogues `/usr/share/sambaedu/applications/winget/{add,remove}.json`
+>   (+ couche `/etc/...`) présents pour le test winget réaliste.
+> - **`WPKG_ALLOWED_IPS`** doit contenir l'IP du testeur (ou le CIDR du LAN)
+>   en plus de `127.0.0.1,::1` — sinon tous les `curl` ci-dessous depuis une
+>   autre machine que la VM tombent en **403** (`local.request`). Sur la VM
+>   elle-même (localhost), aucun ajout nécessaire.
+>
+> **Correctif post-review #1 (2026-05-25)** : `linux_out` ne résout PLUS par
+> hostname. Il lit le contexte pré-calculé `apps.<md5>` (store `app_context`,
+> posé par le pipeline d'assembly des scripts via `CacheAppContextWriter`),
+> exactement comme les 6 autres endpoints `*_out.php` natifs. Le param `id`
+> est donc le **md5 de session** (`md5(strtolower(user).strtolower(machine).action.application)`)
+> que `startup.linux` envoie déjà — **pas** un hostname.
+
+### Scénario 6.1 — `linux_out` happy path (paquets APT)
+
+1. Poste `PC01` enregistré (table `workstations`) avec ≥2 applications WPKG
+   **Installed** rattachées (directes ou via parc/profil), dont au moins une
+   portant un fragment `<linux type="apt" package="…"/>` dans `Application::xml`.
+   Le contexte `apps.<md5>` doit exister (posé au logon/boot par l'assembly du
+   script) avec la clé `liste_applications` (liste plate d'`app_id` lowercase).
+2. Récupérer le `<md5>` réel d'une session active (clé `apps.<md5>` du store
+   `app_context`) — c'est le même `id` que `startup.linux` injecte. Depuis une
+   IP autorisée (`WPKG_ALLOWED_IPS`) ou la VM :
+   ```bash
+   curl -s "http://se4fs/wpkg/linux_out.php?id=<md5>"
+   ```
+3. Sortie attendue : plain-text `"pkg1 pkg2 pkg3"` (espaces simples, ordre =
+   ordre de `liste_applications`). `Content-Type: text/plain`.
+4. Une app sans noeud `<linux type="apt">` → fallback `strtolower(app_id)`
+   (parité `linux_out.php:36-38`). Une app assignée mais **non Installed** est
+   absente (S1 — filtre `->installed()`, parité packages.xml).
+5. Parité legacy : comparer le body au legacy pour le même `id`/contexte
+   (le `for p in $packages` shell tolère un trailing space/newline éventuel).
+
+### Scénario 6.2 — `linux_out` cas limites (id absent / invalide / contexte expiré)
+
+1. `curl -s "http://se4fs/wpkg/linux_out.php"` (sans `id`) → **body vide**, 200.
+2. `curl -s "http://se4fs/wpkg/linux_out.php?id=PAS_UN_MD5"` (id non-md5) →
+   **body vide**, 200 (le legacy `apcu_fetch` sur une clé invalide retournerait
+   false → bloc non exécuté).
+3. `curl -s "http://se4fs/wpkg/linux_out.php?id=<md5_inexistant>"` (md5 valide
+   mais contexte `apps.<md5>` expiré/absent — TTL 1800s dépassé) → **body vide**,
+   200 (pas de crash : le poste boot quand même ; `Log::debug` côté natif).
+
+### Scénario 6.3 — `winget_out` machine vierge → tout en install
+
+1. `WPKG_WINGET_ENABLED=true`. Poste `PC02` avec ≥1 app portant un fragment
+   `<windows type="winget" id="…"/>`.
+2. ```bash
+   curl -s -X POST -F "machine=PC02" -F "list=[]" -F "action=list" \
+     http://se4fs/wpkg/winget_out.php
+   ```
+3. Sortie attendue : JSON `{"install":[{"Id":"…","Source":"winget"}, …]}`
+   (toutes les apps demandées + `add.json` en `install`). `Content-Type: text/json`,
+   `JSON_PRETTY_PRINT`. Clés `upgrade`/`uninstall` absentes.
+
+### Scénario 6.4 — `winget_out` upgrade + uninstall + surcharge `/etc/`
+
+1. Construire un `list` représentatif de `Get-WinGetPackage | ConvertTo-Json`
+   contenant : (a) une app demandée déjà installée avec `IsUpdateAvailable=true`
+   + `AvailableVersions`, (b) une app présente dans `remove.json`.
+2. Ajouter une entrée dans `/etc/sambaedu/applications/winget/add.json`
+   (surcharge admin) absente de `/usr/share/...`.
+3. POST `machine=PC02`, `list=<json>`, `action=list`.
+4. Sortie attendue : `upgrade` peuplé (avec `AvailableVersion` bornée par la
+   version pinnée XML si présente), `uninstall` peuplé (app de `remove.json`),
+   `install` contient l'entrée `/etc/add.json`. Parité `winget_out.php:133-189`.
+5. Vérifier **qu'aucun fichier `/tmp/winget_*.json` n'est créé** (le legacy le
+   faisait en debug — non porté).
+
+### Scénario 6.5 — `winget_out` flag off + validations + ordre catchall
+
+1. `WPKG_WINGET_ENABLED=false` → POST winget_out → **400 Bad request**
+   (parité `:23-26`).
+2. Flag on mais `action != "list"` OU `machine` vide OU `list` vide OU `list`
+   non-JSON → **400**.
+3. **Non-régression catchall** : les autres chemins `*.php` legacy (ex.
+   `/wpkg/packages_xml_out.php`) continuent d'être servis par
+   `LegacyCatchallController`. Vérifier que `/wpkg/linux_out.php` et
+   `/wpkg/winget_out.php` sont bien servis par le **natif** (header / log
+   d'app Laravel), pas par le shim legacy. Test archi `WpkgOutRoutesTest`
+   garantit l'ordre avant catchall.
+
+### Post-correctifs & non-régressions (Story 17.6)
+
+- [ ] **Parité format** — `linux_out` : espaces simples, pas de newline final
+  injecté côté natif (DO-3). `winget_out` : `Content-Type: text/json`
+  (non-standard, parité stricte), clés JSON omises si vides.
+- [ ] **S4 — `Content-Type` sur cas vide `linux_out`** : le natif pose
+  `Content-Type: text/plain` **même** sur le cas body vide (id absent/invalide
+  ou contexte expiré) ; le legacy ne pose ce header que sur cache-hit
+  (`linux_out.php:44`, bloc `if ($info)`). Micro-divergence sans impact
+  (`startup.linux` split sur les espaces, ignore le Content-Type), mais à
+  connaître pour une capture **bytes** de référence (ne pas créer de faux échec
+  de parité de header sur le cas vide).
+- [ ] **#1 — `linux_out` lit `apps.<md5>`** : vérifier qu'une session réelle
+  produit bien la clé `apps.<md5>` dans le store `app_context` et que `linux_out`
+  renvoie la liste APT attendue (pas un body vide). Si body vide en prod : vérifier
+  que le contexte n'a pas expiré (TTL 1800s) et que `liste_applications` est peuplée.
+- [ ] **S1 — filtre `installed()`** : une app assignée au poste mais `Available`/
+  `UpdateAvailable` est absente de la sortie `linux_out` ET de la liste XML winget
+  (helper `loadByAppIds` partagé). Parité packages.xml legacy.
+- [ ] **Pas d'écriture disque** — `winget_out` n'écrit aucun fichier temporaire
+  (`/tmp/winget_*.json` legacy non porté — sécurité + idempotence).
+- [ ] **Sécurité LAN** — un appel depuis une IP hors allowlist `local.request`
+  est rejeté (403), iso `wpkg/reports/*`. Aucun JWT/Bearer requis (D2). Pré-requis :
+  l'IP du testeur doit être dans `WPKG_ALLOWED_IPS` (sinon 403 attendu).

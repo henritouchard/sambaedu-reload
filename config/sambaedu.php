@@ -429,6 +429,22 @@ return [
         // (chevauchement). Permet aux postes pas encore mis à jour de
         // continuer à pousser leurs rapports.
         'secret_rotation_overlap_days' => (int) env('WPKG_SECRET_ROTATION_OVERLAP_DAYS', 7),
+
+        // Story 17.6 / D6 — Flag d'activation de l'endpoint `/wpkg/winget_out.php`
+        // (parité `$config['winget']` legacy, alimenté par
+        // `/etc/sambaedu/sambaedu.conf.d/{clients,wpkg}.conf`). Si falsy →
+        // `WingetOutController` retourne 400 (parité `winget_out.php:23-26`).
+        // `linux_out` n'a PAS ce flag (toujours actif).
+        'winget_enabled' => (bool) env('WPKG_WINGET_ENABLED', false),
+
+        // Story 17.6 / D5 — Chemins des catalogues winget add/remove (parité
+        // legacy `winget_out.php:103,109,164,170`). Couche `/etc/` (surcharge
+        // admin) + couche `/usr/share/` (défaut package). Configurables pour
+        // les tests ; non-hardcodés dans le controller/service.
+        'winget_catalog_add_local'    => env('WPKG_WINGET_ADD_LOCAL', '/etc/sambaedu/applications/winget/add.json'),
+        'winget_catalog_add_default'  => env('WPKG_WINGET_ADD_DEFAULT', '/usr/share/sambaedu/applications/winget/add.json'),
+        'winget_catalog_remove_local'   => env('WPKG_WINGET_REMOVE_LOCAL', '/etc/sambaedu/applications/winget/remove.json'),
+        'winget_catalog_remove_default' => env('WPKG_WINGET_REMOVE_DEFAULT', '/usr/share/sambaedu/applications/winget/remove.json'),
     ],
 
     /*

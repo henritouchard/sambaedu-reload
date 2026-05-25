@@ -651,6 +651,47 @@ Route::get('/wpkg/profiles.xml', \App\Wpkg\Deployment\Http\Controllers\ProfilesX
 
 /*
 |--------------------------------------------------------------------------
+| Story 17.6 — Endpoints WPKG linux_out / winget_out (parité legacy)
+|--------------------------------------------------------------------------
+| Porte nativement les 2 derniers endpoints `*_out.php` encore servis par le
+| shim PHP-FPM legacy (catchall), non couverts par 16.13 :
+|   - `/wpkg/linux_out.php` (consommé par `applications/wpkg/startup.linux`) →
+|     liste plain-text des paquets APT applicables au poste.
+|   - `/wpkg/winget_out.php` (consommé par `install/os/SambaEdu/install.ps1`) →
+|     décision JSON {install, upgrade, uninstall}.
+|
+| **Chemins littéraux `.php`** : les scripts packagés appellent la racine
+| `/wpkg/{linux,winget}_out.php` (on ne modifie PAS ces scripts — HORS-SCOPE).
+| Le chemin natif doit matcher EXACTEMENT le chemin legacy.
+|
+| **ORDRE STRICT** : ces 2 routes DOIVENT rester AVANT le catchall legacy
+| `{path}` ci-dessous — sinon le shim PHP-FPM legacy les intercepte
+| silencieusement. Test garde-fou : `WpkgOutRoutesTest`.
+|
+| **Sécurité (D2 / `feedback_auth_iso_legacy`)** : PAS d'auth JWT — les postes
+| ne sont pas encore enrôlés au boot Linux / install OS Windows. Protection =
+| `local.request` (IP allowlist LAN, iso `wpkg/reports/*`) + `throttle:300,1`
+| (boot de masse rentrée). `withoutMiddleware(['web'])` : appels machine sans
+| session/CSRF (`install.ps1` POST sans token CSRF).
+*/
+Route::match(['GET', 'POST'], '/wpkg/linux_out.php', [
+    \App\Wpkg\Deployment\Http\Controllers\LinuxOutController::class,
+    'handle',
+])
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('wpkg.linux-out')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/wpkg/winget_out.php', [
+    \App\Wpkg\Deployment\Http\Controllers\WingetOutController::class,
+    'handle',
+])
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('wpkg.winget-out')
+    ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
 | Story 3.1 — iPXE Service Core (endpoint natif de premier boot iPXE)
 |--------------------------------------------------------------------------
 | Remplace le legacy `/ipxe/boot.php` pour le menu de premier appel iPXE.
