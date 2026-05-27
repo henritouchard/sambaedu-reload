@@ -41,7 +41,7 @@
                 <label wire:key="{{ $keyPrefix }}-{{ $profile->id }}"
                     class="flex items-center gap-3 p-3 hover:bg-base-200 cursor-pointer border-b border-base-200 last:border-b-0">
                     <input type="checkbox" class="checkbox checkbox-sm checkbox-primary"
-                        wire:model="{{ $selectionProperty }}" value="{{ $profile->id }}" />
+                        wire:model.live="{{ $selectionProperty }}" value="{{ $profile->id }}" />
                     <x-atoms.icon-avatar icon="fa-cubes" bgColor="bg-primary/10" textColor="text-primary"
                         size="w-8 h-8" iconSize="text-sm" />
                     <div class="flex-1">

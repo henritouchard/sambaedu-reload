@@ -133,10 +133,14 @@ new #[Title('Control Hub - Instance SE4FS')] class extends Component {
                 return;
             }
 
-            $this->controlHubService->performHeartbeat();
-            $connection->updateStatus('online');
+            $result = $this->controlHubService->performHeartbeat();
             $this->loadData();
-            $this->toastSuccess('Test heartbeat exécuté avec succès');
+
+            if ($result->success) {
+                $this->toastSuccess('Test heartbeat exécuté avec succès');
+            } else {
+                $this->toastError('Test heartbeat échoué : ' . $result->message);
+            }
         } catch (\Exception $e) {
             Log::error('Erreur lors de l\'exécution du heartbeat ControlHub', [
                 'exception' => $e->getMessage(),
