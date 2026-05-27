@@ -109,6 +109,12 @@ class ControlHubService
             return HeartbeatResponse::failed('Aucune connexion ControlHub active trouvée');
         }
 
+        // La BDD fait foi sur l'URL du ControlHub (dynamique, saisie au handshake) :
+        // on resynchronise le client au cas où le singleton aurait une URL obsolète.
+        if ($connection->base_url) {
+            $this->apiClient->setBaseUrl($connection->base_url);
+        }
+
         $token = $this->getToken();
         if (!$token) {
             return HeartbeatResponse::failed('Aucun token disponible pour le heartbeat');
@@ -310,6 +316,11 @@ class ControlHubService
      */
     public function testConnection(): array
     {
+        $connection = $this->repository->getCurrentConnection();
+        if ($connection && $connection->base_url) {
+            $this->apiClient->setBaseUrl($connection->base_url);
+        }
+
         $token = $this->getToken();
         if (!$token) {
             return [

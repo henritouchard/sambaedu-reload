@@ -23,9 +23,12 @@ class ControlHubServiceProvider extends ServiceProvider
 
         // Register API Client
         $this->app->singleton(ControlHubApiClient::class, function ($app) {
-            $baseUrl = config('controlHub.base_url', 'http://192.168.122.1:8080');
             $timeout = config('controlHub.api.timeout', 30);
             $connectTimeout = config('controlHub.api.connect_timeout', 10);
+
+            $baseUrl = $app->make(ControlHubConnectionRepository::class)
+                ->getCurrentConnection()
+                ?->base_url ?? '';
 
             return new ControlHubApiClient($baseUrl, $timeout, $connectTimeout);
         });
