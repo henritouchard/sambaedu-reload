@@ -12,12 +12,13 @@ Checklist par domaine métier. À dérouler avant une mise en production importa
 - [ ] [auth](domains/auth.md) — Plateforme HTTPS + JWT v1 poste↔serveur local (PKI locale, enrollment, refresh, révocation) _(Story 16.10)_
 - [ ] [ipxe](domains/ipxe.md) — Boot iPXE, résolution MAC/UUID, fondations Services Laravel _(Stories 3.1+)_
 - [ ] [users](domains/users.md) — Listing /users, filtres audit (quota dépassé, mdp par défaut), synchro password_changed_at AD _(Story 14.4)_
+- [ ] [ad-sync](domains/ad-sync.md) — Synchronisation AD observer-driven (Workstation, WorkstationGroup, …) + rename modrdn préservant objectGUID/netbootGUID _(Story 4.9)_
 
 ## À créer au fil des prochaines stories
 
 - [x] `users.md` — créé story 14.4 (filtres audit). À compléter : création / modification / suppression / bulk reset MDP / itinérant
 - [ ] `parc.md` — actions machine / batch groupes / schedules / wallpapers / AppProfiles
-- [ ] `ad-sync.md` — `/admin/sync-from-ad`, rapatriement profils LDAP
+- [x] `ad-sync.md` — créé Story 4.9 (observer-driven Workstation, rename modrdn). À compléter : `/admin/sync-from-ad`, rapatriement profils LDAP
 - [ ] `bootstrap-update.md` — `scripts/update.sh`, migrations, seed auto, cache reset
 - [ ] `legacy-shims.md` — routes catchall legacy, modules GPO / iPXE / DHCP / BBB / imprimantes
 - [ ] _(auth.md ajouté Story 16.10 — couvrira aussi `users.md` et `legacy auth/CAS/OAuth2` au fil des prochaines stories Phase 2/3)_

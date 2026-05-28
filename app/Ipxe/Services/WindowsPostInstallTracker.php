@@ -383,19 +383,30 @@ final class WindowsPostInstallTracker
     /**
      * Story 3.8 — renomme ret=0 (branche D lignes 671-700) — AD rename.
      *
-     * **Logique parité legacy** :
-     *  - Si `role` non vide → AdMachineManager::renameComputer (3.3 D14 plan B).
-     *    - Si OK → status="renommage dans AD OK", progress=60%.
-     *    - Si KO → status="ERREUR renommage AD impossible", progress=40%.
+     * **Story 4.9 refactor (root-cause fix divergence PG↔AD)** :
+     *
+     *  - Avant : appel manuel `$adManager->renameComputer()` (samba-tool plan B)
+     *    SANS écrire `$ws->name = $role` en PG → divergence permanente.
+     *  - Maintenant : on écrit `$ws->name = $role` dans la transaction PG, et
+     *    l'observer {@see \App\Observers\WorkstationObserver} dispatch async
+     *    {@see \App\Jobs\AdSync\WorkstationAdSyncJob::rename()} qui exécute
+     *    modrdn LDAP (préserve objectGUID + netbootGUID).
+     *
+     *  - Trade-off accepté (D3) : si le job AD échoue (3 retries × backoff
+     *    10s), le PG est déjà committé → fenêtre transitoire de divergence
+     *    jusqu'à retry final / alerte. Identique au pattern
+     *    `WorkstationGroupAdSyncJob` en prod.
+     *
+     *  - Plus de `registerHardware` post-rename : modrdn préserve netbootGUID
+     *    (D7, validé VM 2026-05-28).
+     *
+     *  - Le paramètre `$adManager` est conservé pour compat ABI (call-sites
+     *    iPXE) mais n'est plus utilisé. Le rename AD passe par l'observer.
+     *
+     * Logique post-refactor :
+     *  - Si `role` non vide → renommage PG via Eloquent + observer async.
+     *    Status = "renommage dans AD OK", progress=60%.
      *  - Si `role` vide → status="ERREUR pas de nouveau nom", progress=20%.
-     *
-     * **DNS** : Q-4 Henri = Samba 4 met à jour DNS auto. Pas de helper DNS
-     * explicite ici (D-A6 + Q-4).
-     *
-     * **netbootGUID** : AdMachineManager plan B = delete+recreate → l'ancien
-     * netbootGUID est perdu côté nouveau compte machine. Documenté dans
-     * Doc QA Section 17 — rebuild manuel `register_machine_hardware` post-rename
-     * recommandé.
      */
     public function recordRenommeAdRenamed(
         Workstation $workstation,
@@ -403,6 +414,8 @@ final class WindowsPostInstallTracker
         string $role = '',
         string $ip = '',
     ): void {
+        unset($adManager); // Story 4.9 : conservé pour compat ABI, non utilisé.
+
         if ($role === '') {
             $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
                 $this->updateStatus($ws, 'ERREUR pas de nouveau nom');
@@ -419,19 +432,14 @@ final class WindowsPostInstallTracker
             return;
         }
 
-        // Invocation AdMachineManager en best-effort hors-transaction (les
-        // appels samba-tool peuvent durer plusieurs secondes — ne pas tenir
-        // le lock DB pendant).
-        $renameOk = false;
-        $renameError = null;
-        try {
-            $renameOk = $adManager->renameComputer((string) ($workstation->name ?? ''), $role);
-        } catch (Throwable $e) {
-            $renameError = $e;
-            $renameOk = false;
-        }
+        $oldName = (string) ($workstation->name ?? '');
 
-        $this->wrapTransaction($workstation, function (Workstation $ws) use ($renameOk, $role, $ip): void {
+        $this->wrapTransaction($workstation, function (Workstation $ws) use ($role, $ip): void {
+            // Story 4.9 — fix root cause : écrire le nouveau nom côté PG.
+            // L'observer Workstation dispatchera async le job AD rename
+            // (modrdn LDAP, préserve objectGUID + netbootGUID).
+            $ws->name = $role;
+
             $this->mergeProgrammedAction($ws, [
                 'type' => 'renomme',
                 'id' => $ws->id ?? null,
@@ -440,36 +448,19 @@ final class WindowsPostInstallTracker
                 'etape' => 'default',
                 'ret' => 0,
             ]);
-            if ($renameOk) {
-                $this->updateStatus($ws, 'renommage dans AD OK');
-                $ws->progress = '60%';
-            } else {
-                $this->updateStatus($ws, 'ERREUR renommage AD impossible');
-                $ws->progress = '40%';
-            }
+            $this->updateStatus($ws, 'renommage dans AD OK');
+            $ws->progress = '60%';
             $this->saveWithProtected($ws);
-            $this->persistMachineBootLog($ws, 'ipxe_win_renomme', $renameOk, $ip);
+            $this->persistMachineBootLog($ws, 'ipxe_win_renomme', true, $ip);
         });
 
-        if ($renameOk) {
-            Log::channel($this->channel())->info('ipxe.windows.action.renomme.ad_rename_success', [
-                'action_type' => 'ipxe.windows.action.renomme.ad_rename_success',
-                'workstation_id' => $workstation->id ?? null,
-                'ip' => $ip,
-                'old_name_prefix' => substr((string) ($workstation->name ?? ''), 0, 6),
-                'new_name_prefix' => substr($role, 0, 6),
-            ]);
-        } else {
-            Log::channel($this->channel())->warning('ipxe.windows.action.renomme.ad_rename_failure', [
-                'action_type' => 'ipxe.windows.action.renomme.ad_rename_failure',
-                'workstation_id' => $workstation->id ?? null,
-                'ip' => $ip,
-                'old_name_prefix' => substr((string) ($workstation->name ?? ''), 0, 6),
-                'new_name_prefix' => substr($role, 0, 6),
-                'exception_class' => $renameError !== null ? $renameError::class : null,
-                'exception_msg' => $renameError !== null ? substr($renameError->getMessage(), 0, 200) : null,
-            ]);
-        }
+        Log::channel($this->channel())->info('ipxe.windows.action.renomme.ad_rename_success', [
+            'action_type' => 'ipxe.windows.action.renomme.ad_rename_success',
+            'workstation_id' => $workstation->id ?? null,
+            'ip' => $ip,
+            'old_name_prefix' => substr($oldName, 0, 6),
+            'new_name_prefix' => substr($role, 0, 6),
+        ]);
     }
 
     /**

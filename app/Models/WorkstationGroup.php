@@ -13,7 +13,6 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Eloquent\Builder;
 use Livewire\Wireable;
 use App\Models\AppProfile;
-use App\Observers\WorkstationObserver;
 use App\Enums\LockReason;
 
 /**
@@ -181,72 +180,39 @@ class WorkstationGroup extends Model implements Wireable
     }
 
     /**
-     * Ajoute une ou plusieurs machines au groupe avec synchronisation AD
-     * 
-     * @param int|array $workstationIds ID(s) de la/des machine(s)
-     * @return void
+     * Ajoute une ou plusieurs machines au groupe.
+     *
+     * Note Story 4.9 (D4) : les hooks pivot audit-only ont été supprimés
+     * (code mort depuis 2026-05-20).
      */
     public function attachWorkstations(int|array $workstationIds): void
     {
         $workstationIds = is_array($workstationIds) ? $workstationIds : [$workstationIds];
-
         $this->workstations()->attach($workstationIds);
-
-        foreach ($workstationIds as $workstationId) {
-            $workstation = Workstation::find($workstationId);
-            if ($workstation) {
-                WorkstationObserver::onGroupAttached($workstation, $this->id);
-            }
-        }
     }
 
     /**
-     * Retire une ou plusieurs machines du groupe avec synchronisation AD
-     * 
-     * @param int|array $workstationIds ID(s) de la/des machine(s)
-     * @return void
+     * Retire une ou plusieurs machines du groupe.
+     *
+     * Note Story 4.9 (D4) : voir {@see attachWorkstations()}.
      */
     public function detachWorkstations(int|array $workstationIds): void
     {
         $workstationIds = is_array($workstationIds) ? $workstationIds : [$workstationIds];
-
         $this->workstations()->detach($workstationIds);
-
-        foreach ($workstationIds as $workstationId) {
-            $workstation = Workstation::find($workstationId);
-            if ($workstation) {
-                WorkstationObserver::onGroupDetached($workstation, $this->id);
-            }
-        }
     }
 
     /**
-     * Synchronise les machines du groupe avec synchronisation AD
-     * 
+     * Synchronise les machines du groupe.
+     *
+     * Note Story 4.9 (D4) : voir {@see attachWorkstations()}.
+     *
      * @param array $workstationIds IDs des machines à synchroniser
      * @return array Les changements effectués
      */
     public function syncWorkstations(array $workstationIds): array
     {
-        $changes = $this->workstations()->sync($workstationIds);
-
-        // Traiter les machines attachées
-        foreach ($changes['attached'] ?? [] as $workstationId) {
-            $workstation = Workstation::find($workstationId);
-            if ($workstation) {
-                WorkstationObserver::onGroupAttached($workstation, $this->id);
-            }
-        }
-
-        // Traiter les machines détachées
-        foreach ($changes['detached'] ?? [] as $workstationId) {
-            $workstation = Workstation::find($workstationId);
-            if ($workstation) {
-                WorkstationObserver::onGroupDetached($workstation, $this->id);
-            }
-        }
-
-        return $changes;
+        return $this->workstations()->sync($workstationIds);
     }
 
     /**

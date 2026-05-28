@@ -442,6 +442,69 @@ update_systemd() {
 }
 
 # ============================================================================
+# Bascule PXE bootstrap vers la route Laravel native (Story 4.9 / 3.7)
+# ============================================================================
+# La conf legacy `/etc/sambaedu/sambaedu.conf.d/dhcp.conf` posée par les
+# anciennes versions de Sambaedu définit `ipxe_script = "boot.php"`, ce qui
+# fait pointer le `filename` DHCP des postes PXE vers le bootstrap legacy PHP.
+# Tant que cette valeur est en place, les actions iPXE (rename, enrollment…)
+# passent par le legacy via le catchall et ne touchent PAS PostgreSQL — d'où
+# les divergences PG↔AD observées avant la story 4.9.
+#
+# Bascule idempotente : si `ipxe_script` ≠ "boot", on remplace puis on
+# régénère `dhcpd.conf` + reload `isc-dhcp-server`. Sinon no-op.
+# ============================================================================
+
+ensure_ipxe_bootstrap_native() {
+    log "Bascule PXE bootstrap → route Laravel native..."
+
+    local conf_file="/etc/sambaedu/sambaedu.conf.d/dhcp.conf"
+
+    if [[ ! -f "$conf_file" ]]; then
+        log_warning "$conf_file absent — bascule iPXE ignorée (pas de DHCP Sambaedu sur cet hôte ?)"
+        return 0
+    fi
+
+    local current
+    current=$(grep -E '^ipxe_script\s*=' "$conf_file" | head -1 | sed -E 's/^ipxe_script\s*=\s*"?([^"]*)"?\s*$/\1/')
+
+    if [[ "$current" == "boot" ]]; then
+        log_success "ipxe_script déjà sur 'boot' (route Laravel) — pas de changement"
+        return 0
+    fi
+
+    log "ipxe_script actuel = \"$current\" → bascule vers \"boot\""
+
+    cp -a "$conf_file" "${conf_file}.bak-$(date +%Y%m%d-%H%M%S)"
+    sed -i -E 's|^(ipxe_script\s*=\s*).*$|\1"boot"|' "$conf_file"
+
+    local new
+    new=$(grep -E '^ipxe_script\s*=' "$conf_file" | head -1 | sed -E 's/^ipxe_script\s*=\s*"?([^"]*)"?\s*$/\1/')
+    if [[ "$new" != "boot" ]]; then
+        log_error "Echec du sed sur $conf_file (ipxe_script = \"$new\")"
+        return 1
+    fi
+
+    local make_script="/usr/share/sambaedu/sbin/make_dhcpd_conf.sh"
+    if [[ -x "$make_script" ]]; then
+        log "Régénération de /etc/dhcp/dhcpd.conf via make_dhcpd_conf.sh..."
+        # Note : make_dhcpd_conf.sh régénère le fichier ET redémarre déjà
+        # `isc-dhcp-server.service` en interne (cf. legacy ligne 242). Pas
+        # besoin d'un reload/restart additionnel ici — et `isc-dhcp-server`
+        # ne supporte de toute façon pas `reload`.
+        "$make_script" || {
+            log_warning "make_dhcpd_conf.sh a retourné un code d'erreur — vérifier manuellement"
+            return 0
+        }
+    else
+        log_warning "$make_script introuvable ou non exécutable — régénération dhcpd.conf à faire manuellement"
+        return 0
+    fi
+
+    log_success "PXE bootstrap basculé sur route Laravel native (/ipxe/boot)"
+}
+
+# ============================================================================
 # Affichage du résumé
 # ============================================================================
 
@@ -460,6 +523,7 @@ show_summary() {
     echo "  ✓ PKI Auth V1"
     echo "  ✓ Apache"
     echo "  ✓ Services systemd"
+    echo "  ✓ PXE bootstrap (Laravel native)"
     echo ""
 }
 
@@ -531,6 +595,9 @@ main() {
 
     echo ""
     ensure_apcu_cli
+
+    echo ""
+    ensure_ipxe_bootstrap_native
 
     echo ""
     run_doctor_check

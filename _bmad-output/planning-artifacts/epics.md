@@ -244,7 +244,7 @@ Chaque story est considérée terminée uniquement si :
 
 ### Epic 3 — Système iPXE — Boot réseau & Déploiement OS
 **Statut :** 🔴 not-ready
-*Le système iPXE est entièrement réimplémenté nativement dans Laravel, sans dépendance au proxy legacy catchall. Les postes peuvent booter, s'enregistrer (nommage, parc, salle), et recevoir une installation OS (Linux, Windows) via des endpoints Laravel dédiés, en s'appuyant sur PostgreSQL comme source de vérité à la place de l'AD direct.*
+*Le système iPXE est entièrement réimplémenté nativement dans Laravel, sans dépendance au proxy legacy catchall. Les postes peuvent booter, s'enregistrer (nommage, parc, salle), et recevoir une installation OS (Linux, Windows) via des endpoints Laravel dédiés, en s'appuyant sur PostgreSQL comme source de vérité à la place de l'AD direct. Le mode LTSP (thin clients) est tracé en Story 3.9 (à investiguer).*
 **FRs couverts :** FR8 (boot/WOL context), FR7 (enrollment machines), FR23-26 (déploiement Windows via iPXE)
 **Prérequis :** Epic 1 (AuthGuard, catchall), Epic 4 (modèles Workstation/WorkstationGroup)
 **Note :** les scripts d'installation OS existants (`actions/*.php`, `Win10/`) sont réécrits en services PHP Laravel — ils appellent les mêmes outils système (wimboot, clonezilla, partitions) mais via des Services typés, sans dépendance au legacy PHP procédural.
@@ -1425,6 +1425,21 @@ So que je puisse gérer la rentrée scolaire (reset toutes les classes entrantes
 ### Story 3.7 : Clonage et Maintenance
 
 *Opérations clonezilla (clone, restore), mode maintenance/rescue via iPXE.*
+
+### Story 3.9 : Mode LTSP — Boot postes sans disque (thin clients)
+
+> **⚠️ À INVESTIGUER avant implémentation** — la story est tracée ici pour ne pas perdre le besoin terrain ; les acceptance criteria seront définis lors de la création via `bmad-create-story` après investigation du legacy.
+>
+> **Déclencheur :** des établissements utilisent encore LTSP en production — il faut un portage dans SE5.
+>
+> **Contrainte principale :** comportement iso-legacy strict. Le legacy gérait l'entrée LTSP dans le menu iPXE boot réseau (fichiers `boot.php:84-90` + `ltsp.php`). Le portage doit reproduire ce comportement à l'identique sans introduire de nouveau mécanisme d'auth ou de provisioning.
+>
+> **Points à investiguer :**
+> - Identifier les postes concernés (groupe `serveurs_ltsp` ? toutes machines ?)
+> - Cartographier `ltsp.php` et `boot.php:84-90` — entrée menu, paramètres kernel, IP hardcodée (`IP_SE4FS="172.16.1.11"` dans `LTSP_buster_SE4.sh:16`) à rendre configurable
+> - Valider si le package `sambaedu-ltsp` est encore installé sur les serveurs de prod concernés
+
+*Portage de l'entrée LTSP dans le menu iPXE SE5 — iso-legacy, postes sans disque (thin clients). À détailler après investigation du legacy.*
 
 ---
 

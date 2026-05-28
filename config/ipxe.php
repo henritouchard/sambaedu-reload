@@ -59,9 +59,14 @@ return [
         'resolution_x' => (int) env('IPXE_RESOLUTION_X', 1024),
         'resolution_y' => (int) env('IPXE_RESOLUTION_Y', 768),
 
-        // Background PNG affiché par la console iPXE (chemin relatif servi
-        // par Apache/Laravel à l'URL `${se4fs}/png/ipxe-se4.png`).
-        'background_png' => env('IPXE_BACKGROUND_PNG', 'png/ipxe-se4.png'),
+        // Background PNG affiché par la console iPXE.
+        //
+        // **Path absolu obligatoire** (préfixé `/`) : avec un path relatif,
+        // iPXE résolvait l'URL par rapport au chain courant, ce qui cassait
+        // sur les routes de profondeur >1 (ex: `/ipxe/enrollment/name` →
+        // résolu en `/ipxe/enrollment/png/...` → 404 → `console --picture`
+        // failure → iPXE quitte le script → UEFI tombe en boot loop).
+        'background_png' => env('IPXE_BACKGROUND_PNG', '/ipxe/png/ipxe-se4.png'),
     ],
 
     /*
@@ -121,6 +126,13 @@ return [
     | Timeout par défaut iso-legacy `sambaedu/ipxe/admin.php:14` (30s).
     */
     'admin' => [
+        // Kill-switch story 4.10 — désactive l'item login admin dans le menu
+        // boot iPXE (known.blade.php) tant que l'auth username/password +
+        // contrôle de droits n'est pas restaurée côté
+        // `IpxeService::handleAdmin()`. Default false = sûr par défaut.
+        // Réactiver via `.env` (`IPXE_ADMIN_ENABLED=true`) UNIQUEMENT après
+        // livraison de la story 4.10 (auth iPXE).
+        'enabled' => (bool) env('IPXE_ADMIN_ENABLED', false),
         'menu_timeout_ms' => (int) env('IPXE_ADMIN_TIMEOUT_MS', 30000),
     ],
 
@@ -135,7 +147,7 @@ return [
     */
     'maintenance' => [
         'menu_timeout_ms' => (int) env('IPXE_MAINTENANCE_TIMEOUT_MS', 10000),
-        'background_png' => env('IPXE_MAINTENANCE_BG_PNG', 'png/sysrescuecd.png'),
+        'background_png' => env('IPXE_MAINTENANCE_BG_PNG', '/ipxe/png/sysrescuecd.png'),
     ],
 
     /*
@@ -241,7 +253,7 @@ return [
         'menu_timeout_ms' => (int) env('IPXE_INSTALL_LINUX_TIMEOUT_MS', 10000),
 
         // Background PNG affiché par la console iPXE du menu installation-linux.
-        'background_png' => env('IPXE_INSTALL_LINUX_BG_PNG', 'png/linux2.png'),
+        'background_png' => env('IPXE_INSTALL_LINUX_BG_PNG', '/ipxe/png/linux2.png'),
 
         // Variante par défaut sélectionnée (iso-legacy installation-linux.php:29).
         'default_variant' => env('IPXE_INSTALL_LINUX_DEFAULT', 'install_deb_gnome'),
@@ -321,7 +333,7 @@ return [
 
         // Background PNG affiché par la console iPXE (iso-legacy
         // installation-windows.php:24).
-        'background_png' => env('IPXE_INSTALL_WIN_BG_PNG', 'png/windows10.png'),
+        'background_png' => env('IPXE_INSTALL_WIN_BG_PNG', '/ipxe/png/windows10.png'),
 
         // Variante par défaut sélectionnée (iso-legacy
         // installation-windows.php:28 — install Win11 auto).
@@ -464,7 +476,7 @@ return [
     'clonezilla' => [
         'enabled' => filter_var(env('IPXE_CLONEZILLA_ENABLED', true), FILTER_VALIDATE_BOOL),
         'menu_timeout_ms' => (int) env('IPXE_CLONEZILLA_TIMEOUT_MS', 10000),
-        'background_png' => env('IPXE_CLONEZILLA_BG_PNG', 'png/clonezilla.png'),
+        'background_png' => env('IPXE_CLONEZILLA_BG_PNG', '/ipxe/png/clonezilla.png'),
     ],
 
     /*

@@ -112,15 +112,11 @@ class WorkstationEnrollmentServiceTest extends TestCase
             'status' => 'active',
         ]);
 
-        $this->adManager->shouldReceive('renameComputer')
-            ->once()
-            ->with('old-name', 'new-name')
-            ->andReturn(true);
-        // F4 (review 3.3) : registerHardware doit être appelé après un rename réussi.
-        $this->adManager->shouldReceive('registerHardware')
-            ->once()
-            ->with('new-name', Mockery::any())
-            ->andReturn(true);
+        // Story 4.9 : le rename AD est désormais piloté par l'observer
+        // + WorkstationAdSyncJob (async). Plus d'appel direct à
+        // renameComputer/registerHardware depuis ce service.
+        $this->adManager->shouldReceive('renameComputer')->never();
+        $this->adManager->shouldReceive('registerHardware')->never();
 
         $result = $this->service->enrollName(
             rawName: 'new-name',
@@ -134,53 +130,6 @@ class WorkstationEnrollmentServiceTest extends TestCase
 
         self::assertDatabaseHas('workstations', [
             'uuid' => '33333333-3333-3333-3333-333333333333',
-            'name' => 'new-name',
-        ]);
-    }
-
-    #[Test]
-    public function it_returns_renamed_with_ad_result_false_on_ad_failure(): void
-    {
-        Workstation::create([
-            'name' => 'old-name',
-            'uuid' => '44444444-4444-4444-4444-444444444444',
-            'mac' => 'aa:bb:cc:dd:ee:04',
-            'status' => 'active',
-        ]);
-
-        $this->adManager->shouldReceive('renameComputer')
-            ->once()
-            ->andReturn(false);
-        // F4 (review 3.3) : registerHardware ne doit PAS être appelé si rename échoue.
-        $this->adManager->shouldReceive('registerHardware')->never();
-
-        // Opus-7 (review 3.3) : asserter que le log `ipxe.enrollment.name.success`
-        // est émis avec contexte `ad_result === 'failed'`.
-        $logger = Mockery::mock('Illuminate\Log\Logger');
-        $logger->shouldReceive('info')
-            ->with('ipxe.enrollment.name.success', Mockery::on(
-                fn ($ctx) => is_array($ctx)
-                    && ($ctx['status'] ?? null) === 'renamed'
-                    && ($ctx['ad_result'] ?? null) === 'failed',
-            ))
-            ->atLeast()->once();
-        // Catch-all pour les autres niveaux/events éventuels (best-effort log helper).
-        $logger->shouldReceive('info')->byDefault();
-        $logger->shouldReceive('warning')->byDefault();
-        $logger->shouldReceive('error')->byDefault();
-        Log::shouldReceive('channel')->andReturn($logger)->byDefault();
-
-        $result = $this->service->enrollName(
-            rawName: 'new-name',
-            mac: 'aa:bb:cc:dd:ee:04',
-            uuid: '44444444-4444-4444-4444-444444444444',
-        );
-
-        self::assertSame(EnrollNameStatus::Renamed, $result->status);
-        self::assertFalse($result->adResult);
-        // La DB est quand même mise à jour (best-effort).
-        self::assertDatabaseHas('workstations', [
-            'uuid' => '44444444-4444-4444-4444-444444444444',
             'name' => 'new-name',
         ]);
     }

@@ -378,8 +378,15 @@ class WorkstationService
 
             $log('info', count($machinesAd) . ' machines trouvées dans l\'AD');
 
-            // Désactiver la synchronisation AD pendant l'import pour éviter les boucles
-            WorkstationObserver::disableSync();
+            // Désactiver la synchronisation AD pendant l'import pour éviter les boucles.
+            // Auto-fix #10 (review 4.9) : `disableSync()`/`enableSync()` sont
+            // désormais `private` — on lit/restaure manuellement le flag via
+            // l'attribut public `$syncEnabled` (équivalent du try/finally
+            // historique de cette section). `withoutSync()` n'est pas
+            // utilisable ici car le bloc englobant gère déjà une transaction
+            // DB qu'on ne veut pas wrapper dans le closure.
+            $previousSyncEnabled = WorkstationObserver::$syncEnabled;
+            WorkstationObserver::$syncEnabled = false;
 
             try {
                 DB::beginTransaction();
@@ -474,7 +481,7 @@ class WorkstationService
                 DB::commit();
                 
             } finally {
-                WorkstationObserver::enableSync();
+                WorkstationObserver::$syncEnabled = $previousSyncEnabled;
             }
 
             if ($establishmentDn !== null) {

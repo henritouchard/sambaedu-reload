@@ -62,11 +62,12 @@ final class IpxeMenuRenderer
      * Pas de logique côté renderer — la substitution est entièrement déléguée
      * au template Blade qui lit `$chainTarget ?? 'boot'`.
      */
-    public function renderHandshake(?string $chainTarget = null): string
+    public function renderHandshake(?string $chainTarget = null, string $serverBaseUrl = ''): string
     {
         return $this->viewFactory->make('ipxe.menu.handshake', [
             'shebang' => self::IPXE_SHEBANG,
             'chainTarget' => $chainTarget,
+            'serverBaseUrl' => $serverBaseUrl,
         ])->render();
     }
 
@@ -137,6 +138,11 @@ final class IpxeMenuRenderer
             'menuTimeoutMs' => (int) config('ipxe.menu.default_timeout_ms', 5000),
             'menuDefault' => $sanitizedAction !== null ? 'action' : 'default',
             'bootDiskFallback' => $this->renderBootDiskFallback(),
+            // Story 4.10 kill-switch — désactive l'item login admin tant que
+            // l'auth iPXE (validatePassword + droit computer.install) n'est pas
+            // restaurée côté `IpxeService::handleAdmin()`. Default false =
+            // sûr par défaut.
+            'isAdminActive' => (bool) config('ipxe.admin.enabled', false),
         ])->render();
     }
 

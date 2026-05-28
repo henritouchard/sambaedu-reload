@@ -93,13 +93,16 @@ cat > "$APACHE_SITES_AVAILABLE/sambaedu.conf" << VHOST_SER
         Require all granted
     </Directory>
 
-    # Servir les fichiers iPXE directement depuis le legacy (fichiers statiques
-    # volumineux : .wim, .sdi, wimboot, etc.) — les .php passent toujours par FPM
+    # /ipxe : sert les fichiers statiques volumineux (.wim, .sdi, wimboot, etc.)
+    # directement depuis le legacy, .php legacy via FPM, et FallbackResource
+    # délègue à Laravel pour les URL sans fichier physique (/ipxe/boot,
+    # /ipxe/admin, /ipxe/enrollment/name, etc. — story 3.x + 4.9).
     Alias /ipxe /var/www/sambaedu/ipxe
     <Directory /var/www/sambaedu/ipxe>
         Options -Indexes +FollowSymLinks
         AllowOverride None
         Require all granted
+        FallbackResource /index.php
     </Directory>
 
     ErrorLog /var/log/apache2/sambaedu-reload-error.log

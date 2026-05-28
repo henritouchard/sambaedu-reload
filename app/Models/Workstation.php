@@ -3,7 +3,7 @@
 namespace App\Models;
 
 use App\Auth\V1\Models\WorkstationMigrationStatus;
-use App\Observers\WorkstationObserver;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -40,6 +40,8 @@ use Livewire\Wireable;
  */
 class Workstation extends Model implements Wireable
 {
+    use HasFactory;
+
     /**
      * La table associée au modèle
      */
@@ -162,52 +164,40 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Ajoute la machine à un ou plusieurs groupes avec synchronisation AD
-     * 
-     * @param int|array $groupIds ID(s) du/des groupe(s)
-     * @return void
+     * Ajoute la machine à un ou plusieurs groupes.
+     *
+     * Note Story 4.9 (D4) : les hooks pivot audit-only `onGroupAttached` ont
+     * été supprimés (code mort depuis 2026-05-20 — la sync AD machine→groupe
+     * a été retirée, le pivot SQL est la source de vérité).
      */
     public function attachGroups(int|array $groupIds): void
     {
         $groupIds = is_array($groupIds) ? $groupIds : [$groupIds];
-
         $this->groups()->attach($groupIds);
-
-        foreach ($groupIds as $groupId) {
-            WorkstationObserver::onGroupAttached($this, (int) $groupId);
-        }
     }
 
     /**
-     * Retire la machine d'un ou plusieurs groupes avec synchronisation AD
-     * 
-     * @param int|array $groupIds ID(s) du/des groupe(s)
-     * @return void
+     * Retire la machine d'un ou plusieurs groupes.
+     *
+     * Note Story 4.9 (D4) : voir {@see attachGroups()}.
      */
     public function detachGroups(int|array $groupIds): void
     {
         $groupIds = is_array($groupIds) ? $groupIds : [$groupIds];
-
         $this->groups()->detach($groupIds);
-
-        foreach ($groupIds as $groupId) {
-            WorkstationObserver::onGroupDetached($this, (int) $groupId);
-        }
     }
 
     /**
-     * Synchronise les groupes de la machine avec synchronisation AD
-     * 
+     * Synchronise les groupes de la machine.
+     *
+     * Note Story 4.9 (D4) : voir {@see attachGroups()}.
+     *
      * @param array $groupIds IDs des groupes à synchroniser
      * @return array Les changements effectués
      */
     public function syncGroups(array $groupIds): array
     {
-        $changes = $this->groups()->sync($groupIds);
-
-        WorkstationObserver::onGroupsSynced($this, $changes);
-
-        return $changes;
+        return $this->groups()->sync($groupIds);
     }
 
 

@@ -18,11 +18,13 @@ use App\Config\LegacyConfigBridge;
 use App\Models\AppProfile;
 use App\Models\Shortcut;
 use App\Models\UserGroup;
+use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Observers\AppProfileObserver;
 use App\Observers\ShortcutObserver;
 use App\Observers\UserGroupObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Observers\WorkstationObserver;
 use App\Repositories\EstablishmentRepository;
 use App\Repositories\GroupRepository;
 use App\Repositories\UserGroupRepository;
@@ -203,6 +205,15 @@ class AppServiceProvider extends ServiceProvider
         UserGroup::observe(UserGroupObserver::class);
         AppProfile::observe(AppProfileObserver::class);
         Shortcut::observe(ShortcutObserver::class);
+
+        // Story 4.9 — Observer Workstation : enregistré uniquement hors
+        // environnement de test (queue=sync en PHPUnit → tout dispatch
+        // tape LDAP/AD réel et casse les tests qui touchent Workstation
+        // sans muter l'event dispatcher). Les tests qui veulent l'observer
+        // l'enregistrent explicitement (cf. WorkstationObserverTest::setUp).
+        if (! $this->app->environment('testing')) {
+            Workstation::observe(WorkstationObserver::class);
+        }
 
         // Story 5.2 (D5=A) — Observer sur le pivot user_group_user pour
         // synchroniser les ACLs FS lors d'un changement de classe d'élève.

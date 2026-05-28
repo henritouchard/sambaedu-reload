@@ -5,7 +5,9 @@ menu Preboot eXecution Environment for {{ $workstationName }} ({{ $ip }})
 set menu-default {{ $menuDefault }}
 set menu-timeout {{ $menuTimeoutMs }}
 item --gap -- ----------------------------------------------------------------------
+@if($isAdminActive)
 item --key 1 login (1) Acces au menu d'administration
+@endif
 @if($action)
 item --key 2 action (2) Action programmee : {{ $action['label'] ?? 'pending' }}
 @endif

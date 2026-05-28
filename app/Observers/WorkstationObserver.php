@@ -4,31 +4,61 @@ declare(strict_types=1);
 
 namespace App\Observers;
 
+use App\Jobs\AdSync\WorkstationAdSyncJob;
 use App\Models\Workstation;
-use App\Models\WorkstationGroup;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Observer pour synchroniser automatiquement les Workstations vers l'AD
+ * Story 4.9 — Observer pour synchroniser automatiquement les Workstations vers l'AD.
+ *
+ * Pattern miroir strict de {@see WorkstationGroupObserver}.
+ *
+ * Hooks Eloquent :
+ *  - created : dispatch ACTION_CREATE (assure existence AD + ad_guid PG).
+ *  - updated : dispatch ACTION_RENAME si `isDirty('name')`,
+ *              dispatch ACTION_STATUS si `isDirty('status')`.
+ *  - deleting : dispatch ACTION_DELETE avant suppression PG (on a encore
+ *               accès à `$ws->name`).
+ *
+ * Helper {@see withoutSync()} : SEUL moyen autorisé pour écrire un
+ * Workstation sans déclencher le job AD (seeders, imports CSV, sync inverse
+ * depuis AD).
+ *
+ * Décision D4 (Henri 2026-05-28) : les hooks pivot audit-only
+ * (`onGroupAttached`/`onGroupDetached`/`onGroupsSynced`) ont été supprimés —
+ * code mort depuis Epic 4 (sync AD machine→groupe retirée 2026-05-20).
  */
 class WorkstationObserver
 {
+    /**
+     * Flag global de synchronisation. Conservé `public` (lecture seule
+     * conventionnelle) pour les tests qui doivent l'inspecter mais NE DOIT
+     * PAS être écrit en dehors de {@see withoutSync()}.
+     *
+     * Auto-fix #10 (review 4.9, 2026-05-28) : les helpers `disableSync()` /
+     * `enableSync()` sont passés `private` — l'unique API publique est
+     * `withoutSync()` qui garantit la restauration du flag (try/finally-safe).
+     */
     public static bool $syncEnabled = true;
 
-    public static function disableSync(): void
+    private static function disableSync(): void
     {
         self::$syncEnabled = false;
     }
 
-    public static function enableSync(): void
+    private static function enableSync(): void
     {
         self::$syncEnabled = true;
     }
 
+    /**
+     * Exécute le callback avec la synchronisation AD désactivée. Restaure
+     * l'état précédent du flag même en cas d'exception.
+     */
     public static function withoutSync(callable $callback): mixed
     {
         $wasEnabled = self::$syncEnabled;
-        self::$syncEnabled = false;
+        self::disableSync();
 
         try {
             return $callback();
@@ -38,75 +68,114 @@ class WorkstationObserver
     }
 
     /**
-     * Appelé après l'ajout d'une machine à un groupe (pivot attach).
-     *
-     * Audit-only depuis 2026-05-20 : la sync AD machine→groupe a été retirée
-     * (décision Epic 4 — `WorkstationMembershipAdSyncJob` ne supporte plus
-     * `add`/`remove`, seul `move` salle subsiste). Le pivot SQL est la source
-     * de vérité unique pour l'appartenance aux groupes logiques (parcs).
+     * Hook Eloquent : appelé après la création d'une Workstation.
      */
-    public static function onGroupAttached(Workstation $workstation, int $groupId): void
+    public function created(Workstation $workstation): void
     {
         if (!self::$syncEnabled) {
             return;
         }
 
-        $group = WorkstationGroup::find($groupId);
-        if (!$group) {
-            Log::warning('[WorkstationObserver] Groupe non trouvé pour attach', [
-                'workstation_id' => $workstation->id,
-                'group_id' => $groupId
-            ]);
-            return;
-        }
-
-        Log::debug('[WorkstationObserver] Machine ajoutée au groupe', [
-            'machine' => $workstation->name,
-            'group' => $group->name
+        Log::debug('[WorkstationObserver] Workstation créée', [
+            'id' => $workstation->id,
+            'name' => $workstation->name,
         ]);
+
+        // Auto-fix #8 (review 4.9) : `->afterCommit()` garantit que le job ne
+        // soit pas exécuté avant que la transaction Eloquent englobante ne
+        // soit committée (sinon `find($id)` du worker pourrait renvoyer null
+        // en queue=sync ou en mode database).
+        dispatch(WorkstationAdSyncJob::create((int) $workstation->id))->afterCommit();
     }
 
     /**
-     * Appelé après le retrait d'une machine d'un groupe (pivot detach).
+     * Hook Eloquent : appelé après une mise à jour d'une Workstation.
      *
-     * Audit-only — voir {@see onGroupAttached()} pour la note archi.
+     * Utilise `wasChanged()` car dans le hook `updated` les attributs ont déjà
+     * été persistés et `isDirty()` retourne false (parité avec
+     * `WorkstationGroupObserver` qui résout le même problème).
      */
-    public static function onGroupDetached(Workstation $workstation, int $groupId): void
+    public function updated(Workstation $workstation): void
     {
         if (!self::$syncEnabled) {
             return;
         }
 
-        $group = WorkstationGroup::find($groupId);
-        if (!$group) {
-            Log::warning('[WorkstationObserver] Groupe non trouvé pour detach', [
-                'workstation_id' => $workstation->id,
-                'group_id' => $groupId
+        $nameChanged = $workstation->wasChanged('name');
+        $statusChanged = $workstation->wasChanged('status');
+
+        // Décision design #3 (Henri 2026-05-28) : si name ET status changent
+        // dans le même `save()`, on dispatche UN SEUL job `update` (fusion
+        // rename + status en une transaction LDAP). Sinon, comportement
+        // standard (rename ou status indépendants).
+        if ($nameChanged && $statusChanged) {
+            $oldName = (string) $workstation->getOriginal('name');
+            $newName = (string) $workstation->name;
+            $newStatus = (string) $workstation->status;
+
+            Log::debug('[WorkstationObserver] Workstation name+status changés, dispatch update job (fusionné)', [
+                'id' => $workstation->id,
+                'old_name' => $oldName,
+                'new_name' => $newName,
+                'status' => $newStatus,
             ]);
+
+            dispatch(WorkstationAdSyncJob::update(
+                (int) $workstation->id,
+                $oldName,
+                $newName,
+                $newStatus,
+            ))->afterCommit();
+
             return;
         }
 
-        Log::debug('[WorkstationObserver] Machine retirée du groupe', [
-            'machine' => $workstation->name,
-            'group' => $group->name
-        ]);
+        if ($nameChanged) {
+            $oldName = (string) $workstation->getOriginal('name');
+            $newName = (string) $workstation->name;
+
+            Log::debug('[WorkstationObserver] Workstation renommée, dispatch rename job', [
+                'id' => $workstation->id,
+                'old_name' => $oldName,
+                'new_name' => $newName,
+            ]);
+
+            // Auto-fix #8 : afterCommit.
+            dispatch(WorkstationAdSyncJob::rename((int) $workstation->id, $oldName, $newName))->afterCommit();
+        }
+
+        if ($statusChanged) {
+            Log::debug('[WorkstationObserver] Workstation status changé, dispatch status job', [
+                'id' => $workstation->id,
+                'status' => $workstation->status,
+            ]);
+
+            // Auto-fix #8 : afterCommit.
+            dispatch(WorkstationAdSyncJob::status((int) $workstation->id, (string) $workstation->status))->afterCommit();
+        }
     }
 
     /**
-     * Appelé après la synchronisation des groupes (pivot sync)
+     * Hook Eloquent : appelé AVANT la suppression d'une Workstation (pour
+     * avoir encore accès à `$ws->name` et `$ws->ad_guid`).
      */
-    public static function onGroupsSynced(Workstation $workstation, array $changes): void
+    public function deleting(Workstation $workstation): void
     {
         if (!self::$syncEnabled) {
             return;
         }
 
-        foreach ($changes['attached'] ?? [] as $groupId) {
-            self::onGroupAttached($workstation, (int) $groupId);
-        }
+        Log::debug('[WorkstationObserver] Workstation en cours de suppression, dispatch delete job', [
+            'id' => $workstation->id,
+            'name' => $workstation->name,
+        ]);
 
-        foreach ($changes['detached'] ?? [] as $groupId) {
-            self::onGroupDetached($workstation, (int) $groupId);
-        }
+        // Auto-fix #8 : afterCommit (cohérence avec les autres dispatch).
+        // Note : `deleting` est avant le commit, donc afterCommit garantit
+        // qu'on ne supprime AD que si la row PG est bien supprimée.
+        dispatch(WorkstationAdSyncJob::delete(
+            (string) $workstation->name,
+            $workstation->ad_guid,
+        ))->afterCommit();
     }
 }

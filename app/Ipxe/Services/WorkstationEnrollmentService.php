@@ -7,9 +7,11 @@ namespace App\Ipxe\Services;
 use App\Ipxe\Enums\IpxeEnrollmentFlow;
 use App\Ipxe\Support\EnrollNameResult;
 use App\Ldap\AdMachineManager;
+use App\LdapModels\MachineModel;
 use App\Models\MachineBootLog;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
+use App\Observers\WorkstationObserver;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -157,13 +159,21 @@ final class WorkstationEnrollmentService
             }
 
             // 6) Cas 1 — création neuve (UUID inconnu).
+            //
+            // Décision design #1a (Henri 2026-05-28) : on bypasse l'observer
+            // pour la création initiale (sinon : double passe AD — un dispatch
+            // de WorkstationAdSyncJob::create + les appels directs `check` /
+            // `registerHardware` ci-dessous). Le flow iPXE garde son retour
+            // synchrone (firmware attend un `ad_ok`), tandis qu'on poste
+            // `ad_guid` / `ad_dn` après registerHardware pour cohérence PG↔AD
+            // sans repasser par le job.
             if ($current === null) {
-                $workstation = Workstation::create([
+                $workstation = WorkstationObserver::withoutSync(fn () => Workstation::create([
                     'name' => $sanitized,
                     'uuid' => strtolower($uuid),
                     'mac' => $mac,
                     'status' => 'active',
-                ]);
+                ]));
 
                 // AD : check (idempotent create) + registerHardware (netbootGUID).
                 $adCheck = $this->adMachineManager->check($sanitized);
@@ -171,6 +181,36 @@ final class WorkstationEnrollmentService
                     ? $this->adMachineManager->registerHardware($sanitized, $uuid)
                     : false;
                 $adOk = $adCheck && $adRegister;
+
+                // Stockage `ad_guid` + `ad_dn` post-création AD (sans
+                // déclencher l'observer → pas de job).
+                if ($adOk) {
+                    try {
+                        $machine = MachineModel::findBy('cn', $sanitized);
+                        if ($machine !== null) {
+                            $guid = $machine->getConvertedGuid();
+                            $dn = $machine->getDn();
+                            if (!empty($guid)) {
+                                WorkstationObserver::withoutSync(function () use ($workstation, $guid, $dn): void {
+                                    $workstation->ad_guid = $guid;
+                                    if (!empty($dn)) {
+                                        $workstation->ad_dn = $dn;
+                                    }
+                                    $workstation->save();
+                                });
+                            }
+                        }
+                    } catch (Throwable $e) {
+                        // best-effort — ne pas bloquer l'enrollment iPXE si la
+                        // lecture LDAP post-create échoue.
+                        $this->log('ipxe.enrollment.name.ad_guid_backfill_failure', [
+                            'action_type' => 'ipxe.enrollment.name.ad_guid_backfill_failure',
+                            'workstation_id' => $workstation->id,
+                            'exception_class' => $e::class,
+                            'message' => substr($e->getMessage(), 0, 200),
+                        ], 'warning');
+                    }
+                }
 
                 $this->log('ipxe.enrollment.name.success', [
                     'action_type' => 'ipxe.enrollment.name.success',
@@ -189,26 +229,30 @@ final class WorkstationEnrollmentService
             }
 
             // 7) Cas 3 — renommage (UUID connu, nouveau nom libre).
-            $oldName = (string) ($current->name ?? '');
+            //
+            // Story 4.9 : le rename AD est désormais piloté par l'observer
+            // {@see \App\Observers\WorkstationObserver} qui dispatch async
+            // {@see \App\Jobs\AdSync\WorkstationAdSyncJob::rename()} (modrdn
+            // LDAP, préserve objectGUID + netbootGUID).
+            //
+            // D7 : registerHardware post-rename supprimé — modrdn LDAP
+            // préserve netbootGUID (validé VM 2026-05-28).
+            //
+            // Auto-fix #6 (review 4.9) : suppression de `$oldName` mort et
+            // de son `unset()`. Le rename AD est délégué à l'observer/job —
+            // le résultat réel n'est connu qu'après exécution async, donc on
+            // log `ad_result='dispatched'` (vs `'success'` mensonger).
             $current->name = $sanitized;
             if ($mac !== '' && $current->mac !== $mac) {
                 $current->mac = $mac;
             }
             $current->save();
 
-            // AD : rename via samba-tool computer move (D14 plan A).
-            $adRename = $this->adMachineManager->renameComputer($oldName, $sanitized);
-            // F4 (review 3.3) : re-register netbootGUID après rename — parité legacy
-            // `enregistrement.php:60-63` + docstring `renameComputer():351-355` exige.
-            $adRegister = $adRename
-                ? $this->adMachineManager->registerHardware($sanitized, $uuid)
-                : false;
-            $adResult = $adRename && $adRegister;
-
             $this->log('ipxe.enrollment.name.success', [
                 'action_type' => 'ipxe.enrollment.name.success',
                 'status' => 'renamed',
-                'ad_result' => $adResult ? 'success' : 'failed',
+                // async — voir queue logs (channel default) pour résultat réel.
+                'ad_result' => 'dispatched',
                 'ip' => $ip,
                 'mac_prefix' => substr($mac, 0, 6),
                 'uuid_prefix' => substr($uuid, 0, 8),
@@ -218,7 +262,10 @@ final class WorkstationEnrollmentService
 
             $this->persistMachineBootLog($current, $ip, IpxeEnrollmentFlow::Name, true);
 
-            return EnrollNameResult::renamed($current, $sanitized, $adResult);
+            // EnrollNameResult::renamed() exige un bool — on passe `true`
+            // pour signaler « dispatch émis » (le retour iPXE ne reflète
+            // plus le succès AD réel, désormais async).
+            return EnrollNameResult::renamed($current, $sanitized, true);
         } catch (Throwable $e) {
             $this->log('ipxe.enrollment.name.failure', [
                 'action_type' => 'ipxe.enrollment.name.failure',

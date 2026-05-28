@@ -51,7 +51,7 @@ final class IpxeEnrollmentOrchestrator
             $this->logHandshake($request, IpxeEnrollmentFlow::Name);
 
             return $this->safeRender(
-                fn (): string => $this->renderer->renderHandshake('ipxe/enrollment/name'),
+                fn (): string => $this->renderer->renderHandshake('name'),
                 IpxeMenuKind::Handshake,
                 $ip,
                 $mac,
@@ -131,7 +131,7 @@ final class IpxeEnrollmentOrchestrator
             $this->logHandshake($request, IpxeEnrollmentFlow::Byod);
 
             return $this->safeRender(
-                fn (): string => $this->renderer->renderHandshake('ipxe/enrollment/byod'),
+                fn (): string => $this->renderer->renderHandshake('byod'),
                 IpxeMenuKind::Handshake,
                 $ip,
                 $mac,
@@ -214,7 +214,7 @@ final class IpxeEnrollmentOrchestrator
             $this->logHandshake($request, IpxeEnrollmentFlow::Room);
 
             return $this->safeRender(
-                fn (): string => $this->renderer->renderHandshake('ipxe/enrollment/room'),
+                fn (): string => $this->renderer->renderHandshake('room'),
                 IpxeMenuKind::Handshake,
                 $ip,
                 $mac,
@@ -286,7 +286,7 @@ final class IpxeEnrollmentOrchestrator
         [$mac, $uuid, $product, $ip] = $this->extractCommonParams($request);
         $serverBaseUrl = $this->resolveServerBaseUrl($request);
         $flow = $attach ? IpxeEnrollmentFlow::ParcAdd : IpxeEnrollmentFlow::ParcRemove;
-        $endpoint = $attach ? 'ipxe/enrollment/parc-add' : 'ipxe/enrollment/parc-remove';
+        $endpoint = $attach ? 'parc-add' : 'parc-remove';
 
         if ($mac === '' || $uuid === '') {
             $this->logHandshake($request, $flow);

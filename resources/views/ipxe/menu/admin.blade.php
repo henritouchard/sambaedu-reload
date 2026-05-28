@@ -1,7 +1,7 @@
 {!! $shebang !!}
 params
-param mac {{ $mac }}
-param uuid {{ $uuid }}
+param mac ${net0/mac}
+param uuid ${uuid}
 console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }}
 :menu
 menu Preboot eXecution Environment pour {{ $workstationName }} ({{ $ip }})

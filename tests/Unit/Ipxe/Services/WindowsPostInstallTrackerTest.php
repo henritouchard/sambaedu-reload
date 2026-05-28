@@ -394,15 +394,16 @@ class WindowsPostInstallTrackerTest extends TestCase
     {
         $ws = $this->makeWorkstation();
 
+        // Story 4.9 : plus d'appel à renameComputer (rename PG → observer
+        // → WorkstationAdSyncJob async). adManager n'est plus utilisé.
         $adManager = Mockery::mock(AdMachineManager::class);
-        $adManager->shouldReceive('renameComputer')
-            ->once()
-            ->with('PC-101', 'pc-renamed-01')
-            ->andReturn(true);
+        $adManager->shouldNotReceive('renameComputer');
 
         $this->tracker->recordRenommeAdRenamed($ws, $adManager, 'pc-renamed-01');
 
         $fresh = $ws->fresh();
+        // Story 4.9 fix root cause : `name` est désormais écrit en PG.
+        self::assertSame('pc-renamed-01', $fresh->name);
         self::assertSame('renommage dans AD OK', $fresh->status);
         self::assertSame('60%', $fresh->progress);
         $pa = $fresh->programmed_action;
@@ -412,46 +413,11 @@ class WindowsPostInstallTrackerTest extends TestCase
     }
 
     #[Test]
-    public function it_records_renomme_ad_renamed_failure(): void
-    {
-        $ws = $this->makeWorkstation();
-
-        $adManager = Mockery::mock(AdMachineManager::class);
-        $adManager->shouldReceive('renameComputer')
-            ->once()
-            ->andReturn(false);
-
-        $this->tracker->recordRenommeAdRenamed($ws, $adManager, 'pc-renamed-01');
-
-        $fresh = $ws->fresh();
-        self::assertSame('ERREUR renommage AD impossible', $fresh->status);
-        self::assertSame('40%', $fresh->progress);
-    }
-
-    #[Test]
-    public function it_records_renomme_ad_renamed_throws_handled_as_failure(): void
-    {
-        $ws = $this->makeWorkstation();
-
-        $adManager = Mockery::mock(AdMachineManager::class);
-        $adManager->shouldReceive('renameComputer')
-            ->once()
-            ->andThrow(new \RuntimeException('samba-tool not available'));
-
-        $this->tracker->recordRenommeAdRenamed($ws, $adManager, 'pc-renamed-01');
-
-        $fresh = $ws->fresh();
-        // Exception catched + traité comme failure (40%).
-        self::assertSame('ERREUR renommage AD impossible', $fresh->status);
-        self::assertSame('40%', $fresh->progress);
-    }
-
-    #[Test]
     public function it_records_renomme_ad_renamed_with_empty_role(): void
     {
         $ws = $this->makeWorkstation();
         $adManager = Mockery::mock(AdMachineManager::class);
-        // renameComputer NE DOIT PAS être appelé si role vide.
+        // Story 4.9 : renameComputer n'est jamais appelé (refactor).
         $adManager->shouldNotReceive('renameComputer');
 
         $this->tracker->recordRenommeAdRenamed($ws, $adManager, '');
@@ -459,6 +425,8 @@ class WindowsPostInstallTrackerTest extends TestCase
         $fresh = $ws->fresh();
         self::assertSame('ERREUR pas de nouveau nom', $fresh->status);
         self::assertSame('20%', $fresh->progress);
+        // Le nom PG n'a PAS été modifié (role vide).
+        self::assertSame('PC-101', $fresh->name);
     }
 
     #[Test]
@@ -612,7 +580,8 @@ class WindowsPostInstallTrackerTest extends TestCase
         ]);
 
         $adManager = Mockery::mock(AdMachineManager::class);
-        $adManager->shouldReceive('renameComputer')->andReturn(true);
+        // Story 4.9 : adManager non utilisé (refactor observer).
+        $adManager->shouldNotReceive('renameComputer');
 
         $this->tracker->recordRenommeAdRenamed($ws, $adManager, 'pc-renamed-01');
 

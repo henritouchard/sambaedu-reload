@@ -268,7 +268,10 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
     }
 
     /* ---------------------------------------------------------------
-     * AC13.5 — renomme ret=0 → AD rename via AdMachineManager
+     * AC13.5 — renomme ret=0 → écriture PG `name = role` (observer-driven).
+     *
+     * Story 4.9 : refactor — plus d'appel direct à AdMachineManager,
+     * le rename AD est déclenché par l'observer + WorkstationAdSyncJob.
      * --------------------------------------------------------------- */
 
     #[Test]
@@ -277,10 +280,8 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         $ws = $this->seedWorkstation();
 
         $adMock = Mockery::mock(AdMachineManager::class);
-        $adMock->shouldReceive('renameComputer')
-            ->once()
-            ->with('pc-techno-25', 'pc-renamed-01')
-            ->andReturn(true);
+        // Story 4.9 : adManager non utilisé par recordRenommeAdRenamed.
+        $adMock->shouldNotReceive('renameComputer');
         $this->app->instance(AdMachineManager::class, $adMock);
 
         $response = $this->post('/ipxe/windows/action', [
@@ -295,35 +296,10 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         self::assertSame('', (string) $response->getContent());
 
         $ws->refresh();
+        // Story 4.9 fix root cause : le nom PG est écrit en transaction.
+        self::assertSame('pc-renamed-01', $ws->name);
         self::assertSame('renommage dans AD OK', $ws->status);
         self::assertSame('60%', $ws->progress);
-    }
-
-    /* ---------------------------------------------------------------
-     * AC13.6 — renomme ret=0 + AD rename failure
-     * --------------------------------------------------------------- */
-
-    #[Test]
-    public function it_logs_warning_on_ad_rename_failure(): void
-    {
-        $ws = $this->seedWorkstation();
-
-        $adMock = Mockery::mock(AdMachineManager::class);
-        $adMock->shouldReceive('renameComputer')->once()->andReturn(false);
-        $this->app->instance(AdMachineManager::class, $adMock);
-
-        $response = $this->post('/ipxe/windows/action', [
-            'uuid' => $ws->uuid,
-            'name' => 'pc-techno-25',
-            'etape' => 'renomme',
-            'ret' => '0',
-            'role' => 'pc-renamed-01',
-        ]);
-
-        $response->assertStatus(200);
-        $ws->refresh();
-        self::assertSame('ERREUR renommage AD impossible', $ws->status);
-        self::assertSame('40%', $ws->progress);
     }
 
     /* ---------------------------------------------------------------

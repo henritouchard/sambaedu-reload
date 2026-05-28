@@ -3,14 +3,18 @@ params
 param mac {{ $mac }}
 param uuid {{ $uuid }}
 param platform {{ $platform }}
-console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }}
 @if($result === null)
-echo Enregistrement du nom pour uuid: {{ $uuid }}
-echo (ne pas utiliser pour renommer sans reinstallation)
-echo -n Entrez le nom de la machine:
+echo === DEBUG enrollment/name handshake ===
+echo mac={{ $mac }} uuid={{ $uuid }} platform={{ $platform }}
+echo currentName={{ $currentName }}
+echo serverBaseUrl={{ $serverBaseUrl }}
+prompt --timeout 15000 Appuyez sur une touche pour continuer (15s)...
+echo Entrez le nom de la machine:
 set name {{ $currentName }}
 read name
+echo Vous avez saisi : ${name}
 param new_name ${name}
+prompt --timeout 5000 Chain vers serveur dans 5s, appuyez sur une touche pour annuler...
 chain --replace --autofree {{ $serverBaseUrl }}/ipxe/enrollment/name##params
 @else
 @switch($result->status->value)
