@@ -1,0 +1,14 @@
+# Dépendances (volumineuses, inutiles pour Claude)
+vendor/
+node_modules/
+public/vendor/
+
+# Fichiers compilés / assets
+public/build/
+public/hot/
+
+# Caches et logs
+storage/logs/
+storage/framework/cache/
+bootstrap/cache/
+.git/
