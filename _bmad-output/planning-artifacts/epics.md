@@ -3422,7 +3422,7 @@ So que je sache en quelques secondes si le déploiement WPKG fonctionne sur l'en
 
 ## Epic 17 : Scripts de Démarrage Windows et Linux
 
-**Statut :** 🟢 **Story 17.1 done** (audit `audit-applications-scripts.md` validé Henri 2026-05-21 — patch post-Epic-16-done). Stories 17.2-17.6 cadrées (6 stories au total, ~7-9j) avec estimations révisées tenant compte des livrables Epic 16 done (16.12 infra logs, 16.13 endpoints API v1). Cf. audit Section G.6 pour le récapitulatif.
+**Statut :** ✅ **DONE 2026-05-28 — 6/6 stories done (17-1..17-6)**. Clôturé par Henri. Compatibilité runtime des ~80 scripts versionnés par le package Debian `sambaedu` garantie avec Epic 15 (WPKG natif) + Epic 16 (GPO natives). Reste à Henri : smoke VM (audit template réel + parité bytes .cmd, DO-3 newline linux_out).
 
 *Gestion des scripts Windows ET Linux (logon, startup, shutdown, logoff) déposés sur NETLOGON ou via GPO/`autorun`. Le responsable peut créer, éditer, versionner et associer des scripts à des cibles (utilisateur, machine, OU, WorkstationGroup). Logs d'exécution et rapports d'erreur côté serveur via channel `winscripts` (et `linscripts` pour Linux), centralisés en DB (table `script_execution_logs` partagée avec Epic 16 Phase 2).*
 
@@ -3456,7 +3456,7 @@ So que je sache en quelques secondes si le déploiement WPKG fonctionne sur l'en
 
 *Cadrage post-audit : étend Story 16.7 (squelette `ApplicationScriptsGenerator`/`Assembler`/`Scanner`/`Controller` + whitelist 8 clés). Périmètre : (1) élargir `config/sambaedu.gpo.applications.substitutions.php` de 8 → 14 clés (ajout `ADMINSE_NAME`, `DHCP_MASQUE`, `DHCP_RESEAU`, `GLPI_URL`, `NO_INTERNET`, `SE4AD_IP`, `SE4FS_IP`, `SE4INSTALL_NAME`) en mappant chaque clé vers sa source Eloquent/config/env ; (2) audit de parité bytes legacy vs natif ; (3) intégrer `WrapperScriptRenderer` (16.12) dans `ApplicationScriptsAssembler` pour wrapper chaque fragment (couplé avec 17.5 opt-in). Charge : 2-3j. Prérequis : 17.1 ✅ + 16.7 ✅ + 16.12 ✅.*
 
-### Story 17.3 : Compat GPO orchestratrice `se4_applications` (Stratégie A)
+### Story 17.3 : Compat GPO orchestratrice `se4_applications` (Stratégie A) ✅ done 2026-05-28
 
 *Cadrage post-audit : Stratégie A confirmée (Henri 2026-05-21) — modèle « download GPO repo + set direct à l'install serveur ». Template `se4_applications` fourni par le package Debian (cf. `WpkgGpoSynchronizer` 16.6 pour le pattern). 17.3 vérifie que les `.cmd` orchestrateurs contenus dans le template (Machine\Scripts\Startup, Machine\Scripts\Logon) pointent vers les endpoints natifs `/api/v1/workstation-config/applications-scripts` (16.13) et non vers `gpo/applications.php` legacy. Patcher le template upstream ou ajouter substitution post-extraction si écart. Aucune création de GPO ni de synchronizer dédié (Story 16.4 cancelled). Charge : ~1j. Prérequis : 17.1 ✅ + 16.5 ✅ + 16.13 ✅.*
 
