@@ -29,6 +29,26 @@ class WingetPackagesResolverTest extends TestCase
     /** @var list<string> */
     private array $tmpFiles = [];
 
+    /**
+     * Neutralise les 4 chemins de catalogue add/remove vers des fichiers
+     * inexistants — sinon les tests qui ne posent pas de catalogue lisent
+     * /usr/share/sambaedu/applications/winget/*.json présent sur la VM
+     * (PowerShell + AppInstaller) et pollue le résultat.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        foreach ([
+            'sambaedu.wpkg.winget_catalog_add_local',
+            'sambaedu.wpkg.winget_catalog_add_default',
+            'sambaedu.wpkg.winget_catalog_remove_local',
+            'sambaedu.wpkg.winget_catalog_remove_default',
+        ] as $key) {
+            config()->set($key, sys_get_temp_dir() . '/winget-absent-' . uniqid() . '.json');
+        }
+    }
+
     protected function tearDown(): void
     {
         foreach ($this->tmpFiles as $f) {
