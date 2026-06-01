@@ -259,7 +259,8 @@ class WorkstationAdSyncJob implements ShouldQueue
             return ['success' => true];
         }
 
-        $machine = MachineModel::findBy('cn', $oldName);
+        // Résolution par `ad_guid` (stable) en priorité — cf. resolveAdMachineByGuidOrCn.
+        $machine = $this->resolveAdMachineByGuidOrCn($oldName);
 
         // Idempotence : si l'ancien CN n'existe plus mais le nouveau existe →
         // rename déjà appliqué, on no-op.
@@ -274,6 +275,15 @@ class WorkstationAdSyncJob implements ShouldQueue
             }
             Log::warning('[WorkstationAdSyncJob] handleRename: compte AD introuvable', [
                 'old' => $oldName,
+                'new' => $newName,
+            ]);
+            return ['success' => true];
+        }
+
+        // L'objet résolu (par guid) peut déjà porter le `new_name` (rename
+        // appliqué, ad_dn PG laissé stale) → no-op idempotent.
+        if (strcasecmp((string) $machine->getFirstAttribute('cn'), $newName) === 0) {
+            Log::info('[WorkstationAdSyncJob] handleRename: cn AD déjà == new_name (idempotent)', [
                 'new' => $newName,
             ]);
             return ['success' => true];
@@ -462,7 +472,8 @@ class WorkstationAdSyncJob implements ShouldQueue
             ),
         };
 
-        $machine = MachineModel::findBy('cn', $oldName);
+        // Résolution par `ad_guid` (stable) en priorité — cf. resolveAdMachineByGuidOrCn.
+        $machine = $this->resolveAdMachineByGuidOrCn($oldName);
 
         // Idempotence : si l'ancien CN n'existe plus mais le nouveau existe →
         // rename déjà appliqué, on tente quand même la pose du UAC.
@@ -484,7 +495,9 @@ class WorkstationAdSyncJob implements ShouldQueue
             return ['success' => true];
         }
 
-        if (strcasecmp($oldName, $newName) !== 0) {
+        // On compare le `cn` AD réel (résolu par guid) au `new_name` — pas le
+        // `old_name` SQL qui peut avoir divergé.
+        if (strcasecmp((string) $machine->getFirstAttribute('cn'), $newName) !== 0) {
             $domain = $this->resolveDomain();
 
             // D1 — modrdn LDAP.
@@ -528,6 +541,55 @@ class WorkstationAdSyncJob implements ShouldQueue
             return null;
         }
         return Workstation::find((int) $this->workstationId);
+    }
+
+    /**
+     * Résout l'objet AD à renommer en privilégiant `ad_guid` (identifiant
+     * stable) sur `cn = old_name` (mutable). Iso pattern {@see handleDelete()}.
+     *
+     * Pourquoi : le `cn` AD et le `name` PG peuvent diverger (renames de test
+     * successifs où chaque dispatch porte le `old_name` SQL courant, rename
+     * AD hors-Sambaedu, ad_dn PG laissé stale...). Une recherche uniquement
+     * par `cn = old_name` échouait alors silencieusement (« compte AD
+     * introuvable » → no-op) alors que l'objet existe sous un autre `cn`.
+     * Le legacy `enregistrement.php` était robuste car il retrouvait la
+     * machine par UUID puis renommait depuis son `cn` réel.
+     *
+     * Fallback `cn = old_name` pour les workstations PG non back-fillées
+     * (`ad_guid` null).
+     */
+    private function resolveAdMachineByGuidOrCn(string $oldName): ?MachineModel
+    {
+        $ws = $this->findWorkstation();
+        $adGuid = $ws !== null ? (string) ($ws->ad_guid ?? '') : '';
+
+        if ($adGuid !== '') {
+            try {
+                $machine = MachineModel::findByGuid($adGuid);
+            } catch (\Throwable $e) {
+                Log::warning('[WorkstationAdSyncJob] resolveAdMachine: findByGuid a échoué, fallback sur cn', [
+                    'ad_guid' => $adGuid,
+                    'error' => $e->getMessage(),
+                ]);
+                $machine = null;
+            }
+
+            if ($machine !== null) {
+                $foundCn = (string) $machine->getFirstAttribute('cn');
+                if (strcasecmp($foundCn, $oldName) !== 0) {
+                    // Audit : divergence nom SQL/cn AD (rename hors-Sambaedu ou
+                    // ad_dn PG stale). On renomme quand même depuis le cn réel.
+                    Log::warning('[WorkstationAdSyncJob] resolveAdMachine: cn AD diffère du old_name PG (divergence détectée)', [
+                        'pg_old_name' => $oldName,
+                        'ad_cn' => $foundCn,
+                        'ad_guid' => $adGuid,
+                    ]);
+                }
+                return $machine;
+            }
+        }
+
+        return MachineModel::findBy('cn', $oldName);
     }
 
     /**
