@@ -184,7 +184,23 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         }
 
         try {
-            $count = $this->parcService->bulkAddMachinesToGroup($this->selectedMachines, $this->id);
+            if ($this->group->is_physical) {
+                // Salle physique : « ajouter » = déplacer le poste DANS cette
+                // salle → réécrit la FK `workstations.physical_room_id` (un poste
+                // n'a qu'une seule salle ; il quitte sa salle précédente). La
+                // propagation OU AD est déléguée au workflow existant (parité
+                // avec l'enrollment iPXE `assignRoom`). Source de vérité unique
+                // du lien physique = la FK, pas le pivot.
+                $count = 0;
+                foreach ($this->selectedMachines as $machineId) {
+                    if ($this->parcService->assignMachineToPhysicalRoom((int) $machineId, $this->id)) {
+                        $count++;
+                    }
+                }
+            } else {
+                // Parc logique : appartenance N:N via le pivot.
+                $count = $this->parcService->bulkAddMachinesToGroup($this->selectedMachines, $this->id);
+            }
             $this->toastSuccess("{$count} machine(s) ajoutée(s) au groupe");
             $this->showAddMachinesModal = false;
             $this->selectedMachines = [];
@@ -201,7 +217,14 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         Gate::authorize('update-workstationGroup', $this->group);
 
         try {
-            $this->parcService->removeMachineFromGroup($machineId, $this->id);
+            if ($this->group->is_physical) {
+                // Salle physique : « retirer » = détacher le poste de la salle
+                // → `physical_room_id = null` (propagation OU AD déléguée).
+                $this->parcService->assignMachineToPhysicalRoom($machineId, null);
+            } else {
+                // Parc logique : detach du pivot N:N.
+                $this->parcService->removeMachineFromGroup($machineId, $this->id);
+            }
             $this->toastSuccess('Machine retirée du groupe');
             $this->loadGroup();
         } catch (\Exception $e) {
@@ -216,7 +239,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             return;
         }
 
-        $this->selectedGroupMachineIds = $this->group->workstations->pluck('id')->map(static fn(mixed $id): int => (int) $id)->values()->all();
+        $this->selectedGroupMachineIds = $this->group->members->pluck('id')->map(static fn(mixed $id): int => (int) $id)->values()->all();
         $this->allGroupMachinesSelected = true;
     }
 
@@ -235,7 +258,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             return;
         }
 
-        $totalMachines = $this->group->workstations->count();
+        $totalMachines = $this->group->members->count();
         $this->allGroupMachinesSelected = $totalMachines > 0 && count($this->selectedGroupMachineIds) === $totalMachines;
     }
 
@@ -267,7 +290,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             return;
         }
 
-        $availableMachineIds = $this->group->workstations->pluck('id')->map(static fn(mixed $id): int => (int) $id)->values()->all();
+        $availableMachineIds = $this->group->members->pluck('id')->map(static fn(mixed $id): int => (int) $id)->values()->all();
 
         $this->selectedGroupMachineIds = array_values(array_map('intval', array_intersect($this->selectedGroupMachineIds, $availableMachineIds)));
 
@@ -839,7 +862,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             return;
         }
 
-        $this->selectedGroupMachineIds = $this->group->workstations->pluck('id')->map(static fn(mixed $id): int => (int) $id)->values()->all();
+        $this->selectedGroupMachineIds = $this->group->members->pluck('id')->map(static fn(mixed $id): int => (int) $id)->values()->all();
 
         $this->executeSelectedGroupMachinesAction($action);
     }

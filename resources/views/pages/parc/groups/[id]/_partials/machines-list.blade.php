@@ -7,7 +7,7 @@
                     @click="tab = 'postes'">
                     <i class="fa-solid fa-computer mr-2"></i>
                     Postes
-                    <span class="badge badge-ghost badge-sm ml-2">{{ $group->workstations->count() }}</span>
+                    <span class="badge badge-ghost badge-sm ml-2">{{ $group->members->count() }}</span>
                 </a>
                 <a role="tab" class="tab" :class="{ 'tab-active': tab === 'imprimantes' }"
                     @click="tab = 'imprimantes'">
@@ -23,10 +23,10 @@
                 <h3 class="card-title text-base">
                     <i class="fa-solid fa-computer text-primary"></i>
                     Machines du groupe
-                    <span class="badge badge-ghost">{{ $group->workstations->count() }}</span>
+                    <span class="badge badge-ghost">{{ $group->members->count() }}</span>
                 </h3>
                 <div class="flex items-center gap-2">
-                    @if ($group->workstations->isNotEmpty())
+                    @if ($group->members->isNotEmpty())
                         <button type="button" class="btn btn-ghost btn-sm" wire:click="selectAllGroupMachines">
                             <i class="fa-solid fa-check-double"></i>
                             Tout sélectionner
@@ -76,7 +76,7 @@
                 </dialog>
             @endteleport
 
-            @if ($group->workstations->isEmpty())
+            @if ($group->members->isEmpty())
                 <div class="flex flex-col items-center justify-center py-12 text-center">
                     <div class="text-5xl mb-4 opacity-20">
                         <i class="fa-solid fa-computer"></i>
@@ -107,7 +107,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach ($group->workstations as $machine)
+                            @foreach ($group->members as $machine)
                                 @php
                                     $activeTask = $machineActiveTasksById[$machine->id] ?? null;
                                     // Source unique de vérité : méthode helper côté composant (review #13).

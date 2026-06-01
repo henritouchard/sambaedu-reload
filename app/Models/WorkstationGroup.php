@@ -174,6 +174,26 @@ class WorkstationGroup extends Model implements Wireable
         return $this->hasMany(Workstation::class, 'physical_room_id');
     }
 
+    /**
+     * Membres « postes » du groupe, indépendamment du mode de liaison.
+     *
+     * Un groupe est exclusivement physique OU logique :
+     *  - physique (salle) → les membres vivent dans la FK
+     *    `workstations.physical_room_id` (un poste = une seule salle) ;
+     *  - logique (parc)   → les membres vivent dans le pivot
+     *    `workstation_group_workstation` (un poste = N parcs).
+     *
+     * Cet accessor expose LA bonne collection selon `is_physical`, pour que
+     * l'UI (liste, compteur, sélection batch) affiche les postes sans se
+     * soucier de la mécanique de stockage. La source de vérité du lien
+     * physique reste la FK ; la colonne pivot `physical` (morte) a été
+     * supprimée par migration.
+     */
+    public function getMembersAttribute(): \Illuminate\Support\Collection
+    {
+        return $this->is_physical ? $this->physicalWorkstations : $this->workstations;
+    }
+
     public function wallpapers(): MorphMany
     {
         return $this->morphMany(Wallpaper::class, 'owner');
