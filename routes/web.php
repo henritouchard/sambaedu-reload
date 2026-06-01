@@ -746,12 +746,20 @@ Route::get('/ipxe/boot.ipxe', [
 | **Whitelist action** : `IpxeAdminAction` enum (3 cases stricts en 3.2 —
 | rescuecd, winpe, factory_reset). Toute autre valeur retourne 404 + log
 | warning `ipxe.action.unknown_action`.
+|
+| **Story 4.10 (correctif review #15)** : throttle abaissé à `30,1`
+| (30 req/min/IP) sur tous les endpoints sensibles iPXE protégés par
+| `IpxeAuthService::guard()` — parade brute-force LAN. Un firmware iPXE
+| légitime fait au plus 2-3 hits/min par poste (chain `##params` après
+| saisie utilisateur). 30/min couvre amplement les retries firmware et
+| coupe une boucle d'attaque dictionnaire. Cf. test
+| `IpxeAdminAuthTest::it_rate_limits_admin_endpoint_after_30_failures`.
 */
 Route::match(['GET', 'POST'], '/ipxe/admin', [
     \App\Ipxe\Http\Controllers\IpxeAdminController::class,
     'handle',
 ])
-    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->middleware(['auth.v1.lan-only', 'throttle:30,1'])
     ->name('ipxe.admin')
     ->withoutMiddleware(['web']);
 
@@ -759,7 +767,7 @@ Route::match(['GET', 'POST'], '/ipxe/maintenance', [
     \App\Ipxe\Http\Controllers\IpxeMaintenanceController::class,
     'handle',
 ])
-    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->middleware(['auth.v1.lan-only', 'throttle:30,1'])
     ->name('ipxe.maintenance')
     ->withoutMiddleware(['web']);
 
@@ -767,7 +775,7 @@ Route::match(['GET', 'POST'], '/ipxe/action/{action}', [
     \App\Ipxe\Http\Controllers\IpxeActionController::class,
     'handle',
 ])
-    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->middleware(['auth.v1.lan-only', 'throttle:30,1'])
     ->where('action', '[a-z0-9_]+')
     ->name('ipxe.action')
     ->withoutMiddleware(['web']);
@@ -797,7 +805,7 @@ Route::match(['GET', 'POST'], '/ipxe/enrollment/name', [
     \App\Ipxe\Http\Controllers\IpxeEnrollmentNameController::class,
     'handle',
 ])
-    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->middleware(['auth.v1.lan-only', 'throttle:30,1'])
     ->name('ipxe.enrollment.name')
     ->withoutMiddleware(['web']);
 
@@ -805,7 +813,7 @@ Route::match(['GET', 'POST'], '/ipxe/enrollment/byod', [
     \App\Ipxe\Http\Controllers\IpxeEnrollmentByodController::class,
     'handle',
 ])
-    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->middleware(['auth.v1.lan-only', 'throttle:30,1'])
     ->name('ipxe.enrollment.byod')
     ->withoutMiddleware(['web']);
 
@@ -813,7 +821,7 @@ Route::match(['GET', 'POST'], '/ipxe/enrollment/room', [
     \App\Ipxe\Http\Controllers\IpxeEnrollmentRoomController::class,
     'handle',
 ])
-    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->middleware(['auth.v1.lan-only', 'throttle:30,1'])
     ->name('ipxe.enrollment.room')
     ->withoutMiddleware(['web']);
 
@@ -821,7 +829,7 @@ Route::match(['GET', 'POST'], '/ipxe/enrollment/parc-add', [
     \App\Ipxe\Http\Controllers\IpxeEnrollmentParcAddController::class,
     'handle',
 ])
-    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->middleware(['auth.v1.lan-only', 'throttle:30,1'])
     ->name('ipxe.enrollment.parc-add')
     ->withoutMiddleware(['web']);
 
@@ -829,7 +837,7 @@ Route::match(['GET', 'POST'], '/ipxe/enrollment/parc-remove', [
     \App\Ipxe\Http\Controllers\IpxeEnrollmentParcRemoveController::class,
     'handle',
 ])
-    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->middleware(['auth.v1.lan-only', 'throttle:30,1'])
     ->name('ipxe.enrollment.parc-remove')
     ->withoutMiddleware(['web']);
 
@@ -856,7 +864,7 @@ Route::match(['GET', 'POST'], '/ipxe/installation-linux', [
     \App\Ipxe\Http\Controllers\IpxeInstallationLinuxController::class,
     'handle',
 ])
-    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->middleware(['auth.v1.lan-only', 'throttle:30,1'])
     ->name('ipxe.installation-linux')
     ->withoutMiddleware(['web']);
 
@@ -909,7 +917,7 @@ Route::match(['GET', 'POST'], '/ipxe/installation-windows', [
     \App\Ipxe\Http\Controllers\IpxeInstallationWindowsController::class,
     'handle',
 ])
-    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->middleware(['auth.v1.lan-only', 'throttle:30,1'])
     ->name('ipxe.installation-windows')
     ->withoutMiddleware(['web']);
 
@@ -970,8 +978,31 @@ Route::match(['GET', 'POST'], '/ipxe/clonezilla-menu', [
     \App\Ipxe\Http\Controllers\IpxeClonezillaMenuController::class,
     'handle',
 ])
-    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->middleware(['auth.v1.lan-only', 'throttle:30,1'])
     ->name('ipxe.clonezilla-menu')
+    ->withoutMiddleware(['web']);
+
+/*
+|--------------------------------------------------------------------------
+| Assets d'installation OS — route unique servie par Laravel
+|--------------------------------------------------------------------------
+| `GET /ipxe/os/{path}` sert les binaires d'install OS (kernel/initrd
+| debian-installer, sysresccd, clonezilla, .wim Windows...) depuis les
+| racines whitelistees `config('ipxe.actions.os_assets.roots')`.
+|
+| Remplace les `Alias` Apache par-emplacement (non versionnes) : les chemins
+| sont desormais versionnes en config. Fonctionne grace au `FallbackResource
+| /index.php` de l'Alias `/ipxe` du vhost reload (une URL /ipxe/os/... non
+| physique arrive a Laravel). X-Sendfile si dispo, sinon streaming (cf.
+| IpxeOsAssetController). LAN-only, pas de JWT (firmware iPXE).
+|
+| Throttle 600/min/IP : un poste fetch kernel+initrd(+squashfs) ; per-IP
+| donc per-poste, 600 couvre largement. ORDRE STRICT : AVANT le catchall.
+*/
+Route::get('/ipxe/os/{path}', [\App\Ipxe\Http\Controllers\IpxeOsAssetController::class, 'handle'])
+    ->where('path', '.*')
+    ->middleware(['auth.v1.lan-only', 'throttle:600,1'])
+    ->name('ipxe.os-asset')
     ->withoutMiddleware(['web']);
 
 /*

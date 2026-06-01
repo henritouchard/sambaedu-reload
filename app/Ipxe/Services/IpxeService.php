@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ipxe\Services;
 
+use App\Ipxe\Contracts\IpxeAuthorizes;
 use App\Ipxe\Enums\IpxeAdminAction;
 use App\Ipxe\Enums\IpxeMenuKind;
 use App\Ipxe\Support\MacAddressNormalizer;
@@ -43,7 +44,40 @@ final class IpxeService
         private readonly WorkstationLocator $locator,
         private readonly IpxeMenuRenderer $renderer,
         private readonly IpxeActionResolver $actionResolver,
+        private readonly IpxeAuthorizes $authService,
     ) {
+    }
+
+    /**
+     * Story 4.10 — Helper d'autorisation iPXE.
+     *
+     * Cas d'usage : tous les endpoints sensibles (admin, maintenance,
+     * action/*, installation-linux/windows, clonezilla-menu — et côté
+     * enrollment via {@see IpxeEnrollmentOrchestrator}).
+     *
+     * Si l'auth échoue, on rend l'écran iPXE `auth_failed` (wrap safeRender,
+     * headers D10 préservés) et on retourne la Response prête à servir au
+     * caller. Sinon retourne `null` et le caller continue son flow normal.
+     */
+    public function guard(Request $request, string $context): ?Response
+    {
+        $outcome = $this->authService->authorize($request, $context);
+        if ($outcome->status->isAllowed()) {
+            return null;
+        }
+
+        $ip = (string) ($request->ip() ?? '');
+        $mac = (string) $request->input('mac', '');
+        $uuid = (string) $request->input('uuid', '');
+        $baseUrl = $this->resolveServerBaseUrl($request);
+
+        return $this->safeRender(
+            fn (): string => $this->renderer->renderAuthFailed($outcome->status, $baseUrl),
+            $ip,
+            $mac,
+            $uuid,
+            IpxeMenuKind::AdminMenu, // tag log générique — kind=auth_failed implicite via context
+        );
     }
 
     /**
@@ -217,6 +251,13 @@ final class IpxeService
             );
         }
 
+        // Story 4.10 — Auth iso-legacy (validatePassword AD + permission
+        // Spatie `computer.install`). Refus → écran `auth_failed` + chain
+        // back boot. Aucun leak de password (cf. IpxeAuthService).
+        if (($denied = $this->guard($request, 'admin')) !== null) {
+            return $denied;
+        }
+
         $workstation = $this->locator->locate($mac, $uuid, $product);
         $this->logMenuRendered('ipxe.admin.menu_rendered', $workstation, $mac, $uuid, $ip);
         $this->persistEndpointLog($workstation, $ip, 'ipxe_admin', 'ipxe');
@@ -265,6 +306,11 @@ final class IpxeService
                 $uuid,
                 IpxeMenuKind::MaintenanceHandshake,
             );
+        }
+
+        // Story 4.10 — Auth obligatoire (cf. handleAdmin).
+        if (($denied = $this->guard($request, 'maintenance')) !== null) {
+            return $denied;
         }
 
         $workstation = $this->locator->locate($mac, $uuid, $product);
@@ -319,6 +365,11 @@ final class IpxeService
                 $uuid,
                 IpxeMenuKind::ClonezillaMenuHandshake,
             );
+        }
+
+        // Story 4.10 — Auth obligatoire (cf. handleAdmin).
+        if (($denied = $this->guard($request, 'clonezilla')) !== null) {
+            return $denied;
         }
 
         $workstation = $this->locator->locate($mac, $uuid, $product);
@@ -396,12 +447,25 @@ final class IpxeService
             ]);
 
             return $this->safeRender(
-                fn (): string => $this->renderer->renderHandshake('action/' . $adminAction->value),
+                // URL absolue (pas un chain relatif) : `/ipxe/action/{x}` est a
+                // 2 niveaux, donc un relatif `action/{x}` depuis l'URI courante
+                // doublerait le chemin (`/ipxe/action/action/{x}`) -> 404 -> reboot.
+                fn (): string => $this->renderer->renderHandshake(
+                    $this->resolveServerBaseUrl($request) . '/ipxe/action/' . $adminAction->value,
+                ),
                 $ip,
                 $mac,
                 $uuid,
                 IpxeMenuKind::ActionHandshake,
             );
+        }
+
+        // Story 4.10 — Auth obligatoire pour TOUTES les actions whitelistées
+        // (rescuecd, winpe, factory_reset, clonezilla_*, gparted, hdt,
+        // memtest86plus). Inclut les actions destructrices (factory_reset
+        // écrase sda1). Cf. handleAdmin.
+        if (($denied = $this->guard($request, 'action')) !== null) {
+            return $denied;
         }
 
         $workstation = $this->locator->locate($mac, $uuid, $product);
@@ -489,6 +553,11 @@ final class IpxeService
             );
         }
 
+        // Story 4.10 — Auth obligatoire (cf. handleAdmin).
+        if (($denied = $this->guard($request, 'install_linux')) !== null) {
+            return $denied;
+        }
+
         $workstation = $this->locator->locate($mac, $uuid, $product);
         $this->logMenuRendered('ipxe.install_linux.menu_rendered', $workstation, $mac, $uuid, $ip);
         $this->persistEndpointLog($workstation, $ip, 'ipxe_install_linux', 'ipxe');
@@ -540,6 +609,11 @@ final class IpxeService
                 $uuid,
                 IpxeMenuKind::InstallationWindowsHandshake,
             );
+        }
+
+        // Story 4.10 — Auth obligatoire (cf. handleAdmin).
+        if (($denied = $this->guard($request, 'install_windows')) !== null) {
+            return $denied;
         }
 
         $workstation = $this->locator->locate($mac, $uuid, $product);

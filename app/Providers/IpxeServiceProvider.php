@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Ipxe\Contracts\IpxeAuthorizes;
 use App\Ipxe\Iso\Services\WindowsIsoDownloadOrchestrator;
 use App\Ipxe\Iso\Services\WindowsIsoSourcesReader;
 use App\Ipxe\Iso\Services\WindowsIsoUrlValidator;
 use App\Ipxe\Services\IpxeActionResolver;
+use App\Ipxe\Services\IpxeAuthService;
 use App\Ipxe\Services\IpxeEnrollmentMenuBuilder;
 use App\Ipxe\Services\IpxeEnrollmentOrchestrator;
 use App\Ipxe\Services\IpxeHostnameSanitizer;
@@ -83,10 +85,23 @@ class IpxeServiceProvider extends ServiceProvider
             $app->make(ViewFactory::class),
         ));
 
+        // Story 4.10 — IpxeAuthService centralise l'auth iPXE
+        // (AD bind + permission Spatie `computer.install`).
+        $this->app->singleton(IpxeAuthService::class, fn ($app) => new IpxeAuthService(
+            $app->make(\App\Services\AuthenticationService::class),
+        ));
+
+        // Story 4.10 (correctif review #12) — binding contrat → impl concrète.
+        // Tous les consommateurs iPXE type-hintent désormais `IpxeAuthorizes`
+        // (pas `IpxeAuthService`), ce qui permet de stubber l'auth en test
+        // sans toucher au `final` de la classe concrète de prod.
+        $this->app->singleton(IpxeAuthorizes::class, fn ($app) => $app->make(IpxeAuthService::class));
+
         $this->app->singleton(IpxeService::class, fn ($app) => new IpxeService(
             $app->make(WorkstationLocator::class),
             $app->make(IpxeMenuRenderer::class),
             $app->make(IpxeActionResolver::class),
+            $app->make(IpxeAuthorizes::class),
         ));
 
         // Story 3.3 — D5/D6 — bindings enrollment.
@@ -105,6 +120,7 @@ class IpxeServiceProvider extends ServiceProvider
             $app->make(IpxeEnrollmentMenuBuilder::class),
             $app->make(IpxeMenuRenderer::class),
             $app->make(IpxeHostnameSanitizer::class),
+            $app->make(IpxeAuthorizes::class),
         ));
 
         // Story 3.4 — D11 / AC9.3 — bindings installation Linux.

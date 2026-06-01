@@ -150,8 +150,9 @@ class IpxeActionResolverTest extends TestCase
 
         $body = $this->resolver->resolve(IpxeAdminAction::Rescuecd, null, $request);
 
-        // Doit utiliser se4fs.lan (from HTTP_HOST) suffixé /ipxe.
-        self::assertStringContainsString('http://se4fs.lan/ipxe/sysresccd', $body);
+        // Doit utiliser se4fs.lan (from HTTP_HOST) suffixé /ipxe/os (assets OS
+        // servis par la route Laravel IpxeOsAssetController).
+        self::assertStringContainsString('http://se4fs.lan/ipxe/os/sysresccd', $body);
     }
 
     #[Test]

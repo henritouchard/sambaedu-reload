@@ -246,6 +246,37 @@ class AuthenticationService
     }
 
     /**
+     * Story 4.10 — Validation AD credentials sans effet de bord session.
+     *
+     * Wrapper public minimal autour de {@see validatePassword()} destiné aux
+     * call-sites qui veulent un bind LDAP « pur » (pas de `$_SESSION['login']`,
+     * pas d'event Auth Laravel) — typiquement les endpoints iPXE
+     * (`IpxeAuthService`) qui ne sont pas dans une session web.
+     *
+     * **Sécurité** : ne JAMAIS logger `$password` (même tronqué). Les logs
+     * internes de `validatePassword`/`attemptBind` ne logguent que le login/DN.
+     * Le caller doit lui-même appliquer la même règle.
+     *
+     * @return bool true si le bind LDAP réussit avec ce couple (login,password).
+     *              false sinon (mauvais mdp, user inconnu, erreur LDAP, ou
+     *              changement de mdp obligatoire — comportement iso-legacy
+     *              admin.php qui refusait dans ce cas).
+     */
+    public function validateAdCredentials(string $login, string $password): bool
+    {
+        if ($login === '' || $password === '') {
+            return false;
+        }
+
+        // validatePassword retourne :
+        //   1   = OK
+        //   -1  = OK mais mdp à changer (legacy refusait → on refuse aussi)
+        //   -2  = KO + mdp à changer
+        //   0   = KO / erreur
+        return $this->validatePassword($login, $password) === 1;
+    }
+
+    /**
      * Vérifie la validité du mot de passe d'un utilisateur
      *
      * Utilise LdapRecord pour authentifier l'utilisateur via bind LDAP

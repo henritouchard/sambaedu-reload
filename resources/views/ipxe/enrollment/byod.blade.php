@@ -1,8 +1,12 @@
 {!! $shebang !!}
+{{-- Story 4.10 (correctif review #2) propagation auth iPXE iso `admin.blade.php`. --}}
 params
-param mac {{ $mac }}
-param uuid {{ $uuid }}
+{{-- Variables iPXE SMBIOS (cf. name.blade.php) - pas les valeurs Laravel. --}}
+param mac ${net0/mac}
+param uuid ${uuid}
 param platform {{ $platform }}
+param username ${username}
+param password ${password:base64}
 console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }}
 @if($denied ?? false)
 echo ERREUR ! acces refuse

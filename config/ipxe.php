@@ -126,13 +126,16 @@ return [
     | Timeout par défaut iso-legacy `sambaedu/ipxe/admin.php:14` (30s).
     */
     'admin' => [
-        // Kill-switch story 4.10 — désactive l'item login admin dans le menu
-        // boot iPXE (known.blade.php) tant que l'auth username/password +
-        // contrôle de droits n'est pas restaurée côté
-        // `IpxeService::handleAdmin()`. Default false = sûr par défaut.
-        // Réactiver via `.env` (`IPXE_ADMIN_ENABLED=true`) UNIQUEMENT après
-        // livraison de la story 4.10 (auth iPXE).
-        'enabled' => (bool) env('IPXE_ADMIN_ENABLED', false),
+        // Story 4.10 — kill-switch retiré, default `true` désormais.
+        // L'auth iPXE (validatePassword AD + permission Spatie
+        // `computer.install`) est portée par `IpxeAuthService::authorize()`
+        // côté serveur (cf. `IpxeService::handleAdmin()`). Le menu boot
+        // `known.blade.php` affiche TOUJOURS l'item `(1) login` — toute
+        // tentative d'accès sans creds valides reçoit l'écran iPXE
+        // `auth_failed.blade.php`.
+        // Conserver le flag pour permettre une désactivation explicite
+        // (`IPXE_ADMIN_ENABLED=false`) en cas de panne LDAP rare.
+        'enabled' => (bool) env('IPXE_ADMIN_ENABLED', true),
         'menu_timeout_ms' => (int) env('IPXE_ADMIN_TIMEOUT_MS', 30000),
     ],
 
@@ -201,6 +204,35 @@ return [
     'actions' => [
         'os_url' => env('IPXE_OS_URL', null),
         'script_url' => env('IPXE_SCRIPT_URL', null),
+
+        /*
+        |----------------------------------------------------------------------
+        | Assets d'installation OS servis par Laravel (route /ipxe/os/{path})
+        |----------------------------------------------------------------------
+        |
+        | Remplace les `Alias` Apache par-emplacement (non versionnes) : la
+        | route `GET /ipxe/os/{path}` (cf. IpxeOsAssetController) sert les
+        | binaires d'install OS depuis ces racines whitelistees. Ajouter un
+        | emplacement = editer ce tableau (versionne), pas Apache.
+        |
+        | `roots` : repertoires autorises, testes dans l'ordre (1er match).
+        | `xsendfile_enabled` : si mod_xsendfile est actif cote Apache, mettre
+        |   IPXE_OS_ASSETS_XSENDFILE=true -> Apache sert les octets (pas de
+        |   streaming PHP-FPM). Defaut false = streaming (marche sans module,
+        |   suffisant hors boot de masse).
+        |
+        */
+        'os_assets' => [
+            'roots' => array_values(array_filter([
+                env('IPXE_OS_ASSETS_ROOT', '/var/sambaedu/unattended/install/os'),
+            ], static fn ($p): bool => (string) $p !== '')),
+            // Defaut true : sur SE5, `scripts/setupXsendfile.sh` (appele par
+            // install.sh) installe mod_xsendfile + pose XSendFile/XSendFilePath.
+            // Apache sert alors les octets nativement (sendfile) — pas de
+            // streaming PHP-FPM (qui bloquait a 99% sur l'initrd ~355 Mo).
+            'xsendfile_enabled' => filter_var(env('IPXE_OS_ASSETS_XSENDFILE', true), FILTER_VALIDATE_BOOL),
+            'xsendfile_header' => env('IPXE_OS_ASSETS_XSENDFILE_HEADER', 'X-Sendfile'),
+        ],
         // IMPORTANT: `se4install_passwd` (lu via `config(<clé>)`) doit rester
         // ASCII-safe (pas d'espace, pas de newline, idéalement uniquement
         // `[A-Za-z0-9._-]`). La valeur est injectée brute dans la cmdline

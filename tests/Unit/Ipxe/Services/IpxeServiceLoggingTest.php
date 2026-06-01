@@ -15,6 +15,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Psr\Log\LoggerInterface;
 use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
+use Tests\Support\IpxeAuthTestHelper;
 
 /**
  * Story 3.1 — AC7.3 / T4.3.
@@ -25,12 +26,15 @@ use Tests\TestCase;
  */
 class IpxeServiceLoggingTest extends TestCase
 {
+    use IpxeAuthTestHelper;
+
     /** @var array<int, array{action:string, context:array<string,mixed>}> */
     private array $capturedLogs = [];
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bypassIpxeAuth();
         IpxeSchemaBootstrapper::bootstrap();
         $this->capturedLogs = [];
 

@@ -2259,3 +2259,227 @@ php artisan config:clear
 
 > Smoke automatisable : voir Story 3.1 et 3.2 § "Smoke test à exécuter quand VM up"
 > dans `_bmad-output/implementation-artifacts/3-1-ipxe-service-core.md`.
+
+---
+
+## Section 18 — Story 4.10 — Auth iPXE admin + permissions
+
+**Date livraison** : 2026-05-29
+**Migrations à appliquer** : aucune (permission Spatie `computer.install` déjà
+présente dans `SambaPermission` enum + seed via `PermissionSeeder`).
+**Permissions requises côté Spatie** :
+- `computer.install` (existante) — attribuée à `super-admin` + `ComputerAdmin`.
+**Pré-déploiement** :
+- S'assurer que `php artisan db:seed --class=PermissionSeeder` a été exécuté
+  au moins une fois (idempotent — sans effet sur les rôles existants).
+- Vérifier la valeur effective du flag :
+  `php artisan tinker --execute='echo (int) config("ipxe.admin.enabled");'`
+  → doit valoir `1` (default 4.10 — kill-switch retiré).
+
+### Contexte
+
+La régression sécurité critique (handleAdmin sans validation user/password,
+mitigation par kill-switch posée le 2026-05-28) est levée. Tous les endpoints
+iPXE sensibles exigent désormais :
+1. POST `username` + `password` (le password étant base64-encoded par le
+   firmware via `param password ${password:base64}`).
+2. Bind LDAP valide (`AuthenticationService::validateAdCredentials()` —
+   wrapper public sans effet de bord session, ajouté en 4.10).
+3. Permission Spatie `computer.install` sur l'`User` PG correspondant.
+
+Refus → écran iPXE `auth_failed.blade.php` (text/plain, sleep 8s, chain back
+boot). Aucun leak password (en clair ni base64) côté logs ni response body.
+
+### Endpoints couverts
+
+| Endpoint                            | Auth requise | Logs `ipxe.<context>.*` |
+|-------------------------------------|--------------|--------------------------|
+| `POST /ipxe/admin`                  | OUI          | `admin`                  |
+| `POST /ipxe/maintenance`            | OUI          | `maintenance`            |
+| `POST /ipxe/action/{action}`        | OUI          | `action`                 |
+| `POST /ipxe/installation-linux`     | OUI          | `install_linux`          |
+| `POST /ipxe/installation-windows`   | OUI          | `install_windows`        |
+| `POST /ipxe/clonezilla-menu`        | OUI          | `clonezilla`             |
+| `POST /ipxe/enrollment/name`        | OUI          | `enrollment.name`        |
+| `POST /ipxe/enrollment/room`        | OUI          | `enrollment.room`        |
+| `POST /ipxe/enrollment/parc-add`    | OUI          | `enrollment.parc-add`    |
+| `POST /ipxe/enrollment/parc-remove` | OUI          | `enrollment.parc-remove` |
+| `POST /ipxe/enrollment/byod`        | OUI          | `enrollment.byod`        |
+| `GET|POST /ipxe/boot`               | NON (public) | `boot.*`                 |
+| Handshake (mac/uuid absents)        | NON          | `<context>.handshake`    |
+
+### Scénario 4.10-1 — Login random refusé (pas de creds)
+
+```bash
+# POST sans username/password → écran auth_failed
+curl -sS -X POST http://192.168.122.50/ipxe/admin \
+     --data 'mac=aa:bb:cc:11:22:33&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa'
+```
+
+**Attendu** :
+- Status 200, `Content-Type: text/plain`
+- Body contient : `Acces refuse - identifiants requis`
+- Body chain back : `chain --replace --autofree http://192.168.122.50/ipxe/boot##params`
+
+**Log iPXE** :
+```bash
+tail -n 5 storage/logs/ipxe/ipxe-$(date +%F).log
+# Attendu : event `ipxe.admin.auth_missing` avec context
+#   {ip, username_prefix:'', mac_prefix:'aa:bb:', uuid_prefix:'12345678'}
+# AUCUN champ `password` ou `password_prefix`.
+```
+
+### Scénario 4.10-2 — Login random refusé (creds invalides)
+
+```bash
+PWD_B64=$(printf 'wrongpassword' | base64)
+curl -sS -X POST http://192.168.122.50/ipxe/admin \
+     --data "mac=aa:bb:cc:11:22:33&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa&username=attacker&password=$PWD_B64"
+```
+
+**Attendu** :
+- Status 200, body contient `identifiants invalides`
+- Log : `ipxe.admin.auth_failed` avec `ip`, `username_prefix='att'`,
+  `mac_prefix='aa:bb:'`. **JAMAIS** `password` ni `wrongpassword`.
+
+### Scénario 4.10-3 — Login valide sans droit `computer.install` → refusé
+
+Prérequis : créer un user AD `prof_demo` côté AD (samba-tool user create),
+attribuer en SE5 le rôle `prof` (qui n'a PAS `computer.install`).
+
+```bash
+PWD_B64=$(printf 'CorrectAdPwd' | base64)
+curl -sS -X POST http://192.168.122.50/ipxe/admin \
+     --data "mac=aa:bb:cc:11:22:33&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa&username=prof_demo&password=$PWD_B64"
+```
+
+**Attendu** :
+- Status 200, body contient `droit insuffisant` + `computer.install`
+- Log : `ipxe.admin.permission_denied` avec `permission='computer.install'`,
+  `user_known_in_pg=true`, `username_prefix='pro'`.
+
+### Scénario 4.10-4 — Login valide avec droit → menu admin servi
+
+Prérequis : user AD `admin_demo` + rôle SE5 `super-admin` ou `ComputerAdmin`.
+
+```bash
+PWD_B64=$(printf 'CorrectAdPwd' | base64)
+curl -sS -X POST http://192.168.122.50/ipxe/admin \
+     --data "mac=aa:bb:cc:11:22:33&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa&username=admin_demo&password=$PWD_B64"
+```
+
+**Attendu** :
+- Status 200, body contient `item --key m maintenance` + nom du poste.
+- Log : `ipxe.admin.auth_success` avec `permission='computer.install'`,
+  `username_prefix='adm'`.
+
+### Scénario 4.10-5 — Kill-switch désactive l'item (1) login
+
+```bash
+# Override env pour désactiver l'item login dans known.blade.php
+IPXE_ADMIN_ENABLED=false php artisan config:cache
+
+# Poste connu boot — known.blade ne doit plus offrir l'item login
+curl -sS -X POST http://192.168.122.50/ipxe/boot \
+     --data 'mac=aa:bb:cc:11:22:33&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa'
+# Attendu : body NE contient PAS `item --key 1 login`
+# Restaurer
+IPXE_ADMIN_ENABLED=true php artisan config:cache
+```
+
+### Scénario 4.10-6 — Sweep des endpoints sensibles sans creds
+
+Pour chaque endpoint listé dans la matrice :
+
+```bash
+for ep in /ipxe/maintenance /ipxe/action/rescuecd /ipxe/action/factory_reset \
+          /ipxe/installation-linux /ipxe/installation-windows /ipxe/clonezilla-menu \
+          /ipxe/enrollment/name /ipxe/enrollment/room \
+          /ipxe/enrollment/parc-add /ipxe/enrollment/parc-remove /ipxe/enrollment/byod; do
+  body=$(curl -sS -X POST "http://192.168.122.50$ep" \
+              --data 'mac=aa:bb:cc:11:22:33&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa')
+  echo "=== $ep ==="
+  echo "$body" | grep -E 'Acces refuse|identifiants requis' || echo "MISS auth check"
+done
+```
+
+**Attendu** : chaque endpoint répond `Acces refuse - identifiants requis`.
+
+### Scénario 4.10-7 — Non-leak password (grep défensif)
+
+```bash
+# Tenter un POST avec un password unique identifiable
+curl -sS -X POST http://192.168.122.50/ipxe/admin \
+     --data "mac=aa:bb:cc:11:22:33&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa&username=attacker&password=$(printf 'CANARY_PWD_LEAK_TEST' | base64)"
+
+# Vérifier que CANARY_PWD_LEAK_TEST n'apparait dans aucun log iPXE/laravel/syslog
+grep -rn 'CANARY_PWD_LEAK_TEST\|Q0FOQVJZX1BXRF9MRUFLX1RFU1Q' storage/logs/ /var/log/ 2>/dev/null
+# Attendu : 0 résultat.
+```
+
+> Smoke automatisable : tests `IpxeAdminAuthTest::*` (65 cas après
+> corrections post-review) couvrent les scénarios 4.10-1, 4.10-2, 4.10-3,
+> 4.10-4, 4.10-6, 4.10-7, 4.10-8 hors AD/LDAP réel (stub
+> `validateAdCredentials`).
+
+### Post-correctifs & non-régressions
+
+> Section enrichie post-review adversariale (2026-05-29, doc
+> `_bmad-output/codeReviews/4-10.md`). 5 corrections automatiques
+> appliquées : #2, #3, #5, #10, #14.
+
+| Incident | Story | Symptôme | Correctif | Scénario test ajouté |
+|---|---|---|---|---|
+| #2 (review) — enrollment multi-step cassé sans propagation creds | 4.10 | 5 templates enrollment (`name`, `room`, `parc-add`, `parc-remove`, `byod`) ne re-déclarent pas `param username`/`param password` dans leur bloc `params` ; au 2e hit (après `read name`/`choose`), iPXE re-chain `##params` SANS creds → `MissingCredentials` → `auth_failed` → flow cassé en production réelle | Ajout `param username ${username}` + `param password ${password:base64}` dans les 5 templates enrollment, iso `admin.blade.php` | `it_propagates_credentials_through_multi_step_enrollment_flow` (5 cas) + scénario 4.10-8 ci-dessous |
+| #3 (review) — `decodePassword` fallback raw défectueux | 4.10 | `base64_decode(strict=true)` ne retourne false QUE pour chars hors alphabet b64 ; un password full-[a-z] comme `mypassword` est « décodé » en binaire aléatoire → bind LDAP échoue silencieusement | Guard regex `^[A-Za-z0-9+/]+={0,2}$` ET `strlen % 4 === 0` AVANT `base64_decode` ; sinon fallback raw | `it_decodes_standard_base64_password_correctly`, `it_falls_back_to_raw_when_password_is_full_b64_alphabet_but_not_encoded`, `it_falls_back_to_raw_when_password_contains_non_b64_characters` |
+| #5 (review) — `bypassIpxeAuth` masque retrait silencieux de `guard()` | 4.10 | Le helper court-circuite `IpxeAuthService::authorize()` ; si un dev retire `$this->guard()` d'un handler, aucun test existant ne casse | Test paramétré (12 endpoints) avec `$mock->expects($this->once())` sur `validateAdCredentials()` → casse si un handler contourne guard() | `it_invokes_validate_ad_credentials_for_each_sensitive_endpoint` (12 cas) |
+| #10 (review) — test `allow` sans assertion positive | 4.10 | Le test `it_allows_authenticated_user_with_permission` ne vérifiait que `assertStringNotContainsString('Acces refuse', …)` → ne détecte pas un handler qui rendrait un mauvais template silencieusement | Dictionnaire `[path => substring_attendu]` + `assertStringContainsString` par endpoint | Patch intégré au test paramétré existant (12 cas) |
+| #14 (review) — case sensitivity AD vs Postgres dans `User::findByLogin` | 4.10 | AD est case-insensitive sur `sAMAccountName` ; Postgres `where('login', $value)` est case-sensitive → un POST iPXE avec login MAJUSCULES (alors que DB = minuscules) → `findByLogin=null` → `PermissionDenied` même si bind LDAP OK | `User::findByLogin` patché en `whereRaw('LOWER(login) = ?', [strtolower($login)])` | `it_resolves_user_with_uppercase_login_case_insensitively` |
+
+#### Scénario 4.10-8 — Propagation creds dans le flow enrollment multi-step (incident #2)
+
+```bash
+# Setup : user AD `admin_demo` + droit `computer.install` ; poste pré-enregistré.
+PWD_B64=$(printf 'CorrectAdPwd' | base64)
+PAYLOAD="mac=aa:bb:cc:11:22:33&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa"
+CREDS="username=admin_demo&password=$PWD_B64"
+
+# 1er hit enrollment/room (handshake — affiche menu de salles)
+curl -sS -X POST "http://192.168.122.50/ipxe/enrollment/room" \
+     --data "$PAYLOAD&$CREDS" | head -20
+
+# 2e hit enrollment/room après "choose" (poste re-chain `##params`)
+curl -sS -X POST "http://192.168.122.50/ipxe/enrollment/room" \
+     --data "$PAYLOAD&$CREDS&room=42" | grep -E "Acces refuse|ajoutee"
+# Attendu : `ajoutee a la salle …` (PAS `Acces refuse - identifiants requis`).
+```
+
+**Attendu** : aucun POST ne retourne `Acces refuse - identifiants requis` au
+2ème hit — les params propagés (`param username ${username}` +
+`param password ${password:base64}`) garantissent la persistance des creds
+cross-chain dans le settings store iPXE.
+
+#### Scénario 4.10-9 — Rate-limit 30/min/IP sur endpoints sensibles (patch #15)
+
+Garde-fou anti brute-force LAN : les 12 endpoints iPXE protégés par
+`IpxeAuthService::guard()` (admin, maintenance, action/*, installation-*,
+clonezilla-menu, enrollment/*) sont throttlés à `30 req/min/IP`. Un firmware
+iPXE légitime fait au plus 2-3 hits/min par poste — 30/min couvre les retries
+firmware et coupe net une boucle d'attaque dictionnaire.
+
+```bash
+# Reset éventuel du bucket (laravel cache)
+ssh /vm 'cd /var/www/sambaedu-reload && php artisan cache:clear'
+
+# Spammer 31 POST `/ipxe/admin` avec creds invalides depuis une même IP
+for i in $(seq 1 31); do
+  STATUS=$(curl -sS -o /dev/null -w "%{http_code}" -X POST \
+    http://192.168.122.50/ipxe/admin \
+    --data "mac=aa:bb:cc:11:22:33&uuid=12345678-1234-1234-1234-aaaaaaaaaaaa&username=attacker&password=$(printf 'wrong' | base64)")
+  echo "hit #$i → $STATUS"
+done
+```
+
+**Attendu** : 30 premiers hits = `200` (écran iPXE `Acces refuse - identifiants
+invalides`), 31ème hit = `429 Too Many Requests`. Couverture automatisée :
+`IpxeAdminAuthTest::it_rate_limits_admin_endpoint_after_30_failures`.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ipxe\Services;
 
+use App\Ipxe\Contracts\IpxeAuthorizes;
 use App\Ipxe\Enums\IpxeEnrollmentFlow;
 use App\Ipxe\Enums\IpxeMenuKind;
 use App\Ipxe\Support\MacAddressNormalizer;
@@ -36,7 +37,37 @@ final class IpxeEnrollmentOrchestrator
         private readonly IpxeEnrollmentMenuBuilder $menuBuilder,
         private readonly IpxeMenuRenderer $renderer,
         private readonly IpxeHostnameSanitizer $hostnameSanitizer,
+        private readonly IpxeAuthorizes $authService,
     ) {
+    }
+
+    /**
+     * Story 4.10 — Helper d'autorisation iPXE iso `IpxeService::guard()`.
+     *
+     * Décision Henri 2026-05-28 : pas d'exception pour `enrollment/name`
+     * (création initiale) — tout endpoint enrollment exige auth + permission
+     * `computer.install`. Le mass-enrollment bot est hors scope (process
+     * admin manuel pour rentrée scolaire).
+     */
+    private function guard(Request $request, string $context): ?Response
+    {
+        $outcome = $this->authService->authorize($request, 'enrollment.' . $context);
+        if ($outcome->status->isAllowed()) {
+            return null;
+        }
+
+        $ip = (string) ($request->ip() ?? '');
+        $mac = (string) $request->input('mac', '');
+        $uuid = (string) $request->input('uuid', '');
+        $baseUrl = $this->resolveServerBaseUrl($request);
+
+        return $this->safeRender(
+            fn (): string => $this->renderer->renderAuthFailed($outcome->status, $baseUrl),
+            IpxeMenuKind::Default_,
+            $ip,
+            $mac,
+            $uuid,
+        );
     }
 
     /**
@@ -51,12 +82,19 @@ final class IpxeEnrollmentOrchestrator
             $this->logHandshake($request, IpxeEnrollmentFlow::Name);
 
             return $this->safeRender(
-                fn (): string => $this->renderer->renderHandshake('name'),
+                fn (): string => $this->renderer->renderHandshake(
+                    $this->resolveServerBaseUrl($request) . '/ipxe/enrollment/name',
+                ),
                 IpxeMenuKind::Handshake,
                 $ip,
                 $mac,
                 $uuid,
             );
+        }
+
+        // Story 4.10 — Auth obligatoire (cf. IpxeService::guard).
+        if (($denied = $this->guard($request, 'name')) !== null) {
+            return $denied;
         }
 
         $newName = (string) $request->input('new_name', '');
@@ -131,12 +169,19 @@ final class IpxeEnrollmentOrchestrator
             $this->logHandshake($request, IpxeEnrollmentFlow::Byod);
 
             return $this->safeRender(
-                fn (): string => $this->renderer->renderHandshake('byod'),
+                fn (): string => $this->renderer->renderHandshake(
+                    $this->resolveServerBaseUrl($request) . '/ipxe/enrollment/byod',
+                ),
                 IpxeMenuKind::Handshake,
                 $ip,
                 $mac,
                 $uuid,
             );
+        }
+
+        // Story 4.10 — Auth obligatoire.
+        if (($denied = $this->guard($request, 'byod')) !== null) {
+            return $denied;
         }
 
         $newName = (string) $request->input('new_name', '');
@@ -214,12 +259,17 @@ final class IpxeEnrollmentOrchestrator
             $this->logHandshake($request, IpxeEnrollmentFlow::Room);
 
             return $this->safeRender(
-                fn (): string => $this->renderer->renderHandshake('room'),
+                fn (): string => $this->renderer->renderHandshake($serverBaseUrl . '/ipxe/enrollment/room'),
                 IpxeMenuKind::Handshake,
                 $ip,
                 $mac,
                 $uuid,
             );
+        }
+
+        // Story 4.10 — Auth obligatoire.
+        if (($denied = $this->guard($request, 'room')) !== null) {
+            return $denied;
         }
 
         $workstation = $this->locator->locate($mac, $uuid, $product);
@@ -292,12 +342,17 @@ final class IpxeEnrollmentOrchestrator
             $this->logHandshake($request, $flow);
 
             return $this->safeRender(
-                fn (): string => $this->renderer->renderHandshake($endpoint),
+                fn (): string => $this->renderer->renderHandshake($serverBaseUrl . '/ipxe/enrollment/' . $endpoint),
                 IpxeMenuKind::Handshake,
                 $ip,
                 $mac,
                 $uuid,
             );
+        }
+
+        // Story 4.10 — Auth obligatoire (parc-add / parc-remove).
+        if (($denied = $this->guard($request, $endpoint)) !== null) {
+            return $denied;
         }
 
         $workstation = $this->locator->locate($mac, $uuid, $product);

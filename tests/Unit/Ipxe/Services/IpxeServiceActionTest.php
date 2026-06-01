@@ -12,6 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
+use Tests\Support\IpxeAuthTestHelper;
 
 /**
  * Story 3.2 — AC3.3 / T4.6.
@@ -20,11 +21,14 @@ use Tests\TestCase;
  */
 class IpxeServiceActionTest extends TestCase
 {
+    use IpxeAuthTestHelper;
+
     private IpxeService $service;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bypassIpxeAuth();
         IpxeSchemaBootstrapper::bootstrap();
         $this->service = $this->app->make(IpxeService::class);
     }
@@ -56,7 +60,9 @@ class IpxeServiceActionTest extends TestCase
         self::assertSame(200, $response->getStatusCode());
         $body = (string) $response->getContent();
         self::assertStringStartsWith('#!ipxe', $body);
-        self::assertStringContainsString('chain --replace --autofree action/rescuecd##params', $body);
+        // Story 4.10 — chain absolu (chemin complet) pour eviter le doublement
+        // `/ipxe/action/action/...` d'un relatif sur une route 2 niveaux.
+        self::assertStringContainsString('/ipxe/action/rescuecd##params', $body);
     }
 
     #[Test]

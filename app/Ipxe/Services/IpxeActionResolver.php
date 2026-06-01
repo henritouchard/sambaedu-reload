@@ -77,7 +77,7 @@ final class IpxeActionResolver
         $workstationName = $this->sanitizeAscii((string) ($ws->name ?? ''));
 
         $osUrl = $this->resolveOsUrl($request);
-        $scriptUrl = $this->resolveScriptUrl($osUrl);
+        $scriptUrl = $this->resolveScriptUrl($request);
         $serverBaseUrl = $this->resolveServerBaseUrl($request);
 
         $autorunUrl = $scriptUrl . '/sysrescuecd/autorun.php?mac=' . rawurlencode($mac)
@@ -241,7 +241,7 @@ final class IpxeActionResolver
         // Build preseed URL — parité legacy `actions/deb_*.php:6`.
         // Le `perso=1` est forcé pour Nird (parité `nird.php:5`).
         $persoFlag = ($distribution === 'nird' || $perso === 1) ? 1 : 0;
-        $preseedUrl = $scriptUrl . '/ipxe/linux/preseed?mac=' . rawurlencode($mac)
+        $preseedUrl = $scriptUrl . '/linux/preseed?mac=' . rawurlencode($mac)
             . '&uuid=' . rawurlencode($uuid)
             . '&os=' . rawurlencode($osVersion)
             . '&type=' . rawurlencode($variant);
@@ -292,29 +292,39 @@ final class IpxeActionResolver
             return rtrim($configured, '/');
         }
 
+        // Assets OS (debian-installer, sysresccd, clonezilla, Win10...) servis
+        // par la route Laravel `/ipxe/os/{path}` (cf. IpxeOsAssetController) —
+        // chemins versionnes en config, plus d'Alias Apache par-emplacement.
+        // NE PAS confondre avec `/ipxe` nu (script_url, preseed/autorun).
         $schemeAndHost = (string) ($request->getSchemeAndHttpHost() ?? '');
         if ($schemeAndHost !== '') {
-            return rtrim($schemeAndHost, '/') . '/ipxe';
+            return rtrim($schemeAndHost, '/') . '/ipxe/os';
         }
 
-        return 'http://se4fs/ipxe';
+        return 'http://se4fs/ipxe/os';
     }
 
     /**
-     * Résout l'URL de base des scripts dynamiques.
+     * Résout l'URL de base des scripts dynamiques (`/ipxe`).
      *
-     * Si `config('ipxe.actions.script_url')` non défini → fallback sur
-     * l'`$osUrl` déjà résolu (parité legacy `admin.php:12` qui utilise une
-     * URL unique pour les deux).
+     * Parité legacy `ipxe_functions.inc.php:80` (`$script_url =
+     * http://{se4fs_ip}/ipxe`). Distinct de `resolveOsUrl()` (`/os`) : les
+     * scripts (preseed, autorun...) vivent sous `/ipxe`, les assets OS sous
+     * `/os`. Override via `config('ipxe.actions.script_url')`.
      */
-    private function resolveScriptUrl(string $osUrl): string
+    private function resolveScriptUrl(Request $request): string
     {
         $configured = (string) config('ipxe.actions.script_url', '');
         if ($configured !== '') {
             return rtrim($configured, '/');
         }
 
-        return $osUrl;
+        $schemeAndHost = (string) ($request->getSchemeAndHttpHost() ?? '');
+        if ($schemeAndHost !== '') {
+            return rtrim($schemeAndHost, '/') . '/ipxe';
+        }
+
+        return 'http://se4fs/ipxe';
     }
 
     /**

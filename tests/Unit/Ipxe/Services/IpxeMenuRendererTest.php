@@ -371,6 +371,12 @@ class IpxeMenuRendererTest extends TestCase
         // Fix review #1 / pertinence 3 — sans bloc params en tête, les chain
         // ##params injectent un namespace vide → MachineBootLog audit cassé.
         // Iso-legacy `sambaedu/ipxe/admin.php:69-74`.
+        //
+        // Le bloc params utilise les variables iPXE SMBIOS (${net0/mac}/${uuid})
+        // et NON les valeurs Laravel-rendues : fournies par le firmware à chaque
+        // requête, donc robustes même si le poste a un mac/uuid vide/divergent en
+        // SQL (sinon un uuid vide ferait basculer /ipxe/admin sur le préambule
+        // handshake et perdrait l'auth au retour menu). Cf. known.blade.php.
         $ws = Workstation::create([
             'name' => 'PC-PARAMS-A',
             'uuid' => 'abcdef12-3456-7890-abcd-ef1234567890',
@@ -382,15 +388,19 @@ class IpxeMenuRendererTest extends TestCase
 
         self::assertStringContainsString('param mac ', $body);
         self::assertStringContainsString('param uuid ', $body);
-        // Les valeurs (mac + uuid) doivent bien apparaitre dans le bloc params.
-        self::assertStringContainsString('param mac aa:bb:cc:dd:ee:ff', $body);
-        self::assertStringContainsString('param uuid abcdef12-3456-7890-abcd-ef1234567890', $body);
+        // Variables iPXE SMBIOS dans le bloc params (pas les valeurs Laravel).
+        self::assertStringContainsString('param mac ${net0/mac}', $body);
+        self::assertStringContainsString('param uuid ${uuid}', $body);
     }
 
     #[Test]
     public function it_renders_maintenance_menu_with_params_block_for_chain_namespace(): void
     {
         // Fix review #1 — iso-legacy `sambaedu/ipxe/maintenance.php:19-22`.
+        // Le bloc params utilise les variables iPXE SMBIOS (${net0/mac}/${uuid})
+        // et NON les valeurs Laravel : un uuid SQL vide ferait basculer
+        // /ipxe/action (sélectionné depuis ce menu) sur le préambule handshake.
+        // Cf. known.blade.php / admin.blade.php.
         $ws = Workstation::create([
             'name' => 'PC-PARAMS-M',
             'uuid' => 'bbbbcccc-1111-2222-3333-444455556666',
@@ -402,8 +412,9 @@ class IpxeMenuRendererTest extends TestCase
 
         self::assertStringContainsString('param mac ', $body);
         self::assertStringContainsString('param uuid ', $body);
-        self::assertStringContainsString('param mac aa:bb:cc:dd:ee:01', $body);
-        self::assertStringContainsString('param uuid bbbbcccc-1111-2222-3333-444455556666', $body);
+        // Variables iPXE SMBIOS dans le bloc params (pas les valeurs Laravel).
+        self::assertStringContainsString('param mac ${net0/mac}', $body);
+        self::assertStringContainsString('param uuid ${uuid}', $body);
     }
 
     #[Test]

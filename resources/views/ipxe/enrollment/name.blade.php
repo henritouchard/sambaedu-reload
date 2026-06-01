@@ -1,20 +1,28 @@
 {!! $shebang !!}
+{{-- Story 4.10 (correctif review #2) propagation auth iPXE iso `admin.blade.php`. --}}
 params
-param mac {{ $mac }}
-param uuid {{ $uuid }}
+{{-- Variables iPXE SMBIOS (${net0/mac}/${uuid}) et NON les valeurs Laravel :
+     fournies par le firmware a chaque requete, donc toujours presentes meme si
+     le poste a un uuid/mac vide ou divergent en SQL. Un uuid vide ferait
+     basculer /ipxe/admin sur le preambule handshake (qui ne porte pas
+     username/password) -> perte d'auth au retour menu. Iso `admin.blade.php`
+     / `known.blade.php`. --}}
+param mac ${net0/mac}
+param uuid ${uuid}
 param platform {{ $platform }}
+param username ${username}
+param password ${password:base64}
 @if($result === null)
-echo === DEBUG enrollment/name handshake ===
-echo mac={{ $mac }} uuid={{ $uuid }} platform={{ $platform }}
-echo currentName={{ $currentName }}
-echo serverBaseUrl={{ $serverBaseUrl }}
-prompt --timeout 15000 Appuyez sur une touche pour continuer (15s)...
 echo Entrez le nom de la machine:
 set name {{ $currentName }}
 read name
 echo Vous avez saisi : ${name}
 param new_name ${name}
-prompt --timeout 5000 Chain vers serveur dans 5s, appuyez sur une touche pour annuler...
+{{-- NE PAS ajouter de `prompt` ici : un script iPXE s'interrompt (abort) des
+     qu'une commande renvoie un statut non-zero sans `||`. `prompt --timeout`
+     renvoie un echec a l'expiration du delai sans appui touche, ce qui faisait
+     avorter le script AVANT le `chain` (aucune requete serveur, reboot PXE).
+     Iso-legacy `enregistrement.php` : on enchaine directement apres `read`. --}}
 chain --replace --autofree {{ $serverBaseUrl }}/ipxe/enrollment/name##params
 @else
 @switch($result->status->value)

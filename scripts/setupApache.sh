@@ -39,10 +39,17 @@ if [ ! -d "$SER_ROOT/public" ]; then
     exit 1
 fi
 
+# Pas de sambaedu.conf préexistant = première install (et non une bascule depuis
+# le legacy) : on ne bloque pas. ServerName/ServerAdmin retomberont sur des
+# défauts (hostname) plus bas. C'est ce qui permet à install.sh de déléguer ici
+# sans condition (setupApache.sh = source unique de la conf Apache SER).
 if [ ! -f "$APACHE_SITES_ENABLED/sambaedu.conf" ] && [ ! -L "$APACHE_SITES_ENABLED/sambaedu.conf" ]; then
-    echo "ERREUR : sambaedu.conf n'est pas actif dans sites-enabled."
-    exit 1
+    echo "   INFO : pas de sambaedu.conf existant — première install, valeurs par défaut."
 fi
+
+# Modules Apache requis : proxy_fcgi est indispensable au SetHandler proxy:fcgi
+# qui route les .php vers PHP-FPM ; rewrite/headers pour Laravel.
+a2enmod rewrite headers proxy_fcgi >/dev/null 2>&1 || true
 
 # ─── 1. Backup des confs existantes ──────────────────────────────────────────
 
@@ -51,7 +58,10 @@ mkdir -p "$BACKUP_DIR"
 
 echo "[1/7] Backup des configurations dans $BACKUP_DIR"
 
-cp -L "$APACHE_SITES_ENABLED/sambaedu.conf" "$BACKUP_DIR/sambaedu.conf.backup"
+# Backup seulement si une conf existe (absente en première install).
+if [ -f "$APACHE_SITES_ENABLED/sambaedu.conf" ] || [ -L "$APACHE_SITES_ENABLED/sambaedu.conf" ]; then
+    cp -L "$APACHE_SITES_ENABLED/sambaedu.conf" "$BACKUP_DIR/sambaedu.conf.backup"
+fi
 
 if [ -f "$APACHE_SITES_AVAILABLE/sambaedu-reload.conf" ]; then
     cp "$APACHE_SITES_AVAILABLE/sambaedu-reload.conf" "$BACKUP_DIR/sambaedu-reload.conf.backup"
@@ -261,8 +271,11 @@ echo "[7/7] Vérification et rechargement Apache"
 if ! apache2ctl configtest 2>&1; then
     echo ""
     echo "ERREUR : La configuration Apache est invalide ! Restauration automatique..."
-    cp "$BACKUP_DIR/sambaedu.conf.backup" "$APACHE_SITES_ENABLED/sambaedu.conf"
-    cp "$BACKUP_DIR/ports.conf.backup" "$PORTS_CONF"
+    # En première install il n'y a pas de backup : on retire la conf invalide
+    # plutôt que de laisser Apache refuser de démarrer.
+    cp "$BACKUP_DIR/sambaedu.conf.backup" "$APACHE_SITES_ENABLED/sambaedu.conf" 2>/dev/null \
+        || rm -f "$APACHE_SITES_ENABLED/sambaedu.conf"
+    cp "$BACKUP_DIR/ports.conf.backup" "$PORTS_CONF" 2>/dev/null || true
     rm -f "$APACHE_SITES_ENABLED/sambaedu-legacy.conf"
     if apache2ctl configtest 2>/dev/null; then
         apache2ctl graceful
@@ -276,6 +289,10 @@ fi
 
 apache2ctl graceful
 echo "   Apache rechargé"
+
+# Service natif des assets OS iPXE (mod_xsendfile + XSendFile dans le vhost) —
+# le vhost vient d'etre regenere sans ces directives, on les (re)pose. Idempotent.
+bash "$SER_ROOT/scripts/setupXsendfile.sh"
 
 # Clear les caches Laravel
 cd "$SER_ROOT"

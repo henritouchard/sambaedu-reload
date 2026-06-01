@@ -9,6 +9,7 @@ use App\Models\Workstation;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
+use Tests\Support\IpxeAuthTestHelper;
 
 /**
  * Story 3.2 — AC3.3 / AC8.2 / T6.5.
@@ -17,9 +18,12 @@ use Tests\TestCase;
  */
 class IpxeActionEndpointTest extends TestCase
 {
+    use IpxeAuthTestHelper;
+
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bypassIpxeAuth();
         IpxeSchemaBootstrapper::bootstrap();
         config([
             'auth_v1.bootstrap.allowed_subnets' => '127.0.0.0/8,192.168.0.0/16,10.0.0.0/8',
@@ -33,7 +37,7 @@ class IpxeActionEndpointTest extends TestCase
 
         $response->assertStatus(200);
         $body = (string) $response->getContent();
-        self::assertStringContainsString('chain --replace --autofree action/rescuecd##params', $body);
+        self::assertStringContainsString('/ipxe/action/rescuecd##params', $body);
         // Fix review #6 — assertions headers sécurité complètes au niveau Feature.
         // Symfony normalise `no-store` en `no-store, private` au send (cf.
         // ResponseHeaderBag::computeCacheControlValue) ; on assert l'inclusion.

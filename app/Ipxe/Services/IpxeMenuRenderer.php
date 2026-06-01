@@ -72,6 +72,44 @@ final class IpxeMenuRenderer
     }
 
     /**
+     * Story 4.10 — Rend l'écran iPXE « accès refusé » (auth_failed.blade.php).
+     *
+     * Utilisé quand un endpoint sensible (`admin`, `maintenance`, `action/*`,
+     * `installation-*`, `enrollment/*`, `clonezilla-menu`) reçoit :
+     *   - pas de credentials,
+     *   - credentials invalides (bind LDAP refusé),
+     *   - credentials valides mais sans permission `computer.install`.
+     *
+     * Le rendu reste un script iPXE valide (text/plain) : message court,
+     * sleep 8s, chain back vers `/ipxe/boot`. Le firmware iPXE doit toujours
+     * pouvoir poursuivre — pas de freeze.
+     *
+     * @param  IpxeAuthStatus  $reason  Raison du refus — sert à choisir
+     *                                   le libellé affiché sans leaker
+     *                                   d'info à l'attaquant.
+     */
+    public function renderAuthFailed(IpxeAuthStatus $reason, string $serverBaseUrl): string
+    {
+        $reasonLabel = match ($reason) {
+            IpxeAuthStatus::MissingCredentials => 'identifiants requis',
+            IpxeAuthStatus::AuthFailed => 'identifiants invalides',
+            IpxeAuthStatus::PermissionDenied => 'droit insuffisant',
+            IpxeAuthStatus::Allowed => 'OK', // jamais atteint
+        };
+        $reasonHint = match ($reason) {
+            IpxeAuthStatus::PermissionDenied => 'Permission requise : computer.install',
+            default => null,
+        };
+
+        return $this->viewFactory->make('ipxe.menu.auth_failed', [
+            'shebang' => self::IPXE_SHEBANG,
+            'reasonLabel' => $reasonLabel,
+            'reasonHint' => $reasonHint,
+            'serverBaseUrl' => rtrim($serverBaseUrl, '/'),
+        ])->render();
+    }
+
+    /**
      * Rend le menu pour un poste inconnu (résolution null).
      *
      * Menu minimal : boot disk only. Pas d'item enrollment/admin (= scope

@@ -1,7 +1,11 @@
 {!! $shebang !!}
+{{-- Story 4.10 (correctif review #2) propagation auth iPXE iso `admin.blade.php`. --}}
 params
-param mac {{ $mac }}
-param uuid {{ $uuid }}
+{{-- Variables iPXE SMBIOS (cf. name.blade.php / room.blade.php) - pas Laravel. --}}
+param mac ${net0/mac}
+param uuid ${uuid}
+param username ${username}
+param password ${password:base64}
 console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }}
 @if($attachedParcName !== null)
 echo La machine a ete ajoutee au parc {{ $attachedParcName }}

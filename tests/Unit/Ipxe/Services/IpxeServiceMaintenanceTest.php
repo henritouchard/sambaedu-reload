@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
+use Tests\Support\IpxeAuthTestHelper;
 
 /**
  * Story 3.2 — AC3.2 / T4.5.
@@ -19,11 +20,14 @@ use Tests\TestCase;
  */
 class IpxeServiceMaintenanceTest extends TestCase
 {
+    use IpxeAuthTestHelper;
+
     private IpxeService $service;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bypassIpxeAuth();
         IpxeSchemaBootstrapper::bootstrap();
         $this->service = $this->app->make(IpxeService::class);
     }

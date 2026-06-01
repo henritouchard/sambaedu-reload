@@ -9,6 +9,7 @@ use App\Models\Workstation;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
+use Tests\Support\IpxeAuthTestHelper;
 
 /**
  * Story 3.2 — AC2.1 / AC3.1 / AC8.2 / T6.3.
@@ -17,9 +18,12 @@ use Tests\TestCase;
  */
 class IpxeAdminEndpointTest extends TestCase
 {
+    use IpxeAuthTestHelper;
+
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bypassIpxeAuth();
         IpxeSchemaBootstrapper::bootstrap();
         config([
             'auth_v1.bootstrap.allowed_subnets' => '127.0.0.0/8,192.168.0.0/16,10.0.0.0/8',

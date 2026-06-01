@@ -78,7 +78,7 @@ class IpxeConfigTest extends TestCase
     #[Test]
     public function it_loads_maintenance_background_png_default(): void
     {
-        self::assertSame('png/sysrescuecd.png', (string) config('ipxe.maintenance.background_png'));
+        self::assertSame('/ipxe/png/sysrescuecd.png', (string) config('ipxe.maintenance.background_png'));
     }
 
     #[Test]
@@ -321,7 +321,7 @@ class IpxeConfigTest extends TestCase
         // AC6.1 — section clonezilla (3 cles D8).
         self::assertTrue(filter_var(config('ipxe.clonezilla.enabled'), FILTER_VALIDATE_BOOL));
         self::assertSame(10000, (int) config('ipxe.clonezilla.menu_timeout_ms'));
-        self::assertSame('png/clonezilla.png', config('ipxe.clonezilla.background_png'));
+        self::assertSame('/ipxe/png/clonezilla.png', config('ipxe.clonezilla.background_png'));
     }
 
     #[Test]

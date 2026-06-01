@@ -195,11 +195,17 @@ class User extends Authenticatable implements Wireable
     // ========================================================================
 
     /**
-     * Trouve un utilisateur par son login
+     * Trouve un utilisateur par son login.
+     *
+     * Story 4.10 (correctif review #14) — comparaison case-insensitive.
+     * AD est case-insensitive sur sAMAccountName ; Postgres `=` est
+     * case-sensitive. Sans `LOWER()`, un user POSTant `JDOE` ne matche pas
+     * l'enregistrement `jdoe` → faux `permission_denied` lors d'un POST iPXE
+     * alors que le bind LDAP a réussi.
      */
     public static function findByLogin(string $login): ?self
     {
-        return static::where('login', $login)->first();
+        return static::whereRaw('LOWER(login) = ?', [strtolower($login)])->first();
     }
 
     /**
