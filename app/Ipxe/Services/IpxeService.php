@@ -146,9 +146,14 @@ final class IpxeService
         $this->logBootAttempt($workstation, $mac, $uuid, $product, $ip);
         $this->persistMachineBootLog($workstation, $ip);
 
+        // baseUrl résolu avant le null-check : le menu « inconnu » a désormais
+        // besoin du serverBaseUrl pour chaîner vers /ipxe/admin (parité legacy
+        // boot.php:82 — l'admin reste accessible aux machines non enrôlées).
+        $baseUrl = $this->resolveServerBaseUrl($request);
+
         if ($workstation === null) {
             return $this->safeRender(
-                fn (): string => $this->renderer->renderUnknown($ip),
+                fn (): string => $this->renderer->renderUnknown($ip, $baseUrl),
                 $ip,
                 $mac,
                 $uuid,
@@ -157,7 +162,6 @@ final class IpxeService
         }
 
         $action = $this->resolveProgrammedAction($workstation);
-        $baseUrl = $this->resolveServerBaseUrl($request);
 
         return $this->safeRender(
             fn (): string => $this->renderer->renderKnown($workstation, $action, $baseUrl),

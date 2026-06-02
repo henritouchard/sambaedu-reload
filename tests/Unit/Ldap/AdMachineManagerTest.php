@@ -87,7 +87,18 @@ class AdMachineManagerTest extends TestCase
         self::assertTrue($manager->check('PC-NEW-42'));
         Process::assertRan(function ($process) {
             $cmd = is_array($process->command) ? $process->command : [];
-            return in_array('computer', $cmd, true) && in_array('create', $cmd, true) && in_array('PC-NEW-42', $cmd, true);
+            // Le poste doit être créé dans l'OU SambaEdu (`--computerou=ou=computers`),
+            // pas le conteneur AD par défaut `CN=Computers` — sinon invisible du
+            // checker de divergence (AdSyncChecker n'énumère que cette OU).
+            $hasComputerOu = (bool) array_filter(
+                $cmd,
+                fn ($a) => is_string($a) && str_starts_with($a, '--computerou=') && str_contains(strtolower($a), 'ou=computers'),
+            );
+
+            return in_array('computer', $cmd, true)
+                && in_array('create', $cmd, true)
+                && in_array('PC-NEW-42', $cmd, true)
+                && $hasComputerOu;
         });
     }
 
@@ -125,22 +136,25 @@ class AdMachineManagerTest extends TestCase
     // ────────────────────────── registerHardware() ──────────────────────────
 
     #[Test]
-    public function register_hardware_calls_samba_tool_with_netbootguid(): void
+    public function register_hardware_writes_netbootguid_via_ldap(): void
     {
-        Process::fake([
-            '*' => Process::result(exitCode: 0),
-        ]);
-        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo());
+        // Plus de samba-tool pour registerHardware : `computer edit` n'a pas
+        // d'option `--set-attribute` (samba 4.22). On écrit via LdapRecord.
+        Process::fake();
+
+        // `$machine->netbootguid = …` route via __set → setAttribute().
+        // L'expectation `with()` sert de garde-fou sur la valeur binaire :
+        // GUID Microsoft (little-endian sur les 3 premiers champs), identique
+        // au legacy `from_guid()` → indispensable pour la reconnaissance PXE.
+        $machine = Mockery::mock(\App\LdapModels\MachineModel::class);
+        $machine->shouldReceive('setAttribute')->once()
+            ->with('netbootguid', hex2bin('67452301ab89efcd0123456789abcdef'))
+            ->andReturnSelf();
+        $machine->shouldReceive('save')->once()->andReturnTrue();
+
+        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo($machine));
         self::assertTrue($manager->registerHardware('PC-001', '01234567-89ab-cdef-0123-456789abcdef'));
-        Process::assertRan(function ($p) {
-            $cmd = is_array($p->command) ? $p->command : [];
-            foreach ($cmd as $a) {
-                if (is_string($a) && str_starts_with($a, '--set-attribute=netbootGUID=')) {
-                    return true;
-                }
-            }
-            return false;
-        });
+        Process::assertNothingRan();
     }
 
     #[Test]
@@ -155,12 +169,22 @@ class AdMachineManagerTest extends TestCase
     }
 
     #[Test]
-    public function register_hardware_returns_false_on_exec_error(): void
+    public function register_hardware_returns_false_when_machine_absent(): void
     {
-        Process::fake([
-            '*' => Process::result(errorOutput: 'permission denied', exitCode: 1),
-        ]);
-        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo());
+        Process::fake();
+        // repo->findByName retourne null → machine introuvable dans l'AD.
+        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo(null));
+        self::assertFalse($manager->registerHardware('PC-001', '01234567-89ab-cdef-0123-456789abcdef'));
+    }
+
+    #[Test]
+    public function register_hardware_returns_false_when_ldap_save_throws(): void
+    {
+        Process::fake();
+        $machine = Mockery::mock(\App\LdapModels\MachineModel::class);
+        $machine->shouldReceive('setAttribute')->andReturnSelf();
+        $machine->shouldReceive('save')->once()->andThrow(new \RuntimeException('ldap write failed'));
+        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo($machine));
         self::assertFalse($manager->registerHardware('PC-001', '01234567-89ab-cdef-0123-456789abcdef'));
     }
 

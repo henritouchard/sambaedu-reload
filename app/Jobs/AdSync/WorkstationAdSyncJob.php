@@ -271,6 +271,7 @@ class WorkstationAdSyncJob implements ShouldQueue
                     'old' => $oldName,
                     'new' => $newName,
                 ]);
+                $this->syncAdDnFromMachine($newExisting);
                 return ['success' => true];
             }
             Log::warning('[WorkstationAdSyncJob] handleRename: compte AD introuvable', [
@@ -280,12 +281,14 @@ class WorkstationAdSyncJob implements ShouldQueue
             return ['success' => true];
         }
 
-        // L'objet résolu (par guid) peut déjà porter le `new_name` (rename
-        // appliqué, ad_dn PG laissé stale) → no-op idempotent.
+        // L'objet résolu (par guid) peut déjà porter le `new_name` (rename AD
+        // appliqué) → no-op côté AD, mais on resynchronise `ad_dn` en PG au cas
+        // où il serait resté périmé.
         if (strcasecmp((string) $machine->getFirstAttribute('cn'), $newName) === 0) {
             Log::info('[WorkstationAdSyncJob] handleRename: cn AD déjà == new_name (idempotent)', [
                 'new' => $newName,
             ]);
+            $this->syncAdDnFromMachine($machine);
             return ['success' => true];
         }
 
@@ -311,6 +314,9 @@ class WorkstationAdSyncJob implements ShouldQueue
             ]);
         }
         $machine->save();
+
+        // Le modrdn a changé le DN → rafraîchir le cache `ad_dn` en PG.
+        $this->syncAdDnFromMachine($machine);
 
         Log::info('[WorkstationAdSyncJob] handleRename: succès (modrdn)', [
             'old' => $oldName,
@@ -450,8 +456,8 @@ class WorkstationAdSyncJob implements ShouldQueue
      * on return success (le rename a déjà été appliqué hors-Sambaedu, ou
      * la machine n'a jamais été synchronisée AD).
      *
-     * Pas de write-back PG (`ad_guid` ne change pas — modrdn préserve le
-     * objectGUID natif AD).
+     * `ad_guid` ne change pas (modrdn préserve l'objectGUID natif AD), mais le
+     * DN si → on rafraîchit `ad_dn` en PG via {@see syncAdDnFromMachine()}.
      */
     private function handleUpdate(): array
     {
@@ -486,6 +492,7 @@ class WorkstationAdSyncJob implements ShouldQueue
                 ]);
                 $newExisting->useraccountcontrol = $uac;
                 $newExisting->save();
+                $this->syncAdDnFromMachine($newExisting);
                 return ['success' => true];
             }
             Log::info('[WorkstationAdSyncJob] handleUpdate: compte AD introuvable (idempotent)', [
@@ -521,6 +528,10 @@ class WorkstationAdSyncJob implements ShouldQueue
         $machine->useraccountcontrol = $uac;
         $machine->save();
 
+        // Si un modrdn a eu lieu ci-dessus, le DN a changé → rafraîchir `ad_dn`
+        // en PG (no-op si inchangé).
+        $this->syncAdDnFromMachine($machine);
+
         Log::info('[WorkstationAdSyncJob] handleUpdate: succès (rename+status fusionné)', [
             'old' => $oldName,
             'new' => $newName,
@@ -541,6 +552,42 @@ class WorkstationAdSyncJob implements ShouldQueue
             return null;
         }
         return Workstation::find((int) $this->workstationId);
+    }
+
+    /**
+     * Rafraîchit `workstations.ad_dn` en PG à partir du DN AD courant de la
+     * machine, APRÈS un modrdn (rename/move). C'est le SEUL endroit qui change
+     * le DN d'un poste, donc le seul à devoir entretenir ce cache : aucune
+     * autre fonction d'update n'a à s'en soucier.
+     *
+     * `ad_dn` n'est pas redondant avec `ad_guid` : il encode la POSITION dans
+     * l'arbre AD (sous-arbre OU) et sert notamment au suffix-match d'héritage
+     * GPO (couverture WPKG). Laissé périmé, il fausserait ce calcul.
+     *
+     * Écrit via `withoutSync` (le `name` ne change pas ici → aucun re-dispatch
+     * d'observer), et no-op si déjà à jour.
+     */
+    private function syncAdDnFromMachine(MachineModel $machine): void
+    {
+        $dn = (string) $machine->getDn();
+        if ($dn === '') {
+            return;
+        }
+
+        $ws = $this->findWorkstation();
+        if ($ws === null || (string) $ws->ad_dn === $dn) {
+            return;
+        }
+
+        WorkstationObserver::withoutSync(function () use ($ws, $dn): void {
+            $ws->ad_dn = $dn;
+            $ws->save();
+        });
+
+        Log::info('[WorkstationAdSyncJob] ad_dn PG rafraîchi après modrdn', [
+            'id' => $ws->id,
+            'ad_dn' => $dn,
+        ]);
     }
 
     /**

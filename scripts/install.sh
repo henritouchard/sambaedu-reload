@@ -832,6 +832,23 @@ main() {
   # Résumé
   echo ""
   show_summary
+
+  # ── Finalisation : rejouer update.sh (idempotent) ──
+  # install.sh ne couvre pas toutes les étapes « ensure » (notamment la bascule
+  # du PXE bootstrap vers la route native /ipxe/boot via
+  # ensure_ipxe_bootstrap_native). Plutôt que de dupliquer ces étapes ici (et
+  # risquer la dérive), on rejoue update.sh en fin d'install : il est idempotent
+  # (composer, migrations, apache, systemd, ipxe bootstrap, doctor) et garantit
+  # qu'un déploiement from-scratch finit dans le même état qu'un parc à jour.
+  # NB : pas de forward des args d'install (update.sh a son propre parse_args).
+  echo ""
+  log "Finalisation : exécution de update.sh (idempotent) pour appliquer les étapes 'ensure'..."
+  echo ""
+  if bash "$SCRIPT_DIR/update.sh"; then
+    log_success "update.sh terminé — déploiement finalisé (PXE bootstrap natif inclus)."
+  else
+    log_warning "update.sh a retourné une erreur — l'install de base est faite, mais des étapes 'ensure' ont pu échouer (dont la bascule PXE /ipxe/boot). Vérifier la sortie ci-dessus."
+  fi
 }
 
 main "$@"

@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Gpo;
 
+use App\Config\LdapConfig;
+use App\Config\SambaEduConfig;
 use App\Gpo\Support\GpoLogger;
 use App\Gpo\Support\SambaToolRunner;
 use Illuminate\Support\Facades\Process;
+use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -152,7 +155,19 @@ class SambaToolRunnerTest extends TestCase
         $this->assertCount(1, $execLogs, 'Un seul log gpo.sambatool.exec attendu');
         $this->assertSame('debug', $execLogs[0]['level']);
         $this->assertSame(0, $execLogs[0]['context']['exit_code']);
-        $this->assertSame(['/usr/bin/samba-tool', 'gpo', 'listall', '--use-kerberos=required'], $execLogs[0]['context']['command']);
+
+        // La commande loguée commence par bin + sous-commande, et contient la
+        // kerb option. Des args distants (`-H ldap://… -U <admin>`) peuvent
+        // s'intercaler selon la résolution du DC — d'où l'assertion souple.
+        $command = $execLogs[0]['context']['command'];
+        $this->assertSame(['/usr/bin/samba-tool', 'gpo', 'listall'], array_slice($command, 0, 3));
+        $this->assertContains('--use-kerberos=required', $command);
+
+        // Sécurité : le mot de passe admin ne doit JAMAIS apparaître dans la
+        // commande loguée (il transite par l'env `PASSWD`, jamais en argv).
+        foreach ($command as $arg) {
+            $this->assertStringNotContainsString('%', (string) $arg, 'aucun user%password en argv/log');
+        }
     }
 
     #[Test]
@@ -190,5 +205,69 @@ class SambaToolRunnerTest extends TestCase
         $runner->run(['gpo', 'listall']);
 
         Process::assertRan(fn ($process) => $process->timeout === 45);
+    }
+
+    #[Test]
+    public function it_targets_remote_dc_with_h_u_and_passwd_env(): void
+    {
+        // SambaEduConfig contrôlé → DC établissement connu + creds admin
+        // (même source que LdapRecord). On vérifie que samba-tool est ciblé
+        // sur le DC distant et que le mot de passe ne fuite pas en argv.
+        $ldap = new LdapConfig(
+            url: 'ldaps://dc.test.fr',
+            port: 636,
+            baseDn: 'dc=test,dc=fr',
+            adminName: 'Administrator',
+            adminPassword: 's3cr3t-pw',
+            domain: 'test.fr',
+            sambaDomain: 'test',
+            peopleRdn: 'ou=Utilisateurs',
+            groupsRdn: 'ou=Groups',
+            computersRdn: 'ou=computers',
+            parcsRdn: 'ou=Parcs',
+            classesRdn: 'ou=classes',
+            equipesRdn: 'ou=equipes',
+            matieresRdn: 'ou=matieres',
+            coursRdn: 'ou=cours',
+            projetsRdn: 'ou=projets',
+            otherGroupsRdn: 'ou=autres',
+            delegationsRdn: 'ou=delegations',
+            equipementsRdn: 'ou=Materiels',
+            rightsRdn: 'ou=Rights',
+            trashRdn: 'ou=Trash',
+            etablissementsRdn: 'OU=etablissements',
+            adminRdn: 'cn=Users',
+            etabServerIp: '10.0.0.9',
+        );
+        $config = Mockery::mock(SambaEduConfig::class);
+        $config->shouldReceive('ldap')->andReturn($ldap);
+        $this->app->instance(SambaEduConfig::class, $config);
+
+        Process::fake([
+            '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+        ]);
+
+        (new SambaToolRunner())->run(['computer', 'create', 'pc-test-01']);
+
+        Process::assertRan(function ($process) {
+            $cmd = $process->command;
+            if (! is_array($cmd)) {
+                return false;
+            }
+
+            $hIdx = array_search('-H', $cmd, true);
+            $uIdx = array_search('-U', $cmd, true);
+
+            // `-H ldap://<etab_ip>` (jamais ldaps://) + `-U <admin>`.
+            $hostOk = $hIdx !== false && ($cmd[$hIdx + 1] ?? null) === 'ldap://10.0.0.9';
+            $userOk = $uIdx !== false && ($cmd[$uIdx + 1] ?? null) === 'Administrator';
+
+            // Mot de passe absent de l'argv, présent en env PASSWD.
+            $noPwdInArgv = ! in_array('s3cr3t-pw', $cmd, true)
+                && ! in_array('Administrator%s3cr3t-pw', $cmd, true);
+            $passwdInEnv = ($process->environment['PASSWD'] ?? null) === 's3cr3t-pw';
+
+            return $hostOk && $userOk && $noPwdInArgv && $passwdInEnv;
+        });
     }
 }

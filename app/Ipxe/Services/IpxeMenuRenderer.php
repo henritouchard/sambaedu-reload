@@ -117,11 +117,16 @@ final class IpxeMenuRenderer
      *
      * @param  string  $ip  Adresse IP du poste appelant (pour `menu` title).
      */
-    public function renderUnknown(string $ip): string
+    public function renderUnknown(string $ip, string $serverBaseUrl = ''): string
     {
         return $this->viewFactory->make('ipxe.menu.default', [
             'shebang' => self::IPXE_SHEBANG,
             'ip' => $ip,
+            // Story 4.10 / parité legacy boot.php:82 — l'item admin est proposé
+            // même pour une machine inconnue ; le bloc `:login` chaîne vers
+            // `/ipxe/admin`, d'où le besoin du serverBaseUrl + flag admin.
+            'serverBaseUrl' => rtrim($serverBaseUrl, '/'),
+            'isAdminActive' => (bool) config('ipxe.admin.enabled', false),
             'resolutionX' => (int) config('ipxe.menu.resolution_x', 1024),
             'resolutionY' => (int) config('ipxe.menu.resolution_y', 768),
             'resolutionPng' => $this->resolveBackgroundPng(),

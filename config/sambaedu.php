@@ -315,12 +315,17 @@ return [
         // `windows.inc.php:265`.
         'win_key' => env('SAMBAEDU_WIN_KEY', 'VK7JG-NPHTM-C97JM-9MPGT-3V66T'),
 
-        // User local Windows pour le mode `perso=1` (pc perso hors domaine).
-        // Iso-legacy `windows.inc.php:234` chain `win_user ?? perso_user ?? linux_user`.
-        'win_user' => env('SAMBAEDU_WIN_USER', ''),
+        // User local Windows pour le mode `perso=1` (pc perso hors domaine) —
+        // injecté dans l'autounattend (AutoLogon + LocalAccount). Mêmes
+        // fallback/valeurs que Linux ({@see sambaedu.linux.user}) pour cohérence
+        // inter-OS : `?:` (et non le défaut d'env()) car une clé .env présente
+        // mais vide renvoie '' → on bascule sur le fallback plutôt que de poser
+        // un username vide qui bloquerait l'install. Iso-legacy `windows.inc.php:234`
+        // chain `win_user ?? perso_user ?? linux_user`.
+        'win_user' => env('SAMBAEDU_WIN_USER') ?: 'basicuser',
 
         // Mot de passe du user perso (SECRET).
-        'win_user_passwd' => env('SAMBAEDU_WIN_USER_PASSWD', ''),
+        'win_user_passwd' => env('SAMBAEDU_WIN_USER_PASSWD') ?: 'sambaedu-v5',
 
         // Flag autologon (LogonCount = 4294967295 si !join && win_autologon == 1).
         // Iso-legacy `windows.inc.php:335-339`.
@@ -331,8 +336,14 @@ return [
         'locale' => env('SAMBAEDU_LINUX_LOCALE', 'fr_FR'),
         'keyboard' => env('SAMBAEDU_LINUX_KEYBOARD', 'fr(latin9)'),
         'interface' => env('SAMBAEDU_LINUX_INTERFACE', 'auto'),
-        'user' => env('SAMBAEDU_LINUX_USER', ''),
-        'user_passwd' => env('SAMBAEDU_LINUX_USER_PASSWD', ''), // SECRET
+        // Compte local créé par l'installateur Debian (preseed passwd/username).
+        // `?:` (et non le défaut d'env()) car une clé présente mais VIDE dans
+        // .env renvoie '' — on veut alors basculer sur le fallback, pas garder
+        // un username vide qui ferait échouer le preseed (« identifiant non
+        // valable »). Le login doit rester valide Debian : minuscule initiale,
+        // [a-z0-9], ≤ 32 car.
+        'user' => env('SAMBAEDU_LINUX_USER') ?: 'basicuser',
+        'user_passwd' => env('SAMBAEDU_LINUX_USER_PASSWD') ?: 'sambaedu-v5', // SECRET
         'version_debian' => env('SAMBAEDU_LINUX_VERSION_DEBIAN', 'trixie'),
         'apt_proxy' => env('SAMBAEDU_LINUX_APT_PROXY', ''),
         'server_proxy' => env('SAMBAEDU_LINUX_SERVER_PROXY', ''),

@@ -55,16 +55,22 @@ class IpxeMenuRendererTest extends TestCase
     }
 
     #[Test]
-    public function it_renders_unknown_menu_contains_only_default_item(): void
+    public function it_renders_unknown_menu_offers_admin_login_and_exit(): void
     {
-        $body = $this->renderer->renderUnknown('192.168.1.42');
+        // Parité legacy boot.php:82 — l'item admin est proposé MÊME pour un
+        // poste inconnu (sinon impossible de l'enrôler/installer via iPXE : la
+        // machine neuve n'atteindrait jamais /ipxe/admin). Le bloc :login
+        // chaîne vers la route native /ipxe/admin. admin.enabled = true par
+        // défaut (Story 4.10).
+        $body = $this->renderer->renderUnknown('192.168.1.42', 'http://se4fs.lan');
 
         self::assertStringStartsWith('#!ipxe', $body);
         self::assertStringContainsString('192.168.1.42', $body);
         self::assertStringContainsString(':menu', $body);
+        self::assertStringContainsString('item --key 1 login', $body);
         self::assertStringContainsString('item --key 0 exit', $body);
-        // Pas d'item login/action (poste inconnu).
-        self::assertStringNotContainsString('item --key 1 login', $body);
+        self::assertStringContainsString('chain --replace --autofree http://se4fs.lan/ipxe/admin##params', $body);
+        // Pas d'action programmée pour un poste inconnu.
         self::assertStringNotContainsString('item --key 2 action', $body);
     }
 

@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Ldap;
 
+use App\Config\SambaEduConfig;
 use App\Gpo\Support\SambaToolRunner;
+use App\LdapModels\MachineModel;
 use App\Repositories\WorkstationRepository;
 use Illuminate\Support\Facades\Log;
+use LdapRecord\Models\Attributes\Guid;
 
 /**
  * Service natif de gestion AD côté machines (création, mise à jour hardware,
@@ -93,17 +96,27 @@ class AdMachineManager
             return true;
         }
 
-        // Création samba-tool — l'AD se charge du DN selon la config
-        // par défaut (`cn=computers,dc=...`). Pour un placement OU précis,
-        // une story dédiée pourra étendre avec `--computerou=` (cf. Epic 17).
+        // Création samba-tool. SANS `--computerou`, samba-tool place la machine
+        // dans le conteneur AD par défaut `CN=Computers,<base>` — or SambaEdu
+        // attend les postes dans l'OU `ou=computers` (cf. LdapDnHelper::computers
+        // / AdSyncChecker::checkWorkstations qui n'énumère QUE cette OU). Sans le
+        // placement explicite, le poste est invisible du checker → fausse
+        // divergence « présent en PG, absent en AD ». On force donc l'OU.
+        $createArgs = ['computer', 'create', $machineName];
+        $computersOu = $this->computersOu();
+        if ($computersOu !== '') {
+            $createArgs[] = '--computerou=' . $computersOu;
+        }
+
         Log::channel('gpo')->info('[gpo] ad.machine.check create start', [
             'action_type' => 'ad.machine.check',
             'machine' => $machineName,
+            'computer_ou' => $computersOu,
             'step' => 'create',
         ]);
 
         try {
-            $result = $this->runner->run(['computer', 'create', $machineName]);
+            $result = $this->runner->run($createArgs);
         } catch (\Throwable $e) {
             Log::channel('gpo')->error('[AdMachineManager] check() create threw', [
                 'action_type' => 'ad.machine.check',
@@ -172,29 +185,50 @@ class AdMachineManager
             return false;
         }
 
-        // Note : iso-legacy `register_machine_hardware` distingue le cas
-        // `netbootguid` absent (add) vs différent (replace). On simplifie en
-        // `--set` qui est idempotent côté samba-tool (équivalent replace) —
-        // garde l'audit log dans tous les cas.
-        $args = ['computer', 'edit', $machineName, '--set-attribute=netbootGUID=' . $uuid];
-
+        // Écriture `netbootGUID` via LdapRecord (LDAP direct sur le DC distant).
+        //
+        // Pourquoi PAS samba-tool : `samba-tool computer edit` (4.22) n'a pas
+        // d'option `--set-attribute` — uniquement `--editor` (interactif). On
+        // pose donc l'attribut via le model {@see MachineModel}, comme le job
+        // de rename ({@see \App\Jobs\AdSync\WorkstationAdSyncJob::handleRename}).
+        //
+        // Format : `netbootGUID` est un octet-string binaire (GUID Microsoft,
+        // little-endian sur les 3 premiers champs). `Guid::getBinary()` produit
+        // EXACTEMENT les mêmes 16 octets que le legacy `from_guid()`
+        // (`pack('VvvCCC6', …)`) — vérifié bit à bit. `$machine->save()` est
+        // idempotent (add si absent, replace sinon), couvrant les 2 cas legacy.
         try {
-            $result = $this->runner->run($args);
+            // Normalise un éventuel uuid 32-hex sans tirets vers le format
+            // canonique 8-4-4-4-12 attendu par le helper Guid.
+            $dashed = (strlen($uuid) === 32 && ! str_contains($uuid, '-'))
+                ? sprintf(
+                    '%s-%s-%s-%s-%s',
+                    substr($uuid, 0, 8),
+                    substr($uuid, 8, 4),
+                    substr($uuid, 12, 4),
+                    substr($uuid, 16, 4),
+                    substr($uuid, 20, 12),
+                )
+                : $uuid;
+
+            $binaryGuid = (new Guid($dashed))->getBinary();
+
+            $machine = $this->workstations->findByName($machineName);
+            if ($machine === null) {
+                Log::channel('gpo')->warning('[AdMachineManager] registerHardware() machine introuvable dans l\'AD', [
+                    'action_type' => 'ad.machine.hardware.register',
+                    'machine' => $machineName,
+                ]);
+                return false;
+            }
+
+            $machine->netbootguid = $binaryGuid;
+            $machine->save();
         } catch (\Throwable $e) {
             Log::channel('gpo')->error('[AdMachineManager] registerHardware() threw', [
                 'action_type' => 'ad.machine.hardware.register',
                 'machine' => $machineName,
                 'error' => $e->getMessage(),
-            ]);
-            return false;
-        }
-
-        if ($result->exitCode() !== 0) {
-            Log::channel('gpo')->error('[AdMachineManager] registerHardware() failed', [
-                'action_type' => 'ad.machine.hardware.register',
-                'machine' => $machineName,
-                'exit_code' => $result->exitCode(),
-                'stderr' => $this->truncate((string) $result->errorOutput()),
             ]);
             return false;
         }
@@ -488,6 +522,36 @@ class AdMachineManager
     private function isValidMachineName(string $name): bool
     {
         return $name !== '' && (bool) preg_match(self::MACHINE_REGEX, $name);
+    }
+
+    /**
+     * OU relative (sans base DN) où créer les comptes machine, pour
+     * `samba-tool computer create --computerou=`. Dérivée de la même source
+     * que LdapRecord ({@see \App\Config\SambaEduConfig::ldap()} → `computersRdn`,
+     * ex. `ou=computers`). On retire un éventuel suffixe `dc=…` : samba-tool
+     * attend l'OU relative au domaine. Retourne `''` si non résolvable
+     * (fallback : conteneur AD par défaut, comportement historique).
+     */
+    private function computersOu(): string
+    {
+        try {
+            $rdn = trim((string) app(SambaEduConfig::class)->ldap()->computersRdn);
+            if ($rdn === '') {
+                return '';
+            }
+
+            $parts = array_filter(
+                array_map('trim', explode(',', $rdn)),
+                fn (string $p): bool => $p !== '' && stripos($p, 'dc=') !== 0,
+            );
+
+            return implode(',', $parts);
+        } catch (\Throwable $e) {
+            Log::channel('gpo')->warning('[AdMachineManager] computersOu() non résolue, placement AD par défaut', [
+                'error' => $e->getMessage(),
+            ]);
+            return '';
+        }
     }
 
     private function isValidSamaccountname(string $name): bool

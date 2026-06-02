@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Gpo\Support;
 
+use App\Config\SambaEduConfig;
 use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
 /**
@@ -44,6 +46,14 @@ class SambaToolRunner
     private ?array $globalArgsCache = null;
 
     /**
+     * Cache de la cible distante : `[list<string> $args, array<string,string> $env]`.
+     * Lazy-loaded depuis {@see SambaEduConfig::ldap()}.
+     *
+     * @var array{0: list<string>, 1: array<string, string>}|null
+     */
+    private ?array $remoteTargetCache = null;
+
+    /**
      * Exécute une sous-commande `samba-tool`. Le premier argument est
      * typiquement `gpo` suivi de la sous-commande (`listall`, `show`, etc.).
      *
@@ -64,8 +74,17 @@ class SambaToolRunner
             return $result;
         }
 
+        [, $env] = $this->remoteTarget();
+
         $startedAt = microtime(true);
-        $result = Process::timeout($timeout)->run($command);
+        $pending = Process::timeout($timeout);
+        if ($env !== []) {
+            // Mot de passe admin passé via env `PASSWD` (lu nativement par
+            // samba-tool/credentials) → jamais dans argv (`ps`) ni dans le
+            // log d'audit `sambaToolExec()` qui ne trace que `$command`.
+            $pending = $pending->env($env);
+        }
+        $result = $pending->run($command);
         $durationMs = (microtime(true) - $startedAt) * 1000.0;
 
         $log?->sambaToolExec(
@@ -118,7 +137,58 @@ class SambaToolRunner
     {
         $bin = (string) config('sambaedu.gpo.bin_path', '/usr/bin/samba-tool');
 
-        return array_merge([$bin], $args, $this->globalArgs());
+        [$remoteArgs] = $this->remoteTarget();
+
+        return array_merge([$bin], $args, $remoteArgs, $this->globalArgs());
+    }
+
+    /**
+     * Résout la cible distante (`-H ldap://<DC> -U <admin>`) + l'env `PASSWD`,
+     * depuis la MÊME source que LdapRecord ({@see SambaEduConfig::ldap()}).
+     *
+     * Pourquoi `ldap://` et pas `ldaps://` : samba-tool refuse `ldaps://` sans
+     * CA TLS configurée (`tls cafile`/`tls ca directories`). En `ldap://`, la
+     * négociation SASL (GSSAPI/NTLMSSP) signe+chiffre le trafic ET les creds —
+     * la confidentialité est donc préservée sans dépendre de la PKI.
+     *
+     * `samba-tool computer create` (et `user`/`group`) opère par défaut sur la
+     * base AD LOCALE (`/var/lib/samba/private/sam.ldb`) ; sur un serveur SE5 qui
+     * n'est pas le DC, ce fichier n'existe pas → exit 255. Le `-H` explicite
+     * cible le DC établissement distant (parité avec le bind LdapRecord).
+     *
+     * Fallback défensif : si l'hôte n'est pas résolvable (ex. env `testing`
+     * sans `etab_ip`, mode strict qui lève), on retombe sur le comportement
+     * local historique (pas de `-H`) — les appels samba-tool restant capables
+     * de tourner sur un DC local le cas échéant.
+     *
+     * @return array{0: list<string>, 1: array<string, string>}
+     */
+    private function remoteTarget(): array
+    {
+        if ($this->remoteTargetCache !== null) {
+            return $this->remoteTargetCache;
+        }
+
+        $args = [];
+        $env = [];
+
+        try {
+            $ldap = app(SambaEduConfig::class)->ldap();
+            $host = $ldap->getHosts()[0] ?? '';
+
+            if ($host !== '' && $ldap->adminName !== '') {
+                $args = ['-H', 'ldap://' . $host, '-U', $ldap->adminName];
+                if ($ldap->adminPassword !== '') {
+                    $env['PASSWD'] = $ldap->adminPassword;
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::channel('gpo')->warning('[SambaToolRunner] cible DC distante non résolue, fallback samba-tool local', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $this->remoteTargetCache = [$args, $env];
     }
 
     /**

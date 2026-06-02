@@ -160,14 +160,35 @@ final class WorkstationEnrollmentService
 
             // 6) Cas 1 — création neuve (UUID inconnu).
             //
-            // Décision design #1a (Henri 2026-05-28) : on bypasse l'observer
-            // pour la création initiale (sinon : double passe AD — un dispatch
-            // de WorkstationAdSyncJob::create + les appels directs `check` /
-            // `registerHardware` ci-dessous). Le flow iPXE garde son retour
-            // synchrone (firmware attend un `ad_ok`), tandis qu'on poste
-            // `ad_guid` / `ad_dn` après registerHardware pour cohérence PG↔AD
-            // sans repasser par le job.
+            // Décision design #1b (Henri 2026-06-01, remplace #1a) : ordre
+            // « AD d'abord, PG ensuite ». On crée+enregistre le compte machine
+            // AD AVANT toute écriture Postgres ; si l'AD échoue on REJETTE
+            // (return adError) sans rien persister en PG — évite la divergence
+            // « poste fantôme en base sans compte AD » (cf. incident poste 46).
+            // `check()` étant idempotent, un retry ré-utilise un compte déjà
+            // présent. On continue de bypasser l'observer (pas de double-passe
+            // via WorkstationAdSyncJob::create — l'AD est déjà fait ici).
             if ($current === null) {
+                // AD d'ABORD : check (idempotent create) + registerHardware (netbootGUID).
+                $adCheck = $this->adMachineManager->check($sanitized);
+                $adRegister = $adCheck
+                    && $this->adMachineManager->registerHardware($sanitized, $uuid);
+
+                if (! $adRegister) {
+                    // Échec AD → rien en PG → message lisible côté firmware.
+                    $this->log('ipxe.enrollment.name.ad_error', [
+                        'action_type' => 'ipxe.enrollment.name.ad_error',
+                        'ad_step' => $adCheck ? 'register_hardware' : 'check',
+                        'ip' => $ip,
+                        'mac_prefix' => substr($mac, 0, 6),
+                        'uuid_prefix' => substr($uuid, 0, 8),
+                        'sanitized_name_prefix' => substr($sanitized, 0, 8),
+                    ], 'error');
+
+                    return EnrollNameResult::adError($sanitized);
+                }
+
+                // AD OK → on persiste PG (sans déclencher l'observer).
                 $workstation = WorkstationObserver::withoutSync(fn () => Workstation::create([
                     'name' => $sanitized,
                     'uuid' => strtolower($uuid),
@@ -175,47 +196,37 @@ final class WorkstationEnrollmentService
                     'status' => 'active',
                 ]));
 
-                // AD : check (idempotent create) + registerHardware (netbootGUID).
-                $adCheck = $this->adMachineManager->check($sanitized);
-                $adRegister = $adCheck
-                    ? $this->adMachineManager->registerHardware($sanitized, $uuid)
-                    : false;
-                $adOk = $adCheck && $adRegister;
-
-                // Stockage `ad_guid` + `ad_dn` post-création AD (sans
-                // déclencher l'observer → pas de job).
-                if ($adOk) {
-                    try {
-                        $machine = MachineModel::findBy('cn', $sanitized);
-                        if ($machine !== null) {
-                            $guid = $machine->getConvertedGuid();
-                            $dn = $machine->getDn();
-                            if (!empty($guid)) {
-                                WorkstationObserver::withoutSync(function () use ($workstation, $guid, $dn): void {
-                                    $workstation->ad_guid = $guid;
-                                    if (!empty($dn)) {
-                                        $workstation->ad_dn = $dn;
-                                    }
-                                    $workstation->save();
-                                });
-                            }
+                // Backfill `ad_guid` + `ad_dn` post-création AD (best-effort).
+                try {
+                    $machine = MachineModel::findBy('cn', $sanitized);
+                    if ($machine !== null) {
+                        $guid = $machine->getConvertedGuid();
+                        $dn = $machine->getDn();
+                        if (!empty($guid)) {
+                            WorkstationObserver::withoutSync(function () use ($workstation, $guid, $dn): void {
+                                $workstation->ad_guid = $guid;
+                                if (!empty($dn)) {
+                                    $workstation->ad_dn = $dn;
+                                }
+                                $workstation->save();
+                            });
                         }
-                    } catch (Throwable $e) {
-                        // best-effort — ne pas bloquer l'enrollment iPXE si la
-                        // lecture LDAP post-create échoue.
-                        $this->log('ipxe.enrollment.name.ad_guid_backfill_failure', [
-                            'action_type' => 'ipxe.enrollment.name.ad_guid_backfill_failure',
-                            'workstation_id' => $workstation->id,
-                            'exception_class' => $e::class,
-                            'message' => substr($e->getMessage(), 0, 200),
-                        ], 'warning');
                     }
+                } catch (Throwable $e) {
+                    // best-effort — ne pas bloquer l'enrollment iPXE si la
+                    // lecture LDAP post-create échoue (le compte AD existe déjà).
+                    $this->log('ipxe.enrollment.name.ad_guid_backfill_failure', [
+                        'action_type' => 'ipxe.enrollment.name.ad_guid_backfill_failure',
+                        'workstation_id' => $workstation->id,
+                        'exception_class' => $e::class,
+                        'message' => substr($e->getMessage(), 0, 200),
+                    ], 'warning');
                 }
 
                 $this->log('ipxe.enrollment.name.success', [
                     'action_type' => 'ipxe.enrollment.name.success',
                     'status' => 'created',
-                    'ad_result' => $adOk ? 'success' : 'failed',
+                    'ad_result' => 'success',
                     'ip' => $ip,
                     'mac_prefix' => substr($mac, 0, 6),
                     'uuid_prefix' => substr($uuid, 0, 8),
@@ -225,7 +236,7 @@ final class WorkstationEnrollmentService
 
                 $this->persistMachineBootLog($workstation, $ip, IpxeEnrollmentFlow::Name, true);
 
-                return EnrollNameResult::created($workstation, $sanitized, $adOk);
+                return EnrollNameResult::created($workstation, $sanitized, true);
             }
 
             // 7) Cas 3 — renommage (UUID connu, nouveau nom libre).

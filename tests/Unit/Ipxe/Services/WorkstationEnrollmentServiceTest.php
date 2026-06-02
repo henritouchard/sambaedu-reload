@@ -78,6 +78,50 @@ class WorkstationEnrollmentServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_returns_ad_error_and_persists_nothing_when_ad_check_fails(): void
+    {
+        // AD-first : si check() échoue, registerHardware n'est pas appelé et
+        // RIEN n'est écrit en PG (pas de divergence poste fantôme).
+        $this->adManager->shouldReceive('check')->once()->with('pc-adfail-1')->andReturn(false);
+        $this->adManager->shouldReceive('registerHardware')->never();
+
+        $result = $this->service->enrollName(
+            rawName: 'pc-adfail-1',
+            mac: 'aa:bb:cc:dd:ee:f1',
+            uuid: 'a1111111-1111-1111-1111-111111111111',
+        );
+
+        self::assertSame(EnrollNameStatus::AdError, $result->status);
+        self::assertNull($result->workstation);
+        self::assertFalse($result->adResult);
+
+        self::assertDatabaseMissing('workstations', [
+            'uuid' => 'a1111111-1111-1111-1111-111111111111',
+        ]);
+    }
+
+    #[Test]
+    public function it_returns_ad_error_and_persists_nothing_when_register_hardware_fails(): void
+    {
+        // check() OK mais registerHardware KO → adError, rien en PG.
+        $this->adManager->shouldReceive('check')->once()->with('pc-adfail-2')->andReturn(true);
+        $this->adManager->shouldReceive('registerHardware')->once()->with('pc-adfail-2', Mockery::any())->andReturn(false);
+
+        $result = $this->service->enrollName(
+            rawName: 'pc-adfail-2',
+            mac: 'aa:bb:cc:dd:ee:f2',
+            uuid: 'a2222222-2222-2222-2222-222222222222',
+        );
+
+        self::assertSame(EnrollNameStatus::AdError, $result->status);
+        self::assertNull($result->workstation);
+
+        self::assertDatabaseMissing('workstations', [
+            'uuid' => 'a2222222-2222-2222-2222-222222222222',
+        ]);
+    }
+
+    #[Test]
     public function it_returns_same_name_when_uuid_already_owns_name(): void
     {
         $ws = Workstation::create([
