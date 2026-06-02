@@ -131,6 +131,28 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping()
                  ->runInBackground();
 
+        // Story 20.2 — Purge RGPD des identités externes fédérées à 02h30.
+        // Anonymise (jamais hard-delete) les `external_identities` dont la
+        // rétention PII a expiré (last_login_at < now - pii_ttl_days).
+        // Conditionnée par le toggle `federated_auth.retention.anonymize_enabled`
+        // évalué à chaque tick via `->when()` (D-8 : OFF par défaut tant que la
+        // base légale n'est pas validée — prise d'effet sans redéploiement,
+        // pattern trash:purge). Décalée de trash:purge (02h00) pour éviter le
+        // chevauchement de fenêtre de maintenance nocturne.
+        $schedule->command('federated:purge-identities')
+                 ->dailyAt('02:30')
+                 ->withoutOverlapping()
+                 ->runInBackground()
+                 ->when(function (): bool {
+                     try {
+                         return (bool) config('federated_auth.retention.anonymize_enabled', false);
+                     } catch (\Throwable $e) {
+                         // Doute sur la config : on ne planifie pas (pas de
+                         // purge muette — cohérent garde-fou trash:purge).
+                         return false;
+                     }
+                 });
+
         // Story 16.14 Q2 — Warm-up cache santé GPO daily 22:00.
         // Pré-charge `getLinks` + `versionNumber` pour chaque GPO du domaine
         // (TTL 24 h) — évite N appels samba-tool sur le listing admin matinal.

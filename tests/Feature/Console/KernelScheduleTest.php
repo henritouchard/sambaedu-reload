@@ -200,6 +200,77 @@ class KernelScheduleTest extends TestCase
     // Story 16.11 — migration:health-check schedulé daily
     // =========================================================================
 
+    // =========================================================================
+    // Story 20.2 — federated:purge-identities à 02h30 + ->when() toggle config
+    // =========================================================================
+
+    #[Test]
+    public function it_schedules_federated_purge_identities_daily_at_0230(): void
+    {
+        $kernel = $this->app->make(Kernel::class);
+        $schedule = $this->app->make(Schedule::class);
+
+        $scheduleMethod = new \ReflectionMethod($kernel, 'schedule');
+        $scheduleMethod->setAccessible(true);
+        $scheduleMethod->invoke($kernel, $schedule);
+
+        $hasFederatedPurge = collect($schedule->events())->contains(
+            static fn ($event): bool => str_contains((string) $event->command, 'federated:purge-identities')
+                && $event->expression === '30 2 * * *'
+        );
+
+        $this->assertTrue(
+            $hasFederatedPurge,
+            'Le scheduler doit déclencher federated:purge-identities quotidiennement à 02h30 (story 20.2).',
+        );
+    }
+
+    #[Test]
+    public function it_does_not_run_federated_purge_when_anonymize_disabled(): void
+    {
+        config(['federated_auth.retention.anonymize_enabled' => false]);
+
+        $kernel = $this->app->make(Kernel::class);
+        $schedule = $this->app->make(Schedule::class);
+
+        $scheduleMethod = new \ReflectionMethod($kernel, 'schedule');
+        $scheduleMethod->setAccessible(true);
+        $scheduleMethod->invoke($kernel, $schedule);
+
+        $event = collect($schedule->events())->first(
+            static fn ($event): bool => str_contains((string) $event->command, 'federated:purge-identities')
+        );
+
+        $this->assertNotNull($event);
+        $this->assertFalse(
+            $event->filtersPass($this->app),
+            'anonymize_enabled=false → la closure ->when() doit retourner false (D-8).',
+        );
+    }
+
+    #[Test]
+    public function it_runs_federated_purge_when_anonymize_enabled(): void
+    {
+        config(['federated_auth.retention.anonymize_enabled' => true]);
+
+        $kernel = $this->app->make(Kernel::class);
+        $schedule = $this->app->make(Schedule::class);
+
+        $scheduleMethod = new \ReflectionMethod($kernel, 'schedule');
+        $scheduleMethod->setAccessible(true);
+        $scheduleMethod->invoke($kernel, $schedule);
+
+        $event = collect($schedule->events())->first(
+            static fn ($event): bool => str_contains((string) $event->command, 'federated:purge-identities')
+        );
+
+        $this->assertNotNull($event);
+        $this->assertTrue(
+            $event->filtersPass($this->app),
+            'anonymize_enabled=true → la closure ->when() doit retourner true.',
+        );
+    }
+
     #[Test]
     public function it_schedules_migration_health_check_daily(): void
     {

@@ -178,6 +178,10 @@ trait IssuesFederatedJwt
                 $table->string('email')->nullable();
                 $table->boolean('is_active')->default(true);
                 $table->timestamp('last_login_at')->nullable();
+                // Story 20.2 — colonnes de cycle de vie / rétention RGPD.
+                $table->timestamp('anonymized_at')->nullable();
+                $table->string('deactivated_reason')->nullable();
+                $table->string('deleted_reason')->nullable();
                 $table->timestamps();
                 $table->softDeletes();
             });

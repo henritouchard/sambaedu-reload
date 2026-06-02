@@ -215,6 +215,176 @@ puis **rejouer le même JWT** (encore valide, non expiré).
 
 ---
 
+## Story 20.2 — Cycle de vie & rétention RGPD de l'identité externe
+
+**Date livraison** : 2026-06-02
+**Migration à appliquer** :
+`2026_06_02_120000_add_retention_columns_to_external_identities.php`
+(colonnes `anonymized_at`, `deactivated_reason`, `deleted_reason` — additive).
+**Nouveaux artefacts** :
+- Service `App\Auth\Federated\ExternalIdentityLifecycleService` (extraction
+  non-régressive de la logique d'upsert/sync inline 20.1 — D-2).
+- Commande `php artisan federated:purge-identities` (`--dry-run` / `--force`).
+- Bloc config `federated_auth.retention` + clés `.env`
+  `FEDERATED_AUTH_RETENTION_*`.
+
+### Base légale de rétention (RGPD — à valider DPO)
+
+- **Finalité** : imputabilité des actions d'administration réalisées par un
+  acteur externe fédéré (technicien flotte hors-AD).
+- **Base légale** : intérêt légitime + obligation légale de traçabilité et de
+  sécurité des SI (RGPD art. 6-1-c et 6-1-f).
+- **Durée** : `pii_ttl_days` (défaut **365 j** après `last_login_at` — **Q-1, à
+  confirmer Henri/juridique**).
+- **Sort en fin de rétention** : **anonymisation**, JAMAIS d'effacement physique
+  (D-1) — la PII (`name`/`email`/`login`) est vidée, `external_sub` réécrit en
+  `anon:<sha256>` (D-5), la ligne survit (soft-deletée + `anonymized_at`) pour
+  l'intégrité de l'audit (Story 20.4) et les FK `users`. Après anonymisation, ce
+  n'est plus une donnée personnelle.
+- **Interrupteur** : `anonymize_enabled` = **false par défaut** (D-8) tant que
+  la durée n'est pas validée juridiquement → la purge est no-op safe.
+
+### Les 4 états du cycle de vie
+
+| État | `is_active` | `deleted_at` | `anonymized_at` | Login |
+|---|---|---|---|---|
+| Active | true | null | null | autorisé (si JWT valide) |
+| Désactivée | false | null | null | 403 `identity_revoked` |
+| Soft-deletée | (any) | non-null | null | 403 `identity_revoked` |
+| Anonymisée | false | non-null | non-null | 403 `identity_anonymized` |
+
+### Section 4 — Sync de profil à la reconnexion (D-3)
+
+#### Scénario 20.2-1 — Claim présent écrase / claim absent préserve
+
+**Action** : login 20.1-1 avec `name="Ancien"`, `email="a@x.fr"`. Puis
+reconnexion (même `sub`, nouveau `jti`) avec `name="Nouveau"` et **sans** champ
+`email` (ou `email=""`).
+
+**Attendu** :
+
+- `external_identities.name` = `"Nouveau"` (claim présent → écrase).
+- `external_identities.email` = `"a@x.fr"` (claim absent/vide → **préservé**,
+  pas d'effacement involontaire).
+- Le **rôle** et `is_active` ne sont **pas** modifiés par la sync de profil
+  (séparation identité/accès — vérifier `model_has_roles` inchangé).
+
+### Section 5 — Désactivation & soft-delete tracés
+
+#### Scénario 20.2-2 — Désactivation administrative (sans suppression)
+
+**Action** : sur une identité active, appeler la transition `deactivate` (via
+outillage 20.3 à venir, ou en DB pour le QA :
+`UPDATE external_identities SET is_active=false, deactivated_reason='litige' …`).
+
+**Attendu** :
+
+- `is_active=false`, `deactivated_reason` renseigné, **PII intacte**,
+  `deleted_at` NULL, `anonymized_at` NULL.
+- Un fresh login pour ce `sub` → **403** (pas de réactivation — cf. 20.1-10).
+- Event `federated.identity.deactivated` (channel `federated-auth`, **sans PII**).
+
+#### Scénario 20.2-3 — Soft-delete tracé, résolvable `withTrashed()`
+
+**Action** : soft-delete d'une identité (`softDeleteWithReason`).
+
+**Attendu** :
+
+- `deleted_at` non-null, `deleted_reason` renseigné, ligne **toujours
+  résolvable** via `ExternalIdentity::withTrashed()` (audit 20.4).
+- Login refusé **403**. Event `federated.identity.soft_deleted` (sans PII).
+
+### Section 6 — Purge RGPD planifiée (`federated:purge-identities`)
+
+#### Scénario 20.2-4 — Dry-run liste les candidats sans rien modifier
+
+**Pré-requis** : `FEDERATED_AUTH_RETENTION_ANONYMIZE_ENABLED=true`,
+`FEDERATED_AUTH_RETENTION_PII_TTL_DAYS=365`. Une identité dont
+`last_login_at` > 365 j.
+
+**Action** : `php artisan federated:purge-identities --dry-run`
+
+**Attendu** :
+
+- Sortie `[DRY-RUN] Candidats à anonymiser : N`, tableau (ID, sub **sha256**,
+  `last_login_at`, état) — **jamais** de PII (ni `name`/`email`/`login`, ni sub
+  clair).
+- **Aucune** modification DB (`anonymized_at` toujours NULL, PII intacte).
+
+#### Scénario 20.2-5 — Anonymisation effective (jamais hard-delete)
+
+**Action** : `php artisan federated:purge-identities` (sans `--dry-run`).
+
+**Attendu** :
+
+- L'identité expirée est anonymisée : `name`/`email`/`login` **vidés**,
+  `external_sub` = `anon:<sha256(sub)>`, `anonymized_at` posé,
+  `is_active=false`, `deleted_at` posé.
+- La ligne **survit** : `SELECT … FROM external_identities` (sans
+  `withTrashed`) ne la retourne plus, mais `withTrashed()` la retrouve.
+  **Jamais** de `forceDelete`.
+- Le(s) `User source='federated'` lié(s) : **toujours présents** (FK intacte),
+  mais `is_active=false` (accès coupé — AC12).
+- Une identité **active récemment** (< TTL) est **conservée** (non anonymisée).
+- Event `federated.identity.anonymized` (sans PII).
+
+#### Scénario 20.2-6 — No-op safe si toggle OFF ou TTL ≤ 0
+
+**Action** :
+
+1. `FEDERATED_AUTH_RETENTION_ANONYMIZE_ENABLED=false` →
+   `php artisan federated:purge-identities` → sortie « Rétention désactivée »,
+   exit **0**, **aucune** anonymisation.
+2. `pii_ttl_days=0` sans `--force` → sortie « pii_ttl_days non configuré »,
+   exit **0**, aucune anonymisation. (Avec `--force` → purge consciente.)
+
+#### Scénario 20.2-6bis — Audit DPO pré-activation : `--dry-run` énumère même toggle OFF (P-1)
+
+**Contexte** : P-1 (review 20.2) — un `--dry-run` est sans effet de bord ; le DPO
+doit pouvoir visualiser l'impact d'une future purge **avant** d'activer la
+rétention (`anonymize_enabled` reste `false` par défaut tant que la base légale
+n'est pas validée — D-8).
+
+**Pré-requis** : `FEDERATED_AUTH_RETENTION_ANONYMIZE_ENABLED=false`,
+`FEDERATED_AUTH_RETENTION_PII_TTL_DAYS=365`. Une identité dont `last_login_at`
+> 365 j.
+
+**Action** : `php artisan federated:purge-identities --dry-run`
+
+**Attendu** :
+
+- Avertissement « **SIMULATION** uniquement » + tableau `[DRY-RUN] Candidats à
+  anonymiser : N` (ID, sub sha256, `last_login_at`, état) — jamais de PII.
+- **Aucune** modification DB. Hors `--dry-run`, toggle OFF reste no-op (20.2-6).
+
+#### Scénario 20.2-7 — Reconnexion d'une identité anonymisée → 403 (anti-résurrection)
+
+**Contexte** : D-4 — une identité dont la PII a été purgée ne doit pas être
+« ressuscitée » par une simple reconnexion (contournement de la purge RGPD).
+
+**Action** : après anonymisation (20.2-5), re-soumettre un **nouveau** JWT valide
+pour le **même `sub` clair** d'origine (`POST /auth/federated/callback`).
+
+**Attendu** :
+
+- Réponse **403**, event `federated.login.identity_anonymized`, **aucune**
+  session, **aucune** identité « fraîche » recréée pour ce sub clair (la forme
+  `anon:<sha256>` est résolue et bloque la recréation).
+- La réactivation reste une décision **admin** explicite (Story 20.3).
+
+### Section 7 — Non-régression du refactor (D-2 / AC15)
+
+#### Scénario 20.2-8 — La suite 20.1 reste verte après extraction du service
+
+**Action** : rejouer intégralement les scénarios **20.1-1 → 20.1-11** (le
+controller délègue désormais à `ExternalIdentityLifecycleService` ; le
+comportement observable doit être **identique**).
+
+**Attendu** : aucun changement de comportement (login, reconnexion, révocation
+403, guard D-5, anti-rejeu jti). Filet de non-régression du refactor.
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **20.1-7 / 20.1-9** couvrent la **régression critique D-5** : le guard de
@@ -233,6 +403,14 @@ puis **rejouer le même JWT** (encore valide, non expiré).
 | #3 — `aud` array sans match → mauvais code d'erreur | 🟡 | Tests unit (`aud_array_without_match…`) |
 | #4 — fallback Bearer (déviation D-3) | 🟠 | Retiré (POST strict) ; vérifié par 20.1-1 |
 | #6 — `login` loggé (AC16) | 🟡 | Vérif « aucun PII » de la checklist |
+| 20.2 — résurrection d'une identité anonymisée par reconnexion (D-4) | 🟠 | Scénario 20.2-7 + Unit/Feature (`anonymized_identity_is_refused…`) |
+| 20.2 — `external_sub` réécrit (D-5) casse le lookup clair → recréation/collision | 🟠 | Résolu : reconcile résout aussi `anon:<sha256>` ; couvert par 20.2-7 |
+| 20.2 — anonymisation non idempotente (`anon:anon:…`) | 🟡 | Unit (`anonymize_is_idempotent`) |
+| 20.2 — purge silencieuse sans base légale validée (D-8) | 🟠 | Toggle OFF par défaut ; Scénario 20.2-6 + KernelSchedule `->when()` |
+| 20.2 — PII dans les logs de purge (AC16) | 🟠 | id + sub sha256 uniquement ; Unit (`logs_carry_no_pii…`) |
+| 20.2 P-2 — `anonymize()` non atomique → Users actifs orphelins d'une identité anonymisée (état irréparable par rejeu) | 🟠 | `DB::transaction()` autour du corps d'`anonymize()`/`softDeleteWithReason()` ; Unit existants (`anonymize_deactivates_linked_user…`) |
+| 20.2 P-1 — `--dry-run` impossible tant que `anonymize_enabled=false` (pas d'audit DPO pré-activation) | 🟠 | dry-run énumère malgré toggle OFF (simulation) ; Feature (`dry_run_lists_candidates_even_when_anonymize_disabled`) |
+| 20.2 P-8 — motif > 255 → `QueryException` MySQL non vue en SQLite | 🟡 | troncature `mb_substr(…,0,255)` ; Unit (`deactivate_truncates_overlong_reason…`) |
 
 ## Checklist rapide
 
@@ -247,4 +425,12 @@ puis **rejouer le même JWT** (encore valide, non expiré).
 - [ ] 20.1-9 Flux AD/LDAP strictement inchangé (non-régression)
 - [ ] 20.1-10 Identité révoquée → 403 au fresh login, pas de réactivation (post-review #1)
 - [ ] 20.1-11 `jti` non brûlé si provisioning échoue → retry possible (post-review M1)
-- [ ] Aucun JWT brut / clé / PII dans le channel `federated-auth`
+- [ ] 20.2-1 Sync profil : claim présent écrase / absent préserve ; rôle & is_active jamais touchés
+- [ ] 20.2-2 Désactivation tracée (PII intacte), fresh login → 403
+- [ ] 20.2-3 Soft-delete tracé, résolvable `withTrashed()`, login → 403
+- [ ] 20.2-4 Purge `--dry-run` liste sans rien modifier (sub hashé, pas de PII)
+- [ ] 20.2-5 Anonymisation effective : PII vidée, `anon:<sha256>`, jamais hard-delete, User lié désactivé (FK intacte)
+- [ ] 20.2-6 No-op safe si `anonymize_enabled=false` ou TTL ≤ 0 sans `--force` (exit 0)
+- [ ] 20.2-7 Reconnexion d'une identité anonymisée → 403 `identity_anonymized`, pas de recréation
+- [ ] 20.2-8 Suite 20.1 inchangée après extraction du service (non-régression D-2)
+- [ ] Aucun JWT brut / clé / PII dans le channel `federated-auth` (y c. logs de purge)

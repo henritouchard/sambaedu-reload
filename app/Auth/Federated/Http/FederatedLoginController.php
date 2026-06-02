@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Auth\Federated\Http;
 
+use App\Auth\Federated\ExternalIdentityLifecycleService;
 use App\Auth\Federated\FederatedRoleMapper;
 use App\Auth\Federated\Jwt\Exceptions\InvalidFederatedJwtException;
 use App\Auth\Federated\Jwt\FederatedJwtReplayChecker;
@@ -15,7 +16,6 @@ use App\Models\ExternalIdentity;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -48,6 +48,7 @@ class FederatedLoginController
         private readonly FederatedJwtVerifier $verifier,
         private readonly FederatedRoleMapper $roleMapper,
         private readonly FederatedJwtReplayChecker $replayChecker,
+        private readonly ExternalIdentityLifecycleService $lifecycle,
     ) {
     }
 
@@ -84,7 +85,12 @@ class FederatedLoginController
         // brûle pas le `jti`, donc un retry légitime du même jeton (encore
         // valide) reste possible (review M1).
         $user = DB::transaction(function () use ($claims, $sambaRole): User {
-            $identity = $this->upsertIdentity($claims);
+            // Story 20.2 — D-2 : la réconciliation de l'identité (upsert + sync
+            // profil + gardes révocation/anonymisation) est déléguée au service
+            // de cycle de vie. Comportement observable INCHANGÉ vs 20.1 (le
+            // garde anti-résurrection D-4 est un AJOUT, jamais déclenché par
+            // une identité 20.1 non encore anonymisée).
+            $identity = $this->lifecycle->reconcileOnLogin($claims);
             $user = $this->provisionUser($identity, $claims);
             $this->applyRole($user, $sambaRole);
 
@@ -139,49 +145,6 @@ class FederatedLoginController
         }
 
         throw new HttpException(400, 'Missing federated token');
-    }
-
-    /**
-     * Upsert de l'identité externe (clé = external_sub). Reconnexion → même row.
-     *
-     * **Révocation (Q1 / review #1)** : si une identité EXISTE déjà et a été
-     * explicitement révoquée par un admin — soit `is_active=false`, soit
-     * soft-deletée — on REFUSE le login (403) sans la réactiver. Un JWT valide
-     * ne doit jamais réarmer silencieusement une identité désactivée ; la
-     * réactivation est une action d'admin (outillage = Story 20.3). La création
-     * d'une identité neuve (1er login) reste autorisée.
-     */
-    private function upsertIdentity(FederatedUserClaims $claims): ExternalIdentity
-    {
-        $identity = ExternalIdentity::withTrashed()
-            ->where('external_sub', $claims->sub)
-            ->first();
-
-        if ($identity !== null && ($identity->trashed() || ! $identity->is_active)) {
-            Log::channel('federated-auth')->warning('[FederatedLoginController] federated.login.identity_revoked', [
-                'action_type' => 'federated.login.identity_revoked',
-                'sub' => $claims->sub,
-                'iss' => $claims->iss,
-            ]);
-
-            // 403 : identité révoquée côté SE5, aucune session ouverte.
-            throw new HttpException(403, 'Federated identity revoked on this instance');
-        }
-
-        if ($identity === null) {
-            $identity = new ExternalIdentity();
-            $identity->external_sub = $claims->sub;
-            $identity->is_active = true;
-        }
-
-        $identity->issuer = $claims->iss;
-        $identity->login = $claims->login !== '' ? $claims->login : $identity->login;
-        $identity->name = $claims->name !== '' ? $claims->name : $identity->name;
-        $identity->email = $claims->email !== '' ? $claims->email : $identity->email;
-        $identity->last_login_at = Carbon::now();
-        $identity->save();
-
-        return $identity;
     }
 
     /**

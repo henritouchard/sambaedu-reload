@@ -156,4 +156,57 @@ return [
     'safety' => [
         'forbid_test_keys_in_production' => (bool) env('FEDERATED_AUTH_FORBID_TEST_KEYS_IN_PROD', true),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Base légale de rétention RGPD (Story 20.2 — IR-M5)
+    |--------------------------------------------------------------------------
+    |
+    | Cœur de la story 20.2 : « identité persistante ≠ conservation indéfinie ».
+    | L'`ExternalIdentity` (le « qui ») est durable pour l'imputabilité des
+    | actions d'administration, mais sa PII (`name`/`email`/`login` lisible,
+    | `external_sub` clair) n'est conservée QUE le temps d'une base légale
+    | énoncée et pour une durée bornée, puis ANONYMISÉE (jamais hard-delete —
+    | D-1) pour préserver l'intégrité de l'audit dénormalisé (Story 20.4) et
+    | les FK `users.external_identity_id`.
+    |
+    | - `legal_basis` : énoncé de la base légale du traitement (RGPD art. 6).
+    | - `pii_ttl_days` : durée de conservation de la PII après la DERNIÈRE
+    |   activité (`last_login_at`). Au-delà, l'identité devient candidate à
+    |   l'anonymisation. Défaut PROPOSÉ : 365 j (obligation de traçabilité des
+    |   accès d'administration en contexte éducation — Q-1, à confirmer Henri).
+    | - `anonymize_enabled` : INTERRUPTEUR de la purge. Défaut **false** (D-8) :
+    |   tant que la durée/base légale n'est pas validée juridiquement, la
+    |   commande `federated:purge-identities` tourne en no-op safe (warning +
+    |   exit clair) et ne supprime AUCUNE PII silencieusement. Le scheduling
+    |   Kernel lit ce toggle via `->when()` (prise d'effet sans redéploiement).
+    | - `retention_note` : justification lisible (finalité + sort en fin de
+    |   rétention), reprise dans le runbook QA.
+    |
+    | Override `.env` : `FEDERATED_AUTH_RETENTION_*`.
+    |
+    */
+
+    'retention' => [
+        'legal_basis' => env(
+            'FEDERATED_AUTH_RETENTION_LEGAL_BASIS',
+            'Intérêt légitime + obligation légale de traçabilité et de sécurité '
+            . 'des systèmes d\'information : imputabilité des actions '
+            . 'd\'administration réalisées par un acteur externe fédéré '
+            . '(RGPD art. 6-1-c et 6-1-f).'
+        ),
+
+        'pii_ttl_days' => (int) env('FEDERATED_AUTH_RETENTION_PII_TTL_DAYS', 365),
+
+        'anonymize_enabled' => (bool) env('FEDERATED_AUTH_RETENTION_ANONYMIZE_ENABLED', false),
+
+        'retention_note' => env(
+            'FEDERATED_AUTH_RETENTION_NOTE',
+            'La PII de l\'identité externe (nom, email, login lisible, sub clair) '
+            . 'est conservée tant qu\'elle sert l\'imputabilité d\'actions '
+            . 'd\'administration, puis ANONYMISÉE après pii_ttl_days '
+            . '(external_sub réécrit en anon:<sha256>, ligne conservée pour '
+            . 'l\'intégrité de l\'audit — jamais d\'effacement physique).'
+        ),
+    ],
 ];

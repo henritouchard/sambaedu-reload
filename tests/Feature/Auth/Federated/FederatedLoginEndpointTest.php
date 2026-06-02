@@ -58,6 +58,7 @@ class FederatedLoginEndpointTest extends TestCase
             new FederatedJwtVerifier(),
             new FederatedRoleMapper(),
             new FederatedJwtReplayChecker(),
+            new \App\Auth\Federated\ExternalIdentityLifecycleService(),
         );
     }
 
@@ -176,6 +177,33 @@ class FederatedLoginEndpointTest extends TestCase
 
         // Toujours soft-deletée (pas de restauration silencieuse).
         $this->assertNotNull(ExternalIdentity::withTrashed()->where('external_sub', 'ext-trashed')->first()->deleted_at);
+        $this->assertFalse(Auth::check());
+    }
+
+    #[Test]
+    public function anonymized_identity_is_refused_on_reconnection(): void
+    {
+        // Story 20.2 — AC11 / D-4 : anti-résurrection end-to-end. Un 1er login
+        // crée l'identité ; on l'anonymise via le service ; une reconnexion
+        // (nouveau jti) doit être refusée 403, sans réactivation ni recréation.
+        $first = $this->issueFederatedJwt(['sub' => 'ext-anon-e2e', 'jti' => 'jti-anon-1']);
+        $this->makeController()->callback($this->requestWithToken($first['token']));
+        Auth::logout();
+
+        $identity = ExternalIdentity::where('external_sub', 'ext-anon-e2e')->firstOrFail();
+        (new \App\Auth\Federated\ExternalIdentityLifecycleService())->anonymize($identity);
+
+        // Le sub clair a été réécrit (D-5) ; on rejoue le MÊME sub clair.
+        $second = $this->issueFederatedJwt(['sub' => 'ext-anon-e2e', 'jti' => 'jti-anon-2']);
+        try {
+            $this->makeController()->callback($this->requestWithToken($second['token']));
+            $this->fail('Expected 403 (identité anonymisée)');
+        } catch (HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+        }
+
+        // Aucune identité « fraîche » recréée pour ce sub clair (anti-contournement).
+        $this->assertSame(0, ExternalIdentity::withTrashed()->where('external_sub', 'ext-anon-e2e')->count());
         $this->assertFalse(Auth::check());
     }
 
