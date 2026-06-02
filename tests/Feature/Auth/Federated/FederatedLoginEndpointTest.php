@@ -299,7 +299,7 @@ class FederatedLoginEndpointTest extends TestCase
         $userRepo = Mockery::mock(UserRepository::class);
         $userRepo->shouldReceive('findByLogin')->once()->with('prof.dupont')->andReturn($ldapUser);
 
-        $guard = new SambaEduAuthGuard($authService, $userRepo);
+        $guard = new SambaEduAuthGuard($authService, $userRepo, new \App\Auth\Federated\ExternalIdentityLifecycleService());
 
         $request = Request::create('/app/dashboard', 'GET');
         $session = new Store('test', new ArraySessionHandler(120));
@@ -348,6 +348,6 @@ class FederatedLoginEndpointTest extends TestCase
         // Garde-fou : le LDAP ne doit JAMAIS être interrogé pour un externe.
         $userRepo->shouldReceive('findByLogin')->never();
 
-        return new SambaEduAuthGuard($authService, $userRepo);
+        return new SambaEduAuthGuard($authService, $userRepo, new \App\Auth\Federated\ExternalIdentityLifecycleService());
     }
 }

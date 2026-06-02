@@ -69,7 +69,7 @@ class FederatedPurgeIdentitiesCommandTest extends TestCase
         $this->assertNull($fresh->login);
         $this->assertNotNull($fresh->anonymized_at);
         $this->assertFalse($fresh->is_active);
-        $this->assertSame('anon:' . hash('sha256', 'ext-old'), $fresh->external_sub);
+        $this->assertSame('anon:' . app(\App\Auth\Federated\ExternalIdentityLifecycleService::class)->hashSub('ext-old'), $fresh->external_sub);
     }
 
     #[Test]

@@ -182,6 +182,14 @@ return [
     |   Kernel lit ce toggle via `->when()` (prise d'effet sans redéploiement).
     | - `retention_note` : justification lisible (finalité + sort en fin de
     |   rétention), reprise dans le runbook QA.
+    | - `hash_key` : SECRET du HMAC qui dérive `external_sub` → `anon:<hmac>`
+    |   (P-4 / review 20.2). Salé pour qu'un `sub` à faible entropie ne soit pas
+    |   ré-identifiable par bruteforce/rainbow (sinon la valeur anonymisée reste
+    |   PSEUDONYME et non « anonyme » au sens RGPD). Clé FIXE, dédiée, JAMAIS
+    |   tournée : une rotation casserait la re-corrélation forensique (D-5 /
+    |   Story 20.4). À défaut de clé dédiée, on retombe sur `APP_KEY` (non-vide
+    |   garanti) plutôt que de hasher sans sel — mais la PROD doit poser
+    |   `FEDERATED_AUTH_RETENTION_HASH_KEY`.
     |
     | Override `.env` : `FEDERATED_AUTH_RETENTION_*`.
     |
@@ -208,5 +216,9 @@ return [
             . '(external_sub réécrit en anon:<sha256>, ligne conservée pour '
             . 'l\'intégrité de l\'audit — jamais d\'effacement physique).'
         ),
+
+        // P-4 : secret du HMAC d'anonymisation. Fallback APP_KEY (jamais vide)
+        // pour ne pas hasher sans sel ; la prod DOIT poser une clé dédiée fixe.
+        'hash_key' => env('FEDERATED_AUTH_RETENTION_HASH_KEY') ?: env('APP_KEY', ''),
     ],
 ];

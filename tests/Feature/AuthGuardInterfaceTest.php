@@ -7,6 +7,7 @@ use App\Http\Middleware\Auth\KeycloakAuthGuard;
 use App\Http\Middleware\Auth\SambaEduAuthGuard;
 use App\Services\AuthenticationService;
 use App\Repositories\UserRepository;
+use App\Auth\Federated\ExternalIdentityLifecycleService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -39,7 +40,7 @@ class AuthGuardInterfaceTest extends TestCase
         $authService = $this->createMock(AuthenticationService::class);
         $userRepo = $this->createMock(UserRepository::class);
 
-        $guard = new SambaEduAuthGuard($authService, $userRepo);
+        $guard = new SambaEduAuthGuard($authService, $userRepo, new ExternalIdentityLifecycleService());
 
         $this->assertInstanceOf(AuthGuardInterface::class, $guard);
     }
@@ -91,6 +92,7 @@ class AuthGuardInterfaceTest extends TestCase
             fn ($app) => new SambaEduAuthGuard(
                 $app->make(AuthenticationService::class),
                 $app->make(UserRepository::class),
+                $app->make(ExternalIdentityLifecycleService::class),
             ),
         );
 
@@ -144,6 +146,7 @@ class AuthGuardInterfaceTest extends TestCase
             fn ($app) => new SambaEduAuthGuard(
                 $app->make(AuthenticationService::class),
                 $app->make(UserRepository::class),
+                $app->make(ExternalIdentityLifecycleService::class),
             ),
         );
 

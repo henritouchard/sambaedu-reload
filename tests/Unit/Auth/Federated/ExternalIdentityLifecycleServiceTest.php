@@ -205,6 +205,15 @@ class ExternalIdentityLifecycleServiceTest extends TestCase
     }
 
     #[Test]
+    public function hash_sub_is_salted_not_raw_sha256(): void
+    {
+        // P-4 (review 20.2) : le hash est un HMAC salé, pas un sha256 nu — un sub
+        // à faible entropie ne doit pas être ré-identifiable par rainbow table.
+        $this->assertNotSame(hash('sha256', 'ext-x'), $this->service->hashSub('ext-x'));
+        $this->assertSame(64, mb_strlen($this->service->hashSub('ext-x')), 'HMAC-SHA256 = 64 hexdigits');
+    }
+
+    #[Test]
     public function deactivate_truncates_overlong_reason_to_column_length(): void
     {
         // P-8 (review 20.2) : `deactivated_reason` est varchar(255). SQLite ne
@@ -233,8 +242,8 @@ class ExternalIdentityLifecycleServiceTest extends TestCase
         $this->assertFalse($fresh->is_active);
         $this->assertNotNull($fresh->anonymized_at);
         $this->assertNotNull($fresh->deleted_at, 'anonymisée = soft-deletée');
-        // D-5 : external_sub réécrit en anon:<sha256(sub original)>.
-        $this->assertSame('anon:' . hash('sha256', 'ext-rgpd'), $fresh->external_sub);
+        // D-5 : external_sub réécrit en anon:<hmac(sub original)> (P-4 : salé).
+        $this->assertSame('anon:' . $this->service->hashSub('ext-rgpd'), $fresh->external_sub);
         // L'ancien sub clair ne matche plus.
         $this->assertNull(ExternalIdentity::withTrashed()->where('external_sub', 'ext-rgpd')->first());
     }

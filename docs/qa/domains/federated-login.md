@@ -411,6 +411,8 @@ comportement observable doit être **identique**).
 | 20.2 P-2 — `anonymize()` non atomique → Users actifs orphelins d'une identité anonymisée (état irréparable par rejeu) | 🟠 | `DB::transaction()` autour du corps d'`anonymize()`/`softDeleteWithReason()` ; Unit existants (`anonymize_deactivates_linked_user…`) |
 | 20.2 P-1 — `--dry-run` impossible tant que `anonymize_enabled=false` (pas d'audit DPO pré-activation) | 🟠 | dry-run énumère malgré toggle OFF (simulation) ; Feature (`dry_run_lists_candidates_even_when_anonymize_disabled`) |
 | 20.2 P-8 — motif > 255 → `QueryException` MySQL non vue en SQLite | 🟡 | troncature `mb_substr(…,0,255)` ; Unit (`deactivate_truncates_overlong_reason…`) |
+| 20.2 P-4 — `sha256(sub)` nu → sub faible entropie ré-identifiable (anon. pseudonyme, pas anonyme RGPD) | 🟡 | HMAC-SHA256 clé dédiée `retention.hash_key` ; Unit (`hash_sub_is_salted_not_raw_sha256`) |
+| 20.2 M-2 / P-9 — guard 20.1 logge `external_sub` en clair (+ double-hash latent si anonymisé) | 🟡 | `SambaEduAuthGuard::subForLog()` hashe + gère préfixe `anon:` ; couvert par `AuthGuardInterfaceTest` + suite federated |
 
 ## Checklist rapide
 

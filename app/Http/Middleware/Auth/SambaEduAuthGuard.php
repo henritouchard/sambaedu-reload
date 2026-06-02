@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
+use App\Auth\Federated\ExternalIdentityLifecycleService;
 use App\Auth\Federated\Session\FederatedSession;
 use App\Models\ExternalIdentity;
 use App\Models\User;
@@ -27,8 +28,27 @@ class SambaEduAuthGuard implements AuthGuardInterface
 {
     public function __construct(
         private AuthenticationService $authService,
-        private UserRepository $userRepository
+        private UserRepository $userRepository,
+        private ExternalIdentityLifecycleService $federatedLifecycle
     ) {
+    }
+
+    /**
+     * Représentation NON ré-identifiable d'un `sub` fédéré pour les logs (M-2 /
+     * review 20.2 — doctrine AC16/D-5 : jamais de `sub` clair). Un `external_sub`
+     * déjà anonymisé (`anon:<hmac>`) est opaque → loggé tel quel sans re-hasher
+     * (évite le double hash latent P-9).
+     */
+    private function subForLog(?string $sub): ?string
+    {
+        if ($sub === null || $sub === '') {
+            return null;
+        }
+        if (str_starts_with($sub, ExternalIdentityLifecycleService::ANON_PREFIX)) {
+            return $sub;
+        }
+
+        return $this->federatedLifecycle->hashSub($sub);
     }
 
     /**
@@ -119,10 +139,10 @@ class SambaEduAuthGuard implements AuthGuardInterface
 
         if ($user === null) {
             // AC16 : ne logger que des claims non sensibles. On dérive le `sub`
-            // du login fédéré (`ext:<sub>`) plutôt que de logger le login (#6).
+            // du login fédéré (`ext:<sub>`) et on le HASHE (M-2 : jamais en clair).
             Log::channel('federated-auth')->warning('[SambaEduAuthGuard] federated.session.user_missing', [
                 'action_type' => 'federated.session.user_missing',
-                'sub' => str_starts_with($login, 'ext:') ? substr($login, 4) : null,
+                'sub_hash' => $this->subForLog(str_starts_with($login, 'ext:') ? substr($login, 4) : null),
             ]);
             $this->logoutFederated($request);
             return $this->unauthorized($request, 'Session fédérée invalide');
@@ -135,7 +155,7 @@ class SambaEduAuthGuard implements AuthGuardInterface
         if ($identity === null || !$identity->is_active) {
             Log::channel('federated-auth')->warning('[SambaEduAuthGuard] federated.session.deactivated', [
                 'action_type' => 'federated.session.deactivated',
-                'sub' => $identity?->external_sub,
+                'sub_hash' => $this->subForLog($identity?->external_sub),
             ]);
             $this->logoutFederated($request);
             return $this->unauthorized($request, 'Identité externe désactivée');

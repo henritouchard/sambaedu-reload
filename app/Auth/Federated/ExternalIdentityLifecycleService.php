@@ -257,12 +257,25 @@ class ExternalIdentityLifecycleService
     }
 
     /**
-     * Hash non réversible d'un `sub` (sha256). Sert à tracer/corréler sans
-     * exposer le `sub` clair ni aucune PII (AC16) + à forger le `external_sub`
-     * opaque de l'anonymisation (D-5).
+     * Hash non réversible d'un `sub` (HMAC-SHA256 — P-4). Sert à tracer/corréler
+     * sans exposer le `sub` clair ni aucune PII (AC16) + à forger le
+     * `external_sub` opaque de l'anonymisation (D-5).
+     *
+     * Le SEL (clé HMAC dédiée, cf. `federated_auth.retention.hash_key`) empêche
+     * la ré-identification d'un `sub` à faible entropie par bruteforce/rainbow —
+     * sans lui, `anon:<hash>` resterait pseudonyme (pas anonyme RGPD). La clé
+     * étant FIXE, le hash reste re-corrélable pour le forensique légal (20.4).
+     *
+     * @throws \RuntimeException si aucun secret n'est résolu (mauvaise config —
+     *         on refuse de hasher sans sel plutôt que d'affaiblir silencieusement).
      */
     public function hashSub(string $sub): string
     {
-        return hash('sha256', $sub);
+        $key = (string) config('federated_auth.retention.hash_key', '');
+        if ($key === '') {
+            throw new \RuntimeException('federated_auth.retention.hash_key est vide — impossible de hasher le sub sans sel (P-4).');
+        }
+
+        return hash_hmac('sha256', $sub, $key);
     }
 }
