@@ -125,7 +125,7 @@ VHOST_SER
 echo "[3/7] Création du vhost legacy (port $LEGACY_PORT, localhost only)"
 
 # Extraction du réseau local pour la directive preseed (Allow from ...)
-PRESEED_NETWORK=$(grep -oP 'Allow from \K\S+' "$BACKUP_DIR/sambaedu.conf.backup" 2>/dev/null | head -1)
+PRESEED_NETWORK=$(grep -oP 'Allow from \K\S+' "$BACKUP_DIR/sambaedu.conf.backup" 2>/dev/null | head -1 || echo "")
 PRESEED_NETWORK="${PRESEED_NETWORK:-172.19.1.0}"
 
 cat > "$APACHE_SITES_AVAILABLE/sambaedu-legacy.conf" << VHOST_LEGACY
