@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Ipxe;
 
+use App\Ipxe\Services\LinuxPostInstallTracker;
 use App\Models\MachineBootLog;
 use App\Models\Workstation;
 use PHPUnit\Framework\Attributes\Test;
@@ -54,7 +55,14 @@ class IpxeLinuxActionEndpointTest extends TestCase
 
         $ws->refresh();
         self::assertSame('linux', $ws->os);
-        self::assertStringContainsString('terminee', (string) $ws->status);
+        // Fix install-debian — `status` n'est plus écrasé (domaine fermé
+        // varchar(20)) ; l'issue d'install est portée par le marqueur one-shot
+        // `programmed_action` (consommé/effacé au prochain boot iPXE).
+        self::assertSame('active', $ws->status);
+        self::assertSame(
+            LinuxPostInstallTracker::ACTION_INSTALL_DONE,
+            $ws->programmed_action['type'] ?? null,
+        );
     }
 
     #[Test]
@@ -69,7 +77,13 @@ class IpxeLinuxActionEndpointTest extends TestCase
         ]);
 
         $ws->refresh();
-        self::assertStringContainsString('echouee (ret=99)', (string) $ws->status);
+        // `status` préservé ; l'échec est porté par le marqueur programmed_action.
+        self::assertSame('active', $ws->status);
+        self::assertSame(
+            LinuxPostInstallTracker::ACTION_INSTALL_FAILED,
+            $ws->programmed_action['type'] ?? null,
+        );
+        self::assertSame(99, $ws->programmed_action['ret'] ?? null);
     }
 
     #[Test]

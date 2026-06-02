@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Ipxe\Services;
 
 use App\Ipxe\Services\IpxeService;
+use App\Ipxe\Services\LinuxPostInstallTracker;
 use App\Models\MachineBootLog;
 use App\Models\Workstation;
 use Illuminate\Http\Request;
@@ -77,8 +78,11 @@ class IpxeServiceTest extends TestCase
         $body = (string) $response->getContent();
         self::assertStringStartsWith('#!ipxe', $body);
         self::assertStringContainsString('item --key 0 exit', $body);
-        // Pas d'item login (= poste connu only).
-        self::assertStringNotContainsString('item --key 1 login', $body);
+        // Le menu inconnu propose l'item admin (key 1 login) depuis la story
+        // 4.10 (parité boot.php:82 — l'admin reste accessible aux machines non
+        // enrôlées). Il se distingue du menu `known` par l'item de boot disque
+        // en `key 0 exit` (le menu known utilise `key 3 default`).
+        self::assertStringNotContainsString('item --key 3 default', $body);
     }
 
     #[Test]
@@ -119,6 +123,68 @@ class IpxeServiceTest extends TestCase
         self::assertStringContainsString('PC-SALLE-101', $body);
         self::assertStringContainsString('item --key 1 login', $body);
         self::assertStringContainsString('item --key 3 default', $body);
+    }
+
+    #[Test]
+    public function it_returns_install_done_screen_when_workstation_freshly_installed(): void
+    {
+        // Fix install-debian — marqueur one-shot posé par
+        // LinuxPostInstallTracker::record() en fin d'install Linux.
+        Workstation::create([
+            'name' => 'PC-NEUF-01',
+            'uuid' => '12345678-1234-1234-1234-123456789abc',
+            'mac' => 'aa:bb:cc:dd:ee:ff',
+            'status' => 'active',
+            'programmed_action' => ['type' => LinuxPostInstallTracker::ACTION_INSTALL_DONE, 'ret' => 0],
+        ]);
+
+        $response = $this->service->handleBoot($this->makeRequest([
+            'mac' => 'aa:bb:cc:dd:ee:ff',
+            'uuid' => '12345678-1234-1234-1234-123456789abc',
+            'product' => 'OptiPlex 3050',
+        ]));
+
+        $body = (string) $response->getContent();
+        self::assertStringStartsWith('#!ipxe', $body);
+        self::assertStringContainsString('Installation Linux terminee avec succes', $body);
+        self::assertStringContainsString('PC-NEUF-01', $body);
+        self::assertStringContainsString('sanboot', $body);
+        // Ce n'est PAS le menu known habituel.
+        self::assertStringNotContainsString('item --key 1 login', $body);
+    }
+
+    #[Test]
+    public function it_clears_the_install_done_marker_after_serving_screen_once(): void
+    {
+        $ws = Workstation::create([
+            'name' => 'PC-NEUF-01',
+            'uuid' => '12345678-1234-1234-1234-123456789abc',
+            'mac' => 'aa:bb:cc:dd:ee:ff',
+            'status' => 'active',
+            'programmed_action' => ['type' => LinuxPostInstallTracker::ACTION_INSTALL_DONE, 'ret' => 0],
+        ]);
+
+        // 1er boot → écran post-install + effacement du marqueur.
+        $first = (string) $this->service->handleBoot($this->makeRequest([
+            'mac' => 'aa:bb:cc:dd:ee:ff',
+            'uuid' => '12345678-1234-1234-1234-123456789abc',
+        ]))->getContent();
+        self::assertStringContainsString('Installation Linux terminee avec succes', $first);
+
+        $ws->refresh();
+        self::assertNotSame(
+            LinuxPostInstallTracker::ACTION_INSTALL_DONE,
+            $ws->programmed_action['type'] ?? null,
+            'le marqueur one-shot doit être effacé après le 1er affichage',
+        );
+
+        // 2e boot → menu known normal (plus l'écran post-install).
+        $second = (string) $this->service->handleBoot($this->makeRequest([
+            'mac' => 'aa:bb:cc:dd:ee:ff',
+            'uuid' => '12345678-1234-1234-1234-123456789abc',
+        ]))->getContent();
+        self::assertStringNotContainsString('Installation Linux terminee avec succes', $second);
+        self::assertStringContainsString('item --key 3 default', $second);
     }
 
     #[Test]

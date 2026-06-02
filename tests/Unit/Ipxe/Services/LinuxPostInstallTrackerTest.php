@@ -56,7 +56,13 @@ class LinuxPostInstallTrackerTest extends TestCase
 
         $ws->refresh();
         self::assertSame('linux', $ws->os);
-        self::assertSame(LinuxPostInstallTracker::STATUS_SUCCESS, $ws->status);
+        // Fix install-debian — `status` n'est PLUS écrasé (domaine fermé
+        // varchar(20) ; la phrase d'issue provoquait un SQLSTATE 22001).
+        self::assertSame('active', $ws->status);
+        // Marqueur one-shot posé pour l'écran post-install (consommé au boot).
+        self::assertIsArray($ws->programmed_action);
+        self::assertSame(LinuxPostInstallTracker::ACTION_INSTALL_DONE, $ws->programmed_action['type']);
+        self::assertSame(0, $ws->programmed_action['ret']);
         self::assertNotNull($ws->last_report_at);
         // Post-review #M4 — assertion déterministe sur le timestamp.
         self::assertTrue(
@@ -73,7 +79,11 @@ class LinuxPostInstallTrackerTest extends TestCase
 
         $ws->refresh();
         self::assertSame('linux', $ws->os);
-        self::assertStringContainsString('echouee (ret=42)', $ws->status);
+        // `status` lifecycle préservé ; l'échec est porté par le marqueur
+        // `programmed_action` (+ MachineBootLog success=false).
+        self::assertSame('active', $ws->status);
+        self::assertSame(LinuxPostInstallTracker::ACTION_INSTALL_FAILED, $ws->programmed_action['type']);
+        self::assertSame(42, $ws->programmed_action['ret']);
     }
 
     #[Test]
@@ -102,14 +112,17 @@ class LinuxPostInstallTrackerTest extends TestCase
     }
 
     #[Test]
-    public function it_status_is_ascii_strict(): void
+    public function it_does_not_overwrite_lifecycle_status(): void
     {
-        $ws = $this->makeWorkstation();
+        // Fix install-debian — le record post-install ne doit jamais toucher
+        // la colonne `status` (domaine fermé active|inactive|protected). Ici un
+        // poste `inactive` doit le rester après un record réussi.
+        $ws = $this->makeWorkstation('inactive');
         $this->tracker->record($ws, 0, 'PC-101', '');
         $ws->refresh();
 
-        // Status ne doit pas contenir d'accent fr (charset ASCII iso D8).
-        self::assertMatchesRegularExpression('/^[\x20-\x7E]+$/', (string) $ws->status);
+        self::assertSame('inactive', $ws->status);
+        self::assertSame('linux', $ws->os);
     }
 
     /* ------------------------------------------------------------------
@@ -117,9 +130,10 @@ class LinuxPostInstallTrackerTest extends TestCase
      *
      * Décision Henri : le legacy `flag_poste=1` ne bloque JAMAIS la
      * réinstall iPXE — il sert uniquement de protection anti-suppression
-     * DB. On respecte cette sémantique en restaurant `'protected'` après
-     * l'install (les autres effets de l'install — os, last_report_at,
-     * MachineBootLog — sont conservés).
+     * DB. Depuis le fix install-debian, `record()` ne touche plus du tout
+     * `status` : la préservation de `'protected'` (comme de toute valeur
+     * lifecycle) est donc native. Les autres effets de l'install — os,
+     * last_report_at, programmed_action, MachineBootLog — sont conservés.
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -130,7 +144,7 @@ class LinuxPostInstallTrackerTest extends TestCase
 
         $fresh = $ws->fresh();
         self::assertNotNull($fresh);
-        // Status `protected` restauré au lieu de `installation Linux terminee`.
+        // Status `protected` préservé (record() ne touche plus `status`).
         self::assertSame('protected', $fresh->status);
         // Les autres effets de l'install sont conservés (os + last_report_at).
         self::assertSame('linux', $fresh->os);
@@ -153,7 +167,7 @@ class LinuxPostInstallTrackerTest extends TestCase
 
         $fresh = $ws->fresh();
         self::assertNotNull($fresh);
-        // Status `protected` restauré au lieu de `installation Linux echouee (ret=1)`.
+        // Status `protected` préservé (record() ne touche plus `status`).
         self::assertSame('protected', $fresh->status);
         self::assertSame('linux', $fresh->os);
         self::assertNotNull($fresh->last_report_at);

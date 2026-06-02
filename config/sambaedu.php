@@ -352,7 +352,14 @@ return [
         'proxy_port' => env('SAMBAEDU_LINUX_PROXY_PORT', ''),
         'proxy_url' => env('SAMBAEDU_LINUX_PROXY_URL', ''),
         'token' => env('SAMBAEDU_LINUX_TOKEN', ''), // SECRET
-        'depot_type' => env('SAMBAEDU_LINUX_DEPOT_TYPE', 'main'),
+        // Canal de dépôt SambaEdu (`stable` | `se4XP` | `irundo`) injecté dans
+        // le preseed (`debian.cfg` → apt-setup/local0/repository).
+        // Défaut `null` VOLONTAIRE : laisse `LdapRecordServiceProvider` dériver
+        // la valeur de `sambaedu.conf` (`depot_type`) au bootstrap, avec repli
+        // `se4XP` (seul canal contenant winbind/ad-dc/linux-stations — `main`
+        // n'a aucun paquet sambaedu, `stable` n'a ni winbind ni ad-dc). Un
+        // `SAMBAEDU_LINUX_DEPOT_TYPE` explicite dans `.env` reste prioritaire.
+        'depot_type' => env('SAMBAEDU_LINUX_DEPOT_TYPE'),
         'commande_fin_preseed' => env('SAMBAEDU_LINUX_COMMANDE_FIN', ''),
         'disk' => env('SAMBAEDU_LINUX_DISK', ''), // optionnel — force /dev/sdX si défini
         'mask' => env('SAMBAEDU_LINUX_MASK', ''),

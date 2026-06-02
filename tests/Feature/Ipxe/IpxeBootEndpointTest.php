@@ -85,8 +85,10 @@ class IpxeBootEndpointTest extends TestCase
         $body = (string) $response->getContent();
         self::assertStringStartsWith('#!ipxe', $body);
         self::assertStringContainsString('item --key 0 exit', $body);
-        // Pas d'item login (poste inconnu only).
-        self::assertStringNotContainsString('item --key 1 login', $body);
+        // Le menu inconnu propose l'item admin (key 1 login) depuis la story
+        // 4.10 (parité boot.php:82) ; il se distingue du menu known par l'item
+        // de boot disque en `key 0 exit` (le known utilise `key 3 default`).
+        self::assertStringNotContainsString('item --key 3 default', $body);
     }
 
     #[Test]

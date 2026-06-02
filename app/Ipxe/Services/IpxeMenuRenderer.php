@@ -190,6 +190,37 @@ final class IpxeMenuRenderer
     }
 
     /**
+     * Fix install-debian — Rend l'écran one-shot « installation Linux
+     * terminée » (`resources/views/ipxe/menu/installed_linux.blade.php`).
+     *
+     * Affiché au 1er boot iPXE suivant une install Linux réussie (marqueur
+     * `programmed_action.type = 'linux_install_done'` posé par
+     * {@see LinuxPostInstallTracker::record()} et consommé/effacé par
+     * {@see IpxeService::handleBoot()}). Un compte à rebours (timeout
+     * `ipxe.linux.post_install_countdown_ms`, défaut 10 s) puis boot du disque
+     * local via {@see renderBootDiskFallback()}.
+     *
+     * @param  Workstation  $ws             Poste fraîchement installé.
+     * @param  string  $serverBaseUrl       URL de base du SE4FS (réservé pour
+     *                                       cohérence avec les autres render*).
+     */
+    public function renderLinuxInstallDone(Workstation $ws, string $serverBaseUrl): string
+    {
+        $countdownMs = (int) config('ipxe.linux.post_install_countdown_ms', 10000);
+
+        return $this->viewFactory->make('ipxe.menu.installed_linux', [
+            'shebang' => self::IPXE_SHEBANG,
+            'workstationName' => $this->sanitizeAscii((string) ($ws->name ?? 'unknown')),
+            'resolutionX' => (int) config('ipxe.menu.resolution_x', 1024),
+            'resolutionY' => (int) config('ipxe.menu.resolution_y', 768),
+            'resolutionPng' => $this->resolveBackgroundPng(),
+            'countdownMs' => $countdownMs,
+            'countdownSeconds' => (int) round($countdownMs / 1000),
+            'bootDiskFallback' => $this->renderBootDiskFallback(),
+        ])->render();
+    }
+
+    /**
      * Story 3.2 — AC4.2 — Rend le menu admin natif
      * (`resources/views/ipxe/menu/admin.blade.php`).
      *

@@ -284,6 +284,11 @@ return [
         // Timeout du menu installation-linux (10s — iso-legacy installation-linux.php:9).
         'menu_timeout_ms' => (int) env('IPXE_INSTALL_LINUX_TIMEOUT_MS', 10000),
 
+        // Fix install-debian — compte à rebours (ms) de l'écran one-shot
+        // « installation Linux terminée » affiché au 1er boot post-install,
+        // avant boot automatique du disque local (defaut 10s).
+        'post_install_countdown_ms' => (int) env('IPXE_LINUX_POST_INSTALL_COUNTDOWN_MS', 10000),
+
         // Background PNG affiché par la console iPXE du menu installation-linux.
         'background_png' => env('IPXE_INSTALL_LINUX_BG_PNG', '/ipxe/png/linux2.png'),
 

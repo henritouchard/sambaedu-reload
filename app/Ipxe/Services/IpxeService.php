@@ -161,6 +161,26 @@ final class IpxeService
             );
         }
 
+        // Fix install-debian — écran one-shot post-install Linux.
+        // `LinuxPostInstallTracker::record()` a posé un marqueur
+        // `programmed_action.type = 'linux_install_done'` à la fin de l'install
+        // (callback `/ipxe/linux/action`). Au 1er boot suivant, on affiche
+        // « installation terminée » + compte à rebours puis boot disque local,
+        // et on efface le marqueur pour que les boots ultérieurs repassent au
+        // menu `known` normal (sinon le poste réafficherait l'écran à chaque
+        // PXE boot).
+        if ($this->isFreshLinuxInstall($workstation)) {
+            $this->clearProgrammedAction($workstation);
+
+            return $this->safeRender(
+                fn (): string => $this->renderer->renderLinuxInstallDone($workstation, $baseUrl),
+                $ip,
+                $mac,
+                $uuid,
+                IpxeMenuKind::LinuxInstallDone,
+            );
+        }
+
         $action = $this->resolveProgrammedAction($workstation);
 
         return $this->safeRender(
@@ -170,6 +190,39 @@ final class IpxeService
             $uuid,
             IpxeMenuKind::Known,
         );
+    }
+
+    /**
+     * Fix install-debian — détecte le marqueur one-shot « install Linux
+     * terminée » posé par {@see LinuxPostInstallTracker::record()} dans
+     * `Workstation::programmed_action`.
+     */
+    private function isFreshLinuxInstall(Workstation $workstation): bool
+    {
+        $action = $workstation->programmed_action;
+
+        return is_array($action)
+            && ($action['type'] ?? null) === LinuxPostInstallTracker::ACTION_INSTALL_DONE;
+    }
+
+    /**
+     * Efface le marqueur `programmed_action` (one-shot) après avoir servi
+     * l'écran post-install. Best-effort : un échec DB ne doit pas empêcher le
+     * rendu de l'écran (au pire le poste le reverra au boot suivant).
+     */
+    private function clearProgrammedAction(Workstation $workstation): void
+    {
+        try {
+            $workstation->programmed_action = [];
+            $workstation->save();
+        } catch (Throwable $e) {
+            Log::channel($this->channel())->warning('ipxe.boot.clear_marker_failed', [
+                'action_type' => 'ipxe.boot.clear_marker_failed',
+                'workstation_id' => $workstation->id ?? null,
+                'exception_class' => $e::class,
+                'message' => substr($e->getMessage(), 0, 200),
+            ]);
+        }
     }
 
     /**

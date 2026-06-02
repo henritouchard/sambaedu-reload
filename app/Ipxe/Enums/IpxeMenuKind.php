@@ -65,4 +65,8 @@ enum IpxeMenuKind: string
     // Story 3.7 — AC2.1.
     case ClonezillaMenu = 'clonezilla_menu';
     case ClonezillaMenuHandshake = 'clonezilla_menu_handshake';
+
+    // Fix install-debian — écran one-shot « installation Linux terminée »
+    // (compte à rebours + boot disque local) affiché au 1er boot post-install.
+    case LinuxInstallDone = 'linux_install_done';
 }

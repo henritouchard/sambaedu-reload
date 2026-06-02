@@ -27,11 +27,13 @@ use Throwable;
  *      la Workstation via `WorkstationLocator::locate($uuid=...)`).
  *   2. Met à jour `Workstation::os = 'linux'` (parité legacy
  *      `preseed.php:84` `set_os($config, $machine['cn'], "linux")`).
- *   3. Met à jour `Workstation::status` selon `ret` :
- *      - `ret = 0` → `'installation Linux terminee'` (ASCII strict — pas
- *        d'accent fr car `Workstation::status` peut être réinjecté dans
- *        des cmdlines iPXE / UI mixed-charset).
- *      - `ret != 0` → `'installation Linux echouee (ret=<N>)'`.
+ *   3. Pose un marqueur one-shot dans `Workstation::programmed_action`
+ *      (`{type: linux_install_done|linux_install_failed, ret}`) consommé au
+ *      prochain boot iPXE par {@see \App\Ipxe\Services\IpxeService::handleBoot()}
+ *      pour afficher l'écran « installation terminée » + compte à rebours.
+ *      **NE touche PAS `status`** : domaine fermé `varchar(20)`
+ *      (`active|inactive|protected`) — y écrire la phrase d'issue provoquait
+ *      un SQLSTATE 22001 (value too long) → 500 sur le callback.
  *   4. `last_report_at = now()` (parité audit).
  *   5. Insert `MachineBootLog` `action='ipxe_linux_report'`.
  *   6. Log info `ipxe.linux.action.success` ou warning
@@ -52,15 +54,18 @@ use Throwable;
 final class LinuxPostInstallTracker
 {
     /**
-     * Status string lorsque l'install se termine avec succès (`ret=0`).
+     * Type de `programmed_action` posé lorsque l'install se termine avec
+     * succès (`ret=0`). Marqueur one-shot consommé par
+     * {@see \App\Ipxe\Services\IpxeService::handleBoot()} au prochain boot
+     * iPXE pour afficher l'écran « installation terminée » + compte à rebours.
      */
-    public const STATUS_SUCCESS = 'installation Linux terminee';
+    public const ACTION_INSTALL_DONE = 'linux_install_done';
 
     /**
-     * Format de status lorsque l'install échoue (`ret != 0`). Le placeholder
-     * `%d` est remplacé par la valeur `$ret` reçue.
+     * Type de `programmed_action` posé lorsque l'install échoue (`ret != 0`).
+     * Le code `ret` est conservé dans la clé `ret` du JSON.
      */
-    public const STATUS_FAILURE_FORMAT = 'installation Linux echouee (ret=%d)';
+    public const ACTION_INSTALL_FAILED = 'linux_install_failed';
 
     /**
      * Channel Monolog dédié (iso 3.1 D7).
@@ -87,38 +92,31 @@ final class LinuxPostInstallTracker
         string $name,
         string $ip = '',
     ): void {
-        // Post-review #M3 — décision Henri : préserver `status='protected'`
-        // post-install. Le legacy `flag_poste=1` ne bloque JAMAIS la
-        // réinstall iPXE (vérifié) ; il sert uniquement de protection
-        // anti-suppression DB lors des resync AD. On respecte cette
-        // sémantique en restaurant le status `protected` après l'install
-        // (au lieu de l'écraser silencieusement par
-        // `installation Linux terminee`).
-        $wasProtected = $workstation->status === 'protected';
-
+        // Fix install-debian — on NE touche PLUS `status`.
+        //
+        // `workstations.status` est un `varchar(20)` à domaine fermé
+        // (`active|inactive|protected` — cf. scopes du modèle). Y écrire une
+        // phrase d'issue d'install (`'installation Linux terminee'` = 27 c.)
+        // provoquait un SQLSTATE[22001] « value too long » → l'UPDATE entier
+        // échouait → HTTP 500 sur le callback `/ipxe/linux/action` (le poste
+        // n'était alors jamais marqué). L'issue d'install est désormais tracée
+        // via `os` + `last_report_at` + `MachineBootLog` (persistMachineBootLog
+        // ci-dessous). Comme on ne réécrit plus `status`, la sémantique
+        // « préserver `protected` post-install » (décision Henri #M3 : le
+        // legacy `flag_poste=1` protège de la suppression mais ne bloque pas
+        // la réinstall) est respectée nativement, sans hack de restauration.
         $workstation->os = 'linux';
-        $workstation->status = $ret === 0
-            ? self::STATUS_SUCCESS
-            : sprintf(self::STATUS_FAILURE_FORMAT, $ret);
         $workstation->last_report_at = Carbon::now();
 
-        if ($wasProtected) {
-            // Restore le marqueur de protection — l'install Linux a quand
-            // même eu lieu (os/last_report_at à jour) mais on ne perd pas
-            // la protection anti-suppression.
-            $workstation->status = 'protected';
-        }
+        // Marqueur one-shot consommé au prochain boot iPXE
+        // (IpxeService::handleBoot) : affiche l'écran « installation terminée »
+        // + compte à rebours puis boot disque local, et efface le marqueur.
+        $workstation->programmed_action = [
+            'type' => $ret === 0 ? self::ACTION_INSTALL_DONE : self::ACTION_INSTALL_FAILED,
+            'ret' => $ret,
+        ];
 
         $workstation->save();
-
-        if ($wasProtected) {
-            Log::channel($this->channel())->info('ipxe.linux.action.protected_preserved', [
-                'action_type' => 'ipxe.linux.action.protected_preserved',
-                'workstation_id' => $workstation->id ?? null,
-                'mac' => (string) ($workstation->mac ?? ''),
-                'ret' => $ret,
-            ]);
-        }
 
         $this->persistMachineBootLog($workstation, $ret, $ip);
 
