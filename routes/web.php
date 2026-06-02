@@ -1019,6 +1019,27 @@ Route::get('/ipxe/os/{path}', [\App\Ipxe\Http\Controllers\IpxeOsAssetController:
 
 /*
 |--------------------------------------------------------------------------
+| Story 20.1 — Login fédéré (Epic 20 — IdP externe de confiance)
+|--------------------------------------------------------------------------
+| Endpoint d'entrée du login fédéré : reçoit en POST un JWT signé RS256 émis
+| par un IdP externe de confiance (D-3 : POST binding façon SAML, jamais de
+| token en query string — fuite logs/historique/Referer). Le controller
+| vérifie le jeton, upsert l'identité externe, mappe le rôle (403 si inconnu),
+| ouvre une session SE5 standard et redirige dans l'app.
+|
+| Route WEB (ouvre une session → besoin du cookie de session). PUBLIQUE
+| (point d'entrée non authentifié — la preuve, c'est le JWT signé).
+|
+| ORDRE STRICT : cette route DOIT rester AVANT le catchall legacy ci-dessous.
+| Test garde-fou : `FederatedRouteTest::federated_callback_route_is_declared_before_catchall`.
+*/
+Route::post('/auth/federated/callback', [
+    \App\Auth\Federated\Http\FederatedLoginController::class,
+    'callback',
+])->name('auth.federated.callback');
+
+/*
+|--------------------------------------------------------------------------
 | Legacy PHP Fallback Route (DOIT ÊTRE EN DERNIER)
 |--------------------------------------------------------------------------
 | Cette route catch-all délègue au LegacyCatchallController :

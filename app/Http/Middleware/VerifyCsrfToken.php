@@ -19,6 +19,11 @@ class VerifyCsrfToken extends Middleware
         'annu2*',
         'api*',
         'api2*',
+        // Story 20.1 — login fédéré : POST cross-site auto-soumis par l'IdP
+        // externe (façon SAML POST binding). Pas de session SE5 préexistante,
+        // donc pas de token CSRF possible. La preuve d'authenticité est le JWT
+        // signé RS256 vérifié par le controller (anti-rejeu jti).
+        'auth/federated/*',
         'auth.php*',
         'barre.php*',
         'bbb*',

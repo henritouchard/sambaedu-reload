@@ -187,6 +187,28 @@ return [
             'replace_placeholders' => false,
         ],
 
+        // Story 20.1 — Channel dédié auth fédérée (Epic 20). Couvre la
+        // vérification du JWT fédéré (émetteur externe de confiance), le login
+        // fédéré et la réconciliation du guard de session pour les externes.
+        // Calqué sur `auth-v1`.
+        // ⚠️ SÉCURITÉ : ne jamais logger le JWT brut, ni les clés, ni de PII
+        // (login/name/email). Seuls des identifiants/claims non sensibles sont
+        // loggables : sub, jti, iss, role, code de rejet, préfixe de hash du
+        // jeton. Convention d'événements par `action_type` :
+        //  - federated.jwt.rejected
+        //  - federated.login.success / federated.login.role_unknown
+        //  - federated.session.deactivated
+        'federated-auth' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/federated-auth/federated-auth.log'),
+            'level' => env('FEDERATED_AUTH_LOG_LEVEL', 'info'),
+            'days' => (int) env('FEDERATED_AUTH_LOG_DAYS', 30),
+            // Channel sécurité-critique : pas de remplacement de placeholders
+            // (évite toute injection si une string contrôlable contenait des
+            // `{placeholder}`). Iso pattern `auth-v1`.
+            'replace_placeholders' => false,
+        ],
+
         // Story 16.12 — Channel dédié logs d'exécution scripts centralisés.
         // Couvre : ingestion endpoint, idempotence, archivage job daily,
         // rendu du wrapper. Pas de secret loggé (jamais d'access_token,

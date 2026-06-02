@@ -1783,6 +1783,32 @@ const DATASETS = {
           ] },
       ],
     },
+    {
+      num: 20, title: "Authentification fédérée d'utilisateurs externes", status: "in-progress",
+      summary: "<strong>Phase 2 — IdP externe de confiance (cadrée 2026-05-29, PM John + archi Winston claude-opus-4-8[1m]).</strong> Permet à un <strong>technicien externe</strong> (gérant plusieurs collèges, <strong>absent de l'AD</strong> local) de se connecter à une instance SE5 via un <strong>JWT signé émis par controlHub</strong> et d'obtenir une session avec un rôle. SER gagne un <strong>fournisseur d'identité externe de confiance générique</strong> — aucune notion de « central » dans le code SER (principe fondateur PRD, <code>expected_iss</code> en config). <strong>Découverte de cadrage</strong> : l'infra JWT existe déjà (Story 16-10, <code>firebase/php-jwt</code> + <code>WorkstationJwtVerifier</code> RS256/anti-rejeu) — Epic 20 <strong>calque</strong> cette infra pour un nouveau tier « utilisateur fédéré », ne réinvente pas. Réconciliation iso-legacy (<code>feedback_auth_iso_legacy</code>) : acteur humain+central (controlHub à jour), distinct de l'auth machine/poste (AD+SMB) → pas de violation « pas de Bearer per-host ». 5 stories cadrées. Artefacts : <code>epics.md §Epic 20</code>, <code>architecture.md §Authentification Fédérée</code>, <code>implementation-readiness-report-2026-05-29-epic20.md</code>.",
+      stories: [
+        { id: "20-1", title: "Login fédéré — validation du JWT controlHub & ouverture de session externe", status: "review",
+          note: "<strong>🟡 review 2026-06-01</strong> (dev-cycle complet : dev opus claude-opus-4-8[1m] → review sonnet APPROVE WITH CHANGES (7 pb) → 2e avis opus (M1/M2/M3 manqués) → corrections + 2 arbitrages Henri). Livré : <code>FederatedJwtVerifier</code>+<code>FederatedUserClaims</code> (RS256 pinné, rejet <code>alg:none</code>/confusion HS256, validation <code>iss</code>/<code>aud</code>(=instance, anti-rejeu inter-instance)/<code>tier</code>/<code>exp</code>/<code>nbf</code>/<code>iat</code>, leeway ±60s), anti-rejeu <code>jti</code> usage unique (cache <code>add()</code> + DB <code>federated_jwt_consumptions</code>), <code>config/federated_auth.php</code> (clés par <code>kid</code> + <code>role_map</code>), modèle+migration <code>external_identities</code> (softDeletes) + colonnes <code>users.source</code>/<code>users.external_identity_id</code>, <code>FederatedLoginController</code> + route POST <code>/auth/federated/callback</code> AVANT le catchall, <strong>réconciliation guard D-5</strong> (<code>SambaEduAuthGuard</code> saute le LDAP pour les sessions fédérées, valide <code>ExternalIdentity.is_active</code> — flux AD strictement inchangé), mapping rôle (unknown→403), channel log <code>federated-auth</code>. <strong>Corrections post-review</strong> : #1/Q1 révocation (refus 403 si identité <code>is_active=false</code>/soft-deletée, pas de réactivation silencieuse) ; M1/Q2 consommation <code>jti</code> déplacée APRÈS provisioning (un échec ne brûle plus le jeton) ; #4/Q3 POST binding strict (Bearer retiré) ; #3/#5/#6/#7 (aud-array mismatch, tests AC8, AC16 log, ttlFor). <strong>33/33 tests fédérés + 41/41 non-régression verts</strong>, lint 0 erreur. Doc review <code>codeReviews/20-1.md</code> <code>to-validate</code>. Runbook QA <code>docs/qa/domains/federated-login.md</code> (11 scénarios). 27 fichiers stagés (pas de commit — choix Henri). Reste à Henri : smoke E2E (vrai JWT controlHub → session) avant <code>done</code>.",
+          tasks: [
+            { title: "FederatedJwtVerifier + FederatedUserClaims (RS256 only, anti-rejeu jti, leeway)", status: "done" },
+            { title: "config/federated_auth.php (clés par kid, role_map, expected_iss/aud/tier)",       status: "done" },
+            { title: "Migration external_identities + colonnes users.source/external_identity_id",      status: "done" },
+            { title: "FederatedLoginController + route POST avant catchall (+ test archi)",             status: "done" },
+            { title: "Réconciliation guard de session D-5 (skip LDAP pour sessions fédérées)",          status: "done" },
+            { title: "Tests Unit (≥10) + Feature (≥8) + Architecture + non-régression",                 status: "done" },
+            { title: "Runbook QA docs/qa/domains/federated-login.md",                                   status: "done" },
+            { title: "Smoke E2E VM (vrai JWT controlHub → session) — Henri",                            status: "backlog" },
+          ] },
+        { id: "20-2", title: "Identité externe persistante (cycle de vie + RGPD)", status: "backlog",
+          note: "Cycle de vie complet de l'identité externe hors-AD : sémantique soft-delete avancée, réutilisation à la reconnexion, sync profil, <strong>base légale de rétention RGPD</strong> (IR-M5, Q-5 reportée). 20.1 livre le modèle minimal ; 20.2 le durcit." },
+        { id: "20-3", title: "Mapping rôle externe → rôle Spatie (outillage/UI)", status: "backlog",
+          note: "Outillage/UI du mapping rôle-externe → rôle Spatie + richesse du mapping. 20.1 fait la résolution minimale (config + rejet unknown→403). Adéquation du périmètre des rôles cibles (IR-M3, Q-1)." },
+        { id: "20-4", title: "Audit dénormalisé des actions externes", status: "backlog",
+          note: "Journalisation dénormalisée des actions externes (login + id externe + nom + rôle copiés dans le log, lisible après soft-delete de l'identité)." },
+        { id: "20-5", title: "Doc contrat d'intégration controlHub", status: "backlog",
+          note: "Doc de contrat d'intégration controlHub (claims JWT, mapping rôle, erreurs, audit, domain-neutral). À RÉDIGER APRÈS 20.1-20.4 (le contrat se dérive du code livré — mémoire <code>feedback_doc_follows_code</code>)." },
+      ],
+    },
   ],
 
   // ═══════════════════════════════════════════════════════════════════════════

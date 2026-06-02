@@ -3,9 +3,9 @@ stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8]
 lastStep: 8
 status: 'complete'
 completedAt: '2026-03-18'
-lastEditedAt: '2026-03-25'
-lastEditReason: 'Ajout section Cloisonnement Legacy (Epic 1bis)'
-inputDocuments: [_bmad-output/planning-artifacts/prd.md]
+lastEditedAt: '2026-06-01'
+lastEditReason: 'Ajout section Authentification Fédérée — Phase 2 IdP externe (Epic 20) — déplacée depuis worktree guacamole'
+inputDocuments: [_bmad-output/planning-artifacts/prd.md, _bmad-output/planning-artifacts/epics.md]
 workflowType: 'architecture'
 project_name: 'codebase'
 user_name: 'henri'
@@ -181,6 +181,7 @@ Routing standard Laravel (`web.php`). Les fichiers de vues suivent une conventio
 |---|---|---|
 | Auth MVP | Laravel + LDAP existant (`sambaedu.auth`) | Déjà en place et fonctionnel — pas touché |
 | Keycloak SSO | Sprint dédié Phase 2 | Critique — hors scope MVP, ne pas préparer de shims prématurés |
+| Auth fédérée externe (techniciens flotte) | JWT signé `RS256` + `FederatedIdpAuthGuard` (Epic 20) | IdP externe pluggable via `AuthGuardInterface` (matérialise la Phase 2 anticipée) — voir section dédiée « Authentification Fédérée » |
 | API irundoo↔SER | Sanctum tokens | Déjà en place |
 
 ### API & Communication
@@ -306,6 +307,83 @@ Handler global qui capture toutes les erreurs du système :
 **Dashboard :** module dans la page admin SER — affichage temps réel des erreurs pour faciliter le dev et le debug des shims. Complémentaire à GlitchTip (prévu à terme pour le monitoring production), pas nécessairement conservé.
 
 **Règle :** le error logger est un outil de dev, pas un système de monitoring production. Il est disponible dès le début de l'epic pour accompagner l'intégration progressive des modules.
+
+### Authentification Fédérée — Phase 2 IdP externe (Epic 20)
+
+> **Ajout 2026-05-29.** Cette section matérialise concrètement la « Phase 2 » d'auth externe que l'architecture avait déjà réservée (cf. *Auth & Sécurité* — « Keycloak SSO Phase 2 » — et *Décision ajoutée — Interface AuthGuard*). Elle ne crée pas de pilier d'auth : elle remplit l'emplacement `AuthGuardInterface` déjà dessiné en Story 1.4.
+
+**Besoin (Epic 20) :** authentifier un acteur humain **externe à l'AD d'un établissement** (technicien gérant plusieurs collèges) et l'autoriser selon un rôle, sans qu'il existe jamais dans l'AD local (cible : 1 AD = 1 collège).
+
+**Principe directeur — domain-neutral :** SER gagne un concept de **fournisseur d'identité externe de confiance** (IdP fédéré, configurable). controlHub en est *une* instance ; le code SER n'a **aucune notion de « central »** (principe fondateur PRD). Cohérent avec la décision Epic 19 (« le central ne porte plus de secret par étab »).
+
+#### Décisions tranchées (chat archi 2026-05-29)
+
+| # | Décision | Choix | Rationale |
+|---|---|---|---|
+| ① | Preuve d'identité | **Redirect JWT signé** (OIDC-léger) | controlHub redirige le navigateur vers SE5 avec un JWT signé ; SE5 vérifie via la **clé publique** de l'émetteur. Pattern déjà maîtrisé (token JSON signé porté-navigateur d'Epic 19 ; OIDC anticipé). **Zéro secret partagé par étab** — controlHub signe avec sa privée, SE5 ne détient que la publique. Technologie standard. |
+| ② | Positionnement du guard | **`FederatedIdpAuthGuard` distinct & générique** | Nouvelle implémentation de `AuthGuardInterface`, **coexistant** avec `SambaEduAuthGuard` (LDAP, reste le défaut) et un futur `KeycloakAuthGuard`. SSO Keycloak établissement (humains internes) et fédération flotte (externes hors-AD) sont deux besoins distincts — ne pas les fusionner. Réutilise l'abstraction, pas le pilier. |
+| ③ | Session & révocation | **Session SE5 standard + JWT d'entrée à TTL court** | Le JWT d'entrée expire vite (≈5-15 min) ; une fois la session ouverte, elle vit comme une session SE5 normale. Révocation **passive** (à expiration). Iso-existant, rien à construire. Révocation active côté SE5 (push controlHub) = évolution si le terrain l'exige. |
+
+#### Contrat d'autorisation — rôle, pas permissions
+
+Le JWT transporte un **nom de rôle** (l'intention), **jamais une liste de permissions** (le mécanisme). SE5 mappe `rôle-externe → rôle Spatie local` via une table configurable, puis réutilise les Policies/Gates Spatie existants (Epic 7).
+
+- **Pourquoi :** un contrat « permissions » fuit le catalogue interne (`SambaPermission`, 21 entrées) dans l'échange inter-systèmes et impose à l'IdP un catalogue **par version d'instance** — ingérable sur une flotte hétérogène. Le contrat « rôle » absorbe l'évolution des permissions du côté qui en détient le sens (SE5), sans redéploiement de l'IdP.
+- **Garde-fou :** un rôle asséré inconnu de l'instance → **refus explicite** (jamais de fallback vers un rôle privilégié).
+
+#### Composants
+
+```
+app/Auth/FederatedIdpAuthGuard.php          ← nouvelle implémentation de AuthGuardInterface (vérif JWT, mapping rôle)
+app/Models/ExternalIdentity.php             ← identité externe persistante hors-AD (soft-delete), distincte de LdapUser
+config/federated_auth.php                   ← émetteur(s) de confiance (clé publique, issuer), table rôle-externe → rôle Spatie
+```
+
+- **Identité externe persistante (Story 20.2)** : enregistrement local durable (id externe stable, login, nom, email), **jamais écrit dans l'AD**, **jamais hard-delete** (soft-delete). Reconnexions = même enregistrement (clé = id externe). L'identité persiste indépendamment de l'état d'accès → audit/RGPD.
+- **Audit dénormalisé (Story 20.4)** : les actions externes sont journalisées avec login + id externe + nom + rôle actif **copiés** dans le log (pas une simple FK), pour rester lisibles après soft-delete. Origine externe distinguée de l'AD locale.
+
+#### Flux d'authentification fédérée
+
+```
+1. Technicien authentifié sur controlHub demande l'accès à l'instance SE5 d'un collège.
+2. controlHub forge un JWT { sub: id externe, login, name, email, role, iss, exp(court) }
+   signé avec sa clé privée → redirige le navigateur vers l'endpoint de fédération SE5.
+3. SE5 (FederatedIdpAuthGuard) :
+   a. vérifie signature (clé publique de l'iss configuré), exp, iss → sinon 401, aucune session.
+   b. upsert ExternalIdentity (clé = sub) — hors-AD, soft-delete.
+   c. mappe role → rôle Spatie local (table config) ; rôle inconnu → 403 explicite.
+   d. ouvre une session SE5 standard. Auth LDAP/AD inchangée (iso-legacy).
+4. Le technicien administre l'instance selon son rôle (Policies/Gates Spatie existants).
+   Chaque action → log d'audit dénormalisé.
+```
+
+#### Sécurité du jeton JWT (durcissement IR 2026-05-29)
+
+> Exigences non négociables sur le code d'auth — à intégrer comme AC de Story 20.1. Issues des constats H1/M1/M4 du rapport de readiness Epic 20.
+
+**Vérification de signature (H1) :**
+
+- **Algorithme pinné = `RS256`** (asymétrique : controlHub signe avec sa privée, SE5 vérifie avec la publique). EdDSA/Ed25519 acceptable si la lib le supporte. *Boring tech, ubiquitaire en PHP.*
+- **Rejet explicite de `alg:none`** et de **tout algorithme symétrique** (`HS256`…) : la lib doit n'accepter QUE l'algo attendu, pour fermer la faille classique de confusion d'algorithme (un attaquant signant en HS256 avec la clé publique comme secret). Ne jamais déduire l'algo du header du jeton.
+- **Claims validés systématiquement** : `iss` (= émetteur configuré), **`aud` (= identifiant de CETTE instance SE5)**, `exp`, `nbf`, `iat`. Tout claim manquant ou non conforme → **401, aucune session**.
+- **Le claim `aud` lie le jeton à une instance précise** — un JWT forgé pour le collège A ne peut être rejoué sur le collège B (protection clé sur une flotte).
+
+**Distribution de la clé publique (M1) :**
+
+- **MVP : clé publique statique en config** (`config/federated_auth.php`, par `iss`). Pas de dépendance réseau à la connexion — *boring, robuste*.
+- **Rotation** : support de **plusieurs clés par `kid`** (clé identifiée dans le header JWT) pour permettre une rotation sans coupure (ancienne + nouvelle valides pendant le recouvrement).
+- **Évolution** : endpoint **JWKS** côté controlHub (récupération + cache des clés) — uniquement si la rotation manuelle par config devient un point de friction terrain. YAGNI au départ.
+
+**Anti-rejeu & horloge (M4) :**
+
+- **`jti` obligatoire** + cache courte durée (TTL = TTL du jeton) : un `jti` déjà vu est refusé → un jeton d'entrée n'est consommable **qu'une fois**.
+- **Tolérance d'horloge** : ±60 s sur `exp`/`nbf`/`iat` (le TTL court rend le clock-skew sensible).
+
+#### Frontières
+
+- **Hors scope SER** : la gestion côté controlHub des techniciens et de leurs rôles (côté irundoo) ; le périmètre multi-instance (quelles instances un JWT autorise = décision controlHub) ; l'auth machine/poste (reste iso-legacy AD+SMB, acteur distinct).
+- **Inchangé** : `LdapUserProvider`, `SambaEduAuthGuard`, l'auth AD du MVP. Le guard fédéré s'active sur l'endpoint de fédération uniquement ; LDAP reste le défaut.
+- **Stories** : 20.1 (guard), 20.2 (identité persistante), 20.3 (mapping rôle), 20.4 (audit dénormalisé), 20.5 (doc contrat — *après* implémentation).
 
 ---
 

@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
+use App\Auth\Federated\Session\FederatedSession;
+use App\Models\ExternalIdentity;
 use App\Models\User;
 use App\Services\AuthenticationService;
 use App\Services\UserSyncService;
@@ -44,6 +46,17 @@ class SambaEduAuthGuard implements AuthGuardInterface
 
         if (empty($login)) {
             return $this->unauthorized($request);
+        }
+
+        // Story 20.1 — D-5 : RÉCONCILIATION du guard pour les sessions
+        // FÉDÉRÉES. Un utilisateur externe n'existe PAS dans le LDAP — la
+        // vérification `findByLogin` ci-dessous le déconnecterait à chaque
+        // requête. Si la session est marquée « fédérée », on valide
+        // `ExternalIdentity.is_active` et on SAUTE entièrement la vérif LDAP.
+        // Le flux LDAP reste STRICTEMENT INCHANGÉ pour les sessions non
+        // fédérées (AC15).
+        if (FederatedSession::isFederated($request)) {
+            return $this->handleFederatedSession($request, $next, $login);
         }
 
         // Vérifier que l'utilisateur existe toujours dans LDAP via le repository
@@ -84,6 +97,72 @@ class SambaEduAuthGuard implements AuthGuardInterface
             Auth::login($eloquentUser);
         }
         return $next($request);
+    }
+
+    /**
+     * Story 20.1 — D-5. Traite une requête authentifiée dont la session est
+     * marquée « fédérée ».
+     *
+     * Au lieu de revérifier le LDAP (l'externe n'y existe pas), on :
+     *  1. recharge le `User` Eloquent fédéré ;
+     *  2. valide que l'`ExternalIdentity` liée est toujours active ;
+     *  3. réaligne le guard Laravel (`Auth::login`) si besoin.
+     *
+     * Si l'identité externe est désactivée → logout + 401 (révocation
+     * effective côté SE5, indépendante de l'AD).
+     */
+    private function handleFederatedSession(Request $request, Closure $next, string $login): Response
+    {
+        $user = User::where('login', $login)
+            ->where('source', 'federated')
+            ->first();
+
+        if ($user === null) {
+            // AC16 : ne logger que des claims non sensibles. On dérive le `sub`
+            // du login fédéré (`ext:<sub>`) plutôt que de logger le login (#6).
+            Log::channel('federated-auth')->warning('[SambaEduAuthGuard] federated.session.user_missing', [
+                'action_type' => 'federated.session.user_missing',
+                'sub' => str_starts_with($login, 'ext:') ? substr($login, 4) : null,
+            ]);
+            $this->logoutFederated($request);
+            return $this->unauthorized($request, 'Session fédérée invalide');
+        }
+
+        $identity = $user->external_identity_id !== null
+            ? ExternalIdentity::find($user->external_identity_id)
+            : null;
+
+        if ($identity === null || !$identity->is_active) {
+            Log::channel('federated-auth')->warning('[SambaEduAuthGuard] federated.session.deactivated', [
+                'action_type' => 'federated.session.deactivated',
+                'sub' => $identity?->external_sub,
+            ]);
+            $this->logoutFederated($request);
+            return $this->unauthorized($request, 'Identité externe désactivée');
+        }
+
+        // Expose l'utilisateur courant à la requête (parité flux LDAP).
+        $request->attributes->set('sambaedu_user', $user);
+        $request->attributes->set('sambaedu_login', $login);
+
+        // Réaligne le guard web sur l'utilisateur fédéré (les `can:*` doivent
+        // évaluer SES rôles Spatie). Aucune vérif LDAP n'est effectuée.
+        if (Auth::id() !== $user->id) {
+            Auth::login($user);
+        }
+
+        return $next($request);
+    }
+
+    /**
+     * Déconnecte proprement une session fédérée (purge marqueur + session
+     * legacy + guard Laravel).
+     */
+    private function logoutFederated(Request $request): void
+    {
+        FederatedSession::forget($request);
+        $this->authService->logout();
+        Auth::logout();
     }
 
     /**

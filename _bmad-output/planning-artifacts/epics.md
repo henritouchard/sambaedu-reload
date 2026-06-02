@@ -356,6 +356,17 @@ Chaque story est considérée terminée uniquement si :
 
 ---
 
+### Epic 20 — Authentification fédérée d'utilisateurs externes (techniciens flotte)
+**Statut :** 🟡 cadrage (2026-05-29) — stories esquissées, non engagées.
+*Permettre à un acteur humain **externe à l'AD d'un établissement** (typiquement un technicien gérant plusieurs collèges) de s'authentifier dans une instance SE5 et de l'administrer selon un rôle, **sans jamais exister dans l'AD local** (cohérent avec la cible 1 AD = 1 collège). SER gagne un concept générique de **fournisseur d'identité externe de confiance** (IdP fédéré configurable) — controlHub en est l'instance, mais **aucune notion de "central" n'entre dans le code SER** (principe fondateur du PRD maître : « Aucune notion de "central" ne doit exister dans SER »). Se branche sur l'abstraction `AuthGuardInterface` posée en Story 1.4 — c'est la « Phase 2 » pluggable anticipée (le stub `KeycloakAuthGuard` matérialise déjà l'intention d'un IdP externe).*
+**Décision de contrat structurante :** l'interface entre l'IdP externe et SER transporte un **nom de rôle** (l'intention), **jamais des permissions brutes** (le mécanisme). SER reste maître de la résolution rôle→permissions Spatie. *Pourquoi : un contrat « permissions » couple l'IdP au catalogue de permissions de SER et impose un suivi par version d'instance — ingérable sur une flotte hétérogène. Un contrat « rôle » absorbe l'évolution des permissions du côté qui en détient le sens (SER), sans redéploiement de l'IdP.*
+**Séparation identité / accès :** l'**identité externe** est persistée durablement hors-AD (jamais hard-delete) pour l'audit/RGPD ; l'**état d'accès** est piloté par l'IdP (à chaque connexion). Les deux axes sont distincts. Journaux d'audit **dénormalisés** (login + id externe + nom + rôle au moment de l'action) pour rester attribuables sans jointure vivante.
+**Distinct de l'auth machine :** ne touche pas l'auth machine/poste (acteur ≠ ; reste iso-legacy AD+SMB).
+**Prérequis :** Epic 7 (rôles/permissions Spatie), Epic 11 (modèle d'appel API central↔local généralisé), Story 1.4 (`AuthGuardInterface`).
+**Hors scope :** la gestion côté controlHub des techniciens externes et de leurs rôles (côté irundoo) ; l'auth machine/poste ; le périmètre multi-instance (quelles instances un jeton autorise = décision controlHub).
+
+---
+
 ## Epic 1 : Fondations & Observabilité
 
 *L'équipe de développement dispose d'une base PostgreSQL saine et d'outils pour piloter la migration progressive depuis le legacy SambaEdu.*
@@ -3524,6 +3535,134 @@ So que je sache en quelques secondes si le déploiement WPKG fonctionne sur l'en
 ### Story 18.5 : Déclenchement manuel de réplication
 
 *Cadrage haut niveau : action utilisateur qui force une synchro entre DCs (utile post-modification massive). Confirmation préalable, journalisation, traçabilité.*
+
+---
+
+## Epic 20 : Authentification fédérée d'utilisateurs externes (techniciens flotte)
+
+**Statut :** 🟡 cadrage — **créé le 2026-05-29** (chat de cadrage PM). Stories esquissées, non engagées.
+**Contexte étudié :** 2026-05-29 — revue de l'auth SE5 existante (LdapRecord + Spatie : 9 rôles, 21 permissions ; `AuthController`, `LdapUserProvider`, `AuthGuardInterface`/`SambaEduAuthGuard` + stub `KeycloakAuthGuard` de Story 1.4 ; enums `SambaRole`/`SambaPermission`) à la lumière du besoin « technicien flotte hors-AD ».
+
+*Permettre à un acteur humain externe à l'AD d'un établissement (technicien gérant plusieurs collèges) de s'authentifier dans une instance SE5 et de l'administrer selon un rôle, sans jamais exister dans l'AD local. SER gagne un **fournisseur d'identité externe de confiance** générique et configurable (controlHub en est l'instance) ; le code SER ne porte aucune notion de « central ». Se branche sur l'abstraction `AuthGuardInterface` (Story 1.4) — la « Phase 2 » pluggable anticipée.*
+
+> **Esprit :** epic de cadrage. Mémoire des décisions prises au chat PM du 2026-05-29. Les stories ne sont pas encore ready-for-dev — les points de décision ci-dessous se tranchent au démarrage.
+
+### Pourquoi pas un compte AD (décision Henri 2026-05-29)
+
+La cible long terme est **1 AD = 1 collège**. Un technicien gérant N collèges via N comptes AD = N créations / synchronisations / révocations / audits séparés à maintenir — une dette à rebours de la cible. L'utilisateur externe **ne doit jamais toucher l'AD d'un établissement**. D'où la fédération depuis un IdP externe.
+
+### Contrainte de conception transverse — domain-neutral (principe PRD maître)
+
+Le PRD maître impose : *« Aucune notion de "central" ne doit exister dans SER. »* Cet epic le respecte en exposant une capacité **générique** : un **IdP externe configurable** (URL/clé/émetteur en config), dont controlHub est *une* instance. SER valide « l'émetteur configuré X », jamais « le central ». Le mapping d'autorisation est « rôle asséré par l'IdP → rôle Spatie local », pas « rôle controlHub ». Même esprit que le stub `KeycloakAuthGuard` de Story 1.4 (auth pluggable anticipée).
+
+### Décision de contrat — rôle, pas permissions (décision Henri 2026-05-29)
+
+Le jeton/contrat entre l'IdP et SER transporte un **nom de rôle** (l'intention), **jamais une liste de permissions** (le mécanisme).
+
+- **Pourquoi :** un contrat « permissions » fuit le catalogue interne de SER (les 21 `SambaPermission`) dans l'échange inter-systèmes, force l'IdP à suivre l'évolution des permissions et à gérer un catalogue **par version d'instance** — ingérable sur une flotte hétérogène. Un contrat « rôle » est une étiquette stable : chaque instance résout le rôle vers *ses* permissions, et l'ajout/renommage d'une permission est absorbé **dans SER** sans redéploiement de l'IdP.
+- **Conséquence :** si un besoin de finesse émerge → ajouter un rôle, ne pas passer aux permissions brutes. Les rôles `technicien` / `referent-numerique` existent déjà (`SambaRole`).
+
+### Séparation identité / accès (décision Henri 2026-05-29)
+
+Deux axes distincts, à ne pas confondre :
+
+1. **Identité externe** — enregistrement local durable (le « qui »), **jamais hard-delete**, pour que tout log reste attribuable. Exigence audit/RGPD non négociable en contexte éducation.
+2. **Accès** — état actif/révoqué piloté par l'IdP à la connexion. N'oblige pas à laisser l'accès ouvert en permanence.
+
+Filet de sécurité : **logs d'audit dénormalisés** (login + id externe + nom + rôle au moment de l'action) — un journal ne doit jamais dépendre d'une jointure vivante.
+
+### Story 20.1 : Guard d'authentification fédérée (provider externe configurable)
+
+As a **développeur / architecte**,
+I want un guard/provider validant une identité assérée par un IdP externe de confiance (jeton signé), à côté de `LdapUserProvider` et branché sur l'abstraction `AuthGuardInterface`,
+So that une identité humaine hors-AD puisse être authentifiée dans SER sans introduire de notion de « central ».
+
+**Acceptance Criteria :**
+
+**Given** un jeton signé par l'IdP externe configuré, valide et non expiré
+**When** l'utilisateur arrive sur l'endpoint de fédération SE5
+**Then** SER vérifie signature, expiration et émetteur, puis ouvre une session
+**And** un jeton invalide / expiré / d'émetteur inconnu échoue de façon explicite (401, aucune session) — pas de comportement silencieux
+**And** l'auth AD existante (`LdapUserProvider`, `SambaEduAuthGuard`) reste strictement inchangée (iso-legacy)
+**And** l'émetteur de confiance est identifié **par configuration** (URL/clé/émetteur), zéro « controlHub »/« central » codé en dur dans SER
+**And** le mécanisme réutilise le canal de confiance API central↔local existant plutôt que d'introduire un nouveau secret par étab
+
+### Story 20.2 : Identité externe persistante (hors-AD)
+
+As a **DPO / responsable**,
+I want que chaque utilisateur externe fédéré soit matérialisé par un enregistrement local durable (id externe, login, nom, email), distinct des `LdapUser`, jamais hard-delete,
+So that toute action reste attribuable à une personne identifiable même après révocation de son accès.
+
+**Acceptance Criteria :**
+
+**Given** un utilisateur externe se connecte pour la première fois via la fédération
+**When** l'authentification réussit (Story 20.1)
+**Then** un enregistrement d'identité externe est créé localement (id externe stable, login, nom, email), distinct des `LdapUser`/AD
+**And** cet enregistrement n'est jamais écrit dans l'AD d'un établissement
+**And** la suppression est un soft-delete — l'identité reste résolvable pour l'historique
+**And** les reconnexions ultérieures réutilisent le même enregistrement (clé = id externe stable)
+**And** l'identité persiste indépendamment de l'état d'accès (un accès révoqué ne supprime pas l'identité)
+
+### Story 20.3 : Mapping rôle externe → rôle Spatie
+
+As a **responsable produit**,
+I want que le rôle asséré par l'IdP externe à la connexion soit mappé vers un rôle Spatie local via une table de correspondance configurable,
+So that l'autorisation soit pilotée par une intention stable (le rôle), SER restant maître de la résolution rôle→permissions sans couplage au catalogue de permissions ni au versioning d'instance.
+
+**Acceptance Criteria :**
+
+**Given** le jeton porte un nom de rôle (ex. `technicien`)
+**When** la session externe est ouverte
+**Then** SER applique le rôle Spatie correspondant pour la durée de la session, selon une table `rôle-externe → rôle-local` configurable
+**And** si le rôle asséré est inconnu de l'instance, l'accès est refusé explicitement — jamais de fallback silencieux vers un rôle privilégié
+**And** le contrat transporte un **nom de rôle**, jamais une liste de permissions
+**And** la portée de l'utilisateur externe est l'**instance** (admin selon son rôle), sans scope par classe (contrairement à prof/eleve-admin, Story 7.2)
+**And** l'autorisation effective réutilise les Policies/Gates Spatie existants, sans duplication
+
+### Story 20.4 : Logs d'audit dénormalisés des actions externes
+
+As a **DPO / responsable**,
+I want que les actions réalisées par un utilisateur externe soient journalisées avec l'identité dénormalisée (login + id externe + nom + rôle actif, au moment de l'action),
+So that le journal reste lisible et attribuable même si l'enregistrement d'identité évolue ou est purgé, sans dépendre d'une jointure vivante.
+
+**Acceptance Criteria :**
+
+**Given** un utilisateur externe authentifié réalise une action administrative
+**When** l'action est journalisée
+**Then** le log contient login, id externe, nom, rôle actif et horodatage — **copiés** dans le log (dénormalisés), pas seulement référencés par clé étrangère
+**And** le journal distingue une action d'origine externe d'une action AD locale
+**And** le journal reste lisible même après soft-delete de l'identité externe correspondante
+**And** le mécanisme réutilise l'audit SER existant s'il existe, sinon en pose les bases
+
+### Story 20.5 : Contrat d'intégration controlHub (doc)
+
+*(Rédigée **après** Stories 20.1-20.4 — le contrat se dérive du code livré, pas l'inverse.)*
+
+As a **développeur controlHub**,
+I want un document décrivant comment controlHub fédère un technicien externe vers une instance SE5,
+So that l'intégration côté central se fasse sans dupliquer la logique d'auth SER ni partager de secret par établissement.
+
+**Acceptance Criteria :**
+
+**Given** les Stories 20.1-20.4 sont livrées
+**When** je rédige le document d'intégration
+**Then** un fichier est créé dans `_bmad-output/planning-artifacts/` (p.ex. `handoff-federated-login-controlhub.md`) décrivant le contrat de jeton **réellement implémenté**
+**And** il précise les claims (id externe, login, nom, email, **rôle**, émetteur, expiration, signature), l'endpoint de fédération, le mécanisme de confiance (réutilisation du canal API central↔local), la table de mapping de rôle et les erreurs normalisées (rôle inconnu, jeton expiré, émetteur inconnu)
+**And** il documente les exigences d'audit (identité dénormalisée) et le fait que **SER reste domain-neutral** (IdP configurable, pas de notion de « central »)
+**And** il est rédigé après l'implémentation et reflète ses limites observées
+
+### Points de décision à trancher au démarrage (pas maintenant)
+
+1. **Mécanisme de preuve d'identité** : redirect signé type OIDC-léger (JWT porté par le navigateur du technicien) **vs** handshake serveur-à-serveur (controlHub appelle SE5 pour ouvrir une session) **vs** réutilisation directe du canal Bearer `ControlHubAuth` existant. À benchmarker.
+2. **Lien avec `KeycloakAuthGuard` (stub Story 1.4)** : cet epic est-il LA matérialisation de la « Phase 2 » pluggable, ou un guard distinct coexistant ?
+3. **Modèle de session & révocation** : session SE5 standard **vs** jeton court renouvelé par l'IdP (TTL court = révocation passive **vs** liste de révocation active côté SE5).
+
+### Prérequis & références
+
+- **Prérequis** : Epic 7 (framework rôles/permissions Spatie en place pour le mapping de Story 20.3), Epic 11 (modèle d'appel API central↔local généralisé), Story 1.4 (`AuthGuardInterface` + stub `KeycloakAuthGuard`).
+- **Hors scope** : la gestion côté controlHub des techniciens externes et de leurs rôles (côté irundoo) ; l'auth machine/poste (reste iso-legacy AD+SMB — acteur distinct) ; le périmètre multi-instance (quelles instances un jeton autorise = décision controlHub).
+- **Code SE5 de référence** : `app/Providers/LdapUserProvider.php`, `app/Http/Controllers/AuthController.php`, `app/Contracts/Auth/AuthGuardInterface.php` + `app/Auth/` (stub Keycloak), `app/Enums/SambaRole.php` / `SambaPermission.php`, `app/Http/Middleware/ControlHubAuth.php`, `config/auth.php`.
+- **Mémoire de cadrage** : décisions du chat PM 2026-05-29 (fédération, contrat rôle, identité ≠ accès, audit dénormalisé).
 
 ---
 

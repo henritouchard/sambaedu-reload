@@ -10,6 +10,7 @@ Checklist par domaine métier. À dérouler avant une mise en production importa
 - [ ] [wpkg-deploy](domains/wpkg-deploy.md) — Pipeline déploiement WPKG (logs, migrations, atomic write, chemins config) _(Story 15.1)_
 - [ ] [network](domains/network.md) — Réservations DHCP, baux actifs, import CSV, migration legacy via `/sync-from-ad` _(Story 8.1)_
 - [ ] [auth](domains/auth.md) — Plateforme HTTPS + JWT v1 poste↔serveur local (PKI locale, enrollment, refresh, révocation) _(Story 16.10)_
+- [ ] [federated-login](domains/federated-login.md) — Login fédéré d'utilisateurs externes hors-AD (JWT signé RS256, IdP externe de confiance, anti-rejeu jti, mapping rôle, réconciliation guard) _(Story 20.1)_
 - [ ] [ipxe](domains/ipxe.md) — Boot iPXE, résolution MAC/UUID, fondations Services Laravel _(Stories 3.1+)_
 - [ ] [users](domains/users.md) — Listing /users, filtres audit (quota dépassé, mdp par défaut), synchro password_changed_at AD _(Story 14.4)_
 - [ ] [ad-sync](domains/ad-sync.md) — Synchronisation AD observer-driven (Workstation, WorkstationGroup, …) + rename modrdn préservant objectGUID/netbootGUID _(Story 4.9)_
