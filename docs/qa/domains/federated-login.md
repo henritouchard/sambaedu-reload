@@ -505,6 +505,154 @@ création à la volée (un rôle absent → 403 au lieu d'être créé).
 
 ---
 
+## Story 20.4 — Audit dénormalisé des actions externes
+
+> **Append-only.** Ne modifie aucun scénario 20.1/20.2/20.3 ci-dessus. Couvre le
+> **journal d'audit dénormalisé** des actions d'administration réalisées par un
+> acteur fédéré : `actor_login` + `actor_external_sub` + `actor_name` +
+> `actor_role` **copiés** dans chaque ligne `external_action_audit_logs` au
+> moment de l'action (jamais une simple FK). Raison d'être : le journal reste
+> **lisible et attribuable** même après soft-delete ET anonymisation de
+> l'`ExternalIdentity` (Story 20.2).
+
+### Modèle d'audit (rappel implémentation)
+
+- **Table** `external_action_audit_logs` (Eloquent `App\Models\ExternalActionAuditLog`,
+  calqué sur `QuotaAuditLog` : `record()` statique, `timestamps=false` +
+  `occurred_at` manuel, scopes `scopeFederated`/`scopeForActor`, indexée
+  `actor_login`/`actor_external_sub`/`source`/`occurred_at`).
+- **Capture** = middleware `App\Http\Middleware\Auth\AuditExternalAction`,
+  appliqué **après** `sambaedu.auth` (guard de session) sur les groupes de routes
+  `app` et `admin`. N'écrit que si `FederatedSession::isFederated()` (discrimine
+  externe vs AD — AC2). Périmètre (D-2/Q-1) : **mutations** (POST/PUT/PATCH/DELETE)
+  **ET** `GET` sur route sensible (allowlist `federated_auth.audit.sensitive_get_routes` :
+  `app.users`, `app.user.show`, `app.users.groups.edit`, `app.users.*`).
+- **Best-effort / fail-soft** (D-3) : l'écriture est dans un `try/catch` ; un
+  échec ne dégrade **jamais** la requête métier et est tracé sans PII
+  (`federated.audit.write_failed` — **classe d'exception uniquement**, jamais le
+  message DB qui ré-imprimerait les valeurs liées).
+
+### Section 10 — Audit dénormalisé des actions externes
+
+#### Scénario 20.4-1 — Action mutante fédérée → ligne dénormalisée
+
+**Pré-requis** : session fédérée active (technicien externe loggué), rôle Spatie
+`technicien` actif.
+
+**Action** : POST sur une route applicative mutante (ex. mise à jour de quota
+`/app/users/{login}/quota`).
+
+**Attendu** : **une** ligne `external_action_audit_logs` écrite, contenant
+`actor_login=ext:<sub>`, `actor_external_sub=<sub clair>`, `actor_name`,
+`actor_role=technicien`, `source=federated`, `http_method=POST`, `status_code`,
+`occurred_at`, + FK best-effort `external_identity_id`/`user_id`. Toutes les
+valeurs d'identité sont **copiées** (pas une jointure).
+
+#### Scénario 20.4-2 — Lecture du journal après anonymisation (raison d'être)
+
+**Action** : après l'action 20.4-1, déclencher l'anonymisation de l'identité
+(`federated:purge-identities` ou `anonymize()`) → PII vidée, `external_sub` →
+`anon:<hmac>`, identité soft-deletée.
+
+**Attendu** : la ligne d'audit reste **intacte et lisible** : `actor_login`,
+`actor_external_sub` (sub clair d'origine), `actor_name`, `actor_role` inchangés.
+La lisibilité ne dépend d'**aucune jointure vivante** (AC3).
+
+#### Scénario 20.4-3 — Action AD locale → non journalisée (AC2)
+
+**Action** : un administrateur **AD/LDAP normal** (session non fédérée) réalise
+une mutation (ex. POST quota).
+
+**Attendu** : **aucune** ligne `external_action_audit_logs`. Le marqueur
+`FederatedSession` est absent → le middleware ne touche rien. Flux LDAP
+strictement inchangé.
+
+#### Scénario 20.4-4 — Fail-soft : audit KO ≠ requête KO (AC5)
+
+**Action** : provoquer un échec d'écriture d'audit (panne DB / contrainte) lors
+d'une action fédérée mutante.
+
+**Attendu** : la requête métier **réussit quand même** (réponse non dégradée),
+et l'échec est tracé dans `federated-auth` (`action_type=federated.audit.write_failed`)
+**sans PII** (classe d'exception, pas le message DB).
+
+#### Scénario 20.4-5 — GET non sensible → non journalisé (AC4)
+
+**Action** : un externe loggué fait un `GET` sur une route **non sensible**
+(ex. `/app/dashboard`).
+
+**Attendu** : **aucune** ligne d'audit (bruit/volumétrie évités).
+
+#### Scénario 20.4-6 — GET sensible (PII élève) → journalisé (AC4)
+
+**Action** : un externe loggué fait un `GET` sur une route **sensible** de
+l'allowlist (ex. `/app/users/{login}` → `app.user.show`).
+
+**Attendu** : **une** ligne d'audit dénormalisée, `http_method=GET`.
+
+#### Scénario 20.4-7 — Cohérence du rôle dénormalisé (AC6)
+
+**Action** : changer le rôle Spatie actif de l'externe (ex. `technicien` →
+`referent-numerique`), puis réaliser une action.
+
+**Attendu** : `actor_role` de la nouvelle ligne reflète **exactement** le rôle
+Spatie actif (source de vérité `getRoleNames()`, cohérence 20.3).
+
+### Section 11 — Non-régression 20.1 / 20.2 / 20.3
+
+#### Scénario 20.4-8 — Suites 20.1 + 20.2 + 20.3 restent vertes
+
+**Action** : rejouer **20.1-1 → 20.1-11**, **20.2-1 → 20.2-8**, **20.3-1 →
+20.3-6**.
+
+**Attendu** : aucun changement de comportement. Le middleware d'audit s'exécute
+**après** le guard D-5 et ne modifie ni le login, ni la réconciliation du guard,
+ni le flux AD. (Host : `FederatedLoginEndpointTest` + `Unit/Auth/Federated/*` +
+`AuthGuardInterfaceTest` + suites Console purge = verts.)
+
+### Limites connues 20.4
+
+> Limites **assumées** du périmètre 20.4, à surveiller si les besoins
+> d'imputabilité évoluent. Ne remettent pas en cause les scénarios ci-dessus.
+
+- **(P-1 — RÉSOLU post-review)** ~~Erreur 500 non catchée → action non auditée.~~
+  Le middleware est désormais **terminable** : l'audit est écrit dans
+  `terminate(Request, Response)` (après l'envoi de la réponse). Quand la requête
+  métier lève une exception non catchée, le handler d'exceptions la convertit en
+  **réponse 500 AVANT** que `terminate()` ne soit appelé → l'action en erreur
+  **est auditée** (`status_code=500`). Couvert par le test
+  `mutating_federated_action_returning_500_is_audited`. Ce n'est donc plus une
+  limite.
+- **Note (perf)** : l'audit en `terminate()` s'exécute **après** l'envoi de la
+  réponse au client → **zéro latence perçue** sur le TTFB (l'INSERT sort de la
+  pile de réponse — résout aussi P-2).
+- **(M-2) Retrait de rôle en cours de session → `actor_role=null`.** Si un admin
+  retire le rôle d'un externe pendant sa session (`syncRoles([])`), une action
+  ultérieure est auditée avec `actor_role=null` (lecture `getRoleNames()->first()`
+  à l'instant de l'action). L'imputabilité **login / sub / nom demeure** intacte
+  dans la ligne dénormalisée ; seul le **rôle** est perdu pour cette action.
+- **(LIMITE MAJEURE — canal Livewire NON audité, suivi Story 20.6).** Le projet
+  est **Livewire-first** : la majorité des **mutations admin natives** (CRUD
+  utilisateur, reset mot de passe, attribution de droits via `/rights-management`,
+  etc.) sont des **méthodes de composants Livewire** qui POSTent sur l'endpoint
+  unique `livewire/update`, **hors** des groupes de routes `app`/`admin` où le
+  middleware `federated.audit` est branché. **Conséquence : ces mutations ne sont
+  PAS journalisées par 20.4.** Ce que 20.4 couvre : (a) l'**accès aux écrans à PII
+  élève** via les `GET` sensibles (allowlist — objectif central de l'epic/Q-1), et
+  (b) les **mutations passant par une route HTTP classique** (quota, mass-action
+  parc, import CSV, change-password). `livewire/update` n'est **volontairement
+  pas** branché sur le middleware : un audit HTTP de cet endpoint produirait des
+  lignes `POST /livewire/update` **sans libellé d'action exploitable** (chaque
+  interaction Livewire, même non mutante, est un POST) → bruit > signal. Un audit
+  **signifiant** des actions Livewire nécessite une instrumentation au niveau du
+  **cycle de vie Livewire** (composant + méthode + arguments) → objet de la
+  **Story 20.6 « Audit des actions Livewire fédérées »** (backlog). Le test
+  d'architecture `FederatedAuditCoverageTest` trace explicitement `livewire/update`
+  (et `api/v1/health/detailed`, lecture seule) en allowlist d'exceptions : toute
+  **nouvelle** route `sambaedu.auth` non auditée fera échouer ce test.
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **20.1-7 / 20.1-9** couvrent la **régression critique D-5** : le guard de
@@ -537,6 +685,12 @@ création à la volée (un rôle absent → 403 au lieu d'être créé).
 | 20.3 — IdP asserte une casse/espaces différents → faux 403 | 🟡 | Normalisation `trim`+`strtolower` (D-3) ; Scénario 20.3-2 + Unit mapper (`resolution_is_case_insensitive`, `resolution_trims_surrounding_whitespace`) |
 | 20.3 — un nom asséré arbitraire (`*`/`default`) capture-all (régression invariant 20.1) | 🟠 | Aucun wildcard/fallback : seule l'existence en base résout ; Unit (`no_wildcard_or_default_fallback`) |
 | 20.3 — `super-admin` non bloqué (modèle ouvert assumé, D-5) | 🟡 | Comportement voulu : super-admin existant → appliqué ; Scénario 20.3-4 + Unit (`super_admin_resolves_when_it_exists`) + Feature (`super_admin_is_applied_when_it_exists`) |
+| 20.4 — log par FK seule deviendrait illisible après anonymisation (D-5, raison d'être) | 🟠 | Dénormalisation : 4 colonnes `actor_*` copiées au moment de l'action ; Scénario 20.4-2 + Feature (`log_remains_readable_after_anonymisation_of_identity`, `…after_soft_delete…`) |
+| 20.4 — action AD locale journalisée par erreur (fuite de périmètre, AC2) | 🟠 | Garde `FederatedSession::isFederated()` ; Scénario 20.4-3 + Feature (`non_federated_session_writes_nothing`) |
+| 20.4 — `$e->getMessage()` DB ré-imprime le SQL avec valeurs liées (login/nom = PII dans Monolog, AC7) | 🟠 | On logge la **classe d'exception** uniquement, jamais le message ; Scénario 20.4-4 + Feature (`audit_write_failure_does_not_break_request_and_is_traced` assert no PII) |
+| 20.4 — audit bloquant casserait l'action si DB KO (disponibilité, D-3) | 🟠 | Best-effort `try/catch` ; requête réussit malgré audit KO ; Feature (`audit_write_failure_does_not_break_request_and_is_traced`) |
+| 20.4 — volumétrie des GET non sensibles (bruit) | 🟡 | Allowlist `sensitive_get_routes` : GET non listé → rien ; Scénarios 20.4-5/20.4-6 + Feature (`non_sensitive_get_…writes_nothing`, `sensitive_get_…writes_log`) |
+| 20.4 — `actor_role` divergent du rôle Spatie actif (AC6) | 🟡 | Lecture `getRoleNames()->first()` à l'instant de l'action ; Scénario 20.4-7 + Feature (`denormalised_role_reflects_active_spatie_role`) |
 
 ## Checklist rapide
 
@@ -565,4 +719,12 @@ création à la volée (un rôle absent → 403 au lieu d'être créé).
 - [ ] 20.3-4 `super-admin` existant → appliqué (modèle ouvert D-5, pas de blocage)
 - [ ] 20.3-5 Portée = instance, pas de scope par classe (AC8)
 - [ ] 20.3-6 Suites 20.1 + 20.2 restent vertes (non-régression stricte)
-- [ ] Aucun JWT brut / clé / PII dans le channel `federated-auth` (y c. logs de purge)
+- [ ] 20.4-1 Action mutante fédérée → ligne dénormalisée (login+sub+nom+rôle+method+status copiés)
+- [ ] 20.4-2 Journal lisible après soft-delete ET anonymisation de l'identité (raison d'être)
+- [ ] 20.4-3 Action AD locale (non fédérée) → aucune ligne d'audit (AC2)
+- [ ] 20.4-4 Audit KO (DB) → requête métier OK + trace `federated.audit.write_failed` sans PII
+- [ ] 20.4-5 GET non sensible fédéré → aucune ligne
+- [ ] 20.4-6 GET sensible (PII élève, allowlist) fédéré → une ligne `http_method=GET`
+- [ ] 20.4-7 `actor_role` = rôle Spatie actif (cohérence 20.3)
+- [ ] 20.4-8 Suites 20.1 + 20.2 + 20.3 restent vertes (non-régression stricte)
+- [ ] Aucun JWT brut / clé / PII dans le channel `federated-auth` (y c. logs de purge **et** audit KO)

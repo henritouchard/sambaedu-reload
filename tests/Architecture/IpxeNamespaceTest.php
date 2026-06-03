@@ -1051,7 +1051,16 @@ class IpxeNamespaceTest extends TestCase
         // 3) Elle est dans le groupe `admin` (parité sync-from-ad / settings).
         // On vérifie que le contenu autour mentionne `prefix('admin')` ET
         // `sambaedu.auth + sambaedu.admin`.
-        $adminGroupPos = strpos($content, "prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin']");
+        // Story 20.4 — l'ouverture du groupe admin peut désormais porter des
+        // middlewares additionnels après `sambaedu.admin` (ex. `federated.audit`).
+        // On vérifie la PROPRIÉTÉ de sécurité (prefix admin + auth + admin) sans
+        // épingler la fin exacte de la liste de middlewares.
+        self::assertMatchesRegularExpression(
+            "@prefix\('admin'\)->middleware\(\['sambaedu\.auth', 'sambaedu\.admin'@",
+            $content,
+            'Le groupe admin (sambaedu.auth + sambaedu.admin) doit exister',
+        );
+        $adminGroupPos = strpos($content, "prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin'");
         self::assertNotFalse($adminGroupPos, 'Le groupe admin (sambaedu.auth + sambaedu.admin) doit exister');
 
         $isoRoutePos = strpos($content, "/ipxe/iso-windows");

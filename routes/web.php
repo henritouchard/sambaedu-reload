@@ -21,9 +21,14 @@ use App\Auth\V1\Migration\Http\Controllers\MigrationController as AuthV1Migratio
 */
 
 // Route de test avec middleware sambaedu.auth
+// Story 20.4 (post-review P-5) : `federated.audit` ajouté pour rendre TOTAL
+// l'invariant « toute route `sambaedu.auth` porte `federated.audit` » (cf.
+// tests/Architecture/FederatedAuditCoverageTest). No-op fonctionnel ici (GET de
+// debug non sensible, hors allowlist → aucune écriture), mais ferme l'angle mort
+// préventif d'une future route hors groupes app/admin.
 Route::get('/test-auth', function () {
     return response()->json(['status' => 'ok', 'authenticated' => true, 'time' => now()->toDateTimeString()]);
-})->middleware('sambaedu.auth');
+})->middleware(['sambaedu.auth', 'federated.audit']);
 
 Route::prefix("authentication")->name("auth.")->group(function () {
     // Connexion
@@ -49,7 +54,9 @@ Route::prefix("authentication")->name("auth.")->group(function () {
 
 
 // Route pour l'interface utilisateur modernisée
-Route::prefix('app')->middleware('sambaedu.auth')->name('app.')->group(function () {
+// Story 20.4 — `federated.audit` APRÈS `sambaedu.auth` : journalise les actions
+// des sessions fédérées (no-op pour l'AD locale, ne touche pas le flux LDAP).
+Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('app.')->group(function () {
     // Navigation legacy déplacée sous /admin/homelegacy
 
     Route::livewire('/dashboard', 'pages::dashboard.index')->name('dashboard');
@@ -314,7 +321,7 @@ Route::permanentRedirect('/app/gpo', '/admin/settings/gpo')
 | Admin Routes - ControlHub Handshake Management
 |--------------------------------------------------------------------------
 */
-Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin'])->name('admin.')->group(function () {
+Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federated.audit'])->name('admin.')->group(function () {
     // Control Hub - Livewire fullpage component
     Route::livewire('/control-hub', 'pages::control-hub.index')->name('controlHub.control-hub');
 

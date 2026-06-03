@@ -69,6 +69,11 @@ class Kernel extends HttpKernel
         // SambaEdu middleware personnalisé
         'sambaedu.auth' => \App\Http\Middleware\Auth\SambaEduAuth::class,
         'sambaedu.admin' => \App\Http\Middleware\RequireAdminRights::class,
+
+        // Story 20.4 — audit dénormalisé des actions externes. À appliquer
+        // APRÈS `sambaedu.auth` (le guard a alors peuplé Auth::user()). N'agit
+        // que sur les sessions fédérées (AC2) ; no-op pour l'AD locale.
+        'federated.audit' => \App\Http\Middleware\Auth\AuditExternalAction::class,
         'password.change' => \App\Http\Middleware\PasswordChangeMiddleware::class,
         
         // ControlHub middleware pour l'authentification API

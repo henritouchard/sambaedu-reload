@@ -186,6 +186,33 @@ trait IssuesFederatedJwt
             });
         }
 
+        // Story 20.4 — journal d'audit dénormalisé des actions externes.
+        if (! Schema::hasTable('external_action_audit_logs')) {
+            Schema::create('external_action_audit_logs', function (Blueprint $table): void {
+                $table->id();
+                $table->string('actor_login');
+                $table->string('actor_external_sub')->nullable();
+                $table->string('actor_name')->nullable();
+                $table->string('actor_role')->nullable();
+                $table->string('source', 32)->default('federated');
+                $table->string('http_method', 10);
+                $table->string('route_name')->nullable();
+                $table->string('path');
+                $table->string('action_label')->nullable();
+                $table->integer('status_code');
+                $table->timestamp('occurred_at');
+                $table->unsignedBigInteger('external_identity_id')->nullable();
+                $table->unsignedBigInteger('user_id')->nullable();
+                $table->index('actor_login');
+                $table->index('actor_external_sub');
+                $table->index('source');
+                $table->index('occurred_at');
+                // Iso-prod (migration 2026_06_03_120000) : index de corrélation FK.
+                $table->index('external_identity_id');
+                $table->index('user_id');
+            });
+        }
+
         if (! Schema::hasTable('federated_jwt_consumptions')) {
             Schema::create('federated_jwt_consumptions', function (Blueprint $table): void {
                 $table->uuid('id')->primary();

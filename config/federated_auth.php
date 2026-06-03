@@ -215,4 +215,47 @@ return [
         // pour ne pas hasher sans sel ; la prod DOIT poser une clé dédiée fixe.
         'hash_key' => env('FEDERATED_AUTH_RETENTION_HASH_KEY') ?: env('APP_KEY', ''),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Audit dénormalisé des actions externes (Story 20.4 — D-2 / Q-1)
+    |--------------------------------------------------------------------------
+    |
+    | Le middleware `App\Http\Middleware\Auth\AuditExternalAction` journalise,
+    | DANS LA TABLE `external_action_audit_logs`, les actions réalisées en
+    | session FÉDÉRÉE. Périmètre (Q-1 tranchée par Henri) :
+    |
+    |   - TOUJOURS les requêtes MUTANTES (POST / PUT / PATCH / DELETE) ;
+    |   - EN PLUS les `GET` dont le nom de route figure dans l'allowlist
+    |     `sensitive_get_routes` ci-dessous (écrans exposant de la PII élève).
+    |
+    | Les `GET` non sensibles (dashboard, listes neutres, assets) ne sont PAS
+    | journalisés (bruit / volumétrie). Le `http_method` de chaque ligne
+    | distingue nativement lecture (`GET`) vs mutation.
+    |
+    | `sensitive_get_routes` = liste de NOMS / PATTERNS de routes (wildcard `*`
+    | façon `Str::is`). Le middleware audite un `GET` seulement si
+    | `route()->getName()` matche un de ces patterns. Avantage : le périmètre
+    | des lectures sensibles se révise EN CONFIG (pas de redéploiement code).
+    |
+    | DOMAIN-NEUTRAL : aucune notion d'IdP nommé ici. La liste par défaut est
+    | CONSERVATRICE — elle seed les routes de détail utilisateur / données
+    | élève identifiées en recon (Story 20.4 T0) :
+    |   - `app.users`              : liste des utilisateurs (PII)
+    |   - `app.user.show`          : détail d'un utilisateur (PII)
+    |   - `app.users.groups.edit`  : groupe d'utilisateurs (membres / PII)
+    |   - `app.users.*`            : filet pour les sous-écrans utilisateur.
+    |
+    | Override `.env` non requis (liste statique config). Ajuster ici au besoin.
+    |
+    */
+
+    'audit' => [
+        'sensitive_get_routes' => [
+            'app.users',
+            'app.user.show',
+            'app.users.groups.edit',
+            'app.users.*',
+        ],
+    ],
 ];
