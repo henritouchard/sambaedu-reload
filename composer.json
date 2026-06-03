@@ -37,6 +37,7 @@
         "slim/slim": "~4.12",
         "spatie/laravel-permission": "^6.24",
         "spipu/html2pdf": "~5.2",
+        "spomky-labs/otphp": "^11.4",
         "twbs/bootstrap": "~5.3"
     },
     "require-dev": {
