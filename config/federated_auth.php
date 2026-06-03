@@ -99,25 +99,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Mapping de rôle (D-7)
+    | Résolution de rôle (Story 20.3 — D-1, pivot Henri 2026-06-03)
     |--------------------------------------------------------------------------
     |
-    | Table `rôle-externe (claim `role`) → SambaRole::value` (rôle Spatie
-    | local). Le JWT transporte un NOM DE RÔLE (l'intention), jamais une
-    | liste de permissions (le mécanisme). SE5 mappe puis réutilise les
-    | Policies/Gates Spatie existants.
+    | Il n'y a PLUS de table de correspondance `role_map`. Le nom de rôle
+    | asséré par l'IdP (claim `role`) EST le contrat : SE5 le cherche
+    | DIRECTEMENT parmi ses rôles Spatie EXISTANTS (table `roles`, guard
+    | `web`), après normalisation casse/espaces. Existe → appliqué ; absent →
+    | 403, aucune session, AUCUNE création de rôle à la volée.
     |
-    | ⚠️ GARDE-FOU : un rôle externe ABSENT de cette table → refus explicite
-    |    403, aucune session (jamais de fallback vers un rôle privilégié).
-    |
-    | Défaut (D-7) : `technicien → SambaRole::Technicien`. L'outillage
-    | d'admin/config riche = Story 20.3.
+    | Voir `App\Auth\Federated\FederatedRoleMapper::resolve()`. Aucune config
+    | n'est nécessaire ici : la source de vérité est la table `roles`.
     |
     */
-
-    'role_map' => [
-        'technicien' => \App\Enums\SambaRole::Technicien->value,
-    ],
 
     /*
     |--------------------------------------------------------------------------

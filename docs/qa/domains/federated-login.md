@@ -193,7 +193,7 @@ puis re-soumettre un **nouveau** JWT valide (jti différent) pour ce même `sub`
   `federated.login.identity_revoked`.
 - L'identité reste **désactivée / soft-deletée** : ni `is_active=true`, ni
   `restore()` silencieux. La réactivation n'est possible que par une action
-  d'admin (Story 20.3).
+  d'admin (story d'outillage admin des identités à venir, Epic 20).
 
 #### Scénario 20.1-11 — `jti` non brûlé si le provisioning échoue (post-review M1)
 
@@ -274,7 +274,7 @@ reconnexion (même `sub`, nouveau `jti`) avec `name="Nouveau"` et **sans** champ
 #### Scénario 20.2-2 — Désactivation administrative (sans suppression)
 
 **Action** : sur une identité active, appeler la transition `deactivate` (via
-outillage 20.3 à venir, ou en DB pour le QA :
+l'outillage admin des identités à venir, ou en DB pour le QA :
 `UPDATE external_identities SET is_active=false, deactivated_reason='litige' …`).
 
 **Attendu** :
@@ -370,7 +370,7 @@ pour le **même `sub` clair** d'origine (`POST /auth/federated/callback`).
 - Réponse **403**, event `federated.login.identity_anonymized`, **aucune**
   session, **aucune** identité « fraîche » recréée pour ce sub clair (la forme
   `anon:<sha256>` est résolue et bloque la recréation).
-- La réactivation reste une décision **admin** explicite (Story 20.3).
+- La réactivation reste une décision **admin** explicite (story d'outillage admin des identités à venir, Epic 20).
 
 ### Section 7 — Non-régression du refactor (D-2 / AC15)
 
@@ -382,6 +382,126 @@ comportement observable doit être **identique**).
 
 **Attendu** : aucun changement de comportement (login, reconnexion, révocation
 403, guard D-5, anti-rejeu jti). Filet de non-régression du refactor.
+
+---
+
+## Story 20.3 — Résolution directe du rôle externe
+
+**Date livraison** : 2026-06-03
+**Migration** : aucune (code + config nettoyée — aucune nouvelle table).
+
+> **⚠️ PIVOT DE CONCEPTION (Henri, 2026-06-03)** — La version « mapping »
+> initiale (table `role_map` + validator + commande `federated:roles` + onglet
+> read-only) est **abandonnée et supprimée**. Le nom de rôle asséré par l'IdP
+> EST le contrat ; SE5 le résout par **lookup direct** parmi ses rôles
+> EXISTANTS. Toute référence à `role_map`/`federated:roles`/onglet « Mapping
+> rôles fédérés » dans une procédure antérieure est **caduque**.
+
+**Modèle retenu** :
+
+> L'IdP asserte un nom de rôle (claim `role`, ex. `technicien`). SE5 cherche
+> DIRECTEMENT un rôle Spatie de ce nom parmi ses rôles EXISTANTS (table `roles`,
+> guard `web`), après normalisation casse/espaces (`trim` + `strtolower`).
+> Existe → appliqué (`syncRoles`). Absent → **403**, aucune session, **AUCUNE
+> création de rôle à la volée**.
+
+**Artefacts modifiés / supprimés** :
+- `FederatedRoleMapper::resolve(string): ?string` — lookup direct insensible à
+  la casse dans la table `roles` (guard `web`) ; renvoie le **nom canonique** du
+  rôle existant ou `null`. Plus aucune lecture de config.
+- `FederatedLoginController` — `resolve()===null` → 403 `role_unknown`, aucune
+  session ; **`firstOrCreate` retiré** (jamais de rôle fantôme) ; `syncRoles`
+  d'un rôle EXISTANT uniquement.
+- **SUPPRIMÉS** : bloc config `federated_auth.role_map`,
+  `App\Auth\Federated\FederatedRoleMapValidator`, commande
+  `php artisan federated:roles`, onglet read-only « Mapping rôles fédérés » de
+  `/app/rights-management`.
+
+### Modèle de sécurité ouvert assumé (D-5)
+
+Pas de liste blanche locale : **tout rôle existant** dans l'instance est
+demandable. C'est cohérent — l'émetteur externe de confiance est l'autorité qui
+crée/gère les rôles et décide ce qu'il asserte. `super-admin` n'est PAS bloqué
+(s'il existe en base, il est demandable comme tout autre rôle). La défense
+repose sur : JWT signé RS256 + anti-rejeu `jti` (20.1) + le rôle doit **exister**
+en base + invariant « inconnu → 403 ».
+
+> Conséquence opérationnelle : pour qu'un rôle externe soit utilisable, il faut
+> qu'un rôle Spatie de ce nom **existe** dans l'instance — soit seedé à
+> l'installation (`SambaRole`), soit créé par l'IdP/l'administrateur. Aucune
+> entrée de config à éditer.
+
+### Section 8 — Résolution directe du rôle
+
+#### Scénario 20.3-1 — Rôle existant → accès selon le rôle
+
+**Préparation** : le rôle Spatie `technicien` **existe** dans l'instance
+(seedé / présent en table `roles`).
+
+**Action** : login fédéré (20.1-1) avec `role = technicien`.
+
+**Attendu** :
+
+- Réponse **302**, session ouverte.
+- Le user `source=federated` porte le rôle Spatie `technicien`
+  (`computer.view`/`computer.control`/`wpkg.assign`) — Policies/Gates Epic 7.
+- Channel `federated-auth` : `federated.login.success` avec le `role` appliqué.
+- Variante : un autre rôle existant (ex. `referent-numerique`) asséré → le user
+  porte ce rôle (inclut `computer.install`).
+
+#### Scénario 20.3-2 — Insensibilité casse/espaces
+
+**Action** : login avec `role = " TECHNICIEN "` (casse mixte + espaces de bord),
+le rôle `technicien` existant en base.
+
+**Attendu** : login **accepté** (302), rôle `technicien` appliqué (résolution
+insensible casse/espaces). Aucun wildcard : `role = "tech"` ou un rôle absent
+reste **403** (cf. 20.3-3).
+
+#### Scénario 20.3-3 — Rôle inexistant → 403, aucune création à la volée
+
+**Action** : login avec `role = role-inexistant` (aucun rôle Spatie de ce nom en
+base).
+
+**Attendu** :
+
+- **403**, aucune session ouverte.
+- **AUCUN rôle créé** : `SELECT count(*) FROM roles` inchangé, pas de ligne
+  `role-inexistant`.
+- Événement `federated.login.role_unknown` (channel `federated-auth`,
+  `sub`/`iss`/`role`, **sans PII**).
+- Aucun fallback/capture-all.
+
+#### Scénario 20.3-4 — `super-admin` existant → appliqué (modèle ouvert, D-5)
+
+**Préparation** : le rôle `super-admin` **existe** en base.
+
+**Action** : login avec `role = super-admin`.
+
+**Attendu** : login **accepté** (302), rôle Spatie `super-admin` appliqué (toutes
+les permissions). Aucun garde-fou spécifique : super-admin n'est pas bloqué.
+(Si `super-admin` n'existe PAS en base → 403 `role_unknown` comme tout rôle
+absent.)
+
+#### Scénario 20.3-5 — Portée = instance, pas de scope par classe (AC8)
+
+**Action** : un externe `technicien` authentifié navigue dans l'app.
+
+**Attendu** : il est admin de **l'instance** selon son rôle (Policies/Gates
+Spatie Epic 7), **sans** scope par classe (contrairement à prof/eleve-admin,
+Story 7.2).
+
+### Section 9 — Non-régression 20.1 / 20.2
+
+#### Scénario 20.3-6 — Suites 20.1 + 20.2 restent vertes
+
+**Action** : rejouer intégralement **20.1-1 → 20.1-11** et **20.2-1 → 20.2-8**.
+
+**Attendu** : aucun changement de comportement (login nominal, reconnexion,
+révocation 403, guard D-5, anti-rejeu jti, cycle de vie, rétention RGPD). La
+résolution directe est **iso-comportement** pour les cas valides 20.1/20.2 (le
+rôle attendu existe en base) ; le seul durcissement est le retrait de la
+création à la volée (un rôle absent → 403 au lieu d'être créé).
 
 ---
 
@@ -413,6 +533,10 @@ comportement observable doit être **identique**).
 | 20.2 P-8 — motif > 255 → `QueryException` MySQL non vue en SQLite | 🟡 | troncature `mb_substr(…,0,255)` ; Unit (`deactivate_truncates_overlong_reason…`) |
 | 20.2 P-4 — `sha256(sub)` nu → sub faible entropie ré-identifiable (anon. pseudonyme, pas anonyme RGPD) | 🟡 | HMAC-SHA256 clé dédiée `retention.hash_key` ; Unit (`hash_sub_is_salted_not_raw_sha256`) |
 | 20.2 M-2 / P-9 — guard 20.1 logge `external_sub` en clair (+ double-hash latent si anonymisé) | 🟡 | `SambaEduAuthGuard::subForLog()` hashe + gère préfixe `anon:` ; couvert par `AuthGuardInterfaceTest` + suite federated |
+| 20.3 — rôle asséré inexistant créerait un rôle « fantôme » à la volée | 🟠 | Aucune création : `resolve()` ne renvoie qu'un rôle EXISTANT, sinon `null` → 403 `role_unknown` ; `firstOrCreate` retiré du controller. Scénario 20.3-3 + Feature (`role_absent_from_db_returns_403_and_creates_no_role`, `unknown_role_returns_403_and_opens_no_session`) + Unit (`role_absent_from_db_returns_null`) |
+| 20.3 — IdP asserte une casse/espaces différents → faux 403 | 🟡 | Normalisation `trim`+`strtolower` (D-3) ; Scénario 20.3-2 + Unit mapper (`resolution_is_case_insensitive`, `resolution_trims_surrounding_whitespace`) |
+| 20.3 — un nom asséré arbitraire (`*`/`default`) capture-all (régression invariant 20.1) | 🟠 | Aucun wildcard/fallback : seule l'existence en base résout ; Unit (`no_wildcard_or_default_fallback`) |
+| 20.3 — `super-admin` non bloqué (modèle ouvert assumé, D-5) | 🟡 | Comportement voulu : super-admin existant → appliqué ; Scénario 20.3-4 + Unit (`super_admin_resolves_when_it_exists`) + Feature (`super_admin_is_applied_when_it_exists`) |
 
 ## Checklist rapide
 
@@ -435,4 +559,10 @@ comportement observable doit être **identique**).
 - [ ] 20.2-6 No-op safe si `anonymize_enabled=false` ou TTL ≤ 0 sans `--force` (exit 0)
 - [ ] 20.2-7 Reconnexion d'une identité anonymisée → 403 `identity_anonymized`, pas de recréation
 - [ ] 20.2-8 Suite 20.1 inchangée après extraction du service (non-régression D-2)
+- [ ] 20.3-1 Rôle existant → accès selon le rôle (lookup direct)
+- [ ] 20.3-2 Insensibilité casse/espaces, sans wildcard
+- [ ] 20.3-3 Rôle inexistant → 403 `role_unknown`, AUCUNE création à la volée (Role::count() inchangé)
+- [ ] 20.3-4 `super-admin` existant → appliqué (modèle ouvert D-5, pas de blocage)
+- [ ] 20.3-5 Portée = instance, pas de scope par classe (AC8)
+- [ ] 20.3-6 Suites 20.1 + 20.2 restent vertes (non-régression stricte)
 - [ ] Aucun JWT brut / clé / PII dans le channel `federated-auth` (y c. logs de purge)

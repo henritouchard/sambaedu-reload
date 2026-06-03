@@ -61,7 +61,6 @@ trait IssuesFederatedJwt
             'federated_auth.expected_iss' => $this->federatedTestIss,
             'federated_auth.expected_aud' => $this->federatedTestAud,
             'federated_auth.expected_tier' => 'federated-user',
-            'federated_auth.role_map' => ['technicien' => 'technicien'],
             'federated_auth.replay.cache_store' => 'array',
             'federated_auth.replay.cache_ttl' => 900,
             'federated_auth.replay.cache_prefix' => 'federated:jti:',

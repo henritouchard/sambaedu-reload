@@ -4,43 +4,63 @@ declare(strict_types=1);
 
 namespace App\Auth\Federated;
 
-use App\Enums\SambaRole;
+use Spatie\Permission\Models\Role;
 
 /**
- * Story 20.1 — D-7 / T6.
+ * Story 20.1 — D-7 / T6 ; RECONÇU par Story 20.3 (pivot Henri 2026-06-03).
  *
- * Résout un nom de rôle EXTERNE (claim `role` du JWT, l'intention) vers un
- * `SambaRole` local (le mécanisme Spatie). La table `role_map` vit dans
- * `config/federated_auth.php`.
+ * Résout le nom de rôle ASSÉRÉ par l'IdP externe (claim `role` du JWT,
+ * l'intention) vers un rôle EXISTANT de l'instance.
  *
- * ⚠️ GARDE-FOU : un rôle externe absent de la table → `null`. Le caller
- * (controller) DOIT alors répondre 403 sans ouvrir de session — JAMAIS de
- * fallback vers un rôle privilégié.
+ * ⚠️ PIVOT 20.3 — D-1 : il n'y a PLUS de table de correspondance
+ * (`config/federated_auth.role_map` supprimée). Le nom de rôle asséré EST déjà
+ * le contrat : SE5 le cherche DIRECTEMENT parmi les rôles Spatie EXISTANTS de
+ * l'instance (table `roles`, guard `web`), après normalisation casse/espaces
+ * (`trim` + `strtolower`). Aucune couche de traduction locale.
  *
- * L'outillage d'admin/UI du mapping (richesse, édition) = Story 20.3.
+ * CHOIX D'IMPLÉMENTATION (D-5) — lookup sur la table `roles`, PAS sur l'enum
+ * `SambaRole` : le modèle est ouvert. Tout rôle existant dans l'instance est
+ * demandable, qu'il soit seedé (`SambaRole`) OU créé hors enum (par l'émetteur
+ * externe de confiance, cible à terme). Borner au seul enum exclurait ces
+ * rôles custom — interdit par D-5. La table `roles` est la source de vérité.
+ *
+ * GARDE-FOUS conservés (invariant 20.1) :
+ *   - Rôle asséré vide/blanc → `null`.
+ *   - Rôle asséré sans correspondance en base → `null`.
+ *   - AUCUN wildcard / fallback `default` : seule une existence en base résout.
+ * Le caller (controller) répond 403 sans ouvrir de session sur `null`, et
+ * n'applique (`syncRoles`) qu'un rôle EXISTANT — il n'en crée JAMAIS.
  */
 class FederatedRoleMapper
 {
     /**
-     * @return SambaRole|null Le rôle local mappé, ou `null` si le rôle externe
-     *                        est inconnu de la config.
+     * @return string|null Le NOM CANONIQUE du rôle existant (tel qu'il est en
+     *                     base), ou `null` si le rôle asséré ne correspond à
+     *                     aucun rôle existant (→ 403 côté caller).
      */
-    public function resolve(string $externalRole): ?SambaRole
+    public function resolve(string $externalRole): ?string
     {
-        if ($externalRole === '') {
+        $normalized = $this->normalize($externalRole);
+        if ($normalized === '') {
             return null;
         }
 
-        $map = config('federated_auth.role_map', []);
-        if (! is_array($map) || ! array_key_exists($externalRole, $map)) {
-            return null;
-        }
+        // Lookup DIRECT insensible à la casse dans les rôles existants
+        // (guard `web`). `LOWER(name)` côté SQL pour rester portable
+        // (SQLite/PostgreSQL) ; la normalisation des espaces de bord est faite
+        // côté PHP (`$normalized` est déjà trimé + minuscules).
+        return Role::query()
+            ->where('guard_name', 'web')
+            ->whereRaw('LOWER(name) = ?', [$normalized])
+            ->value('name');
+    }
 
-        $localRoleValue = $map[$externalRole];
-        if (! is_string($localRoleValue) || $localRoleValue === '') {
-            return null;
-        }
-
-        return SambaRole::tryFrom($localRoleValue);
+    /**
+     * Normalisation D-3 : trim des espaces de bord + minuscules. Pas de
+     * sémantique de fallback — c'est une simple égalité tolérante.
+     */
+    private function normalize(string $role): string
+    {
+        return strtolower(trim($role));
     }
 }

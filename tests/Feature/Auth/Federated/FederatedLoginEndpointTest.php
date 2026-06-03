@@ -43,6 +43,10 @@ class FederatedLoginEndpointTest extends TestCase
         parent::setUp();
         $this->configureFederatedAuth();
         $this->ensureFederatedTables();
+        // Story 20.3 — D-1 : la résolution est un lookup direct dans les rôles
+        // EXISTANTS. Les tests seedent en base le rôle attendu (auparavant
+        // déclaré dans `config('federated_auth.role_map')`, table supprimée).
+        Role::firstOrCreate(['name' => SambaRole::Technicien->value, 'guard_name' => 'web']);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 
@@ -94,8 +98,81 @@ class FederatedLoginEndpointTest extends TestCase
     }
 
     #[Test]
+    public function role_absent_from_db_returns_403_and_creates_no_role(): void
+    {
+        // Story 20.3 — AC3 / D-2 end-to-end : le rôle asséré n'EXISTE PAS dans
+        // l'instance → 403, aucune session, et AUCUN rôle créé à la volée
+        // (Role::count() inchangé). Aucune table de correspondance n'est
+        // consultée : la résolution est un lookup direct dans `roles`.
+        $rolesBefore = Role::count();
+
+        $emitted = $this->issueFederatedJwt(['sub' => 'ext-absent', 'role' => 'role-inexistant']);
+
+        try {
+            $this->makeController()->callback($this->requestWithToken($emitted['token']));
+            $this->fail('Expected 403 (rôle absent en base)');
+        } catch (HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+        }
+
+        $this->assertSame(0, User::where('source', 'federated')->count());
+        $this->assertFalse(Auth::check());
+        // AUCUNE création de rôle à la volée.
+        $this->assertSame($rolesBefore, Role::count());
+        $this->assertFalse(Role::where('name', 'role-inexistant')->exists());
+    }
+
+    #[Test]
+    public function second_existing_role_applies_correct_spatie_role(): void
+    {
+        // Story 20.3 — AC1 : un 2e rôle EXISTANT (seedé en base, pas en config)
+        // applique le rôle Spatie correspondant.
+        Role::firstOrCreate(['name' => SambaRole::ReferentNumerique->value, 'guard_name' => 'web']);
+
+        $emitted = $this->issueFederatedJwt(['sub' => 'ext-ref', 'role' => 'referent-numerique']);
+        $response = $this->makeController()->callback($this->requestWithToken($emitted['token']));
+
+        $this->assertSame(302, $response->getStatusCode());
+        $user = User::where('source', 'federated')->first();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->assertTrue($user->fresh()->hasRole(SambaRole::ReferentNumerique->value));
+    }
+
+    #[Test]
+    public function asserted_role_is_case_insensitive(): void
+    {
+        // Story 20.3 — AC2 : normalisation casse/espaces. Le rôle `technicien`
+        // est seedé dans le setUp ; l'IdP asserte ` TECHNICIEN `.
+        $emitted = $this->issueFederatedJwt(['sub' => 'ext-case', 'role' => ' TECHNICIEN ']);
+        $response = $this->makeController()->callback($this->requestWithToken($emitted['token']));
+
+        $this->assertSame(302, $response->getStatusCode());
+        $user = User::where('source', 'federated')->first();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->assertTrue($user->fresh()->hasRole(SambaRole::Technicien->value));
+    }
+
+    #[Test]
+    public function super_admin_is_applied_when_it_exists(): void
+    {
+        // Story 20.3 — AC5 / D-5 : super-admin n'est pas bloqué. S'il existe en
+        // base, il est demandable comme tout autre rôle existant.
+        Role::firstOrCreate(['name' => SambaRole::SuperAdmin->value, 'guard_name' => 'web']);
+
+        $emitted = $this->issueFederatedJwt(['sub' => 'ext-god', 'role' => 'super-admin']);
+        $response = $this->makeController()->callback($this->requestWithToken($emitted['token']));
+
+        $this->assertSame(302, $response->getStatusCode());
+        $user = User::where('source', 'federated')->first();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->assertTrue($user->fresh()->hasRole(SambaRole::SuperAdmin->value));
+    }
+
+    #[Test]
     public function unknown_role_returns_403_and_opens_no_session(): void
     {
+        $rolesBefore = Role::count();
+
         $emitted = $this->issueFederatedJwt(['sub' => 'ext-bbb', 'role' => 'pirate-role']);
 
         try {
@@ -107,6 +184,8 @@ class FederatedLoginEndpointTest extends TestCase
 
         $this->assertSame(0, User::where('source', 'federated')->count());
         $this->assertFalse(Auth::check());
+        // Invariant D-2 : aucune création de rôle à la volée.
+        $this->assertSame($rolesBefore, Role::count());
     }
 
     #[Test]

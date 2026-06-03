@@ -11,7 +11,6 @@ use App\Auth\Federated\Jwt\FederatedJwtReplayChecker;
 use App\Auth\Federated\Jwt\FederatedJwtVerifier;
 use App\Auth\Federated\Jwt\FederatedUserClaims;
 use App\Auth\Federated\Session\FederatedSession;
-use App\Enums\SambaRole;
 use App\Models\ExternalIdentity;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -19,11 +18,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
- * Story 20.1 — D-3 / D-4 / T4.
+ * Story 20.1 — D-3 / D-4 / T4 ; durci par Story 20.3 (pivot Henri 2026-06-03).
  *
  * Controller D'ENTRÉE du login fédéré (POST binding, façon SAML POST binding —
  * D-3 : le jeton arrive en POST, jamais en query string, pour ne pas fuiter
@@ -36,11 +34,11 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  *
  * Flux :
  *  1. Vérifie le JWT (signature RS256, iss/aud/tier/exp/nbf, anti-rejeu jti).
- *  2. Upsert `ExternalIdentity` (clé = `external_sub`).
- *  3. Mappe `role → SambaRole` ; rôle inconnu → 403, aucune session.
- *  4. Provisionne/charge le `User` externe (source='federated').
- *  5. `Auth::login()` + marque la session « fédérée » + bridge `$_SESSION`.
- *  6. Redirige dans l'app.
+ *  2. Résout `role` → rôle EXISTANT de l'instance (lookup direct, 20.3 D-1) ;
+ *     rôle absent/inconnu → 403, aucune session, AUCUNE création de rôle.
+ *  3. Upsert `ExternalIdentity` + provisioning user dans une transaction.
+ *  4. `Auth::login()` + marque la session « fédérée » + bridge `$_SESSION`.
+ *  5. Redirige dans l'app.
  */
 class FederatedLoginController
 {
@@ -65,9 +63,13 @@ class FederatedLoginController
             throw new HttpException($e->httpStatus, $e->getMessage(), $e);
         }
 
-        // --- 2. Mapping de rôle AVANT toute persistance de session (fail fast) ---
-        $sambaRole = $this->roleMapper->resolve($claims->role);
-        if ($sambaRole === null) {
+        // --- 2. Résolution du rôle AVANT toute persistance de session (fail fast) ---
+        // Story 20.3 — D-1 : lookup DIRECT du nom asséré (normalisé) dans les
+        // rôles EXISTANTS de l'instance. Pas de table de correspondance, pas de
+        // création à la volée. Rôle inconnu (absent en base) → 403, aucune
+        // session (D-2 / D-3, invariant 20.1 préservé).
+        $roleName = $this->roleMapper->resolve($claims->role);
+        if ($roleName === null) {
             Log::channel('federated-auth')->warning('[FederatedLoginController] federated.login.role_unknown', [
                 'action_type' => 'federated.login.role_unknown',
                 'sub' => $claims->sub,
@@ -84,7 +86,7 @@ class FederatedLoginController
         // réussi : un échec amont (identité révoquée, panne DB) rollback ET ne
         // brûle pas le `jti`, donc un retry légitime du même jeton (encore
         // valide) reste possible (review M1).
-        $user = DB::transaction(function () use ($claims, $sambaRole): User {
+        $user = DB::transaction(function () use ($claims, $roleName): User {
             // Story 20.2 — D-2 : la réconciliation de l'identité (upsert + sync
             // profil + gardes révocation/anonymisation) est déléguée au service
             // de cycle de vie. Comportement observable INCHANGÉ vs 20.1 (le
@@ -92,7 +94,7 @@ class FederatedLoginController
             // une identité 20.1 non encore anonymisée).
             $identity = $this->lifecycle->reconcileOnLogin($claims);
             $user = $this->provisionUser($identity, $claims);
-            $this->applyRole($user, $sambaRole);
+            $this->applyRole($user, $roleName);
 
             // Consommation jti à usage unique. Si déjà consommé (rejeu /
             // course concurrente) → rollback du provisioning + 401.
@@ -124,7 +126,7 @@ class FederatedLoginController
             'sub' => $claims->sub,
             'jti' => $claims->jti,
             'iss' => $claims->iss,
-            'role' => $sambaRole->value,
+            'role' => $roleName,
         ]);
 
         return redirect()->intended(route('app.dashboard'));
@@ -190,14 +192,18 @@ class FederatedLoginController
     }
 
     /**
-     * Applique le rôle Spatie mappé (sync : un externe porte exactement le
-     * rôle asséré, ré-évalué à chaque login). Crée le rôle si absent (parité
-     * `UserSyncService` — `Role::firstOrCreate` guard `web`).
+     * Applique le rôle EXISTANT résolu (sync : un externe porte exactement le
+     * rôle asséré, ré-évalué à chaque login).
+     *
+     * Story 20.3 — D-2 : on n'a RIEN à créer. `$roleName` est le nom canonique
+     * d'un rôle dont l'EXISTENCE en base a déjà été établie par le mapper
+     * (lookup direct). On applique simplement via `syncRoles`. Les Policies/
+     * Gates Spatie existants (Epic 7, type-hint `App\Models\User`) s'appliquent
+     * ensuite sans duplication. AUCUN `firstOrCreate` : jamais de rôle fantôme.
      */
-    private function applyRole(User $user, SambaRole $role): void
+    private function applyRole(User $user, string $roleName): void
     {
-        Role::firstOrCreate(['name' => $role->value, 'guard_name' => 'web']);
-        $user->syncRoles([$role->value]);
+        $user->syncRoles([$roleName]);
     }
 
     /**

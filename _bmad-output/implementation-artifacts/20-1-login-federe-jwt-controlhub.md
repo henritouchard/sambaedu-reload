@@ -2,6 +2,17 @@
 
 Status: review
 
+> **⚠️ SUPERSESSION PARTIELLE (Story 20.3, pivot Henri 2026-06-03)** — La table
+> de correspondance `config/federated_auth.role_map` introduite par cette story
+> (D-7) a été **RETIRÉE par la Story 20.3**. La résolution du rôle est désormais
+> un **lookup DIRECT** du nom asséré (normalisé casse/espaces) parmi les rôles
+> Spatie EXISTANTS de l'instance (table `roles`, guard `web`) — voir
+> `App\Auth\Federated\FederatedRoleMapper::resolve()` qui renvoie le nom
+> canonique d'un rôle existant ou `null`. Le `firstOrCreate` du controller est
+> également retiré (aucune création de rôle à la volée). L'invariant « rôle
+> inconnu → 403, aucune session » est **préservé**. Les références à `role_map`
+> ci-dessous sont historiques.
+
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
 > **Première story d'Epic 20** « Authentification fédérée d'utilisateurs externes ». Permet à un **technicien externe** (gérant plusieurs collèges, **absent de l'AD** de l'établissement) de se connecter à une instance SE5 via un **JWT signé émis par controlHub**, et d'obtenir une session avec un rôle. SER gagne un **fournisseur d'identité externe de confiance générique** (controlHub en est l'instance) — **aucune notion de « central » dans le code SER** (principe fondateur PRD).
