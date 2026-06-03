@@ -163,6 +163,17 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 'error' => null,
                 'expanded' => false,
             ],
+            // se4install : adoption du token TOTP existant depuis /etc/sambaedu/hashes
+            // (non-destructif, ne réécrit pas l'AD, idempotent, rejouable).
+            'se4install_totp' => [
+                'id' => 'se4install_totp',
+                'title' => '11. Importer le TOTP de se4install',
+                'description' => 'Adopte le token TOTP existant de se4install depuis /etc/sambaedu/hashes (sans réécrire l\'AD). No-op si le fichier est absent ou si le TOTP est déjà géré en base.',
+                'status' => 'pending',
+                'stats' => null,
+                'error' => null,
+                'expanded' => false,
+            ],
         ];
 
         $this->stepLogs = [
@@ -176,6 +187,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             'rights_profiles' => [],
             'rights_migration' => [],
             'dhcp_reservations' => [],
+            'se4install_totp' => [],
         ];
     }
 
@@ -230,6 +242,9 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                     break;
                 case 'dhcp_reservations':
                     $this->runDhcpReservationsSync();
+                    break;
+                case 'se4install_totp':
+                    $this->runSe4installTotpImport();
                     break;
             }
 
@@ -554,6 +569,26 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 $this->addLog('dhcp_reservations', 'warning', "Ligne {$err['line']} : {$err['reason']}");
             }
         }
+    }
+
+    private function runSe4installTotpImport(): void
+    {
+        $manager = app(\App\Services\ServiceCredentialTotpManager::class);
+        $path = (string) config('sambaedu.se4install_hashes_file', '/etc/sambaedu/hashes');
+
+        $this->addLog('se4install_totp', 'info', 'Lecture de ' . $path . '...');
+
+        $stats = $manager->importSe4installFromLegacyHashes($path, function (string $level, string $message): void {
+            $this->addLog('se4install_totp', $level, $message);
+        });
+
+        // Marquer l'étape « sautée » quand rien n'a été importé (fichier absent,
+        // pas de token, ou TOTP déjà géré) — runStep lit la clé 'already_imported'.
+        if (!($stats['imported'] ?? false)) {
+            $stats['already_imported'] = true;
+        }
+
+        $this->steps['se4install_totp']['stats'] = $stats;
     }
 
     private function addLog(string $stepId, string $level, string $message): void
