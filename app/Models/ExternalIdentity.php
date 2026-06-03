@@ -40,7 +40,7 @@ use Illuminate\Support\Carbon;
  *
  *  4. **Anonymisée**   `anonymized_at != null` (+ soft-deletée + `is_active=false`)
  *                      → PII (`name`/`email`/`login`) vidée, `external_sub`
- *                        réécrit en `anon:<sha256>` (D-5). La ligne SURVIT (FK
+ *                        réécrit en `anon:<hmac-sha256>` (D-5). La ligne SURVIT (FK
  *                        `users.external_identity_id` + audit 20.4), n'est plus
  *                        une donnée personnelle (RGPD). État TERMINAL introduit
  *                        par 20.2 (anti-résurrection D-4 : une reconnexion sur

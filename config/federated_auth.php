@@ -207,7 +207,7 @@ return [
             'La PII de l\'identité externe (nom, email, login lisible, sub clair) '
             . 'est conservée tant qu\'elle sert l\'imputabilité d\'actions '
             . 'd\'administration, puis ANONYMISÉE après pii_ttl_days '
-            . '(external_sub réécrit en anon:<sha256>, ligne conservée pour '
+            . '(external_sub réécrit en anon:<hmac-sha256>, ligne conservée pour '
             . 'l\'intégrité de l\'audit — jamais d\'effacement physique).'
         ),
 

@@ -27,7 +27,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  *  - `deactivate()`        : désactivation administrative (sans suppression).
  *  - `softDeleteWithReason()` : soft-delete tracé.
  *  - `anonymize()`         : purge PII de fin de rétention (idempotent, jamais
- *                            hard-delete, `external_sub`→`anon:<sha256>` D-5,
+ *                            hard-delete, `external_sub`→`anon:<hmac-sha256>` D-5,
  *                            désactive les `User` liés).
  *
  * RGPD / sécurité : AUCUNE PII (`name`/`email`/`login` clair) dans les logs —
@@ -65,7 +65,7 @@ class ExternalIdentityLifecycleService
             ->first();
 
         // Anti-résurrection (D-4 + D-5) : après anonymisation, `external_sub` a
-        // été réécrit en `anon:<sha256(sub)>` — un lookup par le sub CLAIR ne le
+        // été réécrit en `anon:<hmac-sha256(sub)>` — un lookup par le sub CLAIR ne le
         // retrouve donc plus. On résout AUSSI par la forme anonymisée pour ne
         // pas recréer silencieusement une identité « fraîche » (contournement de
         // la purge RGPD) ni provoquer une collision sur le `User` lié.
@@ -195,7 +195,7 @@ class ExternalIdentityLifecycleService
      * Anonymisation de fin de rétention (D-1 / D-4 / D-5) — cœur RGPD :
      *
      *  - vide la PII : `name`, `email`, `login` (lisible) → null ;
-     *  - réécrit `external_sub` en `anon:<sha256(sub)>` (D-5 : casse la
+     *  - réécrit `external_sub` en `anon:<hmac-sha256(sub)>` (D-5 : casse la
      *    corrélation IdP↔identité, préserve l'unicité, empêche la résurrection) ;
      *  - pose `anonymized_at` (garde d'idempotence + état terminal) ;
      *  - coupe l'accès (`is_active=false`) et SOFT-DELETE la ligne ;

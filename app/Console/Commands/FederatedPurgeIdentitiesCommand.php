@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Log;
  * PRINCIPE (D-1) : ANONYMISATION, jamais hard-delete. Pour chaque identité dont
  * `last_login_at < now - pii_ttl_days` ET non encore anonymisée, on délègue à
  * {@see ExternalIdentityLifecycleService::anonymize()} qui vide la PII, réécrit
- * `external_sub` en `anon:<sha256>` (D-5), pose `anonymized_at`, désactive les
+ * `external_sub` en `anon:<hmac-sha256>` (D-5), pose `anonymized_at`, désactive les
  * `User` liés et soft-delete la ligne (qui SURVIT pour l'audit 20.4 + les FK).
  *
  * GARDE-FOU (D-8) : tant que `federated_auth.retention.anonymize_enabled` est
