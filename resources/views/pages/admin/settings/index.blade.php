@@ -72,6 +72,15 @@ new #[Title('Réglages')] class extends Component {
                 description="Consultation des logs d'exécution des scripts (samba-tool, etc.)."
                 badge="Diagnostic"
                 testid="card-scripts-logs" />
+
+            <x-molecules.settings-card
+                href="{{ route('admin.settings.credentials') }}"
+                icon="fa-solid fa-key"
+                iconColor="primary"
+                title="Compte se4install"
+                description="Rotation TOTP 6 h du mot de passe AD du compte de déploiement."
+                badge="Sécurité"
+                testid="card-credentials" />
         </x-molecules.settings-section>
 
         {{-- ============================================================

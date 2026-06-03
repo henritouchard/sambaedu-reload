@@ -352,6 +352,11 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin'])->name('a
     Route::livewire('/settings/profils-itinerants', 'pages::admin.settings.profils-itinerants.index')
         ->middleware('can:server.admin')
         ->name('settings.profils-itinerants');
+
+    // /admin/settings/credentials — Compte de service se4install + rotation TOTP 6 h.
+    Route::livewire('/settings/credentials', 'pages::admin.settings.credentials.index')
+        ->middleware('can:server.admin')
+        ->name('settings.credentials');
     /*
     |--------------------------------------------------------------------------
     | Story 3.6 — Gestion ISO Windows (D2)
