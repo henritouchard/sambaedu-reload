@@ -45,7 +45,12 @@ class WindowsUnattendBuilderTest extends TestCase
             'ipxe.log.channel' => 'stack',
         ]);
 
-        $this->service = new WindowsUnattendBuilder();
+        // se4install : mock renvoyant le mot de passe config en live (iso pré-TOTP).
+        $creds = \Mockery::mock(\App\Services\ServiceCredentials::class);
+        $creds->shouldReceive('se4installEffectivePassword')
+            ->andReturnUsing(fn () => (string) config('sambaedu.se4install_passwd', ''));
+
+        $this->service = new WindowsUnattendBuilder($creds);
     }
 
     private function makeWorkstation(string $name = 'PC-101', string $uuid = '12345678-1234-1234-1234-aaaaaaaaaaaa'): Workstation

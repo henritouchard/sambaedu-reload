@@ -59,7 +59,10 @@ class ParityLegacyWindowsActionTest extends TestCase
         parent::setUp();
         IpxeSchemaBootstrapper::bootstrap();
         $this->applyLegacyFixtureConfig();
-        $this->builder = new WindowsActionCmdBuilder($this->app->make(ViewFactory::class));
+        $creds = \Mockery::mock(\App\Services\ServiceCredentials::class);
+        $creds->shouldReceive('se4installEffectivePassword')
+            ->andReturnUsing(fn () => (string) config('sambaedu.se4install_passwd', ''));
+        $this->builder = new WindowsActionCmdBuilder($this->app->make(ViewFactory::class), $creds);
     }
 
     /**

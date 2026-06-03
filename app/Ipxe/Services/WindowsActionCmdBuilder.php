@@ -54,6 +54,7 @@ final class WindowsActionCmdBuilder
 {
     public function __construct(
         private readonly ViewFactory $views,
+        private readonly \App\Services\ServiceCredentials $credentials,
     ) {
     }
 
@@ -189,7 +190,7 @@ final class WindowsActionCmdBuilder
             'ou' => '',
             // Configs SE5 — sanitize defense in depth.
             'se4installName' => $sanitize(config('sambaedu.se4install_name', '')),
-            'se4installPasswd' => $sanitize(config('sambaedu.se4install_passwd', '')),
+            'se4installPasswd' => $sanitize($this->credentials->se4installEffectivePassword()),
             'adminseName' => $sanitize(config('sambaedu.windows.adminse_name', '')),
             'adminsePasswd' => $sanitize(config('sambaedu.windows.adminse_passwd', '')),
             'domain' => $sanitize(config('sambaedu.domain', '')),

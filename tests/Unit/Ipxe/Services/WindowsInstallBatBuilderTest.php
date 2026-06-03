@@ -34,7 +34,13 @@ class WindowsInstallBatBuilderTest extends TestCase
             'sambaedu.domain' => 'example.org',
         ]);
 
-        $this->service = new WindowsInstallBatBuilder();
+        // se4install : mock renvoyant le mot de passe config en live (comportement
+        // iso pré-TOTP). La rotation TOTP est testée dans ServiceCredentialTotpReconcilerTest.
+        $creds = \Mockery::mock(\App\Services\ServiceCredentials::class);
+        $creds->shouldReceive('se4installEffectivePassword')
+            ->andReturnUsing(fn () => (string) config('sambaedu.se4install_passwd', ''));
+
+        $this->service = new WindowsInstallBatBuilder($creds);
     }
 
     private function makeWorkstation(string $name = 'PC-101'): Workstation

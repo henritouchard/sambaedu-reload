@@ -183,6 +183,11 @@ final class WindowsUnattendBuilder
  </Identification>
 </component>';
 
+    public function __construct(
+        private readonly \App\Services\ServiceCredentials $credentials,
+    ) {
+    }
+
     /**
      * Channel Monolog dédié (iso 3.1 D7).
      */
@@ -275,7 +280,7 @@ final class WindowsUnattendBuilder
         $domain = (string) config('sambaedu.domain', '');
         if ($join) {
             $autoLogonUser = (string) config('sambaedu.se4install_name', '');
-            $autoLogonPasswd = (string) config('sambaedu.se4install_passwd', '');
+            $autoLogonPasswd = $this->credentials->se4installEffectivePassword();
             $autoLogonDomain = $domain;
             $localUser = (string) config('sambaedu.windows.adminse_name', '');
             $localPasswd = (string) config('sambaedu.windows.adminse_passwd', '');
@@ -369,7 +374,7 @@ final class WindowsUnattendBuilder
                 "/ns:unattend/ns:settings[@pass='specialize']/component/Identification/Credentials/Username"
                     => (string) config('sambaedu.se4install_name', ''),
                 "/ns:unattend/ns:settings[@pass='specialize']/component/Identification/Credentials/Password"
-                    => (string) config('sambaedu.se4install_passwd', ''),
+                    => $this->credentials->se4installEffectivePassword(),
                 "/ns:unattend/ns:settings[@pass='specialize']/component/Identification/Credentials/Domain"
                     => $domain,
                 "/ns:unattend/ns:settings[@pass='specialize']/component/Identification/JoinDomain"

@@ -36,6 +36,11 @@ final class WindowsInstallBatBuilder
      */
     private const BAT_HEADER = "::cmd";
 
+    public function __construct(
+        private readonly \App\Services\ServiceCredentials $credentials,
+    ) {
+    }
+
     /**
      * Génère le script bash WinPE pour un poste donné.
      *
@@ -64,8 +69,11 @@ final class WindowsInstallBatBuilder
         $se4installName = WindowsXmlPlaceholders::sanitizeShellArg(
             (string) config('sambaedu.se4install_name', ''),
         );
+        // Mot de passe effectif (base+code si TOTP actif, repli config sinon)
+        // — source unique via ServiceCredentials. Voir
+        // [[project_se4install_credential_totp]].
         $se4installPasswd = WindowsXmlPlaceholders::sanitizeShellArg(
-            (string) config('sambaedu.se4install_passwd', ''),
+            $this->credentials->se4installEffectivePassword(),
         );
         $domain = WindowsXmlPlaceholders::sanitizeShellArg(
             (string) config('sambaedu.domain', ''),

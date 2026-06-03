@@ -48,6 +48,19 @@ final class IpxeSchemaBootstrapper
             });
         }
 
+        // se4install : les builders Windows lisent ServiceCredentials qui
+        // interroge cette table (effectivePassword → repli config si vide).
+        if (! Schema::hasTable('service_credentials')) {
+            Schema::create('service_credentials', function (Blueprint $table): void {
+                $table->id();
+                $table->string('name', 64)->unique();
+                $table->text('secret')->nullable();
+                $table->text('totp_secret')->nullable();
+                $table->unsignedBigInteger('totp_applied_counter')->nullable();
+                $table->timestamps();
+            });
+        }
+
         if (! Schema::hasTable('workstations')) {
             Schema::create('workstations', function (Blueprint $table): void {
                 $table->id();

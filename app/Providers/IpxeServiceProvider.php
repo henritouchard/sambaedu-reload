@@ -83,6 +83,7 @@ class IpxeServiceProvider extends ServiceProvider
         // les templates `ipxe.actions.*`.
         $this->app->singleton(IpxeActionResolver::class, fn ($app) => new IpxeActionResolver(
             $app->make(ViewFactory::class),
+            $app->make(\App\Services\ServiceCredentials::class),
         ));
 
         // Story 4.10 — IpxeAuthService centralise l'auth iPXE
@@ -129,8 +130,13 @@ class IpxeServiceProvider extends ServiceProvider
         $this->app->singleton(LinuxPostInstallTracker::class, fn () => new LinuxPostInstallTracker());
 
         // Story 3.5 — D11 / AC9.3 — bindings installation Windows.
-        $this->app->singleton(WindowsUnattendBuilder::class, fn () => new WindowsUnattendBuilder());
-        $this->app->singleton(WindowsInstallBatBuilder::class, fn () => new WindowsInstallBatBuilder());
+        // se4install : mot de passe effectif (TOTP) via ServiceCredentials injecté.
+        $this->app->singleton(WindowsUnattendBuilder::class, fn ($app) => new WindowsUnattendBuilder(
+            $app->make(\App\Services\ServiceCredentials::class),
+        ));
+        $this->app->singleton(WindowsInstallBatBuilder::class, fn ($app) => new WindowsInstallBatBuilder(
+            $app->make(\App\Services\ServiceCredentials::class),
+        ));
         $this->app->singleton(WindowsInstallMenuBuilder::class, fn () => new WindowsInstallMenuBuilder());
         $this->app->singleton(WindowsPostInstallTracker::class, fn () => new WindowsPostInstallTracker());
 
@@ -138,6 +144,7 @@ class IpxeServiceProvider extends ServiceProvider
         // post-OOBE Windows (sysprep/nosysprep/join/renomme/post/wpkg).
         $this->app->singleton(WindowsActionCmdBuilder::class, fn ($app) => new WindowsActionCmdBuilder(
             $app->make(ViewFactory::class),
+            $app->make(\App\Services\ServiceCredentials::class),
         ));
 
         // Story 3.6 — D7 / AC6.4 — bindings gestion ISO Windows (sous-namespace

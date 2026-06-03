@@ -53,6 +53,7 @@ final class IpxeActionResolver
 
     public function __construct(
         private readonly ViewFactory $viewFactory,
+        private readonly \App\Services\ServiceCredentials $credentials,
     ) {
     }
 
@@ -83,10 +84,13 @@ final class IpxeActionResolver
         $autorunUrl = $scriptUrl . '/sysrescuecd/autorun.php?mac=' . rawurlencode($mac)
             . '&uuid=' . rawurlencode($uuid);
 
-        $se4installPasswd = (string) config(
-            (string) config('ipxe.actions.se4install_passwd_config_key', 'sambaedu.se4install_passwd'),
-            '',
-        );
+        // Mot de passe effectif (base+code si TOTP actif) avec repli sur la clé
+        // de config indirecte historique. Voir [[project_se4install_credential_totp]].
+        $se4installPasswd = $this->credentials->effectivePassword('se4install')
+            ?? (string) config(
+                (string) config('ipxe.actions.se4install_passwd_config_key', 'sambaedu.se4install_passwd'),
+                '',
+            );
 
         // Variables spécifiques `winpe` — iso-legacy `actions/winpe.php`.
         // Fix review #2 / Q2 Henri — whitelist stricte de `$version`. Défense
