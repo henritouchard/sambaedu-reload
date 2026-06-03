@@ -245,8 +245,10 @@ return [
     'se4fs_ip'          => env('SE4FS_IP', ''),
     'se4fs_name'        => env('SE4FS_NAME', ''),
     'ipxe_url'          => env('IPXE_URL', ''),
-    'se4install_name'   => env('SE4INSTALL_NAME', ''),
+    'se4install_name'   => env('SE4INSTALL_NAME', 'se4install'),
     'se4install_passwd' => env('SE4INSTALL_PASSWD', ''),
+    // Fichier legacy des tokens TOTP (import one-shot via /sync-from-ad).
+    'se4install_hashes_file' => env('SAMBAEDU_HASHES_FILE', '/etc/sambaedu/hashes'),
 
     // Story 17.2 — AC1.2 — Variables nouvelles consommées par les scripts GPO
     // applications. Iso-legacy `applications.inc.php` → `write_param()`.

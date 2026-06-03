@@ -27,6 +27,15 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping(5)
                  ->runInBackground();
 
+        // Réconciliation TOTP des comptes de service (se4install) : aligne le
+        // mot de passe AD sur la fenêtre 6 h courante. Tick 1 min → désync
+        // post-rollover bornée à ~1 min ; no-op idempotent quand rien n'a
+        // changé. withoutOverlapping pour éviter deux runs concurrents.
+        $schedule->command('sambaedu:totp:reconcile')
+                 ->everyMinute()
+                 ->withoutOverlapping()
+                 ->runInBackground();
+
         // Synchronisation automatique des utilisateurs depuis l'AD
         $schedule->command('users:sync-from-ad --scope=all --mode=delta')
                  ->everyFiveMinutes()

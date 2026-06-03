@@ -138,6 +138,13 @@ class LdapRecordServiceProvider extends ServiceProvider
             'sambaedu.se4fs_ip' => $network->se4fsIp,
             'sambaedu.se4fs_name' => $network->se4fsName,
             'sambaedu.se4_pub_key' => $credentials->se4PubKey,
+            // Mot de passe du compte de service `se4install` (Domain Admin utilisé
+            // pour les installs auto). Le legacy le GÉNÈRE aléatoirement à la
+            // première install et le persiste dans `sambaedu.conf` (section
+            // `clients`) — il n'existe pas de défaut statique. On le dérive donc
+            // d'ici ; un `SE4INSTALL_PASSWD` explicite dans `.env` reste
+            // prioritaire (le backfill ne s'applique que si la config est vide).
+            'sambaedu.se4install_passwd' => (string) $config->get('se4install_passwd', ''),
         ];
 
         $apply = [];
