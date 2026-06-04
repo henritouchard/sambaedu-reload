@@ -6,7 +6,7 @@ param mac ${net0/mac}
 param uuid ${uuid}
 param username ${username}
 param password ${password:base64}
-console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }}
+console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }} ||
 @if($attachedParcName !== null)
 echo La machine a ete ajoutee au parc {{ $attachedParcName }}
 sleep 3

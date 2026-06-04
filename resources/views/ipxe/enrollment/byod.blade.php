@@ -7,7 +7,7 @@ param uuid ${uuid}
 param platform {{ $platform }}
 param username ${username}
 param password ${password:base64}
-console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }}
+console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }} ||
 @if($denied ?? false)
 echo ERREUR ! acces refuse
 sleep 3

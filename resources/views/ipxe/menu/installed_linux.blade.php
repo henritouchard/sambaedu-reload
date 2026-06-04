@@ -1,5 +1,5 @@
 {!! $shebang !!}
-console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }}
+console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }} ||
 {{-- Fix install-debian : ecran one-shot post-install Linux. Charset ASCII
      strict (le firmware iPXE corrompt l'affichage sur les octets UTF-8 > 127,
      cf. iso D8) -> pas d'accents. Le compte a rebours natif iPXE est affiche

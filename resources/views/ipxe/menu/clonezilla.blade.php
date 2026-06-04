@@ -6,7 +6,7 @@ param mac ${net0/mac}
 param uuid ${uuid}
 param username ${username}
 param password ${password:base64}
-console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }}
+console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }} ||
 :menu
 menu Clonezilla - {{ $workstationName }} ({{ $ip }})
 set menu-default exit

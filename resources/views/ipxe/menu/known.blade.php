@@ -1,5 +1,5 @@
 {!! $shebang !!}
-console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }}
+console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }} ||
 :menu
 menu Preboot eXecution Environment for {{ $workstationName }} ({{ $ip }})
 set menu-default {{ $menuDefault }}

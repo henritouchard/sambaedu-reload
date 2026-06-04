@@ -369,8 +369,10 @@ return [
         'menu_timeout_ms' => (int) env('IPXE_INSTALL_WIN_TIMEOUT_MS', 10000),
 
         // Background PNG affiché par la console iPXE (iso-legacy
-        // installation-windows.php:24).
-        'background_png' => env('IPXE_INSTALL_WIN_BG_PNG', '/ipxe/png/windows10.png'),
+        // installation-windows.php:24 qui sert windows11.png — windows10.png
+        // n'existe plus dans les assets png/ ; un 404 faisait avorter le menu
+        // iPXE avant la garde `||`, éjectant le poste du flow natif).
+        'background_png' => env('IPXE_INSTALL_WIN_BG_PNG', '/ipxe/png/windows11.png'),
 
         // Variante par défaut sélectionnée (iso-legacy
         // installation-windows.php:28 — install Win11 auto).
