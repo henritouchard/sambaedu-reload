@@ -26,8 +26,15 @@ use App\Models\Workstation;
  *  - **Sanitization shell-arg** : tous les values interpolés (config, hostname,
  *    AD domain, passwords) passent par {@see WindowsXmlPlaceholders::sanitizeShellArg()}
  *    qui rejette les chars d'injection cmd.exe (`;`, `&`, `|`, backtick, etc.).
- *  - **URL native** `/ipxe/windows/action` (pas `.php`) — la fin de phase
- *    WinPE remonte au tracker SE5 (pas au legacy `Win10/action.php`).
+ *
+ * **Divergence legacy assumée (2026-06-04)** : les lignes post-`setup.exe`
+ * du legacy (`net use /del`, curl `etape=winpe`, `bcdboot /addlast` —
+ * `install.bat.php:56-60`) ont été RETIRÉES : setup.exe lancé depuis WinPE
+ * reboote lui-même sans rendre la main (même avec `/noreboot`, honoré
+ * uniquement depuis un OS complet), elles n'ont donc jamais été exécutées.
+ * Le début d'install est tracé server-side à la génération
+ * ({@see WindowsPostInstallTracker::recordInstallBatGenerated}), la fin par
+ * le curl OOBE de `unattend.xml` (`etape=oobe&ret=0`).
  */
 final class WindowsInstallBatBuilder
 {
@@ -54,7 +61,9 @@ final class WindowsInstallBatBuilder
         WindowsVersion $version,
         array $attrs,
     ): string {
-        $bios = (string) ($attrs['bios'] ?? 'legacy');
+        // `$attrs['bios']` n'est plus consommé ici depuis le retrait du
+        // `bcdboot /addlast` post-setup (code mort legacy) — il reste utilisé
+        // par WindowsUnattendBuilder (DiskConfiguration uefi/legacy).
         $debug = (int) ($attrs['debug'] ?? 0);
 
         // Sanitization stricte de toutes les valeurs interpolées (defense in
@@ -77,20 +86,6 @@ final class WindowsInstallBatBuilder
         );
         $domain = WindowsXmlPlaceholders::sanitizeShellArg(
             (string) config('sambaedu.domain', ''),
-        );
-        // Convention SambaEdu : hostnames toujours lowercase.
-        $hostname = WindowsXmlPlaceholders::sanitizeShellArg(
-            strtolower(IpxeHostnameSanitizer::sanitizeForIpxeOutput((string) ($workstation->name ?? ''))),
-        );
-        // Fix 2026-06-04 — UUID/MAC pour le curl winpe : le controller
-        // `/ipxe/windows/action` résout par UUID/MAC uniquement (le name
-        // reporté n'est pas trusted) ; sans eux le rapport part en
-        // `unknown_workstation`.
-        $uuid = WindowsXmlPlaceholders::sanitizeShellArg(
-            strtolower((string) ($workstation->uuid ?? '')),
-        );
-        $mac = WindowsXmlPlaceholders::sanitizeShellArg(
-            strtolower((string) ($workstation->mac ?? '')),
         );
         $versionStr = WindowsXmlPlaceholders::sanitizeShellArg($version->value);
 
@@ -122,33 +117,18 @@ final class WindowsInstallBatBuilder
         $lines2[] = '';
         $bash .= implode("\r\n", $lines2) . "\r\n" . $pause;
 
-        $lines3 = [];
-        // Divergence legacy assumée (fix 2026-06-04) : `/noreboot` — sans lui,
-        // setup.exe reboote lui-même la machine en fin de phase WinPE et les
-        // lignes suivantes (rapport winpe + bcdboot) ne s'exécutaient JAMAIS
-        // (déjà le cas en SE4 — `install.bat.php:55` sans /noreboot). Le
-        // reboot est repris en main par `wpeutil reboot` en fin de script.
-        $lines3[] = 'z:\\os\\' . $versionStr . '\\sources\\setup.exe /unattend:x:\\windows\\system32\\unattend.xml /noreboot';
-        $lines3[] = 'net use * /del /y';
-        $lines3[] = 'echo remontee du succes de l installation';
-        // URL NATIVE 3.5 (pas `.php`). Iso 3.4 D2 — pointe sur le hook SE5
-        // `/ipxe/windows/action` (pas legacy `Win10/action.php`).
-        // `--max-time 60` : un curl qui pend ne doit pas bloquer le reboot.
-        // Sortie journalisée sur le disque cible pour post-mortem.
-        $lines3[] = 'if exist c:\\windows\\system32\\curl.exe '
-            . '(c:\\windows\\system32\\curl.exe -sS --max-time 60 -F "etape=winpe" -F "name=' . $hostname . '" '
-            . '-F "uuid=' . $uuid . '" -F "mac=' . $mac . '" '
-            . '-F "ret=0" http://' . $se4fsName . '/ipxe/windows/action '
-            . '>> c:\\windows\\se4-winpe-report.log 2>&1) '
-            . 'else (echo curl.exe absent de l image appliquee >> c:\\windows\\se4-winpe-report.log)';
-        if ($bios === 'uefi') {
-            $lines3[] = '%windir%\\system32\\bcdboot c:\\windows /addlast';
-        }
-        $bash .= implode("\r\n", $lines3) . "\r\n" . $pause;
-
-        // Reboot explicite (la PAUSE debug ci-dessus permet d'inspecter la
-        // console WinPE avant le restart).
-        $bash .= "wpeutil reboot\r\n";
+        // setup.exe est la DERNIÈRE commande utile : lancé depuis WinPE, il
+        // reboote lui-même la machine en fin de phase et ne rend jamais la
+        // main (`/noreboot` n'est honoré que depuis un OS complet — vérifié
+        // le 2026-06-04 : un log post-setup sur le disque cible n'est jamais
+        // créé). Les lignes legacy qui suivaient (`net use /del`, curl
+        // `etape=winpe`, `bcdboot /addlast` — `install.bat.php:56-60`)
+        // étaient du code mort depuis toujours et ont été retirées. Le
+        // tracking du début d'install est server-side (à la génération,
+        // {@see WindowsPostInstallTracker::recordInstallBatGenerated}) ; la
+        // fin d'install est rapportée par le curl OOBE de `unattend.xml`.
+        $bash .= 'z:\\os\\' . $versionStr . '\\sources\\setup.exe /unattend:x:\\windows\\system32\\unattend.xml'
+            . "\r\n" . $pause;
 
         return $bash;
     }

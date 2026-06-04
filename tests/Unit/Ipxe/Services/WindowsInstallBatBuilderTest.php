@@ -84,7 +84,7 @@ class WindowsInstallBatBuilderTest extends TestCase
     }
 
     #[Test]
-    public function it_builds_win11_install_bat_uefi_bios_with_bcdboot(): void
+    public function it_builds_win11_install_bat_with_setup_as_last_command(): void
     {
         $ws = $this->makeWorkstation();
         $bash = $this->service->build(
@@ -93,16 +93,19 @@ class WindowsInstallBatBuilderTest extends TestCase
             ['bios' => 'uefi', 'debug' => 0, 'perso' => 0],
         );
 
-        self::assertStringContainsString(
-            'z:\\os\\Win11\\sources\\setup.exe /unattend:x:\\windows\\system32\\unattend.xml /noreboot',
+        // Divergence legacy assumée (2026-06-04) : setup.exe lancé depuis
+        // WinPE reboote lui-même sans rendre la main — toute commande après
+        // lui est du code mort. Il DOIT être la dernière commande du script.
+        self::assertStringEndsWith(
+            "z:\\os\\Win11\\sources\\setup.exe /unattend:x:\\windows\\system32\\unattend.xml\r\n\r\n",
             $bash,
         );
-        // bcdboot ajouté en mode UEFI.
-        self::assertStringContainsString('%windir%\\system32\\bcdboot c:\\windows /addlast', $bash);
-        // Fix 2026-06-04 — sans /noreboot, setup.exe rebootait avant que le
-        // rapport winpe et bcdboot ne s'exécutent ; le reboot est repris en
-        // main en toute fin de script.
-        self::assertStringEndsWith("wpeutil reboot\r\n", $bash);
+        // Les lignes post-setup legacy (mortes) ne doivent pas réapparaître.
+        self::assertStringNotContainsString('bcdboot', $bash);
+        self::assertStringNotContainsString('curl', $bash);
+        self::assertStringNotContainsString('etape=winpe', $bash);
+        self::assertStringNotContainsString('wpeutil reboot', $bash);
+        self::assertStringNotContainsString('/noreboot', $bash);
     }
 
     #[Test]
@@ -159,10 +162,11 @@ class WindowsInstallBatBuilderTest extends TestCase
     }
 
     #[Test]
-    public function it_uses_native_action_url_not_php(): void
+    public function it_contains_no_client_callback(): void
     {
-        // L'URL ne doit PAS pointer sur le legacy `.php` — la 3.5 a posé un
-        // hook natif `/ipxe/windows/action`.
+        // 2026-06-04 : le callback winpe post-setup (legacy `Win10/action.php`,
+        // natif `/ipxe/windows/action`) a été retiré — code mort, setup.exe
+        // ne rend jamais la main. Aucune URL de callback ne doit subsister.
         $ws = $this->makeWorkstation();
         $bash = $this->service->build(
             $ws,
@@ -170,9 +174,8 @@ class WindowsInstallBatBuilderTest extends TestCase
             ['bios' => 'uefi', 'debug' => 0, 'perso' => 0],
         );
 
-        self::assertStringContainsString('http://se4fs.lan/ipxe/windows/action', $bash);
+        self::assertStringNotContainsString('/ipxe/windows/action', $bash);
         self::assertStringNotContainsString('action.php', $bash);
-        self::assertStringNotContainsString('Win10/action.php', $bash);
     }
 
     #[Test]
@@ -209,25 +212,6 @@ class WindowsInstallBatBuilderTest extends TestCase
         );
     }
 
-    #[Test]
-    public function it_includes_curl_winpe_callback_with_hostname(): void
-    {
-        $ws = $this->makeWorkstation('SALLE-B-PC03');
-        $bash = $this->service->build(
-            $ws,
-            WindowsVersion::Win11,
-            ['bios' => 'uefi', 'debug' => 0, 'perso' => 0],
-        );
-
-        // Le hostname est inclus dans la commande curl post-setup.
-        self::assertMatchesRegularExpression('@-F "etape=winpe"@', $bash);
-        self::assertMatchesRegularExpression('@-F "name=salle-b-pc03"@', $bash);
-        self::assertMatchesRegularExpression('@-F "ret=0"@', $bash);
-        // Fix 2026-06-04 — uuid/mac requis : `/ipxe/windows/action` résout par
-        // UUID/MAC uniquement, sans eux le rapport part en unknown_workstation.
-        self::assertMatchesRegularExpression('@-F "uuid=12345678-1234-1234-1234-aaaaaaaaaaaa"@', $bash);
-        self::assertMatchesRegularExpression('@-F "mac=aa:bb:cc:dd:ee:01"@', $bash);
-    }
 
     /**
      * Post-review code-review #4 — AC2.3 CRITICAL : pas de secret loggué.

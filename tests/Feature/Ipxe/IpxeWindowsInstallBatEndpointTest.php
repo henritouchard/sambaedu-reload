@@ -53,9 +53,10 @@ class IpxeWindowsInstallBatEndpointTest extends TestCase
         $body = (string) $response->getContent();
         self::assertStringStartsWith("::cmd\r\n", $body);
         self::assertStringContainsString('z:\\os\\Win11\\sources\\setup.exe', $body);
-        self::assertStringContainsString('bcdboot', $body);
-        // Endpoint native (pas .php).
-        self::assertStringContainsString('/ipxe/windows/action', $body);
+        // 2026-06-04 : plus de lignes post-setup (bcdboot, callback winpe) —
+        // code mort retiré, setup.exe ne rend jamais la main depuis WinPE.
+        self::assertStringNotContainsString('bcdboot', $body);
+        self::assertStringNotContainsString('/ipxe/windows/action', $body);
         self::assertStringNotContainsString('action.php', $body);
     }
 
