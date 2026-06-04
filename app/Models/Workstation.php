@@ -5,7 +5,6 @@ namespace App\Models;
 use App\Auth\V1\Models\WorkstationMigrationStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -30,7 +29,6 @@ use Livewire\Wireable;
  * @property string|null $report_sha Hash SHA du dernier rapport
  * @property string|null $log_path Chemin du fichier log
  * @property string|null $report_path Chemin du fichier rapport
- * @property int|null $physical_room_id ID de la salle physique
  * @property string|null $ad_dn Distinguished Name dans AD
  * @property string|null $ad_guid objectGUID dans AD
  * @property bool $managed_by_control_hub
@@ -63,7 +61,6 @@ class Workstation extends Model implements Wireable
         'report_sha',
         'log_path',
         'report_path',
-        'physical_room_id',
         'ad_dn',
         'ad_guid',
         'managed_by_control_hub',
@@ -79,7 +76,6 @@ class Workstation extends Model implements Wireable
      */
     protected $casts = [
         'last_report_at' => 'datetime',
-        'physical_room_id' => 'integer',
         'managed_by_control_hub' => 'boolean',
         'archived_at' => 'datetime',
         'programmed_action' => 'array',
@@ -114,17 +110,57 @@ class Workstation extends Model implements Wireable
             'shortcut_id'
         )->withTimestamps();
     }
-    public function physicalRoom(): BelongsTo
+    /**
+     * Relation pivot filtrée vers la (les) salle(s) physique(s) du poste.
+     *
+     * Story 4.11 — l'appartenance « salle » vit désormais dans le pivot global
+     * `workstation_group_workstation`, plus dans une FK dédiée. La salle est un
+     * groupe `is_physical = true` ; l'invariant « 1 salle max par poste » est
+     * une règle de service (swap transactionnel `WorkstationGroupService`), pas
+     * une contrainte DB (D3). Cette relation retourne donc *techniquement* une
+     * collection, dont l'accessor singulier {@see getPhysicalRoomAttribute}
+     * extrait l'unique salle (ou null).
+     */
+    public function physicalRooms(): BelongsToMany
     {
-        return $this->belongsTo(WorkstationGroup::class, 'physical_room_id');
+        return $this->belongsToMany(
+            WorkstationGroup::class,
+            'workstation_group_workstation',
+            'workstation_id',
+            'workstation_group_id'
+        )->where('workstation_groups.is_physical', true)
+            ->withTimestamps();
     }
 
     /**
-     * Vérifie si la machine est assignée à une salle physique
+     * Accessor singulier : LA salle physique du poste (ou null).
+     *
+     * Story 4.11 — remplace l'ancienne relation `belongsTo` FK. API de lecture
+     * inchangée pour les consommateurs (`$ws->physicalRoom`, `?->ad_dn`,
+     * `?->id`, `?->name`). Réutilise la relation eager-loadée `physicalRooms`
+     * si présente pour éviter le N+1.
+     */
+    public function getPhysicalRoomAttribute(): ?WorkstationGroup
+    {
+        if ($this->relationLoaded('physicalRooms')) {
+            return $this->getRelation('physicalRooms')->first();
+        }
+
+        return $this->physicalRooms()->first();
+    }
+
+    /**
+     * Vérifie si la machine est assignée à une salle physique.
+     *
+     * Story 4.11 — lecture via le pivot (`is_physical = true`).
      */
     public function hasPhysicalRoom(): bool
     {
-        return !is_null($this->physical_room_id);
+        if ($this->relationLoaded('physicalRooms')) {
+            return $this->getRelation('physicalRooms')->isNotEmpty();
+        }
+
+        return $this->physicalRooms()->exists();
     }
 
     /**
@@ -136,18 +172,6 @@ class Workstation extends Model implements Wireable
     public function getAdOu(): ?string
     {
         return $this->physicalRoom?->ad_dn;
-    }
-
-    /**
-     * Assigne la machine à une salle physique
-     * 
-     * @param int|null $roomId ID de la salle physique (null pour retirer)
-     * @return bool
-     */
-    public function assignToPhysicalRoom(?int $roomId): bool
-    {
-        $this->physical_room_id = $roomId;
-        return $this->save();
     }
 
     /**

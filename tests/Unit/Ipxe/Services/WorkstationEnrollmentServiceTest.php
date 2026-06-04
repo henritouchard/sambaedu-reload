@@ -41,6 +41,11 @@ class WorkstationEnrollmentServiceTest extends TestCase
         IpxeSchemaBootstrapper::bootstrap();
         config()->set('sambaedu.legacy_ldap.suffix', '');
 
+        // Story 4.11 — assignRoom délègue au service qui dispatche le job AD ;
+        // pas de LDAP en test.
+        \Illuminate\Support\Facades\Queue::fake();
+        \App\Observers\WorkstationGroupObserver::disableSync();
+
         $this->adManager = Mockery::mock(AdMachineManager::class);
         $this->service = new WorkstationEnrollmentService(
             $this->adManager,
@@ -50,6 +55,7 @@ class WorkstationEnrollmentServiceTest extends TestCase
 
     protected function tearDown(): void
     {
+        \App\Observers\WorkstationGroupObserver::enableSync();
         Mockery::close();
         parent::tearDown();
     }
@@ -272,10 +278,39 @@ class WorkstationEnrollmentServiceTest extends TestCase
         $ok = $this->service->assignRoom($ws, (int) $room->id);
 
         self::assertTrue($ok);
-        self::assertDatabaseHas('workstations', [
-            'id' => $ws->id,
-            'physical_room_id' => $room->id,
+        // Story 4.11 — l'appartenance « salle » vit dans le pivot global.
+        self::assertDatabaseHas('workstation_group_workstation', [
+            'workstation_id' => $ws->id,
+            'workstation_group_id' => $room->id,
         ]);
+        self::assertSame((int) $room->id, $ws->fresh()->physicalRoom?->id);
+    }
+
+    #[Test]
+    public function it_dispatches_exactly_one_move_job_on_first_room_assignment(): void
+    {
+        // Pitfall AC7 (story 4.11) : un enrôlement iPXE neuf (poste sans
+        // salle précédente) doit dispatcher le move OU AD exactement 1 fois
+        // — pas 0 (garde oldRoomId trop large), pas 2 (double canal).
+        $ws = Workstation::create([
+            'name' => 'pc-room-new',
+            'uuid' => 'bbbb9999-9999-9999-9999-bbbbbbbbbbbb',
+            'mac' => 'aa:bb:cc:dd:ee:92',
+            'status' => 'active',
+        ]);
+        $room = WorkstationGroup::create([
+            'name' => 'salle-102',
+            'is_physical' => true,
+            'is_active' => true,
+        ]);
+
+        $ok = $this->service->assignRoom($ws, (int) $room->id);
+
+        self::assertTrue($ok);
+        \Illuminate\Support\Facades\Queue::assertPushed(
+            \App\Jobs\AdSync\WorkstationMembershipAdSyncJob::class,
+            1,
+        );
     }
 
     #[Test]
@@ -291,10 +326,8 @@ class WorkstationEnrollmentServiceTest extends TestCase
         $ok = $this->service->assignRoom($ws, 99999);
 
         self::assertFalse($ok);
-        self::assertDatabaseHas('workstations', [
-            'id' => $ws->id,
-            'physical_room_id' => null,
-        ]);
+        // Story 4.11 — aucune ligne pivot salle créée pour un id invalide.
+        self::assertNull($ws->fresh()->physicalRoom);
     }
 
     #[Test]

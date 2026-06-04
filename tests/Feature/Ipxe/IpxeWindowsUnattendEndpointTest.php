@@ -203,13 +203,14 @@ class IpxeWindowsUnattendEndpointTest extends TestCase
             'is_active' => true,
         ]);
 
-        Workstation::create([
+        $ws = Workstation::create([
             'name' => 'pc-w11-ou',
             'uuid' => '12345678-1234-1234-1234-aaaabbbb0001',
             'mac' => 'aa:bb:cc:dd:ee:09',
             'status' => 'active',
-            'physical_room_id' => $room->id,
         ]);
+        // Story 4.11 — la salle (source de l'OU) vit dans le pivot global.
+        $ws->groups()->attach($room->id);
 
         $response = $this->get('/ipxe/windows/unattend.xml?mac=aa:bb:cc:dd:ee:09&uuid=12345678-1234-1234-1234-aaaabbbb0001&version=Win11&bios=uefi&perso=0');
 

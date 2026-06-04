@@ -77,7 +77,6 @@ final class IpxeSchemaBootstrapper
                 $table->string('report_sha', 128)->nullable();
                 $table->string('log_path', 512)->nullable();
                 $table->string('report_path', 512)->nullable();
-                $table->unsignedBigInteger('physical_room_id')->nullable();
                 $table->string('ad_dn', 512)->nullable();
                 $table->string('ad_guid', 64)->nullable();
                 $table->boolean('managed_by_control_hub')->default(false);

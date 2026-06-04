@@ -120,8 +120,9 @@ class IpxeEnrollmentMenuBuilderTest extends TestCase
             'uuid' => '44444444-4444-4444-4444-444444444444',
             'mac' => 'aa:bb:cc:dd:ee:04',
             'status' => 'active',
-            'physical_room_id' => $room->id,
         ]);
+        // Story 4.11 — la salle courante vit dans le pivot global.
+        $ws->groups()->attach($room->id);
 
         $vars = $this->builder->buildRoomMenuVariables($ws, 'http://se4fs.lan');
 

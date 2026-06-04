@@ -115,7 +115,6 @@ class LdapShimTest extends TestCase
                 $table->string('report_sha')->nullable();
                 $table->string('log_path')->nullable();
                 $table->string('report_path')->nullable();
-                $table->integer('physical_room_id')->nullable();
                 $table->string('ad_dn')->nullable();
                 $table->string('ad_guid')->nullable();
                 $table->boolean('managed_by_control_hub')->default(false);

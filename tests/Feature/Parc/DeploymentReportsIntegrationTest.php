@@ -71,7 +71,6 @@ class DeploymentReportsIntegrationTest extends TestCase
             $table->string('report_sha', 64)->nullable();
             $table->text('log_path')->nullable();
             $table->text('report_path')->nullable();
-            $table->unsignedBigInteger('physical_room_id')->nullable();
             $table->string('ad_dn', 512)->nullable();
             $table->string('ad_guid', 36)->nullable();
             $table->boolean('managed_by_control_hub')->default(false);

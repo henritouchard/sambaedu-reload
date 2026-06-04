@@ -917,7 +917,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                                     <i class="fa-solid fa-arrow-up-right-from-square text-xs opacity-40 ml-auto"></i>
                                 </a>
                                 <button type="button"
-                                    wire:click="$dispatch('open-workstation-group-selector', { drawerId: 'change-physical-room', groups: {{ $availablePhysicalRooms->filter(fn($r) => $r->id !== $workstation->physical_room_id)->values()->toJson() }} })"
+                                    wire:click="$dispatch('open-workstation-group-selector', { drawerId: 'change-physical-room', groups: {{ $availablePhysicalRooms->filter(fn($r) => $r->id !== $workstation->physicalRoom?->id)->values()->toJson() }} })"
                                     class="btn btn-warning btn-sm gap-2">
                                     <i class="fa-solid fa-pen-to-square"></i>
                                     Modifier

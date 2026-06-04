@@ -1,6 +1,6 @@
 # Story 4.11 : Unification de l'appartenance poste↔groupe dans le pivot global (suppression FK `physical_room_id`)
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -52,47 +52,47 @@ Décision mémorisée : `~/.claude/projects/.../memory/project_pivot_global_memb
 ## Tasks / Subtasks
 
 ### Tâche 1 — Audit préalable (AC: 7)
-- [ ] 1.1 Tracer le canal réel de propagation OU AD lors d'un changement de salle (grep `MembershipAdSyncJob`, `modrdn`, `move`, hooks 4-9) : confirmer le gap ou identifier le canal vivant.
-- [ ] 1.2 Inventaire exhaustif final des call-sites `physical_room_id|physicalRoom|physicalWorkstations|assignToPhysicalRoom` (app/, resources/, tests/, database/) — base : inventaire du 2026-06-04 en Dev Notes.
-- [ ] 1.3 Vérifier les écritures de FK côté imports (CSV story 4-5, import AD `WorkstationGroupService` section migration initiale, `SyncWorkstationGroupsFromAd`).
+- [x] 1.1 Tracer le canal réel de propagation OU AD lors d'un changement de salle (grep `MembershipAdSyncJob`, `modrdn`, `move`, hooks 4-9) : confirmer le gap ou identifier le canal vivant. **Gap CONFIRMÉ** : `WorkstationMembershipAdSyncJob::move` n'était dispatché nulle part dans `app/` (seule occurrence non-définition = docblock `WorkstationEnrollmentService:462`). `AdSyncService::moveMachineToSalle` existe et est vivant, mais aucun déclencheur. → AC7 câble le dispatch dans le service.
+- [x] 1.2 Inventaire exhaustif final des call-sites `physical_room_id|physicalRoom|physicalWorkstations|assignToPhysicalRoom` (app/, resources/, tests/, database/) — réalisé (cf. Completion Notes).
+- [x] 1.3 Vérifier les écritures de FK côté imports : seul `database/seeders/WorkstationSeeder.php` écrivait la FK (migré vers pivot). Aucun import CSV/AD vivant n'écrit `physical_room_id`.
 
 ### Tâche 2 — Migration de schéma + backfill (AC: 1)
-- [ ] 2.1 Migration : backfill `INSERT INTO workstation_group_workstation (workstation_id, workstation_group_id, created_at, updated_at) SELECT w.id, w.physical_room_id, NOW(), NOW() FROM workstations w JOIN workstation_groups g ON g.id = w.physical_room_id WHERE w.physical_room_id IS NOT NULL ON CONFLICT (workstation_group_id, workstation_id) DO NOTHING` — idempotent grâce à la contrainte unique `wg_ws_unique` (vérifiée présente sur la VM 2026-06-04) ; le JOIN écarte les FK orphelines ; les timestamps doivent être posés explicitement (insert SQL brut, pas Eloquent).
-- [ ] 2.2 Drop `workstations.physical_room_id` (+ index/contrainte FK associés). `down()` : recrée la colonne et la repeuple depuis le pivot (`is_physical=true`).
-- [ ] 2.3 D3 actée app-only (Henri 2026-06-04) : PAS de colonne `is_physical` dénormalisée sur le pivot, PAS d'index partiel. Documenter le choix dans la doc QA (Tâche 8) avec le critère de réouverture : durcir via index dénormalisé uniquement si un incident de double-salle survient.
+- [x] 2.1 Migration : backfill FK → pivot via `insertOrIgnore` (cross-driver PG `ON CONFLICT DO NOTHING` / SQLite `INSERT OR IGNORE`) avec timestamps explicites ; JOIN sur `workstation_groups` écartant les FK orphelines. Idempotent via `wg_ws_unique`.
+- [x] 2.2 Drop `workstations.physical_room_id` (+ index/FK). `down()` recrée colonne + FK et repeuple depuis le pivot `is_physical=true`.
+- [x] 2.3 D3 app-only respectée : pas de colonne pivot dénormalisée, pas d'index partiel. Documenté en doc QA (`parc.md` Section 1) avec critère de réouverture + sonde Scénario 1.3.
 
 ### Tâche 3 — Modèles (AC: 2, 6)
-- [ ] 3.1 `Workstation::physicalRoom` → relation pivot filtrée (`belongsToMany(...)->wherePivot`... non : `->where('workstation_groups.is_physical', true)`) + accessor singulier ; `machineObjectOu` inchangé dans sa signature (`physicalRoom?->ad_dn`).
-- [ ] 3.2 `Workstation::hasPhysicalRoom()` réécrit sur le pivot ; suppression `assignToPhysicalRoom()` (écriture = service uniquement).
-- [ ] 3.3 `WorkstationGroup` : `members`/`members_count`/`workstation_count` délèguent à `workstations()` ; suppression `physicalWorkstations()`.
-- [ ] 3.4 Casts/fillable : retirer `physical_room_id`.
+- [x] 3.1 `Workstation::physicalRooms()` (relation pivot filtrée `is_physical=true`) + accessor singulier `getPhysicalRoomAttribute` ; `getAdOu` inchangé (`physicalRoom?->ad_dn`).
+- [x] 3.2 `Workstation::hasPhysicalRoom()` réécrit sur le pivot ; `assignToPhysicalRoom()` supprimé (écriture = service uniquement).
+- [x] 3.3 `WorkstationGroup` : `members`/`members_count`/`workstation_count` délèguent à `workstations()` ; `physicalWorkstations()` supprimée.
+- [x] 3.4 Casts/fillable : `physical_room_id` retiré + property docblock.
 
 ### Tâche 4 — Service de swap transactionnel (AC: 3, 7, 8)
-- [ ] 4.1 `WorkstationGroupService::assignMachineToPhysicalRoom()` réécrit : `DB::transaction` { detach des salles physiques courantes (jointure `is_physical=true`) + attach cible } ; `$roomId=null` = detach seul.
-- [ ] 4.2 Conserver la validation existante (salle inexistante / non physique → `InvalidArgumentException`) et `checkPhysicalRoomConflict`/`moveMachineToPhysicalRoom` (lecture pivot).
-- [ ] 4.3 Dispatch `WorkstationMembershipAdSyncJob::move` post-commit (selon résultat Tâche 1.1).
-- [ ] 4.4 `WorkstationEnrollmentService::assignRoom` (iPXE) délègue au service (plus d'écriture directe modèle) ; mettre à jour le docblock mensonger l.379-392.
+- [x] 4.1 `assignMachineToPhysicalRoom()` réécrit : `DB::transaction` { detach salles physiques courantes + attach cible via `syncWithoutDetaching` (préserve les parcs logiques) } ; `$roomId=null` = detach seul.
+- [x] 4.2 Validation existante conservée (salle inexistante / non physique → `InvalidArgumentException`) ; `checkPhysicalRoomConflict`/`moveMachineToPhysicalRoom` lisent le pivot.
+- [x] 4.3 Dispatch `WorkstationMembershipAdSyncJob::move` post-commit, gardé par `roomId !== null && oldRoomId !== roomId` (pas de move parasite ni sur detach).
+- [x] 4.4 `WorkstationEnrollmentService::assignRoom` délègue au service (`app(WorkstationGroupService)`) ; docblock mensonger corrigé.
 
 ### Tâche 5 — Consommateurs réparés (AC: 4)
-- [ ] 5.1 `WorkstationConfigContextResolver` : supprimer tout doute — `groups()` contient désormais la salle ; vérifier l'heuristique « premier `is_physical=true` » toujours valide.
-- [ ] 5.2 WPKG (`ActiveDeploymentForWorkstationQuery`, `WorkstationPackagesResolver`) : aucun changement de code attendu (ils lisent déjà `groups`) — ajouter les tests prouvant qu'une salle porteuse de profil se déploie.
-- [ ] 5.3 `ShortcutCompilerService`, `AdSyncChecker`, filtres `WorkstationGroupRepository` : idem — vérifier + tester.
-- [ ] 5.4 UI `machines-tab` modale addMachinesToGroup : router les salles vers le service de swap (AC8) ; drawer « change-physical-room » de `machines/[id]` : lecture pivot.
+- [x] 5.1 `WorkstationConfigContextResolver` : heuristique « premier `is_physical=true` dans `groups()` » déjà correcte ; `groups()` contient désormais la salle (aucun changement de code requis, validé par test existant).
+- [x] 5.2 WPKG (`ActiveDeploymentForWorkstationQuery`, `WorkstationPackagesResolver`) : aucun changement de code (lisent déjà `groups`) — test `physical_room_packages_resolve_via_pivot` ajouté.
+- [x] 5.3 `AdSyncChecker:341` (FK → `physicalRoom?->id`), `WorkstationGroupRepository:319` (`whereNull('physical_room_id')` retiré, couvert par `whereDoesntHave('groups')`) ; `ShortcutCompilerService` lit déjà `groups()` (aucun changement).
+- [x] 5.4 UI `addMachinesToGroup` (parc/index) : route les salles vers le service de swap (AC8) ; blade `machines/[id]` `physical_room_id` → `physicalRoom?->id` ; commentaires `groups/[id]` corrigés.
 
 ### Tâche 6 — iPXE (AC: 5)
-- [ ] 6.1 `WorkstationLocator` : eager load adapté (`groups` suffit, retirer `physicalRoom` ou le garder comme relation pivot filtrée).
-- [ ] 6.2 `IpxeEnrollmentMenuBuilder::buildRoomMenuVariables` : `$ws->physical_room_id` → lecture pivot ; `is_current` inchangé.
-- [ ] 6.3 `IpxeWindowsUnattendController` : `machineObjectOu` (transparent si 3.1 bien fait).
+- [x] 6.1 `WorkstationLocator` : eager load `physicalRoom` → `physicalRooms` (relation pivot filtrée).
+- [x] 6.2 `IpxeEnrollmentMenuBuilder::buildRoomMenuVariables` : `$ws->physical_room_id` → `$ws->physicalRoom` (pivot) ; `is_current` inchangé.
+- [x] 6.3 `IpxeWindowsUnattendController` : transparent (`getAdOu` → `physicalRoom?->ad_dn`).
 
 ### Tâche 7 — Tests (AC: 9)
-- [ ] 7.1 Migration : test backfill idempotent + down().
-- [ ] 7.2 Service swap : transactionnel, 1-salle-max, null-detach, dispatch AD (Bus::fake).
-- [ ] 7.3 Consommateurs : WPKG-via-salle, GPO context, filtre repository, shortcut.
-- [ ] 7.4 Migrer les fixtures des fichiers listés en Dev Notes ; vérifier que les 3 échecs préexistants `GroupShowPageTest` passent.
-- [ ] 7.5 Suite complète sur VM (`/vm`) : 0 régression.
+- [x] 7.1 Migration : `UnifyMembershipPivotTest` (backfill, idempotence double-up, skip orphelins, down()).
+- [x] 7.2 Service swap : `PhysicalRoomSwapTest` (transactionnel, 1-salle-max, préservation parcs, null-detach, dispatch + anti-double-dispatch via Bus::fake, non-physique throws, conflit lit pivot).
+- [x] 7.3 Consommateurs : WPKG-via-salle (`WorkstationPackagesResolverArchivedTest`), GPO context (test existant déjà pivot).
+- [x] 7.4 Fixtures migrées (FK → pivot) : `WorkstationEnrollmentServiceTest`, `IpxeEnrollmentMenuBuilderTest`, `IpxeEnrollmentRoomEndpointTest`, `IpxeWindowsUnattendEndpointTest`, `WorkstationLocatorTest` ; les 3 `GroupShowPageTest` passent.
+- [x] 7.5 Suite complète VM : 3 failed (préexistants byte-parity hors scope) / 3667 passed — 0 régression.
 
 ### Tâche 8 — Documentation (AC: 10)
-- [ ] 8.1 `docs/qa/domains/` : modèle d'appartenance unifié + runbook migration/rollback (append-only).
+- [x] 8.1 `docs/qa/domains/parc.md` créé (append-only) : modèle d'appartenance unifié + invariant D3 app-only + critère de réouverture + sonde + runbook migration/rollback. README mis à jour.
 
 ## Dev Notes
 
@@ -209,8 +209,68 @@ docs/qa/domains/                                                  # doc modèle 
 
 ### Agent Model Used
 
+Claude Opus 4.8 (1M context) — `claude-opus-4-8[1m]`.
+
 ### Debug Log References
+
+- Baseline VM (avant story) : `6 failed, 9 risky, 1 incomplete, 194 skipped, 3652 passed` — 3 `GroupShowPageTest` (cibles AC9) + 3 `ApplicationsScriptsByteParityTest` (hors scope).
+- Final VM : `3 failed, 9 risky, 1 incomplete, 194 skipped, 3667 passed` — seuls les 3 `ApplicationsScriptsByteParityTest` préexistants subsistent (legacy byte parity, hors scope) ; les 3 `GroupShowPageTest` sont verts.
+- Migration validée sur PG (VM) : colonne `physical_room_id` droppée, backfill peuplant le pivot, `physicalRoom` accessor lisant le pivot OK.
 
 ### Completion Notes List
 
+**Audit Tâche 1 — gap OU AD CONFIRMÉ.** `WorkstationMembershipAdSyncJob::move` n'était dispatché nulle part dans `app/` ; le canal `AdSyncService::moveMachineToSalle` existe mais sans déclencheur. Le déplacement OU AD au changement de salle n'était donc pas propagé. AC7 le câble dans le point d'écriture unique (`WorkstationGroupService::assignMachineToPhysicalRoom`), gardé contre le double-dispatch (`oldRoomId !== roomId`).
+
+**Décisions / écarts en cours de route :**
+- **Consommateurs WPKG/GPO/shortcut sans changement de code.** L'inventaire a confirmé que `ActiveDeploymentForWorkstationQuery`, `WorkstationPackagesResolver`, `ShortcutCompilerService` et les filtres `WorkstationGroupRepository::getMachines(Scoped)` lisent **déjà** `groups()` (pivot). Ils gagnent la correction automatiquement dès que la salle entre dans le pivot — seuls des tests ont été ajoutés (pas de code). Cela confirme le diagnostic de la story (le split piégeait le cas majoritaire).
+- **Accessor singulier `physicalRoom` = attribut, pas relation.** La relation pivot filtrée est `physicalRooms()` (collection) ; l'accessor `getPhysicalRoomAttribute` extrait `->first()` et réutilise la relation eager-loadée si présente (anti N+1). L'API de lecture `$ws->physicalRoom?->...` reste identique (D4). Les call-sites d'eager-load (`WorkstationLocator`) passent à `physicalRooms`.
+- **Colonne pivot `physical` (morte) laissée intacte.** Contrairement à ce qu'affirmaient les Dev Notes (« supprimée par migration »), la colonne `physical` (bool, default false) est **toujours présente** sur la VM. Conformément à D1 (ne pas la réintroduire comme écho de FK), je ne l'utilise pas et ne la touche pas — hors scope. Les fixtures de test qui font `attach($id, ['physical' => true])` continuent de fonctionner (colonne présente, valeur ignorée par le modèle).
+- **Pas de guard throwing sur `WorkstationGroup::attachWorkstations`.** L'invariant 1-salle-max est app-only (D3), imposé aux points d'écriture UI/iPXE/imports via le swap service. Ajouter un throw dans la méthode générique d'attache aurait cassé le `LegacyParcBridgeService` et de nombreux tests qui attachent à des groupes quelconques via `->workstations()->attach()`. La sonde de détection (doc QA Scénario 1.3) couvre le risque résiduel.
+- **`WorkstationSeeder` migré** : la salle est désormais attachée via le pivot (`$workstation->groups()->attach($room->id)`).
+
+**AC couverts :** AC1 (migration backfill + down, testé), AC2 (`physicalRoom` accessor pivot + `groups` unifiés), AC3 (swap transactionnel, testé), AC4 (consommateurs réparés sans union, WPKG-via-salle testé), AC5 (iPXE iso-comportement, fixtures migrées, tests verts), AC6 (accessors délégués + `physicalWorkstations`/`assignToPhysicalRoom` supprimés), AC7 (dispatch move câblé + Bus::fake), AC8 (modale addMachinesToGroup route les salles vers le swap), AC9 (0 régression, 3 GroupShowPageTest verts), AC10 (doc QA `parc.md` + runbook).
+
 ### File List
+
+**Créés**
+- `database/migrations/2026_06_04_120000_unify_workstation_membership_pivot.php`
+- `tests/Feature/Migrations/UnifyMembershipPivotTest.php`
+- `tests/Unit/Services/Parc/PhysicalRoomSwapTest.php`
+- `docs/qa/domains/parc.md`
+
+**Modifiés — code**
+- `app/Models/Workstation.php` (physicalRooms pivot + accessor, hasPhysicalRoom, -assignToPhysicalRoom, -fillable/cast/docblock FK, -import BelongsTo)
+- `app/Models/WorkstationGroup.php` (members/members_count délèguent à workstations(), -physicalWorkstations)
+- `app/Services/Parc/WorkstationGroupService.php` (swap transactionnel + dispatch move, checkPhysicalRoomConflict lit pivot, import du job)
+- `app/Ipxe/Services/WorkstationEnrollmentService.php` (assignRoom délègue au service, docblock corrigé)
+- `app/Ipxe/Services/WorkstationLocator.php` (eager load physicalRoom → physicalRooms)
+- `app/Ipxe/Services/IpxeEnrollmentMenuBuilder.php` (currentRoom lu via pivot)
+- `app/Services/AdSync/AdSyncChecker.php` (physical_room_id → physicalRoom?->id)
+- `app/Repositories/WorkstationGroupRepository.php` (getMachinesWithoutGroup : retrait whereNull physical_room_id)
+
+**Modifiés — UI**
+- `resources/views/pages/parc/index.blade.php` (addMachinesToGroup route les salles vers le swap)
+- `resources/views/pages/parc/machines/[id]/index.blade.php` (physical_room_id → physicalRoom?->id)
+- `resources/views/pages/parc/groups/[id]/index.blade.php` (commentaires corrigés)
+
+**Modifiés — seeder / doc**
+- `database/seeders/WorkstationSeeder.php` (attache salle via pivot)
+- `docs/qa/README.md` (entrée parc.md)
+
+**Modifiés — tests (fixtures FK → pivot / fakes)**
+- `tests/Unit/Ipxe/Services/WorkstationEnrollmentServiceTest.php`
+- `tests/Unit/Ipxe/Services/IpxeEnrollmentMenuBuilderTest.php`
+- `tests/Unit/Ipxe/Services/WorkstationLocatorTest.php`
+- `tests/Feature/Ipxe/IpxeEnrollmentRoomEndpointTest.php`
+- `tests/Feature/Ipxe/IpxeWindowsUnattendEndpointTest.php`
+- `tests/Feature/Wpkg/Deployment/Services/WorkstationPackagesResolverArchivedTest.php`
+
+**Supprimés** : aucun (aucun fichier supprimé → pas de fantôme inotify sur la VM).
+
+## Change Log
+
+| Date | Version | Description | Auteur |
+|---|---|---|---|
+| 2026-06-04 | 1.0 | Implémentation Story 4.11 — unification de l'appartenance poste↔groupe dans le pivot global (`workstation_group_workstation`), suppression FK `physical_room_id` (migration backfill idempotent + down), swap transactionnel app-only (D3) dans `WorkstationGroupService`, câblage du dispatch `WorkstationMembershipAdSyncJob::move` (gap OU AD comblé), consommateurs réparés (WPKG/GPO/shortcut/filtres lisent déjà le pivot), iPXE iso-comportement, doc QA `parc.md`. 3 GroupShowPageTest verts, 0 régression. | Dev Agent (Opus 4.8) |
+| 2026-06-04 | 1.1 | Corrections post-review (review Sonnet + second avis Opus, cf. `codeReviews/4-11.md`) : #1 eager-load `groups`+`physicalRooms` dans `AdSyncChecker` (N+1), #2 race `oldRoomId` acceptée + documentée (commentaire), #6 docblock `getWorkstationCountAttribute` mis à jour, #7 test e2e dispatch unique via `assignRoom` (enrôlement neuf). En attente arbitrage : #3 `importFromAd` (bug latent guard `wherePivot`), #4 DDL tests résiduels, #N1 conventions pivot `physical`. | Review fix (Opus 4.8) |
+| 2026-06-04 | 1.2 | Arbitrages review résolus : #3 `importFromAd` 3e passe routée vers le swap du service (`dispatchAdSync: false`, nouveau param), #N1 plus aucune écriture de la colonne pivot morte `physical`, #4 `physical_room_id` purgé des 15 DDL SQLite de test. Suite complète VM : 3688 passed / 3 failed (ByteParity préexistants hors scope), 0 régression. | Review fix (Opus 4.8) |

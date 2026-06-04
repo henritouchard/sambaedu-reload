@@ -377,17 +377,20 @@ final class WorkstationEnrollmentService
     }
 
     /**
-     * Story 3.3 — AC2.5 / AC2.6.
+     * Story 3.3 — AC2.5 / AC2.6 ; Story 4.11 — AC5/AC7.
      *
      * Affecte un poste à une salle physique (`WorkstationGroup::is_physical = true`).
      *
-     * Side effect : la sync AD (déplacement OU) est déléguée au workflow
-     * existant Epic 4 (au moins via observers / jobs). Le service touche
-     * uniquement `Workstation::physical_room_id` et délègue la propagation.
+     * Story 4.11 — l'écriture passe désormais par le point unique
+     * {@see \App\Services\Parc\WorkstationGroupService::assignMachineToPhysicalRoom()}
+     * (swap transactionnel sur le pivot global + dispatch du déplacement OU AD
+     * `WorkstationMembershipAdSyncJob::move`). Plus d'écriture directe sur le
+     * modèle : le gap de propagation OU (docblock historique mensonger) est
+     * ainsi comblé. Le comportement iPXE (logs, boot log) est inchangé.
      *
      * Retourne `false` si :
      *  - `$roomId` n'existe pas
-     *  - le `WorkstationGroup` correspondant n'est pas physique ou est archivé
+     *  - le `WorkstationGroup` correspondant n'est pas physique / inactif / archivé
      *  - exception DB
      */
     public function assignRoom(Workstation $ws, int $roomId, string $ip = ''): bool
@@ -413,7 +416,8 @@ final class WorkstationEnrollmentService
                 return false;
             }
 
-            $ok = $ws->assignToPhysicalRoom($roomId);
+            $ok = app(\App\Services\Parc\WorkstationGroupService::class)
+                ->assignMachineToPhysicalRoom($ws->id, $roomId);
 
             if ($ok) {
                 $this->log('ipxe.enrollment.room.success', [

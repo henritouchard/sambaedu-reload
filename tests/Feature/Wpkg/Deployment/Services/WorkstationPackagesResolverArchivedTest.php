@@ -109,4 +109,29 @@ class WorkstationPackagesResolverArchivedTest extends TestCase
 
         self::assertTrue($packages->contains('vlc'));
     }
+
+    /**
+     * Story 4.11 / AC4 — un déploiement WPKG porté par une SALLE physique
+     * (groupe `is_physical = true`, désormais dans le pivot global) doit se
+     * résoudre pour les postes de cette salle. Avant 4.11, la salle vivait
+     * dans la FK `physical_room_id` et était invisible du resolver (qui lit
+     * `groups()`).
+     */
+    #[Test]
+    public function physical_room_packages_resolve_via_pivot(): void
+    {
+        $w = Workstation::create(['name' => 'PC-SALLE']);
+        $room = WorkstationGroup::create(['name' => 'salle-info', 'is_physical' => true]);
+        $w->groups()->attach($room);
+
+        $appRoom = Application::create(['app_id' => 'geogebra', 'name' => 'GeoGebra']);
+        $room->applications()->attach($appRoom);
+
+        $packages = $this->resolver->resolve('PC-SALLE');
+
+        self::assertTrue(
+            $packages->contains('geogebra'),
+            'une salle physique porteuse d\'un package doit le déployer sur ses postes (pivot global)'
+        );
+    }
 }

@@ -76,7 +76,10 @@ final class WorkstationLocator
             );
         }
 
-        $relations = ['physicalRoom', 'groups', 'appProfiles'];
+        // Story 4.11 — `physicalRooms` (pivot filtré is_physical) remplace
+        // l'ancienne relation FK `physicalRoom` ; l'accessor singulier
+        // `$ws->physicalRoom` réutilise cette relation eager-loadée.
+        $relations = ['physicalRooms', 'groups', 'appProfiles'];
 
         // Étape 1 — priorité UUID (iso-legacy `boot.php:42` get_action()
         // qui priorise l'UUID composite).

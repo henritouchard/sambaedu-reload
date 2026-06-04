@@ -83,7 +83,6 @@ class WorkstationGroupServicePowerActionTest extends TestCase
                 $table->string('ip')->nullable();
                 $table->string('mac')->nullable();
                 $table->integer('status')->default(0);
-                $table->unsignedBigInteger('physical_room_id')->nullable();
                 $table->timestamp('last_report_at')->nullable();
                 $table->timestamp('date_rapport_poste')->nullable();
                 $table->string('ad_dn')->nullable();

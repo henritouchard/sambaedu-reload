@@ -4,6 +4,7 @@ namespace App\Services\Parc;
 
 use App\Config\LdapDnHelper;
 use App\Facades\SEConfig;
+use App\Jobs\AdSync\WorkstationMembershipAdSyncJob;
 use App\Jobs\DispatchMachinePowerActionJob;
 use App\LdapModels\DeviceGroupModel;
 use App\LdapModels\DeviceGroupTagModel;
@@ -1008,9 +1009,26 @@ class WorkstationGroupService
     }
 
     /**
-     * Assigne une machine à une salle physique
+     * Assigne une machine à une salle physique (ou la détache de toute salle).
+     *
+     * Story 4.11 — point d'écriture UNIQUE de l'appartenance « salle » (D2).
+     * L'appartenance vit dans le pivot global `workstation_group_workstation` ;
+     * l'invariant « 1 salle max par poste » (D3, app-only) est garanti ici par
+     * un swap transactionnel : detach de TOUTE salle physique courante + attach
+     * de la cible, dans la même transaction (impossible d'observer 0 ou 2
+     * salles depuis une autre connexion).
+     *
+     * `$roomId === null` → simple detach de la (des) salle(s) courante(s).
+     *
+     * Propagation OU AD (gap comblé par 4.11) : si la salle change réellement,
+     * `WorkstationMembershipAdSyncJob::move` est dispatché après commit.
+     * `$dispatchAdSync = false` la désactive — cas import AD (post-review 4.11
+     * #3) : les données VIENNENT d'AD, l'OU y est déjà la bonne, un move
+     * serait un no-op par poste importé.
+     *
+     * @throws \InvalidArgumentException machine/salle introuvable ou non physique
      */
-    public function assignMachineToPhysicalRoom(int $machineId, ?int $roomId): bool
+    public function assignMachineToPhysicalRoom(int $machineId, ?int $roomId, bool $dispatchAdSync = true): bool
     {
         $machine = $this->repository->findMachine($machineId);
         if (!$machine) {
@@ -1027,9 +1045,26 @@ class WorkstationGroupService
             }
         }
 
-        $oldRoomId = $machine->physical_room_id;
-        $machine->physical_room_id = $roomId;
-        $result = $machine->save();
+        // Capture AVANT la transaction. En cas de swaps concurrents du même
+        // poste, $oldRoomId peut être rassis et inhiber le dispatch move
+        // ci-dessous — risque accepté (review 4.11 #2) : n'affecte que la
+        // propagation OU AD (job idempotent, tries=3), jamais l'intégrité du
+        // pivot, et le scénario est quasi inexistant en pratique.
+        $oldRoomId = $machine->physicalRoom?->id;
+
+        DB::transaction(function () use ($machine, $roomId) {
+            // Detach de TOUTES les salles physiques courantes (en pratique <= 1,
+            // mais on nettoie défensivement un éventuel état double).
+            $currentPhysicalIds = $machine->physicalRooms()->pluck('workstation_groups.id')->all();
+            if (!empty($currentPhysicalIds)) {
+                $machine->groups()->detach($currentPhysicalIds);
+            }
+
+            if ($roomId !== null) {
+                // syncWithoutDetaching ne touche pas aux parcs logiques.
+                $machine->groups()->syncWithoutDetaching([$roomId]);
+            }
+        });
 
         Log::info('Salle physique de la machine mise à jour', [
             'machine_id' => $machineId,
@@ -1037,16 +1072,29 @@ class WorkstationGroupService
             'new_room_id' => $roomId,
         ]);
 
-        return $result;
+        // Propagation OU AD : uniquement si la cible existe ET diffère de
+        // l'ancienne salle (pas de move parasite, ni sur un simple detach).
+        if ($dispatchAdSync && $roomId !== null && $oldRoomId !== $roomId) {
+            WorkstationMembershipAdSyncJob::dispatch($machineId, $roomId, WorkstationMembershipAdSyncJob::ACTION_MOVE);
+        }
+
+        return true;
     }
 
     /**
-     * Vérifie si une machine nécessite une confirmation pour être déplacée
+     * Vérifie si une machine nécessite une confirmation pour être déplacée.
+     *
+     * Story 4.11 — lecture de la salle courante via le pivot (`physicalRoom`).
      */
     public function checkPhysicalRoomConflict(int $machineId, int $targetGroupId): ?array
     {
         $machine = $this->repository->findMachine($machineId);
-        if (!$machine || !$machine->physical_room_id) {
+        if (!$machine) {
+            return null;
+        }
+
+        $currentRoom = $machine->physicalRoom;
+        if ($currentRoom === null) {
             return null;
         }
 
@@ -1055,19 +1103,18 @@ class WorkstationGroupService
             return null;
         }
 
-        if ($machine->physical_room_id === $targetGroupId) {
+        if ($currentRoom->id === $targetGroupId) {
             return null;
         }
 
-        $currentRoom = $machine->physicalRoom;
         return [
             'machine_id' => $machineId,
             'machine_name' => $machine->name,
-            'current_room_id' => $machine->physical_room_id,
-            'current_room_name' => $currentRoom?->name ?? 'Inconnue',
+            'current_room_id' => $currentRoom->id,
+            'current_room_name' => $currentRoom->name ?? 'Inconnue',
             'target_room_id' => $targetGroupId,
             'target_room_name' => $targetGroup->name,
-            'message' => "La machine '{$machine->name}' est actuellement dans la salle physique '{$currentRoom?->name}'. Voulez-vous la déplacer vers '{$targetGroup->name}' ?",
+            'message' => "La machine '{$machine->name}' est actuellement dans la salle physique '{$currentRoom->name}'. Voulez-vous la déplacer vers '{$targetGroup->name}' ?",
         ];
     }
 
@@ -1251,7 +1298,14 @@ class WorkstationGroupService
                     }
                 }
 
-                // Troisième passe : créer les liens workstation <-> groupe physique dans la table pivot
+                // Troisième passe : lier workstation <-> salle physique via le
+                // swap du service (post-review 4.11 #3) — point d'écriture
+                // unique D2, invariant 1-salle-max. L'ancien attach pivot brut
+                // gardé par `wherePivot('physical', true)` était aveugle aux
+                // lignes posées par le swap (colonne morte non écrite) : le
+                // re-attach violait `wg_ws_unique` et rollbackait tout l'import.
+                // `dispatchAdSync: false` : les données viennent d'AD, l'OU y
+                // est déjà la bonne.
                 $workstations = Workstation::whereNotNull('ad_dn')->get();
                 $stats['workstation_links'] = 0;
                 foreach ($workstations as $workstation) {
@@ -1262,13 +1316,11 @@ class WorkstationGroupService
                     $groupName = $this->extractParentGroupFromDn($workstation->ad_dn);
                     if ($groupName && $allGroups->has(strtolower($groupName))) {
                         $group = $allGroups->get(strtolower($groupName));
-                        // Vérifier si le lien physique existe déjà
-                        $existingLink = $workstation->groups()
-                            ->where('workstation_group_id', $group->id)
-                            ->wherePivot('physical', true)
-                            ->exists();
-                        if (!$existingLink) {
-                            $workstation->groups()->attach($group->id, ['physical' => true]);
+                        if (!$group->is_physical) {
+                            continue;
+                        }
+                        if ($workstation->physicalRoom?->id !== $group->id) {
+                            $this->assignMachineToPhysicalRoom((int) $workstation->id, (int) $group->id, dispatchAdSync: false);
                             $stats['workstation_links']++;
                         }
                     }
@@ -1464,7 +1516,9 @@ class WorkstationGroupService
                                     ->exists();
                                     
                                 if (!$existingLink) {
-                                    $workstation->groups()->attach($sqlGroup->id, ['physical' => false]);
+                                    // Post-review 4.11 #N1 — la colonne pivot
+                                    // `physical` est morte, on ne l'écrit plus.
+                                    $workstation->groups()->attach($sqlGroup->id);
                                     $stats['workstation_links']++;
                                 }
                             }

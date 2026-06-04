@@ -239,7 +239,20 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
         }
 
         try {
-            $count = $this->parcService->bulkAddMachinesToGroup($this->selectedMachines, $groupId);
+            // Story 4.11 (AC8) — une salle physique impose la règle 1-salle-max :
+            // chaque poste passe par le swap transactionnel du service (detach de
+            // l'ancienne salle + attach), pas par un attach pivot brut.
+            $targetGroup = WorkstationGroup::find($groupId);
+            if ($targetGroup && $targetGroup->is_physical) {
+                $count = 0;
+                foreach ($this->selectedMachines as $machineId) {
+                    if ($this->parcService->assignMachineToPhysicalRoom((int) $machineId, $groupId)) {
+                        $count++;
+                    }
+                }
+            } else {
+                $count = $this->parcService->bulkAddMachinesToGroup($this->selectedMachines, $groupId);
+            }
             $this->toastSuccess("{$count} machine(s) ajoutée(s) au groupe");
             $this->selectedMachines = [];
         } catch (\Exception $e) {

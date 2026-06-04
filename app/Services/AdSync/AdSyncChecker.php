@@ -325,11 +325,14 @@ class AdSyncChecker
 
             $adNames = $adData->pluck('name')->unique();
 
-            $sqlMachines = Workstation::all();
+            // Eager-load : `groups` (lecture des noms ci-dessous) et
+            // `physicalRooms` (l'accessor `physicalRoom` réutilise la
+            // relation chargée) — sinon 2 SELECT par machine dans la boucle.
+            $sqlMachines = Workstation::with(['groups', 'physicalRooms'])->get();
             $sqlData = collect();
 
             foreach ($sqlMachines as $machine) {
-                $groups = $machine->groups()->pluck('name')->toArray();
+                $groups = $machine->groups->pluck('name')->toArray();
 
                 $sqlData->push([
                     'name' => strtolower($machine->name),
@@ -338,7 +341,9 @@ class AdSyncChecker
                     'groups' => $groups,
                     'ip' => $machine->ip,
                     'mac' => $machine->mac,
-                    'physical_room_id' => $machine->physical_room_id,
+                    // Story 4.11 — la salle vit dans le pivot global ; lecture
+                    // via l'accessor `physicalRoom` (plus de FK dédiée).
+                    'physical_room_id' => $machine->physicalRoom?->id,
                     'uuid' => $machine->ad_guid,
                 ]);
             }

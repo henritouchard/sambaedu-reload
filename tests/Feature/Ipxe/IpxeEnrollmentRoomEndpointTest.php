@@ -25,9 +25,19 @@ class IpxeEnrollmentRoomEndpointTest extends TestCase
         parent::setUp();
         $this->bypassIpxeAuth();
         IpxeSchemaBootstrapper::bootstrap();
+        // Story 4.11 — l'affectation salle dispatche le job AD move ; pas de
+        // LDAP en test, et observer groupe neutralisé.
+        \Illuminate\Support\Facades\Queue::fake();
+        \App\Observers\WorkstationGroupObserver::disableSync();
         config([
             'auth_v1.bootstrap.allowed_subnets' => '127.0.0.0/8,192.168.0.0/16,10.0.0.0/8',
         ]);
+    }
+
+    protected function tearDown(): void
+    {
+        \App\Observers\WorkstationGroupObserver::enableSync();
+        parent::tearDown();
     }
 
     #[Test]
@@ -98,9 +108,10 @@ class IpxeEnrollmentRoomEndpointTest extends TestCase
         $body = (string) $response->getContent();
         self::assertStringContainsString('La machine a ete ajoutee a la salle salle-cible', $body);
 
-        self::assertDatabaseHas('workstations', [
-            'id' => $ws->id,
-            'physical_room_id' => $room->id,
+        // Story 4.11 — appartenance salle dans le pivot global.
+        self::assertDatabaseHas('workstation_group_workstation', [
+            'workstation_id' => $ws->id,
+            'workstation_group_id' => $room->id,
         ]);
 
         // F13 (review 3.3) : MachineBootLog peuplé pour le flow room (success).

@@ -166,44 +166,26 @@ class WorkstationGroup extends Model implements Wireable
     }
 
     /**
-     * Relation 1:N avec les postes physiquement dans cette salle
-     * Une machine ne peut être que dans une seule salle physique
-     */
-    public function physicalWorkstations(): HasMany
-    {
-        return $this->hasMany(Workstation::class, 'physical_room_id');
-    }
-
-    /**
-     * Membres « postes » du groupe, indépendamment du mode de liaison.
+     * Membres « postes » du groupe.
      *
-     * Un groupe est exclusivement physique OU logique :
-     *  - physique (salle) → les membres vivent dans la FK
-     *    `workstations.physical_room_id` (un poste = une seule salle) ;
-     *  - logique (parc)   → les membres vivent dans le pivot
-     *    `workstation_group_workstation` (un poste = N parcs).
-     *
-     * Cet accessor expose LA bonne collection selon `is_physical`, pour que
-     * l'UI (liste, compteur, sélection batch) affiche les postes sans se
-     * soucier de la mécanique de stockage. La source de vérité du lien
-     * physique reste la FK ; la colonne pivot `physical` (morte) a été
-     * supprimée par migration.
+     * Story 4.11 — appartenance unifiée : salles physiques ET parcs logiques
+     * vivent dans le même pivot `workstation_group_workstation`. Cet accessor
+     * délègue donc trivialement à {@see workstations()} ; l'ancien aiguillage
+     * FK (salle) / pivot (parc) a disparu avec la colonne `physical_room_id`.
      */
     public function getMembersAttribute(): \Illuminate\Support\Collection
     {
-        return $this->is_physical ? $this->physicalWorkstations : $this->workstations;
+        return $this->workstations;
     }
 
     /**
-     * Compteur de membres « postes » — même aiguillage physique/logique que
-     * {@see getMembersAttribute}, mais en COUNT SQL (pas de chargement de
-     * collection). À utiliser partout où l'UI affiche un nombre de postes.
+     * Compteur de membres « postes » — COUNT SQL via le pivot global
+     * (cf. {@see getMembersAttribute}). À utiliser partout où l'UI affiche un
+     * nombre de postes.
      */
     public function getMembersCountAttribute(): int
     {
-        return $this->is_physical
-            ? $this->physicalWorkstations()->count()
-            : $this->workstations()->count();
+        return $this->workstations()->count();
     }
 
     public function wallpapers(): MorphMany
@@ -461,8 +443,8 @@ class WorkstationGroup extends Model implements Wireable
     /**
      * Retourne le nombre de postes dans ce groupe.
      *
-     * Alias historique de {@see getMembersCountAttribute} — délègue pour
-     * respecter l'aiguillage physique (FK) / logique (pivot).
+     * Alias historique de {@see getMembersCountAttribute} — depuis la story
+     * 4.11 (pivot global unifié), tout délègue à `workstations()`.
      */
     public function getWorkstationCountAttribute(): int
     {

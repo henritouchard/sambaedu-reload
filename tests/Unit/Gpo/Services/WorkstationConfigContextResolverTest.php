@@ -73,7 +73,6 @@ class WorkstationConfigContextResolverTest extends TestCase
             $t->string('os')->nullable();
             $t->string('ip')->nullable();
             $t->string('mac')->nullable();
-            $t->unsignedBigInteger('physical_room_id')->nullable();
             $t->boolean('managed_by_control_hub')->default(false);
             $t->timestamps();
         });

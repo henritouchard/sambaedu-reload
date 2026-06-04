@@ -107,13 +107,10 @@ final class IpxeEnrollmentMenuBuilder
             $rooms = $rooms->take($maxRooms);
         }
 
-        $currentRoomId = $ws->physical_room_id;
-        $current = $currentRoomId !== null
-            ? WorkstationGroup::query()
-                ->where('id', $currentRoomId)
-                ->where('is_physical', true)
-                ->first()
-            : null;
+        // Story 4.11 — la salle courante se lit via le pivot (accessor
+        // `physicalRoom`), plus via la FK `physical_room_id`.
+        $current = $ws->physicalRoom;
+        $currentRoomId = $current?->id;
 
         return [
             'mac' => $this->sanitizeAscii((string) ($ws->mac ?? '')),

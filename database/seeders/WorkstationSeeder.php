@@ -89,9 +89,11 @@ class WorkstationSeeder extends Seeder
                     'mac' => $this->generateMacAddress(),
                     'status' => $status,
                     'ad_guid' => Str::uuid()->toString(),
-                    'physical_room_id' => $room->id,
                     'last_report_at' => $status === 'online' ? now() : now()->subMinutes(rand(60, 10080)),
                 ]);
+
+                // Story 4.11 — l'appartenance « salle » vit dans le pivot global.
+                $workstation->groups()->attach($room->id);
 
                 // Collecter pour les groupes logiques
                 if (str_contains($os, 'Windows')) {

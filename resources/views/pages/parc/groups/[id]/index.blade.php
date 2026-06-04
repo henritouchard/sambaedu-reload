@@ -186,11 +186,11 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         try {
             if ($this->group->is_physical) {
                 // Salle physique : « ajouter » = déplacer le poste DANS cette
-                // salle → réécrit la FK `workstations.physical_room_id` (un poste
-                // n'a qu'une seule salle ; il quitte sa salle précédente). La
-                // propagation OU AD est déléguée au workflow existant (parité
-                // avec l'enrollment iPXE `assignRoom`). Source de vérité unique
-                // du lien physique = la FK, pas le pivot.
+                // salle → swap transactionnel du service sur le pivot global
+                // `workstation_group_workstation` (Story 4.11 : un poste n'a
+                // qu'une seule salle, il quitte sa salle précédente). La
+                // propagation OU AD est dispatchée par le service
+                // (`WorkstationMembershipAdSyncJob::move`).
                 $count = 0;
                 foreach ($this->selectedMachines as $machineId) {
                     if ($this->parcService->assignMachineToPhysicalRoom((int) $machineId, $this->id)) {
@@ -219,7 +219,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         try {
             if ($this->group->is_physical) {
                 // Salle physique : « retirer » = détacher le poste de la salle
-                // → `physical_room_id = null` (propagation OU AD déléguée).
+                // → swap service avec roomId=null (detach pivot is_physical).
                 $this->parcService->assignMachineToPhysicalRoom($machineId, null);
             } else {
                 // Parc logique : detach du pivot N:N.

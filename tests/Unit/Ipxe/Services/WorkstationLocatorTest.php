@@ -280,7 +280,7 @@ class WorkstationLocatorTest extends TestCase
         );
 
         self::assertNotNull($found);
-        self::assertTrue($found->relationLoaded('physicalRoom'));
+        self::assertTrue($found->relationLoaded('physicalRooms'));
         self::assertTrue($found->relationLoaded('groups'));
         self::assertTrue($found->relationLoaded('appProfiles'));
     }

@@ -13,11 +13,12 @@ Checklist par domaine métier. À dérouler avant une mise en production importa
 - [ ] [ipxe](domains/ipxe.md) — Boot iPXE, résolution MAC/UUID, fondations Services Laravel _(Stories 3.1+)_
 - [ ] [users](domains/users.md) — Listing /users, filtres audit (quota dépassé, mdp par défaut), synchro password_changed_at AD _(Story 14.4)_
 - [ ] [ad-sync](domains/ad-sync.md) — Synchronisation AD observer-driven (Workstation, WorkstationGroup, …) + rename modrdn préservant objectGUID/netbootGUID _(Story 4.9)_
+- [ ] [parc](domains/parc.md) — Appartenance poste↔groupe unifiée dans le pivot global, salles physiques (invariant 1-salle-max app-only), runbook migration/rollback _(Story 4.11)_
 
 ## À créer au fil des prochaines stories
 
 - [x] `users.md` — créé story 14.4 (filtres audit). À compléter : création / modification / suppression / bulk reset MDP / itinérant
-- [ ] `parc.md` — actions machine / batch groupes / schedules / wallpapers / AppProfiles
+- [x] `parc.md` — créé Story 4.11 (appartenance unifiée pivot, salle physique, migration). À compléter : actions machine / batch groupes / schedules / wallpapers / AppProfiles
 - [x] `ad-sync.md` — créé Story 4.9 (observer-driven Workstation, rename modrdn). À compléter : `/admin/sync-from-ad`, rapatriement profils LDAP
 - [ ] `bootstrap-update.md` — `scripts/update.sh`, migrations, seed auto, cache reset
 - [ ] `legacy-shims.md` — routes catchall legacy, modules GPO / iPXE / DHCP / BBB / imprimantes

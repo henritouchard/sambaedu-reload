@@ -315,8 +315,10 @@ class WorkstationGroupRepository
      */
     public function getMachinesWithoutGroup(): Collection
     {
+        // Story 4.11 — l'appartenance « salle » vit désormais dans le pivot
+        // global ; `whereDoesntHave('groups')` couvre salles ET parcs. La
+        // clause FK `physical_room_id` (supprimée) n'a plus lieu d'être.
         return Workstation::whereDoesntHave('groups')
-            ->whereNull('physical_room_id')
             ->orderBy('name')
             ->get();
     }
