@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Config\SambaEduConfig;
 use App\Constants\Errors\AuthenticationErrors;
+use App\Contracts\Ad\AdCredentialValidator;
 use App\Models\User as UserModel;
 use App\Repositories\UserRepository;
 use App\Services\Concerns\ResolvesPwdLastSet;
@@ -18,11 +19,16 @@ class AuthenticationService
     private ?array $configCache = null;
     private UserRepository $userRepository;
     private SambaEduConfig $sambaEduConfig;
+    private AdCredentialValidator $credentialValidator;
 
-    public function __construct(UserRepository $userRepository, SambaEduConfig $sambaEduConfig)
-    {
+    public function __construct(
+        UserRepository $userRepository,
+        SambaEduConfig $sambaEduConfig,
+        AdCredentialValidator $credentialValidator
+    ) {
         $this->userRepository = $userRepository;
         $this->sambaEduConfig = $sambaEduConfig;
+        $this->credentialValidator = $credentialValidator;
     }
 
     /**
@@ -320,7 +326,7 @@ class AuthenticationService
                     $ldapUser->save();
 
                     // Tenter l'authentification
-                    $authenticated = $this->attemptBind($bindUsername, $password);
+                    $authenticated = $this->credentialValidator->attemptBind($bindUsername, $password);
 
                     // Remettre pwdlastset à 0
                     $ldapUser->setAttribute('pwdlastset', 0);
@@ -407,97 +413,25 @@ class AuthenticationService
     }
 
     /**
-     * Tente une authentification LDAP via bind avec les credentials de l'utilisateur
-     * 
-     * Utilise directement ldap_connect() et ldap_bind() comme le legacy
-     * pour garantir la compatibilité exacte avec user_valid_passwd()
-     * 
+     * Tente une authentification LDAP via bind avec les credentials de l'utilisateur.
+     *
+     * Story 21.2 (DP-AUTH) — le bind LDAP brut (canal B) est désormais extrait
+     * derrière l'interface injectable {@see AdCredentialValidator} :
+     *  - {@see \App\Services\Auth\RealAdCredentialValidator} (par défaut, partout)
+     *    = l'ancien `ldap_connect()` + `@ldap_bind()` — comportement INCHANGÉ ;
+     *  - {@see \App\Ldap\Fakes\FakeE2eAdCredentialValidator} (e2e uniquement)
+     *    = comparaison au mot de passe seedé, sans bind LDAP réel.
+     *
+     * Wrapper conservé pour ne pas modifier les call-sites internes
+     * (`validatePassword`) et garder la sémantique historique.
+     *
      * @param string $userDn DN de l'utilisateur
      * @param string $password Mot de passe
      * @return bool True si l'authentification réussit, false sinon
      */
     private function attemptBind(string $userDn, string $password): bool
     {
-        try {
-            // Construire l'URL LDAP comme le fait ad_url($config, "ldaps")
-            $ldapUrl = $this->buildLdapUrl();
-
-            // Utiliser directement ldap_connect() et ldap_bind() comme le legacy
-            $ds = ldap_connect($ldapUrl);
-
-            if (!$ds) {
-                Log::error("Échec de la connexion LDAP", [
-                    'ldapUrl' => $ldapUrl,
-                ]);
-                return false;
-            }
-
-            // Configurer les options comme le legacy
-            ldap_set_option($ds, LDAP_OPT_PROTOCOL_VERSION, 3);
-            ldap_set_option($ds, LDAP_OPT_REFERRALS, 0);
-            ldap_set_option($ds, LDAP_OPT_NETWORK_TIMEOUT, 60);
-
-            // Tenter le bind avec le DN et le mot de passe
-            // Utiliser @ pour supprimer les warnings comme le legacy
-            $result = @ldap_bind($ds, $userDn, $password);
-
-            if ($result) {
-                ldap_close($ds);
-                return true;
-            } else {
-                Log::warning("Échec du bind LDAP", [
-                    'userDn' => $userDn,
-                    'ldap_error' => ldap_error($ds),
-                ]);
-                ldap_close($ds);
-                return false;
-            }
-
-        } catch (\Exception $e) {
-            Log::error("Erreur lors du bind LDAP", [
-                'userDn' => $userDn,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-            return false;
-        }
-    }
-
-    /**
-     * Construit l'URL LDAP pour la connexion
-     * Utilise SambaEduConfig pour obtenir les paramètres
-     * 
-     * @return string URL LDAP (ex: "ldaps://server1:636 ldaps://server2:636")
-     */
-    private function buildLdapUrl(): string
-    {
-        $ldapConfig = $this->sambaEduConfig->ldap();
-        $hosts = $ldapConfig->getHosts();
-        $port = $ldapConfig->port;
-        $useSsl = $ldapConfig->useSsl();
-
-        if (empty($hosts)) {
-            Log::error("Aucun hôte LDAP configuré");
-            return '';
-        }
-
-        $url = '';
-        $protocol = $useSsl ? 'ldaps' : 'ldap';
-
-        foreach ($hosts as $host) {
-            if (!empty($url)) {
-                $url .= ' ';
-            }
-            $url .= $protocol . '://' . $host;
-            // Pour ldaps, le port par défaut est 636, pour ldap c'est 389
-            // On ajoute le port seulement s'il est différent du port par défaut
-            $defaultPort = $useSsl ? 636 : 389;
-            if ($port != $defaultPort) {
-                $url .= ':' . $port;
-            }
-        }
-
-        return $url;
+        return $this->credentialValidator->attemptBind($userDn, $password);
     }
 
     /**

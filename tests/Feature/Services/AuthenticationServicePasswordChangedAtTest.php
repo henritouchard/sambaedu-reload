@@ -39,8 +39,12 @@ class AuthenticationServicePasswordChangedAtTest extends TestCase
         // Construire le service avec des stubs minimaux
         $userRepoMock = $this->createMock(\App\Repositories\UserRepository::class);
         $sambaConfigMock = $this->createMock(\App\Config\SambaEduConfig::class);
+        // Story 21.2 — AuthenticationService prend désormais un AdCredentialValidator
+        // injecté (bind LDAP extrait derrière une interface). Stub neutre ici :
+        // ces tests exercent `persistPasswordChangedAt` en isolation, sans bind.
+        $credentialValidatorMock = $this->createMock(\App\Contracts\Ad\AdCredentialValidator::class);
 
-        $this->service = new AuthenticationService($userRepoMock, $sambaConfigMock);
+        $this->service = new AuthenticationService($userRepoMock, $sambaConfigMock, $credentialValidatorMock);
     }
 
     protected function tearDown(): void

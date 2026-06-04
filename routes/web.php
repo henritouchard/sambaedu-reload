@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\ParcController;
 use App\Http\Controllers\AppPolicyController;
@@ -29,6 +30,16 @@ use App\Auth\V1\Migration\Http\Controllers\MigrationController as AuthV1Migratio
 Route::get('/test-auth', function () {
     return response()->json(['status' => 'ok', 'authenticated' => true, 'time' => now()->toDateTimeString()]);
 })->middleware(['sambaedu.auth', 'federated.audit']);
+
+// Story 21.2 (DP-LOG, T3) — Endpoint e2e read-only d'inspection du journal des
+// écritures AD capturées par le fake. DOUBLE GARDE : la route n'est DÉCLARÉE
+// QUE si `APP_ENV === 'e2e'` (non enregistrée sinon, comme 21.1 DP-1) ET le
+// fake (seul écrivain de la table) n'est lui-même actif qu'en e2e. Aucune
+// surface HTTP supplémentaire hors e2e.
+if (App::environment('e2e')) {
+    Route::get('/e2e/ad-writes', [\App\Http\Controllers\E2e\AdWriteLogController::class, 'index'])
+        ->name('e2e.ad-writes');
+}
 
 Route::prefix("authentication")->name("auth.")->group(function () {
     // Connexion

@@ -2,6 +2,7 @@
 
 namespace App\Repositories;
 
+use App\Contracts\Ad\AdDirectory;
 use App\LdapModels\LdapUser;
 use App\LdapModels\SambaEduGroup;
 use App\Constants\Ldap\MainGroups;
@@ -36,6 +37,37 @@ class UserRepository
      * Préfixe pour les clés de cache
      */
     private const CACHE_PREFIX = 'ldap_user_';
+
+    /**
+     * Résolution d'identité AD (canal A). Story 21.2 (DP-AUTH) : injectée pour
+     * permettre le doublage e2e. L'implémentation par défaut
+     * ({@see \App\Ldap\Real\RealAdDirectory}) délègue à `LdapUser::findByLogin()`
+     * → comportement strictement inchangé hors e2e (AC5).
+     *
+     * Optionnelle pour ne PAS casser les nombreux `new UserRepository()` /
+     * résolutions partielles existantes : si non fournie, on retombe sur la
+     * résolution statique historique.
+     */
+    private ?AdDirectory $directory;
+
+    public function __construct(?AdDirectory $directory = null)
+    {
+        $this->directory = $directory;
+    }
+
+    /**
+     * Résout un LdapUser par login via l'AdDirectory injectée, avec repli sur
+     * la résolution statique historique si aucune n'est bindée (parité stricte
+     * hors e2e — AC5).
+     */
+    private function resolveLdapUser(string $login): ?LdapUser
+    {
+        if ($this->directory !== null) {
+            return $this->directory->findUserByLogin($login);
+        }
+
+        return LdapUser::findByLogin($login);
+    }
 
     /**
      * Attributs LDAP minimaux à charger pour optimiser les performances
@@ -123,7 +155,7 @@ class UserRepository
         }
 
         return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($login) {
-            $ldapUser = LdapUser::findByLogin($login);
+            $ldapUser = $this->resolveLdapUser($login);
             return $ldapUser ? $ldapUser->toBusinessObject() : null;
         });
     }
@@ -326,7 +358,7 @@ class UserRepository
      */
     public function findLdapModelByLogin(string $login): ?LdapUser
     {
-        return LdapUser::findByLogin($login);
+        return $this->resolveLdapUser($login);
     }
 
     /**

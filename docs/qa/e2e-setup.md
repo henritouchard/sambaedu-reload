@@ -127,6 +127,14 @@ Cette commande (en env `e2e` uniquement) :
 > de la **Story 21.3**. Pour 21.1, on réutilise `DatabaseSeeder` tel quel pour
 > valider que la template se construit.
 
+> **Story 21.2 — nouvelle migration `e2e_ad_writes`** (journal du fake AD).
+> Elle est **e2e-only** : son `up()` ne crée la table QUE si `APP_ENV=e2e`.
+> Après pull de 21.2, **reconstruire la template** (`e2e:build-template`) pour
+> que `migrate:fresh` matérialise la table dans `sambaedu_e2e_template` — sinon
+> `GET /e2e/ad-writes` et la capture des écritures échoueront (« table absente »).
+> Renseigner aussi `E2E_FAKE_AD_PASSWORD` dans `.env.e2e` (credential des users
+> seedés pour l'auth fake — cf. `.env.e2e.example`).
+
 ---
 
 ## Étape 5 — Reset (déclenché automatiquement par la suite)

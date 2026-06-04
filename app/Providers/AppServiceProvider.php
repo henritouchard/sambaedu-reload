@@ -118,6 +118,25 @@ class AppServiceProvider extends ServiceProvider
             \App\Services\Print\RealCommandRunner::class,
         );
 
+        // Story 21.2 (DP-AUTH) — Validation de credentials AD + résolution
+        // d'identité AD injectables. Implémentations RÉELLES par DÉFAUT dans
+        // TOUS les environnements (dev/prod/testing) → comportement d'auth réel
+        // strictement INCHANGÉ (AC5). Le swap vers les fakes e2e se fait plus
+        // bas, conditionné à `APP_ENV === 'e2e'`.
+        $this->app->bind(
+            \App\Contracts\Ad\AdCredentialValidator::class,
+            \App\Services\Auth\RealAdCredentialValidator::class,
+        );
+        $this->app->bind(
+            \App\Contracts\Ad\AdDirectory::class,
+            \App\Ldap\Real\RealAdDirectory::class,
+        );
+
+        // Story 21.2 — Doublage AD/Samba FAKE, activé UNIQUEMENT en e2e.
+        // Hors e2e (dev/prod/testing) ce bloc est inerte : aucun fake n'est
+        // enregistré, les bindings réels ci-dessus restent en place (AC5/AC6).
+        $this->registerE2eAdFakes();
+
         // Alias pour faciliter l'utilisation via app('sambaedu.config') qui fournit l'instance singleton de SambaeduConfig
         $this->app->alias(AdDataTransformer::class, 'sambaedu.transformer');
         $this->app->alias(AuthenticationService::class, 'sambaedu.auth');
@@ -126,6 +145,52 @@ class AppServiceProvider extends ServiceProvider
         $this->app->alias(UtilityService::class, 'sambaedu.utility');
 
         $this->fixHadPermitSignatureForLivewireFileUpload();
+    }
+
+    /**
+     * Story 21.2 — Enregistre le doublage AD/Samba FAKE, UNIQUEMENT en `e2e`.
+     *
+     * Invariant de sécurité (D-1) : tout binding fake est conditionné à
+     * `APP_ENV === 'e2e'`. En dev/prod/`testing`, cette méthode ne fait RIEN —
+     * les bindings réels (`RealAdCredentialValidator`, `RealAdDirectory`,
+     * `SambaToolRunner` auto-wiré) restent seuls en place (AC5/AC6).
+     *
+     * Trois swaps :
+     *  - canal B (bind auth)   → {@see \App\Ldap\Fakes\FakeE2eAdCredentialValidator}
+     *  - canal A (résolution)  → {@see \App\Ldap\Fakes\FakeAdDirectory}
+     *  - canal C (samba-tool)  → {@see \App\Ldap\Fakes\FakeSambaToolRunner}
+     *
+     * Le journal d'écritures ({@see \App\Ldap\Fakes\FakeAdRecorder}) est un
+     * singleton e2e partagé par les fakes.
+     */
+    private function registerE2eAdFakes(): void
+    {
+        if (! $this->app->environment('e2e')) {
+            return;
+        }
+
+        // Journal d'écritures AD (table Postgres `e2e_ad_writes`) — singleton.
+        $this->app->singleton(\App\Ldap\Fakes\FakeAdRecorder::class);
+
+        // Canal B — validation du mot de passe sans bind LDAP réel.
+        $this->app->bind(
+            \App\Contracts\Ad\AdCredentialValidator::class,
+            \App\Ldap\Fakes\FakeE2eAdCredentialValidator::class,
+        );
+
+        // Canal A — résolution d'identité depuis Postgres (users seedés).
+        $this->app->bind(
+            \App\Contracts\Ad\AdDirectory::class,
+            \App\Ldap\Fakes\FakeAdDirectory::class,
+        );
+
+        // Canal C — samba-tool : le runner réel est remplacé par le fake qui
+        // capture sans exécuter. Tous les consommateurs auto-wirent le type
+        // concret `SambaToolRunner` → le container substitue la sous-classe.
+        $this->app->bind(
+            \App\Gpo\Support\SambaToolRunner::class,
+            \App\Ldap\Fakes\FakeSambaToolRunner::class,
+        );
     }
 
 

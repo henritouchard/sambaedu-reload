@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Config\SambaEduConfig;
+use App\Ldap\Fakes\ThrowingLdapConnection;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Log;
 use LdapRecord\Container;
@@ -29,6 +30,23 @@ class LdapRecordServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Story 21.2 (T1, AC3) — GARDE-FOU STRUCTUREL anti-AD-réel en e2e.
+        // En `e2e`, on n'enregistre JAMAIS la vraie connexion réseau LdapRecord :
+        // on installe une connexion PIÉGÉE qui lève une exception explicite dès
+        // qu'un chemin tente une opération LDAP réelle (`getLdapConnection()` /
+        // `connect()`). Le vrai `samba-ad-dc` est ainsi STRUCTURELLEMENT
+        // inatteignable. Les chemins e2e légitimes (auth fake, capture
+        // samba-tool fake) n'utilisent pas cette connexion. Garde-fou = CODE,
+        // pas config (doctrine 21.1).
+        //
+        // `testing` (PHPUnit/SQLite) reste INCHANGÉ : il n'entre pas dans cette
+        // branche et n'a de toute façon pas de `/etc/sambaedu/*` (la connexion
+        // réelle ci-dessous s'auto-désactive faute de base DN).
+        if ($this->app->environment('e2e')) {
+            $this->registerE2eThrowingConnection();
+            return;
+        }
+
         try {
             // Obtenir la configuration via SambaEduConfig
             /** @var SambaEduConfig $config */
@@ -79,6 +97,41 @@ class LdapRecordServiceProvider extends ServiceProvider
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
             ]);
+        }
+    }
+
+    /**
+     * Garde-fou structurel e2e (AC3) : installe une connexion LdapRecord piégée
+     * comme connexion par défaut. Toute opération LDAP réelle lèvera alors une
+     * exception explicite ({@see ThrowingLdapConnection}).
+     */
+    private function registerE2eThrowingConnection(): void
+    {
+        try {
+            // Config minimale : la connexion n'est JAMAIS ouverte (toute tentative
+            // d'I/O lève). Les hosts/base_dn sont des placeholders inertes.
+            $connection = new ThrowingLdapConnection([
+                'hosts' => ['127.0.0.1'],
+                'base_dn' => 'dc=e2e,dc=local',
+                'username' => '',
+                'password' => '',
+                'port' => 389,
+                'use_ssl' => false,
+                'use_tls' => false,
+            ]);
+
+            Container::addConnection($connection, 'default');
+            Container::setDefaultConnection('default');
+
+            Log::info('LdapRecordServiceProvider: connexion PIÉGÉE e2e installée (AD réel interdit)');
+        } catch (\Throwable $e) {
+            // En e2e on préfère échouer bruyamment : si même la connexion piégée
+            // ne s'installe pas, on laisse l'erreur remonter (aucune connexion
+            // réelle ne doit jamais prendre sa place).
+            Log::error('LdapRecordServiceProvider: échec installation connexion piégée e2e', [
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
         }
     }
 

@@ -47,6 +47,19 @@ class AdSyncService
         $description = $group->description ?? "Groupe de postes $name";
         $isPhysical = $group->is_physical;
 
+        // Story 21.2 (T5/AC7) — en e2e, ce service est traversé par la chaîne
+        // async (observers → jobs AD) et descend directement sur LdapRecord
+        // (canal A) + `ldap_rename` (canal B). On le double AU NIVEAU SERVICE :
+        // capture dans le journal + GUID factice STABLE, aucun accès AD réel.
+        // Inerte hors e2e (branche jamais prise).
+        if (app()->environment('e2e')) {
+            return $this->e2eCaptureWrite('workstationgroup.create', $name, [
+                'is_physical' => $isPhysical,
+                'description' => $description,
+                'parent_id' => $group->parent_id,
+            ]);
+        }
+
         Log::info('[AdSyncService] Création WorkstationGroup dans AD', [
             'name' => $name,
             'is_physical' => $isPhysical,
@@ -141,6 +154,16 @@ class AdSyncService
      */
     public function deleteWorkstationGroupByName(string $name, ?string $adGuid = null, bool $isPhysical = true): array
     {
+        // Review 21-2 P-3 (décision henri 2026-06-05) — symétrie avec
+        // createWorkstationGroup : capture e2e, aucun accès AD réel.
+        // Inerte hors e2e.
+        if (app()->environment('e2e')) {
+            return $this->e2eCaptureWrite('workstationgroup.delete', $name, [
+                'is_physical' => $isPhysical,
+                'ad_guid' => $adGuid,
+            ]);
+        }
+
         Log::info('[AdSyncService] Suppression groupe AD', [
             'name' => $name,
             'is_physical' => $isPhysical
@@ -186,6 +209,16 @@ class AdSyncService
     {
         $isPhysical = $group->is_physical;
 
+        // Review 21-2 P-3 (décision henri 2026-06-05) — symétrie avec
+        // createWorkstationGroup : capture e2e, aucun accès AD réel.
+        if (app()->environment('e2e')) {
+            return $this->e2eCaptureWrite('workstationgroup.rename', $newName, [
+                'old_name' => $oldName,
+                'new_name' => $newName,
+                'is_physical' => $isPhysical,
+            ]);
+        }
+
         Log::info('[AdSyncService] Renommage WorkstationGroup dans AD', [
             'old_name' => $oldName,
             'new_name' => $newName,
@@ -230,6 +263,14 @@ class AdSyncService
     {
         $groupName = $group->name;
         $newParentName = $newParent?->name ?? 'Computers (racine)';
+
+        // Review 21-2 P-3 (décision henri 2026-06-05) — symétrie avec
+        // createWorkstationGroup : capture e2e, aucun accès AD réel.
+        if (app()->environment('e2e')) {
+            return $this->e2eCaptureWrite('workstationgroup.move', $groupName, [
+                'new_parent' => $newParent?->name,
+            ]);
+        }
 
         Log::info('[AdSyncService] Déplacement WorkstationGroup dans AD', [
             'name' => $groupName,
@@ -305,6 +346,16 @@ class AdSyncService
         $machineName = $machine->name;
         $salleName = $targetSalle->name;
 
+        // Story 21.2 (T5/AC7) — double e2e au niveau service : `moveMachineToSalle`
+        // descend de A (LdapRecord) à B (`ldap_rename` brut). En e2e on capture
+        // l'écriture (avec GUID factice stable de la machine) sans toucher l'AD
+        // réel. Inerte hors e2e.
+        if (app()->environment('e2e')) {
+            return $this->e2eCaptureWrite('machine.move', $machineName, [
+                'target_salle' => $salleName,
+            ]);
+        }
+
         Log::info('[AdSyncService] Déplacement machine vers salle', [
             'machine' => $machineName,
             'target_salle' => $salleName
@@ -359,6 +410,42 @@ class AdSyncService
             ]);
             return ['success' => false, 'error' => $e->getMessage()];
         }
+    }
+
+    // ========================================================================
+    // DOUBLAGE e2e (Story 21.2 — T5/AC7)
+    // ========================================================================
+
+    /**
+     * Capture une écriture AD dans le journal e2e et retourne un résultat de
+     * succès cohérent (GUID factice STABLE, pas d'accès AD réel).
+     *
+     * Appelé UNIQUEMENT sous garde `app()->environment('e2e')`. Le recorder
+     * (singleton e2e) n'est bindé qu'en e2e ; on le résout donc paresseusement.
+     *
+     * @param  array<string,mixed>  $payload
+     * @return array{success:bool,guid:string,dn:string,error:null}
+     */
+    private function e2eCaptureWrite(string $actionType, string $target, array $payload = []): array
+    {
+        /** @var \App\Ldap\Fakes\FakeAdRecorder $recorder */
+        $recorder = app(\App\Ldap\Fakes\FakeAdRecorder::class);
+
+        $entry = $recorder->record(
+            actionType: $actionType,
+            target: $target,
+            payload: $payload,
+            channel: \App\Ldap\Fakes\FakeAdRecorder::CHANNEL_LDAPRECORD,
+        );
+
+        $guid = (string) $entry->fake_guid;
+
+        return [
+            'success' => true,
+            'guid' => $guid,
+            'dn' => 'CN=' . $target . ',OU=e2e,DC=e2e,DC=local',
+            'error' => null,
+        ];
     }
 
     // ========================================================================

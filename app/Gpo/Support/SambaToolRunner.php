@@ -224,10 +224,25 @@ class SambaToolRunner
      */
     private function fakeDryRunResult(array $command): ProcessResult
     {
+        return $this->syntheticResult('[dry-run] ' . implode(' ', $command));
+    }
+
+    /**
+     * Construit un `ProcessResult` synthétique de succès (exit 0) via la factory
+     * `Process::result()` — seule autorisée à connaître la signature interne de
+     * `FakeProcessResult` (qui varie selon les versions de Laravel).
+     *
+     * Exposé `protected` pour que le runner FAKE e2e
+     * ({@see \App\Ldap\Fakes\FakeSambaToolRunner}) construise ses résultats SANS
+     * importer la facade `Process` (interdite sous `app/Ldap/*` par
+     * `LdapNamespaceTest`) ni dépendre de la signature de `FakeProcessResult`.
+     */
+    protected function syntheticResult(string $output = '', string $errorOutput = '', int $exitCode = 0): ProcessResult
+    {
         return Process::result(
-            output: '[dry-run] ' . implode(' ', $command),
-            errorOutput: '',
-            exitCode: 0,
+            output: $output,
+            errorOutput: $errorOutput,
+            exitCode: $exitCode,
         );
     }
 }
