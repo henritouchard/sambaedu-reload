@@ -25,20 +25,27 @@ class ControlHubConnectionRepository
 
     /**
      * Sauvegarder une nouvelle connexion depuis le handshake
+     *
+     * @param array{public_key: string, kid: string, iss: string}|null $idpFederated
+     *        Bloc SSO fédéré validé par HandshakeResponse (null si absent de la réponse)
      */
     public function saveHandshakeConnection(
         string $baseUrl,
         string $apiToken,
         string $se4fsApiToken,
         int $heartbeatInterval,
-        ?Carbon $expiresAt = null
+        ?Carbon $expiresAt = null,
+        ?array $idpFederated = null
     ): ControlHubConnection {
         return $this->createOrUpdate([
             'base_url' => $baseUrl,
             'api_token' => $apiToken,
             'se4fs_api_token' => $se4fsApiToken,
             'heartbeat_interval' => $heartbeatInterval,
-            'expires_at' => $expiresAt ?? now()->addDays(30)
+            'expires_at' => $expiresAt ?? now()->addDays(30),
+            'idp_public_key' => $idpFederated['public_key'] ?? null,
+            'idp_kid' => $idpFederated['kid'] ?? null,
+            'idp_iss' => $idpFederated['iss'] ?? null,
         ]);
     }
 

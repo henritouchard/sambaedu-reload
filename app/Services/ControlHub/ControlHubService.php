@@ -79,7 +79,8 @@ class ControlHubService
             apiToken: $handshakeResponse->apiToken,
             se4fsApiToken: $this->instanceApiKey,
             heartbeatInterval: $handshakeResponse->heartbeatInterval ?? 120,
-            expiresAt: $handshakeResponse->expiresAt
+            expiresAt: $handshakeResponse->expiresAt,
+            idpFederated: $handshakeResponse->idpFederated
         );
 
         // Mettre à jour l'URL du client API principal
@@ -89,7 +90,10 @@ class ControlHubService
             'controlhub_url' => $baseUrl,
             'se4fs_instance_id' => $this->instanceId,
             'api_token_received' => substr($handshakeResponse->apiToken, 0, 20) . '...',
-            'heartbeat_interval' => $handshakeResponse->heartbeatInterval
+            'heartbeat_interval' => $handshakeResponse->heartbeatInterval,
+            'idp_federated' => $handshakeResponse->idpFederated
+                ? ['kid' => $handshakeResponse->idpFederated['kid'], 'iss' => $handshakeResponse->idpFederated['iss']]
+                : null,
         ]);
 
         return $handshakeResponse;

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 
 class ControlHubConnection extends Model
 {
@@ -16,6 +17,9 @@ class ControlHubConnection extends Model
         'base_url',
         'api_token',
         'se4fs_api_token',
+        'idp_public_key',
+        'idp_kid',
+        'idp_iss',
         'heartbeat_interval',
         'heartbeat_enabled',
         'heartbeat_failures',
@@ -54,6 +58,10 @@ class ControlHubConnection extends Model
                 $query->whereNull('expires_at')
                     ->orWhere('expires_at', '>', now());
             })
+            // Ordre déterministe : si deux lignes actives coexistent (course sur
+            // createOrUpdate), la plus récente fait foi — elle porte notamment
+            // la clé publique SSO du dernier handshake.
+            ->orderByDesc('id')
             ->first();
     }
 
@@ -72,6 +80,14 @@ class ControlHubConnection extends Model
 
     public static function createOrUpdate(array $data): self
     {
+        // Transaction : désactivation de l'ancienne ligne + création de la nouvelle
+        // doivent être atomiques (sinon une course peut laisser deux lignes actives
+        // ou aucune). La ligne active porte la clé publique SSO : pas d'état ambigu.
+        return DB::transaction(fn () => self::createActiveConnection($data));
+    }
+
+    private static function createActiveConnection(array $data): self
+    {
         self::where('is_active', true)->update(['is_active' => false]);
         return self::create([
             'base_url' => $data['base_url'] ?? null,
@@ -81,6 +97,10 @@ class ControlHubConnection extends Model
             'last_handshake_at' => now(),
             'expires_at' => $data['expires_at'] ?? now()->addDays(30),
             'is_active' => true,
+            // SSO fédéré : clé publique du controlHub reçue au handshake (null si non fournie)
+            'idp_public_key' => $data['idp_public_key'] ?? null,
+            'idp_kid' => $data['idp_kid'] ?? null,
+            'idp_iss' => $data['idp_iss'] ?? null,
         ]);
     }
 
@@ -104,6 +124,21 @@ class ControlHubConnection extends Model
     public function isValid(): bool
     {
         return $this->is_active && !$this->isExpired();
+    }
+
+    /**
+     * Le controlHub a-t-il fourni sa clé publique de SSO fédéré au handshake ?
+     * (prérequis à la vérification des JWT de login fédéré)
+     *
+     * Risque résiduel (review F8) : la clé est stockée sans protection d'intégrité —
+     * un accès en écriture à la DB permettrait de la remplacer et de forger des JWT
+     * fédérés. À adresser dans la story de vérification JWT (pinning/contrôle).
+     */
+    public function hasFederatedIdp(): bool
+    {
+        return !empty($this->idp_public_key)
+            && !empty($this->idp_kid)
+            && !empty($this->idp_iss);
     }
 
     public function isExpired(): bool
