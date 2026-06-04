@@ -109,7 +109,7 @@
 					<Order>1</Order>
 					<Description>postinst curl</Description>
 					<RequiresUserInput>false</RequiresUserInput>
-					<CommandLine>%comspec% /c curl -sL --retry 20 --retry-max-time 300 --fail -F "etape=oobe" -F "name=###_NAME_###" -o "%windir%\action.cmd" "http://###_SE4FS_NAME_###/ipxe/windows/action"</CommandLine>
+					<CommandLine>%comspec% /c curl -sL --retry 20 --retry-max-time 300 --fail -F "etape=oobe" -F "name=###_NAME_###" -F "uuid=###_UUID_###" -F "mac=###_MAC_###" -o "%windir%\action.cmd" "http://###_SE4FS_NAME_###/ipxe/windows/action"</CommandLine>
 				</SynchronousCommand>
 				<SynchronousCommand wcm:action="add">
 					<Order>2</Order>

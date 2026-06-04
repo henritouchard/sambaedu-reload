@@ -202,6 +202,14 @@ class WindowsUnattendBuilderTest extends TestCase
         self::assertStringContainsString('se4fs.lan', $xml);
         // ###_NAME_### remplacé par hostname.
         self::assertStringContainsString('name=pc-101', $xml);
+        // Fix 2026-06-04 — uuid/mac dans le curl OOBE : `/ipxe/windows/action`
+        // résout par UUID/MAC uniquement (name non trusted) ; sans eux le
+        // rapport OOBE part en `unknown_workstation` et les actions
+        // programmées ne sont jamais délivrées.
+        self::assertStringNotContainsString('###_UUID_###', $xml);
+        self::assertStringNotContainsString('###_MAC_###', $xml);
+        self::assertStringContainsString('uuid=12345678-1234-1234-1234-aaaaaaaaaaaa', $xml);
+        self::assertStringContainsString('mac=aa:bb:cc:dd:ee:01', $xml);
     }
 
     #[Test]

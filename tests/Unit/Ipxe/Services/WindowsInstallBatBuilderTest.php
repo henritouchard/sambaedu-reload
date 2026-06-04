@@ -219,6 +219,10 @@ class WindowsInstallBatBuilderTest extends TestCase
         self::assertMatchesRegularExpression('@-F "etape=winpe"@', $bash);
         self::assertMatchesRegularExpression('@-F "name=salle-b-pc03"@', $bash);
         self::assertMatchesRegularExpression('@-F "ret=0"@', $bash);
+        // Fix 2026-06-04 — uuid/mac requis : `/ipxe/windows/action` résout par
+        // UUID/MAC uniquement, sans eux le rapport part en unknown_workstation.
+        self::assertMatchesRegularExpression('@-F "uuid=12345678-1234-1234-1234-aaaaaaaaaaaa"@', $bash);
+        self::assertMatchesRegularExpression('@-F "mac=aa:bb:cc:dd:ee:01"@', $bash);
     }
 
     /**

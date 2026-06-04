@@ -47,6 +47,10 @@ class WindowsTemplateAssetTest extends TestCase
         $content = (string) file_get_contents($this->templatePath());
         self::assertStringContainsString('###_SE4FS_NAME_###', $content);
         self::assertStringContainsString('###_NAME_###', $content);
+        // Fix 2026-06-04 — uuid/mac requis dans le curl OOBE (résolution
+        // UUID/MAC du controller /ipxe/windows/action).
+        self::assertStringContainsString('###_UUID_###', $content);
+        self::assertStringContainsString('###_MAC_###', $content);
     }
 
     #[Test]

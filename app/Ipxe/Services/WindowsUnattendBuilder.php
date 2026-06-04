@@ -46,8 +46,10 @@ use Throwable;
  *   8. Injecte le `LocalAccount` (Administrators) avec `adminse_name`/passwd.
  *   9. Set AdministratorPassword = `adminse_passwd`.
  *   10. AutoLogon LogonCount = `4294967295` si `!join && win_autologon == 1`.
- *   11. Interpole `###_ADMINSE_NAME_###`, `###_SE4FS_NAME_###`, `###_NAME_###`
- *       dans les CommandLine + Path nodes via {@see WindowsXmlPlaceholders}.
+ *   11. Interpole `###_ADMINSE_NAME_###`, `###_SE4FS_NAME_###`, `###_NAME_###`,
+ *       `###_UUID_###`, `###_MAC_###` dans les CommandLine + Path nodes via
+ *       {@see WindowsXmlPlaceholders} (uuid/mac requis par la résolution du
+ *       controller `/ipxe/windows/action`).
  *   12. Retourne le XML formatté UTF-8 (DOMDocument `saveXML()`).
  *
  * **Sécurité** :
@@ -411,11 +413,20 @@ final class WindowsUnattendBuilder
         );
 
         // 11. Interpolation CommandLine + Path nodes
-        // (`###_ADMINSE_NAME_###`, `###_SE4FS_NAME_###`, `###_NAME_###`).
+        // (`###_ADMINSE_NAME_###`, `###_SE4FS_NAME_###`, `###_NAME_###`,
+        // `###_UUID_###`, `###_MAC_###`).
+        //
+        // Fix 2026-06-04 — UUID/MAC dans le curl OOBE : le legacy résolvait le
+        // poste par `name`, mais `IpxeWindowsActionController` résout par
+        // UUID/MAC uniquement (le name reporté n'est pas trusted). Sans eux,
+        // chaque rapport OOBE part en `unknown_workstation` et les actions
+        // programmées (sysprep/wpkg...) ne sont jamais délivrées.
         $values = [
             'ADMINSE_NAME' => (string) config('sambaedu.windows.adminse_name', ''),
             'SE4FS_NAME' => (string) config('sambaedu.se4fs_name', ''),
             'NAME' => $hostname,
+            'UUID' => strtolower((string) ($workstation->uuid ?? '')),
+            'MAC' => strtolower((string) ($workstation->mac ?? '')),
         ];
         $this->interpolateTextNodes($xml, $values);
 

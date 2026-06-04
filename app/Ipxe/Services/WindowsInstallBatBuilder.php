@@ -82,6 +82,16 @@ final class WindowsInstallBatBuilder
         $hostname = WindowsXmlPlaceholders::sanitizeShellArg(
             strtolower(IpxeHostnameSanitizer::sanitizeForIpxeOutput((string) ($workstation->name ?? ''))),
         );
+        // Fix 2026-06-04 — UUID/MAC pour le curl winpe : le controller
+        // `/ipxe/windows/action` résout par UUID/MAC uniquement (le name
+        // reporté n'est pas trusted) ; sans eux le rapport part en
+        // `unknown_workstation`.
+        $uuid = WindowsXmlPlaceholders::sanitizeShellArg(
+            strtolower((string) ($workstation->uuid ?? '')),
+        );
+        $mac = WindowsXmlPlaceholders::sanitizeShellArg(
+            strtolower((string) ($workstation->mac ?? '')),
+        );
         $versionStr = WindowsXmlPlaceholders::sanitizeShellArg($version->value);
 
         $pause = $debug === 1 ? "PAUSE\r\n" : "\r\n";
@@ -120,6 +130,7 @@ final class WindowsInstallBatBuilder
         // `/ipxe/windows/action` (pas legacy `Win10/action.php`).
         $lines3[] = 'if exist c:\\windows\\system32\\curl.exe '
             . '(c:\\windows\\system32\\curl.exe -F "etape=winpe" -F "name=' . $hostname . '" '
+            . '-F "uuid=' . $uuid . '" -F "mac=' . $mac . '" '
             . '-F "ret=0" http://' . $se4fsName . '/ipxe/windows/action)';
         if ($bios === 'uefi') {
             $lines3[] = '%windir%\\system32\\bcdboot c:\\windows /addlast';
