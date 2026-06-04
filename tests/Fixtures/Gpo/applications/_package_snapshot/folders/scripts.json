@@ -68,6 +68,29 @@
 	},
 	{
 		"os": "windows",
+		"action": "logon",
+		"includes": [
+		],
+		"excludes": [
+			"Cloud_drive.monlycee.net",
+			"Cloud_etab",
+			"Cloud_nuage.apps"
+		],
+		"file": "linux_local"
+	},
+	{
+		"os": "linux",
+		"action": "logon",
+		"excludes": [],
+		"includes": [
+			"Cloud_drive.monlycee.net",
+			"Cloud_etab",
+			"Cloud_nuage.apps"
+		],
+		"file": "linux_nuage"
+	},
+	{
+		"os": "windows",
 		"action": "startup",
 		"includes": [],
 		"excludes": [

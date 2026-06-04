@@ -1,0 +1,5 @@
+xdg-user-dirs-update --set DOCUMENTS "$HOME/Docs"
+xdg-user-dirs-update --set MUSIC "$HOME/Musique"
+xdg-user-dirs-update --set PICTURES "$HOME/Images"
+xdg-user-dirs-update --set VIDEOS "$HOME/Videos"
+xdg-user-dirs-update --set TEMPLATES "$HOME/Modèles"

@@ -4,7 +4,4 @@ dpkg --add-architecture i386
 if [ -f "/etc/apt/sources.list.d/winehq.list" ]; then
 	mv "/etc/apt/sources.list.d/winehq.list" "/etc/apt/sources.list.d/winehq.list.save"
 fi
-if [ -z "$config_se4install_name" ]; then
-        set_config sambaedu se4install_name ###_SE4INSTALL_NAME_###
-fi
 # fin de conf wine

@@ -1,6 +1,9 @@
 {
 	"GoogleChrome": {
 		"app": "GoogleChrome",
+		"includes": [
+			"chrome_server_profiles"
+		],
 		"excludes": [
 			"port_perdir",
 			"portables"

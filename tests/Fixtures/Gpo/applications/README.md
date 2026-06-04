@@ -6,13 +6,14 @@
 
 | Champ | Valeur |
 |---|---|
-| **Version paquet** | `4.17.285` (capturé 2026-05-21) |
-| **SHA256 `/usr/share/sambaedu/applications/`** | `8e0b5be2498b000762af4de89141023e62d9cf5e75713e982169d50a0f8c280e` |
+| **Version paquet** | `4.17.695` (recapturé 2026-06-04 — capture initiale `4.17.285` du 2026-05-21) |
+| **SHA256 `/usr/share/sambaedu/applications/`** | `688824a804221fe86763c2812c11dfc4952593c73f4c8f69ab61dbe108886d22` |
 
-Pour recalculer le checksum après une mise à jour :
+Pour recalculer le checksum après une mise à jour (`-print0` requis : le paquet
+contient des noms de fichiers avec espaces depuis 4.17.695) :
 ```bash
 ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 \
-  "find /usr/share/sambaedu/applications/ -type f | sort | xargs sha256sum | sha256sum"
+  "cd /usr/share/sambaedu/applications && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum"
 ```
 
 Pour vérifier la version installée :
@@ -43,10 +44,12 @@ Elles servent de référence byte-à-byte pour le test de parité
 
 ## Date de capture
 
-- **2026-05-21**
-- **Version paquet sambaedu** : `4.17.285`
+- **2026-06-04** (recapture — paquet `4.17.695` ; capture initiale 2026-05-21 sur `4.17.285`)
+- **Version paquet sambaedu** : `4.17.695`
 - **VM** : `root@192.168.122.50`
 - **Path legacy** : `/var/www/sambaedu/gpo/applications.php`
+- **Script de capture** : `/tmp/capture_fixtures_4_17_695.php` (les 5 fixtures
+  17.2 + 17.4 en un seul passage, mêmes `$info`/`$config` que ci-dessous)
 
 ## Procédure de capture
 
@@ -234,9 +237,9 @@ exactement la sortie du legacy PHP.
 | Champ | Valeur |
 |---|---|
 | **Provenance** | `/usr/share/sambaedu/applications/` (VM `root@192.168.122.50`) |
-| **Version paquet** | `sambaedu 4.17.285` (capturé 2026-05-25, identique à 17.2) |
-| **SHA256 agrégé** | `8e0b5be2498b000762af4de89141023e62d9cf5e75713e982169d50a0f8c280e` (identique à la table 17.2) |
-| **Périmètre** | arborescence **complète** (97 fichiers, ~1.4 Mo, 28 apps) |
+| **Version paquet** | `sambaedu 4.17.695` (recapturé 2026-06-04, identique à 17.2) |
+| **SHA256 agrégé** | `688824a804221fe86763c2812c11dfc4952593c73f4c8f69ab61dbe108886d22` (identique à la table 17.2) |
+| **Périmètre** | arborescence **complète** (100 fichiers, ~1.4 Mo, 28 apps) |
 
 **Pourquoi l'arborescence complète et pas un sous-ensemble ?**
 `ApplicationScriptsAssembler::assemble()` concatène **tous** les fragments
@@ -326,12 +329,14 @@ critiques se répartissent sur seulement **3 contextes distincts** :
 Pas de fixture de parité dédiée (P2). Assertion **ligne ROBOCOPY complète** via
 `assertMatchesRegularExpression` :
 ```
-ROBOCOPY "%WinDir%\install\os\netinst" "%ProgramFiles%\SambaEdu"
+ROBOCOPY "%WinDir%\install\os\SambaEdu" "%ProgramFiles%\SambaEdu"
 ```
-**VM = référence légitime (validé Henri P4)** : la source est `install\os\netinst`
-(l'audit H.3 mentionnait `install\os\SambaEdu` — imprécision audit, pas un bug).
-L'assertion verrouille la ligne entière (source + destination) pour détecter tout
-changement de l'un ou l'autre.
+**Historique source** : en `4.17.285` la source était `install\os\netinst`
+(VM = référence légitime, validé Henri P4 — l'audit H.3 mentionnait déjà
+`install\os\SambaEdu`). Le paquet `4.17.695` est passé à `install\os\SambaEdu` :
+l'assertion ligne-entière a détecté le changement (recapture 2026-06-04) et a
+été alignée. Elle continue de verrouiller la ligne entière (source + destination)
+pour détecter tout changement de l'un ou l'autre.
 
 ### Fixture conservée — `linux_logon_firefox` (parité byte isolée nouvelle)
 
@@ -386,6 +391,14 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 "base64 /tmp/fixture-linux_logon_f
 
 - Paquet `sambaedu 4.17.285` — identique à 17.2, pas de bump version/SHA256.
 - Capture réalisée le 2026-05-25 sur VM `root@192.168.122.50`.
+- **Recapture 2026-06-04 (paquet `4.17.695`)** : les 5 fixtures (17.2 + 17.4) et
+  le snapshot P3 ont été régénérés ensemble sur le même paquet (script
+  `/tmp/capture_fixtures_4_17_695.php`, mêmes `$info`). Changements upstream
+  notables : `firewall/startup.windows` → `firewall/logon-system.windows`,
+  `ltsp/startup@serveurs_ltsp.linux` → `ltsp/{ltsp,packages.list,scripts.json}`,
+  source ROBOCOPY wpkg `netinst` → `SambaEdu`, suppression des zero-width
+  spaces (U+200B) des lignes UCPD de `firewall`, lignes roaming profile
+  chrome/edge, retrait de `redirect-GoogleChrome`.
 - **Snapshot P3** : `_package_snapshot/` byte-identique au package (SHA256 `8e0b5be2…`),
   permet les tests de parité portables CI (cf. section dédiée ci-dessus).
 - **Fixtures supprimées (P1/P2)** : `windows_logon_shortcuts/`, `windows_logon_firefox/`,

@@ -42,6 +42,12 @@
 			"browser.startup.windowsLaunchOnLogin.enabled": false
 		},
 
+		"GenerativeAI":
+		{
+			"Enabled": false,
+			"Locked": true
+		}
+
 		"FirefoxHome":
 		{
 			"SponsoredTopSites": false,

@@ -1,6 +1,9 @@
 {
 	"Edge": {
 		"app": "Edge",
+		"includes": [
+			"chrome_server_profiles"
+		],
 		"excludes": [
 			"port_perdir",
 			"portables"
@@ -11,9 +14,6 @@
 	},
 	"Edge_local": {
 		"app": "Edge",
-		"includes": [
-			"port_perdir",
-			"portables"
-		]
+		"includes": []
 	}
 }

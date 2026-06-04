@@ -1,0 +1,16 @@
+# mise en place serveur ltsp
+
+if [ -f "/etc/apt/sources.list.d/ltsp-ubuntu-ppa-focal.list" ]; then
+    rm -f /etc/apt/sources.list.d/ltsp-ubuntu-ppa-focal.list
+fi
+echo "[clients]
+CUPS_SERVER=\"localhost\"" > /etc/ltsp/ltsp.conf
+
+if [ ! -f /srv/ltsp/images/x86_64.img ] ; then
+    # a refaire en cas de modif du serveur
+    ltsp image /
+fi
+ltsp nfs
+ltsp initrd
+ltsp ipxe
+ltsp dnsmasq -d0 -p0 -r0 -t1 2> /dev/null || true

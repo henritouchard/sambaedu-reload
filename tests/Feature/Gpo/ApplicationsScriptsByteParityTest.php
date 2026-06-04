@@ -20,7 +20,8 @@ use Tests\TestCase;
  * **Référence** : audit 17.1 Section G.1 — « verrouiller la parité bytes ».
  *
  * **Fixtures** : `tests/Fixtures/Gpo/applications/<scenario>/expected.<ext>`
- * Capturées sur VM legacy (paquet `sambaedu` 4.17.285) le 2026-05-21.
+ * Capturées sur VM legacy (paquet `sambaedu` 4.17.695) le 2026-06-04
+ * (capture initiale : 4.17.285, 2026-05-21).
  * Procédure de (re)capture : `tests/Fixtures/Gpo/applications/README.md`.
  *
  * **Post-review 17.4 P6** : le helper de parité (`assertScriptParity()`,

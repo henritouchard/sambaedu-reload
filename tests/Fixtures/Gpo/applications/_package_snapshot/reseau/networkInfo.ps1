@@ -19,7 +19,7 @@ $moduleDefinition = {
 }
 New-Module -Name Logging -ScriptBlock $moduleDefinition
 
-$Path = "C:\netinst\"
+$Path = "c:\Netinst\"
 # Création du dossier si inexistant
 If (-Not (Test-Path $Path)) {
     New-Item -Path $Path -ItemType Directory -Force

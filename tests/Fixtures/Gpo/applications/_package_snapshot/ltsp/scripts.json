@@ -1,0 +1,18 @@
+[
+	{
+		"os": "linux",
+		"action": "startup",
+		"interpreter": "apt",
+		"includes": ["serveurs_ltsp"],
+		"excludes": [],
+		"file": "packages.list"
+	},
+	{
+		"os": "linux",
+		"action": "startup",
+		"interpreter": "bash",
+		"includes": ["serveurs_ltsp"],
+		"excludes": [],
+		"file": "ltsp"
+	}
+]

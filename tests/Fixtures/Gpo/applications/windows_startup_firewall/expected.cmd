@@ -27,9 +27,9 @@ IF EXIST "%WINDIR%\install\packages\associations\associations.xml" (
 )
 REM desactivation protection associations
 
-sc config UCPD start=disabled​
-sc stop UCPD​
-schtasks /change /Disable /TN "\Microsoft\Windows\AppxDeploymentClient\UCPD velocity"​
+sc config UCPD start=disabled
+sc stop UCPD
+schtasks /change /Disable /TN "\Microsoft\Windows\AppxDeploymentClient\UCPD velocity"
 
 REM Fin des associations des applications par defaut
 
@@ -59,47 +59,6 @@ IF EXIST "%PROGRAMFILES(x86)%\Mozilla Firefox\" (
     curl -o "%PROGRAMFILES(x86)%\Mozilla Firefox\distribution\policies.json" -F "id=%id%" -F "os=windows" "http://se4fs.localdev.fr/gpo/firefox_out.php">NUL
 )
 REM Fin de la configuration au demarrage de Firefox
-
-REM script [firewall]
-IF NOT [pasInternet]==[] (
-    IF EXIST "%WINDIR%\install\os\netinst\no_internet.ps1" (
-        COPY /Y "%WINDIR%\install\os\netinst\no_internet.ps1" "%PROGRAMFILES%\Sambaedu\no_internet.ps1"
-    )
-
-    SET ip=192.168.1.0
-    FOR /f "tokens=1-4 delims=. " %%a IN ("%ip%") DO (
-        SET ipoctetA=%%a
-        SET ipoctetB=%%b
-        SET ipoctetC=%%c
-        SET ipoctetD=%%d
-    )
-    SET mask=255.255.255.0
-    FOR /f "tokens=1-4 delims=. " %%a IN ("%mask%") DO (
-        SET maskoctetA=%%a
-        SET maskoctetB=%%b
-        SET maskoctetC=%%c
-        SET maskoctetD=%%d
-    )
-    SET /A "lastipA=((%ipoctetA%&%maskoctetA%)|(255-%maskoctetA%))"
-    SET /A "lastipB=((%ipoctetB%&%maskoctetB%)|(255-%maskoctetB%))"
-    SET /A "lastipC=((%ipoctetC%&%maskoctetC%)|(255-%maskoctetC%))"
-    SET /A "lastipD=((%ipoctetD%&%maskoctetD%)|(255-%maskoctetD%))"
-    SET "lastip=%lastipA%.%lastipB%.%lastipC%.%lastipD%"
-
-    netsh advfirewall set allprofiles state on
-    netsh advfirewall firewall del rule name="Allow from SE4FS"
-    netsh advfirewall firewall add rule name="Allow from SE4FS" dir=in action=allow protocol=ANY remoteip=192.168.122.50
-    netsh advfirewall firewall del rule name="Allow from SE4AD"
-    netsh advfirewall firewall add rule name="Allow from SE4AD" dir=in action=allow protocol=ANY remoteip=192.168.122.60
-    netsh advfirewall firewall del rule name="Allow all PING v4"
-    netsh advfirewall firewall add rule name="Allow all PING v4" dir=in action=allow protocol=icmpv4:any,any
-    netsh advfirewall firewall del rule name="Allow all PING v6"
-    netsh advfirewall firewall add rule name="Allow all PING v6" dir=in action=allow protocol=icmpv6:any,any
-    netsh advfirewall firewall del rule name="Block Internet"
-    netsh advfirewall firewall add rule name="Block Internet" dir=out action=block protocol=TCP remoteport=80,443 remoteip=1.1.1.1-%ip%,%lastip%-255.255.255.255 enable=no
-    netsh advfirewall firewall del rule name="Block proxy"
-    netsh advfirewall firewall add rule name="Block proxy" dir=out action=block protocol=TCP remoteport=3128 enable=no
-)
 
 REM script [folders]
 REM effacement si besoin des dossiers cache pour les postes en resau samba
@@ -149,7 +108,7 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\Name
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{24ad3ad4-a569-4530-98e1-ab02f9417aa8}" /v HiddenByDefault /t REG_DWORD /d 0x00000001 /f
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{f86fa3ab-70d2-4fc7-9c99-fcbf05467f3a}" /v HiddenByDefault /t REG_DWORD /d 0x00000001 /f
 
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" /v "Security Packages" /d "mdnsNSP.dll" /t REG_MULTY_SZ /f
+REM reg add "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" /v "Security Packages" /d "mdnsNSP.dll" /t REG_MULTI_SZ /f
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" /v DisableSoftLanding /d 1 /t REG_DWORD /f
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" /v AllowCloudSearch /d 0 /t REG_DWORD /f
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot" /v TurnOffWindowsCopilot /d 1 /t REG_DWORD /f
@@ -249,8 +208,8 @@ REM Debut de la configuration des fonds d'ecrans startup
 REM LockScreen
 IF NOT EXIST "%WINDIR%\Web\SE4\" (MD "%WINDIR%\Web\SE4")
 IF NOT EXIST "%WINDIR%\System32\oobe\info\backgrounds\" (MD "%WINDIR%\System32\oobe\info\backgrounds")
-IF NOT EXIST "%WINDIR%\Web\SE4\SetWallpaper.ps1" (IF EXIST "%WINDIR%\install\os\netinst\SetWallpaper.ps1" (COPY /Y "%WINDIR%\install\os\netinst\SetWallpaper.ps1" "%WINDIR%\Web\SE4\SetWallpaper.ps1"))
-IF EXIST "%WINDIR%\install\os\netinst\SetWallpaper.ps1" (COPY /Y "%WINDIR%\install\os\netinst\SetWallpaper.ps1" "%PROGRAMFILES%\Sambaedu\SetWallpaper.ps1")
+IF NOT EXIST "%WINDIR%\Web\SE4\SetWallpaper.ps1" (IF EXIST "%WINDIR%\install\os\SambaEdu\SetWallpaper.ps1" (COPY /Y "%WINDIR%\install\os\SambaEdu\SetWallpaper.ps1" "%WINDIR%\Web\SE4\SetWallpaper.ps1"))
+IF EXIST "%WINDIR%\install\os\SambaEdu\SetWallpaper.ps1" (COPY /Y "%WINDIR%\install\os\SambaEdu\SetWallpaper.ps1" "%PROGRAMFILES%\Sambaedu\SetWallpaper.ps1")
 curl.exe -o "%WINDIR%\Web\SE4\lockscreen.jpg" -F "action=lockscreen" -F "id=%id%" "http://se4fs/gpo/wallpaper_out.php">NUL
 COPY /Y "%WINDIR%\Web\SE4\lockscreen.jpg" "%WINDIR%\System32\oobe\info\backgrounds\backgroundDefault.jpg"
 REM fond d'ecran sans nom d'utilisateur pour l'ouverture initiale de session
@@ -268,7 +227,7 @@ IF EXIST "%ProgramFiles%\WinGet\Packages" (icacls "%ProgramFiles%\WinGet\Package
 REM script [wpkg]
 REM scripts divers utiles pour sambaedu
 IF NOT EXIST "%ProgramFiles%\SambaEdu" (MD "%ProgramFiles%\SambaEdu")
-ROBOCOPY "%WinDir%\install\os\netinst" "%ProgramFiles%\SambaEdu"
+ROBOCOPY "%WinDir%\install\os\SambaEdu" "%ProgramFiles%\SambaEdu"
 REM DL et exec powershell
 IF EXIST "%TEMP%\applications-startup-system.ps1" (
     DEL /F /Q "%TEMP%\applications-startup-system.ps1"

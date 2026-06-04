@@ -42,8 +42,8 @@ trait AssertsScriptParity
 {
     /**
      * Snapshot portable du package `/usr/share/sambaedu/applications/`
-     * (Story 17.4 P3). Capturé byte-identique au paquet `sambaedu 4.17.285`
-     * (SHA256 `8e0b5be2…`, cf. README). Permet aux tests de parité de tourner
+     * (Story 17.4 P3). Capturé byte-identique au paquet `sambaedu 4.17.695`
+     * (SHA256 `688824a8…`, cf. README). Permet aux tests de parité de tourner
      * SANS dépendre du chemin système VM → portable CI.
      */
     private const APPLICATIONS_SNAPSHOT_PATH = __DIR__ . '/../Fixtures/Gpo/applications/_package_snapshot/';

@@ -52,20 +52,20 @@ Locked=1
 # cache les .lnk
 find ~/Bureau -maxdepth 1 \( -iname "*.lnk" -o -iname "*.ini" -o -iname "*.BIN" -o -iname "*.url" \) -exec basename {} \; > ~/Bureau/.hidden
 # script[folders]
-echo "Configuration des dossier et du bureau"
+#echo "Configuration des dossier et du bureau"
 
 # xdg-mime default nemo.desktop inode/directory
 
 # effacement des bookmarks de nemo si besoin
-if grep -q "Images" ~/.config/gtk-3.0/bookmarks > /dev/null 2>&1; then
- rm -f ~/.config/gtk-3.0/bookmarks
-echo "file:///home/$USER/Docs
-file:///home/$USER/Telechargements
-file:///home/$USER/Musique
-file:///home/$USER/Photos
-file:///home/$USER/Vid%C3%A9os
-">~/.config/gtk-3.0/bookmarks
-fi
+#if grep -q "Images" ~/.config/gtk-3.0/bookmarks > /dev/null 2>&1; then
+# rm -f ~/.config/gtk-3.0/bookmarks
+#echo "file:///home/$USER/Docs
+#file:///home/$USER/Telechargements
+#file:///home/$USER/Musique
+#file:///home/$USER/Photos
+#file:///home/$USER/Videos
+#">~/.config/gtk-3.0/bookmarks
+#fi
 # fin de la configuration du bureau
 
 # script[gdm]
@@ -92,6 +92,8 @@ gsettings set org.gnome.desktop.interface color-scheme prefer-dark
 gsettings set org.gnome.desktop.interface gtk-theme Yaru-dark
 gsettings set org.gnome.desktop.sound theme-name Yaru
 gsettings set org.gnome.desktop.interface icon-theme Yaru-dark
+
+
 # script[rclone]
 # montage auto des partages de l'utilisateur dans un répertoire du home
 rc_config=$HOME/.config/rclone/rclone.conf

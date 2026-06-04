@@ -1,5 +1,5 @@
 IF NOT [###_NO_INTERNET_###]==[] (
     IF EXIST "%PROGRAMFILES%\SambaEdu\no_internet.ps1" (
-        START /B powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PROGRAMFILES%\SambaEdu\no_internet.ps1" -userlogin %userlogin%
+        START /B powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PROGRAMFILES%\SambaEdu\no_internet.ps1" -userlogin %userlogin% -SE4FSIP ###_SE4FS_IP_### -SE4ADIP ###_SE4AD_IP_### -DHCPReseau ###_DHCP_RESEAU_### -DHCPMasque ###_DHCP_MASQUE_###
     )
 )

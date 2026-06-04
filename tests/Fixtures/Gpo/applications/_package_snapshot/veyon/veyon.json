@@ -21,6 +21,78 @@
                     "Action": 1,
                     "Description": "",
                     "IgnoreConditions": false,
+                    "InvertConditions": false,
+                    "Name": "acces local autorisé aux profs",
+                    "Parameters": [
+                        {
+                            "Argument": "CN=Profs,OU=Groups",
+                            "Condition": 1,
+                            "Enabled": true,
+                            "Subject": 3
+                        },
+                        {
+                            "Argument": "",
+                            "Condition": 5,
+                            "Enabled": true,
+                            "Subject": 0
+                        }
+                    ]
+                },
+                {
+                    "Action": 1,
+                    "Description": "",
+                    "IgnoreConditions": false,
+                    "InvertConditions": false,
+                    "Name": "acces local autorise aux administratifs",
+                    "Parameters": [
+                        {
+                            "Argument": "CN=Administratifs,OU=Groups",
+                            "Condition": 1,
+                            "Enabled": true,
+                            "Subject": 3
+                        },
+                        {
+                            "Argument": "",
+                            "Condition": 5,
+                            "Enabled": true,
+                            "Subject": 0
+                        }
+                    ]
+                },
+                {
+                    "Action": 2,
+                    "Description": "",
+                    "IgnoreConditions": false,
+                    "InvertConditions": false,
+                    "Name": "On ne surveille pas les comptes profs",
+                    "Parameters": [
+                        {
+                            "Argument": "CN=Profs,OU=Groups",
+                            "Condition": 1,
+                            "Enabled": true,
+                            "Subject": 3
+                        }
+                    ]
+                },
+                {
+                    "Action": 2,
+                    "Description": "",
+                    "IgnoreConditions": false,
+                    "InvertConditions": false,
+                    "Name": "On ne surveille pas les comptes administratifs",
+                    "Parameters": [
+                        {
+                            "Argument": "CN=Administratifs,OU=Groups",
+                            "Condition": 1,
+                            "Enabled": true,
+                            "Subject": 3
+                        }
+                    ]
+                },
+                {
+                    "Action": 1,
+                    "Description": "",
+                    "IgnoreConditions": false,
                     "InvertConditions": true,
                     "Name": "Tout le monde peut surveiller sauf les élèves",
                     "Parameters": [
@@ -71,36 +143,6 @@
                             "Condition": 4,
                             "Enabled": true,
                             "Subject": 0
-                        }
-                    ]
-                },
-                {
-                    "Action": 2,
-                    "Description": "",
-                    "IgnoreConditions": false,
-                    "InvertConditions": false,
-                    "Name": "On ne surveille pas les comptes profs",
-                    "Parameters": [
-                        {
-                            "Argument": "CN=Profs,OU=Groups",
-                            "Condition": 1,
-                            "Enabled": true,
-                            "Subject": 3
-                        }
-                    ]
-                },
-                {
-                    "Action": 2,
-                    "Description": "",
-                    "IgnoreConditions": false,
-                    "InvertConditions": false,
-                    "Name": "On ne surveille pas les comptes administratifs",
-                    "Parameters": [
-                        {
-                            "Argument": "CN=Administratifs,OU=Groups",
-                            "Condition": 1,
-                            "Enabled": true,
-                            "Subject": 3
                         }
                     ]
                 }

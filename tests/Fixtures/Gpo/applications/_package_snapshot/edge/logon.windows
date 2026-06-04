@@ -3,3 +3,5 @@ reg.exe add "HKCU\Software\Microsoft\Edge" /v "DiskCacheDir" /d "${local_app_dat
 reg.exe add "HKEY_CURRENT_USER\SOFTWARE\Microsoft\Edge" /v HubsSidebarEnabled /d 0 /t REG_DWORD /f
 reg.exe add "HKEY_CURRENT_USER\SOFTWARE\Microsoft\Edge\Recommended" /V "ScarewareBlockerProtectionEnabled" /D 0 /T REG_DWORD /F
 reg.exe add "HKEY_CURRENT_USER\SOFTWARE\Microsoft\Edge" /V "GenAILocalFoundationalModelSettings" /D 1 /T REG_DWORD /F
+reg.exe add "HKCU\Software\Policies\Microsoft\Edge" /v "RoamingProfileSupportEnabled" /d 1 /t REG_DWORD /f
+reg.exe add "HKCU\Software\Policies\Microsoft\Edge" /v "RoamingProfilelocation" /d "${roaming_app_data}\Microsoft\Edge\User Data" /t REG_SZ /f

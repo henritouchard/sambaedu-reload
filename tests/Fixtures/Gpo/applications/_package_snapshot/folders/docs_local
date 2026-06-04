@@ -1,12 +1,12 @@
 REM creation des dossiers sur le profil local (sans cloud actif pour l'utilisateur)
-IF NOT EXIST "%USERPROFILE%\Docs" (MD "%USERPROFILE%\Docs")
+IF NOT EXIST "%USERPROFILE%\Documents" (MD "%USERPROFILE%\Documents")
 IF NOT EXIST "%USERPROFILE%\Images" (MD "%USERPROFILE%\Images")
 IF NOT EXIST "%USERPROFILE%\Videos" (MD "%USERPROFILE%\Videos")
 
 REM conf des dossiers
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v Personal /d "%USERPROFILE%\Docs" /t REG_EXPAND_SZ /f
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v "My Pictures" /d "%USERPROFILE%\Images" /t REG_EXPAND_SZ /f
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v "My Video" /d "%USERPROFILE%\Videos" /t REG_EXPAND_SZ /f
+REM reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v Personal /d "%USERPROFILE%\Documents" /t REG_EXPAND_SZ /f
+REM reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v "My Pictures" /d "%USERPROFILE%\Images" /t REG_EXPAND_SZ /f
+REM reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v "My Video" /d "%USERPROFILE%\Videos" /t REG_EXPAND_SZ /f
 
 REM pin bureau et telechargements
 pwsh -noprofile -executionpolicy bypass -command "$Q = New-Object -ComObject shell.application;$Path = $Q.Namespace('shell:Personal');$Path.Self.Path;if(-not ($Q.Namespace('shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}').Items() | ? {$_.Path -eq $Path.Self.Path})){$Path.Self.InvokeVerb('pintohome')}"

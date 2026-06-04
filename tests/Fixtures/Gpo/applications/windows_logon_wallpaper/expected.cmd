@@ -12,8 +12,6 @@ REM script [redirect-Firefox]
 
 REM script [redirect-Edge]
 
-REM script [redirect-GoogleChrome]
-
 REM script [redirect-OpenBoard]
 
 REM script [redirect-OnlyOffice]
@@ -26,6 +24,8 @@ powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%programfil
 REM script [chrome]
 REM Chrome Cache en local HKCU
 reg.exe add "HKCU\Software\Google\Chrome" /v "DiskCacheDir" /d "${local_app_data}\GoogleCache" /t REG_EXPAND_SZ /f
+reg.exe add "HKCU\Software\Policies\Google\Chrome" /v "RoamingProfileSupportEnabled" /d 1 /t REG_DWORD /f
+reg.exe add "HKCU\Software\Policies\Google\Chrome" /v "RoamingProfilelocation" /d "${roaming_app_data}\Google\Chrome\User Data" /t REG_SZ /f
 
 REM script [edge]
 REM Edge Cache en local HKCU
@@ -33,6 +33,9 @@ reg.exe add "HKCU\Software\Microsoft\Edge" /v "DiskCacheDir" /d "${local_app_dat
 reg.exe add "HKEY_CURRENT_USER\SOFTWARE\Microsoft\Edge" /v HubsSidebarEnabled /d 0 /t REG_DWORD /f
 reg.exe add "HKEY_CURRENT_USER\SOFTWARE\Microsoft\Edge\Recommended" /V "ScarewareBlockerProtectionEnabled" /D 0 /T REG_DWORD /F
 reg.exe add "HKEY_CURRENT_USER\SOFTWARE\Microsoft\Edge" /V "GenAILocalFoundationalModelSettings" /D 1 /T REG_DWORD /F
+reg.exe add "HKCU\Software\Policies\Microsoft\Edge" /v "RoamingProfileSupportEnabled" /d 1 /t REG_DWORD /f
+reg.exe add "HKCU\Software\Policies\Microsoft\Edge" /v "RoamingProfilelocation" /d "${roaming_app_data}\Microsoft\Edge\User Data" /t REG_SZ /f
+
 REM script [firefox]
 REM Mise en place du profil utilisateur de Firefox pour Windows
 IF NOT EXIST "%userprofile%\AppData\Local\cacheFirefox\" (MD "%userprofile%\AppData\Local\cacheFirefox\")
@@ -84,7 +87,7 @@ IF NOT EXIST "\\%se4fs%\users\%USERNAME%\Telechargements" (MD "\\%se4fs%\users\%
 IF NOT EXIST "\\%se4fs%\users\%USERNAME%\Bureau" (MD "\\%se4fs%\users\%USERNAME%\Bureau")
 
 REM conf des dossiers
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v Downloads /d "\\%se4fs%\users\%USERNAME%\Telechargements" /t REG_EXPAND_SZ /f
+REM reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v Downloads /d "\\%se4fs%\users\%USERNAME%\Telechargements" /t REG_EXPAND_SZ /f
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v Desktop /d "\\%se4fs%\users\%USERNAME%\Bureau" /t REG_EXPAND_SZ /f
 
 REM cache les .desktop
@@ -92,17 +95,24 @@ attrib.exe +H "\\%se4fs%\users\%USERNAME%\Bureau\*.desktop"
 
 REM script [folders]
 REM creation des dossiers sur le serveur se4 (sans cloud actif pour l'utilisateur)
-IF NOT EXIST "\\%se4fs%\users\%USERNAME%\Docs" (MD "\\%se4fs%\users\%USERNAME%\Docs")
-IF NOT EXIST "\\%se4fs%\users\%USERNAME%\Images" (MD "\\%se4fs%\users\%USERNAME%\Images")
-IF NOT EXIST "\\%se4fs%\users\%USERNAME%\Videos" (MD "\\%se4fs%\users\%USERNAME%\Videos")
+REM IF NOT EXIST "\\%se4fs%\users\%USERNAME%\Docs" (MD "\\%se4fs%\users\%USERNAME%\Docs")
+REM IF NOT EXIST "\\%se4fs%\users\%USERNAME%\Images" (MD "\\%se4fs%\users\%USERNAME%\Images")
+REM IF NOT EXIST "\\%se4fs%\users\%USERNAME%\Videos" (MD "\\%se4fs%\users\%USERNAME%\Videos")
 
 REM conf des dossiers
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v Personal /d "\\%se4fs%\users\%USERNAME%\Docs" /t REG_EXPAND_SZ /f
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v "My Pictures" /d "\\%se4fs%\users\%USERNAME%\Images" /t REG_EXPAND_SZ /f
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v "My Video" /d "\\%se4fs%\users\%USERNAME%\Videos" /t REG_EXPAND_SZ /f
+REM reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v Personal /d "\\%se4fs%\users\%USERNAME%\Docs" /t REG_EXPAND_SZ /f
+REM reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v "My Pictures" /d "\\%se4fs%\users\%USERNAME%\Images" /t REG_EXPAND_SZ /f
+REM reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" /v "My Video" /d "\\%se4fs%\users\%USERNAME%\Videos" /t REG_EXPAND_SZ /f
 
 REM pin bureau et telechargements
-pwsh -noprofile -executionpolicy bypass -command "$Q = New-Object -ComObject shell.application;$Path = $Q.Namespace('shell:Personal');$Path.Self.Path;if(-not ($Q.Namespace('shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}').Items() | ? {$_.Path -eq $Path.Self.Path})){$Path.Self.InvokeVerb('pintohome')}"
+REM pwsh -noprofile -executionpolicy bypass -command "$Q = New-Object -ComObject shell.application;$Path = $Q.Namespace('shell:Personal');$Path.Self.Path;if(-not ($Q.Namespace('shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}').Items() | ? {$_.Path -eq $Path.Self.Path})){$Path.Self.InvokeVerb('pintohome')}"
+
+REM script [folders]
+xdg-user-dirs-update --set DOCUMENTS "$HOME/Docs"
+xdg-user-dirs-update --set MUSIC "$HOME/Musique"
+xdg-user-dirs-update --set PICTURES "$HOME/Images"
+xdg-user-dirs-update --set VIDEOS "$HOME/Videos"
+xdg-user-dirs-update --set TEMPLATES "$HOME/Modèles"
 
 REM script [logs]
 START /B powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PROGRAMFILES%\SambaEdu\PingSE4.ps1"

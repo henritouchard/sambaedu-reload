@@ -258,25 +258,27 @@ class ApplicationsScriptsCriticalParityTest extends TestCase
      *
      * Le blob `startup/windows` est byte-identique à la fixture 17.2
      * `windows_startup_firewall` (parité couverte là-bas, P2) ; ici on isole le
-     * fragment wpkg via la **ligne ROBOCOPY complète** (source `netinst` +
+     * fragment wpkg via la **ligne ROBOCOPY complète** (source `SambaEdu` +
      * destination `%ProgramFiles%\SambaEdu`).
      *
-     * VM = référence légitime (validé Henri P4) : le script réel utilise
-     * `install\os\netinst` comme source (l'audit H.3 mentionnait `SambaEdu` —
-     * imprécision audit, pas un bug). L'assertion verrouille la ligne entière
-     * via regex pour détecter tout changement de source OU destination.
+     * Historique source : en 4.17.285 le script utilisait `install\os\netinst`
+     * (VM = référence légitime, validé Henri P4 — l'audit H.3 mentionnait déjà
+     * `SambaEdu`). Le paquet 4.17.695 (recapture 2026-06-04) est passé à
+     * `install\os\SambaEdu` — l'assertion (qui verrouille la ligne entière via
+     * regex pour détecter tout changement de source OU destination) a détecté
+     * le changement et a été alignée.
      */
     #[Test]
     public function it_includes_robocopy_deploy_fragment_for_wpkg_startup(): void
     {
         $cmd = $this->assembleFromSnapshot($this->windowsStartupInfo())['cmd'];
 
-        // Ligne complète : ROBOCOPY "%WinDir%\install\os\netinst" "%ProgramFiles%\SambaEdu"
+        // Ligne complète : ROBOCOPY "%WinDir%\install\os\SambaEdu" "%ProgramFiles%\SambaEdu"
         // Backslashes et % échappés pour la regex.
         self::assertMatchesRegularExpression(
-            '/ROBOCOPY "%WinDir%\\\\install\\\\os\\\\netinst" "%ProgramFiles%\\\\SambaEdu"/',
+            '/ROBOCOPY "%WinDir%\\\\install\\\\os\\\\SambaEdu" "%ProgramFiles%\\\\SambaEdu"/',
             $cmd,
-            'La ligne ROBOCOPY complète (source netinst + destination %ProgramFiles%\\SambaEdu) '
+            'La ligne ROBOCOPY complète (source install\\os\\SambaEdu + destination %ProgramFiles%\\SambaEdu) '
             . 'doit être présente dans le blob startup (fragment wpkg/startup.windows, audit H.3 / P4).'
         );
     }

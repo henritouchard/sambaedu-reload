@@ -8,8 +8,8 @@ IF EXIST "%WINDIR%\install\packages\associations\associations.xml" (
 )
 REM desactivation protection associations
 
-sc config UCPD start=disabled​
-sc stop UCPD​
-schtasks /change /Disable /TN "\Microsoft\Windows\AppxDeploymentClient\UCPD velocity"​
+sc config UCPD start=disabled
+sc stop UCPD
+schtasks /change /Disable /TN "\Microsoft\Windows\AppxDeploymentClient\UCPD velocity"
 
 REM Fin des associations des applications par defaut

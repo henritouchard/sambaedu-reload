@@ -1,2 +1,4 @@
 REM Chrome Cache en local HKCU
 reg.exe add "HKCU\Software\Google\Chrome" /v "DiskCacheDir" /d "${local_app_data}\GoogleCache" /t REG_EXPAND_SZ /f
+reg.exe add "HKCU\Software\Policies\Google\Chrome" /v "RoamingProfileSupportEnabled" /d 1 /t REG_DWORD /f
+reg.exe add "HKCU\Software\Policies\Google\Chrome" /v "RoamingProfilelocation" /d "${roaming_app_data}\Google\Chrome\User Data" /t REG_SZ /f

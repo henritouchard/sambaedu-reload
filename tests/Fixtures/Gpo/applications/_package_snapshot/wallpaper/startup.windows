@@ -2,8 +2,8 @@ REM Debut de la configuration des fonds d'ecrans startup
 REM LockScreen
 IF NOT EXIST "%WINDIR%\Web\SE4\" (MD "%WINDIR%\Web\SE4")
 IF NOT EXIST "%WINDIR%\System32\oobe\info\backgrounds\" (MD "%WINDIR%\System32\oobe\info\backgrounds")
-IF NOT EXIST "%WINDIR%\Web\SE4\SetWallpaper.ps1" (IF EXIST "%WINDIR%\install\os\netinst\SetWallpaper.ps1" (COPY /Y "%WINDIR%\install\os\netinst\SetWallpaper.ps1" "%WINDIR%\Web\SE4\SetWallpaper.ps1"))
-IF EXIST "%WINDIR%\install\os\netinst\SetWallpaper.ps1" (COPY /Y "%WINDIR%\install\os\netinst\SetWallpaper.ps1" "%PROGRAMFILES%\Sambaedu\SetWallpaper.ps1")
+IF NOT EXIST "%WINDIR%\Web\SE4\SetWallpaper.ps1" (IF EXIST "%WINDIR%\install\os\SambaEdu\SetWallpaper.ps1" (COPY /Y "%WINDIR%\install\os\SambaEdu\SetWallpaper.ps1" "%WINDIR%\Web\SE4\SetWallpaper.ps1"))
+IF EXIST "%WINDIR%\install\os\SambaEdu\SetWallpaper.ps1" (COPY /Y "%WINDIR%\install\os\SambaEdu\SetWallpaper.ps1" "%PROGRAMFILES%\Sambaedu\SetWallpaper.ps1")
 curl.exe -o "%WINDIR%\Web\SE4\lockscreen.jpg" -F "action=lockscreen" -F "id=%id%" "http://###_SE4FS_NAME_###/gpo/wallpaper_out.php">NUL
 COPY /Y "%WINDIR%\Web\SE4\lockscreen.jpg" "%WINDIR%\System32\oobe\info\backgrounds\backgroundDefault.jpg"
 REM fond d'ecran sans nom d'utilisateur pour l'ouverture initiale de session
