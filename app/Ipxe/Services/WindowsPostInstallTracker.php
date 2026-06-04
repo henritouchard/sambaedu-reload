@@ -35,9 +35,15 @@ use Throwable;
  * doubles updates concurrents (2 POSTes simultanés `etape=sysprep` sur même
  * poste).
  *
- * **Preserve `protected`** (D7 / AC5.5) : pattern 3.4 #M3 + 3.5 — toute
- * méthode qui touche `Workstation::status` doit préserver `protected` si
- * c'était le status pré-update.
+ * **`Workstation::status` non touché** (fix 22001 — aligné LinuxPostInstallTracker) :
+ * `workstations.status` est un `varchar(20)` à domaine fermé
+ * (`active|inactive|protected` — cf. scopes du modèle). Les phrases d'étape
+ * iso-legacy (`'installation Windows terminee'` = 29 c., etc.) provoquaient
+ * un SQLSTATE[22001] « value too long » → HTTP 500 sur les callbacks
+ * `/ipxe/windows/action`. L'avancement est tracé via `progress` +
+ * `programmed_action` (etape/ret) + `MachineBootLog` + logs channel `ipxe`.
+ * Comme on n'écrit plus `status`, la sémantique « préserver `protected` »
+ * (décision #M3) est respectée nativement.
  *
  * **Audit MachineBootLog** (D11 / AC5.3) : insert d'une ligne par étape
  * avec label `ipxe_win_{step}` (6 nouveaux labels ≤ varchar(20)).
@@ -47,18 +53,6 @@ use Throwable;
  */
 final class WindowsPostInstallTracker
 {
-    /**
-     * Status string lorsque WinPE démarre (étape `winpe`). ASCII strict — pas
-     * d'accent fr (`Workstation::status` peut être réinjecté dans des
-     * cmdlines iPXE / UI mixed-charset).
-     */
-    public const STATUS_WINPE = 'installation WinPE';
-
-    /**
-     * Status string lorsque l'install complète Windows aboutit (étape `oobe`).
-     */
-    public const STATUS_OOBE_COMPLETE = 'installation Windows terminee';
-
     /**
      * Channel Monolog dédié (iso 3.1 D7).
      */
@@ -75,20 +69,8 @@ final class WindowsPostInstallTracker
         string $name = '',
         string $ip = '',
     ): void {
-        $wasProtected = $workstation->status === 'protected';
-        $workstation->status = self::STATUS_WINPE;
-        if ($wasProtected) {
-            $workstation->status = 'protected';
-        }
-        $workstation->save();
-        if ($wasProtected) {
-            Log::channel($this->channel())->info('ipxe.windows.action.protected_preserved', [
-                'action_type' => 'ipxe.windows.action.protected_preserved',
-                'workstation_id' => $workstation->id ?? null,
-                'mac' => (string) ($workstation->mac ?? ''),
-                'step' => 'winpe',
-            ]);
-        }
+        // Fix 22001 — on ne touche plus `status` (cf. docblock classe). Le
+        // début d'install est tracé via MachineBootLog + log ci-dessous.
         $this->persistMachineBootLog($workstation, 'ipxe_win_install', true, $ip);
         Log::channel($this->channel())->info('ipxe.windows.action.winpe_start', [
             'action_type' => 'ipxe.windows.action.winpe_start',
@@ -107,22 +89,12 @@ final class WindowsPostInstallTracker
         string $name = '',
         string $ip = '',
     ): void {
-        $wasProtected = $workstation->status === 'protected';
+        // Fix 22001 — on ne touche plus `status` (cf. docblock classe).
+        // L'issue d'install est tracée via os + last_report_at +
+        // MachineBootLog, iso LinuxPostInstallTracker.
         $workstation->os = 'windows';
-        $workstation->status = self::STATUS_OOBE_COMPLETE;
         $workstation->last_report_at = Carbon::now();
-        if ($wasProtected) {
-            $workstation->status = 'protected';
-        }
         $workstation->save();
-        if ($wasProtected) {
-            Log::channel($this->channel())->info('ipxe.windows.action.protected_preserved', [
-                'action_type' => 'ipxe.windows.action.protected_preserved',
-                'workstation_id' => $workstation->id ?? null,
-                'mac' => (string) ($workstation->mac ?? ''),
-                'step' => 'oobe',
-            ]);
-        }
         $this->persistMachineBootLog($workstation, 'ipxe_win_report', true, $ip);
         Log::channel($this->channel())->info('ipxe.windows.action.oobe_complete', [
             'action_type' => 'ipxe.windows.action.oobe_complete',
@@ -164,9 +136,11 @@ final class WindowsPostInstallTracker
      * Story 3.8 — sysprep branche A (`ret<0` premier appel).
      *
      * Parité legacy lignes 415-428 :
-     *  - Si `type ∈ {clonage, clonage2}` → status="préparation 1er boot",
-     *    progress=0%, programmed_action.role=modele.
-     *  - Sinon → progress=0% (status inchangé).
+     *  - Si `type ∈ {clonage, clonage2}` → progress=0%,
+     *    programmed_action.role=modele.
+     *  - Sinon → progress=0%.
+     *
+     * (Le status legacy "préparation 1er boot" n'est plus écrit — fix 22001.)
      */
     public function recordSysprepInitiated(Workstation $workstation, string $ip = ''): void
     {
@@ -178,11 +152,10 @@ final class WindowsPostInstallTracker
             if ($type === 'clonage' || $type === 'clonage2') {
                 $updates['type'] = $type;
                 $updates['role'] = 'modele';
-                $this->updateStatus($ws, 'preparation 1er boot');
             }
             $ws->progress = '0%';
             $this->mergeProgrammedAction($ws, $updates);
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_sysprep', true, $ip);
         });
         $this->logState($workstation, 'sysprep', 'initiated', $ip);
@@ -200,9 +173,8 @@ final class WindowsPostInstallTracker
                 'script' => 'windows',
                 'ret' => 0,
             ]);
-            $this->updateStatus($ws, 'preparation image');
             $ws->progress = '50%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_sysprep', true, $ip);
         });
         $this->logState($workstation, 'sysprep', 'gpo_start', $ip);
@@ -220,9 +192,8 @@ final class WindowsPostInstallTracker
                 'ret' => -1,
                 'etape' => 'init-modele',
             ]);
-            $this->updateStatus($ws, 'sysprep generalisation');
             $ws->progress = '50%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_sysprep', true, $ip);
         });
         $this->logState($workstation, 'sysprep', 'generalized', $ip);
@@ -241,9 +212,8 @@ final class WindowsPostInstallTracker
                 'ret' => -1,
                 'etape' => 'init-modele',
             ]);
-            $this->updateStatus($ws, 'clonage sans sysprep');
             $ws->progress = '100%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_sysprep', true, $ip);
         });
         $this->logState($workstation, 'sysprep', 'none_clone', $ip);
@@ -260,7 +230,7 @@ final class WindowsPostInstallTracker
         $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
             $this->mergeProgrammedAction($ws, ['etape' => 'nosysprep']);
             $ws->progress = '50%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_nosysprep', true, $ip);
         });
         $this->logState($workstation, 'nosysprep', 'initiated', $ip);
@@ -296,9 +266,8 @@ final class WindowsPostInstallTracker
                 $updates['join_role'] = $role;
             }
             $this->mergeProgrammedAction($ws, $updates);
-            $this->updateStatus($ws, 'mise au domaine v2');
             $ws->progress = '0%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_join', true, $ip);
         });
         $this->logState($workstation, 'join', 'initiated', $ip);
@@ -316,9 +285,8 @@ final class WindowsPostInstallTracker
                 'script' => 'default',
                 'ret' => 0,
             ]);
-            $this->updateStatus($ws, 'renommage sans sysprep OK');
             $ws->progress = '30%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_join', true, $ip);
         });
         $this->logState($workstation, 'join', 'adminse_started', $ip);
@@ -336,9 +304,8 @@ final class WindowsPostInstallTracker
                 'script' => 'default',
                 'ret' => 1,
             ]);
-            $this->updateStatus($ws, 'mise au domaine sans sysprep OK');
             $ws->progress = '60%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_join', true, $ip);
         });
         $this->logState($workstation, 'join', 'domained', $ip);
@@ -357,9 +324,8 @@ final class WindowsPostInstallTracker
                 'etape' => 'default',
                 'ret' => -1,
             ]);
-            $this->updateStatus($ws, 'clonage termine');
             $ws->progress = '100%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_join', true, $ip);
         });
         $this->logState($workstation, 'join', 'complete', $ip);
@@ -372,9 +338,8 @@ final class WindowsPostInstallTracker
     {
         $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
             $this->mergeProgrammedAction($ws, ['etape' => 'renomme']);
-            $this->updateStatus($ws, 'renommage au domaine');
             $ws->progress = '20%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_renomme', true, $ip);
         });
         $this->logState($workstation, 'renomme', 'initiated', $ip);
@@ -404,9 +369,10 @@ final class WindowsPostInstallTracker
      *    iPXE) mais n'est plus utilisé. Le rename AD passe par l'observer.
      *
      * Logique post-refactor :
-     *  - Si `role` non vide → renommage PG via Eloquent + observer async.
-     *    Status = "renommage dans AD OK", progress=60%.
-     *  - Si `role` vide → status="ERREUR pas de nouveau nom", progress=20%.
+     *  - Si `role` non vide → renommage PG via Eloquent + observer async,
+     *    progress=60%.
+     *  - Si `role` vide → progress=20% + MachineBootLog success=false + log
+     *    warning (les status phrases legacy ne sont plus écrites — fix 22001).
      */
     public function recordRenommeAdRenamed(
         Workstation $workstation,
@@ -418,9 +384,8 @@ final class WindowsPostInstallTracker
 
         if ($role === '') {
             $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
-                $this->updateStatus($ws, 'ERREUR pas de nouveau nom');
                 $ws->progress = '20%';
-                $this->saveWithProtected($ws);
+                $ws->save();
                 $this->persistMachineBootLog($ws, 'ipxe_win_renomme', false, $ip);
             });
             Log::channel($this->channel())->warning('ipxe.windows.action.renomme.ad_rename_no_role', [
@@ -448,9 +413,8 @@ final class WindowsPostInstallTracker
                 'etape' => 'default',
                 'ret' => 0,
             ]);
-            $this->updateStatus($ws, 'renommage dans AD OK');
             $ws->progress = '60%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_renomme', true, $ip);
         });
 
@@ -475,9 +439,8 @@ final class WindowsPostInstallTracker
                 'etape' => 'default',
                 'ret' => -1,
             ]);
-            $this->updateStatus($ws, 'Renommage termine');
             $ws->progress = '100%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_renomme', true, $ip);
         });
         $this->logState($workstation, 'renomme', 'finished', $ip);
@@ -490,9 +453,8 @@ final class WindowsPostInstallTracker
     {
         $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
             $this->mergeProgrammedAction($ws, ['etape' => 'post']);
-            $this->updateStatus($ws, 'post-mise au domaine manuelle');
             $ws->progress = '20%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_post', true, $ip);
         });
         $this->logState($workstation, 'post', 'initiated', $ip);
@@ -509,9 +471,8 @@ final class WindowsPostInstallTracker
                 'script' => 'default',
                 'ret' => 0,
             ]);
-            $this->updateStatus($ws, 'script de demarrage post-install OK');
             $ws->progress = '50%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_post', true, $ip);
         });
         $this->logState($workstation, 'post', 'autologon', $ip);
@@ -529,9 +490,8 @@ final class WindowsPostInstallTracker
                 'etape' => 'default',
                 'ret' => -1,
             ]);
-            $this->updateStatus($ws, 'script de demarrage post-install OK');
             $ws->progress = '100%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_post', true, $ip);
         });
         $this->logState($workstation, 'post', 'finished', $ip);
@@ -544,9 +504,8 @@ final class WindowsPostInstallTracker
     {
         $this->wrapTransaction($workstation, function (Workstation $ws) use ($ip): void {
             $this->mergeProgrammedAction($ws, ['etape' => 'wpkg']);
-            $this->updateStatus($ws, 'lancement de wpkg en mode interactif');
             $ws->progress = '10%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_wpkg', true, $ip);
         });
         $this->logState($workstation, 'wpkg', 'initiated', $ip);
@@ -564,9 +523,8 @@ final class WindowsPostInstallTracker
                 'etape' => 'wpkg',
                 'ret' => 0,
             ]);
-            $this->updateStatus($ws, 'lancement de wpkg interactif');
             $ws->progress = '50%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_wpkg', true, $ip);
         });
         $this->logState($workstation, 'wpkg', 'autologon', $ip);
@@ -586,9 +544,8 @@ final class WindowsPostInstallTracker
             ]);
             // Note: legacy ligne 664 a une typo « d'exec » avec apostrophe —
             // SE5 simplifie en ASCII pur.
-            $this->updateStatus($ws, 'exec wpkg fini');
             $ws->progress = '100%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_wpkg', true, $ip);
         });
         $this->logState($workstation, 'wpkg', 'finished', $ip);
@@ -597,7 +554,8 @@ final class WindowsPostInstallTracker
     /**
      * Story 3.8 — default branche D (ligne 716-727) — fin process.
      *
-     * Parité legacy : os='windows', progress=100%, status='termine'.
+     * Parité legacy : os='windows', progress=100% (status legacy 'termine'
+     * non porté — fix 22001).
      *
      * @internal Review #6 — non dispatchée par le controller 3.8 :
      * l'étape `default` (= step inconnu) est rejetée 422 par
@@ -615,9 +573,8 @@ final class WindowsPostInstallTracker
                 'ret' => -1,
             ]);
             $ws->os = 'windows';
-            $this->updateStatus($ws, 'termine');
             $ws->progress = '100%';
-            $this->saveWithProtected($ws);
+            $ws->save();
             $this->persistMachineBootLog($ws, 'ipxe_win_report', true, $ip);
         });
         $this->logState($workstation, 'default', 'finished', $ip);
@@ -663,29 +620,6 @@ final class WindowsPostInstallTracker
             // à voir les changements via refresh).
             $workstation->fill($locked->getAttributes())->exists = true;
         });
-    }
-
-    /**
-     * Update `status` en préservant `protected` (pattern 3.4 #M3 + 3.5).
-     */
-    private function updateStatus(Workstation $workstation, string $newStatus): void
-    {
-        $wasProtected = $workstation->status === 'protected';
-        $workstation->status = $newStatus;
-        if ($wasProtected) {
-            // Mémorise le status réel via `_protected_status` (non-fillable —
-            // utilisé uniquement par saveWithProtected).
-            $workstation->setAttribute('status', 'protected');
-        }
-    }
-
-    /**
-     * Save Workstation (le `updateStatus` a déjà géré la préservation
-     * `protected`).
-     */
-    private function saveWithProtected(Workstation $workstation): void
-    {
-        $workstation->save();
     }
 
     /**

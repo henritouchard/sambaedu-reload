@@ -53,7 +53,8 @@ class IpxeWindowsActionEndpointTest extends TestCase
         self::assertSame('', (string) $response->getContent());
 
         $ws->refresh();
-        self::assertSame('installation WinPE', $ws->status);
+        // Fix 22001 — status non touché (domaine fermé varchar(20)).
+        self::assertSame('active', $ws->status);
 
         $log = MachineBootLog::where('action', 'ipxe_win_install')->first();
         self::assertNotNull($log);
@@ -75,7 +76,8 @@ class IpxeWindowsActionEndpointTest extends TestCase
 
         $ws->refresh();
         self::assertSame('windows', $ws->os);
-        self::assertSame('installation Windows terminee', $ws->status);
+        // Fix 22001 — status non touché (domaine fermé varchar(20)).
+        self::assertSame('active', $ws->status);
         self::assertNotNull($ws->last_report_at);
 
         $log = MachineBootLog::where('action', 'ipxe_win_report')->first();
@@ -119,9 +121,9 @@ class IpxeWindowsActionEndpointTest extends TestCase
         ]);
 
         $response->assertStatus(422);
-        // Workstation status unchanged (le tracker n'est pas appelé).
+        // Workstation inchangée (le tracker n'est pas appelé).
         $ws->refresh();
-        self::assertNotSame('installation WinPE', $ws->status);
+        self::assertSame('active', $ws->status);
         self::assertNotSame('windows', $ws->os);
     }
 
@@ -139,8 +141,9 @@ class IpxeWindowsActionEndpointTest extends TestCase
 
         $response->assertStatus(200);
         $ws->refresh();
-        // Pas de mise à jour status WinPE.
-        self::assertNotSame('installation WinPE', $ws->status);
+        // Aucune mutation (ret != 0 → pas de MachineBootLog d'install).
+        self::assertSame('active', $ws->status);
+        self::assertSame(0, MachineBootLog::where('action', 'ipxe_win_install')->count());
     }
 
     #[Test]

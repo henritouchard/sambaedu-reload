@@ -19,10 +19,15 @@ use Tests\TestCase;
  * Story 3.5 — AC3.3.
  *
  * Tests unitaires de {@see WindowsPostInstallTracker} :
- *  - recordWinpeStart() : set status WinPE + MachineBootLog.
- *  - recordOobeComplete() : set os=windows + status terminée + last_report_at.
+ *  - recordWinpeStart() : MachineBootLog only (status non touché — fix 22001).
+ *  - recordOobeComplete() : set os=windows + last_report_at.
  *  - recordInstallBatGenerated() : audit only.
  *  - recordUnknown() : log warning sans side effect DB.
+ *
+ * **Fix 22001** : `workstations.status` est un `varchar(20)` à domaine fermé
+ * (`active|inactive|protected`) — le tracker ne l'écrit plus jamais (aligné
+ * LinuxPostInstallTracker). Chaque test post-étape assert que status reste
+ * à sa valeur initiale.
  */
 class WindowsPostInstallTrackerTest extends TestCase
 {
@@ -47,15 +52,14 @@ class WindowsPostInstallTrackerTest extends TestCase
     }
 
     #[Test]
-    public function it_records_winpe_start_with_status_and_machine_boot_log(): void
+    public function it_records_winpe_start_with_machine_boot_log_only(): void
     {
         $ws = $this->makeWorkstation();
         $this->tracker->recordWinpeStart($ws, 'PC-101', '192.168.1.5');
 
         $ws->refresh();
-        self::assertSame('installation WinPE', $ws->status);
-        // ASCII strict — pas d'accent.
-        self::assertStringNotContainsString('é', $ws->status);
+        // Fix 22001 — status non touché.
+        self::assertSame('active', $ws->status);
 
         // MachineBootLog avec action='ipxe_win_install'.
         $log = MachineBootLog::where('workstation_id', $ws->id)
@@ -76,8 +80,8 @@ class WindowsPostInstallTrackerTest extends TestCase
 
         $ws->refresh();
         self::assertSame('windows', $ws->os);
-        self::assertSame('installation Windows terminee', $ws->status);
-        self::assertStringNotContainsString('é', $ws->status);
+        // Fix 22001 — status non touché.
+        self::assertSame('active', $ws->status);
         self::assertSame('2026-05-21 12:34:56', $ws->last_report_at?->format('Y-m-d H:i:s'));
 
         // MachineBootLog avec action='ipxe_win_report'.
@@ -149,21 +153,39 @@ class WindowsPostInstallTrackerTest extends TestCase
     }
 
     #[Test]
-    public function it_status_strings_are_ascii_strict(): void
+    public function it_never_writes_status_on_any_record_method(): void
     {
-        // Garde-fou : éviter qu'un futur dev change les constantes en
-        // « installation Windows terminée » (avec accent é).
-        self::assertSame('installation WinPE', WindowsPostInstallTracker::STATUS_WINPE);
-        self::assertSame('installation Windows terminee', WindowsPostInstallTracker::STATUS_OOBE_COMPLETE);
-        // Test bytes-level : aucun byte > 0x7E.
-        self::assertMatchesRegularExpression(
-            '/^[\x20-\x7E]+$/',
-            WindowsPostInstallTracker::STATUS_WINPE,
-        );
-        self::assertMatchesRegularExpression(
-            '/^[\x20-\x7E]+$/',
-            WindowsPostInstallTracker::STATUS_OOBE_COMPLETE,
-        );
+        // Garde-fou fix 22001 : `workstations.status` est un varchar(20) à
+        // domaine fermé (active|inactive|protected). Aucune méthode record*
+        // ne doit y écrire de phrase d'étape (SQLSTATE 22001 en PG sinon).
+        $ws = $this->makeWorkstation();
+        $adManager = Mockery::mock(AdMachineManager::class);
+        $adManager->shouldNotReceive('renameComputer');
+
+        $this->tracker->recordWinpeStart($ws);
+        $this->tracker->recordOobeComplete($ws);
+        $this->tracker->recordSysprepInitiated($ws);
+        $this->tracker->recordSysprepGpoStart($ws);
+        $this->tracker->recordSysprepGeneralized($ws);
+        $this->tracker->recordSysprepNoneClone($ws);
+        $this->tracker->recordNosysprep($ws);
+        $this->tracker->recordJoinInitiated($ws);
+        $this->tracker->recordJoinAdminseStarted($ws);
+        $this->tracker->recordJoinDomained($ws);
+        $this->tracker->recordJoinComplete($ws);
+        $this->tracker->recordRenommeInitiated($ws);
+        $this->tracker->recordRenommeAdRenamed($ws, $adManager, 'pc-renamed-01');
+        $this->tracker->recordRenommeAdRenamed($ws, $adManager, '');
+        $this->tracker->recordRenommeFinished($ws);
+        $this->tracker->recordPostInitiated($ws);
+        $this->tracker->recordPostAutologon($ws);
+        $this->tracker->recordPostFinished($ws);
+        $this->tracker->recordWpkgInitiated($ws);
+        $this->tracker->recordWpkgAutologon($ws);
+        $this->tracker->recordWpkgFinished($ws);
+        $this->tracker->recordDefault($ws);
+
+        self::assertSame('active', $ws->fresh()?->status);
     }
 
     /* ------------------------------------------------------------------
@@ -188,7 +210,7 @@ class WindowsPostInstallTrackerTest extends TestCase
 
         $fresh = $ws->fresh();
         self::assertNotNull($fresh);
-        // Status `protected` restauré au lieu de `installation WinPE`.
+        // Status `protected` intact (le tracker ne touche plus status — fix 22001).
         self::assertSame('protected', $fresh->status);
 
         // MachineBootLog quand même inséré (audit conservé).
@@ -213,7 +235,7 @@ class WindowsPostInstallTrackerTest extends TestCase
 
         $fresh = $ws->fresh();
         self::assertNotNull($fresh);
-        // Status `protected` restauré au lieu de `installation Windows terminee`.
+        // Status `protected` intact (le tracker ne touche plus status — fix 22001).
         self::assertSame('protected', $fresh->status);
         // Les autres effets de l'install sont conservés (os + last_report_at).
         self::assertSame('windows', $fresh->os);
@@ -241,7 +263,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordSysprepInitiated($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('preparation 1er boot', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('0%', $fresh->progress);
         $pa = $fresh->programmed_action;
         self::assertSame('clonage', $pa['type']);
@@ -258,7 +280,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordSysprepInitiated($ws);
 
         $fresh = $ws->fresh();
-        // Status non modifié (legacy : seul progress=0%).
+        // Status non modifié (fix 22001 — jamais touché).
         self::assertSame('active', $fresh->status);
         self::assertSame('0%', $fresh->progress);
         // etape ajouté dans programmed_action.
@@ -272,7 +294,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordSysprepGpoStart($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('preparation image', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('50%', $fresh->progress);
         $pa = $fresh->programmed_action;
         self::assertSame('clonage2', $pa['type']);
@@ -288,7 +310,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordSysprepGeneralized($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('sysprep generalisation', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('50%', $fresh->progress);
         $pa = $fresh->programmed_action;
         self::assertSame('modele', $pa['role']);
@@ -304,7 +326,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordSysprepNoneClone($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('clonage sans sysprep', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('100%', $fresh->progress);
         $pa = $fresh->programmed_action;
         self::assertSame('clonage2', $pa['type']);
@@ -332,7 +354,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordJoinInitiated($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('mise au domaine v2', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('0%', $fresh->progress);
         self::assertSame('windows', $fresh->programmed_action['role']);
         self::assertSame('join', $fresh->programmed_action['etape']);
@@ -345,7 +367,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordJoinAdminseStarted($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('renommage sans sysprep OK', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('30%', $fresh->progress);
         $pa = $fresh->programmed_action;
         self::assertSame('clonage2', $pa['type']);
@@ -359,7 +381,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordJoinDomained($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('mise au domaine sans sysprep OK', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('60%', $fresh->progress);
         self::assertSame(1, $fresh->programmed_action['ret']);
     }
@@ -371,7 +393,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordJoinComplete($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('clonage termine', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('100%', $fresh->progress);
         self::assertSame('default', $fresh->programmed_action['etape']);
         self::assertSame(-1, $fresh->programmed_action['ret']);
@@ -384,7 +406,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordRenommeInitiated($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('renommage au domaine', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('20%', $fresh->progress);
         self::assertSame('renomme', $fresh->programmed_action['etape']);
     }
@@ -404,7 +426,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $fresh = $ws->fresh();
         // Story 4.9 fix root cause : `name` est désormais écrit en PG.
         self::assertSame('pc-renamed-01', $fresh->name);
-        self::assertSame('renommage dans AD OK', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('60%', $fresh->progress);
         $pa = $fresh->programmed_action;
         self::assertSame('renomme', $pa['type']);
@@ -423,7 +445,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordRenommeAdRenamed($ws, $adManager, '');
 
         $fresh = $ws->fresh();
-        self::assertSame('ERREUR pas de nouveau nom', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('20%', $fresh->progress);
         // Le nom PG n'a PAS été modifié (role vide).
         self::assertSame('PC-101', $fresh->name);
@@ -436,7 +458,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordRenommeFinished($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('Renommage termine', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('100%', $fresh->progress);
         self::assertSame('default', $fresh->programmed_action['type']);
         self::assertSame(-1, $fresh->programmed_action['ret']);
@@ -449,7 +471,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordPostInitiated($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('post-mise au domaine manuelle', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('20%', $fresh->progress);
         self::assertSame('post', $fresh->programmed_action['etape']);
     }
@@ -461,7 +483,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordPostAutologon($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('script de demarrage post-install OK', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('50%', $fresh->progress);
         self::assertSame(0, $fresh->programmed_action['ret']);
     }
@@ -484,7 +506,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordWpkgInitiated($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('lancement de wpkg en mode interactif', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('10%', $fresh->progress);
         self::assertSame('wpkg', $fresh->programmed_action['etape']);
     }
@@ -496,7 +518,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordWpkgAutologon($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('lancement de wpkg interactif', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('50%', $fresh->progress);
         self::assertSame(0, $fresh->programmed_action['ret']);
     }
@@ -508,20 +530,20 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordWpkgFinished($ws);
 
         $fresh = $ws->fresh();
-        self::assertSame('exec wpkg fini', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('100%', $fresh->progress);
         self::assertSame(-1, $fresh->programmed_action['ret']);
     }
 
     #[Test]
-    public function it_records_default_sets_os_windows_and_termine(): void
+    public function it_records_default_sets_os_windows(): void
     {
         $ws = $this->makeWorkstation();
         $this->tracker->recordDefault($ws);
 
         $fresh = $ws->fresh();
         self::assertSame('windows', $fresh->os);
-        self::assertSame('termine', $fresh->status);
+        self::assertSame('active', $fresh->status);
         self::assertSame('100%', $fresh->progress);
         self::assertSame('default', $fresh->programmed_action['etape']);
         self::assertSame(-1, $fresh->programmed_action['ret']);
@@ -562,7 +584,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordSysprepInitiated($ws);
 
         $fresh = $ws->fresh();
-        // Status 'protected' préservé malgré l'update logique.
+        // Status 'protected' intact (le tracker ne touche plus status — fix 22001).
         self::assertSame('protected', $fresh->status);
         // Mais progress + programmed_action mis à jour.
         self::assertSame('0%', $fresh->progress);
@@ -586,7 +608,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordRenommeAdRenamed($ws, $adManager, 'pc-renamed-01');
 
         $fresh = $ws->fresh();
-        // Status 'protected' préservé.
+        // Status 'protected' intact (le tracker ne touche plus status — fix 22001).
         self::assertSame('protected', $fresh->status);
         self::assertSame('60%', $fresh->progress);
     }

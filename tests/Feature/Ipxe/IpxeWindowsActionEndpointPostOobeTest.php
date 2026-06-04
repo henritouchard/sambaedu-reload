@@ -83,7 +83,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         self::assertStringNotContainsString("\n", $woCrlf);
 
         $ws->refresh();
-        self::assertSame('preparation 1er boot', $ws->status);
+        self::assertSame('active', $ws->status);
         self::assertSame('0%', $ws->progress);
         self::assertSame('modele', $ws->programmed_action['role']);
     }
@@ -171,7 +171,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         self::assertSame('', (string) $response->getContent());
 
         $ws->refresh();
-        self::assertSame('preparation image', $ws->status);
+        self::assertSame('active', $ws->status);
         self::assertSame('50%', $ws->progress);
         self::assertSame('clonage2', $ws->programmed_action['type']);
     }
@@ -191,7 +191,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         self::assertSame('', (string) $response->getContent());
 
         $ws->refresh();
-        self::assertSame('sysprep generalisation', $ws->status);
+        self::assertSame('active', $ws->status);
         self::assertSame('50%', $ws->progress);
     }
 
@@ -210,7 +210,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         self::assertSame('', (string) $response->getContent());
 
         $ws->refresh();
-        self::assertSame('clonage sans sysprep', $ws->status);
+        self::assertSame('active', $ws->status);
         self::assertSame('100%', $ws->progress);
     }
 
@@ -263,7 +263,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         self::assertStringContainsString("-OUPath 'OU=techno,DC=localdev,DC=fr'", $body);
 
         $ws->refresh();
-        self::assertSame('mise au domaine v2', $ws->status);
+        self::assertSame('active', $ws->status);
         self::assertSame('0%', $ws->progress);
     }
 
@@ -298,7 +298,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         $ws->refresh();
         // Story 4.9 fix root cause : le nom PG est écrit en transaction.
         self::assertSame('pc-renamed-01', $ws->name);
-        self::assertSame('renommage dans AD OK', $ws->status);
+        self::assertSame('active', $ws->status);
         self::assertSame('60%', $ws->progress);
     }
 
@@ -379,7 +379,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         $response->assertStatus(200);
         self::assertSame('', (string) $response->getContent());
         $ws->refresh();
-        self::assertSame('installation WinPE', $ws->status);
+        self::assertSame('active', $ws->status);
     }
 
     /* ---------------------------------------------------------------
@@ -399,7 +399,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         $response->assertStatus(200);
         $ws->refresh();
         self::assertSame('windows', $ws->os);
-        self::assertSame('installation Windows terminee', $ws->status);
+        self::assertSame('active', $ws->status);
     }
 
     /* ---------------------------------------------------------------
@@ -443,7 +443,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         self::assertStringContainsString('robocopy', $body);
 
         $ws->refresh();
-        self::assertSame('post-mise au domaine manuelle', $ws->status);
+        self::assertSame('active', $ws->status);
         self::assertSame('20%', $ws->progress);
     }
 
@@ -463,7 +463,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         self::assertStringContainsString('driversAuto.ps1', $body);
 
         $ws->refresh();
-        self::assertSame('lancement de wpkg en mode interactif', $ws->status);
+        self::assertSame('active', $ws->status);
         self::assertSame('10%', $ws->progress);
     }
 
@@ -480,7 +480,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
 
         $response->assertStatus(200);
         $ws->refresh();
-        self::assertSame('Renommage termine', $ws->status);
+        self::assertSame('active', $ws->status);
         self::assertSame('100%', $ws->progress);
     }
 
