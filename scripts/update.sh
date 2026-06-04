@@ -442,6 +442,47 @@ update_systemd() {
 }
 
 # ============================================================================
+# LDAP client — SASL_NOCANON (bind GSSAPI vers DC sans reverse DNS)
+# ============================================================================
+# Sans `SASL_NOCANON on` dans /etc/ldap/ldap.conf, libldap canonicalise le
+# hostname du DC via reverse DNS avant le bind GSSAPI. Si le DC n'a pas
+# d'enregistrement PTR (cas courant en étab), le bind échoue et les pages
+# legacy LDAP (ex: /ipxe/boot.php) renvoient 500. Fix idempotent constaté
+# sur VM le 2026-05-28 — porté ici pour survivre aux réinstalls.
+
+ensure_ldap_sasl_nocanon() {
+    log "Vérification SASL_NOCANON (/etc/ldap/ldap.conf)..."
+
+    local ldap_conf="/etc/ldap/ldap.conf"
+
+    if [[ ! -f "$ldap_conf" ]]; then
+        log_warning "$ldap_conf absent (libldap-common non installé ?) — étape ignorée"
+        return 0
+    fi
+
+    if grep -qE '^[[:space:]]*SASL_NOCANON[[:space:]]+on' "$ldap_conf"; then
+        log_success "SASL_NOCANON déjà actif"
+        return 0
+    fi
+
+    if grep -qE '^[[:space:]]*SASL_NOCANON[[:space:]]' "$ldap_conf"; then
+        # Directive présente mais pas à "on" → forcer.
+        sed -i -E 's|^[[:space:]]*SASL_NOCANON[[:space:]].*$|SASL_NOCANON on|' "$ldap_conf"
+        log "  → $ldap_conf : SASL_NOCANON forcé à on"
+    else
+        {
+            echo ""
+            echo "# SambaEdu — bind GSSAPI sans canonicalisation reverse-DNS du DC"
+            echo "# (DC sans PTR → échec bind → 500 sur les pages LDAP legacy)."
+            echo "SASL_NOCANON on"
+        } >> "$ldap_conf"
+        log "  → $ldap_conf : SASL_NOCANON on ajouté"
+    fi
+
+    log_success "SASL_NOCANON activé"
+}
+
+# ============================================================================
 # Bascule PXE bootstrap vers la route Laravel native (Story 4.9 / 3.7)
 # ============================================================================
 # La conf legacy `/etc/sambaedu/sambaedu.conf.d/dhcp.conf` posée par les
@@ -468,21 +509,39 @@ ensure_ipxe_bootstrap_native() {
     local current
     current=$(grep -E '^ipxe_script\s*=' "$conf_file" | head -1 | sed -E 's/^ipxe_script\s*=\s*"?([^"]*)"?\s*$/\1/')
 
+    local needs_regen=false
+
     if [[ "$current" == "boot" ]]; then
         log_success "ipxe_script déjà sur 'boot' (route Laravel) — pas de changement"
-        return 0
+    else
+        log "ipxe_script actuel = \"$current\" → bascule vers \"boot\""
+
+        cp -a "$conf_file" "${conf_file}.bak-$(date +%Y%m%d-%H%M%S)"
+        sed -i -E 's|^(ipxe_script\s*=\s*).*$|\1"boot"|' "$conf_file"
+
+        local new
+        new=$(grep -E '^ipxe_script\s*=' "$conf_file" | head -1 | sed -E 's/^ipxe_script\s*=\s*"?([^"]*)"?\s*$/\1/')
+        if [[ "$new" != "boot" ]]; then
+            log_error "Echec du sed sur $conf_file (ipxe_script = \"$new\")"
+            return 1
+        fi
+        needs_regen=true
     fi
 
-    log "ipxe_script actuel = \"$current\" → bascule vers \"boot\""
-
-    cp -a "$conf_file" "${conf_file}.bak-$(date +%Y%m%d-%H%M%S)"
-    sed -i -E 's|^(ipxe_script\s*=\s*).*$|\1"boot"|' "$conf_file"
-
-    local new
-    new=$(grep -E '^ipxe_script\s*=' "$conf_file" | head -1 | sed -E 's/^ipxe_script\s*=\s*"?([^"]*)"?\s*$/\1/')
-    if [[ "$new" != "boot" ]]; then
-        log_error "Echec du sed sur $conf_file (ipxe_script = \"$new\")"
-        return 1
+    # Cohérence du dhcpd.conf généré : `ipxe_script` peut être correct alors
+    # que /etc/dhcp/dhcpd.conf n'a jamais été régénéré depuis (édition
+    # manuelle, update interrompu…) et chaîne encore les postes PXE sur le
+    # bootstrap legacy. Constaté sur VM le 2026-06-04 : une install Windows
+    # est repartie en flow legacy (→ PG jamais renseigné) à cause de ça.
+    local dhcpd_conf="/etc/dhcp/dhcpd.conf"
+    if [[ "$needs_regen" == false ]]; then
+        if [[ -f "$dhcpd_conf" ]] && grep -qE 'filename\s+"[^"]*/ipxe/boot\.php"' "$dhcpd_conf"; then
+            log_warning "dhcpd.conf chaîne encore /ipxe/boot.php (désynchronisé de $conf_file) — régénération"
+            needs_regen=true
+        else
+            log_success "dhcpd.conf cohérent (bootstrap natif)"
+            return 0
+        fi
     fi
 
     local make_script="/usr/share/sambaedu/sbin/make_dhcpd_conf.sh"
@@ -523,6 +582,7 @@ show_summary() {
     echo "  ✓ PKI Auth V1"
     echo "  ✓ Apache"
     echo "  ✓ Services systemd"
+    echo "  ✓ LDAP client (SASL_NOCANON)"
     echo "  ✓ PXE bootstrap (Laravel native)"
     echo ""
 }
@@ -595,6 +655,9 @@ main() {
 
     echo ""
     ensure_apcu_cli
+
+    echo ""
+    ensure_ldap_sasl_nocanon
 
     echo ""
     ensure_ipxe_bootstrap_native
