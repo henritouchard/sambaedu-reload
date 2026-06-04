@@ -89,7 +89,9 @@ class IpxeServiceActionTest extends TestCase
 
         self::assertSame(200, $response->getStatusCode());
         $body = (string) $response->getContent();
-        self::assertStringContainsString('kernel Win10/wimboot', $body);
+        // URL absolue (fix 2026-06-04) — un `kernel Win10/wimboot` relatif se
+        // résolvait contre `/ipxe/action/` → 410 → abort iPXE.
+        self::assertMatchesRegularExpression('#^kernel https?://[^/]+/ipxe/Win10/wimboot$#m', $body);
         self::assertStringContainsString('initrd --name winpeshl.ini', $body);
     }
 

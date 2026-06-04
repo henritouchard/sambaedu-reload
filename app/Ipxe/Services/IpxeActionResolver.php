@@ -160,8 +160,11 @@ final class IpxeActionResolver
      *  - `$winDebug` / `$winDisk` / `$winPerso` : flags 0/1.
      *  - `$installBatUrl`         : URL `/ipxe/windows/install.bat`.
      *  - `$unattendXmlUrl`        : URL `/ipxe/windows/unattend.xml`.
-     *  - `$winAssetsBase`         : `'Win10'` (legacy wimboot/winpeshl partagés
-     *    Win10/Win11 — parité `wimboot11.php:7` `kernel Win10/wimboot`).
+     *  - `$winAssetsBase`         : URL absolue `<scriptUrl>/Win10` (legacy
+     *    wimboot/winpeshl partagés Win10/Win11 — parité `wimboot11.php:7`
+     *    `kernel Win10/wimboot`, résolu relatif à `/ipxe/` côté legacy).
+     *  - `$winVersionBase`        : URL absolue `<scriptUrl>/<version>` pour
+     *    BCD/boot.sdi/boot.wim.
      *
      * @return array<string, mixed>
      */
@@ -174,14 +177,30 @@ final class IpxeActionResolver
             return [];
         }
 
-        $installBatUrl = $scriptUrl . '/ipxe/windows/install.bat';
-        $unattendXmlUrl = $scriptUrl . '/ipxe/windows/unattend.xml';
+        // `$scriptUrl` est déjà la base `/ipxe` (cf. resolveScriptUrl() —
+        // parité rescuecd/autorun). Ne PAS re-suffixer `/ipxe` ici (sinon
+        // `/ipxe/ipxe/windows/...` quand l'URL est reconstruite depuis la
+        // Request).
+        $installBatUrl = $scriptUrl . '/windows/install.bat';
+        $unattendXmlUrl = $scriptUrl . '/windows/unattend.xml';
 
         // `winAssetsBase` = chemin des assets wimboot/winpeshl statiques
         // (iso-legacy `actions/wimboot10.php:6` + `wimboot11.php:6` qui
         // pointent tous les deux sur `Win10/wimboot` + `Win10/winpeshl.ini`).
         // Override-able via config si Win11 a son propre wimboot.
-        $winAssetsBase = (string) config('ipxe.windows.assets_paths.wimboot_base', 'Win10');
+        //
+        // Fix 2026-06-04 — URLs ABSOLUES obligatoires : le legacy servait le
+        // script depuis `/ipxe/action.php`, donc `Win10/wimboot` relatif se
+        // résolvait en `/ipxe/Win10/wimboot`. En natif le script est servi
+        // depuis `/ipxe/action/<enum>` → le même chemin relatif partait sur
+        // `/ipxe/action/Win10/wimboot` → 410 → abort iPXE → exit firmware.
+        $winAssetsBase = $scriptUrl . '/'
+            . trim((string) config('ipxe.windows.assets_paths.wimboot_base', 'Win10'), '/');
+
+        // Base absolue des assets versionnés BCD/boot.sdi/boot.wim
+        // (`/ipxe/Win10/...` ou `/ipxe/Win11/...` — Alias Apache vers le
+        // legacy `/var/www/sambaedu/ipxe`). Même raison que `winAssetsBase`.
+        $winVersionBase = $scriptUrl . '/' . $meta['version'];
 
         return [
             'windowsVersion' => $meta['version'],
@@ -192,6 +211,7 @@ final class IpxeActionResolver
             'installBatUrl' => $installBatUrl,
             'unattendXmlUrl' => $unattendXmlUrl,
             'winAssetsBase' => $winAssetsBase,
+            'winVersionBase' => $winVersionBase,
         ];
     }
 

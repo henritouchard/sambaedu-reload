@@ -18,7 +18,7 @@ param disk {{ $winDisk }}
 param perso {{ $winPerso }}
 iseq ${platform} efi && param bios uefi || param bios legacy
 initrd --name unattend.xml {!! $unattendXmlUrl !!}##params unattend.xml
-initrd --name BCD {{ $windowsVersion }}/boot/bcd BCD
-initrd --name boot.sdi {{ $windowsVersion }}/boot/boot.sdi boot.sdi
-initrd --name boot.wim {{ $windowsVersion }}/sources/boot.wim boot.wim
+initrd --name BCD {{ $winVersionBase }}/boot/bcd BCD
+initrd --name boot.sdi {{ $winVersionBase }}/boot/boot.sdi boot.sdi
+initrd --name boot.wim {{ $winVersionBase }}/sources/boot.wim boot.wim
 boot

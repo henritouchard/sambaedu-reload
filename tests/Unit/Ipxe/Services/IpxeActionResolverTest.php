@@ -74,10 +74,13 @@ class IpxeActionResolverTest extends TestCase
         $body = $this->resolver->resolve(IpxeAdminAction::Winpe, null, $request);
 
         self::assertStringStartsWith('#!ipxe', $body);
-        self::assertStringContainsString('kernel Win10/wimboot', $body);
-        self::assertStringContainsString('initrd --name winpeshl.ini', $body);
-        self::assertStringContainsString('initrd --name install.bat Win10/repair.bat.php##params', $body);
-        self::assertStringContainsString('initrd --name diskpart.txt Win10/diskpart.php##params', $body);
+        // URLs ABSOLUES (fix 2026-06-04) : le script natif est servi depuis
+        // `/ipxe/action/<enum>` — un chemin relatif `Win10/wimboot` se
+        // résoudrait en `/ipxe/action/Win10/wimboot` → 410 → abort iPXE.
+        self::assertStringContainsString('kernel http://se4fs.lan/ipxe/Win10/wimboot', $body);
+        self::assertStringContainsString('initrd --name winpeshl.ini http://se4fs.lan/ipxe/Win10/winpeshl.ini', $body);
+        self::assertStringContainsString('initrd --name install.bat http://se4fs.lan/ipxe/Win10/repair.bat.php##params', $body);
+        self::assertStringContainsString('initrd --name diskpart.txt http://se4fs.lan/ipxe/Win10/diskpart.php##params', $body);
         self::assertStringContainsString('initrd --name boot.wim', $body);
         // 2 blocs `params` + 2 `iseq ${platform} efi && param bios uefi || param bios legacy`.
         self::assertSame(2, substr_count($body, 'iseq ${platform} efi && param bios uefi || param bios legacy'));
@@ -201,8 +204,8 @@ class IpxeActionResolverTest extends TestCase
         self::assertStringNotContainsString('kernel http://evil', $body);
         self::assertStringNotContainsString("\nkernel http://evil/x", $body);
         // Le body DOIT contenir le fallback DEFAULT_WIN_VERSION='Win11' pur.
-        self::assertStringContainsString('initrd --name BCD Win11/boot/bcd', $body);
-        self::assertStringContainsString('initrd --name boot.wim Win11/sources/boot.wim', $body);
+        self::assertStringContainsString('initrd --name BCD http://se4fs.lan/ipxe/Win11/boot/bcd', $body);
+        self::assertStringContainsString('initrd --name boot.wim http://se4fs.lan/ipxe/Win11/sources/boot.wim', $body);
     }
 
     #[Test]
@@ -218,8 +221,8 @@ class IpxeActionResolverTest extends TestCase
 
         // Win10 doit être propagé tel quel dans le template winpe.
         self::assertStringContainsString('param version Win10', $body);
-        self::assertStringContainsString('initrd --name BCD Win10/boot/bcd', $body);
-        self::assertStringContainsString('initrd --name boot.wim Win10/sources/boot.wim', $body);
+        self::assertStringContainsString('initrd --name BCD http://se4fs.lan/ipxe/Win10/boot/bcd', $body);
+        self::assertStringContainsString('initrd --name boot.wim http://se4fs.lan/ipxe/Win10/sources/boot.wim', $body);
     }
 
     #[Test]
@@ -247,7 +250,10 @@ class IpxeActionResolverTest extends TestCase
     #[Test]
     public function it_resolves_install_win11_with_wimboot_kernel(): void
     {
-        Config::set('ipxe.actions.script_url', 'http://se4fs.lan');
+        // `script_url` = base `/ipxe` complète (même sémantique que le test
+        // rescuecd/autorun — fix 2026-06-04, avant le code re-suffixait
+        // `/ipxe` → `/ipxe/ipxe/windows/...` quand dérivé de la Request).
+        Config::set('ipxe.actions.script_url', 'http://se4fs.lan/ipxe');
 
         $request = $this->makeRequest([
             'mac' => 'aa:bb:cc:dd:ee:ff',
@@ -257,18 +263,21 @@ class IpxeActionResolverTest extends TestCase
         $body = $this->resolver->resolve(IpxeAdminAction::InstallWin11, null, $request);
 
         self::assertStringStartsWith('#!ipxe', $body);
-        // Kernel iso-legacy `wimboot11.php:6`.
-        self::assertStringContainsString('kernel Win10/wimboot', $body);
+        // Kernel iso-legacy `wimboot11.php:6` — URL ABSOLUE (fix 2026-06-04 :
+        // relatif au script natif `/ipxe/action/<enum>`, `Win10/wimboot` se
+        // résolvait en `/ipxe/action/Win10/wimboot` → 410 → abort iPXE).
+        self::assertStringContainsString('kernel http://se4fs.lan/ipxe/Win10/wimboot', $body);
         // Initrd winpeshl + install.bat + unattend.xml.
-        self::assertStringContainsString('initrd --name winpeshl.ini', $body);
+        self::assertStringContainsString('initrd --name winpeshl.ini http://se4fs.lan/ipxe/Win10/winpeshl.ini', $body);
         self::assertStringContainsString('initrd --name install.bat', $body);
         self::assertStringContainsString('initrd --name unattend.xml', $body);
-        // URLs natives 3.5.
-        self::assertStringContainsString('/ipxe/windows/install.bat##params', $body);
-        self::assertStringContainsString('/ipxe/windows/unattend.xml##params', $body);
-        // Win11 assets paths.
-        self::assertStringContainsString('initrd --name BCD Win11/boot/bcd', $body);
-        self::assertStringContainsString('initrd --name boot.wim Win11/sources/boot.wim', $body);
+        // URLs natives 3.5 — pas de double `/ipxe/ipxe/`.
+        self::assertStringContainsString('http://se4fs.lan/ipxe/windows/install.bat##params', $body);
+        self::assertStringContainsString('http://se4fs.lan/ipxe/windows/unattend.xml##params', $body);
+        self::assertStringNotContainsString('/ipxe/ipxe/', $body);
+        // Win11 assets paths (absolus).
+        self::assertStringContainsString('initrd --name BCD http://se4fs.lan/ipxe/Win11/boot/bcd', $body);
+        self::assertStringContainsString('initrd --name boot.wim http://se4fs.lan/ipxe/Win11/sources/boot.wim', $body);
         // Params section.
         self::assertStringContainsString('param version Win11', $body);
         self::assertStringContainsString('param action wimboot11', $body);
@@ -282,7 +291,7 @@ class IpxeActionResolverTest extends TestCase
     #[Test]
     public function it_resolves_install_win10_debug_with_debug_flag_1(): void
     {
-        Config::set('ipxe.actions.script_url', 'http://se4fs.lan');
+        Config::set('ipxe.actions.script_url', 'http://se4fs.lan/ipxe');
 
         $request = $this->makeRequest([
             'mac' => 'aa:bb:cc:dd:ee:ff',
@@ -294,13 +303,13 @@ class IpxeActionResolverTest extends TestCase
         self::assertStringContainsString('param version Win10', $body);
         self::assertStringContainsString('param action wimboot10', $body);
         self::assertStringContainsString('param debug 1', $body);
-        self::assertStringContainsString('initrd --name BCD Win10/boot/bcd', $body);
+        self::assertStringContainsString('initrd --name BCD http://se4fs.lan/ipxe/Win10/boot/bcd', $body);
     }
 
     #[Test]
     public function it_resolves_install_win11_disk_with_disk_flag_1(): void
     {
-        Config::set('ipxe.actions.script_url', 'http://se4fs.lan');
+        Config::set('ipxe.actions.script_url', 'http://se4fs.lan/ipxe');
 
         $request = $this->makeRequest([
             'mac' => 'aa:bb:cc:dd:ee:ff',
@@ -316,7 +325,7 @@ class IpxeActionResolverTest extends TestCase
     #[Test]
     public function it_resolves_install_win10_perso_with_perso_flag_1(): void
     {
-        Config::set('ipxe.actions.script_url', 'http://se4fs.lan');
+        Config::set('ipxe.actions.script_url', 'http://se4fs.lan/ipxe');
 
         $request = $this->makeRequest([
             'mac' => 'aa:bb:cc:dd:ee:ff',
@@ -334,7 +343,7 @@ class IpxeActionResolverTest extends TestCase
     {
         // Non-régression 3.4 : InstallDebGnome n'expose pas $windowsVersion.
         // On vérifie qu'aucune section Win-specific n'apparaît.
-        Config::set('ipxe.actions.script_url', 'http://se4fs.lan');
+        Config::set('ipxe.actions.script_url', 'http://se4fs.lan/ipxe');
 
         $request = $this->makeRequest([
             'mac' => 'aa:bb:cc:dd:ee:ff',
@@ -411,7 +420,7 @@ class IpxeActionResolverTest extends TestCase
     {
         // Garde-fou : les 7 templates install_win* existent et rendent
         // sans erreur Blade.
-        Config::set('ipxe.actions.script_url', 'http://se4fs.lan');
+        Config::set('ipxe.actions.script_url', 'http://se4fs.lan/ipxe');
 
         $request = $this->makeRequest([
             'mac' => 'aa:bb:cc:dd:ee:ff',
@@ -431,7 +440,17 @@ class IpxeActionResolverTest extends TestCase
         foreach ($cases as $action) {
             $body = $this->resolver->resolve($action, null, $request);
             self::assertStringStartsWith('#!ipxe', $body, "Template {$action->value} ne commence pas par #!ipxe");
-            self::assertStringContainsString('kernel Win10/wimboot', $body, "Template {$action->value} : kernel manquant");
+            self::assertStringContainsString('kernel http://se4fs.lan/ipxe/Win10/wimboot', $body, "Template {$action->value} : kernel manquant");
+            // Fix 2026-06-04 : aucun fetch relatif résiduel (se résoudrait
+            // contre /ipxe/action/ → 410) ni double /ipxe/ipxe/.
+            self::assertStringNotContainsString('/ipxe/ipxe/', $body, "Template {$action->value} : double /ipxe");
+            foreach (['kernel ', 'initrd --name BCD ', 'initrd --name boot.sdi ', 'initrd --name boot.wim ', 'initrd --name winpeshl.ini '] as $directive) {
+                self::assertMatchesRegularExpression(
+                    '/^' . preg_quote($directive, '/') . 'https?:\/\//m',
+                    $body,
+                    "Template {$action->value} : `{$directive}` doit fetcher une URL absolue",
+                );
+            }
             self::assertStringContainsString("boot\n", $body, "Template {$action->value} : pas de boot final");
         }
     }
