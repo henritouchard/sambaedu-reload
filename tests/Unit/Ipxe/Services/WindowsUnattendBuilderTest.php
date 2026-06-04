@@ -210,6 +210,10 @@ class WindowsUnattendBuilderTest extends TestCase
         self::assertStringNotContainsString('###_MAC_###', $xml);
         self::assertStringContainsString('uuid=12345678-1234-1234-1234-aaaaaaaaaaaa', $xml);
         self::assertStringContainsString('mac=aa:bb:cc:dd:ee:01', $xml);
+        // Fix 2026-06-04 (bis) — `ret=0` requis : sans lui le controller
+        // traite l'absence de ret comme -1 → warning `non_zero_ret` au lieu
+        // de `recordOobeComplete` (pas de ligne ipxe_win_report en DB).
+        self::assertStringContainsString('-F "ret=0"', $xml);
     }
 
     #[Test]
