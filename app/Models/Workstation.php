@@ -188,6 +188,25 @@ class Workstation extends Model implements Wireable
     }
 
     /**
+     * Relation pivot filtrée vers les groupes logiques (parcs) du poste.
+     *
+     * Story 4.11 — pendant logique de {@see physicalRooms()} : depuis le pivot
+     * global, la salle physique est aussi une ligne de `groups`. Les vues qui
+     * affichent les parcs doivent passer par cette relation pour ne pas faire
+     * remonter la salle parmi les groupes logiques.
+     */
+    public function logicalGroups(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            WorkstationGroup::class,
+            'workstation_group_workstation',
+            'workstation_id',
+            'workstation_group_id'
+        )->where('workstation_groups.is_physical', false)
+            ->withTimestamps();
+    }
+
+    /**
      * Ajoute la machine à un ou plusieurs groupes.
      *
      * Note Story 4.9 (D4) : les hooks pivot audit-only `onGroupAttached` ont

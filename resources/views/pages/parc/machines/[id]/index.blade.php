@@ -124,7 +124,10 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         try {
             $this->availablePhysicalRooms = $this->parcService->getPhysicalRooms();
 
-            $currentGroupIds = $this->workstation ? $this->workstation->groups->pluck('id')->toArray() : [];
+            // Story 4.11 — `groups` contient aussi la salle physique (pivot
+            // global) ; on filtre via la relation `logicalGroups` pour ne pas
+            // exclure/afficher la salle parmi les groupes logiques.
+            $currentGroupIds = $this->workstation ? $this->workstation->logicalGroups->pluck('id')->toArray() : [];
             $this->availableLogicalGroups = WorkstationGroup::logical()->active()->whereNotIn('id', $currentGroupIds)->orderBy('name')->get();
         } catch (\Exception $e) {
             Log::error('[MachineShow] Erreur chargement groupes: ' . $e->getMessage());
@@ -1000,7 +1003,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                         <h3 class="card-title text-base">
                             <i class="fa-solid fa-layer-group text-primary"></i>
                             Groupes logiques
-                            <span class="badge badge-ghost">{{ $workstation->groups->count() }}</span>
+                            <span class="badge badge-ghost">{{ $workstation->logicalGroups->count() }}</span>
                         </h3>
                         @if ($availableLogicalGroups->isNotEmpty())
                             <button type="button"
@@ -1016,7 +1019,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                         Une machine peut appartenir à plusieurs groupes logiques simultanément.
                     </p>
 
-                    @if ($workstation->groups->isEmpty())
+                    @if ($workstation->logicalGroups->isEmpty())
                         <div class="flex flex-col items-center justify-center py-8 text-center">
                             <div class="text-4xl mb-4 opacity-20">
                                 <i class="fa-solid fa-folder-open"></i>
@@ -1028,7 +1031,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                         </div>
                     @else
                         <div class="flex flex-wrap gap-2">
-                            @foreach ($workstation->groups as $group)
+                            @foreach ($workstation->logicalGroups as $group)
                                 <div class="flex items-center gap-2 pl-3 pr-1 py-1 rounded-lg border border-base-300 bg-base-200/40">
                                     <i class="fa-solid fa-layer-group text-primary text-sm"></i>
                                     <a href="{{ route('app.parc.groups.show', $group->id) }}"
