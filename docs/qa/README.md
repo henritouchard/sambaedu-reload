@@ -15,6 +15,7 @@ Checklist par domaine métier. À dérouler avant une mise en production importa
 - [ ] [users](domains/users.md) — Listing /users, filtres audit (quota dépassé, mdp par défaut), synchro password_changed_at AD _(Story 14.4)_
 - [ ] [ad-sync](domains/ad-sync.md) — Synchronisation AD observer-driven (Workstation, WorkstationGroup, …) + rename modrdn préservant objectGUID/netbootGUID _(Story 4.9)_
 - [ ] [parc](domains/parc.md) — Appartenance poste↔groupe unifiée dans le pivot global, salles physiques (invariant 1-salle-max app-only), runbook migration/rollback _(Story 4.11)_
+- [ ] [e2e-infra](domains/e2e-infra.md) — Socle tests e2e Playwright sur Postgres préseedé : harnais hôte, instance e2e dédiée VM, template DB recréable, garde-fous destructifs `e2e:reset`/`e2e:build-template`. Provisioning : [e2e-setup.md](e2e-setup.md) _(Story 21.1)_
 
 ## À créer au fil des prochaines stories
 

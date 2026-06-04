@@ -11,6 +11,10 @@
 .env.backup
 .env.testing
 .env.*.php
+# Story 21.1 — env e2e réel (secrets, vit sur la VM, chown www-admin). Seul
+# .env.e2e.example (sans secret) est versionné.
+.env.e2e
+!.env.e2e.example
 .phpunit.result.cache
 Homestead.json
 Homestead.yaml
