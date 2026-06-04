@@ -38,6 +38,15 @@ new #[Title('Réglages')] class extends Component {
             description="Quotas, profils itinérants, jobs en arrière-plan et logs d'exécution.">
 
             <x-molecules.settings-card
+                href="{{ route('admin.settings.system-status') }}"
+                icon="fa-solid fa-heart-pulse"
+                iconColor="primary"
+                title="État du système"
+                description="Connectivité AD, base de données, controlHub, Apache, iPXE et distros installables."
+                badge="Diagnostic"
+                testid="card-system-status" />
+
+            <x-molecules.settings-card
                 href="{{ route('admin.quotas') }}"
                 icon="fa-solid fa-hard-drive"
                 iconColor="primary"

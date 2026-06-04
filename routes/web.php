@@ -357,6 +357,13 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin'])->name('a
     Route::livewire('/settings/credentials', 'pages::admin.settings.credentials.index')
         ->middleware('can:server.admin')
         ->name('settings.credentials');
+
+    // /admin/settings/system-status — État du système : checks à la demande
+    // (AD / PostgreSQL / controlHub / Apache / iPXE via app/Doctor) +
+    // disponibilité des distros installables + actions de provisioning async.
+    Route::livewire('/settings/system-status', 'pages::admin.settings.system-status.index')
+        ->middleware('can:server.admin')
+        ->name('settings.system-status');
     /*
     |--------------------------------------------------------------------------
     | Story 3.6 — Gestion ISO Windows (D2)
