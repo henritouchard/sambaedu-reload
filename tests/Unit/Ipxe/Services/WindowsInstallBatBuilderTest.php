@@ -94,11 +94,15 @@ class WindowsInstallBatBuilderTest extends TestCase
         );
 
         self::assertStringContainsString(
-            'z:\\os\\Win11\\sources\\setup.exe /unattend:x:\\windows\\system32\\unattend.xml',
+            'z:\\os\\Win11\\sources\\setup.exe /unattend:x:\\windows\\system32\\unattend.xml /noreboot',
             $bash,
         );
         // bcdboot ajouté en mode UEFI.
         self::assertStringContainsString('%windir%\\system32\\bcdboot c:\\windows /addlast', $bash);
+        // Fix 2026-06-04 — sans /noreboot, setup.exe rebootait avant que le
+        // rapport winpe et bcdboot ne s'exécutent ; le reboot est repris en
+        // main en toute fin de script.
+        self::assertStringEndsWith("wpeutil reboot\r\n", $bash);
     }
 
     #[Test]
