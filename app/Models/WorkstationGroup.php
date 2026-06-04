@@ -194,6 +194,18 @@ class WorkstationGroup extends Model implements Wireable
         return $this->is_physical ? $this->physicalWorkstations : $this->workstations;
     }
 
+    /**
+     * Compteur de membres « postes » — même aiguillage physique/logique que
+     * {@see getMembersAttribute}, mais en COUNT SQL (pas de chargement de
+     * collection). À utiliser partout où l'UI affiche un nombre de postes.
+     */
+    public function getMembersCountAttribute(): int
+    {
+        return $this->is_physical
+            ? $this->physicalWorkstations()->count()
+            : $this->workstations()->count();
+    }
+
     public function wallpapers(): MorphMany
     {
         return $this->morphMany(Wallpaper::class, 'owner');
@@ -447,11 +459,14 @@ class WorkstationGroup extends Model implements Wireable
     }
 
     /**
-     * Retourne le nombre de postes dans ce groupe
+     * Retourne le nombre de postes dans ce groupe.
+     *
+     * Alias historique de {@see getMembersCountAttribute} — délègue pour
+     * respecter l'aiguillage physique (FK) / logique (pivot).
      */
     public function getWorkstationCountAttribute(): int
     {
-        return $this->workstations()->count();
+        return $this->members_count;
     }
 
     /**

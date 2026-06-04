@@ -111,13 +111,18 @@
                                         </div>
                                         <div>
                                             <div class="font-bold flex items-center gap-2">
-                                                {{ $group->name }}
+                                                {{ $group->display_name_or_name }}
                                                 @if ($group->isLocked())
                                                     <span class="tooltip" data-tip="{{ $group->getLockDescription() }}">
                                                         <i class="fa-solid fa-lock text-warning text-xs"></i>
                                                     </span>
                                                 @endif
                                             </div>
+                                            @if ($group->display_name && $group->display_name !== $group->name)
+                                                <div class="text-xs text-base-content/50 font-mono">
+                                                    {{ $group->name }}
+                                                </div>
+                                            @endif
                                             @if ($group->description)
                                                 <div class="text-xs text-base-content/50 truncate max-w-xs">
                                                     {{ $group->description }}
@@ -128,12 +133,12 @@
                                 </td>
                                 <td>
                                     <span class="badge badge-ghost">
-                                        {{ $group->workstations()->count() }}
+                                        {{ $group->members_count }}
                                     </span>
                                 </td>
                                 <td>
                                     @if ($group->parent)
-                                        <span class="text-sm">{{ $group->parent->name }}</span>
+                                        <span class="text-sm">{{ $group->parent->display_name_or_name }}</span>
                                     @else
                                         <span class="text-base-content/50">-</span>
                                     @endif

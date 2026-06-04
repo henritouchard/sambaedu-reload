@@ -8,7 +8,10 @@
                     <i class="fa-solid fa-layer-group text-primary text-2xl"></i>
                 </div>
                 <div>
-                    <h2 class="text-xl font-bold">{{ $group->name }}</h2>
+                    <h2 class="text-xl font-bold">{{ $group->display_name_or_name }}</h2>
+                    @if ($group->display_name && $group->display_name !== $group->name)
+                        <div class="text-xs text-base-content/50 font-mono mb-1">{{ $group->name }}</div>
+                    @endif
                     @if ($group->is_physical)
                         <span class="badge badge-success gap-1">
                             <i class="fa-solid fa-door-open text-xs"></i>
@@ -60,7 +63,7 @@
                     <div class="flex justify-between">
                         <span class="text-base-content/60">Parent</span>
                         <a href="{{ route('app.parc.groups.show', $group->parent->id) }}" class="link link-primary">
-                            {{ $group->parent->name }}
+                            {{ $group->parent->display_name_or_name }}
                         </a>
                     </div>
                 @endif
@@ -82,7 +85,7 @@
             <div class="stats stats-vertical shadow-none">
                 <div class="stat px-0">
                     <div class="stat-title">Machines</div>
-                    <div class="stat-value text-primary">{{ $group->workstations()->count() }}</div>
+                    <div class="stat-value text-primary">{{ $group->members_count }}</div>
                 </div>
                 <div class="stat px-0">
                     <div class="stat-title">Sous-groupes</div>
@@ -106,9 +109,9 @@
                             <a href="{{ route('app.parc.groups.show', $child->id) }}"
                                 class="flex items-center gap-2 p-2 rounded-lg hover:bg-base-200 transition-colors">
                                 <i class="fa-solid fa-layer-group text-base-content/50"></i>
-                                <span>{{ $child->name }}</span>
+                                <span>{{ $child->display_name_or_name }}</span>
                                 <span class="badge badge-ghost badge-sm ml-auto">
-                                    {{ $child->workstations()->count() }}
+                                    {{ $child->members_count }}
                                 </span>
                             </a>
                         </li>

@@ -255,13 +255,13 @@
                                 <i class="fa-solid fa-folder text-primary text-sm"></i>
                             </div>
                             <div class="flex-1 min-w-0">
-                                <div class="font-medium text-sm">{{ $group->name }}</div>
+                                <div class="font-medium text-sm">{{ $group->display_name_or_name }}</div>
                                 @if ($group->description)
                                     <div class="text-xs text-base-content/50 truncate">{{ $group->description }}</div>
                                 @endif
                             </div>
                             <span
-                                class="badge badge-ghost badge-sm">{{ $group->workstations_count ?? $group->workstations()->count() }}</span>
+                                class="badge badge-ghost badge-sm">{{ $group->members_count }}</span>
                         </button>
                     @endforeach
                 </div>

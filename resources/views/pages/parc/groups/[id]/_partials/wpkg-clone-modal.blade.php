@@ -26,9 +26,9 @@
                         class="w-full text-left flex items-center gap-3 p-3 hover:bg-base-200 border-b border-base-200 last:border-b-0">
                         <i class="fa-solid fa-folder-tree text-secondary"></i>
                         <div class="flex-1">
-                            <div class="font-medium">{{ $candidate->name }}</div>
+                            <div class="font-medium">{{ $candidate->display_name_or_name }}</div>
                             <div class="text-xs text-base-content/60">
-                                {{ $candidate->workstations_count ?? $candidate->workstations()->count() }} poste(s)
+                                {{ $candidate->members_count }} poste(s)
                             </div>
                         </div>
                         <i class="fa-solid fa-chevron-right text-base-content/40"></i>

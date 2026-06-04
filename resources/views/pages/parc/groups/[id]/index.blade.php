@@ -1670,7 +1670,10 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                         </div>
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center gap-2 flex-wrap">
-                                <h2 class="text-2xl font-bold">{{ $group->name }}</h2>
+                                <h2 class="text-2xl font-bold">{{ $group->display_name_or_name }}</h2>
+                                @if ($group->display_name && $group->display_name !== $group->name)
+                                    <span class="text-sm text-base-content/50 font-mono">{{ $group->name }}</span>
+                                @endif
                                 @if ($group->is_physical)
                                     <span class="badge badge-success gap-1">
                                         <i class="fa-solid fa-door-open text-xs"></i>
