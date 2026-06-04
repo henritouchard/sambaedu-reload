@@ -10,6 +10,8 @@ inputDocuments: [_bmad-output/planning-artifacts/prd.md, _bmad-output/planning-a
 Ce document fournit le découpage complet en épics et stories pour SambaEdu-Reload (SER) + irundoo, décomposant les exigences du PRD et de l'Architecture en stories implémentables.
 
 > **Dernière révision majeure 2026-05-01** : ajout des Epics **15** (Pipeline de Déploiement WPKG natif, 5 stories actives + 15.7 PLANNED), **16** (Gestion native des GPOs, 6 stories cadrées), et **17** (Scripts de Démarrage Windows, 4 stories cadrées). Stories 9.1 et 9.3 PAUSED annulées et remplacées respectivement par Epic 16 et Epic 17. Epic 15 détaillé (ACs complètes), Epics 16/17 en cadrage haut niveau (ACs à figer au moment de chaque story). Conduite par henri (PM session).
+>
+> **Révision 2026-06-04** : ajout de l'Epic **21** (Tests E2E Playwright sur Postgres préseedé, 7 stories cadrées — socle + fake AD + seed + 4 parcours). Conduite par henri (PM session).
 
 ## Requirements Inventory
 
@@ -364,6 +366,15 @@ Chaque story est considérée terminée uniquement si :
 **Distinct de l'auth machine :** ne touche pas l'auth machine/poste (acteur ≠ ; reste iso-legacy AD+SMB).
 **Prérequis :** Epic 7 (rôles/permissions Spatie), Epic 11 (modèle d'appel API central↔local généralisé), Story 1.4 (`AuthGuardInterface`).
 **Hors scope :** la gestion côté controlHub des techniciens externes et de leurs rôles (côté irundoo) ; l'auth machine/poste ; le périmètre multi-instance (quelles instances un jeton autorise = décision controlHub).
+
+---
+
+### Epic 21 — Tests E2E Playwright sur Postgres préseedé
+**Statut :** 🟡 cadrage (2026-06-04) — stories esquissées, non engagées.
+*Couvrir les parcours utilisateur critiques de SE5 par des tests end-to-end Playwright pilotés depuis l'hôte contre une instance e2e dédiée sur la VM, adossée à une base **Postgres préseedée** recréée depuis une **template DB** (`CREATE DATABASE ... TEMPLATE`). Double valeur : (1) SE5 est Livewire-first et l'audit 20.4 a montré que le canal Livewire échappe aux contrôles HTTP classiques — les e2e sont la seule couche qui teste ce que l'utilisateur vit réellement ; (2) les tests actuels tournent sur SQLite `:memory:`, rendant invisibles les comportements Postgres réels (overflows varchar 22001, contraintes). Les écritures AD/Samba sont **doublées par un fake** en environnement e2e — aucun test ne touche le vrai samba-ad-dc.*
+**FRs couverts :** aucune FR produit — outillage qualité transverse (sécurise la non-régression des FRs déjà livrées : Epics 2, 4, 7, 20)
+**Prérequis :** Epics 2, 4, 7, 20 livrés pour les parcours correspondants (21.4-21.7)
+**Hors scope :** CI distante ; e2e contre l'AD réel ; parcours nécessitant de vrais postes (WPKG/GPO/iPXE) ; tests de charge.
 
 ---
 
@@ -3663,6 +3674,157 @@ So that l'intégration côté central se fasse sans dupliquer la logique d'auth 
 - **Hors scope** : la gestion côté controlHub des techniciens externes et de leurs rôles (côté irundoo) ; l'auth machine/poste (reste iso-legacy AD+SMB — acteur distinct) ; le périmètre multi-instance (quelles instances un jeton autorise = décision controlHub).
 - **Code SE5 de référence** : `app/Providers/LdapUserProvider.php`, `app/Http/Controllers/AuthController.php`, `app/Contracts/Auth/AuthGuardInterface.php` + `app/Auth/` (stub Keycloak), `app/Enums/SambaRole.php` / `SambaPermission.php`, `app/Http/Middleware/ControlHubAuth.php`, `config/auth.php`.
 - **Mémoire de cadrage** : décisions du chat PM 2026-05-29 (fédération, contrat rôle, identité ≠ accès, audit dénormalisé).
+
+---
+
+## Epic 21 : Tests E2E Playwright sur Postgres préseedé
+
+**Statut :** 🟡 cadrage — **créé le 2026-06-04** (chat de cadrage PM). Stories esquissées, non engagées.
+**Contexte étudié :** 2026-06-04 — état des lieux : tests PHPUnit sur SQLite `:memory:` (`phpunit.xml`), aucun outillage navigateur (ni Playwright ni Dusk), seeders partiels (`database/seeders/` : AppProfile, Depot, Permission, Workstation, Wpkg… — pas d'utilisateurs/établissement), constat audit 20.4 que le canal Livewire échappe au middleware HTTP.
+
+*Couvrir les parcours utilisateur critiques de SE5 par des tests end-to-end Playwright, exécutés **depuis l'hôte** contre une **instance e2e dédiée** de l'app sur la VM, adossée à une base **Postgres préseedée**. Les e2e testent ce que l'utilisateur vit réellement (navigateur → Livewire → Postgres), là où les tests actuels s'arrêtent au framework (HTTP simulé → SQLite). Les écritures AD/Samba sont doublées par un **fake** : aucun test ne touche le vrai samba-ad-dc.*
+
+> **Esprit :** epic de cadrage. Mémoire des décisions prises au chat PM du 2026-06-04. ACs à figer au démarrage de chaque story.
+
+### Décisions de cadrage (henri, 2026-06-04)
+
+1. **Exécution : hôte → VM.** Playwright (et ses navigateurs) tournent sur la machine hôte ; les tests ciblent l'instance e2e servie par la VM. Pas de stack docker dédiée, pas de Playwright sur la VM.
+2. **AD/Samba : fake/stub.** En environnement e2e, toutes les écritures AD/Samba passent par un driver factice. La validation de l'intégration AD réelle reste du ressort des tests d'intégration existants / d'une suite future taguée — hors scope ici.
+3. **Reset DB : template Postgres, par suite.** La base e2e est recréée depuis une **template DB** (`DROP DATABASE` + `CREATE DATABASE sambaedu_e2e TEMPLATE sambaedu_e2e_template`, ~100 ms — copie binaire, pas de re-migration). La template est construite (migrate + seed) **une seule fois**, et reconstruite uniquement quand migrations ou seeders changent. Cadence de reset : **par suite** par défaut (le coût marginal autorise du par-test si une suite l'exige). *Écarté : `migrate:fresh --seed` par suite (rejouer toutes les migrations à chaque reset — secondes vs centisecondes) et truncate+reseed (fuites d'état).*
+4. **Périmètre : 4 parcours, une story chacun.** Auth & navigation, Users CRUD, Machines & salles, Fédération controlHub.
+
+### Contraintes de conception transverses
+
+- **Garde-fous destructifs** : le reset (DROP/CREATE) doit **refuser de s'exécuter** si la DB cible ne porte pas le suffixe `_e2e` ou si `APP_ENV ≠ e2e`. Jamais de chemin de code capable de dropper la DB de dev/prod de la VM.
+- **Commutativité intra-suite** : les tests d'une même suite partagent l'état post-seed ; chaque test crée ses propres données (préfixées/identifiables) et ne suppose rien de l'état laissé par un autre test.
+- **Parallélisme** : `workers: 1` au départ (DB partagée). Optimisation future si la suite ralentit : une DB par worker, recréée depuis la même template — l'architecture template rend ça trivial.
+- **⚠️ Branche vs sync inotify** : le sync hôte→VM ne couvre que `main` → les e2e valident **le code `main` déployé sur la VM**. Tester une branche = déploiement explicite demandé par henri, jamais automatique (règle CLAUDE.md : ne jamais sync manuellement sans accord).
+
+### Story 21.1 : Socle Playwright + environnement e2e
+
+As a **développeur**,
+I want un harnais Playwright installé sur l'hôte (config, scripts npm, baseURL) ciblant une instance e2e dédiée de SE5 sur la VM (env Laravel `e2e`, DB Postgres `sambaedu_e2e` recréable depuis `sambaedu_e2e_template`),
+So that les tests e2e s'exécutent de façon reproductible sans jamais perturber l'instance de dev ni ses données.
+
+**Acceptance Criteria :**
+
+**Given** le harnais installé sur l'hôte et l'instance e2e provisionnée sur la VM
+**When** je lance la suite Playwright depuis l'hôte
+**Then** un smoke test (la page de login s'affiche) passe contre l'instance e2e de la VM
+**And** l'instance e2e utilise une DB Postgres dédiée suffixée `_e2e` — jamais la DB de dev/prod
+**And** une commande de build de la template existe (migrate + seed → `sambaedu_e2e_template`), à relancer uniquement quand migrations/seeders changent
+**And** le runner déclenche le reset (DROP/CREATE depuis la template) avant chaque suite, en ~centisecondes
+**And** le reset refuse explicitement de s'exécuter hors env e2e ou sur une DB non suffixée `_e2e` (garde-fou structurel, pas une simple config)
+**And** `workers: 1` est le défaut documenté
+
+### Story 21.2 : Fake AD/Samba en environnement e2e
+
+As a **développeur**,
+I want que toutes les interactions AD/Samba (écritures et auth) passent par un driver factice quand l'app tourne en env `e2e`,
+So that les e2e soient déterministes, rapides, et n'altèrent jamais le vrai samba-ad-dc.
+
+**Acceptance Criteria :**
+
+**Given** l'instance e2e active
+**When** un parcours déclenche une écriture AD (création d'utilisateur, de machine, changement de salle…)
+**Then** l'écriture est capturée par le fake (in-memory / journal inspectable), rien n'atteint samba-ad-dc
+**And** le fake retourne des réponses cohérentes permettant aux parcours d'aboutir (GUID factices stables, statuts de succès)
+**And** en env e2e, le client AD réel **ne peut pas être instancié** (exception explicite au boot du container) — garde-fou structurel
+**And** l'authentification par login/mot de passe des utilisateurs seedés fonctionne via le fake, sans bind LDAP réel
+**And** les environnements non-e2e restent strictement inchangés (zéro impact dev/prod)
+
+### Story 21.3 : Seed e2e de référence
+
+As a **développeur / rédacteur de tests**,
+I want un seeder e2e déterministe produisant un jeu de données de référence documenté (établissement, utilisateurs par rôle avec identifiants connus, salles, machines, permissions Spatie),
+So that chaque test parle un vocabulaire commun et stable, et que la template DB soit reconstructible à l'identique.
+
+**Acceptance Criteria :**
+
+**Given** la commande de build de la template (Story 21.1)
+**When** le seed e2e s'exécute
+**Then** il produit un jeu déterministe : 1 établissement, au moins 1 utilisateur par rôle Spatie pertinent (admin, technicien, prof, élève…) avec identifiants connus, des salles (workstationGroups), des machines, et les permissions associées
+**And** deux exécutions successives produisent des données identiques (déterminisme — pas de faker non seedé)
+**And** le jeu de données est documenté (tableau de référence : qui existe, avec quels droits, quelles machines dans quelles salles)
+**And** il réutilise les seeders existants quand c'est pertinent (PermissionSeeder…) sans les dupliquer
+**And** le seed passe avec le fake AD actif (Story 21.2) — aucune dépendance au vrai AD
+
+### Story 21.4 : Parcours Auth & navigation
+
+As a **responsable qualité**,
+I want des tests e2e couvrant le login local, l'accès aux sections selon le rôle Spatie, et la déconnexion,
+So that le socle d'accès de SE5 (sur lequel reposent tous les autres parcours) soit protégé contre les régressions.
+
+**Acceptance Criteria :**
+
+**Given** la base e2e préseedée (Story 21.3)
+**When** la suite Auth & navigation s'exécute
+**Then** chaque rôle seedé se connecte avec succès et voit les sections que ses permissions Spatie autorisent
+**And** un rôle sans permission sur une section en est explicitement exclu (élément absent ou accès refusé — pas d'erreur 500)
+**And** un login invalide échoue avec un message explicite, sans session ouverte
+**And** la déconnexion ferme la session (retour login, pas d'accès aux pages protégées par navigation arrière)
+
+### Story 21.5 : Parcours Users CRUD
+
+As a **responsable qualité**,
+I want des tests e2e couvrant la création, la modification, la désactivation et la suppression d'un utilisateur via l'UI Livewire,
+So that le cycle de vie utilisateur (Epic 2) — y compris son canal Livewire non couvert par les tests HTTP — soit protégé contre les régressions.
+
+**Acceptance Criteria :**
+
+**Given** la base e2e préseedée et un compte habilité connecté
+**When** la suite Users CRUD s'exécute
+**Then** la création d'un utilisateur via l'UI aboutit : il apparaît dans le listing et l'écriture AD correspondante est capturée par le fake
+**And** la modification d'attributs (classe…) est persistée et visible après rechargement
+**And** la désactivation puis la suppression suivent le flux en deux temps (corbeille → suppression) tel qu'exposé par l'UI
+**And** les retours utilisateur (toasts `WithToasts`) apparaissent aux étapes clés
+**And** les interactions passent par le canal Livewire réel (pas d'appels HTTP simulés)
+
+### Story 21.6 : Parcours Machines & salles
+
+As a **responsable qualité**,
+I want des tests e2e couvrant le listing des machines, l'affectation aux salles (workstationGroups) et l'association d'AppProfiles,
+So that la gestion de parc (Epic 4) — dont la mécanique pivot de memberships fraîchement livrée — soit protégée contre les régressions.
+
+**Acceptance Criteria :**
+
+**Given** la base e2e préseedée (machines et salles connues)
+**When** la suite Machines & salles s'exécute
+**Then** le listing affiche les machines seedées avec leur salle et leur statut
+**And** le changement de salle d'une machine via l'UI est persisté et respecte l'invariant 1-salle-max (l'ancienne affectation disparaît)
+**And** l'écriture AD du changement de salle est capturée par le fake (le swap service est bien traversé)
+**And** l'association d'un AppProfile à une salle/machine est persistée et visible
+
+### Story 21.7 : Parcours Fédération controlHub
+
+As a **responsable qualité**,
+I want des tests e2e couvrant le login fédéré d'un technicien externe (Epic 20) via un IdP stubé émettant des jetons signés de test,
+So that la fédération fraîchement livrée — chemin d'entrée sensible — soit protégée contre les régressions sans dépendre d'un controlHub réel.
+
+**Acceptance Criteria :**
+
+**Given** un stub IdP de test capable d'émettre des jetons signés conformes au contrat de la Story 20.5 (clé de test connue de l'instance e2e)
+**When** la suite Fédération s'exécute
+**Then** un jeton valide ouvre une session : le technicien externe accède aux sections de son rôle mappé
+**And** un jeton expiré, mal signé ou d'émetteur inconnu est refusé explicitement (401, aucune session)
+**And** un rôle asséré inconnu de l'instance est refusé — jamais de fallback silencieux
+**And** une action du technicien externe produit une entrée d'audit dénormalisée (login + id externe + nom + rôle) vérifiable
+**And** l'identité externe persiste entre deux connexions (même enregistrement réutilisé)
+
+### Points de décision à trancher au démarrage (pas maintenant)
+
+1. **Canal de reset DB** : le runner Playwright déclenche le DROP/CREATE via SSH (`global-setup` exécutant une commande artisan sur la VM) **vs** une route HTTP artisan-gated réservée à l'env e2e. À trancher en 21.1.
+2. **Instance e2e** : second vhost/port dédié sur la VM avec `.env.e2e` **vs** bascule d'environnement sur l'instance existante. Le vhost dédié semble plus sûr (zéro risque de polluer le dev) — à confirmer en 21.1.
+3. **Stratégie de doublure auth** : comment `LdapUserProvider` est doublé en e2e — fake annuaire derrière l'abstraction LdapRecord **vs** guard e2e dédié branché sur `AuthGuardInterface` (Story 1.4). À trancher en 21.2.
+4. **Stub IdP 21.7** : générateur de jetons local au repo de tests **vs** mini-service. Le générateur local (clé de test en config e2e) semble suffisant.
+
+### Prérequis & références
+
+- **Prérequis** : Epic 2 (parcours 21.5), Epic 4 + pivot memberships (21.6), Epic 7 (rôles/permissions pour 21.4), Epic 20 + contrat 20.5 (21.7). Le socle 21.1-21.3 n'a pas de prérequis fonctionnel.
+- **Ordre interne** : 21.1 → 21.2 → 21.3 (socle séquentiel), puis 21.4-21.7 indépendantes (21.4 recommandée en premier — les autres en réutilisent les helpers de login).
+- **Hors scope** : CI distante (les e2e tournent depuis l'hôte) ; e2e contre l'AD réel ; parcours nécessitant de vrais postes (WPKG, GPO, iPXE, déploiement Windows) ; tests de charge/performance ; tests e2e du legacy shimé.
+- **Code SE5 de référence** : `phpunit.xml` (config SQLite actuelle), `database/seeders/`, `app/Contracts/Auth/AuthGuardInterface.php`, `app/Providers/LdapUserProvider.php`, services d'écriture AD (à inventorier en 21.2), `app/Components/Traits/WithToasts.php`.
+- **Mémoire de cadrage** : décisions du chat PM 2026-06-04 (hôte→VM, fake AD, template DB Postgres, 4 parcours).
 
 ---
 
