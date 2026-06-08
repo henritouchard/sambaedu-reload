@@ -356,7 +356,7 @@ class ShortcutExportComparisonTest extends TestCase
     public function proxy_file_returns_same_lnk_as_api_direct(): void
     {
         $proxyUrl = "http://{$this->serverHost}/gpo/shortcuts_out.php";
-        $apiBase = "http://{$this->serverHost}/laravel/public/api/v1/shortcuts/export";
+        $apiBase = "http://{$this->serverHost}/api/v1/shortcuts/export";
 
         $shortcuts = $this->getWindowsShortcuts()->take(5);
         $this->assertNotEmpty($shortcuts);
@@ -387,7 +387,7 @@ class ShortcutExportComparisonTest extends TestCase
     public function proxy_icon_returns_same_as_api_direct(): void
     {
         $proxyUrl = "http://{$this->serverHost}/gpo/shortcuts_out.php";
-        $apiBase = "http://{$this->serverHost}/laravel/public/api/v1/shortcuts/export";
+        $apiBase = "http://{$this->serverHost}/api/v1/shortcuts/export";
 
         $shortcut = $this->getWindowsShortcuts()->first();
         $this->assertNotNull($shortcut);
@@ -436,7 +436,7 @@ class ShortcutExportComparisonTest extends TestCase
     {
         $iterations = 20;
         $proxyUrl = "http://{$this->serverHost}/gpo/shortcuts_out.php";
-        $apiUrl = "http://{$this->serverHost}/laravel/public/api/v1/shortcuts/export/file";
+        $apiUrl = "http://{$this->serverHost}/api/v1/shortcuts/export/file";
 
         $shortcut = $this->getWindowsShortcuts()->first();
         $this->assertNotNull($shortcut);

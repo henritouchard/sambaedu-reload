@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Shortcut;
 use App\Services\ShortcutCompilerService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -100,6 +101,15 @@ class ShortcutExportController extends Controller
 
     public function legacyDispatch(Request $request): Response|\Symfony\Component\HttpFoundation\BinaryFileResponse
     {
+        // Le script GPO `se4_applications` (iso-legacy) n'envoie que `id` — la
+        // clé du contexte APCu `apps.<id>` posé par `applications.php` — et
+        // jamais `machine`/`user` (cf. footer logon `curl ... -F "id=%id%"`).
+        // Le legacy résolvait machine/user via `shortcut_create_script($config,
+        // $id, …)` ; on réhydrate donc ces champs depuis le contexte, parité
+        // `WallpaperController::legacyOut` (findById). Sans ça,
+        // `resolveForMachine('', '', …)` ne renvoie que l'en-tête → 0 raccourci.
+        $this->hydrateFromContext($request);
+
         $action = $request->input('action', '');
         $os = $request->input('os', 'linux');
         $shortcutName = $request->input('shortcut', '');
@@ -114,6 +124,51 @@ class ShortcutExportController extends Controller
             'icon' => $this->icon($request->merge(['name' => urldecode($shortcutName)])),
             default => response('Unknown action', 400),
         };
+    }
+
+    /**
+     * Réhydrate `machine` / `user` / `os` depuis le contexte APCu `apps.<id>`
+     * quand la requête legacy ne porte qu'un `id` (cas du script GPO
+     * `se4_applications` au logon/startup, qui n'envoie ni machine ni user).
+     *
+     * Lit le même store que `CacheWallpaperContextRepository` /
+     * `ApplicationScriptsGenerator` (`Cache::store('app_context')`, prefix ''
+     * pour interop legacy). No-op si `machine` est déjà fourni (appel direct
+     * ou chemin `apiV1()` qui injecte la machine via le resolver JWT), si `id`
+     * n'est pas un md5 32-hex valide, ou si le contexte a expiré.
+     */
+    private function hydrateFromContext(Request $request): void
+    {
+        if ($request->filled('machine')) {
+            return;
+        }
+
+        $id = (string) $request->input('id', '');
+        if (preg_match('/^[a-f0-9]{32}$/i', $id) !== 1) {
+            return;
+        }
+
+        $payload = Cache::store('app_context')->get('apps.' . $id);
+        if (! is_array($payload)) {
+            return;
+        }
+
+        $merge = [];
+        $machineCn = $payload['machine']['cn'] ?? null;
+        if (is_string($machineCn) && $machineCn !== '') {
+            $merge['machine'] = $machineCn;
+        }
+        $userCn = $payload['user']['cn'] ?? null;
+        if (is_string($userCn) && $userCn !== '' && ! $request->filled('user')) {
+            $merge['user'] = $userCn;
+        }
+        if (! $request->filled('os') && isset($payload['os']) && is_string($payload['os']) && $payload['os'] !== '') {
+            $merge['os'] = $payload['os'];
+        }
+
+        if ($merge !== []) {
+            $request->merge($merge);
+        }
     }
 
     /**

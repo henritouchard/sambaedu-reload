@@ -402,7 +402,9 @@ class ShortcutCompilerService
     private function buildScriptFragment(Shortcut $shortcut, string $os, string $action): string
     {
         $serverName = config('sambaedu.se4fs_name', request()->getHost());
-        $apiBase = "http://{$serverName}/laravel/public/api/v1/shortcuts/export";
+        // Racine = projet Laravel : pas de préfixe /laravel/public (obsolète).
+        // Iso aux autres endpoints poste (gpo/applications.php, wallpaper_out…).
+        $apiBase = "http://{$serverName}/api/v1/shortcuts/export";
 
         if ($os === 'windows' && !empty($shortcut->windows_link)) {
             return $this->buildWindowsFragment($shortcut, $action, $apiBase);
