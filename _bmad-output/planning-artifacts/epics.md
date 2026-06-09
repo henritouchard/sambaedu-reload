@@ -3689,3 +3689,25 @@ So that l'intégration côté central se fasse sans dupliquer la logique d'auth 
 
 ### Sanity check show_histo depuis reload
 - `resources/views/pages/users/[login]/_partials/user-activity.blade.php:146,157` construit des URLs `/parcs/show_histo.php?selectionne=3&user={login}`. Le refactor de `show_histo_html()` dans `2f8de08a1` **préserve** la lecture des paramètres `user` et `mpenc` : les hidden-inputs sont émis quand `selectionne != 0`. **Lien reload non cassé** — à vérifier manuellement quand quelqu'un ouvrira la fiche d'un user sur la VM.
+
+---
+
+## Epic 22 : Successeur GPO — Environnement poste & tags domain-first
+
+> **Créé 2026-06-09** (PM session Henri, suite debug windaube). Rattaché au product-brief `product-brief-gpo-successor-2026-06-08.md`. Stories en `backlog` (à cadrer via `bmad-create-story`). Cf. `sprint-change-proposal-2026-06-09.md`.
+
+**Contexte métier.** Le modèle SE4 distingue implicitement une **nature de poste** : *partagé* (salle — environnement redirigé vers le partage SMB serveur, roamé sur n'importe quel poste) vs *personnel/nomade* (`port_perdir` = personnels de direction ; `portables` — environnement gardé **local**). Cette distinction pilote où atterrissent le **bureau** (raccourcis) et les **profils navigateur** (Chrome/Edge/OpenBoard). Le port natif l'a perdue (bureau figé local → Bug C, pansement réseau `4e5a152`). Cet epic la **modélise explicitement** côté domaine (Postgres), indépendamment d'AD.
+
+### Story 22.1 — Enum `WorkstationEnvironment`
+- **Valeur :** rendre la nature de poste paramétrable par parc, remplacer le pansement Bug C.
+- **Périmètre :** enum `App\Enums\WorkstationEnvironment` (`shared_local` / `personal_local` / `nomade`) porté par `WorkstationGroup` (colonne Postgres ; applicable groupe **logique OU physique** car résolu côté serveur, pas via GPO/OU). Résolution **par machine** dans `ApplicationScriptsGenerator::resolveInfo` avec précédence **`nomade` > `personal_local` > `shared_local`** (défaut `shared_local`). Consommé par : (a) chemin du bureau dans `ShortcutCompilerService` (remplace le pansement `4e5a152`) ; (b) exclusions de redirection des profils navigateur Chrome/Edge/OpenBoard ; (c) gating du `clean_profiles`. UI de sélection dans parc-settings.
+- **Sémantique :** `shared_local` = défaut partagé (bureau réseau) ; `personal_local` = modèle perdir (raccourcis bureau local, données sur le home SambaEdu réseau) ; `nomade` = tout local (sync en 22.2).
+- **Note :** lit Postgres (pas AD) ; sync AD→PG fiable car 1er traitement à l'install SE5.
+
+### Story 22.2 — Sync des données en mode nomade
+- **Valeur :** un portable hors établissement doit accéder à ses fichiers **offline** et les **resynchroniser** au retour (sinon donnée prisonnière du poste).
+- **Périmètre :** stratégie offline pour les dossiers user en mode `nomade` — **Folder Redirection + Offline Files (CSC)** recommandé (source de vérité serveur + cache local + resync), sinon rclone/robocopy ; **désactivation du `clean_profiles`** pour ces postes.
+
+### Story 22.3 — Sourcing domain-first des tags `list_*` depuis Postgres
+- **Valeur :** lisibilité + cohérence domain-first (AD = projection) ; retirer la dette des listes cryptiques héritées du legacy.
+- **Périmètre :** sourcer les tags de matching depuis les relations Postgres (`list_u`→`User.groups`, `list_m`→`Workstation.groups`) ; **supprimer les clés mortes** `list_m` et `list_ue` (aucun consommateur ; `list_ue`==`list_u` car sam=cn) ; **garder** `list` (union) + `list_u` (load-bearing : matching includes/excludes + wallpaper) ; renommer `tagsUser`/`tagsMachine` ; reproduire le matching includes/excludes depuis les relations en préservant la parité de nommage.

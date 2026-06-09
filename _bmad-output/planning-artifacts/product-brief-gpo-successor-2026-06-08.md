@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [1, 2, 3, 4]
+stepsCompleted: [1, 2, 3, 4, 5, 6]
 inputDocuments:
   - docs/tech-debt-gpo.md
   - _bmad-output/planning-artifacts/audit-gpo-legacy.md
@@ -61,8 +61,17 @@ Un **canal de configuration unique**, sous contrôle total de l'équipe (génér
 - **Pilotées par API**, servies dynamiquement par SE5 (le canal `/workstation-config/*` est la fondation) ;
 - **Logs unifiés** : un seul endroit pour comprendre ce qui s'applique, dans quel ordre ;
 - **Identiques Linux / Windows** : même mécanisme, mêmes politiques, les différences d'OS deviennent un détail d'implémentation côté serveur ;
-- **AD réduit à un point d'ancrage minimal** (forme à arbitrer avec l'architecte) ;
+- **AD réduit à un point d'ancrage minimal** : ancrage concret arbitré avec l'architecte (2026-06-08) = **GPO-dispatcher statique** — quelques GPO génériques et figées, jamais ré-éditées, dont le seul rôle est d'appeler l'endpoint SE5 sur chaque événement de cycle de vie (`startup`/`logon`/`logoff`/`shutdown` + `refresh` périodique via tâche planifiée). Toute l'intelligence reste côté serveur. Cf. `spike-windows-anchor-2026-06-08.md` ;
 - **Déclenchement libre** : au boot, au logon, ou poussé à la demande — non contraint par le modèle GPO.
+
+### Précision d'architecture : « canal unique » = transport unifié, PAS exécution unifiée
+
+Clarification actée (2026-06-08, analyse `applications` vs `wpkg`). Sous la config de poste cohabitent **deux modèles d'exécution distincts et légitimes** :
+
+- **Impératif — `applications`** : scripts (`.cmd`/`.sh`) générés à la volée, lancés aux événements ; sans état, relancés à chaque fois. Idéal tweaks/config/réseau/wallpaper/tiers. → c'est le cœur de la **Phase A** (dispatcher déjà prouvé).
+- **Déclaratif — `wpkg`** : un **moteur** de paquets (client WPKG Windows lisant `packages.xml`/`hosts.xml`/`profiles.xml`) avec **dépendances, versions, upgrade/remove, rollback, check d'état**. → **Phase B+** (la « vraie bête »).
+
+Conséquence : le « canal unique » doit unifier le **plan de contrôle** (un déclencheur, une API, un log, du versionné) **sans aplatir le modèle d'exécution**. **Un seul tuyau, deux outils au bout** : le dispatcher déclenche et trace les deux, il ne les fusionne pas. Réduire `wpkg` à de l'impératif serait une **régression** (perte des dépendances/versions/rollback). Les deux systèmes sont aujourd'hui **non chevauchants** (GPO séparées `se4_applications` / `se4_wpkg`) ; l'action `wpkg` de `applications.php` n'est qu'un mini-script de pré-déploiement (`ROBOCOPY` des outils WPKG), pas le moteur.
 
 ### Key Differentiators
 
@@ -135,3 +144,35 @@ N/A — projet interne. L'objectif se résume à : **réduction de dette techniq
 - couverture des politiques traçables (git + logs) : **→ 100 %**
 
 > **Hypothèse à valider :** aucun seuil de performance/latence d'application retenu comme critère de succès (« le quand, on s'en moque »). À reconfirmer si un seuil terrain émerge.
+
+---
+
+## MVP Scope
+
+**Direction retenue : « A puis B ».** A = cloner le client Linux sur Windows (réutilise le serveur prouvé, tue le risque d'ancrage). B = ensuite faire évoluer le modèle unifié pour les deux OS, la coévolution devenant quasi gratuite car un seul canal.
+
+### Core Features — MVP = Phase A (cloner Linux sur Windows)
+
+1. **Phase 0 — Spike d'ancrage Windows** *(gate)* : ancrage retenu = **GPO-dispatcher statique** (GPO figées génériques → appel API par événement) + tâche planifiée pour le `refresh` périodique (cas « poste jamais éteint »). Spike à exécuter : valider la généricité, la couverture des 4 events (dont logoff/shutdown que les scripts GPO portent nativement), l'auth iso-legacy et le refresh. Détail : `spike-windows-anchor-2026-06-08.md`. Go/no-go avant tout.
+2. **Client Windows = consommateur des endpoints existants** : Windows appelle **les mêmes URLs que Linux** (`/gpo/applications.php`, `/gpo/network_out.php`…) et exécute le script renvoyé en **cmd/ps** au lieu de bash. **Aucun nouveau modèle, aucun nouvel endpoint** — on réutilise le serveur déjà prouvé.
+3. **Bornage aux capacités déjà couvertes par Linux** : scripts, réseau/proxy, wallpaper… *(pas le registre natif, pas WPKG-deps, pas les imprimantes — voir hors-scope).*
+4. **Groupe test** : un poste Windows **et** un poste Linux appliquent la même intention de config, sans GPO sur le nouveau chemin.
+5. **Coexistence** : GPO/legacy intacts, le canal s'**ajoute**.
+
+### Out of Scope for MVP (Phase A)
+
+- **Capacités nativement Windows non couvertes par Linux** : registre complexe, WPKG (dépendances/rollback), imprimantes → **chantier dédié en Phase B+**, car c'est du travail neuf quel que soit le chemin.
+- **Refonte du modèle** (politiques versionnées propres, logs unifiés enrichis) → **Phase B**.
+- Migration des GPO existantes, suppression du chemin GPO, branchement controlHub.
+
+### MVP Success Criteria
+
+- Un poste **Windows** applique sa config **via le canal HTTP existant, sans GPO**, sur les capacités déjà couvertes par Linux.
+- L'archi a validé un **mécanisme d'ancrage Windows soutenable** (déploiement + maintenance acceptables, contrainte iso-legacy respectée).
+- → **Go pour la Phase B.**
+
+### Future Vision
+
+- **Phase B** : modèle unifié versionné et tracé, **migration des deux OS dessus en même temps** (améliorer Linux = améliorer Windows, gratuitement, car un seul canal).
+- **Puis** les chantiers durs : registre natif Windows, WPKG avec dépendances, imprimantes (réconciliation CUPS Linux ↔ Windows).
+- **Enfin** : décommissionnement progressif du chemin GPO, puis **branchement du controlHub** comme client API.
