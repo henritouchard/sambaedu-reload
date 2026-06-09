@@ -164,13 +164,12 @@ class ApplicationScriptsGeneratorTest extends TestCase
         $workstations = Mockery::mock(WorkstationRepository::class);
         $workstations->shouldReceive('findByName')->andReturn($this->machineMock('pc01'));
 
-        // Review #1 : `registerHardware` et `setOs` sont désormais portés par
+        // Review #1 : `registerHardware` est désormais porté par
         // `ApplicationLoggerService` (parité legacy footer `ret=0`), pas par
         // le Generator. Le Generator ne fait plus que `check` au startup.
         $ad = Mockery::mock(AdMachineManager::class);
         $ad->shouldReceive('check')->once()->with('pc01')->andReturn(true);
         $ad->shouldNotReceive('registerHardware');
-        $ad->shouldNotReceive('setOs');
         $ad->shouldNotReceive('listRemoteConnexion');
 
         $writer = Mockery::mock(AppContextWriter::class);
@@ -241,7 +240,6 @@ class ApplicationScriptsGeneratorTest extends TestCase
         $ad = Mockery::mock(AdMachineManager::class);
         $ad->shouldReceive('check')->andReturn(true);
         $ad->shouldReceive('registerHardware')->andReturn(true)->byDefault();
-        $ad->shouldReceive('setOs')->andReturn(true)->byDefault();
 
         $writer = Mockery::mock(AppContextWriter::class);
         $writer->shouldReceive('write')
@@ -288,7 +286,6 @@ class ApplicationScriptsGeneratorTest extends TestCase
         $ad = Mockery::mock(AdMachineManager::class);
         $ad->shouldReceive('check')->andReturn(true);
         $ad->shouldReceive('registerHardware')->andReturn(true)->byDefault();
-        $ad->shouldReceive('setOs')->andReturn(true)->byDefault();
         $writer = Mockery::mock(AppContextWriter::class);
         $writer->shouldReceive('write');
 

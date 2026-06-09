@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Process;
  * **Périmètre** :
  *  - Résolution machine LDAP (search_machine natif via `WorkstationRepository`)
  *  - Résolution user LDAP (search_user natif via `UserRepository`)
- *  - Side effects AD au `startup` only (`check`, `registerHardware`, `setOs`)
+ *  - Side effects AD au `startup` only (`check`, `registerHardware`)
  *  - Side effect AD au `logon` only (`listRemoteConnexion`)
  *  - Pose APCu `apps.$id` (structure iso-legacy compatible 4.7/4.8/16.3b/16.3c)
  *
@@ -145,10 +145,11 @@ class ApplicationScriptsGenerator
         }
         $machineData = $this->machineToArray($machineLdap);
 
-        // Iso-legacy : `register_machine_hardware` et `set_os` sont appelés
-        // par `log_application_scripts` à la fin d'exécution (footer curl
+        // Iso-legacy : `register_machine_hardware` est appelé par
+        // `log_application_scripts` à la fin d'exécution (footer curl
         // `ret=0`), pas au démarrage. Cf. review #1 — corrigé en déléguant
-        // ces side effects à `ApplicationLoggerService::logScripts`. Les
+        // ce side effect à `ApplicationLoggerService::logScripts`. (Le legacy
+        // `set_os` n'est PAS porté : OS = `workstations.os`, cf. AdMachineManager.) Les
         // données `uuid`/`os` sont transmises via le contexte `$info`.
 
         // Recherche user (cas : connexion système = machine, sinon user réel).

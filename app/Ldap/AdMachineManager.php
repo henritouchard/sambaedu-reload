@@ -19,13 +19,16 @@ use LdapRecord\Models\Attributes\Guid;
  * tranchement DO3 par défaut (option (a) : `App\Ldap\AdMachineManager` pour
  * cohérence avec `App\Ldap\AdUserManager` Story 16.3b).
  *
- * **Périmètre** : porte natif les 4 fonctions legacy AD consommées par
+ * **Périmètre** : porte natif les fonctions legacy AD consommées par
  * `applications.inc.php::get_app_scripts_info` :
  *
  *  - `check_computer($config, $machine, &$html)`   → {@see check()}
  *  - `register_machine_hardware($config, $m, $uuid)` → {@see registerHardware()}
- *  - `set_os($config, $name, $os)`                  → {@see setOs()}
  *  - `list_remote_connexion($config, $machineCn, $userLdap)` → {@see listRemoteConnexion()}
+ *
+ * Le legacy `set_os` (ajout au groupe AD `windows`/`linux`) n'est PAS porté :
+ * en SE5 l'OS est `workstations.os` (PG) et l'appartenance de groupe n'est
+ * plus synchronisée vers l'AD (cf. `WorkstationMembershipAdSyncJob`).
  *
  * **Sécurité** :
  *
@@ -42,7 +45,7 @@ use LdapRecord\Models\Attributes\Guid;
  * par `WorkstationRepository` (LdapRecord) pour bénéficier du cache et de
  * la typisation.
  *
- * @legacy-port path="sambaedu/includes/ldap.inc.php (check_computer, register_machine_hardware, set_os)"
+ * @legacy-port path="sambaedu/includes/ldap.inc.php (check_computer, register_machine_hardware)"
  * @legacy-port path="sambaedu/includes/remote.inc.php (list_remote_connexion)"
  * @see AdUserManager Pattern source (Story 16.3b).
  */
@@ -237,86 +240,6 @@ class AdMachineManager
             'action_type' => 'ad.machine.hardware.register',
             'machine' => $machineName,
             'uuid' => $uuid,
-        ]);
-        return true;
-    }
-
-    /**
-     * Marque la machine comme membre d'un groupe parc OS
-     * (parité legacy `set_os` lignes 4106-4110 : `groupaddmember($machine.'$',
-     * $os.$config['suffix'])`).
-     *
-     * Le mécanisme legacy iso-Sambaedu = appartenance au parc `linux`/`windows`
-     * → la résolution OS se fait en lisant les `memberOf` de la machine
-     * (`get_os` legacy lignes 4080-4092). On reproduit le même mécanisme :
-     * ajout du compte machine au groupe `linux`/`windows` (via samba-tool).
-     */
-    public function setOs(string $machineName, string $os): bool
-    {
-        if (! $this->isValidMachineName($machineName)) {
-            Log::channel('gpo')->warning('[AdMachineManager] setOs() invalid machine name', [
-                'action_type' => 'ad.machine.os.set',
-                'machine' => $machineName,
-            ]);
-            return false;
-        }
-        if (! in_array($os, ['linux', 'windows'], true)) {
-            Log::channel('gpo')->warning('[AdMachineManager] setOs() invalid os', [
-                'action_type' => 'ad.machine.os.set',
-                'machine' => $machineName,
-                'os' => $os,
-            ]);
-            return false;
-        }
-
-        // Iso-legacy : suffix optionnel issu de `$config['suffix']` (souvent
-        // vide pour SE4FS standard). On le résout via config Laravel pour
-        // permettre l'override (parité Story 16.3b `ReadUserManager::computeSuffix`).
-        $suffix = (string) config('sambaedu.legacy_ldap.suffix', '');
-        $member = $machineName . '$';
-        $group = $os . $suffix;
-
-        $args = ['group', 'addmembers', $group, $member];
-
-        try {
-            $result = $this->runner->run($args);
-        } catch (\Throwable $e) {
-            Log::channel('gpo')->error('[AdMachineManager] setOs() threw', [
-                'action_type' => 'ad.machine.os.set',
-                'machine' => $machineName,
-                'os' => $os,
-                'error' => $e->getMessage(),
-            ]);
-            return false;
-        }
-
-        if ($result->exitCode() !== 0) {
-            $stderr = (string) $result->errorOutput();
-            // Idempotence : `already a member` = succès (machine déjà dans le
-            // groupe OS — boot répété).
-            if (stripos($stderr, 'already') !== false) {
-                Log::channel('gpo')->debug('[gpo] ad.machine.os.set already member', [
-                    'action_type' => 'ad.machine.os.set',
-                    'machine' => $machineName,
-                    'os' => $os,
-                ]);
-                return true;
-            }
-            Log::channel('gpo')->error('[AdMachineManager] setOs() failed', [
-                'action_type' => 'ad.machine.os.set',
-                'machine' => $machineName,
-                'os' => $os,
-                'exit_code' => $result->exitCode(),
-                'stderr' => $this->truncate($stderr),
-            ]);
-            return false;
-        }
-
-        Log::channel('gpo')->info('[gpo] ad.machine.os.set success', [
-            'action_type' => 'ad.machine.os.set',
-            'machine' => $machineName,
-            'os' => $os,
-            'group' => $group,
         ]);
         return true;
     }

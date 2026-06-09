@@ -59,7 +59,6 @@ class ApplicationsScriptsEndpointTest extends TestCase
         $ad = Mockery::mock(AdMachineManager::class);
         $ad->shouldReceive('check')->andReturn(true)->byDefault();
         $ad->shouldReceive('registerHardware')->andReturn(true)->byDefault();
-        $ad->shouldReceive('setOs')->andReturn(true)->byDefault();
         $ad->shouldReceive('listRemoteConnexion')->andReturn('')->byDefault();
         $this->app->instance(AdMachineManager::class, $ad);
 

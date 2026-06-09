@@ -227,7 +227,7 @@ runtime déjà portés (`wallpaper_out` 4.7, `firefox_out`/`thunderbird_out` 4.8
 | Assembleur scripts       | `App\Gpo\Services\ApplicationScriptsAssembler` (ports `make_*` + 12 fonctions) |
 | Scanner FS               | `App\Gpo\Services\ApplicationTemplatesScanner` (port `read_application_scripts`) |
 | Logger                   | `App\Gpo\Services\ApplicationLoggerService` (port `log_application_scripts`) |
-| Surface AD writeback     | `App\Ldap\AdMachineManager` (4 méthodes : check/registerHardware/setOs/listRemoteConnexion) |
+| Surface AD writeback     | `App\Ldap\AdMachineManager` (check/registerHardware/listRemoteConnexion ; `set_os` non porté — OS = `workstations.os`) |
 | Pose cache               | `App\Services\AppCustomization\CacheAppContextWriter` (interface `AppContextWriter`) |
 | Enum bitmask erreurs     | `App\Gpo\Enums\ApplicationActionError` (7 cas iso `SAMBAEDU_*_APP_ERROR`) |
 | Config substitutions     | `config/sambaedu.php` clé `gpo.applications.substitutions.whitelist` (whitelist statique — étendue Story 17.3 d'1 clé `APPLICATIONS_SCRIPTS_URL`) |

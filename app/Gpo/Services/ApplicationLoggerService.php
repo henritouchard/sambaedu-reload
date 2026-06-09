@@ -50,7 +50,6 @@ class ApplicationLoggerService
         $machineCn = (string) ($info['machine']['cn'] ?? '');
         $userCn = (string) ($info['user']['cn'] ?? $machineCn);
         $action = (string) ($info['action'] ?? '');
-        $os = (string) ($info['os'] ?? '');
         $id = (string) ($info['id'] ?? '');
         $speed = (int) ($info['speed'] ?? 0);
         $time = (int) ($info['time'] ?? 0);
@@ -79,9 +78,9 @@ class ApplicationLoggerService
                 $this->persistLog($info, $errorBitmask, success: true);
             }
 
-            // Iso-legacy `:799-800` : `register_machine_hardware` + `set_os` sont
-            // appelés au footer (`$ret==0`) — review #1. On délègue ici au lieu
-            // de les pré-positionner au 1er appel dans le Generator.
+            // Iso-legacy `:799-800` : `register_machine_hardware` est appelé au
+            // footer (`$ret==0`) — review #1. On délègue ici au lieu de le
+            // pré-positionner au 1er appel dans le Generator.
             $uuid = (string) ($info['uuid'] ?? '');
             if ($action !== 'wpkg' && $machineCn !== '' && $uuid !== '') {
                 try {
@@ -93,22 +92,13 @@ class ApplicationLoggerService
                     ]);
                 }
             }
-            $machineOsGroups = (array) ($info['machine']['os_groups'] ?? []);
-            if ($action !== 'wpkg'
-                && $machineCn !== ''
-                && in_array($os, ['linux', 'windows'], true)
-                && ! in_array($os, $machineOsGroups, true)
-            ) {
-                try {
-                    $this->adMachines->setOs($machineCn, $os);
-                } catch (Throwable $e) {
-                    Log::channel('gpo')->warning('[ApplicationLoggerService] setOs failed', [
-                        'machine' => $machineCn,
-                        'os' => $os,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-            }
+            // NB : le legacy ajoutait ici la machine au groupe AD `windows`/`linux`
+            // (`set_os`). Ce write AD est retiré en SE5 : l'OS est la colonne
+            // `workstations.os` (écrite par les post-install trackers), et
+            // l'appartenance de groupe n'est plus synchronisée vers l'AD (cf.
+            // décision `WorkstationMembershipAdSyncJob` : membership = SQL-only).
+            // Le groupe AD OS n'a aucun consommateur natif SE5 ; `is_dual_boot`
+            // (shim) lit `$ws->groups()` (PG). Dual-boot natif = reporté post-3.7.
 
             if ($action === 'shutdown' || $action === 'logoff') {
                 $this->contextWriter->forget($id);

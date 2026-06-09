@@ -33,7 +33,6 @@ class ApplicationLoggerServiceTest extends TestCase
     {
         $ad = Mockery::mock(AdMachineManager::class);
         $ad->shouldReceive('registerHardware')->andReturn(true)->byDefault();
-        $ad->shouldReceive('setOs')->andReturn(true)->byDefault();
 
         return $ad;
     }

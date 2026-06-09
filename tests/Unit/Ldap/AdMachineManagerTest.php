@@ -188,52 +188,6 @@ class AdMachineManagerTest extends TestCase
         self::assertFalse($manager->registerHardware('PC-001', '01234567-89ab-cdef-0123-456789abcdef'));
     }
 
-    // ────────────────────────── setOs() ──────────────────────────
-
-    #[Test]
-    public function set_os_invokes_group_addmembers_with_machine_suffix(): void
-    {
-        Process::fake([
-            '*' => Process::result(exitCode: 0),
-        ]);
-        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo());
-        self::assertTrue($manager->setOs('PC-001', 'linux'));
-        Process::assertRan(function ($p) {
-            $cmd = is_array($p->command) ? $p->command : [];
-            return in_array('group', $cmd, true) && in_array('addmembers', $cmd, true);
-        });
-    }
-
-    #[Test]
-    public function set_os_idempotent_when_already_member(): void
-    {
-        Process::fake([
-            '*' => Process::result(errorOutput: 'object is already a member of group', exitCode: 1),
-        ]);
-        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo());
-        self::assertTrue($manager->setOs('PC-001', 'windows'));
-    }
-
-    #[Test]
-    public function set_os_rejects_invalid_os(): void
-    {
-        Process::fake();
-        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo());
-        self::assertFalse($manager->setOs('PC-001', 'macos'));
-        self::assertFalse($manager->setOs('PC-001', ''));
-        self::assertFalse($manager->setOs('PC-001', 'LINUX')); // case-sensitive
-        Process::assertNothingRan();
-    }
-
-    #[Test]
-    public function set_os_rejects_invalid_machine_name(): void
-    {
-        Process::fake();
-        $manager = new AdMachineManager($this->makeRunner(), $this->makeRepo());
-        self::assertFalse($manager->setOs('; rm -rf /', 'linux'));
-        Process::assertNothingRan();
-    }
-
     // ────────────────────────── listRemoteConnexion() ──────────────────────────
 
     #[Test]

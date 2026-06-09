@@ -42,7 +42,6 @@ class ApplicationsScriptsSecurityTest extends TestCase
         $ad = Mockery::mock(AdMachineManager::class);
         $ad->shouldNotReceive('check');
         $ad->shouldNotReceive('registerHardware');
-        $ad->shouldNotReceive('setOs');
         $ad->shouldNotReceive('listRemoteConnexion');
         $this->app->instance(AdMachineManager::class, $ad);
 
