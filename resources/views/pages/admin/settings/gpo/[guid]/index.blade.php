@@ -2,8 +2,11 @@
 
 use App\Components\Traits\WithToasts;
 use App\Gpo\Services\GpoService;
+use App\Gpo\Services\GpoPublisher;
 use App\Gpo\Dto\GpoSummary;
 use App\Gpo\Dto\GpoLink;
+use App\Gpo\Support\CachedGpoLookups;
+use App\Gpo\Support\GpoTemplateRegistry;
 use App\Gpo\Support\NativeSectionResolver;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Title;
@@ -42,6 +45,11 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
     public array $loadErrors = [];
     public bool $hasError = false;
 
+    // --- Publication étage 2 (SYSVOL) — modale confirmation D5 ---
+    public bool $isPublishModalOpen = false;
+    public bool $isPublishing = false;
+    public bool $forceFlag = false;
+
     /**
      * Comptage postes par OU (Story 16.5 — AC3.2).
      * @var array<string,int>
@@ -49,15 +57,19 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
     public array $workstationCountByOu = [];
 
     private GpoService $gpoService;
+    private GpoTemplateRegistry $templateRegistry;
+    private GpoPublisher $publisher;
 
     /**
      * Livewire invoque boot() avant mount() à chaque cycle. C'est l'endroit
      * canonique du projet pour injecter les services (cf. pattern
      * pages/users/[login]/index.blade.php). Ne pas dupliquer dans mount().
      */
-    public function boot(GpoService $service): void
+    public function boot(GpoService $service, GpoTemplateRegistry $registry, GpoPublisher $publisher): void
     {
         $this->gpoService = $service;
+        $this->templateRegistry = $registry;
+        $this->publisher = $publisher;
     }
 
     public function mount(string $guid): void
@@ -248,6 +260,82 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
         return NativeSectionResolver::resolve($this->gpo['displayName'] ?? '');
     }
 
+    /**
+     * Cette GPO est-elle publiable ? Vrai ssi une archive-template SE5 matche
+     * son displayName (cf. GpoTemplateRegistry). Une GPO créée à la main /
+     * built-in / tierce n'a pas de template → pas de bouton de publication.
+     */
+    public function getIsPublishableProperty(): bool
+    {
+        $displayName = $this->gpo['displayName'] ?? '';
+        if ($displayName === '') {
+            return false;
+        }
+        try {
+            return $this->templateRegistry->isPublishable($displayName);
+        } catch (\Throwable) {
+            // Répertoire des templates inaccessible (hors VM) : on dégrade en
+            // "non publiable" plutôt que de casser la page détail.
+            return false;
+        }
+    }
+
+    public function openPublishModal(): void
+    {
+        $this->forceFlag = false;
+        $this->isPublishModalOpen = true;
+    }
+
+    public function closePublishModal(): void
+    {
+        $this->isPublishModalOpen = false;
+    }
+
+    /**
+     * Publie l'étage 2 (contenu SYSVOL) de cette GPO via GpoPublisher →
+     * shim legacy `import_gpo`. Side effect SYSVOL : confirmation D5 obligatoire.
+     * Au prochain reboot, les postes liés appliquent le script startup déposé.
+     */
+    public function confirmPublish(): void
+    {
+        abort_unless(
+            auth()->check() && auth()->user()->can('server.admin'),
+            403,
+            'Permission server.admin requise.',
+        );
+
+        $displayName = $this->gpo['displayName'] ?? '';
+        $force = $this->forceFlag;
+        $this->isPublishing = true;
+        $this->isPublishModalOpen = false;
+
+        try {
+            $template = $this->publisher->publish($displayName, $force);
+
+            // Le versionNumber SYSVOL a été bumpé par import_gpo : invalider le
+            // cache santé de cette GPO avant de recharger le détail (iso 16.14 Q2).
+            try {
+                app(CachedGpoLookups::class)->forgetGpo($this->guid);
+            } catch (\Throwable) {
+                // best-effort — ne doit pas masquer le succès métier.
+            }
+
+            $this->loadDetail();
+
+            $this->toast(
+                'success',
+                'GPO publiée',
+                "L'étage 2 de « {$template->displayName} » a été déposé dans SYSVOL. "
+                . 'Au prochain reboot, les postes liés appliqueront le script de démarrage.',
+            );
+        } catch (\Throwable $e) {
+            $this->toast('error', 'Échec de publication', $e->getMessage());
+        } finally {
+            $this->isPublishing = false;
+            $this->forceFlag = false;
+        }
+    }
+
     public function formatVersion(?int $version): string
     {
         if ($version === null) {
@@ -279,25 +367,45 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
                 Retour au listing
             </a>
 
-            {{-- CTA "Gérer les liaisons" (Story 16.5 — AC3.1) --}}
+            {{-- Toutes les actions de la GPO regroupées dans un seul dropdown (pattern /users). --}}
             @can('server.admin')
-                <a href="{{ route('admin.gpo.links', ['guid' => trim((string) $this->guid, '{}')]) }}"
-                    class="btn btn-primary btn-sm"
-                    data-testid="cta-manage-links">
-                    <i class="fa-solid fa-link"></i>
-                    Gérer les liaisons
-                </a>
-            @endcan
+                <x-molecules.action-menu label="Actions" icon="fa-bars" width="w-72" testid="gpo-actions-menu">
+                    {{-- Gérer les liaisons (Story 16.5 — AC3.1) --}}
+                    <li>
+                        <a href="{{ route('admin.gpo.links', ['guid' => trim((string) $this->guid, '{}')]) }}"
+                            data-testid="cta-manage-links">
+                            <i class="fa-solid fa-link w-4"></i>
+                            Gérer les liaisons
+                        </a>
+                    </li>
 
-            {{-- CTAs natifs primaires (Story 16.3a — AC2.1) --}}
-            @foreach ($nativeLinks as $key => $link)
-                <a href="{{ \App\Gpo\Support\NativeSectionResolver::buildUrl($key, $this->guid) }}"
-                    class="btn btn-success btn-sm"
-                    data-testid="native-cta-{{ $key }}">
-                    <i class="fa-solid {{ $link['icon'] }}"></i>
-                    {{ $link['label'] }}
-                </a>
-            @endforeach
+                    {{-- Édition native des sections matchées (Story 16.3a — AC2.1) --}}
+                    @if ($hasNativeLinks)
+                        <li class="menu-title text-xs opacity-60">Édition native</li>
+                        @foreach ($nativeLinks as $key => $link)
+                            <li>
+                                <a href="{{ \App\Gpo\Support\NativeSectionResolver::buildUrl($key, $this->guid) }}"
+                                    data-testid="native-cta-{{ $key }}">
+                                    <i class="fa-solid {{ $link['icon'] }} w-4"></i>
+                                    {{ $link['label'] }}
+                                </a>
+                            </li>
+                        @endforeach
+                    @endif
+
+                    {{-- Publication étage 2 — affichée ssi la GPO a une archive-template SE5. --}}
+                    @if ($this->isPublishable)
+                        <li class="menu-title text-xs opacity-60">SYSVOL</li>
+                        <li>
+                            <button type="button" wire:click="openPublishModal"
+                                wire:loading.attr="disabled" data-testid="open-publish-modal">
+                                <i class="fa-solid fa-upload w-4 text-warning"></i>
+                                Publier l'étage 2 (SYSVOL)
+                            </button>
+                        </li>
+                    @endif
+                </x-molecules.action-menu>
+            @endcan
         </div>
     </x-slot:actions>
 
@@ -384,6 +492,38 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
                 @endif
             </div>
         </div>
+
+        {{-- Encart publication étage 2 — explique pourquoi une GPO est ou non
+             publiable depuis SE5 (template présent vs contenu rédigé à la main). --}}
+        @can('server.admin')
+            @if ($this->isPublishable)
+                <div class="alert alert-warning shadow-sm" data-testid="publishable-note">
+                    <i class="fa-solid fa-upload"></i>
+                    <div>
+                        <p class="font-medium">Cette GPO est publiable.</p>
+                        <p class="text-sm">
+                            Une archive-template SambaEdu correspond à son nom : le bouton
+                            <strong>« Publier l'étage 2 (SYSVOL) »</strong> (re)dépose son contenu
+                            (script de démarrage, policies) dans SYSVOL via <code class="font-mono">import_gpo</code>.
+                            Les postes liés l'appliqueront au prochain reboot.
+                        </p>
+                    </div>
+                </div>
+            @else
+                <div class="alert alert-info shadow-sm" data-testid="not-publishable-note">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <div>
+                        <p class="font-medium">Cette GPO n'est pas publiable depuis SambaEdu.</p>
+                        <p class="text-sm">
+                            Aucune archive-template ne correspond à son nom : son contenu SYSVOL est
+                            <strong>rédigé à la main</strong> (GPO créée manuellement, built-in Windows ou tierce),
+                            pas généré par SambaEdu. Il n'y a donc rien à « publier » — pour la remplir,
+                            restaurez-la depuis une sauvegarde ou éditez-la manuellement.
+                        </p>
+                    </div>
+                </div>
+            @endif
+        @endcan
 
         {{-- Encart "Impact" — Story 16.5 / AC3.2 / D5 --}}
         <div class="card bg-base-100 shadow-sm border border-base-200" data-testid="impact-card">
@@ -521,4 +661,64 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
         </div>
 
     </div>
+
+    {{-- Modale confirmation "Publier l'étage 2" (D5) — side effect SYSVOL --}}
+    @can('server.admin')
+        @if ($this->isPublishable)
+            <x-molecules.modal wire:model="isPublishModalOpen" size="max-w-2xl" height="h-auto"
+                :title="'Publier l\'étage 2 — ' . ($gpo['displayName'] ?? '')" icon="fa-shield-halved text-warning">
+                <x-molecules.modal.section dense>
+                    <div class="alert alert-warning">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        <div>
+                            <p class="font-medium">Cette action écrit dans SYSVOL.</p>
+                            <p class="text-sm">
+                                Elle (re)importe l'archive-template, spécialise les placeholders
+                                (<code class="font-mono">###_…_###</code>) et pousse le contenu sur SYSVOL via
+                                <code class="font-mono">samba-tool</code>/<code class="font-mono">smbclient</code>.
+                                Au prochain reboot, les postes liés appliqueront le script de démarrage déposé.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="form-control mt-3">
+                        <label class="label cursor-pointer justify-start gap-3">
+                            <input type="checkbox" wire:model.live="forceFlag" class="checkbox checkbox-sm"
+                                data-testid="force-flag" />
+                            <span class="label-text">Forcer même si la version SYSVOL est déjà à jour (équivalent <code class="font-mono">--force</code>).</span>
+                        </label>
+                    </div>
+                    <div class="alert alert-error mt-3">
+                        <i class="fa-solid fa-sitemap"></i>
+                        <div>
+                            <p class="text-sm">
+                                <strong>Liaisons OU :</strong> <code class="font-mono">import_gpo</code> applique les
+                                liaisons définies dans la template — et <strong>à défaut de section
+                                <code class="font-mono">[links]</code>, lie la GPO au domaine entier</strong>. Vérifiez
+                                impérativement les liaisons après publication via
+                                <code class="font-mono">/admin/settings/gpo/{guid}/links</code>.
+                            </p>
+                        </div>
+                    </div>
+                </x-molecules.modal.section>
+
+                <x-slot:footer>
+                    <button type="button" class="btn btn-ghost btn-sm" wire:click="closePublishModal"
+                        data-testid="modal-cancel">
+                        Annuler
+                    </button>
+                    <button type="button" class="btn btn-warning btn-sm" wire:click="confirmPublish"
+                        wire:loading.attr="disabled" data-testid="modal-confirm-publish">
+                        <span wire:loading.remove wire:target="confirmPublish">
+                            <i class="fa-solid fa-upload"></i>
+                            Confirmer la publication
+                        </span>
+                        <span wire:loading wire:target="confirmPublish">
+                            <i class="fa-solid fa-circle-notch fa-spin"></i>
+                            Import SYSVOL en cours…
+                        </span>
+                    </button>
+                </x-slot:footer>
+            </x-molecules.modal>
+        @endif
+    @endcan
 </x-organisms.page>

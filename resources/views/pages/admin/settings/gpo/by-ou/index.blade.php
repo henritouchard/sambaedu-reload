@@ -26,6 +26,15 @@ new #[Title('GPOs par OU - SE4FS')] class extends Component {
 
     public string $ouSearch = '';
     public array $ouSuggestions = [];
+    public bool $ousDiscovered = false;
+
+    /**
+     * Liste des DN d'OU connues (whitelist côté serveur).
+     * Volontairement `private` (non exposée/mutable côté client) — rechargée à
+     * chaque requête dans boot() via le cache du repository (findings #8 + #17).
+     *
+     * @var list<string>
+     */
     private array $allOus = [];
 
     /** @var list<array{gpoName:string,gpoDisplayName:?string,origin:string,enforced:bool,disabled:bool}> */
@@ -42,6 +51,10 @@ new #[Title('GPOs par OU - SE4FS')] class extends Component {
     public function boot(GpoService $service): void
     {
         $this->gpoService = $service;
+
+        // Rechargé à chaque requête Livewire : $allOus est private donc non
+        // hydraté entre deux requêtes. Coût faible — listAll() est caché 5 min.
+        $this->loadOus();
     }
 
     public function mount(): void
@@ -51,8 +64,6 @@ new #[Title('GPOs par OU - SE4FS')] class extends Component {
             403,
             'Permission server.admin requise.',
         );
-
-        $this->loadOus();
 
         // Si OU pré-sélectionnée via URL, charger immédiatement
         if (!empty($this->selectedOu)) {
@@ -66,10 +77,14 @@ new #[Title('GPOs par OU - SE4FS')] class extends Component {
         try {
             /** @var OrganizationalUnitRepository $repo */
             $repo = app(OrganizationalUnitRepository::class);
-            $this->allOus = $repo->listAll(300);
+            // listAll() retourne [dn => displayName] — on ne garde que les DN :
+            // tout l'aval (suggestions, whitelist, GpoService::getLinks) attend des DN.
+            $this->allOus = array_keys($repo->listAll(300));
         } catch (\Throwable) {
             $this->allOus = [];
         }
+
+        $this->ousDiscovered = $this->allOus !== [];
     }
 
     public function updatedOuSearch(): void
@@ -198,21 +213,25 @@ new #[Title('GPOs par OU - SE4FS')] class extends Component {
     /**
      * Retourne le DN parent d'un DN LDAP.
      * Ex: "OU=Salles,OU=Postes,DC=example,DC=org" → "OU=Postes,DC=example,DC=org"
-     * Retourne null si le DN est à la racine (DC=... uniquement).
+     *     "OU=Postes,DC=example,DC=org"           → "DC=example,DC=org" (racine domaine)
+     * Retourne null si le DN est déjà la racine (DC=... uniquement) : la racine
+     * fait partie de la chaîne d'héritage (les GPO domaine y sont liées), mais
+     * n'a pas de parent.
      */
     private function getParentDn(string $dn): ?string
     {
+        // Déjà à la racine du domaine (uniquement des DC=) → pas de parent
+        if (!str_contains(strtoupper($dn), 'OU=') && !str_contains(strtoupper($dn), 'CN=')) {
+            return null;
+        }
+
         // Split sur la première virgule
         $commaPos = strpos($dn, ',');
         if ($commaPos === false) {
             return null;
         }
-        $parent = substr($dn, $commaPos + 1);
-        // Si le parent ne contient que des DC=, c'est la racine
-        if (!str_contains(strtoupper($parent), 'OU=') && !str_contains(strtoupper($parent), 'CN=')) {
-            return null;
-        }
-        return $parent;
+
+        return substr($dn, $commaPos + 1);
     }
 
     /**
@@ -254,8 +273,10 @@ new #[Title('GPOs par OU - SE4FS')] class extends Component {
             </ul>
         </div>
 
-        {{-- Sélecteur OU --}}
-        <div class="card bg-base-100 border border-base-300 shadow-sm">
+        {{-- Sélecteur OU — z-20 : la card doit passer au-dessus des cards de
+             résultats (elles aussi position:relative via daisyUI) pour que le
+             dropdown de suggestions ne soit pas recouvert. --}}
+        <div class="card bg-base-100 border border-base-300 shadow-sm z-20">
             <div class="card-body py-4">
                 <h3 class="font-semibold flex items-center gap-2 mb-3">
                     <i class="fa-solid fa-sitemap text-primary text-sm"></i>
@@ -295,7 +316,7 @@ new #[Title('GPOs par OU - SE4FS')] class extends Component {
                         </ul>
                     @endif
 
-                    @if (empty($allOus) && empty($selectedOu))
+                    @if (!$ousDiscovered && empty($selectedOu))
                         <p class="text-xs text-warning mt-2">
                             <i class="fa-solid fa-triangle-exclamation"></i>
                             Aucune OU découverte dans l'AD. Vérifiez la sync AD ou

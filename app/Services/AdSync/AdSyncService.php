@@ -11,6 +11,7 @@ use App\LdapModels\DeviceGroupTagModel;
 use App\LdapModels\MachineModel;
 use App\Models\WorkstationGroup;
 use App\Models\Workstation;
+use App\Observers\WorkstationObserver;
 use Illuminate\Support\Facades\Log;
 use LdapRecord\Models\ActiveDirectory\Group;
 use LdapRecord\Models\ActiveDirectory\OrganizationalUnit;
@@ -323,18 +324,14 @@ class AdSyncService
 
             $oldGroups = $this->getMachineGroups($machineAd);
 
-            $connection = $machineAd->getConnection()->getLdapConnection();
-            $oldDn = $machineAd->getDn();
-            $newRdn = "CN={$machineName}";
-            $newParentDn = $targetOu->getDn();
-            
-            $result = @ldap_rename($connection, $oldDn, $newRdn, $newParentDn, true);
-            if (!$result) {
-                $error = ldap_error($connection);
-                return ['success' => false, 'error' => "Erreur LDAP rename: $error"];
+            try {
+                $machineAd->move($targetOu);
+            } catch (\LdapRecord\LdapRecordException $e) {
+                return ['success' => false, 'error' => "Erreur LDAP rename: {$e->getMessage()}"];
             }
-            
+
             $machineAd = $this->findMachine($machineName);
+            $this->syncAdDnFromMachine($machine, $machineAd);
             $newGroups = $this->getSalleHierarchyGroups($targetSalle);
 
             foreach ($oldGroups as $oldGroup) {
@@ -508,6 +505,28 @@ class AdSyncService
         return MachineModel::in($computersDn)
             ->where('cn', '=', $name)
             ->first();
+    }
+
+    /**
+     * Rafraîchit `workstations.ad_dn` après un déplacement d'OU.
+     * Iso pattern {@see \App\Jobs\AdSync\WorkstationAdSyncJob::syncAdDnFromMachine()}.
+     */
+    private function syncAdDnFromMachine(Workstation $workstation, ?MachineModel $machineAd): void
+    {
+        $dn = (string) $machineAd?->getDn();
+        if ($dn === '' || (string) $workstation->ad_dn === $dn) {
+            return;
+        }
+
+        WorkstationObserver::withoutSync(function () use ($workstation, $dn): void {
+            $workstation->ad_dn = $dn;
+            $workstation->save();
+        });
+
+        Log::info('[AdSyncService] ad_dn PG rafraîchi après déplacement OU', [
+            'id' => $workstation->id,
+            'ad_dn' => $dn,
+        ]);
     }
 
     private function getMachineGroups(MachineModel $machine): array

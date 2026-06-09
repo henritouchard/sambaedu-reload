@@ -493,6 +493,16 @@ return [
         // des fichiers .pol / .xml / .ini de policies (Stories 16.3, 16.4).
         'sysvol_path' => '/var/lib/samba/sysvol',
 
+        // Répertoire des archives-template GPO livrées par le paquet Debian
+        // `sambaedu-gpo` (parité legacy `gpo.inc.php` list_gpo_templates /
+        // get_gpo_template_info). Chaque entrée (`<name>.zip` ou répertoire
+        // `<name>/` contenant un `GPT.INI`) est une GPO **publiable** : son
+        // `displayName` (section `[General]`) sert de clé de résolution avec
+        // une GPO de l'AD. Scanné par `GpoTemplateRegistry` pour décider si une
+        // GPO peut être (re)publiée dans SYSVOL via `import_gpo`. Overridable
+        // pour tests/CI ou installation atypique.
+        'templates_dir' => env('GPO_TEMPLATES_DIR', '/usr/share/sambaedu/gpo/'),
+
         // Répertoire de travail pour `samba-tool gpo fetch` — parité legacy
         // gpo.inc.php:1053. À garder lisible/écrivable par le user PHP-FPM.
         'policies_temp_path' => '/var/www/sambaedu/temp/policies',

@@ -105,4 +105,50 @@ final class MigrationStatusChecker
 
         return strtolower($candidate);
     }
+
+    /**
+     * Résout l'UUID d'un poste depuis le paramètre legacy `machine` (cn).
+     *
+     * Correctif 2026-06-05 : les scripts GPO legacy (templates sambaedu-gpo,
+     * cf. `applications/logon.cmd` sysvol) n'envoient **jamais** de `uuid` —
+     * seulement `machine=%computername%`. Sans résolution serveur, le
+     * bootstrap_token est minté non lié et l'enroll échoue systématiquement
+     * en 401 `uuid_mismatch` (fail-closed 16.11) : aucun poste passant par
+     * la GPO ne peut migrer. On résout donc l'uuid en DB par le nom.
+     *
+     * Pas d'affaiblissement sécurité : `uuid` était déjà un input client
+     * non authentifié ; le couple token↔uuid ne garantit que la cohérence
+     * mint/enroll, pas l'authenticité du poste.
+     *
+     * Best-effort : null si paramètre absent/invalide, poste inconnu ou
+     * uuid SQL vide (poste legacy jamais enrôlé iPXE).
+     */
+    public function resolveUuidFromMachineName(Request $request): ?string
+    {
+        $machine = trim((string) $request->input('machine', ''));
+        // Pattern cn NetBIOS/sAMAccountName : pas de wildcard ni méta LIKE.
+        if ($machine === '' || preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/', $machine) !== 1) {
+            return null;
+        }
+
+        try {
+            $uuid = \App\Models\Workstation::query()
+                ->whereRaw('LOWER(name) = ?', [strtolower($machine)])
+                ->value('uuid');
+        } catch (Throwable $e) {
+            Log::channel('auth-v1')->warning(
+                '[MigrationStatusChecker] migration.uuid.machine_lookup_failed',
+                [
+                    'action_type' => 'migration.uuid.machine_lookup_failed',
+                    'error' => $e->getMessage(),
+                ],
+            );
+
+            return null;
+        }
+
+        $uuid = trim((string) $uuid);
+
+        return $uuid !== '' ? strtolower($uuid) : null;
+    }
 }

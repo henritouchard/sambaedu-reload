@@ -130,6 +130,14 @@ final class MigrationFragmentRenderer
             // compilé Blade — on la préfixe ici pour les fragments Linux.
             if ($os === 'linux') {
                 $body = "#!/bin/bash\n" . $body;
+            } else {
+                // Correctif 2026-06-05 (bug terrain windaube) : le template
+                // Blade est stocké en fins de ligne Unix (LF) — or cmd.exe
+                // exige CRLF. Un .cmd en LF-only désaligne le parseur batch
+                // qui exécute des fragments de lignes au milieu des mots
+                // ("'gration' n'est pas reconnu…") : le fragment n'a jamais
+                // été exécutable. Normalisation systématique en CRLF.
+                $body = $this->toCrlf($body);
             }
         } catch (CaUnavailableException $e) {
             // Story 16.13bis — Correction Opus-B : en production, CA absent
@@ -179,6 +187,10 @@ final class MigrationFragmentRenderer
             // Story 16.13bis : voir renderFullFragment — shebang préfixée en PHP.
             if ($os === 'linux') {
                 $body = "#!/bin/bash\n" . $body;
+            } else {
+                // Correctif 2026-06-05 : CRLF obligatoire pour cmd.exe — voir
+                // renderFullFragment (le fallback inline ci-dessous l'avait déjà).
+                $body = $this->toCrlf($body);
             }
         } catch (Throwable $e) {
             Log::channel('auth-v1')->error(
@@ -200,6 +212,16 @@ final class MigrationFragmentRenderer
         $this->writeCache($cacheKey, $body);
 
         return $body;
+    }
+
+    /**
+     * Normalise les fins de ligne en CRLF (exigence cmd.exe pour les
+     * fragments Windows). Idempotent : les CRLF déjà présents ne sont pas
+     * doublés.
+     */
+    private function toCrlf(string $body): string
+    {
+        return preg_replace('/\r?\n/', "\r\n", $body) ?? $body;
     }
 
     /**

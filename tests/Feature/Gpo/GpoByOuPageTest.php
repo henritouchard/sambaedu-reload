@@ -55,8 +55,20 @@ class GpoByOuPageTest extends TestCase
         return User::query()->create(['login' => $login, 'role' => 'eleve', 'is_active' => true]);
     }
 
-    private function bindOuRepo(array $ous = []): void
+    /**
+     * Mock du repository OU. Respecte le contrat réel de listAll() :
+     * tableau associatif `[dn => displayName]`
+     * (cf. {@see \App\Repositories\OrganizationalUnitRepository::listAll()}).
+     *
+     * @param list<string> $ouDns Liste de DN, convertie en map dn => displayName
+     */
+    private function bindOuRepo(array $ouDns = []): void
     {
+        $ous = [];
+        foreach ($ouDns as $dn) {
+            $ous[$dn] = \App\LdapModels\OrganizationalUnitModel::extractOuNameFromDn($dn) ?: $dn;
+        }
+
         $this->app->bind(\App\Repositories\OrganizationalUnitRepository::class, function () use ($ous) {
             $mock = Mockery::mock(\App\Repositories\OrganizationalUnitRepository::class);
             $mock->shouldReceive('listAll')->andReturn($ous);

@@ -18,41 +18,46 @@ class AppProfileSeeder extends Seeder
         DB::statement('TRUNCATE app_profile_application, app_profile_workstation_group, app_profile_workstation, app_profiles RESTART IDENTITY CASCADE');
         $this->command->info('Tables app_profiles vidées.');
 
-        // Créer des profils applicatifs
+        // Les profils référencent uniquement des apps réellement installées
+        // par AppStoreInstallSeeder (mêmes apps partout, volontairement) :
+        // un app_id inventé serait publié dans profiles.xml sans exister dans
+        // packages.xml, et le client WPKG ne pourrait rien installer.
+        $seedApps = AppStoreInstallSeeder::SEED_APPS;
+
         $profiles = [
             [
                 'name' => 'base-windows',
                 'display_name' => 'Applications de base Windows',
                 'description' => 'Suite logicielle standard pour tous les postes Windows',
-                'apps' => ['firefox', 'libreoffice', 'vlc', '7zip'],
+                'apps' => $seedApps,
                 'groups' => ['windows-all'],
             ],
             [
                 'name' => 'dev-tools',
                 'display_name' => 'Outils de développement',
                 'description' => 'IDE et outils pour les cours de programmation',
-                'apps' => ['vscode', 'python3', 'notepadpp'],
+                'apps' => $seedApps,
                 'groups' => ['info1', 'info2'],
             ],
             [
                 'name' => 'multimedia',
                 'display_name' => 'Suite multimédia',
                 'description' => 'Logiciels audio/vidéo',
-                'apps' => ['vlc', 'audacity', 'openshot'],
+                'apps' => $seedApps,
                 'groups' => ['info3'],
             ],
             [
                 'name' => 'graphisme',
                 'display_name' => 'Suite graphisme',
                 'description' => 'Logiciels de création graphique',
-                'apps' => ['gimp', 'inkscape', 'blender'],
+                'apps' => $seedApps,
                 'groups' => ['techno'],
             ],
             [
                 'name' => 'education',
                 'display_name' => 'Logiciels éducatifs',
                 'description' => 'Applications pédagogiques',
-                'apps' => ['scratch', 'geogebra'],
+                'apps' => $seedApps,
                 'groups' => ['cdi', 'physique', 'svt'],
             ],
         ];
@@ -69,6 +74,8 @@ class AppProfileSeeder extends Seeder
             $appIds = Application::whereIn('app_id', $profileData['apps'])->pluck('id')->toArray();
             if (!empty($appIds)) {
                 $profile->applications()->attach($appIds);
+            } elseif (!empty($profileData['apps'])) {
+                $this->command->warn("Profil {$profileData['name']} : aucune app trouvée parmi [" . implode(', ', $profileData['apps']) . '] — AppStoreInstallSeeder a-t-il réussi ?');
             }
 
             // Associer les groupes

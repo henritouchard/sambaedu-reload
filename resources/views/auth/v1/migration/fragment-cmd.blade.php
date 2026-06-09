@@ -43,11 +43,21 @@ REM Token éphémère 32 chars hex — validé par RequireBootstrapToken à l'en
 set "BOOTSTRAP_TOKEN={{ $bootstrap_token }}"
 set "REFRESH_SCRIPT=%ProgramData%\SambaEdu\sambaedu-refresh.cmd"
 
+REM --- 2bis. Log local de migration (correctif 2026-06-05) ---
+REM Les echos console sont invisibles en script startup/logon GPO — sans
+REM trace locale, un echec de migration est indiagnosticable depuis le
+REM poste. Best-effort : si %ProgramData%\SambaEdu n'est pas inscriptible
+REM (contexte user non eleve), les >> echouent en silence (2>nul).
+if not exist "%ProgramData%\SambaEdu" mkdir "%ProgramData%\SambaEdu" >nul 2>&1
+set "MIGRATION_LOG=%ProgramData%\SambaEdu\migration.log"
+echo [%date% %time%] migration start (user=%username%) >> "%MIGRATION_LOG%" 2>nul
+
 REM --- 3. Decode & install CA root local ---
 set "CA_TMP=%TEMP%\sambaedu-ca-root.crt"
 powershell -NoProfile -Command "[System.IO.File]::WriteAllBytes('%CA_TMP%', [System.Convert]::FromBase64String('%CA_CERT_B64%'))"
 if not exist "%CA_TMP%" (
     echo [SambaEdu] Echec decodage CA root. Migration annulee.
+    echo [%date% %time%] ECHEC decodage CA root >> "%MIGRATION_LOG%" 2>nul
     exit /b 1
 )
 
@@ -63,27 +73,32 @@ for %%S in ("%CA_TMP%") do if %%~zS LSS 100 (
 certutil.exe -addstore -f "Root" "%CA_TMP%" >nul 2>&1
 if errorlevel 1 (
     echo [SambaEdu] Echec installation CA root. Migration annulee.
+    echo [%date% %time%] ECHEC certutil addstore Root - droits admin requis, normal en contexte logon user, la migration passera au boot suivant en SYSTEM >> "%MIGRATION_LOG%" 2>nul
     del "%CA_TMP%" >nul 2>&1
     exit /b 1
 )
 
-REM --- 4. Collecte metadata machine ---
-for /f "tokens=*" %%U in ('powershell -NoProfile -Command "(Get-CimInstance Win32_ComputerSystemProduct).UUID"') do set "MACHINE_UUID=%%U"
-for /f "tokens=*" %%M in ('powershell -NoProfile -Command "(Get-NetAdapter -Physical | Where-Object Status -eq 'Up' | Select-Object -First 1).MacAddress"') do set "MACHINE_MAC=%%M"
-set "MACHINE_HOSTNAME=%COMPUTERNAME%"
-
-REM --- 5. POST /api/v1/agent/enroll (HTTPS strict, validation cert obligatoire) ---
+REM --- 4+5. Collecte metadata machine + POST /api/v1/agent/enroll ---
+REM Correctif 2026-06-05 (bug terrain windaube) — l'ancien decoupage en
+REM 3 "for /f" + reinjection %PAYLOAD% etait casse a deux niveaux :
+REM  1. la spec de commande for /f est delimitee par quotes simples, or la
+REM     commande contenait 'Up' entre quotes simples -> erreur de SYNTAXE
+REM     cmd, qui avorte TOUT le batch avant l'enroll (aucun POST emis) ;
+REM  2. le JSON de %PAYLOAD% (avec ses guillemets) etait reinjecte dans un
+REM     bloc cmd quote -> guillemets manges par le parsing cmd, JSON mutile.
+REM => collecte + construction JSON + POST fusionnes dans UN SEUL processus
+REM    PowerShell : aucune donnee ne transite plus par le parsing cmd.
 REM Le BOOTSTRAP_TOKEN a ete pose en debut de script via "set" (cf. Story
 REM 16.13bis Correction Q1 Option A). PowerShell le recupere via $env:BOOTSTRAP_TOKEN
 REM (set propage l'env vers les sous-processus). Si APCu cote serveur a
 REM rejette le store, l'enroll renvoie 401 et le fragment quitte sans
 REM marquer Migrated=1 (retentative au prochain boot).
-for /f "delims=" %%P in ('powershell -NoProfile -Command "$b=@{uuid='%MACHINE_UUID%'; mac='%MACHINE_MAC%'; hostname='%MACHINE_HOSTNAME%'; os='windows'} | ConvertTo-Json -Compress; Write-Output $b"') do set "PAYLOAD=%%P"
-
 powershell -NoProfile -Command ^
   "try {" ^
+  "  $uuid = (Get-CimInstance Win32_ComputerSystemProduct).UUID;" ^
+  "  $mac = (Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1).MacAddress;" ^
+  "  $body = @{ uuid = $uuid; mac = $mac; hostname = $env:COMPUTERNAME; os = 'windows' } | ConvertTo-Json -Compress;" ^
   "  $headers = @{ 'X-Bootstrap-Token' = $env:BOOTSTRAP_TOKEN; 'Content-Type' = 'application/json' };" ^
-  "  $body = '%PAYLOAD%';" ^
   "  $resp = Invoke-RestMethod -Uri '%ENROLL_ENDPOINT%' -Method POST -Headers $headers -Body $body;" ^
   "  $accessProtected = [System.Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($resp.access_token), $null, 'LocalMachine');" ^
   "  $refreshProtected = [System.Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($resp.refresh_token), $null, 'LocalMachine');" ^
@@ -97,13 +112,15 @@ powershell -NoProfile -Command ^
   "} catch {" ^
   "  Write-Host ('[SambaEdu] Enrollment echoue : ' + $_.Exception.Message);" ^
   "  exit 1" ^
-  "}"
+  "}" >> "%MIGRATION_LOG%" 2>&1
 
 if errorlevel 1 (
     echo [SambaEdu] Migration annulee suite a echec enroll.
+    echo [%date% %time%] ECHEC enroll - voir message PowerShell ci-dessus >> "%MIGRATION_LOG%" 2>nul
     del "%CA_TMP%" >nul 2>&1
     exit /b 1
 )
+echo [%date% %time%] enroll OK >> "%MIGRATION_LOG%" 2>nul
 
 REM --- 6. Write registre HKLM\SOFTWARE\SambaEdu\AuthV1\Endpoints\* ---
 REM Pivot par fichier conf (D6) : les futurs scripts logon Windows liront
@@ -127,6 +144,7 @@ REM precedentes sont idempotentes : install CA, tokens, registre).
 powershell -NoProfile -Command "Set-ItemProperty -Path 'HKLM:\SOFTWARE\SambaEdu\AuthV1' -Name 'Migrated' -Value 1 -Type DWord;"
 
 REM --- 8. Tache planifiee refresh tokens (parite 16.11) ---
+echo [%date% %time%] migration terminee, reboot dans 30s >> "%MIGRATION_LOG%" 2>nul
 if not exist "%ProgramData%\SambaEdu" mkdir "%ProgramData%\SambaEdu" >nul 2>&1
 
 powershell -NoProfile -Command ^

@@ -65,6 +65,29 @@ final class MigrationController extends Controller
     /** Content-Type renvoyé (parité iso-legacy `applications.php`). */
     private const CONTENT_TYPE = 'text/plain; charset=utf-8';
 
+    /**
+     * Correctif 2026-06-05 (gap post-migration, décision Henri) : handlers
+     * fonctionnels iso-legacy par endpoint. Tous portés/testés (Epics 16-17)
+     * mais jamais routés — la story 16.13bis a donné les 8 routes au fragment
+     * de migration en supposant un « client natif » consommant
+     * `Endpoints\*Url` qui n'existe pas encore. Sans passthrough, un poste
+     * migré ne reçoit plus AUCUNE conf applicative (wallpaper, shortcuts, …)
+     * et les sous-appels `*_out.php` du script assemblé enregistreraient un
+     * fragment cmd en guise d'image/conf.
+     *
+     * @var array<string, array{class-string, string}>
+     */
+    private const PASSTHROUGH_HANDLERS = [
+        'applications' => [\App\Http\Controllers\Gpo\ApplicationsScriptsController::class, 'generate'],
+        'wallpaper' => [\App\Http\Controllers\WallpaperController::class, 'legacyOut'],
+        'network' => [\App\Http\Controllers\Gpo\NetworkOutController::class, 'legacyOut'],
+        'veyon' => [\App\Http\Controllers\Gpo\VeyonOutController::class, 'legacyOut'],
+        'associations' => [\App\Http\Controllers\Gpo\AssociationsOutController::class, 'legacyOut'],
+        'shortcuts' => [\App\Http\Controllers\Api\v1\ShortcutExportController::class, 'legacyDispatch'],
+        'firefox' => [\App\Http\Controllers\AppPolicyController::class, 'legacyFirefoxOut'],
+        'thunderbird' => [\App\Http\Controllers\AppPolicyController::class, 'legacyThunderbirdOut'],
+    ];
+
     public function __construct(
         private readonly MigrationFragmentRenderer $renderer,
         private readonly MigrationStatusChecker $statusChecker,
@@ -97,10 +120,59 @@ final class MigrationController extends Controller
         $os = $this->renderer->detectOs($request);
         $declaredUuid = $this->statusChecker->extractDeclaredUuid($request);
 
+        // Correctif 2026-06-05 : les scripts GPO legacy n'envoient pas de
+        // `uuid` (seulement `machine`) — sans résolution serveur, le token
+        // minté non lié condamne l'enroll au 401 uuid_mismatch (16.11
+        // fail-closed). Cf. MigrationStatusChecker::resolveUuidFromMachineName.
+        if ($declaredUuid === null) {
+            $declaredUuid = $this->statusChecker->resolveUuidFromMachineName($request);
+            if ($declaredUuid !== null) {
+                Log::channel('auth-v1')->info(
+                    '[MigrationController] migration.uuid.resolved_from_machine',
+                    [
+                        'action_type' => 'migration.uuid.resolved_from_machine',
+                        'uuid_prefix' => substr(hash('sha256', $declaredUuid), 0, 8),
+                        'ip' => $request->ip(),
+                    ],
+                );
+            }
+        }
+
         // Trace systématique (status='started') — best-effort.
         $this->statusChecker->logAttempt($request, $os, $declaredUuid);
 
         $alreadyMigrated = $this->statusChecker->isMigrated($declaredUuid);
+
+        // Correctif 2026-06-05 (gap post-migration, décision Henri) — voir
+        // PASSTHROUGH_HANDLERS. Deux déclencheurs :
+        //  - poste migré (uuid résolu) : `applications.php` sert le script
+        //    assemblé iso-legacy (confiance LAN, parité décision wpkg
+        //    2026-05-04 #3) au lieu du no-op ;
+        //  - requête porteuse d'un `id` de contexte 32-hex : c'est un
+        //    sous-appel du script assemblé (seul `generate()` pose ces
+        //    contextes) — les appels `*_out` n'envoient ni uuid ni machine,
+        //    l'id est leur seul marqueur. Contexte expiré → le handler
+        //    répond 404 « Context expired » (iso-legacy), bien moins nocif
+        //    qu'un fragment cmd enregistré en wallpaper.jpg.
+        $handler = self::PASSTHROUGH_HANDLERS[$endpoint] ?? null;
+        $hasContextId = preg_match('/^[a-f0-9]{32}$/i', (string) $request->input('id', '')) === 1;
+        $shouldPassthrough = $endpoint === 'applications'
+            ? ($alreadyMigrated || $hasContextId)               // poste migré OU sous-appel porteur d'un id de contexte (ex. fragment powershell `interpreter=powershell` + id, sans machine) ; sinon il reçoit à tort le fragment de migration CMD
+            : $hasContextId;                                    // sous-appel du script assemblé (seul marqueur) ; uuid sans id → noop (iso 16.13bis)
+        if ($handler !== null && $shouldPassthrough) {
+            Log::channel('auth-v1')->info(
+                '[MigrationController] migration.passthrough',
+                [
+                    'action_type' => 'migration.passthrough',
+                    'endpoint' => $endpoint,
+                    'trigger' => $alreadyMigrated ? 'migrated' : 'context_id',
+                    'uuid_prefix' => $declaredUuid !== null ? substr(hash('sha256', $declaredUuid), 0, 8) : null,
+                    'ip' => $request->ip(),
+                ],
+            );
+
+            return app($handler[0])->{$handler[1]}($request);
+        }
 
         if ($alreadyMigrated) {
             Log::channel('auth-v1')->info(

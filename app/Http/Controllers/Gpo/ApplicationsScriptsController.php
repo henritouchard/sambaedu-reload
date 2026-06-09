@@ -50,8 +50,10 @@ class ApplicationsScriptsController extends Controller
     /** Regex iso-legacy user samaccountname / login. */
     private const USER_REGEX = '/^[A-Za-z0-9_.\-$]{1,64}$/';
 
-    /** Regex iso-legacy uuid (32-36 hex avec tirets, vide accepté). */
-    private const UUID_REGEX = '/^[a-f0-9\-]{0,36}$/';
+    /** Regex iso-legacy uuid (32-36 hex avec tirets, vide accepté).
+     * Correctif 2026-06-05 : flag `i` — Windows renvoie l'UUID SMBIOS en
+     * MAJUSCULES (footer `uuid=%UUID%`), le 400 cassait le log `ret=0`. */
+    private const UUID_REGEX = '/^[a-f0-9\-]{0,36}$/i';
 
     /** Regex iso-legacy action (`^((remote)-)?([a-z]*)(-(system|server|once))?$`). */
     private const ACTION_REGEX = '/^((remote)-)?([a-z]*)(-(system|server|once))?$/U';

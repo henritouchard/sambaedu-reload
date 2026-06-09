@@ -210,6 +210,13 @@ class EnrollController extends Controller
         string $os,
         string $jti,
     ): void {
+        // Correctif 2026-06-05 : normalisation lowercase obligatoire — Windows
+        // déclare son UUID SMBIOS en MAJUSCULES, or `isMigrated()` (et tout le
+        // module migration) compare en lowercase : sans normalisation, un
+        // poste Windows enrôlé n'était jamais reconnu migré (fragment full
+        // re-servi à chaque boot, passthrough jamais déclenché).
+        $workstationUuid = strtolower($workstationUuid);
+
         try {
             WorkstationMigrationStatus::updateOrCreate(
                 ['workstation_uuid' => $workstationUuid],

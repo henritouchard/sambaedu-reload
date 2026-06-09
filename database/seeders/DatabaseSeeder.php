@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
             WorkstationSeeder::class,
             DepotSeeder::class,
             DepotApplicationSeeder::class,
+            AppStoreInstallSeeder::class,
             AppProfileSeeder::class,
             ShortcutSeeder::class,
             WpkgReportSeeder::class,

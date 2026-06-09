@@ -172,7 +172,16 @@ class OrganizationalUnitRepository
         if ($cacheSeconds <= 0) {
             return $resolver();
         }
-        return \Illuminate\Support\Facades\Cache::remember($cacheKey, $cacheSeconds, $resolver);
+
+        $result = \Illuminate\Support\Facades\Cache::remember($cacheKey, $cacheSeconds, $resolver);
+
+        // Ne pas laisser en cache un résultat vide (échec LDAP transitoire) :
+        // la prochaine requête retentera au lieu d'afficher 5 min de liste vide.
+        if ($result === []) {
+            \Illuminate\Support\Facades\Cache::forget($cacheKey);
+        }
+
+        return $result;
     }
 
     /**
