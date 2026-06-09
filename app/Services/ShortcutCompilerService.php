@@ -426,7 +426,12 @@ class ShortcutCompilerService
             $path = match ($shortcut->place) {
                 Shortcut::PLACE_STARTUP => '%userprofile%\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\',
                 Shortcut::PLACE_TASKBAR => '%userprofile%\\AppData\\Roaming\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar\\',
-                default => '%userprofile%\\Bureau\\',
+                // Pansement temporaire (Bug C) : défaut = bureau RÉSEAU (poste partagé),
+                // en attendant la story PosteEnvironment (shared_local/personal_local/nomade).
+                // Le port natif avait figé la branche locale (legacy `port_perdir`) → le
+                // bureau étant redirigé vers le réseau, `%userprofile%\Bureau` n'existe pas
+                // → curl(23) sur les postes partagés, aucun raccourci posé.
+                default => '\\\\%se4fs%\\users\\%username%\\Bureau\\',
             };
 
             // Télécharger le .lnk
