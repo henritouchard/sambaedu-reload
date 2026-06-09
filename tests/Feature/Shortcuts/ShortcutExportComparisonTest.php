@@ -105,7 +105,14 @@ class ShortcutExportComparisonTest extends TestCase
         $link = preg_replace("/\\\$user/", $this->testUser, $link);
         $args = preg_replace("/\\\$user/", $this->testUser, $args);
 
-        if (empty($icon)) {
+        // Même résolution d'IconLocation que ShortcutCompilerService::generateWindowsLnk :
+        // un windows_icon vide OU un nom NU (icône uploadée — sans séparateur de
+        // chemin, extension, virgule ni %) se résout vers le .ico déposé dans %temp%
+        // par le script de logon. Les références explicites (firefox.exe,0, C:\…,
+        // %APPDATA%\…) sont préservées. Le legacy ne stockait jamais de nom nu ;
+        // c'est une donnée introduite par SE5 (handleIconUpload) qu'il faut neutraliser.
+        // Le format binaire .lnk reste validé indépendamment par create_windows_lnk.
+        if (empty($icon) || !preg_match('#[\\\\/.,%]#', $icon)) {
             $icon = $this->testUserprofile . "\\AppData\\Local\\Temp\\" . $shortcut->name . ".ico";
         }
 

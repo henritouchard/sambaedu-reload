@@ -174,7 +174,17 @@ class ShortcutCompilerService
         $path = $this->substituteVariables($shortcut->windows_path ?? '', $user, $userprofile);
         $icon = $shortcut->windows_icon;
 
-        if (empty($icon)) {
+        // Icône uploadée : handleIconUpload() stocke le nom NU du raccourci dans
+        // windows_icon (le .ico réel vit dans /etc/sambaedu/applications/shortcuts/
+        // et est téléchargé par le script de logon dans %temp%\<name>.ico). Un nom
+        // nu inscrit tel quel dans l'IconLocation du .lnk est irrésoluble par
+        // Windows → icône « feuille blanche ». On le résout donc, comme le cas
+        // vide, vers le chemin absolu où le script dépose le .ico.
+        // On PRÉSERVE en revanche les références explicites — chemin, extension,
+        // index de ressource ou variable d'environnement (ex. firefox.exe,0,
+        // %APPDATA%\app.ico, C:\...) — détectées par la présence d'un séparateur
+        // de chemin, d'un point, d'une virgule ou d'un %.
+        if (empty($icon) || !preg_match('#[\\\\/.,%]#', $icon)) {
             $icon = $userprofile . "\\AppData\\Local\\Temp\\" . $shortcut->name . ".ico";
         }
 
@@ -285,8 +295,10 @@ class ShortcutCompilerService
                     ]);
                 }
             }
-            // Fallback
-            $fallback = base_path('../elements/images/system-run.ico');
+            // Fallback : icône générique embarquée (parité legacy). Évite que le
+            // script de logon écrive une page d'erreur 404 dans %temp%\<name>.ico
+            // → Windows afficherait une « feuille blanche ».
+            $fallback = public_path('elements/images/system-run.ico');
             return file_exists($fallback) ? $fallback : null;
         }
 
@@ -295,7 +307,7 @@ class ShortcutCompilerService
             return $basePath . $shortcutName . '.png';
         }
 
-        $fallback = base_path('../elements/images/system-run.png');
+        $fallback = public_path('elements/images/system-run.png');
         return file_exists($fallback) ? $fallback : null;
     }
 
