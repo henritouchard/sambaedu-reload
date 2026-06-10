@@ -8,6 +8,7 @@ use App\Dto\Overlay\OverlayAlert;
 use App\Dto\Overlay\OverlayPayload;
 use App\Dto\Wallpaper\WallpaperContext;
 use App\Models\OverlaySignal;
+use App\Models\Workstation;
 use Illuminate\Support\Carbon;
 
 /**
@@ -51,8 +52,13 @@ class OverlayService
 
         $submarine = (bool) config('sambaedu.veyon_submarine', false);
 
+        // Salles (groupes) du poste → match des signaux ciblés par salle.
+        $groupIds = Workstation::query()
+            ->where('uuid', $workstationUuid)
+            ->first()?->groups->pluck('id')->all() ?? [];
+
         $posted = OverlaySignal::query()
-            ->activeFor($workstationUuid, $ctx->userLogin)
+            ->activeFor($workstationUuid, $ctx->userLogin, $groupIds)
             ->get();
 
         foreach ($posted as $signal) {
@@ -95,6 +101,7 @@ class OverlayService
         string $title,
         string $text,
         ?string $workstationUuid = null,
+        ?int $workstationGroupId = null,
         ?string $userLogin = null,
         ?\DateTimeInterface $expiresAt = null,
     ): ?OverlaySignal {
@@ -116,6 +123,7 @@ class OverlayService
             // Normalise '' → null (review finding F) : un joker explicite, jamais
             // une chaîne vide qui fuiterait vers les polls sans session.
             'workstation_uuid' => ($workstationUuid ?? '') !== '' ? $workstationUuid : null,
+            'workstation_group_id' => $workstationGroupId,
             'user_login' => ($userLogin ?? '') !== '' ? $userLogin : null,
             'expires_at' => $expiresAt,
         ]);

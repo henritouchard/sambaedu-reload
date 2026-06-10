@@ -354,6 +354,21 @@ GUI ; JSON/jq/regex/syntaxe validés sur hôte) :
 - Caveats : non testé sur poste réel ; câblage du store JWT = TODO en tête des
   `fetch` ; install/autostart de l'outil = spike §6bis.
 
+## 6sexies. Canal `posted` exploitable — ciblage salle + UI admin (2026-06-09)
+
+Le canal `posted` est désormais pilotable par un admin (l'ancien besoin « infos
+à transmettre » devient un simple producteur de `postSignal`) :
+
+- **Ciblage à 4 mailles** : broadcast / **salle** (WorkstationGroup) / poste / user.
+  Ajout colonne `workstation_group_id` (migration 140000) + scope `activeFor`
+  étendu (match si le poste appartient à la salle ; `OverlayService` résout les
+  salles du poste au poll). Maille salle = décision métier 2026-06-09.
+- **UI** `resources/views/pages/parc-settings/overlay-messages/index.blade.php`
+  (Livewire SFC, gate `wallpaper.manage`, route `app.parc-settings.overlay-messages`) :
+  formulaire (titre/message/sévérité/cible/expiration) + liste + retrait.
+- Tests : `OverlayMessagesPageTest` (6) + ciblage salle dans `OverlayApiV1Test`.
+  **30 tests overlay verts** (80 assertions) sur VM.
+
 ## 7. À trancher / prochaines étapes
 
 - [ ] Valider la cible overlay (Rainmeter+Conky) vs pont PowerBGInfo.

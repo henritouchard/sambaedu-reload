@@ -70,6 +70,7 @@ class OverlayApiV1Test extends TestCase
             $t->string('title');
             $t->text('text');
             $t->string('workstation_uuid', 36)->nullable()->index();
+            $t->unsignedBigInteger('workstation_group_id')->nullable()->index();
             $t->string('user_login')->nullable()->index();
             $t->timestamp('expires_at')->nullable()->index();
             $t->timestamps();
@@ -346,5 +347,42 @@ class OverlayApiV1Test extends TestCase
             ->assertJsonPath('alerts.0.source', 'derived')
             ->assertJsonPath('alerts.1.source', 'posted')
             ->assertJsonCount(2, 'alerts');
+    }
+
+    #[Test]
+    public function signal_targeting_salle_appears_for_workstation_in_that_salle(): void
+    {
+        $seed = $this->seedWorkstationContext();
+
+        OverlaySignal::create([
+            'kind' => 'notice', 'severity' => 'info',
+            'title' => 'Pour la salle', 'text' => 'x',
+            'workstation_uuid' => null,
+            'workstation_group_id' => $seed['group']->id,
+            'user_login' => null, 'expires_at' => null,
+        ]);
+
+        $this->getJson($this->pollUrl(), $this->authHeaders())
+            ->assertOk()
+            ->assertJsonPath('alerts.0.title', 'Pour la salle')
+            ->assertJsonCount(1, 'alerts');
+    }
+
+    #[Test]
+    public function signal_targeting_another_salle_is_absent(): void
+    {
+        $this->seedWorkstationContext();
+
+        OverlaySignal::create([
+            'kind' => 'notice', 'severity' => 'info',
+            'title' => 'Autre salle', 'text' => 'x',
+            'workstation_uuid' => null,
+            'workstation_group_id' => 999999,
+            'user_login' => null, 'expires_at' => null,
+        ]);
+
+        $this->getJson($this->pollUrl(), $this->authHeaders())
+            ->assertOk()
+            ->assertJsonPath('alerts', []);
     }
 }

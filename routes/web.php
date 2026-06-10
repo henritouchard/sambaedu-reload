@@ -163,6 +163,12 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
             ->middleware('can:wallpaper.manage')
             ->name('wallpapers');
 
+        // Messages overlay « infos à transmettre » (POC successeur bandeau) —
+        // producteur de OverlayService::postSignal. Gate wallpaper.manage.
+        Route::livewire('/overlay-messages', 'pages::parc-settings.overlay-messages.index')
+            ->middleware('can:wallpaper.manage')
+            ->name('overlay-messages');
+
         // Personnalisation applications (story 4.8 — Firefox, Thunderbird…)
         Route::livewire('/app-customizations', 'pages::parc-settings.app-customizations.index')
             ->middleware('can:app.customize')

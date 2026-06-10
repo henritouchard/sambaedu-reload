@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $title
  * @property string $text
  * @property string|null $workstation_uuid
+ * @property int|null $workstation_group_id
  * @property string|null $user_login
  * @property \Illuminate\Support\Carbon|null $expires_at
  */
@@ -34,6 +35,7 @@ class OverlaySignal extends Model
         'title',
         'text',
         'workstation_uuid',
+        'workstation_group_id',
         'user_login',
         'expires_at',
     ];
@@ -47,17 +49,26 @@ class OverlaySignal extends Model
      *
      * Match si :
      *  - (workstation_uuid null OU = $uuid) ET
+     *  - (workstation_group_id null OU ∈ $groupIds = salles du poste) ET
      *  - (user_login null OU = $login) ET
      *  - (expires_at null OU > maintenant).
      *
      * @param  Builder<OverlaySignal>  $query
+     * @param  list<int>  $groupIds  ids des groupes (salles) auxquels le poste appartient.
      * @return Builder<OverlaySignal>
      */
-    public function scopeActiveFor(Builder $query, string $uuid, string $login): Builder
+    public function scopeActiveFor(Builder $query, string $uuid, string $login, array $groupIds = []): Builder
     {
         return $query
             ->where(function (Builder $w) use ($uuid): void {
                 $w->whereNull('workstation_uuid')->orWhere('workstation_uuid', $uuid);
+            })
+            ->where(function (Builder $w) use ($groupIds): void {
+                // Cible salle : matche si le poste appartient à la salle ciblée.
+                $w->whereNull('workstation_group_id');
+                if ($groupIds !== []) {
+                    $w->orWhereIn('workstation_group_id', $groupIds);
+                }
             })
             ->where(function (Builder $w) use ($login): void {
                 // Login vide = pas de session → uniquement les signaux joker
