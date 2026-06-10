@@ -1,0 +1,45 @@
+--[[
+  Adaptateur RENDER (Linux / Conky) du POC overlay SambaEdu.
+
+  Lit le fichier local /run/sambaedu/overlay.json (écrit par l'adaptateur
+  fetch overlay-fetch.sh) et affiche identité + machine + alertes en surcouche
+  transparente du fond d'écran. Aucun secret ici : la facade = le fichier local.
+
+  Dépendances poste : conky-all + jq.
+  POC — non testé sur poste réel. Cf. resources/overlay/README.md.
+]]
+
+conky.config = {
+    -- Surcouche transparente, ancrée en bas à gauche.
+    alignment = 'bottom_left',
+    gap_x = 48,
+    gap_y = 48,
+    minimum_width = 520,
+
+    own_window = true,
+    own_window_type = 'desktop',
+    own_window_transparent = true,
+    own_window_argb_visual = true,
+    own_window_argb_value = 0,
+    own_window_hints = 'undecorated,below,sticky,skip_taskbar,skip_pager',
+    double_buffer = true,
+
+    -- Relit le fichier local toutes les 10 s (≤ ttl_seconds du fetch).
+    update_interval = 10,
+
+    use_xft = true,
+    font = 'DejaVu Sans:size=11',
+    default_color = 'FFFFFF',
+    draw_shades = true,        -- ombre portée → lisible sur fond clair
+    default_shade_color = '000000',
+    override_utf8_locale = true,
+}
+
+-- Chaque ${execi} relit le JSON local. `// "—"` / `?` + `2>/dev/null` évitent
+-- toute erreur jq si le fichier est momentanément absent (boot, entre deux
+-- fetch) ou si un champ est null (review finding G).
+conky.text = [[
+${font DejaVu Sans:bold:size=15}${execi 10 jq -r '.identity.fullname // .identity.login // "—"' /run/sambaedu/overlay.json 2>/dev/null}${font}
+${color CCCCCC}${execi 10 jq -r '"\(.machine.name // "—") · \(.machine.room // "—")"' /run/sambaedu/overlay.json 2>/dev/null}${color}
+${voffset 6}${execi 10 jq -r '.alerts[]? | "[\(.severity|ascii_upcase)] \(.title) — \(.text)"' /run/sambaedu/overlay.json 2>/dev/null}
+]]

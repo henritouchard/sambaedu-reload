@@ -216,13 +216,35 @@ skin par `logon.linux` (déjà le script qui pose le wallpaper Linux).
 `WorkstationConfigContextResolver`). Renvoie le payload ci-dessous (pas une
 image). Paramètres `user`/`userprofile`/`os` comme `apiV1`.
 
-### Deux natures d'info — à ne pas confondre
+### Architecture : service `Overlay` (facade) + deux sources de signaux
+> Décision 2026-06-09 : un service **`Overlay`** encapsule la production du
+> payload de poll ET la gestion des signaux. La facade rend la source de chaque
+> alerte invisible au client (et permet de changer d'outil overlay sans toucher
+> au serveur).
+
+```
+Overlay (facade)
+├── pollPayload(OverlayContext): OverlayPayload   // lu par GET /overlay
+│     ├── identity        (depuis le contexte)
+│     ├── alerts[] source=derived   (recalculés chaque poll : veyon/session/quota)
+│     └── alerts[] source=posted    (signaux stockés, actifs pour ce poste/user)
+└── postSignal(target, OverlaySignal): void        // appelé par les producteurs
+      → persiste dans le store de signaux ; récupéré au(x) prochain(s) poll
+```
+
 - **`identity`** : qui/où (toujours présent).
-- **`alerts`** : **dérivées système** (veyon, multi-session, quota) — calculées
-  serveur, l'overlay ne fait que les afficher. Existent déjà (dans le composer).
-- **`notices`** : **messages rédigés par un admin** (« infos à transmettre ») —
-  **capacité NOUVELLE** (n'existe pas dans le composer aujourd'hui). C'est la
-  demande « message d'avertissement si certaines infos sont à transmettre ».
+- **signaux `derived`** : **dérivés système** (veyon, multi-session, quota) —
+  éphémères, recalculés serveur à chaque poll. Existent déjà (dans le composer) →
+  extraits dans `OverlaySignalBuilder`.
+- **signaux `posted`** : **le système poste un message → stocké → récupéré au
+  prochain poll**. Primitive de plomberie générique (push→pull). La future UI
+  admin « infos à transmettre » n'est qu'**un producteur** qui appelle
+  `Overlay::postSignal(...)`. Remplace l'ancien concept séparé `notices`.
+
+### Contrat simplifié : un seul tableau `alerts` avec `source`
+Plus de distinction `alerts`/`notices` côté client : **un tableau `alerts`**, chaque
+entrée porte `source: "derived" | "posted"`. L'overlay affiche
+`severity`/`title`/`text` sans se soucier de l'origine.
 
 ### Payload (exemple)
 ```json
@@ -238,17 +260,15 @@ image). Paramètres `user`/`userprofile`/`os` comme `apiV1`.
   },
   "machine": { "name": "SALLE201-PC03", "room": "Salle 201", "os": "windows" },
   "alerts": [
-    { "id": "veyon", "kind": "remote_control", "severity": "critical",
+    { "id": "veyon", "source": "derived", "kind": "remote_control", "severity": "critical",
       "title": "Prise de contrôle à distance en cours", "text": "…" },
-    { "id": "multi_session", "kind": "session", "severity": "warning",
+    { "id": "multi_session", "source": "derived", "kind": "session", "severity": "warning",
       "title": "Sessions multiples", "text": "Sessions détectées sur : PC07, PC12",
       "machines": ["PC07", "PC12"] },
-    { "id": "quota", "kind": "quota", "severity": "critical",
+    { "id": "quota", "source": "derived", "kind": "quota", "severity": "critical",
       "title": "Stockage saturé", "text": "…",
-      "partitions": [{ "label": "home", "used_mb": 4800, "soft_mb": 5000, "grace_days": 3 }] }
-  ],
-  "notices": [
-    { "id": "maintenance-2026-06-12", "severity": "info",
+      "partitions": [{ "label": "home", "used_mb": 4800, "soft_mb": 5000, "grace_days": 3 }] },
+    { "id": "sig-7f3a", "source": "posted", "kind": "notice", "severity": "info",
       "title": "Maintenance prévue",
       "text": "Sauvegardez vos travaux avant 18h le 12/06.",
       "expires_at": "2026-06-12T18:00:00+02:00" }
@@ -290,6 +310,49 @@ La dérivation veyon/multi-session/quota vit aujourd'hui **dans**
 **extraire** cette dérivation dans un service partagé (p.ex.
 `OverlaySignalBuilder`) consommé par : (a) le nouvel endpoint JSON, (b) le
 composer legacy. Refactor pur, testable, Phase 1.
+
+## 6quater. Phase A POC — LIVRÉE 2026-06-09 (serveur)
+
+Implémenté sur `main` (quick-dev), testé sur VM (17/17 verts, 47 assertions) +
+smoke live (`postSignal → pollPayload` contre PG réel, poste `windaubecdi`/`cdi`) :
+
+- `GET /api/v1/workstation-config/overlay` (`OverlayController`, auth JWT
+  workstation iso `apiV1`, 404 inconnu) — route `agent.v1.config.overlay`.
+- Facade `App\Services\Overlay\OverlayService` : `pollPayload()` (merge
+  derived+posted) + `postSignal()` (garde-fou submarine au post ET au poll).
+- `OverlaySignalBuilder` : dérivés **multi-session + quota** (veyon = canal posté,
+  non dérivable serveur).
+- DTO `OverlayPayload` / `OverlayAlert` (un tableau `alerts`, `source=derived|posted`,
+  toArray plat parsable Rainmeter+jq).
+- Store `overlay_signals` (migration + modèle, scope `activeFor` ciblage joker +
+  expiration) — persiste jusqu'à `expires_at`.
+- `config/overlay.php` (`schema`, `ttl_seconds`). Auto-wiring container (pas de
+  provider). Composer **intact** (duplication assumée).
+- Tests : `tests/Feature/Api/V1/Config/OverlayApiV1Test.php`,
+  `tests/Unit/Services/Overlay/OverlaySignalBuilderTest.php`.
+
+**Limite connue** : `toWallpaperContext` ne fournit pas le fullname AD ni l'admin
+(16.13) → `identity.fullname` = login pour l'instant (enrichissement AD = future
+story). Non committé (en attente revue Henri).
+
+## 6quinquies. Phase B POC — adaptateurs client (2026-06-09)
+
+Artefacts sous `resources/overlay/` (authored server-side, non testés sur poste
+GUI ; JSON/jq/regex/syntaxe validés sur hôte) :
+
+- **Facade client = fichier local `overlay.json`** (modèle « agent écrit local,
+  skin lit local »). Deux adaptateurs de part et d'autre :
+  - **fetch** (`fetch/overlay-fetch.{ps1,sh}`) : poll authentifié (JWT
+    workstation) → écriture atomique du fichier. Seul porteur de l'auth.
+  - **render** (`rainmeter/SambaEduOverlay.ini`, `conky/sambaedu-overlay.conkyrc`) :
+    lit le fichier, affiche identité + machine + alertes. Aucun secret.
+- **Swap d'outil = nouvel adaptateur render uniquement.** Le JWT n'entre jamais
+  dans une config Rainmeter/Conky.
+- Conky : liste **complète** des alertes (`jq`). Rainmeter (regex WebParser, zéro
+  dépendance) : identité + machine + **1re** alerte ; liste complète = variante
+  JsonParser.dll (notée).
+- Caveats : non testé sur poste réel ; câblage du store JWT = TODO en tête des
+  `fetch` ; install/autostart de l'outil = spike §6bis.
 
 ## 7. À trancher / prochaines étapes
 

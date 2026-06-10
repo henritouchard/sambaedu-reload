@@ -29,6 +29,7 @@ use App\Auth\V1\Http\Controllers\PingController as AuthV1PingController;
 use App\ScriptsOs\Http\Controllers\ScriptExecutionLogIngestionController as ScriptsOsIngestionController;
 // Story 16.13 — Exposition endpoints natifs /api/v1/*
 use App\Http\Controllers\WallpaperController;
+use App\Http\Controllers\OverlayController;
 use App\Http\Controllers\AppPolicyController;
 use App\Http\Controllers\Gpo\NetworkOutController;
 use App\Http\Controllers\Gpo\VeyonOutController;
@@ -247,6 +248,7 @@ Route::prefix('v1/workstation-config')
     ->name('agent.v1.config.')
     ->group(function () {
         Route::get('/wallpaper',            [WallpaperController::class,           'apiV1'])->name('wallpaper');
+        Route::get('/overlay',              [OverlayController::class,             'apiV1'])->name('overlay');
         Route::get('/firefox',              [AppPolicyController::class,           'apiV1Firefox'])->name('firefox');
         Route::get('/thunderbird',          [AppPolicyController::class,           'apiV1Thunderbird'])->name('thunderbird');
         Route::get('/shortcuts',            [ShortcutExportController::class,      'apiV1'])->name('shortcuts');

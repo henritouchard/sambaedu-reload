@@ -785,4 +785,19 @@ return [
         // pas ce champ, il est consommé par le runbook QA Section 15).
         'sudoers_user' => env('SAMBAEDU_INSTALL_WIN_ISO_SUDO_USER', 'www-admin'),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Veyon — prise de contrôle à distance (overlay + bandeau wallpaper)
+    |--------------------------------------------------------------------------
+    | `veyon_submarine` : si true, toute alerte « prise de contrôle à distance »
+    | (kind=remote_control) est MASQUÉE — ni cuite par WallpaperComposer ni
+    | renvoyée par OverlayService (enjeu consentement). Déclarée ici (review POC
+    | overlay 2026-06-09, finding E) : le code lisait déjà
+    | `config('sambaedu.veyon_submarine')` mais la clé n'était pas déclarée →
+    | garde-fou silencieusement désactivé par défaut.
+    | `veyon_message` : complément de message affiché avec l'alerte Veyon.
+    */
+    'veyon_submarine' => (bool) env('SAMBAEDU_VEYON_SUBMARINE', false),
+    'veyon_message' => env('SAMBAEDU_VEYON_MESSAGE', ''),
 ];

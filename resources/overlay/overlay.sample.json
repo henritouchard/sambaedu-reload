@@ -1,0 +1,36 @@
+{
+    "schema": "se5.wallpaper-overlay/v1",
+    "generated_at": "2026-06-09T14:32:00+02:00",
+    "ttl_seconds": 60,
+    "identity": {
+        "fullname": "Marie Dupont",
+        "login": "mdupont",
+        "is_admin": false,
+        "main_type": "Profs"
+    },
+    "machine": {
+        "name": "SALLE201-PC03",
+        "room": "Salle 201",
+        "os": "windows"
+    },
+    "alerts": [
+        {
+            "id": "multi_session",
+            "source": "derived",
+            "kind": "session",
+            "severity": "warning",
+            "title": "Sessions multiples",
+            "text": "Sessions détectées sur : PC07, PC12",
+            "machines": ["PC07", "PC12"]
+        },
+        {
+            "id": "sig-7",
+            "source": "posted",
+            "kind": "notice",
+            "severity": "info",
+            "title": "Maintenance prévue",
+            "text": "Sauvegardez vos travaux avant 18h le 12/06.",
+            "expires_at": "2026-06-12T18:00:00+02:00"
+        }
+    ]
+}
