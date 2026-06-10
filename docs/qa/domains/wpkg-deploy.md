@@ -715,3 +715,197 @@ Suite à la code review adversariale + corrections appliquées, vérifications Q
 - [ ] **Sécurité LAN** — un appel depuis une IP hors allowlist `local.request`
   est rejeté (403), iso `wpkg/reports/*`. Aucun JWT/Bearer requis (D2). Pré-requis :
   l'IP du testeur doit être dans `WPKG_ALLOWED_IPS` (sinon 403 attendu).
+
+---
+
+## Section 7 — Réglages de déploiement WPKG configurables au runtime (Story 15.6)
+
+> **Objectif** : vérifier que les bascules opérationnelles du canal winget
+> (`winget_enabled`) et de l'allowlist IP (`allowed_ips`) peuvent être modifiées
+> depuis l'UI admin **sans accès SSH, sans modifier `.env`, sans `config:cache`**.
+>
+> **Rappel** : ces endpoints sont non authentifiés (auth iso-legacy).
+> L'allowlist IP est la frontière de sécurité primaire.
+>
+> **Code de référence** :
+> - `app/Wpkg/Deployment/Services/WpkgDeploymentSettings.php` — résolveur
+> - `app/Wpkg/Deployment/Rules/SafeIpCidrRule.php` — validation IP/CIDR
+> - `app/Http/Middleware/EnsureLocalRequest.php` — middleware allowlist
+> - `app/Wpkg/Deployment/Http/Controllers/WingetOutController.php` — gate flag
+> - `resources/views/pages/admin/settings/gpo/wpkg-deployment/index.blade.php` — UI
+
+### Pré-requis Section 7
+
+- VM accessible, migrations à jour (`php artisan migrate:status`).
+- User admin avec permission Spatie `server.admin`.
+- Au moins 1 poste dans la table `workstations` (pour le test winget_out).
+- L'IP de la machine depuis laquelle vous testez doit être **dans le même réseau
+  que la VM** (ou tester depuis la VM via curl localhost).
+
+### Scénario 7.1 — Activer winget + ajouter CIDR depuis l'UI → poste installe sans SSH
+
+**Objectif** : reproduire le déclencheur terrain 2026-06-10 (poste `windaube`,
+groupe `cdi`) et démontrer que l'admin peut débloquer le canal en quelques clics,
+sans connexion SSH ni `config:cache`.
+
+#### Étape A — Vérifier l'état initial fail-closed
+
+1. Depuis la VM (ou une IP non listée) :
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}" -X POST \
+     -F "machine=windaube" -F "list=[]" -F "action=list" \
+     http://localhost/wpkg/winget_out.php
+   ```
+   → attendu **400** (winget désactivé).
+
+2. Depuis une IP LAN non listée (ex. autre VM) :
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}" -X POST \
+     -F "machine=windaube" -F "list=[]" -F "action=list" \
+     http://192.168.122.50/wpkg/winget_out.php
+   ```
+   → attendu **403** (IP non dans l'allowlist).
+
+#### Étape B — Activer via l'UI (sans SSH)
+
+3. Se connecter sur l'interface SE5 en tant qu'admin (`server.admin`).
+4. Naviguer vers `/admin/settings/gpo/wpkg-deployment`.
+5. Dans la carte **Réglages de déploiement** :
+   - Toggle « Canal winget » → basculer **Activé**.
+   - Toast vert « Canal winget activé ».
+   - Badge source passe de `env` à `DB`.
+
+#### Étape C — Ajouter le CIDR du parc
+
+6. Dans la section **Allowlist IP / CIDR** :
+   - Saisir `192.168.122.0/24` (CIDR du parc LAN).
+   - Cliquer **Ajouter**.
+   - Modale de confirmation : lire l'avertissement (endpoint non authentifié).
+   - Cliquer **Confirmer l'ajout**.
+   - Toast vert « Entrée ajoutée ».
+   - La liste affiche `192.168.122.0/24` avec badge `DB`.
+
+#### Étape D — Vérifier l'effet immédiat (sans config:cache)
+
+7. **Depuis la VM (localhost)** — test winget :
+   ```bash
+   curl -s -X POST -F "machine=windaube" -F "list=[]" -F "action=list" \
+     http://localhost/wpkg/winget_out.php
+   ```
+   → attendu **200** + JSON `{install: [...]}` ou `{}` selon les apps assignées.
+
+8. **Depuis une IP du CIDR 192.168.122.0/24** — test allowlist :
+   ```bash
+   curl -s -X POST -F "machine=windaube" -F "list=[]" -F "action=list" \
+     http://192.168.122.50/wpkg/winget_out.php
+   ```
+   → attendu **200** (l'IP est maintenant dans l'allowlist DB).
+
+9. Vérifier le log `wpkg-deploy` :
+   ```bash
+   tail -20 storage/logs/wpkg-deploy/deploy-*.log | grep 'setting_changed'
+   ```
+   → deux entrées `event=wpkg_deployment_setting_changed` (une pour `winget_enabled`,
+   une pour `allowed_ips`) avec `user_id`, `old`, `new`.
+
+10. **Vérifier qu'aucun `config:cache` n'a été nécessaire** :
+    ```bash
+    stat bootstrap/cache/config.php | grep Modify
+    ```
+    Le timestamp ne doit PAS avoir changé entre les étapes B/C et D.
+
+**Attendu** : le canal winget est opérationnel pour le parc LAN, entièrement piloté
+depuis l'UI, sans intervention shell.
+
+### Scénario 7.2 — Validation stricte de l'allowlist (garde-fous sécurité)
+
+**Objectif** : vérifier que les entrées dangereuses sont rejetées avant persistance.
+
+1. Dans la carte **Allowlist IP / CIDR** → saisir `0.0.0.0/0` → cliquer **Ajouter**.
+   → attendu : message d'erreur « ouvre l'accès à tout Internet », pas de modale,
+   pas de persistance.
+
+2. Saisir `10.0.0.0/8` → cliquer **Ajouter**.
+   → attendu : message d'erreur « préfixe trop large », pas de modale.
+
+3. Saisir `999.1.1.1` → cliquer **Ajouter**.
+   → attendu : message d'erreur « adresse IP valide », pas de modale.
+
+4. Saisir `192.168.1.0/24` deux fois → la deuxième fois : « déjà dans la liste ».
+
+5. Saisir `192.168.50.0/24` → modale → annuler → pas de persistance.
+
+### Scénario 7.3 — Désactiver et retirer une entrée allowlist
+
+1. Toggle « Canal winget » → **Désactivé**.
+   → Toast vert « Canal winget désactivé ».
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}" -X POST \
+     -F "machine=windaube" -F "list=[]" -F "action=list" http://localhost/wpkg/winget_out.php
+   ```
+   → attendu **400** (sans reboot, sans SSH).
+
+2. Dans l'allowlist, cliquer le `×` sur `192.168.122.0/24`.
+   → Toast « Entrée retirée ». Pas de modale pour la suppression.
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}" -X POST \
+     -F "machine=windaube" -F "list=[]" -F "action=list" \
+     http://192.168.122.50/wpkg/winget_out.php
+   ```
+   → attendu **403** (IP à nouveau hors allowlist).
+
+### Scénario 7.4 — Non-régression audit GPO existant
+
+1. Après les manipulations des scénarios 7.1–7.3, vérifier que l'audit GPO
+   existant reste fonctionnel :
+   - Cliquer **Re-auditer** → badge sévérité visible, pas d'erreur.
+   - Cliquer **Re-publier la GPO `se4_wpkg`** → modale confirmation s'ouvre.
+   - Annuler la modale.
+   → La section audit GPO est inchangée et fonctionnelle.
+
+### Scénario 7.5 — Fail-closed : DB polluée `0.0.0.0/0` → IP externe reste 403
+
+**Contexte** : correction post-review #3 (2026-06-10). Vérifie que `allowedIps()` écarte
+en lecture toute entrée dangereuse contournant la validation UI (ex. insertion directe en
+DB via psql, import SQL, ou migration data corruption).
+
+**Prérequis** : accès psql à la DB de test (ou `tinker`).
+
+1. Insérer directement `0.0.0.0/0` dans `system_settings` (hors UI) :
+   ```bash
+   php artisan tinker --execute="App\Models\SystemSetting::set('wpkg.allowed_ips', ['0.0.0.0/0']);"
+   ```
+
+2. Vérifier que `allowedIps()` retourne une liste vide (0.0.0.0/0 écarté) :
+   ```bash
+   php artisan tinker --execute="dd(app(App\Wpkg\Deployment\Services\WpkgDeploymentSettings::class)->allowedIps());"
+   ```
+   → attendu : `[]` (liste vide, `0.0.0.0/0` silencieusement écarté).
+
+3. Depuis une IP externe (ex. `203.0.113.5` — adresse de documentation RFC 5737) :
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}" -X POST \
+     -F "machine=test" -F "list=[]" -F "action=list" \
+     --interface lo http://127.0.0.1/wpkg/winget_out.php
+   ```
+   Simuler l'IP externe via un test unitaire (cf. `EnsureLocalRequestSettingsTest::db_polluted_with_deny_all_cidr_still_rejects_external_ip`).
+   → attendu : **403** même si `0.0.0.0/0` est en DB.
+
+4. Vérifier le log warning dans `storage/logs/wpkg-deploy/deploy-*.log` :
+   ```bash
+   grep 'wpkg_allowed_ip_rejected' storage/logs/wpkg-deploy/deploy-*.log
+   ```
+   → attendu : entrée avec `entry: 0.0.0.0/0`.
+
+5. Nettoyage : restaurer la liste via l'UI ou `tinker`.
+
+**Attendu** : même avec une DB polluée, aucune IP externe ne peut accéder aux endpoints
+WPKG via `0.0.0.0/0` — le fail-closed est garanti en lecture.
+
+### Checklist rapide Section 7 (relecteur)
+
+- [ ] Scénario 7.1 — Activer winget + CIDR LAN → 200 sans SSH ni config:cache
+- [ ] Scénario 7.2 — Validation stricte rejet 0.0.0.0/0, préfixes larges, syntaxe invalide
+- [ ] Scénario 7.3 — Désactivation et retrait allowlist → effet immédiat
+- [ ] Scénario 7.4 — Non-régression audit GPO (re-auditer / modale publish)
+- [ ] Scénario 7.5 — Fail-closed DB polluée `0.0.0.0/0` → IP externe reste 403

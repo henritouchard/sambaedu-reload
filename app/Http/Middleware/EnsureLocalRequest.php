@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Wpkg\Deployment\Services\WpkgDeploymentSettings;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\IpUtils;
@@ -46,24 +47,15 @@ class EnsureLocalRequest
 
     private function isAllowed(string $ip): bool
     {
-        // Localhost toujours autorisé
+        // Localhost toujours autorisé (127.0.0.1/::1 — immuable, ne pas modifier).
         if (IpUtils::checkIp($ip, self::ALWAYS_ALLOWED)) {
             return true;
         }
 
-        // IPs/CIDRs supplémentaires depuis la config
-        $configIps = config('sambaedu.wpkg.report_ingestion_allowed_ips', '');
-        if (empty($configIps)) {
-            return false;
-        }
-
-        // Supporte une chaîne CSV ou un tableau
-        $allowedList = is_array($configIps)
-            ? $configIps
-            : array_map('trim', explode(',', $configIps));
-
-        // Filtrer les entrées vides
-        $allowedList = array_filter($allowedList, static fn(string $entry): bool => $entry !== '');
+        // IPs/CIDRs supplémentaires via résolveur (Story 15.6 : DB > env > défaut).
+        // Le résolveur WpkgDeploymentSettings garantit la précédence DB > config()
+        // et filtre les entrées vides/non-string.
+        $allowedList = app(WpkgDeploymentSettings::class)->allowedIps();
 
         if (empty($allowedList)) {
             return false;

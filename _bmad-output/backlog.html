@@ -1507,6 +1507,16 @@ const DATASETS = {
             { title: "Corrélation `deployment_id` côté serveur (3 axes workstation_ids/group_ids/profile_ids)", status: "done" },
             { title: "Doc audit auth + runbook QA Section 5 + README mapping legacy → reload", status: "done" },
           ] },
+        { id: "15-6", title: "Réglages de déploiement WPKG configurables au runtime (UI admin)",  status: "review",
+          note: "Dev sonnet + review opus (adversariale, 6 problèmes : 1🔴 régression tests endpoints 17.6, 2🟠 audit non asserté + fail-open allowlist, 3🟡) → 5 corrigés auto, #4 statu quo. Tests 129/0. Commit `feat(story-15.6)` sur main. env→DB SystemSetting (winget_enabled + allowed_ips), UI sans config:cache, précédence DB>env>défaut fail-closed.",
+          tasks: [
+            { title: "Résolveur centralisé `WpkgDeploymentSettings` (précédence DB>env>défaut, non-régression si clé DB absente)", status: "done" },
+            { title: "Câblage 2 points de lecture (WingetOutController flag + EnsureLocalRequest allowlist)", status: "done" },
+            { title: "Validation allowlist `SafeIpCidrRule` (rejet 0.0.0.0/0 + préfixes trop larges) + fail-closed en lecture", status: "done" },
+            { title: "UI page wpkg-deployment (toggle winget + éditeur allowlist + badge source DB/env + modale CIDR)", status: "done" },
+            { title: "Audit émis depuis l'action Livewire (channel wpkg-deploy, contourne le trou d'audit HTTP)", status: "done" },
+            { title: "Tests 7 volets (unit résolveur/rule + feature endpoints 2 routes + Livewire) + runbook QA wpkg-deploy", status: "done" },
+          ] },
         { id: "15-7", title: "Bascule production + retrait shim WPKG legacy",                    status: "backlog",
           note: "<strong>PLANNED.</strong> Déclenchée après stabilisation 14j post-15.5 + ingestion ≥95% postes actifs.",
           tasks: [

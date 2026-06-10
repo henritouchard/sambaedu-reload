@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Wpkg\Deployment\Http\Controllers;
 
 use App\Wpkg\Deployment\Services\WingetPackagesResolver;
+use App\Wpkg\Deployment\Services\WpkgDeploymentSettings;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -36,10 +37,11 @@ use Illuminate\Http\Response;
  */
 final class WingetOutController
 {
-    public function handle(Request $request, WingetPackagesResolver $resolver): Response
+    public function handle(Request $request, WingetPackagesResolver $resolver, WpkgDeploymentSettings $settings): Response
     {
         // Parité `winget_out.php:23-26` : flag winget off → 400 Bad request.
-        if (! config('sambaedu.wpkg.winget_enabled', false)) {
+        // Story 15.6 : lecture via résolveur (DB > env > défaut fail-closed).
+        if (! $settings->wingetEnabled()) {
             return $this->badRequest();
         }
 

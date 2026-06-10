@@ -240,3 +240,61 @@ Dashboard `/app/wpkg/deployments` lit l'agrégat via WpkgDashboardQueryService
 - **NFR1 < 2s sur 500 postes** : indices DB + SQL agrégé suffisent. Pas de Redis
   cache layer. Portabilité PG/SQLite via `DB::getDriverName()` dans
   `WpkgDashboardQueryService` (PG `DISTINCT ON` ↔ SQLite `ROW_NUMBER OVER PARTITION`).
+
+## Réglages runtime (Story 15.6)
+
+### Vue d'ensemble
+
+Les deux bascules opérationnelles du canal de livraison Windows (`WPKG_WINGET_ENABLED`,
+`WPKG_ALLOWED_IPS`) ont été sorties du fichier `.env` (figé au runtime) vers la table
+`system_settings` (DB), pilotée depuis l'UI admin `/admin/settings/gpo/wpkg-deployment`.
+
+### Précédence
+
+```
+DB (SystemSetting) > env (config()) > défaut codé fail-closed
+```
+
+Un système fraîchement provisionné reste fermé (`winget_enabled=false`, `allowed_ips=[]`)
+jusqu'à ouverture explicite via l'UI ou `SystemSetting::set(...)`.
+
+### Clés SystemSetting
+
+| Clé                    | Type JSON     | Défaut fallback                                            |
+|------------------------|---------------|------------------------------------------------------------|
+| `wpkg.winget_enabled`  | `bool`        | `config('sambaedu.wpkg.winget_enabled')` (env `WPKG_WINGET_ENABLED`, défaut `false`) |
+| `wpkg.allowed_ips`     | `array<string>` (IP/CIDR) | `config('sambaedu.wpkg.report_ingestion_allowed_ips')` (env `WPKG_ALLOWED_IPS`, défaut `['127.0.0.1','::1']`) |
+
+> **`127.0.0.1`/`::1` restent TOUJOURS autorisés en dur** dans
+> `EnsureLocalRequest::ALWAYS_ALLOWED` — l'allowlist DB/env ne fait qu'**ajouter**
+> (jamais enlever le localhost).
+
+### Points de lecture
+
+1. **`WingetOutController::handle()`** — lit `wingetEnabled()` via le résolveur.
+   Si `false` → **400** (parité legacy, D1/D2 story 15.6).
+
+2. **`EnsureLocalRequest::isAllowed()`** — lit `allowedIps()` via le résolveur.
+   Protège `/wpkg/winget_out.php` ET `/wpkg/linux_out.php` ET `/api/wpkg/reports/{hostname}`
+   (alias `local.request`).
+
+### Résolveur centralisé
+
+`App\Wpkg\Deployment\Services\WpkgDeploymentSettings` centralise la précédence.
+Les deux points de lecture appellent ce résolveur, pas `config()` directement.
+**Pas de cache en v1** (effet immédiat garanti, cf. D6 story 15.6).
+
+### Note de migration stopgap → DB
+
+Suite à la livraison de Story 15.6, le stopgap appliqué manuellement le 2026-06-10
+(`.env` VM : `WPKG_WINGET_ENABLED=true` + `WPKG_ALLOWED_IPS=...,192.168.122.0/24` +
+`config:cache` + `chown www-admin`) peut être **rebasculé via l'UI** :
+
+1. Connecté admin SER sur `/admin/settings/gpo/wpkg-deployment`.
+2. Activer le toggle « Canal winget ».
+3. Ajouter `192.168.122.0/24` dans l'allowlist + confirmer la modale.
+4. Revenir `.env` aux défauts fail-closed : `WPKG_WINGET_ENABLED=false` (ou retirer la ligne).
+5. Relancer `php artisan config:cache` + `chown www-admin:www-admin bootstrap/cache/config.php`
+   (nécessaire pour purger l'env override au profit des défauts fall-through vers DB).
+
+Vérifier : `POST /wpkg/winget_out.php?machine=windaube action=list list=[]` → **200**.

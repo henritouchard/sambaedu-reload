@@ -167,11 +167,23 @@ final class WpkgSchemaBootstrapper
                 $table->timestamps();
             });
         }
+
+        // Story 15.6 — WpkgDeploymentSettings / EnsureLocalRequest lisent SystemSetting
+        // (table system_settings). Ajouté ici pour éviter les patches inline dupliqués.
+        if (! Schema::hasTable('system_settings')) {
+            Schema::create('system_settings', function (Blueprint $table): void {
+                $table->id();
+                $table->string('key', 191)->unique();
+                $table->json('value')->nullable();
+                $table->timestamps();
+            });
+        }
     }
 
     public static function tearDown(): void
     {
         foreach ([
+            'system_settings',
             'wpkg_workstation_options',
             'application_dependencies',
             'application_workstation_group',

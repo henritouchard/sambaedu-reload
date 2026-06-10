@@ -9,7 +9,9 @@ use App\Gpo\Enums\WpkgGpoSyncSeverity;
 use App\Gpo\Services\WpkgGpoSynchronizer;
 use App\Models\User;
 use DateTimeImmutable;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
@@ -31,6 +33,15 @@ class WpkgDeploymentPageTest extends TestCase
             config(['app.key' => 'base64:' . base64_encode(random_bytes(32))]);
         }
         $this->bootstrapSpatieTables();
+        // Story 15.6 : le composant charge system_settings dans mount().
+        if (! Schema::hasTable('system_settings')) {
+            Schema::create('system_settings', function (Blueprint $table): void {
+                $table->id();
+                $table->string('key')->unique();
+                $table->json('value')->nullable();
+                $table->timestamps();
+            });
+        }
     }
 
     protected function tearDown(): void
