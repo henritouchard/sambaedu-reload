@@ -1,48 +1,20 @@
 @if ($group->is_physical)
     @can('wallpaper.manage')
-        @teleport('body')
-            <dialog class="modal"
-                x-data="{ open: @entangle('showWallpaperModal') }"
-                :class="{ 'modal-open': open }"
-                x-cloak>
-                <div class="modal-box w-11/12 max-w-3xl">
-                    <div class="flex items-center justify-between mb-1">
-                        <h3 class="text-lg font-bold flex items-center gap-2">
-                            <i class="fa-solid fa-image text-primary"></i>
-                            Fonds d'écran — {{ $group->name }}
-                        </h3>
-                        <button type="button" class="btn btn-ghost btn-sm btn-circle" wire:click="closeWallpaperModal">
-                            <i class="fa-solid fa-xmark"></i>
-                        </button>
-                    </div>
-                    <p class="text-sm text-base-content/60 mb-6">
-                        Les fonds d'écran définis ici ont la priorité sur ceux de l'établissement.
-                    </p>
+        {{-- Sélecteurs de fond d'écran en modale large (refonte UX 2026-06).
+             Chaque picker gère sa propre modale, ouverte par l'event
+             `open-wp-picker` dispatché par les boutons « Bureau » / « Verr. ». --}}
+        <livewire:components::molecules.wallpaper-library-picker
+            type="wallpaper"
+            :ownerType="App\Models\WorkstationGroup::class"
+            :ownerId="$group->id"
+            title="Fond d'écran — {{ $group->name }}"
+            :key="'wp-picker-wallpaper-' . $group->id" />
 
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        <livewire:components::molecules.wallpaper-card
-                            type="wallpaper"
-                            :ownerType="App\Models\WorkstationGroup::class"
-                            :ownerId="$group->id"
-                            title="Fond d'écran"
-                            :key="'wallpaper-salle-' . $group->id" />
-
-                        <livewire:components::molecules.wallpaper-card
-                            type="lockscreen"
-                            :ownerType="App\Models\WorkstationGroup::class"
-                            :ownerId="$group->id"
-                            title="Écran de verrouillage"
-                            :key="'lockscreen-salle-' . $group->id" />
-                    </div>
-
-                    <div class="modal-action">
-                        <button type="button" class="btn" wire:click="closeWallpaperModal">Fermer</button>
-                    </div>
-                </div>
-                <form method="dialog" class="modal-backdrop">
-                    <button wire:click="closeWallpaperModal">fermer</button>
-                </form>
-            </dialog>
-        @endteleport
+        <livewire:components::molecules.wallpaper-library-picker
+            type="lockscreen"
+            :ownerType="App\Models\WorkstationGroup::class"
+            :ownerId="$group->id"
+            title="Écran de verrouillage — {{ $group->name }}"
+            :key="'wp-picker-lockscreen-' . $group->id" />
     @endcan
 @endif

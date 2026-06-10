@@ -5,38 +5,38 @@ declare(strict_types=1);
 namespace App\Services\Wallpaper;
 
 use App\Models\User;
-use App\Models\UserGroup;
 use App\Models\Wallpaper;
-use App\Models\WorkstationGroup;
+use App\Models\WallpaperAsset;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Service d'upload + redimensionnement wallpaper.
+ * Service d'upload + déduplication wallpaper.
  *
- * Story 4.7 — AC 8.
+ * Refonte bibliothèque (2026-06) : l'image uploadée est normalisée (resize
+ * 1920×1080 JPEG q85), content-addressée par checksum (`<sha256>.jpg`) et
+ * stockée dans la bibliothèque `config('wallpapers.library_path')` (storage/).
+ * Un asset identique n'est écrit qu'une fois (dédup) ; l'assignation
+ * (owner, type) pointe sur l'asset via `asset_id`. Plus de convention de nom
+ * `<type>@<key>.jpg` — le lien est explicite en DB.
  *
- * Compat legacy : le nom de fichier respecte `<type>@<key>.jpg` avec
- * `key = $owner->name` (salles/groupes), `$owner->login` (users),
- * `wallpaper.jpg` / `lockscreen.jpg` (défauts étab). Permet un rollback safe
- * (si on désactive la route Laravel, le legacy reprend directement).
- *
- * Écriture atomique (tmp + rename) pour éviter que les clients lisant en
- * concurrence voient du JPG corrompu (cf. mémoire `feedback_atomic_write.md`).
+ * Écriture atomique (tmp + rename) pour éviter les lectures de JPG corrompu.
  */
 class WallpaperUploadService
 {
-    public function __construct()
-    {
+    public function __construct(
+        private readonly WallpaperAssetCollector $collector = new WallpaperAssetCollector(),
+    ) {
         // Protection contre les bombes pixel (post-review #10)
         WallpaperComposer::configureImagickLimits();
     }
 
     /**
-     * Stocke un wallpaper/lockscreen.
+     * Stocke un wallpaper/lockscreen et retourne l'assignation.
      *
      * @param  string  $type  'wallpaper' | 'lockscreen'
      * @param  Model|null  $owner  User / UserGroup / WorkstationGroup ; null = défaut étab
@@ -54,22 +54,39 @@ class WallpaperUploadService
             throw new \InvalidArgumentException('isDefault et owner sont mutuellement exclusifs.');
         }
 
-        $filename = $this->resolveFilename($type, $owner, $isDefault);
-        // Post-review #F : basename défensif — coupe tout `/` ou `..` qui
-        // aurait pu survivre au sanitize (protège contre path traversal même
-        // si la regex upstream change).
-        $filename = basename($filename);
-        $targetDir = rtrim((string) config('wallpapers.storage_path'), '/');
-        $targetPath = $targetDir . '/' . $filename;
+        $asset = $this->ingestAsset($file);
 
-        if (! is_dir($targetDir)) {
-            if (! @mkdir($targetDir, 0755, true) && ! is_dir($targetDir)) {
-                throw new \RuntimeException("Impossible de créer {$targetDir}");
-            }
+        return $this->upsertAssignment($asset, $type, $owner, $isDefault);
+    }
+
+    /**
+     * Assigne un asset EXISTANT de la bibliothèque à (owner, type) — sans
+     * réupload. Utilisé par le sélecteur de bibliothèque de l'UI.
+     */
+    public function assignExisting(
+        WallpaperAsset $asset,
+        string $type,
+        ?Model $owner = null,
+        bool $isDefault = false,
+    ): Wallpaper {
+        $this->assertValidType($type);
+        if ($isDefault && $owner !== null) {
+            throw new \InvalidArgumentException('isDefault et owner sont mutuellement exclusifs.');
         }
 
-        $this->writeAtomic($file, $targetPath);
+        return $this->upsertAssignment($asset, $type, $owner, $isDefault);
+    }
 
+    /**
+     * Crée ou met à jour l'assignation (owner, type) → asset, et collecte
+     * l'ancien asset s'il devient orphelin.
+     */
+    private function upsertAssignment(
+        WallpaperAsset $asset,
+        string $type,
+        ?Model $owner,
+        bool $isDefault,
+    ): Wallpaper {
         /** @var Authenticatable|null $user */
         $user = Auth::user();
         $authId = ($user !== null && method_exists($user, 'getAuthIdentifier'))
@@ -83,10 +100,8 @@ class WallpaperUploadService
             ? $this->ownerDisplayName($owner)
             : ($isDefault ? 'défaut étab' : 'unknown');
 
-        // Post-review #4 : pour un upload défaut étab, on AJOUTE `is_default`
-        // dans le WHERE afin de ne PAS matcher des rows orphans historiques
-        // `(type, NULL, NULL, is_default=false)` qui auraient été seedés.
-        // Pour un owner concret, (type, owner_type, owner_id) suffit.
+        // Pour un défaut étab, on AJOUTE `is_default` au WHERE afin de ne pas
+        // matcher des rows orphans historiques (post-review #4).
         $matchCriteria = [
             'type' => $type,
             'owner_type' => $ownerType,
@@ -96,60 +111,132 @@ class WallpaperUploadService
             $matchCriteria['is_default'] = true;
         }
 
+        // Asset précédemment assigné (pour GC si remplacement).
+        $previousAssetId = Wallpaper::query()->where($matchCriteria)->value('asset_id');
+
         /** @var Wallpaper $wallpaper */
         $wallpaper = Wallpaper::updateOrCreate(
             $matchCriteria,
             [
                 'name' => $displayName,
-                'path' => $targetPath,
+                'asset_id' => $asset->id,
                 'is_default' => $owner === null && $isDefault,
                 'uploaded_by' => $uploadedBy,
             ],
         );
 
-        Log::info('[WallpaperUpload] stored', [
+        if ($previousAssetId !== null && (int) $previousAssetId !== $asset->id) {
+            $this->collector->collectIfOrphan((int) $previousAssetId);
+        }
+
+        Log::info('[WallpaperUpload] assigned', [
             'id' => $wallpaper->id,
             'type' => $type,
             'owner' => $ownerType . ':' . $ownerId,
-            'path' => $targetPath,
+            'asset_id' => $asset->id,
         ]);
 
         return $wallpaper;
     }
 
     /**
-     * Nom de fichier conforme au legacy :
-     *   - défaut étab  → `wallpaper.jpg` / `lockscreen.jpg`
-     *   - User         → `<type>@<login>.jpg`
-     *   - UserGroup    → `<type>@<name>.jpg`
-     *   - WorkstationGroup → `<type>@<name>.jpg`
+     * Ajoute une image à la bibliothèque SANS l'assigner (flux UI
+     * « sélectionner puis valider »). Normalise + déduplique, retourne l'asset.
      */
-    public function resolveFilename(string $type, ?Model $owner, bool $isDefault): string
+    public function ingest(UploadedFile $file): WallpaperAsset
     {
-        if ($owner === null) {
-            // Défaut étab : `wallpaper.jpg` / `lockscreen.jpg`. Le flag
-            // `isDefault` est déjà validé en amont ; le nom de fichier est
-            // identique dans les deux branches, on retourne directement.
-            return $type . '.jpg';
-        }
+        $this->assertValidFile($file);
 
-        $key = $this->ownerFilesystemKey($owner);
-        if ($key === '') {
-            throw new \InvalidArgumentException('Owner sans clé filesystem (name/login) définie.');
-        }
-
-        // Sanitize : remplace les caractères problématiques (espaces / /)
-        $safeKey = preg_replace('/[^\p{L}\p{N}_\-\.]+/u', '_', $key) ?? $key;
-        return $type . '@' . $safeKey . '.jpg';
+        return $this->ingestAsset($file);
     }
 
-    private function ownerFilesystemKey(Model $owner): string
+    /**
+     * Normalise l'image et la déduplique en asset de bibliothèque.
+     * Écrit le fichier `<checksum>.jpg` dans `library_path` s'il n'existe pas.
+     */
+    private function ingestAsset(UploadedFile $file): WallpaperAsset
     {
-        return match (true) {
-            $owner instanceof User => (string) $owner->login,
-            $owner instanceof UserGroup, $owner instanceof WorkstationGroup => (string) $owner->name,
-            default => (string) ($owner->getAttribute('name') ?? $owner->getAttribute('login') ?? ''),
-        };
+        $libraryDir = WallpaperAsset::libraryPath();
+        if (! is_dir($libraryDir)) {
+            if (! @mkdir($libraryDir, 0755, true) && ! is_dir($libraryDir)) {
+                throw new \RuntimeException("Impossible de créer {$libraryDir}");
+            }
+        }
+
+        // Normalisation vers un fichier temporaire dans la bibliothèque.
+        $tmp = $libraryDir . '/.upload-' . bin2hex(random_bytes(8)) . '.tmp';
+        try {
+            $this->normalizeTo($file, $tmp);
+
+            $checksum = hash_file('sha256', $tmp);
+            if ($checksum === false) {
+                throw new \RuntimeException('Échec calcul checksum.');
+            }
+            $filename = $checksum . '.jpg';
+            $target = $libraryDir . '/' . $filename;
+            $size = filesize($tmp);
+            $byteSize = $size !== false ? $size : null;
+
+            if (is_file($target)) {
+                // Contenu déjà présent : on jette le tmp, on réutilise l'asset.
+                @unlink($tmp);
+            } else {
+                @chmod($tmp, 0644);
+                if (! @rename($tmp, $target)) {
+                    @unlink($tmp);
+                    throw new \RuntimeException("Échec rename {$tmp} → {$target}");
+                }
+            }
+
+            /** @var Authenticatable|null $user */
+            $user = Auth::user();
+            $authId = ($user !== null && method_exists($user, 'getAuthIdentifier'))
+                ? $user->getAuthIdentifier()
+                : null;
+            $uploadedBy = is_int($authId) ? $authId : (is_numeric($authId) ? (int) $authId : null);
+
+            try {
+                return WallpaperAsset::firstOrCreate(
+                    ['checksum' => $checksum],
+                    [
+                        'filename' => $filename,
+                        'original_name' => $file->getClientOriginalName(),
+                        'byte_size' => $byteSize,
+                        'uploaded_by' => $uploadedBy,
+                    ],
+                );
+            } catch (QueryException $e) {
+                // Course entre deux uploads identiques simultanés : le 2e perd
+                // la course d'INSERT (violation unique checksum). On récupère
+                // l'asset créé par le gagnant (review F2).
+                $existing = WallpaperAsset::query()->where('checksum', $checksum)->first();
+                if ($existing !== null) {
+                    return $existing;
+                }
+                throw $e;
+            }
+        } catch (\Throwable $e) {
+            @unlink($tmp);
+            throw $e;
+        }
+    }
+
+    /**
+     * Resize Imagick 1920×1080 + JPEG qualité 85 vers $target (ou copie brute
+     * si Imagick absent — fallback test).
+     */
+    private function normalizeTo(UploadedFile $file, string $target): void
+    {
+        if (class_exists('Imagick')) {
+            $imagick = new \Imagick($file->getRealPath());
+            $imagick->resizeImage(1920, 1080, \Imagick::FILTER_QUADRATIC, 1, true);
+            $imagick->setImageFormat('jpg');
+            $imagick->setImageCompressionQuality(85);
+            $imagick->writeImage($target);
+            $imagick->destroy();
+        } else {
+            copy($file->getRealPath(), $target);
+        }
     }
 
     private function ownerDisplayName(Model $owner): string
@@ -158,38 +245,6 @@ class WallpaperUploadService
             $owner instanceof User => (string) ($owner->login ?? $owner->getKey()),
             default => (string) ($owner->getAttribute('name') ?? $owner->getKey()),
         };
-    }
-
-    /**
-     * Écriture atomique : tmp dans le même dir → rename.
-     * Applique aussi le resize Imagick 1920×1080 + JPEG qualité 85.
-     */
-    private function writeAtomic(UploadedFile $file, string $targetPath): void
-    {
-        $dir = dirname($targetPath);
-        $tmp = $dir . '/.' . basename($targetPath) . '.tmp-' . bin2hex(random_bytes(6));
-
-        try {
-            if (class_exists('Imagick')) {
-                $imagick = new \Imagick($file->getRealPath());
-                $imagick->resizeImage(1920, 1080, \Imagick::FILTER_QUADRATIC, 1, true);
-                $imagick->setImageFormat('jpg');
-                $imagick->setImageCompressionQuality(85);
-                $imagick->writeImage($tmp);
-                $imagick->destroy();
-            } else {
-                // Fallback : copie directe
-                copy($file->getRealPath(), $tmp);
-            }
-            @chmod($tmp, 0644);
-            if (! @rename($tmp, $targetPath)) {
-                @unlink($tmp);
-                throw new \RuntimeException("Échec rename {$tmp} → {$targetPath}");
-            }
-        } catch (\Throwable $e) {
-            @unlink($tmp);
-            throw $e;
-        }
     }
 
     private function assertValidType(string $type): void
@@ -211,8 +266,7 @@ class WallpaperUploadService
             throw new \InvalidArgumentException("Extension non supportée : {$ext}");
         }
 
-        // Post-review #5 : MIME check en complément de l'extension (qui est
-        // client-controllable). Défense en profondeur avec Imagick en aval.
+        // MIME check en complément de l'extension (client-controllable) — post-review #5.
         $mime = (string) $file->getMimeType();
         $allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp'];
         if (! in_array($mime, $allowedMimes, true)) {

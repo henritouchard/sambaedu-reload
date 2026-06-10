@@ -11,9 +11,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 /**
+ * Assignation wallpaper/lockscreen : (owner, type) → asset de bibliothèque.
+ *
+ * Le fichier image n'est plus porté ici (colonne `path` supprimée) mais par
+ * {@see WallpaperAsset} via `asset_id` — un même asset peut être assigné à
+ * plusieurs owners. Le chemin disque est délégué à `asset->absolutePath`.
+ *
  * @property int $id
  * @property string $name
- * @property string $path
+ * @property int|null $asset_id
  * @property string $type
  * @property string|null $owner_type
  * @property int|null $owner_id
@@ -21,6 +27,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * @property int|null $uploaded_by
  * @property \DateTime|null $created_at
  * @property \DateTime|null $updated_at
+ * @property-read WallpaperAsset|null $asset
  */
 class Wallpaper extends Model
 {
@@ -33,7 +40,7 @@ class Wallpaper extends Model
 
     protected $fillable = [
         'name',
-        'path',
+        'asset_id',
         'type',
         'owner_type',
         'owner_id',
@@ -48,6 +55,18 @@ class Wallpaper extends Model
     public function owner(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    /** Asset de bibliothèque (fichier image) référencé par cette assignation. */
+    public function asset(): BelongsTo
+    {
+        return $this->belongsTo(WallpaperAsset::class, 'asset_id');
+    }
+
+    /** Chemin absolu du fichier, délégué à l'asset ('' si non assigné). */
+    public function getAbsolutePathAttribute(): string
+    {
+        return $this->asset?->absolutePath ?? '';
     }
 
     public function uploader(): BelongsTo

@@ -7,6 +7,7 @@ namespace Tests\Feature\Wallpaper;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\Wallpaper;
+use App\Models\WallpaperAsset;
 use App\Models\WorkstationGroup;
 use App\Services\Wallpaper\WallpaperUploadService;
 use Illuminate\Database\Eloquent\Model;
@@ -17,13 +18,15 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests feature — upload service wallpaper.
+ * Tests feature — upload service wallpaper (refonte bibliothèque 2026-06).
  *
- * Story 4.7 — AC 8.
+ * L'upload normalise l'image, la déduplique en asset content-addressé
+ * (`<checksum>.jpg`) sous `library_path`, et crée/maj l'assignation
+ * (owner, type) → asset.
  */
 class WallpaperUploadServiceTest extends TestCase
 {
-    private string $tmpStorage;
+    private string $tmpLibrary;
 
     protected function setUp(): void
     {
@@ -59,10 +62,19 @@ class WallpaperUploadServiceTest extends TestCase
             $t->boolean('is_physical')->default(true);
             $t->timestamps();
         });
+        Schema::create('wallpaper_assets', function (Blueprint $t): void {
+            $t->id();
+            $t->string('filename')->unique();
+            $t->string('original_name')->nullable();
+            $t->string('checksum', 64)->unique();
+            $t->unsignedBigInteger('byte_size')->nullable();
+            $t->unsignedBigInteger('uploaded_by')->nullable();
+            $t->timestamps();
+        });
         Schema::create('wallpapers', function (Blueprint $t): void {
             $t->id();
             $t->string('name');
-            $t->string('path');
+            $t->unsignedBigInteger('asset_id')->nullable();
             $t->string('type');
             $t->string('owner_type')->nullable();
             $t->unsignedBigInteger('owner_id')->nullable();
@@ -71,27 +83,27 @@ class WallpaperUploadServiceTest extends TestCase
             $t->timestamps();
         });
 
-        $this->tmpStorage = sys_get_temp_dir() . '/wp-upload-test-' . bin2hex(random_bytes(4));
-        mkdir($this->tmpStorage, 0755, true);
-        config()->set('wallpapers.storage_path', $this->tmpStorage);
+        $this->tmpLibrary = sys_get_temp_dir() . '/wp-upload-test-' . bin2hex(random_bytes(4));
+        mkdir($this->tmpLibrary, 0755, true);
+        config()->set('wallpapers.library_path', $this->tmpLibrary);
     }
 
     protected function tearDown(): void
     {
-        if (is_dir($this->tmpStorage)) {
-            foreach (glob($this->tmpStorage . '/*') ?: [] as $f) {
+        if (is_dir($this->tmpLibrary)) {
+            foreach (glob($this->tmpLibrary . '/*') ?: [] as $f) {
                 @unlink($f);
             }
-            @rmdir($this->tmpStorage);
+            @rmdir($this->tmpLibrary);
         }
         parent::tearDown();
     }
 
-    private function fakeJpg(int $width = 800, int $height = 600): UploadedFile
+    private function fakeJpg(string $color = '#336699', int $width = 800, int $height = 600): UploadedFile
     {
         $path = sys_get_temp_dir() . '/wp-upload-in-' . bin2hex(random_bytes(3)) . '.jpg';
         $im = new \Imagick();
-        $im->newImage($width, $height, new \ImagickPixel('#336699'));
+        $im->newImage($width, $height, new \ImagickPixel($color));
         $im->setImageFormat('jpg');
         $im->writeImage($path);
         $im->destroy();
@@ -106,8 +118,10 @@ class WallpaperUploadServiceTest extends TestCase
 
         $this->assertTrue($wallpaper->is_default);
         $this->assertNull($wallpaper->owner_type);
-        $this->assertFileExists($wallpaper->path);
-        $this->assertStringEndsWith('wallpaper.jpg', $wallpaper->path);
+        $this->assertNotNull($wallpaper->asset_id);
+        $this->assertFileExists($wallpaper->asset->absolutePath);
+        $this->assertStringStartsWith($this->tmpLibrary . '/', $wallpaper->asset->absolutePath);
+        $this->assertStringEndsWith('.jpg', $wallpaper->asset->filename);
     }
 
     #[Test]
@@ -123,46 +137,99 @@ class WallpaperUploadServiceTest extends TestCase
 
         $this->assertSame(WorkstationGroup::class, $wallpaper->owner_type);
         $this->assertSame($salle->id, $wallpaper->owner_id);
-        $this->assertStringEndsWith('wallpaper@salle_42.jpg', $wallpaper->path);
+        $this->assertNotNull($wallpaper->asset_id);
+        $this->assertFileExists($wallpaper->asset->absolutePath);
     }
 
     #[Test]
-    public function store_user_wallpaper_with_login_as_key(): void
+    public function store_user_wallpaper(): void
     {
         $user = User::query()->create(['login' => 'jdoe']);
-        $wallpaper = (new WallpaperUploadService())->store(
-            $this->fakeJpg(),
-            'wallpaper',
-            $user,
-        );
+        $wallpaper = (new WallpaperUploadService())->store($this->fakeJpg(), 'wallpaper', $user);
 
         $this->assertSame(User::class, $wallpaper->owner_type);
-        $this->assertStringEndsWith('wallpaper@jdoe.jpg', $wallpaper->path);
+        $this->assertNotNull($wallpaper->asset_id);
     }
 
     #[Test]
     public function store_user_group_wallpaper(): void
     {
         $grp = UserGroup::query()->create(['name' => 'Profs']);
-        $wallpaper = (new WallpaperUploadService())->store(
-            $this->fakeJpg(),
-            'wallpaper',
-            $grp,
-        );
+        $wallpaper = (new WallpaperUploadService())->store($this->fakeJpg(), 'wallpaper', $grp);
 
-        $this->assertStringEndsWith('wallpaper@Profs.jpg', $wallpaper->path);
+        $this->assertSame(UserGroup::class, $wallpaper->owner_type);
+        $this->assertNotNull($wallpaper->asset_id);
     }
 
     #[Test]
-    public function store_replaces_existing_wallpaper(): void
+    public function store_upsert_keeps_single_assignment(): void
     {
         $salle = WorkstationGroup::query()->create(['name' => 'salle_a']);
         $service = new WallpaperUploadService();
-        $first = $service->store($this->fakeJpg(), 'wallpaper', $salle);
-        $second = $service->store($this->fakeJpg(), 'wallpaper', $salle);
+        $first = $service->store($this->fakeJpg('#111111'), 'wallpaper', $salle);
+        $second = $service->store($this->fakeJpg('#111111'), 'wallpaper', $salle);
 
+        // Même image (dédup) → même asset, même assignation.
         $this->assertSame($first->id, $second->id, 'Upsert attendu sur (type, owner)');
+        $this->assertSame($first->asset_id, $second->asset_id, 'Image identique → asset dédupliqué');
         $this->assertSame(1, Wallpaper::query()->count());
+        $this->assertSame(1, WallpaperAsset::query()->count());
+    }
+
+    #[Test]
+    public function identical_image_for_two_owners_is_deduplicated(): void
+    {
+        $a = WorkstationGroup::query()->create(['name' => 'salle_a']);
+        $b = WorkstationGroup::query()->create(['name' => 'salle_b']);
+        $service = new WallpaperUploadService();
+
+        $wa = $service->store($this->fakeJpg('#222222'), 'wallpaper', $a);
+        $wb = $service->store($this->fakeJpg('#222222'), 'wallpaper', $b);
+
+        $this->assertSame($wa->asset_id, $wb->asset_id, 'Un seul asset pour une image identique');
+        $this->assertSame(2, Wallpaper::query()->count());
+        $this->assertSame(1, WallpaperAsset::query()->count());
+    }
+
+    #[Test]
+    public function replace_with_different_image_gcs_orphan_asset(): void
+    {
+        $salle = WorkstationGroup::query()->create(['name' => 'salle_a']);
+        $service = new WallpaperUploadService();
+
+        $first = $service->store($this->fakeJpg('#aa0000'), 'wallpaper', $salle);
+        $firstAsset = WallpaperAsset::find($first->asset_id);
+        $firstPath = $firstAsset->absolutePath;
+        $this->assertFileExists($firstPath);
+
+        $second = $service->store($this->fakeJpg('#00aa00'), 'wallpaper', $salle);
+
+        $this->assertNotSame($first->asset_id, $second->asset_id, 'Image différente → nouvel asset');
+        $this->assertSame(1, Wallpaper::query()->count());
+        // L'ancien asset n'est plus référencé → collecté (DB + fichier).
+        $this->assertSame(1, WallpaperAsset::query()->count());
+        $this->assertNull(WallpaperAsset::find($first->asset_id));
+        $this->assertFileDoesNotExist($firstPath);
+    }
+
+    #[Test]
+    public function shared_asset_not_gced_while_still_referenced(): void
+    {
+        $a = WorkstationGroup::query()->create(['name' => 'salle_a']);
+        $b = WorkstationGroup::query()->create(['name' => 'salle_b']);
+        $service = new WallpaperUploadService();
+
+        // Même image assignée à A et B (1 asset, 2 assignations).
+        $service->store($this->fakeJpg('#333333'), 'wallpaper', $a);
+        $wb = $service->store($this->fakeJpg('#333333'), 'wallpaper', $b);
+        $sharedAsset = WallpaperAsset::find($wb->asset_id);
+        $sharedPath = $sharedAsset->absolutePath;
+
+        // B change d'image : l'asset partagé reste (A le référence encore).
+        $service->store($this->fakeJpg('#444444'), 'wallpaper', $b);
+
+        $this->assertNotNull(WallpaperAsset::find($sharedAsset->id));
+        $this->assertFileExists($sharedPath);
     }
 
     #[Test]
@@ -189,8 +256,6 @@ class WallpaperUploadServiceTest extends TestCase
     #[Test]
     public function invalid_mime_rejected_even_with_valid_extension(): void
     {
-        // Post-review #5 : un fichier .jpg qui n'est en fait pas une image
-        // (contenu texte) doit être rejeté par le MIME check.
         $path = sys_get_temp_dir() . '/wp-fakejpg-' . bin2hex(random_bytes(3)) . '.jpg';
         file_put_contents($path, "Ceci n'est pas une image.");
         $file = new UploadedFile($path, 'fake.jpg', 'text/plain', null, true);
@@ -201,18 +266,17 @@ class WallpaperUploadServiceTest extends TestCase
     }
 
     #[Test]
-    public function default_upload_does_not_overwrite_orphan(): void
+    public function default_upload_does_not_match_orphan_row(): void
     {
-        // Post-review #4 : un row orphan historique `(type, NULL, NULL, is_default=false)`
-        // ne doit PAS être matché lors d'un upload défaut étab — sinon le
-        // fichier orphan disque serait écrasé.
-        //
-        // Depuis le fix #D, les orphans ne sont plus importés en DB. Mais on
-        // garde le test en simulant manuellement un orphan historique (rétro-
-        // compat avec installations antérieures).
+        // Un row orphan historique `(type, NULL, NULL, is_default=false)` ne
+        // doit PAS être matché lors d'un upload défaut étab (post-review #4).
+        $orphanAsset = WallpaperAsset::create([
+            'filename' => 'orphan.jpg',
+            'checksum' => hash('sha256', 'orphan'),
+        ]);
         Wallpaper::query()->create([
             'name' => 'orphelin: legacy',
-            'path' => '/etc/sambaedu/applications/wallpaper/wallpaper@legacy.jpg',
+            'asset_id' => $orphanAsset->id,
             'type' => 'wallpaper',
             'owner_type' => null,
             'owner_id' => null,
@@ -221,13 +285,11 @@ class WallpaperUploadServiceTest extends TestCase
 
         $upload = (new WallpaperUploadService())->store($this->fakeJpg(), 'wallpaper', null, true);
 
-        // L'orphan existe toujours (pas écrasé), le défaut étab est un NEW row
         $this->assertTrue($upload->is_default);
         $this->assertSame(2, Wallpaper::query()->count());
-        $this->assertStringEndsWith('wallpaper.jpg', $upload->path);
-        // Vérifie explicitement que l'orphan est intact
+
         $orphan = Wallpaper::query()->where('is_default', false)->first();
         $this->assertNotNull($orphan);
-        $this->assertStringContainsString('wallpaper@legacy.jpg', $orphan->path);
+        $this->assertSame($orphanAsset->id, $orphan->asset_id);
     }
 }

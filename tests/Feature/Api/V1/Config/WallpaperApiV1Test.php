@@ -51,12 +51,23 @@ class WallpaperApiV1Test extends TestCase
             config()->set('app.key', 'base64:' . base64_encode(random_bytes(32)));
         }
 
-        // Schémas additionnels nécessaires à WallpaperResolver.
+        // Schémas additionnels nécessaires à WallpaperResolver (JOIN assets).
+        if (! Schema::hasTable('wallpaper_assets')) {
+            Schema::create('wallpaper_assets', function (Blueprint $t): void {
+                $t->id();
+                $t->string('filename')->unique();
+                $t->string('original_name')->nullable();
+                $t->string('checksum', 64)->unique();
+                $t->unsignedBigInteger('byte_size')->nullable();
+                $t->unsignedBigInteger('uploaded_by')->nullable();
+                $t->timestamps();
+            });
+        }
         if (! Schema::hasTable('wallpapers')) {
             Schema::create('wallpapers', function (Blueprint $t): void {
                 $t->id();
                 $t->string('name');
-                $t->string('path');
+                $t->unsignedBigInteger('asset_id')->nullable();
                 $t->string('type');
                 $t->string('owner_type')->nullable();
                 $t->unsignedBigInteger('owner_id')->nullable();

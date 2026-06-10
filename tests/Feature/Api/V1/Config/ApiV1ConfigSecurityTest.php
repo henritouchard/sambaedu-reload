@@ -103,11 +103,22 @@ class ApiV1ConfigSecurityTest extends TestCase
 
     private function ensureWallpaperFixtures(): void
     {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('wallpaper_assets')) {
+            \Illuminate\Support\Facades\Schema::create('wallpaper_assets', function (\Illuminate\Database\Schema\Blueprint $t): void {
+                $t->id();
+                $t->string('filename')->unique();
+                $t->string('original_name')->nullable();
+                $t->string('checksum', 64)->unique();
+                $t->unsignedBigInteger('byte_size')->nullable();
+                $t->unsignedBigInteger('uploaded_by')->nullable();
+                $t->timestamps();
+            });
+        }
         if (! \Illuminate\Support\Facades\Schema::hasTable('wallpapers')) {
             \Illuminate\Support\Facades\Schema::create('wallpapers', function (\Illuminate\Database\Schema\Blueprint $t): void {
                 $t->id();
                 $t->string('name');
-                $t->string('path');
+                $t->unsignedBigInteger('asset_id')->nullable();
                 $t->string('type');
                 $t->string('owner_type')->nullable();
                 $t->unsignedBigInteger('owner_id')->nullable();

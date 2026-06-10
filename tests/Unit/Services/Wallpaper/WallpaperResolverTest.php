@@ -9,13 +9,13 @@ use App\Dto\Wallpaper\WallpaperResolution;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\Wallpaper;
+use App\Models\WallpaperAsset;
 use App\Models\WorkstationGroup;
 use App\Services\Filesystem\XfsQuotaService;
 use App\Services\Wallpaper\WallpaperResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
@@ -24,19 +24,20 @@ use Tests\TestCase;
 /**
  * Tests unitaires du Resolver — 7 niveaux legacy + optimisation requêtes.
  *
- * Story 4.7 — AC 4, AC 12.
+ * Story 4.7 — AC 4, AC 12. Refonte bibliothèque (2026-06) : la résolution se
+ * fait via les assignations DB jointes aux assets (`asset_id`). Plus de
+ * fallback par convention de nom de fichier.
  */
 class WallpaperResolverTest extends TestCase
 {
-    private string $tmpStorage;
+    private string $tmpLibrary;
 
     protected function setUp(): void
     {
         parent::setUp();
 
         // Désactive les observers Eloquent (synchro AD/LDAP) pour isoler
-        // les tests du Resolver — sinon WorkstationGroupObserver dispatche
-        // WorkstationGroupAdSyncJob qui tape un vrai serveur LDAP.
+        // les tests du Resolver.
         Model::unguard();
         \App\Models\WorkstationGroup::flushEventListeners();
         \App\Models\UserGroup::flushEventListeners();
@@ -65,10 +66,19 @@ class WallpaperResolverTest extends TestCase
             $t->boolean('is_physical')->default(true);
             $t->timestamps();
         });
+        Schema::create('wallpaper_assets', function (Blueprint $t): void {
+            $t->id();
+            $t->string('filename')->unique();
+            $t->string('original_name')->nullable();
+            $t->string('checksum', 64)->unique();
+            $t->unsignedBigInteger('byte_size')->nullable();
+            $t->unsignedBigInteger('uploaded_by')->nullable();
+            $t->timestamps();
+        });
         Schema::create('wallpapers', function (Blueprint $t): void {
             $t->id();
             $t->string('name');
-            $t->string('path');
+            $t->unsignedBigInteger('asset_id')->nullable();
             $t->string('type');
             $t->string('owner_type')->nullable();
             $t->unsignedBigInteger('owner_id')->nullable();
@@ -77,9 +87,9 @@ class WallpaperResolverTest extends TestCase
             $t->timestamps();
         });
 
-        $this->tmpStorage = sys_get_temp_dir() . '/wp-test-' . bin2hex(random_bytes(4));
-        mkdir($this->tmpStorage, 0755, true);
-        config()->set('wallpapers.storage_path', $this->tmpStorage);
+        $this->tmpLibrary = sys_get_temp_dir() . '/wp-test-' . bin2hex(random_bytes(4));
+        mkdir($this->tmpLibrary, 0755, true);
+        config()->set('wallpapers.library_path', $this->tmpLibrary);
         config()->set('wallpapers.system_default_path', '/nonexistent/default.jpg');
         config()->set('wallpapers.perso_wallpaper', false);
         config()->set('wallpapers.main_types', ['Profs', 'Eleves', 'Administratifs']);
@@ -87,11 +97,11 @@ class WallpaperResolverTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (is_dir($this->tmpStorage)) {
-            foreach (glob($this->tmpStorage . '/*') ?: [] as $f) {
+        if (is_dir($this->tmpLibrary)) {
+            foreach (glob($this->tmpLibrary . '/*') ?: [] as $f) {
                 @unlink($f);
             }
-            @rmdir($this->tmpStorage);
+            @rmdir($this->tmpLibrary);
         }
         Mockery::close();
         parent::tearDown();
@@ -102,9 +112,19 @@ class WallpaperResolverTest extends TestCase
         return new WallpaperResolver($quota);
     }
 
+    /** Crée (ou réutilise) un asset de bibliothèque et retourne son id. */
+    private function assetId(string $tag): int
+    {
+        $checksum = hash('sha256', $tag);
+
+        return WallpaperAsset::firstOrCreate(
+            ['checksum' => $checksum],
+            ['filename' => substr($checksum, 0, 24) . '.jpg', 'original_name' => $tag],
+        )->id;
+    }
+
     private function ctx(array $overrides = []): WallpaperContext
     {
-        // Structure APCu réelle : user/machine = arrays LDAP (post-fix #1)
         return WallpaperContext::fromApcuArray(array_merge([
             'user' => ['cn' => 'jdoe', 'fullname' => 'John Doe'],
             'admin' => false,
@@ -123,7 +143,6 @@ class WallpaperResolverTest extends TestCase
     #[Test]
     public function level1_system_default_when_nothing_else(): void
     {
-        // Contexte sans user / groupes / salle matching et DB vide
         $ctx = new WallpaperContext(
             userLogin: '',
             userFullname: '',
@@ -150,7 +169,7 @@ class WallpaperResolverTest extends TestCase
     {
         Wallpaper::query()->create([
             'name' => 'default',
-            'path' => '/etc/sambaedu/applications/wallpaper/wallpaper.jpg',
+            'asset_id' => $this->assetId('etab-default'),
             'type' => 'wallpaper',
             'owner_type' => null,
             'owner_id' => null,
@@ -173,16 +192,15 @@ class WallpaperResolverTest extends TestCase
     {
         Wallpaper::query()->create([
             'name' => 'default',
-            'path' => $this->tmpStorage . '/wallpaper.jpg',
+            'asset_id' => $this->assetId('etab'),
             'type' => 'wallpaper',
             'is_default' => true,
         ]);
-        file_put_contents($this->tmpStorage . '/wallpaper.jpg', 'fake');
 
         $salle = WorkstationGroup::query()->create(['name' => 'salle_a', 'is_physical' => true]);
         Wallpaper::query()->create([
             'name' => 'salle_a',
-            'path' => $this->tmpStorage . '/wallpaper@salle_a.jpg',
+            'asset_id' => $this->assetId('salle_a'),
             'type' => 'wallpaper',
             'owner_type' => WorkstationGroup::class,
             'owner_id' => $salle->id,
@@ -206,7 +224,7 @@ class WallpaperResolverTest extends TestCase
         $salle = WorkstationGroup::query()->create(['name' => 'salle_a']);
         Wallpaper::query()->create([
             'name' => 'salle_a',
-            'path' => '/x/salle.jpg',
+            'asset_id' => $this->assetId('salle'),
             'type' => 'wallpaper',
             'owner_type' => WorkstationGroup::class,
             'owner_id' => $salle->id,
@@ -215,7 +233,7 @@ class WallpaperResolverTest extends TestCase
         $profs = UserGroup::query()->create(['name' => 'Profs', 'type' => 'classe']);
         Wallpaper::query()->create([
             'name' => 'Profs',
-            'path' => '/x/profs.jpg',
+            'asset_id' => $this->assetId('profs'),
             'type' => 'wallpaper',
             'owner_type' => UserGroup::class,
             'owner_id' => $profs->id,
@@ -230,8 +248,7 @@ class WallpaperResolverTest extends TestCase
     }
 
     // ========================================================================
-    // NIVEAU 5 — groupe AD (hors type principal) bat type principal si DB
-    // uniquement pour ce groupe
+    // NIVEAU 5 — groupe AD (hors type principal)
     // ========================================================================
 
     #[Test]
@@ -240,7 +257,7 @@ class WallpaperResolverTest extends TestCase
         $group = UserGroup::query()->create(['name' => 'classe_6A']);
         Wallpaper::query()->create([
             'name' => 'classe_6A',
-            'path' => '/x/6a.jpg',
+            'asset_id' => $this->assetId('6a'),
             'type' => 'wallpaper',
             'owner_type' => UserGroup::class,
             'owner_id' => $group->id,
@@ -273,7 +290,7 @@ class WallpaperResolverTest extends TestCase
         ]);
         Wallpaper::query()->create([
             'name' => 'jdoe',
-            'path' => '/x/jdoe.jpg',
+            'asset_id' => $this->assetId('jdoe'),
             'type' => 'wallpaper',
             'owner_type' => User::class,
             'owner_id' => $user->id,
@@ -282,7 +299,7 @@ class WallpaperResolverTest extends TestCase
         $salle = WorkstationGroup::query()->create(['name' => 'salle_a']);
         Wallpaper::query()->create([
             'name' => 'salle_a',
-            'path' => '/x/salle.jpg',
+            'asset_id' => $this->assetId('salle'),
             'type' => 'wallpaper',
             'owner_type' => WorkstationGroup::class,
             'owner_id' => $salle->id,
@@ -302,9 +319,6 @@ class WallpaperResolverTest extends TestCase
     #[Test]
     public function level7_disabled_falls_back_to_level6_user(): void
     {
-        // Test honnête : le flag `perso_wallpaper=false` fait qu'on retombe
-        // sur le niveau 6 (user) même si un fichier home perso existait.
-        // Post-review #8 : ancien nom mensonger remplacé.
         config()->set('wallpapers.perso_wallpaper', false);
 
         $user = User::query()->create([
@@ -316,7 +330,7 @@ class WallpaperResolverTest extends TestCase
         ]);
         Wallpaper::query()->create([
             'name' => 'jdoe',
-            'path' => '/x/jdoe.jpg',
+            'asset_id' => $this->assetId('jdoe'),
             'type' => 'wallpaper',
             'owner_type' => User::class,
             'owner_id' => $user->id,
@@ -329,8 +343,6 @@ class WallpaperResolverTest extends TestCase
     #[Test]
     public function level7_home_perso_wins_over_all(): void
     {
-        // Vrai test niveau 7 (post-review #8) : crée un tmpdir réel, override
-        // `personal_base_path`, pose un `<tmpdir>/jdoe/Photos/wallpaper.jpg`.
         $tmpdir = sys_get_temp_dir() . '/wp-home-perso-' . bin2hex(random_bytes(4));
         mkdir($tmpdir . '/jdoe/Photos', 0755, true);
         $personalPath = $tmpdir . '/jdoe/Photos/wallpaper.jpg';
@@ -349,17 +361,16 @@ class WallpaperResolverTest extends TestCase
             ]);
             Wallpaper::query()->create([
                 'name' => 'jdoe',
-                'path' => '/x/jdoe.jpg',
+                'asset_id' => $this->assetId('jdoe'),
                 'type' => 'wallpaper',
                 'owner_type' => User::class,
                 'owner_id' => $user->id,
             ]);
 
-            // Un wallpaper de salle pour vérifier que le niveau 7 écrase tout
             $salle = WorkstationGroup::query()->create(['name' => 'salle_a']);
             Wallpaper::query()->create([
                 'name' => 'salle_a',
-                'path' => '/x/salle.jpg',
+                'asset_id' => $this->assetId('salle'),
                 'type' => 'wallpaper',
                 'owner_type' => WorkstationGroup::class,
                 'owner_id' => $salle->id,
@@ -409,10 +420,9 @@ class WallpaperResolverTest extends TestCase
             'ad_rights_bitmask' => 0,
             'role' => 'eleve',
         ]);
-        // Une row user existe MAIS le Resolver ne doit PAS la matcher en lockscreen
         Wallpaper::query()->create([
             'name' => 'jdoe',
-            'path' => '/x/lockuser.jpg',
+            'asset_id' => $this->assetId('lockuser'),
             'type' => 'lockscreen',
             'owner_type' => User::class,
             'owner_id' => $user->id,
@@ -430,7 +440,7 @@ class WallpaperResolverTest extends TestCase
         $grp = UserGroup::query()->create(['name' => 'Profs']);
         Wallpaper::query()->create([
             'name' => 'Profs',
-            'path' => '/x/lockprofs.jpg',
+            'asset_id' => $this->assetId('lockprofs'),
             'type' => 'lockscreen',
             'owner_type' => UserGroup::class,
             'owner_id' => $grp->id,
@@ -449,7 +459,7 @@ class WallpaperResolverTest extends TestCase
         $salle = WorkstationGroup::query()->create(['name' => 'salle_a']);
         Wallpaper::query()->create([
             'name' => 'salle_a',
-            'path' => '/x/locksalle.jpg',
+            'asset_id' => $this->assetId('locksalle'),
             'type' => 'lockscreen',
             'owner_type' => WorkstationGroup::class,
             'owner_id' => $salle->id,
@@ -462,11 +472,53 @@ class WallpaperResolverTest extends TestCase
     }
 
     // ========================================================================
-    // PERF — ≤ 3 queries DB
+    // SOURCE PATH — résolu depuis la bibliothèque (library_path/filename)
     // ========================================================================
 
     #[Test]
-    public function resolver_issues_at_most_3_queries(): void
+    public function source_path_points_to_library(): void
+    {
+        $salle = WorkstationGroup::query()->create(['name' => 'salle_a']);
+        $assetId = $this->assetId('salle_a');
+        Wallpaper::query()->create([
+            'name' => 'salle_a',
+            'asset_id' => $assetId,
+            'type' => 'wallpaper',
+            'owner_type' => WorkstationGroup::class,
+            'owner_id' => $salle->id,
+        ]);
+        $filename = WallpaperAsset::find($assetId)->filename;
+
+        $res = $this->resolver()->resolve($this->ctx(['list_u' => []]), Wallpaper::TYPE_WALLPAPER);
+
+        $this->assertSame($this->tmpLibrary . '/' . $filename, $res->sourcePath);
+    }
+
+    #[Test]
+    public function assignment_without_asset_is_ignored(): void
+    {
+        // Une assignation dont l'asset a disparu (asset_id NULL) ne doit pas
+        // être retournée : le INNER JOIN l'écarte, on retombe au niveau système.
+        $salle = WorkstationGroup::query()->create(['name' => 'salle_a']);
+        Wallpaper::query()->create([
+            'name' => 'salle_a',
+            'asset_id' => null,
+            'type' => 'wallpaper',
+            'owner_type' => WorkstationGroup::class,
+            'owner_id' => $salle->id,
+        ]);
+
+        $res = $this->resolver()->resolve($this->ctx(['list_u' => []]), Wallpaper::TYPE_WALLPAPER);
+
+        $this->assertSame(WallpaperResolution::LEVEL_DEFAULT_SYSTEM, $res->level);
+    }
+
+    // ========================================================================
+    // PERF — ≤ 4 queries DB
+    // ========================================================================
+
+    #[Test]
+    public function resolver_issues_at_most_4_queries(): void
     {
         $user = User::query()->create([
             'login' => 'jdoe',
@@ -487,28 +539,11 @@ class WallpaperResolverTest extends TestCase
         $queries = DB::connection()->getQueryLog();
         DB::connection()->disableQueryLog();
 
-        // ≤ 4 (1 user + 1 user_groups + 1 workstation_group + 1 wallpapers)
+        // ≤ 4 (1 user + 1 user_groups + 1 workstation_group + 1 wallpapers joint)
         $this->assertLessThanOrEqual(
             4,
             count($queries),
             sprintf('Expected ≤ 4 queries, got %d: %s', count($queries), json_encode(array_column($queries, 'query'))),
         );
-    }
-
-    // ========================================================================
-    // FALLBACK FS — DB vide, fichier legacy présent
-    // ========================================================================
-
-    #[Test]
-    public function fallback_filesystem_picks_legacy_file(): void
-    {
-        // Pas de row DB, mais fichier `wallpaper@salle_a.jpg` existe
-        WorkstationGroup::query()->create(['name' => 'salle_a']);
-        file_put_contents($this->tmpStorage . '/wallpaper@salle_a.jpg', 'fake');
-
-        $res = $this->resolver()->resolve($this->ctx(['list_u' => []]), Wallpaper::TYPE_WALLPAPER);
-
-        $this->assertSame(WallpaperResolution::LEVEL_SALLE, $res->level);
-        $this->assertStringEndsWith('wallpaper@salle_a.jpg', $res->sourcePath);
     }
 }

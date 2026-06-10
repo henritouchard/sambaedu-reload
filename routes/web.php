@@ -271,6 +271,11 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
         ->middleware('can:wallpaper.manage')
         ->name('wallpapers.thumbnail');
 
+    // Miniature d'un asset de bibliothèque (sélecteur UI) — refonte 2026-06.
+    Route::get('/wallpaper-assets/{asset}/thumbnail', [WallpaperController::class, 'assetThumbnail'])
+        ->middleware('can:wallpaper.manage')
+        ->name('wallpaper-assets.thumbnail');
+
 });
 
 // ========================================

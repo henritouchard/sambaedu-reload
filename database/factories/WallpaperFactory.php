@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Database\Factories;
 
 use App\Models\Wallpaper;
+use App\Models\WallpaperAsset;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -18,7 +19,7 @@ class WallpaperFactory extends Factory
     {
         return [
             'name' => 'test-' . fake()->unique()->numerify('###'),
-            'path' => '/etc/sambaedu/applications/wallpaper/test.jpg',
+            'asset_id' => WallpaperAsset::factory(),
             'type' => Wallpaper::TYPE_WALLPAPER,
             'owner_type' => null,
             'owner_id' => null,
@@ -28,17 +29,16 @@ class WallpaperFactory extends Factory
 
     public function default(): static
     {
-        return $this->state(fn() => [
+        return $this->state(fn () => [
             'owner_type' => null,
             'owner_id' => null,
             'is_default' => true,
-            'path' => '/etc/sambaedu/applications/wallpaper/wallpaper.jpg',
             'name' => 'default',
         ]);
     }
 
     public function lockscreen(): static
     {
-        return $this->state(fn() => ['type' => Wallpaper::TYPE_LOCKSCREEN]);
+        return $this->state(fn () => ['type' => Wallpaper::TYPE_LOCKSCREEN]);
     }
 }

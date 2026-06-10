@@ -3,6 +3,7 @@
 use Livewire\Component;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
+use Livewire\Attributes\On;
 use App\Services\Parc\WorkstationGroupService;
 use App\Services\Parc\WorkstationGroupScheduleService;
 use App\Services\Parc\MachinePowerService;
@@ -65,7 +66,6 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     public array $currentBatchTaskIds = [];
     public bool $batchSummaryVisible = false;
     public bool $batchTimeoutFired = false;
-    public bool $showWallpaperModal = false;
 
     // ── Story 15.4 / Décision A — Onglet « Applications WPKG » ─────────────
     #[Url(as: 'tab')]
@@ -867,14 +867,14 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         $this->executeSelectedGroupMachinesAction($action);
     }
 
-    public function openWallpaperModal(): void
+    /**
+     * Re-render au retour d'un picker de fond d'écran (refonte UX 2026-06) :
+     * rafraîchit les vignettes header Bureau/Verr. après application/retrait.
+     */
+    #[On('wallpaper-updated')]
+    public function onWallpaperUpdated(): void
     {
-        $this->showWallpaperModal = true;
-    }
-
-    public function closeWallpaperModal(): void
-    {
-        $this->showWallpaperModal = false;
+        // No-op : la simple réception de l'event force le re-render Livewire.
     }
 
     // ========================================
@@ -1628,9 +1628,17 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                             @can('wallpaper.manage')
                                 <hr class="border-zinc-200 my-1">
                                 <li>
-                                    <button type="button" wire:click="openWallpaperModal">
-                                        <i class="fa-solid fa-image"></i>
-                                        Fonds d'écran
+                                    <button type="button"
+                                        wire:click="$dispatch('open-wp-picker', { type: 'wallpaper', ownerId: {{ $group->id }} })">
+                                        <i class="fa-solid fa-desktop"></i>
+                                        Fond d'écran — Bureau
+                                    </button>
+                                </li>
+                                <li>
+                                    <button type="button"
+                                        wire:click="$dispatch('open-wp-picker', { type: 'lockscreen', ownerId: {{ $group->id }} })">
+                                        <i class="fa-solid fa-lock"></i>
+                                        Écran de verrouillage — Verr.
                                     </button>
                                 </li>
                             @endcan
@@ -1739,42 +1747,38 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                                     ->where('owner_id', $group->id)
                                     ->first();
                             @endphp
-                            @if ($headerWallpaper || $headerLockscreen)
-                                <div class="flex items-center gap-3 mt-4 pt-4 border-t border-base-200">
-                                    <span class="text-xs text-base-content/50 uppercase tracking-wide shrink-0">Fonds
-                                        d'écran</span>
+                            <div class="flex items-center gap-3 mt-4 pt-4 border-t border-base-200">
+                                <span class="text-xs text-base-content/50 uppercase tracking-wide shrink-0">Fonds
+                                    d'écran</span>
+
+                                {{-- Bureau (wallpaper) --}}
+                                <button type="button"
+                                    wire:click="$dispatch('open-wp-picker', { type: 'wallpaper', ownerId: {{ $group->id }} })"
+                                    class="group relative rounded-lg overflow-hidden border border-base-300 hover:border-primary transition-colors w-16 h-10 bg-base-200 flex items-center justify-center"
+                                    title="Bureau — cliquer pour choisir">
                                     @if ($headerWallpaper)
-                                        <button type="button" wire:click="openWallpaperModal"
-                                            class="group relative rounded-lg overflow-hidden border border-base-300 hover:border-primary transition-colors"
-                                            title="Fond d'écran — cliquer pour gérer">
-                                            <img src="{{ route('app.wallpapers.thumbnail', $headerWallpaper->id) }}"
-                                                alt="Fond d'écran" class="w-16 h-10 object-cover">
-                                            <div
-                                                class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                                <i
-                                                    class="fa-solid fa-pen text-white opacity-0 group-hover:opacity-100 text-xs"></i>
-                                            </div>
-                                            <span
-                                                class="absolute bottom-0 left-0 right-0 text-[9px] text-center bg-black/50 text-white py-0.5">Bureau</span>
-                                        </button>
+                                        <img src="{{ route('app.wallpapers.thumbnail', $headerWallpaper->id) }}"
+                                            alt="Fond d'écran" class="w-full h-full object-cover">
+                                    @else
+                                        <i class="fa-solid fa-desktop text-base-content/40"></i>
                                     @endif
+                                    <span class="absolute bottom-0 left-0 right-0 text-[9px] text-center bg-black/50 text-white py-0.5">Bureau</span>
+                                </button>
+
+                                {{-- Verr. (lockscreen) --}}
+                                <button type="button"
+                                    wire:click="$dispatch('open-wp-picker', { type: 'lockscreen', ownerId: {{ $group->id }} })"
+                                    class="group relative rounded-lg overflow-hidden border border-base-300 hover:border-primary transition-colors w-16 h-10 bg-base-200 flex items-center justify-center"
+                                    title="Écran de verrouillage — cliquer pour choisir">
                                     @if ($headerLockscreen)
-                                        <button type="button" wire:click="openWallpaperModal"
-                                            class="group relative rounded-lg overflow-hidden border border-base-300 hover:border-primary transition-colors"
-                                            title="Écran de verrouillage — cliquer pour gérer">
-                                            <img src="{{ route('app.wallpapers.thumbnail', $headerLockscreen->id) }}"
-                                                alt="Écran de verrouillage" class="w-16 h-10 object-cover">
-                                            <div
-                                                class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                                <i
-                                                    class="fa-solid fa-pen text-white opacity-0 group-hover:opacity-100 text-xs"></i>
-                                            </div>
-                                            <span
-                                                class="absolute bottom-0 left-0 right-0 text-[9px] text-center bg-black/50 text-white py-0.5">Verr.</span>
-                                        </button>
+                                        <img src="{{ route('app.wallpapers.thumbnail', $headerLockscreen->id) }}"
+                                            alt="Écran de verrouillage" class="w-full h-full object-cover">
+                                    @else
+                                        <i class="fa-solid fa-lock text-base-content/40"></i>
                                     @endif
-                                </div>
-                            @endif
+                                    <span class="absolute bottom-0 left-0 right-0 text-[9px] text-center bg-black/50 text-white py-0.5">Verr.</span>
+                                </button>
+                            </div>
                         @endcan
                     @endif
                 </div>

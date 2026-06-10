@@ -12,8 +12,18 @@ declare(strict_types=1);
 
 return [
     /*
-     | Storage legacy : emplacement des fichiers `<type>@<key>.jpg` et défauts
-     | `/etc/sambaedu/applications/wallpaper/` (garder pour rollback safe).
+     | Bibliothèque de wallpapers (nouveau modèle asset+assignation) : racine
+     | où sont stockés les fichiers content-addressés `<checksum>.<ext>`.
+     | Sous `storage/` → sauvegardable / redéployable sans perte. Relocatable
+     | par cette seule clé (les assets ne stockent que le filename).
+     */
+    'library_path' => env('WALLPAPER_LIBRARY_PATH', storage_path('app/wallpaper')),
+
+    /*
+     | Storage legacy : emplacement historique des fichiers `<type>@<key>.jpg`
+     | `/etc/sambaedu/applications/wallpaper/`. Conservé UNIQUEMENT comme source
+     | de la migration de données (backfill_wallpaper_assets) qui rapatrie ces
+     | fichiers vers `library_path`. Plus aucun code de runtime ne le lit.
      */
     'storage_path' => env('WALLPAPER_STORAGE_PATH', '/etc/sambaedu/applications/wallpaper'),
 
