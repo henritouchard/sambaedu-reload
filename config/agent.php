@@ -8,8 +8,12 @@ declare(strict_types=1);
 |--------------------------------------------------------------------------
 |
 | Story 23.2 — config minimale : seule l'échéance de rotation du token
-| agent vit ici. Complété en 23.5 : ttl_seconds, report_history, rétentions.
+| agent vit ici.
 | Story 23.3 — TTL du ticket d'enrôlement one-time (porte 1 iPXE).
+| Story 23.5 — complétion (gap 4 architecture, valeurs fixées) :
+| ttl_seconds, report_history, rétentions events/history. Les planchers
+| max(1, …) sont évalués au config:cache : une env mal renseignée (0,
+| négatif, vide → null casté 0) ne produit jamais de valeur dégénérée.
 |
 */
 
@@ -28,5 +32,24 @@ return [
     // est de toute façon consommé au premier usage
     // (cf. docs/agent/enrollment.md).
     'enroll_ticket_ttl_minutes' => (int) env('AGENT_ENROLL_TICKET_TTL_MINUTES', 240),
+
+    // Cadence de poll conseillée à l'agent (Story 23.5) : champ `ttl_seconds`
+    // de l'enveloppe se5.desired-state/v1 servie par GET /api/v1/agent/state.
+    // 3600 s = 60 min (D7), aligné sur le golden file du contrat. Indicatif :
+    // le serveur ne refuse pas un poll plus fréquent (throttle à part).
+    'ttl_seconds' => max(1, (int) env('AGENT_STATE_TTL_SECONDS', 3600)),
+
+    // Historique de débogage des rapports agent (flag D3, consommé en 24.1) :
+    // off par défaut — seuls le dernier état rapporté et le journal des
+    // changements sont conservés en fonctionnement nominal.
+    'report_history' => (bool) env('AGENT_REPORT_HISTORY', false),
+
+    // Rétention du journal des changements rapportés par les agents
+    // (« rétention courte » D3, purge consommée en 24.1).
+    'report_events_retention_days' => max(1, (int) env('AGENT_REPORT_EVENTS_RETENTION_DAYS', 14)),
+
+    // Rétention de l'historique de débogage (si report_history est activé) :
+    // purge automatique, l'historique ne grossit jamais sans borne.
+    'report_history_retention_days' => max(1, (int) env('AGENT_REPORT_HISTORY_RETENTION_DAYS', 30)),
 
 ];

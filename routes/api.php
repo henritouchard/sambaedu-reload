@@ -31,6 +31,8 @@ use App\ScriptsOs\Http\Controllers\ScriptExecutionLogIngestionController as Scri
 // Alias requis : `EnrollController` collisionne avec celui du canal JWT
 // legacy-migration (`App\Auth\V1\...`), importé plus haut sous AuthV1EnrollController.
 use App\Http\Controllers\Api\V1\Agent\EnrollController as AgentEnrollController;
+// Story 23.5 — Canal agent desired-state : GET /state (alias iso AgentEnrollController).
+use App\Http\Controllers\Api\V1\Agent\StateController as AgentStateController;
 // Story 16.13 — Exposition endpoints natifs /api/v1/*
 use App\Http\Controllers\WallpaperController;
 use App\Http\Controllers\OverlayController;
@@ -242,13 +244,22 @@ Route::prefix('v1')
 |   `auth.v1.secure-headers` posent `Cache-Control: no-store` (la réponse
 |   200 porte le token en clair, une seule fois) — hygiène HTTP réutilisée,
 |   pas une dépendance au canal JWT.
-| - Futurs endpoints du canal (23.5 `GET /state`, 24.1 report) : derrière
-|   l'alias `agent.token`, à ajouter ici.
+| - `GET /v1/agent/state` (23.5) : l'état cible compilé du poste authentifié,
+|   réponse conditionnelle ETag/If-None-Match → 304 sans corps. Throttle
+|   60/min/IP (defer 23.2 résolu) AVANT `agent.token` : le lookup DB du
+|   middleware est protégé du flood. Pas de `local.request` : l'auth EST le
+|   token (iso canal config 16.13).
+| - Futurs endpoints du canal (24.1 report) : derrière l'alias `agent.token`,
+|   à ajouter ici.
 */
 Route::post('/v1/agent/enrollment', [AgentEnrollController::class, 'store'])
     ->middleware(['local.request', 'auth.v1.secure-headers', 'throttle:10,1'])
     ->name('agent.v1.enrollment');
-        
+
+Route::get('/v1/agent/state', [AgentStateController::class, 'show'])
+    ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
+    ->name('agent.v1.state');
+
 /*
 |--------------------------------------------------------------------------
 | Story 16.13 — Exposition endpoints natifs /api/v1/workstation-config/*

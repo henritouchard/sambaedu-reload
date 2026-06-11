@@ -4,6 +4,7 @@
 > wire format, FIGÉ) sans le modifier : ce document décrit le **côté serveur**
 > de la compilation — comment l'état cible d'un (poste, user) est calculé
 > depuis les tables métier existantes, et comment on ajoute un type.
+> Le compilé est servi par `GET /api/v1/agent/state` — voir `state-endpoint.md`.
 
 ## Vue d'ensemble
 
