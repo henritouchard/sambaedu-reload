@@ -1,0 +1,32 @@
+{
+    "schema": "se5.desired-state/v1",
+    "generated_at": "2026-06-11T08:05:00+00:00",
+    "agent_version": "1.0.0",
+    "workstation": {
+        "hostname": "salle101-pc03",
+        "uuid": "f1d2c3b4-a5e6-4789-9abc-0123456789ab"
+    },
+    "items": [
+        {
+            "type": "wallpaper",
+            "status": "compliant",
+            "hash": "f65db3c85252d489f7f451f0fc5933ca47aee0f5ecfc88ef2e8bf5ca2d6e2d37"
+        },
+        {
+            "type": "overlay",
+            "status": "drift",
+            "hash": "fe63c6843f645ac02b9e5bad418d15172c883c0e54ee53cca97924da4cf2519f"
+        },
+        {
+            "type": "shortcuts",
+            "status": "drifted_allowed",
+            "hash": "2fb7f510fe56e3b7efc27407bd6af1f275f70376df459b326731ab876058335f"
+        },
+        {
+            "type": "printers",
+            "status": "error",
+            "hash": "9f2c4e7a1b3d5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8",
+            "detail": "service Spooler indisponible (RPC 0x6ba)"
+        }
+    ]
+}

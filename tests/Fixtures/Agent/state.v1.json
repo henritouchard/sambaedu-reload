@@ -1,0 +1,41 @@
+{
+    "schema": "se5.desired-state/v1",
+    "generated_at": "2026-06-11T08:00:00+00:00",
+    "ttl_seconds": 3600,
+    "machine": [],
+    "session": [
+        {
+            "type": "wallpaper",
+            "semantics": "exclusive",
+            "mode": "default",
+            "payload": {
+                "asset": "fonds/ecole-2026.jpg",
+                "style": "fill"
+            },
+            "hash": "f65db3c85252d489f7f451f0fc5933ca47aee0f5ecfc88ef2e8bf5ca2d6e2d37"
+        },
+        {
+            "type": "overlay",
+            "semantics": "aggregate",
+            "mode": "strict",
+            "payload": {
+                "tool": "rainmeter",
+                "ttl_seconds": 60
+            },
+            "hash": "fe63c6843f645ac02b9e5bad418d15172c883c0e54ee53cca97924da4cf2519f"
+        }
+    ],
+    "machine_user": [
+        {
+            "type": "shortcuts",
+            "semantics": "aggregate",
+            "mode": "strict",
+            "payload": {
+                "name": "Intranet",
+                "target": "https://intranet.example.edu",
+                "location": "desktop"
+            },
+            "hash": "2fb7f510fe56e3b7efc27407bd6af1f275f70376df459b326731ab876058335f"
+        }
+    ]
+}
