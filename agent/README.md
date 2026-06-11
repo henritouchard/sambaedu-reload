@@ -7,7 +7,9 @@ serveur uniquement) :
 ```
 agent/
 ├── README.md      ← ce fichier : décision techno + contrats locaux du poste
-├── windows/       ← agent Windows (service SYSTEM) + scripts install/uninstall
+├── windows/       ← agent Windows : service SYSTEM (SambaEduAgent.ps1),
+│                    compagnon de session 24.3 (SessionStateFetch.ps1 SYSTEM
+│                    + SessionCompanion.ps1 droits user), install/uninstall
 ├── shared/        ← cœur partageable cross-OS : parsing contrat v1, rapport
 └── build/         ← build + signature Authenticode (sortie : build/dist/)
 ```
@@ -56,7 +58,9 @@ l'infra SE5 (contrainte 6).
 | Cache état cible | `C:\ProgramData\SambaEdu\Agent\cache\state.json` | Enveloppe `se5.desired-state/v1` brute du dernier `GET /state` 200. ACL SYSTEM + Administrators. |
 | Cache ETag | `C:\ProgramData\SambaEdu\Agent\cache\etag.txt` | Header `ETag` stocké **VERBATIM** (guillemets RFC 7232 inclus), renvoyé tel quel en `If-None-Match`. Tout trim/déquotage brise le 304. |
 | Dernier-appliqué | `C:\ProgramData\SambaEdu\Agent\applied-state.json` | Créé **vide** (`{}`) dès 24.2 — infrastructure du mode `default` (gap 1 du contrat §5), consommé par les handlers 24.4. |
-| Logs | `C:\ProgramData\SambaEdu\Agent\logs\agent.log` | Format `[ISO 8601] [LEVEL] message`, rotation quotidienne (`agent-YYYY-MM-DD.log`), rétention 7 jours. Trace locale de la boucle — le serveur ne voit que les rapports. |
+| Cache de session (24.3) | `C:\ProgramData\SambaEdu\Agent\cache\sessions\<SID>\{state.json,etag.txt}` | Un répertoire **par SID** de session, écrit par le fetch SYSTEM. ETag **du contexte** (poste, user) — jamais celui du cache machine. ACL : SYSTEM F, Administrators F, `<SID>` **lecture seule** (les fichiers héritent). |
+| Logs | `C:\ProgramData\SambaEdu\Agent\logs\agent.log` | Format `[ISO 8601] [LEVEL] message`, rotation quotidienne (`agent-YYYY-MM-DD.log`), rétention 7 jours. Trace locale de la boucle — le serveur ne voit que les rapports. Le fetch de session (SYSTEM) logue ICI aussi. |
+| Log compagnon (24.3) | `%LOCALAPPDATA%\SambaEdu\Agent\companion.log` | Seule écriture du processus user (profil user, aucune élévation). Même format/rotation que `agent.log` (`companion-YYYY-MM-DD.log`, 7 jours). |
 
 ### Hostname court (résolution defer review 24.1 #8)
 
@@ -85,6 +89,41 @@ normalisation en minuscules est faite côté serveur.
   quarantaine), plus aucun `POST /report` ni traitement d'état.
 - **Serveur injoignable / 5xx / 429** : l'agent vit sur son cache, backoff
   exponentiel 30 s → 60 s → … plafonné à la cadence normale (3600 s).
+
+### Compagnon de session (Story 24.3)
+
+Le token étant illisible user (ACL 23.3 figée), le canal réseau reste
+**100 % SYSTEM** : le « compagnon de session » est un sous-système en
+**deux tâches planifiées** at-logon, enregistrées par
+`Install-SambaEduAgent.ps1` (vue serveur complète :
+`docs/agent/session-companion.md`) :
+
+- **`SambaEduAgent-SessionFetch`** (SYSTEM) → `SessionStateFetch.ps1` :
+  énumère les sessions interactives (CIM, jamais `quser` — l'identité est
+  résolue côté SYSTEM, anti-usurpation), `GET /state?user=<login court>`
+  avec l'`If-None-Match` **du contexte**, écrit
+  `cache\sessions\<SID>\{state.json,etag.txt}` (user en lecture seule).
+  Même code (`Invoke-SessionStateFetch` dans `SambaEduAgent.ps1`) appelé
+  par le cycle du service pour le rafraîchissement mid-session.
+- **`SambaEduAgent-SessionCompanion`** (principal `BUILTIN\Users`, tourne
+  dans la session avec SES droits) → `SessionCompanion.ps1` : poll borné du
+  cache (2 s / 60 s, fallback dernier cache, sinon sortie silencieuse),
+  `Parse-State`, traite les portées **`session` + `machine_user`**
+  seulement (la portée `machine` reste au service) — no-op journalisé en
+  24.3, handlers en 24.4. N'écrit que dans `%LOCALAPPDATA%\SambaEdu\Agent\`.
+  Ne dot-source que `ContractV1.ps1` (lisible user sous Program Files).
+
+**Durcissement 401 deux-acteurs** (le service ET le fetch partagent le même
+fichier token — une rotation reçue par l'un peut invalider un appel en vol
+de l'autre, dont le `PreviousToken` mémoire est null) : sur 401, après la
+grâce mémoire, `Invoke-AgentHttpWithGrace` **relit le token sur disque** et
+réessaie UNE fois s'il diffère — c'est seulement après ça qu'un 401 est
+irrécupérable (arrêt + log, jamais de re-enrôlement auto).
+
+**Note agent définitif** (binaire Go/.NET, prérequis Epic 25) : la voie
+naturelle est un **broker IPC named-pipe** (le service pousse l'état aux
+processus de session, plus de cache-fichiers ni de double tâche), écartée
+pour le MVP PowerShell (service mono-thread 24.2, artefact temporaire).
 
 ### NFC (note pour 24.4 — handlers)
 
@@ -120,7 +159,8 @@ remonte bien à la CA SambaEdu.
 # Sur le poste (admin), après build :
 .\Install-SambaEduAgent.ps1 -ServerUrl 'http://<serveur-se5>'
 # Vérifier : Get-Service SambaEduAgent ; log C:\ProgramData\SambaEdu\Agent\logs\agent.log
-# Désinstaller (token conservé) : .\Uninstall-SambaEduAgent.ps1
+# Tâches compagnon (24.3) : Get-ScheduledTask SambaEduAgent-Session* → Ready
+# Désinstaller (service + tâches, token conservé) : .\Uninstall-SambaEduAgent.ps1
 ```
 
 La distribution automatique (bootstrap, canari, auto-update) est la story 25.x.

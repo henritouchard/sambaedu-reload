@@ -2,8 +2,10 @@
 # Build-Agent.ps1 — Build + signature Authenticode de l'agent (Story 24.2, AC5)
 # =============================================================================
 # Produit dans agent/build/dist/ un artefact pret a deployer sur le poste lab :
-#   - SambaEduAgent.ps1 + ContractV1.ps1 + Install/Uninstall (bundle a plat,
-#     SambaEduAgent.ps1 dot-source ContractV1.ps1 depuis son propre dossier) ;
+#   - SambaEduAgent.ps1 + ContractV1.ps1 + SessionStateFetch.ps1 +
+#     SessionCompanion.ps1 (compagnon de session 24.3) + Install/Uninstall
+#     (bundle a plat, les scripts dot-sourcent leurs dependances depuis leur
+#     propre dossier) ;
 #   - chaque .ps1 SIGNE Authenticode avec un certificat code-signing emis par
 #     la CA interne SambaEdu-RootCA (NFR6 : un artefact non signe = SmartScreen
 #     bloque = demo impossible). La CA racine est deja deployee sur les postes
@@ -69,6 +71,10 @@ New-Item -ItemType Directory -Path $distDir | Out-Null
 
 $files = @(
     (Join-Path $repoAgentDir 'windows\SambaEduAgent.ps1'),
+    # Compagnon de session 24.3 : scripts EXECUTES PAR LE USER (SessionCompanion)
+    # ou par SYSTEM at-logon (SessionStateFetch) — signes comme le reste (AC6).
+    (Join-Path $repoAgentDir 'windows\SessionStateFetch.ps1'),
+    (Join-Path $repoAgentDir 'windows\SessionCompanion.ps1'),
     (Join-Path $repoAgentDir 'windows\Install-SambaEduAgent.ps1'),
     (Join-Path $repoAgentDir 'windows\Uninstall-SambaEduAgent.ps1'),
     (Join-Path $repoAgentDir 'shared\ContractV1.ps1')

@@ -1,10 +1,12 @@
 # =============================================================================
-# Uninstall-SambaEduAgent.ps1 — Desinstallation propre du service (Story 24.2)
+# Uninstall-SambaEduAgent.ps1 — Desinstallation propre (Stories 24.2 + 24.3)
 # =============================================================================
-# Retire le service et le code installe. Par defaut, CONSERVE les donnees
-# d'enrolement (token 23.3, cache, logs) : une reinstallation reprend la ou
-# le poste en etait, sans re-enrolement. -PurgeData pour tout effacer
-# (le poste devra alors etre re-enrole via la chaine iPXE).
+# Retire le service, les taches planifiees du compagnon de session (24.3) et
+# le code installe. Par defaut, CONSERVE les donnees d'enrolement (token
+# 23.3, cache — y compris cache\sessions\, logs) : une reinstallation
+# reprend la ou le poste en etait, sans re-enrolement. -PurgeData pour tout
+# effacer (le poste devra alors etre re-enrole via la chaine iPXE).
+# Les logs compagnon (%LOCALAPPDATA% de chaque user) ne sont pas touches.
 # =============================================================================
 
 #Requires -Version 5.1
@@ -21,6 +23,16 @@ $ErrorActionPreference = 'Stop'
 
 $installDir = 'C:\Program Files\SambaEdu\Agent'
 $dataDir = 'C:\ProgramData\SambaEdu\Agent'
+
+# --- 0. Taches planifiees du compagnon de session (Story 24.3) ----------------
+foreach ($taskName in @('SambaEduAgent-SessionFetch', 'SambaEduAgent-SessionCompanion')) {
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+        Write-Host "Tache planifiee $taskName supprimee."
+    } else {
+        Write-Host "Tache planifiee $taskName absente : rien a supprimer."
+    }
+}
 
 # --- 1. Arret + suppression du service ---------------------------------------
 $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue

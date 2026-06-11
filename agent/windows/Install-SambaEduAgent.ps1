@@ -7,15 +7,21 @@
 #   .\Install-SambaEduAgent.ps1 -ServerUrl 'http://se5.mondomaine.lan'
 #
 # Ce que fait le script :
-#   1. copie l'agent (SambaEduAgent.ps1 + ContractV1.ps1) vers
-#      C:\Program Files\SambaEdu\Agent\ ;
+#   1. copie l'agent (SambaEduAgent.ps1 + ContractV1.ps1 + SessionStateFetch.ps1
+#      + SessionCompanion.ps1) vers C:\Program Files\SambaEdu\Agent\
+#      (lisible user par defaut — requis par SessionCompanion, piege n° 7) ;
 #   2. ecrit C:\ProgramData\SambaEdu\Agent\config.json (server_url, interval) ;
 #   3. compile un wrapper ServiceBase minimal (SambaEduAgentService.exe) via
 #      Add-Type — un .ps1 ne parle pas le protocole SCM, New-Service sur
 #      powershell.exe seul serait tue au timeout de demarrage ;
 #   4. New-Service compte SYSTEM, demarrage automatique, relance auto 30 s
 #      sur crash (sc.exe failure) ;
-#   5. demarre le service (premiere boucle immediate).
+#   5. enregistre les 2 taches planifiees at-logon du compagnon de session
+#      (Story 24.3) : SambaEduAgent-SessionFetch (SYSTEM) +
+#      SambaEduAgent-SessionCompanion (BUILTIN\Users, droits de la session) —
+#      asynchrones par construction, RIEN dans le chemin synchrone du logon
+#      (NFR1) ;
+#   6. demarre le service (premiere boucle immediate).
 #
 # Pre-requis : poste enrole (C:\ProgramData\SambaEdu\Agent\token pose par la
 # chaine iPXE 23.3) + CA interne SambaEdu-RootCA deployee (23.3) si la
@@ -50,7 +56,9 @@ if (-not (Test-Path $tokenPath)) {
 if (-not (Test-Path $installDir)) {
     New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 }
-Copy-Item -Path (Join-Path $PSScriptRoot 'SambaEduAgent.ps1') -Destination $installDir -Force
+foreach ($name in @('SambaEduAgent.ps1', 'SessionStateFetch.ps1', 'SessionCompanion.ps1')) {
+    Copy-Item -Path (Join-Path $PSScriptRoot $name) -Destination $installDir -Force
+}
 # ContractV1.ps1 : a cote du script d'install (artefact dist/) ou ..\shared (repo).
 $contract = Join-Path $PSScriptRoot 'ContractV1.ps1'
 if (-not (Test-Path $contract)) {
@@ -146,7 +154,60 @@ New-Service -Name $ServiceName `
 & sc.exe config $ServiceName obj= 'LocalSystem' | Out-Null
 & sc.exe failure $ServiceName reset= 86400 actions= 'restart/30000/restart/30000/restart/30000' | Out-Null
 
-# --- 5. Demarrage : premiere boucle immediate ---------------------------------
+# --- 5. Taches planifiees du compagnon de session (Story 24.3) ----------------
+# Deux taches at-logon, asynchrones a l'ouverture (NFR1 : AUCUN script
+# Winlogon/Userinit/GPO — le logon n'attend jamais rien du reseau) :
+#   - SessionFetch : SYSTEM (seul detenteur du token), GET /state?user= pour
+#     chaque session interactive -> cache per-user ;
+#   - SessionCompanion : groupe Users -> s'execute dans la session du user
+#     qui ouvre, avec SES droits (frontiere de confiance NFR5).
+# Principals par SID (jamais de nom localise) : S-1-5-18 = SYSTEM ;
+# S-1-5-32-545 = BUILTIN\Users, traduit en nom local pour -GroupId.
+$psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$usersSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-545')
+$usersGroup = $usersSid.Translate([System.Security.Principal.NTAccount]).Value
+
+$tasks = @(
+    @{
+        Name        = 'SambaEduAgent-SessionFetch'
+        Script      = 'SessionStateFetch.ps1'
+        Principal   = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -LogonType ServiceAccount -RunLevel Highest
+        # Borne par les timeouts HTTP (30 s/requete, plusieurs sessions + reessais).
+        TimeLimit   = New-TimeSpan -Minutes 10
+        Description = 'SambaEdu SE5 : fetch SYSTEM de l''etat de session (GET /state?user=) au logon -> cache per-user (Story 24.3).'
+    },
+    @{
+        Name        = 'SambaEduAgent-SessionCompanion'
+        Script      = 'SessionCompanion.ps1'
+        Principal   = New-ScheduledTaskPrincipal -GroupId $usersGroup -RunLevel Limited
+        # Poll 60 s max + parse/log : 2 min suffisent (review 24.3 #8).
+        TimeLimit   = New-TimeSpan -Minutes 2
+        Description = 'SambaEdu SE5 : compagnon de session (droits user) — portees session + machine_user depuis le cache per-user (Story 24.3).'
+    }
+)
+
+foreach ($task in $tasks) {
+    # Idempotence iso-service : suppression puis recreation.
+    if (Get-ScheduledTask -TaskName $task.Name -ErrorAction SilentlyContinue) {
+        Write-Host "Tache $($task.Name) deja presente : suppression avant recreation."
+        Unregister-ScheduledTask -TaskName $task.Name -Confirm:$false
+    }
+
+    $action = New-ScheduledTaskAction -Execute $psExe `
+        -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -File "{0}"' -f (Join-Path $installDir $task.Script))
+    $trigger = New-ScheduledTaskTrigger -AtLogOn
+    # Garde-fous : limite d'execution PAR TACHE (cf. TimeLimit ci-dessus),
+    # pas de cumul d'instances.
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -ExecutionTimeLimit $task.TimeLimit -MultipleInstances IgnoreNew
+
+    Register-ScheduledTask -TaskName $task.Name -Action $action -Trigger $trigger `
+        -Principal $task.Principal -Settings $settings -Description $task.Description | Out-Null
+    Write-Host "Tache planifiee $($task.Name) enregistree (declencheur : ouverture de session)."
+}
+
+# --- 6. Demarrage : premiere boucle immediate ---------------------------------
 Start-Service -Name $ServiceName
 Write-Host "Service $ServiceName installe et demarre (SYSTEM, demarrage automatique, relance 30 s)."
 Write-Host "Log local : C:\ProgramData\SambaEdu\Agent\logs\agent.log"
+Write-Host "Log compagnon (par user) : %LOCALAPPDATA%\SambaEdu\Agent\companion.log"

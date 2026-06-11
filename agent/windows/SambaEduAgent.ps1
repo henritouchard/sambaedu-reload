@@ -1,8 +1,17 @@
 # =============================================================================
-# SambaEduAgent.ps1 — Agent squelette Windows SE5 (Story 24.2, Epic 24)
+# SambaEduAgent.ps1 — Agent squelette Windows SE5 (Stories 24.2 + 24.3, Epic 24)
 # =============================================================================
 # Service SYSTEM (portee machine) : boucle de check-in qui ferme le circuit
 # UI -> etat cible -> agent -> rapport -> UI.
+#
+# Story 24.3 (compagnon de session) ajoute ici les fonctions PARTAGEES du
+# sous-systeme compagnon : enumeration des sessions interactives (CIM),
+# cache per-user (cache\sessions\<SID>\), fetch SYSTEM `GET /state?user=`
+# (Invoke-SessionStateFetch — aussi point d'entree de la tache planifiee
+# SessionStateFetch.ps1), et durcissement 401 deux-acteurs dans
+# Invoke-AgentHttpWithGrace. Le processus user (SessionCompanion.ps1) ne
+# dot-source JAMAIS ce fichier : il vit sous Program Files avec ContractV1
+# seulement — tout le HTTP et le token restent cote SYSTEM (contrat 23.3).
 #
 # Cycle (1 iteration) :
 #   1. lire le token        C:\ProgramData\SambaEdu\Agent\token   (contrat 23.3)
@@ -45,6 +54,7 @@ $script:ConfigPath       = Join-Path $script:AgentRoot 'config.json'
 $script:CacheDir         = Join-Path $script:AgentRoot 'cache'
 $script:StateCachePath   = Join-Path $script:CacheDir 'state.json'
 $script:EtagCachePath    = Join-Path $script:CacheDir 'etag.txt'
+$script:SessionCacheRoot = Join-Path $script:CacheDir 'sessions'   # cache per-user <SID>\ (24.3)
 $script:AppliedStatePath = Join-Path $script:AgentRoot 'applied-state.json'  # infra 24.4 (mode default)
 $script:LogDir           = Join-Path $script:AgentRoot 'logs'
 $script:LogPath          = Join-Path $script:LogDir 'agent.log'
@@ -53,7 +63,13 @@ $script:LogRetentionDays = 7
 # --- Etat du process (jamais persiste) ---
 
 $script:PreviousToken = $null   # ancien token garde pendant la fenetre de grace D5
-$script:Quarantined   = $false  # 403 AGENT_QUARANTINED -> check-ins legers
+# 403 AGENT_QUARANTINED -> check-ins legers. ATTENTION (review 24.3 #2) : ce
+# flag est PROCESS-LOCAL, jamais persiste ni partage — la tache at-logon
+# SessionStateFetch (process neuf a chaque logon) demarre toujours a $false :
+# elle tente UN fetch, encaisse le 403 et s'arrete (asymetrie assumee avec le
+# service, cf. session-companion.md §7). Les handlers 24.4 ne doivent PAS
+# supposer un etat de quarantaine partage entre les deux acteurs.
+$script:Quarantined   = $false
 
 # =============================================================================
 # Log local structure — [ISO 8601] [LEVEL] message
@@ -122,7 +138,10 @@ function Save-AgentToken {
 
     # Ecriture atomique : fichier temporaire puis Move-Item (rename NTFS).
     # -NoNewline : le contrat 23.3 impose 64 hex SANS newline.
-    $tmp = "$script:TokenPath.tmp"
+    # tmp suffixe $PID (review 24.3 #3 etendu) : depuis 24.3 le token a DEUX
+    # ecrivains SYSTEM (rotation D5 recue par le service OU par la tache
+    # at-logon) — meme risque TOCTOU que le cache de session.
+    $tmp = "$script:TokenPath.$PID.tmp"
     Set-Content -Path $tmp -Value $Token -NoNewline -Encoding Ascii
     Set-AgentAcl -Path $tmp
     Move-Item -Path $tmp -Destination $script:TokenPath -Force
@@ -167,6 +186,141 @@ function Save-StateCache {
         $tmp = "$($pair.Path).tmp"
         Set-Content -Path $tmp -Value $pair.Value -NoNewline -Encoding UTF8
         Set-AgentAcl -Path $tmp
+        Move-Item -Path $tmp -Destination $pair.Path -Force
+    }
+}
+
+# =============================================================================
+# Story 24.3 — sessions interactives + cache per-user
+# =============================================================================
+# Le compagnon de session (droits user) ne peut NI lire le token NI appeler
+# le serveur (ACL 23.3 figee, NFR5). Le canal reseau reste 100 % SYSTEM :
+# les fonctions ci-dessous (executees par le service et par la tache
+# SessionStateFetch at-logon, toutes deux SYSTEM) tirent `GET /state?user=`
+# pour chaque session interactive et ecrivent un cache PER-USER que le
+# processus user lit en LECTURE SEULE.
+# =============================================================================
+
+<#
+.SYNOPSIS
+    Enumere les sessions interactives via CIM et retourne login court + SID.
+.NOTES
+    JAMAIS quser (sortie localisee, fragile) : Win32_LogonSession LogonType
+    2 (Interactive) / 10 (RemoteInteractive) / 11 (CachedInteractive) +
+    association Win32_LoggedOnUser -> Win32_Account (Name = login COURT sans
+    domaine, SID = cle stable des ACL et du repertoire de cache).
+    L'identite est resolue ICI, cote SYSTEM — le processus user ne declare
+    jamais la sienne (anti-usurpation, decision n° 2).
+    Dedoublonne par SID (un user peut avoir plusieurs LogonSession).
+#>
+function Get-InteractiveSessions {
+    $sessions = Get-CimInstance -ClassName Win32_LogonSession `
+        -Filter 'LogonType = 2 OR LogonType = 10 OR LogonType = 11' -ErrorAction Stop
+
+    $bySid = @{}
+    foreach ($session in @($sessions)) {
+        $accounts = Get-CimAssociatedInstance -InputObject $session `
+            -Association Win32_LoggedOnUser -ErrorAction SilentlyContinue
+        foreach ($account in @($accounts)) {
+            if ($null -eq $account -or -not $account.PSObject.Properties['SID']) { continue }
+            $sid = [string]$account.SID
+            # Liste BLANCHE (review 24.3 #1) : seuls les comptes users reels
+            # (domaine OU locaux) portent un SID S-1-5-21-<machine/domaine>-RID.
+            # Tout le reste — pseudo-sessions DWM (S-1-5-90-) / UMFD (S-1-5-96-)
+            # en LogonType 2, comptes virtuels de service (S-1-5-80-, S-1-5-82-),
+            # builtin — n'a aucun etat a tirer ; une liste noire serait
+            # structurellement incomplete.
+            if ($sid -notmatch '^S-1-5-21-') { continue }
+            if ($bySid.ContainsKey($sid)) { continue }
+            # Win32_Account.Name = login court SAM (jamais DOMAIN\user) : le
+            # strip du domaine est structurel, pas du parsing. Garde login
+            # vide (review 24.3 #1) : un Name non resolu (compte orphelin)
+            # produirait un fetch `?user=` (vide) + cache parasite.
+            $login = if ($account.PSObject.Properties['Name']) { [string]$account.Name } else { '' }
+            if ([string]::IsNullOrWhiteSpace($login)) { continue }
+            $bySid[$sid] = [pscustomobject]@{
+                Login = $login
+                Sid   = $sid
+            }
+        }
+    }
+
+    return @($bySid.Values)
+}
+
+<#
+.SYNOPSIS
+    Repertoire de cache per-user, cree avec son ACL si absent (decision n° 3).
+.NOTES
+    ACL posee A LA CREATION : /inheritance:r, SYSTEM F, Administrators F,
+    <SID>:R — le user LIT son etat ((OI) propage le R aux fichiers), n'ecrit
+    rien, ne lit pas le cache d'un autre SID. Les parents (cache\, sessions\)
+    restent SYSTEM+Administrators : le user n'enumere pas l'arborescence mais
+    ouvre son fichier par chemin complet (bypass traverse checking, privilege
+    SeChangeNotifyPrivilege par defaut pour Users).
+#>
+function Initialize-SessionCacheDir {
+    param([Parameter(Mandatory = $true)][string]$Sid)
+
+    if (-not (Test-Path $script:SessionCacheRoot)) {
+        New-Item -ItemType Directory -Path $script:SessionCacheRoot -Force | Out-Null
+        Set-AgentAcl -Path $script:SessionCacheRoot
+    }
+
+    $dir = Join-Path $script:SessionCacheRoot $Sid
+    if (-not (Test-Path $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        & icacls.exe $dir /inheritance:r /grant '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' "*${Sid}:(OI)(CI)R" | Out-Null
+    }
+
+    return $dir
+}
+
+<#
+.SYNOPSIS
+    ETag du contexte (poste, user) — un fichier etag.txt PAR repertoire de
+    session (piege n° 2 : reutiliser l'ETag machine casserait la revalidation).
+#>
+function Read-SessionEtag {
+    param([Parameter(Mandatory = $true)][string]$Sid)
+
+    $path = Join-Path (Join-Path $script:SessionCacheRoot $Sid) 'etag.txt'
+    if (Test-Path $path) {
+        # VERBATIM, guillemets RFC 7232 inclus (convention 24.2).
+        return (Get-Content -Path $path -Raw)
+    }
+
+    return $null
+}
+
+<#
+.SYNOPSIS
+    Persiste l'enveloppe + ETag du contexte user (ecriture atomique tmp+Move).
+.NOTES
+    PAS de Set-AgentAcl sur le tmp (contrairement au cache machine) : les
+    fichiers HERITENT de l'ACL du repertoire per-SID (grants (OI)) — un
+    icacls explicite SYSTEM+Administrators retirerait le R du user.
+    Le tmp nait dans le repertoire cible : il porte la bonne ACL des sa
+    creation et Move-Item (rename NTFS) la conserve.
+#>
+function Save-SessionStateCache {
+    param(
+        [Parameter(Mandatory = $true)][string]$Sid,
+        [Parameter(Mandatory = $true)][string]$StateJson,
+        [Parameter(Mandatory = $true)][string]$Etag
+    )
+
+    $dir = Initialize-SessionCacheDir -Sid $Sid
+
+    foreach ($pair in @(
+            @{ Path = (Join-Path $dir 'state.json'); Value = $StateJson },
+            @{ Path = (Join-Path $dir 'etag.txt'); Value = $Etag }
+        )) {
+        # tmp suffixe $PID (review 24.3 #3) : DEUX ecrivains SYSTEM possibles
+        # (tache at-logon + cycle du service) — un tmp a nom fixe pourrait
+        # etre ecrit par les deux a la fois (corruption) ou rename-vole.
+        $tmp = "$($pair.Path).$PID.tmp"
+        Set-Content -Path $tmp -Value $pair.Value -NoNewline -Encoding UTF8
         Move-Item -Path $tmp -Destination $pair.Path -Force
     }
 }
@@ -296,9 +450,15 @@ function Update-TokenIfRotated {
 
 <#
 .SYNOPSIS
-    Appel HTTP avec gestion du 401 de rotation (AC3) : si 401 avec le nouveau
-    token juste ecrit, on reessaie UNE fois avec l'ancien (fenetre de grace).
-    401 avec l'ancien aussi -> irrecuperable, l'appelant arrete le service.
+    Appel HTTP avec gestion du 401 de rotation (AC3 24.2) : si 401 avec le
+    nouveau token juste ecrit, on reessaie UNE fois avec l'ancien (fenetre de
+    grace). Durcissement deux-acteurs (24.3, decision n° 5) : avant de
+    laisser l'appelant declarer l'irrecuperable, le token est RELU SUR DISQUE
+    — le service (cycle) et le fetch de session (logon) partagent le meme
+    fichier token, et l'autre acteur peut avoir rotate pendant que cet appel
+    etait en vol ($script:PreviousToken de CE process est alors null). S'il
+    differe des tokens deja essayes : UN reessai. 401 apres tout ca ->
+    irrecuperable, l'appelant arrete.
 #>
 function Invoke-AgentHttpWithGrace {
     param(
@@ -332,7 +492,137 @@ function Invoke-AgentHttpWithGrace {
         $script:PreviousToken = $null
     }
 
+    # Etape (b) du traitement 401 (durcissement deux-acteurs 24.3) : la grace
+    # MEMOIRE n'a rien donne (ou n'existait pas). Si le fichier token a change
+    # entre-temps (rotation recue par l'AUTRE acteur, ecriture atomique 24.2),
+    # le 401 n'est PAS irrecuperable : un seul reessai avec le token du disque.
+    if ($response.StatusCode -eq 401) {
+        $diskToken = $null
+        try {
+            $diskToken = Read-AgentToken
+        } catch {
+            Write-AgentLog -Level WARNING -Message "401 : relecture du token sur disque impossible ($($_.Exception.Message)) — durcissement deux-acteurs sans effet."
+        }
+
+        $alreadyTried = @($Token)
+        if ($hasPrevious) { $alreadyTried += $script:PreviousToken }
+
+        if (-not [string]::IsNullOrEmpty($diskToken) -and $alreadyTried -notcontains $diskToken) {
+            Write-AgentLog -Level WARNING -Message '401 mais le token sur disque a change (rotation par l''autre acteur — service ou fetch de session) : reessai UNIQUE avec le token du disque (durcissement deux-acteurs 24.3).'
+            $response = Invoke-AgentHttp -Method $Method -Url $Url -Token $diskToken -Headers $Headers -Body $Body
+            if ($response.StatusCode -ne 401) {
+                # Le token du disque est le bon : adoption pour la suite du
+                # cycle, purge de la grace memoire (elle reference un token
+                # que l'autre acteur a deja remplace).
+                $script:Token = $diskToken
+                $script:PreviousToken = $null
+                Write-AgentLog -Level INFO -Message 'Reessai avec le token du disque accepte : rotation concurrente rattrapee, poursuite normale.'
+            } else {
+                Write-AgentLog -Level ERROR -Message '401 aussi avec le token relu sur disque : authentification irrecuperable.'
+            }
+        }
+    }
+
     return $response
+}
+
+# =============================================================================
+# Story 24.3 — fetch de session cote SYSTEM (GET /state?user=<login court>)
+# =============================================================================
+
+<#
+.SYNOPSIS
+    Pour chaque session interactive : `GET /state?user=` avec l'If-None-Match
+    DU CONTEXTE, puis cache per-user. Un seul code pour les deux declencheurs
+    (decision n° 4) : tache planifiee at-logon (SessionStateFetch.ps1) ET
+    cycle du service (rafraichissement mid-session).
+.NOTES
+    - quarantaine (piege n° 11) : AUCUN fetch de session — l'etat ne serait
+      pas traite, et les check-ins legers restent le GET /state machine ;
+    - erreur reseau : log + skip de la session, PAS de backoff propre — le
+      rattrapage est le cycle du service (AC5) ;
+    - rotation D5 : Update-TokenIfRotated sur chaque reponse (304 compris) ;
+    - login inconnu / compte local : le serveur repond 200 machine-only
+      (agent.state.unknown_user cote serveur) — traite comme tout 200,
+      aucun bruit cote poste (piege n° 3).
+#>
+function Invoke-SessionStateFetch {
+    param([Parameter(Mandatory = $true)][pscustomobject]$Config)
+
+    if ($script:Quarantined) {
+        Write-AgentLog -Level DEBUG -Message 'Quarantaine active : fetch de session saute (check-ins legers = GET /state machine uniquement).'
+        return
+    }
+
+    $sessions = @()
+    try {
+        # @() : une session unique ne doit pas etre deroulee en scalaire
+        # (StrictMode + .Count).
+        $sessions = @(Get-InteractiveSessions)
+    } catch {
+        Write-AgentLog -Level WARNING -Message "Enumeration des sessions interactives en echec : $($_.Exception.Message)"
+        return
+    }
+    if ($sessions.Count -eq 0) {
+        Write-AgentLog -Level DEBUG -Message 'Aucune session interactive : pas de fetch de session.'
+        return
+    }
+
+    # Token relu sur disque a CHAQUE fetch : l'autre acteur (service ou tache
+    # logon) peut l'avoir rotate depuis la derniere lecture de CE process.
+    $script:Token = Read-AgentToken
+
+    foreach ($session in $sessions) {
+        $headers = @{}
+        $etag = Read-SessionEtag -Sid $session.Sid
+        if (-not [string]::IsNullOrEmpty($etag)) {
+            $headers['If-None-Match'] = $etag
+        }
+
+        $url = "$($Config.ServerUrl)/api/v1/agent/state?user=$([uri]::EscapeDataString($session.Login))"
+        try {
+            $response = Invoke-AgentHttpWithGrace -Method GET -Url $url -Token $script:Token -Headers $headers
+        } catch {
+            Write-AgentLog -Level WARNING -Message "Serveur injoignable sur GET /state?user=$($session.Login) : $($_.Exception.Message) — skip (rattrapage au cycle du service)."
+            continue
+        }
+
+        $script:Token = Update-TokenIfRotated -Response $response -CurrentToken $script:Token
+
+        switch ($response.StatusCode) {
+            200 {
+                $null = Parse-State -Json $response.Body   # refuse un major inconnu (§9)
+                $newEtag = $response.Headers['ETag']
+                if (-not [string]::IsNullOrEmpty($newEtag)) {
+                    Save-SessionStateCache -Sid $session.Sid -StateJson $response.Body -Etag $newEtag
+                }
+                Write-AgentLog -Level INFO -Message "GET /state?user=$($session.Login) -> 200 : cache de session $($session.Sid) rafraichi."
+            }
+            304 {
+                Write-AgentLog -Level DEBUG -Message "GET /state?user=$($session.Login) -> 304 : cache de session $($session.Sid) valide."
+            }
+            401 {
+                # Grace memoire ET relecture disque deja tentees par la couche
+                # HTTP : irrecuperable. On ARRETE les fetchs (les sessions
+                # suivantes echoueraient pareil) ; jamais de re-enrolement auto.
+                Write-AgentLog -Level ERROR -Message "401 irrecuperable sur GET /state?user=$($session.Login) : fetchs de session interrompus — re-enrolement MANUEL requis."
+                return
+            }
+            403 {
+                # Quarantaine prononcee pendant le fetch : plus AUCUN
+                # traitement d'etat (piege n° 11) — le flag coupe aussi le
+                # rapport du cycle en cours cote service.
+                if (-not $script:Quarantined) {
+                    $script:Quarantined = $true
+                    Write-AgentLog -Level WARNING -Message 'AGENT_QUARANTINED (403) sur un fetch de session : arret des fetchs, passage en check-ins legers.'
+                }
+                return
+            }
+            default {
+                Write-AgentLog -Level WARNING -Message "GET /state?user=$($session.Login) -> $($response.StatusCode) inattendu : skip (rattrapage au cycle du service)."
+            }
+        }
+    }
 }
 
 # =============================================================================
@@ -405,8 +695,23 @@ function Invoke-AgentCycle {
         }
     }
 
+    # Story 24.3 (decision n° 4) : apres la portee machine, le cycle rafraichit
+    # aussi les caches de session (fraicheur laxe NFR3 : logon + timer). Meme
+    # code que la tache at-logon ; une erreur ici ne casse JAMAIS le cycle
+    # machine (le rattrapage est le cycle suivant), et les retours
+    # ok|backoff|stop du cycle restent ceux de la portee machine.
+    if (-not $script:Quarantined) {
+        try {
+            Invoke-SessionStateFetch -Config $Config
+        } catch {
+            Write-AgentLog -Level WARNING -Message "Rafraichissement des caches de session en echec : $($_.Exception.Message) (rattrapage au prochain cycle)."
+        }
+    }
+
     # En quarantaine on ne devrait pas arriver ici (return plus haut) ; garde
-    # defensive : pas de rapport tant que quarantaine active.
+    # defensive : pas de rapport tant que quarantaine active. La quarantaine
+    # peut aussi etre TOMBEE pendant le fetch de session (403) : pas de
+    # rapport non plus dans ce cas.
     if ($script:Quarantined) {
         return 'ok'
     }
