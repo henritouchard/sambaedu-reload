@@ -153,6 +153,19 @@ class Kernel extends ConsoleKernel
                      }
                  });
 
+        // Story 24.1 — Purge des données de rapport agent (D3) à 02h35 :
+        // agent_report_events > 14 j et agent_report_history > 30 j
+        // (rétentions config/agent.php). Toujours planifiée (pas de ->when
+        // sur le flag report_history : la purge history nettoie aussi les
+        // résidus d'une phase de debug terminée). Fenêtre nocturne entre
+        // trash:purge (02h00) et quota:snapshot (03h00), décalée de
+        // federated:purge-identities (02h30) — review 24.1 #3. Deletes
+        // indexés par created_at, charge négligeable.
+        $schedule->command('agent:reports:prune')
+                 ->dailyAt('02:35')
+                 ->withoutOverlapping()
+                 ->runInBackground();
+
         // Story 16.14 Q2 — Warm-up cache santé GPO daily 22:00.
         // Pré-charge `getLinks` + `versionNumber` pour chaque GPO du domaine
         // (TTL 24 h) — évite N appels samba-tool sur le listing admin matinal.

@@ -33,6 +33,8 @@ use App\ScriptsOs\Http\Controllers\ScriptExecutionLogIngestionController as Scri
 use App\Http\Controllers\Api\V1\Agent\EnrollController as AgentEnrollController;
 // Story 23.5 — Canal agent desired-state : GET /state (alias iso AgentEnrollController).
 use App\Http\Controllers\Api\V1\Agent\StateController as AgentStateController;
+// Story 24.1 — Canal agent desired-state : POST /report (alias iso AgentStateController).
+use App\Http\Controllers\Api\V1\Agent\ReportController as AgentReportController;
 // Story 16.13 — Exposition endpoints natifs /api/v1/*
 use App\Http\Controllers\WallpaperController;
 use App\Http\Controllers\OverlayController;
@@ -249,8 +251,12 @@ Route::prefix('v1')
 |   60/min/IP (defer 23.2 résolu) AVANT `agent.token` : le lookup DB du
 |   middleware est protégé du flood. Pas de `local.request` : l'auth EST le
 |   token (iso canal config 16.13).
-| - Futurs endpoints du canal (24.1 report) : derrière l'alias `agent.token`,
-|   à ajouter ici.
+| - `POST /v1/agent/report` (24.1) : ingestion des rapports de conformité,
+|   stockage D3 borné (état courant + journal des changements + history
+|   flaggé). Chaîne iso /state — l'ack 200 est un wrapper SE5 `{success,…}`
+|   (seul /state sert le contrat brut). X-Agent-New-Token survit (D5).
+| - Futurs endpoints du canal : derrière l'alias `agent.token`, à ajouter
+|   ici, à la FIN du bloc (fenêtre 1500 chars ScriptsOsNamespaceTest).
 */
 Route::post('/v1/agent/enrollment', [AgentEnrollController::class, 'store'])
     ->middleware(['local.request', 'auth.v1.secure-headers', 'throttle:10,1'])
@@ -259,6 +265,10 @@ Route::post('/v1/agent/enrollment', [AgentEnrollController::class, 'store'])
 Route::get('/v1/agent/state', [AgentStateController::class, 'show'])
     ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
     ->name('agent.v1.state');
+
+Route::post('/v1/agent/report', [AgentReportController::class, 'store'])
+    ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
+    ->name('agent.v1.report');
 
 /*
 |--------------------------------------------------------------------------

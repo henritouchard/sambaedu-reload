@@ -5,6 +5,8 @@
 > `state-providers.md` (la compilation côté serveur) : ce document décrit
 > le **transport** — comment un agent (ou un mainteneur en curl/jq) tire
 > l'enveloppe compilée, et le contrat HTTP qu'Epic 24 doit respecter.
+> Le rapport remonte par `POST /api/v1/agent/report` — voir
+> `report-endpoint.md` (Story 24.1).
 
 ## L'endpoint
 

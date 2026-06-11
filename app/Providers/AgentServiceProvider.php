@@ -9,6 +9,7 @@ use App\Services\Agent\Enrollment\EnrollmentService;
 use App\Services\Agent\Enrollment\TokenRotationService;
 use App\Services\Agent\Providers\OverlayStateProvider;
 use App\Services\Agent\Providers\WallpaperStateProvider;
+use App\Services\Agent\Reporting\ReportIngestService;
 use App\Services\Agent\StateCompiler;
 use App\Services\Agent\StateHasher;
 use Illuminate\Routing\Router;
@@ -23,6 +24,8 @@ use Illuminate\Support\ServiceProvider;
  *
  *  - Binding singleton `TokenRotationService` (stateless réutilisable).
  *  - Binding singleton `EnrollmentService` (Story 23.3 — enrôlement porte 1).
+ *  - Binding singleton `ReportIngestService` (Story 24.1 — ingestion des
+ *    rapports de conformité, POST /report).
  *  - Registry des StateProviders + binding singleton `StateCompiler`
  *    (Story 23.4) : ajouter un type de ressource = ajouter UNE ligne au
  *    tableau ci-dessous (Epic 27), zéro modification du compilateur.
@@ -40,6 +43,8 @@ class AgentServiceProvider extends ServiceProvider
             EnrollmentService::class,
             fn ($app) => new EnrollmentService($app->make(TokenRotationService::class)),
         );
+        // Story 24.1 — ingestion des rapports de conformité (POST /report).
+        $this->app->singleton(ReportIngestService::class, fn () => new ReportIngestService());
         $this->app->singleton(StateHasher::class, fn () => new StateHasher());
         $this->app->singleton(StateCompiler::class, fn ($app) => new StateCompiler(
             $app->make(StateHasher::class),

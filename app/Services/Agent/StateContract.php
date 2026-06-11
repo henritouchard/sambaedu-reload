@@ -30,6 +30,30 @@ final class StateContract
     public const SCOPE_MACHINE_USER = 'machine_user';
 
     /**
+     * Identifiants de type de ressource publiés (§7 contrat v1 — NFR12).
+     *
+     * Clé de voûte du contrat, partagés serveur / agent / JSON / DB / UI :
+     * **figés une fois publiés** — jamais de renommage en place (déprécier +
+     * ajouter en cas d'erreur). Liste FERMÉE consommée par la validation de
+     * l'ingestion des rapports (Story 24.1) : un type inconnu → 422 (un
+     * nouveau type = bump de contrat de toute façon). Constante ADDITIVE :
+     * seuls golden files + `contract-v1.md` + hash figé sont intouchables.
+     *
+     * @var list<string>
+     */
+    public const RESOURCE_TYPES = [
+        'wallpaper',
+        'overlay',
+        'shortcuts',
+        'printers',
+        'drives',
+        'associations',
+        'registry',
+        'app_config',
+        'applications',
+    ];
+
+    /**
      * Les trois portées de l'enveloppe, dans l'ordre canonique.
      *
      * @return list<string>
