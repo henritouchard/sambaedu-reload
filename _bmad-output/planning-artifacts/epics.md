@@ -3692,9 +3692,11 @@ So that l'intégration côté central se fasse sans dupliquer la logique d'auth 
 
 ---
 
-## Epic 22 : Successeur GPO — Environnement poste & tags domain-first
+## Epic 22 : Successeur GPO — Environnement poste & tags domain-first — **ABSORBÉ → Epics 23-27**
 
-> **Créé 2026-06-09** (PM session Henri, suite debug windaube). Rattaché au product-brief `product-brief-gpo-successor-2026-06-08.md`. Stories en `backlog` (à cadrer via `bmad-create-story`). Cf. `sprint-change-proposal-2026-06-09.md`.
+> **⚠️ ABSORBÉ 2026-06-11** dans le découpage « Agent desired-state — successeur GPO » (`epics-agent-desired-state.md`, Epics 23-27) : **22.1 → 26.1** (rescopée : plus de retrofit legacy, consommateurs = handlers Epic 27), **22.2 → 26.2** (identique), **22.3 ANNULÉE** (décision 2026-06-11 : pas d'état transitoire legacy/agent — le mécanisme de tags `list_*` s'éteint en bloc avec le canal legacy, story 27.6). Le contenu ci-dessous est conservé pour l'historique, ne plus le cadrer.
+>
+> ~~**Créé 2026-06-09** (PM session Henri, suite debug windaube). Rattaché au product-brief `product-brief-gpo-successor-2026-06-08.md`. Stories en `backlog` (à cadrer via `bmad-create-story`). Cf. `sprint-change-proposal-2026-06-09.md`.~~
 
 **Contexte métier.** Le modèle SE4 distingue implicitement une **nature de poste** : *partagé* (salle — environnement redirigé vers le partage SMB serveur, roamé sur n'importe quel poste) vs *personnel/nomade* (`port_perdir` = personnels de direction ; `portables` — environnement gardé **local**). Cette distinction pilote où atterrissent le **bureau** (raccourcis) et les **profils navigateur** (Chrome/Edge/OpenBoard). Le port natif l'a perdue (bureau figé local → Bug C, pansement réseau `4e5a152`). Cet epic la **modélise explicitement** côté domaine (Postgres), indépendamment d'AD.
 
@@ -3711,3 +3713,9 @@ So that l'intégration côté central se fasse sans dupliquer la logique d'auth 
 ### Story 22.3 — Sourcing domain-first des tags `list_*` depuis Postgres
 - **Valeur :** lisibilité + cohérence domain-first (AD = projection) ; retirer la dette des listes cryptiques héritées du legacy.
 - **Périmètre :** sourcer les tags de matching depuis les relations Postgres (`list_u`→`User.groups`, `list_m`→`Workstation.groups`) ; **supprimer les clés mortes** `list_m` et `list_ue` (aucun consommateur ; `list_ue`==`list_u` car sam=cn) ; **garder** `list` (union) + `list_u` (load-bearing : matching includes/excludes + wallpaper) ; renommer `tagsUser`/`tagsMachine` ; reproduire le matching includes/excludes depuis les relations en préservant la parité de nommage.
+
+---
+
+## Epics 23-27 : Agent desired-state — successeur GPO
+
+> **Découpage dédié dans [`epics-agent-desired-state.md`](epics-agent-desired-state.md)** (créé 2026-06-11, workflow create-epics-and-stories complet). 5 epics / 23 stories : **23** État cible servi (contrat v1, compilation, token & iPXE) · **24** Boucle fermée en lab (agent MVP, gate palier 1) · **25** Gestion de flotte (canari, bootstrap GPO, postes migrés) · **26** Environnement de poste (ex-Epic 22 absorbé, rescopé) · **27** Parité de compétences & extinction du canal legacy (gate paliers 2-3). Inputs : `product-brief-agent-desired-state-2026-06-11.md` + `architecture-agent-desired-state.md` + brainstorming 2026-06-10.

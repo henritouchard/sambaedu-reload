@@ -105,14 +105,34 @@
 			<DisableAutoDaylightTimeSet>false</DisableAutoDaylightTimeSet>
 			<TimeZone>Romance Standard Time</TimeZone>
 			<FirstLogonCommands>
+				<!-- Story 23.3 : l'enrôlement agent DOIT précéder le curl oobe — l'action.cmd
+				     récupéré peut rebooter le poste en ~5 s. Le dossier est créé ET verrouillé
+				     (héritage coupé) AVANT l'échange : le token n'existe jamais dans un dossier
+				     aux ACL héritées (Users-readable) ; si le verrouillage échoue, on n'échange
+				     pas (ticket non consommé → porte 2). Échec non bloquant : sans réseau on
+				     retente 30×10 s ; un 4xx définitif arrête tout de suite, un 5xx/429
+				     transitoire est retenté. ACL via SID (S-1-5-18 = SYSTEM, S-1-5-32-544 =
+				     Administrators) : insensible à la locale Windows. -->
 				<SynchronousCommand wcm:action="add">
 					<Order>1</Order>
+					<Description>agent enrollment</Description>
+					<RequiresUserInput>false</RequiresUserInput>
+					<CommandLine>powershell -NoProfile -ExecutionPolicy Bypass -Command "New-Item -Force -ItemType Directory 'C:\ProgramData\SambaEdu\Agent' | Out-Null; icacls 'C:\ProgramData\SambaEdu\Agent' /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null; if ($LASTEXITCODE -ne 0) { exit 0 }; for ($i=0; $i -lt 30; $i++) { try { $r = Invoke-RestMethod -Method Post -Uri 'http://###_SE4FS_NAME_###/api/v1/agent/enrollment' -Body @{ticket='###_AGENT_ENROLL_TICKET_###'; uuid='###_UUID_###'; mac='###_MAC_###'; hostname='###_NAME_###'}; if ($r.token) { Set-Content -NoNewline -Path 'C:\ProgramData\SambaEdu\Agent\token' -Value $r.token }; break } catch { $s = 0; if ($_.Exception.Response) { $s = [int]$_.Exception.Response.StatusCode }; if ($s -ge 400 -and $s -lt 500 -and $s -ne 429) { break }; Start-Sleep -Seconds 10 } }; exit 0"</CommandLine>
+				</SynchronousCommand>
+				<SynchronousCommand wcm:action="add">
+					<Order>2</Order>
+					<Description>agent token acl</Description>
+					<RequiresUserInput>false</RequiresUserInput>
+					<CommandLine>%comspec% /c if exist "C:\ProgramData\SambaEdu\Agent\token" (icacls "C:\ProgramData\SambaEdu\Agent" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F")</CommandLine>
+				</SynchronousCommand>
+				<SynchronousCommand wcm:action="add">
+					<Order>3</Order>
 					<Description>postinst curl</Description>
 					<RequiresUserInput>false</RequiresUserInput>
 					<CommandLine>%comspec% /c curl -sL --retry 20 --retry-max-time 300 --fail -F "etape=oobe" -F "name=###_NAME_###" -F "uuid=###_UUID_###" -F "mac=###_MAC_###" -F "ret=0" -o "%windir%\action.cmd" "http://###_SE4FS_NAME_###/ipxe/windows/action"</CommandLine>
 				</SynchronousCommand>
 				<SynchronousCommand wcm:action="add">
-					<Order>2</Order>
+					<Order>4</Order>
 					<Description>postinst action</Description>
 					<RequiresUserInput>false</RequiresUserInput>
 					<CommandLine>%comspec% /c if exist %windir%\action.cmd (call %windir%\action.cmd)</CommandLine>

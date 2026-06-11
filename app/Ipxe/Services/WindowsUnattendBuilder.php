@@ -47,7 +47,8 @@ use Throwable;
  *   9. Set AdministratorPassword = `adminse_passwd`.
  *   10. AutoLogon LogonCount = `4294967295` si `!join && win_autologon == 1`.
  *   11. Interpole `###_ADMINSE_NAME_###`, `###_SE4FS_NAME_###`, `###_NAME_###`,
- *       `###_UUID_###`, `###_MAC_###` dans les CommandLine + Path nodes via
+ *       `###_UUID_###`, `###_MAC_###`, `###_AGENT_ENROLL_TICKET_###` (Story
+ *       23.3 — enrôlement agent porte 1) dans les CommandLine + Path nodes via
  *       {@see WindowsXmlPlaceholders} (uuid/mac requis par la résolution du
  *       controller `/ipxe/windows/action`).
  *   12. Retourne le XML formatté UTF-8 (DOMDocument `saveXML()`).
@@ -203,7 +204,7 @@ final class WindowsUnattendBuilder
      *
      * @param  Workstation  $workstation  Poste résolu via {@see WorkstationLocator}.
      * @param  WindowsVersion  $version   Win10|Win11.
-     * @param  array{bios:string, disk:int, perso:int, ou?:string}  $attrs
+     * @param  array{bios:string, disk:int, perso:int, ou?:string, enroll_ticket?:string|null}  $attrs
      * @return string                     XML formatté UTF-8 (`<?xml ...?>` en
      *                                    tête).
      * @throws UnattendGenerationException si template manquant ou config invalide.
@@ -427,6 +428,15 @@ final class WindowsUnattendBuilder
             'NAME' => $hostname,
             'UUID' => strtolower((string) ($workstation->uuid ?? '')),
             'MAC' => strtolower((string) ($workstation->mac ?? '')),
+            // Story 23.3 — ticket d'enrôlement one-time (porte 1) interpolé
+            // dans la FirstLogonCommand « agent enrollment ». Vide si la
+            // migration 23.3 n'est pas passée (le POST partira avec un
+            // ticket vide → 403 immédiat, non bloquant pour l'install).
+            // Invariant hex strict (review 23.3) : le ticket atterrit entre
+            // quotes simples PowerShell — tout non-hex (impossible via
+            // openTicket, défense en profondeur) est vidé plutôt
+            // qu'interpolé.
+            'AGENT_ENROLL_TICKET' => $this->hexTicketOrEmpty($attrs['enroll_ticket'] ?? null),
         ];
         $this->interpolateTextNodes($xml, $values);
 
@@ -555,6 +565,23 @@ final class WindowsUnattendBuilder
         if ($node !== null) {
             $node->nodeValue = WindowsXmlPlaceholders::sanitize($value);
         }
+    }
+
+    /**
+     * Story 23.3 (review) — invariant hex strict du ticket d'enrôlement.
+     *
+     * Le ticket est interpolé entre quotes simples dans une CommandLine
+     * PowerShell ; `sanitizeForTextContent()` (générique, newlines only) est
+     * trop faible pour ce contexte. Un ticket légitime sort toujours de
+     * `bin2hex()` (EnrollmentService::openTicket) — tout non-hex est donc une
+     * erreur de programmation : on le vide (l'install continue, POST 403 non
+     * bloquant) plutôt que de l'interpoler.
+     */
+    private function hexTicketOrEmpty(mixed $ticket): string
+    {
+        $ticket = (string) ($ticket ?? '');
+
+        return preg_match('/^[0-9a-f]*$/', $ticket) === 1 ? $ticket : '';
     }
 
     /**

@@ -48,6 +48,10 @@ powershell -command "Rename-Computer -NewName {{ $cloneName }}"
 REM pause
 REM  on est encore au domaine donc on peut se connecter sur install
 if exist %windir%\install\os\netinst\sysprep.ps1 (powershell -noprofile -executionpolicy bypass -file %windir%\install\os\netinst\sysprep.ps1) else (goto erreur)
+REM Story 23.3 (AC6) - divergence parite legacy ASSUMEE : purge du token agent
+REM AVANT generalize, sinon N clones presenteraient le token du master
+REM (clone_detected -> quarantaine de masse). Cf. docs/agent/enrollment.md.
+if exist "C:\ProgramData\SambaEdu\Agent" (RD /S /Q "C:\ProgramData\SambaEdu\Agent")
 %windir%\system32\sysprep\sysprep.exe /generalize /oobe /quiet /quit /unattend:%windir%\sysprep.xml>%windir%\sysprep.log
 if exist %windir%\system32\sysprep\sysprep_succeeded.tag (curl -F "etape=sysprep" -F "ret=1" -F "name={{ $name }}" http://{{ $se4fsName }}/ipxe/windows/action
 REM pwrconfig /h off
@@ -67,6 +71,11 @@ reg.exe add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Win
 reg.exe add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "AutoLogonCount" /d 1 /F >NUL
 reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "action" /d  "powershell -Command start cmd -v runAs -f %windir%\autorun.cmd" /F >NUL
 powershell -command "$User = '{{ $domain }}\{{ $se4installName }}';$PWord = ConvertTo-SecureString -String '{{ $se4installPasswd }}' -AsPlainText -Force;$Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $User, $PWord;Remove-Computer -UnjoinDomaincredential $Credential -WorkGroupName clone -Force"
+REM Story 23.3 (AC6, review) - divergence parite legacy ASSUMEE : le chemin
+REM nosysprep est un flux de clonage de premier plan (dispatcher legacy, cf.
+REM note en tete) - sans purge, l'image capturee porterait le token du master
+REM comme sur le chemin sysprep. Cf. docs/agent/enrollment.md.
+if exist "C:\ProgramData\SambaEdu\Agent" (RD /S /Q "C:\ProgramData\SambaEdu\Agent")
 curl -F "etape=nosysprep" -F "ret=0" -F "uuid=%UUID%" -F "name={{ $name }}" http://{{ $se4fsName }}/ipxe/windows/action
 %SystemRoot%\system32\shutdown.exe -r -t 20  -c "Le poste est pret pour le clonage . Si vous voulez cloner avec un outil externe, ou capturer une image, surtout ne redemarrez pas Windows avant le clonage!"
 goto fin

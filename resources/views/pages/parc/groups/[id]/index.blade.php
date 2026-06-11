@@ -1757,7 +1757,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                                     class="group relative rounded-lg overflow-hidden border border-base-300 hover:border-primary transition-colors w-16 h-10 bg-base-200 flex items-center justify-center"
                                     title="Bureau — cliquer pour choisir">
                                     @if ($headerWallpaper)
-                                        <img src="{{ route('app.wallpapers.thumbnail', $headerWallpaper->id) }}"
+                                        <img src="{{ route('app.wallpapers.thumbnail', $headerWallpaper->id) }}?v={{ $headerWallpaper->updated_at?->timestamp ?? $headerWallpaper->asset_id }}"
                                             alt="Fond d'écran" class="w-full h-full object-cover">
                                     @else
                                         <i class="fa-solid fa-desktop text-base-content/40"></i>
@@ -1771,7 +1771,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                                     class="group relative rounded-lg overflow-hidden border border-base-300 hover:border-primary transition-colors w-16 h-10 bg-base-200 flex items-center justify-center"
                                     title="Écran de verrouillage — cliquer pour choisir">
                                     @if ($headerLockscreen)
-                                        <img src="{{ route('app.wallpapers.thumbnail', $headerLockscreen->id) }}"
+                                        <img src="{{ route('app.wallpapers.thumbnail', $headerLockscreen->id) }}?v={{ $headerLockscreen->updated_at?->timestamp ?? $headerLockscreen->asset_id }}"
                                             alt="Écran de verrouillage" class="w-full h-full object-cover">
                                     @else
                                         <i class="fa-solid fa-lock text-base-content/40"></i>

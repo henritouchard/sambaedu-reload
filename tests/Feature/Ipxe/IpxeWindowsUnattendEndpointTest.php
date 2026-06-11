@@ -102,6 +102,69 @@ class IpxeWindowsUnattendEndpointTest extends TestCase
         self::assertMatchesRegularExpression('@<Username>perso-user</Username>@', $body);
     }
 
+    // ── Story 23.3 — le ticket d'enrôlement naît à la génération (AC1/AC2) ──
+
+    private function fetchUnattend(string $mac, string $uuid): string
+    {
+        $response = $this->get(
+            '/ipxe/windows/unattend.xml?mac=' . $mac . '&uuid=' . $uuid
+            . '&version=Win11&bios=uefi&disk=0&perso=0',
+        );
+        $response->assertStatus(200);
+
+        return (string) $response->getContent();
+    }
+
+    private function extractTicket(string $xml): string
+    {
+        self::assertMatchesRegularExpression("/ticket='([0-9a-f]{64})'/", $xml);
+        preg_match("/ticket='([0-9a-f]{64})'/", $xml, $matches);
+
+        return $matches[1];
+    }
+
+    #[Test]
+    public function it_opens_an_enrollment_ticket_when_serving_unattend(): void
+    {
+        $this->seedWorkstation('aa:bb:cc:dd:ee:23', '12345678-1234-1234-1234-eeeeeeeeee23', 'pc-enroll');
+
+        $xml = $this->fetchUnattend('aa:bb:cc:dd:ee:23', '12345678-1234-1234-1234-eeeeeeeeee23');
+
+        // Le clair n'est QUE dans l'unattend ; la DB ne porte que le hash.
+        $ticket = $this->extractTicket($xml);
+        $ws = Workstation::where('mac', 'aa:bb:cc:dd:ee:23')->firstOrFail();
+        self::assertSame(hash('sha256', $ticket), $ws->agent_enroll_ticket_hash);
+        self::assertNotNull($ws->agent_enroll_ticket_expires_at);
+    }
+
+    #[Test]
+    public function it_replaces_ticket_on_unattend_refetch_without_error(): void
+    {
+        $this->seedWorkstation('aa:bb:cc:dd:ee:24', '12345678-1234-1234-1234-eeeeeeeeee24', 'pc-refetch');
+
+        $first = $this->extractTicket($this->fetchUnattend('aa:bb:cc:dd:ee:24', '12345678-1234-1234-1234-eeeeeeeeee24'));
+        $second = $this->extractTicket($this->fetchUnattend('aa:bb:cc:dd:ee:24', '12345678-1234-1234-1234-eeeeeeeeee24'));
+
+        self::assertNotSame($first, $second);
+        $ws = Workstation::where('mac', 'aa:bb:cc:dd:ee:24')->firstOrFail();
+        self::assertSame(hash('sha256', $second), $ws->agent_enroll_ticket_hash);
+    }
+
+    #[Test]
+    public function it_revokes_existing_agent_token_on_reinstall(): void
+    {
+        // AC2 — FR14 : réinstall = révocation immédiate, dès la génération.
+        $this->seedWorkstation('aa:bb:cc:dd:ee:25', '12345678-1234-1234-1234-eeeeeeeeee25', 'pc-reinstall');
+        $ws = Workstation::where('mac', 'aa:bb:cc:dd:ee:25')->firstOrFail();
+        app(\App\Services\Agent\Enrollment\TokenRotationService::class)->issueFor($ws);
+
+        $this->fetchUnattend('aa:bb:cc:dd:ee:25', '12345678-1234-1234-1234-eeeeeeeeee25');
+
+        $ws->refresh();
+        self::assertNull($ws->agent_token_hash);
+        self::assertNotNull($ws->agent_enroll_ticket_hash);
+    }
+
     #[Test]
     public function it_returns_404_for_unknown_workstation(): void
     {

@@ -11,9 +11,12 @@ use App\Ipxe\Http\Requests\IpxeWindowsUnattendRequest;
 use App\Ipxe\Services\WindowsUnattendBuilder;
 use App\Ipxe\Services\WorkstationLocator;
 use App\Models\MachineBootLog;
+use App\Models\Workstation;
+use App\Services\Agent\Enrollment\EnrollmentService;
 use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Throwable;
 
@@ -41,6 +44,7 @@ class IpxeWindowsUnattendController extends Controller
     public function __construct(
         private readonly WorkstationLocator $locator,
         private readonly WindowsUnattendBuilder $builder,
+        private readonly EnrollmentService $enrollment,
     ) {
     }
 
@@ -92,12 +96,24 @@ class IpxeWindowsUnattendController extends Controller
         // (scope minimal), à porter quand le flow `boot.php` dual-boot sera
         // migré SE5 (probablement en même temps que la story 3.7 clonage).
 
+        // 3bis. Story 23.3 — ticket d'enrôlement agent one-time (porte 1) :
+        // émis ici (révoque l'ancien token si réinstall — AC2), interpolé
+        // dans la FirstLogonCommand « agent enrollment » de l'unattend. Un
+        // re-fetch WinPE ré-émet simplement un ticket neuf (écrasement).
+        $enrollTicket = $this->openEnrollTicket($workstation);
+
         // 4. Génération XML.
         try {
             $xml = $this->builder->build(
                 $workstation,
                 $version,
-                ['bios' => $bios, 'disk' => $disk, 'perso' => $perso, 'ou' => $ou],
+                [
+                    'bios' => $bios,
+                    'disk' => $disk,
+                    'perso' => $perso,
+                    'ou' => $ou,
+                    'enroll_ticket' => $enrollTicket,
+                ],
             );
         } catch (UnattendGenerationException $e) {
             Log::channel($this->channel())->error('ipxe.windows.unattend.generation_error', [
@@ -127,6 +143,32 @@ class IpxeWindowsUnattendController extends Controller
         ]);
 
         return $this->respondPlain($xml, 200);
+    }
+
+    /**
+     * Story 23.3 — émet le ticket d'enrôlement via
+     * {@see EnrollmentService::openTicket()}. Guard `Schema::hasColumn` :
+     * si la migration 23.3 n'est pas passée, on sert l'unattend SANS ticket
+     * (placeholder vide → POST refusé 403, non bloquant) plutôt que de
+     * casser la chaîne d'install — pas de feature flag dédié, la chaîne
+     * Windows a déjà son toggle `ipxe.windows.*`.
+     */
+    private function openEnrollTicket(mixed $workstation): ?string
+    {
+        if (! $workstation instanceof Workstation) {
+            return null;
+        }
+        if (! Schema::hasColumn('workstations', 'agent_enroll_ticket_hash')) {
+            Log::channel($this->channel())->warning('ipxe.windows.unattend.enroll_ticket_skipped', [
+                'action_type' => 'ipxe.windows.unattend.enroll_ticket_skipped',
+                'workstation_id' => $workstation->id,
+                'reason' => 'missing_agent_enroll_ticket_columns',
+            ]);
+
+            return null;
+        }
+
+        return $this->enrollment->openTicket($workstation);
     }
 
     /**

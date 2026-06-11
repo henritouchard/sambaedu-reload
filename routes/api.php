@@ -27,6 +27,10 @@ use App\Auth\V1\Http\Controllers\PingController as AuthV1PingController;
 //  directement sur les routes legacy `gpo/*_out.php` (web.php).
 // Story 16.12 — Ingestion logs exécution scripts
 use App\ScriptsOs\Http\Controllers\ScriptExecutionLogIngestionController as ScriptsOsIngestionController;
+// Story 23.3 — Canal agent desired-state (Epic 23) : enrôlement porte 1.
+// Alias requis : `EnrollController` collisionne avec celui du canal JWT
+// legacy-migration (`App\Auth\V1\...`), importé plus haut sous AuthV1EnrollController.
+use App\Http\Controllers\Api\V1\Agent\EnrollController as AgentEnrollController;
 // Story 16.13 — Exposition endpoints natifs /api/v1/*
 use App\Http\Controllers\WallpaperController;
 use App\Http\Controllers\OverlayController;
@@ -220,6 +224,30 @@ Route::prefix('v1')
             'store',
         ])->name('logs.ingest');
     });
+
+/*
+|--------------------------------------------------------------------------
+| Story 23.3 — Canal agent desired-state (Epic 23) : enrôlement porte 1
+|--------------------------------------------------------------------------
+| Canal NEUF (bearer token custom, `AgentServiceProvider`), DISTINCT du canal
+| JWT legacy-migration plus haut — frontière architecture : `agent.v1.enroll`
+| / `agent.v1.refresh` / `agent.v1.ping` restent intouchés pendant la
+| transition (extinction en bloc → Epic 27, `/enroll` se libérera alors).
+| D'où l'URI `/v1/agent/enrollment` (nom `agent.v1.enrollment`).
+|
+| - `POST /v1/agent/enrollment` : échange du ticket one-time (émis à la
+|   génération de l'unattend.xml — porte 1 iPXE) contre le token agent.
+|   Profil de consommateur iso endpoints WPKG 17.6 : poste en install, pas
+|   encore de bearer → `local.request` (LAN only) + throttle. Les
+|   `auth.v1.secure-headers` posent `Cache-Control: no-store` (la réponse
+|   200 porte le token en clair, une seule fois) — hygiène HTTP réutilisée,
+|   pas une dépendance au canal JWT.
+| - Futurs endpoints du canal (23.5 `GET /state`, 24.1 report) : derrière
+|   l'alias `agent.token`, à ajouter ici.
+*/
+Route::post('/v1/agent/enrollment', [AgentEnrollController::class, 'store'])
+    ->middleware(['local.request', 'auth.v1.secure-headers', 'throttle:10,1'])
+    ->name('agent.v1.enrollment');
         
 /*
 |--------------------------------------------------------------------------

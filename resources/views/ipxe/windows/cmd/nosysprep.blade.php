@@ -43,6 +43,10 @@ reg.exe add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Win
 reg.exe add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "AutoLogonCount" /d 2 /F >NUL
 reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "action" /d  "powershell -Command start cmd -v runAs -f %windir%\autorun.cmd" /F >NUL
 powershell -command "$User = '{{ $domain }}\{{ $se4installName }}';$PWord = ConvertTo-SecureString -String '{{ $se4installPasswd }}' -AsPlainText -Force;$Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $User, $PWord;Remove-Computer -UnjoinDomaincredential $Credential -WorkGroupName clone -Force"
+REM Story 23.3 (AC6, review) - divergence parite legacy ASSUMEE : clonage sans
+REM sysprep = chemin de capture de premier plan ; sans purge, l'image porterait
+REM le token agent du master. Cf. docs/agent/enrollment.md.
+if exist "C:\ProgramData\SambaEdu\Agent" (RD /S /Q "C:\ProgramData\SambaEdu\Agent")
 curl -F "etape=nosysprep" -F "ret=0" -F "uuid=%UUID%" -F "name={{ $name }}" http://{{ $se4fsName }}/ipxe/windows/action
 %SystemRoot%\system32\shutdown.exe -r -t 5  -c "Le poste est pret pour le clonage . Si vous voulez cloner avec un outil externe, ou capturer une image, surtout ne redemarrez pas Windows avant le clonage!"
 goto fin

@@ -81,6 +81,15 @@ final class IpxeSchemaBootstrapper
                 $table->string('ad_guid', 64)->nullable();
                 $table->boolean('managed_by_control_hub')->default(false);
                 $table->timestamp('archived_at')->nullable();
+                // Story 23.3 — canal agent : la génération unattend ouvre un
+                // ticket d'enrôlement (openTicket → colonnes agent_*).
+                $table->string('agent_token_hash', 64)->nullable();
+                $table->string('agent_previous_token_hash', 64)->nullable();
+                $table->timestamp('agent_token_rotated_at')->nullable();
+                $table->timestamp('agent_last_checkin_at')->nullable();
+                $table->timestamp('agent_quarantined_at')->nullable();
+                $table->string('agent_enroll_ticket_hash', 64)->nullable();
+                $table->timestamp('agent_enroll_ticket_expires_at')->nullable();
                 $table->timestamps();
             });
         } else {
@@ -94,6 +103,22 @@ final class IpxeSchemaBootstrapper
             if (! Schema::hasColumn('workstations', 'programmed_action')) {
                 Schema::table('workstations', function (Blueprint $table): void {
                     $table->text('programmed_action')->nullable();
+                });
+            }
+            // Story 23.3 — idem, idempotent (iso pattern progress).
+            if (! Schema::hasColumn('workstations', 'agent_token_hash')) {
+                Schema::table('workstations', function (Blueprint $table): void {
+                    $table->string('agent_token_hash', 64)->nullable();
+                    $table->string('agent_previous_token_hash', 64)->nullable();
+                    $table->timestamp('agent_token_rotated_at')->nullable();
+                    $table->timestamp('agent_last_checkin_at')->nullable();
+                    $table->timestamp('agent_quarantined_at')->nullable();
+                });
+            }
+            if (! Schema::hasColumn('workstations', 'agent_enroll_ticket_hash')) {
+                Schema::table('workstations', function (Blueprint $table): void {
+                    $table->string('agent_enroll_ticket_hash', 64)->nullable();
+                    $table->timestamp('agent_enroll_ticket_expires_at')->nullable();
                 });
             }
         }

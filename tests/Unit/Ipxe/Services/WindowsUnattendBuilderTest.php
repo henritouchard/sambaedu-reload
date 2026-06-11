@@ -216,6 +216,122 @@ class WindowsUnattendBuilderTest extends TestCase
         self::assertStringContainsString('-F "ret=0"', $xml);
     }
 
+    // ── Story 23.3 — enrôlement agent porte 1 (AC1/AC5) ─────────────────
+
+    /**
+     * @return array<int, string> map Order → CommandLine des FirstLogonCommands.
+     */
+    private function firstLogonCommandsByOrder(string $xml): array
+    {
+        $dom = new DOMDocument();
+        self::assertTrue(@$dom->loadXML($xml));
+        $xpath = new \DOMXPath($dom);
+        $xpath->registerNamespace('ns', 'urn:schemas-microsoft-com:unattend');
+
+        $commands = [];
+        $nodes = $xpath->query('//ns:FirstLogonCommands/ns:SynchronousCommand');
+        self::assertNotFalse($nodes);
+        foreach ($nodes as $node) {
+            $order = (int) $xpath->evaluate('string(ns:Order)', $node);
+            $commands[$order] = (string) $xpath->evaluate('string(ns:CommandLine)', $node);
+        }
+        ksort($commands);
+
+        return $commands;
+    }
+
+    #[Test]
+    public function it_interpolates_enroll_ticket_with_absolute_enrollment_url(): void
+    {
+        $ticket = str_repeat('ab', 32);
+        $xml = $this->service->build(
+            $this->makeWorkstation(),
+            WindowsVersion::Win11,
+            ['bios' => 'uefi', 'disk' => 0, 'perso' => 0, 'enroll_ticket' => $ticket],
+        );
+
+        self::assertStringNotContainsString('###_AGENT_ENROLL_TICKET_###', $xml);
+        self::assertStringContainsString("ticket='" . $ticket . "'", $xml);
+        // URL ABSOLUE obligatoire (piège fetch relatif → 410, mémoire projet).
+        self::assertStringContainsString(
+            "http://se4fs.lan/api/v1/agent/enrollment",
+            $xml,
+        );
+    }
+
+    #[Test]
+    public function it_orders_enrollment_commands_before_the_oobe_curl(): void
+    {
+        // Le bug le plus probable de la story : l'action.cmd récupéré par le
+        // curl oobe peut rebooter en ~5 s — l'enrôlement DOIT passer avant.
+        $xml = $this->service->build(
+            $this->makeWorkstation(),
+            WindowsVersion::Win11,
+            ['bios' => 'uefi', 'disk' => 0, 'perso' => 0, 'enroll_ticket' => str_repeat('cd', 32)],
+        );
+
+        $commands = $this->firstLogonCommandsByOrder($xml);
+        self::assertSame([1, 2, 3, 4], array_keys($commands));
+        // 1 : échange ticket → token (dépôt C:\ProgramData\SambaEdu\Agent\token).
+        self::assertStringContainsString('/api/v1/agent/enrollment', $commands[1]);
+        self::assertStringContainsString('C:\ProgramData\SambaEdu\Agent\token', $commands[1]);
+        // 1 (review 23.3) : le dossier est verrouillé AVANT l'écriture du
+        // token — le token n'existe jamais sous ACL héritées (Users-readable),
+        // et un échec de verrouillage abandonne SANS consommer le ticket.
+        $lockPos = strpos($commands[1], 'icacls');
+        $writePos = strpos($commands[1], 'Set-Content');
+        self::assertNotFalse($lockPos);
+        self::assertNotFalse($writePos);
+        self::assertLessThan($writePos, $lockPos, 'Le verrouillage ACL doit précéder l\'écriture du token.');
+        self::assertStringContainsString('$LASTEXITCODE -ne 0', $commands[1]);
+        // 1 (review 23.3) : retry discriminé — seul un 4xx définitif (hors
+        // 429) arrête la boucle ; 5xx/429 transitoires sont retentés.
+        self::assertStringContainsString('StatusCode', $commands[1]);
+        self::assertStringContainsString('-ne 429', $commands[1]);
+        // 2 : re-verrouillage ACL ceinture-et-bretelles — héritage coupé,
+        // SYSTEM + Administrators (SID).
+        self::assertStringContainsString('icacls', $commands[2]);
+        self::assertStringContainsString('/inheritance:r', $commands[2]);
+        self::assertStringContainsString('*S-1-5-18', $commands[2]);
+        self::assertStringContainsString('*S-1-5-32-544', $commands[2]);
+        // 3-4 : les commandes historiques glissent, inchangées.
+        self::assertStringContainsString('etape=oobe', $commands[3]);
+        self::assertStringContainsString('call %windir%\action.cmd', $commands[4]);
+    }
+
+    #[Test]
+    public function it_drops_non_hex_enroll_ticket_instead_of_interpolating(): void
+    {
+        // Review 23.3 — invariant hex strict : le ticket atterrit entre
+        // quotes simples PowerShell ; un ticket non-hex (impossible via
+        // openTicket — défense en profondeur) est vidé, jamais interpolé.
+        foreach (["evil\nticket", "x'; calc; '", 'UPPERHEX', '$(/inj)'] as $forged) {
+            $xml = $this->service->build(
+                $this->makeWorkstation(),
+                WindowsVersion::Win11,
+                ['bios' => 'uefi', 'disk' => 0, 'perso' => 0, 'enroll_ticket' => $forged],
+            );
+
+            $commands = $this->firstLogonCommandsByOrder($xml);
+            self::assertStringContainsString("ticket=''", $commands[1]);
+        }
+    }
+
+    #[Test]
+    public function it_leaves_ticket_empty_when_none_provided(): void
+    {
+        // Sans ticket (migration 23.3 absente) : placeholder vidé, pas de
+        // résidu — le POST partira avec ticket vide → 403 non bloquant.
+        $xml = $this->service->build(
+            $this->makeWorkstation(),
+            WindowsVersion::Win11,
+            ['bios' => 'uefi', 'disk' => 0, 'perso' => 0],
+        );
+
+        self::assertStringNotContainsString('###_AGENT_ENROLL_TICKET_###', $xml);
+        self::assertStringContainsString("ticket=''", $xml);
+    }
+
     #[Test]
     public function it_throws_unattend_generation_exception_when_template_missing(): void
     {

@@ -148,6 +148,61 @@ class WindowsActionCmdBuilderTest extends TestCase
     }
 
     #[Test]
+    public function it_purges_agent_token_directory_before_generalize(): void
+    {
+        // Story 23.3 — AC6 (divergence parité legacy ASSUMÉE) : sans purge,
+        // N clones présenteraient le token du master → clone_detected →
+        // quarantaine de masse (mécanique 23.2).
+        $ws = $this->makeWorkstation();
+        $body = $this->builder->buildSysprep($ws);
+
+        self::assertStringContainsString(
+            'if exist "C:\ProgramData\SambaEdu\Agent" (RD /S /Q "C:\ProgramData\SambaEdu\Agent")',
+            $body,
+        );
+        // La purge précède le generalize.
+        $purgePos = strpos($body, 'RD /S /Q "C:\ProgramData\SambaEdu\Agent"');
+        $generalizePos = strpos($body, 'sysprep.exe /generalize');
+        self::assertNotFalse($purgePos);
+        self::assertNotFalse($generalizePos);
+        self::assertLessThan($generalizePos, $purgePos, 'La purge token agent doit précéder sysprep.exe /generalize.');
+    }
+
+    #[Test]
+    public function it_purges_agent_token_directory_in_sysprep_nosysprep_fallback(): void
+    {
+        // Review 23.3 — le fallback :nosysprep (sysprep.exe KO) prépare lui
+        // aussi une capture d'image : sans purge, le token du master partirait
+        // dans les clones (AC6).
+        $ws = $this->makeWorkstation();
+        $body = $this->builder->buildSysprep($ws);
+
+        $labelPos = strpos($body, ':nosysprep');
+        self::assertNotFalse($labelPos, 'Bloc :nosysprep attendu dans le body sysprep.');
+        $purgePos = strpos($body, 'RD /S /Q "C:\ProgramData\SambaEdu\Agent"', $labelPos);
+        $shutdownPos = strpos($body, 'shutdown.exe -r -t 20', $labelPos);
+        self::assertNotFalse($purgePos, 'Purge token agent attendue dans le bloc :nosysprep.');
+        self::assertNotFalse($shutdownPos);
+        self::assertLessThan($shutdownPos, $purgePos, 'La purge doit précéder le reboot de capture du fallback nosysprep.');
+    }
+
+    #[Test]
+    public function it_purges_agent_token_directory_in_nosysprep_clone_path(): void
+    {
+        // Review 23.3 — cmd_nosysprep = LE chemin clonage-sans-sysprep de
+        // premier plan (dispatcher legacy : etape=sysprep&type=clonage) :
+        // sans purge, l'image capturée porterait le token du master (AC6).
+        $ws = $this->makeWorkstation();
+        $body = $this->builder->buildNosysprep($ws);
+
+        $purgePos = strpos($body, 'if exist "C:\ProgramData\SambaEdu\Agent" (RD /S /Q "C:\ProgramData\SambaEdu\Agent")');
+        $capturePos = strpos($body, 'pret pour le clonage');
+        self::assertNotFalse($purgePos, 'Purge token agent attendue dans cmd_nosysprep.');
+        self::assertNotFalse($capturePos);
+        self::assertLessThan($capturePos, $purgePos, 'La purge doit précéder le reboot de capture du clonage sans sysprep.');
+    }
+
+    #[Test]
     public function it_renders_nosysprep_with_autologon_adminse_and_curl_callback(): void
     {
         $ws = $this->makeWorkstation();

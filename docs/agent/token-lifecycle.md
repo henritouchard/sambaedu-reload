@@ -153,9 +153,8 @@ Channel dédié **`agent`** (`storage/logs/agent/agent.log`, daily, env
 ## 9. Renvois
 
 - [contract-v1.md](contract-v1.md) — contenu JSON v1 figé (état & rapport).
-- **Story 23.3** — naissance du token (porte 1, `POST /enroll` iPXE) ; note :
-  le préfixe `/api/v1/agent/*` et les noms `agent.v1.*` sont occupés par le
-  canal JWT legacy-migration (`routes/api.php`), collision à résoudre là-bas.
+- [enrollment.md](enrollment.md) — naissance du token (porte 1, ticket
+  one-time iPXE + `POST /api/v1/agent/enrollment`, Story 23.3).
 - **Story 25.3** — porte 2 (postes migrés), 403 « non approuvé », levée de
   quarantaine outillée.
 - **Epic 24** — agent côté poste : présentation des headers, gestion

@@ -38,6 +38,8 @@ use Livewire\Wireable;
  * @property \DateTimeInterface|null $agent_token_rotated_at Dernière émission/rotation token agent (Story 23.2)
  * @property \DateTimeInterface|null $agent_last_checkin_at Dernier check-in canal agent (Story 23.2)
  * @property \DateTimeInterface|null $agent_quarantined_at Quarantaine anti-clonage (Story 23.2)
+ * @property string|null $agent_enroll_ticket_hash SHA-256 hex du ticket d'enrôlement one-time (Story 23.3)
+ * @property \DateTimeInterface|null $agent_enroll_ticket_expires_at Expiration du ticket d'enrôlement (Story 23.3)
  * @property \DateTime $created_at
  * @property \DateTime $updated_at
  */
@@ -91,6 +93,9 @@ class Workstation extends Model implements Wireable
         'agent_token_rotated_at' => 'datetime',
         'agent_last_checkin_at' => 'datetime',
         'agent_quarantined_at' => 'datetime',
+        // Story 23.3 — ticket d'enrôlement one-time (porte 1 iPXE). Hors
+        // $fillable pour la même raison : seul EnrollmentService écrit.
+        'agent_enroll_ticket_expires_at' => 'datetime',
     ];
 
     /**

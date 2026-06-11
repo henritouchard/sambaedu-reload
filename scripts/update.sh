@@ -564,6 +564,85 @@ ensure_ipxe_bootstrap_native() {
 }
 
 # ============================================================================
+# Permissions du partage [install] (lecture par le compte machine des postes)
+# ============================================================================
+# La tâche planifiée GPO `wpkg4` lance la post-install en SYSTEM (= compte
+# machine, mappé « other » côté Samba). Si wpkg/, packages/ ou os/ ne sont pas
+# o+rX, le compte machine est refusé et la post-install ne déploie rien
+# (helpers absents de %PROGRAMFILES%\SambaEdu). Réparation idempotente,
+# délègue au script dédié (zone d'écriture wpkg/rapports/ exclue).
+
+ensure_install_permissions() {
+    local perms_script="$SCRIPT_DIR/verify-install-permissions.sh"
+    if [[ -x "$perms_script" ]]; then
+        bash "$perms_script"
+    else
+        log_warning "verify-install-permissions.sh introuvable/non exécutable — étape ignorée"
+    fi
+}
+
+# ============================================================================
+# Amorçage des helpers SambaEdu dans wpkg.cmd (bootstrap %PROGRAMFILES%)
+# ============================================================================
+# Le déploiement des helpers .ps1/.cmd dans %PROGRAMFILES%\SambaEdu côté poste
+# repose sur la chaîne applications/WPKG, qui ne peut pas s'auto-amorcer (son
+# lanceur `applications-startup.cmd` vit DANS %PROGRAMFILES%\SambaEdu — œuf et
+# poule), et SE5 a retiré le robocopy d'amorçage que le legacy faisait à l'OOBE.
+# On réinjecte donc l'amorçage dans `wpkg.cmd` (lancé à chaque boot en SYSTEM
+# par la tâche planifiée GPO `wpkg4`), juste après le MKLINK qui monte
+# %WinDir%\install → \\<se4fs>\install. Idempotent ; réinjecté après une
+# réinstall du paquet `sambaedu-client-windows` (qui écraserait wpkg.cmd).
+#
+# CRLF CRITIQUE : un .cmd en LF échoue silencieusement côté Windows. awk réémet
+# explicitement `\r` sur les lignes ajoutées pour préserver les fins CRLF.
+
+ensure_wpkg_bootstrap() {
+    log "Vérification amorçage helpers dans wpkg.cmd..."
+
+    local install_root="${SE_INSTALL_ROOT:-/var/sambaedu/unattended/install}"
+    local wpkg_cmd="$install_root/wpkg/wpkg.cmd"
+
+    if [[ ! -f "$wpkg_cmd" ]]; then
+        log_warning "wpkg.cmd absent ($wpkg_cmd) — amorçage ignoré"
+        return 0
+    fi
+
+    if grep -q 'ROBOCOPY.*os.SambaEdu.*ProgramFiles' "$wpkg_cmd"; then
+        log_success "Amorçage helpers déjà présent dans wpkg.cmd"
+        return 0
+    fi
+
+    # Ancre : la ligne MKLINK qui crée %WinDir%\install (le robocopy en dépend).
+    if ! grep -q '%Windir%\\install MKLINK' "$wpkg_cmd"; then
+        log_warning "Ancre MKLINK install introuvable dans wpkg.cmd — amorçage NON inséré (format inattendu)"
+        return 0
+    fi
+
+    cp -a "$wpkg_cmd" "${wpkg_cmd}.bak-$(date +%Y%m%d-%H%M%S)"
+
+    local tmp
+    tmp="$(mktemp)"
+    awk '
+        { print }
+        /%Windir%\\install MKLINK/ {
+            print "REM SambaEdu: amorcage helpers dans %PROGRAMFILES% (independant chaine WPKG)\r"
+            print "IF NOT EXIST \"%ProgramFiles%\\SambaEdu\" MD \"%ProgramFiles%\\SambaEdu\"\r"
+            print "ROBOCOPY \"%WinDir%\\install\\os\\SambaEdu\" \"%ProgramFiles%\\SambaEdu\" /E\r"
+        }
+    ' "$wpkg_cmd" > "$tmp"
+    # `cat >` (et non mv) pour préserver owner/perms/ACL du fichier original.
+    cat "$tmp" > "$wpkg_cmd"
+    rm -f "$tmp"
+
+    if grep -q 'ROBOCOPY.*os.SambaEdu.*ProgramFiles' "$wpkg_cmd"; then
+        log_success "Amorçage helpers ajouté à wpkg.cmd (robocopy os\\SambaEdu → %PROGRAMFILES%\\SambaEdu)"
+    else
+        log_error "Échec insertion amorçage dans wpkg.cmd — backup conservé (${wpkg_cmd}.bak-*)"
+        return 1
+    fi
+}
+
+# ============================================================================
 # Affichage du résumé
 # ============================================================================
 
@@ -584,6 +663,8 @@ show_summary() {
     echo "  ✓ Services systemd"
     echo "  ✓ LDAP client (SASL_NOCANON)"
     echo "  ✓ PXE bootstrap (Laravel native)"
+    echo "  ✓ Amorçage helpers (wpkg.cmd)"
+    echo "  ✓ Permissions partage [install]"
     echo ""
 }
 
@@ -661,6 +742,12 @@ main() {
 
     echo ""
     ensure_ipxe_bootstrap_native
+
+    echo ""
+    ensure_wpkg_bootstrap
+
+    echo ""
+    ensure_install_permissions
 
     echo ""
     run_doctor_check
