@@ -15,6 +15,7 @@ use App\Models\Workstation;
 use App\Models\WorkstationApplicationStatus;
 use App\Models\WorkstationGroup;
 use App\Components\Traits\WithToasts;
+use App\Services\Agent\Enrollment\TokenRotationService;
 use App\Wpkg\Deployment\Generators\WorkstationIniGenerator;
 use App\Wpkg\Deployment\Services\WorkstationOptionsService;
 use Carbon\Carbon;
@@ -203,6 +204,32 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         } catch (\Exception $e) {
             Log::error('[MachineShow] Erreur retrait du groupe: ' . $e->getMessage());
             $this->toastError('Erreur lors du retrait du groupe');
+        }
+    }
+
+    /**
+     * Story 23.2 / AC6 — Révocation par événement du token agent (FR14).
+     * Le prochain appel du poste sur le canal agent recevra 401.
+     */
+    public function revokeAgentToken(TokenRotationService $tokenService): void
+    {
+        if (!$this->workstation) {
+            $this->loadMachine();
+        }
+        if (!$this->workstation || !$this->workstation->isAgentEnrolled()) {
+            $this->toastError('Ce poste n\'a pas de token agent actif');
+            return;
+        }
+
+        try {
+            $tokenService->revokeFor($this->workstation, 'revoked_from_ui_by_admin');
+            $this->toastSuccess('Token agent révoqué');
+            $this->loadMachine();
+        } catch (\Exception $e) {
+            Log::error('[MachineShow] Erreur révocation token agent: ' . $e->getMessage(), [
+                'machine_id' => $this->id,
+            ]);
+            $this->toastError('Erreur lors de la révocation du token agent');
         }
     }
 
@@ -1046,6 +1073,66 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                                 </div>
                             @endforeach
                         </div>
+                    @endif
+                </div>
+            </div>
+
+            {{-- Story 23.2 / AC6 — Card canal agent (token desired-state, Epic 23) --}}
+            <div class="card bg-base-100 shadow-sm border border-base-200">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="card-title text-base">
+                            <i class="fa-solid fa-tower-broadcast text-primary"></i>
+                            Agent
+                            @if ($workstation->isAgentQuarantined())
+                                <span class="badge badge-error">
+                                    <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+                                    Quarantaine
+                                </span>
+                            @elseif ($workstation->isAgentEnrolled())
+                                <span class="badge badge-success">Enrôlé</span>
+                            @else
+                                <span class="badge badge-ghost">Jamais enrôlé</span>
+                            @endif
+                        </h3>
+                        @if ($workstation->isAgentEnrolled())
+                            <button type="button" class="btn btn-error btn-outline btn-sm gap-2"
+                                wire:click="revokeAgentToken"
+                                wire:confirm="Révoquer le token agent de ce poste ? Le poste ne pourra plus appeler le canal agent tant qu'il n'aura pas été ré-enrôlé (réinstallation).">
+                                <i class="fa-solid fa-ban"></i>
+                                Révoquer le token agent
+                            </button>
+                        @endif
+                    </div>
+
+                    @if ($workstation->isAgentEnrolled())
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            <div>
+                                <span class="text-xs text-base-content/60 uppercase tracking-wide">Dernière rotation du token</span>
+                                <p class="font-medium mt-0.5">
+                                    {{ $workstation->agent_token_rotated_at?->format('d/m/Y H:i') ?? '—' }}
+                                </p>
+                            </div>
+                            <div>
+                                <span class="text-xs text-base-content/60 uppercase tracking-wide">Dernier check-in</span>
+                                <p class="font-medium mt-0.5">
+                                    {{ $workstation->agent_last_checkin_at?->format('d/m/Y H:i') ?? '—' }}
+                                </p>
+                            </div>
+                            @if ($workstation->isAgentQuarantined())
+                                <div>
+                                    <span class="text-xs text-base-content/60 uppercase tracking-wide">En quarantaine depuis</span>
+                                    <p class="font-medium mt-0.5 text-error">
+                                        {{ $workstation->agent_quarantined_at?->format('d/m/Y H:i') }}
+                                    </p>
+                                </div>
+                            @endif
+                        </div>
+                    @else
+                        <p class="text-sm text-base-content/60">
+                            Ce poste n'a jamais été enrôlé sur le canal agent. Le token est émis
+                            à l'installation du poste (enrôlement iPXE).
+                        </p>
                     @endif
                 </div>
             </div>

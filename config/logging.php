@@ -163,6 +163,21 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Channel dédié canal agent desired-state (Story 23.2 — Epic 23).
+        // Couvre le cycle de vie du token agent (agent.token.issued/rotated/
+        // rotation_confirmed/revoked/clone_detected/hostname_mismatch) puis
+        // les futurs state/report (23.5, 24.1). Convention `action_type`
+        // namespacé `agent.*`, contexte `workstation_id`.
+        // ⚠️ AUCUN secret : le token clair (et même son hash) ne transitent
+        // JAMAIS par ce channel (iso-convention auth-v1).
+        'agent' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/agent/agent.log'),
+            'level' => env('AGENT_LOG_LEVEL', 'debug'),
+            'days' => (int) env('AGENT_LOG_DAYS', 30),
+            'replace_placeholders' => true,
+        ],
+
         // Channel dédié plateforme auth v1 — JWT + PKI + middlewares
         // (Story 16.10 — Epic 16 Phase 2). Couvre toutes les actions
         // d'authentification poste↔serveur local : émission/refresh/révocation

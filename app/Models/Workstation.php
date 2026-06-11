@@ -33,6 +33,11 @@ use Livewire\Wireable;
  * @property string|null $ad_guid objectGUID dans AD
  * @property bool $managed_by_control_hub
  * @property \DateTimeInterface|null $archived_at Archivage logique (Story 15.3, AC3.4)
+ * @property string|null $agent_token_hash SHA-256 hex du bearer agent (Story 23.2)
+ * @property string|null $agent_previous_token_hash Fenêtre de grâce rotation D5 (Story 23.2)
+ * @property \DateTimeInterface|null $agent_token_rotated_at Dernière émission/rotation token agent (Story 23.2)
+ * @property \DateTimeInterface|null $agent_last_checkin_at Dernier check-in canal agent (Story 23.2)
+ * @property \DateTimeInterface|null $agent_quarantined_at Quarantaine anti-clonage (Story 23.2)
  * @property \DateTime $created_at
  * @property \DateTime $updated_at
  */
@@ -79,6 +84,13 @@ class Workstation extends Model implements Wireable
         'managed_by_control_hub' => 'boolean',
         'archived_at' => 'datetime',
         'programmed_action' => 'array',
+        // Story 23.2 — cycle de vie du token agent. Les colonnes `agent_*`
+        // ne sont volontairement PAS dans $fillable : seules les écritures
+        // explicites de TokenRotationService / AuthenticateAgentToken les
+        // touchent (anti mass-assignment).
+        'agent_token_rotated_at' => 'datetime',
+        'agent_last_checkin_at' => 'datetime',
+        'agent_quarantined_at' => 'datetime',
     ];
 
     /**
@@ -350,6 +362,24 @@ class Workstation extends Model implements Wireable
     public function isSyncedWithAd(): bool
     {
         return !empty($this->ad_guid);
+    }
+
+    /**
+     * Story 23.2 — Vrai si le poste détient un token agent actif
+     * (canal desired-state, Epic 23).
+     */
+    public function isAgentEnrolled(): bool
+    {
+        return $this->agent_token_hash !== null;
+    }
+
+    /**
+     * Story 23.2 — Vrai si le poste est en quarantaine anti-clonage
+     * (403 AGENT_QUARANTINED sur le canal agent tant que non levée).
+     */
+    public function isAgentQuarantined(): bool
+    {
+        return $this->agent_quarantined_at !== null;
     }
 
     /**
