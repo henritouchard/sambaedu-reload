@@ -8,7 +8,8 @@
 #
 # Ce que fait le script :
 #   1. copie l'agent (SambaEduAgent.ps1 + ContractV1.ps1 + SessionStateFetch.ps1
-#      + SessionCompanion.ps1) vers C:\Program Files\SambaEdu\Agent\
+#      + SessionCompanion.ps1 + ConvergenceEngine.ps1 + handlers Wallpaper.ps1/
+#      Overlay.ps1 — Story 24.4) vers C:\Program Files\SambaEdu\Agent\
 #      (lisible user par defaut — requis par SessionCompanion, piege n° 7) ;
 #   2. ecrit C:\ProgramData\SambaEdu\Agent\config.json (server_url, interval) ;
 #   3. compile un wrapper ServiceBase minimal (SambaEduAgentService.exe) via
@@ -59,12 +60,21 @@ if (-not (Test-Path $installDir)) {
 foreach ($name in @('SambaEduAgent.ps1', 'SessionStateFetch.ps1', 'SessionCompanion.ps1')) {
     Copy-Item -Path (Join-Path $PSScriptRoot $name) -Destination $installDir -Force
 }
-# ContractV1.ps1 : a cote du script d'install (artefact dist/) ou ..\shared (repo).
-$contract = Join-Path $PSScriptRoot 'ContractV1.ps1'
-if (-not (Test-Path $contract)) {
-    $contract = Join-Path (Split-Path $PSScriptRoot -Parent) 'shared\ContractV1.ps1'
+# Modules partages + handlers (24.4) : a cote du script d'install (artefact
+# dist/ a plat) ou layout du repo (..\shared, handlers\). Installes A PLAT
+# sous Program Files (lisibles user — dot-sources par SessionCompanion).
+foreach ($module in @(
+        @{ Name = 'ContractV1.ps1'; RepoSubdir = '..\shared' },
+        @{ Name = 'ConvergenceEngine.ps1'; RepoSubdir = '..\shared' },
+        @{ Name = 'Wallpaper.ps1'; RepoSubdir = 'handlers' },
+        @{ Name = 'Overlay.ps1'; RepoSubdir = 'handlers' }
+    )) {
+    $source = Join-Path $PSScriptRoot $module.Name
+    if (-not (Test-Path $source)) {
+        $source = Join-Path (Join-Path $PSScriptRoot $module.RepoSubdir) $module.Name
+    }
+    Copy-Item -Path $source -Destination $installDir -Force
 }
-Copy-Item -Path $contract -Destination $installDir -Force
 
 # --- 2. Configuration locale (server_url + cadence, D7 : 3600 s par defaut) --
 $config = [ordered]@{
@@ -73,6 +83,25 @@ $config = [ordered]@{
 } | ConvertTo-Json
 Set-Content -Path $configPath -Value $config -Encoding UTF8
 & icacls.exe $configPath /inheritance:r /grant '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null
+
+# --- 2bis. Repertoires 24.4 (idempotent — aussi crees a la volee par l'agent) -
+# assets\ : cache des wallpapers telecharges par SYSTEM, LISIBLE user (un
+# wallpaper n'est pas un secret, la session doit pouvoir l'afficher).
+$assetsDir = Join-Path $dataDir 'assets'
+if (-not (Test-Path $assetsDir)) {
+    New-Item -ItemType Directory -Path $assetsDir -Force | Out-Null
+    & icacls.exe $assetsDir /inheritance:r /grant '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)R' | Out-Null
+}
+# reports\sessions\ : racine des drops de resultats session — les sous-
+# repertoires per-SID (ACL <SID>:M) sont crees par le fetch SYSTEM au logon.
+$reportsRoot = Join-Path $dataDir 'reports'
+$sessionReportsDir = Join-Path $reportsRoot 'sessions'
+foreach ($dir in @($reportsRoot, $sessionReportsDir)) {
+    if (-not (Test-Path $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        & icacls.exe $dir /inheritance:r /grant '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
+    }
+}
 
 # --- 3. Wrapper ServiceBase (SCM) --------------------------------------------
 # Lance powershell.exe -File SambaEduAgent.ps1 en fils, le tue a l'arret du
@@ -180,9 +209,14 @@ $tasks = @(
         Name        = 'SambaEduAgent-SessionCompanion'
         Script      = 'SessionCompanion.ps1'
         Principal   = New-ScheduledTaskPrincipal -GroupId $usersGroup -RunLevel Limited
-        # Poll 60 s max + parse/log : 2 min suffisent (review 24.3 #8).
-        TimeLimit   = New-TimeSpan -Minutes 2
-        Description = 'SambaEdu SE5 : compagnon de session (droits user) — portees session + machine_user depuis le cache per-user (Story 24.3).'
+        # ILLIMITE (PT0S desactive la limite) — changement DELIBERE du
+        # reglage post-review 24.3 #8 (2 min) : depuis 24.4 le compagnon est
+        # une BOUCLE RESIDENTE (re-convergence mid-session, decision n° 6) —
+        # une limite le tuerait apres la premiere passe. Le processus meurt
+        # au logoff (fin de session) ; -MultipleInstances IgnoreNew (24.3)
+        # empeche tout cumul d'instances au logon suivant.
+        TimeLimit   = New-TimeSpan -Seconds 0
+        Description = 'SambaEdu SE5 : compagnon de session (droits user) — convergence residente des portees session + machine_user (wallpaper, overlay) depuis le cache per-user (Stories 24.3/24.4).'
     }
 )
 

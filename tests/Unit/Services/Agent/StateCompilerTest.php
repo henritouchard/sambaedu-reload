@@ -388,18 +388,24 @@ class StateCompilerTest extends TestCase
         // Le provider factice est servi (AC1) — en plus des deux réels.
         self::assertSame('fake_type', $state[StateContract::SCOPE_MACHINE][0]['type']);
 
-        // Session : 3 overlays (union, expiré exclu) + 1 wallpaper (user gagne).
+        // Session : 4 overlays (identity 24.4 + union de 3 signaux, expiré
+        // exclu) + 1 wallpaper (user gagne).
         $types = array_count_values(array_column($state[StateContract::SCOPE_SESSION], 'type'));
-        self::assertSame(3, $types['overlay']);
+        self::assertSame(4, $types['overlay']);
         self::assertSame(1, $types['wallpaper']);
         $wallpaper = collect($state[StateContract::SCOPE_SESSION])->firstWhere('type', 'wallpaper');
         self::assertSame(
             ['asset' => $userAsset->filename, 'checksum' => $userAsset->checksum],
             $wallpaper['payload'],
         );
+        // L'identity (sourceId 0) sort en TÊTE de l'union overlay (24.4).
+        self::assertSame(
+            'identity',
+            collect($state[StateContract::SCOPE_SESSION])->firstWhere('type', 'overlay')['payload']['kind'],
+        );
         // Ordre déterministe : types asc dans la portée (overlay < wallpaper).
         self::assertSame(
-            ['overlay', 'overlay', 'overlay', 'wallpaper'],
+            ['overlay', 'overlay', 'overlay', 'overlay', 'wallpaper'],
             array_column($state[StateContract::SCOPE_SESSION], 'type'),
         );
     }

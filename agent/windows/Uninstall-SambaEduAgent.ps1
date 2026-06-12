@@ -2,11 +2,14 @@
 # Uninstall-SambaEduAgent.ps1 — Desinstallation propre (Stories 24.2 + 24.3)
 # =============================================================================
 # Retire le service, les taches planifiees du compagnon de session (24.3) et
-# le code installe. Par defaut, CONSERVE les donnees d'enrolement (token
-# 23.3, cache — y compris cache\sessions\, logs) : une reinstallation
-# reprend la ou le poste en etait, sans re-enrolement. -PurgeData pour tout
-# effacer (le poste devra alors etre re-enrole via la chaine iPXE).
-# Les logs compagnon (%LOCALAPPDATA% de chaque user) ne sont pas touches.
+# le code installe (handlers + moteur 24.4 compris : ils vivent sous
+# Program Files, supprimes avec le reste). Par defaut, CONSERVE les donnees
+# d'enrolement (token 23.3, cache — y compris cache\sessions\, assets\ et
+# reports\sessions\ de 24.4, logs) : une reinstallation reprend la ou le
+# poste en etait, sans re-enrolement. -PurgeData pour tout effacer (le poste
+# devra alors etre re-enrole via la chaine iPXE).
+# Les fichiers per-user (%LOCALAPPDATA%\SambaEdu\Agent\ : log compagnon,
+# applied-state.json, overlay.json) ne sont pas touches (profils users).
 # =============================================================================
 
 #Requires -Version 5.1

@@ -1,5 +1,5 @@
 # =============================================================================
-# SambaEduAgent.ps1 — Agent squelette Windows SE5 (Stories 24.2 + 24.3, Epic 24)
+# SambaEduAgent.ps1 — Agent Windows SE5 (Stories 24.2 + 24.3 + 24.4, Epic 24)
 # =============================================================================
 # Service SYSTEM (portee machine) : boucle de check-in qui ferme le circuit
 # UI -> etat cible -> agent -> rapport -> UI.
@@ -13,11 +13,22 @@
 # dot-source JAMAIS ce fichier : il vit sous Program Files avec ContractV1
 # seulement — tout le HTTP et le token restent cote SYSTEM (contrat 23.3).
 #
+# Story 24.4 (handlers wallpaper + overlay) ajoute cote SYSTEM :
+#   - Sync-WallpaperAssets : pre-telechargement des assets references par les
+#     etats en cache (GET /api/v1/agent/assets/wallpaper/<filename>), verif
+#     SHA-256 = payload.checksum, cache assets\ lisible user (Users:R) ;
+#   - Initialize-SessionReportDir : repertoire de drop per-SID (<SID>:M) ou
+#     le compagnon depose ses resultats de convergence session ;
+#   - Read-SessionReports : collecte + VALIDATION STRICTE des drops (frontiere
+#     de confiance — le user peut forger le sien) + fusion unique par type ->
+#     items REELS du POST /report (le rapport v1 n'a pas de dimension user).
+#
 # Cycle (1 iteration) :
 #   1. lire le token        C:\ProgramData\SambaEdu\Agent\token   (contrat 23.3)
 #   2. GET  /api/v1/agent/state  avec If-None-Match (ETag du cache)
 #   3. 200 -> persister cache\state.json + cache\etag.txt ; 304 -> cache valide
-#   4. construire le rapport minimal (items: [] — aucun handler en 24.2)
+#      puis fetch des sessions + sync des assets wallpaper (24.3/24.4)
+#   4. construire le rapport : items = drops session collectes/valides (24.4)
 #   5. POST /api/v1/agent/report
 #   6. attendre (intervalle 3600 s + jitter ±10 %)
 #
@@ -55,7 +66,18 @@ $script:CacheDir         = Join-Path $script:AgentRoot 'cache'
 $script:StateCachePath   = Join-Path $script:CacheDir 'state.json'
 $script:EtagCachePath    = Join-Path $script:CacheDir 'etag.txt'
 $script:SessionCacheRoot = Join-Path $script:CacheDir 'sessions'   # cache per-user <SID>\ (24.3)
-$script:AppliedStatePath = Join-Path $script:AgentRoot 'applied-state.json'  # infra 24.4 (mode default)
+# applied-state MACHINE : réservé aux futurs handlers de portée machine — les
+# items session (24.4) ont leur applied-state PER-USER sous %LOCALAPPDATA%
+# (le compagnon ne peut pas écrire ici, ACL SYSTEM+Administrators).
+$script:AppliedStatePath = Join-Path $script:AgentRoot 'applied-state.json'
+# Story 24.4 : cache d'assets wallpaper (téléchargés par SYSTEM, lisibles
+# user — ACL Users:R à la création) + drops de résultats session per-SID
+# (le compagnon écrit SON session-report.json, le service collecte au cycle).
+$script:AssetsDir          = Join-Path $script:AgentRoot 'assets'
+$script:SessionReportsRoot = Join-Path $script:AgentRoot 'reports\sessions'
+# Garde-fou de collecte : un drop user est une entrée NON fiable (le user
+# peut forger le sien) — taille plafonnée avant parse (piège n° 10).
+$script:SessionReportMaxBytes = 262144   # 256 KiB
 $script:LogDir           = Join-Path $script:AgentRoot 'logs'
 $script:LogPath          = Join-Path $script:LogDir 'agent.log'
 $script:LogRetentionDays = 7
@@ -367,7 +389,12 @@ function Invoke-AgentHttp {
         [Parameter(Mandatory = $true)][string]$Url,
         [Parameter(Mandatory = $true)][string]$Token,
         [hashtable]$Headers = @{},
-        [string]$Body = $null
+        [string]$Body = $null,
+        # Story 24.4 : sur 200, streamer le corps BINAIRE vers ce fichier au
+        # lieu de le décoder en chaîne (un StreamReader UTF-8 corromprait un
+        # asset image). Body vaut alors '' ; les non-200 restent décodés en
+        # chaîne (corps d'erreur JSON). Rotation D5/grace inchangées.
+        [string]$OutFile = $null
     )
 
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -415,8 +442,16 @@ function Invoke-AgentHttp {
         $body = ''
         $responseStream = $response.GetResponseStream()
         if ($null -ne $responseStream) {
-            $reader = New-Object System.IO.StreamReader($responseStream, [System.Text.Encoding]::UTF8)
-            try { $body = $reader.ReadToEnd() } finally { $reader.Close() }
+            if (-not [string]::IsNullOrEmpty($OutFile) -and $statusCode -eq 200) {
+                # Download binaire (assets 24.4) : copie de flux, jamais de
+                # décodage texte. L'appelant fournit un chemin tmp et fait
+                # lui-même la vérif SHA-256 + le Move atomique.
+                $fileStream = [System.IO.File]::Open($OutFile, [System.IO.FileMode]::Create)
+                try { $responseStream.CopyTo($fileStream) } finally { $fileStream.Close() }
+            } else {
+                $reader = New-Object System.IO.StreamReader($responseStream, [System.Text.Encoding]::UTF8)
+                try { $body = $reader.ReadToEnd() } finally { $reader.Close() }
+            }
         }
     } finally {
         $response.Close()
@@ -466,15 +501,16 @@ function Invoke-AgentHttpWithGrace {
         [Parameter(Mandatory = $true)][string]$Url,
         [Parameter(Mandatory = $true)][string]$Token,
         [hashtable]$Headers = @{},
-        [string]$Body = $null
+        [string]$Body = $null,
+        [string]$OutFile = $null
     )
 
-    $response = Invoke-AgentHttp -Method $Method -Url $Url -Token $Token -Headers $Headers -Body $Body
+    $response = Invoke-AgentHttp -Method $Method -Url $Url -Token $Token -Headers $Headers -Body $Body -OutFile $OutFile
 
     $hasPrevious = -not [string]::IsNullOrEmpty($script:PreviousToken)
     if ($response.StatusCode -eq 401 -and $hasPrevious -and $Token -ne $script:PreviousToken) {
         Write-AgentLog -Level WARNING -Message '401 avec le token courant juste apres une rotation : nouvel essai avec l''ancien token (fenetre de grace D5).'
-        $response = Invoke-AgentHttp -Method $Method -Url $Url -Token $script:PreviousToken -Headers $Headers -Body $Body
+        $response = Invoke-AgentHttp -Method $Method -Url $Url -Token $script:PreviousToken -Headers $Headers -Body $Body -OutFile $OutFile
         if ($response.StatusCode -ne 401) {
             # L'ancien marche encore. Affectation VIVANTE pour la suite du MEME
             # cycle (Update-TokenIfRotated + POST /report lisent $script:Token) ;
@@ -509,7 +545,7 @@ function Invoke-AgentHttpWithGrace {
 
         if (-not [string]::IsNullOrEmpty($diskToken) -and $alreadyTried -notcontains $diskToken) {
             Write-AgentLog -Level WARNING -Message '401 mais le token sur disque a change (rotation par l''autre acteur — service ou fetch de session) : reessai UNIQUE avec le token du disque (durcissement deux-acteurs 24.3).'
-            $response = Invoke-AgentHttp -Method $Method -Url $Url -Token $diskToken -Headers $Headers -Body $Body
+            $response = Invoke-AgentHttp -Method $Method -Url $Url -Token $diskToken -Headers $Headers -Body $Body -OutFile $OutFile
             if ($response.StatusCode -ne 401) {
                 # Le token du disque est le bon : adoption pour la suite du
                 # cycle, purge de la grace memoire (elle reference un token
@@ -573,6 +609,16 @@ function Invoke-SessionStateFetch {
     $script:Token = Read-AgentToken
 
     foreach ($session in $sessions) {
+        # Story 24.4 : le répertoire de drop per-SID est garanti AVANT toute
+        # passe compagnon (créé/ACLé par SYSTEM — le user ne peut pas le
+        # créer lui-même sous ProgramData). Même au 304 : un cache existant
+        # suffit au compagnon pour converger et déposer son drop.
+        try {
+            $null = Initialize-SessionReportDir -Sid $session.Sid
+        } catch {
+            Write-AgentLog -Level WARNING -Message "Creation du repertoire de drop $($session.Sid) en echec : $($_.Exception.Message)"
+        }
+
         $headers = @{}
         $etag = Read-SessionEtag -Sid $session.Sid
         if (-not [string]::IsNullOrEmpty($etag)) {
@@ -623,6 +669,294 @@ function Invoke-SessionStateFetch {
             }
         }
     }
+
+    # Story 24.4 : les assets wallpaper référencés par les états frais sont
+    # pré-téléchargés ICI, côté SYSTEM (le compagnon n'a ni réseau ni token).
+    # Un échec ne casse jamais le fetch — rattrapage au prochain cycle.
+    try {
+        Sync-WallpaperAssets -Config $Config
+    } catch {
+        Write-AgentLog -Level WARNING -Message "Sync des assets wallpaper en echec : $($_.Exception.Message) (rattrapage au prochain cycle)."
+    }
+}
+
+# =============================================================================
+# Story 24.4 — assets wallpaper (download SYSTEM) + drops de resultats session
+# =============================================================================
+# Les handlers de scope `session` tournent dans le COMPAGNON (droits user,
+# ni reseau ni token — partition 24.3). Le service SYSTEM fournit donc :
+#   - le cache d'assets   assets\<filename>          (lisible user, ACL Users:R)
+#   - le repertoire drop  reports\sessions\<SID>\    (le user ecrit SON drop)
+# et collecte au cycle les session-report.json pour les fusionner dans SON
+# rapport (le contrat v1 n'a pas de dimension user — §6 FIGE).
+# =============================================================================
+
+<#
+.SYNOPSIS
+    Repertoire du cache d'assets, cree avec son ACL si absent (decision n° 3).
+.NOTES
+    SYSTEM F, Administrators F, BUILTIN\Users (*S-1-5-32-545) LECTURE : un
+    wallpaper n'est pas un secret et la session doit pouvoir l'afficher.
+    (OI)(CI) : les fichiers heritent — jamais de re-ACL des tmp.
+#>
+function Initialize-AssetsDir {
+    if (-not (Test-Path $script:AssetsDir)) {
+        New-Item -ItemType Directory -Path $script:AssetsDir -Force | Out-Null
+        & icacls.exe $script:AssetsDir /inheritance:r /grant '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)R' | Out-Null
+    }
+}
+
+<#
+.SYNOPSIS
+    Repertoire de drop per-SID, cree avec son ACL si absent (decision n° 7).
+.NOTES
+    Pattern iso Initialize-SessionCacheDir, mais grant <SID>:(OI)(CI)M
+    (Modify) : le user ECRIT son session-report.json (ecriture atomique tmp
+    $PID + Move — le M couvre creation/rename/suppression), ne lit pas les
+    drops des autres SID. Les parents (reports\, sessions\) restent
+    SYSTEM+Administrators : pas d'enumeration par le user (acces par chemin
+    complet, bypass traverse checking).
+#>
+function Initialize-SessionReportDir {
+    param([Parameter(Mandatory = $true)][string]$Sid)
+
+    $reportsRoot = Split-Path $script:SessionReportsRoot -Parent   # ...\reports
+    foreach ($parent in @($reportsRoot, $script:SessionReportsRoot)) {
+        if (-not (Test-Path $parent)) {
+            New-Item -ItemType Directory -Path $parent -Force | Out-Null
+            Set-AgentAcl -Path $parent
+        }
+    }
+
+    $dir = Join-Path $script:SessionReportsRoot $Sid
+    if (-not (Test-Path $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        & icacls.exe $dir /inheritance:r /grant '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' "*${Sid}:(OI)(CI)M" | Out-Null
+    }
+
+    return $dir
+}
+
+<#
+.SYNOPSIS
+    Liste deduplicee des assets wallpaper references par les etats en cache
+    (machine + toutes les sessions) : @{ Filename; Checksum }.
+.NOTES
+    Filename/checksum valides STRICTEMENT avant tout usage (format
+    content-addressed / hex-64) : un cache d'etat reste un fichier disque —
+    jamais de Join-Path sur une valeur non validee.
+#>
+function Get-WantedWallpaperAssets {
+    $statePaths = @()
+    if (Test-Path $script:StateCachePath) { $statePaths += $script:StateCachePath }
+    if (Test-Path $script:SessionCacheRoot) {
+        foreach ($dir in @(Get-ChildItem -Path $script:SessionCacheRoot -Directory -ErrorAction SilentlyContinue)) {
+            $candidate = Join-Path $dir.FullName 'state.json'
+            if (Test-Path $candidate) { $statePaths += $candidate }
+        }
+    }
+
+    $byFilename = @{}
+    foreach ($path in $statePaths) {
+        $state = $null
+        try {
+            $state = Parse-State -Json (Get-Content -Path $path -Raw)
+        } catch {
+            Write-AgentLog -Level WARNING -Message "Cache d'etat illisible ($path) : $($_.Exception.Message) — ignore pour le sync des assets."
+            continue
+        }
+        foreach ($item in @(@($state.Machine) + @($state.Session) + @($state.MachineUser))) {
+            if ($null -eq $item -or -not $item.PSObject.Properties['type'] -or [string]$item.type -ne 'wallpaper') { continue }
+            if (-not $item.PSObject.Properties['payload'] -or $null -eq $item.payload) { continue }
+            $payload = $item.payload
+            if (-not $payload.PSObject.Properties['asset'] -or $null -eq $payload.asset) { continue }
+            $filename = [string]$payload.asset
+            $checksum = if ($payload.PSObject.Properties['checksum'] -and $null -ne $payload.checksum) { [string]$payload.checksum } else { '' }
+            if ($filename -notmatch '^[0-9a-f]{64}\.[a-z0-9]{2,5}$' -or $checksum -notmatch '^[0-9a-f]{64}$') {
+                Write-AgentLog -Level WARNING -Message "Item wallpaper avec asset/checksum hors format ('$filename') : ignore."
+                continue
+            }
+            if (-not $byFilename.ContainsKey($filename)) {
+                $byFilename[$filename] = [pscustomobject]@{ Filename = $filename; Checksum = $checksum }
+            }
+        }
+    }
+
+    return @($byFilename.Values)
+}
+
+<#
+.SYNOPSIS
+    Telecharge les assets wallpaper manquants du cache local (cote SYSTEM,
+    seul detenteur du token) et VERIFIE le SHA-256 = payload.checksum.
+.NOTES
+    - content-addressed : un fichier present porte deja le bon contenu (son
+      nom EST son checksum) — jamais re-telecharge, sync idempotent ;
+    - checksum divergent a l'arrivee = fichier supprime + log, retry au
+      prochain cycle (jamais un asset corrompu dans le cache) ;
+    - 404 (asset retire de la biblio entre compilation et download) = log,
+      l'etat suivant ne le referencera plus ; pas de purge en 24.4 (volume
+      borne par la bibliotheque) ;
+    - rotation D5 traitee sur chaque reponse ; 401 irrecuperable = arret du
+      sync (les suivants echoueraient pareil) ; 403 = quarantaine, arret.
+#>
+function Sync-WallpaperAssets {
+    param([Parameter(Mandatory = $true)][pscustomobject]$Config)
+
+    if ($script:Quarantined) {
+        Write-AgentLog -Level DEBUG -Message 'Quarantaine active : sync des assets saute.'
+        return
+    }
+
+    $wanted = @(Get-WantedWallpaperAssets)
+    $missing = @($wanted | Where-Object { -not (Test-Path (Join-Path $script:AssetsDir $_.Filename)) })
+    if ($missing.Count -eq 0) {
+        return
+    }
+
+    Initialize-AssetsDir
+    $script:Token = Read-AgentToken
+
+    foreach ($asset in $missing) {
+        $url = "$($Config.ServerUrl)/api/v1/agent/assets/wallpaper/$($asset.Filename)"
+        # tmp suffixe $PID DANS le repertoire cible : herite de l'ACL (Users:R
+        # via (OI)) et Move-Item reste un rename NTFS atomique.
+        $tmp = Join-Path $script:AssetsDir "$($asset.Filename).$PID.tmp"
+        try {
+            $response = Invoke-AgentHttpWithGrace -Method GET -Url $url -Token $script:Token -OutFile $tmp
+        } catch {
+            Write-AgentLog -Level WARNING -Message "Serveur injoignable sur GET asset $($asset.Filename) : $($_.Exception.Message) — skip (rattrapage au prochain cycle)."
+            continue
+        }
+
+        $script:Token = Update-TokenIfRotated -Response $response -CurrentToken $script:Token
+
+        switch ($response.StatusCode) {
+            200 {
+                $actual = (Get-FileHash -Path $tmp -Algorithm SHA256).Hash.ToLowerInvariant()
+                if ($actual -ne $asset.Checksum) {
+                    Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
+                    Write-AgentLog -Level WARNING -Message "Asset $($asset.Filename) : SHA-256 telecharge ($actual) != checksum attendu — fichier supprime, retry au prochain cycle."
+                } else {
+                    Move-Item -Path $tmp -Destination (Join-Path $script:AssetsDir $asset.Filename) -Force
+                    Write-AgentLog -Level INFO -Message "Asset wallpaper $($asset.Filename) telecharge et verifie (SHA-256 ok)."
+                }
+            }
+            401 {
+                Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
+                Write-AgentLog -Level ERROR -Message '401 irrecuperable sur le download d''asset : sync interrompu — re-enrolement MANUEL requis.'
+                return
+            }
+            403 {
+                Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
+                if (-not $script:Quarantined) {
+                    $script:Quarantined = $true
+                    Write-AgentLog -Level WARNING -Message 'AGENT_QUARANTINED (403) sur le download d''asset : sync interrompu, passage en check-ins legers.'
+                }
+                return
+            }
+            404 {
+                Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
+                Write-AgentLog -Level WARNING -Message "Asset $($asset.Filename) inconnu du serveur (404) : retire de la bibliotheque ? L'etat suivant ne le referencera plus."
+            }
+            default {
+                Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
+                Write-AgentLog -Level WARNING -Message "GET asset $($asset.Filename) -> $($response.StatusCode) inattendu : skip (rattrapage au prochain cycle)."
+            }
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Collecte + VALIDATION STRICTE des drops session (piege n° 10) et fusion
+    unique par type pour le rapport du service.
+.NOTES
+    FRONTIERE DE CONFIANCE : le user peut forger SON session-report.json —
+    chaque entree est validee avant fusion (type publie §7, status enum,
+    hash hex-64, detail borne, taille de fichier plafonnee, JSON invalide =
+    drop ignore + log). Impact borne par construction : il ne peut fausser
+    que les statuts session de SON poste.
+    Fusion : un item PAR type (le rapport §6 exige des types UNIQUES) — en
+    multi-session, le drop au generated_at le plus recent gagne (postes
+    d'ecole = 1 session interactive ; limitation documentee).
+#>
+function Read-SessionReports {
+    if (-not (Test-Path $script:SessionReportsRoot)) {
+        return @()
+    }
+
+    $validTypes = @(Get-ContractResourceTypes)
+    $merged = @{}   # type -> @{ GeneratedAt; Item }
+
+    foreach ($dir in @(Get-ChildItem -Path $script:SessionReportsRoot -Directory -ErrorAction SilentlyContinue)) {
+        $path = Join-Path $dir.FullName 'session-report.json'
+        if (-not (Test-Path $path)) { continue }
+
+        $drop = $null
+        try {
+            if ((Get-Item -Path $path).Length -gt $script:SessionReportMaxBytes) {
+                Write-AgentLog -Level WARNING -Message "Drop session $($dir.Name) au-dela du plafond ($script:SessionReportMaxBytes octets) : ignore."
+                continue
+            }
+            $drop = Get-Content -Path $path -Raw | ConvertFrom-Json
+        } catch {
+            Write-AgentLog -Level WARNING -Message "Drop session $($dir.Name) illisible/JSON invalide : ignore ($($_.Exception.Message))."
+            continue
+        }
+
+        $generatedAt = [DateTime]::MinValue
+        if ($null -ne $drop -and $drop.PSObject.Properties['generated_at']) {
+            $parsed = [DateTime]::MinValue
+            if ([DateTime]::TryParse([string]$drop.generated_at,
+                    [System.Globalization.CultureInfo]::InvariantCulture,
+                    [System.Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$parsed)) {
+                $generatedAt = $parsed
+            }
+        }
+
+        $dropItems = @()
+        if ($null -ne $drop -and $drop.PSObject.Properties['items']) {
+            $dropItems = @($drop.items)
+        }
+
+        foreach ($item in $dropItems) {
+            if ($null -eq $item) { continue }
+            $type = if ($item.PSObject.Properties['type']) { [string]$item.type } else { '' }
+            $status = if ($item.PSObject.Properties['status']) { [string]$item.status } else { '' }
+            $hash = if ($item.PSObject.Properties['hash']) { [string]$item.hash } else { '' }
+            $detail = if ($item.PSObject.Properties['detail'] -and $null -ne $item.detail) { [string]$item.detail } else { $null }
+
+            # Validation STRICTE (le serveur repondrait 422 sur tout le
+            # rapport : une entree forgee ne doit jamais couler le rapport
+            # machine entier).
+            $invalidReason = $null
+            if ($validTypes -notcontains $type) { $invalidReason = "type '$type' hors liste publiee" }
+            elseif ($script:ResourceStatuses -notcontains $status) { $invalidReason = "status '$status' hors enum" }
+            elseif ($hash -notmatch '^[0-9a-f]{64}$') { $invalidReason = 'hash non hex-64' }
+            elseif ($status -eq 'error' -and [string]::IsNullOrWhiteSpace($detail)) { $invalidReason = 'error sans detail' }
+
+            if ($null -ne $invalidReason) {
+                Write-AgentLog -Level WARNING -Message "Drop session $($dir.Name) : entree invalide ignoree ($invalidReason)."
+                continue
+            }
+            if ($null -ne $detail -and $detail.Length -gt 2000) {
+                $detail = $detail.Substring(0, 2000)
+            }
+
+            if ($merged.ContainsKey($type) -and $merged[$type].GeneratedAt -ge $generatedAt) {
+                continue   # un drop plus recent porte deja ce type
+            }
+
+            $reportItem = [ordered]@{ type = $type; status = $status; hash = $hash }
+            if (-not [string]::IsNullOrEmpty($detail)) { $reportItem['detail'] = $detail }
+            $merged[$type] = @{ GeneratedAt = $generatedAt; Item = [pscustomobject]$reportItem }
+        }
+    }
+
+    # Ordre deterministe (types asc) : le serveur n'impose pas d'ordre au
+    # rapport, mais un ordre stable facilite le diff des history de debug.
+    return @($merged.Keys | Sort-Object | ForEach-Object { $merged[$_].Item })
 }
 
 # =============================================================================
@@ -706,6 +1040,15 @@ function Invoke-AgentCycle {
         } catch {
             Write-AgentLog -Level WARNING -Message "Rafraichissement des caches de session en echec : $($_.Exception.Message) (rattrapage au prochain cycle)."
         }
+        # Story 24.4 : sync des assets AUSSI hors fetch de session (zero
+        # session interactive = pre-telechargement avant le premier logon).
+        # Idempotent (content-addressed) : un eventuel double passage dans le
+        # meme cycle (le fetch synce deja) ne re-telecharge rien.
+        try {
+            Sync-WallpaperAssets -Config $Config
+        } catch {
+            Write-AgentLog -Level WARNING -Message "Sync des assets wallpaper en echec : $($_.Exception.Message) (rattrapage au prochain cycle)."
+        }
     }
 
     # En quarantaine on ne devrait pas arriver ici (return plus haut) ; garde
@@ -716,10 +1059,22 @@ function Invoke-AgentCycle {
         return 'ok'
     }
 
-    # 4. Rapport minimal — hostname COURT (defer 24.1 #8) + UUID SMBIOS.
-    #    items: [] : aucun handler en 24.2, rapport vide VALIDE (200 cote serveur).
+    # 4. Rapport — hostname COURT (defer 24.1 #8) + UUID SMBIOS.
+    #    Story 24.4 : les items REELS viennent des drops session (collecte +
+    #    validation stricte Read-SessionReports — le compagnon a converge,
+    #    le service rapporte). Aucun drop = items: [] (rapport vide valide).
+    #    Latence <= 1 cycle entre convergence session et rapport : assumee
+    #    (NFR3 fraicheur laxe — le « forcer la synchro » arrive en 24.5).
     #    Le rapport part MEME sur 304 : etat inchange = on rapporte quand meme.
-    $uuid = [string](Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID
+    # Review 24.4 #1 : CIM peut etre transitoirement indisponible (WinMgmt en
+    # reparation) — le rapport doit partir quand meme, UUID vide accepte par
+    # Build-Report (champ declaratif, l'identite reelle est le token).
+    $uuid = ''
+    try {
+        $uuid = [string](Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID
+    } catch {
+        Write-AgentLog -Level WARNING -Message "Lecture UUID SMBIOS (CIM) en echec : $($_.Exception.Message) — rapport envoye avec uuid vide."
+    }
     # UUID SMBIOS non fiable sur certains firmwares (vide, tout-F, tout-0) :
     # on l'envoie tel quel (champ declaratif, l'identite reelle est le token)
     # mais on trace localement — divergence = identity_mismatch cote serveur.
@@ -727,7 +1082,16 @@ function Invoke-AgentCycle {
         $uuid -match '^(?i)(F{8}-F{4}-F{4}-F{4}-F{12}|0{8}-0{4}-0{4}-0{4}-0{12})$') {
         Write-AgentLog -Level WARNING -Message "UUID SMBIOS invalide ou placeholder firmware ('$uuid') : le champ workstation.uuid du rapport n'est pas fiable (warnings identity_mismatch possibles cote serveur)."
     }
-    $reportBody = Build-Report -Hostname $env:COMPUTERNAME -Uuid $uuid -Items @()
+    $sessionItems = @()
+    try {
+        $sessionItems = @(Read-SessionReports)
+    } catch {
+        # Un drop corrompu individuel est deja gere DANS Read-SessionReports ;
+        # ici c'est la collecte entiere qui a echoue — rapport vide plutot
+        # que pas de rapport (le check-in doit partir).
+        Write-AgentLog -Level WARNING -Message "Collecte des drops session en echec : $($_.Exception.Message) — rapport sans items."
+    }
+    $reportBody = Build-Report -Hostname $env:COMPUTERNAME -Uuid $uuid -Items $sessionItems
 
     # 5. POST /report
     $reportUrl = "$($Config.ServerUrl)/api/v1/agent/report"

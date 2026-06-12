@@ -33,6 +33,14 @@ class OverlayService
 {
     public const KIND_REMOTE_CONTROL = 'remote_control';
 
+    /**
+     * Kind réservé au cartouche d'identité synthétique émis par le serveur
+     * (`OverlayStateProvider`) : un signal posté avec ce kind serait avalé en
+     * silence côté poste (le handler garde le premier bloc identity — le vrai).
+     * Review 24.4 #2.
+     */
+    public const KIND_RESERVED_IDENTITY = 'identity';
+
     private const SEVERITIES = [
         OverlayAlert::SEVERITY_INFO,
         OverlayAlert::SEVERITY_WARNING,
@@ -114,6 +122,12 @@ class OverlayService
         $severity = in_array($severity, self::SEVERITIES, true)
             ? $severity
             : OverlayAlert::SEVERITY_INFO;
+
+        // Kind réservé reclassé (review 24.4 #2) : le message reste visible
+        // comme alerte au lieu de disparaître en silence côté poste.
+        if ($kind === self::KIND_RESERVED_IDENTITY) {
+            $kind = 'notice';
+        }
 
         return OverlaySignal::create([
             'kind' => mb_substr($kind, 0, 32),

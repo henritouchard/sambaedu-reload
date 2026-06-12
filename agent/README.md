@@ -8,9 +8,14 @@ serveur uniquement) :
 agent/
 ├── README.md      ← ce fichier : décision techno + contrats locaux du poste
 ├── windows/       ← agent Windows : service SYSTEM (SambaEduAgent.ps1),
-│                    compagnon de session 24.3 (SessionStateFetch.ps1 SYSTEM
-│                    + SessionCompanion.ps1 droits user), install/uninstall
+│   │                compagnon de session 24.3 (SessionStateFetch.ps1 SYSTEM
+│   │                + SessionCompanion.ps1 droits user), install/uninstall
+│   └── handlers/  ← handlers session 24.4 : Wallpaper.ps1, Overlay.ps1
+│                    (test/apply spécifiques OS — la machine d'états vit
+│                    dans shared/ConvergenceEngine.ps1)
 ├── shared/        ← cœur partageable cross-OS : parsing contrat v1, rapport
+│                    (ContractV1.ps1) + moteur de convergence 24.4
+│                    (ConvergenceEngine.ps1 — mode default §5, isolation)
 └── build/         ← build + signature Authenticode (sortie : build/dist/)
 ```
 
@@ -57,8 +62,12 @@ l'infra SE5 (contrainte 6).
 | Config locale | `C:\ProgramData\SambaEdu\Agent\config.json` | `{"server_url": "...", "interval_seconds": 3600}` — posée par `Install-SambaEduAgent.ps1`. La cadence est configurable ici (D7 : défaut 3600 s, jitter ±10 % appliqué par l'agent). |
 | Cache état cible | `C:\ProgramData\SambaEdu\Agent\cache\state.json` | Enveloppe `se5.desired-state/v1` brute du dernier `GET /state` 200. ACL SYSTEM + Administrators. |
 | Cache ETag | `C:\ProgramData\SambaEdu\Agent\cache\etag.txt` | Header `ETag` stocké **VERBATIM** (guillemets RFC 7232 inclus), renvoyé tel quel en `If-None-Match`. Tout trim/déquotage brise le 304. |
-| Dernier-appliqué | `C:\ProgramData\SambaEdu\Agent\applied-state.json` | Créé **vide** (`{}`) dès 24.2 — infrastructure du mode `default` (gap 1 du contrat §5), consommé par les handlers 24.4. |
+| Dernier-appliqué MACHINE | `C:\ProgramData\SambaEdu\Agent\applied-state.json` | Créé **vide** (`{}`) dès 24.2 — réservé aux **futurs handlers machine** : les items session (24.4) ont leur applied-state **per-user** (ci-dessous), ce fichier est inaccessible en écriture au compagnon (ACL SYSTEM). |
 | Cache de session (24.3) | `C:\ProgramData\SambaEdu\Agent\cache\sessions\<SID>\{state.json,etag.txt}` | Un répertoire **par SID** de session, écrit par le fetch SYSTEM. ETag **du contexte** (poste, user) — jamais celui du cache machine. ACL : SYSTEM F, Administrators F, `<SID>` **lecture seule** (les fichiers héritent). |
+| Cache d'assets (24.4) | `C:\ProgramData\SambaEdu\Agent\assets\<filename>` | Wallpapers content-addressed téléchargés par SYSTEM (`GET /api/v1/agent/assets/wallpaper/<filename>`, **SHA-256 vérifié = `payload.checksum`**). ACL : SYSTEM F, Administrators F, **Users R** (la session affiche le fond). Pas de purge en 24.4. |
+| Drop de résultats (24.4) | `C:\ProgramData\SambaEdu\Agent\reports\sessions\<SID>\session-report.json` | Écrit par le **compagnon** après chaque passe (sa seule écriture hors profil — ACL `<SID>:(OI)(CI)M` posée par SYSTEM). Collecté + **validé strictement** par le service au cycle → items réels du `POST /report`. |
+| Dernier-appliqué SESSION (24.4) | `%LOCALAPPDATA%\SambaEdu\Agent\applied-state.json` | Per-user : map `type → {hash, applied_at}` (mode `default` §5 — hash d'item opaque pour exclusive, empreinte d'agrégat pour aggregate). |
+| Overlay local (24.4) | `%LOCALAPPDATA%\SambaEdu\Agent\overlay.json` | Composé/écrit par le handler overlay (l'agent EST le fetch du POC). Per-user, écriture atomique, ordre de clés stable (regex Rainmeter). La skin lit CE chemin. |
 | Logs | `C:\ProgramData\SambaEdu\Agent\logs\agent.log` | Format `[ISO 8601] [LEVEL] message`, rotation quotidienne (`agent-YYYY-MM-DD.log`), rétention 7 jours. Trace locale de la boucle — le serveur ne voit que les rapports. Le fetch de session (SYSTEM) logue ICI aussi. |
 | Log compagnon (24.3) | `%LOCALAPPDATA%\SambaEdu\Agent\companion.log` | Seule écriture du processus user (profil user, aucune élévation). Même format/rotation que `agent.log` (`companion-YYYY-MM-DD.log`, 7 jours). |
 
@@ -107,11 +116,15 @@ Le token étant illisible user (ACL 23.3 figée), le canal réseau reste
   par le cycle du service pour le rafraîchissement mid-session.
 - **`SambaEduAgent-SessionCompanion`** (principal `BUILTIN\Users`, tourne
   dans la session avec SES droits) → `SessionCompanion.ps1` : poll borné du
-  cache (2 s / 60 s, fallback dernier cache, sinon sortie silencieuse),
-  `Parse-State`, traite les portées **`session` + `machine_user`**
-  seulement (la portée `machine` reste au service) — no-op journalisé en
-  24.3, handlers en 24.4. N'écrit que dans `%LOCALAPPDATA%\SambaEdu\Agent\`.
-  Ne dot-source que `ContractV1.ps1` (lisible user sous Program Files).
+  cache (2 s / 60 s, fallback dernier cache), `Parse-State`, traite les
+  portées **`session` + `machine_user`** seulement (la portée `machine`
+  reste au service). Depuis 24.4 : **convergence réelle** (moteur
+  `ConvergenceEngine.ps1` + handlers `Wallpaper.ps1`/`Overlay.ps1`,
+  dot-sourcés depuis Program Files — lisibles user) en **boucle résidente**
+  (poll mtime ~60 s + re-test ~5 min ; `ExecutionTimeLimit` illimité,
+  motivé — le processus meurt au logoff). Écrit dans
+  `%LOCALAPPDATA%\SambaEdu\Agent\` + SON drop per-SID (seule exception,
+  ACL `<SID>:M`).
 
 **Durcissement 401 deux-acteurs** (le service ET le fetch partagent le même
 fichier token — une rotation reçue par l'un peut invalider un appel en vol
@@ -125,14 +138,29 @@ naturelle est un **broker IPC named-pipe** (le service pousse l'état aux
 processus de session, plus de cache-fichiers ni de double tâche), écartée
 pour le MVP PowerShell (service mono-thread 24.2, artefact temporaire).
 
-### NFC (note pour 24.4 — handlers)
+### Handlers session (Story 24.4)
+
+Les deux premiers handlers réels — `wallpaper` (HKCU + style fill +
+`SystemParametersInfo`, asset depuis le cache `assets\`, `asset: null` =
+no-op compliant) et `overlay` (composition + écriture atomique
+d'`overlay.json` per-user — l'agent EST le fetch du POC, render
+Rainmeter/Conky inchangé ; Rainmeter absent = gracieux, jamais `error`).
+La machine d'états du **mode `default`** (contrat §5 : dérive humaine →
+`drifted_allowed`, premier passage jamais `drifted_allowed`) et
+l'**isolation par item** (échec → `error` + detail, la passe continue)
+vivent dans `shared/ConvergenceEngine.ps1`. Hash rapporté : exclusive =
+hash d'item **verbatim** ; aggregate = **empreinte** SHA-256 des hashes
+opaques concaténés (ordre serveur). Vue serveur complète :
+`docs/agent/handlers-wallpaper-overlay.md`.
+
+### NFC (handlers)
 
 Le serveur émet en **NFC** et le hash compare octet à octet. Windows peut
 produire du NFD (`é` = `e` + combinant) pour des chemins visuellement
-identiques : les comparaisons *réel vs cible* des futurs handlers (24.4)
-doivent normaliser en NFC avant comparaison
-(`"…".Normalize([Text.NormalizationForm]::FormC)`), sinon faux `drift`.
-Non critique en 24.2 (aucun handler, `items: []`).
+identiques : les comparaisons *réel vs cible* des handlers normalisent en
+NFC avant comparaison (`"…".Normalize([Text.NormalizationForm]::FormC)`),
+sinon faux `drift` — appliqué en 24.4 (chemin wallpaper case-insensitive +
+NFC, contenu overlay NFC).
 
 ---
 

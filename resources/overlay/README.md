@@ -7,6 +7,16 @@ au lieu du bandeau cuit dans le JPEG par `WallpaperComposer`.
 > Contexte / décisions : `_bmad-output/planning-artifacts/spike-wallpaper-overlay-tools-2026-06-09.md`
 > et mémoire `project_overlay_poc_phase_a`.
 
+> ⚠️ **Windows : le fetch POC est DÉPRÉCIÉ depuis la Story 24.4.** L'agent
+> desired-state EST le fetch : le compagnon de session (handler `overlay`)
+> compose et écrit `overlay.json` **per-user** sous
+> `%LOCALAPPDATA%\SambaEdu\Agent\overlay.json` — `fetch/overlay-fetch.ps1`
+> ne doit plus être déployé sur un poste où l'agent tourne (la skin
+> `rainmeter/` pointe désormais sur le fichier per-user ; son code
+> regex/meters est inchangé). **Linux (Conky + `overlay-fetch.sh`) :
+> intouché** — le POC reste le chemin en place jusqu'à l'agent Linux.
+> Vue serveur : `docs/agent/handlers-wallpaper-overlay.md`.
+
 ## La facade : un fichier local `overlay.json`
 
 La frontière neutre côté client est un **fichier JSON local**. Deux adaptateurs
@@ -38,7 +48,8 @@ agent.
 
 | OS | Chemin `overlay.json` |
 |---|---|
-| Windows | `%PROGRAMDATA%\SambaEdu\overlay.json` |
+| Windows (POC, déprécié) | `%PROGRAMDATA%\SambaEdu\overlay.json` |
+| Windows (agent 24.4) | `%LOCALAPPDATA%\SambaEdu\Agent\overlay.json` (per-user, écrit par le compagnon) |
 | Linux | `/run/sambaedu/overlay.json` (tmpfs, recréé au boot) |
 
 Le `fetch` écrit ; le `render` lit. Sur Linux le fichier doit être lisible par la

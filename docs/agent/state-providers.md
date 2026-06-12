@@ -140,8 +140,13 @@ pas les listes (contrat §4).
 - Mailles lues : broadcast (`owner_id` null + `is_default`), WG physique ou
   logique (owner `WorkstationGroup`, départagé par `is_physical`), groupe
   user (owner `UserGroup`), user (owner `User`).
-- L'URL de téléchargement sera AJOUTÉE quand la route de serving existera
-  (champ ajouté = évolution mineure, contrat §9) → story 24.4.
+- **Décision 24.4 : PAS de champ `url`.** La route de serving existe
+  (`GET /api/v1/agent/assets/wallpaper/{filename}`, route
+  `agent.v1.assets.wallpaper` — cf. `handlers-wallpaper-overlay.md`) mais le
+  payload reste `{asset, checksum}` : l'agent construit l'URL depuis
+  `server_url` + chemin documenté, comme pour `/state` et `/report`. Évite
+  un churn d'ETag sur tous les contextes au déploiement ; un champ `url`
+  resterait possible plus tard sans casse (champ ajouté = mineur, §9).
 
 ### `overlay` — `aggregate` / `strict` / `session`
 
@@ -152,12 +157,28 @@ Un item **par signal posté actif** (`overlay_signals`, union) :
   "expires_at": "2026-06-12T08:00:00+00:00" }
 ```
 
+**+ depuis 24.4, un item synthétique `identity`** (uniquement en contexte
+user — jamais en machine-only) :
+
+```json
+{ "kind": "identity", "login": "mdupont", "fullname": "Marie Dupont",
+  "room": "salle_201" }
+```
+
 - `expires_at` : ISO 8601 UTC ou null. Signal expiré = exclu à la
   compilation (l'état change réellement → l'ETag change : correct).
 - Maille d'un signal : `user_login` → user ; `workstation_uuid` → poste ;
   `workstation_group_id` → WG (physique/logique selon le groupe) ; tout
   null → broadcast. Multi-critères → maille la plus spécifique (étiquette
   cohérente pour logs/tests ; sans incidence de précédence, aggregate).
+- Item `identity` (décision 24.4 n° 4) : `fullname` = users (fallback
+  login), `room` = nom du WG **physique** du poste (null sans salle) —
+  données STABLES (l'ETag ne bouge que si elles bougent), maille User,
+  `sourceId` 0 (sort en tête de l'union). Permet au handler overlay de
+  composer « identité user + parc » sans appel AD côté poste (critère
+  Keycloak). Champ de payload owné par le provider (§3.2) — pas une
+  évolution d'enveloppe. Les alertes dérivées volatiles (quota,
+  multi-session) restent HORS desired-state.
 
 ## Ajouter un type de ressource (checklist Epic 27)
 
@@ -178,9 +199,9 @@ Un item **par signal posté actif** (`overlay_signals`, union) :
 
 | Sujet | Pourquoi pas ici | Où |
 |---|---|---|
-| Alertes overlay dérivées (quota, multi-session) et bloc identité/machine | volatiles à chaque poll → détruiraient l'ETag ; métrologie temps réel, pas état cible | arbitrage à la story 24.4 (composition `overlay.json`) |
-| Fallback wallpaper système (`default.jpg`), perso `/home/<user>/Photos`, override quota | features du canal legacy, pas des règles d'état serveur ; le perso est le cas d'école du mode `default`/`drifted_allowed` | réexamen au handler 24.4 |
+| Alertes overlay dérivées (quota, multi-session) | volatiles à chaque poll → détruiraient l'ETag ; métrologie temps réel, pas état cible | hors desired-state (arbitrage 24.4 SOLDÉ : composition locale par le handler, identité stable servie par l'item `identity`) |
+| Fallback wallpaper système (`default.jpg`), perso `/home/<user>/Photos`, override quota | features du canal legacy, pas des règles d'état serveur ; le perso est le cas d'école du mode `default`/`drifted_allowed` (réalisé en 24.4 côté handler) | canal legacy jusqu'à extinction (Epic 27) |
 | Type `lockscreen` | pas dans les identifiants figés §7 | futur type séparé (Epic 27) |
-| URL de téléchargement des assets | la route de serving n'existe pas encore | champ mineur ajouté en 24.4 |
+| URL de téléchargement des assets | **soldé 24.4** : route de serving livrée, payload INCHANGÉ (décision « pas de champ url » ci-dessus) | `handlers-wallpaper-overlay.md` §2 |
 | `config('agent.ttl_seconds')` | clé formalisée avec l'endpoint | story 23.5 (défaut code 3600 en attendant) |
 | UI des warnings de conflit | le log structuré suffit à ce stade | story 24.5 (UI conformité) |

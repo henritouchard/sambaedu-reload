@@ -9,9 +9,11 @@ use App\Enums\StateMaille;
 use App\Enums\StateMode;
 use App\Enums\StateScope;
 use App\Models\OverlaySignal;
+use App\Models\WorkstationGroup;
 use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
+use App\Services\Overlay\OverlayService;
 use Illuminate\Support\Collection;
 
 /**
@@ -19,12 +21,20 @@ use Illuminate\Support\Collection;
  * **postés** (`overlay_signals`, POC f9b3ad9) vers des candidats d'état
  * (Story 23.4, AC4).
  *
- * Un item PAR signal actif (aggregate = union, décision n° 7). Les alertes
- * dérivées (quota, multi-session — `OverlaySignalBuilder`) et le bloc
- * identité/machine restent HORS desired-state v1 : volatiles à chaque poll,
- * elles détruiraient l'ETag — l'arbitrage final (qui compose `overlay.json`
- * côté poste) appartient à la story 24.4. Le POC overlay reste le fetch en
- * prod d'ici là.
+ * Un item PAR signal actif (aggregate = union, décision n° 7), PLUS — depuis
+ * la story 24.4 (décision n° 4) — un candidat synthétique `kind: "identity"`
+ * quand la compilation a un user : `{kind, login, fullname, room}`. C'est
+ * l'enrichissement serveur qui permet au handler overlay de composer
+ * « identité user + parc » sans aucun appel AD côté poste (critère
+ * Keycloak) : le compagnon ne connaît localement ni le fullname ni la salle.
+ * Données STABLES (l'ETag ne bouge que si elles bougent — correct). Champ de
+ * payload owné par la story provider (contrat §3.2) : PAS une évolution
+ * d'enveloppe.
+ *
+ * Les alertes dérivées (quota, multi-session — `OverlaySignalBuilder`)
+ * restent HORS desired-state v1 : volatiles à chaque poll, elles
+ * détruiraient l'ETag — la composition finale d'`overlay.json` est locale
+ * (handler 24.4, cf. docs/agent/handlers-wallpaper-overlay.md).
  *
  * Signal expiré (`expires_at` ≤ now) = exclu à la compilation : l'état
  * change réellement, l'ETag aussi — correct (piège n° 4 préservé, le hash ne
@@ -69,7 +79,7 @@ final class OverlayStateProvider implements StateProvider
             )
             ->get();
 
-        return $signals->map(fn (OverlaySignal $signal): StateCandidate => new StateCandidate(
+        $candidates = $signals->map(fn (OverlaySignal $signal): StateCandidate => new StateCandidate(
             maille: $this->mailleFor($signal, $ctx),
             payload: [
                 'kind' => (string) $signal->kind,
@@ -82,6 +92,54 @@ final class OverlayStateProvider implements StateProvider
             updatedAt: $signal->updated_at,
             sourceId: (int) $signal->id,
         ));
+
+        $identity = $this->identityCandidate($ctx);
+        if ($identity !== null) {
+            $candidates->prepend($identity);
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * Candidat synthétique `identity` (Story 24.4, décision n° 4) — maille
+     * User, émis UNIQUEMENT en contexte user (jamais en machine-only : pas
+     * d'identité à afficher sans session).
+     *
+     * `room` = nom du premier WG **physique** du poste (invariant
+     * 1-salle-max : il y en a 0 ou 1), null sans salle — lookup par les ids
+     * déjà résolus du contexte (lecture seule, pas de re-résolution
+     * d'appartenance). `fullname` retombe sur le login si vide (iso
+     * `OverlayService::pollPayload`). Aucun float (§4.1).
+     *
+     * `sourceId` 0 : ordre aggregate stable par `sourceId` asc (décision
+     * 23.4 n° 9) — l'identité sort TOUJOURS en tête, avant tout signal
+     * (ids DB ≥ 1), quel que soit l'instant de compilation.
+     */
+    private function identityCandidate(TargetContext $ctx): ?StateCandidate
+    {
+        if ($ctx->user === null) {
+            return null;
+        }
+
+        $fullname = (string) ($ctx->user->fullname ?? '');
+        $room = $ctx->physicalGroupIds === []
+            ? null
+            : WorkstationGroup::query()->find($ctx->physicalGroupIds[0])?->name;
+
+        return new StateCandidate(
+            maille: StateMaille::User,
+            payload: [
+                // Kind réservé — postSignal() reclasse tout signal posté qui
+                // le revendiquerait (review 24.4 #2).
+                'kind' => OverlayService::KIND_RESERVED_IDENTITY,
+                'login' => (string) $ctx->user->login,
+                'fullname' => $fullname !== '' ? $fullname : (string) $ctx->user->login,
+                'room' => $room !== null && $room !== '' ? (string) $room : null,
+            ],
+            updatedAt: $ctx->user->updated_at,
+            sourceId: 0,
+        );
     }
 
     /**

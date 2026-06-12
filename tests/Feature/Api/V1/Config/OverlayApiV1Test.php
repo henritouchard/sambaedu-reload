@@ -284,6 +284,20 @@ class OverlayApiV1Test extends TestCase
     }
 
     #[Test]
+    public function post_signal_reserved_identity_kind_reclassified_as_notice(): void
+    {
+        // Review 24.4 #2 : 'identity' est réservé au cartouche synthétique
+        // serveur — un signal posté avec ce kind serait avalé en silence par
+        // le handler overlay. Reclassé pour rester visible comme alerte.
+        $result = app(OverlayService::class)->postSignal(
+            OverlayService::KIND_RESERVED_IDENTITY, 'info', 'Message', 'x', $this->seededWorkstationUuid,
+        );
+
+        self::assertNotNull($result);
+        self::assertSame('notice', $result->kind);
+    }
+
+    #[Test]
     public function signal_targeting_workstation_only_appears_for_any_user(): void
     {
         $this->seedWorkstationContext();

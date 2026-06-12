@@ -75,6 +75,11 @@ $files = @(
     # ou par SYSTEM at-logon (SessionStateFetch) — signes comme le reste (AC6).
     (Join-Path $repoAgentDir 'windows\SessionStateFetch.ps1'),
     (Join-Path $repoAgentDir 'windows\SessionCompanion.ps1'),
+    # Story 24.4 : moteur de convergence (shared, cross-OS) + handlers Windows
+    # — dot-sources par le compagnon, signes comme le reste (bundle a plat).
+    (Join-Path $repoAgentDir 'shared\ConvergenceEngine.ps1'),
+    (Join-Path $repoAgentDir 'windows\handlers\Wallpaper.ps1'),
+    (Join-Path $repoAgentDir 'windows\handlers\Overlay.ps1'),
     (Join-Path $repoAgentDir 'windows\Install-SambaEduAgent.ps1'),
     (Join-Path $repoAgentDir 'windows\Uninstall-SambaEduAgent.ps1'),
     (Join-Path $repoAgentDir 'shared\ContractV1.ps1')

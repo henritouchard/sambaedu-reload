@@ -35,6 +35,8 @@ use App\Http\Controllers\Api\V1\Agent\EnrollController as AgentEnrollController;
 use App\Http\Controllers\Api\V1\Agent\StateController as AgentStateController;
 // Story 24.1 — Canal agent desired-state : POST /report (alias iso AgentStateController).
 use App\Http\Controllers\Api\V1\Agent\ReportController as AgentReportController;
+// Story 24.4 — Canal agent desired-state : GET /assets/wallpaper/{filename} (alias iso AgentReportController).
+use App\Http\Controllers\Api\V1\Agent\AssetController as AgentAssetController;
 // Story 16.13 — Exposition endpoints natifs /api/v1/*
 use App\Http\Controllers\WallpaperController;
 use App\Http\Controllers\OverlayController;
@@ -269,6 +271,14 @@ Route::get('/v1/agent/state', [AgentStateController::class, 'show'])
 Route::post('/v1/agent/report', [AgentReportController::class, 'store'])
     ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
     ->name('agent.v1.report');
+
+// `GET /v1/agent/assets/wallpaper/{filename}` (24.4) : serving binaire des
+// assets de la bibliothèque wallpaper, téléchargés par le service SYSTEM
+// (vérif SHA-256 côté poste). Chaîne iso state/report ; filename
+// content-addressed validé strictement par le controller (sinon 404).
+Route::get('/v1/agent/assets/wallpaper/{filename}', [AgentAssetController::class, 'show'])
+    ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
+    ->name('agent.v1.assets.wallpaper');
 
 /*
 |--------------------------------------------------------------------------

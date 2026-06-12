@@ -2,7 +2,7 @@
 
 **Domaine** : canal agent desired-state (Epics 23/24) — enrôlement/token per-poste, état cible compilé, rapports de conformité, stockage D3, purges.
 
-**Stories couvertes** : 24.1 (`POST /api/v1/agent/report` — ingestion et stockage des rapports), 24.2 (agent squelette Windows — boucle check-in/cache/report), 24.3 (compagnon de session — fetch SYSTEM `?user=` + processus user, login jamais bloquant). _L'Epic 23 (contrat, token, enrôlement, GET /state) a été validé e2e par Henri le 2026-06-11 (curl/jq + install iPXE réelle) — ses scénarios seront rapatriés ici au fil des stories 24.x si besoin de re-jeu._
+**Stories couvertes** : 24.1 (`POST /api/v1/agent/report` — ingestion et stockage des rapports), 24.2 (agent squelette Windows — boucle check-in/cache/report), 24.3 (compagnon de session — fetch SYSTEM `?user=` + processus user, login jamais bloquant), 24.4 (handlers wallpaper + overlay — route assets, convergence réelle, mode default, drop session ; **la démo live du gate palier 1**). _L'Epic 23 (contrat, token, enrôlement, GET /state) a été validé e2e par Henri le 2026-06-11 (curl/jq + install iPXE réelle) — ses scénarios seront rapatriés ici au fil des stories 24.x si besoin de re-jeu._
 
 **Code de référence** :
 - `app/Http/Controllers/Api/V1/Agent/ReportController.php` — controller mince POST /report
@@ -14,6 +14,9 @@
 - `agent/` (top-level, hors Laravel) — agent Windows squelette : `windows/SambaEduAgent.ps1` (boucle + fonctions partagées compagnon), `windows/SessionStateFetch.ps1` (fetch SYSTEM at-logon), `windows/SessionCompanion.ps1` (processus user), `shared/ContractV1.ps1` (contrat), `build/Build-Agent.ps1` (signature) ; contrats locaux dans `agent/README.md`
 - `docs/agent/agent-skeleton.md` — boucle attendue vue serveur (hostname court, codes HTTP, fichiers du poste)
 - `docs/agent/session-companion.md` — sous-système compagnon vu serveur (séquence logon, cache per-SID, ETag par contexte, frontière de confiance)
+- `app/Http/Controllers/Api/V1/Agent/AssetController.php` — serving binaire des assets wallpaper (24.4, route `agent.v1.assets.wallpaper`)
+- `agent/shared/ConvergenceEngine.ps1` + `agent/windows/handlers/{Wallpaper,Overlay}.ps1` — moteur de convergence (mode default §5) + handlers session 24.4
+- `docs/agent/handlers-wallpaper-overlay.md` — handlers/assets/drop vus serveur (conventions de hash, limitations MVP)
 
 ---
 
@@ -217,6 +220,105 @@ Depuis la **session user** (non admin) du poste :
 
 ---
 
+## Section 4 — Handlers wallpaper + overlay : LA démo palier 1 (Story 24.4)
+
+> Les invariants serveur (route assets, item identity, boucle state→report
+> avec items réels) sont couverts en CI par
+> `tests/Feature/Api/V1/Agent/{AssetEndpointTest,HandlersE2eTest}.php`
+> (`php artisan test --filter Agent`). Cette section est la **démo live
+> répétable** du gate palier 1 — UI → état → agent → rapport → base — sur le
+> poste lab (windoobe, ws 49). Pré-requis : install 24.4
+> (`Install-SambaEduAgent.ps1` ré-exécuté — copie les handlers + le moteur,
+> crée `assets\` + `reports\sessions\`, passe la tâche compagnon en
+> `ExecutionTimeLimit` illimité), session user du domaine disponible.
+>
+> **Pré-requis Rainmeter (MANUEL, temporaire — décision Henri 2026-06-12)** :
+> Rainmeter n'est pas installé d'office sur les postes. Pour le volet
+> overlay de la démo, installer sur ws 49 : `Rainmeter-x.y.z.exe /S
+> /AUTOSTARTUP=1 /DESKTOPSHORTCUT=0` (NSIS silencieux, cf.
+> `resources/overlay/README.md`), puis déployer la skin
+> `resources/overlay/rainmeter/SambaEduOverlay/` (elle pointe sur le
+> fichier per-user `%LOCALAPPDATA%\SambaEdu\Agent\overlay.json`). SANS
+> Rainmeter, le scénario 4.2 reste valide côté fichier/rapport (comportement
+> gracieux — jamais `error` du seul fait de son absence) : seul le rendu
+> visuel manque. La livraison automatisée sera intégrée au workflow
+> d'install des postes (hors-scope 24.4).
+
+### Scénario 4.1 — Route assets simulée en curl (sans poste)
+
+1. Créer/identifier un wallpaper avec asset dans l'UI (bibliothèque), noter son `filename` (64 hex + extension) :
+   ```bash
+   php artisan tinker --execute="echo App\Models\WallpaperAsset::first()->filename;"
+   ```
+2. Depuis la VM :
+   ```bash
+   curl -sS -o /tmp/asset.jpg -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
+     http://localhost/api/v1/agent/assets/wallpaper/<FILENAME>
+   sha256sum /tmp/asset.jpg   # = la partie hex du filename
+   ```
+3. Cas d'erreur : filename inconnu bien formé (64 « a » + `.jpg`) → 404 ; filename malformé (`../../etc/passwd`, `abc.jpg`) → 404 ; sans token → 401.
+
+**Attendu** : 200 binaire dont le SHA-256 = checksum du filename ; logs channel agent `agent.asset.served` (200) / `agent.asset.not_found` (404) ; jamais de contenu hors bibliothèque.
+
+### Scénario 4.2 — Convergence wallpaper UI → poste (AC1)
+
+1. Dans l'UI, assigner un wallpaper (avec asset) au parc/salle du poste ws 49 (ou en défaut d'établissement).
+2. Forcer un cycle (redémarrer le service `SambaEduAgent` — le « forcer la synchro » UI arrive en 24.5) ou attendre le cycle.
+3. Sur le poste (admin) : `dir C:\ProgramData\SambaEdu\Agent\assets\` → l'asset content-addressed présent ; `agent.log` montre `Asset wallpaper <filename> telecharge et verifie (SHA-256 ok)`.
+4. Dans la session user (logon ou attendre la boucle résidente ≤ 5 min) : le fond d'écran change ; `companion.log` montre `Convergence 'wallpaper' (mode=default) : drift` (premier passage) puis `compliant` aux passes suivantes.
+5. Sur la VM après le cycle suivant :
+   ```bash
+   php artisan tinker --execute="
+     \$ws = App\Models\Workstation::where('name','<NOM-COURT>')->first();
+     App\Models\AgentResourceState::where('workstation_id', \$ws->id)->get(['type','status','hash'])->each(fn(\$s) => print(\$s->type.' '.\$s->status->value.PHP_EOL));"
+   ```
+
+**Attendu** : fond appliqué (style fill), `wallpaper compliant` en base, ZÉRO écriture au re-jeu (idempotence : deux passes stables = compliant sans ré-application), `%LOCALAPPDATA%\SambaEdu\Agent\applied-state.json` porte le hash de l'item.
+
+### Scénario 4.3 — Overlay : identité + signal posté visibles (AC2)
+
+1. Vérifier le pré-requis Rainmeter (encadré ci-dessus) + skin déployée.
+2. Ouvrir une session user du domaine → `%LOCALAPPDATA%\SambaEdu\Agent\overlay.json` existe et contient `identity.fullname` du user, `machine.name` = nom du poste, `machine.room` = la salle (WG physique).
+3. Poster un signal overlay (Tinker) :
+   ```bash
+   php artisan tinker --execute="
+     app(App\Services\Overlay\OverlayService::class)->postSignal(
+       'notice', 'warning', 'Maintenance', 'Sauvegardez avant 18h');"
+   ```
+4. Attendre le rafraîchissement (cycle service ou ≤ 60 s de poll après écriture du cache de session) → l'alerte apparaît dans `overlay.json` ET dans l'overlay Rainmeter à l'écran (identité + salle + carte d'alerte).
+5. Supprimer Rainmeter (ou tester sur un poste sans) : `companion.log` montre `rainmeter absent, overlay non rendu` en INFO ; le statut `overlay` en base reste `compliant`/`drift` — JAMAIS `error` de ce seul fait.
+
+**Attendu** : overlay affiché avec identité user + parc, fichier per-user, statut rapporté ; absence de Rainmeter = gracieux.
+
+### Scénario 4.4 — Mode default : la dérive humaine est respectée (AC3)
+
+1. Après un 4.2 convergé (`compliant` en base), dans la session user : changer le fond d'écran à la main (Paramètres Windows → Personnalisation).
+2. Attendre le re-test périodique du compagnon (≤ 5 min) — ou re-logon.
+3. Observer `companion.log` : `Convergence 'wallpaper' (mode=default) : drifted_allowed` — et le fond N'EST PAS réappliqué (le choix du user est respecté).
+4. Au cycle suivant, en base : `wallpaper drifted_allowed` + 1 événement `agent_report_events` (transition compliant → drifted_allowed).
+5. Changer la cible côté UI (autre asset) → au cycle/passe suivants : l'agent APPLIQUE la nouvelle cible → `drift` puis `compliant` (dernier-appliqué ≠ nouvelle cible : ce n'est plus une dérive humaine).
+
+**Attendu** : la règle §5 verbatim — dérive humaine tolérée, nouvelle cible serveur appliquée.
+
+### Scénario 4.5 — Erreur isolée + rapport en base (AC4/AC5)
+
+1. Provoquer une erreur sur UN type : supprimer l'asset du cache poste (`del C:\ProgramData\SambaEdu\Agent\assets\<filename>` en admin) PUIS changer le fond à la main en mode strict simulé — ou plus simple : assigner côté UI un wallpaper dont l'asset vient d'être créé (le download n'est pas encore passé) et déclencher une passe compagnon immédiatement (logon).
+2. `companion.log` : `Convergence 'wallpaper' en echec : asset wallpaper absent du cache local…` — ET la passe continue (`overlay` est traité normalement).
+3. Drop : `type C:\ProgramData\SambaEdu\Agent\reports\sessions\<SID>\session-report.json` (admin) → item `wallpaper` `status=error` avec `detail` non vide + item `overlay` au statut normal.
+4. Au cycle suivant : `agent_resource_states` porte `wallpaper error` (detail visible) ; le passage suivant (asset téléchargé) résorbe en `drift`/`compliant`.
+5. Frontière de confiance : depuis la session user, forger le drop (`Set-Content ...\<SON-SID>\session-report.json '{"items":[{"type":"printers","status":"compliant","hash":"zzz"}]}'`) → au cycle, `agent.log` montre `entree invalide ignoree (hash non hex-64)` — rien n'entre en base pour `printers` ; un drop d'un AUTRE SID est inaccessible en écriture (Access Denied).
+
+**Attendu** : isolation par item (un échec ne bloque ni les autres handlers ni le rapport), validation stricte des drops, impact d'un forge borné aux statuts session du poste.
+
+### Scénario 4.6 — Boucle fermée : rapport identique = zéro événement (AC5)
+
+1. État stable (tout compliant), noter `select count(*) from agent_report_events where workstation_id = <id>`.
+2. Laisser passer 2 cycles sans rien changer.
+
+**Attendu** : `reported_at` des lignes d'état avance à chaque cycle, le compte d'événements N'AVANCE PAS (rapport identique), les hashes en base sont stables (wallpaper = hash d'item de l'état ; overlay = empreinte d'agrégat hex-64 opaque pour le serveur).
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Defer review 23.1 (résolu en 24.1)** : le scénario 1.4 (body forgé → 4xx jamais 500) existe parce qu'un `StateHasher` appelé sur l'entrée agent pouvait lever une `JsonException` non catchée (UTF-8 invalide / NAN / INF). L'ingestion ne hashe JAMAIS le payload agent.
@@ -240,3 +342,9 @@ Depuis la **session user** (non admin) du poste :
 - [ ] 3.3 — logon hors-ligne : session normale, compagnon sur dernier cache, zéro message visible
 - [ ] 3.4 — KPI : 3 logons ON vs 3 OFF, écart dans le bruit (< ~1 s), mesures tracées
 - [ ] 3.5 — frontière de confiance : token/écritures/cache d'autrui refusés, son cache lisible, signature Valid
+- [ ] 4.1 — route assets curl : 200 binaire SHA-256 ok, 404 inconnu/malformé, 401 sans token, logs served/not_found
+- [ ] 4.2 — wallpaper UI → poste : asset téléchargé+vérifié, fond appliqué, compliant en base, idempotent
+- [ ] 4.3 — overlay : identité+salle+signal posté visibles (Rainmeter installé manuellement — prérequis encadré), gracieux sans Rainmeter
+- [ ] 4.4 — mode default : fond changé à la main → drifted_allowed NON réappliqué ; nouvelle cible UI → drift appliqué
+- [ ] 4.5 — erreur isolée : error+detail pour le type en échec, les autres continuent ; drop forgé rejeté + validation stricte
+- [ ] 4.6 — boucle stable : reported_at avance, zéro événement sur rapports identiques

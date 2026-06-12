@@ -68,11 +68,18 @@ final readonly class TargetContext
     }
 
     /**
+     * Triés : l'ordre des ids ne doit jamais dépendre du plan d'exécution SQL
+     * (ex. `physicalGroupIds[0]` → `room` de l'item identity → ETag). Les
+     * consommateurs font des `in_array`, insensibles à l'ordre.
+     *
      * @param  array<int|string>  $raw
      * @return list<int>
      */
     private static function ids(array $raw): array
     {
-        return array_values(array_map(static fn ($id): int => (int) $id, $raw));
+        $ids = array_map(static fn ($id): int => (int) $id, $raw);
+        sort($ids);
+
+        return $ids;
     }
 }

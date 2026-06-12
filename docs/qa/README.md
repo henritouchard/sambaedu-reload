@@ -15,7 +15,7 @@ Checklist par domaine métier. À dérouler avant une mise en production importa
 - [ ] [users](domains/users.md) — Listing /users, filtres audit (quota dépassé, mdp par défaut), synchro password_changed_at AD _(Story 14.4)_
 - [ ] [ad-sync](domains/ad-sync.md) — Synchronisation AD observer-driven (Workstation, WorkstationGroup, …) + rename modrdn préservant objectGUID/netbootGUID _(Story 4.9)_
 - [ ] [parc](domains/parc.md) — Appartenance poste↔groupe unifiée dans le pivot global, salles physiques (invariant 1-salle-max app-only), runbook migration/rollback _(Story 4.11)_
-- [ ] [agent](domains/agent.md) — Canal agent desired-state : ingestion des rapports de conformité POST /report, stockage D3 borné, flag history, purge _(Story 24.1)_
+- [ ] [agent](domains/agent.md) — Canal agent desired-state : ingestion des rapports POST /report, stockage D3 borné, agent squelette + compagnon de session, handlers wallpaper/overlay + route assets (démo palier 1) _(Stories 24.1 → 24.4)_
 
 ## À créer au fil des prochaines stories
 
