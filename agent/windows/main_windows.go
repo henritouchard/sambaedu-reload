@@ -1,25 +1,30 @@
-// Binaire agent SambaEdu desired-state — Windows (Story 24.5, Epic 24).
+// Binaire agent SambaEdu desired-state — Windows (Stories 24.5 + 24.6, Epic 24).
 //
-// Service SYSTEM (portée machine) : boucle de check-in GET /state → cache →
-// POST /report (items: [] tant que les handlers ne sont pas portés, 24.6).
-// Le cœur de la boucle (rotation D5, grâce, quarantaine, backoff, cache
-// atomique, StateHasher) vit dans sambaedu/agent/shared — OS-agnostique et
-// testé sur l'hôte. Ce package ne contient QUE le spécifique Win32 :
-// protocole SCM (x/sys/windows/svc), ACL icacls, UUID SMBIOS.
+// Service SYSTEM (portée machine + broker des sessions) : boucle de check-in
+// GET /state → cache → fetch des sessions + sync assets → POST /report
+// (items réels = drops session collectés/validés). Le cœur (rotation D5,
+// grâce, quarantaine, backoff, cache atomique, StateHasher, moteur §5,
+// compagnon, collecte des drops) vit dans sambaedu/agent/shared —
+// OS-agnostique et testé sur l'hôte. Ce package ne contient QUE le
+// spécifique Win32 : protocole SCM (x/sys/windows/svc), ACL icacls, UUID
+// SMBIOS, énumération WTS, registre HKCU + SystemParametersInfoW (FFI sans
+// cgo), tâches planifiées.
 //
-// Sous-commandes (remplacent Install-/Uninstall-SambaEduAgent.ps1 du spike
-// 24.2 — le binaire parle le protocole SCM nativement, plus de wrapper
-// ServiceBase compilé à l'install) :
+// Sous-commandes :
 //
 //	agent.exe install -server-url http://<se5> [-interval 3600]
 //	agent.exe uninstall [-purge]
-//	agent.exe run        (mode console, debug)
+//	agent.exe run            (mode console, debug)
+//	agent.exe session-fetch  (tâche at-logon SYSTEM : GET /state?user= → cache per-SID)
+//	agent.exe companion      (tâche at-logon Users : convergence session, résident)
 //	agent.exe version
 //
-// Invariants (iso-24.2, contrat 23.3) :
-//   - token : C:\ProgramData\SambaEdu\Agent\token (FIGÉ), relu à chaque cycle ;
+// Invariants (iso-24.2/24.3, contrat 23.3) :
+//   - token : C:\ProgramData\SambaEdu\Agent\token (FIGÉ), relu à chaque cycle,
+//     ILLISIBLE du compagnon (ACL SYSTEM+Administrators — le canal réseau
+//     est 100 % SYSTEM, frontière NFR5) ;
 //   - hostname COURT dans le rapport (os.Hostname() = COMPUTERNAME) ;
-//   - NFR1 : ce service n'interagit JAMAIS avec le logon ;
+//   - NFR1 : rien dans le chemin synchrone du logon (tâches asynchrones) ;
 //   - NFR7 : aucune dépendance AD/Kerberos/LDAP — l'auth EST le bearer token.
 package main
 
@@ -78,12 +83,39 @@ func main() {
 		// Mode console (debug) : même boucle que le service, log recopié
 		// sur stderr. Ctrl-C pour arrêter.
 		runConsole()
+	case "session-fetch":
+		// Tâche planifiée at-logon (SYSTEM) : un fetch des sessions + sync
+		// des assets, puis sortie. Jamais d'erreur visible au logon : log
+		// local + code retour (NFR1).
+		runSessionFetchTask()
+	case "companion":
+		// Tâche planifiée at-logon (BUILTIN\Users) : processus RÉSIDENT aux
+		// droits de la session — ni réseau, ni token (NFR5).
+		if err := runCompanion(); err != nil {
+			os.Exit(1)
+		}
 	case "version":
 		fmt.Println(shared.Version)
 	default:
-		fmt.Fprintf(os.Stderr, "usage : agent.exe install|uninstall|run|version\n")
+		fmt.Fprintf(os.Stderr, "usage : agent.exe install|uninstall|run|session-fetch|companion|version\n")
 		os.Exit(2)
 	}
+}
+
+// runSessionFetchTask : point d'entrée de la tâche SambaEduAgent-SessionFetch
+// (processus SYSTEM neuf à chaque logon — il ne connaît pas l'état
+// quarantaine du service : il tente UN fetch, encaisse un éventuel 403 et
+// s'arrête, asymétrie documentée session-companion.md §7).
+func runSessionFetchTask() {
+	agent := newAgent(false)
+	cfg, err := agent.Store.ReadConfig()
+	if err != nil {
+		// Poste non installé/config corrompue : log + sortie silencieuse —
+		// rien ne doit jamais bloquer un logon.
+		agent.Log.Errorf("SessionStateFetch en échec : %v", err)
+		os.Exit(1)
+	}
+	agent.RunSessionFetch(cfg)
 }
 
 func exitOn(err error) {
@@ -94,7 +126,8 @@ func exitOn(err error) {
 }
 
 // newAgent assemble la boucle shared avec les implémentations Windows :
-// ACL icacls (iso-24.2), UUID SMBIOS, hostname COURT.
+// ACL icacls (iso-24.2 + per-SID/assets 24.6), UUID SMBIOS, hostname COURT,
+// énumération WTS des sessions.
 func newAgent(echo bool) *shared.Agent {
 	store := &shared.Store{SetACL: setAgentACL}
 	logger := &shared.Logger{Dir: store.LogsDir(), SetACL: setAgentACL, Echo: echo}
@@ -108,10 +141,14 @@ func newAgent(echo bool) *shared.Agent {
 	}
 
 	return &shared.Agent{
-		Store:    store,
-		Client:   shared.NewClient(store, logger, hostname),
-		Log:      logger,
-		Hostname: hostname,
-		UUID:     smbiosUUID(logger),
+		Store:            store,
+		Client:           shared.NewClient(store, logger, hostname),
+		Log:              logger,
+		Hostname:         hostname,
+		UUID:             smbiosUUID(logger),
+		Sessions:         enumerateInteractiveSessions,
+		SessionCacheACL:  setSessionCacheACL,
+		SessionReportACL: setSessionReportACL,
+		AssetsACL:        setAssetsACL,
 	}
 }

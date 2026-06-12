@@ -1,0 +1,23 @@
+{
+    "schema": "se5.wallpaper-overlay/v1",
+    "identity": {
+        "fullname": "Jean Döe",
+        "login": "jdoe"
+    },
+    "machine": {
+        "name": "SALLE101-PC03",
+        "room": "Salle B-12"
+    },
+    "alerts": [
+        {
+            "severity": "warning",
+            "title": "Maintenance réseau",
+            "text": "Coupure prévue à 18h"
+        },
+        {
+            "severity": "info",
+            "title": "Atelier \"Théâtre\"",
+            "text": "Salle des fêtes"
+        }
+    ]
+}

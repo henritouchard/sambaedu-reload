@@ -1,4 +1,4 @@
-# Handlers wallpaper + overlay — la convergence réelle (Story 24.4)
+# Handlers wallpaper + overlay — la convergence réelle (Story 24.4, portage Go 24.6)
 
 > Vue **côté serveur** des deux premiers handlers réels du canal agent
 > desired-state (Epic 24, gate palier 1). Complète `session-companion.md`
@@ -8,6 +8,14 @@
 > user), le transport par `state-endpoint.md` / `report-endpoint.md`.
 > Tests serveur : `tests/Feature/Api/V1/Agent/{AssetEndpointTest,
 > HandlersE2eTest}.php`.
+>
+> **Implémentation (depuis 24.6) : le binaire Go** (`agent/`) — le spike
+> PowerShell 24.4 est retiré du repo. Les séquences, ACL, conventions de
+> hash et formats locaux ci-dessous sont **inchangés** par le portage ; le
+> gain : la machine d'états §5, l'isolation, la validation des drops et le
+> sérialiseur overlay (golden byte-compatible) sont désormais **testés**
+> (`go test`, hôte). Les références de fichiers PS de ce document se lisent
+> avec la table de correspondance ci-dessous (§1).
 
 ## 1. Vue d'ensemble — qui fait quoi
 
@@ -40,6 +48,17 @@ POST /report (items réels)      ──►  agent_resource_states / agent_report
 | Service SYSTEM | télécharge/vérifie les assets, crée les répertoires de drop, collecte + valide les drops, rapporte |
 | Compagnon (user) | converge wallpaper (HKCU + `SystemParametersInfo`) et overlay (`overlay.json` per-user), persiste son applied-state, dépose son drop |
 
+Correspondance spike PS → implémentation Go (24.6) :
+
+| Référence PS (spike, retiré) | Code Go |
+|---|---|
+| `ConvergenceEngine.ps1` (`Resolve-ItemStatus`, `Invoke-ConvergencePass`) | `agent/shared/engine.go` (`ResolveItemStatus`, `Engine.RunPass`) — §5 table-driven testé |
+| `handlers/Wallpaper.ps1` | `agent/windows/handler_wallpaper_windows.go` (registre + `SystemParametersInfoW` FFI sans cgo) + logique pure `agent/shared/handler_wallpaper.go` |
+| `handlers/Overlay.ps1` (`Build-OverlayDocument`, `Format-OverlayJson`) | `agent/shared/overlay_compose.go` (sérialiseur fixe, golden byte-compatible) + `agent/shared/handler_overlay.go` |
+| `Sync-WallpaperAssets` | `agent/shared/assets.go` |
+| `Read-SessionReports` | `agent/shared/dropcollect.go` |
+| `SessionCompanion.ps1` (boucle résidente, drop) | `agent/shared/companion.go` + `agent/windows/companion_windows.go` |
+
 ## 2. Route serveur de serving des assets (NEUVE)
 
 | | |
@@ -69,7 +88,8 @@ l'afficher). Pas de purge en 24.4 (volume borné par la bibliothèque).
 
 ## 3. Handler `wallpaper` (exclusive / default / session)
 
-`agent/windows/handlers/Wallpaper.ps1` — exécuté par le compagnon :
+`agent/windows/handler_wallpaper_windows.go` (+ logique pure
+`agent/shared/handler_wallpaper.go`, testée hôte) — exécuté par le compagnon :
 
 - **test** : `HKCU:\Control Panel\Desktop\WallPaper` pointe-t-il vers
   `assets\<filename>` attendu ? Comparaison **case-insensitive** + NFC.
@@ -86,7 +106,8 @@ l'afficher). Pas de purge en 24.4 (volume borné par la bibliothèque).
 
 ## 4. Handler `overlay` (aggregate / strict / session) — l'agent devient le fetch du POC
 
-`agent/windows/handlers/Overlay.ps1` :
+`agent/shared/overlay_compose.go` + `agent/shared/handler_overlay.go`
+(OS-agnostique par injection, testé hôte — golden byte-compatible) :
 
 - La cible = le document `overlay.json` **composé localement** depuis TOUS
   les items overlay de la passe (union aggregate, ordre serveur) :
@@ -121,8 +142,8 @@ l'afficher). Pas de purge en 24.4 (volume borné par la bibliothèque).
 
 ## 5. Moteur de convergence + mode `default` (gap 1 réalisé)
 
-`agent/shared/ConvergenceEngine.ps1` — cœur **portable** (aucune dépendance
-Windows) :
+`agent/shared/engine.go` — cœur **portable** (aucune dépendance Windows,
+machine d'états couverte table-driven sur l'hôte) :
 
 - itération **dans l'ordre du payload serveur** (FR18), séquentielle, jamais
   de parallélisme ; dispatch par type ; type sans handler = ignoré + log

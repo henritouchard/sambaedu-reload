@@ -19,6 +19,11 @@ type Logger struct {
 	Dir    string
 	SetACL func(path string) error
 
+	// FileName : nom du fichier courant (défaut agent.log). Le compagnon
+	// 24.6 réutilise CE logger avec racine per-user + companion.log —
+	// format/rotation/rétention identiques (archives <base>-YYYY-MM-DD.log).
+	FileName string
+
 	// RetentionDays : rétention des archives (défaut 7).
 	RetentionDays int
 
@@ -32,6 +37,20 @@ type Logger struct {
 }
 
 const logFileName = "agent.log"
+
+// fileName / archivePrefix : agent.log → agent-YYYY-MM-DD.log ;
+// companion.log → companion-YYYY-MM-DD.log (iso-24.3).
+func (l *Logger) fileName() string {
+	if l.FileName == "" {
+		return logFileName
+	}
+
+	return l.FileName
+}
+
+func (l *Logger) archivePrefix() string {
+	return strings.TrimSuffix(l.fileName(), ".log") + "-"
+}
 
 func (l *Logger) now() time.Time {
 	if l.Now != nil {
@@ -74,7 +93,7 @@ func (l *Logger) log(level, format string, args ...any) {
 	}
 	l.rotateLocked()
 
-	f, err := os.OpenFile(filepath.Join(l.Dir, logFileName), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(filepath.Join(l.Dir, l.fileName()), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}
@@ -99,7 +118,7 @@ func (l *Logger) ensureDirLocked() error {
 // rotateLocked : agent.log d'un jour précédent → agent-YYYY-MM-DD.log, puis
 // purge des archives au-delà de la rétention (iso-24.2).
 func (l *Logger) rotateLocked() {
-	current := filepath.Join(l.Dir, logFileName)
+	current := filepath.Join(l.Dir, l.fileName())
 	info, err := os.Stat(current)
 	if err != nil {
 		return
@@ -113,7 +132,7 @@ func (l *Logger) rotateLocked() {
 		return
 	}
 
-	archive := filepath.Join(l.Dir, fmt.Sprintf("agent-%s.log", lastWriteDay))
+	archive := filepath.Join(l.Dir, fmt.Sprintf("%s%s.log", l.archivePrefix(), lastWriteDay))
 	_ = os.Rename(current, archive)
 
 	// Purge > rétention.
@@ -124,7 +143,7 @@ func (l *Logger) rotateLocked() {
 	cutoff := l.now().AddDate(0, 0, -l.retention())
 	for _, entry := range entries {
 		name := entry.Name()
-		if !strings.HasPrefix(name, "agent-") || !strings.HasSuffix(name, ".log") {
+		if !strings.HasPrefix(name, l.archivePrefix()) || !strings.HasSuffix(name, ".log") {
 			continue
 		}
 		fi, err := entry.Info()

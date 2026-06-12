@@ -433,6 +433,151 @@ désinstallation (iso-24.2).
 
 ---
 
+## Section 6 — Compagnon + handlers Go : parité démo (Story 24.6)
+
+> Le binaire Go est désormais COMPLET : compagnon de session (sous-commandes
+> `session-fetch` SYSTEM + `companion` user résident), handlers
+> wallpaper/overlay, moteur §5, sync assets, drop per-SID → rapport items
+> réels. **Zéro code PHP modifié** (`--filter Agent` = 206 passed inchangé) ;
+> les scénarios serveur des Sections 3 et 4 restent valides tels quels — la
+> Section 6 rejoue la parité côté POSTE sur le binaire Go signé
+> (`agent_version 2.1.0`). Pré-requis : poste lab enrôlé (windoobe ws 49),
+> binaire re-buildé signé CA réelle côté serveur (`scripts/build-agent.sh
+> [--force]`), Rainmeter installé MANUELLEMENT pour la démo overlay (NSIS
+> `/S`, cf. `resources/overlay/README.md` — le handler n'installe jamais
+> rien). Gate CI hôte : `go test ./...` (machine d'états §5 table-driven,
+> golden overlay byte-compatible, validation des drops, fetch/assets
+> httptest) + `go vet` (linux et GOOS=windows) + cross-compile.
+
+### Scénario 6.1 — Install : service + 2 tâches at-logon, reprise du spike
+
+1. Sur le poste (admin) : copier `sambaedu-agent-2.1.0.exe` vers
+   `C:\Program Files\SambaEdu\Agent\agent.exe` puis
+   `agent.exe install -server-url 'http://<serveur-se5>'`.
+2. Vérifier : `Get-Service SambaEduAgent` → Running ; `Get-ScheduledTask
+   SambaEduAgent-SessionFetch, SambaEduAgent-SessionCompanion` → présentes,
+   déclencheur At log on ; la tâche SessionFetch tourne en SYSTEM (limite
+   10 min), la tâche Companion en groupe Users **sans limite d'exécution**
+   (résident délibéré) avec `MultipleInstances IgnoreNew`.
+3. Si le poste portait encore les tâches PS du spike (ws 49) : vérifier
+   qu'elles ont été REMPLACÉES (les actions pointent sur `agent.exe
+   session-fetch` / `agent.exe companion`, plus aucun `powershell.exe -File`).
+4. `agent.exe version` → `2.1.0` ; `agent.exe uninstall` (en fin de
+   campagne) supprime service ET tâches, données conservées.
+
+**Attendu** : install idempotente (rejouable), zéro `.ps1` agent sur le
+poste comme au repo, `C:\ProgramData\SambaEdu\Agent\assets\` créé avec ACL
+SYSTEM/Admins F + Users R (`icacls`).
+
+### Scénario 6.2 — Logon nominal : fetch SYSTEM + compagnon résident
+
+1. Ouvrir une session d'un user du domaine sur le poste.
+2. L'ouverture ne marque AUCUNE attente (tâches asynchrones — NFR1) ;
+   vérifier ensuite : `cache\sessions\<SID>\{state.json,etag.txt}` écrits
+   (ACL `/inheritance:r`, SYSTEM F, Admins F, `<SID>:R`),
+   `reports\sessions\<SID>\` créé (ACL `<SID>:M`),
+   `%LOCALAPPDATA%\SambaEdu\Agent\companion.log` démarré.
+3. Côté serveur : `agent.state.compiled` (ou `not_modified`) avec
+   `user=<login>` dans le channel agent.
+4. Le processus `agent.exe companion` reste RÉSIDENT dans la session
+   (Gestionnaire des tâches) ; il meurt au logoff.
+
+**Attendu** : séquence iso-24.3 (`docs/agent/session-companion.md` §2) sur
+le binaire Go ; aucun répertoire `cache\sessions\` hors SID `S-1-5-21-*`.
+
+### Scénario 6.3 — Logon hors-ligne : jamais bloquant, dernier cache
+
+1. Couper le serveur (ou le réseau du poste), ouvrir une session déjà connue.
+2. La session s'ouvre normalement ; `companion.log` trace « pas de cache
+   frais … convergence sur le DERNIER cache connu » ; aucun message visible.
+3. **KPI logon (action humaine, reprise 24.3 §3.4)** : 3 logons serveur ON
+   vs 3 logons serveur OFF (événements Winlogon / création `explorer.exe`) —
+   écart dans le bruit (< ~1 s), mesures tracées dans la story.
+
+**Attendu** : le « jamais bloquant » est garanti par construction (mêmes
+tâches at-logon asynchrones) — la mesure le confirme sur le binaire Go.
+
+### Scénario 6.4 — Frontière de confiance (NFR5) sur le binaire Go
+
+Dans la session user (non admin) :
+
+1. `type C:\ProgramData\SambaEdu\Agent\token` → **Access Denied**.
+2. Écrire sous `C:\ProgramData\SambaEdu\Agent\` ou `C:\Program
+   Files\SambaEdu\Agent\` → Access Denied — SAUF
+   `reports\sessions\<SON SID>\` (écriture OK : c'est SON drop).
+3. Lire `cache\sessions\<SID d'un AUTRE user>\state.json` → Access Denied ;
+   le sien → lisible.
+4. `companion.log` ne contient AUCUN appel réseau (le compagnon n'a ni
+   client HTTP ni token — grep `GET /state` n'apparaît que dans
+   `logs\agent.log` côté SYSTEM).
+
+**Attendu** : iso-scénario 3.5, inchangé par le portage.
+
+### Scénario 6.5 — Convergence wallpaper UI → poste → rapport (LA démo)
+
+1. UI : associer une règle wallpaper (biblio d'assets) au parc du poste.
+2. Au cycle suivant (ou redémarrage du service pour accélérer) :
+   `agent.asset.served` côté serveur, `assets\<sha256>.<ext>` sur le poste
+   (SHA-256 = nom = checksum), fond d'écran appliqué dans la session
+   (HKCU `WallPaper` + rafraîchissement immédiat).
+3. Boucle fermée curl/jq iso-Epic 23 :
+   ```bash
+   php artisan tinker --execute="
+     \$ws = App\Models\Workstation::where('name','<NOM-COURT>')->first();
+     \$ws->agentResourceStates->each(fn(\$s) => print(\$s->resource_type.' '.\$s->status.' '.\$s->reported_at.PHP_EOL));"
+   ```
+   → ligne `wallpaper compliant` (après la passe suivant l'apply).
+4. Re-jouer le cycle sur état stable → statut inchangé, **zéro nouvel
+   événement** `agent_report_events` (idempotence + conventions de hash
+   stables — `agent_version: 2.1.0` au rapport).
+
+**Attendu** : chaîne complète UI → état → agent Go → rapport, latence
+≤ 1 cycle (NFR3) — le bouclage visuel UI = 24.7.
+
+### Scénario 6.6 — Mode default : dérive humaine respectée (Go)
+
+1. Avec la règle wallpaper en mode `default` convergée (6.5) : changer le
+   fond À LA MAIN dans la session.
+2. Attendre le re-test périodique du compagnon (~5 min) puis le cycle de
+   rapport.
+
+**Attendu** : le fond N'EST PAS réappliqué ; `agent_resource_states` passe
+`wallpaper → drifted_allowed` ; changer ensuite la CIBLE dans l'UI →
+réapplication + `drift` (la cible a bougé). Jamais de `drifted_allowed` au
+premier passage d'un poste vierge.
+
+### Scénario 6.7 — Overlay : identité + signal, Rainmeter gracieux
+
+1. Rainmeter + skin installés manuellement (prérequis démo) ; poster un
+   signal overlay depuis l'UI.
+2. Vérifier `%LOCALAPPDATA%\SambaEdu\Agent\overlay.json` : fullname/login +
+   `machine.name` local + room + `alerts[]` — format à structure fixe
+   (`": "` simple, UTF-8 brut) ; l'overlay AFFICHE identité + alerte.
+3. Supprimer/renommer `Rainmeter.exe` (simuler l'absence) → la passe
+   suivante écrit toujours `overlay.json`, statut overlay reste
+   compliant/drift NORMAL (jamais `error` du seul fait de l'absence),
+   `companion.log` trace « rainmeter absent, overlay non rendu ».
+4. Modifier `overlay.json` à la main → mode `strict` : réécrit à la passe
+   suivante + `drift` au rapport.
+
+**Attendu** : l'agent Go EST le fetch du POC ; `resources/overlay/`
+inchangé (la skin pointe déjà sur le fichier per-user).
+
+### Scénario 6.8 — Erreur isolée + drop forgé (frontière du rapport)
+
+1. Provoquer un échec d'UN handler (ex. supprimer l'asset du cache local
+   APRÈS l'avoir référencé, avant une passe) → l'item `wallpaper` remonte
+   `error` + detail explicite, l'overlay continue d'être traité (isolation).
+2. Dans la session user, forger `reports\sessions\<SON SID>\
+   session-report.json` (type hors liste, status inventé, hash non hex-64,
+   `error` sans detail, fichier > 256 KiB) → au cycle, `logs\agent.log`
+   trace le rejet entrée par entrée ; le rapport part SANS les entrées
+   forgées (jamais de 422 serveur causé par un drop user).
+
+**Attendu** : iso-scénario 4.5 — impact d'un user forgeur borné à SON poste.
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Defer review 23.1 (résolu en 24.1)** : le scénario 1.4 (body forgé → 4xx jamais 500) existe parce qu'un `StateHasher` appelé sur l'entrée agent pouvait lever une `JsonException` non catchée (UTF-8 invalide / NAN / INF). L'ingestion ne hashe JAMAIS le payload agent.
@@ -467,3 +612,11 @@ désinstallation (iso-24.2).
 - [ ] 5.3 — check-in serveur : agent_last_checkin_at + received counts zéro, agent_version 2.0.0, zéro identity_mismatch
 - [ ] 5.4 — résilience Go : backoff 30→3600, quarantaine check-ins légers + levée auto, rotation D5, 401 = arrêt propre
 - [ ] 5.5 — uninstall conservateur (données gardées), -purge destructif explicite
+- [ ] 6.1 — install Go complet : service + 2 tâches at-logon (SYSTEM borné / Users résident), tâches PS remplacées, version 2.1.0
+- [ ] 6.2 — logon nominal : cache per-SID + drop dir + companion.log, compagnon résident, `agent.state.compiled` avec user
+- [ ] 6.3 — logon hors-ligne : session normale sur dernier cache ; KPI 3×ON/3×OFF rejoué sur le binaire Go
+- [ ] 6.4 — frontière de confiance Go : token illisible, écritures refusées (sauf SON drop), zéro réseau compagnon
+- [ ] 6.5 — démo wallpaper UI→poste→rapport : asset vérifié, fond appliqué, compliant en base, zéro événement sur stable, agent_version 2.1.0
+- [ ] 6.6 — mode default Go : dérive humaine → drifted_allowed non réappliqué ; cible changée → drift appliqué
+- [ ] 6.7 — overlay Go : identité+signal affichés, sérialiseur fixe, Rainmeter absent gracieux, strict réécrit + drift
+- [ ] 6.8 — erreur isolée + drops forgés rejetés entrée par entrée (validation stricte au cycle)

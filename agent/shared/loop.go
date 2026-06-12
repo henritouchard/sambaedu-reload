@@ -42,6 +42,20 @@ type Agent struct {
 	// (champ déclaratif — l'identité réelle est le token).
 	UUID func() string
 
+	// Sessions : énumérateur des sessions interactives (WTS côté Windows,
+	// liste blanche ^S-1-5-21- + login non vide — Story 24.6). nil = aucun
+	// fetch de session (tests, plateformes sans sessions).
+	Sessions func() ([]Session, error)
+
+	// ACL injectées par le binaire Windows (icacls), posées À LA CRÉATION
+	// des répertoires — nil = no-op (tests hôte) :
+	//   - SessionCacheACL  : cache\sessions\<SID>\  (<SID>:R) ;
+	//   - SessionReportACL : reports\sessions\<SID>\ (<SID>:M) ;
+	//   - AssetsACL        : assets\ (Users:R).
+	SessionCacheACL  SessionACL
+	SessionReportACL SessionACL
+	AssetsACL        func(path string) error
+
 	// Rand : source de jitter injectable (tests). nil = math/rand global.
 	Rand *rand.Rand
 
@@ -131,14 +145,27 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 		return OutcomeBackoff
 	}
 
-	// Garde défensive : pas de rapport tant que la quarantaine est active.
+	// Story 24.6 (décision 24.3 n° 4 conservée) : après la portée machine,
+	// le cycle rafraîchit aussi les caches de session (IN-PROCESS, même code
+	// que la tâche at-logon — fraîcheur laxe NFR3 : logon + timer) puis
+	// synchronise les assets wallpaper (AUSSI hors fetch : zéro session
+	// interactive = pré-téléchargement avant le premier logon ; idempotent,
+	// content-addressed). Une erreur ici ne casse JAMAIS le cycle machine —
+	// les Outcome restent ceux de la portée machine.
+	if !a.quarantined {
+		a.fetchSessionStates(cfg)
+		a.SyncWallpaperAssets(cfg)
+	}
+
+	// Garde défensive : pas de rapport tant que la quarantaine est active —
+	// elle peut aussi être TOMBÉE pendant le fetch de session (403).
 	if a.quarantined {
 		return OutcomeOK
 	}
 
-	// 4. Rapport — hostname COURT + UUID SMBIOS verbatim ; items: [] tant
-	// que les handlers ne sont pas portés (24.6). Le rapport part MÊME sur
-	// 304 : état inchangé = on rapporte quand même (signal de vie).
+	// 4. Rapport — hostname COURT + UUID SMBIOS verbatim ; items RÉELS =
+	// drops session collectés/validés (24.6). Le rapport part MÊME sur 304 :
+	// état inchangé = on rapporte quand même (signal de vie).
 	uuid := ""
 	if a.UUID != nil {
 		uuid = a.UUID()
@@ -146,7 +173,10 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 	if uuid == "" || isPlaceholderUUID(uuid) {
 		a.Log.Warningf("UUID SMBIOS vide ou placeholder firmware (%q) : le champ workstation.uuid du rapport n'est pas fiable (warnings identity_mismatch possibles côté serveur).", uuid)
 	}
-	reportBody, err := BuildReport(a.Hostname, uuid, nil, time.Now())
+	// Items réels du rapport : collecte + validation stricte des drops
+	// session (latence ≤ 1 cycle entre convergence session et rapport,
+	// NFR3 — « forcer la synchro » = 24.7). Aucun drop = items: [] (valide).
+	reportBody, err := BuildReport(a.Hostname, uuid, CollectSessionReports(a.Store, a.Log), time.Now())
 	if err != nil {
 		a.Log.Errorf("Construction du rapport en échec : %v", err)
 

@@ -34,6 +34,12 @@ func installService(serverURL string, intervalSeconds int) error {
 	if err := store.EnsureLayout(); err != nil {
 		return fmt.Errorf("préparation de l'arborescence : %w", err)
 	}
+	// Story 24.6 : cache d'assets (Users:R) créé dès l'install — les
+	// répertoires per-SID (cache de session, drop) sont créés/ACLés par le
+	// fetch SYSTEM à la volée, SID par SID.
+	if err := store.EnsureAssetsDir(setAssetsACL); err != nil {
+		return fmt.Errorf("préparation du cache d'assets : %w", err)
+	}
 
 	exe, err := os.Executable()
 	if err != nil {
@@ -84,14 +90,23 @@ func installService(serverURL string, intervalSeconds int) error {
 		return fmt.Errorf("configuration de la relance sur crash : %w", err)
 	}
 
+	// Story 24.6 : tâches planifiées at-logon du compagnon (session-fetch
+	// SYSTEM + companion Users), idempotent — désenregistre au passage les
+	// tâches PS homonymes héritées du spike (piège n° 21).
+	if err := registerSessionTasks(exe); err != nil {
+		return err
+	}
+
 	// Démarrage : première boucle immédiate.
 	if err := s.Start(); err != nil {
 		return fmt.Errorf("démarrage du service : %w", err)
 	}
 
 	fmt.Printf("Service %s installé et démarré (SYSTEM, démarrage automatique, relance 30 s).\n", serviceName)
+	fmt.Printf("Tâches planifiées at-logon : %s (SYSTEM) + %s (Users, résident).\n", taskSessionFetch, taskSessionCompanion)
 	fmt.Printf("Binaire enregistré : %s\n", exe)
 	fmt.Println(`Log local : C:\ProgramData\SambaEdu\Agent\logs\agent.log`)
+	fmt.Println(`Log compagnon (par user) : %LOCALAPPDATA%\SambaEdu\Agent\companion.log`)
 
 	return nil
 }
@@ -122,6 +137,14 @@ func uninstallService(purge bool) error {
 		}
 	} else {
 		fmt.Printf("Service %s absent : rien à supprimer.\n", serviceName)
+	}
+
+	// Story 24.6 : suppression des 2 tâches at-logon (données conservées —
+	// le flag -purge ci-dessous reste le seul à toucher aux données).
+	if err := unregisterSessionTasks(); err != nil {
+		fmt.Fprintf(os.Stderr, "avertissement : %v\n", err)
+	} else {
+		fmt.Printf("Tâches planifiées %s + %s supprimées.\n", taskSessionFetch, taskSessionCompanion)
 	}
 
 	dataDir := shared.DefaultAgentRoot

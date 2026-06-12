@@ -9,21 +9,25 @@ module `sambaedu/agent`) :
 agent/
 ├── README.md      ← ce fichier : décision techno (gate résolu) + contrats
 │                    locaux du poste + build/install
-├── go.mod         ← module Go autonome (stdlib + golang.org/x/sys uniquement)
+├── go.mod         ← module Go autonome (stdlib + golang.org/x/sys +
+│                    golang.org/x/text uniquement)
 ├── shared/        ← cœur OS-AGNOSTIQUE (contrainte n° 5) : StateHasher Go
-│   │                (miroir bit-à-bit du PHP 23.1, tests croisés golden
-│   │                files), parsing contrat v1, rapport, client HTTP
-│   │                (rotation D5, grâce, quarantaine), cache atomique,
-│   │                boucle/backoff, log local — 100 % testé sur l'hôte Linux
-│   │                (`go test ./...`)
-│   │                + en SURSIS jusqu'à 24.6 : ContractV1.ps1 (consommé par
-│   │                le compagnon PS) et ConvergenceEngine.ps1 (24.4)
-├── windows/       ← spécifique Win32 (build tags) : main + service SYSTEM
-│   │                (x/sys/windows/svc), sous-commandes install/uninstall/
-│   │                run/version, ACL icacls, UUID SMBIOS
-│   │                + en SURSIS jusqu'à 24.6 : SessionCompanion.ps1,
-│   │                SessionStateFetch.ps1 (compagnon de session PS 24.3)
-│   └── handlers/  ← en SURSIS jusqu'à 24.6 : Wallpaper.ps1, Overlay.ps1 (24.4)
+│                    (miroir bit-à-bit du PHP 23.1, tests croisés golden
+│                    files), parsing contrat v1, rapport, client HTTP
+│                    (rotation D5, grâce, quarantaine), cache atomique
+│                    (machine + per-SID + assets + drops), boucle/backoff,
+│                    moteur de convergence §5 (engine.go), compagnon de
+│                    session (companion.go), fetch de session + sync assets
+│                    + collecte des drops, composition overlay (sérialiseur
+│                    fixe) + handler overlay, log local — 100 % testé sur
+│                    l'hôte Linux (`go test ./...`)
+├── windows/       ← spécifique Win32 (suffixe _windows) : main + service
+│                    SYSTEM (x/sys/windows/svc), sous-commandes install/
+│                    uninstall/run/session-fetch/companion/version, ACL
+│                    icacls, UUID SMBIOS, énumération WTS des sessions,
+│                    handler wallpaper (registre HKCU + SystemParametersInfoW
+│                    en FFI sans cgo), tâches planifiées at-logon
+│                    (Register-ScheduledTask, shell-out admis)
 └── build/         ← build statique cross-compilé + signature Authenticode
                      (build.sh, osslsigncode — sortie : build/dist/, non
                      versionnée)
@@ -35,14 +39,14 @@ Rien ici ne le redéfinit — `shared/` ne fait que le consommer, et les tests G
 lisent les golden files **en place** (`../tests/Fixtures/Agent/`, jamais
 copiés — NFR13 : un seul jeu de golden files, serveur ET agent).
 
-> **Note transition (24.5 → 24.6)** : le spike PowerShell 24.2 (boucle +
-> install/uninstall/build) est **remplacé** par ce binaire Go — ses `.ps1`
-> sont retirés du repo (pas d'état transitoire). Les artefacts PS de
-> 24.3/24.4 (compagnon de session, handlers, `ContractV1.ps1`,
-> `ConvergenceEngine.ps1`) restent jusqu'au portage Go 24.6 ; **attention** :
-> `SessionStateFetch.ps1` dot-sourçait `SambaEduAgent.ps1` (retiré) — la
-> casse temporaire du chemin de session PS en lab est **assumée** (décision
-> story 24.5, la continuité du compagnon PS n'est pas un AC).
+> **Note transition (SOLDÉE en 24.6)** : la totalité du spike PowerShell
+> 24.2-24.4 est **remplacée** par ce binaire Go — **zéro `.ps1` agent au
+> repo** (critère du sprint-change-proposal 2026-06-12, pas d'état
+> transitoire). Le compagnon de session, les handlers wallpaper/overlay, le
+> moteur §5 et la collecte des drops sont portés en Go (Story 24.6) ; les
+> tâches planifiées PS héritées du spike sont désenregistrées par
+> `agent.exe install`. La casse temporaire du chemin de session PS en lab
+> (24.5) est résorbée.
 
 ---
 
@@ -60,7 +64,7 @@ sont REPRISES par le binaire Go ; seule la techno change.
 
 | # | Contrainte | Go (binaire statique) |
 |---|---|---|
-| 1 | Service SYSTEM + compagnon par session | ✅ natif : `golang.org/x/sys/windows/svc` (package canonique de l'équipe Go) — le binaire parle le protocole SCM directement, plus de wrapper ServiceBase compilé à l'install comme en 24.2. Compagnon de session → 24.6 (même binaire, mode compagnon). |
+| 1 | Service SYSTEM + compagnon par session | ✅ natif : `golang.org/x/sys/windows/svc` (package canonique de l'équipe Go) — le binaire parle le protocole SCM directement, plus de wrapper ServiceBase compilé à l'install comme en 24.2. Compagnon de session : MÊME binaire, sous-commandes `session-fetch` (SYSTEM) + `companion` (user, résident) — livré 24.6. |
 | 2 | Signable Authenticode | ✅ le PE produit par `go build` se signe (`osslsigncode` depuis l'hôte Linux) et se vérifie au build. |
 | 3 | Fichiers sous ACL SYSTEM | ✅ icacls (convention 23.3 conservée) ; le binaire lui-même est compilé — plus de script en clair éditable pour le cœur (la contrainte 3 disqualifiait précisément les `.ps1` du spike). |
 | 4 | Auto-update fiable | ✅ swap d'un exe versionné unique — LA raison de sortir de PowerShell avant l'Epic 25 (remplacement de scripts à chaud trop fragile pour ~600 postes). |
@@ -77,9 +81,15 @@ Go** — utilisée ici pour l'UUID SMBIOS (`Get-CimInstance
 Win32_ComputerSystemProduct`, iso-24.2) et les ACL (`icacls.exe`).
 
 **Dépendances** (contrainte 6 — zéro dépendance exotique) : stdlib +
-`golang.org/x/sys` (protocole SCM/Windows) **uniquement**. Pas de framework
-HTTP, pas de lib de config, pas de lib de logging, pas de go-smbios (le
-shell-out PowerShell suffit et reproduit la source exacte du spike).
+`golang.org/x/sys` (protocole SCM/Windows, WTS, registre) +
+`golang.org/x/text` (normalisation Unicode NFC — le serveur émet NFC,
+Windows peut produire du NFD : toute comparaison réel/cible de CHAÎNES dans
+les handlers normalise avant ; annoncée par 24.5 « le moment venu », ajoutée
+en 24.6 — module de l'équipe Go, même niveau de confiance que x/sys)
+**uniquement**. Pas de framework HTTP, pas de lib de config, pas de lib de
+logging, pas de go-smbios (le shell-out PowerShell suffit et reproduit la
+source exacte du spike). NB : le StateHasher, lui, ne normalise RIEN (forme
+canonique figée — hash octet à octet).
 
 ---
 
@@ -112,12 +122,16 @@ ALLOW_UNSIGNED=1 agent/build/build.sh
 `go test ./...` est le gate de la story (pas de CI Go dans le repo) : tout
 `shared/` est testable sans Windows — StateHasher contre les golden files
 (hash figé `6c0e8135…`), parsing contrat, rotation/grâce/quarantaine/backoff
-via `httptest` (zéro réseau réel). Le code Windows-only se valide par
-cross-compile + `go vet` + installation lab.
+et fetch de session/assets via `httptest` (zéro réseau réel), machine
+d'états §5 table-driven, validation des drops, composition overlay (golden
+byte-compatible du sérialiseur PS 24.4). Le code Windows-only (WTS,
+registre, FFI, tâches) se valide par cross-compile + `go vet` +
+installation lab.
 
-**Version** : `agent_version = "2.0.0"` (rupture d'artefact vs lignée PS
-`1.0.0` — les rapports Go sont discernables en lab). Source unique :
-`shared/version.go` (`shared.Version`), injectable au build
+**Version** : `agent_version = "2.1.0"` (binaire COMPLET 24.6 — compagnon +
+handlers ; 2.0.0 = core-only 24.5 ; rupture d'artefact vs lignée PS `1.0.0`
+— les rapports se discernent en lab). Source unique : `shared/version.go`
+(`shared.Version`), injectable au build
 (`-ldflags -X sambaedu/agent/shared.Version=…`), reprise par le nommage de
 l'artefact (`sambaedu-agent-<version>.exe`).
 
@@ -131,9 +145,11 @@ l'artefact (`sambaedu-agent-<version>.exe`).
 | Config locale | `C:\ProgramData\SambaEdu\Agent\config.json` | `{"server_url": "...", "interval_seconds": 3600}` — posée par `agent.exe install` (format 24.2 conservé). Cadence configurable (D7 : défaut 3600 s, jitter ±10 % appliqué par l'agent). |
 | Cache état cible | `C:\ProgramData\SambaEdu\Agent\cache\state.json` | Enveloppe `se5.desired-state/v1` **brute** du dernier `GET /state` 200. Écriture atomique (tmp PID + rename), ACL SYSTEM. |
 | Cache ETag | `C:\ProgramData\SambaEdu\Agent\cache\etag.txt` | Header `ETag` stocké **VERBATIM** (guillemets RFC 7232 inclus), renvoyé tel quel en `If-None-Match`. Tout trim/déquotage brise le 304. |
-| Dernier-appliqué MACHINE | `C:\ProgramData\SambaEdu\Agent\applied-state.json` | Créé/préservé **vide** (`{}`) — infrastructure du mode `default` (gap 1) pour les handlers 24.6. Jamais écrasé s'il existe. |
-| Cache de session (24.3, PS) | `C:\ProgramData\SambaEdu\Agent\cache\sessions\<SID>\…` | Conservé tel quel (le compagnon PS le lit jusqu'à 24.6) — le service Go n'y écrit pas en 24.5. |
-| Assets / drops (24.4, PS) | `…\assets\`, `…\reports\sessions\<SID>\` | Idem : portage → 24.6. |
+| Dernier-appliqué MACHINE | `C:\ProgramData\SambaEdu\Agent\applied-state.json` | Créé/préservé **vide** (`{}`) — réservé aux FUTURS handlers de portée machine (les deux types 24.6, wallpaper et overlay, sont de scope session : dernier-appliqué **per-user**). Jamais écrasé s'il existe. |
+| Cache de session | `C:\ProgramData\SambaEdu\Agent\cache\sessions\<SID>\{state.json, etag.txt}` | Écrit par le fetch SYSTEM (`session-fetch` at-logon + cycle du service, in-process). ETag **DU contexte** (poste, user), verbatim. ACL à la création : SYSTEM F, Admins F, `<SID>:(OI)(CI)R` — le user LIT le sien, rien d'autre. |
+| Cache d'assets | `C:\ProgramData\SambaEdu\Agent\assets\<filename>` | Téléchargé par SYSTEM (`GET /api/v1/agent/assets/wallpaper/<filename>`, SHA-256 vérifié AVANT écriture), content-addressed (jamais re-téléchargé). ACL : SYSTEM F, Admins F, `BUILTIN\Users:(OI)(CI)R`. Pas de purge (volume borné par la biblio, noté). |
+| Drop session | `C:\ProgramData\SambaEdu\Agent\reports\sessions\<SID>\session-report.json` | Écrit par le COMPAGNON après chaque passe (sa seule écriture hors profil), collecté + **validé strictement** par le service au cycle → items réels du `POST /report`. ACL : SYSTEM F, Admins F, `<SID>:(OI)(CI)M`. |
+| Profil user | `%LOCALAPPDATA%\SambaEdu\Agent\{applied-state.json, overlay.json, companion.log}` | Écritures du compagnon : dernier-appliqué per-user (§5), façade overlay (le render lit), log compagnon (format/rotation iso agent.log). |
 | Logs | `C:\ProgramData\SambaEdu\Agent\logs\agent.log` | Format `[ISO 8601] [LEVEL] message`, rotation quotidienne (`agent-YYYY-MM-DD.log`), rétention 7 jours — iso-24.2, implémenté en Go sans lib externe. |
 
 ### Hostname court (defer review 24.1 #8 — conservé en Go)
@@ -175,15 +191,32 @@ est le token) ; placeholder firmware (tout-0/tout-F) tracé en WARNING local.
 - **TLS** : magasin de certificats système (la racine CA interne est déployée
   par iPXE 23.3) ; timeout 30 s par requête.
 
-### Compagnon de session & handlers (PS 24.3/24.4 — portage Go en 24.6)
+### Compagnon de session & handlers (Go — Story 24.6)
 
-Le sous-système compagnon (fetch SYSTEM `?user=`, processus user, handlers
-wallpaper/overlay) reste documenté dans `docs/agent/session-companion.md` et
-`docs/agent/handlers-wallpaper-overlay.md`. Ses `.ps1` sont au repo jusqu'à
-24.6 mais **le chemin PS est cassé en lab depuis 24.5** (le retrait de
-`SambaEduAgent.ps1` casse le dot-source de `SessionStateFetch.ps1`) — casse
-temporaire assumée, pas d'état transitoire maintenu. Le binaire Go 24.6
-reprendra la voie cible (broker du service vers les sessions).
+Le sous-système compagnon est porté en Go dans CE binaire — vue d'ensemble
+dans `docs/agent/session-companion.md` et
+`docs/agent/handlers-wallpaper-overlay.md` (séquences, ACL et conventions
+inchangées par le portage) :
+
+- **`agent.exe session-fetch`** (tâche `SambaEduAgent-SessionFetch`, SYSTEM,
+  At log on, limite 10 min) : énumère les sessions interactives (WTS, liste
+  blanche `S-1-5-21-` + login non vide), `GET /state?user=<login court>`
+  avec l'ETag DU contexte via le MÊME client HTTP (rotation D5/grâce/
+  deux-acteurs), cache per-SID, puis sync des assets. Le cycle du service
+  rejoue le même code **in-process** après la portée machine.
+- **`agent.exe companion`** (tâche `SambaEduAgent-SessionCompanion`, groupe
+  `BUILTIN\Users`, At log on, **sans limite — résident délibéré** : poll du
+  mtime du cache ~60 s + re-test périodique ~5 min) : NI réseau NI token
+  (frontière NFR5) — lit son cache per-SID (poll borné 2 s/60 s au
+  démarrage, fallback dernier cache, sinon attente résidente), partition
+  `session` + `machine_user` SEULEMENT, moteur §5, handlers wallpaper
+  (HKCU + `SystemParametersInfoW` FFI) et overlay (`overlay.json` per-user,
+  sérialiseur fixe, Rainmeter absent = gracieux), applied-state per-user,
+  drop per-SID après chaque passe.
+- L'IPC named-pipe service ⇄ session reste écarté (modèle fichier per-SID
+  validé par les spikes et les reviews) — à réévaluer à l'Epic 27.
+- Quarantaine : pas de fetch de session ; le compagnon converge sur son
+  dernier cache (level-triggered, inoffensif — limitation MVP documentée).
 
 ---
 
@@ -228,17 +261,24 @@ gitignoré). `osslsigncode` s'installe sans privilèges :
 # 0. si le service PS du spike est encore là : .\Uninstall-SambaEduAgent.ps1 (bundle 24.2-24.4)
 # 1. copier le binaire signé :
 mkdir 'C:\Program Files\SambaEdu\Agent' -Force
-copy sambaedu-agent-2.0.0.exe 'C:\Program Files\SambaEdu\Agent\agent.exe'
-# 2. installer + démarrer le service (SYSTEM, auto, relance 30 s sur crash) :
+copy sambaedu-agent-2.1.0.exe 'C:\Program Files\SambaEdu\Agent\agent.exe'
+# 2. installer : service SYSTEM (auto, relance 30 s) + 2 tâches at-logon
+#    (SessionFetch SYSTEM + SessionCompanion Users — les tâches PS homonymes
+#    du spike sont désenregistrées au passage) :
 & 'C:\Program Files\SambaEdu\Agent\agent.exe' install -server-url 'http://<serveur-se5>'
-# Vérifier : Get-Service SambaEduAgent ; log C:\ProgramData\SambaEdu\Agent\logs\agent.log
+# Vérifier : Get-Service SambaEduAgent ; Get-ScheduledTask SambaEduAgent-* ;
+#   log C:\ProgramData\SambaEdu\Agent\logs\agent.log ;
+#   log compagnon (après un logon) %LOCALAPPDATA%\SambaEdu\Agent\companion.log
 # Signature : Get-AuthenticodeSignature 'C:\Program Files\SambaEdu\Agent\agent.exe' → Valid
-# Désinstaller (token/cache/logs conservés) : agent.exe uninstall   (-purge pour tout effacer)
+# Prérequis DÉMO overlay : Rainmeter installé manuellement (NSIS /S, cf.
+#   resources/overlay/README.md) — le handler n'installe JAMAIS d'application.
+# Désinstaller (service + tâches ; token/cache/logs conservés) : agent.exe uninstall
+#   (-purge pour tout effacer)
 # Debug console : agent.exe run   (Ctrl-C pour arrêter)
 ```
 
 ## Versionnement
 
-`agent_version` (`2.0.0` pour le core Go) vit dans `shared/version.go`
-(`shared.Version`) — source unique, déclarée dans chaque rapport, injectable
-au build, à bumper à chaque release (Epic 25).
+`agent_version` (`2.1.0` pour le binaire complet 24.6) vit dans
+`shared/version.go` (`shared.Version`) — source unique, déclarée dans chaque
+rapport, injectable au build, à bumper à chaque release (Epic 25).
