@@ -7,8 +7,24 @@ import (
 	"os/signal"
 	"path/filepath"
 
+	"golang.org/x/sys/windows"
+
 	"sambaedu/agent/shared"
 )
+
+var procFreeConsole = windows.NewLazySystemDLL("kernel32.dll").NewProc("FreeConsole")
+
+// detachConsole : la tâche planifiée lance un binaire CONSOLE dans la session
+// interactive → Windows lui ouvre une fenêtre, qui resterait affichée toute
+// la session (processus résident) et qu'un user pourrait fermer (= tuer le
+// compagnon) ; un clic dedans (quick-edit) gèle même les écritures stdout —
+// constaté lab ws 49 (T12 24.6). FreeConsole détache le processus : la
+// fenêtre se ferme aussitôt (bref flash au logon, assumé). Best-effort : en
+// debug manuel (`agent.exe companion` depuis un terminal), l'effet est de
+// rendre la main au shell — tout le diagnostic vit dans companion.log.
+func detachConsole() {
+	_, _, _ = procFreeConsole.Call()
+}
 
 // Câblage Windows du compagnon de session (Story 24.6) — sous-commande
 // `agent.exe companion`, lancée par la tâche planifiée
@@ -42,6 +58,8 @@ func rainmeterPresent() bool {
 // être visible ni bloquant dans la session : toute erreur part dans
 // companion.log (ou en sortie silencieuse si même le log échoue).
 func runCompanion() error {
+	detachConsole()
+
 	localAppData := os.Getenv("LOCALAPPDATA")
 	if localAppData == "" {
 		return fmt.Errorf("LOCALAPPDATA non défini : pas de profil agent")

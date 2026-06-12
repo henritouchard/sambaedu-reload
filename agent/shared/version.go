@@ -22,8 +22,11 @@ package shared
 // 2.0.0 de 24.5. 2.1.1 = correctif terrain T12 (setAgentACL : flags (OI)(CI)
 // réservés aux répertoires — posés sur un fichier, DACL effective vide et
 // writeAtomic échouait en Accès refusé à la première exécution Windows).
+// 2.1.2 = correctif terrain T12 n° 2 (compagnon : FreeConsole au démarrage —
+// la tâche at-logon laissait une fenêtre console résidente dans la session,
+// fermable par le user = compagnon tué).
 //
 // Injectable au build (var, pas const) :
 //
-//	go build -ldflags "-X sambaedu/agent/shared.Version=2.1.2"
-var Version = "2.1.1"
+//	go build -ldflags "-X sambaedu/agent/shared.Version=2.1.3"
+var Version = "2.1.2"
