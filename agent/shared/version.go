@@ -25,8 +25,12 @@ package shared
 // 2.1.2 = correctif terrain T12 n° 2 (compagnon : FreeConsole au démarrage —
 // la tâche at-logon laissait une fenêtre console résidente dans la session,
 // fermable par le user = compagnon tué).
+// 2.2.0 = cadence pilotée serveur : le `ttl_seconds` de l'enveloppe /state
+// (AGENT_STATE_TTL_SECONDS côté SE5) gouverne l'intervalle de poll, clampé
+// [60 s, 24 h], amorcé depuis le cache au démarrage ; `interval_seconds`
+// local devient le repli avant la première enveloppe vue.
 //
 // Injectable au build (var, pas const) :
 //
-//	go build -ldflags "-X sambaedu/agent/shared.Version=2.1.3"
-var Version = "2.1.2"
+//	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
+var Version = "2.2.0"

@@ -63,7 +63,24 @@ type Agent struct {
 	// cadence normale, plus de POST /report ni de traitement d'état) ;
 	// levée AUTOMATIQUE au premier 200/304. PROCESS-LOCAL, jamais persisté.
 	quarantined bool
+
+	// serverTtl : dernier `ttl_seconds` servi par le serveur (enveloppe
+	// /state, source AGENT_STATE_TTL_SECONDS côté SE5). 0 = jamais vu →
+	// cadence locale (config.json). Mis à jour sur chaque 200 parsé, amorcé
+	// depuis le cache d'état au démarrage (le GET nominal d'un service
+	// redémarré répond 304 et ne re-livre pas l'enveloppe).
+	serverTtl int64
 }
+
+// Bornes de la cadence pilotée serveur : plancher anti-martèlement (un ttl
+// accidentel de 1 s × ~600 postes saturerait le throttle 60/min), plafond
+// anti-extinction (un ttl aberrant ne doit pas rendre le parc « muet » des
+// jours — la dérivation serveur muet = 2 × ttl resterait cohérente, mais
+// plus aucune demande « forcer la synchro » ne serait servie à temps).
+const (
+	MinServerIntervalSeconds = 60
+	MaxServerIntervalSeconds = 86400
+)
 
 // Quarantined expose l'état de quarantaine (tests + diagnostics).
 func (a *Agent) Quarantined() bool { return a.quarantined }
@@ -111,9 +128,10 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 		// Refus d'un major inconnu (§9) : log erreur, cache PRÉSERVÉ, les
 		// check-ins CONTINUENT à cadence normale (piège n° 10) — le rapport
 		// part quand même (signal de vie).
-		if _, err := ParseState(resp.Body); err != nil {
+		if st, err := ParseState(resp.Body); err != nil {
 			a.Log.Errorf("État reçu refusé (%v) : cache local préservé, check-ins maintenus.", err)
 		} else {
+			a.noteServerTtl(st.TtlSeconds)
 			newEtag := resp.Header.Get(headerETag)
 			if newEtag != "" {
 				// 3. Persister cache + ETag (VERBATIM, guillemets inclus).
@@ -215,6 +233,49 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 	}
 }
 
+// noteServerTtl retient le `ttl_seconds` servi (ignore 0/absent : une
+// enveloppe sans ttl ne doit pas faire retomber la cadence pilotée).
+func (a *Agent) noteServerTtl(ttl int64) {
+	if ttl > 0 {
+		a.serverTtl = ttl
+	}
+}
+
+// primeServerTtlFromCache amorce serverTtl depuis le dernier état caché.
+// Sans cet amorçage, un service redémarré repartirait sur la cadence locale
+// jusqu'au prochain changement d'état serveur (son GET nominal répond 304,
+// l'enveloppe — et son ttl — ne sont pas re-livrés). Cache absent ou
+// illisible = no-op silencieux (premier 200 fera foi).
+func (a *Agent) primeServerTtlFromCache() {
+	raw, err := a.Store.ReadStateCache()
+	if err != nil {
+		return
+	}
+	if st, err := ParseState(raw); err == nil {
+		a.noteServerTtl(st.TtlSeconds)
+	}
+}
+
+// EffectiveInterval : cadence du prochain cycle. Priorité au `ttl_seconds`
+// serveur (clampé [MinServerIntervalSeconds, MaxServerIntervalSeconds]) ;
+// repli sur `interval_seconds` de la config locale (déjà défaillé à 3600 par
+// ReadConfig) tant qu'aucune enveloppe n'a été vue.
+func (a *Agent) EffectiveInterval(cfg Config) time.Duration {
+	if a.serverTtl > 0 {
+		ttl := a.serverTtl
+		if ttl < MinServerIntervalSeconds {
+			ttl = MinServerIntervalSeconds
+		}
+		if ttl > MaxServerIntervalSeconds {
+			ttl = MaxServerIntervalSeconds
+		}
+
+		return time.Duration(ttl) * time.Second
+	}
+
+	return time.Duration(cfg.IntervalSeconds) * time.Second
+}
+
 func (a *Agent) enterQuarantine(during string) {
 	if !a.quarantined {
 		a.quarantined = true
@@ -272,8 +333,11 @@ func (a *Agent) Jitter(interval time.Duration) time.Duration {
 
 // Run : boucle principale — timer + jitter ±10 % (D7/FR23), backoff
 // exponentiel (FR22), arrêt sur ctx (stop SCM) ou 401 irrécupérable.
+// Cadence : `ttl_seconds` serveur quand il est connu (voir EffectiveInterval),
+// sinon `interval_seconds` local.
 func (a *Agent) Run(ctx context.Context) {
 	a.Log.Infof("SambaEdu Agent %s démarré (hostname=%s).", Version, a.Hostname)
+	a.primeServerTtlFromCache()
 
 	backoff := time.Duration(0)
 	for {
@@ -286,8 +350,10 @@ func (a *Agent) Run(ctx context.Context) {
 			// silencieusement (AC2).
 			a.Log.Errorf("Cycle en échec : %v", err)
 		} else {
-			interval = time.Duration(cfg.IntervalSeconds) * time.Second
 			outcome = a.RunCycle(cfg)
+			// APRÈS le cycle : un ttl appris sur le 200 de CE cycle
+			// s'applique dès le sleep qui suit.
+			interval = a.EffectiveInterval(cfg)
 		}
 
 		if outcome == OutcomeStop {

@@ -109,14 +109,15 @@ jamais. Un log debug `agent.sync.state_forced` (channel `agent`) trace
 chaque bypass.
 
 **Latence honnête (D7)** : la demande est servie au **prochain contact**
-(timer ≤ 60 min + jitter, ou boot/login immédiats) — c'est le modèle pull.
-Le binaire Go 2.1.x **ignore `ttl_seconds` pour sa planification**
-(`agent/shared/loop.go` : l'intervalle vient de `config.json`) : aucun
-raccourcissement du poll par ttl dynamique n'est possible sans modifier
-l'agent. **Évolution** : quand l'auto-update (25.x) portera un agent qui
-honore `ttl_seconds`, un ttl dynamique pourra réduire cette latence — le
-bypass 304 reste valable en attendant. Aucun push (WoL/reboot/WinRM) :
-choix anti-couteau-suisse (NFR3).
+(timer + jitter, ou boot/login immédiats) — c'est le modèle pull. Depuis
+l'agent **2.2.0**, `ttl_seconds` **gouverne l'intervalle de poll**
+(`agent/shared/loop.go` : clamp [60 s, 24 h], appris sur chaque 200, amorcé
+depuis le cache d'état au redémarrage du service ; `interval_seconds` de
+`config.json` n'est plus que le repli avant la première enveloppe vue). Le
+serveur pilote donc la cadence du parc via `AGENT_STATE_TTL_SECONDS` — p. ex.
+60 s en dev/lab, sans toucher aux postes. Les binaires 2.1.x et antérieurs
+ignoraient ce champ (intervalle local fixe ≤ 60 min). Aucun push
+(WoL/reboot/WinRM) : choix anti-couteau-suisse (NFR3).
 
 ## Codes de réponse
 
@@ -132,7 +133,7 @@ choix anti-couteau-suisse (NFR3).
 
 | Clé | Défaut | Rôle |
 |---|---|---|
-| `ttl_seconds` | 3600 | cadence de poll conseillée, champ `ttl_seconds` de l'enveloppe (D7 : 60 min, aligné golden file). Indicatif — le serveur ne refuse pas un poll plus fréquent |
+| `ttl_seconds` | 3600 | cadence de poll, champ `ttl_seconds` de l'enveloppe (env `AGENT_STATE_TTL_SECONDS`). **Gouverne l'intervalle de l'agent ≥ 2.2.0** (clamp côté agent [60 s, 24 h]) ; indicatif pour les 2.1.x. Pilote AUSSI le seuil « muet » UI (2 × ttl, story 24.7) |
 | `report_history` | `false` | flag D3 : historique de débogage des rapports (consommé en 24.1) |
 | `report_events_retention_days` | 14 | rétention du journal des changements rapportés (« rétention courte » D3, purge 24.1) |
 | `report_history_retention_days` | 30 | purge auto de l'historique de débogage |

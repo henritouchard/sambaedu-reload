@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -423,5 +424,92 @@ func TestReportNotSentWhenStateUnreachable(t *testing.T) {
 	_ = agent.RunCycle(cfg)
 	if f.reportCalls != 0 {
 		t.Errorf("aucun rapport quand GET /state échoue, got %d", f.reportCalls)
+	}
+}
+
+// ── Cadence pilotée serveur (ttl_seconds, 2.2.0) ─────────────────────────────
+
+// minimalEnvelope : enveloppe v1 valide minimale avec un ttl choisi.
+func minimalEnvelope(ttl int) string {
+	return `{"schema":"se5.desired-state/v1","generated_at":"2026-06-12T10:00:00Z","ttl_seconds":` +
+		strconv.Itoa(ttl) + `,"machine":[],"session":[],"machine_user":[]}`
+}
+
+func TestEffectiveIntervalServerTtlGovernsAndClamps(t *testing.T) {
+	agent := &Agent{Log: &Logger{}}
+	cfg := Config{IntervalSeconds: 3600}
+
+	cases := []struct {
+		name string
+		ttl  int64
+		want time.Duration
+	}{
+		{"jamais vu — cadence locale", 0, 3600 * time.Second},
+		{"nominal", 900, 900 * time.Second},
+		{"plancher anti-martèlement", 1, MinServerIntervalSeconds * time.Second},
+		{"plafond anti-extinction", 999_999, MaxServerIntervalSeconds * time.Second},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			agent.serverTtl = c.ttl
+			if got := agent.EffectiveInterval(cfg); got != c.want {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestCycle200NotesServerTtl(t *testing.T) {
+	f := newFakeServer(t)
+	agent, _, cfg := newTestAgent(t, f)
+	f.stateBody = minimalEnvelope(120)
+
+	if got := agent.EffectiveInterval(cfg); got != 3600*time.Second {
+		t.Fatalf("avant le premier 200, cadence locale attendue, got %v", got)
+	}
+	if outcome := agent.RunCycle(cfg); outcome != OutcomeOK {
+		t.Fatalf("OutcomeOK attendu, got %v", outcome)
+	}
+	if got := agent.EffectiveInterval(cfg); got != 120*time.Second {
+		t.Errorf("ttl serveur 120 s attendu après le 200, got %v", got)
+	}
+}
+
+func TestNoteServerTtlIgnoresZero(t *testing.T) {
+	// Une enveloppe SANS ttl (parse → 0) ne fait pas retomber la cadence
+	// pilotée déjà apprise.
+	agent := &Agent{Log: &Logger{}}
+	agent.noteServerTtl(120)
+	agent.noteServerTtl(0)
+	if agent.serverTtl != 120 {
+		t.Errorf("ttl conservé attendu, got %d", agent.serverTtl)
+	}
+}
+
+func TestPrimeServerTtlFromCache(t *testing.T) {
+	// Un service redémarré reprend la cadence serveur depuis le cache (son
+	// GET nominal répond 304 : l'enveloppe n'est pas re-livrée).
+	f := newFakeServer(t)
+	agent, store, cfg := newTestAgent(t, f)
+	if err := store.EnsureLayout(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteStateCache([]byte(minimalEnvelope(300)), `"abc"`); err != nil {
+		t.Fatal(err)
+	}
+
+	agent.primeServerTtlFromCache()
+	if got := agent.EffectiveInterval(cfg); got != 300*time.Second {
+		t.Errorf("ttl 300 s amorcé depuis le cache attendu, got %v", got)
+	}
+}
+
+func TestPrimeServerTtlWithoutCacheIsANoop(t *testing.T) {
+	f := newFakeServer(t)
+	agent, _, cfg := newTestAgent(t, f)
+
+	agent.primeServerTtlFromCache()
+	if got := agent.EffectiveInterval(cfg); got != 3600*time.Second {
+		t.Errorf("cadence locale attendue sans cache, got %v", got)
 	}
 }
