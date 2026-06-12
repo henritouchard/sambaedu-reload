@@ -303,7 +303,7 @@ Route::get('/v1/agent/assets/wallpaper/{filename}', [AgentAssetController::class
 | Throttle 300/min/IP iso pattern 16.3b legacy.
 */
 Route::prefix('v1/workstation-config')
-    ->middleware(['auth.v1.secure-headers', 'auth.v1.workstation', 'throttle:300,1'])
+    ->middleware(['legacy.config.channel', 'auth.v1.secure-headers', 'auth.v1.workstation', 'throttle:300,1'])
     ->name('agent.v1.config.')
     ->group(function () {
         Route::get('/wallpaper',            [WallpaperController::class,           'apiV1'])->name('wallpaper');
@@ -317,7 +317,7 @@ Route::prefix('v1/workstation-config')
         Route::get('/applications-scripts', [ApplicationsScriptsController::class, 'apiV1'])->name('applications-scripts');
     });
 
-Route::prefix('v1/shortcuts/export')->name('shortcuts.export.')->group(function () {
+Route::prefix('v1/shortcuts/export')->name('shortcuts.export.')->middleware('legacy.config.channel')->group(function () {
     // Script complet (.cmd/.sh) pour un poste
     Route::match(['get', 'post'], '/script', [ShortcutExportController::class, 'script'])->name('script');
     // Fichier .lnk ou .desktop individuel

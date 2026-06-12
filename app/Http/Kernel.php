@@ -81,5 +81,9 @@ class Kernel extends HttpKernel
 
         // WPKG middleware — restreint aux requêtes locales
         'local.request' => EnsureLocalRequest::class,
+
+        // Kill-switch dev (2026-06-12) — coupe le canal de config legacy
+        // (workstation-config/* + wpkg/*) pour tester l'agent Go seul.
+        'legacy.config.channel' => \App\Http\Middleware\EnsureLegacyConfigChannelEnabled::class,
     ];
 }

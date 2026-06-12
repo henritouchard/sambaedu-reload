@@ -558,9 +558,10 @@ final class IpxeMenuRenderer
         $lines = [];
         $lines[] = 'iseq ${platform} efi && goto uefi || goto legacy';
         $lines[] = ':uefi';
-        // sanboot bypasse le boot order UEFI (evite les timeouts PXEv4/PXEv6/HTTP avant le disque).
-        // exit 0 en fallback si le firmware ne supporte pas sanboot en mode UEFI.
-        $lines[] = 'sanboot --no-describe --drive 0x80 || exit 0 || sleep 100';
+        // Retour au boot manager UEFI : il re-init le GOP (sinon le framebuffer du menu
+        // iPXE/QXL fuit dans Windows -> ecran corrompu). sanboot bypassait ce reset.
+        $lines[] = 'exit 1 || sleep 100';
+
         $lines[] = ':legacy';
         // Set sp = espace (iPXE n'accepte pas les espaces inline dans iseq).
         $lines[] = 'set sp:hex 20 && set sp ${sp:string}';
@@ -571,7 +572,7 @@ final class IpxeMenuRenderer
             $lines[] = ":suite{$i}";
         }
 
-        $lines[] = 'sanboot --no-describe --drive 0x80 || sleep 100';
+        $lines[] = 'exit 1 || sleep 100';
 
         return implode("\n", $lines) . "\n";
     }

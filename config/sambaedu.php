@@ -28,6 +28,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Kill-switch canal de config legacy (2026-06-12)
+    |--------------------------------------------------------------------------
+    | Quand false, neutralise tout le canal historique qui livre au poste le
+    | wallpaper, les raccourcis, le wpkg, les registres et les applications :
+    |   - /gpo/*_out.php (garde inline MigrationController::serveFragment)
+    |   - /api/v1/workstation-config/* et /wpkg/* (middleware legacy.config.channel)
+    | Objectif : tester l'agent Go (/api/v1/agent/*, indépendant) sans
+    | interférence. Aucun code supprimé — bascule réversible via .env.
+    | Default true → comportement inchangé.
+    */
+    'legacy_config_channel_enabled' => (bool) env('LEGACY_CONFIG_CHANNEL_ENABLED', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Legacy Catchall
     |--------------------------------------------------------------------------
     | Chemin absolu vers le répertoire legacy PHP SambAEdu.

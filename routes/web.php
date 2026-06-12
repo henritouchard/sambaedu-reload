@@ -673,9 +673,11 @@ Route::get('api/policies/{kind}/{id}', [AppPolicyController::class, 'canonical']
 | Doivent rester déclarés AVANT la catchall legacy ci-dessous.
 */
 Route::get('/wpkg/hosts.xml', \App\Wpkg\Deployment\Http\Controllers\HostsXmlController::class)
+    ->middleware('legacy.config.channel')
     ->name('wpkg.hosts-xml')
     ->withoutMiddleware(['web']);
 Route::get('/wpkg/profiles.xml', \App\Wpkg\Deployment\Http\Controllers\ProfilesXmlController::class)
+    ->middleware('legacy.config.channel')
     ->name('wpkg.profiles-xml')
     ->withoutMiddleware(['web']);
 
@@ -708,7 +710,7 @@ Route::match(['GET', 'POST'], '/wpkg/linux_out.php', [
     \App\Wpkg\Deployment\Http\Controllers\LinuxOutController::class,
     'handle',
 ])
-    ->middleware(['local.request', 'throttle:300,1'])
+    ->middleware(['legacy.config.channel', 'local.request', 'throttle:300,1'])
     ->name('wpkg.linux-out')
     ->withoutMiddleware(['web']);
 
@@ -716,7 +718,7 @@ Route::match(['GET', 'POST'], '/wpkg/winget_out.php', [
     \App\Wpkg\Deployment\Http\Controllers\WingetOutController::class,
     'handle',
 ])
-    ->middleware(['local.request', 'throttle:300,1'])
+    ->middleware(['legacy.config.channel', 'local.request', 'throttle:300,1'])
     ->name('wpkg.winget-out')
     ->withoutMiddleware(['web']);
 

@@ -20,7 +20,8 @@ reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "action" /d 
 REM  les fichiers n'ont  pas ete copies lors de l'installation
 if not exist %WINDIR%\Web\SE4\ (md %WINDIR%\Web\SE4)
 if not exist  "%PROGRAMFILES%\SambaEdu" (md "%PROGRAMFILES%\SambaEdu")
-robocopy c:\Netinst "%PROGRAMFILES%\SambaEdu" /MOVE
+REM [LEGACY OFF 2026-06-12] helpers legacy non stages pour test agent Go (l'agent vit dans C:\ProgramData\SambaEdu\Agent, non impacte) — restaurer pour reactiver
+REM [LEGACY OFF 2026-06-12] robocopy c:\Netinst "%PROGRAMFILES%\SambaEdu" /MOVE
 echo 1> c:\Netinst\nowpkg.txt
 echo OK> %windir%\gpo.txt
 curl  -F "etape=post" -F "ret=0" -F "uuid=%UUID%"  -F "name={{ $name }}" http://{{ $se4fsName }}/ipxe/windows/action

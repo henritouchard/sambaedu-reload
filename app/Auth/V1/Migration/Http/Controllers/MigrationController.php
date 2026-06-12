@@ -101,6 +101,21 @@ final class MigrationController extends Controller
      */
     public function serveFragment(Request $request, string $endpoint): Response
     {
+        // Kill-switch dev (2026-06-12) : LEGACY_CONFIG_CHANNEL_ENABLED=false
+        // neutralise tout le canal de config legacy (gpo/*, workstation-config/*,
+        // wpkg/*) pour tester l'agent Go seul. On renvoie un fragment no-op
+        // runnable (exit /b 0 / exit 0) iso au cas « poste migré » : un poste qui
+        // l'exécute ne fait rien. Code intact, réversible via .env. Symétrique du
+        // middleware legacy.config.channel (workstation-config + wpkg).
+        if (! config('sambaedu.legacy_config_channel_enabled', true)) {
+            $os = $this->renderer->detectOs($request);
+
+            return response($this->renderer->renderNoopFragment($os), 200)
+                ->header('Content-Type', self::CONTENT_TYPE)
+                ->header('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+                ->header('X-Migration-Fragment', 'disabled');
+        }
+
         // Validation défensive : si la route appelle ce controller avec un
         // endpoint inconnu (cas d'erreur de routing), on log et on renvoie
         // un noop générique (un poste qui reçoit un script no-op exit /b 0

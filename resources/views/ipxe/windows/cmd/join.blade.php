@@ -45,12 +45,13 @@ goto fin
 reg.exe delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "action" /F >NUL
 reg.exe delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "DefaultPassword" /F>NUL
 reg.exe delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "AutoAdminLogon" /F >NUL
-gpupdate /force /target:computer
+REM [LEGACY OFF 2026-06-12] canal legacy coupe pour test agent Go — restaurer ces 3 lignes pour reactiver
+REM [LEGACY OFF 2026-06-12] gpupdate /force /target:computer
 REM  les fichiers ont ete copies lors de l'installation
 if not exist %WINDIR%\Web\SE4\ (md %WINDIR%\Web\SE4)
-if exist "%PROGRAMFILES%\SambaEdu\SetWallpaper.ps1" (copy /y "%PROGRAMFILES%\SambaEdu\SetWallpaper.ps1" %WINDIR%\Web\SE4\SetWallpaper.ps1)
+REM [LEGACY OFF 2026-06-12] if exist "%PROGRAMFILES%\SambaEdu\SetWallpaper.ps1" (copy /y "%PROGRAMFILES%\SambaEdu\SetWallpaper.ps1" %WINDIR%\Web\SE4\SetWallpaper.ps1)
 if  exist c:\Netinst\nowpkg.txt (del /f /q c:\Netinst\nowpkg.txt)
-schtasks /run /tn wpkg4
+REM [LEGACY OFF 2026-06-12] schtasks /run /tn wpkg4
 curl -F "etape=join" -F "ret=2" -F "uuid=%UUID%"  -F "name={{ $name }}" http://{{ $se4fsName }}/ipxe/windows/action
 echo install finie>c:\Netinst\install.log
 %SystemRoot%\system32\shutdown.exe /t 5 /r
