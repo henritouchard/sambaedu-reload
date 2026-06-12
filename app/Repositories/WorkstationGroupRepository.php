@@ -134,7 +134,8 @@ class WorkstationGroupRepository
         ?string $search = null,
         ?string $os = null,
         ?int $groupId = null,
-        ?string $migrationFilter = null
+        ?string $migrationFilter = null,
+        ?string $conformityFilter = null
     ): LengthAwarePaginator {
         $query = Workstation::query();
 
@@ -154,6 +155,9 @@ class WorkstationGroupRepository
 
         // Story 16.13bis — filtre par statut de migration SE4 → SE5.
         $this->applyMigrationFilter($query, $migrationFilter);
+
+        // Story 24.7 — filtre par conformité agent (worst-status / dérivés).
+        $this->applyConformityFilter($query, $conformityFilter);
 
         $query->withCount([
             'applicationStatuses as installed_apps_count' => fn ($q) => $q->where('status', 'installed'),
@@ -186,6 +190,72 @@ class WorkstationGroupRepository
     }
 
     /**
+     * Story 24.7 — applique le filtre `conformityFilter` à la query, aligné
+     * sur la sémantique du badge worst-status (décision n° 3, piège 8) :
+     *
+     *  - `exceptions`     : poste enrôlé EN ÉCART (au moins une ressource
+     *    `drift` ou `error`) — la dérive tolérée n'en fait PAS partie,
+     *    les muets non plus (ils priment, voir `silent`) ;
+     *  - `drifted_allowed`: worst-status = dérive tolérée (au moins une
+     *    ressource `drifted_allowed`, AUCUNE `drift`/`error`, non muet) ;
+     *  - `compliant`      : enrôlé, a rapporté, et tout est conforme (aucune
+     *    ressource `drift`/`error`/`drifted_allowed`) — et NON muet ;
+     *  - `silent`         : enrôlé mais muet (dernier check-in >
+     *    2 × `agent.ttl_seconds`).
+     *
+     * Tous les filtres sont bornés aux postes ENRÔLÉS (`agent_token_hash`
+     * non null) : un poste hors conformité ne ressort d'aucune catégorie.
+     */
+    private function applyConformityFilter(Builder $query, ?string $conformityFilter): void
+    {
+        if ($conformityFilter === null || $conformityFilter === '') {
+            return;
+        }
+
+        $query->whereNotNull('agent_token_hash');
+
+        $exception = ['drift', 'error'];
+        $threshold = now()->subSeconds(2 * (int) (config('agent.ttl_seconds') ?? 3600));
+
+        // Le « muet » prime sur le contenu rapporté (décision n° 7) : un poste
+        // muet ne ressort QUE dans le filtre `silent`, jamais dans les filtres
+        // de statut — même sémantique que le badge et les compteurs
+        // (ConformityService::summary, review 24.7 #2).
+        $notSilent = function (Builder $q) use ($threshold): void {
+            $q->whereNull('agent_last_checkin_at')
+                ->orWhere('agent_last_checkin_at', '>=', $threshold);
+        };
+
+        if ($conformityFilter === 'exceptions') {
+            $query->whereHas('agentResourceStates', fn (Builder $q) => $q->whereIn('status', $exception))
+                ->where($notSilent);
+
+            return;
+        }
+
+        if ($conformityFilter === 'drifted_allowed') {
+            $query->whereHas('agentResourceStates', fn (Builder $q) => $q->where('status', 'drifted_allowed'))
+                ->whereDoesntHave('agentResourceStates', fn (Builder $q) => $q->whereIn('status', $exception))
+                ->where($notSilent);
+
+            return;
+        }
+
+        if ($conformityFilter === 'compliant') {
+            $query->whereHas('agentResourceStates', fn (Builder $q) => $q->where('status', 'compliant'))
+                ->whereDoesntHave('agentResourceStates', fn (Builder $q) => $q->whereIn('status', ['drift', 'error', 'drifted_allowed']))
+                ->where($notSilent);
+
+            return;
+        }
+
+        if ($conformityFilter === 'silent') {
+            $query->whereNotNull('agent_last_checkin_at')
+                ->where('agent_last_checkin_at', '<', $threshold);
+        }
+    }
+
+    /**
      * Story 7.1 — variante scopée de `getMachines()` : restreint aux machines
      * appartenant (via pivot `workstation_group_workstation`) à l'un des
      * WorkstationGroups autorisés.
@@ -198,7 +268,8 @@ class WorkstationGroupRepository
         ?string $os = null,
         ?int $groupId = null,
         array $authorizedGroupIds = [],
-        ?string $migrationFilter = null
+        ?string $migrationFilter = null,
+        ?string $conformityFilter = null
     ): LengthAwarePaginator {
         $query = Workstation::query()
             ->whereHas('groups', function (Builder $q) use ($authorizedGroupIds) {
@@ -221,6 +292,9 @@ class WorkstationGroupRepository
 
         // Story 16.13bis — filtre par statut de migration SE4 → SE5.
         $this->applyMigrationFilter($query, $migrationFilter);
+
+        // Story 24.7 — filtre par conformité agent (worst-status / dérivés).
+        $this->applyConformityFilter($query, $conformityFilter);
 
         $query->withCount([
             'applicationStatuses as installed_apps_count' => fn ($q) => $q->where('status', 'installed'),

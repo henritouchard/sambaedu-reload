@@ -15,6 +15,8 @@ use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Models\WorkstationGroupSchedule;
 use App\Components\Traits\WithToasts;
+use App\Services\Agent\Reporting\ConformityService;
+use App\Services\Agent\SyncRequestService;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -1174,6 +1176,90 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         $this->tab = in_array($tab, $allowed, true) ? $tab : 'general';
     }
 
+    /**
+     * Story 24.7 / AC3 — Panneau conformité du groupe : par type de ressource
+     * rapporté, « n/N conformes » + la liste des SEULES exceptions, datées
+     * (décision n° 4). Lecture agrégée via ConformityService, relue à chaque
+     * cycle wire:poll (retour auto à compliant — AC4).
+     *
+     * @return array<int, array{type:string, total:int, compliant:int, exceptions:array}>
+     */
+    public function getConformityByTypeProperty(): array
+    {
+        if (! $this->group) {
+            return [];
+        }
+
+        return app(ConformityService::class)->exceptionsFor($this->group);
+    }
+
+    /**
+     * Story 24.7 / AC1 (compteurs groupe) — résumé de conformité du périmètre
+     * du groupe (postes enrôlés membres).
+     *
+     * @return array{enrolled:int, compliant:int, drifted_allowed:int, exceptions:int, never_reported:int, silent:int}
+     */
+    public function getConformitySummaryProperty(): array
+    {
+        if (! $this->group) {
+            return ['enrolled' => 0, 'compliant' => 0, 'drifted_allowed' => 0, 'exceptions' => 0, 'never_reported' => 0, 'silent' => 0];
+        }
+
+        return app(ConformityService::class)->summary($this->group);
+    }
+
+    /**
+     * Story 24.7 / AC5 — « Forcer la synchro » de tous les membres ENRÔLÉS
+     * NON en quarantaine du groupe (mécanique PULL, décision n° 1). Les
+     * postes non enrôlés / en quarantaine sont ignorés silencieusement
+     * (piège 6) ; le toast récapitule demandés / ignorés.
+     */
+    public function forceSyncGroup(SyncRequestService $syncRequests): void
+    {
+        // Guard serveur-side : même gate que les autres mutations de la page
+        // (executeSelectedGroupMachinesAction & co — review 24.7 #1).
+        if (! Gate::allows('computer.control')) {
+            $this->toastAccessDenied();
+            return;
+        }
+
+        if (! $this->group) {
+            $this->loadGroup();
+        }
+        if (! $this->group) {
+            $this->toastError('Groupe non trouvé');
+            return;
+        }
+
+        try {
+            $members = $this->group->workstations()->get();
+            $eligible = $members->filter(
+                fn($w) => $w->isAgentEnrolled() && ! $w->isAgentQuarantined()
+            )->values();
+
+            $admin = auth()->user();
+            $count = $syncRequests->request($eligible, $admin);
+            $ignored = $members->count() - $count;
+
+            if ($count > 0) {
+                $message = "Synchro demandée pour {$count} poste(s)";
+                if ($ignored > 0) {
+                    $message .= " — {$ignored} ignoré(s) (non enrôlés / quarantaine)";
+                }
+                $this->toastSuccess($message);
+            } else {
+                $this->toastWarning('Aucun poste éligible dans ce groupe (enrôlé, hors quarantaine)');
+            }
+
+            $this->loadGroup();
+        } catch (\Exception $e) {
+            Log::error('[GroupShow] Erreur demande de synchro groupe: ' . $e->getMessage(), [
+                'group_id' => $this->id,
+            ]);
+            $this->toastError('Erreur lors de la demande de synchronisation');
+        }
+    }
+
     public function getWpkgAttachedProfilesProperty()
     {
         if (! $this->group) {
@@ -1840,6 +1926,8 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             @else
                 @include('pages.parc.groups.[id]._partials.batch-summary')
                 @include('pages.parc.groups.[id]._partials.machines-list')
+                {{-- Story 24.7 — panneau conformité (règles → exceptions) --}}
+                @include('pages.parc.groups.[id]._partials.conformity-panel')
                 @include('pages.parc.groups.[id]._partials.schedules-panel')
                 @include('pages.parc.groups.[id]._partials.wallpaper-modal')
             @endif

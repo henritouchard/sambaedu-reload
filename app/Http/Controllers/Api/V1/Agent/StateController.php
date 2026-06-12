@@ -33,6 +33,16 @@ use Illuminate\Support\Str;
  * L'ETag est opaque de bout en bout : l'agent stocke le header verbatim,
  * un cache par couple (poste, user) — cf. docs/agent/state-endpoint.md.
  *
+ * Story 24.7 — « forcer la synchro » (FR11, décision n° 1) : si une demande
+ * de resynchronisation est PENDANTE (`agent_sync_requested_at` non null),
+ * `isNotModified()` est BYPASSÉ — on renvoie 200 corps complet même si
+ * `If-None-Match` concorde, AVEC le MÊME ETag et l'enveloppe contrat BRUTE
+ * inchangée (rien d'autre ne change : pas de wrapper, pas de recalcul de
+ * hash — piège 3). Effet poste : le cache `state.json` est réécrit → mtime
+ * change → le compagnon rejoue les handlers. ZÉRO write ici (piège 4) : la
+ * demande est soldée au `POST /report` ({@see ReportController}). Le bypass
+ * couvre TOUS les contextes du cycle (machine ET `?user=`).
+ *
  * Middlewares (routes/api.php) : `auth.v1.secure-headers` + `throttle:60,1`
  * + `agent.token`. Erreurs 401/403 = formats du middleware 23.2, intouchés.
  */
@@ -55,6 +65,21 @@ class StateController extends Controller
         // lisible (slashes et UTF-8 non échappés) en curl/jq.
         $response = response()->json($state, 200, [], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $response->setEtag($this->compiler->hashState($state));
+
+        // Story 24.7 — « forcer la synchro » : une demande pendante force le
+        // 200 corps complet (bypass du 304) sans rien changer d'autre — même
+        // ETag, enveloppe brute. ZÉRO write ici (la lecture du flag ne
+        // consomme PAS la demande : elle vit pour TOUS les contextes du cycle
+        // — machine + fetchs `?user=` — et n'est soldée qu'au POST /report).
+        if ($workstation->hasAgentSyncPending()) {
+            Log::channel('agent')->debug('[StateController] agent.sync.state_forced', [
+                'action_type' => 'agent.sync.state_forced',
+                'workstation_id' => $workstation->id,
+                'user' => $user?->login,
+            ]);
+
+            return $response;
+        }
 
         if ($response->isNotModified($request)) {
             // isNotModified() a transformé la réponse : 304, corps vidé,

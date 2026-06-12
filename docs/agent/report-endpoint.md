@@ -74,6 +74,23 @@ hashes du rapport sont les chaînes opaques `StateHasher` reçues de
 `GET /state`, stockées telles quelles) : un body forgé (UTF-8 invalide,
 NAN/INF) produit un 4xx, jamais un 500 (defer review 23.1, résolu ici).
 
+### Solde d'une demande « forcer la synchro » (Story 24.7)
+
+Après l'ingestion, le controller **solde** une éventuelle demande de
+resynchronisation pendante (`workstations.agent_sync_requested_at`, posée par
+l'UI parc — voir `state-endpoint.md` § « Forcer la synchro ») :
+`agent_sync_requested_at` est remis à **null**, un log
+`agent.sync.fulfilled` (channel `agent`) est émis. **No-op** si aucune
+demande n'était pendante (le cas nominal).
+
+C'est l'invariant des **deux écrivains** de cette colonne : l'UI admin la
+pose, `ReportController` la solde. Le cycle agent étant GET(s) → … → report,
+tous les contextes du cycle ont déjà bénéficié du bypass 304 (200 forcé)
+**avant** ce solde. L'écriture de la colonne est indépendante de la
+transaction d'ingestion D3 (colonne `agent_*`, idempotente). Une demande sur
+un poste en **quarantaine** ne sera jamais soldée (403 au report) — l'UI
+désactive le bouton pour ces postes.
+
 ## Purge — `agent:reports:prune`
 
 Commande artisan planifiée daily 02:35 (`app/Console/Kernel.php`) :

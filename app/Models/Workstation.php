@@ -40,6 +40,7 @@ use Livewire\Wireable;
  * @property \DateTimeInterface|null $agent_quarantined_at Quarantaine anti-clonage (Story 23.2)
  * @property string|null $agent_enroll_ticket_hash SHA-256 hex du ticket d'enrôlement one-time (Story 23.3)
  * @property \DateTimeInterface|null $agent_enroll_ticket_expires_at Expiration du ticket d'enrôlement (Story 23.3)
+ * @property \DateTimeInterface|null $agent_sync_requested_at Demande de resynchronisation pendante (Story 24.7)
  * @property \DateTime $created_at
  * @property \DateTime $updated_at
  */
@@ -96,6 +97,9 @@ class Workstation extends Model implements Wireable
         // Story 23.3 — ticket d'enrôlement one-time (porte 1 iPXE). Hors
         // $fillable pour la même raison : seul EnrollmentService écrit.
         'agent_enroll_ticket_expires_at' => 'datetime',
+        // Story 24.7 — demande de resynchronisation pendante. Hors $fillable :
+        // exactement 2 écrivains (SyncRequestService::request/fulfill).
+        'agent_sync_requested_at' => 'datetime',
     ];
 
     /**
@@ -385,6 +389,54 @@ class Workstation extends Model implements Wireable
     public function isAgentQuarantined(): bool
     {
         return $this->agent_quarantined_at !== null;
+    }
+
+    /**
+     * Story 24.7 — États COURANTS de conformité par type de ressource,
+     * rapportés par l'agent (`agent_resource_states`, upsert 24.1). Lus par
+     * l'UI conformité (badge tableau, table « État rapporté par type »).
+     */
+    public function agentResourceStates(): HasMany
+    {
+        return $this->hasMany(AgentResourceState::class);
+    }
+
+    /**
+     * Story 24.7 — Journal append-only des CHANGEMENTS d'état rapportés
+     * (`agent_report_events`, 24.1, rétention 14 j). Lu par la sous-section
+     * « Derniers événements » de la fiche poste.
+     */
+    public function agentReportEvents(): HasMany
+    {
+        return $this->hasMany(AgentReportEvent::class);
+    }
+
+    /**
+     * Story 24.7 / AC5 — Vrai si une demande « forcer la synchro » est
+     * pendante (timestamp posé par {@see \App\Services\Agent\SyncRequestService},
+     * soldé au prochain `POST /report`).
+     */
+    public function hasAgentSyncPending(): bool
+    {
+        return $this->agent_sync_requested_at !== null;
+    }
+
+    /**
+     * Story 24.7 / décision n° 7 — Vrai si le poste est « muet » : enrôlé
+     * mais aucun check-in récent (dernier check-in > 2 × `agent.ttl_seconds`,
+     * clé existante 23.5 — aucune nouvelle clé config). Un poste jamais
+     * enrôlé ou jamais checké n'est PAS « muet » (état dérivé distinct :
+     * non enrôlé / jamais rapporté).
+     */
+    public function isAgentSilent(): bool
+    {
+        if (! $this->isAgentEnrolled() || $this->agent_last_checkin_at === null) {
+            return false;
+        }
+
+        $ttl = (int) (config('agent.ttl_seconds') ?? 3600);
+
+        return $this->agent_last_checkin_at->lt(now()->subSeconds(2 * $ttl));
     }
 
     /**

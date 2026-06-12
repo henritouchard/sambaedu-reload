@@ -16,6 +16,8 @@ use App\Models\WorkstationApplicationStatus;
 use App\Models\WorkstationGroup;
 use App\Components\Traits\WithToasts;
 use App\Services\Agent\Enrollment\TokenRotationService;
+use App\Services\Agent\Reporting\ConformityService;
+use App\Services\Agent\SyncRequestService;
 use App\Wpkg\Deployment\Generators\WorkstationIniGenerator;
 use App\Wpkg\Deployment\Services\WorkstationOptionsService;
 use Carbon\Carbon;
@@ -231,6 +233,89 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             ]);
             $this->toastError('Erreur lors de la révocation du token agent');
         }
+    }
+
+    /**
+     * Story 24.7 / AC5 — « Forcer la synchro » d'un poste (mécanique PULL,
+     * décision n° 1). Pose `agent_sync_requested_at` via SyncRequestService :
+     * le prochain `GET /state` du poste re-télécharge l'état complet (bypass
+     * 304), le premier `POST /report` suivant solde la demande. Désactivé
+     * (côté Blade) pour un poste non enrôlé ou en quarantaine (piège 6) — on
+     * re-garde côté serveur (une requête Livewire forgée ne contourne pas
+     * l'éligibilité, le service filtre).
+     */
+    public function forceSyncWorkstation(SyncRequestService $syncRequests): void
+    {
+        // Guard serveur-side : forcer la synchro = action de contrôle du
+        // poste, même gate que les autres mutations parc (review 24.7 #1).
+        if (!Gate::allows('computer.control')) {
+            $this->toastAccessDenied();
+            return;
+        }
+
+        if (!$this->workstation) {
+            $this->loadMachine();
+        }
+        if (!$this->workstation) {
+            $this->toastError('Machine non trouvée');
+            return;
+        }
+
+        if (!$this->workstation->isAgentEnrolled()) {
+            $this->toastError('Ce poste n\'a pas de token agent actif');
+            return;
+        }
+        if ($this->workstation->isAgentQuarantined()) {
+            $this->toastError('Poste en quarantaine : la synchro ne peut pas être forcée');
+            return;
+        }
+
+        try {
+            $admin = auth()->user();
+            $count = $syncRequests->request($this->workstation, $admin);
+
+            if ($count > 0) {
+                $this->toastSuccess('Synchro demandée — sera servie au prochain check-in du poste');
+            } else {
+                $this->toastWarning('Aucune demande posée (poste non éligible)');
+            }
+            $this->loadMachine();
+        } catch (\Exception $e) {
+            Log::error('[MachineShow] Erreur demande de synchro: ' . $e->getMessage(), [
+                'machine_id' => $this->id,
+            ]);
+            $this->toastError('Erreur lors de la demande de synchronisation');
+        }
+    }
+
+    /**
+     * Story 24.7 / AC2 — États rapportés COURANTS par type (lecture agrégée
+     * via ConformityService, relue à chaque cycle wire:poll pour le retour
+     * auto à compliant — AC4).
+     *
+     * @return \Illuminate\Support\Collection<int, \App\Models\AgentResourceState>
+     */
+    public function getAgentStatesProperty(): Collection
+    {
+        if (!$this->workstation || !$this->workstation->isAgentEnrolled()) {
+            return collect();
+        }
+
+        return app(ConformityService::class)->statesFor($this->workstation);
+    }
+
+    /**
+     * Story 24.7 / AC2 — Derniers événements de changement (10, datés).
+     *
+     * @return \Illuminate\Support\Collection<int, \App\Models\AgentReportEvent>
+     */
+    public function getAgentEventsProperty(): Collection
+    {
+        if (!$this->workstation || !$this->workstation->isAgentEnrolled()) {
+            return collect();
+        }
+
+        return app(ConformityService::class)->recentEventsFor($this->workstation, 10);
     }
 
     public function executeMachinePowerAction(string $action): void
@@ -1134,6 +1219,9 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                             à l'installation du poste (enrôlement iPXE).
                         </p>
                     @endif
+
+                    {{-- Story 24.7 — conformité par type + événements + forcer la synchro --}}
+                    @include('pages.parc.machines.[id]._partials.agent-conformity')
                 </div>
             </div>
 

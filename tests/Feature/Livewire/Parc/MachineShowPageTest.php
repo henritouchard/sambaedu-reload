@@ -7,7 +7,11 @@ namespace Tests\Feature\Livewire\Parc;
 use App\Jobs\DispatchMachinePowerActionJob;
 use App\Models\MachineBootLog;
 use App\Models\MachinePowerActionTask;
+use App\Enums\AgentResourceStatus;
+use App\Models\AgentReportEvent;
+use App\Models\AgentResourceState;
 use App\Models\Workstation;
+use App\Services\Agent\Reporting\ReportIngestService;
 use App\Services\Parc\MachinePowerService;
 use App\Services\Parc\RemoteAccessService;
 use App\Services\Parc\WorkstationGroupService;
@@ -16,6 +20,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
@@ -56,6 +61,8 @@ class MachineShowPageTest extends TestCase
     protected function tearDown(): void
     {
         if ($this->createdTables) {
+            Schema::dropIfExists('agent_report_events');
+            Schema::dropIfExists('agent_resource_states');
             Schema::dropIfExists('wpkg_workstation_options');
             Schema::dropIfExists('machine_power_action_tasks');
             Schema::dropIfExists('machine_boot_logs');
@@ -84,7 +91,44 @@ class MachineShowPageTest extends TestCase
                 $table->timestamp('date_rapport_poste')->nullable();
                 $table->string('ad_dn')->nullable();
                 $table->string('ad_guid')->nullable();
+                // Story 23.2 / 24.7 — colonnes du canal agent (la card Agent + la
+                // conformité 24.7 les lisent au render).
+                $table->string('agent_token_hash', 64)->nullable();
+                $table->timestamp('agent_token_rotated_at')->nullable();
+                $table->timestamp('agent_last_checkin_at')->nullable();
+                $table->timestamp('agent_quarantined_at')->nullable();
+                $table->timestamp('agent_sync_requested_at')->nullable();
                 $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        // Story 24.7 — tables D3 (24.1) lues par ConformityService.
+        if (!Schema::hasTable('agent_resource_states')) {
+            Schema::create('agent_resource_states', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('workstation_id')->constrained()->cascadeOnDelete();
+                $table->string('type', 64);
+                $table->string('status', 32);
+                $table->string('hash', 64);
+                $table->text('detail')->nullable();
+                $table->timestamp('reported_at')->nullable();
+                $table->timestamps();
+                $table->unique(['workstation_id', 'type']);
+            });
+            $this->createdTables = true;
+        }
+
+        if (!Schema::hasTable('agent_report_events')) {
+            Schema::create('agent_report_events', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('workstation_id')->constrained()->cascadeOnDelete();
+                $table->string('type', 64);
+                $table->string('previous_status', 32)->nullable();
+                $table->string('status', 32);
+                $table->string('hash', 64);
+                $table->text('detail')->nullable();
+                $table->timestamp('created_at')->nullable();
             });
             $this->createdTables = true;
         }
@@ -526,5 +570,145 @@ class MachineShowPageTest extends TestCase
 
         // Pas de task créée pour une action invalide.
         $this->assertEquals(0, MachinePowerActionTask::count());
+    }
+
+    // ─── Story 24.7 — Conformité agent (AC2, AC4, AC5) ──────────────────────
+
+    private function makeEnrolledWorkstation(): Workstation
+    {
+        $ws = $this->makeWorkstation();
+        $ws->agent_token_hash = str_repeat('a', 64);
+        $ws->agent_last_checkin_at = now();
+        $ws->save();
+
+        return $ws->refresh();
+    }
+
+    private function seedState(Workstation $ws, string $type, AgentResourceStatus $status, ?string $detail = null): void
+    {
+        AgentResourceState::create([
+            'workstation_id' => $ws->id,
+            'type' => $type,
+            'status' => $status,
+            'hash' => str_repeat('b', 64),
+            'detail' => $detail,
+            'reported_at' => now(),
+        ]);
+    }
+
+    public function test_machine_page_shows_reported_state_by_type(): void
+    {
+        // AC2 — la card Agent (étendue) montre l'état rapporté par type, daté.
+        $ws = $this->makeEnrolledWorkstation();
+        $this->mockGroupService($ws);
+        $this->seedState($ws, 'wallpaper', AgentResourceStatus::Compliant);
+        $this->seedState($ws, 'overlay', AgentResourceStatus::Drift);
+
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->assertSee('État rapporté par type')
+            ->assertSee('wallpaper')
+            ->assertSee('overlay')
+            ->assertSee('En écart'); // libellé du badge drift
+    }
+
+    public function test_machine_page_lists_recent_events(): void
+    {
+        // AC2 — sous-section « Derniers événements » datés.
+        $ws = $this->makeEnrolledWorkstation();
+        $this->mockGroupService($ws);
+        AgentReportEvent::create([
+            'workstation_id' => $ws->id,
+            'type' => 'wallpaper',
+            'previous_status' => null,
+            'status' => AgentResourceStatus::Drift,
+            'hash' => str_repeat('c', 64),
+            'created_at' => now()->subMinutes(2),
+        ]);
+
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->assertSee('Derniers événements');
+    }
+
+    /**
+     * Accorde `computer.control` (le gate de forceSyncWorkstation, review
+     * 24.7 #1). Le défaut `$user = null` rend la closure guest-friendly :
+     * cette suite ne s'authentifie pas (sinon Gate::before n'est pas appelé).
+     */
+    private function grantComputerControl(): void
+    {
+        Gate::before(fn ($user = null, string $ability = '') => $ability === 'computer.control' ? true : null);
+    }
+
+    public function test_force_sync_posts_a_pending_request(): void
+    {
+        // AC5 — clic « Forcer la synchro » → agent_sync_requested_at posé + toast.
+        $this->grantComputerControl();
+        $ws = $this->makeEnrolledWorkstation();
+        $this->mockGroupService($ws);
+        $this->seedState($ws, 'wallpaper', AgentResourceStatus::Compliant);
+
+        $this->assertNull($ws->agent_sync_requested_at);
+
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('forceSyncWorkstation')
+            ->assertDispatched('toastMagic', status: 'success');
+
+        $this->assertNotNull($ws->refresh()->agent_sync_requested_at);
+    }
+
+    public function test_force_sync_rejected_for_non_enrolled_workstation(): void
+    {
+        // AC5 / piège 6 — bouton garde serveur : poste non enrôlé → erreur,
+        // aucune demande posée.
+        $this->grantComputerControl();
+        $ws = $this->makeWorkstation(); // pas enrôlé
+        $this->mockGroupService($ws);
+
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('forceSyncWorkstation')
+            ->assertDispatched('toastMagic', status: 'error');
+
+        $this->assertNull($ws->refresh()->agent_sync_requested_at);
+    }
+
+    public function test_force_sync_denied_without_computer_control(): void
+    {
+        // Review 24.7 #1 — sans le gate `computer.control` (page accessible
+        // en lecture), l'action est refusée et aucune demande n'est posée.
+        $ws = $this->makeEnrolledWorkstation();
+        $this->mockGroupService($ws);
+
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('forceSyncWorkstation')
+            ->assertDispatched('toastMagic', status: 'error');
+
+        $this->assertNull($ws->refresh()->agent_sync_requested_at);
+    }
+
+    public function test_drift_returns_to_compliant_on_reingest(): void
+    {
+        // AC4 — deux ingestions successives (drift puis compliant) via le
+        // ReportIngestService réel → la vue passe de l'exception à l'absence.
+        $ws = $this->makeEnrolledWorkstation();
+        $this->mockGroupService($ws);
+
+        $ingest = app(ReportIngestService::class);
+        $report = fn (string $status, string $hash) => [
+            'items' => [[
+                'type' => 'wallpaper',
+                'status' => $status,
+                'hash' => $hash,
+            ]],
+        ];
+
+        // 1) drift
+        $ingest->ingest($ws, $report('drift', str_repeat('d', 64)));
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->assertSee('En écart');
+
+        // 2) compliant (la cible a convergé)
+        $ingest->ingest($ws, $report('compliant', str_repeat('e', 64)));
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->assertDontSee('En écart');
     }
 }

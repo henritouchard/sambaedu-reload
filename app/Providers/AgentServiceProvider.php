@@ -9,9 +9,11 @@ use App\Services\Agent\Enrollment\EnrollmentService;
 use App\Services\Agent\Enrollment\TokenRotationService;
 use App\Services\Agent\Providers\OverlayStateProvider;
 use App\Services\Agent\Providers\WallpaperStateProvider;
+use App\Services\Agent\Reporting\ConformityService;
 use App\Services\Agent\Reporting\ReportIngestService;
 use App\Services\Agent\StateCompiler;
 use App\Services\Agent\StateHasher;
+use App\Services\Agent\SyncRequestService;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 
@@ -45,6 +47,10 @@ class AgentServiceProvider extends ServiceProvider
         );
         // Story 24.1 — ingestion des rapports de conformité (POST /report).
         $this->app->singleton(ReportIngestService::class, fn () => new ReportIngestService());
+        // Story 24.7 — « forcer la synchro » (UI request / report fulfill) +
+        // lecture agrégée de conformité pour les pages parc (stateless).
+        $this->app->singleton(SyncRequestService::class, fn () => new SyncRequestService());
+        $this->app->singleton(ConformityService::class, fn () => new ConformityService());
         $this->app->singleton(StateHasher::class, fn () => new StateHasher());
         $this->app->singleton(StateCompiler::class, fn ($app) => new StateCompiler(
             $app->make(StateHasher::class),

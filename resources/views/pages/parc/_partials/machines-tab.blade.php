@@ -40,7 +40,17 @@
                         <option value="not-migrated">Non migrés</option>
                     </select>
                 </div>
-                @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter)
+                {{-- Story 24.7 — filtre par conformité agent (calque 16.13bis) --}}
+                <div class="form-control w-48">
+                    <select wire:model.live="conformityFilter" class="select select-bordered" aria-label="Conformité agent">
+                        <option value="">Conformité : tous</option>
+                        <option value="exceptions">En écart</option>
+                        <option value="drifted_allowed">Dérive tolérée</option>
+                        <option value="silent">Muets</option>
+                        <option value="compliant">Conformes</option>
+                    </select>
+                </div>
+                @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter || $conformityFilter)
                     <button type="button" class="btn btn-ghost btn-sm" wire:click="resetMachineFilters">
                         <i class="fa-solid fa-eraser"></i>
                     </button>
@@ -58,13 +68,13 @@
                 </div>
                 <h3 class="text-xl font-semibold mb-3">Aucun poste trouvé</h3>
                 <p class="text-base-content/60 text-center max-w-md">
-                    @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter)
+                    @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter || $conformityFilter)
                         Aucun poste ne correspond aux critères de recherche.
                     @else
                         Aucun poste n'est enregistré dans le système.
                     @endif
                 </p>
-                @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter)
+                @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter || $conformityFilter)
                     <button type="button" class="btn btn-outline mt-4" wire:click="resetMachineFilters">
                         <i class="fa-solid fa-eraser"></i>
                         Effacer les filtres
@@ -85,6 +95,8 @@
                             <th>IP</th>
                             <th>Dernier rapport</th>
                             <th>Statut</th>
+                            {{-- Story 24.7 — colonne conformité agent (worst-status) --}}
+                            <th class="text-center">Conformité</th>
                             {{-- Story 16.13bis — colonne migration SE4 → SE5 --}}
                             <th class="text-center">Migration</th>
                             <th class="text-center">Déploiement</th>
@@ -139,6 +151,18 @@
                                     <span class="badge {{ $statusClass }} badge-sm">
                                         {{ $machine->getStatusLabel() }}
                                     </span>
+                                </td>
+                                {{-- Story 24.7 — badge conformité agent (worst-status par
+                                     poste, calculé en 1 requête agrégée pour la page —
+                                     $this->machineConformity, zéro N+1). Neutre si non
+                                     enrôlé (hors conformité). --}}
+                                <td class="text-center">
+                                    @if ($machine->isAgentEnrolled())
+                                        <x-atoms.conformity-badge
+                                            :status="$this->machineConformity[$machine->id] ?? 'never_reported'" />
+                                    @else
+                                        <span class="text-base-content/30" title="Poste non enrôlé">—</span>
+                                    @endif
                                 </td>
                                 {{-- Story 16.13bis — badge migration ✅/❌ --}}
                                 <td class="text-center">

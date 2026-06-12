@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Livewire\Parc;
 
+use App\Enums\AgentResourceStatus;
 use App\Jobs\DispatchMachinePowerActionJob;
+use App\Models\AgentResourceState;
 use App\Models\MachinePowerActionTask;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
@@ -71,6 +73,8 @@ class GroupShowPageTest extends TestCase
     protected function tearDown(): void
     {
         if ($this->createdTables) {
+            Schema::dropIfExists('agent_report_events');
+            Schema::dropIfExists('agent_resource_states');
             Schema::dropIfExists('printer_workstation_group');
             Schema::dropIfExists('printers');
             Schema::dropIfExists('workstation_group_schedule_runs');
@@ -98,7 +102,43 @@ class GroupShowPageTest extends TestCase
                 $table->timestamp('date_rapport_poste')->nullable();
                 $table->string('ad_dn')->nullable();
                 $table->string('ad_guid')->nullable();
+                // Story 23.2 / 24.7 — colonnes du canal agent.
+                $table->string('agent_token_hash', 64)->nullable();
+                $table->timestamp('agent_token_rotated_at')->nullable();
+                $table->timestamp('agent_last_checkin_at')->nullable();
+                $table->timestamp('agent_quarantined_at')->nullable();
+                $table->timestamp('agent_sync_requested_at')->nullable();
                 $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        // Story 24.7 — tables D3 (24.1) lues par ConformityService.
+        if (!Schema::hasTable('agent_resource_states')) {
+            Schema::create('agent_resource_states', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('workstation_id')->constrained()->cascadeOnDelete();
+                $table->string('type', 64);
+                $table->string('status', 32);
+                $table->string('hash', 64);
+                $table->text('detail')->nullable();
+                $table->timestamp('reported_at')->nullable();
+                $table->timestamps();
+                $table->unique(['workstation_id', 'type']);
+            });
+            $this->createdTables = true;
+        }
+
+        if (!Schema::hasTable('agent_report_events')) {
+            Schema::create('agent_report_events', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('workstation_id')->constrained()->cascadeOnDelete();
+                $table->string('type', 64);
+                $table->string('previous_status', 32)->nullable();
+                $table->string('status', 32);
+                $table->string('hash', 64);
+                $table->text('detail')->nullable();
+                $table->timestamp('created_at')->nullable();
             });
             $this->createdTables = true;
         }
@@ -647,5 +687,78 @@ class GroupShowPageTest extends TestCase
         foreach (['wake', 'shutdown', 'shutdown-force', 'restart'] as $action) {
             $component->assertSeeHtml("wire:click=\"executeSelectedGroupMachinesAction('{$action}')\"");
         }
+    }
+
+    // ─── Story 24.7 — Panneau conformité du groupe (AC3, AC5) ───────────────
+
+    private function enroll(Workstation $ws): Workstation
+    {
+        $ws->agent_token_hash = str_repeat('a', 64) . $ws->id; // unicité hash
+        $ws->agent_token_hash = substr(hash('sha256', (string) $ws->id), 0, 64);
+        $ws->agent_last_checkin_at = now();
+        $ws->save();
+
+        return $ws->refresh();
+    }
+
+    private function seedState(Workstation $ws, string $type, AgentResourceStatus $status, ?string $detail = null): void
+    {
+        AgentResourceState::create([
+            'workstation_id' => $ws->id,
+            'type' => $type,
+            'status' => $status,
+            'hash' => str_repeat('b', 64),
+            'detail' => $detail,
+            'reported_at' => now(),
+        ]);
+    }
+
+    public function test_group_conformity_panel_lists_only_exceptions(): void
+    {
+        // AC3 — panneau par type : « n/N conformes » + SEULES les exceptions.
+        [$group, $machines] = $this->makeGroupWithMachines(2);
+        $this->mockGroupService($group);
+
+        $ok = $this->enroll($machines[0]);
+        $this->seedState($ok, 'wallpaper', AgentResourceStatus::Compliant);
+
+        $bad = $this->enroll($machines[1]);
+        $this->seedState($bad, 'wallpaper', AgentResourceStatus::Error, 'kaboom');
+
+        $component = Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id]);
+
+        $component->assertSee('Conformité agent');
+        $component->assertSee('wallpaper');
+        // « n/N conformes » : 1 sur 2 conforme.
+        $component->assertSee('1/2 conformes');
+
+        // Le panneau ne liste QUE les exceptions : on assert sur la structure
+        // de données du composant (le nom des postes apparaît aussi dans la
+        // liste des membres du groupe, d'où l'assertion sur la propriété).
+        $byType = $component->get('conformityByType');
+        $this->assertCount(1, $byType);
+        $this->assertSame('wallpaper', $byType[0]['type']);
+        $this->assertSame(1, $byType[0]['compliant']);
+        $exceptionIds = array_column($byType[0]['exceptions'], 'workstation_id');
+        $this->assertContains($bad->id, $exceptionIds);
+        $this->assertNotContains($ok->id, $exceptionIds);
+    }
+
+    public function test_force_sync_group_requests_eligible_members(): void
+    {
+        // AC5 — bouton groupe : pose la demande sur les membres enrôlés non
+        // quarantaine, ignore les autres (toast récapitulatif).
+        [$group, $machines] = $this->makeGroupWithMachines(2);
+        $this->mockGroupService($group);
+
+        $enrolled = $this->enroll($machines[0]);
+        // $machines[1] reste non enrôlé.
+
+        Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
+            ->call('forceSyncGroup')
+            ->assertDispatched('toastMagic', status: 'success');
+
+        $this->assertNotNull($enrolled->refresh()->agent_sync_requested_at);
+        $this->assertNull($machines[1]->refresh()->agent_sync_requested_at);
     }
 }

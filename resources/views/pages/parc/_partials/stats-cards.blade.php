@@ -92,3 +92,81 @@
         </div>
     @endif
 </div>
+
+{{-- Story 24.7 — Compteurs de conformité agent (périmètre = postes ENRÔLÉS du
+     parc, requêtes agrégées). « En écart » = drift+error ; la dérive tolérée
+     est distincte (jamais comptée comme écart). Rendu uniquement quand au
+     moins un poste est enrôlé (sinon section masquée — pas de bruit visuel). --}}
+@if ($statsLoaded && ($conformityStats['enrolled'] ?? 0) > 0)
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mt-2">
+        <div class="card bg-base-100 shadow-sm">
+            <div class="card-body py-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-error/10 flex items-center justify-center">
+                        <i class="fa-solid fa-triangle-exclamation text-error"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm text-base-content/60">En écart</div>
+                        <div class="text-2xl font-bold" title="Postes en drift ou erreur (worst-status)">{{ $conformityStats['exceptions'] ?? 0 }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-base-100 shadow-sm">
+            <div class="card-body py-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center">
+                        <i class="fa-solid fa-circle-info text-info"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm text-base-content/60">Dérive tolérée</div>
+                        <div class="text-2xl font-bold" title="Dérive humaine tolérée (mode default) — pas un écart">{{ $conformityStats['drifted_allowed'] ?? 0 }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-base-100 shadow-sm">
+            <div class="card-body py-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
+                        <i class="fa-solid fa-volume-xmark text-warning"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm text-base-content/60">Muets / jamais rapporté</div>
+                        <div class="text-2xl font-bold" title="Postes enrôlés sans check-in récent (muet) ou n'ayant jamais rapporté">{{ ($conformityStats['silent'] ?? 0) + ($conformityStats['never_reported'] ?? 0) }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-base-100 shadow-sm">
+            <div class="card-body py-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
+                        <i class="fa-solid fa-circle-check text-success"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm text-base-content/60">Conformes</div>
+                        <div class="text-2xl font-bold" title="Postes conformes sur toutes leurs ressources">{{ $conformityStats['compliant'] ?? 0 }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-base-100 shadow-sm">
+            <div class="card-body py-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                        <i class="fa-solid fa-tower-broadcast text-primary"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm text-base-content/60">Postes enrôlés</div>
+                        <div class="text-2xl font-bold" title="Postes disposant d'un agent (canal desired-state)">{{ $conformityStats['enrolled'] ?? 0 }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+@endif

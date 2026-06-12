@@ -8,6 +8,7 @@ use App\Services\Parc\WorkstationGroupService;
 use App\Jobs\SyncWorkstationGroupsFromAd;
 use App\Components\Traits\WithToasts;
 use App\Models\WorkstationGroup;
+use App\Services\Agent\Reporting\ConformityService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
 
@@ -32,6 +33,10 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     // Valeurs admises : '' (tous), 'migrated', 'not-migrated'.
     #[Url]
     public string $migrationFilter = '';
+    // Story 24.7 — filtre par conformité agent.
+    // Valeurs admises : '' (tous), 'exceptions', 'drifted_allowed', 'compliant', 'silent'.
+    #[Url]
+    public string $conformityFilter = '';
 
     // Filtres groupes
     #[Url]
@@ -57,6 +62,8 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     public Collection $availableGroups;
     public array $machineStats = [];
     public array $groupStats = [];
+    // Story 24.7 — compteurs de conformité agent (postes enrôlés du parc).
+    public array $conformityStats = [];
 
     // États
     public bool $statsLoaded = false;
@@ -115,13 +122,53 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
                 migrationFilter: $this->migrationFilter ?: null,
             );
             $this->groupStats = $this->parcService->getGroupStats();
+            // Story 24.7 — compteurs de conformité agent (périmètre = postes
+            // enrôlés du parc), en requêtes agrégées (zéro N+1, piège 11).
+            $this->conformityStats = app(ConformityService::class)->summary();
             $this->statsLoaded = true;
         } catch (\Exception $e) {
             Log::error('[Parc] Erreur chargement stats: ' . $e->getMessage());
             $this->machineStats = [];
             $this->groupStats = [];
+            $this->conformityStats = [];
             $this->statsLoaded = true;
         }
+    }
+
+    /**
+     * Story 24.7 — worst-status de conformité par poste pour la PAGE courante
+     * (badge tableau) : UNE requête agrégée sur les ids paginés (piège 11),
+     * jamais une relation lazy par ligne. Retourne `[id => statut affichable]`
+     * où le statut est l'enum, un dérivé (never_reported/silent) ou 'neutral'
+     * (poste non enrôlé). La résolution silent/never-reported reproduit la
+     * précédence de {@see ConformityService::summary()}.
+     *
+     * @return array<int, string>
+     */
+    public function getMachineConformityProperty(): array
+    {
+        $machines = $this->machines;
+        if (!($machines instanceof \Illuminate\Pagination\LengthAwarePaginator)) {
+            return [];
+        }
+
+        $enrolled = $machines->filter(fn($m) => $m->isAgentEnrolled());
+        if ($enrolled->isEmpty()) {
+            return [];
+        }
+
+        $worst = app(ConformityService::class)->worstStatusFor($enrolled->pluck('id')->all());
+
+        $map = [];
+        foreach ($enrolled as $machine) {
+            if ($machine->isAgentSilent()) {
+                $map[$machine->id] = ConformityService::DERIVED_SILENT;
+                continue;
+            }
+            $map[$machine->id] = $worst[$machine->id] ?? ConformityService::DERIVED_NEVER_REPORTED;
+        }
+
+        return $map;
     }
 
     /**
@@ -144,6 +191,13 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
         $this->statsLoaded = false;
     }
 
+    public function updatedConformityFilter(): void
+    {
+        // Le filtre conformité ne change pas les compteurs globaux (ils
+        // restent sur tout le parc enrôlé) — pas de reload des stats requis.
+        $this->resetPage();
+    }
+
     public function getMachinesProperty()
     {
         try {
@@ -156,6 +210,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
                 groupId: $this->groupFilter,
                 scopeFor: $this->scopedUser(),
                 migrationFilter: $this->migrationFilter ?: null,
+                conformityFilter: $this->conformityFilter ?: null,
             );
         } catch (\Exception $e) {
             Log::error('[Parc] Erreur chargement machines: ' . $e->getMessage());
@@ -205,6 +260,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
         $this->osFilter = '';
         $this->groupFilter = null;
         $this->migrationFilter = '';
+        $this->conformityFilter = '';
         $this->selectedMachines = [];
         // Story 16.13bis — Correction Q2 / Opus-A : recharger les stats
         // pour refléter le nouveau périmètre global après reset.

@@ -81,6 +81,43 @@ Le header `X-Agent-New-Token` (rotation 23.2) survit au 304 : rotation due
 re-check-in). L'agent doit traiter ce header sur **toute** réponse du
 canal, y compris 304 — invariant du recouvrement D5, testé.
 
+### « Forcer la synchro » — bypass du 304 pendant une demande (Story 24.7)
+
+L'admin peut **forcer une resynchronisation** d'un poste depuis l'UI parc
+(FR11). Le mécanisme est du **pull pur**, pas un push : poser une demande
+revient à écrire un timestamp `workstations.agent_sync_requested_at`. Tant
+que cette demande est **pendante** :
+
+- `GET /api/v1/agent/state` (tous contextes : machine ET `?user=`) répond
+  **200 corps complet même si `If-None-Match` concorde** — le 304 est
+  bypassé. RIEN d'autre ne change : MÊME `ETag`, enveloppe contrat BRUTE,
+  aucun recalcul de hash. Le controller reste **zéro write** (la lecture du
+  flag ne consomme PAS la demande — elle vit pour TOUS les fetchs du même
+  cycle).
+- Effet poste : le cache `state.json` est réécrit → `mtime` change → le
+  compagnon rejoue les handlers ≤ ~60 s après le check-in. L'agent restocke
+  le même `ETag` verbatim et reprend ses 304 au cycle suivant (un 200 « au
+  lieu d'un 304 » est un chemin nominal de l'agent).
+- La demande est **soldée** au premier `POST /api/v1/agent/report` suivant
+  (`agent_sync_requested_at` remis à null) — voir `report-endpoint.md`.
+  Le cycle agent étant GET(s) → … → report, tous les contextes ont bénéficié
+  du bypass avant le solde.
+
+`agent_sync_requested_at` a exactement **deux écrivains** : l'UI admin (pose
+la demande) et `ReportController` (la solde). `StateController` ne l'écrit
+jamais. Un log debug `agent.sync.state_forced` (channel `agent`) trace
+chaque bypass.
+
+**Latence honnête (D7)** : la demande est servie au **prochain contact**
+(timer ≤ 60 min + jitter, ou boot/login immédiats) — c'est le modèle pull.
+Le binaire Go 2.1.x **ignore `ttl_seconds` pour sa planification**
+(`agent/shared/loop.go` : l'intervalle vient de `config.json`) : aucun
+raccourcissement du poll par ttl dynamique n'est possible sans modifier
+l'agent. **Évolution** : quand l'auto-update (25.x) portera un agent qui
+honore `ttl_seconds`, un ttl dynamique pourra réduire cette latence — le
+bypass 304 reste valable en attendant. Aucun push (WoL/reboot/WinRM) :
+choix anti-couteau-suisse (NFR3).
+
 ## Codes de réponse
 
 | Code | Sens | Corps |

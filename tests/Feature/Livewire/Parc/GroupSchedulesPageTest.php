@@ -48,6 +48,8 @@ class GroupSchedulesPageTest extends TestCase
     {
         Carbon::setTestNow();
         if ($this->createdTables) {
+            Schema::dropIfExists('agent_report_events');
+            Schema::dropIfExists('agent_resource_states');
             Schema::dropIfExists('printer_workstation_group');
             Schema::dropIfExists('printers');
             Schema::dropIfExists('workstation_group_schedule_runs');
@@ -74,7 +76,44 @@ class GroupSchedulesPageTest extends TestCase
                 $table->timestamp('date_rapport_poste')->nullable();
                 $table->string('ad_dn')->nullable();
                 $table->string('ad_guid')->nullable();
+                // Story 23.2 / 24.7 — colonnes du canal agent (la page groupe
+                // inclut le panneau conformité 24.7 au render de l'onglet général).
+                $table->string('agent_token_hash', 64)->nullable();
+                $table->timestamp('agent_token_rotated_at')->nullable();
+                $table->timestamp('agent_last_checkin_at')->nullable();
+                $table->timestamp('agent_quarantined_at')->nullable();
+                $table->timestamp('agent_sync_requested_at')->nullable();
                 $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        // Story 24.7 — tables D3 (24.1) lues par le panneau conformité.
+        if (!Schema::hasTable('agent_resource_states')) {
+            Schema::create('agent_resource_states', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('workstation_id')->constrained()->cascadeOnDelete();
+                $table->string('type', 64);
+                $table->string('status', 32);
+                $table->string('hash', 64);
+                $table->text('detail')->nullable();
+                $table->timestamp('reported_at')->nullable();
+                $table->timestamps();
+                $table->unique(['workstation_id', 'type']);
+            });
+            $this->createdTables = true;
+        }
+
+        if (!Schema::hasTable('agent_report_events')) {
+            Schema::create('agent_report_events', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('workstation_id')->constrained()->cascadeOnDelete();
+                $table->string('type', 64);
+                $table->string('previous_status', 32)->nullable();
+                $table->string('status', 32);
+                $table->string('hash', 64);
+                $table->text('detail')->nullable();
+                $table->timestamp('created_at')->nullable();
             });
             $this->createdTables = true;
         }

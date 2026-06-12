@@ -578,6 +578,142 @@ inchangé (la skin pointe déjà sur le fichier per-user).
 
 ---
 
+## Section 7 — Conformité UI + forcer la synchro (Story 24.7)
+
+> **Gate palier 1 de l'Epic 24** : cette section ferme la boucle « → UI ».
+> Tout ce qui précède (état cible compilé, token, ingestion 24.1, binaire Go
+> 2.1.x sur ws 49) tourne ; ici le serveur **MONTRE** ce qu'il sait dans les
+> pages parc, et l'admin peut **forcer une resynchro**. La conformité est
+> intégrée aux pages parc EXISTANTES (pas de page « postes » à part) :
+> compteurs + badge + filtre sur `app/parc` (onglet machines), table par type
+> + événements + bouton sur `app/parc/machines/{id}`, panneau règles →
+> exceptions sur `app/parc/groups/{id}`.
+>
+> **Aucune modification de l'agent Go** (binaire 2.1.x figé) : le « forcer la
+> synchro » est du **PULL pur** — l'UI pose une demande
+> (`workstations.agent_sync_requested_at`), `GET /state` bypasse le 304 tant
+> qu'elle est pendante (corps complet re-servi, MÊME ETag), le premier
+> `POST /report` la solde. Latence assumée : servie au prochain contact
+> (timer ≤ 60 min + jitter, ou boot/login immédiats).
+
+### Pré-requis Section 7
+
+- Tous les pré-requis communs + l'agent Go installé et fonctionnel sur ws 49
+  (Section 6 verte).
+- Migration appliquée : `php artisan migrate:status | grep agent_sync` →
+  `add_agent_sync_requested_at_to_workstations` = Ran. Sinon
+  `php artisan migrate` (+ `chown www-admin:www-admin` si `bootstrap/cache/`
+  régénéré).
+- Au moins un poste enrôlé visible dans `app/parc` (ws 49) ; idéalement un
+  parc logique le contenant pour la vue groupe.
+
+### Scénario 7.1 — Smoke serveur : bypass 304 par une demande pendante (curl/Tinker)
+
+1. Repérer le token d'un poste de test enrôlé (ou en émettre un en Tinker :
+   `app(\App\Services\Agent\Enrollment\TokenRotationService::class)->issueFor($ws)`).
+2. `GET /api/v1/agent/state` avec `Authorization: Bearer <token>` → noter
+   l'`ETag`. Le rejouer avec `If-None-Match: <etag>` → **304** (nominal).
+3. Poser une demande en Tinker — la colonne est volontairement hors
+   `$fillable`, donc PAS de `update([...])` (jeté silencieusement) :
+   `app(\App\Services\Agent\SyncRequestService::class)->request(\App\Models\Workstation::find($id));`
+   (logge `agent.sync.requested` au passage ; ou via l'UI, scénario 7.4).
+4. Rejouer le `GET` avec le MÊME `If-None-Match: <etag>` → **200 corps
+   complet**, MÊME `ETag` (enveloppe brute inchangée). `logs/agent/agent.log`
+   trace `agent.sync.state_forced`.
+5. `POST /api/v1/agent/report` (payload minimal valide) → 200 ; en base
+   `agent_sync_requested_at` est **null** (soldée) ;
+   `agent.sync.fulfilled` loggé.
+
+**Attendu** : le bypass ne change QUE le respect de `If-None-Match` (jamais le
+hash, jamais l'enveloppe) ; le report solde la demande ; un poste en
+quarantaine renvoie 403 AVANT toute logique (demande JAMAIS soldée).
+
+### Scénario 7.2 — Compteurs + badge + filtre sur la page parc (AC1)
+
+1. Ouvrir `app/parc`, onglet **Postes**. Sous les stats-cards classiques, une
+   2e rangée « conformité » apparaît dès qu'au moins un poste est enrôlé :
+   **En écart** (drift+error), **Dérive tolérée**, **Muets / jamais
+   rapporté**, **Conformes**, **Postes enrôlés** — calculés sur les postes
+   ENRÔLÉS, en requêtes agrégées.
+2. Chaque ligne poste enrôlé porte un **badge conformité** (worst-status :
+   error > drift > drifted_allowed > compliant ; muet et jamais-rapporté
+   distincts) ; un poste non enrôlé affiche `—` neutre.
+3. Sélectionner le filtre **Conformité : En écart** → seuls les postes en
+   drift/error restent ; idem **Dérive tolérée**, **Muets**, **Conformes**.
+   Le bouton « gomme » réinitialise TOUS les filtres (dont la conformité).
+
+**Attendu** : zéro page « postes » dédiée ; tout vit dans la page parc ;
+aucune dégradation de perf perceptible (le badge = 1 requête agrégée par
+page, pas une requête par ligne).
+
+### Scénario 7.3 — Détail poste : état par type + événements + états dérivés (AC2)
+
+1. Ouvrir `app/parc/machines/{id}` d'un poste enrôlé ayant rapporté. Dans la
+   card **Agent** (étendue, pas dupliquée), une table « État rapporté par
+   type » : type, badge statut (4 statuts + `drifted_allowed` visuellement
+   distinct), date `reported_at` (relative), `detail` tronqué, hash opaque
+   tronqué (jamais interprété).
+2. Sous-section « Derniers événements » : jusqu'à 10 `agent_report_events`
+   datés, transition `previous_status → status`, detail.
+3. États dérivés : un poste enrôlé SANS aucune ligne d'état affiche « Jamais
+   rapporté » ; un poste enrôlé dont le dernier check-in dépasse
+   2 × `config('agent.ttl_seconds')` affiche un bandeau « Poste muet ». Un
+   poste non enrôlé garde l'affichage neutre existant (card Agent « Jamais
+   enrôlé »).
+
+**Attendu** : les écarts sont DATÉS (l'événement de dérive donne le début, la
+ligne d'état donne la fraîcheur).
+
+### Scénario 7.4 — Forcer la synchro depuis le détail poste (AC5, LA démo)
+
+1. Sur `app/parc/machines/{id}` d'un poste enrôlé non quarantaine, cliquer
+   **Forcer la synchro** → confirmation `wire:confirm` → toast succès,
+   bandeau « Synchro demandée le … — en attente du prochain check-in », le
+   bouton devient « Synchro demandée » (désactivé). `agent.sync.requested`
+   loggé avec l'admin.
+2. Le bouton est **désactivé avec tooltip** pour un poste non enrôlé ou en
+   quarantaine (piège 6).
+3. Au prochain cycle de l'agent (ws 49 ; pour accélérer la démo : relancer le
+   service ou attendre le timer), le poste re-télécharge l'état complet
+   (200 forcé) et POST son rapport → le bandeau « demandée » DISPARAÎT
+   (soldée), la table d'état se rafraîchit (`wire:poll.15s` borné au bloc).
+
+**Attendu** : reconvergence complète + trace + feedback UI ; mécanisme
+**pull** (pas de push WoL/WinRM).
+
+### Scénario 7.5 — Démo live répétable : wallpaper UI → poste → écart → résorption (gate palier 1)
+
+> **LE scénario de la démo live** (action humaine Henri, gate de l'epic).
+
+1. Dans l'UI, changer le **wallpaper d'un parc** contenant ws 49 (page
+   wallpaper du groupe).
+2. Sur `app/parc/groups/{id}` (onglet **Général**), le panneau **Conformité
+   agent** montre, par type (`wallpaper`), « n/N conformes » + la liste des
+   SEULS postes en exception, datés et cliquables. Tant que ws 49 n'a pas
+   convergé, il apparaît en `drift` (écart visible à l'écran).
+3. (Optionnel pour accélérer) cliquer **Forcer la synchro du groupe** → tous
+   les membres enrôlés non quarantaine reçoivent une demande (toast
+   récapitulatif demandés / ignorés).
+4. ws 49 converge (handler wallpaper réapplique), POST son rapport → le
+   panneau (wire:poll.15s) repasse le poste en `compliant` **sans action
+   admin** (AC4) : l'exception disparaît de la liste.
+
+**Attendu** : l'écart se VOIT puis se RÉSORBE à l'écran ; aucun poste conforme
+n'est jamais listé (le poste n'apparaît qu'en exception).
+
+### Scénario 7.6 — Retour auto à compliant (AC4), sans forcer
+
+1. Sur un poste en `drift` (par n'importe quel moyen), attendre le passage
+   naturel suivant de l'agent (convergence) SANS cliquer « forcer ».
+2. La fiche poste et le panneau groupe (tous deux `wire:poll.15s` bornés)
+   repassent en `compliant` d'eux-mêmes — la donnée est relue de
+   `agent_resource_states` (l'upsert 24.1 fait foi, `reported_at` rafraîchi).
+
+**Attendu** : aucune intervention requise ; le bouton « forcer » n'est qu'un
+raccourci de latence, pas un prérequis du retour à compliant.
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Defer review 23.1 (résolu en 24.1)** : le scénario 1.4 (body forgé → 4xx jamais 500) existe parce qu'un `StateHasher` appelé sur l'entrée agent pouvait lever une `JsonException` non catchée (UTF-8 invalide / NAN / INF). L'ingestion ne hashe JAMAIS le payload agent.
@@ -622,3 +758,9 @@ inchangé (la skin pointe déjà sur le fichier per-user).
 - [ ] 6.6 — mode default Go : dérive humaine → drifted_allowed non réappliqué ; cible changée → drift appliqué
 - [ ] 6.7 — overlay Go : identité+signal affichés, sérialiseur fixe, Rainmeter absent gracieux, strict réécrit + drift
 - [ ] 6.8 — erreur isolée + drops forgés rejetés entrée par entrée (validation stricte au cycle)
+- [ ] 7.1 — smoke serveur : demande pendante → GET /state 200 forcé (même ETag) ; report → soldée (null) ; quarantaine → 403 sans solde
+- [ ] 7.2 — page parc : compteurs conformité (enrôlés), badge worst-status par ligne, filtre conformité + reset
+- [ ] 7.3 — détail poste : état par type daté + 10 événements + dérivés (jamais rapporté / muet), non enrôlé neutre
+- [ ] 7.4 — forcer la synchro poste : demande posée + toast + log requested, bouton désactivé non-enrôlé/quarantaine, solde visible
+- [ ] 7.5 — démo live (ws 49) : wallpaper UI → parc → écart visible (panneau groupe règles→exceptions) → résorption ; forcer synchro groupe
+- [ ] 7.6 — retour auto à compliant sans forcer (wire:poll borné, relecture agent_resource_states)

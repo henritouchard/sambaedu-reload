@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\Agent\ReportRequest;
 use App\Models\Workstation;
 use App\Services\Agent\Reporting\ReportIngestService;
+use App\Services\Agent\SyncRequestService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -32,6 +33,15 @@ use Illuminate\Support\Str;
  * est loggée en warning, l'ingestion POURSUIT (l'anti-clonage MAC est le
  * travail du middleware 23.2, pas du report).
  *
+ * Story 24.7 — « forcer la synchro » (décision n° 1/2) : après ingestion,
+ * une éventuelle demande pendante (`agent_sync_requested_at`, posée par l'UI
+ * via {@see SyncRequestService::request()}) est SOLDÉE
+ * ({@see SyncRequestService::fulfill()} — remise à null + log
+ * `agent.sync.fulfilled`). Le cycle agent étant GET(s) → … → report, tous
+ * les contextes du cycle ont déjà bénéficié du bypass 304 avant ce solde.
+ * C'est le SECOND (et dernier) écrivain de la colonne — l'invariant « 2
+ * écrivains » de la décision n° 2.
+ *
  * Middlewares (routes/api.php) : `auth.v1.secure-headers` + `throttle:60,1`
  * + `agent.token`. Erreurs 401/403 = formats du middleware 23.2, intouchés.
  */
@@ -39,6 +49,7 @@ class ReportController extends Controller
 {
     public function __construct(
         private readonly ReportIngestService $ingest,
+        private readonly SyncRequestService $syncRequests,
     ) {
     }
 
@@ -53,6 +64,12 @@ class ReportController extends Controller
         // History de debug = payload BRUT (champs inconnus §9 inclus, review
         // 24.1 #2) — validated() les stripperait de l'historique.
         $counts = $this->ingest->ingest($workstation, $report, $request->json()->all());
+
+        // Story 24.7 — solde de la demande « forcer la synchro » (no-op si
+        // aucune demande n'était pendante : le cas nominal). Hors transaction
+        // d'ingestion : l'écriture de la colonne agent_* est indépendante du
+        // stockage D3 et idempotente.
+        $this->syncRequests->fulfill($workstation);
 
         return response()->json([
             'success' => true,
