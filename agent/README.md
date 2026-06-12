@@ -65,7 +65,7 @@ sont REPRISES par le binaire Go ; seule la techno change.
 | 3 | Fichiers sous ACL SYSTEM | ✅ icacls (convention 23.3 conservée) ; le binaire lui-même est compilé — plus de script en clair éditable pour le cœur (la contrainte 3 disqualifiait précisément les `.ps1` du spike). |
 | 4 | Auto-update fiable | ✅ swap d'un exe versionné unique — LA raison de sortir de PowerShell avant l'Epic 25 (remplacement de scripts à chaud trop fragile pour ~600 postes). |
 | 5 | Cœur partageable cross-OS | ✅ `shared/` est 100 % OS-agnostique, compilé/testé sur Linux ; le spécifique Win32 est isolé derrière build tags. |
-| 6 | Zéro runtime exotique sur le poste | ✅ binaire STATIQUE (`CGO_ENABLED=0`) : rien à installer, aucun runtime — vieux Windows 10 inclus. La toolchain Go n'existe que sur la machine de build (l'hôte), jamais sur les postes ni le serveur. |
+| 6 | Zéro runtime exotique sur le poste | ✅ binaire STATIQUE (`CGO_ENABLED=0`) : rien à installer, aucun runtime — vieux Windows 10 inclus. La toolchain Go n'existe que sur les machines de build (serveur SE5 via `scripts/build-agent.sh`, hôte de dev), jamais sur les postes. |
 | 7 | Empreinte discrète | ✅ ~7 Mo, un seul processus, poll HTTP + actions locales. |
 
 **Règle Rust / COM-WinRT** (addendum architecture) : Windows iso-legacy =
@@ -83,11 +83,13 @@ shell-out PowerShell suffit et reproduit la source exacte du spike).
 
 ---
 
-## Toolchain & commandes (machine de build = l'hôte, jamais la VM)
+## Toolchain & commandes (build nominal = le serveur SE5 ; dev/tests = l'hôte)
 
 ```bash
-# Toolchain (user-local, sans sudo) — version retenue story 24.5 : go1.26.4
+# Dev/tests sur l'hôte : toolchain user-local, sans sudo — go1.26.4
 #   tarball officiel go.dev extrait dans ~/go-toolchain/
+#   (sur le serveur : /usr/local/go, amorcée par scripts/build-agent.sh,
+#    version + SHA-256 épinglés dans le script)
 export PATH=$HOME/go-toolchain/go/bin:$PATH
 
 cd agent/
@@ -96,7 +98,12 @@ go vet ./...
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...   # validation cross du code Windows
 GOOS=windows GOARCH=amd64 go vet ./...
 
-# Build de production signé (cf. §Signature pour le PFX) :
+# Build de production signé — chemin NOMINAL : sur le serveur SE5, automatique
+# via scripts/update.sh (ensure_codesign_pfx + ensure_agent_build), ou à la main :
+sudo scripts/build-agent.sh        # [--force] — PFX/toolchain/osslsigncode gérés
+# → agent/build/dist/sambaedu-agent-<version>.exe (signé CA interne, vérifié)
+
+# Build manuel depuis une autre machine (cf. §Signature pour rapatrier le PFX) :
 CODESIGN_PFX=… CODESIGN_CA=… [CODESIGN_PASS=…] agent/build/build.sh
 # Build de dev non signé (JAMAIS déployable) :
 ALLOW_UNSIGNED=1 agent/build/build.sh
@@ -190,19 +197,23 @@ après coup (`osslsigncode verify -CAfile <racine>`).
 
 **Matériel de signature** : la PKI interne vit sur le serveur SE5
 (`storage/keys/pki/ca-root.{crt,key}` — story 16.10) ; sa racine est déployée
-sur les postes par la chaîne iPXE 23.3. Il faut un certificat **code
-signing** (EKU `1.3.6.1.5.5.7.3.3`) émis par cette CA, exporté en **PFX** :
+sur les postes par la chaîne iPXE 23.3. Le certificat **code signing** (EKU
+`1.3.6.1.5.5.7.3.3`) est émis par cette CA et exporté en **PFX sans mot de
+passe** par `scripts/emit-codesign-pfx.sh` — **appelé automatiquement par
+`scripts/update.sh`** (`ensure_codesign_pfx`, donc aussi par `install.sh` qui
+rejoue update.sh) : no-op si le PFX existe, valide > 30 j et chaînant vers le
+ca-root courant ; ré-émission forcée si la CA vient d'être régénérée. Dans la
+foulée, **`ensure_agent_build` (→ `scripts/build-agent.sh`) builde le binaire
+signé sur le serveur même** (toolchain Go épinglée + osslsigncode amorcés au
+premier passage, no-op si dist/ est à jour) : le PFX ne quitte jamais le
+serveur. Le rapatriement ci-dessous ne sert qu'à un build manuel ailleurs :
 
 ```bash
 # Sur le serveur SE5 (la clé CA ne quitte jamais le serveur) :
-cd /var/www/sambaedu-reload/storage/keys/pki
-openssl req -new -newkey rsa:3072 -nodes -keyout codesign.key -out codesign.csr \
-  -subj "/C=FR/O=SambaEdu/OU=SambaEdu Local PKI/CN=SambaEdu Code Signing"
-openssl x509 -req -in codesign.csr -CA ca-root.crt -CAkey ca-root.key \
-  -CAcreateserial -days 1095 -sha256 -out codesign.crt \
-  -extfile <(printf "extendedKeyUsage=codeSigning\nkeyUsage=digitalSignature\nbasicConstraints=CA:FALSE")
-openssl pkcs12 -export -out sambaedu-codesign.pfx -inkey codesign.key -in codesign.crt -certfile ca-root.crt
+sudo scripts/emit-codesign-pfx.sh            # [--force pour ré-émettre]
+# → storage/keys/pki/sambaedu-codesign.pfx
 # Rapatrier le PFX sur la machine de build (hors repo !), puis :
+scp root@<serveur>:/var/www/sambaedu-reload/storage/keys/pki/sambaedu-codesign.pfx ~/
 CODESIGN_PFX=~/sambaedu-codesign.pfx CODESIGN_CA=<ca-root.crt> agent/build/build.sh
 ```
 

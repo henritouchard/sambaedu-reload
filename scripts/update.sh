@@ -276,6 +276,66 @@ ensure_auth_v1_pki() {
 }
 
 # ============================================================================
+# PFX code-signing agent (Story 24.5) — émission conditionnelle
+# ============================================================================
+# Délègue à scripts/emit-codesign-pfx.sh (idempotent : no-op si le PFX existe,
+# valide >30j et chaîne vers le ca-root courant). Forcé si ensure_auth_v1_pki
+# vient de régénérer la CA (l'ancienne chaîne ne remonterait plus à la racine
+# déployée sur les postes). NON-FATAL : un échec ici ne doit pas bloquer un
+# update serveur — le PFX ne sert qu'aux builds de l'agent.
+
+ensure_codesign_pfx() {
+    log "Vérification PFX code-signing agent..."
+
+    local emit_script="$SCRIPT_DIR/emit-codesign-pfx.sh"
+    if [[ ! -x "$emit_script" ]]; then
+        if [[ -f "$emit_script" ]]; then
+            chmod +x "$emit_script"
+        else
+            log_warning "emit-codesign-pfx.sh absent — étape ignorée"
+            return 0
+        fi
+    fi
+
+    local args=()
+    if [[ "$AUTH_V1_PKI_REGENERATED" == true ]]; then
+        log "CA régénérée pendant cet update — ré-émission forcée du PFX code-signing"
+        args+=(--force)
+    fi
+
+    if bash "$emit_script" "${args[@]}"; then
+        log_success "PFX code-signing agent OK (storage/keys/pki/sambaedu-codesign.pfx)"
+    else
+        log_warning "Émission du PFX code-signing échouée — les builds agent signés sont bloqués (relancer : scripts/emit-codesign-pfx.sh), l'update continue"
+    fi
+}
+
+# ============================================================================
+# Build agent Go signé (Story 24.5) — build conditionnel côté serveur
+# ============================================================================
+# Délègue à scripts/build-agent.sh (idempotent : no-op si le binaire dist/
+# est plus récent que les sources agent/ et que le cert code-signing ;
+# amorce toolchain Go épinglée + osslsigncode au premier passage). Le PFX ne
+# quitte jamais le serveur. NON-FATAL : un échec de build agent ne doit pas
+# bloquer un update serveur.
+
+ensure_agent_build() {
+    log "Vérification build agent Go signé..."
+
+    local build_script="$SCRIPT_DIR/build-agent.sh"
+    if [[ ! -f "$build_script" ]]; then
+        log_warning "build-agent.sh absent — étape ignorée"
+        return 0
+    fi
+
+    if bash "$build_script"; then
+        log_success "Agent Go signé OK (agent/build/dist/)"
+    else
+        log_warning "Build agent Go échoué — artefact signé non produit (relancer : scripts/build-agent.sh), l'update continue"
+    fi
+}
+
+# ============================================================================
 # Reload Apache après renouvellement cert serveur
 # ============================================================================
 # Apache lit les certs SSL au démarrage et les garde en mémoire. Quand
@@ -724,6 +784,12 @@ main() {
 
     echo ""
     ensure_auth_v1_pki
+
+    echo ""
+    ensure_codesign_pfx
+
+    echo ""
+    ensure_agent_build
 
     echo ""
     update_apache
