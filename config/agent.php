@@ -52,4 +52,11 @@ return [
     // purge automatique, l'historique ne grossit jamais sans borne.
     'report_history_retention_days' => max(1, (int) env('AGENT_REPORT_HISTORY_RETENTION_DAYS', 30)),
 
+    // Répertoire des binaires de release de l'agent (D6, Story 25.1 —
+    // distribution canari par rings). Dépôt direct sur le serveur (hors
+    // git/inotify, convention storage), lisible www-admin (uid 599) sinon
+    // hash_file()/serving échouent silencieusement. Surchargé en test vers
+    // un répertoire temporaire (jamais d'écriture dans le vrai storage/).
+    'releases_path' => env('AGENT_RELEASES_PATH', storage_path('agent/releases')),
+
 ];

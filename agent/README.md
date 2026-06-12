@@ -256,6 +256,9 @@ gitignoré). `osslsigncode` s'installe sans privilèges :
 
 ## Installation lab (manuelle — la distribution automatique est l'Epic 25)
 
+> Publication serveur (releases, rings, manifest — Story 25.1) : voir
+> `docs/agent/release-distribution.md`.
+
 ```powershell
 # Sur le poste (admin), poste déjà enrôlé (token 23.3) :
 # 0. si le service PS du spike est encore là : .\Uninstall-SambaEduAgent.ps1 (bundle 24.2-24.4)

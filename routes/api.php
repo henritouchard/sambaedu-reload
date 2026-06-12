@@ -37,6 +37,8 @@ use App\Http\Controllers\Api\V1\Agent\StateController as AgentStateController;
 use App\Http\Controllers\Api\V1\Agent\ReportController as AgentReportController;
 // Story 24.4 — Canal agent desired-state : GET /assets/wallpaper/{filename} (alias iso AgentReportController).
 use App\Http\Controllers\Api\V1\Agent\AssetController as AgentAssetController;
+// Story 25.1 — Canal agent desired-state : GET /release (manifest) + GET /releases/{filename} (alias iso AgentAssetController).
+use App\Http\Controllers\Api\V1\Agent\ReleaseController as AgentReleaseController;
 // Story 16.13 — Exposition endpoints natifs /api/v1/*
 use App\Http\Controllers\WallpaperController;
 use App\Http\Controllers\OverlayController;
@@ -257,6 +259,10 @@ Route::prefix('v1')
 |   stockage D3 borné (état courant + journal des changements + history
 |   flaggé). Chaîne iso /state — l'ack 200 est un wrapper SE5 `{success,…}`
 |   (seul /state sert le contrat brut). X-Agent-New-Token survit (D5).
+| - `GET /v1/agent/release` + `GET /v1/agent/releases/{filename}` (25.1) :
+|   manifest de release {version, hash, url} résolu selon le ring du poste
+|   (ring = WorkstationGroup, récence, fallback stable) + download du
+|   binaire signé (iso assets : 404 indistinct).
 | - Futurs endpoints du canal : derrière l'alias `agent.token`, à ajouter
 |   ici, à la FIN du bloc (fenêtre 1500 chars ScriptsOsNamespaceTest).
 */
@@ -279,6 +285,18 @@ Route::post('/v1/agent/report', [AgentReportController::class, 'store'])
 Route::get('/v1/agent/assets/wallpaper/{filename}', [AgentAssetController::class, 'show'])
     ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
     ->name('agent.v1.assets.wallpaper');
+
+// `GET /v1/agent/release` + `GET /v1/agent/releases/{filename}` (25.1) :
+// distribution canari par rings (D6). Manifest wrapper SE5, url ABSOLUE ;
+// binaire servi seulement s'il est publié dans agent_releases (l'agent 25.2
+// vérifie SHA-256 + signature avant exécution). Chaîne iso state/report.
+Route::get('/v1/agent/release', [AgentReleaseController::class, 'manifest'])
+    ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
+    ->name('agent.v1.release');
+
+Route::get('/v1/agent/releases/{filename}', [AgentReleaseController::class, 'download'])
+    ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
+    ->name('agent.v1.release.download');
 
 /*
 |--------------------------------------------------------------------------

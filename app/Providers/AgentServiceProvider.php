@@ -9,6 +9,8 @@ use App\Services\Agent\Enrollment\EnrollmentService;
 use App\Services\Agent\Enrollment\TokenRotationService;
 use App\Services\Agent\Providers\OverlayStateProvider;
 use App\Services\Agent\Providers\WallpaperStateProvider;
+use App\Services\Agent\Releases\ReleaseCreationService;
+use App\Services\Agent\Releases\ReleaseManifestService;
 use App\Services\Agent\Reporting\ConformityService;
 use App\Services\Agent\Reporting\ReportIngestService;
 use App\Services\Agent\StateCompiler;
@@ -51,6 +53,10 @@ class AgentServiceProvider extends ServiceProvider
         // lecture agrégée de conformité pour les pages parc (stateless).
         $this->app->singleton(SyncRequestService::class, fn () => new SyncRequestService());
         $this->app->singleton(ConformityService::class, fn () => new ConformityService());
+        // Story 25.1 — distribution des releases (D6) : création vérifiée
+        // hash + manifest résolu par ring (stateless tous les deux).
+        $this->app->singleton(ReleaseCreationService::class, fn () => new ReleaseCreationService());
+        $this->app->singleton(ReleaseManifestService::class, fn () => new ReleaseManifestService());
         $this->app->singleton(StateHasher::class, fn () => new StateHasher());
         $this->app->singleton(StateCompiler::class, fn ($app) => new StateCompiler(
             $app->make(StateHasher::class),

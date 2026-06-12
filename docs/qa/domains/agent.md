@@ -714,6 +714,104 @@ raccourci de latence, pas un prérequis du retour à compliant.
 
 ---
 
+## Section 8 — Distribution des releases (Story 25.1)
+
+Moitié serveur de la distribution canari (D6/FR24) : `agent_releases` +
+`agent_release_rings` (un ring = un WorkstationGroup), commandes artisan
+`agent:release:{create,target,promote}`, `GET /api/v1/agent/release`
+(manifest résolu par ring) + `GET /api/v1/agent/releases/{filename}`
+(binaire). Référence : `docs/agent/release-distribution.md`. Pré-requis :
+`storage/agent/releases/` existant et chown www-admin ; un poste enrôlé
+(token 23.3 — ws 49 dispo) ; binaire signé dans `agent/build/dist/`
+(24.5/24.6 — un binaire factice convient pour les scénarios serveur).
+
+### Scénario 8.1 — Créer une release : hash OK / hash KO (AC1)
+
+1. Sur la VM, déposer le binaire :
+   `install -o www-admin -g www-admin agent/build/dist/sambaedu-agent-<v>.exe storage/agent/releases/`.
+2. **KO d'abord** : `php artisan agent:release:create <v> sambaedu-agent-<v>.exe --hash=$(printf '0%.0s' {1..64})`
+   → sortie « Release refusée (hash_mismatch) », **exit ≠ 0**, table
+   `agent_releases` VIDE (`psql` ou tinker), log `agent.release.rejected`
+   (warning, raison) dans le channel agent.
+3. **OK ensuite** : re-créer avec
+   `--hash=$(sha256sum storage/agent/releases/sambaedu-agent-<v>.exe | cut -d' ' -f1) --stable`
+   → exit 0, UNE ligne `agent_releases` (hash = sha256sum, `is_stable`
+   true), log `agent.release.created`.
+4. Variantes refus (toutes exit ≠ 0, zéro ligne ajoutée) : fichier absent
+   (`file_missing`), version re-soumise (`duplicate_version`), filename
+   `agent.exe` (`invalid_filename`).
+
+**Attendu** : un artefact incohérent est IMPUBLIABLE — aucun refus ne laisse
+de ligne en base.
+
+### Scénario 8.2 — Manifest depuis un poste enrôlé ; sans ring → stable (AC2, AC3)
+
+1. Récupérer le token du poste lab (ws 49) :
+   `C:\ProgramData\SambaEdu\Agent\token` (poste) — jamais loggé côté serveur.
+2. Sans token : `curl -i http://<serveur>/api/v1/agent/release` → **401**
+   JSON `AGENT_TOKEN_MISSING` (route vivante derrière le cache).
+3. Avec token, poste SANS ring :
+   `curl -s -H "Authorization: Bearer <token>" http://<serveur>/api/v1/agent/release`
+   → 200 `{success: true, version, hash, url}` = la **stable** (jamais une
+   canari par accident), `url` **absolue** (vérifier le host = `APP_URL`).
+4. Supprimer toute stable (tinker `is_stable = false`) et re-curler → **404**
+   `{error: "no_release"}` — pas de 500, pas de 200 vide. Restaurer ensuite.
+
+**Attendu** : la résolution suit ring → stable → 404 ; le contrat wire est
+conforme au golden `tests/Fixtures/Agent/release-manifest.v1.json`.
+
+### Scénario 8.3 — Canari : ring d'1 poste de lab (AC2)
+
+1. Publier une seconde version (8.1) SANS `--stable` (la canari).
+2. Créer/choisir un WorkstationGroup contenant UNIQUEMENT le poste lab
+   (salle ou parc — indifférent), puis :
+   `php artisan agent:release:target <v-canari> <nom-du-groupe>`
+   → log `agent.release.targeted`.
+3. curl manifest avec le token du poste lab → `version` = **canari**.
+4. curl manifest avec le token d'un AUTRE poste enrôlé (hors groupe) →
+   `version` = **stable** : la canari n'a pas fui.
+5. Si le poste appartient AUSSI à un parc ciblé : vérifier le warning
+   `agent.release.ring_conflict` (workstation_id + group_ids) et que le
+   ciblage le plus RÉCENT gagne.
+
+**Attendu** : une release atteint 1 poste de lab avant le parc — le ring
+borne exactement la diffusion.
+
+### Scénario 8.4 — Rollback : re-ciblage stable (récence) (AC2)
+
+1. Poste lab sous canari (8.3). Re-cibler le MÊME groupe sur la version
+   stable : `php artisan agent:release:target <v-stable> <nom-du-groupe>`.
+2. curl manifest → `version` = stable : le re-ciblage, posé APRÈS, gagne
+   par récence (`updated_at` du ring rafraîchi même à version identique).
+3. Variante pointeur : `php artisan agent:release:promote <v-stable>` →
+   les postes SANS ring rebasculent ; `agent_releases` n'a qu'UNE ligne
+   `is_stable` true (log `agent.release.promoted`).
+
+**Attendu** : le rollback est un re-ciblage/une promotion — aucune
+suppression nécessaire, effet au prochain check-in.
+
+### Scénario 8.5 — Download binaire authentifié + sha256sum (AC4, AC6)
+
+1. Depuis le manifest 8.2, extraire `url`, puis :
+   `curl -s -H "Authorization: Bearer <token>" -o /tmp/agent.exe "<url>"`
+   → 200 ; `sha256sum /tmp/agent.exe` = le `hash` du manifest, à l'octet.
+2. Sans token sur la même `url` → **401** ; token forgé → 401
+   `AGENT_TOKEN_INVALID` ; poste en quarantaine → **403**.
+3. 404 **indistinct** `{error: "not_found"}` pour : filename forgé
+   `sambaedu-agent-9.9.9.exe` (inconnu DB), traversal
+   `..%5C..%5Cpasswd`, et un binaire orphelin déposé dans
+   `storage/agent/releases/` SANS ligne `agent_releases` (jamais servi).
+   Les trois réponses sont identiques (aucun oracle de présence) ; logs
+   `download_served`/`download_not_found` côté serveur.
+4. Rotation : reculer `agent_token_rotated_at` du poste (tinker) au-delà de
+   l'échéance, re-curler le manifest → 200 avec header `X-Agent-New-Token`
+   (invariant D5 — le recouvrement survit au canal release).
+
+**Attendu** : seul un binaire PUBLIÉ est servi, à un poste AUTHENTIFIÉ, et
+le corps reçu est exactement l'artefact vérifié à la création.
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Defer review 23.1 (résolu en 24.1)** : le scénario 1.4 (body forgé → 4xx jamais 500) existe parce qu'un `StateHasher` appelé sur l'entrée agent pouvait lever une `JsonException` non catchée (UTF-8 invalide / NAN / INF). L'ingestion ne hashe JAMAIS le payload agent.
@@ -764,3 +862,8 @@ raccourci de latence, pas un prérequis du retour à compliant.
 - [ ] 7.4 — forcer la synchro poste : demande posée + toast + log requested, bouton désactivé non-enrôlé/quarantaine, solde visible
 - [ ] 7.5 — démo live (ws 49) : wallpaper UI → parc → écart visible (panneau groupe règles→exceptions) → résorption ; forcer synchro groupe
 - [ ] 7.6 — retour auto à compliant sans forcer (wire:poll borné, relecture agent_resource_states)
+- [ ] 8.1 — créer release : hash KO refusé exit ≠ 0 zéro ligne, hash OK + stable, variantes refus
+- [ ] 8.2 — manifest poste enrôlé : 401 sans token, 200 stable sans ring (url absolue = APP_URL), 404 no_release sans stable
+- [ ] 8.3 — canari ring 1 poste lab : canari servie au lab, stable aux autres, ring_conflict si multi-rings
+- [ ] 8.4 — rollback : re-ciblage stable gagne par récence ; promote = une seule stable
+- [ ] 8.5 — download : sha256sum = hash manifest, 401/403, 404 indistinct (forgé/traversal/orphelin), X-Agent-New-Token sur 200
