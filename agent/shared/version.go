@@ -19,9 +19,11 @@ package shared
 // le binaire Go marque une rupture d'artefact → 2.x (les rapports Go sont
 // discernables des rapports PS en lab). 2.1.0 = binaire COMPLET 24.6
 // (compagnon + handlers + drops) — discernable en lab des rapports core-only
-// 2.0.0 de 24.5.
+// 2.0.0 de 24.5. 2.1.1 = correctif terrain T12 (setAgentACL : flags (OI)(CI)
+// réservés aux répertoires — posés sur un fichier, DACL effective vide et
+// writeAtomic échouait en Accès refusé à la première exécution Windows).
 //
 // Injectable au build (var, pas const) :
 //
-//	go build -ldflags "-X sambaedu/agent/shared.Version=2.1.1"
-var Version = "2.1.0"
+//	go build -ldflags "-X sambaedu/agent/shared.Version=2.1.2"
+var Version = "2.1.1"

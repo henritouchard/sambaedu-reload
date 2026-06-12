@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"syscall"
 )
@@ -17,10 +18,27 @@ import (
 // *S-1-5-18 = SYSTEM, *S-1-5-32-544 = Administrators. (OI)(CI) : les
 // fichiers/sous-répertoires héritent.
 func setAgentACL(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat %s : %w", path, err)
+	}
+	// (OI)(CI) UNIQUEMENT sur les répertoires. Posés via icacls directement
+	// sur un FICHIER, ces flags rendent les ACE inertes pour l'accès au
+	// fichier lui-même : DACL effective VIDE, le rename de writeAtomic
+	// échoue en Accès refusé — constaté lab ws 49 (T12 24.6, A/B icacls
+	// avec/sans flags), invisible des tests hôte (icacls = Windows réel).
+	if info.IsDir() {
+		return runIcacls(path,
+			"/inheritance:r",
+			"/grant", "*S-1-5-18:(OI)(CI)F",
+			"/grant", "*S-1-5-32-544:(OI)(CI)F",
+		)
+	}
+
 	return runIcacls(path,
 		"/inheritance:r",
-		"/grant", "*S-1-5-18:(OI)(CI)F",
-		"/grant", "*S-1-5-32-544:(OI)(CI)F",
+		"/grant", "*S-1-5-18:F",
+		"/grant", "*S-1-5-32-544:F",
 	)
 }
 
