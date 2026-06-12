@@ -1,0 +1,176 @@
+package shared
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strconv"
+	"time"
+)
+
+// Constantes du contrat se5.desired-state/v1 — FIGÉES, iso
+// App\Services\Agent\StateContract (jamais une variable d'environnement,
+// NFR12) et agent/shared/ContractV1.ps1 (lignée spike 24.2).
+const (
+	// ContractSchema est le nom de schéma complet, présent dans l'enveloppe
+	// état ET dans le rapport.
+	ContractSchema = "se5.desired-state/v1"
+
+	// ContractMajor est la version majeure acceptée : l'agent REFUSE un
+	// major inconnu (contrat §9) ; une version mineure ajoutée (v1.1) reste
+	// acceptée (forward-compat).
+	ContractMajor = 1
+)
+
+// ContractScopes : les trois portées de l'enveloppe état (aussi les clés JSON).
+var ContractScopes = []string{"machine", "session", "machine_user"}
+
+// ResourceTypes : identifiants de type de ressource publiés (§7 — figés : on
+// ne renomme JAMAIS, on déprécie + ajoute).
+var ResourceTypes = []string{
+	"wallpaper", "overlay", "shortcuts", "printers", "drives",
+	"associations", "registry", "app_config", "applications",
+}
+
+// ResourceStatuses : statuts de conformité du rapport (§6 — iso
+// App\Enums\AgentResourceStatus).
+var ResourceStatuses = []string{"compliant", "drift", "drifted_allowed", "error"}
+
+var schemaPattern = regexp.MustCompile(`^se5\.desired-state/v(\d+)`)
+
+// ValidSchema valide le champ `schema` d'une enveloppe ou d'un rapport.
+// Forward-compat §9 : seule la version MAJEURE est discriminante
+// (`se5.desired-state/v1.1` accepté, `v2` refusé).
+func ValidSchema(schema string) bool {
+	m := schemaPattern.FindStringSubmatch(schema)
+	if m == nil {
+		return false
+	}
+	major, err := strconv.Atoi(m[1])
+
+	return err == nil && major == ContractMajor
+}
+
+// State est l'enveloppe `GET /state` décodée : les trois portées, jamais nil
+// (portée absente = liste vide). Les champs inconnus de l'enveloppe sont
+// ignorés au décodage (forward-compat §9).
+type State struct {
+	Schema      string
+	GeneratedAt string
+	TtlSeconds  int64
+	Machine     []any
+	Session     []any
+	MachineUser []any
+}
+
+// ParseState décode et valide l'enveloppe `GET /state` (200).
+//
+// Refuse un major inconnu (erreur → l'appelant loggue, PRÉSERVE son cache et
+// poursuit les check-ins — piège n° 10). L'ETag n'est PAS géré ici (transport,
+// pas contrat) : il reste opaque et stocké verbatim par la couche HTTP.
+func ParseState(raw []byte) (*State, error) {
+	v, err := DecodeJSON(raw)
+	if err != nil {
+		return nil, err
+	}
+	envelope, ok := v.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("enveloppe état : objet JSON attendu, obtenu %T", v)
+	}
+
+	schema, _ := envelope["schema"].(string)
+	if !ValidSchema(schema) {
+		return nil, fmt.Errorf("schema inconnu ou major non supporté : %q (attendu : %s)", schema, ContractSchema)
+	}
+
+	state := &State{Schema: schema}
+	state.GeneratedAt, _ = envelope["generated_at"].(string)
+	if n, ok := envelope["ttl_seconds"].(json.Number); ok {
+		if ttl, err := n.Int64(); err == nil {
+			state.TtlSeconds = ttl
+		}
+	}
+
+	// Portée absente (enveloppe tronquée) → liste vide, jamais nil.
+	state.Machine = scopeItems(envelope, "machine")
+	state.Session = scopeItems(envelope, "session")
+	state.MachineUser = scopeItems(envelope, "machine_user")
+
+	return state, nil
+}
+
+func scopeItems(envelope map[string]any, scope string) []any {
+	if items, ok := envelope[scope].([]any); ok {
+		return items
+	}
+
+	return []any{}
+}
+
+// ReportItem est une entrée `items[]` du rapport §6. Le hash est OPAQUE :
+// échoué tel quel depuis l'état serveur, jamais recalculé.
+type ReportItem struct {
+	Type   string `json:"type"`
+	Status string `json:"status"`
+	Hash   string `json:"hash"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// report est le payload `POST /report` (§6). Struct (ordre de clés stable
+// pour le debug) — le rapport est du transport, PAS une entrée du hasher.
+type report struct {
+	Schema       string            `json:"schema"`
+	GeneratedAt  string            `json:"generated_at"`
+	AgentVersion string            `json:"agent_version"`
+	Workstation  reportWorkstation `json:"workstation"`
+	Items        []ReportItem      `json:"items"`
+}
+
+type reportWorkstation struct {
+	Hostname string `json:"hostname"`
+	UUID     string `json:"uuid"`
+}
+
+// BuildReport construit le payload JSON de `POST /report`.
+//
+// RÈGLE HOSTNAME (defer review 24.1 #8, résolu 24.2 — CONSERVÉ en Go) :
+// hostname DOIT être le nom COURT du poste (sans domaine) — le serveur le
+// compare à workstations.name et loggue `agent.report.identity_mismatch` en
+// cas de divergence. uuid = UUID SMBIOS envoyé VERBATIM (vide admis : champ
+// déclaratif, l'identité réelle est le token) — la normalisation minuscules
+// est côté serveur.
+//
+// Story 24.5 : items est TOUJOURS vide (handlers → 24.6) — `items: []` est
+// valide côté serveur (AC9 24.1). Un slice nil est sérialisé `[]`, jamais
+// `null`.
+func BuildReport(hostname, uuid string, items []ReportItem, now time.Time) ([]byte, error) {
+	if hostname == "" {
+		return nil, fmt.Errorf("rapport : hostname vide")
+	}
+	if items == nil {
+		items = []ReportItem{}
+	}
+
+	return marshalCompactJSON(report{
+		Schema:       ContractSchema,
+		GeneratedAt:  now.UTC().Format(time.RFC3339),
+		AgentVersion: Version,
+		Workstation:  reportWorkstation{Hostname: hostname, UUID: uuid},
+		Items:        items,
+	})
+}
+
+// marshalCompactJSON sérialise du JSON de TRANSPORT (rapport) : compact, sans
+// échappement HTML, sans '\n' final. Rien à voir avec la forme canonique du
+// hasher (Canonicalize) — ce JSON n'est jamais hashé.
+func marshalCompactJSON(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+}

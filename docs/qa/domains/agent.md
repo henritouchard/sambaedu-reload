@@ -2,7 +2,15 @@
 
 **Domaine** : canal agent desired-state (Epics 23/24) — enrôlement/token per-poste, état cible compilé, rapports de conformité, stockage D3, purges.
 
-**Stories couvertes** : 24.1 (`POST /api/v1/agent/report` — ingestion et stockage des rapports), 24.2 (agent squelette Windows — boucle check-in/cache/report), 24.3 (compagnon de session — fetch SYSTEM `?user=` + processus user, login jamais bloquant), 24.4 (handlers wallpaper + overlay — route assets, convergence réelle, mode default, drop session ; **la démo live du gate palier 1**). _L'Epic 23 (contrat, token, enrôlement, GET /state) a été validé e2e par Henri le 2026-06-11 (curl/jq + install iPXE réelle) — ses scénarios seront rapatriés ici au fil des stories 24.x si besoin de re-jeu._
+**Stories couvertes** : 24.1 (`POST /api/v1/agent/report` — ingestion et stockage des rapports), 24.2 (agent squelette Windows — boucle check-in/cache/report), 24.3 (compagnon de session — fetch SYSTEM `?user=` + processus user, login jamais bloquant), 24.4 (handlers wallpaper + overlay — route assets, convergence réelle, mode default, drop session ; **la démo live du gate palier 1**), 24.5 (agent **Go** — core de convergence, service SYSTEM natif, build signé Authenticode ; remplace le service PS de 24.2 → Section 5). _L'Epic 23 (contrat, token, enrôlement, GET /state) a été validé e2e par Henri le 2026-06-11 (curl/jq + install iPXE réelle) — ses scénarios seront rapatriés ici au fil des stories 24.x si besoin de re-jeu._
+
+> **Bascule Go (24.5)** : les scénarios 2.2/2.3 (service PowerShell) sont
+> **historiques** depuis le retrait des `.ps1` de 24.2 — leur équivalent sur
+> le binaire Go est la **Section 5**. Les scénarios 3.x/4.x (compagnon PS,
+> handlers) restent joués sur les artefacts PS 24.3/24.4 encore au repo, mais
+> le chemin de session PS est **cassé en lab** depuis 24.5 (dot-source de
+> `SambaEduAgent.ps1` retiré) — casse temporaire assumée jusqu'au portage Go
+> 24.6 (décision story 24.5, pas d'état transitoire).
 
 **Code de référence** :
 - `app/Http/Controllers/Api/V1/Agent/ReportController.php` — controller mince POST /report
@@ -17,6 +25,7 @@
 - `app/Http/Controllers/Api/V1/Agent/AssetController.php` — serving binaire des assets wallpaper (24.4, route `agent.v1.assets.wallpaper`)
 - `agent/shared/ConvergenceEngine.ps1` + `agent/windows/handlers/{Wallpaper,Overlay}.ps1` — moteur de convergence (mode default §5) + handlers session 24.4
 - `docs/agent/handlers-wallpaper-overlay.md` — handlers/assets/drop vus serveur (conventions de hash, limitations MVP)
+- `agent/{go.mod,shared/,windows/,build/build.sh}` — agent **Go** 24.5 : cœur OS-agnostique (StateHasher croisé golden files, rotation D5/grâce/quarantaine/backoff, cache atomique), service SYSTEM `x/sys/windows/svc` (sous-commandes `install`/`uninstall`/`run`/`version`), build statique signé osslsigncode — décision techno et contrats locaux dans `agent/README.md`
 
 ---
 
@@ -319,6 +328,111 @@ Depuis la **session user** (non admin) du poste :
 
 ---
 
+## Section 5 — Boucle agent Go : core, service SYSTEM, build signé (Story 24.5)
+
+> Les invariants serveur sont INCHANGÉS par la bascule Go (mêmes tests CI
+> `AgentSkeletonE2eTest`, `--filter Agent` = 206 passed). Côté agent, le gate
+> CI local est `go test ./...` (hôte) : StateHasher croisé golden files (hash
+> figé `6c0e8135…`), rotation D5/grâce/quarantaine/backoff sur `httptest`.
+> Cette section est le e2e **avec le vrai binaire** sur le poste lab
+> (windoobe, ws 49). Pré-requis : poste enrôlé 23.3, binaire produit par
+> `agent/build/build.sh` (signé — cf. `agent/README.md` §Signature).
+
+### Scénario 5.1 — Build signé reproductible (hôte)
+
+1. Sur l'hôte : `cd agent && go test ./...` puis
+   `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...` → tout vert.
+2. Build de production :
+   ```bash
+   CODESIGN_PFX=<sambaedu-codesign.pfx> CODESIGN_CA=<ca-root.crt> agent/build/build.sh
+   ```
+3. Observer la sortie : build statique → signature osslsigncode →
+   `osslsigncode verify` intégré.
+
+**Attendu** : `Signature verification: ok` + chaîne remontant à la CA interne
+SambaEdu ; artefact `agent/build/dist/sambaedu-agent-<version>.exe` (non
+versionné) ; le build REFUSE de produire sans `CODESIGN_PFX` (sauf
+`ALLOW_UNSIGNED=1`, jamais déployable).
+
+### Scénario 5.2 — Installation du service Go sur le poste lab
+
+1. Si le service PS du spike est encore installé : le retirer
+   (`Uninstall-SambaEduAgent.ps1` du bundle 24.2-24.4 — supprime service +
+   tâches planifiées, conserve token/cache).
+2. Copier le binaire signé vers `C:\Program Files\SambaEdu\Agent\agent.exe`,
+   puis en admin :
+   ```powershell
+   & 'C:\Program Files\SambaEdu\Agent\agent.exe' install -server-url 'http://<serveur-se5>'
+   ```
+3. Vérifier sur le poste : `Get-Service SambaEduAgent` → Running (compte
+   LocalSystem, démarrage automatique, relance 30 s — `sc.exe qfailure
+   SambaEduAgent`) ; `Get-AuthenticodeSignature 'C:\Program
+   Files\SambaEdu\Agent\agent.exe'` → **Valid** ; aucun blocage
+   SmartScreen/politique d'exécution ; `agent.exe version` → `2.0.0`.
+4. Vérifier `C:\ProgramData\SambaEdu\Agent\` : `config.json` posé,
+   `cache\state.json` + `cache\etag.txt` + `applied-state.json` (`{}`)
+   présents après le 1er cycle, ACL SYSTEM+Administrators sans héritage
+   (`icacls`), log `logs\agent.log` au format `[ISO 8601] [LEVEL]`.
+
+**Attendu** : service SYSTEM natif (AUCUN wrapper compilé, aucun
+powershell.exe résident), boucle fermée dans le log (`GET /state -> 200` puis
+`POST /report -> 200 : rapport accepté, boucle fermée.`).
+
+### Scénario 5.3 — Check-in visible serveur (rapport Go discernable)
+
+1. Sur la VM après le 1er cycle :
+   ```bash
+   php artisan tinker --execute="
+     \$ws = App\Models\Workstation::where('name', '<NOM-COURT>')->first();
+     echo \$ws->agent_last_checkin_at;"
+   grep agent.report.received storage/logs/agent*.log | tail
+   ```
+
+**Attendu** : `agent_last_checkin_at` rafraîchi ; `agent.report.received`
+avec counts à zéro (items `[]` jusqu'à 24.6) ; **zéro**
+`identity_mismatch` (hostname court) ; le payload rapporté porte
+`agent_version: 2.0.0` (lignée Go — un `1.x` = vieux spike PS encore actif
+quelque part).
+
+### Scénario 5.4 — Résilience du binaire Go (backoff, quarantaine, rotation)
+
+1. **Backoff** : couper le réseau du poste (ou arrêter Apache) → `agent.log`
+   montre `Serveur injoignable … Prochain essai dans 30 s` puis 60, 120…
+   plafonné 3600 ; aucun crash (`Get-Service` reste Running), reprise propre
+   au retour du serveur.
+2. **Quarantaine** : en Tinker
+   `app(App\Services\Agent\Enrollment\TokenRotationService::class)->quarantine($ws, 'qa')`
+   → au cycle suivant `agent.log` indique le passage en check-ins légers ;
+   plus aucun `agent.report.received` côté serveur mais `agent_last_checkin_at`
+   continue d'avancer. Lever (`agent_quarantined_at = null`) → `Quarantaine
+   levée par le serveur` + reprise du rapport au check-in suivant.
+3. **Rotation D5** : en SQL, vieillir `agent_token_rotated_at` de 31 jours →
+   au cycle suivant `agent.log` montre `Rotation token reçue` ; le fichier
+   `token` a changé (64 hex sans newline, ACL intactes) ; le cycle d'après
+   s'authentifie sans 401.
+4. **401 irrécupérable** : révoquer le token (UI 23.x ou SQL) → `agent.log`
+   trace `401 irrécupérable … ARRÊT du service` ; le service s'arrête
+   PROPREMENT (pas de boucle de relance SCM — la relance 30 s ne vaut que
+   pour les crashs) ; **jamais de re-enrôlement automatique**.
+
+**Attendu** : les quatre comportements ci-dessus, identiques au contrat
+24.2 — la bascule Go est invisible du serveur.
+
+### Scénario 5.5 — Désinstallation conservatrice
+
+1. `agent.exe uninstall` → service supprimé, `C:\ProgramData\SambaEdu\Agent\`
+   intact (token/cache/logs).
+2. Réinstaller (`agent.exe install …`) → reprise immédiate sans re-enrôlement
+   (ETag du cache réutilisé : `agent.state.not_modified` possible côté
+   serveur).
+3. (Optionnel, destructif) `agent.exe uninstall -purge` → données effacées,
+   re-enrôlement iPXE requis.
+
+**Attendu** : par défaut les données d'enrôlement survivent à la
+désinstallation (iso-24.2).
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Defer review 23.1 (résolu en 24.1)** : le scénario 1.4 (body forgé → 4xx jamais 500) existe parce qu'un `StateHasher` appelé sur l'entrée agent pouvait lever une `JsonException` non catchée (UTF-8 invalide / NAN / INF). L'ingestion ne hashe JAMAIS le payload agent.
@@ -348,3 +462,8 @@ Depuis la **session user** (non admin) du poste :
 - [ ] 4.4 — mode default : fond changé à la main → drifted_allowed NON réappliqué ; nouvelle cible UI → drift appliqué
 - [ ] 4.5 — erreur isolée : error+detail pour le type en échec, les autres continuent ; drop forgé rejeté + validation stricte
 - [ ] 4.6 — boucle stable : reported_at avance, zéro événement sur rapports identiques
+- [ ] 5.1 — build Go signé : go test + cross-compile verts, osslsigncode verify ok, refus sans PFX
+- [ ] 5.2 — service Go installé poste lab : SYSTEM natif, signature Valid, boucle fermée, ACL/contrats locaux intacts
+- [ ] 5.3 — check-in serveur : agent_last_checkin_at + received counts zéro, agent_version 2.0.0, zéro identity_mismatch
+- [ ] 5.4 — résilience Go : backoff 30→3600, quarantaine check-ins légers + levée auto, rotation D5, 401 = arrêt propre
+- [ ] 5.5 — uninstall conservateur (données gardées), -purge destructif explicite

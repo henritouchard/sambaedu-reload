@@ -134,13 +134,13 @@ FR13: Epic 23 - Rotation intervalle + recouvrement (D5)
 FR14: Epic 23 - Révocation par événement
 FR15: Epic 23 - Anti-clonage → alerte + quarantaine
 FR16: Epic 23 (porte 1 iPXE) + Epic 25 (porte 2 migrés + approbation un-clic)
-FR17: Epic 24 - Service SYSTEM + compagnon de session, cache local
-FR18: Epic 24 - Boucle test/apply/report idempotente, isolée, séquentielle
-FR19: Epic 24 - Mode default → drifted_allowed (persistance dernier-appliqué — gap 1, spécifié au contrat en Epic 23)
-FR20: Epic 24 - Handlers MVP wallpaper + overlay
+FR17: Epic 24 - Service SYSTEM + compagnon de session, cache local → 24.5 (SYSTEM/Go) + 24.6 (compagnon/Go)
+FR18: Epic 24 - Boucle test/apply/report idempotente, isolée, séquentielle → 24.5 (moteur Go)
+FR19: Epic 24 - Mode default → drifted_allowed (persistance dernier-appliqué — gap 1, spécifié au contrat en Epic 23) → 24.6 (Go)
+FR20: Epic 24 - Handlers MVP wallpaper + overlay → 24.6 (Go)
 FR21: Epic 27 - Handlers palier 2, bascule du simple au dur
-FR22: Epic 24 - Résilience canal (backoff, 401/403)
-FR23: Epic 24 - Cadence timer 60 min + jitter (D7)
+FR22: Epic 24 - Résilience canal (backoff, 401/403) → 24.5 (Go)
+FR23: Epic 24 - Cadence timer 60 min + jitter (D7) → 24.5 (Go)
 FR24: Epic 25 - Distribution binaires signés + manifest + rings (D6)
 FR25: Epic 25 - Bootstrap GPO figé = filet éternel
 FR26: Epic 25 - UI parc-settings/agent (+ toggle strict/défaut exposé au fil de l'eau en Epic 27)
@@ -319,6 +319,13 @@ afin de diagnostiquer l'état attendu de n'importe quel poste et permettre des c
 
 L'admin change un wallpaper dans l'UI, le poste de lab converge, le rapport remonte, l'écart se voit. **Critère de complétude de l'epic = la démo live répétable** (UI → état → agent → rapport → UI) — le MVP du brief.
 
+> **Note bascule Go (course-correction 2026-06-12)** : le prototype PowerShell
+> (24.2/24.3/24.4, superseded) a validé la boucle et le modèle 2-process.
+> L'agent de production est en **Go** : core+service SYSTEM (24.5), compagnon+
+> handlers (24.6). La démo palier 1 (24.7) est jouée sur le binaire Go signé —
+> frontière de confiance et signature réelles. Aucune double implémentation
+> conservée (pas d'état transitoire).
+
 ### Story 24.1 : POST /api/v1/agent/report — ingestion et stockage des rapports
 
 En tant qu'admin d'établissement,
@@ -368,7 +375,10 @@ afin de valider la boucle réseau complète avant tout handler.
 **And** `agent/build/` produit un artefact **signé dès ce premier prototype** (CA interne, racine déployée par l'install).
 
 **Given** la décision techno (gate PoC P2)
-**Then** le choix (binaire autonome, .NET, PowerShell…) est documenté dans `agent/README.md` contre le cahier des charges des 7 contraintes — un démarrage PowerShell jetable est admis, le choix définitif étant requis avant l'Epic 25 (premier déploiement hors lab).
+**Then** [Story 24.2 requalifiée — spike de dérisquage PowerShell, superseded par 24.5
+(Go). Le démarrage PowerShell a validé la boucle réseau ; le choix définitif
+est acté : **Go** (mémoire project_agent_runtime_go, 2026-06-11), implémenté
+en 24.5/24.6. Le `.ps1` est retiré à la bascule Go.]
 
 ### Story 24.3 : Compagnon de session — portée user, login jamais bloquant
 
@@ -413,7 +423,67 @@ afin de voir le modèle fonctionner sur les premières ressources réelles.
 **Then** statut `error` + détail rapportés, les autres handlers et le rapport continuent (isolation)
 **And** l'exécution est séquentielle dans l'ordre du payload serveur.
 
-### Story 24.5 : Conformité visible — l'état rapporté dans les pages parc + forcer la synchro
+### Story 24.5 : Agent Go — core de convergence, service SYSTEM, build signé
+
+En tant que mainteneur SambaEdu,
+je veux le cœur de l'agent réécrit en Go (boucle, hash, cache, résilience, build signé) tournant en service SYSTEM,
+afin de disposer de l'artefact de production réel, signable et déployable, en lieu et place du prototype PowerShell.
+
+**Acceptance Criteria:**
+
+**Given** le repo `agent/`
+**Then** le code Go vit sous `agent/` (`shared/` = boucle test/apply/report + parsing du contrat + `StateHasher` Go ; `windows/` = service SYSTEM), jamais dans `app/`
+**And** les `.ps1` de 24.2 (squelette, compagnon) sont **retirés** une fois leur équivalent Go vert — aucune double implémentation au repo (l'historique git garde la trace).
+
+**Given** un poste de lab enrôlé (token de 23.3)
+**When** le service SYSTEM Go démarre (boot) puis à chaque timer (60 min + jitter ±10 %, configurable)
+**Then** il appelle `GET /state` avec `If-None-Match`, met en cache local le dernier état connu (fichiers sous ACL SYSTEM), envoie son rapport (portée machine).
+
+**Given** `StateHasher`
+**Then** l'agent Go reproduit l'algorithme de 23.1 **à l'identique** (ksort SORT_STRING récursif, NFC, zéro float, `generated_at` exclu) et le valide contre les golden files `tests/Fixtures/Agent/` — tests croisés serveur/agent ; l'agent compare des hashes opaques, il ne recalcule jamais depuis sa propre sérialisation.
+
+**Given** le serveur injoignable
+**Then** l'agent fonctionne sur son dernier état en cache, backoff exponentiel plafonné au timer.
+
+**Given** un 401 pendant une rotation
+**Then** tentative avec l'ancien token ; sinon arrêt + log local (jamais de re-enrôlement silencieux).
+**Given** un 403 quarantaine
+**Then** l'agent cesse de converger mais poursuit des check-ins légers.
+
+**Given** le build
+**Then** `agent/build/` produit un **binaire Go statique unique**, cross-compilé Windows, **signé Authenticode** (CA interne, racine déployée par l'install), zéro dépendance runtime exotique (NFR6)
+**And** `agent/README.md` documente la décision **Go** contre le cahier des **7 contraintes** (service SYSTEM + compagnon, artefact signable, ACL SYSTEM, auto-update fiable, cœur partageable, zéro dépendance exotique, empreinte discrète) — gate techno (ex-PoC P2) **résolu**.
+
+### Story 24.6 : Agent Go — compagnon de session, handlers wallpaper/overlay, parité démo
+
+En tant qu'admin d'établissement (et prof/élève côté session),
+je veux le compagnon de session et les handlers wallpaper/overlay en Go, convergents et idempotents,
+afin que la boucle complète tourne sur le binaire de production et que la démo palier 1 soit jouée pour de vrai.
+
+**Acceptance Criteria:**
+
+**Given** un logon utilisateur
+**When** le compagnon de session Go démarre
+**Then** l'ouverture de session n'attend RIEN du réseau (convergence `session`/`machine_user` asynchrone après ouverture) ; le compagnon tourne aux droits de la session (pas SYSTEM) et ne peut pas modifier les fichiers de l'agent (frontière de confiance) ; le `.ps1` du compagnon de 24.3 est retiré une fois ce handler vert.
+
+**Given** l'état cible contient un item `wallpaper` (biblio d'assets, maille résolue)
+**When** la boucle exécute `test` puis `apply` si écart
+**Then** le fond d'écran correspond à l'asset cible (`SystemParametersInfo` via FFI Win32, ou shell-out PowerShell documenté si un cas le justifie), `apply` idempotent, statut rapporté.
+
+**Given** l'item `overlay`
+**When** le handler s'exécute
+**Then** l'agent Go écrit `overlay.json` local (il DEVIENT le fetch du POC) — Rainmeter/Conky inchangés, l'overlay affiche identité user + parc.
+
+**Given** un item en mode `default` dont l'état réel a été modifié par un humain (réel ≠ cible ∧ dernier-appliqué = cible)
+**Then** le handler ne réapplique PAS et rapporte `drifted_allowed` (persistance du dernier état appliqué par item, contrat 23.1).
+
+**Given** un handler qui échoue
+**Then** statut `error` + détail rapportés, les autres handlers et le rapport continuent (isolation), exécution séquentielle dans l'ordre du payload serveur.
+
+**Given** l'agent Go complet (24.5 + 24.6)
+**Then** la convergence est démontrable de bout en bout (changer le wallpaper d'un parc dans l'UI → le poste de lab converge → le rapport remonte, vérifiable curl/jq iso-Epic 23) — le bouclage visuel UI complet est scellé par 24.7 (gate palier 1).
+
+### Story 24.7 : Conformité visible — l'état rapporté dans les pages parc + forcer la synchro
 
 En tant qu'admin d'établissement,
 je veux voir l'état rapporté de mes postes là où je gère déjà mon parc, et pouvoir forcer une synchro,
@@ -441,6 +511,10 @@ afin de détecter un écart sans me déplacer — et fermer la boucle de la dém
 On passe d'UN poste de lab à UN PARC : releases par rings, auto-update, « la dernière GPO de l'histoire » comme bootstrap/filet, enrôlement des postes migrés. Prérequis de tout déploiement hors lab (NFR8). Gap 3 résolu ici.
 
 ### Story 25.1 : Releases serveur — binaires signés, manifest, rings = WorkstationGroups
+
+> **Dépendance amont** : le binaire signé déposé dans storage/agent/releases/
+> est produit par les stories 24.5 (build signé Authenticode) + 24.6 (binaire
+> complet). 25.1 le distribue, ne le crée pas.
 
 En tant que mainteneur SambaEdu,
 je veux publier des versions de l'agent ciblées par ring,

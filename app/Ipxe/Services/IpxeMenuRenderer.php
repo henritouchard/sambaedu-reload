@@ -558,7 +558,9 @@ final class IpxeMenuRenderer
         $lines = [];
         $lines[] = 'iseq ${platform} efi && goto uefi || goto legacy';
         $lines[] = ':uefi';
-        $lines[] = 'exit 1 || sleep 100';
+        // sanboot bypasse le boot order UEFI (evite les timeouts PXEv4/PXEv6/HTTP avant le disque).
+        // exit 0 en fallback si le firmware ne supporte pas sanboot en mode UEFI.
+        $lines[] = 'sanboot --no-describe --drive 0x80 || exit 0 || sleep 100';
         $lines[] = ':legacy';
         // Set sp = espace (iPXE n'accepte pas les espaces inline dans iseq).
         $lines[] = 'set sp:hex 20 && set sp ${sp:string}';

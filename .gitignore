@@ -78,3 +78,9 @@ Desktop.ini
 *.bak
 
 /sambaedu
+
+# Agent Go (story 24.5) : artefacts de build non versionnés (convention
+# storage — le binaire de prod sera déposé dans storage/agent/releases/ par
+# 25.1) ; jamais de PFX/clé privée dans le repo.
+/agent/build/dist/
+*.pfx

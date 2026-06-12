@@ -212,6 +212,16 @@ le config-as-code Linux existant le fait en bash).
 7. **Empreinte discrète** : poll HTTP + actions locales — pas de besoin
    de perfs particulières ; la simplicité d'opération prime.
 
+> **Addendum 2026-06-12 — gate techno résolu : Go.** La décision reportée
+> (PoC P2) est tranchée : l'agent est écrit en **Go** (binaire statique unique,
+> cross-compile Windows/Linux, signé Authenticode). Rationale : Windows iso-legacy
+> = Win32 plat (registre + SystemParametersInfo + spawn process) où Go n'a aucun
+> handicap ; mainteneurs non-devs = un seul binaire lisible ; le vrai argument =
+> binaire sans runtime sur parc hétérogène non managé. Réévaluer Rust uniquement
+> si l'Epic 27 entre dans COM/WinRT (IShellLink, Task Scheduler COM, PackageManager
+> WinRT) — échappatoire intermédiaire = shell-out PowerShell depuis l'agent Go.
+> Implémenté en stories 24.5/24.6. Réf. mémoire project_agent_runtime_go.
+
 **Note :** le PoC P2 (premier handler wallpaper en lab) est l'endroit
 naturel pour trancher — il peut démarrer en PowerShell jetable pour
 valider la boucle, le choix définitif étant requis avant le premier
