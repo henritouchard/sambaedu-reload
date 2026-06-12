@@ -96,8 +96,11 @@ Channel `agent`, actions `agent.release.*` : `created` (info) / `rejected`
 (warning + raison machine) / `promoted` (info) / `targeted` (info) /
 `ring_conflict` (warning — uniquement si releases distinctes) /
 `manifest_served` (**debug** — un par check-in, volumétrie NFR4) /
-`no_release` (debug) / `download_served` (info — un par téléchargement,
-parité `agent.asset.served`) / `download_not_found` (info) /
+`no_release` (debug) / `download_served` (**debug** — un téléchargement
+n'est qu'un préalable sans garantie : la trace de déploiement qui fait foi
+est la **version rapportée par l'agent au check-in**, contrat 25.2 — version
+dans chaque rapport, échec d'update rapporté au serveur) /
+`download_not_found` (info — l'anomalie, elle, reste visible) /
 `releases_path_missing` (warning — `releases_path` absent/illisible :
 distingue côté ops « config cassée, parc entier en 404 » de « release
 inconnue » ; la réponse client reste le 404 indistinct). Toujours

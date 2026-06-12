@@ -124,7 +124,12 @@ class ReleaseController extends Controller
             return $this->notFound($workstation, $filename);
         }
 
-        Log::channel('agent')->info('[ReleaseController] agent.release.download_served', [
+        // Debug (décision review 25.1 #4) : un téléchargement n'est qu'un
+        // préalable sans garantie — la trace de déploiement qui FAIT FOI est
+        // la version rapportée par l'agent au check-in (25.2 : version dans
+        // chaque rapport, échec d'update rapporté). Pas de pic info au
+        // rollout d'un ring.
+        Log::channel('agent')->debug('[ReleaseController] agent.release.download_served', [
             'action_type' => 'agent.release.download_served',
             'workstation_id' => $workstation->id,
             'version' => $release->version,

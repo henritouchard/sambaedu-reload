@@ -128,7 +128,10 @@ class ReleaseCreationService
 
         $release = DB::transaction(function () use ($version, $filename, $declaredHash, $stable): AgentRelease {
             if ($stable) {
-                // Invariant « au plus une stable » : swap transactionnel.
+                // Invariant « au plus une stable » : swap transactionnel,
+                // sérialisé par verrou (review 25.1 #1 — deux publications
+                // simultanées passent l'une après l'autre, jamais 2 stables).
+                $this->lockStablePointer();
                 AgentRelease::query()->where('is_stable', true)->update(['is_stable' => false]);
             }
 
@@ -163,6 +166,7 @@ class ReleaseCreationService
         }
 
         DB::transaction(function () use ($release): void {
+            $this->lockStablePointer();
             AgentRelease::query()
                 ->where('is_stable', true)
                 ->whereKeyNot($release->getKey())
@@ -225,6 +229,20 @@ class ReleaseCreationService
         ]);
 
         return ReleaseOperationException::rejected($reason, $message);
+    }
+
+    /**
+     * Sérialise les écritures du pointeur stable (review 25.1 #1). Un
+     * lockForUpdate sur les lignes stables ne suffit pas (phantom : deux
+     * create --stable sans stable existante ne se verraient pas) — verrou
+     * advisory PG lié à la transaction. SQLite (tests) sérialise déjà
+     * toutes les écritures : no-op.
+     */
+    private function lockStablePointer(): void
+    {
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::select("SELECT pg_advisory_xact_lock(hashtext('agent_releases.stable'))");
+        }
     }
 
     private function releasesPath(): string
