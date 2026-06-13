@@ -270,3 +270,60 @@ jamais l'état de sa demande.
 | `agent.enroll.enrolled` | info | Token né à la consommation d'une demande approuvée (`gate = 2`) |
 
 Jamais de token/hash en clair, jamais de preuve sensible excédant le faisceau.
+
+## 10. Porte 2 — le client agent (Story 25.4, Fork 1 = B)
+
+La porte 2 serveur (§9, Story 25.3) est consommée par **l'agent Go lui-même**
+sur le chemin migré : un poste installé par la GPO-dispatcher figée
+(`se4_agent_bootstrap`) ou réparé reçoit le service **sans token**, puis
+s'auto-enrôle.
+
+### 10.1 Garde d'install relâchée
+
+`agent.exe install` n'exige **plus** un token présent
+(`agent/windows/install_windows.go`). L'install procède sans token : config,
+arborescence, ACL, enregistrement SCM. Conséquence bénigne — sans token, le run
+loop ne converge pas, il **demande** son enrôlement. Sur un poste **déjà
+enrôlé** dont l'agent est briqué, la réinstall **conserve** le token (hors
+périmètre install) → convergence directe, **jamais** de ré-enrôlement.
+
+### 10.2 Branche « token absent » du run loop
+
+À chaque cycle, `runCycle` (`agent/shared/loop.go`) teste la présence du fichier
+token (`Store.TokenExists()`) :
+
+- **token présent** → flux nominal **inchangé** (GET /state / POST /report /
+  rotation D5) ;
+- **token absent** → `runEnrollment` : faisceau `{uuid, mac, hostname}`, POST
+  `/api/v1/agent/enrollment` **sans bearer** (`Client.PostNoAuth`), ticket vide.
+
+Un token présent mais **corrompu** reste un échec de cycle (backoff) — **jamais**
+un déclencheur d'auto-enroll (un poste enrôlé ne se ré-enrôle jamais auto, FR22).
+
+### 10.3 Mapping des réponses (client)
+
+Le token de réponse est lu dans le **corps JSON** `{success, token}` (jamais
+dans l'en-tête de rotation D5).
+
+| HTTP | Outcome client | Comportement |
+|---|---|---|
+| 200 `{token}` | `EnrollApproved` | `Store.WriteToken` (atomique + ACL SID), bascule en convergence au cycle suivant ; cadence normale |
+| 403 | `EnrollPending` | Demande enregistrée (ou poste rejeté) → check-ins légers, **cadence normale**, jamais de backoff agressif ni d'escalade |
+| 409 | `EnrollConflict` | Log conflit + check-ins légers, **jamais** de ré-enrôlement automatique silencieux (le serveur tranche) |
+| réseau KO / 5xx / autre | `EnrollError` | Backoff exponentiel (FR22) |
+
+### 10.4 MAC — ancre de rapprochement
+
+Le faisceau porte la **MAC** (`agent/windows/mac_windows.go` : première interface
+active, up, non-loopback, MAC matérielle non vide ; le serveur normalise via
+`MacAddressNormalizer`). Une MAC absente rend la demande **non
+auto-approuvable** (tracée, jamais rapprochée) — on **n'invente jamais** une MAC
+en silence ; le client logge un warning et poste quand même (l'admin peut
+approuver manuellement).
+
+### 10.5 Anti-boucle & poste rejeté
+
+Un cycle qui reçoit 403/409 ne déclenche **aucune** re-tentative immédiate :
+cadence normale (timer + jitter), exactement comme la quarantaine. Un poste
+`rejected` (25.3 décision n° 2) boucle dans le vide — aucune escalade, aucun
+brick : la demande n'est jamais ré-ouverte par un re-POST côté serveur.

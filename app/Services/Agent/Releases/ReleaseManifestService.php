@@ -61,6 +61,42 @@ class ReleaseManifestService
     }
 
     /**
+     * Manifest de la version STABLE, sans aucun poste résolu — chemin
+     * d'amorçage LAN (Story 25.4, AC4). L'appelant (script GPO / WinPE) n'a
+     * pas de token, donc aucun ring à résoudre : on sert TOUJOURS la stable
+     * (`is_stable`), jamais une canari (un poste sans ring retombe déjà sur la
+     * stable côté {@see manifestFor()} — ici on court-circuite la résolution
+     * par ring qui exigerait un Workstation).
+     *
+     * Même tie-break que {@see manifestFor()} (review 25.1 #1 :
+     * `orderByDesc('id')` — déterminisme si l'invariant single-stable est cassé
+     * par une écriture concurrente). Null si aucune stable publiée → le
+     * controller répond 404 `no_release`.
+     *
+     * @return array{version: string, hash: string, url: string}|null
+     */
+    public function stableManifest(): ?array
+    {
+        $release = AgentRelease::query()
+            ->where('is_stable', true)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($release === null) {
+            return null;
+        }
+
+        return [
+            'version' => $release->version,
+            'hash' => $release->hash,
+            // URL ABSOLUE de l'endpoint d'amorçage (piège n° 6 — iso 25.1,
+            // jamais un chemin relatif ni figé en DB). URL FIXE : le binaire
+            // stable est résolu côté serveur, le filename ne transite pas.
+            'url' => route('agent.v1.stable.download'),
+        ];
+    }
+
+    /**
      * Release ciblée par les rings du poste — récence (décision n° 4),
      * tie-break id desc (déterminisme : les timestamps SQLite/PG peuvent
      * coïncider à la seconde). Un ring orphelin (release manquante — état

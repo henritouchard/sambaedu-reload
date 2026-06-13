@@ -16,16 +16,19 @@ import (
 // démarrage automatique, relance 30 s sur crash. Idempotent : un service
 // existant est arrêté/supprimé puis recréé (iso-PS).
 //
-// Pré-requis : poste enrôlé (token 23.3 présent) — garde identique au spike.
+// Story 25.4 (Fork 1 = B) : la garde « token présent » est RELÂCHÉE. L'install
+// procède SANS token — c'est le chemin du poste migré (GPO-dispatcher figée),
+// qui n'a pas encore de token : il s'auto-enrôle (porte 2) une fois le service
+// posé. La suppression de la garde est bénigne : sans token, le run loop ne
+// converge pas (il poste sa demande d'enrôlement + check-ins légers), il ne se
+// brique jamais. La config/arborescence/ACL/SCM restent écrites à l'identique.
+// Sur un poste DÉJÀ enrôlé dont l'agent est briqué, la réinstall CONSERVE le
+// token (hors périmètre install, piège n° 11) → convergence directe.
+//
 // Le binaire doit être exécuté depuis son emplacement DÉFINITIF (recommandé :
 // C:\Program Files\SambaEdu\Agent\agent.exe) : le SCM enregistre ce chemin.
 func installService(serverURL string, intervalSeconds int) error {
 	store := &shared.Store{SetACL: setAgentACL}
-
-	// Garde : le poste doit être enrôlé (chaîne iPXE 23.3).
-	if _, err := store.ReadToken(); err != nil {
-		return fmt.Errorf("%w — installation interrompue (le poste n'est pas enrôlé ?)", err)
-	}
 
 	// Config locale (format 24.2 conservé) + arborescence cache/applied-state.
 	if err := store.WriteConfig(shared.Config{ServerURL: serverURL, IntervalSeconds: intervalSeconds}); err != nil {

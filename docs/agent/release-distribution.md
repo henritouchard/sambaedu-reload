@@ -111,3 +111,39 @@ dans l'`url` du manifest, le filename est alors **percent-encodé**
 (`2.1.2+r1` → `sambaedu-agent-2.1.2%2Br1.exe`). Le serveur décode à la
 réception (vérifié) ; l'agent doit décoder avant toute comparaison littérale
 filename ↔ version. Sans objet pour le semver simple produit par le build.
+
+## Endpoints d'amorçage LAN (Story 25.4 — non authentifiés)
+
+Les deux chemins d'installation de l'agent (GPO-dispatcher figée pour les
+postes migrés, unattend iPXE pour les postes neufs) tournent **avant** que
+l'agent ait un token. Ils ne peuvent donc pas passer par les endpoints
+ci-dessus (derrière `agent.token`). Trois endpoints **non authentifiés**,
+chaîne middleware iso `/v1/agent/enrollment` (`local.request` LAN-only +
+`auth.v1.secure-headers` + `throttle:60,1`), **hors** du groupe `agent.token`
+(`app/Http/Controllers/Api/V1/Agent/BootstrapController.php`) :
+
+| Méthode | URI | Route | Réponse |
+|---|---|---|---|
+| GET | `/api/v1/agent/stable` | `agent.v1.stable` | Manifest stable `{success, version, hash, url}` (URL **absolue**, FIXE) ; 404 `no_release` si aucune stable |
+| GET | `/api/v1/agent/stable/download` | `agent.v1.stable.download` | Binaire **stable** (octet-stream). URL FIXE : la résolution du filename est interne (jamais un input client). Confinement realpath iso 25.1, 404 indistinct |
+| GET | `/api/v1/agent/ca` | `agent.v1.ca` | Racine CA en PEM (`text/plain`) ; **503** si la PKI n'est pas initialisée (`php artisan auth:ca:init`), jamais 500 |
+
+**Résolution forcée stable** : l'appelant n'a pas de token, donc aucun ring à
+résoudre — `ReleaseManifestService::stableManifest()` sert **toujours** la
+`is_stable` (jamais une canari). Une canari publiée ne fuit jamais par ces
+endpoints.
+
+**Frontière `agent_*` + zéro AD (NFR7)** : lecture seule `agent_releases` + le
+`.crt` PKI sur disque ; **aucune** écriture, **aucun** appel
+LdapRecord/Kerberos/samba-tool. Le périmètre de confiance est le réseau
+(`local.request`).
+
+**Intégrité au premier dépôt** : aucun re-signage / re-vérif Authenticode
+côté serveur (décision 25.1). La confiance repose sur (a) le canal LAN/VPN, (b)
+le hash optionnellement vérifié par le script via `/stable`, (c) la signature
+Authenticode validée **ensuite** à chaque auto-update par l'agent (25.2). La
+racine CA est le **prérequis de confiance** déployée par **les deux** chemins.
+
+**Logs (channel `agent`)** : `agent.release.stable_served` (manifest + binaire),
+`agent.ca.served`, `agent.ca.unavailable` (503), `agent.release.stable_not_found`
+(404 indistinct). Jamais de token/hash en clair.

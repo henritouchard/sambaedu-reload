@@ -146,6 +146,9 @@ func newAgent(echo bool) *shared.Agent {
 		Log:              logger,
 		Hostname:         hostname,
 		UUID:             smbiosUUID(logger),
+		// Story 25.4 : ancre MAC du faisceau d'enrôlement porte 2 (auto-enroll
+		// du poste migré). Utilisée seulement quand le token est absent.
+		MAC:              macAddress(logger),
 		Sessions:         enumerateInteractiveSessions,
 		SessionCacheACL:  setSessionCacheACL,
 		SessionReportACL: setSessionReportACL,

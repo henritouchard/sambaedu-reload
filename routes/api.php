@@ -39,6 +39,10 @@ use App\Http\Controllers\Api\V1\Agent\ReportController as AgentReportController;
 use App\Http\Controllers\Api\V1\Agent\AssetController as AgentAssetController;
 // Story 25.1 — Canal agent desired-state : GET /release (manifest) + GET /releases/{filename} (alias iso AgentAssetController).
 use App\Http\Controllers\Api\V1\Agent\ReleaseController as AgentReleaseController;
+// Story 25.4 — Endpoints d'amorçage LAN NON authentifiés (binaire stable + CA)
+// servis aux deux chemins d'installation (GPO-dispatcher figée + unattend iPXE)
+// AVANT que l'agent ait un token. `local.request`, HORS du groupe `agent.token`.
+use App\Http\Controllers\Api\V1\Agent\BootstrapController as AgentBootstrapController;
 // Story 16.13 — Exposition endpoints natifs /api/v1/*
 use App\Http\Controllers\WallpaperController;
 use App\Http\Controllers\OverlayController;
@@ -297,6 +301,43 @@ Route::get('/v1/agent/release', [AgentReleaseController::class, 'manifest'])
 Route::get('/v1/agent/releases/{filename}', [AgentReleaseController::class, 'download'])
     ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
     ->name('agent.v1.release.download');
+
+/*
+|--------------------------------------------------------------------------
+| Story 25.4 — Endpoints d'amorçage LAN (binaire stable + racine CA)
+|--------------------------------------------------------------------------
+| Les deux chemins d'installation de l'agent tournent AVANT tout token : le
+| script GPO-dispatcher figée (poste migré) et l'unattend iPXE (poste neuf)
+| déploient la CA, téléchargent le binaire stable, puis lancent
+| `agent.exe install`. Profil de consommateur iso `/v1/agent/enrollment`
+| (poste sans bearer en install/amorçage) → `local.request` (LAN only) +
+| throttle ; PAS `agent.token`.
+|
+| - `GET /v1/agent/stable`          : manifest stable {version, hash, url}
+|   (url ABSOLUE) ou 404 `no_release`. Résolution FORCÉE sur `is_stable` —
+|   jamais une canari (l'appelant n'a pas de ring).
+| - `GET /v1/agent/stable/download` : binaire stable (octet-stream),
+|   confinement realpath iso `ReleaseController::download()`, 404 indistinct.
+| - `GET /v1/agent/ca`              : racine CA en PEM (text/plain) ; 503 si
+|   la PKI n'est pas initialisée (config serveur incomplète, jamais 500).
+|
+| Frontière `agent_*` + zéro AD (NFR7) : lecture seule `agent_releases` + le
+| `.crt` PKI sur disque ; aucune écriture, aucun appel annuaire. Noms
+| `agent.v1.stable*` / `agent.v1.ca` (les noms `agent.v1.bootstrap.*` ont été
+| supprimés — piège n° 6). Placées ICI, à la FIN du bloc canal agent (après le
+| groupe 16.12), pour la fenêtre 1500 chars de `ScriptsOsNamespaceTest`.
+*/
+Route::get('/v1/agent/stable', [AgentBootstrapController::class, 'stable'])
+    ->middleware(['local.request', 'auth.v1.secure-headers', 'throttle:60,1'])
+    ->name('agent.v1.stable');
+
+Route::get('/v1/agent/stable/download', [AgentBootstrapController::class, 'download'])
+    ->middleware(['local.request', 'auth.v1.secure-headers', 'throttle:60,1'])
+    ->name('agent.v1.stable.download');
+
+Route::get('/v1/agent/ca', [AgentBootstrapController::class, 'ca'])
+    ->middleware(['local.request', 'auth.v1.secure-headers', 'throttle:60,1'])
+    ->name('agent.v1.ca');
 
 /*
 |--------------------------------------------------------------------------

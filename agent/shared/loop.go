@@ -42,6 +42,15 @@ type Agent struct {
 	// (champ déclaratif — l'identité réelle est le token).
 	UUID func() string
 
+	// MAC : fournisseur de l'adresse MAC de l'adaptateur actif, injecté par le
+	// binaire Windows (Story 25.4) — ancre fiable de rapprochement de la
+	// demande d'enrôlement porte 2 (le serveur normalise via
+	// MacAddressNormalizer). nil = MAC vide (la demande reste traçable mais non
+	// auto-approuvable — piège n° 5 : jamais de MAC inventée en silence). N'est
+	// utilisé que sur le chemin d'auto-enroll (token absent) ; le flux nominal
+	// ne l'envoie pas (X-Agent-Mac volontairement non posé, décision 24.2).
+	MAC func() string
+
 	// Sessions : énumérateur des sessions interactives (WTS côté Windows,
 	// liste blanche ^S-1-5-21- + login non vide — Story 24.6). nil = aucun
 	// fetch de session (tests, plateformes sans sessions).
@@ -130,6 +139,15 @@ func (a *Agent) RunCycle(cfg Config) (outcome Outcome) {
 }
 
 func (a *Agent) runCycle(cfg Config) Outcome {
+	// Story 25.4 (Fork 1 = B) : token ABSENT → demande d'enrôlement porte 2,
+	// PAS un échec de cycle. Un poste migré (chemin GPO-dispatcher figée) est
+	// installé sans token : il s'auto-enrôle, puis converge dès l'approbation.
+	// Un token PRÉSENT mais corrompu reste un échec de cycle (backoff) côté
+	// ReadToken ci-dessous — un poste enrôlé ne se ré-enrôle JAMAIS auto (FR22).
+	if !a.Store.TokenExists() {
+		return a.runEnrollment(cfg)
+	}
+
 	// 1. Token relu sur disque À CHAQUE cycle (contrat 23.3).
 	token, err := a.Store.ReadToken()
 	if err != nil {
@@ -278,6 +296,82 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 
 		return OutcomeBackoff
 	}
+}
+
+// runEnrollment : cycle « token absent » — demande d'enrôlement porte 2 (Story
+// 25.4, Fork 1 = B). Construit le faisceau {uuid, mac, hostname}, poste SANS
+// bearer, interprète la réponse serveur (25.3) :
+//
+//   - EnrollApproved : token reçu → écriture ATOMIQUE (ACL SID via Store) ; le
+//     PROCHAIN cycle relira le token et basculera en convergence (GET /state…).
+//     OutcomeOK = cadence normale (pas de spin : la convergence démarre au
+//     cycle suivant) ;
+//   - EnrollPending (403) : demande enregistrée (ou poste rejeté) → check-ins
+//     légers à cadence normale, OutcomeOK, JAMAIS de backoff agressif ni
+//     d'escalade (anti-boucle iso quarantaine) ;
+//   - EnrollConflict (409) : MAC d'un poste déjà enrôlé → log + cadence normale,
+//     OutcomeOK, JAMAIS de ré-enrôlement automatique silencieux ;
+//   - EnrollError : réseau KO / 5xx / réponse inattendue → OutcomeBackoff.
+//
+// Aucune primitive Windows : entièrement testable sur l'hôte (le faisceau vient
+// des providers injectés UUID/MAC + Hostname, le POST passe par le Client HTTP).
+func (a *Agent) runEnrollment(cfg Config) Outcome {
+	identity := EnrollIdentity{
+		UUID:     a.collectUUID(),
+		MAC:      a.collectMAC(),
+		Hostname: a.Hostname,
+	}
+	if identity.MAC == "" {
+		// Piège n° 5 : une demande sans MAC est traçable mais jamais
+		// auto-approuvable (ancre de rapprochement absente). On la poste quand
+		// même (l'admin peut approuver manuellement) mais on le signale.
+		a.Log.Warningf("Demande d'enrôlement porte 2 sans MAC : la demande sera tracée mais non auto-approuvable (rapprochement impossible).")
+	}
+
+	token, outcome := requestEnrollment(a.Client, cfg.ServerURL, identity)
+
+	switch outcome {
+	case EnrollApproved:
+		if err := a.Store.WriteToken(token); err != nil {
+			a.Log.Errorf("Token d'enrôlement reçu mais écriture sur disque en échec : %v — nouvel essai au prochain cycle.", err)
+
+			return OutcomeBackoff
+		}
+		a.Log.Infof("Enrôlement porte 2 approuvé : token écrit sur disque, bascule en convergence au prochain cycle.")
+
+		return OutcomeOK
+	case EnrollPending:
+		a.Log.Infof("Enrôlement porte 2 en attente d'approbation (ou poste non éligible) : check-ins légers, nouvel essai à cadence normale.")
+
+		return OutcomeOK
+	case EnrollConflict:
+		a.Log.Warningf("Enrôlement porte 2 en conflit (l'ancre MAC matche un poste déjà enrôlé) : aucun ré-enrôlement automatique — résolution serveur/admin requise. Check-ins légers.")
+
+		return OutcomeOK
+	default:
+		a.Log.Warningf("Demande d'enrôlement porte 2 en échec (serveur injoignable ou réponse inattendue) : backoff.")
+
+		return OutcomeBackoff
+	}
+}
+
+// collectUUID : UUID SMBIOS verbatim (champ déclaratif) ; chaîne vide admise.
+func (a *Agent) collectUUID() string {
+	if a.UUID == nil {
+		return ""
+	}
+
+	return a.UUID()
+}
+
+// collectMAC : MAC de l'adaptateur actif ; chaîne vide admise (jamais inventée,
+// piège n° 5).
+func (a *Agent) collectMAC() string {
+	if a.MAC == nil {
+		return ""
+	}
+
+	return a.MAC()
 }
 
 // noteServerTtl retient le `ttl_seconds` servi (ignore 0/absent : une

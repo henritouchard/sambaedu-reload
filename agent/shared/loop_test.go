@@ -312,6 +312,11 @@ func TestCycle401Stops(t *testing.T) {
 }
 
 func TestCycleMissingTokenBacksOff(t *testing.T) {
+	// Story 25.4 : token absent → branche d'auto-enrôlement porte 2. Ce fake
+	// serveur ne monte PAS /api/v1/agent/enrollment (404 par défaut du mux) →
+	// la demande échoue (EnrollError) → backoff. L'invariant testé reste : un
+	// token absent ne crashe JAMAIS le cycle (la bascule auto-enroll vivante
+	// est couverte par loop_enroll_test.go).
 	f := newFakeServer(t)
 	agent, store, cfg := newTestAgent(t, f)
 	if err := os.Remove(store.TokenPath()); err != nil {
@@ -319,7 +324,7 @@ func TestCycleMissingTokenBacksOff(t *testing.T) {
 	}
 
 	if outcome := agent.RunCycle(cfg); outcome != OutcomeBackoff {
-		t.Errorf("token absent : backoff (et jamais de crash), got %v", outcome)
+		t.Errorf("token absent + enrôlement injoignable : backoff (et jamais de crash), got %v", outcome)
 	}
 }
 

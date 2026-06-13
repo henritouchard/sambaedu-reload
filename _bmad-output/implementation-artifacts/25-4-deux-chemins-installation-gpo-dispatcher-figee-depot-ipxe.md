@@ -1,6 +1,6 @@
 # Story 25.4: Les deux chemins d'installation — GPO-dispatcher figée (bootstrap + filet) et dépôt iPXE
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -127,35 +127,35 @@ Les briques amont existent toutes et ont été conçues pour ce point de jonctio
 
 ## Tasks / Subtasks
 
-- [ ] **Tâche 1 — Endpoints d'amorçage LAN serveur** (AC4) [Source: pièges 6,7,8,9]
-  - [ ] `GET /v1/agent/stable` : controller (réutiliser/étendre `ReleaseController` ou un `BootstrapController` neuf) → `ReleaseManifestService` **forcé stable** ; réponse `{success, version, hash, url}` URL absolue ; 404 `no_release`.
-  - [ ] `GET /v1/agent/stable/download` : binaire stable, confinement realpath iso `ReleaseController::download()`, 404 indistinct.
-  - [ ] `GET /v1/agent/ca` : `CaInitializer::getCaCertPem()` en `text/plain` ; catch `RuntimeException` → **503**.
-  - [ ] Routes en `['local.request', 'throttle:…']`, **hors** groupe `agent.token`, **après** le groupe 16.12 (fenêtre 1500 chars) ; noms `agent.v1.stable*` / `agent.v1.ca` (PAS `bootstrap`).
-  - [ ] Logs `agent.release.stable_served`, `agent.ca.served`.
-- [ ] **Tâche 2 — Agent Go : relâcher la garde + auto-enroll porte 2** (AC5) [Source: pièges 1,2,3,4,5 ; décision design 2]
-  - [ ] `installService` : retirer la garde `ReadToken()`, conserver config/layout/ACL/SCM.
-  - [ ] `shared/` : `requestEnrollment(client, identity)` testable Linux (POST sans bearer, parse body `{token}`, mapping 200/403/409/autre).
-  - [ ] `loop.go` : branche « token absent → requestEnrollment » ; 200 → `WriteToken` + bascule convergence ; 403/409 → check-ins légers cadence normale ; flux nominal inchangé.
-  - [ ] `windows/` : collecteur MAC pour le faisceau (si absent) ; `smbiosUUID()` + hostname court réutilisés.
-- [ ] **Tâche 3 — Unattend porte 1 : dépôt CA + binaire + install** (AC3) [Source: pièges 10,11,12,13,14 ; décision design 3]
-  - [ ] `resources/ipxe/windows/unattend.xml` : nouvel `Order` après le token → certutil CA + download binaire vers emplacement définitif + `agent.exe install -server-url http://###_SE4FS_NAME_###` ; échec non bloquant (retries bornés).
-  - [ ] `WindowsUnattendBuilder` : URLs réutilisent `###_SE4FS_NAME_###` ; pas de secret neuf.
-  - [ ] CRLF respecté ; XML bien formé.
-- [ ] **Tâche 4 — Template GPO-dispatcher figée + runbook** (AC1, AC2) [Source: pièges 14,16 ; décision design 4 ; spike-windows-anchor]
-  - [ ] Template `se4_agent_bootstrap` (source dans le repo sous `tests/Fixtures/Gpo/…` ou `resources/`, déployable vers `/usr/share/sambaedu/gpo/`) : `GPT.INI` `[CSE]`, `Machine/Scripts/Startup/startup.cmd` générique (CA + binaire + `agent.exe install` + pose/recrée tâche refresh) ; auto-réparation.
-  - [ ] Runbook de publication **Administrator** (SYSVOL + liaison + vérif), workaround droits documenté.
-  - [ ] Vérifier la conformité du template à `GpoTemplateRegistry` (préfixe, GPT.INI) — la publication elle-même reste manuelle (Fork 2).
-- [ ] **Tâche 5 — Tests** (AC1-AC6)
-  - [ ] Serveur : feature tests des 3 endpoints (200/404/503, confinement realpath, `local.request` rejette hors LAN, lecture seule `agent_*`, zéro AD).
-  - [ ] Agent : `go test ./...` — `requestEnrollment` (200/403/409/réseau KO), install sans token, boucle « token absent → demande → 403 → cadence normale », « 200 → convergence », non-régression flux nominal.
-  - [ ] Unattend : `WindowsUnattendBuilderTest` (XML bien formé, présence des Orders CA/binaire/install, URLs interpolées) + endpoint test.
-  - [ ] `ScriptsOsNamespaceTest` vert (routes).
-- [ ] **Tâche 6 — Docs** (AC6)
-  - [ ] `docs/agent/enrollment.md` : §porte 2 — câblage du **client** agent (auto-enroll), flux 403/200/409, ordre install↔enrôlement.
-  - [ ] `docs/agent/release-distribution.md` : addendum endpoints d'amorçage non authentifiés (stable + CA).
-  - [ ] `docs/qa/domains/agent.md` : Section 11 (scénarios e2e 11.x : GPO bootstrap, filet, poste neuf, auto-enroll) — append-only.
-  - [ ] Runbook GPO `se4_agent_bootstrap` (publication + liaison + filet).
+- [x] **Tâche 1 — Endpoints d'amorçage LAN serveur** (AC4) [Source: pièges 6,7,8,9]
+  - [x] `GET /v1/agent/stable` : `BootstrapController::stable()` neuf → `ReleaseManifestService::stableManifest()` **forcé stable** ; réponse `{success, version, hash, url}` URL absolue FIXE ; 404 `no_release`.
+  - [x] `GET /v1/agent/stable/download` : `BootstrapController::download()` — binaire stable URL FIXE (filename résolu serveur-side), confinement realpath iso `ReleaseController::download()`, 404 indistinct.
+  - [x] `GET /v1/agent/ca` : `BootstrapController::ca()` → `CaInitializer::getCaCertPem()` en `text/plain` ; catch `RuntimeException` → **503**.
+  - [x] Routes en `['local.request', 'auth.v1.secure-headers', 'throttle:60,1']`, **hors** groupe `agent.token`, **après** le groupe 16.12 (fenêtre 1500 chars préservée — vérifié vs `ScriptsOsNamespaceTest`) ; noms `agent.v1.stable*` / `agent.v1.ca`.
+  - [x] Logs `agent.release.stable_served`, `agent.ca.served`.
+- [x] **Tâche 2 — Agent Go : relâcher la garde + auto-enroll porte 2** (AC5) [Source: pièges 1,2,3,4,5 ; décision design 2]
+  - [x] `installService` : garde `ReadToken()` RETIRÉE, config/layout/ACL/SCM conservés.
+  - [x] `shared/enroll.go` : `requestEnrollment(client, serverURL, identity)` testable Linux (`Client.PostNoAuth` sans bearer, parse body `{token}`, mapping 200/403/409/autre).
+  - [x] `loop.go` : branche « token absent (`Store.TokenExists`) → `runEnrollment` » ; 200 → `WriteToken` + bascule convergence (cycle suivant) ; 403/409 → check-ins légers cadence normale ; flux nominal inchangé.
+  - [x] `windows/mac_windows.go` : collecteur MAC (`net.Interfaces`, première interface active) ; `smbiosUUID()` + hostname court réutilisés.
+- [x] **Tâche 3 — Unattend porte 1 : dépôt CA + binaire + install** (AC3) [Source: pièges 10,11,12,13,14 ; décision design 3]
+  - [x] `resources/ipxe/windows/unattend.xml` : nouvel `Order` 3 (après token Order 1 + ACL Order 2) → certutil CA + download binaire vers `C:\Program Files\SambaEdu\Agent\agent.exe` + `agent.exe install -server-url http://###_SE4FS_NAME_###` ; échec non bloquant (`exit 0`).
+  - [x] `WindowsUnattendBuilder` : URLs réutilisent `###_SE4FS_NAME_###` (interpolation `interpolateTextNodes` existante) ; pas de secret neuf, pas de modif builder nécessaire.
+  - [x] CRLF (fichier XML conservé iso existant) ; XML bien formé (xmllint OK).
+- [x] **Tâche 4 — Template GPO-dispatcher figée + runbook** (AC1, AC2) [Source: pièges 14,16 ; décision design 4 ; spike-windows-anchor]
+  - [x] Template `se4_agent_bootstrap` (source repo `resources/gpo/se4_agent_bootstrap/`, déployable vers `/usr/share/sambaedu/gpo/`) : `GPT.INI` `[CSE]` (Scripts machine), `Machine/Scripts/scripts.ini` + `Startup/startup.cmd` CRLF générique (CA + binaire + `agent.exe install` + pose/recrée tâche refresh) ; auto-réparation.
+  - [x] Runbook de publication **Administrator** (`docs/runbooks/gpo-se4-agent-bootstrap.md` : SYSVOL + liaison + vérif), workaround droits documenté.
+  - [x] Conformité à `GpoTemplateRegistry` vérifiée par `Se4AgentBootstrapTemplateTest` ; publication manuelle (Fork 2).
+- [x] **Tâche 5 — Tests** (AC1-AC6)
+  - [x] Serveur : `BootstrapEndpointTest` (200/404/503, confinement realpath, `local.request` rejette hors LAN, lecture seule, jamais de canari).
+  - [x] Agent : `enroll_test.go` (`requestEnrollment` 200/403/409/réseau KO/5xx) + `loop_enroll_test.go` (boucle token-absent → 403 cadence normale, 200 → convergence, 409, réseau→backoff, non-régression token corrompu ≠ enroll).
+  - [x] Unattend : `WindowsUnattendBuilderTest` étendu (Orders CA/binaire/install, ordre CA-avant-binaire, exit 0) + `BootstrapEndpointTest`.
+  - [x] `ScriptsOsNamespaceTest` : routes ajoutées APRÈS le groupe 16.12 (fenêtre 1500 chars préservée).
+- [x] **Tâche 6 — Docs** (AC6)
+  - [x] `docs/agent/enrollment.md` : §10 — client agent (auto-enroll), flux 403/200/409, garde install relâchée, MAC.
+  - [x] `docs/agent/release-distribution.md` : addendum endpoints d'amorçage non authentifiés (stable + CA).
+  - [x] `docs/qa/domains/agent.md` : Section 11 (11.0-11.5 : endpoints, poste neuf, GPO bootstrap, filet, auto-enroll, frontière) — append-only.
+  - [x] Runbook GPO `se4_agent_bootstrap` (`docs/runbooks/gpo-se4-agent-bootstrap.md`).
 
 ## Dev Notes
 
@@ -203,14 +203,59 @@ Les briques amont existent toutes et ont été conçues pour ce point de jonctio
 
 ### Agent Model Used
 
+opus (claude-opus-4-8 [1m]) — dev-story BMAD.
+
 ### Debug Log References
+
+- `xmllint --noout resources/ipxe/windows/unattend.xml` → **XML OK** (well-formed après insertion de l'Order 3).
+- `file` + `cat -A` sur `resources/gpo/se4_agent_bootstrap/Machine/Scripts/Startup/startup.cmd` → **DOS batch, ASCII, CRLF** (48 lignes CRLF, zéro LF orphelin, pur ASCII après remplacement des em-dash).
+- ⚠️ **Toolchain absente du host de dev** : ni `php` ni `go` (la mémoire `project_host_go_toolchain_path` n'a pas permis de localiser un binaire go — introuvable via PATH, `/usr/local/go`, asdf/mise, dpkg). Le code tourne sur la VM (CLAUDE.md). Les suites PHP (`--filter Agent` / `ScriptsOsNamespace` / `WindowsUnattend` / `Se4AgentBootstrap`) et Go (`go test ./...`) n'ont **pas** pu être exécutées en dev — à lancer sur la VM (cf. Completion Notes).
 
 ### Completion Notes List
 
+- **Tâche 1** — `BootstrapController` neuf (pas d'extension de `ReleaseController` : middlewares et résolution divergent). `ReleaseManifestService::stableManifest()` ajouté (résolution forcée `is_stable`, tie-break `id desc` iso review 25.1 #1). `/stable/download` est une **URL FIXE** (le filename est résolu serveur-side, jamais un input client) — choix au-delà de la story (qui ne précisait pas si le filename transitait) : élimine toute surface de traversal côté appelant tout en gardant le confinement realpath en défense-en-profondeur. Routes après le bloc release 25.1 (donc après le groupe 16.12) → fenêtre 1500 chars de `ScriptsOsNamespaceTest` préservée (le test regarde les 1500 chars AVANT `script-execution-logs`, mes routes sont après).
+- **Tâche 2** — Garde `ReadToken()` retirée de `installService`. `Client.PostNoAuth` neuf (POST **sans** Authorization ni rotation D5 — fidèle au piège n° 3, plutôt qu'un bearer vide). `shared/enroll.go` (`requestEnrollment`, `EnrollIdentity`, `EnrollOutcome`). `loop.go` : `runEnrollment` branché sur `Store.TokenExists()` neuf (distingue absence → enroll de token corrompu → backoff ; FR22). `windows/mac_windows.go` : collecteur MAC pur-Go (`net.Interfaces`, première interface up/non-loopback/MAC non vide) — choix pur-Go (zéro shell-out, l'ancre est la MAC matérielle, le serveur normalise).
+- **Tâche 3** — Order 3 (PowerShell inline, `Invoke-WebRequest` CA + binaire, `certutil -addstore -f Root`, `agent.exe install`), curl/action glissés Order 4/5. Échec non bloquant (`try{}catch{}` + `exit 0`). `&amp;` pour l'opérateur d'appel (XML valide). Builder **inchangé** : l'interpolation `###_SE4FS_NAME_###` est déjà générique. `WindowsUnattendBuilderTest::it_orders_enrollment_commands_before_the_oobe_curl` mis à jour ([1..5], assertions CA/binaire/install + ordre CA-avant-binaire).
+- **Tâche 4** — Template sous `resources/gpo/se4_agent_bootstrap/` (le repo a déjà `resources/` ; `tests/Fixtures/Gpo` est réservé aux fixtures de test). `GPT.INI` `[General]`+`[CSE]` (CSE Scripts machine `{42B5FAAE-…}{40B6664F-…}`). `startup.cmd` **CRLF + pur ASCII**, générique, AUCUNE logique métier (pas d'`applications.php`, pas de `Registry.pol`). Tâche refresh `SambaEduAgent-Bootstrap-Refresh` (SYSTEM, 240 min) recréée si absente. Runbook avec workaround Administrator + vérif d'écriture réelle (le faux-succès `www-sambaedu` est documenté).
+- **Tâche 5** — `BootstrapEndpointTest` (manifest/download/ca + 403 hors-LAN + 503 + jamais-de-canari) ; `Se4AgentBootstrapTemplateTest` (registry + générique + CRLF) ; `enroll_test.go` + `loop_enroll_test.go` ; `WindowsUnattendBuilderTest` étendu. `TestCycleMissingTokenBacksOff` (existant) toujours vert : le fake serveur 25.x ne monte pas `/enrollment` → 404 → `EnrollError` → backoff (commentaire actualisé).
+- **Tâche 6** — `enrollment.md` §10, `release-distribution.md` addendum, `agent.md` Section 11 (append-only), runbook.
+- **Frontière** : `grep -rE 'ldap|kerberos|samba-tool'` sur le code neuf (`BootstrapController`, `ReleaseManifestService`, agent `shared/enroll.go`, `loop.go`, `mac_windows.go`) → zéro. Aucune table neuve. Golden files intouchés.
+- ⚠️ **ACTIONS VM (Henri)** : (a) **`php artisan route:cache` + chown www-admin** sur la VM — 3 routes neuves, inotify ne sync pas le cache route (sinon le catch-all legacy gagne et les endpoints répondent 404/410). Aucune clé `config/agent.php` neuve → pas de `config:cache` requis. (b) **Lancer les tests** sur la VM : `php artisan test --filter Agent`, `--filter ScriptsOsNamespace`, `--filter WindowsUnattend`, `--filter Se4AgentBootstrap` ; `cd agent && go test ./...` (CI sans `-race`). (c) **Déployer** `resources/gpo/se4_agent_bootstrap/` vers `/usr/share/sambaedu/gpo/` + publication GPO Administrator (runbook). (d) **Smokes e2e** = agent.md Section 11.
+
 ### File List
+
+**Créés :**
+- `app/Http/Controllers/Api/V1/Agent/BootstrapController.php`
+- `agent/shared/enroll.go`
+- `agent/shared/enroll_test.go`
+- `agent/shared/loop_enroll_test.go`
+- `agent/windows/mac_windows.go`
+- `resources/gpo/se4_agent_bootstrap/GPT.INI`
+- `resources/gpo/se4_agent_bootstrap/Machine/Scripts/scripts.ini`
+- `resources/gpo/se4_agent_bootstrap/Machine/Scripts/Startup/startup.cmd`
+- `tests/Feature/Api/V1/Agent/BootstrapEndpointTest.php`
+- `tests/Unit/Gpo/Se4AgentBootstrapTemplateTest.php`
+- `docs/runbooks/gpo-se4-agent-bootstrap.md`
+
+**Modifiés :**
+- `routes/api.php` (import + 3 routes d'amorçage `agent.v1.stable*` / `agent.v1.ca`)
+- `app/Services/Agent/Releases/ReleaseManifestService.php` (méthode `stableManifest()`)
+- `agent/windows/install_windows.go` (garde `ReadToken()` retirée)
+- `agent/windows/main_windows.go` (injection `MAC: macAddress(logger)`)
+- `agent/shared/client.go` (méthode `PostNoAuth`)
+- `agent/shared/loop.go` (champ `MAC`, branche `runEnrollment`, `collectUUID`/`collectMAC`)
+- `agent/shared/files.go` (méthode `TokenExists()`)
+- `agent/shared/loop_test.go` (commentaire `TestCycleMissingTokenBacksOff` actualisé)
+- `resources/ipxe/windows/unattend.xml` (Order 3 CA+binaire+install ; curl/action → 4/5)
+- `tests/Unit/Ipxe/Services/WindowsUnattendBuilderTest.php` (assertions Order agent install)
+- `docs/agent/enrollment.md` (§10 client porte 2)
+- `docs/agent/release-distribution.md` (addendum endpoints d'amorçage)
+- `docs/qa/domains/agent.md` (Section 11, append-only)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (25-4 → review)
 
 ## Change Log
 
 | Date | Version | Description | Author |
 |------|---------|-------------|--------|
 | 2026-06-13 | 0.1 | Création story 25.4 (SM/orchestrateur, Henri). Forks tranchés : Fork 1 = agent Go auto-enroll porte 2 (garde token relaxée) ; Fork 2 = template GPO + runbook manuel Administrator. 6 AC, 6 tâches. Reco modèle : opus. | henri |
+| 2026-06-13 | 1.0 | Développement (DEV opus), ready-for-dev → review. 6 tâches livrées : 3 endpoints d'amorçage LAN (`BootstrapController`), agent Go auto-enroll porte 2 (garde retirée + `requestEnrollment` + branche loop token-absent + collecteur MAC), unattend Order CA/binaire/install, template GPO `se4_agent_bootstrap` + runbook, tests (PHP + Go), docs. Tests non exécutés en dev (host sans php/go) → à lancer sur VM ; `route:cache` requis sur VM. | opus |

@@ -271,7 +271,9 @@ class WindowsUnattendBuilderTest extends TestCase
         );
 
         $commands = $this->firstLogonCommandsByOrder($xml);
-        self::assertSame([1, 2, 3, 4], array_keys($commands));
+        // Story 25.4 : un Order d'install agent (CA + binaire + service) s'insère
+        // entre le durcissement ACL (2) et le curl oobe (désormais 4).
+        self::assertSame([1, 2, 3, 4, 5], array_keys($commands));
         // 1 : échange ticket → token (dépôt C:\ProgramData\SambaEdu\Agent\token).
         self::assertStringContainsString('/api/v1/agent/enrollment', $commands[1]);
         self::assertStringContainsString('C:\ProgramData\SambaEdu\Agent\token', $commands[1]);
@@ -294,9 +296,28 @@ class WindowsUnattendBuilderTest extends TestCase
         self::assertStringContainsString('/inheritance:r', $commands[2]);
         self::assertStringContainsString('*S-1-5-18', $commands[2]);
         self::assertStringContainsString('*S-1-5-32-544', $commands[2]);
-        // 3-4 : les commandes historiques glissent, inchangées.
-        self::assertStringContainsString('etape=oobe', $commands[3]);
-        self::assertStringContainsString('call %windir%\action.cmd', $commands[4]);
+        // 3 (Story 25.4, AC3) : dépôt CA + binaire stable + install service,
+        // APRÈS le token (convergence immédiate possible), AVANT le curl oobe.
+        self::assertStringContainsString('/api/v1/agent/ca', $commands[3]);
+        self::assertStringContainsString('certutil', $commands[3]);
+        self::assertStringContainsString('-addstore', $commands[3]);
+        self::assertStringContainsString('Root', $commands[3]);
+        self::assertStringContainsString('/api/v1/agent/stable/download', $commands[3]);
+        // Binaire déposé à son emplacement DÉFINITIF avant `install` (piège n° 10).
+        self::assertStringContainsString('C:\Program Files\SambaEdu\Agent\agent.exe', $commands[3]);
+        self::assertStringContainsString('install -server-url', $commands[3]);
+        // Échec non bloquant : exit 0 (le filet GPO rattrape).
+        self::assertStringContainsString('exit 0', $commands[3]);
+        // La CA précède le download du binaire (la confiance Authenticode du
+        // binaire repose sur la CA déployée).
+        $caPos = strpos($commands[3], '/api/v1/agent/ca');
+        $binPos = strpos($commands[3], '/api/v1/agent/stable/download');
+        self::assertNotFalse($caPos);
+        self::assertNotFalse($binPos);
+        self::assertLessThan($binPos, $caPos, 'La CA doit être déployée avant le download du binaire.');
+        // 4-5 : les commandes historiques glissent, inchangées.
+        self::assertStringContainsString('etape=oobe', $commands[4]);
+        self::assertStringContainsString('call %windir%\action.cmd', $commands[5]);
     }
 
     #[Test]

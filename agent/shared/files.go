@@ -98,6 +98,18 @@ func (s *Store) ReadToken() (string, error) {
 	return token, nil
 }
 
+// TokenExists indique si le fichier token est présent sur disque — sans le
+// valider (un token malformé « existe » au sens de ce prédicat). Story 25.4 :
+// l'auto-enroll (porte 2) ne se déclenche que sur l'ABSENCE du fichier ; un
+// token présent mais corrompu reste un échec de cycle (backoff), jamais une
+// raison de re-poster une demande d'enrôlement (un poste enrôlé ne se
+// ré-enrôle JAMAIS automatiquement — FR22).
+func (s *Store) TokenExists() bool {
+	_, err := os.Stat(s.TokenPath())
+
+	return err == nil
+}
+
 // WriteToken écrit le nouveau token ATOMIQUEMENT (rotation D5) : 64 hex sans
 // newline, ACL posée sur le fichier temporaire AVANT le rename.
 func (s *Store) WriteToken(token string) error {

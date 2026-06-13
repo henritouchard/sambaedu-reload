@@ -84,6 +84,40 @@ func (c *Client) Post(url string, body []byte) (*Response, error) {
 	return c.request(http.MethodPost, url, map[string]string{"Content-Type": "application/json"}, body)
 }
 
+// PostNoAuth appelle POST url avec un corps JSON SANS bearer token ni
+// rotation D5 — chemin d'amorçage de la demande d'enrôlement porte 2 (Story
+// 25.4, piège n° 3). Le poste n'a pas encore de token : la requête part sans
+// en-tête Authorization, et la réponse ne porte jamais de X-Agent-New-Token (le
+// token d'enrôlement vit dans le CORPS JSON `{success, token}`, jamais dans
+// l'en-tête de rotation). X-Agent-Hostname reste posé (anti-clonage, inoffensif
+// hors canal authentifié). Une erreur n'est retournée que sur erreur RÉSEAU.
+func (c *Client) PostNoAuth(url string, body []byte) (*Response, error) {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequest(http.MethodPost, url, reader)
+	if err != nil {
+		return nil, fmt.Errorf("construction requête %s %s : %w", http.MethodPost, url, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set(headerAgentHostname, c.Hostname)
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	if err != nil {
+		return nil, fmt.Errorf("lecture du corps de réponse : %w", err)
+	}
+
+	return &Response{StatusCode: resp.StatusCode, Body: raw, Header: resp.Header}, nil
+}
+
 // request : appel + grâce 401 (mémoire puis disque) + rotation D5 sur la
 // réponse FINALE retournée.
 func (c *Client) request(method, url string, headers map[string]string, body []byte) (*Response, error) {

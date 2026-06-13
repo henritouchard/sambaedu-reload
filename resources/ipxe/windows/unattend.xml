@@ -125,14 +125,29 @@
 					<RequiresUserInput>false</RequiresUserInput>
 					<CommandLine>%comspec% /c if exist "C:\ProgramData\SambaEdu\Agent\token" (icacls "C:\ProgramData\SambaEdu\Agent" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F")</CommandLine>
 				</SynchronousCommand>
+				<!-- Story 25.4 (porte 1, FR16) : APRÈS l'obtention du token (Order 1) et le
+				     durcissement ACL (Order 2), on dépose la racine CA + le binaire stable + on
+				     enregistre le service. Le poste neuf finit avec un agent vivant DÉJÀ enrôlé
+				     (token présent → convergence immédiate), sans GPO. Échec NON BLOQUANT
+				     (try/catch, exit 0) : un poste dont l'install agent échoue retombe sur le
+				     filet GPO au prochain boot. Le binaire est déposé à son emplacement DÉFINITIF
+				     (C:\Program Files\SambaEdu\Agent\agent.exe) AVANT `install` — le SCM enregistre
+				     ce chemin (piège n° 10). CA = certutil -addstore -f Root, idempotent (piège
+				     n° 14). Endpoints d'amorçage NON authentifiés (LAN), sans bearer. -->
 				<SynchronousCommand wcm:action="add">
 					<Order>3</Order>
+					<Description>agent install (ca + binaire stable + service)</Description>
+					<RequiresUserInput>false</RequiresUserInput>
+					<CommandLine>powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try { $dir='C:\Program Files\SambaEdu\Agent'; New-Item -Force -ItemType Directory $dir | Out-Null; $ca=Join-Path $env:TEMP 'se4-ca.crt'; Invoke-WebRequest -UseBasicParsing -Uri 'http://###_SE4FS_NAME_###/api/v1/agent/ca' -OutFile $ca; certutil -addstore -f Root $ca | Out-Null; $exe=Join-Path $dir 'agent.exe'; Invoke-WebRequest -UseBasicParsing -Uri 'http://###_SE4FS_NAME_###/api/v1/agent/stable/download' -OutFile $exe; &amp; $exe install -server-url 'http://###_SE4FS_NAME_###' } catch { } exit 0"</CommandLine>
+				</SynchronousCommand>
+				<SynchronousCommand wcm:action="add">
+					<Order>4</Order>
 					<Description>postinst curl</Description>
 					<RequiresUserInput>false</RequiresUserInput>
 					<CommandLine>%comspec% /c curl -sL --retry 20 --retry-max-time 300 --fail -F "etape=oobe" -F "name=###_NAME_###" -F "uuid=###_UUID_###" -F "mac=###_MAC_###" -F "ret=0" -o "%windir%\action.cmd" "http://###_SE4FS_NAME_###/ipxe/windows/action"</CommandLine>
 				</SynchronousCommand>
 				<SynchronousCommand wcm:action="add">
-					<Order>4</Order>
+					<Order>5</Order>
 					<Description>postinst action</Description>
 					<RequiresUserInput>false</RequiresUserInput>
 					<CommandLine>%comspec% /c if exist %windir%\action.cmd (call %windir%\action.cmd)</CommandLine>

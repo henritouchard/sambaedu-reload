@@ -1095,6 +1095,87 @@ demande d'enrôlement. Le conflit se fonde sur la **seule MAC** (ancre, review
 
 ---
 
+## Section 11 — Les deux chemins d'installation : GPO-dispatcher figée + dépôt iPXE (Story 25.4)
+
+> **Append-only.** Smokes e2e exécutés sur VM/poste de lab (publication GPO
+> Administrator + install WinPE), pas depuis dev-cycle. Pré-requis serveur :
+> `php artisan auth:ca:init` (sinon `/api/v1/agent/ca` → 503) + une release
+> **stable** publiée (`agent:release:publish … --stable`). Sur la VM, une
+> release `2.1.2` (cert TEST) est laissée stable par 25.1/25.2.
+
+### 11.0 — Endpoints d'amorçage LAN (serveur, automatisable)
+
+1. `curl http://<se5>/api/v1/agent/stable` depuis le LAN → `{success, version,
+   hash, url}`, `url` absolue se terminant par `/api/v1/agent/stable/download`.
+2. `curl -o agent.exe http://<se5>/api/v1/agent/stable/download` → binaire,
+   `sha256sum agent.exe` = `hash` du manifest.
+3. `curl http://<se5>/api/v1/agent/ca` → PEM `-----BEGIN CERTIFICATE-----`,
+   `Content-Type: text/plain`.
+4. Contre-épreuves : depuis une IP **hors LAN** → **403** (`local.request`) ;
+   CA non initialisée → **503** (jamais 500) ; aucune stable → `/stable` 404
+   `no_release` et `/stable/download` 404 indistinct.
+
+### 11.1 — Poste neuf (iPXE/WinPE) : binaire + token + CA, sans GPO (AC3)
+
+1. Réinstaller un poste par la chaîne iPXE/WinPE.
+2. Attendu, au FirstLogon : Order 1 obtient le **token**, Order 3 déploie la
+   **CA** (`certutil -store Root` la liste), télécharge le **binaire stable**
+   vers `C:\Program Files\SambaEdu\Agent\agent.exe`, et `agent.exe install`
+   enregistre le service SYSTEM.
+3. Le poste finit avec un agent **vivant et déjà enrôlé** (token présent →
+   convergence immédiate) — **aucune** GPO requise.
+4. Contre-épreuve : couper le réseau au FirstLogon → l'install agent échoue
+   **sans bloquer** l'install Windows (exit 0) ; le poste est rattrapé par le
+   filet GPO au boot suivant.
+
+### 11.2 — Poste migré : la GPO-dispatcher figée installe l'agent (AC1)
+
+1. Publier le template `se4_agent_bootstrap` vers SYSVOL (runbook
+   `docs/runbooks/gpo-se4-agent-bootstrap.md`, workaround Administrator) et
+   lier la GPO à la racine du domaine (ou OU Parcs).
+2. Sur un poste migré **sans agent**, `gpupdate /force` puis reboot.
+3. Attendu : le `startup.cmd` déploie la CA, télécharge le binaire stable,
+   `agent.exe install` enregistre le service, et une **tâche de refresh**
+   `SambaEduAgent-Bootstrap-Refresh` (SYSTEM, 240 min) est créée.
+4. L'agent posé **demande son enrôlement** (porte 2) : côté UI, une demande
+   `pending` apparaît ; après **approbation un-clic** (ou campagne), le poste
+   converge au check-in suivant (cf. Section 10).
+
+### 11.3 — Le filet éternel : la GPO répare un agent briqué/supprimé (AC2, #27)
+
+1. Sur un poste enrôlé, supprimer le service (`agent.exe uninstall`) ou
+   corrompre `agent.exe`.
+2. Repasser la GPO (reboot **ou** attendre la tâche de refresh).
+3. Attendu : `agent.exe install` **réinstalle** au même emplacement ; le
+   **token survit** (hors périmètre install) → l'agent repart **directement** en
+   convergence, **sans** ré-enrôlement.
+4. Auto-réparation : supprimer la tâche `SambaEduAgent-Bootstrap-Refresh` puis
+   repasser le startup → la tâche est **recréée**.
+
+### 11.4 — Auto-enroll de l'agent Go sans token, sans brique (AC5)
+
+1. Installer l'agent sur un poste **sans token** (`agent.exe install
+   -server-url http://<se5>` sans token présent — la garde est relâchée).
+2. Lancer `agent.exe run` (console) : à chaque cycle « token absent », l'agent
+   poste sa demande porte 2 (`POST /v1/agent/enrollment`, **sans** Authorization,
+   faisceau `{uuid, mac, hostname}`).
+3. Attendu : **403** → check-ins légers à cadence normale (jamais de spin) ;
+   après approbation, **200 {token}** → token écrit, bascule en convergence au
+   cycle suivant ; un poste dont la MAC matche un enrôlé → **409** + log conflit,
+   **jamais** de ré-enrôlement auto.
+4. Contre-épreuve `rejected` : rejeter la demande → l'agent boucle dans le vide
+   (403), **aucune** escalade, **aucun** brick. Non-régression : un poste avec
+   token converge normalement (GET /state / POST /report / rotation D5 intacts).
+
+### 11.5 — Frontière (review grep)
+
+1. `grep -rE 'ldap|kerberos|samba-tool' app/Http/Controllers/Api/V1/Agent/BootstrapController.php app/Services/Agent/Releases/ReleaseManifestService.php` → **zéro** match.
+2. Les endpoints d'amorçage ne **lisent** que `agent_releases` + le `.crt` PKI,
+   n'écrivent rien. Golden files figés (state/report/release-manifest/contract-v1)
+   intouchés.
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Defer review 23.1 (résolu en 24.1)** : le scénario 1.4 (body forgé → 4xx jamais 500) existe parce qu'un `StateHasher` appelé sur l'entrée agent pouvait lever une `JsonException` non catchée (UTF-8 invalide / NAN / INF). L'ingestion ne hashe JAMAIS le payload agent.
