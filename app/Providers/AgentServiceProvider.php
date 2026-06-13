@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Http\Middleware\AuthenticateAgentToken;
+use App\Services\Agent\Enrollment\EnrollmentCampaign;
+use App\Services\Agent\Enrollment\EnrollmentMatchService;
 use App\Services\Agent\Enrollment\EnrollmentService;
 use App\Services\Agent\Enrollment\TokenRotationService;
 use App\Services\Agent\Providers\OverlayStateProvider;
@@ -43,9 +45,17 @@ class AgentServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(TokenRotationService::class, fn () => new TokenRotationService());
+        // Story 25.3 — Porte 2 : rapprochement du faisceau + mode campagne
+        // (anti-usurpation jamais débrayé) injectés dans EnrollmentService.
+        $this->app->singleton(EnrollmentMatchService::class, fn () => new EnrollmentMatchService());
+        $this->app->singleton(EnrollmentCampaign::class, fn () => new EnrollmentCampaign());
         $this->app->singleton(
             EnrollmentService::class,
-            fn ($app) => new EnrollmentService($app->make(TokenRotationService::class)),
+            fn ($app) => new EnrollmentService(
+                $app->make(TokenRotationService::class),
+                $app->make(EnrollmentMatchService::class),
+                $app->make(EnrollmentCampaign::class),
+            ),
         );
         // Story 24.1 — ingestion des rapports de conformité (POST /report).
         $this->app->singleton(ReportIngestService::class, fn () => new ReportIngestService());

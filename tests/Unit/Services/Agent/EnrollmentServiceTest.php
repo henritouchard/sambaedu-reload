@@ -29,8 +29,10 @@ class EnrollmentServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tokens = new TokenRotationService();
-        $this->service = new EnrollmentService($this->tokens);
+        $this->tokens = app(TokenRotationService::class);
+        // Résolu via le container : EnrollmentService a gagné des dépendances en
+        // 25.3 (rapprochement faisceau + campagne) — le binding reste la source.
+        $this->service = app(EnrollmentService::class);
     }
 
     // ── openTicket (AC1, AC2) ───────────────────────────────────────────

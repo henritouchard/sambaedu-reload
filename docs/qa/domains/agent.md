@@ -961,11 +961,131 @@ conformité ; seule l'update est sautée. La quarantaine globale reste l'apanage
 
 ---
 
+## Section 10 — Porte 2 : enrôlement des postes migrés, approbation un-clic (Story 25.3)
+
+**Objet** : un poste migré (existant, sans ticket — agent posé par la GPO 25.4)
+qui rejoue `POST /api/v1/agent/enrollment` ne reçoit plus un 403 sec : une
+**demande d'enrôlement** est créée (`agent_enrollment_requests`), visible et
+approuvable dans l'UI (`/app/parc-settings/agent`). Le poste reste 403
+(indistinct) tant qu'il n'est pas approuvé ; le token naît à son prochain
+check-in (jamais via l'UI). Mode **campagne** = auto-approbation bornée des
+postes connus concordants, **anti-usurpation jamais débrayé**.
+
+### Pré-requis Section 10
+
+- VM à jour : `php artisan migrate` (table `agent_enrollment_requests`).
+- Un poste **connu** en base avec MAC + hostname renseignés (importé AD/legacy).
+- `curl` depuis le LAN (le endpoint est derrière `local.request`).
+- Réinitialiser entre scénarios : `DELETE FROM agent_enrollment_requests;` et
+  vider le réglage campagne (UI « Désactiver » ou
+  `SystemSetting::forget('agent_enroll_campaign_until')`).
+
+### Scénario 10.1 — Poste migré sans ticket → demande pending visible (AC1)
+
+1. `curl -s -o /dev/null -w '%{http_code}' -X POST http://<se4fs>/api/v1/agent/enrollment -H 'Content-Type: application/json' -d '{"mac":"<MAC poste connu>","hostname":"<hostname poste connu>","uuid":"x"}'`.
+2. Attendu : **403** (corps `AGENT_ENROLL_NOT_ALLOWED`, indistinct).
+3. UI `/app/parc-settings/agent` : la demande apparaît dans la liste pending,
+   faisceau affiché (hostname/MAC/uuid), badge **rapproché** + nom du poste.
+4. Log channel `agent` : `agent.enroll.requested` (jamais de token/hash).
+
+**Attendu** : la branche d'échec crée bien une demande, sans changer la réponse.
+
+### Scénario 10.2 — Idempotence : re-check-in ne duplique pas (AC1)
+
+1. Rejouer le `curl` du 10.1 deux ou trois fois.
+2. UI : **une seule** ligne (pas de doublon), `Vu` rafraîchi à chaque appel.
+3. Base : `SELECT count(*) FROM agent_enrollment_requests` = 1 pour ce faisceau.
+
+**Attendu** : `updateOrCreate` sur la MAC normalisée → 1 demande, `last_seen_at`
+qui avance.
+
+### Scénario 10.3 — Approbation un-clic → token au prochain check-in (AC2)
+
+1. Depuis l'UI, cliquer **« Approuver »** sur la demande (confirmer).
+2. Toast de succès ; la demande disparaît de la liste pending (status approved).
+   Log `agent.enroll.approved` avec `resolved_by`.
+3. Rejouer le `curl` (le poste re-check-in) : attendu **200** `{success, token}`.
+4. Base : la demande est **consommée** (supprimée) ; le poste a un
+   `agent_token_hash`. Le token n'a JAMAIS transité par l'UI.
+
+**Attendu** : approuver arme la demande ; le token naît au redeem suivant.
+
+### Scénario 10.4 — Campagne ON, poste connu concordant → auto-approbation (AC3)
+
+1. UI : activer le **mode campagne** (ex. 7 jours).
+2. `curl` POST avec le faisceau d'un **autre** poste connu (MAC + hostname
+   cohérents, non enrôlé) : attendu **403**.
+3. Base/UI : la demande est `approved` avec `auto_approved = true` (badge auto) ;
+   log `agent.enroll.auto_approved`.
+4. Re-`curl` : **200** + token, demande consommée.
+
+**Attendu** : auto-approbation sans clic, mais le token naît toujours au redeem.
+
+### Scénario 10.5 — Campagne ON, poste divergent/inconnu → manuel (AC3, invariant)
+
+1. Campagne toujours active. `curl` POST avec :
+   - (a) MAC d'un poste connu **mais hostname différent** ;
+   - (b) une MAC **inconnue** (aucun poste) ;
+   - (c) une MAC partagée par **2 postes** (multi-candidats).
+2. Attendu pour les trois : **403** + demande **pending** (`auto_approved =
+   false`), **jamais** auto-approuvée — même campagne active.
+
+**Attendu** : l'anti-usurpation ne se débraye jamais. Invariant non négociable.
+
+### Scénario 10.6 — Conflit : poste connu déjà enrôlé (AC4, piège n° 4)
+
+1. Sur un poste déjà enrôlé (`agent_token_hash` non nul), `curl` POST sans
+   ticket avec son faisceau.
+2. Attendu : **409** `AGENT_ENROLL_CONFLICT`, token courant **intact**,
+   **aucune** demande pending créée.
+
+**Attendu** : un ré-enrôlement/clone d'un poste enrôlé est un conflit, jamais une
+demande d'enrôlement.
+
+### Scénario 10.7 — Rejet → poste hors système, pas de ré-ouverture (AC4)
+
+1. Sur une demande pending, cliquer **« Rejeter »** : la modale réutilisable
+   affiche les preuves ; confirmer.
+2. Toast ; status `rejected` ; log `agent.enroll.rejected` `reason=manual_reject`.
+3. Rejouer le `curl` : **403**, **aucun** token, la demande **N'EST PAS**
+   ré-ouverte (reste `rejected`, pas de nouvelle ligne pending).
+
+**Attendu** : un poste rejeté reste dehors ; l'admin garde la main pour re-armer.
+
+### Scénario 10.8 — Non-régression porte 1 (AC6)
+
+1. Générer un unattend pour un poste (porte 1) puis échanger son ticket valide.
+2. Attendu : **200** + token direct (flux §2 inchangé), **aucune** ligne
+   `agent_enrollment_requests` créée.
+
+**Attendu** : la greffe porte 2 ne touche pas le flux ticket.
+
+### Scénario 10.9 — Demande « inconnu » : approbation non actionnable (review #3)
+
+1. Provoquer une demande pending dont le faisceau ne rapproche aucun poste connu
+   (MAC absente de `workstations`) → badge **« inconnu »** dans l'UI.
+2. Attendu : le bouton **« Approuver »** est **désactivé** (tooltip
+   « rapprochement requis »). Si l'action est forcée (appel direct), le service
+   la refuse (toast d'erreur), la demande reste `pending` — jamais d'approbation
+   sans cible (qui laisserait le poste 403 indéfiniment + demande invisible).
+
+### Scénario 10.10 — Autorisation des actions d'approbation (review #4)
+
+1. Connecté avec un compte **sans** la permission `computer.install`, tenter
+   `approve` / `confirmReject` / `enableCampaign` (idéalement via un appel direct
+   `/livewire/update`, pas seulement via la page).
+2. Attendu : **403** (Gate), aucune mutation — la demande reste `pending`, la
+   campagne inchangée. Avec `computer.install`, l'action passe et `resolved_by`
+   porte l'identifiant de l'admin (trace d'audit).
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Defer review 23.1 (résolu en 24.1)** : le scénario 1.4 (body forgé → 4xx jamais 500) existe parce qu'un `StateHasher` appelé sur l'entrée agent pouvait lever une `JsonException` non catchée (UTF-8 invalide / NAN / INF). L'ingestion ne hashe JAMAIS le payload agent.
 - **Review 24.3 #1 (corrigé)** : `Get-InteractiveSessions` filtrait les pseudo-sessions par liste NOIRE (`S-1-5-90/96-`) — comptes virtuels (`S-1-5-80/82-`) et `Win32_Account.Name` vides passaient → fetchs `?user=` (vide) + caches `sessions\<SID-service>\` parasites. Corrigé en liste BLANCHE `^S-1-5-21-` + garde login vide. Angle de test à conserver : sur le poste lab (scénario 3.2), vérifier qu'AUCUN répertoire `cache\sessions\` ne correspond à un SID hors `S-1-5-21-*` ; côté serveur, `?user=` VIDE = 200 machine-only SANS `agent.state.unknown_user` (figé par `SessionCompanionE2eTest::empty_user_param_…`).
 - **Incident terrain T12 ws 49 n° 2 (corrigé en 2.1.2)** : la tâche `SambaEduAgent-SessionCompanion` (binaire CONSOLE lancé dans la session interactive) laissait une **fenêtre console visible et résidente** toute la session — fermable par le user (= compagnon tué), et un clic dedans (quick-edit) gelait stdout. Corrigé : `FreeConsole` au démarrage du compagnon (bref flash au logon, assumé). Angle de test à conserver (scénario 6.2) : après logon, AUCUNE fenêtre console résiduelle ; `agent.exe companion` visible dans le Gestionnaire des tâches uniquement.
+- **Review 25.3 #3/#4 (corrigés avant merge)** : deux angles que les tests unitaires n'attrapaient pas mais qu'un test manuel révèle. (a) **Approuver un poste « inconnu »** (sans rapprochement DB) menait à une impasse : la demande passait `approved` mais l'étape 2 du redeem exige une cible → poste 403 éternel + demande sortie du scope pending (invisible). Corrigé : le bouton « Approuver » est **désactivé** (tooltip « rapprochement requis ») pour une demande sans `matched_workstation_id`, et le service le refuse. Angle de test à conserver (scénario 10.9) : une demande badge « inconnu » ne propose PAS d'approbation actionnable. (b) **Actions Livewire non gardées** : `approve/reject/campagne` ne reposaient que sur le middleware de page — un appel direct `/livewire/update` les exposait. Corrigé : `Gate::authorize('computer.install')` sur chaque action mutante. Angle de test (scénario 10.10) : un utilisateur sans `computer.install` reçoit 403 sur l'action, la demande reste `pending`. Bonus observabilité : un log `agent.enroll.stale_approval` (warning) signale désormais une approbation qui ne se matérialise pas (poste enrôlé entre-temps / cible nulle).
 - **Incident terrain T12 ws 49 (corrigé en 2.1.1)** : `agent.exe install` échouait en `Accès refusé` sur le rename atomique de `config.json` — `setAgentACL` posait les flags d'héritage `(OI)(CI)` sur les FICHIERS tmp de `writeAtomic` ; via icacls sur un fichier, ces ACE deviennent inertes pour l'accès au fichier lui-même → DACL effective vide, plus personne (pas même SYSTEM) n'a DELETE, le rename échoue. Invisible des 122 tests hôte (icacls = Windows réel uniquement) — détecté à la PREMIÈRE exécution Windows du binaire. Corrigé : `setAgentACL` distingue répertoire (`(OI)(CI)F`) / fichier (`F` plat). Angle de test à conserver (scénario 6.1) : après install, `icacls C:\ProgramData\SambaEdu\Agent\config.json` doit montrer des ACE SANS flags `(OI)(CI)`. Méthode de diagnostic qui a tranché : reproduction manuelle A/B de la séquence writeAtomic (`Set-Content` tmp → `icacls /inheritance:r /grant` avec puis sans flags → `Rename-Item`). Nettoyage d'un poste touché : supprimer `cache\state.json`/`etag.txt` et `applied-state.json` écrits par un binaire ≤ 2.1.0 (DACL inerte = irremplaçables par le service), JAMAIS le `token`.
 
 ---
@@ -1023,3 +1143,13 @@ conformité ; seule l'update est sautée. La quarantaine globale reste l'apanage
 - [ ] 9.4 — anti-brique : swap interrompu → agent en place fonctionnel, jamais « ni ancien ni nouveau » ; restart = recovery SCM après sortie non-gracieuse (plantage volontaire attendu code 42)
 - [ ] 9.5 — token/cache survivent au swap : pas de ré-enrôlement, rotation D5 OK après update
 - [ ] 9.6 — 403 release : update sauté SANS quarantaine globale, le POST /report a bien lieu (contre-épreuve : 403 /state met bien en quarantaine)
+- [ ] 10.1 — poste migré sans ticket → 403 + demande pending visible UI, badge rapproché, log requested
+- [ ] 10.2 — idempotence : re-check-in → 1 seule demande, last_seen_at rafraîchi
+- [ ] 10.3 — approbation un-clic → log approved ; prochain check-in → 200 token + demande consommée (token jamais dans l'UI)
+- [ ] 10.4 — campagne ON + poste connu concordant → auto_approved ; re-check-in → 200 token
+- [ ] 10.5 — campagne ON + divergent/inconnu/multi-candidat → reste manuel pending (invariant anti-usurpation)
+- [ ] 10.6 — poste connu déjà enrôlé → 409 conflit, token intact, aucune demande pending
+- [ ] 10.7 — rejet → 403 au re-check-in, aucun token, pas de ré-ouverture auto
+- [ ] 10.8 — non-régression porte 1 : ticket valide → 200 token direct, aucune demande créée
+- [ ] 10.9 — demande « inconnu » : bouton Approuver désactivé, service refuse, reste pending (review #3)
+- [ ] 10.10 — autorisation : sans `computer.install` → 403 sur l'action, aucune mutation ; avec → resolved_by renseigné (review #4)

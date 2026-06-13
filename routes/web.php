@@ -173,6 +173,13 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
         Route::livewire('/app-customizations', 'pages::parc-settings.app-customizations.index')
             ->middleware('can:app.customize')
             ->name('app-customizations');
+
+        // Agent desired-state — surface d'approbation des enrôlements porte 2
+        // (story 25.3). Squelette minimal : rings/releases/progression = 25.5.
+        // Gate `computer.install` (iso index parc-settings — admin de parc).
+        Route::livewire('/agent', 'pages::parc-settings.agent.index')
+            ->middleware('can:computer.install')
+            ->name('agent');
     });
 
     // // Gestion des parcs (Livewire)
