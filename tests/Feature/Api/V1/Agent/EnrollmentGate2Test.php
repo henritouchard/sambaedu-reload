@@ -242,6 +242,52 @@ final class EnrollmentGate2Test extends TestCase
         self::assertSame(hash('sha256', $token), $ws->refresh()->agent_token_hash);
     }
 
+    /**
+     * Review #M2 : sous MAC partagée (clone), le conflit est détecté par
+     * l'EXISTENCE d'un poste enrôlé partageant la MAC (`exists()`), quel que
+     * soit l'ordre des lignes — pas par un `.first()` qui pourrait tomber sur le
+     * clone non-enrôlé et rater le conflit.
+     */
+    #[Test]
+    public function enrolled_clone_sharing_mac_still_returns_409(): void
+    {
+        // Une fiche NON enrôlée partageant la MAC (créée d'abord = candidate au
+        // `.first()`), puis le poste enrôlé qui partage la même MAC.
+        Workstation::factory()->create(['mac' => 'aa:bb:cc:dd:ee:ff', 'name' => 'PC-CLONE']);
+        $enrolled = Workstation::factory()->create(['mac' => 'aa:bb:cc:dd:ee:ff', 'name' => 'PC-LAB-01']);
+        $this->tokens->issueFor($enrolled);
+
+        $this->enroll(['mac' => 'aa:bb:cc:dd:ee:ff', 'hostname' => 'PC-LAB-01'])
+            ->assertStatus(409)
+            ->assertJson(['code' => EnrollController::CODE_CONFLICT]);
+
+        self::assertSame(0, AgentEnrollmentRequest::query()->count());
+    }
+
+    /**
+     * Review #M3 : présenter SEULEMENT l'uuid d'un poste enrôlé (preuve faible,
+     * spoofable) ne déclenche PAS de 409 — le conflit ne se fonde que sur la MAC
+     * (ancre). Sinon le 409≠403 serait un oracle de présence (AC6). Sans MAC
+     * concordante : 403 indistinct + demande pending (traçable, non
+     * auto-approuvable).
+     */
+    #[Test]
+    public function uuid_only_of_enrolled_workstation_does_not_leak_409_oracle(): void
+    {
+        $enrolled = Workstation::factory()->create(['mac' => 'aa:bb:cc:dd:ee:ff', 'uuid' => 'UUID-ENROLLED', 'name' => 'PC-LAB-01']);
+        $this->tokens->issueFor($enrolled);
+        $this->enableCampaign();
+
+        // Faisceau avec l'uuid du poste enrôlé mais une MAC étrangère → pas de
+        // conflit MAC → 403 indistinct (jamais 409), demande pending créée.
+        $this->enroll(['mac' => '11:22:33:44:55:66', 'hostname' => 'PC-IMPOSTEUR', 'uuid' => 'UUID-ENROLLED'])
+            ->assertStatus(403);
+
+        self::assertSame(1, AgentEnrollmentRequest::query()->count());
+        // Le poste enrôlé n'est pas auto-approuvé (MAC divergente).
+        self::assertNull(AgentEnrollmentRequest::query()->first()->matched_workstation_id);
+    }
+
     // ── AC3 — campagne expirée → manuel ─────────────────────────────────
 
     #[Test]

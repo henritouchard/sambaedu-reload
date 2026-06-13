@@ -58,8 +58,9 @@ iPXE (admin authentifié)                 serveur SE5                       post
 3. **Échange** (`POST /api/v1/agent/enrollment`, route `agent.v1.enrollment`)
    — résolution par **hash du ticket** exclusivement : le ticket EST
    l'identité ; uuid/mac sont spoofables sur le LAN et ne servent qu'au log
-   de cohérence (`agent.enroll.identity_mismatch`, warning sans blocage) et
-   au choix 409/403. Le ticket est consommé atomiquement (un seul redeem
+   de cohérence (`agent.enroll.identity_mismatch`, warning sans blocage). Le
+   choix 409/403 en cas d'échec se fonde sur la **seule MAC** (ancre) — l'uuid
+   ne sert jamais d'oracle (review 25.3 #M3). Le ticket est consommé atomiquement (un seul redeem
    gagne, même concurrent), le token naît via
    `TokenRotationService::issueFor()` et le clair est renvoyé **une seule
    fois** (`{success: true, token}`, `Cache-Control: no-store`).
@@ -101,7 +102,7 @@ Format d'erreur JSON SE5 : `{error, message, code}`. Middlewares :
 | HTTP | `code` | Cas |
 |---|---|---|
 | 200 | — | Ticket valide : `{success: true, token}` (clair, une seule fois) |
-| 409 | `AGENT_ENROLL_CONFLICT` | Ticket invalide **et** poste visé (uuid, à défaut mac) **déjà enrôlé** — son token reste intact, rien n'est écrasé silencieusement |
+| 409 | `AGENT_ENROLL_CONFLICT` | Ticket invalide **et** un poste **partageant la MAC** (ancre) est **déjà enrôlé** — son token reste intact, rien n'est écrasé silencieusement. Conflit fondé sur la **seule MAC** (`exists()` d'un enrôlé) : l'uuid (preuve faible) ne déclenche jamais de 409 (pas d'oracle, review 25.3 #M2/#M3) |
 | 403 | `AGENT_ENROLL_NOT_ALLOWED` | Tout le reste : ticket absent/inconnu/expiré/déjà consommé, poste non enrôlé ou inconnu — **volontairement indistincts** (pas d'oracle sur l'état des tickets). C'est le point d'accueil de la **porte 2** ([§9](#9-porte-2--enrôlement-des-postes-migrés-story-253)) : une demande d'enrôlement est créée/rafraîchie en effet de bord, sans que la réponse ne change (toujours 403 indistinct) |
 
 Note collision : `POST /api/v1/agent/enroll` (`agent.v1.enroll`) appartient
@@ -255,7 +256,7 @@ jamais l'état de sa demande.
 | HTTP | `code` | Cas |
 |---|---|---|
 | 200 | — | Demande **approuvée** (un-clic ou auto) concordante re-présentée : `issueFor()`, token né, demande consommée |
-| 409 | `AGENT_ENROLL_CONFLICT` | Poste connu **déjà enrôlé** — jamais de demande pending, jamais d'auto, token intact |
+| 409 | `AGENT_ENROLL_CONFLICT` | Un poste **partageant la MAC** (ancre) est **déjà enrôlé** — jamais de demande pending, jamais d'auto, token intact. Fondé sur la seule MAC (`exists()`), l'uuid ne fait jamais oracle (review 25.3 #M2/#M3) |
 | 403 | `AGENT_ENROLL_NOT_ALLOWED` | Tout le reste : demande créée/rafraîchie/pending/rejetée — **indistinct** |
 
 ### 9.7 Logs porte 2 (channel `agent`)

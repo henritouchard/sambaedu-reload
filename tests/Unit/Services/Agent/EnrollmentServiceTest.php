@@ -197,17 +197,20 @@ class EnrollmentServiceTest extends TestCase
     }
 
     #[Test]
-    public function invalid_ticket_targeting_enrolled_workstation_is_conflict(): void
+    public function invalid_ticket_with_uuid_only_of_enrolled_workstation_is_not_a_conflict(): void
     {
-        // AC4 — 409 réservé au cas « poste identifiable (uuid) ET déjà
-        // enrôlé » : rien n'est écrasé, son token reste intact.
+        // Review #M3 (sans-oracle, AC6) : l'uuid SEUL (preuve faible/spoofable)
+        // ne déclenche JAMAIS de 409 — sinon le 409≠403 serait un oracle de
+        // présence. Le conflit se fonde désormais sur la SEULE MAC (ancre, cf.
+        // test `..._by_mac_is_conflict`). Sans MAC concordante : 403 indistinct,
+        // le token du poste enrôlé reste intact (rien n'est écrasé).
         $ws = Workstation::factory()->create();
         $token = $this->tokens->issueFor($ws);
 
         $result = $this->service->redeem(str_repeat('f', 64), ['uuid' => $ws->uuid]);
 
         self::assertFalse($result->enrolled);
-        self::assertTrue($result->conflict);
+        self::assertFalse($result->conflict);
         self::assertSame(hash('sha256', $token), $ws->refresh()->agent_token_hash);
     }
 

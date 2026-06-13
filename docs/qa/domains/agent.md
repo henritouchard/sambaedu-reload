@@ -1035,12 +1035,27 @@ qui avance.
 ### Scénario 10.6 — Conflit : poste connu déjà enrôlé (AC4, piège n° 4)
 
 1. Sur un poste déjà enrôlé (`agent_token_hash` non nul), `curl` POST sans
-   ticket avec son faisceau.
+   ticket en présentant **sa MAC**.
 2. Attendu : **409** `AGENT_ENROLL_CONFLICT`, token courant **intact**,
    **aucune** demande pending créée.
 
 **Attendu** : un ré-enrôlement/clone d'un poste enrôlé est un conflit, jamais une
-demande d'enrôlement.
+demande d'enrôlement. Le conflit se fonde sur la **seule MAC** (ancre, review
+#M2/#M3) — voir 10.11/10.12.
+
+### Scénario 10.11 — Conflit sous MAC partagée (review #M2)
+
+1. Deux fiches partagent une MAC ; l'**une** est enrôlée, l'autre non.
+2. `curl` POST sans ticket avec cette MAC.
+3. Attendu : **409** quel que soit l'ordre des fiches en base (détection par
+   `exists()` d'un enrôlé partageant la MAC, pas par « la première trouvée »).
+
+### Scénario 10.12 — Pas d'oracle via l'UUID (review #M3, AC6)
+
+1. `curl` POST sans ticket en présentant l'**UUID** d'un poste enrôlé mais une
+   **MAC étrangère** (ou aucune MAC).
+2. Attendu : **403** indistinct (jamais 409) + demande pending non
+   auto-approuvable — l'UUID seul ne révèle pas la présence d'un poste enrôlé.
 
 ### Scénario 10.7 — Rejet → poste hors système, pas de ré-ouverture (AC4)
 
@@ -1086,6 +1101,7 @@ demande d'enrôlement.
 - **Review 24.3 #1 (corrigé)** : `Get-InteractiveSessions` filtrait les pseudo-sessions par liste NOIRE (`S-1-5-90/96-`) — comptes virtuels (`S-1-5-80/82-`) et `Win32_Account.Name` vides passaient → fetchs `?user=` (vide) + caches `sessions\<SID-service>\` parasites. Corrigé en liste BLANCHE `^S-1-5-21-` + garde login vide. Angle de test à conserver : sur le poste lab (scénario 3.2), vérifier qu'AUCUN répertoire `cache\sessions\` ne correspond à un SID hors `S-1-5-21-*` ; côté serveur, `?user=` VIDE = 200 machine-only SANS `agent.state.unknown_user` (figé par `SessionCompanionE2eTest::empty_user_param_…`).
 - **Incident terrain T12 ws 49 n° 2 (corrigé en 2.1.2)** : la tâche `SambaEduAgent-SessionCompanion` (binaire CONSOLE lancé dans la session interactive) laissait une **fenêtre console visible et résidente** toute la session — fermable par le user (= compagnon tué), et un clic dedans (quick-edit) gelait stdout. Corrigé : `FreeConsole` au démarrage du compagnon (bref flash au logon, assumé). Angle de test à conserver (scénario 6.2) : après logon, AUCUNE fenêtre console résiduelle ; `agent.exe companion` visible dans le Gestionnaire des tâches uniquement.
 - **Review 25.3 #3/#4 (corrigés avant merge)** : deux angles que les tests unitaires n'attrapaient pas mais qu'un test manuel révèle. (a) **Approuver un poste « inconnu »** (sans rapprochement DB) menait à une impasse : la demande passait `approved` mais l'étape 2 du redeem exige une cible → poste 403 éternel + demande sortie du scope pending (invisible). Corrigé : le bouton « Approuver » est **désactivé** (tooltip « rapprochement requis ») pour une demande sans `matched_workstation_id`, et le service le refuse. Angle de test à conserver (scénario 10.9) : une demande badge « inconnu » ne propose PAS d'approbation actionnable. (b) **Actions Livewire non gardées** : `approve/reject/campagne` ne reposaient que sur le middleware de page — un appel direct `/livewire/update` les exposait. Corrigé : `Gate::authorize('computer.install')` sur chaque action mutante. Angle de test (scénario 10.10) : un utilisateur sans `computer.install` reçoit 403 sur l'action, la demande reste `pending`. Bonus observabilité : un log `agent.enroll.stale_approval` (warning) signale désormais une approbation qui ne se matérialise pas (poste enrôlé entre-temps / cible nulle).
+- **Review 25.3 #M2/#M3 (arbitrage Henri, corrigés)** : le conflit 409 se fondait sur `resolveByIdentity()` (uuid puis MAC, `.first()`). Deux trous : (a) **oracle** — présenter l'UUID seul d'un poste enrôlé donnait 409 (≠403), révélant sa présence via une preuve faible/spoofable ; (b) **MAC partagée** — `.first()` pouvait tomber sur un clone non-enrôlé et rater le conflit. Corrigé : conflit fondé sur la **seule MAC** via `Workstation::where('mac')->whereNotNull('agent_token_hash')->exists()` ; `resolveByIdentity()` supprimée. **Changement de contrat propagé à la porte 1** (le 409 par uuid-seul disparaît). Angles de test à conserver : scénarios 10.11 (MAC partagée → 409 indépendant de l'ordre) et 10.12 (uuid seul → 403 sans oracle).
 - **Incident terrain T12 ws 49 (corrigé en 2.1.1)** : `agent.exe install` échouait en `Accès refusé` sur le rename atomique de `config.json` — `setAgentACL` posait les flags d'héritage `(OI)(CI)` sur les FICHIERS tmp de `writeAtomic` ; via icacls sur un fichier, ces ACE deviennent inertes pour l'accès au fichier lui-même → DACL effective vide, plus personne (pas même SYSTEM) n'a DELETE, le rename échoue. Invisible des 122 tests hôte (icacls = Windows réel uniquement) — détecté à la PREMIÈRE exécution Windows du binaire. Corrigé : `setAgentACL` distingue répertoire (`(OI)(CI)F`) / fichier (`F` plat). Angle de test à conserver (scénario 6.1) : après install, `icacls C:\ProgramData\SambaEdu\Agent\config.json` doit montrer des ACE SANS flags `(OI)(CI)`. Méthode de diagnostic qui a tranché : reproduction manuelle A/B de la séquence writeAtomic (`Set-Content` tmp → `icacls /inheritance:r /grant` avec puis sans flags → `Rename-Item`). Nettoyage d'un poste touché : supprimer `cache\state.json`/`etag.txt` et `applied-state.json` écrits par un binaire ≤ 2.1.0 (DACL inerte = irremplaçables par le service), JAMAIS le `token`.
 
 ---
@@ -1153,3 +1169,5 @@ demande d'enrôlement.
 - [ ] 10.8 — non-régression porte 1 : ticket valide → 200 token direct, aucune demande créée
 - [ ] 10.9 — demande « inconnu » : bouton Approuver désactivé, service refuse, reste pending (review #3)
 - [ ] 10.10 — autorisation : sans `computer.install` → 403 sur l'action, aucune mutation ; avec → resolved_by renseigné (review #4)
+- [ ] 10.11 — conflit sous MAC partagée : 409 quel que soit l'ordre des fiches (review #M2)
+- [ ] 10.12 — pas d'oracle UUID : uuid d'un enrôlé + MAC étrangère → 403 indistinct, jamais 409 (review #M3)

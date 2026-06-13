@@ -146,10 +146,12 @@ final class EnrollmentEndpointTest extends TestCase
     #[Test]
     public function missing_ticket_on_enrolled_workstation_returns_409_and_token_stays_intact(): void
     {
-        $ws = Workstation::factory()->create();
+        // Conflit fondé sur la MAC (ancre) — review #M3 : l'uuid seul ne sert
+        // plus d'oracle, le vecteur d'identité du conflit est la MAC.
+        $ws = Workstation::factory()->create(['mac' => 'aa:bb:cc:dd:ee:ff']);
         $token = $this->tokens->issueFor($ws);
 
-        $this->enroll(['uuid' => $ws->uuid])
+        $this->enroll(['mac' => 'aa:bb:cc:dd:ee:ff'])
             ->assertStatus(409)
             ->assertJson([
                 'error' => 'conflict',
@@ -164,9 +166,9 @@ final class EnrollmentEndpointTest extends TestCase
     #[Test]
     public function missing_ticket_on_unknown_workstation_returns_403(): void
     {
-        Workstation::factory()->create();
+        Workstation::factory()->create(['mac' => 'aa:bb:cc:dd:ee:ff']);
 
-        $this->enroll(['uuid' => '99999999-9999-9999-9999-999999999999'])
+        $this->enroll(['mac' => '11:22:33:44:55:66'])
             ->assertStatus(403)
             ->assertJson(['code' => EnrollController::CODE_NOT_ALLOWED]);
     }

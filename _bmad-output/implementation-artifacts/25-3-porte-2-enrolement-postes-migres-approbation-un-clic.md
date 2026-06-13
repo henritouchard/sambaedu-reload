@@ -254,14 +254,15 @@ Valeur autonome immédiate : un poste migré sur lequel la GPO a posé l'agent (
 - `resources/views/pages/parc-settings/agent/index.blade.php` — page squelette (Livewire SFC) hébergeant la surface d'approbation (rings/releases = 25.5, non livrés).
 - `resources/views/pages/parc-settings/agent/_partials/enrollment-requests.blade.php` — surface Livewire SFC : liste pending, approuver un-clic, rejeter via modale réutilisable, bandeau campagne, `WithToasts`. **(post-review)** `Gate::authorize('computer.install')` sur chaque action (#4), bouton « Approuver » désactivé sans rapprochement (#3), cap campagne 365j (#7).
 - `tests/Unit/Services/Agent/EnrollmentMatchServiceTest.php` — 9 tests (MAC normalisée, candidat unique vs multi, hostname cohérent/divergent, enrôlé exclu, uuid jamais seul).
-- `tests/Feature/Api/V1/Agent/EnrollmentGate2Test.php` — 13 tests (matrice AC7 complète + non-régression porte 1 + sans-oracle log).
+- `tests/Feature/Api/V1/Agent/EnrollmentGate2Test.php` — 15 tests (matrice AC7 complète + non-régression porte 1 + sans-oracle log ; +2 post-review : clone MAC partagée → 409 #M2, uuid seul d'un enrôlé → 403 sans oracle #M3).
 - `tests/Feature/Livewire/Agent/EnrollmentRequestsSurfaceTest.php` — 6 tests (liste pending, approuver, **approuver refusé sans rapprochement**, rejeter modale, toggle campagne, **403 sans `computer.install`**) — `actingAs` admin (post-review #3/#4/#5).
 
 ### Modifiés
-- `app/Services/Agent/Enrollment/EnrollmentService.php` — injection `EnrollmentMatchService` + `EnrollmentCampaign` ; `reject()` → `handleGate2()` (conflit 409 / demande approuvée concordante → claim atomique + token / création-refresh demande + auto-approbation campagne) ; nouvelles méthodes `approveManually()` / `rejectManually()` (gardées `pending`) + helpers `recordRequest()`/`findRequestByIdentity()`/`idempotencyKey()`. Flux ticket (porte 1) inchangé. **(post-review)** claim atomique étape 2 (#1), gardes de statut (#2), log `stale_approval` (#M4).
+- `app/Services/Agent/Enrollment/EnrollmentService.php` — injection `EnrollmentMatchService` + `EnrollmentCampaign` ; `reject()` → `handleGate2()` (conflit 409 MAC-only / demande approuvée concordante → claim atomique + token / création-refresh demande + auto-approbation campagne) ; nouvelles méthodes `approveManually()` / `rejectManually()` (gardées `pending`) + helpers `recordRequest()`/`findRequestByIdentity()`/`idempotencyKey()`. Flux ticket succès (porte 1) inchangé. **(post-review)** claim atomique étape 2 (#1), gardes de statut (#2), log `stale_approval` (#M4), conflit 409 fondé sur la **seule MAC** via `exists()` enrôlé + `resolveByIdentity()` supprimée (#M2/#M3).
 - `app/Providers/AgentServiceProvider.php` — bindings singletons `EnrollmentMatchService` et `EnrollmentCampaign` + injection dans `EnrollmentService`.
 - `routes/web.php` — route `parc-settings/agent` (`Route::livewire`, gate `can:computer.install`). Aucune route API neuve (porte 2 réutilise `agent.v1.enrollment`).
-- `tests/Unit/Services/Agent/EnrollmentServiceTest.php` — résolution de `EnrollmentService` via le container (constructeur a gagné des dépendances).
+- `tests/Unit/Services/Agent/EnrollmentServiceTest.php` — résolution de `EnrollmentService` via le container (constructeur a gagné des dépendances). **(post-review #M3)** le test uuid-seul→conflit devient uuid-seul→**non**-conflit (sans-oracle).
+- `tests/Feature/Api/V1/Agent/EnrollmentEndpointTest.php` — **(post-review #M3)** conflit porte 1 réaligné sur la MAC (le 409 par uuid-seul n'existe plus).
 - `docs/agent/enrollment.md` — section §9 « Porte 2 » (flux, faisceau gap 3, idempotence, campagne, codes 200/403/409, logs) ; renvois « 25.3 à venir » résolus (§1, §4, §5, §8). Section porte 1 et `contract-v1.md` inchangés.
 - `docs/qa/domains/agent.md` — Section 10 (scénarios 10.1→10.10, dont 10.9/10.10 post-review) + entrée Post-correctifs review 25.3 #3/#4 + checklist append-only.
 - `docs/qa/README.md` — ligne domaine agent étendue à 25.3.
@@ -282,7 +283,7 @@ opus (`claude-opus-4-8[1m]`).
 
 ### Gates
 - `php -l` : OK sur tous les fichiers créés/modifiés.
-- Tests (hôte, vendor présent) : `--filter Enrollment` → **148 passed (517 assertions)** après corrections post-review. Détail : `EnrollmentMatchServiceTest` 9/9, `EnrollmentGate2Test` 13/13, `EnrollmentRequestsSurfaceTest` 6/6, `EnrollmentServiceTest` (porte 1) + `EnrollmentEndpointTest` (porte 1) verts (non-régression).
+- Tests (hôte, vendor présent) : `--filter Enrollment` → **150 passed (523 assertions)** après corrections post-review + arbitrages M2/M3. Détail : `EnrollmentMatchServiceTest` 9/9, `EnrollmentGate2Test` 15/15, `EnrollmentRequestsSurfaceTest` 6/6, `EnrollmentServiceTest` + `EnrollmentEndpointTest` (porte 1, conflit réaligné MAC) verts.
 - `--filter Agent` complet : **257 passed, 45 failed**. Les 45 échecs sont **pré-existants et indépendants** (baseline identique avant toute modif) : `WorkstationGroupObserver`/AdSync tentent un `ldap_search` sur l'hôte sans serveur LDAP (`Can't contact LDAP server`). Aucun échec sur les fichiers de cette story. La VM (avec config AD ou observers neutralisés) est la cible d'exécution de référence d'Henri.
 - Grep Keycloak NFR7 / writes hors `agent_*` : vide.
 
@@ -307,7 +308,9 @@ Review sonnet (8 findings) + second avis opus (3 manqués) → doc `_bmad-output
 
 **Écartés** : #6 (cosmétique, opus 1/3) ; #8 (solution index-unique-PG **rejetée** : contredit la décision n°1 / parité SQLite de la story).
 
-**⏳ Arbitrage Henri (touchent l'invariant anti-usurpation / sémantique 409 partagée porte 1) — NON corrigés** : #M2 (conflit `.first()` sous MAC partagée → durcir en `exists()` enrôlé), #M3 (oracle 409 via uuid seul en porte 2), #M1 (refresh re-calcule `matched_workstation_id` — risque jugé dans le modèle de menace accepté). Détail + questions dans le doc de review.
+**Arbitrages Henri (2026-06-13) — tranchés** :
+- **#M2 + #M3 ✅ corrigés** : le conflit 409 se fonde désormais sur la **seule MAC** (ancre) via `Workstation::where('mac',$mac)->whereNotNull('agent_token_hash')->exists()`. Plus d'oracle uuid (#M3, AC6), et un clone enrôlé sous MAC partagée est toujours détecté (#M2, `exists()` vs `.first()`). `resolveByIdentity()` supprimée. **Changement de contrat propagé à la porte 1** (le 409 par uuid-seul disparaît) : `enrollment.md` §4/§9 + tests porte 1 (`EnrollmentEndpointTest`, `EnrollmentServiceTest`) alignés sur la MAC ; 2 tests neufs gate-2 (`enrolled_clone_sharing_mac_still_returns_409`, `uuid_only_of_enrolled_workstation_does_not_leak_409_oracle`).
+- **#M1 ✅ accepté tel quel** : aucune modif. `match()` ne résout que par MAC, le rapprochement ne mute pas via hostname ; risque résiduel (MAC spoofée) dans le modèle de menace iso-legacy accepté (`feedback_auth_iso_legacy`).
 
 ## Change Log
 
@@ -315,3 +318,4 @@ Review sonnet (8 findings) + second avis opus (3 manqués) → doc `_bmad-output
 |---|---|---|
 | 2026-06-13 | DEV opus | Implémentation porte 2 : table+modèle `agent_enrollment_requests`, `EnrollmentMatchService` (faisceau/concordance/anti-usurpation), `EnrollmentCampaign` (réglage borné), branche `handleGate2` dans `EnrollmentService` (demande pending, auto/manuel, consommation à l'approbation), surface UI Livewire (liste + approuver/rejeter + modale réutilisable + campagne), doc §9 enrollment.md + QA Section 10. 26 tests neufs verts, zéro régression porte 1. Status → review. |
 | 2026-06-13 | Review sonnet + 2e avis opus | 8 findings + 3 manqués (opus). 7 corrigés auto (#1 claim atomique, #2 gardes statut, #3 approuver sans rapprochement, #4 Gate::authorize, #5 tests authz, #7 cap campagne, #M4 log stale_approval) ; #6/#8 écartés ; #M1/#M2/#M3 en arbitrage Henri. `--filter Enrollment` 148 passed. Doc `codeReviews/25-3.md`. |
+| 2026-06-13 | Arbitrages Henri | #M2+#M3 corrigés : conflit 409 **MAC-only** (`exists()` enrôlé) → plus d'oracle uuid, clone MAC partagée détecté ; `resolveByIdentity()` supprimée ; contrat propagé porte 1 (`enrollment.md` + tests porte 1/porte 2 réalignés, 2 tests gate-2 neufs). #M1 accepté tel quel. `--filter Enrollment` **150 passed (523 assertions)**. Review doc → done. |

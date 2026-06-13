@@ -177,12 +177,19 @@ class EnrollmentService
      */
     private function handleGate2(string $reason, array $identity): EnrollmentResult
     {
-        // (1) Conflit : poste connu déjà enrôlé — jamais de demande pending, 409.
-        $target = $this->resolveByIdentity($identity);
-        if ($target !== null && $target->agent_token_hash !== null) {
+        // (1) Conflit : un poste DÉJÀ ENRÔLÉ partage l'ancre MAC → 409, jamais de
+        // demande pending (clone / ré-enrôlement potentiel, pas un poste migré
+        // qui rejoint). Review #M2/#M3 : conflit fondé sur la SEULE MAC (ancre) —
+        // l'uuid (preuve faible/spoofable) ne sert jamais d'oracle de présence
+        // (AC6, sans-oracle) — ET sur l'EXISTENCE d'un enrôlé partageant la MAC
+        // (`exists()`, pas `.first()`) : un clone enrôlé sous MAC partagée est
+        // toujours détecté quel que soit l'ordre des lignes en base.
+        $mac = MacAddressNormalizer::normalize((string) ($identity['mac'] ?? ''));
+        if ($mac !== null
+            && Workstation::query()->where('mac', $mac)->whereNotNull('agent_token_hash')->exists()) {
             $this->log('warning', 'agent.enroll.rejected', [
                 'reason' => $reason,
-                'workstation_id' => $target->id,
+                'mac' => $mac,
                 'conflict' => true,
             ]);
 
@@ -426,29 +433,6 @@ class EnrollmentService
 
         if ($hostname !== null) {
             return ['hostname' => mb_strtolower($hostname)];
-        }
-
-        return null;
-    }
-
-    /**
-     * Résout le poste visé par uuid, à défaut mac — uniquement pour le choix
-     * 409/403 et le contexte de log, jamais pour autoriser.
-     */
-    private function resolveByIdentity(array $identity): ?Workstation
-    {
-        $uuid = strtolower(trim((string) ($identity['uuid'] ?? '')));
-        if ($uuid !== '') {
-            $found = Workstation::query()->whereRaw('LOWER(uuid) = ?', [$uuid])->first();
-            if ($found !== null) {
-                return $found;
-            }
-        }
-
-        $mac = MacAddressNormalizer::normalize((string) ($identity['mac'] ?? ''));
-        if ($mac !== null) {
-            // `workstations.mac` est canonique lowercase `:` (mutator modèle).
-            return Workstation::query()->where('mac', $mac)->first();
         }
 
         return null;
