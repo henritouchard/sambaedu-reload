@@ -303,8 +303,11 @@ class WindowsUnattendBuilderTest extends TestCase
         self::assertStringContainsString('-addstore', $commands[3]);
         self::assertStringContainsString('Root', $commands[3]);
         self::assertStringContainsString('/api/v1/agent/stable/download', $commands[3]);
-        // Binaire déposé à son emplacement DÉFINITIF avant `install` (piège n° 10).
-        self::assertStringContainsString('C:\Program Files\SambaEdu\Agent\agent.exe', $commands[3]);
+        // Binaire déposé à son emplacement DÉFINITIF avant `install` (piège n° 10) :
+        // le dossier littéral + l'exe résolu via Join-Path depuis ce dossier (le
+        // SCM enregistre ce chemin, jamais %temp%).
+        self::assertStringContainsString("\$dir='C:\\Program Files\\SambaEdu\\Agent'", $commands[3]);
+        self::assertStringContainsString("Join-Path \$dir 'agent.exe'", $commands[3]);
         self::assertStringContainsString('install -server-url', $commands[3]);
         // Échec non bloquant : exit 0 (le filet GPO rattrape).
         self::assertStringContainsString('exit 0', $commands[3]);
