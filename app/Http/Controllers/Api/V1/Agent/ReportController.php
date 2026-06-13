@@ -71,10 +71,45 @@ class ReportController extends Controller
         // stockage D3 et idempotente.
         $this->syncRequests->fulfill($workstation);
 
+        // Story 25.5 — greffe persistance de la version rapportée (AC4). La
+        // version vient du payload VALIDÉ (`max:32`, jamais le brut), écrite
+        // hors transaction D3 (iso fulfill / check-in). `ReportIngestService`
+        // reste read-only sur `workstations` : la greffe est ICI, pas dans le
+        // service. Colonnes hors $fillable → forceFill explicite. Le contrat de
+        // report est inchangé (la version était déjà dans chaque payload).
+        $this->persistReportedVersion($workstation, $report);
+
         return response()->json([
             'success' => true,
             'counts' => $counts,
         ]);
+    }
+
+    /**
+     * Story 25.5 — persiste la version rapportée par l'agent (AC4).
+     *
+     * `agent_version` est `required` dans `ReportRequest` : `$report` la
+     * contient toujours quand on arrive ici (validation passée). Garde de
+     * forme défensive néanmoins (chaîne non vide) avant l'écriture, et
+     * troncature à 32 (= largeur colonne / borne `max:32`) par sécurité —
+     * SQLite n'applique pas les varchar en test. `forceFill` car les colonnes
+     * `agent_*` sont volontairement hors `$fillable`. Écriture idempotente :
+     * un re-report de la même version ne casse rien, `agent_reported_version_at`
+     * est rafraîchi à chaque rapport (fraîcheur = donnée de progression).
+     *
+     * @param  array<string, mixed>  $report
+     */
+    private function persistReportedVersion(Workstation $workstation, array $report): void
+    {
+        $version = $report['agent_version'] ?? null;
+        if (! is_string($version) || trim($version) === '') {
+            return;
+        }
+
+        $workstation->forceFill([
+            'agent_reported_version' => Str::limit(trim($version), 32, ''),
+            'agent_reported_version_at' => now(),
+        ])->save();
     }
 
     /**

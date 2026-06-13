@@ -136,6 +136,109 @@ class EnrollmentRequestsSurfaceTest extends TestCase
     }
 
     #[Test]
+    public function approving_unknown_request_with_target_arms_it_on_the_chosen_workstation(): void
+    {
+        // Story 25.5 (AC5) — extension : approbation d'un inconnu par sélection
+        // de cible explicite. `approveManually` reçoit le $target (3ᵉ arg).
+        $req = $this->pending(['matched_workstation_id' => null]);
+        $target = Workstation::factory()->create(['name' => 'PC-CIBLE']);
+
+        Livewire::test(self::COMPONENT)
+            ->call('openTargetSelect', $req->id)
+            ->assertSet('isTargetOpen', true)
+            ->set('targetWorkstationId', $target->id)
+            ->call('confirmApproveWithTarget')
+            ->assertSet('isTargetOpen', false)
+            ->assertDispatched('toastMagic');
+
+        $req->refresh();
+        self::assertSame(AgentEnrollmentRequest::STATUS_APPROVED, $req->status);
+        // La cible humaine explicite a été armée (anti-usurpation : pas d'auto-sélection).
+        self::assertSame($target->id, $req->matched_workstation_id);
+        self::assertSame($this->admin->id, $req->resolved_by);
+        // Le token ne transite pas : la cible reste non enrôlée ici.
+        self::assertFalse($target->refresh()->isAgentEnrolled());
+    }
+
+    #[Test]
+    public function selecting_a_target_is_refused_for_an_already_matched_request(): void
+    {
+        // Anti-usurpation (review 25.5 #P2) : la modale de sélection de cible est
+        // RÉSERVÉE aux demandes inconnues. Une demande déjà rapprochée ne doit
+        // jamais être ré-aiguillée silencieusement vers une autre cible via
+        // /livewire/update — ni à l'ouverture, ni à la confirmation.
+        $matched = Workstation::factory()->create(['name' => 'PC-DEJA']);
+        $other = Workstation::factory()->create(['name' => 'PC-USURPATEUR']);
+        $req = $this->pending(['matched_workstation_id' => $matched->id]);
+
+        // Garde à l'ouverture : openTargetSelect refuse d'armer la modale.
+        Livewire::test(self::COMPONENT)
+            ->call('openTargetSelect', $req->id)
+            ->assertSet('isTargetOpen', false)
+            ->assertDispatched('toastMagic', fn ($event, $params) => ($params['status'] ?? null) === 'error');
+
+        // Défense en profondeur : même en forçant l'état (adressabilité
+        // /livewire/update, modale jamais ouverte légitimement), confirmer avec
+        // une autre cible est refusé et ne touche pas le rapprochement.
+        Livewire::test(self::COMPONENT)
+            ->set('targetRequestId', $req->id)
+            ->set('targetWorkstationId', $other->id)
+            ->call('confirmApproveWithTarget')
+            ->assertDispatched('toastMagic', fn ($event, $params) => ($params['status'] ?? null) === 'error');
+
+        $req->refresh();
+        self::assertSame(AgentEnrollmentRequest::STATUS_PENDING, $req->status);
+        // Le rapprochement d'origine est intact (pas d'override par $other).
+        self::assertSame($matched->id, $req->matched_workstation_id);
+    }
+
+    #[Test]
+    public function approving_unknown_without_selecting_a_target_does_not_arm(): void
+    {
+        // Anti-usurpation : aucune auto-sélection silencieuse. Sans cible
+        // choisie, la demande reste pending.
+        $req = $this->pending(['matched_workstation_id' => null]);
+
+        Livewire::test(self::COMPONENT)
+            ->call('openTargetSelect', $req->id)
+            ->call('confirmApproveWithTarget'); // aucun targetWorkstationId
+
+        self::assertSame(AgentEnrollmentRequest::STATUS_PENDING, $req->refresh()->status);
+    }
+
+    #[Test]
+    public function target_candidates_exclude_already_enrolled_workstations(): void
+    {
+        $req = $this->pending(['matched_workstation_id' => null]);
+        $free = Workstation::factory()->create(['name' => 'PC-LIBRE']);
+        $enrolled = Workstation::factory()->create(['name' => 'PC-PRIS']);
+        $enrolled->forceFill(['agent_token_hash' => str_repeat('a', 64)])->save();
+
+        // openTargetSelect pré-remplit la recherche avec le hostname de la
+        // demande ; on la vide pour lister tous les postes non enrôlés.
+        $component = Livewire::test(self::COMPONENT)
+            ->call('openTargetSelect', $req->id)
+            ->set('targetSearch', '');
+        $candidates = $component->instance()->targetCandidates;
+
+        self::assertTrue($candidates->contains('id', $free->id));
+        self::assertFalse($candidates->contains('id', $enrolled->id));
+    }
+
+    #[Test]
+    public function open_target_select_is_forbidden_without_permission(): void
+    {
+        $req = $this->pending(['matched_workstation_id' => null]);
+        $viewer = User::query()->create(['login' => 'enroll-viewer2', 'role' => 'eleve', 'is_active' => true]);
+        $this->actingAs($viewer);
+
+        $this->withoutExceptionHandling();
+        $this->expectException(AuthorizationException::class);
+
+        Livewire::test(self::COMPONENT)->call('openTargetSelect', $req->id);
+    }
+
+    #[Test]
     public function approve_is_forbidden_without_permission(): void
     {
         // (review #4/#5) Un utilisateur sans `computer.install` est refusé même

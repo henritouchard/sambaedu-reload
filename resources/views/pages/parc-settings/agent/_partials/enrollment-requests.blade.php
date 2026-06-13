@@ -2,6 +2,7 @@
 
 use App\Components\Traits\WithToasts;
 use App\Models\AgentEnrollmentRequest;
+use App\Models\Workstation;
 use App\Services\Agent\Enrollment\EnrollmentCampaign;
 use App\Services\Agent\Enrollment\EnrollmentService;
 use Illuminate\Support\Facades\Gate;
@@ -36,6 +37,19 @@ return new class extends Component {
 
     /** Durée (en jours) de la campagne lors de l'activation depuis l'UI. */
     public int $campaignDays = 7;
+
+    /**
+     * Modale de sélection de cible (Story 25.5, AC5) — approbation d'une
+     * demande « inconnue » (sans rapprochement). L'admin choisit explicitement
+     * un poste cible : anti-usurpation jamais débrayé, aucune auto-sélection.
+     */
+    public bool $isTargetOpen = false;
+
+    public ?int $targetRequestId = null;
+
+    public ?int $targetWorkstationId = null;
+
+    public string $targetSearch = '';
 
     #[Computed]
     public function requests()
@@ -89,6 +103,119 @@ return new class extends Component {
         app(EnrollmentService::class)->approveManually($request, auth()->id());
         unset($this->requests);
         $this->toastSuccess('Poste approuvé — il recevra son jeton à son prochain check-in.');
+    }
+
+    /**
+     * Story 25.5 (AC5) — ouvre la modale de sélection de cible pour une demande
+     * « inconnue » (sans rapprochement). Le choix du poste cible est l'extension
+     * explicitement renvoyée ici par 25.3.
+     */
+    public function openTargetSelect(int $id): void
+    {
+        Gate::authorize('computer.install');
+
+        $request = AgentEnrollmentRequest::query()->pending()->find($id);
+        if ($request === null) {
+            $this->toastError('Demande introuvable ou déjà résolue.');
+
+            return;
+        }
+
+        // AC5 / piège 6 : la sélection de cible est RÉSERVÉE aux demandes
+        // inconnues (sans rapprochement). Un poste déjà rapproché ne doit jamais
+        // être ré-aiguillé silencieusement vers une autre cible via la modale
+        // (adressabilité /livewire/update) — anti-usurpation, choix non débrayé.
+        if ($request->matched_workstation_id !== null) {
+            $this->toastError('Ce poste est déjà rapproché : utilisez l\'approbation directe.');
+
+            return;
+        }
+
+        $this->targetRequestId = $id;
+        $this->targetWorkstationId = null;
+        $this->targetSearch = $request->hostname ?? '';
+        $this->isTargetOpen = true;
+    }
+
+    public function closeTarget(): void
+    {
+        $this->isTargetOpen = false;
+        $this->targetRequestId = null;
+        $this->targetWorkstationId = null;
+        $this->targetSearch = '';
+    }
+
+    /**
+     * Candidats à la cible : postes NON enrôlés (pas de token agent), liste
+     * bornée filtrée par nom/hostname. AUCUNE auto-sélection (anti-usurpation
+     * 25.3) — la suggestion n'est qu'une aide, le choix reste humain.
+     */
+    #[Computed]
+    public function targetCandidates()
+    {
+        $query = Workstation::query()
+            ->whereNull('agent_token_hash')
+            ->orderBy('name')
+            ->limit(25);
+
+        $search = trim($this->targetSearch);
+        if ($search !== '') {
+            $query->where(function ($q) use ($search): void {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('mac', 'like', '%' . strtolower($search) . '%');
+            });
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * Approuve une demande inconnue sur la cible choisie (AC5) :
+     * `approveManually($req, auth()->id(), $target)` — le 3ᵉ arg arme la demande
+     * sur ce poste. Le token naît au prochain `redeem()` du poste, il ne transite
+     * jamais par l'UI. Choix de cible HUMAIN explicite (anti-usurpation).
+     */
+    public function confirmApproveWithTarget(): void
+    {
+        Gate::authorize('computer.install');
+
+        $request = $this->targetRequestId !== null
+            ? AgentEnrollmentRequest::query()->pending()->find($this->targetRequestId)
+            : null;
+
+        if ($request === null) {
+            $this->closeTarget();
+            $this->toastError('Demande introuvable ou déjà résolue.');
+
+            return;
+        }
+
+        // Défense en profondeur (adressabilité /livewire/update) : refuser
+        // l'override de cible sur une demande déjà rapprochée — anti-usurpation.
+        if ($request->matched_workstation_id !== null) {
+            $this->closeTarget();
+            $this->toastError('Ce poste est déjà rapproché : utilisez l\'approbation directe.');
+
+            return;
+        }
+
+        if ($this->targetWorkstationId === null) {
+            $this->toastError('Sélectionnez un poste cible pour approuver cette demande inconnue.');
+
+            return;
+        }
+
+        $target = Workstation::query()->whereNull('agent_token_hash')->find($this->targetWorkstationId);
+        if ($target === null) {
+            $this->toastError('Poste cible introuvable ou déjà enrôlé.');
+
+            return;
+        }
+
+        app(EnrollmentService::class)->approveManually($request, auth()->id(), $target);
+        $this->closeTarget();
+        unset($this->requests);
+        $this->toastSuccess("Demande approuvée sur le poste « {$target->name} » — il recevra son jeton à son prochain check-in.");
     }
 
     public function openReject(int $id): void
@@ -250,9 +377,10 @@ return new class extends Component {
                                     <i class="fa-solid fa-check"></i> Approuver
                                 </button>
                             @else
-                                <button type="button" class="btn btn-sm btn-success" disabled
-                                    title="Poste non rapproché : un rapprochement avec une fiche connue est requis pour approuver (sélection de cible à venir en 25.5).">
-                                    <i class="fa-solid fa-check"></i> Approuver
+                                <button type="button" class="btn btn-sm btn-success btn-outline"
+                                    wire:click="openTargetSelect({{ $request->id }})"
+                                    title="Poste non rapproché : choisir une cible pour approuver (anti-usurpation — choix humain explicite).">
+                                    <i class="fa-solid fa-crosshairs"></i> Approuver…
                                 </button>
                             @endif
                             <button type="button" class="btn btn-sm btn-ghost text-error"
@@ -300,6 +428,60 @@ return new class extends Component {
             <button type="button" class="btn btn-ghost" wire:click="close">Annuler</button>
             <button type="button" class="btn btn-error" wire:click="confirmReject">
                 <i class="fa-solid fa-xmark"></i> Rejeter
+            </button>
+        </x-slot:footer>
+    </x-molecules.modal>
+
+    {{-- Modale de sélection de cible (Story 25.5, AC5) — demande inconnue --}}
+    <x-molecules.modal wire:model="isTargetOpen" title="Choisir le poste cible"
+        icon="fa-crosshairs text-primary" size="max-w-2xl" height="h-auto" closeMethod="closeTarget">
+        <x-molecules.modal.section title="Approuver une demande inconnue">
+            <p class="text-sm text-base-content/60 mb-3">
+                Ce poste n'a pas été rapproché automatiquement. Choisissez explicitement la fiche
+                poste à laquelle l'associer (anti-usurpation : aucun rapprochement automatique d'un
+                inconnu). Le jeton naîtra au prochain check-in du poste — il ne transite jamais ici.
+            </p>
+            <div class="form-control mb-3">
+                <label class="label"><span class="label-text">Rechercher un poste (nom / MAC)</span></label>
+                <input type="text" class="input input-bordered" wire:model.live.debounce.300ms="targetSearch"
+                    placeholder="Nom ou MAC du poste cible">
+            </div>
+            <div class="max-h-72 overflow-y-auto border border-base-300 rounded-lg">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th>Nom</th>
+                            <th>MAC</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse ($this->targetCandidates as $candidate)
+                            <tr wire:key="cand-{{ $candidate->id }}" class="cursor-pointer"
+                                wire:click="$set('targetWorkstationId', {{ $candidate->id }})">
+                                <td>
+                                    <input type="radio" class="radio radio-sm" name="targetWorkstationId"
+                                        wire:model.live="targetWorkstationId" value="{{ $candidate->id }}">
+                                </td>
+                                <td class="font-mono">{{ $candidate->name }}</td>
+                                <td class="font-mono text-xs text-base-content/60">{{ $candidate->mac ?? '—' }}</td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="3" class="text-center text-base-content/50 py-6">
+                                    Aucun poste non enrôlé ne correspond.
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </x-molecules.modal.section>
+
+        <x-slot:footer>
+            <button type="button" class="btn btn-ghost" wire:click="closeTarget">Annuler</button>
+            <button type="button" class="btn btn-success" wire:click="confirmApproveWithTarget">
+                <i class="fa-solid fa-check"></i> Approuver sur ce poste
             </button>
         </x-slot:footer>
     </x-molecules.modal>

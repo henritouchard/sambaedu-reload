@@ -41,6 +41,8 @@ use Livewire\Wireable;
  * @property string|null $agent_enroll_ticket_hash SHA-256 hex du ticket d'enrôlement one-time (Story 23.3)
  * @property \DateTimeInterface|null $agent_enroll_ticket_expires_at Expiration du ticket d'enrôlement (Story 23.3)
  * @property \DateTimeInterface|null $agent_sync_requested_at Demande de resynchronisation pendante (Story 24.7)
+ * @property string|null $agent_reported_version Dernière version d'agent rapportée (Story 25.5)
+ * @property \DateTimeInterface|null $agent_reported_version_at Fraîcheur de la version rapportée (Story 25.5)
  * @property \DateTime $created_at
  * @property \DateTime $updated_at
  */
@@ -100,6 +102,10 @@ class Workstation extends Model implements Wireable
         // Story 24.7 — demande de resynchronisation pendante. Hors $fillable :
         // exactement 2 écrivains (SyncRequestService::request/fulfill).
         'agent_sync_requested_at' => 'datetime',
+        // Story 25.5 — version d'agent rapportée (greffe ReportController). Hors
+        // $fillable : seul écrivain = ReportController::store() (forceFill). La
+        // surface « progression du déploiement » lit ces colonnes (lecture seule).
+        'agent_reported_version_at' => 'datetime',
     ];
 
     /**

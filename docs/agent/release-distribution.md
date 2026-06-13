@@ -147,3 +147,33 @@ racine CA est le **prérequis de confiance** déployée par **les deux** chemins
 **Logs (channel `agent`)** : `agent.release.stable_served` (manifest + binaire),
 `agent.ca.served`, `agent.ca.unavailable` (503), `agent.release.stable_not_found`
 (404 indistinct). Jamais de token/hash en clair.
+
+## UI de pilotage des rings (Story 25.5)
+
+La page `parc-settings/agent/` (route `parc-settings.agent`, `can:computer.install`)
+expose une **seconde façade** sur le pilotage des rings — **le même service** que
+la CLI 25.1, jamais une réinvention. Les commandes artisan
+`agent:release:{create,promote,target}` restent l'interface CLI ; l'UI appelle
+exactement `ReleaseCreationService::{target,promote}` (SEUL écrivain des tables
+release/ring) :
+
+| Action UI | Appel service | Log | Sémantique |
+|---|---|---|---|
+| « Cibler un ring » / « Re-cibler » | `target($version, $group)` | `agent.release.targeted` | Cible UN ring (WorkstationGroup) sur une version — promotion canari |
+| « Rollback » (sur un ring) | `target($stableVersion, $group)` | `agent.release.targeted` | Re-cible le ring sur la stable par défaut (pas une suppression de ligne) |
+| « Définir stable » | `promote($version)` | `agent.release.promoted` | Déplace le pointeur stable global (défaut des postes sans ring — aussi le rollback du défaut parc) |
+
+**Aucune écriture directe** sur `agent_releases` / `agent_release_rings` depuis
+l'UI : toute `ReleaseOperationException` (version inconnue) est catchée → toast
+d'erreur, jamais une 500. **Pas de modèle d'ordre des rings** : la promotion « 1
+poste → 1 salle → parc » reste du **jugement humain** (l'admin choisit le groupe
+ET la version) — aucune auto-promotion.
+
+**Greffe de progression** : la version rapportée par l'agent (`agent_version`,
+présente dans chaque report) est désormais **persistée** dans
+`workstations.agent_reported_version` (+ `_at`) par `ReportController::store()`
+(hors transaction d'ingestion ; `ReportIngestService` reste read-only sur
+`workstations`). La surface « progression du déploiement » LIT cette colonne
+(jointure lecture seule `rings × workstation_group_workstation × workstations`)
+pour montrer, par ring, les postes à jour / en retard / jamais vus vs la version
+ciblée. Le contrat de report est inchangé — la colonne ne modifie pas le payload.

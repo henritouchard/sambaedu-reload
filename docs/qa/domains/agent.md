@@ -1176,6 +1176,60 @@ demande d'enrôlement. Le conflit se fonde sur la **seule MAC** (ancre, review
 
 ---
 
+## Section 12 — Console de pilotage de la flotte : UI parc-settings/agent (Story 25.5)
+
+La page `parc-settings/agent/` (route `parc-settings.agent`, `can:computer.install`) devient la **console de pilotage de la flotte** : 3 surfaces sur une seule page (releases & rings, progression du déploiement, enrôlements en attente). C'est de la **plomberie de surface** — tous les moteurs existent (25.1-25.4), l'UI est une 2ᵉ façade sur les **mêmes services** (`ReleaseCreationService` seul écrivain, `EnrollmentService::approveManually`). Greffe back unique : la version rapportée par l'agent est désormais **persistée** (`workstations.agent_reported_version`).
+
+### Scénario 12.1 — Cibler un ring sur une version (promotion canari)
+
+1. Sur la VM, s'assurer qu'au moins deux releases existent (ex. `2.1.2` stable + une autre publiée via `agent:release:create`).
+2. Ouvrir `parc-settings/agent/`, section « Releases publiées » → bouton **« Cibler un ring »**.
+3. Dans la modale, choisir un groupe (salle physique OU parc logique) + une version, valider.
+4. **Attendu** : toast de succès ; une ligne apparaît dans « Rings ciblés » (groupe → version, « dernier ciblage » = à l'instant). Côté logs `agent` : un `agent.release.targeted` (PAS `promoted`).
+5. Vérifier qu'AUCUNE écriture directe n'a eu lieu hors du service : `agent_release_rings` n'a qu'une ligne par groupe (UNIQUE), `updated_at` rafraîchi.
+
+### Scénario 12.2 — Définir / rollback la stable par défaut (`promote`)
+
+1. Section « Releases publiées » → sur une release non-stable, bouton **« Définir stable »** → confirmer dans la modale.
+2. **Attendu** : toast de succès ; le badge « stable par défaut » se déplace sur la nouvelle version ; **au plus une** release stable (invariant transactionnel). Log `agent.release.promoted`.
+3. Rollback du défaut parc : re-« Définir stable » sur la version antérieure → les postes **sans ring** reconvergent à leur prochain check-in.
+
+### Scénario 12.3 — Rollback d'un ring raté
+
+1. Sur un ring ciblé sur une version canari, bouton **« Rollback »** (`wire:confirm`).
+2. **Attendu** : le ring est re-ciblé sur la **stable par défaut** (c'est un `target()`, pas une suppression de ligne) ; toast ; log `agent.release.targeted`. Les postes du groupe reconvergent vers la stable.
+3. Cas dégradé : aucune stable publiée → toast d'erreur explicite, aucune écriture.
+
+### Scénario 12.4 — Progression du déploiement par ring
+
+1. Après avoir ciblé un ring, laisser des postes du groupe poster un rapport (boucle agent / `curl` POST report — cf. scénario 2.1) avec leur `agent_version`.
+2. Section « Progression du déploiement » : par ring, version ciblée vs comptes **à jour / en retard / jamais vus**, + « dernier rapport ».
+3. **Attendu** : un poste rapportant la version ciblée passe « à jour » ; un poste sur une autre version = « en retard » ; un poste qui n'a jamais rapporté = « jamais vu ». La fraîcheur (`agent_reported_version_at`) avance à chaque report. Surface **lecture seule** (aucune écriture, zéro AD).
+4. Greffe back à vérifier : `workstations.agent_reported_version` se peuple au fil des reports (avant 25.5, la colonne n'existait pas — la version était jetée).
+
+### Scénario 12.5 — Approbation d'un poste « inconnu » par sélection de cible (extension 25.3)
+
+1. Provoquer une demande d'enrôlement `pending` **sans rapprochement** (badge « inconnu » — poste non rapproché en DB).
+2. Section « Enrôlements en attente » : le bouton **« Approuver… »** est désormais **actif** (en 25.3 il était désactivé, renvoyé à 25.5).
+3. Cliquer → modale de **sélection de cible** : rechercher (nom/MAC) un poste **non enrôlé**, le choisir (radio), valider.
+4. **Attendu** : `EnrollmentService::approveManually($req, admin, $target)` arme la demande sur **la cible choisie** ; toast ; la demande passe `approved` ; le **token ne transite jamais par l'UI** (il naîtra au prochain `redeem()` du poste).
+5. **Anti-usurpation** (à conserver comme angle de test) : aucune **auto-sélection** silencieuse — sans cible choisie, la demande reste `pending` ; les postes déjà enrôlés n'apparaissent **pas** dans la liste des candidats.
+
+### Scénario 12.6 — Frontière, autorisation, golden files
+
+1. Vérifier qu'aucune action de la page n'écrit hors `agent_*` ni n'appelle d'AD : `grep -rE 'ldap|kerberos|samba-tool'` sur les partials 25.5 = vide.
+2. Adressabilité `/livewire/update` : un utilisateur sans `computer.install` qui appelle directement une action mutante (cibler / promote / rollback / approuver-cible) reçoit **403** (`Gate::authorize`), aucune mutation. Les `#[Computed]` de lecture restent accessibles via l'accès page.
+3. Golden files **intouchés** (state/report/release-manifest/contract-v1) : le contrat de report ne change pas — la colonne `agent_reported_version` ne modifie pas le payload. Le golden `report.v1.json` passe verbatim (`ReportedVersionPersistenceTest`).
+
+### Scénario 12.7 — Anti-usurpation : la sélection de cible refuse une demande déjà rapprochée (review #2)
+
+1. Provoquer une demande `pending` **avec** rapprochement (`matched_workstation_id` renseigné — poste connu/concordant).
+2. Dans l'UI, cette demande propose l'approbation un-clic (scénario 10.3), **pas** la modale de sélection de cible (réservée aux « inconnus », scénario 12.5).
+3. **Attendu (garde à l'ouverture)** : forcer `openTargetSelect` sur cette demande (appel direct `/livewire/update`) → toast d'erreur « déjà rapproché », la modale ne s'ouvre pas.
+4. **Attendu (défense en profondeur)** : forcer `confirmApproveWithTarget` avec une autre cible → refusé ; la demande reste `pending` ET son `matched_workstation_id` d'origine est **intact** (aucun override). Couvert par `EnrollmentRequestsSurfaceTest::selecting_a_target_is_refused_for_an_already_matched_request`.
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Defer review 23.1 (résolu en 24.1)** : le scénario 1.4 (body forgé → 4xx jamais 500) existe parce qu'un `StateHasher` appelé sur l'entrée agent pouvait lever une `JsonException` non catchée (UTF-8 invalide / NAN / INF). L'ingestion ne hashe JAMAIS le payload agent.
@@ -1183,6 +1237,7 @@ demande d'enrôlement. Le conflit se fonde sur la **seule MAC** (ancre, review
 - **Incident terrain T12 ws 49 n° 2 (corrigé en 2.1.2)** : la tâche `SambaEduAgent-SessionCompanion` (binaire CONSOLE lancé dans la session interactive) laissait une **fenêtre console visible et résidente** toute la session — fermable par le user (= compagnon tué), et un clic dedans (quick-edit) gelait stdout. Corrigé : `FreeConsole` au démarrage du compagnon (bref flash au logon, assumé). Angle de test à conserver (scénario 6.2) : après logon, AUCUNE fenêtre console résiduelle ; `agent.exe companion` visible dans le Gestionnaire des tâches uniquement.
 - **Review 25.3 #3/#4 (corrigés avant merge)** : deux angles que les tests unitaires n'attrapaient pas mais qu'un test manuel révèle. (a) **Approuver un poste « inconnu »** (sans rapprochement DB) menait à une impasse : la demande passait `approved` mais l'étape 2 du redeem exige une cible → poste 403 éternel + demande sortie du scope pending (invisible). Corrigé : le bouton « Approuver » est **désactivé** (tooltip « rapprochement requis ») pour une demande sans `matched_workstation_id`, et le service le refuse. Angle de test à conserver (scénario 10.9) : une demande badge « inconnu » ne propose PAS d'approbation actionnable. (b) **Actions Livewire non gardées** : `approve/reject/campagne` ne reposaient que sur le middleware de page — un appel direct `/livewire/update` les exposait. Corrigé : `Gate::authorize('computer.install')` sur chaque action mutante. Angle de test (scénario 10.10) : un utilisateur sans `computer.install` reçoit 403 sur l'action, la demande reste `pending`. Bonus observabilité : un log `agent.enroll.stale_approval` (warning) signale désormais une approbation qui ne se matérialise pas (poste enrôlé entre-temps / cible nulle).
 - **Review 25.3 #M2/#M3 (arbitrage Henri, corrigés)** : le conflit 409 se fondait sur `resolveByIdentity()` (uuid puis MAC, `.first()`). Deux trous : (a) **oracle** — présenter l'UUID seul d'un poste enrôlé donnait 409 (≠403), révélant sa présence via une preuve faible/spoofable ; (b) **MAC partagée** — `.first()` pouvait tomber sur un clone non-enrôlé et rater le conflit. Corrigé : conflit fondé sur la **seule MAC** via `Workstation::where('mac')->whereNotNull('agent_token_hash')->exists()` ; `resolveByIdentity()` supprimée. **Changement de contrat propagé à la porte 1** (le 409 par uuid-seul disparaît). Angles de test à conserver : scénarios 10.11 (MAC partagée → 409 indépendant de l'ordre) et 10.12 (uuid seul → 403 sans oracle).
+- **Review 25.5 #2 (corrigé avant merge)** : la modale de **sélection de cible** (approbation d'un poste « inconnu », scénario 12.5) ne vérifiait que `matched_workstation_id === null` côté *template* (affichage du bouton). Les méthodes Livewire `openTargetSelect` / `confirmApproveWithTarget` ne gardaient pas l'invariant : via un appel direct `/livewire/update` sur une demande **déjà rapprochée**, un admin pouvait écraser silencieusement le rapprochement par une autre cible (`approveManually` donne priorité au `$target`) — contournement de l'anti-usurpation. Corrigé : garde `matched_workstation_id !== null → toastError` dans les **deux** méthodes (ouverture + confirmation, défense en profondeur). Angle de test à conserver (scénario 12.7) : une demande **rapprochée** ne propose pas/refuse la sélection de cible ; un appel forcé laisse le rapprochement d'origine intact, demande `pending`.
 - **Incident terrain T12 ws 49 (corrigé en 2.1.1)** : `agent.exe install` échouait en `Accès refusé` sur le rename atomique de `config.json` — `setAgentACL` posait les flags d'héritage `(OI)(CI)` sur les FICHIERS tmp de `writeAtomic` ; via icacls sur un fichier, ces ACE deviennent inertes pour l'accès au fichier lui-même → DACL effective vide, plus personne (pas même SYSTEM) n'a DELETE, le rename échoue. Invisible des 122 tests hôte (icacls = Windows réel uniquement) — détecté à la PREMIÈRE exécution Windows du binaire. Corrigé : `setAgentACL` distingue répertoire (`(OI)(CI)F`) / fichier (`F` plat). Angle de test à conserver (scénario 6.1) : après install, `icacls C:\ProgramData\SambaEdu\Agent\config.json` doit montrer des ACE SANS flags `(OI)(CI)`. Méthode de diagnostic qui a tranché : reproduction manuelle A/B de la séquence writeAtomic (`Set-Content` tmp → `icacls /inheritance:r /grant` avec puis sans flags → `Rename-Item`). Nettoyage d'un poste touché : supprimer `cache\state.json`/`etag.txt` et `applied-state.json` écrits par un binaire ≤ 2.1.0 (DACL inerte = irremplaçables par le service), JAMAIS le `token`.
 
 ---
