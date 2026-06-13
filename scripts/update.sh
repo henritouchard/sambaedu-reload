@@ -319,6 +319,30 @@ ensure_codesign_pfx() {
 # quitte jamais le serveur. NON-FATAL : un échec de build agent ne doit pas
 # bloquer un update serveur.
 
+# ============================================================================
+# Toolchain Go (agent) + cache partagé + dépendances
+# ============================================================================
+# Délègue à scripts/setupGo.sh : installe la toolchain Go épinglée, la met sur
+# le PATH, prépare le cache Go partagé (www-admin) et télécharge les deps du
+# module agent/. Prérequis de `ensure_agent_build` (build) ET du pont
+# `php artisan test` → `go test ./...` (tests/Feature/Agent/GoAgentTest.php).
+
+setup_go() {
+    log "Vérification toolchain Go (agent)..."
+
+    local setup_script="$SCRIPT_DIR/setupGo.sh"
+    if [[ ! -f "$setup_script" ]]; then
+        log_warning "setupGo.sh absent — étape ignorée"
+        return 0
+    fi
+
+    if bash "$setup_script"; then
+        log_success "Toolchain Go OK (go test agent disponible)"
+    else
+        log_warning "setupGo.sh échoué — go test agent indisponible, l'update continue"
+    fi
+}
+
 ensure_agent_build() {
     log "Vérification build agent Go signé..."
 
@@ -787,6 +811,9 @@ main() {
 
     echo ""
     ensure_codesign_pfx
+
+    echo ""
+    setup_go
 
     echo ""
     ensure_agent_build
