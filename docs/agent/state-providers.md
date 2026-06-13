@@ -195,6 +195,56 @@ user — jamais en machine-only) :
    mise à jour SCIEMMENT du hash figé `ContractV1Test`).
 6. Handler côté agent (Epic 24/27) : `test`/`apply`/`report` idempotent.
 
+## Environnement de poste (`WorkstationEnvironment`) — Story 26.1
+
+La **nature d'un poste** est une donnée du domaine portée **par parc** sur
+`workstation_groups.environment` (colonne VARCHAR(32) nullable, cast enum
+`App\Enums\WorkstationEnvironment`). Trois valeurs aux **identifiants figés
+(NFR12)** :
+
+| Valeur | Sémantique |
+|---|---|
+| `shared_local` | Poste **partagé** : bureau réseau, profils redirigés. C'est le parc historique (salle de classe). **Défaut implicite.** |
+| `personal_local` | Modèle **perdir / direction** : bureau local à l'utilisateur, données sur le home réseau (nominatif, pas déconnecté). |
+| `nomade` | **Tout local avec synchronisation** (offline / resync — réalisé en Story 26.2). |
+
+### Résolution multi-parcs
+
+Un poste appartient à N parcs (sa salle physique + ses parcs logiques). Le
+service `App\Services\Agent\WorkstationEnvironmentResolver` résout **un** seul
+environnement avec la **précédence** :
+
+    nomade > personal_local > shared_local
+
+et le **défaut `shared_local`** quand aucune valeur n'est déclarée (poste sans
+groupe, ou tous les parcs à `null`). La précédence vit **dans le service SEUL**
+(décision D1, parallèle `StateMaille`/`StateCompiler`) — ni dans l'enum, ni
+dans les providers. `null` (« non déclaré ») reste distinct de `shared_local`
+(décision D2 : pas de default SQL, pas de backfill).
+
+Lecture **exclusivement Postgres** (`WorkstationGroup::whereIn('id', …)`),
+JAMAIS d'AD / LdapRecord / APCu (NFR7, même discipline que `TargetContext`).
+Pour la consommation par un `StateProvider` de l'Epic 27, préférer
+`resolveForGroupIds(TargetContext::workstationGroupIds())` — les ids sont déjà
+résolus, le provider ne re-requête pas les appartenances.
+
+### Point de consommation & note de transition
+
+Ce service ne produit que la **donnée** : aucun handler ni StateProvider
+« environment » n'existe en 26.1. Il sera consommé par les handlers de l'Epic
+27 (raccourcis 27.1, profils navigateur 27.4). **AUCUN retrofit legacy** :
+`ApplicationScriptsGenerator`, `ShortcutCompilerService` et le pansement Bug C
+(`4e5a152`) restent intouchés — ils meurent avec le canal legacy (27.6) ; le
+Bug C est corrigé définitivement par le handler raccourcis (27.1). Ne PAS
+brancher ce service sur le canal legacy.
+
+### UI
+
+Onglet « Environnement » de `parc-settings` (SFC Livewire
+`_partials/environment-tab.blade.php`) : un `<select>` par parc (logiques ET
+physiques), Gate `update-workstationGroup` (même autorisation que l'édition
+d'un parc), persistance via le modèle, toast de succès.
+
 ## Hors scope (et où ça vit)
 
 | Sujet | Pourquoi pas ici | Où |

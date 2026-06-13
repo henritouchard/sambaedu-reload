@@ -35,6 +35,7 @@ use App\Enums\LockReason;
  * @property bool $is_active
  * @property string|null $locked Raison du verrouillage (si non-null, empêche modification/suppression)
  * @property bool $managed_by_control_hub
+ * @property \App\Enums\WorkstationEnvironment|null $environment Nature des postes du parc (Story 26.1) — null = non déclaré
  * @property \DateTimeInterface|null $archived_at Archivage logique (Story 15.3, AC3.4)
  * @property \DateTime|null $created_at
  * @property \DateTime|null $updated_at
@@ -70,8 +71,8 @@ class WorkstationGroup extends Model implements Wireable
         'is_active',
         'locked',
         'managed_by_control_hub',
-        'controlhub_id',
         'controlhub_version',
+        'environment',
         'archived_at',
     ];
 
@@ -86,6 +87,7 @@ class WorkstationGroup extends Model implements Wireable
         'locked' => 'string',
         'managed_by_control_hub' => 'boolean',
         'controlhub_version' => 'datetime',
+        'environment' => \App\Enums\WorkstationEnvironment::class,
         'archived_at' => 'datetime',
     ];
 

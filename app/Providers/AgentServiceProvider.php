@@ -18,6 +18,7 @@ use App\Services\Agent\Reporting\ReportIngestService;
 use App\Services\Agent\StateCompiler;
 use App\Services\Agent\StateHasher;
 use App\Services\Agent\SyncRequestService;
+use App\Services\Agent\WorkstationEnvironmentResolver;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 
@@ -67,6 +68,10 @@ class AgentServiceProvider extends ServiceProvider
         // hash + manifest résolu par ring (stateless tous les deux).
         $this->app->singleton(ReleaseCreationService::class, fn () => new ReleaseCreationService());
         $this->app->singleton(ReleaseManifestService::class, fn () => new ReleaseManifestService());
+        // Story 26.1 — résolution de la nature du poste (précédence
+        // nomade>personal_local>shared_local, défaut shared_local, Postgres-only),
+        // consommable par les StateProviders de l'Epic 27. Stateless.
+        $this->app->singleton(WorkstationEnvironmentResolver::class, fn () => new WorkstationEnvironmentResolver());
         $this->app->singleton(StateHasher::class, fn () => new StateHasher());
         $this->app->singleton(StateCompiler::class, fn ($app) => new StateCompiler(
             $app->make(StateHasher::class),

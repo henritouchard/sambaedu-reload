@@ -117,6 +117,69 @@ ssh /vm 'cd /var/www/sambaedu-reload && php artisan migrate:rollback --step=1 --
 
 ---
 
+## Section 3 — Environnement de poste par parc (Story 26.1)
+
+> **Contexte** : chaque parc (logique OU physique) déclare la nature de ses
+> postes — `shared_local` (partagé, bureau réseau), `personal_local` (perdir,
+> bureau local + home réseau), `nomade` (tout local + sync, réalisé en 26.2).
+> La donnée vit sur `workstation_groups.environment` (nullable). Un poste dans
+> N parcs résout **un** environnement (précédence
+> `nomade > personal_local > shared_local`, défaut `shared_local`). En 26.1 la
+> donnée + le service de résolution sont livrés ; les handlers qui la
+> consomment arrivent à l'Epic 27 — **aucun effet visible côté poste encore**.
+
+### Scénario 3.1 — Sélection UI et persistance
+
+1. Ouvrir `/app/parc-settings`, onglet **Environnement**.
+2. Vérifier que la liste affiche **les parcs logiques ET les salles physiques**
+   actifs (badge « parc logique » / « salle physique »).
+3. Sur un parc, choisir **Nomade** dans le `<select>` → toast de succès, valeur
+   conservée après rechargement de la page.
+4. Sonde base :
+   ```bash
+   ssh /vm "cd /var/www/sambaedu-reload && php artisan tinker --execute=\"echo \App\Models\WorkstationGroup::where('name','<nom>')->value('environment');\""
+   # attendu : nomade
+   ```
+5. Remettre **« Non déclaré (partagé par défaut) »** → la colonne repasse à
+   `null` (PAS `shared_local` : on distingue non-déclaré / déclaré-partagé).
+
+### Scénario 3.2 — Gate (autorisation)
+
+1. Avec un utilisateur **sans** `computer.control` (ni délégation scopée sur le
+   parc), l'action `save` doit être refusée (`AuthorizationException`) — c'est
+   la **même** gate `update-workstationGroup` que l'édition d'un parc, pas
+   `computer.install`.
+2. Avec une **délégation scopée** `computer.control` sur un parc précis :
+   l'utilisateur peut configurer l'environnement de CE parc uniquement.
+
+### Scénario 3.3 — Précédence multi-parcs (résolution serveur)
+
+Un poste membre de plusieurs parcs hérite de l'environnement le plus « fort ».
+À vérifier via tinker (le service `WorkstationEnvironmentResolver`) :
+
+```bash
+ssh /vm "cd /var/www/sambaedu-reload && php artisan tinker --execute=\"
+\\\$ws = \App\Models\Workstation::first();
+echo app(\App\Services\Agent\WorkstationEnvironmentResolver::class)->resolve(\\\$ws)->value;
+\""
+```
+
+- Poste dans `{partagé, personnel}` → **`personal_local`**.
+- Poste dans `{partagé, personnel, nomade}` → **`nomade`**.
+- Poste sans parc, ou tous parcs « Non déclaré » → **`shared_local`** (défaut).
+
+> **Post-correctif / pourquoi ces scénarios** : la précédence est l'unique
+> logique métier de la story (décision D1 : elle vit dans le service, jamais
+> dans l'enum). Le défaut `shared_local` côté service (pas en SQL, décision D2)
+> garantit qu'un parc oublié reste neutre. **Discipline NFR7** : le service lit
+> Postgres uniquement — aucune requête AD/LDAP/APCu (à confirmer si un doute :
+> `grep -n 'Ldap\|apcu\|AppCustomization' app/Services/Agent/WorkstationEnvironmentResolver.php` = 0 hit).
+> **Note de transition** : aucun retrofit legacy ; le service n'est branché sur
+> aucun chemin legacy (Bug C corrigé définitivement par le handler raccourcis
+> en Story 27.1).
+
+---
+
 ## Checklist rapide
 
 - [ ] Affectation salle via UI parc → poste dans la salle (Scénario 1.1)
@@ -126,3 +189,7 @@ ssh /vm 'cd /var/www/sambaedu-reload && php artisan migrate:rollback --step=1 --
 - [ ] Sonde double-salle = 0 ligne (Scénario 1.3)
 - [ ] WPKG / GPO / raccourci porté par une salle → résolu pour les postes de la salle
 - [ ] Migration up/down vérifiées (Section 2)
+- [ ] Onglet Environnement liste parcs logiques + physiques, sélection persiste (Scénario 3.1)
+- [ ] « Non déclaré » écrit `null`, pas `shared_local` (Scénario 3.1)
+- [ ] Gate `update-workstationGroup` (refus sans droit, délégation scopée OK) (Scénario 3.2)
+- [ ] Précédence `nomade > personal_local > shared_local` + défaut (Scénario 3.3)

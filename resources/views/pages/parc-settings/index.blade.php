@@ -148,6 +148,11 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                 <i class="fa-solid fa-arrow-up-right-from-square mr-2"></i>
                 Raccourcis
             </button>
+            <button type="button" role="tab" class="tab {{ $tab === 'environment' ? 'tab-active' : '' }}"
+                wire:click="setTab('environment')">
+                <i class="fa-solid fa-laptop-house mr-2"></i>
+                Environnement
+            </button>
         </div>
 
         <!-- Contenu des onglets -->
@@ -160,6 +165,8 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                 <livewire:pages::parc-settings._partials.depot-tab />
             @elseif ($tab === 'shortcuts')
                 <livewire:pages::parc-settings._partials.shortcuts-tab />
+            @elseif ($tab === 'environment')
+                <livewire:pages::parc-settings._partials.environment-tab />
             @endif
         </div>
     </div>
