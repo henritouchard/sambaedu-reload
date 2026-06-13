@@ -88,6 +88,49 @@ class DeploymentProgressSurfaceTest extends TestCase
     }
 
     #[Test]
+    public function a_multi_ring_workstation_is_counted_once_in_its_most_recently_targeted_ring(): void
+    {
+        // Cas réel : un poste ∈ groupe physique (ring canari récent) ET groupe
+        // logique (ring parc plus ancien). Le manifest ne lui sert qu'UNE
+        // version = celle du ring le plus récemment ciblé (récence FR4). Il doit
+        // être compté UNE seule fois, dans le ring canari — et SURTOUT pas
+        // « en retard » dans le ring parc qui ne le gouverne pas.
+        $relCanari = $this->release('2.3.0');
+        $relParc = $this->release('2.2.0');
+
+        $groupPhys = WorkstationGroup::factory()->create(['name' => 'salle-B12']);
+        $groupLogic = WorkstationGroup::factory()->create(['name' => 'labo-SVT']);
+
+        $ringParc = AgentReleaseRing::query()->create([
+            'workstation_group_id' => $groupLogic->id,
+            'agent_release_id' => $relParc->id,
+        ]);
+        $ringCanari = AgentReleaseRing::query()->create([
+            'workstation_group_id' => $groupPhys->id,
+            'agent_release_id' => $relCanari->id,
+        ]);
+        // Récence explicite (update direct = bypass timestamps) : canari > parc.
+        AgentReleaseRing::query()->whereKey($ringParc->id)->update(['updated_at' => now()->subDay()]);
+        AgentReleaseRing::query()->whereKey($ringCanari->id)->update(['updated_at' => now()]);
+
+        $pc42 = $this->ws('2.3.0'); // a convergé vers la canari
+        $pc42->groups()->attach([$groupPhys->id, $groupLogic->id]);
+
+        $rings = Livewire::test(self::COMPONENT)->instance()->rings;
+        $canari = $rings->firstWhere('id', $ringCanari->id);
+        $parc = $rings->firstWhere('id', $ringParc->id);
+
+        // Compté une seule fois, dans le ring effectif (canari), et à jour.
+        self::assertSame(1, $canari['total']);
+        self::assertSame(1, $canari['up_to_date']);
+        self::assertSame(0, $canari['behind']);
+
+        // Ring parc : le poste n'y est PAS recompté ni faussement « en retard ».
+        self::assertSame(0, $parc['total']);
+        self::assertSame(0, $parc['behind']);
+    }
+
+    #[Test]
     public function it_renders_empty_state_without_rings(): void
     {
         Livewire::test(self::COMPONENT)

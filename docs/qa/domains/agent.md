@@ -1206,6 +1206,7 @@ La page `parc-settings/agent/` (route `parc-settings.agent`, `can:computer.insta
 2. Section « Progression du déploiement » : par ring, version ciblée vs comptes **à jour / en retard / jamais vus**, + « dernier rapport ».
 3. **Attendu** : un poste rapportant la version ciblée passe « à jour » ; un poste sur une autre version = « en retard » ; un poste qui n'a jamais rapporté = « jamais vu ». La fraîcheur (`agent_reported_version_at`) avance à chaque report. Surface **lecture seule** (aucune écriture, zéro AD).
 4. Greffe back à vérifier : `workstations.agent_reported_version` se peuple au fil des reports (avant 25.5, la colonne n'existait pas — la version était jetée).
+5. **Ring effectif / poste multi-rings** (angle de test, multi-appartenance fréquente : physique + logiques) : prendre un poste membre d'un groupe physique **et** d'un groupe logique, les **deux** ciblés sur des versions différentes. Le manifest ne sert qu'**une** version = celle du ring **le plus récemment ciblé** (récence FR4, iso `ReleaseManifestService`). **Attendu** : le poste est compté **une seule fois**, dans le ring le plus récent, et n'apparaît **jamais « en retard »** dans l'autre ring (qui ne gouverne pas sa version). Re-cibler l'autre ring plus récemment doit basculer le poste vers ce ring au prochain calcul. Couvert par `DeploymentProgressSurfaceTest::a_multi_ring_workstation_is_counted_once_in_its_most_recently_targeted_ring`.
 
 ### Scénario 12.5 — Approbation d'un poste « inconnu » par sélection de cible (extension 25.3)
 

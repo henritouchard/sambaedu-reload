@@ -2,6 +2,7 @@
 
 use App\Models\AgentRelease;
 use App\Models\AgentReleaseRing;
+use App\Models\Workstation;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -10,13 +11,21 @@ use Livewire\Component;
  *
  * LECTURE SEULE : agrège, par ring, la version CIBLÉE
  * (`agent_release_rings.release.version`) vs les versions RAPPORTÉES par les
- * postes du groupe (`workstations.agent_reported_version`, persistée par la
- * greffe report 25.5). Montre l'avancée de la canari (1 poste → 1 salle →
- * parc) : combien de postes sont à jour / en retard / jamais vus, et la
- * fraîcheur de la donnée.
+ * postes (`workstations.agent_reported_version`, persistée par la greffe report
+ * 25.5). Montre l'avancée de la canari (1 poste → 1 salle → parc) : combien de
+ * postes sont à jour / en retard / jamais vus, et la fraîcheur de la donnée.
+ *
+ * **Ring EFFECTIF (pas multi-comptage)** : un poste appartient typiquement à un
+ * groupe physique ET 1-2 groupes logiques (pivot global 4.11), donc à plusieurs
+ * rings. Mais le manifest ne lui sert qu'UNE version. On l'attribue donc à un
+ * seul ring — celui qui gouverne réellement sa version cible = le plus
+ * récemment ciblé parmi ses groupes (récence, FR4 « la plus récente gagne »,
+ * iso {@see \App\Services\Agent\Releases\ReleaseManifestService::resolveRingRelease()}).
+ * Sans ce dédoublonnage, un poste compté dans chaque ring apparaîtrait « en
+ * retard » dans les rings qui ne le servent pas.
  *
  * Jointure lecture seule `agent_release_rings × workstation_group_workstation
- * × workstations` via les relations Eloquent (`workstationGroup->workstations`).
+ * × workstations` via les relations Eloquent, résolue EN MÉMOIRE (zéro N+1).
  * Zéro AD (aucun LdapRecord/Kerberos/samba-tool), zéro écriture — la frontière
  * `agent_*` est respectée, aucun Gate (lecture, l'accès page `can:computer.install`
  * suffit). Pas de pagination : le nombre de rings est borné (un ring = un
@@ -26,42 +35,84 @@ return new class extends Component {
     #[Computed]
     public function rings()
     {
-        return AgentReleaseRing::query()
-            ->with(['release', 'workstationGroup.workstations'])
-            ->get()
-            ->map(function (AgentReleaseRing $ring) {
-                $targetVersion = $ring->release?->version;
-                $workstations = $ring->workstationGroup?->workstations ?? collect();
+        // Rings ciblés, du plus récent au plus ancien : c'est À LA FOIS l'ordre
+        // d'affichage ET l'ordre de résolution du ring effectif (récence FR4 —
+        // iso ReleaseManifestService::resolveRingRelease, tie-break id desc).
+        $rings = AgentReleaseRing::query()
+            ->with(['release', 'workstationGroup'])
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->get();
 
-                $upToDate = 0;
-                $behind = 0;
-                $neverSeen = 0;
+        // Compteurs par ring, init à zéro (préserve l'ordre d'affichage).
+        $stats = [];
+        foreach ($rings as $ring) {
+            $stats[$ring->id] = [
+                'id' => $ring->id,
+                'group' => $ring->workstationGroup?->name ?? '—',
+                'is_physical' => (bool) ($ring->workstationGroup?->is_physical ?? true),
+                'target_version' => $ring->release?->version,
+                'total' => 0,
+                'up_to_date' => 0,
+                'behind' => 0,
+                'never_seen' => 0,
+                'last_report_at' => null,
+            ];
+        }
 
-                foreach ($workstations as $ws) {
-                    if ($ws->agent_reported_version === null) {
-                        $neverSeen++;
-                    } elseif ($targetVersion !== null && $ws->agent_reported_version === $targetVersion) {
-                        $upToDate++;
-                    } else {
-                        $behind++;
-                    }
-                }
+        $targetedGroupIds = $rings->pluck('workstation_group_id')->unique()->all();
+        if ($targetedGroupIds === []) {
+            return collect(array_values($stats));
+        }
 
-                return [
-                    'id' => $ring->id,
-                    'group' => $ring->workstationGroup?->name ?? '—',
-                    'is_physical' => (bool) ($ring->workstationGroup?->is_physical ?? true),
-                    'target_version' => $targetVersion,
-                    'total' => $workstations->count(),
-                    'up_to_date' => $upToDate,
-                    'behind' => $behind,
-                    'never_seen' => $neverSeen,
-                    'last_report_at' => $workstations
-                        ->pluck('agent_reported_version_at')
-                        ->filter()
-                        ->max(),
-                ];
-            });
+        // Ordre de résolution = rings AVEC une release, du plus récent au plus
+        // ancien (un ring orphelin — release nulle, état défensif — est ignoré :
+        // le poste retombe sur le candidat suivant puis la stable, iso AC3).
+        $resolutionOrder = $rings->filter(fn (AgentReleaseRing $r): bool => $r->release !== null);
+
+        // Postes appartenant à AU MOINS un groupe ciblé, avec leurs SEULES
+        // appartenances ciblées (lecture seule, zéro AD, zéro N+1).
+        $workstations = Workstation::query()
+            ->whereHas('groups', fn ($q) => $q->whereIn('workstation_groups.id', $targetedGroupIds))
+            ->with(['groups' => fn ($q) => $q->whereIn('workstation_groups.id', $targetedGroupIds)])
+            ->get();
+
+        foreach ($workstations as $ws) {
+            $wsGroupIds = $ws->groups->pluck('id')->all();
+
+            // Ring EFFECTIF : le plus récemment ciblé parmi les groupes du poste
+            // (= la version que le manifest lui sert vraiment). Comptage UNIQUE,
+            // jamais dans un ring qui ne le gouverne pas → plus de faux « en
+            // retard » pour un poste multi-rings (physique + logiques).
+            $effective = $resolutionOrder->first(
+                fn (AgentReleaseRing $r): bool => in_array($r->workstation_group_id, $wsGroupIds, true),
+            );
+
+            // Aucun ring avec release ne le couvre → il suit la stable par
+            // défaut, hors progression par ring (la vue ne liste que les rings).
+            if ($effective === null) {
+                continue;
+            }
+
+            $rid = $effective->id;
+            $stats[$rid]['total']++;
+
+            if ($ws->agent_reported_version === null) {
+                $stats[$rid]['never_seen']++;
+            } elseif ($ws->agent_reported_version === $effective->release->version) {
+                $stats[$rid]['up_to_date']++;
+            } else {
+                $stats[$rid]['behind']++;
+            }
+
+            $reportedAt = $ws->agent_reported_version_at;
+            if ($reportedAt !== null
+                && ($stats[$rid]['last_report_at'] === null || $reportedAt->gt($stats[$rid]['last_report_at']))) {
+                $stats[$rid]['last_report_at'] = $reportedAt;
+            }
+        }
+
+        return collect(array_values($stats));
     }
 
     #[Computed]
