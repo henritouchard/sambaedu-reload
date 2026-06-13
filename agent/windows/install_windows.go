@@ -40,6 +40,12 @@ func installService(serverURL string, intervalSeconds int) error {
 	if err := store.EnsureAssetsDir(setAssetsACL); err != nil {
 		return fmt.Errorf("préparation du cache d'assets : %w", err)
 	}
+	// Story 25.2 : répertoire de staging d'auto-update (SYSTEM F + Admins F,
+	// PAS de Users:R — un binaire stagé n'est pas un asset affiché). Créé dès
+	// l'install ; SelfUpdate le (re)crée à la volée si absent (idempotent).
+	if err := store.EnsureUpdateDir(setUpdateACL); err != nil {
+		return fmt.Errorf("préparation du répertoire de staging d'auto-update : %w", err)
+	}
 
 	exe, err := os.Executable()
 	if err != nil {
@@ -79,15 +85,35 @@ func installService(serverURL string, intervalSeconds int) error {
 	}
 	defer s.Close()
 
-	// Relance automatique 30 s sur crash (iso `sc.exe failure ... reset=86400
-	// actions=restart/30000/...`). Un ARRÊT PROPRE (401 irrécupérable) n'est
-	// pas relancé : la relance ne vaut que pour les terminaisons anormales.
+	// Relance automatique 30 s sur terminaison ANORMALE (iso `sc.exe failure ...
+	// reset=86400 actions=restart/30000/...`). Un ARRÊT PROPRE (401 irrécupérable
+	// → svc.Handler signale SERVICE_STOPPED gracieusement) n'est PAS relancé : la
+	// relance ne vaut que pour les terminaisons anormales.
+	//
+	// Story 25.2 (Option A) : après un swap d'auto-update réussi, l'agent sort
+	// par os.Exit(≠0) (swapExitCode, update_windows.go) — le process meurt SANS
+	// que le svc.Handler ne signale SERVICE_STOPPED proprement. Le SCM voit une
+	// terminaison anormale et applique ces RecoveryActions → relance avec le
+	// binaire vN+1. La fenêtre de reset (86400 s) ne remet le compteur d'échecs
+	// à zéro qu'après 24 h sans incident : 3 relances ×30 s couvrent largement un
+	// swap (un seul échec attendu par update), et un poste qui bouclerait sur des
+	// crashs serait de toute façon réparé par le bootstrap GPO figé (25.4).
 	if err := s.SetRecoveryActions([]mgr.RecoveryAction{
 		{Type: mgr.ServiceRestart, Delay: 30 * time.Second},
 		{Type: mgr.ServiceRestart, Delay: 30 * time.Second},
 		{Type: mgr.ServiceRestart, Delay: 30 * time.Second},
 	}, 86400); err != nil {
 		return fmt.Errorf("configuration de la relance sur crash : %w", err)
+	}
+	// Story 25.2 (Option A) : ceinture-bretelles pour garantir la relance après la
+	// sortie volontaire post-swap. Selon que le SCM classe notre os.Exit(≠0)
+	// comme un « crash » (process disparu sans SERVICE_STOPPED) ou comme un
+	// « échec non-crash » (code de sortie ≠ 0), seul ce flag garantit que les
+	// RecoveryActions s'appliquent AUSSI au second cas. Sans lui, une sortie avec
+	// code ≠ 0 considérée « non-crash » ne déclencherait pas la relance → l'agent
+	// vN+1 resterait en place mais arrêté jusqu'au prochain boot.
+	if err := s.SetRecoveryActionsOnNonCrashFailures(true); err != nil {
+		return fmt.Errorf("activation de la relance sur sortie non-gracieuse (post-swap) : %w", err)
 	}
 
 	// Story 24.6 : tâches planifiées at-logon du compagnon (session-fetch

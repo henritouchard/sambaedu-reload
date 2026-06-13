@@ -812,6 +812,155 @@ le corps reçu est exactement l'artefact vérifié à la création.
 
 ---
 
+## Section 9 — Auto-update de l'agent (Story 25.2)
+
+L'agent consomme le manifest 25.1 et se met à jour **seul**, sans tournée des
+salles, **sans jamais briquer le parc** (NFR8). Double vérification (SHA-256
+avant écriture, Authenticode avant swap), swap atomique anti-brique, report
+d'échec via item `agent_update`, version rapportée = preuve de succès.
+
+### Pré-requis Section 9
+
+- La **matrice de tests automatique** (≥ 20 cas, `agent/shared/update_test.go`)
+  tourne sur l'hôte : `cd agent && PATH="$HOME/go-toolchain/go/bin:$PATH" go test ./...`
+  → vert. Elle couvre tout le flux décision/download/hash/orchestration avec
+  les primitives Windows STUBÉES (nominal, 404, version égale, hash KO,
+  signature KO, download KO, tronqué, 401, 403 release = update sauté SANS
+  quarantaine (M4), report d'échec, version rapportée, single-download, survie
+  token). Le **cœur anti-brique** (`shared/swap.go` `PerformSwap`) est désormais
+  RÉELLEMENT testé sur Linux (`shared/swap_test.go`) : swap nominal +
+  triggerRestart appelé, staged absent (aucune mutation), hash `.new` divergent
+  (M2), échec du rename final → **ROLLBACK vérifié** (ancien binaire restauré,
+  triggerRestart JAMAIS appelé). **Restent au smoke uniquement les spécificités
+  OS** : Authenticode réel (WinVerifyTrust), `os.Exit` + recovery SCM, ACL du
+  staging — `go test` ne les couvre pas (build tag Windows).
+- VM serveur 25.1 disponible (release `2.1.2` cert TEST publiée stable) ; un
+  **poste de lab Windows** enrôlé (ws 49), avec la **CA interne SE5 ajoutée au
+  magasin de confiance machine** (sinon la vérif Authenticode rejette le binaire
+  pourtant signé — c'est le comportement attendu, pas un bug).
+- Un binaire `vN+1` **signé** (cert TEST chaînant vers cette CA) produit par
+  `agent/build/build.sh` (`VERSION=2.2.1` p.ex.) et déposé dans
+  `storage/agent/releases/` (chown www-admin).
+
+### Scénario 9.1 — Convergence par ring : l'agent passe à vN+1 (AC1, AC2, AC4)
+
+1. Publier `vN+1` signé : `php artisan agent:release:create 2.2.1 sambaedu-agent-2.2.1.exe --hash=<sha256>`
+   puis cibler le ring d'1 poste de lab : `php artisan agent:release:target 2.2.1 <WorkstationGroup-du-lab>`.
+   Les autres postes restent sur la stable (`2.1.2`).
+2. Sur le poste de lab, attendre un cycle (ou `agent.exe run` en console admin
+   pour observer). Suivre `C:\ProgramData\SambaEdu\Agent\logs\agent.log` :
+   `Auto-update : version cible 2.2.1 annoncée…` → `signature Authenticode …
+   valide` → `swap 2.1.2→2.2.1 réussi …, sortie volontaire (code 42) pour
+   relance par la recovery SCM`.
+3. **Restart attendu = relance par la recovery SCM après une sortie
+   NON-GRACIEUSE** (Option A, review 25.2) : l'agent ne fait PLUS de stop+start
+   in-process ; il sort par `os.Exit(42)` et la **recovery SCM** (ServiceRestart
+   ×3, configurée à l'install) relance le service avec le binaire vN+1.
+   - Dans le **journal d'événements Windows** (Service Control Manager), on
+     observe une entrée de **terminaison anormale** du service `SambaEduAgent`
+     (code de sortie 42) immédiatement suivie d'un redémarrage automatique :
+     c'est un **plantage volontaire ATTENDU**, pas un incident (le log local
+     `sortie volontaire … pour relance SCM` le confirme).
+   - Vérifier le swap : `C:\Program Files\SambaEdu\Agent\agent.exe` est le neuf
+     (`agent.exe version` → `2.2.1`), `agent.exe.old` nettoyé au boot suivant
+     (best-effort). `Get-Service SambaEduAgent` → Running (relancé < ~30 s).
+4. Côté serveur (page parc / tinker) : la **version rapportée** du poste passe à
+   `2.2.1` au check-in suivant — **c'est la trace de déploiement qui fait foi**
+   (`download_served` reste du debug). Les autres postes : toujours `2.1.2`.
+
+**Attendu** : la boucle de déploiement par ring est observable de bout en bout
+(canari 1 poste → version rapportée vN+1) ; les postes hors ring inchangés.
+
+### Scénario 9.2 — Binaire corrompu : rejeté, jamais installé (AC1, AC3)
+
+1. Publier une release dont le **hash déclaré ≠ contenu** est impossible (la
+   création 25.1 le refuse). Pour simuler côté agent : déposer dans
+   `storage/agent/releases/` un binaire **corrompu** sous le filename d'une
+   release existante APRÈS création (le serveur sert alors un corps dont le
+   SHA-256 ≠ `hash` du manifest). Cibler le ring du lab.
+2. Sur le poste : le log montre `SHA-256 du binaire téléchargé (…) != hash
+   manifest (…) — binaire JETÉ (rien écrit)`. **Aucun fichier** sous
+   `C:\ProgramData\SambaEdu\Agent\update\`. **Aucun swap** :
+   `agent.exe version` inchangé.
+3. Le check-in suivant rapporte un item `agent_update` `status: error` (visible
+   page parc / `agent_resource_states` côté serveur). Le poste **continue de
+   rapporter son état réel** (le cycle n'est pas cassé).
+
+**Attendu** : un binaire corrompu n'atteint jamais le swap (porte 1) ; l'agent
+reste fonctionnel ; l'échec remonte sans casser le cycle.
+
+### Scénario 9.3 — Binaire non signé / signature non de confiance : rejeté (AC1, AC3)
+
+1. Produire un binaire `vN+1` **non signé** (`ALLOW_UNSIGNED=1 agent/build/build.sh`)
+   ou signé par une CA **hors magasin de confiance machine** du poste. Le
+   déposer (avec son SHA-256 réel, donc la **porte 1 hash passe**) et cibler le
+   ring du lab.
+2. Sur le poste : le log montre `signature Authenticode invalide sur le binaire
+   stagé : … — binaire JETÉ, AUCUN swap`. Le binaire est bien **stagé** sous
+   `update\` (hash OK) mais **jamais swappé** (porte 2). `agent.exe version`
+   inchangé.
+3. Item `agent_update` `status: error` au check-in suivant.
+
+**Attendu** : la vérif Authenticode (WinVerifyTrust) est la dernière porte avant
+exécution ; un binaire non signé / non de confiance ne tourne JAMAIS sur le parc.
+
+### Scénario 9.4 — Anti-brique : un swap interrompu laisse l'agent en place (AC3, NFR8)
+
+1. Reproduire un échec de dépose : pendant un cycle d'update (binaire valide
+   stagé), verrouiller temporairement `C:\Program Files\SambaEdu\Agent\` en
+   écriture (ou couper l'alimentation entre les renames — test destructif
+   encadré). 
+2. Vérifier qu'à AUCUN instant `agent.exe` n'est absent : soit `agent.exe`
+   (vN intact, rollback fait), soit `agent.exe` (vN+1) + `agent.exe.old`. Jamais
+   de chemin sans binaire valide. Le swap re-hashe le `.new` à sa position
+   finale (M2) avant le rename : un `.new` corrompu par la copie est rejeté
+   AVANT toute étape destructive (ancien binaire intact).
+3. Si le swap a échoué : aucune sortie `os.Exit` (triggerRestart n'est appelé
+   qu'après un swap réussi), le service continue de tourner sur vN, l'échec
+   figure en `agent_update` error au check-in suivant. Si le swap a réussi mais
+   que la recovery SCM était saturée (3 échecs en 24 h) : vN+1 en place mais
+   service arrêté → le prochain boot ou le bootstrap GPO figé (25.4) le relance.
+
+**Attendu** : jamais d'état « ni ancien ni nouveau » ; l'agent en place reste
+fonctionnel ; retry au prochain check-in (cadence `ttl_seconds`). Le rollback et
+le « triggerRestart jamais appelé sur échec » sont désormais **réellement testés
+sur Linux** (`shared/swap_test.go`, `PerformSwap`) — le smoke ne valide plus que
+les spécificités OS (ACL, `os.Exit` réel, recovery SCM, Authenticode).
+
+### Scénario 9.5 — Token/cache survivent à l'update (AC2, piège n° 5)
+
+1. Après une convergence réussie (9.1), vérifier sur le poste que
+   `C:\ProgramData\SambaEdu\Agent\token` est **intact** (même valeur), que le
+   cache d'état (`cache\state.json`) et `applied-state.json` sont relus par
+   l'image vN+1 **sans ré-enrôlement**. Le check-in vN+1 ne déclenche aucun
+   `agent.report.identity_mismatch` ni 401.
+2. Vérifier que la rotation D5 fonctionne toujours après le swap (un
+   `X-Agent-New-Token` est honoré par l'image vN+1).
+
+**Attendu** : le swap ne touche QUE `agent.exe` (Program Files) ; les données
+sous ProgramData survivent par construction.
+
+### Scénario 9.6 — 403 release : update sauté, le poste reste visible (M4, Option 1)
+
+1. Geler le ring du lab côté serveur de façon à ce que le **canal release**
+   (`GET /api/v1/agent/release` ou le download) réponde **403** au poste, alors
+   que le **canal principal** `/state` répond toujours `200`/`304`.
+2. Sur le poste : le log montre `GET /release -> 403 (canal release refusé) :
+   update sauté ce cycle — PAS de quarantaine globale`. L'update est **sauté**.
+3. Vérifier que le poste **N'EST PAS** en quarantaine globale : le `POST /report`
+   du cycle **a bien lieu** (le poste reste visible sur sa conformité côté page
+   parc / `agent_resource_states`), avec un item `agent_update` `status: error`
+   (raison = 403 release). La version rapportée reste vN (inchangée).
+4. Contre-épreuve : un `403` sur le canal **principal** `/state` met, lui, le
+   poste en **quarantaine globale** (check-ins légers, plus de `POST /report`) —
+   comportement INCHANGÉ (la quarantaine globale reste réservée à `/state`).
+
+**Attendu** : un ring gelé (403 release) ne rend JAMAIS le poste muet sur sa
+conformité ; seule l'update est sautée. La quarantaine globale reste l'apanage du
+403 du canal principal.
+
+---
+
 ## Post-correctifs & non-régressions
 
 - **Defer review 23.1 (résolu en 24.1)** : le scénario 1.4 (body forgé → 4xx jamais 500) existe parce qu'un `StateHasher` appelé sur l'entrée agent pouvait lever une `JsonException` non catchée (UTF-8 invalide / NAN / INF). L'ingestion ne hashe JAMAIS le payload agent.
@@ -867,3 +1016,10 @@ le corps reçu est exactement l'artefact vérifié à la création.
 - [ ] 8.3 — canari ring 1 poste lab : canari servie au lab, stable aux autres, ring_conflict si multi-rings
 - [ ] 8.4 — rollback : re-ciblage stable gagne par récence ; promote = une seule stable
 - [ ] 8.5 — download : sha256sum = hash manifest, 401/403, 404 indistinct (forgé/traversal/orphelin), X-Agent-New-Token sur 200
+- [ ] 9.0 — matrice auto `go test ./...` verte (≥ 20 cas, primitives Windows stubées)
+- [ ] 9.1 — convergence par ring : canari vN+1 lab → version rapportée passe à vN+1, autres postes inchangés
+- [ ] 9.2 — binaire corrompu : hash KO → jeté, rien écrit, aucun swap, item agent_update error
+- [ ] 9.3 — binaire non signé / hors confiance : hash OK mais Authenticode KO → stagé mais jamais swappé
+- [ ] 9.4 — anti-brique : swap interrompu → agent en place fonctionnel, jamais « ni ancien ni nouveau » ; restart = recovery SCM après sortie non-gracieuse (plantage volontaire attendu code 42)
+- [ ] 9.5 — token/cache survivent au swap : pas de ré-enrôlement, rotation D5 OK après update
+- [ ] 9.6 — 403 release : update sauté SANS quarantaine globale, le POST /report a bien lieu (contre-épreuve : 403 /state met bien en quarantaine)

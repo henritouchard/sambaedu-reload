@@ -150,5 +150,11 @@ func newAgent(echo bool) *shared.Agent {
 		SessionCacheACL:  setSessionCacheACL,
 		SessionReportACL: setSessionReportACL,
 		AssetsACL:        setAssetsACL,
+		// Story 25.2 : primitives d'auto-update Windows (vérif Authenticode +
+		// swap atomique restart-SCM) + ACL SYSTEM du staging — l'orchestration
+		// shared/ les injecte, nil en test/Linux (update inerte).
+		UpdateACL:          setUpdateACL,
+		VerifyAuthenticode: verifyAuthenticode,
+		SwapAndRestart:     swapAndRestart,
 	}
 }

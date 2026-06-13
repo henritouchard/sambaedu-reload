@@ -280,8 +280,124 @@ copy sambaedu-agent-2.1.0.exe 'C:\Program Files\SambaEdu\Agent\agent.exe'
 # Debug console : agent.exe run   (Ctrl-C pour arrêter)
 ```
 
+## Auto-update (Story 25.2)
+
+L'agent se met à jour seul depuis le manifest serveur (Story 25.1 —
+`docs/agent/release-distribution.md`), **sans jamais briquer le parc**.
+`shared.SelfUpdate` est appelé en **fin de cycle machine** (iso
+`SyncWallpaperAssets`, sous garde `!quarantined`, avant le `POST /report`).
+
+**Déclenchement (égalité stricte, PAS semver).** Le manifest dit
+autoritairement « voici la version que ce poste DOIT avoir » (résolue par ring
+côté serveur). L'agent applique `manifest.version != shared.Version` → update —
+même un **downgrade** (rollback décidé serveur). Pas de comparateur de récence
+côté agent : le serveur est l'autorité. `manifest 404 no_release` = rien à faire
+(no-op silencieux) ; `401` = la portée machine arrêtera le service
+(re-enrôlement MANUEL) ; `403` sur le **canal release** (manifest OU download) =
+**update sauté** ce cycle, **PAS de quarantaine globale** (M4, Option 1) : le
+poste continue son cycle et **envoie son report** (il reste visible sur sa
+conformité). La quarantaine globale — qui, elle, supprime le `POST /report` —
+reste réservée au `403` du canal principal `/state`.
+
+**Double vérification, dans l'ordre (deux portes successives).**
+1. **SHA-256** du corps téléchargé == `hash` du manifest **AVANT toute
+   écriture** (pattern `assets.go`) — divergent → binaire **jeté, rien écrit**,
+   retry au prochain cycle.
+2. **Signature Authenticode** du fichier **stagé** (sous `ProgramData\…\update\`)
+   **AVANT tout swap** — invalide/non-confiance → **jeté, aucun swap**.
+
+Un download corrompu/non-signé n'atteint **jamais** le swap.
+
+**Choix Authenticode : `WinVerifyTrust` (in-process, `golang.org/x/sys/windows`).**
+On utilise `WinVerifyTrustEx` + `WINTRUST_ACTION_GENERIC_VERIFY_V2` (déjà au
+`go.mod`, **aucune dépendance neuve**) plutôt qu'un shell-out
+`Get-AuthenticodeSignature`. Rationale : code de retour **binaire** (`nil` =
+signé + chaîne de confiance valide jusqu'à une CA de confiance machine ; tout
+autre = rejet), pas de parsing de chaîne localisée fragile en locale FR, pas de
+spawn de `powershell.exe`. La CA interne SE5 est déployée par l'install
+(racine de confiance machine, brief #31). Le shell-out reste l'échappatoire
+documentée si besoin terrain (`agent/windows/update_windows.go`).
+
+**Swap atomique anti-brique** (cœur `shared.PerformSwap`, wrapper Windows
+`swapAndRestart`) :
+
+```
+(pré) copier ATOMIQUEMENT le binaire stagé À CÔTÉ de la cible (agent.exe.new,
+      tmp+rename même volume que Program Files — staged vit sous ProgramData,
+      volume potentiellement distinct → rename cross-device impossible ; M1)
+(re)  RE-HASHER agent.exe.new == hash manifest        (M2 : le binaire qui sera
+        exécuté repasse la porte d'intégrité à SA position finale)
+        si divergent -> cleanup .new + abort (agent vN intact)
+(a)   rm agent.exe.old (résidu)
+(b)   agent.exe -> agent.exe.old        (rename OK même IMAGE VERROUILLÉE)
+(c)   agent.exe.new -> agent.exe        (rename ATOMIQUE même volume)
+        si (c) KO -> rollback (b) inverse, abort (agent vN intact)
+(d)   SORTIE NON-GRACIEUSE os.Exit(≠0)  (Option A) → la recovery SCM relance
+        le binaire vN+1 (le process meurt SANS signaler SERVICE_STOPPED → le
+        SCM voit une terminaison anormale → ServiceRestart ×3)
+(e)   au boot vN+1 : rm agent.exe.old   (cleanupOldBinary, best-effort)
+```
+
+**Redémarrage = sortie non-gracieuse + recovery SCM (Option A).** Après un swap
+réussi, l'agent **provoque sa propre sortie** (`os.Exit(swapExitCode)`, code ≠ 0)
+au lieu de tenter un stop+start in-process (l'ancien mécanisme `restartService`
+était structurellement cassé : un service ne peut pas s'arrêter+redémarrer
+depuis sa propre goroutine sans deadlock). La recovery SCM — `ServiceRestart` ×3,
+déjà configurée à l'install + `SetRecoveryActionsOnNonCrashFailures(true)` pour
+couvrir une sortie à code non nul — relance le service avec le binaire vN+1.
+**Contrepartie** : dans le journal d'événements Windows, cette sortie volontaire
+**ressemble à un plantage** (terminaison anormale, code 42) — c'est ATTENDU
+(un log local explicite `swap … réussi, sortie volontaire pour relance SCM`
+précède la sortie). La **preuve de succès** reste la nouvelle `agent_version`
+rapportée par le binaire vN+1 au prochain check-in.
+
+**Invariant** : à aucun instant `agent.exe` n'est absent ou corrompu — entre
+(b) et (c) il existe sous `.old`, (c) est atomique. Chaque étape destructive a
+son inverse, et `os.Exit` n'est appelé qu'APRÈS un swap réussi (jamais sur une
+erreur). Si la copie/re-hash/dépose échoue → abort + rollback, agent vN en place.
+Si le restart auto échoue (recovery SCM saturée) → image vN+1 en place mais
+service arrêté → le prochain boot ou le bootstrap GPO figé (25.4) le relance.
+**Jamais d'état « ni ancien ni nouveau »** (NFR8, l'AC la plus dure).
+
+**Données hors périmètre du swap.** Le swap ne touche QUE `agent.exe`
+(`Program Files`) ; le **token** et le cache vivent sous
+`C:\ProgramData\SambaEdu\Agent\` — **survivent par construction** (relus après
+restart, jamais de ré-enrôlement). La rotation D5 (token tournant) survit aussi.
+
+**Borne 16 Mio.** Le `Client` borne le corps HTTP à 16 Mio (`io.LimitReader`).
+Un binaire agent fait ~7 Mo (vérifier `agent/build/dist/`). Un binaire
+>16 Mio serait tronqué → SHA-256 divergent → rejeté (fail-safe correct, mais
+update bloqué : un binaire si gros signale un problème de build). **Ne pas
+relever cette borne sans raison.**
+
+**Résilience.** Un échec ne casse **jamais** le cycle machine (recover + log) ni
+le `POST /report` (l'état réel du poste part quand même). **Un seul download par
+cycle** (pas de boucle intra-cycle) ; retry au prochain check-in (cadence
+`ttl_seconds`, pas de timer dédié). L'échec est **rapporté** via un item
+`agent_update` (`status: error` + detail) — ce n'est **PAS** un type de
+ressource desired-state (pas de handler/provider serveur), juste un canal de
+signalement. Le **succès** ne pose pas d'item : la nouvelle `agent_version` du
+rapport EST la preuve de succès (la trace de déploiement qui fait foi —
+`download_served` côté serveur = debug). **Zéro dépendance AD** dans le chemin
+d'update (critère Keycloak NFR7) : bearer token neuf, url verbatim du manifest.
+
+**Découpage testabilité.** L'orchestration (décision/download/hash/staging) vit
+dans `shared/update.go` ; le **cœur anti-brique** (copie-atomique→re-hash→
+rename→ROLLBACK) vit dans `shared/swap.go` (`PerformSwap`) — tous deux testés
+sur Linux (les renames POSIX se comportent comme Windows pour ce besoin). La
+matrice NFR8 (`shared/update_test.go` + `shared/swap_test.go`) couvre le swap
+nominal (triggerRestart appelé), le staged absent, le hash `.new` divergent
+(M2) et l'échec du rename final (ROLLBACK vérifié : ancien binaire restauré,
+triggerRestart JAMAIS appelé). Seules restent côté `windows/update_windows.go`
+(`*_windows.go`, non testées en CI Linux — validées au **smoke** sur poste de
+lab) les **spécificités OS** : `verifyAuthenticode` (WinVerifyTrust), la
+résolution du chemin réel (`os.Executable`), l'ACL du staging, et la sortie
+`os.Exit` (injectée dans `PerformSwap` comme `triggerRestart`). Publication
+serveur : voir `docs/agent/release-distribution.md` (Story 25.1).
+
 ## Versionnement
 
 `agent_version` (`2.1.0` pour le binaire complet 24.6) vit dans
 `shared/version.go` (`shared.Version`) — source unique, déclarée dans chaque
-rapport, injectable au build, à bumper à chaque release (Epic 25).
+rapport, injectable au build, à bumper à chaque release (Epic 25). L'auto-update
+25.2 compare `manifest.version` à cette variable (égalité stricte).

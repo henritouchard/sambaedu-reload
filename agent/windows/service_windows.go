@@ -19,6 +19,11 @@ func (s *agentService) Execute(_ []string, requests <-chan svc.ChangeRequest, st
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Story 25.2 : au démarrage de la nouvelle image (après un auto-update),
+	// nettoyer agent.exe.old (best-effort — l'ancien process est mort, son
+	// image n'est plus verrouillée). No-op si pas de résidu.
+	cleanupOldBinary()
+
 	agent := newAgent(false)
 	done := make(chan struct{})
 	go func() {

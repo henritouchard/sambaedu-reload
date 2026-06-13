@@ -33,6 +33,7 @@ const (
 	sessionsDirName       = "sessions"
 	assetsDirName         = "assets"
 	reportsDirName        = "reports"
+	updateDirName         = "update"
 	sessionReportFileName = "session-report.json"
 	overlayFileName       = "overlay.json"
 	companionLogFileName  = "companion.log"
@@ -71,6 +72,40 @@ func (s *Store) AssetsDir() string {
 
 func (s *Store) AssetPath(filename string) string {
 	return filepath.Join(s.AssetsDir(), filename)
+}
+
+// UpdateDir : répertoire de staging des binaires d'auto-update (Story 25.2,
+// décision n° 5) — C:\ProgramData\SambaEdu\Agent\update\. Le téléchargement
+// ET les deux vérifications (SHA-256, Authenticode) s'y font ; Program Files
+// n'est touché qu'à l'instant du rename final du swap. ACL SYSTEM (pas de
+// Users:R, contrairement aux assets : un binaire stagé n'est pas affiché).
+func (s *Store) UpdateDir() string {
+	return filepath.Join(s.root(), updateDirName)
+}
+
+// UpdateStagePath : chemin du binaire stagé pour une version donnée. Le
+// filename n'est PAS user-controlled (validé en amont par SelfUpdate :
+// extrait de l'url manifest, pattern strict sambaedu-agent-<version>.exe).
+func (s *Store) UpdateStagePath(filename string) string {
+	return filepath.Join(s.UpdateDir(), filename)
+}
+
+// EnsureUpdateDir crée update\ avec son ACL SYSTEM (SYSTEM F, Admins F — pas
+// de Users:R : le staging d'un binaire n'est pas un asset affiché par la
+// session). acl nil = no-op (tests hôte). Idempotent.
+func (s *Store) EnsureUpdateDir(acl func(path string) error) error {
+	dir := s.UpdateDir()
+	if _, err := os.Stat(dir); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("création de %s : %w", dir, err)
+	}
+	if acl != nil {
+		return acl(dir)
+	}
+
+	return nil
 }
 
 func (s *Store) ReportsRoot() string {

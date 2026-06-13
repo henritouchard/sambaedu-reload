@@ -56,6 +56,29 @@ type Agent struct {
 	SessionReportACL SessionACL
 	AssetsACL        func(path string) error
 
+	// UpdateACL : ACL du répertoire de staging d'auto-update (update\, SYSTEM
+	// F + Admins F, PAS de Users:R — Story 25.2). Injectée par le binaire
+	// Windows (icacls). nil = no-op (tests hôte Linux).
+	UpdateACL func(path string) error
+
+	// Primitives Windows de l'auto-update (Story 25.2, décision n° 2),
+	// injectées par le binaire Windows (newAgent) iso AssetsACL — nil sur
+	// !windows ET en test, l'orchestration shared/ se teste avec des stubs :
+	//   - VerifyAuthenticode : vérifie la signature Authenticode du binaire
+	//     STAGÉ AVANT tout swap (WinVerifyTrust ; erreur = binaire jeté) ;
+	//   - SwapAndRestart : swap atomique anti-brique (shared.PerformSwap :
+	//     copie-atomique→re-hash→rename→rollback) PUIS sortie non-gracieuse
+	//     os.Exit(≠0) sur succès → la recovery SCM relance le binaire vN+1
+	//     (Option A, décision review 25.2). `expectedHash` = hash manifest,
+	//     re-vérifié sur le binaire RÉELLEMENT mis en place (M2). Erreur =
+	//     anti-brique, ancien binaire en place ; pas d'erreur = le process est
+	//     en train de mourir (os.Exit), le reste du cycle n'a pas lieu.
+	// nil = update INERTE (no-op silencieux) : l'auto-update ne tourne qu'en
+	// service Windows réel — sur une plateforme sans ces primitives, l'agent
+	// ne tente jamais de se remplacer (un binaire Linux n'a pas de SCM).
+	VerifyAuthenticode func(path string) error
+	SwapAndRestart     func(stagedPath, version, expectedHash string) error
+
 	// Rand : source de jitter injectable (tests). nil = math/rand global.
 	Rand *rand.Rand
 
@@ -63,6 +86,14 @@ type Agent struct {
 	// cadence normale, plus de POST /report ni de traitement d'état) ;
 	// levée AUTOMATIQUE au premier 200/304. PROCESS-LOCAL, jamais persisté.
 	quarantined bool
+
+	// pendingUpdateError : message d'échec du DERNIER cycle d'auto-update
+	// (Story 25.2, décision n° 7) — vidé dans le `BuildReport` du même cycle
+	// sous forme d'un item `agent_update` status `error`. PROCESS-LOCAL, jamais
+	// persisté : un échec se rapporte une fois ; le cycle suivant retentera et
+	// re-posera l'item s'il échoue à nouveau. La RÉUSSITE ne pose pas d'item
+	// (la nouvelle `agent_version` du rapport EST la preuve de succès, AC4).
+	pendingUpdateError string
 
 	// serverTtl : dernier `ttl_seconds` servi par le serveur (enveloppe
 	// /state, source AGENT_STATE_TTL_SECONDS côté SE5). 0 = jamais vu →
@@ -173,6 +204,17 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 	if !a.quarantined {
 		a.fetchSessionStates(cfg)
 		a.SyncWallpaperAssets(cfg)
+		// Story 25.2 : auto-update en fin de portée machine, AVANT le rapport
+		// (l'item agent_update d'un échec rejoint le POST /report du cycle). Un
+		// succès remplace le binaire puis provoque une SORTIE NON-GRACIEUSE du
+		// process (os.Exit(≠0), Option A) : la recovery SCM relance le binaire
+		// vN+1. Le POST /report ci-dessous n'a alors pas lieu pour CE cycle —
+		// c'est l'image vN+1 qui rapportera la nouvelle version (preuve de
+		// succès, AC4). Un échec laisse l'agent en place (anti-brique) : le
+		// rapport part normalement avec l'item d'échec. Un 403 sur le canal
+		// release ne met PAS le poste en quarantaine globale (M4) : il saute
+		// seulement l'update, le report ci-dessous a bien lieu.
+		a.SelfUpdate(cfg)
 	}
 
 	// Garde défensive : pas de rapport tant que la quarantaine est active —
@@ -194,7 +236,12 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 	// Items réels du rapport : collecte + validation stricte des drops
 	// session (latence ≤ 1 cycle entre convergence session et rapport,
 	// NFR3 — « forcer la synchro » = 24.7). Aucun drop = items: [] (valide).
-	reportBody, err := BuildReport(a.Hostname, uuid, CollectSessionReports(a.Store, a.Log), time.Now())
+	// Items réels = drops session collectés/validés + un éventuel item
+	// agent_update (échec d'auto-update du cycle, Story 25.2 — vidé ici, un
+	// échec se rapporte une fois).
+	items := CollectSessionReports(a.Store, a.Log)
+	items = append(items, a.drainUpdateReportItems()...)
+	reportBody, err := BuildReport(a.Hostname, uuid, items, time.Now())
 	if err != nil {
 		a.Log.Errorf("Construction du rapport en échec : %v", err)
 

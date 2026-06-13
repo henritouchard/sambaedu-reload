@@ -22,8 +22,14 @@ type fakeServer struct {
 	stateEtag  string
 	reportCode int
 
+	// releaseCode : code HTTP du GET /api/v1/agent/release (canal release, Story
+	// 25.2). 0 = handler non monté → 404 par défaut du mux (no_release, l'agent
+	// ne tente rien). >0 = code servi (ex. 403 pour tester M4 dans runCycle).
+	releaseCode int
+
 	stateCalls   int
 	reportCalls  int
+	releaseCalls int
 	lastReport   []byte
 	lastEtagSeen string
 
@@ -36,6 +42,18 @@ func newFakeServer(t *testing.T) *fakeServer {
 	f.stateBody = string(mustReadGolden(t))
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/agent/release", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.releaseCalls++
+		if f.releaseCode == 0 {
+			// Pas de release configurée : 404 no_release (rien à faire).
+			w.WriteHeader(404)
+
+			return
+		}
+		w.WriteHeader(f.releaseCode)
+	})
 	mux.HandleFunc("/api/v1/agent/state", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
