@@ -56,6 +56,12 @@ type Companion struct {
 	// Engine : moteur de convergence (handlers wallpaper + overlay).
 	Engine *Engine
 
+	// Watchdog : surveillance de Rainmeter côté compagnon (Story 27.1bis, D5) —
+	// relance Rainmeter.exe s'il disparaît (idempotent, borné). nil = inerte
+	// (tests hôte, plateforme sans Rainmeter). Évalué à chaque tour de la
+	// boucle résidente, JAMAIS dans le chemin synchrone du logon.
+	Watchdog *RainmeterWatchdog
+
 	Log *Logger
 
 	// Now : horloge injectable (tests). nil = time.Now.
@@ -233,6 +239,13 @@ func (c *Companion) Run(ctx context.Context) {
 	var lastPassAt time.Time
 
 	for {
+		// Story 27.1bis (D5) : watchdog Rainmeter — relance le rendu s'il a
+		// disparu (idempotent, borné). Évalué AVANT la convergence du cache
+		// pour que l'overlay réapparaisse vite après un kill. nil = inerte.
+		if c.Watchdog != nil {
+			c.Watchdog.Tick()
+		}
+
 		var currentWrite time.Time
 		if info, err := os.Stat(c.StatePath); err == nil {
 			currentWrite = info.ModTime()

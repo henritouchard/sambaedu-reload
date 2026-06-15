@@ -39,6 +39,8 @@ use App\Http\Controllers\Api\V1\Agent\ReportController as AgentReportController;
 use App\Http\Controllers\Api\V1\Agent\AssetController as AgentAssetController;
 // Story 25.1 — Canal agent desired-state : GET /release (manifest) + GET /releases/{filename} (alias iso AgentAssetController).
 use App\Http\Controllers\Api\V1\Agent\ReleaseController as AgentReleaseController;
+// Story 27.1bis — Canal agent desired-state : GET /tools/{filename} (artefact outil de rendu portable — Rainmeter ; alias iso AgentReleaseController).
+use App\Http\Controllers\Api\V1\Agent\ToolController as AgentToolController;
 // Story 25.4 — Endpoints d'amorçage LAN NON authentifiés (binaire stable + CA)
 // servis aux deux chemins d'installation (GPO-dispatcher figée + unattend iPXE)
 // AVANT que l'agent ait un token. `local.request`, HORS du groupe `agent.token`.
@@ -301,6 +303,18 @@ Route::get('/v1/agent/release', [AgentReleaseController::class, 'manifest'])
 Route::get('/v1/agent/releases/{filename}', [AgentReleaseController::class, 'download'])
     ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
     ->name('agent.v1.release.download');
+
+// `GET /v1/agent/tools/{filename}` (27.1bis, D8) : serving binaire des
+// artefacts d'OUTILS DE RENDU portables posés par l'agent au bootstrap
+// (aujourd'hui : Rainmeter portable). Route/asset DÉDIÉE, distincte de
+// `agent_releases`/`/releases` (réservés au binaire agent + auto-update
+// 25.2). Filename strict `sambaedu-rainmeter-…\.zip` + realpath confiné sous
+// `agent.tools_path` (sinon 404 indistinct) ; l'INTÉGRITÉ SHA-256 est
+// vérifiée côté agent AVANT extraction (pattern SyncWallpaperAssets). Chaîne
+// iso state/report/asset.
+Route::get('/v1/agent/tools/{filename}', [AgentToolController::class, 'download'])
+    ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
+    ->name('agent.v1.tools.download');
 
 /*
 |--------------------------------------------------------------------------

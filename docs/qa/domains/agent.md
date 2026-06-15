@@ -1408,6 +1408,130 @@ La page `parc-settings/agent/` (route `parc-settings.agent`, `can:computer.insta
 3. Le golden `report.v1.json` illustre l'isolation : un item `printers` en
    `error` (avec `detail`) coexiste avec les autres statuts.
 
+## Section 15 — Rendu overlay VERROUILLÉ (Rainmeter) — Story 27.1bis
+
+> Accélérateur de démo rattaché à 27.1. Le handler de **données** overlay existe
+> déjà (24.6 : `overlay.json` per-user). Cette story ajoute le **RENDU
+> VERROUILLÉ** en 3 volets : (1) **provisioning** Rainmeter PORTABLE par l'agent
+> au bootstrap (download vérifié SHA-256 + extraction ACL, install-if-absent) ;
+> (2) le **SERVICE SYSTEM écrit `overlay.json` au logon** (session-change), le
+> fichier est possédé SYSTEM avec ACL `<SID>:R` (infalsifiable, NFR5) — l'overlay
+> a QUITTÉ la map du compagnon (D1) ; (3) **verrouillage** : skin posée
+> **UTF-16 LE + BOM** (sinon mojibake `Â·`), `Rainmeter.ini` durci
+> (`TrayIcon=0` / `Draggable=0` / `ClickThrough=1` / `KeepOnScreen=1`) sous
+> `C:\ProgramData\SambaEdu\Rainmeter\` en ACL Users:R, **watchdog** compagnon qui
+> relance `Rainmeter.exe` s'il est tué. **Q1 = logon-only** (alertes figées pour
+> la session, pas de re-write périodique — assumé). **PAS d'obfuscation de
+> process** (D7). **Aucun bump du golden** (composition réutilisée à l'identique).
+>
+> **Prérequis** : Section 3 (cache de session per-SID), Section 6 (compagnon Go),
+> Section 4.3 (overlay de données). **Dépôt VM** : l'artefact portable Rainmeter
+> `sambaedu-rainmeter-<version>-portable.zip` sous `storage/agent/tools/`
+> (**chown www-admin** sinon serving en 404 silencieux) ; figer son SHA-256 dans
+> la constante `RainmeterToolChecksum` (`agent/shared/rainmeter.go`) — tant
+> qu'elle est vide, le provisioning est volontairement INERTE (Rainmeter absent
+> reste gracieux). **`config:cache`** /vm après ajout de la clé `agent.tools_path`.
+
+### Scénario 15.1 — Pose du portable Rainmeter au bootstrap (install-if-absent)
+
+1. Déposer `sambaedu-rainmeter-<version>-portable.zip` sous `storage/agent/tools/`
+   (chown www-admin) et renseigner son SHA-256 dans `RainmeterToolChecksum` ;
+   rebâtir/déployer l'agent.
+2. Sur le poste lab (service SYSTEM démarré, Rainmeter ABSENT) : au cycle de
+   bootstrap, **attendu** l'agent télécharge l'artefact via
+   `GET /api/v1/agent/tools/<filename>` (route **dédiée**, authentifiée agent),
+   **vérifie le SHA-256 AVANT extraction**, et l'extrait sous
+   `C:\ProgramData\SambaEdu\Rainmeter\app\` (`Rainmeter.exe` présent).
+3. **Idempotence** : au cycle suivant, Rainmeter déjà posé → **no-op** (aucun
+   re-téléchargement). **Zéro registre, zéro MSI/NSIS/winget** ; aucun handler
+   runtime n'a installé Rainmeter (« handler jamais installeur »).
+4. **Hash KO** : altérer l'artefact sur la VM (sans changer la constante) →
+   l'agent **rejette** (SHA-256 divergent), **n'extrait rien**, retente au cycle
+   suivant. (`agent.log` : « SHA-256 téléchargé … != attendu ».)
+5. **Artefact absent (404)** ou constante vide → provisioning **sauté
+   gracieusement**, `overlay.json` continue d'être écrit (Rainmeter absent =
+   gracieux, invariant 24.4/24.6).
+
+### Scénario 15.2 — ACL de la config verrouillée (Users:R, SYSTEM/Admins full)
+
+1. Après provisioning : `icacls C:\ProgramData\SambaEdu\Rainmeter` →
+   **attendu** `BUILTIN\Users:(OI)(CI)(R)` + `NT AUTHORITY\SYSTEM:(F)` +
+   `BUILTIN\Administrators:(F)`, héritage retiré.
+2. En **utilisateur standard** (non-admin), tenter de modifier
+   `C:\ProgramData\SambaEdu\Rainmeter\Rainmeter.ini` (ex. remettre `TrayIcon=1`,
+   `Draggable=1`) → **accès refusé**. La config est inaltérable par l'élève.
+
+### Scénario 15.3 — `overlay.json` écrit par SYSTEM au logon, ACL `<SID>:R`
+
+1. Ouvrir une session utilisateur. **Attendu** : `overlay.json` apparaît sous
+   `%LOCALAPPDATA%\SambaEdu\Agent\overlay.json` (chemin per-user conservé, D2),
+   composé par le SERVICE SYSTEM au logon (event-driven, **pas de polling**).
+2. `icacls %LOCALAPPDATA%\SambaEdu\Agent\overlay.json` → **attendu** propriétaire
+   `NT AUTHORITY\SYSTEM`, ACE `<SID-de-l'user>:(R)` (Read **seulement**), SYSTEM +
+   Administrators full, héritage retiré, **PAS** de flags `(OI)(CI)` (c'est un
+   FICHIER).
+3. En tant que l'utilisateur de la session, tenter d'**éditer** `overlay.json`
+   (modifier une alerte, une salle) → **accès refusé** : l'élève **lit** mais ne
+   **falsifie jamais** la donnée affichée (NFR5).
+4. **D1** : `overlay.json` n'est **plus** écrit par le compagnon (`companion.log`
+   ne mentionne plus de handler `overlay`) ; wallpaper / shortcuts / printers /
+   drives restent gérés par le compagnon (non-régression).
+5. **Multi-session** : ouvrir une 2e session (autre user) → chaque user a SON
+   `overlay.json` sous SON `%LOCALAPPDATA%`, ACL à SON SID. (Fallback documenté
+   D2/Q2 : profil non résoluble sous SYSTEM → `%ProgramData%\SambaEdu\overlay.json`
+   commun + warning `agent.log` ; perte assumée du per-user — à ne PAS confondre
+   avec le chemin nominal.)
+
+### Scénario 15.4 — Rendu verrouillé : non déplaçable, non masquable, épinglé, pas de tray
+
+1. Rainmeter rend la skin SambaEduOverlay au logon : panneau identité + machine +
+   1re alerte, épinglé en haut-droite.
+2. **Non déplaçable** : tenter de glisser le panneau à la souris → il ne bouge
+   pas (`Draggable=0`). **ClickThrough** : un clic dans le panneau passe à la
+   fenêtre dessous (pas de menu contextuel skin, pas de focus). **Épinglé** :
+   `KeepOnScreen=1` — jamais hors zone visible.
+3. **Pas d'icône de tray** : aucune icône Rainmeter dans la zone de notification
+   (`TrayIcon=0`) — l'élève ne pilote/masque rien depuis le tray.
+4. **Pas d'obfuscation** (D7) : `Rainmeter.exe` est **visible** dans le
+   Gestionnaire des tâches (assumé) — la défense est l'ACL + le watchdog, pas le
+   masquage.
+
+### Scénario 15.5 — UTF-16 LE + BOM : caractères accentués sans mojibake
+
+1. `Get-Content C:\ProgramData\SambaEdu\Rainmeter\Skins\SambaEduOverlay\SambaEduOverlay.ini -Encoding Byte -TotalCount 2`
+   → **attendu** `255 254` (BOM `FF FE` UTF-16 LE).
+2. Composer une identité / une salle avec accents (ex. « Salle B-12 · élève
+   éàü ») : à l'écran, **aucun `Â·` ni mojibake** — les accents s'affichent
+   correctement (sans la conversion UTF-16, le `·` deviendrait `Â·`).
+3. **Idempotence** : reconverger (relancer le cycle) → la skin n'est **pas
+   réécrite** si elle est déjà conforme au hash attendu (pose test/apply).
+
+### Scénario 15.6 — Watchdog : Rainmeter relancé s'il est tué (D5)
+
+1. Rainmeter rendu. **Tuer** `Rainmeter.exe` (Gestionnaire des tâches, ou
+   `taskkill /IM Rainmeter.exe /F`).
+2. **Attendu** : au tick suivant de la boucle résidente du compagnon (≤ ~60 s),
+   le **watchdog** relance `Rainmeter.exe` pointant la config verrouillée
+   ProgramData — l'overlay réapparaît. (`companion.log` : « Watchdog Rainmeter :
+   process absent → relancé ».)
+3. **Borné** : tuer Rainmeter en boucle ne provoque pas de relance serrée — un
+   minimum (~30 s) sépare deux tentatives. **Logoff** : le compagnon (et donc le
+   watchdog) meurt avec la session (pas de session = rien à rendre) — non
+   accumulation, non visible.
+
+### Scénario 15.7 — Route /tools dédiée + golden overlay intact (NFR13)
+
+1. `GET /api/v1/agent/tools/<filename>` (curl, token agent) : 200 binaire ;
+   404 indistinct pour filename hors pattern (`sambaedu-rainmeter-…\.zip`),
+   inconnu ou `agent.tools_path` illisible ; 401 sans token ; 403 quarantaine.
+   **La route est SÉPARÉE de `/releases`** (réservé au binaire agent / 25.2) —
+   un `sambaedu-agent-*.exe` est rejeté en 404 par `/tools` et réciproquement.
+2. **Golden inchangé** : `go test ./shared/ -run
+   TestComposeOverlayDocumentGoldenByteCompatible` vert — `overlay.json` reste
+   **byte-identique** au format 24.6 (la composition `ComposeOverlayDocument` est
+   réutilisée à l'identique côté SYSTEM ; aucun bump). Toute divergence d'un octet
+   = bug, jamais un bump à acter.
+
 ## Post-correctifs & non-régressions
 
 - **Defer review 23.1 (résolu en 24.1)** : le scénario 1.4 (body forgé → 4xx jamais 500) existe parce qu'un `StateHasher` appelé sur l'entrée agent pouvait lever une `JsonException` non catchée (UTF-8 invalide / NAN / INF). L'ingestion ne hashe JAMAIS le payload agent.
@@ -1503,3 +1627,10 @@ Ces trois incidents passaient les tests unitaires initiaux mais se révèlent à
 - [ ] 13.5 — toggle strict/default : strict recrée, souple → `drifted_allowed` non recréé ; toggle visible aussi wallpaper + overlay
 - [ ] 13.6 — lecture seule + zéro AD (grep vide ; ciblage AD-CN seul = aucun item)
 - [ ] 13.7 — golden v1 + hash figé bumpé sciemment ; `go test` croisé serveur/agent vert (NFR13)
+- [ ] 15.1 — portable posé au bootstrap (hash vérifié avant extraction), idempotent ; hash KO rejeté ; 404/constante vide = gracieux
+- [ ] 15.2 — ACL config Rainmeter Users:R / SYSTEM+Admins full ; non-admin ne peut pas modifier Rainmeter.ini
+- [ ] 15.3 — overlay.json écrit par SYSTEM au logon, ACL `<SID>:R`, non éditable par l'user ; overlay sorti de la map compagnon (D1) ; multi-session per-user
+- [ ] 15.4 — rendu verrouillé : non déplaçable / ClickThrough / épinglé / pas de tray ; process visible (pas d'obfuscation D7)
+- [ ] 15.5 — skin UTF-16 LE + BOM (FF FE), accents corrects (pas de `Â·`), pose idempotente
+- [ ] 15.6 — watchdog : kill Rainmeter → relancé ≤ ~60 s, borné (~30 s), meurt au logoff
+- [ ] 15.7 — route /tools dédiée (séparée de /releases) ; golden overlay byte-identique (aucun bump, NFR13)

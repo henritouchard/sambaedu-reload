@@ -38,22 +38,6 @@ func detachConsole() {
 // ce fichier ne fait que résoudre le SID (token de processus), les chemins
 // et les handlers.
 
-// rainmeterPresent : détection par chemins standards — purement informative,
-// n'influe JAMAIS sur le statut de convergence (Rainmeter absent = gracieux).
-func rainmeterPresent() bool {
-	candidates := []string{
-		filepath.Join(os.Getenv("ProgramFiles"), "Rainmeter", "Rainmeter.exe"),
-		filepath.Join(os.Getenv("LOCALAPPDATA"), "Rainmeter", "Rainmeter.exe"),
-	}
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return true
-		}
-	}
-
-	return false
-}
-
 // runCompanion : point d'entrée de la sous-commande. Rien ne doit jamais
 // être visible ni bloquant dans la session : toute erreur part dans
 // companion.log (ou en sortie silencieuse si même le log échoue).
@@ -81,7 +65,6 @@ func runCompanion() error {
 	}
 
 	store := &shared.Store{} // racine ProgramData par défaut — LECTURE seule ici
-	computerName := os.Getenv("COMPUTERNAME")
 
 	// Mode debug du poste (drapeau d'enveloppe `debug` du dernier état tiré
 	// par session-fetch SYSTEM, lu en best-effort dans le cache per-SID) :
@@ -107,12 +90,13 @@ func runCompanion() error {
 		Engine: &shared.Engine{
 			Handlers: map[string]shared.Handler{
 				"wallpaper": &wallpaperHandler{AssetsDir: store.AssetsDir()},
-				"overlay": &shared.OverlayHandler{
-					Path:             user.OverlayPath(),
-					ComputerName:     computerName,
-					RainmeterPresent: rainmeterPresent,
-					Log:              logger,
-				},
+				// Story 27.1bis (D1) : l'overlay a QUITTÉ la map du compagnon.
+				// overlay.json est désormais composé ET écrit par le SERVICE
+				// SYSTEM au logon (overlay_logon_windows.go), possédé SYSTEM +
+				// ACL <SID>:R — infalsifiable par l'élève (NFR5). Le compagnon
+				// (droits user) ne le touche plus. La composition
+				// (ComposeOverlayDocument) reste réutilisée à l'identique côté
+				// SYSTEM (golden inchangé).
 				// Story 27.1 — raccourcis (aggregate / machine_user) : pose les
 				// `.lnk` au chemin résolu serveur (fix Bug C), level-triggered,
 				// COM IShellLink natif.
@@ -138,7 +122,13 @@ func runCompanion() error {
 			},
 			Log: logger,
 		},
-		Log: logger,
+		// Story 27.1bis (D5) : watchdog Rainmeter côté compagnon (droits user) —
+		// relance Rainmeter.exe (pointant la skin verrouillée ProgramData) s'il
+		// disparaît, idempotent + borné, meurt au logoff. Le portable + la
+		// config sont posés par le SERVICE SYSTEM (provisioning au bootstrap) ;
+		// le compagnon ne fait que maintenir le rendu vivant.
+		Watchdog: newRainmeterWatchdog(rainmeterPortableStore(), logger),
+		Log:      logger,
 	}
 
 	// Le processus meurt à la fin de session (logoff) ; Interrupt couvre le

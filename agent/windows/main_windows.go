@@ -159,5 +159,11 @@ func newAgent(echo bool) *shared.Agent {
 		UpdateACL:          setUpdateACL,
 		VerifyAuthenticode: verifyAuthenticode,
 		SwapAndRestart:     swapAndRestart,
+		// Story 27.1bis : provisioning de l'outil de rendu Rainmeter au bootstrap
+		// du cycle SYSTEM (portable install-if-absent + config verrouillée). ACL
+		// Users:R / SYSTEM+Admins full (setAssetsACL réutilisé). nil en
+		// test/Linux (provisioning inerte).
+		Rainmeter:    rainmeterPortableStore(),
+		RainmeterACL: setAssetsACL,
 	}
 }

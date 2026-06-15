@@ -127,10 +127,25 @@ enveloppe machine-only. La partition ci-dessus est donc la SEULE règle :
 chaque item est traité par exactement un acteur.
 
 Depuis 24.4 (porté en Go en 24.6), le compagnon **converge réellement**
-(moteur §5 + handlers wallpaper/overlay). **Il ne poste toujours rien** : le
-rapport v1 n'a pas de dimension user (contrat §6 FIGÉ) — il dépose ses
-résultats dans SON drop per-SID, que le service collecte, valide
+(moteur §5 + handlers wallpaper/shortcuts/printers/drives). **Il ne poste
+toujours rien** : le rapport v1 n'a pas de dimension user (contrat §6 FIGÉ) —
+il dépose ses résultats dans SON drop per-SID, que le service collecte, valide
 strictement et rapporte (cf. `handlers-wallpaper-overlay.md` §6).
+
+> **Story 27.1bis — l'overlay quitte le compagnon (D1).** L'écriture de
+> `overlay.json` a été **retirée de la map du compagnon** : elle est désormais
+> faite par le **SERVICE SYSTEM au logon** (abonnement session-change
+> `WTS_SESSION_LOGON`, `overlay_logon_windows.go`). Motif : infalsifiabilité
+> (NFR5). Le fichier reste au chemin per-user
+> `%LOCALAPPDATA%\SambaEdu\Agent\overlay.json` (la skin ne change pas de
+> `JsonPath`, D2) mais il est **possédé par SYSTEM avec ACL `<SID>:R`** — l'élève
+> **lit**, ne **falsifie jamais** la donnée affichée. La composition
+> (`ComposeOverlayDocument`) est réutilisée à l'identique (format byte-compatible
+> inchangé). Conséquence sur la partition ci-dessus : `overlay` est le seul item
+> de portée `session` désormais traité côté **SYSTEM** (les autres handlers
+> session — wallpaper/shortcuts/printers/drives — restent au compagnon). Le
+> compagnon conserve en plus un **watchdog Rainmeter** (relance du rendu, droits
+> user — D5).
 
 ## 6. Frontière de confiance (NFR5) — qui détient quoi
 

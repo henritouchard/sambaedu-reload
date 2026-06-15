@@ -59,4 +59,13 @@ return [
     // un répertoire temporaire (jamais d'écriture dans le vrai storage/).
     'releases_path' => env('AGENT_RELEASES_PATH', storage_path('agent/releases')),
 
+    // Répertoire des artefacts d'OUTILS DE RENDU posés par l'agent au
+    // bootstrap (Story 27.1bis, D8 — aujourd'hui : l'archive PORTABLE de
+    // Rainmeter). DÉLIBÉRÉMENT distinct de `releases_path` : `agent_releases`
+    // est réservé au binaire agent + auto-update (25.2), un outil tiers vit
+    // ailleurs. Dépôt direct sur le serveur (hors git/inotify, convention
+    // storage), lisible www-admin (uid 599) sinon le serving échoue
+    // silencieusement (404). Surchargé en test vers un répertoire temporaire.
+    'tools_path' => env('AGENT_TOOLS_PATH', storage_path('agent/tools')),
+
 ];

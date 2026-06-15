@@ -80,6 +80,21 @@ func setAssetsACL(path string) error {
 	)
 }
 
+// setOverlayFileACL : ACL du FICHIER overlay.json écrit par SYSTEM au logon
+// (Story 27.1bis, D1/D2). SYSTEM + Administrators FULL, <SID>:R (Read) —
+// héritage retiré : SYSTEM possède/écrit, l'élève LIT mais ne FALSIFIE JAMAIS
+// la donnée affichée (NFR5). Posée sur le FICHIER (le dossier %LOCALAPPDATA%
+// appartient au user) : PAS de (OI)(CI) — ces flags rendraient la DACL
+// effective vide sur un fichier (acquis lab ws 49, T12 24.6 — cf. setAgentACL).
+func setOverlayFileACL(path, sid string) error {
+	return runIcacls(path,
+		"/inheritance:r",
+		"/grant", "*S-1-5-18:F",
+		"/grant", "*S-1-5-32-544:F",
+		"/grant", "*"+sid+":R",
+	)
+}
+
 func runIcacls(path string, args ...string) error {
 	cmd := exec.Command("icacls.exe", append([]string{path}, args...)...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}

@@ -118,6 +118,38 @@ func enumerateInteractiveSessions() ([]shared.Session, error) {
 	return sessions, nil
 }
 
+// interactiveSessionIDs : SessionID WTS des sessions interactives (Active ou
+// Disconnected) — Story 27.1bis. Réutilise l'énumération WTS vet-clean de
+// 24.6 (WTSEnumerateSessions, Pointer→uintptr uniquement) plutôt que de
+// déréférencer le lpEventData (uintptr→Pointer interdit par vet) d'un
+// session-change. Sur un logon, la nouvelle session apparaît dans cette
+// énumération : le service écrit overlay.json pour chacune (idempotent, cheap).
+func interactiveSessionIDs() ([]uint32, error) {
+	var sessionInfo *windows.WTS_SESSION_INFO
+	var count uint32
+	if err := windows.WTSEnumerateSessions(0, 0, 1, &sessionInfo, &count); err != nil {
+		return nil, fmt.Errorf("WTSEnumerateSessions : %w", err)
+	}
+	defer windows.WTSFreeMemory(uintptr(unsafe.Pointer(sessionInfo)))
+
+	entries := unsafe.Slice(sessionInfo, count)
+
+	ids := make([]uint32, 0, count)
+	for _, entry := range entries {
+		// On inclut DÉLIBÉRÉMENT les sessions Disconnected (#5, limite assumée) :
+		// un user verrouillé/déconnecté (RDP détaché, bascule rapide) garde un
+		// profil monté dont l'overlay doit rester à jour pour son retour. La
+		// (ré)écriture est idempotente et cheap (overlay.json par session) — pas
+		// d'effet de bord à écrire pour une session déconnectée.
+		if entry.State != windows.WTSActive && entry.State != windows.WTSDisconnected {
+			continue
+		}
+		ids = append(ids, entry.SessionID)
+	}
+
+	return ids, nil
+}
+
 // currentProcessSID : SID du token du PROCESSUS COURANT (compagnon —
 // décision n° 2) : même sous-système de sécurité que LookupSID côté fetch.
 // Uniquement pour trouver SON cache et SON drop, jamais transmis à personne.

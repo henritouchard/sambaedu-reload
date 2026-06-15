@@ -247,6 +247,32 @@ inchangées par le portage) :
   SambaEdu : un lecteur monté par l'utilisateur (vers un autre serveur, ou une
   lettre cible déjà occupée par un montage user) n'est **jamais** démonté ni
   écrasé. Tokens `<se4fs>`/`<login>` substitués **localement**.
+- **Rendu overlay VERROUILLÉ (Story 27.1bis)** — l'agent gère le **cycle de vie
+  du rendu** (Rainmeter), pas seulement la donnée :
+  - **Provisioning portable au bootstrap** (SERVICE SYSTEM, `SyncRainmeterTool`
+    dans `shared/rainmeter_provision.go`, calqué `SyncWallpaperAssets`) : download
+    de l'archive PORTABLE via la route **dédiée** `GET /api/v1/agent/tools/<filename>`
+    (≠ `/releases`, réservé au binaire agent), **SHA-256 vérifié AVANT extraction**
+    (constante `RainmeterToolChecksum` — vide = inerte/gracieux), extraction
+    `archive/zip` (anti zip-slip) sous `C:\ProgramData\SambaEdu\Rainmeter\app\`,
+    ACL Users:R. Install-if-absent **idempotent**. **Jamais** par un handler runtime,
+    **jamais** MSI/NSIS/winget, zéro registre (mode portable).
+  - **`overlay.json` écrit par le SERVICE SYSTEM au logon** (`overlay_logon_windows.go`)
+    — abonnement session-change (`svc.AcceptSessionChange` + `case SessionChange`
+    sur `WTS_SESSION_LOGON`), résolution user/profil de session via le token
+    (`WTSQueryUserToken` + `GetUserProfileDirectory`, jamais l'AD — NFR7),
+    composition via `shared.OverlayDocumentForSession` (réutilise
+    `ComposeOverlayDocument` à l'identique — golden inchangé), écriture atomique
+    possédée SYSTEM + **ACL `<SID>:R`** (`setOverlayFileACL`) : infalsifiable
+    (NFR5). **Logon-only** (Q1=B : pas de re-write périodique). L'overlay a
+    **quitté la map du compagnon** (D1). Fallback documenté
+    `%ProgramData%\SambaEdu\overlay.json` si le profil n'est pas résoluble.
+  - **Verrouillage** : skin posée **UTF-16 LE + BOM** (`ToUTF16LEWithBOM`, sinon
+    mojibake `Â·`) + `Rainmeter.ini` durci (`BuildHardenedRainmeterIni` :
+    `TrayIcon=0` / `Draggable=0` / `ClickThrough=1` / `KeepOnScreen=1`) sous
+    ProgramData ACL Users:R ; **watchdog** côté compagnon
+    (`shared/watchdog.go` + `rainmeter_windows.go`) relance `Rainmeter.exe` s'il
+    disparaît (idempotent, borné, meurt au logoff). **Pas d'obfuscation** (D7).
 - L'IPC named-pipe service ⇄ session reste écarté (modèle fichier per-SID
   validé par les spikes et les reviews) — à réévaluer à l'Epic 27.
 - Quarantaine : pas de fetch de session ; le compagnon converge sur son
@@ -307,8 +333,12 @@ copy sambaedu-agent-2.1.0.exe 'C:\Program Files\SambaEdu\Agent\agent.exe'
 #   log C:\ProgramData\SambaEdu\Agent\logs\agent.log ;
 #   log compagnon (après un logon) %LOCALAPPDATA%\SambaEdu\Agent\companion.log
 # Signature : Get-AuthenticodeSignature 'C:\Program Files\SambaEdu\Agent\agent.exe' → Valid
-# Prérequis DÉMO overlay : Rainmeter installé manuellement (NSIS /S, cf.
-#   resources/overlay/README.md) — le handler n'installe JAMAIS d'application.
+# Prérequis DÉMO overlay (≤ 27.1) : Rainmeter installé manuellement (NSIS /S).
+# Story 27.1bis : Rainmeter PORTABLE posé par l'AGENT au bootstrap (route
+#   /api/v1/agent/tools/, SHA-256 vérifié) — déposer l'artefact sur la VM sous
+#   storage/agent/tools/ (chown www-admin) + figer son hash dans la constante
+#   RainmeterToolChecksum (agent/shared/rainmeter.go). overlay.json est alors
+#   écrit par le SERVICE SYSTEM au logon (ACL <SID>:R) — cf. resources/overlay/README.md.
 # Désinstaller (service + tâches ; token/cache/logs conservés) : agent.exe uninstall
 #   (-purge pour tout effacer)
 # Debug console : agent.exe run   (Ctrl-C pour arrêter)

@@ -70,6 +70,17 @@ type Agent struct {
 	// Windows (icacls). nil = no-op (tests hôte Linux).
 	UpdateACL func(path string) error
 
+	// Rainmeter : store de l'outil de rendu (C:\ProgramData\SambaEdu\Rainmeter)
+	// — provisioning portable au bootstrap + pose de la config verrouillée
+	// (Story 27.1bis). nil = provisioning INERTE (tests, !windows : l'agent ne
+	// pose jamais Rainmeter sur une plateforme sans outil de rendu).
+	Rainmeter *RainmeterStore
+
+	// RainmeterACL : ACL de l'arbre Rainmeter (Users:R, SYSTEM/Admins full —
+	// setAssetsACL réutilisé, Story 27.1bis). Injectée par le binaire Windows.
+	// nil = no-op (tests hôte Linux).
+	RainmeterACL func(path string) error
+
 	// Primitives Windows de l'auto-update (Story 25.2, décision n° 2),
 	// injectées par le binaire Windows (newAgent) iso AssetsACL — nil sur
 	// !windows ET en test, l'orchestration shared/ se teste avec des stubs :
@@ -222,6 +233,12 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 	if !a.quarantined {
 		a.fetchSessionStates(cfg)
 		a.SyncWallpaperAssets(cfg)
+		// Story 27.1bis : provisioning de l'outil de rendu Rainmeter au
+		// BOOTSTRAP du cycle SYSTEM (portable install-if-absent + config
+		// verrouillée), JAMAIS depuis un handler runtime (« handler jamais
+		// installeur » — D3). Idempotent ; un échec ne casse pas le cycle
+		// (rattrapage au prochain passage, comme le sync wallpaper).
+		a.SyncRainmeterTool(cfg)
 		// Story 25.2 : auto-update en fin de portée machine, AVANT le rapport
 		// (l'item agent_update d'un échec rejoint le POST /report du cycle). Un
 		// succès remplace le binaire puis provoque une SORTIE NON-GRACIEUSE du

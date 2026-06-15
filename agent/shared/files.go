@@ -18,6 +18,11 @@ const (
 	// le chemin du token y est un CONTRAT (purge sysprep obligatoire).
 	DefaultAgentRoot = `C:\ProgramData\SambaEdu\Agent`
 
+	// DefaultProgramDataSambaEdu : parent ProgramData\SambaEdu — sert de base
+	// au fallback overlay commun (D2/Q2, Story 27.1bis) quand le profil de
+	// session n'est pas résoluble sous SYSTEM.
+	DefaultProgramDataSambaEdu = `C:\ProgramData\SambaEdu`
+
 	tokenFile        = "token"
 	configFile       = "config.json"
 	cacheDirName     = "cache"

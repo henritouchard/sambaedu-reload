@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"time"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 )
 
@@ -31,13 +32,44 @@ func (s *agentService) Execute(_ []string, requests <-chan svc.ChangeRequest, st
 		close(done)
 	}()
 
-	status <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
+	// Story 27.1bis : COMPUTERNAME (machine.name de l'overlay) — jamais
+	// demandé au serveur, lu localement (iso ComposeOverlayDocument 24.6).
+	computerName := os.Getenv("COMPUTERNAME")
+
+	// Story 27.1bis (volet 2, D1) : on s'abonne aux notifications de session
+	// (AcceptSessionChange) — au logon (WTS_SESSION_LOGON), le service compose
+	// et écrit overlay.json possédé SYSTEM (ACL <SID>:R, infalsifiable NFR5).
+	status <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown | svc.AcceptSessionChange}
 
 	for {
 		select {
 		case req := <-requests:
 			switch req.Cmd {
 			case svc.Interrogate:
+				status <- req.CurrentStatus
+			case svc.SessionChange:
+				// On ne réagit QU'au logon (WTS_SESSION_LOGON 0x5) ; les autres
+				// événements (logoff, lock, unlock…) sont ignorés (Q1=B :
+				// logon-only, pas de re-write périodique ni sur unlock).
+				// Best-effort : une composition/écriture overlay ne doit JAMAIS
+				// bloquer le SCM — elle est rapide (lecture cache +
+				// WriteFileAtomic + icacls). On NE déréférence PAS le
+				// lpEventData (uintptr→Pointer rejeté par vet) : on
+				// ré-énumère les sessions interactives (WTS vet-clean, 24.6) —
+				// la nouvelle session y apparaît, on écrit pour chacune
+				// (idempotent).
+				if req.EventType == windows.WTS_SESSION_LOGON {
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								agent.Log.Errorf("Écriture overlay au logon en échec (panique rattrapée) : %v", r)
+							}
+						}()
+						writeOverlayForAllSessions(agent.Store, computerName, agent.Log)
+					}()
+				}
+				// On re-confirme l'état courant au SCM (l'event n'a pas changé
+				// l'état du service).
 				status <- req.CurrentStatus
 			case svc.Stop, svc.Shutdown:
 				status <- svc.Status{State: svc.StopPending}

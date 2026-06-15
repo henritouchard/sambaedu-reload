@@ -50,6 +50,7 @@ agent.
 |---|---|
 | Windows (POC, déprécié) | `%PROGRAMDATA%\SambaEdu\overlay.json` |
 | Windows (agent 24.4) | `%LOCALAPPDATA%\SambaEdu\Agent\overlay.json` (per-user, écrit par le compagnon) |
+| Windows (agent 27.1bis) | `%LOCALAPPDATA%\SambaEdu\Agent\overlay.json` (per-user, **écrit par le SERVICE SYSTEM au logon**, possédé SYSTEM + ACL `<SID>:R` — infalsifiable) |
 | Linux | `/run/sambaedu/overlay.json` (tmpfs, recréé au boot) |
 
 Le `fetch` écrit ; le `render` lit. Sur Linux le fichier doit être lisible par la
@@ -92,6 +93,47 @@ Voir `overlay.sample.json`. Le render n'utilise que :
   futur = lier le login au JWT (review finding D).
 - Le **JWT ne vit que dans le `fetch`** (header HTTP). Les configs render ne
   contiennent aucun secret, et le `fetch` ne logge pas le token.
+
+## Rendu VERROUILLÉ (Story 27.1bis)
+
+À partir de 27.1bis, l'agent ne se contente plus d'**écrire la donnée** : il
+gère le **cycle de vie du rendu** et le **durcit**. Trois changements par rapport
+au POC ci-dessus :
+
+1. **Provisioning portable par l'agent** (plus d'install NSIS manuelle). Rainmeter
+   est extrait en mode **PORTABLE** (zéro registre) sous
+   `C:\ProgramData\SambaEdu\Rainmeter\app\`, **posé par le SERVICE SYSTEM au
+   bootstrap** (download via la route dédiée `GET /api/v1/agent/tools/<filename>`,
+   **SHA-256 vérifié AVANT extraction**, install-if-absent idempotent). **Jamais**
+   par un handler runtime (« handler jamais installeur »), **jamais** MSI/NSIS/
+   winget. Tant que l'artefact réel n'est pas figé (constante `RainmeterToolChecksum`
+   vide côté agent), le provisioning est inerte et Rainmeter absent reste gracieux.
+
+2. **`overlay.json` écrit par le SERVICE SYSTEM au logon** (session-change WTS,
+   `WTS_SESSION_LOGON`), **possédé SYSTEM avec ACL `<SID>:R`** : l'élève **lit**,
+   ne **falsifie jamais** la donnée affichée (NFR5). Le chemin per-user
+   `%LOCALAPPDATA%\SambaEdu\Agent\overlay.json` est conservé (le `JsonPath` de la
+   skin ne change pas). **Écriture événementielle au logon uniquement** (Q1 =
+   logon-only : les alertes live ne sont pas rafraîchies en cours de session —
+   assumé). L'overlay a quitté la map du compagnon (D1). La composition
+   (`ComposeOverlayDocument`) est réutilisée à l'identique (format byte-compatible
+   inchangé).
+
+3. **Verrouillage du rendu**. La skin est posée en **UTF-16 LE + BOM** (conversion
+   à la pose depuis la source UTF-8 du repo — sinon mojibake `Â·`). Un
+   **`Rainmeter.ini` durci** (`TrayIcon=0`, et sur la section d'instance de la skin
+   `Draggable=0` / `ClickThrough=1` / `KeepOnScreen=1` + position épinglée) est posé
+   sous `C:\ProgramData\SambaEdu\Rainmeter\` en **ACL Users:R, SYSTEM/Admins full**
+   (la skin seule ne suffit pas à verrouiller — c'est le `Rainmeter.ini` sous ACL
+   qui le fait). Un **watchdog** côté compagnon (droits user) relance
+   `Rainmeter.exe` s'il disparaît (idempotent, borné, meurt au logoff). **Pas
+   d'obfuscation de process** (D7) : l'élève voit/tue son `Rainmeter.exe` → le
+   watchdog répond.
+
+> La skin canonique reste `resources/overlay/rainmeter/SambaEduOverlay/SambaEduOverlay.ini`
+> (UTF-8). Une copie embarquée (`agent/shared/embedded/SambaEduOverlay.ini`),
+> maintenue identique, est ce que l'agent convertit et pose (go:embed ne peut
+> référencer un fichier hors du package).
 
 ## ⚠️ Caveats POC
 
