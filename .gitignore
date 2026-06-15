@@ -83,4 +83,7 @@ Desktop.ini
 # storage — le binaire de prod sera déposé dans storage/agent/releases/ par
 # 25.1) ; jamais de PFX/clé privée dans le repo.
 /agent/build/dist/
+# Binaires compilés à la racine du module (go build / cross-compile ad hoc),
+# ex. agent/windows.exe — ne jamais versionner.
+/agent/*.exe
 *.pfx
