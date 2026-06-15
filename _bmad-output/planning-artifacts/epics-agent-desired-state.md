@@ -146,7 +146,7 @@ FR25: Epic 25 - Bootstrap GPO figé = filet éternel
 FR26: Epic 25 - UI parc-settings/agent (+ toggle strict/défaut exposé au fil de l'eau en Epic 27)
 FR27: Epic 23 - Logging channel agent namespacé (transversal, étendu par chaque epic)
 FR28: Epic 26 - Enum WorkstationEnvironment (ex-22.1, rescopée : consommateurs = handlers Epic 27, pas de retrofit legacy)
-FR29: Epic 26 - Sync offline des nomades (ex-22.2)
+FR29: Epic 26 - ~~Sync offline des nomades (ex-22.2)~~ → CLOSE (2026-06-13, Story 26.2) : modèle offline/resync (Folder Redirection + Offline Files/CSC) ÉCARTÉ. Décision : nomade = poste 100 % LOCAL assumé (pas de profil réseau, docs locaux jamais supprimés, config par l'agent desired-state) ; perte des données si perte du poste = risque accepté. Voir Story 26.2 + docs/agent/state-providers.md §« Mode nomade ».
 FR30: Epic 27 - Extinction en bloc du canal legacy (ex-22.3 annulée)
 
 ## Epic List
@@ -643,26 +643,38 @@ afin que les handlers (bureau, profils navigateur, clean_profiles) adaptent leur
 
 **Note de transition :** AUCUN retrofit dans le canal legacy (`ApplicationScriptsGenerator`, `ShortcutCompilerService`, pansement `4e5a152` intouchés — ils meurent avec le canal). Le Bug C est corrigé définitivement par le handler raccourcis (Epic 27), qui consommera ce service.
 
-### Story 26.2 : Mode nomade — données accessibles offline et resynchronisées au retour
+### Story 26.2 : Mode nomade — modèle 100 % local assumé (clôture de FR29)
+
+> **RECADRÉE et CLOSE le 2026-06-13 (dev-cycle, décision Henri).** Le scope
+> d'origine ci-dessous (offline/resync via Folder Redirection + Offline Files /
+> CSC) a été **écarté** : il ne correspond pas à l'exploitation réelle des
+> nomades. **Modèle retenu** : un poste nomade est **100 % LOCAL** — pas de profil
+> utilisateur réseau, documents **stockés en local et jamais supprimés** (le poste
+> *est* la source de vérité de ses données), configuration (logiciels WPKG,
+> raccourcis, wallpaper) servie par **l'agent desired-state** (Epics 23-25).
+> **Aucune** redirection de dossiers / fichier hors-connexion / synchronisation
+> serveur. **Conséquence acceptée** : perte des données locales si le portable
+> est perdu/volé/en panne (un filet de sauvegarde serait une décision séparée).
+> La story livrée est une **décision/documentation** (zéro code) : cf.
+> `docs/agent/state-providers.md` §« Mode nomade (Story 26.2) » et la story
+> `26-2-mode-nomade-offline-resync.md`. La désactivation de `clean_profiles` pour
+> les nomades (AC d'origine ci-dessous) était **sans objet** (un nomade n'a pas de
+> profil itinérant réseau) ; la réimplémentation native du nettoyage de profils
+> est la **Story 26.3**.
+
+**Scope d'origine (ÉCARTÉ — conservé pour historique) :**
 
 En tant qu'utilisateur d'un portable nomade,
 je veux accéder à mes fichiers hors établissement et les retrouver synchronisés au retour,
 afin que mes données ne soient jamais prisonnières du poste.
 
-**Acceptance Criteria:**
+~~**Given** un poste en environnement `nomade` **When** la stratégie offline est appliquée aux dossiers user **Then** la source de vérité reste le serveur (home SambaEdu) avec cache local et resynchronisation au retour — Folder Redirection + Offline Files (CSC) recommandé ; alternative rclone/robocopy.~~
 
-**Given** un poste en environnement `nomade`
-**When** la stratégie offline est appliquée aux dossiers user
-**Then** la source de vérité reste le serveur (home SambaEdu) avec cache local et resynchronisation au retour — **Folder Redirection + Offline Files (CSC)** recommandé ; alternative rclone/robocopy documentée si CSC disqualifié à l'implémentation.
+~~**Given** un poste nomade hors établissement (serveur injoignable) **Then** l'utilisateur accède à ses dossiers en local sans erreur.~~
 
-**Given** un poste nomade hors établissement (serveur injoignable)
-**Then** l'utilisateur accède à ses dossiers en local sans erreur.
+~~**Given** le retour sur le LAN **Then** les modifications locales remontent au serveur ; les conflits suivent le comportement documenté de la stratégie retenue.~~
 
-**Given** le retour sur le LAN
-**Then** les modifications locales remontent au serveur ; les conflits suivent le comportement documenté de la stratégie retenue.
-
-**Given** un poste `nomade`
-**Then** le `clean_profiles` est désactivé pour ces postes (sinon perte des données en attente de sync).
+~~**Given** un poste `nomade` **Then** le `clean_profiles` est désactivé pour ces postes.~~
 
 ## Epic 27 : Parité de compétences — la bascule des ressources, du simple au dur (gate paliers 2-3)
 

@@ -245,6 +245,41 @@ Onglet « Environnement » de `parc-settings` (SFC Livewire
 physiques), Gate `update-workstationGroup` (même autorisation que l'édition
 d'un parc), persistance via le modèle, toast de succès.
 
+### Mode nomade (Story 26.2)
+
+**Modèle retenu (décision Henri, 2026-06-13) : le poste nomade est 100 % LOCAL,
+et c'est ASSUMÉ.** Concrètement, un poste `nomade` :
+
+- **n'a pas de profil utilisateur réseau** (ni itinérant, ni redirigé) ;
+- **stocke ses documents en local sur la machine**, et ils **ne sont jamais
+  supprimés** (le poste *est* la source de vérité de ses données) ;
+- reçoit sa configuration (logiciels WPKG, raccourcis, wallpaper, …) par
+  **l'agent desired-state** (Epics 23-25), qui converge comme sur tout autre
+  poste. **C'est tout.**
+
+> **Ce que la Story 26.2 NE fait PAS — et pourquoi (clôture de FR29).** L'epic
+> (FR29) recommandait à l'origine un modèle « serveur = source de vérité + cache
+> offline + resynchronisation » (Folder Redirection + Offline Files / CSC). Ce
+> modèle a été **écarté** : il ne correspond pas à l'exploitation réelle des
+> nomades (qui gardent tout en local) et ajouterait une machinerie Windows
+> lourde (redirection, CSC, conflits de sync) sans bénéfice recherché. **Aucune
+> redirection de dossiers, aucun fichier hors-connexion, aucune synchronisation
+> serveur n'est mise en place.** **Conséquence explicitement acceptée** : si le
+> portable est perdu/volé/en panne, ses données locales sont perdues (pas de
+> copie serveur). Un éventuel filet de sauvegarde serait une décision séparée,
+> hors 26.2.
+
+> **`clean_profiles` / `del-roam` ne concernent PAS les nomades.** Ces mécanismes
+> legacy agissent sur le store des profils **itinérants** `/home/profiles`, par
+> **user**, et sont **aveugles au poste** (`clean_profiles('*')` = purge des
+> orphelins, action admin manuelle `ldap_cleaner.php?do=3` ; `del-roam.sh` =
+> trim per-`${username}`, logon script SYSVOL). Un nomade n'ayant **pas de profil
+> réseau**, ces mécanismes ne le touchent pas — il n'y avait rien à désactiver.
+> La **réimplémentation native** du nettoyage de profils (pastille tableau user +
+> purge des orphelins, calcul journalier) est un sujet **distinct** traité en
+> **Story 26.3**. AUCUN retrofit legacy (`RoamingProfileService`,
+> `ApplicationScriptsGenerator`, `ShortcutCompilerService`, GPO `redirections`).
+
 ## Hors scope (et où ça vit)
 
 | Sujet | Pourquoi pas ici | Où |
