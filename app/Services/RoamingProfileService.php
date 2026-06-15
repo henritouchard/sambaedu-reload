@@ -826,7 +826,7 @@ class RoamingProfileService
             while (file_exists($dest)) {
                 $dest = self::TRASH_ROOT . '/' . $dir . '.' . $stamp . '-' . (++$suffix);
             }
-            $ok = @rename($real, $dest);
+            $ok = $this->moveToTrash($real, $dest);
 
             if ($ok === false) {
                 Log::error('[RoamingProfileService] Purge : déplacement échoué', [
@@ -857,5 +857,43 @@ class RoamingProfileService
         ]);
 
         return ['moved' => $moved, 'skipped' => $skipped, 'errors' => $errors];
+    }
+
+    /**
+     * Déplace un dossier de profil vers la corbeille, de façon robuste au
+     * partitionnement disque.
+     *
+     * `rename(2)` échoue avec `EXDEV` si la source (`/home/profiles`) et la
+     * destination (`_Trash_users`) sont sur des FILESYSTEMS distincts — config
+     * courante en prod où `/home/profiles` est un volume dédié. On bascule alors
+     * sur `mv` (copie + suppression, gère le cross-device). Ce repli n'intervient
+     * QUE dans le chemin d'action admin de la purge (jamais au render) : le
+     * shellout n'enfreint pas l'invariant perf.
+     *
+     * Les deux chemins sont déjà confinés/validés en amont (realpath sous
+     * `PROFILES_ROOT`, nom validé `isSafeProfileDirName`, destination sous
+     * `TRASH_ROOT`) ; `escapeshellarg` en défense supplémentaire.
+     *
+     * @return bool  true si le dossier a bien quitté son emplacement d'origine.
+     */
+    protected function moveToTrash(string $source, string $dest): bool
+    {
+        if (@rename($source, $dest)) {
+            return true;
+        }
+
+        // Repli cross-device (EXDEV) : `mv` gère copie+suppression entre FS.
+        try {
+            $mv = Process::run('mv -f ' . escapeshellarg($source) . ' ' . escapeshellarg($dest));
+        } catch (\Throwable $e) {
+            Log::error('[RoamingProfileService] Purge : repli mv (exception)', [
+                'op' => 'moveToTrash',
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+
+        // Succès confirmé seulement si la source a réellement disparu.
+        return $mv->successful() && !is_dir($source);
     }
 }

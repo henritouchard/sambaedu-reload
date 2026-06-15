@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\RoamingProfileService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -225,6 +226,32 @@ class RoamingProfileCleanupTest extends TestCase
         $this->assertSame(0, $result['moved']);
         $this->assertSame(0, $result['errors']);
         $this->assertGreaterThanOrEqual(1, $result['skipped']);
+    }
+
+    /**
+     * AC #5 (review S1) : si `rename()` échoue (corbeille sur un autre
+     * filesystem que /home/profiles — `EXDEV`, config prod fréquente), le
+     * déplacement bascule sur `mv` (cross-device). On le vérifie via la méthode
+     * `moveToTrash` exposée : source inexistante → rename false → repli `mv`.
+     */
+    #[Test]
+    public function it_falls_back_to_mv_when_rename_fails_cross_device(): void
+    {
+        Process::fake(); // mv "réussit" (faux process), n'exécute rien.
+
+        $service = new class () extends RoamingProfileService {
+            public function exposeMoveToTrash(string $s, string $d): bool
+            {
+                return $this->moveToTrash($s, $d);
+            }
+        };
+
+        // Source inexistante → rename() renvoie false → repli mv déclenché.
+        $ok = $service->exposeMoveToTrash('/home/profiles/ghost.V1', '/home/admin/_Trash_users/ghost.V1.x');
+
+        // is_dir(source) = false (inexistante) + mv fake successful → true.
+        $this->assertTrue($ok);
+        Process::assertRan(fn ($process) => str_contains($process->command, 'mv -f'));
     }
 
     #[Test]

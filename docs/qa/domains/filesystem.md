@@ -702,7 +702,7 @@ détection/purge des profils orphelins. **Aucun routage vers le legacy**
 | Incident | Scénario de non-régression |
 |----------|----------------------------|
 | #1 `du` exit-code ≠ 0 (sous-dossier illisible) jetait tout le snapshot | 26.3-9 |
-| S1 `rename` cross-device (`/home/profiles` mount dédié en prod) | 26.3-10 (vérif infra) |
+| S1 `rename` cross-device (`/home/profiles` mount dédié en prod) → fallback `mv` | 26.3-10 |
 
 #### Scénario 26.3-9 — `du` en succès PARTIEL : le snapshot reste exploitable
 
@@ -714,12 +714,14 @@ détection/purge des profils orphelins. **Aucun routage vers le legacy**
 4. Restaurer : `chmod 700 /home/profiles/<un_profil>`.
 5. **Échec total** (sortie vide / `/home/profiles` illisible en entier) → exit non-fatal, log `error`, snapshot PRÉCÉDENT conservé (fail-soft).
 
-#### Scénario 26.3-10 — Vérif infra : corbeille sur le même filesystem que `/home/profiles`
+#### Scénario 26.3-10 — Purge robuste cross-device (`/home/profiles` sur volume dédié)
 
-**Contexte** : la purge déplace via `rename()`, qui échoue (`EXDEV`) si `/home/profiles` et `/home/admin/_Trash_users` sont sur des mounts distincts.
+**Contexte** : la purge déplace via `rename()`, qui échoue (`EXDEV`) si `/home/profiles` et `/home/admin/_Trash_users` sont sur des mounts distincts. Le code bascule alors sur `mv -f` (copie+suppression, gère le cross-device). À valider sur un serveur où `/home/profiles` est un volume dédié.
 
-1. `stat -c '%d %n' /home/profiles /home/admin` → les deux doivent afficher **le même device id**.
-2. Si devices différents (volume profils dédié) : la purge échouera systématiquement (compteur `errors`). Prévoir un fallback `mv`/copy+unlink (cf. story Notes post-review S1) AVANT d'activer la purge en prod.
+1. `stat -c '%d %n' /home/profiles /home/admin` — noter si les device id diffèrent (volume profils dédié = cas intéressant).
+2. Créer un dossier orphelin de test sous `/home/profiles`, le faire détecter (`profiles:snapshot`), puis lancer la purge depuis l'UI admin.
+3. **Attendu** : le dossier est bien déplacé dans `/home/admin/_Trash_users/` (compteur `moved`, **pas** `errors`), même si les deux chemins sont sur des disques différents. Vérifier que la source a disparu de `/home/profiles`.
+4. Sur le **même** device (cas VM), le déplacement passe par `rename()` direct — résultat identique.
 
 ### Checklist rapide — Story 26.3
 
@@ -732,7 +734,7 @@ détection/purge des profils orphelins. **Aucun routage vers le legacy**
 - [ ] Scénario 26.3-7 : gardes path-traversal
 - [ ] Scénario 26.3-8 : gating server.admin
 - [ ] Scénario 26.3-9 : `du` succès partiel → snapshot exploitable (review #1)
-- [ ] Scénario 26.3-10 : vérif infra corbeille même device (review S1)
+- [ ] Scénario 26.3-10 : purge robuste cross-device (fallback `mv`, review S1)
 
 ---
 
