@@ -225,6 +225,28 @@ inchangées par le portage) :
   écrit dans le champ Description, `shared.ShortcutManagedMarker`) n'est **jamais**
   touché. Les tokens serveur (`<user>` → `%USERNAME%`, `<se4fs>` → serveur de
   fichiers) sont substitués **localement**.
+- **Handler `printers`** (aggregate / `session` — Story 27.2) : installe/retire
+  les **connexions imprimante réseau** (partage Samba `\\<se4fs>\<cups_name>`,
+  connexion logique résolue serveur) et pose l'imprimante **par défaut** sur
+  l'item `is_default` (résolu serveur : WG physique > logique). API Win32
+  **winspool en Go natif** (`handler_printers_windows.go` — `AddPrinterConnection`
+  / `DeletePrinterConnection` / `SetDefaultPrinter` / `EnumPrinters`, pas de
+  shell-out, zéro dépendance ajoutée). Logique pure (set cible, défaut,
+  level-triggered, isolation) dans `shared/handler_printers.go` (testée hôte).
+  **Marqueur de périmètre** = serveur SambaEdu (`<se4fs>` résolu localement) :
+  seules les connexions vers CE serveur sont gérées ; une imprimante installée
+  par l'utilisateur n'est **jamais** désinstallée. Serveur d'impression
+  injoignable → statut `error` isolé (les autres types continuent), retry au
+  cycle suivant.
+- **Handler `drives`** (aggregate / `session` — Story 27.2) : monte/démonte les
+  **lecteurs réseau** (lettre → UNC des classes du user, projection MVP-A). API
+  Win32 **mpr en Go natif** (`handler_drives_windows.go` — `WNetAddConnection2`
+  / `WNetCancelConnection2` / `WNetGetConnection`, pas de shell-out `net use`).
+  Logique pure (set cible lettre→UNC, level-triggered) dans
+  `shared/handler_drives.go` (testée hôte). **Marqueur de périmètre** = serveur
+  SambaEdu : un lecteur monté par l'utilisateur (vers un autre serveur, ou une
+  lettre cible déjà occupée par un montage user) n'est **jamais** démonté ni
+  écrasé. Tokens `<se4fs>`/`<login>` substitués **localement**.
 - L'IPC named-pipe service ⇄ session reste écarté (modèle fichier per-SID
   validé par les spikes et les reviews) — à réévaluer à l'Epic 27.
 - Quarantaine : pas de fetch de session ; le compagnon converge sur son

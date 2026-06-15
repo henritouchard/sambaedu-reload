@@ -1315,6 +1315,99 @@ La page `parc-settings/agent/` (route `parc-settings.agent`, `can:computer.insta
    (`frozenStateHash`) prouve que le hasher Go produit le **même** hash que le
    StateHasher PHP sur le nouveau payload (frontière de contrat respectée).
 
+## Section 14 — Handlers lecteurs & imprimantes (Story 27.2)
+
+> Deuxième story de l'Epic 27 : reconduit le pattern 27.1 pour **deux types**
+> d'un coup — `drives` (lecteurs réseau, projection MVP-A des classes) et
+> `printers` (imprimantes, défaut réglé par WG). Providers serveur lecture seule
+> + handlers agent Go (winspool/mpr natifs) + golden bumpé. **L'imprimante de la
+> salle devient un item d'état comme les autres** (Vérité #9). Prérequis :
+> Section 13 (handler raccourcis), domaine `printers` (imprimantes CUPS/SER),
+> domaine `filesystem` (partages de classe). **Migration VM** : jouer
+> `php artisan migrate` (colonne pivot `is_default`) — `migrate:status` d'abord
+> (les migrations ne sont pas auto-jouées sur la VM).
+
+### Scénario 14.1 — Convergence lecteurs + imprimantes UI → poste
+
+1. Rattacher une imprimante à la **salle** du poste (onglet « Imprimantes » du
+   groupe). Rattacher l'utilisateur du poste à une **classe** (`UserGroup
+   type='classe'`) ayant un partage de classe.
+2. Sur le poste lab : ouvrir une session. **Attendu** : l'imprimante de la salle
+   est **installée** (connexion `\\<se4fs>\<cups_name>`) et le lecteur `K:` est
+   **monté** vers `\\<se4fs>\Classe_<name>\<login>\`.
+3. Vérifier le payload servi : `GET /api/v1/agent/state?user=<login>` → items
+   `printers` et `drives` (portée `session`). `printers.connection` =
+   `\\<se4fs>\<cups_name>` (connexion LOGIQUE, **jamais** l'URI back-end CUPS
+   `socket://…`) ; `drives.unc` = `\\<se4fs>\Classe_<name>\<login>\` (tokens
+   substitués côté poste, pas dans le JSON serveur).
+
+### Scénario 14.2 — Union multi-mailles (salle physique + parc logique)
+
+1. Rattacher une imprimante à la **salle physique** du poste et une autre au
+   **parc logique**. Rattacher la même imprimante aux deux mailles.
+2. **Attendu** : le poste reçoit l'**union** des imprimantes des deux mailles ;
+   l'imprimante commune n'apparaît **qu'une fois** (dédup par contenu côté
+   compilateur, réutilisée de 27.1). Le hash d'agrégat du rapport est stable.
+
+### Scénario 14.3 — Imprimante par défaut = réglée par WG (physique > logique)
+
+1. Cocher « Par défaut » sur une imprimante de la **salle physique** (toggle
+   `printers-list.blade.php` du groupe) et sur une AUTRE imprimante du **parc
+   logique** du même poste.
+2. **Attendu** : **une seule** imprimante porte `is_default: true` dans le
+   payload — celle de la salle **physique** (qui l'emporte sur le parc logique,
+   décision n° 5). L'agent pose `SetDefaultPrinter` sur cette imprimante.
+3. Cocher deux défauts sur la **même** maille → départage déterministe
+   `cups_name` asc (la plus petite alphabétiquement gagne). Le toggle est valable
+   pour un WG **physique comme logique** (réglage explicite, pas d'auto-dérivation
+   « la salle »).
+
+### Scénario 14.4 — Suppression level-triggered (mapping retiré → démonté)
+
+1. Retirer une imprimante des règles (détacher du WG). Au passage suivant :
+   **attendu** l'imprimante gérée est **désinstallée** du poste.
+2. Retirer l'utilisateur d'une classe. Au passage suivant : **attendu** le
+   lecteur géré (`K:`) est **démonté** (convergence, pas accumulation).
+3. **Garde-fou périmètre** : l'utilisateur installe manuellement une imprimante
+   (autre serveur) et monte un lecteur perso (ex. `K:` vers `\\autreserveur\…`).
+   Après convergence, ils sont **toujours là** — l'agent ne gère QUE les
+   connexions/montages vers le serveur SambaEdu (`<se4fs>`), jamais ceux de
+   l'utilisateur.
+
+### Scénario 14.5 — Isolation serveur d'impression down → `error`, le reste converge
+
+1. Rendre le serveur d'impression injoignable (arrêter le spooler / couper le
+   partage Samba imprimante) avec une règle `printers` active.
+2. **Attendu** : le rapport (`POST /report`) porte `status: error` + `detail`
+   exploitable pour le SEUL type `printers` ; le type `drives` (et les autres :
+   shortcuts/wallpaper/overlay) **converge quand même** (isolation `engine.go
+   RunPass` §5, réutilisée). L'agent **retente** au cycle suivant
+   (level-triggered).
+
+### Scénario 14.6 — Lecture seule + ZÉRO AD (NFR7, critère Keycloak)
+
+1. `grep -rE 'ldap|apcu|get_apps|samba-tool|ad_users|ad_user_groups'` sur
+   `app/Services/Agent/Providers/{Printers,Drives}StateProvider.php` →
+   **aucun appel** (les seules occurrences sont des commentaires documentant
+   l'interdit). `CupsPrinterService` et `ShareService` sont **lus** (métadonnée /
+   projection des classes), **jamais modifiés** ni câblés au canal legacy.
+2. Le ciblage `printers` est par maille POSTE (salle/parc) — il n'existe aucune
+   relation `UserGroup → Printer`. Le ciblage `drives` est par les classes du
+   user (pivot SQL `user_group_user`), jamais par CN AD.
+
+### Scénario 14.7 — Golden file & cohérence serveur/agent (NFR13)
+
+1. Le golden `tests/Fixtures/Agent/state.v1.json` porte les payloads `printers`
+   v1 (`{cups_name, connection, description, location, is_default}`) et `drives`
+   v1 (`{letter, unc, label}`) en portée `session` ; le hash figé
+   `ContractV1Test::FROZEN_STATE_HASH` a été bumpé **sciemment** (évolution
+   mineure §9). `php artisan test --filter ContractV1` vert.
+2. Côté agent : `go test ./...` vert — le test croisé `hasher_test.go`
+   (`frozenStateHash`) prouve que le hasher Go produit le **même** hash que le
+   StateHasher PHP sur les nouveaux payloads (frontière de contrat respectée).
+3. Le golden `report.v1.json` illustre l'isolation : un item `printers` en
+   `error` (avec `detail`) coexiste avec les autres statuts.
+
 ## Post-correctifs & non-régressions
 
 - **Defer review 23.1 (résolu en 24.1)** : le scénario 1.4 (body forgé → 4xx jamais 500) existe parce qu'un `StateHasher` appelé sur l'entrée agent pouvait lever une `JsonException` non catchée (UTF-8 invalide / NAN / INF). L'ingestion ne hashe JAMAIS le payload agent.

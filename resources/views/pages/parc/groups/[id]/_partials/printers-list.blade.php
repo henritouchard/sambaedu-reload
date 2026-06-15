@@ -31,6 +31,9 @@
                     <th>Description</th>
                     <th>Localisation</th>
                     <th>URI</th>
+                    <th class="text-center" title="Imprimante poussée par défaut sur les postes de ce groupe (agent desired-state)">
+                        Par défaut
+                    </th>
                     <th class="w-20"></th>
                 </tr>
             </thead>
@@ -49,6 +52,30 @@
                             <span class="font-mono text-xs text-base-content/60" title="{{ $printer->uri }}">
                                 {{ \Illuminate\Support\Str::limit($printer->uri, 50) }}
                             </span>
+                        </td>
+                        {{-- Story 27.2 — drapeau « imprimante par défaut » (pivot is_default).
+                             Réglé par WG (physique comme logique) ; l'agent pousse
+                             SetDefaultPrinter sur l'item marqué. La résolution inter-WG
+                             (physique > logique) est faite côté serveur à la compilation. --}}
+                        <td class="text-center">
+                            {{-- Garde UI : le toggle appelle `toggleDefaultPrinter` qui exige
+                                 `manage-printer` (= server.admin global, PrinterPolicy). Sans cette
+                                 garde, un délégué scopé (accès `view` au groupe) verrait un toggle
+                                 cliquable qui lèverait un 403. On rend l'état en lecture seule. --}}
+                            @can('manage-printer')
+                                <input type="checkbox"
+                                    class="toggle toggle-sm toggle-primary"
+                                    @checked((bool) (int) ($printer->pivot->is_default ?? 0))
+                                    wire:click="toggleDefaultPrinter('{{ $printer->cups_name }}')"
+                                    title="Définir comme imprimante par défaut de ce groupe" />
+                            @else
+                                @if ((bool) (int) ($printer->pivot->is_default ?? 0))
+                                    <i class="fa-solid fa-circle-check text-primary"
+                                        title="Imprimante par défaut de ce groupe"></i>
+                                @else
+                                    <span class="text-base-content/40">—</span>
+                                @endif
+                            @endcan
                         </td>
                         <td>
                             <a href="{{ route('app.parc.index') }}#printers"

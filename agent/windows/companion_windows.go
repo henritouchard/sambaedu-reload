@@ -120,6 +120,21 @@ func runCompanion() error {
 					Ops: &shortcutOps{log: logger},
 					Log: logger,
 				},
+				// Story 27.2 — imprimantes (aggregate / session) : connexion au
+				// partage Samba imprimante (AddPrinterConnection natif), defaut
+				// pose sur l'item is_default ; level-triggered, marqueur de
+				// perimetre = serveur SambaEdu.
+				"printers": &shared.PrintersHandler{
+					Ops: &printerOps{log: logger},
+					Log: logger,
+				},
+				// Story 27.2 — lecteurs reseau (aggregate / session) : montage
+				// lettre->UNC des classes du user (WNetAddConnection2 natif),
+				// level-triggered, marqueur de perimetre = serveur SambaEdu.
+				"drives": &shared.DrivesHandler{
+					Ops: &driveOps{log: logger},
+					Log: logger,
+				},
 			},
 			Log: logger,
 		},

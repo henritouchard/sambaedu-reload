@@ -24,6 +24,30 @@
                 "ttl_seconds": 60
             },
             "hash": "fe63c6843f645ac02b9e5bad418d15172c883c0e54ee53cca97924da4cf2519f"
+        },
+        {
+            "type": "printers",
+            "semantics": "aggregate",
+            "mode": "strict",
+            "payload": {
+                "cups_name": "imp-salle101",
+                "connection": "\\\\<se4fs>\\imp-salle101",
+                "description": "HP LaserJet salle 101",
+                "location": "Salle 101",
+                "is_default": true
+            },
+            "hash": "8ed3286ba4a7ba5d375bd3c1d0762ce61673a19f658e61cbd716f59b48ea9c12"
+        },
+        {
+            "type": "drives",
+            "semantics": "aggregate",
+            "mode": "strict",
+            "payload": {
+                "letter": "K:",
+                "unc": "\\\\<se4fs>\\Classe_3emeA\\<login>\\",
+                "label": "Classe 3emeA"
+            },
+            "hash": "f54397ec0dbc0f70f015ed233b9cee700f625568af7568b3ba83b1b3287ef323"
         }
     ],
     "machine_user": [

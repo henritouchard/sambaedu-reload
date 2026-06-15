@@ -284,7 +284,7 @@ class WorkstationGroup extends Model implements Wireable
             'cups_name',
             'id',
             'cups_name'
-        )->withPivot('attached_at', 'attached_by_user_id');
+        )->withPivot('attached_at', 'attached_by_user_id', 'is_default');
     }
 
     /**

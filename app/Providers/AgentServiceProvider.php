@@ -9,7 +9,9 @@ use App\Services\Agent\Enrollment\EnrollmentCampaign;
 use App\Services\Agent\Enrollment\EnrollmentMatchService;
 use App\Services\Agent\Enrollment\EnrollmentService;
 use App\Services\Agent\Enrollment\TokenRotationService;
+use App\Services\Agent\Providers\DrivesStateProvider;
 use App\Services\Agent\Providers\OverlayStateProvider;
+use App\Services\Agent\Providers\PrintersStateProvider;
 use App\Services\Agent\Providers\ShortcutsStateProvider;
 use App\Services\Agent\Providers\WallpaperStateProvider;
 use App\Services\Agent\Releases\ReleaseCreationService;
@@ -83,6 +85,13 @@ class AgentServiceProvider extends ServiceProvider
                 // union des raccourcis des mailles, chemin du bureau résolu
                 // serveur (fix Bug C). Une ligne, zéro modif du compilateur.
                 $app->make(ShortcutsStateProvider::class),
+                // Story 27.2 — types `printers` (aggregate / session) : union
+                // des imprimantes des mailles POSTE, défaut exclusif réglé par
+                // WG (physique > logique) ; et `drives` (aggregate / session) :
+                // projection des partages de classe en montages réseau (MVP-A,
+                // pas de table). Deux lignes, zéro modif du compilateur.
+                $app->make(PrintersStateProvider::class),
+                $app->make(DrivesStateProvider::class),
             ],
         ));
     }

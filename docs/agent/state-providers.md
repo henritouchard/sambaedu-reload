@@ -218,6 +218,109 @@ mailles, dédoublonnée par contenu au compilateur (décision n° 4) :
 - `place` ∈ `desktop|startup|taskbar` (iso `Shortcut::PLACE_*`). Tous les champs
   sont des strings (jamais de float, §4.1).
 
+### `printers` — `aggregate` / `strict` / `session` (Story 27.2)
+
+Un item **par (imprimante × maille POSTE applicable)** — union des mailles
+(salle physique + parc logique), dédoublonnée par contenu au compilateur :
+
+```json
+{ "cups_name": "imp-salle101",
+  "connection": "\\\\<se4fs>\\imp-salle101",
+  "description": "HP LaserJet salle 101",
+  "location": "Salle 101",
+  "is_default": true }
+```
+
+- **Lecture Postgres + CUPS PURE** (`printer_workstation_group` restreint aux
+  `physicalGroupIds` + `logicalGroupIds` du `TargetContext`). L'imprimante est
+  une **ressource de POSTE** (Vérité #9 « l'imprimante de la salle ») : il
+  n'existe **aucune** relation `UserGroup → Printer`, le ciblage est purement
+  par maille POSTE. Aucun appel AD/LdapRecord/APCu (NFR7, critère Keycloak).
+- **`connection` = connexion LOGIQUE** (décision n° 4) : le partage Samba
+  imprimante `\\<se4fs>\<cups_name>`, **jamais** l'URI back-end CUPS
+  (`socket://…`, `ipp://…`). `CupsPrinterService::getPrinter()` est lu
+  **uniquement** pour la métadonnée (`description`/`location`) — jamais
+  d'écriture CUPS, jamais l'URI live. CUPS injoignable à la compilation =
+  métadonnée vide, l'imprimante reste servie (la connexion logique est stable).
+  Le token `<se4fs>` est substitué **localement** par l'agent.
+- **`is_default` = sous-item `exclusive`** (drapeau de PAYLOAD, pas une
+  sémantique de type — décision n° 5) : réglé **explicitement** par l'admin sur
+  l'attachement imprimante↔WG (colonne pivot `is_default`), valable pour un WG
+  **physique comme logique**. L'unicité (un seul défaut par poste) est résolue
+  **côté serveur** : parmi les WG porteurs d'un défaut applicables au poste, le
+  **WG physique l'emporte sur le logique** ; départage déterministe `cups_name`
+  asc à spécificité égale. **UN SEUL** `is_default: true` dans la collection.
+  L'agent applique bêtement `SetDefaultPrinter` sur l'item marqué — il ne
+  recalcule **jamais** la spécificité.
+  > **⚠️ Invariant de garde (review 27.2, M3)** : `is_default` doit être résolu
+  > **GLOBALEMENT par le provider** (un seul gagnant calculé sur l'ensemble des
+  > mailles), **jamais** porté tel quel depuis le pivot brut au payload par maille.
+  > Raison : la dédup aggregate du compilateur fusionne par CONTENU de payload. Si
+  > deux candidats de la **même** imprimante (rattachée à 2 WG) portaient des
+  > `is_default` divergents (`true` côté WG-défaut, `false` côté autre WG), leurs
+  > payloads différeraient → **non dédupliqués** → l'agent recevrait l'imprimante
+  > en double. La résolution globale garantit le même `is_default` sur tous les
+  > candidats d'une imprimante donnée, donc la dédup tient. Ne pas régresser cet
+  > invariant lors d'un refactor.
+- **`scope=session`** (la connexion imprimante est per-user) ;
+  **`semantics=aggregate`** (union sans précédence). Convergence level-triggered
+  côté agent : une imprimante retirée des règles est **désinstallée** au passage
+  suivant ; une imprimante installée par l'utilisateur hors périmètre SambaEdu
+  n'est **jamais** désinstallée (marqueur de périmètre = serveur SambaEdu).
+  > **Périmètre géré = serveur SambaEdu (décision Henri 27.2, review F1)** : toute
+  > connexion per-user dont la cible est `\\<se4fs>\…` est considérée **gérée**
+  > (donc désinstallable si hors règles), **y compris** une connexion que
+  > l'utilisateur aurait ajoutée lui-même vers le serveur SambaEdu. L'agent ne
+  > touche **jamais** une connexion vers un **autre** serveur (`ListManaged` filtre
+  > par préfixe du serveur SambaEdu). Choix assumé : « connexion vers le serveur
+  > SambaEdu = du ressort de SambaEdu ».
+- **Retrait du défaut (décision Henri 27.2, review F2/M1)** : si l'admin **décoche**
+  le défaut sur tous les WG (plus aucun `is_default: true` au payload), l'agent
+  **laisse l'imprimante par défaut Windows en place** — Windows impose toujours UNE
+  par-défaut, sans cible naturelle vers quoi rebasculer. Ni `Apply` ni `Test` ne
+  touchent au défaut quand aucune cible n'est marquée (figé par
+  `TestPrintersDefaultRemovedLeavesCurrentInPlace`). Une éventuelle « remise à zéro
+  active » du défaut est laissée à une story ultérieure (point backlog).
+- **Isolation des erreurs** : serveur d'impression injoignable à l'`apply` →
+  statut `error` + détail pour le SEUL type `printers` ; `drives` et les autres
+  types continuent (engine `RunPass` §5 réutilisé). Retry au cycle suivant.
+
+### `drives` — `aggregate` / `strict` / `session` (Story 27.2, MVP-A)
+
+Un item **par classe du user** (projection des partages de classe existants —
+**pas de table SQL**, décision n° 1 MVP-A) :
+
+```json
+{ "letter": "K:",
+  "unc": "\\\\<se4fs>\\Classe_3emeA\\<login>\\",
+  "label": "Classe 3emeA" }
+```
+
+- **Projection en lecture seule** : aucun modèle `Share`, aucune table de
+  partages, aucune notion de lettre de lecteur dans le codebase — les partages
+  de classe sont **filesystem-truth** (`/var/sambaedu/Classes/Classe_<name>`,
+  gérés par `ShareService`, **lu/projeté jamais modifié**). Le provider DÉRIVE
+  les montages depuis les **classes du user** (`UserGroup type='classe'` parmi
+  les `userGroupIds` du `TargetContext`) — maille `user_group`. Aucun ciblage
+  AD-CN (NFR7).
+- **Lettres conventionnelles figées serveur** (décision n° 2) : aucune
+  convention legacy historique n'existe (le `net use` SE4 ne montait que `z:`
+  pour l'installeur WPKG). Convention retenue : **`K:` = classe** (incrément
+  `K:`, `L:`, `M:`… par classe, ordre déterministe par nom asc). `H:` (home
+  user) est **réservé** pour une projection future et non émis ici.
+- **UNC tokenisé** : `\\<se4fs>\Classe_<name>\<login>\` (iso legacy
+  `Classes/Classe_<name>/<login>`). Le préfixe `Classe_` est normalisé via
+  `ShareService::bareClassName()` (pas de double préfixe). Tokens `<se4fs>` /
+  `<login>` substitués **localement** par l'agent.
+- **Émis PARTOUT** (décision n° 6) : indépendamment du `WorkstationEnvironment`
+  (le resolver 26.1 n'est **pas** consommé) — un montage réseau est réseau par
+  nature, y compris sur poste local/nomade. Contexte machine-only (user null) =
+  aucun lecteur (un montage de classe dépend du login).
+- **`scope=session`** ; **`semantics=aggregate`**. Convergence level-triggered :
+  un mapping retiré des règles est **démonté** ; un lecteur monté par
+  l'utilisateur hors périmètre SambaEdu n'est **jamais** démonté (marqueur de
+  périmètre = serveur SambaEdu).
+
 ### Mode `strict|default` par règle (Story 27.1 — FR26)
 
 Le mode d'application **n'est plus une constante par type** : c'est un attribut

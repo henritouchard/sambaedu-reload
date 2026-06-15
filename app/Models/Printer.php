@@ -35,6 +35,14 @@ class Printer extends Model
     public $incrementing = false;
     protected $keyType = 'string';
 
+    /**
+     * Story 27.2 — identifiant figé du type d'état `printers` (contrat §7,
+     * NFR12), iso `Wallpaper::TYPE_WALLPAPER`. Consommé par
+     * `App\Services\Agent\Providers\PrintersStateProvider::type()`. snake_case,
+     * jamais renommé.
+     */
+    public const TYPE_PRINTERS = 'printers';
+
     protected $fillable = [
         'cups_name',
         'created_by_user_id',
@@ -65,7 +73,7 @@ class Printer extends Model
             'cups_name',
             'workstation_group_id',
         )
-            ->withPivot('attached_at', 'attached_by_user_id');
+            ->withPivot('attached_at', 'attached_by_user_id', 'is_default');
     }
 
     /**

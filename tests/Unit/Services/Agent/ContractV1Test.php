@@ -40,7 +40,15 @@ class ContractV1Test extends TestCase
     // `debug` (bool) à côté de `ttl_seconds`. Champ ajouté = forward-compatible
     // (l'agent ignore les champs d'enveloppe inconnus) ; il entre dans le hash
     // pour que le toggle franchisse le cache 304.
-    private const FROZEN_STATE_HASH = '82095869e99c50d35b385f925a5cdd0769af3540576285e0e29a519e827a7432';
+    //
+    // Re-bumpé SCIEMMENT par la Story 27.2 (évolution MINEURE du contrat, §9) :
+    // ajout de DEUX items réels en portée `session` — `printers` (payload v1
+    // `{cups_name, connection, description, location, is_default}` owné par
+    // PrintersStateProvider) et `drives` (payload v1 `{letter, unc, label}` owné
+    // par DrivesStateProvider). Types DÉJÀ figés §7 ; payloads ajoutés =
+    // forward-compatible, pas un major. Le jumeau Go (hasher_test.go) est bumpé
+    // à la même valeur (test croisé NFR13).
+    private const FROZEN_STATE_HASH = 'fe4cb1216da04ab7ad02215e6958251b72174d62923d545013b54487619c174e';
 
     private StateHasher $hasher;
 

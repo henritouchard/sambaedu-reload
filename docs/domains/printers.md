@@ -84,7 +84,7 @@ protected $casts = ['orphan' => 'boolean'];
 
 | Méthode | Type | Notes |
 |---|---|---|
-| `workstationGroups(): BelongsToMany` | N:N via `printer_workstation_group` | `withPivot('attached_at', 'attached_by_user_id')`. **Pas** de `withTimestamps()` — le pivot porte uniquement `attached_at` (timestamp explicite), pas `created_at`/`updated_at`. |
+| `workstationGroups(): BelongsToMany` | N:N via `printer_workstation_group` | `withPivot('attached_at', 'attached_by_user_id', 'is_default')`. **Pas** de `withTimestamps()` — le pivot porte uniquement `attached_at` (timestamp explicite), pas `created_at`/`updated_at`. La colonne `is_default` (Story 27.2) règle l'**imprimante par défaut** poussée par l'agent (cf. « Canal agent desired-state » ci-dessous). |
 | `createdBy(): BelongsTo` | vers `User` | nullable — créateur SER (null si row créée par `printers:sync`). |
 
 ### Scopes
@@ -572,4 +572,39 @@ Windows.
 | `sambaedu/includes/printers.inc.php:560-585` | `enum_smb_printers` | **porté** dans `listPrintersOnPivot` |
 | `sambaedu/printers/list_printers.php:45-60` | Restauration ACL POSIX `/var/lib/samba/printers/` | **NON porté** — délégué au script bash `rest_rights.sh -p` |
 | Legacy `escapeshellarg` faille (`get_printer_driver` n'échappe pas `$printer` ni `$server`) | Faille pré-existante | **corrigée** systématiquement dans `PrintDriverService` |
+
+## Canal agent desired-state (Story 27.2)
+
+Depuis l'Epic 27, l'**installation côté POSTE** des imprimantes passe par l'agent
+desired-state (type `printers`, contrat §7) — un item d'état comme les autres
+(Vérité #9 « l'imprimante de la salle »). Deux étages **distincts, jamais
+fusionnés** :
+
+- **Étage SERVEUR (ce domaine)** : `CupsPrinterService` pilote CUPS/Samba
+  (créer/supprimer une imprimante côté serveur), la table SER porte audit +
+  rattachement N:N. **Inchangé** par 27.2.
+- **Étage POSTE (canal agent)** : `App\Services\Agent\Providers\PrintersStateProvider`
+  **lit** le pivot `printer_workstation_group` (restreint aux mailles POSTE du
+  `TargetContext`) et émet un payload `{cups_name, connection, description,
+  location, is_default}`. L'agent **installe la connexion** côté poste. Le
+  provider ne **fusionne pas** avec CUPS : il **lit** `CupsPrinterService::getPrinter()`
+  uniquement pour la métadonnée (`description`/`location`), **jamais** l'URI
+  back-end (`socket://…`). La `connection` émise est une **connexion logique**
+  Samba `\\<se4fs>\<cups_name>`, pas l'URI live (couplage runtime écarté).
+
+**Imprimante par défaut (`is_default`)** : colonne ajoutée au pivot
+`printer_workstation_group` (migration
+`2026_06_15_120000_add_is_default_to_printer_workstation_group.php`). Réglage
+explicite par l'admin (toggle « Par défaut » dans
+`pages/parc/groups/[id]/_partials/printers-list.blade.php`), valable pour un WG
+**physique comme logique**. L'unicité (un seul défaut par poste) est résolue
+**côté serveur** par le provider : WG **physique > logique**, départage
+`cups_name` asc — **PAS** de contrainte SQL (un poste peut appartenir à plusieurs
+WG porteurs d'un défaut). L'agent applique `SetDefaultPrinter` sur l'unique item
+marqué.
+
+> Détail du payload, de la convergence level-triggered et de l'isolation des
+> erreurs : `docs/agent/state-providers.md` (section `printers`) et
+> `agent/README.md` (handler `printers`).
+
 - [Domaine Parc (cross-ref onglet imprimantes)](parc.md)

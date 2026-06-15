@@ -235,6 +235,66 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         }
     }
 
+    /**
+     * Story 27.2 (décision Henri n° 5) — bascule le drapeau « imprimante par
+     * défaut » de l'attachement imprimante↔WG (colonne pivot `is_default`).
+     *
+     * Valable pour un WG physique (salle) COMME logique (parc). Exclusif AU SEIN
+     * du WG (UX « l'imprimante par défaut de ce groupe ») : cocher une imprimante
+     * décoche les autres du même WG. La résolution inter-WG (physique > logique
+     * si un poste appartient à plusieurs WG porteurs d'un défaut) est faite côté
+     * serveur par `PrintersStateProvider` à la compilation, PAS ici.
+     *
+     * Gate iso attache/détache des imprimantes du parc (`server.admin` scopable),
+     * cohérent avec la PrinterPolicy (`manage-printer`).
+     */
+    public function toggleDefaultPrinter(string $cupsName): void
+    {
+        Gate::authorize('manage-printer');
+
+        if (!$this->group) {
+            return;
+        }
+
+        try {
+            $printer = $this->group->printers->firstWhere('cups_name', $cupsName);
+            if (!$printer) {
+                $this->toastError('Imprimante non rattachée à ce groupe');
+                return;
+            }
+
+            $currentlyDefault = (bool) (int) ($printer->pivot->is_default ?? 0);
+
+            \Illuminate\Support\Facades\DB::transaction(function () use ($cupsName, $currentlyDefault): void {
+                // Décocher tous les défauts du WG (exclusivité intra-WG).
+                \Illuminate\Support\Facades\DB::table('printer_workstation_group')
+                    ->where('workstation_group_id', $this->group->id)
+                    ->update(['is_default' => false]);
+
+                // Cocher la cible — sauf si on cliquait sur le défaut courant
+                // (toggle off : plus de défaut réglé sur ce WG).
+                if (!$currentlyDefault) {
+                    \Illuminate\Support\Facades\DB::table('printer_workstation_group')
+                        ->where('workstation_group_id', $this->group->id)
+                        ->where('cups_name', $cupsName)
+                        ->update(['is_default' => true]);
+                }
+            });
+
+            $this->toastSuccess(
+                $currentlyDefault
+                    ? 'Imprimante par défaut retirée'
+                    : 'Imprimante par défaut définie pour ce groupe',
+            );
+            $this->loadGroup();
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error('[GroupShow] Erreur toggle imprimante par défaut: ' . $e->getMessage());
+            $this->toastError('Erreur lors de la mise à jour de l\'imprimante par défaut');
+        }
+    }
+
     public function selectAllGroupMachines(): void
     {
         if (!$this->group) {

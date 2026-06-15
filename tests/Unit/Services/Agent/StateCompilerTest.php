@@ -326,6 +326,65 @@ class StateCompilerTest extends TestCase
         self::assertCount(2, $items);
     }
 
+    // ── Story 27.2 — printers : dédup réutilisée + défaut exclusif ─────────
+
+    #[Test]
+    public function printers_same_printer_on_two_mailles_dedups_and_default_survives(): void
+    {
+        \App\Observers\WorkstationGroupObserver::disableSync();
+
+        $ws = Workstation::factory()->create();
+        $room = WorkstationGroup::factory()->create();           // physique
+        $parc = WorkstationGroup::factory()->logical()->create(); // logique
+        $ws->groups()->attach([$room->id, $parc->id]);
+
+        // imp-shared rattachée AUX DEUX mailles avec le MÊME défaut → un seul item
+        // après dédup (payload identique). imp-other au parc, non défaut.
+        $impShared = \App\Models\Printer::factory()->create(['cups_name' => 'imp-shared']);
+        $impOther = \App\Models\Printer::factory()->create(['cups_name' => 'imp-other']);
+        foreach ([$room, $parc] as $g) {
+            \Illuminate\Support\Facades\DB::table('printer_workstation_group')->insert([
+                'cups_name' => $impShared->cups_name,
+                'workstation_group_id' => $g->id,
+                'attached_at' => now(),
+                'attached_by_user_id' => null,
+                // Défaut réglé sur le WG PHYSIQUE uniquement (la résolution
+                // physique > logique produit le MÊME is_default=true sur les deux
+                // candidats imp-shared → payloads identiques → dédup).
+                'is_default' => $g->id === $room->id,
+            ]);
+        }
+        \Illuminate\Support\Facades\DB::table('printer_workstation_group')->insert([
+            'cups_name' => $impOther->cups_name,
+            'workstation_group_id' => $parc->id,
+            'attached_at' => now(),
+            'attached_by_user_id' => null,
+            'is_default' => false,
+        ]);
+
+        $cups = $this->createMock(\App\Services\Print\CupsPrinterService::class);
+        $cups->method('getPrinter')->willReturn([
+            'name' => 'x', 'uri' => 'socket://b', 'state' => 'idle',
+            'description' => null, 'location' => null, 'model' => null, 'jobs_count' => 0,
+        ]);
+        $provider = new \App\Services\Agent\Providers\PrintersStateProvider($cups);
+
+        $items = $this->compiler([$provider])
+            ->compile(TargetContext::for($ws, null))[StateContract::SCOPE_SESSION];
+
+        \App\Observers\WorkstationGroupObserver::enableSync();
+
+        // imp-shared dédupliquée (1 item) + imp-other = 2 items distincts.
+        self::assertCount(2, $items);
+        $byName = collect($items)->keyBy(fn (array $i): string => $i['payload']['cups_name']);
+        self::assertTrue($byName['imp-shared']['payload']['is_default']);
+        self::assertFalse($byName['imp-other']['payload']['is_default']);
+
+        // UN SEUL is_default true sur tout le type (sous-item exclusive).
+        $defaults = collect($items)->filter(fn (array $i): bool => $i['payload']['is_default'] === true);
+        self::assertCount(1, $defaults);
+    }
+
     // ── Story 27.1 — mode agrégé par type (décision n° 2) ─────────────────
 
     #[Test]

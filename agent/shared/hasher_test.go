@@ -16,7 +16,11 @@ import (
 // sur le nouveau payload (NFR13).
 // Re-bumpé SCIEMMENT (mode debug du poste, §9) : ajout du champ d'enveloppe
 // `debug` (bool) au golden — champ forward-compatible inclus dans le hash.
-const frozenStateHash = "82095869e99c50d35b385f925a5cdd0769af3540576285e0e29a519e827a7432"
+// Re-bumpé SCIEMMENT par la Story 27.2 (§9) : ajout des items `printers` +
+// `drives` (portée session, payloads v1 réels) au golden — ce test croisé
+// prouve que le hasher Go suit le StateHasher PHP sur les nouveaux payloads
+// (NFR13).
+const frozenStateHash = "fe4cb1216da04ab7ad02215e6958251b72174d62923d545013b54487619c174e"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -120,8 +124,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 3 {
-		t.Errorf("3 items attendus dans le golden state, %d vérifiés", checked)
+	if checked != 5 {
+		t.Errorf("5 items attendus dans le golden state, %d vérifiés", checked)
 	}
 }
 
