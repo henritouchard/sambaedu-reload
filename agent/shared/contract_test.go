@@ -2,6 +2,8 @@ package shared
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -70,6 +72,63 @@ func TestParseStateRejectsNonObjectAndInvalidJson(t *testing.T) {
 		if _, err := ParseState([]byte(raw)); err == nil {
 			t.Errorf("entrée %q : erreur attendue", raw)
 		}
+	}
+}
+
+func TestParseStateDecodesDebugFlag(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want bool
+	}{
+		{`{"schema":"se5.desired-state/v1","debug":true,"machine":[],"session":[],"machine_user":[]}`, true},
+		{`{"schema":"se5.desired-state/v1","debug":false,"machine":[],"session":[],"machine_user":[]}`, false},
+		// Absent (serveur antérieur) → false, jamais d'erreur.
+		{`{"schema":"se5.desired-state/v1","machine":[],"session":[],"machine_user":[]}`, false},
+	}
+	for _, c := range cases {
+		state, err := ParseState([]byte(c.raw))
+		if err != nil {
+			t.Fatalf("ParseState(%s) : %v", c.raw, err)
+		}
+		if state.Debug != c.want {
+			t.Errorf("debug : got %v, want %v (raw=%s)", state.Debug, c.want, c.raw)
+		}
+	}
+}
+
+func TestDebugFromStateCacheFile(t *testing.T) {
+	dir := t.TempDir()
+
+	// debug=true dans le cache → true.
+	onPath := filepath.Join(dir, "on.json")
+	if err := os.WriteFile(onPath, []byte(`{"schema":"se5.desired-state/v1","debug":true,"machine":[],"session":[],"machine_user":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !DebugFromStateCacheFile(onPath) {
+		t.Error("cache debug=true : DebugFromStateCacheFile doit retourner true")
+	}
+
+	// debug=false → false.
+	offPath := filepath.Join(dir, "off.json")
+	if err := os.WriteFile(offPath, []byte(`{"schema":"se5.desired-state/v1","debug":false,"machine":[],"session":[],"machine_user":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if DebugFromStateCacheFile(offPath) {
+		t.Error("cache debug=false : DebugFromStateCacheFile doit retourner false")
+	}
+
+	// Best-effort : fichier absent → false, jamais de panique.
+	if DebugFromStateCacheFile(filepath.Join(dir, "absent.json")) {
+		t.Error("cache absent : false attendu")
+	}
+
+	// JSON invalide / major inconnu → false.
+	badPath := filepath.Join(dir, "bad.json")
+	if err := os.WriteFile(badPath, []byte(`{"schema":"se5.desired-state/v2","debug":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if DebugFromStateCacheFile(badPath) {
+		t.Error("major inconnu : false attendu (cache best-effort)")
 	}
 }
 

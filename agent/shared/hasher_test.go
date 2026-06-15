@@ -11,7 +11,12 @@ import (
 // FROZEN_STATE_HASH — hash d'état figé du golden file state.v1.json, dupliqué
 // depuis tests/Unit/Services/Agent/ContractV1Test.php:33 (le hash est FIGÉ
 // par le contrat : la duplication de la constante est admise, story 24.5).
-const frozenStateHash = "6c0e8135118a24538b526ede21e70a08685643d2bd056c6a79010d7cd52496b7"
+// Bumpé SCIEMMENT par la Story 27.1 (payload `shortcuts` v1 réel — évolution
+// mineure §9) : ce test croisé prouve que le hasher Go suit le StateHasher PHP
+// sur le nouveau payload (NFR13).
+// Re-bumpé SCIEMMENT (mode debug du poste, §9) : ajout du champ d'enveloppe
+// `debug` (bool) au golden — champ forward-compatible inclus dans le hash.
+const frozenStateHash = "82095869e99c50d35b385f925a5cdd0769af3540576285e0e29a519e827a7432"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).

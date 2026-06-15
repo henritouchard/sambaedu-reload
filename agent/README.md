@@ -210,9 +210,21 @@ inchangées par le portage) :
   (frontière NFR5) — lit son cache per-SID (poll borné 2 s/60 s au
   démarrage, fallback dernier cache, sinon attente résidente), partition
   `session` + `machine_user` SEULEMENT, moteur §5, handlers wallpaper
-  (HKCU + `SystemParametersInfoW` FFI) et overlay (`overlay.json` per-user,
-  sérialiseur fixe, Rainmeter absent = gracieux), applied-state per-user,
-  drop per-SID après chaque passe.
+  (HKCU + `SystemParametersInfoW` FFI), overlay (`overlay.json` per-user,
+  sérialiseur fixe, Rainmeter absent = gracieux) et **shortcuts** (Story
+  27.1), applied-state per-user, drop per-SID après chaque passe.
+- **Handler `shortcuts`** (aggregate / `machine_user` — Story 27.1, fix Bug C) :
+  pose/retire les `.lnk` au chemin **résolu côté serveur** (`desktop_path`
+  réseau ou local selon `WorkstationEnvironment` du parc). Création **COM
+  IShellLink en Go natif** (`handler_shortcuts_windows.go` — pas de shell-out
+  PowerShell, zéro dépendance ajoutée : COM via `golang.org/x/sys/windows` +
+  syscall vtable). Logique pure (résolution du set cible, décision test/apply,
+  level-triggered) dans `shared/handler_shortcuts.go` (testée hôte). Convergence
+  **level-triggered, jamais d'accumulation** : un raccourci sorti des règles est
+  supprimé ; un `.lnk` créé par l'utilisateur (sans le **marqueur de gestion**
+  écrit dans le champ Description, `shared.ShortcutManagedMarker`) n'est **jamais**
+  touché. Les tokens serveur (`<user>` → `%USERNAME%`, `<se4fs>` → serveur de
+  fichiers) sont substitués **localement**.
 - L'IPC named-pipe service ⇄ session reste écarté (modèle fichier per-SID
   validé par les spikes et les reviews) — à réévaluer à l'Epic 27.
 - Quarantaine : pas de fetch de session ; le compagnon converge sur son

@@ -32,6 +32,7 @@ UTC ISO 8601 (`Carbon::now('UTC')->toIso8601String()`).
   "schema": "se5.desired-state/v1",
   "generated_at": "2026-06-11T08:00:00+00:00",
   "ttl_seconds": 3600,
+  "debug": false,
   "machine":      [ /* items portée machine */ ],
   "session":      [ /* items portée session */ ],
   "machine_user": [ /* items portée machine × user */ ]
@@ -43,6 +44,7 @@ UTC ISO 8601 (`Carbon::now('UTC')->toIso8601String()`).
 | `schema` | string | Version du contrat. L'agent **refuse un major inconnu**. |
 | `generated_at` | string (ISO 8601 **avec timezone**) | Instant de compilation. **Champ volatil exclu du hash.** |
 | `ttl_seconds` | int | Cadence de poll/rafraîchissement conseillée. |
+| `debug` | bool | Mode debug du poste (`workstations.debug`). En debug, le compagnon de session garde sa console ouverte (toutes sessions) et y recopie ses logs. **Champ opérationnel inclus dans le hash** : un toggle change l'ETag et franchit le cache 304. L'agent ignore ce champ s'il ne le connaît pas (forward-compat). |
 | `machine` / `session` / `machine_user` | list\<item\> | Les trois **portées** d'application. |
 
 ### Portées (`App\Enums\StateScope`)

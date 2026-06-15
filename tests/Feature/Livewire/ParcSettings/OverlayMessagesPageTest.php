@@ -57,6 +57,7 @@ class OverlayMessagesPageTest extends TestCase
             $t->unsignedBigInteger('workstation_group_id')->nullable()->index();
             $t->string('user_login')->nullable()->index();
             $t->timestamp('expires_at')->nullable()->index();
+            $t->string('mode', 16)->nullable(); // Story 27.1 — toggle strict/default
             $t->timestamps();
         });
     }
@@ -190,6 +191,45 @@ class OverlayMessagesPageTest extends TestCase
             ->set('targetSalleId', null)
             ->call('save')
             ->assertHasErrors('targetSalleId');
+    }
+
+    #[Test]
+    public function publishing_persists_the_chosen_mode(): void
+    {
+        // Story 27.1 (FR26) — première exposition du toggle strict/default sur
+        // overlay : le mode choisi est persisté sur le signal créé.
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::COMPONENT)
+            ->set('title', 'Souple')
+            ->set('text', 'x')
+            ->set('targetType', 'broadcast')
+            ->set('mode', 'default')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('overlay_signals', [
+            'title' => 'Souple',
+            'mode' => 'default',
+        ]);
+    }
+
+    #[Test]
+    public function publishing_defaults_to_strict_mode(): void
+    {
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::COMPONENT)
+            ->set('title', 'Strict défaut')
+            ->set('text', 'x')
+            ->set('targetType', 'broadcast')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('overlay_signals', [
+            'title' => 'Strict défaut',
+            'mode' => 'strict',
+        ]);
     }
 
     #[Test]

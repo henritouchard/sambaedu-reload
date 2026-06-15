@@ -30,7 +30,17 @@ class ContractV1Test extends TestCase
      * file ou de la canonicalisation doit mettre cette valeur à jour
      * sciemment (+ bump de version, cf. règle d'évolution du contrat).
      */
-    private const FROZEN_STATE_HASH = '6c0e8135118a24538b526ede21e70a08685643d2bd056c6a79010d7cd52496b7';
+    // Bumpé SCIEMMENT par la Story 27.1 (évolution MINEURE du contrat, §9) :
+    // le payload `shortcuts` du golden est passé du squelette illustratif
+    // (`{name, target, location}`) au payload v1 RÉEL owné par
+    // `ShortcutsStateProvider` (`{name, target, args, icon, place,
+    // desktop_path}`). Champ/payload ajouté = forward-compatible, pas un major.
+    //
+    // Re-bumpé SCIEMMENT (mode debug du poste, §9) : ajout du champ d'enveloppe
+    // `debug` (bool) à côté de `ttl_seconds`. Champ ajouté = forward-compatible
+    // (l'agent ignore les champs d'enveloppe inconnus) ; il entre dans le hash
+    // pour que le toggle franchisse le cache 304.
+    private const FROZEN_STATE_HASH = '82095869e99c50d35b385f925a5cdd0769af3540576285e0e29a519e827a7432';
 
     private StateHasher $hasher;
 
@@ -49,6 +59,10 @@ class ContractV1Test extends TestCase
         $this->assertArrayHasKey('generated_at', $state);
         $this->assertArrayHasKey('ttl_seconds', $state);
         $this->assertIsInt($state['ttl_seconds']);
+
+        // Mode debug du poste — champ d'enveloppe (bool), à côté de ttl_seconds.
+        $this->assertArrayHasKey('debug', $state);
+        $this->assertIsBool($state['debug']);
 
         // Les trois portées sont présentes et sont des listes ordonnées
         // (une map changerait l'ordre canonique via le tri des clés).

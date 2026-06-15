@@ -6,6 +6,7 @@ namespace App\Services\Agent;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
+use App\Enums\StateMode;
 use App\Services\Agent\Contracts\StateProvider;
 use Illuminate\Support\Facades\Log;
 
@@ -68,6 +69,11 @@ final class StateCompiler
             // présente mais null (env vide) casterait en 0 sans le `??`
             // (defer review 23.4). Plancher iso config/agent.php.
             'ttl_seconds' => max(1, (int) (config('agent.ttl_seconds') ?? 3600)),
+            // Mode debug du poste (drapeau `workstations.debug`) : pilote le
+            // comportement console du compagnon agent. Champ d'enveloppe (pas
+            // un item de portée) — opérationnel, non convergent. Inclus dans
+            // le hash (donc l'ETag) : un toggle franchit le cache 304.
+            'debug' => (bool) $ctx->workstation->debug,
             ...$scopes,
         ];
 
@@ -128,12 +134,21 @@ final class StateCompiler
             ? $this->selectExclusive($provider, $ctx, $candidates)
             : $this->selectAggregate($candidates);
 
+        // Mode AGRÉGÉ par type (Story 27.1, décision n° 2) : le moteur agent
+        // rend UN verdict par type → tous les items d'un type portent le même
+        // mode. Posture sûre = `strict` dès qu'UNE règle sélectionnée est
+        // stricte ; `default` seulement si TOUTES tolèrent la dérive. Un
+        // candidat sans mode (null) retombe sur le défaut du provider
+        // (comportement 23.4 préservé). Calculé sur les candidats RETENUS
+        // (l'exclusif a déjà tranché la maille gagnante).
+        $mode = $this->aggregateMode($provider, $selected)->value;
+
         return array_map(
-            function (StateCandidate $candidate) use ($provider): array {
+            function (StateCandidate $candidate) use ($provider, $mode): array {
                 $item = [
                     'type' => $provider->type(),
                     'semantics' => $provider->semantics()->value,
-                    'mode' => $provider->mode()->value,
+                    'mode' => $mode,
                     'payload' => $candidate->payload,
                 ];
                 $item['hash'] = $this->hasher->hashItem($item);
@@ -145,9 +160,45 @@ final class StateCompiler
     }
 
     /**
+     * Mode agrégé d'un type (décision n° 2) : `default` ssi TOUS les candidats
+     * retenus sont en `default`, sinon `strict`. Le mode d'un candidat null
+     * vaut le défaut du provider (`StateProvider::mode()`) — ainsi un provider
+     * historique sans colonne `mode` (ou une règle non configurée) conserve
+     * exactement son comportement 23.4.
+     *
+     * @param  list<StateCandidate>  $selected  non vide
+     */
+    private function aggregateMode(StateProvider $provider, array $selected): StateMode
+    {
+        $providerDefault = $provider->mode();
+
+        foreach ($selected as $candidate) {
+            if (($candidate->mode ?? $providerDefault) === StateMode::Strict) {
+                return StateMode::Strict;
+            }
+        }
+
+        return StateMode::Default;
+    }
+
+    /**
      * Type aggregate = **union** des candidats de toutes les mailles
      * applicables, ordre stable par `sourceId` asc (décision n° 9 — pour
-     * `overlay` : `id` asc des signaux).
+     * `overlay` : `id` asc des signaux), **dédoublonnée par contenu** (Story
+     * 27.1, décision n° 4).
+     *
+     * Dédup : deux règles produisant le MÊME item (même payload) sur deux
+     * mailles différentes — typiquement un raccourci assigné à la fois au parc
+     * ET au poste — ne donnent qu'UN item dans la sortie. Sans cela, le poste
+     * recevrait des `.lnk` en double et le hash d'agrégat dépendrait du nombre
+     * de mailles recouvrantes (déterminisme cassé). On garde le PREMIER par
+     * `sourceId` asc (ordre déjà trié) → la sortie reste stable. La clé de
+     * contenu est le payload canonicalisé (le `mode` est agrégé par type en
+     * aval, il n'entre donc pas dans l'identité de l'item).
+     *
+     * Overlay (1 item/signal, payloads naturellement distincts dont l'`id` du
+     * signal via `kind`/`text`) n'est pas affecté : aucun doublon de contenu à
+     * fusionner (non-régression vérifiée en test).
      *
      * @param  list<StateCandidate>  $candidates
      * @return list<StateCandidate>
@@ -159,7 +210,31 @@ final class StateCompiler
             static fn (StateCandidate $a, StateCandidate $b): int => $a->sourceId <=> $b->sourceId,
         );
 
-        return $candidates;
+        $unique = [];
+        $seen = [];
+        foreach ($candidates as $candidate) {
+            $key = $this->contentKey($candidate->payload);
+            if (isset($seen[$key])) {
+                continue; // doublon de contenu (autre maille) — déjà retenu (sourceId plus petit).
+            }
+            $seen[$key] = true;
+            $unique[] = $candidate;
+        }
+
+        return $unique;
+    }
+
+    /**
+     * Clé de contenu stable d'un payload (dédup aggregate, décision n° 4) :
+     * la forme canonique JSON du hasher (tri récursif des clés) — deux payloads
+     * identiques au tri des clés près produisent la même clé. Réutilise la
+     * canonicalisation du contrat : aucune autre forme de hash ad hoc.
+     *
+     * @param  array<string,mixed>  $payload
+     */
+    private function contentKey(array $payload): string
+    {
+        return $this->hasher->hashItem(['payload' => $payload]);
     }
 
     /**

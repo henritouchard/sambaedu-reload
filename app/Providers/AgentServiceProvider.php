@@ -10,6 +10,7 @@ use App\Services\Agent\Enrollment\EnrollmentMatchService;
 use App\Services\Agent\Enrollment\EnrollmentService;
 use App\Services\Agent\Enrollment\TokenRotationService;
 use App\Services\Agent\Providers\OverlayStateProvider;
+use App\Services\Agent\Providers\ShortcutsStateProvider;
 use App\Services\Agent\Providers\WallpaperStateProvider;
 use App\Services\Agent\Releases\ReleaseCreationService;
 use App\Services\Agent\Releases\ReleaseManifestService;
@@ -78,6 +79,10 @@ class AgentServiceProvider extends ServiceProvider
             [
                 $app->make(WallpaperStateProvider::class),
                 $app->make(OverlayStateProvider::class),
+                // Story 27.1 — type `shortcuts` (aggregate / machine_user) :
+                // union des raccourcis des mailles, chemin du bureau résolu
+                // serveur (fix Bug C). Une ligne, zéro modif du compilateur.
+                $app->make(ShortcutsStateProvider::class),
             ],
         ));
     }

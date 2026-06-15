@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Agent;
 
 use App\Enums\StateMaille;
+use App\Enums\StateMode;
 
 /**
  * Candidat brut retourné par un `StateProvider` (Story 23.4 — décision n° 4) :
@@ -17,17 +18,26 @@ use App\Enums\StateMaille;
  * déterminisme du hash quand deux règles partagent le même `updated_at`).
  * `sourceId` est aussi l'id loggé dans `agent.state.conflict` et l'ordre
  * stable des items aggregate (décision n° 9).
+ *
+ * `mode` (Story 27.1, décision n° 2) : mode d'application **par candidat** —
+ * le toggle strict/default n'est plus une constante par type mais un attribut
+ * piloté par règle. `null` = « le candidat ne déclare pas de mode » : le
+ * compilateur retombe alors sur le `StateProvider::mode()` (défaut du type,
+ * comportement 23.4 préservé). L'agrégation du mode par type (un seul verdict
+ * par type côté agent) vit dans le `StateCompiler` SEUL.
  */
 final readonly class StateCandidate
 {
     /**
      * @param  array<string,mixed>  $payload  contrat §4.1 : jamais de float
      * @param  int  $sourceId  id de la règle métier source (tiebreak + logs)
+     * @param  StateMode|null  $mode  mode par règle (null = défaut du provider)
      */
     public function __construct(
         public StateMaille $maille,
         public array $payload,
         public ?\DateTimeInterface $updatedAt,
         public int $sourceId,
+        public ?StateMode $mode = null,
     ) {}
 }

@@ -47,6 +47,12 @@ class WallpaperStateProviderTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Projection Postgres-pure : aucune synchro AD à déclencher (host sans
+        // LDAP, iso NFR7). Pattern aligné sur ShortcutsStateProviderTest (27.1).
+        \App\Observers\WorkstationGroupObserver::disableSync();
+        \App\Observers\UserGroupObserver::disableSync();
+        \App\Observers\UserGroupUserPivotObserver::disableSync();
+
         $this->provider = new WallpaperStateProvider();
         $this->ws = Workstation::factory()->create();
         $this->room = WorkstationGroup::factory()->create();
@@ -55,6 +61,14 @@ class WallpaperStateProviderTest extends TestCase
         $this->user = User::factory()->create();
         $this->userGroup = UserGroup::factory()->create();
         $this->user->groups()->attach($this->userGroup->id);
+    }
+
+    protected function tearDown(): void
+    {
+        \App\Observers\WorkstationGroupObserver::enableSync();
+        \App\Observers\UserGroupObserver::enableSync();
+        \App\Observers\UserGroupUserPivotObserver::enableSync();
+        parent::tearDown();
     }
 
     #[Test]
@@ -183,6 +197,35 @@ class WallpaperStateProviderTest extends TestCase
         $candidates = $this->provider->itemsFor($this->ctx());
 
         self::assertCount(3, $candidates, 'le provider étiquette, il ne tranche pas (D2 = compilateur)');
+    }
+
+    // ── Story 27.1 — review #8/#M1 : fallback mode réel = défaut provider ──
+
+    #[Test]
+    public function rule_without_mode_compiles_to_provider_default_not_strict(): void
+    {
+        // Non-régression #8/#M1 : un wallpaper sans `mode` en base (null) doit
+        // compiler en `default` (le défaut RÉEL du provider wallpaper), JAMAIS
+        // en `strict`. C'est le comportement que le compilateur applique — l'UI
+        // doit le refléter (l'ancien `?? 'strict'` mentait, review #M1).
+        $wallpaper = Wallpaper::factory()->default()->create();
+        self::assertNull($wallpaper->mode, 'pré-condition : mode null en base');
+
+        $compiler = app(\App\Services\Agent\StateCompiler::class);
+        $state = $compiler->compile($this->ctx());
+
+        $wallpaperItems = array_values(array_filter(
+            $state[StateScope::Session->value],
+            fn (array $item): bool => $item['type'] === 'wallpaper',
+        ));
+        self::assertNotEmpty($wallpaperItems, 'le type wallpaper doit être servi');
+        foreach ($wallpaperItems as $item) {
+            self::assertSame(
+                'default',
+                $item['mode'],
+                'wallpaper sans mode → default (défaut provider), pas strict',
+            );
+        }
     }
 
     private function ctx(): TargetContext

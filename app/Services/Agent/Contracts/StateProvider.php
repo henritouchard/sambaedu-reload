@@ -29,7 +29,11 @@ use Illuminate\Support\Collection;
  * `mode()` : extension 23.4 de l'interface architecture (décision n° 6) —
  * l'item du contrat porte `mode` et AC1 interdit toute table type→mode dans
  * le compilateur, donc le provider déclare sa constante, comme `semantics()`
- * et `scope()`.
+ * et `scope()`. Depuis 27.1 (décision n° 2), ce mode est le **défaut du type**
+ * : le toggle strict/default vit désormais PAR RÈGLE (`StateCandidate::$mode`),
+ * et `mode()` ne s'applique qu'aux candidats qui ne déclarent pas le leur
+ * (`null`). Le compilateur agrège ensuite le mode par type (tous default →
+ * default, sinon strict).
  */
 interface StateProvider
 {
@@ -39,7 +43,7 @@ interface StateProvider
     /** Sémantique de combinaison : le compilateur l'applique, jamais le provider. */
     public function semantics(): ResourceSemantics;
 
-    /** Mode d'application déclaré par type (constante jusqu'au toggle UI, Epic 27). */
+    /** Mode d'application PAR DÉFAUT du type (27.1 : le toggle par règle vit sur StateCandidate::$mode). */
     public function mode(): StateMode;
 
     /** Portée d'enveloppe vers laquelle le compilateur route les items. */

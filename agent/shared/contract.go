@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"time"
@@ -59,6 +60,11 @@ type State struct {
 	Schema      string
 	GeneratedAt string
 	TtlSeconds  int64
+	// Debug : mode debug du poste (champ d'enveloppe `debug`). En debug, le
+	// compagnon de session GARDE sa console ouverte et y recopie ses logs.
+	// Absent/non bool → false (forward-compat : un serveur antérieur ne
+	// l'émet pas).
+	Debug       bool
 	Machine     []any
 	Session     []any
 	MachineUser []any
@@ -91,6 +97,8 @@ func ParseState(raw []byte) (*State, error) {
 			state.TtlSeconds = ttl
 		}
 	}
+	// Champ d'enveloppe `debug` (bool). Absent/non bool → false.
+	state.Debug, _ = envelope["debug"].(bool)
 
 	// Portée absente (enveloppe tronquée) → liste vide, jamais nil.
 	state.Machine = scopeItems(envelope, "machine")
@@ -98,6 +106,24 @@ func ParseState(raw []byte) (*State, error) {
 	state.MachineUser = scopeItems(envelope, "machine_user")
 
 	return state, nil
+}
+
+// DebugFromStateCacheFile lit le cache d'état (state.json brut) au chemin
+// donné et retourne le drapeau `debug` de l'enveloppe. BEST-EFFORT : toute
+// erreur (fichier absent, JSON invalide, major inconnu) → false, jamais de
+// panique. Sert le câblage console du compagnon AVANT toute boucle : le cache
+// per-SID reflète le dernier état tiré par session-fetch (SYSTEM).
+func DebugFromStateCacheFile(path string) bool {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	state, err := ParseState(raw)
+	if err != nil {
+		return false
+	}
+
+	return state.Debug
 }
 
 func scopeItems(envelope map[string]any, scope string) []any {

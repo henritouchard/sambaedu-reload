@@ -125,7 +125,7 @@ final class StateEndpointTest extends TestCase
 
         // Enveloppe BRUTE : exactement les clés du contrat, aucun wrapper SE5.
         self::assertSame(
-            ['schema', 'generated_at', 'ttl_seconds', ...StateContract::scopes()],
+            ['schema', 'generated_at', 'ttl_seconds', 'debug', ...StateContract::scopes()],
             array_keys($state),
         );
         self::assertSame(StateContract::SCHEMA, $state['schema']);

@@ -152,7 +152,7 @@ final class AgentSkeletonE2eTest extends TestCase
         // Parse-State (agent) valide : schema + 3 portées en listes.
         $state = $response->json();
         self::assertSame(
-            ['schema', 'generated_at', 'ttl_seconds', ...StateContract::scopes()],
+            ['schema', 'generated_at', 'ttl_seconds', 'debug', ...StateContract::scopes()],
             array_keys($state),
         );
         self::assertSame(StateContract::SCHEMA, $state['schema']);

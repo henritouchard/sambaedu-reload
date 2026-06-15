@@ -19,7 +19,10 @@ use App\Services\WorkstationService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Carbon;
+use App\Wpkg\Deployment\Events\WorkstationOptionsChanged;
+use App\Wpkg\Deployment\Models\WpkgWorkstationOption;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
@@ -98,6 +101,8 @@ class MachineShowPageTest extends TestCase
                 $table->timestamp('agent_last_checkin_at')->nullable();
                 $table->timestamp('agent_quarantined_at')->nullable();
                 $table->timestamp('agent_sync_requested_at')->nullable();
+                // Mode debug du poste (toggle onglet Agent).
+                $table->boolean('debug')->default(false);
                 $table->timestamps();
             });
             $this->createdTables = true;
@@ -605,6 +610,7 @@ class MachineShowPageTest extends TestCase
         $this->seedState($ws, 'overlay', AgentResourceStatus::Drift);
 
         Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('setTab', 'agent') // la card Agent vit dans l'onglet « Agent »
             ->assertSee('État rapporté par type')
             ->assertSee('wallpaper')
             ->assertSee('overlay')
@@ -626,6 +632,7 @@ class MachineShowPageTest extends TestCase
         ]);
 
         Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('setTab', 'agent') // la card Agent vit dans l'onglet « Agent »
             ->assertSee('Derniers événements');
     }
 
@@ -685,6 +692,42 @@ class MachineShowPageTest extends TestCase
         $this->assertNull($ws->refresh()->agent_sync_requested_at);
     }
 
+    public function test_toggle_debug_mode_flips_flag_and_wpkg_options(): void
+    {
+        // Onglet Agent — clic « Mode debug » → workstation.debug + options
+        // WPKG debug/logdebug, toast succès. L'event de régénération .ini est
+        // faké (pas d'écriture filesystem en test).
+        Event::fake([WorkstationOptionsChanged::class]);
+        $this->grantComputerControl();
+        $ws = $this->makeWorkstation();
+        $this->mockGroupService($ws);
+
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('setTab', 'agent')
+            ->call('toggleDebugMode')
+            ->assertDispatched('toastMagic', status: 'success');
+
+        $this->assertTrue($ws->refresh()->debug);
+        $options = WpkgWorkstationOption::where('workstation_id', $ws->id)
+            ->pluck('option_value', 'option_key');
+        $this->assertSame('true', $options['debug'] ?? null);
+        $this->assertSame('true', $options['logdebug'] ?? null);
+    }
+
+    public function test_toggle_debug_mode_denied_without_computer_control(): void
+    {
+        // Sans `computer.control`, l'action est refusée et le drapeau ne bouge pas.
+        $ws = $this->makeWorkstation();
+        $this->mockGroupService($ws);
+
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('setTab', 'agent')
+            ->call('toggleDebugMode')
+            ->assertDispatched('toastMagic', status: 'error');
+
+        $this->assertFalse($ws->refresh()->debug);
+    }
+
     public function test_drift_returns_to_compliant_on_reingest(): void
     {
         // AC4 — deux ingestions successives (drift puis compliant) via le
@@ -704,11 +747,13 @@ class MachineShowPageTest extends TestCase
         // 1) drift
         $ingest->ingest($ws, $report('drift', str_repeat('d', 64)));
         Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('setTab', 'agent') // la card Agent vit dans l'onglet « Agent »
             ->assertSee('En écart');
 
         // 2) compliant (la cible a convergé)
         $ingest->ingest($ws, $report('compliant', str_repeat('e', 64)));
         Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('setTab', 'agent')
             ->assertDontSee('En écart');
     }
 }

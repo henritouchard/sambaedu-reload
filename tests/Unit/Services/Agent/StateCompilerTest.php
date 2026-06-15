@@ -69,6 +69,27 @@ class StateCompilerTest extends TestCase
     }
 
     #[Test]
+    public function envelope_carries_workstation_debug_flag(): void
+    {
+        $off = TargetContext::for(Workstation::factory()->create(['debug' => false]), null);
+        $on = TargetContext::for(Workstation::factory()->create(['debug' => true]), null);
+
+        $stateOff = $this->compiler([])->compile($off);
+        $stateOn = $this->compiler([])->compile($on);
+
+        self::assertArrayHasKey('debug', $stateOff);
+        self::assertFalse($stateOff['debug']);
+        self::assertTrue($stateOn['debug']);
+
+        // Le drapeau entre dans le hash (donc l'ETag) : un toggle franchit le 304.
+        self::assertNotSame(
+            $this->hasher->hashState($stateOff),
+            $this->hasher->hashState($stateOn),
+            'le toggle debug doit changer le hash d\'état (sinon le cache 304 le masque)',
+        );
+    }
+
+    #[Test]
     public function provider_without_rules_yields_absent_type_not_empty_item(): void
     {
         $provider = $this->fakeProvider('ghost', ResourceSemantics::Exclusive, StateScope::Session, []);
@@ -266,6 +287,107 @@ class StateCompilerTest extends TestCase
 
         self::assertSame(['v' => 'user'], $state[StateContract::SCOPE_SESSION][0]['payload']);
         self::assertCount(0, $warnings, 'un conflit dans une maille battue n\'arbitre rien');
+    }
+
+    // ── Story 27.1 — dédup aggregate par contenu (décision n° 4) ──────────
+
+    #[Test]
+    public function aggregate_dedups_identical_payloads_from_different_mailles(): void
+    {
+        // Même raccourci assigné au parc ET au poste → un SEUL item en sortie
+        // (sinon `.lnk` en double + hash dépendant du nombre de mailles).
+        $provider = $this->fakeProvider('shortcuts', ResourceSemantics::Aggregate, StateScope::MachineUser, [
+            new StateCandidate(StateMaille::LogicalGroup, ['name' => 'Intranet', 'place' => 'desktop'], now(), 5),
+            new StateCandidate(StateMaille::Workstation, ['name' => 'Intranet', 'place' => 'desktop'], now(), 9),
+            new StateCandidate(StateMaille::User, ['name' => 'Notes', 'place' => 'desktop'], now(), 2),
+        ]);
+
+        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_MACHINE_USER];
+
+        self::assertCount(2, $items, 'le doublon de contenu est fusionné, l\'item distinct reste');
+        // Ordre stable par sourceId asc : Notes (2) avant Intranet (5).
+        self::assertSame(
+            [['name' => 'Notes', 'place' => 'desktop'], ['name' => 'Intranet', 'place' => 'desktop']],
+            array_column($items, 'payload'),
+        );
+    }
+
+    #[Test]
+    public function aggregate_dedup_does_not_affect_distinct_overlay_payloads(): void
+    {
+        // Non-régression overlay : payloads distincts → aucun élément fusionné.
+        $provider = $this->fakeProvider('overlay', ResourceSemantics::Aggregate, StateScope::Session, [
+            new StateCandidate(StateMaille::Broadcast, ['kind' => 'notice', 'text' => 'a'], now(), 1),
+            new StateCandidate(StateMaille::User, ['kind' => 'notice', 'text' => 'b'], now(), 2),
+        ]);
+
+        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_SESSION];
+
+        self::assertCount(2, $items);
+    }
+
+    // ── Story 27.1 — mode agrégé par type (décision n° 2) ─────────────────
+
+    #[Test]
+    public function mode_aggregates_to_default_only_when_all_selected_candidates_are_default(): void
+    {
+        $provider = $this->fakeProvider('shortcuts', ResourceSemantics::Aggregate, StateScope::MachineUser, [
+            new StateCandidate(StateMaille::User, ['name' => 'A'], now(), 1, StateMode::Default),
+            new StateCandidate(StateMaille::User, ['name' => 'B'], now(), 2, StateMode::Default),
+        ]);
+
+        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_MACHINE_USER];
+
+        self::assertSame(['default', 'default'], array_column($items, 'mode'), 'tous default → default');
+    }
+
+    #[Test]
+    public function mode_aggregates_to_strict_when_any_selected_candidate_is_strict(): void
+    {
+        $provider = $this->fakeProvider('shortcuts', ResourceSemantics::Aggregate, StateScope::MachineUser, [
+            new StateCandidate(StateMaille::User, ['name' => 'A'], now(), 1, StateMode::Default),
+            new StateCandidate(StateMaille::User, ['name' => 'B'], now(), 2, StateMode::Strict),
+        ]);
+
+        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_MACHINE_USER];
+
+        // Posture sûre : un seul strict suffit → tout le type est strict.
+        self::assertSame(['strict', 'strict'], array_column($items, 'mode'));
+    }
+
+    #[Test]
+    public function candidate_without_mode_falls_back_to_provider_default(): void
+    {
+        // Aucun candidat ne déclare de mode → on retombe sur mode() du provider
+        // (comportement 23.4 préservé).
+        $defaultProvider = $this->fakeProvider('a', ResourceSemantics::Aggregate, StateScope::Session, [
+            new StateCandidate(StateMaille::Broadcast, ['k' => 1], now(), 1),
+        ], StateMode::Default);
+        $strictProvider = $this->fakeProvider('b', ResourceSemantics::Aggregate, StateScope::Session, [
+            new StateCandidate(StateMaille::Broadcast, ['k' => 2], now(), 1),
+        ], StateMode::Strict);
+
+        $state = $this->compiler([$defaultProvider, $strictProvider])->compile($this->machineOnlyContext());
+        $byType = collect($state[StateContract::SCOPE_SESSION])->keyBy('type');
+
+        self::assertSame('default', $byType['a']['mode']);
+        self::assertSame('strict', $byType['b']['mode']);
+    }
+
+    #[Test]
+    public function exclusive_mode_comes_from_the_winning_candidate(): void
+    {
+        // L'exclusif tranche la maille gagnante : son mode fait foi.
+        $provider = $this->fakeProvider('wallpaper', ResourceSemantics::Exclusive, StateScope::Session, [
+            new StateCandidate(StateMaille::Broadcast, ['asset' => 'b'], now(), 1, StateMode::Strict),
+            new StateCandidate(StateMaille::User, ['asset' => 'u'], now(), 2, StateMode::Default),
+        ]);
+
+        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_SESSION];
+
+        self::assertCount(1, $items);
+        self::assertSame('u', $items[0]['payload']['asset'], 'la maille user gagne');
+        self::assertSame('default', $items[0]['mode'], 'le mode du candidat gagnant fait foi');
     }
 
     // ── AC5 — déterminisme (protège l'ETag de 23.5) ───────────────────────

@@ -1231,6 +1231,90 @@ La page `parc-settings/agent/` (route `parc-settings.agent`, `can:computer.insta
 
 ---
 
+## Section 13 — Handler raccourcis : le bureau converge selon la nature du poste (Story 27.1)
+
+> Premier type de l'Epic 27 (parité de compétences) : provider `shortcuts`
+> serveur + handler agent Go + golden + **première exposition du toggle
+> strict/default** (rétroactif wallpaper/overlay). Corrige **définitivement le
+> Bug C** (bureau réseau figé en dur sur poste partagé → `curl(23)`) par le bon
+> modèle (donnée du domaine, pas branche `.cmd` legacy). Prérequis : Section 12
+> (UI agent), domaine `parc` Story 26.1 (environnement de poste).
+
+### Scénario 13.1 — Convergence du bureau RÉSEAU sur poste partagé (`shared_local`)
+
+1. Parc du poste = `shared_local` (défaut). Créer un raccourci `place=desktop`
+   (UI `/app/shortcuts/new`), l'assigner au parc (ou au poste).
+2. Sur le poste lab : ouvrir une session. **Attendu** : le `.lnk` apparaît au
+   bureau **réseau** (`\\<se4fs>\users\<user>\Bureau\`) — plus aucun `curl(23)`.
+3. Vérifier le payload servi : `GET /api/v1/agent/state?user=<login>` →
+   item `shortcuts` (portée `machine_user`) avec
+   `desktop_path` = `\\<se4fs>\users\<user>\Bureau\` (tokens substitués côté
+   poste, pas dans le JSON serveur).
+
+### Scénario 13.2 — Convergence du bureau LOCAL sur parc personnel/nomade
+
+1. Basculer le parc en `personal_local` (onglet Environnement, Story 26.1).
+2. Forcer une synchro (Section 7) puis ré-ouvrir la session.
+3. **Attendu** : le même raccourci est désormais posé au bureau **local**
+   (`%USERPROFILE%\Desktop\`) — c'est la donnée du domaine (et non une branche
+   figée) qui dicte le chemin. Le pansement legacy `4e5a152` est **intouché**
+   (il meurt avec son canal en 27.6).
+
+### Scénario 13.3 — Union multi-mailles, sans doublon
+
+1. Assigner UN MÊME raccourci au parc ET au poste, plus un autre raccourci au
+   groupe de l'utilisateur.
+2. **Attendu** : le bureau reçoit l'**union** (2 raccourcis distincts), le
+   doublon parc+poste n'apparaît **qu'une fois** (dédup par contenu côté
+   compilateur). Le hash d'agrégat du rapport est stable (deux relevés
+   identiques = zéro événement).
+
+### Scénario 13.4 — Suppression level-triggered (jamais d'accumulation)
+
+1. Retirer un raccourci des règles (ou le passer `is_active=false`).
+2. Au passage suivant de l'agent : **attendu** le `.lnk` géré **disparaît** du
+   poste (convergence, pas cumul historique — contraste avec le `shortcuts.txt`
+   legacy).
+3. **Garde-fou** : créer manuellement un `.lnk` utilisateur au bureau (ex.
+   `MesNotes.lnk`). Après convergence, il est **toujours là** — l'agent ne
+   supprime QUE les raccourcis portant son marqueur de gestion (champ
+   Description = `SambaEdu desired-state managed shortcut`).
+
+### Scénario 13.5 — Toggle strict/default + `drifted_allowed` (FR26, 1re exposition UI)
+
+1. Sur un raccourci en mode **strict** : supprimer le `.lnk` à la main →
+   **attendu** il est **recréé** au passage suivant (`drift`), la cible fait loi.
+2. Basculer le raccourci en mode **souple** (toggle UI `/app/shortcuts/{id}`).
+   Une fois la cible appliquée, supprimer le `.lnk` à la main → **attendu** il
+   **n'est PAS recréé** ; le rapport (`POST /report`) porte `drifted_allowed`
+   pour le type `shortcuts` (la machine d'états §5 du moteur, non réimplémentée,
+   distingue dérive humaine d'une cible qui a bougé).
+3. **Toggle rétroactif** : vérifier que le toggle strict/souple est aussi exposé
+   sur les **fonds d'écran** (`/app/parc-settings/wallpapers`, carte wallpaper) et
+   les **overlays** (`/app/parc-settings/overlay-messages`, sélecteur Application).
+   Non-régression : sans bascule, wallpaper reste `default` et overlay `strict`
+   (comportement avant 27.1 préservé — `mode` null en base = défaut du provider).
+
+### Scénario 13.6 — Lecture seule + ZÉRO AD (NFR7, critère Keycloak)
+
+1. `grep -rE 'ldap|apcu|get_apps|samba-tool|ad_users|ad_user_groups'` sur
+   `app/Services/Agent/Providers/ShortcutsStateProvider.php` → **aucun appel**
+   (les seules occurrences sont des commentaires documentant l'interdit).
+2. Un raccourci ciblé **uniquement** par `ad_users`/`ad_user_groups` (CN AD
+   legacy) **ne produit aucun item** servi par l'agent (ciblage MVP pivot SQL
+   seulement). Le ciblage poste/parc/user/groupes user via le pivot
+   `shortcut_assignables` fonctionne.
+
+### Scénario 13.7 — Golden file & cohérence serveur/agent (NFR13)
+
+1. Le golden `tests/Fixtures/Agent/state.v1.json` porte le payload `shortcuts`
+   v1 RÉEL (`{name, target, args, icon, place, desktop_path}`) ; le hash figé
+   `ContractV1Test::FROZEN_STATE_HASH` a été bumpé **sciemment** (évolution
+   mineure §9, documentée). `php artisan test --filter ContractV1` vert.
+2. Côté agent : `go test ./...` vert — le test croisé `hasher_test.go`
+   (`frozenStateHash`) prouve que le hasher Go produit le **même** hash que le
+   StateHasher PHP sur le nouveau payload (frontière de contrat respectée).
+
 ## Post-correctifs & non-régressions
 
 - **Defer review 23.1 (résolu en 24.1)** : le scénario 1.4 (body forgé → 4xx jamais 500) existe parce qu'un `StateHasher` appelé sur l'entrée agent pouvait lever une `JsonException` non catchée (UTF-8 invalide / NAN / INF). L'ingestion ne hashe JAMAIS le payload agent.
@@ -1240,6 +1324,17 @@ La page `parc-settings/agent/` (route `parc-settings.agent`, `can:computer.insta
 - **Review 25.3 #M2/#M3 (arbitrage Henri, corrigés)** : le conflit 409 se fondait sur `resolveByIdentity()` (uuid puis MAC, `.first()`). Deux trous : (a) **oracle** — présenter l'UUID seul d'un poste enrôlé donnait 409 (≠403), révélant sa présence via une preuve faible/spoofable ; (b) **MAC partagée** — `.first()` pouvait tomber sur un clone non-enrôlé et rater le conflit. Corrigé : conflit fondé sur la **seule MAC** via `Workstation::where('mac')->whereNotNull('agent_token_hash')->exists()` ; `resolveByIdentity()` supprimée. **Changement de contrat propagé à la porte 1** (le 409 par uuid-seul disparaît). Angles de test à conserver : scénarios 10.11 (MAC partagée → 409 indépendant de l'ordre) et 10.12 (uuid seul → 403 sans oracle).
 - **Review 25.5 #2 (corrigé avant merge)** : la modale de **sélection de cible** (approbation d'un poste « inconnu », scénario 12.5) ne vérifiait que `matched_workstation_id === null` côté *template* (affichage du bouton). Les méthodes Livewire `openTargetSelect` / `confirmApproveWithTarget` ne gardaient pas l'invariant : via un appel direct `/livewire/update` sur une demande **déjà rapprochée**, un admin pouvait écraser silencieusement le rapprochement par une autre cible (`approveManually` donne priorité au `$target`) — contournement de l'anti-usurpation. Corrigé : garde `matched_workstation_id !== null → toastError` dans les **deux** méthodes (ouverture + confirmation, défense en profondeur). Angle de test à conserver (scénario 12.7) : une demande **rapprochée** ne propose pas/refuse la sélection de cible ; un appel forcé laisse le rapprochement d'origine intact, demande `pending`.
 - **Incident terrain T12 ws 49 (corrigé en 2.1.1)** : `agent.exe install` échouait en `Accès refusé` sur le rename atomique de `config.json` — `setAgentACL` posait les flags d'héritage `(OI)(CI)` sur les FICHIERS tmp de `writeAtomic` ; via icacls sur un fichier, ces ACE deviennent inertes pour l'accès au fichier lui-même → DACL effective vide, plus personne (pas même SYSTEM) n'a DELETE, le rename échoue. Invisible des 122 tests hôte (icacls = Windows réel uniquement) — détecté à la PREMIÈRE exécution Windows du binaire. Corrigé : `setAgentACL` distingue répertoire (`(OI)(CI)F`) / fichier (`F` plat). Angle de test à conserver (scénario 6.1) : après install, `icacls C:\ProgramData\SambaEdu\Agent\config.json` doit montrer des ACE SANS flags `(OI)(CI)`. Méthode de diagnostic qui a tranché : reproduction manuelle A/B de la séquence writeAtomic (`Set-Content` tmp → `icacls /inheritance:r /grant` avec puis sans flags → `Rename-Item`). Nettoyage d'un poste touché : supprimer `cache\state.json`/`etag.txt` et `applied-state.json` écrits par un binaire ≤ 2.1.0 (DACL inerte = irremplaçables par le service), JAMAIS le `token`.
+- **Bump du hash figé `FROZEN_STATE_HASH` (Story 27.1, intentionnel)** : le golden `state.v1.json` portait pour `shortcuts` un payload SQUELETTE illustratif (`{name, target, location}`) ; il est passé au payload v1 RÉEL (`{name, target, args, icon, place, desktop_path}`) owné par `ShortcutsStateProvider`. C'est une **évolution mineure** du contrat (§9, champ/payload ajouté, forward-compatible) — PAS un bump de major. La constante a été mise à jour **sciemment** dans `ContractV1Test.php` ET dans `agent/shared/hasher_test.go` (test croisé NFR13 : le hasher Go DOIT reproduire le hash PHP). Toute future divergence de ces deux valeurs = régression de canonicalisation, jamais à « corriger » en alignant aveuglément.
+
+### Story 27.1 — bugs manqués par les tests unitaires, détectables en manuel (corrigés post-review)
+
+Ces trois incidents passaient les tests unitaires initiaux mais se révèlent à l'usage. Tableau incident → scénario de non-régression (couvert depuis par les tests `handler_shortcuts_test.go` #6/#7 et `OverlayStateProviderTest`/`WallpaperStateProviderTest`).
+
+| # | Incident (symptôme terrain) | Cause | Scénario de non-régression |
+|---|------------------------------|-------|----------------------------|
+| 1 (homonyme) | Un prof crée « Intranet.lnk » sur son bureau (même nom qu'un raccourci géré) → **AUCUN raccourci SambaEdu** ne se pose plus sur ce poste, en silence (le type entier passe `error`). | `Matches()` Windows retournait une **erreur** sur un `.lnk` non géré au chemin d'une cible ; le moteur propage toute erreur de `test` en `{status: error}` pour le TYPE entier. | Sur le lab : créer manuellement un `.lnk` homonyme d'une cible sur le bureau, puis déclencher une convergence. Attendu : le fichier user reste **intact** (jamais écrasé/supprimé), les AUTRES raccourcis se posent quand même, le type n'est PAS en `error`. (`handler_shortcuts_test.go::TestShortcutsUserHomonymOnDesiredPathIsIgnored`.) |
+| 2 (cross-placement) | On retire TOUTES les règles `desktop` mais on garde une règle `startup` → le `.lnk` Bureau géré reste **orphelin pour toujours** (jamais nettoyé). | `managedDirs()` ne balayait que les emplacements présents dans le `desired` courant ; un emplacement vidé de ses règles n'était plus balayé. | Sur le lab : poser un raccourci desktop + un startup, puis retirer la règle desktop (garder startup) et reconverger. Attendu : le `.lnk` desktop géré **disparaît** au passage suivant ; les `.lnk` user (sans marqueur) ne sont JAMAIS touchés. (`handler_shortcuts_test.go::TestShortcutsCrossPlacementOrphanRemoved`.) |
+| 5 / M1 (toggle/UI honnête) | (5) Le toggle overlay strict↔default paraît **inopérant** : dès qu'un user est en session, l'overlay reste `strict` quoi que choisisse l'admin. (M1) La carte wallpaper surligne « Strict » alors que le poste applique réellement `default`. | (5) Le candidat synthétique `identity` (sentinel `sourceId=0`, mode null → défaut provider `strict`) pesait dans l'agrégation du mode du type `overlay`. (M1) L'UI affichait `?? 'strict'` en dur au lieu du défaut RÉEL du provider wallpaper (`default`). | (5) Poster des messages overlay tous en `default` AVEC un user en session → l'item `overlay` du `GET /state` doit porter `mode: default`. (`OverlayStateProviderTest::overlay_aggregates_to_default_when_all_real_signals_are_default_despite_identity`.) (M1) Ouvrir une carte wallpaper d'une règle sans `mode` en base → le bouton **« Souple »** (default) doit être surligné, pas « Strict » ; le `GET /state` confirme `mode: default`. (`WallpaperStateProviderTest::rule_without_mode_compiles_to_provider_default_not_strict`.) |
 
 ---
 
@@ -1308,3 +1403,10 @@ La page `parc-settings/agent/` (route `parc-settings.agent`, `can:computer.insta
 - [ ] 10.10 — autorisation : sans `computer.install` → 403 sur l'action, aucune mutation ; avec → resolved_by renseigné (review #4)
 - [ ] 10.11 — conflit sous MAC partagée : 409 quel que soit l'ordre des fiches (review #M2)
 - [ ] 10.12 — pas d'oracle UUID : uuid d'un enrôlé + MAC étrangère → 403 indistinct, jamais 409 (review #M3)
+- [ ] 13.1 — bureau RÉSEAU sur `shared_local` : `.lnk` posé à `\\<se4fs>\users\<user>\Bureau\`, fini le curl(23)
+- [ ] 13.2 — bureau LOCAL sur `personal_local`/`nomade` : `.lnk` à `%USERPROFILE%\Desktop\` (donnée du domaine, pas branche figée)
+- [ ] 13.3 — union multi-mailles sans doublon, hash d'agrégat stable
+- [ ] 13.4 — suppression level-triggered (raccourci sorti des règles disparaît) ; raccourci UTILISATEUR jamais supprimé
+- [ ] 13.5 — toggle strict/default : strict recrée, souple → `drifted_allowed` non recréé ; toggle visible aussi wallpaper + overlay
+- [ ] 13.6 — lecture seule + zéro AD (grep vide ; ciblage AD-CN seul = aucun item)
+- [ ] 13.7 — golden v1 + hash figé bumpé sciemment ; `go test` croisé serveur/agent vert (NFR13)

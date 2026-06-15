@@ -145,7 +145,7 @@ final class SessionCompanionE2eTest extends TestCase
         // traite que deux (session + machine_user), la partition est à LUI.
         $state = $response->json();
         self::assertSame(
-            ['schema', 'generated_at', 'ttl_seconds', ...StateContract::scopes()],
+            ['schema', 'generated_at', 'ttl_seconds', 'debug', ...StateContract::scopes()],
             array_keys($state),
         );
         self::assertSame(StateContract::SCHEMA, $state['schema']);

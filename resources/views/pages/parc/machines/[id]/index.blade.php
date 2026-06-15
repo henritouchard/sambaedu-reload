@@ -7,6 +7,7 @@ use Livewire\Attributes\Url;
 use App\Jobs\DispatchMachinePowerActionJob;
 use App\Services\Parc\WorkstationGroupService;
 use App\Services\Parc\MachinePowerService;
+use App\Services\Parc\WorkstationDebugService;
 use App\Services\AppProfile\AppProfileService;
 use App\Models\AppProfile;
 use App\Models\Application;
@@ -232,6 +233,42 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                 'machine_id' => $this->id,
             ]);
             $this->toastError('Erreur lors de la révocation du token agent');
+        }
+    }
+
+    /**
+     * Mode debug du poste — bascule unique (canal agent + options WPKG
+     * debug/logdebug) via WorkstationDebugService. Même gate de contrôle
+     * poste que « forcer la synchro » (re-vérifié serveur-side : une requête
+     * Livewire forgée ne contourne pas l'éligibilité).
+     */
+    public function toggleDebugMode(WorkstationDebugService $debugService): void
+    {
+        if (! Gate::allows('computer.control')) {
+            $this->toastAccessDenied();
+            return;
+        }
+
+        if (! $this->workstation) {
+            $this->loadMachine();
+        }
+        if (! $this->workstation) {
+            $this->toastError('Machine non trouvée');
+            return;
+        }
+
+        try {
+            $enabled = ! $this->workstation->debug;
+            $debugService->setDebug($this->workstation, $enabled);
+            $this->toastSuccess($enabled
+                ? 'Mode debug activé — console agent conservée + logs WPKG verbeux'
+                : 'Mode debug désactivé');
+            $this->loadMachine();
+        } catch (\Exception $e) {
+            Log::error('[MachineShow] Erreur bascule mode debug: ' . $e->getMessage(), [
+                'machine_id' => $this->id,
+            ]);
+            $this->toastError('Erreur lors de la bascule du mode debug');
         }
     }
 
@@ -625,7 +662,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 
     public function setTab(string $tab): void
     {
-        $allowed = ['general', 'wpkg'];
+        $allowed = ['general', 'wpkg', 'agent'];
         $this->tab = in_array($tab, $allowed, true) ? $tab : 'general';
     }
 
@@ -1103,62 +1140,56 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                     <i class="fa-solid fa-cube mr-2"></i>
                     Applications WPKG
                 </button>
+                <button type="button" role="tab"
+                    class="tab {{ $tab === 'agent' ? 'tab-active' : '' }}"
+                    wire:click="setTab('agent')">
+                    <i class="fa-solid fa-tower-broadcast mr-2"></i>
+                    Agent
+                </button>
             </div>
 
             @if ($tab === 'wpkg')
                 @include('pages.parc.machines.[id]._partials.wpkg-assignment-tab')
-            @else
-            {{-- Card groupes logiques --}}
+            @elseif ($tab === 'agent')
+            {{-- Onglet Agent — mode debug + canal agent (token, conformité) --}}
+
+            {{-- Card mode debug du poste --}}
             <div class="card bg-base-100 shadow-sm border border-base-200">
                 <div class="card-body">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="card-title text-base">
-                            <i class="fa-solid fa-layer-group text-primary"></i>
-                            Groupes logiques
-                            <span class="badge badge-ghost">{{ $workstation->logicalGroups->count() }}</span>
-                        </h3>
-                        @if ($availableLogicalGroups->isNotEmpty())
-                            <button type="button"
-                                wire:click="$dispatch('open-workstation-group-selector', { drawerId: 'add-logical-groups', groups: {{ $availableLogicalGroups->toJson() }} })"
-                                class="btn btn-primary btn-sm gap-2">
-                                <i class="fa-solid fa-plus"></i>
-                                Ajouter
-                            </button>
-                        @endif
-                    </div>
-
-                    <p class="text-sm text-base-content/60 mb-4">
-                        Une machine peut appartenir à plusieurs groupes logiques simultanément.
-                    </p>
-
-                    @if ($workstation->logicalGroups->isEmpty())
-                        <div class="flex flex-col items-center justify-center py-8 text-center">
-                            <div class="text-4xl mb-4 opacity-20">
-                                <i class="fa-solid fa-folder-open"></i>
+                    <div class="flex items-start justify-between gap-4">
+                        <div class="flex items-start gap-3">
+                            <i class="fa-solid fa-bug {{ $workstation->debug ? 'text-warning' : 'text-base-content/40' }} text-lg mt-0.5"></i>
+                            <div>
+                                <h3 class="card-title text-base">
+                                    Mode debug
+                                    @if ($workstation->debug)
+                                        <span class="badge badge-warning gap-1">
+                                            <i class="fa-solid fa-circle-dot text-[0.6rem]"></i>
+                                            Actif
+                                        </span>
+                                    @else
+                                        <span class="badge badge-ghost">Inactif</span>
+                                    @endif
+                                </h3>
+                                <p class="text-sm text-base-content/60 mt-1 max-w-xl">
+                                    En debug, la console de l'agent reste ouverte sur le poste
+                                    (quelle que soit la session ouverte) et y recopie ses logs en
+                                    direct. Active aussi les logs WPKG détaillés
+                                    (<code>debug</code> + <code>logdebug</code> du <code>.ini</code>).
+                                </p>
                             </div>
-                            <h4 class="text-base font-semibold mb-2">Aucun groupe logique</h4>
-                            <p class="text-base-content/60 text-sm max-w-sm">
-                                Ce poste n'appartient à aucun groupe logique.
-                            </p>
                         </div>
-                    @else
-                        <div class="flex flex-wrap gap-2">
-                            @foreach ($workstation->logicalGroups as $group)
-                                <div class="flex items-center gap-2 pl-3 pr-1 py-1 rounded-lg border border-base-300 bg-base-200/40">
-                                    <i class="fa-solid fa-layer-group text-primary text-sm"></i>
-                                    <a href="{{ route('app.parc.groups.show', $group->id) }}"
-                                        class="font-medium text-sm hover:text-primary">
-                                        {{ $group->name }}
-                                    </a>
-                                    <button type="button" class="btn btn-ghost btn-xs btn-square text-error"
-                                        wire:click="removeFromLogicalGroup({{ $group->id }})"
-                                        wire:confirm="Retirer ce poste du groupe logique ?">
-                                        <i class="fa-solid fa-xmark"></i>
-                                    </button>
-                                </div>
-                            @endforeach
-                        </div>
-                    @endif
+                        @can('computer.control')
+                            <input type="checkbox" class="toggle toggle-warning"
+                                wire:click="toggleDebugMode"
+                                wire:confirm="{{ $workstation->debug
+                                    ? 'Désactiver le mode debug de ce poste ?'
+                                    : 'Activer le mode debug de ce poste ? La console agent restera visible et les logs WPKG passeront en mode verbeux.' }}"
+                                @checked($workstation->debug) />
+                        @else
+                            <input type="checkbox" class="toggle toggle-warning" @checked($workstation->debug) disabled />
+                        @endcan
+                    </div>
                 </div>
             </div>
 
@@ -1222,6 +1253,61 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 
                     {{-- Story 24.7 — conformité par type + événements + forcer la synchro --}}
                     @include('pages.parc.machines.[id]._partials.agent-conformity')
+                </div>
+            </div>
+
+            @else
+            {{-- Card groupes logiques --}}
+            <div class="card bg-base-100 shadow-sm border border-base-200">
+                <div class="card-body">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="card-title text-base">
+                            <i class="fa-solid fa-layer-group text-primary"></i>
+                            Groupes logiques
+                            <span class="badge badge-ghost">{{ $workstation->logicalGroups->count() }}</span>
+                        </h3>
+                        @if ($availableLogicalGroups->isNotEmpty())
+                            <button type="button"
+                                wire:click="$dispatch('open-workstation-group-selector', { drawerId: 'add-logical-groups', groups: {{ $availableLogicalGroups->toJson() }} })"
+                                class="btn btn-primary btn-sm gap-2">
+                                <i class="fa-solid fa-plus"></i>
+                                Ajouter
+                            </button>
+                        @endif
+                    </div>
+
+                    <p class="text-sm text-base-content/60 mb-4">
+                        Une machine peut appartenir à plusieurs groupes logiques simultanément.
+                    </p>
+
+                    @if ($workstation->logicalGroups->isEmpty())
+                        <div class="flex flex-col items-center justify-center py-8 text-center">
+                            <div class="text-4xl mb-4 opacity-20">
+                                <i class="fa-solid fa-folder-open"></i>
+                            </div>
+                            <h4 class="text-base font-semibold mb-2">Aucun groupe logique</h4>
+                            <p class="text-base-content/60 text-sm max-w-sm">
+                                Ce poste n'appartient à aucun groupe logique.
+                            </p>
+                        </div>
+                    @else
+                        <div class="flex flex-wrap gap-2">
+                            @foreach ($workstation->logicalGroups as $group)
+                                <div class="flex items-center gap-2 pl-3 pr-1 py-1 rounded-lg border border-base-300 bg-base-200/40">
+                                    <i class="fa-solid fa-layer-group text-primary text-sm"></i>
+                                    <a href="{{ route('app.parc.groups.show', $group->id) }}"
+                                        class="font-medium text-sm hover:text-primary">
+                                        {{ $group->name }}
+                                    </a>
+                                    <button type="button" class="btn btn-ghost btn-xs btn-square text-error"
+                                        wire:click="removeFromLogicalGroup({{ $group->id }})"
+                                        wire:confirm="Retirer ce poste du groupe logique ?">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
                 </div>
             </div>
 

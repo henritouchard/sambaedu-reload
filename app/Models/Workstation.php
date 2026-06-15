@@ -75,6 +75,10 @@ class Workstation extends Model implements Wireable
         'ad_guid',
         'managed_by_control_hub',
         'archived_at',
+        // Mode debug du poste : réglage de contrôle admin (≠ colonnes
+        // `agent_*` hors $fillable). Exposé à l'agent dans l'enveloppe
+        // desired-state ; pilote aussi les options WPKG debug/logdebug.
+        'debug',
     ];
 
     /**
@@ -89,6 +93,8 @@ class Workstation extends Model implements Wireable
         'managed_by_control_hub' => 'boolean',
         'archived_at' => 'datetime',
         'programmed_action' => 'array',
+        // Mode debug du poste (exposé dans l'enveloppe desired-state).
+        'debug' => 'boolean',
         // Story 23.2 — cycle de vie du token agent. Les colonnes `agent_*`
         // ne sont volontairement PAS dans $fillable : seules les écritures
         // explicites de TokenRotationService / AuthenticateAgentToken les

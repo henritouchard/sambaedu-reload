@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\StateMode;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -25,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * @property int|null $owner_id
  * @property bool $is_default
  * @property int|null $uploaded_by
+ * @property \App\Enums\StateMode|null $mode Mode d'application desired-state (strict/default) — Story 27.1
  * @property \DateTime|null $created_at
  * @property \DateTime|null $updated_at
  * @property-read WallpaperAsset|null $asset
@@ -46,10 +48,12 @@ class Wallpaper extends Model
         'owner_id',
         'is_default',
         'uploaded_by',
+        'mode',
     ];
 
     protected $casts = [
         'is_default' => 'boolean',
+        'mode' => StateMode::class,
     ];
 
     public function owner(): MorphTo

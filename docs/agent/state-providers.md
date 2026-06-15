@@ -180,6 +180,55 @@ user — jamais en machine-only) :
   évolution d'enveloppe. Les alertes dérivées volatiles (quota,
   multi-session) restent HORS desired-state.
 
+### `shortcuts` — `aggregate` / `strict` / `machine_user` (Story 27.1)
+
+Un item **par couple (raccourci actif × assignation applicable)** — union des
+mailles, dédoublonnée par contenu au compilateur (décision n° 4) :
+
+```json
+{ "name": "Intranet", "target": "https://intranet.example.edu",
+  "args": "", "icon": "",
+  "place": "desktop",
+  "desktop_path": "\\\\<se4fs>\\users\\<user>\\Bureau\\" }
+```
+
+- **Lecture Postgres PURE** (`shortcuts` × `shortcut_assignables`, morph
+  WorkstationGroup + Workstation + UserGroup + User restreint au
+  `TargetContext`). Le ciblage AD-CN legacy (`ad_users`/`ad_user_groups`,
+  cache APCu) n'est **JAMAIS** lu (NFR7, critère Keycloak — décision n° 8).
+  Raccourci `is_active = false` = exclu.
+- **`desktop_path` = fix définitif du Bug C.** Résolu **côté serveur**
+  (décision n° 3) via `WorkstationEnvironmentResolver::resolveForGroupIds()`
+  (26.1) — bureau **réseau** si le parc est `shared_local`
+  (`\\<se4fs>\users\<user>\Bureau\`), bureau **local** si
+  `personal_local`/`nomade` (`%USERPROFILE%\Desktop\`). Plus de branche figée
+  dans un `.cmd` legacy : c'est la donnée du domaine qui dicte le chemin. Les
+  tokens `<se4fs>` / `<user>` (et les `%VAR%` Windows) restent dans le payload :
+  l'agent les substitue **localement** (login courant, nom serveur) — aucune
+  fuite de secret, aucune dépendance réseau au calcul. `desktop_path` n'est
+  présent **que** pour `place=desktop` (startup/taskbar = chemins standards
+  résolus par l'agent).
+- **`scope=machine_user`** (décision n° 1) : le set dépend du user, le chemin du
+  poste — le calcul est un croisement (poste, user). **`semantics=aggregate`** :
+  le poste reçoit l'union de toutes ses mailles, sans précédence.
+- **Convergence level-triggered** côté agent (handler Go `shortcuts`) : un
+  raccourci retiré des règles **disparaît** au passage suivant ; un raccourci
+  créé par l'utilisateur (hors marqueur de gestion) n'est **jamais** supprimé
+  (cf. `agent/README.md`, décision n° 5).
+- `place` ∈ `desktop|startup|taskbar` (iso `Shortcut::PLACE_*`). Tous les champs
+  sont des strings (jamais de float, §4.1).
+
+### Mode `strict|default` par règle (Story 27.1 — FR26)
+
+Le mode d'application **n'est plus une constante par type** : c'est un attribut
+**par règle** (colonne `mode` sur `shortcuts`, `wallpapers`, `overlay_signals`),
+porté par `StateCandidate::$mode`. Le `StateCompiler` **agrège** le mode par
+type (un seul verdict côté agent) : **`default` ssi TOUTES** les règles retenues
+sont `default`, sinon **`strict`** (posture sûre). Une règle sans `mode` (null
+en base) retombe sur `StateProvider::mode()` (le défaut du type) — wallpaper
+reste `default`, overlay/shortcuts restent `strict` tant qu'aucune règle n'est
+basculée via l'UI (toggle exposé pour les 3 types, décision n° 2).
+
 ## Ajouter un type de ressource (checklist Epic 27)
 
 1. **Identifiant figé** : ajouter le type à `docs/agent/contract-v1.md` §7

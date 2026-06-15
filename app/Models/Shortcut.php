@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\StateMode;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -41,6 +42,7 @@ use Livewire\Wireable;
  * @property bool $is_dynamic Contient des variables dynamiques ($user, $userprofile, etc.)
  * @property array|null $compiled_data Données pré-compilées du raccourci
  * @property \DateTime|null $compiled_at Timestamp de la dernière compilation
+ * @property \App\Enums\StateMode|null $mode Mode d'application desired-state (strict/default) — Story 27.1
  * @property \DateTime $created_at
  * @property \DateTime $updated_at
  */
@@ -84,6 +86,7 @@ class Shortcut extends Model implements Wireable
         'compiled_at',
         'ad_users',
         'ad_user_groups',
+        'mode',
     ];
 
     /**
@@ -101,7 +104,15 @@ class Shortcut extends Model implements Wireable
         'compiled_at' => 'datetime',
         'ad_users' => 'array',
         'ad_user_groups' => 'array',
+        'mode' => StateMode::class,
     ];
+
+    /**
+     * Identifiant FIGÉ du type de ressource desired-state (contrat §7, NFR12).
+     * Story 27.1 — iso `Wallpaper::TYPE_WALLPAPER`, consommé par le
+     * `ShortcutsStateProvider`. Jamais renommé une fois publié.
+     */
+    public const TYPE_SHORTCUTS = 'shortcuts';
 
     /**
      * Emplacements possibles

@@ -58,10 +58,10 @@ func rainmeterPresent() bool {
 // être visible ni bloquant dans la session : toute erreur part dans
 // companion.log (ou en sortie silencieuse si même le log échoue).
 func runCompanion() error {
-	detachConsole()
-
 	localAppData := os.Getenv("LOCALAPPDATA")
 	if localAppData == "" {
+		detachConsole()
+
 		return fmt.Errorf("LOCALAPPDATA non défini : pas de profil agent")
 	}
 	user := &shared.UserStore{Root: filepath.Join(localAppData, "SambaEdu", "Agent")}
@@ -74,6 +74,7 @@ func runCompanion() error {
 	// uniquement pour trouver SON cache et SON drop. Jamais transmis.
 	sid, err := currentProcessSID()
 	if err != nil {
+		detachConsole()
 		logger.Errorf("Compagnon en échec : résolution du SID impossible (%v).", err)
 
 		return err
@@ -81,6 +82,21 @@ func runCompanion() error {
 
 	store := &shared.Store{} // racine ProgramData par défaut — LECTURE seule ici
 	computerName := os.Getenv("COMPUTERNAME")
+
+	// Mode debug du poste (drapeau d'enveloppe `debug` du dernier état tiré
+	// par session-fetch SYSTEM, lu en best-effort dans le cache per-SID) :
+	//   - debug ON  → on NE détache PAS la console (le user veut voir l'agent
+	//     tourner, quelle que soit la session) + echo des logs en direct ;
+	//   - debug OFF → comportement nominal : FreeConsole (la fenêtre héritée
+	//     de la tâche planifiée se ferme — bref flash au logon).
+	// Latence assumée : le 1er logon suivant l'activation lit le cache encore
+	// « non-debug » ; la console apparaît au logon suivant (cache rafraîchi).
+	if shared.DebugFromStateCacheFile(store.SessionStatePath(sid)) {
+		logger.Echo = true
+		logger.Infof("Mode debug actif (serveur) : console conservée, logs recopiés en direct.")
+	} else {
+		detachConsole()
+	}
 
 	companion := &shared.Companion{
 		SID:       sid,
@@ -96,6 +112,13 @@ func runCompanion() error {
 					ComputerName:     computerName,
 					RainmeterPresent: rainmeterPresent,
 					Log:              logger,
+				},
+				// Story 27.1 — raccourcis (aggregate / machine_user) : pose les
+				// `.lnk` au chemin résolu serveur (fix Bug C), level-triggered,
+				// COM IShellLink natif.
+				"shortcuts": &shared.ShortcutsHandler{
+					Ops: &shortcutOps{log: logger},
+					Log: logger,
 				},
 			},
 			Log: logger,

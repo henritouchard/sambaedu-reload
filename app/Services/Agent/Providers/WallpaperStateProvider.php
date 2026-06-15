@@ -99,6 +99,7 @@ final class WallpaperStateProvider implements StateProvider
                 'wallpapers.owner_type',
                 'wallpapers.owner_id',
                 'wallpapers.is_default',
+                'wallpapers.mode',
                 'wallpapers.updated_at',
                 'wallpaper_assets.filename as asset_filename',
                 'wallpaper_assets.checksum as asset_checksum',
@@ -112,6 +113,10 @@ final class WallpaperStateProvider implements StateProvider
             ],
             updatedAt: $row->updated_at,
             sourceId: (int) $row->id,
+            // Mode par règle (Story 27.1, décision n° 2) — null en base = pas
+            // déclaré → le compilateur retombe sur mode() (défaut `default`,
+            // comportement 23.4 préservé).
+            mode: $row->mode,
         ));
     }
 
