@@ -428,3 +428,34 @@ func TestShortcutsThroughEngineSection5(t *testing.T) {
 		})
 	}
 }
+
+// Bug terrain 27.1 : la convention `chemin,index` du `.lnk` doit être décomposée
+// avant SetIconLocation, sinon `…\firefox.exe,0` est pris comme chemin de fichier
+// (introuvable → icône « feuille blanche »).
+func TestParseIconLocation(t *testing.T) {
+	cases := []struct {
+		name      string
+		icon      string
+		wantPath  string
+		wantIndex int
+	}{
+		{"vide", "", "", 0},
+		{"exe avec index 0", `C:\Program Files\Mozilla Firefox\firefox.exe,0`, `C:\Program Files\Mozilla Firefox\firefox.exe`, 0},
+		{"exe avec index positif", `C:\Windows\System32\shell32.dll,42`, `C:\Windows\System32\shell32.dll`, 42},
+		{"index négatif (ressource par id)", `C:\app\res.dll,-3`, `C:\app\res.dll`, -3},
+		{"index avec espaces tolérés", `C:\app\icon.dll, 5`, `C:\app\icon.dll`, 5},
+		{"ico sans index", `%APPDATA%\pronote.ico`, `%APPDATA%\pronote.ico`, 0},
+		{"chemin sans virgule", `C:\app\firefox.exe`, `C:\app\firefox.exe`, 0},
+		{"virgule non suivie d'un entier = partie du chemin", `C:\dir,with,comma\icon.ico`, `C:\dir,with,comma\icon.ico`, 0},
+		{"suffixe non entier", `C:\app\icon.dll,abc`, `C:\app\icon.dll,abc`, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path, index := ParseIconLocation(tc.icon)
+			if path != tc.wantPath || index != tc.wantIndex {
+				t.Fatalf("ParseIconLocation(%q) = (%q, %d), attendu (%q, %d)",
+					tc.icon, path, index, tc.wantPath, tc.wantIndex)
+			}
+		})
+	}
+}

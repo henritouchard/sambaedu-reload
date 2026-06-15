@@ -228,7 +228,7 @@ func (o *shortcutOps) Matches(path string, spec shared.ShortcutSpec) (bool, erro
 		return false, nil // absent → apply créera
 	}
 
-	desc, target, args, icon, err := o.readShortcut(path)
+	desc, target, args, icon, iconIndex, err := o.readShortcut(path)
 	if err != nil {
 		return false, nil // illisible → réécrire
 	}
@@ -242,13 +242,20 @@ func (o *shortcutOps) Matches(path string, spec shared.ShortcutSpec) (bool, erro
 		return false, nil
 	}
 
+	// L'icône cible est résolue (tokens) PUIS décomposée en (chemin, index) — la
+	// même convention `chemin,index` que celle posée par createShortcut. On
+	// compare chemin ET index au `.lnk` relu, sinon le `,0` de la spec ne matche
+	// jamais le chemin nu relu → réécriture à chaque passe (idempotence cassée).
+	specIconPath, specIconIndex := shared.ParseIconLocation(substituteTokens(spec.Icon))
+	iconMatches := strings.EqualFold(icon, specIconPath) && iconIndex == specIconIndex
+
 	// `args` est comparé sensible à la casse et SANS substitution de tokens
 	// (review #M4) : latent, aucun payload `args` ne porte de token aujourd'hui.
 	// Si un jour un `args` contenait `<user>`/`%VAR%`, il faudrait substituer ici
 	// comme pour target/icon, sinon perte d'idempotence (réécriture à chaque passe).
 	return strings.EqualFold(target, substituteTokens(spec.Target)) &&
 		args == spec.Args &&
-		strings.EqualFold(icon, substituteTokens(spec.Icon)), nil
+		iconMatches, nil
 }
 
 // Blocked : un `.lnk` NON géré occupe-t-il `path` ? (décision n° 5, review #1).
@@ -259,7 +266,7 @@ func (o *shortcutOps) Blocked(path string) (bool, error) {
 	if _, err := os.Stat(path); err != nil {
 		return false, nil // absent → libre, apply créera
 	}
-	desc, _, _, _, err := o.readShortcut(path)
+	desc, _, _, _, _, err := o.readShortcut(path)
 	if err != nil {
 		return false, nil // illisible → on ne le considère pas comme un blocage géré
 	}
@@ -300,7 +307,7 @@ func (o *shortcutOps) logf(format string, args ...any) {
 
 // isManaged : le `.lnk` porte-t-il le marqueur de gestion (Description) ?
 func (o *shortcutOps) isManaged(path string) (bool, error) {
-	desc, _, _, _, err := o.readShortcut(path)
+	desc, _, _, _, _, err := o.readShortcut(path)
 	if err != nil {
 		return false, err
 	}
@@ -387,7 +394,12 @@ func createShortcut(path, target, args, icon, description string) error {
 			}
 		}
 		if icon != "" {
-			if err := setIconLocation(sl, icon, 0); err != nil {
+			// L'icône suit la convention `chemin,index` (ex. `firefox.exe,0`) :
+			// on la décompose pour SetIconLocation(path, index), sinon le `,0`
+			// est pris comme partie du chemin → fichier introuvable → icône
+			// « feuille blanche » (bug terrain 27.1).
+			iconPath, iconIndex := shared.ParseIconLocation(icon)
+			if err := setIconLocation(sl, iconPath, iconIndex); err != nil {
 				return fmt.Errorf("SetIconLocation : %w", err)
 			}
 		}
@@ -409,18 +421,18 @@ func createShortcut(path, target, args, icon, description string) error {
 	})
 }
 
-// readShortcut lit description/target/args/icon d'un `.lnk` existant.
-func (o *shortcutOps) readShortcut(path string) (desc, target, args, icon string, err error) {
+// readShortcut lit description/target/args/icon(+index) d'un `.lnk` existant.
+func (o *shortcutOps) readShortcut(path string) (desc, target, args, icon string, iconIndex int, err error) {
 	err = withShellLink(path, func(sl *iShellLink, _ *iPersistFile) error {
 		desc = getStr(sl.vtbl.GetDescription, sl)
 		target = getStr(sl.vtbl.GetPath, sl)
 		args = getStr(sl.vtbl.GetArguments, sl)
-		icon = getIconLocation(sl)
+		icon, iconIndex = getIconLocation(sl)
 
 		return nil
 	})
 
-	return desc, target, args, icon, err
+	return desc, target, args, icon, iconIndex, err
 }
 
 const maxPathW = 1024
@@ -477,7 +489,10 @@ func setIconLocation(sl *iShellLink, icon string, index int) error {
 }
 
 // getIconLocation : GetIconLocation(LPWSTR pszIconPath, int cch, int* piIcon).
-func getIconLocation(sl *iShellLink) string {
+// Retourne le chemin ET l'index (deux champs natifs du `.lnk`) pour une
+// comparaison d'idempotence correcte (sinon l'index est ignoré et le `.lnk` est
+// réécrit à chaque passe).
+func getIconLocation(sl *iShellLink) (string, int) {
 	buf := make([]uint16, maxPathW)
 	var idx int32
 	syscall.SyscallN(sl.vtbl.GetIconLocation,
@@ -487,5 +502,5 @@ func getIconLocation(sl *iShellLink) string {
 		uintptr(unsafe.Pointer(&idx)),
 	)
 
-	return windows.UTF16ToString(buf)
+	return windows.UTF16ToString(buf), int(idx)
 }

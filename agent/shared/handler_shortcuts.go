@@ -3,6 +3,7 @@ package shared
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -55,6 +56,38 @@ type ShortcutSpec struct {
 	Icon        string // chemin d'icône (peut être vide)
 	Place       string // desktop | startup | taskbar
 	DesktopPath string // chemin du bureau résolu serveur (place=desktop only)
+}
+
+// ParseIconLocation décompose une icône à la convention Windows historique
+// `chemin,index` (ex. `C:\…\firefox.exe,0`) en (chemin, index) — c'est la forme
+// native d'un `.lnk` (IShellLink::SetIconLocation(LPCWSTR path, int index)).
+//
+// Le serveur (`windows_icon`) stocke l'icône avec son index suffixé. Sans ce
+// split, le handler passait `…\firefox.exe,0` comme CHEMIN de fichier → Windows
+// cherchait un fichier nommé « firefox.exe,0 », introuvable → icône « feuille
+// blanche ». Bug terrain 27.1.
+//
+// Règles : on coupe sur la DERNIÈRE virgule UNIQUEMENT si le suffixe est un
+// entier (positif ou négatif — un index négatif = ressource par ID). Sinon, la
+// virgule fait partie du chemin (rare mais légal) → index 0. Une icône vide
+// reste ("", 0). Les espaces autour de l'index sont tolérés.
+func ParseIconLocation(icon string) (path string, index int) {
+	if icon == "" {
+		return "", 0
+	}
+
+	pos := strings.LastIndex(icon, ",")
+	if pos < 0 {
+		return icon, 0
+	}
+
+	suffix := strings.TrimSpace(icon[pos+1:])
+	n, err := strconv.Atoi(suffix)
+	if err != nil {
+		return icon, 0 // pas un index → la virgule appartient au chemin
+	}
+
+	return icon[:pos], n
 }
 
 // ShortcutOps : opérations `.lnk` spécifiques à l'OS, injectées (testable
