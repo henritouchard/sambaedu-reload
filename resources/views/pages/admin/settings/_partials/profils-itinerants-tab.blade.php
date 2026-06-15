@@ -48,6 +48,13 @@ new class extends Component {
     /** Statut de chargement de la GPO (pour message d'alerte UI). */
     public bool $gpoLoadFailed = false;
 
+    /**
+     * Story 26.3 — Nombre de profils orphelins (dossiers /home/profiles sans
+     * compte user). Lu UNIQUEMENT depuis le cache (SystemSetting profiles.orphans
+     * alimenté par le job nocturne profiles:snapshot). ZÉRO scan FS au render.
+     */
+    public int $orphanCount = 0;
+
     private RoamingProfileService $service;
 
     public function boot(RoamingProfileService $service): void
@@ -63,6 +70,22 @@ new class extends Component {
 
         $this->reloadExclusions();
         $this->reloadStats();
+        $this->reloadOrphanCount();
+    }
+
+    /**
+     * Story 26.3 — recharge le compteur d'orphelins depuis le cache (aucun FS).
+     */
+    private function reloadOrphanCount(): void
+    {
+        try {
+            $this->orphanCount = $this->service->getOrphanCount();
+        } catch (\Throwable $e) {
+            Log::error('[ProfilsItinerantsTab] Echec lecture compteur orphelins', [
+                'error' => $e->getMessage(),
+            ]);
+            $this->orphanCount = 0;
+        }
     }
 
     private function reloadExclusions(): void
@@ -174,6 +197,50 @@ new class extends Component {
         }
     }
 
+    /**
+     * Story 26.3 — Purge native des profils orphelins (réimplémentation de
+     * `ldap_cleaner.php?do=3` ; NE route JAMAIS vers le legacy).
+     *
+     * Double gate server.admin (mount + ici). La purge RE-VÉRIFIE l'absence de
+     * compte au moment de l'action (service) + déplace vers _Trash_users
+     * (réversible). Toast générique via WithToasts (jamais $e->getMessage()).
+     */
+    public function purgeOrphans(): void
+    {
+        if (!Gate::allows('server.admin')) {
+            abort(403);
+        }
+
+        try {
+            $result = $this->service->purgeOrphanProfiles();
+            $this->reloadOrphanCount();
+
+            if ($result['moved'] === 0 && $result['errors'] === 0) {
+                $this->toastSuccess('Aucun profil orphelin à purger.');
+                return;
+            }
+
+            if ($result['errors'] > 0) {
+                $this->toastError(sprintf(
+                    '%d profil(s) déplacé(s) en corbeille, %d en échec (voir les logs serveur).',
+                    $result['moved'],
+                    $result['errors']
+                ));
+                return;
+            }
+
+            $this->toastSuccess(sprintf(
+                '%d profil(s) orphelin(s) déplacé(s) vers la corbeille _Trash_users.',
+                $result['moved']
+            ));
+        } catch (\Throwable $e) {
+            Log::error('[ProfilsItinerantsTab] Echec purgeOrphans', [
+                'error' => $e->getMessage(),
+            ]);
+            $this->toastError('Impossible de purger les profils orphelins.');
+        }
+    }
+
     // =========================================================================
     // MODALES
     // =========================================================================
@@ -230,6 +297,32 @@ new class extends Component {
 ?>
 
 <div class="space-y-6">
+    {{-- =====================================================================
+         Story 26.3 — Bandeau profils orphelins + purge native (do=3)
+         Compteur lu depuis le cache (SystemSetting profiles.orphans alimenté
+         par le job nocturne profiles:snapshot) — ZÉRO scan FS au render.
+         ===================================================================== --}}
+    @if ($orphanCount > 0)
+        <div class="alert alert-warning shadow-sm">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <div class="flex-1">
+                <span class="font-medium">{{ $orphanCount }} profil(s) itinérant(s) orphelin(s)</span>
+                <p class="text-sm">
+                    Dossiers de <code>/home/profiles</code> sans compte utilisateur correspondant.
+                    La purge les déplace vers la corbeille <code>_Trash_users</code> (réversible).
+                </p>
+            </div>
+            <button type="button" class="btn btn-sm btn-error"
+                wire:click="purgeOrphans"
+                wire:confirm="Déplacer les {{ $orphanCount }} profil(s) orphelin(s) vers la corbeille _Trash_users ? L'absence de compte sera re-vérifiée avant chaque déplacement."
+                wire:loading.attr="disabled" wire:target="purgeOrphans">
+                <span wire:loading wire:target="purgeOrphans" class="loading loading-spinner loading-xs"></span>
+                <i wire:loading.remove wire:target="purgeOrphans" class="fa-solid fa-trash"></i>
+                Purger les profils orphelins
+            </button>
+        </div>
+    @endif
+
     {{-- =====================================================================
          Section 1 — Exclusions du profil itinérant
          ===================================================================== --}}

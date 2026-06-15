@@ -347,4 +347,29 @@ class KernelScheduleTest extends TestCase
         );
         // Cleanup : assuré par tearDown() + DatabaseTransactions rollback.
     }
+
+    // =========================================================================
+    // Story 26.3 — profiles:snapshot à 04h30
+    // =========================================================================
+
+    #[Test]
+    public function it_schedules_profiles_snapshot_daily_at_0430(): void
+    {
+        $kernel = $this->app->make(Kernel::class);
+        $schedule = $this->app->make(Schedule::class);
+
+        $scheduleMethod = new \ReflectionMethod($kernel, 'schedule');
+        $scheduleMethod->setAccessible(true);
+        $scheduleMethod->invoke($kernel, $schedule);
+
+        $hasProfilesSnapshot = collect($schedule->events())->contains(
+            static fn ($event): bool => str_contains((string) $event->command, 'profiles:snapshot')
+                && $event->expression === '30 4 * * *'
+        );
+
+        $this->assertTrue(
+            $hasProfilesSnapshot,
+            'Le scheduler doit déclencher profiles:snapshot quotidiennement à 04h30 (story 26.3).'
+        );
+    }
 }

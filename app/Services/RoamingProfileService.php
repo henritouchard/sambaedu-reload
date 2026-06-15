@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\SystemSetting;
+use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
 /**
@@ -55,6 +59,26 @@ class RoamingProfileService
             return false;
         }
         return (bool) preg_match(self::VALUE_REGEX, $value);
+    }
+
+    /**
+     * Garde dédiée aux NOMS DE DOSSIER de premier niveau (`/home/profiles/<x>`).
+     *
+     * Contrairement à `VALUE_REGEX` (conçue pour des chemins relatifs
+     * d'exclusion GPO, donc `/` autorisé), un nom de dossier de profil ne doit
+     * JAMAIS contenir de séparateur. Regex stricte sans `/`, veto `..`/`.`,
+     * pour ne pas s'appuyer sur le seul `str_contains` en aval (modèle de
+     * sécurité explicite — cf. review 26.3 #6).
+     */
+    public static function isSafeProfileDirName(string $name): bool
+    {
+        if ($name === '' || $name === '.' || $name === '..') {
+            return false;
+        }
+        if (str_contains($name, '..')) {
+            return false;
+        }
+        return (bool) preg_match('/^[\w\-. ]+$/', $name);
     }
 
     /**
@@ -403,5 +427,435 @@ class RoamingProfileService
         uasort($res, fn ($a, $b) => $b['average'] <=> $a['average']);
 
         return $res;
+    }
+
+    // =========================================================================
+    // Story 26.3 — Scan natif /home/profiles + détection orphelins + cache + purge
+    // =========================================================================
+
+    /**
+     * Racine du store des profils itinérants. Toute suppression DOIT rester
+     * confinée sous ce préfixe (vérifié par realpath dans `purgeOrphanProfiles`).
+     */
+    public const PROFILES_ROOT = '/home/profiles';
+
+    /**
+     * Dossier corbeille où les profils orphelins sont DÉPLACÉS (réversible)
+     * plutôt que supprimés — décalque le legacy `do=3&mode_clean=mv`
+     * (`/home/admin/_Trash_users`). Règle projet : `trash`/déplacement plutôt
+     * que `rm -rf` quand c'est possible.
+     */
+    public const TRASH_ROOT = '/home/admin/_Trash_users';
+
+    /**
+     * Clé SystemSetting où la liste des profils orphelins (dossiers sans compte
+     * user) est persistée par le job nocturne. Les orphelins n'ont pas de ligne
+     * `users` → ils ne peuvent pas être badgés dans le tableau ni stockés dans
+     * la colonne `profile_snapshot` ; d'où ce stockage global séparé.
+     */
+    public const ORPHANS_SETTING_KEY = 'profiles.orphans';
+
+    /**
+     * Seuil « profil volumineux » (en Mo) au-delà duquel le tableau /app/users
+     * affiche une pastille d'alerte. Choix : 200 Mo — nettement au-dessus du
+     * seuil d'affichage 8 Mo de l'onglet admin (qui sert au drill-down par
+     * sous-dossier), car ici on veut repérer les comptes franchement
+     * consommateurs à l'échelle du profil complet.
+     */
+    public const LARGE_PROFILE_THRESHOLD_MB = 200.0;
+
+    /**
+     * Scan FS premier niveau de `/home/profiles` via `du --max-depth=1 -b`.
+     *
+     * COÛTEUX — destiné EXCLUSIVEMENT au job nocturne `profiles:snapshot`.
+     * JAMAIS appelé au render Livewire (contrainte perf, invariant de
+     * conception). L'UI lit le cache (`getProfileSizeForLogin`, `getOrphans*`).
+     *
+     * Réutilise `Process::run` (fakeable en test, cohérent QuotaSnapshotCommand).
+     * Retourne une map `[dirName => sizeBytes]` (le dossier racine lui-même est
+     * filtré). `null` si le scan échoue (du absent, /home/profiles absent…) —
+     * le job conserve alors le snapshot précédent (fail-soft).
+     *
+     * @return array<string, int>|null
+     */
+    public function scanProfileSizes(): ?array
+    {
+        $root = self::PROFILES_ROOT;
+
+        if (!is_dir($root)) {
+            Log::error('[RoamingProfileService] Racine profils absente — scan ignoré', [
+                'op' => 'scanProfileSizes',
+                'root' => $root,
+            ]);
+            return null;
+        }
+
+        $safeRoot = escapeshellarg($root);
+
+        try {
+            $result = Process::run("du --max-depth=1 -b {$safeRoot} 2>&1");
+        } catch (\Throwable $e) {
+            Log::error('[RoamingProfileService] Echec du (exception)', [
+                'op' => 'scanProfileSizes',
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+
+        // `du` sort en code ≠ 0 dès qu'UN sous-dossier est illisible (ACL, profil
+        // en cours d'écriture pendant le scan…) tout en imprimant des tailles
+        // VALIDES pour tous les dossiers accessibles. Sur un /home/profiles réel
+        // (centaines de profils, ACL hétérogènes), exiger un code 0 ferait
+        // échouer le snapshot en permanence. On parse donc la sortie disponible
+        // (les lignes d'erreur `du: …` n'ont pas de tabulation → ignorées par
+        // parseDuOutput) ; on ne renonce QUE si rien n'est exploitable.
+        $sizes = $this->parseDuOutput((string) $result->output(), $root);
+
+        if (!$result->successful()) {
+            // Succès partiel toléré si au moins une entrée a été parsée ;
+            // échec total (sortie vide / illisible) → fail-soft (snapshot conservé).
+            $level = $sizes === [] ? 'error' : 'warning';
+            Log::log($level, '[RoamingProfileService] du en code non-zéro', [
+                'op' => 'scanProfileSizes',
+                'code' => $result->exitCode(),
+                'parsed_dirs' => count($sizes),
+                'output' => $result->output(),
+            ]);
+            if ($sizes === []) {
+                return null;
+            }
+        }
+
+        return $sizes;
+    }
+
+    /**
+     * Parse la sortie brute de `du --max-depth=1 -b <root>` en map
+     * `[dirName => bytes]`. La ligne du dossier racine lui-même est filtrée.
+     *
+     * Extrait pour testabilité (le scan FS dépend de `is_dir`, absent en CI).
+     *
+     * @return array<string, int>
+     */
+    public function parseDuOutput(string $output, string $root): array
+    {
+        $sizes = [];
+        $rootNormalized = rtrim($root, '/');
+
+        foreach (preg_split("/\r?\n/", $output) as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+
+            // Format `du -b` : `<bytes>\t<path>`.
+            $parts = preg_split("/\t/", $line, 2);
+            if ($parts === false || count($parts) < 2) {
+                continue;
+            }
+
+            $bytes = (int) $parts[0];
+            $path = rtrim($parts[1], '/');
+
+            // Ligne du dossier racine lui-même → ignorée (on ne garde que les
+            // sous-dossiers de premier niveau).
+            if ($path === $rootNormalized) {
+                continue;
+            }
+
+            $dir = basename($path);
+            if ($dir === '' || $dir === '.' || $dir === '..') {
+                continue;
+            }
+
+            $sizes[$dir] = $bytes;
+        }
+
+        return $sizes;
+    }
+
+    /**
+     * Extrait le login d'un nom de dossier de profil itinérant.
+     *
+     * Les profils Windows itinérants sont versionnés : `alice.V6`, `bob.V2`…
+     * (cf. legacy `clean_profiles` regex `/$user(\.V[0-9]).?/`). On retire le
+     * suffixe `.V<N>` éventuel pour retrouver le login. Un dossier sans suffixe
+     * est interprété tel quel.
+     */
+    public function loginFromProfileDir(string $dir): string
+    {
+        return (string) preg_replace('/\.V\d+.*$/', '', $dir);
+    }
+
+    /**
+     * Détecte les profils ORPHELINS : dossiers de `/home/profiles` dont le
+     * login extrait ne correspond à AUCUN compte `User` (résolu `LOWER(login)`,
+     * NFR7 Postgres-only — JAMAIS l'AD).
+     *
+     * @param  array<int, string>  $dirs  Noms de dossiers (premier niveau).
+     * @return array<int, string>  Sous-ensemble de $dirs sans compte user.
+     */
+    public function detectOrphans(array $dirs): array
+    {
+        if ($dirs === []) {
+            return [];
+        }
+
+        // Une seule requête : on récupère tous les logins existants (lower).
+        $logins = User::query()
+            ->whereNotNull('login')
+            ->pluck('login')
+            ->map(fn ($l) => strtolower((string) $l))
+            ->filter(fn ($l) => $l !== '')
+            ->flip();
+
+        $orphans = [];
+        foreach ($dirs as $dir) {
+            $login = strtolower($this->loginFromProfileDir($dir));
+            if ($login === '') {
+                continue;
+            }
+            if (!$logins->has($login)) {
+                $orphans[] = $dir;
+            }
+        }
+
+        return array_values($orphans);
+    }
+
+    // ------------------------------------------------------------------ Lecteurs cache
+
+    /**
+     * Taille (Mo) du profil itinérant d'un login, lue UNIQUEMENT depuis le
+     * cache persistant (`users.profile_snapshot`). Aucun FS. `null` si pas de
+     * snapshot pour ce login.
+     */
+    public function getProfileSizeForLogin(string $login): ?float
+    {
+        $user = User::findByLogin($login);
+        if ($user === null) {
+            return null;
+        }
+
+        $snap = $user->profile_snapshot;
+        if (!is_array($snap) || !isset($snap['size_mb'])) {
+            return null;
+        }
+
+        return (float) $snap['size_mb'];
+    }
+
+    /**
+     * Liste des profils orphelins persistée par le dernier snapshot, lue depuis
+     * `SystemSetting` (aucun FS). Le cache peut dater de la veille — la purge
+     * RE-VÉRIFIE l'absence de compte avant toute suppression.
+     *
+     * @return array<int, string>
+     */
+    public function getOrphanProfiles(): array
+    {
+        $raw = SystemSetting::get(self::ORPHANS_SETTING_KEY, []);
+        $list = is_array($raw) ? ($raw['dirs'] ?? $raw) : [];
+
+        if (!is_array($list)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_map(fn ($v) => is_string($v) ? $v : null, $list),
+            fn ($v) => $v !== null && $v !== ''
+        ));
+    }
+
+    /**
+     * Nombre de profils orphelins (lecture cache, aucun FS).
+     */
+    public function getOrphanCount(): int
+    {
+        return count($this->getOrphanProfiles());
+    }
+
+    // ------------------------------------------------------------------ Écriture snapshot
+
+    /**
+     * Persiste le résultat d'un scan nocturne (appelé par `profiles:snapshot`).
+     *
+     * - Tailles par-login → colonne `users.profile_snapshot` (badge tableau).
+     * - Liste des orphelins → `SystemSetting` clé `profiles.orphans`.
+     *
+     * Un dossier dont le login matche plusieurs versions (ex. `alice.V6` ET
+     * `alice.V2`) cumule les tailles sur le login. Le snapshot n'efface PAS les
+     * users absents du scan : on ne touche que les logins présents (cohérent
+     * fail-soft quota:snapshot).
+     *
+     * @param  array<string, int>  $sizesByDir  [dirName => bytes] (sortie scanProfileSizes)
+     * @return array{users_updated:int, orphans:int}
+     */
+    public function persistSnapshot(array $sizesByDir): array
+    {
+        $capturedAt = Carbon::now()->toIso8601String();
+
+        // 1) Agrège bytes par login (cumul multi-versions) + garde le dernier dir vu.
+        $byLogin = [];
+        foreach ($sizesByDir as $dir => $bytes) {
+            $login = strtolower($this->loginFromProfileDir((string) $dir));
+            if ($login === '') {
+                continue;
+            }
+            if (!isset($byLogin[$login])) {
+                $byLogin[$login] = ['bytes' => 0, 'dir' => (string) $dir];
+            }
+            $byLogin[$login]['bytes'] += (int) $bytes;
+            $byLogin[$login]['dir'] = (string) $dir;
+        }
+
+        $usersUpdated = 0;
+        foreach ($byLogin as $login => $agg) {
+            $user = User::findByLogin($login);
+            if ($user === null) {
+                continue; // orphelin — traité plus bas.
+            }
+
+            $bytes = (int) $agg['bytes'];
+            $user->forceFill([
+                'profile_snapshot' => [
+                    'size_bytes' => $bytes,
+                    'size_mb' => round($bytes / 1024 / 1024, 1),
+                    'dir' => $agg['dir'],
+                    'captured_at' => $capturedAt,
+                ],
+            ])->save();
+            $usersUpdated++;
+        }
+
+        // 2) Détecte + persiste les orphelins (dossiers sans compte user).
+        $orphans = $this->detectOrphans(array_keys($sizesByDir));
+        SystemSetting::set(self::ORPHANS_SETTING_KEY, [
+            'dirs' => $orphans,
+            'captured_at' => $capturedAt,
+        ]);
+
+        return [
+            'users_updated' => $usersUpdated,
+            'orphans' => count($orphans),
+        ];
+    }
+
+    // ------------------------------------------------------------------ Purge sécurisée
+
+    /**
+     * Purge native des profils orphelins (réimplémentation de `clean_profiles('*')`
+     * / `ldap_cleaner.php?do=3`). NE route JAMAIS vers le legacy.
+     *
+     * Sécurité (anti-désastre `rm -rf`) :
+     *   - chaque candidat est RE-VÉRIFIÉ orphelin au moment de l'action (le
+     *     cache peut dater — un compte recréé entre-temps NE doit PAS perdre
+     *     son profil) ;
+     *   - nom validé par `isValueSafe` (anti path-traversal, veto `..`) ;
+     *   - `realpath` résolu et vérifié sous `PROFILES_ROOT` (anti-symlink) ;
+     *   - jamais de glob ; on n'agit que sur les dossiers explicitement listés.
+     *
+     * Mode par défaut : DÉPLACEMENT vers `_Trash_users` (réversible). Si le
+     * déplacement échoue, l'entrée est comptée en erreur (jamais de fallback
+     * `rm -rf` silencieux).
+     *
+     * @return array{moved:int, skipped:int, errors:int}
+     */
+    public function purgeOrphanProfiles(): array
+    {
+        $candidates = $this->getOrphanProfiles();
+
+        $moved = 0;
+        $skipped = 0;
+        $errors = 0;
+
+        if ($candidates === []) {
+            return ['moved' => 0, 'skipped' => 0, 'errors' => 0];
+        }
+
+        // Re-vérification fraîche contre la BDD (le cache peut dater).
+        $stillOrphans = array_flip($this->detectOrphans($candidates));
+
+        // S'assure que la corbeille existe (best-effort).
+        if (!is_dir(self::TRASH_ROOT)) {
+            @mkdir(self::TRASH_ROOT, 0750, true);
+        }
+
+        foreach ($candidates as $dir) {
+            // Garde 1 — nom de dossier safe (regex stricte sans `/`, veto `..`).
+            if (!self::isSafeProfileDirName($dir)) {
+                Log::warning('[RoamingProfileService] Purge : nom de dossier rejeté (unsafe)', [
+                    'op' => 'purgeOrphanProfiles',
+                    'dir' => $dir,
+                ]);
+                $skipped++;
+                continue;
+            }
+
+            // Garde 2 — re-vérification orphelin (compte recréé entre-temps ?).
+            if (!isset($stillOrphans[$dir])) {
+                Log::info('[RoamingProfileService] Purge : dossier ignoré (compte réapparu)', [
+                    'op' => 'purgeOrphanProfiles',
+                    'dir' => $dir,
+                ]);
+                $skipped++;
+                continue;
+            }
+
+            $target = self::PROFILES_ROOT . '/' . $dir;
+
+            // Garde 3 — realpath confiné sous PROFILES_ROOT (anti-symlink/traversal).
+            $real = realpath($target);
+            $rootReal = realpath(self::PROFILES_ROOT) ?: self::PROFILES_ROOT;
+            if ($real === false || !str_starts_with($real, rtrim($rootReal, '/') . '/')) {
+                Log::warning('[RoamingProfileService] Purge : chemin hors PROFILES_ROOT — refusé', [
+                    'op' => 'purgeOrphanProfiles',
+                    'dir' => $dir,
+                ]);
+                $skipped++;
+                continue;
+            }
+
+            // Déplacement réversible vers _Trash_users (suffixe horodaté pour
+            // éviter d'écraser une purge précédente du même login ; on garantit
+            // l'unicité au cas où deux purges du même dossier tomberaient dans
+            // la même seconde).
+            $stamp = date('YmdHis');
+            $dest = self::TRASH_ROOT . '/' . $dir . '.' . $stamp;
+            $suffix = 0;
+            while (file_exists($dest)) {
+                $dest = self::TRASH_ROOT . '/' . $dir . '.' . $stamp . '-' . (++$suffix);
+            }
+            $ok = @rename($real, $dest);
+
+            if ($ok === false) {
+                Log::error('[RoamingProfileService] Purge : déplacement échoué', [
+                    'op' => 'purgeOrphanProfiles',
+                    'dir' => $dir,
+                ]);
+                $errors++;
+                continue;
+            }
+
+            Log::info('[RoamingProfileService] Purge : profil orphelin déplacé en corbeille', [
+                'op' => 'purgeOrphanProfiles',
+                'dir' => $dir,
+            ]);
+            $moved++;
+        }
+
+        // Met à jour le cache orphelins : ne conserve que les candidats
+        // toujours présents sur disque (les déplacés ont disparu) ET toujours
+        // sans compte (re-vérifié).
+        $remaining = array_values(array_filter(
+            $this->detectOrphans($candidates),
+            fn ($d) => is_dir(self::PROFILES_ROOT . '/' . $d)
+        ));
+        SystemSetting::set(self::ORPHANS_SETTING_KEY, [
+            'dirs' => $remaining,
+            'captured_at' => Carbon::now()->toIso8601String(),
+        ]);
+
+        return ['moved' => $moved, 'skipped' => $skipped, 'errors' => $errors];
     }
 }

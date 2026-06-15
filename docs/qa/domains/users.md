@@ -230,3 +230,39 @@ ou la query des filtres audit.
 | #3 | 🟠 Important | Changement de filtre audit ne reset pas `selectedUsers` → bulk action exécutable sur des logins absents de la liste filtrée | Reset `$this->selectedUsers = []` dans `updatedQuotaOverflow`, `updatedPasswordDefault`, `removeQuotaOverflowFilter`, `removePasswordDefaultFilter`, `resetFilters` | Scénario QA 14.4-7 ci-dessus + 3 tests Livewire dans `UsersIndexPageAuditFiltersTest::test_it_resets_selected_users_when_*` |
 | #11 | 🟡 Mineur | `App\Types\User::toArray()` / `fromLivewire()` non aware de `passwordChangedAt` → round-trip Livewire perdrait silencieusement la valeur | Sérialisation ISO8601 `passwordChangedAt?->toIso8601String()` + parsing `Carbon::parse(...)` miroir | Tests unit `tests/Unit/Types/UserTest.php::it_round_trips_password_changed_at_through_livewire` + tests robustesse null/missing key |
 | #12 | 🟡 Mineur | Garde-fou FILETIME > 2100 silencieux → user mis « mdp par défaut » sans trace | Commentaire seuil + `Log::warning('ResolvesPwdLastSet: FILETIME hors plage', [...])` | Tests unit `ResolvesPwdLastSetTest::it_logs_warning_when_filetime_*`. Scénario QA : grep `journalctl -u php-fpm` pour les entrées `FILETIME hors plage` après 1 cycle complet de sync AD ; aucune entrée attendue en prod nominale |
+
+---
+
+## Story 26.3 — Pastille « profil itinérant volumineux » (2026-06-15)
+
+Le tableau `/app/users` affiche une pastille pour les comptes dont le profil
+itinérant (`/home/profiles/<login>.V<N>`) dépasse le seuil
+`RoamingProfileService::LARGE_PROFILE_THRESHOLD_MB` (200 Mo). La valeur provient
+**exclusivement** du cache `users.profile_snapshot` (alimenté par le job nocturne
+`profiles:snapshot`, cf. domaine **filesystem** Story 26.3) — **zéro shellout/`du`
+au render** (invariant perf). Le volet purge des orphelins est documenté dans
+`filesystem.md` (onglet admin Profils itinérants).
+
+**Pré-requis** : avoir lancé `php artisan profiles:snapshot` au moins une fois
+après avoir peuplé `/home/profiles` (cf. Scénario filesystem 26.3-1).
+
+### Scénario 26.3-U1 — Pastille affichée au-delà du seuil
+
+**Étapes** :
+
+1. Garantir un compte `qa263` avec `profile_snapshot.size_mb` ≥ 200 (via snapshot).
+2. Ouvrir `/app/users`, rechercher `qa263`.
+3. **Attendu** : colonne « Utilisation » → badge `badge-warning` « <taille> Mo » avec tooltip « Profil itinérant volumineux (… Mo, seuil 200 Mo) ». Test : `UsersIndexPageQuotaColumnTest::test_it_shows_large_profile_badge_above_threshold`.
+
+### Scénario 26.3-U2 — Pas de pastille sous le seuil / sans snapshot
+
+**Étapes** :
+
+1. Compte avec `size_mb < 200`, ou compte sans `profile_snapshot`.
+2. Ouvrir `/app/users`.
+3. **Attendu** : **aucune** pastille « profil volumineux » (pas d'erreur, pas de badge). Tests : `test_it_hides_large_profile_badge_below_threshold` + non-régression colonne quota inchangée.
+
+### Checklist rapide — Story 26.3 (users)
+
+- [ ] Scénario 26.3-U1 : pastille volumineux affichée (cache uniquement)
+- [ ] Scénario 26.3-U2 : pas de pastille sous seuil / sans snapshot

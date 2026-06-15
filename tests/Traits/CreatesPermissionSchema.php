@@ -61,6 +61,8 @@ trait CreatesPermissionSchema
                 // Story 14.4 — AC1 : colonne password_changed_at pour les filtres audit
                 $table->timestamp('password_changed_at')->nullable();
                 $table->json('quota_snapshot')->nullable();
+                // Story 26.3 — snapshot taille profil itinérant (badge tableau).
+                $table->json('profile_snapshot')->nullable();
                 $table->timestamps();
             });
             $this->createdTables[] = 'users';

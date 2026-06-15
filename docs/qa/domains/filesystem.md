@@ -608,4 +608,132 @@ La commande retourne désormais 3 codes distincts (mise à jour `--description` 
 
 ---
 
-*Dernière mise à jour : 2026-04-30 (Story 5.2 + corrections review)*
+## Story 26.3 — Nettoyage natif des profils itinérants (2026-06-15)
+
+Réimplémentation native du nettoyage legacy `ldap_cleaner.php?do=3` /
+`clean_profiles('*')` : snapshot nocturne des tailles de `/home/profiles` +
+détection/purge des profils orphelins. **Aucun routage vers le legacy**
+(kill-switch `LEGACY_CONFIG_CHANNEL_ENABLED=false`).
+
+**Pré-requis spécifiques** :
+
+- VM avec `/home/profiles` peuplé (au moins un dossier `<login>.V<N>` pour un
+  compte existant + un dossier orphelin sans compte).
+- Compte `admin` (`server.admin`) pour l'onglet `/admin/settings` → Profils itinérants.
+- Binaire `du` disponible (présent par défaut).
+
+### Section — Scan nocturne + cache (invariant perf)
+
+#### Scénario 26.3-1 — Snapshot manuel `profiles:snapshot`
+
+**Étapes** :
+
+1. Créer un compte test `qa263` et un dossier `/home/profiles/qa263.V6` (>200 Mo
+   pour déclencher la pastille), plus un dossier orphelin `/home/profiles/ghost.V2`.
+2. Lancer le job : `php artisan profiles:snapshot`.
+3. **Attendu** : sortie `ProfilesSnapshot terminé — dossiers scannés : N | users mis à jour : M | profils orphelins : 1 | durée : …s`, exit 0.
+4. Vérifier en BDD : `users.profile_snapshot` de `qa263` contient `size_mb` ≈ taille réelle ; `SystemSetting` clé `profiles.orphans` contient `ghost.V2`.
+
+#### Scénario 26.3-2 — Fail-soft `/home/profiles` absent
+
+**Étapes** :
+
+1. Renommer temporairement `/home/profiles` (ou tester sur un env sans ce dossier).
+2. Lancer `php artisan profiles:snapshot`.
+3. **Attendu** : `Log::error [RoamingProfileService]` (racine absente), message d'erreur en sortie, exit 1 (FAILURE) **non fatal pour le scheduler**, et le snapshot précédent (colonne + `profiles.orphans`) **conservé** (pas effacé).
+
+#### Scénario 26.3-3 — Planification nocturne 04h30
+
+**Étapes** :
+
+1. `php artisan schedule:list` (ou inspection `Console\Kernel`).
+2. **Attendu** : `profiles:snapshot` planifié `daily at 04:30`, `withoutOverlapping`, `runInBackground`. Créneau libre (après `script-logs:archive:rotate` 04:00).
+
+#### Scénario 26.3-4 — INVARIANT PERF : aucun `du`/scan au render
+
+**Pré-requis** : snapshot 26.3-1 OK.
+
+**Étapes** :
+
+1. Ouvrir `/app/users` (tableau) puis l'onglet `/admin/settings` → Profils itinérants.
+2. Surveiller en parallèle sur la VM : `pgrep -af du` ou `auditctl` sur `/home/profiles`.
+3. **Attendu** : aucun processus `du`, aucun accès FS à `/home/profiles` déclenché par l'affichage. Les valeurs (pastille volumineux, compteur orphelins) viennent **uniquement** du cache (colonne + SystemSetting). Verrouillé par test `ProfilsItinerantsOrphanPurgeTest::it_never_shells_out_at_render_or_purge`.
+
+### Section — Purge des orphelins (anti-désastre)
+
+#### Scénario 26.3-5 — Purge déplace vers `_Trash_users`
+
+**Pré-requis** : 26.3-1 OK avec `ghost.V2` orphelin.
+
+**Étapes** :
+
+1. Onglet Profils itinérants : le bandeau « 1 profil(s) itinérant(s) orphelin(s) » s'affiche.
+2. Cliquer « Purger les profils orphelins » → confirmer.
+3. **Attendu** : toast « 1 profil(s) orphelin(s) déplacé(s) vers la corbeille _Trash_users », le compteur passe à 0, le bandeau disparaît. `/home/profiles/ghost.V2` n'existe plus ; `/home/admin/_Trash_users/ghost.V2.<horodatage>` existe (réversible).
+
+#### Scénario 26.3-6 — Re-vérification : compte recréé entre snapshot et purge
+
+**Pré-requis** : cache `profiles.orphans` contient `ghost.V2`.
+
+**Étapes** :
+
+1. Créer un compte `ghost` (login matchant le dossier orphelin) APRÈS le snapshot.
+2. Lancer la purge.
+3. **Attendu** : `ghost.V2` **n'est pas supprimé** (re-vérification BDD au moment de l'action — le cache pouvait dater). `Log::info` « dossier ignoré (compte réapparu) ». Aucune perte de données. Verrouillé par test `RoamingProfileCleanupTest::it_never_purges_a_dir_whose_user_exists`.
+
+#### Scénario 26.3-7 — Gardes anti path-traversal
+
+**Étapes** (test, non destructif) :
+
+1. Injecter en BDD une entrée `profiles.orphans` contenant `../../etc`, `foo/bar`, `evil;rm`.
+2. Lancer la purge.
+3. **Attendu** : aucune entrée déplacée (`moved=0`), toutes rejetées (`isValueSafe` + veto `..` + refus `/` + realpath confiné sous `/home/profiles`). `Log::warning` par entrée. Verrouillé par `RoamingProfileCleanupTest::it_skips_purge_for_path_traversal_and_slash_names`.
+
+#### Scénario 26.3-8 — Gating `server.admin` du bouton purge
+
+**Étapes** :
+
+1. Se connecter avec un compte **sans** `server.admin`.
+2. Tenter d'atteindre `purgeOrphans` (payload Livewire forgé).
+3. **Attendu** : `403`. Double gate (`mount()` + méthode). Verrouillé par `ProfilsItinerantsOrphanPurgeTest::it_blocks_purge_without_server_admin_even_on_forged_payload`.
+
+### Post-correctifs review 2026-06-15 (Story 26.3)
+
+| Incident | Scénario de non-régression |
+|----------|----------------------------|
+| #1 `du` exit-code ≠ 0 (sous-dossier illisible) jetait tout le snapshot | 26.3-9 |
+| S1 `rename` cross-device (`/home/profiles` mount dédié en prod) | 26.3-10 (vérif infra) |
+
+#### Scénario 26.3-9 — `du` en succès PARTIEL : le snapshot reste exploitable
+
+**Contexte** : sur un `/home/profiles` réel, des profils peuvent être illisibles (ACL, session ouverte pendant le scan). `du` sort alors en code ≠ 0 tout en imprimant des tailles valides. Le snapshot ne doit PAS être abandonné.
+
+1. Sur la VM, rendre un sous-dossier de `/home/profiles` illisible : `chmod 000 /home/profiles/<un_profil>`.
+2. Lancer `php artisan profiles:snapshot`.
+3. **Attendu** : exit `SUCCESS`, les autres profils sont bien persistés (colonne `users.profile_snapshot` + `SystemSetting profiles.orphans` peuplés), un log `warning` « du en code non-zéro » mentionne `parsed_dirs > 0`. La pastille et le compteur ne sont PAS vides.
+4. Restaurer : `chmod 700 /home/profiles/<un_profil>`.
+5. **Échec total** (sortie vide / `/home/profiles` illisible en entier) → exit non-fatal, log `error`, snapshot PRÉCÉDENT conservé (fail-soft).
+
+#### Scénario 26.3-10 — Vérif infra : corbeille sur le même filesystem que `/home/profiles`
+
+**Contexte** : la purge déplace via `rename()`, qui échoue (`EXDEV`) si `/home/profiles` et `/home/admin/_Trash_users` sont sur des mounts distincts.
+
+1. `stat -c '%d %n' /home/profiles /home/admin` → les deux doivent afficher **le même device id**.
+2. Si devices différents (volume profils dédié) : la purge échouera systématiquement (compteur `errors`). Prévoir un fallback `mv`/copy+unlink (cf. story Notes post-review S1) AVANT d'activer la purge en prod.
+
+### Checklist rapide — Story 26.3
+
+- [ ] Scénario 26.3-1 : snapshot manuel peuple colonne + orphans
+- [ ] Scénario 26.3-2 : fail-soft FS absent (snapshot conservé)
+- [ ] Scénario 26.3-3 : planification 04h30
+- [ ] Scénario 26.3-4 : INVARIANT aucun `du` au render
+- [ ] Scénario 26.3-5 : purge → `_Trash_users` (réversible)
+- [ ] Scénario 26.3-6 : compte recréé jamais purgé (re-vérif)
+- [ ] Scénario 26.3-7 : gardes path-traversal
+- [ ] Scénario 26.3-8 : gating server.admin
+- [ ] Scénario 26.3-9 : `du` succès partiel → snapshot exploitable (review #1)
+- [ ] Scénario 26.3-10 : vérif infra corbeille même device (review S1)
+
+---
+
+*Dernière mise à jour : 2026-06-15 (Story 26.3 — nettoyage natif profils itinérants ; post-correctifs review #1/S1)*

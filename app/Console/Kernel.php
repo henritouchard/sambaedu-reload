@@ -166,6 +166,18 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping()
                  ->runInBackground();
 
+        // Story 26.3 — Snapshot quotidien des tailles de profils itinérants à 04h30.
+        // Scanne `/home/profiles` (`du --max-depth=1 -b`) UNE FOIS par nuit et
+        // persiste les tailles par-login (users.profile_snapshot) + la liste des
+        // profils orphelins (SystemSetting profiles.orphans). L'UI (tableau
+        // /app/users + onglet admin profils-itinérants) lit le cache : ZÉRO
+        // shellout/scan FS au render (contrainte perf invariant). Créneau 04:30
+        // libre (après script-logs:archive:rotate 04:00).
+        $schedule->command('profiles:snapshot')
+                 ->dailyAt('04:30')
+                 ->withoutOverlapping()
+                 ->runInBackground();
+
         // Story 16.14 Q2 — Warm-up cache santé GPO daily 22:00.
         // Pré-charge `getLinks` + `versionNumber` pour chaque GPO du domaine
         // (TTL 24 h) — évite N appels samba-tool sur le listing admin matinal.

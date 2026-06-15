@@ -119,4 +119,72 @@ class UsersIndexPageQuotaColumnTest extends TestCase
             // modale de délégation, badges "Externe"/"Inactif" — donc pas d'assert global).
             ->assertSeeHtml('title="Aucun snapshot disponible"');
     }
+
+    /**
+     * Story 26.3 — AC #2 : pastille « profil itinérant volumineux » au-delà du
+     * seuil. La valeur provient EXCLUSIVEMENT du cache (colonne profile_snapshot).
+     */
+    public function test_it_shows_large_profile_badge_above_threshold(): void
+    {
+        $user = User::query()->create([
+            'login' => 'big-profile',
+            'firstname' => 'Big',
+            'lastname' => 'Profile',
+            'role' => 'eleve',
+            'is_active' => true,
+            'profile_snapshot' => [
+                'size_bytes' => 314572800,
+                'size_mb' => 300.0, // > seuil 200 Mo
+                'dir' => 'big-profile.V6',
+                'captured_at' => '2026-06-15T04:30:00+02:00',
+            ],
+        ]);
+
+        Livewire::test('pages::users.index')
+            ->assertSee('big-profile')
+            ->assertSeeHtml('Profil itinérant volumineux')
+            ->assertSee('300 Mo');
+    }
+
+    public function test_it_hides_large_profile_badge_below_threshold(): void
+    {
+        User::query()->create([
+            'login' => 'small-profile',
+            'firstname' => 'Small',
+            'lastname' => 'Profile',
+            'role' => 'eleve',
+            'is_active' => true,
+            'profile_snapshot' => [
+                'size_bytes' => 52428800,
+                'size_mb' => 50.0, // < seuil 200 Mo
+                'dir' => 'small-profile.V1',
+                'captured_at' => '2026-06-15T04:30:00+02:00',
+            ],
+        ]);
+
+        Livewire::test('pages::users.index')
+            ->assertSee('small-profile')
+            ->assertDontSeeHtml('Profil itinérant volumineux');
+    }
+
+    /**
+     * AC #2 : un user SANS entrée de cache (`profile_snapshot = null`) n'affiche
+     * AUCUN badge profil (ni erreur). Verrouille le chemin NULL explicitement
+     * (review 26.3 #7) — distinct du cas « sous le seuil ».
+     */
+    public function test_it_shows_no_profile_badge_when_snapshot_null(): void
+    {
+        User::query()->create([
+            'login' => 'no-profile-snap',
+            'firstname' => 'No',
+            'lastname' => 'Snap',
+            'role' => 'eleve',
+            'is_active' => true,
+            'profile_snapshot' => null,
+        ]);
+
+        Livewire::test('pages::users.index')
+            ->assertSee('no-profile-snap')
+            ->assertDontSeeHtml('Profil itinérant volumineux');
+    }
 }

@@ -74,6 +74,7 @@ class User extends Authenticatable implements Wireable
         'pwd_reset_at',
         'password_changed_at',
         'quota_snapshot',
+        'profile_snapshot',
     ];
 
     protected $hidden = [
@@ -95,6 +96,10 @@ class User extends Authenticatable implements Wireable
         // la migration `add_quota_snapshot_to_users_table` et dans la
         // commande `QuotaSnapshotCommand`.
         'quota_snapshot' => 'array',
+        // Snapshot taille du profil itinérant /home/profiles (story 26.3) —
+        // alimenté par la commande `profiles:snapshot`. Structure documentée
+        // dans la migration `add_profile_snapshot_to_users_table`.
+        'profile_snapshot' => 'array',
     ];
 
     // ========================================================================

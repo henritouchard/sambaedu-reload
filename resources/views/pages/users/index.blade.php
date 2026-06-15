@@ -301,7 +301,7 @@ new class extends Component {
     {
         $term = trim($this->search);
 
-        $query = User::query()->select(['id', 'login', 'firstname', 'lastname', 'fullname', 'is_active', 'school_code', 'quota_snapshot']);
+        $query = User::query()->select(['id', 'login', 'firstname', 'lastname', 'fullname', 'is_active', 'school_code', 'quota_snapshot', 'profile_snapshot']);
 
         if (mb_strlen($term) >= 4) {
             $normalizedSearch = '%' . mb_strtolower($term) . '%';
@@ -636,11 +636,30 @@ new class extends Component {
                                             }
                                         }
                                     @endphp
-                                    @if ($percent === null)
-                                        <span class="text-base-content/40" title="Aucun snapshot disponible">—</span>
-                                    @else
-                                        <span class="badge {{ $badgeClass }}" title="Utilisation /home">{{ $percent }}%</span>
-                                    @endif
+                                    @php
+                                        // Story 26.3 — pastille « profil itinérant volumineux ».
+                                        // Lecture du cache JSON profile_snapshot (zéro shellout,
+                                        // alimenté par le job nocturne profiles:snapshot). Badge
+                                        // affiché uniquement au-delà du seuil ; rien sinon.
+                                        $profileSnap = $user->profile_snapshot ?? null;
+                                        $profileMb = is_array($profileSnap) ? ($profileSnap['size_mb'] ?? null) : null;
+                                        $largeThreshold = \App\Services\RoamingProfileService::LARGE_PROFILE_THRESHOLD_MB;
+                                        $isLargeProfile = $profileMb !== null && (float) $profileMb >= $largeThreshold;
+                                    @endphp
+                                    <div class="flex items-center gap-1 flex-wrap">
+                                        @if ($percent === null)
+                                            <span class="text-base-content/40" title="Aucun snapshot disponible">—</span>
+                                        @else
+                                            <span class="badge {{ $badgeClass }}" title="Utilisation /home">{{ $percent }}%</span>
+                                        @endif
+                                        @if ($isLargeProfile)
+                                            <span class="badge badge-warning gap-1"
+                                                title="Profil itinérant volumineux ({{ $profileMb }} Mo, seuil {{ $largeThreshold }} Mo)">
+                                                <i class="fa-solid fa-folder-tree text-[10px]"></i>
+                                                {{ $profileMb }} Mo
+                                            </span>
+                                        @endif
+                                    </div>
                                 </td>
                                 <td>
                                     <div class="flex gap-1 flex-wrap">
