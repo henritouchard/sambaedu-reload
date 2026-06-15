@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Shortcut;
 use App\Services\FileManagerService;
 use App\Services\ImageManagerService;
+use App\Services\Shortcuts\ShortcutIconAssetService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 
@@ -14,11 +15,16 @@ class ShortcutsService
     private string $iconsPath = '/etc/sambaedu/applications/shortcuts/';
     private FileManagerService $fileManager;
     private ImageManagerService $imageManager;
+    private ShortcutIconAssetService $iconAssetService;
 
-    public function __construct(FileManagerService $fileManager, ImageManagerService $imageManager)
-    {
+    public function __construct(
+        FileManagerService $fileManager,
+        ImageManagerService $imageManager,
+        ?ShortcutIconAssetService $iconAssetService = null,
+    ) {
         $this->fileManager = $fileManager;
         $this->imageManager = $imageManager;
+        $this->iconAssetService = $iconAssetService ?? new ShortcutIconAssetService();
     }
 
     /**
@@ -300,11 +306,48 @@ class ShortcutsService
         if ($iconFile) {
             $iconPath = $this->handleIconUpload($iconFile, $shortcutData['name']);
             if ($iconPath) {
+                // `windows_icon` reste le NOM NU (legacy + UI — INCHANGÉ).
                 $shortcutData['windows_icon'] = $iconPath;
+
+                // Story 27.7 (AC1) : content-adressage de l'icône uploadée vers
+                // le dossier servi par Apache + persistance filename/checksum sur
+                // le raccourci DB s'il existe (le provider lit la DB). Le `.ico`
+                // legacy name-addressed (`<name>.ico`) vient d'être produit par
+                // handleIconUpload — on le content-adresse en plus (jamais à sa
+                // place). Fail-soft : un échec asset ne casse pas la sauvegarde
+                // du raccourci (le backfill rattrapera).
+                $this->persistIconAsset($shortcutData['name']);
             }
         }
 
         return $this->saveShortcut($shortcutData);
+    }
+
+    /**
+     * Content-adresse l'icône uploadée `<name>.ico` et persiste
+     * `icon_asset`/`icon_checksum` sur le raccourci DB correspondant (résolu par
+     * nom nu — la même clé que `windows_icon`). Story 27.7, AC1.
+     *
+     * Idempotent + fail-soft : source absente / pas de raccourci DA encore
+     * importé → no-op silencieux (le backfill artisan rattrape).
+     */
+    private function persistIconAsset(string $shortcutName): void
+    {
+        $sourceIco = rtrim($this->iconsPath, '/') . '/' . $shortcutName . '.ico';
+        $asset = $this->iconAssetService->contentAddress($sourceIco);
+        if ($asset === null) {
+            return;
+        }
+
+        // Lie tous les raccourcis DB dont l'icône uploadée == ce nom nu
+        // (windows_icon OU icon_path), exactement la résolution du provider.
+        Shortcut::query()
+            ->where('windows_icon', $shortcutName)
+            ->orWhere('icon_path', $shortcutName)
+            ->update([
+                'icon_asset' => $asset['asset'],
+                'icon_checksum' => $asset['checksum'],
+            ]);
     }
 
     /**

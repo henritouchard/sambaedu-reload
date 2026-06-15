@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Enums\StateMode;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -32,6 +31,8 @@ use Livewire\Wireable;
  * @property string|null $linux_icon Chemin de l'icône Linux
  * @property string|null $linux_startupwmclass StartupWMClass Linux
  * @property string|null $icon_path Chemin de l'icône uploadée
+ * @property string|null $icon_asset Filename content-addressed `<sha256>.ico` de l'icône uploadée (Story 27.7)
+ * @property string|null $icon_checksum SHA-256 hex du `.ico` content-addressed (Story 27.7)
  * @property string|null $category Catégorie du raccourci
  * @property string|null $description Description du raccourci
  * @property bool $is_active Raccourci actif
@@ -42,7 +43,6 @@ use Livewire\Wireable;
  * @property bool $is_dynamic Contient des variables dynamiques ($user, $userprofile, etc.)
  * @property array|null $compiled_data Données pré-compilées du raccourci
  * @property \DateTime|null $compiled_at Timestamp de la dernière compilation
- * @property \App\Enums\StateMode|null $mode Mode d'application desired-state (strict/default) — Story 27.1
  * @property \DateTime $created_at
  * @property \DateTime $updated_at
  */
@@ -74,6 +74,8 @@ class Shortcut extends Model implements Wireable
         'linux_icon',
         'linux_startupwmclass',
         'icon_path',
+        'icon_asset',
+        'icon_checksum',
         'category',
         'description',
         'is_active',
@@ -86,7 +88,6 @@ class Shortcut extends Model implements Wireable
         'compiled_at',
         'ad_users',
         'ad_user_groups',
-        'mode',
     ];
 
     /**
@@ -104,7 +105,6 @@ class Shortcut extends Model implements Wireable
         'compiled_at' => 'datetime',
         'ad_users' => 'array',
         'ad_user_groups' => 'array',
-        'mode' => StateMode::class,
     ];
 
     /**
@@ -157,7 +157,7 @@ class Shortcut extends Model implements Wireable
             'shortcut_assignables',
             'shortcut_id',
             'assignable_id'
-        )->withTimestamps();
+        )->withPivot('mode')->withTimestamps();
     }
 
     /**
@@ -171,7 +171,7 @@ class Shortcut extends Model implements Wireable
             'shortcut_assignables',
             'shortcut_id',
             'assignable_id'
-        )->withTimestamps();
+        )->withPivot('mode')->withTimestamps();
     }
 
     /**

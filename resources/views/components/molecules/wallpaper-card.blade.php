@@ -306,7 +306,9 @@ new class extends Component {
                     </div>
                 @endif
 
-                {{-- Toggle strict/default (Story 27.1, FR26) — visible quand une règle existe. --}}
+                {{-- Toggle strict/default PAR CIBLE (Story 27.3) — le fond cible un
+                     seul owner (1 cible/règle), le mode est donc déjà posé au geste
+                     d'assignation sur sa propre ligne `wallpapers.mode`. --}}
                 @if ($this->wallpaper)
                     {{-- Défaut = défaut du PROVIDER (wallpaper → `default`), PAS
                          `strict` en dur (review #M1) : quand `mode` est null en

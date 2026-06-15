@@ -254,9 +254,11 @@ new #[Title('Infos à transmettre — overlay')] class extends Component {
                             @error('expiresInHours') <span class="text-error text-sm mt-1">{{ $message }}</span> @enderror
                         </div>
 
-                        {{-- Mode d'application desired-state (Story 27.1, FR26). --}}
+                        {{-- Mode d'application desired-state — PAR CIBLE (Story 27.3) :
+                             le signal EST l'assignation (1 cible/signal), le mode est
+                             donc déjà posé au geste d'assignation sur sa propre ligne. --}}
                         <div class="form-control">
-                            <label class="label"><span class="label-text">Application</span></label>
+                            <label class="label"><span class="label-text">Application sur cette cible</span></label>
                             <select wire:model="mode" class="select select-bordered">
                                 <option value="strict">Strict (réimposé en cas de dérive)</option>
                                 <option value="default">Souple (dérive tolérée)</option>

@@ -191,21 +191,62 @@ class ShortcutsStateProviderTest extends TestCase
     }
 
     #[Test]
-    public function mode_is_read_per_rule_from_the_table(): void
+    public function mode_is_read_per_assignment_from_the_pivot(): void
     {
-        $strict = $this->shortcut('strict', ['mode' => StateMode::Strict]);
-        $default = $this->shortcut('lax', ['mode' => StateMode::Default]);
-        $unset = $this->shortcut('unset'); // mode null
-        $this->assign($strict, Workstation::class, $this->ws->id);
-        $this->assign($default, Workstation::class, $this->ws->id);
-        $this->assign($unset, Workstation::class, $this->ws->id);
+        // Story 27.3 : le mode vit sur le LIEN (`shortcut_assignables.mode`), plus
+        // sur la règle. Trois assignations, trois modes distincts sur le lien.
+        $strict = $this->shortcut('strict');
+        $default = $this->shortcut('lax');
+        $unset = $this->shortcut('unset');
+        $this->assign($strict, Workstation::class, $this->ws->id, StateMode::Strict);
+        $this->assign($default, Workstation::class, $this->ws->id, StateMode::Default);
+        $this->assign($unset, Workstation::class, $this->ws->id); // mode null sur le lien
 
         $byName = $this->provider->itemsFor($this->ctx())
             ->keyBy(fn (StateCandidate $c): string => $c->payload['name']);
 
         self::assertSame(StateMode::Strict, $byName['strict']->mode);
         self::assertSame(StateMode::Default, $byName['lax']->mode);
-        self::assertNull($byName['unset']->mode, 'null = défaut résolu côté compilateur');
+        self::assertNull($byName['unset']->mode, 'null sur le lien = défaut résolu côté compilateur');
+    }
+
+    #[Test]
+    public function same_rule_on_two_mailles_carries_each_assignment_mode(): void
+    {
+        // LE cœur de 27.3 : un MÊME raccourci, verrouillé (strict) sur un parc et
+        // modifiable (default) sur un autre — chaque candidat porte le mode de SON
+        // assignation, pas un mode global de règle.
+        $shortcut = $this->shortcut('pronote');
+        $this->assign($shortcut, WorkstationGroup::class, $this->room->id, StateMode::Strict);
+        $this->assign($shortcut, WorkstationGroup::class, $this->parc->id, StateMode::Default);
+
+        $byMaille = $this->provider->itemsFor($this->ctx())
+            ->keyBy(fn (StateCandidate $c): string => $c->maille->value);
+
+        self::assertCount(2, $byMaille, 'une règle sur 2 mailles → 2 candidats');
+        self::assertSame(StateMode::Strict, $byMaille[StateMaille::PhysicalGroup->value]->mode);
+        self::assertSame(StateMode::Default, $byMaille[StateMaille::LogicalGroup->value]->mode);
+    }
+
+    #[Test]
+    public function mode_is_read_per_assignment_for_usergroup_and_user_mailles(): void
+    {
+        // Story 27.3 : les mailles UserGroup/User passent par le même pivot
+        // `shortcut_assignables` (JOIN SQL brut, alias `assignment_mode`) que les
+        // mailles poste/groupe — on prouve que le mode du lien remonte aussi pour
+        // ces deux branches morph (couverture du chemin user-scope).
+        $ug = $this->shortcut('ug-strict');
+        $usr = $this->shortcut('user-lax');
+        $this->assign($ug, UserGroup::class, $this->userGroup->id, StateMode::Strict);
+        $this->assign($usr, User::class, $this->user->id, StateMode::Default);
+
+        $byName = $this->provider->itemsFor($this->ctx())
+            ->keyBy(fn (StateCandidate $c): string => $c->payload['name']);
+
+        self::assertSame(StateMode::Strict, $byName['ug-strict']->mode);
+        self::assertSame(StateMaille::UserGroup, $byName['ug-strict']->maille);
+        self::assertSame(StateMode::Default, $byName['user-lax']->mode);
+        self::assertSame(StateMaille::User, $byName['user-lax']->maille);
     }
 
     #[Test]
@@ -236,6 +277,74 @@ class ShortcutsStateProviderTest extends TestCase
         self::assertCount(0, $this->provider->itemsFor($this->ctx()));
     }
 
+    // --- Story 27.7 : icône UPLOADÉE (nom nu) → asset content-addressed -------
+
+    #[Test]
+    public function uploaded_icon_bare_name_emits_asset_and_checksum(): void
+    {
+        // Icône UPLOADÉE : `windows_icon` = nom NU (`Calculatrice`), un asset
+        // content-addressed existe en base → payload porte icon_asset/checksum
+        // À CÔTÉ de `icon` (nom nu brut). PAS d'URL (l'agent dérive).
+        $sha = str_repeat('a', 64);
+        $sc = $this->shortcut('calc', [
+            'place' => Shortcut::PLACE_STARTUP,
+            'windows_link' => 'C:\\Windows\\System32\\calc.exe',
+            'windows_icon' => 'Calculatrice',
+            'icon_asset' => $sha . '.ico',
+            'icon_checksum' => $sha,
+        ]);
+        $this->assign($sc, Workstation::class, $this->ws->id);
+
+        $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
+
+        self::assertSame('Calculatrice', $payload['icon']);
+        self::assertSame($sha . '.ico', $payload['icon_asset']);
+        self::assertSame($sha, $payload['icon_checksum']);
+        self::assertArrayNotHasKey('url', $payload, 'décision n° 4 : pas de champ url');
+    }
+
+    #[Test]
+    public function real_icon_path_keeps_icon_raw_and_emits_no_asset(): void
+    {
+        // Chemin RÉEL (`firefox.exe,0`) → `icon` brut, JAMAIS d'asset (régression
+        // zéro pour ce cas, déjà géré par ParseIconLocation 2.2.1).
+        $sc = $this->shortcut('ff', [
+            'place' => Shortcut::PLACE_STARTUP,
+            'windows_icon' => 'C:\\Program Files\\Mozilla Firefox\\firefox.exe,0',
+            // même si des colonnes étaient renseignées par erreur, un chemin
+            // réel ne déclenche PAS l'émission d'asset.
+            'icon_asset' => str_repeat('b', 64) . '.ico',
+            'icon_checksum' => str_repeat('b', 64),
+        ]);
+        $this->assign($sc, Workstation::class, $this->ws->id);
+
+        $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
+
+        self::assertSame('C:\\Program Files\\Mozilla Firefox\\firefox.exe,0', $payload['icon']);
+        self::assertArrayNotHasKey('icon_asset', $payload);
+        self::assertArrayNotHasKey('icon_checksum', $payload);
+    }
+
+    #[Test]
+    public function bare_name_without_backfilled_asset_falls_back_to_raw_icon(): void
+    {
+        // Nom nu mais AUCUN asset content-addressed en base (`icon_asset` null) :
+        // on tombe sur `icon` brut (ancien comportement), JAMAIS un asset cassé
+        // (piège n° 3). Le backfill rattrapera.
+        $sc = $this->shortcut('vivaldi', [
+            'place' => Shortcut::PLACE_STARTUP,
+            'windows_icon' => 'vivaldi',
+            // icon_asset / icon_checksum laissés null
+        ]);
+        $this->assign($sc, Workstation::class, $this->ws->id);
+
+        $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
+
+        self::assertSame('vivaldi', $payload['icon']);
+        self::assertArrayNotHasKey('icon_asset', $payload);
+        self::assertArrayNotHasKey('icon_checksum', $payload);
+    }
+
     /**
      * @param  array<string,mixed>  $attrs
      */
@@ -255,12 +364,13 @@ class ShortcutsStateProviderTest extends TestCase
      * accepte tout modèle SQL — WorkstationGroup, Workstation, UserGroup,
      * User : ciblage MVP pivot SQL, décision n° 8).
      */
-    private function assign(Shortcut $shortcut, string $type, int $id): void
+    private function assign(Shortcut $shortcut, string $type, int $id, ?StateMode $mode = null): void
     {
         \Illuminate\Support\Facades\DB::table('shortcut_assignables')->insert([
             'shortcut_id' => $shortcut->id,
             'assignable_type' => $type,
             'assignable_id' => $id,
+            'mode' => $mode?->value, // Story 27.3 : mode PAR ASSIGNATION sur le lien.
             'created_at' => now(),
             'updated_at' => now(),
         ]);

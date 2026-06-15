@@ -13,23 +13,25 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.1 — cast `mode` (enum App\Enums\StateMode) sur les 3 tables qui
- * portent désormais le toggle strict/default (shortcuts + wallpapers +
- * overlay_signals, décision n° 2). Vérifie aussi la non-régression : `mode`
- * null reste null (le défaut est résolu côté provider, pas en base).
+ * Story 27.1 — cast `mode` (enum App\Enums\StateMode) sur les tables qui portent
+ * le toggle strict/default. Révisé Story 27.3 : pour `shortcuts` le mode a quitté
+ * la RÈGLE pour l'ASSIGNATION (`shortcut_assignables.mode`, plus de cast sur le
+ * modèle `Shortcut`) — la couverture du mode shortcuts vit désormais dans
+ * `ShortcutsStateProviderTest`. `wallpapers` et `overlay_signals` gardent le mode
+ * sur leur table (déjà « par cible », Option A) : cast inchangé, testé ici.
  */
 class StateModeCastTest extends TestCase
 {
     use RefreshDatabase;
 
     #[Test]
-    public function shortcut_casts_mode_to_enum_and_keeps_null(): void
+    public function shortcut_no_longer_casts_mode_on_the_model(): void
     {
-        $strict = Shortcut::create(['key' => 'k1', 'name' => 'A', 'place' => 'desktop', 'mode' => StateMode::Strict]);
-        $unset = Shortcut::create(['key' => 'k2', 'name' => 'B', 'place' => 'desktop']);
+        // Story 27.3 : `mode` a quitté `$casts`/`$fillable` du modèle Shortcut.
+        $sc = new Shortcut();
 
-        self::assertSame(StateMode::Strict, $strict->fresh()->mode);
-        self::assertNull($unset->fresh()->mode, 'mode non déclaré reste null (défaut résolu côté provider)');
+        self::assertArrayNotHasKey('mode', $sc->getCasts(), 'le cast mode a quitté le modèle Shortcut (mode = sur le pivot)');
+        self::assertNotContains('mode', $sc->getFillable(), 'mode n\'est plus fillable sur Shortcut');
     }
 
     #[Test]

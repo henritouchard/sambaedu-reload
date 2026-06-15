@@ -40,9 +40,6 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
     public string $linux_path = '';
     public string $linux_startupwmclass = '';
 
-    // Mode d'application desired-state (Story 27.1, FR26) : strict|default.
-    public string $mode = 'strict';
-
     // Upload d'icône
     #[Validate('image|max:2048')] // 2MB Max
     public $icon_file = null;
@@ -83,8 +80,6 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
             $this->linux_args = $this->shortcutModel->linux_args ?? '';
             $this->linux_path = $this->shortcutModel->linux_path ?? '';
             $this->linux_startupwmclass = $this->shortcutModel->linux_startupwmclass ?? '';
-            // Mode desired-state : null en base = défaut strict (la cible fait loi).
-            $this->mode = $this->shortcutModel->mode?->value ?? 'strict';
             $this->loadAssignments();
         } catch (\Exception $e) {
             Log::error('ShortcutPage loadShortcut error: ' . $e->getMessage());
@@ -116,7 +111,6 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
             'linux_path' => 'nullable|string|max:500',
             'linux_startupwmclass' => 'nullable|string|max:255',
             'icon_file' => 'nullable|image|max:2048',
-            'mode' => 'required|in:strict,default',
         ]);
 
         try {
@@ -130,7 +124,6 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
                 'linux_args' => $this->linux_args,
                 'linux_path' => $this->linux_path,
                 'linux_startupwmclass' => $this->linux_startupwmclass,
-                'mode' => $this->mode,
             ]);
 
             // Gérer l'icône si uploadée
@@ -239,22 +232,33 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
         array $workstationGroupIds = [],
         array $workstationIds = [],
         array $adUsers = [],
-        array $adUserGroups = []
+        array $adUserGroups = [],
+        string $mode = 'strict'
     ): void {
         if (!$this->shortcutModel) {
             return;
         }
 
+        // Drift policy PAR ASSIGNATION (Story 27.3) : le mode strict|default est
+        // posé sur le LIEN (pivot `shortcut_assignables.mode`), au lot pour les
+        // cibles confirmées dans la modale. null sur le lien = défaut strict
+        // résolu côté provider.
+        $mode = in_array($mode, ['strict', 'default'], true) ? $mode : 'strict';
+
         try {
             $count = 0;
 
             if (!empty($workstationGroupIds)) {
-                $this->shortcutModel->workstationGroups()->syncWithoutDetaching($workstationGroupIds);
+                $this->shortcutModel->workstationGroups()->syncWithoutDetaching(
+                    collect($workstationGroupIds)->mapWithKeys(fn ($id) => [$id => ['mode' => $mode]])->all()
+                );
                 $count += count($workstationGroupIds);
             }
 
             if (!empty($workstationIds)) {
-                $this->shortcutModel->workstations()->syncWithoutDetaching($workstationIds);
+                $this->shortcutModel->workstations()->syncWithoutDetaching(
+                    collect($workstationIds)->mapWithKeys(fn ($id) => [$id => ['mode' => $mode]])->all()
+                );
                 $count += count($workstationIds);
             }
 

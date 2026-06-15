@@ -1532,6 +1532,144 @@ La page `parc-settings/agent/` (route `parc-settings.agent`, `can:computer.insta
    réutilisée à l'identique côté SYSTEM ; aucun bump). Toute divergence d'un octet
    = bug, jamais un bump à acter.
 
+## Section 16 — Drift policy PAR ASSIGNATION : le mode suit la cible (Story 27.3)
+
+> **Révision de 27.1.** En 27.1, le mode `strict|default` (drift policy) était posé
+> sur la **règle**. 27.3 le rend **par assignation** : un même raccourci peut être
+> `strict` (verrouillé) sur un parc et `default` (dérive humaine tolérée) sur un
+> autre. **Asymétrie structurelle (piège central)** : seul `shortcuts` a une vraie
+> table pivot N-à-M (`shortcut_assignables`) → le `mode` y est **déplacé**
+> (`shortcuts.mode` → `shortcut_assignables.mode`). `wallpapers` (owner sur la
+> table) et `overlay_signals` (ciblage colonne sur la table) ont « règle =
+> assignation » (1 cible/règle) → le `mode` **reste sur leur table**, déjà « par
+> cible » (Option A, aucun pivot créé). **Objectif clé : contrat agent + golden
+> INTACTS** — le `mode` n'a JAMAIS été émis au payload v1 (résolu au compilateur),
+> donc `state.v1.json`/`report.v1.json` et `FROZEN_STATE_HASH`/`frozenStateHash`
+> ne bougent PAS du fait de cette story (un bump dû au mode = régression).
+>
+> **Actions /vm** : `migrate:status` puis `php artisan migrate --force` (2
+> migrations : add `mode` sur `shortcut_assignables` + drop `mode` de `shortcuts`).
+> Pas de `config:cache`/`route:cache` (aucun config/route ajouté).
+
+### Scénario 16.1 — Un même raccourci, strict sur un parc et default sur un autre (lab Windows)
+
+1. Côté serveur : créer un raccourci (ex. « Pronote »), l'assigner à DEUX parcs
+   via la modale d'assignation — toggle « autoriser l'utilisateur à modifier »
+   **décoché** (strict) pour le parc A, **coché** (default) pour le parc B.
+2. Sur un poste du parc A (mode `strict`) : un prof supprime le `.lnk` Pronote →
+   au passage suivant l'agent le **recrée** (la cible fait loi).
+3. Sur un poste du parc B (mode `default`) : un prof supprime le `.lnk` Pronote →
+   l'agent **ne le recrée pas** et rapporte `drifted_allowed` (dérive tolérée).
+4. **Preuve serveur** : `shortcut_assignables.mode` = `strict` pour le lien parc A,
+   `default` pour le lien parc B (le même `shortcut_id` porte deux modes).
+
+### Scénario 16.2 — Défaut strict quand l'assignation ne déclare pas de mode
+
+1. Assigner un raccourci sans toucher le toggle (ou via une assignation pré-27.3
+   restée `mode = null`).
+2. **Attendu** : le compilateur retombe sur `StateProvider::mode()` = `strict`
+   (la cible fait loi). `null` sur le lien = « non déclaré », jamais un default SQL.
+
+### Scénario 16.3 — Le toggle a quitté le formulaire de règle
+
+1. Ouvrir l'édition d'un raccourci : **aucun** champ « Application sur le poste »
+   (mode) n'est présent dans le formulaire de règle (déplacé vers l'assignation).
+2. Le mode se règle **uniquement** au geste d'assignation (modale raccourcis ;
+   carte wallpaper ; création overlay — pour ces deux derniers, déjà « par cible »).
+
+### Scénario 16.4 — Golden + hash inchangés (non-régression contrat)
+
+1. `git diff tests/Fixtures/Agent/state.v1.json report.v1.json` (hors changements
+   d'autres stories) **vide** pour ce qui touche le `mode`.
+2. `ContractV1Test::state_hash_is_frozen_regression_guard` VERT sans bump ; Go
+   `go test ./shared/ -run TestHash` VERT (le `mode` n'a jamais fui au payload).
+
+## Section 17 — Icône UPLOADÉE → asset statique servi par Apache (Story 27.7)
+
+> **Le trou de parité fermé** : une icône uploadée (`windows_icon` = nom NU,
+> ex. `Calculatrice`) s'affichait en « feuille blanche » côté poste car le
+> provider émettait le nom nu brut comme `IconLocation`. 27.7 livre le bon
+> modèle : asset content-addressed servi en STATIQUE + GET HTTP simple agent +
+> IconLocation locale. À dérouler en lab Windows AVANT l'extinction legacy
+> (27.6).
+
+**Pré-requis VM (ACTION HUMAINE)** :
+- Migration jouée : `php artisan migrate` (colonnes `shortcuts.icon_asset`,
+  `icon_checksum`) — `migrate:status` doit montrer `add_icon_asset_to_shortcuts`
+  `Ran`.
+- Alias Apache appliqué : reporter le bloc `/assets/shortcut-icons` de
+  `config/apache/sambaedu.conf` (ou `scripts/setupApache.sh`) dans
+  `/etc/apache2/sites-enabled/sambaedu.conf` (hors-git, inotify ne le sync pas),
+  puis `systemctl reload apache2`.
+- Dossier servi créé + lisible Apache :
+  `mkdir -p storage/app/shortcut-icons && chown -R www-admin storage/app/shortcut-icons`.
+- Backfill joué : `php artisan shortcuts:backfill-icons`.
+
+### Scénario 17.1 — Icône uploadée s'affiche réellement (plus de feuille blanche)
+
+1. Côté serveur : uploader une icône pour un raccourci (UI raccourcis,
+   `icon_file`) — ex. `Calculatrice`. Vérifier en base :
+   `shortcuts.icon_asset = <sha>.ico`, `icon_checksum = <sha>` ; le `<sha>.ico`
+   est présent dans `storage/app/shortcut-icons/`.
+2. `GET /api/v1/agent/state?user=<login>` (poste ciblé) : l'item `shortcuts`
+   porte `{icon_asset, icon_checksum}` à côté de `icon` (nom nu), **PAS** de
+   champ `url`.
+3. Sur le poste lab : déclencher une convergence (logon + cycle). Le `.lnk`
+   s'affiche avec **son icône réelle** (plus de feuille blanche). L'icône a été
+   déposée dans `C:\ProgramData\SambaEdu\Agent\icons\<sha>.ico` et
+   l'`IconLocation` du `.lnk` pointe dessus.
+
+### Scénario 17.2 — Garde-fou sécurité de l'Alias (CRITIQUE)
+
+1. `curl <server_url>/assets/shortcut-icons/<sha>.ico` → **200** binaire (servi
+   en direct, hors FPM).
+2. `curl <server_url>/assets/shortcut-icons/` → **403/404**, JAMAIS un listing
+   (Options `-Indexes`).
+3. `curl <server_url>/assets/shortcut-icons/../keys/pki/...` (toute tentative de
+   remontée) → **JAMAIS** servi : l'Alias pointe EXACTEMENT sur le sous-dossier,
+   `storage/keys/pki/` (PFX code-signing + clés CA) reste inaccessible. Vérifier
+   le vhost : `grep -A2 'Alias /assets/shortcut-icons'` ne contient ni
+   `storage/$` ni un parent de `keys/pki`.
+
+### Scénario 17.3 — Chemin réel inchangé (régression zéro)
+
+1. Un raccourci à icône RÉELLE (`windows_icon = firefox.exe,0`) : l'item `state`
+   porte `icon` brut, **AUCUN** `icon_asset`/`icon_checksum`. Le poste pose
+   l'icône via `ParseIconLocation` (comportement 2.2.1, inchangé).
+
+### Scénario 17.4 — Convergence gracieuse si asset indisponible
+
+1. Référencer un `icon_asset` dont le `.ico` n'est PAS (encore) servi (ex.
+   supprimer le `<sha>.ico` du dossier servi) → le download agent renvoie 404 :
+   l'icône n'entre pas dans le cache local.
+2. Le raccourci est quand même posé **sans IconLocation cassée** (icône défaut),
+   reporté `drift`, JAMAIS une « feuille blanche » ni une erreur bloquant les
+   AUTRES raccourcis. Au cycle suivant (asset re-servi) → l'icône converge.
+3. Checksum KO (servir un contenu divergent du `<sha>` attendu) : l'agent
+   **rejette AVANT écriture**, retry au cycle suivant — un contenu corrompu
+   n'entre jamais dans le cache.
+
+### Scénario 17.5 — Backfill name→content-addressed
+
+1. Des icônes legacy `/etc/sambaedu/applications/shortcuts/<name>.ico` existent,
+   référencées par des raccourcis `windows_icon = <name>` SANS `icon_asset`.
+2. `php artisan shortcuts:backfill-icons` → résumé `{assets, linked, missing}` ;
+   chaque `<name>.ico` est COPIÉ en `<sha>.ico` (legacy jamais supprimé), les
+   colonnes renseignées. Un raccourci dont le `.ico` legacy est absent →
+   `missing`, jamais d'échec.
+3. Re-run **idempotent** : `linked` identique, `assets` dédupliqué par checksum,
+   aucun fichier servi en double.
+
+### Scénario 17.6 — Transport statique vs token'd + golden bumpé sciemment
+
+1. Le download icône est un **GET HTTP simple** (le serveur statique répond
+   même sans `Authorization`) — distinct du canal wallpaper token'd
+   (`AssetController`, inchangé).
+2. `ContractV1Test::state_hash_is_frozen_regression_guard` VERT avec le hash
+   bumpé `a43e8aad…` ; Go `go test ./shared/ -run TestHash` VERT à la MÊME
+   valeur (test croisé NFR13). Le bump (payload `shortcuts` +
+   `{icon_asset, icon_checksum}`) est documenté = évolution mineure §9.
+
 ## Post-correctifs & non-régressions
 
 - **Defer review 23.1 (résolu en 24.1)** : le scénario 1.4 (body forgé → 4xx jamais 500) existe parce qu'un `StateHasher` appelé sur l'entrée agent pouvait lever une `JsonException` non catchée (UTF-8 invalide / NAN / INF). L'ingestion ne hashe JAMAIS le payload agent.

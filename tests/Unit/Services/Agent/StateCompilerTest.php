@@ -415,6 +415,28 @@ class StateCompilerTest extends TestCase
     }
 
     #[Test]
+    public function strict_assignment_wins_even_when_dedup_drops_its_candidate(): void
+    {
+        // Story 27.3 (régression du 2e avis review) : mode PAR ASSIGNATION.
+        // Le MÊME raccourci est assigné à deux mailles vues par le même poste,
+        // avec des modes différents (strict sur l'une, default sur l'autre) →
+        // payloads IDENTIQUES → `selectAggregate()` n'en garde qu'UN.
+        // L'agrégation du mode doit néanmoins voir l'assignation stricte
+        // (agrégation PRÉ-dedup), sinon le verrouillage de la maille stricte
+        // serait silencieusement perdu selon le candidat survivant.
+        $provider = $this->fakeProvider('shortcuts', ResourceSemantics::Aggregate, StateScope::MachineUser, [
+            // sourceId égal (même règle) ; payload identique ; modes opposés.
+            new StateCandidate(StateMaille::LogicalGroup, ['name' => 'Pronote', 'place' => 'desktop'], now(), 7, StateMode::Default),
+            new StateCandidate(StateMaille::Workstation, ['name' => 'Pronote', 'place' => 'desktop'], now(), 7, StateMode::Strict),
+        ]);
+
+        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_MACHINE_USER];
+
+        self::assertCount(1, $items, 'le doublon de contenu est fusionné');
+        self::assertSame('strict', $items[0]['mode'], 'le strict d\'une assignation l\'emporte malgré le dedup');
+    }
+
+    #[Test]
     public function candidate_without_mode_falls_back_to_provider_default(): void
     {
         // Aucun candidat ne déclare de mode → on retombe sur mode() du provider

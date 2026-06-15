@@ -105,6 +105,34 @@ type iPersistFile struct {
 // shortcutOps : impl ShortcutOps de production (Windows COM).
 type shortcutOps struct {
 	log *shared.Logger
+	// iconsDir : cache local des icônes UPLOADÉES content-addressed
+	// (C:\ProgramData\SambaEdu\Agent\icons, Story 27.7). Le SERVICE SYSTEM les
+	// pré-télécharge (SyncShortcutIcons) ; le compagnon (ici) pointe
+	// l'IconLocation dessus. Vide (tests) = pas de résolution d'asset → on
+	// retombe sur l'icône brute.
+	iconsDir string
+}
+
+// effectiveIcon résout l'IconLocation à poser sur le `.lnk` (Story 27.7).
+//
+//   - icône UPLOADÉE (spec.IconAsset non vide) ET le `.ico` local content-
+//     addressed est présent (pré-téléchargé par SyncShortcutIcons) → on pointe
+//     sur le chemin LOCAL absolu (index 0). Plus de « feuille blanche ».
+//   - icône uploadée dont le `.ico` local manque encore (pas téléchargé /
+//     checksum KO côté sync) → IconLocation VIDE (icône défaut Windows),
+//     JAMAIS un chemin irrésoluble. Le drift est rattrapé au cycle suivant
+//     (sous-décision F, piège n° 7).
+//   - icône RÉELLE (chemin `firefox.exe,0`, IconAsset vide) → la même valeur
+//     brute qu'avant (tokens substitués, ParseIconLocation gère `,index`).
+func (o *shortcutOps) effectiveIcon(spec shared.ShortcutSpec) string {
+	if spec.IconAsset != "" {
+		// Décision PURE (stat du `.ico` local content-addressed) factorisée en
+		// shared (testée sur l'hôte) : chemin local si présent, "" si manquant
+		// (icône défaut, jamais cassée).
+		return shared.ResolveUploadedIconLocation(spec.IconAsset, o.iconsDir)
+	}
+
+	return substituteTokens(spec.Icon)
 }
 
 // PlaceDir résout le répertoire absolu d'un emplacement (tokens substitués).
@@ -242,11 +270,16 @@ func (o *shortcutOps) Matches(path string, spec shared.ShortcutSpec) (bool, erro
 		return false, nil
 	}
 
-	// L'icône cible est résolue (tokens) PUIS décomposée en (chemin, index) — la
-	// même convention `chemin,index` que celle posée par createShortcut. On
-	// compare chemin ET index au `.lnk` relu, sinon le `,0` de la spec ne matche
-	// jamais le chemin nu relu → réécriture à chaque passe (idempotence cassée).
-	specIconPath, specIconIndex := shared.ParseIconLocation(substituteTokens(spec.Icon))
+	// L'icône cible est résolue (asset local content-addressed OU chemin réel,
+	// Story 27.7) PUIS décomposée en (chemin, index) — la même convention
+	// `chemin,index` que celle posée par createShortcut. On compare chemin ET
+	// index au `.lnk` relu, sinon le `,0` de la spec ne matche jamais le chemin
+	// nu relu → réécriture à chaque passe (idempotence cassée). Une icône
+	// uploadée dont l'asset local manque encore résout en "" (icône défaut) :
+	// le `.lnk` sans IconLocation est donc « conforme » tant que l'asset n'est
+	// pas téléchargé → pas de réécriture en boucle ; quand le sync l'a déposé,
+	// effectiveIcon pointe le fichier local et la passe suivante converge.
+	specIconPath, specIconIndex := shared.ParseIconLocation(o.effectiveIcon(spec))
 	iconMatches := strings.EqualFold(icon, specIconPath) && iconIndex == specIconIndex
 
 	// `args` est comparé sensible à la casse et SANS substitution de tokens
@@ -284,7 +317,7 @@ func (o *shortcutOps) Create(path string, spec shared.ShortcutSpec) error {
 		path,
 		substituteTokens(spec.Target),
 		spec.Args,
-		substituteTokens(spec.Icon),
+		o.effectiveIcon(spec),
 		shared.ShortcutManagedMarker,
 	)
 }

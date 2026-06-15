@@ -53,6 +53,9 @@ use Illuminate\Support\Collection;
  *
  * Payload v1 (décision n° 6) : `{name, target, args, icon, place, desktop_path}`
  * — `desktop_path` présent uniquement si `place=desktop`. Pas de float (§4.1).
+ * Story 27.7 (AC2) : payload étendu de `{icon_asset, icon_checksum}` quand
+ * l'icône est un NOM NU uploadé content-addressed (champs ajoutés,
+ * forward-compatible — l'agent dérive l'URL statique).
  */
 final class ShortcutsStateProvider implements StateProvider
 {
@@ -72,9 +75,10 @@ final class ShortcutsStateProvider implements StateProvider
 
     public function mode(): StateMode
     {
-        // Défaut du type (décision n° 2) — un raccourci sans `mode` en base est
-        // strict : la cible fait loi (comportement attendu côté admin). Le
-        // toggle par règle (`StateCandidate::$mode`) le surcharge.
+        // Défaut du type — une assignation sans `mode` (Story 27.3 : mode PAR
+        // ASSIGNATION) est strict : la cible fait loi (comportement attendu côté
+        // admin). Le toggle par assignation (`StateCandidate::$mode`, lu sur
+        // `shortcut_assignables.mode`) le surcharge.
         return StateMode::Strict;
     }
 
@@ -126,14 +130,19 @@ final class ShortcutsStateProvider implements StateProvider
                 'shortcuts.id',
                 'shortcuts.name',
                 'shortcuts.place',
-                'shortcuts.mode',
                 'shortcuts.windows_link',
                 'shortcuts.windows_args',
                 'shortcuts.windows_icon',
                 'shortcuts.icon_path',
+                'shortcuts.icon_asset',
+                'shortcuts.icon_checksum',
                 'shortcuts.updated_at',
                 'shortcut_assignables.assignable_type',
                 'shortcut_assignables.assignable_id',
+                // Mode PAR ASSIGNATION (Story 27.3) — lu sur le LIEN, plus sur la
+                // règle. Aliasé pour ne pas heurter une colonne du modèle et
+                // casté manuellement (le cast `StateMode` a quitté le modèle).
+                'shortcut_assignables.mode as assignment_mode',
             ]);
 
         return $rows->map(fn (Shortcut $row): StateCandidate => new StateCandidate(
@@ -141,9 +150,10 @@ final class ShortcutsStateProvider implements StateProvider
             payload: $this->payloadFor($row, $desktopPath),
             updatedAt: $row->updated_at,
             sourceId: (int) $row->id,
-            // Mode par règle (décision n° 2) — null en base = pas déclaré → le
-            // compilateur retombe sur mode() (défaut `strict`).
-            mode: $row->mode,
+            // Mode PAR ASSIGNATION (Story 27.3) — null sur le lien = pas déclaré
+            // → le compilateur retombe sur mode() (défaut `strict`). Le même
+            // raccourci sur deux mailles porte le mode de CHAQUE assignation.
+            mode: StateMode::tryFrom((string) $row->assignment_mode),
         ));
     }
 
@@ -172,29 +182,68 @@ final class ShortcutsStateProvider implements StateProvider
     }
 
     /**
-     * Payload v1 (décision n° 6). `desktop_path` présent UNIQUEMENT pour
-     * `place=desktop` (startup/taskbar ont leurs propres chemins standards,
-     * résolus par l'agent). `target` = la cible (exe/URL), `args` = arguments,
-     * `icon` = chemin d'icône (windows_icon prioritaire, fallback icon_path).
-     * Toujours des strings (jamais de float, §4.1).
+     * Payload v1 (décision n° 6, étendu Story 27.7). `desktop_path` présent
+     * UNIQUEMENT pour `place=desktop`. `target` = la cible (exe/URL), `args` =
+     * arguments, `icon` = chemin d'icône (windows_icon prioritaire, fallback
+     * icon_path). Toujours des strings (jamais de float, §4.1).
+     *
+     * **Story 27.7 — distinction nom nu / chemin réel (AC2, piège n° 3).**
+     * Le champ `icon` peut valoir un CHEMIN réel (`firefox.exe,0`,
+     * `%APPDATA%\x.ico` — posé tel quel) OU le NOM NU d'une icône UPLOADÉE
+     * (`Calculatrice` — pas un chemin, le `.ico` réel vit côté serveur). On
+     * reproduit la détection legacy `!preg_match('#[\\/.,%]#', $icon)`
+     * (pas de séparateur `\ / . , %` = nom nu — `ShortcutCompilerService:187`).
+     * Si c'est un nom nu ET qu'un asset content-addressed existe en base
+     * (`icon_asset` non null) → on émet `{icon_asset, icon_checksum}` (PAS
+     * d'URL, décision n° 4 — l'agent dérive l'URL) à CÔTÉ de `icon` (champs
+     * ajoutés, forward-compatible). L'agent préfère l'asset local content-
+     * addressed ; faute d'asset téléchargé il retombe gracieusement (pas de
+     * « feuille blanche », jamais une icône cassée). Un nom nu SANS asset
+     * backfillé (`icon_asset` null) → `icon` brut seul (ancien comportement,
+     * jamais un asset cassé).
      *
      * @return array<string,mixed>
      */
     private function payloadFor(Shortcut $row, string $desktopPath): array
     {
+        $icon = (string) ($row->windows_icon ?? $row->icon_path ?? '');
+
         $payload = [
             'name' => (string) $row->name,
             'target' => (string) ($row->windows_link ?? ''),
             'args' => (string) ($row->windows_args ?? ''),
-            'icon' => (string) ($row->windows_icon ?? $row->icon_path ?? ''),
+            'icon' => $icon,
             'place' => (string) $row->place,
         ];
+
+        // Icône UPLOADÉE (nom nu) backfillée en asset content-addressed : on
+        // ajoute les champs asset. Lecture de colonnes pures (zéro hash/I/O au
+        // render — invariant perf, piège n° 2).
+        if ($this->isBareIconName($icon)
+            && $row->icon_asset !== null && $row->icon_asset !== ''
+            && $row->icon_checksum !== null && $row->icon_checksum !== ''
+        ) {
+            $payload['icon_asset'] = (string) $row->icon_asset;
+            $payload['icon_checksum'] = (string) $row->icon_checksum;
+        }
 
         if ($row->place === Shortcut::PLACE_DESKTOP) {
             $payload['desktop_path'] = $desktopPath;
         }
 
         return $payload;
+    }
+
+    /**
+     * Détecte un NOM NU d'icône uploadée (≠ chemin réel) — regex iso-legacy
+     * `ShortcutCompilerService:187` : aucun séparateur de chemin/index
+     * (`\ / . , %`) ⇒ ce n'est pas un chemin, c'est le nom d'un raccourci dont
+     * l'icône a été uploadée côté serveur. Chaîne vide = pas un nom nu (pas
+     * d'icône). Story 27.7, AC2.
+     */
+    private function isBareIconName(string $icon): bool
+    {
+        return $icon !== '' && ! preg_match('#[\\\\/.,%]#', $icon);
     }
 
     /**

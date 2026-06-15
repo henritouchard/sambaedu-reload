@@ -233,6 +233,11 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 	if !a.quarantined {
 		a.fetchSessionStates(cfg)
 		a.SyncWallpaperAssets(cfg)
+		// Story 27.7 : pré-télécharge les icônes UPLOADÉES de raccourcis
+		// content-addressed (GET HTTP statique sans token) AVANT la passe
+		// compagnon qui pose les `.lnk` ; idempotent, un échec ne casse pas le
+		// cycle (rattrapage au prochain passage, iso sync wallpaper).
+		a.SyncShortcutIcons(cfg)
 		// Story 27.1bis : provisioning de l'outil de rendu Rainmeter au
 		// BOOTSTRAP du cycle SYSTEM (portable install-if-absent + config
 		// verrouillée), JAMAIS depuis un handler runtime (« handler jamais

@@ -110,24 +110,10 @@
                 @endif
             </div>
 
-            <!-- Mode d'application desired-state (Story 27.1, FR26) -->
-            @if (!$creating)
-                <div class="form-control flex flex-col">
-                    <label class="label py-1">
-                        <span class="label-text font-semibold">Application sur le poste</span>
-                    </label>
-                    @if ($editing)
-                        <select wire:model="mode" class="select select-bordered select-sm">
-                            <option value="strict">Strict — la cible fait loi (toute suppression est réimposée)</option>
-                            <option value="default">Souple — un raccourci supprimé par un prof n'est pas recréé</option>
-                        </select>
-                    @else
-                        <span class="text-sm py-1">
-                            {{ $mode === 'default' ? 'Souple (dérive humaine tolérée)' : 'Strict (la cible fait loi)' }}
-                        </span>
-                    @endif
-                </div>
-            @endif
+            {{-- Mode d'application desired-state (drift policy) : déplacé du
+                 formulaire de RÈGLE vers le GESTE D'ASSIGNATION (Story 27.3) — le
+                 mode strict|default est désormais PAR CIBLE
+                 (`shortcut_assignables.mode`), posé dans la modale d'assignation. --}}
 
             <!-- Icône (seulement en édition) -->
             @if ($editing || $creating)

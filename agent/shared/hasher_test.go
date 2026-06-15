@@ -20,7 +20,11 @@ import (
 // `drives` (portée session, payloads v1 réels) au golden — ce test croisé
 // prouve que le hasher Go suit le StateHasher PHP sur les nouveaux payloads
 // (NFR13).
-const frozenStateHash = "fe4cb1216da04ab7ad02215e6958251b72174d62923d545013b54487619c174e"
+// Re-bumpé SCIEMMENT par la Story 27.7 (§9) : le payload `shortcuts` gagne
+// `{icon_asset, icon_checksum}` (icône UPLOADÉE content-addressed) — champs
+// ajoutés, forward-compatible. Ce test croisé prouve que le hasher Go suit le
+// StateHasher PHP sur le payload étendu (NFR13).
+const frozenStateHash = "a43e8aadd40e7ed7e98aebe7952d473a5a729630bf6ca9c12362c840e691d1c0"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).

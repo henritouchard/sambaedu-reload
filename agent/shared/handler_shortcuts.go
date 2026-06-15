@@ -2,6 +2,8 @@ package shared
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,9 +55,21 @@ type ShortcutSpec struct {
 	Name        string // nom d'affichage (→ <name>.lnk)
 	Target      string // cible : chemin exe ou URL
 	Args        string // arguments de lancement
-	Icon        string // chemin d'icône (peut être vide)
+	Icon        string // chemin d'icône réel `chemin,index` (peut être vide)
 	Place       string // desktop | startup | taskbar
 	DesktopPath string // chemin du bureau résolu serveur (place=desktop only)
+
+	// IconAsset : filename content-addressed `<sha256>.ico` d'une icône
+	// UPLOADÉE (Story 27.7). Présent UNIQUEMENT pour une icône uploadée (nom
+	// nu côté serveur) ; vide pour un chemin d'icône réel (`firefox.exe,0` →
+	// Icon). Quand présent ET que le `.ico` local est disponible (pré-
+	// téléchargé content-addressed par SyncShortcutIcons), l'impl OS pointe
+	// l'IconLocation sur le fichier LOCAL `IconPath(<sha>.ico)` ; absent /
+	// non téléchargé → pas d'IconLocation (icône défaut), JAMAIS un chemin
+	// irrésoluble (régression « feuille blanche »). Le drift résultant est
+	// rattrapé au cycle suivant (sous-décision F, piège n° 7).
+	IconAsset    string
+	IconChecksum string // SHA-256 attendu (validé à l'écriture locale)
 }
 
 // ParseIconLocation décompose une icône à la convention Windows historique
@@ -88,6 +102,34 @@ func ParseIconLocation(icon string) (path string, index int) {
 	}
 
 	return icon[:pos], n
+}
+
+// ResolveUploadedIconLocation décide l'IconLocation BRUTE à poser pour une
+// icône UPLOADÉE content-addressed (Story 27.7), AVANT substitution de tokens.
+// Logique PURE (stat + jointure de chemin), testée sur l'hôte ; l'impl Windows
+// l'appelle puis la passe à SetIconLocation / ParseIconLocation.
+//
+//   - asset présent dans `iconsDir` (pré-téléchargé par SyncShortcutIcons) →
+//     chemin LOCAL absolu (index 0 via la convention sans `,index`). Plus de
+//     « feuille blanche ».
+//   - asset NON encore disponible (pas téléchargé / checksum KO côté sync) →
+//     "" : pas d'IconLocation (icône défaut Windows), JAMAIS un chemin
+//     irrésoluble. Le drift est rattrapé au cycle suivant (sous-décision F,
+//     piège n° 7).
+//
+// `iconAsset` est supposé DÉJÀ validé (ValidShortcutIconFilename) par
+// parseShortcutSpec — un asset hors format n'arrive jamais ici (il a été remis
+// à "" en amont, on retombe alors sur l'icône réelle, hors de cette fonction).
+func ResolveUploadedIconLocation(iconAsset, iconsDir string) string {
+	if iconAsset == "" || iconsDir == "" {
+		return ""
+	}
+	local := filepath.Join(iconsDir, iconAsset)
+	if _, err := os.Stat(local); err != nil {
+		return "" // pas encore là : pas d'icône cassée
+	}
+
+	return local
 }
 
 // ShortcutOps : opérations `.lnk` spécifiques à l'OS, injectées (testable
@@ -366,16 +408,28 @@ func parseShortcutSpec(raw any) (ShortcutSpec, bool) {
 	icon, _ := payload["icon"].(string)
 	desktopPath, _ := payload["desktop_path"].(string)
 
+	// Story 27.7 : champs ajoutés (forward-compatible) — une icône UPLOADÉE
+	// porte `icon_asset`/`icon_checksum`. Validés STRICTEMENT : un asset hors
+	// format est IGNORÉ (on retombe sur `icon` brut, jamais un asset cassé).
+	iconAsset, _ := payload["icon_asset"].(string)
+	iconChecksum, _ := payload["icon_checksum"].(string)
+	if iconAsset != "" && (!ValidShortcutIconFilename(iconAsset) || !ValidChecksum(iconChecksum)) {
+		iconAsset = ""
+		iconChecksum = ""
+	}
+
 	if place == shortcutPlaceDesktop && desktopPath == "" {
 		return ShortcutSpec{}, false // le serveur DOIT fournir le chemin (Bug C)
 	}
 
 	return ShortcutSpec{
-		Name:        name,
-		Target:      target,
-		Args:        args,
-		Icon:        icon,
-		Place:       place,
-		DesktopPath: desktopPath,
+		Name:         name,
+		Target:       target,
+		Args:         args,
+		Icon:         icon,
+		Place:        place,
+		DesktopPath:  desktopPath,
+		IconAsset:    iconAsset,
+		IconChecksum: iconChecksum,
 	}, true
 }

@@ -115,6 +115,18 @@ cat > "$APACHE_SITES_AVAILABLE/sambaedu.conf" << VHOST_SER
         FallbackResource /index.php
     </Directory>
 
+    # /assets/shortcut-icons : icônes UPLOADÉES de raccourcis content-addressed
+    # (Story 27.7), servies EN DIRECT. GARDE-FOU SÉCURITÉ : pointe EXACTEMENT sur
+    # le sous-dossier dédié, JAMAIS sur storage/ entier (storage/keys/pki/ = PFX
+    # code-signing + clés CA). -Indexes, PAS de FallbackResource. À chown
+    # www-admin (lisible Apache).
+    Alias /assets/shortcut-icons $SER_ROOT/storage/app/shortcut-icons
+    <Directory $SER_ROOT/storage/app/shortcut-icons>
+        Options -Indexes +FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+
     ErrorLog /var/log/apache2/sambaedu-reload-error.log
     CustomLog /var/log/apache2/sambaedu-reload-access.log combined
 </VirtualHost>

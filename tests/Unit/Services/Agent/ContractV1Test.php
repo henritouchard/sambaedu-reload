@@ -48,7 +48,14 @@ class ContractV1Test extends TestCase
     // par DrivesStateProvider). Types DÉJÀ figés §7 ; payloads ajoutés =
     // forward-compatible, pas un major. Le jumeau Go (hasher_test.go) est bumpé
     // à la même valeur (test croisé NFR13).
-    private const FROZEN_STATE_HASH = 'fe4cb1216da04ab7ad02215e6958251b72174d62923d545013b54487619c174e';
+    //
+    // Re-bumpé SCIEMMENT par la Story 27.7 (évolution MINEURE du contrat, §9) :
+    // le payload `shortcuts` du golden gagne `{icon_asset, icon_checksum}`
+    // (icône UPLOADÉE content-addressed, AC2/AC6) ET illustre une icône uploadée
+    // (nom nu `icon`). Champs AJOUTÉS = forward-compatible, pas un major. Le
+    // jumeau Go (hasher_test.go::frozenStateHash) est bumpé à la même valeur
+    // (test croisé NFR13).
+    private const FROZEN_STATE_HASH = 'a43e8aadd40e7ed7e98aebe7952d473a5a729630bf6ca9c12362c840e691d1c0';
 
     private StateHasher $hasher;
 

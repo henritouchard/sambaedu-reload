@@ -101,7 +101,10 @@ func runCompanion() error {
 				// `.lnk` au chemin résolu serveur (fix Bug C), level-triggered,
 				// COM IShellLink natif.
 				"shortcuts": &shared.ShortcutsHandler{
-					Ops: &shortcutOps{log: logger},
+					// Story 27.7 : iconsDir = cache local des icônes uploadées
+					// content-addressed (pré-téléchargées en SYSTEM par
+					// SyncShortcutIcons). Le compagnon pointe l'IconLocation dessus.
+					Ops: &shortcutOps{log: logger, iconsDir: store.IconsDir()},
 					Log: logger,
 				},
 				// Story 27.2 — imprimantes (aggregate / session) : connexion au

@@ -134,14 +134,26 @@ final class StateCompiler
             ? $this->selectExclusive($provider, $ctx, $candidates)
             : $this->selectAggregate($candidates);
 
-        // Mode AGRÉGÉ par type (Story 27.1, décision n° 2) : le moteur agent
-        // rend UN verdict par type → tous les items d'un type portent le même
-        // mode. Posture sûre = `strict` dès qu'UNE règle sélectionnée est
-        // stricte ; `default` seulement si TOUTES tolèrent la dérive. Un
-        // candidat sans mode (null) retombe sur le défaut du provider
-        // (comportement 23.4 préservé). Calculé sur les candidats RETENUS
-        // (l'exclusif a déjà tranché la maille gagnante).
-        $mode = $this->aggregateMode($provider, $selected)->value;
+        // Mode AGRÉGÉ par type (Story 27.1, décision n° 2 ; révisé 27.3) : le
+        // moteur agent rend UN verdict par type → tous les items d'un type
+        // portent le même mode. Posture sûre = `strict` dès qu'UNE assignation
+        // applicable est stricte ; `default` seulement si TOUTES tolèrent la
+        // dérive. Un candidat sans mode (null) retombe sur le défaut du provider
+        // (comportement 23.4 préservé).
+        //
+        // ⚠️ 27.3 : depuis que le mode est PAR ASSIGNATION, deux mailles du même
+        // poste peuvent produire le MÊME payload avec des modes différents (ex.
+        // raccourci `strict` sur le poste ET `default` sur son parc). Le dedup de
+        // `selectAggregate()` (clé = contenu, le mode N'entre PAS dans l'identité)
+        // n'en garderait qu'un : agréger le mode sur `$selected` masquerait alors
+        // l'assignation stricte. On agrège donc sur l'ensemble PRÉ-DEDUP pour la
+        // sémantique aggregate (le dedup ne sert que le déterminisme de sortie),
+        // et sur les candidats RETENUS pour l'exclusif (la maille gagnante est
+        // déjà tranchée, les mailles perdantes ne doivent pas peser sur le mode).
+        $modeCandidates = $provider->semantics() === ResourceSemantics::Exclusive
+            ? $selected
+            : $candidates;
+        $mode = $this->aggregateMode($provider, $modeCandidates)->value;
 
         return array_map(
             function (StateCandidate $candidate) use ($provider, $mode): array {
@@ -166,13 +178,15 @@ final class StateCompiler
      * historique sans colonne `mode` (ou une règle non configurée) conserve
      * exactement son comportement 23.4.
      *
-     * @param  list<StateCandidate>  $selected  non vide
+     * @param  list<StateCandidate>  $candidates  non vide — ensemble sur lequel
+     *   se décide le mode : RETENUS pour l'exclusif, PRÉ-DEDUP pour l'aggregate
+     *   (cf. `compileProvider()`, garantie strict-wins 27.3).
      */
-    private function aggregateMode(StateProvider $provider, array $selected): StateMode
+    private function aggregateMode(StateProvider $provider, array $candidates): StateMode
     {
         $providerDefault = $provider->mode();
 
-        foreach ($selected as $candidate) {
+        foreach ($candidates as $candidate) {
             if (($candidate->mode ?? $providerDefault) === StateMode::Strict) {
                 return StateMode::Strict;
             }

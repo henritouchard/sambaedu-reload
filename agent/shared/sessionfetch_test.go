@@ -24,6 +24,10 @@ type fakeSessionServer struct {
 	assetBody  map[string][]byte
 	assetCalls []string
 
+	// Story 27.7 : icônes raccourci servies en STATIQUE (GET simple sans token).
+	iconBody  map[string][]byte
+	iconCalls []string
+
 	server *httptest.Server
 }
 
@@ -35,6 +39,7 @@ func newFakeSessionServer(t *testing.T) *fakeSessionServer {
 		userStateEtag: `"etag-user-1"`,
 		userEtagSeen:  map[string]string{},
 		assetBody:     map[string][]byte{},
+		iconBody:      map[string][]byte{},
 	}
 
 	mux := http.NewServeMux()
@@ -71,6 +76,23 @@ func newFakeSessionServer(t *testing.T) *fakeSessionServer {
 		filename := strings.TrimPrefix(r.URL.Path, "/api/v1/agent/assets/wallpaper/")
 		f.assetCalls = append(f.assetCalls, filename)
 		body, ok := f.assetBody[filename]
+		if !ok {
+			w.WriteHeader(404)
+
+			return
+		}
+		w.WriteHeader(200)
+		_, _ = w.Write(body)
+	})
+	// Story 27.7 : Alias statique des icônes raccourci — GET simple (PAS de
+	// vérif de token : le handler répond même sans Authorization, c'est l'objet
+	// du test « transport sans token »).
+	mux.HandleFunc("/assets/shortcut-icons/", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		filename := strings.TrimPrefix(r.URL.Path, "/assets/shortcut-icons/")
+		f.iconCalls = append(f.iconCalls, filename)
+		body, ok := f.iconBody[filename]
 		if !ok {
 			w.WriteHeader(404)
 

@@ -2,6 +2,8 @@ package shared
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -457,5 +459,72 @@ func TestParseIconLocation(t *testing.T) {
 					tc.icon, path, index, tc.wantPath, tc.wantIndex)
 			}
 		})
+	}
+}
+
+// --- Story 27.7 : icône UPLOADÉE (icon_asset/icon_checksum) ------------------
+
+func TestParseShortcutSpecCarriesUploadedIconFields(t *testing.T) {
+	sha := strings.Repeat("a", 64)
+	payload := map[string]any{
+		"name":          "Calculatrice",
+		"target":        `C:\Windows\System32\calc.exe`,
+		"args":          "",
+		"icon":          "Calculatrice", // nom nu (icône uploadée)
+		"icon_asset":    sha + ".ico",
+		"icon_checksum": sha,
+		"place":         "startup",
+	}
+	spec, ok := parseShortcutSpec(payload)
+	if !ok {
+		t.Fatal("spec valide attendue")
+	}
+	if spec.IconAsset != sha+".ico" || spec.IconChecksum != sha {
+		t.Fatalf("champs icône uploadée non portés : %+v", spec)
+	}
+}
+
+func TestParseShortcutSpecStripsInvalidUploadedIcon(t *testing.T) {
+	// icon_asset hors format content-addressed → remis à "" (on retombera sur
+	// l'icône brute, jamais un asset cassé — piège n° 3).
+	for _, bad := range []map[string]any{
+		{"name": "x", "place": "startup", "icon": "x", "icon_asset": "../evil.ico", "icon_checksum": strings.Repeat("a", 64)},
+		{"name": "x", "place": "startup", "icon": "x", "icon_asset": strings.Repeat("a", 64) + ".ico", "icon_checksum": "tooshort"},
+	} {
+		spec, ok := parseShortcutSpec(bad)
+		if !ok {
+			t.Fatalf("spec valide attendue pour %v", bad)
+		}
+		if spec.IconAsset != "" || spec.IconChecksum != "" {
+			t.Errorf("asset hors format devrait être strippé : %+v", spec)
+		}
+	}
+}
+
+func TestResolveUploadedIconLocation(t *testing.T) {
+	dir := t.TempDir()
+	sha := strings.Repeat("a", 64)
+	filename := sha + ".ico"
+
+	// Asset NON présent localement → "" (icône défaut, jamais cassée).
+	if got := ResolveUploadedIconLocation(filename, dir); got != "" {
+		t.Errorf("asset absent → \"\" attendu, got %q", got)
+	}
+
+	// Asset présent → chemin local absolu.
+	local := filepath.Join(dir, filename)
+	if err := os.WriteFile(local, []byte("ico"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ResolveUploadedIconLocation(filename, dir); got != local {
+		t.Errorf("asset présent → %q attendu, got %q", local, got)
+	}
+
+	// Pas d'asset / pas de dir → "" (icône réelle gérée hors de cette fonction).
+	if got := ResolveUploadedIconLocation("", dir); got != "" {
+		t.Errorf("pas d'asset → \"\" attendu, got %q", got)
+	}
+	if got := ResolveUploadedIconLocation(filename, ""); got != "" {
+		t.Errorf("pas de iconsDir → \"\" attendu, got %q", got)
 	}
 }

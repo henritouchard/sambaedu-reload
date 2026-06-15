@@ -215,8 +215,56 @@ mailles, dédoublonnée par contenu au compilateur (décision n° 4) :
   raccourci retiré des règles **disparaît** au passage suivant ; un raccourci
   créé par l'utilisateur (hors marqueur de gestion) n'est **jamais** supprimé
   (cf. `agent/README.md`, décision n° 5).
+- **Mode PAR ASSIGNATION** (Story 27.3, révise 27.1) : le `mode` strict/default
+  est lu sur le **lien** `shortcut_assignables.mode` (par maille), plus sur la
+  règle. Un même raccourci peut donc être `strict` (verrouillé) sur un parc et
+  `default` (dérive tolérée) sur un autre — chaque candidat porte le mode de
+  **son** assignation. `null` sur le lien = défaut du type (`strict`) résolu
+  côté provider. L'agrégation par type au compilateur est inchangée (voir plus
+  bas). Le mode n'est jamais émis au payload (résolu serveur).
 - `place` ∈ `desktop|startup|taskbar` (iso `Shortcut::PLACE_*`). Tous les champs
   sont des strings (jamais de float, §4.1).
+
+**Icône UPLOADÉE → asset statique content-addressed (Story 27.7).** Le champ
+`icon` peut porter soit un **chemin réel** (`firefox.exe,0`, `%APPDATA%\x.ico` —
+géré par `ParseIconLocation` côté agent, INCHANGÉ depuis 2.2.1), soit le **nom
+NU** d'un raccourci dont l'admin a **uploadé** une icône (`Calculatrice` — le
+`.ico` réel vit côté serveur). Le provider reproduit la détection legacy
+`!preg_match('#[\\/.,%]#', $icon)` (`ShortcutCompilerService:187`) : aucun
+séparateur de chemin/index ⇒ nom nu. Quand c'est un nom nu **ET** qu'un asset
+content-addressed existe en base (`shortcuts.icon_asset` non null), le payload
+**ajoute** deux champs (forward-compatible) :
+
+```json
+{ "name": "Calculatrice", "target": "C:\\Windows\\System32\\calc.exe",
+  "args": "", "icon": "Calculatrice",
+  "icon_asset": "3a7b…abcd.ico", "icon_checksum": "3a7b…abcd",
+  "place": "desktop", "desktop_path": "\\\\<se4fs>\\users\\<user>\\Bureau\\" }
+```
+
+- **PAS de champ `url`** (décision n° 4, iso 24.4) : l'agent **dérive** l'URL
+  depuis `server_url + "/assets/shortcut-icons/" + icon_asset` (Alias Apache
+  statique scopé, cf. `agent/README.md` et `config/apache/sambaedu.conf`).
+- **Transport STATIQUE, pas token'd** (≠ wallpaper) : un `.ico` est un blob
+  public-safe ; l'agent fait un **GET HTTP simple** (sans token), vérifie le
+  SHA-256 = `icon_checksum` **AVANT** écriture locale, dépose
+  `%PROGRAMDATA%\SambaEdu\Agent\icons\<sha>.ico` (content-addressed,
+  idempotent). Le content-addressing + checksum **EST** la garantie
+  d'intégrité.
+- **Lecture de colonnes pures** au render (`icon_asset`/`icon_checksum` lus,
+  jamais hashés à la volée — le checksum est calculé à l'**upload**/au
+  **backfill** et persisté). Invariant perf des providers préservé.
+- **Convergence gracieuse** : un nom nu **sans** asset backfillé
+  (`icon_asset` null) tombe sur `icon` brut (ancien comportement), JAMAIS un
+  asset cassé ; côté agent, un `.ico` local manquant/checksum KO ⇒ raccourci
+  posé **sans IconLocation** (icône défaut), drift + re-sync au cycle suivant,
+  JAMAIS d'icône « feuille blanche » ni d'erreur bloquant les autres
+  raccourcis.
+- **Backfill** : `php artisan shortcuts:backfill-icons` content-adresse les
+  icônes uploadées **existantes** (name-addressed `<name>.ico` → `<sha>.ico`,
+  copie jamais déplacement, dédup checksum) et renseigne les colonnes.
+- **Hors-scope** : le canal wallpaper garde son transport token'd
+  (`AssetController`) — non migré (décision n° 5).
 
 ### `printers` — `aggregate` / `strict` / `session` (Story 27.2)
 
@@ -321,16 +369,37 @@ Un item **par classe du user** (projection des partages de classe existants —
   l'utilisateur hors périmètre SambaEdu n'est **jamais** démonté (marqueur de
   périmètre = serveur SambaEdu).
 
-### Mode `strict|default` par règle (Story 27.1 — FR26)
+### Mode `strict|default` — provenance par type (Story 27.1, révisé 27.3 — FR26)
 
 Le mode d'application **n'est plus une constante par type** : c'est un attribut
-**par règle** (colonne `mode` sur `shortcuts`, `wallpapers`, `overlay_signals`),
-porté par `StateCandidate::$mode`. Le `StateCompiler` **agrège** le mode par
-type (un seul verdict côté agent) : **`default` ssi TOUTES** les règles retenues
-sont `default`, sinon **`strict`** (posture sûre). Une règle sans `mode` (null
-en base) retombe sur `StateProvider::mode()` (le défaut du type) — wallpaper
-reste `default`, overlay/shortcuts restent `strict` tant qu'aucune règle n'est
-basculée via l'UI (toggle exposé pour les 3 types, décision n° 2).
+porté par `StateCandidate::$mode`. Le `StateCompiler` **agrège** le mode par type
+(un seul verdict côté agent) : **`default` ssi TOUTES** les candidats retenus
+sont `default`, sinon **`strict`** (posture sûre). Un candidat sans `mode` (null)
+retombe sur `StateProvider::mode()` (le défaut du type) — wallpaper reste
+`default`, overlay/shortcuts restent `strict` tant qu'aucune cible n'est basculée.
+
+**La PROVENANCE du mode diffère selon la structure d'assignation du type** (Story
+27.3 — drift policy PAR ASSIGNATION) :
+
+- **`shortcuts`** : vraie table pivot N-à-M (`shortcut_assignables`). Le mode vit
+  sur le **lien** (`shortcut_assignables.mode`) — un même raccourci peut être
+  `strict` sur un parc et `default` sur un autre. Le provider projette le mode de
+  **chaque** assignation dans son candidat.
+- **`wallpapers`** : ciblage `owner_type`/`owner_id` **sur la table `wallpapers`**
+  (1 wallpaper = 1 cible). La règle EST l'assignation → le mode reste sur
+  `wallpapers.mode` ; il est **déjà « par cible »**.
+- **`overlay_signals`** : ciblage `workstation_uuid`/`workstation_group_id`/
+  `user_login` **sur la table** (1 signal = 1 cible). Idem : le mode reste sur
+  `overlay_signals.mode`, **déjà « par cible »**.
+
+> **Note de révision.** En 27.1, le mode était posé sur la RÈGLE des 3 types
+> (colonne `mode` sur `shortcuts`/`wallpapers`/`overlay_signals`). 27.3 le rend
+> **par assignation** : pour `shortcuts` la colonne `mode` a été **déplacée** de
+> `shortcuts` vers `shortcut_assignables` (le mode quitte la règle) ; pour
+> `wallpapers`/`overlay_signals` la colonne reste en place car « règle =
+> assignation » (Option A — aucun pivot créé). Le toggle UI suit : posé au geste
+> d'assignation (modale d'assignation raccourcis ; carte wallpaper ; création
+> overlay), retiré du formulaire d'édition de règle raccourci.
 
 ## Ajouter un type de ressource (checklist Epic 27)
 

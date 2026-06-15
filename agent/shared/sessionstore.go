@@ -32,6 +32,7 @@ import (
 const (
 	sessionsDirName       = "sessions"
 	assetsDirName         = "assets"
+	iconsDirName          = "icons"
 	reportsDirName        = "reports"
 	updateDirName         = "update"
 	sessionReportFileName = "session-report.json"
@@ -72,6 +73,41 @@ func (s *Store) AssetsDir() string {
 
 func (s *Store) AssetPath(filename string) string {
 	return filepath.Join(s.AssetsDir(), filename)
+}
+
+// IconsDir : cache des icônes UPLOADÉES de raccourcis content-addressed
+// (Story 27.7) — C:\ProgramData\SambaEdu\Agent\icons\<sha>.ico. Distinct du
+// cache d'assets wallpaper (transport différent : GET HTTP statique sans
+// token vs Client token'd) — mais MÊME ACL (Users:R, un .ico n'est pas un
+// secret et le compagnon doit pointer l'IconLocation dessus).
+func (s *Store) IconsDir() string {
+	return filepath.Join(s.root(), iconsDirName)
+}
+
+// IconPath : chemin local d'une icône raccourci content-addressed. Le
+// filename est validé STRICTEMENT en amont (ValidShortcutIconFilename) — un
+// payload serveur reste une entrée externe, jamais de traversal depuis le
+// cache d'icônes.
+func (s *Store) IconPath(filename string) string {
+	return filepath.Join(s.IconsDir(), filename)
+}
+
+// EnsureIconsDir crée icons\ avec son ACL (Users:R — setAssetsACL réutilisé :
+// un .ico de raccourci n'est pas un secret et le compagnon doit l'afficher).
+// acl nil = no-op (tests hôte). Idempotent.
+func (s *Store) EnsureIconsDir(acl func(path string) error) error {
+	dir := s.IconsDir()
+	if _, err := os.Stat(dir); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("création de %s : %w", dir, err)
+	}
+	if acl != nil {
+		return acl(dir)
+	}
+
+	return nil
 }
 
 // UpdateDir : répertoire de staging des binaires d'auto-update (Story 25.2,

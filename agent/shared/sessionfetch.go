@@ -147,4 +147,5 @@ func (a *Agent) RunSessionFetch(cfg Config) {
 
 	a.fetchSessionStates(cfg)
 	a.SyncWallpaperAssets(cfg)
+	a.SyncShortcutIcons(cfg) // Story 27.7 : icônes uploadées (GET statique sans token)
 }

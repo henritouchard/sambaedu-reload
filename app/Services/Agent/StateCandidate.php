@@ -19,9 +19,11 @@ use App\Enums\StateMode;
  * `sourceId` est aussi l'id loggé dans `agent.state.conflict` et l'ordre
  * stable des items aggregate (décision n° 9).
  *
- * `mode` (Story 27.1, décision n° 2) : mode d'application **par candidat** —
+ * `mode` (Story 27.1, révisé Story 27.3) : mode d'application **par candidat** —
  * le toggle strict/default n'est plus une constante par type mais un attribut
- * piloté par règle. `null` = « le candidat ne déclare pas de mode » : le
+ * piloté par l'ASSIGNATION (27.3 : `shortcut_assignables.mode` ; wallpaper /
+ * overlay = mode sur leur ligne, déjà « par cible »). `null` = « le candidat ne
+ * déclare pas de mode » : le
  * compilateur retombe alors sur le `StateProvider::mode()` (défaut du type,
  * comportement 23.4 préservé). L'agrégation du mode par type (un seul verdict
  * par type côté agent) vit dans le `StateCompiler` SEUL.
@@ -31,7 +33,7 @@ final readonly class StateCandidate
     /**
      * @param  array<string,mixed>  $payload  contrat §4.1 : jamais de float
      * @param  int  $sourceId  id de la règle métier source (tiebreak + logs)
-     * @param  StateMode|null  $mode  mode par règle (null = défaut du provider)
+     * @param  StateMode|null  $mode  mode par assignation (27.3 ; null = défaut du provider, résolu au compilateur)
      */
     public function __construct(
         public StateMaille $maille,
