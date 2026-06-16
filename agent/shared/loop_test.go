@@ -536,3 +536,235 @@ func TestPrimeServerTtlWithoutCacheIsANoop(t *testing.T) {
 		t.Errorf("cadence locale attendue sans cache, got %v", got)
 	}
 }
+
+// ── Réveil au logon (Story 27.9) ─────────────────────────────────────────────
+
+// runWakeAgent : agent piloté pour les tests de réveil — cadence nominale très
+// longue (pour que SEUL un réveil puisse écourter la sieste), debounce ramené à
+// 0 quand on veut autoriser tous les réveils, ctx annulé après N rapports.
+func newWakeAgent(t *testing.T, f *fakeServer, intervalSeconds int) (*Agent, *Store) {
+	t.Helper()
+	agent, store, _ := newTestAgent(t, f)
+	agent.InitWake()
+	if err := store.WriteConfig(Config{ServerURL: f.server.URL, IntervalSeconds: intervalSeconds}); err != nil {
+		t.Fatal(err)
+	}
+
+	return agent, store
+}
+
+// waitReports bloque jusqu'à ce que le serveur de test ait vu >= n rapports, ou
+// échoue au timeout. Évite les time.Sleep arbitraires (pilotage par état).
+func waitReports(t *testing.T, f *fakeServer, n int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		f.mu.Lock()
+		got := f.reportCalls
+		f.mu.Unlock()
+		if got >= n {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	f.mu.Lock()
+	got := f.reportCalls
+	f.mu.Unlock()
+	t.Fatalf("timeout : %d rapports attendus, got %d", n, got)
+}
+
+func reportCount(f *fakeServer) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.reportCalls
+}
+
+// TestSleepUntilDueOrWakeFreshCycleWhenDebouncePassed : AC1/AC3 — avec un dernier
+// cycle déjà ancien (> min-interval), un réveil interrompt la longue sieste et
+// déclenche un cycle frais quasi immédiatement (la fonction retourne true).
+func TestSleepUntilDueOrWakeFreshCycleWhenDebouncePassed(t *testing.T) {
+	agent := &Agent{Log: &Logger{}}
+	agent.InitWake()
+
+	// Dernier cycle « il y a longtemps » → debounce franchi.
+	lastCycle := time.Now().Add(-2 * time.Duration(MinLogonWakeIntervalSeconds) * time.Second)
+	agent.RequestWake()
+
+	ctx := context.Background()
+	start := time.Now()
+	// Sieste nominale très longue : seul le réveil peut écourter.
+	got := agent.sleepUntilDueOrWake(ctx, time.Hour, lastCycle)
+	if !got {
+		t.Fatal("réveil franchissant le debounce : cycle frais (true) attendu")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("le réveil aurait dû écourter la sieste quasi immédiatement, attendu %v", elapsed)
+	}
+}
+
+// TestSleepUntilDueOrWakeDebouncedWhenTooRecent : AC3 — un réveil trop tôt après
+// le dernier cycle ne lance PAS de cycle immédiat ; il est coalescé. Comme le
+// min-interval réel (60 s) est trop long pour un test rapide, on vérifie que la
+// fonction NE retourne PAS immédiatement true sur un wake « frais » (dernier
+// cycle = maintenant) et qu'elle sort proprement sur ctx.
+func TestSleepUntilDueOrWakeDebouncedWhenTooRecent(t *testing.T) {
+	agent := &Agent{Log: &Logger{}}
+	agent.InitWake()
+
+	lastCycle := time.Now() // tout juste → bien dans la fenêtre de debounce
+	agent.RequestWake()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan bool, 1)
+	go func() {
+		// Échéance nominale longue : si le debounce N'était PAS respecté, la
+		// fonction retournerait true tout de suite (cycle prématuré). On veut
+		// qu'elle reste à attendre (le min-interval n'est pas écoulé, et il
+		// expire AVANT l'échéance nominale d'1 h → re-sieste du reliquat).
+		done <- agent.sleepUntilDueOrWake(ctx, time.Hour, lastCycle)
+	}()
+
+	// Pendant 200 ms, la fonction NE doit PAS avoir rendu true (debounce actif).
+	select {
+	case v := <-done:
+		t.Fatalf("retour prématuré %v : le debounce aurait dû maintenir la sieste", v)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	// ctx annulé → sortie propre (false), même réveil en cours.
+	cancel()
+	select {
+	case v := <-done:
+		if v {
+			t.Fatal("sortie sur ctx.Done attendue (false)")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("sleepUntilDueOrWake bloqué après ctx.Done")
+	}
+}
+
+// TestSleepUntilDueOrWakeCoalescesMultipleWakes : AC3 — plusieurs réveils
+// rapprochés pendant la fenêtre de debounce sont coalescés (au plus un cycle).
+// On vérifie que N RequestWake successifs ne provoquent qu'au plus une sortie
+// « cycle frais », et que le buffer 1 ne fait jamais bloquer RequestWake.
+func TestSleepUntilDueOrWakeCoalescesMultipleWakes(t *testing.T) {
+	agent := &Agent{Log: &Logger{}}
+	agent.InitWake()
+
+	// 50 réveils en rafale : aucun ne doit bloquer (non-bloquant + buffer 1).
+	for range 50 {
+		agent.RequestWake()
+	}
+	// Le canal est bufferisé taille 1 : au plus un signal en attente.
+	if len(agent.wake) > 1 {
+		t.Fatalf("canal wake doit coalescer (buffer 1), got len=%d", len(agent.wake))
+	}
+
+	// Dernier cycle ancien → le premier réveil consommé franchit le debounce et
+	// retourne true ; les 49 autres ont été jetés (coalescence).
+	lastCycle := time.Now().Add(-2 * time.Duration(MinLogonWakeIntervalSeconds) * time.Second)
+	if !agent.sleepUntilDueOrWake(context.Background(), time.Hour, lastCycle) {
+		t.Fatal("premier réveil (debounce franchi) : cycle frais attendu")
+	}
+	// Plus aucun signal en attente après consommation.
+	if len(agent.wake) != 0 {
+		t.Fatalf("aucun réveil résiduel attendu après coalescence, got len=%d", len(agent.wake))
+	}
+}
+
+// TestRequestWakeNilSafe : AC6 — RequestWake sur un Agent sans canal (nil) ne
+// panique pas et est un no-op (console de debug, plateformes sans sessions).
+func TestRequestWakeNilSafe(t *testing.T) {
+	agent := &Agent{Log: &Logger{}} // wake == nil
+	// Ne doit pas paniquer ni bloquer.
+	agent.RequestWake()
+	agent.RequestWake()
+}
+
+// TestRunNilWakeIsInert : AC6 — la boucle Run avec un canal wake nil tourne sans
+// panic et sort proprement sur ctx (le `case <-a.wake` sur nil bloque pour
+// toujours mais c'est juste une branche jamais prête : le timer/ctx restent
+// actifs).
+func TestRunNilWakeIsInert(t *testing.T) {
+	f := newFakeServer(t)
+	agent, store, _ := newTestAgent(t, f) // pas d'InitWake → wake nil
+	if err := store.WriteConfig(Config{ServerURL: f.server.URL, IntervalSeconds: 3600}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		agent.Run(ctx)
+		close(done)
+	}()
+
+	waitReports(t, f, 1, 5*time.Second)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run avec wake nil aurait dû sortir proprement sur ctx")
+	}
+}
+
+// TestRunWakeNoRegressionContextCancel : AC5/non-régression — ctx.Done() sort
+// toujours proprement même avec un réveil concurrent posté juste avant.
+func TestRunWakeNoRegressionContextCancel(t *testing.T) {
+	f := newFakeServer(t)
+	agent, _ := newWakeAgent(t, f, 100000)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		agent.Run(ctx)
+		close(done)
+	}()
+
+	waitReports(t, f, 1, 5*time.Second)
+	before := reportCount(f)
+	agent.RequestWake() // réveil concurrent…
+	cancel()            // …puis stop SCM
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run aurait dû sortir sur ctx malgré un réveil concurrent")
+	}
+	// Le réveil ne doit pas avoir provoqué une avalanche de cycles : le debounce
+	// (60 s) + le ctx annulé immédiatement garantissent au plus le cycle de
+	// boot. On tolère 1 cycle supplémentaire (course bénigne wake/cancel) mais
+	// pas davantage — une avalanche signalerait une régression de la cadence.
+	if got := reportCount(f); got > before+1 {
+		t.Errorf("réveil concurrent : avalanche de cycles (%d rapports, boot=%d) — au plus +1 attendu", got, before)
+	}
+}
+
+// TestSleepUntilDueOrWakeDebounceHonoredAfterDelay : AC3 — couvre la branche
+// nominale du debounce (debounceTimer.C → cycle frais). Dernier cycle posé juste
+// avant l'expiration du min-interval (reliquat ~60 ms) : le réveil ne part PAS
+// immédiatement (debounce actif) mais bien à l'expiration, et avant l'échéance
+// nominale longue. Vérifie à la fois « pas trop tôt » et « bien honoré ».
+func TestSleepUntilDueOrWakeDebounceHonoredAfterDelay(t *testing.T) {
+	agent := &Agent{Log: &Logger{}}
+	agent.InitWake()
+
+	minWindow := time.Duration(MinLogonWakeIntervalSeconds) * time.Second
+	// Dernier cycle juste sous le min-interval → reliquat de debounce ~60 ms,
+	// qui expire bien AVANT l'échéance nominale (1 h) → branche debounceTimer.C.
+	lastCycle := time.Now().Add(-(minWindow - 60*time.Millisecond))
+	agent.RequestWake()
+
+	start := time.Now()
+	got := agent.sleepUntilDueOrWake(context.Background(), time.Hour, lastCycle)
+	if !got {
+		t.Fatal("à l'expiration du debounce, un cycle frais (true) est attendu")
+	}
+	elapsed := time.Since(start)
+	if elapsed > 2*time.Second {
+		t.Fatalf("le cycle aurait dû partir à l'expiration du min-interval (~60 ms), pris %v", elapsed)
+	}
+	if elapsed < 30*time.Millisecond {
+		t.Fatalf("le cycle est parti avant l'expiration du debounce (%v) — branche non honorée", elapsed)
+	}
+}

@@ -59,6 +59,8 @@ func (s *agentService) Execute(_ []string, requests <-chan svc.ChangeRequest, st
 				// la nouvelle session y apparaît, on écrit pour chacune
 				// (idempotent).
 				if req.EventType == windows.WTS_SESSION_LOGON {
+					// Story 27.1bis : réécriture overlay.json (best-effort, sous
+					// garde recover — une panique overlay ne tue pas le SCM).
 					func() {
 						defer func() {
 							if r := recover(); r != nil {
@@ -67,6 +69,14 @@ func (s *agentService) Execute(_ []string, requests <-chan svc.ChangeRequest, st
 						}()
 						writeOverlayForAllSessions(agent.Store, computerName, agent.Log)
 					}()
+					// Story 27.9 : réveil de la boucle de convergence — un cycle
+					// complet (RunCycle) part dès le logon au lieu d'attendre le
+					// prochain tick (jusqu'à ~1 h). Send NON-BLOQUANT (coalescé,
+					// jamais de blocage du SCM) et INDÉPENDANT de l'overlay : posé
+					// HORS du recover ci-dessus, une panique overlay n'empêche pas
+					// le réveil et vice-versa (les deux sont best-effort distincts,
+					// AC4). Le debounce min-interval vit côté boucle.
+					agent.RequestWake()
 				}
 				// On re-confirme l'état courant au SCM (l'event n'a pas changé
 				// l'état du service).

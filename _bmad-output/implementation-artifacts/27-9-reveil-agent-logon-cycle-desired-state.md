@@ -1,6 +1,6 @@
 # Story 27.9: Réveil de l'agent au logon — cycle desired-state
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -45,29 +45,30 @@ La sieste est un `select { case <-ctx.Done(): … case <-time.After(sleep): }` (
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Canal de réveil dans `Agent` (`agent/shared/loop.go`)** (AC: 1, 2, 6)
-  - [ ] Ajouter un champ canal de réveil bufferisé taille 1 (ex. `wake chan struct{}`), créé à la construction (voir T4) ou lazy-initialisé ; documenter qu'un canal nil = réveil inerte (tests/console).
-  - [ ] Exposer une méthode `RequestWake()` qui poste sur le canal en **send non-bloquant** (`select { case a.wake <- struct{}{}: default: }`) — nil-safe, jamais de blocage, coalescence naturelle (buffer 1).
-- [ ] **T2 — Interruption de sieste + debounce dans `Run` (`agent/shared/loop.go`)** (AC: 1, 3, 5)
-  - [ ] Suivre l'instant de **début du dernier cycle** (`time.Time`, mis à jour juste avant `RunCycle`).
-  - [ ] Ajouter `case <-a.wake:` au `select` de sieste (`loop.go:544-550`), aux côtés de `ctx.Done()` et `time.After(sleep)`.
-  - [ ] Sur réveil : si `time.Since(dernierCycle) >= MinLogonWakeIntervalSeconds` → repartir en haut de boucle pour un cycle frais ; sinon (debounce) → **re-sleeper** le reliquat (`MinLogonWakeIntervalSeconds - elapsed`) au lieu de lancer le cycle, sans réinitialiser le backoff (le tick nominal reste l'échéance de repli).
-  - [ ] Garantir AC5 : hors réveil, la logique de cadence/jitter/backoff/`OutcomeStop` est intacte (aucune branche existante modifiée hors ajout du `case`).
-- [ ] **T3 — Constante de debounce (`agent/shared/files.go`)** (AC: 3)
-  - [ ] Ajouter `MinLogonWakeIntervalSeconds` (valeur par défaut proposée : **60 s**, iso plancher `MinServerIntervalSeconds`) avec un commentaire explicitant le rôle anti-martèlement.
-- [ ] **T4 — Câblage SCM au logon (`agent/windows/service_windows.go`)** (AC: 1, 2, 4)
-  - [ ] Dans la branche `if req.EventType == windows.WTS_SESSION_LOGON` : conserver `writeOverlayForAllSessions(...)` (27.1bis) **ET** ajouter l'appel à `agent.RequestWake()`.
-  - [ ] Garder l'appel best-effort : ni l'écriture overlay ni le réveil ne doivent bloquer le SCM ; la garde `recover()` existante (overlay) reste, le `RequestWake()` non-bloquant n'a pas besoin de garde mais ne doit pas être placé sous une panique de l'overlay (les rendre indépendants).
-  - [ ] S'assurer que le canal de réveil partagé entre la goroutine `Run` et le handler est initialisé **avant** que `Run` ne démarre (créer le canal dans `newAgent` est le plus sûr).
-- [ ] **T5 — Tests hôte (`agent/shared/loop_test.go`)** (AC: 1, 3, 5, 6)
-  - [ ] Test : un `RequestWake()` interrompt la sieste de `Run` et provoque un cycle frais avant l'échéance nominale (intervalle de test long, wake immédiat, compter les cycles ; piloter via `Client`/serveur de test existant et `ctx` annulé après le 2e cycle).
-  - [ ] Test debounce : deux `RequestWake()` rapprochés (< min-interval) ⇒ **un seul** cycle supplémentaire dans la fenêtre.
-  - [ ] Test nil-safe : `RequestWake()` sur un `Agent` sans canal (ou canal nil) ne panique pas (AC6).
-  - [ ] Non-régression : `ctx.Done()` sort toujours proprement même avec un réveil concurrent ; les tests existants `RunCycle*` / `EffectiveInterval*` / `NextBackoff*` restent verts.
-- [ ] **T6 — Vérifications de build & non-régression** (AC: 4, 5, 6)
-  - [ ] `go vet` + `go test ./agent/shared/...` (hôte Linux) verts.
-  - [ ] Cross-compile Windows (`GOOS=windows`) vert — le câblage `service_windows.go` compile, l'overlay 27.1bis inchangé.
-  - [ ] Aucun nouvel import Windows dans `agent/shared` (le réveil est plateforme-agnostique).
+- [x] **T1 — Canal de réveil dans `Agent` (`agent/shared/loop.go`)** (AC: 1, 2, 6)
+  - [x] Ajouter un champ canal de réveil bufferisé taille 1 (`wake chan struct{}`), créé à la construction via `InitWake()` (appelé par `newAgent`) + helper test `NewAgentForTest` ; documenté qu'un canal nil = réveil inerte (console/tests, nil-safe).
+  - [x] Exposer une méthode `RequestWake()` qui poste sur le canal en **send non-bloquant** (`select { case a.wake <- struct{}{}: default: }`) — nil-safe (early-return si `wake == nil`), jamais de blocage, coalescence naturelle (buffer 1).
+- [x] **T2 — Interruption de sieste + debounce dans `Run` (`agent/shared/loop.go`)** (AC: 1, 3, 5)
+  - [x] Suivre l'instant de **début du dernier cycle** (`lastCycleStart time.Time`, mis à jour juste avant `RunCycle`).
+  - [x] Ajouter `case <-a.wake:` au `select` de sieste, extrait dans `sleepUntilDueOrWake(ctx, sleep, lastCycleStart)`, aux côtés de `ctx.Done()` et du timer nominal.
+  - [x] Sur réveil : si `time.Since(lastCycleStart) >= MinLogonWakeIntervalSeconds` → cycle frais immédiat ; sinon (debounce) → re-sieste BORNÉE du reliquat (jamais au-delà de l'échéance nominale absolue déjà armée), sans réinitialiser le backoff. Le timer nominal n'est jamais repoussé (échéance absolue de repli).
+  - [x] Garantir AC5 : aucun calcul de cadence/jitter/backoff/`OutcomeStop` modifié ; le `select` historique est simplement déplacé tel quel dans `sleepUntilDueOrWake`, avec l'unique ajout du `case <-a.wake`.
+- [x] **T3 — Constante de debounce (`agent/shared/files.go`)** (AC: 3)
+  - [x] Ajouté `MinLogonWakeIntervalSeconds = 60` (iso plancher `MinServerIntervalSeconds`) avec commentaire anti-martèlement.
+- [x] **T4 — Câblage SCM au logon (`agent/windows/service_windows.go`)** (AC: 1, 2, 4)
+  - [x] Dans la branche `WTS_SESSION_LOGON` : `writeOverlayForAllSessions(...)` conservé (sous sa garde `recover()`) **ET** `agent.RequestWake()` ajouté.
+  - [x] `RequestWake()` posé **hors** du `func(){ … recover() … }()` overlay → indépendant : une panique overlay n'empêche pas le réveil et vice-versa (AC4). Send non-bloquant = aucun blocage du SCM.
+  - [x] Canal initialisé dans `newAgent` (`agent/windows/main_windows.go`) via `agent.InitWake()` AVANT le `go agent.Run(ctx)` du `Execute`.
+- [x] **T5 — Tests hôte (`agent/shared/loop_test.go`)** (AC: 1, 3, 5, 6)
+  - [x] `TestSleepUntilDueOrWakeFreshCycleWhenDebouncePassed` : réveil franchissant le debounce interrompt la sieste → cycle frais (true) quasi immédiat.
+  - [x] `TestSleepUntilDueOrWakeDebouncedWhenTooRecent` : réveil trop récent NE retourne PAS prématurément (coalescé) ; sortie propre sur `ctx`.
+  - [x] `TestSleepUntilDueOrWakeCoalescesMultipleWakes` : 50 `RequestWake()` en rafale ⇒ canal `len <= 1` (coalescence) ⇒ au plus un cycle.
+  - [x] `TestRequestWakeNilSafe` + `TestRunNilWakeIsInert` : canal nil = no-op, aucun panic, `Run` sort sur `ctx` (AC6).
+  - [x] `TestRunWakeNoRegressionContextCancel` : `ctx.Done()` sort proprement malgré un réveil concurrent ; suite existante (`RunCycle*`/`EffectiveInterval*`/`NextBackoff*`) verte.
+- [x] **T6 — Vérifications de build & non-régression** (AC: 4, 5, 6)
+  - [x] `go vet ./shared/...` + `go test ./shared/...` (hôte Linux) verts (module racine = `agent/`).
+  - [x] Cross-compile Windows (`CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./windows`) vert + `GOOS=windows go vet ./windows/...` vert — overlay 27.1bis inchangé.
+  - [x] Aucun nouvel import Windows dans `agent/shared` (réveil plateforme-agnostique) ; `agent/go.mod` & `go.sum` inchangés (zéro nouvelle dépendance).
 
 ## Dev Notes
 
@@ -126,8 +127,32 @@ La sieste est un `select { case <-ctx.Done(): … case <-time.After(sleep): }` (
 
 ### Agent Model Used
 
+Opus 4.8 (1M context) — `claude-opus-4-8[1m]`. NB : Fable (`claude-fable-5`) était la reco initiale (consigne projet stories agent desired-state) mais indisponible ; fallback Opus assumé, pertinent ici pour le résiduel concurrence (course canal `wake`/`ctx`, coalescence, debounce côté boucle).
+
 ### Debug Log References
+
+- `go vet ./shared/...` → exit 0.
+- `go test ./shared/...` (hôte Linux) → `ok sambaedu/agent/shared` (suite complète verte, dont les 6 nouveaux tests réveil/debounce/nil-safe).
+- `go test -race ./shared/... -run 'Wake|SleepUntil|RequestWake'` → PASS (mes tests propres sous le détecteur de course). NB : la suite `-race` complète signale DEUX courses PRÉ-EXISTANTES, toutes deux sur `companion.go:176` (↔ `companion_test.go`) : `TestCompanionRunStaysResidentWithoutCache` ET `TestCompanionRunResidentReconvergesOnCacheChange`. Fichiers NON touchés par cette story — hors périmètre 27.9 (à traiter en story dédiée, cf. backlog dette technique companion).
+- Cross-compile : `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./windows` → binaire produit (10,7 Mo) ; `GOOS=windows go vet ./windows/...` → exit 0.
+- `agent/go.mod` / `agent/go.sum` : aucun diff (zéro nouvelle dépendance).
 
 ### Completion Notes List
 
+- **Mécanisme** : canal `wake chan struct{}` bufferisé taille 1 sur l'`Agent` (shared), posté en send non-bloquant par `RequestWake()` (nil-safe). Le handler SCM Windows (`WTS_SESSION_LOGON`) appelle `RequestWake()` à côté — et **indépendamment** — de la réécriture overlay 27.1bis.
+- **Debounce côté boucle** : la décision « honorer ou coalescer » vit dans `sleepUntilDueOrWake` (thread unique de `Run`), via `lastCycleStart` + `MinLogonWakeIntervalSeconds` (60 s, `files.go`). Le SCM ne fait que poster ; aucune course sur état partagé.
+- **Échéance nominale absolue préservée (AC5)** : le timer de sieste est armé une fois sur `sleep` ; un réveil debouncé re-siète AU PLUS le reliquat de min-interval, borné par l'échéance nominale — jamais de repoussage du tick, jamais de reset du backoff. Le `select` historique (`ctx.Done()` / timer) est déplacé tel quel, seul `case <-a.wake` est ajouté.
+- **Coalescence** : buffer 1 + `default` → 50 logons en rafale ⇒ au plus un signal en file ; un réveil supplémentaire pendant la fenêtre de debounce est jeté (au plus un cycle par fenêtre min-interval, AC3).
+- **Non-régression overlay 27.1bis** : `writeOverlayForAllSessions` + sa garde `recover()` intacts ; le réveil est best-effort distinct (une panique de l'un ne tue ni le SCM ni l'autre, AC4).
+- **Inertie hors Windows (AC6)** : canal nil = no-op (`RequestWake` early-return ; `case <-a.wake` sur nil = branche jamais prête, timer/ctx restent actifs). Aucun import Windows dans `shared`.
+- **Hors périmètre** : aucun bump `FROZEN_STATE_HASH`, aucune migration/route, zéro impact serveur SE5, aucune release publiée (validation poste Windows réel = action humaine post-merge).
+
 ### File List
+
+- `agent/shared/loop.go` (modifié) — champ `wake` + `InitWake()` + `NewAgentForTest()` + `RequestWake()` ; `Run` : `lastCycleStart` + extraction `sleepUntilDueOrWake()` (debounce + `case <-a.wake`).
+- `agent/shared/files.go` (modifié) — constante `MinLogonWakeIntervalSeconds = 60`.
+- `agent/windows/service_windows.go` (modifié) — `agent.RequestWake()` dans la branche `WTS_SESSION_LOGON`, hors du recover overlay.
+- `agent/windows/main_windows.go` (modifié) — `newAgent` retourne une variable `agent` + `agent.InitWake()` avant retour.
+- `agent/shared/loop_test.go` (modifié) — 6 tests hôte (réveil/debounce/coalescence/nil-safe/non-régression ctx) + helpers `newWakeAgent`/`waitReports`/`reportCount`.
+- `docs/qa/domains/agent.md` (modifié) — Section 20 (réveil au logon), scénarios manuels poste Windows.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (modifié) — statut `review` + commentaire daté.

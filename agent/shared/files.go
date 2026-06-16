@@ -34,6 +34,16 @@ const (
 	// DefaultIntervalSeconds : cadence par défaut (D7), iso ttl_seconds
 	// conseillé par le serveur.
 	DefaultIntervalSeconds = 3600
+
+	// MinLogonWakeIntervalSeconds : fenêtre de debounce anti-martèlement du
+	// réveil au logon (Story 27.9). Un réveil logon ne déclenche un cycle frais
+	// QUE si ce délai s'est écoulé depuis le DÉBUT du dernier cycle ; sinon le
+	// signal est coalescé (re-sleep du reliquat). Protège contre les
+	// logons/déconnexions rapprochés (sessions multiples, RDP qui claque, fast
+	// user switching) qui sinon feraient spinner la boucle. Valeur iso plancher
+	// MinServerIntervalSeconds (60 s) : un réveil n'est jamais plus agressif que
+	// la cadence serveur minimale.
+	MinLogonWakeIntervalSeconds = 60
 )
 
 var tokenPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)

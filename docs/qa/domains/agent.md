@@ -1932,3 +1932,114 @@ Ces trois incidents passaient les tests unitaires initiaux mais se révèlent à
 3. Idempotence : re-jouer `migrate` (ou `migrate:rollback` puis `migrate`) ne
    casse rien (`Schema::hasColumn` en garde des deux côtés ; `down()` RE-CRÉE la
    colonne nullable).
+
+## Section 20 — Réveil de l'agent au logon : cycle desired-state (Story 27.9)
+
+> **Nature de la story.** RUNTIME/boucle agent, **PAS** un handler de ressource :
+> aucun contrat v1, aucun golden, aucun `FROZEN_STATE_HASH`, aucune migration,
+> aucune route, **zéro impact serveur SE5**. L'agent Go réutilise le hook SCM
+> **existant** `WTS_SESSION_LOGON` (déjà abonné `AcceptSessionChange` pour
+> `overlay.json`, Story 27.1bis) pour **réveiller la boucle de convergence** : au
+> logon, un **cycle complet** (`RunCycle` : `/state` + portée session + assets +
+> icônes + Rainmeter + self-update + `/report`) part **immédiatement** au lieu
+> d'attendre le prochain tick de polling (jusqu'à ~1 h, voire 24 h de TTL
+> serveur). Mécanisme = canal `wake` bufferisé 1 + `RequestWake()` non-bloquant
+> (coalescé) ; garde-fou anti-martèlement = **debounce min-interval (60 s)** côté
+> boucle. Le réveil **s'ajoute** à l'écriture overlay 27.1bis, il ne la remplace
+> pas.
+>
+> **Périmètre testé en automatique (hôte Linux)** : toute la logique (réveil,
+> debounce, coalescence, nil-safe, non-régression `ctx`) vit dans `agent/shared`
+> et est couverte par `go test ./shared/...` (6 nouveaux tests). Le câblage
+> `service_windows.go` (`//go:build windows`) est couvert par cross-compile +
+> `go vet`. **Les scénarios ci-dessous valident le comportement OBSERVABLE sur un
+> poste Windows réel — ce sont des ACTIONS HUMAINES (Henri), post-merge** : ils
+> ne sont pas automatisables dans le worktree (zéro interaction VM, aucun poste).
+
+### Scénario 20.1 — Logon pendant la sieste → cycle frais observé dans les logs (lab Windows — ACTION HUMAINE Henri)
+
+1. Sur un poste enrôlé, service agent installé et démarré. Attendre que le **1er
+   cycle de boot** soit passé (log `POST /report -> 200 : rapport accepté…`) — la
+   boucle est désormais en **sieste nominale** (jusqu'à `ttl_seconds` serveur, p.
+   ex. ~1 h).
+2. **Sans redémarrer le service**, ouvrir une **session interactive** (logon
+   Windows d'un utilisateur du domaine) plus de 60 s après le dernier cycle.
+3. **Attendu** dans `C:\ProgramData\SambaEdu\Agent\logs\…` (quasi immédiatement,
+   pas après l'heure de sieste) :
+   - une ligne `Réveil au logon : cycle de convergence frais lancé (… s depuis le
+     dernier cycle).` ;
+   - puis le cycle complet : `GET /state -> 200/304…`, fetch session, sync
+     assets/icônes/Rainmeter, self-update, `POST /report -> 200…`.
+4. **Effet métier** : raccourcis / lecteurs / imprimantes / wallpaper / overlay
+   convergent **dès l'ouverture de session**, sans le « il ne se passe rien
+   pendant un moment » au logon.
+
+### Scénario 20.2 — Debounce : logons rapprochés ⇒ AU PLUS un cycle dans la fenêtre min-interval (lab Windows — ACTION HUMAINE Henri)
+
+1. Provoquer un cycle (logon ou boot), noter l'horodatage du cycle dans les logs.
+2. **Dans les 60 s** qui suivent ce cycle, déclencher **plusieurs logons
+   rapprochés** (fast user switching, ouverture/fermeture rapide, sessions RDP
+   multiples qui claquent).
+3. **Attendu** : **aucun** nouveau cycle complet ne part immédiatement à chaque
+   logon. Les logs montrent au plus une ligne de coalescence
+   (`Réveil au logon … coalescé (debounce)…` / `… ignoré (debounce)…`), puis **au
+   plus UN** cycle frais à l'expiration du min-interval (ou au tick nominal si
+   celui-ci arrive avant). **Jamais** de rafale de cycles (`POST /report`) qui
+   martèlerait le serveur.
+4. **Contre-épreuve réseau** : le backoff exponentiel n'est **pas** réinitialisé
+   par un réveil — si le serveur était injoignable, un logon n'efface pas le
+   garde-fou anti-martèlement (FR22), il ne fait qu'écourter la sieste sous
+   debounce.
+
+### Scénario 20.3 — Non-régression overlay 27.1bis : `overlay.json` toujours réécrit au logon (lab Windows — ACTION HUMAINE Henri)
+
+1. Au logon (Scénario 20.1), vérifier que `overlay.json` de la session
+   (`…\<profil utilisateur>\…\SambaEdu\Agent\overlay.json`, possédé SYSTEM, ACL
+   `<SID>:R`) est **réécrit** comme avant 27.9 — l'overlay Rainmeter verrouillé
+   s'affiche.
+2. **Attendu** : le réveil de la boucle **s'ajoute** à l'écriture overlay, il ne
+   la remplace ni ne l'ordonne. Les deux sont best-effort **indépendants** : si la
+   composition overlay panique (rattrapée par le `recover()` existant, log
+   `Écriture overlay au logon en échec (panique rattrapée)…`), le **réveil de la
+   boucle a quand même lieu** — et inversement.
+3. **Contre-épreuve** : aucune régression du comportement overlay logon-only
+   (pas de réécriture sur logoff/lock/unlock).
+
+### Scénario 20.4 — Aucun logon : la cadence nominale est strictement inchangée (lab Windows — ACTION HUMAINE Henri)
+
+1. Laisser le poste **sans ouverture de session** (ou console verrouillée sans
+   nouveau logon) pendant plusieurs cadences.
+2. **Attendu** : le ticker / jitter ±10 % / TTL serveur / backoff exponentiel se
+   comportent **exactement** comme avant 27.9 (cadence nominale, clamps
+   `[60 s, 86400 s]`, sieste, sortie propre sur stop SCM / 401 `OutcomeStop`). Le
+   réveil au logon n'altère **aucun** calcul de cadence quand il n'y a pas de
+   logon.
+3. **Console de debug / plateforme sans sessions** : le mécanisme est **inerte**
+   (canal nil, no-op) — aucun panic, aucune dépendance Windows tirée dans
+   `agent/shared`.
+
+### Post-correctifs & non-régressions (Section 20)
+
+- **Send non-bloquant obligatoire** : `RequestWake()` poste en `select … default`
+  sur un canal bufferisé 1 → ne **gèle jamais** le thread de contrôle du service
+  (`Execute`), même boucle occupée (cycle en vol, HTTP lent) ou réveil déjà en
+  attente. Un send bloquant aurait rendu le service insensible aux
+  `Stop`/`Interrogate`.
+- **Canal initialisé à la construction** (`newAgent` → `InitWake()`), **avant**
+  `go agent.Run(ctx)` : jamais de `RequestWake` sur un canal nil au moment du
+  premier logon (qui bloquerait pour toujours). `RequestWake()` reste nil-safe par
+  défense.
+- **Debounce côté boucle (thread unique)** : la fenêtre min-interval se mesure
+  dans `Run` (propriétaire de `lastCycleStart`), pas côté SCM → aucune course sur
+  un état partagé. Le SCM ne fait que poster un signal ; la boucle décide.
+
+### Checklist rapide (Section 20)
+
+- [ ] 20.1 — Logon pendant la sieste : log `Réveil au logon : cycle … frais lancé`
+      + cycle complet immédiat (pas après l'heure de sieste).
+- [ ] 20.2 — Logons rapprochés (< 60 s) : au plus UN cycle dans la fenêtre,
+      lignes de coalescence dans les logs, pas de rafale `POST /report`.
+- [ ] 20.3 — `overlay.json` toujours réécrit au logon (27.1bis non régressé,
+      overlay et réveil indépendants).
+- [ ] 20.4 — Sans logon : cadence/jitter/TTL/backoff strictement inchangés ;
+      mécanisme inerte sur console de debug.

@@ -121,6 +121,62 @@ type Agent struct {
 	// depuis le cache d'état au démarrage (le GET nominal d'un service
 	// redémarré répond 304 et ne re-livre pas l'enveloppe).
 	serverTtl int64
+
+	// wake : canal de réveil au logon (Story 27.9). Le handler SCM Windows y
+	// poste un signal NON-BLOQUANT (RequestWake) au WTS_SESSION_LOGON ; la
+	// boucle Run l'écoute dans son `select` de sieste pour partir sur un cycle
+	// frais sans attendre le tick nominal. Bufferisé taille 1 → coalescence
+	// naturelle (50 logons en rafale ⇒ au plus un signal en attente). Créé à la
+	// CONSTRUCTION de l'Agent (newAgent / NewAgentForTest) — un canal nil = réveil
+	// INERTE (no-op nil-safe : runConsole de debug, tests hôte Linux). Le
+	// mécanisme est plateforme-agnostique : aucun import Windows dans shared/.
+	wake chan struct{}
+}
+
+// NewAgentForTest construit un Agent avec son canal de réveil initialisé
+// (Story 27.9) — réservé aux tests hôte qui pilotent le réveil. Le binaire
+// Windows passe par newAgent (main_windows.go) qui initialise wake de la même
+// manière. Le canal est bufferisé taille 1 (coalescence).
+func NewAgentForTest(base Agent) *Agent {
+	a := base
+	a.wake = make(chan struct{}, 1)
+
+	return &a
+}
+
+// InitWake initialise le canal de réveil bufferisé taille 1 (Story 27.9),
+// appelé à la construction de l'Agent par le binaire Windows (newAgent) AVANT
+// que la goroutine Run ne démarre. Idempotent : ne réinitialise pas un canal
+// déjà créé (on ne veut jamais perdre un signal en vol). Sans cet appel, le
+// canal reste nil → RequestWake est un no-op et le réveil est inerte (console
+// de debug, plateformes sans sessions).
+func (a *Agent) InitWake() {
+	if a.wake == nil {
+		a.wake = make(chan struct{}, 1)
+	}
+}
+
+// RequestWake poste un signal de réveil NON-BLOQUANT sur le canal `wake`
+// (Story 27.9). Appelé par le handler SCM au WTS_SESSION_LOGON. Invariants :
+//   - nil-safe : un canal non initialisé (console, tests) = no-op silencieux,
+//     jamais de send sur nil channel (qui bloquerait pour toujours) ;
+//   - non-bloquant (`select … default`) : ne bloque JAMAIS le thread de
+//     contrôle du service (Execute), même si la boucle est occupée (cycle en
+//     vol, HTTP lent) ou si un réveil est déjà en attente ;
+//   - coalescence : le buffer 1 + le `default` jettent les signaux en trop —
+//     plusieurs logons rapprochés ⇒ au plus un réveil en file.
+//
+// Le debounce (fenêtre min-interval) est géré CÔTÉ BOUCLE (Run), thread unique
+// propriétaire de l'instant « dernier cycle » : RequestWake ne fait que poster
+// le signal, la boucle décide si elle l'honore.
+func (a *Agent) RequestWake() {
+	if a.wake == nil {
+		return
+	}
+	select {
+	case a.wake <- struct{}{}:
+	default:
+	}
 }
 
 // Bornes de la cadence pilotée serveur : plancher anti-martèlement (un ttl
@@ -503,6 +559,13 @@ func (a *Agent) Run(ctx context.Context) {
 	a.primeServerTtlFromCache()
 
 	backoff := time.Duration(0)
+	// lastCycleStart : instant de début du DERNIER cycle (Story 27.9) — base du
+	// debounce min-interval côté boucle (thread unique, aucune course avec le
+	// SCM qui ne fait que poster sur `wake`). Tant qu'aucun cycle n'a démarré
+	// (config illisible au boot), la valeur reste zero → time.Since(zero) >>
+	// min-interval → un réveil est toujours honoré (bénin : le backoff borne
+	// les re-tentatives, pas de spin).
+	var lastCycleStart time.Time
 	for {
 		interval := time.Duration(DefaultIntervalSeconds) * time.Second
 		outcome := OutcomeBackoff
@@ -513,6 +576,7 @@ func (a *Agent) Run(ctx context.Context) {
 			// silencieusement (AC2).
 			a.Log.Errorf("Cycle en échec : %v", err)
 		} else {
+			lastCycleStart = time.Now()
 			outcome = a.RunCycle(cfg)
 			// APRÈS le cycle : un ttl appris sur le 200 de CE cycle
 			// s'applique dès le sleep qui suit.
@@ -541,12 +605,97 @@ func (a *Agent) Run(ctx context.Context) {
 				int(sleep/time.Second), int(interval/time.Second), int(jitter/time.Second))
 		}
 
-		select {
-		case <-ctx.Done():
+		// Sieste interruptible : ctx.Done() (stop SCM), échéance nominale, ou
+		// réveil au logon (Story 27.9). Le réveil ne touche NI la cadence
+		// nominale, NI le jitter, NI le backoff (AC5) : il ne fait qu'écourter
+		// la sieste, sous garde-fou debounce. On boucle ici pour pouvoir
+		// re-siester le reliquat de debounce sans repartir en haut de boucle
+		// (qui relancerait un cycle prématurément).
+		if !a.sleepUntilDueOrWake(ctx, sleep, lastCycleStart) {
 			a.Log.Infof("Arrêt demandé (SCM) : sortie propre de la boucle.")
 
 			return
-		case <-time.After(sleep):
+		}
+	}
+}
+
+// sleepUntilDueOrWake exécute la sieste de fin de cycle en l'interrompant sur :
+//   - ctx.Done() (stop SCM) → retourne false (la boucle Run doit sortir) ;
+//   - l'échéance `sleep` (tick nominal / backoff) → retourne true (cycle frais) ;
+//   - un signal de réveil au logon sur `a.wake` (Story 27.9) → si le debounce
+//     l'autorise (>= MinLogonWakeIntervalSeconds depuis lastCycleStart) retourne
+//     true (cycle frais immédiat) ; sinon (coalescence) re-siester le reliquat
+//     du min-interval, BORNÉ par l'échéance nominale restante — le tick nominal
+//     reste l'échéance de repli, le backoff n'est jamais réinitialisé.
+//
+// Le timer principal compte l'échéance nominale ABSOLUE : un réveil debouncé ne
+// la repousse pas (un wake à t+1 s avec sleep=10 s ⇒ le cycle part toujours à
+// t+10 s au plus tard). Toute la logique vit dans shared/ (testable hôte).
+func (a *Agent) sleepUntilDueOrWake(ctx context.Context, sleep time.Duration, lastCycleStart time.Time) bool {
+	deadline := time.Now().Add(sleep)
+	timer := time.NewTimer(sleep)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
+			// Échéance nominale / backoff atteinte : cycle frais.
+			return true
+		case <-a.wake:
+			// Réveil au logon. Debounce côté boucle : on n'écourte la sieste que
+			// si le min-interval s'est écoulé depuis le DÉBUT du dernier cycle.
+			elapsed := time.Since(lastCycleStart)
+			minWindow := time.Duration(MinLogonWakeIntervalSeconds) * time.Second
+			if elapsed >= minWindow {
+				a.Log.Infof("Réveil au logon : cycle de convergence frais lancé (%d s depuis le dernier cycle).", int(elapsed/time.Second))
+
+				return true
+			}
+			// Debounce : trop tôt. On NE relance PAS de cycle ; on attend au
+			// plus tôt l'expiration du min-interval, mais jamais au-delà de
+			// l'échéance nominale déjà programmée (timer.C reste armé sur
+			// `deadline`). Le signal est consommé (coalescence) ; un nouveau
+			// logon re-postera au besoin.
+			remaining := minWindow - elapsed
+			debounceDeadline := lastCycleStart.Add(minWindow)
+			if debounceDeadline.After(deadline) {
+				// Le min-interval expire APRÈS l'échéance nominale : inutile de
+				// l'attendre, le tick nominal arrivera avant. On laisse le timer
+				// principal courir (rien à faire de plus).
+				a.Log.Debugf("Réveil au logon ignoré (debounce) : seulement %d s depuis le dernier cycle, l'échéance nominale arrive avant la fin du min-interval.", int(elapsed/time.Second))
+
+				continue
+			}
+			a.Log.Debugf("Réveil au logon coalescé (debounce) : %d s depuis le dernier cycle, ré-évaluation dans %d s.", int(elapsed/time.Second), int(remaining/time.Second))
+			// Petite sieste bornée jusqu'à l'expiration du min-interval, tout en
+			// gardant ctx.Done() et le timer nominal actifs.
+			debounceTimer := time.NewTimer(remaining)
+			select {
+			case <-ctx.Done():
+				debounceTimer.Stop()
+
+				return false
+			case <-timer.C:
+				debounceTimer.Stop()
+
+				return true
+			case <-debounceTimer.C:
+				// Le min-interval est désormais écoulé : un cycle frais part
+				// (le logon avait bien demandé une convergence, on l'honore au
+				// plus tôt sans avoir martelé).
+				a.Log.Infof("Réveil au logon honoré après debounce : cycle de convergence frais lancé.")
+
+				return true
+			case <-a.wake:
+				// Réveil supplémentaire pendant la fenêtre de debounce :
+				// coalescé (au plus un cycle dans la fenêtre min-interval, AC3).
+				debounceTimer.Stop()
+				a.Log.Debugf("Réveil au logon supplémentaire coalescé pendant le debounce.")
+
+				continue
+			}
 		}
 	}
 }

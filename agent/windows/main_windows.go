@@ -149,12 +149,12 @@ func newAgent(echo bool) *shared.Agent {
 		hostname = os.Getenv("COMPUTERNAME")
 	}
 
-	return &shared.Agent{
-		Store:            store,
-		Client:           shared.NewClient(store, logger, hostname),
-		Log:              logger,
-		Hostname:         hostname,
-		UUID:             smbiosUUID(logger),
+	agent := &shared.Agent{
+		Store:    store,
+		Client:   shared.NewClient(store, logger, hostname),
+		Log:      logger,
+		Hostname: hostname,
+		UUID:     smbiosUUID(logger),
 		// Story 25.4 : ancre MAC du faisceau d'enrôlement porte 2 (auto-enroll
 		// du poste migré). Utilisée seulement quand le token est absent.
 		MAC:              macAddress(logger),
@@ -176,4 +176,12 @@ func newAgent(echo bool) *shared.Agent {
 		Rainmeter:    rainmeterPortableStore(),
 		RainmeterACL: setRainmeterACL,
 	}
+	// Story 27.9 : canal de réveil au logon initialisé À LA CONSTRUCTION, AVANT
+	// que la goroutine Run ne démarre (le handler SCM y postera au
+	// WTS_SESSION_LOGON). Garantit qu'un RequestWake ne tombe jamais sur un canal
+	// nil (qui bloquerait pour toujours) et que le signal n'est jamais perdu
+	// faute d'init paresseuse.
+	agent.InitWake()
+
+	return agent
 }
