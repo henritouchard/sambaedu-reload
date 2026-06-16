@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -17,13 +18,17 @@ type fakeHandler struct {
 	applyErr  error
 	testPanic bool
 
-	testCalls  int
-	applyCalls int
+	// Compteurs atomiques : les tests « résidents » (companion_test.go) lisent
+	// ces compteurs depuis la goroutine de test pendant que la goroutine
+	// Companion.Run() les incrémente → sans atomic, data race sous `go test
+	// -race`. lastItems n'est lu qu'en contexte synchrone (RunPass direct).
+	testCalls  atomic.Int64
+	applyCalls atomic.Int64
 	lastItems  []StateItem
 }
 
 func (h *fakeHandler) Test(items []StateItem) (bool, error) {
-	h.testCalls++
+	h.testCalls.Add(1)
 	h.lastItems = items
 	if h.testPanic {
 		panic("boom du handler")
@@ -33,7 +38,7 @@ func (h *fakeHandler) Test(items []StateItem) (bool, error) {
 }
 
 func (h *fakeHandler) Apply(items []StateItem) error {
-	h.applyCalls++
+	h.applyCalls.Add(1)
 
 	return h.applyErr
 }
@@ -80,8 +85,8 @@ func TestRunPassStrictLifecycle(t *testing.T) {
 	if len(items) != 1 || items[0].Status != "drift" || items[0].Hash != "aaa" {
 		t.Fatalf("premier passage : %+v", items)
 	}
-	if h.applyCalls != 1 {
-		t.Fatalf("apply attendu au premier passage, got %d", h.applyCalls)
+	if h.applyCalls.Load() != 1 {
+		t.Fatalf("apply attendu au premier passage, got %d", h.applyCalls.Load())
 	}
 	if applied["wallpaper"].Hash != "aaa" || applied["wallpaper"].AppliedAt != "2026-06-12T10:00:00Z" {
 		t.Fatalf("persistance du dernier-appliqué : %+v", applied["wallpaper"])
@@ -90,22 +95,22 @@ func TestRunPassStrictLifecycle(t *testing.T) {
 	// 2. Passe suivante, réel = cible → compliant, zéro apply.
 	h.compliant = true
 	items = e.RunPass([]StateItem{wallpaperItem("aaa")}, applied)
-	if items[0].Status != "compliant" || h.applyCalls != 1 {
-		t.Fatalf("compliant sans apply attendu : %+v (applyCalls=%d)", items, h.applyCalls)
+	if items[0].Status != "compliant" || h.applyCalls.Load() != 1 {
+		t.Fatalf("compliant sans apply attendu : %+v (applyCalls=%d)", items, h.applyCalls.Load())
 	}
 
 	// 3. Dérive (réel ≠ cible) MÊME quand dernier-appliqué = cible : STRICT →
 	//    drift + réapplique TOUJOURS (plus de drifted_allowed, Story 27.8).
 	h.compliant = false
 	items = e.RunPass([]StateItem{wallpaperItem("aaa")}, applied)
-	if items[0].Status != "drift" || h.applyCalls != 2 {
-		t.Fatalf("drift + réapplication attendus (strict) : %+v (applyCalls=%d)", items, h.applyCalls)
+	if items[0].Status != "drift" || h.applyCalls.Load() != 2 {
+		t.Fatalf("drift + réapplication attendus (strict) : %+v (applyCalls=%d)", items, h.applyCalls.Load())
 	}
 
 	// 4. Cible changée → applique → drift, nouvelle cible persistée.
 	items = e.RunPass([]StateItem{wallpaperItem("bbb")}, applied)
-	if items[0].Status != "drift" || h.applyCalls != 3 || items[0].Hash != "bbb" {
-		t.Fatalf("cible changée : %+v (applyCalls=%d)", items, h.applyCalls)
+	if items[0].Status != "drift" || h.applyCalls.Load() != 3 || items[0].Hash != "bbb" {
+		t.Fatalf("cible changée : %+v (applyCalls=%d)", items, h.applyCalls.Load())
 	}
 	if applied["wallpaper"].Hash != "bbb" {
 		t.Fatalf("nouvelle cible persistée attendue : %+v", applied["wallpaper"])
@@ -324,9 +329,9 @@ func TestErrorDetailBoundedAndNeverEmpty(t *testing.T) {
 func TestItemsFromScopeSkipsMalformedEntries(t *testing.T) {
 	raw := []any{
 		map[string]any{"type": "wallpaper", "hash": "aaa", "semantics": "exclusive", "payload": map[string]any{"asset": nil}},
-		map[string]any{"type": "overlay"},   // sans hash → ignoré
-		map[string]any{"hash": "orphelin"},  // sans type → ignoré
-		"pas-un-objet",                      // non-objet → ignoré
+		map[string]any{"type": "overlay"},  // sans hash → ignoré
+		map[string]any{"hash": "orphelin"}, // sans type → ignoré
+		"pas-un-objet",                     // non-objet → ignoré
 		map[string]any{"type": "shortcuts", "hash": "bbb"},
 	}
 

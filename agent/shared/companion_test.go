@@ -104,7 +104,7 @@ func TestCompanionPassMachineScopeNeverDispatched(t *testing.T) {
 	if err != nil || !ran {
 		t.Fatal(err)
 	}
-	if h.testCalls != 0 {
+	if h.testCalls.Load() != 0 {
 		t.Error("la portée machine est l'exclusivité du service SYSTEM")
 	}
 
@@ -141,7 +141,7 @@ func TestCompanionPassDropDirAbsentSkipsQuietly(t *testing.T) {
 	if err != nil || !ran {
 		t.Fatalf("la passe converge quand même : %v %v", ran, err)
 	}
-	if h.testCalls != 1 {
+	if h.testCalls.Load() != 1 {
 		t.Error("convergence attendue malgré le drop absent")
 	}
 }
@@ -226,10 +226,10 @@ func TestCompanionRunResidentReconvergesOnCacheChange(t *testing.T) {
 
 	// 1re passe (cache frais), puis attendre un tick.
 	deadline := time.Now().Add(2 * time.Second)
-	for h.testCalls < 1 && time.Now().Before(deadline) {
+	for h.testCalls.Load() < 1 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if h.testCalls < 1 {
+	if h.testCalls.Load() < 1 {
 		t.Fatal("première passe attendue")
 	}
 
@@ -239,10 +239,10 @@ func TestCompanionRunResidentReconvergesOnCacheChange(t *testing.T) {
 	future := time.Now().Add(2 * time.Second)
 	_ = os.Chtimes(c.StatePath, future, future)
 
-	for h.testCalls < 2 && time.Now().Before(deadline) {
+	for h.testCalls.Load() < 2 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if h.testCalls < 2 {
+	if h.testCalls.Load() < 2 {
 		t.Error("re-convergence sur changement de cache attendue")
 	}
 
@@ -273,17 +273,17 @@ func TestCompanionRunStaysResidentWithoutCache(t *testing.T) {
 
 	// Pas de cache → pas de passe.
 	time.Sleep(60 * time.Millisecond)
-	if h.testCalls != 0 {
+	if h.testCalls.Load() != 0 {
 		t.Fatal("aucune passe sans cache")
 	}
 
 	// Le cache apparaît mid-session → convergence.
 	writeSessionCache(t, store, string(mustReadGolden(t)))
 	deadline := time.Now().Add(2 * time.Second)
-	for h.testCalls < 1 && time.Now().Before(deadline) {
+	for h.testCalls.Load() < 1 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if h.testCalls < 1 {
+	if h.testCalls.Load() < 1 {
 		t.Error("convergence dès qu'un cache apparaît attendue")
 	}
 
