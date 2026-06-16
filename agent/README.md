@@ -298,11 +298,18 @@ inchangées par le portage) :
     **quitté la map du compagnon** (D1). Fallback documenté
     `%ProgramData%\SambaEdu\overlay.json` si le profil n'est pas résoluble.
   - **Verrouillage** : skin posée **UTF-16 LE + BOM** (`ToUTF16LEWithBOM`, sinon
-    mojibake `Â·`) + `Rainmeter.ini` durci (`BuildHardenedRainmeterIni` :
-    `TrayIcon=0` / `Draggable=0` / `ClickThrough=1` / `KeepOnScreen=1`) sous
-    ProgramData ACL Users:R ; **watchdog** côté compagnon
-    (`shared/watchdog.go` + `rainmeter_windows.go`) relance `Rainmeter.exe` s'il
-    disparaît (idempotent, borné, meurt au logoff). **Pas d'obfuscation** (D7).
+    mojibake `Â·`) sous ProgramData **ACL Users:RX** (lecture + exécution :
+    `Rainmeter.exe` est lancé par le compagnon en droits user). **MODE INSTALLÉ
+    (Story 27.1ter)** : le `Rainmeter.ini` durci (`BuildHardenedRainmeterIni` :
+    `TrayIcon=0` / `Draggable=0` / `ClickThrough=1` / `KeepOnScreen=1` +
+    `SkinPath` vers les skins ProgramData) n'est PLUS posé sous ProgramData (il y
+    forcerait le mode portable + les modales « not writable »/« Safe Start » sur
+    user standard) — il est écrit par le **compagnon** dans
+    `%APPDATA%\Rainmeter\Rainmeter.ini` (**writable**, per-user, réimposé à chaque
+    logon) ; tout `Rainmeter.ini` résiduel de l'arbre ProgramData est supprimé au
+    provisioning. **watchdog** côté compagnon (`shared/watchdog.go` +
+    `rainmeter_windows.go`) relance `Rainmeter.exe` s'il disparaît (idempotent,
+    borné, meurt au logoff). **Pas d'obfuscation** (D7).
 - L'IPC named-pipe service ⇄ session reste écarté (modèle fichier per-SID
   validé par les spikes et les reviews) — à réévaluer à l'Epic 27.
 - Quarantaine : pas de fetch de session ; le compagnon converge sur son

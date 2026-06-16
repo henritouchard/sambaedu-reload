@@ -177,6 +177,17 @@ func (r *RainmeterStore) RainmeterInstalled() bool {
 	return err == nil
 }
 
+// hardenedSkinPath : chemin de la racine des skins (verrouillées RX sous
+// ProgramData) que le Rainmeter.ini durci déclare via SkinPath (Story 27.1ter).
+// Composé des constantes canoniques de PRODUCTION Windows (DefaultRainmeterRoot
+// + rainmeterSkinsDirName) avec séparateur Windows et un backslash terminal
+// (convention SkinPath). Pur/déterministe : BuildHardenedRainmeterIni reste sans
+// accès au store, mais ce chemin reste cohérent avec RainmeterStore.SkinsDir()
+// en production (Root vide → DefaultRainmeterRoot).
+func hardenedSkinPath() string {
+	return DefaultRainmeterRoot + `\` + rainmeterSkinsDirName + `\`
+}
+
 // --- Conversion UTF-16 LE + BOM (D6) -----------------------------------------
 
 // ToUTF16LEWithBOM convertit une source UTF-8 en UTF-16 LE avec BOM (FF FE) —
@@ -242,6 +253,18 @@ func BuildHardenedRainmeterIni() string {
 		"TrayIcon=0",
 		// Démarrage silencieux, pas de fenêtre de bienvenue/notif.
 		"Debug=0",
+		// MODE INSTALLÉ (Story 27.1ter) : ce Rainmeter.ini vit désormais en
+		// %APPDATA%\Rainmeter\ (writable, posé par le compagnon en droits user —
+		// plus de modale « not writable » ni « Safe Start »). Comme les settings
+		// ne sont plus AUX CÔTÉS de Rainmeter.exe, on doit dire EXPLICITEMENT à
+		// Rainmeter où trouver ses skins : SkinPath pointe l'arbre RX verrouillé
+		// sous ProgramData. La section [SambaEduOverlay] ci-dessous est résolue
+		// RELATIVEMENT à ce SkinPath (→ <SkinPath>\SambaEduOverlay\SambaEduOverlay.ini).
+		// Chemin dérivé des constantes du store (DefaultRainmeterRoot +
+		// rainmeterSkinsDirName), terminé par un séparateur (convention SkinPath
+		// Rainmeter). La fonction est pure (pas d'accès au store) : on compose le
+		// chemin de production canonique à partir des mêmes constantes.
+		"SkinPath=" + hardenedSkinPath(),
 		"",
 		// Section d'INSTANCE de la skin — verrouillage dur. La section Rainmeter.ini
 		// = le CHEMIN du dossier de config relatif à Skins\ (ici `SambaEduOverlay`,
@@ -272,6 +295,53 @@ func BuildHardenedRainmeterIni() string {
 	}
 
 	return strings.Join(lines, "\r\n")
+}
+
+// BuildUserRainmeterIniBytes : contenu OCTET du Rainmeter.ini per-user
+// (%APPDATA%\Rainmeter\Rainmeter.ini) en UTF-16 LE + BOM, prêt à écrire (Story
+// 27.1ter, mode installé). Pivot PUR/déterministe testé sur l'hôte : c'est le
+// contenu durci (BuildHardenedRainmeterIni, avec SkinPath) que le compagnon
+// réimpose à chaque logon. Le chemin %APPDATA% (résolution + écriture atomique)
+// reste hors d'ici (agent/windows, injecté) — seule la fabrication du contenu
+// est partagée. UTF-16 LE + BOM pour homogénéité Rainmeter (iso 27.1bis).
+func BuildUserRainmeterIniBytes() ([]byte, error) {
+	return ToUTF16LEWithBOM(BuildHardenedRainmeterIni())
+}
+
+// WriteUserRainmeterIni écrit le Rainmeter.ini per-user durci à path
+// (%APPDATA%\Rainmeter\Rainmeter.ini), de façon ATOMIQUE et IDEMPOTENTE — il ne
+// réécrit que si le fichier est absent ou divergent du durci attendu (hash
+// octet, UTF-16 LE + BOM sensible). AUCUNE ACL n'est posée : le fichier doit
+// rester WRITABLE (c'est tout l'objet de la story 27.1ter — propriété naturelle
+// de l'user dans son %APPDATA%). Crée le dossier parent si besoin. Pur (os.*
+// portable) : la SEULE part Windows est la résolution de %APPDATA% par
+// l'appelant (agent/windows). Retourne (true, nil) si une écriture a eu lieu,
+// (false, nil) si déjà conforme (no-op idempotent).
+//
+// ⚠️ Le no-op idempotent ne vaut QUE tant que Rainmeter n'a pas encore consommé
+// le fichier. En régime établi, Rainmeter écrit SES propres settings (positions,
+// @Backup, marqueur d'arrêt) dans ce même Rainmeter.ini dès qu'il tourne → au
+// logon SUIVANT le fichier diverge du durci pur et la réécriture A LIEU. C'est
+// VOULU (D5 : réimposition du durci à chaque logon, l'élève ne fige pas une
+// config altérée), PAS une optimisation « zéro écriture en régime stable ».
+// L'écriture précède le lancement de Rainmeter (compagnon : avant le watchdog),
+// donc jamais de conflit avec une instance vivante.
+func WriteUserRainmeterIni(path string) (bool, error) {
+	want, err := BuildUserRainmeterIniBytes()
+	if err != nil {
+		return false, fmt.Errorf("contenu du Rainmeter.ini per-user : %w", err)
+	}
+	if fileMatchesContent(path, want) {
+		return false, nil // déjà conforme — idempotent
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return false, fmt.Errorf("création du dossier %s : %w", filepath.Dir(path), err)
+	}
+	if err := WriteFileAtomic(path, want); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 // --- Extraction portable (logique pure, archive/zip cross-platform) ----------

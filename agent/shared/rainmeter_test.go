@@ -89,6 +89,120 @@ func TestBuildHardenedRainmeterIni_Deterministic(t *testing.T) {
 	}
 }
 
+// TestBuildHardenedRainmeterIni_SkinPath (Story 27.1ter) : en mode installé, le
+// Rainmeter.ini durci doit déclarer SkinPath pointant l'arbre des skins
+// verrouillées sous ProgramData (les settings vivant désormais en %APPDATA%,
+// Rainmeter ne peut plus déduire l'emplacement des skins). Le SkinPath doit être
+// dans la section [Rainmeter], pointer la racine Skins de production et finir par
+// un séparateur (convention SkinPath).
+func TestBuildHardenedRainmeterIni_SkinPath(t *testing.T) {
+	ini := BuildHardenedRainmeterIni()
+
+	wantSkinPath := `SkinPath=C:\ProgramData\SambaEdu\Rainmeter\Skins\`
+	if !strings.Contains(ini, wantSkinPath) {
+		t.Fatalf("Rainmeter.ini durci doit contenir %q :\n%s", wantSkinPath, ini)
+	}
+
+	// SkinPath doit être dans [Rainmeter] (avant la section de la skin), pas dans
+	// la section d'instance.
+	rmIdx := strings.Index(ini, "[Rainmeter]")
+	skinIdx := strings.Index(ini, "["+rainmeterSkinName+"]")
+	spIdx := strings.Index(ini, "SkinPath=")
+	if !(rmIdx < spIdx && spIdx < skinIdx) {
+		t.Fatalf("SkinPath doit être dans la section [Rainmeter], avant [%s] :\n%s", rainmeterSkinName, ini)
+	}
+
+	// Cohérence FORTE avec le store en production (Root vide → DefaultRainmeterRoot) :
+	// le SkinPath déclaré DOIT désigner le MÊME dossier que SkinsDir(). On compare
+	// après normalisation (séparateur \ vs / — sur l'hôte Linux filepath.Join mêle
+	// les deux — et slash terminal de la convention SkinPath).
+	norm := func(p string) string { return strings.TrimRight(strings.ReplaceAll(p, `\`, "/"), "/") }
+	emitted := strings.TrimPrefix(wantSkinPath, "SkinPath=")
+	prodStore := &RainmeterStore{}
+	if norm(emitted) != norm(prodStore.SkinsDir()) {
+		t.Fatalf("SkinPath émis (%s) doit désigner SkinsDir() (%s)", emitted, prodStore.SkinsDir())
+	}
+}
+
+// --- Rainmeter.ini per-user (mode installé, %APPDATA%) ------------------------
+
+func TestBuildUserRainmeterIniBytes_HardenedUTF16(t *testing.T) {
+	got, err := BuildUserRainmeterIniBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// UTF-16 LE + BOM (iso 27.1bis, homogénéité Rainmeter).
+	if len(got) < 2 || got[0] != 0xFF || got[1] != 0xFE {
+		t.Fatalf("Rainmeter.ini per-user doit être en UTF-16 LE + BOM : % x", got[:min(2, len(got))])
+	}
+	// Doit être EXACTEMENT la conversion du durci (avec SkinPath).
+	want, _ := ToUTF16LEWithBOM(BuildHardenedRainmeterIni())
+	if !bytes.Equal(got, want) {
+		t.Fatal("le contenu per-user doit être le durci converti (SkinPath inclus)")
+	}
+}
+
+// TestWriteUserRainmeterIni_WritableAtomicIdempotent (Story 27.1ter) : le .ini
+// per-user est écrit (atomique, dossier créé), WRITABLE (aucune ACL/perm
+// restrictive posée par nous), et idempotent (2e passage = no-op).
+func TestWriteUserRainmeterIni_WritableAtomicIdempotent(t *testing.T) {
+	// Sous-dossier inexistant : MkdirAll doit le créer.
+	path := filepath.Join(t.TempDir(), "Rainmeter", "Rainmeter.ini")
+
+	wrote, err := WriteUserRainmeterIni(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !wrote {
+		t.Fatal("première écriture attendue (fichier absent)")
+	}
+
+	// Contenu = durci UTF-16 LE + BOM.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := BuildUserRainmeterIniBytes()
+	if !bytes.Equal(raw, want) {
+		t.Fatal("contenu du .ini per-user incorrect")
+	}
+
+	// WRITABLE : on doit pouvoir y réécrire/le tronquer sans EACCES (pas d'ACL
+	// read-only). On vérifie le bit owner-write du mode (sur l'hôte Linux).
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o200 == 0 {
+		t.Fatalf("le .ini per-user doit rester writable (perm %o)", info.Mode().Perm())
+	}
+
+	// Idempotence : 2e passage, contenu identique → no-op (pas de réécriture).
+	wrote2, err := WriteUserRainmeterIni(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wrote2 {
+		t.Fatal("second passage doit être un no-op idempotent (contenu déjà conforme)")
+	}
+
+	// Divergence (l'user a édité son writable .ini) → réécriture (réimposition du
+	// durci au logon suivant, D5).
+	if err := os.WriteFile(path, []byte("tampered"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wrote3, err := WriteUserRainmeterIni(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !wrote3 {
+		t.Fatal("contenu divergent doit déclencher une réécriture (réimposition du durci)")
+	}
+	if raw, _ := os.ReadFile(path); !bytes.Equal(raw, want) {
+		t.Fatal("le durci doit être réimposé après divergence")
+	}
+}
+
 // --- Idempotence de pose (fileMatchesContent) --------------------------------
 
 func TestFileMatchesContent(t *testing.T) {

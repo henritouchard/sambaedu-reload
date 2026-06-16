@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,9 +95,11 @@ func (o *rainmeterOps) currentSessionID() (uint32, error) {
 	return session, nil
 }
 
-// Launch : lance Rainmeter.exe SANS argument (#8). En mode portable, Rainmeter
-// lit son Rainmeter.ini dans son propre dossier ; ce Rainmeter.ini durci (sous
-// ProgramData ACL) déclare la skin SambaEduOverlay en Active=1 et porte
+// Launch : lance Rainmeter.exe SANS argument (#8). En MODE INSTALLÉ (Story
+// 27.1ter — plus de Rainmeter.ini sous ProgramData), Rainmeter lit son
+// Rainmeter.ini dans %APPDATA%\Rainmeter\ (writable, posé par le compagnon avant
+// ce lancement). Ce .ini durci déclare la skin SambaEduOverlay en Active=1,
+// pointe les skins verrouillées via SkinPath (ProgramData RX) et porte
 // TrayIcon=0 + Draggable=0/ClickThrough=1/KeepOnScreen=1 sur la section
 // d'instance — la skin se charge donc d'elle-même, pas besoin de passer son
 // chemin en argument (le faire courcircuiterait le chargement automatique).
@@ -116,6 +119,36 @@ func (o *rainmeterOps) Launch() error {
 	}
 
 	return cmd.Start()
+}
+
+// ensureUserRainmeterIni : primitive Windows de la story 27.1ter (mode installé)
+// injectée dans shared.Companion.EnsureUserRainmeterIni. Elle résout %APPDATA%
+// (toujours présent dans la session user, local — dispo même nomade, cf.
+// project_nomade_local_fr29_closed), compose %APPDATA%\Rainmeter\Rainmeter.ini et
+// y écrit le contenu durci (UTF-16 LE + BOM) de façon ATOMIQUE et IDEMPOTENTE,
+// SANS aucune ACL (le fichier doit rester WRITABLE — c'est tout l'objet de la
+// story : plus de modale « not writable » / « Safe Start »). Toute la logique
+// (contenu, atomicité, idempotence) vit dans shared.WriteUserRainmeterIni ; ici
+// on ne fait QUE résoudre le chemin Windows. Gracieux : l'erreur remonte à
+// Companion.Run qui la logge sans bloquer (NFR1).
+func ensureUserRainmeterIni(log *shared.Logger) error {
+	appData := os.Getenv("APPDATA")
+	if appData == "" {
+		return fmt.Errorf("APPDATA non défini : impossible de résoudre %%APPDATA%%\\Rainmeter")
+	}
+	iniPath := filepath.Join(appData, "Rainmeter", "Rainmeter.ini")
+
+	wrote, err := shared.WriteUserRainmeterIni(iniPath)
+	if err != nil {
+		return err
+	}
+	if wrote {
+		log.Infof("Rainmeter.ini per-user (mode installé) posé/réimposé, writable : %s.", iniPath)
+	} else {
+		log.Debugf("Rainmeter.ini per-user déjà conforme (idempotent) : %s.", iniPath)
+	}
+
+	return nil
 }
 
 // newRainmeterWatchdog assemble le watchdog compagnon (ops Windows injectées).

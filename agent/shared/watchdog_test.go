@@ -15,12 +15,19 @@ type fakeRainmeterOps struct {
 	launchErr   error
 	launchCount int
 	launched    chan struct{}
+	// onLaunch (optionnel) : hook synchrone appelé à chaque Launch — sert à
+	// tracer l'ordre relatif d'opérations dans un test concurrent (le test fournit
+	// son propre verrou). nil = inerte.
+	onLaunch func()
 }
 
 func (f *fakeRainmeterOps) Installed() bool { return f.installed }
 func (f *fakeRainmeterOps) Running() bool   { return f.running }
 func (f *fakeRainmeterOps) Launch() error {
 	f.launchCount++
+	if f.onLaunch != nil {
+		f.onLaunch()
+	}
 	// Une relance « réussie » rend Rainmeter présent (modèle réaliste).
 	if f.launchErr == nil {
 		f.running = true

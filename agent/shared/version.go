@@ -48,8 +48,19 @@ package shared
 // section correcte est `[SambaEduOverlay]` (chemin du DOSSIER de config relatif à
 // Skins\) ; `Active=1` y sélectionne le 1er .ini. overlay.json était bien écrit,
 // seul le rendu manquait.
+// 2.2.9 = Rainmeter MODE INSTALLÉ, settings per-user writable (Story 27.1ter).
+// Le « verrouillage par Rainmeter.ini read-only » de 27.1bis cassait l'e2e sur un
+// user standard : modales « Rainmeter.ini is not writable » + « Safe Start »
+// (Rainmeter ne peut écrire ses settings/marqueur d'arrêt sous ProgramData RX).
+// Désormais : (1) le SERVICE SYSTEM ne pose plus de Rainmeter.ini sous ProgramData
+// et SUPPRIME tout résiduel (sa présence à côté de Rainmeter.exe forcerait le mode
+// portable) ; (2) BuildHardenedRainmeterIni gagne SkinPath=C:\ProgramData\…\Skins\
+// (skins restées verrouillées RX) ; (3) le COMPAGNON (droits user) écrit
+// %APPDATA%\Rainmeter\Rainmeter.ini durci, WRITABLE (atomique, idempotent, sans
+// ACL), au démarrage AVANT le lancement du watchdog. overlay.json reste écrit par
+// SYSTEM (NFR5 intact) ; contrat/golden inchangés.
 //
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.2.8"
+var Version = "2.2.9"

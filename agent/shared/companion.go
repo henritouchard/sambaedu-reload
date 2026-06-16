@@ -62,6 +62,15 @@ type Companion struct {
 	// boucle résidente, JAMAIS dans le chemin synchrone du logon.
 	Watchdog *RainmeterWatchdog
 
+	// EnsureUserRainmeterIni : primitive injectée (Story 27.1ter, D2) — écrit
+	// %APPDATA%\Rainmeter\Rainmeter.ini DURCI et WRITABLE (mode installé), au
+	// démarrage du compagnon, AVANT le lancement de Rainmeter par le watchdog
+	// (sinon Rainmeter lirait un .ini absent/ancien). Atomique + idempotent +
+	// sans ACL (le fichier appartient à l'user). nil = no-op (tests hôte,
+	// plateforme sans %APPDATA%/Rainmeter). Un échec est GRACIEUX (log, jamais de
+	// blocage — NFR1).
+	EnsureUserRainmeterIni func() error
+
 	Log *Logger
 
 	// Now : horloge injectable (tests). nil = time.Now.
@@ -222,6 +231,19 @@ func (c *Companion) writeDrop(items []ReportItem) {
 func (c *Companion) Run(ctx context.Context) {
 	c.Log.Infof("Compagnon de session démarré (sid=%s, agent %s) — après ouverture de session, jamais dans son chemin synchrone (NFR1). Boucle résidente (poll %d s, re-test %d s).",
 		c.SID, Version, int(c.cachePoll()/time.Second), int(c.periodicPass()/time.Second))
+
+	// MODE INSTALLÉ (Story 27.1ter) : AVANT de lancer Rainmeter, on (ré)impose le
+	// Rainmeter.ini per-user durci dans %APPDATA%\Rainmeter\ (writable, droits
+	// user). Il DOIT exister avant le lancement du watchdog ci-dessous, sinon
+	// Rainmeter lirait un .ini absent (Safe Start) ou ancien. Idempotent (réécrit
+	// seulement si divergent). GRACIEUX (NFR1) : un échec est loggé en warning et
+	// n'interrompt RIEN — le watchdog tente quand même (au pire les modales
+	// reviennent, mais l'overlay rend). nil = no-op (tests hôte, non-Windows).
+	if c.EnsureUserRainmeterIni != nil {
+		if err := c.EnsureUserRainmeterIni(); err != nil {
+			c.Log.Warningf("Écriture du Rainmeter.ini per-user (%%APPDATA%%) en échec : %v — le watchdog lance quand même Rainmeter (les modales peuvent réapparaître).", err)
+		}
+	}
 
 	// Rendu overlay PROMPT au logon (levier A) : on lance le watchdog Rainmeter
 	// AVANT l'attente du cache de convergence. overlay.json est déjà écrit par le

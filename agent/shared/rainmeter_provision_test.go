@@ -121,6 +121,11 @@ func portableFixture(t *testing.T, version string) (filename, checksum string, a
 	for name, content := range map[string]string{
 		"Rainmeter.exe":    "MZ-fake-portable",
 		"Skins/readme.txt": "skins",
+		// Le portable Rainmeter RÉEL embarque un Rainmeter.ini à la racine (aux
+		// côtés de l'exe) → forcerait le MODE PORTABLE. La fixture le reproduit
+		// pour que les tests d'extraction PROUVENT sa suppression (Story 27.1ter,
+		// F2/F3) : après SyncRainmeterTool, store.SettingsPath() doit être absent.
+		"Rainmeter.ini": "[Rainmeter]\r\nportable=default\r\n",
 	} {
 		w, err := zw.Create(name)
 		if err != nil {
@@ -200,9 +205,11 @@ func TestSyncRainmeterTool_ActiveDownloadsVerifiesExtractsAndPosesSkin(t *testin
 	if bytes.Equal(raw, skinBody) {
 		t.Fatal("la skin posée doit être convertie (UTF-16), pas l'UTF-8 brut servi")
 	}
-	// Rainmeter.ini durci posé.
-	if _, err := os.Stat(store.SettingsPath()); err != nil {
-		t.Fatalf("Rainmeter.ini durci attendu : %v", err)
+	// MODE INSTALLÉ (Story 27.1ter) : AUCUN Rainmeter.ini ne doit subsister sous
+	// ProgramData (sa présence forcerait le mode portable → modales). Les settings
+	// partent en %APPDATA%, posés par le compagnon.
+	if _, err := os.Stat(store.SettingsPath()); err == nil {
+		t.Fatal("aucun Rainmeter.ini ne doit être posé sous ProgramData (mode installé, Story 27.1ter)")
 	}
 	if aclCalls == 0 {
 		t.Error("ACL Rainmeter attendue")
@@ -235,9 +242,10 @@ func TestSyncRainmeterTool_NilToolNoOpGraceful(t *testing.T) {
 	if len(f.toolCalls) != 0 {
 		t.Errorf("aucun download de portable attendu (tool: null) : %v", f.toolCalls)
 	}
-	// Le verrouillage (Rainmeter.ini durci) reste posé.
-	if _, err := os.Stat(store.SettingsPath()); err != nil {
-		t.Errorf("Rainmeter.ini durci attendu même sans portable : %v", err)
+	// Mode installé : aucun Rainmeter.ini sous ProgramData (le verrouillage durci
+	// part en %APPDATA% via le compagnon).
+	if _, err := os.Stat(store.SettingsPath()); err == nil {
+		t.Error("aucun Rainmeter.ini ne doit être posé sous ProgramData (mode installé)")
 	}
 }
 
@@ -279,9 +287,9 @@ func TestSyncRainmeterTool_SkinHashMismatchNotPosed(t *testing.T) {
 	if _, err := os.Stat(store.SkinPath()); err == nil {
 		t.Fatal("une skin au SHA-256 divergent ne doit JAMAIS être posée")
 	}
-	// Le Rainmeter.ini durci reste posé (le verrouillage ne dépend pas de la skin).
-	if _, err := os.Stat(store.SettingsPath()); err != nil {
-		t.Errorf("Rainmeter.ini durci attendu même sans skin : %v", err)
+	// Mode installé : aucun Rainmeter.ini sous ProgramData, même sans skin.
+	if _, err := os.Stat(store.SettingsPath()); err == nil {
+		t.Error("aucun Rainmeter.ini ne doit être posé sous ProgramData (mode installé)")
 	}
 }
 
@@ -301,8 +309,42 @@ func TestSyncRainmeterTool_NilSkinSkippedConfigStillPosed(t *testing.T) {
 	if _, err := os.Stat(store.SkinPath()); err == nil {
 		t.Fatal("aucune skin ne doit être posée quand skin: null")
 	}
-	if _, err := os.Stat(store.SettingsPath()); err != nil {
-		t.Errorf("Rainmeter.ini durci attendu : %v", err)
+	// Mode installé : aucun Rainmeter.ini sous ProgramData.
+	if _, err := os.Stat(store.SettingsPath()); err == nil {
+		t.Error("aucun Rainmeter.ini ne doit être posé sous ProgramData (mode installé)")
+	}
+}
+
+// TestSyncRainmeterTool_ResidualProgramDataIniRemoved : un Rainmeter.ini résiduel
+// dans l'arbre ProgramData (embarqué par le zip portable OU ancien durci 27.1bis)
+// est SUPPRIMÉ de façon idempotente (Story 27.1ter — sa présence forcerait le
+// mode portable et ramènerait les modales). Re-passage = idempotent (no-op).
+func TestSyncRainmeterTool_ResidualProgramDataIniRemoved(t *testing.T) {
+	f := newFakeRainmeterServer(t)
+	f.manifestBody = manifestJSON(nil, nil)
+
+	agent, store, cfg := newRainmeterAgent(t, f)
+	agent.RainmeterACL = func(string) error { return nil }
+
+	// Simule un Rainmeter.ini résiduel posé sous ProgramData (portable embarqué).
+	if err := os.MkdirAll(store.RootDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.SettingsPath(), []byte("[Rainmeter]\nstale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	agent.SyncRainmeterTool(cfg)
+
+	if _, err := os.Stat(store.SettingsPath()); err == nil {
+		t.Fatal("le Rainmeter.ini résiduel sous ProgramData doit être supprimé (mode installé)")
+	}
+
+	// Idempotence : un 2e passage sans .ini ne plante pas (os.Remove ErrNotExist
+	// ignoré).
+	agent.SyncRainmeterTool(cfg)
+	if _, err := os.Stat(store.SettingsPath()); err == nil {
+		t.Fatal("aucun Rainmeter.ini ne doit réapparaître sous ProgramData")
 	}
 }
 

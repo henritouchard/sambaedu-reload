@@ -2043,3 +2043,73 @@ Ces trois incidents passaient les tests unitaires initiaux mais se révèlent à
       overlay et réveil indépendants).
 - [ ] 20.4 — Sans logon : cadence/jitter/TTL/backoff strictement inchangés ;
       mécanisme inerte sur console de debug.
+
+## Section 21 — Rainmeter MODE INSTALLÉ : settings per-user writable (Story 27.1ter)
+
+Le verrouillage « Rainmeter.ini read-only sous ProgramData » de 27.1bis cassait
+l'e2e sur un **user standard non-admin** : modales « Rainmeter.ini is not
+writable » + « Safe Start » (Rainmeter ne peut écrire ses settings / son marqueur
+d'arrêt dans un `.ini` RX). 27.1ter passe Rainmeter en **mode installé** : les
+settings (`Rainmeter.ini`) partent en `%APPDATA%\Rainmeter\` (writable, écrit par
+le compagnon en droits user) ; les **skins restent verrouillées** RX en
+ProgramData, pointées par `SkinPath`.
+
+### Scénario 21.1 — Logon user standard non-admin : AUCUNE modale, skin chargée (lab Windows — ACTION HUMAINE Henri)
+
+1. Poste avec l'agent 2.2.9+ provisionné (service SYSTEM : portable Rainmeter
+   posé, skin verrouillée, AUCUN `Rainmeter.ini` sous `C:\ProgramData\SambaEdu\Rainmeter\`).
+2. Ouvrir une session avec un compte **élève non-admin** (pas Administrator).
+3. **Attendu** :
+   - **AUCUNE modale** Rainmeter — ni « Rainmeter.ini is not writable. Settings
+     will not be saved », ni « Rainmeter Safe Start » proposant de charger les
+     skins par défaut.
+   - L'overlay affiche bien la skin **SambaEduOverlay** (PAS les défauts illustro
+     de Rainmeter).
+   - `%APPDATA%\Rainmeter\Rainmeter.ini` **présent** (écrit par le compagnon au
+     logon) et **writable** (l'user en est propriétaire — `icacls` montre un droit
+     d'écriture, aucune ACL read-only posée par nous).
+   - `C:\ProgramData\SambaEdu\Rainmeter\` ne contient **aucun** `Rainmeter.ini`
+     (mode installé garanti) ; l'arbre reste RX (skins lisibles, non modifiables).
+4. **Comparaison admin/élève** : le bug 27.1bis ne touchait que l'élève (admin
+   avait `Administrators:F`). Vérifier que **l'élève** ne voit plus rien.
+
+### Scénario 21.2 — Idempotence + réimposition du durci (lab Windows — ACTION HUMAINE Henri)
+
+1. En session élève, ouvrir `%APPDATA%\Rainmeter\Rainmeter.ini` et le modifier
+   (ou le supprimer).
+2. Fermer/rouvrir la session (ou laisser le compagnon redémarrer).
+3. **Attendu** : au logon suivant, le compagnon **réimpose** le `.ini` durci
+   (TrayIcon=0, SkinPath, section `[SambaEduOverlay]` verrouillée) — écriture
+   idempotente (réécrit seulement si absent ou divergent). L'élève peut au pire
+   masquer l'overlay pour sa session courante (récupérable), jamais afficher de
+   fausse donnée (`overlay.json` reste SYSTEM read-only).
+
+### Scénario 21.3 — Non-régression `overlay.json` SYSTEM (NFR5) (lab Windows — ACTION HUMAINE Henri)
+
+1. **Attendu** : `overlay.json` reste composé ET écrit par le **SERVICE SYSTEM**
+   au logon, ACL `<SID>:R` (read-only pour l'user). La donnée affichée n'est
+   jamais falsifiable par l'élève — seul le `Rainmeter.ini` de présentation est
+   writable. Vérifier qu'un élève ne peut pas écrire `overlay.json`.
+
+### Post-correctifs & non-régressions (Section 21)
+
+- **Mode portable vs installé = présence d'un `Rainmeter.ini` à côté de
+  `Rainmeter.exe`.** Le provisioning SYSTEM **supprime** désormais tout
+  `Rainmeter.ini` résiduel de l'arbre ProgramData (celui embarqué par le zip
+  portable + ancien durci d'une install 27.1bis) — sinon Rainmeter repasserait en
+  mode portable et les modales reviendraient. Suppression idempotente
+  (`os.Remove` ignorant `ErrNotExist`).
+- **Ordre d'écriture** : le compagnon écrit `%APPDATA%\Rainmeter\Rainmeter.ini`
+  **AVANT** le `Watchdog.Tick()` anticipé (levier A) — sinon Rainmeter lirait un
+  `.ini` absent au 1er lancement (Safe Start). Échec d'écriture = **gracieux**
+  (log warning, le watchdog lance quand même — NFR1).
+- **Skins inchangées** RX en ProgramData, pointées par
+  `SkinPath=C:\ProgramData\SambaEdu\Rainmeter\Skins\` dans `[Rainmeter]`.
+
+### Checklist rapide (Section 21)
+
+- [ ] 21.1 — Logon élève non-admin : aucune modale (not-writable / Safe Start),
+      skin SambaEduOverlay chargée, `%APPDATA%\Rainmeter\Rainmeter.ini` présent et
+      writable, aucun `.ini` sous ProgramData.
+- [ ] 21.2 — `.ini` per-user édité/supprimé → réimposé au logon (idempotent).
+- [ ] 21.3 — `overlay.json` reste SYSTEM read-only (NFR5 non régressé).

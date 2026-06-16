@@ -131,7 +131,13 @@ func runCompanion() error {
 		// config sont posés par le SERVICE SYSTEM (provisioning au bootstrap) ;
 		// le compagnon ne fait que maintenir le rendu vivant.
 		Watchdog: newRainmeterWatchdog(rainmeterPortableStore(), logger),
-		Log:      logger,
+		// Story 27.1ter (mode installé, D2) : avant le lancement de Rainmeter par
+		// le watchdog, le compagnon (droits user) (ré)impose le Rainmeter.ini
+		// durci dans %APPDATA%\Rainmeter\, WRITABLE — supprime les modales « not
+		// writable » / « Safe Start » sur un user standard. Le SYSTEM a, lui,
+		// retiré tout Rainmeter.ini de l'arbre ProgramData (mode installé).
+		EnsureUserRainmeterIni: func() error { return ensureUserRainmeterIni(logger) },
+		Log:                    logger,
 	}
 
 	// Le processus meurt à la fin de session (logoff) ; Interrupt couvre le

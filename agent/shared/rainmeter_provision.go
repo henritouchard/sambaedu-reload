@@ -208,6 +208,20 @@ func (a *Agent) extractRainmeterAtomic(archive []byte) error {
 		return err
 	}
 
+	// MODE INSTALLÉ (Story 27.1ter) : on retire le Rainmeter.ini embarqué par le
+	// portable DANS LE TEMPORAIRE, AVANT la bascule — ainsi l'arbre définitif ne
+	// reçoit JAMAIS de Rainmeter.ini racine, même transitoirement. Sinon il
+	// existerait une fenêtre entre la bascule et la suppression d'ensureRainmeterConfig
+	// où un Rainmeter.exe lancé verrait son Rainmeter.ini voisin → MODE PORTABLE →
+	// modales « not writable »/« Safe Start » (review 27.1ter F3). Seul le .ini AUX
+	// CÔTÉS de l'exe (racine) force le portable — c'est le seul à éliminer.
+	// ensureRainmeterConfig garde sa suppression idempotente pour le cas « upgrade
+	// d'une install 27.1bis antérieure » (.ini déjà présent dans la racine, hors
+	// extraction).
+	if err := os.Remove(filepath.Join(tmp, rainmeterSettingsFile)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("retrait du Rainmeter.ini portable (temporaire) : %w", err)
+	}
+
 	// Bascule des entrées top-level du portable dans la racine. Rename atomique
 	// par entrée (même volume — tmp est sous root) ; on remplace une entrée
 	// portable pré-existante, jamais la config (les noms diffèrent).
@@ -230,12 +244,13 @@ func (a *Agent) extractRainmeterAtomic(archive []byte) error {
 }
 
 // ensureRainmeterConfig : télécharge la skin (vérif SHA-256 AVANT écriture,
-// conversion UTF-16 LE + BOM à la pose — Story 25.6, plus d'embed) + pose le
-// Rainmeter.ini durci, idempotent par contenu (ne réécrit que si divergence).
+// conversion UTF-16 LE + BOM à la pose — Story 25.6, plus d'embed) + GARANTIT
+// l'absence de tout Rainmeter.ini sous ProgramData (Story 27.1ter — mode
+// installé : les settings partent en %APPDATA%, posés par le compagnon).
 // Toujours appelée. Skin absente/illisible serveur (skin == nil) ou download en
-// échec → skin non (re)posée, MAIS le Rainmeter.ini durci + l'ACL restent posés
-// (le verrouillage ne dépend pas de la skin ; à l'arrivée de la skin, tout est
-// prêt). ACL Users:R sur la racine.
+// échec → skin non (re)posée, MAIS la suppression du .ini résiduel + l'ACL
+// restent appliquées (le verrouillage ne dépend pas de la skin). ACL Users:R sur
+// la racine.
 func (a *Agent) ensureRainmeterConfig(cfg Config, skinEntry *rainmeterSkinEntry) {
 	// Skin (UTF-16 LE + BOM) — téléchargée et vérifiée (D1) au lieu d'embarquée.
 	if skinEntry == nil {
@@ -255,26 +270,21 @@ func (a *Agent) ensureRainmeterConfig(cfg Config, skinEntry *rainmeterSkinEntry)
 		}
 	}
 
-	// Rainmeter.ini durci, posé AUSSI en UTF-16 LE + BOM (homogénéité Rainmeter).
-	// Construit LOCALEMENT (déterministe, indépendant de la skin/serveur).
-	ini, err := ToUTF16LEWithBOM(BuildHardenedRainmeterIni())
-	if err != nil {
-		a.Log.Errorf("Conversion UTF-16 du Rainmeter.ini en échec : %v", err)
-
-		return
-	}
-	if !fileMatchesContent(a.Rainmeter.SettingsPath(), ini) {
-		if err := os.MkdirAll(a.Rainmeter.SettingsDir(), 0o700); err != nil {
-			a.Log.Warningf("Création du dossier de config Rainmeter en échec : %v", err)
-
-			return
-		}
-		if err := WriteFileAtomic(a.Rainmeter.SettingsPath(), ini); err != nil {
-			a.Log.Warningf("Pose du Rainmeter.ini durci en échec : %v", err)
-
-			return
-		}
-		a.Log.Infof("Rainmeter.ini durci posé (TrayIcon=0, Draggable=0, ClickThrough=1, KeepOnScreen=1) : %s.", a.Rainmeter.SettingsPath())
+	// MODE INSTALLÉ (Story 27.1ter) : on N'ÉCRIT PLUS le Rainmeter.ini durci sous
+	// ProgramData. Les settings partent en %APPDATA%\Rainmeter\ (writable, posés
+	// par le COMPAGNON en droits user) — la présence d'un Rainmeter.ini AUX CÔTÉS
+	// de Rainmeter.exe forcerait le MODE PORTABLE et ramènerait les modales « not
+	// writable » / « Safe Start » sur un user standard (ProgramData en RX).
+	// On SUPPRIME donc, de façon IDEMPOTENTE, tout Rainmeter.ini résiduel du
+	// dossier racine ProgramData : celui embarqué par le zip portable ET un ancien
+	// durci posé par une install 27.1bis antérieure. Son absence garantit le mode
+	// installé → Rainmeter lit %APPDATA%\Rainmeter\Rainmeter.ini (writable) et
+	// charge la skin verrouillée via SkinPath.
+	residualIni := a.Rainmeter.SettingsPath()
+	if err := os.Remove(residualIni); err != nil && !os.IsNotExist(err) {
+		a.Log.Warningf("Suppression du Rainmeter.ini résiduel sous ProgramData en échec : %v (le mode portable pourrait persister).", err)
+	} else if err == nil {
+		a.Log.Infof("Rainmeter.ini résiduel supprimé de l'arbre ProgramData (mode installé, settings en %%APPDATA%%) : %s.", residualIni)
 	}
 
 	// ACL Users:R sur la racine Rainmeter (couvre skin + Rainmeter.ini —

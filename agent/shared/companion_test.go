@@ -3,9 +3,11 @@ package shared
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -321,6 +323,88 @@ func TestCompanionRunLaunchesWatchdogBeforeCacheWait(t *testing.T) {
 		t.Fatal("le watchdog doit être lancé dès le démarrage, sans attendre WaitForCache")
 	}
 
+	cancel()
+	<-done
+}
+
+// TestCompanionRunWritesUserRainmeterIniBeforeWatchdog (Story 27.1ter) : le
+// compagnon écrit le Rainmeter.ini per-user (%APPDATA%) AVANT de lancer
+// Rainmeter par le watchdog — sinon Rainmeter lirait un .ini absent (Safe Start)
+// au premier lancement.
+func TestCompanionRunWritesUserRainmeterIniBeforeWatchdog(t *testing.T) {
+	c, _ := newTestCompanion(t, &fakeHandler{compliant: true})
+	c.PollInterval = 5 * time.Millisecond
+	c.PollTimeout = 2 * time.Second
+	c.CachePoll = 10 * time.Millisecond
+
+	var order []string
+	var mu sync.Mutex
+	c.EnsureUserRainmeterIni = func() error {
+		mu.Lock()
+		order = append(order, "ini")
+		mu.Unlock()
+
+		return nil
+	}
+	launched := make(chan struct{}, 1)
+	ops := &fakeRainmeterOps{installed: true, running: false, launched: launched, onLaunch: func() {
+		mu.Lock()
+		order = append(order, "launch")
+		mu.Unlock()
+	}}
+	c.Watchdog = &RainmeterWatchdog{Ops: ops}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		c.Run(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-launched:
+	case <-time.After(500 * time.Millisecond):
+		cancel()
+		<-done
+		t.Fatal("le watchdog doit être lancé au démarrage")
+	}
+	cancel()
+	<-done
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(order) < 2 || order[0] != "ini" || order[1] != "launch" {
+		t.Fatalf("le .ini per-user doit être écrit AVANT le lancement de Rainmeter, got %v", order)
+	}
+}
+
+// TestCompanionRunUserRainmeterIniFailureGraceful (Story 27.1ter, NFR1) : un
+// échec d'écriture du .ini per-user est gracieux — le watchdog lance quand même
+// Rainmeter, le compagnon ne panique/ne bloque pas.
+func TestCompanionRunUserRainmeterIniFailureGraceful(t *testing.T) {
+	c, _ := newTestCompanion(t, &fakeHandler{compliant: true})
+	c.PollInterval = 5 * time.Millisecond
+	c.PollTimeout = 2 * time.Second
+	c.CachePoll = 10 * time.Millisecond
+
+	c.EnsureUserRainmeterIni = func() error { return errors.New("APPDATA non défini") }
+	launched := make(chan struct{}, 1)
+	c.Watchdog = &RainmeterWatchdog{Ops: &fakeRainmeterOps{installed: true, running: false, launched: launched}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		c.Run(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-launched: // malgré l'échec du .ini, le watchdog lance Rainmeter
+	case <-time.After(500 * time.Millisecond):
+		cancel()
+		<-done
+		t.Fatal("le watchdog doit lancer Rainmeter même si l'écriture du .ini per-user échoue (NFR1)")
+	}
 	cancel()
 	<-done
 }
