@@ -29,8 +29,14 @@ package shared
 // (AGENT_STATE_TTL_SECONDS côté SE5) gouverne l'intervalle de poll, clampé
 // [60 s, 24 h], amorcé depuis le cache au démarrage ; `interval_seconds`
 // local devient le repli avant la première enveloppe vue.
+// 2.2.3 = fond d'écran servi EN DIRECT par Apache (Alias /assets/wallpaper,
+// calque Story 27.7) : SyncWallpaperAssets passe du Client token'd
+// (/api/v1/agent/assets/wallpaper) à un GET statique sans token, hors PHP-FPM.
+// Contrat wire INCHANGÉ (payload {asset, checksum}, golden figés) — seule la
+// dérivation d'URL côté agent change ; la route Laravel token'd reste vivante
+// le temps du rollout.
 //
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.2.2"
+var Version = "2.2.3"

@@ -3,7 +3,6 @@ package shared
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -155,7 +154,7 @@ func (a *Agent) SyncShortcutIcons(cfg Config) {
 	base := strings.TrimRight(cfg.ServerURL, "/")
 	for _, icon := range missing {
 		iconURL := base + ShortcutIconsRoute + icon.Filename
-		body, status, err := a.getStaticIcon(iconURL)
+		body, status, err := a.getStatic(iconURL, shortcutIconMaxBytes)
 		if err != nil {
 			a.Log.Warningf("Serveur injoignable sur GET icône %s : %v — skip (rattrapage au prochain cycle).", icon.Filename, err)
 
@@ -187,22 +186,4 @@ func (a *Agent) SyncShortcutIcons(cfg Config) {
 			a.Log.Warningf("GET icône %s -> %d inattendu : skip (rattrapage au prochain cycle).", icon.Filename, status)
 		}
 	}
-}
-
-// getStaticIcon : GET HTTP SIMPLE (PAS le Client token'd — décision n° 1).
-// Réutilise le *http.Client sous-jacent (timeout/transport) sans la couche
-// token/rotation. Corps borné (LimitReader). Retourne (corps, status, err).
-func (a *Agent) getStaticIcon(url string) ([]byte, int, error) {
-	resp, err := a.Client.HTTP.Get(url)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, shortcutIconMaxBytes))
-	if err != nil {
-		return nil, resp.StatusCode, err
-	}
-
-	return body, resp.StatusCode, nil
 }

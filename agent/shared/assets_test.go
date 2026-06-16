@@ -133,6 +133,30 @@ func TestSyncAssetsSkippedInQuarantine(t *testing.T) {
 	}
 }
 
+func TestSyncAssetsStaticTransportNeedsNoToken(t *testing.T) {
+	// Transport STATIQUE (calque 27.7) : le download passe par un GET simple
+	// sur /assets/wallpaper (Alias Apache), JAMAIS par le Client token'd. Sans
+	// aucun token sur disque, le sync doit donc réussir.
+	f := newFakeSessionServer(t)
+	filename, checksum, body := assetFixture()
+	f.assetBody[filename] = body
+
+	agent, store, cfg := newSessionAgent(t, f, nil)
+	if err := os.Remove(store.TokenPath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteSessionStateCache(testSID, []byte(stateWithWallpaperAsset(filename, checksum)), `"e"`, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	agent.SyncWallpaperAssets(cfg)
+
+	raw, err := os.ReadFile(store.AssetPath(filename))
+	if err != nil || string(raw) != string(body) {
+		t.Fatalf("asset téléchargé sans token attendu (transport statique) : %v", err)
+	}
+}
+
 func TestRunSessionFetchFetchesThenSyncsAssets(t *testing.T) {
 	// Le point d'entrée de la tâche at-logon : fetch des sessions PUIS sync
 	// des assets référencés par le cache frais.

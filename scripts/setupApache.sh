@@ -127,6 +127,19 @@ cat > "$APACHE_SITES_AVAILABLE/sambaedu.conf" << VHOST_SER
         Require all granted
     </Directory>
 
+    # /assets/wallpaper : fonds d'écran content-addressed (biblio wallpaper,
+    # config wallpapers.library_path = storage/app/wallpaper), servis EN DIRECT
+    # (hors FPM/Laravel). GARDE-FOU SÉCURITÉ : pointe EXACTEMENT sur le
+    # sous-dossier dédié, JAMAIS sur storage/ entier (storage/keys/pki/ = PFX
+    # code-signing + clés CA). -Indexes, PAS de FallbackResource. À chown
+    # www-admin (lisible Apache).
+    Alias /assets/wallpaper $SER_ROOT/storage/app/wallpaper
+    <Directory $SER_ROOT/storage/app/wallpaper>
+        Options -Indexes +FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+
     ErrorLog /var/log/apache2/sambaedu-reload-error.log
     CustomLog /var/log/apache2/sambaedu-reload-access.log combined
 </VirtualHost>

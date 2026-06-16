@@ -147,7 +147,7 @@ l'artefact (`sambaedu-agent-<version>.exe`).
 | Cache ETag | `C:\ProgramData\SambaEdu\Agent\cache\etag.txt` | Header `ETag` stocké **VERBATIM** (guillemets RFC 7232 inclus), renvoyé tel quel en `If-None-Match`. Tout trim/déquotage brise le 304. |
 | Dernier-appliqué MACHINE | `C:\ProgramData\SambaEdu\Agent\applied-state.json` | Créé/préservé **vide** (`{}`) — réservé aux FUTURS handlers de portée machine (les deux types 24.6, wallpaper et overlay, sont de scope session : dernier-appliqué **per-user**). Jamais écrasé s'il existe. |
 | Cache de session | `C:\ProgramData\SambaEdu\Agent\cache\sessions\<SID>\{state.json, etag.txt}` | Écrit par le fetch SYSTEM (`session-fetch` at-logon + cycle du service, in-process). ETag **DU contexte** (poste, user), verbatim. ACL à la création : SYSTEM F, Admins F, `<SID>:(OI)(CI)R` — le user LIT le sien, rien d'autre. |
-| Cache d'assets | `C:\ProgramData\SambaEdu\Agent\assets\<filename>` | Téléchargé par SYSTEM (`GET /api/v1/agent/assets/wallpaper/<filename>`, SHA-256 vérifié AVANT écriture), content-addressed (jamais re-téléchargé). ACL : SYSTEM F, Admins F, `BUILTIN\Users:(OI)(CI)R`. Pas de purge (volume borné par la biblio, noté). |
+| Cache d'assets | `C:\ProgramData\SambaEdu\Agent\assets\<filename>` | Téléchargé par SYSTEM via **GET statique SANS token** sur l'Alias Apache `GET /assets/wallpaper/<filename>` (hors PHP-FPM, calque 27.7), SHA-256 vérifié AVANT écriture, content-addressed (jamais re-téléchargé). ACL : SYSTEM F, Admins F, `BUILTIN\Users:(OI)(CI)R`. Pas de purge (volume borné par la biblio, noté). |
 | Cache d'icônes raccourci | `C:\ProgramData\SambaEdu\Agent\icons\<sha256>.ico` | **Story 27.7** — icônes UPLOADÉES content-addressed. Téléchargé par SYSTEM via **GET HTTP simple SANS token** (`<server_url>/assets/shortcut-icons/<sha>.ico`, Alias Apache statique), SHA-256 vérifié AVANT écriture, content-addressed (jamais re-téléchargé). ACL identique aux assets (Users:R). L'`IconLocation` du `.lnk` pointe sur ce fichier local. |
 | Drop session | `C:\ProgramData\SambaEdu\Agent\reports\sessions\<SID>\session-report.json` | Écrit par le COMPAGNON après chaque passe (sa seule écriture hors profil), collecté + **validé strictement** par le service au cycle → items réels du `POST /report`. ACL : SYSTEM F, Admins F, `<SID>:(OI)(CI)M`. |
 | Profil user | `%LOCALAPPDATA%\SambaEdu\Agent\{applied-state.json, overlay.json, companion.log}` | Écritures du compagnon : dernier-appliqué per-user (§5), façade overlay (le render lit), log compagnon (format/rotation iso agent.log). |
@@ -233,8 +233,10 @@ inchangées par le portage) :
     `server_url + "/assets/shortcut-icons/" + icon_asset` (URL **dérivée**, pas
     de champ `url` — décision 24.4), vérifie le **SHA-256 AVANT écriture**, la
     dépose content-addressed sous `C:\ProgramData\SambaEdu\Agent\icons\<sha>.ico`
-    (ACL Users:R, `SyncShortcutIcons` dans `shared/icon_assets.go`, calqué
-    `SyncWallpaperAssets` mais transport statique). Le compagnon pointe alors
+    (ACL Users:R, `SyncShortcutIcons` dans `shared/icon_assets.go`, qui partage
+    avec `SyncWallpaperAssets` le helper de download statique `getStatic` — depuis
+    le passage du wallpaper en Alias statique, les deux suivent le même transport).
+    Le compagnon pointe alors
     l'`IconLocation` du `.lnk` sur ce **fichier local**. **Convergence
     gracieuse** : `.ico` local absent / checksum KO ⇒ raccourci posé **sans
     IconLocation** (icône défaut), drift + re-sync au cycle suivant, JAMAIS une

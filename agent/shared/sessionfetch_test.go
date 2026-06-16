@@ -70,10 +70,13 @@ func newFakeSessionServer(t *testing.T) *fakeSessionServer {
 		}
 		w.WriteHeader(f.userStateCode)
 	})
-	mux.HandleFunc("/api/v1/agent/assets/wallpaper/", func(w http.ResponseWriter, r *http.Request) {
+	// Story wallpaper-static : fonds d'écran servis en STATIQUE par Apache
+	// (Alias /assets/wallpaper), GET simple SANS token — le handler répond même
+	// sans Authorization, comme l'Alias shortcut-icons.
+	mux.HandleFunc("/assets/wallpaper/", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		filename := strings.TrimPrefix(r.URL.Path, "/api/v1/agent/assets/wallpaper/")
+		filename := strings.TrimPrefix(r.URL.Path, "/assets/wallpaper/")
 		f.assetCalls = append(f.assetCalls, filename)
 		body, ok := f.assetBody[filename]
 		if !ok {

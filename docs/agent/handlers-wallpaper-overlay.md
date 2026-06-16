@@ -59,11 +59,26 @@ Correspondance spike PS → implémentation Go (24.6) :
 | `Read-SessionReports` | `agent/shared/dropcollect.go` |
 | `SessionCompanion.ps1` (boucle résidente, drop) | `agent/shared/companion.go` + `agent/windows/companion_windows.go` |
 
-## 2. Route serveur de serving des assets (NEUVE)
+## 2. Serving des assets — Alias Apache statique (calque Story 27.7)
+
+Le fond d'écran est servi **EN DIRECT par Apache** via l'Alias
+`/assets/wallpaper/<sha256>.<ext>` (`config/apache/sambaedu.conf` +
+`scripts/setupApache.sh`, scopé sur `storage/app/wallpaper`, `Options -Indexes`,
+**pas** de FallbackResource) — exactement comme `/assets/shortcut-icons` (27.7).
+L'agent fait un **GET HTTP simple SANS token** (`SyncWallpaperAssets`, helper
+`getStatic` mutualisé avec `icon_assets.go`) : les images (centaines de Ko à
+plusieurs Mo) ne traversent plus PHP-FPM. Garantie d'intégrité = content-addressing
++ **SHA-256 vérifié AVANT écriture** (un contenu divergent n'entre jamais dans le
+cache). Garde-fou sécu : l'Alias pointe EXACTEMENT sur le sous-dossier dédié,
+jamais sur `storage/` entier (`storage/keys/pki/` = PFX code-signing + clés CA).
+
+**Route Laravel token'd conservée le temps du rollout** : la route ci-dessous
+reste vivante car les postes en **ancien agent** dérivent encore cette URL ; son
+retrait est un cleanup ultérieur séparé.
 
 | | |
 |---|---|
-| URL | `GET /api/v1/agent/assets/wallpaper/{filename}` (route `agent.v1.assets.wallpaper`) |
+| URL (legacy, transition) | `GET /api/v1/agent/assets/wallpaper/{filename}` (route `agent.v1.assets.wallpaper`) |
 | Middlewares | `auth.v1.secure-headers` + `throttle:60,1` + `agent.token` — chaîne iso state/report ; `X-Agent-New-Token` survit (D5) |
 | Controller | `App\Http\Controllers\Api\V1\Agent\AssetController` (mince) |
 | 200 | contenu binaire de l'asset (`WallpaperAsset` lookup par filename, fichier sous `config('wallpapers.library_path')`) |
