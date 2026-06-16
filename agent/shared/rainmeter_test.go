@@ -73,7 +73,7 @@ func TestBuildHardenedRainmeterIni_LockdownDirectives(t *testing.T) {
 		"Draggable=0",                        // non déplaçable
 		"ClickThrough=1",                     // clics traversent
 		"KeepOnScreen=1",                     // épinglée
-		"[SambaEduOverlay\\SambaEduOverlay]", // section d'instance
+		"[SambaEduOverlay]", // section d'instance = dossier de config relatif à Skins\
 		"Active=1",
 	}
 	for _, want := range mustContain {

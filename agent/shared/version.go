@@ -35,8 +35,21 @@ package shared
 // Contrat wire INCHANGÉ (payload {asset, checksum}, golden figés) — seule la
 // dérivation d'URL côté agent change ; la route Laravel token'd reste vivante
 // le temps du rollout.
+// 2.2.4 = correctif race overlay au logon (Story 27.1bis) : la tâche
+// `session-fetch` compose désormais overlay.json elle-même après avoir peuplé
+// le cache per-SID, dans le même process SYSTEM séquentiel. L'évènement
+// WTS_SESSION_LOGON du service arrivait avant le fetch réseau → cache absent au
+// moment de composer → no-op gracieux jamais rattrapé (logon-only) → overlay.json
+// jamais écrit. L'écriture du service reste en place (idempotente, filet).
+// 2.2.5 = correctif section du Rainmeter.ini durci (Story 27.1bis) : la section
+// d'instance était `[SambaEduOverlay\SambaEduOverlay]` (forme à deux niveaux) →
+// Rainmeter cherchait un dossier de config Skins\SambaEduOverlay\SambaEduOverlay\
+// inexistant → AUCUNE skin activée → Rainmeter tournait mais écran vide. La
+// section correcte est `[SambaEduOverlay]` (chemin du DOSSIER de config relatif à
+// Skins\) ; `Active=1` y sélectionne le 1er .ini. overlay.json était bien écrit,
+// seul le rendu manquait.
 //
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.2.3"
+var Version = "2.2.5"

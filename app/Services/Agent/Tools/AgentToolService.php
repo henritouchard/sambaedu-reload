@@ -299,7 +299,29 @@ class AgentToolService
             throw $this->reject('invalid_filename', 'Filename hors du répertoire confiné.');
         }
 
-        $file->move($base, $filename);
+        // Le fichier source peut être un upload HTTP classique OU le fichier
+        // temporaire d'un `TemporaryUploadedFile` Livewire (posté lors d'une
+        // requête ANTÉRIEURE via l'endpoint `upload-file`). On NE peut donc pas
+        // s'appuyer sur `UploadedFile::move()` (Symfony), qui passe par
+        // `move_uploaded_file()` : cette fonction rejette tout fichier absent du
+        // `$_FILES` de la requête courante → échec silencieux sur le flux
+        // Livewire. On déplace par `rename` (copie en repli cross-device),
+        // après confirmation du confinement du target ci-dessus.
+        $source = $file->getRealPath() ?: $file->getPathname();
+        if (@rename($source, $target)) {
+            return;
+        }
+        if (@copy($source, $target)) {
+            @unlink($source);
+
+            return;
+        }
+
+        throw $this->reject('move_failed', sprintf(
+            'Déplacement de l\'archive impossible : %s → %s.',
+            $source,
+            $target,
+        ));
     }
 
     /**

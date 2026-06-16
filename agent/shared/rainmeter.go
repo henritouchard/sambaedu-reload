@@ -243,8 +243,15 @@ func BuildHardenedRainmeterIni() string {
 		// Démarrage silencieux, pas de fenêtre de bienvenue/notif.
 		"Debug=0",
 		"",
-		// Section d'INSTANCE de la skin (Config\Skin) — verrouillage dur.
-		"[" + rainmeterSkinName + "\\" + rainmeterSkinName + "]",
+		// Section d'INSTANCE de la skin — verrouillage dur. La section Rainmeter.ini
+		// = le CHEMIN du dossier de config relatif à Skins\ (ici `SambaEduOverlay`,
+		// le dossier qui contient SambaEduOverlay.ini) ; `Active=1` sélectionne le
+		// 1er .ini de ce dossier. PAS `[SambaEduOverlay\SambaEduOverlay]` : cette
+		// forme à deux niveaux ferait chercher un dossier
+		// Skins\SambaEduOverlay\SambaEduOverlay\ inexistant → aucune skin activée →
+		// écran vide (le .ini est un FICHIER dans le dossier de config, jamais un
+		// sous-dossier).
+		"[" + rainmeterSkinName + "]",
 		"Active=1",
 		// Non déplaçable (l'élève ne peut pas la traîner hors de l'écran).
 		"Draggable=0",

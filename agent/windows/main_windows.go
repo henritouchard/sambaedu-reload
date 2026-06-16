@@ -116,6 +116,15 @@ func runSessionFetchTask() {
 		os.Exit(1)
 	}
 	agent.RunSessionFetch(cfg)
+
+	// Composition d'overlay.json DANS CE PROCESS, après que RunSessionFetch a
+	// garanti l'écriture du cache per-SID (Story 27.1bis — correctif race
+	// logon). L'évènement WTS_SESSION_LOGON du service (qui écrit aussi
+	// overlay.json, idempotent) arrive avant que ce fetch réseau n'ait peuplé
+	// le cache : OverlayDocumentForSession y voyait un cache absent → no-op, et
+	// le logon-only ne rattrapait jamais. Ici le cache vient d'être écrit
+	// séquentiellement → composition fiable. Best-effort, jamais bloquant.
+	writeOverlayForAllSessions(agent.Store, os.Getenv("COMPUTERNAME"), agent.Log)
 }
 
 func exitOn(err error) {
