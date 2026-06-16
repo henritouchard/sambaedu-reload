@@ -287,8 +287,11 @@ func BuildHardenedRainmeterIni() string {
 		// définitif est recalé par l'OnRefreshAction=!Move de la skin.
 		"WindowX=0",
 		"WindowY=0",
-		// Toujours au-dessus (l'overlay ne disparaît pas derrière une fenêtre).
-		"AlwaysOnTop=1",
+		// Niveau BUREAU (-2 = « On Desktop ») : l'overlay reste en ARRIÈRE-PLAN,
+		// jamais au-dessus des applications de l'élève — il se comporte comme un
+		// widget de bureau (visible sur le bureau, masqué par une fenêtre au
+		// premier plan). Réglage demandé 2026-06-16 (avant : 1 = topmost).
+		"AlwaysOnTop=-2",
 		// Pas de snap au bord, pas de fondu au survol.
 		"SnapEdges=0",
 		"",
