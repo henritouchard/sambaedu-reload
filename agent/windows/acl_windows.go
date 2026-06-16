@@ -80,6 +80,24 @@ func setAssetsACL(path string) error {
 	)
 }
 
+// setRainmeterACL : ACL de l'arbre Rainmeter (C:\ProgramData\SambaEdu\Rainmeter).
+// Variante de setAssetsACL avec BUILTIN\Users en RX (Read & eXecute) et NON R :
+// l'arbre contient Rainmeter.exe, que le COMPAGNON — qui tourne aux droits de la
+// SESSION (élève non-admin) — doit LANCER (CreateProcessW). Le droit R seul
+// n'inclut pas FILE_EXECUTE : un user standard se voit refuser le lancement
+// (« Accès refusé », watchdog en échec — constaté lab ws, profil non-admin alors
+// que le profil admin passe via l'ACE Administrators:F). RX ajoute l'exécution
+// SANS le write : l'élève ne peut toujours pas falsifier la config verrouillée.
+// (OI)(CI) : les fichiers/sous-répertoires héritent (dont Rainmeter.exe).
+func setRainmeterACL(path string) error {
+	return runIcacls(path,
+		"/inheritance:r",
+		"/grant", "*S-1-5-18:(OI)(CI)F",
+		"/grant", "*S-1-5-32-544:(OI)(CI)F",
+		"/grant", "*S-1-5-32-545:(OI)(CI)RX",
+	)
+}
+
 // setOverlayFileACL : ACL du FICHIER overlay.json écrit par SYSTEM au logon
 // (Story 27.1bis, D1/D2). SYSTEM + Administrators FULL, <SID>:R (Read) —
 // héritage retiré : SYSTEM possède/écrit, l'élève LIT mais ne FALSIFIE JAMAIS

@@ -170,9 +170,10 @@ func newAgent(echo bool) *shared.Agent {
 		SwapAndRestart:     swapAndRestart,
 		// Story 27.1bis : provisioning de l'outil de rendu Rainmeter au bootstrap
 		// du cycle SYSTEM (portable install-if-absent + config verrouillée). ACL
-		// Users:R / SYSTEM+Admins full (setAssetsACL réutilisé). nil en
+		// dédiée Users:RX (Rainmeter.exe est lancé par le compagnon aux droits de
+		// la session — R seul refuserait l'exécution) / SYSTEM+Admins full. nil en
 		// test/Linux (provisioning inerte).
 		Rainmeter:    rainmeterPortableStore(),
-		RainmeterACL: setAssetsACL,
+		RainmeterACL: setRainmeterACL,
 	}
 }
