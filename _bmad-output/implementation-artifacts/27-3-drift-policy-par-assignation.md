@@ -1,6 +1,18 @@
 # Story 27.3 : Drift policy par assignation — le mode strict/default suit la cible, pas la règle
 
-Status: review
+Status: cancelled
+
+> **❌ CANCELLED (Henri 2026-06-16).** Story **annulée et superseded par 27.8**
+> (`92fd9e9` — retrait du mode strict/default en bloc, STRICT partout). Deux raisons :
+> 1. **Fond** : le mode `strict/default` que cette story déplaçait (règle→assignation) a été
+>    **retiré intégralement** par 27.8 — le grain réel du mode est `type × poste`, pas `item × cible`
+>    comme cette story le vendait (cf. review 27.3 Q1/#6). Plus de drift policy à régler.
+> 2. **Numérotation** : cette story avait **réaffecté à tort le numéro 27.3**, qui appartient au slot
+>    canonique **« Handlers registre & associations de fichiers »** (`epics-agent-desired-state.md` L719).
+>    Le slot 27.3 est rendu à ce handler.
+>
+> Le code de cette story n'a **jamais été committé en `feat`** (resté en `review`) — rien à défaire.
+> Fichier conservé comme trace historique. Voir mémoire `project_drift_policy_strict_only`.
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
