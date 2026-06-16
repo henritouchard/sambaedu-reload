@@ -7,9 +7,16 @@ import (
 	"testing"
 )
 
-func overlayIdentityItem(fullname, login, room string) StateItem {
+func overlayIdentityItem(fullname, login string) StateItem {
 	return StateItem{Type: "overlay", Semantics: "aggregate", Hash: "h-id",
-		Payload: map[string]any{"kind": "identity", "fullname": fullname, "login": login, "room": room}}
+		Payload: map[string]any{"kind": "identity", "fullname": fullname, "login": login}}
+}
+
+// overlayMachineItem : item overlay de portée MACHINE (Story 27.10) — porte la
+// salle. La salle ne vient PLUS de l'item identity.
+func overlayMachineItem(room string) StateItem {
+	return StateItem{Type: "overlay", Semantics: "aggregate", Hash: "h-mc",
+		Payload: map[string]any{"kind": "machine", "room": room}}
 }
 
 func overlayAlertItem(severity, title, text string) StateItem {
@@ -33,7 +40,8 @@ func TestComposeOverlayDocumentGoldenByteCompatible(t *testing.T) {
 	want := string(bytes.TrimSuffix(raw, []byte("\n")))
 
 	items := []StateItem{
-		overlayIdentityItem("Jean Döe", "jdoe", "Salle B-12"),
+		overlayMachineItem("Salle B-12"),
+		overlayIdentityItem("Jean Döe", "jdoe"),
 		// Sanitize iso OverlayService::sanitizeText : retours ligne /
 		// espaces multiples → UN espace.
 		overlayAlertItem("warning", "Maintenance  réseau", "Coupure\nprévue à 18h"),
@@ -75,12 +83,74 @@ func TestComposeOverlayDocumentFirstIdentityWins(t *testing.T) {
 	// Un seul bloc identité (le serveur n'en émet qu'un — défense : le
 	// PREMIER gagne, ordre serveur).
 	items := []StateItem{
-		overlayIdentityItem("Premier", "p", "R1"),
-		overlayIdentityItem("Second", "s", "R2"),
+		overlayIdentityItem("Premier", "p"),
+		overlayIdentityItem("Second", "s"),
 	}
 	got := ComposeOverlayDocument(items, "PC")
 	if !strings.Contains(got, `"fullname": "Premier"`) || strings.Contains(got, "Second") {
 		t.Errorf("le premier bloc identity doit gagner :\n%s", got)
+	}
+}
+
+func TestComposeOverlayDocumentFirstMachineWins(t *testing.T) {
+	// Un seul bloc machine (le serveur n'en émet qu'un — défense : le PREMIER
+	// gagne, ordre serveur).
+	items := []StateItem{
+		overlayMachineItem("Salle A"),
+		overlayMachineItem("Salle B"),
+	}
+	got := ComposeOverlayDocument(items, "PC")
+	if !strings.Contains(got, `"room": "Salle A"`) || strings.Contains(got, "Salle B") {
+		t.Errorf("le premier bloc machine doit gagner :\n%s", got)
+	}
+}
+
+func TestComposeOverlayDocumentMachineRoomWithoutIdentity(t *testing.T) {
+	// CŒUR Story 27.10 (AC3/AC4) — préchargement : item MACHINE seul (room),
+	// AUCUN item identity (cache session absent au logon). Le document porte
+	// machine.room rempli + machine.name local, identity VIDE.
+	got := ComposeOverlayDocument([]StateItem{overlayMachineItem("Salle B-12")}, "SALLE101-PC03")
+
+	for _, want := range []string{
+		`"name": "SALLE101-PC03"`,
+		`"room": "Salle B-12"`,
+		`"fullname": ""`,
+		`"login": ""`,
+		`"alerts": []`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("préchargement : fragment manquant %q :\n%s", want, got)
+		}
+	}
+}
+
+func TestComposeOverlayDocumentIdentityWithoutMachineRoomEmpty(t *testing.T) {
+	// Symétrique : identity seul (cache machine absent) → room vide, jamais
+	// alimenté par l'identity (la salle ne vient QUE de l'item machine, D1).
+	got := ComposeOverlayDocument([]StateItem{overlayIdentityItem("Jean", "jdoe")}, "PC")
+
+	if !strings.Contains(got, `"fullname": "Jean"`) {
+		t.Errorf("identity attendue :\n%s", got)
+	}
+	if !strings.Contains(got, `"room": ""`) {
+		t.Errorf("room vide attendue sans item machine :\n%s", got)
+	}
+}
+
+func TestComposeOverlayDocumentMachineRoomNull(t *testing.T) {
+	// Salle absente côté serveur (poste sans WG physique) : l'item machine porte
+	// room:null (valeur nulle EXPLICITE, OverlayMachineStateProvider). Le compose
+	// retombe sur room:"" — divergence PHP-null ↔ Go-`.(string)` maîtrisée (review
+	// F2). La clé room reste TOUJOURS présente (regex render).
+	got := ComposeOverlayDocument([]StateItem{
+		{Type: "overlay", Payload: map[string]any{"kind": "machine", "room": nil}},
+	}, "PC-NULL")
+
+	if !strings.Contains(got, `"room": ""`) {
+		t.Errorf("room:null doit retomber sur room vide :\n%s", got)
+	}
+	if !strings.Contains(got, `"name": "PC-NULL"`) {
+		t.Errorf("machine.name local attendu :\n%s", got)
 	}
 }
 
@@ -122,7 +192,7 @@ func TestComposeOverlayDocumentEscaping(t *testing.T) {
 func TestComposeOverlayDocumentNoVolatileField(t *testing.T) {
 	// AUCUN champ volatil (generated_at…) : un champ horodaté ferait
 	// dériver chaque passe. Deux compositions = mêmes octets.
-	items := []StateItem{overlayIdentityItem("X", "x", "R")}
+	items := []StateItem{overlayIdentityItem("X", "x"), overlayMachineItem("R")}
 	if ComposeOverlayDocument(items, "PC") != ComposeOverlayDocument(items, "PC") {
 		t.Error("composition non déterministe")
 	}
@@ -136,7 +206,7 @@ func TestComposeOverlayDocumentNoVolatileField(t *testing.T) {
 func TestOverlayHandlerTestApplyLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	h := &OverlayHandler{Path: dir + "/overlay.json", ComputerName: "PC"}
-	items := []StateItem{overlayIdentityItem("Jean", "jdoe", "B12")}
+	items := []StateItem{overlayIdentityItem("Jean", "jdoe"), overlayMachineItem("B12")}
 
 	// Fichier absent → non conforme.
 	if ok, err := h.Test(items); err != nil || ok {
@@ -170,7 +240,7 @@ func TestOverlayHandlerTestApplyLifecycle(t *testing.T) {
 func TestOverlayHandlerNFCComparison(t *testing.T) {
 	dir := t.TempDir()
 	h := &OverlayHandler{Path: dir + "/overlay.json", ComputerName: "PC"}
-	items := []StateItem{overlayIdentityItem("Jean Döe", "jdoe", "B12")}
+	items := []StateItem{overlayIdentityItem("Jean Döe", "jdoe"), overlayMachineItem("B12")}
 
 	if err := h.Apply(items); err != nil {
 		t.Fatal(err)
@@ -198,7 +268,7 @@ func TestOverlayHandlerRainmeterAbsentGraceful(t *testing.T) {
 	h := &OverlayHandler{Path: dir + "/overlay.json", ComputerName: "PC",
 		RainmeterPresent: func() bool { return false }}
 
-	if err := h.Apply([]StateItem{overlayIdentityItem("X", "x", "R")}); err != nil {
+	if err := h.Apply([]StateItem{overlayIdentityItem("X", "x"), overlayMachineItem("R")}); err != nil {
 		t.Fatalf("Rainmeter absent ne doit JAMAIS être une erreur : %v", err)
 	}
 	if _, err := os.Stat(h.Path); err != nil {

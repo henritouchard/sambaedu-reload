@@ -3,7 +3,17 @@
     "generated_at": "2026-06-11T08:00:00+00:00",
     "ttl_seconds": 3600,
     "debug": false,
-    "machine": [],
+    "machine": [
+        {
+            "type": "overlay",
+            "semantics": "aggregate",
+            "payload": {
+                "kind": "machine",
+                "room": "Salle 101"
+            },
+            "hash": "a752794a4de8a6914c393c8beef059da1c77e1290b82acb5b786ffa2bbe20d24"
+        }
+    ],
     "session": [
         {
             "type": "wallpaper",
@@ -18,10 +28,11 @@
             "type": "overlay",
             "semantics": "aggregate",
             "payload": {
-                "tool": "rainmeter",
-                "ttl_seconds": 60
+                "kind": "identity",
+                "login": "<user>",
+                "fullname": "Marie Dupont"
             },
-            "hash": "bfbaf4894deccf11ea557d41fe3765028e2c29c743d7e9d60e35d45fd63b1655"
+            "hash": "9d5e55411c14ff191042cc270d5d128c4e6d9a192b0790b9d54868605984ddc4"
         },
         {
             "type": "printers",

@@ -59,8 +59,16 @@ package shared
 // %APPDATA%\Rainmeter\Rainmeter.ini durci, WRITABLE (atomique, idempotent, sans
 // ACL), au démarrage AVANT le lancement du watchdog. overlay.json reste écrit par
 // SYSTEM (NFR5 intact) ; contrat/golden inchangés.
+// 2.2.10 = préchargement identité MACHINE de l'overlay (Story 27.10). La SALLE
+// (`machine.room`) passe de la portée session (item identity) à la portée
+// MACHINE (cache persistant) : ComposeOverlayDocument extrait `room` de l'item
+// `kind:"machine"`, et OverlayDocumentForSession lit le cache MACHINE + le cache
+// session per-SID. Au logon, poste + salle s'affichent dès le cache machine, sans
+// attendre le fetch per-user (login/fullname arrivent ensuite avec le cache
+// session). Byte-format overlay.json INCHANGÉ ; contrat bumpé (golden + 2 hashes
+// figés croisés PHP↔Go).
 //
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.2.9"
+var Version = "2.2.10"

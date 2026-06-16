@@ -59,7 +59,16 @@ class ContractV1Test extends TestCase
     // chaque item d'état (item 5 clés → 4 : type/semantics/payload/hash —
     // convergence STRICT inconditionnelle). Le hash de chaque item ET le hash
     // d'état changent. Bumpé à l'IDENTIQUE côté Go (hasher_test.go::frozenStateHash).
-    private const FROZEN_STATE_HASH = '1599cc48341c732d941e24c830c9facb1237dccf0f17390f939e59f082aafb1b';
+    //
+    // Re-bumpé SCIEMMENT par la Story 27.10 (§9) : la SALLE passe de la portée
+    // session (ancien item identity `{kind, login, fullname, room}`) à la portée
+    // MACHINE — nouvel item overlay `{kind:"machine", room}` (cache persistant,
+    // préchargement poste+salle au logon). L'item identity session perd `room`
+    // (`{kind, login, fullname}`). Le golden gagne donc un item overlay
+    // machine-scope (6 items au total) et l'item identity session change. Le hash
+    // de ces items ET le hash d'état changent. Bumpé à l'IDENTIQUE côté Go
+    // (hasher_test.go::frozenStateHash).
+    private const FROZEN_STATE_HASH = '8174042c0ac8d8f7b6ef1fecf0ff4313b0eba23451e50136c8f712bb5afb4975';
 
     private StateHasher $hasher;
 
@@ -91,8 +100,14 @@ class ContractV1Test extends TestCase
             $this->assertTrue(array_is_list($state[$scope]), "portée {$scope} : doit être une liste, pas une map");
         }
 
-        // AC1 — une portée illustre le « tableau vide » (rien à faire).
-        $this->assertSame([], $state[StateContract::SCOPE_MACHINE]);
+        // Story 27.10 — la portée `machine` porte désormais l'item overlay
+        // `{kind:"machine", room}` (salle préchargée au logon) : elle n'est plus
+        // le « tableau vide » illustratif. Le contrat tolère toujours une portée
+        // vide (les trois sont des listes, éventuellement vides — vérifié
+        // ci-dessus) ; le golden illustre maintenant les trois portées peuplées.
+        $this->assertNotSame([], $state[StateContract::SCOPE_MACHINE]);
+        $this->assertSame('overlay', $state[StateContract::SCOPE_MACHINE][0]['type']);
+        $this->assertSame('machine', $state[StateContract::SCOPE_MACHINE][0]['payload']['kind']);
     }
 
     #[Test]

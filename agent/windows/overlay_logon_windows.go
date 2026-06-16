@@ -96,14 +96,14 @@ func writeOverlayAtLogon(sessionID uint32, store *shared.Store, computerName str
 	writeOverlayDocument(overlayPath, sid, store, computerName, log)
 }
 
-// writeOverlayDocument compose (depuis le cache per-SID) et écrit overlay.json
-// au chemin résolu, possédé SYSTEM + ACL <SID>:R. Cache absent = no-op gracieux
-// (premier logon hors-ligne : on n'écrase pas un overlay précédent par un
-// document vide).
+// writeOverlayDocument compose (depuis les caches machine + session per-SID) et
+// écrit overlay.json au chemin résolu, possédé SYSTEM + ACL <SID>:R. Aucune
+// portée exploitable = no-op gracieux (premier logon hors-ligne : on n'écrase
+// pas un overlay précédent par un document vide).
 func writeOverlayDocument(overlayPath, sid string, store *shared.Store, computerName string, log *shared.Logger) {
 	document, ok := shared.OverlayDocumentForSession(store, sid, computerName, log)
 	if !ok {
-		log.Debugf("Overlay au logon : aucun cache de session exploitable pour %s — pas d'écriture (gracieux).", sid)
+		log.Debugf("Overlay au logon : aucun cache exploitable (machine ni session) pour %s — pas d'écriture (gracieux).", sid)
 
 		return
 	}

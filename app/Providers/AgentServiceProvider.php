@@ -10,6 +10,7 @@ use App\Services\Agent\Enrollment\EnrollmentMatchService;
 use App\Services\Agent\Enrollment\EnrollmentService;
 use App\Services\Agent\Enrollment\TokenRotationService;
 use App\Services\Agent\Providers\DrivesStateProvider;
+use App\Services\Agent\Providers\OverlayMachineStateProvider;
 use App\Services\Agent\Providers\OverlayStateProvider;
 use App\Services\Agent\Providers\PrintersStateProvider;
 use App\Services\Agent\Providers\ShortcutsStateProvider;
@@ -81,6 +82,11 @@ class AgentServiceProvider extends ServiceProvider
             [
                 $app->make(WallpaperStateProvider::class),
                 $app->make(OverlayStateProvider::class),
+                // Story 27.10 — volet MACHINE de l'overlay : la salle
+                // (`{kind:"machine", room}`) passe en portée machine (cache
+                // persistant) pour précharger poste+salle au logon sans attendre
+                // le fetch per-user. `room` retiré de l'item identity session.
+                $app->make(OverlayMachineStateProvider::class),
                 // Story 27.1 — type `shortcuts` (aggregate / machine_user) :
                 // union des raccourcis des mailles, chemin du bureau résolu
                 // serveur (fix Bug C). Une ligne, zéro modif du compilateur.

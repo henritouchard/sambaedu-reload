@@ -170,8 +170,10 @@ class OverlayStateProviderTest extends TestCase
     // ── Story 24.4 — candidat synthétique `identity` (décision n° 4) ─────
 
     #[Test]
-    public function user_context_yields_identity_candidate_with_login_fullname_and_physical_room(): void
+    public function user_context_yields_identity_candidate_with_login_and_fullname_only(): void
     {
+        // Story 27.10 (D1) : `room` est RETIRÉ de l'item identity session — la
+        // salle est désormais émise en portée MACHINE (OverlayMachineStateProvider).
         $this->user->update(['fullname' => 'Marie Dupont']);
 
         $candidates = $this->provider->itemsFor($this->ctx());
@@ -186,29 +188,29 @@ class OverlayStateProviderTest extends TestCase
                 'kind' => 'identity',
                 'login' => $this->user->login,
                 'fullname' => 'Marie Dupont',
-                // room = nom du WG PHYSIQUE (la salle), jamais le parc logique.
-                'room' => $this->room->name,
             ],
             $identity->payload,
         );
+        // `room` n'est plus une clé de l'item identity (source unique = machine).
+        self::assertArrayNotHasKey('room', $identity->payload);
         // sourceId 0 : l'identité sort en tête de l'union aggregate (ordre
         // stable par sourceId asc, décision 23.4 n° 9).
         self::assertSame(0, $identity->sourceId);
     }
 
     #[Test]
-    public function identity_fullname_falls_back_to_login_and_room_is_null_without_physical_group(): void
+    public function identity_fullname_falls_back_to_login(): void
     {
         $this->user->update(['fullname' => null]);
-        $wsSansSalle = Workstation::factory()->create();
 
-        $candidates = $this->provider->itemsFor(TargetContext::for($wsSansSalle, $this->user));
+        $candidates = $this->provider->itemsFor($this->ctx());
 
-        self::assertCount(1, $candidates);
-        $payload = $candidates->first()->payload;
-        self::assertSame('identity', $payload['kind']);
-        self::assertSame($this->user->login, $payload['fullname']);
-        self::assertNull($payload['room']);
+        $identity = $candidates->first(
+            fn (StateCandidate $c): bool => ($c->payload['kind'] ?? null) === 'identity',
+        );
+        self::assertNotNull($identity);
+        self::assertSame($this->user->login, $identity->payload['fullname']);
+        self::assertArrayNotHasKey('room', $identity->payload);
     }
 
     #[Test]

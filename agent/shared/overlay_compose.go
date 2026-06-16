@@ -79,18 +79,25 @@ type overlayAlert struct {
 // ComposeOverlayDocument compose le document overlay.json cible depuis TOUS
 // les items overlay de la passe (aggregate = union, ordre serveur) :
 //
-//   - item `kind: "identity"` (enrichissement serveur OverlayStateProvider)
-//     → identity.fullname/login + machine.room — le compagnon ne connaît
-//     localement ni le fullname ni la salle, et le critère Keycloak (NFR7)
-//     interdit tout appel AD côté poste. Un seul bloc identité (le serveur
-//     n'en émet qu'un — défense : le PREMIER gagne, ordre serveur) ;
+//   - item `kind: "identity"` (enrichissement serveur OverlayStateProvider,
+//     portée SESSION) → identity.fullname/login — le compagnon ne connaît pas
+//     localement le fullname, et le critère Keycloak (NFR7) interdit tout
+//     appel AD côté poste. Un seul bloc identité (le serveur n'en émet qu'un —
+//     défense : le PREMIER gagne, ordre serveur) ;
+//   - item `kind: "machine"` (OverlayMachineStateProvider, portée MACHINE,
+//     Story 27.10) → machine.room — la salle est une propriété STABLE du
+//     poste, préchargée au logon depuis le cache machine SANS attendre le
+//     fetch per-user (premier gagne, défense) ;
 //   - machine.name = COMPUTERNAME LOCAL (jamais demandé au serveur) ;
 //   - les autres items (signaux postés) → alerts[], ordre serveur.
 //
-// Champs absents (machine-only sans identity) = chaînes vides, jamais omis :
-// la regex du render exige la présence des clés.
+// Champs absents (machine-only sans identity, ou session sans cache machine) =
+// chaînes vides, jamais omis : la regex du render exige la présence des clés.
+// C'est le CŒUR du préchargement (Story 27.10) : `machine.room` peut être
+// rempli (item machine) alors qu'`identity` est vide (cache session absent).
 func ComposeOverlayDocument(items []StateItem, computerName string) string {
 	var identity map[string]any
+	var machine map[string]any
 	alerts := []overlayAlert{}
 
 	for _, item := range items {
@@ -98,9 +105,16 @@ func ComposeOverlayDocument(items []StateItem, computerName string) string {
 		if !ok || payload == nil {
 			continue
 		}
-		if kind, _ := payload["kind"].(string); kind == "identity" {
+		switch kind, _ := payload["kind"].(string); kind {
+		case "identity":
 			if identity == nil {
-				identity = payload
+				identity = payload // le PREMIER gagne (défense, ordre serveur).
+			}
+
+			continue
+		case "machine":
+			if machine == nil {
+				machine = payload // le PREMIER gagne (défense, ordre serveur).
 			}
 
 			continue
@@ -127,7 +141,11 @@ func ComposeOverlayDocument(items []StateItem, computerName string) string {
 		if v, ok := identity["login"].(string); ok {
 			login = sanitizeOverlayText(v, overlayIdentityMaxLength)
 		}
-		if v, ok := identity["room"].(string); ok {
+	}
+	// La salle vient de l'item MACHINE (portée machine, cache persistant) —
+	// jamais de l'item identity (Story 27.10, D1).
+	if machine != nil {
+		if v, ok := machine["room"].(string); ok {
 			room = sanitizeOverlayText(v, overlayIdentityMaxLength)
 		}
 	}

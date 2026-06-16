@@ -8,7 +8,6 @@ use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
 use App\Enums\StateScope;
 use App\Models\OverlaySignal;
-use App\Models\WorkstationGroup;
 use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
@@ -22,10 +21,11 @@ use Illuminate\Support\Collection;
  *
  * Un item PAR signal actif (aggregate = union, décision n° 7), PLUS — depuis
  * la story 24.4 (décision n° 4) — un candidat synthétique `kind: "identity"`
- * quand la compilation a un user : `{kind, login, fullname, room}`. C'est
- * l'enrichissement serveur qui permet au handler overlay de composer
- * « identité user + parc » sans aucun appel AD côté poste (critère
- * Keycloak) : le compagnon ne connaît localement ni le fullname ni la salle.
+ * quand la compilation a un user : `{kind, login, fullname}` (la salle est
+ * passée en portée MACHINE, Story 27.10 / {@see OverlayMachineStateProvider}).
+ * C'est l'enrichissement serveur qui permet au handler overlay de composer
+ * « identité user » sans aucun appel AD côté poste (critère Keycloak) : le
+ * compagnon ne connaît localement pas le fullname.
  * Données STABLES (l'ETag ne bouge que si elles bougent — correct). Champ de
  * payload owné par la story provider (contrat §3.2) : PAS une évolution
  * d'enveloppe.
@@ -100,10 +100,11 @@ final class OverlayStateProvider implements StateProvider
      * User, émis UNIQUEMENT en contexte user (jamais en machine-only : pas
      * d'identité à afficher sans session).
      *
-     * `room` = nom du premier WG **physique** du poste (invariant
-     * 1-salle-max : il y en a 0 ou 1), null sans salle — lookup par les ids
-     * déjà résolus du contexte (lecture seule, pas de re-résolution
-     * d'appartenance). `fullname` retombe sur le login si vide (iso
+     * Ne porte plus que `login` + `fullname` (Story 27.10, décision D1) : la
+     * salle (`room`) est désormais émise en portée MACHINE par
+     * {@see OverlayMachineStateProvider} — source UNIQUE, propriété du POSTE
+     * (pas du user), préchargée au logon depuis le cache machine sans attendre
+     * ce fetch per-user. `fullname` retombe sur le login si vide (iso
      * `OverlayService::pollPayload`). Aucun float (§4.1).
      *
      * `sourceId` 0 : ordre aggregate stable par `sourceId` asc (décision
@@ -117,9 +118,6 @@ final class OverlayStateProvider implements StateProvider
         }
 
         $fullname = (string) ($ctx->user->fullname ?? '');
-        $room = $ctx->physicalGroupIds === []
-            ? null
-            : WorkstationGroup::query()->find($ctx->physicalGroupIds[0])?->name;
 
         return new StateCandidate(
             maille: StateMaille::User,
@@ -129,7 +127,6 @@ final class OverlayStateProvider implements StateProvider
                 'kind' => OverlayService::KIND_RESERVED_IDENTITY,
                 'login' => (string) $ctx->user->login,
                 'fullname' => $fullname !== '' ? $fullname : (string) $ctx->user->login,
-                'room' => $room !== null && $room !== '' ? (string) $room : null,
             ],
             updatedAt: $ctx->user->updated_at,
             sourceId: 0,

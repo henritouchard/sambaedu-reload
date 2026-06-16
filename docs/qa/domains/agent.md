@@ -2113,3 +2113,64 @@ ProgramData, pointées par `SkinPath`.
       writable, aucun `.ini` sous ProgramData.
 - [ ] 21.2 — `.ini` per-user édité/supprimé → réimposé au logon (idempotent).
 - [ ] 21.3 — `overlay.json` reste SYSTEM read-only (NFR5 non régressé).
+
+## Section 22 — Préchargement de l'identité MACHINE de l'overlay : salle en portée machine (Story 27.10)
+
+**Intention.** Au logon, l'overlay tardait car poste/salle/login venaient
+ENTIÈREMENT du fetch per-user (`GET /state?user=`), qui peut tarder ou échouer
+en tout début de session. Deux champs sont STABLES par poste : le nom
+(`machine.name`, déjà local via `COMPUTERNAME`) et la **salle** (`machine.room`).
+La story 27.10 bascule la salle de la portée **session** (ancien item `identity`)
+vers la portée **machine** (cache persistant `cache/state.json`, rempli par le
+cycle service + réveil-logon 27.9). L'agent compose alors **poste + salle dès le
+logon** depuis le cache machine, sans attendre le fetch per-user ;
+`identity{login, fullname}` se remplit ensuite avec le cache session per-SID.
+
+**Mécanique.**
+- Serveur : nouvel `OverlayMachineStateProvider` (`scope()==Machine`) émet
+  `{kind:"machine", room}` (room = `workstation.physicalRooms[0].name`, null →
+  vide), **même en machine-only** (`GET /state` sans user). `OverlayStateProvider`
+  (identity, session) ne porte plus que `{kind, login, fullname}` — `room` retiré
+  (source UNIQUE = machine, D1).
+- Agent : `ComposeOverlayDocument` extrait `room` de l'item `kind:"machine"` et
+  `login`/`fullname` de `kind:"identity"` ; `machine.name` reste local.
+  `OverlayDocumentForSession` lit le cache MACHINE **ET** le cache session per-SID.
+  Byte-format d'`overlay.json` INCHANGÉ.
+- Contrat : item overlay machine-scope ajouté au golden `state.v1.json`, item
+  identity session sans `room` (6 items) ; 2 hashes figés croisés bumpés à
+  l'identique (`8174042c…`). Version agent → 2.2.10.
+
+### Scénario 22.1 — Préchargement : poste + salle affichés au logon même si le per-user tarde (lab Windows — ACTION HUMAINE Henri)
+
+1. Cache machine frais (la salle est connue), provoquer un logon élève alors que
+   le serveur **tarde/échoue** sur `GET /state?user=` (cache session absent/périmé).
+2. Attendu : `overlay.json` (écrit SYSTEM) porte `machine.name` (local) **et**
+   `machine.room` (depuis le cache machine persistant) renseignés DÈS le logon ;
+   `identity.login`/`identity.fullname` sont VIDES (clés présentes, valeurs `""`).
+3. Quand le fetch per-user aboutit (prochain compose), `identity.login/fullname`
+   se remplissent ; `machine.room` reste identique (la salle ne change pas).
+
+### Scénario 22.2 — La salle survit au reboot sans session (cache machine persistant)
+
+1. Reboot du poste, AUCUN logon encore. Le cycle service (boot/réveil) peuple le
+   cache machine.
+2. Attendu : au premier logon, la salle est déjà présente côté cache machine →
+   `machine.room` composé sans aucun aller-retour per-user.
+
+### Scénario 22.3 — Non-régression byte-format + NFR5 + partition des portées
+
+1. `overlay.json` reste byte-compatible (sérialiseur figé, `": "` simple, UTF-8
+   brut, pas de `\n` final) — golden Go inchangé.
+2. `overlay.json` reste écrit par SYSTEM, ACL `<SID>:R` (NFR5) — l'élève lit, ne
+   falsifie pas.
+3. Le COMPAGNON (droits user) ne lit JAMAIS la portée machine : seul le compose
+   au logon (SYSTEM) lit les DEUX caches. Aucune fuite de la portée machine vers
+   le compagnon.
+
+### Checklist rapide (Section 22)
+
+- [ ] 22.1 — Logon avec per-user lent/KO → poste + salle affichés immédiatement,
+      login/fullname vides puis remplis au fetch suivant.
+- [ ] 22.2 — Salle présente au 1er logon post-reboot sans dépendance per-user.
+- [ ] 22.3 — `overlay.json` byte-format + SYSTEM read-only (NFR5) + partition des
+      portées intacts.

@@ -33,7 +33,13 @@ import (
 // login de session ; `<login>` n'était jamais substitué côté agent → UNC
 // littéral, lecteurs non montés). Le hash du drive item ET le hash d'état
 // changent. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
-const frozenStateHash = "1599cc48341c732d941e24c830c9facb1237dccf0f17390f939e59f082aafb1b"
+// Re-bumpé SCIEMMENT par la Story 27.10 (§9) : la SALLE passe de la portée
+// session (item identity) à la portée MACHINE — nouvel item overlay
+// `{kind:"machine", room}` (préchargement poste+salle au logon) ; l'item
+// identity session perd `room`. Le golden gagne un item machine-scope (6 items)
+// et l'item identity change. Le hash d'état change. Bumpé à l'IDENTIQUE côté PHP
+// (ContractV1Test::FROZEN_STATE_HASH).
+const frozenStateHash = "8174042c0ac8d8f7b6ef1fecf0ff4313b0eba23451e50136c8f712bb5afb4975"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -137,8 +143,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 5 {
-		t.Errorf("5 items attendus dans le golden state, %d vérifiés", checked)
+	if checked != 6 {
+		t.Errorf("6 items attendus dans le golden state, %d vérifiés", checked)
 	}
 }
 

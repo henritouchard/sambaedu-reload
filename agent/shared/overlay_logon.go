@@ -19,43 +19,73 @@ import "os"
 // écriture atomique, ACL <SID>:R) reste dans agent/windows.
 
 // OverlayDocumentForSession lit le cache d'état per-SID (alimenté par
-// session-fetch SYSTEM), en extrait les items des portées session +
-// machine_user (mêmes portées que le compagnon, ordre serveur) et compose le
-// document overlay.json cible.
+// session-fetch SYSTEM) ET le cache MACHINE persistant (cache/state.json,
+// alimenté par le cycle service + réveil-logon 27.9), en extrait les items
+// overlay des DEUX, et compose le document overlay.json cible.
 //
-// Retourne (document, true) si un cache exploitable existe ; ("", false) si le
-// cache est absent (premier logon hors-ligne : rien à composer — l'invariant
-// « Rainmeter absent = gracieux » s'applique à l'amont, on n'écrit rien plutôt
-// qu'un document vide qui écraserait un overlay précédent valide). Un cache
-// illisible/corrompu = ("", false) + log côté appelant.
+// La salle (`machine.room`) vient de la portée MACHINE du cache machine
+// (Story 27.10) : poste + salle sont ainsi composés DÈS le logon sans attendre
+// le fetch per-user. `identity.login/fullname` viennent de la portée session
+// du cache per-SID. Le compose tourne côté SYSTEM (logon-only) → l'accès aux
+// deux caches respecte la partition des portées (le COMPAGNON en droits user
+// ne lit JAMAIS la portée machine ; lui ne lit que son cache session per-SID).
+//
+// Gracieux à toutes les granularités :
+//   - cache machine présent, session absent → `machine.room` rempli (préchargement),
+//     `identity` vide jusqu'à l'arrivée du cache session ;
+//   - cache session présent, machine absent → identity rempli, room vide ;
+//   - les deux absents → ("", false) : rien à composer (on n'écrase pas un
+//     overlay précédent valide par un document vide).
+//
+// Un cache illisible/corrompu n'avorte pas la composition : la portée intacte
+// est utilisée (best-effort), l'autre est sautée + log. Retourne ("", false)
+// uniquement si AUCUNE portée exploitable n'a été trouvée.
 func OverlayDocumentForSession(store *Store, sid, computerName string, log *Logger) (string, bool) {
-	raw, err := os.ReadFile(store.SessionStatePath(sid))
-	if err != nil {
-		logDebug(log, "Cache de session absent : pas de composition overlay au logon (gracieux).")
+	overlayItems := make([]StateItem, 0, 8)
+	found := false
 
-		return "", false
+	// Cache MACHINE (portée machine — la salle). Best-effort : absent/illisible
+	// → on poursuit avec le seul cache session (room vide).
+	if raw, err := os.ReadFile(store.StateCachePath()); err != nil {
+		logDebug(log, "Cache machine absent : salle non préchargée au logon (gracieux).")
+	} else if state, err := ParseState(raw); err != nil {
+		logWarning(log, "Cache machine illisible : salle non préchargée au logon.")
+	} else {
+		overlayItems = appendOverlayItems(overlayItems, ItemsFromScope(state.Machine, log))
+		found = true
 	}
 
-	state, err := ParseState(raw)
-	if err != nil {
-		logWarning(log, "Cache de session illisible : composition overlay sautée au logon.")
-
-		return "", false
+	// Cache SESSION per-SID (portées session + machine_user — identity + alertes).
+	if raw, err := os.ReadFile(store.SessionStatePath(sid)); err != nil {
+		logDebug(log, "Cache de session absent : identity non composée au logon (gracieux).")
+	} else if state, err := ParseState(raw); err != nil {
+		logWarning(log, "Cache de session illisible : identity sautée au logon.")
+	} else {
+		// Mêmes portées que le compagnon (session + machine_user, ordre serveur).
+		overlayItems = appendOverlayItems(overlayItems, ItemsFromScope(state.Session, log))
+		overlayItems = appendOverlayItems(overlayItems, ItemsFromScope(state.MachineUser, log))
+		found = true
 	}
 
-	// Mêmes portées que le compagnon (session + machine_user, ordre serveur).
-	items := ItemsFromScope(state.Session, log)
-	items = append(items, ItemsFromScope(state.MachineUser, log)...)
-
-	// Ne retenir que les items overlay (les autres types — wallpaper,
-	// shortcuts, printers, drives — restent gérés par le compagnon). La
-	// composition tolère une liste sans item overlay (document machine-only).
-	overlayItems := make([]StateItem, 0, len(items))
-	for _, item := range items {
-		if item.Type == "overlay" {
-			overlayItems = append(overlayItems, item)
-		}
+	if !found {
+		// Aucune portée exploitable : rien à composer (l'invariant « Rainmeter
+		// absent = gracieux » s'applique à l'amont — on n'écrase pas un overlay
+		// précédent valide par un document vide).
+		return "", false
 	}
 
 	return ComposeOverlayDocument(overlayItems, computerName), true
+}
+
+// appendOverlayItems ne retient que les items overlay (les autres types —
+// wallpaper, shortcuts, printers, drives — restent gérés par le compagnon). La
+// composition tolère une liste sans item overlay (document machine-only).
+func appendOverlayItems(dst, items []StateItem) []StateItem {
+	for _, item := range items {
+		if item.Type == "overlay" {
+			dst = append(dst, item)
+		}
+	}
+
+	return dst
 }
