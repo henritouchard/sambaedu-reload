@@ -223,6 +223,19 @@ func (c *Companion) Run(ctx context.Context) {
 	c.Log.Infof("Compagnon de session démarré (sid=%s, agent %s) — après ouverture de session, jamais dans son chemin synchrone (NFR1). Boucle résidente (poll %d s, re-test %d s).",
 		c.SID, Version, int(c.cachePoll()/time.Second), int(c.periodicPass()/time.Second))
 
+	// Rendu overlay PROMPT au logon (levier A) : on lance le watchdog Rainmeter
+	// AVANT l'attente du cache de convergence. overlay.json est déjà écrit par le
+	// SERVICE SYSTEM au logon (overlay_logon) ; Rainmeter n'a besoin que d'être
+	// lancé pour l'afficher — ça ne dépend PAS du cache per-SID qu'attend
+	// WaitForCache. Sans ce Tick anticipé, l'overlay n'apparaît qu'APRÈS
+	// WaitForCache (jusqu'à PollTimeout, ~60 s). Idempotent (relance seulement si
+	// absent, back-off borné) : le Tick de la boucle résidente continue de
+	// surveiller. Toujours hors du chemin synchrone du logon (NFR1 : le compagnon
+	// est lancé par la tâche planifiée, pas dans la séquence de logon Windows).
+	if c.Watchdog != nil {
+		c.Watchdog.Tick()
+	}
+
 	fresh, exists := c.WaitForCache(ctx)
 	switch {
 	case !exists:

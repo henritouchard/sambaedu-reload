@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // fakeSessionServer : serveur SE5 minimal pour le chemin `?user=` + assets.
@@ -155,6 +156,17 @@ func TestSessionFetch304PreservesCacheAndSendsContextEtag(t *testing.T) {
 	agent, store, cfg := newSessionAgent(t, f, []Session{{Login: "jdoe", SID: testSID}})
 
 	agent.fetchSessionStates(cfg) // 200 → cache
+
+	// Levier B : on VIEILLIT le mtime du cache après le 200, puis on vérifie
+	// que le 304 le RAFRAÎCHIT (cache validé à l'instant). Sans ça, le compagnon
+	// jugerait le cache « périmé » (mtime < FreshWindow) et attendrait le
+	// PollTimeout plein à chaque logon en régime stable.
+	statePath := store.SessionStatePath(testSID)
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(statePath, old, old); err != nil {
+		t.Fatalf("préparation du mtime : %v", err)
+	}
+
 	agent.fetchSessionStates(cfg) // ETag du contexte → 304
 
 	if got := f.userEtagSeen["jdoe"]; got != f.userStateEtag {
@@ -162,6 +174,13 @@ func TestSessionFetch304PreservesCacheAndSendsContextEtag(t *testing.T) {
 	}
 	if raw, _ := store.ReadSessionStateCache(testSID); string(raw) != f.userStateBody {
 		t.Error("cache intact sur 304")
+	}
+	info, err := os.Stat(statePath)
+	if err != nil {
+		t.Fatalf("stat du cache : %v", err)
+	}
+	if !info.ModTime().After(old) {
+		t.Errorf("mtime du cache doit être rafraîchi sur 304 : got %v (attendu > %v)", info.ModTime(), old)
 	}
 }
 

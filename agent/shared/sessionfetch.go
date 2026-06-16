@@ -1,6 +1,10 @@
 package shared
 
-import "net/url"
+import (
+	"net/url"
+	"os"
+	"time"
+)
 
 // Fetch de session côté SYSTEM (Story 24.6 — portage d'Invoke-SessionStateFetch
 // 24.3/24.4). Le compagnon de session (droits user) ne peut NI lire le token
@@ -110,7 +114,21 @@ func (a *Agent) fetchSessionStates(cfg Config) {
 			}
 			a.Log.Infof("GET /state?user=%s -> 200 : cache de session %s rafraîchi.", session.Login, session.SID)
 		case 304:
-			a.Log.Debugf("GET /state?user=%s -> 304 : cache de session %s valide.", session.Login, session.SID)
+			// Cache encore VALIDE (ETag match) mais inchangé : le serveur ne
+			// renvoie pas de corps, donc on ne réécrit pas le fichier. On
+			// rafraîchit néanmoins son mtime (levier B) : sans ça, après une
+			// période sans changement (que des 304), le cache garde le mtime de
+			// son dernier 200 — vieux de plusieurs minutes/heures — et le
+			// compagnon le juge « périmé » (WaitForCache : frais = mtime <
+			// FreshWindow), attendant le PollTimeout plein (~60 s) à chaque
+			// logon avant de converger. Toucher le mtime reflète la VÉRITÉ
+			// (« cache validé à l'instant ») et supprime cette attente en
+			// régime stable. Best-effort : un échec de touch n'interrompt rien.
+			now := time.Now()
+			if err := os.Chtimes(a.Store.SessionStatePath(session.SID), now, now); err != nil {
+				a.Log.Debugf("Rafraîchissement du mtime du cache de session %s (304) en échec : %v — sans impact (rattrapage au prochain 200).", session.SID, err)
+			}
+			a.Log.Debugf("GET /state?user=%s -> 304 : cache de session %s valide (mtime rafraîchi).", session.Login, session.SID)
 		case 401:
 			// Grâce mémoire ET relecture disque déjà tentées par le Client :
 			// irrécupérable. On ARRÊTE les fetchs (les sessions suivantes

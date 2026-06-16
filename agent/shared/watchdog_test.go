@@ -6,11 +6,15 @@ import (
 )
 
 // fakeRainmeterOps : ops injectables (present/absent + compteur de relances).
+// launched (optionnel) : signal NON-BLOQUANT à chaque Launch — permet à un test
+// concurrent (Run en goroutine) d'observer un lancement SANS lire launchCount
+// (qui serait une data-race avec la goroutine du compagnon).
 type fakeRainmeterOps struct {
 	installed   bool
 	running     bool
 	launchErr   error
 	launchCount int
+	launched    chan struct{}
 }
 
 func (f *fakeRainmeterOps) Installed() bool { return f.installed }
@@ -20,6 +24,12 @@ func (f *fakeRainmeterOps) Launch() error {
 	// Une relance « réussie » rend Rainmeter présent (modèle réaliste).
 	if f.launchErr == nil {
 		f.running = true
+	}
+	if f.launched != nil {
+		select {
+		case f.launched <- struct{}{}:
+		default:
+		}
 	}
 
 	return f.launchErr

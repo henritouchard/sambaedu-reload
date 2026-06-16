@@ -290,3 +290,37 @@ func TestCompanionRunStaysResidentWithoutCache(t *testing.T) {
 	cancel()
 	<-done
 }
+
+func TestCompanionRunLaunchesWatchdogBeforeCacheWait(t *testing.T) {
+	// Levier A : le watchdog Rainmeter est lancé IMMÉDIATEMENT au démarrage,
+	// AVANT l'attente du cache de convergence (WaitForCache). overlay.json est
+	// déjà écrit par SYSTEM au logon → le rendu ne doit pas attendre le cache
+	// per-SID. PollTimeout long + aucun cache : si le lancement n'arrivait
+	// qu'APRÈS WaitForCache (boucle résidente), il faudrait ~PollTimeout (2 s)
+	// pour le voir. On exige qu'il arrive bien avant (Tick anticipé).
+	h := &fakeHandler{compliant: true}
+	c, _ := newTestCompanion(t, h)
+	c.PollInterval = 5 * time.Millisecond
+	c.PollTimeout = 2 * time.Second
+	c.CachePoll = 10 * time.Millisecond
+	ops := &fakeRainmeterOps{installed: true, running: false, launched: make(chan struct{}, 1)}
+	c.Watchdog = &RainmeterWatchdog{Ops: ops}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		c.Run(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-ops.launched: // lancé avant la fin de WaitForCache (2 s) → Tick anticipé
+	case <-time.After(500 * time.Millisecond):
+		cancel()
+		<-done
+		t.Fatal("le watchdog doit être lancé dès le démarrage, sans attendre WaitForCache")
+	}
+
+	cancel()
+	<-done
+}
