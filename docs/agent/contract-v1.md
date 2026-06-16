@@ -7,9 +7,14 @@
 > `tests/Fixtures/Agent/report.v1.json` (rapport de conformité).
 >
 > Un agent déployé **fige le wire format**. Tant qu'aucun consommateur n'existe,
-> on peut décider de la forme de l'enveloppe, de la présence du booléen `mode`
-> et de l'algorithme de hash ; **après, plus jamais** sans bump de version
-> majeure. C'est l'objet de cette story : figer les irréversibles.
+> on peut décider de la forme de l'enveloppe et de l'algorithme de hash ;
+> **après, plus jamais** sans bump de version majeure. C'est l'objet de cette
+> story : figer les irréversibles.
+>
+> **Story 27.8** : le mécanisme `mode` strict/default est **entièrement retiré**
+> (convergence STRICT inconditionnelle). L'item passe de 5 à 4 clés, le statut
+> `drifted_allowed` disparaît, les hashes figés sont bumpés (zéro prod → rupture
+> interne assumée, schéma reste `v1`).
 
 ## 1. Vue d'ensemble
 
@@ -58,15 +63,16 @@ Les valeurs sont **aussi** les clés de l'enveloppe.
 
 ## 3. Item
 
-Chaque item porte **exactement** ces cinq clés (ni plus, ni moins) :
+Chaque item porte **exactement** ces quatre clés (ni plus, ni moins) — Story
+27.8 : la clé `mode` a été **retirée** (convergence STRICT inconditionnelle,
+cf. §5) :
 
 ```json
 {
   "type": "wallpaper",
   "semantics": "exclusive",
-  "mode": "default",
   "payload": { "asset": "fonds/ecole-2026.jpg", "style": "fill" },
-  "hash": "f65db3c8…2d6e2d37"
+  "hash": "66fbf6ff…03ed4d9"
 }
 ```
 
@@ -74,7 +80,6 @@ Chaque item porte **exactement** ces cinq clés (ni plus, ni moins) :
 |---|---|---|
 | `type` | string snake_case | Identifiant de type de ressource **figé** (cf. §7). |
 | `semantics` | `aggregate` \| `exclusive` | Règle de combinaison (cf. §3.1). |
-| `mode` | `strict` \| `default` | Tolérance à la dérive (cf. §5). |
 | `payload` | object | Données spécifiques au type — **owné par la story du provider** (§3.2). |
 | `hash` | string (sha256 hex) | Hash opaque du contenu définissant de l'item (cf. §4). |
 
@@ -88,8 +93,9 @@ Chaque item porte **exactement** ces cinq clés (ni plus, ni moins) :
 
 ### 3.2 `payload` : frontière de responsabilité
 
-Ce qui est **figé en 23.1** = le *wrapper* (`type/semantics/mode/payload/hash`)
-et l'enveloppe. La **sous-structure interne de `payload`** par type est **owné
+Ce qui est **figé en 23.1** = le *wrapper* (`type/semantics/payload/hash`)
+et l'enveloppe (Story 27.8 : la clé `mode` a été retirée du wrapper — convergence
+strict inconditionnelle, cf. §5). La **sous-structure interne de `payload`** par type est **owné
 par la story du provider correspondant** (wallpaper/overlay → 23.4 ; etc.). Les
 payloads présents dans `state.v1.json` sont **illustratifs** et n'engagent pas
 le détail final de chaque provider.
@@ -148,53 +154,35 @@ les contraintes ci-dessous.
   du NFD (`é` = `e` + accent combinant) pour des chemins/noms visuellement
   identiques, ce qui créerait de faux `drift`.
 
-## 5. Mode `strict` vs `default` — gap 1 (la règle à ne pas rater)
+## 5. Convergence STRICT inconditionnelle (Story 27.8)
 
-`App\Enums\StateMode`. Le mode `default` est le **sabotage le plus dangereux**
-s'il est mal spécifié — d'où la règle écrite **noir sur blanc** :
+> **Story 27.8 — RÉVISION.** Le mécanisme `mode ∈ {strict, default}` (gap 1
+> introduit par 27.1, déplacé par 27.3) est **entièrement RETIRÉ**. La review
+> 27.3 a établi que le grain réel du mode était `type × poste` (un seul verdict
+> de mode par type côté agent), pas `item × cible` : la promesse « un même
+> raccourci verrouillé sur un parc, modifiable sur un autre, sur le même poste »
+> était creuse au niveau agent. Henri a tranché : **comportement UNIQUE = la
+> cible fait TOUJOURS loi**.
 
-L'agent **persiste, par item, le dernier état qu'il a lui-même APPLIQUÉ**.
-À chaque cycle, pour un item donné, il compare trois choses : l'état **réel**
-sur le poste, l'état **cible** (du serveur), et son **dernier-appliqué** mémorisé.
-
-### `mode = strict`
-
-Toute dérive est réappliquée. La cible **fait loi**, sans exception.
+Comportement unique : **la cible fait loi, sans exception** (l'ancien
+`mode = strict`, rendu inconditionnel). La dérive humaine n'est **plus** tolérée.
 
 ```
 réel ≠ cible  →  l'agent RÉAPPLIQUE la cible  →  rapporte `drift`
 réel = cible  →  rien à faire                 →  rapporte `compliant`
 ```
 
-### `mode = default`
+Il n'existe plus de statut `drifted_allowed`, plus de clé `mode` au payload, plus
+de paramètre `mode`/`lastAppliedHash` au verdict (`ResolveItemStatus(isCompliant)`).
 
-Tolère la **dérive humaine volontaire**.
+**Persistance du dernier-appliqué (conservée).** L'agent persiste toujours, par
+type, le dernier état qu'il a appliqué (horodatage — traçabilité, décision 24.4
+n° 9). Cette mémoire n'a **plus d'incidence sur le verdict** (elle ne sert qu'à
+la trace), mais le store applied-state est conservé (Story 27.8 D-B).
 
-```
-réel = cible                              →  rapporte `compliant`
-réel ≠ cible  ∧  dernier-appliqué ≠ cible →  la cible a bougé, pas encore poussée
-                                              →  l'agent APPLIQUE la cible  →  `drift`
-réel ≠ cible  ∧  dernier-appliqué = cible →  DÉRIVE HUMAINE
-                                              →  l'agent NE RÉAPPLIQUE PAS
-                                              →  rapporte `drifted_allowed`
-```
-
-**Premier passage (pas de `dernier-appliqué` persisté)** : à la première
-rencontre d'un item — aucune mémoire pour lui — l'agent traite le cas comme
-`dernier-appliqué ≠ cible` :
-
-```
-réel = cible  →  rapporte `compliant`  →  persiste la cible comme dernier-appliqué
-réel ≠ cible  →  APPLIQUE la cible     →  rapporte `drift`  →  persiste
-```
-
-L'absence de mémoire n'est **jamais** interprétée comme une dérive humaine
-(`drifted_allowed` exige un `dernier-appliqué` connu et égal à la cible).
-
-Autrement dit : si l'agent a déjà appliqué la cible **et** que l'état réel en a
-divergé depuis, c'est qu'un humain a volontairement changé la valeur → en
-`default`, on respecte ce choix et on **ne réapplique pas**. En `strict`, on
-écrase.
+**Premier passage** : aucune mémoire ⇒ même comportement que tout autre passage —
+`réel = cible → compliant` (+ persiste), `réel ≠ cible → APPLIQUE → drift`
+(+ persiste).
 
 ## 6. Rapport de conformité — gap 2 (`POST /report`)
 
@@ -207,7 +195,6 @@ divergé depuis, c'est qu'un humain a volontairement changé la valeur → en
   "items": [
     { "type": "wallpaper", "status": "compliant",       "hash": "f65db3c8…" },
     { "type": "overlay",   "status": "drift",            "hash": "fe63c684…" },
-    { "type": "shortcuts", "status": "drifted_allowed",  "hash": "2fb7f510…" },
     { "type": "printers",  "status": "error",            "hash": "9f2c4e7a…",
       "detail": "service Spooler indisponible (RPC 0x6ba)" }
   ]
@@ -221,17 +208,15 @@ divergé depuis, c'est qu'un humain a volontairement changé la valeur → en
 | `agent_version` | Version de l'agent émetteur. |
 | `workstation` | Identité du poste (`hostname`, `uuid`). |
 | `items[].type` | Identifiant de type figé. |
-| `items[].status` | `compliant` \| `drift` \| `drifted_allowed` \| `error` (`App\Enums\AgentResourceStatus`). |
+| `items[].status` | `compliant` \| `drift` \| `error` (`App\Enums\AgentResourceStatus`). |
 | `items[].hash` | Hash **opaque** de la cible que l'agent a traitée (échoué tel quel, jamais recalculé). |
 | `items[].detail` | **Obligatoire et non vide** quand `status = error` ; optionnel sinon. |
 
-Statuts (`App\Enums\AgentResourceStatus`) :
+Statuts (`App\Enums\AgentResourceStatus`) — Story 27.8 : 3 statuts (le
+`drifted_allowed` est retiré) :
 
 - `compliant` — réel = cible, rien à faire.
-- `drift` — dérive détectée **et réappliquée** (`strict`, ou `default` avec
-  dérive non humaine).
-- `drifted_allowed` — dérive humaine **tolérée** en `default`, non réappliquée
-  (cf. §5).
+- `drift` — dérive détectée **et réappliquée** (la cible fait toujours loi).
 - `error` — l'application a échoué ; `detail` documente la cause.
 
 ## 7. Identifiants de type de ressource (NFR12 — figés)

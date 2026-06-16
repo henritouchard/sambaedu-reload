@@ -20,9 +20,10 @@ use Tests\TestCase;
 /**
  * Tests Unit `ConformityService` — Story 24.7 (AC1, AC2, AC3).
  *
- * worst-status (précédence error > drift > drifted_allowed > compliant),
- * compteurs par statut + dérivés (jamais rapporté / muet), exceptions datées
- * groupées par type, périmètre = postes ENRÔLÉS. Lecture pure (aucun HTTP).
+ * worst-status (précédence error > drift > compliant — Story 27.8 :
+ * `drifted_allowed` retiré), compteurs par statut + dérivés (jamais rapporté /
+ * muet), exceptions datées groupées par type, périmètre = postes ENRÔLÉS.
+ * Lecture pure (aucun HTTP).
  */
 class ConformityServiceTest extends TestCase
 {
@@ -71,7 +72,7 @@ class ConformityServiceTest extends TestCase
     // ── worst-status ────────────────────────────────────────────────────
 
     #[Test]
-    public function worst_status_applies_precedence_error_over_drift_over_allowed(): void
+    public function worst_status_applies_precedence_error_over_drift_over_compliant(): void
     {
         $ws = $this->enrolled();
         $this->state($ws, 'wallpaper', AgentResourceStatus::Drift);
@@ -93,30 +94,15 @@ class ConformityServiceTest extends TestCase
         self::assertArrayNotHasKey($ws->id, $worst);
     }
 
-    #[Test]
-    public function worst_status_drifted_allowed_wins_over_compliant(): void
-    {
-        $ws = $this->enrolled();
-        $this->state($ws, 'wallpaper', AgentResourceStatus::Compliant);
-        $this->state($ws, 'overlay', AgentResourceStatus::DriftedAllowed);
-
-        $worst = $this->service->worstStatusFor([$ws->id]);
-
-        self::assertSame(AgentResourceStatus::DriftedAllowed->value, $worst[$ws->id]);
-    }
-
     // ── summary counters + dérivés ──────────────────────────────────────
 
     #[Test]
     public function summary_counts_each_category_on_enrolled_perimeter(): void
     {
-        // 1 exception (drift), 1 dérive tolérée, 1 conforme, 1 jamais rapporté,
-        // 1 muet, 1 NON enrôlé (hors périmètre).
+        // 1 exception (drift), 1 conforme, 1 jamais rapporté, 1 muet, 1 NON
+        // enrôlé (hors périmètre). Story 27.8 : plus de catégorie « dérive tolérée ».
         $exc = $this->enrolled();
         $this->state($exc, 'wallpaper', AgentResourceStatus::Drift);
-
-        $allowed = $this->enrolled();
-        $this->state($allowed, 'wallpaper', AgentResourceStatus::DriftedAllowed);
 
         $ok = $this->enrolled();
         $this->state($ok, 'wallpaper', AgentResourceStatus::Compliant);
@@ -132,9 +118,8 @@ class ConformityServiceTest extends TestCase
 
         $summary = $this->service->summary();
 
-        self::assertSame(5, $summary['enrolled']);
+        self::assertSame(4, $summary['enrolled']);
         self::assertSame(1, $summary['exceptions']);
-        self::assertSame(1, $summary['drifted_allowed']);
         self::assertSame(1, $summary['compliant']);
         self::assertSame(1, $summary['never_reported']);
         self::assertSame(1, $summary['silent']);
@@ -150,7 +135,6 @@ class ConformityServiceTest extends TestCase
 
         self::assertSame(1, $summary['exceptions']);
         self::assertSame(0, $summary['compliant']);
-        self::assertSame(0, $summary['drifted_allowed']);
     }
 
     // ── périmètre groupe ────────────────────────────────────────────────

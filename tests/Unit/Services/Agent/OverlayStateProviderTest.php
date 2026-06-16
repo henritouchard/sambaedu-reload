@@ -6,7 +6,6 @@ namespace Tests\Unit\Services\Agent;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
-use App\Enums\StateMode;
 use App\Enums\StateScope;
 use App\Models\OverlaySignal;
 use App\Models\User;
@@ -71,7 +70,6 @@ class OverlayStateProviderTest extends TestCase
     {
         self::assertSame('overlay', $this->provider->type());
         self::assertSame(ResourceSemantics::Aggregate, $this->provider->semantics());
-        self::assertSame(StateMode::Strict, $this->provider->mode());
         self::assertSame(StateScope::Session, $this->provider->scope());
     }
 
@@ -245,69 +243,6 @@ class OverlayStateProviderTest extends TestCase
             foreach ($candidate->payload as $value) {
                 self::assertIsNotFloat($value);
             }
-        }
-    }
-
-    // ── Story 27.1 — review #5 : l'identity ne pèse PAS dans le mode ──────
-
-    #[Test]
-    public function identity_candidate_carries_neutral_default_mode_not_provider_strict(): void
-    {
-        // L'identity est un candidat SYNTHÉTIQUE, pas une règle admin : il doit
-        // porter un mode NEUTRE (`default`) pour ne JAMAIS tirer l'agrégation du
-        // type `overlay` vers `strict` (review #5). Sans ce mode explicite il
-        // retombait sur le défaut provider (`strict`) et rendait le toggle
-        // overlay inopérant dès qu'un user était en session.
-        $candidates = $this->provider->itemsFor($this->ctx());
-
-        $identity = $candidates->first(
-            fn (StateCandidate $c): bool => ($c->payload['kind'] ?? null) === 'identity',
-        );
-        self::assertNotNull($identity);
-        self::assertSame(StateMode::Default, $identity->mode);
-    }
-
-    #[Test]
-    public function overlay_aggregates_to_default_when_all_real_signals_are_default_despite_identity(): void
-    {
-        // Validation du fix #5 : un user EST en session (identity présent) ET tous
-        // les VRAIS signaux sont `default` → le type overlay doit agréger en
-        // `default`. Avant le fix, l'identity (mode null → strict) forçait `strict`.
-        $this->signal(['title' => 'info A', 'mode' => StateMode::Default]);
-        $this->signal(['title' => 'info B', 'mode' => StateMode::Default]);
-
-        $compiler = app(\App\Services\Agent\StateCompiler::class);
-        $state = $compiler->compile($this->ctx());
-
-        $overlayItems = array_values(array_filter(
-            $state[StateScope::Session->value],
-            fn (array $item): bool => $item['type'] === 'overlay',
-        ));
-        self::assertNotEmpty($overlayItems, 'le type overlay doit être servi');
-        foreach ($overlayItems as $item) {
-            self::assertSame('default', $item['mode'], 'overlay doit agréger en default (toggle opérant, review #5)');
-        }
-    }
-
-    #[Test]
-    public function overlay_aggregates_to_strict_when_a_real_signal_is_strict(): void
-    {
-        // Non-régression : un vrai signal `strict` (ou null → défaut strict) doit
-        // bien forcer le type en `strict`. L'identity neutre ne masque pas un
-        // signal admin strict.
-        $this->signal(['title' => 'info', 'mode' => StateMode::Default]);
-        $this->signal(['title' => 'urgent', 'mode' => StateMode::Strict]);
-
-        $compiler = app(\App\Services\Agent\StateCompiler::class);
-        $state = $compiler->compile($this->ctx());
-
-        $overlayItems = array_values(array_filter(
-            $state[StateScope::Session->value],
-            fn (array $item): bool => $item['type'] === 'overlay',
-        ));
-        self::assertNotEmpty($overlayItems);
-        foreach ($overlayItems as $item) {
-            self::assertSame('strict', $item['mode'], 'un signal strict force le type en strict');
         }
     }
 

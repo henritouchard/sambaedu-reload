@@ -14,7 +14,7 @@
 | Auth | bearer token per-poste (canal 23.2/23.3) — **l'identité de la requête EST le poste résolu par le token**, jamais le payload |
 | Middlewares | `auth.v1.secure-headers` + `throttle:60,1` + `agent.token` (chaîne iso `GET /state`) |
 | Corps requête | le rapport `se5.desired-state/v1` (§6 du contrat, golden `report.v1.json`) |
-| Corps 200 | ACK serveur→agent au format SE5 : `{"success": true, "counts": {"compliant": n, "drift": n, "drifted_allowed": n, "error": n}}` — l'agent n'a besoin que du 2xx |
+| Corps 200 | ACK serveur→agent au format SE5 : `{"success": true, "counts": {"compliant": n, "drift": n, "error": n}}` — l'agent n'a besoin que du 2xx (Story 27.8 : `drifted_allowed` retiré, 3 statuts) |
 | Écritures | tables `agent_*` uniquement (`ReportIngestService`) — `agent_last_checkin_at` et la rotation restent gérés par le middleware `agent.token` |
 
 Contrairement à `GET /state`, l'ACK est un wrapper SE5 (pas l'enveloppe

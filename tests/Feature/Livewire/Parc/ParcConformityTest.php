@@ -69,11 +69,10 @@ class ParcConformityTest extends TestCase
 
     public function test_conformity_counters_are_computed_on_enrolled_perimeter(): void
     {
-        // AC1 — compteurs : 1 en écart, 1 dérive tolérée, 1 conforme.
+        // AC1 — compteurs : 1 en écart, 1 conforme. Story 27.8 : plus de
+        // catégorie « dérive tolérée ».
         $exc = $this->enrolled('pc-exc');
         $this->seedState($exc, 'wallpaper', AgentResourceStatus::Drift);
-        $allowed = $this->enrolled('pc-allowed');
-        $this->seedState($allowed, 'wallpaper', AgentResourceStatus::DriftedAllowed);
         $ok = $this->enrolled('pc-ok');
         $this->seedState($ok, 'wallpaper', AgentResourceStatus::Compliant);
 
@@ -81,9 +80,8 @@ class ParcConformityTest extends TestCase
             ->call('loadStats');
 
         $stats = $component->get('conformityStats');
-        $this->assertSame(3, $stats['enrolled']);
+        $this->assertSame(2, $stats['enrolled']);
         $this->assertSame(1, $stats['exceptions']);
-        $this->assertSame(1, $stats['drifted_allowed']);
         $this->assertSame(1, $stats['compliant']);
     }
 

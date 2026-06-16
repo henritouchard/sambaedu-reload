@@ -6,7 +6,6 @@ namespace Tests\Unit\Services\Agent;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
-use App\Enums\StateMode;
 use App\Enums\StateScope;
 use App\Enums\WorkstationEnvironment;
 use App\Models\Shortcut;
@@ -81,7 +80,6 @@ class ShortcutsStateProviderTest extends TestCase
     {
         self::assertSame('shortcuts', $this->provider->type());
         self::assertSame(ResourceSemantics::Aggregate, $this->provider->semantics());
-        self::assertSame(StateMode::Strict, $this->provider->mode());
         self::assertSame(StateScope::MachineUser, $this->provider->scope());
     }
 
@@ -191,62 +189,21 @@ class ShortcutsStateProviderTest extends TestCase
     }
 
     #[Test]
-    public function mode_is_read_per_assignment_from_the_pivot(): void
+    public function same_rule_on_two_mailles_yields_one_candidate_per_maille(): void
     {
-        // Story 27.3 : le mode vit sur le LIEN (`shortcut_assignables.mode`), plus
-        // sur la règle. Trois assignations, trois modes distincts sur le lien.
-        $strict = $this->shortcut('strict');
-        $default = $this->shortcut('lax');
-        $unset = $this->shortcut('unset');
-        $this->assign($strict, Workstation::class, $this->ws->id, StateMode::Strict);
-        $this->assign($default, Workstation::class, $this->ws->id, StateMode::Default);
-        $this->assign($unset, Workstation::class, $this->ws->id); // mode null sur le lien
-
-        $byName = $this->provider->itemsFor($this->ctx())
-            ->keyBy(fn (StateCandidate $c): string => $c->payload['name']);
-
-        self::assertSame(StateMode::Strict, $byName['strict']->mode);
-        self::assertSame(StateMode::Default, $byName['lax']->mode);
-        self::assertNull($byName['unset']->mode, 'null sur le lien = défaut résolu côté compilateur');
-    }
-
-    #[Test]
-    public function same_rule_on_two_mailles_carries_each_assignment_mode(): void
-    {
-        // LE cœur de 27.3 : un MÊME raccourci, verrouillé (strict) sur un parc et
-        // modifiable (default) sur un autre — chaque candidat porte le mode de SON
-        // assignation, pas un mode global de règle.
+        // Story 27.8 : un MÊME raccourci assigné à deux mailles produit un
+        // candidat par maille (l'étiquetage par maille survit ; le mécanisme
+        // mode strict/default a été retiré — STRICT inconditionnel).
         $shortcut = $this->shortcut('pronote');
-        $this->assign($shortcut, WorkstationGroup::class, $this->room->id, StateMode::Strict);
-        $this->assign($shortcut, WorkstationGroup::class, $this->parc->id, StateMode::Default);
+        $this->assign($shortcut, WorkstationGroup::class, $this->room->id);
+        $this->assign($shortcut, WorkstationGroup::class, $this->parc->id);
 
         $byMaille = $this->provider->itemsFor($this->ctx())
             ->keyBy(fn (StateCandidate $c): string => $c->maille->value);
 
         self::assertCount(2, $byMaille, 'une règle sur 2 mailles → 2 candidats');
-        self::assertSame(StateMode::Strict, $byMaille[StateMaille::PhysicalGroup->value]->mode);
-        self::assertSame(StateMode::Default, $byMaille[StateMaille::LogicalGroup->value]->mode);
-    }
-
-    #[Test]
-    public function mode_is_read_per_assignment_for_usergroup_and_user_mailles(): void
-    {
-        // Story 27.3 : les mailles UserGroup/User passent par le même pivot
-        // `shortcut_assignables` (JOIN SQL brut, alias `assignment_mode`) que les
-        // mailles poste/groupe — on prouve que le mode du lien remonte aussi pour
-        // ces deux branches morph (couverture du chemin user-scope).
-        $ug = $this->shortcut('ug-strict');
-        $usr = $this->shortcut('user-lax');
-        $this->assign($ug, UserGroup::class, $this->userGroup->id, StateMode::Strict);
-        $this->assign($usr, User::class, $this->user->id, StateMode::Default);
-
-        $byName = $this->provider->itemsFor($this->ctx())
-            ->keyBy(fn (StateCandidate $c): string => $c->payload['name']);
-
-        self::assertSame(StateMode::Strict, $byName['ug-strict']->mode);
-        self::assertSame(StateMaille::UserGroup, $byName['ug-strict']->maille);
-        self::assertSame(StateMode::Default, $byName['user-lax']->mode);
-        self::assertSame(StateMaille::User, $byName['user-lax']->maille);
+        self::assertArrayHasKey(StateMaille::PhysicalGroup->value, $byMaille);
+        self::assertArrayHasKey(StateMaille::LogicalGroup->value, $byMaille);
     }
 
     #[Test]
@@ -364,13 +321,12 @@ class ShortcutsStateProviderTest extends TestCase
      * accepte tout modèle SQL — WorkstationGroup, Workstation, UserGroup,
      * User : ciblage MVP pivot SQL, décision n° 8).
      */
-    private function assign(Shortcut $shortcut, string $type, int $id, ?StateMode $mode = null): void
+    private function assign(Shortcut $shortcut, string $type, int $id): void
     {
         \Illuminate\Support\Facades\DB::table('shortcut_assignables')->insert([
             'shortcut_id' => $shortcut->id,
             'assignable_type' => $type,
             'assignable_id' => $id,
-            'mode' => $mode?->value, // Story 27.3 : mode PAR ASSIGNATION sur le lien.
             'created_at' => now(),
             'updated_at' => now(),
         ]);

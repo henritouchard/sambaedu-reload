@@ -6,7 +6,6 @@ namespace Tests\Unit\Services\Agent;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
-use App\Enums\StateMode;
 use App\Enums\StateScope;
 use App\Models\User;
 use App\Models\UserGroup;
@@ -80,7 +79,6 @@ class DrivesStateProviderTest extends TestCase
     {
         self::assertSame('drives', $this->provider->type());
         self::assertSame(ResourceSemantics::Aggregate, $this->provider->semantics());
-        self::assertSame(StateMode::Strict, $this->provider->mode());
         self::assertSame(StateScope::Session, $this->provider->scope());
     }
 

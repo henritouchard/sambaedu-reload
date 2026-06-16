@@ -6,7 +6,6 @@ namespace App\Services\Agent\Providers;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
-use App\Enums\StateMode;
 use App\Enums\StateScope;
 use App\Models\UserGroup;
 use App\Services\Agent\Contracts\StateProvider;
@@ -76,13 +75,6 @@ final class DrivesStateProvider implements StateProvider
     public function semantics(): ResourceSemantics
     {
         return ResourceSemantics::Aggregate;
-    }
-
-    public function mode(): StateMode
-    {
-        // Défaut du type (décision n° 7) — `strict`, posture sûre. Pas de toggle
-        // UI pour cette story.
-        return StateMode::Strict;
     }
 
     public function scope(): StateScope
@@ -159,8 +151,6 @@ final class DrivesStateProvider implements StateProvider
                 ],
                 updatedAt: $class->updated_at,
                 sourceId: (int) $class->id,
-                // Mode null → le compilateur retombe sur mode() (strict).
-                mode: null,
             );
         }
 

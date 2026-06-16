@@ -38,35 +38,22 @@ func (h *fakeHandler) Apply(items []StateItem) error {
 	return h.applyErr
 }
 
-// --- Machine d'états §5 (table-driven, VERBATIM) -----------------------------------
+// --- Machine d'états §5 (table-driven — STRICT inconditionnel, Story 27.8) ----------
 
 func TestResolveItemStatusSection5Verbatim(t *testing.T) {
-	const target = "cible"
 	cases := []struct {
-		name        string
-		compliant   bool
-		mode        string
-		lastApplied string
-		want        Verdict
+		name      string
+		compliant bool
+		want      Verdict
 	}{
-		// strict : la cible fait loi, sans exception.
-		{"strict/compliant", true, "strict", "", Verdict{Status: "compliant", ShouldPersist: true}},
-		{"strict/compliant_avec_memoire", true, "strict", target, Verdict{Status: "compliant", ShouldPersist: true}},
-		{"strict/drift_premier_passage", false, "strict", "", Verdict{Status: "drift", ShouldApply: true, ShouldPersist: true}},
-		{"strict/drift_meme_si_dernier_applique_egal_cible", false, "strict", target, Verdict{Status: "drift", ShouldApply: true, ShouldPersist: true}},
-		{"strict/drift_cible_changee", false, "strict", "ancienne", Verdict{Status: "drift", ShouldApply: true, ShouldPersist: true}},
-
-		// default : tolère la dérive humaine volontaire.
-		{"default/compliant", true, "default", "", Verdict{Status: "compliant", ShouldPersist: true}},
-		{"default/derive_humaine", false, "default", target, Verdict{Status: "drifted_allowed"}},
-		{"default/cible_changee_applique", false, "default", "ancienne", Verdict{Status: "drift", ShouldApply: true, ShouldPersist: true}},
-		// Premier passage (pas de mémoire) : JAMAIS drifted_allowed (§5).
-		{"default/premier_passage_jamais_drifted_allowed", false, "default", "", Verdict{Status: "drift", ShouldApply: true, ShouldPersist: true}},
+		// STRICT inconditionnel : la cible fait TOUJOURS loi.
+		{"compliant", true, Verdict{Status: "compliant", ShouldPersist: true}},
+		{"drift_applique", false, Verdict{Status: "drift", ShouldApply: true, ShouldPersist: true}},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ResolveItemStatus(tc.compliant, tc.mode, tc.lastApplied, target)
+			got := ResolveItemStatus(tc.compliant)
 			if got != tc.want {
 				t.Errorf("got %+v, want %+v", got, tc.want)
 			}
@@ -77,12 +64,12 @@ func TestResolveItemStatusSection5Verbatim(t *testing.T) {
 // --- RunPass : machine d'états intégrée (premier passage / persistance) -------------
 
 func wallpaperItem(hash string) StateItem {
-	return StateItem{Type: "wallpaper", Semantics: "exclusive", Mode: "default", Hash: hash}
+	return StateItem{Type: "wallpaper", Semantics: "exclusive", Hash: hash}
 }
 
-func TestRunPassDefaultModeFullLifecycle(t *testing.T) {
-	// Cycle de vie complet du mode default sur un type exclusive :
-	// premier passage drift → compliant → dérive humaine → cible changée.
+func TestRunPassStrictLifecycle(t *testing.T) {
+	// Cycle de vie STRICT (Story 27.8) sur un type exclusive : premier passage
+	// drift → compliant → dérive (toujours réappliquée) → cible changée.
 	h := &fakeHandler{}
 	e := &Engine{Handlers: map[string]Handler{"wallpaper": h},
 		Now: func() time.Time { return time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC) }}
@@ -107,20 +94,17 @@ func TestRunPassDefaultModeFullLifecycle(t *testing.T) {
 		t.Fatalf("compliant sans apply attendu : %+v (applyCalls=%d)", items, h.applyCalls)
 	}
 
-	// 3. Dérive humaine : réel ≠ cible ∧ dernier-appliqué = cible →
-	//    drifted_allowed, ne réapplique PAS.
+	// 3. Dérive (réel ≠ cible) MÊME quand dernier-appliqué = cible : STRICT →
+	//    drift + réapplique TOUJOURS (plus de drifted_allowed, Story 27.8).
 	h.compliant = false
 	items = e.RunPass([]StateItem{wallpaperItem("aaa")}, applied)
-	if items[0].Status != "drifted_allowed" || h.applyCalls != 1 {
-		t.Fatalf("drifted_allowed sans apply attendu : %+v (applyCalls=%d)", items, h.applyCalls)
-	}
-	if applied["wallpaper"].Hash != "aaa" {
-		t.Fatal("drifted_allowed ne doit rien persister")
+	if items[0].Status != "drift" || h.applyCalls != 2 {
+		t.Fatalf("drift + réapplication attendus (strict) : %+v (applyCalls=%d)", items, h.applyCalls)
 	}
 
-	// 4. Cible changée (dernier-appliqué ≠ nouvelle cible) → applique → drift.
+	// 4. Cible changée → applique → drift, nouvelle cible persistée.
 	items = e.RunPass([]StateItem{wallpaperItem("bbb")}, applied)
-	if items[0].Status != "drift" || h.applyCalls != 2 || items[0].Hash != "bbb" {
+	if items[0].Status != "drift" || h.applyCalls != 3 || items[0].Hash != "bbb" {
 		t.Fatalf("cible changée : %+v (applyCalls=%d)", items, h.applyCalls)
 	}
 	if applied["wallpaper"].Hash != "bbb" {
@@ -154,7 +138,7 @@ func TestRunPassIsolationErrorContinues(t *testing.T) {
 
 	items := e.RunPass([]StateItem{
 		wallpaperItem("aaa"),
-		{Type: "overlay", Semantics: "aggregate", Mode: "strict", Hash: "bbb"},
+		{Type: "overlay", Semantics: "aggregate", Hash: "bbb"},
 	}, applied)
 
 	if len(items) != 2 {
@@ -240,23 +224,6 @@ func TestRunPassTypeWithoutHandlerEmitsNoStatus(t *testing.T) {
 
 	if len(items) != 1 || items[0].Type != "wallpaper" {
 		t.Errorf("seul wallpaper doit produire un statut : %+v", items)
-	}
-}
-
-func TestRunPassUnknownModeTreatedAsStrict(t *testing.T) {
-	// Mode inconnu (contrat futur ?) : posture sûre = strict (réapplique).
-	h := &fakeHandler{}
-	e := &Engine{Handlers: map[string]Handler{"wallpaper": h}}
-	applied := AppliedState{"wallpaper": {Hash: "aaa"}}
-
-	items := e.RunPass([]StateItem{
-		{Type: "wallpaper", Semantics: "exclusive", Mode: "permissif", Hash: "aaa"},
-	}, applied)
-
-	// En default ce serait drifted_allowed (dernier-appliqué = cible) ; en
-	// strict c'est drift + apply.
-	if items[0].Status != "drift" || h.applyCalls != 1 {
-		t.Errorf("mode inconnu = strict attendu : %+v (applyCalls=%d)", items, h.applyCalls)
 	}
 }
 
@@ -356,7 +323,7 @@ func TestErrorDetailBoundedAndNeverEmpty(t *testing.T) {
 
 func TestItemsFromScopeSkipsMalformedEntries(t *testing.T) {
 	raw := []any{
-		map[string]any{"type": "wallpaper", "hash": "aaa", "semantics": "exclusive", "mode": "default", "payload": map[string]any{"asset": nil}},
+		map[string]any{"type": "wallpaper", "hash": "aaa", "semantics": "exclusive", "payload": map[string]any{"asset": nil}},
 		map[string]any{"type": "overlay"},   // sans hash → ignoré
 		map[string]any{"hash": "orphelin"},  // sans type → ignoré
 		"pas-un-objet",                      // non-objet → ignoré
@@ -367,10 +334,10 @@ func TestItemsFromScopeSkipsMalformedEntries(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("2 items valides attendus, got %+v", items)
 	}
-	if items[0].Type != "wallpaper" || items[0].Mode != "default" || items[0].Semantics != "exclusive" {
+	if items[0].Type != "wallpaper" || items[0].Semantics != "exclusive" {
 		t.Errorf("extraction des champs : %+v", items[0])
 	}
-	if items[1].Type != "shortcuts" || items[1].Semantics != "" || items[1].Mode != "" {
+	if items[1].Type != "shortcuts" || items[1].Semantics != "" {
 		t.Errorf("défauts vides (résolus par le moteur) : %+v", items[1])
 	}
 }

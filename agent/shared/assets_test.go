@@ -11,7 +11,7 @@ import (
 // stateWithWallpaperAsset : enveloppe v1 minimale référençant un asset
 // content-addressed.
 func stateWithWallpaperAsset(filename, checksum string) string {
-	return `{"schema":"se5.desired-state/v1","generated_at":"2026-06-12T08:00:00+00:00","ttl_seconds":3600,"machine":[],"session":[{"type":"wallpaper","semantics":"exclusive","mode":"default","payload":{"asset":"` +
+	return `{"schema":"se5.desired-state/v1","generated_at":"2026-06-12T08:00:00+00:00","ttl_seconds":3600,"machine":[],"session":[{"type":"wallpaper","semantics":"exclusive","payload":{"asset":"` +
 		filename + `","checksum":"` + checksum + `"},"hash":"` + strings.Repeat("c", 64) + `"}],"machine_user":[]}`
 }
 

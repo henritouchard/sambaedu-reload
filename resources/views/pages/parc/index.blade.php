@@ -34,7 +34,8 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     #[Url]
     public string $migrationFilter = '';
     // Story 24.7 — filtre par conformité agent.
-    // Valeurs admises : '' (tous), 'exceptions', 'drifted_allowed', 'compliant', 'silent'.
+    // Valeurs admises : '' (tous), 'exceptions', 'compliant', 'silent'.
+    // Story 27.8 : valeur 'drifted_allowed' retirée (mécanisme strict/default supprimé).
     #[Url]
     public string $conformityFilter = '';
 

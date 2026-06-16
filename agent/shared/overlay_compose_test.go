@@ -8,12 +8,12 @@ import (
 )
 
 func overlayIdentityItem(fullname, login, room string) StateItem {
-	return StateItem{Type: "overlay", Semantics: "aggregate", Mode: "strict", Hash: "h-id",
+	return StateItem{Type: "overlay", Semantics: "aggregate", Hash: "h-id",
 		Payload: map[string]any{"kind": "identity", "fullname": fullname, "login": login, "room": room}}
 }
 
 func overlayAlertItem(severity, title, text string) StateItem {
-	return StateItem{Type: "overlay", Semantics: "aggregate", Mode: "strict", Hash: "h-al",
+	return StateItem{Type: "overlay", Semantics: "aggregate", Hash: "h-al",
 		Payload: map[string]any{"kind": "signal", "severity": severity, "title": title, "text": text}}
 }
 

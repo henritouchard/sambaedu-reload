@@ -193,7 +193,7 @@ final class AgentSkeletonE2eTest extends TestCase
 
         $response->assertOk()->assertJson([
             'success' => true,
-            'counts' => ['compliant' => 0, 'drift' => 0, 'drifted_allowed' => 0, 'error' => 0],
+            'counts' => ['compliant' => 0, 'drift' => 0, 'error' => 0],
         ]);
         // Aucun handler = aucune ligne d'état — mais la boucle est FERMÉE :
         // le check-in (signal de vie AC8) est stampé par le middleware.

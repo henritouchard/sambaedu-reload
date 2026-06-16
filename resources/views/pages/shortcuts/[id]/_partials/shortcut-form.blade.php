@@ -110,11 +110,6 @@
                 @endif
             </div>
 
-            {{-- Mode d'application desired-state (drift policy) : déplacé du
-                 formulaire de RÈGLE vers le GESTE D'ASSIGNATION (Story 27.3) — le
-                 mode strict|default est désormais PAR CIBLE
-                 (`shortcut_assignables.mode`), posé dans la modale d'assignation. --}}
-
             <!-- Icône (seulement en édition) -->
             @if ($editing || $creating)
                 <div class="form-control md:col-span-2">

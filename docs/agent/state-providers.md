@@ -38,17 +38,14 @@ GET /state (23.5) ──► StateCompiler::compile(TargetContext)
 interface StateProvider {
     public function type(): string;                    // identifiant figé (§7, NFR12)
     public function semantics(): ResourceSemantics;    // aggregate | exclusive
-    public function mode(): StateMode;                 // strict | default
     public function scope(): StateScope;               // machine | session | machine_user
     public function itemsFor(TargetContext $ctx): Collection; // candidats bruts par maille
 }
 ```
 
-`mode()` est une extension 23.4 de l'interface de l'architecture (qui ne
-déclarait que 4 méthodes) : l'item du contrat porte `mode`, et AC1 interdit
-toute table type→mode dans le compilateur — donc le provider déclare sa
-constante, au même titre que `semantics()` et `scope()`. Ces constantes par
-type tiennent jusqu'à l'UI du toggle (Epic 27) ; aucune table de config.
+> **Story 27.8** : la méthode `mode()` a été **retirée** de l'interface (le
+> mécanisme `mode` strict/default est supprimé — convergence STRICT
+> inconditionnelle). L'item du contrat n'a plus de clé `mode`.
 
 `itemsFor()` retourne des `StateCandidate` (readonly) : `maille`
 (enum interne `App\Enums\StateMaille`), `payload`, `updatedAt` + `sourceId`
@@ -126,7 +123,7 @@ pas les listes (contrat §4).
 > La sous-structure de `payload` est ownée par cette story (contrat §3.2) ;
 > les payloads des golden files sont **illustratifs** et ne changent pas.
 
-### `wallpaper` — `exclusive` / `default` / `session`
+### `wallpaper` — `exclusive` / `session`
 
 ```json
 { "asset": "9aa326c3….jpg", "checksum": "9aa326c3…" }
@@ -148,7 +145,7 @@ pas les listes (contrat §4).
   un churn d'ETag sur tous les contextes au déploiement ; un champ `url`
   resterait possible plus tard sans casse (champ ajouté = mineur, §9).
 
-### `overlay` — `aggregate` / `strict` / `session`
+### `overlay` — `aggregate` / `session`
 
 Un item **par signal posté actif** (`overlay_signals`, union) :
 
@@ -180,7 +177,7 @@ user — jamais en machine-only) :
   évolution d'enveloppe. Les alertes dérivées volatiles (quota,
   multi-session) restent HORS desired-state.
 
-### `shortcuts` — `aggregate` / `strict` / `machine_user` (Story 27.1)
+### `shortcuts` — `aggregate` / `machine_user` (Story 27.1)
 
 Un item **par couple (raccourci actif × assignation applicable)** — union des
 mailles, dédoublonnée par contenu au compilateur (décision n° 4) :
@@ -215,13 +212,10 @@ mailles, dédoublonnée par contenu au compilateur (décision n° 4) :
   raccourci retiré des règles **disparaît** au passage suivant ; un raccourci
   créé par l'utilisateur (hors marqueur de gestion) n'est **jamais** supprimé
   (cf. `agent/README.md`, décision n° 5).
-- **Mode PAR ASSIGNATION** (Story 27.3, révise 27.1) : le `mode` strict/default
-  est lu sur le **lien** `shortcut_assignables.mode` (par maille), plus sur la
-  règle. Un même raccourci peut donc être `strict` (verrouillé) sur un parc et
-  `default` (dérive tolérée) sur un autre — chaque candidat porte le mode de
-  **son** assignation. `null` sur le lien = défaut du type (`strict`) résolu
-  côté provider. L'agrégation par type au compilateur est inchangée (voir plus
-  bas). Le mode n'est jamais émis au payload (résolu serveur).
+- **Drift policy : STRICT inconditionnel** (Story 27.8) — le mécanisme
+  `mode` strict/default est **retiré** (colonne `shortcut_assignables.mode`
+  droppée). L'assignation ne porte plus de mode ; la cible fait toujours loi
+  (cf. la note « Mode strict|default — RETIRÉ » plus bas).
 - `place` ∈ `desktop|startup|taskbar` (iso `Shortcut::PLACE_*`). Tous les champs
   sont des strings (jamais de float, §4.1).
 
@@ -266,7 +260,7 @@ content-addressed existe en base (`shortcuts.icon_asset` non null), le payload
 - **Hors-scope** : le canal wallpaper garde son transport token'd
   (`AssetController`) — non migré (décision n° 5).
 
-### `printers` — `aggregate` / `strict` / `session` (Story 27.2)
+### `printers` — `aggregate` / `session` (Story 27.2)
 
 Un item **par (imprimante × maille POSTE applicable)** — union des mailles
 (salle physique + parc logique), dédoublonnée par contenu au compilateur :
@@ -333,7 +327,7 @@ Un item **par (imprimante × maille POSTE applicable)** — union des mailles
   statut `error` + détail pour le SEUL type `printers` ; `drives` et les autres
   types continuent (engine `RunPass` §5 réutilisé). Retry au cycle suivant.
 
-### `drives` — `aggregate` / `strict` / `session` (Story 27.2, MVP-A)
+### `drives` — `aggregate` / `session` (Story 27.2, MVP-A)
 
 Un item **par classe du user** (projection des partages de classe existants —
 **pas de table SQL**, décision n° 1 MVP-A) :
@@ -369,44 +363,27 @@ Un item **par classe du user** (projection des partages de classe existants —
   l'utilisateur hors périmètre SambaEdu n'est **jamais** démonté (marqueur de
   périmètre = serveur SambaEdu).
 
-### Mode `strict|default` — provenance par type (Story 27.1, révisé 27.3 — FR26)
+### Mode `strict|default` — RETIRÉ (Story 27.8)
 
-Le mode d'application **n'est plus une constante par type** : c'est un attribut
-porté par `StateCandidate::$mode`. Le `StateCompiler` **agrège** le mode par type
-(un seul verdict côté agent) : **`default` ssi TOUTES** les candidats retenus
-sont `default`, sinon **`strict`** (posture sûre). Un candidat sans `mode` (null)
-retombe sur `StateProvider::mode()` (le défaut du type) — wallpaper reste
-`default`, overlay/shortcuts restent `strict` tant qu'aucune cible n'est basculée.
-
-**La PROVENANCE du mode diffère selon la structure d'assignation du type** (Story
-27.3 — drift policy PAR ASSIGNATION) :
-
-- **`shortcuts`** : vraie table pivot N-à-M (`shortcut_assignables`). Le mode vit
-  sur le **lien** (`shortcut_assignables.mode`) — un même raccourci peut être
-  `strict` sur un parc et `default` sur un autre. Le provider projette le mode de
-  **chaque** assignation dans son candidat.
-- **`wallpapers`** : ciblage `owner_type`/`owner_id` **sur la table `wallpapers`**
-  (1 wallpaper = 1 cible). La règle EST l'assignation → le mode reste sur
-  `wallpapers.mode` ; il est **déjà « par cible »**.
-- **`overlay_signals`** : ciblage `workstation_uuid`/`workstation_group_id`/
-  `user_login` **sur la table** (1 signal = 1 cible). Idem : le mode reste sur
-  `overlay_signals.mode`, **déjà « par cible »**.
-
-> **Note de révision.** En 27.1, le mode était posé sur la RÈGLE des 3 types
-> (colonne `mode` sur `shortcuts`/`wallpapers`/`overlay_signals`). 27.3 le rend
-> **par assignation** : pour `shortcuts` la colonne `mode` a été **déplacée** de
-> `shortcuts` vers `shortcut_assignables` (le mode quitte la règle) ; pour
-> `wallpapers`/`overlay_signals` la colonne reste en place car « règle =
-> assignation » (Option A — aucun pivot créé). Le toggle UI suit : posé au geste
-> d'assignation (modale d'assignation raccourcis ; carte wallpaper ; création
-> overlay), retiré du formulaire d'édition de règle raccourci.
+> **Story 27.8 — RETRAIT TOTAL.** Le mécanisme `mode ∈ {strict, default}`
+> (introduit par 27.1, déplacé par 27.3) est **entièrement supprimé**. La review
+> 27.3 a établi que le grain réel du mode était `type × poste` (un seul verdict
+> par type côté agent), pas `item × cible` — la promesse « par assignation »
+> était creuse au niveau agent. Henri a tranché : **comportement UNIQUE = STRICT
+> inconditionnel** (la cible fait toujours loi, la dérive humaine est toujours
+> corrigée, le statut `drifted_allowed` disparaît).
+>
+> Conséquences : `StateProvider::mode()`, `StateCandidate::$mode`,
+> `StateCompiler::aggregateMode()`, l'enum `App\Enums\StateMode`, les colonnes
+> `mode` des 3 tables (`shortcut_assignables`/`wallpapers`/`overlay_signals`) et
+> les 3 toggles UI sont **retirés**. L'item du contrat passe de 5 à 4 clés. Voir
+> `docs/agent/contract-v1.md` §5.
 
 ## Ajouter un type de ressource (checklist Epic 27)
 
 1. **Identifiant figé** : ajouter le type à `docs/agent/contract-v1.md` §7
    (snake_case, jamais renommé — NFR12).
-2. Choisir `semantics` / `mode` / `scope` (constantes déclarées par le
-   provider).
+2. Choisir `semantics` / `scope` (constantes déclarées par le provider).
 3. Écrire `App\Services\Agent\Providers\<Type>StateProvider` : lecture seule
    des tables métier, candidats étiquetés par maille, payload sans float.
 4. L'enregistrer dans `AgentServiceProvider::register()` (une ligne dans le
@@ -506,7 +483,7 @@ et c'est ASSUMÉ.** Concrètement, un poste `nomade` :
 | Sujet | Pourquoi pas ici | Où |
 |---|---|---|
 | Alertes overlay dérivées (quota, multi-session) | volatiles à chaque poll → détruiraient l'ETag ; métrologie temps réel, pas état cible | hors desired-state (arbitrage 24.4 SOLDÉ : composition locale par le handler, identité stable servie par l'item `identity`) |
-| Fallback wallpaper système (`default.jpg`), perso `/home/<user>/Photos`, override quota | features du canal legacy, pas des règles d'état serveur ; le perso est le cas d'école du mode `default`/`drifted_allowed` (réalisé en 24.4 côté handler) | canal legacy jusqu'à extinction (Epic 27) |
+| Fallback wallpaper système (`default.jpg`), perso `/home/<user>/Photos`, override quota | features du canal legacy, pas des règles d'état serveur (le mode strict/default a été retiré en 27.8 — convergence STRICT inconditionnelle) | canal legacy jusqu'à extinction (Epic 27) |
 | Type `lockscreen` | pas dans les identifiants figés §7 | futur type séparé (Epic 27) |
 | URL de téléchargement des assets | **soldé 24.4** : route de serving livrée, payload INCHANGÉ (décision « pas de champ url » ci-dessus) | `handlers-wallpaper-overlay.md` §2 |
 | `config('agent.ttl_seconds')` | clé formalisée avec l'endpoint | story 23.5 (défaut code 3600 en attendant) |

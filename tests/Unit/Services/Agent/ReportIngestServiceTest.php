@@ -95,11 +95,11 @@ class ReportIngestServiceTest extends TestCase
     }
 
     #[Test]
-    public function first_error_and_drifted_allowed_reports_create_events(): void
+    public function first_error_and_drift_reports_create_events(): void
     {
         $this->ingest([
             $this->item('error', self::HASH_A, 'boom', 'printers'),
-            $this->item('drifted_allowed', self::HASH_A, null, 'shortcuts'),
+            $this->item('drift', self::HASH_A, null, 'shortcuts'),
         ]);
 
         self::assertSame(2, AgentReportEvent::query()->count());
@@ -219,7 +219,7 @@ class ReportIngestServiceTest extends TestCase
         ]);
 
         self::assertSame(
-            ['compliant' => 2, 'drift' => 1, 'drifted_allowed' => 0, 'error' => 0],
+            ['compliant' => 2, 'drift' => 1, 'error' => 0],
             $counts,
         );
     }
@@ -229,7 +229,7 @@ class ReportIngestServiceTest extends TestCase
     {
         $counts = $this->ingest([]);
 
-        self::assertSame(['compliant' => 0, 'drift' => 0, 'drifted_allowed' => 0, 'error' => 0], $counts);
+        self::assertSame(['compliant' => 0, 'drift' => 0, 'error' => 0], $counts);
         self::assertSame(0, AgentResourceState::query()->count());
         self::assertSame(0, AgentReportEvent::query()->count());
     }

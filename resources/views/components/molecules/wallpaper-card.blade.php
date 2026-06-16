@@ -209,29 +209,6 @@ new class extends Component {
         $cls = $this->ownerType;
         return $cls::query()->find($this->ownerId);
     }
-
-    /**
-     * Mode d'application desired-state de la règle (Story 27.1) — `strict`
-     * (défaut : la cible fait loi) ou `default` (tolère la dérive humaine).
-     * Toggle exposé pour la première fois (FR26), rétroactivement sur wallpaper.
-     */
-    public function setMode(string $mode): void
-    {
-        if (! Gate::allows('wallpaper.manage')) {
-            $this->toastAccessDenied();
-            return;
-        }
-
-        $value = \App\Enums\StateMode::tryFrom($mode);
-        $wallpaper = $this->wallpaper;
-        if ($value === null || $wallpaper === null) {
-            return;
-        }
-
-        $wallpaper->update(['mode' => $value]);
-        unset($this->wallpaper);
-        $this->toastSuccess('Mode du fond d\'écran : ' . ($value === \App\Enums\StateMode::Strict ? 'strict' : 'souple') . '.');
-    }
 };
 ?>
 
@@ -303,35 +280,6 @@ new class extends Component {
                                 @endforeach
                             </div>
                         @endif
-                    </div>
-                @endif
-
-                {{-- Toggle strict/default PAR CIBLE (Story 27.3) — le fond cible un
-                     seul owner (1 cible/règle), le mode est donc déjà posé au geste
-                     d'assignation sur sa propre ligne `wallpapers.mode`. --}}
-                @if ($this->wallpaper)
-                    {{-- Défaut = défaut du PROVIDER (wallpaper → `default`), PAS
-                         `strict` en dur (review #M1) : quand `mode` est null en
-                         base, le compilateur applique réellement `default` ; l'UI
-                         doit refléter ce comportement et ne pas surligner « Strict »
-                         à tort. --}}
-                    @php $currentMode = $this->wallpaper->mode?->value ?? (new \App\Services\Agent\Providers\WallpaperStateProvider())->mode()->value; @endphp
-                    <div class="mt-3 flex items-center gap-2">
-                        <span class="text-xs text-base-content/60">Application :</span>
-                        <div class="join">
-                            <button type="button"
-                                wire:click="setMode('strict')"
-                                class="btn btn-xs join-item {{ $currentMode === 'strict' ? 'btn-primary' : 'btn-ghost' }}"
-                                title="La cible fait loi : toute modification du fond est réappliquée.">
-                                Strict
-                            </button>
-                            <button type="button"
-                                wire:click="setMode('default')"
-                                class="btn btn-xs join-item {{ $currentMode === 'default' ? 'btn-primary' : 'btn-ghost' }}"
-                                title="Tolère la modification manuelle : un fond changé par l'utilisateur n'est pas réimposé.">
-                                Souple
-                            </button>
-                        </div>
                     </div>
                 @endif
             </form>

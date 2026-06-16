@@ -82,8 +82,9 @@ Points fermes :
 ```
 
 `items: []` est **valide** (validé 24.1, règle `present` pas `required`) :
-réponse `200 {success: true, counts: {compliant: 0, drift: 0,
-drifted_allowed: 0, error: 0}}`, aucune ligne `agent_resource_states` écrite,
+réponse `200 {success: true, counts: {compliant: 0, drift: 0, error: 0}}`
+(Story 27.8 : `drifted_allowed` retiré, 3 statuts), aucune ligne
+`agent_resource_states` écrite,
 `agent_last_checkin_at` stampé par le middleware. Les items réels arrivent
 avec les handlers Go (24.6). `agent_version` = `2.0.0` (lignée Go — les
 rapports `1.x` étaient le spike PS).

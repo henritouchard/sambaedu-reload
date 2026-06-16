@@ -41,11 +41,6 @@
                 <span class="badge badge-success gap-1">
                     <i class="fa-solid fa-circle-check"></i> {{ $cSummary['compliant'] ?? 0 }} conformes
                 </span>
-                @if (($cSummary['drifted_allowed'] ?? 0) > 0)
-                    <span class="badge badge-info gap-1">
-                        <i class="fa-solid fa-circle-info"></i> {{ $cSummary['drifted_allowed'] }} dérive tolérée
-                    </span>
-                @endif
                 @if (($cSummary['silent'] ?? 0) > 0)
                     <span class="badge badge-warning gap-1">
                         <i class="fa-solid fa-volume-xmark"></i> {{ $cSummary['silent'] }} muet(s)

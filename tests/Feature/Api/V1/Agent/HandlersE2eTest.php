@@ -153,7 +153,6 @@ final class HandlersE2eTest extends TestCase
         $wallpapers = $this->sessionItemsOfType($state, 'wallpaper');
         self::assertCount(1, $wallpapers);
         self::assertSame('exclusive', $wallpapers[0]['semantics']);
-        self::assertSame('default', $wallpapers[0]['mode']);
         self::assertSame(
             ['asset' => $d['asset']->filename, 'checksum' => $d['asset']->checksum],
             $wallpapers[0]['payload'],
@@ -164,7 +163,6 @@ final class HandlersE2eTest extends TestCase
         $overlays = $this->sessionItemsOfType($state, 'overlay');
         self::assertCount(2, $overlays);
         self::assertSame('aggregate', $overlays[0]['semantics']);
-        self::assertSame('strict', $overlays[0]['mode']);
         self::assertSame(
             [
                 'kind' => 'identity',
@@ -231,20 +229,21 @@ final class HandlersE2eTest extends TestCase
         $eventsAfterConvergence = AgentReportEvent::where('workstation_id', $ws->id)->count();
         self::assertSame(4, $eventsAfterConvergence);
 
-        // Rapport 3 : mode default — l'élève change son fond (drifted_allowed)
-        // + le handler overlay échoue (error, detail OBLIGATOIRE).
+        // Rapport 3 : STRICT (Story 27.8) — l'élève change son fond, l'agent le
+        // RÉAPPLIQUE (drift, plus de drifted_allowed) + le handler overlay
+        // échoue (error, detail OBLIGATOIRE).
         $this->report($d['token'], $this->reportPayload($ws, [
-            ['type' => 'wallpaper', 'status' => 'drifted_allowed', 'hash' => $wallpaperHash],
+            ['type' => 'wallpaper', 'status' => 'drift', 'hash' => $wallpaperHash],
             [
                 'type' => 'overlay', 'status' => 'error', 'hash' => $overlayHash,
                 'detail' => 'ecriture overlay.json refusee (profil verrouille)',
             ],
         ]))->assertOk()
-            ->assertJsonPath('counts.drifted_allowed', 1)
+            ->assertJsonPath('counts.drift', 1)
             ->assertJsonPath('counts.error', 1);
 
         self::assertSame(
-            AgentResourceStatus::DriftedAllowed,
+            AgentResourceStatus::Drift,
             $wallpaperState->refresh()->status,
         );
         $overlayState->refresh();
@@ -256,7 +255,7 @@ final class HandlersE2eTest extends TestCase
         $reportedAt = $overlayState->reported_at;
         $this->travel(1)->hour();
         $this->report($d['token'], $this->reportPayload($ws, [
-            ['type' => 'wallpaper', 'status' => 'drifted_allowed', 'hash' => $wallpaperHash],
+            ['type' => 'wallpaper', 'status' => 'drift', 'hash' => $wallpaperHash],
             [
                 'type' => 'overlay', 'status' => 'error', 'hash' => $overlayHash,
                 'detail' => 'ecriture overlay.json refusee (profil verrouille)',

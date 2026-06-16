@@ -237,7 +237,8 @@ func TestContractConstantsAreFrozen(t *testing.T) {
 	if len(ResourceTypes) != 9 {
 		t.Errorf("9 identifiants de type publiés (§7), got %d", len(ResourceTypes))
 	}
-	if len(ResourceStatuses) != 4 {
-		t.Errorf("4 statuts (§6), got %d", len(ResourceStatuses))
+	// Story 27.8 : `drifted_allowed` retiré → 3 statuts (STRICT inconditionnel).
+	if len(ResourceStatuses) != 3 {
+		t.Errorf("3 statuts (§6), got %d", len(ResourceStatuses))
 	}
 }

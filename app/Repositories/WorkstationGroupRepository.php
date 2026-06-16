@@ -194,14 +194,14 @@ class WorkstationGroupRepository
      * sur la sémantique du badge worst-status (décision n° 3, piège 8) :
      *
      *  - `exceptions`     : poste enrôlé EN ÉCART (au moins une ressource
-     *    `drift` ou `error`) — la dérive tolérée n'en fait PAS partie,
-     *    les muets non plus (ils priment, voir `silent`) ;
-     *  - `drifted_allowed`: worst-status = dérive tolérée (au moins une
-     *    ressource `drifted_allowed`, AUCUNE `drift`/`error`, non muet) ;
+     *    `drift` ou `error`) — les muets non plus (ils priment, voir `silent`) ;
      *  - `compliant`      : enrôlé, a rapporté, et tout est conforme (aucune
-     *    ressource `drift`/`error`/`drifted_allowed`) — et NON muet ;
+     *    ressource `drift`/`error`) — et NON muet ;
      *  - `silent`         : enrôlé mais muet (dernier check-in >
      *    2 × `agent.ttl_seconds`).
+     *
+     * Story 27.8 : le filtre `drifted_allowed` (dérive tolérée) est SUPPRIMÉ —
+     * le mécanisme strict/default est retiré (la cible fait toujours loi).
      *
      * Tous les filtres sont bornés aux postes ENRÔLÉS (`agent_token_hash`
      * non null) : un poste hors conformité ne ressort d'aucune catégorie.
@@ -233,17 +233,9 @@ class WorkstationGroupRepository
             return;
         }
 
-        if ($conformityFilter === 'drifted_allowed') {
-            $query->whereHas('agentResourceStates', fn (Builder $q) => $q->where('status', 'drifted_allowed'))
-                ->whereDoesntHave('agentResourceStates', fn (Builder $q) => $q->whereIn('status', $exception))
-                ->where($notSilent);
-
-            return;
-        }
-
         if ($conformityFilter === 'compliant') {
             $query->whereHas('agentResourceStates', fn (Builder $q) => $q->where('status', 'compliant'))
-                ->whereDoesntHave('agentResourceStates', fn (Builder $q) => $q->whereIn('status', ['drift', 'error', 'drifted_allowed']))
+                ->whereDoesntHave('agentResourceStates', fn (Builder $q) => $q->whereIn('status', ['drift', 'error']))
                 ->where($notSilent);
 
             return;

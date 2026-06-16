@@ -157,7 +157,7 @@ func TestCompanionPassUnknownMajorErrors(t *testing.T) {
 }
 
 func TestCompanionPassCorruptedAppliedStateRestartsWithoutMemory(t *testing.T) {
-	// applied-state corrompu = premier passage §5 (JAMAIS drifted_allowed).
+	// applied-state corrompu = premier passage §5 → drift (STRICT, Story 27.8).
 	h := &fakeHandler{} // non conforme
 	c, store := newTestCompanion(t, h)
 	writeSessionCache(t, store, string(mustReadGolden(t)))
@@ -173,7 +173,7 @@ func TestCompanionPassCorruptedAppliedStateRestartsWithoutMemory(t *testing.T) {
 	}
 	raw, _ := os.ReadFile(c.DropPath)
 	if !strings.Contains(string(raw), `"status":"drift"`) {
-		t.Errorf("premier passage sans mémoire = drift (jamais drifted_allowed) : %s", raw)
+		t.Errorf("premier passage sans mémoire = drift (STRICT inconditionnel) : %s", raw)
 	}
 }
 

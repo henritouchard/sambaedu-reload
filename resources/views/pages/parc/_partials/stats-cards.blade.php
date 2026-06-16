@@ -94,9 +94,10 @@
 </div>
 
 {{-- Story 24.7 — Compteurs de conformité agent (périmètre = postes ENRÔLÉS du
-     parc, requêtes agrégées). « En écart » = drift+error ; la dérive tolérée
-     est distincte (jamais comptée comme écart). Rendu uniquement quand au
-     moins un poste est enrôlé (sinon section masquée — pas de bruit visuel). --}}
+     parc, requêtes agrégées). « En écart » = drift+error (Story 27.8 : statut
+     drifted_allowed retiré — la cible fait toujours loi, convergence stricte).
+     Rendu uniquement quand au moins un poste est enrôlé (sinon section masquée
+     — pas de bruit visuel). --}}
 @if ($statsLoaded && ($conformityStats['enrolled'] ?? 0) > 0)
     <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mt-2">
         <div class="card bg-base-100 shadow-sm">
@@ -108,20 +109,6 @@
                     <div>
                         <div class="text-sm text-base-content/60">En écart</div>
                         <div class="text-2xl font-bold" title="Postes en drift ou erreur (worst-status)">{{ $conformityStats['exceptions'] ?? 0 }}</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="card bg-base-100 shadow-sm">
-            <div class="card-body py-4">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center">
-                        <i class="fa-solid fa-circle-info text-info"></i>
-                    </div>
-                    <div>
-                        <div class="text-sm text-base-content/60">Dérive tolérée</div>
-                        <div class="text-2xl font-bold" title="Dérive humaine tolérée (mode default) — pas un écart">{{ $conformityStats['drifted_allowed'] ?? 0 }}</div>
                     </div>
                 </div>
             </div>

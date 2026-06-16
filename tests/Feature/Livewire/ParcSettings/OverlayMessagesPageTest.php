@@ -57,7 +57,7 @@ class OverlayMessagesPageTest extends TestCase
             $t->unsignedBigInteger('workstation_group_id')->nullable()->index();
             $t->string('user_login')->nullable()->index();
             $t->timestamp('expires_at')->nullable()->index();
-            $t->string('mode', 16)->nullable(); // Story 27.1 — toggle strict/default
+            // Story 27.8 : plus de colonne `mode` (mécanisme strict/default retiré).
             $t->timestamps();
         });
     }
@@ -194,42 +194,28 @@ class OverlayMessagesPageTest extends TestCase
     }
 
     #[Test]
-    public function publishing_persists_the_chosen_mode(): void
+    public function publishing_creates_the_signal_without_any_mode(): void
     {
-        // Story 27.1 (FR26) — première exposition du toggle strict/default sur
-        // overlay : le mode choisi est persisté sur le signal créé.
+        // Story 27.8 : le mécanisme strict/default est retiré — la publication
+        // crée le signal sans poser de `mode`, sans champ `mode` au formulaire.
         $this->actingAs($this->manager());
 
-        Livewire::test(self::COMPONENT)
-            ->set('title', 'Souple')
-            ->set('text', 'x')
-            ->set('targetType', 'broadcast')
-            ->set('mode', 'default')
-            ->call('save')
-            ->assertHasNoErrors();
-
-        $this->assertDatabaseHas('overlay_signals', [
-            'title' => 'Souple',
-            'mode' => 'default',
-        ]);
-    }
-
-    #[Test]
-    public function publishing_defaults_to_strict_mode(): void
-    {
-        $this->actingAs($this->manager());
-
-        Livewire::test(self::COMPONENT)
-            ->set('title', 'Strict défaut')
+        $component = Livewire::test(self::COMPONENT)
+            ->set('title', 'Sans mode')
             ->set('text', 'x')
             ->set('targetType', 'broadcast')
             ->call('save')
             ->assertHasNoErrors();
 
-        $this->assertDatabaseHas('overlay_signals', [
-            'title' => 'Strict défaut',
-            'mode' => 'strict',
-        ]);
+        self::assertFalse(
+            property_exists($component->instance(), 'mode'),
+            'le composant ne porte plus le champ mode (Story 27.8)',
+        );
+        $this->assertDatabaseHas('overlay_signals', ['title' => 'Sans mode']);
+        self::assertFalse(
+            \Illuminate\Support\Facades\Schema::hasColumn('overlay_signals', 'mode'),
+            'plus de colonne mode sur overlay_signals (Story 27.8)',
+        );
     }
 
     #[Test]

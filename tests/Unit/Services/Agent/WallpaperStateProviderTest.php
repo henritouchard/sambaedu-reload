@@ -6,7 +6,6 @@ namespace Tests\Unit\Services\Agent;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
-use App\Enums\StateMode;
 use App\Enums\StateScope;
 use App\Models\User;
 use App\Models\UserGroup;
@@ -76,7 +75,6 @@ class WallpaperStateProviderTest extends TestCase
     {
         self::assertSame('wallpaper', $this->provider->type());
         self::assertSame(ResourceSemantics::Exclusive, $this->provider->semantics());
-        self::assertSame(StateMode::Default, $this->provider->mode());
         self::assertSame(StateScope::Session, $this->provider->scope());
     }
 
@@ -197,35 +195,6 @@ class WallpaperStateProviderTest extends TestCase
         $candidates = $this->provider->itemsFor($this->ctx());
 
         self::assertCount(3, $candidates, 'le provider étiquette, il ne tranche pas (D2 = compilateur)');
-    }
-
-    // ── Story 27.1 — review #8/#M1 : fallback mode réel = défaut provider ──
-
-    #[Test]
-    public function rule_without_mode_compiles_to_provider_default_not_strict(): void
-    {
-        // Non-régression #8/#M1 : un wallpaper sans `mode` en base (null) doit
-        // compiler en `default` (le défaut RÉEL du provider wallpaper), JAMAIS
-        // en `strict`. C'est le comportement que le compilateur applique — l'UI
-        // doit le refléter (l'ancien `?? 'strict'` mentait, review #M1).
-        $wallpaper = Wallpaper::factory()->default()->create();
-        self::assertNull($wallpaper->mode, 'pré-condition : mode null en base');
-
-        $compiler = app(\App\Services\Agent\StateCompiler::class);
-        $state = $compiler->compile($this->ctx());
-
-        $wallpaperItems = array_values(array_filter(
-            $state[StateScope::Session->value],
-            fn (array $item): bool => $item['type'] === 'wallpaper',
-        ));
-        self::assertNotEmpty($wallpaperItems, 'le type wallpaper doit être servi');
-        foreach ($wallpaperItems as $item) {
-            self::assertSame(
-                'default',
-                $item['mode'],
-                'wallpaper sans mode → default (défaut provider), pas strict',
-            );
-        }
     }
 
     private function ctx(): TargetContext

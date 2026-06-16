@@ -23,11 +23,11 @@ const overlaySessionState = `{
   "generated_at": "2026-06-16T08:00:00Z",
   "machine": [],
   "session": [
-    {"type":"overlay","semantics":"aggregate","mode":"strict","hash":"h-id",
+    {"type":"overlay","semantics":"aggregate","hash":"h-id",
      "payload":{"kind":"identity","fullname":"Jean Döe","login":"jdoe","room":"Salle B-12"}},
-    {"type":"overlay","semantics":"aggregate","mode":"strict","hash":"h-al",
+    {"type":"overlay","semantics":"aggregate","hash":"h-al",
      "payload":{"kind":"signal","severity":"warning","title":"Maintenance","text":"Coupure prévue"}},
-    {"type":"wallpaper","semantics":"exclusive","mode":"default","hash":"h-wp",
+    {"type":"wallpaper","semantics":"exclusive","hash":"h-wp",
      "payload":{"asset":null}}
   ],
   "machine_user": []

@@ -6,7 +6,6 @@ namespace Tests\Unit\Services\Agent;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
-use App\Enums\StateMode;
 use App\Enums\StateScope;
 use App\Models\OverlaySignal;
 use App\Models\User;
@@ -100,7 +99,7 @@ class StateCompilerTest extends TestCase
     }
 
     #[Test]
-    public function items_have_exactly_the_five_contract_keys_and_state_hasher_hash(): void
+    public function items_have_exactly_the_four_contract_keys_and_state_hasher_hash(): void
     {
         $provider = $this->fakeProvider('demo', ResourceSemantics::Exclusive, StateScope::Machine, [
             new StateCandidate(StateMaille::Broadcast, ['value' => 'x'], now(), 1),
@@ -109,10 +108,10 @@ class StateCompilerTest extends TestCase
         $state = $this->compiler([$provider])->compile($this->machineOnlyContext());
 
         $item = $state[StateContract::SCOPE_MACHINE][0];
-        self::assertSame(['type', 'semantics', 'mode', 'payload', 'hash'], array_keys($item));
+        // Story 27.8 : item à 4 clés (clé `mode` retirée — STRICT inconditionnel).
+        self::assertSame(['type', 'semantics', 'payload', 'hash'], array_keys($item));
         self::assertSame('demo', $item['type']);
         self::assertSame('exclusive', $item['semantics']);
-        self::assertSame('strict', $item['mode']);
         self::assertSame(['value' => 'x'], $item['payload']);
         self::assertSame($this->hasher->hashItem($item), $item['hash']);
     }
@@ -385,92 +384,6 @@ class StateCompilerTest extends TestCase
         self::assertCount(1, $defaults);
     }
 
-    // ── Story 27.1 — mode agrégé par type (décision n° 2) ─────────────────
-
-    #[Test]
-    public function mode_aggregates_to_default_only_when_all_selected_candidates_are_default(): void
-    {
-        $provider = $this->fakeProvider('shortcuts', ResourceSemantics::Aggregate, StateScope::MachineUser, [
-            new StateCandidate(StateMaille::User, ['name' => 'A'], now(), 1, StateMode::Default),
-            new StateCandidate(StateMaille::User, ['name' => 'B'], now(), 2, StateMode::Default),
-        ]);
-
-        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_MACHINE_USER];
-
-        self::assertSame(['default', 'default'], array_column($items, 'mode'), 'tous default → default');
-    }
-
-    #[Test]
-    public function mode_aggregates_to_strict_when_any_selected_candidate_is_strict(): void
-    {
-        $provider = $this->fakeProvider('shortcuts', ResourceSemantics::Aggregate, StateScope::MachineUser, [
-            new StateCandidate(StateMaille::User, ['name' => 'A'], now(), 1, StateMode::Default),
-            new StateCandidate(StateMaille::User, ['name' => 'B'], now(), 2, StateMode::Strict),
-        ]);
-
-        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_MACHINE_USER];
-
-        // Posture sûre : un seul strict suffit → tout le type est strict.
-        self::assertSame(['strict', 'strict'], array_column($items, 'mode'));
-    }
-
-    #[Test]
-    public function strict_assignment_wins_even_when_dedup_drops_its_candidate(): void
-    {
-        // Story 27.3 (régression du 2e avis review) : mode PAR ASSIGNATION.
-        // Le MÊME raccourci est assigné à deux mailles vues par le même poste,
-        // avec des modes différents (strict sur l'une, default sur l'autre) →
-        // payloads IDENTIQUES → `selectAggregate()` n'en garde qu'UN.
-        // L'agrégation du mode doit néanmoins voir l'assignation stricte
-        // (agrégation PRÉ-dedup), sinon le verrouillage de la maille stricte
-        // serait silencieusement perdu selon le candidat survivant.
-        $provider = $this->fakeProvider('shortcuts', ResourceSemantics::Aggregate, StateScope::MachineUser, [
-            // sourceId égal (même règle) ; payload identique ; modes opposés.
-            new StateCandidate(StateMaille::LogicalGroup, ['name' => 'Pronote', 'place' => 'desktop'], now(), 7, StateMode::Default),
-            new StateCandidate(StateMaille::Workstation, ['name' => 'Pronote', 'place' => 'desktop'], now(), 7, StateMode::Strict),
-        ]);
-
-        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_MACHINE_USER];
-
-        self::assertCount(1, $items, 'le doublon de contenu est fusionné');
-        self::assertSame('strict', $items[0]['mode'], 'le strict d\'une assignation l\'emporte malgré le dedup');
-    }
-
-    #[Test]
-    public function candidate_without_mode_falls_back_to_provider_default(): void
-    {
-        // Aucun candidat ne déclare de mode → on retombe sur mode() du provider
-        // (comportement 23.4 préservé).
-        $defaultProvider = $this->fakeProvider('a', ResourceSemantics::Aggregate, StateScope::Session, [
-            new StateCandidate(StateMaille::Broadcast, ['k' => 1], now(), 1),
-        ], StateMode::Default);
-        $strictProvider = $this->fakeProvider('b', ResourceSemantics::Aggregate, StateScope::Session, [
-            new StateCandidate(StateMaille::Broadcast, ['k' => 2], now(), 1),
-        ], StateMode::Strict);
-
-        $state = $this->compiler([$defaultProvider, $strictProvider])->compile($this->machineOnlyContext());
-        $byType = collect($state[StateContract::SCOPE_SESSION])->keyBy('type');
-
-        self::assertSame('default', $byType['a']['mode']);
-        self::assertSame('strict', $byType['b']['mode']);
-    }
-
-    #[Test]
-    public function exclusive_mode_comes_from_the_winning_candidate(): void
-    {
-        // L'exclusif tranche la maille gagnante : son mode fait foi.
-        $provider = $this->fakeProvider('wallpaper', ResourceSemantics::Exclusive, StateScope::Session, [
-            new StateCandidate(StateMaille::Broadcast, ['asset' => 'b'], now(), 1, StateMode::Strict),
-            new StateCandidate(StateMaille::User, ['asset' => 'u'], now(), 2, StateMode::Default),
-        ]);
-
-        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_SESSION];
-
-        self::assertCount(1, $items);
-        self::assertSame('u', $items[0]['payload']['asset'], 'la maille user gagne');
-        self::assertSame('default', $items[0]['mode'], 'le mode du candidat gagnant fait foi');
-    }
-
     // ── AC5 — déterminisme (protège l'ETag de 23.5) ───────────────────────
 
     #[Test]
@@ -581,9 +494,8 @@ class StateCompilerTest extends TestCase
         foreach (StateContract::scopes() as $scope) {
             self::assertTrue(array_is_list($state[$scope]));
             foreach ($state[$scope] as $item) {
-                self::assertSame(['type', 'semantics', 'mode', 'payload', 'hash'], array_keys($item));
+                self::assertSame(['type', 'semantics', 'payload', 'hash'], array_keys($item));
                 self::assertNotNull(ResourceSemantics::tryFrom($item['semantics']));
-                self::assertNotNull(StateMode::tryFrom($item['mode']));
                 self::assertSame($this->hasher->hashItem($item), $item['hash']);
             }
         }
@@ -636,9 +548,8 @@ class StateCompilerTest extends TestCase
         ResourceSemantics $semantics,
         StateScope $scope,
         array $candidates,
-        StateMode $mode = StateMode::Strict,
     ): StateProvider {
-        return new class($type, $semantics, $scope, $candidates, $mode) implements StateProvider
+        return new class($type, $semantics, $scope, $candidates) implements StateProvider
         {
             /** @param list<StateCandidate> $candidates */
             public function __construct(
@@ -646,7 +557,6 @@ class StateCompilerTest extends TestCase
                 private readonly ResourceSemantics $semantics,
                 private readonly StateScope $scope,
                 private readonly array $candidates,
-                private readonly StateMode $mode,
             ) {}
 
             public function type(): string
@@ -657,11 +567,6 @@ class StateCompilerTest extends TestCase
             public function semantics(): ResourceSemantics
             {
                 return $this->semantics;
-            }
-
-            public function mode(): StateMode
-            {
-                return $this->mode;
             }
 
             public function scope(): StateScope

@@ -48,7 +48,7 @@ final class StateHasher
     /**
      * Hash du contenu *définissant* d'un item. Sa propre clé `hash` est exclue
      * (sinon dépendance circulaire) : l'item hashé ne contient que ce qui le
-     * définit (`type`, `semantics`, `mode`, `payload`, …).
+     * définit (`type`, `semantics`, `payload`).
      *
      * @param  array<string,mixed>  $item
      */

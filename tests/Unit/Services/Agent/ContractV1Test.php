@@ -6,7 +6,6 @@ namespace Tests\Unit\Services\Agent;
 
 use App\Enums\AgentResourceStatus;
 use App\Enums\ResourceSemantics;
-use App\Enums\StateMode;
 use App\Services\Agent\StateContract;
 use App\Services\Agent\StateHasher;
 use PHPUnit\Framework\Attributes\Test;
@@ -55,7 +54,12 @@ class ContractV1Test extends TestCase
     // (nom nu `icon`). Champs AJOUTÉS = forward-compatible, pas un major. Le
     // jumeau Go (hasher_test.go::frozenStateHash) est bumpé à la même valeur
     // (test croisé NFR13).
-    private const FROZEN_STATE_HASH = 'a43e8aadd40e7ed7e98aebe7952d473a5a729630bf6ca9c12362c840e691d1c0';
+    //
+    // Re-bumpé SCIEMMENT par la Story 27.8 (§9) : la clé `mode` est RETIRÉE de
+    // chaque item d'état (item 5 clés → 4 : type/semantics/payload/hash —
+    // convergence STRICT inconditionnelle). Le hash de chaque item ET le hash
+    // d'état changent. Bumpé à l'IDENTIQUE côté Go (hasher_test.go::frozenStateHash).
+    private const FROZEN_STATE_HASH = '4d0c2c9406c448c8febb05807f33bb8c53af17aec0c9051ca7a4d4fddbf93579';
 
     private StateHasher $hasher;
 
@@ -92,7 +96,7 @@ class ContractV1Test extends TestCase
     }
 
     #[Test]
-    public function every_state_item_has_the_five_contract_keys_and_valid_enums(): void
+    public function every_state_item_has_the_four_contract_keys_and_valid_enums(): void
     {
         $state = $this->loadGolden('state.v1.json');
 
@@ -101,16 +105,16 @@ class ContractV1Test extends TestCase
             foreach ($state[$scope] as $item) {
                 $itemCount++;
 
-                // AC1 — exactement les 5 clés du contrat, ni plus ni moins.
+                // AC1 — exactement les 4 clés du contrat, ni plus ni moins
+                // (Story 27.8 : la clé `mode` est retirée — STRICT inconditionnel).
                 $this->assertSame(
-                    ['type', 'semantics', 'mode', 'payload', 'hash'],
+                    ['type', 'semantics', 'payload', 'hash'],
                     array_keys($item),
                     "item de portée {$scope} : clés non conformes",
                 );
 
                 $this->assertIsString($item['type']);
                 $this->assertNotNull(ResourceSemantics::tryFrom($item['semantics']));
-                $this->assertNotNull(StateMode::tryFrom($item['mode']));
                 $this->assertIsArray($item['payload']);
             }
         }
@@ -148,7 +152,7 @@ class ContractV1Test extends TestCase
     }
 
     #[Test]
-    public function report_golden_file_has_valid_structure_and_four_statuses(): void
+    public function report_golden_file_has_valid_structure_and_three_statuses(): void
     {
         $report = $this->loadGolden('report.v1.json');
 
@@ -181,7 +185,8 @@ class ContractV1Test extends TestCase
             }
         }
 
-        // AC3 — les quatre statuts sont illustrés.
+        // AC3 — les trois statuts sont illustrés (Story 27.8 : `drifted_allowed`
+        // retiré → compliant, drift, error).
         foreach (AgentResourceStatus::cases() as $case) {
             $this->assertArrayHasKey(
                 $case->value,

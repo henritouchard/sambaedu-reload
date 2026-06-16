@@ -1,20 +1,19 @@
 @props([
     // Statut de conformité agent (Story 24.7) :
-    // valeurs enum AgentResourceStatus (compliant|drift|drifted_allowed|error)
+    // valeurs enum AgentResourceStatus (compliant|drift|error)
     // + dérivés (never_reported|silent) + 'neutral' (poste non enrôlé / hors
-    // conformité). null = neutre.
+    // conformité). null = neutre. Story 27.8 : `drifted_allowed` retiré.
     'status' => null,
 ])
 
 @php
     // Mapping centralisé statut → badge DaisyUI (jamais dupliqué dans les
-    // vues). `drifted_allowed` a une distinction visuelle propre (info,
-    // dérive TOLÉRÉE — piège 8) distincte de l'écart réel (drift/error).
+    // vues). Story 27.8 : la cible fait toujours loi, plus de « dérive
+    // tolérée » — seul l'écart réel (drift/error) existe.
     $map = [
         'compliant' => ['class' => 'badge-success', 'icon' => 'fa-circle-check', 'label' => 'Conforme'],
         'drift' => ['class' => 'badge-error', 'icon' => 'fa-triangle-exclamation', 'label' => 'En écart'],
         'error' => ['class' => 'badge-error', 'icon' => 'fa-circle-xmark', 'label' => 'Erreur'],
-        'drifted_allowed' => ['class' => 'badge-info', 'icon' => 'fa-circle-info', 'label' => 'Dérive tolérée'],
         'never_reported' => ['class' => 'badge-ghost', 'icon' => 'fa-circle-question', 'label' => 'Jamais rapporté'],
         'silent' => ['class' => 'badge-warning', 'icon' => 'fa-volume-xmark', 'label' => 'Muet'],
         'neutral' => ['class' => 'badge-ghost', 'icon' => 'fa-minus', 'label' => '—'],

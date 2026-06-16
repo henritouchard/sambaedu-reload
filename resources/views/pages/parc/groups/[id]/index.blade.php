@@ -1257,12 +1257,13 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
      * Story 24.7 / AC1 (compteurs groupe) — résumé de conformité du périmètre
      * du groupe (postes enrôlés membres).
      *
-     * @return array{enrolled:int, compliant:int, drifted_allowed:int, exceptions:int, never_reported:int, silent:int}
+     * @return array{enrolled:int, compliant:int, exceptions:int, never_reported:int, silent:int}
      */
     public function getConformitySummaryProperty(): array
     {
         if (! $this->group) {
-            return ['enrolled' => 0, 'compliant' => 0, 'drifted_allowed' => 0, 'exceptions' => 0, 'never_reported' => 0, 'silent' => 0];
+            // Story 27.8 : clé `drifted_allowed` retirée (mécanisme strict/default supprimé).
+            return ['enrolled' => 0, 'compliant' => 0, 'exceptions' => 0, 'never_reported' => 0, 'silent' => 0];
         }
 
         return app(ConformityService::class)->summary($this->group);

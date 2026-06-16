@@ -42,12 +42,12 @@ class StateHasherTest extends TestCase
         $ordered = [
             'schema' => 'se5.desired-state/v1',
             'ttl_seconds' => 3600,
-            'machine' => [['type' => 'wallpaper', 'mode' => 'default']],
+            'machine' => [['type' => 'wallpaper', 'semantics' => 'exclusive']],
         ];
 
         // Mêmes données, clés dans un ordre différent (top-level + nested).
         $shuffled = [
-            'machine' => [['mode' => 'default', 'type' => 'wallpaper']],
+            'machine' => [['semantics' => 'exclusive', 'type' => 'wallpaper']],
             'schema' => 'se5.desired-state/v1',
             'ttl_seconds' => 3600,
         ];
@@ -106,7 +106,6 @@ class StateHasherTest extends TestCase
         $item = [
             'type' => 'wallpaper',
             'semantics' => 'exclusive',
-            'mode' => 'default',
             'payload' => ['asset' => 'fonds/ecole-2026.jpg'],
         ];
 
@@ -121,8 +120,8 @@ class StateHasherTest extends TestCase
     #[Test]
     public function hash_item_is_independent_of_key_order(): void
     {
-        $a = ['type' => 'overlay', 'mode' => 'strict', 'payload' => ['ttl_seconds' => 60, 'tool' => 'rainmeter']];
-        $b = ['payload' => ['tool' => 'rainmeter', 'ttl_seconds' => 60], 'mode' => 'strict', 'type' => 'overlay'];
+        $a = ['type' => 'overlay', 'semantics' => 'aggregate', 'payload' => ['ttl_seconds' => 60, 'tool' => 'rainmeter']];
+        $b = ['payload' => ['tool' => 'rainmeter', 'ttl_seconds' => 60], 'semantics' => 'aggregate', 'type' => 'overlay'];
 
         $this->assertSame(
             $this->hasher->hashItem($a),
@@ -156,7 +155,6 @@ class StateHasherTest extends TestCase
                 [
                     'type' => 'wallpaper',
                     'semantics' => 'exclusive',
-                    'mode' => 'default',
                     'payload' => ['asset' => 'fonds/ecole-2026.jpg', 'style' => 'fill'],
                 ],
             ],

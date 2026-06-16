@@ -301,6 +301,11 @@ Depuis la **session user** (non admin) du poste :
 
 ### Scénario 4.4 — Mode default : la dérive humaine est respectée (AC3)
 
+> **⚠️ ABROGÉ par Story 27.8.** Le mécanisme `mode` strict/default est retiré :
+> la convergence est STRICT inconditionnelle (toute dérive humaine est TOUJOURS
+> corrigée, `drifted_allowed` n'existe plus). Scénario conservé pour l'historique.
+> Remplacé par la Section 19 (Story 27.8).
+
 1. Après un 4.2 convergé (`compliant` en base), dans la session user : changer le fond d'écran à la main (Paramètres Windows → Personnalisation).
 2. Attendre le re-test périodique du compagnon (≤ 5 min) — ou re-logon.
 3. Observer `companion.log` : `Convergence 'wallpaper' (mode=default) : drifted_allowed` — et le fond N'EST PAS réappliqué (le choix du user est respecté).
@@ -535,6 +540,10 @@ Dans la session user (non admin) :
 ≤ 1 cycle (NFR3) — le bouclage visuel UI = 24.7.
 
 ### Scénario 6.6 — Mode default : dérive humaine respectée (Go)
+
+> **⚠️ ABROGÉ par Story 27.8.** Le mécanisme `mode` strict/default est retiré :
+> la convergence est STRICT inconditionnelle (`drifted_allowed` n'existe plus).
+> Scénario conservé pour l'historique. Remplacé par la Section 19 (Story 27.8).
 
 1. Avec la règle wallpaper en mode `default` convergée (6.5) : changer le
    fond À LA MAIN dans la session.
@@ -1282,6 +1291,11 @@ La page `parc-settings/agent/` (route `parc-settings.agent`, `can:computer.insta
 
 ### Scénario 13.5 — Toggle strict/default + `drifted_allowed` (FR26, 1re exposition UI)
 
+> **⚠️ ABROGÉ par Story 27.8.** Le toggle strict/default et le statut
+> `drifted_allowed` sont retirés (convergence STRICT inconditionnelle — un
+> raccourci supprimé est TOUJOURS recréé). Scénario conservé pour l'historique.
+> Remplacé par la Section 19 (Story 27.8).
+
 1. Sur un raccourci en mode **strict** : supprimer le `.lnk` à la main →
    **attendu** il est **recréé** au passage suivant (`drift`), la cible fait loi.
 2. Basculer le raccourci en mode **souple** (toggle UI `/app/shortcuts/{id}`).
@@ -1533,6 +1547,13 @@ La page `parc-settings/agent/` (route `parc-settings.agent`, `can:computer.insta
    = bug, jamais un bump à acter.
 
 ## Section 16 — Drift policy PAR ASSIGNATION : le mode suit la cible (Story 27.3)
+
+> **⚠️ SECTION ENTIÈREMENT ABROGÉE par Story 27.8.** Le mécanisme `mode`
+> strict/default (introduit par 27.1, déplacé par 27.3) est **entièrement
+> retiré** : la convergence est STRICT inconditionnelle, il n'y a plus de toggle,
+> plus de `shortcut_assignables.mode`, plus de `drifted_allowed`. Tous les
+> scénarios 16.1–16.4 ci-dessous sont **sans objet**. Conservés pour
+> l'historique. Voir la Section 19 (Story 27.8).
 
 > **Révision de 27.1.** En 27.1, le mode `strict|default` (drift policy) était posé
 > sur la **règle**. 27.3 le rend **par assignation** : un même raccourci peut être
@@ -1791,7 +1812,7 @@ Ces trois incidents passaient les tests unitaires initiaux mais se révèlent à
 - [ ] 4.1 — route assets curl : 200 binaire SHA-256 ok, 404 inconnu/malformé, 401 sans token, logs served/not_found
 - [ ] 4.2 — wallpaper UI → poste : asset téléchargé+vérifié, fond appliqué, compliant en base, idempotent
 - [ ] 4.3 — overlay : identité+salle+signal posté visibles (Rainmeter installé manuellement — prérequis encadré), gracieux sans Rainmeter
-- [ ] 4.4 — mode default : fond changé à la main → drifted_allowed NON réappliqué ; nouvelle cible UI → drift appliqué
+- [x] 4.4 — ~~mode default : fond changé à la main → drifted_allowed NON réappliqué~~ **ABROGÉ par Story 27.8** (mode retiré — STRICT inconditionnel ; voir Section 19)
 - [ ] 4.5 — erreur isolée : error+detail pour le type en échec, les autres continuent ; drop forgé rejeté + validation stricte
 - [ ] 4.6 — boucle stable : reported_at avance, zéro événement sur rapports identiques
 - [ ] 5.1 — build Go signé : go test + cross-compile verts, osslsigncode verify ok, refus sans PFX
@@ -1804,7 +1825,7 @@ Ces trois incidents passaient les tests unitaires initiaux mais se révèlent à
 - [ ] 6.3 — logon hors-ligne : session normale sur dernier cache ; KPI 3×ON/3×OFF rejoué sur le binaire Go
 - [ ] 6.4 — frontière de confiance Go : token illisible, écritures refusées (sauf SON drop), zéro réseau compagnon
 - [ ] 6.5 — démo wallpaper UI→poste→rapport : asset vérifié, fond appliqué, compliant en base, zéro événement sur stable, agent_version 2.1.0
-- [ ] 6.6 — mode default Go : dérive humaine → drifted_allowed non réappliqué ; cible changée → drift appliqué
+- [x] 6.6 — ~~mode default Go : dérive humaine → drifted_allowed non réappliqué~~ **ABROGÉ par Story 27.8** (mode retiré — STRICT inconditionnel ; voir Section 19)
 - [ ] 6.7 — overlay Go : identité+signal affichés, sérialiseur fixe, Rainmeter absent gracieux, strict réécrit + drift
 - [ ] 6.8 — erreur isolée + drops forgés rejetés entrée par entrée (validation stricte au cycle)
 - [ ] 7.1 — smoke serveur : demande pendante → GET /state 200 forcé (même ETag) ; report → soldée (null) ; quarantaine → 403 sans solde
@@ -1841,7 +1862,7 @@ Ces trois incidents passaient les tests unitaires initiaux mais se révèlent à
 - [ ] 13.2 — bureau LOCAL sur `personal_local`/`nomade` : `.lnk` à `%USERPROFILE%\Desktop\` (donnée du domaine, pas branche figée)
 - [ ] 13.3 — union multi-mailles sans doublon, hash d'agrégat stable
 - [ ] 13.4 — suppression level-triggered (raccourci sorti des règles disparaît) ; raccourci UTILISATEUR jamais supprimé
-- [ ] 13.5 — toggle strict/default : strict recrée, souple → `drifted_allowed` non recréé ; toggle visible aussi wallpaper + overlay
+- [x] 13.5 — ~~toggle strict/default : strict recrée, souple → `drifted_allowed` non recréé~~ **ABROGÉ par Story 27.8** (toggle retiré — STRICT inconditionnel ; voir Section 19)
 - [ ] 13.6 — lecture seule + zéro AD (grep vide ; ciblage AD-CN seul = aucun item)
 - [ ] 13.7 — golden v1 + hash figé bumpé sciemment ; `go test` croisé serveur/agent vert (NFR13)
 - [ ] 15.1 — portable posé au bootstrap (hash vérifié avant extraction), idempotent ; hash KO rejeté ; 404/constante vide = gracieux
@@ -1855,3 +1876,59 @@ Ces trois incidents passaient les tests unitaires initiaux mais se révèlent à
 - [ ] 18.2 — toggle ON → manifest `tool` actif, agent déploie (hash vérifié avant extraction) ; toggle OFF → `tool: null`, no-op SANS désinstaller (D4) ; absent → gracieux
 - [ ] 18.3 — skin servie 401/403/200, intégrité SHA-256 = canonique ; agent télécharge + UTF-16 LE+BOM (pas de `Â·`), hash KO rejeté ; embed retiré (grep vide, build windows vert) ; retouche skin sans rebuild
 - [ ] 18.4 — manifest dédié hors items desired-state ; golden overlay byte-identique (aucun bump) ; `go test` Rainmeter croisé vert
+
+## Section 19 — Retrait du mode strict/default : STRICT partout (Story 27.8)
+
+> **Nature de la story.** Aucune ressource ajoutée : **DÉMONTAGE** du mécanisme
+> `mode ∈ {strict, default}` de la drift policy (introduit par 27.1, déplacé par
+> 27.3). La review 27.3 (Q1/#6) a établi que le grain réel du mode était
+> `type × poste`, pas `item × cible` — promesse « par assignation » creuse au
+> niveau agent. Henri a tranché : **STRICT inconditionnel partout**. Cette
+> section ABROGE les scénarios 4.4, 6.6, 13.5 et toute la Section 16.
+>
+> Schéma → providers → compilateur → UI → AGENT Go → contrat/golden : item du
+> contrat 5 clés → **4** (`type`, `semantics`, `payload`, `hash`), statut
+> `drifted_allowed` **retiré** (3 statuts), `FROZEN_STATE_HASH` PHP + Go
+> **bumpés croisés** (`4d0c2c94…`), colonnes `mode` des 3 tables **droppées**,
+> enum `StateMode` + `StateCandidate::$mode` + `StateProvider::mode()` +
+> `StateCompiler::aggregateMode()` **supprimés**, 3 toggles UI **retirés**.
+
+### Scénario 19.1 — Convergence STRICT partout : la suppression humaine est TOUJOURS corrigée (lab Windows — ACTION HUMAINE Henri)
+
+1. Sur un poste enrôlé, pour **chaque** type géré (wallpaper, raccourci,
+   overlay) : laisser converger (`compliant` en base), puis **modifier/supprimer
+   à la main** la ressource gérée dans la session (changer le fond, supprimer un
+   `.lnk` géré, etc.).
+2. Attendre le re-test périodique du compagnon (≤ 5 min) ou re-logon.
+3. **Attendu** : la cible est **réappliquée** à CHAQUE fois — le fond revient, le
+   `.lnk` est recréé — sans exception. Le rapport (`POST /report`) porte
+   `drift` (jamais `drifted_allowed` — ce statut n'existe plus). C'est le
+   comportement UNIQUE (l'ancien « strict », rendu inconditionnel).
+4. **Contre-épreuve** : aucun toggle « Souple/Strict » n'est présent dans l'UI
+   (modale d'assignation raccourcis, carte wallpaper, création overlay).
+
+### Scénario 19.2 — Le contrat a bougé : item à 4 clés, report à 3 statuts (curl + base)
+
+1. `GET /api/v1/agent/state` (poste enrôlé) → **attendu** chaque item porte
+   **exactement** 4 clés `{type, semantics, payload, hash}` — **aucune** clé
+   `mode`.
+2. Vérifier que `tests/Fixtures/Agent/state.v1.json` (golden) hash d'état =
+   `4d0c2c9406c448c8febb05807f33bb8c53af17aec0c9051ca7a4d4fddbf93579` (figé,
+   identique PHP `ContractV1Test::FROZEN_STATE_HASH` et Go
+   `hasher_test.go::frozenStateHash` — test croisé NFR13).
+3. `POST /api/v1/agent/report` avec un item `status: "drifted_allowed"` →
+   **attendu** rejet validation (422), le statut n'existe plus
+   (`AgentResourceStatus` = `compliant` | `drift` | `error`).
+4. Page parc : plus de compteur ni de filtre « Dérive tolérée » ; le badge de
+   conformité n'a plus l'état `drifted_allowed`.
+
+### Scénario 19.3 — Schéma : colonnes `mode` droppées, réversibles (action `/vm`)
+
+1. `php artisan migrate:status` → 3 migrations `2026_06_16_11020x_drop_mode_from_*`
+   Pending.
+2. `php artisan migrate --force` → **attendu** les colonnes `mode` de
+   `shortcut_assignables`, `wallpapers`, `overlay_signals` sont **droppées** ;
+   `shortcuts.mode` **non touchée** (déjà droppée par 27.3).
+3. Idempotence : re-jouer `migrate` (ou `migrate:rollback` puis `migrate`) ne
+   casse rien (`Schema::hasColumn` en garde des deux côtés ; `down()` RE-CRÉE la
+   colonne nullable).

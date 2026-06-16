@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Dto\Overlay\OverlayAlert;
-use App\Enums\StateMode;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
@@ -24,7 +23,6 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $workstation_uuid
  * @property int|null $workstation_group_id
  * @property string|null $user_login
- * @property \App\Enums\StateMode|null $mode Mode d'application desired-state (strict/default) — Story 27.1
  * @property \Illuminate\Support\Carbon|null $expires_at
  */
 class OverlaySignal extends Model
@@ -40,12 +38,10 @@ class OverlaySignal extends Model
         'workstation_group_id',
         'user_login',
         'expires_at',
-        'mode',
     ];
 
     protected $casts = [
         'expires_at' => 'datetime',
-        'mode' => StateMode::class,
     ];
 
     /**

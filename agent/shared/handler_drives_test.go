@@ -91,7 +91,6 @@ func driveItem(letter, unc string) StateItem {
 	return StateItem{
 		Type:      "drives",
 		Semantics: "aggregate",
-		Mode:      "strict",
 		Hash:      letter + "-h",
 		Payload: map[string]any{
 			"letter": letter,
@@ -290,7 +289,7 @@ func TestDrivesInvalidPayloadIsError(t *testing.T) {
 	}
 }
 
-// --- Machine d'états §5 via le moteur (strict/default/premier passage) --------
+// --- Machine d'états §5 via le moteur (STRICT inconditionnel, Story 27.8) -----
 
 func TestDrivesThroughEngineSection5(t *testing.T) {
 	items := []StateItem{driveItem("K", `\\<se4fs>\Classe_3A\<login>\`)}
@@ -298,17 +297,15 @@ func TestDrivesThroughEngineSection5(t *testing.T) {
 
 	cases := []struct {
 		name        string
-		mode        string
 		seedManaged bool
 		lastApplied string
 		wantStatus  string
 		wantApply   bool
 	}{
-		{"premier passage strict → drift + apply", "strict", false, "", "drift", true},
-		{"strict dérive → réapplique (drift)", "strict", true, targetHash, "drift", true},
-		{"default + dérive humaine (dernier=cible) → drifted_allowed", "default", true, targetHash, "drifted_allowed", false},
-		{"default premier passage → drift (jamais allowed sans mémoire)", "default", true, "", "drift", true},
-		{"conforme → compliant", "strict", false, targetHash, "compliant", false},
+		{"premier passage → drift + apply", false, "", "drift", true},
+		{"dérive → réapplique (drift)", true, targetHash, "drift", true},
+		{"dérive même dernier=cible → réapplique (strict)", true, targetHash, "drift", true},
+		{"conforme → compliant", false, targetHash, "compliant", false},
 	}
 
 	for _, tc := range cases {
@@ -325,7 +322,6 @@ func TestDrivesThroughEngineSection5(t *testing.T) {
 			h := &DrivesHandler{Ops: ops}
 			engine := &Engine{Handlers: map[string]Handler{"drives": h}}
 			it := []StateItem{driveItem("K", `\\<se4fs>\Classe_3A\<login>\`)}
-			it[0].Mode = tc.mode
 
 			applied := AppliedState{}
 			if tc.lastApplied != "" {

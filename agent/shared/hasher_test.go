@@ -24,7 +24,11 @@ import (
 // `{icon_asset, icon_checksum}` (icône UPLOADÉE content-addressed) — champs
 // ajoutés, forward-compatible. Ce test croisé prouve que le hasher Go suit le
 // StateHasher PHP sur le payload étendu (NFR13).
-const frozenStateHash = "a43e8aadd40e7ed7e98aebe7952d473a5a729630bf6ca9c12362c840e691d1c0"
+// Re-bumpé SCIEMMENT par la Story 27.8 (§9) : la clé `mode` est RETIRÉE de
+// chaque item d'état (item 5 clés → 4 : type/semantics/payload/hash —
+// convergence STRICT inconditionnelle). Le hash de chaque item ET le hash
+// d'état changent. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
+const frozenStateHash = "4d0c2c9406c448c8febb05807f33bb8c53af17aec0c9051ca7a4d4fddbf93579"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).

@@ -6,7 +6,6 @@ namespace App\Services\Agent;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
-use App\Enums\StateMode;
 use App\Services\Agent\Contracts\StateProvider;
 use Illuminate\Support\Facades\Log;
 
@@ -118,7 +117,8 @@ final class StateCompiler
 
     /**
      * Items finals d'un provider : sélection D2 puis assemblage contrat
-     * (`{type, semantics, mode, payload, hash}` — exactement 5 clés).
+     * (`{type, semantics, payload, hash}` — exactement 4 clés). Story 27.8 : la
+     * clé `mode` est retirée (STRICT inconditionnel — plus d'agrégation de mode).
      *
      * @return list<array<string,mixed>>
      */
@@ -134,33 +134,11 @@ final class StateCompiler
             ? $this->selectExclusive($provider, $ctx, $candidates)
             : $this->selectAggregate($candidates);
 
-        // Mode AGRÉGÉ par type (Story 27.1, décision n° 2 ; révisé 27.3) : le
-        // moteur agent rend UN verdict par type → tous les items d'un type
-        // portent le même mode. Posture sûre = `strict` dès qu'UNE assignation
-        // applicable est stricte ; `default` seulement si TOUTES tolèrent la
-        // dérive. Un candidat sans mode (null) retombe sur le défaut du provider
-        // (comportement 23.4 préservé).
-        //
-        // ⚠️ 27.3 : depuis que le mode est PAR ASSIGNATION, deux mailles du même
-        // poste peuvent produire le MÊME payload avec des modes différents (ex.
-        // raccourci `strict` sur le poste ET `default` sur son parc). Le dedup de
-        // `selectAggregate()` (clé = contenu, le mode N'entre PAS dans l'identité)
-        // n'en garderait qu'un : agréger le mode sur `$selected` masquerait alors
-        // l'assignation stricte. On agrège donc sur l'ensemble PRÉ-DEDUP pour la
-        // sémantique aggregate (le dedup ne sert que le déterminisme de sortie),
-        // et sur les candidats RETENUS pour l'exclusif (la maille gagnante est
-        // déjà tranchée, les mailles perdantes ne doivent pas peser sur le mode).
-        $modeCandidates = $provider->semantics() === ResourceSemantics::Exclusive
-            ? $selected
-            : $candidates;
-        $mode = $this->aggregateMode($provider, $modeCandidates)->value;
-
         return array_map(
-            function (StateCandidate $candidate) use ($provider, $mode): array {
+            function (StateCandidate $candidate) use ($provider): array {
                 $item = [
                     'type' => $provider->type(),
                     'semantics' => $provider->semantics()->value,
-                    'mode' => $mode,
                     'payload' => $candidate->payload,
                 ];
                 $item['hash'] = $this->hasher->hashItem($item);
@@ -169,30 +147,6 @@ final class StateCompiler
             },
             $selected,
         );
-    }
-
-    /**
-     * Mode agrégé d'un type (décision n° 2) : `default` ssi TOUS les candidats
-     * retenus sont en `default`, sinon `strict`. Le mode d'un candidat null
-     * vaut le défaut du provider (`StateProvider::mode()`) — ainsi un provider
-     * historique sans colonne `mode` (ou une règle non configurée) conserve
-     * exactement son comportement 23.4.
-     *
-     * @param  list<StateCandidate>  $candidates  non vide — ensemble sur lequel
-     *   se décide le mode : RETENUS pour l'exclusif, PRÉ-DEDUP pour l'aggregate
-     *   (cf. `compileProvider()`, garantie strict-wins 27.3).
-     */
-    private function aggregateMode(StateProvider $provider, array $candidates): StateMode
-    {
-        $providerDefault = $provider->mode();
-
-        foreach ($candidates as $candidate) {
-            if (($candidate->mode ?? $providerDefault) === StateMode::Strict) {
-                return StateMode::Strict;
-            }
-        }
-
-        return StateMode::Default;
     }
 
     /**
@@ -207,8 +161,7 @@ final class StateCompiler
      * recevrait des `.lnk` en double et le hash d'agrégat dépendrait du nombre
      * de mailles recouvrantes (déterminisme cassé). On garde le PREMIER par
      * `sourceId` asc (ordre déjà trié) → la sortie reste stable. La clé de
-     * contenu est le payload canonicalisé (le `mode` est agrégé par type en
-     * aval, il n'entre donc pas dans l'identité de l'item).
+     * contenu est le payload canonicalisé.
      *
      * Overlay (1 item/signal, payloads naturellement distincts dont l'`id` du
      * signal via `kind`/`text`) n'est pas affecté : aucun doublon de contenu à

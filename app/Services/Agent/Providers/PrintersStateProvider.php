@@ -6,7 +6,6 @@ namespace App\Services\Agent\Providers;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
-use App\Enums\StateMode;
 use App\Enums\StateScope;
 use App\Models\Printer;
 use App\Models\WorkstationGroup;
@@ -72,13 +71,6 @@ final class PrintersStateProvider implements StateProvider
     public function semantics(): ResourceSemantics
     {
         return ResourceSemantics::Aggregate;
-    }
-
-    public function mode(): StateMode
-    {
-        // Défaut du type (décision Henri n° 7) — posture sûre `strict` : la
-        // liste d'imprimantes fait loi. Pas de toggle UI pour cette story.
-        return StateMode::Strict;
     }
 
     public function scope(): StateScope
@@ -177,8 +169,6 @@ final class PrintersStateProvider implements StateProvider
                 // compilateur, et la dédup garde le premier — ici on veut un
                 // ordre DÉTERMINISTE et injectif, pas signifiant.
                 sourceId: $this->stableSourceId($group, $nameRank[$cupsName]),
-                // Mode null → le compilateur retombe sur mode() (strict).
-                mode: null,
             );
         }
 

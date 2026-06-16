@@ -11,7 +11,7 @@ import (
 // stateWithShortcutIcon : enveloppe v1 minimale dont l'item `shortcuts`
 // (machine_user) référence une icône uploadée content-addressed.
 func stateWithShortcutIcon(filename, checksum string) string {
-	return `{"schema":"se5.desired-state/v1","generated_at":"2026-06-16T08:00:00+00:00","ttl_seconds":3600,"machine":[],"session":[],"machine_user":[{"type":"shortcuts","semantics":"aggregate","mode":"strict","payload":{"name":"Calculatrice","target":"C:\\Windows\\System32\\calc.exe","args":"","icon":"Calculatrice","icon_asset":"` +
+	return `{"schema":"se5.desired-state/v1","generated_at":"2026-06-16T08:00:00+00:00","ttl_seconds":3600,"machine":[],"session":[],"machine_user":[{"type":"shortcuts","semantics":"aggregate","payload":{"name":"Calculatrice","target":"C:\\Windows\\System32\\calc.exe","args":"","icon":"Calculatrice","icon_asset":"` +
 		filename + `","icon_checksum":"` + checksum + `","place":"desktop","desktop_path":"%USERPROFILE%\\Desktop\\"},"hash":"` + strings.Repeat("a", 64) + `"}]}`
 }
 

@@ -1,7 +1,7 @@
 {{-- Story 24.7 / AC2, AC4, AC5 — Conformité agent de la fiche poste.
 
-     Extension de la card Agent (23.2) : état rapporté PAR TYPE (4 statuts +
-     distinction visuelle drifted_allowed), derniers événements datés, états
+     Extension de la card Agent (23.2) : état rapporté PAR TYPE (3 statuts —
+     Story 27.8 : `drifted_allowed` retiré), derniers événements datés, états
      dérivés (jamais rapporté / muet), bouton « Forcer la synchro » (PULL) +
      état de la demande pendante.
 

@@ -141,7 +141,7 @@ final class StateEndpointTest extends TestCase
     }
 
     #[Test]
-    public function every_item_carries_exactly_the_five_contract_keys_with_verifiable_hash(): void
+    public function every_item_carries_exactly_the_four_contract_keys_with_verifiable_hash(): void
     {
         [$ws, $token] = $this->enrolledWorkstationWithBroadcastWallpaper();
         OverlaySignal::create(['kind' => 'info', 'severity' => 'info', 'title' => 'b', 'text' => 'b']);
@@ -151,7 +151,8 @@ final class StateEndpointTest extends TestCase
         $items = array_merge(...array_map(fn (string $s): array => $state[$s], StateContract::scopes()));
         self::assertNotEmpty($items);
         foreach ($items as $item) {
-            self::assertSame(['type', 'semantics', 'mode', 'payload', 'hash'], array_keys($item));
+            // Story 27.8 : item à 4 clés (clé `mode` retirée — STRICT inconditionnel).
+            self::assertSame(['type', 'semantics', 'payload', 'hash'], array_keys($item));
             self::assertSame(
                 $this->hasher->hashItem($item),
                 $item['hash'],

@@ -40,7 +40,7 @@ return new class extends Migration
                 $table->id();
                 $table->foreignId('workstation_id')->constrained()->cascadeOnDelete();
                 $table->string('type', 64)->comment('Identifiant de type figé (§7 contrat v1)');
-                $table->string('status', 32)->comment('compliant|drift|drifted_allowed|error (AgentResourceStatus)');
+                $table->string('status', 32)->comment('compliant|drift|error (AgentResourceStatus) — Story 27.8 a retiré drifted_allowed');
                 $table->string('hash', 64)->comment('Hash opaque StateHasher rapporté tel quel par l\'agent');
                 $table->text('detail')->nullable()->comment('Cause d\'erreur rapportée (obligatoire si status=error)');
                 $table->timestamp('reported_at')->comment('Horodatage du dernier rapport — rafraîchi même si identique');

@@ -101,7 +101,7 @@ re-téléchargé. ACL du répertoire à la création : SYSTEM F, Administrators 
 **`BUILTIN\Users` R** (un wallpaper n'est pas un secret, la session doit
 l'afficher). Pas de purge en 24.4 (volume borné par la bibliothèque).
 
-## 3. Handler `wallpaper` (exclusive / default / session)
+## 3. Handler `wallpaper` (exclusive / session)
 
 `agent/windows/handler_wallpaper_windows.go` (+ logique pure
 `agent/shared/handler_wallpaper.go`, testée hôte) — exécuté par le compagnon :
@@ -116,10 +116,12 @@ l'afficher). Pas de purge en 24.4 (volume borné par la bibliothèque).
   aucun statut émis (géré par le moteur).
 - Asset pas encore téléchargé (course avec le download SYSTEM) → `error` +
   detail explicite, résorbé au passage suivant.
-- Mode `default` → machine d'états §5 complète (cf. §5 ci-dessous) : le fond
-  personnel d'un élève est LE cas d'école du `drifted_allowed`.
+- ~~Mode `default` → machine d'états §5 complète : le fond personnel d'un élève
+  est LE cas d'école du `drifted_allowed`.~~ **ABROGÉ par Story 27.8** : le mode
+  strict/default est retiré (STRICT inconditionnel — le fond cible est TOUJOURS
+  réimposé, plus de `drifted_allowed`).
 
-## 4. Handler `overlay` (aggregate / strict / session) — l'agent devient le fetch du POC
+## 4. Handler `overlay` (aggregate / session) — l'agent devient le fetch du POC
 
 `agent/shared/overlay_compose.go` + `agent/shared/handler_overlay.go`
 (OS-agnostique par injection, testé hôte — golden byte-compatible) :
@@ -155,7 +157,7 @@ l'afficher). Pas de purge en 24.4 (volume borné par la bibliothèque).
 - Aucun item overlay (ni identity — ex. cache machine-only sans signal) →
   type absent du drop, aucun statut.
 
-## 5. Moteur de convergence + mode `default` (gap 1 réalisé)
+## 5. Moteur de convergence — STRICT inconditionnel (Story 27.8 ; gap 1 retiré)
 
 `agent/shared/engine.go` — cœur **portable** (aucune dépendance Windows,
 machine d'états couverte table-driven sur l'hôte) :
@@ -165,12 +167,12 @@ machine d'états couverte table-driven sur l'hôte) :
   DEBUG (contrat §8) ;
 - **try/catch par type** : un échec → `{status: error, detail}` et la passe
   continue (isolation, AC epic) ;
-- machine d'états **§5 verbatim** (`Resolve-ItemStatus`) :
-  - `strict` : réel ≠ cible → applique → `drift` ; sinon `compliant` ;
-  - `default` : réel ≠ cible ∧ dernier-appliqué = cible → **dérive humaine**
-    → ne réapplique PAS → `drifted_allowed` ; dernier-appliqué ≠ cible →
-    applique → `drift` ;
-  - **premier passage** (pas de mémoire) : jamais `drifted_allowed`.
+- machine d'états **§5** (`ResolveItemStatus`) — **Story 27.8 : STRICT
+  inconditionnel** (le mode strict/default et `drifted_allowed` sont retirés) :
+  - réel ≠ cible → applique → `drift` ; réel = cible → `compliant` (la cible
+    fait TOUJOURS loi) ;
+  - le store applied-state (dernier-appliqué) est conservé pour la traçabilité,
+    mais n'a plus d'incidence sur le verdict (D-B).
 - **applied-state PER-USER** : `%LOCALAPPDATA%\SambaEdu\Agent\
   applied-state.json` (map `type → {hash, applied_at}`, hash d'item opaque /
   empreinte d'agrégat). Le `applied-state.json` **machine** de 24.2
@@ -251,7 +253,8 @@ une limite tuerait la boucle après la première passe).
 - `POST /report` avec des items **réels** : lignes `agent_resource_states`
   (wallpaper/overlay) + événements `agent_report_events` sur transition,
   zéro événement sur rapport identique ;
-- mode default : modifier le fond à la main sur le poste →
-  `drifted_allowed` au rapport suivant (et le fond N'EST PAS réappliqué).
+- STRICT inconditionnel (Story 27.8) : modifier le fond à la main sur le poste →
+  le fond cible est **réappliqué** (`drift`) au rapport suivant — plus de
+  `drifted_allowed`.
 
 Runbook démo palier 1 : `docs/qa/domains/agent.md` §4.

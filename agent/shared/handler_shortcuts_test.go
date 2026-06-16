@@ -126,7 +126,7 @@ func shortcutItem(name, target, place, desktopPath string) StateItem {
 		payload["desktop_path"] = desktopPath
 	}
 
-	return StateItem{Type: "shortcuts", Semantics: "aggregate", Mode: "strict", Hash: name + "-h", Payload: payload}
+	return StateItem{Type: "shortcuts", Semantics: "aggregate", Hash: name + "-h", Payload: payload}
 }
 
 const netDesktop = `\\<se4fs>\users\<user>\Bureau`
@@ -373,7 +373,7 @@ func TestShortcutsAggregateHashIsServerOrderConcat(t *testing.T) {
 	}
 }
 
-// --- Machine d'états §5 via le moteur (strict/default/premier passage) --------
+// --- Machine d'états §5 via le moteur (STRICT inconditionnel, Story 27.8) -----
 
 func TestShortcutsThroughEngineSection5(t *testing.T) {
 	items := []StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, netDesktop)}
@@ -381,17 +381,15 @@ func TestShortcutsThroughEngineSection5(t *testing.T) {
 
 	cases := []struct {
 		name        string
-		mode        string
 		seedManaged bool // un raccourci géré DIVERGENT déjà sur le poste
 		lastApplied string
 		wantStatus  string
 		wantCreate  bool
 	}{
-		{"premier passage strict → drift + apply", "strict", false, "", "drift", true},
-		{"strict dérive → réapplique (drift)", "strict", true, targetHash, "drift", true},
-		{"default + dérive humaine (dernier=cible) → drifted_allowed, pas de réécriture", "default", true, targetHash, "drifted_allowed", false},
-		{"default premier passage → drift (jamais allowed sans mémoire)", "default", true, "", "drift", true},
-		{"conforme → compliant", "strict", false, targetHash, "compliant", false},
+		{"premier passage → drift + apply", false, "", "drift", true},
+		{"dérive → réapplique (drift)", true, targetHash, "drift", true},
+		{"dérive même dernier=cible → réapplique (strict)", true, targetHash, "drift", true},
+		{"conforme → compliant", false, targetHash, "compliant", false},
 	}
 
 	for _, tc := range cases {
@@ -409,7 +407,6 @@ func TestShortcutsThroughEngineSection5(t *testing.T) {
 			h := &ShortcutsHandler{Ops: ops}
 			engine := &Engine{Handlers: map[string]Handler{"shortcuts": h}}
 			it := []StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, netDesktop)}
-			it[0].Mode = tc.mode
 
 			applied := AppliedState{}
 			if tc.lastApplied != "" {

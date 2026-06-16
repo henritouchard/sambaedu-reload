@@ -35,8 +35,9 @@ var ResourceTypes = []string{
 }
 
 // ResourceStatuses : statuts de conformité du rapport (§6 — iso
-// App\Enums\AgentResourceStatus).
-var ResourceStatuses = []string{"compliant", "drift", "drifted_allowed", "error"}
+// App\Enums\AgentResourceStatus). Story 27.8 : `drifted_allowed` retiré
+// (convergence STRICT inconditionnelle).
+var ResourceStatuses = []string{"compliant", "drift", "error"}
 
 var schemaPattern = regexp.MustCompile(`^se5\.desired-state/v(\d+)`)
 

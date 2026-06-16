@@ -6,7 +6,6 @@ namespace App\Services\Agent\Providers;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
-use App\Enums\StateMode;
 use App\Enums\StateScope;
 use App\Models\OverlaySignal;
 use App\Models\WorkstationGroup;
@@ -52,11 +51,6 @@ final class OverlayStateProvider implements StateProvider
         return ResourceSemantics::Aggregate;
     }
 
-    public function mode(): StateMode
-    {
-        return StateMode::Strict;
-    }
-
     public function scope(): StateScope
     {
         return StateScope::Session;
@@ -91,10 +85,6 @@ final class OverlayStateProvider implements StateProvider
             ],
             updatedAt: $signal->updated_at,
             sourceId: (int) $signal->id,
-            // Mode par règle (Story 27.1, décision n° 2) — null en base = pas
-            // déclaré → le compilateur retombe sur mode() (défaut `strict`,
-            // comportement 23.4 préservé).
-            mode: $signal->mode,
         ));
 
         $identity = $this->identityCandidate($ctx);
@@ -143,15 +133,6 @@ final class OverlayStateProvider implements StateProvider
             ],
             updatedAt: $ctx->user->updated_at,
             sourceId: 0,
-            // Mode NEUTRE (Story 27.1, review #5) : l'identity est un candidat
-            // SYNTHÉTIQUE (enrichissement serveur), PAS une règle admin — il ne
-            // doit JAMAIS peser dans l'agrégation du mode du type `overlay`.
-            // `default` est neutre vis-à-vis du « strict ssi un candidat strict »
-            // (StateCompiler::aggregateMode) : l'identity ne force donc plus le
-            // type en `strict` dès qu'un user est en session, ce qui rendait le
-            // toggle overlay inopérant (bug review #5). Le mode effectif du type
-            // reste dicté par les VRAIS signaux admin.
-            mode: StateMode::Default,
         );
     }
 

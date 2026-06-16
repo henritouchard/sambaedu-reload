@@ -6,7 +6,6 @@ namespace Tests\Unit\Services\Agent;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
-use App\Enums\StateMode;
 use App\Enums\StateScope;
 use App\Models\Printer;
 use App\Models\User;
@@ -114,7 +113,6 @@ class PrintersStateProviderTest extends TestCase
         self::assertSame('printers', $p->type());
         self::assertSame(Printer::TYPE_PRINTERS, $p->type());
         self::assertSame(ResourceSemantics::Aggregate, $p->semantics());
-        self::assertSame(StateMode::Strict, $p->mode());
         self::assertSame(StateScope::Session, $p->scope());
     }
 

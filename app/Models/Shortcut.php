@@ -157,7 +157,7 @@ class Shortcut extends Model implements Wireable
             'shortcut_assignables',
             'shortcut_id',
             'assignable_id'
-        )->withPivot('mode')->withTimestamps();
+        )->withTimestamps();
     }
 
     /**
@@ -171,7 +171,7 @@ class Shortcut extends Model implements Wireable
             'shortcut_assignables',
             'shortcut_id',
             'assignable_id'
-        )->withPivot('mode')->withTimestamps();
+        )->withTimestamps();
     }
 
     /**

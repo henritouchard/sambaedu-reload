@@ -136,8 +136,8 @@ class ReportIngestService
         });
 
         // AC5 — un warning par item créant un événement de dérive
-        // (drift/error/drifted_allowed entrant) : jamais de spam sur rapport
-        // identique (eventDue = false → rien collecté).
+        // (drift/error entrant) : jamais de spam sur rapport identique
+        // (eventDue = false → rien collecté).
         foreach ($driftEvents as $event) {
             Log::channel('agent')->warning('[ReportIngestService] agent.report.drift', [
                 'action_type' => 'agent.report.drift',

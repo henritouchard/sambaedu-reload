@@ -45,7 +45,6 @@
                     <select wire:model.live="conformityFilter" class="select select-bordered" aria-label="Conformité agent">
                         <option value="">Conformité : tous</option>
                         <option value="exceptions">En écart</option>
-                        <option value="drifted_allowed">Dérive tolérée</option>
                         <option value="silent">Muets</option>
                         <option value="compliant">Conformes</option>
                     </select>

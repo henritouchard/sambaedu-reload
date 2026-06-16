@@ -21,15 +21,14 @@ use Illuminate\Support\Collection;
  * neutres côté UI). Les hashes sont OPAQUES (lus, jamais recalculés —
  * piège 9). Aucune écriture, aucun accès AD/LDAP.
  *
- * États affichés (4 enum + 2 dérivés) :
- *  - `compliant` / `drift` / `drifted_allowed` / `error` (lus de
- *    `agent_resource_states`) ;
+ * États affichés (3 enum + 2 dérivés) :
+ *  - `compliant` / `drift` / `error` (lus de `agent_resource_states`) ;
  *  - dérivé « jamais rapporté » : poste enrôlé, zéro ligne d'état ;
  *  - dérivé « muet » : `agent_last_checkin_at` > 2 × `agent.ttl_seconds`
  *    ({@see Workstation::isAgentSilent()}, décision n° 7).
  *
- * « En écart » (compteur d'alerte) = `drift` + `error` (piège 8 :
- * `drifted_allowed` = dérive TOLÉRÉE, jamais comptée comme écart).
+ * « En écart » (compteur d'alerte) = `drift` + `error`. Story 27.8 : le statut
+ * `drifted_allowed` (dérive tolérée) est SUPPRIMÉ — la cible fait toujours loi.
  */
 class ConformityService
 {
@@ -41,14 +40,12 @@ class ConformityService
 
     /**
      * Précédence du worst-status (décision n° 3) : `error` domine tout,
-     * puis `drift`, puis `drifted_allowed`, puis `compliant`. Les dérivés
-     * (jamais rapporté / muet) sont calculés à part (ils ne vivent pas dans
-     * `agent_resource_states`).
+     * puis `drift`, puis `compliant`. Les dérivés (jamais rapporté / muet)
+     * sont calculés à part (ils ne vivent pas dans `agent_resource_states`).
      */
     private const STATUS_PRECEDENCE = [
-        AgentResourceStatus::Error->value => 4,
-        AgentResourceStatus::Drift->value => 3,
-        AgentResourceStatus::DriftedAllowed->value => 2,
+        AgentResourceStatus::Error->value => 3,
+        AgentResourceStatus::Drift->value => 2,
         AgentResourceStatus::Compliant->value => 1,
     ];
 
@@ -59,12 +56,11 @@ class ConformityService
      * Clés retournées :
      *  - `enrolled` : total des postes enrôlés du périmètre ;
      *  - `compliant` : postes dont le worst-status est `compliant` ;
-     *  - `drifted_allowed` : worst-status `drifted_allowed` (dérive tolérée) ;
      *  - `exceptions` : worst-status `drift` ou `error` (EN ÉCART) ;
      *  - `never_reported` : enrôlés sans aucune ligne d'état ;
      *  - `silent` : enrôlés muets (check-in > 2 × ttl).
      *
-     * @return array{enrolled:int, compliant:int, drifted_allowed:int, exceptions:int, never_reported:int, silent:int}
+     * @return array{enrolled:int, compliant:int, exceptions:int, never_reported:int, silent:int}
      */
     public function summary(?WorkstationGroup $group = null): array
     {
@@ -74,7 +70,6 @@ class ConformityService
         $base = [
             'enrolled' => count($enrolledIds),
             'compliant' => 0,
-            'drifted_allowed' => 0,
             'exceptions' => 0,
             'never_reported' => 0,
             'silent' => 0,
@@ -105,7 +100,6 @@ class ConformityService
             match ($status) {
                 AgentResourceStatus::Error->value,
                 AgentResourceStatus::Drift->value => $base['exceptions']++,
-                AgentResourceStatus::DriftedAllowed->value => $base['drifted_allowed']++,
                 default => $base['compliant']++,
             };
         }

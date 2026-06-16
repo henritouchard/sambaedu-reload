@@ -232,33 +232,25 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
         array $workstationGroupIds = [],
         array $workstationIds = [],
         array $adUsers = [],
-        array $adUserGroups = [],
-        string $mode = 'strict'
+        array $adUserGroups = []
     ): void {
         if (!$this->shortcutModel) {
             return;
         }
 
-        // Drift policy PAR ASSIGNATION (Story 27.3) : le mode strict|default est
-        // posé sur le LIEN (pivot `shortcut_assignables.mode`), au lot pour les
-        // cibles confirmées dans la modale. null sur le lien = défaut strict
-        // résolu côté provider.
-        $mode = in_array($mode, ['strict', 'default'], true) ? $mode : 'strict';
-
+        // Story 27.8 : le mécanisme strict/default est SUPPRIMÉ — l'assignation
+        // ne pose plus de `mode` sur le pivot (STRICT inconditionnel, la cible
+        // fait toujours loi).
         try {
             $count = 0;
 
             if (!empty($workstationGroupIds)) {
-                $this->shortcutModel->workstationGroups()->syncWithoutDetaching(
-                    collect($workstationGroupIds)->mapWithKeys(fn ($id) => [$id => ['mode' => $mode]])->all()
-                );
+                $this->shortcutModel->workstationGroups()->syncWithoutDetaching($workstationGroupIds);
                 $count += count($workstationGroupIds);
             }
 
             if (!empty($workstationIds)) {
-                $this->shortcutModel->workstations()->syncWithoutDetaching(
-                    collect($workstationIds)->mapWithKeys(fn ($id) => [$id => ['mode' => $mode]])->all()
-                );
+                $this->shortcutModel->workstations()->syncWithoutDetaching($workstationIds);
                 $count += count($workstationIds);
             }
 

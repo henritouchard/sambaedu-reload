@@ -30,7 +30,6 @@ new #[Title('Infos à transmettre — overlay')] class extends Component {
     public string $targetWorkstationUuid = '';
     public string $targetUserLogin = '';
     public ?int $expiresInHours = 24; // null = pas d'expiration
-    public string $mode = 'strict'; // desired-state : strict|default (Story 27.1, FR26)
 
     /** @var array<int,array{id:int,name:string}> */
     public array $salles = [];
@@ -76,7 +75,6 @@ new #[Title('Infos à transmettre — overlay')] class extends Component {
             'targetWorkstationUuid' => ['nullable', 'required_if:targetType,workstation', 'string'],
             'targetUserLogin' => ['nullable', 'required_if:targetType,user', 'string', 'max:255'],
             'expiresInHours' => ['nullable', 'integer', 'min:1', 'max:8760'],
-            'mode' => ['required', 'in:strict,default'],
         ];
     }
 
@@ -88,29 +86,18 @@ new #[Title('Infos à transmettre — overlay')] class extends Component {
             ? Carbon::now()->addHours($this->expiresInHours)
             : null;
 
-        // Création + pose du mode dans UNE transaction (review #4) : le mode
-        // desired-state (Story 27.1, FR26) est posé sur le signal créé, mais en
-        // deux requêtes (postSignal crée, puis update). Sans transaction, un
-        // crash entre les deux laisserait un signal sans mode (fenêtre `null`).
-        // La transaction rend l'écriture atomique sans toucher la signature de
-        // postSignal() (3 autres appelants — moins invasif que l'étendre).
-        $mode = \App\Enums\StateMode::tryFrom($this->mode) ?? \App\Enums\StateMode::Strict;
-
-        \Illuminate\Support\Facades\DB::transaction(function () use ($overlay, $expiresAt, $mode): void {
-            $signal = $overlay->postSignal(
-                kind: 'notice',
-                severity: $this->severity,
-                title: $this->title,
-                text: $this->text,
-                workstationUuid: $this->targetType === 'workstation' ? $this->targetWorkstationUuid : null,
-                workstationGroupId: $this->targetType === 'salle' ? $this->targetSalleId : null,
-                userLogin: $this->targetType === 'user' ? $this->targetUserLogin : null,
-                expiresAt: $expiresAt,
-            );
-
-            // OverlayStateProvider lira ce mode par règle ; le compilateur agrège.
-            $signal?->update(['mode' => $mode]);
-        });
+        // Story 27.8 : le mécanisme strict/default est SUPPRIMÉ — le signal créé
+        // ne porte plus de `mode` (STRICT inconditionnel, la cible fait loi).
+        $overlay->postSignal(
+            kind: 'notice',
+            severity: $this->severity,
+            title: $this->title,
+            text: $this->text,
+            workstationUuid: $this->targetType === 'workstation' ? $this->targetWorkstationUuid : null,
+            workstationGroupId: $this->targetType === 'salle' ? $this->targetSalleId : null,
+            userLogin: $this->targetType === 'user' ? $this->targetUserLogin : null,
+            expiresAt: $expiresAt,
+        );
 
         $this->reset(['title', 'text', 'targetSalleId', 'targetWorkstationUuid', 'targetUserLogin']);
         $this->toastSuccess('Message overlay publié.');
@@ -252,18 +239,6 @@ new #[Title('Infos à transmettre — overlay')] class extends Component {
                             <label class="label"><span class="label-text">Expire dans (heures)</span></label>
                             <input type="number" wire:model="expiresInHours" class="input input-bordered" min="1" max="8760" placeholder="vide = jamais" />
                             @error('expiresInHours') <span class="text-error text-sm mt-1">{{ $message }}</span> @enderror
-                        </div>
-
-                        {{-- Mode d'application desired-state — PAR CIBLE (Story 27.3) :
-                             le signal EST l'assignation (1 cible/signal), le mode est
-                             donc déjà posé au geste d'assignation sur sa propre ligne. --}}
-                        <div class="form-control">
-                            <label class="label"><span class="label-text">Application sur cette cible</span></label>
-                            <select wire:model="mode" class="select select-bordered">
-                                <option value="strict">Strict (réimposé en cas de dérive)</option>
-                                <option value="default">Souple (dérive tolérée)</option>
-                            </select>
-                            @error('mode') <span class="text-error text-sm mt-1">{{ $message }}</span> @enderror
                         </div>
                     </div>
 

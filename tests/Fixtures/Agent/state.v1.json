@@ -8,27 +8,24 @@
         {
             "type": "wallpaper",
             "semantics": "exclusive",
-            "mode": "default",
             "payload": {
                 "asset": "fonds/ecole-2026.jpg",
                 "style": "fill"
             },
-            "hash": "f65db3c85252d489f7f451f0fc5933ca47aee0f5ecfc88ef2e8bf5ca2d6e2d37"
+            "hash": "66fbf6fff4907cb1bec56aef20942773ff1bcf258962420268c63d0ee03ed4d9"
         },
         {
             "type": "overlay",
             "semantics": "aggregate",
-            "mode": "strict",
             "payload": {
                 "tool": "rainmeter",
                 "ttl_seconds": 60
             },
-            "hash": "fe63c6843f645ac02b9e5bad418d15172c883c0e54ee53cca97924da4cf2519f"
+            "hash": "bfbaf4894deccf11ea557d41fe3765028e2c29c743d7e9d60e35d45fd63b1655"
         },
         {
             "type": "printers",
             "semantics": "aggregate",
-            "mode": "strict",
             "payload": {
                 "cups_name": "imp-salle101",
                 "connection": "\\\\<se4fs>\\imp-salle101",
@@ -36,25 +33,23 @@
                 "location": "Salle 101",
                 "is_default": true
             },
-            "hash": "8ed3286ba4a7ba5d375bd3c1d0762ce61673a19f658e61cbd716f59b48ea9c12"
+            "hash": "1c3c40b10b58ccb8d9b3f1163821bf83da66c59162246875b78f47da31f1a8c0"
         },
         {
             "type": "drives",
             "semantics": "aggregate",
-            "mode": "strict",
             "payload": {
                 "letter": "K:",
                 "unc": "\\\\<se4fs>\\Classe_3emeA\\<login>\\",
                 "label": "Classe 3emeA"
             },
-            "hash": "f54397ec0dbc0f70f015ed233b9cee700f625568af7568b3ba83b1b3287ef323"
+            "hash": "9838549085fca18969cd769d0031dd238801ec0444b0834327dcaaa55abf24ea"
         }
     ],
     "machine_user": [
         {
             "type": "shortcuts",
             "semantics": "aggregate",
-            "mode": "strict",
             "payload": {
                 "name": "Calculatrice",
                 "target": "C:\\Windows\\System32\\calc.exe",
@@ -65,7 +60,7 @@
                 "place": "desktop",
                 "desktop_path": "\\\\<se4fs>\\users\\<user>\\Bureau\\"
             },
-            "hash": "1b97dcc73fa455f02663b431d84d24e4cfb68249be5353145230559a6c50f291"
+            "hash": "1ff7dadf19767a81dcfd7bb45efbca04ef265b8298e96ecab4a69ae6fe684263"
         }
     ]
 }

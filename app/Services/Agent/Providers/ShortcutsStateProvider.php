@@ -6,7 +6,6 @@ namespace App\Services\Agent\Providers;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
-use App\Enums\StateMode;
 use App\Enums\StateScope;
 use App\Enums\WorkstationEnvironment;
 use App\Models\Shortcut;
@@ -73,15 +72,6 @@ final class ShortcutsStateProvider implements StateProvider
         return ResourceSemantics::Aggregate;
     }
 
-    public function mode(): StateMode
-    {
-        // Défaut du type — une assignation sans `mode` (Story 27.3 : mode PAR
-        // ASSIGNATION) est strict : la cible fait loi (comportement attendu côté
-        // admin). Le toggle par assignation (`StateCandidate::$mode`, lu sur
-        // `shortcut_assignables.mode`) le surcharge.
-        return StateMode::Strict;
-    }
-
     public function scope(): StateScope
     {
         return StateScope::MachineUser;
@@ -139,10 +129,6 @@ final class ShortcutsStateProvider implements StateProvider
                 'shortcuts.updated_at',
                 'shortcut_assignables.assignable_type',
                 'shortcut_assignables.assignable_id',
-                // Mode PAR ASSIGNATION (Story 27.3) — lu sur le LIEN, plus sur la
-                // règle. Aliasé pour ne pas heurter une colonne du modèle et
-                // casté manuellement (le cast `StateMode` a quitté le modèle).
-                'shortcut_assignables.mode as assignment_mode',
             ]);
 
         return $rows->map(fn (Shortcut $row): StateCandidate => new StateCandidate(
@@ -150,10 +136,6 @@ final class ShortcutsStateProvider implements StateProvider
             payload: $this->payloadFor($row, $desktopPath),
             updatedAt: $row->updated_at,
             sourceId: (int) $row->id,
-            // Mode PAR ASSIGNATION (Story 27.3) — null sur le lien = pas déclaré
-            // → le compilateur retombe sur mode() (défaut `strict`). Le même
-            // raccourci sur deux mailles porte le mode de CHAQUE assignation.
-            mode: StateMode::tryFrom((string) $row->assignment_mode),
         ));
     }
 

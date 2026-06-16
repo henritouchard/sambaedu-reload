@@ -34,12 +34,6 @@ new class extends Component {
     public array $selectedUsers = [];
     public array $selectedUserGroups = [];
 
-    // Drift policy PAR ASSIGNATION (Story 27.3) : mode strict|default appliqué AU
-    // LOT aux cibles confirmées. strict = la cible fait loi (toute suppression
-    // réimposée) ; default = la dérive humaine est tolérée. Posé sur le pivot
-    // `shortcut_assignables.mode` par la page (syncWithoutDetaching).
-    public string $mode = 'strict';
-
     // Déjà assignés (pour les exclure)
     public array $alreadyAssignedWgIds = [];
     public array $alreadyAssignedWsIds = [];
@@ -84,7 +78,6 @@ new class extends Component {
         $this->searchUsers = '';
         $this->searchUserGroups = '';
         $this->activeTab = 'workstation_groups';
-        $this->mode = 'strict';
     }
 
     private function loadAvailableData(): void
@@ -237,7 +230,6 @@ new class extends Component {
             workstationIds: $this->selectedWs,
             adUsers: $this->selectedUsers,
             adUserGroups: $this->selectedUserGroups,
-            mode: in_array($this->mode, ['strict', 'default'], true) ? $this->mode : 'strict',
         );
         $this->close();
     }
@@ -490,21 +482,6 @@ new class extends Component {
 
             <!-- Footer -->
             <div class="p-4 border-t border-base-300 shrink-0 space-y-3">
-                {{-- Drift policy PAR ASSIGNATION (Story 27.3) : un seul toggle au lot
-                     pour toutes les cibles confirmées. --}}
-                <label class="flex items-start gap-3 cursor-pointer">
-                    <input type="checkbox" class="toggle toggle-primary toggle-sm mt-0.5"
-                        @checked($mode === 'default')
-                        wire:click="$set('mode', $event.target.checked ? 'default' : 'strict')" />
-                    <span class="text-sm">
-                        <span class="font-medium">Autoriser l'utilisateur à modifier ce paramètre sur ces cibles</span>
-                        <span class="block text-xs text-base-content/60">
-                            {{ $mode === 'default'
-                                ? 'Souple — un raccourci supprimé par un utilisateur n\'est pas recréé (dérive tolérée).'
-                                : 'Verrouillé — la cible fait loi, toute suppression est réimposée.' }}
-                        </span>
-                    </span>
-                </label>
                 <div class="flex justify-between items-center">
                     <button type="button" class="btn btn-ghost" wire:click="close">Annuler</button>
                     <button type="button" wire:click="confirm" class="btn btn-primary"

@@ -11,11 +11,11 @@ import (
 // ConvergenceEngine.ps1, design validé en review 24.4).
 //
 // Cœur PORTABLE (contrainte n° 5 du cahier des charges) : AUCUNE dépendance
-// Windows ici — uniquement la machine d'états du contrat §5 (strict/default/
-// premier passage), l'isolation par item et les conventions de hash du
-// rapport. Les handlers spécifiques OS (registre, SystemParametersInfo,
-// chemins %LOCALAPPDATA%) vivent dans agent/windows/ derrière l'interface
-// Handler.
+// Windows ici — uniquement la machine d'états du contrat §5 (convergence
+// STRICT inconditionnelle — Story 27.8), l'isolation par item et les
+// conventions de hash du rapport. Les handlers spécifiques OS (registre,
+// SystemParametersInfo, chemins %LOCALAPPDATA%) vivent dans agent/windows/
+// derrière l'interface Handler.
 //
 // Ce que fait Engine.RunPass :
 //   - itère les items DANS L'ORDRE du payload serveur (AC epic / FR18 —
@@ -25,9 +25,9 @@ import (
 //     ignoré + log DEBUG (contrat §8 : « ne touche pas ») ;
 //   - isolation PAR type (recover au point de dispatch) : un échec/panic
 //     produit {status: error, detail} et la passe CONTINUE (AC epic) ;
-//   - applique la machine d'états §5 VERBATIM (cf. ResolveItemStatus) avec
-//     le store applied-state injecté par l'appelant (per-user pour le
-//     compagnon) ;
+//   - applique la machine d'états §5 (cf. ResolveItemStatus — STRICT
+//     inconditionnel depuis 27.8) ; le store applied-state injecté par
+//     l'appelant (per-user pour le compagnon) trace le dernier-appliqué ;
 //   - produit les items de rapport {type, status, hash[, detail]}.
 //
 // Conventions de hash du rapport (24.4, conservées À L'IDENTIQUE — en
@@ -47,11 +47,12 @@ const detailMaxLength = 2000
 
 // StateItem est un item du contrat (§3) vu par le moteur : champs extraits
 // de l'enveloppe parsée, payload laissé brut pour les handlers. Le Hash est
-// OPAQUE (fourni serveur) — jamais recalculé.
+// OPAQUE (fourni serveur) — jamais recalculé. Story 27.8 : plus de champ
+// `Mode` (le mécanisme strict/default est supprimé — convergence STRICT
+// inconditionnelle) ; un éventuel champ `mode` du payload serveur est ignoré.
 type StateItem struct {
 	Type      string
 	Semantics string // "exclusive" | "aggregate" (défaut exclusive)
-	Mode      string // "strict" | "default" (défaut strict)
 	Hash      string
 	Payload   any // map[string]any ou nil — parsing, jamais hashé
 }
@@ -76,11 +77,9 @@ func ItemsFromScope(raw []any, log *Logger) []StateItem {
 			continue
 		}
 		semantics, _ := obj["semantics"].(string)
-		mode, _ := obj["mode"].(string)
 		items = append(items, StateItem{
 			Type:      typ,
 			Semantics: semantics,
-			Mode:      mode,
 			Hash:      hash,
 			Payload:   obj["payload"],
 		})
@@ -120,35 +119,22 @@ type Verdict struct {
 	ShouldPersist bool
 }
 
-// ResolveItemStatus implémente la machine d'états du contrat §5 — UNE fois,
-// VERBATIM (le « sabotage le plus dangereux » du contrat si approximée).
-//
-// mode = strict :
+// ResolveItemStatus implémente la machine d'états du contrat §5 — STRICT
+// inconditionnel (Story 27.8 : le mécanisme strict/default est SUPPRIMÉ, la
+// cible fait TOUJOURS loi) :
 //
 //	réel = cible → compliant ; réel ≠ cible → APPLIQUE → drift.
 //
-// mode = default :
-//
-//	réel = cible                            → compliant ;
-//	réel ≠ cible ∧ dernier-appliqué = cible → DÉRIVE HUMAINE → ne réapplique
-//	                                          PAS → drifted_allowed ;
-//	réel ≠ cible ∧ dernier-appliqué ≠ cible → la cible a bougé → APPLIQUE → drift.
-//
-// Premier passage (dernier-appliqué vide = aucune mémoire) : traité comme
-// `dernier-appliqué ≠ cible` — JAMAIS drifted_allowed sans mémoire (§5).
+// La dérive humaine n'est plus tolérée : `réel ≠ cible` produit toujours
+// `drift` + apply (plus de `drifted_allowed`, plus de paramètre `mode` ni
+// `lastAppliedHash` au verdict).
 //
 // ShouldPersist : la cible devient le dernier-appliqué après compliant ou
-// apply réussi (§5 « persiste ») — y compris en strict (empreinte persistée
-// pour la traçabilité, décision 24.4 n° 9, sans incidence de verdict).
-// En drifted_allowed : rien à persister (dernier-appliqué = cible déjà).
-func ResolveItemStatus(isCompliant bool, mode, lastAppliedHash, targetHash string) Verdict {
+// apply réussi (empreinte persistée pour la traçabilité, décision 24.4 n° 9,
+// conservée même sans incidence de verdict — Story 27.8 D-B).
+func ResolveItemStatus(isCompliant bool) Verdict {
 	if isCompliant {
 		return Verdict{Status: "compliant", ShouldPersist: true}
-	}
-
-	humanDrift := mode == "default" && lastAppliedHash != "" && lastAppliedHash == targetHash
-	if humanDrift {
-		return Verdict{Status: "drifted_allowed"}
 	}
 
 	return Verdict{Status: "drift", ShouldApply: true, ShouldPersist: true}
@@ -221,14 +207,6 @@ func (e *Engine) RunPass(items []StateItem, applied AppliedState) []ReportItem {
 		if semantics == "" {
 			semantics = "exclusive"
 		}
-		mode := first.Mode
-		if mode != "strict" && mode != "default" {
-			if mode != "" {
-				// Mode inconnu (contrat futur ?) : posture sûre = strict.
-				logWarning(e.Log, "Mode '%s' inconnu pour le type '%s' : traité en strict.", mode, typ)
-			}
-			mode = "strict"
-		}
 
 		// Hash rapporté (conventions 24.4) : exclusive = hash d'item
 		// verbatim ; aggregate = empreinte déterministe, ordre serveur.
@@ -245,13 +223,10 @@ func (e *Engine) RunPass(items []StateItem, applied AppliedState) []ReportItem {
 			targetHash = typeItems[len(typeItems)-1].Hash
 		}
 
-		lastApplied := ""
-		if entry, ok := applied[typ]; ok {
-			lastApplied = entry.Hash
-		}
-
-		reportItem, persist := e.dispatch(handler, typ, mode, typeItems, lastApplied, targetHash)
+		reportItem, persist := e.dispatch(handler, typ, typeItems, targetHash)
 		if persist {
+			// Persistance du dernier-appliqué (traçabilité, décision 24.4 n° 9 ;
+			// conservée Story 27.8 D-B même sans incidence de verdict).
 			applied[typ] = AppliedEntry{
 				Hash:      targetHash,
 				AppliedAt: e.now().UTC().Format(time.RFC3339),
@@ -267,7 +242,7 @@ func (e *Engine) RunPass(items []StateItem, applied AppliedState) []ReportItem {
 // erreur OU panic d'un handler devient {status: error, detail} et la passe
 // continue (AC epic isolation). persist n'est vrai qu'après un Test/Apply
 // réussi (un Apply en échec ne persiste jamais la cible).
-func (e *Engine) dispatch(handler Handler, typ, mode string, typeItems []StateItem, lastApplied, targetHash string) (item ReportItem, persist bool) {
+func (e *Engine) dispatch(handler Handler, typ string, typeItems []StateItem, targetHash string) (item ReportItem, persist bool) {
 	// recover au POINT DE DISPATCH (décision n° 4) : aucun handler ne peut
 	// tuer la passe.
 	defer func() {
@@ -285,7 +260,7 @@ func (e *Engine) dispatch(handler Handler, typ, mode string, typeItems []StateIt
 		return errorReportItem(typ, targetHash, err.Error()), false
 	}
 
-	verdict := ResolveItemStatus(isCompliant, mode, lastApplied, targetHash)
+	verdict := ResolveItemStatus(isCompliant)
 	if verdict.ShouldApply {
 		if err := handler.Apply(typeItems); err != nil {
 			logError(e.Log, "Convergence '%s' en échec : %v", typ, err)
@@ -294,7 +269,7 @@ func (e *Engine) dispatch(handler Handler, typ, mode string, typeItems []StateIt
 		}
 	}
 
-	logInfo(e.Log, "Convergence '%s' (mode=%s) : %s.", typ, mode, verdict.Status)
+	logInfo(e.Log, "Convergence '%s' : %s.", typ, verdict.Status)
 
 	return ReportItem{Type: typ, Status: verdict.Status, Hash: targetHash}, verdict.ShouldPersist
 }

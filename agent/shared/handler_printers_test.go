@@ -88,7 +88,6 @@ func printerItem(cupsName string, isDefault bool) StateItem {
 	return StateItem{
 		Type:      "printers",
 		Semantics: "aggregate",
-		Mode:      "strict",
 		Hash:      cupsName + "-h",
 		Payload: map[string]any{
 			"cups_name":   cupsName,
@@ -372,7 +371,7 @@ func TestPrintersInvalidPayloadIsError(t *testing.T) {
 	}
 }
 
-// --- Machine d'états §5 via le moteur (strict/default/premier passage) --------
+// --- Machine d'états §5 via le moteur (STRICT inconditionnel, Story 27.8) -----
 
 func TestPrintersThroughEngineSection5(t *testing.T) {
 	items := []StateItem{printerItem("imp1", false)}
@@ -380,17 +379,15 @@ func TestPrintersThroughEngineSection5(t *testing.T) {
 
 	cases := []struct {
 		name        string
-		mode        string
 		seedManaged bool // une imprimante gérée DIVERGENTE déjà installée
 		lastApplied string
 		wantStatus  string
 		wantApply   bool
 	}{
-		{"premier passage strict → drift + apply", "strict", false, "", "drift", true},
-		{"strict dérive → réapplique (drift)", "strict", true, targetHash, "drift", true},
-		{"default + dérive humaine (dernier=cible) → drifted_allowed", "default", true, targetHash, "drifted_allowed", false},
-		{"default premier passage → drift (jamais allowed sans mémoire)", "default", true, "", "drift", true},
-		{"conforme → compliant", "strict", false, targetHash, "compliant", false},
+		{"premier passage → drift + apply", false, "", "drift", true},
+		{"dérive → réapplique (drift)", true, targetHash, "drift", true},
+		{"dérive même dernier=cible → réapplique (strict)", true, targetHash, "drift", true},
+		{"conforme → compliant", false, targetHash, "compliant", false},
 	}
 
 	for _, tc := range cases {
@@ -407,7 +404,6 @@ func TestPrintersThroughEngineSection5(t *testing.T) {
 			h := &PrintersHandler{Ops: ops}
 			engine := &Engine{Handlers: map[string]Handler{"printers": h}}
 			it := []StateItem{printerItem("imp1", false)}
-			it[0].Mode = tc.mode
 
 			applied := AppliedState{}
 			if tc.lastApplied != "" {
