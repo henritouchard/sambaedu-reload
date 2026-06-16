@@ -175,6 +175,20 @@ func newAgent(echo bool) *shared.Agent {
 		// test/Linux (provisioning inerte).
 		Rainmeter:    rainmeterPortableStore(),
 		RainmeterACL: setRainmeterACL,
+		// Story 27.3 : moteur de convergence de la portée MACHINE (le service
+		// SYSTEM en est le SEUL acteur — le compagnon ignore la portée machine,
+		// NFR5). Premier type machine : `registry` HKLM (droits SYSTEM). UN seul
+		// handler Go générique partagé avec le compagnon (côté HKCU) ; ici câblé
+		// pour la ruche machine. logsDir = racine SYSTEM (companion a son log).
+		MachineEngine: &shared.Engine{
+			Handlers: map[string]shared.Handler{
+				"registry": &shared.RegistryHandler{
+					Ops: &registryOps{log: logger},
+					Log: logger,
+				},
+			},
+			Log: logger,
+		},
 	}
 	// Story 27.9 : canal de réveil au logon initialisé À LA CONSTRUCTION, AVANT
 	// que la goroutine Run ne démarre (le handler SCM y postera au

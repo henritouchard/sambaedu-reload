@@ -131,6 +131,20 @@ type Agent struct {
 	// INERTE (no-op nil-safe : runConsole de debug, tests hôte Linux). Le
 	// mécanisme est plateforme-agnostique : aucun import Windows dans shared/.
 	wake chan struct{}
+
+	// MachineEngine : moteur de convergence de la portée MACHINE (Story 27.3).
+	// Le service SYSTEM est le SEUL acteur de la portée machine (le compagnon
+	// l'ignore explicitement, NFR5) — il porte donc son propre moteur, distinct
+	// de celui du compagnon (portées session/machine_user). Premier type machine
+	// du canal agent : `registry` HKLM (ruche machine, droits SYSTEM). nil =
+	// convergence machine INERTE (tests hôte sans handlers, console de debug,
+	// plateformes sans registre) — le cycle réseau/cache/report continue.
+	MachineEngine *Engine
+
+	// machineReportItems : items de rapport de la DERNIÈRE convergence machine
+	// (Story 27.3), vidés dans le BuildReport du même cycle (le service est
+	// in-process : pas de drop, contrairement au compagnon). PROCESS-LOCAL.
+	machineReportItems []ReportItem
 }
 
 // NewAgentForTest construit un Agent avec son canal de réveil initialisé
@@ -287,6 +301,13 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 	// content-addressed). Une erreur ici ne casse JAMAIS le cycle machine —
 	// les Outcome restent ceux de la portée machine.
 	if !a.quarantined {
+		// Story 27.3 : convergence de la portée MACHINE (registre HKLM, droits
+		// SYSTEM) sur le DERNIER cache d'état. AVANT le fetch des sessions et le
+		// rapport (ses items machine rejoignent le POST /report du cycle). Un
+		// échec ici ne casse JAMAIS le cycle (isolation par item dans le moteur ;
+		// les autres types/portées continuent). Sur 304, le cache machine reste
+		// valide → re-test level-triggered (drift réimposé).
+		a.convergeMachine()
 		a.fetchSessionStates(cfg)
 		a.SyncWallpaperAssets(cfg)
 		// Story 27.7 : pré-télécharge les icônes UPLOADÉES de raccourcis
@@ -337,6 +358,17 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 	// échec se rapporte une fois).
 	items := CollectSessionReports(a.Store, a.Log)
 	items = append(items, a.drainUpdateReportItems()...)
+	// Story 27.3 : items de la convergence MACHINE (registre HKLM) — in-process,
+	// pas de drop. Drainés ici (un statut machine se rapporte au cycle où il a
+	// convergé).
+	items = append(items, a.machineReportItems...)
+	a.machineReportItems = nil
+	// Le contrat exige des types UNIQUES (§6). Le type `registry` peut arriver de
+	// DEUX portées (HKLM machine via le service + HKCU session via le compagnon) :
+	// on fusionne par type (pire statut gagne) pour ne jamais poster deux items du
+	// même type (sinon l'ingestion serveur en écraserait un). No-op sur les types
+	// déjà uniques (wallpaper/shortcuts/printers/drives/overlay/agent_update).
+	items = MergeReportItemsByType(items)
 	reportBody, err := BuildReport(a.Hostname, uuid, items, time.Now())
 	if err != nil {
 		a.Log.Errorf("Construction du rapport en échec : %v", err)
@@ -374,6 +406,63 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 
 		return OutcomeBackoff
 	}
+}
+
+// convergeMachine exécute une passe de convergence de la portée MACHINE (Story
+// 27.3) sur le dernier cache d'état (state.json SYSTEM). Le service SYSTEM est le
+// SEUL acteur de cette portée (le compagnon l'ignore). Les items de rapport sont
+// stockés pour rejoindre le POST /report du cycle (in-process, pas de drop).
+//
+// Best-effort total : tout échec (cache absent/illisible, parse, persistance)
+// est loggué sans casser le cycle (l'isolation par item vit déjà dans le moteur).
+// MachineEngine nil = no-op (console de debug, tests hôte, plateforme sans
+// registre).
+func (a *Agent) convergeMachine() {
+	a.machineReportItems = nil
+	if a.MachineEngine == nil {
+		return
+	}
+
+	raw, err := a.Store.ReadStateCache()
+	if err != nil {
+		a.Log.Debugf("Convergence machine sautée : cache d'état absent (%v).", err)
+
+		return
+	}
+	state, err := ParseState(raw)
+	if err != nil {
+		a.Log.Warningf("Convergence machine sautée : cache d'état illisible (%v).", err)
+
+		return
+	}
+
+	items := ItemsFromScope(state.Machine, a.Log)
+	if len(items) == 0 {
+		return // aucune règle machine = type absent (contrat §8) : rien à faire.
+	}
+
+	// Dernier-appliqué MACHINE sous ProgramData (ACL SYSTEM) — distinct du
+	// per-user du compagnon. Corrompu = repart sans mémoire (premier passage §5,
+	// jamais interprété comme une dérive humaine).
+	applied, corrupted := ReadAppliedState(a.Store.AppliedStatePath())
+	if corrupted {
+		a.Log.Warningf("applied-state machine corrompu : repart sans mémoire (premier passage §5).")
+	}
+
+	a.machineReportItems = a.MachineEngine.RunPass(items, applied)
+
+	// applied-state MACHINE : écriture atomique (WriteFileAtomic) sous le
+	// répertoire racine ProgramData, déjà verrouillé SYSTEM+Admins / inheritance:r
+	// (acl_windows.go) — le fichier (et son .tmp) héritent de cette ACL, jamais
+	// lisibles par Users. On ne re-pose pas d'ACL par fichier (iso applied-state
+	// per-user du compagnon) : le contenu n'est que des hashes/timestamps opaques.
+	if err := WriteAppliedState(a.Store.AppliedStatePath(), applied); err != nil {
+		a.Log.Warningf("Persistance de l'applied-state machine en échec : %v", err)
+	}
+
+	// items = nb de clés HKLM convergées ; machineReportItems = nb de verdicts de
+	// rapport (un par TYPE, donc ≤ 1 pour `registry`).
+	a.Log.Infof("Convergence machine terminée : %d clé(s), %d verdict(s) de type.", len(items), len(a.machineReportItems))
 }
 
 // runEnrollment : cycle « token absent » — demande d'enrôlement porte 2 (Story

@@ -13,6 +13,8 @@ use App\Services\Agent\Providers\DrivesStateProvider;
 use App\Services\Agent\Providers\OverlayMachineStateProvider;
 use App\Services\Agent\Providers\OverlayStateProvider;
 use App\Services\Agent\Providers\PrintersStateProvider;
+use App\Services\Agent\Providers\RegistryMachineStateProvider;
+use App\Services\Agent\Providers\RegistryUserStateProvider;
 use App\Services\Agent\Providers\ShortcutsStateProvider;
 use App\Services\Agent\Providers\WallpaperStateProvider;
 use App\Services\Agent\Releases\ReleaseCreationService;
@@ -98,6 +100,15 @@ class AgentServiceProvider extends ServiceProvider
                 // pas de table). Deux lignes, zéro modif du compilateur.
                 $app->make(PrintersStateProvider::class),
                 $app->make(DrivesStateProvider::class),
+                // Story 27.3 — type `registry` (exclusive PAR IDENTITÉ DE CLÉ) :
+                // catalogue de réglages registre activables par parc, compilés
+                // en items concrets {hive,path,name,type,value}. DEUX providers,
+                // UN handler Go (D-Q2) : HKLM → portée machine (service SYSTEM),
+                // HKCU → portée session (compagnon). Une table catalogue,
+                // chaque provider filtre par hive. Zéro modif du routage
+                // compilateur (le scope() de chaque provider suffit).
+                $app->make(RegistryMachineStateProvider::class),
+                $app->make(RegistryUserStateProvider::class),
             ],
         ));
     }

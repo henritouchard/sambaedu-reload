@@ -173,6 +173,14 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
         Route::livewire('/app-customizations', 'pages::parc-settings.app-customizations.index')
             ->middleware('can:app.customize')
             ->name('app-customizations');
+
+        // Réglages registre par parc (Story 27.3) — catalogue de réglages
+        // registre Windows activables par parc, appliqués par l'agent
+        // (successeur natif Registry.pol/GPO). Gate app.customize (iso autres
+        // réglages parc).
+        Route::livewire('/registry-settings', 'pages::parc-settings.registry-settings.index')
+            ->middleware('can:app.customize')
+            ->name('registry-settings');
     });
 
     // // Gestion des parcs (Livewire)

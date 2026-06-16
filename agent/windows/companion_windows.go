@@ -122,6 +122,15 @@ func runCompanion() error {
 					Ops: &driveOps{log: logger},
 					Log: logger,
 				},
+				// Story 27.3 — registre HKCU (exclusive par cle / session) : le
+				// COMPAGNON applique les reglages de la ruche utilisateur (effet
+				// Explorer immediat). Les items HKLM (portee machine) sont
+				// appliques par le SERVICE SYSTEM (machine_windows.go), JAMAIS
+				// ici (droits user). UN seul handler Go generique, deux moteurs.
+				"registry": &shared.RegistryHandler{
+					Ops: &registryOps{log: logger},
+					Log: logger,
+				},
 			},
 			Log: logger,
 		},

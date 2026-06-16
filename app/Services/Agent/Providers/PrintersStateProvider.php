@@ -178,9 +178,10 @@ final class PrintersStateProvider implements StateProvider
     /**
      * Résout l'UNIQUE imprimante par défaut du poste (décision n° 5) : parmi les
      * couples (imprimante, WG) porteurs d'un `is_default=true` au pivot, le **WG
-     * physique l'emporte sur le logique** ; à spécificité égale, départage
-     * déterministe `cups_name` asc. Retourne le `cups_name` gagnant, ou null si
-     * aucun défaut réglé.
+     * logique l'emporte sur le physique** (Story 27.3, D-Q3 — inversion globale
+     * `logique > physique`, alignée sur `StateCompiler::specificity()`) ; à
+     * spécificité égale, départage déterministe `cups_name` asc. Retourne le
+     * `cups_name` gagnant, ou null si aucun défaut réglé.
      *
      * Résolu ICI (pas au compilateur générique) car l'unicité dépend d'un
      * drapeau de payload propre à ce type (le compilateur aggregate ne connaît
@@ -193,7 +194,7 @@ final class PrintersStateProvider implements StateProvider
     private function resolveDefaultCupsName(array $pairs): ?string
     {
         /** @var array{0: int, 1: string}|null $best */
-        $best = null; // [rang, cups_name] — rang 0 = physique (gagne), 1 = logique
+        $best = null; // [rang, cups_name] — rang 0 = logique (gagne), 1 = physique (D-Q3)
 
         foreach ($pairs as $pair) {
             $printer = $pair['printer'];
@@ -206,7 +207,14 @@ final class PrintersStateProvider implements StateProvider
                 continue;
             }
 
-            $rank = $group->is_physical === true ? 0 : 1;
+            // D-Q3 (27.3) : logique > physique → le WG logique a le rang 0.
+            // ⚠️ COUPLAGE à tenir en phase avec StateCompiler::specificity()
+            // (PhysicalGroup < LogicalGroup) : ce rang local est la résolution
+            // INTERNE du sous-item `is_default` (aggregate, hors compilateur,
+            // décisions n°4/5) — si la précédence physique/logique est de nouveau
+            // ré-inversée, mettre les DEUX à jour (test PrintersStateProviderTest
+            // `default_logical_wins_over_physical` verrouille ce sens).
+            $rank = $group->is_physical === true ? 1 : 0;
             $cupsName = (string) $printer->cups_name;
 
             if ($best === null

@@ -77,19 +77,25 @@ les mailles user sont alors vides, aucune erreur. Ne pas confondre avec
 
 ## Chaîne de spécificité (extension de D2, décision 23.4 n° 1)
 
-D2 ne figeait que la partie machine (`poste > WG physique > WG logique >
-broadcast`). La chaîne **complète**, tranchée en 23.4 :
+D2 ne figeait que la partie machine. La chaîne **complète**, tranchée en 23.4
+puis **INVERSÉE GLOBALEMENT par la Story 27.3 (D-Q3)** sur le couple
+logique/physique :
 
 ```
-user > groupes user > poste > WG physique > WG logique > broadcast
+user > groupes user > poste > WG LOGIQUE > WG PHYSIQUE > broadcast
 ```
 
-Rationale iso-legacy : `WallpaperResolver` plaçait déjà le user (niveau 6) et
-ses groupes (niveaux 4-5) au-dessus de la salle (3) et de l'étab (2) — un
-wallpaper personnel bat celui de la salle, comportement connu des admins. La
-distinction legacy « type principal vs groupe AD » s'écrase en UNE maille
-`groupes user` (divergence douce assumée : un conflit entre deux groupes
-devient une règle intra-maille, ci-dessous).
+**Inversion D-Q3 (27.3) :** le **parc LOGIQUE** est une **sélection délibérée de
+postes** (transverse aux salles) → plus spécifique que la **salle PHYSIQUE**. Cet
+ordre s'applique à **TOUS** les types exclusifs (registry, wallpaper) ET à la
+résolution du défaut `printers` (alignée séparément côté provider). Avant 27.3 :
+`… WG physique > WG logique …`.
+
+Rationale iso-legacy : `WallpaperResolver` plaçait déjà le user et ses groupes
+au-dessus de la salle et de l'étab — un wallpaper personnel bat celui de la
+salle, comportement connu des admins. La distinction legacy « type principal vs
+groupe AD » s'écrase en UNE maille `groupes user` (divergence douce assumée : un
+conflit entre deux groupes devient une règle intra-maille, ci-dessous).
 
 - **Type `aggregate`** : UNION des candidats de toutes les mailles
   applicables (la spécificité ne joue pas).
@@ -362,6 +368,58 @@ Un item **par classe du user** (projection des partages de classe existants —
   un mapping retiré des règles est **démonté** ; un lecteur monté par
   l'utilisateur hors périmètre SambaEdu n'est **jamais** démonté (marqueur de
   périmètre = serveur SambaEdu).
+
+### `registry` — `exclusive` PAR IDENTITÉ DE CLÉ / `machine` + `session` (Story 27.3)
+
+Premier type **sans table métier existante** → table catalogue **DÉDIÉE**
+`registry_settings` (D1 ; jamais une table polymorphe générique de règles) +
+pivot `registry_setting_assignables` (calque `shortcut_assignables` : morph
+WorkstationGroup/Workstation/UserGroup/User).
+
+- **DEUX providers, UN handler Go (D-Q2).** UN type `registry`, UNE table, MAIS
+  deux providers serveur car un provider déclare UNE portée :
+  `RegistryMachineStateProvider` (filtre `hive=HKLM`, `scope=Machine`) et
+  `RegistryUserStateProvider` (filtre `hive=HKCU`, `scope=Session`). Logique
+  commune dans `AbstractRegistryStateProvider`. Côté agent : UN seul handler Go
+  `registry` générique (HKLM par le service SYSTEM, HKCU par le compagnon).
+- **Catalogue → items CONCRETS.** Chaque réglage du catalogue se **compile** en
+  un payload `{hive, path, name, type, value}` concret (cf. `contract-v1.md`
+  §7.1). 🔴 **Invariant central** : le `key`/`id` du catalogue ne fuite **JAMAIS**
+  au payload — c'est ce qui garde l'éditeur de clés brutes (v2) gratuit.
+- **Exclusive PAR IDENTITÉ DE CLÉ** (`KeyedExclusiveProvider`). Une clé de
+  registre = une valeur ; le `StateCompiler` groupe les candidats par
+  `exclusiveKey(payload)` = `{hive, path, name}` (insensible à la casse) et arbitre
+  CHAQUE groupe indépendamment : la maille la plus spécifique gagne **pour cette
+  clé** (D-Q3 : WG logique > WG physique), les clés distinctes **s'accumulent**.
+  Distinct de `wallpaper` (un seul item pour tout le type — pas de marqueur).
+- **Lecture Postgres pure** (NFR7) : catalogue × pivot restreint aux ids du
+  `TargetContext`. Aucun AD/APCu/`samba-tool`. Le ciblage UI v1 = par **parc**
+  (WorkstationGroup, physique ET logique) ; le pivot complet supporte
+  poste/groupe-user sans migration.
+- **« Désactiver = cesser de gérer ».** Un réglage retiré disparaît → l'agent ne
+  touche plus la clé (pas de reset OFF, contrat §8).
+- **Rapport unique-type** : les deux portées émettant `registry`, l'agent fusionne
+  par type avant le POST /report (`MergeReportItemsByType`, pire statut gagne).
+
+#### Limites connues (Story 27.3 — review)
+
+- **`REG_EXPAND_SZ` comparé en littéral non développé.** `RegistryHandler.Equal`
+  compare la chaîne cible telle quelle (NFC), et `registryOps.Read` lit la valeur
+  BRUTE non développée (écriture via `SetExpandStringValue`). Si un autre acteur a
+  stocké la valeur DÉJÀ développée (`C:\Users\…` au lieu de `%USERPROFILE%\…`) ou
+  avec une casse de variable différente, l'agent verra un **drift permanent** et
+  réécrira à chaque cycle. Le set initial du catalogue n'a aucun `REG_EXPAND_SZ` →
+  impact nul aujourd'hui ; à garder à l'esprit quand le catalogue grossit par data.
+- **`registry` machine + session collapsé en UNE ligne d'état serveur.** Le contrat
+  §6 exige des types uniques au rapport ; quand un poste a des clés HKLM (machine)
+  ET HKCU (session), les deux verdicts sont fusionnés (`MergeReportItemsByType`,
+  pire statut gagne) → l'ingestion écrit UNE ligne `agent_resource_states(poste,
+  'registry')`. Conséquences : (a) si le hash dominant alterne entre les deux
+  portées d'un cycle à l'autre, un `AgentReportEvent` peut être émis sans dérive
+  « réelle » d'une ressource unique ; (b) un seul `detail` survit → on ne distingue
+  pas côté serveur « HKLM en erreur » de « HKCU en erreur ». Acceptable en v1 ;
+  un raffinement futur (sous-type `registry:machine`/`registry:session` ou portée
+  au rapport) lèverait la limite.
 
 ### Mode `strict|default` — RETIRÉ (Story 27.8)
 

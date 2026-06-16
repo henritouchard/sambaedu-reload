@@ -129,6 +129,62 @@ func CollectSessionReports(store *Store, log *Logger) []ReportItem {
 	return items
 }
 
+// statusSeverity : ordre de gravité pour la fusion par type (error > drift >
+// compliant). Un statut inconnu est traité comme le moins grave (jamais une
+// panique).
+func statusSeverity(status string) int {
+	switch status {
+	case "error":
+		return 2
+	case "drift":
+		return 1
+	default: // compliant / inconnu
+		return 0
+	}
+}
+
+// MergeReportItemsByType fusionne une liste d'items de rapport pour garantir des
+// types UNIQUES (contrat §6) — Story 27.3. Un même type peut arriver de DEUX
+// portées convergées séparément : `registry` HKLM (service SYSTEM, portée
+// machine) ET `registry` HKCU (compagnon, portée session). Sans fusion, le
+// rapport porterait deux items `registry` → l'ingestion serveur
+// (updateOrCreate sur (workstation_id, type)) en écraserait un silencieusement.
+//
+// Règle : par type, on garde le statut le PLUS GRAVE (error > drift > compliant)
+// — la conformité globale d'un type est sa pire portée. Le hash retenu est celui
+// de l'item gagnant (premier au statut le plus grave dans l'ordre d'entrée) ;
+// son `detail` est préservé. Ordre de sortie : types ASCENDANT (déterminisme).
+// La liste d'entrée est laissée intacte (copie).
+func MergeReportItemsByType(items []ReportItem) []ReportItem {
+	if len(items) == 0 {
+		return []ReportItem{}
+	}
+
+	byType := map[string]ReportItem{}
+	order := []string{}
+	for _, item := range items {
+		existing, seen := byType[item.Type]
+		if !seen {
+			order = append(order, item.Type)
+			byType[item.Type] = item
+
+			continue
+		}
+		// Conserve le plus grave ; à gravité égale, le PREMIER vu (stable).
+		if statusSeverity(item.Status) > statusSeverity(existing.Status) {
+			byType[item.Type] = item
+		}
+	}
+
+	slices.Sort(order)
+	merged := make([]ReportItem, 0, len(order))
+	for _, typ := range order {
+		merged = append(merged, byType[typ])
+	}
+
+	return merged
+}
+
 // isBlank : vide ou espaces seulement (iso IsNullOrWhiteSpace — un detail
 // " " ne satisfait pas « non vide »).
 func isBlank(s string) bool {

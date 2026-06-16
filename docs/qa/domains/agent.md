@@ -2174,3 +2174,84 @@ logon** depuis le cache machine, sans attendre le fetch per-user ;
 - [ ] 22.2 — Salle présente au 1er logon post-reboot sans dépendance per-user.
 - [ ] 22.3 — `overlay.json` byte-format + SYSTEM read-only (NFR5) + partition des
       portées intacts.
+
+## Story 27.3 — Réglages registre par parc (catalogue)
+
+Le canal agent gagne le type `registry` : un **catalogue** de réglages de
+registre Windows prédéterminés, activables **par parc** dans
+`/app/parc-settings/registry-settings`, appliqués et réimposés par l'agent
+(successeur natif du canal Registry.pol/GPO). DEUX providers serveur (HKLM →
+service SYSTEM, HKCU → compagnon), UN handler Go générique. Exclusive PAR
+IDENTITÉ DE CLÉ avec précédence **logique > physique** (D-Q3, inversion globale).
+
+**Catalogue initial (3 réglages, vérifiables en `regedit`) :**
+
+| Libellé UI | hive | clé | valeur cible |
+|---|---|---|---|
+| Afficher les extensions de fichiers | HKCU | `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` \ `HideFileExt` | `REG_DWORD` = `0` |
+| Afficher les fichiers cachés | HKCU | `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` \ `Hidden` | `REG_DWORD` = `1` |
+| Désactiver l'UAC | HKLM | `SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System` \ `EnableLUA` | `REG_DWORD` = `0` |
+
+### Scénario 27.3.1 — Réglage HKLM appliqué par parc (SYSTEM) (lab Windows — ACTION HUMAINE Henri)
+
+1. Activer « Désactiver l'UAC » (HKLM) sur le parc d'un poste, dans
+   `parc-settings/registry-settings`.
+2. Attendre un cycle agent (ou forcer la synchro).
+3. **Attendu** : `regedit` → `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System`
+   `EnableLUA = 0`. La convergence machine est faite par le **service SYSTEM**
+   (log service : « Convergence machine terminée »).
+
+### Scénario 27.3.2 — Réglage HKCU appliqué au logon (compagnon) (lab Windows — ACTION HUMAINE Henri)
+
+1. Activer « Afficher les extensions de fichiers » (HKCU) sur le parc.
+2. Ouvrir une session sur un poste du parc.
+3. **Attendu** : `regedit` → `HKCU\…\Explorer\Advanced` `HideFileExt = 0` ;
+   l'Explorateur affiche les extensions. Appliqué par le **compagnon** (droits
+   user, ruche de la session).
+
+### Scénario 27.3.3 — Drift STRICT : une valeur modifiée à la main est réimposée (lab Windows — ACTION HUMAINE Henri)
+
+1. Avec un réglage actif sur le parc, modifier la valeur à la main dans `regedit`
+   (ex. remettre `HideFileExt = 1`).
+2. Attendre un cycle (ou logon pour HKCU).
+3. **Attendu** : la valeur est **réimposée** à la cible (statut `drift` au rapport
+   puis convergence). La dérive humaine est toujours corrigée (STRICT 27.8).
+
+### Scénario 27.3.4 — Exclusive par clé entre parcs, logique > physique (lab Windows — ACTION HUMAINE Henri)
+
+1. Assigner la MÊME clé à deux mailles d'un poste avec des valeurs différentes :
+   une sur la **salle physique**, une sur le **parc logique**.
+2. **Attendu** : le poste reçoit la valeur de la maille la plus spécifique —
+   **le parc LOGIQUE l'emporte sur la salle PHYSIQUE** (D-Q3). Les clés
+   DISTINCTES s'accumulent toutes (aucune ne se perd).
+
+### Scénario 27.3.5 — Désactiver = cesser de gérer (lab Windows — ACTION HUMAINE Henri)
+
+1. Retirer un réglage actif d'un parc (toggle off).
+2. **Attendu** : l'agent **ne touche plus** la clé. La valeur déjà appliquée
+   **reste en place** (PAS de retour automatique à la valeur Windows d'origine).
+   C'est une limite connue (pas de reset OFF explicite en v1).
+
+### Post-correctifs & non-régressions (Story 27.3)
+
+- **Inversion D-Q3 GLOBALE** : `logique > physique` touche AUSSI le défaut
+  `printers` (27.2) et l'exclusivité `wallpaper`. Les tests 27.1/27.2 dépendants
+  ont été MIS À JOUR (pas non-régressés) : `default_logical_wins_over_physical`,
+  chaîne de spécificité.
+- **Rapport unique-type** : `registry` arrive de DEUX portées (HKLM machine +
+  HKCU session). L'agent fusionne par type (pire statut gagne) avant le report —
+  sinon l'ingestion serveur (`updateOrCreate` sur `(workstation, type)`) en
+  écraserait un.
+- **Invariant central** : `curl GET /state` ne doit JAMAIS faire apparaître un
+  `setting_id`/`key` de catalogue dans un payload `registry` (uniquement
+  `{hive, path, name, type, value}`).
+
+### Checklist rapide (Story 27.3)
+
+- [ ] 27.3.1 — HKLM (UAC) appliqué par le service SYSTEM (`EnableLUA=0` en regedit).
+- [ ] 27.3.2 — HKCU (extensions) appliqué au logon par le compagnon.
+- [ ] 27.3.3 — Valeur modifiée à la main → réimposée (drift STRICT).
+- [ ] 27.3.4 — Même clé sur 2 parcs → valeur de la maille la plus spécifique
+      (logique > physique) ; clés distinctes toutes présentes.
+- [ ] 27.3.5 — Désactiver un réglage = la clé garde sa valeur (pas de reset OFF).
+- [ ] 27.3.6 — Payload `registry` concret, jamais d'id de catalogue (`curl /state`).

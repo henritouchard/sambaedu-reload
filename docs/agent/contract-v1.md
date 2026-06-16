@@ -231,6 +231,53 @@ Identifiants prévus :
 `wallpaper`, `overlay`, `shortcuts`, `printers`, `drives`, `associations`,
 `registry`, `app_config`, `applications`.
 
+### 7.1 Payload `registry` (Story 27.3)
+
+Type `registry` — sémantique **`exclusive` PAR IDENTITÉ DE CLÉ** (une clé de
+registre = une valeur ; la maille la plus spécifique gagne POUR CETTE clé, les
+clés distinctes s'accumulent). Le payload porte un item de registre **CONCRET** :
+
+```json
+{
+  "type": "registry",
+  "semantics": "exclusive",
+  "payload": {
+    "hive": "HKCU",
+    "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+    "name": "HideFileExt",
+    "type": "REG_DWORD",
+    "value": 0
+  },
+  "hash": "92730f99…af686b5"
+}
+```
+
+| Clé | Type JSON | Sens |
+|---|---|---|
+| `hive` | string | `HKLM` (portée machine, service SYSTEM) \| `HKCU` (portée session, compagnon). |
+| `path` | string | Chemin de clé sous la ruche (backslashes échappés en JSON). |
+| `name` | string | Nom de la valeur de registre. |
+| `type` | string | `REG_SZ` \| `REG_DWORD` \| `REG_EXPAND_SZ` \| `REG_MULTI_SZ` \| `REG_QWORD`. |
+| `value` | int \| string \| list&lt;string&gt; | Valeur cible TYPÉE : `REG_DWORD`/`REG_QWORD` → **entier** (zéro float, §4.1) ; `REG_SZ`/`REG_EXPAND_SZ` → **string** ; `REG_MULTI_SZ` → **liste de strings** (jamais `{}` — §4.1). |
+
+> **🔴 Invariant central (27.3).** Le payload `registry` ne porte **JAMAIS** un
+> `setting_id` / `setting_key` de catalogue serveur. Le catalogue
+> (`registry_settings`) est un détail SERVEUR qui se **compile** en cet item
+> concret dans le provider. C'est ce qui garde l'option « éditeur de clés brutes »
+> (v2) gratuite : une 2ᵉ source d'autoring produira les **mêmes** items concrets
+> → zéro changement d'agent/contrat/provider.
+
+> **« Désactiver = cesser de gérer ».** Un réglage retiré d'un parc DISPARAÎT de
+> la liste → l'agent **ne touche plus** à la clé (elle garde sa dernière valeur).
+> Le handler registry ne supprime/n'efface JAMAIS une clé absente de la cible
+> (contrat §8 ; pas de reset OFF explicite en v1).
+
+> **Portée → acteur (D-Q2).** UN seul handler Go `registry`, instancié deux fois :
+> le **service SYSTEM** applique les items HKLM (portée `machine`), le
+> **compagnon** applique les items HKCU (portée `session`). Comme les deux
+> portées émettent le type `registry`, l'agent **fusionne par type** avant le
+> rapport (pire statut gagne) pour respecter l'unicité des types §6.
+
 ## 8. Tableau vide ≠ type absent (décision de contrat — AC1)
 
 Les items d'une portée sont une **liste**, pas une map. La distinction

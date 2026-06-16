@@ -14,6 +14,7 @@ use App\Models\Wallpaper;
 use App\Models\WallpaperAsset;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
+use App\Services\Agent\Contracts\KeyedExclusiveProvider;
 use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\Providers\OverlayStateProvider;
 use App\Services\Agent\Providers\WallpaperStateProvider;
@@ -187,11 +188,14 @@ class StateCompilerTest extends TestCase
     #[Test]
     public function exclusive_specificity_full_chain_each_maille_beats_the_less_specific(): void
     {
-        // Décision n° 1 : user > groupes user > poste > WG physique > WG logique > broadcast.
+        // Story 27.3 (D-Q3) — INVERSION GLOBALE `logique > physique` :
+        // user > groupes user > poste > WG LOGIQUE > WG PHYSIQUE > broadcast.
+        // (Chaîne du moins spécifique au plus spécifique : chaque ajout doit
+        // battre tous les précédents → physique avant logique ici.)
         $chain = [
             [StateMaille::Broadcast, 'broadcast'],
-            [StateMaille::LogicalGroup, 'logical'],
             [StateMaille::PhysicalGroup, 'physical'],
+            [StateMaille::LogicalGroup, 'logical'],
             [StateMaille::Workstation, 'poste'],
             [StateMaille::UserGroup, 'user_group'],
             [StateMaille::User, 'user'],
@@ -347,9 +351,11 @@ class StateCompilerTest extends TestCase
                 'workstation_group_id' => $g->id,
                 'attached_at' => now(),
                 'attached_by_user_id' => null,
-                // Défaut réglé sur le WG PHYSIQUE uniquement (la résolution
-                // physique > logique produit le MÊME is_default=true sur les deux
-                // candidats imp-shared → payloads identiques → dédup).
+                // Défaut réglé sur le WG PHYSIQUE uniquement. imp-shared reste
+                // LE défaut résolu (seule imprimante flaguée) → is_default=true
+                // sur les DEUX candidats imp-shared (le défaut est résolu une
+                // fois GLOBALEMENT par cups_name) → payloads identiques → dédup.
+                // (D-Q3 logique>physique ne change rien ici : un seul défaut.)
                 'is_default' => $g->id === $room->id,
             ]);
         }
@@ -382,6 +388,77 @@ class StateCompilerTest extends TestCase
         // UN SEUL is_default true sur tout le type (sous-item exclusive).
         $defaults = collect($items)->filter(fn (array $i): bool => $i['payload']['is_default'] === true);
         self::assertCount(1, $defaults);
+    }
+
+    // ── Story 27.3 — exclusive PAR IDENTITÉ DE CLÉ (registry) ─────────────
+
+    #[Test]
+    public function keyed_exclusive_same_key_most_specific_maille_wins_logical_beats_physical(): void
+    {
+        // Même clé {hive,path,name} sur DEUX mailles (WG physique + WG logique)
+        // avec des valeurs différentes → la plus spécifique gagne POUR CETTE CLÉ.
+        // D-Q3 : WG LOGIQUE bat WG PHYSIQUE.
+        $provider = $this->keyedExclusiveProvider('registry', StateScope::Session, [
+            new StateCandidate(StateMaille::PhysicalGroup, $this->regPayload('HKCU', 'P', 'Foo', 0), now(), 1),
+            new StateCandidate(StateMaille::LogicalGroup, $this->regPayload('HKCU', 'P', 'Foo', 1), now(), 2),
+        ]);
+
+        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_SESSION];
+
+        self::assertCount(1, $items, 'une seule valeur par clé');
+        self::assertSame(1, $items[0]['payload']['value'], 'le WG logique gagne pour cette clé (D-Q3)');
+    }
+
+    #[Test]
+    public function keyed_exclusive_distinct_keys_all_accumulate(): void
+    {
+        // Deux clés DISTINCTES → les deux sont présentes (accumulation), même si
+        // l'une vient d'une maille moins spécifique.
+        $provider = $this->keyedExclusiveProvider('registry', StateScope::Session, [
+            new StateCandidate(StateMaille::PhysicalGroup, $this->regPayload('HKCU', 'P', 'Alpha', 0), now(), 1),
+            new StateCandidate(StateMaille::LogicalGroup, $this->regPayload('HKCU', 'P', 'Beta', 1), now(), 2),
+        ]);
+
+        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_SESSION];
+
+        self::assertCount(2, $items, 'les clés distinctes s\'accumulent');
+        $names = collect($items)->pluck('payload.name')->sort()->values()->all();
+        self::assertSame(['Alpha', 'Beta'], $names);
+    }
+
+    #[Test]
+    public function keyed_exclusive_mixed_same_and_distinct_keys(): void
+    {
+        // Clé A en concurrence (poste bat parc) + clé B unique.
+        $provider = $this->keyedExclusiveProvider('registry', StateScope::Session, [
+            new StateCandidate(StateMaille::LogicalGroup, $this->regPayload('HKCU', 'P', 'A', 0), now(), 1),
+            new StateCandidate(StateMaille::Workstation, $this->regPayload('HKCU', 'P', 'A', 9), now(), 2),
+            new StateCandidate(StateMaille::LogicalGroup, $this->regPayload('HKCU', 'P', 'B', 7), now(), 3),
+        ]);
+
+        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_SESSION];
+        $byName = collect($items)->keyBy('payload.name');
+
+        self::assertCount(2, $items);
+        self::assertSame(9, $byName['A']['payload']['value'], 'le poste bat le parc pour la clé A');
+        self::assertSame(7, $byName['B']['payload']['value']);
+    }
+
+    #[Test]
+    public function non_keyed_exclusive_keeps_single_winner_for_the_whole_type(): void
+    {
+        // Non-régression wallpaper : un provider Exclusive SANS le marqueur
+        // KeyedExclusiveProvider garde « un seul item gagnant pour le type »
+        // même avec des payloads distincts.
+        $provider = $this->fakeProvider('wp', ResourceSemantics::Exclusive, StateScope::Session, [
+            new StateCandidate(StateMaille::PhysicalGroup, ['asset' => 'a'], now(), 1),
+            new StateCandidate(StateMaille::LogicalGroup, ['asset' => 'b'], now(), 2),
+        ]);
+
+        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_SESSION];
+
+        self::assertCount(1, $items, 'wallpaper : un seul fond pour tout le poste');
+        self::assertSame('b', $items[0]['payload']['asset'], 'le WG logique gagne (D-Q3)');
     }
 
     // ── AC5 — déterminisme (protège l'ETag de 23.5) ───────────────────────
@@ -572,6 +649,69 @@ class StateCompilerTest extends TestCase
             public function scope(): StateScope
             {
                 return $this->scope;
+            }
+
+            public function itemsFor(TargetContext $ctx): Collection
+            {
+                return collect($this->candidates);
+            }
+        };
+    }
+
+    /**
+     * Payload registry concret pour les tests d'exclusivité par clé.
+     *
+     * @return array<string,mixed>
+     */
+    private function regPayload(string $hive, string $path, string $name, int $value): array
+    {
+        return [
+            'hive' => $hive,
+            'path' => $path,
+            'name' => $name,
+            'type' => 'REG_DWORD',
+            'value' => $value,
+        ];
+    }
+
+    /**
+     * Provider Exclusive + KeyedExclusiveProvider (exclusivité par identité de
+     * clé {hive,path,name}) — modèle du provider registry.
+     *
+     * @param  list<StateCandidate>  $candidates
+     */
+    private function keyedExclusiveProvider(
+        string $type,
+        StateScope $scope,
+        array $candidates,
+    ): StateProvider {
+        return new class($type, $scope, $candidates) implements KeyedExclusiveProvider, StateProvider
+        {
+            /** @param list<StateCandidate> $candidates */
+            public function __construct(
+                private readonly string $type,
+                private readonly StateScope $scope,
+                private readonly array $candidates,
+            ) {}
+
+            public function type(): string
+            {
+                return $this->type;
+            }
+
+            public function semantics(): ResourceSemantics
+            {
+                return ResourceSemantics::Exclusive;
+            }
+
+            public function scope(): StateScope
+            {
+                return $this->scope;
+            }
+
+            public function exclusiveKey(array $payload): string
+            {
+                return strtolower(($payload['hive'] ?? '').'|'.($payload['path'] ?? '').'|'.($payload['name'] ?? ''));
             }
 
             public function itemsFor(TargetContext $ctx): Collection

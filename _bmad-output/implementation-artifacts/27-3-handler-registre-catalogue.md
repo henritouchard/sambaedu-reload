@@ -1,6 +1,6 @@
 # Story 27.3 : Handler registre — catalogue de réglages par parc
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -27,6 +27,52 @@ Status: ready-for-dev
 > 4. **Sémantique = `exclusive`** par identité de clé `{hive, path, name}` : la maille la plus spécifique
 >    gagne par clé ; les clés distinctes s'accumulent. (`aggregate` impossible : une clé = une seule valeur.)
 > 5. **Drift STRICT inconditionnel** (27.8) : statuts `compliant | drift | error`, jamais de tolérance.
+
+## ✅ DÉCISIONS HENRI — VALIDATION DEV-CYCLE (2026-06-16) — À APPLIQUER SANS RE-DEMANDER
+
+> Tranchées à la validation de la story (Q1/Q2/Q3 + ciblage). **Procéder sans re-demander.**
+>
+> **D-Q1 — Set initial du catalogue (3 réglages, choisis parmi les GPO SambaEdu, tous vérifiables sans infra).**
+> Ship-on v1 (seeder/migration de données idempotent) :
+> | Libellé UI | GPO d'origine | hive | path | name | type | value |
+> |---|---|---|---|---|---|---|
+> | Afficher les extensions de fichiers | `optimisations`/`Bureau` | `HKCU` | `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` | `HideFileExt` | `REG_DWORD` | `0` |
+> | Afficher les fichiers cachés | `optimisations`/`Bureau` | `HKCU` | `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` | `Hidden` | `REG_DWORD` | `1` |
+> | Désactiver l'UAC | `desactivation uac` | `HKLM` | `SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System` | `EnableLUA` | `REG_DWORD` | `0` |
+>
+> Deux HKCU (compagnon, effet Explorer immédiat) + un HKLM (SYSTEM) → couvre les **deux portées** pour valider
+> les deux providers ET les deux moteurs Go. **« Désactiver un réglage » = cesser de le gérer** (item absent ;
+> la clé garde sa dernière valeur ; PAS de reset OFF explicite — piège n°5). Le catalogue grossit ensuite par
+> **data** (zéro release agent). NB : le Bureau à distance (RDP) a été écarté du set initial (non testable
+> facilement par Henri).
+>
+> **D-Q2 — DEUX providers serveur, UN handler Go.** Un `StateProvider` déclare UNE portée (`scope()`) et le
+> compilateur route tous ses items vers ce seul casier. Donc : `RegistryMachineStateProvider` (HKLM →
+> `scope()=Machine`) **et** `RegistryUserStateProvider` (HKCU → `scope()=Session`), deux entrées au tableau
+> `AgentServiceProvider`, **zéro modif du routage compilateur**. Côté agent : **UN SEUL** handler `registry`
+> générique (HKLM par le service SYSTEM, HKCU par le compagnon) — la séparation est purement serveur. Les deux
+> providers partagent la même logique de lecture (trait/classe de base ou helper commun) ; seule la ruche/portée
+> diffère. Le catalogue `registry_settings` reste UNE table : chaque provider filtre par `hive`.
+>
+> **D-Q3 — 🔴 INVERSION GLOBALE de la précédence physique/logique (`logique > physique`).** Décision Henri :
+> le **parc LOGIQUE prime sur la salle PHYSIQUE** car le parc logique est une **sélection délibérée de postes**
+> (transverse aux salles) → plus spécifique. Cet ordre s'applique **GLOBALEMENT** (pas seulement au registre).
+> Périmètre étendu de 27.3 (puisqu'elle touche déjà `selectExclusive`) :
+> - `StateCompiler::specificity()` : **échanger** les rangs `PhysicalGroup` ↔ `LogicalGroup` →
+>   `user(0) > user_group(1) > workstation(2) > logical_group(3) > physical_group(4) > broadcast(5)`.
+> - Mettre à jour les **docblocks** de `StateCompiler` ET `StateMaille` (la chaîne de spécificité y est écrite à
+>   l'envers : `…physical_group > logical_group…` → `…logical_group > physical_group…`).
+> - **Corriger les tests dépendants de 27.1/27.2** qui assument « physique > logique » — notamment la
+>   **résolution de l'imprimante par défaut** (27.2 : « WG physique > logique » → devient « logique > physique »)
+>   et tout test wallpaper/exclusive concerné. Ce n'est PAS de la non-régression : le comportement CHANGE
+>   sciemment. Relire `PrintersStateProviderTest`/`StateCompilerTest`/wallpaper et ajuster les attentes.
+> - **PAS de bump golden/hash** : la précédence n'est PAS encodée dans `state.v1.json` (fixtures hand-authored) ;
+>   elle n'affecte que la sélection au runtime (tests provider/compilateur). Vérifier que `FROZEN_STATE_HASH`
+>   reste inchangé par CE volet (le bump du hash vient UNIQUEMENT de l'ajout de l'item `registry`, AC6).
+>
+> **D-ciblage — UI par parc, pivot complet en schéma.** Le geste UI v1 n'expose que le ciblage **par parc**
+> (`WorkstationGroup`, physique ET logique). Le pivot `registry_setting_assignables` reste complet (morph
+> Workstation/WorkstationGroup/UserGroup/User) → extensible vers poste/groupe-user **sans migration**.
 
 ## Story
 
@@ -96,8 +142,8 @@ symétrique, pas de back-fill.
    moment de son handler ».]
 
 3. **Sémantique `exclusive` par identité de clé.** Une clé de registre = **une** valeur. Le compilateur doit
-   départager par **identité `{hive, path, name}`** : maille la plus spécifique gagne (poste > WG physique >
-   WG logique > broadcast), clés **différentes** s'accumulent. ⚠️ `StateCompiler::selectExclusive()` existant
+   départager par **identité `{hive, path, name}`** : maille la plus spécifique gagne (poste > WG **logique** >
+   WG **physique** > broadcast — précédence inversée D-Q3), clés **différentes** s'accumulent. ⚠️ `StateCompiler::selectExclusive()` existant
    départage par spécificité de maille — vérifier qu'il **clé bien par identité d'item** (pas « un seul item du
    type pour tout le poste », ce qui écraserait des clés distinctes). Si l'exclusive actuel est « 1 item / type »
    (cas wallpaper), il faut une **exclusivité par identité de clé** ⇒ **lire `StateCompiler` avant de coder** et
@@ -189,11 +235,14 @@ HKCU→session/machine_user)
 
 **Given** deux mailles assignant la **même clé** `{hive, path, name}` avec des valeurs différentes
 **When** le `StateCompiler` compile
-**Then** la maille **la plus spécifique gagne POUR CETTE CLÉ** (poste > WG physique > WG logique > broadcast),
+**Then** la maille **la plus spécifique gagne POUR CETTE CLÉ**, selon la précédence **mise à jour D-Q3** :
+`poste > WG **logique** > WG **physique** > broadcast` (⚠️ logique > physique — inversion globale, voir D-Q3),
 et les **clés distinctes s'accumulent** toutes
 **And** la machine d'états §5 (`engine.go`) et la sémantique de drift **STRICT** sont **réutilisées telles
 quelles** (zéro modification agent) ; si `selectExclusive()` actuel exclut « 1 item par type » (cas wallpaper),
-il est **étendu pour exclure par identité d'item** sans régresser wallpaper/printers (test de non-régression).
+il est **étendu pour exclure par identité d'item** sans casser le fonctionnement de wallpaper/printers (mais en
+intégrant l'inversion de précédence D-Q3 : leurs tests de résolution physique/logique sont **mis à jour**, pas
+« non-régressés »).
 
 ### AC5 — Agent Go : handler `registry` générique, idempotent, par portée (FR21)
 
@@ -236,8 +285,9 @@ SCIEMMENT à la même valeur** (relever d'abord la valeur courante du tree), tes
 - `RegistryStateProviderTest` : (a) catalogue assigné → item **concret** `{hive,path,name,type,value}` par
   maille ; (b) **jamais** d'id de catalogue dans le payload ; (c) réglage non assigné → aucun item ; (d) HKLM→
   portée machine, HKCU→portée session ; (e) **lecture seule, zéro AD** (NFR7)
-- `StateCompilerTest` : **exclusive par identité de clé** — même clé sur 2 mailles → la plus spécifique gagne ;
-  clés distinctes → toutes présentes ; **non-régression wallpaper/printers `is_default`**
+- `StateCompilerTest` : **exclusive par identité de clé** — même clé sur 2 mailles → la plus spécifique gagne
+  (**WG logique bat WG physique**, D-Q3) ; clés distinctes → toutes présentes ; **précédence physique/logique
+  inversée** propagée aux tests wallpaper/printers `is_default` (attentes MISES À JOUR, pas non-régressées)
 - test UI/feature : l'activation persiste l'assignation pivot ; la désactivation la retire
 - `ContractV1Test` : golden cohérent, hash **bumpé** (croisé)
 
@@ -257,74 +307,77 @@ réapplique, désactiver = cesser de gérer) ; ligne 27.3 dans `docs/qa/README.m
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Cadrage figé + 2 questions résiduelles** (pièges n°1, n°5)
-  - [ ] Confirmer l'invariant « zéro id de catalogue au payload » comme garde-fou de revue.
-  - [ ] Geler le **set initial du catalogue** (Question Henri n°1) et la **sémantique de désactivation**
-        (cesser de gérer vs reset OFF). Défaut appliqué si pas de retour : v1 = cesser de gérer + un petit set
-        de réglages sûrs (voir Dev Notes).
+- [x] **T0 — Cadrage figé + 2 questions résiduelles** (pièges n°1, n°5)
+  - [x] Confirmer l'invariant « zéro id de catalogue au payload » comme garde-fou de revue.
+  - [x] Geler le **set initial du catalogue** (D-Q1, 3 réglages) et la **sémantique de désactivation**
+        (cesser de gérer ; appliqué via seeder + handler qui n'efface jamais une clé absente de la cible).
 
-- [ ] **T1 — Migrations : catalogue + pivot** (AC1)
-  - [ ] `database/migrations/2026_06_16_HHMMSS_create_registry_settings_table.php` : `key` unique, `label`,
-        `hive`, `path`, `name`, `type`, `value` (texte ; `REG_MULTI_SZ`/`REG_DWORD` sérialisés — documenter),
-        flags `is_active`/visibilité, `->comment()` daté 27.3, `Schema::hasTable` en garde, `down()` drop.
-  - [ ] `database/migrations/2026_06_16_HHMMSS_create_registry_setting_assignables_table.php` : `foreignId
-        ('registry_setting_id')->constrained()->cascadeOnDelete()`, `morphs('assignable')`, `unique(...)`,
-        **calqué EXACTEMENT** sur `2026_02_09_173400_create_shortcut_assignables_table.php`.
-  - [ ] (Optionnel) seeder/migration de données du set initial du catalogue (idempotent) — OU laisser vide et
-        peupler via l'UI ; décision T0.
+- [x] **T1 — Migrations : catalogue + pivot** (AC1)
+  - [x] `2026_06_16_130000_create_registry_settings_table.php` : `key` unique, `label`, `description`,
+        `hive`(16), `path`, `name`, `type`(16), `value`(text), `is_active`, `->comment()` daté 27.3,
+        `Schema::hasTable` en garde, `down()` drop. Sérialisation documentée (DWORD décimal, MULTI_SZ JSON).
+  - [x] `2026_06_16_130100_create_registry_setting_assignables_table.php` : `foreignId(...)
+        ->constrained()->cascadeOnDelete()`, `morphs('assignable')`, `unique(...)`, **calqué** shortcuts.
+  - [x] `2026_06_16_130200_seed_registry_settings_catalog.php` : seeder de données IDEMPOTENT (updateOrInsert
+        par `key`) du set D-Q1 (HideFileExt, Hidden, EnableLUA) ; `down()` supprime les 3 clés.
 
-- [ ] **T2 — Modèle catalogue** (AC2)
-  - [ ] `app/Models/RegistrySetting.php` : `$fillable`/`$casts`, const `TYPE_REGISTRY='registry'`, relation
-        d'assignation polymorphe, accessors éventuels (enum `hive`/`type`).
+- [x] **T2 — Modèle catalogue** (AC2)
+  - [x] `app/Models/RegistrySetting.php` : `$fillable`/`$casts`, const `TYPE_REGISTRY='registry'`,
+        `HIVE_MACHINE`/`HIVE_USER`, 4 relations `morphedByMany`, `isMachineHive()`. + `RegistrySettingFactory`.
 
-- [ ] **T3 — Provider** (AC3, AC4) — *cœur serveur*
-  - [ ] `app/Services/Agent/Providers/RegistryStateProvider.php` implements `StateProvider` : `type()`,
-        `semantics()=Exclusive`, `scope()`, `itemsFor(TargetContext)` — lecture pivot par maille, **compile**
-        chaque réglage en item concret `{hive,path,name,type,value}`, candidats BRUTS (D2).
-  - [ ] Enregistrer dans `app/Providers/AgentServiceProvider.php` (tableau des providers de `StateCompiler`).
-  - [ ] **Adapter `StateCompiler::selectExclusive()`** si nécessaire pour **exclure par identité de clé**
-        `{hive,path,name}` (et non « 1 item / type »), **sans régresser** wallpaper/printers — relire d'abord.
+- [x] **T3 — Provider** (AC3, AC4) — *cœur serveur*
+  - [x] `AbstractRegistryStateProvider` (logique commune) + `RegistryMachineStateProvider` (HKLM/Machine) +
+        `RegistryUserStateProvider` (HKCU/Session) implements `StateProvider`+`KeyedExclusiveProvider` :
+        lecture pivot par maille, **compile** chaque réglage en item concret `{hive,path,name,type,value}`,
+        candidats BRUTS (D2), `exclusiveKey()={hive,path,name}`.
+  - [x] Enregistrés (les DEUX) dans `AgentServiceProvider`.
+  - [x] **Étendu `StateCompiler::selectExclusive()`** : marqueur `KeyedExclusiveProvider` → groupement par
+        identité de clé, vainqueur résolu par groupe (`resolveExclusiveWinner`), sans régresser wallpaper.
+  - [x] **D-Q3** : `specificity()` inversé `logique > physique` + docblocks StateCompiler/StateMaille +
+        défaut `printers` aligné (logique gagne) + tests 27.1/27.2 corrigés (pas non-régressés).
 
-- [ ] **T4 — Agent Go : handler générique** (AC5)
-  - [ ] `agent/shared/handler_registry.go` : struct `RegistryHandler{Ops, Log}` + `Test`/`Apply` purs,
-        interface `RegistryOps` injectée (testable hôte avec fake).
-  - [ ] `agent/windows/handler_registry_windows.go` : impl `registryOps` Windows native (`golang.org/x/sys/
-        windows/registry` — vérifier go.mod, sinon proposer ; lecture/écriture HKLM/HKCU, types REG_*).
-  - [ ] Câblage 1 ligne dans `agent/windows/companion_windows.go` map `Handlers["registry"]` (SYSTEM pour
-        HKLM, compagnon pour HKCU — respecter le découpage des deux moteurs existants).
-  - [ ] `agent/shared/handler_registry_test.go` : set cible, idempotence, drift, error isolé, HKLM/HKCU.
+- [x] **T4 — Agent Go : handler générique** (AC5)
+  - [x] `agent/shared/handler_registry.go` : `RegistryHandler{Ops, Log}` + `Test`/`Apply` purs, interface
+        `RegistryOps` injectée, `RegistryValue` typé (DWORD/QWORD/SZ/EXPAND_SZ/MULTI_SZ), NFC, effort maximal.
+  - [x] `agent/windows/handler_registry_windows.go` : `registryOps` native (`golang.org/x/sys/windows/registry`
+        DÉJÀ dans go.mod) — `rootKey` HKLM/HKCU, CreateKey, lecture/écriture REG_*.
+  - [x] Câblage : map compagnon (`registry` HKCU) **+** nouveau `MachineEngine` du service SYSTEM (`registry`
+        HKLM) — le service SYSTEM gagne un moteur de convergence machine (premier type machine du canal).
+  - [x] `agent/shared/handler_registry_test.go` : set cible, idempotence (2 passes 0 écriture), drift, error
+        isolé + isolation inter-clés, HKLM/HKCU, MULTI_SZ, payloads invalides, §5 via moteur, MergeReportItemsByType.
 
-- [ ] **T5 — Contrat + golden** (AC6)
-  - [ ] `docs/agent/contract-v1.md` §7 : payload `registry`.
-  - [ ] `tests/Fixtures/Agent/state.v1.json` : item `registry` (+ `report.v1.json` si exemple voulu).
-  - [ ] Relever `FROZEN_STATE_HASH`/`frozenStateHash` courants, **bumper** aux nouvelles valeurs croisées
-        (calcul via hasher réel /vm ou hôte Go), `ContractV1Test` + `hasher_test.go` verts.
+- [x] **T5 — Contrat + golden** (AC6)
+  - [x] `docs/agent/contract-v1.md` §7.1 : payload `registry` documenté (5 champs, invariant central, portées).
+  - [x] `tests/Fixtures/Agent/state.v1.json` : item `registry` ajouté (portée session, HKCU/HideFileExt).
+  - [x] `FROZEN_STATE_HASH`/`frozenStateHash` bumpés croisés `1599cc48…`→`2b49f008…` (item `92730f99…`),
+        calculés via le hasher Go réel hôte ; `ContractV1Test` PHP + `hasher_test.go` Go verts (preuve NFR13).
 
-- [ ] **T6 — UI** (AC7)
-  - [ ] `resources/views/pages/parc-settings/registry-settings/index.blade.php` (+ `_partials/`) : Livewire SFC,
-        liste catalogue + toggle/valeur par parc, persistance pivot (`syncWithoutDetaching`/attach/detach),
-        `WithToasts`, modale réutilisable au besoin, Gate iso-parc-settings.
-  - [ ] Greffer l'entrée de section dans la navigation `parc-settings/` (calquer `overlay-messages`).
+- [x] **T6 — UI** (AC7)
+  - [x] `resources/views/pages/parc-settings/registry-settings/index.blade.php` : Livewire SFC, sélecteur de
+        parc + toggles par réglage du catalogue, persistance pivot (`syncWithoutDetaching`/`detach`),
+        `WithToasts`, Gate `app.customize`. Route nommée `app.parc-settings.registry-settings` (iso overlay).
 
-- [ ] **T7 — Tests** (AC8)
-  - [ ] PHPUnit : `RegistryStateProviderTest`, `StateCompilerTest` (exclusive par clé + non-régression),
-        feature UI assignation, `ContractV1Test` (hash bumpé).
-  - [ ] Go : `go test ./...` + `go vet` (linux+windows) + cross-compile + `hasher_test.go` croisé — verts.
+- [x] **T7 — Tests** (AC8)
+  - [x] PHPUnit : `RegistryStateProviderTest` (15), `StateCompilerTest` (keyed exclusive ×4 + chaîne inversée),
+        `PrintersStateProviderTest` (logique gagne), `RegistrySettingsPageTest` (5), `ContractV1Test` (hash).
+  - [x] Go : `go test ./...` + `go vet` (linux+windows) + cross-compile (10.8 Mo) + `hasher_test.go` croisé — verts.
 
-- [ ] **T8 — Documentation + QA** (AC9)
-  - [ ] `state-providers.md` section registry ; `contract-v1.md` §7 ; `docs/qa/domains/agent.md` `## Story 27.3`
-        append-only ; ligne 27.3 `docs/qa/README.md`.
+- [x] **T8 — Documentation + QA** (AC9)
+  - [x] `state-providers.md` (section registry + inversion D-Q3) ; `contract-v1.md` §7.1 ; `docs/qa/domains/
+        agent.md` `## Story 27.3` (5 scénarios + checklist, append-only) ; ligne 27.3 enrichie `docs/qa/README.md`.
 
-- [ ] **T9 — Validation finale** (AC6, AC8)
-  - [ ] `php -l` sur les PHP touchés ; grep NFR7 (`ldap|apcu|samba-tool`) sur le provider → vide ; grep « zéro
-        retrofit legacy » (aucun fichier du canal Registry.pol/GPO dans le diff).
-  - [ ] `go test ./...`/vet/cross-compile verts. `--filter Agent` /vm sans régression (hors préexistants connus).
-  - [ ] **Actions /vm (PAS auto)** : `migrate:status` → `php artisan migrate --force` (2 migrations + seeder si
-        retenu). Pas de `config:cache`/`route:cache` (aucun config/route ajouté).
+- [x] **T9 — Validation finale** (AC6, AC8)
+  - [x] `php -l` sur tous les PHP touchés OK ; grep NFR7 (`ldap|apcu|samba-tool`) sur les providers → vide
+        (commentaire toléré) ; grep zéro retrofit legacy (gpo.inc.php/Registry.pol) → aucun fichier.
+  - [x] `go test ./...`/vet/cross-compile verts ; PHP registry-related verts hôte (vendor réinstallé). Les
+        erreurs `--filter Agent` restantes sont PRÉ-EXISTANTES (ldap_search host + AgentToolService mime/zip).
+  - [ ] **Actions /vm (PAS auto, ACTION HENRI)** : `migrate:status` → `php artisan migrate --force`
+        (3 migrations : 2 tables + seeder catalogue) ; `php artisan route:cache` + chown www-admin (1 route
+        AJOUTÉE : `app.parc-settings.registry-settings`) ; rejouer la suite PHPUnit `--filter Agent`.
   - [ ] **Validation lab (poste Windows) — ACTION HUMAINE (Henri)** : un réglage HKLM activé sur un parc est
         appliqué (SYSTEM) ; un réglage HKCU appliqué au logon (compagnon) ; une valeur modifiée à la main est
-        **réimposée** (drift STRICT) ; un réglage `strict` sur un parc et une autre valeur sur un autre parc →
-        chaque poste reçoit la valeur de SA maille la plus spécifique.
+        **réimposée** (drift STRICT) ; même clé sur 2 parcs → valeur de la maille la plus spécifique
+        (logique > physique).
 
 ## Dev Notes
 
@@ -447,26 +500,23 @@ mémoires `project_agent_desired_state_direction`, `project_gpo_dispatcher_stati
 - [Source: mémoires `project_registry_catalog_first_generic_underneath`, `project_drift_policy_strict_only`,
   `project_agent_desired_state_direction`, `project_gpo_dispatcher_static_anchor`].
 
-## Questions pour Henri
+## Questions pour Henri — ✅ TOUTES TRANCHÉES (2026-06-16)
 
-1. **Set initial du catalogue + sémantique de « désactiver ».** (a) Quels réglages registre ship-on en v1
-   (proposition de défaut en Dev Notes : extensions de fichiers, écran de verrouillage, proxy…) ? (b)
-   « Désactiver un réglage pour un parc » = **cesser de le gérer** (item absent, la clé garde sa dernière
-   valeur — défaut recommandé, simple, desired-state pur) **ou** **réimposer une valeur OFF explicite** (le
-   catalogue porte alors une 2ᵉ valeur « désactivé ») ? Défaut appliqué : **cesser de gérer**, OFF explicite
-   reporté.
+> Réponses figées en tête de story (bloc « DÉCISIONS HENRI — VALIDATION DEV-CYCLE »). Rappel :
 
-2. **Cohabitation HKLM + HKCU dans un seul provider.** Un `StateProvider` déclare **une** portée (`scope()`).
-   Si le catalogue mélange des réglages HKLM (machine) et HKCU (user), faut-il **un seul provider** qui range
-   chaque item dans la bonne portée d'enveloppe (nécessite que le compilateur accepte qu'un provider émette sur
-   2 portées) **ou deux providers** `RegistryMachineStateProvider`/`RegistryUserStateProvider` (plus simple
-   vis-à-vis de `scope()`, deux entrées au tableau) ? Défaut proposé : **deux providers** (un par ruche/portée)
-   — plus propre avec le contrat actuel ; à confirmer.
+1. **✅ RÉSOLU (D-Q1).** Set initial = 3 réglages choisis parmi les GPO SambaEdu (`HideFileExt` HKCU,
+   `Hidden` HKCU, `EnableLUA` HKLM). « Désactiver » = **cesser de gérer** (OFF explicite reporté). Bureau à
+   distance écarté (non testable facilement). Voir tableau D-Q1.
 
-3. **Ciblage : parc uniquement ou pivot complet ?** Le pivot calque `shortcut_assignables` (Workstation/
-   WorkstationGroup/UserGroup/User). En v1, n'exposer le geste UI que **par parc** (`WorkstationGroup`), ou
-   ouvrir aussi poste/groupe user comme les raccourcis ? Défaut : **par parc** à l'UI, pivot complet en schéma
-   (extensible sans migration).
+2. **✅ RÉSOLU (D-Q2).** **Deux providers** (`RegistryMachineStateProvider` HKLM/machine +
+   `RegistryUserStateProvider` HKCU/session), **un seul** handler Go générique. Aucune modif du routage
+   compilateur.
+
+3. **✅ RÉSOLU (D-ciblage).** UI **par parc** (`WorkstationGroup`), pivot complet en schéma (extensible sans
+   migration).
+
+4. **✅ NOUVEAU (D-Q3).** **Inversion globale `logique > physique`** dans `StateCompiler::specificity()` +
+   docblocks + correction des tests 27.1/27.2 dépendants. Voir D-Q3.
 
 ## Recommandation Modèle Dev
 
@@ -485,8 +535,102 @@ SYSTEM/compagnon (HKLM/HKCU) idempotent, et (f) une **UI parc** neuve. Le risque
 
 ### Agent Model Used
 
+opus (claude-opus-4-8[1m]), effort xhigh.
+
 ### Debug Log References
+
+- Go : `go test ./...` + `go vet ./...` + `GOOS=windows go vet ./windows/...` + cross-compile
+  `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./windows` — tous VERTS (binaire 10 797 568 octets).
+- PHP : vendor réinstallé sur l'hôte (`composer install --ignore-platform-req=ext-apcu
+  --ignore-platform-req=ext-imagick`) + `bootstrap/cache` créé. `ContractV1Test` 5/5, `RegistryStateProviderTest`
+  15/15, `RegistrySettingsPageTest` 5/5, compiler+printers nouveaux/modifiés 7/7 — VERTS.
+- Hash calculé via le hasher Go RÉEL hôte (test jetable supprimé après) : item registry
+  `92730f99ed3e64f81e99c955e64bfb37da8fcc765aa1eb44373c9c4e4af686b5`, état complet
+  `2b49f008c6a006de797426e0d65c6e50dd3c7691b611dbeeff086e1f2af3c1ac`.
 
 ### Completion Notes List
 
+- **D-Q1** : seeder de données idempotent (`updateOrInsert` par `key`) des 3 réglages exacts (HideFileExt HKCU=0,
+  Hidden HKCU=1, EnableLUA HKLM=0). « Désactiver = cesser de gérer » : le handler Go n'efface JAMAIS une clé
+  absente de la cible (pas de reset OFF) ; l'UI fait un `detach` du pivot.
+- **D-Q2** : DEUX providers serveur (`RegistryMachineStateProvider` HKLM/Machine, `RegistryUserStateProvider`
+  HKCU/Session) partageant `AbstractRegistryStateProvider` ; UNE table `registry_settings`, filtre par `hive`.
+  UN handler Go générique `registry` (`{hive,path,name,type,value}` seulement). Câblé HKCU dans la map du
+  COMPAGNON, HKLM dans un nouveau `MachineEngine` du service SYSTEM.
+- **🔴 Couture machine-scope (découverte d'archi)** : le canal agent n'avait JUSQU'ICI aucun handler de portée
+  `machine` (wallpaper=session, shortcuts=machine_user, overlay=SYSTEM hors-Engine). Le compagnon IGNORE
+  explicitement la portée machine (NFR5). `registry` HKLM est le PREMIER type machine → j'ai ajouté au service
+  SYSTEM un `MachineEngine` + `Agent.convergeMachine()` (lit le cache, ItemsFromScope(machine), RunPass,
+  applied-state machine sous ProgramData). Best-effort, nil-safe (inerte en test/console). Items de rapport
+  drainés au POST /report du cycle.
+- **🔴 Unicité de type au rapport (§6)** : les DEUX portées émettent le type `registry` (HKLM via le service,
+  HKCU via le drop compagnon) → risque de deux items `registry` dans un même rapport (l'ingestion serveur
+  `updateOrCreate` sur `(workstation, type)` en écraserait un). Ajout de `MergeReportItemsByType` (fusion par
+  type, pire statut gagne : error>drift>compliant) appliqué juste avant `BuildReport`. No-op sur les types déjà
+  uniques.
+- **D-Q3** : `StateCompiler::specificity()` inversé `logique > physique` (rangs 3↔4) + docblocks StateCompiler
+  ET StateMaille. Défaut `printers` aligné côté provider (`resolveDefaultCupsName` : logique rang 0). Tests
+  CORRIGÉS sciemment : `StateCompilerTest::exclusive_specificity_full_chain` (chaîne réordonnée),
+  `PrintersStateProviderTest::default_physical_wins_over_logical` → `default_logical_wins_over_physical`.
+  Wallpaper provider test inchangé (n'asserte que le tagging, pas la précédence). Hash golden NON impacté par
+  D-Q3 (la précédence n'est pas dans les fixtures hand-authored).
+- **Exclusive par identité de clé** : marqueur `App\Services\Agent\Contracts\KeyedExclusiveProvider`
+  (`exclusiveKey(payload)`). `selectExclusive()` groupe par cette clé et arbitre chaque groupe via
+  `resolveExclusiveWinner` (extrait de l'ancien code). Wallpaper (sans marqueur) garde « un seul item gagnant
+  pour le type » — non-régression prouvée par test.
+- **Invariant central** : aucun `setting_id`/`key`/`label` de catalogue dans le payload — vérifié par test
+  (`array_keys($payload) === ['hive','path','name','type','value']`).
+- **D-ciblage** : pivot complet (morph WG/Workstation/UserGroup/User) ; UI v1 par parc (WorkstationGroup,
+  physique ET logique).
+- **AC6** : golden +1 item `registry` (portée session, garde `machine: []` pour ne pas casser le test AC1 du
+  contrat) ; `FROZEN_STATE_HASH` PHP + `frozenStateHash` Go bumpés à la MÊME valeur ; tests croisés verts =
+  preuve NFR13. Item-count `hasher_test.go` 5→6, `contract_test.go` session 4→5.
+- **NFR7** : grep `ldap|apcu|samba-tool` sur les 3 providers = vide (seul docblock toléré). Ciblage = Postgres.
+- **Zéro retrofit legacy** : aucun `gpo.inc.php`/`Registry.pol` câblé.
+
 ### File List
+
+**Créés :**
+- `app/Models/RegistrySetting.php`
+- `app/Services/Agent/Contracts/KeyedExclusiveProvider.php`
+- `app/Services/Agent/Providers/AbstractRegistryStateProvider.php`
+- `app/Services/Agent/Providers/RegistryMachineStateProvider.php`
+- `app/Services/Agent/Providers/RegistryUserStateProvider.php`
+- `database/factories/RegistrySettingFactory.php`
+- `database/migrations/2026_06_16_130000_create_registry_settings_table.php`
+- `database/migrations/2026_06_16_130100_create_registry_setting_assignables_table.php`
+- `database/migrations/2026_06_16_130200_seed_registry_settings_catalog.php`
+- `resources/views/pages/parc-settings/registry-settings/index.blade.php`
+- `agent/shared/handler_registry.go`
+- `agent/shared/handler_registry_test.go`
+- `agent/windows/handler_registry_windows.go`
+- `tests/Unit/Services/Agent/RegistryStateProviderTest.php`
+- `tests/Feature/Livewire/ParcSettings/RegistrySettingsPageTest.php`
+
+**Modifiés :**
+- `app/Enums/StateMaille.php` (docblock D-Q3)
+- `app/Providers/AgentServiceProvider.php` (2 providers registry enregistrés)
+- `app/Services/Agent/StateCompiler.php` (specificity inversée D-Q3, selectExclusive keyed)
+- `app/Services/Agent/Providers/PrintersStateProvider.php` (défaut logique>physique D-Q3)
+- `agent/shared/loop.go` (MachineEngine + convergeMachine + MergeReportItemsByType au report)
+- `agent/shared/dropcollect.go` (MergeReportItemsByType + statusSeverity)
+- `agent/shared/contract_test.go` (session 4→5)
+- `agent/shared/hasher_test.go` (frozenStateHash bump + item-count 5→6)
+- `agent/windows/companion_windows.go` (handler registry HKCU)
+- `agent/windows/main_windows.go` (MachineEngine HKLM)
+- `tests/Fixtures/Agent/state.v1.json` (item registry)
+- `tests/Unit/Services/Agent/ContractV1Test.php` (FROZEN_STATE_HASH bump)
+- `tests/Unit/Services/Agent/StateCompilerTest.php` (keyed exclusive + chaîne inversée)
+- `tests/Unit/Services/Agent/PrintersStateProviderTest.php` (logique gagne)
+- `routes/web.php` (route registry-settings)
+- `docs/agent/contract-v1.md` (§7.1 payload registry)
+- `docs/agent/state-providers.md` (section registry + D-Q3)
+- `docs/qa/domains/agent.md` (Story 27.3, append-only)
+- `docs/qa/README.md` (ligne 27.3 agent)
+
+### Change Log
+
+- 2026-06-16 — Story 27.3 implémentée (T0-T9). Type `registry` au canal agent : catalogue par parc, 2 providers
+  serveur / 1 handler Go générique, exclusive par clé, inversion globale logique>physique (D-Q3), couture
+  machine-scope (1er type machine : MachineEngine SYSTEM), fusion par type au rapport, golden + hash croisé
+  bumpés. Status → review.

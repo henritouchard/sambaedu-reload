@@ -10,9 +10,11 @@ namespace App\Enums;
  * non soumise à NFR12). Les providers étiquettent leurs candidats avec elle ;
  * le compilateur l'utilise pour appliquer D2.
  *
- * ⚠️ AUCUNE méthode de rang ici : l'ordre de spécificité
- * (`user > user_group > workstation > physical_group > logical_group >
- * broadcast`) vit dans le **StateCompiler seul** — l'y dupliquer ferait
+ * ⚠️ AUCUNE méthode de rang ici : l'ordre de spécificité — Story 27.3 (D-Q3)
+ * INVERSE `logical_group`/`physical_group` GLOBALEMENT (le parc logique bat la
+ * salle physique) :
+ * `user > user_group > workstation > logical_group > physical_group >
+ * broadcast` — vit dans le **StateCompiler seul** — l'y dupliquer ferait
  * fuiter D2 vers les providers (anti-pattern bloquant, architecture
  * Enforcement Guidelines).
  */

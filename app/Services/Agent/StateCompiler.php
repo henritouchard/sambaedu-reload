@@ -6,6 +6,7 @@ namespace App\Services\Agent;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
+use App\Services\Agent\Contracts\KeyedExclusiveProvider;
 use App\Services\Agent\Contracts\StateProvider;
 use Illuminate\Support\Facades\Log;
 
@@ -19,8 +20,10 @@ use Illuminate\Support\Facades\Log;
  * (architecture, Enforcement Guidelines).
  *
  * Chaîne de spécificité complète (décision n° 1, extension iso-legacy de D2
- * qui ne figeait que la partie machine) :
- * `user > groupes user > poste > WG physique > WG logique > broadcast`.
+ * qui ne figeait que la partie machine) — Story 27.3 (D-Q3) INVERSE
+ * `WG logique`/`WG physique` GLOBALEMENT (le parc LOGIQUE est une sélection
+ * délibérée de postes transverse aux salles → plus spécifique que la salle) :
+ * `user > groupes user > poste > WG logique > WG physique > broadcast`.
  *
  * **Déterminisme** = exigence de contrat : deux compilations du même état à
  * des instants différents produisent le même `StateHasher::hashState()`
@@ -205,17 +208,63 @@ final class StateCompiler
     }
 
     /**
-     * Type exclusif = la maille la plus spécifique gagne ; conflit au sein de
-     * cette maille → la règle la plus récente gagne (`updated_at` desc puis
+     * Type exclusif. Deux régimes (Story 27.3) :
+     *
+     *  - **Défaut (wallpaper)** : UN SEUL item gagnant pour tout le type — la
+     *    maille la plus spécifique gagne, conflit intra-maille → la plus récente.
+     *  - **Par identité de clé** ({@see KeyedExclusiveProvider}, ex. registry) :
+     *    les candidats sont GROUPÉS par `exclusiveKey(payload)` ; la sélection
+     *    ci-dessus s'applique INDÉPENDAMMENT à chaque groupe → la maille la plus
+     *    spécifique gagne POUR CETTE CLÉ, et les clés distinctes s'accumulent
+     *    toutes. Ordre de sortie stable (clés triées) pour le déterminisme de
+     *    l'ETag (23.5).
+     *
+     * D2 reste au compilateur : le provider ne fait QUE déclarer son
+     * `exclusiveKey()` ; la précédence/récence est arbitrée ici.
+     *
+     * @param  list<StateCandidate>  $candidates  non vide
+     * @return list<StateCandidate>
+     */
+    private function selectExclusive(StateProvider $provider, TargetContext $ctx, array $candidates): array
+    {
+        if (! $provider instanceof KeyedExclusiveProvider) {
+            return [$this->resolveExclusiveWinner($provider, $ctx, $candidates)];
+        }
+
+        // Groupement par identité de clé (ordre d'apparition mémorisé pour un
+        // tri final déterministe). Chaque groupe est arbitré séparément.
+        /** @var array<string, list<StateCandidate>> $groups */
+        $groups = [];
+        foreach ($candidates as $candidate) {
+            $key = $provider->exclusiveKey($candidate->payload);
+            $groups[$key][] = $candidate;
+        }
+
+        // Tri des clés (SORT_STRING, iso canonicalisation) : l'ordre de sortie
+        // ne doit jamais dépendre du plan SQL ni de l'ordre des candidats.
+        $keys = array_keys($groups);
+        sort($keys, SORT_STRING);
+
+        $selected = [];
+        foreach ($keys as $key) {
+            $selected[] = $this->resolveExclusiveWinner($provider, $ctx, $groups[$key]);
+        }
+
+        return $selected;
+    }
+
+    /**
+     * Élit le vainqueur d'un ENSEMBLE de candidats exclusifs (tout le type, ou
+     * un groupe de clé) : la maille la plus spécifique gagne ; conflit au sein
+     * de cette maille → la règle la plus récente gagne (`updated_at` desc puis
      * `id` desc) + warning `agent.state.conflict` (décision n° 2, AC3).
      *
      * Le warning n'est émis que pour la maille gagnante : un conflit dans une
      * maille battue n'arbitre rien (aucune incidence sur l'état servi).
      *
      * @param  list<StateCandidate>  $candidates  non vide
-     * @return list<StateCandidate>
      */
-    private function selectExclusive(StateProvider $provider, TargetContext $ctx, array $candidates): array
+    private function resolveExclusiveWinner(StateProvider $provider, TargetContext $ctx, array $candidates): StateCandidate
     {
         $bestRank = min(array_map(
             fn (StateCandidate $c): int => $this->specificity($c->maille),
@@ -252,13 +301,19 @@ final class StateCompiler
             ]);
         }
 
-        return [$inMaille[0]];
+        return $inMaille[0];
     }
 
     /**
      * Rang de spécificité des mailles (décision n° 1) — 0 = la plus
      * spécifique. Vit ICI et nulle part ailleurs : ni dans l'enum, ni dans
      * les providers (sinon D2 fuit).
+     *
+     * Story 27.3 (D-Q3) — INVERSION GLOBALE `logique > physique` : le parc
+     * LOGIQUE (sélection délibérée de postes, transverse aux salles) bat la
+     * salle PHYSIQUE. `LogicalGroup` passe au rang 3, `PhysicalGroup` au rang 4.
+     * S'applique à TOUS les types exclusifs (registry, wallpaper, et la
+     * résolution du défaut `printers` côté provider est alignée séparément).
      */
     private function specificity(StateMaille $maille): int
     {
@@ -266,8 +321,8 @@ final class StateCompiler
             StateMaille::User => 0,
             StateMaille::UserGroup => 1,
             StateMaille::Workstation => 2,
-            StateMaille::PhysicalGroup => 3,
-            StateMaille::LogicalGroup => 4,
+            StateMaille::LogicalGroup => 3,
+            StateMaille::PhysicalGroup => 4,
             StateMaille::Broadcast => 5,
         };
     }

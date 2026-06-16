@@ -63,12 +63,19 @@ class ContractV1Test extends TestCase
     // Re-bumpé SCIEMMENT par la Story 27.10 (§9) : la SALLE passe de la portée
     // session (ancien item identity `{kind, login, fullname, room}`) à la portée
     // MACHINE — nouvel item overlay `{kind:"machine", room}` (cache persistant,
-    // préchargement poste+salle au logon). L'item identity session perd `room`
-    // (`{kind, login, fullname}`). Le golden gagne donc un item overlay
-    // machine-scope (6 items au total) et l'item identity session change. Le hash
-    // de ces items ET le hash d'état changent. Bumpé à l'IDENTIQUE côté Go
-    // (hasher_test.go::frozenStateHash).
-    private const FROZEN_STATE_HASH = '8174042c0ac8d8f7b6ef1fecf0ff4313b0eba23451e50136c8f712bb5afb4975';
+    // préchargement poste+salle au logon). L'item identity session perd `room`.
+    //
+    // Re-bumpé SCIEMMENT par la Story 27.3 (évolution MINEURE du contrat, §9) :
+    // ajout d'UN item `registry` en portée `session` — payload v1 réel
+    // `{hive, path, name, type, value}` owné par les providers registry
+    // (RegistryMachineStateProvider HKLM / RegistryUserStateProvider HKCU). Type
+    // DÉJÀ figé §7 ; payload ajouté = forward-compatible, pas un major.
+    //
+    // Rebase 27.3 sur main (27.10 inclus) : le golden combine désormais l'item
+    // overlay machine-scope (room) ET l'item registry session → 7 items, hash
+    // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
+    // même valeur (test croisé NFR13 — canonicalisation équivalente PHP↔Go).
+    private const FROZEN_STATE_HASH = 'e9a1cdc183b6bda9da7a8d40a84ee31838de13e784195e969225802bda7f4fc3';
 
     private StateHasher $hasher;
 

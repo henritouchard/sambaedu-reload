@@ -36,10 +36,15 @@ import (
 // Re-bumpé SCIEMMENT par la Story 27.10 (§9) : la SALLE passe de la portée
 // session (item identity) à la portée MACHINE — nouvel item overlay
 // `{kind:"machine", room}` (préchargement poste+salle au logon) ; l'item
-// identity session perd `room`. Le golden gagne un item machine-scope (6 items)
-// et l'item identity change. Le hash d'état change. Bumpé à l'IDENTIQUE côté PHP
-// (ContractV1Test::FROZEN_STATE_HASH).
-const frozenStateHash = "8174042c0ac8d8f7b6ef1fecf0ff4313b0eba23451e50136c8f712bb5afb4975"
+// identity session perd `room`.
+// Re-bumpé SCIEMMENT par la Story 27.3 (§9) : ajout d'UN item `registry`
+// (portée session, payload v1 réel `{hive, path, name, type, value}` owné par
+// les providers registry) au golden — type DÉJÀ figé §7, payload ajouté =
+// forward-compatible, pas un major.
+// Rebase 27.3 sur main (27.10 inclus) : le golden combine désormais l'item
+// overlay machine-scope (room) ET l'item registry session → 7 items, hash
+// d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
+const frozenStateHash = "e9a1cdc183b6bda9da7a8d40a84ee31838de13e784195e969225802bda7f4fc3"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -143,8 +148,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 6 {
-		t.Errorf("6 items attendus dans le golden state, %d vérifiés", checked)
+	if checked != 7 {
+		t.Errorf("7 items attendus dans le golden state (machine room 27.10 + registry session 27.3), %d vérifiés", checked)
 	}
 }
 

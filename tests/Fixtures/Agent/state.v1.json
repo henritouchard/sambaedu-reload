@@ -55,6 +55,18 @@
                 "label": "Classe 3emeA"
             },
             "hash": "e8fcecfea26778b610f1edf34cecba2f07c8c95def4d9d6c43939607e0341a93"
+        },
+        {
+            "type": "registry",
+            "semantics": "exclusive",
+            "payload": {
+                "hive": "HKCU",
+                "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+                "name": "HideFileExt",
+                "type": "REG_DWORD",
+                "value": 0
+            },
+            "hash": "92730f99ed3e64f81e99c955e64bfb37da8fcc765aa1eb44373c9c4e4af686b5"
         }
     ],
     "machine_user": [

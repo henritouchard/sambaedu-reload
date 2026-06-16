@@ -152,23 +152,23 @@ class PrintersStateProviderTest extends TestCase
     }
 
     #[Test]
-    public function default_physical_wins_over_logical(): void
+    public function default_logical_wins_over_physical(): void
     {
-        // Même imprimante par défaut sur les 2 mailles n'est pas le cas ici :
-        // deux imprimantes DISTINCTES, chacune défaut sur sa maille. Le physique
-        // doit l'emporter.
-        $impPhys = Printer::factory()->create(['cups_name' => 'zphys']); // cups_name "grand" exprès
-        $impLog = Printer::factory()->create(['cups_name' => 'alog']);   // cups_name "petit" exprès
+        // Story 27.3 (D-Q3) — INVERSION GLOBALE `logique > physique` : deux
+        // imprimantes DISTINCTES, chacune défaut sur sa maille. Le LOGIQUE doit
+        // désormais l'emporter (comportement CHANGÉ sciemment, pas régressé).
+        $impPhys = Printer::factory()->create(['cups_name' => 'aphys']); // cups_name "petit" exprès
+        $impLog = Printer::factory()->create(['cups_name' => 'zlog']);   // cups_name "grand" exprès
         $this->attach($impPhys, $this->room, isDefault: true);
         $this->attach($impLog, $this->parc, isDefault: true);
 
         $byName = $this->provider()->itemsFor($this->ctx())
             ->keyBy(fn (StateCandidate $c): string => $c->payload['cups_name']);
 
-        // Le physique gagne MÊME si son cups_name est "plus grand" (la maille
+        // Le logique gagne MÊME si son cups_name est "plus grand" (la maille
         // prime sur le départage alphabétique).
-        self::assertTrue($byName['zphys']->payload['is_default']);
-        self::assertFalse($byName['alog']->payload['is_default']);
+        self::assertTrue($byName['zlog']->payload['is_default']);
+        self::assertFalse($byName['aphys']->payload['is_default']);
 
         // UN SEUL is_default true dans toute la collection.
         $defaults = $this->provider()->itemsFor($this->ctx())

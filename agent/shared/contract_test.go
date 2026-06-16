@@ -26,11 +26,12 @@ func TestParseStateGoldenFile(t *testing.T) {
 	if state.TtlSeconds != 3600 {
 		t.Errorf("ttl_seconds : got %d, want 3600", state.TtlSeconds)
 	}
-	// Story 27.2 : portée session = 4 (wallpaper, overlay identity, printers,
-	// drives). Story 27.10 : la portée machine gagne l'item overlay
-	// `{kind:"machine", room}` (salle préchargée au logon) → machine=1.
-	if len(state.Machine) != 1 || len(state.Session) != 4 || len(state.MachineUser) != 1 {
-		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 1/4/1)",
+	// Story 27.2 : portée session = 4 items réels (wallpaper, overlay identity,
+	// printers, drives). Story 27.3 : +1 item `registry` (HKCU) → session = 5.
+	// Story 27.10 : la SALLE passe en portée machine — nouvel item overlay
+	// `{kind:"machine", room}` (préchargement poste+salle au logon) → machine = 1.
+	if len(state.Machine) != 1 || len(state.Session) != 5 || len(state.MachineUser) != 1 {
+		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 1/5/1)",
 			len(state.Machine), len(state.Session), len(state.MachineUser))
 	}
 }
