@@ -59,7 +59,7 @@ class ContractV1Test extends TestCase
     // chaque item d'état (item 5 clés → 4 : type/semantics/payload/hash —
     // convergence STRICT inconditionnelle). Le hash de chaque item ET le hash
     // d'état changent. Bumpé à l'IDENTIQUE côté Go (hasher_test.go::frozenStateHash).
-    private const FROZEN_STATE_HASH = '4d0c2c9406c448c8febb05807f33bb8c53af17aec0c9051ca7a4d4fddbf93579';
+    private const FROZEN_STATE_HASH = '1599cc48341c732d941e24c830c9facb1237dccf0f17390f939e59f082aafb1b';
 
     private StateHasher $hasher;
 

@@ -40,10 +40,10 @@
             "semantics": "aggregate",
             "payload": {
                 "letter": "K:",
-                "unc": "\\\\<se4fs>\\Classe_3emeA\\<login>\\",
+                "unc": "\\\\<se4fs>\\Classe_3emeA\\<user>\\",
                 "label": "Classe 3emeA"
             },
-            "hash": "9838549085fca18969cd769d0031dd238801ec0444b0834327dcaaa55abf24ea"
+            "hash": "e8fcecfea26778b610f1edf34cecba2f07c8c95def4d9d6c43939607e0341a93"
         }
     ],
     "machine_user": [

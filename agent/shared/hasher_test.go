@@ -28,7 +28,12 @@ import (
 // chaque item d'état (item 5 clés → 4 : type/semantics/payload/hash —
 // convergence STRICT inconditionnelle). Le hash de chaque item ET le hash
 // d'état changent. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
-const frozenStateHash = "4d0c2c9406c448c8febb05807f33bb8c53af17aec0c9051ca7a4d4fddbf93579"
+// Re-bumpé SCIEMMENT (normalisation de token) : le payload `drives` émet
+// désormais le token CANONIQUE `<user>` au lieu de `<login>` (même notion =
+// login de session ; `<login>` n'était jamais substitué côté agent → UNC
+// littéral, lecteurs non montés). Le hash du drive item ET le hash d'état
+// changent. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
+const frozenStateHash = "1599cc48341c732d941e24c830c9facb1237dccf0f17390f939e59f082aafb1b"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).

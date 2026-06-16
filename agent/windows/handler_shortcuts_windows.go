@@ -185,7 +185,11 @@ func standardDesktopDir() (string, error) {
 
 // substituteTokens remplace les tokens serveur par les valeurs LOCALES.
 //
-//	<user>  → login courant (USERNAME)
+//	<user>  → login courant (USERNAME) — token CANONIQUE unique pour le login de
+//	          session, émis aussi bien par ShortcutsStateProvider que
+//	          DrivesStateProvider (cf. normalisation : drives émettait jadis
+//	          `<login>`, non substitué ici → UNC littéral `<login>` →
+//	          WNetAddConnection2 code 67, lecteurs non montés).
 //	<se4fs> → nom du serveur de fichiers (SE4FS env, fallback LOGONSERVER sans \\)
 //	%USERPROFILE%/%APPDATA%/… → laissés à os.ExpandEnv (Windows les substitue
 //	aussi via cmd, mais on les résout ici pour un chemin propre).

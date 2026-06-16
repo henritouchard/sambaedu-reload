@@ -104,11 +104,11 @@ class DrivesStateProviderTest extends TestCase
         $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
 
         self::assertSame('K:', $payload['letter'], 'convention figée : K: = classe');
-        self::assertSame('\\\\<se4fs>\\Classe_3emeA\\<login>\\', $payload['unc']);
+        self::assertSame('\\\\<se4fs>\\Classe_3emeA\\<user>\\', $payload['unc']);
         self::assertSame('Classe 3emeA', $payload['label']);
         // Tokens NON substitués côté serveur (l'agent substitue localement).
         self::assertStringContainsString('<se4fs>', $payload['unc']);
-        self::assertStringContainsString('<login>', $payload['unc']);
+        self::assertStringContainsString('<user>', $payload['unc']);
     }
 
     #[Test]
@@ -119,7 +119,7 @@ class DrivesStateProviderTest extends TestCase
 
         $payload = $this->provider->itemsFor($this->ctx())->first()->payload;
 
-        self::assertSame('\\\\<se4fs>\\Classe_6emeC\\<login>\\', $payload['unc']);
+        self::assertSame('\\\\<se4fs>\\Classe_6emeC\\<user>\\', $payload['unc']);
         self::assertStringNotContainsString('Classe_Classe_', $payload['unc']);
     }
 

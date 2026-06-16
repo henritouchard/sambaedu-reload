@@ -22,9 +22,9 @@ import (
 // par un montage user) est IGNORÉ via Blocked() — ni démonté, ni ré-monté : les
 // autres lecteurs convergent quand même (iso shortcuts/printers 27.1/27.2).
 //
-// L'UNC (`\\<se4fs>\Classe_<name>\<login>\`) est résolu CÔTÉ SERVEUR (projection
+// L'UNC (`\\<se4fs>\Classe_<name>\<user>\`) est résolu CÔTÉ SERVEUR (projection
 // des classes du user, MVP-A) ; l'agent substitue seulement les tokens locaux
-// (`<se4fs>`, `<login>`). L'agent reste bête : aucune logique métier de classe.
+// (`<se4fs>`, `<user>`). L'agent reste bête : aucune logique métier de classe.
 //
 // ISOLATION des erreurs (AC4) : serveur de fichiers injoignable au montage →
 // l'op renvoie une erreur → le moteur rend {status: error, detail} pour le SEUL
@@ -34,7 +34,7 @@ import (
 // sont des strings (contrat §4.1).
 type DriveSpec struct {
 	Letter string // lettre de lecteur, ex. "K:" (clé d'identité du montage)
-	UNC    string // chemin UNC \\<se4fs>\Classe_<name>\<login>\ (tokens substitués localement)
+	UNC    string // chemin UNC \\<se4fs>\Classe_<name>\<user>\ (tokens substitués localement)
 }
 
 // DriveOps : opérations de montage réseau spécifiques à l'OS, injectées
@@ -45,7 +45,7 @@ type DriveSpec struct {
 // valeur (UNC résolu) sert à détecter une dérive (lettre montée vers le mauvais
 // partage).
 type DriveOps interface {
-	// ResolveUNC substitue les tokens locaux (`<se4fs>`/`<login>`) dans l'UNC
+	// ResolveUNC substitue les tokens locaux (`<se4fs>`/`<user>`) dans l'UNC
 	// cible → l'UNC réel `\\serveur\partage\login\`. Erreur = serveur non
 	// résoluble (l'item devient error, les autres types continuent).
 	ResolveUNC(spec DriveSpec) (string, error)

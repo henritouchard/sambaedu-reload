@@ -34,13 +34,13 @@ func newFakeDriveOps() *fakeDriveOps {
 	}
 }
 
-// ResolveUNC : substitue les tokens fictifs <se4fs>/<login> pour les tests.
+// ResolveUNC : substitue les tokens fictifs <se4fs>/<user> pour les tests.
 func (o *fakeDriveOps) ResolveUNC(spec DriveSpec) (string, error) {
 	if err := o.resolveErr[spec.UNC]; err != nil {
 		return "", err
 	}
 	unc := strings.ReplaceAll(spec.UNC, "<se4fs>", "SE4FS")
-	unc = strings.ReplaceAll(unc, "<login>", "alice")
+	unc = strings.ReplaceAll(unc, "<user>", "alice")
 
 	return strings.TrimRight(unc, `\`), nil
 }
@@ -103,7 +103,7 @@ func driveItem(letter, unc string) StateItem {
 // resolvedUNC : l'UNC tel que résolu par le fake (tokens substitués).
 func resolvedUNC(raw string) string {
 	unc := strings.ReplaceAll(raw, "<se4fs>", "SE4FS")
-	unc = strings.ReplaceAll(unc, "<login>", "alice")
+	unc = strings.ReplaceAll(unc, "<user>", "alice")
 
 	return strings.TrimRight(unc, `\`)
 }
@@ -114,8 +114,8 @@ func TestDrivesApplyMapsTargetSetThenIdempotent(t *testing.T) {
 	ops := newFakeDriveOps()
 	h := &DrivesHandler{Ops: ops}
 	items := []StateItem{
-		driveItem("K", `\\<se4fs>\Classe_3A\<login>\`),
-		driveItem("L", `\\<se4fs>\Classe_3B\<login>\`),
+		driveItem("K", `\\<se4fs>\Classe_3A\<user>\`),
+		driveItem("L", `\\<se4fs>\Classe_3B\<user>\`),
 	}
 
 	if err := h.Apply(items); err != nil {
@@ -147,7 +147,7 @@ func TestDrivesLetterNormalization(t *testing.T) {
 	for _, raw := range []string{"k", "K", "k:", "K:"} {
 		ops := newFakeDriveOps()
 		h := &DrivesHandler{Ops: ops}
-		if err := h.Apply([]StateItem{driveItem(raw, `\\<se4fs>\Classe_3A\<login>\`)}); err != nil {
+		if err := h.Apply([]StateItem{driveItem(raw, `\\<se4fs>\Classe_3A\<user>\`)}); err != nil {
 			t.Fatalf("apply %q: %v", raw, err)
 		}
 		if !ops.mapped["K:"].mapped {
@@ -162,14 +162,14 @@ func TestDrivesUnmapsManagedDriveDroppedFromRules(t *testing.T) {
 	ops := newFakeDriveOps()
 	h := &DrivesHandler{Ops: ops}
 	full := []StateItem{
-		driveItem("K", `\\<se4fs>\Classe_3A\<login>\`),
-		driveItem("L", `\\<se4fs>\Classe_3B\<login>\`),
+		driveItem("K", `\\<se4fs>\Classe_3A\<user>\`),
+		driveItem("L", `\\<se4fs>\Classe_3B\<user>\`),
 	}
 	if err := h.Apply(full); err != nil {
 		t.Fatalf("apply full: %v", err)
 	}
 
-	reduced := []StateItem{driveItem("K", `\\<se4fs>\Classe_3A\<login>\`)}
+	reduced := []StateItem{driveItem("K", `\\<se4fs>\Classe_3A\<user>\`)}
 	if err := h.Apply(reduced); err != nil {
 		t.Fatalf("apply reduced: %v", err)
 	}
@@ -193,8 +193,8 @@ func TestDrivesNeverTouchesUserMappedLetter(t *testing.T) {
 
 	h := &DrivesHandler{Ops: ops}
 	items := []StateItem{
-		driveItem("K", `\\<se4fs>\Classe_3A\<login>\`), // homonyme bloqué
-		driveItem("L", `\\<se4fs>\Classe_3B\<login>\`), // doit converger
+		driveItem("K", `\\<se4fs>\Classe_3A\<user>\`), // homonyme bloqué
+		driveItem("L", `\\<se4fs>\Classe_3B\<user>\`), // doit converger
 	}
 
 	if err := h.Apply(items); err != nil {
@@ -226,10 +226,10 @@ func TestDrivesNeverTouchesUserMappedLetter(t *testing.T) {
 func TestDrivesRemapsDivergentLetter(t *testing.T) {
 	ops := newFakeDriveOps()
 	// K: gérée mais montée vers le mauvais partage.
-	ops.mapped["K:"] = driveMapping{mapped: true, unc: resolvedUNC(`\\<se4fs>\Classe_AUTRE\<login>\`)}
+	ops.mapped["K:"] = driveMapping{mapped: true, unc: resolvedUNC(`\\<se4fs>\Classe_AUTRE\<user>\`)}
 
 	h := &DrivesHandler{Ops: ops}
-	items := []StateItem{driveItem("K", `\\<se4fs>\Classe_3A\<login>\`)}
+	items := []StateItem{driveItem("K", `\\<se4fs>\Classe_3A\<user>\`)}
 
 	ok, err := h.Test(items)
 	if err != nil {
@@ -242,7 +242,7 @@ func TestDrivesRemapsDivergentLetter(t *testing.T) {
 	if err := h.Apply(items); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	want := resolvedUNC(`\\<se4fs>\Classe_3A\<login>\`)
+	want := resolvedUNC(`\\<se4fs>\Classe_3A\<user>\`)
 	if ops.mapped["K:"].unc != want {
 		t.Fatalf("K: aurait dû être remonté vers %q, obtenu %q", want, ops.mapped["K:"].unc)
 	}
@@ -252,10 +252,10 @@ func TestDrivesRemapsDivergentLetter(t *testing.T) {
 
 func TestDrivesServerUnreachableIsError(t *testing.T) {
 	ops := newFakeDriveOps()
-	ops.resolveErr[`\\<se4fs>\Classe_3A\<login>\`] = fmt.Errorf("serveur de fichiers injoignable")
+	ops.resolveErr[`\\<se4fs>\Classe_3A\<user>\`] = fmt.Errorf("serveur de fichiers injoignable")
 	h := &DrivesHandler{Ops: ops}
 
-	items := []StateItem{driveItem("K", `\\<se4fs>\Classe_3A\<login>\`)}
+	items := []StateItem{driveItem("K", `\\<se4fs>\Classe_3A\<user>\`)}
 	if _, err := h.Test(items); err == nil {
 		t.Fatalf("serveur injoignable : erreur attendue de Test")
 	}
@@ -292,7 +292,7 @@ func TestDrivesInvalidPayloadIsError(t *testing.T) {
 // --- Machine d'états §5 via le moteur (STRICT inconditionnel, Story 27.8) -----
 
 func TestDrivesThroughEngineSection5(t *testing.T) {
-	items := []StateItem{driveItem("K", `\\<se4fs>\Classe_3A\<login>\`)}
+	items := []StateItem{driveItem("K", `\\<se4fs>\Classe_3A\<user>\`)}
 	targetHash := AggregateHash(items)
 
 	cases := []struct {
@@ -313,15 +313,15 @@ func TestDrivesThroughEngineSection5(t *testing.T) {
 			ops := newFakeDriveOps()
 			if tc.seedManaged {
 				// Une lettre gérée hors cible (sortie des règles) → réel ≠ cible.
-				ops.mapped["Z:"] = driveMapping{mapped: true, unc: resolvedUNC(`\\<se4fs>\Classe_ghost\<login>\`)}
+				ops.mapped["Z:"] = driveMapping{mapped: true, unc: resolvedUNC(`\\<se4fs>\Classe_ghost\<user>\`)}
 			}
 			if tc.name == "conforme → compliant" {
-				ops.mapped["K:"] = driveMapping{mapped: true, unc: resolvedUNC(`\\<se4fs>\Classe_3A\<login>\`)}
+				ops.mapped["K:"] = driveMapping{mapped: true, unc: resolvedUNC(`\\<se4fs>\Classe_3A\<user>\`)}
 			}
 
 			h := &DrivesHandler{Ops: ops}
 			engine := &Engine{Handlers: map[string]Handler{"drives": h}}
-			it := []StateItem{driveItem("K", `\\<se4fs>\Classe_3A\<login>\`)}
+			it := []StateItem{driveItem("K", `\\<se4fs>\Classe_3A\<user>\`)}
 
 			applied := AppliedState{}
 			if tc.lastApplied != "" {
@@ -347,8 +347,8 @@ func TestDrivesThroughEngineSection5(t *testing.T) {
 
 func TestDrivesAggregateHashIsServerOrderConcat(t *testing.T) {
 	items := []StateItem{
-		driveItem("K", `\\<se4fs>\Classe_3A\<login>\`),
-		driveItem("L", `\\<se4fs>\Classe_3B\<login>\`),
+		driveItem("K", `\\<se4fs>\Classe_3A\<user>\`),
+		driveItem("L", `\\<se4fs>\Classe_3B\<user>\`),
 	}
 	got := AggregateHash(items)
 	if got == "" || len(got) != 64 {

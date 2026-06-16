@@ -265,7 +265,7 @@ inchangées par le portage) :
   `shared/handler_drives.go` (testée hôte). **Marqueur de périmètre** = serveur
   SambaEdu : un lecteur monté par l'utilisateur (vers un autre serveur, ou une
   lettre cible déjà occupée par un montage user) n'est **jamais** démonté ni
-  écrasé. Tokens `<se4fs>`/`<login>` substitués **localement**.
+  écrasé. Tokens `<se4fs>`/`<user>` substitués **localement**.
 - **Rendu overlay VERROUILLÉ (Story 27.1bis)** — l'agent gère le **cycle de vie
   du rendu** (Rainmeter), pas seulement la donnée :
   - **Provisioning portable au bootstrap** (SERVICE SYSTEM, `SyncRainmeterTool`

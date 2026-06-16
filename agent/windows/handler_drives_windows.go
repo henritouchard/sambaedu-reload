@@ -23,8 +23,8 @@ import (
 // jamais listée, jamais démontée. Une lettre cible déjà occupée par un montage
 // user (vers un AUTRE UNC) est Blocked → on n'écrase pas.
 //
-// Tokens `<se4fs>`/`<login>` substitués LOCALEMENT ; l'UNC logique
-// (`\\<se4fs>\Classe_<name>\<login>\`) est resté CÔTÉ SERVEUR (provider MVP-A).
+// Tokens `<se4fs>`/`<user>` substitués LOCALEMENT ; l'UNC logique
+// (`\\<se4fs>\Classe_<name>\<user>\`) est resté CÔTÉ SERVEUR (provider MVP-A).
 
 var (
 	modMpr = windows.NewLazySystemDLL("mpr.dll")
@@ -58,7 +58,7 @@ type driveOps struct {
 	log *shared.Logger
 }
 
-// ResolveUNC substitue les tokens locaux (`<se4fs>`/`<login>`) dans l'UNC cible.
+// ResolveUNC substitue les tokens locaux (`<se4fs>`/`<user>`) dans l'UNC cible.
 // Le `net use` n'accepte pas de backslash final → on le retire.
 func (o *driveOps) ResolveUNC(spec shared.DriveSpec) (string, error) {
 	unc := strings.TrimRight(substituteTokens(spec.UNC), `\`)

@@ -51,8 +51,8 @@ use Illuminate\Support\Facades\Log;
  * par-user, UNC dépendant du login). Le handler agent `drives` est exécuté par
  * le compagnon de session.
  *
- * Payload v1 : `{letter, unc, label}` — UNC `\\<se4fs>\Classe_<name>\<login>\`,
- * tokens `<se4fs>`/`<login>` substitués LOCALEMENT par l'agent (iso 27.1).
+ * Payload v1 : `{letter, unc, label}` — UNC `\\<se4fs>\Classe_<name>\<user>\`,
+ * tokens `<se4fs>`/`<user>` substitués LOCALEMENT par l'agent (iso 27.1).
  * Toujours des strings (§4.1).
  */
 final class DrivesStateProvider implements StateProvider
@@ -143,10 +143,11 @@ final class DrivesStateProvider implements StateProvider
                 payload: [
                     'letter' => $letter.':',
                     // UNC vers le sous-dossier de la classe du user (iso legacy
-                    // `Classes/Classe_<name>/<login>`). Tokens `<se4fs>`/`<login>`
+                    // `Classes/Classe_<name>/<user>`). Tokens `<se4fs>`/`<user>`
                     // substitués localement par l'agent (jamais de secret en
-                    // payload, aucune dépendance réseau au calcul).
-                    'unc' => '\\\\<se4fs>\\Classe_'.$bare.'\\<login>\\',
+                    // payload, aucune dépendance réseau au calcul). `<user>` est
+                    // le token CANONIQUE du login de session (iso ShortcutsState).
+                    'unc' => '\\\\<se4fs>\\Classe_'.$bare.'\\<user>\\',
                     'label' => 'Classe '.$bare,
                 ],
                 updatedAt: $class->updated_at,

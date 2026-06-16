@@ -324,7 +324,7 @@ func TestPrintersErrorDoesNotBlockOtherTypes(t *testing.T) {
 
 	items := []StateItem{
 		printerItem("imp1", false),
-		driveItem("K", `\\<se4fs>\Classe_3A\<login>\`),
+		driveItem("K", `\\<se4fs>\Classe_3A\<user>\`),
 	}
 
 	report := engine.RunPass(items, AppliedState{})
