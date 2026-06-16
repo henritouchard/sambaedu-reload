@@ -68,4 +68,22 @@ return [
     // silencieusement (404). Surchargé en test vers un répertoire temporaire.
     'tools_path' => env('AGENT_TOOLS_PATH', storage_path('agent/tools')),
 
+    // Borne haute de l'upload du portable d'un outil de rendu (Story 25.6 —
+    // catalogue agent_tools). Un portable Rainmeter complet pèse quelques
+    // dizaines de Mio ; 200 Mio est une marge large mais FINIE — un upload
+    // au-delà est refusé AVANT stockage/hachage (aucun orphelin). Exprimée en
+    // octets. Le plancher max(1, …) évite une valeur dégénérée (0/négatif/vide
+    // → null casté 0) qui rejetterait tout upload.
+    'tool_max_upload_bytes' => max(1, (int) env('AGENT_TOOL_MAX_UPLOAD_BYTES', 200 * 1024 * 1024)),
+
+    // Skin canonique d'overlay Rainmeter (Story 25.6, volet A — D7). Autorité
+    // = `resources/overlay/rainmeter/SambaEduOverlay/SambaEduOverlay.ini`
+    // (UTF-8, versionné) ; provisionnée (copie/symlink) sous ce chemin
+    // (convention storage NON versionné, chown www-admin uid 599 sinon
+    // hash_file()/serving échouent en 404 silencieux). Servie par la ROUTE
+    // AGENT authentifiée token (PAS d'alias Apache public) ; l'agent vérifie
+    // le SHA-256 du manifest AVANT écriture, puis convertit UTF-16 LE + BOM.
+    // Surchargé en test vers un fichier temporaire.
+    'overlay_skin_path' => env('AGENT_OVERLAY_SKIN_PATH', storage_path('assets/overlay/rainmeter/SambaEduOverlay.ini')),
+
 ];

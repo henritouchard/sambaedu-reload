@@ -316,6 +316,24 @@ Route::get('/v1/agent/tools/{filename}', [AgentToolController::class, 'download'
     ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
     ->name('agent.v1.tools.download');
 
+// `GET /v1/agent/tools-manifest` + `GET /v1/agent/overlay-skin` (25.6, D8(b)/D7) :
+// manifest tool/skin DÉDIÉ (iso release-manifest 25.1, HORS items desired-state
+// → golden overlay/state INCHANGÉS) + serving de la skin d'overlay Rainmeter
+// par la ROUTE AGENT authentifiée (PAS d'alias Apache public). Le manifest
+// expose l'outil ACTIF {key, filename, sha256, size} (SHA-256 vérifié côté
+// agent AVANT extraction — D6, remplace la constante Go figée) + la skin
+// {filename, sha256} ; outil désactivé/absent → tool: null (no-op gracieux,
+// D4). La skin a un filename FIXE (anti-traversal par construction). Chaîne iso
+// state/report/tools. Placées AVANT le bloc 25.4/16.13 (fenêtre 1500 chars
+// ScriptsOsNamespaceTest — après le groupe 16.12, jamais juste avant).
+Route::get('/v1/agent/tools-manifest', [AgentToolController::class, 'manifest'])
+    ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
+    ->name('agent.v1.tools.manifest');
+
+Route::get('/v1/agent/overlay-skin', [AgentToolController::class, 'skin'])
+    ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
+    ->name('agent.v1.tools.skin');
+
 /*
 |--------------------------------------------------------------------------
 | Story 25.4 — Endpoints d'amorçage LAN (binaire stable + racine CA)

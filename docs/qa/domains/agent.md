@@ -1670,6 +1670,85 @@ La page `parc-settings/agent/` (route `parc-settings.agent`, `can:computer.insta
    valeur (test croisé NFR13). Le bump (payload `shortcuts` +
    `{icon_asset, icon_checksum}`) est documenté = évolution mineure §9.
 
+## Section 18 — Catalogue de tools : portable Rainmeter uploadé + skin servie + toggle (Story 25.6)
+
+> **Le trou de parité fermé** : 27.1bis livrait le portable Rainmeter déposé
+> MANUELLEMENT sur la VM (hash figé en dur dans le binaire Go) et la skin
+> EMBARQUÉE par `go:embed` (recompilation à chaque retouche). 25.6 fait du
+> portable ET de la skin des **assets gérés serveur, toggleables depuis l'UI** :
+> upload validé (SHA-256 calculé serveur), manifest dédié, serving authentifié
+> de la skin, embed retiré. **Le rendu verrouillé (ACL/watchdog/overlay.json
+> SYSTEM) et le golden overlay sont INTOUCHÉS.**
+
+**Pré-requis VM (ACTION HUMAINE)** :
+- Migration jouée : `php artisan migrate` (table `agent_tools`) —
+  `migrate:status` doit montrer `create_agent_tools_table` `Ran`.
+- Clés config appliquées : `php artisan config:cache` + chown www-admin (clés
+  `agent.tool_max_upload_bytes`, `agent.overlay_skin_path`).
+- Routes neuves : `php artisan route:cache` (`agent.v1.tools.manifest`,
+  `agent.v1.tools.skin`).
+- Skin canonique provisionnée sous `storage/assets/overlay/rainmeter/SambaEduOverlay.ini`
+  (copie idempotente depuis `resources/overlay/...` au 1er serving ;
+  **`chown www-admin storage/assets/overlay/rainmeter`** sinon `hash_file()` →
+  false → 404 silencieux).
+- Dossier outils lisible/écrivable www-admin : `storage/agent/tools/`.
+
+### Scénario 18.1 — Upload portable : validation structure ZIP + SHA-256 serveur
+
+1. UI `parc-settings/agent/` → section « Outils du parc ». Importer l'archive
+   `.zip` du portable Rainmeter (version `4.5.18`). En base : `agent_tools` a une
+   ligne `key=rainmeter`, `filename=sambaedu-rainmeter-4.5.18.zip`,
+   `sha256 = hash_file('sha256')` du fichier stocké (jamais un hash client),
+   `enabled=false` (premier upload désactivé par défaut).
+2. **Refus** (chacun → `toastError`, jamais 500, ZÉRO ligne écrite, aucun
+   orphelin) : extension non-`.zip` ; MIME hostile ; archive > borne config ;
+   ZIP SANS `Rainmeter.exe` à la racine ; ZIP SANS dossier `Skins/` ; ZIP
+   corrompu ; version malformée (`../evil`).
+3. **Anti-traversal** : un nom de fichier client hostile (`../../etc/passwd.zip`)
+   est IGNORÉ — le filename est DÉRIVÉ serveur de la version
+   (`sambaedu-rainmeter-<version>.zip`, matchant la regex `ToolController`).
+
+### Scénario 18.2 — Toggle on/off → déploiement / no-op sans désinstaller (D3, D4)
+
+1. Activer le toggle → `agent_tools.enabled=true`. `GET /api/v1/agent/tools-manifest`
+   (poste enrôlé) expose `tool: {key, filename, sha256, size}`. Sur le poste
+   lab : prochain check-in → l'agent télécharge le portable (route `/tools/{filename}`),
+   vérifie le SHA-256 = `tool.sha256` AVANT extraction, pose Rainmeter, overlay
+   rendu au logon.
+2. Désactiver le toggle → `enabled=false`. Le manifest renvoie `tool: null`.
+   Sur le poste : l'agent **ne (re)provisionne plus** (no-op gracieux), MAIS
+   **Rainmeter déjà posé reste en place** (D4 — pas de désinstallation).
+3. Aucun tool dans le catalogue → `tool: null` → no-op (jamais d'`error` du seul
+   fait de l'absence ; Rainmeter absent reste gracieux, invariant 24.4/24.6).
+
+### Scénario 18.3 — Skin SERVIE authentifiée, embed retiré (Volet A, D1, D7)
+
+1. `GET /api/v1/agent/overlay-skin` SANS `Authorization` → **401**. Avec token
+   d'un poste en quarantaine → **403**. Avec token valide → **200** binaire
+   (`BinaryFileResponse`), PAS d'alias Apache public (la skin n'est pas
+   client-facing comme SYSVOL).
+2. **Intégrité** : le SHA-256 servi = le `skin.sha256` du manifest = le hash de
+   la canonique `resources/overlay/rainmeter/SambaEduOverlay/SambaEduOverlay.ini`
+   (le provisioner réaligne la cible servie sur la canonique — autorité).
+3. Sur le poste : l'agent télécharge la skin, vérifie le SHA-256 AVANT écriture,
+   la convertit **UTF-16 LE + BOM** (`ToUTF16LEWithBOM` inchangé) et la pose ;
+   accents corrects (pas de `Â·`). Hash divergent → rejetée AVANT écriture,
+   retry au cycle suivant — jamais une skin corrompue posée.
+4. **Embed retiré** : `agent/shared/rainmeter_embed.go`, `embedded/`,
+   `rainmeter_embed_test.go` SUPPRIMÉS ; `grep -rn 'go:embed embedded/\|RainmeterSkinSource'`
+   sur `agent/` = VIDE (hors commentaires) ; `GOOS=windows go build ./...` VERT.
+5. **Sans recompilation** : retoucher la skin canonique → re-provisionnée au
+   prochain serving SANS rebuild de l'agent (c'est le cœur de la story).
+
+### Scénario 18.4 — Golden overlay INCHANGÉ + manifest hors items desired-state (D8b)
+
+1. Le manifest tool/skin est un **endpoint DÉDIÉ** (iso `release-manifest` 25.1),
+   PAS un item desired-state : `agent/shared/testdata/overlay.golden.json` reste
+   **byte-identique** (aucun bump) ; `ContractV1Test` VERT à la même valeur.
+2. `go test ./shared/ -run 'Rainmeter|ParseRainmeter'` VERT (provisioning piloté
+   par manifest, vérif hash avant extraction/écriture, no-op gracieux, parsing
+   strict du filename/hash).
+
 ## Post-correctifs & non-régressions
 
 - **Defer review 23.1 (résolu en 24.1)** : le scénario 1.4 (body forgé → 4xx jamais 500) existe parce qu'un `StateHasher` appelé sur l'entrée agent pouvait lever une `JsonException` non catchée (UTF-8 invalide / NAN / INF). L'ingestion ne hashe JAMAIS le payload agent.
@@ -1772,3 +1851,7 @@ Ces trois incidents passaient les tests unitaires initiaux mais se révèlent à
 - [ ] 15.5 — skin UTF-16 LE + BOM (FF FE), accents corrects (pas de `Â·`), pose idempotente
 - [ ] 15.6 — watchdog : kill Rainmeter → relancé ≤ ~60 s, borné (~30 s), meurt au logoff
 - [ ] 15.7 — route /tools dédiée (séparée de /releases) ; golden overlay byte-identique (aucun bump, NFR13)
+- [ ] 18.1 — upload portable : SHA-256 calculé serveur, structure ZIP (`Rainmeter.exe` + `Skins/`) ; refus extension/MIME/taille/structure/version → toastError zéro ligne ; filename dérivé serveur (anti-traversal)
+- [ ] 18.2 — toggle ON → manifest `tool` actif, agent déploie (hash vérifié avant extraction) ; toggle OFF → `tool: null`, no-op SANS désinstaller (D4) ; absent → gracieux
+- [ ] 18.3 — skin servie 401/403/200, intégrité SHA-256 = canonique ; agent télécharge + UTF-16 LE+BOM (pas de `Â·`), hash KO rejeté ; embed retiré (grep vide, build windows vert) ; retouche skin sans rebuild
+- [ ] 18.4 — manifest dédié hors items desired-state ; golden overlay byte-identique (aucun bump) ; `go test` Rainmeter croisé vert

@@ -33,6 +33,14 @@ new #[Title('Agent — Flotte - SE4FS')] class extends Component
             <livewire:pages::parc-settings.agent._partials.releases-rings />
         </section>
 
+        {{-- Surface 4 : catalogue d'outils — portable Rainmeter uploadé + toggle (25.6) --}}
+        <section>
+            <h2 class="text-xl font-bold mb-3 flex items-center gap-2">
+                <i class="fa-solid fa-wrench text-primary"></i> Outils du parc
+            </h2>
+            <livewire:pages::parc-settings.agent._partials.tools-catalog />
+        </section>
+
         {{-- Surface 3 : progression du déploiement (lecture seule) --}}
         <section>
             <h2 class="text-xl font-bold mb-3 flex items-center gap-2">

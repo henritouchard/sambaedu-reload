@@ -106,8 +106,9 @@ au POC ci-dessus :
    bootstrap** (download via la route dédiée `GET /api/v1/agent/tools/<filename>`,
    **SHA-256 vérifié AVANT extraction**, install-if-absent idempotent). **Jamais**
    par un handler runtime (« handler jamais installeur »), **jamais** MSI/NSIS/
-   winget. Tant que l'artefact réel n'est pas figé (constante `RainmeterToolChecksum`
-   vide côté agent), le provisioning est inerte et Rainmeter absent reste gracieux.
+   winget. *(Depuis 25.6, l'artefact et son SHA-256 viennent du catalogue serveur
+   `agent_tools` via le manifest — voir la section « Catalogue de tools » plus bas ;
+   tool absent/désactivé → provisioning inerte, Rainmeter absent reste gracieux.)*
 
 2. **`overlay.json` écrit par le SERVICE SYSTEM au logon** (session-change WTS,
    `WTS_SESSION_LOGON`), **possédé SYSTEM avec ACL `<SID>:R`** : l'élève **lit**,
@@ -131,9 +132,40 @@ au POC ci-dessus :
    watchdog répond.
 
 > La skin canonique reste `resources/overlay/rainmeter/SambaEduOverlay/SambaEduOverlay.ini`
-> (UTF-8). Une copie embarquée (`agent/shared/embedded/SambaEduOverlay.ini`),
-> maintenue identique, est ce que l'agent convertit et pose (go:embed ne peut
-> référencer un fichier hors du package).
+> (UTF-8) — l'**autorité**. Depuis 25.6 elle n'est plus embarquée : voir la
+> section suivante.
+
+## Catalogue de tools — skin servie + portable uploadé (Story 25.6)
+
+25.6 fait du **portable Rainmeter ET de la skin** des **assets gérés côté
+serveur**, toggleables depuis l'UI — là où 27.1bis les livrait en bouche-trou
+(portable déposé à la main + hash figé dans le binaire ; skin embarquée
+`go:embed`).
+
+- **Skin SERVIE (l'embed est retiré, D1)**. La skin canonique
+  `resources/overlay/rainmeter/SambaEduOverlay/SambaEduOverlay.ini` (UTF-8, toujours
+  l'autorité) est **provisionnée** sous
+  `storage/assets/overlay/rainmeter/SambaEduOverlay.ini` (`OverlaySkinProvisioner`,
+  copie idempotente, `chown www-admin`) et **servie** par la **route agent
+  authentifiée** `GET /api/v1/agent/overlay-skin` (token'd, PAS d'alias public).
+  L'agent la **télécharge** (vérif SHA-256 avant écriture) puis la convertit
+  UTF-16 LE + BOM à la pose (logique 27.1bis inchangée). Le `go:embed`
+  (`agent/shared/rainmeter_embed.go`, `embedded/`, son test) est **SUPPRIMÉ** :
+  retoucher la skin canonique ne nécessite **plus de recompiler l'agent**.
+
+- **Portable uploadé + toggle (catalogue `agent_tools`, D2/D5)**. L'admin
+  **importe** le `.zip` portable depuis `parc-settings/agent/` (section « Outils
+  du parc ») : le serveur valide (extension/MIME/taille, **structure ZIP**
+  `Rainmeter.exe` + `Skins/`), **calcule le SHA-256** (jamais un hash client),
+  range le fichier sous `storage/agent/tools/`. Un **toggle** active/désactive le
+  déploiement (global — D3). Le checksum du portable vient désormais de l'**état
+  servi** (manifest `GET /api/v1/agent/tools-manifest`), plus de la constante Go
+  `RainmeterToolChecksum` (retirée). Désactivé → no-op côté agent, **sans
+  désinstaller** (D4).
+
+- **Golden overlay INTOUCHÉ** : le manifest tool/skin est un endpoint **dédié**
+  (pas un item desired-state) ; `ComposeOverlayDocument` et le rendu verrouillé
+  (ACL/watchdog/overlay.json SYSTEM) sont **réutilisés tels quels**.
 
 ## ⚠️ Caveats POC
 

@@ -177,3 +177,53 @@ présente dans chaque report) est désormais **persistée** dans
 (jointure lecture seule `rings × workstation_group_workstation × workstations`)
 pour montrer, par ring, les postes à jour / en retard / jamais vus vs la version
 ciblée. Le contrat de report est inchangé — la colonne ne modifie pas le payload.
+
+## Catalogue de tools — portable Rainmeter uploadé + skin servie (Story 25.6)
+
+Distinct du canal **release** (réservé au binaire agent + auto-update) : un
+**catalogue d'outils de rendu** posés par l'agent au bootstrap. Table dédiée
+`agent_tools` (`key` unique, `name`, `filename`, `sha256`, `size`, `enabled`,
+`uploaded_at`, `uploaded_by` — PAS de table polymorphe, D2). Rainmeter = 1re et
+seule entrée en MVP (mono-version, D5).
+
+**Écrivain unique** : `App\Services\Agent\Tools\AgentToolService` (pattern
+`ReleaseCreationService`). L'UI Livewire et toute autre façade passent par lui —
+jamais de `save()` direct.
+
+- `upload(UploadedFile, string $version, ?int $uploadedBy)` — ingestion VALIDÉE :
+  extension `.zip` + MIME, taille ≤ `config('agent.tool_max_upload_bytes')`,
+  **structure ZIP** (`Rainmeter.exe` + `Skins/` à la racine), filename **dérivé
+  serveur** de la version (`sambaedu-rainmeter-<version>.zip`, matchant la regex
+  `ToolController` — jamais le nom client brut, anti-traversal), **SHA-256
+  calculé serveur** (`hash_file`). Mono-version : un nouvel upload remplace
+  l'archive active (ancien fichier purgé), l'état `enabled` est conservé. Tout
+  refus → `AgentToolException`, AUCUNE ligne écrite, aucun orphelin.
+- `toggle(AgentTool, bool)` — bascule GLOBALE `enabled` (D3).
+
+**Endpoints (canal agent — bearer, chaîne iso state/report)** :
+
+| Verbe + chemin | Rôle |
+| --- | --- |
+| `GET /api/v1/agent/tools-manifest` | Manifest DÉDIÉ (D8b, iso `release-manifest`) : `{success, tool:{key,filename,sha256,size}|null, skin:{filename,sha256}|null}`. Tool absent/désactivé → `tool: null` (no-op gracieux agent, D4). **Hors items desired-state → golden overlay/state INTOUCHÉS.** |
+| `GET /api/v1/agent/tools/{filename}` | Serving binaire du portable (27.1bis, réutilisé) — filename strict, realpath confiné `agent.tools_path`, 404 indistinct. |
+| `GET /api/v1/agent/overlay-skin` | Serving de la **skin** (D7) — route agent authentifiée (PAS d'alias public), filename FIXE (anti-traversal), 404 indistinct, intégrité SHA-256 exposée au manifest. |
+
+**Skin servie (retire l'embed, D1)** : la canonique
+`resources/overlay/rainmeter/SambaEduOverlay/SambaEduOverlay.ini` (UTF-8,
+autorité) est **provisionnée** (copie idempotente) sous
+`config('agent.overlay_skin_path')` = `storage/assets/overlay/rainmeter/SambaEduOverlay.ini`
+par `OverlaySkinProvisioner`, qui réaligne la cible servie sur la canonique et
+expose son SHA-256 au manifest. `chown www-admin` requis (sinon `hash_file()` →
+false → 404 silencieux). L'agent **télécharge** la skin (vérif SHA-256 avant
+écriture) puis la convertit UTF-16 LE + BOM — le `go:embed` 27.1bis est retiré.
+
+**Intégrité du portable depuis l'état (D6)** : l'agent lit `tool.sha256` du
+manifest et vérifie le téléchargement AVANT extraction — la constante Go
+`RainmeterToolChecksum` est retirée (le catalogue serveur est l'autorité).
+
+> **Invariant ops** : ne JAMAIS remplacer le `.zip` portable ni la skin sur
+> disque hors upload (UI / `AgentToolService`) — le SHA-256 fait foi depuis la
+> DB et le manifest. Un remplacement manuel du fichier ferait diverger son hash
+> de celui exposé au manifest, et l'agent **rejetterait le téléchargement en
+> boucle** (vérif SHA-256 avant écriture/extraction). Tout changement d'archive
+> ou de skin passe par un nouvel upload (qui recalcule et republie le hash).

@@ -99,16 +99,3 @@ func TestOverlayDocumentForSession_CorruptedCacheGraceful(t *testing.T) {
 		t.Fatal("cache corrompu/schema inconnu → composition sautée (gracieux)")
 	}
 }
-
-// La skin embarquée doit exister et être convertible en UTF-16 LE + BOM —
-// garde-fou de l'embed (un embed cassé ferait échouer le provisioning).
-func TestRainmeterSkinSource_EmbeddedAndConvertible(t *testing.T) {
-	src := RainmeterSkinSource()
-	if !strings.Contains(src, "[Rainmeter]") || !strings.Contains(src, "JsonPath") {
-		t.Fatalf("skin embarquée invalide (pas une skin Rainmeter) : %.80q", src)
-	}
-	out, err := ToUTF16LEWithBOM(src)
-	if err != nil || len(out) < 2 || out[0] != 0xFF || out[1] != 0xFE {
-		t.Fatalf("skin embarquée non convertible UTF-16 LE + BOM : %v", err)
-	}
-}

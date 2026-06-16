@@ -87,3 +87,9 @@ Desktop.ini
 # ex. agent/windows.exe — ne jamais versionner.
 /agent/*.exe
 *.pfx
+
+# Story 25.6 : skin d'overlay Rainmeter PROVISIONNÉE (copie de la canonique
+# versionnée resources/overlay/rainmeter/…) — convention storage NON versionné,
+# servie par la route agent. L'autorité reste resources/ ; cette copie est
+# régénérée par OverlaySkinProvisioner (chown www-admin requis en prod).
+/storage/assets/overlay/

@@ -271,11 +271,22 @@ inchangées par le portage) :
   - **Provisioning portable au bootstrap** (SERVICE SYSTEM, `SyncRainmeterTool`
     dans `shared/rainmeter_provision.go`, calqué `SyncWallpaperAssets`) : download
     de l'archive PORTABLE via la route **dédiée** `GET /api/v1/agent/tools/<filename>`
-    (≠ `/releases`, réservé au binaire agent), **SHA-256 vérifié AVANT extraction**
-    (constante `RainmeterToolChecksum` — vide = inerte/gracieux), extraction
-    `archive/zip` (anti zip-slip) sous `C:\ProgramData\SambaEdu\Rainmeter\app\`,
+    (≠ `/releases`, réservé au binaire agent), **SHA-256 vérifié AVANT extraction**,
+    extraction `archive/zip` (anti zip-slip) sous `C:\ProgramData\SambaEdu\Rainmeter\`,
     ACL Users:R. Install-if-absent **idempotent**. **Jamais** par un handler runtime,
     **jamais** MSI/NSIS/winget, zéro registre (mode portable).
+  - **Catalogue de tools serveur (Story 25.6)** — le portable ET la skin sont
+    désormais des **assets gérés serveur, toggleables depuis l'UI**, plus un
+    artefact déposé à la main + une skin embarquée. L'agent lit un **manifest
+    dédié** `GET /api/v1/agent/tools-manifest` (`{tool:{key,filename,sha256,size},
+    skin:{filename,sha256}}`) : le SHA-256 du portable vient de l'**état servi**
+    (catalogue `agent_tools`, plus la constante Go `RainmeterToolChecksum`
+    RETIRÉE) ; tool absent/désactivé (`tool: null`) → **no-op gracieux** (pas de
+    désinstallation — D4). La **skin est TÉLÉCHARGÉE** (vérif SHA-256 avant
+    écriture) via `GET /api/v1/agent/overlay-skin` (route agent token'd, pas
+    d'alias public) — **l'embed `go:embed` est SUPPRIMÉ** (`rainmeter_embed.go`,
+    `embedded/`, son test de non-divergence) : une retouche de skin n'exige plus
+    de recompiler l'agent.
   - **`overlay.json` écrit par le SERVICE SYSTEM au logon** (`overlay_logon_windows.go`)
     — abonnement session-change (`svc.AcceptSessionChange` + `case SessionChange`
     sur `WTS_SESSION_LOGON`), résolution user/profil de session via le token

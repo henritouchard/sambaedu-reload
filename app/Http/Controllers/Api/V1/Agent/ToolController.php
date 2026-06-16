@@ -6,6 +6,8 @@ namespace App\Http\Controllers\Api\V1\Agent;
 
 use App\Http\Controllers\Controller;
 use App\Models\Workstation;
+use App\Services\Agent\Tools\AgentToolManifestService;
+use App\Services\Agent\Tools\OverlaySkinProvisioner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -99,6 +101,82 @@ class ToolController extends Controller
         ]);
 
         return response()->file($path);
+    }
+
+    /**
+     * Story 25.6 (D8(b)) — MANIFEST tool/skin DÉDIÉ
+     * (route `agent.v1.tools.manifest`). Iso `ReleaseController::manifest()` :
+     * wrapper SE5 `{success, …}`, JAMAIS un golden item desired-state (un outil
+     * de rendu n'est pas une ressource StateItem — le golden overlay/state
+     * reste INCHANGÉ). Expose l'outil ACTIF `{key, filename, sha256, size}` (le
+     * SHA-256 du portable que l'agent vérifie AVANT extraction — D6, remplace
+     * la constante Go figée) et la skin `{filename, sha256}`. Outil absent ou
+     * désactivé → `tool: null` (no-op gracieux côté agent — D4) ; skin
+     * introuvable → `skin: null`.
+     */
+    public function manifest(Request $request, AgentToolManifestService $manifests): JsonResponse
+    {
+        /** @var Workstation $workstation */
+        $workstation = $request->attributes->get('agent.workstation');
+
+        $manifest = $manifests->manifest();
+
+        // Debug : un par check-in (volume NFR4) — jamais en info.
+        Log::channel('agent')->debug('[ToolController] agent.tool.manifest_served', [
+            'action_type' => 'agent.tool.manifest_served',
+            'workstation_id' => $workstation->id,
+            'tool_enabled' => $manifest['tool'] !== null,
+            'skin_available' => $manifest['skin'] !== null,
+        ]);
+
+        return response()->json(array_merge(['success' => true], $manifest));
+    }
+
+    /**
+     * Story 25.6 (D7) — SERVING de la skin d'overlay Rainmeter
+     * (route `agent.v1.tools.skin`). PAS d'alias Apache public : la skin n'est
+     * pas client-facing comme SYSVOL/wpkg — elle est consommée par l'agent
+     * authentifié token (chaîne middleware iso `download()`). Filename FIXE
+     * (dérivé serveur, AUCUN input client → anti-traversal par construction) ;
+     * le fichier servi est résolu/provisionné depuis la canonique versionnée
+     * par {@see OverlaySkinProvisioner}. 404 INDISTINCT si introuvable/illisible
+     * (chown www-admin requis en prod sinon serving silencieusement KO).
+     * L'INTÉGRITÉ SHA-256 est exposée au manifest et vérifiée CÔTÉ AGENT avant
+     * écriture (iso le portable).
+     */
+    public function skin(Request $request, OverlaySkinProvisioner $skin): BinaryFileResponse|JsonResponse
+    {
+        /** @var Workstation $workstation */
+        $workstation = $request->attributes->get('agent.workstation');
+
+        $path = $skin->resolveServedPath();
+        if ($path === null || ! is_file($path)) {
+            return $this->skinNotFound($workstation);
+        }
+
+        Log::channel('agent')->debug('[ToolController] agent.tool.skin_served', [
+            'action_type' => 'agent.tool.skin_served',
+            'workstation_id' => $workstation->id,
+        ]);
+
+        return response()->file($path);
+    }
+
+    /**
+     * 404 INDISTINCT pour la skin (iso `notFound()`) : absente/illisible
+     * répondent à l'identique — aucun oracle.
+     */
+    private function skinNotFound(Workstation $workstation): JsonResponse
+    {
+        Log::channel('agent')->info('[ToolController] agent.tool.skin_not_found', [
+            'action_type' => 'agent.tool.skin_not_found',
+            'workstation_id' => $workstation->id,
+        ]);
+
+        return response()->json([
+            'error' => 'not_found',
+            'message' => 'Unknown overlay skin',
+        ], 404);
     }
 
     /**

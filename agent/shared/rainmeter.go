@@ -31,21 +31,29 @@ import (
 // asset vérifié + maintien, rien d'autre (anti-couteau-suisse NFR9/NFR12).
 
 const (
-	// RainmeterToolFilename : nom figé de l'artefact portable servi par la
-	// route dédiée /api/v1/agent/tools/{filename} (D8). Le serveur valide ce
-	// même pattern `sambaedu-rainmeter-…\.zip`. Mono-version (Q3) : un seul
-	// artefact pour tout le parc — Rainmeter ne bouge quasi jamais.
-	RainmeterToolFilename = "sambaedu-rainmeter-4.5.18-portable.zip"
+	// Story 25.6 (D6/D8) — l'intégrité ET le nom du portable viennent désormais
+	// du MANIFEST tool/skin servi (GET /api/v1/agent/tools-manifest), plus d'une
+	// constante figée dans le binaire (27.1bis `RainmeterToolFilename` /
+	// `RainmeterToolChecksum` RETIRÉES). Le catalogue serveur (table
+	// `agent_tools`) est l'autorité : l'agent lit `tool.{filename, sha256}` et
+	// vérifie le SHA-256 du téléchargement AVANT extraction. Outil absent ou
+	// désactivé du manifest → no-op gracieux (Rainmeter absent reste gracieux,
+	// invariant 24.4/24.6 — D4). La skin suit le même chemin : téléchargée
+	// (vérif SHA-256) depuis GET /api/v1/agent/overlay-skin, plus d'embed
+	// go:embed (D1).
 
-	// RainmeterToolChecksum : SHA-256 ATTENDU de l'artefact portable, vérifié
-	// AVANT extraction (pattern SyncWallpaperAssets : un contenu divergent
-	// n'entre JAMAIS dans le dossier cible). Bakée dans le binaire (comme le
-	// hash figé du contrat) — le déposant de l'artefact sur la VM met à jour
-	// cette constante en regard du `.zip` réellement servi. La chaîne vide
-	// DÉSACTIVE le provisioning (no-op gracieux) : tant que l'artefact réel
-	// n'est pas figé, l'agent ne télécharge/extrait rien — overlay.json reste
-	// écrit, Rainmeter absent reste gracieux (invariant 24.4/24.6).
-	RainmeterToolChecksum = ""
+	// RainmeterToolsManifestRoute : endpoint du manifest tool/skin DÉDIÉ (D8b),
+	// servi sur le canal agent token'd (chaîne iso /state).
+	RainmeterToolsManifestRoute = "/api/v1/agent/tools-manifest"
+
+	// RainmeterToolsRoute : préfixe du serving binaire du portable (le filename
+	// vient du manifest). Route existante 27.1bis, réutilisée.
+	RainmeterToolsRoute = "/api/v1/agent/tools/"
+
+	// RainmeterOverlaySkinRoute : serving de la skin d'overlay par la ROUTE
+	// AGENT authentifiée (D7 — PAS un alias Apache public ; la skin est
+	// consommée par l'agent token'd, pas client-facing comme SYSVOL).
+	RainmeterOverlaySkinRoute = "/api/v1/agent/overlay-skin"
 
 	// rainmeterExeName : sentinelle de présence/extraction. Le portable réel
 	// (option « Portable » de l'installeur Rainmeter) pose Rainmeter.exe À LA
