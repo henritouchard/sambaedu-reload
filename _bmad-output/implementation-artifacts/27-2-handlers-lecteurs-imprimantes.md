@@ -665,6 +665,53 @@ plus rigoureux. `opus`.
   1 ligne lors d'un write ; restauré depuis git puis ré-édité après libération d'espace — contenu intègre,
   vérifié.
 
+## ⚠️ Écart de parité legacy `drives` — À ARBITRER AVANT 27.6 (relevé 2026-06-16)
+
+> Relevé en revue avec Henri (comparaison du comportement legacy SE4 réellement servi vs ce que livre 27.2).
+> **Sans effet tant que le canal legacy vit (27.6) ; devient visible utilisateur le jour de la bascule.**
+> À trancher avant le décommissionnement legacy. Le dev de 27.2 N'A PAS re-tranché — c'est un fork de design.
+
+**Constat factuel.** La décision n° 2 (T2) affirme « aucune convention de lettre historique trouvée dans le
+legacy SE4 (`net use` legacy ne montait que `z:`) ». **C'est inexact** : la convention de lettres legacy EST
+documentée dans `../sambaedu/individuel.php:44,59`. Le grep `net use` est passé à côté parce que le legacy ne
+mappe PAS ces lettres par `net use` — K: vient du **profil itinérant Windows** (USERPROFILE), et H:/I:/L: de
+**drive-maps poussées au logon** (script de logon / GPO drive-maps), côté Windows.
+
+**Convention legacy réelle** (`individuel.php:44,59`) :
+
+| Lettre | Cible legacy | Contenu |
+|---|---|---|
+| **K:** | `\\se4fs\users\<login>` (`/home/<login>`) | **Home perso** (Documents, Bureau, profil) — RW |
+| **H:** | `\\se4fs\classes` = `/var/sambaedu/Classes` (**racine**) | **Toutes les classes**, vue ACL-filtrée |
+| **I:** | `\\se4fs\docs` | Documentation partagée |
+| **L:** | `\\se4fs\progs` (`ro/` + `rw/`) | Logiciels |
+
+**3 divergences de 27.2 (MVP-A) vs legacy :**
+
+1. **Périmètre.** 27.2 ne couvre QUE les classes. H: (classes racine), I: (docs), L: (progs) et le home
+   perso **ne sont pas émis**. Au décommissionnement legacy (27.6), un poste perdrait I:/L: + le home tant
+   qu'aucun provider ne les porte.
+2. **Modèle de montage.** Legacy = **UNE** lettre (H:) sur la **racine** du partage classes → l'utilisateur
+   navigue dans toutes les classes, les **ACL Samba filtrent** (lecture sur toutes, écriture sur son propre
+   `Classe_X/<login>/` + équipe enseignante `rwx` — `../sambaedu/includes/partages.inc.php:372,498,506,567`).
+   27.2 = **une lettre PAR classe**, pointée directement sur le sous-dossier `Classe_<nom>\<user>\` →
+   plus de vue inter-classes par le lecteur ; un prof multi-classes obtient K:, L:, M:…
+3. **Collision de lettre.** 27.2 réutilise **`K:`** pour les classes, alors que `K:` = home perso en legacy.
+
+**Précision importante (NON un écart) :** les ACL ne changent pas — Samba reste seul maître des droits, 27.2
+ne touche pas le FS. La sémantique « lecture sur toutes les classes / écriture sur mon dossier » est bien le
+comportement historique (ACL legacy ci-dessus), pas une régression de droits. L'écart est sur le **mapping**
+(lettres + modèle de navigation + couverture), pas sur les permissions.
+
+**À trancher (Henri) avant 27.6 :**
+- (a) **Modèle cible** : reproduire le legacy (H: racine ACL-filtrée + K: home + I:/L:) — parité 1:1 — ou
+  assumer le nouveau modèle « une lettre par classe pointée sur le sous-dossier user » (rupture d'UX) ?
+- (b) **Couverture** : qui porte home/docs/progs ? (nouveau(x) provider(s), ou hors-scope agent assumé ?)
+- (c) **Lettre classes** : conserver `K:` (collision home à gérer) ou repasser à `H:` pour la parité ?
+
+Tant que non tranché, **ne pas activer la bascule 27.6 pour `drives`** sous peine de régression visible
+utilisateur (H: « toutes les classes » → K: « ma classe seulement », perte de I:/L:/home).
+
 ## File List
 
 ### Providers PHP (serveur, lecture seule)
@@ -716,4 +763,5 @@ plus rigoureux. `opus`.
 
 | Date | Auteur | Changement |
 |---|---|---|
+| 2026-06-16 | Henri + Claude | Relevé d'un **écart de parité legacy `drives`** (nouvelle section avant File List) : convention de lettres legacy H/K/I/L documentée (`../sambaedu/individuel.php:44,59`) contredisant la décision n° 2 ; 27.2 (MVP-A) ne couvre que les classes, change le modèle de montage (lettre/classe vs H: racine ACL-filtrée) et réutilise `K:` (= home legacy). ACL inchangées (non un écart). À arbitrer avant 27.6. |
 | 2026-06-15 | DEV opus | Story 27.2 développée : providers `printers`+`drives` (lecture seule), migration pivot `is_default`, toggle UI défaut par WG, handlers agent Go (winspool/mpr natifs, level-triggered, marqueur de périmètre serveur SambaEdu, isolation par item), golden bumpé sciemment (PHP+Go croisé NFR13), tests + doc + QA. ready-for-dev → review. |
