@@ -28,10 +28,11 @@ func TestParseStateGoldenFile(t *testing.T) {
 	}
 	// Story 27.2 : portée session = 4 items réels (wallpaper, overlay identity,
 	// printers, drives). Story 27.3 : +1 item `registry` (HKCU) → session = 5.
+	// Story 27.3bis : +1 item `associations` (HKCU/UserChoice) → session = 6.
 	// Story 27.10 : la SALLE passe en portée machine — nouvel item overlay
 	// `{kind:"machine", room}` (préchargement poste+salle au logon) → machine = 1.
-	if len(state.Machine) != 1 || len(state.Session) != 5 || len(state.MachineUser) != 1 {
-		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 1/5/1)",
+	if len(state.Machine) != 1 || len(state.Session) != 6 || len(state.MachineUser) != 1 {
+		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 1/6/1)",
 			len(state.Machine), len(state.Session), len(state.MachineUser))
 	}
 }

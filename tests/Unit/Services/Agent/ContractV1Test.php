@@ -75,7 +75,15 @@ class ContractV1Test extends TestCase
     // overlay machine-scope (room) ET l'item registry session → 7 items, hash
     // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
     // même valeur (test croisé NFR13 — canonicalisation équivalente PHP↔Go).
-    private const FROZEN_STATE_HASH = 'e9a1cdc183b6bda9da7a8d40a84ee31838de13e784195e969225802bda7f4fc3';
+    //
+    // Re-bumpé SCIEMMENT par la Story 27.3bis (évolution MINEURE du contrat, §9) :
+    // ajout d'UN item `associations` en portée `session` — payload v1 réel
+    // `{identifier, progid, type}` owné par AssociationsStateProvider. Le hash
+    // UserChoice anti-tamper N'EST JAMAIS au payload (calculé 100 % côté agent à
+    // partir du SID/temps/experience du poste). Type DÉJÀ figé §7 ; payload
+    // ajouté = forward-compatible, pas un major → 8 items, hash d'état RECALCULÉ.
+    // Le jumeau Go porte la même valeur (test croisé NFR13).
+    private const FROZEN_STATE_HASH = '77fb548ac9b1f0604afce2a0c7d0316379391ef2e182a95a005b979f3fa5e3bd';
 
     private StateHasher $hasher;
 

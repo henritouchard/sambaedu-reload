@@ -19,6 +19,10 @@ class DatabaseSeeder extends Seeder
             AppStoreInstallSeeder::class,
             AppProfileSeeder::class,
             ShortcutSeeder::class,
+            // Story 27.3bis — reproduction des associations de fichiers legacy
+            // (default.xml si lisible, sinon baseline figée) : à la bascule, les
+            // défauts sont déjà en base. Idempotent/rejouable.
+            FileAssociationSeeder::class,
             WpkgReportSeeder::class,
         ]);
     }

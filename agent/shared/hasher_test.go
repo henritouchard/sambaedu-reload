@@ -44,7 +44,13 @@ import (
 // Rebase 27.3 sur main (27.10 inclus) : le golden combine désormais l'item
 // overlay machine-scope (room) ET l'item registry session → 7 items, hash
 // d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
-const frozenStateHash = "e9a1cdc183b6bda9da7a8d40a84ee31838de13e784195e969225802bda7f4fc3"
+// Re-bumpé SCIEMMENT par la Story 27.3bis (§9) : ajout d'UN item `associations`
+// (portée session, payload v1 réel `{identifier, progid, type}` owné par
+// AssociationsStateProvider) au golden — type DÉJÀ figé §7, payload ajouté =
+// forward-compatible, pas un major. Le hash UserChoice n'est JAMAIS au payload
+// (calculé agent-side). 8 items, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE
+// côté PHP (ContractV1Test::FROZEN_STATE_HASH).
+const frozenStateHash = "77fb548ac9b1f0604afce2a0c7d0316379391ef2e182a95a005b979f3fa5e3bd"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -148,8 +154,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 7 {
-		t.Errorf("7 items attendus dans le golden state (machine room 27.10 + registry session 27.3), %d vérifiés", checked)
+	if checked != 8 {
+		t.Errorf("8 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis), %d vérifiés", checked)
 	}
 }
 

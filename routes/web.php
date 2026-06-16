@@ -181,6 +181,15 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
         Route::livewire('/registry-settings', 'pages::parc-settings.registry-settings.index')
             ->middleware('can:app.customize')
             ->name('registry-settings');
+
+        // Associations de fichiers/protocoles par parc (Story 27.3bis) —
+        // catalogue d'associations par défaut (.pdf → Acrobat, http → Firefox)
+        // activables par parc, appliquées par l'agent (successeur natif du volet
+        // poste associations.ps1/SFTA.ps1 ; hash UserChoice confiné côté agent).
+        // Gate app.customize (iso autres réglages parc).
+        Route::livewire('/file-associations', 'pages::parc-settings.file-associations.index')
+            ->middleware('can:app.customize')
+            ->name('file-associations');
     });
 
     // // Gestion des parcs (Livewire)

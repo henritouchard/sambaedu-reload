@@ -1,6 +1,6 @@
 # Story 27.3bis : Handler associations de fichiers — le vice UserChoice confiné
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -17,6 +17,43 @@ Status: ready-for-dev
 > 3. **Le hash UserChoice est calculé 100 % côté AGENT** (comme le legacy). Le **payload contrat ne porte que
 >    `{identifier, progid, type}`** concrets — **jamais** le hash (impossible à pré-calculer serveur : il
 >    dépend du SID de l'utilisateur, d'un timestamp et d'un GUID « user experience » lus sur le poste).
+>
+> **— Questions T0 tranchées par Henri (2026-06-16, étape validation dev-cycle) :**
+> 4. **Source = table dédiée `file_associations`** (Option A). **MAIS exigence ajoutée** : prévoir un **seeder de
+>    population** (`FileAssociationSeeder`, branché dans le flux de seed prod iso `ShortcutSeeder`, et/ou exposé
+>    via le mécanisme `sync-from-ad`/refresh) qui **reproduit l'existant legacy** — source = `default.xml` +
+>    `associations.json` lus par `AssociationsResolver` (constantes `DEFAULT_XML_PATH`,
+>    `ASSOCIATIONS_SYSTEM_JSON_PATH` sous `/usr/share/sambaedu/applications/associations/`). But : à la bascule,
+>    les défauts d'associations actuels sont déjà présents en base, pas de régression fonctionnelle.
+> 5. **Couplage app installée = ÉMETTRE, PAS de filtre WPKG** (donc PAS l'Option B). **Mode d'échec affiné** :
+>    quand le **ProgId cible n'est PAS installé/enregistré** sur le poste, l'agent **ne force RIEN et ne touche
+>    PAS** la clé UserChoice existante → **le choix de l'utilisateur est préservé** (pas d'écrasement, pas de
+>    suppression-avant-réécriture sur un ProgId absent). Surfacé comme `error` **non fatal** (isolation par item,
+>    `detail` = « ProgId X non enregistré, choix utilisateur conservé »). On NE rejoue PAS en boucle agressive un
+>    défaut inapplicable. Le contrat reste à 3 statuts (`compliant|drift|error`).
+> 6. **Scope = `session`** : appliqué/réimposé au logon par le **compagnon** (HKCU), iso volet legacy
+>    `associations.ps1`. (PAS `machine_user`.)
+>
+> **— Extension tranchée par Henri (2026-06-17, après review) :**
+> 7. **Catalogue tagué `native` vs `wpkg:<package>` + validation prédictive serveur par parc.** Chaque entrée
+>    de catalogue porte une **source** : `native` (built-in Windows, toujours présent → toujours applicable) ou
+>    `wpkg` avec le **`wpkg_package`** d'origine (ProgId fourni par un paquet déployé). Le SEEDER peuple : les
+>    built-ins depuis `default.xml` (tag `native`) ET les associations fournies par les paquets WPKG via
+>    `PackagesXmlAssociationsReader::read()` (`packageId → identifier → {ProgId, type}`, tag `wpkg:<packageId>`).
+>    L'**UI** d'assignation calcule, par parc, un statut PRÉDICTIF : `native` → OK ; `wpkg` & paquet déployé sur
+>    le parc → OK ; `wpkg` & paquet NON déployé → **error affiché AVANT déploiement** (« Firefox n'est pas
+>    déployé sur ce parc → cette association échouera ici »). Remplace le warning générique N1 par un message
+>    EXACT. **L'agent (`ProgIDRegistered`) reste le dernier rempart** (poste divergent).
+>    - **Garde-fou NFR7** : le croisement WPKG vit dans l'**UI/assignation** (Livewire), **JAMAIS** dans
+>      `AssociationsStateProvider` (qui reste PG-pur, sans APCu/legacy). Le provider **continue d'émettre**
+>      (D-Henri n°3 « émettre sans filtrer WPKG » PRÉSERVÉ). Source du déploiement par parc = requête group-level
+>      Eloquent (appProfiles.applications + applications directes du `WorkstationGroup`), PAS le cache APCu de
+>      `WorkstationPackagesResolver`.
+>    - **Invariant contrat** : `source`/`wpkg_package` sont SERVEUR-only → le payload reste `{identifier, progid,
+>      type}` **INCHANGÉ**. ⚠️ **NE PAS toucher** au golden `state.v1.json`, au `FROZEN_STATE_HASH`, ni au handler
+>      Go : l'agent ne connaît jamais la notion native/wpkg.
+>    - **Clé de jointure CRITIQUE à vérifier** : `<package id>` de `packages.xml` (clé du reader) DOIT matcher
+>      `Application::$app_id` (sortie du resolver / pivot parc) — sinon la validation est silencieusement fausse.
 
 ## Story
 
@@ -158,8 +195,12 @@ machine d'états §5 + STRICT inchangés.
 `FileExts\<ext>\UserChoice` (fichiers) / `UrlAssociations\<proto>\UserChoice` (protocoles) via
 `agent/windows/handler_associations_windows.go` (ops `golang.org/x/sys/windows/registry` + SID/experience/temps),
 câblé **compagnon** dans `companion_windows.go`
-**And** `Apply` **idempotent** (état stable = zéro réécriture), `Test` compare le ProgId réel ; échec (ProgId
-inconnu, clé verrouillée) → `error`+`detail`, **isolation par item**
+**And** `Apply` **idempotent** (état stable = zéro réécriture), `Test` compare le ProgId réel ; clé verrouillée →
+`error`+`detail`, **isolation par item**
+**And** (D-Henri n°5) **ProgId cible NON installé/enregistré** sur le poste → l'agent **ne supprime pas et ne
+réécrit pas** la clé UserChoice existante (**choix utilisateur préservé**, pas de clobber) ; statut `error` **non
+fatal** avec `detail` explicite (« ProgId X non enregistré, choix utilisateur conservé »), **pas de réécriture en
+boucle** d'un défaut inapplicable
 **And** **tests vectoriels** du hash (entrées connues → hash attendu) prouvent la fidélité.
 
 ### AC6 — Contrat & golden : item `associations`, hash bumpé croisé (NFR13)
@@ -190,28 +231,63 @@ croisé — verts.
 logon, ProgId absent → error) ; ligne 27.3bis `docs/qa/README.md` ; note successeur du volet poste
 `associations.ps1`/`SFTA.ps1` (legacy intouché, meurt en 27.6).
 
+### AC10 — Catalogue tagué `native` vs `wpkg` + seed natives + WPKG (D-Henri n°7)
+
+**Given** l'extension WPKG-aware
+**When** les migrations + le seeder s'exécutent
+**Then** `file_associations` gagne `source` (`native`|`wpkg`) + `wpkg_package` (nullable, le `<package id>` d'origine
+pour `wpkg`) — colonnes AJOUTÉES à la migration `create` existante (Pending sur VM, pas d'alter séparé) ;
+`FileAssociation` gagne `SOURCE_NATIVE`/`SOURCE_WPKG` + `isNative()`
+**And** le seeder peuple les built-ins depuis `default.xml` (tag `native`, `wpkg_package=null`) ET les associations
+fournies par les paquets WPKG via `PackagesXmlAssociationsReader::read()` (tag `wpkg`, `wpkg_package=<packageId>`) ;
+hôte/CI sans `default.xml`/`packages.xml` → baseline figée taggée (Firefox=`wpkg`, txt/jpg=`native`)
+**And** le payload contrat reste `{identifier, progid, type}` **INCHANGÉ** (golden/hash/agent NON touchés).
+
+### AC11 — Validation prédictive par parc dans l'UI (D-Henri n°7, NFR7)
+
+**Given** l'admin assigne/consulte les associations d'un parc
+**When** l'UI calcule le statut par association
+**Then** `native` → applicable ; `wpkg` & `wpkg_package` déployé sur le parc → applicable ; `wpkg` & paquet NON
+déployé → **`indisponible`** affiché (warning + tooltip nommant le paquet : « <pkg> non déployé sur ce parc →
+échouera ici ») ; le **toast** à l'activation est EXACT (avertit si indisponible, succès sinon)
+**And** la source du déploiement par parc = requête **group-level Eloquent** (appProfiles.applications +
+applications directes du `WorkstationGroup` + déps transitives), **PG-pur, sans le cache APCu** de
+`WorkstationPackagesResolver`
+**And** `AssociationsStateProvider` reste **INCHANGÉ** (PG-pur, émet toujours, D-Henri n°3) — `grep ldap|apcu|wpkg`
+sur le provider reste VIDE ; la clé de jointure `packages.xml <package id>` ⇄ `Application::$app_id` est VÉRIFIÉE.
+
 ## Tasks / Subtasks
 
-- [ ] **T0 — Trancher la source de vérité** (Question n°1, AC1) : table dédiée `file_associations` (recommandé)
+- [x] **T0 — Trancher la source de vérité** (Question n°1, AC1) : table dédiée `file_associations` (recommandé)
       vs envelopper `AssociationsResolver` 16.3c. + couplage app installée (Question n°2) + scope (Question n°3).
-- [ ] **T1 — Migrations** (AC2, si table) : `file_associations` + `file_association_assignables` calqués
-      `shortcut_assignables`, idempotents, `down()` symétrique, comment daté 27.3bis. (+ seeder set initial ?)
-- [ ] **T2 — Modèle** : `App\Models\FileAssociation` + const `TYPE_ASSOCIATIONS='associations'` + relation pivot.
-- [ ] **T3 — Provider** (AC3, AC4) : `AssociationsStateProvider` (Exclusive, per-user, candidats bruts D2,
+- [x] **T1 — Migrations + seeder reproduction legacy** (AC2, D-Henri n°4) : `file_associations` +
+      `file_association_assignables` calqués `shortcut_assignables`, idempotents, `down()` symétrique, comment
+      daté 27.3bis. **+ `FileAssociationSeeder`** (catalogue + assignations défaut) **reproduisant l'existant
+      legacy** — source = `default.xml`/`associations.json` (constantes `AssociationsResolver`), branché dans le
+      flux de seed prod (iso `ShortcutSeeder` dans `DatabaseSeeder`) et/ou exposable via `sync-from-ad`/refresh.
+- [x] **T2 — Modèle** : `App\Models\FileAssociation` + const `TYPE_ASSOCIATIONS='associations'` + relation pivot.
+- [x] **T3 — Provider** (AC3, AC4) : `AssociationsStateProvider` (Exclusive, per-user, candidats bruts D2,
       payload `{identifier, progid, type}`, zéro APCu/AD), enregistré dans `AgentServiceProvider` ; exclusive par
       identifiant au compilateur (réutiliser l'extension faite en 27.3 si dispo).
-- [ ] **T4 — 🔴 Agent Go : handler + hash UserChoice** (AC5) : `handler_associations.go` (logique pure + calcul
+- [x] **T4 — 🔴 Agent Go : handler + hash UserChoice** (AC5) : `handler_associations.go` (logique pure + calcul
       hash testable hôte) + `handler_associations_windows.go` (registre HKCU, SID/experience/temps) + câblage
       **compagnon** ; `handler_associations_test.go` avec **vecteurs de hash**.
-- [ ] **T5 — Contrat + golden** (AC6) : payload §7 ; item `state.v1.json` ; bump `FROZEN_STATE_HASH`/`frozenStateHash`
+- [x] **T5 — Contrat + golden** (AC6) : payload §7 ; item `state.v1.json` ; bump `FROZEN_STATE_HASH`/`frozenStateHash`
       croisé (relever la valeur courante).
-- [ ] **T6 — UI** (AC7) : `parc-settings/file-associations/` Livewire SFC + persistance pivot + nav.
-- [ ] **T7 — Tests** (AC8) : PHPUnit (provider/compilateur/UI/contrat) + Go (vecteurs hash + handler) verts.
-- [ ] **T8 — Doc + QA** (AC9) append-only.
+- [x] **T6 — UI** (AC7) : `parc-settings/file-associations/` Livewire SFC + persistance pivot + nav.
+- [x] **T7 — Tests** (AC8) : PHPUnit (provider/compilateur/UI/contrat) + Go (vecteurs hash + handler) verts.
+- [x] **T8 — Doc + QA** (AC9) append-only.
 - [ ] **T9 — Validation finale** : `php -l` ; grep NFR7 vide ; grep zéro retrofit legacy ; `go test`/vet/cross
       verts ; **/vm** `migrate:status` → `migrate --force` ; **validation lab Windows (ACTION HUMAINE Henri)** :
       `.pdf → Acrobat` appliqué au logon, association changée à la main **réimposée** (drift STRICT), ProgId
       inexistant → `error`, parcs différents → défauts différents par poste.
+- [x] **T10 — Schéma `source`/`wpkg_package` + seed natives+WPKG** (AC10) : colonnes ajoutées à la migration
+      `create` existante ; consts modèle ; seeder revu (natives `default.xml` + WPKG `PackagesXmlAssociationsReader`,
+      baseline taggée en repli). **Golden/hash/agent intouchés.**
+- [x] **T11 — Validation prédictive UI par parc** (AC11) : statut `native`/`wpkg-déployé`/`indisponible` calculé
+      group-level Eloquent (PG-pur), badge+tooltip+toast EXACTS, remplace le warning générique N1. Provider
+      INCHANGÉ. Vérifier la jointure `packages.xml id ⇄ Application::app_id`. Tests : seeder (tags), UI
+      (indisponible vs applicable vs native), provider (NFR7 toujours vide, émet toujours).
 
 ## Dev Notes
 
@@ -274,17 +350,14 @@ UI calquée `resources/views/pages/parc-settings/overlay-messages/`. Contrat : `
 - [Source: mémoires `project_registry_catalog_first_generic_underneath`, `project_drift_policy_strict_only`,
   `project_migrated_poste_missing_client_helpers` (associations côté poste), `project_agent_desired_state_direction`].
 
-## Questions pour Henri
+## Questions pour Henri — ✅ TRANCHÉES (2026-06-16)
 
-1. **Source de vérité** : table catalogue dédiée `file_associations` (recommandé, propre, iso 27.3) **vs**
-   envelopper `AssociationsResolver` 16.3c (réutilise la résolution fichiers mais tire APCu/WPKG/legacy). Défaut :
-   **table dédiée**.
-2. **Couplage app installée** : le provider **filtre-t-il** par apps WPKG installées (réutiliser
-   `WorkstationPackagesResolver`) ou émet-il l'item et laisse l'agent rapporter `error` si le ProgId est absent ?
-   Défaut : **émettre + error gracieux** (découple de 27.5).
-3. **Scope** : `session` (réécrit à chaque logon) ou `machine_user` (persistant par poste×user) ? UserChoice est
-   per-user HKCU. Défaut proposé : **session** (appliqué au logon par le compagnon, iso volet legacy
-   `associations.ps1`).
+1. **Source de vérité** → ✅ **Table dédiée `file_associations`** + **seeder de population reproduisant
+   l'existant legacy** (`FileAssociationSeeder` via flux seed prod / `sync-from-ad`, source `default.xml` +
+   `associations.json`). Cf. DÉCISION HENRI n°4.
+2. **Couplage app installée** → ✅ **Émettre, PAS de filtre WPKG** ; si ProgId absent → **ne pas forcer, préserver
+   le choix utilisateur** (`error` non fatal, pas d'écrasement). Cf. DÉCISION HENRI n°5.
+3. **Scope** → ✅ **`session`** (compagnon, au logon). Cf. DÉCISION HENRI n°6.
 
 ## Recommandation Modèle Dev
 
@@ -300,8 +373,151 @@ appliquée — bug difficile à diagnostiquer). S'y ajoutent l'**exclusivité pa
 
 ### Agent Model Used
 
+`claude-opus-4-8[1m]`
+
 ### Debug Log References
+
+- **Hash UserChoice — fidélité vérifiée par double transcription indépendante.** Le portage Go de
+  `SFTA.ps1::Get-Hash` a été cross-validé contre un portage **indépendant** en Python (arithmétique exacte
+  masquée 32 bits, transcrit séparément de la source `SFTA.ps1` — pas une copie du Go). Trois triplets figés
+  (`.pdf`/Acrobat, `http`/FirefoxURL, `.html`/FirefoxHTML) produisent les mêmes hashes des deux côtés :
+  `h5ZFaFkHaDU=`, `9RbFZtAB87g=`, `zWoSzvx4Irg=`. Ces vecteurs sont baquetés dans `handler_associations_test.go`.
+  Subtilité maîtrisée : l'overflow `int64` des produits de constantes (~1e19) wrappe en 2's complement, sans
+  effet sur les 32 bits de poids faible que `convertInt32` conserve → identique au masquage exact Python.
+- **Bump de hash croisé** : item `associations` ajouté au golden → relevé de la valeur courante puis recalcul.
+  Nouveau `FROZEN_STATE_HASH` = `77fb548ac9b1f0604afce2a0c7d0316379391ef2e182a95a005b979f3fa5e3bd`, posé À
+  L'IDENTIQUE en PHP (`ContractV1Test`) et Go (`hasher_test.go::frozenStateHash`). Hash per-item du nouvel item
+  = `5d4bb78870ddadb6f1eb1126ba9958ca35e4198bd69a6db954719493b358468b` (calculé via `shared.HashItem`).
+  Compteurs ajustés : session 5→6 (`contract_test.go`), total 7→8 (`hasher_test.go`).
+- **Vérifs Go (hôte `~/go-toolchain`)** : `go test ./...` VERT, `go test ./shared/ -race` VERT (37 s),
+  `go vet ./...` + `GOOS=windows go vet ./windows` PROPRES, `GOOS=windows GOARCH=amd64 go build ./windows`
+  OK (binaire temporaire supprimé).
+- **Vérifs PHP (hôte)** : `php -l` PROPRE sur les 14 fichiers PHP/blade créés/modifiés. PHPUnit exécuté SUR
+  L'HÔTE (SQLite mémoire) : `AssociationsStateProviderTest` (13), `ContractV1Test` (6), `FileAssociationsPageTest`
+  (5) — **24/24 VERTS**. Les 2 erreurs de `StateCompilerTest` (`target_context_resolves…`, `full_compile…`)
+  sont **PRÉEXISTANTES** (reproduites sur HEAD `4fa9b40` avec mes changements stashés) : l'observer
+  `WorkstationGroupObserver` dispatche un job AD-sync qui échoue faute d'AD sur l'hôte — artefact d'environnement,
+  pas une régression. Elles passent sur la VM.
+- **NFR7** : `AssociationsStateProvider` code-only (docblocks retirés) ZÉRO `LdapRecord|samba-tool|Cache::|apcu_|
+  AssociationsResolver`. Légende dans 2 docblocks (mentions de l'interdit) seulement, retirées par le test.
+- **Zéro retrofit legacy** : `app/Gpo/*` et `app/Http/Controllers/Gpo/*` INTOUCHÉS (`git status` vide).
 
 ### Completion Notes List
 
+- **T0 (tranché par Henri)** : source = table dédiée `file_associations` + pivot `file_association_assignables`
+  (calque `shortcut_assignables`/`registry_setting_assignables`). Couplage app = ÉMETTRE (pas de filtre WPKG),
+  ProgId absent → préserver le choix utilisateur. Scope = `session` (compagnon, HKCU).
+- **Hash UserChoice (cœur de risque)** : logique PURE dans `agent/shared/handler_associations.go`
+  (`UserChoiceHash` + `getHash`/`getShiftRight`/`getLong`/`convertInt32`, ~portage 1:1 de `Get-Hash`), ops
+  Windows dans `agent/windows/handler_associations_windows.go` (SID via token de processus, FileTime hex
+  secondes-à-zéro iso `Get-HexDateTime`, GUID `{D18B6DD5-…}` extrait de `shell32.dll` avec repli hardcodé,
+  écriture HKCU avec **suppression-avant-réécriture** de la clé UserChoice via `registry.DeleteKey` =
+  `RegDeleteKeyW` natif comme le legacy). Câblé COMPAGNON dans `companion_windows.go`.
+- **Mode ProgId-absent (D-Henri n°5)** : `ProgIDRegistered()` interroge `HKCR\<ProgId>` (fusion HKLM+HKCU des
+  classes). Si absent → le handler NE supprime/réécrit PAS la clé existante (`deleteSeen` reste faux dans le
+  fake, choix utilisateur intact), remonte une erreur NON fatale au `detail` explicite, sans réécriture en
+  boucle (testé sur 3 passes). Isolation par item : un ProgId absent n'empêche pas les autres associations de
+  converger (effort maximal, première erreur remontée à la fin).
+- **Seeder de reproduction (D-Henri n°4)** : DEUX mécanismes — (1) migration de seed
+  `…_140200_seed_file_associations_catalog.php` (baseline figée idempotente, jouée sur VM au `migrate`) ;
+  (2) `FileAssociationSeeder` classe (câblé dans `DatabaseSeeder` iso `ShortcutSeeder`, idempotent/rejouable)
+  qui **parse `default.xml` legacy** quand il est lisible (VM/prod, via `AssociationsResolver::DEFAULT_XML_PATH`)
+  et retombe sur la baseline figée sinon (hôte/CI). Le seeder attache les défauts à TOUS les parcs actifs
+  (reproduction de la portée legacy « all »). ⚠️ Sur l'hôte (worktree) `default.xml` est ABSENT → seule la
+  baseline est testée ; **le parse `default.xml` réel reste à VALIDER sur VM**.
+- **Provider** : `AssociationsStateProvider` (UN seul, `scope=Session`) implémente `KeyedExclusiveProvider`
+  avec `exclusiveKey()=identifier` → exclusivité PAR IDENTIFIANT au `StateCompiler` SANS aucune modification du
+  compilateur (mécanisme 27.3 réutilisé). Payload concret `{identifier, progid, type}`, jamais d'id de catalogue
+  ni de hash/SID. Lecture Postgres pure.
+- **UI** : SFC Livewire `parc-settings/file-associations/index.blade.php` (calque `registry-settings`),
+  `WithToasts`, geste par parc (toggle = attach/detach pivot, `syncWithoutDetaching` idempotent), gate
+  `app.customize`, route nommée `app.parc-settings.file-associations`.
+
+- **T10 — Catalogue tagué `native`/`wpkg` (D-Henri n°7).** Colonnes `source` (`native`|`wpkg`, défaut
+  `native`) + `wpkg_package` (nullable) AJOUTÉES à la migration `create` EXISTANTE `…_140000` (Pending sur VM,
+  pas d'alter séparé). Modèle : consts `SOURCE_NATIVE`/`SOURCE_WPKG`, `$fillable` étendu, helper `isNative()`.
+  `catalogKey(identifier, progid)` INCHANGÉ (l'identité reste la paire ; `source`/`wpkg_package` sont des
+  attributs). Seed-migration `…_140200` + baseline figée du seeder TAGUÉES de façon cohérente : Firefox
+  (`.html/.htm/http/https → Firefox*`) = `wpkg` paquet `firefox` ; `.jpg → WindowsPhotoViewer` = `native` ;
+  AJOUT `.txt → txtfile` = `native` (cas de Henri). Le `FileAssociationSeeder` peuple DEUX sources : (1) natives
+  via le parse `default.xml` legacy (tag `native`/`wpkg_package=null`) ; (2) WPKG via
+  `PackagesXmlAssociationsReader::read()` (`packageId → identifier → {ProgId, type}` → tag `wpkg`/
+  `wpkg_package=<packageId>`). **Préférence native** : `mergeCatalogs()` insère d'abord les `wpkg` puis les
+  `native` écrasent une paire identique → un built-in bat un paquet. Repli baseline figée si ni `default.xml`
+  ni `packages.xml` lisibles (hôte/CI). **Choix du reader legacy `App\Gpo` dans le SEEDER** : acceptable (geste
+  d'admin ponctuel, pas le chemin critique desired-state) ; `App\Services\AppStore\PackagesXmlService` ÉCARTÉ
+  car il ÉCRIT `packages.xml` (`regenerate()`) mais n'expose PAS les associations par paquet — aucune source
+  non-legacy équivalente. Le PROVIDER reste PG-pur (ne lit jamais le reader).
+
+- **T11 — Validation prédictive UI par parc (D-Henri n°7).** Le computed `associations()` ajoute un champ
+  `availability ∈ applicable|unavailable` : `native` → applicable ; `wpkg` & `wpkg_package` ∈ paquets déployés
+  du parc → applicable ; `wpkg` & paquet non déployé → unavailable. Calcul des paquets déployés =
+  `deployedPackagesForParc(int)` : requête **group-level Eloquent PG-pure** sur le `WorkstationGroup`
+  (`appProfiles.applications.app_id` + `applications.app_id` directes + déps transitives BFS via query builder
+  sur `application_dependencies`), **SANS `Cache::`/APCu** (inspiré de
+  `WorkstationPackagesResolver::computePackages()` branche « via les parcs », mais ciblé sur UN groupe et sans
+  cache). UI : le warning générique N1 (icône+tooltip sur lignes assignées) REMPLACÉ par un signal EXACT —
+  badge « indisponible » rouge + icône warning `text-error` + tooltip nommant le paquet (« `<pkg>` n'est pas
+  déployé sur ce parc → cette association échouera ici… ») UNIQUEMENT sur les `unavailable`. Toast EXACT à
+  l'activation : `toastWarning` nommant le paquet manquant si `unavailable`, sinon `toastSuccess` simple
+  (« Association activée pour le parc. »).
+
+- **Jointure `<package id>` ⇄ `Application::$app_id` (VÉRIFIÉE).** La clé du reader `PackagesXmlAssociationsReader`
+  est l'attribut `<package id>` des `<package>` de `packages.xml`. Ce fichier est généré par
+  `App\Services\AppStore\PackagesXmlService::regenerate()`, qui itère `Application::installed()` et émet le
+  `$app->xml` de chaque app — dont la RACINE est `<package id="…">` valant `app_id` (convention confirmée par les
+  fixtures : `tests/Fixtures/Gpo/packages-xml-sample.xml` `<package id="firefox">`, `ApplicationXmlReaderTest`
+  `app('firefox', '<package id="firefox">…')`, `PackagesXmlServiceTest`). Le `WorkstationPackagesResolver`
+  collecte précisément `$app->app_id`. Donc comparer `FileAssociation::$wpkg_package` (= `packageId` du reader,
+  seedé) à l'ensemble des `app_id` déployés du parc est correct. **Risque résiduel** : un paquet dont le
+  `<package id>` de son XML diverge de son `app_id` en base romprait la jointure silencieusement — non observé
+  dans les fixtures, à confirmer sur les vrais `packages.xml`/apps de la VM (cf. « reste à valider »).
+
+- **Invariants préservés (preuves).** `AssociationsStateProvider` INCHANGÉ (diff vide ; grep NFR7
+  `ldap|apcu|wpkg|samba-tool|Cache::|PackagesXml` code-only VIDE ; émet toujours indépendamment du déploiement).
+  Payload contrat `{identifier, progid, type}` INCHANGÉ : `git diff --stat` sur `agent/`, `tests/Fixtures/Agent/`,
+  `tests/Unit/Services/Agent/ContractV1Test.php`, `agent/shared/hasher_test.go` = **VIDE** (md5 identiques au
+  HEAD avant extension) ; `go test ./...` `(cached)` = preuve que l'agent n'a pas bougé. L'agent ne connaît
+  jamais native/wpkg ; il reste le dernier rempart via `ProgIDRegistered`.
+
 ### File List
+
+**Nouveaux fichiers :**
+- `database/migrations/2026_06_16_140000_create_file_associations_table.php`
+- `database/migrations/2026_06_16_140100_create_file_association_assignables_table.php`
+- `database/migrations/2026_06_16_140200_seed_file_associations_catalog.php`
+- `app/Models/FileAssociation.php`
+- `database/factories/FileAssociationFactory.php`
+- `app/Services/Agent/Providers/AssociationsStateProvider.php`
+- `database/seeders/FileAssociationSeeder.php`
+- `resources/views/pages/parc-settings/file-associations/index.blade.php`
+- `agent/shared/handler_associations.go`
+- `agent/shared/handler_associations_test.go`
+- `agent/windows/handler_associations_windows.go`
+- `tests/Unit/Services/Agent/AssociationsStateProviderTest.php`
+- `tests/Feature/Livewire/ParcSettings/FileAssociationsPageTest.php`
+- `tests/Unit/Seeders/FileAssociationSeederTest.php` *(extension T10/T11 : tags, idempotence, préférence native)*
+
+**Fichiers modifiés :**
+- `app/Providers/AgentServiceProvider.php` (enregistrement `AssociationsStateProvider`)
+- `database/seeders/DatabaseSeeder.php` (câblage `FileAssociationSeeder`)
+- `routes/web.php` (route `file-associations`)
+- `agent/windows/companion_windows.go` (câblage handler `associations`)
+- `tests/Fixtures/Agent/state.v1.json` (item `associations` ajouté + hash per-item)
+- `agent/shared/hasher_test.go` (`frozenStateHash` bumpé + compteur 7→8)
+- `agent/shared/contract_test.go` (compteur session 5→6)
+- `tests/Unit/Services/Agent/ContractV1Test.php` (`FROZEN_STATE_HASH` bumpé)
+- `docs/agent/contract-v1.md` (§7.2 payload `associations` + note `source`/`wpkg_package` serveur-only — T10/T11)
+- `docs/agent/state-providers.md` (section `associations` + hash UserChoice + bullet validation prédictive — T11)
+- `docs/qa/domains/agent.md` (section `## Story 27.3bis`, append-only ; scénario 27.3bis.6bis prédictif + checklist 27.3bis.7 EXACTE)
+- `docs/qa/README.md` (ligne domaine agent enrichie 27.3bis + extension WPKG-aware)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (ligne 27-3bis → review, commentaire enrichi WPKG-aware)
+
+**Fichiers modifiés par l'extension WPKG-aware (T10/T11, 2026-06-17) :**
+- `database/migrations/2026_06_16_140000_create_file_associations_table.php` (colonnes `source` + `wpkg_package`)
+- `database/migrations/2026_06_16_140200_seed_file_associations_catalog.php` (baseline taguée native/wpkg + `.txt → txtfile`)
+- `app/Models/FileAssociation.php` (consts `SOURCE_NATIVE`/`SOURCE_WPKG`, `$fillable`, helper `isNative()`)
+- `database/seeders/FileAssociationSeeder.php` (peuplement natives `default.xml` + WPKG `PackagesXmlAssociationsReader`, `mergeCatalogs()` préférence native)
+- `database/factories/FileAssociationFactory.php` (états `native()`/`wpkg()`, défaut `source=native`)
+- `resources/views/pages/parc-settings/file-associations/index.blade.php` (champ `availability`, calcul group-level PG-pur `deployedPackagesForParc()`, warning EXACT + toast EXACT remplaçant le N1 générique)
+- `tests/Feature/Livewire/ParcSettings/FileAssociationsPageTest.php` (6 tests AC11 : native applicable, wpkg indisponible vs déployé, via app profile, toast exact warning/succès)

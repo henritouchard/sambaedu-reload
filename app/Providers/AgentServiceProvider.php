@@ -9,6 +9,7 @@ use App\Services\Agent\Enrollment\EnrollmentCampaign;
 use App\Services\Agent\Enrollment\EnrollmentMatchService;
 use App\Services\Agent\Enrollment\EnrollmentService;
 use App\Services\Agent\Enrollment\TokenRotationService;
+use App\Services\Agent\Providers\AssociationsStateProvider;
 use App\Services\Agent\Providers\DrivesStateProvider;
 use App\Services\Agent\Providers\OverlayMachineStateProvider;
 use App\Services\Agent\Providers\OverlayStateProvider;
@@ -109,6 +110,13 @@ class AgentServiceProvider extends ServiceProvider
                 // compilateur (le scope() de chaque provider suffit).
                 $app->make(RegistryMachineStateProvider::class),
                 $app->make(RegistryUserStateProvider::class),
+                // Story 27.3bis — type `associations` (exclusive PAR IDENTIFIANT,
+                // portée session/compagnon HKCU) : catalogue d'associations de
+                // fichiers/protocoles par défaut activables par parc, compilées
+                // en items concrets {identifier, progid, type}. Le hash UserChoice
+                // est calculé 100 % côté agent (jamais au payload). Une ligne,
+                // zéro modif du compilateur (exclusiveKey()=identifier suffit).
+                $app->make(AssociationsStateProvider::class),
             ],
         ));
     }

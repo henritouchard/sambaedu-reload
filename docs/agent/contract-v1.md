@@ -278,6 +278,76 @@ clés distinctes s'accumulent). Le payload porte un item de registre **CONCRET**
 > portées émettent le type `registry`, l'agent **fusionne par type** avant le
 > rapport (pire statut gagne) pour respecter l'unicité des types §6.
 
+### 7.2 Payload `associations` (Story 27.3bis)
+
+Type `associations` — sémantique **`exclusive` PAR IDENTIFIANT** (une
+extension/un protocole = UN programme par défaut ; la maille la plus spécifique
+gagne POUR CET identifiant, les identifiants distincts s'accumulent). Portée
+**`session`** (UserChoice HKCU, appliqué par le compagnon au logon). Le payload
+porte une association **CONCRÈTE** :
+
+```json
+{
+  "type": "associations",
+  "semantics": "exclusive",
+  "payload": {
+    "identifier": ".html",
+    "progid": "FirefoxHTML",
+    "type": "file"
+  },
+  "hash": "5d4bb788…358468b"
+}
+```
+
+| Clé | Type JSON | Sens |
+|---|---|---|
+| `identifier` | string | Extension (`.pdf`, `.html`) ou protocole (`http`, `https`). |
+| `progid` | string | ProgId Windows cible inscrit sous UserChoice (ex. `Acrobat.Document.DC`, `FirefoxURL`). |
+| `type` | string | `file` (→ `FileExts\<ext>\UserChoice`) \| `protocol` (→ `UrlAssociations\<proto>\UserChoice`). |
+
+> **🔴 Le hash UserChoice n'est JAMAIS au payload.** Windows protège
+> l'association par défaut par un hash anti-tamper dérivé de
+> `extension + SID + ProgId + timestamp + experienceGUID`. Ses entrées ne sont
+> connues que **sur le poste** (SID de session, FileTime courant, GUID
+> `{D18B6DD5-…}` de `shell32.dll`) → le hash est calculé **100 % côté agent**.
+> Le contrat ne porte que la cible logique `{identifier, progid, type}`.
+
+> **🔴 Invariant central (27.3bis).** Le payload ne porte **JAMAIS** un
+> `key`/`id` de catalogue (`file_associations`). Le catalogue se **compile** en
+> cet item concret dans le provider — option « clés brutes » (v2) gratuite.
+
+> **`source`/`wpkg_package` sont SERVEUR-only (D-Henri n°7, 27.3bis).** Le
+> catalogue tague chaque association `native` (built-in Windows, toujours
+> applicable) ou `wpkg` (ProgId fourni par un paquet WPKG, `wpkg_package` = le
+> `<package id>` = `Application::app_id`). Ces colonnes alimentent la **validation
+> prédictive de l'UI** (« paquet non déployé sur ce parc → cette association
+> échouera ici », AVANT déploiement) mais **NE fuient JAMAIS au payload** : il
+> reste `{identifier, progid, type}` INCHANGÉ. **L'agent ne connaît pas la notion
+> native/wpkg** — il reste le dernier rempart via `ProgIDRegistered` (poste
+> divergent). Le croisement WPKG vit dans l'UI/assignation (Livewire), jamais dans
+> `AssociationsStateProvider` (PG-pur, NFR7), qui **émet toujours** (D-Henri n°3).
+
+> **ProgId absent → choix préservé (D-Henri n°5).** Si le ProgId cible n'est pas
+> enregistré sur le poste, l'agent **ne supprime pas et ne réécrit pas** la clé
+> UserChoice existante (pas de clobber), et `Apply` ne rejoue PAS ce défaut
+> inapplicable. `detail` = « ProgId X non enregistré, choix utilisateur conservé ».
+>
+> **⚠️ Granularité du statut = PAR TYPE, pas par item (grain §5 figé 27.8).** Le
+> dispatch agent est par **type** : si AU MOINS un item `associations` échoue
+> (ProgId absent, clé verrouillée), le type ENTIER est reporté `error` et **n'est
+> pas persisté** (pas de cache 304 → re-convergence au cycle suivant). Les autres
+> associations du même type sont quand même APPLIQUÉES en interne (`Apply`
+> best-effort), mais le rapport masque le type en `error` tant qu'un item résiste.
+> « error non fatal » signifie donc « n'avorte pas la passe / ne tue pas les autres
+> TYPES » — **pas** « n'affecte pas les autres associations du même type ». Avec la
+> non-intersection WPKG (D-Henri n°3), un défaut ciblant une app non installée
+> maintient `associations` en `error` à chaque cycle : c'est **attendu**, pas un
+> bug (un grain réel item×poste rouvrirait le débat 27.8, cf. mémoire
+> `drift_policy_strict_only`).
+
+> **« Désactiver = cesser de gérer ».** Une association retirée d'un parc
+> DISPARAÎT → l'agent ne touche plus la clé (le choix courant reste, §8).
+
 ## 8. Tableau vide ≠ type absent (décision de contrat — AC1)
 
 Les items d'une portée sont une **liste**, pas une map. La distinction

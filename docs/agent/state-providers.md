@@ -421,6 +421,80 @@ WorkstationGroup/Workstation/UserGroup/User).
   un raffinement futur (sous-type `registry:machine`/`registry:session` ou portée
   au rapport) lèverait la limite.
 
+### `associations` — `exclusive` PAR IDENTIFIANT / `session` (Story 27.3bis)
+
+Successeur natif du volet poste `associations.ps1`/`SFTA.ps1` (le canal legacy
+`gpo/associations_out.php` reste intouché, il meurt en 27.6). Table catalogue
+**DÉDIÉE** `file_associations` (D1, iso `registry_settings`) + pivot
+`file_association_assignables` (morph WorkstationGroup/Workstation/UserGroup/User).
+
+- **UN provider, portée session.** `AssociationsStateProvider` (`scope=Session`) :
+  l'association vit sous `HKCU` (UserChoice de l'utilisateur connecté), appliquée
+  par le **compagnon** au logon. Pas de pendant machine (contrairement à
+  `registry`) — l'association par défaut est intrinsèquement per-user.
+- **Catalogue → items CONCRETS.** Chaque association se **compile** en un payload
+  `{identifier, progid, type}` concret (cf. `contract-v1.md` §7.2). 🔴 **Invariant
+  central** : le `key`/`id` du catalogue ne fuite **JAMAIS** au payload. 🔴 **Le
+  hash UserChoice n'est JAMAIS au payload** : il dépend du SID/timestamp/GUID
+  « user experience » du poste → calculé **100 % côté agent** (piège n° 2).
+- **Exclusive PAR IDENTIFIANT** (`KeyedExclusiveProvider`). Une extension/un
+  protocole = UN programme par défaut ; le `StateCompiler` groupe les candidats par
+  `exclusiveKey(payload)` = `identifier` (insensible à la casse) et arbitre CHAQUE
+  groupe : la maille la plus spécifique gagne **pour cet identifiant** (D-Q3 : WG
+  logique > WG physique), les identifiants distincts **s'accumulent**. Même
+  mécanisme générique que `registry` — zéro modification du compilateur.
+- **Lecture Postgres pure** (NFR7) : catalogue × pivot restreint aux ids du
+  `TargetContext`. Aucun AD/APCu/`samba-tool`. ⚠️ **NE réutilise PAS** la
+  dépendance APCu/WPKG de `AssociationsResolver` (16.3c) — le canal desired-state
+  lit Postgres et lui seul.
+- **Couplage app installée (D-Henri n°5).** Le provider **émet** l'item tel quel
+  (pas de filtre WPKG, découplé de 27.5). Côté agent : si le **ProgId cible n'est
+  pas enregistré** sur le poste, le handler **ne supprime pas et ne réécrit pas**
+  la clé UserChoice existante → **choix utilisateur préservé** (pas de clobber),
+  statut `error` **non fatal** (`detail` = « ProgId X non enregistré, choix
+  utilisateur conservé »), **pas de réécriture en boucle**.
+- **Reproduction legacy (D-Henri n°4).** Migration de seed (baseline figée
+  FirefoxHTML/FirefoxURL + visionneuse photos, iso fixture
+  `legacy-associations-out.json`) **+** `FileAssociationSeeder` (câblé dans
+  `DatabaseSeeder`, idempotent/rejouable) qui **parse `default.xml` legacy** quand
+  il est lisible (VM/prod) sinon retombe sur la baseline. But : à la bascule, les
+  défauts d'associations sont déjà en base — zéro régression.
+- **« Désactiver = cesser de gérer ».** Une association retirée disparaît →
+  l'agent ne touche plus la clé (le choix courant reste, pas de reset OFF, §8).
+- **Catalogue tagué `native` / `wpkg` + validation PRÉDICTIVE UI (D-Henri n°7).**
+  Chaque entrée porte une `source` SERVEUR-only : `native` (built-in Windows, ex.
+  `.txt → txtfile`, `.jpg → WindowsPhotoViewer` — toujours applicable) ou `wpkg`
+  avec `wpkg_package` = le `<package id>` WPKG d'origine (= `Application::app_id`).
+  L'**UI** d'assignation calcule, par parc, un statut EXACT : `native` →
+  applicable ; `wpkg` & paquet déployé sur le parc → applicable ; `wpkg` & paquet
+  NON déployé → **`unavailable`** affiché AVANT déploiement (warning rouge +
+  tooltip nommant le paquet : « `<pkg>` n'est pas déployé sur ce parc → cette
+  association échouera ici », toast EXACT à l'activation). Source du déploiement par
+  parc = requête **group-level Eloquent PG-pure** (`appProfiles.applications` +
+  `applications` directes du `WorkstationGroup` + déps transitives), **SANS le cache
+  APCu** de `WorkstationPackagesResolver`. 🔴 Ce croisement WPKG vit UNIQUEMENT dans
+  l'UI (Livewire) : `AssociationsStateProvider` reste PG-pur (NFR7) et **émet
+  toujours** (D-Henri n°3) ; `source`/`wpkg_package` ne fuient JAMAIS au payload
+  contrat (inchangé). L'agent (`ProgIDRegistered`) reste le dernier rempart sur un
+  poste divergent. Clé de jointure vérifiée : `<package id>` (clé du reader
+  `PackagesXmlAssociationsReader`) = `Application::$app_id` (sortie du resolver) —
+  `PackagesXmlService::regenerate()` émet le `$app->xml` dont la racine `<package id>`
+  vaut `app_id`.
+
+#### Le hash UserChoice (cœur de risque, AC5)
+
+Le handler `agent/shared/handler_associations.go` porte FIDÈLEMENT l'algorithme
+`SFTA.ps1::Get-Hash` (~565-711) : `baseInfo = ("{identifier}{sid}{progid}{dateTimeHex}
+{userExperience}").ToLower()` → **MD5 sur l'encodage UTF-16LE** de `baseInfo + "\x00\x00"`
+→ deux passes de dérivation à constantes → 16 octets → XOR fold 8 octets → **Base64**.
+La logique pure (calcul du hash) est **testable hôte** (`handler_associations_test.go`,
+**vecteurs de hash** verrouillés contre un portage indépendant) ; les ops Windows
+(SID via token de processus, FileTime hex secondes mises à zéro, GUID `{D18B6DD5-…}`
+extrait de `shell32.dll`, écriture HKCU + **suppression-avant-réécriture** de la clé
+UserChoice à ACL hérité) vivent dans `handler_associations_windows.go`. Une seule
+constante fausse = hash silencieusement rejeté par Windows = association non
+appliquée — d'où les tests vectoriels obligatoires.
+
 ### Mode `strict|default` — RETIRÉ (Story 27.8)
 
 > **Story 27.8 — RETRAIT TOTAL.** Le mécanisme `mode ∈ {strict, default}`

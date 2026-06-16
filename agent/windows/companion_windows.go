@@ -131,6 +131,16 @@ func runCompanion() error {
 					Ops: &registryOps{log: logger},
 					Log: logger,
 				},
+				// Story 27.3bis — associations de fichiers/protocoles (exclusive
+				// par identifiant / session) : le COMPAGNON impose le ProgId par
+				// defaut sous HKCU UserChoice + le HASH anti-tamper (calcule
+				// agent-side a partir du SID/temps/experience du poste). ProgId
+				// absent => choix utilisateur PRESERVE (pas de clobber), error non
+				// fatal (D-Henri n5). Level-triggered, idempotent.
+				"associations": &shared.AssociationsHandler{
+					Ops: &associationsOps{log: logger},
+					Log: logger,
+				},
 			},
 			Log: logger,
 		},

@@ -2255,3 +2255,155 @@ IDENTITÉ DE CLÉ avec précédence **logique > physique** (D-Q3, inversion glob
       (logique > physique) ; clés distinctes toutes présentes.
 - [ ] 27.3.5 — Désactiver un réglage = la clé garde sa valeur (pas de reset OFF).
 - [ ] 27.3.6 — Payload `registry` concret, jamais d'id de catalogue (`curl /state`).
+
+## Story 27.3bis — Associations par défaut (UserChoice)
+
+Le canal agent gagne le type `associations` : un **catalogue** d'associations de
+fichiers/protocoles par défaut (`.pdf` → Acrobat, `http` → Firefox), activables
+**par parc** dans `/app/parc-settings/file-associations`, appliquées et réimposées
+par l'agent **au logon** (HKCU UserChoice, par le **compagnon**). Successeur natif
+du volet poste `associations.ps1`/`SFTA.ps1` (canal legacy `associations_out.php`
+intouché, meurt en 27.6). Exclusive **PAR IDENTIFIANT**, précédence
+**logique > physique** (D-Q3). **Cœur de risque** : le hash anti-tamper UserChoice
+(MD5 UTF-16LE + dérivation à constantes), calculé **100 % côté agent** (jamais au
+payload — dépend du SID/temps/GUID du poste) et **verrouillé par tests vectoriels**.
+
+**Catalogue initial reproduit du legacy (baseline figée, parse `default.xml` si présent VM) :**
+
+| Libellé UI | identifier | type | ProgId cible |
+|---|---|---|---|
+| Pages HTML → Firefox | `.html` | file | `FirefoxHTML` |
+| Pages HTM → Firefox | `.htm` | file | `FirefoxHTML` |
+| Protocole HTTP → Firefox | `http` | protocol | `FirefoxURL` |
+| Protocole HTTPS → Firefox | `https` | protocol | `FirefoxURL` |
+| Images JPG → Visionneuse | `.jpg` | file | `WindowsPhotoViewer` |
+
+### Scénario 27.3bis.1 — Association appliquée par parc au logon (compagnon) (lab Windows — ACTION HUMAINE Henri)
+
+1. Activer une association (ex. « Pages HTML → Firefox ») sur le parc d'un poste,
+   dans `parc-settings/file-associations`. S'assurer que Firefox (ProgId
+   `FirefoxHTML`) est installé sur le poste.
+2. Ouvrir une session sur un poste du parc.
+3. **Attendu** : `regedit` →
+   `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.html\UserChoice`
+   porte `ProgId = FirefoxHTML` **et** un `Hash` valide ; double-cliquer un `.html`
+   ouvre Firefox (Windows n'a PAS réinitialisé l'association → preuve que le hash
+   est bon). Appliqué par le **compagnon** (droits user, ruche de session).
+
+### Scénario 27.3bis.2 — Hash UserChoice réimposé au drift STRICT (lab Windows — ACTION HUMAINE Henri)
+
+1. Avec une association active sur le parc, changer le programme par défaut **à la
+   main** (Paramètres Windows → Applications par défaut, ou un autre navigateur).
+2. Rouvrir une session (le compagnon réapplique au logon).
+3. **Attendu** : l'association est **réimposée** à la cible (statut `drift` au
+   rapport puis convergence) — le ProgId ET le Hash sont réécrits. La dérive
+   humaine est toujours corrigée (STRICT 27.8). L'ancienne clé UserChoice (ACL
+   hérité) est **supprimée avant réécriture** (sinon Windows refuserait le Hash).
+
+### Scénario 27.3bis.3 — Per-user au logon (HKCU) (lab Windows — ACTION HUMAINE Henri)
+
+1. Deux utilisateurs différents ouvrent une session sur le même poste du parc.
+2. **Attendu** : chacun reçoit l'association sous **SON** `HKCU` (le hash dépend du
+   SID — il est recalculé per-user par le compagnon de chaque session). Aucun
+   partage de la clé UserChoice entre utilisateurs.
+
+### Scénario 27.3bis.4 — ProgId absent → choix utilisateur conservé, error non fatal (lab Windows — ACTION HUMAINE Henri)
+
+1. Activer une association dont le **ProgId cible n'est PAS installé** sur le poste
+   (ex. `.pdf → Acrobat.Document.DC` sans Acrobat). L'utilisateur a déjà un autre
+   lecteur PDF par défaut.
+2. Ouvrir une session.
+3. **Attendu** : l'agent **NE touche PAS** la clé UserChoice existante — le choix
+   de l'utilisateur (son lecteur PDF) est **PRÉSERVÉ** (pas de clobber, pas de
+   suppression-avant-réécriture). Les autres associations (ProgId présent) sont
+   quand même **appliquées en interne** (`Apply` best-effort).
+4. **⚠️ Granularité du statut = PAR TYPE (grain §5 figé 27.8), pas par item.** Le
+   rapport porte `associations: error` **non fatal** (`detail` = « ProgId X non
+   enregistré, choix utilisateur conservé ») tant qu'AU MOINS un item résiste : le
+   type entier reste `error` et **n'est pas persisté** → re-convergence à chaque
+   cycle (pas de 304). « Non fatal » = ne tue pas les autres TYPES (wallpaper,
+   printers…), **pas** « les autres associations passent en `compliant` ». Avec la
+   non-intersection WPKG (D-Henri n°3), un défaut ciblant une app non installée
+   maintient `associations: error` à chaque cycle — c'est **attendu**, vérifier
+   seulement que la clé utilisateur n'est jamais réécrite.
+
+### Scénario 27.3bis.5 — Parcs différents → défauts différents (lab Windows — ACTION HUMAINE Henri)
+
+1. Sur deux parcs distincts, activer des associations différentes pour le même
+   identifiant (ex. parc A : `.html → FirefoxHTML` ; parc B : `.html → ChromeHTML`).
+2. Ouvrir une session sur un poste de chaque parc.
+3. **Attendu** : chaque poste reçoit le ProgId de SON parc. Si un poste appartient
+   aux deux mailles, la plus spécifique l'emporte (logique > physique, D-Q3) ; les
+   identifiants distincts s'accumulent.
+
+### Scénario 27.3bis.6bis — Validation prédictive par parc dans l'UI (navigateur, hors lab) — D-Henri n°7
+
+> Étend l'UI `parc-settings/file-associations`. Le warning n'est plus générique
+> (« si le ProgId n'est pas installé… ») mais EXACT par paquet et par parc.
+
+1. Ouvrir un parc **sans** Firefox déployé. Une association `wpkg` (ex.
+   `http → FirefoxURL`, paquet `firefox`) s'affiche avec un **badge « indisponible »
+   rouge + icône warning** ; le tooltip nomme le paquet : « `firefox` n'est pas
+   déployé sur ce parc → cette association échouera ici (l'agent rapportera une
+   erreur, le choix utilisateur reste préservé) ».
+2. Activer cette association → **toast d'avertissement EXACT** nommant `firefox`
+   (pas le toast de succès simple).
+3. Déployer Firefox sur ce parc (rattacher l'app `firefox` au parc ou via un app
+   profile), recharger : l'association passe **`applicable`** (plus de badge/warning).
+4. Une association **`native`** (ex. `.txt → txtfile`, `.jpg → WindowsPhotoViewer`)
+   est **toujours `applicable`** quel que soit le parc (aucune dépendance de paquet) ;
+   l'activer émet un **toast de succès simple** (« Association activée pour le parc. »).
+5. **Invariant** : le statut prédictif est calculé **côté serveur** (group-level
+   Eloquent PG-pur, sans APCu) ; `curl GET /state` ne fait JAMAIS apparaître
+   `source`/`wpkg_package` dans un payload `associations` (toujours `{identifier,
+   progid, type}`). L'agent reste le dernier rempart (`ProgIDRegistered`) sur un
+   poste où l'app est absente malgré le « déployé » serveur.
+
+### Post-correctifs & non-régressions (Story 27.3bis)
+
+- **Zéro modification du `StateCompiler`** : `AssociationsStateProvider` réutilise
+  le marqueur `KeyedExclusiveProvider` (exclusiveKey = `identifier`) déjà câblé par
+  27.3 — non-régression `registry`/`wallpaper`/`printers` vérifiée (tests
+  compilateur).
+- **Hash UserChoice — fidélité par tests vectoriels** : le portage Go est verrouillé
+  contre un portage **indépendant** (référence Python en arithmétique exacte) sur
+  des triplets figés. Une constante fausse = hash rejeté par Windows = association
+  non appliquée (bug silencieux) — d'où l'obligation vectorielle.
+- **Bump de hash croisé** : item `associations` ajouté au golden → `FROZEN_STATE_HASH`
+  (PHP `ContractV1Test`) ET `frozenStateHash` (Go `hasher_test.go`) bumpés à la même
+  valeur (`77fb548a…f3fa5e3bd`), 8 items au golden, session 6 items.
+- **Invariant central** : `curl GET /state` ne doit JAMAIS faire apparaître un
+  `key`/`id` de catalogue NI un `hash`/`sid` dans un payload `associations`
+  (uniquement `{identifier, progid, type}`).
+- **Extension WPKG-aware (D-Henri n°7)** : catalogue tagué `native`/`wpkg`
+  (`source` + `wpkg_package` SERVEUR-only) ; validation prédictive UI par parc
+  (native → applicable ; wpkg déployé → applicable ; wpkg non déployé →
+  indisponible, warning EXACT + toast nommant le paquet). Calcul des paquets
+  déployés = group-level Eloquent PG-pur (sans cache APCu). **Provider INCHANGÉ**
+  (PG-pur, émet toujours, grep `ldap|apcu|wpkg` VIDE). **Golden/hash/agent
+  INTOUCHÉS** (`source`/`wpkg_package` ne fuient jamais au payload — l'agent ne
+  connaît pas native/wpkg). Clé de jointure VÉRIFIÉE : `<package id>` du reader =
+  `Application::$app_id` (= racine `<package id>` du `$app->xml`).
+
+### Checklist rapide (Story 27.3bis)
+
+- [ ] 27.3bis.1 — Association appliquée par parc au logon (compagnon), `.html`
+      ouvre Firefox (hash UserChoice valide, non réinitialisé par Windows).
+- [ ] 27.3bis.2 — Programme par défaut changé à la main → réimposé au logon (drift
+      STRICT, clé supprimée-avant-réécriture).
+- [ ] 27.3bis.3 — Per-user : chaque session reçoit l'association sous son HKCU
+      (hash dépendant du SID).
+- [ ] 27.3bis.4 — ProgId absent → choix utilisateur **conservé** (pas de clobber),
+      pas de boucle ; statut `associations: error` **type-level** (tout le type tant
+      qu'un item résiste, non persisté) — attendu, vérifier seulement le non-clobber.
+- [ ] 27.3bis.5 — Parcs différents → défauts différents par poste (logique >
+      physique sur maille partagée).
+- [ ] 27.3bis.6 — Payload `associations` concret `{identifier, progid, type}`,
+      jamais d'id de catalogue NI de hash/SID (`curl /state`).
+- [ ] 27.3bis.7 — UI `parc-settings/file-associations` (navigateur, hors lab) :
+      validation PRÉDICTIVE par parc (D-Henri n°7). Une association `wpkg` dont le
+      paquet n'est **pas déployé** sur le parc affiche un **badge « indisponible » +
+      warning rouge + tooltip nommant le paquet** ; l'activer émet un **toast
+      d'avertissement EXACT** nommant ce paquet. Le même paquet **déployé** → la
+      ligne passe `applicable` (plus de warning). Une association **`native`**
+      (`.txt`, `.jpg`) est toujours `applicable` (toast de succès simple).

@@ -67,6 +67,16 @@
                 "value": 0
             },
             "hash": "92730f99ed3e64f81e99c955e64bfb37da8fcc765aa1eb44373c9c4e4af686b5"
+        },
+        {
+            "type": "associations",
+            "semantics": "exclusive",
+            "payload": {
+                "identifier": ".html",
+                "progid": "FirefoxHTML",
+                "type": "file"
+            },
+            "hash": "5d4bb78870ddadb6f1eb1126ba9958ca35e4198bd69a6db954719493b358468b"
         }
     ],
     "machine_user": [
