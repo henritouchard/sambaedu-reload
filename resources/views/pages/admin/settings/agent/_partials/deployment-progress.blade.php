@@ -27,7 +27,7 @@ use Livewire\Component;
  * Jointure lecture seule `agent_release_rings × workstation_group_workstation
  * × workstations` via les relations Eloquent, résolue EN MÉMOIRE (zéro N+1).
  * Zéro AD (aucun LdapRecord/Kerberos/samba-tool), zéro écriture — la frontière
- * `agent_*` est respectée, aucun Gate (lecture, l'accès page `can:computer.install`
+ * `agent_*` est respectée, aucun Gate (lecture, l'accès page `can:server.admin`
  * suffit). Pas de pagination : le nombre de rings est borné (un ring = un
  * groupe ciblé), l'agrégation se fait par comptage, pas par liste de postes.
  */

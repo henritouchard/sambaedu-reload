@@ -173,13 +173,6 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
         Route::livewire('/app-customizations', 'pages::parc-settings.app-customizations.index')
             ->middleware('can:app.customize')
             ->name('app-customizations');
-
-        // Agent desired-state — surface d'approbation des enrôlements porte 2
-        // (story 25.3). Squelette minimal : rings/releases/progression = 25.5.
-        // Gate `computer.install` (iso index parc-settings — admin de parc).
-        Route::livewire('/agent', 'pages::parc-settings.agent.index')
-            ->middleware('can:computer.install')
-            ->name('agent');
     });
 
     // // Gestion des parcs (Livewire)
@@ -334,6 +327,12 @@ Route::get('/app/gpo/{guid}/links', fn (string $guid) => redirect('/admin/settin
 Route::permanentRedirect('/app/gpo', '/admin/settings/gpo')
     ->name('app.gpo.index');
 
+// Console flotte agent déplacée /app/parc-settings/agent → /admin/settings/agent
+// (fonction d'administration serveur). Permanent (301), conserve l'ancien nom de
+// route pour les éventuels liens/bookmarks. Iso-pattern des redirects GPO ci-dessus.
+Route::permanentRedirect('/app/parc-settings/agent', '/admin/settings/agent')
+    ->name('app.parc-settings.agent');
+
 /*
 |--------------------------------------------------------------------------
 | Admin Routes - ControlHub Handshake Management
@@ -389,6 +388,14 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     Route::livewire('/settings/system-status', 'pages::admin.settings.system-status.index')
         ->middleware('can:server.admin')
         ->name('settings.system-status');
+
+    // /admin/settings/agent — Console de pilotage de la flotte agent desired-state
+    // (rings/releases 25.1, enrôlements porte 2 25.3, progression 25.5, catalogue
+    // d'outils 25.6). Déplacée depuis /app/parc-settings/agent : c'est une fonction
+    // d'administration serveur (gate `can:server.admin`, redirect 301 ci-dessous).
+    Route::livewire('/settings/agent', 'pages::admin.settings.agent.index')
+        ->middleware('can:server.admin')
+        ->name('settings.agent');
     /*
     |--------------------------------------------------------------------------
     | Story 3.6 — Gestion ISO Windows (D2)

@@ -81,7 +81,7 @@ return new class extends Component {
     {
         // (review #4) Double protection iso-pattern projet : le middleware route
         // protège la page, le Gate protège l'action adressable via /livewire/update.
-        Gate::authorize('computer.install');
+        Gate::authorize('server.admin');
 
         $request = AgentEnrollmentRequest::query()->pending()->with('matchedWorkstation')->find($id);
         if ($request === null) {
@@ -112,7 +112,7 @@ return new class extends Component {
      */
     public function openTargetSelect(int $id): void
     {
-        Gate::authorize('computer.install');
+        Gate::authorize('server.admin');
 
         $request = AgentEnrollmentRequest::query()->pending()->find($id);
         if ($request === null) {
@@ -177,7 +177,7 @@ return new class extends Component {
      */
     public function confirmApproveWithTarget(): void
     {
-        Gate::authorize('computer.install');
+        Gate::authorize('server.admin');
 
         $request = $this->targetRequestId !== null
             ? AgentEnrollmentRequest::query()->pending()->find($this->targetRequestId)
@@ -220,7 +220,7 @@ return new class extends Component {
 
     public function openReject(int $id): void
     {
-        Gate::authorize('computer.install');
+        Gate::authorize('server.admin');
 
         $request = AgentEnrollmentRequest::query()->pending()->find($id);
         if ($request === null) {
@@ -248,7 +248,7 @@ return new class extends Component {
 
     public function confirmReject(): void
     {
-        Gate::authorize('computer.install');
+        Gate::authorize('server.admin');
 
         $request = $this->rejectId !== null
             ? AgentEnrollmentRequest::query()->pending()->find($this->rejectId)
@@ -269,7 +269,7 @@ return new class extends Component {
 
     public function enableCampaign(): void
     {
-        Gate::authorize('computer.install');
+        Gate::authorize('server.admin');
 
         // (review #7) Borne haute : une campagne plafonne à 365 jours (hygiène
         // d'input — l'anti-usurpation ne dépend pas de la durée, mais une saisie
@@ -282,7 +282,7 @@ return new class extends Component {
 
     public function disableCampaign(): void
     {
-        Gate::authorize('computer.install');
+        Gate::authorize('server.admin');
 
         app(EnrollmentCampaign::class)->disable();
         unset($this->campaignActive, $this->campaignUntil);

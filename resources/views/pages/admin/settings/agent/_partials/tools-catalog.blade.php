@@ -23,7 +23,7 @@ use Livewire\WithFileUploads;
  * SANS désinstaller — D4).
  *
  * Chaque méthode mutante (upload, toggle) est gardée
- * `Gate::authorize('computer.install')` : le middleware `can:computer.install`
+ * `Gate::authorize('server.admin')` : le middleware `can:server.admin`
  * protège la PAGE, mais l'action reste adressable via `/livewire/update` (double
  * protection iso `releases-rings`). Tout refus métier
  * ({@see AgentToolException}) est catché → `toastError`, jamais une 500.
@@ -51,9 +51,9 @@ return new class extends Component {
      * (extension/MIME/taille/structure ZIP) et calcule le SHA-256 — l'UI ne fait
      * qu'une pré-validation légère (présence, taille Livewire) puis délègue.
      */
-    public function upload(): void
+    public function importTool(): void
     {
-        Gate::authorize('computer.install');
+        Gate::authorize('server.admin');
 
         $maxBytes = (int) config('agent.tool_max_upload_bytes');
         $maxKilobytes = max(1, (int) floor($maxBytes / 1024));
@@ -100,7 +100,7 @@ return new class extends Component {
      */
     public function toggle(): void
     {
-        Gate::authorize('computer.install');
+        Gate::authorize('server.admin');
 
         $tool = $this->tool;
         if ($tool === null) {
@@ -211,8 +211,8 @@ return new class extends Component {
             </div>
 
             <div class="card-actions justify-end mt-3">
-                <button type="button" class="btn btn-primary" wire:click="upload"
-                    wire:loading.attr="disabled" wire:target="upload,archive">
+                <button type="button" class="btn btn-primary" wire:click="importTool"
+                    wire:loading.attr="disabled" wire:target="importTool,archive">
                     <i class="fa-solid fa-upload"></i> Importer
                 </button>
             </div>

@@ -4,10 +4,10 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Story 25.5 — Page parc-settings/agent : console de pilotage de la flotte.
+ * Story 25.5 — Page admin/settings/agent : console de pilotage de la flotte.
  *
  * Trois surfaces sur une seule page (convention `pages/` filesystem-router,
- * Livewire SFC, `can:computer.install`) :
+ * Livewire SFC, `can:server.admin`) :
  *   1. Releases & rings — voir les releases publiées (25.1), la version ciblée
  *      par ring, cibler/rollback un ring (`target()`), définir la stable par
  *      défaut (`promote()`). Tout passe par `ReleaseCreationService`.
@@ -30,7 +30,7 @@ new #[Title('Agent — Flotte - SE4FS')] class extends Component
     <div class="flex flex-col gap-10">
         {{-- Surface 1 : releases & rings (25.1, pilotage via ReleaseCreationService) --}}
         <section>
-            <livewire:pages::parc-settings.agent._partials.releases-rings />
+            <livewire:pages::admin.settings.agent._partials.releases-rings />
         </section>
 
         {{-- Surface 4 : catalogue d'outils — portable Rainmeter uploadé + toggle (25.6) --}}
@@ -38,7 +38,7 @@ new #[Title('Agent — Flotte - SE4FS')] class extends Component
             <h2 class="text-xl font-bold mb-3 flex items-center gap-2">
                 <i class="fa-solid fa-wrench text-primary"></i> Outils du parc
             </h2>
-            <livewire:pages::parc-settings.agent._partials.tools-catalog />
+            <livewire:pages::admin.settings.agent._partials.tools-catalog />
         </section>
 
         {{-- Surface 3 : progression du déploiement (lecture seule) --}}
@@ -46,7 +46,7 @@ new #[Title('Agent — Flotte - SE4FS')] class extends Component
             <h2 class="text-xl font-bold mb-3 flex items-center gap-2">
                 <i class="fa-solid fa-chart-line text-primary"></i> Progression du déploiement
             </h2>
-            <livewire:pages::parc-settings.agent._partials.deployment-progress />
+            <livewire:pages::admin.settings.agent._partials.deployment-progress />
         </section>
 
         {{-- Surface 2 : enrôlements en attente (porte 2, 25.3 + extension 25.5) --}}
@@ -54,7 +54,7 @@ new #[Title('Agent — Flotte - SE4FS')] class extends Component
             <h2 class="text-xl font-bold mb-3 flex items-center gap-2">
                 <i class="fa-solid fa-user-shield text-primary"></i> Enrôlements en attente
             </h2>
-            <livewire:pages::parc-settings.agent._partials.enrollment-requests />
+            <livewire:pages::admin.settings.agent._partials.enrollment-requests />
         </section>
     </div>
 </x-organisms.page>

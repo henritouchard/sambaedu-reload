@@ -23,7 +23,7 @@ use Tests\TestCase;
  * Le composant délègue au service ; on vérifie l'effet de bord en base.
  *
  * Review #4/#5 : les actions mutantes sont gardées par `Gate::authorize(
- * 'computer.install')` (double protection iso-pattern projet). Les tests
+ * 'server.admin')` (double protection iso-pattern projet). Les tests
  * agissent comme un admin muni de la permission, et un test négatif vérifie le
  * 403 pour un utilisateur sans droit (`resolved_by` réellement renseigné).
  */
@@ -31,7 +31,7 @@ class EnrollmentRequestsSurfaceTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const COMPONENT = 'pages::parc-settings.agent._partials.enrollment-requests';
+    private const COMPONENT = 'pages::admin.settings.agent._partials.enrollment-requests';
 
     private User $admin;
 
@@ -39,10 +39,10 @@ class EnrollmentRequestsSurfaceTest extends TestCase
     {
         parent::setUp();
 
-        Permission::firstOrCreate(['name' => 'computer.install', 'guard_name' => 'web']);
+        Permission::firstOrCreate(['name' => 'server.admin', 'guard_name' => 'web']);
 
         $this->admin = User::query()->create(['login' => 'enroll-admin', 'role' => 'prof', 'is_active' => true]);
-        $this->admin->givePermissionTo('computer.install');
+        $this->admin->givePermissionTo('server.admin');
         $this->actingAs($this->admin);
     }
 
@@ -241,7 +241,7 @@ class EnrollmentRequestsSurfaceTest extends TestCase
     #[Test]
     public function approve_is_forbidden_without_permission(): void
     {
-        // (review #4/#5) Un utilisateur sans `computer.install` est refusé même
+        // (review #4/#5) Un utilisateur sans `server.admin` est refusé même
         // s'il adresse directement l'action via /livewire/update. On désactive le
         // handler d'exception (la conversion en page d'erreur 403 exigerait le
         // manifest Vite, absent sur l'hôte) pour vérifier directement que le Gate

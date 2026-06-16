@@ -26,15 +26,15 @@ class DeploymentProgressSurfaceTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const COMPONENT = 'pages::parc-settings.agent._partials.deployment-progress';
+    private const COMPONENT = 'pages::admin.settings.agent._partials.deployment-progress';
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        Permission::firstOrCreate(['name' => 'computer.install', 'guard_name' => 'web']);
+        Permission::firstOrCreate(['name' => 'server.admin', 'guard_name' => 'web']);
         $admin = User::query()->create(['login' => 'prog-admin', 'role' => 'prof', 'is_active' => true]);
-        $admin->givePermissionTo('computer.install');
+        $admin->givePermissionTo('server.admin');
         $this->actingAs($admin);
     }
 

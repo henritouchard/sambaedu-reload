@@ -93,6 +93,25 @@ new #[Title('Réglages')] class extends Component {
         </x-molecules.settings-section>
 
         {{-- ============================================================
+             Section Agent / Flotte
+             ============================================================ --}}
+        <x-molecules.settings-section
+            title="Agent / Flotte"
+            icon="fa-solid fa-shield-halved"
+            color="primary"
+            description="Pilotage de l'agent desired-state : rings de déploiement, releases, enrôlements et catalogue d'outils.">
+
+            <x-molecules.settings-card
+                href="{{ route('admin.settings.agent') }}"
+                icon="fa-solid fa-shield-halved"
+                iconColor="primary"
+                title="Console de la flotte"
+                description="Rings & releases, demandes d'enrôlement, progression du déploiement et outils du parc."
+                badge="Agent"
+                testid="card-agent" />
+        </x-molecules.settings-section>
+
+        {{-- ============================================================
              Section GPO
              ============================================================ --}}
         <x-molecules.settings-section

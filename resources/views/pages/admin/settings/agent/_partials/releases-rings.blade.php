@@ -21,7 +21,7 @@ use Livewire\Component;
  *
  * Toute `ReleaseOperationException` (version inconnue — cas défensif, la version
  * vient d'une liste fermée) est catchée → `toastError`, jamais une 500. Chaque
- * action mutante est gardée par `Gate::authorize('computer.install')` (double
+ * action mutante est gardée par `Gate::authorize('server.admin')` (double
  * protection : la page ET l'action adressable via /livewire/update).
  *
  * Pas de modèle d'ordre des rings (décision actée) : la promotion « 1 poste →
@@ -81,7 +81,7 @@ return new class extends Component {
 
     public function openTarget(?int $groupId = null): void
     {
-        Gate::authorize('computer.install');
+        Gate::authorize('server.admin');
 
         $this->targetGroupId = $groupId;
         $this->targetVersion = $this->stableRelease?->version;
@@ -90,7 +90,7 @@ return new class extends Component {
 
     public function confirmTarget(): void
     {
-        Gate::authorize('computer.install');
+        Gate::authorize('server.admin');
 
         $group = $this->targetGroupId !== null
             ? WorkstationGroup::query()->find($this->targetGroupId)
@@ -138,7 +138,7 @@ return new class extends Component {
      */
     public function rollbackRing(int $ringId): void
     {
-        Gate::authorize('computer.install');
+        Gate::authorize('server.admin');
 
         $ring = AgentReleaseRing::query()->with('workstationGroup')->find($ringId);
         if ($ring === null || $ring->workstationGroup === null) {
@@ -170,7 +170,7 @@ return new class extends Component {
 
     public function openPromote(string $version): void
     {
-        Gate::authorize('computer.install');
+        Gate::authorize('server.admin');
 
         $this->promoteVersion = $version;
         $this->isPromoteOpen = true;
@@ -178,7 +178,7 @@ return new class extends Component {
 
     public function confirmPromote(): void
     {
-        Gate::authorize('computer.install');
+        Gate::authorize('server.admin');
 
         if ($this->promoteVersion === null || $this->promoteVersion === '') {
             $this->closePromote();

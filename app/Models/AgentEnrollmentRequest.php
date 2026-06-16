@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Écrit UNIQUEMENT par {@see \App\Services\Agent\Enrollment\EnrollmentService}
  * (création/refresh au redeem porte 2, approbation/rejet manuel ou auto,
  * consommation à la naissance du token). Lu par la surface UI d'approbation
- * (Livewire `parc-settings/agent`). Le rapprochement LIT `workstations`
+ * (Livewire `admin/settings/agent`). Le rapprochement LIT `workstations`
  * (lecture seule) ; cette table n'écrit jamais dans AD.
  *
  * @property int $id

@@ -21,14 +21,14 @@ use Tests\TestCase;
  * L'UI est la 2ᵉ façade sur `ReleaseCreationService` (SEUL écrivain) : cibler
  * un ring = `target()` (`agent.release.targeted`), définir la stable =
  * `promote()` (`agent.release.promoted`), rollback ring = re-`target()` sur la
- * stable. Version inconnue → `toastError`, jamais 500. Gate `computer.install`
+ * stable. Version inconnue → `toastError`, jamais 500. Gate `server.admin`
  * sur chaque action mutante (adressabilité /livewire/update).
  */
 class ReleasesRingsSurfaceTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const COMPONENT = 'pages::parc-settings.agent._partials.releases-rings';
+    private const COMPONENT = 'pages::admin.settings.agent._partials.releases-rings';
 
     private User $admin;
 
@@ -36,9 +36,9 @@ class ReleasesRingsSurfaceTest extends TestCase
     {
         parent::setUp();
 
-        Permission::firstOrCreate(['name' => 'computer.install', 'guard_name' => 'web']);
+        Permission::firstOrCreate(['name' => 'server.admin', 'guard_name' => 'web']);
         $this->admin = User::query()->create(['login' => 'rel-admin', 'role' => 'prof', 'is_active' => true]);
-        $this->admin->givePermissionTo('computer.install');
+        $this->admin->givePermissionTo('server.admin');
         $this->actingAs($this->admin);
     }
 
@@ -126,7 +126,7 @@ class ReleasesRingsSurfaceTest extends TestCase
     }
 
     /**
-     * AC6 : CHAQUE méthode mutante vérifie `Gate::authorize('computer.install')`
+     * AC6 : CHAQUE méthode mutante vérifie `Gate::authorize('server.admin')`
      * (adressabilité /livewire/update). On couvre les 5 méthodes, pas seulement
      * `openTarget` — un refactor qui retirerait un seul `Gate::authorize` casse.
      *

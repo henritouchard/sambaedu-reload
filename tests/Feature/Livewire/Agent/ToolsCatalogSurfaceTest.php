@@ -20,7 +20,7 @@ use ZipArchive;
  * Story 25.6 — surface « Tools » du catalogue agent (AC2, AC3, AC6).
  *
  * Façade UI sur le SEUL écrivain `AgentToolService` : upload (délègue
- * `upload()`), toggle (délègue `toggle()`). Gate `computer.install` sur chaque
+ * `upload()`), toggle (délègue `toggle()`). Gate `server.admin` sur chaque
  * mutation (adressabilité /livewire/update). Refus métier → `toastError`,
  * jamais 500. Retours via toasts.
  */
@@ -28,7 +28,7 @@ class ToolsCatalogSurfaceTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const COMPONENT = 'pages::parc-settings.agent._partials.tools-catalog';
+    private const COMPONENT = 'pages::admin.settings.agent._partials.tools-catalog';
 
     private User $admin;
 
@@ -40,9 +40,9 @@ class ToolsCatalogSurfaceTest extends TestCase
     {
         parent::setUp();
 
-        Permission::firstOrCreate(['name' => 'computer.install', 'guard_name' => 'web']);
+        Permission::firstOrCreate(['name' => 'server.admin', 'guard_name' => 'web']);
         $this->admin = User::query()->create(['login' => 'tool-admin', 'role' => 'prof', 'is_active' => true]);
-        $this->admin->givePermissionTo('computer.install');
+        $this->admin->givePermissionTo('server.admin');
         $this->actingAs($this->admin);
 
         $this->toolsDir = storage_path('framework/testing/tools-' . uniqid());
@@ -70,7 +70,10 @@ class ToolsCatalogSurfaceTest extends TestCase
         $zip->addFromString('Skins/SambaEduOverlay/SambaEduOverlay.ini', "[Variables]\n");
         $zip->close();
 
-        return new UploadedFile($path, 'portable.zip', 'application/zip', null, true);
+        // `createWithContent` → `Illuminate\Http\Testing\File` (porte la
+        // propriété `->name` que la sérialisation de fichier Livewire lit ;
+        // un `UploadedFile` brut ne l'a pas → "Undefined property $name").
+        return UploadedFile::fake()->createWithContent('portable.zip', file_get_contents($path));
     }
 
     // ── AC2/AC6 — upload via le service, SHA-256 serveur ─────────────────
@@ -81,7 +84,7 @@ class ToolsCatalogSurfaceTest extends TestCase
         Livewire::test(self::COMPONENT)
             ->set('version', '4.5.18')
             ->set('archive', $this->validPortable())
-            ->call('upload')
+            ->call('importTool')
             ->assertDispatched('toastMagic', fn ($e, $p) => ($p['status'] ?? null) === 'success');
 
         $tool = AgentTool::query()->where('key', 'rainmeter')->sole();
@@ -102,8 +105,8 @@ class ToolsCatalogSurfaceTest extends TestCase
 
         Livewire::test(self::COMPONENT)
             ->set('version', '1.0')
-            ->set('archive', new UploadedFile($path, 'portable.zip', 'application/zip', null, true))
-            ->call('upload')
+            ->set('archive', UploadedFile::fake()->createWithContent('portable.zip', file_get_contents($path)))
+            ->call('importTool')
             ->assertDispatched('toastMagic', fn ($e, $p) => ($p['status'] ?? null) === 'error');
 
         self::assertSame(0, AgentTool::query()->count());
@@ -143,7 +146,7 @@ class ToolsCatalogSurfaceTest extends TestCase
         Livewire::test(self::COMPONENT)
             ->set('version', '1.0')
             ->set('archive', $this->validPortable())
-            ->call('upload');
+            ->call('importTool');
     }
 
     #[Test]
