@@ -36,8 +36,8 @@ enum WorkstationEnvironment: string
     case Nomade = 'nomade';
 
     /**
-     * Libellé humain pour l'UI parc-settings (le `<select>` de l'onglet
-     * « Environnement »). Pas de logique métier — purement présentation.
+     * Libellé humain pour le `<select>` d'édition de l'environnement d'un parc
+     * (formulaire d'édition de groupe). Pas de logique métier — pure présentation.
      */
     public function label(): string
     {
@@ -45,6 +45,19 @@ enum WorkstationEnvironment: string
             self::SharedLocal => 'Partagé (bureau réseau, profils redirigés)',
             self::PersonalLocal => 'Personnel (bureau local, home réseau)',
             self::Nomade => 'Nomade (tout local avec synchronisation)',
+        };
+    }
+
+    /**
+     * Libellé compact pour les contextes contraints (badge de la fiche groupe,
+     * entrées du menu d'action groupée) où la `label()` complète est trop longue.
+     */
+    public function shortLabel(): string
+    {
+        return match ($this) {
+            self::SharedLocal => 'Partagé',
+            self::PersonalLocal => 'Personnel',
+            self::Nomade => 'Nomade',
         };
     }
 }

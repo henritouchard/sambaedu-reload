@@ -1874,6 +1874,12 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                             <span class="text-xs text-base-content/60 uppercase tracking-wide">Sous-groupes</span>
                             <p class="font-medium mt-0.5">{{ $groupChildrenCount }}</p>
                         </div>
+                        <div>
+                            <span class="text-xs text-base-content/60 uppercase tracking-wide">Environnement</span>
+                            <p class="font-medium mt-0.5" title="{{ $group->environment?->label() }}">
+                                {{ $group->environment?->shortLabel() ?? 'Non déclaré' }}
+                            </p>
+                        </div>
                         @if ($group->parent)
                             <div>
                                 <span class="text-xs text-base-content/60 uppercase tracking-wide">Groupe parent</span>

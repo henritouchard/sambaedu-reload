@@ -3,6 +3,7 @@
 use Livewire\Component;
 use Livewire\Attributes\Title;
 use App\Services\Parc\WorkstationGroupService;
+use App\Enums\WorkstationEnvironment;
 use App\Models\WorkstationGroup;
 use App\Components\Traits\WithToasts;
 use Illuminate\Support\Facades\Log;
@@ -21,6 +22,9 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
     public string $description = '';
     public ?int $parent_id = null;
     public bool $is_physical = false;
+    // Nature des postes du parc (Story 26.1). '' = « non déclaré » → null en base
+    // (distinct de shared_local, le défaut étant résolu côté serveur).
+    public string $environment = '';
 
     // Données pour les sélecteurs
     public Collection $availableParents;
@@ -58,6 +62,7 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
             $this->description = $this->group->description ?? '';
             $this->parent_id = $this->group->parent_id;
             $this->is_physical = (bool) $this->group->is_physical;
+            $this->environment = $this->group->environment?->value ?? '';
         } catch (\Exception $e) {
             Log::error('[GroupEdit] Erreur chargement: ' . $e->getMessage());
             $this->toastError('Erreur lors du chargement du groupe');
@@ -103,12 +108,25 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
             return;
         }
 
+        // Environnement : '' = « non déclaré » → null. Une valeur non vide doit
+        // appartenir à l'enum fermé (sinon requête forgée) — on refuse plutôt que
+        // de ravaler en null silencieusement.
+        $environment = null;
+        if ($this->environment !== '') {
+            $environment = WorkstationEnvironment::tryFrom($this->environment);
+            if ($environment === null) {
+                $this->toastError("Valeur d'environnement invalide.");
+                return;
+            }
+        }
+
         try {
             $this->parcService->updateGroup($this->id, [
                 'name' => $validated['name'],
                 'description' => $validated['description'] ?: null,
                 'parent_id' => $validated['parent_id'] ?: null,
                 'is_physical' => $validated['is_physical'],
+                'environment' => $environment,
             ]);
 
             session()->flash('toast', [

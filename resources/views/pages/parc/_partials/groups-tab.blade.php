@@ -199,6 +199,30 @@
                                     Fusionner
                                 </button>
                             </li>
+                            <li>
+                                <details>
+                                    <summary>
+                                        <i class="fa-solid fa-laptop-house"></i>
+                                        Définir le profil des postes(nommade, fixe, etc.)
+                                    </summary>
+                                    <ul>
+                                        @foreach (\App\Enums\WorkstationEnvironment::cases() as $env)
+                                            <li>
+                                                <button type="button"
+                                                    wire:click="setGroupsEnvironment('{{ $env->value }}')">
+                                                    {{ $env->shortLabel() }}
+                                                </button>
+                                            </li>
+                                        @endforeach
+                                        <li>
+                                            <button type="button" class="text-base-content/70"
+                                                wire:click="setGroupsEnvironment('')">
+                                                Non déclaré
+                                            </button>
+                                        </li>
+                                    </ul>
+                                </details>
+                            </li>
                             <div class="divider my-1"></div>
                             <li>
                                 <button type="button" class="text-error" wire:click="deleteGroups"

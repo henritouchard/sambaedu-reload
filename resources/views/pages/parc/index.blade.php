@@ -7,8 +7,10 @@ use Livewire\WithPagination;
 use App\Services\Parc\WorkstationGroupService;
 use App\Jobs\SyncWorkstationGroupsFromAd;
 use App\Components\Traits\WithToasts;
+use App\Enums\WorkstationEnvironment;
 use App\Models\WorkstationGroup;
 use App\Services\Agent\Reporting\ConformityService;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
 
@@ -406,6 +408,69 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
             Log::error('[Parc] Erreur suppression groupes: ' . $e->getMessage());
             $this->toastError($e->getMessage());
         }
+    }
+
+    /**
+     * Action groupée — déclare l'environnement (nature des postes, Story 26.1)
+     * des groupes sélectionnés. Remplace l'ancien onglet « Environnement » de
+     * parc-settings : la propriété s'édite désormais là où l'on gère les groupes.
+     *
+     * `$value` vide = « non déclaré » → null (distinct de shared_local, le défaut
+     * étant résolu côté serveur). Une valeur non vide doit appartenir à l'enum
+     * fermé. La gate `update-workstationGroup` (= computer.install) est vérifiée
+     * PAR groupe : la route /parc n'exige que la lecture, on protège donc
+     * l'écriture ressource par ressource (un délégué scopé ne touche que les
+     * groupes autorisés).
+     */
+    public function setGroupsEnvironment(string $value): void
+    {
+        if (empty($this->selectedGroups)) {
+            $this->toastError('Aucun groupe sélectionné');
+            return;
+        }
+
+        if ($value !== '' && WorkstationEnvironment::tryFrom($value) === null) {
+            $this->toastError("Valeur d'environnement invalide.");
+            return;
+        }
+
+        $environment = $value === '' ? null : WorkstationEnvironment::from($value);
+
+        $updated = 0;
+        $skipped = 0;
+        foreach ($this->selectedGroups as $groupId) {
+            $group = WorkstationGroup::find((int) $groupId);
+            if (!$group) {
+                continue;
+            }
+
+            if (!Gate::allows('update-workstationGroup', $group)) {
+                $skipped++;
+                continue;
+            }
+
+            $group->environment = $environment;
+            $group->save();
+            $updated++;
+        }
+
+        $label = $environment?->label() ?? 'Non déclaré (partagé par défaut)';
+
+        if ($updated === 0) {
+            $this->toastError(
+                $skipped > 0
+                    ? "Aucun groupe modifié — {$skipped} non autorisé(s)."
+                    : 'Aucun groupe modifié.',
+            );
+            return;
+        }
+
+        $message = "Environnement « {$label} » appliqué à {$updated} groupe(s)";
+        if ($skipped > 0) {
+            $message .= " — {$skipped} ignoré(s) (non autorisé)";
+        }
+        $this->toastSuccess($message);
+        $this->selectedGroups = [];
     }
 
     // Synchronisation depuis AD
