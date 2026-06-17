@@ -52,9 +52,10 @@ except Exception as e:
 
 # --- Mettre à jour les statuts ---
 for key, status in statuses.items():
-    if re.match(r'^\d+\w*-\d+-.+', key):
-        # Story: "1-2-catchall-..." or "1bis-2-bootstrap-..." → id "1-2" or "1bis-2"
-        m_story = re.match(r'^(\d+\w*)-(\d+)-.+', key)
+    if re.match(r'^\d+\w*-\d+\w*-.+', key):
+        # Story: "1-2-catchall-...", "1bis-2-bootstrap-..." ou "27-3bis-..." → id "1-2", "1bis-2" ou "27-3bis"
+        # (le suffixe "bis" peut être sur l'epic OU sur le numéro de story → \w* sur les deux groupes)
+        m_story = re.match(r'^(\d+\w*)-(\d+\w*)-.+', key)
         story_id = f"{m_story.group(1)}-{m_story.group(2)}"
         html = re.sub(
             r'(\{ id: "' + re.escape(story_id) + r'",.*?status: ")[^"]*(")',
