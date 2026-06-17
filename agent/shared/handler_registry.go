@@ -105,6 +105,30 @@ type RegistryOps interface {
 	Write(spec RegistrySpec) error
 }
 
+// registryNotifier : hook OPTIONNEL (assertion de type sur Ops) implémenté par
+// l'impl OS pour signaler au shell qu'au moins une clé HKCU affectant l'UI a
+// changé. L'impl Windows émet SHChangeNotify(SHCNE_ASSOCCHANGED) → l'Explorer
+// DÉJÀ ouvert relit ses réglages de vue (Hidden, HideFileExt) sans relogon.
+// Optionnel : RegistryOps ne l'exige PAS — un fake de test / un OS sans impl ne
+// le fournit pas (l'assertion échoue → aucune notification, comportement
+// inchangé). Best-effort : un shell non rafraîchi n'est JAMAIS une erreur de
+// convergence (la clé EST écrite ; au pire l'effet apparaît au prochain relogon).
+type registryNotifier interface {
+	NotifyShellChanged()
+}
+
+// isUserHive : la ruche est-elle celle de l'utilisateur (HKCU) ? Gate le
+// rafraîchissement shell sur les seules clés per-user — les écritures HKLM du
+// service (session 0) ne rafraîchissent aucun bureau interactif.
+func isUserHive(hive string) bool {
+	switch strings.ToUpper(strings.TrimSpace(hive)) {
+	case "HKCU", "HKEY_CURRENT_USER":
+		return true
+	default:
+		return false
+	}
+}
+
 // RegistryHandler : handler exclusive-par-clé branché dans le moteur
 // (engine.go) — la machine d'états §5 reste au moteur, JAMAIS ici.
 type RegistryHandler struct {
@@ -174,6 +198,7 @@ func (h *RegistryHandler) Apply(items []StateItem) error {
 	}
 
 	var firstErr error
+	shellRefresh := false // au moins une clé HKCU a changé → rafraîchir le shell
 	for _, spec := range specs {
 		actual, present, err := h.Ops.Read(spec.Hive, spec.Path, spec.Name)
 		if err != nil {
@@ -196,6 +221,21 @@ func (h *RegistryHandler) Apply(items []StateItem) error {
 			continue
 		}
 		logInfo(h.Log, "Réglage registre appliqué : %s = %s", spec.identity(), formatValue(spec.Value))
+		if isUserHive(spec.Hive) {
+			shellRefresh = true
+		}
+	}
+
+	// Une clé HKCU affectant l'UI vient de changer (ex. Explorer\Advanced :
+	// Hidden, HideFileExt) : sans signal au shell, l'Explorer DÉJÀ ouvert garde
+	// ses anciens réglages de vue jusqu'au prochain relogon. On émet un
+	// rafraîchissement best-effort (impl OS optionnelle — hôte/tests : no-op).
+	// Gate sur HKCU + changement EFFECTIF : 0 écriture = 0 notification (au régime
+	// stable, l'idempotence est préservée et l'Explorer ne « flicke » pas).
+	if shellRefresh {
+		if notifier, ok := h.Ops.(registryNotifier); ok {
+			notifier.NotifyShellChanged()
+		}
 	}
 
 	return firstErr

@@ -15,7 +15,12 @@ type fakeRegistryOps struct {
 	writeErr  map[string]error         // identité → erreur d'écriture
 	writeCnt  int
 	readCnt   int
+	notifyCnt int // appels NotifyShellChanged (rafraîchissement shell émis)
 }
+
+// NotifyShellChanged : implémente registryNotifier (optionnel) → compte les
+// rafraîchissements shell émis par Apply après un changement HKCU.
+func (o *fakeRegistryOps) NotifyShellChanged() { o.notifyCnt++ }
 
 func newFakeRegistryOps() *fakeRegistryOps {
 	return &fakeRegistryOps{
@@ -242,6 +247,57 @@ func TestRegistryHandlesBothHivesGenerically(t *testing.T) {
 	if ops.values[keyID("HKCU", `Software\Y`, "U")].Int != 1 {
 		t.Fatalf("clé HKCU non appliquée")
 	}
+}
+
+// --- Rafraîchissement shell : émis sur changement HKCU seul ------------------
+
+func TestRegistryShellRefreshOnUserHiveChangeOnly(t *testing.T) {
+	t.Run("changement HKCU → notification shell émise (puis idempotente)", func(t *testing.T) {
+		ops := newFakeRegistryOps()
+		h := &RegistryHandler{Ops: ops}
+		items := []StateItem{dwordItem("HKCU", `Software\Test\Advanced`, "Hidden", 1)}
+
+		if err := h.Apply(items); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if ops.notifyCnt != 1 {
+			t.Fatalf("changement HKCU : 1 rafraîchissement shell attendu, obtenu %d", ops.notifyCnt)
+		}
+		// État stable : 2e passe sans écriture → aucune notification de plus.
+		if err := h.Apply(items); err != nil {
+			t.Fatalf("apply 2: %v", err)
+		}
+		if ops.notifyCnt != 1 {
+			t.Fatalf("état stable : aucune notification supplémentaire attendue, obtenu %d", ops.notifyCnt)
+		}
+	})
+
+	t.Run("HKLM seul (service, session 0) → aucune notification shell", func(t *testing.T) {
+		ops := newFakeRegistryOps()
+		h := &RegistryHandler{Ops: ops}
+		items := []StateItem{dwordItem("HKLM", `SOFTWARE\Test\System`, "EnableLUA", 0)}
+
+		if err := h.Apply(items); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if ops.notifyCnt != 0 {
+			t.Fatalf("HKLM : aucun rafraîchissement shell attendu, obtenu %d", ops.notifyCnt)
+		}
+	})
+
+	t.Run("déjà conforme → aucune écriture, aucune notification", func(t *testing.T) {
+		ops := newFakeRegistryOps()
+		ops.values[keyID("HKCU", `Software\Test\Advanced`, "Hidden")] = RegistryValue{Kind: "REG_DWORD", Int: 1}
+		h := &RegistryHandler{Ops: ops}
+		items := []StateItem{dwordItem("HKCU", `Software\Test\Advanced`, "Hidden", 1)}
+
+		if err := h.Apply(items); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if ops.notifyCnt != 0 {
+			t.Fatalf("état déjà conforme : aucune notification attendue, obtenu %d", ops.notifyCnt)
+		}
+	})
 }
 
 // --- Payload invalide → error (enveloppe) ------------------------------------
