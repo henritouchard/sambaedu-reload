@@ -5,26 +5,27 @@ use App\Models\FileAssociation;
 use App\Models\WorkstationGroup;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Story 27.3bis — Page Livewire SFC « Associations par défaut » (catalogue par parc).
+ * Story 27.3bis — Onglet « Associations par défaut » de la page d'un WorkstationGroup.
  *
- * L'admin d'établissement ACTIVE par parc des associations PRÉDÉTERMINÉES
- * (`.pdf` → Acrobat, `http` → Firefox…) issues du catalogue `file_associations`.
- * Il ne touche jamais à un hash : la complexité UserChoice est confinée dans le
- * handler agent (calculée per-user au logon, HKCU).
+ * L'association par défaut s'applique PAR workstationGroup (parc logique OU salle) :
+ * le geste vit donc dans la page de gestion du groupe (onglet), scopé à `$groupId`,
+ * et non dans une page globale à sélecteur de parc.
  *
- * Persistance sur le pivot polymorphe `file_association_assignables` (assignable
- * = WorkstationGroup) via attach/detach. « Désactiver » = retirer l'assignation
- * = l'item disparaît de l'état → l'agent CESSE de gérer l'association (le choix
- * courant reste en place ; PAS de reset OFF — piège n° 5).
+ * L'admin ACTIVE des associations PRÉDÉTERMINÉES (`.pdf` → Acrobat, `http` → Firefox…)
+ * issues du catalogue `file_associations`. Il ne touche jamais à un hash : la
+ * complexité UserChoice est confinée dans le handler agent (calculée per-user au
+ * logon, HKCU). Persistance sur le pivot polymorphe `file_association_assignables`
+ * (assignable = WorkstationGroup) via attach/detach. « Désactiver » = retirer
+ * l'assignation = l'agent CESSE de gérer l'association (le choix courant reste en
+ * place ; PAS de reset OFF — piège n° 5).
  *
  * **Validation PRÉDICTIVE par parc (D-Henri n°7, AC11).** Chaque association porte
  * une `source` : `native` (built-in Windows → toujours applicable) ou `wpkg`
  * (fournie par un paquet → applicable seulement si `wpkg_package` est DÉPLOYÉ sur
- * le parc). L'UI calcule, par parc, un statut EXACT :
+ * le parc). L'UI calcule, pour CE groupe, un statut EXACT :
  *   - `native` → `applicable` ;
  *   - `wpkg` & paquet déployé → `applicable` ;
  *   - `wpkg` & paquet NON déployé → `unavailable` → warning rouge + tooltip nommant
@@ -34,19 +35,15 @@ use Livewire\Component;
  * croisement WPKG vit ICI, JAMAIS dans `AssociationsStateProvider` (qui émet
  * toujours, D-Henri n°3).
  *
- * Calqué sur `registry-settings`/`overlay-messages` (WithToasts, geste par parc).
- * Gate `app.customize` (iso autres réglages parc — voir routes/web.php).
+ * Gate `app.customize` (iso autres réglages parc).
  */
-new #[Title('Associations par défaut — par parc')] class extends Component {
+new class extends Component {
     use WithToasts;
 
-    /** Parc (WorkstationGroup) actuellement édité. */
-    public ?int $parcId = null;
+    /** WorkstationGroup (parc/salle) édité — passé par la page parente. */
+    public int $groupId;
 
-    /** @var array<int,array{id:int,name:string,is_physical:bool}> */
-    public array $parcs = [];
-
-    public function mount(): void
+    public function mount(int $groupId): void
     {
         abort_unless(
             auth()->check() && auth()->user()->can('app.customize'),
@@ -54,24 +51,11 @@ new #[Title('Associations par défaut — par parc')] class extends Component {
             'Permission app.customize requise.',
         );
 
-        // Parcs (logiques ET physiques — geste UI v1 par PARC, D-ciblage).
-        $this->parcs = WorkstationGroup::query()
-            ->where('is_active', true)
-            ->orderBy('is_physical')
-            ->orderBy('name')
-            ->get(['id', 'name', 'display_name', 'is_physical'])
-            ->map(fn (WorkstationGroup $g): array => [
-                'id' => (int) $g->id,
-                'name' => (string) ($g->display_name ?? $g->name),
-                'is_physical' => (bool) $g->is_physical,
-            ])
-            ->all();
-
-        $this->parcId = $this->parcs[0]['id'] ?? null;
+        $this->groupId = $groupId;
     }
 
     /**
-     * Catalogue des associations actives + drapeau « assignée au parc courant » +
+     * Catalogue des associations actives + drapeau « assignée au groupe courant » +
      * statut PRÉDICTIF d'applicabilité (`applicable` | `unavailable`) sur ce parc.
      *
      * @return array<int,array<string,mixed>>
@@ -79,12 +63,8 @@ new #[Title('Associations par défaut — par parc')] class extends Component {
     #[Computed]
     public function associations(): array
     {
-        if ($this->parcId === null) {
-            return [];
-        }
-
         $assignedIds = $this->assignedAssociationIds();
-        $deployedPackages = $this->deployedPackagesForParc($this->parcId);
+        $deployedPackages = $this->deployedPackagesForParc($this->groupId);
 
         return FileAssociation::query()
             ->where('is_active', true)
@@ -111,18 +91,14 @@ new #[Title('Associations par défaut — par parc')] class extends Component {
     }
 
     /**
-     * Active/désactive une association pour le parc courant (pivot attach/detach).
+     * Active/désactive une association pour le groupe courant (pivot attach/detach).
      * Toast EXACT : à l'activation d'une association `unavailable` (paquet WPKG non
      * déployé sur le parc), avertit en nommant le paquet ; sinon succès simple.
      */
     public function toggle(int $associationId): void
     {
-        if ($this->parcId === null) {
-            return;
-        }
-
         $association = FileAssociation::query()->findOrFail($associationId);
-        $parc = WorkstationGroup::query()->findOrFail($this->parcId);
+        $parc = WorkstationGroup::query()->findOrFail($this->groupId);
 
         if (in_array($associationId, $this->assignedAssociationIds(), true)) {
             // Désassigner = cesser de gérer (l'item disparaît, le choix courant
@@ -164,19 +140,15 @@ new #[Title('Associations par défaut — par parc')] class extends Component {
     }
 
     /**
-     * Ids des associations assignées au parc courant (une requête pivot).
+     * Ids des associations assignées au groupe courant (une requête pivot).
      *
      * @return list<int>
      */
     private function assignedAssociationIds(): array
     {
-        if ($this->parcId === null) {
-            return [];
-        }
-
         return DB::table('file_association_assignables')
             ->where('assignable_type', WorkstationGroup::class)
-            ->where('assignable_id', $this->parcId)
+            ->where('assignable_id', $this->groupId)
             ->pluck('file_association_id')
             ->map(fn ($id): int => (int) $id)
             ->all();
@@ -292,114 +264,89 @@ new #[Title('Associations par défaut — par parc')] class extends Component {
 };
 ?>
 
-<x-organisms.page
-    title="Associations par défaut"
-    :scrollable="true"
-    description="Activez par parc les programmes par défaut des extensions et protocoles (PDF, HTTP…), appliqués et maintenus par l'agent.">
-
-    <div class="space-y-6">
-        <div class="alert alert-info shadow-sm">
-            <i class="fa-solid fa-circle-info"></i>
-            <div>
-                <p class="font-medium">Catalogue d'associations</p>
-                <p class="text-sm opacity-80">
-                    Cochez les associations à appliquer pour ce parc. Elles sont réimposées par l'agent
-                    au logon (une association changée manuellement sur un poste est corrigée au cycle suivant).
-                    <strong>Désactiver une association = cesser de la gérer</strong> : le choix déjà
-                    appliqué reste en place. Une association dont le programme cible vient d'un paquet
-                    <strong>non déployé sur ce parc</strong> est signalée comme indisponible (elle
-                    échouera sur les postes ; le choix de l'utilisateur reste préservé).
-                </p>
-            </div>
+<div class="space-y-6 mt-4">
+    <div class="alert alert-info shadow-sm">
+        <i class="fa-solid fa-circle-info"></i>
+        <div>
+            <p class="font-medium">Catalogue d'associations</p>
+            <p class="text-sm opacity-80">
+                Cochez les associations à appliquer pour ce parc. Elles sont réimposées par l'agent
+                au logon (une association changée manuellement sur un poste est corrigée au cycle suivant).
+                <strong>Désactiver une association = cesser de la gérer</strong> : le choix déjà
+                appliqué reste en place. Une association dont le programme cible vient d'un paquet
+                <strong>non déployé sur ce parc</strong> est signalée comme indisponible (elle
+                échouera sur les postes ; le choix de l'utilisateur reste préservé).
+            </p>
         </div>
+    </div>
 
-        {{-- Sélecteur de parc --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
-            <div class="card-body">
-                <div class="form-control max-w-md">
-                    <label class="label"><span class="label-text">Parc</span></label>
-                    <select wire:model.live="parcId" class="select select-bordered">
-                        @forelse ($parcs as $parc)
-                            <option value="{{ $parc['id'] }}">
-                                {{ $parc['name'] }} ({{ $parc['is_physical'] ? 'salle' : 'parc logique' }})
-                            </option>
-                        @empty
-                            <option value="">Aucun parc</option>
-                        @endforelse
-                    </select>
-                </div>
-            </div>
-        </div>
+    <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card-body">
+            <h2 class="card-title text-base">Associations par défaut disponibles</h2>
 
-        {{-- Catalogue --}}
-        <div class="card bg-base-100 shadow-sm border border-base-200">
-            <div class="card-body">
-                <h2 class="card-title text-base">Associations disponibles</h2>
-
-                <div class="overflow-x-auto">
-                    <table class="table table-sm">
-                        <thead>
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Activée</th>
+                            <th>Association</th>
+                            <th>Type</th>
+                            <th>Cible</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse ($this->associations as $association)
                             <tr>
-                                <th>Activée</th>
-                                <th>Association</th>
-                                <th>Type</th>
-                                <th>Cible</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse ($this->associations as $association)
-                                <tr>
-                                    <td>
-                                        <input type="checkbox" class="toggle toggle-primary toggle-sm"
-                                            @checked($association['assigned'])
-                                            wire:click="toggle({{ $association['id'] }})" />
-                                    </td>
-                                    <td>
-                                        <div class="font-medium flex items-center gap-1">
-                                            {{ $association['label'] }}
-                                            @if ($association['availability'] === 'unavailable')
-                                                {{-- Validation prédictive EXACTE (D-Henri n°7) : le paquet
-                                                     WPKG cible n'est PAS déployé sur ce parc → l'association
-                                                     échouera ici. Nomme le paquet ; garde-fou si la donnée est
-                                                     incohérente (wpkg sans wpkg_package). --}}
-                                                @php($missingPkg = $association['wpkg_package'] ?? null)
-                                                <span class="tooltip tooltip-error before:max-w-xs before:whitespace-normal"
-                                                    data-tip="{{ $missingPkg
-                                                        ? '« '.$missingPkg.' » n\'est pas déployé sur ce parc → cette association échouera ici (l\'agent rapportera une erreur, le choix utilisateur reste préservé).'
-                                                        : 'Association mal configurée (paquet source manquant) → elle échouera sur les postes ; le choix utilisateur reste préservé.' }}">
-                                                    <i class="fa-solid fa-triangle-exclamation text-error text-xs"
-                                                        aria-label="{{ $missingPkg ? 'Paquet '.$missingPkg.' non déployé sur ce parc' : 'Association mal configurée (paquet source manquant)' }}"></i>
-                                                </span>
-                                            @endif
-                                        </div>
-                                        @if ($association['description'] !== '')
-                                            <div class="text-sm opacity-70">{{ $association['description'] }}</div>
-                                        @endif
-                                    </td>
-                                    <td>
-                                        <span class="badge badge-sm @class([
-                                            'badge-info' => $association['assoc_type'] === 'protocol',
-                                            'badge-ghost' => $association['assoc_type'] === 'file',
-                                        ])">{{ $association['assoc_type'] === 'protocol' ? 'protocole' : 'fichier' }}</span>
+                                <td>
+                                    <input type="checkbox" class="toggle toggle-primary toggle-sm"
+                                        @checked($association['assigned'])
+                                        wire:click="toggle({{ $association['id'] }})" />
+                                </td>
+                                <td>
+                                    <div class="font-medium flex items-center gap-1">
+                                        {{ $association['label'] }}
                                         @if ($association['availability'] === 'unavailable')
-                                            <span class="badge badge-sm badge-error badge-outline ml-1">indisponible</span>
+                                            {{-- Validation prédictive EXACTE (D-Henri n°7) : le paquet
+                                                 WPKG cible n'est PAS déployé sur ce parc → l'association
+                                                 échouera ici. Nomme le paquet ; garde-fou si la donnée est
+                                                 incohérente (wpkg sans wpkg_package). --}}
+                                            @php($missingPkg = $association['wpkg_package'] ?? null)
+                                            <span class="tooltip tooltip-error before:max-w-xs before:whitespace-normal"
+                                                data-tip="{{ $missingPkg
+                                                    ? '« '.$missingPkg.' » n\'est pas déployé sur ce parc → cette association échouera ici (l\'agent rapportera une erreur, le choix utilisateur reste préservé).'
+                                                    : 'Association mal configurée (paquet source manquant) → elle échouera sur les postes ; le choix utilisateur reste préservé.' }}">
+                                                <i class="fa-solid fa-triangle-exclamation text-error text-xs"
+                                                    aria-label="{{ $missingPkg ? 'Paquet '.$missingPkg.' non déployé sur ce parc' : 'Association mal configurée (paquet source manquant)' }}"></i>
+                                            </span>
                                         @endif
-                                    </td>
-                                    <td class="text-xs opacity-70 font-mono">
-                                        {{ $association['identifier'] }} → {{ $association['progid'] }}
-                                    </td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="4" class="text-center opacity-60 py-6">
-                                        Aucune association dans le catalogue (ou aucun parc sélectionné).
-                                    </td>
-                                </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
+                                    </div>
+                                    @if ($association['description'] !== '')
+                                        <div class="text-sm opacity-70">{{ $association['description'] }}</div>
+                                    @endif
+                                </td>
+                                <td>
+                                    <span class="badge badge-sm @class([
+                                        'badge-info' => $association['assoc_type'] === 'protocol',
+                                        'badge-ghost' => $association['assoc_type'] === 'file',
+                                    ])">{{ $association['assoc_type'] === 'protocol' ? 'protocole' : 'fichier' }}</span>
+                                    @if ($association['availability'] === 'unavailable')
+                                        <span class="badge badge-sm badge-error badge-outline ml-1">indisponible</span>
+                                    @endif
+                                </td>
+                                <td class="text-xs opacity-70 font-mono">
+                                    {{ $association['identifier'] }} → {{ $association['progid'] }}
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="4" class="text-center opacity-60 py-6">
+                                    Aucune association dans le catalogue.
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
-</x-organisms.page>
+</div>

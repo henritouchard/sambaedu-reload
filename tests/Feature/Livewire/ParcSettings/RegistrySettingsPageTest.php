@@ -17,7 +17,10 @@ use Tests\Concerns\SeedsWorkstationConfig;
 use Tests\TestCase;
 
 /**
- * Page Livewire « Réglages registre » (catalogue par parc) — Story 27.3, AC7.
+ * Onglet Livewire « Réglages registre » de la page d'un WorkstationGroup —
+ * Story 27.3, AC7. Le geste s'applique PAR groupe (parc/salle) : le composant est
+ * monté en onglet de `parc/groups/{id}` et reçoit `groupId` au montage (plus de
+ * sélecteur de parc global).
  *
  * Vérifie : gate app.customize (rendu vs 403), activation = assignation pivot,
  * désactivation = retrait, idempotence (réactiver ne double pas). La compilation
@@ -27,7 +30,7 @@ class RegistrySettingsPageTest extends TestCase
 {
     use SeedsWorkstationConfig;
 
-    private const COMPONENT = 'pages::parc-settings.registry-settings.index';
+    private const COMPONENT = 'pages::parc.groups._partials.registry-tab';
 
     protected function setUp(): void
     {
@@ -142,11 +145,11 @@ class RegistrySettingsPageTest extends TestCase
     #[Test]
     public function renders_for_authorized_manager(): void
     {
-        $this->parc();
+        $parc = $this->parc();
         $this->setting();
         $this->actingAs($this->manager());
 
-        Livewire::test(self::COMPONENT)
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
             ->assertOk()
             ->assertSee('Réglages registre')
             ->assertSee('Afficher les extensions');
@@ -158,7 +161,7 @@ class RegistrySettingsPageTest extends TestCase
         $viewer = User::query()->create(['login' => 'viewer-r', 'role' => 'eleve', 'is_active' => true]);
         $this->actingAs($viewer);
 
-        Livewire::test(self::COMPONENT)->assertStatus(403);
+        Livewire::test(self::COMPONENT, ['groupId' => 1])->assertStatus(403);
     }
 
     #[Test]
@@ -168,8 +171,7 @@ class RegistrySettingsPageTest extends TestCase
         $setting = $this->setting();
         $this->actingAs($this->manager());
 
-        Livewire::test(self::COMPONENT)
-            ->set('parcId', $parc->id)
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
             ->call('toggle', $setting->id)
             ->assertHasNoErrors();
 
@@ -187,8 +189,7 @@ class RegistrySettingsPageTest extends TestCase
         $setting = $this->setting();
         $this->actingAs($this->manager());
 
-        Livewire::test(self::COMPONENT)
-            ->set('parcId', $parc->id)
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
             ->call('toggle', $setting->id)   // active
             ->call('toggle', $setting->id);  // désactive (cesser de gérer)
 
@@ -205,7 +206,7 @@ class RegistrySettingsPageTest extends TestCase
         $setting = $this->setting();
         $this->actingAs($this->manager());
 
-        $component = Livewire::test(self::COMPONENT)->set('parcId', $parc->id);
+        $component = Livewire::test(self::COMPONENT, ['groupId' => $parc->id]);
         $component->call('toggle', $setting->id); // active
         $component->call('toggle', $setting->id); // désactive
         $component->call('toggle', $setting->id); // réactive

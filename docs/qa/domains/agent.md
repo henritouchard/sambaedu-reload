@@ -2178,9 +2178,11 @@ logon** depuis le cache machine, sans attendre le fetch per-user ;
 ## Story 27.3 — Réglages registre par parc (catalogue)
 
 Le canal agent gagne le type `registry` : un **catalogue** de réglages de
-registre Windows prédéterminés, activables **par parc** dans
-`/app/parc-settings/registry-settings`, appliqués et réimposés par l'agent
-(successeur natif du canal Registry.pol/GPO). DEUX providers serveur (HKLM →
+registre Windows prédéterminés, activables **par parc** dans l'onglet
+« Réglages registre » de la page d'un WorkstationGroup
+(`/app/parc/groups/{id}?tab=registry` — gate `app.customize`), appliqués et
+réimposés par l'agent (successeur natif du canal Registry.pol/GPO). DEUX
+providers serveur (HKLM →
 service SYSTEM, HKCU → compagnon), UN handler Go générique. Exclusive PAR
 IDENTITÉ DE CLÉ avec précédence **logique > physique** (D-Q3, inversion globale).
 
@@ -2194,8 +2196,8 @@ IDENTITÉ DE CLÉ avec précédence **logique > physique** (D-Q3, inversion glob
 
 ### Scénario 27.3.1 — Réglage HKLM appliqué par parc (SYSTEM) (lab Windows — ACTION HUMAINE Henri)
 
-1. Activer « Désactiver l'UAC » (HKLM) sur le parc d'un poste, dans
-   `parc-settings/registry-settings`.
+1. Activer « Désactiver l'UAC » (HKLM) sur le parc d'un poste, dans l'onglet
+   « Réglages registre » de la page du parc (`parc/groups/{id}?tab=registry`).
 2. Attendre un cycle agent (ou forcer la synchro).
 3. **Attendu** : `regedit` → `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System`
    `EnableLUA = 0`. La convergence machine est faite par le **service SYSTEM**
@@ -2234,6 +2236,13 @@ IDENTITÉ DE CLÉ avec précédence **logique > physique** (D-Q3, inversion glob
 
 ### Post-correctifs & non-régressions (Story 27.3)
 
+- **UI = onglet de la page d'un WorkstationGroup** (correctif post-livraison) : le
+  réglage registre s'appliquant PAR groupe, le geste vit dans un onglet « Réglages
+  registre » de `parc/groups/{id}` (composant Livewire
+  `pages::parc.groups._partials.registry-tab`, monté `:group-id`, gate `app.customize`),
+  PAS dans une page parc-settings globale à sélecteur de parc (page standalone +
+  route `parc-settings.registry-settings` supprimées). L'onglet n'apparaît que pour
+  `app.customize`.
 - **Inversion D-Q3 GLOBALE** : `logique > physique` touche AUSSI le défaut
   `printers` (27.2) et l'exclusivité `wallpaper`. Les tests 27.1/27.2 dépendants
   ont été MIS À JOUR (pas non-régressés) : `default_logical_wins_over_physical`,
@@ -2260,8 +2269,9 @@ IDENTITÉ DE CLÉ avec précédence **logique > physique** (D-Q3, inversion glob
 
 Le canal agent gagne le type `associations` : un **catalogue** d'associations de
 fichiers/protocoles par défaut (`.pdf` → Acrobat, `http` → Firefox), activables
-**par parc** dans `/app/parc-settings/file-associations`, appliquées et réimposées
-par l'agent **au logon** (HKCU UserChoice, par le **compagnon**). Successeur natif
+**par parc** dans l'onglet « Associations » de la page d'un WorkstationGroup
+(`/app/parc/groups/{id}?tab=associations` — gate `app.customize`), appliquées et
+réimposées par l'agent **au logon** (HKCU UserChoice, par le **compagnon**). Successeur natif
 du volet poste `associations.ps1`/`SFTA.ps1` (canal legacy `associations_out.php`
 intouché, meurt en 27.6). Exclusive **PAR IDENTIFIANT**, précédence
 **logique > physique** (D-Q3). **Cœur de risque** : le hash anti-tamper UserChoice
@@ -2281,7 +2291,8 @@ payload — dépend du SID/temps/GUID du poste) et **verrouillé par tests vecto
 ### Scénario 27.3bis.1 — Association appliquée par parc au logon (compagnon) (lab Windows — ACTION HUMAINE Henri)
 
 1. Activer une association (ex. « Pages HTML → Firefox ») sur le parc d'un poste,
-   dans `parc-settings/file-associations`. S'assurer que Firefox (ProgId
+   dans l'onglet « Associations » de la page du parc
+   (`parc/groups/{id}?tab=associations`). S'assurer que Firefox (ProgId
    `FirefoxHTML`) est installé sur le poste.
 2. Ouvrir une session sur un poste du parc.
 3. **Attendu** : `regedit` →
@@ -2338,7 +2349,8 @@ payload — dépend du SID/temps/GUID du poste) et **verrouillé par tests vecto
 
 ### Scénario 27.3bis.6bis — Validation prédictive par parc dans l'UI (navigateur, hors lab) — D-Henri n°7
 
-> Étend l'UI `parc-settings/file-associations`. Le warning n'est plus générique
+> Étend l'onglet « Associations » de la page d'un parc
+> (`parc/groups/{id}?tab=associations`). Le warning n'est plus générique
 > (« si le ProgId n'est pas installé… ») mais EXACT par paquet et par parc.
 
 1. Ouvrir un parc **sans** Firefox déployé. Une association `wpkg` (ex.
@@ -2361,6 +2373,14 @@ payload — dépend du SID/temps/GUID du poste) et **verrouillé par tests vecto
 
 ### Post-correctifs & non-régressions (Story 27.3bis)
 
+- **UI = onglet de la page d'un WorkstationGroup** (correctif post-livraison) :
+  l'association par défaut s'appliquant PAR groupe, le geste vit dans un onglet
+  « Associations » de `parc/groups/{id}` (composant Livewire
+  `pages::parc.groups._partials.associations-tab`, monté `:group-id`, gate
+  `app.customize`), PAS dans une page parc-settings globale à sélecteur de parc
+  (page standalone + route `parc-settings.file-associations` supprimées). La
+  validation prédictive WPKG est calculée pour CE groupe. L'onglet n'apparaît que
+  pour `app.customize`.
 - **Zéro modification du `StateCompiler`** : `AssociationsStateProvider` réutilise
   le marqueur `KeyedExclusiveProvider` (exclusiveKey = `identifier`) déjà câblé par
   27.3 — non-régression `registry`/`wallpaper`/`printers` vérifiée (tests
@@ -2400,7 +2420,7 @@ payload — dépend du SID/temps/GUID du poste) et **verrouillé par tests vecto
       physique sur maille partagée).
 - [ ] 27.3bis.6 — Payload `associations` concret `{identifier, progid, type}`,
       jamais d'id de catalogue NI de hash/SID (`curl /state`).
-- [ ] 27.3bis.7 — UI `parc-settings/file-associations` (navigateur, hors lab) :
+- [ ] 27.3bis.7 — UI onglet « Associations » du parc (`parc/groups/{id}?tab=associations`, navigateur, hors lab) :
       validation PRÉDICTIVE par parc (D-Henri n°7). Une association `wpkg` dont le
       paquet n'est **pas déployé** sur le parc affiche un **badge « indisponible » +
       warning rouge + tooltip nommant le paquet** ; l'activer émet un **toast

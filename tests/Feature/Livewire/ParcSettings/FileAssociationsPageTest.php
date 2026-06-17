@@ -20,7 +20,10 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Page Livewire « Associations par défaut » (catalogue par parc) — Story 27.3bis, AC7, AC11.
+ * Onglet Livewire « Associations par défaut » de la page d'un WorkstationGroup —
+ * Story 27.3bis, AC7, AC11. Le geste s'applique PAR groupe (parc/salle) : le
+ * composant est monté en onglet de `parc/groups/{id}` et reçoit `groupId` au
+ * montage (plus de sélecteur de parc global).
  *
  * Vérifie : gate app.customize (rendu vs 403), activation = assignation pivot,
  * désactivation = retrait, idempotence (réactiver ne double pas). La compilation
@@ -35,7 +38,7 @@ class FileAssociationsPageTest extends TestCase
 {
     use SeedsWorkstationConfig;
 
-    private const COMPONENT = 'pages::parc-settings.file-associations.index';
+    private const COMPONENT = 'pages::parc.groups._partials.associations-tab';
 
     protected function setUp(): void
     {
@@ -159,11 +162,11 @@ class FileAssociationsPageTest extends TestCase
     #[Test]
     public function renders_for_authorized_manager(): void
     {
-        $this->parc();
+        $parc = $this->parc();
         $this->association();
         $this->actingAs($this->manager());
 
-        Livewire::test(self::COMPONENT)
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
             ->assertOk()
             ->assertSee('Associations par défaut')
             ->assertSee('PDF → Acrobat');
@@ -175,7 +178,7 @@ class FileAssociationsPageTest extends TestCase
         $viewer = User::query()->create(['login' => 'viewer-a', 'role' => 'eleve', 'is_active' => true]);
         $this->actingAs($viewer);
 
-        Livewire::test(self::COMPONENT)->assertStatus(403);
+        Livewire::test(self::COMPONENT, ['groupId' => 1])->assertStatus(403);
     }
 
     #[Test]
@@ -185,8 +188,7 @@ class FileAssociationsPageTest extends TestCase
         $assoc = $this->association();
         $this->actingAs($this->manager());
 
-        Livewire::test(self::COMPONENT)
-            ->set('parcId', $parc->id)
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
             ->call('toggle', $assoc->id)
             ->assertHasNoErrors();
 
@@ -204,8 +206,7 @@ class FileAssociationsPageTest extends TestCase
         $assoc = $this->association();
         $this->actingAs($this->manager());
 
-        Livewire::test(self::COMPONENT)
-            ->set('parcId', $parc->id)
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
             ->call('toggle', $assoc->id)   // active
             ->call('toggle', $assoc->id);  // désactive (cesser de gérer)
 
@@ -222,7 +223,7 @@ class FileAssociationsPageTest extends TestCase
         $assoc = $this->association();
         $this->actingAs($this->manager());
 
-        $component = Livewire::test(self::COMPONENT)->set('parcId', $parc->id);
+        $component = Livewire::test(self::COMPONENT, ['groupId' => $parc->id]);
         $component->call('toggle', $assoc->id); // active
         $component->call('toggle', $assoc->id); // désactive
         $component->call('toggle', $assoc->id); // réactive
@@ -267,8 +268,7 @@ class FileAssociationsPageTest extends TestCase
         $assoc = $this->association(); // source=native par défaut (.pdf → Acrobat)
         $this->actingAs($this->manager());
 
-        $rows = Livewire::test(self::COMPONENT)
-            ->set('parcId', $parc->id)
+        $rows = Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
             ->get('associations');
 
         self::assertSame('applicable', $rows[0]['availability']);
@@ -281,7 +281,7 @@ class FileAssociationsPageTest extends TestCase
         $assoc = $this->wpkgAssociation('firefox'); // paquet NON déployé sur le parc
         $this->actingAs($this->manager());
 
-        $component = Livewire::test(self::COMPONENT)->set('parcId', $parc->id);
+        $component = Livewire::test(self::COMPONENT, ['groupId' => $parc->id]);
 
         $rows = $component->get('associations');
         self::assertSame('unavailable', $rows[0]['availability']);
@@ -299,8 +299,7 @@ class FileAssociationsPageTest extends TestCase
         $assoc = $this->wpkgAssociation('firefox');
         $this->actingAs($this->manager());
 
-        $rows = Livewire::test(self::COMPONENT)
-            ->set('parcId', $parc->id)
+        $rows = Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
             ->get('associations');
 
         self::assertSame('applicable', $rows[0]['availability']);
@@ -318,8 +317,7 @@ class FileAssociationsPageTest extends TestCase
         $assoc = $this->wpkgAssociation('firefox');
         $this->actingAs($this->manager());
 
-        $rows = Livewire::test(self::COMPONENT)
-            ->set('parcId', $parc->id)
+        $rows = Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
             ->get('associations');
 
         self::assertSame('applicable', $rows[0]['availability'], 'paquet déployé via app profile du parc');
@@ -333,8 +331,7 @@ class FileAssociationsPageTest extends TestCase
         $this->actingAs($this->manager());
 
         // Toast EXACT d'avertissement (event `toastMagic` status=warning) nommant le paquet manquant.
-        Livewire::test(self::COMPONENT)
-            ->set('parcId', $parc->id)
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
             ->call('toggle', $assoc->id)
             ->assertHasNoErrors()
             ->assertDispatched(
@@ -353,8 +350,7 @@ class FileAssociationsPageTest extends TestCase
         $this->actingAs($this->manager());
 
         // Succès simple (event `toastMagic` status=success), aucun avertissement de paquet.
-        Livewire::test(self::COMPONENT)
-            ->set('parcId', $parc->id)
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
             ->call('toggle', $assoc->id)
             ->assertHasNoErrors()
             ->assertDispatched(

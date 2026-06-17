@@ -1232,7 +1232,14 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 
     public function setTab(string $tab): void
     {
+        // Onglets registre/associations (27.3/27.3bis) : gestes par WorkstationGroup,
+        // réservés à app.customize — l'onglet n'est cliquable que si la permission
+        // est accordée (sinon retombe sur « general »).
         $allowed = ['general', 'wpkg'];
+        if (auth()->user()?->can('app.customize')) {
+            $allowed[] = 'registry';
+            $allowed[] = 'associations';
+        }
         $this->tab = in_array($tab, $allowed, true) ? $tab : 'general';
     }
 
@@ -1945,6 +1952,22 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                     <i class="fa-solid fa-cube mr-2"></i>
                     Applications WPKG
                 </button>
+                @can('app.customize')
+                    {{-- Story 27.3 — Réglages registre par parc (successeur natif Registry.pol/GPO). --}}
+                    <button type="button" role="tab"
+                        class="tab {{ $tab === 'registry' ? 'tab-active' : '' }}"
+                        wire:click="setTab('registry')">
+                        <i class="fa-solid fa-sliders mr-2"></i>
+                        Réglages registre
+                    </button>
+                    {{-- Story 27.3bis — Associations par défaut par parc (successeur natif SFTA). --}}
+                    <button type="button" role="tab"
+                        class="tab {{ $tab === 'associations' ? 'tab-active' : '' }}"
+                        wire:click="setTab('associations')">
+                        <i class="fa-solid fa-file-circle-check mr-2"></i>
+                        Associations
+                    </button>
+                @endcan
             </div>
 
             @if ($tab === 'wpkg')
@@ -1984,6 +2007,12 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                 @if ($showCloneModal)
                     @include('pages.parc.groups.[id]._partials.wpkg-clone-modal')
                 @endif
+            @elseif ($tab === 'registry')
+                {{-- Story 27.3 — onglet réglages registre, composant Livewire scopé au groupe. --}}
+                <livewire:pages::parc.groups._partials.registry-tab :group-id="$group->id" :key="'registry-tab-'.$group->id" />
+            @elseif ($tab === 'associations')
+                {{-- Story 27.3bis — onglet associations par défaut, composant Livewire scopé au groupe. --}}
+                <livewire:pages::parc.groups._partials.associations-tab :group-id="$group->id" :key="'associations-tab-'.$group->id" />
             @else
                 @include('pages.parc.groups.[id]._partials.batch-summary')
                 @include('pages.parc.groups.[id]._partials.machines-list')

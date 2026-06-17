@@ -174,22 +174,11 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
             ->middleware('can:app.customize')
             ->name('app-customizations');
 
-        // Réglages registre par parc (Story 27.3) — catalogue de réglages
-        // registre Windows activables par parc, appliqués par l'agent
-        // (successeur natif Registry.pol/GPO). Gate app.customize (iso autres
-        // réglages parc).
-        Route::livewire('/registry-settings', 'pages::parc-settings.registry-settings.index')
-            ->middleware('can:app.customize')
-            ->name('registry-settings');
-
-        // Associations de fichiers/protocoles par parc (Story 27.3bis) —
-        // catalogue d'associations par défaut (.pdf → Acrobat, http → Firefox)
-        // activables par parc, appliquées par l'agent (successeur natif du volet
-        // poste associations.ps1/SFTA.ps1 ; hash UserChoice confiné côté agent).
-        // Gate app.customize (iso autres réglages parc).
-        Route::livewire('/file-associations', 'pages::parc-settings.file-associations.index')
-            ->middleware('can:app.customize')
-            ->name('file-associations');
+        // NOTE (27.3 / 27.3bis) : les réglages registre et les associations par
+        // défaut s'appliquent PAR WorkstationGroup. Ils ne sont donc PAS des pages
+        // parc-settings globales mais des ONGLETS de la page d'un groupe
+        // (`parc/groups/{id}?tab=registry|associations`, composants Livewire
+        // `pages::parc.groups._partials.{registry,associations}-tab`).
     });
 
     // // Gestion des parcs (Livewire)
