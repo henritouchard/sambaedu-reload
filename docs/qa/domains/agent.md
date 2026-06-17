@@ -2427,3 +2427,76 @@ payload — dépend du SID/temps/GUID du poste) et **verrouillé par tests vecto
       d'avertissement EXACT** nommant ce paquet. Le même paquet **déployé** → la
       ligne passe `applicable` (plus de warning). Une association **`native`**
       (`.txt`, `.jpg`) est toujours `applicable` (toast de succès simple).
+
+## Story 27.3ter — Registre : valeur par défaut diffusée + override par parc
+
+> **Note de migration sémantique.** Le modèle 27.3 « activer / cesser de gérer »
+> est REMPLACÉ : `registry_settings.value` devient la **valeur par défaut diffusée
+> à TOUTE la flotte** (maille Broadcast) ; le pivot porte un **override de valeur
+> par parc** (`registry_setting_assignables.value`). « Retirer un override » =
+> **revenir à la valeur par défaut** (l'agent re-converge), PAS « cesser de gérer ».
+> **Contrat & agent INCHANGÉS** (5 clés payload), **golden/hash INTACTS** (la
+> fixture `state.v1.json` est hand-authored, jamais compilée d'un seed → la
+> diffusion Broadcast ne la touche pas). Aucun fichier Go modifié. Le canal legacy
+> Registry.pol/GPO reste intouché (meurt en 27.6).
+
+### Scénario 27.3ter.1 — Défaut appliqué PARTOUT, sans aucun override (lab Windows — ACTION HUMAINE Henri)
+
+1. Un réglage actif du catalogue (ex. `HideFileExt` défaut `0`), AUCUN override sur
+   le parc du poste.
+2. **Attendu** : le poste applique la **valeur par défaut** (Broadcast) — la clé est
+   gérée sur toute la flotte sans aucune assignation. (Un parc neuf hérite des
+   défauts sans pivot ; l'observer `WorkstationGroupObserver` n'est PAS modifié, zéro
+   matérialisation à la création — D1.)
+
+### Scénario 27.3ter.2 — Override de parc applique la déviation (lab Windows — ACTION HUMAINE Henri)
+
+1. Onglet « Registre » de la page du parc → **Ajouter un réglage** → choisir
+   `HideFileExt`, saisir la valeur déviée (ex. `1`) via le contrôle adapté au type,
+   confirmer (encart `warning` si présent).
+2. **Attendu** : les postes du parc reçoivent la **valeur d'override** (`1`) ; les
+   postes hors parc gardent le **défaut** (`0`). L'override bat le défaut Broadcast
+   pour cette clé (précédence existante, exclusive par clé inchangée).
+
+### Scénario 27.3ter.3 — Retirer un override → re-convergence au DÉFAUT (lab Windows — ACTION HUMAINE Henri)
+
+1. Sur un parc avec un override actif, cliquer **Retirer** dans l'onglet « Registre ».
+2. **Attendu** : la ligne de pivot disparaît → au cycle suivant l'agent **réapplique
+   la valeur par défaut** (Broadcast) sur le poste. **PAS** de valeur figée sur la
+   dernière valeur subie (D3, inverse exact du `detach` 27.3).
+
+### Scénario 27.3ter.4 — Logique > physique sur un override de même clé (lab Windows — ACTION HUMAINE Henri)
+
+1. Même clé déviée sur la **salle physique** (valeur A) ET le **parc logique**
+   (valeur B) d'un même poste.
+2. **Attendu** : le **parc LOGIQUE l'emporte** (D-Q3). Le défaut Broadcast n'est servi
+   que si aucune maille du poste ne porte d'override.
+
+### Scénario 27.3ter.5 — Posture UAC sûre par défaut + warning (navigateur + lab — ACTION HUMAINE Henri)
+
+1. Vérifier que le défaut de `EnableLUA` est **`1`** (UAC ACTIVÉ) — diffusé partout
+   (posture sûre, D6). « Désactiver l'UAC » devient un **override de parc** délibéré.
+2. À l'ajout/édition de cet override (onglet parc) OU à l'édition de son défaut
+   (`/admin/settings/registry`), un **encart de warning** s'affiche et exige une
+   **confirmation explicite** avant persistance (D7). `warning = null` ⇒ pas d'encart.
+
+### Réglages serveur — édition du défaut (navigateur, hors lab)
+
+- **Page `/admin/settings/registry`** (gate `server.admin`) : l'admin fixe la
+  **valeur par défaut** de chaque réglage (`registry_settings.value` — diffusée à
+  toute la flotte), via le **même contrôle adapté au type** + **validation serveur**
+  + confirmation si `warning`. Toggle `is_active` (un réglage inactif n'est plus
+  diffusé). N'édite QUE le catalogue existant — **pas d'éditeur de clés brutes** (v2).
+- **Validation** (onglet parc ET serveur) : DWORD/QWORD = entier borné, SZ/EXPAND_SZ
+  = chaîne non vide, MULTI_SZ = liste, et si `options` présent → valeur ∈ valeurs
+  autorisées. Rejet propre (erreur Livewire, jamais d'exception au render).
+
+### Checklist rapide (Story 27.3ter)
+
+- [ ] 27.3ter.1 — Poste SANS override applique le défaut diffusé (Broadcast).
+- [ ] 27.3ter.2 — Override de parc applique la déviation ; hors parc = défaut.
+- [ ] 27.3ter.3 — Retirer l'override → re-convergence au défaut (pas de valeur figée).
+- [ ] 27.3ter.4 — Même clé sur salle + parc logique → logique gagne (D-Q3).
+- [ ] 27.3ter.5 — `EnableLUA` défaut `1` (UAC activé) ; désactiver = override + warning confirmé.
+- [ ] 27.3ter.6 — `/admin/settings/registry` (navigateur) : édition du défaut + validation + warning + Gate admin.
+- [ ] 27.3ter.7 — Onglet « Registre » du parc n'affiche QUE les overrides ; payload `registry` reste `{hive,path,name,type,value}` (`curl /state`).

@@ -17,14 +17,14 @@ use Tests\Concerns\SeedsWorkstationConfig;
 use Tests\TestCase;
 
 /**
- * Onglet Livewire « Réglages registre » de la page d'un WorkstationGroup —
- * Story 27.3, AC7. Le geste s'applique PAR groupe (parc/salle) : le composant est
- * monté en onglet de `parc/groups/{id}` et reçoit `groupId` au montage (plus de
- * sélecteur de parc global).
+ * Onglet Livewire « Registre » de la page d'un WorkstationGroup — Story 27.3ter,
+ * AC4a / AC7. Le composant édite les OVERRIDES de valeur par parc (colonne
+ * `registry_setting_assignables.value`) : ajouter / éditer / retirer, contrôle
+ * adapté au type, validation serveur, confirmation du `warning`.
  *
- * Vérifie : gate app.customize (rendu vs 403), activation = assignation pivot,
- * désactivation = retrait, idempotence (réactiver ne double pas). La compilation
- * en items concrets est couverte par RegistryStateProviderTest.
+ * Vérifie : gate app.customize (rendu vs 403), ajout = pivot.value, édition =
+ * change la valeur, retirer = detach (revient au défaut), validation rejette une
+ * valeur incohérente, warning exige confirmation, n'affiche que les overrides.
  */
 class RegistrySettingsPageTest extends TestCase
 {
@@ -60,7 +60,10 @@ class RegistrySettingsPageTest extends TestCase
                 $t->string('name');
                 $t->string('type', 16);
                 $t->text('value');
+                $t->json('options')->nullable();
+                $t->text('warning')->nullable();
                 $t->boolean('is_active')->default(true);
+                $t->boolean('overrides_locked')->default(false);
                 $t->timestamps();
             });
         }
@@ -70,6 +73,7 @@ class RegistrySettingsPageTest extends TestCase
                 $t->unsignedBigInteger('registry_setting_id');
                 $t->string('assignable_type');
                 $t->unsignedBigInteger('assignable_id');
+                $t->text('value')->nullable();
                 $t->timestamps();
                 $t->unique(['registry_setting_id', 'assignable_id', 'assignable_type'], 'rsa_unique');
             });
@@ -128,9 +132,9 @@ class RegistrySettingsPageTest extends TestCase
         return WorkstationGroup::create(['name' => 'parc-info', 'is_physical' => false]);
     }
 
-    private function setting(): RegistrySetting
+    private function setting(array $overrides = []): RegistrySetting
     {
-        return RegistrySetting::create([
+        return RegistrySetting::create(array_merge([
             'key' => 'show_file_extensions',
             'label' => 'Afficher les extensions',
             'hive' => 'HKCU',
@@ -139,7 +143,19 @@ class RegistrySettingsPageTest extends TestCase
             'type' => 'REG_DWORD',
             'value' => '0',
             'is_active' => true,
-        ]);
+        ], $overrides));
+    }
+
+    private function override(RegistrySetting $setting, WorkstationGroup $parc, ?string $value): void
+    {
+        DB::table('registry_setting_assignables')->updateOrInsert(
+            [
+                'registry_setting_id' => $setting->id,
+                'assignable_type' => WorkstationGroup::class,
+                'assignable_id' => $parc->id,
+            ],
+            ['value' => $value, 'created_at' => now(), 'updated_at' => now()],
+        );
     }
 
     #[Test]
@@ -151,8 +167,7 @@ class RegistrySettingsPageTest extends TestCase
 
         Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
             ->assertOk()
-            ->assertSee('Réglages registre')
-            ->assertSee('Afficher les extensions');
+            ->assertSee('Overrides de réglages registre');
     }
 
     #[Test]
@@ -165,33 +180,101 @@ class RegistrySettingsPageTest extends TestCase
     }
 
     #[Test]
-    public function toggle_assigns_the_setting_to_the_parc(): void
+    public function lists_only_overrides_not_the_full_catalog(): void
+    {
+        $parc = $this->parc();
+        $withOverride = $this->setting(['key' => 'k1', 'label' => 'Réglage dévié', 'name' => 'A']);
+        $noOverride = $this->setting(['key' => 'k2', 'label' => 'Réglage par défaut', 'name' => 'B']);
+        $this->override($withOverride, $parc, '1');
+        $this->actingAs($this->manager());
+
+        $component = Livewire::test(self::COMPONENT, ['groupId' => $parc->id]);
+
+        // La liste « overrides » ne contient QUE le réglage dévié — le réglage sans
+        // override n'y figure pas (il n'apparaît que dans le catalogue d'ajout).
+        $overrideIds = collect($component->instance()->overrides())->pluck('id')->all();
+        self::assertSame([$withOverride->id], $overrideIds);
+
+        $addableIds = collect($component->instance()->addableSettings())->pluck('id')->all();
+        self::assertContains($noOverride->id, $addableIds);
+        self::assertNotContains($withOverride->id, $addableIds);
+    }
+
+    #[Test]
+    public function locked_setting_is_not_addable_but_existing_override_remains(): void
+    {
+        // « Gelé » (overrides_locked) = plus de NOUVEAUX overrides, mais une
+        // déviation existante reste listée (et éditable). La diffusion est
+        // inchangée (is_active reste true) — pas de stranding.
+        $parc = $this->parc();
+        $frozenWithOverride = $this->setting(['key' => 'k1', 'name' => 'A', 'overrides_locked' => true]);
+        $frozenNoOverride = $this->setting(['key' => 'k2', 'name' => 'B', 'overrides_locked' => true]);
+        $this->override($frozenWithOverride, $parc, '1');
+        $this->actingAs($this->manager());
+
+        $component = Livewire::test(self::COMPONENT, ['groupId' => $parc->id]);
+
+        // L'override existant sur un réglage gelé reste listé…
+        $overrideIds = collect($component->instance()->overrides())->pluck('id')->all();
+        self::assertContains($frozenWithOverride->id, $overrideIds);
+
+        // …mais aucun réglage gelé n'est proposé à l'ajout (ni celui déjà dévié,
+        // ni celui sans override).
+        $addableIds = collect($component->instance()->addableSettings())->pluck('id')->all();
+        self::assertNotContains($frozenWithOverride->id, $addableIds);
+        self::assertNotContains($frozenNoOverride->id, $addableIds);
+    }
+
+    #[Test]
+    public function add_override_persists_pivot_value(): void
     {
         $parc = $this->parc();
         $setting = $this->setting();
         $this->actingAs($this->manager());
 
         Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
-            ->call('toggle', $setting->id)
+            ->call('openAdd', $setting->id)
+            ->set('formValue', '1')
+            ->call('saveOverride')
             ->assertHasNoErrors();
 
         $this->assertDatabaseHas('registry_setting_assignables', [
             'registry_setting_id' => $setting->id,
-            'assignable_type' => WorkstationGroup::class,
             'assignable_id' => $parc->id,
+            'value' => '1',
         ]);
     }
 
     #[Test]
-    public function toggle_twice_removes_the_assignment(): void
+    public function edit_override_changes_the_value(): void
     {
         $parc = $this->parc();
         $setting = $this->setting();
+        $this->override($setting, $parc, '1');
         $this->actingAs($this->manager());
 
         Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
-            ->call('toggle', $setting->id)   // active
-            ->call('toggle', $setting->id);  // désactive (cesser de gérer)
+            ->call('openEdit', $setting->id)
+            ->set('formValue', '0')
+            ->call('saveOverride')
+            ->assertHasNoErrors();
+
+        $this->assertSame('0', DB::table('registry_setting_assignables')
+            ->where('registry_setting_id', $setting->id)
+            ->where('assignable_id', $parc->id)
+            ->value('value'));
+    }
+
+    #[Test]
+    public function remove_override_detaches_back_to_default(): void
+    {
+        $parc = $this->parc();
+        $setting = $this->setting();
+        $this->override($setting, $parc, '1');
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
+            ->call('removeOverride', $setting->id);
 
         $this->assertDatabaseMissing('registry_setting_assignables', [
             'registry_setting_id' => $setting->id,
@@ -200,22 +283,117 @@ class RegistrySettingsPageTest extends TestCase
     }
 
     #[Test]
-    public function re_enabling_does_not_duplicate_the_pivot_row(): void
+    public function validation_rejects_non_integer_for_dword(): void
     {
         $parc = $this->parc();
-        $setting = $this->setting();
+        $setting = $this->setting(); // REG_DWORD
         $this->actingAs($this->manager());
 
-        $component = Livewire::test(self::COMPONENT, ['groupId' => $parc->id]);
-        $component->call('toggle', $setting->id); // active
-        $component->call('toggle', $setting->id); // désactive
-        $component->call('toggle', $setting->id); // réactive
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
+            ->call('openAdd', $setting->id)
+            ->set('formValue', 'not-a-number')
+            ->call('saveOverride')
+            ->assertHasErrors('formValue');
 
-        $count = DB::table('registry_setting_assignables')
-            ->where('registry_setting_id', $setting->id)
-            ->where('assignable_id', $parc->id)
-            ->count();
+        $this->assertDatabaseMissing('registry_setting_assignables', [
+            'registry_setting_id' => $setting->id,
+            'assignable_id' => $parc->id,
+        ]);
+    }
 
-        self::assertSame(1, $count, 'syncWithoutDetaching reste idempotent (pas de doublon)');
+    #[Test]
+    public function validation_rejects_value_outside_options(): void
+    {
+        $parc = $this->parc();
+        $setting = $this->setting([
+            'options' => [['value' => '0', 'label' => 'Off'], ['value' => '1', 'label' => 'On']],
+        ]);
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
+            ->call('openAdd', $setting->id)
+            ->set('formValue', '9') // hors options
+            ->call('saveOverride')
+            ->assertHasErrors('formValue');
+    }
+
+    #[Test]
+    public function validation_rejects_empty_string_for_sz(): void
+    {
+        $parc = $this->parc();
+        $setting = $this->setting(['type' => 'REG_SZ', 'value' => 'défaut']);
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
+            ->call('openAdd', $setting->id)
+            ->set('formValue', '')
+            ->call('saveOverride')
+            ->assertHasErrors('formValue');
+
+        $this->assertDatabaseMissing('registry_setting_assignables', [
+            'registry_setting_id' => $setting->id,
+            'assignable_id' => $parc->id,
+        ]);
+    }
+
+    #[Test]
+    public function validation_rejects_qword_overflow_instead_of_clamping(): void
+    {
+        // Régression N1 : (int) clampe silencieusement à PHP_INT_MAX au-delà ;
+        // un QWORD à 20 chiffres doit être REJETÉ, pas stocké tronqué.
+        $parc = $this->parc();
+        $setting = $this->setting(['type' => 'REG_QWORD', 'value' => '0']);
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
+            ->call('openAdd', $setting->id)
+            ->set('formValue', '99999999999999999999') // > 2^63-1
+            ->call('saveOverride')
+            ->assertHasErrors('formValue');
+
+        $this->assertDatabaseMissing('registry_setting_assignables', [
+            'registry_setting_id' => $setting->id,
+            'assignable_id' => $parc->id,
+        ]);
+    }
+
+    #[Test]
+    public function warning_setting_requires_explicit_confirmation(): void
+    {
+        $parc = $this->parc();
+        $setting = $this->setting([
+            'key' => 'disable_uac',
+            'label' => 'Désactiver l\'UAC',
+            'hive' => 'HKLM',
+            'name' => 'EnableLUA',
+            'warning' => 'Désactive l\'UAC : trou de sécurité + casse Démarrer + redémarrage.',
+        ]);
+        $this->actingAs($this->manager());
+
+        // Sans confirmation → bloqué.
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
+            ->call('openAdd', $setting->id)
+            ->set('formValue', '0')
+            ->call('saveOverride')
+            ->assertHasErrors('warningAcknowledged');
+
+        $this->assertDatabaseMissing('registry_setting_assignables', [
+            'registry_setting_id' => $setting->id,
+            'assignable_id' => $parc->id,
+        ]);
+
+        // Avec confirmation → persiste.
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
+            ->call('openAdd', $setting->id)
+            ->set('formValue', '0')
+            ->set('warningAcknowledged', true)
+            ->call('saveOverride')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('registry_setting_assignables', [
+            'registry_setting_id' => $setting->id,
+            'assignable_id' => $parc->id,
+            'value' => '0',
+        ]);
     }
 }

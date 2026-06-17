@@ -30,8 +30,34 @@ class RegistrySettingFactory extends Factory
             'name' => $name,
             'type' => 'REG_DWORD',
             'value' => '1',
+            // Story 27.3ter — par défaut saisie libre (pas de choix fermé) et pas
+            // de warning. Les states `withOptions()`/`withWarning()` les posent.
+            'options' => null,
+            'warning' => null,
             'is_active' => true,
+            'overrides_locked' => false,
         ];
+    }
+
+    /**
+     * Story 27.3ter — réglage à choix FERMÉ (sélecteur/toggle) Activé/Désactivé.
+     */
+    public function withOptions(?array $options = null): static
+    {
+        return $this->state(fn () => [
+            'options' => $options ?? [
+                ['value' => '1', 'label' => 'Activé'],
+                ['value' => '0', 'label' => 'Désactivé'],
+            ],
+        ]);
+    }
+
+    /**
+     * Story 27.3ter (D7) — réglage portant un message d'implications à confirmer.
+     */
+    public function withWarning(string $warning = 'Réglage sensible : confirmer.'): static
+    {
+        return $this->state(fn () => ['warning' => $warning]);
     }
 
     public function machine(): static

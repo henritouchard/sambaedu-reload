@@ -386,18 +386,35 @@ WorkstationGroup/Workstation/UserGroup/User).
   un payload `{hive, path, name, type, value}` concret (cf. `contract-v1.md`
   §7.1). 🔴 **Invariant central** : le `key`/`id` du catalogue ne fuite **JAMAIS**
   au payload — c'est ce qui garde l'éditeur de clés brutes (v2) gratuit.
+- **🆕 Story 27.3ter — VALEUR PAR DÉFAUT DIFFUSÉE (Broadcast) + OVERRIDE par parc.**
+  Le modèle 27.3 (« géré uniquement si assigné, sinon non géré ») est ABANDONNÉ.
+  Le provider émet désormais DEUX sources de candidats BRUTS :
+  1. **Broadcast (rang 5)** — un candidat par réglage ACTIF de la ruche, portant
+     la **valeur par défaut du catalogue** (`registry_settings.value`). Chaque clé
+     active est donc gérée à sa valeur par défaut sur TOUTE la flotte (`sourceId`
+     = id du réglage, maille `Broadcast`, **sans** passer par `mailleFor()`).
+  2. **Par maille** — un candidat par assignation applicable au contexte, portant
+     l'**override de parc** (`registry_setting_assignables.value`) avec **repli sur
+     le défaut catalogue si null** (override inerte).
+  La précédence existante (`logique > physique > broadcast`) fait que l'override
+  par maille bat le défaut pour cette clé — **StateCompiler INCHANGÉ**.
 - **Exclusive PAR IDENTITÉ DE CLÉ** (`KeyedExclusiveProvider`). Une clé de
   registre = une valeur ; le `StateCompiler` groupe les candidats par
   `exclusiveKey(payload)` = `{hive, path, name}` (insensible à la casse) et arbitre
   CHAQUE groupe indépendamment : la maille la plus spécifique gagne **pour cette
   clé** (D-Q3 : WG logique > WG physique), les clés distinctes **s'accumulent**.
   Distinct de `wallpaper` (un seul item pour tout le type — pas de marqueur).
-- **Lecture Postgres pure** (NFR7) : catalogue × pivot restreint aux ids du
-  `TargetContext`. Aucun AD/APCu/`samba-tool`. Le ciblage UI v1 = par **parc**
-  (WorkstationGroup, physique ET logique) ; le pivot complet supporte
-  poste/groupe-user sans migration.
-- **« Désactiver = cesser de gérer ».** Un réglage retiré disparaît → l'agent ne
-  touche plus la clé (pas de reset OFF, contrat §8).
+- **Lecture Postgres pure** (NFR7) : catalogue (défauts Broadcast) × pivot
+  (overrides) restreint aux ids du `TargetContext`. Aucun AD/APCu/`samba-tool`. Le
+  ciblage UI v1 = par **parc** (WorkstationGroup, physique ET logique) ; le pivot
+  complet supporte poste/groupe-user sans migration.
+- **« Retirer un override = revenir au défaut » (27.3ter, remplace « cesser de
+  gérer »).** Comme le défaut Broadcast reste émis, supprimer la ligne de pivot
+  fait **re-converger** le poste vers la valeur par défaut au cycle suivant (PAS
+  une valeur figée). Il n'existe plus d'opt-out/tombstone par parc (D3 : « tout
+  est valeur »). Métadonnées d'éditeur côté catalogue : `options` (choix fermé
+  `[{value,label}]`, contrôle UI/validation) + `warning` (D7, confirmation au
+  déclenchement) — **n'affectent JAMAIS le payload** (détails serveur/UI).
 - **Rapport unique-type** : les deux portées émettant `registry`, l'agent fusionne
   par type avant le POST /report (`MergeReportItemsByType`, pire statut gagne).
 

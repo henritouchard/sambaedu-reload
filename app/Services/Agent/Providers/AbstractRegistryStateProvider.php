@@ -49,9 +49,22 @@ use Illuminate\Support\Collection;
  * (discipline D2) : aucune précédence/tri/dédup ici — la sélection vit dans le
  * `StateCompiler` SEUL (qui consulte `exclusiveKey()`).
  *
- * Un réglage non assigné à aucune maille du poste **n'émet aucun item** (contrat
- * §8 : type/clé absent = non géré ; « désactiver » = cesser de gérer, jamais un
- * reset OFF explicite — piège n° 5).
+ * **Story 27.3ter — VALEUR PAR DÉFAUT DIFFUSÉE (Broadcast) + OVERRIDE par parc.**
+ * Le modèle 27.3 (« géré uniquement si assigné, sinon non géré ») est ABANDONNÉ.
+ * Le provider émet désormais DEUX sources de candidats BRUTS :
+ *   1. **Broadcast (rang 5)** — un candidat par réglage ACTIF de la ruche,
+ *      `payload.value` = défaut catalogue (`registry_settings.value`), `maille`
+ *      = {@see StateMaille::Broadcast}, `sourceId` = id du réglage. ⚠️ Ce
+ *      candidat NE passe PAS par {@see mailleFor()} (pas d'assignable). Chaque
+ *      clé active est donc gérée à sa valeur par défaut sur TOUTE la flotte (D1).
+ *   2. **Par maille** — un candidat par assignation applicable au contexte
+ *      (pivot × `TargetContext`), `payload.value` = OVERRIDE du pivot
+ *      (`registry_setting_assignables.value`) **avec repli sur le défaut catalogue
+ *      si null** (D2 ; override inerte si NULL).
+ * La précédence existante (`logique > physique > broadcast`) fait que l'override
+ * par maille bat le défaut Broadcast pour cette clé — STATECOMPILER INCHANGÉ.
+ * « Retirer » un override = supprimer la ligne de pivot = le poste re-converge
+ * vers le défaut Broadcast au cycle suivant (D3 ; PAS « cesser de gérer »).
  */
 abstract class AbstractRegistryStateProvider implements KeyedExclusiveProvider, StateProvider
 {
@@ -86,17 +99,50 @@ abstract class AbstractRegistryStateProvider implements KeyedExclusiveProvider, 
     }
 
     /**
-     * Un candidat PAR (réglage actif de la ruche × assignation applicable au
-     * contexte). Lecture pivot par maille ; chaque réglage COMPILÉ en item
-     * concret. Candidats BRUTS (D2) — la précédence par clé est au compilateur.
+     * Candidats BRUTS (D2) du provider — DEUX sources (Story 27.3ter) :
+     *   (1) un candidat **Broadcast** par réglage ACTIF de la ruche (défaut
+     *       catalogue, émis à TOUTE la flotte) ;
+     *   (2) un candidat par maille par **assignation applicable** au contexte
+     *       (override `pivot.value` avec repli sur le défaut catalogue si null).
+     * Chaque réglage COMPILÉ en item concret. La précédence par clé est au
+     * compilateur — le provider ne trie/filtre/dédup RIEN.
      *
      * @return Collection<int, StateCandidate>
      */
     public function itemsFor(TargetContext $ctx): Collection
     {
+        // ── Source 1 : DÉFAUT diffusé (Broadcast) ─────────────────────────────
+        // Tous les réglages actifs de la ruche → candidat Broadcast au défaut
+        // catalogue. Ne passe PAS par mailleFor() (pas d'assignable). C'est le
+        // changement de comportement central de 27.3ter (D1) : une clé active
+        // est gérée à sa valeur par défaut même SANS aucune assignation.
+        $defaults = RegistrySetting::query()
+            ->where('registry_settings.is_active', true)
+            ->where('registry_settings.hive', $this->hive())
+            ->get([
+                'registry_settings.id',
+                'registry_settings.hive',
+                'registry_settings.path',
+                'registry_settings.name',
+                'registry_settings.type',
+                'registry_settings.value',
+                'registry_settings.updated_at',
+            ]);
+
+        /** @var Collection<int, StateCandidate> $candidates */
+        $candidates = $defaults->map(fn (RegistrySetting $row): StateCandidate => new StateCandidate(
+            maille: StateMaille::Broadcast,
+            payload: $this->payloadFor($row),
+            updatedAt: $row->updated_at,
+            sourceId: (int) $row->id,
+        ));
+
+        // ── Source 2 : OVERRIDES par maille (pivot × contexte) ────────────────
+        // Mêmes restrictions de ciblage qu'en 27.3, mais le payload.value devient
+        // l'override du pivot (repli sur le défaut catalogue si null).
         $wgIds = $ctx->workstationGroupIds();
 
-        $rows = RegistrySetting::query()
+        $overrides = RegistrySetting::query()
             ->where('registry_settings.is_active', true)
             ->where('registry_settings.hive', $this->hive())
             ->join('registry_setting_assignables', 'registry_settings.id', '=', 'registry_setting_assignables.registry_setting_id')
@@ -133,33 +179,46 @@ abstract class AbstractRegistryStateProvider implements KeyedExclusiveProvider, 
                 'registry_settings.updated_at',
                 'registry_setting_assignables.assignable_type',
                 'registry_setting_assignables.assignable_id',
+                // OVERRIDE de valeur du parc (null = repli sur le défaut catalogue).
+                'registry_setting_assignables.value as override_value',
             ]);
 
-        return $rows->map(fn (RegistrySetting $row): StateCandidate => new StateCandidate(
-            maille: $this->mailleFor($row, $ctx),
-            payload: $this->payloadFor($row),
-            updatedAt: $row->updated_at,
-            sourceId: (int) $row->id,
-        ));
+        foreach ($overrides as $row) {
+            $candidates->push(new StateCandidate(
+                maille: $this->mailleFor($row, $ctx),
+                // override_value sélectionné en alias : null => repli défaut.
+                payload: $this->payloadFor($row, $row->override_value),
+                updatedAt: $row->updated_at,
+                sourceId: (int) $row->id,
+            ));
+        }
+
+        return $candidates->values();
     }
 
     /**
      * Compile un réglage de catalogue en item CONCRET `{hive, path, name, type,
-     * value}` — JAMAIS d'`id`/`key` de catalogue (invariant central). La valeur
-     * typée du contrat (zéro float §4.1) : DWORD/QWORD en entier, MULTI_SZ en
-     * liste, SZ/EXPAND_SZ en chaîne (la colonne `value` est stockée en texte ;
-     * cf. migration pour la sérialisation).
+     * value}` — JAMAIS d'`id`/`key` de catalogue (invariant central). EXACTEMENT
+     * 5 clés. La valeur typée du contrat (zéro float §4.1) : DWORD/QWORD en
+     * entier, MULTI_SZ en liste, SZ/EXPAND_SZ en chaîne (la colonne `value` est
+     * stockée en texte ; cf. migration pour la sérialisation).
+     *
+     * Story 27.3ter : `$override` (nullable) porte l'override de parc. `null` ⇒
+     * repli sur le défaut catalogue (`$row->value`). JAMAIS de clé de catalogue
+     * au payload.
      *
      * @return array<string,mixed>
      */
-    private function payloadFor(RegistrySetting $row): array
+    private function payloadFor(RegistrySetting $row, ?string $override = null): array
     {
+        $raw = $override ?? (string) $row->value;
+
         return [
             'hive' => (string) $row->hive,
             'path' => (string) $row->path,
             'name' => (string) $row->name,
             'type' => (string) $row->type,
-            'value' => $this->typedValue((string) $row->type, (string) $row->value),
+            'value' => $this->typedValue((string) $row->type, $raw),
         ];
     }
 

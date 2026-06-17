@@ -109,6 +109,15 @@ new #[Title('Réglages')] class extends Component {
                 description="Rings & releases, demandes d'enrôlement, progression du déploiement et outils du parc."
                 badge="Agent"
                 testid="card-agent" />
+
+            <x-molecules.settings-card
+                href="{{ route('admin.settings.registry') }}"
+                icon="fa-solid fa-sliders"
+                iconColor="primary"
+                title="Registre — valeurs par défaut"
+                description="Valeur par défaut de chaque réglage registre, diffusée à toute la flotte (déviable par parc)."
+                badge="Registre"
+                testid="card-registry-defaults" />
         </x-molecules.settings-section>
 
         {{-- ============================================================

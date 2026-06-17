@@ -410,6 +410,55 @@ class StateCompilerTest extends TestCase
     }
 
     #[Test]
+    public function keyed_exclusive_override_beats_broadcast_default_same_key(): void
+    {
+        // Story 27.3ter — même clé : défaut Broadcast (rang 5) + override de parc
+        // (maille logique). L'override GAGNE via la précédence existante (zéro
+        // modif compilateur).
+        $provider = $this->keyedExclusiveProvider('registry', StateScope::Session, [
+            new StateCandidate(StateMaille::Broadcast, $this->regPayload('HKCU', 'P', 'Foo', 0), now(), 1),
+            new StateCandidate(StateMaille::LogicalGroup, $this->regPayload('HKCU', 'P', 'Foo', 1), now(), 1),
+        ]);
+
+        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_SESSION];
+
+        self::assertCount(1, $items, 'une seule valeur par clé');
+        self::assertSame(1, $items[0]['payload']['value'], 'l\'override de parc bat le défaut Broadcast');
+    }
+
+    #[Test]
+    public function keyed_exclusive_broadcast_default_emitted_when_no_override(): void
+    {
+        // Story 27.3ter — une clé SANS override pour aucune maille du poste : le
+        // défaut Broadcast est émis (la clé est gérée à sa valeur par défaut).
+        $provider = $this->keyedExclusiveProvider('registry', StateScope::Session, [
+            new StateCandidate(StateMaille::Broadcast, $this->regPayload('HKCU', 'P', 'Foo', 0), now(), 1),
+        ]);
+
+        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_SESSION];
+
+        self::assertCount(1, $items);
+        self::assertSame(0, $items[0]['payload']['value'], 'le défaut Broadcast est servi');
+    }
+
+    #[Test]
+    public function keyed_exclusive_override_logical_beats_override_physical_same_key(): void
+    {
+        // Story 27.3ter — deux overrides (salle physique + parc logique) sur la
+        // MÊME clé + le défaut Broadcast : logique > physique > broadcast (D-Q3).
+        $provider = $this->keyedExclusiveProvider('registry', StateScope::Session, [
+            new StateCandidate(StateMaille::Broadcast, $this->regPayload('HKCU', 'P', 'Foo', 0), now(), 1),
+            new StateCandidate(StateMaille::PhysicalGroup, $this->regPayload('HKCU', 'P', 'Foo', 2), now(), 1),
+            new StateCandidate(StateMaille::LogicalGroup, $this->regPayload('HKCU', 'P', 'Foo', 3), now(), 1),
+        ]);
+
+        $items = $this->compiler([$provider])->compile($this->machineOnlyContext())[StateContract::SCOPE_SESSION];
+
+        self::assertCount(1, $items);
+        self::assertSame(3, $items[0]['payload']['value'], 'le parc logique gagne (D-Q3)');
+    }
+
+    #[Test]
     public function keyed_exclusive_distinct_keys_all_accumulate(): void
     {
         // Deux clés DISTINCTES → les deux sont présentes (accumulation), même si

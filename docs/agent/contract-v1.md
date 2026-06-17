@@ -267,10 +267,14 @@ clés distinctes s'accumulent). Le payload porte un item de registre **CONCRET**
 > (v2) gratuite : une 2ᵉ source d'autoring produira les **mêmes** items concrets
 > → zéro changement d'agent/contrat/provider.
 
-> **« Désactiver = cesser de gérer ».** Un réglage retiré d'un parc DISPARAÎT de
-> la liste → l'agent **ne touche plus** à la clé (elle garde sa dernière valeur).
-> Le handler registry ne supprime/n'efface JAMAIS une clé absente de la cible
-> (contrat §8 ; pas de reset OFF explicite en v1).
+> **Story 27.3ter — `value` = override de parc, sinon défaut catalogue.** La
+> STRUCTURE du payload est INCHANGÉE (5 clés). Côté serveur, le `value` émis est
+> l'**override de parc** (`registry_setting_assignables.value`) si présent, sinon
+> la **valeur par défaut du catalogue** (`registry_settings.value`) — cette
+> dernière étant désormais **diffusée à TOUTES les machines** (maille Broadcast).
+> L'agent et le golden ne changent pas : une valeur concrète reste une valeur
+> concrète. « Retirer un override » = supprimer la ligne de pivot → le poste
+> **re-converge vers le défaut** au cycle suivant (PAS « cesser de gérer »).
 
 > **Portée → acteur (D-Q2).** UN seul handler Go `registry`, instancié deux fois :
 > le **service SYSTEM** applique les items HKLM (portée `machine`), le

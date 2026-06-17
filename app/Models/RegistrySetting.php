@@ -27,7 +27,9 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
  * @property string $path Chemin de clé sous la ruche
  * @property string $name Nom de la valeur
  * @property string $type REG_SZ | REG_DWORD | REG_EXPAND_SZ | REG_MULTI_SZ | REG_QWORD
- * @property string $value Valeur cible sérialisée en texte
+ * @property string $value Valeur cible sérialisée en texte — DÉFAUT diffusé (27.3ter)
+ * @property array<int,array{value:string,label:string}>|null $options Choix fermés [{value,label}] (27.3ter ; null = saisie libre)
+ * @property string|null $warning Message d'implications au déclenchement (27.3ter D7 ; null = pas d'encart)
  * @property bool $is_active
  * @property \Illuminate\Support\Carbon $created_at
  * @property \Illuminate\Support\Carbon $updated_at
@@ -60,11 +62,18 @@ class RegistrySetting extends Model
         'name',
         'type',
         'value',
+        'options',
+        'warning',
         'is_active',
+        'overrides_locked',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        // Story 27.3ter — gelé = plus de nouveaux overrides (diffusion inchangée).
+        'overrides_locked' => 'boolean',
+        // Story 27.3ter — choix fermés [{value,label}] ; null = saisie libre.
+        'options' => 'array',
     ];
 
     /**
@@ -79,7 +88,7 @@ class RegistrySetting extends Model
             'registry_setting_assignables',
             'registry_setting_id',
             'assignable_id',
-        )->withTimestamps();
+        )->withPivot('value')->withTimestamps();
     }
 
     /**
@@ -94,7 +103,7 @@ class RegistrySetting extends Model
             'registry_setting_assignables',
             'registry_setting_id',
             'assignable_id',
-        )->withTimestamps();
+        )->withPivot('value')->withTimestamps();
     }
 
     /**
@@ -108,7 +117,7 @@ class RegistrySetting extends Model
             'registry_setting_assignables',
             'registry_setting_id',
             'assignable_id',
-        )->withTimestamps();
+        )->withPivot('value')->withTimestamps();
     }
 
     /**
@@ -122,7 +131,7 @@ class RegistrySetting extends Model
             'registry_setting_assignables',
             'registry_setting_id',
             'assignable_id',
-        )->withTimestamps();
+        )->withPivot('value')->withTimestamps();
     }
 
     /**
@@ -132,5 +141,56 @@ class RegistrySetting extends Model
     public function isMachineHive(): bool
     {
         return $this->hive === self::HIVE_MACHINE;
+    }
+
+    /**
+     * Story 27.3ter — le réglage propose-t-il un choix FERMÉ (sélecteur/toggle) ?
+     * Helper d'aide UI/validation — AUCUNE logique de précédence ici.
+     */
+    public function hasOptions(): bool
+    {
+        return is_array($this->options) && $this->options !== [];
+    }
+
+    /**
+     * Valeurs autorisées (texte) du choix fermé — pour la validation serveur de
+     * la valeur d'override / du défaut saisi(e).
+     *
+     * @return list<string>
+     */
+    public function allowedOptionValues(): array
+    {
+        if (! $this->hasOptions()) {
+            return [];
+        }
+
+        return array_values(array_map(
+            static fn (array $opt): string => (string) ($opt['value'] ?? ''),
+            $this->options ?? [],
+        ));
+    }
+
+    /**
+     * Libellé lisible d'une valeur via `options` (ex. « Afficher ») ; repli sur
+     * la valeur brute si aucun libellé ne correspond. Helper d'affichage UI.
+     */
+    public function optionLabel(string $value): string
+    {
+        foreach ($this->options ?? [] as $opt) {
+            if ((string) ($opt['value'] ?? '') === $value) {
+                return (string) ($opt['label'] ?? $value);
+            }
+        }
+
+        return $value;
+    }
+
+    /**
+     * Story 27.3ter (D7) — le réglage porte-t-il un message d'implications à
+     * confirmer au déclenchement ?
+     */
+    public function hasWarning(): bool
+    {
+        return is_string($this->warning) && trim($this->warning) !== '';
     }
 }
