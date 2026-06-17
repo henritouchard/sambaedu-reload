@@ -27,6 +27,18 @@ class AppCustomization extends Model
 {
     use HasFactory;
 
+    /**
+     * Identifiant de type de ressource figé du canal agent desired-state
+     * (contrat §7, NFR12 — DÉJÀ réservé). Story 27.4 : la table métier
+     * `app_customizations` (story 4.8) est la SOURCE LUE par
+     * {@see \App\Services\Agent\Providers\AppConfigStateProvider} ; ce type
+     * projette les policies résolues `policies.json` (Firefox/Thunderbird)
+     * vers le handler agent. Iso `Wallpaper::TYPE_WALLPAPER` /
+     * `RegistrySetting::TYPE_REGISTRY` — le provider référence cette constante,
+     * jamais la chaîne littérale (un identifiant figé ne se renomme JAMAIS).
+     */
+    public const TYPE_APP_CONFIG = 'app_config';
+
     protected $table = 'app_customizations';
 
     protected $fillable = [

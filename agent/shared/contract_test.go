@@ -31,8 +31,12 @@ func TestParseStateGoldenFile(t *testing.T) {
 	// Story 27.3bis : +1 item `associations` (HKCU/UserChoice) → session = 6.
 	// Story 27.10 : la SALLE passe en portée machine — nouvel item overlay
 	// `{kind:"machine", room}` (préchargement poste+salle au logon) → machine = 1.
-	if len(state.Machine) != 1 || len(state.Session) != 6 || len(state.MachineUser) != 1 {
-		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 1/6/1)",
+	// Story 27.4 : +1 item `app_config` (policies.json FF/TB, aggregate). Correctif
+	// post-review 2026-06-17 (review #1) : `app_config` est en portée MACHINE
+	// (`policies.json` machine-wide, admin-write, écrit par le service SYSTEM ;
+	// résolu PAR PARC) → machine = 2, session reste 6.
+	if len(state.Machine) != 2 || len(state.Session) != 6 || len(state.MachineUser) != 1 {
+		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 2/6/1)",
 			len(state.Machine), len(state.Session), len(state.MachineUser))
 	}
 }

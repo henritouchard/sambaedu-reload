@@ -352,6 +352,79 @@ porte une association **CONCRÈTE** :
 > **« Désactiver = cesser de gérer ».** Une association retirée d'un parc
 > DISPARAÎT → l'agent ne touche plus la clé (le choix courant reste, §8).
 
+### 7.3 Payload `app_config` (Story 27.4)
+
+Type `app_config` — sémantique **`aggregate` PAR `app_kind`** (un item par
+application configurable : Firefox ET Thunderbird coexistent ; pour UNE app, un
+seul jeu de policies effectif déjà fusionné côté serveur). Portée **`machine`**
+(`policies.json` est **machine-wide**, posé sous `%ProgramFiles%\…\distribution\`
+en contexte admin-write → écrit par le **service SYSTEM** ; résolution **PAR
+PARC**, niveaux 1-4 : template → auto → défaut étab → WG, avec `$user = null`).
+Le par-user de Firefox = le **profil** (Mécanisme B / roaming, hors 27.4), PAS
+`policies.json`. Le payload porte les policies **RÉSOLUES CONCRÈTES** (le contenu
+exact que l'agent écrit dans `policies.json`) :
+
+```json
+{
+  "type": "app_config",
+  "semantics": "aggregate",
+  "payload": {
+    "app_kind": "firefox",
+    "policies": {
+      "policies": {
+        "DisableTelemetry": true,
+        "Homepage": { "URL": "https://etab.local/" }
+      }
+    }
+  },
+  "hash": "cb347596…636ef8c2"
+}
+```
+
+| Clé | Type JSON | Sens |
+|---|---|---|
+| `app_kind` | string | `firefox` \| `thunderbird` (les apps configurables par `policies.json` — `AppKind::cases()`). Pas de Chrome/Edge (le legacy ne gère aucune policy ; recadrage 2026-06-17). |
+| `policies` | object | Les policies **résolues** (6 niveaux fusionnés serveur) à écrire telles quelles dans `policies.json`. Forme native de l'app (Firefox/Thunderbird = `{ "policies": { … } }`). Strings/ints/bools/null/objets/listes — **jamais de float** (§4.1 ; un float de policy est normalisé en string par le provider). |
+
+**Mécanisme : UN SEUL — `policies.json` enterprise natif.** L'agent écrit un
+`policies.json` au chemin natif d'install de l'app (Firefox
+`…\Mozilla Firefox\distribution\policies.json`, Thunderbird au chemin
+équivalent), en **écriture atomique**. PAS de mécanisme « registre policies »,
+PAS de redirection de profil (sujet **roaming** serveur, renvoyé au domaine
+roaming/`WorkstationEnvironment` — 26.x / story de suivi). Une app posée par
+`policies.json` future = data serveur (un `AppKind` + un adapter), **zéro release
+agent**.
+
+> **🔴 Invariant central (27.4).** Le payload `app_config` ne porte **JAMAIS** un
+> `customization_id` ni un scope de catalogue (`app_customizations`). La
+> hiérarchie 6 niveaux (story 4.8) est un détail SERVEUR qui se **compile** en ces
+> policies concrètes dans le provider — option « 2ᵉ source d'authoring » gratuite.
+
+> **Marqueur de périmètre + conflit hors-périmètre (`error`).** Seul un
+> `policies.json` posé par l'agent (clé d'extension `_sambaedu_managed: true`,
+> inerte côté app) est géré. Un `policies.json` posé hors SambaEdu (autre outil,
+> admin) au chemin natif n'est **JAMAIS écrasé ni supprimé** (non-ingérence). Mais
+> comme la policy agent n'est alors PAS active, l'item de cette app est rapporté
+> **`error`** (détail : « policies.json hors-périmètre présent, policy agent non
+> appliquée ») et non `compliant` (qui serait trompeur). Les autres apps/types
+> convergent (isolation).
+
+> **« Désactiver = cesser de gérer ».** Une app retirée des règles voit son
+> `policies.json` GÉRÉ **retiré** au passage suivant (level-triggered, drift
+> STRICT) ; jamais un fichier hors périmètre.
+
+> **App butée = limite connue.** Une app qui écrirait un réglage **sans aucun
+> mécanisme enterprise natif** (pas de `policies.json` exploitable) n'est **PAS
+> bricolée** par l'agent (pas de patch de config user, pas de hook) : le réglage
+> est documenté comme non géré. Invariant : un handler n'écrit que via un
+> mécanisme enterprise documenté de l'app.
+
+> **Couplage installation (limite connue).** Pour que la policy ait un effet,
+> l'app doit être installée (Firefox/Thunderbird présents) → story 27.5
+> (applications/WPKG). Le service SYSTEM écrit sous Program Files ; si le dossier
+> d'install est absent (app non installée), l'écriture échoue → `{status: error}`
+> pour le seul type `app_config`, les autres types convergent.
+
 ## 8. Tableau vide ≠ type absent (décision de contrat — AC1)
 
 Les items d'une portée sont une **liste**, pas une map. La distinction

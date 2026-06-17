@@ -266,6 +266,25 @@ inchangées par le portage) :
   SambaEdu : un lecteur monté par l'utilisateur (vers un autre serveur, ou une
   lettre cible déjà occupée par un montage user) n'est **jamais** démonté ni
   écrasé. Tokens `<se4fs>`/`<user>` substitués **localement**.
+- **Handler `app_config`** (aggregate PAR `app_kind` / `machine` — Story 27.4) :
+  pose la **config d'app déclarative** (Firefox/Thunderbird) via le **SEUL
+  mécanisme enterprise natif `policies.json`** au chemin d'install de l'app
+  (`…\Mozilla Firefox\distribution\policies.json` / Thunderbird), en **écriture
+  atomique** (`handler_app_config_windows.go` — pas de shell-out). Enregistré dans
+  le **MachineEngine SYSTEM** : `policies.json` est machine-wide (admin-write) → le
+  service SYSTEM l'écrit (un compagnon user prendrait ACCESS_DENIED) ; résolution
+  serveur **PAR PARC** (niveaux 1-4). Le par-user de Firefox = le profil
+  (Mécanisme B / roaming, hors 27.4). Logique pure (set cible par app,
+  level-triggered, drift STRICT, canonicalisation `policies.json` via l'unique
+  `shared.CanonicalJSON`) dans `shared/handler_app_config.go` (testée hôte). Le
+  serveur calcule le QUOI (policies résolues, `AppCustomizationService`) ; l'agent
+  fait le OÙ/COMMENT. **Marqueur de périmètre** = clé `_sambaedu_managed` : un
+  `policies.json` posé hors SambaEdu n'est **jamais** écrasé ni supprimé — mais
+  comme la policy agent n'est alors pas active, le conflit est rapporté `error`
+  (jamais `compliant` trompeur). App retirée des règles → `policies.json` géré
+  **retiré** (level-triggered). **App butée sans mécanisme enterprise = non gérée**
+  (zéro bricolage, limite connue). Pas de Chrome/Edge, pas de mécanisme registre,
+  pas de redirection de profil (recadrage 2026-06-17).
 - **Rendu overlay VERROUILLÉ (Story 27.1bis)** — l'agent gère le **cycle de vie
   du rendu** (Rainmeter), pas seulement la donnée :
   - **Provisioning portable au bootstrap** (SERVICE SYSTEM, `SyncRainmeterTool`

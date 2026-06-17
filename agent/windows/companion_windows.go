@@ -141,6 +141,15 @@ func runCompanion() error {
 					Ops: &associationsOps{log: logger},
 					Log: logger,
 				},
+				// Story 27.4 — config d'app declarative : le handler `app_config`
+				// a QUITTE la map du compagnon (correctif post-review 2026-06-17,
+				// review #1). policies.json est ecrit sous %ProgramFiles%\...\
+				// distribution\ (machine-wide, admin-write) — un compagnon aux
+				// droits user prend ACCESS_DENIED a chaque logon. Il est desormais
+				// porte par le MachineEngine SYSTEM (main_windows.go), iso le
+				// handler `registry` HKLM (27.3). Le par-user de Firefox = le
+				// PROFIL (mecanisme B / roaming), PAS policies.json — donc aucun
+				// niveau user perdu (resolution serveur niveaux 1-4 par parc).
 			},
 			Log: logger,
 		},

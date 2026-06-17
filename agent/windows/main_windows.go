@@ -186,6 +186,22 @@ func newAgent(echo bool) *shared.Agent {
 					Ops: &registryOps{log: logger},
 					Log: logger,
 				},
+				// Story 27.4 — config d'app declarative (aggregate par app_kind /
+				// scope MACHINE, correctif post-review 2026-06-17 review #1) : le
+				// SERVICE SYSTEM pose le policies.json enterprise natif au chemin
+				// d'install Firefox/Thunderbird (%ProgramFiles%\...\distribution\,
+				// ecriture atomique). policies.json est machine-wide, admin-write
+				// → SYSTEM ecrit (le compagnon user prenait ACCESS_DENIED). La
+				// resolution serveur est PAR PARC (niveaux 1-4 : template + auto +
+				// defaut etab + WG) ; le par-user de Firefox = le PROFIL (mecanisme
+				// B / roaming, hors 27.4). UN SEUL mecanisme : pas de registre, pas
+				// de Chrome/Edge. Level-triggered, idempotent ; marqueur de
+				// perimetre = clef _sambaedu_managed (jamais ecraser un fichier
+				// pose hors SambaEdu — conflit => error, review #7).
+				"app_config": &shared.AppConfigHandler{
+					Ops: &appConfigOps{log: logger},
+					Log: logger,
+				},
 			},
 			Log: logger,
 		},

@@ -12,6 +12,22 @@
                 "room": "Salle 101"
             },
             "hash": "a752794a4de8a6914c393c8beef059da1c77e1290b82acb5b786ffa2bbe20d24"
+        },
+        {
+            "type": "app_config",
+            "semantics": "aggregate",
+            "payload": {
+                "app_kind": "firefox",
+                "policies": {
+                    "policies": {
+                        "DisableTelemetry": true,
+                        "Homepage": {
+                            "URL": "https://etab.local/"
+                        }
+                    }
+                }
+            },
+            "hash": "cb347596d413a14e52078fd76d180acaadfd399cb398c9cc53b8bbe2636ef8c2"
         }
     ],
     "session": [

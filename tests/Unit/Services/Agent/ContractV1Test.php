@@ -83,7 +83,24 @@ class ContractV1Test extends TestCase
     // partir du SID/temps/experience du poste). Type DÉJÀ figé §7 ; payload
     // ajouté = forward-compatible, pas un major → 8 items, hash d'état RECALCULÉ.
     // Le jumeau Go porte la même valeur (test croisé NFR13).
-    private const FROZEN_STATE_HASH = '77fb548ac9b1f0604afce2a0c7d0316379391ef2e182a95a005b979f3fa5e3bd';
+    //
+    // Re-bumpé SCIEMMENT par la Story 27.4 (évolution MINEURE du contrat, §9) :
+    // ajout d'UN item `app_config` (aggregate) — payload v1 réel
+    // `{app_kind, policies}` owné par AppConfigStateProvider (projection des
+    // policies résolues `policies.json` Firefox/Thunderbird, story 4.8). Les
+    // policies sont CONCRÈTES (jamais un id de scope/customization), sans float
+    // (§4.1). Type DÉJÀ figé §7 ; payload ajouté = forward-compatible, pas un
+    // major → 9 items, hash d'état RECALCULÉ. Le jumeau Go
+    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
+    //
+    // Correctif post-review 2026-06-17 (review #1) : l'item `app_config` passe de
+    // la portée `session` à la portée `machine` — `policies.json` est
+    // machine-wide (admin-write, écrit par le service SYSTEM), résolu PAR PARC
+    // (niveaux 1-4, `$user = null`). Le par-user de Firefox = le profil
+    // (Mécanisme B / roaming, hors 27.4). Le déplacement de portée RECALCULE le
+    // hash d'état (machine = 2 items, session = 6) ; le jumeau Go porte la même
+    // valeur (test croisé NFR13).
+    private const FROZEN_STATE_HASH = '6f0ff33e8ea114d28f67094042bea656a68d6cfdafa01ee6ad9f9537dff377fb';
 
     private StateHasher $hasher;
 

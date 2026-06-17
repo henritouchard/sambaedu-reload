@@ -512,6 +512,91 @@ UserChoice à ACL hérité) vivent dans `handler_associations_windows.go`. Une s
 constante fausse = hash silencieusement rejeté par Windows = association non
 appliquée — d'où les tests vectoriels obligatoires.
 
+### `app_config` — `aggregate` PAR `app_kind` / `machine` (Story 27.4)
+
+Successeur natif du canal export-FS des policies d'app (`exportToFs` →
+`/etc/sambaedu/applications/{kind}/*.json`, tiré par GPO/scripts WPKG — le canal
+legacy reste intouché, il meurt en 27.6). Contrairement à `registry`/
+`associations` (premiers types SANS table métier), `app_config` est dans le cas
+`wallpaper`/`printers` : la **table métier existe déjà** (`app_customizations`,
+story 4.8) avec son service de résolution. **On la LIT, on ne la double pas**
+(créer une 2ᵉ table de policies = doublon de source de vérité, interdit).
+
+> **Deux mécanismes legacy distincts (cadrage 27.4).** Le legacy traite Firefox
+> via DEUX mécanismes qui coexistent : (A) **config** = `policies.json`
+> (marque-pages, page d'accueil, extensions, proxy), écrit dans
+> `%ProgramFiles%\Mozilla Firefox\distribution\policies.json` = **machine-wide,
+> contexte SYSTEM/admin, PAR-PARC** — **c'est le périmètre de 27.4** ; (B)
+> **profil user** = jonctions/redirection du dossier profil vers le home
+> (roaming) — **HORS 27.4** (story roaming de suivi). Le par-user de Firefox est
+> le Mécanisme B (le PROFIL), PAS `policies.json`.
+
+- **Provider `AppConfigStateProvider`** (`aggregate` / `machine`) : un candidat
+  PAR `app_kind` (`AppKind::cases()` = Firefox, Thunderbird), résolu via
+  `AppCustomizationService::resolvePoliciesForMachine($wg, null, $kind, 'windows')`
+  — **`$user = null`** : résolution PAR PARC, niveaux **1-4** (template → auto
+  proxy/DNS/popup → défaut étab → WG). Les niveaux 5-6 (UserGroups/User) ne sont
+  PAS résolus (le par-user de Firefox = le profil, Mécanisme B). **PG + config-pur**
+  (NFR7, critère Keycloak — grep `Cache::|apcu|Ldap|samba-tool` vide) : le cache
+  APCu `CacheAppContextRepository` sert l'AUTRE canal (legacy-port), jamais ce
+  chemin.
+- **Pourquoi `machine`.** `policies.json` est **machine-wide**, posé sous
+  `%ProgramFiles%\…\distribution\` (ACL admin-write). Un compagnon aux droits user
+  prendrait `ACCESS_DENIED` à chaque logon — la portée est donc **`machine`** : le
+  **service SYSTEM** écrit le fichier (iso le handler `registry` HKLM, 27.3). La
+  config est par-parc (parité legacy) ; le par-user de Firefox passe par le profil
+  (Mécanisme B / roaming, hors 27.4).
+- **Impédance « WG unique 4.8 » vs « mailles Epic 27 ».**
+  `resolvePoliciesForMachine` prend UN `WorkstationGroup`, alors que le
+  `TargetContext` expose des LISTES de mailles. Le provider collapse l'axe WG en
+  feedant le WG **gagnant en précédence** du poste (`logique > physique` —
+  inversion globale story 27.3, alignée sur `StateCompiler::specificity()`) → un
+  candidat par app. Sans ce collapse, itérer tous les WG produirait plusieurs
+  items Firefox (un par override de WG).
+  - ⚠️ **Tiebreak multi-parcs logiques (limite connue, review #2, statu quo
+    assumé).** Un poste appartenant à PLUSIEURS parcs logiques avec des policies
+    différentes : seul le WG gagnant (précédence, puis **plus petit id** —
+    déterminisme) est résolu ; les autres parcs logiques sont **silencieusement
+    ignorés**. `policies.json` est machine-wide (un fichier par install) : il ne
+    peut pas porter deux configs Firefox concurrentes. Tiebreak documenté ici et
+    dans le docblock du provider.
+- **Payload `{app_kind, policies}`** : policies CONCRÈTES (jamais un id de
+  scope/customization), sans float (§4.1 — un float de policy → string).
+- **Handler `app_config`** (`agent/shared/handler_app_config.go` pur +
+  `agent/windows/handler_app_config_windows.go`) : UN SEUL mécanisme — écrire le
+  `policies.json` enterprise natif au chemin d'install de l'app (écriture
+  atomique), level-triggered, drift STRICT, marqueur de périmètre (clé
+  `_sambaedu_managed`). Enregistré dans le **MachineEngine SYSTEM** (portée
+  machine). Réutilise `engine.go::ResolveItemStatus` (§5) + `AggregateHash`. La
+  canonicalisation du `policies.json` (cible côté serveur ET fichier relu côté
+  agent) passe par **UNE seule fonction** `shared.CanonicalJSON` (idempotence
+  garantie sur les `json.Number`, review #3).
+
+#### Limites connues (Story 27.4)
+
+- **App butée sans mécanisme enterprise = non géré.** Une app qui écrirait un
+  réglage **sans aucun `policies.json` exploitable** n'est **PAS bricolée** (pas
+  de patch de config user, pas de hook) : le réglage est documenté comme non géré
+  (« match nul » assumé du brainstorming). Invariant : un handler n'écrit que via
+  un mécanisme enterprise documenté de l'app.
+- **Couplage installation.** Pour que la policy ait un effet, l'app doit être
+  installée → story 27.5 (applications/WPKG). Le service SYSTEM écrit sous Program
+  Files ; si le dossier d'install est absent (app non installée), l'écriture
+  échoue → `{status: error}` pour le seul type `app_config`, les autres types
+  convergent (isolation `engine.go::RunPass`).
+- **`policies.json` hors périmètre = conflit `error` (review #7).** Un fichier
+  posé au chemin natif par un autre outil/admin (sans marqueur) n'est **jamais
+  écrasé ni supprimé** (non-ingérence préservée). Mais comme la policy agent n'est
+  alors PAS active, l'item de cette app est rapporté **`error`** (détail :
+  « policies.json hors-périmètre présent, policy agent non appliquée ») au lieu de
+  `compliant` (qui serait trompeur). Les autres apps/types convergent. _(Défaut =
+  signaler sans écraser ; une future « prise de possession » SYSTEM pourra être
+  décidée.)_
+- **Chrome/Edge + redirection de profil = HORS 27.4.** Le legacy ne gère aucune
+  policy Chrome/Edge (net-new sans référence) ; la redirection de profil est un
+  sujet **roaming** serveur (Mécanisme B, pas une policy client) → renvoyé au
+  domaine roaming/`WorkstationEnvironment` (26.x / story de suivi).
+
 ### Mode `strict|default` — RETIRÉ (Story 27.8)
 
 > **Story 27.8 — RETRAIT TOTAL.** Le mécanisme `mode ∈ {strict, default}`

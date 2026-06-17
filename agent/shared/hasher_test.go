@@ -50,7 +50,19 @@ import (
 // forward-compatible, pas un major. Le hash UserChoice n'est JAMAIS au payload
 // (calculé agent-side). 8 items, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE
 // côté PHP (ContractV1Test::FROZEN_STATE_HASH).
-const frozenStateHash = "77fb548ac9b1f0604afce2a0c7d0316379391ef2e182a95a005b979f3fa5e3bd"
+// Re-bumpé SCIEMMENT par la Story 27.4 (§9) : ajout d'UN item `app_config`
+// (aggregate, payload v1 réel `{app_kind, policies}` owné par
+// AppConfigStateProvider) au golden — type DÉJÀ figé §7, payload ajouté =
+// forward-compatible, pas un major. Les policies sont CONCRÈTES (jamais un id de
+// scope), sans float (§4.1). 9 items, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE
+// côté PHP (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
+//
+// Correctif post-review 2026-06-17 (review #1) : l'item `app_config` passe de la
+// portée `session` à la portée `machine` (`policies.json` machine-wide,
+// admin-write, écrit par le service SYSTEM ; résolu PAR PARC niveaux 1-4). Le
+// déplacement de portée RECALCULE le hash d'état (machine = 2, session = 6) ;
+// bumpé à l'IDENTIQUE côté PHP (test croisé NFR13).
+const frozenStateHash = "6f0ff33e8ea114d28f67094042bea656a68d6cfdafa01ee6ad9f9537dff377fb"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -154,8 +166,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 8 {
-		t.Errorf("8 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis), %d vérifiés", checked)
+	if checked != 9 {
+		t.Errorf("9 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4), %d vérifiés", checked)
 	}
 }
 

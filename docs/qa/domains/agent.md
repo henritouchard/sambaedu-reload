@@ -2500,3 +2500,152 @@ payload — dépend du SID/temps/GUID du poste) et **verrouillé par tests vecto
 - [ ] 27.3ter.5 — `EnableLUA` défaut `1` (UAC activé) ; désactiver = override + warning confirmé.
 - [ ] 27.3ter.6 — `/admin/settings/registry` (navigateur) : édition du défaut + validation + warning + Gate admin.
 - [ ] 27.3ter.7 — Onglet « Registre » du parc n'affiche QUE les overrides ; payload `registry` reste `{hive,path,name,type,value}` (`curl /state`).
+
+## Story 27.4 — Config d'app déclarative (policies.json Firefox/Thunderbird)
+
+Le canal agent gagne le type `app_config` : la **configuration des navigateurs
+configurables par policies natives** (Firefox, Thunderbird) suit l'état cible du
+**parc**, appliquée et maintenue par l'agent via le **SEUL mécanisme enterprise
+natif `policies.json`** (fichier au chemin d'install de l'app, écriture atomique).
+Successeur natif du canal export-FS des policies (`exportToFs` →
+`/etc/sambaedu/applications/{kind}/*.json`, GPO/WPKG — le canal legacy reste
+intouché, meurt en 27.6). **Aucune nouvelle UI** : l'édition des policies par
+scope existe déjà (story 4.8, `parc-settings/app-customizations`).
+
+**Deux mécanismes legacy distincts (correctif post-review 2026-06-17, #1).** Le
+legacy traite Firefox via (A) **config** = `policies.json` (machine-wide, écrit
+sous `%ProgramFiles%\…\distribution\` en contexte admin/SYSTEM, **PAR-PARC**) —
+**c'est 27.4** ; (B) **profil user** = jonctions/redirection du dossier profil
+(roaming) — **HORS 27.4** (story roaming de suivi). Le par-user de Firefox = le
+profil (Mécanisme B), PAS `policies.json`. La config d'app via `policies.json` est
+donc appliquée par le **moteur SYSTEM** (portée `machine`), résolue **PAR PARC**
+(niveaux 1-4, `$user = null`) — un compagnon user prendrait ACCESS_DENIED sous
+Program Files.
+
+**Pas de table neuve.** Contrairement à 27.3/27.3bis (catalogues créés),
+`app_config` LIT la table métier existante `app_customizations` (4.8) via
+`AppCustomizationService::resolvePoliciesForMachine($wg, null, $kind, 'windows')`
+(résolution hiérarchique niveaux 1-4 : template → auto proxy/DNS/popup → défaut
+étab → WG). **PG + config-pur** (NFR7, critère Keycloak — grep
+`Cache::|apcu|Ldap|samba-tool` vide sur le provider). Le payload porte les
+policies **CONCRÈTES** `{app_kind, policies}`, jamais un id de scope. Aggregate
+PAR `app_kind` (un item par app), scope **machine** (`policies.json` machine-wide,
+écrit par le service SYSTEM).
+
+**Recadrage périmètre (2026-06-17).** UNIQUEMENT Firefox/Thunderbird
+`policies.json`. **Chrome/Edge RETIRÉS** (le legacy ne gère aucune policy) ;
+**redirection de profil navigateur RETIRÉE** (Mécanisme B, sujet roaming serveur,
+renvoyé au domaine roaming/`WorkstationEnvironment` — 26.x / story de suivi).
+
+### Scénario 27.4.1 — Config navigateur appliquée PAR PARC via policies.json (lab Windows — ACTION HUMAINE Henri)
+
+1. Éditer les policies Firefox au niveau **parc** (`WorkstationGroup`) dans l'UI
+   4.8 (`parc-settings/app-customizations`) — ex. parc impose une `Homepage` et
+   `DisableTelemetry`. S'assurer que Firefox est installé.
+2. Démarrer un poste du parc (le moteur SYSTEM converge au bootstrap / au
+   réveil ; pas besoin de session interactive).
+3. **Attendu** : le **service SYSTEM** écrit
+   `…\Mozilla Firefox\distribution\policies.json` (écriture atomique) avec la
+   **résolution PAR PARC niveaux 1-4** (template + auto + défaut étab + WG gagnant,
+   `resolvePoliciesForMachine($wg, null, …)`). Vérifier dans `about:policies`
+   (Firefox) que le réglage de parc est actif. Le fichier porte la clé
+   `_sambaedu_managed: true` (marqueur de périmètre, inerte côté Firefox).
+4. Un second `policies.json` n'est posé pour **Thunderbird** que si une règle
+   Thunderbird existe (un item par app — type/clé absente = non géré, §8).
+5. **Pas de par-user** : un override Firefox au niveau **utilisateur** (UserGroup
+   ou User) dans l'UI 4.8 n'a **aucun effet** sur `policies.json` (niveaux 5-6 non
+   résolus en portée machine). Le par-user de Firefox = le **profil** (Mécanisme B
+   / roaming, hors 27.4).
+
+### Scénario 27.4.2 — Par-parc stable inter-sessions (lab — ACTION HUMAINE Henri)
+
+1. Sur le même poste/parc, ouvrir des sessions avec **deux utilisateurs
+   différents**.
+2. **Attendu** : le `policies.json` est **identique** quel que soit l'utilisateur
+   (config par-parc, écrite par SYSTEM, indépendante de la session). `curl /state`
+   (token agent) montre l'item `app_config` dans la portée **`machine`**, un par
+   `app_kind`, avec policies concrètes, **jamais** un `customization_id`/scope.
+3. Un poste appartenant à **deux parcs logiques** avec des policies Firefox
+   différentes : seul le parc gagnant (précédence `logique > physique`, puis plus
+   petit id) est appliqué — le 2ᵉ parc logique est **silencieusement ignoré**
+   (limite connue, review #2 : `policies.json` machine-wide ne porte qu'une config
+   par install).
+
+### Scénario 27.4.3 — Level-triggered : policy retirée → dé-appliquée (lab — ACTION HUMAINE Henri)
+
+1. Désassigner toutes les règles `app_config` d'une app (ex. retirer la
+   customization Firefox du parc et de l'étab) → l'app n'a plus aucun item au
+   `/state`.
+2. Relancer un cycle (réveil / reboot — le moteur SYSTEM converge).
+3. **Attendu** : le `policies.json` **GÉRÉ** (marqueur `_sambaedu_managed`) de
+   cette app est **retiré** (convergence, pas accumulation). Un `policies.json`
+   posé **hors SambaEdu** (autre outil, admin — sans marqueur) au même chemin
+   n'est **JAMAIS** supprimé.
+
+### Scénario 27.4.4 — Drift STRICT : policy modifiée à la main réimposée (lab — ACTION HUMAINE Henri)
+
+1. Modifier à la main le `policies.json` posé par l'agent (changer une URL, vider
+   une clé).
+2. Relancer une session (ou attendre le cycle).
+3. **Attendu** : le réel ≠ cible → **drift** + réécriture à l'octet près de la
+   cible résolue serveur (STRICT inconditionnel, story 27.8 — pas de tolérance de
+   dérive). Statut `drift` au rapport. Deux passes sur état stable = `compliant`,
+   zéro écriture (idempotence).
+
+### Scénario 27.4.5 — App butée = non géré documenté (« match nul » assumé) (revue de code + lab)
+
+1. Une app qui n'expose **aucun mécanisme enterprise natif** (`policies.json`)
+   pour un réglage demandé.
+2. **Attendu** : l'agent **ne force RIEN et n'invente RIEN** (pas de patch de
+   config user bricolé, pas de hook). Le réglage est documenté comme **limite
+   connue** (`docs/agent/state-providers.md`, `contract-v1.md` §7.3). Invariant :
+   un handler n'écrit que via un mécanisme enterprise documenté. À ce stade, les
+   apps gérées (`knownAppKinds` = firefox, thunderbird) ont toutes un
+   `policies.json` → pas d'app butée active, mais l'invariant est posé.
+
+### Scénario 27.4.6 — Isolation des erreurs : chemin verrouillé/app absente → `error`, le reste continue (lab — ACTION HUMAINE Henri)
+
+1. Rendre le `policies.json` d'une app non écrivable (chemin verrouillé, ou
+   dossier `distribution\` absent / app non installée).
+2. **Attendu** : statut `error` + `detail` exploitable pour le type `app_config`
+   ; **les autres types** (shortcuts/wallpaper/registry/associations/printers/
+   drives) **continuent** (isolation `engine.go::RunPass`, jamais réimplémentée).
+   En interne, l'app saine du même type converge quand même (effort maximal) ;
+   retry au cycle suivant (level-triggered). **Couplage installation** (limite
+   connue) : pour que la policy ait un effet, l'app doit être installée → 27.5.
+
+### Scénario 27.4.7 — Conflit hors-périmètre : policies.json étranger → `error`, jamais écrasé (lab — ACTION HUMAINE Henri)
+
+1. Poser à la main un `policies.json` (sans clé `_sambaedu_managed`) au chemin
+   natif d'une app, AVANT toute règle agent.
+2. Activer une règle `app_config` pour cette app, relancer un cycle (réveil /
+   reboot).
+3. **Attendu (correctif post-review #7)** : l'agent **détecte** le fichier hors
+   périmètre et **ne l'écrase JAMAIS** (non-ingérence préservée ; sa suppression
+   level-triggered ne le touche pas non plus). Comme la policy agent n'est alors
+   **pas active**, l'item de cette app est rapporté **`error`** (détail :
+   « policies.json hors-périmètre présent, policy agent non appliquée ») et **non**
+   `compliant` (qui masquerait le conflit). Les autres apps/types convergent
+   (isolation). _(Défaut = signaler sans écraser ; une « prise de possession »
+   SYSTEM pourra être décidée plus tard.)_
+
+### Checklist rapide (Story 27.4)
+
+- [ ] 27.4.1 — `policies.json` posé PAR PARC par le moteur SYSTEM (niveaux 1-4),
+      visible dans `about:policies`, marqueur `_sambaedu_managed` présent ; un
+      override user n'a aucun effet (par-user = profil, hors 27.4).
+- [ ] 27.4.2 — Config par-parc identique inter-sessions ; item `app_config` en
+      portée **`machine`**, payload concret `{app_kind, policies}`, jamais d'id de
+      scope (`curl /state`) ; 2 parcs logiques → seul le gagnant appliqué (limite).
+- [ ] 27.4.3 — Policy retirée des règles → `policies.json` géré **dé-appliqué** ;
+      fichier hors périmètre jamais supprimé.
+- [ ] 27.4.4 — Policy modifiée à la main **réimposée** (drift STRICT) ;
+      idempotent (2 passes = compliant, zéro écriture).
+- [ ] 27.4.5 — App butée sans mécanisme enterprise = **non géré documenté**, zéro
+      bricolage (invariant posé).
+- [ ] 27.4.6 — Chemin verrouillé/app absente → `error` isolé, les autres types
+      convergent (couplage install 27.5 documenté).
+- [ ] 27.4.7 — `policies.json` étranger → **`error` de conflit** (jamais écrasé ni
+      supprimé ; jamais `compliant` trompeur).
+- [ ] 27.4.8 — Aucune nouvelle UI (édition policies 4.8 inchangée) ; Chrome/Edge
+      + redirection de profil **hors scope** (roaming → 26.x).

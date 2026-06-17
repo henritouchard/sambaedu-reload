@@ -9,6 +9,7 @@ use App\Services\Agent\Enrollment\EnrollmentCampaign;
 use App\Services\Agent\Enrollment\EnrollmentMatchService;
 use App\Services\Agent\Enrollment\EnrollmentService;
 use App\Services\Agent\Enrollment\TokenRotationService;
+use App\Services\Agent\Providers\AppConfigStateProvider;
 use App\Services\Agent\Providers\AssociationsStateProvider;
 use App\Services\Agent\Providers\DrivesStateProvider;
 use App\Services\Agent\Providers\OverlayMachineStateProvider;
@@ -117,6 +118,16 @@ class AgentServiceProvider extends ServiceProvider
                 // est calculé 100 % côté agent (jamais au payload). Une ligne,
                 // zéro modif du compilateur (exclusiveKey()=identifier suffit).
                 $app->make(AssociationsStateProvider::class),
+                // Story 27.4 — type `app_config` (aggregate PAR app_kind /
+                // session) : projection en LECTURE SEULE des policies d'app
+                // résolues (`app_customizations`, story 4.8) via
+                // AppCustomizationService::resolvePoliciesForMachine (PG +
+                // config-pur, NFR7). UN item par app (Firefox/Thunderbird),
+                // policies CONCRÈTES au payload (jamais un id de scope). Le
+                // handler agent écrit le SEUL mécanisme enterprise natif
+                // `policies.json` au chemin natif de l'install. Une ligne, zéro
+                // modif du compilateur.
+                $app->make(AppConfigStateProvider::class),
             ],
         ));
     }
