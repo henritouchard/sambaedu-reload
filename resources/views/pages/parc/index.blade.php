@@ -500,10 +500,10 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
 
     <x-slot:actions>
         <div class="flex gap-2">
-            <a href="{{ route('app.parc.groups.new') }}" class="btn btn-primary">
+            <button type="button" class="btn btn-primary" wire:click="$dispatch('open-group-modal')">
                 <i class="fa-solid fa-plus"></i>
                 Nouveau Groupe
-            </a>
+            </button>
             <!-- <div class="dropdown dropdown-end">
                 <label tabindex="0" class="btn btn-outline">
                     <i class="fa-solid fa-ellipsis-vertical"></i>
@@ -562,4 +562,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
             @endif
         </div>
     </div>
+
+    {{-- Modale réutilisable de création / édition de groupe (ici : mode création). --}}
+    <livewire:pages::parc.groups._partials.group-form-modal />
 </x-organisms.page>

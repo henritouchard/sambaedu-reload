@@ -60,4 +60,31 @@ enum WorkstationEnvironment: string
             self::Nomade => 'Nomade',
         };
     }
+
+    /**
+     * Icône FontAwesome (glyphe seul, sans couleur) pour les contrôles d'édition
+     * et les badges. Pure présentation — parallèle à {@see label()}.
+     */
+    public function icon(): string
+    {
+        return match ($this) {
+            self::SharedLocal => 'fa-users',
+            self::PersonalLocal => 'fa-user',
+            self::Nomade => 'fa-laptop',
+        };
+    }
+
+    /**
+     * Description courte affichée en tooltip à côté de chaque option du sélecteur
+     * d'environnement. Pure présentation (reprend la doc de l'enum) — aucune
+     * sémantique de précédence, qui reste l'affaire du WorkstationEnvironmentResolver.
+     */
+    public function description(): string
+    {
+        return match ($this) {
+            self::SharedLocal => 'Poste partagé (salle de classe) : bureau réseau et profils redirigés. Défaut du parc historique.',
+            self::PersonalLocal => 'Modèle direction / perdir : bureau local à l\'utilisateur, données sur le home réseau. Poste nominatif mais connecté.',
+            self::Nomade => 'Tout local avec synchronisation : le poste fonctionne déconnecté puis réconcilie (offline / resync).',
+        };
+    }
 }

@@ -59,10 +59,10 @@
                             Effacer les filtres
                         </button>
                     @endif
-                    <a href="{{ route('app.parc.groups.new') }}" class="btn btn-primary">
+                    <button type="button" class="btn btn-primary" wire:click="$dispatch('open-group-modal')">
                         <i class="fa-solid fa-plus"></i>
                         Créer un groupe
-                    </a>
+                    </button>
                 </div>
             </div>
         @else

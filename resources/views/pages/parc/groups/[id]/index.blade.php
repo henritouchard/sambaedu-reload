@@ -1745,10 +1745,11 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                                     <i class="fa-solid fa-lock text-warning text-xs ml-auto"></i>
                                 </span>
                             @else
-                                <a href="{{ route('app.parc.groups.edit', $group->id) }}">
+                                <button type="button"
+                                    wire:click="$dispatch('open-group-modal', { id: {{ $group->id }} })">
                                     <i class="fa-solid fa-pen"></i>
                                     Modifier
-                                </a>
+                                </button>
                             @endif
                         </li>
                         <hr class="border-zinc-200 my-1">
@@ -1820,6 +1821,9 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     </x-slot:actions>
 
     @if ($group)
+        {{-- Modale réutilisable de création / édition de groupe (ici : mode édition). --}}
+        <livewire:pages::parc.groups._partials.group-form-modal :key="'group-form-modal-' . $group->id" />
+
         <div class="space-y-6">
             {{-- Carte d'identité du groupe --}}
             <div class="card bg-base-100 shadow-sm border border-base-200 mb-6">
