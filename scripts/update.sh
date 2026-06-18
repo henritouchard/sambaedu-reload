@@ -405,12 +405,15 @@ update_apache() {
         # Le vhost SER est actif — vérifier qu'il n'a pas été altéré
         # en comparant le DocumentRoot et la structure attendue
         if grep -q "DocumentRoot.*sambaedu-reload/public" "$APACHE_CONF_TARGET" \
-           && [[ -f "/etc/apache2/sites-available/sambaedu-legacy.conf" ]]; then
+           && [[ -f "/etc/apache2/sites-available/sambaedu-legacy.conf" ]] \
+           && grep -q "Alias /wpkg/bundle" "$APACHE_CONF_TARGET"; then
             log_success "Apache déjà configuré pour SER (setupApache.sh)"
             return
         else
-            # Le vhost SER est incomplet (legacy manquant) → relancer setupApache.sh
-            log_warning "Configuration Apache SER incomplète — relance de setupApache.sh"
+            # Vhost SER incomplet : legacy manquant OU alias /wpkg/bundle absent
+            # (vhost antérieur à la Story 27.5) → relancer setupApache.sh pour
+            # (re)poser les aliases. Idempotent.
+            log_warning "Configuration Apache SER incomplète (legacy ou alias /wpkg/bundle manquant) — relance de setupApache.sh"
             if [[ -x "$SETUP_APACHE_SCRIPT" ]]; then
                 bash "$SETUP_APACHE_SCRIPT"
                 log_success "Apache reconfiguré via setupApache.sh"
@@ -727,6 +730,60 @@ ensure_wpkg_bootstrap() {
 }
 
 # ============================================================================
+# Bundle WPKG natif SE5 (Story 27.5) — génération (servi statiquement)
+# ============================================================================
+# `php artisan wpkg:bundle` (ré)génère le bundle WPKG natif pré-substitué
+# (scripts versionnés resources/wpkg/* + packages.xml avec SE4FS_NAME résolu)
+# dans le sous-dossier PUBLIC servi en statique par Apache (alias /wpkg/bundle
+# posé par setupApache.sh). À régénérer à chaque déploiement : SE4FS_NAME / la
+# conf serveur peuvent changer, et les scripts versionnés évoluent.
+#
+# Propriété des fichiers : on GÉNÈRE directement sous www-admin (uid 599) via
+# `sudo -u` — update.sh tournant en root, c'est sans mot de passe (même pattern
+# que run_doctor_check). Les fichiers naissent donc lisibles par Apache : AUCUN
+# chown séparé, et c'est l'exact user du runtime PHP-FPM en prod. Sans ce bon
+# propriétaire, Apache servirait le bundle en 404 silencieux (convention storage
+# non versionnée). Fallback root + chown si le compte www-admin est absent.
+# Idempotent : le générateur réécrit tout (écriture atomique tmp + rename).
+
+ensure_wpkg_bundle() {
+    log "Génération du bundle WPKG natif (Story 27.5)..."
+    cd "$APP_DIR"
+
+    if ! php artisan list 2>/dev/null | grep -q 'wpkg:bundle'; then
+        log_warning "Commande wpkg:bundle non disponible (Story 27.5 pas déployée) — étape ignorée"
+        return 0
+    fi
+
+    if id www-admin >/dev/null 2>&1; then
+        # Génération sous www-admin → fichiers nés avec le bon propriétaire,
+        # pas de chown. sudo -u sans mot de passe puisqu'on est root.
+        if ! sudo -u www-admin php artisan wpkg:bundle; then
+            log_error "Échec génération bundle WPKG (sudo -u www-admin) — livraison WPKG native indisponible"
+            return 1
+        fi
+        log_success "Bundle WPKG généré sous www-admin (lisible Apache, pas de chown requis)"
+    else
+        # Pas de compte www-admin (cas dégradé) : génération en root, puis chown
+        # défensif. Chemin = override .env (AGENT_WPKG_BUNDLE_PATH) sinon défaut
+        # config/agent.php (storage/app/public/wpkg/bundle).
+        log_warning "User www-admin absent — génération en root + chown a posteriori"
+        if ! php artisan wpkg:bundle; then
+            log_error "Échec génération bundle WPKG — livraison WPKG native indisponible"
+            return 1
+        fi
+        local bundle_path
+        bundle_path="$(grep -oP '^AGENT_WPKG_BUNDLE_PATH=\K.*' "$APP_DIR/.env" 2>/dev/null || true)"
+        bundle_path="${bundle_path:-$APP_DIR/storage/app/public/wpkg/bundle}"
+        if [[ -d "$bundle_path" ]]; then
+            chown -R www-admin:www-admin "$bundle_path" 2>/dev/null \
+                && log_success "Bundle WPKG généré + chown www-admin ($bundle_path)" \
+                || log_warning "Bundle généré mais chown échoué ($bundle_path) — risque de 404 Apache"
+        fi
+    fi
+}
+
+# ============================================================================
 # Affichage du résumé
 # ============================================================================
 
@@ -748,6 +805,7 @@ show_summary() {
     echo "  ✓ LDAP client (SASL_NOCANON)"
     echo "  ✓ PXE bootstrap (Laravel native)"
     echo "  ✓ Amorçage helpers (wpkg.cmd)"
+    echo "  ✓ Bundle WPKG natif (généré sous www-admin)"
     echo "  ✓ Permissions partage [install]"
     echo ""
 }
@@ -838,6 +896,9 @@ main() {
 
     echo ""
     ensure_wpkg_bootstrap
+
+    echo ""
+    ensure_wpkg_bundle
 
     echo ""
     ensure_install_permissions

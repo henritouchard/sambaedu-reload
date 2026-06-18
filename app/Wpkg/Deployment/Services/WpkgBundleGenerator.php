@@ -124,6 +124,31 @@ class WpkgBundleGenerator
             throw new RuntimeException("Catalogue packages.xml invalide : {$catalogPath}");
         }
 
+        // Garde structurelle (leçon 2026-06-18) : l'engine WPKG (`wpkg-se4.js`) lit
+        // les <package> ENFANTS DIRECTS de l'unique racine <packages>
+        // (`getPackages().selectNodes("package")`). Un catalogue bien formé mais MAL
+        // STRUCTURÉ — double <packages> imbriqué de l'export SE4, ou racine
+        // inattendue — passe `loadXML` mais donne « 0 package entries » côté poste :
+        // WPKG n'installe RIEN, en SILENCE. On échoue ICI, fort et clair, plutôt que
+        // de servir un catalogue inexploitable (jamais de faux succès).
+        $root = $dom->documentElement;
+        if ($root === null || $root->localName !== 'packages') {
+            throw new RuntimeException(sprintf(
+                'Catalogue packages.xml : racine <%s> inattendue (attendu <packages>) : %s',
+                $root?->localName ?? '(vide)',
+                $catalogPath,
+            ));
+        }
+        $packagesCount = $dom->getElementsByTagName('packages')->length;
+        if ($packagesCount !== 1) {
+            throw new RuntimeException(sprintf(
+                'Catalogue packages.xml mal structuré : %d éléments <packages> (attendu 1) — '
+                .'imbrication détectée, l\'engine WPKG lirait « 0 package entries » : %s',
+                $packagesCount,
+                $catalogPath,
+            ));
+        }
+
         foreach ($dom->getElementsByTagName('variable') as $variable) {
             if (! $variable instanceof \DOMElement) {
                 continue;

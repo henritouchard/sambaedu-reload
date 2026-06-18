@@ -140,6 +140,21 @@ cat > "$APACHE_SITES_AVAILABLE/sambaedu.conf" << VHOST_SER
         Require all granted
     </Directory>
 
+    # /wpkg/bundle : bundle WPKG natif SE5 (Story 27.5) — scripts versionnés +
+    # packages.xml pré-substitués, GÉNÉRÉS par 'php artisan wpkg:bundle' dans
+    # storage/app/public/wpkg/bundle (ensure_wpkg_bundle dans update.sh). Servi
+    # EN STATIQUE, zéro charge Laravel : c'est le client WPKG qui télécharge (D7).
+    # GARDE-FOU SÉCURITÉ : pointe EXACTEMENT sur le sous-dossier dédié, JAMAIS sur
+    # storage/ entier (storage/keys/pki/ = PFX code-signing + clés CA). -Indexes,
+    # PAS de FallbackResource (un 404 reste un 404, ne retombe pas sur Laravel).
+    # À chown www-admin (lisible Apache) — sinon serving 404 silencieux.
+    Alias /wpkg/bundle $SER_ROOT/storage/app/public/wpkg/bundle
+    <Directory $SER_ROOT/storage/app/public/wpkg/bundle>
+        Options -Indexes +FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+
     ErrorLog /var/log/apache2/sambaedu-reload-error.log
     CustomLog /var/log/apache2/sambaedu-reload-access.log combined
 </VirtualHost>

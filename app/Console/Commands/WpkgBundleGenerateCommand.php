@@ -38,7 +38,7 @@ final class WpkgBundleGenerateCommand extends Command
         foreach ($result['files'] as $file) {
             $this->line("  - {$file}");
         }
-        $this->comment('Pensez au chown www-admin (uid 599) sur le sous-dossier (/vm) — sinon serving Apache 404.');
+        $this->comment('Si exécuté indépendamment en tant que root, pensez au chown www-admin (uid 599) sur le sous-dossier /storage/app/public/wpkg — sinon serving Apache 404.');
 
         return self::SUCCESS;
     }
