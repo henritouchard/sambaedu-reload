@@ -346,27 +346,23 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
 
     public function confirmPublish(): void
     {
-        $force = $this->forceFlag;
-        $this->isPublishing = true;
+        // Story 27.5 (D2) — la PUBLICATION de la GPO `se4_wpkg` est RETIRÉE :
+        // l'AGENT est désormais le SEUL déclencheur de WPKG (handler
+        // `applications` → `wpkg-client.vbs`), à la place de la GPO. SE5 cesse de
+        // publier `se4_wpkg` (pas de double déclenchement / collision). L'action
+        // de re-publication devient un NO-OP informatif + re-audit (lecture
+        // seule) ; on ne touche plus SYSVOL. La GPO résiduelle côté lab est
+        // déliée hors worktree (action Henri).
         $this->isPublishModalOpen = false;
+        $this->isPublishing = false;
+        $this->forceFlag = false;
 
-        try {
-            $r = $this->sync->publish($force);
-            $this->report = $r->toArray();
-            $this->expectedHostsXmlUrl = $r->expectedHostsXmlUrl;
-            $this->expectedProfilesXmlUrl = $r->expectedProfilesXmlUrl;
-            $this->toast(
-                'success',
-                'GPO re-publiée',
-                'Statut : ' . strtoupper($r->severity->value) . '. Le prochain `gpupdate /force` poste propage les changements.',
-            );
-        } catch (\Throwable $e) {
-            $this->toast('error', 'Échec de re-publication', $e->getMessage());
-            $this->audit(); // refresh état AD réel.
-        } finally {
-            $this->isPublishing = false;
-            $this->forceFlag = false;
-        }
+        $this->audit(); // refresh état AD réel (lecture seule, jamais de publish).
+        $this->toast(
+            'info',
+            'Publication GPO retirée (Story 27.5)',
+            'La GPO `se4_wpkg` n\'est plus publiée par SE5 : l\'agent déclenche désormais WPKG (canal desired-state). Aucune action SYSVOL effectuée.',
+        );
     }
 
     // -------------------------------------------------------------------------

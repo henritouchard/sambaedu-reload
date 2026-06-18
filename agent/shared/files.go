@@ -35,6 +35,15 @@ const (
 	// conseillé par le serveur.
 	DefaultIntervalSeconds = 3600
 
+	// WpkgBundlePath : sous-chemin (relatif à server_url) du bundle WPKG
+	// pré-substitué servi en STATIQUE par Apache (Story 27.5, D10 — PAS via
+	// Laravel). L'agent DONNE cette URL au bootstrap WPKG (il ne télécharge
+	// PAS) ; c'est `wpkg.cmd` (patché) qui la télécharge. Le serveur génère le
+	// bundle à ce chemin (alias Apache dédié, auth LAN/restriction du
+	// sous-dossier — iso-legacy, pas de bearer). Conventionnel & figé côté agent
+	// (le serveur l'expose via config/agent.php `wpkg_bundle_url`).
+	WpkgBundlePath = "/wpkg/bundle"
+
 	// MinLogonWakeIntervalSeconds : fenêtre de debounce anti-martèlement du
 	// réveil au logon (Story 27.9). Un réveil logon ne déclenche un cycle frais
 	// QUE si ce délai s'est écoulé depuis le DÉBUT du dernier cycle ; sinon le
@@ -220,6 +229,14 @@ func (s *Store) WriteConfig(cfg Config) error {
 	}
 
 	return s.writeAtomic(s.ConfigPath(), raw)
+}
+
+// ApplyACL pose l'ACL SYSTEM+Administrators sur un chemin DÉJÀ créé. Utilisé
+// par les handlers qui créent leurs propres fichiers hors de la racine Agent
+// (ex. profils WPKG par-hôte — Story 27.5) pour maintenir la cohérence de
+// sécurité avec les autres fichiers agent. No-op en test (SetACL == nil).
+func (s *Store) ApplyACL(path string) error {
+	return s.setACL(path)
 }
 
 func (s *Store) ensureDir(dir string) error {

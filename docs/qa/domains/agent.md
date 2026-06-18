@@ -2667,3 +2667,119 @@ renvoyé au domaine roaming/`WorkstationEnvironment` — 26.x / story de suivi).
       supprimé ; jamais `compliant` trompeur).
 - [ ] 27.4.8 — Aucune nouvelle UI (édition policies 4.8 inchangée) ; Chrome/Edge
       + redirection de profil **hors scope** (roaming → 26.x).
+
+## Story 27.5 — Applications : l'agent déclenche WPKG (un tuyau, deux outils)
+
+Le canal agent gagne le type `applications` : les **installations d'applications**
+passent par le **canal agent** (déclencheur) à la place de la GPO `se4_wpkg`.
+**« Un tuyau, deux outils »** : l'agent unifie le **transport** (déclenche au
+cycle), PAS le moteur. **WPKG reste le moteur déclaratif** (résolution de
+dépendances, `<check>/<install>/<upgrade>`, versions) — **non absorbé**. Le
+handler `applications` (MachineEngine SYSTEM — WPKG installe machine-wide) **donne
+l'URL** du bundle (Apache statique) + **dépose** localement le profil par-hôte
+(`profiles.xml`/`hosts.xml` dans `%ProgramData%\SambaEdu\wpkg`, D9) + **déclenche**
+`wpkg-client.vbs /NOTempo`, puis **lit `wpkg.xml`** pour l'état par paquet.
+
+**Livraison NATIVE SE5 (D6).** Shim WPKG legacy supprimé (`/wpkg/hosts.xml`,
+`/wpkg/profiles.xml`). SE5 **génère** le bundle pré-substitué (`php artisan
+wpkg:bundle` : scripts versionnés `resources/wpkg/*` patchés + catalogue
+`packages.xml`, `SE4FS_NAME` résolu) servi en **statique par Apache**
+(`config('agent.wpkg_bundle_path')`, PAS via Laravel). Le **client** télécharge
+(zéro charge Laravel — D7) ; installeurs sur SMB inchangés (D11). GPO `se4_wpkg`
+**plus publiée** par SE5 (l'agent est le seul déclencheur — D2).
+
+**Provider PG-pur (NFR7).** `ApplicationsStateProvider` projette l'ensemble cible
+via `WorkstationPackagesResolver::computePackages` (méthode **NON CACHÉE**, jamais
+le wrapper `resolve()`/APCu). Payload concret `{app_id, name}`, aggregate / scope
+`machine`, maille Broadcast (résolution déjà finale — D4). **Inventaire PAR APP**
+rapporté (champ additif `inventory`, AC4) → `agent_application_inventory`
+(fondation des licences à pool, sans UI) ; le verdict du type reste PAR TYPE
+(grain 27.8 intact).
+
+### Scénario 27.5.1 — App affectée à un parc installée par l'agent (lab Windows — ACTION HUMAINE Henri)
+
+1. Affecter une application WPKG à un **parc** (`WorkstationGroup`) — ex. VLC.
+2. Générer le bundle sur le serveur : `php artisan wpkg:bundle` (puis chown
+   www-admin sur le sous-dossier).
+3. Sur un poste du parc : relancer un cycle agent (réveil au logon / reboot /
+   bouton forcer).
+4. **Attendu** : l'item `applications` apparaît dans `GET /api/v1/agent/state`
+   (portée `machine`, payload `{app_id, name}`) ; le handler **dépose**
+   `profiles.xml`/`hosts.xml` dans `%ProgramData%\SambaEdu\wpkg` puis **déclenche**
+   `wpkg-client.vbs` ; WPKG installe VLC (+ ses dépendances) ; `wpkg.xml` liste le
+   paquet ; le rapport remonte `applications` `drift` (puis `compliant` au cycle
+   suivant) + l'inventaire (`agent_application_inventory` : VLC `compliant`).
+
+### Scénario 27.5.2 — Convergence level-triggered (poste hors ligne) (lab — ACTION HUMAINE Henri)
+
+1. Affecter une app à un poste **hors ligne** pendant la fenêtre d'installation.
+2. Rallumer/reconnecter le poste plus tard.
+3. **Attendu** : le poste converge à son **prochain cycle** (boot/login/timer/
+   forcer) — l'app s'installe. Fini le poste joint qui n'installe rien : le
+   déclencheur n'est plus l'événement GPO ponctuel au boot mais le **cycle agent
+   répété** (« programmé aujourd'hui, effectif demain »).
+
+### Scénario 27.5.3 — Idempotence : poste déjà convergé → pas de re-déclenchement (lab — ACTION HUMAINE Henri)
+
+1. Sur un poste où l'ensemble cible est **déjà entièrement installé** (désiré ⊆
+   installé dans `wpkg.xml`), relancer un cycle.
+2. **Attendu** : `Test` est vrai → statut `applications` **`compliant`**, WPKG
+   **n'est PAS re-déclenché** (level-triggered, pas d'effet cumulatif). Aucune
+   ré-installation.
+
+### Scénario 27.5.4 — App retirée des affectations → libère son siège (lab + base — ACTION HUMAINE Henri)
+
+1. Retirer une app des affectations d'un poste, relancer un cycle.
+2. **Attendu** : l'app disparaît de l'ensemble cible (état) ; l'agent ne l'exige
+   plus installée et la **ligne d'inventaire** `agent_application_inventory` est
+   **nettoyée** (level-triggered — siège libéré). L'agent ne **désinstalle pas**
+   l'app de lui-même (c'est WPKG qui le ferait via `<remove>`).
+
+### Scénario 27.5.5 — Échec d'install → `error`, jamais un faux `compliant` (lab — ACTION HUMAINE Henri)
+
+1. Affecter une app dont l'installeur échoue (ex. code 1603), relancer un cycle.
+2. **Attendu** : WPKG est déclenché mais l'app reste absente de `wpkg.xml` après
+   le run → l'agent rapporte le type `applications` en **`error`** + `detail`
+   (jamais un `compliant` optimiste — leçon 🟠 27.4 #7) ; l'inventaire marque
+   cette app `error` (siège non occupé). Les apps saines du même cycle convergent
+   (effort maximal) ; les autres types convergent (isolation).
+
+### Scénario 27.5.6 — Livraison native : shim supprimé, bundle Apache statique (navigateur + lab — ACTION HUMAINE Henri)
+
+1. Vérifier que `/wpkg/hosts.xml` et `/wpkg/profiles.xml` ne sont **plus servis**
+   (routes supprimées).
+2. `php artisan wpkg:bundle` génère le sous-dossier (scripts + `packages.xml` avec
+   `SE4FS_NAME` substitué) ; Apache le sert en **statique** ; `wpkg.cmd` (patché)
+   le télécharge en **HTTP** (plus de XCOPY SMB) ; `wpkg-se4.js` (patché) lit le
+   catalogue HTTP + les profils **locaux**.
+3. **Attendu** : un poste télécharge le bundle depuis Apache (zéro charge Laravel),
+   lit le profil déposé par l'agent, installe. La GPO `se4_wpkg` **n'est plus
+   publiée** par SE5 (page wpkg-deployment : action de re-publication retirée,
+   no-op informatif). Délier la GPO résiduelle côté lab (action Henri, hors
+   worktree).
+
+### Scénario 27.5.7 — Provider PG-pur, NFR7 (revue de code + curl)
+
+1. Grep garde sur `app/Services/Agent/Providers/ApplicationsStateProvider.php` :
+   `ldap|apcu|samba-tool|Cache::|LdapRecord|PackagesXml` → **vide** (commentaires
+   exceptés).
+2. **Attendu** : le provider lit `computePackages` (NON CACHÉE), jamais
+   `resolve()` (APCu). Payload `{app_id, name}` concret, jamais un id de
+   catalogue/pivot/scope, jamais de recette d'install. Item d'état à **4 clés**
+   (`type, semantics, payload, hash`).
+
+### Checklist rapide (Story 27.5)
+
+- [ ] 27.5.1 — App de parc installée par l'agent (déclenchement WPKG) ; item
+      `applications` machine dans `/state` ; inventaire en base.
+- [ ] 27.5.2 — Poste hors ligne → converge au prochain cycle (level-triggered).
+- [ ] 27.5.3 — Poste déjà convergé → `compliant`, **zéro re-déclenchement**.
+- [ ] 27.5.4 — App retirée → ligne d'inventaire nettoyée (siège libéré) ; pas de
+      désinstallation auto.
+- [ ] 27.5.5 — Échec d'install → `error` + detail (jamais faux `compliant`),
+      inventaire `error` ; isolation des autres types.
+- [ ] 27.5.6 — Shim legacy supprimé ; bundle Apache statique (`wpkg:bundle`,
+      `SE4FS_NAME` substitué) ; `wpkg.cmd`/`wpkg-se4.js` patchés ; GPO `se4_wpkg`
+      plus publiée.
+- [ ] 27.5.7 — Provider NFR7 (grep vide), payload 4 clés concret, jamais
+      `resolve()`/APCu ; golden + hashes PHP⇄Go re-bumpés à l'identique.

@@ -67,6 +67,17 @@ class ReportRequest extends FormRequest
                 'max:2000',
                 'required_if:items.*.status,' . AgentResourceStatus::Error->value,
             ],
+            // Story 27.5 — AC4 : champ ADDITIF optionnel `inventory` sur l'item
+            // `applications` (résultat PAR APP : {app_id, status, detail?}).
+            // Évolution MINEURE §9 (champ ajouté = reste v1 ; un vieux serveur
+            // l'ignorerait). Le verdict du TYPE reste PAR TYPE (items.*.status,
+            // worst-status) — l'inventaire est une DONNÉE additive, pas un
+            // verdict (grain 27.8 intact). `nullable` : les autres types ne
+            // portent pas d'inventaire.
+            'items.*.inventory' => ['nullable', 'array'],
+            'items.*.inventory.*.app_id' => ['required', 'string', 'max:191'],
+            'items.*.inventory.*.status' => ['required', Rule::enum(AgentResourceStatus::class)],
+            'items.*.inventory.*.detail' => ['nullable', 'string', 'max:2000'],
         ];
     }
 }

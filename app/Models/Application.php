@@ -49,6 +49,17 @@ use Livewire\Wireable;
 class Application extends Model implements Wireable
 {
     /**
+     * Identifiant FIGÉ du type d'état du contrat agent (`se5.desired-state/v1`,
+     * §7 — NFR12). Partagé serveur / agent / JSON / DB / UI : JAMAIS renommé en
+     * place (déprécier + ajouter en cas d'erreur). Iso {@see \App\Models\Printer}
+     * `TYPE_PRINTERS` et {@see \App\Models\AppCustomization::TYPE_APP_CONFIG}.
+     * Story 27.5 — l'agent DÉCLENCHE WPKG : ce type projette l'ensemble cible des
+     * applications (résolution {@see \App\Wpkg\Deployment\Services\WorkstationPackagesResolver})
+     * en état, payload concret `{app_id, name}`.
+     */
+    public const TYPE_APPLICATIONS = 'applications';
+
+    /**
      * La table associée au modèle
      */
     protected $table = 'applications';

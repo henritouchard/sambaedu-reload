@@ -1,0 +1,175 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Wpkg\Deployment\Services;
+
+use App\Config\SambaEduConfig;
+use Illuminate\Support\Facades\Log;
+use RuntimeException;
+
+/**
+ * Story 27.5 (D6/D7/D10) — Génère le bundle WPKG NATIF SE5 pré-substitué dans un
+ * sous-dossier PUBLIC servi en STATIQUE par Apache (PAS via Laravel).
+ *
+ * « Pareil pour tous » (clarif. Henri 2026-06-18) : le bundle ne contient QUE des
+ * artefacts identiques pour tout le parc (config d'instance) :
+ *   - `wpkg-se4.js`, `wpkg-client.vbs`, `wpkg.cmd` : scripts versionnés
+ *     (`resources/wpkg/*`, patchés D8 pour pointer SE5/local), copiés VERBATIM ;
+ *   - `packages.xml` : catalogue global, avec `SE4FS_NAME` substitué UNE FOIS à
+ *     la génération (source conf serveur — PAS l'AD, iso `packages_xml_out.php`).
+ *
+ * Le SEUL vrai custom par-poste = `profiles.xml`/`hosts.xml`, DÉPOSÉ par l'agent
+ * (D9) — JAMAIS dans ce bundle. Régénéré à la pose / au changement de conf
+ * (commande `wpkg:bundle`), pas par requête (D7 : zéro charge Laravel sur le
+ * gros download — c'est Apache qui sert le statique). Écriture atomique par
+ * fichier (tmp + rename).
+ */
+class WpkgBundleGenerator
+{
+    /**
+     * Scripts « pareil pour tous » copiés VERBATIM depuis `resources/wpkg/`
+     * (déjà patchés D8). Les `*-original`/`*.bak-*` sont exclus (références de
+     * diff, jamais servies).
+     *
+     * @var list<string>
+     */
+    private const VERBATIM_SCRIPTS = [
+        'wpkg-se4.js',
+        'wpkg-client.vbs',
+        'wpkg.cmd',
+    ];
+
+    /** Nom du catalogue source/cible. */
+    private const CATALOG = 'packages.xml';
+
+    public function __construct(
+        private readonly SambaEduConfig $config,
+    ) {}
+
+    /**
+     * Génère le bundle dans le répertoire public configuré
+     * (`config('agent.wpkg_bundle_path')`). Idempotent : régénère tout à chaque
+     * appel (snapshot de la conf + des scripts versionnés courants).
+     *
+     * @return array{path: string, files: list<string>, se4fs_name: string}
+     */
+    public function generate(): array
+    {
+        $source = $this->sourceDir();
+        $target = (string) config('agent.wpkg_bundle_path');
+        if ($target === '') {
+            throw new RuntimeException('config(agent.wpkg_bundle_path) vide — bundle WPKG non générable.');
+        }
+
+        if (! is_dir($target) && ! mkdir($target, 0o755, true) && ! is_dir($target)) {
+            throw new RuntimeException("Création du répertoire bundle impossible : {$target}");
+        }
+
+        $written = [];
+
+        // 1. Scripts « pareil pour tous » — copie verbatim (déjà patchés D8).
+        foreach (self::VERBATIM_SCRIPTS as $script) {
+            $src = $source . DIRECTORY_SEPARATOR . $script;
+            if (! is_file($src)) {
+                throw new RuntimeException("Script source du bundle introuvable : {$src}");
+            }
+            $raw = file_get_contents($src);
+            if ($raw === false) {
+                throw new RuntimeException("Lecture du script source en échec : {$src}");
+            }
+            $this->writeAtomic($target . DIRECTORY_SEPARATOR . $script, $raw);
+            $written[] = $script;
+        }
+
+        // 2. Catalogue `packages.xml` — SE4FS_NAME substitué à la génération.
+        $se4fsName = (string) ($this->config->get('se4fs_name', 'se4fs') ?? 'se4fs');
+        $catalog = $this->buildSubstitutedCatalog(
+            $source . DIRECTORY_SEPARATOR . self::CATALOG,
+        );
+        $this->writeAtomic($target . DIRECTORY_SEPARATOR . self::CATALOG, $catalog);
+        $written[] = self::CATALOG;
+
+        Log::channel('wpkg-deploy')->info('[WpkgBundleGenerator] bundle WPKG natif généré', [
+            'path' => $target,
+            'files' => $written,
+            'se4fs_name' => $se4fsName,
+        ]);
+
+        return ['path' => $target, 'files' => $written, 'se4fs_name' => $se4fsName];
+    }
+
+    /**
+     * Substitue les `<variable source="sambaedu">` du catalogue (≥ `SE4FS_NAME`,
+     * clé `se4fs_name`) depuis la conf serveur — iso `packages_xml_out.php:46-56`
+     * (jamais l'AD). Une clé absente de la conf → `value=""` (parité legacy).
+     */
+    private function buildSubstitutedCatalog(string $catalogPath): string
+    {
+        if (! is_file($catalogPath)) {
+            throw new RuntimeException("Catalogue source introuvable : {$catalogPath}");
+        }
+
+        $raw = file_get_contents($catalogPath);
+        if ($raw === false) {
+            throw new RuntimeException("Lecture du catalogue en échec : {$catalogPath}");
+        }
+
+        $dom = new \DOMDocument('1.0', 'UTF-8');
+        $dom->preserveWhiteSpace = true;
+        $prev = libxml_use_internal_errors(true);
+        $ok = $dom->loadXML($raw);
+        libxml_use_internal_errors($prev);
+        if (! $ok) {
+            throw new RuntimeException("Catalogue packages.xml invalide : {$catalogPath}");
+        }
+
+        foreach ($dom->getElementsByTagName('variable') as $variable) {
+            if (! $variable instanceof \DOMElement) {
+                continue;
+            }
+            if ($variable->getAttribute('source') !== 'sambaedu') {
+                continue;
+            }
+            // `value` porte le NOM de la clé de conf à résoudre (ex. `se4fs_name`).
+            $configKey = $variable->getAttribute('value');
+            $resolved = $this->config->get($configKey, null);
+            // Parité legacy : clé absente → value vide (jamais un placeholder cuit).
+            $variable->setAttribute('value', $resolved !== null ? (string) $resolved : '');
+        }
+
+        $out = $dom->saveXML();
+        if ($out === false) {
+            throw new RuntimeException("Sérialisation du catalogue substitué en échec : {$catalogPath}");
+        }
+
+        return $out;
+    }
+
+    /**
+     * Répertoire source des artefacts versionnés (`resources/wpkg/`).
+     * Surchargeable via `config('sambaedu.wpkg.bundle_source_path')` (tests).
+     */
+    private function sourceDir(): string
+    {
+        $configured = (string) config('sambaedu.wpkg.bundle_source_path', '');
+
+        return $configured !== '' ? $configured : base_path('resources/wpkg');
+    }
+
+    /**
+     * Écriture atomique (tmp + rename) — Apache ne sert jamais un fichier à demi
+     * écrit. chown www-admin reste une action serveur (convention storage).
+     */
+    private function writeAtomic(string $path, string $content): void
+    {
+        $tmp = $path . '.tmp';
+        if (file_put_contents($tmp, $content) === false) {
+            throw new RuntimeException("Écriture du bundle en échec : {$tmp}");
+        }
+        if (! rename($tmp, $path)) {
+            @unlink($tmp);
+            throw new RuntimeException("Rename atomique du bundle en échec : {$tmp} → {$path}");
+        }
+    }
+}

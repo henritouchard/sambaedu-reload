@@ -597,6 +597,42 @@ story 4.8) avec son service de résolution. **On la LIT, on ne la double pas**
   sujet **roaming** serveur (Mécanisme B, pas une policy client) → renvoyé au
   domaine roaming/`WorkstationEnvironment` (26.x / story de suivi).
 
+### `applications` — `aggregate` / `machine` (Story 27.5)
+
+- **Provider `ApplicationsStateProvider`** (`aggregate` / `machine`) : projection
+  en LECTURE SEULE de l'**ensemble cible WPKG** d'un poste vers des candidats
+  d'état. Un candidat **par `app_id` affecté** (union poste + groupes +
+  dépendances transitives), payload concret `{app_id, name}`.
+- **Single source of truth, NON CACHÉE (NFR7).** Le provider réutilise la
+  résolution WPKG existante via
+  `WorkstationPackagesResolver::computePackages($hostname)` — la méthode **NON
+  CACHÉE** (la logique d'union 4 sources + BFS de dépendances). Il n'appelle
+  **JAMAIS** le wrapper `resolve()` (qui enveloppe `Cache::remember`/APCu —
+  interdit dans un provider). Réimplémenter l'union/BFS ici divergerait de WPKG
+  réel → interdit. Le grep garde `ldap|apcu|samba-tool|Cache::|LdapRecord|PackagesXml`
+  est **vide** (commentaires exceptés).
+  > ⚠️ **Préempter un faux positif de revue.** La précédence 27.3bis (où
+  > `AssociationsResolver` APCu n'a PAS été réutilisé) concernait une lecture de
+  > cache pour validation UI. Ici, la **résolution de l'ensemble** est la logique
+  > métier centrale ; on la réutilise **non cachée** → le grep reste vide.
+- **Maille `Broadcast` (D4).** `computePackages($hostname)` résout déjà l'union
+  poste + groupes + dépendances — résolution **finale, mono-sortie** (pas une
+  liste de candidats par maille à composer). On émet donc chaque app comme
+  candidat `StateMaille::Broadcast` ; le compilateur en `aggregate` fait l'union
+  sans précédence à arbitrer (tous Broadcast). Adaptation documentée (iso le
+  collapse mono-WG de 27.4) du modèle « liste de mailles » d'Epic 27 à une API de
+  résolution mono-sortie. Alternative écartée : ré-étiqueter par maille d'origine
+  (coûteux, sans valeur — aggregate ⇒ union de toute façon).
+- **Portée MACHINE** (leçon 🔴 27.4 #1) : WPKG installe machine-wide → le service
+  SYSTEM déclenche. `sourceId` = `Application::id` (PK stable, déterministe &
+  injectif → ordre aggregate / ETag stable). `payload` = `{app_id, name}` —
+  jamais une recette d'install (pas de version/`<check>`/`<install>`), jamais un
+  id de catalogue/pivot/scope (invariant central, contrat §7.4).
+- **« Un tuyau, deux outils ».** Le provider projette l'**ensemble** (les
+  `app_id`), pas les recettes. Le handler agent **déclenche** WPKG (le moteur
+  déclaratif, non absorbé) et lit `wpkg.xml`. Inventaire par app rapporté en
+  champ additif (contrat §6) → `agent_application_inventory`.
+
 ### Mode `strict|default` — RETIRÉ (Story 27.8)
 
 > **Story 27.8 — RETRAIT TOTAL.** Le mécanisme `mode ∈ {strict, default}`

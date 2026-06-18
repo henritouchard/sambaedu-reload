@@ -202,6 +202,20 @@ func newAgent(echo bool) *shared.Agent {
 					Ops: &appConfigOps{log: logger},
 					Log: logger,
 				},
+				// Story 27.5 — applications (aggregate / scope MACHINE) : le
+				// SERVICE SYSTEM DÉCLENCHE le moteur WPKG local à la place de la
+				// GPO se4_wpkg. Il DONNE l'URL du bundle (Apache statique) au
+				// bootstrap + DÉPOSE le profil par-hôte (profiles.xml/hosts.xml)
+				// dans %ProgramData%\SambaEdu\wpkg (D9) + DÉCLENCHE
+				// wpkg-client.vbs (le client télécharge, l'agent non — D7), puis
+				// LIT wpkg.xml pour l'état par paquet (inventaire AC4). WPKG reste
+				// le moteur déclaratif (non absorbé). Shell-out = seule exception
+				// justifiée (déclencher un moteur externe). MACHINE et non
+				// compagnon (WPKG installe machine-wide — leçon 🔴 27.4 #1).
+				"applications": &shared.ApplicationsHandler{
+					Ops: &applicationsOps{log: logger, store: store},
+					Log: logger,
+				},
 			},
 			Log: logger,
 		},

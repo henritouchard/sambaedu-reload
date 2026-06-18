@@ -19,7 +19,13 @@ IF EXIST Z:\wpkg\wpkg-client.vbs NET USE Z: /DELETE
 
 IF EXIST "C:\Program Files\Powershell\7\pwsh.exe" ("C:\Program Files\Powershell\7\pwsh.exe" -NoProfile -Mta -NonInteractive -ExecutionPolicy Bypass -File "%ProgramFiles%\Sambaedu\install.ps1")
 
-REM WPKG
-XCOPY /Y /V /D %windir%\install\wpkg\wpkg-client.vbs %WinDir%\wpkg-client.vbs*
+REM WPKG (SambaEdu SE5 — story 27.5, D6/D8) : livraison NATIVE.
+REM Le bundle WPKG (scripts + catalogue pre-substitue) est servi STATIQUEMENT par
+REM Apache. On TELECHARGE en HTTP (au lieu du XCOPY SMB legacy) depuis l'URL du
+REM bundle donnee par l'agent dans %SE4_WPKG_BUNDLE_URL% (defaut
+REM http://%SE4FS%/wpkg/bundle). C'est le CLIENT qui telecharge (l'agent non).
+IF [%SE4_WPKG_BUNDLE_URL%]==[] (SET SE4_WPKG_BUNDLE_URL=http://%SE4FS%/wpkg/bundle)
+bitsadmin /transfer se4wpkg /download /priority normal "%SE4_WPKG_BUNDLE_URL%/wpkg-client.vbs" "%WinDir%\wpkg-client.vbs" >NUL 2>&1
+IF NOT EXIST %WinDir%\wpkg-client.vbs (powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -UseBasicParsing -Uri '%SE4_WPKG_BUNDLE_URL%/wpkg-client.vbs' -OutFile '%WinDir%\wpkg-client.vbs' } catch { exit 1 }" >NUL 2>&1)
 IF EXIST %WinDir%\wpkg-client.vbs (ECHO gpo %date%>>%WinDir%\wpkg-gpo.txt)
 IF EXIST %WinDir%\wpkg-client.vbs (%WinDir%\system32\cscript.exe //B //NoLogo %WinDir%\wpkg-client.vbs /NOTempo >NUL 2>&1)

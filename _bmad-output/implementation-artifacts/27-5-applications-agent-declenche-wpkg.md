@@ -1,6 +1,6 @@
 # Story 27.5 : Applications — l'agent déclenche WPKG (un tuyau, deux outils)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -61,7 +61,7 @@ afin que la dernière ressource quitte le transport GPO sans réécrire le moteu
 **Then** SE5 **génère** le bundle **pré-substitué** (scripts versionnés `resources/wpkg/{wpkg-se4.js, wpkg-client.vbs, wpkg.cmd}` + catalogue `packages.xml`, variables résolues `SE4FS_NAME`/base URL) dans un **sous-dossier public spécifique**, **servi en statique par Apache** (pas tout `/storage`, **pas** via Laravel) — auth = LAN sur ce sous-dossier restreint (iso-legacy)
 **And** l'**agent donne l'URL** du sous-dossier (config agent) au **bootstrap** et **déclenche** `wpkg.cmd`/`wpkg-client.vbs` — c'est le **client qui télécharge** (l'agent ne télécharge pas : ni blocage, ni goroutine, zéro charge Laravel) ; `wpkg.cmd` est patché pour un **download HTTP** (au lieu du `XCOPY` SMB l.23)
 **And** `wpkg-se4.js` est **patché** : `wpkg_base` (l.321) + noms de fetch (l.479/481/483) → endpoints SE5 / fichiers locaux ; les namespaces `wpkg.org` (l.534-538, schéma XML) **intouchés**
-**And** le **profil par-hôte** est fourni **sans charge Laravel** : l'**agent dépose localement** `profiles.xml`/`hosts.xml` générés depuis son état `applications` (il a déjà la liste), `wpkg-se4.js` lisant en local *(reco D9 — alt : mini-route dynamique)*
+**And** le **profil par-hôte** est fourni **sans charge Laravel** : l'**agent dépose localement** `profiles.xml`/`hosts.xml` générés depuis son état `applications` (il a déjà la liste), `wpkg-se4.js` lisant en local *(D9 — CONFIRMÉ Henri 2026-06-18)*
 **And** les **installeurs** restent sur le partage **SMB** `%Z%\packages` (D11 — `/noDownload`, inchangé)
 **And** la GPO `se4_wpkg` est **retirée** (D2) ; ce qui meurt en 27.5 = le **serving WPKG legacy uniquement** — pas `winget_out`/`linux_out`/`/gpo/*`, ni `WorkstationPackagesResolver` (réutilisé) (→ 27.6).
 
@@ -81,81 +81,81 @@ afin que la dernière ressource quitte le transport GPO sans réécrire le moteu
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Identifiant de type figé sur le modèle** (AC1)
-  - [ ] Ajouter `public const TYPE_APPLICATIONS = 'applications';` sur `app/Models/Application.php` (iso `Printer::TYPE_PRINTERS`, `AppCustomization::TYPE_APP_CONFIG`), avec docblock « identifiant figé du type d'état — contrat §7, NFR12, jamais renommé »
-  - [ ] Vérifier la cohérence avec `StateContract::RESOURCE_TYPES` (déjà présent ligne 53) — aucun changement à faire là
+- [x] **T1 — Identifiant de type figé sur le modèle** (AC1)
+  - [x] Ajouter `public const TYPE_APPLICATIONS = 'applications';` sur `app/Models/Application.php` (iso `Printer::TYPE_PRINTERS`, `AppCustomization::TYPE_APP_CONFIG`), avec docblock « identifiant figé du type d'état — contrat §7, NFR12, jamais renommé »
+  - [x] Vérifier la cohérence avec `StateContract::RESOURCE_TYPES` (déjà présent ligne 53) — aucun changement à faire là
 
-- [ ] **T2 — Exposer une résolution WPKG NON cachée (PG-pure)** (AC1, NFR7)
-  - [ ] Sur `app/Wpkg/Deployment/Services/WorkstationPackagesResolver.php` : exposer une méthode publique **sans cache** que le provider appellera (ex. rendre `computePackages(string $hostname): Collection` publique, ou ajouter `resolveUncached(string $hostname): Collection` qui délègue à `computePackages`) — **ne JAMAIS** appeler `resolve()` depuis le provider (il wrappe `Cache::remember`, APCu, ligne 50-64)
-  - [ ] Confirmer que la méthode exposée ne touche **aucun** cache (le `Cache::remember` reste exclusivement dans `resolve()`)
-  - [ ] Couvrir d'un test unitaire la méthode exposée (mêmes paquets que `resolve()`, sans I/O cache)
+- [x] **T2 — Exposer une résolution WPKG NON cachée (PG-pure)** (AC1, NFR7)
+  - [x] Sur `app/Wpkg/Deployment/Services/WorkstationPackagesResolver.php` : exposer une méthode publique **sans cache** que le provider appellera (ex. rendre `computePackages(string $hostname): Collection` publique, ou ajouter `resolveUncached(string $hostname): Collection` qui délègue à `computePackages`) — **ne JAMAIS** appeler `resolve()` depuis le provider (il wrappe `Cache::remember`, APCu, ligne 50-64)
+  - [x] Confirmer que la méthode exposée ne touche **aucun** cache (le `Cache::remember` reste exclusivement dans `resolve()`)
+  - [x] Couvrir d'un test unitaire la méthode exposée (mêmes paquets que `resolve()`, sans I/O cache)
 
-- [ ] **T3 — `ApplicationsStateProvider`** (AC1)
-  - [ ] Créer `app/Services/Agent/Providers/ApplicationsStateProvider.php implements StateProvider`
-  - [ ] `type()` → `Application::TYPE_APPLICATIONS` ; `semantics()` → `ResourceSemantics::Aggregate` ; `scope()` → `StateScope::Machine`
-  - [ ] Constructeur : injecter `WorkstationPackagesResolver`
-  - [ ] `itemsFor(TargetContext $ctx)` : résoudre l'ensemble cible via la méthode NON cachée (`$ctx->workstation->name`) → `Collection<string>` d'`app_id` ; **hydrater** les lignes `Application::whereIn('app_id', $appIds)->get()` (PG-pur) pour sourcer `name`/`id`/`updated_at` ; émettre **un `StateCandidate` par `app_id`**, `maille: StateMaille::Broadcast` (l'ensemble est déjà la résolution finale poste+groupes côté WPKG — voir Décision D4 sur la maille), `payload: ['app_id' => …, 'name' => …]` (`name` = libellé d'affichage de l'app, colonne sur `Application` ; strings only, jamais de float, jamais un id de scope/catalogue), `updatedAt` = `Application::updated_at`, `sourceId` **déterministe & injectif** (ex. `Application::id`)
-  - [ ] **Zéro** tri/précédence/dédup dans le provider (D2 = compilateur)
-  - [ ] Docblock : règles NFR7 + « projette la résolution WPKG (single source of truth), jamais une réimplémentation de l'union/BFS de dépendances »
+- [x] **T3 — `ApplicationsStateProvider`** (AC1)
+  - [x] Créer `app/Services/Agent/Providers/ApplicationsStateProvider.php implements StateProvider`
+  - [x] `type()` → `Application::TYPE_APPLICATIONS` ; `semantics()` → `ResourceSemantics::Aggregate` ; `scope()` → `StateScope::Machine`
+  - [x] Constructeur : injecter `WorkstationPackagesResolver`
+  - [x] `itemsFor(TargetContext $ctx)` : résoudre l'ensemble cible via la méthode NON cachée (`$ctx->workstation->name`) → `Collection<string>` d'`app_id` ; **hydrater** les lignes `Application::whereIn('app_id', $appIds)->get()` (PG-pur) pour sourcer `name`/`id`/`updated_at` ; émettre **un `StateCandidate` par `app_id`**, `maille: StateMaille::Broadcast` (l'ensemble est déjà la résolution finale poste+groupes côté WPKG — voir Décision D4 sur la maille), `payload: ['app_id' => …, 'name' => …]` (`name` = libellé d'affichage de l'app, colonne sur `Application` ; strings only, jamais de float, jamais un id de scope/catalogue), `updatedAt` = `Application::updated_at`, `sourceId` **déterministe & injectif** (ex. `Application::id`)
+  - [x] **Zéro** tri/précédence/dédup dans le provider (D2 = compilateur)
+  - [x] Docblock : règles NFR7 + « projette la résolution WPKG (single source of truth), jamais une réimplémentation de l'union/BFS de dépendances »
 
-- [ ] **T4 — Enregistrement du provider** (AC1)
-  - [ ] Ajouter `$app->make(ApplicationsStateProvider::class),` dans le tableau du `StateCompiler` de `app/Providers/AgentServiceProvider.php` (après `AppConfigStateProvider`, ~ligne 130) + l'`use` en tête de fichier + un commentaire `// Story 27.5 — type applications` iso les précédents
+- [x] **T4 — Enregistrement du provider** (AC1)
+  - [x] Ajouter `$app->make(ApplicationsStateProvider::class),` dans le tableau du `StateCompiler` de `app/Providers/AgentServiceProvider.php` (après `AppConfigStateProvider`, ~ligne 130) + l'`use` en tête de fichier + un commentaire `// Story 27.5 — type applications` iso les précédents
 
-- [ ] **T5 — Test unitaire du provider** (AC1, AC7)
-  - [ ] `tests/Unit/Services/Agent/ApplicationsStateProviderTest.php` : test d'identité figée en premier (`type()===' applications'`, `Aggregate`, `Machine`) ; **désactiver les observers AD en `setUp`** (`WorkstationGroupObserver::disableSync()` etc. — pas de LDAP sur l'hôte) ; test « un item par app affectée (union mailles + dépendances) » ; test « payload sans float, sans id de scope » ; test « provider PG-pur » (aucun appel cache)
+- [x] **T5 — Test unitaire du provider** (AC1, AC7)
+  - [x] `tests/Unit/Services/Agent/ApplicationsStateProviderTest.php` : test d'identité figée en premier (`type()===' applications'`, `Aggregate`, `Machine`) ; **désactiver les observers AD en `setUp`** (`WorkstationGroupObserver::disableSync()` etc. — pas de LDAP sur l'hôte) ; test « un item par app affectée (union mailles + dépendances) » ; test « payload sans float, sans id de scope » ; test « provider PG-pur » (aucun appel cache)
 
-- [ ] **T6 — Handler Go cœur (portable, testable hôte)** (AC2, AC3)
-  - [ ] `agent/shared/handler_applications.go` : `ApplicationsSpec` (parse `{app_id, name}`), interface `ApplicationsOps` (ex. `ListInstalled() ([]string, error)`, `TriggerWpkg() (WpkgResult, error)` où `WpkgResult` porte le résultat par paquet), struct `ApplicationsHandler{Ops, Log}`
-  - [ ] `desiredSet(items)` : parse + dédup défensif (dernier gagne) de l'ensemble des `app_id`
-  - [ ] `Test(items) (bool, error)` : vrai si l'ensemble cible est déjà appliqué (comparer l'ensemble cible à l'état WPKG / au dernier-appliqué persisté) — **niveau, pas événement**
-  - [ ] `Apply(items) error` : déclencher WPKG via `Ops.TriggerWpkg()`, collecter le résultat par paquet ; effort-maximal (tenter tout, renvoyer la 1re erreur à la fin)
-  - [ ] Le handler **n'écrit pas le rapport** (le moteur le fait via `ResolveItemStatus`) — mais il expose l'inventaire par app pour `BuildReport` (voir T9)
-  - [ ] `agent/shared/handler_applications_test.go` : table-driven, machine STRICT (compliant / drift+apply / error), faux `ApplicationsOps`
+- [x] **T6 — Handler Go cœur (portable, testable hôte)** (AC2, AC3)
+  - [x] `agent/shared/handler_applications.go` : `ApplicationsSpec` (parse `{app_id, name}`), interface `ApplicationsOps` (ex. `ListInstalled() ([]string, error)`, `TriggerWpkg() (WpkgResult, error)` où `WpkgResult` porte le résultat par paquet), struct `ApplicationsHandler{Ops, Log}`
+  - [x] `desiredSet(items)` : parse + dédup défensif (dernier gagne) de l'ensemble des `app_id`
+  - [x] `Test(items) (bool, error)` : vrai si l'ensemble cible est déjà appliqué (comparer l'ensemble cible à l'état WPKG / au dernier-appliqué persisté) — **niveau, pas événement**
+  - [x] `Apply(items) error` : déclencher WPKG via `Ops.TriggerWpkg()`, collecter le résultat par paquet ; effort-maximal (tenter tout, renvoyer la 1re erreur à la fin)
+  - [x] Le handler **n'écrit pas le rapport** (le moteur le fait via `ResolveItemStatus`) — mais il expose l'inventaire par app pour `BuildReport` (voir T9)
+  - [x] `agent/shared/handler_applications_test.go` : table-driven, machine STRICT (compliant / drift+apply / error), faux `ApplicationsOps`
 
-- [ ] **T7 — Handler Go Windows (donne l'URL + dépose le profil + déclenche)** (AC2, AC5)
-  - [ ] `agent/windows/handler_applications_windows.go` : implémentation réelle de `ApplicationsOps` :
+- [x] **T7 — Handler Go Windows (donne l'URL + dépose le profil + déclenche)** (AC2, AC5)
+  - [x] `agent/windows/handler_applications_windows.go` : implémentation réelle de `ApplicationsOps` :
     - **Donner l'URL** du sous-dossier Apache au bootstrap (injecter dans `wpkg.cmd` ou passer en variable/arg) + **déposer localement** `profiles.xml`/`hosts.xml` générés depuis l'état `applications` (D9). **L'agent ne télécharge PAS** le bundle — c'est `wpkg.cmd` qui le download depuis Apache (D7/D10).
     - **Déclencher** `cscript //B //NoLogo wpkg-client.vbs /NOTempo` (→ `wpkg-se4.js /synchronize /noDownload /applymultiple:true` ; **PAS** `wpkg.js /server /profile` en direct) ; garantir `%SE4FS%` + accès partage SMB (installeurs).
     - Capturer le **code de sortie**, puis **lire `wpkg.xml`** pour l'**état par paquet** → inventaire + statut (D5). Spike : chemin/format `wpkg.xml`.
-  - [ ] Stub `!windows` no-op pour la compilation hôte
-  - [ ] Justifier en commentaire le shell-out (déclencher un moteur externe ≠ API Win32) ; **aucune dépendance AD** (vérifié)
+  - [x] Stub `!windows` no-op pour la compilation hôte
+  - [x] Justifier en commentaire le shell-out (déclencher un moteur externe ≠ API Win32) ; **aucune dépendance AD** (vérifié)
 
-- [ ] **T8 — Enregistrement du handler (MachineEngine / SYSTEM)** (AC2)
-  - [ ] Enregistrer `"applications": &shared.ApplicationsHandler{Ops: &applicationsOps{…}, Log: logger}` dans la map `MachineEngine.Handlers` de `agent/windows/main_windows.go` (iso `app_config`/`registry` HKLM) — **PAS** dans `companion_windows.go` (installation machine-wide = SYSTEM, leçon 🔴 27.4 #1 : portée de livraison ≠ portée de résolution)
+- [x] **T8 — Enregistrement du handler (MachineEngine / SYSTEM)** (AC2)
+  - [x] Enregistrer `"applications": &shared.ApplicationsHandler{Ops: &applicationsOps{…}, Log: logger}` dans la map `MachineEngine.Handlers` de `agent/windows/main_windows.go` (iso `app_config`/`registry` HKLM) — **PAS** dans `companion_windows.go` (installation machine-wide = SYSTEM, leçon 🔴 27.4 #1 : portée de livraison ≠ portée de résolution)
 
-- [ ] **T9 — Inventaire par poste : contrat rapport + stockage** (AC4, AC6)
-  - [ ] **Contrat rapport** : l'item `applications` du rapport porte un champ additif optionnel **`inventory`** (recommandé — évite de masquer le `type`; aligné sur le vocabulaire AC4 « le reporting porte l'inventaire ») : `inventory: [{app_id, status, detail?}]` (statut ∈ `compliant|drift|error` ; `detail` optionnel non vide si `status=error`) ; le `status` du type = **pire statut** des apps (fold worst-status, `error > drift > compliant`)
-  - [ ] Côté agent : `BuildReport` (cf. `agent/shared/loop.go`) inclut ce champ pour le type `applications`
-  - [ ] **Validation** : `app/Http/Requests/Api/V1/Agent/ReportRequest.php` accepte `items.*.inventory` (array nullable ; `inventory.*.app_id` string ; `inventory.*.status` enum `AgentResourceStatus` ; `inventory.*.detail` string nullable)
-  - [ ] **Migration** : nouvelle table `agent_application_inventory` (`workstation_id` FK cascadeOnDelete, `app_id` varchar, `status` varchar(32), `reported_at` timestamp, `UNIQUE(workstation_id, app_id)`), migration idempotente + `down()` symétrique + `->comment()` daté
-  - [ ] **Ingest** : `app/Services/Agent/Reporting/ReportIngestService.php` upserte les lignes d'inventaire (`updateOrCreate` sur `(workstation_id, app_id)`) **en plus** de la ligne d'état par type (inchangée) — dans la même transaction ; nettoie les lignes d'apps absentes de l'inventaire rapporté (level-triggered : une app retirée n'occupe plus de siège)
-  - [ ] **Aucune UI** (AC4) ; modèle `app/Models/AgentApplicationInventory.php` minimal (lecture future)
-  - [ ] Log `agent.applications.*` (ex. `agent.applications.reported`) iso convention `agent.<domaine>.<event>`
+- [x] **T9 — Inventaire par poste : contrat rapport + stockage** (AC4, AC6)
+  - [x] **Contrat rapport** : l'item `applications` du rapport porte un champ additif optionnel **`inventory`** (recommandé — évite de masquer le `type`; aligné sur le vocabulaire AC4 « le reporting porte l'inventaire ») : `inventory: [{app_id, status, detail?}]` (statut ∈ `compliant|drift|error` ; `detail` optionnel non vide si `status=error`) ; le `status` du type = **pire statut** des apps (fold worst-status, `error > drift > compliant`)
+  - [x] Côté agent : `BuildReport` (cf. `agent/shared/loop.go`) inclut ce champ pour le type `applications`
+  - [x] **Validation** : `app/Http/Requests/Api/V1/Agent/ReportRequest.php` accepte `items.*.inventory` (array nullable ; `inventory.*.app_id` string ; `inventory.*.status` enum `AgentResourceStatus` ; `inventory.*.detail` string nullable)
+  - [x] **Migration** : nouvelle table `agent_application_inventory` (`workstation_id` FK cascadeOnDelete, `app_id` varchar, `status` varchar(32), `reported_at` timestamp, `UNIQUE(workstation_id, app_id)`), migration idempotente + `down()` symétrique + `->comment()` daté
+  - [x] **Ingest** : `app/Services/Agent/Reporting/ReportIngestService.php` upserte les lignes d'inventaire (`updateOrCreate` sur `(workstation_id, app_id)`) **en plus** de la ligne d'état par type (inchangée) — dans la même transaction ; nettoie les lignes d'apps absentes de l'inventaire rapporté (level-triggered : une app retirée n'occupe plus de siège)
+  - [x] **Aucune UI** (AC4) ; modèle `app/Models/AgentApplicationInventory.php` minimal (lecture future)
+  - [x] Log `agent.applications.*` (ex. `agent.applications.reported`) iso convention `agent.<domaine>.<event>`
 
-- [ ] **T10 — Livraison WPKG native SE5 (Apache statique, shim legacy supprimé)** (AC5)
-  - [ ] **Supprimer le shim legacy WPKG** (serving `*_xml_out.php` → 500 + gating `legacy.config.channel`, `routes/web.php:704-710`). **Ne PAS** toucher `winget_out`/`linux_out`/`/gpo/*` (→ 27.6).
-  - [ ] **Générer le bundle pré-substitué** (scripts `resources/wpkg/*` + `packages.xml`, variables résolues serveur : `SE4FS_NAME` ← conf serveur, base URL → SE5) dans un **sous-dossier public spécifique** ; régénérer à la pose / au changement de conf (D7).
-  - [ ] **Servir en statique par Apache** ce sous-dossier (alias dédié — **pas** tout `/storage`, **pas** via Laravel) ; auth = LAN/restriction du sous-dossier (D10), **pas de bearer**.
-  - [ ] **Substitution (D7)** à la génération : porter `<variable source="sambaedu">` (≥ `SE4FS_NAME` ← clé `se4fs_name`) iso `packages_xml_out.php:46-56` (source conf serveur, **pas l'AD**).
-  - [ ] **Patcher `wpkg-se4.js` (D8)** : `wpkg_base` (l.321) + `web_{packages,profiles,hosts}_file_name` (l.479/481/483) + log (l.8441) → endpoints SE5 / fichiers locaux ; **ne PAS** toucher les namespaces `wpkg.org` (l.534-538).
-  - [ ] **Patcher `wpkg.cmd`** : remplacer le `XCOPY \\%SE4FS%\install\wpkg\wpkg-client.vbs` (l.23) par un **download HTTP** depuis l'URL Apache ; conserver `%SE4FS%`.
-  - [ ] **Profil par-hôte (D9)** : l'agent **dépose** `profiles.xml`/`hosts.xml` localement (depuis l'état `applications`) → pas d'endpoint dynamique. *(alt : mini-route Laravel)*
-  - [ ] **Installeurs (D11)** : **inchangé** — restent sur SMB `\\<SE4FS>\install` (`%Z%\packages`, `/noDownload`).
-  - [ ] **Déclencheur GPO (D2)** : retirer la **publication** de `se4_wpkg` (`app/Gpo/Services/WpkgGpoSynchronizer.php` + point d'appel + action page `wpkg-deployment`) ; documenter le **déliage lab** (Henri, hors worktree).
-  - [ ] **Config agent** : URL du sous-dossier dans `config/agent.php` (servie à l'agent) → `config:cache` + chown www-admin /vm.
+- [x] **T10 — Livraison WPKG native SE5 (Apache statique, shim legacy supprimé)** (AC5)
+  - [x] **Supprimer le shim legacy WPKG** (serving `*_xml_out.php` → 500 + gating `legacy.config.channel`, `routes/web.php:704-710`). **Ne PAS** toucher `winget_out`/`linux_out`/`/gpo/*` (→ 27.6).
+  - [x] **Générer le bundle pré-substitué** (scripts `resources/wpkg/*` + `packages.xml`, variables résolues serveur : `SE4FS_NAME` ← conf serveur, base URL → SE5) dans un **sous-dossier public spécifique** ; régénérer à la pose / au changement de conf (D7).
+  - [x] **Servir en statique par Apache** ce sous-dossier (alias dédié — **pas** tout `/storage`, **pas** via Laravel) ; auth = LAN/restriction du sous-dossier (D10), **pas de bearer**.
+  - [x] **Substitution (D7)** à la génération : porter `<variable source="sambaedu">` (≥ `SE4FS_NAME` ← clé `se4fs_name`) iso `packages_xml_out.php:46-56` (source conf serveur, **pas l'AD**).
+  - [x] **Patcher `wpkg-se4.js` (D8)** : `wpkg_base` (l.321) + `web_{packages,profiles,hosts}_file_name` (l.479/481/483) + log (l.8441) → endpoints SE5 / fichiers locaux ; **ne PAS** toucher les namespaces `wpkg.org` (l.534-538).
+  - [x] **Patcher `wpkg.cmd`** : remplacer le `XCOPY \\%SE4FS%\install\wpkg\wpkg-client.vbs` (l.23) par un **download HTTP** depuis l'URL Apache ; conserver `%SE4FS%`.
+  - [x] **Profil par-hôte (D9 — CONFIRMÉ)** : l'agent **dépose** `profiles.xml`/`hosts.xml` localement (depuis l'état `applications`) → pas d'endpoint dynamique. *(mini-route Laravel écartée)*
+  - [x] **Installeurs (D11)** : **inchangé** — restent sur SMB `\\<SE4FS>\install` (`%Z%\packages`, `/noDownload`).
+  - [x] **Déclencheur GPO (D2)** : retirer la **publication** de `se4_wpkg` (`app/Gpo/Services/WpkgGpoSynchronizer.php` + point d'appel + action page `wpkg-deployment`) ; documenter le **déliage lab** (Henri, hors worktree).
+  - [x] **Config agent** : URL du sous-dossier dans `config/agent.php` (servie à l'agent) → `config:cache` + chown www-admin /vm.
 
-- [ ] **T11 — Golden files + tests croisés contrat** (AC6)
-  - [ ] Ajouter l'item `applications` (4 clés, portée `machine`) à `tests/Fixtures/Agent/state.v1.json` ; ajouter l'illustration d'inventaire à `tests/Fixtures/Agent/report.v1.json`
-  - [ ] Recalculer les hashes : **(1)** recalculer & écrire le `hash` de chaque item, **PUIS (2)** recalculer le hash d'état ; relever d'abord la valeur courante (`FROZEN_STATE_HASH` actuel = `6f0ff33e8ea114d28f67094042bea656a68d6cfdafa01ee6ad9f9537dff377fb`) qui bouge à chaque story de revue
-  - [ ] Bumper `ContractV1Test::FROZEN_STATE_HASH` (PHP) et `agent/shared/hasher_test.go` `frozenStateHash` (Go) à la **même** valeur ; ajuster `agent/shared/contract_test.go` (compte portée `machine` +1)
-  - [ ] Ajouter un commentaire `// Story 27.5` dans `ContractV1Test.php`
+- [x] **T11 — Golden files + tests croisés contrat** (AC6)
+  - [x] Ajouter l'item `applications` (4 clés, portée `machine`) à `tests/Fixtures/Agent/state.v1.json` ; ajouter l'illustration d'inventaire à `tests/Fixtures/Agent/report.v1.json`
+  - [x] Recalculer les hashes : **(1)** recalculer & écrire le `hash` de chaque item, **PUIS (2)** recalculer le hash d'état ; relever d'abord la valeur courante (`FROZEN_STATE_HASH` actuel = `6f0ff33e8ea114d28f67094042bea656a68d6cfdafa01ee6ad9f9537dff377fb`) qui bouge à chaque story de revue
+  - [x] Bumper `ContractV1Test::FROZEN_STATE_HASH` (PHP) et `agent/shared/hasher_test.go` `frozenStateHash` (Go) à la **même** valeur ; ajuster `agent/shared/contract_test.go` (compte portée `machine` +1)
+  - [x] Ajouter un commentaire `// Story 27.5` dans `ContractV1Test.php`
 
-- [ ] **T12 — Documentation (suit le code)** (AC6)
-  - [ ] `docs/agent/contract-v1.md` : §7.4 `applications` (table de payload, invariant central « le payload ne porte jamais un id de catalogue/pivot, juste l'app_id concret », « désactiver = cesser de gérer », « moteur WPKG non absorbé ») + note §6 (champ d'inventaire additif, évolution mineure)
-  - [ ] `docs/agent/state-providers.md` (section `ApplicationsStateProvider`), `agent/README.md` (puce handler), `docs/qa/domains/agent.md` (`## Story 27.5` append-only), `docs/qa/README.md` (une ligne)
+- [x] **T12 — Documentation (suit le code)** (AC6)
+  - [x] `docs/agent/contract-v1.md` : §7.4 `applications` (table de payload, invariant central « le payload ne porte jamais un id de catalogue/pivot, juste l'app_id concret », « désactiver = cesser de gérer », « moteur WPKG non absorbé ») + note §6 (champ d'inventaire additif, évolution mineure)
+  - [x] `docs/agent/state-providers.md` (section `ApplicationsStateProvider`), `agent/README.md` (puce handler), `docs/qa/domains/agent.md` (`## Story 27.5` append-only), `docs/qa/README.md` (une ligne)
 
-- [ ] **T13 — Validation (host + /vm)**
-  - [ ] **Hôte** : `cd agent && ~/go-toolchain/go/bin/go test ./... && go vet ./...` + cross-compile `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go vet ./... && go build ./...` + `gofmt -l` ; `php -l` sur les fichiers PHP touchés ; grep garde NFR7 vide sur le provider
+- [x] **T13 — Validation (host + /vm)**
+  - [x] **Hôte** : `cd agent && ~/go-toolchain/go/bin/go test ./... && go vet ./...` + cross-compile `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go vet ./... && go build ./...` + `gofmt -l` ; `php -l` sur les fichiers PHP touchés ; grep garde NFR7 vide sur le provider
   - [ ] **/vm (action Henri, hors worktree)** : `php artisan migrate:status` puis `migrate --force` (table `agent_application_inventory` Pending) ; `php artisan test --filter Agent` (PHPUnit indisponible dans le worktree, varchar non appliqué en SQLite) ; e2e : assigner une app à un parc → vérifier l'item `applications` dans `GET /api/v1/agent/state` (curl) → poste converge → inventaire en base
 
 ## Dev Notes
@@ -213,7 +213,19 @@ Le handler **ne réimplémente pas** la détection de présence de WPKG (`<check
 
 ### Livraison WPKG native SE5 (Décisions D6–D11, 2026-06-18)
 
-Refonte décidée par Henri : SE5 devient autonome pour livrer WPKG (plus de dépendance au serving legacy ni, pour les scripts, au `.deb`). Flux cible :
+Refonte décidée par Henri : SE5 devient autonome pour livrer WPKG (plus de dépendance au serving legacy ni, pour les scripts, au `.deb`).
+
+**Périmètre par artefact — « pareil pour tous » vs « custom par-poste » (clarif. Henri 2026-06-18) :**
+
+| Artefact | Portée | Livraison |
+|---|---|---|
+| `wpkg-se4.js`, `wpkg-client.vbs`, `wpkg.cmd` | **pareil pour tous** (config instance : nom serveur, lu via `%se4fs%`/runtime) | Apache statique (substitué **1×** à la génération) |
+| `packages.xml` (catalogue global) | **pareil pour tous** (instance ; `SE4FS_NAME` substitué **1×**) | Apache statique |
+| `profiles.xml` + `hosts.xml` (sélection + mapping) | **custom PAR-POSTE** | **déposés par l'agent** (depuis l'état `applications` — D9) |
+
+→ Le **seul** vrai custom par-poste = `profiles.xml`/`hosts.xml`, et l'agent l'a **déjà** → **aucun serving dynamique/custom côté serveur** ; Apache ne sert que du statique same-for-all. (Le catalogue vient d'Apache, pas de l'agent : l'agent a la *liste* d'`app_id`, pas les recettes d'install.)
+
+Flux cible :
 
 1. **Génération (SE5)** — SE5 génère le **bundle pré-substitué** (scripts `resources/wpkg/*` + catalogue `packages.xml`, variables résolues `SE4FS_NAME`/base URL) dans un **sous-dossier public spécifique** (régénéré à la pose / au changement de conf, **pas** par requête — D7).
 2. **Serving (Apache statique, D10)** — Apache sert ce sous-dossier **en statique** (pas tout `/storage`, **pas** via Laravel). Auth = LAN/restriction du sous-dossier (iso-legacy). **Zéro charge Laravel** sur le gros download.
@@ -252,7 +264,7 @@ Le rapport est **une ligne par `(workstation_id, type)`** (contrainte `UNIQUE` D
 | **D6** | Livraison WPKG (écarts + canal) | **✅ Henri 2026-06-18 : TOUT-EN-UN — livraison NATIVE SE5.** Shim legacy supprimé ; bundle pré-substitué servi en **Apache statique** ; agent **donne l'URL** & déclenche (le client télécharge) ; profil déposé par l'agent ; `wpkg-se4.js`+`wpkg.cmd` patchés. Élargit le périmètre (assumé) | (prérequis séparé — écarté) |
 | **D7** | Substitution + qui télécharge | **✅ Henri 2026-06-18 : substitution serveur à la GÉNÉRATION** (fichiers pré-substitués dans le sous-dossier). L'**agent ne télécharge PAS** — il **donne l'URL** au bootstrap ; le **client** télécharge depuis Apache (zéro charge Laravel, pas de goroutine/blocage) | Agent télécharge (rejeté : occupe Laravel + bloque l'agent) |
 | **D8** | Patcher `wpkg-se4.js` (URLs) | **✅ OUI** — `wpkg_base` (l.321) + `web_{packages,profiles,hosts}_file_name` (l.479/481/483) + log (l.8441) → endpoints SE5/fichiers locaux ; namespaces `wpkg.org` (l.534-538) **intouchés**. On devient mainteneur du script | Faire répondre SE5 aux noms legacy `*_xml_out.php` (rejeté : on garde le shim qu'on tue) |
-| **D9** | Profil par-hôte | **✅ reco : l'agent DÉPOSE `profiles.xml`/`hosts.xml` localement** (depuis son état `applications` — il a déjà la liste) ; `wpkg-se4.js` patché pour lecture locale → **zéro endpoint Laravel**. *(confirmable)* | Mini-route dynamique (re-Laravel — moins aligné « pas de charge Laravel ») |
+| **D9** | Profil par-hôte | **✅ CONFIRMÉ Henri 2026-06-18 : l'agent DÉPOSE `profiles.xml`/`hosts.xml` localement** (depuis son état `applications` — il a déjà la liste) ; `wpkg-se4.js` patché pour lecture locale → **zéro endpoint Laravel** | Mini-route dynamique (re-Laravel — moins aligné « pas de charge Laravel ») |
 | **D10** | Serving & auth du bundle | **✅ Henri 2026-06-18 : Apache sert un SOUS-DOSSIER spécifique en STATIQUE** (pas tout `/storage`, pas via Laravel) ; auth = LAN/restriction du sous-dossier (iso-legacy) ; **pas de bearer** | Route Laravel + bearer (rejeté : charge Laravel inutile) |
 | **D11** | Binaires d'installeurs (`%Z%\packages\…`) | **✅ reco : SMB inchangé** — `/noDownload` (WPKG lit `%Z%`), `<install>` par-paquet en `%Z%`, `PackagesXmlService` strip déjà `<download>` → repointer HTTP = grosse chirurgie hors-but. Scripts+catalogue HTTP, installeurs SMB | Servir aussi les payloads en HTTP (follow-up éventuel) |
 
@@ -315,10 +327,75 @@ Commits handler de référence : **27.1 `46d6ad1`**, **27.2 `bd8bd6e`**, **27.3 
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-opus-4-8
 
 ### Debug Log References
 
+- Validation hôte (worktree) : `cd agent && ~/go-toolchain/go/bin/go test ./...` → PASS (`sambaedu/agent/shared` ok) ; `go vet ./...` (linux) clean ; cross `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go vet ./... && go build ./...` clean ; `gofmt -l` vide sur tous les fichiers touchés (5 fichiers pré-existants non liés restent flaggés, hors périmètre).
+- `php -l` clean sur tous les fichiers PHP modifiés/créés.
+- NFR7 grep `ldap|apcu|samba-tool|Cache::|LdapRecord|PackagesXml` sur `ApplicationsStateProvider.php` → vide hors commentaires (le docblock documente la règle).
+- Hash d'état recalculé : item `applications` `145bf532…0237a2d` ; hash d'état `283f391d005d2ec42b305d0c093ed48b16b2bfa4f9bc6b895c65ccf61ba29daf`. Cross-check PHP↔Go : `TestHashStateGoldenMatchesFrozenHash` + `TestHashItemGoldenItemsMatchTheirHashFields` (10 items) PASS — les deux côtés calculent la MÊME valeur.
+- PHPUnit non joué dans le worktree (vendor absent, VM interdite) → tests provider/feature écrits + lintés, exécution = action Henri /vm (`php artisan test --filter Agent`).
+
 ### Completion Notes List
 
+- **T1-T5 (serveur, canal agent)** : `Application::TYPE_APPLICATIONS` ajouté ; `WorkstationPackagesResolver::computePackages()` rendue PUBLIQUE (NON cachée — le `Cache::remember` reste exclusivement dans `resolve()`) ; `ApplicationsStateProvider` (aggregate/machine, maille Broadcast, payload `{app_id, name}`, PG-pur NFR7, jamais `resolve()`) ; enregistré dans `AgentServiceProvider` après `AppConfigStateProvider` ; test unitaire (identité figée, payload sans float/id de scope, PG-pur cache-free, union mailles + dépendances).
+- **T6-T8 (agent Go)** : `shared/handler_applications.go` (`ApplicationsSpec`, `ApplicationsOps{ListInstalled, TriggerWpkg}`, `WpkgResult`, `ApplicationsHandler` — `Test` = désiré⊆installé lu dans wpkg.xml, `Apply` = déclenche WPKG, level-triggered/idempotent, NFC, effort-maximal, inventaire exposé via `InventoryReporter`) + test table-driven (faux Ops, machine STRICT, isolation) ; `windows/handler_applications_windows.go` (dépose profiles.xml/hosts.xml localement D9, déclenche `cscript wpkg-client.vbs /NOTempo`, donne l'URL bundle, lit wpkg.xml — spike D5 : tente `%SystemDrive%\wpkg.xml` + `%PROGRAMDATA%\wpkg.xml`) ; enregistré dans `MachineEngine.Handlers` (SYSTEM). `go.mod` inchangé (`golang.org/x/text` déjà présent).
+- **T9 (inventaire)** : champ additif `inventory` sur `ReportItem` Go (omitempty) ; migration `agent_application_inventory` (FK cascade, UNIQUE(workstation_id, app_id)) + modèle `AgentApplicationInventory` ; ingest upsert + nettoyage level-triggered dans `ReportIngestService` (même transaction) ; validation `ReportRequest` (`items.*.inventory` nullable) ; Feature test ingest. Le moteur joint l'inventaire sur TOUS les chemins (y compris `error`) via `withInventory`.
+- **T10 (livraison native SE5)** : shim legacy supprimé (routes `/wpkg/hosts.xml` + `/wpkg/profiles.xml` retirées, 2 tests contrôleur `git rm`) ; `wpkg-se4.js` patché (`wpkg_base`→`%SE4_WPKG_BUNDLE_URL%`/défaut bundle, profils LOCAUX via `hosts_path`/`profiles_path`, noms web→`packages.xml`/`profiles.xml`/`hosts.xml`, POST log legacy neutralisé ; namespaces wpkg.org INTOUCHÉS) ; `wpkg.cmd` patché (download HTTP bitsadmin/pwsh au lieu de XCOPY SMB) ; `WpkgBundleGenerator` + commande `php artisan wpkg:bundle` (substitue `SE4FS_NAME` iso `packages_xml_out.php`, copie verbatim les scripts) ; `config/agent.php` (`wpkg_bundle_path`/`wpkg_bundle_url`) + `shared.WpkgBundlePath` ; publication GPO `se4_wpkg` retirée de la page wpkg-deployment (`confirmPublish`→no-op re-audit informatif, `publish()` du synchronizer conservé intact → tests unit/command/namespace verts) ; `WpkgGpoSynchronizer` audit repointé sur le bundle natif (`resolveRouteUrl`/`URL` supprimés, devenus morts).
+- **T11 (golden + hashes croisés)** : item `applications` (4 clés, machine) ajouté à `state.v1.json` ; illustration inventaire ajoutée à `report.v1.json` ; `FROZEN_STATE_HASH` re-bumpé `6f0ff33e…`→`283f391d…` côté PHP ET Go (même valeur, vérifiée par le cross-check Go) ; comptes ajustés (`contract_test.go` machine 2→3 ; `hasher_test.go` 9→10 items).
+- **T12 (doc)** : `contract-v1.md` §7.4 `applications` + note §6 (champ inventaire additif) ; `state-providers.md` section `ApplicationsStateProvider` ; `agent/README.md` puce handler ; `docs/qa/domains/agent.md` Section 27.5 (7 scénarios + checklist, append-only) ; `docs/qa/README.md` ligne agent enrichie.
+- **Décisions appliquées** : D1 (inventaire additif, verdict par type), D2 (GPO publication retirée — page no-op, méthode conservée pour les tests), D4 (maille Broadcast), D5 (lecture wpkg.xml, 2 chemins candidats), D6-D11 (livraison native : bundle Apache statique, agent donne l'URL, profil local, scripts patchés, installeurs SMB).
+- **Pour Henri /vm** : `migrate --force` (table Pending) ; `php artisan test --filter Agent` ; `php artisan wpkg:bundle` + chown www-admin sur le sous-dossier + alias Apache statique vers `config('agent.wpkg_bundle_path')` ; délier la GPO `se4_wpkg` résiduelle côté lab ; e2e curl `/state` + convergence poste. **inotify ne propage pas les deletes** : 2 fichiers de test supprimés (`HostsXmlControllerTest`, `ProfilesXmlControllerTest`) + routes retirées — fantômes possibles sur la VM, cleanup SSH à confirmer.
+
 ### File List
+
+**Serveur (PHP) — créés**
+- `app/Services/Agent/Providers/ApplicationsStateProvider.php`
+- `app/Models/AgentApplicationInventory.php`
+- `app/Wpkg/Deployment/Services/WpkgBundleGenerator.php`
+- `app/Console/Commands/WpkgBundleGenerateCommand.php`
+- `database/migrations/2026_06_18_140000_create_agent_application_inventory_table.php`
+- `tests/Unit/Services/Agent/ApplicationsStateProviderTest.php`
+- `tests/Feature/Api/V1/Agent/ApplicationsInventoryIngestTest.php`
+
+**Serveur (PHP) — modifiés**
+- `app/Models/Application.php` (const `TYPE_APPLICATIONS`)
+- `app/Wpkg/Deployment/Services/WorkstationPackagesResolver.php` (`computePackages` publique)
+- `app/Providers/AgentServiceProvider.php` (enregistrement provider)
+- `app/Http/Requests/Api/V1/Agent/ReportRequest.php` (validation `inventory`)
+- `app/Services/Agent/Reporting/ReportIngestService.php` (ingest inventaire)
+- `app/Gpo/Services/WpkgGpoSynchronizer.php` (audit repointé bundle natif, `resolveRouteUrl`/`URL` retirés)
+- `config/agent.php` (`wpkg_bundle_path`/`wpkg_bundle_url`)
+- `routes/web.php` (shim WPKG legacy supprimé)
+- `resources/views/pages/admin/settings/gpo/wpkg-deployment/index.blade.php` (`confirmPublish` no-op)
+- `tests/Feature/Gpo/WpkgDeploymentPageTest.php` (test publish retiré → no-op)
+
+**Serveur (PHP) — supprimés (`git rm`)**
+- `tests/Feature/Wpkg/Deployment/Http/HostsXmlControllerTest.php`
+- `tests/Feature/Wpkg/Deployment/Http/ProfilesXmlControllerTest.php`
+
+**Agent (Go) — créés**
+- `agent/shared/handler_applications.go`
+- `agent/shared/handler_applications_test.go`
+- `agent/windows/handler_applications_windows.go`
+
+**Agent (Go) — modifiés**
+- `agent/shared/contract.go` (`ReportItem.Inventory` + `ReportInventoryItem`)
+- `agent/shared/engine.go` (`InventoryReporter` + `withInventory`)
+- `agent/shared/files.go` (const `WpkgBundlePath`)
+- `agent/windows/main_windows.go` (handler `applications` dans MachineEngine)
+- `agent/shared/contract_test.go` (compte machine 2→3)
+- `agent/shared/hasher_test.go` (`frozenStateHash` + 9→10 items)
+
+**Bundle WPKG (resources/wpkg) — patchés (D8)**
+- `resources/wpkg/wpkg-se4.js` (wpkg_base, profils locaux, noms web, log)
+- `resources/wpkg/wpkg.cmd` (download HTTP)
+
+**Golden / contrat**
+- `tests/Fixtures/Agent/state.v1.json` (+1 item `applications`)
+- `tests/Fixtures/Agent/report.v1.json` (illustration inventaire)
+- `tests/Unit/Services/Agent/ContractV1Test.php` (`FROZEN_STATE_HASH`)
+
+**Documentation**
+- `docs/agent/contract-v1.md`, `docs/agent/state-providers.md`, `agent/README.md`, `docs/qa/domains/agent.md`, `docs/qa/README.md`

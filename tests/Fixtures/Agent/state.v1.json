@@ -28,6 +28,15 @@
                 }
             },
             "hash": "cb347596d413a14e52078fd76d180acaadfd399cb398c9cc53b8bbe2636ef8c2"
+        },
+        {
+            "type": "applications",
+            "semantics": "aggregate",
+            "payload": {
+                "app_id": "firefox",
+                "name": "Mozilla Firefox"
+            },
+            "hash": "145bf5328ba494df8bc260e650c82e1e39ded6e0b9b092466ea81450e0237a2d"
         }
     ],
     "session": [

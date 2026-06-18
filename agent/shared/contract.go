@@ -137,10 +137,26 @@ func scopeItems(envelope map[string]any, scope string) []any {
 
 // ReportItem est une entrée `items[]` du rapport §6. Le hash est OPAQUE :
 // échoué tel quel depuis l'état serveur, jamais recalculé.
+//
+// Story 27.5 (§6, évolution MINEURE) : champ ADDITIF optionnel `inventory`
+// (résultat PAR APP de l'item `applications` — un vieux serveur l'ignore, reste
+// v1). Le `status`/`hash` du type RESTENT le verdict PAR TYPE (worst-status) ;
+// l'inventaire est une DONNÉE additive, jamais un verdict per-app (grain 27.8
+// intact). `omitempty` : seul l'item `applications` le porte.
 type ReportItem struct {
-	Type   string `json:"type"`
+	Type      string                `json:"type"`
+	Status    string                `json:"status"`
+	Hash      string                `json:"hash"`
+	Detail    string                `json:"detail,omitempty"`
+	Inventory []ReportInventoryItem `json:"inventory,omitempty"`
+}
+
+// ReportInventoryItem : résultat PAR APP de l'inventaire `applications` (Story
+// 27.5 §6). `status` ∈ {compliant, drift, error} (compliant/drift = installé,
+// error = non installé) ; `detail` optionnel (omitempty).
+type ReportInventoryItem struct {
+	AppID  string `json:"app_id"`
 	Status string `json:"status"`
-	Hash   string `json:"hash"`
 	Detail string `json:"detail,omitempty"`
 }
 

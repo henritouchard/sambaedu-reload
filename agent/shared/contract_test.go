@@ -35,8 +35,10 @@ func TestParseStateGoldenFile(t *testing.T) {
 	// post-review 2026-06-17 (review #1) : `app_config` est en portée MACHINE
 	// (`policies.json` machine-wide, admin-write, écrit par le service SYSTEM ;
 	// résolu PAR PARC) → machine = 2, session reste 6.
-	if len(state.Machine) != 2 || len(state.Session) != 6 || len(state.MachineUser) != 1 {
-		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 2/6/1)",
+	// Story 27.5 : +1 item `applications` (aggregate, portée MACHINE — l'agent
+	// DÉCLENCHE WPKG, qui installe machine-wide) → machine = 3, session reste 6.
+	if len(state.Machine) != 3 || len(state.Session) != 6 || len(state.MachineUser) != 1 {
+		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 3/6/1)",
 			len(state.Machine), len(state.Session), len(state.MachineUser))
 	}
 }

@@ -285,6 +285,25 @@ inchangées par le portage) :
   **retiré** (level-triggered). **App butée sans mécanisme enterprise = non gérée**
   (zéro bricolage, limite connue). Pas de Chrome/Edge, pas de mécanisme registre,
   pas de redirection de profil (recadrage 2026-06-17).
+- **Handler `applications`** (aggregate / `machine` — Story 27.5, « un tuyau, deux
+  outils ») : **DÉCLENCHE le moteur WPKG local** (`wpkg-client.vbs /NOTempo` via
+  `cscript`, `handler_applications_windows.go` — seul shell-out justifié :
+  déclencher un moteur externe ne s'écrit pas en Win32) à la place de la GPO
+  `se4_wpkg`. Enregistré dans le **MachineEngine SYSTEM** (WPKG installe
+  machine-wide). L'agent **donne l'URL** du bundle (Apache statique) au bootstrap
+  + **dépose** localement `profiles.xml`/`hosts.xml` (`%ProgramData%\SambaEdu\wpkg`,
+  depuis l'état `applications` — D9) ; c'est le **client** qui télécharge (zéro
+  charge Laravel). Puis **lit `wpkg.xml`** (base d'état locale WPKG) pour l'état
+  PAR PAQUET. WPKG reste le **moteur déclaratif** (dépendances, `<check>/<install>`,
+  versions) — **non absorbé** : le handler ne réimplémente NI l'install, NI la
+  détection de présence, NI la résolution de dépendances. Logique pure (set cible,
+  `Test` = désiré ⊆ installé lu dans `wpkg.xml`, `Apply` = déclenche WPKG,
+  idempotent/level-triggered, NFC) dans `shared/handler_applications.go` (testée
+  hôte, faux `ApplicationsOps`). **Inventaire PAR APP** exposé au rapport (champ
+  additif `inventory`, AC4 — fondation des licences à pool). Échec d'install après
+  run = `error` (jamais un faux `compliant`, leçon 🟠 27.4 #7). Livraison NATIVE
+  SE5 : shim legacy supprimé, bundle généré (`php artisan wpkg:bundle`) + servi
+  statiquement par Apache.
 - **Rendu overlay VERROUILLÉ (Story 27.1bis)** — l'agent gère le **cycle de vie
   du rendu** (Rainmeter), pas seulement la donnée :
   - **Provisioning portable au bootstrap** (SERVICE SYSTEM, `SyncRainmeterTool`

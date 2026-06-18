@@ -100,6 +100,18 @@ type Handler interface {
 	Apply(items []StateItem) error
 }
 
+// InventoryReporter : interface OPTIONNELLE qu'un handler peut implémenter pour
+// joindre un inventaire PAR SOUS-ENTITÉ à son item de rapport (Story 27.5, AC4 —
+// le handler `applications` rapporte le résultat par app). Le moteur l'appelle
+// APRÈS le dispatch (Test/Apply) et n'attache l'inventaire que si non vide. Cela
+// NE change PAS le verdict du type (status/hash restent worst-status par type —
+// grain 27.8 intact) : l'inventaire est une DONNÉE additive.
+type InventoryReporter interface {
+	// ReportInventory : inventaire par sous-entité du DERNIER Test/Apply (vidé
+	// par le moteur dans le ReportItem du cycle). Vide → champ omis.
+	ReportInventory() []ReportInventoryItem
+}
+
 // AppliedEntry : dernier-appliqué d'un type (contrat §5) — hash OPAQUE
 // (hash d'item exclusive ou empreinte d'agrégat) + horodatage informatif.
 type AppliedEntry struct {
@@ -257,7 +269,7 @@ func (e *Engine) dispatch(handler Handler, typ string, typeItems []StateItem, ta
 	if err != nil {
 		logError(e.Log, "Convergence '%s' en échec : %v", typ, err)
 
-		return errorReportItem(typ, targetHash, err.Error()), false
+		return e.withInventory(handler, errorReportItem(typ, targetHash, err.Error())), false
 	}
 
 	verdict := ResolveItemStatus(isCompliant)
@@ -265,13 +277,31 @@ func (e *Engine) dispatch(handler Handler, typ string, typeItems []StateItem, ta
 		if err := handler.Apply(typeItems); err != nil {
 			logError(e.Log, "Convergence '%s' en échec : %v", typ, err)
 
-			return errorReportItem(typ, targetHash, err.Error()), false
+			return e.withInventory(handler, errorReportItem(typ, targetHash, err.Error())), false
 		}
 	}
 
 	logInfo(e.Log, "Convergence '%s' : %s.", typ, verdict.Status)
 
-	return ReportItem{Type: typ, Status: verdict.Status, Hash: targetHash}, verdict.ShouldPersist
+	report := ReportItem{Type: typ, Status: verdict.Status, Hash: targetHash}
+
+	return e.withInventory(handler, report), verdict.ShouldPersist
+}
+
+// withInventory joint l'inventaire PAR SOUS-ENTITÉ d'un handler (s'il implémente
+// InventoryReporter, ex. `applications`) à son item de rapport — sur TOUS les
+// chemins de sortie, y compris `error` (Story 27.5, AC4 : un verdict de type
+// `error`/`drift` porte quand même les résultats par app — fondation des
+// licences à pool). N'altère PAS le verdict par type (grain 27.8 intact) : donnée
+// additive. Vide → champ omis (omitempty).
+func (e *Engine) withInventory(handler Handler, item ReportItem) ReportItem {
+	if reporter, ok := handler.(InventoryReporter); ok {
+		if inv := reporter.ReportInventory(); len(inv) > 0 {
+			item.Inventory = inv
+		}
+	}
+
+	return item
 }
 
 // errorReportItem : item {status: error} — `detail` obligatoire non vide

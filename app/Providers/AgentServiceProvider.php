@@ -10,6 +10,7 @@ use App\Services\Agent\Enrollment\EnrollmentMatchService;
 use App\Services\Agent\Enrollment\EnrollmentService;
 use App\Services\Agent\Enrollment\TokenRotationService;
 use App\Services\Agent\Providers\AppConfigStateProvider;
+use App\Services\Agent\Providers\ApplicationsStateProvider;
 use App\Services\Agent\Providers\AssociationsStateProvider;
 use App\Services\Agent\Providers\DrivesStateProvider;
 use App\Services\Agent\Providers\OverlayMachineStateProvider;
@@ -128,6 +129,16 @@ class AgentServiceProvider extends ServiceProvider
                 // `policies.json` au chemin natif de l'install. Une ligne, zéro
                 // modif du compilateur.
                 $app->make(AppConfigStateProvider::class),
+                // Story 27.5 — type `applications` (aggregate / machine) :
+                // projection en LECTURE SEULE de l'ensemble cible WPKG d'un poste
+                // (WorkstationPackagesResolver::computePackages, méthode NON
+                // CACHÉE — NFR7, jamais l'APCu de resolve()). UN item par app_id
+                // affecté, payload concret {app_id, name} (jamais une recette
+                // d'install : WPKG reste le moteur déclaratif, non absorbé). Le
+                // handler agent DÉCLENCHE WPKG (service SYSTEM = portée machine) ;
+                // l'ensemble cible est aussi la clé d'inventaire par poste (AC4).
+                // Une ligne, zéro modif du compilateur.
+                $app->make(ApplicationsStateProvider::class),
             ],
         ));
     }

@@ -219,6 +219,28 @@ Statuts (`App\Enums\AgentResourceStatus`) — Story 27.8 : 3 statuts (le
 - `drift` — dérive détectée **et réappliquée** (la cible fait toujours loi).
 - `error` — l'application a échoué ; `detail` documente la cause.
 
+**Champ additif `inventory` (Story 27.5, évolution MINEURE §9).** L'item
+`applications` du **rapport** peut porter un champ optionnel `inventory` : un
+**résultat par application** `[{app_id, status, detail?}]` (statut ∈
+`compliant|drift|error`). C'est une **donnée additive** sous la ligne d'état par
+type — **jamais** un verdict per-app : le `status`/`hash` de l'item RESTENT le
+verdict **PAR TYPE** (pire statut des apps ; grain 27.8 intact). Le serveur
+stocke l'inventaire dans `agent_application_inventory` (clé `(workstation_id,
+app_id)`, level-triggered) — **fondation des licences à pool**, sans UI. Un
+serveur antérieur ignore ce champ (reste `v1`).
+
+```json
+{
+  "type": "applications",
+  "status": "drift",
+  "hash": "1a2b3c4d…",
+  "inventory": [
+    { "app_id": "firefox", "status": "compliant" },
+    { "app_id": "vlc", "status": "error", "detail": "installeur en échec (code 1603)" }
+  ]
+}
+```
+
 ## 7. Identifiants de type de ressource (NFR12 — figés)
 
 Clé de voûte du contrat, **partagés** serveur / agent / JSON / DB / UI. Ils sont
@@ -424,6 +446,72 @@ agent**.
 > (applications/WPKG). Le service SYSTEM écrit sous Program Files ; si le dossier
 > d'install est absent (app non installée), l'écriture échoue → `{status: error}`
 > pour le seul type `app_config`, les autres types convergent.
+
+### 7.4 Payload `applications` (Story 27.5)
+
+Type `applications` — sémantique **`aggregate`** (un item par application
+affectée au poste ; l'union poste + groupes + dépendances transitives), portée
+**`machine`** (WPKG installe **machine-wide** → le **service SYSTEM** déclenche ;
+leçon 🔴 27.4 #1 : portée de livraison = machine, jamais session). Le payload
+porte un identifiant de paquet WPKG **CONCRET** :
+
+```json
+{
+  "type": "applications",
+  "semantics": "aggregate",
+  "payload": {
+    "app_id": "firefox",
+    "name": "Mozilla Firefox"
+  },
+  "hash": "145bf532…0237a2d"
+}
+```
+
+| Clé | Type JSON | Sens |
+|---|---|---|
+| `app_id` | string | Identifiant de paquet WPKG ( = `package-id` de `profiles.xml` = `Application::app_id`). Clé de déclenchement ET d'inventaire. |
+| `name` | string | Libellé d'affichage de l'application (`Application::name`). Informe l'inventaire/les logs. Strings only (§4.1). |
+
+**« Un tuyau, deux outils ».** L'agent unifie le **transport** (le déclencheur),
+PAS le moteur de paquets. WPKG reste le **moteur déclaratif** (résolution de
+dépendances, `<check>/<install>/<upgrade>`, versions) — il **n'est PAS absorbé**.
+Le handler `applications` **déclenche** le moteur WPKG local
+(`wpkg-client.vbs /NOTempo`) à la place de la GPO `se4_wpkg`, **donne l'URL** du
+bundle (Apache statique) au bootstrap + **dépose** localement le profil par-hôte
+(`profiles.xml`/`hosts.xml`), puis **lit `wpkg.xml`** pour l'état par paquet. Il
+ne réimplémente **JAMAIS** l'installation, la détection de présence ou la
+résolution de dépendances.
+
+> **🔴 Invariant central (27.5).** Le payload `applications` ne porte **JAMAIS**
+> un id de catalogue/pivot/scope ni une recette d'installation (pas de version,
+> pas de `<check>`, pas de `<install>` — propriété de `packages.xml`). Juste
+> l'`app_id` concret + son libellé. L'ensemble cible est projeté en lecture seule
+> de la résolution WPKG existante (`WorkstationPackagesResolver::computePackages`,
+> méthode **NON CACHÉE** — NFR7) : single source of truth, jamais une
+> réimplémentation de l'union/BFS de dépendances.
+
+> **« Désactiver = cesser de gérer ».** Une app retirée des affectations disparaît
+> de l'ensemble cible → l'agent ne l'exige plus installée (l'inventaire la
+> libère) ; il ne la **désinstalle pas** de lui-même (c'est WPKG qui le ferait via
+> `<remove>` dans son profil — le handler ne touche jamais au poste hors du
+> déclenchement WPKG).
+
+> **Convergence level-triggered.** `Test` = « l'ensemble cible est-il déjà
+> entièrement installé ? » (désiré ⊆ installé, lu dans `wpkg.xml`) → `compliant`
+> sans re-déclenchement. Ensemble modifié / installation incomplète → `Apply`
+> (déclenche WPKG, idempotent). Échec d'install après run = `error` + `detail`
+> (jamais un faux `compliant`). Fini le poste joint qui n'installe rien : le
+> déclencheur n'est plus l'événement GPO ponctuel au boot mais le **cycle agent
+> répété** (boot/login/timer/forcer).
+
+> **Livraison NATIVE SE5 (D6).** Le shim WPKG legacy (`/wpkg/hosts.xml`,
+> `/wpkg/profiles.xml`) est **supprimé**. SE5 **génère** le bundle pré-substitué
+> (`php artisan wpkg:bundle` : scripts versionnés `resources/wpkg/*` + catalogue
+> `packages.xml`, `SE4FS_NAME` résolu) dans un sous-dossier servi en **statique
+> par Apache** (`config('agent.wpkg_bundle_path')`, pas via Laravel). Le profil
+> par-hôte est **déposé par l'agent** (D9). Les installeurs restent sur SMB
+> (D11). La GPO `se4_wpkg` n'est **plus publiée** par SE5 (l'agent est le seul
+> déclencheur — D2).
 
 ## 8. Tableau vide ≠ type absent (décision de contrat — AC1)
 

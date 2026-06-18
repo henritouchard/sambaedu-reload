@@ -12,7 +12,6 @@ use DateTimeImmutable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -243,9 +242,17 @@ class WpkgGpoSynchronizer
         $severity = WpkgGpoSyncSeverity::Ok;
         $messages = [];
 
-        // 1. URLs attendues : single source of truth (D2).
-        $hostsXmlUrl = $this->resolveRouteUrl('wpkg.hosts-xml');
-        $profilesXmlUrl = $this->resolveRouteUrl('wpkg.profiles-xml');
+        // 1. URLs attendues — Story 27.5 (D6) : le shim WPKG legacy
+        // (`/wpkg/hosts.xml` + `/wpkg/profiles.xml`) est SUPPRIMÉ, la livraison
+        // est NATIVE (bundle Apache statique + profil déposé par l'agent). La GPO
+        // `se4_wpkg` est retirée comme déclencheur (l'agent déclenche WPKG). Ces
+        // URLs sont conservées dans le DTO d'audit à titre INFORMATIF et pointent
+        // désormais le bundle natif (`config('agent.wpkg_bundle_url')`) — elles ne
+        // sont plus des endpoints dynamiques. Les noms de fichiers `hosts.xml` /
+        // `profiles.xml` y figurent (artefacts du bundle / profil local).
+        $bundleUrl = rtrim((string) config('agent.wpkg_bundle_url', ''), '/');
+        $hostsXmlUrl = ($bundleUrl !== '' ? $bundleUrl : '(bundle WPKG natif non configuré)') . '/hosts.xml';
+        $profilesXmlUrl = ($bundleUrl !== '' ? $bundleUrl : '(bundle WPKG natif non configuré)') . '/profiles.xml';
 
         // 2. Recherche de la GPO `se4_wpkg` dans l'AD.
         $gpoExists = false;
@@ -637,20 +644,6 @@ class WpkgGpoSynchronizer
         }
 
         return [true, $coverage, $severity, $messages];
-    }
-
-    /**
-     * Résout l'URL absolue d'une route 15.2. En testing/CI sans serveur HTTP
-     * configuré, `URL::route` peut lever — on retombe sur un placeholder
-     * lisible plutôt que de casser l'audit.
-     */
-    private function resolveRouteUrl(string $name): string
-    {
-        try {
-            return URL::route($name, [], true);
-        } catch (\Throwable) {
-            return '(route ' . $name . ' non résolue — vérifier APP_URL)';
-        }
     }
 
     /**

@@ -169,12 +169,19 @@ class WpkgDeploymentPageTest extends TestCase
     }
 
     #[Test]
-    public function admin_can_confirm_publish_and_sees_toast(): void
+    public function confirm_publish_is_retired_noop_and_never_calls_publish(): void
     {
+        // Story 27.5 (D2) — la publication de `se4_wpkg` est RETIRÉE : l'agent
+        // est le seul déclencheur de WPKG. `confirmPublish` ne publie plus (no-op
+        // informatif + re-audit lecture seule) → la synchro ne doit JAMAIS
+        // recevoir `publish()`.
         $this->actingAs($this->makeAdmin());
-        $audit = $this->makeReport();
-        $published = $this->makeReport(['operationId' => 'pub-op-1', 'severity' => WpkgGpoSyncSeverity::Ok]);
-        $this->bindSync($audit, $published);
+
+        /** @var WpkgGpoSynchronizer&\Mockery\MockInterface $mock */
+        $mock = Mockery::mock(WpkgGpoSynchronizer::class);
+        $mock->shouldReceive('audit')->andReturn($this->makeReport());
+        $mock->shouldNotReceive('publish'); // RETIRÉ — aucune écriture SYSVOL.
+        $this->app->bind(WpkgGpoSynchronizer::class, fn () => $mock);
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->call('openPublishModal')
@@ -183,43 +190,5 @@ class WpkgDeploymentPageTest extends TestCase
             ->assertSet('isPublishModalOpen', false)
             ->assertSet('forceFlag', false)
             ->assertSet('isPublishing', false);
-    }
-
-    #[Test]
-    public function force_checkbox_passes_through_to_synchronizer(): void
-    {
-        $this->actingAs($this->makeAdmin());
-        $audit = $this->makeReport();
-
-        /** @var WpkgGpoSynchronizer&\Mockery\MockInterface $mock */
-        $mock = Mockery::mock(WpkgGpoSynchronizer::class);
-        $mock->shouldReceive('audit')->andReturn($audit);
-        // Capture l'argument force passé à publish().
-        $forceCalledWith = null;
-        $mock->shouldReceive('publish')
-            ->andReturnUsing(function (bool $force) use (&$forceCalledWith, $audit) {
-                $forceCalledWith = $force;
-                return $audit;
-            });
-        $this->app->bind(WpkgGpoSynchronizer::class, fn () => $mock);
-
-        Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
-            ->set('forceFlag', true)
-            ->call('confirmPublish');
-
-        self::assertTrue($forceCalledWith, 'forceFlag=true doit propager publish($force=true)');
-    }
-
-    #[Test]
-    public function publish_error_renders_toast_and_keeps_audit_visible(): void
-    {
-        $this->actingAs($this->makeAdmin());
-        $audit = $this->makeReport();
-        $this->bindSync($audit, null, new \RuntimeException('lock indisponible'));
-
-        Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
-            ->call('confirmPublish')
-            ->assertSet('isPublishing', false)
-            ->assertSet('isPublishModalOpen', false);
     }
 }

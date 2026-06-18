@@ -62,7 +62,12 @@ import (
 // admin-write, écrit par le service SYSTEM ; résolu PAR PARC niveaux 1-4). Le
 // déplacement de portée RECALCULE le hash d'état (machine = 2, session = 6) ;
 // bumpé à l'IDENTIQUE côté PHP (test croisé NFR13).
-const frozenStateHash = "6f0ff33e8ea114d28f67094042bea656a68d6cfdafa01ee6ad9f9537dff377fb"
+// Re-bumpé SCIEMMENT par la Story 27.5 (§9) : ajout d'UN item `applications`
+// (aggregate, portée MACHINE) — payload v1 réel `{app_id, name}` owné par
+// ApplicationsStateProvider (projection de l'ensemble cible WPKG). Type DÉJÀ figé
+// §7, payload ajouté = forward-compatible. machine = 3, 10 items au total, hash
+// d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
+const frozenStateHash = "283f391d005d2ec42b305d0c093ed48b16b2bfa4f9bc6b895c65ccf61ba29daf"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -166,8 +171,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 9 {
-		t.Errorf("9 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4), %d vérifiés", checked)
+	if checked != 10 {
+		t.Errorf("10 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5), %d vérifiés", checked)
 	}
 }
 

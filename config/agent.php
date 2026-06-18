@@ -76,6 +76,27 @@ return [
     // → null casté 0) qui rejetterait tout upload.
     'tool_max_upload_bytes' => max(1, (int) env('AGENT_TOOL_MAX_UPLOAD_BYTES', 200 * 1024 * 1024)),
 
+    // Bundle WPKG natif SE5 (Story 27.5, D6/D7/D10) — livraison NATIVE,
+    // remplace le serving legacy `*_xml_out.php` (shim supprimé).
+    //
+    //  - `wpkg_bundle_path` : répertoire PUBLIC où SE5 GÉNÈRE le bundle
+    //    pré-substitué (scripts versionnés `resources/wpkg/*` + catalogue
+    //    `packages.xml`, variable `SE4FS_NAME` résolue à la génération). Servi
+    //    en STATIQUE par Apache via un alias dédié (PAS via Laravel, PAS tout
+    //    `/storage` — D10) ; auth = LAN/restriction du sous-dossier (iso-legacy,
+    //    pas de bearer). Convention storage non versionnée (chown www-admin uid
+    //    599 sinon serving 404 silencieux). Régénéré à la pose / au changement
+    //    de conf (commande `wpkg:bundle`). Surchargé en test (répertoire temp).
+    'wpkg_bundle_path' => env('AGENT_WPKG_BUNDLE_PATH', storage_path('app/public/wpkg/bundle')),
+
+    // URL publique du sous-dossier Apache servant le bundle (donnée à l'agent —
+    // l'agent la passe au bootstrap WPKG, il ne TÉLÉCHARGE PAS : c'est le client
+    // qui download, zéro charge Laravel — D7). Défaut dérivé d'APP_URL +
+    // `/wpkg/bundle` (iso le sous-chemin figé côté agent `shared.WpkgBundlePath`).
+    // L'agent Go dérive lui-même cette URL de son `server_url` ; cette clé est la
+    // SOURCE DE VÉRITÉ serveur (UI/diagnostic + génération).
+    'wpkg_bundle_url' => env('AGENT_WPKG_BUNDLE_URL', rtrim((string) env('APP_URL', ''), '/') . '/wpkg/bundle'),
+
     // Skin canonique d'overlay Rainmeter (Story 25.6, volet A — D7). Autorité
     // = `resources/overlay/rainmeter/SambaEduOverlay/SambaEduOverlay.ini`
     // (UTF-8, versionné) ; provisionnée (copie/symlink) sous ce chemin

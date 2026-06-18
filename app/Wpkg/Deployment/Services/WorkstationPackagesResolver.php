@@ -72,7 +72,17 @@ class WorkstationPackagesResolver
     }
 
     /**
-     * Calcul Eloquent (4 sources + dépendances transitives + dédup + tri).
+     * Calcul Eloquent (4 sources + dépendances transitives + dédup + tri),
+     * **SANS aucun cache** — le `Cache::remember` reste exclusivement dans
+     * {@see resolve()}.
+     *
+     * **PUBLIC pour le canal agent (Story 27.5, NFR7 — critère Keycloak).** Le
+     * provider d'état `ApplicationsStateProvider` projette l'ensemble cible WPKG
+     * en items d'état : il DOIT lire la résolution NON CACHÉE (un provider ne
+     * touche jamais l'APCu — interdit). C'est la SEULE source de vérité sur « ce
+     * que WPKG va installer » (union 4 sources + BFS de dépendances) ; la
+     * réimplémenter dans le provider divergerait de WPKG réel. Eloquent-pur :
+     * aucun LDAP/AD, aucun cache.
      *
      * Les postes, groupes et profils marqués `archived_at` sont
      * **silencieusement ignorés** : on les traite comme des fantômes
@@ -83,7 +93,7 @@ class WorkstationPackagesResolver
      *
      * @return Collection<int, string>
      */
-    private function computePackages(string $hostname): Collection
+    public function computePackages(string $hostname): Collection
     {
         /** @var Workstation|null $workstation */
         $workstation = Workstation::query()

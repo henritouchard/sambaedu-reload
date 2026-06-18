@@ -694,21 +694,21 @@ Route::get('api/policies/{kind}/{id}', [AppPolicyController::class, 'canonical']
 
 /*
 |--------------------------------------------------------------------------
-| Story 15.2 — Endpoints HTTP WPKG hosts.xml / profiles.xml (parité legacy)
+| Story 27.5 — Shim WPKG legacy SUPPRIMÉ (livraison NATIVE SE5, D6)
 |--------------------------------------------------------------------------
-| Pas de middleware web/auth/sambaedu.admin : confiance LAN, parité legacy
-| stricte (décision user 2026-05-04 #3). Un middleware machine optionnel
-| pourra être ajouté en Story 15.5.
-| Doivent rester déclarés AVANT la catchall legacy ci-dessous.
+| Les anciens endpoints HTTP WPKG `/wpkg/hosts.xml` (wpkg.hosts-xml) et
+| `/wpkg/profiles.xml` (wpkg.profiles-xml) — derniers vestiges du serving
+| WPKG legacy (gating `legacy.config.channel`, → 410 kill-switch / 500
+| `*_xml_out.php`) — sont RETIRÉS. La livraison WPKG est désormais NATIVE :
+|   - le catalogue `packages.xml` (pré-substitué SE4FS_NAME) + les scripts
+|     sont GÉNÉRÉS (`php artisan wpkg:bundle`) et servis en STATIQUE par Apache
+|     (sous-dossier `config('agent.wpkg_bundle_path')`, PAS via Laravel — D10) ;
+|   - le profil par-hôte (`profiles.xml`/`hosts.xml`) est DÉPOSÉ LOCALEMENT par
+|     l'agent (D9, zéro endpoint dynamique) ;
+|   - l'agent DÉCLENCHE `wpkg-client.vbs` (handler `applications`) à la place
+|     de la GPO `se4_wpkg` (publication retirée de la page wpkg-deployment).
+| `winget_out`/`linux_out`/`/gpo/*` restent INTOUCHÉS (→ 27.6).
 */
-Route::get('/wpkg/hosts.xml', \App\Wpkg\Deployment\Http\Controllers\HostsXmlController::class)
-    ->middleware('legacy.config.channel')
-    ->name('wpkg.hosts-xml')
-    ->withoutMiddleware(['web']);
-Route::get('/wpkg/profiles.xml', \App\Wpkg\Deployment\Http\Controllers\ProfilesXmlController::class)
-    ->middleware('legacy.config.channel')
-    ->name('wpkg.profiles-xml')
-    ->withoutMiddleware(['web']);
 
 /*
 |--------------------------------------------------------------------------

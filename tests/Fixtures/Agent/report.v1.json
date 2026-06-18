@@ -22,6 +22,22 @@
             "status": "error",
             "hash": "9f2c4e7a1b3d5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8",
             "detail": "service Spooler indisponible (RPC 0x6ba)"
+        },
+        {
+            "type": "applications",
+            "status": "drift",
+            "hash": "1a2b3c4d5e6f70819203a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9",
+            "inventory": [
+                {
+                    "app_id": "firefox",
+                    "status": "compliant"
+                },
+                {
+                    "app_id": "vlc",
+                    "status": "error",
+                    "detail": "installeur en échec (code 1603)"
+                }
+            ]
         }
     ]
 }

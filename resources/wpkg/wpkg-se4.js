@@ -318,7 +318,25 @@ if (se4fs == null) {
 	se4fs = "se4fs";
 }
 
-var wpkg_base = "http://" + se4fs + "/wpkg";
+/*
+ * SambaEdu SE5 (story 27.5, D8) — livraison NATIVE : le bundle pre-substitue
+ * (scripts + catalogue packages.xml) est servi STATIQUEMENT par Apache au
+ * sous-dossier passe par l'agent dans %SE4_WPKG_BUNDLE_URL% (defaut
+ * http://%se4fs%/wpkg/bundle). Le catalogue (packages.xml, identique pour tous
+ * = SE4FS_NAME substitue cote serveur) vient de ce bundle ; le profil par-hote
+ * (profiles.xml / hosts.xml) est DEPOSE LOCALEMENT par l'agent dans
+ * %SE4_WPKG_LOCAL_PROFILE_DIR% (D9 — zero endpoint Laravel). On ne touche PAS
+ * les namespaces wpkg.org (schema XML, plus bas).
+ */
+var wpkg_base = wshShell.ExpandEnvironmentStrings("%SE4_WPKG_BUNDLE_URL%");
+if (wpkg_base == null || wpkg_base == "" || wpkg_base == "%SE4_WPKG_BUNDLE_URL%") {
+	wpkg_base = "http://" + se4fs + "/wpkg/bundle";
+}
+/** dossier local ou l'agent depose profiles.xml / hosts.xml (D9) */
+var se4_local_profile_dir = wshShell.ExpandEnvironmentStrings("%SE4_WPKG_LOCAL_PROFILE_DIR%");
+if (se4_local_profile_dir == null || se4_local_profile_dir == "" || se4_local_profile_dir == "%SE4_WPKG_LOCAL_PROFILE_DIR%") {
+	se4_local_profile_dir = wshShell.ExpandEnvironmentStrings("%ProgramData%") + "\\SambaEdu\\wpkg";
+}
 
 /** forces to check for package existence but ignores wpkg.xml */
 var force = false;
@@ -387,6 +405,20 @@ var packages_path = "";
 var profiles_path = "";
 /** path from where to read host files */
 var hosts_path = "";
+
+/*
+ * SambaEdu SE5 (story 27.5, D8/D9) — le profil PAR-HOTE (profiles.xml /
+ * hosts.xml) est DEPOSE LOCALEMENT par l'agent dans %SE4_WPKG_LOCAL_PROFILE_DIR%
+ * (zero endpoint Laravel) : on pointe hosts_path / profiles_path sur ces
+ * fichiers locaux. packages_path reste vide => le CATALOGUE (packages.xml,
+ * identique pour tous) vient de wpkg_base (bundle Apache statique, HTTP). Le
+ * client lit donc : catalogue=HTTP, profil/hote=local — exactement la frontiere
+ * « pareil pour tous » (Apache) vs « custom par-poste » (depose par l'agent).
+ */
+if (se4_local_profile_dir != null && se4_local_profile_dir != "") {
+	hosts_path = se4_local_profile_dir + "\\hosts.xml";
+	profiles_path = se4_local_profile_dir + "\\profiles.xml";
+}
 
 /**
  * specify if manually installed packages should be kept during synchronization
@@ -475,12 +507,20 @@ var hostname = network.ComputerName;
 
 var logfilePattern = "wpkg-[HOSTNAME].log";
 
+/*
+ * SambaEdu SE5 (story 27.5, D8) — noms de fetch HTTP repointes vers les
+ * artefacts NATIFS servis statiquement par Apache dans le bundle (plus aucun
+ * `*_xml_out.php` legacy — shim supprime). Le CATALOGUE packages.xml (identique
+ * pour tous, SE4FS_NAME substitue cote serveur) vient du bundle ; profiles.xml /
+ * hosts.xml sont en realite lus EN LOCAL (hosts_path / profiles_path ci-dessus,
+ * deposes par l'agent — D9), ces noms web restent par coherence/repli.
+ */
 /** web file name of package database if base is an http url */
-var web_packages_file_name = "packages_xml_out.php";
+var web_packages_file_name = "packages.xml";
 /** web file name of profile database if base is an http url */
-var web_profiles_file_name = "profiles_xml_out.php?poste=" + encodeURIComponent(hostname);
+var web_profiles_file_name = "profiles.xml";
 /** web file name of hosts database if base is an http url */
-var web_hosts_file_name = "hosts_xml_out.php?poste=" + encodeURIComponent(hostname);
+var web_hosts_file_name = "hosts.xml";
 
 var web_log_url = "wpkg_log.php?poste=" + encodeURIComponent(hostname);
 
@@ -8435,13 +8475,25 @@ function cleanup() {
 		// close the log
 		getLogFile().Close();
 
-		var WinHttpReq = new ActiveXObject("WinHttp.WinHttpRequest.5.1");
-
-		// Create an HTTP request.
-		WinHttpReq.Open("GET", wpkg_base + "/" + web_log_url, false);
-
-		// Send the HTTP request.
-		WinHttpReq.Send();
+		/*
+		 * SambaEdu SE5 (story 27.5, D8) — le POST du log vers le legacy
+		 * `wpkg_log.php` est RETIRE : ce endpoint meurt avec le shim WPKG legacy.
+		 * Le RAPPORT de conformite passe desormais par l'AGENT (qui lit wpkg.xml
+		 * pour l'etat par paquet + l'inventaire AC4, et POST /api/v1/agent/report).
+		 * Le log local (wpkg-[HOSTNAME].log) reste ecrit pour le diagnostic poste.
+		 * Bloc d'envoi HTTP neutralise (try/catch defensif si une variante du
+		 * client le ressuscite).
+		 */
+		try {
+			var se4_report_log = wshShell.ExpandEnvironmentStrings("%SE4_WPKG_LEGACY_LOG_POST%");
+			if (se4_report_log == "1") {
+				var WinHttpReq = new ActiveXObject("WinHttp.WinHttpRequest.5.1");
+				WinHttpReq.Open("GET", wpkg_base + "/" + web_log_url, false);
+				WinHttpReq.Send();
+			}
+		} catch (e) {
+			// best-effort : le canal de rapport est l'agent, pas ce POST legacy.
+		}
 
 	}
 }

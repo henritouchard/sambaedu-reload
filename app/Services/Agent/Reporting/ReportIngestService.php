@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Services\Agent\Reporting;
 
 use App\Enums\AgentResourceStatus;
+use App\Models\AgentApplicationInventory;
 use App\Models\AgentReportEvent;
 use App\Models\AgentReportHistory;
 use App\Models\AgentResourceState;
+use App\Models\Application;
 use App\Models\Workstation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -75,7 +77,11 @@ class ReportIngestService
         /** @var list<array{type: string, status: AgentResourceStatus}> $driftEvents */
         $driftEvents = [];
 
-        DB::transaction(function () use ($workstation, $report, $rawPayload, &$counts, &$driftEvents): void {
+        // Story 27.5 — nombre de lignes d'inventaire upsertées (log
+        // `agent.applications.reported`). Collecté APRÈS commit.
+        $inventoryReported = 0;
+
+        DB::transaction(function () use ($workstation, $report, $rawPayload, &$counts, &$driftEvents, &$inventoryReported): void {
             // Sérialisation per-poste (review 24.1 #5) : verrou sur la ligne
             // workstation AVANT toute lecture d'état — deux POST concurrents
             // du même poste ne peuvent plus courser l'updateOrCreate (UNIQUE
@@ -125,6 +131,17 @@ class ReportIngestService
                         $driftEvents[] = ['type' => $item['type'], 'status' => $status];
                     }
                 }
+
+                // Story 27.5 — AC4 : inventaire PAR APP additif sur l'item
+                // `applications` (champ `inventory`). DONNÉE sous la ligne d'état
+                // par type (déjà upsertée ci-dessus, inchangée) — JAMAIS un
+                // verdict per-app (grain 27.8 intact, D1). Même transaction.
+                if ($item['type'] === Application::TYPE_APPLICATIONS) {
+                    $inventoryReported += $this->ingestApplicationsInventory(
+                        $workstation,
+                        $item['inventory'] ?? [],
+                    );
+                }
             }
 
             if ((bool) config('agent.report_history', false)) {
@@ -153,7 +170,63 @@ class ReportIngestService
             'counts' => $counts,
         ]);
 
+        // Story 27.5 — trace de l'inventaire applications upserté (AC4). Émis
+        // APRÈS commit (pas de trace d'un rollback). Silencieux si aucun item
+        // `applications` (les autres types ne portent pas d'inventaire).
+        if ($inventoryReported > 0) {
+            Log::channel('agent')->info('[ReportIngestService] agent.applications.reported', [
+                'action_type' => 'agent.applications.reported',
+                'workstation_id' => $workstation->id,
+                'apps' => $inventoryReported,
+            ]);
+        }
+
         return $counts;
+    }
+
+    /**
+     * Story 27.5 — AC4 : upsert l'inventaire PAR APP du poste (champ additif
+     * `inventory` de l'item `applications`) puis NETTOIE les lignes d'apps
+     * absentes du rapport (level-triggered : une app retirée n'occupe plus de
+     * siège). DONNÉE additive sous la ligne d'état par type — JAMAIS un verdict
+     * per-app (grain 27.8 intact). Appelée DANS la transaction d'ingestion.
+     *
+     * @param  list<array<string, mixed>>  $inventory `[{app_id, status, detail?}]`
+     * @return int nombre de lignes upsertées
+     */
+    private function ingestApplicationsInventory(Workstation $workstation, array $inventory): int
+    {
+        $reportedAppIds = [];
+
+        foreach ($inventory as $row) {
+            $appId = (string) ($row['app_id'] ?? '');
+            if ($appId === '') {
+                continue;
+            }
+            $status = AgentResourceStatus::from($row['status']);
+
+            AgentApplicationInventory::query()->updateOrCreate(
+                ['workstation_id' => $workstation->id, 'app_id' => $appId],
+                [
+                    'status' => $status,
+                    // Message d'erreur WPKG (ex. code 1603) — null si status ≠ error.
+                    'detail' => ($row['detail'] ?? null) ?: null,
+                    // Rafraîchi MÊME si identique (fraîcheur, iso ligne d'état).
+                    'reported_at' => now(),
+                ],
+            );
+
+            $reportedAppIds[] = $appId;
+        }
+
+        // Level-triggered : retirer les lignes d'apps qui ne sont PLUS dans
+        // l'inventaire rapporté (l'app a été désassignée → libère son siège).
+        AgentApplicationInventory::query()
+            ->where('workstation_id', $workstation->id)
+            ->when($reportedAppIds !== [], fn ($q) => $q->whereNotIn('app_id', $reportedAppIds))
+            ->delete();
+
+        return count($reportedAppIds);
     }
 
     /**

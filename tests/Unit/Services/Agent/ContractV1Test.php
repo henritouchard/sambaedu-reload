@@ -100,7 +100,17 @@ class ContractV1Test extends TestCase
     // (Mécanisme B / roaming, hors 27.4). Le déplacement de portée RECALCULE le
     // hash d'état (machine = 2 items, session = 6) ; le jumeau Go porte la même
     // valeur (test croisé NFR13).
-    private const FROZEN_STATE_HASH = '6f0ff33e8ea114d28f67094042bea656a68d6cfdafa01ee6ad9f9537dff377fb';
+    //
+    // Re-bumpé SCIEMMENT par la Story 27.5 (évolution MINEURE du contrat, §9) :
+    // ajout d'UN item `applications` (aggregate) en portée `machine` — payload
+    // v1 réel `{app_id, name}` owné par ApplicationsStateProvider (projection de
+    // l'ensemble cible WPKG, WorkstationPackagesResolver::computePackages NON
+    // CACHÉE). app_id/name CONCRETS (jamais un id de catalogue/pivot/scope),
+    // strings only (§4.1). Type DÉJÀ figé §7 ; payload ajouté =
+    // forward-compatible, pas un major → machine = 3 items, 10 items au total,
+    // hash d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte
+    // la même valeur (test croisé NFR13 — canonicalisation équivalente PHP↔Go).
+    private const FROZEN_STATE_HASH = '283f391d005d2ec42b305d0c093ed48b16b2bfa4f9bc6b895c65ccf61ba29daf';
 
     private StateHasher $hasher;
 
