@@ -184,12 +184,6 @@ new class extends Component {
 
         $parc = WorkstationGroup::query()->findOrFail($this->groupId);
 
-        // Sémantique EXCLUSIVE de l'agent (piège n°7) : ProgId DÉJÀ défini(s) sur le
-        // parc pour CE même identifier, AVANT cette composition. Le compilateur
-        // (`StateCompiler::selectExclusive`, clé = `strtolower(identifier)`) n'en
-        // applique qu'UN — si on en ajoute un 2e (progid différent), il faut prévenir.
-        $existingProgIdsForIdentifier = $this->progIdsAttachedForIdentifier($identifier);
-
         try {
             $association = $resolver->compose($identifier, $assocType, $app, $parc);
         } catch (\InvalidArgumentException $e) {
@@ -227,21 +221,25 @@ new class extends Component {
             $this->toastSuccess('Association « ' . $association->identifier . ' → ' . $association->progid . ' » ajoutée au parc.');
         }
 
-        // AVERTISSEMENT non bloquant (piège n°7) : si le parc avait DÉJÀ une asso
-        // pour CE identifier avec un ProgId DIFFÉRENT, l'agent (règle exclusive)
-        // n'en appliquera qu'une → la nouvelle peut être ignorée côté poste. On
-        // NE bloque PAS et on NE remplace PAS automatiquement (décision laissée à
-        // Henri — le compilateur tranche).
-        $conflicting = array_filter(
-            $existingProgIdsForIdentifier,
-            fn (string $p): bool => strtolower($p) !== strtolower((string) $association->progid),
-        );
-        if ($conflicting !== []) {
-            $this->toastWarning(
-                'Une association pour ' . $identifier . ' est déjà définie sur ce parc. '
-                . 'L\'agent n\'en applique qu\'une (règle exclusive) — désactivez l\'ancienne pour que '
-                . 'celle-ci prenne effet.',
-                'Association concurrente sur ce parc',
+        // Sémantique EXCLUSIVE de l'agent (piège n°7) : le compilateur
+        // (`StateCompiler::selectExclusive`, clé = `strtolower(identifier)`) n'applique
+        // qu'UNE association par identifier. Décision Henri (2026-06-18, Q2) :
+        // REMPLACEMENT AUTOMATIQUE — on détache du parc les associations concurrentes
+        // (même identifier, ProgId DIFFÉRENT) pour que la nouvelle prenne effet
+        // immédiatement (le choix déjà appliqué côté poste reste, iso piège n°5).
+        $replacedIds = array_values(array_filter(
+            $this->attachedAssociationIdsForIdentifier($identifier),
+            fn (int $id): bool => $id !== (int) $association->id,
+        ));
+        if ($replacedIds !== []) {
+            foreach (FileAssociation::query()->whereIn('id', $replacedIds)->get() as $old) {
+                $old->workstationGroups()->detach($parc->id);
+            }
+            $this->toastInfo(
+                count($replacedIds) === 1
+                    ? 'L\'association précédente pour ' . $identifier . ' a été remplacée sur ce parc (règle exclusive).'
+                    : count($replacedIds) . ' associations précédentes pour ' . $identifier . ' ont été remplacées sur ce parc (règle exclusive).',
+                'Association précédente remplacée',
             );
         }
 
@@ -286,13 +284,14 @@ new class extends Component {
     }
 
     /**
-     * ProgId des associations DÉJÀ attachées au parc courant pour un `identifier`
-     * donné (comparaison insensible à la casse, comme Windows). Sert l'avertissement
-     * « association concurrente » (sémantique exclusive de l'agent, piège n°7).
+     * Ids des associations DÉJÀ attachées au parc courant pour un `identifier` donné
+     * (comparaison insensible à la casse, comme Windows). Sert le remplacement
+     * automatique des associations concurrentes (sémantique exclusive de l'agent,
+     * piège n°7 ; décision Henri Q2).
      *
-     * @return list<string>
+     * @return list<int>
      */
-    private function progIdsAttachedForIdentifier(string $identifier): array
+    private function attachedAssociationIdsForIdentifier(string $identifier): array
     {
         $assignedIds = $this->assignedAssociationIds();
         if ($assignedIds === []) {
@@ -302,8 +301,8 @@ new class extends Component {
         return FileAssociation::query()
             ->whereIn('id', $assignedIds)
             ->whereRaw('LOWER(identifier) = ?', [strtolower($identifier)])
-            ->pluck('progid')
-            ->map(fn ($p): string => (string) $p)
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
             ->all();
     }
 

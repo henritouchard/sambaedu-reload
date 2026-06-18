@@ -74,6 +74,6 @@ class NativeApplicationSeederTest extends TestCase
         $seeder->run();
 
         self::assertSame($count, NativeApplication::query()->count(), 'rejouable, zéro doublon');
-        self::assertGreaterThanOrEqual(3, $count, 'au moins Bloc-notes/Paint/WordPad (Visionneuse retirée : exe rundll32.exe = générique non fonctionnel)');
+        self::assertGreaterThanOrEqual(2, $count, 'au moins Bloc-notes/Paint (Visionneuse retirée : rundll32 = générique non fonctionnel ; WordPad retiré : supprimé de Win11 24H2 — décision Henri Q1)');
     }
 }

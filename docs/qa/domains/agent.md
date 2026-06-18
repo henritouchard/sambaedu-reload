@@ -2885,9 +2885,9 @@ rapporté (champ additif `inventory`, AC4) → `agent_application_inventory`
 | Incident | Correctif | Angle de test |
 |----------|-----------|---------------|
 | M1/C5 — recomposer une paire depuis un parc réactivait `is_active` pour TOUS les parcs (kill-switch global contourné) | `is_active` posé uniquement à la création (`firstOrNew`), jamais réécrit sur ligne existante | Scénario 27.11.7 |
-| C4 — composer 2 apps pour la même extension : la 2e était silencieusement ignorée par l'agent (règle exclusive) sans signal UI | Toast d'avertissement non bloquant à la composition d'un `identifier` déjà associé (progid ≠) | Scénario 27.11.8 |
+| C4/Q2 — composer 2 apps pour la même extension : la 2e était silencieusement ignorée par l'agent (règle exclusive) sans signal UI | **Remplacement AUTOMATIQUE** (décision Henri Q2, 2026-06-18) : l'ancienne association du même `identifier` (progid ≠) est détachée du parc, la nouvelle la remplace + toast | Scénario 27.11.8 |
 | C2 — générique d'une native curée affiché « applicable » à tort (faux positif prédictif) | Tout ProgId générique (`Applications\<exe>`) → badge **« best-effort »** indépendamment de `source` (AC5) | Scénario 27.11.3 étendu |
-| C1 — Visionneuse de photos seedée avec `rundll32.exe` (générique structurellement inopérant) | Entrée retirée du catalogue natif ; WordPad conservé+commenté (curation Win11 = décision produit) | Vérif seed `native_applications` |
+| C1/Q1 — Visionneuse de photos seedée avec `rundll32.exe` (générique structurellement inopérant) | Entrée retirée du catalogue natif ; **WordPad AUSSI retiré** (supprimé de Win11 24H2 — décision Henri Q1) → reste Bloc-notes + Paint | Vérif seed `native_applications` |
 
 ### Scénario 27.11.7 — `is_active` n'est PAS réactivé en recomposant depuis un autre parc (navigateur, hors lab)
 
@@ -2895,11 +2895,11 @@ rapporté (champ additif `inventory`, AC4) → `agent_application_inventory`
 - **When** un admin recompose la même paire `(extension, app)` depuis un parc différent.
 - **Then** la ligne `file_associations` **reste** `is_active=false` (la recomposition n'écrit `is_active` qu'à la création) → la paire reste coupée côté provider pour tous les parcs. Vérif SQL : `is_active` inchangé après `compose()`.
 
-### Scénario 27.11.8 — Avertissement « règle exclusive » sur extension déjà associée (navigateur, hors lab)
+### Scénario 27.11.8 — Remplacement automatique sur extension déjà associée (navigateur, hors lab)
 
 - **Given** un parc a déjà `.html → FirefoxHTML` attaché.
 - **When** l'admin compose `.html → Applications\chrome.exe` (progid différent) sur le même parc.
-- **Then** un **toast d'avertissement non bloquant** signale que l'agent n'applique qu'une asso par extension (règle exclusive) et invite à désactiver l'ancienne ; la création n'est PAS bloquée (le compilateur tranche). Remplacement automatique = décision produit non implémentée (cf. review Q2).
+- **Then** l'ancienne association (`FirefoxHTML`) est **automatiquement détachée du parc** (décision Henri Q2) ; une **seule** association `.html` reste attachée (la nouvelle) ; un **toast** signale le remplacement de l'association précédente. La ligne `file_associations` de l'ancienne n'est PAS supprimée (elle peut rester attachée à d'autres parcs) ; le choix déjà appliqué côté poste reste (piège n°5).
 
 ### Checklist rapide (Story 27.11)
 
@@ -2914,5 +2914,5 @@ rapporté (champ additif `inventory`, AC4) → `agent_application_inventory`
       sans `SupportedTypes` ; hash valide pour ProgId avec `\`.
 - [ ] 27.11.7 — Recomposer une paire globalement désactivée depuis un autre parc ne la
       réactive PAS (`is_active` reste false). [correctif review M1/C5]
-- [ ] 27.11.8 — Composer une 2e app pour une extension déjà associée → toast
-      d'avertissement « règle exclusive », création non bloquée. [correctif review C4]
+- [ ] 27.11.8 — Composer une 2e app pour une extension déjà associée → l'ancienne est
+      détachée du parc, la nouvelle la remplace (une seule reste) + toast. [Q2 / C4]

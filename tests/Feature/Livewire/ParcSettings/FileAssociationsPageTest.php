@@ -511,10 +511,11 @@ class FileAssociationsPageTest extends TestCase
     }
 
     #[Test]
-    public function composing_second_app_for_same_identifier_warns_exclusive(): void
+    public function composing_second_app_for_same_identifier_replaces_previous(): void
     {
-        // C4 : une asso existe déjà pour .html sur le parc (FirefoxHTML) ; composer
-        // une 2e app pour .html (générique différent) → toast warning « exclusive ».
+        // Q2 (décision Henri 2026-06-18) : une asso existe déjà pour .html sur le parc
+        // (FirefoxHTML) ; composer une 2e app pour .html (ProgId différent) → l'ancienne
+        // est AUTOMATIQUEMENT détachée du parc (règle exclusive), la nouvelle la remplace.
         $parc = $this->parc();
         $existing = FileAssociation::create([
             'key' => 'html_firefox', 'label' => '.html → Firefox', 'identifier' => '.html',
@@ -532,19 +533,28 @@ class FileAssociationsPageTest extends TestCase
             ->call('compose')
             ->assertHasNoErrors();
 
-        // `assertDispatched` de Livewire ne teste que le PREMIER event du nom donné
-        // (le toast d'availability part avant le warning) → on parcourt tous les
-        // dispatches pour trouver le warning « règle exclusive ».
-        $dispatches = collect($component->effects['dispatches'] ?? []);
-        $warn = $dispatches->first(
-            fn (array $d): bool => $d['name'] === 'toastMagic'
-                && ($d['params']['status'] ?? null) === 'warning'
-                && str_contains((string) ($d['params']['message'] ?? ''), 'règle exclusive'),
+        // L'ancienne association (FirefoxHTML) a été DÉTACHÉE du parc (remplacement auto).
+        self::assertFalse(
+            $existing->workstationGroups()->whereKey($parc->id)->exists(),
+            'l\'ancienne association doit être détachée du parc (remplacement automatique Q2)',
         );
-        self::assertNotNull($warn, 'un toast warning « règle exclusive » doit être émis (sémantique exclusive, piège n°7)');
 
-        // Non bloquant : la 2e association EST bien créée (le compilateur tranche).
-        self::assertSame(2, FileAssociation::query()->where('identifier', '.html')->count());
+        // Une SEULE association reste attachée au parc pour .html : la nouvelle (≠ FirefoxHTML).
+        $attachedIds = DB::table('file_association_assignables')
+            ->where('assignable_type', WorkstationGroup::class)
+            ->where('assignable_id', $parc->id)
+            ->pluck('file_association_id');
+        $htmlAttached = FileAssociation::query()->whereIn('id', $attachedIds)->where('identifier', '.html')->get();
+        self::assertCount(1, $htmlAttached, 'une seule asso .html attachée au parc après remplacement');
+        self::assertNotSame('FirefoxHTML', (string) $htmlAttached->first()->progid, 'la nouvelle association a remplacé l\'ancienne');
+
+        // Un toast signale le remplacement de l'association précédente.
+        $dispatches = collect($component->effects['dispatches'] ?? []);
+        $replaced = $dispatches->first(
+            fn (array $d): bool => $d['name'] === 'toastMagic'
+                && str_contains((string) ($d['params']['message'] ?? ''), 'remplacée'),
+        );
+        self::assertNotNull($replaced, 'un toast doit signaler le remplacement de l\'association précédente (Q2)');
     }
 
     #[Test]

@@ -43,9 +43,12 @@ class NativeApplicationSeeder extends Seeder
         // / `"rundll32.exe" "%1"` qui N'OUVRE PAS l'image (il manque l'argument
         // `shell32.dll,ImageView_Fullscreen`) → exclue.
         //
-        // Les apps absentes des Windows récents (Visionneuse de photos désactivée
-        // depuis Win10 1607 ; WordPad RETIRÉ en Win11 24H2) relèvent d'une DÉCISION
-        // DE CURATION PRODUIT (laissée à Henri), pas d'une règle technique.
+        // Les apps absentes des Windows récents relèvent d'une DÉCISION DE CURATION
+        // PRODUIT (Henri), pas d'une règle technique. Tranché 2026-06-18 :
+        //  - Visionneuse de photos Windows : EXCLUE (exe `rundll32.exe` non fonctionnel
+        //    en générique, désactivée depuis Win10 1607) ;
+        //  - WordPad : RETIRÉ (supprimé de Windows 11 24H2+ — décision Henri Q1).
+        // Reste donc des built-ins présents sur les Windows ciblés.
         return [
             [
                 'label' => 'Bloc-notes (Notepad)',
@@ -59,15 +62,6 @@ class NativeApplicationSeeder extends Seeder
                 'progid' => 'Paint.Picture',
                 'executable' => '%SystemRoot%\\system32\\mspaint.exe',
                 'assoc_types' => ['.bmp', '.png', '.jpg', '.jpeg', '.gif'],
-                'icon_url' => null,
-            ],
-            [
-                // NOTE CURATION : WordPad est RETIRÉ de Windows 11 24H2+ (curation
-                // produit à trancher par Henri — conservé pour l'instant, pas retiré).
-                'label' => 'WordPad',
-                'progid' => 'WordPad.Document.1',
-                'executable' => '%ProgramFiles%\\Windows NT\\Accessories\\wordpad.exe',
-                'assoc_types' => ['.rtf', '.txt'],
                 'icon_url' => null,
             ],
         ];
