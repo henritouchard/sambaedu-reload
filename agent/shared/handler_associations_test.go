@@ -8,21 +8,33 @@ import (
 
 // --- TESTS VECTORIELS DU HASH USERCHOICE (cœur de risque, AC5) ---------------
 //
-// Les hashes attendus ont été calculés par un PORTAGE INDÉPENDANT de l'algorithme
-// `SFTA.ps1::Get-Hash` (référence Python en arithmétique exacte, masquée 32 bits,
-// transcrite séparément du code Go). Un triplet figé (identifier, sid, progid,
-// dateTimeHex, userExperience) → hash Base64 attendu. Toute divergence Go vs ces
-// vecteurs = transcription fautive d'une constante/d'un shift → hash rejeté par
-// Windows (bug silencieux). Ces vecteurs VERROUILLENT la fidélité du portage.
+// DEUX NATURES DE VECTEURS dans ce test — à ne PAS confondre :
+//
+//  (a) VECTEURS CROSS-VALIDÉS (`.pdf`/`http`/`.html`) : les hashes attendus ont
+//      été calculés par un PORTAGE INDÉPENDANT de l'algorithme `SFTA.ps1::Get-Hash`
+//      (référence Python en arithmétique exacte, masquée 32 bits, transcrite
+//      séparément du code Go). Ils prouvent la fidélité INTER-IMPLÉMENTATION
+//      (Go ⇄ référence Python, toutes deux transcrites de l'algorithme public
+//      PS-SFTA). Toute divergence Go vs ces vecteurs = transcription fautive d'une
+//      constante/d'un shift → hash rejeté par Windows (bug silencieux).
+//
+//  (b) VECTEUR DE NON-RÉGRESSION INTERNE (`Applications\vlc.exe`, Story 27.11) :
+//      sa valeur attendue est calculée par le CODE GO TESTÉ LUI-MÊME sur des inputs
+//      figés (ce N'EST PAS une référence indépendante). Il fige le comportement du
+//      portage sur un ProgId contenant un `\` (anti-régression), mais ne prouve PAS
+//      à lui seul la fidélité Windows-native. Cette dernière a été validée
+//      EMPIRIQUEMENT par Henri (AC1/T1 : SFTA.ps1 produit `Gk3UMH/Rm+A=` sur des
+//      inputs RÉELS — valeur ≠ ici car les inputs diffèrent). Le `\` (0x5C) n'est
+//      PAS un caractère spécial de l'algorithme : le hash porte sur l'UTF-16LE
+//      VERBATIM de baseInfo.
 //
 // experience = chaîne hardcodée de Get-UserExperience (GUID figé de shell32.dll).
 // sid/dateTimeHex = valeurs figées représentatives (forme réelle).
 //
-// ⚠️ PORTÉE DE CES VECTEURS : ils prouvent la fidélité INTER-IMPLÉMENTATION
-// (Go ⇄ référence Python, toutes deux transcrites de l'algorithme public
-// PS-SFTA), PAS l'acceptation Windows-native. La preuve FINALE (Windows applique
-// l'association ET ne l'invalide pas après redémarrage d'Explorer) est déléguée à
-// la validation lab Windows (story T9, action humaine — cf. docs/qa/domains/agent.md
+// ⚠️ PORTÉE GÉNÉRALE : ces vecteurs (hors validation empirique d'Henri) ne prouvent
+// PAS l'acceptation Windows-native. La preuve FINALE (Windows applique l'association
+// ET ne l'invalide pas après redémarrage d'Explorer) est déléguée à la validation
+// lab Windows (story T9, action humaine — cf. docs/qa/domains/agent.md
 // « Story 27.3bis »). Symptôme d'un hash subtilement faux = association non
 // appliquée SANS erreur d'écriture côté agent → seul un poste réel le révèle.
 
@@ -37,11 +49,22 @@ func TestUserChoiceHashVectors(t *testing.T) {
 		identifier string
 		progID     string
 		assocType  string
-		want       string // calculé par la référence Python indépendante
+		want       string // (a) réf Python indépendante ; (b) non-régression interne (cf. en-tête)
 	}{
+		// (a) Vecteurs CROSS-VALIDÉS par la référence Python indépendante.
 		{".pdf", "Acrobat.Document.DC", "file", "h5ZFaFkHaDU="},
 		{"http", "FirefoxURL", "protocol", "9RbFZtAB87g="},
 		{".html", "FirefoxHTML", "file", "zWoSzvx4Irg="},
+		// (b) Story 27.11 — VECTEUR DE NON-RÉGRESSION INTERNE : ProgId contenant un
+		// `\` (`Applications\<exe>`). ⚠️ Cette valeur attendue est calculée par le
+		// CODE GO TESTÉ LUI-MÊME sur ces inputs figés — ce N'EST PAS une référence
+		// indépendante : elle FIGE le comportement du portage sur le cas `\`
+		// (anti-régression), pas sa fidélité Windows-native. Le hash porte sur la
+		// chaîne ProgId VERBATIM (le `\` = 0x5C n'est PAS un cas particulier de
+		// l'algorithme). La fidélité Windows-native du cas `\` est validée
+		// EMPIRIQUEMENT par Henri (AC1/T1 : SFTA.ps1 → `Gk3UMH/Rm+A=` sur des inputs
+		// RÉELS, valeur ≠ ici car inputs différents).
+		{".clclcc", "Applications\\vlc.exe", "file", "5q6eG+3TpdI="},
 	}
 
 	for _, tc := range cases {
@@ -85,16 +108,23 @@ type fakeAssociationsOps struct {
 	inputsErr  error
 	writeCnt   int
 	deleteSeen map[string]bool // identifier (lower) → WriteUserChoice appelé (= delete+write)
+
+	// Story 27.11 — auto-enregistrement per-user d'un Applications\<exe>.
+	exeAvailable map[string]bool  // exe (lower) → résoluble sur le poste (App Paths/PATH)
+	registerErr  map[string]error // exe (lower) → erreur d'écriture registre
+	registerCnt  int              // nombre d'appels à RegisterApplicationProgID
 }
 
 func newFakeAssociationsOps() *fakeAssociationsOps {
 	return &fakeAssociationsOps{
-		userChoice: map[string]string{},
-		registered: map[string]bool{},
-		readErr:    map[string]error{},
-		writeErr:   map[string]error{},
-		regErr:     map[string]error{},
-		deleteSeen: map[string]bool{},
+		userChoice:   map[string]string{},
+		registered:   map[string]bool{},
+		readErr:      map[string]error{},
+		writeErr:     map[string]error{},
+		regErr:       map[string]error{},
+		deleteSeen:   map[string]bool{},
+		exeAvailable: map[string]bool{},
+		registerErr:  map[string]error{},
 	}
 }
 
@@ -135,6 +165,23 @@ func (o *fakeAssociationsOps) SessionInputs() (string, string, string, error) {
 	}
 
 	return vectorSID, vectorDateTime, vectorExperience, nil
+}
+
+// RegisterApplicationProgID (Story 27.11) : simule l'auto-enregistrement per-user.
+// L'exe est « résolu » s'il est marqué disponible ; on marque alors le ProgId
+// `Applications\<exe>` comme enregistré (le passage suivant le verra conforme).
+func (o *fakeAssociationsOps) RegisterApplicationProgID(exe string) (bool, error) {
+	o.registerCnt++
+	e := strings.ToLower(exe)
+	if err := o.registerErr[e]; err != nil {
+		return false, err
+	}
+	if !o.exeAvailable[e] {
+		return false, nil // exe introuvable → abstention
+	}
+	o.registered[strings.ToLower(`Applications\`+exe)] = true
+
+	return true, nil
 }
 
 // fileItem / protoItem construisent des StateItem `associations`.
@@ -321,6 +368,103 @@ func TestAssociationsFileAndProtocolBothConverge(t *testing.T) {
 	}
 	if ops.userChoice["https"] != "FirefoxURL" {
 		t.Errorf("association protocole non appliquée : %q", ops.userChoice["https"])
+	}
+}
+
+// --- Story 27.11 : auto-enregistrement per-user d'un Applications\<exe> --------
+
+// Générique non enregistré + exe RÉSOLUBLE → auto-enregistré per-user PUIS
+// UserChoice imposé ; 2e passe idempotente (zéro réécriture, pas de ré-enregistrement).
+func TestAssociationsGenericAutoRegistersThenAppliesIdempotent(t *testing.T) {
+	ops := newFakeAssociationsOps()
+	ops.exeAvailable["vlc.exe"] = true // résoluble sur le poste (App Paths/PATH)
+	h := &AssociationsHandler{Ops: ops}
+	items := []StateItem{fileItem(".clclcc", "Applications\\vlc.exe")}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply (générique) : %v", err)
+	}
+	if ops.registerCnt != 1 {
+		t.Fatalf("auto-enregistrement attendu une fois, obtenu %d", ops.registerCnt)
+	}
+	if ops.userChoice[".clclcc"] != "Applications\\vlc.exe" {
+		t.Fatalf("UserChoice générique non imposé après auto-enregistrement : %q", ops.userChoice[".clclcc"])
+	}
+
+	ok, err := h.Test(items)
+	if err != nil || !ok {
+		t.Fatalf("test après apply : ok=%v err=%v (attendu conforme)", ok, err)
+	}
+
+	// 2e passe : déjà enregistré + conforme → ni ré-enregistrement ni réécriture.
+	beforeReg, beforeWrite := ops.registerCnt, ops.writeCnt
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply 2 (générique) : %v", err)
+	}
+	if ops.registerCnt != beforeReg {
+		t.Fatalf("idempotence : pas de ré-enregistrement attendu (avant %d, après %d)", beforeReg, ops.registerCnt)
+	}
+	if ops.writeCnt != beforeWrite {
+		t.Fatalf("idempotence : pas de réécriture UserChoice attendue (avant %d, après %d)", beforeWrite, ops.writeCnt)
+	}
+}
+
+// Générique + exe INTROUVABLE → abstention D-Henri n°5 : aucun UserChoice imposé,
+// choix utilisateur préservé, error non fatal (pas de boucle).
+func TestAssociationsGenericAbstainsWhenExeUnavailable(t *testing.T) {
+	ops := newFakeAssociationsOps()
+	// exeAvailable["vlc.exe"] absent → RegisterApplicationProgID renvoie false.
+	ops.userChoice[".clclcc"] = "SomeOther.User" // choix existant de l'utilisateur
+	h := &AssociationsHandler{Ops: ops}
+	items := []StateItem{fileItem(".clclcc", "Applications\\vlc.exe")}
+
+	err := h.Apply(items)
+	if err == nil {
+		t.Fatal("error non fatale attendue (exe générique introuvable)")
+	}
+	if !strings.Contains(err.Error(), "non enregistré") || !strings.Contains(err.Error(), "conservé") {
+		t.Fatalf("detail attendu explicite (non enregistré, conservé), obtenu : %v", err)
+	}
+	if ops.registerCnt != 1 {
+		t.Fatalf("une tentative d'auto-enregistrement attendue, obtenu %d", ops.registerCnt)
+	}
+	if ops.deleteSeen[".clclcc"] {
+		t.Fatal("la clé UserChoice ne doit PAS être touchée (pas de clobber)")
+	}
+	if ops.userChoice[".clclcc"] != "SomeOther.User" {
+		t.Fatalf("choix utilisateur DOIT être préservé, obtenu %q", ops.userChoice[".clclcc"])
+	}
+	if ops.writeCnt != 0 {
+		t.Fatalf("aucune écriture UserChoice attendue (exe absent), obtenu %d", ops.writeCnt)
+	}
+
+	// Plusieurs passes : pas de réécriture, mais re-tentative d'enregistrement OK
+	// (best-effort, pas de boucle d'écriture UserChoice).
+	_ = h.Apply(items)
+	if ops.writeCnt != 0 {
+		t.Fatalf("pas de réécriture en boucle (exe absent), obtenu %d", ops.writeCnt)
+	}
+	// Best-effort : chaque passe RE-TENTE l'auto-enregistrement (l'exe pourrait
+	// être installé entre deux passes) → 1 tentative par Apply, soit 2 au total.
+	if ops.registerCnt != 2 {
+		t.Fatalf("2 tentatives d'auto-enregistrement attendues (best-effort), obtenu %d", ops.registerCnt)
+	}
+}
+
+// Un ProgId RICHE non enregistré ne déclenche PAS l'auto-enregistrement (réservé
+// au cas générique Applications\<exe>) — non-régression D-Henri n°5.
+func TestAssociationsRichProgIdDoesNotAutoRegister(t *testing.T) {
+	ops := newFakeAssociationsOps()
+	ops.userChoice[".pdf"] = "SumatraPDF.User"
+	h := &AssociationsHandler{Ops: ops}
+	items := []StateItem{fileItem(".pdf", "Acrobat.Document.DC")}
+
+	_ = h.Apply(items)
+	if ops.registerCnt != 0 {
+		t.Fatalf("aucun auto-enregistrement attendu pour un ProgId riche, obtenu %d", ops.registerCnt)
+	}
+	if ops.writeCnt != 0 {
+		t.Fatalf("aucune écriture attendue (ProgId riche absent), obtenu %d", ops.writeCnt)
 	}
 }
 

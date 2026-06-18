@@ -19,6 +19,11 @@ class DatabaseSeeder extends Seeder
             AppStoreInstallSeeder::class,
             AppProfileSeeder::class,
             ShortcutSeeder::class,
+            // Story 27.11 — référentiel curé des applications natives Win32
+            // (built-ins du composer d'associations) : Source 2 du dropdown,
+            // ProgId canoniques connus. Idempotent/rejouable. Seedé AVANT les
+            // associations (le composer y puise).
+            NativeApplicationSeeder::class,
             // Story 27.3bis — reproduction des associations de fichiers legacy
             // (default.xml si lisible, sinon baseline figée) : à la bascule, les
             // défauts sont déjà en base. Idempotent/rejouable.

@@ -7,8 +7,11 @@ namespace Tests\Feature\Livewire\ParcSettings;
 use App\Models\AppProfile;
 use App\Models\Application;
 use App\Models\FileAssociation;
+use App\Models\NativeApplication;
 use App\Models\User;
 use App\Models\WorkstationGroup;
+use App\Gpo\Services\PackagesXmlAssociationsReader;
+use App\Services\Agent\Resolvers\AssociationResolver;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -21,24 +24,24 @@ use Tests\TestCase;
 
 /**
  * Onglet Livewire « Associations par défaut » de la page d'un WorkstationGroup —
- * Story 27.3bis, AC7, AC11. Le geste s'applique PAR groupe (parc/salle) : le
- * composant est monté en onglet de `parc/groups/{id}` et reçoit `groupId` au
- * montage (plus de sélecteur de parc global).
+ * Story 27.11 (V2 COMPOSER). Le geste s'applique PAR groupe (parc/salle), monté en
+ * onglet de `parc/groups/{id}` avec `groupId`.
  *
- * Vérifie : gate app.customize (rendu vs 403), activation = assignation pivot,
- * désactivation = retrait, idempotence (réactiver ne double pas). La compilation
- * en items concrets est couverte par AssociationsStateProviderTest.
- *
- * **Validation prédictive (AC11, D-Henri n°7)** : une association `wpkg` dont le
- * paquet n'est PAS déployé sur le parc → `unavailable` (warning rendu + toast
- * exact) ; le même paquet déployé → `applicable` ; une `native` → toujours
- * `applicable`. Le calcul des paquets déployés est group-level Eloquent PG-pur.
+ * Vérifie : gate app.customize (rendu vs 403) ; le COMPOSER (saisie extension +
+ * dropdown app par nom → création via AssociationResolver + attache parc) ; la
+ * liste éditable/désactivable (désactiver = détacher = cesser de gérer) ; la
+ * validation prédictive sur entrée custom (native/wpkg déployé → applicable ; wpkg
+ * non déployé → indisponible + toast nommant le paquet) ; le garde-fou exe manquant
+ * (générique refusé sans exe).
  */
 class FileAssociationsPageTest extends TestCase
 {
     use SeedsWorkstationConfig;
 
     private const COMPONENT = 'pages::parc.groups._partials.associations-tab';
+
+    /** Fixture WPKG : firefox déclare .html→FirefoxHTML, http→FirefoxURL. */
+    public const PACKAGES_XML = __DIR__ . '/../../../Fixtures/Gpo/packages-xml-sample.xml';
 
     protected function setUp(): void
     {
@@ -48,22 +51,35 @@ class FileAssociationsPageTest extends TestCase
             config(['app.key' => 'base64:' . base64_encode(random_bytes(32))]);
         }
 
-        // Bootstrap WPKG AVANT le contexte poste : crée `workstation_groups` AVEC
-        // `archived_at` (requis par la validation prédictive group-level) + les
-        // pivots applications/app_profiles. `seedWorkstationContextSchemas()`
-        // complète ensuite users/user_groups (tables déjà présentes sautées).
         WpkgSchemaBootstrapper::bootstrap();
         $this->seedWorkstationContextSchemas();
         $this->ensureAssociationTables();
+        $this->ensureNativeAppsTable();
+        $this->ensureApplicationComposerColumns();
         $this->ensureSpatieTables();
 
         Permission::firstOrCreate(['name' => 'app.customize', 'guard_name' => 'web']);
+
+        // Le composer doit résoudre les ProgId riches via packages.xml fixturé
+        // (geste admin admis, hors chemin desired-state).
+        $this->bindResolverWithFixturePackagesXml();
     }
 
     protected function tearDown(): void
     {
         WpkgSchemaBootstrapper::tearDown();
         parent::tearDown();
+    }
+
+    private function bindResolverWithFixturePackagesXml(): void
+    {
+        $reader = new class extends PackagesXmlAssociationsReader {
+            public function read(?string $packagesXmlPath = null): array
+            {
+                return parent::read(FileAssociationsPageTest::PACKAGES_XML);
+            }
+        };
+        $this->app->bind(AssociationResolver::class, fn () => new AssociationResolver($reader));
     }
 
     private function ensureAssociationTables(): void
@@ -93,6 +109,35 @@ class FileAssociationsPageTest extends TestCase
                 $t->unique(['file_association_id', 'assignable_id', 'assignable_type'], 'faa_unique');
             });
         }
+    }
+
+    private function ensureNativeAppsTable(): void
+    {
+        if (! Schema::hasTable('native_applications')) {
+            Schema::create('native_applications', function (Blueprint $t): void {
+                $t->id();
+                $t->string('key')->unique();
+                $t->string('label');
+                $t->string('progid');
+                $t->string('executable');
+                $t->json('assoc_types');
+                $t->string('icon_url')->nullable();
+                $t->timestamps();
+            });
+        }
+    }
+
+    /** Le bootstrapper WPKG crée `applications` sans `executable`/`icon_url` (27.11). */
+    private function ensureApplicationComposerColumns(): void
+    {
+        Schema::table('applications', function (Blueprint $t): void {
+            if (! Schema::hasColumn('applications', 'executable')) {
+                $t->string('executable')->nullable();
+            }
+            if (! Schema::hasColumn('applications', 'icon_url')) {
+                $t->string('icon_url')->nullable();
+            }
+        });
     }
 
     private function ensureSpatieTables(): void
@@ -147,29 +192,56 @@ class FileAssociationsPageTest extends TestCase
         return WorkstationGroup::create(['name' => 'parc-assoc', 'is_physical' => false]);
     }
 
-    private function association(): FileAssociation
+    private function notepad(): NativeApplication
     {
-        return FileAssociation::create([
-            'key' => 'pdf_acrobat',
-            'label' => 'PDF → Acrobat',
-            'identifier' => '.pdf',
-            'assoc_type' => 'file',
-            'progid' => 'Acrobat.Document.DC',
-            'is_active' => true,
+        return NativeApplication::create([
+            'key' => 'notepad',
+            'label' => 'Bloc-notes',
+            'progid' => 'txtfile',
+            'executable' => '%SystemRoot%\\system32\\notepad.exe',
+            'assoc_types' => ['.txt'],
         ]);
     }
+
+    private function wpkgApp(string $appId, ?string $executable = null): Application
+    {
+        return Application::create([
+            'app_id' => $appId,
+            'name' => ucfirst($appId),
+            'executable' => $executable,
+        ]);
+    }
+
+    /** Une association déjà attachée au parc (édition/désactivation/affichage). */
+    private function attachedAssociation(WorkstationGroup $parc): FileAssociation
+    {
+        $assoc = FileAssociation::create([
+            'key' => 'txt_txtfile',
+            'label' => '.txt → Bloc-notes',
+            'identifier' => '.txt',
+            'assoc_type' => 'file',
+            'progid' => 'txtfile',
+            'source' => FileAssociation::SOURCE_NATIVE,
+            'is_active' => true,
+        ]);
+        $assoc->workstationGroups()->attach($parc->id);
+
+        return $assoc;
+    }
+
+    // ── Gate ───────────────────────────────────────────────────────────────────
 
     #[Test]
     public function renders_for_authorized_manager(): void
     {
         $parc = $this->parc();
-        $this->association();
+        $this->notepad();
         $this->actingAs($this->manager());
 
         Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
             ->assertOk()
-            ->assertSee('Associations par défaut')
-            ->assertSee('PDF → Acrobat');
+            ->assertSee('Ajouter une association')
+            ->assertSee('Bloc-notes'); // option du dropdown
     }
 
     #[Test]
@@ -181,17 +253,24 @@ class FileAssociationsPageTest extends TestCase
         Livewire::test(self::COMPONENT, ['groupId' => 1])->assertStatus(403);
     }
 
+    // ── Composer : création ──────────────────────────────────────────────────
+
     #[Test]
-    public function toggle_assigns_the_association_to_the_parc(): void
+    public function compose_creates_native_association_and_attaches_to_parc(): void
     {
         $parc = $this->parc();
-        $assoc = $this->association();
+        $native = $this->notepad();
         $this->actingAs($this->manager());
 
         Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
-            ->call('toggle', $assoc->id)
+            ->set('newIdentifier', '.txt')
+            ->set('newAppRef', 'native:' . $native->id)
+            ->call('compose')
             ->assertHasNoErrors();
 
+        $assoc = FileAssociation::query()->where('identifier', '.txt')->firstOrFail();
+        self::assertSame('txtfile', $assoc->progid);
+        self::assertSame(FileAssociation::SOURCE_NATIVE, $assoc->source);
         $this->assertDatabaseHas('file_association_assignables', [
             'file_association_id' => $assoc->id,
             'assignable_type' => WorkstationGroup::class,
@@ -200,15 +279,110 @@ class FileAssociationsPageTest extends TestCase
     }
 
     #[Test]
-    public function toggle_twice_removes_the_assignment(): void
+    public function compose_creates_rich_wpkg_association_when_package_declares_handler(): void
     {
         $parc = $this->parc();
-        $assoc = $this->association();
+        $app = $this->wpkgApp('firefox');
         $this->actingAs($this->manager());
 
         Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
-            ->call('toggle', $assoc->id)   // active
-            ->call('toggle', $assoc->id);  // désactive (cesser de gérer)
+            ->set('newIdentifier', '.html')
+            ->set('newAppRef', 'wpkg:' . $app->id)
+            ->call('compose')
+            ->assertHasNoErrors();
+
+        $assoc = FileAssociation::query()->where('identifier', '.html')->firstOrFail();
+        self::assertSame('FirefoxHTML', $assoc->progid); // ProgId riche déclaré
+        self::assertSame(FileAssociation::SOURCE_WPKG, $assoc->source);
+        self::assertSame('firefox', $assoc->wpkg_package);
+    }
+
+    #[Test]
+    public function compose_creates_generic_association_for_custom_extension(): void
+    {
+        $parc = $this->parc();
+        $app = $this->wpkgApp('vlc', 'C:\\Program Files\\VideoLAN\\VLC\\vlc.exe');
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
+            ->set('newIdentifier', '.clclcc')
+            ->set('newAppRef', 'wpkg:' . $app->id)
+            ->call('compose')
+            ->assertHasNoErrors();
+
+        $assoc = FileAssociation::query()->where('identifier', '.clclcc')->firstOrFail();
+        self::assertSame('Applications\\vlc.exe', $assoc->progid); // ProgId générique fabriqué
+        self::assertSame(FileAssociation::SOURCE_WPKG, $assoc->source);
+        self::assertSame('vlc', $assoc->wpkg_package);
+    }
+
+    // ── Garde-fou exe manquant (piège n°4) ─────────────────────────────────────
+
+    #[Test]
+    public function compose_blocks_generic_without_executable(): void
+    {
+        $parc = $this->parc();
+        // Firefox déclare .html mais PAS .clclcc, et n'a pas d'exe → refusé.
+        $app = $this->wpkgApp('firefox', null);
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
+            ->set('newIdentifier', '.clclcc')
+            ->set('newAppRef', 'wpkg:' . $app->id)
+            ->call('compose')
+            ->assertHasNoErrors() // pas une erreur de validation Livewire : un toast
+            ->assertDispatched(
+                'toastMagic',
+                fn (string $event, array $params): bool => ($params['status'] ?? null) === 'error',
+            );
+
+        self::assertSame(0, FileAssociation::query()->where('identifier', '.clclcc')->count());
+    }
+
+    #[Test]
+    public function compose_rejects_invalid_identifier(): void
+    {
+        $parc = $this->parc();
+        $native = $this->notepad();
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
+            ->set('newIdentifier', 'pas valide!!')
+            ->set('newAppRef', 'native:' . $native->id)
+            ->call('compose')
+            ->assertHasErrors('newIdentifier');
+    }
+
+    // ── Liste éditable / désactivable ──────────────────────────────────────────
+
+    #[Test]
+    public function parc_associations_list_shows_only_attached_entries(): void
+    {
+        $parc = $this->parc();
+        $attached = $this->attachedAssociation($parc);
+        // Une association NON attachée ne doit pas figurer.
+        FileAssociation::create([
+            'key' => 'other', 'label' => 'autre', 'identifier' => '.xyz',
+            'assoc_type' => 'file', 'progid' => 'Xyz', 'is_active' => true,
+        ]);
+        $this->actingAs($this->manager());
+
+        $rows = Livewire::test(self::COMPONENT, ['groupId' => $parc->id])->get('associations');
+
+        self::assertCount(1, $rows);
+        self::assertSame($attached->id, $rows[0]['id']);
+    }
+
+    #[Test]
+    public function disable_detaches_the_association_from_the_parc(): void
+    {
+        $parc = $this->parc();
+        $assoc = $this->attachedAssociation($parc);
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
+            ->call('disable', $assoc->id)
+            ->assertHasNoErrors();
 
         $this->assertDatabaseMissing('file_association_assignables', [
             'file_association_id' => $assoc->id,
@@ -216,123 +390,174 @@ class FileAssociationsPageTest extends TestCase
         ]);
     }
 
+    // ── Validation prédictive sur entrée custom (AC5) ──────────────────────────
+
     #[Test]
-    public function re_enabling_does_not_duplicate_the_pivot_row(): void
+    public function predictive_native_association_is_applicable(): void
     {
         $parc = $this->parc();
-        $assoc = $this->association();
+        $this->attachedAssociation($parc); // native
+        $this->actingAs($this->manager());
+
+        $rows = Livewire::test(self::COMPONENT, ['groupId' => $parc->id])->get('associations');
+
+        self::assertSame('applicable', $rows[0]['availability']);
+    }
+
+    #[Test]
+    public function predictive_wpkg_unavailable_when_package_not_deployed(): void
+    {
+        $parc = $this->parc();
+        $assoc = FileAssociation::create([
+            'key' => 'http_firefox', 'label' => 'http → Firefox', 'identifier' => 'http',
+            'assoc_type' => 'protocol', 'progid' => 'FirefoxURL',
+            'source' => FileAssociation::SOURCE_WPKG, 'wpkg_package' => 'firefox', 'is_active' => true,
+        ]);
+        $assoc->workstationGroups()->attach($parc->id);
         $this->actingAs($this->manager());
 
         $component = Livewire::test(self::COMPONENT, ['groupId' => $parc->id]);
-        $component->call('toggle', $assoc->id); // active
-        $component->call('toggle', $assoc->id); // désactive
-        $component->call('toggle', $assoc->id); // réactive
+        $rows = $component->get('associations');
 
-        $count = DB::table('file_association_assignables')
-            ->where('file_association_id', $assoc->id)
-            ->where('assignable_id', $parc->id)
-            ->count();
-
-        self::assertSame(1, $count, 'syncWithoutDetaching reste idempotent (pas de doublon)');
+        self::assertSame('unavailable', $rows[0]['availability']);
+        $component->assertSee('indisponible')->assertSee('firefox');
     }
 
-    // ── AC11 — validation prédictive par parc (native / wpkg déployé / indispo) ──
-
-    /** Association `wpkg` dont le paquet est rattaché à un parc (Application + pivot). */
-    private function wpkgAssociation(string $package = 'firefox'): FileAssociation
+    #[Test]
+    public function predictive_wpkg_applicable_when_package_deployed(): void
     {
-        return FileAssociation::create([
-            'key' => 'http_' . $package,
-            'label' => 'HTTP → ' . $package,
-            'identifier' => 'http',
-            'assoc_type' => 'protocol',
-            'progid' => 'FirefoxURL',
-            'source' => FileAssociation::SOURCE_WPKG,
-            'wpkg_package' => $package,
-            'is_active' => true,
+        $parc = $this->parc();
+        $app = Application::create(['app_id' => 'firefox', 'name' => 'Firefox']);
+        $parc->applications()->attach($app->id);
+        $assoc = FileAssociation::create([
+            'key' => 'http_firefox', 'label' => 'http → Firefox', 'identifier' => 'http',
+            'assoc_type' => 'protocol', 'progid' => 'FirefoxURL',
+            'source' => FileAssociation::SOURCE_WPKG, 'wpkg_package' => 'firefox', 'is_active' => true,
+        ]);
+        $assoc->workstationGroups()->attach($parc->id);
+        $this->actingAs($this->manager());
+
+        $rows = Livewire::test(self::COMPONENT, ['groupId' => $parc->id])->get('associations');
+
+        self::assertSame('applicable', $rows[0]['availability']);
+    }
+
+    #[Test]
+    public function predictive_generic_association_is_best_effort(): void
+    {
+        // C2/AC5 : un ProgId GÉNÉRIQUE (Applications\<exe>) → best-effort, JAMAIS
+        // « applicable » — indépendamment de la source (ici native).
+        $parc = $this->parc();
+        $assoc = FileAssociation::create([
+            'key' => 'clclcc_generic', 'label' => '.clclcc → Bloc-notes', 'identifier' => '.clclcc',
+            'assoc_type' => 'file', 'progid' => 'Applications\\notepad.exe',
+            'source' => FileAssociation::SOURCE_NATIVE, 'is_active' => true,
+        ]);
+        $assoc->workstationGroups()->attach($parc->id);
+        $this->actingAs($this->manager());
+
+        $component = Livewire::test(self::COMPONENT, ['groupId' => $parc->id]);
+        $rows = $component->get('associations');
+
+        self::assertSame('best-effort', $rows[0]['availability']);
+        self::assertTrue($rows[0]['generic']);
+        $component->assertSee('best-effort');
+    }
+
+    #[Test]
+    public function composing_generic_association_emits_best_effort_info(): void
+    {
+        // C2 : composer un générique (extension custom + app à exe) → toast info best-effort.
+        $parc = $this->parc();
+        $app = $this->wpkgApp('vlc', 'C:\\Program Files\\VideoLAN\\VLC\\vlc.exe');
+        $parc->applications()->attach($app->id); // déployé : prouve que générique prime
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
+            ->set('newIdentifier', '.clclcc')
+            ->set('newAppRef', 'wpkg:' . $app->id)
+            ->call('compose')
+            ->assertHasNoErrors()
+            ->assertDispatched(
+                'toastMagic',
+                fn (string $event, array $params): bool => ($params['status'] ?? null) === 'info'
+                    && str_contains((string) ($params['message'] ?? ''), 'best-effort'),
+            );
+    }
+
+    #[Test]
+    public function disable_on_association_not_attached_to_parc_is_honest_no_op(): void
+    {
+        // C3 : l'asso existe mais n'est PAS attachée au parc courant → pas de
+        // faux toast « retirée », et aucun détachement.
+        $parc = $this->parc();
+        $other = WorkstationGroup::create(['name' => 'autre-parc', 'is_physical' => false]);
+        $assoc = $this->attachedAssociation($other); // attachée à un AUTRE parc
+        $this->actingAs($this->manager());
+
+        Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
+            ->call('disable', $assoc->id)
+            ->assertHasNoErrors()
+            ->assertDispatched(
+                'toastMagic',
+                fn (string $event, array $params): bool => ($params['status'] ?? null) === 'error',
+            );
+
+        // L'attache à l'autre parc reste intacte.
+        $this->assertDatabaseHas('file_association_assignables', [
+            'file_association_id' => $assoc->id,
+            'assignable_id' => $other->id,
         ]);
     }
 
-    private function deployPackageToParc(WorkstationGroup $parc, string $appId): Application
+    #[Test]
+    public function composing_second_app_for_same_identifier_warns_exclusive(): void
     {
-        $app = Application::create(['app_id' => $appId, 'name' => $appId]);
-        $parc->applications()->attach($app->id);
+        // C4 : une asso existe déjà pour .html sur le parc (FirefoxHTML) ; composer
+        // une 2e app pour .html (générique différent) → toast warning « exclusive ».
+        $parc = $this->parc();
+        $existing = FileAssociation::create([
+            'key' => 'html_firefox', 'label' => '.html → Firefox', 'identifier' => '.html',
+            'assoc_type' => 'file', 'progid' => 'FirefoxHTML',
+            'source' => FileAssociation::SOURCE_WPKG, 'wpkg_package' => 'firefox', 'is_active' => true,
+        ]);
+        $existing->workstationGroups()->attach($parc->id);
 
-        return $app;
+        $app = $this->wpkgApp('chrome', 'C:\\Program Files\\Google\\Chrome\\chrome.exe');
+        $this->actingAs($this->manager());
+
+        $component = Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
+            ->set('newIdentifier', '.html')
+            ->set('newAppRef', 'wpkg:' . $app->id)
+            ->call('compose')
+            ->assertHasNoErrors();
+
+        // `assertDispatched` de Livewire ne teste que le PREMIER event du nom donné
+        // (le toast d'availability part avant le warning) → on parcourt tous les
+        // dispatches pour trouver le warning « règle exclusive ».
+        $dispatches = collect($component->effects['dispatches'] ?? []);
+        $warn = $dispatches->first(
+            fn (array $d): bool => $d['name'] === 'toastMagic'
+                && ($d['params']['status'] ?? null) === 'warning'
+                && str_contains((string) ($d['params']['message'] ?? ''), 'règle exclusive'),
+        );
+        self::assertNotNull($warn, 'un toast warning « règle exclusive » doit être émis (sémantique exclusive, piège n°7)');
+
+        // Non bloquant : la 2e association EST bien créée (le compilateur tranche).
+        self::assertSame(2, FileAssociation::query()->where('identifier', '.html')->count());
     }
 
     #[Test]
-    public function native_association_is_always_applicable(): void
+    public function composing_unavailable_wpkg_association_warns_naming_the_package(): void
     {
         $parc = $this->parc();
-        $assoc = $this->association(); // source=native par défaut (.pdf → Acrobat)
+        $app = $this->wpkgApp('firefox'); // paquet PAS déployé sur le parc
         $this->actingAs($this->manager());
 
-        $rows = Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
-            ->get('associations');
-
-        self::assertSame('applicable', $rows[0]['availability']);
-    }
-
-    #[Test]
-    public function wpkg_association_unavailable_when_package_not_deployed(): void
-    {
-        $parc = $this->parc();
-        $assoc = $this->wpkgAssociation('firefox'); // paquet NON déployé sur le parc
-        $this->actingAs($this->manager());
-
-        $component = Livewire::test(self::COMPONENT, ['groupId' => $parc->id]);
-
-        $rows = $component->get('associations');
-        self::assertSame('unavailable', $rows[0]['availability']);
-
-        // Le warning EXACT (badge « indisponible » + tooltip nommant le paquet) est rendu.
-        $component->assertSee('indisponible')
-            ->assertSee('firefox');
-    }
-
-    #[Test]
-    public function wpkg_association_applicable_when_package_deployed_on_parc(): void
-    {
-        $parc = $this->parc();
-        $this->deployPackageToParc($parc, 'firefox'); // paquet déployé sur le parc
-        $assoc = $this->wpkgAssociation('firefox');
-        $this->actingAs($this->manager());
-
-        $rows = Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
-            ->get('associations');
-
-        self::assertSame('applicable', $rows[0]['availability']);
-    }
-
-    #[Test]
-    public function wpkg_application_via_app_profile_makes_it_applicable(): void
-    {
-        $parc = $this->parc();
-        $app = Application::create(['app_id' => 'firefox', 'name' => 'firefox']);
-        $profile = AppProfile::create(['name' => 'profile-parc', 'is_active' => true]);
-        $profile->applications()->attach($app->id);
-        $parc->appProfiles()->attach($profile->id);
-
-        $assoc = $this->wpkgAssociation('firefox');
-        $this->actingAs($this->manager());
-
-        $rows = Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
-            ->get('associations');
-
-        self::assertSame('applicable', $rows[0]['availability'], 'paquet déployé via app profile du parc');
-    }
-
-    #[Test]
-    public function activating_unavailable_wpkg_association_warns_naming_the_package(): void
-    {
-        $parc = $this->parc();
-        $assoc = $this->wpkgAssociation('firefox'); // non déployé
-        $this->actingAs($this->manager());
-
-        // Toast EXACT d'avertissement (event `toastMagic` status=warning) nommant le paquet manquant.
         Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
-            ->call('toggle', $assoc->id)
+            ->set('newIdentifier', '.html')
+            ->set('newAppRef', 'wpkg:' . $app->id)
+            ->call('compose')
             ->assertHasNoErrors()
             ->assertDispatched(
                 'toastMagic',
@@ -343,20 +568,21 @@ class FileAssociationsPageTest extends TestCase
     }
 
     #[Test]
-    public function activating_native_association_emits_plain_success(): void
+    public function composing_applicable_association_emits_plain_success(): void
     {
         $parc = $this->parc();
-        $assoc = $this->association(); // native
+        $native = $this->notepad();
         $this->actingAs($this->manager());
 
-        // Succès simple (event `toastMagic` status=success), aucun avertissement de paquet.
         Livewire::test(self::COMPONENT, ['groupId' => $parc->id])
-            ->call('toggle', $assoc->id)
+            ->set('newIdentifier', '.txt')
+            ->set('newAppRef', 'native:' . $native->id)
+            ->call('compose')
             ->assertHasNoErrors()
             ->assertDispatched(
                 'toastMagic',
                 fn (string $event, array $params): bool => ($params['status'] ?? null) === 'success'
-                    && str_contains((string) ($params['message'] ?? ''), 'Association activée pour le parc.'),
+                    && str_contains((string) ($params['message'] ?? ''), 'ajoutée au parc'),
             );
     }
 }

@@ -2783,3 +2783,136 @@ rapporté (champ additif `inventory`, AC4) → `agent_application_inventory`
       plus publiée.
 - [ ] 27.5.7 — Provider NFR7 (grep vide), payload 4 clés concret, jamais
       `resolve()`/APCu ; golden + hashes PHP⇄Go re-bumpés à l'identique.
+## Story 27.11 — Composer d'associations par défaut (extension libre + app par nom)
+
+> V2 de l'UI d'associations 27.3bis : on passe du **catalogue figé** (toggles) à un
+> **composer** — l'admin SAISIT une extension/protocole et CHOISIT l'application
+> PAR SON NOM. Le serveur (`AssociationResolver`) traduit en cible technique :
+> ProgId **riche** si le paquet le déclare pour l'extension, sinon **générique**
+> `Applications\<exe>`. Le canal agent (provider/compilateur/handler/hash) de 27.3bis
+> est **réutilisé tel quel** (golden/contrat INTOUCHÉS, payload `{identifier, progid,
+> type}` inchangé). La seule donnée neuve = le chemin de l'exe
+> (`applications.executable` + table `native_applications`).
+>
+> **GATE empirique AC1 — DÉJÀ VALIDÉ par Henri (2026-06-18), à re-vérifier en
+> non-régression** : (1) un `UserChoice` vers `HKCU\Software\Classes\Applications\<exe>`
+> est **honoré par le shell** sans `SupportedTypes` (double-clic `.clclcc` → VLC après
+> reboot ✅) ; (2) `getHash` produit un hash valide pour un ProgId contenant `\`
+> (`Applications\vlc.exe` → `Gk3UMH/Rm+A=` via SFTA.ps1 ✅). Le vecteur de test
+> `.clclcc → Applications\vlc.exe` (`5q6eG+3TpdI=` sur les inputs figés) verrouille la
+> fidélité du portage Go pour le cas `\`.
+
+### Scénario 27.11.1 — Composer une association WPKG RICHE (navigateur + lab Windows — ACTION HUMAINE Henri)
+
+1. Ouvrir l'onglet « Associations » d'un parc (`parc/groups/{id}?tab=associations`,
+   gate `app.customize`). Le bloc « Ajouter une association » propose une **saisie
+   extension/protocole** + un **dropdown d'apps par nom** (WPKG installées + natives
+   Win32 curées).
+2. Saisir `.html`, choisir **Firefox** (app WPKG). Valider → une ligne
+   `.html → FirefoxHTML` est créée (`source=wpkg`, `wpkg_package=firefox`) et attachée
+   au parc. Le ProgId **riche** `FirefoxHTML` est déclaré par `packages.xml` pour `.html`
+   (pas un générique).
+3. **Lab** : sur un poste du parc avec Firefox déployé, au logon suivant, double-cliquer
+   un `.html` ouvre Firefox (UserChoice + hash appliqués par le compagnon, non
+   réinitialisé par Windows).
+
+### Scénario 27.11.2 — Composer une association GÉNÉRIQUE custom `.clclcc → Applications\<exe>` (navigateur + lab Windows — ACTION HUMAINE Henri)
+
+1. Saisir une extension arbitraire `.clclcc`, choisir une app WPKG **sans handler
+   déclaré pour `.clclcc`** mais avec un exécutable connu (ex. **VLC**,
+   `executable = C:\Program Files\VideoLAN\VLC\vlc.exe`). Valider.
+2. La ligne créée porte un **ProgId générique fabriqué** `Applications\vlc.exe` (badge
+   « générique »), `source=wpkg`, `wpkg_package=vlc`.
+3. **Lab** : au logon, le **compagnon** (droits user) auto-enregistre PER-USER
+   `HKCU\Software\Classes\Applications\vlc.exe\shell\open\command = "C:\…\vlc.exe" "%1"`
+   (chemin résolu sur le poste via App Paths/PATH — JAMAIS reçu du serveur) AVANT
+   d'imposer UserChoice. Double-cliquer un `.clclcc` ouvre VLC (validé empiriquement
+   2026-06-18). AUCUNE écriture HKLM/admin.
+
+### Scénario 27.11.3 — Prédictif « indisponible » : paquet WPKG non déployé (navigateur, hors lab)
+
+1. Sur un parc **sans** le paquet déployé, composer/afficher une association `wpkg`
+   (ex. `.html → FirefoxHTML`, paquet `firefox`). La ligne affiche un **badge
+   « indisponible » + icône warning** ; le tooltip nomme le paquet.
+2. À la composition d'une telle association, un **toast d'avertissement EXACT** nomme
+   le paquet (« `firefox` n'est pas déployé sur ce parc → … »). Une association `native`
+   (`.txt → txtfile`) ou un `wpkg` déployé → **toast de succès simple**.
+3. **Invariant** : le statut prédictif est calculé **côté serveur** (group-level
+   Eloquent PG-pur, SANS APCu). `curl GET /state` ne fait JAMAIS apparaître
+   `source`/`wpkg_package` (payload toujours `{identifier, progid, type}`).
+
+### Scénario 27.11.4 — Garde-fou exe manquant : pas de générique sans exe (navigateur, hors lab)
+
+1. Choisir une app **sans ProgId riche pour l'extension ET sans `executable`** (ex.
+   Firefox + `.clclcc`, Firefox n'ayant pas d'exe renseigné). Valider.
+2. La composition est **refusée** : **toast d'erreur** (« Cette application n'a pas
+   d'exécutable connu… »), AUCUNE ligne `file_associations` créée (piège n°4 : pas de
+   générique sans exe). Le `%1` est obligatoire dans la commande générée.
+
+### Scénario 27.11.5 — Liste éditable / désactivable (navigateur, hors lab)
+
+1. La liste « Associations par défaut du parc » n'affiche que les associations
+   **attachées à CE parc** (défauts legacy seedés 27.3bis inclus), comme lignes
+   **éditables/désactivables**.
+2. « Retirer » détache l'association du parc = **cesser de la gérer** (iso 27.3bis :
+   le choix déjà appliqué sur le poste reste, PAS de reset OFF — l'item disparaît du
+   `/state`).
+
+### Post-correctifs & non-régressions (Story 27.11)
+
+- **AC7 — invariance aval PROUVÉE** : `git diff --stat` **VIDE** sur
+  `AssociationsStateProvider`, `StateCompiler`, `tests/Fixtures/Agent/state.v1.json`,
+  `ContractV1Test.php`, `agent/shared/hasher_test.go`. Le seul code agent touché est
+  `agent/shared/handler_associations.go` (raffinement `ProgIDRegistered` POUR LE CAS
+  GÉNÉRIQUE + auto-enregistrement AC6), son test (vecteur `\` + auto-enregistrement) et
+  l'impl Windows. Le payload reste `{identifier, progid, type}` ; le hash UserChoice
+  (`getHash`/`WriteUserChoice`) est **réutilisé tel quel** (zéro régression).
+- **NFR7** : `AssociationResolver` et `AssociationsStateProvider` PG-purs (grep
+  `apcu_`/`LdapRecord`/`samba-tool` VIDE — seules des mentions documentaires « Aucun…
+  APCu »). La lecture `packages.xml` du resolver est un geste d'ADMINISTRATION (hors
+  chemin desired-state, iso `FileAssociationSeeder`). Le croisement WPKG prédictif vit
+  dans l'UI (group-level Eloquent, sans le cache APCu de `WorkstationPackagesResolver`).
+- **ProgIDRegistered raffiné CAS GÉNÉRIQUE uniquement** : pour `Applications\<exe>`, on
+  vérifie la sous-clé `shell\open\command` (valeur par défaut non vide), pas seulement
+  la présence du nœud — sinon on croit l'asso applicable alors que Windows ouvrirait
+  « Comment voulez-vous ouvrir… ». Les ProgId riches restent inchangés (présence du nœud).
+- **Exe résolu sur le POSTE** : le chemin complet de `<exe>` n'est JAMAIS dans le
+  payload (invariant) ; le compagnon le résout via `App Paths` (HKCU puis HKLM) puis le
+  PATH. Introuvable → abstention D-Henri n°5 (error non fatal, choix préservé).
+
+**Correctifs de review (2026-06-18) — angles détectables en manuel mais hors tests unitaires :**
+
+| Incident | Correctif | Angle de test |
+|----------|-----------|---------------|
+| M1/C5 — recomposer une paire depuis un parc réactivait `is_active` pour TOUS les parcs (kill-switch global contourné) | `is_active` posé uniquement à la création (`firstOrNew`), jamais réécrit sur ligne existante | Scénario 27.11.7 |
+| C4 — composer 2 apps pour la même extension : la 2e était silencieusement ignorée par l'agent (règle exclusive) sans signal UI | Toast d'avertissement non bloquant à la composition d'un `identifier` déjà associé (progid ≠) | Scénario 27.11.8 |
+| C2 — générique d'une native curée affiché « applicable » à tort (faux positif prédictif) | Tout ProgId générique (`Applications\<exe>`) → badge **« best-effort »** indépendamment de `source` (AC5) | Scénario 27.11.3 étendu |
+| C1 — Visionneuse de photos seedée avec `rundll32.exe` (générique structurellement inopérant) | Entrée retirée du catalogue natif ; WordPad conservé+commenté (curation Win11 = décision produit) | Vérif seed `native_applications` |
+
+### Scénario 27.11.7 — `is_active` n'est PAS réactivé en recomposant depuis un autre parc (navigateur, hors lab)
+
+- **Given** une paire `(identifier, progid)` partagée, globalement désactivée (`is_active=false`).
+- **When** un admin recompose la même paire `(extension, app)` depuis un parc différent.
+- **Then** la ligne `file_associations` **reste** `is_active=false` (la recomposition n'écrit `is_active` qu'à la création) → la paire reste coupée côté provider pour tous les parcs. Vérif SQL : `is_active` inchangé après `compose()`.
+
+### Scénario 27.11.8 — Avertissement « règle exclusive » sur extension déjà associée (navigateur, hors lab)
+
+- **Given** un parc a déjà `.html → FirefoxHTML` attaché.
+- **When** l'admin compose `.html → Applications\chrome.exe` (progid différent) sur le même parc.
+- **Then** un **toast d'avertissement non bloquant** signale que l'agent n'applique qu'une asso par extension (règle exclusive) et invite à désactiver l'ancienne ; la création n'est PAS bloquée (le compilateur tranche). Remplacement automatique = décision produit non implémentée (cf. review Q2).
+
+### Checklist rapide (Story 27.11)
+
+- [ ] 27.11.1 — Composer une asso WPKG riche (`.html → FirefoxHTML`), appliquée au logon.
+- [ ] 27.11.2 — Composer une asso générique custom (`.clclcc → Applications\vlc.exe`),
+      auto-enregistrement per-user + ouverture VLC au double-clic (lab).
+- [ ] 27.11.3 — Prédictif « indisponible » : paquet WPKG non déployé → badge + toast
+      nommant le paquet ; `native`/déployé → succès.
+- [ ] 27.11.4 — Garde-fou exe manquant : générique refusé (toast d'erreur), rien créé.
+- [ ] 27.11.5 — Liste du parc éditable : « Retirer » = cesser de gérer (item absent du `/state`).
+- [ ] 27.11.6 — AC1 (déjà validé 2026-06-18) : UserChoice → `Applications\<exe>` honoré
+      sans `SupportedTypes` ; hash valide pour ProgId avec `\`.
+- [ ] 27.11.7 — Recomposer une paire globalement désactivée depuis un autre parc ne la
+      réactive PAS (`is_active` reste false). [correctif review M1/C5]
+- [ ] 27.11.8 — Composer une 2e app pour une extension déjà associée → toast
+      d'avertissement « règle exclusive », création non bloquée. [correctif review C4]

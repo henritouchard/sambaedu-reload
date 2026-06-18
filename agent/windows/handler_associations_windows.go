@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -82,9 +83,18 @@ func (o *associationsOps) ReadUserChoiceProgID(spec shared.AssociationSpec) (str
 // CLASSES_ROOT fusionne HKLM\Software\Classes et HKCU\Software\Classes : la
 // présence de la clé `<ProgId>` y atteste que l'application gère ce ProgId.
 // D-Henri n°5 : si absent, l'agent NE touche PAS la clé UserChoice.
+//
+// Story 27.11 (raffinement CAS GÉNÉRIQUE) : pour `Applications\<exe>`, la présence
+// du nœud ne suffit pas — sans `shell\open\command`, Windows ouvrirait « Comment
+// voulez-vous ouvrir… ». On vérifie donc la sous-clé `shell\open\command` ET sa
+// valeur par défaut non vide pour ce cas. Les ProgId riches restent inchangés.
 func (o *associationsOps) ProgIDRegistered(progID string) (bool, error) {
 	if progID == "" {
 		return false, nil
+	}
+
+	if strings.HasPrefix(strings.ToLower(progID), `applications\`) {
+		return progIDCommandRegistered(progID)
 	}
 
 	key, err := registry.OpenKey(registry.CLASSES_ROOT, progID, registry.QUERY_VALUE)
@@ -98,6 +108,100 @@ func (o *associationsOps) ProgIDRegistered(progID string) (bool, error) {
 	_ = key.Close()
 
 	return true, nil
+}
+
+// progIDCommandRegistered : le ProgId générique a-t-il une commande d'ouverture
+// effective `HKCR\<ProgId>\shell\open\command` (valeur par défaut non vide) ? C'est
+// la condition RÉELLE d'applicabilité d'un `Applications\<exe>` (Story 27.11).
+func progIDCommandRegistered(progID string) (bool, error) {
+	cmdPath := progID + `\shell\open\command`
+
+	key, err := registry.OpenKey(registry.CLASSES_ROOT, cmdPath, registry.QUERY_VALUE)
+	if err != nil {
+		if errors.Is(err, registry.ErrNotExist) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("ouverture de HKCR\\%s : %w", cmdPath, err)
+	}
+	defer key.Close()
+
+	// Valeur par défaut (nom ""). Absente/vide → commande non effective.
+	cmd, _, err := key.GetStringValue("")
+	if err != nil {
+		if errors.Is(err, registry.ErrNotExist) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("lecture de HKCR\\%s (défaut) : %w", cmdPath, err)
+	}
+
+	return strings.TrimSpace(cmd) != "", nil
+}
+
+// RegisterApplicationProgID auto-enregistre PER-USER un ProgId générique
+// `Applications\<exe>` (Story 27.11, AC6) : résout le chemin COMPLET de `<exe>` sur
+// le poste (App Paths puis PATH) — JAMAIS reçu du serveur — et écrit
+// `HKCU\Software\Classes\Applications\<exe>\shell\open\command = "<chemin>" "%1"`.
+// AUCUNE écriture HKLM/admin. Exe introuvable → registered=false (abstention,
+// choix utilisateur préservé). Idempotent (réécrire la même commande = no-op
+// fonctionnel).
+func (o *associationsOps) RegisterApplicationProgID(exe string) (bool, error) {
+	exe = strings.TrimSpace(exe)
+	if exe == "" {
+		return false, nil
+	}
+
+	fullPath, found := resolveExecutablePath(exe)
+	if !found {
+		// Exe introuvable sur le poste → on s'abstient (D-Henri n°5).
+		return false, nil
+	}
+
+	// HKCU\Software\Classes\Applications\<exe>\shell\open\command (per-user).
+	keyPath := `Software\Classes\Applications\` + exe + `\shell\open\command`
+	key, _, err := registry.CreateKey(registry.CURRENT_USER, keyPath, registry.SET_VALUE)
+	if err != nil {
+		return false, fmt.Errorf("création de HKCU\\%s : %w", keyPath, err)
+	}
+	defer key.Close()
+
+	// `"<chemin>" "%1"` : le %1 passe le fichier en argument (obligatoire — piège
+	// n°4). Valeur par défaut (nom "").
+	command := `"` + fullPath + `" "%1"`
+	if err := key.SetStringValue("", command); err != nil {
+		return false, fmt.Errorf("écriture de HKCU\\%s (défaut) : %w", keyPath, err)
+	}
+
+	return true, nil
+}
+
+// resolveExecutablePath résout le chemin COMPLET d'un exe par son nom, sur le
+// poste : d'abord via `App Paths` (HKCU puis HKLM —
+// `Software\Microsoft\Windows\CurrentVersion\App Paths\<exe>`, convention Windows
+// de résolution par nom), puis via le PATH (exec.LookPath). Introuvable → false.
+func resolveExecutablePath(exe string) (string, bool) {
+	for _, root := range []registry.Key{registry.CURRENT_USER, registry.LOCAL_MACHINE} {
+		appPathsKey := `Software\Microsoft\Windows\CurrentVersion\App Paths\` + exe
+		key, err := registry.OpenKey(root, appPathsKey, registry.QUERY_VALUE)
+		if err != nil {
+			continue
+		}
+		val, _, err := key.GetStringValue("")
+		_ = key.Close()
+		if err == nil {
+			val = strings.Trim(strings.TrimSpace(val), `"`)
+			if val != "" {
+				return val, true
+			}
+		}
+	}
+
+	if p, err := exec.LookPath(exe); err == nil && p != "" {
+		return p, true
+	}
+
+	return "", false
 }
 
 // WriteUserChoice supprime l'ancienne clé UserChoice (ACL hérité bloque la

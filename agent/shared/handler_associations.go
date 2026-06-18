@@ -62,6 +62,30 @@ func (s AssociationSpec) isProtocol() bool {
 	return strings.EqualFold(s.Type, "protocol")
 }
 
+// genericApplicationsPrefix : préfixe des ProgId GÉNÉRIQUES fabriqués par le
+// composer serveur (Story 27.11) — `Applications\<exe>` (« Ouvrir avec », ce que
+// Windows crée nativement). Casse réelle de la clé HKCR.
+const genericApplicationsPrefix = `Applications\`
+
+// isGenericApplication : le ProgId cible est-il un générique `Applications\<exe>`
+// (Story 27.11) plutôt qu'un ProgId riche (`FirefoxHTML`, `txtfile`…) ? Insensible
+// à la casse (Windows l'est sur les clés de registre).
+func (s AssociationSpec) isGenericApplication() bool {
+	return strings.HasPrefix(strings.ToLower(s.ProgID), strings.ToLower(genericApplicationsPrefix))
+}
+
+// applicationExe : le NOM de l'exe (basename) d'un ProgId générique
+// `Applications\<exe>`. Vide si le ProgId n'est pas générique. Le chemin COMPLET
+// n'est JAMAIS dans le payload (invariant AC7) : il est résolu sur le poste
+// (App Paths / PATH) par AssociationsOps.RegisterApplicationProgID.
+func (s AssociationSpec) applicationExe() string {
+	if !s.isGenericApplication() {
+		return ""
+	}
+
+	return s.ProgID[len(genericApplicationsPrefix):]
+}
+
 // AssociationsOps : accès spécifiques à l'OS, injectés (testable hôte).
 // L'impl Windows vit dans agent/windows/handler_associations_windows.go ; un
 // fake en mémoire couvre les tests.
@@ -73,7 +97,24 @@ type AssociationsOps interface {
 
 	// ProgIDRegistered indique si le ProgId cible est enregistré/installé sur le
 	// poste. false → l'agent NE touche PAS la clé existante (D-Henri n°5).
+	//
+	// Story 27.11 (raffinement CAS GÉNÉRIQUE uniquement) : pour un ProgId
+	// `Applications\<exe>`, la simple présence du nœud `HKCR\Applications\<exe>`
+	// ne suffit PAS — Windows ouvrirait « Comment voulez-vous ouvrir… » sans
+	// `shell\open\command`. L'impl vérifie donc la sous-clé `shell\open\command`
+	// pour ce cas (les ProgId riches restent inchangés : présence du nœud).
 	ProgIDRegistered(progID string) (bool, error)
+
+	// RegisterApplicationProgID (Story 27.11, AC6) auto-enregistre PER-USER un
+	// ProgId générique `Applications\<exe>` : écrit
+	// `HKCU\Software\Classes\Applications\<exe>\shell\open\command = "<chemin>" "%1"`.
+	// Le chemin COMPLET de `<exe>` est résolu sur le POSTE (App Paths / PATH) — il
+	// n'est JAMAIS dans le payload (invariant AC7). AUCUNE écriture HKLM/admin.
+	//
+	// Retourne registered=false si l'exe est INTROUVABLE sur le poste (abstention,
+	// D-Henri n°5 : le choix utilisateur est préservé, pas de générique sans exe).
+	// err = échec d'écriture/accès registre.
+	RegisterApplicationProgID(exe string) (registered bool, err error)
 
 	// WriteUserChoice supprime l'ancienne clé UserChoice puis (ré)écrit
 	// `ProgId` + `Hash` (calculé via HashFor). Idempotent du point de vue du
@@ -189,9 +230,33 @@ func (h *AssociationsHandler) Apply(items []StateItem) error {
 			continue
 		}
 		if !registered {
-			// D-Henri n°5 : ProgId absent → on NE touche PAS la clé existante
-			// (pas de clobber, pas de suppression-avant-réécriture). Choix
-			// utilisateur conservé. Erreur NON fatale (isolation), pas de boucle.
+			// Story 27.11 (AC6) : pour un ProgId GÉNÉRIQUE `Applications\<exe>`
+			// non enregistré, le compagnon (droits user) tente l'auto-enregistrement
+			// PER-USER (`HKCU\Software\Classes\Applications\<exe>\shell\open\command`)
+			// AVANT d'imposer UserChoice — le chemin de l'exe est résolu sur le poste.
+			// Réussite → on poursuit (imposera UserChoice). Échec (exe introuvable)
+			// → on retombe sur l'abstention D-Henri n°5 (choix préservé).
+			if spec.isGenericApplication() {
+				ok, regErr := h.Ops.RegisterApplicationProgID(spec.applicationExe())
+				if regErr != nil {
+					logError(h.Log, "Auto-enregistrement de %q (%s) en échec : %v", spec.ProgID, spec.identity(), regErr)
+					if firstErr == nil {
+						firstErr = fmt.Errorf("auto-enregistrement de %q (%s) : %w", spec.ProgID, spec.identity(), regErr)
+					}
+
+					continue
+				}
+				if ok {
+					logInfo(h.Log, "ProgId générique auto-enregistré (per-user) : %s", spec.ProgID)
+					registered = true
+				}
+			}
+		}
+		if !registered {
+			// D-Henri n°5 : ProgId absent (ou exe générique introuvable) → on NE
+			// touche PAS la clé existante (pas de clobber, pas de
+			// suppression-avant-réécriture). Choix utilisateur conservé. Erreur NON
+			// fatale (isolation), pas de boucle.
 			detail := fmt.Sprintf("ProgId %q non enregistré, choix utilisateur conservé (%s)", spec.ProgID, spec.identity())
 			logWarning(h.Log, "Association %s ignorée : %s", spec.identity(), detail)
 			if firstErr == nil {

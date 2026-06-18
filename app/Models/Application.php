@@ -35,6 +35,7 @@ use Livewire\Wireable;
  * @property string|null $installer_url URL de l'installeur
  * @property string|null $installer_sha256 Hash SHA256 de l'installeur
  * @property string|null $installer_filename Nom du fichier installeur
+ * @property string|null $executable Nom de l'exe runtime (27.11 — fabrique le ProgId générique Applications\<exe> ; seul le BASENAME est consommé côté serveur, le chemin complet n'est ni transmis au payload ni consommé par l'agent, le poste le re-résout)
  * @property int|null $installer_size Taille en octets
  * @property string|null $local_xml_path Chemin XML local
  * @property string|null $local_installer_path Chemin installeur local
@@ -87,6 +88,7 @@ class Application extends Model implements Wireable
         'installer_url',
         'installer_sha256',
         'installer_filename',
+        'executable',
         'installer_size',
         'local_xml_path',
         'local_installer_path',

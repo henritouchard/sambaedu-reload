@@ -328,8 +328,19 @@ porte une association **CONCRÈTE** :
 | Clé | Type JSON | Sens |
 |---|---|---|
 | `identifier` | string | Extension (`.pdf`, `.html`) ou protocole (`http`, `https`). |
-| `progid` | string | ProgId Windows cible inscrit sous UserChoice (ex. `Acrobat.Document.DC`, `FirefoxURL`). |
+| `progid` | string | ProgId Windows cible inscrit sous UserChoice (ex. `Acrobat.Document.DC`, `FirefoxURL`). Peut être un ProgId **générique** `Applications\<exe>` (cf. note ci-dessous, Story 27.11). |
 | `type` | string | `file` (→ `FileExts\<ext>\UserChoice`) \| `protocol` (→ `UrlAssociations\<proto>\UserChoice`). |
+
+> **`progid` peut être `Applications\<exe>` (Story 27.11 — composer).** Quand
+> l'admin compose une association *(extension, app)* sans ProgId riche déclaré pour
+> cette extension, le serveur fabrique le ProgId **générique** `Applications\<exe>`
+> (« Ouvrir avec », ce que Windows crée nativement) — ex. `Applications\vlc.exe`. Le
+> **payload ne change PAS** (`{identifier, progid, type}`) et le **hash** est calculé
+> sur la chaîne ProgId VERBATIM (le `\` n'est pas un cas particulier — confirmé
+> empiriquement 2026-06-18). Le **chemin complet** de l'exe n'est JAMAIS dans le
+> payload : le compagnon le résout sur le poste (App Paths/PATH) et auto-enregistre
+> per-user `HKCU\Software\Classes\Applications\<exe>\shell\open\command` AVANT
+> d'imposer UserChoice. Golden/contrat INCHANGÉS.
 
 > **🔴 Le hash UserChoice n'est JAMAIS au payload.** Windows protège
 > l'association par défaut par un hash anti-tamper dérivé de

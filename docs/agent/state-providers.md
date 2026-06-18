@@ -497,6 +497,32 @@ Successeur natif du volet poste `associations.ps1`/`SFTA.ps1` (le canal legacy
   `PackagesXmlAssociationsReader`) = `Application::$app_id` (sortie du resolver) —
   `PackagesXmlService::regenerate()` émet le `$app->xml` dont la racine `<package id>`
   vaut `app_id`.
+- **Composer V2 + resolver riche/générique (Story 27.11).** L'UI passe d'un catalogue
+  figé (toggles) à un **composer** : l'admin saisit une extension/protocole et choisit
+  une app PAR SON NOM (apps WPKG `Application` + natives Win32 curées
+  `NativeApplication`, UWP exclues). Un service serveur **`AssociationResolver`**
+  (`App\Services\Agent\Resolvers\AssociationResolver`, **PG-pur**) traduit
+  *(extension X, app A)* → *(progid, source, wpkg_package)* :
+  (1) **A native curée** déclarant X → ProgId canonique (`txtfile`…), `source=native` ;
+  (2) **A WPKG déclarant un handler POUR X** (`packages.xml`) → ProgId **riche**,
+  `source=wpkg`, `wpkg_package=A.app_id` ; (3) **sinon** → ProgId **générique**
+  `Applications\<exe de A>` (`source=wpkg`/`native` selon A). Le résultat est **upserté**
+  comme ligne `file_associations` (clé `catalogKey(identifier, progid)`, iso 27.3bis)
+  attachée au parc — **payload aval inchangé, pas de migration de `file_associations`**.
+  La lecture `packages.xml` du resolver est un geste d'**administration** admis (hors
+  chemin desired-state, iso `FileAssociationSeeder`) — `AssociationsStateProvider` reste
+  PG-pur. **Donnée neuve** : `applications.executable` (nullable) + table
+  `native_applications` (`{label, progid, executable, assoc_types}`, seedée idempotente).
+  **Garde-fou (piège n°4)** : générique requis sans exe → composition refusée (pas de
+  générique sans exe ; le `%1` est obligatoire dans la commande générée).
+- **Agent : auto-enregistrement per-user du générique (Story 27.11, AC6).** Pour un
+  ProgId générique `Applications\<exe>` non enregistré, le **compagnon** (droits user)
+  résout le chemin de l'exe sur le poste (`App Paths`/PATH — jamais reçu du serveur) et
+  écrit `HKCU\Software\Classes\Applications\<exe>\shell\open\command = "<chemin>" "%1"`
+  AVANT d'imposer UserChoice (aucune écriture HKLM/admin). `ProgIDRegistered` est raffiné
+  **pour ce cas générique uniquement** (vérifie `shell\open\command`, pas juste le nœud).
+  Exe introuvable → abstention D-Henri n°5. Le hash UserChoice (`getHash`) et
+  `WriteUserChoice` sont **réutilisés tels quels** (golden/contrat INTOUCHÉS).
 
 #### Le hash UserChoice (cœur de risque, AC5)
 

@@ -168,6 +168,19 @@ class FileAssociation extends Model
     }
 
     /**
+     * Le ProgId cible est-il GÉNÉRIQUE `Applications\<exe>` (« Ouvrir avec »
+     * fabriqué par le resolver faute de ProgId riche), insensible à la casse ?
+     * Un générique est « best-effort » côté UI (AC5) : l'association SERA tentée
+     * mais dépend de l'app réellement installée et résoluble sur le poste —
+     * INDÉPENDAMMENT de `source` (un générique de native l'est aussi). Distinct
+     * d'un ProgId canonique (ex. `txtfile`), toujours « applicable ».
+     */
+    public function isGeneric(): bool
+    {
+        return str_starts_with(strtolower((string) $this->progid), 'applications\\');
+    }
+
+    /**
      * Clé de catalogue DÉTERMINISTE dérivée de l'identité d'une entrée =
      * `(identifier, progid)`. Story 27.3bis : le seed-migration, la baseline figée
      * du seeder ET le parse `default.xml` legacy DOIVENT converger sur cette clé

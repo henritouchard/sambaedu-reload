@@ -1,6 +1,6 @@
 # Story 27.11 : Composer d'associations par défaut — extension libre + app par nom
 
-Status: backlog
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -231,28 +231,32 @@ indisponible ; garde-fou exe manquant ; les 2 confirmations empiriques AC1).
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — 🔴 GATE AC1 (action humaine Henri)** : valider sur poste les 2 confirmations empiriques ; ajouter le
-      vecteur de test hash `Applications\<exe>` ; **trancher générique vs repli**. **Bloque T5/T6 (générique).**
-- [ ] **T2 — Donnée** (AC2) : migration `applications.executable` (nullable, idempotente, `down` symétrique) ;
-      table **native curée** + seeder idempotent (Win32 built-ins, UWP exclues) ; captation exe WPKG
-      (import/édition ou parse `packages.xml`, documentée).
-- [ ] **T3 — Service resolver** (AC3) : `AssociationResolver::resolve(X, A)` PG-pur testable hôte ; upsert
-      `file_associations` iso `catalogKey` ; lecture `PackagesXmlAssociationsReader` admise (geste admin).
-- [ ] **T4 — UI composer** (AC4, AC5) : refonte de
+- [x] **T1 — 🔴 GATE AC1 (action humaine Henri)** : validé 2026-06-18 sur poste Windows réel — (1) UserChoice vers `Applications\vlc.exe` honoré sans SupportedTypes (double-clic `.clclcc` après reboot ✅) ; (2) hash valide pour ProgId avec `\` (`Gk3UMH/Rm+A=` via SFTA.ps1 ✅). Scope complet débloqué. Vecteur de test `Applications\<exe>` à ajouter en T6.
+- [x] **T2 — Donnée** (AC2) : migration `applications.executable` (nullable, idempotente, `down` symétrique) ;
+      table **native curée** (`native_applications`) + modèle/factory + seeder idempotent (Win32 built-ins, UWP
+      exclues) ; captation exe WPKG via la colonne `executable` (import/édition), documentée.
+- [x] **T3 — Service resolver** (AC3) : `AssociationResolver::resolve(X, A)` PG-pur testable hôte ; upsert
+      `file_associations` iso `catalogKey` (`compose()`) ; lecture `PackagesXmlAssociationsReader` admise (geste admin).
+- [x] **T4 — UI composer** (AC4, AC5) : refonte de
       `resources/views/pages/parc/groups/_partials/associations-tab.blade.php` — bloc d'ajout (saisie extension +
       dropdown app à icône), liste éditable/désactivable, prédictif étendu, garde-fou exe manquant, `WithToasts`.
-- [ ] **T5 — Agent Go : auto-enregistrement per-user** (AC6) — *si AC1(1) OK* : écriture
-      `HKCU\Software\Classes\Applications\<exe>\shell\open\command` avant UserChoice ; raffiner `ProgIDRegistered`
-      (vérif `shell\open\command` sur le cas générique) ; hash/écriture réutilisés ; câblage compagnon.
-- [ ] **T6 — Tests** (AC8) : `AssociationResolverTest` ; `FileAssociationsPageTest` étendu ; Go (vecteur générique
-      + auto-enregistrement) ; NFR7 grep vide.
-- [ ] **T7 — Preuve d'invariance** (AC7) : `git diff --stat` vide sur provider/compilateur/golden/hash/agent (hors
-      ajouts AC1/AC6) ; sinon justifier.
-- [ ] **T8 — Doc + QA** (AC9) append-only.
-- [ ] **T9 — Validation finale** : `php -l` ; grep NFR7 vide ; `go test`/vet/cross verts ; **/vm**
-      `migrate:status` → `migrate --force` (colonne `executable` + table native) ; **validation lab Windows
-      (ACTION HUMAINE Henri)** : composer une asso WPKG riche appliquée au logon, composer une asso générique
-      custom (`.clclcc` → app), prédictif « indisponible », garde-fou exe manquant.
+- [x] **T5 — Agent Go : auto-enregistrement per-user** (AC6) — *AC1(1) validé* : écriture
+      `HKCU\Software\Classes\Applications\<exe>\shell\open\command` avant UserChoice (`RegisterApplicationProgID`,
+      chemin exe résolu sur le poste via App Paths/PATH) ; raffiné `ProgIDRegistered` (vérif `shell\open\command`
+      sur le cas générique) ; hash/écriture réutilisés ; câblage compagnon (interface Ops + impl Windows).
+- [x] **T6 — Tests** (AC8) : `AssociationResolverTest` (9) ; `FileAssociationsPageTest` étendu (14) ;
+      `NativeApplicationSeederTest` (2) ; `Story2711MigrationsTest` (1) ; Go `handler_associations_test.go`
+      (vecteur générique `Applications\<exe>` + auto-enregistrement per-user) ; NFR7 grep vide.
+- [x] **T7 — Preuve d'invariance** (AC7) : `git diff --stat` VIDE sur provider/compilateur/golden/contrat/hasher
+      (cf. Completion Notes) ; agent touché seulement pour le raffinement `ProgIDRegistered`/auto-enregistrement
+      (AC6) + vecteur de test (AC1).
+- [x] **T8 — Doc + QA** (AC9) append-only : `docs/agent/contract-v1.md` (note `Applications\<exe>`),
+      `docs/agent/state-providers.md` (composer + resolver), `docs/qa/domains/agent.md` (section 27.11).
+- [~] **T9 — Validation finale** : `php -l` OK ; grep NFR7 vide ; `go test`/vet/cross **verts** ; migrations
+      idempotentes vérifiées **en SQLite** (`Story2711MigrationsTest`). **RESTE ACTIONS HUMAINES HENRI** (non
+      cochées) : **/vm** `migrate:status` → `migrate --force` (colonne `executable` + table `native_applications`) ;
+      **validation lab Windows** : composer une asso WPKG riche appliquée au logon, composer une asso générique
+      custom (`.clclcc` → app via `Applications\<exe>`), prédictif « indisponible », garde-fou exe manquant.
 
 ## Dev Notes
 
@@ -342,10 +346,155 @@ preuve d'invariance aval.
 
 ### Agent Model Used
 
-_(à remplir par le DEV)_
+`claude-opus-4-8[1m]` (Opus 4.8, 1M context). Fable recommandé par la story mais
+indisponible — fallback opus assumé (iso 27.9/27.10).
 
 ### Debug Log References
 
+- Tests hôte sur **SQLite :memory: + cache `array`** (phpunit.xml). `vendor/` réinstallé
+  (`composer install --ignore-platform-req=ext-apcu --ignore-platform-req=ext-imagick`)
+  + `mkdir -p bootstrap/cache`. `package:discover` échoue sur l'hôte (ext-apcu absent)
+  mais sans impact tests (CACHE_DRIVER=array).
+- Go : module `agent/`, toolchain `~/go-toolchain/go/bin/go`. `go test ./shared/` vert,
+  `go vet ./shared/...` + `GOOS=windows go vet ./windows/...` propres, `GOOS=windows go
+  build ./windows` OK.
+- Vecteur de hash générique `.clclcc → Applications\vlc.exe` calculé via `UserChoiceHash`
+  sur les inputs figés du test → `5q6eG+3TpdI=` (verrouille la fidélité du portage Go
+  pour le cas `\` ; l'acceptation Windows-native est déléguée au lab, déjà validée AC1).
+
 ### Completion Notes List
 
+**Périmètre livré (T2→T8).** Le gate AC1 (T1) étant validé empiriquement par Henri
+(2026-06-18), le SCOPE COMPLET a été implémenté (fallback générique `Applications\<exe>`,
+colonne `executable`, table native curée, auto-enregistrement agent AC6) — pas le repli.
+
+- **T2 (AC2)** : migration `applications.executable` (nullable, idempotente `hasColumn`,
+  `down()` symétrique, comment daté 27.11) ; table dédiée `native_applications`
+  (`{key, label, progid, executable, assoc_types(json), icon_url}`) + modèle
+  `NativeApplication` (`supportsIdentifier()`) + factory + `NativeApplicationSeeder`
+  idempotent (`updateOrCreate` par `key` ; Bloc-notes/`txtfile`, Paint/`Paint.Picture`,
+  WordPad, Visionneuse de photos ; **UWP exclues**) câblé dans `DatabaseSeeder` AVANT
+  `FileAssociationSeeder`. Captation exe WPKG = colonne `executable` (alimentée à
+  l'import/édition).
+- **T3 (AC3)** : `AssociationResolver::resolve(X, A)` PG-pur → `ResolvedAssociation
+  {progid, source, wpkgPackage, generic}`. Native déclarant X → ProgId canonique
+  (`source=native`) ; native ne déclarant pas X → générique (piège n°2) ; WPKG déclarant
+  un handler pour X (via `PackagesXmlAssociationsReader`) → ProgId riche
+  (`source=wpkg`, `wpkg_package=app_id`) ; sinon générique `Applications\<exe>`. Garde-fou
+  n°4 : générique sans exe → `InvalidArgumentException`. `compose()` upsert
+  `file_associations` via `catalogKey(identifier, progid)` + attache au parc
+  (`syncWithoutDetaching`). **Pas de migration de `file_associations`.**
+- **T4 (AC4/AC5)** : refonte de l'onglet en COMPOSER (saisie extension/protocole validée
+  regex + dropdown app par nom à icône WPKG+natives ; `compose()`/`disable()` ; liste
+  n'affichant que les associations attachées au parc, éditables/désactivables ; prédictif
+  group-level Eloquent PG-pur SANS APCu ; garde-fou exe → toast d'erreur ; `WithToasts`).
+  Type déduit de la saisie (`.` → file, sinon protocol).
+- **T5 (AC6)** : interface `AssociationsOps` étendue de `RegisterApplicationProgID(exe)` ;
+  `Apply()` tente l'auto-enregistrement per-user POUR LE CAS GÉNÉRIQUE avant UserChoice
+  (échec/exe introuvable → abstention D-Henri n°5) ; impl Windows écrit
+  `HKCU\Software\Classes\Applications\<exe>\shell\open\command = "<chemin>" "%1"` (chemin
+  résolu via App Paths HKCU/HKLM puis PATH — **jamais reçu du serveur**, invariant) ;
+  `ProgIDRegistered` raffiné POUR LE CAS GÉNÉRIQUE (vérif `shell\open\command` non vide).
+  `getHash`/`WriteUserChoice`/`SessionInputs` **réutilisés tels quels**.
+- **T6 (AC8)** : `AssociationResolverTest` (9), `FileAssociationsPageTest` (14 — réécrit
+  V2 composer), `NativeApplicationSeederTest` (2), `Story2711MigrationsTest` (1) ; Go
+  `handler_associations_test.go` (+vecteur `Applications\vlc.exe` AC1 + 3 tests
+  auto-enregistrement : auto-register→apply idempotent, abstention si exe absent, ProgId
+  riche n'auto-registre pas). **Résultats** : PHPUnit 55 tests / 238 assertions VERTS
+  (mes tests + invariance provider/contrat/seeder/reader) ; `go test ./shared/` VERT ;
+  `go vet` linux+windows VERT ; cross-compile Windows VERT.
+- **T7 (AC7) — PREUVE D'INVARIANCE** : `git diff --stat` **VIDE** sur :
+  `app/Services/Agent/Providers/AssociationsStateProvider.php`,
+  `app/Services/Agent/StateCompiler.php`, `tests/Fixtures/Agent/state.v1.json`,
+  `tests/Unit/Services/Agent/ContractV1Test.php`, `agent/shared/hasher_test.go`. Sortie :
+
+  ```
+  $ git diff --stat -- AssociationsStateProvider.php StateCompiler.php state.v1.json ContractV1Test.php hasher_test.go
+  (aucune ligne — diff vide)
+  ```
+
+  Le seul code agent touché (autorisé AC1/AC6) :
+  ```
+  agent/shared/handler_associations.go          |  71 +++++++++++++-
+  agent/shared/handler_associations_test.go     | 136 ++++++++++++++++++++++++--
+  agent/windows/handler_associations_windows.go | 104 ++++++++++++++++++++
+  ```
+  Le payload reste `{identifier, progid, type}` ; golden Go `frozenStateHash` et PHP
+  `FROZEN_STATE_HASH` intouchés (ContractV1Test + tests golden Go verts).
+- **NFR7** : `grep -rinE 'apcu_|LdapRecord|use .*Ldap|samba-tool'` VIDE sur
+  `AssociationResolver`/`ResolvedAssociation`/`AssociationsStateProvider` (seules des
+  mentions documentaires « Aucun… APCu »). `php -l` OK sur tous les fichiers PHP touchés.
+- **Choix de conception non explicitement couvert** : le chemin COMPLET de l'exe n'est
+  PAS dans le payload (invariant AC7) ; l'agent le résout SUR LE POSTE via `App Paths`
+  (HKCU puis HKLM) puis le PATH (`exec.LookPath`). Cohérent avec D-Henri n°5 (exe
+  introuvable → abstention). À valider en lab (résolution App Paths/PATH du `<exe>`).
+- **Note suite Unit complète** : `vendor/bin/phpunit --testsuite Unit` montre des
+  errors/failures PRÉEXISTANTS et hors-périmètre (LDAP non joignable sur l'hôte —
+  `ldap_search(): Can't contact LDAP server` ; AgentToolService ext-zip ; factories
+  LDAP-dépendantes). Confirmé via `git stash` : `LdapConnectionTest` échoue à
+  l'identique sur HEAD avant mes modifs. Aucun de mes tests n'échoue.
+
+**ACTIONS HUMAINES RESTANTES (Henri) — T9 non cochées :**
+1. **/vm** : `php artisan migrate:status` → `php artisan migrate --force` pour appliquer
+   `applications.executable` + `native_applications` sur PostgreSQL (les migrations ne
+   sont jouées qu'en SQLite côté dev ; +`config:cache`/`chown www-admin` si besoin).
+   Seeder native : `php artisan db:seed --class=NativeApplicationSeeder` (idempotent).
+2. **Validation lab Windows** (poste réel) : (a) composer une asso WPKG **riche**
+   (`.html → FirefoxHTML`) appliquée au logon ; (b) composer une asso **générique custom**
+   (`.clclcc → Applications\<exe>`) → auto-enregistrement per-user + double-clic ouvre
+   l'app ; (c) prédictif **« indisponible »** (paquet WPKG non déployé) ; (d) garde-fou
+   **exe manquant** (composition refusée). Check-list QA : `docs/qa/domains/agent.md`
+   section « Story 27.11 ».
+
 ### File List
+
+**Migrations / seeders / factory :**
+- `database/migrations/2026_06_18_120000_add_executable_to_applications.php` (créé)
+- `database/migrations/2026_06_18_120100_create_native_applications_table.php` (créé)
+- `database/seeders/NativeApplicationSeeder.php` (créé)
+- `database/seeders/DatabaseSeeder.php` (modifié — câble `NativeApplicationSeeder`)
+- `database/factories/NativeApplicationFactory.php` (créé)
+
+**Modèles :**
+- `app/Models/NativeApplication.php` (créé)
+- `app/Models/Application.php` (modifié — `executable` au `$fillable` + docblock)
+
+**Service resolver :**
+- `app/Services/Agent/Resolvers/AssociationResolver.php` (créé)
+- `app/Services/Agent/Resolvers/ResolvedAssociation.php` (créé)
+
+**UI / Livewire :**
+- `resources/views/pages/parc/groups/_partials/associations-tab.blade.php` (refonte V2 composer)
+
+**Agent Go :**
+- `agent/shared/handler_associations.go` (modifié — interface `RegisterApplicationProgID`,
+  helpers `isGenericApplication`/`applicationExe`, auto-enregistrement dans `Apply`)
+- `agent/windows/handler_associations_windows.go` (modifié — `RegisterApplicationProgID`,
+  `resolveExecutablePath`, raffinement `ProgIDRegistered`/`progIDCommandRegistered`)
+- `agent/shared/handler_associations_test.go` (modifié — vecteur AC1 + tests AC6)
+
+**Tests PHP :**
+- `tests/Unit/Services/Agent/Resolvers/AssociationResolverTest.php` (créé)
+- `tests/Feature/Livewire/ParcSettings/FileAssociationsPageTest.php` (réécrit V2 composer)
+- `tests/Unit/Seeders/NativeApplicationSeederTest.php` (créé)
+- `tests/Unit/Migrations/Story2711MigrationsTest.php` (créé)
+
+**Documentation / QA :**
+- `docs/agent/contract-v1.md` (modifié — note `progid` peut être `Applications\<exe>`)
+- `docs/agent/state-providers.md` (modifié — composer + resolver riche/générique + AC6)
+- `docs/qa/domains/agent.md` (modifié — section append-only « Story 27.11 »)
+
+**Suivi sprint / story :**
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (entrée `27-11-…` = review)
+- `_bmad-output/implementation-artifacts/27-11-associations-composer-extension-app.md` (cette story)
+
+## Change Log
+
+- **2026-06-18 — DEV (claude-opus-4-8[1m])** : implémentation T2→T8 du composer
+  d'associations V2. Donnée (`applications.executable` + table `native_applications`
+  curée), service `AssociationResolver` PG-pur (riche/générique/native), refonte UI
+  composer (saisie + dropdown app par nom + liste éditable/désactivable + prédictif +
+  garde-fou exe), agent Go (auto-enregistrement per-user `Applications\<exe>` + raffinement
+  `ProgIDRegistered` cas générique), tests PHP+Go, doc contrat/providers/QA. Preuve
+  d'invariance AC7 (diff aval vide). Status ready-for-dev → review. Reste actions humaines
+  Henri (T9 : /vm migrate --force + validation lab Windows).
