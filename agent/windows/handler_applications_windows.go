@@ -121,6 +121,43 @@ func (o *applicationsOps) ListInstalled() ([]string, error) {
 	return []string{}, nil
 }
 
+// DeployedProfileAppIds lit le `profiles.xml` par-hôte DÉJÀ DÉPOSÉ par l'agent
+// (`%ProgramData%\SambaEdu\wpkg\profiles.xml`, écrit par `dropHostProfile` au
+// dernier `Apply`) et renvoie l'ensemble des `package-id` qu'il référence — « ce
+// que l'agent a demandé à WPKG de gérer la dernière fois ». ABSENT (jamais déposé)
+// → ([], nil) : rien géré encore (toute cible désirée constitue un changement →
+// Apply déposera). Illisible/corrompu → err (le moteur rend error pour le type).
+// Schéma iso `dropHostProfile`/`ProfilesXmlController` : `<profiles><profile>
+// <package package-id=…/></profile></profiles>`.
+func (o *applicationsOps) DeployedProfileAppIds() ([]string, error) {
+	path := filepath.Join(o.wpkgDir(), "profiles.xml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Jamais déposé : aucun périmètre géré encore.
+			return []string{}, nil
+		}
+
+		return nil, fmt.Errorf("lecture de %s : %w", path, err)
+	}
+
+	var doc xmlProfiles
+	if err := xml.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("profiles.xml déposé illisible (%s) : %w", path, err)
+	}
+
+	var ids []string
+	for _, profile := range doc.Profiles {
+		for _, pkg := range profile.Packages {
+			if id := strings.TrimSpace(pkg.PackageID); id != "" {
+				ids = append(ids, id)
+			}
+		}
+	}
+
+	return ids, nil
+}
+
 // wpkgXMLCandidatePaths : chemins candidats de `wpkg.xml` (D5), dans l'ordre
 // de préférence. Chemin réel (prioritaire) : `%SystemRoot%\system32\wpkg.xml`
 // — `wpkg-se4.js::getSettingsPath()` résout `fso.GetSpecialFolder(1)` =

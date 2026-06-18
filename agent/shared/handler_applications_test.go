@@ -22,6 +22,12 @@ type fakeApplicationsOps struct {
 	listErr error
 	// triggerErr : erreur de déclenchement (profil non déposable, cscript absent).
 	triggerErr error
+	// deployed : package-id du `profiles.xml` par-hôte DÉJÀ déposé (« ce que
+	// l'agent gère »). Mis à jour par TriggerWpkg (= dropHostProfile écrit le
+	// profil = ensemble cible). Vide = jamais déposé.
+	deployed []string
+	// deployedErr : erreur de lecture du profil déposé (corrompu/illisible).
+	deployedErr error
 
 	triggerCnt int
 	lastSpecs  []ApplicationsSpec
@@ -49,15 +55,39 @@ func (o *fakeApplicationsOps) ListInstalled() ([]string, error) {
 	return o.installedList(), nil
 }
 
+func (o *fakeApplicationsOps) DeployedProfileAppIds() ([]string, error) {
+	if o.deployedErr != nil {
+		return nil, o.deployedErr
+	}
+
+	return append([]string(nil), o.deployed...), nil
+}
+
 func (o *fakeApplicationsOps) TriggerWpkg(specs []ApplicationsSpec) (WpkgResult, error) {
 	o.triggerCnt++
 	o.lastSpecs = specs
 	if o.triggerErr != nil {
 		return WpkgResult{}, o.triggerErr
 	}
-	// Le run WPKG installe les paquets prévus (simulation).
+	specSet := map[string]bool{}
+	for _, s := range specs {
+		specSet[s.AppId] = true
+	}
+	// WPKG `/synchronize` : désinstalle les paquets qui QUITTENT le profil déposé
+	// (présents dans l'ancien profil, absents du nouvel ensemble cible).
+	for _, id := range o.deployed {
+		if !specSet[id] {
+			delete(o.installed, id)
+		}
+	}
+	// Le run WPKG installe les paquets prévus (simulation de la résolution).
 	for _, id := range o.installsOnTrigger {
 		o.installed[id] = true
+	}
+	// dropHostProfile : le profil déposé devient le nouvel ensemble cible.
+	o.deployed = make([]string, 0, len(specs))
+	for _, s := range specs {
+		o.deployed = append(o.deployed, s.AppId)
 	}
 
 	return WpkgResult{Triggered: true, Installed: o.installedList()}, nil
@@ -80,7 +110,11 @@ func applicationsItem(appID, name string) StateItem {
 
 func TestApplicationsTestCompliantWhenAllInstalled(t *testing.T) {
 	ops := newFakeApplicationsOps()
+	// `extra` = logiciel installé HORS-SE5 (jamais dans notre profil déposé) :
+	// il ne doit PAS provoquer de non-conformité (périmètre géré = profil déposé,
+	// pas le set installé complet).
 	ops.installed = map[string]bool{"firefox": true, "vlc": true, "extra": true}
+	ops.deployed = []string{"firefox", "vlc"}
 	h := &ApplicationsHandler{Ops: ops}
 	items := []StateItem{
 		applicationsItem("firefox", "Mozilla Firefox"),
@@ -133,6 +167,49 @@ func TestApplicationsTestNotCompliantWhenAnyMissing(t *testing.T) {
 	}
 	if !inv["firefox"] || inv["vlc"] {
 		t.Errorf("inventaire incohérent : firefox=%v vlc=%v (attendu true/false)", inv["firefox"], inv["vlc"])
+	}
+}
+
+// --- RETRAIT : une app quittant le profil → non conforme → désinstallation ---
+//
+// Régression terrain 2026-06-19 : retirer adnarn/ganttProject d'un profil ne les
+// désinstallait pas. Cause : `Test = désiré ⊆ installé` restait vert (les apps
+// RESTANTES sont installées) → `Apply` jamais déclenché → `profiles.xml` jamais
+// réécrit → WPKG jamais relancé. Fix : `Test` compare aussi le desired set au
+// profil DÉPOSÉ ; un retrait (desired ⊊ déposé) le rend non conforme → `Apply`
+// réécrit le profil + relance `/synchronize`, qui désinstalle nativement (<remove>).
+func TestApplicationsTestNotCompliantWhenAppRemovedFromProfile(t *testing.T) {
+	ops := newFakeApplicationsOps()
+	// adnarn était géré (dans le profil déposé) ET installé, comme firefox/vlc.
+	ops.installed = map[string]bool{"firefox": true, "vlc": true, "adnarn": true}
+	ops.deployed = []string{"firefox", "vlc", "adnarn"}
+	h := &ApplicationsHandler{Ops: ops}
+	// adnarn retiré du profil côté serveur → desired set sans adnarn.
+	items := []StateItem{
+		applicationsItem("firefox", "Mozilla Firefox"),
+		applicationsItem("vlc", "VLC"),
+	}
+
+	ok, err := h.Test(items)
+	if err != nil {
+		t.Fatalf("test : %v", err)
+	}
+	if ok {
+		t.Fatalf("app retirée (adnarn) toujours dans le profil déposé → non conforme attendu (désiré ⊊ déposé)")
+	}
+}
+
+// Profil par-hôte déposé illisible → Test remonte l'erreur (le moteur rend error ;
+// jamais un faux compliant — on ne peut pas déterminer le périmètre géré).
+func TestApplicationsTestErrorWhenDeployedProfileUnreadable(t *testing.T) {
+	ops := newFakeApplicationsOps()
+	ops.installed = map[string]bool{"firefox": true}
+	ops.deployedErr = fmt.Errorf("profiles.xml corrompu")
+	h := &ApplicationsHandler{Ops: ops}
+	items := []StateItem{applicationsItem("firefox", "Mozilla Firefox")}
+
+	if _, err := h.Test(items); err == nil {
+		t.Errorf("Test doit remonter l'erreur de lecture du profil par-hôte déposé")
 	}
 }
 
@@ -256,6 +333,7 @@ func TestApplicationsEngineStrictStateMachine(t *testing.T) {
 	type setup struct {
 		name          string
 		preInstalled  []string // état initial de wpkg.xml
+		deployed      []string // profil par-hôte déjà déposé (profiles.xml)
 		installsOnRun []string // ce que le run WPKG installe
 		wantStatus    string
 		wantTriggers  int
@@ -263,8 +341,9 @@ func TestApplicationsEngineStrictStateMachine(t *testing.T) {
 
 	cases := []setup{
 		{
-			name:          "tout installé → compliant (zéro déclenchement)",
+			name:          "tout installé + profil à jour → compliant (zéro déclenchement)",
 			preInstalled:  []string{"firefox", "vlc"},
+			deployed:      []string{"firefox", "vlc"},
 			installsOnRun: nil,
 			wantStatus:    "compliant",
 			wantTriggers:  0,
@@ -272,6 +351,7 @@ func TestApplicationsEngineStrictStateMachine(t *testing.T) {
 		{
 			name:          "app manquante → drift (déclenche WPKG) qui converge",
 			preInstalled:  []string{"firefox"},
+			deployed:      []string{"firefox"},
 			installsOnRun: []string{"vlc"},
 			wantStatus:    "drift",
 			wantTriggers:  1,
@@ -279,6 +359,7 @@ func TestApplicationsEngineStrictStateMachine(t *testing.T) {
 		{
 			name:          "déclenché mais app toujours manquante → error",
 			preInstalled:  nil,
+			deployed:      nil,
 			installsOnRun: []string{"firefox"}, // vlc jamais installée
 			wantStatus:    "error",
 			wantTriggers:  1,
@@ -291,6 +372,7 @@ func TestApplicationsEngineStrictStateMachine(t *testing.T) {
 			for _, id := range tc.preInstalled {
 				ops.installed[id] = true
 			}
+			ops.deployed = tc.deployed
 			ops.installsOnTrigger = tc.installsOnRun
 
 			eng := &Engine{Handlers: map[string]Handler{
@@ -329,6 +411,51 @@ func TestApplicationsEngineStrictStateMachine(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Bout-à-bout via le moteur : un retrait → drift → WPKG relancé → app désinstallée
+// → cycle suivant compliant (idempotence). Couvre la régression 2026-06-19.
+func TestApplicationsEngineRemovalTriggersUninstall(t *testing.T) {
+	ops := newFakeApplicationsOps()
+	ops.installed = map[string]bool{"firefox": true, "vlc": true, "adnarn": true}
+	ops.deployed = []string{"firefox", "vlc", "adnarn"}
+	eng := &Engine{Handlers: map[string]Handler{
+		"applications": &ApplicationsHandler{Ops: ops},
+	}}
+	// adnarn retiré du profil : ensemble cible = firefox + vlc.
+	items := []StateItem{
+		applicationsItem("firefox", "Mozilla Firefox"),
+		applicationsItem("vlc", "VLC"),
+	}
+
+	report := eng.RunPass(items, AppliedState{})
+	if len(report) != 1 {
+		t.Fatalf("1 item de rapport attendu, obtenu %d", len(report))
+	}
+	// Retrait = dérive corrigée par Apply (re-déclenchement WPKG).
+	if report[0].Status != "drift" {
+		t.Errorf("statut : got %q want drift (retrait → re-déclenchement)", report[0].Status)
+	}
+	if ops.triggerCnt != 1 {
+		t.Errorf("WPKG doit être relancé exactement 1 fois pour désinstaller, obtenu %d", ops.triggerCnt)
+	}
+	// Le profil redéposé reflète l'ensemble cible (sans adnarn).
+	if len(ops.lastSpecs) != 2 {
+		t.Errorf("le profil redéposé doit contenir l'ensemble cible (2 apps), obtenu %d", len(ops.lastSpecs))
+	}
+	// `/synchronize` a désinstallé adnarn (parti du profil déposé).
+	if ops.installed["adnarn"] {
+		t.Errorf("adnarn aurait dû être désinstallée par /synchronize après le retrait")
+	}
+
+	// Cycle suivant : convergé → compliant, plus aucun re-déclenchement.
+	report2 := eng.RunPass(items, AppliedState{})
+	if report2[0].Status != "compliant" {
+		t.Errorf("après convergence, statut compliant attendu, obtenu %q", report2[0].Status)
+	}
+	if ops.triggerCnt != 1 {
+		t.Errorf("cycle convergé : aucun re-déclenchement supplémentaire (idempotence), obtenu %d au total", ops.triggerCnt)
 	}
 }
 
@@ -474,6 +601,9 @@ func TestApplicationsNFCNormalizationAvoidsFalseDrift(t *testing.T) {
 		t.Fatalf("setup invalide : les formes NFD et NFC doivent différer en octets")
 	}
 	ops.installed = map[string]bool{nfd: true}
+	// Profil déposé en NFD : la comparaison desired(NFC) ↔ déposé doit aussi
+	// normaliser (sinon faux « périmètre changé »).
+	ops.deployed = []string{nfd}
 	h := &ApplicationsHandler{Ops: ops}
 	items := []StateItem{applicationsItem(nfc, "LibreOffice")}
 

@@ -95,6 +95,23 @@ type ApplicationsOps interface {
 	// `specs` = l'ensemble cible (utilisé pour générer le profil par-hôte
 	// `profiles.xml`/`hosts.xml` localement — D9 : zéro charge Laravel).
 	TriggerWpkg(specs []ApplicationsSpec) (WpkgResult, error)
+
+	// DeployedProfileAppIds lit l'ensemble des `package-id` du profil par-hôte
+	// DÉJÀ DÉPOSÉ localement (`profiles.xml`, écrit par le dernier `Apply` via
+	// `TriggerWpkg`/`dropHostProfile`) — c'est « ce que l'agent a demandé à WPKG
+	// de gérer la dernière fois ». ABSENT (jamais déposé) → ([], nil) : rien géré
+	// encore. Illisible/corrompu → err (le moteur rend error pour le type).
+	//
+	// Sert la DÉTECTION DE RETRAIT (2026-06-19). WPKG `/synchronize` ne
+	// désinstalle un paquet que lorsqu'il QUITTE le profil déposé sur le poste
+	// (`getPackagesRemoved` compare l'installé à `profiles.xml`). Or l'agent ne
+	// redépose ce profil (et ne relance WPKG) QUE dans `Apply`, et `Apply` n'est
+	// déclenché que si `Test` échoue. « Désiré ⊆ installé » seul reste vert après
+	// un retrait (les apps RESTANTES sont toujours installées) → l'app retirée
+	// survivrait, le profil sur le poste n'étant jamais réécrit. En comparant le
+	// desired set courant au profil déposé, `Test` détecte le retrait (desired ⊊
+	// déposé) et déclenche `Apply`.
+	DeployedProfileAppIds() ([]string, error)
 }
 
 // ApplicationsHandler : handler aggregate branché dans le moteur (engine.go) —
@@ -140,14 +157,29 @@ func (h *ApplicationsHandler) desiredSpecs(items []StateItem) ([]ApplicationsSpe
 	return specs, nil
 }
 
-// Test : l'ensemble cible est-il DÉJÀ entièrement appliqué ? « désiré ⊆ installé »
-// au NIVEAU (pas à l'événement) : on lit `wpkg.xml` (l'état courant réel de WPKG)
-// et on vérifie que chaque app cible y figure. Toute app cible manquante → non
-// conforme (apply déclenchera WPKG). Une erreur de lecture (`wpkg.xml` illisible)
-// remonte → le moteur rend error.
+// Test : l'ensemble cible est-il DÉJÀ entièrement appliqué ? Deux conditions —
+// au NIVEAU (pas à l'événement) :
+//
+//  1. « désiré ⊆ installé » : on lit `wpkg.xml` (l'état courant réel de WPKG) et
+//     on vérifie que chaque app cible y figure. Toute app cible manquante → non
+//     conforme (apply déclenchera WPKG pour l'installer).
+//  2. « périmètre géré inchangé » : le desired set ÉGALE-t-il le profil par-hôte
+//     DÉJÀ DÉPOSÉ (`profiles.xml`) ? S'ils diffèrent — une app a été RETIRÉE (ou
+//     ajoutée) du profil côté serveur — le périmètre géré a bougé → non conforme
+//     → Apply réécrit le profil et relance WPKG `/synchronize`, qui désinstalle
+//     nativement l'app retirée (recettes `<remove>`). Sans cette 2ᵉ condition,
+//     un retrait laissait « désiré ⊆ installé » vert (les apps RESTANTES sont
+//     toujours installées) → l'app retirée survivait sur le poste, le profil
+//     n'étant jamais réécrit (régression terrain 2026-06-19).
+//
+// On compare au profil DÉPOSÉ, PAS au set installé complet : un logiciel installé
+// hors-SE5 (jamais dans notre profil déposé) ne doit pas provoquer un
+// re-déclenchement permanent — WPKG le préserve déjà (paquet non-zombie).
 //
 // On NE réimplémente PAS `<check>` : la présence est CELLE QUE WPKG A ÉCRITE dans
-// `wpkg.xml`. L'inventaire par app est mémorisé pour le rapport (AC4).
+// `wpkg.xml`. L'inventaire par app est mémorisé pour le rapport (AC4). Une erreur
+// de lecture (`wpkg.xml` ou `profiles.xml` illisible) remonte → le moteur rend
+// error (jamais un faux compliant).
 func (h *ApplicationsHandler) Test(items []StateItem) (bool, error) {
 	specs, err := h.desiredSpecs(items)
 	if err != nil {
@@ -162,7 +194,9 @@ func (h *ApplicationsHandler) Test(items []StateItem) (bool, error) {
 
 	missing := false
 	inventory := make([]WpkgPackageResult, 0, len(specs))
+	desiredSet := make(map[string]bool, len(specs))
 	for _, spec := range specs {
+		desiredSet[normalizeNFC(spec.AppId)] = true
 		present := installedSet[normalizeNFC(spec.AppId)]
 		inventory = append(inventory, WpkgPackageResult{AppId: spec.AppId, Installed: present})
 		if !present {
@@ -171,7 +205,18 @@ func (h *ApplicationsHandler) Test(items []StateItem) (bool, error) {
 	}
 	h.lastInventory = inventory
 
-	// désiré ⊆ installé → compliant (pas de re-déclenchement) ; sinon non conforme.
+	// Condition 2 — périmètre géré : desired set == profil par-hôte déposé ?
+	// Diff (app retirée OU ajoutée) → non conforme (Apply réécrit le profil +
+	// relance `/synchronize`).
+	deployed, err := h.Ops.DeployedProfileAppIds()
+	if err != nil {
+		return false, fmt.Errorf("lecture du profil par-hôte déposé (profiles.xml) : %w", err)
+	}
+	if !sameNormalizedSet(desiredSet, deployed) {
+		return false, nil
+	}
+
+	// Condition 1 — désiré ⊆ installé → compliant (pas de re-déclenchement).
 	return !missing, nil
 }
 
@@ -287,4 +332,21 @@ func normalizedSet(ids []string) map[string]bool {
 	}
 
 	return set
+}
+
+// sameNormalizedSet : le set désiré (clés DÉJÀ en forme NFC) est-il égal, en tant
+// qu'ENSEMBLE (ordre/doublons indifférents), à `ids` (normalisé NFC) ? Sert la
+// comparaison desired ↔ profil déposé du `Test` (détection de retrait/ajout).
+func sameNormalizedSet(desired map[string]bool, ids []string) bool {
+	other := normalizedSet(ids)
+	if len(other) != len(desired) {
+		return false
+	}
+	for k := range desired {
+		if !other[k] {
+			return false
+		}
+	}
+
+	return true
 }
