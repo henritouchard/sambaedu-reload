@@ -10,8 +10,10 @@ use App\Models\Application;
 use App\Models\Depot;
 use App\Models\DepotApplication;
 use App\Models\InstallationLog;
+use App\Wpkg\Deployment\Services\WpkgBundleGenerator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Service principal du magasin d'applications — orchestrateur
@@ -30,6 +32,7 @@ class AppStoreService
         private DepotSyncService $depotSyncService,
         private PackagesXmlService $packagesXmlService,
         private PackageInstallerService $packageInstallerService,
+        private WpkgBundleGenerator $wpkgBundleGenerator,
     ) {
         $this->storagePath = config('sambaedu.wpkg.storage_path', '/var/se4fs/wpkg');
         $this->downloadTimeout = (int) config('sambaedu.wpkg.download_timeout', 300);
@@ -211,11 +214,37 @@ class AppStoreService
     }
 
     /**
-     * Regenere le fichier packages.xml local (delegue a PackagesXmlService)
+     * Regenere le catalogue module (packages.xml local) PUIS le bundle WPKG servi
+     * au poste — point unique d'évolution du catalogue (ajout/retrait d'app).
+     *
+     * Story 27.6 (Bug A / AC3, D3) : SOURCE UNIQUE. Le catalogue module est l'unique
+     * source de vérité ; le bundle (lu réellement par le poste) en est la projection.
+     * On chaîne donc la régénération du bundle (`WpkgBundleGenerator::generate()`,
+     * qui source le catalogue module) directement après `regenerate()` — sinon une
+     * app ajoutée via l'UI n'atteindrait jamais le poste (bug terrain « windeboule »).
+     *
+     * D4 — RÉSILIENCE : un échec de régénération du bundle (ex. garde structurelle
+     * déclenchée par un catalogue module malformé) est LOGGÉ sur `wpkg-deploy` mais
+     * ne casse PAS l'ajout au catalogue. Le catalogue module reste écrit (atomique) ;
+     * le bundle, lui aussi atomique (tmp+rename), n'est jamais servi à demi écrit et
+     * sera recohérent au prochain changement / `php artisan wpkg:bundle`. À NE PAS
+     * confondre avec l'invalidation du cache resolver par-hôte
+     * (`InvalidateWorkstationPackagesCache`), qui purge le cache des packages par
+     * poste mais ne régénère PAS le bundle global.
      */
     public function updateLocalPackagesXml(): void
     {
         $this->packagesXmlService->regenerate();
+
+        try {
+            $this->wpkgBundleGenerator->generate();
+        } catch (Throwable $e) {
+            Log::channel('wpkg-deploy')->error(
+                '[AppStore] Régénération du bundle WPKG en échec après mise à jour du catalogue — '
+                .'l\'ajout au catalogue est conservé, le bundle sera recohérent au prochain changement.',
+                ['error' => $e->getMessage()],
+            );
+        }
     }
 
     // ========================================

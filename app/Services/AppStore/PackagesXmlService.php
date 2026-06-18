@@ -46,18 +46,52 @@ class PackagesXmlService
                     continue;
                 }
 
-                $imported = $dom->importNode($fragment->documentElement, true);
-
-                // Supprimer les noeuds SambaEdu non compris par le client WPKG Windows
-                $sambaEduNodes = ['download', 'delete', 'untar', 'unzip'];
-                foreach ($sambaEduNodes as $nodeName) {
-                    $nodes = $imported->getElementsByTagName($nodeName);
-                    while ($nodes->length > 0) {
-                        $nodes->item(0)->parentNode->removeChild($nodes->item(0));
+                // Story 27.6 (Bug B) — IMPORTER LES <package> INTERNES, jamais le wrapper.
+                // Un recipe `$app->xml` est soit un document complet
+                // `<packages><package/>…</packages>` (racine wrapper, cas courant des
+                // dépôts SE4), soit un `<package/>` direct (recipes minimalistes).
+                // Importer le wrapper `<packages>` produisait `<packages>` DANS
+                // `<packages>` → 0 <package> enfant DIRECT de la racine → l'engine
+                // `wpkg-se4.js` (`getPackages().selectNodes("package")`) voyait 0 package.
+                // On collecte les <package> à plat, on les importe un par un sous $root.
+                $srcRoot = $fragment->documentElement;
+                if ($srcRoot->localName === 'package') {
+                    // Cas (b) : recipe à racine <package> directe.
+                    $packageNodes = [$srcRoot];
+                } else {
+                    // Cas (a) : racine wrapper (<packages> ou autre). On ne prend QUE les
+                    // <package> enfants DIRECTS du wrapper (un recipe SE4 n'imbrique
+                    // jamais un <package> dans un <package>). Matérialisé en tableau
+                    // (la DOMNodeList enfants est live — on la fige avant d'importer).
+                    $packageNodes = [];
+                    foreach ($srcRoot->childNodes as $child) {
+                        if ($child instanceof \DOMElement && $child->localName === 'package') {
+                            $packageNodes[] = $child;
+                        }
                     }
                 }
 
-                $root->appendChild($imported);
+                if ($packageNodes === []) {
+                    Log::warning('[AppStore] Recipe sans <package>, skip', ['app_id' => $app->app_id]);
+                    continue;
+                }
+
+                // Supprimer les noeuds SambaEdu non compris par le client WPKG Windows,
+                // APPLIQUÉ PAR <package> importé (le strip opère sur le noeud importé,
+                // pas sur le DOM source).
+                $sambaEduNodes = ['download', 'delete', 'untar', 'unzip'];
+                foreach ($packageNodes as $packageNode) {
+                    $imported = $dom->importNode($packageNode, true);
+
+                    foreach ($sambaEduNodes as $nodeName) {
+                        $nodes = $imported->getElementsByTagName($nodeName);
+                        while ($nodes->length > 0) {
+                            $nodes->item(0)->parentNode->removeChild($nodes->item(0));
+                        }
+                    }
+
+                    $root->appendChild($imported);
+                }
             }
         }
 

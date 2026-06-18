@@ -13,10 +13,19 @@
 | `wpkg-client.vbs-original` | Version **upstream** (avant customisation SambaEdu) — référence pour `diff`. |
 | `wpkg.cmd` | Amorçage : pose la variable machine `%SE4FS%`, copie le `.vbs` en `%WinDir%`, lance le client. |
 | `wpkg.cmd.bak-20260610` | Sauvegarde datée (redondante avec git — à élaguer). |
-| `packages.xml` | Catalogue **généré** (instance VM, snapshot). Porte la `<variable name="SE4FS_NAME" value="se4fs_name" source="sambaedu"/>` substituée côté serveur. |
+
+> **Story 27.6 — `packages.xml` SUPPRIMÉ de `resources/wpkg/` (D2).** Ce dossier ne
+> contient désormais QUE des **scripts** (sourcés VERBATIM par `WpkgBundleGenerator`).
+> Le **catalogue** `packages.xml` n'est plus statique ici : sa source unique est le
+> **catalogue module** (`config('sambaedu.wpkg.packages_xml_path')`, généré par
+> `PackagesXmlService` à chaque ajout/retrait d'app via l'AppStore), dont le bundle
+> servi au poste est la projection pré-substituée. Garder un `packages.xml` statique
+> sous ce nom entretenait la confusion « deux catalogues » à l'origine du bug terrain
+> 2026-06-18 (« windeboule » / `ganttproject` introuvable). Cf.
+> `docs/wpkg-deploy/architecture.md` § Catalogue source unique.
 
 ## Faits clés (vérifiés 2026-06-18)
 
 - **Aucune dépendance AD** dans le chemin WPKG : le client ne lit l'AD que via `getHostGroups()` (`WinNT://…`) **wrappé `try/catch`, jamais utilisé** (matching par nom, pas par groupe). Identité poste = `WScript.Network.ComputerName` (local). → critère Keycloak (NFR7) respecté.
-- **Une seule variable substituée serveur** : `SE4FS_NAME` (clé `se4fs_name`, depuis la conf serveur `/etc/sambaedu/*` — **pas l'AD**). Le legacy `packages_xml_out.php` la substitue ; le SE5 `PackagesXmlService` **non** (écart à corriger — cf. story 27.5 / D6).
+- **Une seule variable substituée serveur** : `SE4FS_NAME` (clé `se4fs_name`, depuis la conf serveur `/etc/sambaedu/*` — **pas l'AD**). Le legacy `packages_xml_out.php` la substitue ; côté SE5, c'est désormais `WpkgBundleGenerator` qui la substitue **à la génération du bundle** (story 27.5 / D6), sur le catalogue sourcé du module (story 27.6 / Bug A — source unique).
 - **Désalignement de noms d'endpoints** : `wpkg-se4.js` appelle les URL legacy `*_xml_out.php` alors que SE5 sert `profiles.xml` / `hosts.xml` (et n'a pas porté `packages_xml_out.php`) — cause probable du « WPKG ne fonctionne pas » (cf. story 27.5 / D6).

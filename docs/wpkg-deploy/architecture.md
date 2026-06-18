@@ -243,3 +243,93 @@ fantômes côté pipeline.
 |---|---|---|
 | `2026_05_06_100000_add_archived_at_to_workstations_and_groups` | `workstations`, `workstation_groups` | `archived_at` (timestamp nullable + index) |
 | `2026_05_06_100100_add_archived_at_and_ad_dn_to_app_profiles` | `app_profiles` | `ad_dn` (varchar(512) nullable), `archived_at` (timestamp nullable + index) |
+
+## Catalogue WPKG — source unique (bundle ⇐ module) — Story 27.6
+
+> **Contexte** : bug terrain 2026-06-18 (poste « windeboule », app `ganttproject`
+> ajoutée via l'UI AppStore → `Database inconsistency: Package with ID 'ganttproject'
+> does not exist within the package database`). Cause racine : **deux catalogues
+> `packages.xml` parallèles et déconnectés**, dont l'un était malformé.
+
+### Le problème (avant 27.6)
+
+| Catalogue | Généré par | Chemin | Lu par le poste ? | État |
+|---|---|---|---|---|
+| **Bundle** | `WpkgBundleGenerator` (27.5) | `config('agent.wpkg_bundle_path')` (servi statique par Apache) | **OUI** (download client) | sourcé du statique `resources/wpkg/packages.xml` (hand-curated, **jamais** les apps du module) |
+| **Module** | `PackagesXmlService::regenerate()` | `config('sambaedu.wpkg.packages_xml_path')` | non | régénéré à chaque ajout/retrait d'app via l'UI, mais **malformé** (double `<packages>` imbriqué → 0 `<package>` lisible) |
+
+Une app ajoutée via l'UI régénérait le **catalogue module** (malformé, et de toute
+façon pas lu par le poste) — elle n'atteignait **jamais** le **bundle** que lit le poste.
+
+### Le modèle (après 27.6) : source unique
+
+- **Le catalogue module est l'UNIQUE source de vérité du catalogue.** Régénéré par
+  `PackagesXmlService::regenerate()` (importe les `<package>` **internes** de chaque
+  recipe — wrapper `<packages>` OU racine `<package>` directe — à plat sous une
+  **unique** racine `<packages>` ; strip des nœuds SambaEdu `download/delete/untar/unzip`
+  par package).
+- **Le bundle est une projection pré-substituée du catalogue module.**
+  `WpkgBundleGenerator::generate()` source son `packages.xml` depuis
+  `config('sambaedu.wpkg.packages_xml_path')` (PAS `resources/wpkg/packages.xml`),
+  applique la substitution `SE4FS_NAME` (`<variable source="sambaedu">`, depuis la
+  conf serveur — jamais l'AD), et écrit atomiquement (tmp + rename) dans le
+  sous-dossier servi par Apache.
+- **Régénération chaînée** : `AppStoreService::updateLocalPackagesXml()` régénère le
+  catalogue module **PUIS** le bundle (point unique d'évolution du catalogue, ajout
+  ou retrait d'app). Aucune intervention manuelle `php artisan wpkg:bundle` requise.
+  La régénération du bundle est **résiliente** (D4) : un échec (ex. garde structurelle
+  déclenchée) est **loggé sur `wpkg-deploy`** mais ne casse PAS l'ajout au catalogue
+  (le catalogue module reste écrit ; le bundle, atomique, n'est jamais servi à demi
+  écrit). À NE PAS confondre avec `InvalidateWorkstationPackagesCache` (cache resolver
+  par-hôte — autre responsabilité, inchangé).
+
+### Topologie : scripts vs catalogue
+
+```
+resources/wpkg/                    → SCRIPTS versionnés (VERBATIM)
+  ├── wpkg-se4.js                    (moteur)
+  ├── wpkg-client.vbs                (orchestrateur)
+  └── wpkg.cmd                       (amorçage)
+                                     ⚠ packages.xml SUPPRIMÉ (Story 27.6 / D2) —
+                                       n'était plus la source du catalogue et
+                                       entretenait la confusion « deux catalogues ».
+
+config('sambaedu.wpkg.packages_xml_path')   → CATALOGUE MODULE (source unique)
+  (PackagesXmlService::regenerate, à plat)
+
+config('agent.wpkg_bundle_path')            → BUNDLE servi au poste (projection)
+  ├── wpkg-se4.js / wpkg-client.vbs / wpkg.cmd   (copie VERBATIM des scripts)
+  └── packages.xml                               (catalogue module + SE4FS_NAME substitué)
+```
+
+### Garde structurelle (filet de sécurité)
+
+`WpkgBundleGenerator` lève `RuntimeException` si la racine du catalogue n'est pas
+`<packages>` ou s'il y a `≠ 1` élément `<packages>` (imbrication détectée). Cette
+garde, livrée en 27.5, **protège désormais le sourcing du catalogue module** : si le
+catalogue module redevenait malformé, la génération du bundle **échoue fort et clair**
+plutôt que de servir un catalogue inexploitable en silence (l'engine `wpkg-se4.js` lit
+les `<package>` enfants directs de l'unique racine `<packages>` — un catalogue mal
+structuré donne « 0 package entries » côté poste).
+
+### D5 — catalogue module absent
+
+Si le catalogue module n'existe pas encore au moment de générer le bundle (1er run sur
+une install neuve), `WpkgBundleGenerator` le **régénère via `PackagesXmlService`** avant
+de le sourcer (le bundle reste toujours cohérent avec l'état courant des apps installées).
+
+### Exploitation — `chown www-admin` (rappel)
+
+Le sous-dossier du bundle (`config('agent.wpkg_bundle_path')`) est servi en **statique
+par Apache** (pas via Laravel). La régénération chaînée tourne sous le worker PHP-FPM
+(`www-admin`, uid 599) → OK. **Seul un run manuel `php artisan wpkg:bundle` en tant que
+root** nécessite ensuite un `chown www-admin` sur le sous-dossier — sinon le serving
+Apache échoue en **404 silencieux** (convention storage non versionnée).
+
+### Canal mort — ne pas réintroduire
+
+Le canal **classique** WPKG (catalogue `packages.xml` disque/SMB + serving HTTP) est
+**pgsql-backed et sain** — c'est ce que 27.6 répare. **Seul** `packages_xml_out.php`
+(MySQL legacy) n'est **pas porté** et a été supprimé : **ne pas le réintroduire**.
+`winget_out`/`linux_out` sont des sous-ponts distincts (gatés `WPKG_WINGET_ENABLED`),
+hors-scope.

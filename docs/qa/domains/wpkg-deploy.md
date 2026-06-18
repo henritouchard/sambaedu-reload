@@ -587,6 +587,7 @@ Suite à la code review adversariale + corrections appliquées, vérifications Q
 - [ ] Scénarios 4.1 → 4.5 — UI admin assignation apps WPKG (Story 15.4)
 - [ ] Scénarios 5.3 → 5.6 — Pipeline rapports + Dashboard (Story 15.5)
 - [ ] Scénarios 6.1 → 6.5 — Endpoints natifs `/wpkg/{linux,winget}_out.php` (Story 17.6)
+- [ ] Scénarios 8.1 → 8.4 — Catalogue source unique (bundle ⇐ module) (Story 27.6)
 
 ---
 
@@ -909,3 +910,124 @@ WPKG via `0.0.0.0/0` — le fail-closed est garanti en lecture.
 - [ ] Scénario 7.3 — Désactivation et retrait allowlist → effet immédiat
 - [ ] Scénario 7.4 — Non-régression audit GPO (re-auditer / modale publish)
 - [ ] Scénario 7.5 — Fail-closed DB polluée `0.0.0.0/0` → IP externe reste 403
+
+---
+
+## Section 8 — Catalogue source unique (bundle ⇐ module) — Story 27.6
+
+> **Convention append-only** : numérotation stable. Cette section corrige le bug
+> terrain 2026-06-18 (« windeboule » / `ganttproject` → `Database inconsistency:
+> Package with ID 'ganttproject' does not exist within the package database`).
+>
+> **Modèle livré** : le **catalogue module**
+> (`config('sambaedu.wpkg.packages_xml_path')`, généré par `PackagesXmlService`)
+> est l'UNIQUE source de vérité du catalogue ; le **bundle servi au poste**
+> (`config('agent.wpkg_bundle_path')`, généré par `WpkgBundleGenerator`, servi
+> statique par Apache) en est la projection pré-substituée. L'ajout/retrait d'une
+> app via l'UI AppStore régénère le catalogue module **PUIS** le bundle (chaînage
+> `AppStoreService::updateLocalPackagesXml()`).
+>
+> **Code de référence** :
+> - `app/Services/AppStore/PackagesXmlService.php` — Bug B (import des `<package>`
+>   internes, catalogue à plat)
+> - `app/Wpkg/Deployment/Services/WpkgBundleGenerator.php` — Bug A (source unique +
+>   garde structurelle + substitution `SE4FS_NAME` + D5)
+> - `app/Services/AppStore/AppStoreService.php::updateLocalPackagesXml()` — chaînage (D3/D4)
+> - `docs/wpkg-deploy/architecture.md` § Catalogue source unique
+>
+> **Pré-requis** : section 2 validée (endpoint bundle / catalogue joignable),
+> au moins un dépôt AppStore configuré pour pouvoir ajouter une app via l'UI.
+
+### Scénario 8.1 — Ajout d'app via l'UI → bundle régénéré auto → `<package id>` présent
+
+**Objectif** : reproduire et clore le bug terrain. Une app ajoutée via le module
+AppStore doit atteindre le bundle que lit réellement le poste, sans
+`php artisan wpkg:bundle` manuel.
+
+1. Dans l'UI AppStore, ajouter/installer une app (ex. `ganttproject`) au catalogue.
+2. Sur la VM, inspecter le **catalogue module** :
+   ```bash
+   xmllint --noout "$(php artisan tinker --execute='echo config("sambaedu.wpkg.packages_xml_path");')" && echo "BIEN FORMÉ"
+   ```
+   → bien formé. Vérifier qu'il est **à plat** :
+   ```bash
+   CAT="$(php artisan tinker --execute='echo config("sambaedu.wpkg.packages_xml_path");')"
+   xmllint --xpath 'count(/packages)' "$CAT"          # attendu : 1
+   xmllint --xpath 'count(/packages/package)' "$CAT"   # attendu : N (apps installées)
+   xmllint --xpath 'count(//packages/packages)' "$CAT" # attendu : 0 (pas d'imbrication)
+   ```
+3. Inspecter le **bundle** (servi au poste) :
+   ```bash
+   BUNDLE="$(php artisan tinker --execute='echo config("agent.wpkg_bundle_path");')/packages.xml"
+   xmllint --xpath 'count(/packages)' "$BUNDLE"                                  # attendu : 1
+   xmllint --xpath 'count(/packages/package[@id="ganttproject"])' "$BUNDLE"       # attendu : 1
+   ```
+4. Vérifier le log `wpkg-deploy` : une ligne `[WpkgBundleGenerator] bundle WPKG natif généré`
+   postérieure à l'ajout (pas d'erreur `Régénération du bundle WPKG en échec`).
+
+**Attendu** : le bundle contient `<package id="ganttproject">`, racine `<packages>`
+unique, `<package>` à plat. Aucune intervention manuelle `wpkg:bundle`.
+
+### Scénario 8.2 — Catalogue module malformé → `wpkg:bundle` échoue fort (garde)
+
+**Objectif** : non-régression de la garde structurelle 27.5 protégeant le sourcing.
+
+1. Sur la VM, corrompre temporairement le catalogue module avec une imbrication
+   `<packages>` (sauvegarder d'abord) :
+   ```bash
+   CAT="$(php artisan tinker --execute='echo config("sambaedu.wpkg.packages_xml_path");')"
+   cp "$CAT" /tmp/packages.bak.xml
+   printf '<?xml version="1.0"?>\n<packages><packages><package id="x"/></packages></packages>' > "$CAT"
+   ```
+2. Lancer la génération du bundle :
+   ```bash
+   php artisan wpkg:bundle ; echo "exit=$?"
+   ```
+   → la commande doit **échouer** (exit ≠ 0) avec un message du type
+   `Catalogue packages.xml mal structuré : 2 éléments <packages> (attendu 1)`.
+3. Vérifier qu'**aucun bundle à demi écrit** n'a été servi : le `packages.xml` du
+   bundle est inchangé (mtime / contenu identiques à avant l'étape 2), pas de `.tmp`
+   résiduel à côté.
+4. Restaurer : `cp /tmp/packages.bak.xml "$CAT"` puis `php artisan wpkg:bundle` (succès).
+
+**Attendu** : échec fort et clair, jamais de faux succès / catalogue inexploitable
+servi en silence. Bundle inchangé après l'échec (atomicité tmp+rename).
+
+### Scénario 8.3 — Substitution `SE4FS_NAME` appliquée sur le catalogue sourcé du module
+
+1. S'assurer que le catalogue module porte une
+   `<variable name="SE4FS_NAME" value="se4fs_name" source="sambaedu"/>` (présente
+   dans les recipes des dépôts SE4) — ou en ajouter une de test.
+2. `php artisan wpkg:bundle`.
+3. Inspecter le bundle :
+   ```bash
+   BUNDLE="$(php artisan tinker --execute='echo config("agent.wpkg_bundle_path");')/packages.xml"
+   grep -o 'value="[^"]*"' "$BUNDLE" | grep -i "$(php artisan tinker --execute='echo config("sambaedu.se4fs_name","se4fs");')"
+   ```
+   → la valeur de la variable est la **valeur résolue** de `se4fs_name` (conf serveur),
+   pas le placeholder `se4fs_name`.
+
+**Attendu** : substitution serveur appliquée (non-régression 27.5), jamais l'AD.
+
+### Scénario 8.4 — E2e poste « windeboule » / `ganttproject` → plus de « Database inconsistency »
+
+1. Après le scénario 8.1, **régénérer le bundle** si exécuté manuellement en root et
+   **`chown www-admin`** sur le sous-dossier :
+   ```bash
+   php artisan wpkg:bundle
+   chown -R www-admin:www-admin "$(php artisan tinker --execute='echo config("agent.wpkg_bundle_path");')"
+   ```
+2. Sur le poste « windeboule » (assigné `ganttproject` via `profiles.xml`), relancer
+   la convergence WPKG (`cscript //B //NoLogo wpkg-client.vbs /NOTempo` ou re-logon).
+3. Vérifier le rapport / journal client : `ganttproject` est **trouvé** dans le
+   catalogue (plus de `Database inconsistency: Package with ID 'ganttproject' does
+   not exist`) et installé. `notepad++` / `firefox` restent OK (non-régression).
+
+**Attendu** : le poste installe `ganttproject` ; le bug terrain 2026-06-18 est clos.
+
+### Checklist rapide Section 8 (relecteur)
+
+- [ ] Scénario 8.1 — Ajout app UI → bundle régénéré auto, `<package id>` présent, racine unique, à plat
+- [ ] Scénario 8.2 — Catalogue module malformé → `wpkg:bundle` échoue fort, bundle inchangé
+- [ ] Scénario 8.3 — Substitution `SE4FS_NAME` appliquée sur le catalogue sourcé du module
+- [ ] Scénario 8.4 — E2e poste « windeboule » / `ganttproject` → plus de « Database inconsistency »

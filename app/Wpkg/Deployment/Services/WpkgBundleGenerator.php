@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Wpkg\Deployment\Services;
 
 use App\Config\SambaEduConfig;
+use App\Services\AppStore\PackagesXmlService;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -18,6 +19,19 @@ use RuntimeException;
  *     (`resources/wpkg/*`, patchés D8 pour pointer SE5/local), copiés VERBATIM ;
  *   - `packages.xml` : catalogue global, avec `SE4FS_NAME` substitué UNE FOIS à
  *     la génération (source conf serveur — PAS l'AD, iso `packages_xml_out.php`).
+ *
+ * Story 27.6 (Bug A / SOURCE UNIQUE) : le catalogue `packages.xml` du bundle
+ * n'est PLUS sourcé du statique `resources/wpkg/packages.xml` (hand-curated,
+ * jamais à jour des apps ajoutées via le module AppStore) mais du CATALOGUE
+ * MODULE (`config('sambaedu.wpkg.packages_xml_path')`, régénéré par
+ * `PackagesXmlService` à chaque ajout/retrait d'app). Le catalogue module est
+ * désormais l'UNIQUE source de vérité ; le bundle en est une projection
+ * pré-substituée. Si le catalogue module est absent (jamais régénéré), on le
+ * régénère d'abord (D5). La garde structurelle ci-dessous (≠ 1 <packages>)
+ * protège ce sourcing : un catalogue module redevenu malformé fait échouer la
+ * génération du bundle fort et clair (jamais de faux succès). Les SCRIPTS
+ * restent sourcés VERBATIM de `resources/wpkg/` — seul le CATALOGUE change de
+ * source.
  *
  * Le SEUL vrai custom par-poste = `profiles.xml`/`hosts.xml`, DÉPOSÉ par l'agent
  * (D9) — JAMAIS dans ce bundle. Régénéré à la pose / au changement de conf
@@ -40,11 +54,12 @@ class WpkgBundleGenerator
         'wpkg.cmd',
     ];
 
-    /** Nom du catalogue source/cible. */
+    /** Nom du catalogue cible (fichier écrit dans le bundle). */
     private const CATALOG = 'packages.xml';
 
     public function __construct(
         private readonly SambaEduConfig $config,
+        private readonly PackagesXmlService $packagesXml,
     ) {}
 
     /**
@@ -82,11 +97,12 @@ class WpkgBundleGenerator
             $written[] = $script;
         }
 
-        // 2. Catalogue `packages.xml` — SE4FS_NAME substitué à la génération.
+        // 2. Catalogue `packages.xml` — SOURCE UNIQUE (Story 27.6 / Bug A) : sourcé
+        //    du catalogue MODULE (`config('sambaedu.wpkg.packages_xml_path')`, écrit
+        //    par PackagesXmlService), PAS du statique `resources/wpkg/packages.xml`.
+        //    SE4FS_NAME substitué à la génération.
         $se4fsName = (string) ($this->config->get('se4fs_name', 'se4fs') ?? 'se4fs');
-        $catalog = $this->buildSubstitutedCatalog(
-            $source . DIRECTORY_SEPARATOR . self::CATALOG,
-        );
+        $catalog = $this->buildSubstitutedCatalog($this->moduleCatalogPath());
         $this->writeAtomic($target . DIRECTORY_SEPARATOR . self::CATALOG, $catalog);
         $written[] = self::CATALOG;
 
@@ -97,6 +113,46 @@ class WpkgBundleGenerator
         ]);
 
         return ['path' => $target, 'files' => $written, 'se4fs_name' => $se4fsName];
+    }
+
+    /**
+     * Chemin du catalogue MODULE = source unique du catalogue du bundle
+     * (`config('sambaedu.wpkg.packages_xml_path')`, écrit par `PackagesXmlService`).
+     *
+     * D5 — si le catalogue module est absent (jamais régénéré, ex. 1er run sur une
+     * install neuve), on le régénère d'abord via `PackagesXmlService` : le bundle
+     * reste toujours cohérent avec l'état courant des apps installées plutôt que
+     * d'échouer au 1er run. La régénération est idempotente (snapshot des
+     * `Application::installed()`).
+     */
+    private function moduleCatalogPath(): string
+    {
+        $path = (string) config('sambaedu.wpkg.packages_xml_path', '');
+        if ($path === '') {
+            throw new RuntimeException(
+                'config(sambaedu.wpkg.packages_xml_path) vide — catalogue module introuvable, bundle non générable.',
+            );
+        }
+
+        if (! is_file($path)) {
+            Log::channel('wpkg-deploy')->info(
+                '[WpkgBundleGenerator] catalogue module absent — régénération avant sourcing du bundle (D5)',
+                ['path' => $path],
+            );
+            $this->packagesXml->regenerate();
+
+            // Contrat D5 : après régénération, le catalogue DOIT exister. Sinon on
+            // échoue ICI avec un message explicite plutôt que de laisser
+            // buildSubstitutedCatalog lever « Catalogue source introuvable » (trace
+            // trompeuse — la cause réelle est une régénération D5 sans écriture).
+            if (! is_file($path)) {
+                throw new RuntimeException(
+                    "Régénération D5 terminée mais catalogue module toujours absent : {$path}",
+                );
+            }
+        }
+
+        return $path;
     }
 
     /**
@@ -172,7 +228,10 @@ class WpkgBundleGenerator
     }
 
     /**
-     * Répertoire source des artefacts versionnés (`resources/wpkg/`).
+     * Répertoire source des SCRIPTS versionnés (`resources/wpkg/{wpkg-se4.js,
+     * wpkg-client.vbs, wpkg.cmd}`). Story 27.6 : ce répertoire ne fournit PLUS le
+     * catalogue `packages.xml` (sourcé du catalogue module, cf. `moduleCatalogPath()`)
+     * — UNIQUEMENT les scripts copiés VERBATIM.
      * Surchargeable via `config('sambaedu.wpkg.bundle_source_path')` (tests).
      */
     private function sourceDir(): string

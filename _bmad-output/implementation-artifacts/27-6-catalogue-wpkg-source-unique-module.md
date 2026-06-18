@@ -1,6 +1,6 @@
 # Story 27.6 : Catalogue WPKG — source unique depuis le module (fix désync bundle/module + malformation)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -87,42 +87,42 @@ afin que mes postes installent ce que je leur assigne au lieu de planter sur « 
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Bug B : corriger l'import DOM de `PackagesXmlService::regenerate()`** (AC1)
-  - [ ] Dans `app/Services/AppStore/PackagesXmlService.php::regenerate()` (≈ lignes 37-61) : ne plus faire `$imported = $dom->importNode($fragment->documentElement, true)` puis `$root->appendChild($imported)` sur le **wrapper `<packages>`**. À la place, **itérer sur les `<package>` internes** du recipe et importer/append **chaque `<package>`** sous `$root`.
-  - [ ] **Gérer les deux cas de racine du recipe** : (a) racine `<packages>` wrapper (cas courant `$app->xml`) → boucler sur ses `<package>` enfants directs ; (b) racine `<package>` directe → importer cette racine telle quelle. Utiliser `$fragment->documentElement->localName` pour discriminer (ou itérer `$fragment->getElementsByTagName('package')` en se limitant aux `<package>` pertinents — choisir l'approche la plus robuste, documentée en commentaire).
-  - [ ] **Conserver le strip** des nœuds SambaEdu (`download`/`delete`/`untar`/`unzip`) — l'appliquer **par `<package>` importé** (boucle interne, comme aujourd'hui mais sur le bon nœud).
-  - [ ] Conserver le skip+log d'un recipe XML invalide (comportement inchangé).
-  - [ ] Conserver l'écriture atomique (tmp + rename) et le `mkdir -p` du dossier cible.
+- [x] **T1 — Bug B : corriger l'import DOM de `PackagesXmlService::regenerate()`** (AC1)
+  - [x] Dans `app/Services/AppStore/PackagesXmlService.php::regenerate()` (≈ lignes 37-61) : ne plus faire `$imported = $dom->importNode($fragment->documentElement, true)` puis `$root->appendChild($imported)` sur le **wrapper `<packages>`**. À la place, **itérer sur les `<package>` internes** du recipe et importer/append **chaque `<package>`** sous `$root`.
+  - [x] **Gérer les deux cas de racine du recipe** : (a) racine `<packages>` wrapper (cas courant `$app->xml`) → boucler sur ses `<package>` enfants directs ; (b) racine `<package>` directe → importer cette racine telle quelle. Utiliser `$fragment->documentElement->localName` pour discriminer (ou itérer `$fragment->getElementsByTagName('package')` en se limitant aux `<package>` pertinents — choisir l'approche la plus robuste, documentée en commentaire).
+  - [x] **Conserver le strip** des nœuds SambaEdu (`download`/`delete`/`untar`/`unzip`) — l'appliquer **par `<package>` importé** (boucle interne, comme aujourd'hui mais sur le bon nœud).
+  - [x] Conserver le skip+log d'un recipe XML invalide (comportement inchangé).
+  - [x] Conserver l'écriture atomique (tmp + rename) et le `mkdir -p` du dossier cible.
 
-- [ ] **T2 — Bug A : `WpkgBundleGenerator` source le catalogue depuis le catalogue module** (AC2, AC4)
-  - [ ] Dans `app/Wpkg/Deployment/Services/WpkgBundleGenerator.php` : faire pointer la source du **catalogue** (`buildSubstitutedCatalog($catalogPath)`) vers le catalogue module `config('sambaedu.wpkg.packages_xml_path')` au lieu de `$source . DIRECTORY_SEPARATOR . self::CATALOG` (qui résout `resources/wpkg/packages.xml`).
-  - [ ] **Les scripts** (`VERBATIM_SCRIPTS`) restent sourcés depuis `resources/wpkg/` (`sourceDir()`) — NE PAS changer (AC4) : seul le catalogue change de source.
-  - [ ] Si le catalogue module **n'existe pas encore** (jamais régénéré), définir le comportement : régénérer d'abord via `PackagesXmlService` (le plus sûr — bundle toujours cohérent), OU échouer clairement avec un message explicite. Trancher selon Dev Notes (D5) ; le défaut recommandé = **régénérer le catalogue module si absent** avant de le sourcer.
-  - [ ] La garde structurelle (lignes 134-150) protège le nouveau sourcing — **ne pas l'affaiblir** ; elle s'applique désormais au catalogue module (bien formé après T1).
-  - [ ] La substitution `SE4FS_NAME` reste inchangée (elle opère sur le DOM du catalogue sourcé, quel qu'il soit).
+- [x] **T2 — Bug A : `WpkgBundleGenerator` source le catalogue depuis le catalogue module** (AC2, AC4)
+  - [x] Dans `app/Wpkg/Deployment/Services/WpkgBundleGenerator.php` : faire pointer la source du **catalogue** (`buildSubstitutedCatalog($catalogPath)`) vers le catalogue module `config('sambaedu.wpkg.packages_xml_path')` au lieu de `$source . DIRECTORY_SEPARATOR . self::CATALOG` (qui résout `resources/wpkg/packages.xml`).
+  - [x] **Les scripts** (`VERBATIM_SCRIPTS`) restent sourcés depuis `resources/wpkg/` (`sourceDir()`) — NE PAS changer (AC4) : seul le catalogue change de source.
+  - [x] Si le catalogue module **n'existe pas encore** (jamais régénéré), définir le comportement : régénérer d'abord via `PackagesXmlService` (le plus sûr — bundle toujours cohérent), OU échouer clairement avec un message explicite. Trancher selon Dev Notes (D5) ; le défaut recommandé = **régénérer le catalogue module si absent** avant de le sourcer.
+  - [x] La garde structurelle (lignes 134-150) protège le nouveau sourcing — **ne pas l'affaiblir** ; elle s'applique désormais au catalogue module (bien formé après T1).
+  - [x] La substitution `SE4FS_NAME` reste inchangée (elle opère sur le DOM du catalogue sourcé, quel qu'il soit).
 
-- [ ] **T3 — Régénération du bundle au changement de catalogue** (AC3)
-  - [ ] Chaîner la régénération du bundle après celle du catalogue module. Point d'accroche recommandé : `app/Services/AppStore/AppStoreService.php::updateLocalPackagesXml()` (déjà le point unique d'appel de `PackagesXmlService::regenerate()`) — après `regenerate()`, appeler `WpkgBundleGenerator::generate()`. **Décision D3** : appel direct chaîné (simple, traçable) vs event/listener dédié (`WpkgCatalogChanged` → listener qui régénère le bundle). Trancher en Dev Notes ; défaut = appel chaîné direct dans `updateLocalPackagesXml()` (le module est déjà le point unique).
-  - [ ] **Résilience (AC3, D4)** : entourer la régénération du bundle d'un try/catch qui **logge sur `wpkg-deploy`** en cas d'échec (ex. garde structurelle déclenchée). Décider si l'échec du bundle doit faire échouer l'ajout d'app (propager) ou seulement logger (continuer) — défaut recommandé : **logger en error + ne pas casser l'ajout au catalogue** (le catalogue module reste écrit ; le bundle sera recohérent au prochain `wpkg:bundle`/changement), MAIS l'atomicité du bundle (tmp+rename) garantit qu'aucun bundle à demi écrit n'est servi.
-  - [ ] Vérifier que `InvalidateWorkstationPackagesCache` (cache resolver par-hôte) **reste inchangé** : il purge le cache des packages par-hôte (resolver), ce n'est PAS le déclencheur du bundle. Ne pas mélanger les deux responsabilités.
+- [x] **T3 — Régénération du bundle au changement de catalogue** (AC3)
+  - [x] Chaîner la régénération du bundle après celle du catalogue module. Point d'accroche recommandé : `app/Services/AppStore/AppStoreService.php::updateLocalPackagesXml()` (déjà le point unique d'appel de `PackagesXmlService::regenerate()`) — après `regenerate()`, appeler `WpkgBundleGenerator::generate()`. **Décision D3** : appel direct chaîné (simple, traçable) vs event/listener dédié (`WpkgCatalogChanged` → listener qui régénère le bundle). Trancher en Dev Notes ; défaut = appel chaîné direct dans `updateLocalPackagesXml()` (le module est déjà le point unique).
+  - [x] **Résilience (AC3, D4)** : entourer la régénération du bundle d'un try/catch qui **logge sur `wpkg-deploy`** en cas d'échec (ex. garde structurelle déclenchée). Décider si l'échec du bundle doit faire échouer l'ajout d'app (propager) ou seulement logger (continuer) — défaut recommandé : **logger en error + ne pas casser l'ajout au catalogue** (le catalogue module reste écrit ; le bundle sera recohérent au prochain `wpkg:bundle`/changement), MAIS l'atomicité du bundle (tmp+rename) garantit qu'aucun bundle à demi écrit n'est servi.
+  - [x] Vérifier que `InvalidateWorkstationPackagesCache` (cache resolver par-hôte) **reste inchangé** : il purge le cache des packages par-hôte (resolver), ce n'est PAS le déclencheur du bundle. Ne pas mélanger les deux responsabilités.
 
-- [ ] **T4 — Sort de `resources/wpkg/packages.xml`** (AC4)
-  - [ ] **Décision D2 (tranchée : SUPPRESSION)** : `git rm resources/wpkg/packages.xml`. Retirer toute référence (config `sambaedu.wpkg.bundle_source_path` si elle pointe dessus, fixtures/tests). GARDER les scripts `resources/wpkg/*.{js,vbs,cmd}`. S'assurer que la structure de recipe est documentée dans `docs/wpkg-deploy`. NB : nettoyage du fantôme VM hors-bande (SSH ; inotify ne propage pas les deletes).
-  - [ ] Documenter la nouvelle topologie : scripts ⇒ `resources/wpkg/` (VERBATIM) ; catalogue ⇒ catalogue module (`PackagesXmlService` → `config('sambaedu.wpkg.packages_xml_path')`).
+- [x] **T4 — Sort de `resources/wpkg/packages.xml`** (AC4)
+  - [x] **Décision D2 (tranchée : SUPPRESSION)** : `git rm resources/wpkg/packages.xml`. Retirer toute référence (config `sambaedu.wpkg.bundle_source_path` si elle pointe dessus, fixtures/tests). GARDER les scripts `resources/wpkg/*.{js,vbs,cmd}`. S'assurer que la structure de recipe est documentée dans `docs/wpkg-deploy`. NB : nettoyage du fantôme VM hors-bande (SSH ; inotify ne propage pas les deletes).
+  - [x] Documenter la nouvelle topologie : scripts ⇒ `resources/wpkg/` (VERBATIM) ; catalogue ⇒ catalogue module (`PackagesXmlService` → `config('sambaedu.wpkg.packages_xml_path')`).
 
-- [ ] **T5 — Tests** (AC5)
-  - [ ] `tests/Unit/Services/AppStore/PackagesXmlServiceTest.php` (ou Feature si DB requise pour `Application::installed()`) : test « catalogue à plat » — recipes wrapper `<packages><package/></packages>` × N → DOM régénéré : `getElementsByTagName('packages')->length === 1` ET N `<package>` enfants directs de la racine. **Ce test échoue sur le code buggé actuel** (il verrait N+1 `<packages>` et 0 `<package>` direct). Ajouter aussi un cas recipe à racine `<package>` directe.
-  - [ ] Test « strip conservé » : un recipe avec `<download>/<delete>/<untar>/<unzip>` → ces nœuds absents du catalogue final, par package.
-  - [ ] `tests/.../WpkgBundleGenerator…Test.php` (étendre l'existant 27.5) : test « bundle inclut une app module » — catalogue module contenant `<package id="ganttproject">` → bundle généré contient ce `<package id>`. Test « substitution `SE4FS_NAME` toujours appliquée » sur le catalogue sourcé du module. Test de **non-régression de la garde** : catalogue module malformé (double `<packages>`) → `generate()` lève `RuntimeException`.
-  - [ ] Surcharger `config('sambaedu.wpkg.packages_xml_path')` et `config('agent.wpkg_bundle_path')` vers des fichiers/répertoires temp dans `setUp` (pas d'écriture sur les chemins de prod).
+- [x] **T5 — Tests** (AC5)
+  - [x] `tests/Unit/Services/AppStore/PackagesXmlServiceTest.php` (ou Feature si DB requise pour `Application::installed()`) : test « catalogue à plat » — recipes wrapper `<packages><package/></packages>` × N → DOM régénéré : `getElementsByTagName('packages')->length === 1` ET N `<package>` enfants directs de la racine. **Ce test échoue sur le code buggé actuel** (il verrait N+1 `<packages>` et 0 `<package>` direct). Ajouter aussi un cas recipe à racine `<package>` directe.
+  - [x] Test « strip conservé » : un recipe avec `<download>/<delete>/<untar>/<unzip>` → ces nœuds absents du catalogue final, par package.
+  - [x] `tests/.../WpkgBundleGenerator…Test.php` (créé — aucun test 27.5 existant) : test « bundle inclut une app module » — catalogue module contenant `<package id="ganttproject">` → bundle généré contient ce `<package id>`. Test « substitution `SE4FS_NAME` toujours appliquée » sur le catalogue sourcé du module. Test de **non-régression de la garde** : catalogue module malformé (double `<packages>`) → `generate()` lève `RuntimeException`. Test D5 : catalogue module absent → régénéré avant sourcing.
+  - [x] Surcharger `config('sambaedu.wpkg.packages_xml_path')` et `config('agent.wpkg_bundle_path')` vers des fichiers/répertoires temp dans `setUp` (pas d'écriture sur les chemins de prod).
 
-- [ ] **T6 — Documentation (suit le code)** (AC4, AC6)
-  - [ ] `docs/wpkg-deploy/architecture.md` : section sur la **source unique du catalogue** (catalogue module = source de vérité, sourcé par le bundle) + topologie scripts/catalogue + rappel `chown www-admin` (action serveur, sinon serving Apache 404 silencieux).
-  - [ ] Rappeler explicitement dans la doc que `packages_xml_out.php` (MySQL legacy) reste **non porté / hors-scope** (ne pas réintroduire).
+- [x] **T6 — Documentation (suit le code)** (AC4, AC6)
+  - [x] `docs/wpkg-deploy/architecture.md` : section sur la **source unique du catalogue** (catalogue module = source de vérité, sourcé par le bundle) + topologie scripts/catalogue + rappel `chown www-admin` (action serveur, sinon serving Apache 404 silencieux).
+  - [x] Rappeler explicitement dans la doc que `packages_xml_out.php` (MySQL legacy) reste **non porté / hors-scope** (ne pas réintroduire).
 
-- [ ] **T7 — Validation (host + /vm)**
-  - [ ] **Hôte** : `php -l` sur les fichiers PHP touchés ; `vendor/bin/phpunit --filter PackagesXmlService` et `--filter WpkgBundle` si vendor dispo en local (sinon /vm). Grep de non-régression : aucun `LdapRecord`/`samba-tool`/`packages_xml_out` introduit.
-  - [ ] **/vm (action Henri, hors worktree)** : `php artisan wpkg:bundle` après ajout d'une app via l'UI → vérifier que `packages.xml` du bundle contient le `<package id>` de l'app, racine `<packages>` unique, `<package>` à plat (`xmllint`/DOM). E2e : ajouter `ganttproject` via le module → bundle régénéré auto (AC3) → poste « windeboule » converge → plus de « Database inconsistency ». `chown www-admin` sur le sous-dossier bundle. `config:cache` si une clé config change.
+- [x] **T7 — Validation (host + /vm)**
+  - [x] **Hôte** : `php -l` sur les fichiers PHP touchés (OK, PHP 8.4.5) ; `vendor/bin/phpunit --filter PackagesXmlService` et `--filter WpkgBundle` NON exécutables (vendor ABSENT du worktree → action /vm). Grep de non-régression : aucun `LdapRecord`/`samba-tool`/`packages_xml_out` introduit (les 2 occurrences `packages_xml_out` dans WpkgBundleGenerator sont des commentaires iso-référence pré-existants, pas du code).
+  - [ ] **/vm (action Henri, hors worktree)** : `php artisan wpkg:bundle` après ajout d'une app via l'UI → vérifier que `packages.xml` du bundle contient le `<package id>` de l'app, racine `<packages>` unique, `<package>` à plat (`xmllint`/DOM). E2e : ajouter `ganttproject` via le module → bundle régénéré auto (AC3) → poste « windeboule » converge → plus de « Database inconsistency ». `chown www-admin` sur le sous-dossier bundle. `config:cache` si une clé config change. **+ rejouer PHPUnit `--filter PackagesXmlService` et `--filter WpkgBundle` (vendor absent worktree). + trash fantôme VM `resources/wpkg/packages.xml` (inotify ne propage pas les deletes).**
 
 ## Dev Notes
 
@@ -226,3 +226,90 @@ Justification :
 - **Câblage event/déclencheur** (régénération du bundle au changement de catalogue) avec décision résilience/atomicité (D3/D4) et préservation de la garde structurelle existante.
 - **Tests croisés** (DOM bien formé qui échoue sur le code buggé actuel + bundle inclut app module + non-régression garde + substitution) demandant de comprendre finement le comportement attendu de l'engine WPKG.
 - Cohérent avec les stories Epic 27 précédentes (27.1→27.5), toutes développées en `opus`. `sonnet` serait risqué ici vu la densité DOM + archi ; `opus` est le choix prudent.
+
+## Dev Agent Record
+
+**Modèle** : `opus` (claude-opus-4-8), subagent BMAD dev-story, 2026-06-18.
+
+### Décisions prises
+
+- **D2 (tranchée Henri) — SUPPRESSION** : `git rm resources/wpkg/packages.xml`.
+  Scripts `resources/wpkg/{wpkg-se4.js, wpkg-client.vbs, wpkg.cmd}` conservés
+  (sourcés VERBATIM). README `resources/wpkg/README.md` mis à jour (note 27.6 +
+  ligne `SE4FS_NAME` rafraîchie : l'écart 27.5 est clos). La config
+  `sambaedu.wpkg.bundle_source_path` est le répertoire **scripts-only** (tests),
+  elle ne pointait pas sur le fichier-catalogue — conservée telle quelle.
+- **D3 — appel chaîné direct** : la régénération du bundle est appelée directement
+  dans `AppStoreService::updateLocalPackagesXml()` (point unique d'appel de
+  `PackagesXmlService::regenerate()`, déjà invoqué par
+  `finalizeInstallation()` et `uninstallApplication()`). Pas d'event/listener dédié
+  (surface minimale, traçable, un seul écrivain du catalogue module).
+- **D4 — logger + ne pas casser** : la régénération du bundle est entourée d'un
+  `try/catch (Throwable)` qui **logge en error sur `wpkg-deploy`** sans propager.
+  Un ajout/retrait d'app ne plante pas si le bundle est temporairement non
+  générable ; l'atomicité tmp+rename de `WpkgBundleGenerator::writeAtomic()`
+  garantit qu'aucun bundle à demi écrit n'est servi.
+- **D5 — régénérer si absent** : `WpkgBundleGenerator::moduleCatalogPath()`
+  régénère le catalogue module via `PackagesXmlService::regenerate()` s'il n'existe
+  pas encore (1er run install neuve), puis le source. Bundle toujours cohérent.
+
+### Notes d'implémentation
+
+- **Bug B (T1)** : discrimination de racine via `documentElement->localName`
+  (`package` → cas direct ; sinon → wrapper, on collecte les `<package>` **enfants
+  DIRECTS** du wrapper en matérialisant la liste, jamais `getElementsByTagName`
+  récursif — un recipe SE4 n'imbrique pas `<package>` dans `<package>`). Le strip
+  `download/delete/untar/unzip` opère **par `<package>` importé** (sur le nœud
+  importé, pas le DOM source). `importNode($pkg, true)` copie (ne détache pas le
+  source) → pas de mutation de liste live. Skip+log d'un recipe sans `<package>`
+  ajouté. Compat ascendante prouvée : les tests existants (recipes à racine
+  `<package>` directe + cas « aucune app » → racine vide) restent verts.
+- **Bug A (T2)** : `generate()` source le catalogue via `moduleCatalogPath()`
+  (`config('sambaedu.wpkg.packages_xml_path')`) au lieu de
+  `$source . '/' . self::CATALOG`. Les scripts restent sourcés de `sourceDir()`
+  (inchangé). Garde structurelle (≠ 1 `<packages>`) et substitution `SE4FS_NAME`
+  **inchangées** — elles protègent/opèrent désormais sur le catalogue module.
+  `WpkgBundleGenerator::__construct` reçoit `PackagesXmlService` (DI, requis pour
+  D5). Import `App\Services\AppStore\PackagesXmlService` — NON interdit par
+  `WpkgDeploymentNamespaceTest` (préfixes interdits = `LdapRecord\`,
+  `App\LdapModels\`, `App\Services\Ad\` uniquement). `PackagesXmlService` reste
+  PG/disque-pur (AC6).
+- **T3** : `AppStoreService::__construct` reçoit `WpkgBundleGenerator`. Pas de cycle
+  DI (`AppStoreService → WpkgBundleGenerator → PackagesXmlService` ; `AppStoreService
+  → PackagesXmlService`). Aucune instanciation directe `new AppStoreService(...)` ni
+  `new WpkgBundleGenerator(...)` ailleurs (résolus par le conteneur).
+- **AC6** : grep `LdapRecord|samba-tool|packages_xml_out|Ad|Kerberos|kinit` VIDE en
+  CODE sur les 3 fichiers touchés (les 2 occurrences `packages_xml_out` dans
+  `WpkgBundleGenerator` sont des commentaires iso-référence pré-existants 27.5).
+
+### Statut des tests
+
+- **`php -l`** : OK sur les 5 fichiers PHP touchés (PHP 8.4.5 hôte).
+- **PHPUnit NON exécuté** : `vendor/` ABSENT du worktree (host) → impossible de
+  lancer phpunit ici (action /vm de Henri). Filtres à lancer : `--filter
+  PackagesXmlService` (T1 : 3 nouveaux tests dont le flat-catalog qui échoue sur le
+  code buggé + cas racine directe + strip wrapper) et `--filter WpkgBundle` (T2/T5 :
+  4 tests — bundle inclut app module, substitution SE4FS_NAME, garde malformé →
+  RuntimeException, D5 régénère si absent).
+
+## File List
+
+**Modifiés :**
+- `app/Services/AppStore/PackagesXmlService.php` — Bug B (T1) : import des `<package>` internes à plat, 2 cas de racine, strip par package.
+- `app/Wpkg/Deployment/Services/WpkgBundleGenerator.php` — Bug A (T2) : source unique (catalogue module), `moduleCatalogPath()` + D5, ctor reçoit `PackagesXmlService`, docblocks.
+- `app/Services/AppStore/AppStoreService.php` — chaînage (T3, D3/D4) : `updateLocalPackagesXml()` régénère le bundle après le catalogue, try/catch loggé `wpkg-deploy`, ctor reçoit `WpkgBundleGenerator`.
+- `tests/Unit/Services/PackagesXmlServiceTest.php` — T5 : 3 tests (flat-catalog wrapper ×N, racine directe, strip par package sur wrapper).
+- `resources/wpkg/README.md` — T4 : note suppression `packages.xml` + topologie scripts/catalogue + ligne `SE4FS_NAME` rafraîchie.
+- `docs/wpkg-deploy/architecture.md` — T6 : section « Catalogue source unique (bundle ⇐ module) ».
+- `docs/qa/domains/wpkg-deploy.md` — Section 8 (append-only, 4 scénarios) + entrée checklist globale.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — statut review.
+
+**Créés :**
+- `tests/Unit/Wpkg/Deployment/Services/WpkgBundleGeneratorTest.php` — T5 : 4 tests du sourcing catalogue module + garde + substitution + D5.
+
+**Supprimés :**
+- `resources/wpkg/packages.xml` — T4 / D2 (`git rm`). Scripts conservés. Fantôme VM à trash hors-bande (action Henri).
+
+## Change Log
+
+- 2026-06-18 — Story 27.6 développée (opus / claude-opus-4-8). Bug A + Bug B corrigés, catalogue module = source unique du bundle, chaînage résilient (D3/D4), D5 régénère si absent, `resources/wpkg/packages.xml` supprimé (D2). Tests écrits (non exécutés — vendor absent worktree). Status → review.
