@@ -23,6 +23,16 @@
 # `wpkg/rapports/` (servie en écriture par le partage [rapports]) qui est
 # volontairement exclue.
 #
+# CAUSE RACINE (au-delà du chmod de réparation) : les dossiers `os/` et
+# `packages/` portent une ACL POSIX par défaut `default:other::---`. Tout
+# fichier qui y NAÎT (ex. un installeur déposé par le module AppStore :
+# download → rename, sans chmod) hérite de `other::---` et est illisible par le
+# compte machine, QUEL QUE SOIT l'umask de php-fpm. On pose donc aussi
+# `default:other::r-x` (`setfacl -d`) sur les dossiers → les futurs fichiers
+# naissent lisibles et le fix est one-shot (plus besoin de re-réparer après
+# chaque ajout). Lecture seule : on n'ajoute JAMAIS de bit `w` — aucune
+# altération d'installeur possible (le seul vrai risque sécu serait `o+w`).
+#
 # Idempotent et non destructif (n'ajoute que le bit de lecture « other » ;
 # ne retire jamais de droit, ne touche ni owner ni group). Conçu pour être
 # appelé depuis update.sh. `--check` : audit seul, exit 1 si dérive détectée.
@@ -80,6 +90,26 @@ EOF
 }
 
 # ----------------------------------------------------------------------------
+# ACL par défaut (cause racine)
+# ----------------------------------------------------------------------------
+# Liste les dossiers dont l'ACL POSIX par défaut porte `default:other::` SANS
+# `r` : ils enfanteraient des fichiers nés `other::---` (illisibles par le
+# compte machine), quel que soit l'umask. `wpkg/rapports/` est élagué.
+# Robuste sous `set -e` (le pipe getfacl|awk ne fait jamais échouer l'appelant).
+list_bad_default_acls() {
+    local rapports_dir="$1"
+    { getfacl -R -p "$INSTALL_ROOT" 2>/dev/null | awk -v rap="$rapports_dir" '
+        /^# file: / { f = substr($0, 9); next }
+        /^default:other::/ {
+            # Isoler la PERMISSION (« --- » ou « r-x ») : le mot « other »
+            # contient déjà un « r », ne pas tester la ligne entière.
+            perm = $0; sub(/^default:other::/, "", perm)
+            if (index(perm, "r") == 0 && index(f, rap) != 1) print f
+        }
+    '; } || true
+}
+
+# ----------------------------------------------------------------------------
 # Cœur
 # ----------------------------------------------------------------------------
 main() {
@@ -92,41 +122,54 @@ main() {
         return 0
     fi
 
+    local has_setfacl=true
+    command -v setfacl &>/dev/null || has_setfacl=false
+
     local rapports_dir="$INSTALL_ROOT/wpkg/rapports"
     log "Audit des permissions de lecture sous $INSTALL_ROOT (hors wpkg/rapports)..."
 
-    # Violateurs : dossiers sans o+rx (octal 005), fichiers sans o+r (004).
+    # Violateurs d'accès : dossiers sans o+rx (octal 005), fichiers sans o+r (004).
     # La zone d'écriture client rapports/ est élaguée (-prune).
-    local bad_dirs bad_files
+    local bad_dirs bad_files bad_dacl
     bad_dirs=$(find "$INSTALL_ROOT" -path "$rapports_dir" -prune -o -type d ! -perm -005 -print 2>/dev/null | wc -l)
     bad_files=$(find "$INSTALL_ROOT" -path "$rapports_dir" -prune -o -type f ! -perm -004 -print 2>/dev/null | wc -l)
-    local total=$((bad_dirs + bad_files))
+    # Violateurs d'ACL par défaut (cause racine des futures naissances cassées).
+    bad_dacl=$(list_bad_default_acls "$rapports_dir" | wc -l)
+    local total=$((bad_dirs + bad_files + bad_dacl))
 
     if [[ "$total" -eq 0 ]]; then
-        log_success "Permissions conformes (tout est lisible par le compte machine)"
+        log_success "Permissions conformes (existant lisible + naissances saines)"
         return 0
     fi
 
     if [[ "$CHECK_ONLY" == true ]]; then
-        log_warning "$total chemin(s) non lisible(s) par le compte machine ($bad_dirs dossier(s), $bad_files fichier(s))"
+        log_warning "$total écart(s) : $bad_dirs dossier(s) o-rx, $bad_files fichier(s) o-r, $bad_dacl ACL défaut other sans 'r'"
         log_warning "Échantillon :"
-        find "$INSTALL_ROOT" -path "$rapports_dir" -prune -o \( -type d ! -perm -005 -o -type f ! -perm -004 \) -print 2>/dev/null | head -10 | sed 's/^/    /'
+        { find "$INSTALL_ROOT" -path "$rapports_dir" -prune -o \( -type d ! -perm -005 -o -type f ! -perm -004 \) -print 2>/dev/null
+          list_bad_default_acls "$rapports_dir" | sed 's/$/ (ACL défaut)/'
+        } | head -10 | sed 's/^/    /'
         log_warning "Relancer sans --check (ou via update.sh) pour réparer."
         return 1
     fi
 
-    log "$total chemin(s) à corriger ($bad_dirs dossier(s) → o+rx, $bad_files fichier(s) → o+r)..."
-    # Réparation batchée (chmod {} +) ; n'ajoute que le bit de lecture « other ».
+    log "$total écart(s) à corriger ($bad_dirs dir → o+rx, $bad_files file → o+r, $bad_dacl ACL défaut → other r-x)..."
+    # 1. Réparation de l'existant : n'ajoute que le bit de lecture « other » (jamais w).
     find "$INSTALL_ROOT" -path "$rapports_dir" -prune -o -type d ! -perm -005 -exec chmod o+rx {} + 2>/dev/null || true
     find "$INSTALL_ROOT" -path "$rapports_dir" -prune -o -type f ! -perm -004 -exec chmod o+r  {} + 2>/dev/null || true
-
-    # Re-vérification post-fix.
-    local remaining
-    remaining=$(find "$INSTALL_ROOT" -path "$rapports_dir" -prune -o \( -type d ! -perm -005 -o -type f ! -perm -004 \) -print 2>/dev/null | wc -l)
-    if [[ "$remaining" -eq 0 ]]; then
-        log_success "$total chemin(s) corrigé(s) — partage [install] lisible par les postes"
+    # 2. Cause racine : ACL par défaut other::r-x sur les dossiers → naissances saines.
+    if [[ "$has_setfacl" == true ]]; then
+        find "$INSTALL_ROOT" -path "$rapports_dir" -prune -o -type d -exec setfacl -d -m o::rx {} + 2>/dev/null || true
     else
-        log_error "$remaining chemin(s) toujours non lisible(s) après réparation (droits insuffisants ?) — vérifier manuellement"
+        log_warning "setfacl indisponible — ACL par défaut NON corrigée ; les futurs ajouts pourront renaître non lisibles."
+    fi
+
+    # Re-vérification post-fix (accès + ACL par défaut).
+    local remaining
+    remaining=$(( $(find "$INSTALL_ROOT" -path "$rapports_dir" -prune -o \( -type d ! -perm -005 -o -type f ! -perm -004 \) -print 2>/dev/null | wc -l) + $(list_bad_default_acls "$rapports_dir" | wc -l) ))
+    if [[ "$remaining" -eq 0 ]]; then
+        log_success "$total écart(s) corrigé(s) — [install] lisible par les postes, naissances saines"
+    else
+        log_error "$remaining écart(s) restant(s) après réparation (droits insuffisants ?) — vérifier manuellement"
         return 1
     fi
 }
