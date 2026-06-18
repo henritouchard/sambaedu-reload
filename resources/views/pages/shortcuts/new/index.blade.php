@@ -89,6 +89,11 @@ new #[Title('Nouveau raccourci - Instance SE4FS')] class extends Component {
                         'windows_icon' => $iconPath,
                         'icon_path' => $iconPath,
                     ]);
+                    // Story 27.7 : content-adresser l'icône uploadée (`<name>.ico` →
+                    // `<sha>.ico` servi par Apache) + persister `icon_asset`/`icon_checksum`.
+                    // Sans cet appel, l'agent n'a aucun asset à télécharger → icône
+                    // « feuille blanche » et colonnes nulles (gap 27.7 / handleIconUpload seul).
+                    $shortcutsService->persistIconAsset($this->name);
                 }
             }
 

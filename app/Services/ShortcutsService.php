@@ -331,7 +331,7 @@ class ShortcutsService
      * Idempotent + fail-soft : source absente / pas de raccourci DA encore
      * importé → no-op silencieux (le backfill artisan rattrape).
      */
-    private function persistIconAsset(string $shortcutName): void
+    public function persistIconAsset(string $shortcutName): void
     {
         $sourceIco = rtrim($this->iconsPath, '/') . '/' . $shortcutName . '.ico';
         $asset = $this->iconAssetService->contentAddress($sourceIco);

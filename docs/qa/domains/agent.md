@@ -2480,6 +2480,23 @@ payload — dépend du SID/temps/GUID du poste) et **verrouillé par tests vecto
    (`/admin/settings/registry`), un **encart de warning** s'affiche et exige une
    **confirmation explicite** avant persistance (D7). `warning = null` ⇒ pas d'encart.
 
+### Comportement validé (2026-06-17) — latence d'application au logon (HKCU)
+
+Boucle complète serveur → contrat → agent → registre **testée et validée e2e** sur
+poste : ajout/édition d'override appliqué, et **retrait → re-convergence à la valeur
+par défaut diffusée (Broadcast)** confirmés (scénarios 27.3ter.1 à .3 ; cas reproduit
+avec les défauts seedés `HideFileExt=0` afficher / `Hidden=1` afficher).
+
+**Latence à connaître pour les scénarios HKCU.** Les réglages de la ruche **HKCU**
+servis au logon par le compagnon (clés Explorer Advanced `Hidden` / `HideFileExt`)
+ne deviennent **visibles qu'au LOGON SUIVANT**, pas dans la session en cours :
+l'Explorateur lit ces clés per-user à l'ouverture de session. Un changement — ou un
+retrait d'override (retour au défaut) — appliqué pendant/à un logon donné s'observe
+donc au logon d'après. **Ne pas conclure à un échec du handler si l'effet n'apparaît
+pas immédiatement** : re-logon, puis vérifier. Pour un effet intra-session il faudrait
+un rafraîchissement explicite de l'Explorateur (`SHChangeNotify`), hors périmètre
+actuel.
+
 ### Réglages serveur — édition du défaut (navigateur, hors lab)
 
 - **Page `/admin/settings/registry`** (gate `server.admin`) : l'admin fixe la
@@ -2500,6 +2517,7 @@ payload — dépend du SID/temps/GUID du poste) et **verrouillé par tests vecto
 - [ ] 27.3ter.5 — `EnableLUA` défaut `1` (UAC activé) ; désactiver = override + warning confirmé.
 - [ ] 27.3ter.6 — `/admin/settings/registry` (navigateur) : édition du défaut + validation + warning + Gate admin.
 - [ ] 27.3ter.7 — Onglet « Registre » du parc n'affiche QUE les overrides ; payload `registry` reste `{hive,path,name,type,value}` (`curl /state`).
+- [ ] 27.3ter.8 — Effet d'une clé HKCU (`Hidden`/`HideFileExt`) visible au LOGON SUIVANT, pas dans la session courante (latence assumée, pas un bug du handler).
 
 ## Story 27.4 — Config d'app déclarative (policies.json Firefox/Thunderbird)
 
