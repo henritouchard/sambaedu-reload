@@ -40,6 +40,11 @@ type Session struct {
 //     (`agent.state.unknown_user` côté serveur) — traité comme tout 200,
 //     aucun bruit côté poste.
 func (a *Agent) fetchSessionStates(cfg Config) {
+	// Réinitialisé à chaque passe. Sert AUSSI d'ensemble autoritaire des SID
+	// vivants pour PurgeOrphanDrops (RunCycle) — réutilisé sans seconde
+	// énumération WTS. nil = indéterminé (quarantaine / pas d'énumérateur /
+	// échec) → purge fail-open ; map vide (zéro session) → purge légitime.
+	a.activeSIDs = nil
 	if a.quarantined {
 		a.Log.Debugf("Quarantaine active : fetch de session sauté (check-ins légers = GET /state machine uniquement).")
 
@@ -55,6 +60,15 @@ func (a *Agent) fetchSessionStates(cfg Config) {
 
 		return
 	}
+
+	// Ensemble des SID vivants AVANT le court-circuit « zéro session » : zéro
+	// session interactive = map vide autoritaire (tous les drops sont orphelins).
+	active := make(map[string]bool, len(sessions))
+	for _, session := range sessions {
+		active[session.SID] = true
+	}
+	a.activeSIDs = active
+
 	if len(sessions) == 0 {
 		a.Log.Debugf("Aucune session interactive : pas de fetch de session.")
 

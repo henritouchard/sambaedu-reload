@@ -33,7 +33,9 @@ class ReportIngestServiceTest extends TestCase
     {
         parent::setUp();
 
-        $this->service = new ReportIngestService();
+        // Résolu via le conteneur : injecte le StateCompiler (types par session)
+        // câblé par AgentServiceProvider — iso production.
+        $this->service = app(ReportIngestService::class);
         $this->ws = Workstation::factory()->create();
     }
 
@@ -205,6 +207,55 @@ class ReportIngestServiceTest extends TestCase
 
         self::assertSame(2, AgentResourceState::query()->count());
         self::assertSame(1, AgentResourceState::query()->where('workstation_id', $other->id)->count());
+    }
+
+    // ── Fix fantômes : nettoyage level-triggered des types session ─────────
+
+    #[Test]
+    public function session_scoped_row_absent_from_next_report_is_pruned(): void
+    {
+        // Une session a laissé une erreur `drives` (type PAR SESSION).
+        $this->ingest([$this->item('error', self::HASH_A, 'K: KO', 'drives')]);
+        self::assertSame(1, AgentResourceState::query()->where('type', 'drives')->count());
+
+        // Cycle suivant SANS `drives` (plus aucune session à classe), avec un type
+        // machine : la ligne `drives` (session, absente) est purgée.
+        $this->ingest([$this->item('compliant', self::HASH_B, null, 'app_config')]);
+
+        self::assertSame(0, AgentResourceState::query()->where('type', 'drives')->count(), 'la ligne session absente du rapport est purgée');
+        self::assertSame(1, AgentResourceState::query()->where('type', 'app_config')->count());
+    }
+
+    #[Test]
+    public function machine_scoped_row_absent_from_next_report_is_kept(): void
+    {
+        // `app_config` est MACHINE-scope : même absent d'un rapport ultérieur, sa
+        // ligne n'est JAMAIS purgée (un type machine est toujours rapporté
+        // in-process — une absence ne signifie pas « plus de session »).
+        $this->ingest([$this->item('compliant', self::HASH_A, null, 'app_config')]);
+        $this->ingest([$this->item('compliant', self::HASH_B, null, 'drives')]);
+
+        self::assertSame(1, AgentResourceState::query()->where('type', 'app_config')->count(), 'un type machine absent n\'est pas purgé');
+        self::assertSame(1, AgentResourceState::query()->where('type', 'drives')->count());
+    }
+
+    #[Test]
+    public function session_types_all_present_in_report_are_kept(): void
+    {
+        // Plusieurs types session co-rapportés (une session vivante) : aucun
+        // n'est purgé (tous présents dans le rapport courant).
+        $this->ingest([
+            $this->item('compliant', self::HASH_A, null, 'drives'),
+            $this->item('drift', self::HASH_A, null, 'printers'),
+            $this->item('compliant', self::HASH_A, null, 'shortcuts'),
+        ]);
+        $this->ingest([
+            $this->item('compliant', self::HASH_B, null, 'drives'),
+            $this->item('compliant', self::HASH_B, null, 'printers'),
+            $this->item('compliant', self::HASH_B, null, 'shortcuts'),
+        ]);
+
+        self::assertSame(3, AgentResourceState::query()->count(), 'types session tous présents = aucun purgé');
     }
 
     // ── Comptes retournés ─────────────────────────────────────────────────

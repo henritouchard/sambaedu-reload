@@ -6,6 +6,7 @@ namespace App\Services\Agent;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
+use App\Enums\StateScope;
 use App\Services\Agent\Contracts\KeyedExclusiveProvider;
 use App\Services\Agent\Contracts\StateProvider;
 use Illuminate\Support\Facades\Log;
@@ -98,6 +99,35 @@ final class StateCompiler
     public function hashState(array $state): string
     {
         return $this->hasher->hashState($state);
+    }
+
+    /**
+     * Types de ressource rapportés PAR SESSION (compagnon, via un drop per-SID) —
+     * portée `Session` ou `MachineUser`, par opposition aux types MACHINE
+     * rapportés in-process par le service SYSTEM (toujours présents chaque cycle,
+     * jamais fantômes).
+     *
+     * Consommé par {@see \App\Services\Agent\Reporting\ReportIngestService} pour le
+     * nettoyage level-triggered : une ligne d'état d'un type session ABSENTE du
+     * rapport courant = plus aucune session active ne la porte (utilisateur
+     * délogué) → purgée (sinon le dernier état d'une session partie traînerait
+     * indéfiniment — fantôme « il y a 6 min »). Dérivé du `scope()` des providers
+     * (source de vérité), jamais figé : un `registry`/`overlay` à double portée
+     * apparaît ici dès qu'un provider session le déclare (sans risque — un type
+     * machine toujours rapporté n'est jamais absent, donc jamais purgé).
+     *
+     * @return list<string>
+     */
+    public function perSessionReportedTypes(): array
+    {
+        $types = [];
+        foreach ($this->providers as $provider) {
+            if ($provider->scope() !== StateScope::Machine) {
+                $types[] = $provider->type();
+            }
+        }
+
+        return array_values(array_unique($types));
     }
 
     /**

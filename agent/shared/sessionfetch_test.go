@@ -301,7 +301,9 @@ func TestSessionFetchNilEnumeratorIsNoop(t *testing.T) {
 
 func TestRunCycleRefreshesSessionsAndCollectsDrops(t *testing.T) {
 	// Le cycle du service rafraîchit les caches de session IN-PROCESS après
-	// la portée machine, et le rapport embarque les items des drops.
+	// la portée machine, et le rapport embarque les items des drops d'une
+	// session VIVANTE (le SID du drop est dans l'énumération — sinon le drop
+	// serait purgé comme orphelin, fix fantômes).
 	f := newFakeServer(t)
 	store := newTestStore(t)
 	writeToken(t, store, validToken)
@@ -313,7 +315,9 @@ func TestRunCycleRefreshesSessionsAndCollectsDrops(t *testing.T) {
 		Log:      log,
 		Hostname: "SALLE101-PC03",
 		UUID:     func() string { return "" },
-		Sessions: func() ([]Session, error) { sessionCalls++; return nil, nil },
+		// Session vivante dont le SID == celui du drop ci-dessous : le drop est
+		// légitime, conservé par PurgeOrphanDrops et collecté.
+		Sessions: func() ([]Session, error) { sessionCalls++; return []Session{{Login: "alice", SID: testSID}}, nil },
 	}
 	cfg := Config{ServerURL: f.server.URL, IntervalSeconds: 3600}
 

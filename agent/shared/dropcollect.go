@@ -129,6 +129,46 @@ func CollectSessionReports(store *Store, log *Logger) []ReportItem {
 	return items
 }
 
+// PurgeOrphanDrops supprime les répertoires de drop per-SID des sessions qui ne
+// sont PLUS interactives (logoff / arrêt / reboot). Sans ça, un drop mort vit
+// indéfiniment sous ProgramData (persiste aux reboots) et est re-collecté +
+// re-rapporté à CHAQUE cycle SYSTEM — le serveur réécrit `reported_at = now()`
+// → fantôme « il y a 6 min » indélébile, montrant l'état d'un utilisateur parti.
+//
+// `activeSIDs` = ensemble des SID des sessions interactives VIVANTES (Active OU
+// Disconnected), résolu côté SYSTEM par la MÊME énumération WTS que le fetch.
+// Un SID absent de cet ensemble = session terminée → son drop est purgé.
+//
+// FAIL-OPEN : `activeSIDs == nil` (énumération indisponible/échouée, console de
+// debug, tests hôte) → AUCUNE purge. On ne supprime JAMAIS le drop d'une session
+// qu'on n'a pas pu confirmer terminée — au pire un fantôme survit un cycle de
+// plus, jamais la perte du rapport d'une session vivante. Un ensemble VIDE non
+// nil (zéro session interactive confirmée) purge légitimement tous les drops.
+func PurgeOrphanDrops(store *Store, activeSIDs map[string]bool, log *Logger) {
+	if activeSIDs == nil {
+		return
+	}
+	entries, err := os.ReadDir(store.SessionReportsRoot())
+	if err != nil {
+		return // pas de répertoire de drops → rien à purger
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		sid := entry.Name()
+		if activeSIDs[sid] {
+			continue // session vivante (Active/Disconnected) : drop légitime, conservé
+		}
+		if err := os.RemoveAll(store.SessionReportDir(sid)); err != nil {
+			logWarning(log, "Purge du drop de session orpheline %s en échec : %v.", sid, err)
+
+			continue
+		}
+		logInfo(log, "Drop de session orpheline purgé (session terminée) : %s.", sid)
+	}
+}
+
 // statusSeverity : ordre de gravité pour la fusion par type (error > drift >
 // compliant). Un statut inconnu est traité comme le moins grave (jamais une
 // panique).

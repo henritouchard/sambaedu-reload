@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -151,5 +152,71 @@ func TestCollectSessionReportsNoDropsDir(t *testing.T) {
 	store := newTestStore(t)
 	if items := CollectSessionReports(store, nil); len(items) != 0 {
 		t.Errorf("aucun répertoire = items vides : %+v", items)
+	}
+}
+
+// ── PurgeOrphanDrops (fix fantômes) ──────────────────────────────────────────
+
+func TestPurgeOrphanDropsRemovesInactiveKeepsActive(t *testing.T) {
+	store := newTestStore(t)
+	writeDrop(t, store, testSID, `{"generated_at":"2026-06-12T10:00:00Z","items":[]}`)
+	writeDrop(t, store, otherSID, `{"generated_at":"2026-06-12T10:00:00Z","items":[]}`)
+
+	// testSID vivant, otherSID terminé.
+	PurgeOrphanDrops(store, map[string]bool{testSID: true}, nil)
+
+	if _, err := os.Stat(store.SessionReportDir(testSID)); err != nil {
+		t.Errorf("la session vivante doit être conservée : %v", err)
+	}
+	if _, err := os.Stat(store.SessionReportDir(otherSID)); !os.IsNotExist(err) {
+		t.Errorf("la session orpheline doit être purgée (err=%v)", err)
+	}
+}
+
+func TestPurgeOrphanDropsNilSetIsFailOpen(t *testing.T) {
+	store := newTestStore(t)
+	writeDrop(t, store, testSID, `{"generated_at":"2026-06-12T10:00:00Z","items":[]}`)
+
+	PurgeOrphanDrops(store, nil, nil) // ensemble indisponible → ne purge rien
+
+	if _, err := os.Stat(store.SessionReportDir(testSID)); err != nil {
+		t.Errorf("set nil = fail-open : rien ne doit être purgé (%v)", err)
+	}
+}
+
+func TestPurgeOrphanDropsEmptySetPurgesAll(t *testing.T) {
+	store := newTestStore(t)
+	writeDrop(t, store, testSID, `{"generated_at":"2026-06-12T10:00:00Z","items":[]}`)
+	writeDrop(t, store, otherSID, `{"generated_at":"2026-06-12T10:00:00Z","items":[]}`)
+
+	PurgeOrphanDrops(store, map[string]bool{}, nil) // zéro session confirmée → tout orphelin
+
+	for _, sid := range []string{testSID, otherSID} {
+		if _, err := os.Stat(store.SessionReportDir(sid)); !os.IsNotExist(err) {
+			t.Errorf("aucune session vivante = tout purgé : %s subsiste (%v)", sid, err)
+		}
+	}
+}
+
+func TestPurgeOrphanDropsNoDropsDirNoPanic(t *testing.T) {
+	store := newTestStore(t)
+	PurgeOrphanDrops(store, map[string]bool{}, nil) // répertoire absent : aucun panic
+}
+
+// Le fantôme d'une session partie ne doit plus être collecté après purge.
+func TestPurgeThenCollectExcludesOrphanItems(t *testing.T) {
+	store := newTestStore(t)
+	// Drop d'une session TERMINÉE portant une erreur (le fantôme).
+	writeDrop(t, store, otherSID,
+		`{"generated_at":"2026-06-12T10:00:00Z","items":[{"type":"drives","status":"error","hash":"`+hashA()+`","detail":"K: KO"}]}`)
+	// Drop de la session vivante.
+	writeDrop(t, store, testSID,
+		`{"generated_at":"2026-06-12T11:00:00Z","items":[{"type":"wallpaper","status":"compliant","hash":"`+hashB()+`"}]}`)
+
+	PurgeOrphanDrops(store, map[string]bool{testSID: true}, nil)
+	items := CollectSessionReports(store, nil)
+
+	if len(items) != 1 || items[0].Type != "wallpaper" {
+		t.Errorf("le fantôme drives de la session partie ne doit plus être collecté : %+v", items)
 	}
 }

@@ -145,6 +145,14 @@ type Agent struct {
 	// (Story 27.3), vidés dans le BuildReport du même cycle (le service est
 	// in-process : pas de drop, contrairement au compagnon). PROCESS-LOCAL.
 	machineReportItems []ReportItem
+
+	// activeSIDs : ensemble des SID des sessions interactives VIVANTES
+	// (Active+Disconnected) de la DERNIÈRE passe fetchSessionStates — réutilisé
+	// par PurgeOrphanDrops (fix fantômes) pour purger les drops des sessions
+	// terminées SANS seconde énumération WTS. nil = indéterminé (quarantaine /
+	// pas d'énumérateur / échec) → purge fail-open ; map vide = zéro session
+	// confirmée → purge légitime de tous les drops. PROCESS-LOCAL.
+	activeSIDs map[string]bool
 }
 
 // NewAgentForTest construit un Agent avec son canal de réveil initialisé
@@ -356,6 +364,13 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 	// Items réels = drops session collectés/validés + un éventuel item
 	// agent_update (échec d'auto-update du cycle, Story 25.2 — vidé ici, un
 	// échec se rapporte une fois).
+	// Fix fantômes de conformité : purger les drops des sessions TERMINÉES AVANT
+	// de collecter. Sinon un drop mort (user délogué/reboot) survit sous
+	// ProgramData et est re-rapporté en boucle (reported_at=now() ment « 6 min »).
+	// L'ensemble autoritaire des SID vivants (Active+Disconnected) a été renseigné
+	// par fetchSessionStates ci-dessus (MÊME énumération WTS — pas de second
+	// appel). nil = indéterminé → PurgeOrphanDrops fail-open (aucune purge).
+	PurgeOrphanDrops(a.Store, a.activeSIDs, a.Log)
 	items := CollectSessionReports(a.Store, a.Log)
 	items = append(items, a.drainUpdateReportItems()...)
 	// Story 27.3 : items de la convergence MACHINE (registre HKLM) — in-process,

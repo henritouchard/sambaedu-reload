@@ -11,6 +11,7 @@ use App\Models\AgentReportHistory;
 use App\Models\AgentResourceState;
 use App\Models\Application;
 use App\Models\Workstation;
+use App\Services\Agent\StateCompiler;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -58,6 +59,12 @@ use Illuminate\Support\Facades\Log;
  */
 class ReportIngestService
 {
+    public function __construct(
+        // Source de vérité des types PAR SESSION (scope ≠ machine) pour le
+        // nettoyage level-triggered des fantômes — voir {@see ingest()}.
+        private readonly StateCompiler $compiler,
+    ) {}
+
     /**
      * Ingère un rapport validé et retourne les comptes d'items par statut
      * (réponse ack + log `agent.report.received`).
@@ -81,7 +88,11 @@ class ReportIngestService
         // `agent.applications.reported`). Collecté APRÈS commit.
         $inventoryReported = 0;
 
-        DB::transaction(function () use ($workstation, $report, $rawPayload, &$counts, &$driftEvents, &$inventoryReported): void {
+        // Fix fantômes — nombre de lignes d'état de types PAR SESSION purgées
+        // (absentes du rapport courant). Collecté APRÈS commit.
+        $sessionPruned = 0;
+
+        DB::transaction(function () use ($workstation, $report, $rawPayload, &$counts, &$driftEvents, &$inventoryReported, &$sessionPruned): void {
             // Sérialisation per-poste (review 24.1 #5) : verrou sur la ligne
             // workstation AVANT toute lecture d'état — deux POST concurrents
             // du même poste ne peuvent plus courser l'updateOrCreate (UNIQUE
@@ -144,6 +155,31 @@ class ReportIngestService
                 }
             }
 
+            // Fix fantômes — nettoyage LEVEL-TRIGGERED des lignes d'état de types
+            // PAR SESSION (compagnon) ABSENTES du rapport courant. Un type session
+            // présent en base mais plus rapporté = plus AUCUNE session active ne le
+            // porte (utilisateur délogué/parti) → la ligne traînerait à jamais
+            // (la table n'a pas de dimension session, aucune expiration). Les types
+            // MACHINE (rapportés in-process CHAQUE cycle par le service SYSTEM)
+            // n'apparaissent jamais dans `perSessionReportedTypes()` → jamais
+            // purgés, même transitoirement absents. Même esprit que le nettoyage
+            // de l'inventaire applications ci-dessus. L'agent purge le drop mort à
+            // la source (`PurgeOrphanDrops`) ; ce nettoyage efface la ligne déjà
+            // figée côté serveur. Le drop de chaque session vivante reste rapporté
+            // → seuls les types réellement disparus sont purgés.
+            /** @var list<string> $reportedTypes */
+            $reportedTypes = array_values(array_unique(array_map(
+                static fn (array $reported): string => (string) $reported['type'],
+                $items,
+            )));
+            if ($reportedTypes !== []) {
+                $sessionPruned = AgentResourceState::query()
+                    ->where('workstation_id', $workstation->id)
+                    ->whereIn('type', $this->compiler->perSessionReportedTypes())
+                    ->whereNotIn('type', $reportedTypes)
+                    ->delete();
+            }
+
             if ((bool) config('agent.report_history', false)) {
                 AgentReportHistory::create([
                     'workstation_id' => $workstation->id,
@@ -169,6 +205,16 @@ class ReportIngestService
             'workstation_id' => $workstation->id,
             'counts' => $counts,
         ]);
+
+        // Fix fantômes — trace des lignes d'état session purgées (level-triggered).
+        // Émis APRÈS commit ; silencieux si rien à purger (régime stable).
+        if ($sessionPruned > 0) {
+            Log::channel('agent')->info('[ReportIngestService] agent.report.session_pruned', [
+                'action_type' => 'agent.report.session_pruned',
+                'workstation_id' => $workstation->id,
+                'pruned' => $sessionPruned,
+            ]);
+        }
 
         // Story 27.5 — trace de l'inventaire applications upserté (AC4). Émis
         // APRÈS commit (pas de trace d'un rollback). Silencieux si aucun item

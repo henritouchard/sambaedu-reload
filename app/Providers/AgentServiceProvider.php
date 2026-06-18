@@ -68,7 +68,10 @@ class AgentServiceProvider extends ServiceProvider
             ),
         );
         // Story 24.1 — ingestion des rapports de conformité (POST /report).
-        $this->app->singleton(ReportIngestService::class, fn () => new ReportIngestService());
+        // Le StateCompiler fournit les types PAR SESSION (nettoyage des fantômes).
+        $this->app->singleton(ReportIngestService::class, fn ($app) => new ReportIngestService(
+            $app->make(StateCompiler::class),
+        ));
         // Story 24.7 — « forcer la synchro » (UI request / report fulfill) +
         // lecture agrégée de conformité pour les pages parc (stateless).
         $this->app->singleton(SyncRequestService::class, fn () => new SyncRequestService());
