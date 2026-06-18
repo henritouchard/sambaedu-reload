@@ -1,6 +1,6 @@
 # Story 27.1ter : Rainmeter settings per-user writable (mode installé)
 
-Status: review
+Status: done
 
 <!-- Suite directe de 27.1bis (provisioning overlay verrouillé). -->
 

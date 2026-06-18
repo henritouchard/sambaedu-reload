@@ -1,6 +1,6 @@
 # Story 27.5 : Applications — l'agent déclenche WPKG (un tuyau, deux outils)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
