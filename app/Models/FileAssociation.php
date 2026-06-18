@@ -43,7 +43,7 @@ class FileAssociation extends Model
 
     /**
      * Identifiant FIGÉ du type de ressource desired-state (contrat §7, NFR12),
-     * iso `RegistrySetting::TYPE_REGISTRY`/`Shortcut::TYPE_SHORTCUTS`. Consommé
+     * iso `CapabilityProjection::MECHANISM_REGISTRY`/`Shortcut::TYPE_SHORTCUTS`. Consommé
      * par {@see \App\Services\Agent\Providers\AssociationsStateProvider}.
      * snake_case, jamais renommé une fois publié.
      */

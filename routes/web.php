@@ -403,14 +403,15 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('settings.agent');
 
-    // /admin/settings/registry — Story 27.3ter : édition des VALEURS PAR DÉFAUT
-    // du catalogue de réglages registre (le défaut diffusé à toute la flotte via
-    // la maille Broadcast). Édite les défauts du catalogue existant ; ne crée PAS
-    // de clé brute arbitraire (éditeur de clés brutes = v2, hors-scope). Les
-    // overrides PAR PARC s'éditent dans l'onglet « Registre » de la page du parc.
-    Route::livewire('/settings/registry', 'pages::admin.settings.registry.index')
+    // /admin/settings/capabilities — Story 27.12 (rewrite capability-first de
+    // 27.3ter) : édition des VALEURS PAR DÉFAUT diffusées des CAPACITÉS (intention
+    // métier OS-agnostique ; la clé de registre est un détail de mécanisme caché,
+    // porté par la projection). Le défaut est diffusé à toute la flotte via la
+    // maille Broadcast ; les overrides PAR PARC s'éditent dans l'onglet
+    // « Options/Capacités » de la page du parc. Remplace /admin/settings/registry.
+    Route::livewire('/settings/capabilities', 'pages::admin.settings.capabilities.index')
         ->middleware('can:server.admin')
-        ->name('settings.registry');
+        ->name('settings.capabilities');
     /*
     |--------------------------------------------------------------------------
     | Story 3.6 — Gestion ISO Windows (D2)

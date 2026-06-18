@@ -111,13 +111,13 @@ new #[Title('Réglages')] class extends Component {
                 testid="card-agent" />
 
             <x-molecules.settings-card
-                href="{{ route('admin.settings.registry') }}"
+                href="{{ route('admin.settings.capabilities') }}"
                 icon="fa-solid fa-sliders"
                 iconColor="primary"
-                title="Registre — valeurs par défaut"
-                description="Valeur par défaut de chaque réglage registre, diffusée à toute la flotte (déviable par parc)."
-                badge="Registre"
-                testid="card-registry-defaults" />
+                title="Capacités — valeurs par défaut"
+                description="Valeur par défaut de chaque capacité (options des postes), diffusée à toute la flotte (déviable par parc)."
+                badge="Capacités"
+                testid="card-capabilities-defaults" />
         </x-molecules.settings-section>
 
         {{-- ============================================================

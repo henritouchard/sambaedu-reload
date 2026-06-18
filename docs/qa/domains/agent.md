@@ -2783,6 +2783,7 @@ rapporté (champ additif `inventory`, AC4) → `agent_application_inventory`
       plus publiée.
 - [ ] 27.5.7 — Provider NFR7 (grep vide), payload 4 clés concret, jamais
       `resolve()`/APCu ; golden + hashes PHP⇄Go re-bumpés à l'identique.
+
 ## Story 27.11 — Composer d'associations par défaut (extension libre + app par nom)
 
 > V2 de l'UI d'associations 27.3bis : on passe du **catalogue figé** (toggles) à un
@@ -2916,3 +2917,91 @@ rapporté (champ additif `inventory`, AC4) → `agent_application_inventory`
       réactive PAS (`is_active` reste false). [correctif review M1/C5]
 - [ ] 27.11.8 — Composer une 2e app pour une extension déjà associée → l'ancienne est
       détachée du parc, la nouvelle la remplace (une seule reste) + toast. [Q2 / C4]
+
+## Story 27.12 — Config en CAPACITÉS : registre repensé (capability-first)
+
+**Contexte.** Rewrite du modèle 27.3/27.3ter : l'admin gère désormais des
+**capacités** (intention métier — « Afficher les extensions », « Bureau à
+distance », « MAJ Windows gérées »…), jamais une clé de registre. La table
+centrale d'authoring est `capabilities` ; le registre est une **projection**
+(`capability_projections.mechanism = registry`). **Contrat, `StateCompiler`,
+golden et handler Go INCHANGÉS** (D3) : l'item registry reste `{hive, path, name,
+type, value}`. Les anciennes tables/providers/UI registry sont retirées.
+
+> ⚠️ **Pré-requis VM** : `php artisan migrate` (crée `capabilities` /
+> `capability_projections` / `capability_assignments`, seede le lot iso, **droppe**
+> `registry_settings`/`registry_setting_assignables`) ; `php artisan route:cache` +
+> `chown www-admin` (routes UI capacités modifiées). Pas de `config:cache`.
+
+### Scénario 27.12.1 — Bascule serveur : le registre est une projection (revue de code + curl)
+
+1. Vérifier `app/Providers/AgentServiceProvider.php` : `Registry{Machine,User}CapabilityProvider`
+   enregistrés **à la place** de `Registry{Machine,User}StateProvider` (retirés).
+2. `grep -rn "RegistrySetting" app/` → uniquement docblocks (modèle/tables droppés).
+3. `GET /state` d'un poste enrôlé : l'enveloppe contient toujours des items `type:registry`
+   au payload `{hive,path,name,type,value}` — **aucun** `capability_id`/`key`/`label`/`spec`.
+
+### Scénario 27.12.2 — Capacité diffusée par défaut (lab Windows — ACTION HUMAINE Henri)
+
+1. Sans aucun override de parc, une capacité active du lot iso (ex. `show_file_extensions`
+   défaut `on`) est diffusée à TOUTE la flotte : le poste reçoit l'item registry
+   correspondant (HideFileExt=0) et l'Explorateur affiche les extensions (au logon suivant
+   pour les clés HKCU Explorer).
+
+### Scénario 27.12.3 — Override de parc applique la déviation (lab Windows — ACTION HUMAINE Henri)
+
+1. Onglet « Options / Capacités » d'un parc → « Ajouter une capacité » → choisir
+   `show_file_extensions`, valeur `off` (Masquer) → Enregistrer.
+2. Sur un poste du parc : au cycle suivant, HideFileExt=1 (override `off` bat le défaut
+   Broadcast `on` pour cette clé) ; les postes hors du parc gardent le défaut.
+
+### Scénario 27.12.4 — Retirer un override → re-convergence au DÉFAUT (lab Windows — ACTION HUMAINE Henri)
+
+1. Sur le parc du scénario 27.12.3 : action « Retirer » sur l'override.
+2. Au cycle suivant le poste RE-CONVERGE vers le défaut (HideFileExt=0) — « retirer »
+   ≠ « cesser de gérer » (D4). La capacité reste diffusée.
+
+### Scénario 27.12.5 — Capacité on-only : override `off` cesse de gérer la clé (lab Windows — ACTION HUMAINE Henri)
+
+1. Pour une capacité on-only (map `{"on":…}` sans `off`, ex. `windows_copilot_off`),
+   un override de parc vers `off` n'émet AUCUNE clé pour ce parc (cesser de gérer) — la
+   valeur en place côté poste n'est plus réimposée par l'agent.
+
+### Scénario 27.12.6 — Page serveur : valeur par défaut + gel (navigateur — ACTION HUMAINE Henri)
+
+1. `/admin/settings/capabilities` (Gate `server.admin`) : éditer le défaut diffusé d'une
+   capacité (le contrôle s'adapte au `value_type` ; validation serveur des valeurs ;
+   confirmation explicite si `warning`, ex. UAC). Le défaut s'applique à tous les parcs
+   sans override. Le toggle « Gelé » bloque l'ajout de NOUVEAUX overrides sans couper la
+   diffusion. La page liste le catalogue complet ; mention « les capacités non listées
+   appliquent leur valeur par défaut ».
+
+### Scénario 27.12.7 — Posture UAC sûre + warning conservé (navigateur + lab — ACTION HUMAINE Henri)
+
+1. `uac_enabled` défaut `on` (EnableLUA=1, UAC ACTIVÉ) ; éditer le défaut OU poser un
+   override `off` exige de cocher la confirmation du warning (sécurité). Désactiver l'UAC
+   est un geste délibéré (override de parc), jamais le défaut diffusé.
+
+### Scénario 27.12.8 — Bundle WindowsUpdate à compléter (revue de code — ACTION HUMAINE Henri)
+
+1. La capacité `windows_updates_managed` est seedée avec une transcription **PARTIELLE**
+   des clés Windows Update / AU (la source autoritaire `se4_windows-update-ON/Machine/Registry.pol`
+   est sur la VM, inaccessible au worktree). **Compléter le bundle** (≈34 clés) dans la
+   `spec` de la projection (`capability_projections`) ou via une migration de données
+   additionnelle, depuis la source VM. Le seed est idempotent (`updateOrInsert`).
+
+### Checklist rapide (Story 27.12)
+
+- [ ] 27.12.1 — Providers capability-first enregistrés ; modèle/tables registry droppés ;
+      `/state` n'émet QUE `{hive,path,name,type,value}` (zéro id/key/spec).
+- [ ] 27.12.2 — Capacité active diffusée par défaut (Broadcast) sur toute la flotte.
+- [ ] 27.12.3 — Override de parc bat le défaut pour la clé (override de VALEUR de capacité).
+- [ ] 27.12.4 — « Retirer » l'override → re-convergence au défaut (pas « cesser de gérer »).
+- [ ] 27.12.5 — Capacité on-only + override `off` → clé non émise (cesser de gérer).
+- [ ] 27.12.6 — Page serveur `/admin/settings/capabilities` : défaut + gel + validation +
+      warning (Gate `server.admin`).
+- [ ] 27.12.7 — UAC défaut `on` (posture sûre) + warning à confirmer.
+- [ ] 27.12.8 — Bundle WindowsUpdate complété depuis la source VM (transcription partielle
+      au seed).
+- [ ] Contrat & agent INCHANGÉS : `ContractV1Test` vert sans modif ; `go test ./shared/...`
+      + cross-compile `GOOS=windows` verts ; aucun fichier Go modifié.

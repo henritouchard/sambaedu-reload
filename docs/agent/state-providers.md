@@ -369,52 +369,80 @@ Un item **par classe du user** (projection des partages de classe existants —
   l'utilisateur hors périmètre SambaEdu n'est **jamais** démonté (marqueur de
   périmètre = serveur SambaEdu).
 
-### `registry` — `exclusive` PAR IDENTITÉ DE CLÉ / `machine` + `session` (Story 27.3)
+### `registry` — `exclusive` PAR IDENTITÉ DE CLÉ / `machine` + `session` (Story 27.3 → **rewrite capability-first 27.12**)
 
-Premier type **sans table métier existante** → table catalogue **DÉDIÉE**
-`registry_settings` (D1 ; jamais une table polymorphe générique de règles) +
-pivot `registry_setting_assignables` (calque `shortcut_assignables` : morph
-WorkstationGroup/Workstation/UserGroup/User).
+> **🔁 Story 27.12 — le registre n'est plus une table d'authoring : c'est une
+> PROJECTION de capacité.** L'admin manipule désormais une **capacité** (intention
+> métier OS-agnostique — « Afficher les extensions », « Bureau à distance »,
+> « MAJ Windows gérées »…), jamais une clé de registre. La table centrale est
+> `capabilities` ; le registre est une `capability_projections` (mechanism
+> `registry`). **Le payload `registry`, le `StateCompiler`, le contrat et le
+> handler Go sont INCHANGÉS** (D3) : l'item reste `{hive, path, name, type,
+> value}`. Le rewrite est borné à l'authoring + la compilation côté serveur.
+> Les anciennes `registry_settings`/`registry_setting_assignables` + providers
+> `Registry{Machine,User}StateProvider` sont **superseded** (droppées).
 
-- **DEUX providers, UN handler Go (D-Q2).** UN type `registry`, UNE table, MAIS
-  deux providers serveur car un provider déclare UNE portée :
-  `RegistryMachineStateProvider` (filtre `hive=HKLM`, `scope=Machine`) et
-  `RegistryUserStateProvider` (filtre `hive=HKCU`, `scope=Session`). Logique
-  commune dans `AbstractRegistryStateProvider`. Côté agent : UN seul handler Go
-  `registry` générique (HKLM par le service SYSTEM, HKCU par le compagnon).
-- **Catalogue → items CONCRETS.** Chaque réglage du catalogue se **compile** en
-  un payload `{hive, path, name, type, value}` concret (cf. `contract-v1.md`
-  §7.1). 🔴 **Invariant central** : le `key`/`id` du catalogue ne fuite **JAMAIS**
-  au payload — c'est ce qui garde l'éditeur de clés brutes (v2) gratuit.
-- **🆕 Story 27.3ter — VALEUR PAR DÉFAUT DIFFUSÉE (Broadcast) + OVERRIDE par parc.**
-  Le modèle 27.3 (« géré uniquement si assigné, sinon non géré ») est ABANDONNÉ.
-  Le provider émet désormais DEUX sources de candidats BRUTS :
-  1. **Broadcast (rang 5)** — un candidat par réglage ACTIF de la ruche, portant
-     la **valeur par défaut du catalogue** (`registry_settings.value`). Chaque clé
-     active est donc gérée à sa valeur par défaut sur TOUTE la flotte (`sourceId`
-     = id du réglage, maille `Broadcast`, **sans** passer par `mailleFor()`).
-  2. **Par maille** — un candidat par assignation applicable au contexte, portant
-     l'**override de parc** (`registry_setting_assignables.value`) avec **repli sur
-     le défaut catalogue si null** (override inerte).
-  La précédence existante (`logique > physique > broadcast`) fait que l'override
-  par maille bat le défaut pour cette clé — **StateCompiler INCHANGÉ**.
-- **Exclusive PAR IDENTITÉ DE CLÉ** (`KeyedExclusiveProvider`). Une clé de
-  registre = une valeur ; le `StateCompiler` groupe les candidats par
-  `exclusiveKey(payload)` = `{hive, path, name}` (insensible à la casse) et arbitre
-  CHAQUE groupe indépendamment : la maille la plus spécifique gagne **pour cette
-  clé** (D-Q3 : WG logique > WG physique), les clés distinctes **s'accumulent**.
-  Distinct de `wallpaper` (un seul item pour tout le type — pas de marqueur).
-- **Lecture Postgres pure** (NFR7) : catalogue (défauts Broadcast) × pivot
-  (overrides) restreint aux ids du `TargetContext`. Aucun AD/APCu/`samba-tool`. Le
-  ciblage UI v1 = par **parc** (WorkstationGroup, physique ET logique) ; le pivot
-  complet supporte poste/groupe-user sans migration.
-- **« Retirer un override = revenir au défaut » (27.3ter, remplace « cesser de
-  gérer »).** Comme le défaut Broadcast reste émis, supprimer la ligne de pivot
-  fait **re-converger** le poste vers la valeur par défaut au cycle suivant (PAS
-  une valeur figée). Il n'existe plus d'opt-out/tombstone par parc (D3 : « tout
-  est valeur »). Métadonnées d'éditeur côté catalogue : `options` (choix fermé
-  `[{value,label}]`, contrôle UI/validation) + `warning` (D7, confirmation au
-  déclenchement) — **n'affectent JAMAIS le payload** (détails serveur/UI).
+#### Modèle capacité → projection → item (3 couches, D2)
+
+- **Capacité** (`capabilities`) : intention métier. Porte le modèle de valeur
+  (`value_type` = toggle/enum/scalar, `options`), le **défaut diffusé**
+  (`default_value`), les métadonnées (`warning`, `applies_to_os`), `is_active`,
+  `overrides_locked`. Le `key`/`id` ne fuite **JAMAIS** au payload (invariant
+  central, piège n°1).
+- **Projection** (`capability_projections`, unique `(capability_id, os,
+  mechanism)`) : COMMENT l'intention se matérialise sur un `os` via un `mechanism`
+  (= `type` du contrat). `registry` est publié (gratuit) ; un nouveau mécanisme
+  (firewall/localgroup) = ajout au contrat figé + handler Go (hors 27.12).
+- **Item de contrat** : concret, mécanisme-typé, ce que l'agent reçoit déjà.
+
+#### Interpréteur de `spec` (D5 — le cœur)
+
+Une projection registry porte `spec = { "keys": [ {hive, path, name, type, value},
+… ] }`. Pour chaque clé **de la ruche du provider**, `value` est résolu contre la
+**valeur effective de capacité** (`assignment.value ?? default_value`, D4) :
+
+- **littéral** (scalaire OU liste détectée par `array_is_list($value)`, ex.
+  MULTI_SZ `["a","b"]`) → **toujours émis** quand la capacité s'applique ;
+- **map** valeur-capacité → donnée (objet assoc, ex. `{"on":0,"off":1}`) → on
+  cherche la valeur effective ; **clé de map absente ⇒ la clé n'est PAS émise**
+  (= cesser de gérer cette clé, ex. bundle on-only `{"on":1}` : un override `off`
+  n'émet rien). Disambiguïsation map vs littéral-MULTI_SZ via `array_is_list`.
+
+Puis **coercition par `type`** (DWORD/QWORD→int, MULTI_SZ→liste de chaînes,
+SZ/EXPAND_SZ→chaîne) pour le contrat §4.1 (**zéro float**).
+
+> ⚠️ **Coin liste vide.** `array_is_list([]) === true` → un littéral `value: []` est
+> traité comme **littéral liste** (MULTI_SZ vide ÉMIS), PAS comme « cesser de gérer ».
+> Pour « cesser de gérer » une clé selon la valeur de capacité, utiliser **une map**
+> sans la valeur effective (ex. on-only `{"on":1}`), jamais `[]`.
+
+#### Compilation (inchangée)
+
+- **DEUX providers, UN handler Go.** `RegistryMachineCapabilityProvider`
+  (`hive=HKLM`, `scope=Machine`) et `RegistryUserCapabilityProvider`
+  (`hive=HKCU`, `scope=Session`) ; logique commune dans
+  `AbstractCapabilityStateProvider`. Côté agent : UN seul handler Go `registry`
+  (HKLM par le service SYSTEM, HKCU par le compagnon). Note **HKCR** : routé en
+  `HKCU\Software\Classes\…` (vue per-user, ex. `onedrive_hidden`).
+- **Broadcast (défaut diffusé) + override par maille (D4).** Le provider émet, par
+  capacité applicable : (1) un lot de candidats **Broadcast** pour `default_value`
+  (`sourceId` = `capability.id`, maille `Broadcast`, sans `mailleFor()`) ; (2) un
+  lot par maille par assignation applicable, valeur effective = `assignment.value
+  ?? default_value`. Candidats **BRUTS** (aucune précédence/tri/dédup). La
+  précédence existante (`logique > physique > broadcast`) fait que l'override bat
+  le défaut **pour cette clé**.
+- **Bundle = une capacité → N candidats.** Une projection de N clés produit N
+  candidats (un par clé émise), tous au même `sourceId`. Deux capacités définissant
+  la **même** clé → collision arbitrée par la récence au compilateur.
+- **Exclusive PAR IDENTITÉ DE CLÉ** (`KeyedExclusiveProvider`,
+  `exclusiveKey={hive,path,name}` insensible à la casse) — inchangé.
+- **Lecture Postgres pure** (NFR7) : `capabilities` actives (projection registry
+  windows) × `capability_assignments` restreint aux ids du `TargetContext`. Aucun
+  AD/APCu/`samba-tool`.
+- **« Retirer un override = revenir au défaut » (D4).** Supprimer la ligne
+  `capability_assignments` fait re-converger le poste vers `default_value` au
+  cycle suivant (PAS « cesser de gérer »). Métadonnées d'authoring (`options`,
+  `warning`, `overrides_locked`) = serveur/UI uniquement, **jamais** au payload.
 - **Rapport unique-type** : les deux portées émettant `registry`, l'agent fusionne
   par type avant le POST /report (`MergeReportItemsByType`, pire statut gagne).
 

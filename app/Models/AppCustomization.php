@@ -34,8 +34,8 @@ class AppCustomization extends Model
      * {@see \App\Services\Agent\Providers\AppConfigStateProvider} ; ce type
      * projette les policies résolues `policies.json` (Firefox/Thunderbird)
      * vers le handler agent. Iso `Wallpaper::TYPE_WALLPAPER` /
-     * `RegistrySetting::TYPE_REGISTRY` — le provider référence cette constante,
-     * jamais la chaîne littérale (un identifiant figé ne se renomme JAMAIS).
+     * `CapabilityProjection::MECHANISM_REGISTRY` — le provider référence cette
+     * constante, jamais la chaîne littérale (un identifiant figé ne se renomme JAMAIS).
      */
     public const TYPE_APP_CONFIG = 'app_config';
 

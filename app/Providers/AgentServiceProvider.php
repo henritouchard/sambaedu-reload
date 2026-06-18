@@ -16,8 +16,8 @@ use App\Services\Agent\Providers\DrivesStateProvider;
 use App\Services\Agent\Providers\OverlayMachineStateProvider;
 use App\Services\Agent\Providers\OverlayStateProvider;
 use App\Services\Agent\Providers\PrintersStateProvider;
-use App\Services\Agent\Providers\RegistryMachineStateProvider;
-use App\Services\Agent\Providers\RegistryUserStateProvider;
+use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
+use App\Services\Agent\Providers\RegistryUserCapabilityProvider;
 use App\Services\Agent\Providers\ShortcutsStateProvider;
 use App\Services\Agent\Providers\WallpaperStateProvider;
 use App\Services\Agent\Releases\ReleaseCreationService;
@@ -103,15 +103,21 @@ class AgentServiceProvider extends ServiceProvider
                 // pas de table). Deux lignes, zéro modif du compilateur.
                 $app->make(PrintersStateProvider::class),
                 $app->make(DrivesStateProvider::class),
-                // Story 27.3 — type `registry` (exclusive PAR IDENTITÉ DE CLÉ) :
-                // catalogue de réglages registre activables par parc, compilés
-                // en items concrets {hive,path,name,type,value}. DEUX providers,
-                // UN handler Go (D-Q2) : HKLM → portée machine (service SYSTEM),
-                // HKCU → portée session (compagnon). Une table catalogue,
-                // chaque provider filtre par hive. Zéro modif du routage
-                // compilateur (le scope() de chaque provider suffit).
-                $app->make(RegistryMachineStateProvider::class),
-                $app->make(RegistryUserStateProvider::class),
+                // Story 27.12 — type `registry` CAPABILITY-FIRST (exclusive PAR
+                // IDENTITÉ DE CLÉ). Rewrite de 27.3/27.3ter : la table d'authoring
+                // devient `capabilities` (intention métier), le registre est UNE
+                // projection (`capability_projections.mechanism = registry`). Le
+                // provider EXPANSE une capacité → items concrets
+                // {hive,path,name,type,value} (interpréteur de `spec` D5, map/
+                // littéral). Broadcast (défaut diffusé) + override de VALEUR de
+                // capacité par maille (D4). DEUX providers, UN handler Go : HKLM →
+                // portée machine (service SYSTEM), HKCU → portée session
+                // (compagnon). Le `key`/`id` de capacité/projection ne fuit JAMAIS
+                // au payload (invariant central). Contrat + agent INCHANGÉS (D3).
+                // Zéro modif du routage compilateur (le scope() de chaque provider
+                // suffit). Remplace Registry{Machine,User}StateProvider (retirés).
+                $app->make(RegistryMachineCapabilityProvider::class),
+                $app->make(RegistryUserCapabilityProvider::class),
                 // Story 27.3bis — type `associations` (exclusive PAR IDENTIFIANT,
                 // portée session/compagnon HKCU) : catalogue d'associations de
                 // fichiers/protocoles par défaut activables par parc, compilées
