@@ -108,6 +108,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             'remote_desktop_enabled',
             'windows_copilot_off',
             'onedrive_hidden',
+            'windows_store_disabled',
         ];
 
         foreach ($expected as $key) {
@@ -173,6 +174,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             'show_file_extensions',
             'show_hidden_files',
             'uac_enabled',
+            'windows_store_disabled',
         ];
 
         foreach ($symmetric as $key) {
@@ -196,6 +198,47 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         foreach ($wu->projections()->firstOrFail()->spec['keys'] as $regKey) {
             self::assertArrayNotHasKey('off', $regKey['value'], "{$regKey['name']} reste on-only (clé non émise si off)");
         }
+    }
+
+    #[Test]
+    public function windows_copilot_off_is_machine_scope_hklm(): void
+    {
+        // Fix : HKCU\Software\Policies\* est en lecture seule pour l'utilisateur
+        // standard (le companion de session échoue « Accès refusé »). La capacité
+        // est donc projetée en HKLM (machine/SYSTEM), équivalent Copilot supporté.
+        $cap = Capability::query()->where('key', 'windows_copilot_off')->firstOrFail();
+
+        $key = $cap->projections()
+            ->where('os', 'windows')->where('mechanism', 'registry')
+            ->firstOrFail()->spec['keys'][0];
+
+        self::assertSame('HKLM', $key['hive'], 'Copilot doit être en HKLM (pas HKCU\\Software\\Policies)');
+        self::assertSame('SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot', $key['path']);
+        self::assertSame('TurnOffWindowsCopilot', $key['name']);
+        self::assertSame(1, $key['value']['on']);
+        self::assertSame(0, $key['value']['off']);
+    }
+
+    #[Test]
+    public function windows_store_disabled_blocks_store_via_remove_windows_store(): void
+    {
+        // Capacité neuve : policy « Désactiver l'application Store ».
+        // HKLM\SOFTWARE\Policies\Microsoft\WindowsStore\RemoveWindowsStore = 1 (bloqué).
+        $cap = Capability::query()->where('key', 'windows_store_disabled')->firstOrFail();
+
+        self::assertSame('on', $cap->default_value, 'Store bloqué par défaut sur tout le parc');
+        self::assertSame(['windows'], $cap->applies_to_os);
+
+        $key = $cap->projections()
+            ->where('os', 'windows')->where('mechanism', 'registry')
+            ->firstOrFail()->spec['keys'][0];
+
+        self::assertSame('HKLM', $key['hive'], 'scope machine');
+        self::assertSame('SOFTWARE\\Policies\\Microsoft\\WindowsStore', $key['path']);
+        self::assertSame('RemoveWindowsStore', $key['name']);
+        self::assertSame('REG_DWORD', $key['type']);
+        self::assertSame(1, $key['value']['on'], 'on = Store bloqué');
+        self::assertSame(0, $key['value']['off'], 'off = Store accessible (défaut Windows)');
     }
 
     #[Test]

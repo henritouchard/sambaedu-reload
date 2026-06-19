@@ -1,3 +1,1 @@
-- [ ] dev 27-6 => corrections du wpkg
-- [ ] merger le windows capacity (27-12 wt handleRegister)
 - [ ] 8-2-7 => téléchargement de nouveau wpkg bloquants
