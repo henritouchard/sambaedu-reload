@@ -81,10 +81,7 @@ class SyncFromAdImportCommand extends Command
         $etab = $this->resolveEstablishment($establishmentRepository, $needsEtab);
         $this->primeEstablishmentContext($etab);
 
-        // 3. Décision dry-run / exécution pour la migration des droits.
-        $this->rightsExecute = $this->resolveRightsExecute($selected);
-
-        // 4. Confirmation (interactif uniquement).
+        // 3. Confirmation (interactif uniquement).
         if ($this->input->isInteractive()) {
             $label = $etab === '0' ? 'Domaine entier' : $etab;
             if (! confirm(sprintf('Lancer %d import(s) sur « %s » ?', count($selected), $label), default: true)) {
@@ -93,6 +90,10 @@ class SyncFromAdImportCommand extends Command
                 return self::SUCCESS;
             }
         }
+
+        // 4. Décision dry-run / exécution pour la migration des droits (après
+        //    confirmation, pour ne pas interroger avant que l'opérateur valide le lancement).
+        $this->rightsExecute = $this->resolveRightsExecute($selected);
 
         // 5. Exécution.
         return $this->runImports($selected, $definitions, $etab);
@@ -372,9 +373,12 @@ class SyncFromAdImportCommand extends Command
         // 1er paramètre = dryRun (positionnel pour rester simple à mocker/tester).
         $report = app(RightsMigrationService::class)->migrate($dryRun);
 
-        $logger('info', "{$prefix}Utilisateurs scannés : {$report['users_scanned']}");
-        $logger('info', "{$prefix}Rôles assignés : {$report['roles_assigned']}");
-        $logger('info', "{$prefix}Délégations positives : {$report['delegations_created']}");
+        $scanned = $report['users_scanned'] ?? 0;
+        $roles = $report['roles_assigned'] ?? 0;
+        $delegations = $report['delegations_created'] ?? 0;
+        $logger('info', "{$prefix}Utilisateurs scannés : {$scanned}");
+        $logger('info', "{$prefix}Rôles assignés : {$roles}");
+        $logger('info', "{$prefix}Délégations positives : {$delegations}");
 
         if (($report['negatives_created'] ?? 0) > 0) {
             $logger('info', "{$prefix}Délégations négatives : {$report['negatives_created']}");
