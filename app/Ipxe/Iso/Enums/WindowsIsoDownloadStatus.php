@@ -12,14 +12,14 @@ namespace App\Ipxe\Iso\Enums;
  * Cycle de vie :
  *
  *  Pending → Downloading → Extracting → Success      (chemin nominal)
- *                                     \→ Failed       (échec curl OU install-win-iso.sh)
+ *                                     \→ Failed       (échec curl OU extraction)
  *                                     \→ Cancelled    (admin annule via UI)
  *
  * - `Pending`     : row créée, Job dispatché, worker pas encore pickup.
  * - `Downloading` : `curl` en cours (Process Symfony).
- * - `Extracting`  : `sudo install-win-iso.sh` en cours.
+ * - `Extracting`  : extraction native (montage loop + copie) en cours.
  * - `Success`     : tout est OK (`/var/sambaedu/unattended/install/os/Win{N}/version` peuplé).
- * - `Failed`      : `curl` OU `install-win-iso.sh` a retourné ≠ 0 (exit_code + error texte).
+ * - `Failed`      : `curl` OU l'extraction a retourné ≠ 0 (exit_code + error texte).
  * - `Cancelled`   : admin a cliqué "Annuler" — le Process en cours continue mais le Job
  *                   skipera la suite (parité legacy qui ne SIGTERM pas non plus).
  *

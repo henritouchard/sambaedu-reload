@@ -29,6 +29,8 @@ class WindowsIsoDownloadOrchestratorTest extends TestCase
 
     private WindowsIsoDownloadOrchestrator $orchestrator;
     private User $user;
+    private string $isoStoragePath;
+    private string $uploadTmpPath;
 
     protected function setUp(): void
     {
@@ -43,6 +45,18 @@ class WindowsIsoDownloadOrchestratorTest extends TestCase
         config(['ipxe.iso_management.global_lock_key' => 'ipxe.iso.download.test-lock']);
         config(['ipxe.iso_management.global_lock_ttl' => 60]);
         config(['ipxe.iso_management.queue_name' => 'ipxe_iso_downloads_test']);
+        // Lock store = array en test (aligné sur cache.default=array ci-dessous) :
+        // l'orchestrator prend le lock sur ce store, et les tests l'acquièrent/relâchent
+        // via Cache::lock() (= store par défaut) — même store, mêmes clés.
+        config(['ipxe.iso_management.lock_store' => 'array']);
+
+        // Dépôt manuel : dossiers temp (même filesystem → rename atomique).
+        $this->isoStoragePath = sys_get_temp_dir() . '/se5-iso-store-' . getmypid();
+        $this->uploadTmpPath  = $this->isoStoragePath . '/.uploads';
+        @mkdir($this->uploadTmpPath, 0775, true);
+        config(['ipxe.iso_management.iso_storage_path' => $this->isoStoragePath]);
+        config(['ipxe.iso_management.upload_tmp_path' => $this->uploadTmpPath]);
+        config(['ipxe.iso_management.upload_max_total_bytes' => 6 * 1024 * 1024 * 1024]);
 
         // Force le cache driver array pour les tests (pas de redis en sqlite).
         config(['cache.default' => 'array']);
@@ -63,6 +77,17 @@ class WindowsIsoDownloadOrchestratorTest extends TestCase
     protected function tearDown(): void
     {
         Cache::lock('ipxe.iso.download.test-lock')->forceRelease();
+        // Nettoyage des dossiers temp upload.
+        foreach (glob($this->uploadTmpPath . '/*') ?: [] as $f) {
+            @unlink($f);
+        }
+        foreach (glob($this->isoStoragePath . '/*') ?: [] as $f) {
+            if (is_file($f)) {
+                @unlink($f);
+            }
+        }
+        @rmdir($this->uploadTmpPath);
+        @rmdir($this->isoStoragePath);
         $this->dropWindowsIsoSchema();
         parent::tearDown();
     }
@@ -160,5 +185,81 @@ class WindowsIsoDownloadOrchestratorTest extends TestCase
         self::assertFalse($result);
         $download->refresh();
         self::assertSame(WindowsIsoDownloadStatus::Success, $download->status);
+    }
+
+    /* =================================================================
+     * Dépôt manuel (submitUpload)
+     * ================================================================= */
+
+    #[Test]
+    public function it_submit_upload_creates_row_moves_file_and_dispatches_job(): void
+    {
+        $partPath = $this->uploadTmpPath . '/' . '11111111-2222-4333-8444-555566667777.part';
+        file_put_contents($partPath, 'FAKE-ISO-BYTES');
+
+        $download = $this->orchestrator->submitUpload(
+            $partPath,
+            'Win11_24H2.iso',
+            'Win11',
+            $this->user->id,
+            '127.0.0.1',
+        );
+
+        self::assertSame('Win11', $download->version);
+        self::assertSame('Win11_24H2.iso', $download->iso_name);
+        self::assertNull($download->source_url);
+        self::assertSame(WindowsIsoDownload::SOURCE_UPLOAD, $download->source);
+        self::assertSame(WindowsIsoDownloadStatus::Pending, $download->status);
+
+        // Le `.part` a été renommé vers la destination finale (atomique).
+        self::assertFileDoesNotExist($partPath);
+        self::assertFileExists($this->isoStoragePath . '/Win11_24H2.iso');
+
+        Queue::assertPushedOn('ipxe_iso_downloads_test', DownloadWindowsIsoJob::class);
+    }
+
+    #[Test]
+    public function it_submit_upload_throws_validation_for_bad_filename(): void
+    {
+        $partPath = $this->uploadTmpPath . '/aaaaaaaa-bbbb-4ccc-8ddd-eeeeffff0000.part';
+        file_put_contents($partPath, 'X');
+
+        $this->expectException(WindowsIsoValidationException::class);
+        try {
+            $this->orchestrator->submitUpload($partPath, '../evil.iso', 'Win11', $this->user->id, '127.0.0.1');
+        } finally {
+            Queue::assertNothingPushed();
+            self::assertSame(0, WindowsIsoDownload::query()->count());
+        }
+    }
+
+    #[Test]
+    public function it_submit_upload_throws_validation_when_assembled_file_missing(): void
+    {
+        $this->expectException(WindowsIsoValidationException::class);
+        $this->orchestrator->submitUpload(
+            $this->uploadTmpPath . '/does-not-exist.part',
+            'Win11_24H2.iso',
+            'Win11',
+            $this->user->id,
+            '127.0.0.1',
+        );
+    }
+
+    #[Test]
+    public function it_submit_upload_throws_lock_when_global_lock_held(): void
+    {
+        $partPath = $this->uploadTmpPath . '/abababab-cdcd-4ede-8fef-010101010101.part';
+        file_put_contents($partPath, 'X');
+
+        $lock = Cache::lock('ipxe.iso.download.test-lock', 60);
+        self::assertTrue($lock->get());
+
+        try {
+            $this->expectException(WindowsIsoLockException::class);
+            $this->orchestrator->submitUpload($partPath, 'Win11_24H2.iso', 'Win11', $this->user->id, '127.0.0.1');
+        } finally {
+            $lock->release();
+        }
     }
 }

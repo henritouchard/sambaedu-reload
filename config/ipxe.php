@@ -396,14 +396,31 @@ return [
         // Cf. enum WindowsVersion.
         'allowed_versions' => ['Win10', 'Win11'],
 
-        // Paths des assets statiques Windows servis par Apache via catchall.
-        // `wimboot_base` : préfixe partagé Win10/Win11 (iso-legacy
-        // `actions/wimboot10.php:6` + `wimboot11.php:6` qui pointent tous
-        // les deux sur `Win10/wimboot`).
+        // Assets WinPE servis aux postes via la route `/ipxe/os/{path}`
+        // (IpxeOsAssetController + X-Sendfile), sous `deployed_os_base_path`.
+        //
+        // `wimboot_base` : sous-dossier (sous `/ipxe/os/`) des helpers WinPE
+        // partagés Win10/Win11 — `wimboot` (chargeur iPXE, version-agnostique)
+        // + `winpeshl.ini`. Historiquement `Win10` (parité legacy
+        // `wimboot10.php:6`/`wimboot11.php:6` `kernel Win10/wimboot`, fournis
+        // par le paquet SE4 `sambaedu-client-windows`). Déplacés hors `Win10/`
+        // vers un dossier neutre `winpe` (direction SE5-autonome
+        // [[project_windows_install_helpers_oem_staging]]) : ils ne sont plus
+        // livrés par le deb mais semés par WindowsIsoExtractor à l'extraction
+        // depuis `winpe_source_path`. Le resolver bâtit l'URL
+        // `<osUrl>/<wimboot_base>/wimboot` (= `/ipxe/os/winpe/wimboot`).
+        //
+        // `winpe_source_path` : dossier SOURCE versionné des helpers WinPE,
+        // copié dans `{deployed_os_base_path}/<wimboot_base>/` à chaque
+        // extraction. Le passage par le tree `/os` (au lieu d'un service direct
+        // depuis `resources/`) est imposé par `XSendFilePath` Apache, confiné à
+        // `deployed_os_base_path` (cf. scripts/setupXsendfile.sh).
         'assets_paths' => [
-            'wimboot_base' => env('IPXE_WIN_WIMBOOT_BASE', 'Win10'),
-            'wimboot' => env('IPXE_WIN_WIMBOOT_PATH', 'Win10/wimboot'),
-            'winpeshl' => env('IPXE_WIN_WINPESHL_PATH', 'Win10/winpeshl.ini'),
+            'wimboot_base' => env('IPXE_WIN_WIMBOOT_BASE', 'winpe'),
+            'winpe_source_path' => env('IPXE_WIN_WINPE_SOURCE', resource_path('ipxe/winpe')),
+            // Sous-chemins versionnés BCD/boot.sdi/boot.wim, relatifs à
+            // `<osUrl>/<version>` (documentaires : les templates les codent en
+            // dur — `{{ $winVersionBase }}/sources/boot.wim` etc.).
             'bcd' => env('IPXE_WIN_BCD_PATH', '{version}/boot/bcd'),
             'boot_sdi' => env('IPXE_WIN_BOOT_SDI_PATH', '{version}/boot/boot.sdi'),
             'boot_wim' => env('IPXE_WIN_BOOT_WIM_PATH', '{version}/sources/boot.wim'),
@@ -467,10 +484,20 @@ return [
         // sudoers + worker queue.
         'enabled' => filter_var(env('IPXE_ISO_MANAGEMENT_ENABLED', true), FILTER_VALIDATE_BOOL),
 
-        // Path filesystem où sont stockées les ISO téléchargées + le rooting
-        // des dossiers `Win{10,11}{,-old}/` extraits par install-win-iso.sh.
+        // Racine des dossiers `Win{10,11}{,-old}/` extraits par
+        // install-win-iso.sh — servie aux postes via `/os` (route
+        // `/ipxe/os/{path}` + X-Sendfile). Exception client-facing : RESTE
+        // hors `storage/` (cf. convention storage non-versionné).
         'deployed_os_base_path' => env('IPXE_ISO_DEPLOYED_OS_BASE', '/var/sambaedu/unattended/install/os'),
-        'iso_storage_path'      => env('IPXE_ISO_STORAGE_PATH', '/var/sambaedu/unattended/install/os/iso'),
+
+        // Stockage des ISO *sources* (déposées par upload ou téléchargées par
+        // curl) AVANT extraction. Déplacé sous `storage/` (convention des
+        // assets non-versionnés) — n'est plus un sous-dossier du tree `/os`
+        // servi aux postes. Servi en HTTP par l'alias Apache `/install/iso`
+        // (cf. scripts/setupApache.sh) pour accès/vérification manuels — aucun
+        // flux d'install ne consomme l'ISO brute (les postes lisent les
+        // dossiers Win extraits sous `deployed_os_base_path`).
+        'iso_storage_path'      => env('IPXE_ISO_STORAGE_PATH', storage_path('install/iso')),
 
         // Nom du fichier "version" qui contient le nom de l'iso source
         // ("Win11_24H2.iso") — écrit par install-win-iso.sh après extraction.
@@ -483,9 +510,12 @@ return [
         // **Anti-pattern strict** : ne PAS étendre cette liste à `microsoft.com`
         // bare — un attaquant qui compromet une sous-page `microsoft.com/foo.iso`
         // pourrait pousser un fake ISO.
+        // `download.prss.microsoft.com` matche (via str_ends_with) les
+        // sous-domaines `software.download.prss.…` ET `software-static.download.prss.…`
+        // (Microsoft a basculé de l'un à l'autre courant 2026).
         'allowed_url_hosts' => explode(',', (string) env(
             'IPXE_ISO_ALLOWED_HOSTS',
-            'software-static.download.prss.microsoft.com,software-download.microsoft.com,download.microsoft.com',
+            'download.prss.microsoft.com,software-download.microsoft.com,download.microsoft.com',
         )),
 
         // Timeouts process (secondes) — passés en arg `--max-time` à curl
@@ -503,8 +533,52 @@ return [
         'global_lock_key' => env('IPXE_ISO_LOCK_KEY', 'ipxe.iso.download.global'),
         'global_lock_ttl' => (int) env('IPXE_ISO_LOCK_TTL', 7200),
 
+        // Store du lock global. Le cache par défaut est APCu (`apc`) qui NE
+        // supporte PAS `Cache::lock()` (« undefined method ApcStore::lock() »)
+        // ET est per-process (invisible entre PHP-FPM et le worker). On force
+        // donc un store partagé lock-capable — `file` par défaut, convention
+        // iso `App\SystemStatus\DistroInstallTracker`. `database` est aussi un
+        // choix valide (QUEUE_CONNECTION=database déjà en place).
+        'lock_store' => env('IPXE_ISO_LOCK_STORE', 'file'),
+
         // Nombre de rows historiques affichées dans la card "Historique".
         'history_limit' => (int) env('IPXE_ISO_HISTORY_LIMIT', 10),
+
+        // --- Dépôt manuel d'ISO (upload chunké) -----------------------------
+        //
+        // En plus du téléchargement par URL (curl serveur), l'admin peut
+        // déposer une ISO depuis son navigateur. L'uploader découpe le fichier
+        // en chunks (POST raw octet-stream) pour supporter des ISO de plusieurs
+        // Go SANS lever `upload_max_filesize`/`post_max_size` à 4G+ et avec
+        // reprise en cas de coupure. Le serveur réassemble en `.part` dans
+        // `upload_tmp_path` puis renomme atomiquement (même filesystem que
+        // `iso_storage_path`) avant de lancer l'extraction.
+
+        // Master switch dédié à l'upload (indépendant du flux URL).
+        'upload_enabled' => filter_var(env('IPXE_ISO_UPLOAD_ENABLED', true), FILTER_VALIDATE_BOOL),
+
+        // Dossier de réassemblage des chunks. DOIT être sur le même filesystem
+        // que `iso_storage_path` (rename atomique, pas de copie 2× l'espace
+        // disque) et writable par le user PHP-FPM (www-admin). Niché sous
+        // `iso_storage_path` mais NON exposé en HTTP (deny dans l'alias Apache
+        // `/install/iso`) — ce sont des `.part`/`.json` partiels.
+        'upload_tmp_path' => env('IPXE_ISO_UPLOAD_TMP', storage_path('install/iso/.uploads')),
+
+        // Taille d'un chunk (octets). Défaut 5 Mo : tient sous le
+        // `post_max_size` stock PHP (8M) en raw body — fonctionne sans toucher
+        // la config serveur. Monter cette valeur (+ `post_max_size`) réduit le
+        // nombre de round-trips sur les gros fichiers. Le front lit cette
+        // valeur (injectée dans le blade) — pas de drift client/serveur.
+        'upload_chunk_bytes' => (int) env('IPXE_ISO_UPLOAD_CHUNK_BYTES', 5 * 1024 * 1024),
+
+        // Taille totale max d'une ISO déposée (octets). Défaut 10 Go (marge
+        // au-dessus des ISO Win10/Win11 multi-langue ~7,5 Go).
+        'upload_max_total_bytes' => (int) env('IPXE_ISO_UPLOAD_MAX_BYTES', 10 * 1024 * 1024 * 1024),
+
+        // TTL (secondes) avant purge d'un upload partiel abandonné dans
+        // `upload_tmp_path` (nettoyé best-effort au démarrage d'un nouvel
+        // upload). Défaut 24h.
+        'upload_stale_ttl' => (int) env('IPXE_ISO_UPLOAD_STALE_TTL', 86400),
     ],
 
     /*

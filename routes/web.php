@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\ParcController;
 use App\Http\Controllers\AppPolicyController;
+use App\Http\Controllers\Ipxe\WindowsIsoUploadController;
 use App\Http\Controllers\WallpaperController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChangePasswordController;
@@ -436,6 +437,14 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     Route::livewire('/ipxe/iso-windows', 'pages::admin.ipxe.iso-windows.index')
         ->middleware('can:server.admin')
         ->name('ipxe.iso-windows');
+
+    // Dépôt manuel d'ISO par chunks (raw octet-stream) — supporte les ISO de
+    // plusieurs Go sans lever post_max_size. Auth via le groupe admin +
+    // can:server.admin + CSRF. Le finalize (validation + rename + dispatch
+    // Job) vit dans le composant Livewire (méthode `finalizeUpload`).
+    Route::post('/ipxe/iso-windows/upload-chunk', [WindowsIsoUploadController::class, 'chunk'])
+        ->middleware('can:server.admin')
+        ->name('ipxe.iso-windows.upload-chunk');
 
 
     // ========================================

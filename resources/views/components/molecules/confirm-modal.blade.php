@@ -50,7 +50,7 @@ Utilise la balise <dialog> HTML5 native pour éviter les problèmes de z-index
         },
         
         close() {
-            document.getElementById('confirm-modal-dialog').close();
+            this.$root.close();
             this.method = null;
             this.params = [];
             this.wireId = null;

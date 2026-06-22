@@ -259,7 +259,13 @@ return [
     'se4fs_ip'          => env('SE4FS_IP', ''),
     'se4fs_name'        => env('SE4FS_NAME', ''),
     'ipxe_url'          => env('IPXE_URL', ''),
-    'se4install_name'   => env('SE4INSTALL_NAME', 'se4install'),
+    // `?:` (et non le 2ᵉ arg de `env()`) : un `.env` avec `SE4INSTALL_NAME=`
+    // (défini-mais-vide) renvoie `''` et neutraliserait le défaut. Un nom vide
+    // casse en silence le `net use` WinPE (install.bat → `/user:@domaine` →
+    // auth SMB échoue → boucle de ping). On retombe donc sur le compte de
+    // service canonique `se4install` (= clé du coffre ServiceCredentials qui
+    // porte déjà son mot de passe).
+    'se4install_name'   => env('SE4INSTALL_NAME') ?: 'se4install',
     'se4install_passwd' => env('SE4INSTALL_PASSWD', ''),
     // Fichier legacy des tokens TOTP (import one-shot via /sync-from-ad).
     'se4install_hashes_file' => env('SAMBAEDU_HASHES_FILE', '/etc/sambaedu/hashes'),
@@ -438,6 +444,25 @@ return [
 
         // Chemin du fichier packages.xml local
         'packages_xml_path' => env('WPKG_PACKAGES_XML', '/var/sambaedu/unattended/install/wpkg/packages.xml'),
+
+        // Migration legacy SE4 → SE5 : source des recettes WPKG et racine des
+        // binaires côté legacy. Consommés UNIQUEMENT par
+        // {@see \App\Services\AppStore\LegacyWpkgImporter} (étape « Importer les
+        // applications WPKG » de /admin/sync-from-ad).
+        //
+        // - `legacy_packages_xml_path` : le packages.xml consolidé du serveur
+        //   SE4 (un `<package id="id_nom_app">` par appli active, avec
+        //   métadonnées + directives `<download saveto="…">`). Seule source qui
+        //   contient la recette XML — la table MySQL `applications` ne la stocke
+        //   pas. Défaut = même chemin que `packages_xml_path` (migration in-place
+        //   sur le même serveur) ; sur ce serveur le fichier EST le packages.xml
+        //   legacy tant que SE5 ne l'a pas régénéré.
+        // - `legacy_install_root` : racine des binaires SE4 (legacy `$wpkgroot2`).
+        //   Si == `storage_path` (cas in-place), le placement des fichiers se
+        //   réduit à une vérification de présence. À surcharger uniquement si SE5
+        //   tourne sur un hôte distinct du stock de fichiers SE4 (copie effective).
+        'legacy_packages_xml_path' => env('WPKG_LEGACY_PACKAGES_XML', '/var/sambaedu/unattended/install/wpkg/packages.xml'),
+        'legacy_install_root'      => env('WPKG_LEGACY_INSTALL_ROOT', '/var/sambaedu/unattended/install'),
 
         // Pipeline déploiement WPKG (Story 15.1) — chemins **en dur** : décision
         // 2026-05-03, pas de variables d'env dédiées. Les ops modifient ce
@@ -762,42 +787,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Story 3.6 — Script externe d'extraction ISO Windows (D11)
+    | Story 3.6 — Extraction native ISO Windows (D11)
     |--------------------------------------------------------------------------
     |
-    | `install-win-iso.sh` vit sous `/usr/share/sambaedu/scripts/` côté VM
-    | (paquet sambaedu). SE5 ne le porte pas — l'invoque via `sudo` depuis
-    | le Job `DownloadWindowsIsoJob`. Prérequis sudoers à valider en T0.5 :
+    | Depuis 2026-06-22 l'extraction est portée NATIVEMENT dans le code
+    | ({@see \App\Ipxe\Iso\Services\WindowsIsoExtractor}) — plus de script
+    | externe `install-win-iso.sh`. Le Job `DownloadWindowsIsoJob` monte l'ISO
+    | en loop read-only puis copie son contenu vers
+    | `ipxe.iso_management.deployed_os_base_path/Win{N}`.
+    |
+    | Prérequis sudoers (le worker tourne en www-admin ; mount/umount + la
+    | tree-mutation du dossier servi exigent root) :
     |
     |   # /etc/sudoers.d/sambaedu-iso-install
-    |   www-admin ALL=(root) NOPASSWD: /usr/share/sambaedu/scripts/install-win-iso.sh
+    |   www-admin ALL=(root) NOPASSWD: /usr/bin/mount, /usr/bin/umount, \
+    |       /usr/bin/cp, /usr/bin/rm, /usr/bin/mkdir, /usr/bin/chown
     |
-    | Sans cette règle : le Job échoue avec exit_code 1 + stderr
-    | "no tty present and no askpass program specified" — la story 3.6 gère
-    | ce cas avec un toast utilisateur clair (cf. AC4.4 + AC4.5).
-    |
-    | **Pas de wildcard sudo** — la règle DOIT cibler le path strict
-    | `/usr/share/sambaedu/scripts/install-win-iso.sh` (defense in depth vs
-    | un attaquant qui poserait un script malveillant ailleurs).
+    | (ou la règle blanket `NOPASSWD: ALL` déjà posée sur la VM). Sans droits
+    | sudo, l'extraction échoue (`exit_code 1` + stderr "a password is
+    | required") — la story 3.6 affiche un toast utilisateur clair (AC4.4/AC4.5).
     */
     'windows_iso' => [
-        // Path absolu du script shell d'extraction. Override possible via
-        // env pour les environnements de test (où l'on stubbe le script).
-        /* SÉCURITÉ (review post-3.6, #11 / #2 rejeté) : ce path est
-         * sudo-allowlisté dans `/etc/sudoers.d/sambaedu-iso-install` (path
-         * strict, pas de wildcard). Modifier cette valeur (config ou env
-         * `SAMBAEDU_INSTALL_WIN_ISO_SCRIPT`) sans MAJ correspondante du
-         * fichier sudoers casse l'install Windows (Job échoue `exit_code 1`
-         * + stderr "a password is required") — defense in depth implicite.
-         * Tout changement ici DOIT être accompagné d'une coordination Ops. */
-        'install_script' => env(
-            'SAMBAEDU_INSTALL_WIN_ISO_SCRIPT',
-            '/usr/share/sambaedu/scripts/install-win-iso.sh',
-        ),
-
-        // User sudoers documentaire (informatif uniquement — le Job ne lit
-        // pas ce champ, il est consommé par le runbook QA Section 15).
-        'sudoers_user' => env('SAMBAEDU_INSTALL_WIN_ISO_SUDO_USER', 'www-admin'),
+        // Répertoire racine où WindowsIsoExtractor crée le point de montage
+        // temporaire (un sous-dossier unique par extraction, monté puis
+        // démonté). Surchargeable pour tests / environnements contraints.
+        'extract_mount_dir' => env('SAMBAEDU_ISO_EXTRACT_MOUNT_DIR', sys_get_temp_dir()),
     ],
 
     /*

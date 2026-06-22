@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Tests\Unit\Ipxe\Iso\Jobs;
 
 use App\Ipxe\Iso\Enums\WindowsIsoDownloadStatus;
+use App\Ipxe\Iso\Exceptions\WindowsIsoExtractionException;
 use App\Ipxe\Iso\Jobs\DownloadWindowsIsoJob;
+use App\Ipxe\Iso\Services\WindowsIsoExtractor;
 use App\Models\User;
 use App\Models\WindowsIsoDownload;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
-use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use PHPUnit\Framework\Attributes\Test;
@@ -25,10 +26,15 @@ use Tests\Traits\CreatesWindowsIsoSchema;
  *  - Échec phase curl (status=failed + exit_code + error).
  *  - Échec phase extract (status=failed + exit_code + error).
  *  - Annulation entre curl et extract.
- *  - Sécurité escapeshellarg systématique.
+ *  - Sécurité escapeshellarg systématique (curl).
  *  - Implementations ShouldQueue + WithoutOverlapping.
  *  - Lock global release dans finally.
  *  - Exception → status=failed + log.
+ *
+ * L'extraction elle-même est testée dans
+ * {@see \Tests\Unit\Ipxe\Iso\Services\WindowsIsoExtractorTest}. Ici on stubbe
+ * {@see WindowsIsoExtractor} dans le conteneur pour isoler le comportement du
+ * Job (transitions, mapping d'échec, bypass curl pour les dépôts).
  */
 class DownloadWindowsIsoJobTest extends TestCase
 {
@@ -43,12 +49,14 @@ class DownloadWindowsIsoJobTest extends TestCase
         $this->createWindowsIsoSchema();
 
         config([
-            'ipxe.iso_management.iso_storage_path'        => '/tmp/sambaedu-test/iso',
+            'ipxe.iso_management.iso_storage_path'         => '/tmp/sambaedu-test/iso',
             'ipxe.iso_management.download_timeout_seconds' => 7200,
             'ipxe.iso_management.extract_timeout_seconds'  => 1800,
-            'ipxe.iso_management.global_lock_key'         => 'ipxe.iso.download.test-job-lock',
-            'sambaedu.windows_iso.install_script'          => '/usr/share/sambaedu/scripts/install-win-iso.sh',
-            'cache.default'                               => 'array',
+            'ipxe.iso_management.global_lock_key'          => 'ipxe.iso.download.test-job-lock',
+            // Lock store = array en test (aligné sur cache.default) : releaseLock
+            // du Job et les assertions de lock des tests visent le même store.
+            'ipxe.iso_management.lock_store'               => 'array',
+            'cache.default'                                => 'array',
         ]);
 
         Cache::lock('ipxe.iso.download.test-job-lock')->forceRelease();
@@ -65,6 +73,35 @@ class DownloadWindowsIsoJobTest extends TestCase
         Cache::lock('ipxe.iso.download.test-job-lock')->forceRelease();
         $this->dropWindowsIsoSchema();
         parent::tearDown();
+    }
+
+    /**
+     * Lie un faux extracteur dans le conteneur. Renvoie l'objet espion : on
+     * peut inspecter `->calls` (chaque extract enregistré) et lui faire lever
+     * une exception via `$throws`.
+     */
+    private function fakeExtractor(?\Throwable $throws = null): object
+    {
+        $spy = new class {
+            /** @var array<int, array{version: string, isoPath: string, timeout: ?int}> */
+            public array $calls = [];
+
+            public ?\Throwable $throws = null;
+
+            public function extract(string $version, string $isoPath, ?int $timeout = null): void
+            {
+                $this->calls[] = ['version' => $version, 'isoPath' => $isoPath, 'timeout' => $timeout];
+
+                if ($this->throws !== null) {
+                    throw $this->throws;
+                }
+            }
+        };
+        $spy->throws = $throws;
+
+        $this->app->instance(WindowsIsoExtractor::class, $spy);
+
+        return $spy;
     }
 
     /* =================================================================
@@ -84,13 +121,13 @@ class DownloadWindowsIsoJobTest extends TestCase
     }
 
     #[Test]
-    public function it_declares_without_overlapping_middleware_with_global_key(): void
+    public function it_declares_no_queue_middleware(): void
     {
+        // `WithoutOverlapping` retiré : il casse sur APCu (ApcStore::lock()
+        // undefined). Le mutex global vit dans le lock file de l'orchestrator.
         $job = new DownloadWindowsIsoJob(42);
-        $middlewares = $job->middleware();
 
-        self::assertCount(1, $middlewares);
-        self::assertInstanceOf(WithoutOverlapping::class, $middlewares[0]);
+        self::assertSame([], $job->middleware());
     }
 
     /* =================================================================
@@ -101,11 +138,9 @@ class DownloadWindowsIsoJobTest extends TestCase
     public function it_runs_nominal_path_and_marks_success(): void
     {
         Process::fake([
-            // curl OK
             'curl*' => Process::result(output: 'OK', errorOutput: '', exitCode: 0),
-            // sudo install-win-iso.sh OK
-            'sudo*' => Process::result(output: 'EXTRACTED', errorOutput: '', exitCode: 0),
         ]);
+        $this->fakeExtractor();
 
         $download = WindowsIsoDownload::factory()->pending()->create([
             'iso_name'             => 'Win11_24H2.iso',
@@ -150,12 +185,14 @@ class DownloadWindowsIsoJobTest extends TestCase
     }
 
     #[Test]
-    public function it_marks_failed_when_extract_returns_non_zero_exit(): void
+    public function it_marks_failed_when_extraction_throws(): void
     {
         Process::fake([
             'curl*' => Process::result(output: 'OK', errorOutput: '', exitCode: 0),
-            'sudo*' => Process::result(output: '', errorOutput: 'Mount loop failed', exitCode: 1),
         ]);
+        // L'extracteur natif échoue (ex. montage loop KO) → exception portant
+        // l'exit code + le stderr de la commande fautive.
+        $this->fakeExtractor(new WindowsIsoExtractionException('[mount] Mount loop failed', 1));
 
         $download = WindowsIsoDownload::factory()->pending()->create([
             'iso_name'             => 'Win11_24H2.iso',
@@ -180,6 +217,7 @@ class DownloadWindowsIsoJobTest extends TestCase
     public function it_skips_when_status_is_already_cancelled(): void
     {
         Process::fake();
+        $spy = $this->fakeExtractor();
 
         $download = WindowsIsoDownload::factory()->create([
             'status'               => WindowsIsoDownloadStatus::Cancelled,
@@ -193,6 +231,7 @@ class DownloadWindowsIsoJobTest extends TestCase
         $download->refresh();
         self::assertSame(WindowsIsoDownloadStatus::Cancelled, $download->status);
         Process::assertNothingRan();
+        self::assertSame([], $spy->calls, 'Aucune extraction sur un download déjà annulé.');
     }
 
     #[Test]
@@ -212,26 +251,28 @@ class DownloadWindowsIsoJobTest extends TestCase
                 return Process::result(output: 'OK', errorOutput: '', exitCode: 0);
             },
         ]);
+        $spy = $this->fakeExtractor();
 
         (new DownloadWindowsIsoJob($download->id))->handle();
 
         $download->refresh();
         self::assertSame(WindowsIsoDownloadStatus::Cancelled, $download->status);
         // L'extract ne doit PAS avoir tourné.
+        self::assertSame([], $spy->calls, 'L\'extraction ne doit pas tourner après une annulation.');
         Process::assertRan(fn ($p) => str_starts_with($p->command, 'curl'));
     }
 
     /* =================================================================
-     * Sécurité escapeshellarg
+     * Sécurité escapeshellarg (curl)
      * ================================================================= */
 
     #[Test]
-    public function it_escapes_shell_arguments_in_curl_and_extract_commands(): void
+    public function it_escapes_shell_arguments_in_curl_command(): void
     {
         Process::fake([
             'curl*' => Process::result(output: 'OK', errorOutput: '', exitCode: 0),
-            'sudo*' => Process::result(output: 'OK', errorOutput: '', exitCode: 0),
         ]);
+        $this->fakeExtractor();
 
         $download = WindowsIsoDownload::factory()->pending()->create([
             'iso_name'             => 'Win11_24H2.iso',
@@ -248,14 +289,6 @@ class DownloadWindowsIsoJobTest extends TestCase
                 && str_contains($p->command, "'https://download.microsoft.com/Win11_24H2.iso'")
                 && str_contains($p->command, "'/tmp/sambaedu-test/iso/Win11_24H2.iso'");
         });
-
-        // Le sudo install-win-iso.sh doit contenir version_num=11 et iso_name escapés.
-        Process::assertRan(function ($p) {
-            return str_starts_with($p->command, 'sudo ')
-                && str_contains($p->command, "'/usr/share/sambaedu/scripts/install-win-iso.sh'")
-                && str_contains($p->command, "'11'")
-                && str_contains($p->command, "'Win11_24H2.iso'");
-        });
     }
 
     /* =================================================================
@@ -267,8 +300,8 @@ class DownloadWindowsIsoJobTest extends TestCase
     {
         Process::fake([
             'curl*' => Process::result(output: 'OK', errorOutput: '', exitCode: 0),
-            'sudo*' => Process::result(output: 'OK', errorOutput: '', exitCode: 0),
         ]);
+        $this->fakeExtractor();
 
         // Acquière le lock manuellement (simule l'orchestrator l'a posé).
         Cache::lock('ipxe.iso.download.test-job-lock', 60)->get();
@@ -318,6 +351,71 @@ class DownloadWindowsIsoJobTest extends TestCase
         // Pas de row 99999.
         (new DownloadWindowsIsoJob(99999))->handle();
 
+        Process::assertNothingRan();
+    }
+
+    /* =================================================================
+     * Dépôt manuel (source = upload)
+     * ================================================================= */
+
+    #[Test]
+    public function it_skips_curl_for_upload_source_and_extracts_directly(): void
+    {
+        // Le fichier déposé existe déjà (renommé par l'orchestrator).
+        $isoPath = '/tmp/sambaedu-test/iso/Win11_24H2.iso';
+        @mkdir(dirname($isoPath), 0775, true);
+        file_put_contents($isoPath, 'FAKE-ISO-CONTENT');
+
+        Process::fake();
+        $spy = $this->fakeExtractor();
+
+        $download = WindowsIsoDownload::factory()->upload()->pending()->create([
+            'iso_name'             => 'Win11_24H2.iso',
+            'version'              => 'Win11',
+            'initiated_by_user_id' => $this->user->id,
+        ]);
+
+        try {
+            (new DownloadWindowsIsoJob($download->id))->handle();
+
+            $download->refresh();
+            self::assertSame(WindowsIsoDownloadStatus::Success, $download->status);
+            self::assertSame(0, $download->exit_code);
+            self::assertNotNull($download->started_at, 'started_at doit être posé même sans phase download.');
+
+            // Aucun curl ne doit avoir tourné.
+            Process::assertNotRan(fn ($p) => str_starts_with($p->command, 'curl'));
+
+            // L'extraction a été invoquée avec la version + le chemin ISO résolu.
+            self::assertCount(1, $spy->calls);
+            self::assertSame('Win11', $spy->calls[0]['version']);
+            self::assertSame($isoPath, $spy->calls[0]['isoPath']);
+        } finally {
+            @unlink($isoPath);
+        }
+    }
+
+    #[Test]
+    public function it_marks_failed_for_upload_when_file_is_missing(): void
+    {
+        Process::fake();
+        $spy = $this->fakeExtractor();
+
+        // Aucun fichier sur disque pour cette ISO.
+        @unlink('/tmp/sambaedu-test/iso/Win11_MISSING.iso');
+
+        $download = WindowsIsoDownload::factory()->upload()->pending()->create([
+            'iso_name'             => 'Win11_MISSING.iso',
+            'version'              => 'Win11',
+            'initiated_by_user_id' => $this->user->id,
+        ]);
+
+        (new DownloadWindowsIsoJob($download->id))->handle();
+
+        $download->refresh();
+        self::assertSame(WindowsIsoDownloadStatus::Failed, $download->status);
+        self::assertStringContainsString('upload-missing', (string) $download->error);
+        self::assertSame([], $spy->calls, 'Pas d\'extraction si le fichier déposé est absent.');
         Process::assertNothingRan();
     }
 }

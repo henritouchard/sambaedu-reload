@@ -101,4 +101,15 @@ class WindowsIsoDownloadFactory extends Factory
             'iso_name' => $version . '_24H2.iso',
         ]);
     }
+
+    /**
+     * Dépôt manuel (upload chunké) : aucune URL source.
+     */
+    public function upload(): static
+    {
+        return $this->state(fn () => [
+            'source'     => WindowsIsoDownload::SOURCE_UPLOAD,
+            'source_url' => null,
+        ]);
+    }
 }

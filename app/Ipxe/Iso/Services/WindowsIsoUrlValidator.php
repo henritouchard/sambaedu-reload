@@ -56,8 +56,32 @@ class WindowsIsoUrlValidator
      *
      * #6 (post-review 2026-05-21) — extraite en constante publique pour
      * éviter la duplication entre composant Livewire et service.
+     *
+     * 2026-06-22 — autorise une query string / fragment APRÈS `.iso` :
+     * `(?:[?#][^\s<>"\']*)?`. Les URLs de téléchargement Microsoft sont des
+     * URLs signées (`...Win11.iso?t=<token>&P1=...&P4=...`) — sans cette
+     * tolérance, la couche 1 rejetait toute URL réelle. La couche 2 extrait
+     * de toute façon l'`iso_name` du PATH seul (la query ne peut pas tromper
+     * la regex).
      */
-    public const URL_PATH_REGEX = '#^https://[^\s<>"\']+/Win(?:10|11)[A-Za-z0-9._\-]*\.iso$#';
+    public const URL_PATH_REGEX = '#^https://[^\s<>"\']+/Win(?:10|11)[A-Za-z0-9._\-]*\.iso(?:[?\#][^\s<>"\']*)?$#';
+
+    /**
+     * Regex d'un nom de fichier ISO déposé (upload manuel).
+     *
+     * Contrairement au flux URL (qui impose la convention Microsoft
+     * `Win(10|11)*.iso` car la version y est déduite du nom), le dépôt manuel
+     * laisse le choix de la version à l'admin (select). Le nom de fichier est
+     * donc plus permissif MAIS strictement borné pour la sécurité :
+     *  - charset blanc `[A-Za-z0-9._-]` uniquement → aucun séparateur de chemin
+     *    (`/`, `\`), aucun `..` possible (le `.` isolé est ok, `..` non car il
+     *    serait suivi/précédé d'autres `.` toujours dans le charset mais le
+     *    rejet explicite des `..` ci-dessous le couvre), aucun espace ni
+     *    caractère shell.
+     *  - extension `.iso` obligatoire (insensible à la casse).
+     *  - 1 à 255 caractères (limite filesystem).
+     */
+    public const UPLOAD_FILENAME_REGEX = '#^[A-Za-z0-9._\-]{1,251}\.iso$#i';
 
     /**
      * Versions Windows acceptées (D5 + cohérence enum
@@ -66,6 +90,57 @@ class WindowsIsoUrlValidator
      * @var list<string>
      */
     private const ALLOWED_VERSIONS = ['10', '11'];
+
+    /**
+     * Valide un dépôt manuel d'ISO : nom de fichier + version choisie.
+     *
+     * @param  string  $filename  Nom de fichier brut fourni par le client (jamais un chemin).
+     * @param  string  $version   'Win10' | 'Win11' (select admin).
+     * @return array{iso_name: string, version: string, version_num: string}
+     *
+     * @throws WindowsIsoValidationException
+     */
+    public function validateUploadFilename(string $filename, string $version): array
+    {
+        // Anti-caractère de contrôle / null byte / newline.
+        if (preg_match('/[\x00-\x1F\x7F]/', $filename) === 1) {
+            throw new WindowsIsoValidationException(
+                "Nom de fichier invalide : caractères de contrôle interdits.",
+            );
+        }
+
+        // Defense in depth anti path-traversal — refus explicite de `..` et de
+        // tout séparateur de chemin avant même la regex de charset.
+        if (str_contains($filename, '..')
+            || str_contains($filename, '/')
+            || str_contains($filename, '\\')
+        ) {
+            throw new WindowsIsoValidationException(
+                "Nom de fichier invalide : séparateurs de chemin et `..` interdits.",
+            );
+        }
+
+        if (preg_match(self::UPLOAD_FILENAME_REGEX, $filename) !== 1) {
+            throw new WindowsIsoValidationException(
+                "Nom de fichier invalide : seuls les caractères [A-Za-z0-9._-] sont autorisés, "
+                . "extension `.iso` obligatoire (255 caractères max).",
+            );
+        }
+
+        // Version issue d'un select admin — whitelist stricte.
+        $versionNum = str_replace('Win', '', $version);
+        if (! in_array($versionNum, self::ALLOWED_VERSIONS, true)) {
+            throw new WindowsIsoValidationException(
+                "Version Windows '" . $version . "' non supportée (Win10 ou Win11 uniquement).",
+            );
+        }
+
+        return [
+            'iso_name'    => $filename,
+            'version'     => 'Win' . $versionNum,
+            'version_num' => $versionNum,
+        ];
+    }
 
     /**
      * @return array{url: string, iso_name: string, version: string, version_num: string}
@@ -116,7 +191,10 @@ class WindowsIsoUrlValidator
         }
 
         $allowedHosts = (array) config('ipxe.iso_management.allowed_url_hosts', [
-            'software-static.download.prss.microsoft.com',
+            // `download.prss.microsoft.com` couvre via str_ends_with() les
+            // sous-domaines `software.` ET `software-static.` (Microsoft a
+            // basculé de l'un à l'autre) + les futurs.
+            'download.prss.microsoft.com',
             'software-download.microsoft.com',
             'download.microsoft.com',
         ]);

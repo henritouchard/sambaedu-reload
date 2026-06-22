@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Ipxe\Iso\Jobs;
 
 use App\Ipxe\Iso\Enums\WindowsIsoDownloadStatus;
+use App\Ipxe\Iso\Exceptions\WindowsIsoExtractionException;
+use App\Ipxe\Iso\Services\WindowsIsoExtractor;
 use App\Models\WindowsIsoDownload;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -23,8 +24,9 @@ use Throwable;
  *
  *  1. `curl -fSL --max-time {timeout} -o '<iso_path>' '<url>'`
  *     → status pending → downloading.
- *  2. `sudo /usr/share/sambaedu/scripts/install-win-iso.sh <num> <iso_name>`
- *     → status downloading → extracting.
+ *  2. Extraction native via {@see \App\Ipxe\Iso\Services\WindowsIsoExtractor}
+ *     (montage loop + copie vers `{deployed_os_base_path}/Win{N}`, port du
+ *     legacy `install-win-iso.sh`) → status downloading → extracting.
  *  3. Soit `success` (exit_code=0), soit `failed` (exit_code ≠ 0 + stderr abrégé).
  *
  * Sécurité (D5 + D8) :
@@ -32,7 +34,7 @@ use Throwable;
  *  - **`Process::run(string)` mode shellline** uniquement quand on a besoin du
  *    sudo + redirect stdout vers fichier. Pour le sudo on construit la
  *    commande complète avec `escapeshellarg()` puis on passe en shell mode.
- *  - **`tries=1`** — un échec curl ou install-win-iso.sh est terminal.
+ *  - **`tries=1`** — un échec curl ou extraction est terminal.
  *  - **`WithoutOverlapping`** Job middleware (defense in depth couche 2 vs
  *    Cache::lock applicatif couche 1).
  *  - **`timeout=9300s`** (Q1 Henri 2026-05-21 = curl 7200 + extract 1800 +
@@ -96,30 +98,20 @@ class DownloadWindowsIsoJob implements ShouldQueue
      * Le key est global (pas par-download_id) — c'est le point clé : il
      * empêche 2 Jobs concurrents de manipuler simultanément
      * `/var/sambaedu/unattended/install/os/Win{10,11}/*` (corruption potentielle
-     * par `install-win-iso.sh` qui rotate Win{N} → Win{N}-old).
+     * par l'extraction native qui rotate Win{N} → Win{N}-old).
      *
      * @return array<int, object>
      */
     public function middleware(): array
     {
-        // D15 + #5 (rejeté — documenté ici) : `WithoutOverlapping($key)` (key Job
-        // middleware, valeur `ipxe-iso-download-global`) et `Cache::lock($lockKey)`
-        // (orchestrator applicatif, key `ipxe.iso.download.global`) sont 2
-        // mécanismes **orthogonaux** avec keys intentionnellement distinctes :
-        //  - `Cache::lock` côté orchestrator = visible UI (toast immédiat).
-        //  - `WithoutOverlapping` côté Job = filet de sécurité worker queue.
-        // Cf. _bmad-output/codeReviews/3-6.md (corrections post-review #5 D15).
-        //
-        // Opus-H : `dontRelease()` au lieu de `releaseAfter(60)` — si l'orchestrator
-        // détient déjà le lock applicatif, ce Job doit échouer immédiatement
-        // plutôt que boucler dans la queue jusqu'au `expireAfter(timeout)`.
-        // Comportement attendu : l'orchestrator garde le lock pendant tout le
-        // cycle ; en condition normale, ce Job est le seul à tourner.
-        return [
-            (new WithoutOverlapping('ipxe-iso-download-global'))
-                ->dontRelease()
-                ->expireAfter($this->timeout),
-        ];
+        // `WithoutOverlapping` RETIRÉ (2026-06-22) : ce middleware s'appuie sur
+        // le cache PAR DÉFAUT (APCu) qui n'implémente pas lock() → lève
+        // « undefined method ApcStore::lock() » au pickup du Job, et il n'expose
+        // aucune API pour lui passer un store lock-capable. Le mutex global reste
+        // porté par le lock file de l'orchestrator (couche 1, store `file`) + les
+        // transitions sous lockForUpdate dans handle(). En conditions normales un
+        // seul Job ISO tourne à la fois (lock applicatif + worker unique).
+        return [];
     }
 
     public function handle(): void
@@ -148,71 +140,87 @@ class DownloadWindowsIsoJob implements ShouldQueue
             return;
         }
 
-        $isoStoragePath = (string) config('ipxe.iso_management.iso_storage_path', '/var/sambaedu/unattended/install/os/iso');
+        $isoStoragePath = (string) config('ipxe.iso_management.iso_storage_path', storage_path('install/iso'));
         $isoPath        = rtrim($isoStoragePath, '/') . '/' . $download->iso_name;
 
+        // Dépôt manuel : le fichier est déjà sur disque (renommé par
+        // l'orchestrator). On saute toute la phase curl et on passe directement
+        // à l'extraction.
+        $isUpload = $download->isUpload();
+
         try {
-            // === Phase 1 : Downloading (curl) =================================
+            // === Phase 1 : Downloading (curl) — flux URL uniquement ===========
             //
             // #14 — Transition pending → downloading sous lockForUpdate + check
             // status pour éviter écrasement d'un cancel concurrent (race
             // PostgreSQL). Si annulé entre dispatch et pickup => log + return.
-            $shouldContinue = DB::transaction(function () use ($download): bool {
-                /** @var WindowsIsoDownload|null $fresh */
-                $fresh = WindowsIsoDownload::query()
-                    ->where('id', $download->id)
-                    ->lockForUpdate()
-                    ->first();
-                if ($fresh === null || $fresh->status === WindowsIsoDownloadStatus::Cancelled) {
-                    return false;
+            if (! $isUpload) {
+                $shouldContinue = DB::transaction(function () use ($download): bool {
+                    /** @var WindowsIsoDownload|null $fresh */
+                    $fresh = WindowsIsoDownload::query()
+                        ->where('id', $download->id)
+                        ->lockForUpdate()
+                        ->first();
+                    if ($fresh === null || $fresh->status === WindowsIsoDownloadStatus::Cancelled) {
+                        return false;
+                    }
+                    $fresh->update([
+                        'status'     => WindowsIsoDownloadStatus::Downloading,
+                        'started_at' => now(),
+                    ]);
+
+                    return true;
+                });
+
+                if (! $shouldContinue) {
+                    Log::channel((string) config('ipxe.log.channel', 'ipxe'))->info('ipxe.iso.download.skipped_cancelled', [
+                        'download_id' => $download->id,
+                        'iso_name'    => $download->iso_name,
+                        'phase'       => 'pre-download',
+                    ]);
+
+                    return;
                 }
-                $fresh->update([
-                    'status'     => WindowsIsoDownloadStatus::Downloading,
-                    'started_at' => now(),
-                ]);
 
-                return true;
-            });
+                $curlTimeout = (int) config('ipxe.iso_management.download_timeout_seconds', 7200);
 
-            if (! $shouldContinue) {
-                Log::channel((string) config('ipxe.log.channel', 'ipxe'))->info('ipxe.iso.download.skipped_cancelled', [
-                    'download_id' => $download->id,
-                    'iso_name'    => $download->iso_name,
-                    'phase'       => 'pre-download',
-                ]);
+                // escapeshellarg systématique : `iso_path` (chemin construit
+                // côté serveur, mais defense in depth) + `source_url`
+                // (saisie utilisateur — validée mais on protège).
+                $curlCmd = sprintf(
+                    'curl -fSL --max-time %d -o %s %s',
+                    $curlTimeout,
+                    escapeshellarg($isoPath),
+                    escapeshellarg((string) $download->source_url),
+                );
 
-                return;
-            }
+                // Q1 Henri 2026-05-21 : Process::timeout strict (pas de marge +60s
+                // — la marge globale vit dans `$this->timeout` au niveau Job).
+                $curlResult = Process::timeout($curlTimeout)->run($curlCmd);
 
-            $curlTimeout = (int) config('ipxe.iso_management.download_timeout_seconds', 7200);
+                if (! $curlResult->successful()) {
+                    // Opus-A : cleanup best-effort du fichier ISO partiel.
+                    $this->cleanupPartialIso($isoPath, 'curl-failed');
+                    $this->markFailed($download, $curlResult->exitCode() ?? -1, $curlResult->errorOutput() ?: $curlResult->output(), 'curl-failed');
 
-            // escapeshellarg systématique : `iso_path` (chemin construit
-            // côté serveur, mais defense in depth) + `source_url`
-            // (saisie utilisateur — validée mais on protège).
-            $curlCmd = sprintf(
-                'curl -fSL --max-time %d -o %s %s',
-                $curlTimeout,
-                escapeshellarg($isoPath),
-                escapeshellarg($download->source_url),
-            );
-
-            // Q1 Henri 2026-05-21 : Process::timeout strict (pas de marge +60s
-            // — la marge globale vit dans `$this->timeout` au niveau Job).
-            $curlResult = Process::timeout($curlTimeout)->run($curlCmd);
-
-            if (! $curlResult->successful()) {
-                // Opus-A : cleanup best-effort du fichier ISO partiel.
-                $this->cleanupPartialIso($isoPath, 'curl-failed');
-                $this->markFailed($download, $curlResult->exitCode() ?? -1, $curlResult->errorOutput() ?: $curlResult->output(), 'curl-failed');
+                    return;
+                }
+            } elseif (! is_file($isoPath)) {
+                // Dépôt manuel mais fichier absent (rename KO / purge externe) —
+                // échec terminal explicite plutôt que de lancer un extract sur rien.
+                $this->markFailed($download, -1, 'Fichier déposé introuvable : ' . $isoPath, 'upload-missing');
 
                 return;
             }
 
-            // === Phase 2 : Extracting (sudo install-win-iso.sh) ================
+            // === Phase 2 : Extracting (extraction native, WindowsIsoExtractor) =
             //
-            // #14 + Q3 — Transition downloading → extracting sous lockForUpdate
-            // + check status cancelled. Si annulé entre curl et extract =>
-            // bypass + return sans écraser le status `cancelled`.
+            // #14 + Q3 — Transition (downloading|pending) → extracting sous
+            // lockForUpdate + check status cancelled. Si annulé avant extract
+            // => bypass + return sans écraser le status `cancelled`.
+            //
+            // `started_at` est posé ici si absent (cas upload : pas de phase
+            // download qui l'aurait déjà renseigné).
             $shouldExtract = DB::transaction(function () use ($download): bool {
                 /** @var WindowsIsoDownload|null $fresh */
                 $fresh = WindowsIsoDownload::query()
@@ -222,7 +230,11 @@ class DownloadWindowsIsoJob implements ShouldQueue
                 if ($fresh === null || $fresh->status === WindowsIsoDownloadStatus::Cancelled) {
                     return false;
                 }
-                $fresh->update(['status' => WindowsIsoDownloadStatus::Extracting]);
+                $update = ['status' => WindowsIsoDownloadStatus::Extracting];
+                if ($fresh->started_at === null) {
+                    $update['started_at'] = now();
+                }
+                $fresh->update($update);
 
                 return true;
             });
@@ -236,23 +248,17 @@ class DownloadWindowsIsoJob implements ShouldQueue
                 return;
             }
 
-            $scriptPath    = (string) config('sambaedu.windows_iso.install_script', '/usr/share/sambaedu/scripts/install-win-iso.sh');
             $extractTimeout = (int) config('ipxe.iso_management.extract_timeout_seconds', 1800);
 
-            // `sudo <script> <version_num> <iso_name>` — escapeshellarg systématique
-            // sur tous les arguments + `sudo` lui-même est hardcodé (pas user input).
-            $extractCmd = sprintf(
-                'sudo -n %s %s %s',
-                escapeshellarg($scriptPath),
-                escapeshellarg($download->versionNum()),
-                escapeshellarg($download->iso_name),
-            );
-
-            // Q1 Henri 2026-05-21 : Process::timeout strict (cf. supra).
-            $extractResult = Process::timeout($extractTimeout)->run($extractCmd);
-
-            if (! $extractResult->successful()) {
-                $this->markFailed($download, $extractResult->exitCode() ?? -1, $extractResult->errorOutput() ?: $extractResult->output(), 'extract-failed');
+            // Extraction native (port du legacy install-win-iso.sh) : montage
+            // loop de l'ISO + copie vers {deployed_os_base_path}/Win{N}. La
+            // source est lue depuis la config SE5 (plus de chemin codé en dur),
+            // et le `apt --reinstall sambaedu-client-windows` legacy est retiré.
+            // Un échec lève WindowsIsoExtractionException (exit code + stderr).
+            try {
+                app(WindowsIsoExtractor::class)->extract($download->version, $isoPath, $extractTimeout);
+            } catch (WindowsIsoExtractionException $e) {
+                $this->markFailed($download, $e->exitCode, $e->getMessage(), 'extract-failed');
 
                 return;
             }
@@ -390,9 +396,14 @@ class DownloadWindowsIsoJob implements ShouldQueue
     private function releaseLock(string $lockKey): void
     {
         try {
-            Cache::lock($lockKey)->forceRelease();
+            // Même store que l'orchestrator (file par défaut) : le cache APCu
+            // par défaut ne supporte pas lock() et est per-process. Cf.
+            // App\SystemStatus\DistroInstallTracker.
+            Cache::store((string) config('ipxe.iso_management.lock_store', 'file'))
+                ->lock($lockKey)
+                ->forceRelease();
         } catch (Throwable) {
-            // Ignore — TTL 7200s release naturellement.
+            // Ignore — TTL release naturellement.
         }
     }
 

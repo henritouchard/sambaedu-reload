@@ -37,6 +37,17 @@ class WindowsIsoDownloadOrchestrator
     ) {}
 
     /**
+     * Store du lock global. Le cache par défaut (APCu) ne supporte PAS
+     * `Cache::lock()` (« undefined method ApcStore::lock() ») et est per-process
+     * (invisible entre PHP-FPM et le worker qui release). On force donc un store
+     * partagé lock-capable — convention {@see \App\SystemStatus\DistroInstallTracker}.
+     */
+    private function lockStore(): \Illuminate\Contracts\Cache\Repository
+    {
+        return Cache::store((string) config('ipxe.iso_management.lock_store', 'file'));
+    }
+
+    /**
      * @throws \App\Ipxe\Iso\Exceptions\WindowsIsoValidationException si URL invalide.
      * @throws WindowsIsoLockException si lock global indisponible.
      */
@@ -55,7 +66,7 @@ class WindowsIsoDownloadOrchestrator
         $lockKey = (string) config('ipxe.iso_management.global_lock_key', 'ipxe.iso.download.global');
         $lockTtl = (int) config('ipxe.iso_management.global_lock_ttl', 7200);
 
-        $lock = Cache::lock($lockKey, $lockTtl);
+        $lock = $this->lockStore()->lock($lockKey, $lockTtl);
         if (! $lock->get()) {
             Log::channel((string) config('ipxe.log.channel', 'ipxe'))->info('ipxe.iso.download.rejected_locked', [
                 'iso_name'   => $validated['iso_name'],
@@ -116,10 +127,121 @@ class WindowsIsoDownloadOrchestrator
     }
 
     /**
+     * Dépôt manuel d'une ISO (uploader chunké). Le fichier est déjà
+     * réassemblé sur disque (`$assembledPath`, un `.part` produit par le
+     * {@see \App\Http\Controllers\Ipxe\WindowsIsoUploadController}). On le
+     * valide, acquiert le même lock global que le flux URL (upload et
+     * download sont mutuellement exclusifs — tous deux touchent
+     * `Win{10,11}/`), puis on renomme atomiquement le `.part` vers
+     * `{iso_storage_path}/{iso_name}` avant de créer la row (`source=upload`,
+     * `source_url=null`) et de dispatcher le Job (qui sautera la phase curl).
+     *
+     * Le rename est atomique car `upload_tmp_path` et `iso_storage_path` sont
+     * sur le même filesystem (cf. config) — pas de copie 2× l'espace disque.
+     *
+     * @param  string  $assembledPath  Chemin du `.part` réassemblé (déjà complet).
+     * @param  string  $filename       Nom de fichier brut (validé ici).
+     * @param  string  $version        'Win10' | 'Win11' (select admin).
+     *
+     * @throws \App\Ipxe\Iso\Exceptions\WindowsIsoValidationException si nom/version invalide ou fichier absent.
+     * @throws WindowsIsoLockException si lock global indisponible.
+     */
+    public function submitUpload(
+        string $assembledPath,
+        string $filename,
+        string $version,
+        int $initiatedByUserId,
+        string $hostIp,
+    ): WindowsIsoDownload {
+        // 1) Validation nom de fichier + version (defense in depth — déjà
+        //    validés côté controller au 1er chunk + côté Livewire).
+        $validated = $this->urlValidator->validateUploadFilename($filename, $version);
+
+        // Le fichier réassemblé doit exister et être non-vide.
+        if (! is_file($assembledPath) || (int) @filesize($assembledPath) <= 0) {
+            throw new \App\Ipxe\Iso\Exceptions\WindowsIsoValidationException(
+                "Fichier déposé introuvable ou vide — relancez le dépôt.",
+            );
+        }
+
+        $validatedHostIp = (filter_var($hostIp, FILTER_VALIDATE_IP) !== false) ? $hostIp : null;
+
+        // 2) Lock global non-bloquant (partagé avec le flux URL).
+        $lockKey = (string) config('ipxe.iso_management.global_lock_key', 'ipxe.iso.download.global');
+        $lockTtl = (int) config('ipxe.iso_management.global_lock_ttl', 7200);
+
+        $lock = $this->lockStore()->lock($lockKey, $lockTtl);
+        if (! $lock->get()) {
+            Log::channel((string) config('ipxe.log.channel', 'ipxe'))->info('ipxe.iso.upload.rejected_locked', [
+                'iso_name' => $validated['iso_name'],
+                'version'  => $validated['version'],
+                'user_id'  => $initiatedByUserId,
+                'host_ip'  => $validatedHostIp,
+            ]);
+
+            // On NE supprime PAS le `.part` : l'admin pourra relancer le dépôt
+            // (finalize) une fois le download/upload en cours terminé, sans
+            // re-téléverser plusieurs Go.
+            throw new WindowsIsoLockException(
+                "Une opération ISO est déjà en cours, attendez sa fin ou annulez-la.",
+            );
+        }
+
+        try {
+            // 3) Rename atomique `.part` → destination finale, AVANT la
+            //    transaction DB (un échec FS ne doit pas laisser de row).
+            $isoStoragePath = (string) config('ipxe.iso_management.iso_storage_path', storage_path('install/iso'));
+            $finalPath = rtrim($isoStoragePath, '/') . '/' . $validated['iso_name'];
+
+            if (! @rename($assembledPath, $finalPath)) {
+                throw new \App\Ipxe\Iso\Exceptions\WindowsIsoValidationException(
+                    "Impossible de déposer le fichier dans le dossier des ISO "
+                    . "(vérifiez les droits filesystem de `www-admin`).",
+                );
+            }
+
+            // 4) Row + dispatch dans une transaction (atomicité — iso submit()).
+            $download = DB::transaction(function () use ($validated, $initiatedByUserId, $validatedHostIp): WindowsIsoDownload {
+                $download = WindowsIsoDownload::create([
+                    'version'              => $validated['version'],
+                    'iso_name'             => $validated['iso_name'],
+                    'source_url'           => null,
+                    'source'               => WindowsIsoDownload::SOURCE_UPLOAD,
+                    'status'               => WindowsIsoDownloadStatus::Pending,
+                    'initiated_by_user_id' => $initiatedByUserId,
+                    'host_ip'              => $validatedHostIp,
+                ]);
+
+                $queue = (string) config('ipxe.iso_management.queue_name', 'ipxe_iso_downloads');
+                DownloadWindowsIsoJob::dispatch($download->id)->onQueue($queue);
+
+                Log::channel((string) config('ipxe.log.channel', 'ipxe'))->info('ipxe.iso.upload.submitted', [
+                    'download_id' => $download->id,
+                    'iso_name'    => $download->iso_name,
+                    'version'     => $download->version,
+                    'user_id'     => $initiatedByUserId,
+                    'host_ip'     => $validatedHostIp,
+                ]);
+
+                return $download;
+            });
+
+            return $download;
+        } catch (\Throwable $e) {
+            try {
+                $lock->release();
+            } catch (\Throwable) {
+                // Ignore.
+            }
+            throw $e;
+        }
+    }
+
+    /**
      * Annule un téléchargement non-terminal (idempotent — un cancel sur un
      * download déjà terminal est no-op qui retourne false).
      *
-     * Le Process curl / install-win-iso.sh en cours n'est PAS interrompu
+     * Le Process curl / l'extraction en cours n'est PAS interrompu
      * (parité legacy). Le Job détectera le status `cancelled` à la prochaine
      * `refresh()` et bypassera la suite.
      */
@@ -140,7 +262,7 @@ class WindowsIsoDownloadOrchestrator
         // ré-essaiera de release dans son finally (idempotent).
         $lockKey = (string) config('ipxe.iso_management.global_lock_key', 'ipxe.iso.download.global');
         try {
-            Cache::lock($lockKey)->forceRelease();
+            $this->lockStore()->lock($lockKey)->forceRelease();
         } catch (\Throwable) {
             // Ignore — TTL 7200s release naturellement.
         }

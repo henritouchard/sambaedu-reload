@@ -155,6 +155,22 @@ cat > "$APACHE_SITES_AVAILABLE/sambaedu.conf" << VHOST_SER
         Require all granted
     </Directory>
 
+    # /install/iso : ISO Windows *sources* (déposées par upload ou téléchargées
+    # par curl), config ipxe.iso_management.iso_storage_path = storage/install/iso.
+    # Déplacées hors du tree /os pour respecter la convention storage/ ; servies
+    # ici pour accès/vérification manuels. À chown www-admin (FPM + worker y
+    # écrivent ET Apache y lit). -Indexes, pas de FallbackResource.
+    Alias /install/iso $SER_ROOT/storage/install/iso
+    <Directory $SER_ROOT/storage/install/iso>
+        Options -Indexes +FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+    # NE PAS exposer le réassemblage de chunks (.part/.json partiels).
+    <Directory $SER_ROOT/storage/install/iso/.uploads>
+        Require all denied
+    </Directory>
+
     ErrorLog /var/log/apache2/sambaedu-reload-error.log
     CustomLog /var/log/apache2/sambaedu-reload-access.log combined
 </VirtualHost>

@@ -111,10 +111,23 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 'error' => null,
                 'expanded' => false,
             ],
+            // Migration SE4 → SE5 : import du catalogue WPKG legacy depuis le
+            // packages.xml du serveur (recettes + placement des binaires).
+            // DOIT précéder l'import des profils applicatifs, qui relie ensuite
+            // chaque profil à ces applications.
+            'wpkg_applications' => [
+                'id' => 'wpkg_applications',
+                'title' => '6. Importer les applications WPKG',
+                'description' => 'Importe le catalogue WPKG du serveur legacy (packages.xml) et place les binaires au bon endroit',
+                'status' => 'pending',
+                'stats' => null,
+                'error' => null,
+                'expanded' => false,
+            ],
             'app_profiles' => [
                 'id' => 'app_profiles',
-                'title' => '6. Importer les profils applicatifs',
-                'description' => 'Importe les AppProfiles depuis OU=Parcs',
+                'title' => '7. Importer les profils applicatifs',
+                'description' => 'Importe les AppProfiles depuis OU=Parcs et les relie à leurs applications WPKG (assignations parc legacy)',
                 'status' => 'pending',
                 'stats' => null,
                 'error' => null,
@@ -122,7 +135,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             ],
             'shortcuts' => [
                 'id' => 'shortcuts',
-                'title' => '7. Importer les raccourcis',
+                'title' => '8. Importer les raccourcis',
                 'description' => 'Importe les raccourcis depuis le fichier JSON vers la base de données',
                 'status' => 'pending',
                 'stats' => null,
@@ -132,7 +145,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             // Story 7.2 — AC4 : rapatriement non-destructif des profils LDAP custom.
             'rights_profiles' => [
                 'id' => 'rights_profiles',
-                'title' => '8. Rapatrier les profils LDAP custom',
+                'title' => '9. Rapatrier les profils LDAP custom',
                 'description' => 'Scanne la branche Rights (rights_rdn) et crée côté SER les profils custom absents (non-destructif, n\'écrase jamais un profil existant)',
                 'status' => 'pending',
                 'stats' => null,
@@ -144,7 +157,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             // Dans « Tout exécuter », seul le dry-run est lancé automatiquement.
             'rights_migration' => [
                 'id' => 'rights_migration',
-                'title' => '9. Migrer les droits legacy → Spatie',
+                'title' => '10. Migrer les droits legacy → Spatie',
                 'description' => 'Migration one-shot : lit les assignations bitmask de l\'AD (rights_rdn + delegations_rdn) et les pose dans Spatie. Lancez d\'abord l\'Aperçu, puis Exécuter pour appliquer.',
                 'status' => 'pending',
                 'stats' => null,
@@ -156,7 +169,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             // Lecture seule du fichier, idempotent, rejouable.
             'dhcp_reservations' => [
                 'id' => 'dhcp_reservations',
-                'title' => '10. Importer les réservations DHCP',
+                'title' => '11. Importer les réservations DHCP',
                 'description' => 'Parse /etc/sambaedu/reservations.inc et crée les réservations DHCP côté SER (one-shot migration legacy, lecture seule, rejouable)',
                 'status' => 'pending',
                 'stats' => null,
@@ -167,7 +180,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             // (non-destructif, ne réécrit pas l'AD, idempotent, rejouable).
             'se4install_totp' => [
                 'id' => 'se4install_totp',
-                'title' => '11. Importer le TOTP de se4install',
+                'title' => '12. Importer le TOTP de se4install',
                 'description' => 'Adopte le token TOTP existant de se4install depuis /etc/sambaedu/hashes (sans réécrire l\'AD). No-op si le fichier est absent ou si le TOTP est déjà géré en base.',
                 'status' => 'pending',
                 'stats' => null,
@@ -182,6 +195,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             'workstations' => [],
             'physical_groups' => [],
             'logical_groups' => [],
+            'wpkg_applications' => [],
             'app_profiles' => [],
             'shortcuts' => [],
             'rights_profiles' => [],
@@ -230,6 +244,9 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                     break;
                 case 'workstations':
                     $this->runWorkstationsSync();
+                    break;
+                case 'wpkg_applications':
+                    $this->runWpkgApplicationsSync();
                     break;
                 case 'app_profiles':
                     $this->runAppProfilesSync();
@@ -463,6 +480,24 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
         $this->steps['workstations']['stats'] = $stats;
     }
 
+    /**
+     * Migration SE4 → SE5 : import du catalogue WPKG legacy (packages.xml du
+     * serveur) vers la table `applications` + placement des binaires. Étape
+     * préalable à l'import des profils applicatifs, qui relie ensuite chaque
+     * profil à ces applications. Pas de contexte établissement : le catalogue
+     * WPKG est global au serveur.
+     */
+    private function runWpkgApplicationsSync(): void
+    {
+        $importer = app(\App\Services\AppStore\LegacyWpkgImporter::class);
+
+        $stats = $importer->importFromLegacy(function (string $level, string $message): void {
+            $this->addLog('wpkg_applications', $level, $message);
+        });
+
+        $this->steps['wpkg_applications']['stats'] = $stats;
+    }
+
     private function runAppProfilesSync(): void
     {
         $this->ensureEstablishmentContextSelected();
@@ -473,7 +508,22 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             $this->addLog('app_profiles', $level, $message);
         });
 
-        $this->steps['app_profiles']['stats'] = $stats;
+        // Population des applications de chaque profil depuis les assignations
+        // parc legacy (table applications_profile). Nécessite que le catalogue
+        // Application ait été importé à l'étape précédente. Dégradation propre
+        // (no-op) si la connexion legacy_mysql n'est pas disponible.
+        $linker = app(\App\Services\AppProfile\AppProfileLegacyApplicationLinker::class);
+        $linkStats = $linker->linkFromLegacy(function (string $level, string $message): void {
+            $this->addLog('app_profiles', $level, $message);
+        });
+
+        $this->steps['app_profiles']['stats'] = array_merge($stats, [
+            'applications_linked' => $linkStats['applications_linked'],
+            'profiles_linked' => $linkStats['profiles_linked'],
+            'profiles_without_legacy_parc' => $linkStats['profiles_without_legacy_parc'],
+            'applications_missing' => $linkStats['applications_missing'],
+            'legacy_unavailable' => $linkStats['legacy_unavailable'],
+        ]);
     }
 
     private function runShortcutsSync(): void

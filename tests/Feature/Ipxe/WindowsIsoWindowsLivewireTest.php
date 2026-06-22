@@ -147,7 +147,7 @@ class WindowsIsoWindowsLivewireTest extends TestCase
         Livewire::test('pages::admin.ipxe.iso-windows.index')
             ->assertOk()
             ->assertSee('Versions Windows déployées')
-            ->assertSee('Nouveau téléchargement')
+            ->assertSee('Nouvelle source Windows')
             ->assertSee('Historique');
     }
 

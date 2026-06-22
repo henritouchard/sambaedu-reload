@@ -302,13 +302,13 @@ class IpxeConfigTest extends TestCase
     }
 
     #[Test]
-    public function it_loads_sambaedu_windows_iso_install_script_default(): void
+    public function it_loads_sambaedu_windows_iso_extract_mount_dir_default(): void
     {
-        self::assertSame(
-            '/usr/share/sambaedu/scripts/install-win-iso.sh',
-            config('sambaedu.windows_iso.install_script'),
-        );
-        self::assertSame('www-admin', config('sambaedu.windows_iso.sudoers_user'));
+        // Extraction native (WindowsIsoExtractor) : plus de script .sh externe ;
+        // seul le répertoire racine du point de montage temporaire est configurable.
+        self::assertSame(sys_get_temp_dir(), config('sambaedu.windows_iso.extract_mount_dir'));
+        self::assertNull(config('sambaedu.windows_iso.install_script'), 'clé legacy retirée');
+        self::assertNull(config('sambaedu.windows_iso.sudoers_user'), 'clé legacy retirée');
     }
 
     /* ------------------------------------------------------------------

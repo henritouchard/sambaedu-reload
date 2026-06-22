@@ -269,6 +269,143 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
         $this->refreshData();
     }
 
+    // ---- Dépôt manuel (upload chunké) --------------------------------------
+
+    /**
+     * Étape 1 du dépôt manuel : pré-validation serveur (nom, version, taille,
+     * feature, pas d'opération en cours) puis ouverture de la modale de
+     * confirmation (le fichier réel reste côté navigateur — l'upload chunké
+     * démarre après confirmation via `beginUpload()` → event JS).
+     */
+    public function openUploadConfirm(string $filename, int $sizeBytes, string $version): void
+    {
+        if (! (bool) config('ipxe.iso_management.upload_enabled', true)
+            || ! (bool) config('ipxe.iso_management.enabled', true)) {
+            $this->toastError("Le dépôt manuel d'ISO est désactivé.");
+
+            return;
+        }
+        if ($this->currentRunning !== null) {
+            $this->toastError("Une opération ISO est déjà en cours — attendez sa fin ou annulez-la.");
+
+            return;
+        }
+
+        try {
+            $validated = app(WindowsIsoUrlValidator::class)->validateUploadFilename($filename, $version);
+        } catch (WindowsIsoValidationException $e) {
+            $this->toastError($e->getMessage(), 'Dépôt invalide');
+
+            return;
+        }
+
+        $maxBytes = (int) config('ipxe.iso_management.upload_max_total_bytes', 10 * 1024 * 1024 * 1024);
+        if ($sizeBytes < 1 || $sizeBytes > $maxBytes) {
+            $maxGo = round($maxBytes / (1024 * 1024 * 1024), 1);
+            $this->toastError("Fichier vide ou trop volumineux (limite {$maxGo} Go).");
+
+            return;
+        }
+
+        $sizeGo = round($sizeBytes / (1024 * 1024 * 1024), 2);
+        $this->dispatch(
+            'open-confirm-modal',
+            title: 'Confirmer le dépôt de l\'ISO Windows',
+            message: 'Déposer « ' . $validated['iso_name'] . ' » (' . $sizeGo . ' Go) comme source Windows '
+                . $validated['version_num'] . ' ? Le fichier sera téléversé puis extrait, remplaçant la version '
+                . 'courante (l\'ancienne sera renommée en `-old`).',
+            confirmText: 'Téléverser et déployer',
+            cancelText: 'Annuler',
+            variant: 'warning',
+            method: 'beginUpload',
+            params: [],
+            wireId: $this->getId(),
+        );
+    }
+
+    /**
+     * Confirmation modale du dépôt — signale au front (event JS) de démarrer
+     * l'upload chunké du fichier sélectionné.
+     */
+    public function beginUpload(): void
+    {
+        if ($this->currentRunning !== null) {
+            $this->toastError("Une opération ISO est déjà en cours.");
+
+            return;
+        }
+
+        $this->dispatch('iso-start-upload');
+    }
+
+    /**
+     * Étape finale du dépôt manuel — appelée par le JS une fois TOUS les
+     * chunks téléversés. Vérifie le `.part` réassemblé puis délègue à
+     * l'orchestrator (rename atomique + dispatch Job extraction).
+     */
+    public function finalizeUpload(string $uploadId, string $version, WindowsIsoDownloadOrchestrator $orchestrator): void
+    {
+        if (! (bool) config('ipxe.iso_management.upload_enabled', true)
+            || ! (bool) config('ipxe.iso_management.enabled', true)) {
+            $this->toastError("Le dépôt manuel d'ISO est désactivé.");
+
+            return;
+        }
+
+        // Defense in depth : `uploadId` DOIT être un UUID (anti path-traversal).
+        if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $uploadId) !== 1) {
+            $this->toastError("Identifiant de dépôt invalide.");
+
+            return;
+        }
+
+        $dir      = rtrim((string) config('ipxe.iso_management.upload_tmp_path', storage_path('install/iso/.uploads')), '/');
+        $partPath = $dir . '/' . $uploadId . '.part';
+        $metaPath = $dir . '/' . $uploadId . '.json';
+
+        $metaRaw = is_file($metaPath) ? @file_get_contents($metaPath) : false;
+        $meta    = $metaRaw !== false ? json_decode((string) $metaRaw, true) : null;
+        if (! is_array($meta) || ! is_file($partPath)) {
+            $this->toastError("Dépôt introuvable ou incomplet — relancez le dépôt.");
+
+            return;
+        }
+        $total    = (int) ($meta['totalChunks'] ?? 0);
+        $received = (int) ($meta['received'] ?? 0);
+        if ($total < 1 || $received < $total) {
+            $this->toastError("Le dépôt n'est pas complet — relancez le dépôt.");
+
+            return;
+        }
+
+        try {
+            $download = $orchestrator->submitUpload(
+                assembledPath: $partPath,
+                filename: (string) ($meta['filename'] ?? ''),
+                version: $version,
+                initiatedByUserId: (int) Auth::id(),
+                hostIp: (string) (request()->ip() ?? ''),
+            );
+
+            @unlink($metaPath);  // le `.part` a été renommé par l'orchestrator.
+            $this->toastSuccess("Dépôt accepté pour « {$download->iso_name} » — extraction lancée, suivi en bas de page.");
+            $this->lastTerminalNotified = null;
+            $this->dispatch('iso-upload-reset');
+            $this->refreshData();
+        } catch (WindowsIsoValidationException $e) {
+            $this->toastError($e->getMessage(), 'Dépôt invalide');
+        } catch (WindowsIsoLockException $e) {
+            $this->toastError($e->getMessage(), 'Opération déjà en cours');
+        } catch (\Throwable $e) {
+            Log::channel((string) config('ipxe.log.channel', 'ipxe'))->error('ipxe.iso.upload.finalize.exception', [
+                'exception' => $e::class,
+                'message'   => $e->getMessage(),
+                'user_id'   => Auth::id(),
+            ]);
+            $this->toastError("Erreur inattendue lors de la finalisation du dépôt. Consultez les logs.");
+        }
+    }
+
     /**
      * Méthode publique pour le polling Livewire — alias `refreshData()`.
      */
@@ -291,6 +428,7 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
             'version'        => $d->version,
             'iso_name'       => $d->iso_name,
             'source_url'     => $d->source_url,
+            'source'         => $d->source,
             'status'         => $d->status->value,
             'status_label'   => $d->status->label(),
             'status_badge'   => $d->status->badgeClass(),
@@ -467,7 +605,12 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
                     </div>
 
                     <div class="text-xs opacity-60">
-                        Source : <span class="font-mono">{{ \Illuminate\Support\Str::limit($currentRunning['source_url'], 100) }}</span>
+                        Source :
+                        @if (($currentRunning['source'] ?? 'url') === 'upload')
+                            <span class="badge badge-ghost badge-sm"><i class="fa-solid fa-upload"></i> Fichier déposé</span>
+                        @else
+                            <span class="font-mono">{{ \Illuminate\Support\Str::limit($currentRunning['source_url'] ?? '', 100) }}</span>
+                        @endif
                     </div>
 
                     <div class="flex gap-2 mt-2">
@@ -492,79 +635,158 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
         @endif
 
         {{-- ============================================================
-             Card "Nouveau téléchargement" (formulaire URL)
+             Card "Nouvelle source Windows" — URL Microsoft OU dépôt fichier
+             (onglets, switch client Alpine).
              ============================================================ --}}
+        @php($urlEnabled = config('ipxe.iso_management.enabled', true))
+        @php($uploadEnabled = config('ipxe.iso_management.upload_enabled', true) && config('ipxe.iso_management.enabled', true))
+        @php($uploadMaxGo = round(((int) config('ipxe.iso_management.upload_max_total_bytes', 10 * 1024 * 1024 * 1024)) / (1024 * 1024 * 1024), 1))
         <div class="card bg-base-100 shadow-sm border border-base-200">
-            <div class="card-body space-y-4">
+            <div class="card-body space-y-4" x-data="{ mode: 'url' }">
                 <h2 class="card-title text-lg">
-                    <i class="fa-solid fa-cloud-arrow-down text-primary"></i>
-                    Nouveau téléchargement
+                    <i class="fa-solid fa-plus text-primary"></i>
+                    Nouvelle source Windows
                 </h2>
 
-                @if (! config('ipxe.iso_management.enabled', true))
+                @if (! $urlEnabled)
                     <div class="alert alert-warning">
                         <i class="fa-solid fa-triangle-exclamation"></i>
-                        <span>
-                            La gestion des ISO Windows est désactivée
-                            (<code>IPXE_ISO_MANAGEMENT_ENABLED=false</code>). Le formulaire reste affiché en
-                            lecture pour information, mais le bouton « Télécharger » est désactivé.
-                        </span>
+                        <span>La gestion des ISO Windows est désactivée (<code>IPXE_ISO_MANAGEMENT_ENABLED=false</code>).</span>
                     </div>
                 @endif
 
-                <p class="text-sm text-base-content/70">
-                    Copiez l'URL obtenue sur le site officiel Microsoft (allowlist :
-                    <code>software-static.download.prss.microsoft.com</code>,
-                    <code>software-download.microsoft.com</code>,
-                    <code>download.microsoft.com</code>). Schéma <strong>HTTPS</strong> obligatoire.
-                </p>
+                {{-- Bandeau d'état serveur partagé (hors wire:ignore — reflète le polling). --}}
+                @if ($currentRunning !== null)
+                    <div class="alert alert-warning text-xs">
+                        <i class="fa-solid fa-info-circle"></i>
+                        <span>Une opération ISO est déjà en cours — attendez sa fin ou annulez-la avant d'en lancer une nouvelle.</span>
+                    </div>
+                @endif
 
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text font-medium">URL de l'ISO Microsoft</span>
-                    </label>
-                    <input type="url" wire:model="url"
-                        class="input input-bordered font-mono text-sm"
-                        placeholder="https://software-static.download.prss.microsoft.com/.../Win11_24H2.iso"
-                        @disabled($currentRunning !== null || ! config('ipxe.iso_management.enabled', true))
-                        data-testid="iso-url-input" />
-                    @error('url')
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ $message }}</span>
-                        </label>
-                    @enderror
-                </div>
-
-                <div class="flex flex-wrap gap-3 items-center">
-                    <button type="button" wire:click="submitDownload"
-                        class="btn btn-primary"
-                        wire:loading.attr="disabled"
-                        @disabled($currentRunning !== null || ! config('ipxe.iso_management.enabled', true))
-                        data-testid="iso-submit-button">
-                        <span wire:loading.remove wire:target="submitDownload,confirmDownload">
-                            <i class="fa-solid fa-download"></i>
-                            Télécharger l'ISO
-                        </span>
-                        <span wire:loading wire:target="submitDownload,confirmDownload">
-                            <span class="loading loading-spinner loading-xs"></span>
-                            Préparation…
-                        </span>
+                {{-- Onglets URL / dépôt fichier. --}}
+                <div role="tablist" class="tabs tabs-boxed bg-base-200 w-fit">
+                    <button type="button" role="tab" class="tab" :class="mode === 'url' ? 'tab-active' : ''" @click="mode = 'url'">
+                        <i class="fa-solid fa-link mr-1"></i> Par URL Microsoft
                     </button>
-
-                    @if ($currentRunning !== null)
-                        <span class="text-xs text-warning">
-                            <i class="fa-solid fa-info-circle"></i>
-                            Un téléchargement est déjà en cours — attendez sa fin ou annulez-le.
-                        </span>
-                    @endif
+                    <button type="button" role="tab" class="tab" :class="mode === 'upload' ? 'tab-active' : ''" @click="mode = 'upload'">
+                        <i class="fa-solid fa-upload mr-1"></i> Déposer un fichier
+                    </button>
                 </div>
 
-                <p class="text-xs text-base-content/60">
-                    <i class="fa-solid fa-shield"></i>
-                    Validation 2 couches : sanity check Livewire + service `WindowsIsoUrlValidator`
-                    (anti-SSRF). Le processus serveur (curl + extraction) tourne en arrière-plan via
-                    Laravel Queue, 1 instance vivante à la fois.
-                </p>
+                {{-- ---- Panneau URL ----------------------------------------------- --}}
+                <div x-show="mode === 'url'" class="space-y-4">
+                    <p class="text-sm text-base-content/70">
+                        Copiez l'URL obtenue sur le site officiel Microsoft (allowlist :
+                        <code>*.download.prss.microsoft.com</code>,
+                        <code>software-download.microsoft.com</code>,
+                        <code>download.microsoft.com</code>). Schéma <strong>HTTPS</strong> obligatoire.
+                        La query string signée (<code>?t=…</code>) est conservée pour le téléchargement.
+                    </p>
+
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-medium">URL de l'ISO Microsoft</span>
+                        </label>
+                        <input type="url" wire:model="url"
+                            class="input input-bordered font-mono text-sm"
+                            placeholder="https://software-static.download.prss.microsoft.com/.../Win11_24H2.iso"
+                            @disabled($currentRunning !== null || ! $urlEnabled)
+                            data-testid="iso-url-input" />
+                        @error('url')
+                            <label class="label">
+                                <span class="label-text-alt text-error">{{ $message }}</span>
+                            </label>
+                        @enderror
+                    </div>
+
+                    <div class="flex flex-wrap gap-3 items-center">
+                        <button type="button" wire:click="submitDownload"
+                            class="btn btn-primary"
+                            wire:loading.attr="disabled"
+                            @disabled($currentRunning !== null || ! $urlEnabled)
+                            data-testid="iso-submit-button">
+                            <span wire:loading.remove wire:target="submitDownload,confirmDownload">
+                                <i class="fa-solid fa-download"></i>
+                                Télécharger l'ISO
+                            </span>
+                            <span wire:loading wire:target="submitDownload,confirmDownload">
+                                <span class="loading loading-spinner loading-xs"></span>
+                                Préparation…
+                            </span>
+                        </button>
+                    </div>
+
+                    <p class="text-xs text-base-content/60">
+                        <i class="fa-solid fa-shield"></i>
+                        Validation 2 couches : sanity check Livewire + service `WindowsIsoUrlValidator`
+                        (anti-SSRF). Le téléchargement (curl + extraction) tourne en arrière-plan via Laravel Queue.
+                    </p>
+                </div>
+
+                {{-- ---- Panneau dépôt fichier (upload chunké) --------------------- --}}
+                {{-- `style="display:none"` initial : évite le flash avant init Alpine
+                     (pas de support x-cloak global). x-show prend le relais ensuite. --}}
+                <div x-show="mode === 'upload'" style="display:none" class="space-y-4">
+                    @if (! $uploadEnabled)
+                        <div class="alert alert-warning">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            <span>Le dépôt manuel d'ISO est désactivé (<code>IPXE_ISO_UPLOAD_ENABLED=false</code>).</span>
+                        </div>
+                    @endif
+
+                    <p class="text-sm text-base-content/70">
+                        Déposez directement le fichier ISO (jusqu'à {{ $uploadMaxGo }} Go). Le fichier est téléversé
+                        par morceaux (reprise automatique en cas de coupure) puis extrait comme un téléchargement
+                        classique. Choisissez la version Windows cible.
+                    </p>
+
+                    {{-- wire:ignore : un re-render Livewire (Rafraichir, polling) ne doit
+                         pas réinitialiser la barre de progression d'un upload en cours. --}}
+                    <div wire:ignore class="space-y-3" @if (! $uploadEnabled) style="opacity:.5;pointer-events:none" @endif>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div class="form-control md:col-span-1">
+                                <label class="label"><span class="label-text font-medium">Version cible</span></label>
+                                <select id="iso-up-version" class="select select-bordered">
+                                    <option value="Win11">Windows 11</option>
+                                    <option value="Win10">Windows 10</option>
+                                </select>
+                            </div>
+                            <div class="md:col-span-2 flex items-end">
+                                <p class="text-xs text-base-content/60">
+                                    <i class="fa-solid fa-shield"></i>
+                                    Le nom de fichier doit se terminer par <code>.iso</code> (caractères
+                                    <code>A-Z a-z 0-9 . _ -</code>). La version courante sera archivée en <code>-old</code>.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div id="iso-up-drop"
+                            class="border-2 border-dashed border-base-300 rounded-lg p-6 text-center cursor-pointer hover:border-primary transition-colors">
+                            <i class="fa-solid fa-cloud-arrow-up text-3xl text-base-content/40"></i>
+                            <p class="mt-2 text-sm">Glissez l'ISO ici ou <span class="link link-primary">parcourez</span></p>
+                            <p id="iso-up-filename" class="mt-1 text-xs font-mono text-base-content/70"></p>
+                            <input id="iso-up-input" type="file" accept=".iso,application/octet-stream" class="hidden" />
+                        </div>
+
+                        {{-- Barre de progression --}}
+                        <div id="iso-up-progress" class="hidden space-y-1">
+                            <div class="flex justify-between text-xs">
+                                <span id="iso-up-phase">Téléversement…</span>
+                                <span id="iso-up-pct">0 %</span>
+                            </div>
+                            <progress id="iso-up-bar" class="progress progress-primary w-full" value="0" max="100"></progress>
+                        </div>
+
+                        <p id="iso-up-status" class="text-xs hidden"></p>
+
+                        <div>
+                            <button id="iso-up-start" type="button" class="btn btn-primary" disabled>
+                                <i class="fa-solid fa-upload"></i>
+                                Téléverser et déployer
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -601,7 +823,12 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
                                     <tr>
                                         <td class="text-xs">{{ $d['created_at_str'] }}</td>
                                         <td><span class="badge badge-outline">{{ $d['version'] }}</span></td>
-                                        <td class="font-mono text-xs">{{ $d['iso_name'] }}</td>
+                                        <td class="font-mono text-xs">
+                                            {{ $d['iso_name'] }}
+                                            @if (($d['source'] ?? 'url') === 'upload')
+                                                <span class="tooltip" data-tip="Fichier déposé"><i class="fa-solid fa-upload text-base-content/40 ml-1"></i></span>
+                                            @endif
+                                        </td>
                                         <td>
                                             <span class="badge {{ $d['status_badge'] }}">{{ $d['status_label'] }}</span>
                                         </td>
@@ -635,6 +862,208 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
 
     </div>
 
-    {{-- Modale de confirmation réutilisable (cf. CLAUDE.md). --}}
-    <x-molecules.confirm-modal />
+    {{-- Pas de modale locale ici. Le layout global (layouts/app.blade.php) rend
+         deja une <x-molecules.confirm-modal /> (id confirm-modal-dialog). En rendre
+         une seconde sur la page creait un DOUBLON d id qui cassait la fermeture.
+         Le dispatch open-confirm-modal est un event window : la modale globale le
+         capte et s ouvre, quel que soit son emplacement DOM. --}}
+
+    {{-- ============================================================
+         Uploader chunké (dépôt manuel d'ISO).
+         Pattern projet : <script> + @js() + Livewire.find(id).call(...)
+         (cf. confirm-modal). Découpe le fichier en chunks POSTés en raw
+         octet-stream au controller, puis appelle finalizeUpload().
+         ============================================================ --}}
+    <script>
+        (function () {
+            const UPLOAD_URL = @js(route('admin.ipxe.iso-windows.upload-chunk'));
+            const CHUNK      = @js((int) config('ipxe.iso_management.upload_chunk_bytes', 5 * 1024 * 1024));
+            const MAX_TOTAL  = @js((int) config('ipxe.iso_management.upload_max_total_bytes', 10 * 1024 * 1024 * 1024));
+            const WIRE_ID    = @js($this->getId());
+
+            const $ = (id) => document.getElementById(id);
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+            const wire = () => (window.Livewire ? window.Livewire.find(WIRE_ID) : null);
+            const csrf = () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+            const uuid = () => (crypto.randomUUID
+                ? crypto.randomUUID()
+                : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+                    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                }));
+
+            function fmtBytes(b) {
+                if (b >= 1024 * 1024 * 1024) return (b / (1024 * 1024 * 1024)).toFixed(2) + ' Go';
+                if (b >= 1024 * 1024) return (b / (1024 * 1024)).toFixed(1) + ' Mo';
+                return Math.round(b / 1024) + ' Ko';
+            }
+
+            let selectedFile = null;
+            let uploading = false;
+
+            function setStatus(msg, isError) {
+                const s = $('iso-up-status');
+                if (!s) return;
+                s.textContent = msg || '';
+                s.classList.toggle('hidden', !msg);
+                s.classList.toggle('text-error', !!isError);
+                s.classList.toggle('text-base-content/70', !isError);
+            }
+
+            function setProgress(frac, received, total) {
+                const wrap = $('iso-up-progress'), bar = $('iso-up-bar'), pct = $('iso-up-pct');
+                if (!wrap) return;
+                const p = Math.max(0, Math.min(100, Math.round(frac * 100)));
+                wrap.classList.toggle('hidden', frac <= 0 && !uploading);
+                if (bar) bar.value = p;
+                if (pct) pct.textContent = total ? (p + ' % (' + received + '/' + total + ')') : (p + ' %');
+            }
+
+            function setControls(disabled) {
+                ['iso-up-start', 'iso-up-input', 'iso-up-version'].forEach((id) => {
+                    const e = $(id);
+                    if (e) e.disabled = disabled;
+                });
+                const drop = $('iso-up-drop');
+                if (drop) drop.style.pointerEvents = disabled ? 'none' : '';
+            }
+
+            function resetUi() {
+                selectedFile = null;
+                uploading = false;
+                const input = $('iso-up-input');
+                if (input) input.value = '';
+                const fn = $('iso-up-filename');
+                if (fn) fn.textContent = '';
+                setProgress(0, 0, 0);
+                const wrap = $('iso-up-progress');
+                if (wrap) wrap.classList.add('hidden');
+                setStatus('', false);
+                setControls(false);
+                const start = $('iso-up-start');
+                if (start) start.disabled = true;
+            }
+
+            function onPick(file) {
+                if (!file) return;
+                selectedFile = file;
+                const fn = $('iso-up-filename');
+                if (fn) fn.textContent = file.name + ' — ' + fmtBytes(file.size);
+                setProgress(0, 0, 0);
+                $('iso-up-progress')?.classList.add('hidden');
+                setStatus('', false);
+                const start = $('iso-up-start');
+                if (start) start.disabled = false;
+            }
+
+            async function postChunk(qs, blob) {
+                let attempt = 0;
+                while (true) {
+                    attempt++;
+                    try {
+                        const r = await fetch(UPLOAD_URL + '?' + qs.toString(), {
+                            method: 'POST',
+                            headers: { 'X-CSRF-TOKEN': csrf(), 'Content-Type': 'application/octet-stream' },
+                            body: blob,
+                        });
+                        let body = {};
+                        try { body = await r.json(); } catch (_) {}
+                        if (r.status >= 500 && attempt < 5) { await sleep(800 * attempt); continue; }
+                        return { ok: r.ok, status: r.status, body };
+                    } catch (netErr) {
+                        if (attempt >= 6) throw netErr;
+                        await sleep(800 * attempt);
+                    }
+                }
+            }
+
+            async function doUpload() {
+                if (!selectedFile || uploading) return;
+                uploading = true;
+                setControls(true);
+                const file = selectedFile;
+                const version = $('iso-up-version')?.value || 'Win11';
+                const uploadId = uuid();
+                const total = Math.max(1, Math.ceil(file.size / CHUNK));
+                let received = 0;
+                setProgress(0, 0, total);
+                setStatus('Téléversement en cours…', false);
+                try {
+                    while (received < total) {
+                        const i = received;
+                        const startByte = i * CHUNK;
+                        const blob = file.slice(startByte, Math.min(startByte + CHUNK, file.size));
+                        const qs = new URLSearchParams({
+                            uploadId, index: i, total, chunkSize: CHUNK, filename: file.name, version,
+                        });
+                        const resp = await postChunk(qs, blob);
+                        if (resp.status === 409 && Number.isInteger(resp.body.received)) {
+                            received = resp.body.received;
+                            continue;
+                        }
+                        if (!resp.ok || !resp.body.ok) {
+                            throw new Error(resp.body.error || ('HTTP ' + resp.status));
+                        }
+                        received = Number.isInteger(resp.body.received) ? resp.body.received : received + 1;
+                        setProgress(received / total, received, total);
+                        if (resp.body.complete) break;
+                    }
+                    setStatus('Finalisation…', false);
+                    const w = wire();
+                    if (w) await w.call('finalizeUpload', uploadId, version);
+                    // En cas de succès, le serveur émet `iso-upload-reset` (→ resetUi).
+                    // Sinon (toast d'erreur serveur), on réactive les contrôles.
+                    uploading = false;
+                    setControls(false);
+                } catch (e) {
+                    setStatus('Échec du dépôt : ' + (e && e.message ? e.message : e), true);
+                    uploading = false;
+                    setControls(false);
+                }
+            }
+
+            function bind() {
+                const input = $('iso-up-input');
+                const drop = $('iso-up-drop');
+                const start = $('iso-up-start');
+                if (!input || !start || start.dataset.bound) return;
+                start.dataset.bound = '1';
+
+                input.addEventListener('change', (e) => onPick(e.target.files[0]));
+                if (drop) {
+                    drop.addEventListener('click', () => input.click());
+                    ['dragover', 'dragenter'].forEach((ev) => drop.addEventListener(ev, (e) => {
+                        e.preventDefault(); drop.classList.add('border-primary');
+                    }));
+                    ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => {
+                        e.preventDefault(); drop.classList.remove('border-primary');
+                    }));
+                    drop.addEventListener('drop', (e) => { if (e.dataTransfer.files[0]) onPick(e.dataTransfer.files[0]); });
+                }
+                start.addEventListener('click', () => {
+                    if (uploading) return;
+                    if (!selectedFile) { setStatus('Sélectionnez d\'abord un fichier ISO.', true); return; }
+                    if (selectedFile.size > MAX_TOTAL) { setStatus('Fichier trop volumineux (limite ' + fmtBytes(MAX_TOTAL) + ').', true); return; }
+                    const w = wire();
+                    if (w && w.get && w.get('currentRunning')) { setStatus('Une opération ISO est déjà en cours.', true); return; }
+                    const version = $('iso-up-version')?.value || 'Win11';
+                    // Pré-validation serveur + ouverture de la modale de confirmation.
+                    if (w) w.call('openUploadConfirm', selectedFile.name, selectedFile.size, version);
+                });
+            }
+
+            // Le dernier rendu gagne : on stocke les handlers sur window pour
+            // éviter les closures obsolètes après une navigation wire:navigate
+            // (les listeners window, eux, ne sont posés qu'une fois).
+            window.__isoUpload = { doUpload, resetUi };
+            if (!window.__isoUploadBound) {
+                window.__isoUploadBound = true;
+                window.addEventListener('iso-start-upload', () => window.__isoUpload?.doUpload());
+                window.addEventListener('iso-upload-reset', () => window.__isoUpload?.resetUi());
+            }
+
+            bind();
+            document.addEventListener('livewire:navigated', bind);
+        })();
+    </script>
 </x-organisms.page>

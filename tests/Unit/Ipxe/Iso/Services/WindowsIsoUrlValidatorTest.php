@@ -28,8 +28,9 @@ class WindowsIsoUrlValidatorTest extends TestCase
     {
         parent::setUp();
         // Allowlist fixe pour les tests (pas de dépendance .env).
+        // `download.prss.microsoft.com` couvre les sous-domaines software./software-static.
         config(['ipxe.iso_management.allowed_url_hosts' => [
-            'software-static.download.prss.microsoft.com',
+            'download.prss.microsoft.com',
             'software-download.microsoft.com',
             'download.microsoft.com',
         ]]);
@@ -148,6 +149,54 @@ class WindowsIsoUrlValidatorTest extends TestCase
     }
 
     #[Test]
+    public function it_accepts_the_new_software_prss_host(): void
+    {
+        // Microsoft sert désormais depuis `software.download.prss.microsoft.com`
+        // (l'ancien était `software-static.download.prss.microsoft.com`).
+        $url = 'https://software.download.prss.microsoft.com/dbazure/Win11_25H2_French_x64_v2.iso';
+
+        $result = $this->validator->validate($url);
+
+        self::assertSame('Win11_25H2_French_x64_v2.iso', $result['iso_name']);
+        self::assertSame('Win11', $result['version']);
+    }
+
+    #[Test]
+    public function it_accepts_a_signed_url_with_query_string(): void
+    {
+        // URL signée réelle (token + paramètres après `.iso`).
+        $url = 'https://software.download.prss.microsoft.com/dbazure/Win11_25H2_French_x64_v2.iso'
+            . '?t=b6350761-ef2f-44f0-875c-797215ff8359&P1=1782222087&P2=602&P3=2'
+            . '&P4=VbGxxtau%2bFKGWwJBQ%2fUiaKoED%3d%3d';
+
+        // Couche 1 (regex Livewire) doit matcher l'URL complète (query incluse).
+        self::assertSame(1, preg_match(WindowsIsoUrlValidator::URL_PATH_REGEX, $url),
+            'La couche 1 doit accepter une URL signée avec query string.');
+
+        // Couche 2 (service) extrait l'iso_name du PATH seul, la query est ignorée.
+        $result = $this->validator->validate($url);
+        self::assertSame('Win11_25H2_French_x64_v2.iso', $result['iso_name']);
+        self::assertSame('Win11', $result['version']);
+        // L'URL stockée/curlée conserve la query signée (obligatoire au download).
+        self::assertSame($url, $result['url']);
+    }
+
+    #[Test]
+    public function url_path_regex_still_rejects_injection_after_iso(): void
+    {
+        // La query autorisée commence par `?` ou `#` ; un `;`/`&`/espace après
+        // `.iso` reste rejeté par la couche 1.
+        foreach ([
+            'https://download.microsoft.com/Win11.iso;curl evil',
+            'https://download.microsoft.com/Win11.iso&pwn',
+            "https://download.microsoft.com/Win11.iso\n;rm -rf /",
+        ] as $bad) {
+            self::assertSame(0, preg_match(WindowsIsoUrlValidator::URL_PATH_REGEX, $bad),
+                "La couche 1 doit rejeter : {$bad}");
+        }
+    }
+
+    #[Test]
     public function it_rejects_url_longer_than_2048_chars(): void
     {
         // 2049 chars d'URL — `str_repeat('x', 2000)` dans le path.
@@ -155,5 +204,62 @@ class WindowsIsoUrlValidatorTest extends TestCase
         $this->expectException(WindowsIsoValidationException::class);
         $this->expectExceptionMessage('longueur');
         $this->validator->validate($url);
+    }
+
+    /* =================================================================
+     * Dépôt manuel — validateUploadFilename()
+     * ================================================================= */
+
+    #[Test]
+    public function it_validates_a_safe_upload_filename_and_derives_version(): void
+    {
+        $result = $this->validator->validateUploadFilename('Win11_24H2_French_x64.iso', 'Win11');
+
+        self::assertSame('Win11_24H2_French_x64.iso', $result['iso_name']);
+        self::assertSame('Win11', $result['version']);
+        self::assertSame('11', $result['version_num']);
+    }
+
+    #[Test]
+    public function it_accepts_a_custom_filename_with_explicit_version(): void
+    {
+        // Le nom n'a pas à suivre la convention Microsoft (≠ flux URL) :
+        // la version vient du select.
+        $result = $this->validator->validateUploadFilename('custom-image_v2.iso', 'Win10');
+
+        self::assertSame('custom-image_v2.iso', $result['iso_name']);
+        self::assertSame('Win10', $result['version']);
+        self::assertSame('10', $result['version_num']);
+    }
+
+    /**
+     * @return iterable<string, array{0: string, 1: string}>
+     */
+    public static function badUploadFilenameProvider(): iterable
+    {
+        yield 'path traversal'        => ['../../etc/passwd.iso', 'Win11'];
+        yield 'slash'                 => ['dir/Win11.iso', 'Win11'];
+        yield 'backslash'             => ['dir\\Win11.iso', 'Win11'];
+        yield 'double dot embedded'   => ['Win11..iso', 'Win11'];
+        yield 'no iso extension'      => ['Win11_24H2.img', 'Win11'];
+        yield 'space'                 => ['Win 11.iso', 'Win11'];
+        yield 'shell metachar'        => ['Win11;rm.iso', 'Win11'];
+        yield 'newline'               => ["Win11\n.iso", 'Win11'];
+        yield 'null byte'             => ["Win11\0.iso", 'Win11'];
+    }
+
+    #[Test]
+    #[DataProvider('badUploadFilenameProvider')]
+    public function it_rejects_unsafe_upload_filenames(string $filename, string $version): void
+    {
+        $this->expectException(WindowsIsoValidationException::class);
+        $this->validator->validateUploadFilename($filename, $version);
+    }
+
+    #[Test]
+    public function it_rejects_unsupported_version_on_upload(): void
+    {
+        $this->expectException(WindowsIsoValidationException::class);
+        $this->validator->validateUploadFilename('Win7_sp1.iso', 'Win7');
     }
 }

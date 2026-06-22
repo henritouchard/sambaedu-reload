@@ -43,7 +43,9 @@ trait CreatesWindowsIsoSchema
                 $t->id();
                 $t->string('version', 10);
                 $t->string('iso_name', 255);
-                $t->string('source_url', 2048);
+                $t->string('source_url', 2048)->nullable();
+                // Dépôt manuel (upload chunké) — 'url' | 'upload'.
+                $t->string('source', 10)->default('url');
                 $t->string('status', 20)->default('pending');
                 $t->timestamp('started_at')->nullable();
                 $t->timestamp('completed_at')->nullable();

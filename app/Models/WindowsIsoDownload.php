@@ -24,7 +24,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $id
  * @property string $version            'Win10' | 'Win11'
  * @property string $iso_name           'Win11_24H2.iso'
- * @property string $source_url         URL Microsoft saisie (publique)
+ * @property string|null $source_url    URL Microsoft saisie (publique) — null si dépôt manuel
+ * @property string $source             'url' (curl serveur) | 'upload' (fichier déposé)
  * @property WindowsIsoDownloadStatus $status
  * @property \Illuminate\Support\Carbon|null $started_at
  * @property \Illuminate\Support\Carbon|null $completed_at
@@ -49,6 +50,7 @@ class WindowsIsoDownload extends Model
         'version',
         'iso_name',
         'source_url',
+        'source',
         'status',
         'started_at',
         'completed_at',
@@ -73,6 +75,22 @@ class WindowsIsoDownload extends Model
      */
     public const VERSIONS = ['Win10', 'Win11'];
 
+    /** Origine de l'ISO : téléchargement curl serveur. */
+    public const SOURCE_URL = 'url';
+
+    /** Origine de l'ISO : fichier déposé par l'admin (uploader chunké). */
+    public const SOURCE_UPLOAD = 'upload';
+
+    /**
+     * L'ISO provient-elle d'un dépôt manuel (upload) plutôt que d'un
+     * téléchargement curl depuis Microsoft ? Détermine si le Job saute la
+     * phase `Downloading` (le fichier est déjà sur disque).
+     */
+    public function isUpload(): bool
+    {
+        return $this->source === self::SOURCE_UPLOAD;
+    }
+
     /**
      * Relation vers l'admin qui a déclenché le téléchargement.
      */
@@ -82,10 +100,11 @@ class WindowsIsoDownload extends Model
     }
 
     /**
-     * Numéro de version (sans le préfixe `Win`) — utilisé pour
-     * `install-win-iso.sh <version_num> <iso_name>`.
+     * Numéro de version (sans le préfixe `Win`) — ex. `Win11` → `'11'`.
      *
-     * Exemple : `Win11` → `'11'`.
+     * Conservé comme accesseur pratique (affichage/historique). Le Job
+     * d'extraction passe désormais la version complète (`Win10`/`Win11`) à
+     * {@see \App\Ipxe\Iso\Services\WindowsIsoExtractor}.
      */
     public function versionNum(): string
     {

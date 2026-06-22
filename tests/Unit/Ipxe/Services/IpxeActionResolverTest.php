@@ -263,21 +263,22 @@ class IpxeActionResolverTest extends TestCase
         $body = $this->resolver->resolve(IpxeAdminAction::InstallWin11, null, $request);
 
         self::assertStringStartsWith('#!ipxe', $body);
-        // Kernel iso-legacy `wimboot11.php:6` — URL ABSOLUE (fix 2026-06-04 :
-        // relatif au script natif `/ipxe/action/<enum>`, `Win10/wimboot` se
-        // résolvait en `/ipxe/action/Win10/wimboot` → 410 → abort iPXE).
-        self::assertStringContainsString('kernel http://se4fs.lan/ipxe/Win10/wimboot', $body);
+        // Kernel iso-legacy `wimboot11.php:6` — wimboot servi par `/ipxe/os/`
+        // (helper WinPE semé sous `{deployed_os_base}/winpe`, plus le `Win10/`
+        // legacy). URL ABSOLUE (script natif servi depuis `/ipxe/action/<enum>`,
+        // un chemin relatif se résoudrait contre `/ipxe/action/...` → abort).
+        self::assertStringContainsString('kernel http://se4fs.lan/ipxe/os/winpe/wimboot', $body);
         // Initrd winpeshl + install.bat + unattend.xml.
-        self::assertStringContainsString('initrd --name winpeshl.ini http://se4fs.lan/ipxe/Win10/winpeshl.ini', $body);
+        self::assertStringContainsString('initrd --name winpeshl.ini http://se4fs.lan/ipxe/os/winpe/winpeshl.ini', $body);
         self::assertStringContainsString('initrd --name install.bat', $body);
         self::assertStringContainsString('initrd --name unattend.xml', $body);
         // URLs natives 3.5 — pas de double `/ipxe/ipxe/`.
         self::assertStringContainsString('http://se4fs.lan/ipxe/windows/install.bat##params', $body);
         self::assertStringContainsString('http://se4fs.lan/ipxe/windows/unattend.xml##params', $body);
         self::assertStringNotContainsString('/ipxe/ipxe/', $body);
-        // Win11 assets paths (absolus).
-        self::assertStringContainsString('initrd --name BCD http://se4fs.lan/ipxe/Win11/boot/bcd', $body);
-        self::assertStringContainsString('initrd --name boot.wim http://se4fs.lan/ipxe/Win11/sources/boot.wim', $body);
+        // Win11 assets paths (absolus, ISO extraite servie par `/ipxe/os/`).
+        self::assertStringContainsString('initrd --name BCD http://se4fs.lan/ipxe/os/Win11/boot/bcd', $body);
+        self::assertStringContainsString('initrd --name boot.wim http://se4fs.lan/ipxe/os/Win11/sources/boot.wim', $body);
         // Params section.
         self::assertStringContainsString('param version Win11', $body);
         self::assertStringContainsString('param action wimboot11', $body);
@@ -303,7 +304,7 @@ class IpxeActionResolverTest extends TestCase
         self::assertStringContainsString('param version Win10', $body);
         self::assertStringContainsString('param action wimboot10', $body);
         self::assertStringContainsString('param debug 1', $body);
-        self::assertStringContainsString('initrd --name BCD http://se4fs.lan/ipxe/Win10/boot/bcd', $body);
+        self::assertStringContainsString('initrd --name BCD http://se4fs.lan/ipxe/os/Win10/boot/bcd', $body);
     }
 
     #[Test]
@@ -440,9 +441,9 @@ class IpxeActionResolverTest extends TestCase
         foreach ($cases as $action) {
             $body = $this->resolver->resolve($action, null, $request);
             self::assertStringStartsWith('#!ipxe', $body, "Template {$action->value} ne commence pas par #!ipxe");
-            self::assertStringContainsString('kernel http://se4fs.lan/ipxe/Win10/wimboot', $body, "Template {$action->value} : kernel manquant");
-            // Fix 2026-06-04 : aucun fetch relatif résiduel (se résoudrait
-            // contre /ipxe/action/ → 410) ni double /ipxe/ipxe/.
+            self::assertStringContainsString('kernel http://se4fs.lan/ipxe/os/winpe/wimboot', $body, "Template {$action->value} : kernel manquant");
+            // Aucun fetch relatif résiduel (se résoudrait contre
+            // /ipxe/action/ → abort iPXE) ni double /ipxe/ipxe/.
             self::assertStringNotContainsString('/ipxe/ipxe/', $body, "Template {$action->value} : double /ipxe");
             foreach (['kernel ', 'initrd --name BCD ', 'initrd --name boot.sdi ', 'initrd --name boot.wim ', 'initrd --name winpeshl.ini '] as $directive) {
                 self::assertMatchesRegularExpression(
