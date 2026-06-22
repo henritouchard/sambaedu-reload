@@ -7,7 +7,7 @@ Checklist par domaine métier. À dérouler avant une mise en production importa
 - [ ] [rights-management](domains/rights-management.md) — Droits applicatifs, rôles Spatie, permissions, délégations périmétrées, scoping classe, profils CRUD _(Stories 7.1, 7.2)_
 - [ ] [filesystem](domains/filesystem.md) — Quotas, snapshot, trash, home dirs, nettoyage natif des profils itinérants (snapshot nocturne /home/profiles, détection + purge orphelins vers _Trash_users) _(Stories 5.1c, 5.1d, 5.2, 26.3)_
 - [ ] [gpo](domains/gpo.md) — Group Policy Objects, profils itinérants, redirections, fondations natives `App\Gpo` _(Stories 1bis.18f, 16.1)_
-- [ ] [wpkg-deploy](domains/wpkg-deploy.md) — Pipeline déploiement WPKG (logs, migrations, atomic write, chemins config) _(Story 15.1)_
+- [ ] [wpkg-deploy](domains/wpkg-deploy.md) — Pipeline déploiement WPKG (logs, migrations, atomic write, chemins config), catalogue source unique bundle⇐module, ajout au catalogue NON-BLOQUANT (queue + progression Livewire) _(Stories 15.1, 27.6, 8.2.7)_
 - [ ] [network](domains/network.md) — Réservations DHCP, baux actifs, import CSV, migration legacy via `/sync-from-ad` _(Story 8.1)_
 - [ ] [auth](domains/auth.md) — Plateforme HTTPS + JWT v1 poste↔serveur local (PKI locale, enrollment, refresh, révocation) _(Story 16.10)_
 - [ ] [federated-login](domains/federated-login.md) — Login fédéré d'utilisateurs externes hors-AD (JWT signé RS256, IdP externe de confiance, anti-rejeu jti, mapping rôle, réconciliation guard) _(Story 20.1)_

@@ -21,17 +21,27 @@ use App\Enums\StateMaille;
  * Story 27.8 : le mécanisme `mode` strict/default est SUPPRIMÉ (STRICT
  * inconditionnel) — le candidat ne porte plus de mode, l'agent réapplique
  * toujours l'état cible.
+ *
+ * `depth` (hérédité physique) : profondeur du candidat DANS LA CHAÎNE PHYSIQUE
+ * du poste — salle directe = 0, +1 par niveau de parent (`parent_id`). Fait
+ * BRUT fourni par le provider ; le `StateCompiler` SEUL l'arbitre (au sein de
+ * la maille `physical_group`, le plus PROCHE — profondeur la plus faible —
+ * gagne, l'enfant battant le parent). `null` pour toute maille hors chaîne
+ * physique (Broadcast, logique, poste, user…) où la notion ne s'applique pas.
  */
 final readonly class StateCandidate
 {
     /**
      * @param  array<string,mixed>  $payload  contrat §4.1 : jamais de float
      * @param  int  $sourceId  id de la règle métier source (tiebreak + logs)
+     * @param  ?int  $depth  profondeur dans la chaîne physique (0 = salle directe),
+     *                       `null` hors maille `physical_group`
      */
     public function __construct(
         public StateMaille $maille,
         public array $payload,
         public ?\DateTimeInterface $updatedAt,
         public int $sourceId,
+        public ?int $depth = null,
     ) {}
 }

@@ -73,8 +73,13 @@ unsigned="$dist_dir/sambaedu-agent-$VERSION-unsigned.exe"
 signed="$dist_dir/sambaedu-agent-$VERSION.exe"
 
 echo "Build : agent Go $VERSION (windows/amd64, statique)…"
+# -buildvcs=false : la version vient de -ldflags -X (shared/version.go), pas du
+# VCS. Sans ce flag, `go build` (buildvcs=auto) lance `git` dans le repo pour
+# estampiller commit/date ; ça échoue (exit 128, build avorté) si le repo est
+# owné par un autre user que celui qui builde (ex. déploiement root sur arbo
+# owned uid 1000). On rend donc le build insensible à la méthode de déploiement.
 (cd "$agent_dir" && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
-    "$GO" build -trimpath \
+    "$GO" build -trimpath -buildvcs=false \
     -ldflags "-s -w -X sambaedu/agent/shared.Version=$VERSION" \
     -o "$unsigned" ./windows)
 echo "Binaire : $unsigned ($(du -h "$unsigned" | cut -f1))"

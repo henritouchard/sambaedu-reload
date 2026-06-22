@@ -1,8 +1,10 @@
 <?php
 
 use App\Components\Traits\WithToasts;
+use App\Jobs\InstallApplicationJob;
 use App\Models\Depot;
 use App\Models\DepotApplication;
+use App\Models\InstallationLog;
 use App\Services\AppStore\AppStoreService;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Computed;
@@ -37,8 +39,6 @@ return new class extends Component {
     public array $selectedDepotInstallApps = [];
 
     public bool $isDepotSyncing = false;
-
-    public bool $isInstalling = false;
 
     public ?string $depotSyncMessage = null;
 
@@ -188,6 +188,14 @@ return new class extends Component {
         }
     }
 
+    /**
+     * Story 8.2.7 — Dispatch NON-BLOQUANT : pour chaque app sélectionnée on
+     * dispatche un {@see InstallApplicationJob} sur la file `default`. La
+     * méthode rend la main immédiatement — aucun téléchargement synchrone ne
+     * gèle la requête. Le worker exécute le flow `installApplication()`
+     * existant (option A « tout dans le Job ») ; le panneau de progression
+     * (AC6) rattrape la latence d'apparition du log via `wire:poll`.
+     */
     public function installFromDepot(): void
     {
         if (empty($this->selectedDepotInstallApps)) {
@@ -196,38 +204,51 @@ return new class extends Component {
             return;
         }
 
-        $this->isInstalling = true;
-        $installed = 0;
-        $errors = 0;
+        // Convention projet : identité = User.login. Fallback 'system' si
+        // non authentifié (cohérent avec le défaut de installApplication()).
+        $initiatedBy = auth()->user()?->login ?? 'system';
 
-        try {
-            foreach ($this->selectedDepotInstallApps as $depotAppId) {
-                try {
-                    $depotApp = DepotApplication::find($depotAppId);
-                    if ($depotApp) {
-                        $this->appStoreService->installApplication($depotApp);
-                        $installed++;
-                    }
-                } catch (\Exception $e) {
-                    Log::error("[DepotTab] Erreur installation app {$depotAppId}: " . $e->getMessage());
-                    $errors++;
-                }
+        $count = 0;
+        foreach ($this->selectedDepotInstallApps as $depotAppId) {
+            // On ne sérialise pas le modèle : le Job re-find() par id.
+            $depotApp = DepotApplication::find($depotAppId);
+            if ($depotApp === null) {
+                continue;
             }
 
-            if ($installed > 0) {
-                $this->toastSuccess("{$installed} application(s) ajoutée(s) au catalogue");
-            }
-            if ($errors > 0) {
-                $this->toastWarning("{$errors} erreur(s) lors de l'ajout");
-            }
-
-            $this->selectedDepotInstallApps = [];
-        } catch (\Exception $e) {
-            Log::error('[DepotTab] Erreur installation apps: ' . $e->getMessage());
-            $this->toastError("Erreur lors de l'ajout");
-        } finally {
-            $this->isInstalling = false;
+            InstallApplicationJob::dispatch($depotApp->id, $initiatedBy);
+            $count++;
         }
+
+        $this->selectedDepotInstallApps = [];
+
+        if ($count > 0) {
+            $this->toastSuccess("{$count} installation(s) lancée(s) en arrière-plan");
+        } else {
+            $this->toastWarning('Aucune application valide à installer');
+        }
+    }
+
+    /**
+     * Story 8.2.7 (AC6) — Installations actives de l'utilisateur courant.
+     *
+     * Lit les `InstallationLog` non-terminaux (scopeInProgress) initiés par
+     * le login courant, avec la relation `application` chargée. Pilote le
+     * panneau de progression et son `wire:poll` conditionnel.
+     *
+     * @return \Illuminate\Support\Collection<int, InstallationLog>
+     */
+    #[Computed]
+    public function activeInstallations()
+    {
+        $login = auth()->user()?->login ?? 'system';
+
+        return InstallationLog::query()
+            ->inProgress()
+            ->where('initiated_by', $login)
+            ->with('application')
+            ->latest('id')
+            ->get();
     }
 
     public function toggleDepotInstallAppSelection(int $appId): void
@@ -361,6 +382,46 @@ return new class extends Component {
             <div class="stat-value text-lg text-warning">{{ $dStats['updatable'] }}</div>
         </div>
     </div>
+
+    {{-- ============================================================
+         Story 8.2.7 (AC6) — Panneau de progression des installations
+         en arrière-plan. wire:poll.3s CONDITIONNEL : actif uniquement
+         s'il reste au moins une installation non-terminale (modèle
+         iso-windows). Quand tout est terminal, le bloc disparaît et le
+         polling s'arrête.
+         ============================================================ --}}
+    @php $activeInstalls = $this->activeInstallations; @endphp
+    @if ($activeInstalls->isNotEmpty())
+        <div class="flex-shrink-0 card bg-base-100 shadow-sm border border-info" wire:poll.3s>
+            <div class="card-body p-4 space-y-3">
+                <h2 class="card-title text-base">
+                    <span class="loading loading-spinner loading-sm text-info"></span>
+                    Installations en cours ({{ $activeInstalls->count() }})
+                </h2>
+
+                <div class="space-y-2">
+                    @foreach ($activeInstalls as $install)
+                        <div wire:key="active-install-{{ $install->id }}"
+                            class="border border-base-200 rounded-lg p-3">
+                            <div class="flex items-center justify-between gap-3 mb-1">
+                                <span class="font-medium text-sm">
+                                    {{ $install->application?->name ?? $install->application?->app_id ?? 'Application' }}
+                                </span>
+                                <span class="badge badge-{{ $install->status->color() }} badge-sm">
+                                    {{ $install->status->label() }}
+                                </span>
+                            </div>
+                            <progress class="progress progress-info w-full" value="{{ $install->progress }}"
+                                max="100"></progress>
+                            @if ($install->message)
+                                <div class="text-xs text-base-content/60 mt-1">{{ $install->message }}</div>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        </div>
+    @endif
 
     <!-- Résumé dépôt + Sélecteur -->
     <div class="flex-shrink-0 card bg-base-100 shadow-sm border border-base-200">
@@ -573,7 +634,7 @@ return new class extends Component {
                         </span>
                         <span wire:loading wire:target="installFromDepot">
                             <i class="fa-solid fa-spinner fa-spin mr-1"></i>
-                            Installation...
+                            Lancement...
                         </span>
                     </button>
                     <button type="button" class="btn btn-ghost btn-sm"

@@ -175,6 +175,10 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
                         // gagne au sein d'une maille, iso compilateur).
                         updatedAt: $override['updated_at'] ?? $capability->updated_at,
                         sourceId: (int) $capability->id,
+                        // Profondeur physique (hérédité) : le compilateur fait
+                        // gagner l'enfant (profondeur faible) sur le parent au sein
+                        // de la maille `physical_group`. `null` hors chaîne physique.
+                        depth: $override['depth'],
                     ));
                 }
             }
@@ -321,10 +325,17 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
      * Overrides applicables au contexte, groupés par `capability_id` (lecture
      * Postgres pure restreinte aux ids résolus). Chaque entrée porte la maille
      * étiquetée (D2 = compilateur applique la précédence) + la valeur d'override
-     * (null = repli sur le défaut) + l'updated_at du pivot (récence intra-maille).
+     * (null = repli sur le défaut) + l'updated_at du pivot (récence intra-maille)
+     * + la profondeur physique (hérédité — `null` hors chaîne physique).
+     *
+     * **Hérédité physique (capacités uniquement).** Les WorkstationGroups ciblés
+     * sont la chaîne physique ÉTENDUE aux ancêtres ({@see TargetContext::$physicalGroupDepths})
+     * ∪ les parcs logiques DIRECTS. On élargit ICI, dans le provider de capacités,
+     * et PAS via `workstationGroupIds()` (accesseur partagé par des providers qui
+     * n'héritent pas — wallpaper/printers/shortcuts/associations/overlay/env).
      *
      * @param  list<int>  $capabilityIds
-     * @return array<int, list<array{maille:StateMaille, value:?string, updated_at:\DateTimeInterface|null}>>
+     * @return array<int, list<array{maille:StateMaille, value:?string, updated_at:\DateTimeInterface|null, depth:?int}>>
      */
     private function resolveOverrides(TargetContext $ctx, array $capabilityIds): array
     {
@@ -332,7 +343,11 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
             return [];
         }
 
-        $wgIds = $ctx->workstationGroupIds();
+        // Chaîne physique (salle directe + ancêtres) ∪ parcs logiques directs.
+        $wgIds = array_values(array_unique(array_merge(
+            array_map('intval', array_keys($ctx->physicalGroupDepths)),
+            $ctx->logicalGroupIds,
+        )));
 
         $rows = \Illuminate\Support\Facades\DB::table('capability_assignments')
             ->whereIn('capability_id', $capabilityIds)
@@ -369,11 +384,20 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
 
         $out = [];
         foreach ($rows as $row) {
+            $assignableType = (string) $row->assignable_type;
+            $assignableId = (int) $row->assignable_id;
+            $maille = $this->mailleFor($assignableType, $assignableId, $ctx);
+
             $out[(int) $row->capability_id][] = [
-                'maille' => $this->mailleFor((string) $row->assignable_type, (int) $row->assignable_id, $ctx),
+                'maille' => $maille,
                 'value' => $row->value === null ? null : (string) $row->value,
                 'updated_at' => $row->updated_at !== null
                     ? \Illuminate\Support\Carbon::parse($row->updated_at)
+                    : null,
+                // Profondeur physique : renseignée pour la maille `physical_group`
+                // (chaîne salle directe → ancêtres), `null` partout ailleurs.
+                'depth' => $maille === StateMaille::PhysicalGroup
+                    ? ($ctx->physicalGroupDepths[$assignableId] ?? null)
                     : null,
             ];
         }
@@ -383,14 +407,15 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
 
     /**
      * Étiquetage assignable → maille (D2 = compilateur applique la précédence).
-     * La distinction physique/logique d'un WorkstationGroup se fait via les listes
-     * du contexte (la requête a déjà restreint aux groupes du poste) — étiquetage,
-     * pas précédence. Iso 27.3.
+     * La distinction physique/logique d'un WorkstationGroup se fait via la chaîne
+     * physique du contexte ({@see TargetContext::$physicalGroupDepths}, salle
+     * directe + ancêtres) : un ancêtre n'est PAS dans `physicalGroupIds` (salles
+     * directes) mais reste un groupe physique. Étiquetage, pas précédence. Iso 27.3.
      */
     private function mailleFor(string $assignableType, int $assignableId, TargetContext $ctx): StateMaille
     {
         return match ($assignableType) {
-            WorkstationGroup::class => in_array($assignableId, $ctx->physicalGroupIds, true)
+            WorkstationGroup::class => isset($ctx->physicalGroupDepths[$assignableId])
                 ? StateMaille::PhysicalGroup
                 : StateMaille::LogicalGroup,
             Workstation::class => StateMaille::Workstation,

@@ -129,8 +129,11 @@ class WpkgDeploymentPageTest extends TestCase
     }
 
     #[Test]
-    public function admin_sees_unlinked_gpo_warning(): void
+    public function admin_sees_unlinked_gpo_as_residual_info(): void
     {
+        // Story 27.5 — une GPO `se4_wpkg` non liée n'est PLUS une alerte
+        // bloquante : l'agent déclenche WPKG indépendamment des liaisons. La
+        // section liaisons est désormais purement informative.
         $this->actingAs($this->makeAdmin());
         $this->bindSync($this->makeReport([
             'linkedOus' => [],
@@ -140,8 +143,9 @@ class WpkgDeploymentPageTest extends TestCase
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->assertStatus(200)
-            ->assertSee('GPO non liée')
-            ->assertSeeHtml('badge-warning');
+            ->assertSeeHtml('data-testid="unlinked-info"')
+            ->assertSee('non liée')
+            ->assertSee('Sans effet sur WPKG');
     }
 
     #[Test]
@@ -157,24 +161,27 @@ class WpkgDeploymentPageTest extends TestCase
     }
 
     #[Test]
-    public function admin_can_open_publish_modal(): void
+    public function admin_sees_agent_trigger_explainer(): void
     {
+        // Story 27.5 / 27.6 — l'encart explique que l'agent (canal desired-state)
+        // est désormais le seul déclencheur de WPKG, à la place de la GPO.
         $this->actingAs($this->makeAdmin());
         $this->bindSync($this->makeReport());
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
-            ->call('openPublishModal')
-            ->assertSet('isPublishModalOpen', true)
-            ->assertSet('forceFlag', false);
+            ->assertStatus(200)
+            ->assertSeeHtml('data-testid="agent-trigger-explainer"')
+            ->assertSee('agent déclenche WPKG')
+            ->assertSee('bundle WPKG natif');
     }
 
     #[Test]
-    public function confirm_publish_is_retired_noop_and_never_calls_publish(): void
+    public function page_never_publishes_and_has_no_publish_action(): void
     {
         // Story 27.5 (D2) — la publication de `se4_wpkg` est RETIRÉE : l'agent
-        // est le seul déclencheur de WPKG. `confirmPublish` ne publie plus (no-op
-        // informatif + re-audit lecture seule) → la synchro ne doit JAMAIS
-        // recevoir `publish()`.
+        // est le seul déclencheur de WPKG. Le bouton/modale de publication a été
+        // supprimé et la synchro ne doit JAMAIS recevoir `publish()` — ni au
+        // mount, ni au re-audit.
         $this->actingAs($this->makeAdmin());
 
         /** @var WpkgGpoSynchronizer&\Mockery\MockInterface $mock */
@@ -184,11 +191,12 @@ class WpkgDeploymentPageTest extends TestCase
         $this->app->bind(WpkgGpoSynchronizer::class, fn () => $mock);
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
-            ->call('openPublishModal')
-            ->set('forceFlag', true)
-            ->call('confirmPublish')
-            ->assertSet('isPublishModalOpen', false)
-            ->assertSet('forceFlag', false)
-            ->assertSet('isPublishing', false);
+            ->assertStatus(200)
+            // Plus de bouton ni de modale de publication.
+            ->assertDontSeeHtml('data-testid="open-publish-modal"')
+            ->assertDontSeeHtml('data-testid="modal-confirm-publish"')
+            // Le re-audit reste une lecture pure (aucun publish()).
+            ->call('refresh')
+            ->assertSet('hasError', false);
     }
 }

@@ -423,9 +423,10 @@ class WpkgDeploymentSettingsPageTest extends TestCase
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->assertStatus(200)
-            // La carte GPO doit encore être présente.
+            // L'audit GPO résiduel doit encore être présent (badge sévérité).
             ->assertSeeHtml('data-testid="severity-badge"')
-            ->assertSeeHtml('data-testid="open-publish-modal"')
+            // Story 27.5 — plus de bouton de publication (l'agent déclenche WPKG).
+            ->assertDontSeeHtml('data-testid="open-publish-modal"')
             // Re-auditer fonctionne toujours.
             ->call('refresh')
             ->assertSet('hasError', false);

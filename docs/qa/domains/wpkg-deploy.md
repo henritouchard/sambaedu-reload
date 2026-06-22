@@ -855,14 +855,26 @@ depuis l'UI, sans intervention shell.
    ```
    → attendu **403** (IP à nouveau hors allowlist).
 
-### Scénario 7.4 — Non-régression audit GPO existant
+### Scénario 7.4 — Non-régression audit GPO résiduelle (Story 27.5)
 
-1. Après les manipulations des scénarios 7.1–7.3, vérifier que l'audit GPO
-   existant reste fonctionnel :
-   - Cliquer **Re-auditer** → badge sévérité visible, pas d'erreur.
-   - Cliquer **Re-publier la GPO `se4_wpkg`** → modale confirmation s'ouvre.
-   - Annuler la modale.
-   → La section audit GPO est inchangée et fonctionnelle.
+> **Mise à jour 2026-06-19** : depuis la Story 27.5, l'agent est le seul
+> déclencheur de WPKG ; la GPO `se4_wpkg` n'est plus publiée par SE5. La page
+> `wpkg-deployment` a été restructurée : le bouton « Re-publier la GPO » et sa
+> modale ont été **supprimés** (la publication était déjà un no-op). L'audit GPO
+> devient purement **informatif** (GPO résiduelle).
+
+1. Après les manipulations des scénarios 7.1–7.3, vérifier que la page reste
+   fonctionnelle :
+   - Un encart **« L'agent déclenche WPKG »** est affiché en tête de page
+     (`data-testid="agent-trigger-explainer"`).
+   - Cliquer **Re-auditer** → badge sévérité visible (`data-testid="severity-badge"`),
+     pas d'erreur.
+   - **Aucun** bouton « Re-publier la GPO » n'est présent
+     (`data-testid="open-publish-modal"` absent).
+   - La carte **Réglages de déploiement** (winget + allowlist) reste inchangée
+     et opérationnelle.
+   → La section audit GPO résiduelle est informative ; les réglages de
+   déploiement restent pleinement fonctionnels.
 
 ### Scénario 7.5 — Fail-closed : DB polluée `0.0.0.0/0` → IP externe reste 403
 
@@ -1031,3 +1043,112 @@ servi en silence. Bundle inchangé après l'échec (atomicité tmp+rename).
 - [ ] Scénario 8.2 — Catalogue module malformé → `wpkg:bundle` échoue fort, bundle inchangé
 - [ ] Scénario 8.3 — Substitution `SE4FS_NAME` appliquée sur le catalogue sourcé du module
 - [ ] Scénario 8.4 — E2e poste « windeboule » / `ganttproject` → plus de « Database inconsistency »
+
+## Section 9 — Ajout au catalogue NON-BLOQUANT (queue + progression Livewire) — Story 8.2.7
+
+L'ajout d'applications WPKG au catalogue (onglet **Dépôt** des réglages de parc) ne s'exécute
+plus dans la requête web. `installFromDepot()` **dispatche** un `InstallApplicationJob` par app
+sélectionnée sur la file `default` (servie par `laravel-queue-worker` + `laravel-queue-general`,
+uid `www-admin`). Le worker exécute le flow `AppStoreService::installApplication()` inchangé, et
+un panneau de progression Livewire (`wire:poll.3s` conditionnel, modèle `iso-windows`) reflète
+l'avancement via `InstallationLog`.
+
+### Pré-requis Section 9
+
+- Workers de queue actifs sur la VM :
+  ```bash
+  systemctl is-active laravel-queue-worker laravel-queue-general
+  # → active / active (auto enable+restart par scripts/update.sh)
+  ```
+- `QUEUE_CONNECTION=database` dans `.env` (prod). Tables `jobs`/`failed_jobs` déjà migrées
+  (`create_unified_schema`). Vérifier l'absence de migration en attente : `php artisan migrate:status`.
+- Au moins un dépôt synchronisé avec plusieurs applications NON installées.
+- Un utilisateur authentifié (le `initiated_by` des logs = son `login`).
+
+### Scénario 9.1 — Clic « Ajouter au catalogue » → navigation immédiatement libre
+
+1. Onglet **Dépôt**, sélectionner 1 application non installée, cliquer « Ajouter au catalogue ».
+2. **Attendu immédiat** : toast « **1 installation(s) lancée(s) en arrière-plan** » (PAS
+   « ajoutée(s) ») ; la sélection se vide ; l'UI **reste réactive** (changer de filtre / page /
+   onglet répond sans blocage — plus aucun gel `isInstalling`).
+3. Le panneau « **Installations en cours** » apparaît dans les ~3 s (latence de pickup worker +
+   poll), avec le nom de l'app, un badge de statut (`En attente`/`Téléchargement`/…) et une barre
+   de progression.
+4. Au terme du job : statut `Succès`, barre à 100 %, puis (au poll suivant) la ligne **disparaît**
+   du panneau (log terminal) et le `wire:poll` **s'arrête** (plus de bloc rendu). L'app passe
+   « Installée » dans le tableau.
+
+**Attendu** : la requête du clic rend la main instantanément ; le téléchargement réel se fait côté
+worker ; la progression s'affiche puis s'arrête seule.
+
+### Scénario 9.2 — N installations simultanées (isolation par job)
+
+1. Sélectionner **plusieurs** apps (≥ 3), cliquer « Ajouter au catalogue ».
+2. **Attendu** : toast « **N installation(s) lancée(s) en arrière-plan** » ; **N**
+   `InstallApplicationJob` en file (`select count(*) from jobs;` côté DB, ou
+   `php artisan queue:monitor database:default`).
+3. Le panneau liste les N lignes ; le parallélisme effectif = nombre de workers sur `default`
+   (≥ 2 sur la VM) — au-delà, les jobs suivants attendent (1 job/worker à la fois). C'est
+   attendu (pas de parallélisme illimité).
+
+**Attendu** : un job indépendant par app ; toutes finissent `Success` (réseau OK).
+
+### Scénario 9.3 — Échec d'un job n'affecte pas les autres
+
+1. Préparer un dépôt avec une app dont l'`xml_url` est invalide (404) ou le `xml_sha` faux,
+   à côté d'apps saines. Sélectionner les deux, lancer.
+2. **Attendu** : le job de l'app KO finit `InstallationLog.status = Failed` (message d'erreur) et
+   `Application.status = Error` ; les jobs des apps saines finissent `Success` indépendamment.
+   Le panneau montre une ligne en échec et les autres en succès, sans interruption globale.
+3. Vérifier en DB :
+   ```sql
+   SELECT a.app_id, il.status, il.message
+   FROM installation_logs il JOIN applications a ON a.id = il.application_id
+   ORDER BY il.id DESC;
+   ```
+4. Si le job échoue **définitivement** (épuisement `tries=3`), le garde-fou `failed()` ne réécrit
+   PAS un log déjà terminal (pas d'écrasement d'un message d'erreur précis ou d'un succès).
+
+**Attendu** : isolation stricte ; aucun job sain entraîné par un job KO.
+
+### Scénario 9.4 — Régénération `packages.xml` sous charge (sérialisation)
+
+1. Lancer plusieurs ajouts qui se terminent quasi-simultanément (apps légères).
+2. Chaque finalisation appelle `updateLocalPackagesXml()`, protégé par
+   `Cache::lock('appstore.packages-xml.regenerate', 30)->block(20, …)`.
+3. **Attendu** : le `packages.xml` module final est **valide** (un seul `<packages>` racine, tous
+   les `<package id>` des apps installées présents, aucune troncature / imbrication). L'écriture
+   est atomique (`.tmp`+`rename`) ; le lock sérialise la séquence de génération.
+   ```bash
+   xmllint --noout "$(php artisan tinker --execute='echo config("sambaedu.wpkg.packages_xml_path");')" && echo "XML valide"
+   ```
+4. Vérifier l'absence d'erreur de lock dans les logs (`storage/logs/laravel*.log`).
+
+**Attendu** : pas de catalogue corrompu malgré la concurrence ; bundle recohérent (chaînage 27.6).
+
+### Scénario 9.5 — Double-clic / re-soumission sur la même app (WithoutOverlapping)
+
+1. Lancer l'ajout d'une app, puis (avant la fin) **relancer** l'ajout de la **même** app.
+2. **Attendu** : grâce au middleware `WithoutOverlapping` keyé sur l'`app_id`, deux jobs concurrents
+   sur la même app ne s'exécutent pas en parallèle (le second est remis en file `releaseAfter`).
+   L'idempotence `Application::firstOrCreate` + skip-by-hash garantit qu'aucune installation n'est
+   dupliquée ni corrompue.
+
+**Attendu** : une seule installation effective par app à un instant donné ; pas de doublon.
+
+### Post-correctifs & non-régressions Section 9
+
+- **Pourquoi le polling conditionnel** : si le `wire:poll` tournait en permanence, il chargerait la
+  DB inutilement. Le bloc (et donc le poll) n'est rendu **que** si `activeInstallations()` n'est pas
+  vide — quand tout est terminal, le polling cesse. Vérifier qu'après la fin des installations,
+  aucune requête de poll ne part plus (onglet Réseau du navigateur).
+- **`QUEUE_CONNECTION=sync` interdit en prod pour ce flux** : avec `sync`, le dispatch
+  redeviendrait synchrone (blocage). S'assurer que la VM est bien en `database`.
+
+### Checklist rapide Section 9 (relecteur)
+
+- [ ] Scénario 9.1 — Clic → toast « arrière-plan », UI libre, progression s'affiche puis s'arrête
+- [ ] Scénario 9.2 — N apps → N jobs indépendants en file, parallélisme = nb workers
+- [ ] Scénario 9.3 — 1 job KO → `Failed`/`Error` isolé, jobs sains `Success`, `failed()` n'écrase pas un log terminal
+- [ ] Scénario 9.4 — Finalisations concurrentes → `packages.xml` valide (lock + write atomique)
+- [ ] Scénario 9.5 — Re-soumission même app → `WithoutOverlapping` + idempotence, pas de doublon

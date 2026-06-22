@@ -12,6 +12,7 @@ use App\Models\DepotApplication;
 use App\Models\InstallationLog;
 use App\Wpkg\Deployment\Services\WpkgBundleGenerator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -234,17 +235,36 @@ class AppStoreService
      */
     public function updateLocalPackagesXml(): void
     {
-        $this->packagesXmlService->regenerate();
+        // Story 8.2.7 (AC8) — SÉRIALISATION sous charge parallèle. Plusieurs
+        // InstallApplicationJob peuvent finaliser quasi-simultanément et
+        // appeler cette méthode en concurrence. L'écriture fichier est DÉJÀ
+        // atomique (`.tmp` + `rename`, PackagesXmlService L104-108) ; le lock
+        // sérialise en plus la SÉQUENCE lecture `Application::installed()` →
+        // génération → écriture, pour éviter qu'une régénération lise un état
+        // intermédiaire incohérent du catalogue.
+        //
+        // `block(20, …)` : on attend jusqu'à 20s l'obtention du lock (TTL 30s),
+        // largement suffisant vu que `regenerate()` est une opération courte.
+        //
+        // ⚠ La sérialisation CROSS-WORKER (les jobs tournent dans des process
+        // `queue:work` distincts) exige un store de cache PARTAGÉ : `file`
+        // (prod VM, locks sur disque), `database` ou `redis`. Le défaut `apc`
+        // de `config/cache.php`/`.env.example` serait per-process (lock
+        // inopérant entre workers). Garde-fou de fond quel que soit le store :
+        // l'écriture `.tmp`+rename de `PackagesXmlService` reste atomique.
+        Cache::lock('appstore.packages-xml.regenerate', 30)->block(20, function (): void {
+            $this->packagesXmlService->regenerate();
 
-        try {
-            $this->wpkgBundleGenerator->generate();
-        } catch (Throwable $e) {
-            Log::channel('wpkg-deploy')->error(
-                '[AppStore] Régénération du bundle WPKG en échec après mise à jour du catalogue — '
-                .'l\'ajout au catalogue est conservé, le bundle sera recohérent au prochain changement.',
-                ['error' => $e->getMessage()],
-            );
-        }
+            try {
+                $this->wpkgBundleGenerator->generate();
+            } catch (Throwable $e) {
+                Log::channel('wpkg-deploy')->error(
+                    '[AppStore] Régénération du bundle WPKG en échec après mise à jour du catalogue — '
+                    .'l\'ajout au catalogue est conservé, le bundle sera recohérent au prochain changement.',
+                    ['error' => $e->getMessage()],
+                );
+            }
+        });
     }
 
     // ========================================

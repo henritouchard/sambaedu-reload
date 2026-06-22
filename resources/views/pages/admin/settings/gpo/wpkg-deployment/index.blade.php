@@ -1,7 +1,6 @@
 <?php
 
 use App\Components\Traits\WithToasts;
-use App\Gpo\Dto\WpkgGpoSyncReport;
 use App\Gpo\Services\WpkgGpoSynchronizer;
 use App\Models\SystemSetting;
 use App\Wpkg\Deployment\Rules\SafeIpCidrRule;
@@ -12,40 +11,41 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Page Livewire SFC — Hook GPO ↔ WPKG (Story 16.6 + Story 16.9).
- * Étendue en Story 15.6 : carte « Réglages de déploiement » (winget_enabled + allowed_ips).
+ * Page Livewire SFC — Audit de la livraison WPKG.
  * Servie sous `/admin/settings/gpo/wpkg-deployment`.
  *
- * Affiche l'état de cohérence entre la GPO `se4_wpkg` qui déclenche
- * `cscript wpkg.js /server=...` côté postes Windows et les endpoints serveur
- * `/wpkg/hosts.xml` + `/wpkg/profiles.xml` (Story 15.2) + Bearer Phase 2
- * (Story 15.5 lecture seule).
+ * **Bascule modèle (Story 27.5 / 27.6)** : l'AGENT est désormais le SEUL
+ * déclencheur de WPKG sur les postes (handler `applications`, canal
+ * desired-state, moteur machine/SYSTEM). La GPO `se4_wpkg` qui lançait
+ * historiquement `cscript wpkg.js /server=...` au boot N'EST PLUS publiée par
+ * SE5 — la publication est retirée (no-op). L'agent dépose `profiles.xml` /
+ * `hosts.xml` localement et `wpkg-client.vbs` récupère le **bundle WPKG natif**
+ * servi en statique par Apache (`config('agent.wpkg_bundle_url')`), dont le
+ * catalogue est régénéré à chaque ajout/retrait d'app au catalogue (source
+ * unique 27.6).
  *
- * Actions exposées :
- *  - Re-auditer (lecture pure, no side effect)
- *  - Re-publier la GPO (write SYSVOL via shim `import_gpo` — modale
- *    confirmation D5 obligatoire)
- *  - Réglages de déploiement (Story 15.6) : toggle winget + allowlist IP (modale pour ajout CIDR)
+ * Cette page conserve donc deux rôles :
+ *  - **Réglages de déploiement** (Story 15.6, toujours actifs) : toggle canal
+ *    winget + allowlist IP/CIDR des endpoints `/wpkg/{winget,linux}_out.php`.
+ *  - **Audit informatif** : état de la GPO `se4_wpkg` désormais RÉSIDUELLE
+ *    (existence/liaisons/template), bundle natif attendu côté postes et
+ *    couverture Bearer — purement diagnostique, sans effet sur la livraison.
  *
- * Permission : `server.admin` (D8 — middleware route + abort_unless mount).
+ * Permission : `server.admin` (middleware route + abort_unless mount).
  *
  * **PIÈGE AUDIT** : les mutations Livewire ne passent PAS par le middleware HTTP
- * → l'audit doit être émis explicitement depuis save() (Story 15.6 / D5 / AC5).
+ * → l'audit des réglages doit être émis explicitement depuis les actions
+ * (Story 15.6 / AC5).
  */
-new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
+new #[Title('Audit livraison WPKG - SE4FS')] class extends Component {
     use WithToasts;
 
     // =========================================================================
-    // Partie audit GPO existante (Story 16.6 + 16.9) — NE PAS MODIFIER
+    // Partie audit GPO résiduelle (Story 16.6 + 16.9 + 27.5)
     // =========================================================================
 
     public ?array $report = null;
     public bool $hasError = false;
-
-    // --- Modale confirmation publish (D5) ---
-    public bool $isPublishModalOpen = false;
-    public bool $forceFlag = false;
-    public bool $isPublishing = false;
 
     #[Locked]
     public string $expectedHostsXmlUrl = '';
@@ -294,11 +294,14 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
     }
 
     // =========================================================================
-    // Partie audit GPO (Story 16.6 + 16.9) — inchangée
+    // Partie audit GPO résiduelle (Story 16.6 + 16.9 + 27.5)
     // =========================================================================
 
     /**
      * Recharge le rapport d'audit (lecture pure, no side effect).
+     *
+     * Story 27.5 : `audit()` ne déclenche jamais de publication SYSVOL. La GPO
+     * `se4_wpkg` n'est plus publiée par SE5 — ce rapport est purement informatif.
      */
     public function audit(): void
     {
@@ -324,50 +327,14 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
     }
 
     // -------------------------------------------------------------------------
-    // Modale "Re-publier la GPO" (D5)
-    // -------------------------------------------------------------------------
-
-    public function openPublishModal(): void
-    {
-        $this->forceFlag = false;
-        $this->isPublishModalOpen = true;
-    }
-
-    public function closePublishModal(): void
-    {
-        $this->isPublishModalOpen = false;
-        $this->forceFlag = false;
-    }
-
-    public function close(): void
-    {
-        $this->closePublishModal();
-    }
-
-    public function confirmPublish(): void
-    {
-        // Story 27.5 (D2) — la PUBLICATION de la GPO `se4_wpkg` est RETIRÉE :
-        // l'AGENT est désormais le SEUL déclencheur de WPKG (handler
-        // `applications` → `wpkg-client.vbs`), à la place de la GPO. SE5 cesse de
-        // publier `se4_wpkg` (pas de double déclenchement / collision). L'action
-        // de re-publication devient un NO-OP informatif + re-audit (lecture
-        // seule) ; on ne touche plus SYSVOL. La GPO résiduelle côté lab est
-        // déliée hors worktree (action Henri).
-        $this->isPublishModalOpen = false;
-        $this->isPublishing = false;
-        $this->forceFlag = false;
-
-        $this->audit(); // refresh état AD réel (lecture seule, jamais de publish).
-        $this->toast(
-            'info',
-            'Publication GPO retirée (Story 27.5)',
-            'La GPO `se4_wpkg` n\'est plus publiée par SE5 : l\'agent déclenche désormais WPKG (canal desired-state). Aucune action SYSVOL effectuée.',
-        );
-    }
-
-    // -------------------------------------------------------------------------
     // Computed accessors pour la vue
     // -------------------------------------------------------------------------
+
+    /** URL de base du bundle WPKG natif servi en statique par Apache. */
+    public function getBundleBaseUrlProperty(): string
+    {
+        return rtrim((string) config('agent.wpkg_bundle_url', ''), '/');
+    }
 
     public function getSeverityClassProperty(): string
     {
@@ -399,8 +366,8 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
 };
 ?>
 
-<x-organisms.page title="Hook GPO ↔ WPKG" :scrollable="true"
-    description="Cohérence entre la GPO `se4_wpkg` et les endpoints `/wpkg/hosts.xml` + `/wpkg/profiles.xml` (Story 15.2 / Story 15.5 / Story 16.6).">
+<x-organisms.page title="Audit livraison WPKG" :scrollable="true"
+    description="Réglages du canal WPKG (winget + allowlist IP) et audit informatif. Depuis la Story 27.5, l'agent déclenche WPKG (bundle natif) — la GPO `se4_wpkg` n'est plus publiée par SE5.">
 
     <x-slot:actions>
         <div class="flex flex-wrap gap-2 items-center">
@@ -419,7 +386,41 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
     <div class="space-y-6">
 
         {{-- ===================================================================
-             Carte « Réglages de déploiement » (Story 15.6) — en tête de page
+             Encart « L'agent déclenche WPKG » (Story 27.5 / 27.6)
+             =================================================================== --}}
+        <div class="card bg-base-100 shadow-sm border border-info/40" data-testid="agent-trigger-explainer">
+            <div class="card-body">
+                <h2 class="card-title text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-robot text-info"></i>
+                    L'agent déclenche WPKG
+                    <span class="badge badge-ghost badge-sm">Story 27.5</span>
+                </h2>
+                <p class="text-sm text-base-content/80">
+                    Le <strong>canal desired-state de l'agent</strong> (handler <code>applications</code>, moteur
+                    machine/SYSTEM) est désormais le <strong>seul déclencheur</strong> de WPKG sur les postes.
+                    La GPO <code>se4_wpkg</code> qui lançait <code>cscript wpkg.js</code> au boot
+                    <strong>n'est plus publiée</strong> par SE5.
+                </p>
+                <ul class="text-sm space-y-1 list-disc list-inside text-base-content/80 mt-1">
+                    <li>
+                        L'agent dépose <code>profiles.xml</code> / <code>hosts.xml</code> <em>localement</em> sur le poste,
+                        puis <code>wpkg-client.vbs</code> applique le <strong>bundle WPKG natif</strong> servi en statique
+                        par Apache.
+                    </li>
+                    <li>
+                        Le catalogue du bundle est régénéré automatiquement à chaque ajout/retrait d'application au
+                        catalogue (source unique — Story 27.6).
+                    </li>
+                    <li>
+                        Les sections d'audit ci-dessous (GPO résiduelle, liaisons, couverture Bearer) sont conservées
+                        <strong>à titre de diagnostic</strong> : elles n'influencent plus la livraison WPKG.
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        {{-- ===================================================================
+             Carte « Réglages de déploiement » (Story 15.6) — toujours actifs
              =================================================================== --}}
         <div class="card bg-base-100 shadow-sm border border-base-200" data-testid="deployment-settings-card">
             <div class="card-body">
@@ -532,7 +533,9 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
             </div>
         </div>
 
-        {{-- Reste de la page : audit GPO (inchangé) --}}
+        {{-- ===================================================================
+             Audit GPO résiduelle (informatif — Story 27.5)
+             =================================================================== --}}
 
         @if ($hasError || $report === null)
             <div class="alert alert-error" data-testid="audit-error">
@@ -546,24 +549,23 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
                 </div>
             </div>
         @else
-            {{-- Badge sévérité principal --}}
+            {{-- Statut audit GPO résiduelle --}}
             <div class="card bg-base-100 shadow-sm border border-base-200">
                 <div class="card-body py-4">
                     <div class="flex items-center justify-between gap-3 flex-wrap">
                         <h2 class="card-title flex items-center gap-3">
                             <i class="fa-solid fa-circle-nodes text-primary"></i>
-                            Statut global
+                            Audit GPO résiduelle `se4_wpkg`
                             <span class="badge {{ $this->severityClass }} badge-lg uppercase font-mono"
                                 data-testid="severity-badge">
                                 {{ strtoupper($report['severity']) }}
                             </span>
                         </h2>
-                        <button type="button" class="btn btn-error btn-sm" wire:click="openPublishModal"
-                            wire:loading.attr="disabled" data-testid="open-publish-modal">
-                            <i class="fa-solid fa-upload"></i>
-                            Re-publier la GPO `se4_wpkg`
-                        </button>
                     </div>
+                    <p class="text-xs text-base-content/60 mt-1">
+                        Cet audit porte sur la GPO héritée `se4_wpkg`, conservée pour diagnostic. Une GPO absente ou
+                        non liée <strong>n'empêche pas</strong> la livraison WPKG, désormais assurée par l'agent.
+                    </p>
                     @if (! empty($report['operationId']))
                         <p class="text-xs text-base-content/60 font-mono">
                             operation_id : {{ $report['operationId'] }}
@@ -572,12 +574,55 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
                 </div>
             </div>
 
-            {{-- Tableau 1 : État GPO --}}
+            {{-- Bundle WPKG natif (ex « URLs serveur attendues ») --}}
+            <div class="card bg-base-100 shadow-sm border border-base-200">
+                <div class="card-body">
+                    <h3 class="card-title text-lg flex items-center gap-2">
+                        <i class="fa-solid fa-box-open text-accent"></i>
+                        Bundle WPKG natif (livré par l'agent)
+                    </h3>
+                    <p class="text-sm text-base-content/70">
+                        L'agent dépose <code>profiles.xml</code> / <code>hosts.xml</code> <em>localement</em> sur le poste,
+                        puis <code>wpkg-client.vbs</code> récupère le bundle servi en statique par Apache. Les fichiers
+                        ci-dessous sont des <strong>artefacts du bundle / profil local</strong> — ce ne sont plus des
+                        endpoints dynamiques interrogés au boot.
+                    </p>
+                    <div class="overflow-x-auto mt-2">
+                        <table class="table table-sm" data-testid="urls-table">
+                            <thead>
+                                <tr>
+                                    <th>Artefact</th>
+                                    <th>URL</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="font-medium">Base bundle</td>
+                                    <td class="font-mono text-xs break-all">
+                                        {{ $this->bundleBaseUrl !== '' ? $this->bundleBaseUrl : '(bundle WPKG natif non configuré — config agent.wpkg_bundle_url)' }}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="font-medium">hosts.xml</td>
+                                    <td class="font-mono text-xs break-all">{{ $report['expectedHostsXmlUrl'] }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="font-medium">profiles.xml</td>
+                                    <td class="font-mono text-xs break-all">{{ $report['expectedProfilesXmlUrl'] }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Tableau : État GPO résiduelle --}}
             <div class="card bg-base-100 shadow-sm border border-base-200">
                 <div class="card-body">
                     <h3 class="card-title text-lg flex items-center gap-2">
                         <i class="fa-solid fa-server text-secondary"></i>
-                        État GPO `se4_wpkg`
+                        État GPO résiduelle `se4_wpkg`
+                        <span class="badge badge-ghost badge-sm">informatif</span>
                     </h3>
                     <div class="overflow-x-auto">
                         <table class="table table-sm" data-testid="gpo-state-table">
@@ -588,7 +633,7 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
                                         @if ($report['gpoExists'])
                                             <span class="badge badge-success">Oui</span>
                                         @else
-                                            <span class="badge badge-error">Non — publication initiale requise</span>
+                                            <span class="badge badge-ghost">Non — sans effet (l'agent déclenche WPKG)</span>
                                         @endif
                                     </td>
                                 </tr>
@@ -614,7 +659,7 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
                                         @if ($report['templateExists'])
                                             <span class="badge badge-success">Oui</span>
                                         @else
-                                            <span class="badge badge-error">Absent</span>
+                                            <span class="badge badge-ghost">Absent</span>
                                         @endif
                                     </td>
                                 </tr>
@@ -630,26 +675,23 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
                 </div>
             </div>
 
-            {{-- Tableau 2 : Liaisons --}}
+            {{-- Tableau : Liaisons (résiduelles) --}}
             <div class="card bg-base-100 shadow-sm border border-base-200">
                 <div class="card-body">
                     <h3 class="card-title text-lg flex items-center gap-2">
                         <i class="fa-solid fa-link text-info"></i>
-                        Liaisons OU
+                        Liaisons OU (résiduelles)
                         <span class="badge badge-neutral badge-sm">{{ count($report['linkedOus'] ?? []) }}</span>
                     </h3>
                     @if (empty($report['linkedOus']))
-                        <div class="alert alert-warning" data-testid="unlinked-warning">
-                            <i class="fa-solid fa-triangle-exclamation"></i>
+                        <div class="alert alert-info" data-testid="unlinked-info">
+                            <i class="fa-solid fa-circle-info"></i>
                             <div>
-                                <p class="font-medium">GPO non liée — aucun poste ne déclenchera `wpkg.js`.</p>
-                                @if ($report['gpoGuid'])
-                                    <a href="{{ route('admin.gpo.links', ['guid' => trim((string) $report['gpoGuid'], '{}')]) }}"
-                                        class="btn btn-primary btn-sm mt-2" data-testid="link-now-cta">
-                                        <i class="fa-solid fa-plus"></i>
-                                        Lier maintenant
-                                    </a>
-                                @endif
+                                <p class="font-medium">GPO résiduelle non liée à une OU.</p>
+                                <p class="text-sm opacity-80">
+                                    Sans effet sur WPKG : la livraison est déclenchée par l'agent, indépendamment des
+                                    liaisons GPO.
+                                </p>
                             </div>
                         </div>
                     @else
@@ -672,41 +714,7 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
                 </div>
             </div>
 
-            {{-- Tableau 3 : URLs serveur attendues --}}
-            <div class="card bg-base-100 shadow-sm border border-base-200">
-                <div class="card-body">
-                    <h3 class="card-title text-lg flex items-center gap-2">
-                        <i class="fa-solid fa-globe text-accent"></i>
-                        URLs serveur attendues côté postes
-                    </h3>
-                    <p class="text-sm text-base-content/70">
-                        Une fois la GPO publiée et liée, les postes Windows interrogent ces URLs au boot
-                        (`cscript wpkg.js /server=&lt;SE4FS_NAME&gt; /profile=&lt;hostname&gt;`).
-                    </p>
-                    <div class="overflow-x-auto mt-2">
-                        <table class="table table-sm" data-testid="urls-table">
-                            <thead>
-                                <tr>
-                                    <th>Endpoint</th>
-                                    <th>URL</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td class="font-medium">hosts.xml</td>
-                                    <td class="font-mono text-xs break-all">{{ $report['expectedHostsXmlUrl'] }}</td>
-                                </tr>
-                                <tr>
-                                    <td class="font-medium">profiles.xml</td>
-                                    <td class="font-mono text-xs break-all">{{ $report['expectedProfilesXmlUrl'] }}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Tableau 4 : Couverture Bearer --}}
+            {{-- Tableau : Couverture Bearer (diagnostic) --}}
             <div class="card bg-base-100 shadow-sm border border-base-200">
                 <div class="card-body">
                     <h3 class="card-title text-lg flex items-center gap-2">
@@ -714,6 +722,9 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
                         Couverture Bearer Phase 2 (Story 15.5)
                         <span class="badge badge-ghost badge-sm">{{ $this->bearerSummary }}</span>
                     </h3>
+                    <p class="text-xs text-base-content/60">
+                        Diagnostic résiduel : l'agent ne consomme pas de secret Bearer pour WPKG (dépôt local du profil).
+                    </p>
                     @if (! ($report['bearerTableAvailable'] ?? false))
                         <p class="text-sm text-base-content/70">
                             La table `workstation_api_secrets` (Story 15.5 Phase 2) n'est pas migrée sur ce
@@ -768,54 +779,6 @@ new #[Title('Hook GPO ↔ WPKG - SE4FS')] class extends Component {
             @endif
         @endif
     </div>
-
-    {{-- Modale confirmation Re-publier (D5) — inchangée --}}
-    <x-molecules.modal wire:model="isPublishModalOpen" size="max-w-2xl" height="h-auto"
-        title="Re-publier la GPO `se4_wpkg`" icon="fa-shield-halved text-error">
-        <x-molecules.modal.section dense>
-            <div class="alert alert-warning">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <div>
-                    <p class="font-medium">Cette action écrase la GPO `se4_wpkg` dans SYSVOL.</p>
-                    <p class="text-sm">
-                        Elle re-importe le template officiel `/usr/share/sambaedu/gpo/se4_wpkg.zip`, spécialise
-                        les placeholders (`###_SE4FS_NAME_###`, etc.) et pousse l'archive sur SYSVOL via
-                        `samba-tool`/`smbclient`. Au prochain reboot, les postes Windows liés appliqueront
-                        le nouveau script `.cmd` startup → `cscript wpkg.js /server=&lt;SE4FS_NAME&gt;`.
-                    </p>
-                </div>
-            </div>
-            <div class="form-control mt-3">
-                <label class="label cursor-pointer justify-start gap-3">
-                    <input type="checkbox" wire:model.live="forceFlag" class="checkbox checkbox-sm"
-                        data-testid="force-flag" />
-                    <span class="label-text">Forcer même si la GPO est déjà à jour (équivalent `--force`).</span>
-                </label>
-            </div>
-            <p class="text-xs text-base-content/60 mt-2">
-                Note : aucune liaison automatique aux OUs n'est créée. Après publication, allez sur
-                <code class="font-mono">/admin/settings/gpo/{guid}/links</code> pour lier la GPO aux OUs ciblées.
-            </p>
-        </x-molecules.modal.section>
-
-        <x-slot:footer>
-            <button type="button" class="btn btn-ghost btn-sm" wire:click="closePublishModal"
-                data-testid="modal-cancel">
-                Annuler
-            </button>
-            <button type="button" class="btn btn-error btn-sm" wire:click="confirmPublish"
-                wire:loading.attr="disabled" data-testid="modal-confirm-publish">
-                <span wire:loading.remove wire:target="confirmPublish">
-                    <i class="fa-solid fa-upload"></i>
-                    Confirmer la re-publication
-                </span>
-                <span wire:loading wire:target="confirmPublish">
-                    <i class="fa-solid fa-circle-notch fa-spin"></i>
-                    Import SYSVOL en cours…
-                </span>
-            </button>
-        </x-slot:footer>
-    </x-molecules.modal>
 
     {{-- Modale confirmation ajout CIDR allowlist (Story 15.6 / D8) --}}
     <x-molecules.modal wire:model="isAddCidrModalOpen" size="max-w-lg" height="h-auto"

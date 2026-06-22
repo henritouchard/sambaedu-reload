@@ -8,11 +8,16 @@ cp .env.example .env
 APP_KEY="base64:$(php -r 'echo base64_encode(random_bytes(32));')"
 sed -i "s|APP_KEY=.*|APP_KEY=$APP_KEY|" .env
 
-# Générer SE4FS_INSTANCE_ID et SE4FS_INSTANCE_API_KEY
+# Générer SE4FS_INSTANCE_ID (UUID v4) et SE4FS_INSTANCE_API_KEY.
+# uuidgen (paquet uuid-runtime) n'est pas garanti sur la VM ; sans fallback,
+# l'ID restait le placeholder de .env.example (non unique entre instances).
+# PHP est toujours présent (déjà utilisé pour APP_KEY / l'API key ci-dessous).
 if command -v uuidgen >/dev/null 2>&1; then
     SE4FS_INSTANCE_ID=$(uuidgen)
-    sed -i "s|SE4FS_INSTANCE_ID=.*|SE4FS_INSTANCE_ID=$SE4FS_INSTANCE_ID|" .env
+else
+    SE4FS_INSTANCE_ID=$(php -r '$b=random_bytes(16);$b[6]=chr((ord($b[6])&0x0f)|0x40);$b[8]=chr((ord($b[8])&0x3f)|0x80);$h=bin2hex($b);printf("%s-%s-%s-%s-%s",substr($h,0,8),substr($h,8,4),substr($h,12,4),substr($h,16,4),substr($h,20,12));')
 fi
+sed -i "s|SE4FS_INSTANCE_ID=.*|SE4FS_INSTANCE_ID=$SE4FS_INSTANCE_ID|" .env
 
 SE4FS_INSTANCE_API_KEY=$(php -r 'echo "se4fs_instance_".bin2hex(random_bytes(16));')
 sed -i "s|SE4FS_INSTANCE_API_KEY=.*|SE4FS_INSTANCE_API_KEY=$SE4FS_INSTANCE_API_KEY|" .env
@@ -23,7 +28,7 @@ sed -i "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=$REDIS_PASSWORD|" .env
 
 # Charger les valeurs depuis /etc/sambaedu/sambaedu.conf si disponible
 if [ -f "/etc/sambaedu/sambaedu.conf" ]; then
-    source <(grep -E '^[a-z_]+ = ' /etc/sambaedu/sambaedu.conf | sed 's/ = /=/g')
+    source <(grep -E '^[a-z0-9_]+ = ' /etc/sambaedu/sambaedu.conf | sed 's/ = /=/g')
 
     [ -n "$se4ad_ip" ] && sed -i "s|^SE4AD_IP=.*|SE4AD_IP=$se4ad_ip|" .env
 
@@ -48,7 +53,7 @@ fi
 if [ -d "/etc/sambaedu/sambaedu.conf.d" ]; then
     for conf_file in /etc/sambaedu/sambaedu.conf.d/*.conf; do
         [ -f "$conf_file" ] || continue
-        source <(grep -E '^[a-z_]+ = ' "$conf_file" | sed 's/ = /=/g')
+        source <(grep -E '^[a-z0-9_]+ = ' "$conf_file" | sed 's/ = /=/g')
     done
 
     # Ré-appliquer les variables iPXE (elles peuvent venir d'un module .conf.d/)

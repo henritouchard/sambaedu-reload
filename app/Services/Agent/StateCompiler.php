@@ -285,9 +285,18 @@ final class StateCompiler
 
     /**
      * Élit le vainqueur d'un ENSEMBLE de candidats exclusifs (tout le type, ou
-     * un groupe de clé) : la maille la plus spécifique gagne ; conflit au sein
-     * de cette maille → la règle la plus récente gagne (`updated_at` desc puis
-     * `id` desc) + warning `agent.state.conflict` (décision n° 2, AC3).
+     * un groupe de clé) : la maille la plus spécifique gagne ; arbitrage au sein
+     * de cette maille (décision n° 2, AC3) :
+     *
+     *   - **`physical_group` (hérédité physique, Story 27.x)** : le candidat le
+     *     plus PROCHE du poste gagne — profondeur la plus FAIBLE d'abord (l'enfant
+     *     bat le parent dans la chaîne `parent_id`). Ce n'est PAS un conflit :
+     *     c'est la résolution attendue de l'héritage → aucun warning. La récence
+     *     ne départage qu'à profondeur ÉGALE (cas dégénéré, impossible avec
+     *     l'invariant 1-salle-max → warning de sécurité comme un vrai conflit).
+     *   - **autres mailles (logique incluse)** : groupes PLATS → la règle la plus
+     *     récente gagne (`updated_at` desc puis `id` desc) + warning
+     *     `agent.state.conflict` (deux groupes incomparables se disputent la clé).
      *
      * Le warning n'est émis que pour la maille gagnante : un conflit dans une
      * maille battue n'arbitre rien (aucune incidence sur l'état servi).
@@ -306,28 +315,54 @@ final class StateCompiler
             fn (StateCandidate $c): bool => $this->specificity($c->maille) === $bestRank,
         ));
 
-        if (count($inMaille) > 1) {
-            // Récence en précision microseconde (TZ-safe via getTimestamp) :
-            // getTimestamp() seul tronque à la seconde et ferait gagner le
-            // tiebreak `id` à tort entre deux règles modifiées dans la même
-            // seconde (review 23.4 — théorique avec timestamps(0), réel pour
-            // tout futur provider dont le Carbon porte des microsecondes).
-            $recency = static fn (StateCandidate $c): int => $c->updatedAt === null
-                ? PHP_INT_MIN
-                : $c->updatedAt->getTimestamp() * 1_000_000 + (int) $c->updatedAt->format('u');
+        if (count($inMaille) === 1) {
+            return $inMaille[0];
+        }
 
-            usort($inMaille, static function (StateCandidate $a, StateCandidate $b) use ($recency): int {
-                $byRecency = $recency($b) <=> $recency($a);
+        // Récence en précision microseconde (TZ-safe via getTimestamp) :
+        // getTimestamp() seul tronque à la seconde et ferait gagner le
+        // tiebreak `id` à tort entre deux règles modifiées dans la même
+        // seconde (review 23.4 — théorique avec timestamps(0), réel pour
+        // tout futur provider dont le Carbon porte des microsecondes).
+        $recency = static fn (StateCandidate $c): int => $c->updatedAt === null
+            ? PHP_INT_MIN
+            : $c->updatedAt->getTimestamp() * 1_000_000 + (int) $c->updatedAt->format('u');
 
-                return $byRecency !== 0 ? $byRecency : ($b->sourceId <=> $a->sourceId);
-            });
+        // Hérédité physique : dans la chaîne PHYSIQUE, le plus PROCHE (profondeur
+        // faible) prime. Hors physique, seule la récence départage (groupes plats).
+        $isPhysical = $inMaille[0]->maille === StateMaille::PhysicalGroup;
 
+        usort($inMaille, static function (StateCandidate $a, StateCandidate $b) use ($recency, $isPhysical): int {
+            if ($isPhysical) {
+                $byDepth = ($a->depth ?? PHP_INT_MAX) <=> ($b->depth ?? PHP_INT_MAX);
+                if ($byDepth !== 0) {
+                    return $byDepth; // profondeur croissante : l'enfant gagne.
+                }
+            }
+            $byRecency = $recency($b) <=> $recency($a);
+
+            return $byRecency !== 0 ? $byRecency : ($b->sourceId <=> $a->sourceId);
+        });
+
+        // Conflit RÉEL à signaler : des candidats RESTENT indistinguables après le
+        // critère principal de la maille. En physique, l'enfant qui bat le parent
+        // par profondeur n'est PAS un conflit (héritage propre) — on ne signale
+        // qu'une égalité de profondeur au sommet. Hors physique, tout multi-candidat
+        // l'est (la récence a tranché entre groupes incomparables).
+        $tiedAtTop = $isPhysical
+            ? array_values(array_filter(
+                $inMaille,
+                static fn (StateCandidate $c): bool => $c->depth === $inMaille[0]->depth,
+            ))
+            : $inMaille;
+
+        if (count($tiedAtTop) > 1) {
             Log::channel('agent')->warning('[StateCompiler] agent.state.conflict', [
                 'action_type' => 'agent.state.conflict',
                 'workstation_id' => $ctx->workstation->id,
                 'type' => $provider->type(),
                 'maille' => $inMaille[0]->maille->value,
-                'rule_ids' => array_map(static fn (StateCandidate $c): int => $c->sourceId, $inMaille),
+                'rule_ids' => array_map(static fn (StateCandidate $c): int => $c->sourceId, $tiedAtTop),
             ]);
         }
 

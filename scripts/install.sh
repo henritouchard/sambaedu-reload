@@ -260,20 +260,29 @@ generate_env() {
   bash "$SCRIPT_DIR/create-env.sh"
   log_success ".env créé avec succès"
 
-  # Pré-remplir APP_URL avec l'UAI depuis /etc/sambaedu/sambaedu.conf
-  local uai=""
-  if [[ -f "/etc/sambaedu/sambaedu.conf" ]]; then
-    uai=$(grep -oP 'UAI\s*=\s*"\K[^"]+' /etc/sambaedu/sambaedu.conf 2>/dev/null || echo "")
-  fi
+  # APP_URL : create-env.sh la dérive de se4_url (/etc/sambaedu/sambaedu.conf).
+  # On ne pré-remplit le placeholder URL_A_COMPLETER que si elle est restée VIDE
+  # (pas de se4_url) — sinon on conserve la valeur dérivée. Le placeholder reste
+  # le garde-fou « à compléter » pour les déploiements proxifiés où l'URL
+  # publique réelle (reverse-proxy lab1/controlHub) diffère du se4_url interne.
+  local current_app_url uai=""
+  current_app_url=$(grep -oP '^APP_URL=\K.*' "$APP_DIR/.env" 2>/dev/null || echo "")
 
-  if [[ -n "$uai" ]]; then
-    sed -i "s|^APP_URL=.*|APP_URL=https://URL_A_COMPLETER/${uai}|" "$APP_DIR/.env"
-    log "UAI détecté : $uai"
-    log_warning "APP_URL pré-remplie : https://URL_A_COMPLETER/${uai}"
+  if [[ -n "$current_app_url" ]]; then
+    log "APP_URL déjà dérivée par create-env.sh : $current_app_url (conservée)"
+    log_warning "Déploiement derrière un reverse-proxy ? Remplacez APP_URL par l'URL publique réelle."
   else
-    sed -i "s|^APP_URL=.*|APP_URL=https://URL_A_COMPLETER|" "$APP_DIR/.env"
-    log_warning "UAI non trouvé dans /etc/sambaedu/sambaedu.conf"
-    log_warning "APP_URL pré-remplie : https://URL_A_COMPLETER"
+    if [[ -f "/etc/sambaedu/sambaedu.conf" ]]; then
+      uai=$(grep -oP 'UAI\s*=\s*"\K[^"]+' /etc/sambaedu/sambaedu.conf 2>/dev/null || echo "")
+    fi
+    if [[ -n "$uai" ]]; then
+      sed -i "s|^APP_URL=.*|APP_URL=https://URL_A_COMPLETER/${uai}|" "$APP_DIR/.env"
+      log "UAI détecté : $uai"
+      log_warning "APP_URL pré-remplie : https://URL_A_COMPLETER/${uai}"
+    else
+      sed -i "s|^APP_URL=.*|APP_URL=https://URL_A_COMPLETER|" "$APP_DIR/.env"
+      log_warning "se4_url/UAI absents — APP_URL pré-remplie : https://URL_A_COMPLETER"
+    fi
   fi
 
   # Pré-remplir ESTABLISHMENT_NAME avec etab_name depuis /etc/sambaedu/sambaedu.conf
