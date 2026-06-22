@@ -152,6 +152,21 @@
 					<RequiresUserInput>false</RequiresUserInput>
 					<CommandLine>%comspec% /c if exist %windir%\action.cmd (call %windir%\action.cmd)</CommandLine>
 				</SynchronousCommand>
+				<!-- Reboot terminal de fin d'install (ère agent) : porte le `shutdown -r`
+				     du legacy `cmd_oobe` (action.php:260), jamais porté car `handleOobe`
+				     renvoie un body vide (action.cmd 0 octet). Sans lui, la session OOBE
+				     se4install finit ses FirstLogonCommands et reste ouverte sans reboot.
+				     `/t 30` laisse une fenêtre ; si un action.cmd futur planifie déjà un
+				     shutdown, ce 2e appel no-op (1190 « shutdown already in progress »).
+				     Pas de boucle : LogonCount=2 mais les FirstLogonCommands ne tournent
+				     qu'au 1er logon. Marqueur install.log posé pour le suivi (parité
+				     legacy `cmd_oobe`). -->
+				<SynchronousCommand wcm:action="add">
+					<Order>6</Order>
+					<Description>reboot fin install</Description>
+					<RequiresUserInput>false</RequiresUserInput>
+					<CommandLine>%comspec% /c (if not exist c:\netinst md c:\netinst) &amp; echo install finie&gt;c:\netinst\install.log &amp; shutdown /r /t 30 /c "Installation terminee, redemarrage"</CommandLine>
+				</SynchronousCommand>
 			</FirstLogonCommands>
 		</component>
 	</settings>
