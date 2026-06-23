@@ -1,6 +1,6 @@
 # Story 27.16: Déploiement automatisé de la GPO bootstrap `SE_agent_bootstrap` + isolation par blocage d'héritage (OU computers de l'établissement)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
