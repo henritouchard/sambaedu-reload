@@ -136,6 +136,18 @@ return [
         // prod sur les postes non-mis-à-jour (cf. `docs/qa/domains/ipxe.md`
         // Section 16 « Compat postes legacy »).
         '^ipxe/action/' => 'gone:action iPXE inconnue ou format invalide - utiliser /ipxe/action/{action} valide',
+        // Cleanup résiduel — fichiers .php du module legacy ipxe jamais migrés
+        // mais non bloqués jusqu'ici (atteignables via proxy `^/ipxe/`). Fermeture
+        // explicite du canal : aucun n'est chaîné par le flow natif (vérifié — seul
+        // `Win10/repair.bat.php` reste appelé par winpe.blade et N'EST PAS bloqué).
+        //   - action.php / clonage.php : dispatchers `?action=` portés en natif
+        //     (/ipxe/action/{action}, IpxeActionController / IpxeWindowsActionController).
+        //   - ltsp.php / preboot.php / reservation.php : fonctionnalités non portées en SE5.
+        '^ipxe/action\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/{action} natif SE5',
+        '^ipxe/clonage\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/action/clonezilla_* natif SE5',
+        '^ipxe/ltsp\.php(?:\?.*)?$' => 'gone:LTSP non supporté en SE5',
+        '^ipxe/preboot\.php(?:\?.*)?$' => 'gone:utiliser /ipxe/boot natif SE5',
+        '^ipxe/reservation\.php(?:\?.*)?$' => 'gone:réservation non portée en SE5',
     ],
 
     /*
