@@ -58,7 +58,12 @@ final class SeAgentBootstrapTemplateTest extends TestCase
     {
         $gptIni = (string) file_get_contents($this->source . '/GPT.INI');
         self::assertStringContainsString('[CSE]', $gptIni);
-        self::assertStringContainsString('gPCMachineExtensionNames', $gptIni);
+        // Clé en MINUSCULES : le parseur legacy `get_gpo_template_info` teste
+        // `isset($gptini['CSE']['gpcmachineextensionnames'])` (parse_ini_string
+        // préserve la casse). Une clé `gPCMachineExtensionNames` ferait échouer
+        // la reconnaissance → « gpo invalide ».
+        self::assertStringContainsString('gpcmachineextensionnames=', $gptIni);
+        self::assertStringNotContainsString('gPCMachineExtensionNames', $gptIni);
         // displayName SE5 (renommé 27.16) — l'ancien préfixe se4_ a disparu.
         self::assertStringContainsString('displayName=SE_agent_bootstrap', $gptIni);
         self::assertStringNotContainsString('se4_agent_bootstrap', $gptIni);

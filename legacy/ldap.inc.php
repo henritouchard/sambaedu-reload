@@ -1623,6 +1623,25 @@ if (!function_exists('get_config')) {
         // Partir du $config global (initialisé par legacy_build_config dans config.inc.php)
         $globalConfig = $GLOBALS['config'] ?? [];
 
+        // Auto-réparation : `legacy_build_config()` s'exécute UNE fois au premier
+        // chargement du bridge (config.inc.php), et peut figer `$GLOBALS['config']`
+        // avec des clés LDAP VIDES si SambaEduConfig n'avait pas encore pu lire
+        // /etc/sambaedu/sambaedu.conf à cet instant du boot (ordre de chargement
+        // des providers). Le global reste alors gelé vide pour tout le process →
+        // tout appelant legacy (search_ad, import_gpo, wpkg…) hérite d'un
+        // ldap_admin_passwd/base_dn vide et le bind LDAP est refusé. Si on détecte
+        // ces clés critiques vides, on reconstruit à frais (SambaEduConfig est un
+        // singleton caché → coût négligeable) et on repropage dans le global.
+        if (empty($globalConfig['ldap_base_dn']) || empty($globalConfig['ldap_admin_passwd'])) {
+            if (function_exists('legacy_build_config')) {
+                $rebuilt = legacy_build_config();
+                if (!empty($rebuilt['ldap_base_dn']) || !empty($rebuilt['ldap_admin_passwd'])) {
+                    $globalConfig = array_merge($globalConfig, $rebuilt);
+                    $GLOBALS['config'] = $globalConfig;
+                }
+            }
+        }
+
         // Fusionner : le $config passé en paramètre peut contenir des clés supplémentaires
         $config = !empty($config) ? array_merge($globalConfig, $config) : $globalConfig;
 
@@ -1631,7 +1650,7 @@ if (!function_exists('get_config')) {
             $config['bind'] = new LdapShimConnection();
         }
 
-        // S'assurer que les DNs sont construits
+        // S'assurer que les DNs sont construits (dernier filet si le rebuild n'a rien donné)
         if (empty($config['ldap_base_dn'])) {
             $config['ldap_base_dn'] = config('sambaedu.legacy_ldap.base_dn', '');
         }

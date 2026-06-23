@@ -422,7 +422,23 @@ deploy_docker() {
 install_composer() {
   log "Installation des dépendances Composer..."
   cd "$APP_DIR"
-  mkdir -p bootstrap/cache
+
+  # Le hook post-autoload-dump de composer lance `artisan package:discover`,
+  # qui boote le framework et instancie le compilateur Blade avec le chemin
+  # config('view.compiled') = realpath(storage_path('framework/views')).
+  # realpath() renvoie false si le dossier n'existe pas → « Please provide a
+  # valid cache path. ». Sur un déploiement from-scratch (tarball / sync
+  # inotify qui ne crée pas les arborescences vides .gitignore-only), ces
+  # dossiers runtime peuvent manquer. On les crée AVANT composer install.
+  mkdir -p \
+    bootstrap/cache \
+    storage/framework/views \
+    storage/framework/cache/data \
+    storage/framework/sessions \
+    storage/framework/testing \
+    storage/logs \
+    storage/app/public
+
   composer install --no-dev --optimize-autoloader --no-interaction
 
   # S'assurer que vendor/ appartient à www-admin (groupe web)

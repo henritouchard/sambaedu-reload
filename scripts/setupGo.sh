@@ -73,7 +73,14 @@ if [[ "$need_install" == true ]]; then
     log "Installation go${GO_VERSION} dans $GO_PREFIX..."
     tarball="$(mktemp /tmp/go.XXXXXX.tar.gz)"
     trap 'rm -f "$tarball"' EXIT
-    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o "$tarball"
+    # -4 : la VM n'a pas de route IPv6 sortante — forcer l'IPv4 évite d'attendre
+    #      des AAAA inutilisables (et les « Could not resolve host » quand le DC
+    #      ne renvoie transitoirement que des AAAA).
+    # --retry-all-errors : un SERVFAIL/timeout DNS transitoire (exit 6) se
+    #      rattrape au lieu de faire échouer toute l'étape. L'intégrité reste
+    #      garantie par le sha256sum -c épinglé juste après.
+    curl -fsSL -4 --connect-timeout 15 --retry 4 --retry-delay 3 --retry-all-errors \
+        "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o "$tarball"
     echo "${GO_SHA256}  ${tarball}" | sha256sum -c - >/dev/null
     rm -rf "$GO_PREFIX"
     tar -C /usr/local -xzf "$tarball"

@@ -53,6 +53,9 @@ class AgentBootstrapPublisher
     /** Nom SE5 (= displayName GPT.INI = basename du template). */
     public const DISPLAY_NAME = 'SE_agent_bootstrap';
 
+    /** Cache de la sonde `kinit --password-file` (Heimdal=true, MIT=false). */
+    private ?bool $kinitSupportsPasswordFile = null;
+
     public function __construct(
         private readonly GpoService $gpoService,
         private readonly GpoTemplateRegistry $registry,
@@ -337,65 +340,64 @@ class AgentBootstrapPublisher
     /**
      * `kinit Administrator` dans le ccache dédié.
      *
-     * Pb3 — le mot de passe est écrit dans un **fichier temporaire 0600**
-     * (ccache-adjacent, purgé en `finally`) passé via `--password-file=<fichier>`.
-     * On évite ainsi `--password-file=/dev/stdin` (non garanti MIT/Heimdal : si le
-     * flag est ignoré, kinit retombe sur une lecture TTY → blocage interactif).
-     * Le mot de passe n'est JAMAIS en argv (`ps`) ni dans les logs. Un timeout
-     * borne le Process pour ne jamais pendre.
+     * Pb3 — le mot de passe est fourni via **STDIN** (`Process::input`), jamais
+     * en argv (`ps`) ni dans un fichier ni dans les logs. C'est le SEUL canal
+     * portable entre implémentations :
+     *  - MIT kinit (Debian `krb5-user`) n'a PAS d'option `--password-file` ; son
+     *    prompter lit le mot de passe sur stdin dès que ce n'est pas un TTY.
+     *  - Heimdal kinit exige explicitement `--password-file=STDIN` pour lire
+     *    stdin (sinon il va sur /dev/tty → blocage).
+     * On sonde donc la capacité `--password-file` une fois et on n'ajoute le flag
+     * que si kinit le supporte. Un timeout borne le Process pour ne jamais pendre.
      */
     private function kinitAdministrator(string $adminPasswd, string $ccache, \App\Gpo\Support\GpoActionLog $log): void
     {
         $principal = $this->administratorPrincipal();
         $log->step('kinit Administrator (ccache dédié)', ['principal' => $principal]);
 
-        $passwdFile = $this->makeTempPasswordFile($adminPasswd);
+        $command = ['kinit'];
+        if ($this->kinitSupportsPasswordFile()) {
+            $command[] = '--password-file=STDIN';
+        }
+        $command[] = $principal;
 
-        try {
-            $result = Process::env(['KRB5CCNAME' => $ccache])
-                ->timeout(30)
-                ->run(['kinit', '--password-file=' . $passwdFile, $principal]);
+        $result = Process::env(['KRB5CCNAME' => $ccache])
+            ->input($adminPasswd)
+            ->timeout(30)
+            ->run($command);
 
-            if (! $result->successful()) {
-                throw new RuntimeException(sprintf(
-                    'kinit Administrator échoué (exit=%d) — impossible d\'établir le contexte d\'écriture SYSVOL. stderr: %s',
-                    $result->exitCode() ?? -1,
-                    $this->scrub($result->errorOutput()),
-                ));
-            }
+        if (! $result->successful()) {
+            throw new RuntimeException(sprintf(
+                'kinit Administrator échoué (exit=%d) — impossible d\'établir le contexte d\'écriture SYSVOL. stderr: %s',
+                $result->exitCode() ?? -1,
+                $this->scrub($result->errorOutput()),
+            ));
+        }
 
-            // Pb5 — durcir les perms du ccache (le ticket Administrator ne doit
-            // être lisible que par le user courant).
-            $ccachePath = preg_replace('/^FILE:/', '', $ccache) ?? $ccache;
-            if (is_file($ccachePath)) {
-                @chmod($ccachePath, 0600);
-            }
-        } finally {
-            // Purge immédiate du fichier mot de passe temp (jamais persisté).
-            if (is_file($passwdFile)) {
-                @unlink($passwdFile);
-            }
+        // Pb5 — durcir les perms du ccache (le ticket Administrator ne doit
+        // être lisible que par le user courant).
+        $ccachePath = preg_replace('/^FILE:/', '', $ccache) ?? $ccache;
+        if (is_file($ccachePath)) {
+            @chmod($ccachePath, 0600);
         }
     }
 
     /**
-     * Écrit `$adminPasswd` dans un fichier temporaire **0600** (proche du ccache)
-     * destiné à `kinit --password-file=`. Le caller le purge en `finally`.
+     * Sonde si le `kinit` du PATH supporte `--password-file` (Heimdal) ou non
+     * (MIT). MIT comme Heimdal écrivent leur usage sur stderr ; on cherche le
+     * flag dans la sortie combinée. Mémoïsé : la réponse ne change pas pendant
+     * la vie du process.
      */
-    private function makeTempPasswordFile(string $adminPasswd): string
+    private function kinitSupportsPasswordFile(): bool
     {
-        $path = sys_get_temp_dir() . '/krb5pw_se_bootstrap_' . bin2hex(random_bytes(6));
-        // Créer le fichier en 0600 AVANT d'y écrire (pas de fenêtre world-readable).
-        $handle = fopen($path, 'w');
-        if ($handle === false) {
-            throw new RuntimeException('Impossible de créer le fichier mot de passe temporaire kinit.');
+        if ($this->kinitSupportsPasswordFile !== null) {
+            return $this->kinitSupportsPasswordFile;
         }
-        @chmod($path, 0600);
-        fwrite($handle, $adminPasswd);
-        fclose($handle);
-        @chmod($path, 0600);
 
-        return $path;
+        $help = Process::timeout(5)->run(['kinit', '--help']);
+        $text = $help->output() . $help->errorOutput();
+
+        return $this->kinitSupportsPasswordFile = str_contains($text, '--password-file');
     }
 
     /**
@@ -432,7 +434,7 @@ class AgentBootstrapPublisher
     {
         require_once base_path('legacy/bootstrap.php');
 
-        foreach (['get_config', 'import_gpo'] as $fn) {
+        foreach (['get_config', 'import_gpo', 'search_ad'] as $fn) {
             if (! function_exists($fn)) {
                 throw new RuntimeException(sprintf('Fonction legacy `%s` indisponible après bootstrap — environnement dégradé.', $fn));
             }
@@ -441,6 +443,17 @@ class AgentBootstrapPublisher
         /** @var array<string,mixed> $config */
         $config = [];
         $config = \get_config($config);
+
+        // PHP 8 — `import_gpo()` (legacy central /var/www/sambaedu, non porté)
+        // fait `count($gpo)` sur le retour de `search_ad(...,'gpo')`. Ce retour
+        // est `false` UNIQUEMENT quand le bind LDAP échoue (ldap_admin_passwd
+        // absent/illisible dans /etc/sambaedu/sambaedu.conf, ou DC injoignable) —
+        // et `count(false)` est une TypeError fatale en PHP 8.2 qui masque la
+        // vraie cause. GPO absente => `search_ad` renvoie `[]` (count 0) et
+        // import_gpo la crée nativement via sa branche `else` (gpocreate). On
+        // sonde donc le bind AVANT pour convertir l'échec LDAP en message clair
+        // sans toucher au legacy partagé.
+        $this->assertGpoSearchUsable($config);
 
         $log->step('import_gpo (shim legacy) invoqué', ['display_name' => self::DISPLAY_NAME]);
 
@@ -459,6 +472,31 @@ class AgentBootstrapPublisher
         }
 
         return $ok;
+    }
+
+    /**
+     * Sonde que `search_ad(...,'gpo')` est exploitable (bind LDAP OK) AVANT que
+     * `import_gpo` ne fasse `count()` dessus.
+     *
+     * `search_ad` renvoie `false` quand le bind LDAP échoue — typiquement
+     * `ldap_admin_passwd` absent/illisible dans /etc/sambaedu/sambaedu.conf, ou
+     * DC injoignable. En PHP 8.2 le `count(false)` d'import_gpo serait une
+     * TypeError opaque ; on lève ici une erreur explicite à la place. Un retour
+     * `[]` (GPO absente) ou un array (présente) est valide : import_gpo gère les
+     * deux nativement (création via `gpocreate` dans sa branche `else`).
+     */
+    private function assertGpoSearchUsable(array $config): void
+    {
+        // nocache=true : ne PAS relire un éventuel `false` mémoïsé (apc.enable_cli=On).
+        $probe = \search_ad($config, self::DISPLAY_NAME, 'gpo', 'all', [], 'subtree', false, true);
+
+        if ($probe === false) {
+            throw new RuntimeException(
+                'Recherche LDAP de la GPO a échoué (bind refusé). Vérifier `ldap_admin_passwd` '
+                . 'dans /etc/sambaedu/sambaedu.conf (présent et lisible par www-admin) et la '
+                . 'joignabilité du contrôleur de domaine.'
+            );
+        }
     }
 
     // -----------------------------------------------------------------------
