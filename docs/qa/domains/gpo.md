@@ -2287,3 +2287,60 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 \
 - [ ] **17.5-4** `winscript-logs:disable` → `.env` `=false`, sortie iso-legacy (parité bytes) restaurée
 - [ ] **17.5-5** Idempotence enable/disable : aucune duplication de la variable, `.env` non destructif
 - [ ] **17.5-6** Tests automatisés verts : `php artisan test --filter WinscriptLogsCommands` (9 PASS, fixture `.env` isolée)
+
+## Story 27.14 — Extinction du canal de configuration legacy
+
+> **Pré-requis** : le parc tourne déjà sur le canal AGENT desired-state (bootstrap GPO `se4_agent_bootstrap` 25.4 déployé, postes enrôlés, agent ≥ version de parité). Cette story SUPPRIME physiquement le transport de config historique des postes ; elle n'ajoute aucune ressource au canal agent. **Gate de sortie** : la checklist de parité (ci-dessous, Scénario 27.14-0) doit être documentée avant la mise en production.
+
+> **Frontière critique à NE PAS confondre** : `/api/v1/workstation-config/*` (legacy, SUPPRIMÉ) ≠ `/api/v1/agent/*` (canal agent, INTACT). Le bootstrap `se4_agent_bootstrap` (25.4) SURVIT, figé.
+
+### Scénario 27.14-0 — Gate de parité de compétences (validation de sortie, palier 3)
+
+1. Dérouler la table « Checklist de parité » de la story 27-14 : pour chaque capacité legacy (wallpapers+overlay, raccourcis/nature de poste, lecteurs réseau, imprimantes, associations de fichiers, registre/capacités, config d'app FF/TB, applications/WPKG, ciblage par critères, réveil au logon), démontrer l'équivalent sur le canal agent sur **environnement réaliste** : postes migrés ET neufs, plusieurs salles.
+2. **Attendu** : chaque capacité dont la story SE5 est `done` est cochée `À PARITÉ` avec preuve de démo ; les capacités en `review` sont notées (le code legacy correspondant part quand même — extinction TOTALE réversible décidée par Henri 2026-06-19, le gate est une validation de sortie documentée, pas un blocage dur).
+3. **Réversibilité** : avant toute purge sèche serveur, la neutralisation est réversible (move/rename `*.disabled-27.14` côté VM ; git côté repo).
+
+### Scénario 27.14-1 — Plus aucune route legacy de config ne répond
+
+1. `cd /var/www/sambaedu-reload && php artisan route:list`
+2. **Attendu** : AUCUNE des routes suivantes n'apparaît :
+   - `gpo/shortcuts_out.php`, `gpo/wallpaper_out.php`, `gpo/firefox_out.php`, `gpo/thunderbird_out.php`, `gpo/network_out.php`, `gpo/veyon_out.php`, `gpo/associations_out.php`, `gpo/applications.php` (ex-`migration.legacy.*`) ;
+   - `api/v1/workstation-config/*` (ex-`agent.v1.config.*`, 9 routes) ;
+   - `api/v1/shortcuts/export/{script,file,icon}` (ex-`shortcuts.export.*`) ;
+   - `api/policies/{kind}/{id}` (ex-`app-policy.canonical`).
+3. **Attendu (survivants)** : `wpkg/linux_out.php`, `wpkg/winget_out.php`, `api/v1/agent/{ca,stable,stable/download,state,report,...}`, les redirections 301 `app/gpo/*`, les miniatures `app/wallpapers/{wallpaper}/thumbnail` + `app/wallpaper-assets/{asset}/thumbnail`, et les routes ControlHub `api/v1/shortcuts/{sync,delete}` répondent toujours.
+4. Côté poste migré : un appel HTTP à `http://<SE4FS>/gpo/wallpaper_out.php` retourne désormais le **catch-all legacy** (port 8082) ou 404 — il n'enrôle plus ni ne sert de fragment. Le poste reçoit sa configuration **exclusivement par l'agent**.
+
+### Scénario 27.14-2 — Bootstrap (25.4) intact, dernier artefact AD
+
+1. `git status resources/gpo/se4_agent_bootstrap/` → **diff vide** (GPT.INI + `Machine/Scripts/Startup/startup.cmd` + `scripts.ini` intouchés, octet pour octet).
+2. `php artisan test tests/Unit/Gpo/Se4AgentBootstrapTemplateTest.php` → 4 PASS (publiable, CSE, dispatcher générique, CRLF).
+3. **Attendu** : `GpoTemplateRegistry::isPublishable('se4_agent_bootstrap')` renvoie `true`. Le startup.cmd ne dépend que de `/api/v1/agent/ca` + `/api/v1/agent/stable/download` (canal agent, intacts).
+
+### Scénario 27.14-3 — Kill-switch + canal Linux/install Windows préservés (hors scope)
+
+1. **Attendu** : le middleware `legacy.config.channel` (`EnsureLegacyConfigChannelEnabled`), le flag `LEGACY_CONFIG_CHANNEL_ENABLED` (`config/sambaedu.php` défaut `true`) et la ligne `.env.example` sont CONSERVÉS — ils gatent encore `linux_out`/`winget_out`.
+2. `LEGACY_CONFIG_CHANNEL_ENABLED=true` (défaut) → `GET /wpkg/linux_out.php` (depuis une IP LAN allowlistée) répond 200 (liste APT). `LEGACY_CONFIG_CHANNEL_ENABLED=false` → 410. La page `/admin/settings/gpo/wpkg-deployment` conserve sa carte « Réglages de déploiement » (toggle winget + allowlist IP) ; l'AUDIT GPO `se4_wpkg` et le bouton « Re-publier » ont disparu.
+
+### Scénario 27.14-4 — KPI « 0 GPO créée/modifiée hors bootstrap » (audit SYSVOL opérateur)
+
+> Non automatisable depuis le repo — **vérification opérateur en lab** (brief §153).
+
+1. Sur le DC, lister les GPO : `samba-tool gpo listall` (ou via la page `/admin/settings/gpo`).
+2. Inventorier le SYSVOL : aucune GPO de configuration de poste (`se4_*`, `etab_*`) ne doit avoir été **créée ou modifiée** par SE5 depuis l'extinction. Seul `se4_agent_bootstrap` est légitimement publiable, et il n'est jamais ré-édité.
+3. **Attendu** : compteur des écritures SYSVOL SE5 hors bootstrap = **0**. Les GPO `se4_*` résiduelles côté lab sont des coquilles figées (déliées hors worktree, action opérateur) — elles ne sont plus alimentées par SE5.
+4. **Note inotify** : les fichiers de code supprimés dans le worktree ne se propagent PAS à la VM (mémoire `project_inotify_no_delete_sync`). Après merge sur `main`, des fantômes peuvent subsister côté VM (`legacy/modules/gpo/*.php`, `app/Gpo/Services/*` supprimés) — nettoyage SSH à valider avec l'opérateur, jamais depuis un worktree.
+
+### Scénario 27.14-5 — Postes migrés reçoivent leur conf par l'agent (non-régression R2)
+
+1. Sur un poste **migré** SE4→SE5 (agent vivant) : au prochain cycle desired-state, vérifier que wallpaper, raccourcis, lecteurs, imprimantes, associations, config d'app et applications convergent via `/api/v1/agent/state` → handlers Go (plus aucun appel `gpo/*_out.php`).
+2. **Risque à surveiller (R2)** : un poste migré dont l'agent serait mort/absent NE reçoit plus de fragment de réinjection legacy (le passthrough `MigrationController` est supprimé). Confirmer l'état réel du parc migré (agent déployé partout) avant la bascule prod. Le kill-switch (actif depuis 2026-06-12) montrait déjà le comportement cible (fragment no-op) ; la suppression le rend permanent.
+
+### Checklist rapide 27.14
+
+- [ ] **27.14-0** Gate de parité documenté (table de la story remplie, démo réaliste postes migrés+neufs/salles multiples)
+- [ ] **27.14-1** `route:list` : 0 route `gpo/*_out.php` / `gpo/applications.php` / `workstation-config/*` / `shortcuts/export/*` / `api/policies/*` ; survivants (linux_out/winget_out, agent, 301, thumbnails, ControlHub) présents
+- [ ] **27.14-2** Bootstrap `se4_agent_bootstrap` diff vide + `Se4AgentBootstrapTemplateTest` vert + `isPublishable` true
+- [ ] **27.14-3** Kill-switch + linux_out/winget_out + carte réglages déploiement préservés ; audit/re-publish `se4_wpkg` retirés
+- [ ] **27.14-4** KPI 0 GPO hors bootstrap (audit SYSVOL opérateur lab) ; fantômes inotify nettoyés hors worktree
+- [ ] **27.14-5** Postes migrés convergent par l'agent (zéro appel `*_out.php`) ; parc migré couvert par l'agent avant bascule prod

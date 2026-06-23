@@ -108,10 +108,8 @@ class ScriptsOsNamespaceTest extends TestCase
         self::assertStringContainsString('/refresh', $apiRoutes);
         self::assertStringContainsString('/ping', $apiRoutes);
 
-        // Routes 16.13bis : /bootstrap.{cmd,sh} ont été remplacées par
-        // /api/v1/workstation-config/* (MigrationController). On asserte la
-        // présence du nouveau prefix workstation-config.
-        self::assertStringContainsString('v1/workstation-config', $apiRoutes);
+        // Story 27.14 — l'assertion sur le prefix `/api/v1/workstation-config`
+        // a été retirée : ce groupe (canal de config legacy) a été supprimé.
     }
 
     #[Test]

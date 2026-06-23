@@ -565,211 +565,23 @@ return [
         // Overridable via env GPO_KERB_OPTION.
         'kerb_option' => env('GPO_KERB_OPTION', '--use-kerberos=desired'),
 
-        // Story 16.6 — Sous-config WPKG GPO synchronizer (`WpkgGpoSynchronizer`).
-        // Toutes les valeurs sont overridables via env() pour permettre un
-        // déploiement Ansible / tuning prod sans patcher le code.
-        //
-        // - `template_path` : path du template officiel `.zip` (parité legacy
-        //   `/usr/share/sambaedu/gpo/se4_wpkg.zip`). Overridable pour tests
-        //   et installations atypiques.
-        // - `bearer_required` : feature flag Phase 2 (Story 15.5). Par défaut
-        //   `false` (mode tolérant — TD-16.6-3). Passe à `true` pour bumper
-        //   la sévérité Error/Warning quand des postes liés sont sans secret.
-        // - `lock_timeout` : TTL du `Cache::lock('gpo:wpkg:sync', N)`. 300 s
-        //   par défaut (review fix #10 — 60 s trop court pour absorber un
-        //   `import_gpo` lent : extraction + spécialisation + `smbclient put`).
-        // - `lock_wait` : délai max d'attente bloquante pour acquérir le lock
-        //   (`$lock->block(N)`). 30 s par défaut (review fix #4).
-        'wpkg_sync' => [
-            'template_path' => env('GPO_WPKG_TEMPLATE_PATH', '/usr/share/sambaedu/gpo/se4_wpkg.zip'),
-            'bearer_required' => (bool) env('GPO_WPKG_BEARER_REQUIRED', false),
-            'lock_timeout' => (int) env('GPO_WPKG_LOCK_TIMEOUT', 300),
-            'lock_wait' => (int) env('GPO_WPKG_LOCK_WAIT', 30),
-        ],
+        // Story 27.14 — La sous-config `wpkg_sync` (template `se4_wpkg.zip`,
+        // bearer, locks) a été SUPPRIMÉE avec `WpkgGpoSynchronizer` : la GPO
+        // `se4_wpkg` n'est plus un transport actif (27.5 — l'agent déclenche
+        // `wpkg-client.vbs`, plus la GPO). La livraison WPKG native (bundle
+        // statique + agent) ne consomme aucune de ces clés.
 
-        // Story 16.7 — Whitelist des substitutions `###_KEY_###` autorisées
-        // dans les templates de scripts applications (`.windows`, `.linux`,
-        // `scripts.json`). Décision user D3 (2026-05-12) : config statique.
-        //
-        // Sécurité (audit F3 audit-gpo-legacy adressé) :
-        //  - Whitelist immuable : seules les clés explicitement listées peuvent
-        //    être substituées.
-        //  - Aucun input user (machine, user, action, uuid…) injectable comme
-        //    clé : la map est strictement statique et lue par
-        //    `ApplicationScriptsAssembler::applySubstitutions()`.
-        //  - Les placeholders hors whitelist restent inchangés (warning log
-        //    channel `daily`) → ne casse pas iso-bytes legacy
-        //    (`traitement_data.inc.php::write_param()` ne substituait que les
-        //    clés de config présentes).
-        //
-        // Format des specs (sérialisable — compatible `php artisan config:cache`) :
-        //  - ['config' => 'path', 'env' => 'VAR', 'default' => 'fallback']
-        //    Chaîne de résolution : config() → env() → default. Une valeur
-        //    vide ('') est traitée comme manquante (fall-through).
-        //  - ['value' => 'static'] : valeur littérale (utilisée pour `TMP_DIR`).
-        //  - Une spec qui résout à null est ignorée (placeholder laissé
-        //    inchangé dans la sortie).
-        //
-        // @legacy-port path="sambaedu/includes/traitement_data.inc.php (write_param)"
-        // @see \App\Gpo\Services\ApplicationScriptsAssembler::resolveSubstitutionValue
-        'applications' => [
-            'substitutions' => [
-                'whitelist' => [
-                    // Identifiant DNS du serveur SE4FS (utilisé dans curl URL des
-                    // scripts cmd/bash, cf. legacy `applications.inc.php:399,405,423`).
-                    'SE4FS_NAME' => [
-                        'config' => 'sambaedu.se4fs_name',
-                        'env' => 'SE4FS_NAME',
-                    ],
-
-                    // Domaine DNS de l'établissement (suffixe utilisé dans
-                    // `applications.inc.php:405,426`).
-                    'DOMAIN' => [
-                        'config' => 'sambaedu.domain',
-                        'env' => 'SE4FS_DOMAIN',
-                    ],
-
-                    // Identifiant établissement (UAI / RNE) — utilisé dans header
-                    // `cmd` `applications.inc.php:368` (`SET TAG=...`).
-                    'UAI' => [
-                        'config' => 'sambaedu.uai',
-                        'env' => 'SE4FS_UAI',
-                    ],
-
-                    // Chemin partage NETLOGON (déploiement scripts/exécutables Windows).
-                    'NETLOGON_PATH' => [
-                        'config' => 'sambaedu.netlogon_path',
-                        'env' => 'NETLOGON_PATH',
-                        'default' => '/var/lib/samba/sysvol',
-                    ],
-
-                    // URL/base du dépôt WPKG (consommée par `wpkg_scripts` côté legacy).
-                    'WPKG_URL' => [
-                        'config' => 'sambaedu.wpkg.base_url',
-                        'default' => '',
-                    ],
-
-                    // Domaine Samba (NetBIOS) — utilisé dans `local_admin_scripts`
-                    // pour `net localgroup administrateurs <DOMAIN>\<user>`.
-                    'SAMBA_DOMAIN' => [
-                        'config' => 'sambaedu.samba_domain',
-                        'env' => 'SAMBA_DOMAIN',
-                    ],
-
-                    // Dossier temporaire serveur (parité legacy `sys_get_temp_dir()`).
-                    'TMP_DIR' => ['value' => '/tmp'],
-
-                    // Nom UI du dossier "Mes Documents" (legacy `applications.inc.php:291`).
-                    'CLOUD_PERSO_NAME' => [
-                        'config' => 'sambaedu.cloud_perso_name',
-                        'default' => 'Mes Documents',
-                    ],
-
-                    // ── Story 17.2 — 8 nouvelles clés (audit Section B) ──────────
-
-                    // Nom de l'admin local Windows créé sur chaque poste installé.
-                    // Iso-legacy `applications.inc.php` → `$config['adminse_name']`.
-                    // Consommé par : `folders/clean_profiles` (risque bloquant :
-                    // suppression dossier admin local si vide — cf. audit Section A).
-                    // Default 'adminse' évite ce risque en absence de configuration.
-                    'ADMINSE_NAME' => [
-                        'config' => 'sambaedu.windows.adminse_name',
-                        'env' => 'SAMBAEDU_ADMINSE_NAME',
-                        'default' => 'adminse',
-                    ],
-
-                    // Masque sous-réseau DHCP (forme simple).
-                    // Iso-legacy `$config['dhcp_masque']` (sambaedu.conf).
-                    // Consommé par : `firewall/startup.windows` (règles netsh).
-                    // Décision Q-2 : forme simple (pas multi-VLAN indexé).
-                    'DHCP_MASQUE' => [
-                        'config' => 'sambaedu.dhcp_masque',
-                        'env' => 'SAMBAEDU_DHCP_MASQUE',
-                        'default' => '',
-                    ],
-
-                    // Adresse réseau DHCP (forme simple).
-                    // Iso-legacy `$config['dhcp_reseau']` (sambaedu.conf).
-                    // Consommé par : `firewall/startup.windows` (règles netsh).
-                    // Décision Q-2 : forme simple (pas multi-VLAN indexé).
-                    'DHCP_RESEAU' => [
-                        'config' => 'sambaedu.dhcp_reseau',
-                        'env' => 'SAMBAEDU_DHCP_RESEAU',
-                        'default' => '',
-                    ],
-
-                    // URL du serveur GLPI Agent.
-                    // Iso-legacy `$config['glpi_url']` (sambaedu.conf).
-                    // Consommé par : `glpi/startup.linux` (config GLPI Agent invalide si vide).
-                    'GLPI_URL' => [
-                        'config' => 'sambaedu.glpi_url',
-                        'env' => 'SAMBAEDU_GLPI_URL',
-                        'default' => '',
-                    ],
-
-                    // Nom du groupe AD « pas d'internet ».
-                    // Iso-legacy `$config['no_internet']` (`user.interface.inc.php:409-410`).
-                    // Consommé par : `firewall/startup.windows`, `firewall/logon-system.windows`.
-                    // String vide → condition `IF NOT []==[]` → inopérante (iso-legacy si non configuré).
-                    'NO_INTERNET' => [
-                        'config' => 'sambaedu.no_internet',
-                        'env' => 'SAMBAEDU_NO_INTERNET',
-                        'default' => '',
-                    ],
-
-                    // IP du serveur AD Samba (SE4AD).
-                    // Iso-legacy `$config['se4ad_ip']` (sambaedu.conf).
-                    // Consommé par : `firewall/startup.windows` (règles netsh).
-                    'SE4AD_IP' => [
-                        'config' => 'sambaedu.se4ad_ip',
-                        'env' => 'SE4AD_IP',
-                    ],
-
-                    // IP du serveur SE4FS (serveur de fichiers).
-                    // Iso-legacy `$config['se4fs_ip']` (sambaedu.conf).
-                    // Consommé par : `firewall/startup.windows` (règles netsh).
-                    'SE4FS_IP' => [
-                        'config' => 'sambaedu.se4fs_ip',
-                        'env' => 'SE4FS_IP',
-                    ],
-
-                    // Nom du serveur d'installation SE4 (partage Wine/Wallpaper/etc).
-                    // Iso-legacy `$config['se4install_name']` (sambaedu.conf).
-                    // Consommé par : `wallpaper/logon.windows`, `wine/startup.linux`.
-                    'SE4INSTALL_NAME' => [
-                        'config' => 'sambaedu.se4install_name',
-                        'env' => 'SE4INSTALL_NAME',
-                    ],
-
-                    // 17.3 — URL endpoint natif Story 16.13 substituée dans les .cmd
-                    // orchestrateurs GPO se4_applications (Stratégie A.2). Résolution
-                    // dynamique via `URL::route('agent.v1.config.applications-scripts',
-                    // [], absolute: true)` quand config + env sont vides. Le `default`
-                    // est une **paire callable array** `[Classe::class, 'méthode']` —
-                    // is_callable=true ET sérialisable par `var_export` (compatible
-                    // `php artisan config:cache`). Le `resolveSubstitutionValue` 17.3
-                    // exécute la callable et matérialise la string URL au runtime.
-                    // Override testing/CI via `SAMBAEDU_APPLICATIONS_SCRIPTS_URL`.
-                    'APPLICATIONS_SCRIPTS_URL' => [
-                        'config' => 'sambaedu.gpo.applications_scripts_url',
-                        'env' => 'SAMBAEDU_APPLICATIONS_SCRIPTS_URL',
-                        'default' => [\App\Gpo\Services\ApplicationScriptsAssembler::class, 'resolveApplicationsScriptsUrl'],
-                    ],
-                ],
-            ],
-        ],
-
-        // Story 17.3 — Sous-config audit GPO `se4_applications` (template officiel
-        // livré par le paquet Debian `sambaedu-gpo`). Iso pattern `wpkg_sync.template_path`
-        // 16.6 — overridable via env pour testing/CI ou installation atypique.
-        //
-        // Important : sur la VM dev (sambaedu-gpo packagé), le template est un
-        // **répertoire** `sambaedu-gpo/se4_applications/`, pas un `.zip`. La
-        // commande `gpo:applications:audit` détecte automatiquement le mode
-        // (fichier vs répertoire) via `is_dir()` / `is_file()` — iso 16.6 D6.
-        'applications_template' => [
-            'path' => env('GPO_APPLICATIONS_TEMPLATE_PATH', '/usr/share/sambaedu/gpo/se4_applications.zip'),
-        ],
+        // Story 27.14 — La sous-config `applications.substitutions.whitelist`
+        // (story 16.7/17.2/17.3) a été SUPPRIMÉE avec le canal de génération de
+        // scripts applications legacy : elle n'était lue que par
+        // `ApplicationScriptsAssembler::applySubstitutions()` (supprimé) et la
+        // commande d'audit `gpo:applications:audit` (supprimée). La sous-config
+        // `applications_template` (template `se4_applications.zip`, story 17.3)
+        // est SUPPRIMÉE de même : le template de config GPO `se4_applications`
+        // n'est plus audité ni publié (config legacy hors bootstrap). Les clés
+        // métier (SE4FS_NAME, DOMAIN, etc.) restent disponibles directement sous
+        // `config('sambaedu.*')` pour les autres consommateurs (WPKG bundle,
+        // linux_out/winget_out).
 
         // Story 16.3c — Sous-config Wine (UI admin + Job queue).
         'wine' => [

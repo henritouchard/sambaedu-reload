@@ -3,10 +3,8 @@
 use App\Components\Traits\WithToasts;
 use App\Gpo\Enums\GpoHealthStatus;
 use App\Gpo\Services\GpoService;
-use App\Gpo\Services\GpoPublisher;
 use App\Gpo\Dto\GpoSummary;
 use App\Gpo\Support\CachedGpoLookups;
-use App\Gpo\Support\GpoTemplateRegistry;
 use App\Gpo\Support\GpoExportSerializer;
 use App\Gpo\Support\GpoHealthStatusCalculator;
 use App\Gpo\Support\GpoLogger;
@@ -107,20 +105,13 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
     /** @var array<string, string>  GUID → health_status (calculé via cache). */
     public array $healthStatusByGuid = [];
 
-    // --- Publication étage 2 (SYSVOL) — modale partagée (une GPO ou batch) ---
-    public bool $isPublishModalOpen = false;
-    public bool $isPublishing = false;
-    public bool $forceFlag = false;
-    /** true → publier toutes les GPO publiables ; false → publier $publishTargetName seule. */
-    public bool $publishAll = false;
-    public string $publishTargetName = '';
-    public ?string $publishTargetGuid = null;
+    // Story 27.14 — la publication étage 2 (SYSVOL) via `GpoPublisher` (une GPO
+    // ou batch) a été supprimée avec le canal de config legacy. Le listing GPO
+    // reste en consultation read-only.
 
     private GpoService $gpoService;
     private ?CachedGpoLookups $cache = null;
     private ?OrganizationalUnitRepository $ouRepo = null;
-    private GpoTemplateRegistry $templateRegistry;
-    private GpoPublisher $publisher;
 
     /**
      * Livewire invoque boot() avant mount() à chaque cycle (initial + interactions),
@@ -129,13 +120,9 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
     public function boot(
         GpoService $service,
         CachedGpoLookups $cache,
-        GpoTemplateRegistry $registry,
-        GpoPublisher $publisher,
     ): void {
         $this->gpoService = $service;
         $this->cache = $cache;
-        $this->templateRegistry = $registry;
-        $this->publisher = $publisher;
     }
 
     public function mount(): void
@@ -714,156 +701,11 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
         return $this->pagination['items'] ?? [];
     }
 
-    // -------------------------------------------------------------------------
-    // Publication étage 2 (SYSVOL) — par GPO ou batch (généralisation gpo-maj.php)
-    // -------------------------------------------------------------------------
-
-    /**
-     * Une GPO est-elle publiable (une archive-template SE5 matche son nom) ?
-     * Dégrade en false si le répertoire des templates est inaccessible (hors VM).
-     */
-    public function isGpoPublishable(string $displayName): bool
-    {
-        if ($displayName === '') {
-            return false;
-        }
-        try {
-            return $this->templateRegistry->isPublishable($displayName);
-        } catch (\Throwable) {
-            return false;
-        }
-    }
-
-    /** Nombre de GPO chargées actuellement publiables (drive le bouton batch). */
-    public function getPublishableCountProperty(): int
-    {
-        $count = 0;
-        foreach ($this->gpos as $g) {
-            if ($this->isGpoPublishable($g['displayName'] ?? '')) {
-                $count++;
-            }
-        }
-        return $count;
-    }
-
-    public function openPublishOne(string $guid, string $displayName): void
-    {
-        $this->publishAll = false;
-        $this->publishTargetGuid = $guid;
-        $this->publishTargetName = $displayName;
-        $this->forceFlag = false;
-        $this->isPublishModalOpen = true;
-    }
-
-    public function openPublishAll(): void
-    {
-        $this->publishAll = true;
-        $this->publishTargetGuid = null;
-        $this->publishTargetName = '';
-        $this->forceFlag = false;
-        $this->isPublishModalOpen = true;
-    }
-
-    public function closePublishModal(): void
-    {
-        $this->isPublishModalOpen = false;
-    }
-
-    /**
-     * Publie l'étage 2 (SYSVOL) : une GPO ciblée, ou toutes les GPO publiables.
-     * Side effect SYSVOL via `GpoPublisher` → shim legacy `import_gpo`.
-     */
-    public function confirmPublish(): void
-    {
-        abort_unless(
-            auth()->check() && auth()->user()->can('server.admin'),
-            403,
-            'Permission server.admin requise.',
-        );
-
-        $force = $this->forceFlag;
-        $this->isPublishing = true;
-        $this->isPublishModalOpen = false;
-
-        try {
-            if ($this->publishAll) {
-                $this->runBatchPublish($force);
-            } else {
-                $this->runSinglePublish($this->publishTargetName, $this->publishTargetGuid, $force);
-            }
-            // Recharge le listing (versions/santé) après mutation SYSVOL.
-            $this->loadGpos();
-        } finally {
-            $this->isPublishing = false;
-            $this->forceFlag = false;
-            $this->publishAll = false;
-            $this->publishTargetName = '';
-            $this->publishTargetGuid = null;
-        }
-    }
-
-    private function runSinglePublish(string $displayName, ?string $guid, bool $force): void
-    {
-        try {
-            $this->publisher->publish($displayName, $force);
-            $this->invalidateGpoCache($guid);
-            $this->toast(
-                'success',
-                'GPO publiée',
-                "L'étage 2 de « {$displayName} » a été déposé dans SYSVOL.",
-            );
-        } catch (\Throwable $e) {
-            $this->toast('error', 'Échec de publication', $e->getMessage());
-        }
-    }
-
-    /**
-     * Publie séquentiellement toutes les GPO chargées qui sont publiables.
-     * Best-effort : on continue malgré les échecs et on résume.
-     */
-    private function runBatchPublish(bool $force): void
-    {
-        $ok = 0;
-        $failures = [];
-
-        foreach ($this->gpos as $g) {
-            $name = $g['displayName'] ?? '';
-            if (! $this->isGpoPublishable($name)) {
-                continue;
-            }
-            try {
-                $this->publisher->publish($name, $force);
-                $this->invalidateGpoCache($g['name'] ?? null);
-                $ok++;
-            } catch (\Throwable $e) {
-                $failures[] = $name . ' : ' . $e->getMessage();
-            }
-        }
-
-        if ($failures === []) {
-            $this->toast('success', 'Publication terminée', "{$ok} GPO publiée(s) dans SYSVOL.");
-        } elseif ($ok > 0) {
-            $this->toast(
-                'warning',
-                'Publication partielle',
-                "{$ok} GPO publiée(s), " . count($failures) . ' en échec : ' . implode(' | ', $failures),
-            );
-        } else {
-            $this->toast('error', 'Échec de publication', implode(' | ', $failures));
-        }
-    }
-
-    private function invalidateGpoCache(?string $guid): void
-    {
-        if ($guid === null || $this->cache === null) {
-            return;
-        }
-        try {
-            $this->cache->forgetGpo($guid);
-        } catch (\Throwable) {
-            // best-effort — ne doit pas masquer le succès métier.
-        }
-    }
+    // Story 27.14 — Publication étage 2 (SYSVOL) SUPPRIMÉE avec le canal de
+    // config legacy : `isGpoPublishable`, `getPublishableCountProperty`,
+    // `openPublishOne`, `openPublishAll`, `closePublishModal`, `confirmPublish`,
+    // `runSinglePublish`, `runBatchPublish`, `invalidateGpoCache` (consommé
+    // uniquement par la publication) retirés. Le listing GPO reste read-only.
 
     public function formatVersion(?int $version): string
     {
@@ -892,16 +734,9 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
     <x-slot:actions>
         {{-- Toutes les actions de la page regroupées dans un seul dropdown (pattern /users). --}}
         <x-molecules.action-menu label="Actions" icon="fa-bars" width="w-72" testid="gpo-actions-menu">
-            @if ($this->publishableCount > 0)
-                <li>
-                    <button type="button" wire:click="openPublishAll" wire:loading.attr="disabled"
-                        data-testid="publish-all-btn">
-                        <i class="fa-solid fa-cloud-arrow-up w-4 text-warning"></i>
-                        Publier tout ({{ $this->publishableCount }})
-                    </button>
-                </li>
-                <li class="menu-title text-xs opacity-60">Données</li>
-            @endif
+            {{-- Story 27.14 — action « Publier tout » retirée avec l'extinction
+                 du canal de config legacy. --}}
+            <li class="menu-title text-xs opacity-60">Données</li>
             <li>
                 <button type="button" wire:click="exportCsv" wire:loading.attr="disabled"
                     data-testid="export-csv-btn">
@@ -1048,7 +883,7 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
                                             Édition native
                                         </span>
                                     </th>
-                                    <th class="text-right">Actions</th>
+                                    {{-- Story 27.14 — colonne « Actions » (publication SYSVOL) retirée. --}}
                                 </tr>
                             </thead>
                             <tbody>
@@ -1061,7 +896,6 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
                                         $detailUrl = route('admin.gpo.show', ['guid' => trim((string) $gpo['name'], '{}')]);
                                         $nativeMatches = \App\Gpo\Support\NativeSectionResolver::resolve($gpo['displayName'] ?? '');
                                         $nativeCount = count($nativeMatches);
-                                        $rowPublishable = $this->isGpoPublishable($gpo['displayName'] ?? '');
                                     @endphp
                                     <tr class="hover:bg-sky-50 cursor-pointer"
                                         onclick="if (!event.target.closest('.native-edit-cell') && !event.target.closest('.gpo-actions-cell')) window.location.href='{{ $detailUrl }}'">
@@ -1142,26 +976,11 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
                                                 </details>
                                             @endif
                                         </td>
-                                        {{-- Colonne Actions — dropdown unifié (x-molecules.action-menu).
-                                             Publication étage 2 affichée ssi la GPO est publiable. --}}
-                                        <td class="gpo-actions-cell text-right" onclick="event.stopPropagation()">
-                                            @if ($rowPublishable)
-                                                <button type="button" class="btn btn-warning btn-xs"
-                                                    wire:click="openPublishOne(@js($gpo['name']), @js($gpo['displayName']))"
-                                                    wire:loading.attr="disabled"
-                                                    data-testid="row-publish-btn"
-                                                    title="Publier l'étage 2 (SYSVOL) de cette GPO">
-                                                    <i class="fa-solid fa-upload"></i>
-                                                    Publier
-                                                </button>
-                                            @else
-                                                <span class="text-base-content/30">—</span>
-                                            @endif
-                                        </td>
+                                        {{-- Story 27.14 — colonne Actions (publication SYSVOL) retirée. --}}
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="6" class="text-center py-12 text-base-content/60">
+                                        <td colspan="5" class="text-center py-12 text-base-content/60">
                                             <div class="flex flex-col items-center gap-3">
                                                 <svg class="w-12 h-12 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -1214,58 +1033,6 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
         </div>
     </div>
 
-    {{-- Modale confirmation "Publier l'étage 2" — partagée (une GPO ou batch) --}}
-    <x-molecules.modal wire:model="isPublishModalOpen" size="max-w-2xl" height="h-auto"
-        :title="$publishAll ? 'Publier toutes les GPO publiables' : ('Publier l\'étage 2 — ' . $publishTargetName)"
-        icon="fa-shield-halved text-warning">
-        <x-molecules.modal.section dense>
-            <div class="alert alert-warning">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <div>
-                    @if ($publishAll)
-                        <p class="font-medium">Cette action écrit dans SYSVOL pour {{ $this->publishableCount }} GPO.</p>
-                    @else
-                        <p class="font-medium">Cette action écrit dans SYSVOL pour « {{ $publishTargetName }} ».</p>
-                    @endif
-                    <p class="text-sm">
-                        Chaque GPO est (ré)importée depuis sa template (spécialisation des placeholders +
-                        dépôt SYSVOL via <code class="font-mono">samba-tool</code>/<code class="font-mono">smbclient</code>).
-                        Les postes liés l'appliqueront au prochain reboot.
-                    </p>
-                </div>
-            </div>
-            <div class="alert alert-error mt-3">
-                <i class="fa-solid fa-sitemap"></i>
-                <p class="text-sm">
-                    <strong>Liaisons OU :</strong> <code class="font-mono">import_gpo</code> applique les liaisons
-                    de la template — et <strong>à défaut, lie au domaine entier</strong>. Vérifiez les liaisons après publication.
-                </p>
-            </div>
-            <div class="form-control mt-3">
-                <label class="label cursor-pointer justify-start gap-3">
-                    <input type="checkbox" wire:model.live="forceFlag" class="checkbox checkbox-sm"
-                        data-testid="force-flag" />
-                    <span class="label-text">Forcer même si la version SYSVOL est déjà à jour (équivalent <code class="font-mono">--force</code>).</span>
-                </label>
-            </div>
-        </x-molecules.modal.section>
-
-        <x-slot:footer>
-            <button type="button" class="btn btn-ghost btn-sm" wire:click="closePublishModal"
-                data-testid="modal-cancel">
-                Annuler
-            </button>
-            <button type="button" class="btn btn-warning btn-sm" wire:click="confirmPublish"
-                wire:loading.attr="disabled" data-testid="modal-confirm-publish">
-                <span wire:loading.remove wire:target="confirmPublish">
-                    <i class="fa-solid fa-upload"></i>
-                    {{ $publishAll ? 'Publier toutes' : 'Confirmer la publication' }}
-                </span>
-                <span wire:loading wire:target="confirmPublish">
-                    <i class="fa-solid fa-circle-notch fa-spin"></i>
-                    Import SYSVOL en cours…
-                </span>
-            </button>
-        </x-slot:footer>
-    </x-molecules.modal>
+    {{-- Story 27.14 — la modale « Publier l'étage 2 (SYSVOL) » a été retirée
+         avec l'extinction du canal de config legacy. --}}
 </x-organisms.page>

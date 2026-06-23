@@ -249,46 +249,11 @@ class AuthV1NamespaceTest extends TestCase
         );
     }
 
-    /**
-     * Story 16.13bis — Les 8 chemins URI `gpo/*_out.php` doivent toujours
-     * être enregistrés dans `routes/web.php` mais leur target controller a
-     * changé : ils pointent désormais vers
-     * `App\Auth\V1\Migration\Http\Controllers\MigrationController::serveFragment`
-     * (transformé par closure D2) au lieu des controllers métier originels.
-     * Ce test ne vérifie plus l'identité du controller cible — voir
-     * `tests/Architecture/Migration/MigrationModuleArchitectureTest`.
-     */
-    #[Test]
-    public function legacy_out_routes_are_preserved(): void
-    {
-        $webRoutes = (string) file_get_contents(__DIR__ . '/../../routes/web.php');
-        $apiRoutes = (string) file_get_contents(__DIR__ . '/../../routes/api.php');
-        $allRoutes = $webRoutes . "\n" . $apiRoutes;
-
-        $expected = [
-            'wallpaper_out',
-            'firefox_out',
-            'thunderbird_out',
-            'shortcuts_out',
-            'network_out',
-            'veyon_out',
-            'associations_out',
-            'applications.php',
-        ];
-
-        $missing = [];
-        foreach ($expected as $endpoint) {
-            if (! str_contains($allRoutes, $endpoint)) {
-                $missing[] = $endpoint;
-            }
-        }
-
-        self::assertSame(
-            [],
-            $missing,
-            "Chemins URI legacy `*_out.php` manquants — la transformation Story 16.13bis doit préserver les URIs :\n  - " . implode("\n  - ", $missing),
-        );
-    }
+    // Story 27.14 — le test `legacy_out_routes_are_preserved` (qui exigeait la
+    // présence des 8 chemins `gpo/*_out.php` + `applications.php` dans les
+    // routes) a été retiré : ces routes du canal de config legacy
+    // (`migration.legacy.*` → `MigrationController::serveFragment`) ont été
+    // SUPPRIMÉES avec l'extinction du canal.
 
     /**
      * Story 16.13bis — le middleware `inject.bootstrap-fragment` 16.11 a

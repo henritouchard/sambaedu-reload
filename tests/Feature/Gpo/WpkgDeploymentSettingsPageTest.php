@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Gpo;
 
-use App\Gpo\Dto\WpkgGpoSyncReport;
-use App\Gpo\Enums\WpkgGpoSyncSeverity;
-use App\Gpo\Services\WpkgGpoSynchronizer;
 use App\Models\SystemSetting;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
@@ -83,47 +80,11 @@ class WpkgDeploymentSettingsPageTest extends TestCase
         return User::query()->create(['login' => $login, 'role' => 'eleve', 'is_active' => true]);
     }
 
-    private function bindSyncOk(): void
-    {
-        $mock = Mockery::mock(WpkgGpoSynchronizer::class);
-        $mock->shouldReceive('audit')->andReturn(new WpkgGpoSyncReport(
-            gpoExists: true,
-            gpoGuid: '{AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}',
-            gpoDisplayName: 'se4_wpkg',
-            gpoPath: null,
-            linkedOus: ['OU=Computers,DC=example,DC=org'],
-            expectedHostsXmlUrl: 'http://test/wpkg/hosts.xml',
-            expectedProfilesXmlUrl: 'http://test/wpkg/profiles.xml',
-            templatePath: '/usr/share/sambaedu/gpo/se4_wpkg.zip',
-            templateExists: true,
-            templateLastModified: null,
-            detectedPlaceholders: [],
-            unknownPlaceholders: [],
-            bearerCoverage: [],
-            bearerTableAvailable: false,
-            severity: WpkgGpoSyncSeverity::Ok,
-            messages: [],
-        ));
-        $mock->shouldReceive('publish')->andReturn(new WpkgGpoSyncReport(
-            gpoExists: true,
-            gpoGuid: '{AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}',
-            gpoDisplayName: 'se4_wpkg',
-            gpoPath: null,
-            linkedOus: [],
-            expectedHostsXmlUrl: 'http://test/wpkg/hosts.xml',
-            expectedProfilesXmlUrl: 'http://test/wpkg/profiles.xml',
-            templatePath: '/usr/share/sambaedu/gpo/se4_wpkg.zip',
-            templateExists: true,
-            templateLastModified: null,
-            detectedPlaceholders: [],
-            unknownPlaceholders: [],
-            bearerCoverage: [],
-            bearerTableAvailable: false,
-            severity: WpkgGpoSyncSeverity::Ok,
-            messages: [],
-        ));
-        $this->app->bind(WpkgGpoSynchronizer::class, fn () => $mock);
-    }
+    // Story 27.14 — le helper `bindSyncOk()` (mock `WpkgGpoSynchronizer` pour
+    // l'audit GPO `se4_wpkg`) a été retiré : l'audit a été supprimé de la page
+    // avec l'extinction du canal de config legacy. La page n'injecte plus le
+    // synchronizer ; seuls les réglages de déploiement (winget + allowlist)
+    // subsistent.
 
     // =========================================================================
     // AC4.1 — Rendu + badge source
@@ -133,7 +94,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function admin_sees_deployment_settings_card(): void
     {
         $this->actingAs($this->makeAdmin());
-        $this->bindSyncOk();
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->assertStatus(200)
@@ -144,7 +104,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function badge_shows_env_when_no_db_key(): void
     {
         $this->actingAs($this->makeAdmin());
-        $this->bindSyncOk();
 
         // Sans clé DB → badge 'env'.
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
@@ -156,7 +115,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function badge_shows_db_when_db_key_exists(): void
     {
         $this->actingAs($this->makeAdmin());
-        $this->bindSyncOk();
         SystemSetting::set('wpkg.winget_enabled', true);
         SystemSetting::set('wpkg.allowed_ips', ['192.168.1.0/24']);
 
@@ -173,7 +131,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function toggle_winget_persists_and_emits_toast(): void
     {
         $this->actingAs($this->makeAdmin());
-        $this->bindSyncOk();
 
         // Avant : winget désactivé (env false, pas de DB).
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
@@ -190,7 +147,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function toggle_winget_twice_cycles_state(): void
     {
         $this->actingAs($this->makeAdmin());
-        $this->bindSyncOk();
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->call('toggleWinget')
@@ -207,7 +163,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function adding_cidr_opens_modal(): void
     {
         $this->actingAs($this->makeAdmin());
-        $this->bindSyncOk();
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->set('newIpEntry', '192.168.1.0/24')
@@ -220,7 +175,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function confirm_add_cidr_persists_and_emits_toast(): void
     {
         $this->actingAs($this->makeAdmin());
-        $this->bindSyncOk();
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->set('newIpEntry', '192.168.1.0/24')
@@ -240,7 +194,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function cancel_modal_does_not_persist(): void
     {
         $this->actingAs($this->makeAdmin());
-        $this->bindSyncOk();
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->set('newIpEntry', '192.168.1.0/24')
@@ -257,7 +210,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function remove_ip_persists_without_modal(): void
     {
         $this->actingAs($this->makeAdmin());
-        $this->bindSyncOk();
         SystemSetting::set('wpkg.allowed_ips', ['192.168.1.0/24', '10.0.0.1']);
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
@@ -279,7 +231,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function invalid_ip_shows_error_without_persisting(): void
     {
         $this->actingAs($this->makeAdmin());
-        $this->bindSyncOk();
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->set('newIpEntry', '999.999.999.999')
@@ -294,7 +245,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function deny_all_ipv4_shows_error(): void
     {
         $this->actingAs($this->makeAdmin());
-        $this->bindSyncOk();
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->set('newIpEntry', '0.0.0.0/0')
@@ -307,7 +257,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function too_wide_prefix_shows_error(): void
     {
         $this->actingAs($this->makeAdmin());
-        $this->bindSyncOk();
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->set('newIpEntry', '10.0.0.0/8')
@@ -320,7 +269,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function duplicate_entry_shows_error(): void
     {
         $this->actingAs($this->makeAdmin());
-        $this->bindSyncOk();
         SystemSetting::set('wpkg.allowed_ips', ['192.168.1.0/24']);
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
@@ -338,7 +286,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function toggle_winget_aborts_403_without_server_admin(): void
     {
         $this->actingAs($this->makeRegularUser());
-        $this->bindSyncOk();
 
         // Livewire intercepte abort(403) dans mount() et le transforme en réponse HTTP
         // — pas en exception PHP propagée. On vérifie le statut HTTP.
@@ -350,7 +297,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function confirm_add_cidr_aborts_403_without_server_admin(): void
     {
         $this->actingAs($this->makeRegularUser());
-        $this->bindSyncOk();
 
         // mount() vérifie server.admin → 403 pour un utilisateur non-admin.
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
@@ -371,7 +317,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     public function toggle_winget_action_itself_aborts_403_for_non_admin(): void
     {
         $this->actingAs($this->makeRegularUser('user-noauth-toggle'));
-        $this->bindSyncOk();
 
         // L'utilisateur sans server.admin ne peut même pas monter le composant → 403 au mount.
         // Ce test vérifie que le status HTTP renvoyé est bien 403, prouvant que la garde est active.
@@ -399,7 +344,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     {
         $admin = $this->makeAdmin('admin-for-cidr-guard');
         $this->actingAs($admin);
-        $this->bindSyncOk();
 
         $component = Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index');
         $component->assertStatus(200);
@@ -411,26 +355,10 @@ class WpkgDeploymentSettingsPageTest extends TestCase
             ->assertStatus(403);
     }
 
-    // =========================================================================
-    // AC4.6 — Non-régression audit GPO existant
-    // =========================================================================
-
-    #[Test]
-    public function existing_gpo_audit_is_still_functional(): void
-    {
-        $this->actingAs($this->makeAdmin());
-        $this->bindSyncOk();
-
-        Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
-            ->assertStatus(200)
-            // L'audit GPO résiduel doit encore être présent (badge sévérité).
-            ->assertSeeHtml('data-testid="severity-badge"')
-            // Story 27.5 — plus de bouton de publication (l'agent déclenche WPKG).
-            ->assertDontSeeHtml('data-testid="open-publish-modal"')
-            // Re-auditer fonctionne toujours.
-            ->call('refresh')
-            ->assertSet('hasError', false);
-    }
+    // Story 27.14 — le test AC4.6 `existing_gpo_audit_is_still_functional`
+    // (carte d'audit GPO `se4_wpkg` + bouton re-publish + re-audit) a été retiré :
+    // l'audit GPO a été supprimé de la page avec l'extinction du canal de config
+    // legacy. Seuls les réglages de déploiement (winget + allowlist) subsistent.
 
     // =========================================================================
     // AC5 — Audit émis depuis save() (pas via middleware HTTP)
@@ -441,7 +369,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     {
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
-        $this->bindSyncOk();
 
         $logInfoCalled = false;
 
@@ -476,7 +403,6 @@ class WpkgDeploymentSettingsPageTest extends TestCase
     {
         $admin = $this->makeAdmin('admin-15-6-cidr');
         $this->actingAs($admin);
-        $this->bindSyncOk();
 
         $oldIps = [];
         $newCidr = '192.168.10.0/24';

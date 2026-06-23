@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Gpo;
 
-use App\Gpo\Dto\WpkgGpoSyncReport;
-use App\Gpo\Enums\WpkgGpoSyncSeverity;
-use App\Gpo\Services\WpkgGpoSynchronizer;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -52,37 +49,10 @@ class WpkgDeploymentPagePermissionTest extends TestCase
         parent::tearDown();
     }
 
-    private function bindSyncOk(): void
-    {
-        $mock = Mockery::mock(WpkgGpoSynchronizer::class);
-        $mock->shouldReceive('audit')->andReturn(new WpkgGpoSyncReport(
-            gpoExists: true,
-            gpoGuid: '{AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE}',
-            gpoDisplayName: 'se4_wpkg',
-            gpoPath: null,
-            linkedOus: ['OU=Computers,DC=example,DC=org'],
-            expectedHostsXmlUrl: 'http://test/wpkg/hosts.xml',
-            expectedProfilesXmlUrl: 'http://test/wpkg/profiles.xml',
-            templatePath: '/usr/share/sambaedu/gpo/se4_wpkg.zip',
-            templateExists: true,
-            templateLastModified: null,
-            detectedPlaceholders: [],
-            unknownPlaceholders: [],
-            bearerCoverage: [],
-            bearerTableAvailable: false,
-            severity: WpkgGpoSyncSeverity::Ok,
-            messages: [],
-        ));
-        $this->app->bind(WpkgGpoSynchronizer::class, fn () => $mock);
-    }
-
-    private function bindSyncExpectNoCalls(): void
-    {
-        $mock = Mockery::mock(WpkgGpoSynchronizer::class);
-        $mock->shouldNotReceive('audit');
-        $mock->shouldNotReceive('publish');
-        $this->app->bind(WpkgGpoSynchronizer::class, fn () => $mock);
-    }
+    // Story 27.14 — les helpers `bindSyncOk()` / `bindSyncExpectNoCalls()`
+    // (mock `WpkgGpoSynchronizer`) ont été retirés : l'audit GPO `se4_wpkg` a
+    // été supprimé de la page. La page (réglages de déploiement) n'injecte plus
+    // le synchronizer ; le test de permission reste valable sur la page existante.
 
     private function makeAdmin(string $login): User
     {
@@ -100,7 +70,6 @@ class WpkgDeploymentPagePermissionTest extends TestCase
     public function it_renders_200_for_authenticated_admin(): void
     {
         $this->actingAs($this->makeAdmin('admin-wpkg-perm-ok'));
-        $this->bindSyncOk();
 
         Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index')
             ->assertStatus(200);
@@ -110,7 +79,6 @@ class WpkgDeploymentPagePermissionTest extends TestCase
     public function mount_aborts_403_without_server_admin(): void
     {
         $this->actingAs($this->makeRegularUser('user-wpkg-perm-ko'));
-        $this->bindSyncExpectNoCalls();
 
         try {
             Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index');
@@ -127,7 +95,6 @@ class WpkgDeploymentPagePermissionTest extends TestCase
     {
         $user = $this->makeRegularUser('user-wpkg-route-ko');
         $this->actingAs($user);
-        $this->bindSyncExpectNoCalls();
 
         $response = $this->get('/admin/settings/gpo/wpkg-deployment');
         $this->assertContains($response->getStatusCode(), [403, 302, 500], 'Réponse non-200 attendue pour non-admin.');
@@ -137,7 +104,6 @@ class WpkgDeploymentPagePermissionTest extends TestCase
     #[Test]
     public function unauthenticated_request_is_blocked(): void
     {
-        $this->bindSyncExpectNoCalls();
 
         try {
             Livewire::test('pages::admin.settings.gpo.wpkg-deployment.index');

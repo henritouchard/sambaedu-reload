@@ -32,9 +32,9 @@ use Illuminate\Support\Collection;
  * bête : il pose le `.lnk` au `desktop_path` reçu (tokens `<se4fs>`/`<user>`
  * substitués localement).
  *
- * **Lecture Postgres PURE** (NFR7, critère Keycloak) : le legacy
- * `ShortcutCompilerService::resolveForMachine()` lit `ad_users`/`ad_user_groups`
- * (CN AD) via `whereJsonContains` + cache APCu — INTERDIT ici. Ce provider ne
+ * **Lecture Postgres PURE** (NFR7, critère Keycloak) : l'ancien canal legacy
+ * (supprimé en 27.14) lisait `ad_users`/`ad_user_groups` (CN AD) via
+ * `whereJsonContains` + cache APCu — INTERDIT ici. Ce provider ne
  * touche JAMAIS l'AD : il lit le pivot polymorphe `shortcut_assignables`
  * (WorkstationGroup + Workstation + UserGroup + User — ciblage MVP pivot SQL,
  * décision n° 8) restreint aux ids déjà résolus du {@see TargetContext}. Les
@@ -174,7 +174,7 @@ final class ShortcutsStateProvider implements StateProvider
      * `%APPDATA%\x.ico` — posé tel quel) OU le NOM NU d'une icône UPLOADÉE
      * (`Calculatrice` — pas un chemin, le `.ico` réel vit côté serveur). On
      * reproduit la détection legacy `!preg_match('#[\\/.,%]#', $icon)`
-     * (pas de séparateur `\ / . , %` = nom nu — `ShortcutCompilerService:187`).
+     * (pas de séparateur `\ / . , %` = nom nu — regex iso-legacy conservée).
      * Si c'est un nom nu ET qu'un asset content-addressed existe en base
      * (`icon_asset` non null) → on émet `{icon_asset, icon_checksum}` (PAS
      * d'URL, décision n° 4 — l'agent dérive l'URL) à CÔTÉ de `icon` (champs
@@ -218,7 +218,7 @@ final class ShortcutsStateProvider implements StateProvider
 
     /**
      * Détecte un NOM NU d'icône uploadée (≠ chemin réel) — regex iso-legacy
-     * `ShortcutCompilerService:187` : aucun séparateur de chemin/index
+     * conservée : aucun séparateur de chemin/index
      * (`\ / . , %`) ⇒ ce n'est pas un chemin, c'est le nom d'un raccourci dont
      * l'icône a été uploadée côté serveur. Chaîne vide = pas un nom nu (pas
      * d'icône). Story 27.7, AC2.

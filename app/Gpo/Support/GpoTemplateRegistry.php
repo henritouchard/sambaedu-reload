@@ -28,8 +28,11 @@ use ZipArchive;
  * — aucune spécificité `se4_wpkg`, la GPO WPKG n'est qu'une template parmi
  * d'autres.
  *
- * Lecture pure : aucun side effect, aucun `exec`. La publication SYSVOL réelle
- * est faite par {@see \App\Gpo\Services\GpoPublisher} via `import_gpo`.
+ * Lecture pure : aucun side effect, aucun `exec`. Story 27.14 : la publication
+ * SYSVOL de templates de config (ex-`GpoPublisher`) a été supprimée avec le
+ * canal de config legacy ; ce registre subsiste comme RECONNAISSANCE de
+ * publiabilité (notamment du bootstrap `se4_agent_bootstrap`, 25.4) —
+ * `isPublishable()` reste l'API consommée.
  */
 class GpoTemplateRegistry
 {

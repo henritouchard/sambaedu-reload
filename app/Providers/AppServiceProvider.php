@@ -16,12 +16,10 @@ use App\Config\SambaEduConfig;
 use App\Config\LdapDnHelper;
 use App\Config\LegacyConfigBridge;
 use App\Models\AppProfile;
-use App\Models\Shortcut;
 use App\Models\UserGroup;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Observers\AppProfileObserver;
-use App\Observers\ShortcutObserver;
 use App\Observers\UserGroupObserver;
 use App\Observers\WorkstationGroupObserver;
 use App\Observers\WorkstationObserver;
@@ -33,7 +31,6 @@ use App\Services\AdSync\AdSyncService;
 use App\Services\AdSync\UserGroupAdSyncService;
 use App\Services\Legacy\LegacyParcBridgeService;
 use App\Services\Parc\MachinePowerService;
-use App\Services\ShortcutCompilerService;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\DB;
@@ -77,7 +74,6 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(EstablishmentRepository::class);
         $this->app->singleton(GroupRepository::class);
         $this->app->singleton(ShortcutsService::class);
-        $this->app->singleton(ShortcutCompilerService::class);
         $this->app->singleton(StatsService::class);
         $this->app->singleton(UserService::class);
         $this->app->singleton(UserGroupRepository::class);
@@ -204,7 +200,6 @@ class AppServiceProvider extends ServiceProvider
         WorkstationGroup::observe(WorkstationGroupObserver::class);
         UserGroup::observe(UserGroupObserver::class);
         AppProfile::observe(AppProfileObserver::class);
-        Shortcut::observe(ShortcutObserver::class);
 
         // Story 4.9 — Observer Workstation : enregistré uniquement hors
         // environnement de test (queue=sync en PHPUnit → tout dispatch

@@ -34,11 +34,11 @@ use App\Models\WorkstationGroup;
  * {@see resolveForGroupIds()} avec les ids déjà mémorisés par
  * `TargetContext::workstationGroupIds()`.
  *
- * ⚠️ Note de transition (26.1) : ce service N'EST PAS branché sur le canal
- * legacy. `ApplicationScriptsGenerator`, `ShortcutCompilerService` et le
- * pansement Bug C (4e5a152) restent intouchés — le Bug C est corrigé
- * définitivement par le handler raccourcis (Story 27.1) qui consommera CE
- * service. Ne PAS le câbler au legacy.
+ * ⚠️ Note (26.1) : ce service n'a jamais été branché sur le canal legacy
+ * (`ApplicationScriptsGenerator`/`ShortcutCompilerService` + le pansement
+ * Bug C 4e5a152, tous supprimés à l'extinction legacy 27.14). Le Bug C est
+ * corrigé définitivement par le handler raccourcis (Story 27.1) qui consomme
+ * CE service. Ne PAS recâbler de canal legacy.
  */
 final readonly class WorkstationEnvironmentResolver
 {

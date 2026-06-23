@@ -16,7 +16,6 @@ use App\Wpkg\Deployment\Events\WorkstationGroupMembershipChanged;
 use App\Wpkg\Deployment\Events\WorkstationManualReevaluationRequested;
 use App\Wpkg\Deployment\Events\WorkstationOptionsChanged;
 use App\Wpkg\Deployment\Console\Commands\RotateWpkgReportArchivesCommand;
-use App\Wpkg\Deployment\Console\Commands\WpkgGpoSyncCommand;
 use App\Wpkg\Deployment\Listeners\InvalidateWorkstationPackagesCache;
 use App\Wpkg\Deployment\Listeners\RegenerateWorkstationIniOnManualReevaluation;
 use App\Wpkg\Deployment\Listeners\RegenerateWorkstationIniOnOptionsChanged;
@@ -66,8 +65,9 @@ class WpkgDeploymentServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->commands([
                 RotateWpkgReportArchivesCommand::class,
-                // Story 16.6 — Synchronizer GPO `se4_wpkg` ↔ endpoints 15.2/15.5.
-                WpkgGpoSyncCommand::class,
+                // Story 27.14 — `WpkgGpoSyncCommand` (`wpkg:gpo:sync`, publiait la
+                // GPO `se4_wpkg`) retiré avec l'extinction du canal de config legacy
+                // (la GPO `se4_wpkg` n'est plus un transport — l'agent déclenche WPKG).
             ]);
         }
 

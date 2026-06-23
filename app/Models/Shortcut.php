@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Livewire\Wireable;
 
@@ -137,14 +136,6 @@ class Shortcut extends Model implements Wireable
         '%TEMP%',
     ];
 
-
-    /**
-     * Entrées pré-compilées de ce raccourci
-     */
-    public function compiledShortcuts(): HasMany
-    {
-        return $this->hasMany(CompiledShortcut::class);
-    }
 
     /**
      * Groupes de postes (salles, parcs) associés à ce raccourci
@@ -322,18 +313,6 @@ class Shortcut extends Model implements Wireable
         }
 
         return $found;
-    }
-
-    /**
-     * Marque le raccourci comme nécessitant une recompilation.
-     */
-    public function invalidateCompilation(): void
-    {
-        $this->update([
-            'compiled_data' => null,
-            'compiled_at' => null,
-        ]);
-        $this->compiledShortcuts()->delete();
     }
 
     /**

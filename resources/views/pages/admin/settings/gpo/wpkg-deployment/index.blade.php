@@ -1,35 +1,24 @@
 <?php
 
 use App\Components\Traits\WithToasts;
-use App\Gpo\Services\WpkgGpoSynchronizer;
 use App\Models\SystemSetting;
 use App\Wpkg\Deployment\Rules\SafeIpCidrRule;
 use App\Wpkg\Deployment\Services\WpkgDeploymentSettings;
 use Illuminate\Support\Facades\Log;
-use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Page Livewire SFC — Audit de la livraison WPKG.
+ * Page Livewire SFC — Réglages de déploiement WPKG (Story 15.6).
  * Servie sous `/admin/settings/gpo/wpkg-deployment`.
  *
- * **Bascule modèle (Story 27.5 / 27.6)** : l'AGENT est désormais le SEUL
- * déclencheur de WPKG sur les postes (handler `applications`, canal
- * desired-state, moteur machine/SYSTEM). La GPO `se4_wpkg` qui lançait
- * historiquement `cscript wpkg.js /server=...` au boot N'EST PLUS publiée par
- * SE5 — la publication est retirée (no-op). L'agent dépose `profiles.xml` /
- * `hosts.xml` localement et `wpkg-client.vbs` récupère le **bundle WPKG natif**
- * servi en statique par Apache (`config('agent.wpkg_bundle_url')`), dont le
- * catalogue est régénéré à chaque ajout/retrait d'app au catalogue (source
- * unique 27.6).
- *
- * Cette page conserve donc deux rôles :
- *  - **Réglages de déploiement** (Story 15.6, toujours actifs) : toggle canal
- *    winget + allowlist IP/CIDR des endpoints `/wpkg/{winget,linux}_out.php`.
- *  - **Audit informatif** : état de la GPO `se4_wpkg` désormais RÉSIDUELLE
- *    (existence/liaisons/template), bundle natif attendu côté postes et
- *    couverture Bearer — purement diagnostique, sans effet sur la livraison.
+ * Story 27.14 — l'AUDIT de cohérence de la GPO `se4_wpkg` (story 16.6, via
+ * `WpkgGpoSynchronizer`) a été RETIRÉ avec l'extinction du canal de config
+ * legacy : la GPO `se4_wpkg` n'est plus un transport (27.5 — l'agent déclenche
+ * `wpkg-client.vbs`) et les endpoints `/wpkg/hosts.xml` + `/wpkg/profiles.xml`
+ * ont été supprimés (27.5). Il ne reste que la carte « Réglages de
+ * déploiement » (toggle winget + allowlist IP) qui gate les endpoints WPKG
+ * `linux_out`/`winget_out` (HORS scope 27.14, conservés).
  *
  * Permission : `server.admin` (middleware route + abort_unless mount).
  *
@@ -37,27 +26,8 @@ use Livewire\Component;
  * → l'audit des réglages doit être émis explicitement depuis les actions
  * (Story 15.6 / AC5).
  */
-new #[Title('Audit livraison WPKG - SE4FS')] class extends Component {
+new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
     use WithToasts;
-
-    // =========================================================================
-    // Partie audit GPO résiduelle (Story 16.6 + 16.9 + 27.5)
-    // =========================================================================
-
-    public ?array $report = null;
-    public bool $hasError = false;
-
-    #[Locked]
-    public string $expectedHostsXmlUrl = '';
-    #[Locked]
-    public string $expectedProfilesXmlUrl = '';
-
-    private WpkgGpoSynchronizer $sync;
-
-    public function boot(WpkgGpoSynchronizer $sync): void
-    {
-        $this->sync = $sync;
-    }
 
     // =========================================================================
     // Partie réglages déploiement (Story 15.6)
@@ -99,7 +69,6 @@ new #[Title('Audit livraison WPKG - SE4FS')] class extends Component {
             'Permission server.admin requise.',
         );
 
-        $this->audit();
         $this->loadDeploymentSettings();
     }
 
@@ -293,89 +262,19 @@ new #[Title('Audit livraison WPKG - SE4FS')] class extends Component {
         return $error;
     }
 
-    // =========================================================================
-    // Partie audit GPO résiduelle (Story 16.6 + 16.9 + 27.5)
-    // =========================================================================
-
-    /**
-     * Recharge le rapport d'audit (lecture pure, no side effect).
-     *
-     * Story 27.5 : `audit()` ne déclenche jamais de publication SYSVOL. La GPO
-     * `se4_wpkg` n'est plus publiée par SE5 — ce rapport est purement informatif.
-     */
-    public function audit(): void
-    {
-        $this->hasError = false;
-        try {
-            $r = $this->sync->audit();
-            $this->report = $r->toArray();
-            $this->expectedHostsXmlUrl = $r->expectedHostsXmlUrl;
-            $this->expectedProfilesXmlUrl = $r->expectedProfilesXmlUrl;
-        } catch (\Throwable $e) {
-            $this->hasError = true;
-            $this->report = null;
-            $this->toast('error', 'Audit impossible', $e->getMessage());
-        }
-    }
-
-    public function refresh(): void
-    {
-        $this->audit();
-        if (! $this->hasError) {
-            $this->toast('success', 'Audit rechargé', 'État de cohérence rafraîchi.');
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // Computed accessors pour la vue
-    // -------------------------------------------------------------------------
-
-    /** URL de base du bundle WPKG natif servi en statique par Apache. */
-    public function getBundleBaseUrlProperty(): string
-    {
-        return rtrim((string) config('agent.wpkg_bundle_url', ''), '/');
-    }
-
-    public function getSeverityClassProperty(): string
-    {
-        $sev = $this->report['severity'] ?? 'ok';
-        return match ($sev) {
-            'ok' => 'badge-success',
-            'info' => 'badge-info',
-            'warning' => 'badge-warning',
-            'error' => 'badge-error',
-            default => 'badge-neutral',
-        };
-    }
-
-    public function getBearerSummaryProperty(): string
-    {
-        if (! is_array($this->report)) {
-            return '(n/a)';
-        }
-        if (($this->report['bearerTableAvailable'] ?? false) === false) {
-            return 'Table absente (Story 15.5 Phase 2)';
-        }
-        $coverage = $this->report['bearerCoverage'] ?? [];
-        if (! is_array($coverage) || $coverage === []) {
-            return 'Aucun poste évalué';
-        }
-        $covered = count(array_filter($coverage));
-        return sprintf('%d/%d postes couverts', $covered, count($coverage));
-    }
+    // Story 27.14 — la partie AUDIT GPO `se4_wpkg` (story 16.6 : `audit()`,
+    // `refresh()`, modale re-publish, `getSeverityClassProperty`,
+    // `getBearerSummaryProperty`) a été SUPPRIMÉE avec `WpkgGpoSynchronizer` et
+    // l'extinction du canal de config legacy. Seuls les réglages de déploiement
+    // (toggle winget + allowlist IP) subsistent.
 };
 ?>
 
-<x-organisms.page title="Audit livraison WPKG" :scrollable="true"
-    description="Réglages du canal WPKG (winget + allowlist IP) et audit informatif. Depuis la Story 27.5, l'agent déclenche WPKG (bundle natif) — la GPO `se4_wpkg` n'est plus publiée par SE5.">
+<x-organisms.page title="Réglages de déploiement WPKG" :scrollable="true"
+    description="Toggle canal winget + allowlist IP des endpoints WPKG (linux_out / winget_out). Story 15.6.">
 
     <x-slot:actions>
         <div class="flex flex-wrap gap-2 items-center">
-            <button type="button" class="btn btn-outline btn-sm" wire:click="refresh"
-                wire:loading.attr="disabled" data-testid="re-audit">
-                <i class="fa-solid fa-arrows-rotate"></i>
-                Re-auditer
-            </button>
             <a href="{{ route('admin.gpo.index') }}" class="btn btn-ghost btn-sm">
                 <i class="fa-solid fa-list"></i>
                 Liste des GPOs
@@ -533,253 +432,7 @@ new #[Title('Audit livraison WPKG - SE4FS')] class extends Component {
             </div>
         </div>
 
-        {{-- ===================================================================
-             Audit GPO résiduelle (informatif — Story 27.5)
-             =================================================================== --}}
-
-        @if ($hasError || $report === null)
-            <div class="alert alert-error" data-testid="audit-error">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <div>
-                    <p class="font-medium">Audit impossible</p>
-                    <p class="text-sm opacity-80">
-                        Consultez les logs `storage/logs/gpo/gpo-*.log` (channel `gpo`, action_type
-                        `gpo.wpkg.sync.start` / `gpo.wpkg.sync.end`).
-                    </p>
-                </div>
-            </div>
-        @else
-            {{-- Statut audit GPO résiduelle --}}
-            <div class="card bg-base-100 shadow-sm border border-base-200">
-                <div class="card-body py-4">
-                    <div class="flex items-center justify-between gap-3 flex-wrap">
-                        <h2 class="card-title flex items-center gap-3">
-                            <i class="fa-solid fa-circle-nodes text-primary"></i>
-                            Audit GPO résiduelle `se4_wpkg`
-                            <span class="badge {{ $this->severityClass }} badge-lg uppercase font-mono"
-                                data-testid="severity-badge">
-                                {{ strtoupper($report['severity']) }}
-                            </span>
-                        </h2>
-                    </div>
-                    <p class="text-xs text-base-content/60 mt-1">
-                        Cet audit porte sur la GPO héritée `se4_wpkg`, conservée pour diagnostic. Une GPO absente ou
-                        non liée <strong>n'empêche pas</strong> la livraison WPKG, désormais assurée par l'agent.
-                    </p>
-                    @if (! empty($report['operationId']))
-                        <p class="text-xs text-base-content/60 font-mono">
-                            operation_id : {{ $report['operationId'] }}
-                        </p>
-                    @endif
-                </div>
-            </div>
-
-            {{-- Bundle WPKG natif (ex « URLs serveur attendues ») --}}
-            <div class="card bg-base-100 shadow-sm border border-base-200">
-                <div class="card-body">
-                    <h3 class="card-title text-lg flex items-center gap-2">
-                        <i class="fa-solid fa-box-open text-accent"></i>
-                        Bundle WPKG natif (livré par l'agent)
-                    </h3>
-                    <p class="text-sm text-base-content/70">
-                        L'agent dépose <code>profiles.xml</code> / <code>hosts.xml</code> <em>localement</em> sur le poste,
-                        puis <code>wpkg-client.vbs</code> récupère le bundle servi en statique par Apache. Les fichiers
-                        ci-dessous sont des <strong>artefacts du bundle / profil local</strong> — ce ne sont plus des
-                        endpoints dynamiques interrogés au boot.
-                    </p>
-                    <div class="overflow-x-auto mt-2">
-                        <table class="table table-sm" data-testid="urls-table">
-                            <thead>
-                                <tr>
-                                    <th>Artefact</th>
-                                    <th>URL</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td class="font-medium">Base bundle</td>
-                                    <td class="font-mono text-xs break-all">
-                                        {{ $this->bundleBaseUrl !== '' ? $this->bundleBaseUrl : '(bundle WPKG natif non configuré — config agent.wpkg_bundle_url)' }}
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td class="font-medium">hosts.xml</td>
-                                    <td class="font-mono text-xs break-all">{{ $report['expectedHostsXmlUrl'] }}</td>
-                                </tr>
-                                <tr>
-                                    <td class="font-medium">profiles.xml</td>
-                                    <td class="font-mono text-xs break-all">{{ $report['expectedProfilesXmlUrl'] }}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Tableau : État GPO résiduelle --}}
-            <div class="card bg-base-100 shadow-sm border border-base-200">
-                <div class="card-body">
-                    <h3 class="card-title text-lg flex items-center gap-2">
-                        <i class="fa-solid fa-server text-secondary"></i>
-                        État GPO résiduelle `se4_wpkg`
-                        <span class="badge badge-ghost badge-sm">informatif</span>
-                    </h3>
-                    <div class="overflow-x-auto">
-                        <table class="table table-sm" data-testid="gpo-state-table">
-                            <tbody>
-                                <tr>
-                                    <td class="font-medium">Existe dans l'AD ?</td>
-                                    <td>
-                                        @if ($report['gpoExists'])
-                                            <span class="badge badge-success">Oui</span>
-                                        @else
-                                            <span class="badge badge-ghost">Non — sans effet (l'agent déclenche WPKG)</span>
-                                        @endif
-                                    </td>
-                                </tr>
-                                @if ($report['gpoGuid'])
-                                    <tr>
-                                        <td class="font-medium">GUID</td>
-                                        <td class="font-mono text-xs">{{ $report['gpoGuid'] }}</td>
-                                    </tr>
-                                @endif
-                                @if ($report['gpoPath'])
-                                    <tr>
-                                        <td class="font-medium">Path SYSVOL</td>
-                                        <td class="font-mono text-xs">{{ $report['gpoPath'] }}</td>
-                                    </tr>
-                                @endif
-                                <tr>
-                                    <td class="font-medium">Template officiel</td>
-                                    <td class="font-mono text-xs">{{ $report['templatePath'] }}</td>
-                                </tr>
-                                <tr>
-                                    <td class="font-medium">Template présent ?</td>
-                                    <td>
-                                        @if ($report['templateExists'])
-                                            <span class="badge badge-success">Oui</span>
-                                        @else
-                                            <span class="badge badge-ghost">Absent</span>
-                                        @endif
-                                    </td>
-                                </tr>
-                                @if (! empty($report['templateLastModified']))
-                                    <tr>
-                                        <td class="font-medium">Template mtime</td>
-                                        <td class="font-mono text-xs">{{ $report['templateLastModified'] }}</td>
-                                    </tr>
-                                @endif
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Tableau : Liaisons (résiduelles) --}}
-            <div class="card bg-base-100 shadow-sm border border-base-200">
-                <div class="card-body">
-                    <h3 class="card-title text-lg flex items-center gap-2">
-                        <i class="fa-solid fa-link text-info"></i>
-                        Liaisons OU (résiduelles)
-                        <span class="badge badge-neutral badge-sm">{{ count($report['linkedOus'] ?? []) }}</span>
-                    </h3>
-                    @if (empty($report['linkedOus']))
-                        <div class="alert alert-info" data-testid="unlinked-info">
-                            <i class="fa-solid fa-circle-info"></i>
-                            <div>
-                                <p class="font-medium">GPO résiduelle non liée à une OU.</p>
-                                <p class="text-sm opacity-80">
-                                    Sans effet sur WPKG : la livraison est déclenchée par l'agent, indépendamment des
-                                    liaisons GPO.
-                                </p>
-                            </div>
-                        </div>
-                    @else
-                        <ul class="text-sm space-y-1" data-testid="linked-ous">
-                            @foreach ($report['linkedOus'] as $dn)
-                                <li class="font-mono text-xs">
-                                    <i class="fa-solid fa-folder-tree text-info"></i>
-                                    {{ $dn }}
-                                </li>
-                            @endforeach
-                        </ul>
-                        @if ($report['gpoGuid'])
-                            <a href="{{ route('admin.gpo.links', ['guid' => trim((string) $report['gpoGuid'], '{}')]) }}"
-                                class="btn btn-ghost btn-sm mt-3">
-                                <i class="fa-solid fa-pen-to-square"></i>
-                                Gérer les liaisons
-                            </a>
-                        @endif
-                    @endif
-                </div>
-            </div>
-
-            {{-- Tableau : Couverture Bearer (diagnostic) --}}
-            <div class="card bg-base-100 shadow-sm border border-base-200">
-                <div class="card-body">
-                    <h3 class="card-title text-lg flex items-center gap-2">
-                        <i class="fa-solid fa-key text-warning"></i>
-                        Couverture Bearer Phase 2 (Story 15.5)
-                        <span class="badge badge-ghost badge-sm">{{ $this->bearerSummary }}</span>
-                    </h3>
-                    <p class="text-xs text-base-content/60">
-                        Diagnostic résiduel : l'agent ne consomme pas de secret Bearer pour WPKG (dépôt local du profil).
-                    </p>
-                    @if (! ($report['bearerTableAvailable'] ?? false))
-                        <p class="text-sm text-base-content/70">
-                            La table `workstation_api_secrets` (Story 15.5 Phase 2) n'est pas migrée sur ce
-                            serveur. L'auth Bearer côté reports clients est en mode Phase 1 (IP allowlist
-                            `EnsureLocalRequest`). Pas d'impact bloquant.
-                        </p>
-                    @elseif (empty($report['bearerCoverage']))
-                        <p class="text-sm text-base-content/70" data-testid="bearer-empty">
-                            Aucun poste à évaluer pour le moment (GPO non liée ou pas de poste actif dans
-                            les OUs liées).
-                        </p>
-                    @else
-                        @php
-                            $missing = array_filter($report['bearerCoverage'], fn ($v) => $v === false);
-                        @endphp
-                        @if (count($missing) === 0)
-                            <p class="text-sm text-success">Tous les postes liés ont un secret Bearer actif.</p>
-                        @else
-                            <details class="text-sm">
-                                <summary class="cursor-pointer">
-                                    {{ count($missing) }} poste(s) sans Bearer — voir détail
-                                </summary>
-                                <ul class="mt-2 ml-4 list-disc">
-                                    @foreach (array_keys($missing) as $name)
-                                        <li class="font-mono text-xs">{{ $name }}</li>
-                                    @endforeach
-                                </ul>
-                                <p class="text-xs text-base-content/60 mt-2">
-                                    Provisionnez via `php artisan wpkg:provision-secrets` (Story 15.5).
-                                </p>
-                            </details>
-                        @endif
-                    @endif
-                </div>
-            </div>
-
-            {{-- Messages diagnostiques --}}
-            @if (! empty($report['messages']))
-                <div class="card bg-base-100 shadow-sm border border-base-200">
-                    <div class="card-body">
-                        <h3 class="card-title text-lg flex items-center gap-2">
-                            <i class="fa-solid fa-circle-info text-primary"></i>
-                            Diagnostics
-                        </h3>
-                        <ul class="text-sm space-y-1 list-disc list-inside" data-testid="diagnostic-messages">
-                            @foreach ($report['messages'] as $msg)
-                                <li>{{ $msg }}</li>
-                            @endforeach
-                        </ul>
-                    </div>
-                </div>
-            @endif
-        @endif
     </div>
-
     {{-- Modale confirmation ajout CIDR allowlist (Story 15.6 / D8) --}}
     <x-molecules.modal wire:model="isAddCidrModalOpen" size="max-w-lg" height="h-auto"
         title="Confirmer l'élargissement de l'allowlist WPKG" icon="fa-shield-halved text-warning">

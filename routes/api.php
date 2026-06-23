@@ -13,7 +13,6 @@ use App\Http\Controllers\Api\v1\ControlHub\SnapshotController;
 use App\Http\Controllers\Api\v1\ControlHub\ApplicationController;
 use App\Http\Controllers\Api\v1\ControlHub\AppProfileController;
 use App\Http\Controllers\Api\v1\ControlHub\SyncManifestController;
-use App\Http\Controllers\Api\v1\ShortcutExportController;
 use App\Http\Controllers\Api\WpkgReportController;
 
 // Story 16.10 — Auth v1 poste ↔ serveur local (HTTPS + JWT RS256)
@@ -45,14 +44,13 @@ use App\Http\Controllers\Api\V1\Agent\ToolController as AgentToolController;
 // servis aux deux chemins d'installation (GPO-dispatcher figée + unattend iPXE)
 // AVANT que l'agent ait un token. `auth.v1.lan-only` (RFC1918), HORS du groupe `agent.token`.
 use App\Http\Controllers\Api\V1\Agent\BootstrapController as AgentBootstrapController;
-// Story 16.13 — Exposition endpoints natifs /api/v1/*
-use App\Http\Controllers\WallpaperController;
-use App\Http\Controllers\OverlayController;
-use App\Http\Controllers\AppPolicyController;
-use App\Http\Controllers\Gpo\NetworkOutController;
-use App\Http\Controllers\Gpo\VeyonOutController;
-use App\Http\Controllers\Gpo\AssociationsOutController;
-use App\Http\Controllers\Gpo\ApplicationsScriptsController;
+// Story 27.14 — Les imports des controllers du canal de config legacy
+// (`WallpaperController::apiV1`, `OverlayController`, `AppPolicyController`,
+// `Gpo\{NetworkOut,VeyonOut,AssociationsOut,ApplicationsScripts}Controller`,
+// `ShortcutExportController`) ont été retirés avec le groupe de routes
+// `/api/v1/workstation-config/*` (16.13) et `/api/v1/shortcuts/export/*`.
+// `WallpaperController` survit (thumbnail/assetThumbnail) mais n'est consommé
+// QUE par routes/web.php — plus aucune route API ne le référence.
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -376,48 +374,14 @@ Route::get('/v1/agent/ca', [AgentBootstrapController::class, 'ca'])
 
 /*
 |--------------------------------------------------------------------------
-| Story 16.13 — Exposition endpoints natifs /api/v1/workstation-config/*
+| Story 27.14 — Canal de config legacy `/api/v1/workstation-config/*` ÉTEINT
 |--------------------------------------------------------------------------
-| 8 endpoints natifs équivalents aux *_out.php legacy, protégés par
-| auth.v1.workstation (JWT RS256 + tier=workstation, livré par 16.10).
-| workstation_uuid extrait du claim sub (pattern iso 16.12 strict —
-| jamais depuis query/body user-controlled).
-|
-| Les endpoints legacy `*_out.php` restent inchangés (transformés en
-| MigrationController en 16.13bis).
-|
-| Préfixe `/api/v1/workstation-config/*` (post-review code-review 16.13,
-| arbitrage Henri Q4 2026-05-19) : namespace dédié qui évite toute
-| ambiguïté avec ControlHub (`/api/v1/snapshot`, `/api/v1/shortcuts/sync`,
-| `/api/v1/applications/...`) et matérialise explicitement la nature
-| « configuration poste » des endpoints.
-|
-| Méthode HTTP : 7 GET + 1 GET|POST pour /associations (parité legacy
-| `associations_out.php` accepte body `list` POST).
-| Throttle 300/min/IP iso pattern 16.3b legacy.
+| Le groupe `v1/workstation-config` (9 routes `agent.v1.config.*`, story 16.13)
+| et le groupe `v1/shortcuts/export` (`shortcuts.export.*`) — 100 % legacy
+| (méthodes `apiV1`/`script`/`file`/`icon`) — ont été SUPPRIMÉS. Le canal AGENT
+| desired-state (`/api/v1/agent/*` + StateProviders) est totalement indépendant
+| et reste intact. Le middleware `legacy.config.channel` est CONSERVÉ (gate les
+| endpoints WPKG `linux_out`/`winget_out`, hors scope 27.14).
 */
-Route::prefix('v1/workstation-config')
-    ->middleware(['legacy.config.channel', 'auth.v1.secure-headers', 'auth.v1.workstation', 'throttle:300,1'])
-    ->name('agent.v1.config.')
-    ->group(function () {
-        Route::get('/wallpaper',            [WallpaperController::class,           'apiV1'])->name('wallpaper');
-        Route::get('/overlay',              [OverlayController::class,             'apiV1'])->name('overlay');
-        Route::get('/firefox',              [AppPolicyController::class,           'apiV1Firefox'])->name('firefox');
-        Route::get('/thunderbird',          [AppPolicyController::class,           'apiV1Thunderbird'])->name('thunderbird');
-        Route::get('/shortcuts',            [ShortcutExportController::class,      'apiV1'])->name('shortcuts');
-        Route::get('/network',              [NetworkOutController::class,          'apiV1'])->name('network');
-        Route::get('/veyon',                [VeyonOutController::class,            'apiV1'])->name('veyon');
-        Route::match(['GET', 'POST'], '/associations', [AssociationsOutController::class, 'apiV1'])->name('associations');
-        Route::get('/applications-scripts', [ApplicationsScriptsController::class, 'apiV1'])->name('applications-scripts');
-    });
-
-Route::prefix('v1/shortcuts/export')->name('shortcuts.export.')->middleware('legacy.config.channel')->group(function () {
-    // Script complet (.cmd/.sh) pour un poste
-    Route::match(['get', 'post'], '/script', [ShortcutExportController::class, 'script'])->name('script');
-    // Fichier .lnk ou .desktop individuel
-    Route::match(['get', 'post'], '/file', [ShortcutExportController::class, 'file'])->name('file');
-    // Icône d'un raccourci (.ico/.png)
-    Route::match(['get', 'post'], '/icon', [ShortcutExportController::class, 'icon'])->name('icon');
-});
 
 

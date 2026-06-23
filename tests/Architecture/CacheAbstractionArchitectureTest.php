@@ -36,9 +36,9 @@ final class CacheAbstractionArchitectureTest extends TestCase
             'app/Services/AppCustomization/CacheAppContextWriter.php',
             'app/Services/AppCustomization/Contracts/AppContextWriter.php',
             'app/Services/Wallpaper/CacheWallpaperContextRepository.php',
-            'app/Http/Controllers/Gpo/ApplicationsScriptsController.php',
-            'app/Gpo/Services/ApplicationScriptsGenerator.php',
-            'app/Gpo/Services/ApplicationScriptsAssembler.php',
+            // Story 27.14 — `ApplicationsScriptsController`, `ApplicationScriptsGenerator`
+            // et `ApplicationScriptsAssembler` (canal de génération de scripts
+            // applications legacy) ont été supprimés ; retirés du scope.
             'app/Providers/AppCustomizationServiceProvider.php',
             'app/Providers/WallpaperServiceProvider.php',
         ];

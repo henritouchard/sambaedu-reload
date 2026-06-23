@@ -140,8 +140,6 @@ clients automates (bash, client Veyon C++).
 | URL                       | Controller                                                       | Service métier                       | Side effect AD                                    | Channel logs |
 |---------------------------|------------------------------------------------------------------|--------------------------------------|---------------------------------------------------|--------------|
 | `/gpo/network_out.php`    | `App\Http\Controllers\Gpo\NetworkOutController::legacyOut`       | `App\Gpo\Services\NetworkScriptGenerator` | aucun                                            | `daily` standard |
-| `/gpo/veyon_out.php`      | `App\Http\Controllers\Gpo\VeyonOutController::legacyOut`         | `App\Gpo\Services\VeyonConfigGenerator` + `App\Gpo\Services\ReadUserManager` | création AD `read.user{suffix}` si absent (sous lock) | `daily` standard |
-| `/gpo/veyon_out.php?licence=1` | idem (sous-action)                                          | sert `/etc/sambaedu/applications/veyon/licence.vlf` raw | aucun                                            | `daily` standard |
 | `/gpo/associations_out.php` (POST only) | `App\Http\Controllers\Gpo\AssociationsOutController::legacyOut` | `App\Gpo\Services\AssociationsResolver` + `App\Gpo\Services\PackagesXmlAssociationsReader` + `App\Wpkg\Deployment\Services\WorkstationPackagesResolver` (15.2) | aucun (lecture seule)                          | `daily` standard (Story 16.3c D9) |
 
 **Auth** : pas d'auth web (postes clients sans cookie Laravel). Garde effective =
@@ -152,11 +150,6 @@ Throttle `300,1` par IP (parité firefox_out.php).
 **Iso-bytes** : sortie strictement comparable byte-à-byte au legacy (modulo
 `BindPassword` chiffré OAEP non-déterministe pour Veyon). Pas de `\r\n`, pas
 de gzip, pas de cache.
-
-**Fallback shim `@legacy-port`** : `ReadUserManager` délègue à
-`create_ad_user`, `set_config`, `user_valid_passwd`, `usersetpassword` du
-shim 1bis-18g (chargés via `legacy/bootstrap.php`). Story 16.4 portera ces
-opérations en service AD natif propre.
 
 **Spécificité `associations_out.php` (Story 16.3c)** :
 - Endpoint **POST only** — le legacy n'accepte pas GET (body `list` obligatoire).
@@ -482,7 +475,7 @@ re-spécialise ses placeholders (`###_SE4FS_NAME_###`, `###_DOMAIN_###`, etc.).
 
 - **D1** : Périmètre = audit + republish (pas de génération from scratch = Epic 17.1).
 - **D2** : URL serveur via `URL::route('wpkg.hosts-xml')` / `wpkg.profiles-xml` (single source of truth de 15.2).
-- **D3** : Service métier avec `audit()` + `publish(force)` — pattern iso `ReadUserManager` 16.3b.
+- **D3** : Service métier avec `audit()` + `publish(force)` — pattern service métier audit/publish (cf. 16.3b).
 - **D4** : UI Livewire SFC + commande artisan double accès.
 - **D5** : Modale `<x-molecules.modal>` confirmation obligatoire sur publish.
 - **D6** : Fallback shim `@legacy-port` autorisé (`import_gpo`/`specialise_gpo`) — pas de portage natif.

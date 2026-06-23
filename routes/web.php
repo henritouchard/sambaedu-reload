@@ -2,13 +2,14 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\ParcController;
-use App\Http\Controllers\AppPolicyController;
 use App\Http\Controllers\Ipxe\WindowsIsoUploadController;
 use App\Http\Controllers\WallpaperController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChangePasswordController;
-// Story 16.13bis — Module migration SE4 → SE5 (App\Auth\V1\Migration).
-use App\Auth\V1\Migration\Http\Controllers\MigrationController as AuthV1MigrationController;
+// Story 27.14 — Extinction du canal legacy : les imports `AppPolicyController`
+// (canal config app legacy) et `MigrationController` (passthrough fragment
+// legacy) ont été retirés avec leurs routes (`app-policy.canonical`,
+// `migration.legacy.*`).
 
 /*
 |--------------------------------------------------------------------------
@@ -583,39 +584,17 @@ Route::get('/shortcuts/icon/{name}', function (string $name) {
 
 /*
 |--------------------------------------------------------------------------
-| Story 16.13bis — Migration SE4 → SE5 (fragment+reboot stateless)
+| Story 27.14 — Canal de config legacy ÉTEINT (ex-16.13bis migration fragment)
 |--------------------------------------------------------------------------
-| Les 8 routes legacy `gpo/*_out.php` (+ `gpo/applications.php`) sont
-| transformées en endpoints servant un **fragment de migration** texte
-| (cmd Windows ou sh Linux) via `MigrationController::serveFragment` :
-|
-|   - Poste non-migré : fragment complet (download CA, enroll JWT,
-|     write registre/endpoints.conf, shutdown /r /t 30).
-|   - Poste déjà migré (lookup `workstations_migration_status`) :
-|     fragment no-op (`exit 0` — pas de reboot intempestif).
-|
-| Le middleware `inject.bootstrap-fragment` 16.11 a été **supprimé** par
-| la Story 16.13bis : la logique d'injection en préfixe d'une réponse
-| legacy fonctionnelle est remplacée par un fragment autonome qui
-| **remplace** la réponse legacy. Les méthodes `legacyOut` /
-| `legacyDispatch` / `generate` des controllers métier deviennent code
-| mort sur la route legacy (les appels en direct restent possibles via
-| les méthodes `apiV1` 16.13 sur `/api/v1/workstation-config/*`).
-|
-| Pas d'auth, pas de check uuid bloquant : un poste non-migré n'a pas
-| encore de JWT, c'est précisément le rôle du fragment d'enrôler.
-| Throttle `300,1` conservé (parité rentrée scolaire 300 postes
-| simultanés).
+| Les 8 routes legacy `gpo/*_out.php` (+ `gpo/applications.php`) qui servaient
+| le fragment de migration / passthrough de conf legacy (`MigrationController::
+| serveFragment` + `PASSTHROUGH_HANDLERS`) ont été SUPPRIMÉES. Le poste migré
+| reçoit désormais TOUTE sa configuration par l'agent desired-state
+| (bootstrap GPO 25.4 → enrôlement → convergence). Le kill-switch
+| `LEGACY_CONFIG_CHANNEL_ENABLED=false` (actif depuis 2026-06-12) montrait
+| déjà le comportement cible (fragment no-op) ; la suppression le rend
+| permanent. Cf. story 27.14 / mémoire `project_no_legacy_transition_state`.
 */
-Route::match(['GET', 'POST'], 'gpo/shortcuts_out.php',
-    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'shortcuts'))
-    ->middleware('throttle:300,1')
-    ->name('migration.legacy.shortcuts');
-
-Route::match(['GET', 'POST'], 'gpo/wallpaper_out.php',
-    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'wallpaper'))
-    ->middleware('throttle:300,1')
-    ->name('migration.legacy.wallpaper');
 
 /*
 |--------------------------------------------------------------------------
@@ -633,74 +612,10 @@ Route::get('admin/gpo/del-roam.sh', [\App\Http\Controllers\Admin\RoamingProfileC
     ->middleware(\App\Http\Middleware\AllowSe4FsScript::class)
     ->name('admin.gpo.del-roam-script');
 
-/*
-|--------------------------------------------------------------------------
-| Story 16.13bis — Migration SE4 → SE5 : 6 routes legacy restantes
-|--------------------------------------------------------------------------
-| Suite du bloc transformé ci-dessus (shortcuts + wallpaper) : firefox,
-| thunderbird, network, veyon, associations, applications.
-|
-| Les 8 endpoints renvoient désormais **un fragment de migration**
-| (cmd Windows ou sh Linux) via `MigrationController::serveFragment`.
-| Les noms de routes deviennent `migration.legacy.{endpoint}` (les
-| anciens noms `wallpaper.legacy`, `app-policy.firefox.legacy`, etc.
-| sont supprimés — grep le repo pour adapter les call-sites).
-|
-| Note D13 (option β) : `gpo/applications.php` est aussi transformé en
-| fragment — la pose APCu `apps.<md5>` côté legacy disparaît (le poste
-| migré utilise JWT 16.10, plus md5 APCu). Les méthodes `apiV1` 16.13
-| des controllers continuent de servir `/api/v1/workstation-config/*`
-| sans modification.
-|
-| Pas d'auth (poste non-migré sans JWT). Throttle `300,1` préservé.
-*/
-Route::match(['GET', 'POST'], 'gpo/firefox_out.php',
-    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'firefox'))
-    ->middleware('throttle:300,1')
-    ->name('migration.legacy.firefox');
-
-Route::match(['GET', 'POST'], 'gpo/thunderbird_out.php',
-    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'thunderbird'))
-    ->middleware('throttle:300,1')
-    ->name('migration.legacy.thunderbird');
-
-Route::match(['GET', 'POST'], 'gpo/network_out.php',
-    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'network'))
-    ->middleware('throttle:300,1')
-    ->name('migration.legacy.network');
-
-Route::match(['GET', 'POST'], 'gpo/veyon_out.php',
-    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'veyon'))
-    ->middleware('throttle:300,1')
-    ->name('migration.legacy.veyon');
-
-// Story 16.3c — POST uniquement legacy ; on garde POST uniquement pour
-// parité fonctionnelle (un GET sans `list` retournait 400 legacy). Le
-// fragment de migration ne consomme pas le body, mais on préserve la
-// shape de la route pour ne pas créer un GET nouveau qui exposerait le
-// chemin à d'autres clients.
-Route::match(['POST'], 'gpo/associations_out.php',
-    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'associations'))
-    ->middleware('throttle:300,1')
-    ->name('migration.legacy.associations');
-
-Route::match(['GET', 'POST'], 'gpo/applications.php',
-    fn (\Illuminate\Http\Request $r) => app(AuthV1MigrationController::class)->serveFragment($r, 'applications'))
-    ->middleware('throttle:300,1')
-    ->name('migration.legacy.applications');
-
-/*
-|--------------------------------------------------------------------------
-| Route canonique /api/policies/{kind}/{id}
-|--------------------------------------------------------------------------
-| Story 4.8 — AC 10. Route alternative propre en parallèle des iso-contrat.
-| Placée dans web.php (pas api.php) pour éviter le préfixe /api/ global —
-| en réalité nous préfixons à la main pour que le routing corresponde à
-| `/api/policies/{kind}/{id}`. Pas d'auth (même design que iso-contrat).
-*/
-Route::get('api/policies/{kind}/{id}', [AppPolicyController::class, 'canonical'])
-    ->middleware('throttle:300,1')
-    ->name('app-policy.canonical');
+// Story 27.14 — les 6 routes legacy `migration.legacy.{firefox,thunderbird,
+// network,veyon,associations,applications}` (ex-16.13bis) et la route
+// `app-policy.canonical` (`/api/policies/{kind}/{id}`, canal config app legacy
+// story 4.8) ont été SUPPRIMÉES avec l'extinction du canal de config legacy.
 
 /*
 |--------------------------------------------------------------------------
