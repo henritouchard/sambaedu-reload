@@ -23,8 +23,12 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
  * CA sans bearer.
  *
  * Trois endpoints, chaîne middleware iso `/v1/agent/enrollment`
- * (`local.request` + `auth.v1.secure-headers` + `throttle`), HORS du groupe
- * `agent.token` (piège n° 6) :
+ * (`auth.v1.lan-only` + `auth.v1.secure-headers` + `throttle`), HORS du groupe
+ * `agent.token` (piège n° 6). `auth.v1.lan-only` (= EnsureLanIp, subnets
+ * RFC1918) et NON `local.request` (= EnsureLocalRequest, localhost + liste
+ * d'ingestion WPKG) : ces endpoints sont appelés par un VRAI poste sur le LAN
+ * pendant l'install — `local.request` le rejetterait en 403 (la liste WPKG vaut
+ * localhost par défaut). Iso unattend iPXE + `/enroll` legacy, mêmes subnets :
  *
  *  - `GET /v1/agent/stable` (route `agent.v1.stable`) — le MANIFEST de la
  *    version STABLE `{success, version, hash, url}` ({@see ReleaseManifestService::stableManifest()}),
@@ -45,7 +49,8 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
  * Frontière `agent_*` + zéro AD (NFR7, piège n° 15) : ces endpoints LISENT
  * `agent_releases` (stable) et le `.crt` PKI sur disque ; ils n'écrivent rien
  * et n'appellent AUCUN LdapRecord/Kerberos/samba-tool. Identité néant : le
- * périmètre réseau est porté par `local.request` (LAN/VPN de confiance).
+ * périmètre réseau est porté par `auth.v1.lan-only` (subnets RFC1918 du LAN
+ * scolaire, surchargeables via `AUTH_V1_BOOTSTRAP_ALLOWED_SUBNETS`).
  */
 class BootstrapController extends Controller
 {

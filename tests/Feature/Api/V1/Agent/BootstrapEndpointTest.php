@@ -22,9 +22,10 @@ use Tests\TestCase;
  * `GET /api/v1/agent/ca`.
  *
  * Routes RÉELLES (`agent.v1.stable*`, `agent.v1.ca`) derrière
- * `local.request` + `auth.v1.secure-headers` + `throttle:60,1`, HORS du groupe
+ * `auth.v1.lan-only` + `auth.v1.secure-headers` + `throttle:60,1`, HORS du groupe
  * `agent.token` (pas de bearer requis). Confinement realpath iso 25.1, 404
- * indistinct, 503 si CA non initialisée. `local.request` rejette hors LAN.
+ * indistinct, 503 si CA non initialisée. `auth.v1.lan-only` (subnets RFC1918)
+ * rejette hors LAN — un vrai poste sur le LAN passe (≠ `local.request`).
  */
 final class BootstrapEndpointTest extends TestCase
 {
@@ -105,7 +106,7 @@ final class BootstrapEndpointTest extends TestCase
 
     private function fromLan(string $uri): TestResponse
     {
-        // 127.0.0.1 toujours autorisé par EnsureLocalRequest.
+        // 127.0.0.1 (127.0.0.0/8) toujours autorisé par EnsureLanIp.
         return $this->call('GET', $uri, server: ['REMOTE_ADDR' => '127.0.0.1']);
     }
 

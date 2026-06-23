@@ -43,7 +43,7 @@ use App\Http\Controllers\Api\V1\Agent\ReleaseController as AgentReleaseControlle
 use App\Http\Controllers\Api\V1\Agent\ToolController as AgentToolController;
 // Story 25.4 — Endpoints d'amorçage LAN NON authentifiés (binaire stable + CA)
 // servis aux deux chemins d'installation (GPO-dispatcher figée + unattend iPXE)
-// AVANT que l'agent ait un token. `local.request`, HORS du groupe `agent.token`.
+// AVANT que l'agent ait un token. `auth.v1.lan-only` (RFC1918), HORS du groupe `agent.token`.
 use App\Http\Controllers\Api\V1\Agent\BootstrapController as AgentBootstrapController;
 // Story 16.13 — Exposition endpoints natifs /api/v1/*
 use App\Http\Controllers\WallpaperController;
@@ -251,8 +251,10 @@ Route::prefix('v1')
 |
 | - `POST /v1/agent/enrollment` : échange du ticket one-time (émis à la
 |   génération de l'unattend.xml — porte 1 iPXE) contre le token agent.
-|   Profil de consommateur iso endpoints WPKG 17.6 : poste en install, pas
-|   encore de bearer → `local.request` (LAN only) + throttle. Les
+|   Profil de consommateur : poste en install, pas encore de bearer, sur le
+|   LAN scolaire → `auth.v1.lan-only` (subnets RFC1918, iso unattend +
+|   `/enroll` legacy) + throttle. PAS `local.request` (localhost + liste WPKG
+|   uniquement → un vrai poste serait rejeté 403 ; piège réel terrain). Les
 |   `auth.v1.secure-headers` posent `Cache-Control: no-store` (la réponse
 |   200 porte le token en clair, une seule fois) — hygiène HTTP réutilisée,
 |   pas une dépendance au canal JWT.
@@ -273,7 +275,7 @@ Route::prefix('v1')
 |   ici, à la FIN du bloc (fenêtre 1500 chars ScriptsOsNamespaceTest).
 */
 Route::post('/v1/agent/enrollment', [AgentEnrollController::class, 'store'])
-    ->middleware(['local.request', 'auth.v1.secure-headers', 'throttle:10,1'])
+    ->middleware(['auth.v1.lan-only', 'auth.v1.secure-headers', 'throttle:10,1'])
     ->name('agent.v1.enrollment');
 
 Route::get('/v1/agent/state', [AgentStateController::class, 'show'])
@@ -342,8 +344,9 @@ Route::get('/v1/agent/overlay-skin', [AgentToolController::class, 'skin'])
 | script GPO-dispatcher figée (poste migré) et l'unattend iPXE (poste neuf)
 | déploient la CA, téléchargent le binaire stable, puis lancent
 | `agent.exe install`. Profil de consommateur iso `/v1/agent/enrollment`
-| (poste sans bearer en install/amorçage) → `local.request` (LAN only) +
-| throttle ; PAS `agent.token`.
+| (poste sans bearer en install/amorçage, sur le LAN) → `auth.v1.lan-only`
+| (subnets RFC1918) + throttle ; PAS `agent.token`, PAS `local.request`
+| (localhost-only → 403 sur un vrai poste).
 |
 | - `GET /v1/agent/stable`          : manifest stable {version, hash, url}
 |   (url ABSOLUE) ou 404 `no_release`. Résolution FORCÉE sur `is_stable` —
@@ -360,15 +363,15 @@ Route::get('/v1/agent/overlay-skin', [AgentToolController::class, 'skin'])
 | groupe 16.12), pour la fenêtre 1500 chars de `ScriptsOsNamespaceTest`.
 */
 Route::get('/v1/agent/stable', [AgentBootstrapController::class, 'stable'])
-    ->middleware(['local.request', 'auth.v1.secure-headers', 'throttle:60,1'])
+    ->middleware(['auth.v1.lan-only', 'auth.v1.secure-headers', 'throttle:60,1'])
     ->name('agent.v1.stable');
 
 Route::get('/v1/agent/stable/download', [AgentBootstrapController::class, 'download'])
-    ->middleware(['local.request', 'auth.v1.secure-headers', 'throttle:60,1'])
+    ->middleware(['auth.v1.lan-only', 'auth.v1.secure-headers', 'throttle:60,1'])
     ->name('agent.v1.stable.download');
 
 Route::get('/v1/agent/ca', [AgentBootstrapController::class, 'ca'])
-    ->middleware(['local.request', 'auth.v1.secure-headers', 'throttle:60,1'])
+    ->middleware(['auth.v1.lan-only', 'auth.v1.secure-headers', 'throttle:60,1'])
     ->name('agent.v1.ca');
 
 /*

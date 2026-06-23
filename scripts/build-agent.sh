@@ -98,24 +98,41 @@ fi
 version="$(sed -n 's/.*Version = "\(.*\)".*/\1/p' "$APP_DIR/agent/shared/version.go" | head -1)"
 binary="$DIST_DIR/sambaedu-agent-${version}.exe"
 
+# Le build peut être sauté si le binaire est déjà à jour ; MAIS la publication
+# (--publish/--stable) doit rester atteignable même alors — sinon un `--stable`
+# sur un binaire déjà buildé sortait en « rien à faire » SANS jamais déposer ni
+# enregistrer la release (publication silencieusement perdue : agent_releases
+# vide, /api/v1/agent/stable → no_release).
+need_build=true
 if [[ "$FORCE" != true && -f "$binary" ]]; then
     stale="$(find "$APP_DIR/agent" -type f \( -name '*.go' -o -name 'go.mod' -o -name 'go.sum' -o -name 'build.sh' \) -newer "$binary" -print -quit)"
     if [[ -z "$stale" && ! "$CS_CRT" -nt "$binary" ]]; then
-        log "Binaire à jour ($binary) — rien à faire."
-        exit 0
+        if [[ "$PUBLISH" != true ]]; then
+            log "Binaire à jour ($binary) — rien à faire."
+            exit 0
+        fi
+        log "Binaire à jour ($binary) — build sauté ; publication demandée → dépôt + manifeste de l'artefact existant."
+        need_build=false
+    else
+        log "Rebuild : ${stale:-cert code-signing} plus récent que le binaire."
     fi
-    log "Rebuild : ${stale:-cert code-signing} plus récent que le binaire."
 fi
 
 # --- Build + signature (la CA du serveur, le PFX ne sort pas d'ici) -------------
-log "Build agent Go ${version} signé (CA interne)..."
-GO="$GO_BIN" \
-CODESIGN_PFX="$CS_PFX" \
-CODESIGN_CA="$CA_CRT" \
-TIMESTAMP_URL="${TIMESTAMP_URL:-}" \
-    bash "$APP_DIR/agent/build/build.sh"
-
-log "Artefact signé : $binary"
+# Sauté si le binaire est déjà à jour et qu'on ne fait que (re)publier : on
+# republie alors l'artefact EXISTANT tel quel (hash stable). La signature
+# Authenticode n'étant pas déterministe, rebuilder changerait le hash pour rien.
+if [[ "$need_build" == true ]]; then
+    log "Build agent Go ${version} signé (CA interne)..."
+    GO="$GO_BIN" \
+    CODESIGN_PFX="$CS_PFX" \
+    CODESIGN_CA="$CA_CRT" \
+    TIMESTAMP_URL="${TIMESTAMP_URL:-}" \
+        bash "$APP_DIR/agent/build/build.sh"
+    log "Artefact signé : $binary"
+else
+    log "Réutilisation de l'artefact existant (pas de re-signature) : $binary"
+fi
 
 # --- Publication (--publish / --stable) : dépôt + manifeste, atomiques --------
 # Le binaire DÉPOSÉ et le hash ENREGISTRÉ proviennent du MÊME fichier (celui
