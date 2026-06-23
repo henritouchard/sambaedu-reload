@@ -45,9 +45,16 @@ class GpoTemplateRegistry
      * templates effectivement livrées par le paquet `sambaedu-gpo` (review F7),
      * matching insensible à la casse.
      *
+     * Story 27.16 : ajout du préfixe SE5 `se_` pour reconnaître le bootstrap
+     * d'amorçage agent renommé `SE_agent_bootstrap` (ex-`se4_agent_bootstrap`,
+     * 25.4). Le matching est `mb_strtolower` + `str_starts_with`, donc
+     * `SE_agent_bootstrap` → `se_agent_bootstrap` passe. `se_` ne chevauche PAS
+     * `se4_` (`se4_...` lowercasé commence par `se4`, jamais par `se_`) : aucune
+     * capture indésirable, la surface restant bornée à `templates_dir`.
+     *
      * @var list<string>
      */
-    private const ALLOWED_PREFIXES = ['se4_', 'etab_'];
+    private const ALLOWED_PREFIXES = ['se4_', 'etab_', 'se_'];
 
     /** Mémo par instance — évite de re-scanner le disque à chaque accès (review F5). */
     private ?array $cache = null;

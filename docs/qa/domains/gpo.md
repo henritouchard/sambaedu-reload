@@ -2344,3 +2344,51 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 \
 - [ ] **27.14-3** Kill-switch + linux_out/winget_out + carte réglages déploiement préservés ; audit/re-publish `se4_wpkg` retirés
 - [ ] **27.14-4** KPI 0 GPO hors bootstrap (audit SYSVOL opérateur lab) ; fantômes inotify nettoyés hors worktree
 - [ ] **27.14-5** Postes migrés convergent par l'agent (zéro appel `*_out.php`) ; parc migré couvert par l'agent avant bascule prod
+
+## Story 27.16 — Déploiement automatisé de la GPO bootstrap `SE_agent_bootstrap` + isolation par blocage d'héritage
+
+> **Renommage SE5** : la GPO bootstrap 25.4 `se4_agent_bootstrap` devient `SE_agent_bootstrap` (dossier + `[General]displayName` + en-tête `startup.cmd`). Préfixe `se_` ajouté à `GpoTemplateRegistry::ALLOWED_PREFIXES` (sans retirer `se4_`/`etab_`).
+>
+> **Automatisation** : la publication (ex-pas de runbook manuel Fork 2 25.4) est désormais portée par la commande `php artisan gpo:deploy-agent-bootstrap`, câblée dans `scripts/update.sh` (`ensure_agent_bootstrap_gpo`) et donc dans `install.sh` (qui rejoue update.sh). Idempotente, **fail-soft**, contexte Administrator pour vaincre le blocage SYSVOL READ-only.
+>
+> **Isolation (AD mutualisé ~75 collèges)** : option 1 « par établissement » — blocage d'héritage (`gPOptions=1`) sur l'OU computers de NOTRE établissement + lien du bootstrap sur cette MÊME OU (JAMAIS la racine). Aucune GPO legacy supprimée/déliée/éditée (objets partagés fédération-wide). Prérequis : DC joignable + `admin_passwd`. E2e réel = action manuelle Henri sur le lab.
+
+### Scénario 27.16-1 — Renommage SE5 reconnu comme template publiable (HÔTE)
+
+1. `php artisan test --filter 'SeAgentBootstrap|GpoTemplateRegistry'` → vert (préfixe `se_`, `[CSE]`, CRLF + pur ASCII, non-régression `se4_`/`etab_`, `se_` ne capture pas `session_x`).
+2. `git status resources/gpo/SE_agent_bootstrap/` → rename propre depuis `se4_agent_bootstrap/` ; `GPT.INI` porte `displayName=SE_agent_bootstrap` ; `startup.cmd` en-tête renommé.
+3. **Attendu** : `file resources/gpo/SE_agent_bootstrap/Machine/Scripts/Startup/startup.cmd` → « DOS batch file, ASCII text, with CRLF line terminators » (aucun LF orphelin, aucun octet non-ASCII). `GpoTemplateRegistry::isPublishable('SE_agent_bootstrap')` → `true`.
+
+### Scénario 27.16-2 — Publication Administrator + vérification d'écriture RÉELLE (lab, opérateur)
+
+1. Prérequis : DC AD joignable + `admin_passwd` (Domain Admin) en config. PKI initialisée + une release **stable** publiée (cf. runbook §0).
+2. `php artisan gpo:deploy-agent-bootstrap` (sur la VM/se4fs). La commande : stage le template → `templates_dir/sambaedu-gpo/SE_agent_bootstrap/`, établit un ticket Kerberos **Administrator** dédié (`kinit` dans un `KRB5CCNAME` temporaire, purgé en fin), publie via le shim legacy `import_gpo` (crée la GPC si absente, écrit SYSVOL, pose `gPCMachineExtensionNames`, version).
+3. **Vérification d'écriture réelle** (anti faux-succès `www-sambaedu` READ-only) : la commande re-lit le `startup.cmd` déposé en SYSVOL (`smbclient ls` sous Administrator) et exige une **taille > 0** ; un `ACCESS_DENIED` masqué en exit 0 devient un **échec explicite** (`gpo.sysvol.write` failure), pas un faux « publié ».
+4. **Attendu** : `samba-tool gpo listall | grep SE_agent_bootstrap` la liste ; l'objet GPC porte `gPCMachineExtensionNames` (sans quoi le `startup.cmd` ne s'exécuterait jamais — piège runbook §3bis). Aucun secret en clair dans la sortie ni les logs `gpo` (`operation_id` corrélé `gpo.create`/`gpo.sysvol.write`/`gpo.link.add`/`gpo.inheritance.set`).
+
+### Scénario 27.16-3 — Blocage d'héritage sur l'OU établissement (les GPO legacy ne s'appliquent plus à NOS postes, les 74 autres collèges intacts)
+
+1. Après déploiement, sur le DC : `samba-tool gpo getinheritance "OU=<code>,OU=computers,<base_dn>"` → **GPO_BLOCK_INHERITANCE** (prod/lab1 avec couche établissement) ; en localdev plat → `OU=computers,<base>`.
+2. **Attendu (notre établissement)** : un poste de NOTRE OU computers ne reçoit plus les GPO legacy liées racine (`wpkg`, `Wallpaper`, `redirections`, `applications`, `proxy`, `imprimantes`, `lecteurs reseau`, …) — `gpresult /R` sur un poste de test ne les liste plus comme appliquées.
+3. **Attendu (autres collèges, NON-RÉGRESSION fédération)** : aucune autre OU établissement (`OU=<autre_code>,OU=computers`) n'a `gPOptions` modifié ; les 74 autres collèges continuent de recevoir les GPO racine. **Aucune** GPO legacy supprimée/déliée/éditée (ACL/Deny inclus) — `samba-tool gpo listall` et les `gPLink` racine inchangés.
+4. **Idempotence** : ré-exécuter `gpo:deploy-agent-bootstrap` → héritage déjà bloqué = noop (pas d'erreur), lien déjà présent = succès silencieux (16.5).
+
+### Scénario 27.16-4 — Lien bootstrap sur l'OU établissement + filet éternel sur un poste
+
+1. **Attendu** : `samba-tool gpo getlink "OU=<code>,OU=computers,<base_dn>"` liste `SE_agent_bootstrap` (lié à l'OU établissement, JAMAIS à la racine — sinon il viserait les 75 collèges).
+2. Déplacer un poste agent-less (ex. `windeboule`) dans l'OU établissement (action opérateur, hors commande), `gpupdate /force` puis **reboot** → le `startup.cmd` (SYSTEM) (re)pose la CA + le binaire stable + `agent.exe install` + la tâche de refresh 240 min. L'agent **demande son enrôlement** (porte 2), approbation un-clic (25.3) → convergence.
+3. **Attendu** : un poste dont l'install agent unattend a échoué (403 `local.request` historique) se ré-installe l'agent tout seul au boot suivant — le filet FR25/#27 cesse d'être un pas manuel jamais exécuté.
+
+### Scénario 27.16-5 — Garde fail-soft (DC injoignable / creds absents) + idempotence (HÔTE + lab)
+
+1. **HÔTE** : `php artisan test --filter 'AgentBootstrapPublisher|GpoDeployAgentBootstrap'` → vert. La garde renvoie `skipped` (pas d'exception, AUCUN appel destructeur `setInheritance`/`setLink`) quand `admin_passwd` absent OU DC injoignable ; mapping exit codes : skip/deployed/dry-run → 0, `failed` → 0 (fail-soft) sauf `--strict` → 1.
+2. **Lab** : couper le DC (ou vider `admin_passwd`) puis lancer `scripts/update.sh` → l'étape `ensure_agent_bootstrap_gpo` **warn + skip**, l'update **ne casse PAS** (exit non bloquant). Rétablir DC + creds → relancer : publication effective, idempotente.
+3. **Attendu** : `--dry-run` affiche l'OU cible détectée et NE fait AUCUNE écriture (pas de staging effectif, pas de publication, pas de lien).
+
+### Checklist rapide 27.16
+
+- [ ] **27.16-1** Rename `SE_agent_bootstrap` reconnu (préfixe `se_`) + `SeAgentBootstrapTemplateTest`/`GpoTemplateRegistryTest` verts ; CRLF + pur ASCII intacts ; `se4_`/`etab_` non régressés
+- [ ] **27.16-2** Publication Administrator (kinit dédié purgé) + `gPCMachineExtensionNames` posé + **vérification d'écriture réelle** (faux-succès SYSVOL → échec explicite) ; aucun secret en clair
+- [ ] **27.16-3** Héritage bloqué sur l'OU computers de NOTRE établissement ; GPO legacy ne s'appliquent plus à nos postes ; 74 autres collèges intacts ; aucune GPO legacy supprimée/déliée/éditée
+- [ ] **27.16-4** `SE_agent_bootstrap` liée à l'OU établissement (jamais racine) ; poste agent-less se ré-installe l'agent au reboot (filet éternel)
+- [ ] **27.16-5** Garde fail-soft (DC/creds absents → skip non bloquant) ; idempotence (re-run = noop) ; `--dry-run` sans side effect ; `update.sh`/`install.sh` ne cassent jamais

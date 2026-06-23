@@ -10,25 +10,27 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 25.4 (Tâche 4) — conformité du template GPO-dispatcher figée
- * `se4_agent_bootstrap` (source dans le repo sous `resources/gpo/`, déployable
- * vers `/usr/share/sambaedu/gpo/`) à {@see GpoTemplateRegistry}.
+ * Story 25.4 (Tâche 4) + Story 27.16 (renommage SE5) — conformité du template
+ * GPO-dispatcher figée `SE_agent_bootstrap` (ex-`se4_agent_bootstrap`, source
+ * dans le repo sous `resources/gpo/`, déployable vers `/usr/share/sambaedu/gpo/`)
+ * à {@see GpoTemplateRegistry}.
  *
  * On valide que :
- *  - le template est RECONNU comme publiable (préfixe `se4_`, `GPT.INI` avec
+ *  - le template est RECONNU comme publiable (préfixe SE5 `se_`, `GPT.INI` avec
  *    `[CSE]` machine) ;
+ *  - le `GPT.INI` porte bien le displayName SE5 `SE_agent_bootstrap` ;
  *  - le `startup.cmd` est générique (CA + binaire stable + `agent.exe install`
  *    + tâche de refresh) et SANS logique métier (piège n° 16) ;
- *  - les scripts SYSVOL sont en CRLF (piège n° 12).
+ *  - les scripts SYSVOL sont en CRLF + pur ASCII (piège n° 12).
  */
-final class Se4AgentBootstrapTemplateTest extends TestCase
+final class SeAgentBootstrapTemplateTest extends TestCase
 {
     private string $source;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->source = base_path('resources/gpo/se4_agent_bootstrap');
+        $this->source = base_path('resources/gpo/SE_agent_bootstrap');
     }
 
     #[Test]
@@ -38,14 +40,14 @@ final class Se4AgentBootstrapTemplateTest extends TestCase
         // <dir>/sambaedu-gpo/<name>/GPT.INI.
         $dir = storage_path('framework/testing/gpo-' . uniqid());
         File::ensureDirectoryExists($dir . '/sambaedu-gpo');
-        File::copyDirectory($this->source, $dir . '/sambaedu-gpo/se4_agent_bootstrap');
+        File::copyDirectory($this->source, $dir . '/sambaedu-gpo/SE_agent_bootstrap');
         config(['sambaedu.gpo.templates_dir' => $dir]);
 
         $registry = new GpoTemplateRegistry();
 
         self::assertTrue(
-            $registry->isPublishable('se4_agent_bootstrap'),
-            'Le template se4_agent_bootstrap doit être reconnu publiable (préfixe se4_, GPT.INI [CSE]).',
+            $registry->isPublishable('SE_agent_bootstrap'),
+            'Le template SE_agent_bootstrap doit être reconnu publiable (préfixe se_, GPT.INI [CSE]).',
         );
 
         File::deleteDirectory($dir);
@@ -57,8 +59,9 @@ final class Se4AgentBootstrapTemplateTest extends TestCase
         $gptIni = (string) file_get_contents($this->source . '/GPT.INI');
         self::assertStringContainsString('[CSE]', $gptIni);
         self::assertStringContainsString('gPCMachineExtensionNames', $gptIni);
-        // Préfixe se4_ (displayName).
-        self::assertStringContainsString('se4_agent_bootstrap', $gptIni);
+        // displayName SE5 (renommé 27.16) — l'ancien préfixe se4_ a disparu.
+        self::assertStringContainsString('displayName=SE_agent_bootstrap', $gptIni);
+        self::assertStringNotContainsString('se4_agent_bootstrap', $gptIni);
     }
 
     #[Test]
@@ -80,20 +83,31 @@ final class Se4AgentBootstrapTemplateTest extends TestCase
         // (applications.php), pas de Registry.pol.
         self::assertStringNotContainsString('applications.php', $cmd);
         self::assertStringNotContainsString('Registry.pol', $cmd);
+        // L'en-tête renommé SE5 ne doit plus mentionner l'ancien nom.
+        self::assertStringNotContainsString('se4_agent_bootstrap', $cmd);
     }
 
     #[Test]
-    public function sysvol_scripts_use_crlf_line_endings(): void
+    public function sysvol_scripts_use_crlf_line_endings_and_pure_ascii(): void
     {
         // Piège n° 12 : tout .cmd/.bat déposé dans SYSVOL doit finir en \r\n —
-        // LF seul échoue silencieusement.
-        $cmd = (string) file_get_contents($this->source . '/Machine/Scripts/Startup/startup.cmd');
-        self::assertStringContainsString("\r\n", $cmd);
-        // Aucun LF orphelin (chaque \n est précédé d'un \r).
-        self::assertSame(
-            substr_count($cmd, "\n"),
-            substr_count($cmd, "\r\n"),
-            'Le startup.cmd doit être intégralement en CRLF (aucun LF orphelin).',
-        );
+        // LF seul échoue silencieusement. + pur ASCII (Story 27.16).
+        foreach (['Machine/Scripts/Startup/startup.cmd', 'Machine/Scripts/scripts.ini', 'GPT.INI'] as $rel) {
+            $content = (string) file_get_contents($this->source . '/' . $rel);
+
+            self::assertStringContainsString("\r\n", $content, "{$rel} doit contenir des CRLF.");
+            // Aucun LF orphelin (chaque \n est précédé d'un \r).
+            self::assertSame(
+                substr_count($content, "\n"),
+                substr_count($content, "\r\n"),
+                "{$rel} doit être intégralement en CRLF (aucun LF orphelin).",
+            );
+            // Pur ASCII (aucun octet > 0x7F).
+            self::assertSame(
+                1,
+                preg_match('/^[\x00-\x7F]*$/', $content),
+                "{$rel} doit être en pur ASCII (aucun octet non-ASCII).",
+            );
+        }
     }
 }

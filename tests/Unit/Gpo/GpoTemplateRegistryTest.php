@@ -103,6 +103,36 @@ class GpoTemplateRegistryTest extends TestCase
         $this->assertNull($registry->templateFor('se4_empty'));
     }
 
+    /**
+     * Story 27.16 — le nouveau préfixe SE5 `se_` reconnaît `SE_agent_bootstrap`
+     * (matching `mb_strtolower`) SANS dégrader la reconnaissance des templates
+     * legacy `se4_`/`etab_` (non-régression), ET sans chevaucher `se4_` :
+     * `se4_wpkg` lowercasé commence par `se4`, jamais par `se_`.
+     */
+    #[Test]
+    public function registry_recognizes_se_prefix_for_bootstrap_without_regressing_legacy_prefixes(): void
+    {
+        $this->makeTemplate('SE_agent_bootstrap');   // préfixe se_ (insensible casse)
+        $this->makeTemplate('se4_wpkg');             // préfixe se4_ (legacy)
+        $this->makeTemplate('etab_custom');          // préfixe etab_ (legacy)
+        $registry = $this->app->make(GpoTemplateRegistry::class);
+
+        $this->assertTrue($registry->isPublishable('SE_agent_bootstrap'), 'se_ doit reconnaître le bootstrap SE5');
+        $this->assertTrue($registry->isPublishable('se4_wpkg'), 'se4_ doit rester reconnu (non-régression)');
+        $this->assertTrue($registry->isPublishable('etab_custom'), 'etab_ doit rester reconnu (non-régression)');
+    }
+
+    /** Story 27.16 — `se_` ne capture pas un nom hors préfixe (`session_x`). */
+    #[Test]
+    public function registry_se_prefix_does_not_capture_unrelated_names(): void
+    {
+        // `session_x` ne commence PAS par `se_` (c'est `ses…`) → non publiable.
+        $this->makeTemplate('session_x');
+        $registry = $this->app->make(GpoTemplateRegistry::class);
+
+        $this->assertFalse($registry->isPublishable('session_x'));
+    }
+
     private function makeTemplate(string $name, int $version = 5, bool $withCse = true): void
     {
         File::makeDirectory($this->templatesDir . 'sambaedu-gpo/' . $name, 0755, true);

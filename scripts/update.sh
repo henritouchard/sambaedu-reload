@@ -784,6 +784,47 @@ ensure_wpkg_bundle() {
 }
 
 # ============================================================================
+# GPO bootstrap agent (Story 27.16) — déploiement automatisé idempotent fail-soft
+# ============================================================================
+# `php artisan gpo:deploy-agent-bootstrap` publie la GPO-dispatcher figée
+# `SE_agent_bootstrap` (filet éternel FR25/#27 : un poste agent-less se réinstalle
+# l'agent au boot suivant) et isole nos postes des GPO legacy (blocage d'héritage
+# + lien sur l'OU computers de l'établissement). La commande est :
+#   - IDEMPOTENTE (republication best-effort, pas de doublon GPO) ;
+#   - FAIL-SOFT (garde interne) : si le DC est injoignable ou `admin_passwd`
+#     absent, elle warn et sort en 0 (skip) — la GPO sera reprise au prochain
+#     passage. On NE met donc PAS --strict ici : un échec NE casse JAMAIS l'update.
+# Prérequis pour une publication effective : DC AD joignable + `admin_passwd`
+# (Domain Admin) dans la config (.env SAMBAEDU_ADMIN_PASSWD / sambaedu.conf).
+# Cf. docs/runbooks/gpo-se4-agent-bootstrap.md.
+
+ensure_agent_bootstrap_gpo() {
+    log "Déploiement GPO bootstrap agent (Story 27.16)..."
+    cd "$APP_DIR"
+
+    if ! php artisan list 2>/dev/null | grep -q 'gpo:deploy-agent-bootstrap'; then
+        log_warning "Commande gpo:deploy-agent-bootstrap non disponible (Story 27.16 pas déployée) — étape ignorée"
+        return 0
+    fi
+
+    # Exécution sous www-admin (uid 599) quand présent : aligne le user runtime
+    # PHP-FPM et le ccache Kerberos temporaire. La commande gère elle-même son
+    # contexte Administrator (kinit dédié). Non bloquante : `|| true` en filet,
+    # mais la garde fail-soft interne renvoie déjà 0 sur DC/creds absents.
+    # Décision Henri (review 27.16 #10) : on GARDE www-admin pour la cohérence
+    # avec les autres appels artisan d'update.sh (doctor, etc.). Le ticket
+    # Administrator (kinit interne) rend l'uid indifférent pour l'écriture SYSVOL ;
+    # PRÉREQUIS : www-admin doit pouvoir exécuter `kinit` et `smbclient`.
+    if id www-admin >/dev/null 2>&1; then
+        sudo -u www-admin php artisan gpo:deploy-agent-bootstrap || true
+    else
+        php artisan gpo:deploy-agent-bootstrap || true
+    fi
+
+    log_success "Étape GPO bootstrap agent terminée (voir sortie ci-dessus : déployé / skip / échec non bloquant)"
+}
+
+# ============================================================================
 # Affichage du résumé
 # ============================================================================
 
@@ -899,6 +940,9 @@ main() {
 
     echo ""
     ensure_wpkg_bundle
+
+    echo ""
+    ensure_agent_bootstrap_gpo
 
     echo ""
     ensure_install_permissions

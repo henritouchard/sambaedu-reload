@@ -1,6 +1,6 @@
 @echo off
 :: ============================================================================
-:: SambaEdu -- GPO-dispatcher figee "se4_agent_bootstrap" (Story 25.4, FR25 + #27)
+:: SambaEdu -- GPO-dispatcher figee "SE_agent_bootstrap" (Story 25.4 / 27.16, FR25 + #27)
 :: ----------------------------------------------------------------------------
 :: LE DERNIER ARTEFACT AD, JAMAIS RE-EDITE. Script GENERIQUE (event -> install/
 :: reparation), AUCUNE logique metier. Seule specialisation : ###_SE4FS_NAME_###

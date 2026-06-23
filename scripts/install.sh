@@ -845,10 +845,12 @@ main() {
   # ── Finalisation : rejouer update.sh (idempotent) ──
   # install.sh ne couvre pas toutes les étapes « ensure » (notamment la bascule
   # du PXE bootstrap vers la route native /ipxe/boot via
-  # ensure_ipxe_bootstrap_native). Plutôt que de dupliquer ces étapes ici (et
-  # risquer la dérive), on rejoue update.sh en fin d'install : il est idempotent
-  # (composer, migrations, apache, systemd, ipxe bootstrap, doctor) et garantit
-  # qu'un déploiement from-scratch finit dans le même état qu'un parc à jour.
+  # ensure_ipxe_bootstrap_native, le bundle WPKG, et le déploiement de la GPO
+  # bootstrap agent `ensure_agent_bootstrap_gpo` — Story 27.16). Plutôt que de
+  # dupliquer ces étapes ici (et risquer la dérive), on rejoue update.sh en fin
+  # d'install : il est idempotent (composer, migrations, apache, systemd, ipxe
+  # bootstrap, GPO bootstrap agent, doctor) et garantit qu'un déploiement
+  # from-scratch finit dans le même état qu'un parc à jour.
   # NB : pas de forward des args d'install (update.sh a son propre parse_args).
   echo ""
   log "Finalisation : exécution de update.sh (idempotent) pour appliquer les étapes 'ensure'..."
