@@ -669,6 +669,49 @@ ensure_install_permissions() {
 }
 
 # ============================================================================
+# Dossiers d'écriture AppStore (install native d'apps) — ownership www-admin
+# ============================================================================
+# L'install native d'apps (InstallApplicationJob → AppStoreService →
+# PackageInstallerService) télécharge dans wpkg/tmp2/ puis rename() vers
+# packages/<app>/<fichier>, en CRÉANT le sous-dossier par-app (mkdir). Ces deux
+# dossiers doivent donc être INSCRIPTIBLES par www-admin (uid 599, user PHP-FPM +
+# workers). Sur un partage [install] legacy, packages/ naît souvent root:root 755
+# → le mkdir du sous-dossier échoue → install KO (« Echec deplacement … »,
+# InstallationLog failed à 20%). On garantit ici l'ownership www-admin du dossier
+# lui-même (NON récursif : on ne réattribue pas les assets legacy déjà présents ;
+# la lecture poste o+rX est posée juste après par ensure_install_permissions).
+# Concern ÉCRITURE, volontairement distinct de verify-install-permissions.sh qui
+# ne gère que la lecture « other » et ne touche jamais owner/group. Idempotent.
+ensure_appstore_write_dirs() {
+    log "Vérification dossiers d'écriture AppStore (packages/, wpkg/tmp2/)..."
+
+    local install_root="${SE_INSTALL_ROOT:-/var/sambaedu/unattended/install}"
+    if [[ ! -d "$install_root" ]]; then
+        # Hôte de dev (pas la VM) : ce chemin n'existe pas → sortie propre.
+        log_warning "Racine partage absente ($install_root) — étape ignorée"
+        return 0
+    fi
+
+    if ! id www-admin &>/dev/null; then
+        log_warning "Compte www-admin absent — ownership AppStore non appliqué"
+        return 0
+    fi
+
+    local d
+    for d in "$install_root/packages" "$install_root/wpkg/tmp2"; do
+        [[ -d "$d" ]] || mkdir -p "$d"
+        if [[ "$(stat -c '%U' "$d")" != "www-admin" ]]; then
+            if chown www-admin:www-admin "$d"; then
+                log_success "Ownership corrigé : $d → www-admin"
+            else
+                log_error "Échec chown $d (droits insuffisants ?)"
+            fi
+        fi
+    done
+    log_success "Dossiers d'écriture AppStore prêts (inscriptibles par www-admin)"
+}
+
+# ============================================================================
 # Amorçage des helpers SambaEdu dans wpkg.cmd (bootstrap %PROGRAMFILES%)
 # ============================================================================
 # Le déploiement des helpers .ps1/.cmd dans %PROGRAMFILES%\SambaEdu côté poste
@@ -780,6 +823,60 @@ ensure_wpkg_bundle() {
                 && log_success "Bundle WPKG généré + chown www-admin ($bundle_path)" \
                 || log_warning "Bundle généré mais chown échoué ($bundle_path) — risque de 404 Apache"
         fi
+    fi
+}
+
+# ============================================================================
+# Provisioning du client WPKG dans le partage SMB d'install (greenfield)
+# ============================================================================
+# `wpkg-client.vbs` / `wpkg-se4.js` sont normalement livrés par le `.deb`
+# `sambaedu-wpkg` dans /var/sambaedu/unattended/install/wpkg/ (servi en SMB
+# \\SE4FS\install\wpkg). L'install iPXE (resources/views/ipxe/windows/cmd/
+# wpkg.blade.php, branche :autologon) les copie de là vers %WinDir%. Sur une VM
+# GREENFIELD sans ce `.deb`, le dossier SMB n'a pas ces fichiers → le `copy`
+# échoue en SILENCE → le poste reste sans client WPKG → l'agent ne peut JAMAIS
+# déclencher WPKG (« wpkg-client.vbs introuvable »). On MIROITE donc le bundle
+# natif (généré juste avant par ensure_wpkg_bundle) vers le partage SMB à chaque
+# update/install : plus aucune dépendance au `.deb` pour ces scripts.
+#
+# World-readable (644) OBLIGATOIRE : le poste est mappé classe SMB « other » —
+# un fichier non lisible par « other » échoue en silence (cf. payloads WPKG
+# world-readable). On NE touche PAS `wpkg.cmd` du partage : il est patché par
+# ensure_wpkg_bootstrap (variante legacy distincte du bundle HTTP) — l'écraser
+# perdrait l'amorçage helpers. Idempotent (re-copie). Fail-soft : sources/dir
+# absents → warn, jamais d'échec d'update.
+
+ensure_wpkg_smb_client() {
+    log "Provisioning client WPKG dans le partage SMB d'install (greenfield)..."
+
+    local install_root="${SE_INSTALL_ROOT:-/var/sambaedu/unattended/install}"
+    local smb_dir="$install_root/wpkg"
+    local bundle_path
+    bundle_path="$(grep -oP '^AGENT_WPKG_BUNDLE_PATH=\K.*' "$APP_DIR/.env" 2>/dev/null || true)"
+    bundle_path="${bundle_path:-$APP_DIR/storage/app/public/wpkg/bundle}"
+
+    if [[ ! -d "$smb_dir" ]]; then
+        log_warning "Partage SMB install absent ($smb_dir) — provisioning client WPKG ignoré"
+        return 0
+    fi
+
+    local own=()
+    id www-admin >/dev/null 2>&1 && own=(-o www-admin -g www-admin)
+
+    local f missing=0
+    for f in wpkg-client.vbs wpkg-se4.js; do
+        if [[ ! -f "$bundle_path/$f" ]]; then
+            log_warning "Source bundle absente ($bundle_path/$f) — non miroité (bundle non généré ?)"
+            missing=1
+            continue
+        fi
+        install "${own[@]}" -m 644 "$bundle_path/$f" "$smb_dir/$f"
+    done
+
+    if [[ "$missing" -eq 0 ]]; then
+        log_success "Client WPKG miroité vers le partage SMB ($smb_dir : wpkg-client.vbs, wpkg-se4.js, 644)"
+    else
+        log_warning "Client WPKG partiellement miroité — vérifier ensure_wpkg_bundle (génération du bundle)"
     fi
 }
 
@@ -942,7 +1039,13 @@ main() {
     ensure_wpkg_bundle
 
     echo ""
+    ensure_wpkg_smb_client
+
+    echo ""
     ensure_agent_bootstrap_gpo
+
+    echo ""
+    ensure_appstore_write_dirs
 
     echo ""
     ensure_install_permissions
