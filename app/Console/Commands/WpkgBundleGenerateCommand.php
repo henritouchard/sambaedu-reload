@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Services\AppStore\PackagesXmlService;
 use App\Wpkg\Deployment\Services\WpkgBundleGenerator;
 use Illuminate\Console\Command;
 
@@ -21,12 +22,26 @@ use Illuminate\Console\Command;
  */
 final class WpkgBundleGenerateCommand extends Command
 {
-    protected $signature = 'wpkg:bundle';
+    protected $signature = 'wpkg:bundle {--no-regenerate : Ne PAS régénérer le catalogue module avant la projection (projette le catalogue existant tel quel).}';
 
     protected $description = 'Génère le bundle WPKG natif SE5 pré-substitué (scripts + packages.xml) servi statiquement par Apache.';
 
-    public function handle(WpkgBundleGenerator $generator): int
+    public function handle(WpkgBundleGenerator $generator, PackagesXmlService $packagesXml): int
     {
+        // Story 27.19 — Le bundle n'est qu'une PROJECTION du catalogue module ;
+        // `WpkgBundleGenerator` ne le régénère que s'il est ABSENT (fallback D5).
+        // Sans ce regenerate explicite, un déploiement de code (ex. la réécriture
+        // FULL HTTP des recettes %SOFTWARE%) ne se reflète JAMAIS dans le catalogue
+        // servi tant qu'aucun ajout/retrait d'app ne déclenche regenerate() — le
+        // poste continue de recevoir l'ancien catalogue (%SOFTWARE%, sans download).
+        // On rafraîchit donc le catalogue module à CHAQUE génération (idempotent :
+        // snapshot de Application::installed()). `--no-regenerate` pour les cas où
+        // l'on veut projeter un catalogue figé.
+        if (! $this->option('no-regenerate')) {
+            $packagesXml->regenerate();
+            $this->info('Catalogue module régénéré (transform FULL HTTP appliquée) avant projection.');
+        }
+
         $result = $generator->generate();
 
         $this->info(sprintf(
