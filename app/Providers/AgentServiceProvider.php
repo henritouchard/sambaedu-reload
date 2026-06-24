@@ -19,6 +19,7 @@ use App\Services\Agent\Providers\PrintersStateProvider;
 use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
 use App\Services\Agent\Providers\RegistryUserCapabilityProvider;
 use App\Services\Agent\Providers\ShortcutsStateProvider;
+use App\Services\Agent\Providers\LockscreenStateProvider;
 use App\Services\Agent\Providers\WallpaperStateProvider;
 use App\Services\Agent\Releases\ReleaseCreationService;
 use App\Services\Agent\Releases\ReleaseManifestService;
@@ -89,6 +90,12 @@ class AgentServiceProvider extends ServiceProvider
             $app->make(StateHasher::class),
             [
                 $app->make(WallpaperStateProvider::class),
+                // Fond de l'écran de VERROUILLAGE (type `lockscreen`, portée
+                // machine) — pendant pré-login du wallpaper de bureau (session).
+                // Posé machine-wide par le service SYSTEM (PersonalizationCSP) ;
+                // owners défaut étab + WorkstationGroup seulement (pas de user
+                // au verrouillage). Une ligne, zéro modif du compilateur.
+                $app->make(LockscreenStateProvider::class),
                 $app->make(OverlayStateProvider::class),
                 // Story 27.10 — volet MACHINE de l'overlay : la salle
                 // (`{kind:"machine", room}`) passe en portée machine (cache

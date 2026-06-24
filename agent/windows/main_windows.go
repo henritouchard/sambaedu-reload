@@ -186,6 +186,13 @@ func newAgent(echo bool) *shared.Agent {
 					Ops: &registryOps{log: logger},
 					Log: logger,
 				},
+				// Fond de l'écran de VERROUILLAGE (exclusive / machine) : le
+				// SERVICE SYSTEM impose l'image via PersonalizationCSP (HKLM —
+				// le verrouillage est pré-login, LogonUI tourne en SYSTEM). Le
+				// pendant `wallpaper` (fond de bureau) est SESSION/HKCU côté
+				// compagnon. Même cache d'assets (SyncWallpaperAssets pré-télécharge
+				// les deux types).
+				"lockscreen": &lockscreenHandler{AssetsDir: store.AssetsDir()},
 				// Story 27.4 — config d'app declarative (aggregate par app_kind /
 				// scope MACHINE, correctif post-review 2026-06-17 review #1) : le
 				// SERVICE SYSTEM pose le policies.json enterprise natif au chemin

@@ -243,8 +243,8 @@ func TestContractConstantsAreFrozen(t *testing.T) {
 	if ContractSchema != "se5.desired-state/v1" {
 		t.Errorf("ContractSchema modifié : %q — le contrat est FIGÉ (NFR12)", ContractSchema)
 	}
-	if len(ResourceTypes) != 9 {
-		t.Errorf("9 identifiants de type publiés (§7), got %d", len(ResourceTypes))
+	if len(ResourceTypes) != 10 {
+		t.Errorf("10 identifiants de type publiés (§7), got %d", len(ResourceTypes))
 	}
 	// Story 27.8 : `drifted_allowed` retiré → 3 statuts (STRICT inconditionnel).
 	if len(ResourceStatuses) != 3 {

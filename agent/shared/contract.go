@@ -30,7 +30,7 @@ var ContractScopes = []string{"machine", "session", "machine_user"}
 // ResourceTypes : identifiants de type de ressource publiés (§7 — figés : on
 // ne renomme JAMAIS, on déprécie + ajoute).
 var ResourceTypes = []string{
-	"wallpaper", "overlay", "shortcuts", "printers", "drives",
+	"wallpaper", "lockscreen", "overlay", "shortcuts", "printers", "drives",
 	"associations", "registry", "app_config", "applications",
 }
 

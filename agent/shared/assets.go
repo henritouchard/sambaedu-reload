@@ -87,7 +87,11 @@ func (a *Agent) wantedWallpaperAssets() []wallpaperAssetRef {
 		scopes := [][]any{state.Machine, state.Session, state.MachineUser}
 		for _, scope := range scopes {
 			for _, item := range ItemsFromScope(scope, nil) {
-				if item.Type != "wallpaper" {
+				// `lockscreen` partage la même biblio content-addressed et la
+				// même route de serving que `wallpaper` : SYSTEM pré-télécharge
+				// les deux dans le cache d'assets (le handler lockscreen tourne
+				// aussi côté SYSTEM, mais lit le cache plutôt que le réseau).
+				if item.Type != "wallpaper" && item.Type != "lockscreen" {
 					continue
 				}
 				payload, ok := item.Payload.(map[string]any)

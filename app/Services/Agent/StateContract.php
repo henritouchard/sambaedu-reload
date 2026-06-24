@@ -43,6 +43,7 @@ final class StateContract
      */
     public const RESOURCE_TYPES = [
         'wallpaper',
+        'lockscreen',
         'overlay',
         'shortcuts',
         'printers',
