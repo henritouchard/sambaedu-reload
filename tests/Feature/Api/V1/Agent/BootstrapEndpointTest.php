@@ -104,10 +104,18 @@ final class BootstrapEndpointTest extends TestCase
         ));
     }
 
-    private function fromLan(string $uri): TestResponse
+    /**
+     * @param  array<string,string>  $headers
+     */
+    private function fromLan(string $uri, array $headers = []): TestResponse
     {
         // 127.0.0.1 (127.0.0.0/8) toujours autorisé par EnsureLanIp.
-        return $this->call('GET', $uri, server: ['REMOTE_ADDR' => '127.0.0.1']);
+        $server = ['REMOTE_ADDR' => '127.0.0.1'];
+        foreach ($headers as $name => $value) {
+            $server['HTTP_' . strtoupper(str_replace('-', '_', $name))] = $value;
+        }
+
+        return $this->call('GET', $uri, server: $server);
     }
 
     // ── AC4 — manifest stable ────────────────────────────────────────────
@@ -173,6 +181,33 @@ final class BootstrapEndpointTest extends TestCase
         $served = $response->baseResponse->getFile()->getPathname();
         self::assertSame($this->releasesDir . '/' . $stable->filename, $served);
         self::assertSame($manifest['hash'], hash('sha256', (string) file_get_contents($served)));
+    }
+
+    #[Test]
+    public function download_returns_304_when_if_none_match_equals_stable_hash(): void
+    {
+        // GET conditionnel par hash : le poste envoie le SHA-256 de SON binaire ;
+        // s'il égale la stable → 304 sans corps (rien à télécharger), ETag = hash.
+        $stable = $this->publishedStable('2.0.0');
+
+        $response = $this->fromLan(self::DOWNLOAD_ROUTE, ['If-None-Match' => '"' . $stable->hash . '"']);
+
+        $response->assertStatus(304);
+        $response->assertHeader('ETag', '"' . $stable->hash . '"');
+    }
+
+    #[Test]
+    public function download_serves_binary_when_if_none_match_differs(): void
+    {
+        // Hash local différent (version périmée OU binaire corrompu) → 200 + binaire
+        // (réparation). L'ETag servi reste le hash de la stable courante.
+        $stable = $this->publishedStable('2.0.0');
+
+        $response = $this->fromLan(self::DOWNLOAD_ROUTE, ['If-None-Match' => '"' . str_repeat('0', 64) . '"']);
+
+        $response->assertOk();
+        self::assertInstanceOf(BinaryFileResponse::class, $response->baseResponse);
+        $response->assertHeader('ETag', '"' . $stable->hash . '"');
     }
 
     #[Test]

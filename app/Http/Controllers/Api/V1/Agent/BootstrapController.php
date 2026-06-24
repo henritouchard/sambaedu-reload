@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AgentRelease;
 use App\Services\Agent\Releases\ReleaseManifestService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -108,7 +109,7 @@ class BootstrapController extends Controller
      * tout échec (pas de stable, fichier absent, config manquante), zéro
      * oracle.
      */
-    public function download(): BinaryFileResponse|JsonResponse
+    public function download(Request $request): BinaryFileResponse|JsonResponse
     {
         // Lookup DB d'abord (piège n° 8) : seule la STABLE publiée est servie —
         // un binaire orphelin ou une canari ne fuit jamais par cet endpoint
@@ -144,6 +145,28 @@ class BootstrapController extends Controller
             return $this->notFound($filename);
         }
 
+        // GET CONDITIONNEL PAR HASH (intégrité + zéro-transfert) : l'ETag fort est
+        // le SHA-256 de la release (validateur de CONTENU, pas mtime). Le poste
+        // d'amorçage calcule le hash de SON `agent.exe` local et l'envoie en
+        // `If-None-Match` ; s'il égale la stable courante → 304 sans corps (rien à
+        // faire). Tout écart — version périmée OU binaire corrompu/altéré — produit
+        // un hash différent → 200 + binaire (réparation). C'est l'optimum demandé :
+        // pas de re-téléchargement à chaque boot, ET réparation d'un binaire briqué
+        // (qu'un conditionnel par date `If-Modified-Since` raterait : mtime local
+        // inchangé). Symfony compare l'`If-None-Match` (guillemets gérés) à l'ETag.
+        $response = response()->file($path);
+        $response->setEtag($release->hash);
+        if ($response->isNotModified($request)) {
+            // 304 : aucun octet servi. Trace distincte (observabilité parc :
+            // « déjà à jour » ≠ « téléchargé »).
+            Log::channel('agent')->debug('[BootstrapController] agent.release.stable_download_not_modified', [
+                'action_type' => 'agent.release.stable_download_not_modified',
+                'version' => $release->version,
+            ]);
+
+            return $response;
+        }
+
         // Niveau `debug` + action_type distinct du manifest (iso 25.1
         // `download_served`) : le téléchargement est un préalable sans garantie
         // d'install — la trace qui fait foi reste la version rapportée au
@@ -156,7 +179,7 @@ class BootstrapController extends Controller
             'binary' => true,
         ]);
 
-        return response()->file($path);
+        return $response;
     }
 
     /**

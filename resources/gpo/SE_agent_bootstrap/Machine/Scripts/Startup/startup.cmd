@@ -9,12 +9,13 @@
 ::
 :: Execute en SYSTEM au demarrage (Machine/Scripts/Startup). Il :
 ::   (a) deploie la racine CA dans LocalMachine\Root (certutil, idempotent) ;
-::   (b) telecharge le binaire stable a son emplacement DEFINITIF ;
+::   (b) telecharge le binaire stable SI besoin (GET conditionnel par hash :
+::       304 si deja a jour, 200 si perime/corrompu) a son emplacement DEFINITIF ;
 ::   (c) lance "agent.exe install" (idempotent : installe OU repare un agent
 ::       brique/supprime -- le filet eternel #27). Le token survit (hors perimetre
 ::       install) : un poste deja enrole repart en convergence directe ;
-::  (c2) pose le client WPKG wpkg-client.vbs en %WinDir% depuis le bundle HTTP
-::       (l'agent le declenche mais ne le telecharge pas -- D7) ;
+::  (c2) pose le client WPKG (wpkg-client.vbs + wpkg-se4.js) depuis le bundle HTTP
+::       (l'agent les declenche mais ne les telecharge pas -- D7) ;
 ::   (d) (re)cree une tache planifiee de refresh (SYSTEM, periodique) qui rejoue
 ::       (a)-(c2) -- le filet du "poste jamais eteint". Auto-reparation : la tache
 ::       est recreee si absente.
@@ -36,8 +37,19 @@ if not exist "%AGENT_DIR%" md "%AGENT_DIR%"
 curl.exe -s -o "%CA_TMP%" "http://%SE4FS%/api/v1/agent/ca"
 if exist "%CA_TMP%" certutil -addstore -f Root "%CA_TMP%" >nul 2>&1
 
-:: --- (b) binaire stable a l'emplacement DEFINITIF ---------------------------
-curl.exe -s -o "%AGENT_EXE%" "http://%SE4FS%/api/v1/agent/stable/download"
+:: --- (b) binaire stable a l'emplacement DEFINITIF (GET conditionnel par HASH) -
+:: On calcule le SHA-256 de NOTRE agent.exe et on l'envoie en If-None-Match.
+:: Serveur : ETag = hash de la stable -> 304 (aucun octet) si on est deja a jour,
+:: 200 + binaire sinon. Avantage vs date : un binaire CORROMPU/ALTERE a un hash
+:: different -> re-telecharge (un If-Modified-Since le raterait). Zero transfert
+:: en regime etabli (7,7 Mo economises a chaque boot). Bascule via .tmp + garde
+:: taille (>100 Ko) : ni un corps 404 (~50 o) ni un 304 (vide) n'ecrasent le .exe.
+set "AGENT_SHA="
+if exist "%AGENT_EXE%" for /f "skip=1 delims=" %%H in ('certutil -hashfile "%AGENT_EXE%" SHA256 2^>nul') do if not defined AGENT_SHA set "AGENT_SHA=%%H"
+set "AGENT_SHA=%AGENT_SHA: =%"
+if defined AGENT_SHA (curl.exe -fs -H "If-None-Match: \"%AGENT_SHA%\"" -o "%TEMP%\agent.tmp" "http://%SE4FS%/api/v1/agent/stable/download") else (curl.exe -fs -o "%TEMP%\agent.tmp" "http://%SE4FS%/api/v1/agent/stable/download")
+for %%A in ("%TEMP%\agent.tmp") do if %%~zA GTR 100000 move /Y "%TEMP%\agent.tmp" "%AGENT_EXE%" >nul
+if exist "%TEMP%\agent.tmp" del /f /q "%TEMP%\agent.tmp"
 
 :: --- (c) install/reparation du service (idempotent) -------------------------
 if exist "%AGENT_EXE%" "%AGENT_EXE%" install -server-url "http://%SE4FS%"
