@@ -190,14 +190,18 @@ new class extends Component {
                                     <td>
                                         <div class="font-medium flex items-center gap-1">
                                             {{ $capability['label'] }}
+                                            @if ($capability['description'] !== '')
+                                                <span class="tooltip tooltip-right before:max-w-xs before:whitespace-normal"
+                                                    data-tip="{{ $capability['description'] }}">
+                                                    <i class="fa-solid fa-circle-info text-xs opacity-40 cursor-help"
+                                                        aria-label="{{ $capability['description'] }}"></i>
+                                                </span>
+                                            @endif
                                             @if ($capability['has_warning'])
                                                 <i class="fa-solid fa-triangle-exclamation text-warning text-xs"
                                                     aria-label="Capacité sensible"></i>
                                             @endif
                                         </div>
-                                        @if ($capability['description'] !== '')
-                                            <div class="text-sm opacity-70">{{ $capability['description'] }}</div>
-                                        @endif
                                     </td>
                                     <td class="text-xs opacity-60">{{ $capability['category'] }}</td>
                                     <td class="font-medium">{{ $capability['default_display'] }}</td>
