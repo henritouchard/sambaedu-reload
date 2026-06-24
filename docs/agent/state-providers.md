@@ -17,9 +17,11 @@ flowchart TD
     GET["GET /api/v1/agent/state"] --> COMPILE["StateCompiler::compile(TargetContext)"]
     COMPILE -->|interroge le registry<br/>AgentServiceProvider| PROV["StateProvider<br/>(1 par type de ressource)"]
     PROV --> WP["WallpaperStateProvider<br/>(wallpapers × wallpaper_assets)"]
+    PROV --> LS["LockscreenStateProvider<br/>(lockscreen, portée machine)"]
     PROV --> OV["OverlayStateProvider<br/>(overlay_signals)"]
     PROV --> ETC["… (un provider par type)"]
     WP -->|candidats bruts<br/>étiquetés par maille| MERGE
+    LS --> MERGE
     OV --> MERGE
     ETC --> MERGE
     MERGE["StateCompiler — seul porteur de la sémantique de merge :<br/>spécificité, union, conflits, hash, enveloppe v1"]
@@ -149,6 +151,25 @@ pas les listes (contrat §4).
   mais le payload reste `{asset, checksum}` : l'agent construit l'URL depuis
   `server_url` + chemin documenté, comme pour `/state` et `/report`. Un champ
   `url` resterait ajoutable plus tard sans casse (champ ajouté = mineur, §9).
+
+### `lockscreen` — `exclusive` / `machine`
+
+```json
+{ "asset": "9aa326c3….jpg", "checksum": "9aa326c3…" }
+```
+
+- **Pendant pré-login du `wallpaper`** : fond de l'écran de **verrouillage**,
+  affiché AVANT toute session (LogonUI tourne en SYSTEM) → portée **`machine`**,
+  appliqué par le **service SYSTEM** (`PersonalizationCSP`, HKLM), pas le
+  compagnon. Payload **identique** à `wallpaper` (`{asset, checksum}`), même
+  bibliothèque content-addressed, **même route de serving** (`agent.v1.assets.wallpaper`,
+  agnostique au type) et même pré-téléchargement SYSTEM.
+- `{"asset": null, "checksum": null}` = règle explicite « pas de fond de
+  verrouillage imposé » (contrat §8), distinct du type absent.
+- **Mailles lues : broadcast + WG physique/logique SEULEMENT** — jamais
+  `UserGroup`/`User` : il n'y a pas d'utilisateur au verrouillage. C'est la
+  restriction « niveaux 1-3 » (défaut système → étab → salle) que le résolveur
+  legacy appliquait déjà au lockscreen.
 
 ### `overlay` — `aggregate` / `session`
 
@@ -753,6 +774,5 @@ parc), persistance via le modèle, toast de succès.
 |---|---|---|
 | Alertes overlay dérivées (quota, multi-session) | volatiles à chaque poll → détruiraient l'ETag ; métrologie temps réel, pas état cible | hors desired-state (composition locale par le handler ; identité stable servie par l'item `identity`) |
 | Fallback wallpaper système (`default.jpg`), perso `/home/<user>/Photos`, override quota | features du canal legacy, pas des règles d'état serveur | canal legacy jusqu'à extinction |
-| Type `lockscreen` | pas dans les identifiants figés §7 | futur type séparé |
 | URL de téléchargement des assets | route de serving livrée, payload INCHANGÉ (« pas de champ url » ci-dessus) | [handlers-wallpaper-overlay.md](handlers-wallpaper-overlay.md) §2 |
 | UI des warnings de conflit | le log structuré suffit à ce stade | UI conformité (suivi) |

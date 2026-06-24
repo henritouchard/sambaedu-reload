@@ -236,8 +236,8 @@ nouvel identifiant, jamais renommer en place.
 
 Identifiants prévus :
 
-`wallpaper`, `overlay`, `shortcuts`, `printers`, `drives`, `associations`,
-`registry`, `app_config`, `applications`.
+`wallpaper`, `lockscreen`, `overlay`, `shortcuts`, `printers`, `drives`,
+`associations`, `registry`, `app_config`, `applications`.
 
 ### 7.1 Payload `registry`
 
@@ -506,6 +506,42 @@ résolution de dépendances.
 > par Apache** (`config('agent.wpkg_bundle_path')`, pas via Laravel). Le profil
 > par-hôte est **déposé par l'agent**. Les installeurs restent sur SMB. La GPO
 > `se4_wpkg` n'est **plus publiée** par SE5 : l'agent est le seul déclencheur.
+
+### 7.5 Payload `lockscreen`
+
+Type `lockscreen` — fond de l'écran de **verrouillage**, sémantique
+**`exclusive`** (un seul fond), portée **`machine`**. Pendant **pré-login** du
+type `wallpaper` (fond de **bureau**, portée `session`/compagnon/HKCU) : l'écran
+de verrouillage s'affiche AVANT toute session (LogonUI tourne en SYSTEM), il se
+pose **machine-wide** — c'est donc le **service SYSTEM** qui l'applique. Le
+payload est **identique** à `wallpaper` :
+
+```json
+{
+  "type": "lockscreen",
+  "semantics": "exclusive",
+  "payload": { "asset": "a1b2…f9.jpg", "checksum": "a1b2…f9" }
+}
+```
+
+| Clé | Type JSON | Sens |
+|---|---|---|
+| `asset` | string \| null | Filename content-addressed de la bibliothèque (`<sha256>.<ext>`), ou `null` = « pas de fond de verrouillage imposé » (§8). |
+| `checksum` | string \| null | SHA-256 du fichier, vérifié à l'arrivée du download (côté SYSTEM). `null` ssi `asset` `null`. |
+
+L'asset est **servi par la même route** que `wallpaper`
+(`agent.v1.assets.wallpaper` / Alias statique `/assets/wallpaper/`, agnostique
+au type — un lockscreen est un asset de la même biblio) et **pré-téléchargé par
+SYSTEM** dans le même cache. Côté Windows, le handler impose l'image via
+`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP`
+(`LockScreenImageStatus=1`, `LockScreenImagePath`/`LockScreenImageUrl` = chemin
+local de l'asset). Idempotent ; `asset: null` = no-op compliant.
+
+> **Owners restreints (pré-login).** Côté serveur, le `LockscreenStateProvider`
+> ne remonte que le **défaut d'établissement** (Broadcast) et les
+> **WorkstationGroup** (salle/parc) — **jamais** d'owner User/UserGroup : il n'y
+> a pas d'utilisateur au verrouillage. C'est la restriction « niveaux 1-3 » que
+> le résolveur legacy appliquait déjà au lockscreen.
 
 ## 8. Tableau vide ≠ type absent (décision de contrat)
 
