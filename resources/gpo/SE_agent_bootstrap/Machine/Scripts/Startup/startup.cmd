@@ -45,21 +45,25 @@ if exist "%AGENT_EXE%" "%AGENT_EXE%" install -server-url "http://%SE4FS%"
 :: --- (c2) client WPKG : wpkg-client.vbs + wpkg-se4.js locaux (self-heal SYSTEM)
 :: L'agent DECLENCHE wpkg-client.vbs mais ne le telecharge pas (choix D7). La
 :: copie SMB a l'install (autologon se4install + auth ADS) est fragile ; on pose
-:: donc le client ICI, en SYSTEM (compte machine -> auth fiable), depuis le bundle
-:: HTTP. La vbs localise le moteur a c:\windows\install\wpkg\wpkg-se4.js (MapZ,
-:: jadis symlink SMB pose par wpkg.cmd) ; sur greenfield ce symlink n'existe pas
-:: -> exit 13 (« wpkg-se4.js absent »). On pose donc le moteur LOCALEMENT au meme
-:: chemin (repertoire reel, pas de SMB) ; il est HTTP-aware (lit SE4_WPKG_BUNDLE_URL
-:: au runtime, fourni par l'agent au declenchement). Telechargement en .tmp +
-:: bascule SEULEMENT si taille plausible (>1000 o) : un corps d'erreur 404 (~50 o)
-:: n'ecrase jamais un fichier sain (lecon du faux agent.exe de 49 o).
-curl.exe -s -o "%TEMP%\wpkg-client.vbs.tmp" "http://%SE4FS%/wpkg/bundle/wpkg-client.vbs"
-for %%A in ("%TEMP%\wpkg-client.vbs.tmp") do if %%~zA GTR 1000 copy /Y "%TEMP%\wpkg-client.vbs.tmp" "%WINDIR%\wpkg-client.vbs" >nul
-if exist "%TEMP%\wpkg-client.vbs.tmp" del /f /q "%TEMP%\wpkg-client.vbs.tmp"
+:: donc le client ICI, en SYSTEM, depuis le bundle HTTP. La vbs localise le moteur
+:: a c:\windows\install\wpkg\wpkg-se4.js (MapZ, jadis symlink SMB pose par
+:: wpkg.cmd) ; sur greenfield ce symlink n'existe pas -> exit 13 (« wpkg-se4.js
+:: absent »). On pose donc le moteur LOCALEMENT au meme chemin (repertoire reel,
+:: pas de SMB) ; il est HTTP-aware (lit SE4_WPKG_BUNDLE_URL au runtime).
+::
+:: GET CONDITIONNEL (curl -z = If-Modified-Since) : en regime etabli le serveur
+:: repond 304 -> AUCUN transfert (pas de re-telechargement a chaque boot). On ne
+:: tire que si le fichier est ABSENT (self-heal) ou si le bundle a CHANGE (auto-
+:: update). Bascule .tmp + garde taille >1000 o : un corps d'erreur 404 (~50 o)
+:: n'ecrase jamais un fichier sain (lecon du faux agent.exe de 49 o). -f : pas de
+:: corps sur erreur HTTP.
+if exist "%WINDIR%\wpkg-client.vbs" (curl.exe -fs -z "%WINDIR%\wpkg-client.vbs" -o "%TEMP%\wcv.tmp" "http://%SE4FS%/wpkg/bundle/wpkg-client.vbs") else (curl.exe -fs -o "%TEMP%\wcv.tmp" "http://%SE4FS%/wpkg/bundle/wpkg-client.vbs")
+for %%A in ("%TEMP%\wcv.tmp") do if %%~zA GTR 1000 copy /Y "%TEMP%\wcv.tmp" "%WINDIR%\wpkg-client.vbs" >nul
+if exist "%TEMP%\wcv.tmp" del /f /q "%TEMP%\wcv.tmp"
 if not exist "%WINDIR%\install\wpkg" md "%WINDIR%\install\wpkg" 2>nul
-curl.exe -s -o "%TEMP%\wpkg-se4.js.tmp" "http://%SE4FS%/wpkg/bundle/wpkg-se4.js"
-for %%A in ("%TEMP%\wpkg-se4.js.tmp") do if %%~zA GTR 1000 copy /Y "%TEMP%\wpkg-se4.js.tmp" "%WINDIR%\install\wpkg\wpkg-se4.js" >nul
-if exist "%TEMP%\wpkg-se4.js.tmp" del /f /q "%TEMP%\wpkg-se4.js.tmp"
+if exist "%WINDIR%\install\wpkg\wpkg-se4.js" (curl.exe -fs -z "%WINDIR%\install\wpkg\wpkg-se4.js" -o "%TEMP%\wse4.tmp" "http://%SE4FS%/wpkg/bundle/wpkg-se4.js") else (curl.exe -fs -o "%TEMP%\wse4.tmp" "http://%SE4FS%/wpkg/bundle/wpkg-se4.js")
+for %%A in ("%TEMP%\wse4.tmp") do if %%~zA GTR 1000 copy /Y "%TEMP%\wse4.tmp" "%WINDIR%\install\wpkg\wpkg-se4.js" >nul
+if exist "%TEMP%\wse4.tmp" del /f /q "%TEMP%\wse4.tmp"
 
 :: --- (d) (re)creation de la tache de refresh (SYSTEM, toutes les 240 min) ----
 :: Auto-reparation : si la tache est absente, on la recree (le filet eternel).
