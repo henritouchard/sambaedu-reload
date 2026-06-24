@@ -237,6 +237,52 @@ class WpkgBundleGeneratorTest extends TestCase
         $this->assertEquals(1, $dom->getElementsByTagName('packages')->length);
     }
 
+    /**
+     * Story 27.19 (AC3/AC4/AC5) — INTÉGRATION end-to-end : une app %SOFTWARE%
+     * installée en DB, catalogue module absent → régénéré (transformation HTTP) →
+     * le bundle servi contient le <download> réécrit en HTTP (url SE5 + target
+     * %TEMP%, sha retirés) et l'<install> %SOFTWARE%→%TEMP%. Prouve que la livraison
+     * full-HTTP traverse bien le sourcing du bundle (PackagesXmlService→bundle).
+     */
+    #[Test]
+    public function bundle_carries_http_rewritten_payload_for_software_recipe(): void
+    {
+        config(['sambaedu.se4fs_name' => 'se4fs.lan']);
+        $this->assertFileDoesNotExist($this->moduleCatalogPath);
+
+        Application::where('status', ApplicationStatus::Installed)->delete();
+        Application::create([
+            'app_id' => 'id_7zip',
+            'name' => '7-Zip',
+            'status' => ApplicationStatus::Installed,
+            'xml' => '<package id="id_7zip" name="7-Zip" revision="1.0">'
+                . '<check type="file" condition="exists" path="%WinDir%\7za.exe"/>'
+                . '<download url="http://deb.sambaedu.org/7za.exe" saveto="packages/7-zip/7za.exe" sha256sum="dead"/>'
+                . '<install cmd="xcopy /Y %SOFTWARE%\7-zip\7za.exe %WinDir%\"/>'
+                . '</package>',
+        ]);
+
+        $this->generator()->generate();
+
+        $dom = new \DOMDocument();
+        $dom->load($this->bundlePath . '/packages.xml');
+
+        $download = $dom->getElementsByTagName('download')->item(0);
+        $this->assertNotNull($download);
+        $this->assertSame('http://se4fs.lan/wpkg/files/7-zip/7za.exe', $download->getAttribute('url'));
+        $this->assertSame('7-zip\7za.exe', $download->getAttribute('target'));
+        $this->assertFalse($download->hasAttribute('saveto'));
+        $this->assertFalse($download->hasAttribute('sha256sum'));
+
+        $install = $dom->getElementsByTagName('install')->item(0);
+        $this->assertStringNotContainsString('%SOFTWARE%', $install->getAttribute('cmd'));
+        $this->assertStringContainsString('%TEMP%', $install->getAttribute('cmd'));
+
+        // <check> intact (idempotence).
+        $check = $dom->getElementsByTagName('check')->item(0);
+        $this->assertSame('%WinDir%\7za.exe', $check->getAttribute('path'));
+    }
+
     private function setSe4fsName(string $value): void
     {
         $this->setRawConfig(['se4fs_name' => $value]);

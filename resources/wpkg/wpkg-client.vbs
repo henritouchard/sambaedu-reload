@@ -216,9 +216,16 @@ If fso.FileExists(NoWpkgTxt) Then
    fso.DeleteFile(NoWpkgTxt)
 End If
 
-' on impose /noDownload car les downloads sont geres cote serveur sur se4. Cela evite de patcher wpkg.js a chaque maj pour ce point.
+' Story 27.19 (SE5) : /noDownload RETIRÉ. Historiquement les payloads étaient
+' pré-déposés via le partage SMB %SOFTWARE% (download géré « côté serveur ») et le
+' moteur n'avait donc rien à télécharger. En SE5 natif ce partage est débranché :
+' le serveur reste le point central mais livre les binaires en HTTP. Le catalogue
+' réécrit (PackagesXmlService) pointe chaque <download> sur http://<se4fs>/wpkg/files/…
+' avec un target relatif à %TEMP% → le moteur télécharge AVANT l'install. Le poste
+' consomme donc TOUJOURS du serveur (jamais d'Internet) ; on change le transport
+' SMB→HTTP, pas le modèle. Retirer /noDownload « rallume » ce download natif.
 ' mise à jour 1.3 : on impose /applymultiple:true car, dans l'interface se4, plusieurs profiles s'appliquent à un seul poste.
-dim WPKG_OPTIONS : WPKG_OPTIONS = "/synchronize /noDownload /applymultiple:true"
+dim WPKG_OPTIONS : WPKG_OPTIONS = "/synchronize /applymultiple:true"
 
 Dim oSysEnv
 

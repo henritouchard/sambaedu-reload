@@ -1152,3 +1152,170 @@ worker ; la progression s'affiche puis s'arrête seule.
 - [ ] Scénario 9.3 — 1 job KO → `Failed`/`Error` isolé, jobs sains `Success`, `failed()` n'écrase pas un log terminal
 - [ ] Scénario 9.4 — Finalisations concurrentes → `packages.xml` valide (lock + write atomique)
 - [ ] Scénario 9.5 — Re-soumission même app → `WithoutOverlapping` + idempotence, pas de doublon
+
+## Section 10 — Livraison FULL HTTP des payloads (Story 27.19)
+
+> **Contexte** : avant 27.19, le bundle natif SE5 servait le catalogue + les scripts mais
+> ni les payloads ni un `config.xml`. La variable WPKG `%SOFTWARE%` (qui pointait la racine
+> du partage SMB legacy) restait **indéfinie** (montage `MapNetworkDrive` débranché), et
+> `PackagesXmlService` **strippait** tous les `<download>`. Résultat : tout paquet installé
+> par `xcopy %SOFTWARE%\…` (ex. 7za marqué `is_parc_default`) échouait **en silence** —
+> rapport poste « WPKG déclenché mais apps non installées ». 27.19 bascule en **full HTTP** :
+> le moteur télécharge chaque payload depuis SE5 (`/wpkg/files/…`), réutilisant le download
+> **natif** de `wpkg-se4.js` (`target` relatif à `%TEMP%`). On NE patche PAS le moteur, on NE
+> rétablit PAS de montage SMB. **L'agent Go est INCHANGÉ** (le poste reçoit le nouveau VBS /
+> catalogue via le bundle HTTP — pas de bump de version/contrat/golden).
+
+### Pré-requis Section 10
+
+- Au moins une app `%SOFTWARE%` installée (ex. `id_7zip` avec `xcopy /Y %SOFTWARE%\7-zip\7za.exe %WinDir%\`).
+- Le binaire correspondant présent à `/var/sambaedu/unattended/install/packages/<saveto sans "packages/">`
+  (déposé par `PackageInstallerService::downloadFiles`, world-readable 664).
+- Catalogue + bundle régénérés après le déploiement de cette story : `php artisan wpkg:bundle`.
+- **Conf Apache déployée hors git** : l'alias `/wpkg/files` est ajouté dans `scripts/setupApache.sh`
+  mais la conf vhost réelle est générée/déployée sur la VM. Après mise à jour de `setupApache.sh`,
+  **re-générer/recharger** la conf Apache de la VM, sinon `/wpkg/files` renvoie 404 (cf. mémoire
+  « VM config cachée ≠ synced »).
+
+### Scénario 10.1 — Alias Apache `/wpkg/files` sert les binaires (T1)
+
+1. Sur la VM, vérifier que la conf vhost `*:80` contient bien le bloc
+   `Alias /wpkg/files /var/sambaedu/unattended/install/packages` avec `Options -Indexes`,
+   `Require all granted`, **sans** `FallbackResource`.
+2. Depuis un poste (ou en local) :
+   ```bash
+   curl -sI http://<se4fs>/wpkg/files/7-zip/7za.exe   # → 200
+   curl -sI http://<se4fs>/wpkg/files/                # → 403 (Indexes désactivé), JAMAIS un listing
+   ```
+3. **Garde-fou sécurité** — vérifier que l'alias n'expose QUE l'arbre des binaires paquets :
+   ```bash
+   curl -sI http://<se4fs>/wpkg/files/../packages.xml        # ne doit PAS servir le catalogue module
+   curl -sI http://<se4fs>/wpkg/files/../wpkg/tmp2/           # ne doit PAS exposer tmp2
+   ```
+   L'alias pointe sur `.../install/packages`, **jamais** sur `/var/sambaedu/unattended/install`
+   entier, **jamais** sur `storage/keys/pki` (PFX code-signing + clés CA).
+
+**Attendu** : payloads servis en 200 ; aucun listing de répertoire ; rien hors `.../install/packages`.
+
+### Scénario 10.2 — Catalogue réécrit pour une recette `%SOFTWARE%` (T2)
+
+1. `php artisan tinker` :
+   ```php
+   app(\App\Services\AppStore\PackagesXmlService::class)->regenerate();
+   ```
+2. Ouvrir le catalogue module (`config('sambaedu.wpkg.packages_xml_path')`) et localiser le
+   `<package>` `%SOFTWARE%` (ex. `id_7zip`). **Attendu** :
+   - `<download>` **conservé** avec
+     `url="http://<se4fs>/wpkg/files/7-zip/7za.exe"` et `target="7-zip\7za.exe"` ;
+     attributs `saveto` / `sha256sum` / `md5sum` **retirés** ;
+   - `<install cmd="xcopy /Y %TEMP%\7-zip\7za.exe %WinDir%\">` (`%SOFTWARE%`→`%TEMP%`) ;
+   - `<check>` **INCHANGÉ** (idempotence — ex. `file %WinDir%\7za.exe`).
+3. **Exclusion chirurgicale** — vérifier qu'un paquet **sans** `%SOFTWARE%` (ex. installeur MSI
+   `msiexec /i app.msi`) a toujours son `<download>` **strippé** et son `<install>` **inchangé**.
+4. **Exclusion archives serveur** — pour un paquet qui `untar`/`unzip` une archive côté serveur,
+   le `<download>` de **l'archive** (source du `<untar tarfile>` / `<unzip zipfile>`) ne doit
+   **JAMAIS** être réactivé (il reste strippé) ; seul un éventuel payload **direct** de la même
+   recette est réécrit en HTTP.
+
+**Attendu** : seules les recettes `%SOFTWARE%` deviennent HTTP ; aucune archive extraite serveur
+ne voit son download réactivé ; `delete`/`untar`/`unzip` toujours strippés.
+
+> Couverture unitaire HÔTE : `tests/Unit/Services/PackagesXmlServiceTest.php` (groupe `http delivery *`)
+> et `tests/Unit/Wpkg/Deployment/Services/WpkgBundleGeneratorTest.php::bundle_carries_http_rewritten_payload_for_software_recipe`.
+
+### Scénario 10.3 — `/noDownload` retiré + bundle publié (T3)
+
+1. Vérifier `resources/wpkg/wpkg-client.vbs` :
+   `WPKG_OPTIONS = "/synchronize /applymultiple:true"` (**plus** de `/noDownload`).
+2. `php artisan wpkg:bundle` puis vérifier que le VBS servi par `/wpkg/bundle` ne contient plus
+   `/noDownload` :
+   ```bash
+   curl -s http://<se4fs>/wpkg/bundle/wpkg-client.vbs | grep -i WPKG_OPTIONS
+   ```
+
+**Attendu** : le canal download natif du moteur est « rallumé » ; le bundle publié reflète le VBS
+sans `/noDownload`.
+
+### Scénario 10.4 — e2e poste : install effective via HTTP (VM/POSTE)
+
+1. Marquer une app `%SOFTWARE%` en défaut parc (ex. 7za), laisser l'agent déposer le profil
+   et déclencher `wpkg-client.vbs` (compte **SYSTEM** → `%TEMP%` = `C:\Windows\Temp`).
+2. **Attendu** :
+   - le moteur télécharge `7za.exe` en HTTP dans `%TEMP%\7-zip\` **avant** l'install ;
+   - `xcopy /Y %TEMP%\7-zip\7za.exe %WinDir%\` copie le binaire ;
+   - le `<check>` (`file %WinDir%\7za.exe`) passe → `wpkg.xml` marque le paquet **installé** ;
+   - le handler relit `wpkg.xml` → rapport **compliant** (et non plus « non installé »).
+3. **Idempotence** : relancer le cycle. Le `<check>` étant satisfait, **ni download ni install** ne
+   se redéclenchent (le `<check>` reste le garde — inchangé par 27.19).
+
+**Attendu** : l'app s'installe réellement ; second passage = no-op (compliant), aucun re-download.
+
+### Post-correctifs & non-régressions Section 10
+
+- **Pourquoi la réécriture d'URL est obligatoire** : l'intention legacy de `/noDownload` (« le
+  serveur centralise les downloads, le poste ne tape jamais Internet ») est **préservée**. Retirer
+  `/noDownload` SANS réécrire les `<download url>` ferait taper les postes sur `deb.sambaedu.org`
+  directement. La réécriture repointe chaque URL sur SE5 (`/wpkg/files`) → le poste consomme
+  **toujours du serveur**, on change le transport SMB→HTTP, pas le modèle.
+- **`%TEMP%` du compte SYSTEM** : `wpkg-client.vbs` tourne en SYSTEM → `%TEMP%` = `C:\Windows\Temp`.
+  Le moteur télécharge dans `%TEMP%\<target>` et l'`xcopy` réécrit relit au même endroit (cohérence
+  du compte). Vérifier l'écriture/relecture si un doute (droits sur `C:\Windows\Temp`).
+- **Substitution `<se4fs>`** : un placeholder non résolu dans l'URL → download 404 silencieux (même
+  classe de bug qu'avant 27.19). `PackagesXmlService::se4fsName()` résout `config('sambaedu.se4fs_name')`
+  (fallback `se4fs`) à la régénération — couvert par `http_delivery_uses_se4fs_fallback_when_config_empty`.
+- **Intégrité HTTP en clair (T4 différée)** : la vérif sha client (`certutil -hashfile`) est
+  **reportée en backlog** (cf. story 27.19 T4). Raisons : le serveur vérifie déjà le hash au download
+  (`PackageInstallerService::downloadWithHash`) ; risque MITM mitigé (LAN interne, serveur de
+  confiance, binaires publics) ; un préfixe `certutil` dans `<install cmd>` change la surface de
+  risque (échec certutil = échec install) et exige une validation poste dédiée. À reprendre si des
+  payloads sensibles ou un transport non maîtrisé entrent en jeu (envisager aussi HTTPS/jeton).
+
+| Incident | Cause | Couverture |
+|---|---|---|
+| **#R3 (review 27.19)** — `saveto` hors `packages/` → URL `/wpkg/files/<saveto>` 404 silencieuse | L'alias ne sert QUE `.../install/packages` ; `PackageInstallerService`/`LegacyWpkgImporter` déposent le payload à `storagePath/saveto` **verbatim** (des `saveto` réels existent en `softwares/...`, `wpkg/packages/...`) | Garde-fou : `<download>` hors `packages/` strippé + `Log::warning` (échec diagnosticable). Test `http_delivery_strips_download_when_saveto_outside_packages_tree` + Scénario 10.5 |
+| **#R-M2 (review 27.19)** — `%TEMP%` (SYSTEM = `C:\Windows\Temp`) jamais purgé, **pas même au reboot** → accumulation des installeurs téléchargés | Le download natif HTTP écrit dans `%TEMP%\<target>` sans nettoyage | Une `<install>` de purge `cmd /c del /F /Q "%TEMP%\<target>" 2>nul & exit /b 0` appendue **en dernier** : ne tourne qu'après install réussie (le moteur avorte avant en cas d'échec), `exit /b 0` ⇒ ne fait jamais échouer le package. Test `http_delivery_appends_temp_purge_after_install` + Scénario 10.6 |
+
+### Scénario 10.5 — Payload hors arbre `packages/` : pas d'URL morte (post-correctif #R3)
+
+> Angle révélé par la review 27.19 : un binaire dont le `saveto` n'est pas sous `packages/`
+> (ex. recette importée avec `saveto="softwares/firefox/firefox.exe"`) n'est pas atteignable par
+> l'alias `/wpkg/files`. Le bug initial 27.17 (« install échoue en silence ») se reproduirait via
+> une **URL 404 silencieuse**. Le correctif strippe ce `<download>` et logue un warning serveur.
+
+1. Importer/installer une recette `%SOFTWARE%` dont le `<download saveto>` ne commence PAS par
+   `packages/` (ex. `softwares/<app>/<bin>.exe`).
+2. `php artisan wpkg:bundle` puis inspecter le catalogue servi (`/wpkg/bundle` → `packages.xml`).
+   - **Attendu** : la recette ne contient **aucun** `<download>` pointant vers `/wpkg/files/softwares/...`
+     (pas d'URL morte). L'`<install>` reste réécrit en `%TEMP%`.
+3. Vérifier `storage/logs/laravel.log` (ou journal serveur) : **deux** lignes `Log::warning`
+   `[AppStore]` — « payload %SOFTWARE% hors arbre /wpkg/files » + « recette %SOFTWARE% sans payload
+   HTTP livrable » avec l'`id` du paquet. C'est le signal opérationnel à corriger (recette à
+   re-packager avec un `saveto` sous `packages/`), au lieu d'un poste qui rapporte « non installé »
+   sans trace serveur.
+
+### Scénario 10.6 — Purge du payload `%TEMP%` après install réussie (post-correctif #R-M2)
+
+> `%TEMP%` du compte SYSTEM (`C:\Windows\Temp`) n'est PAS vidé au reboot par Windows. Sans purge,
+> chaque payload téléchargé s'accumule. Le correctif appende une `<install>` de suppression qui ne
+> s'exécute qu'**après** une install réussie.
+
+1. Côté serveur (HÔTE), inspecter le catalogue d'une recette `%SOFTWARE%` régénérée : après l'`<install>`
+   réel (`xcopy … %TEMP%\…`), une **seconde `<install>`** doit exister, en dernier :
+   `cmd /c del /F /Q "%TEMP%\<sous-chemin>" 2>nul & exit /b 0` (une par payload téléchargé).
+2. **VM/POSTE — cas nominal** : déclencher l'install d'un paquet non conforme. Après remontée
+   `compliant`, vérifier que `C:\Windows\Temp\<sous-chemin>` (le payload téléchargé) **n'existe plus**.
+   Le fichier installé (`%WinDir%\7za.exe`) est bien présent (purge sans impact sur le `<check>`).
+3. **VM/POSTE — cas échec** : forcer l'échec de l'install réel (ex. cible verrouillée). Vérifier que
+   le paquet est rapporté **non conforme** ET que le payload **reste** dans `C:\Windows\Temp\…` (la
+   purge, appendue après, n'a pas tourné car le moteur a avorté avant) → diagnostic possible.
+4. **Idempotence** : 2ᵉ passage sur un poste déjà conforme → le `<check>` passe, aucun install ne
+   tourne, donc ni download ni purge (rien à nettoyer).
+
+### Checklist rapide Section 10 (relecteur)
+
+- [ ] Scénario 10.1 — `/wpkg/files/<bin>` → 200, pas de listing, rien hors `.../install/packages`
+- [ ] Scénario 10.2 — recette `%SOFTWARE%` réécrite (url HTTP + target `%TEMP%`, sha retirés, install `%TEMP%`, check intact) ; non-`%SOFTWARE%` et archives serveur exclues
+- [ ] Scénario 10.3 — `/noDownload` retiré du VBS, bundle publié reflète le changement
+- [ ] Scénario 10.4 — e2e poste : 7za téléchargé HTTP → xcopy `%TEMP%` → check OK → rapport compliant ; 2ᵉ passage = no-op
+- [ ] Scénario 10.5 — `saveto` hors `packages/` : `<download>` strippé (pas d'URL 404) + warnings serveur `[AppStore]`
+- [ ] Scénario 10.6 — purge `%TEMP%` : `<install>` `del … & exit /b 0` en dernier ; payload supprimé si succès, conservé si échec ; idempotent

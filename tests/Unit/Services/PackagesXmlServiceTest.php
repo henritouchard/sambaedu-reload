@@ -429,6 +429,299 @@ class PackagesXmlServiceTest extends TestCase
         $this->assertEquals(1, $dom->getElementsByTagName('packages')->length);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Story 27.19 — Livraison FULL HTTP des payloads. Transformation chirurgicale
+    // du catalogue : seules les recettes %SOFTWARE% sont réécrites pour télécharger
+    // en HTTP (download natif, target=%TEMP%) ; exclusion des archives extraites
+    // serveur (untar/unzip) ; recettes sans %SOFTWARE% inchangées.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * @return \DOMElement le <package> régénéré (premier de la racine)
+     */
+    private function regenerateAndGetPackage(): \DOMElement
+    {
+        $this->service->regenerate();
+        $dom = new \DOMDocument();
+        $dom->load($this->testPackagesXmlPath);
+
+        return $dom->getElementsByTagName('package')->item(0);
+    }
+
+    private function installApp(string $appId, string $xml): void
+    {
+        Application::create([
+            'app_id' => $appId,
+            'name' => $appId,
+            'status' => ApplicationStatus::Installed,
+            'xml' => $xml,
+        ]);
+    }
+
+    #[Test]
+    public function http_delivery_rewrites_download_url_and_target_for_software_recipe(): void
+    {
+        Application::where('status', ApplicationStatus::Installed)->delete();
+        config(['sambaedu.se4fs_name' => 'se4fs.lan']);
+
+        $this->installApp('id_7zip', '<package id="id_7zip" name="7-Zip" revision="1.0">
+            <check type="file" condition="exists" path="%WinDir%\7za.exe"/>
+            <download url="http://deb.sambaedu.org/7-zip/7za.exe" saveto="packages/7-zip/7za.exe" sha256sum="deadbeef" md5sum="cafe"/>
+            <install cmd="xcopy /Y %SOFTWARE%\7-zip\7za.exe %WinDir%\"/>
+        </package>');
+
+        $package = $this->regenerateAndGetPackage();
+
+        $download = $package->getElementsByTagName('download')->item(0);
+        $this->assertNotNull($download, 'Le <download> doit être conservé pour une recette %SOFTWARE%');
+        $this->assertSame('http://se4fs.lan/wpkg/files/7-zip/7za.exe', $download->getAttribute('url'));
+        $this->assertSame('7-zip\7za.exe', $download->getAttribute('target'));
+        // saveto / hashes retirés (non lus par le moteur).
+        $this->assertFalse($download->hasAttribute('saveto'));
+        $this->assertFalse($download->hasAttribute('sha256sum'));
+        $this->assertFalse($download->hasAttribute('md5sum'));
+    }
+
+    #[Test]
+    public function http_delivery_rewrites_install_software_to_temp(): void
+    {
+        Application::where('status', ApplicationStatus::Installed)->delete();
+
+        $this->installApp('id_7zip', '<package id="id_7zip" name="7-Zip" revision="1.0">
+            <download url="http://x/7za.exe" saveto="packages/7-zip/7za.exe"/>
+            <install cmd="xcopy /Y %SOFTWARE%\7-zip\7za.exe %WinDir%\"/>
+        </package>');
+
+        $package = $this->regenerateAndGetPackage();
+        $install = $package->getElementsByTagName('install')->item(0);
+
+        $this->assertSame('xcopy /Y %TEMP%\7-zip\7za.exe %WinDir%\\', $install->getAttribute('cmd'));
+        $this->assertStringNotContainsString('%SOFTWARE%', $install->getAttribute('cmd'));
+    }
+
+    #[Test]
+    public function http_delivery_leaves_check_untouched(): void
+    {
+        Application::where('status', ApplicationStatus::Installed)->delete();
+
+        $this->installApp('id_7zip', '<package id="id_7zip" name="7-Zip" revision="1.0">
+            <check type="file" condition="exists" path="%WinDir%\7za.exe"/>
+            <download url="http://x/7za.exe" saveto="packages/7-zip/7za.exe"/>
+            <install cmd="xcopy /Y %SOFTWARE%\7-zip\7za.exe %WinDir%\"/>
+        </package>');
+
+        $package = $this->regenerateAndGetPackage();
+        $check = $package->getElementsByTagName('check')->item(0);
+
+        $this->assertSame('file', $check->getAttribute('type'));
+        $this->assertSame('exists', $check->getAttribute('condition'));
+        $this->assertSame('%WinDir%\7za.exe', $check->getAttribute('path'));
+    }
+
+    #[Test]
+    public function http_delivery_uses_se4fs_fallback_when_config_empty(): void
+    {
+        Application::where('status', ApplicationStatus::Installed)->delete();
+        config(['sambaedu.se4fs_name' => '']);
+
+        $this->installApp('id_7zip', '<package id="id_7zip" name="7-Zip" revision="1.0">
+            <download url="http://x/7za.exe" saveto="packages/7-zip/7za.exe"/>
+            <install cmd="xcopy /Y %SOFTWARE%\7-zip\7za.exe %WinDir%\"/>
+        </package>');
+
+        $package = $this->regenerateAndGetPackage();
+        $download = $package->getElementsByTagName('download')->item(0);
+
+        $this->assertSame('http://se4fs/wpkg/files/7-zip/7za.exe', $download->getAttribute('url'));
+    }
+
+    #[Test]
+    public function http_delivery_skips_recipe_without_software_var(): void
+    {
+        // Recette MSI classique (download + install msiexec) SANS %SOFTWARE% :
+        // comportement iso-legacy → <download> strippé, install inchangé.
+        Application::where('status', ApplicationStatus::Installed)->delete();
+
+        $this->installApp('id_msi', '<package id="id_msi" name="MSI App" revision="1.0">
+            <download url="http://x/app.msi" saveto="packages/app/app.msi"/>
+            <install cmd="msiexec /i app.msi /qn"/>
+        </package>');
+
+        $package = $this->regenerateAndGetPackage();
+
+        $this->assertSame(0, $package->getElementsByTagName('download')->length, 'download strippé si pas de %SOFTWARE%');
+        $install = $package->getElementsByTagName('install')->item(0);
+        $this->assertSame('msiexec /i app.msi /qn', $install->getAttribute('cmd'));
+    }
+
+    #[Test]
+    public function http_delivery_excludes_server_extracted_untar_download(): void
+    {
+        // L'archive .tar.gz est extraite CÔTÉ SERVEUR (untar) : son <download> ne
+        // doit JAMAIS être réactivé même si la recette utilise %SOFTWARE% pour le
+        // fichier extrait. Le download du payload extrait (le binaire) reste, lui.
+        Application::where('status', ApplicationStatus::Installed)->delete();
+        config(['sambaedu.se4fs_name' => 'se4fs.lan']);
+
+        $this->installApp('id_archive', '<package id="id_archive" name="Archive App" revision="1.0">
+            <download url="http://x/bundle.tar.gz" saveto="packages/app/bundle.tar.gz" sha256sum="aa"/>
+            <untar tarfile="packages/app/bundle.tar.gz" target="packages/app/"/>
+            <install cmd="xcopy /Y %SOFTWARE%\app\extracted.exe %WinDir%\"/>
+        </package>');
+
+        $package = $this->regenerateAndGetPackage();
+
+        // Le <download> de l'archive (source de l'untar) est strippé.
+        $this->assertSame(0, $package->getElementsByTagName('download')->length, 'download d archive extraite serveur strippé');
+        // L'untar est aussi strippé (post-traitement serveur).
+        $this->assertSame(0, $package->getElementsByTagName('untar')->length);
+        // L'install %SOFTWARE% est tout de même réécrit en %TEMP% (le fichier
+        // extrait sera attendu sous %TEMP%, cohérent avec les autres downloads).
+        $install = $package->getElementsByTagName('install')->item(0);
+        $this->assertStringNotContainsString('%SOFTWARE%', $install->getAttribute('cmd'));
+        // review #7 : vérifier la substitution effective (pas une simple cmd vidée).
+        $this->assertStringContainsString('%TEMP%', $install->getAttribute('cmd'));
+    }
+
+    #[Test]
+    public function http_delivery_appends_temp_purge_after_install(): void
+    {
+        // review #M2 — le payload téléchargé dans %TEMP% doit être supprimé APRÈS une
+        // install réussie. Une <install> de purge est appendue EN DERNIER : le moteur
+        // avorte le package au 1er install en échec, donc la purge ne tourne qu'après
+        // succès. `cmd /c … & exit /b 0` ⇒ ne fait jamais échouer le package.
+        Application::where('status', ApplicationStatus::Installed)->delete();
+
+        $this->installApp('id_7zip', '<package id="id_7zip" name="7-Zip" revision="1.0">
+            <download url="http://x/7za.exe" saveto="packages/7-zip/7za.exe"/>
+            <install cmd="xcopy /Y %SOFTWARE%\7-zip\7za.exe %WinDir%\"/>
+        </package>');
+
+        $package = $this->regenerateAndGetPackage();
+        $installs = $package->getElementsByTagName('install');
+
+        // 2 <install> : l'install réel (réécrit %TEMP%) puis la purge, dans cet ordre.
+        $this->assertSame(2, $installs->length, 'une <install> de purge appendue après l\'install réel');
+        $this->assertStringContainsString('xcopy', $installs->item(0)->getAttribute('cmd'), 'l\'install réel reste en premier');
+        $purge = $installs->item(1)->getAttribute('cmd');
+        $this->assertSame('cmd /c del /F /Q "%TEMP%\7-zip\7za.exe" 2>nul & exit /b 0', $purge);
+    }
+
+    #[Test]
+    public function http_delivery_strips_download_when_saveto_outside_packages_tree(): void
+    {
+        // review #3 — l'alias Apache /wpkg/files ne sert QUE `.../install/packages`.
+        // Un saveto hors `packages/` (déposé verbatim par PackageInstaller/Importer,
+        // ex. `softwares/...`) n'est PAS atteignable → réécrire l'URL produirait un
+        // 404 silencieux. On strippe le <download> (pas d'URL morte) ; l'install
+        // %SOFTWARE% est tout de même réécrit en %TEMP% mais le warning serveur
+        // signale l'absence de payload livrable.
+        Application::where('status', ApplicationStatus::Installed)->delete();
+        config(['sambaedu.se4fs_name' => 'se4fs.lan']);
+
+        $this->installApp('id_soft', '<package id="id_soft" name="Soft App" revision="1.0">
+            <download url="http://x/firefox.exe" saveto="softwares/firefox/firefox.exe"/>
+            <install cmd="xcopy /Y %SOFTWARE%\firefox\firefox.exe %WinDir%\"/>
+        </package>');
+
+        $package = $this->regenerateAndGetPackage();
+
+        // Aucun <download> ne survit (saveto non servable par l'alias) — pas d'URL 404.
+        $this->assertSame(0, $package->getElementsByTagName('download')->length, 'download hors packages/ strippé');
+        // L'install est tout de même réécrit en %TEMP% (cohérence de la transformation).
+        $install = $package->getElementsByTagName('install')->item(0);
+        $this->assertStringNotContainsString('%SOFTWARE%', $install->getAttribute('cmd'));
+    }
+
+    #[Test]
+    public function http_delivery_excludes_server_extracted_unzip_but_keeps_other_download(): void
+    {
+        // Mix : une archive extraite serveur (unzip) ET un payload direct dans la
+        // même recette %SOFTWARE%. Seul le download de l'archive est exclu ; le
+        // payload direct est réécrit en HTTP.
+        Application::where('status', ApplicationStatus::Installed)->delete();
+        config(['sambaedu.se4fs_name' => 'se4fs.lan']);
+
+        $this->installApp('id_mix', '<package id="id_mix" name="Mix App" revision="1.0">
+            <download url="http://x/data.zip" saveto="packages/mix/data.zip"/>
+            <unzip zipfile="packages/mix/data.zip" target="packages/mix/"/>
+            <download url="http://x/setup.exe" saveto="packages/mix/setup.exe" sha256sum="bb"/>
+            <install cmd="%SOFTWARE%\mix\setup.exe /S"/>
+        </package>');
+
+        $package = $this->regenerateAndGetPackage();
+
+        $downloads = $package->getElementsByTagName('download');
+        $this->assertSame(1, $downloads->length, 'seul le payload direct est conservé');
+        $kept = $downloads->item(0);
+        $this->assertSame('http://se4fs.lan/wpkg/files/mix/setup.exe', $kept->getAttribute('url'));
+        $this->assertSame('mix\setup.exe', $kept->getAttribute('target'));
+    }
+
+    #[Test]
+    public function http_delivery_rewrites_multiple_downloads_and_installs(): void
+    {
+        Application::where('status', ApplicationStatus::Installed)->delete();
+        config(['sambaedu.se4fs_name' => 'se4fs.lan']);
+
+        $this->installApp('id_multi', '<package id="id_multi" name="Multi App" revision="1.0">
+            <download url="http://x/a.exe" saveto="packages/multi/a.exe"/>
+            <download url="http://x/b.dll" saveto="packages/multi/sub/b.dll"/>
+            <install cmd="xcopy /Y %SOFTWARE%\multi\a.exe %WinDir%\"/>
+            <install cmd="copy %SOFTWARE%\multi\sub\b.dll %WinDir%\system32\"/>
+        </package>');
+
+        $package = $this->regenerateAndGetPackage();
+
+        $downloads = $package->getElementsByTagName('download');
+        $this->assertSame(2, $downloads->length);
+        $this->assertSame('http://se4fs.lan/wpkg/files/multi/a.exe', $downloads->item(0)->getAttribute('url'));
+        $this->assertSame('multi\a.exe', $downloads->item(0)->getAttribute('target'));
+        $this->assertSame('http://se4fs.lan/wpkg/files/multi/sub/b.dll', $downloads->item(1)->getAttribute('url'));
+        $this->assertSame('multi\sub\b.dll', $downloads->item(1)->getAttribute('target'));
+
+        $installs = $package->getElementsByTagName('install');
+        $this->assertStringNotContainsString('%SOFTWARE%', $installs->item(0)->getAttribute('cmd'));
+        $this->assertStringNotContainsString('%SOFTWARE%', $installs->item(1)->getAttribute('cmd'));
+    }
+
+    #[Test]
+    public function http_delivery_handles_backslash_saveto_normalization(): void
+    {
+        // Une recette legacy peut écrire saveto en séparateurs Windows. La
+        // normalisation doit reconnaître l'archive extraite serveur (untar) et
+        // exclure son download.
+        Application::where('status', ApplicationStatus::Installed)->delete();
+
+        $this->installApp('id_bs', '<package id="id_bs" name="Backslash App" revision="1.0">
+            <download url="http://x/arch.tgz" saveto="packages\app\arch.tgz"/>
+            <untar tarfile="packages/app/arch.tgz" target="packages/app/"/>
+            <install cmd="xcopy %SOFTWARE%\app\x.exe %WinDir%\"/>
+        </package>');
+
+        $package = $this->regenerateAndGetPackage();
+        $this->assertSame(0, $package->getElementsByTagName('download')->length);
+    }
+
+    #[Test]
+    public function http_delivery_strips_delete_untar_unzip_but_not_download_software(): void
+    {
+        // Non-régression : delete/untar/unzip restent strippés (post-traitement
+        // serveur) ; seul <download> change de traitement.
+        Application::where('status', ApplicationStatus::Installed)->delete();
+
+        $this->installApp('id_full', '<package id="id_full" name="Full App" revision="1.0">
+            <download url="http://x/a.exe" saveto="packages/full/a.exe"/>
+            <delete file="packages/full/old.exe"/>
+            <install cmd="xcopy %SOFTWARE%\full\a.exe %WinDir%\"/>
+        </package>');
+
+        $package = $this->regenerateAndGetPackage();
+
+        $this->assertSame(1, $package->getElementsByTagName('download')->length);
+        $this->assertSame(0, $package->getElementsByTagName('delete')->length);
+    }
+
     #[Test]
     public function regenerate_uses_config_packages_xml_path(): void
     {

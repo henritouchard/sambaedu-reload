@@ -155,6 +155,28 @@ cat > "$APACHE_SITES_AVAILABLE/sambaedu.conf" << VHOST_SER
         Require all granted
     </Directory>
 
+    # /wpkg/files : PAYLOADS (binaires installeurs) des paquets WPKG (Story 27.19)
+    # — livraison FULL HTTP : le moteur wpkg-se4.js télécharge chaque payload en
+    # HTTP (download natif, target=%TEMP%) au lieu de l'ancien xcopy depuis le
+    # partage SMB %SOFTWARE% (débranché). Les binaires sont déposés par
+    # PackageInstallerService::downloadFiles à `storage_path/<saveto>` avec
+    # saveto="packages/<...>" → l'alias mappe `packages/` sur sa racine, l'URL
+    # publique est donc http://<se4fs>/wpkg/files/<saveto sans préfixe "packages/">.
+    # GARDE-FOU SÉCURITÉ : pointe EXACTEMENT sur le sous-arbre des binaires
+    # paquets (`.../install/packages`), JAMAIS sur `/var/sambaedu/unattended/install`
+    # entier (qui contient aussi wpkg/{tmp2,packages.xml}, scripts, etc.), et JAMAIS
+    # sur storage/keys/pki (PFX code-signing + clés CA). -Indexes (pas de listing),
+    # PAS de FallbackResource (un 404 reste un 404, ne retombe pas sur Laravel).
+    # Binaires world-readable 664, dossier à chown www-admin (lisible Apache) —
+    # sinon 404 silencieux. Payloads = installeurs publics : pas d'ACL requise (v1
+    # sans auth/HTTPS ; durcissement sha/HTTPS différé, cf. story 27.19 T4).
+    Alias /wpkg/files /var/sambaedu/unattended/install/packages
+    <Directory /var/sambaedu/unattended/install/packages>
+        Options -Indexes +FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+
     # /install/iso : ISO Windows *sources* (déposées par upload ou téléchargées
     # par curl), config ipxe.iso_management.iso_storage_path = storage/install/iso.
     # Déplacées hors du tree /os pour respecter la convention storage/ ; servies

@@ -1,6 +1,6 @@
 # Story 27.19: Livraison WPKG full HTTP (payloads servis par Apache, fin du transport SMB)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -54,11 +54,11 @@ Issu du debug terrain de la story 27.17 : 7za marqué `is_parc_default` a bien �
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Alias Apache `/wpkg/files`** (AC: 1,2) — ajouter l'alias public (vhost `*:80`, après `/wpkg/bundle`) → `/var/sambaedu/unattended/install/packages` ; `-Indexes`, `Require all granted` ; garde-fou sécurité (jamais l'install entier ni `storage/keys/pki`). `scripts/setupApache.sh`. Doc : conf déployée hors git → runbook.
-- [ ] **T2 — Transformation du catalogue** (AC: 3,4,5,6) — dans `PackagesXmlService::regenerate()` : retirer `'download'` du strip ; réécrire `<download>` (url HTTP SE5 + target `%TEMP%`, retirer saveto/sha) ; réécrire les `<install cmd>` `%SOFTWARE%`→`%TEMP%` ; **uniquement** pour les paquets `%SOFTWARE%`, exclure untar/unzip. Substitution `<SE4FS_NAME>` via `WpkgBundleGenerator::buildSubstitutedCatalog`. `app/Services/AppStore/PackagesXmlService.php` (+ éventuel `WpkgBundleGenerator.php`).
-- [ ] **T3 — Rallumer le download client** (AC: 7) — retirer `/noDownload` de `resources/wpkg/wpkg-client.vbs:221` ; régénérer le bundle. `resources/wpkg/wpkg-client.vbs`.
-- [ ] **T4 — (durcissement, optionnel) vérif sha client** (AC: —) — préfixer une vérif `certutil -hashfile %TEMP%\… SHA256` dans le `<install>` réécrit, alimentée par `$download['sha256sum']`. Reportable. `app/Services/AppStore/PackagesXmlService.php`.
-- [ ] **T5 — Tests + doc** (AC: 8,9) — tests unitaires HÔTE de la transformation catalogue (download réécrit, install %TEMP%, exclusions untar/unzip/non-%SOFTWARE%, substitution SE4FS) ; test génération bundle ; doc runbook `docs/qa/domains/wpkg-deploy.md` (append) + `docs/wpkg-deploy/`. `tests/.../PackagesXmlServiceTest.php`.
+- [x] **T1 — Alias Apache `/wpkg/files`** (AC: 1,2) — ajouter l'alias public (vhost `*:80`, après `/wpkg/bundle`) → `/var/sambaedu/unattended/install/packages` ; `-Indexes`, `Require all granted` ; garde-fou sécurité (jamais l'install entier ni `storage/keys/pki`). `scripts/setupApache.sh`. Doc : conf déployée hors git → runbook.
+- [x] **T2 — Transformation du catalogue** (AC: 3,4,5,6) — dans `PackagesXmlService::regenerate()` : retirer `'download'` du strip ; réécrire `<download>` (url HTTP SE5 + target `%TEMP%`, retirer saveto/sha) ; réécrire les `<install cmd>` `%SOFTWARE%`→`%TEMP%` ; **uniquement** pour les paquets `%SOFTWARE%`, exclure untar/unzip. Substitution `<SE4FS_NAME>` via `WpkgBundleGenerator::buildSubstitutedCatalog`. `app/Services/AppStore/PackagesXmlService.php` (+ éventuel `WpkgBundleGenerator.php`).
+- [x] **T3 — Rallumer le download client** (AC: 7) — retirer `/noDownload` de `resources/wpkg/wpkg-client.vbs:221` ; régénérer le bundle. `resources/wpkg/wpkg-client.vbs`.
+- [ ] **T4 — (durcissement, optionnel) vérif sha client** (AC: —) — **DIFFÉRÉE EN BACKLOG** (cf. Dev Agent Record). préfixer une vérif `certutil -hashfile %TEMP%\… SHA256` dans le `<install>` réécrit, alimentée par `$download['sha256sum']`. Reportable. `app/Services/AppStore/PackagesXmlService.php`.
+- [x] **T5 — Tests + doc** (AC: 8,9) — tests unitaires HÔTE de la transformation catalogue (download réécrit, install %TEMP%, exclusions untar/unzip/non-%SOFTWARE%, substitution SE4FS) ; test génération bundle ; doc runbook `docs/qa/domains/wpkg-deploy.md` (append) + `docs/wpkg-deploy/`. `tests/.../PackagesXmlServiceTest.php`.
 
 ## Dev Notes
 
@@ -104,3 +104,51 @@ Issu du debug terrain de la story 27.17 : 7za marqué `is_parc_default` a bien �
 ## Recommandation Modèle Dev
 
 **opus** — réécriture programmatique de catalogue XML à portée parc-wide (risque de régression sur TOUS les paquets), exclusions chirurgicales subtiles (untar/unzip server-side), interaction moteur tiers/VBS, sécurité d'alias Apache. Faible surface de fichiers mais invariants délicats.
+
+## Dev Agent Record
+
+### Implementation Plan
+
+- **T1** — Alias Apache `/wpkg/files` ajouté dans `scripts/setupApache.sh`, dans le vhost `*:80`, immédiatement après `/wpkg/bundle`. Pointe EXACTEMENT sur `/var/sambaedu/unattended/install/packages` (sous-arbre des binaires paquets), `Options -Indexes +FollowSymLinks`, `Require all granted`, pas de `FallbackResource`. Le saveto étant `packages/<rel>`, l'alias mappe `packages/` sur sa racine → URL publique `/wpkg/files/<rel>`. Garde-fou documenté : jamais `/var/sambaedu/unattended/install` entier, jamais `storage/keys/pki`.
+- **T2** — `PackagesXmlService::regenerate()` : `'download'` retiré du strip (`$serverOnlyNodes = ['delete','untar','unzip']`). Nouvelle méthode privée `transformPackageForHttpDelivery(\DOMElement $package)` appelée AVANT le strip des nœuds serveur (besoin de lire `<untar>`/`<unzip>` pour identifier les archives extraites serveur). Algorithme chirurgical :
+  1. Recense les `saveto` consommés par un `<untar tarfile>`/`<unzip zipfile>` (normalisés) = archives extraites serveur.
+  2. Marqueur `dependsOnSoftware` = au moins un `<install cmd>` contenant `%SOFTWARE%` (insensible casse).
+  3. Pour chaque `<download>` : archive extraite serveur → strip inconditionnel ; recette sans `%SOFTWARE%` ou download sans saveto → strip (iso-legacy, inerte sans config.xml) ; sinon → réécriture HTTP (`url=http://<se4fs>/wpkg/files/<rel sans "packages/">`, `target=<rel windows>`, suppression `saveto`/`sha256sum`/`md5sum`/`sha1sum`/`md5`).
+  4. Si `dependsOnSoftware`, réécrit `%SOFTWARE%`→`%TEMP%` dans tous les `<install cmd>`.
+  Le `<check>` n'est jamais touché. `se4fsName()` résout `config('sambaedu.se4fs_name')` (fallback `se4fs`).
+- **T3** — `/noDownload` retiré de `WPKG_OPTIONS` dans `resources/wpkg/wpkg-client.vbs` (commentaire d'origine remplacé par la rationale SE5). Régénération bundle = `php artisan wpkg:bundle` (à exécuter sur la VM au déploiement — le bundle copie le VBS VERBATIM).
+- **T5** — 10 tests HÔTE ajoutés à `PackagesXmlServiceTest` + 1 test d'intégration end-to-end à `WpkgBundleGeneratorTest` ; runbook `docs/qa/domains/wpkg-deploy.md` Section 10 (append) + ligne README QA enrichie.
+
+### Décisions
+
+- **T4 DIFFÉRÉE EN BACKLOG (vérif sha client `certutil`)** — assumée comme reportable par la story (« durcissement, optionnel »). Raisons : (1) le serveur vérifie déjà le hash au download (`PackageInstallerService::downloadWithHash`) ; (2) risque MITM mitigé (LAN interne, serveur de confiance, payloads = installeurs publics) ; (3) préfixer un `certutil -hashfile` dans le `<install cmd>` change la surface de risque (un échec/indisponibilité de `certutil` ferait échouer l'install) et exige une validation poste dédiée (SYSTEM, `%TEMP%`) hors périmètre des tests HÔTE de cette story. À reprendre si des payloads sensibles ou un transport non maîtrisé entrent en jeu (envisager alors aussi HTTPS/jeton). Documentée dans le runbook (Post-correctifs Section 10).
+- **Résolution de `<SE4FS_NAME>`** — au lieu d'écrire un placeholder textuel `<SE4FS_NAME>` dans l'URL (que `WpkgBundleGenerator::buildSubstitutedCatalog` ne substituerait PAS — il ne traite que les ÉLÉMENTS `<variable source="sambaedu">`, pas les attributs `url`), `PackagesXmlService` résout `se4fs_name` lui-même via `config('sambaedu.se4fs_name')` (fallback `se4fs`) au moment de la régénération. Même SOURCE de vérité (conf serveur, jamais l'AD) et même intention que le mécanisme `WpkgBundleGenerator`, et le catalogue module est de toute façon régénéré à chaque changement de conf. Couvert par `http_delivery_uses_se4fs_fallback_when_config_empty`.
+- **Inclusion de l'install `%SOFTWARE%`→`%TEMP%` même quand le download d'archive est exclu** — quand une recette `%SOFTWARE%` contient À LA FOIS un `<untar>`/`<unzip>` (archive extraite serveur, download exclu) et un `<install %SOFTWARE%>`, l'`<install>` est tout de même réécrit en `%TEMP%` (cohérence avec les payloads directs réécrits ; le fichier attendu sera sous `%TEMP%`). Cas couvert par `http_delivery_excludes_server_extracted_untar_download`.
+
+### Completion Notes
+
+- AC1/AC2 (T1) : alias `/wpkg/files` scopé sur l'arbre des binaires, `-Indexes`, garde-fou sécurité — conf déployée hors git, runbook met en garde sur le rechargement Apache VM.
+- AC3 : `<download>` n'est plus strippé d'office (`delete`/`untar`/`unzip` toujours strippés).
+- AC4 : `<download>` conservé réécrit (url HTTP SE5 dérivée du saveto, target relatif, saveto/sha retirés).
+- AC5 : `<install cmd>` `%SOFTWARE%`→`%TEMP%`.
+- AC6 (CŒUR) : transformation strictement limitée aux recettes `%SOFTWARE%` ; archives extraites serveur (untar/unzip) jamais réactivées ; recettes non-`%SOFTWARE%` inchangées. 10 tests dédiés.
+- AC7 (T3) : `/noDownload` retiré.
+- AC8 : `<check>` inchangé (test `http_delivery_leaves_check_untouched`).
+- AC9 : aucun fichier `agent/**` modifié (vérifié `git diff --name-only | grep '^agent/'` = vide), pas de bump version/contrat/golden.
+- Tests HÔTE : `PackagesXmlServiceTest` 23 passés (13 existants + 10 nouveaux), `WpkgBundleGeneratorTest` 6 passés (5 + 1), non-régression `LegacyWpkgImporterTest`/`PackagesXmlLockTest`/`ApplicationsStateProviderTest`/`PackagesXmlAssociationsReaderTest` OK. Total ciblé : 37 tests / 131 assertions verts.
+- Validation VM/poste e2e (download natif HTTP réel en SYSTEM, xcopy depuis `%TEMP%`, remontée `wpkg.xml`, rapport compliant, alias `curl`) reste à dérouler sur la VM (cf. runbook Section 10, hors tests HÔTE).
+
+### File List
+
+- `scripts/setupApache.sh` (modifié — T1, alias `/wpkg/files`)
+- `app/Services/AppStore/PackagesXmlService.php` (modifié — T2, transformation HTTP chirurgicale + `se4fsName()`)
+- `resources/wpkg/wpkg-client.vbs` (modifié — T3, retrait `/noDownload`)
+- `tests/Unit/Services/PackagesXmlServiceTest.php` (modifié — T5, 10 tests de transformation)
+- `tests/Unit/Wpkg/Deployment/Services/WpkgBundleGeneratorTest.php` (modifié — T5, 1 test d'intégration bundle)
+- `docs/qa/domains/wpkg-deploy.md` (modifié — T5, Section 10 append)
+- `docs/qa/README.md` (modifié — T5, ligne domaine wpkg-deploy enrichie)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (modifié — statut 27-19 → review)
+
+### Change Log
+
+- 2026-06-24 — Story 27.19 développée (DEV opus). Livraison FULL HTTP des payloads WPKG : alias Apache `/wpkg/files`, réécriture chirurgicale du catalogue (`<download>`→HTTP SE5 + `%SOFTWARE%`→`%TEMP%` pour les seules recettes `%SOFTWARE%`, exclusion des archives extraites serveur), retrait `/noDownload`. T4 (sha client) différée en backlog. Agent Go intact. 11 tests HÔTE ajoutés. Status ready-for-dev → review.
