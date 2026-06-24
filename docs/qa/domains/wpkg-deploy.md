@@ -1179,9 +1179,15 @@ worker ; la progression s'affiche puis s'arrête seule.
 
 ### Scénario 10.1 — Alias Apache `/wpkg/files` sert les binaires (T1)
 
+> **Déploiement automatique** : `scripts/update.sh` (`update_apache()`) inclut `Alias /wpkg/files`
+> dans son test de complétude du vhost SER. Un serveur dont le vhost déployé ne contient pas encore
+> l'alias (antérieur à 27.19) déclenche une relance idempotente de `setupApache.sh` (réécriture du
+> vhost + `apache2ctl graceful`). Aucune action manuelle : le prochain `update.sh` pose l'alias.
+
 1. Sur la VM, vérifier que la conf vhost `*:80` contient bien le bloc
    `Alias /wpkg/files /var/sambaedu/unattended/install/packages` avec `Options -Indexes`,
-   `Require all granted`, **sans** `FallbackResource`.
+   `Require all granted`, **sans** `FallbackResource`. S'il manque, lancer `bash scripts/update.sh`
+   (ou directement `bash scripts/setupApache.sh`).
 2. Depuis un poste (ou en local) :
    ```bash
    curl -sI http://<se4fs>/wpkg/files/7-zip/7za.exe   # → 200

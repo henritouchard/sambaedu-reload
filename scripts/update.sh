@@ -406,14 +406,16 @@ update_apache() {
         # en comparant le DocumentRoot et la structure attendue
         if grep -q "DocumentRoot.*sambaedu-reload/public" "$APACHE_CONF_TARGET" \
            && [[ -f "/etc/apache2/sites-available/sambaedu-legacy.conf" ]] \
-           && grep -q "Alias /wpkg/bundle" "$APACHE_CONF_TARGET"; then
+           && grep -q "Alias /wpkg/bundle" "$APACHE_CONF_TARGET" \
+           && grep -q "Alias /wpkg/files" "$APACHE_CONF_TARGET"; then
             log_success "Apache déjà configuré pour SER (setupApache.sh)"
             return
         else
             # Vhost SER incomplet : legacy manquant OU alias /wpkg/bundle absent
-            # (vhost antérieur à la Story 27.5) → relancer setupApache.sh pour
-            # (re)poser les aliases. Idempotent.
-            log_warning "Configuration Apache SER incomplète (legacy ou alias /wpkg/bundle manquant) — relance de setupApache.sh"
+            # (vhost antérieur à la Story 27.5) OU alias /wpkg/files absent (vhost
+            # antérieur à la Story 27.19 — livraison HTTP des payloads WPKG) →
+            # relancer setupApache.sh pour (re)poser les aliases. Idempotent.
+            log_warning "Configuration Apache SER incomplète (legacy ou alias /wpkg/bundle ou /wpkg/files manquant) — relance de setupApache.sh"
             if [[ -x "$SETUP_APACHE_SCRIPT" ]]; then
                 bash "$SETUP_APACHE_SCRIPT"
                 log_success "Apache reconfiguré via setupApache.sh"
