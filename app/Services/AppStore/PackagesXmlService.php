@@ -181,22 +181,26 @@ class PackagesXmlService
             }
         }
 
-        // 2. La recette dépend-elle de %SOFTWARE% ? Marqueur = un <install cmd>
-        //    référençant %SOFTWARE% (insensible à la casse, comme une var d'env
-        //    Windows). Si non, on ne réécrit RIEN (on strippe les <download> pour
-        //    rester iso-comportement legacy : inertes sans config.xml).
+        // 2. La recette dépend-elle d'un payload STAGÉ sous le partage legacy ?
+        //    Marqueur = un <install cmd> référençant `%SOFTWARE%\` OU `%Z%\packages\`
+        //    (insensibles à la casse). Les DEUX résolvent vers le même dossier local
+        //    `c:\windows\install\packages\` (posé jadis par le montage SMB, vide en
+        //    SE5) — d'où le même besoin de livraison HTTP. Si non, on ne réécrit RIEN
+        //    (on strippe les <download> : iso-legacy, inertes sans config.xml).
+        //    NB : `%Z%\wpkg\tools\…` (7za archiveur, nircmd) = outils PARTAGÉS, hors
+        //    scope ici (pas de <download> par-app) — JAMAIS réécrits.
         $installNodes = $this->collectByTag($package, 'install');
-        $dependsOnSoftware = false;
+        $dependsOnStagedPayload = false;
         foreach ($installNodes as $install) {
-            if ($this->referencesSoftwareVar($install->getAttribute('cmd'))) {
-                $dependsOnSoftware = true;
+            if ($this->referencesStagedPayloadVar($install->getAttribute('cmd'))) {
+                $dependsOnStagedPayload = true;
                 break;
             }
         }
 
         // 3. Traiter chaque <download>. On compte les payloads effectivement
-        //    réécrits en HTTP : une recette %SOFTWARE% sans aucun payload livrable
-        //    est un trou silencieux (l'install %TEMP% n'aura aucune source) → warn.
+        //    réécrits en HTTP : une recette à payload stagé sans aucun payload
+        //    livrable est un trou silencieux (l'install %TEMP% n'aura aucune source) → warn.
         $httpDownloads = 0;
         $rewrittenTargets = [];
         foreach ($this->collectByTag($package, 'download') as $download) {
@@ -208,9 +212,9 @@ class PackagesXmlService
                 continue;
             }
 
-            // Recette sans dépendance %SOFTWARE%, ou <download> sans saveto → strip
+            // Recette sans payload stagé, ou <download> sans saveto → strip
             // (comportement legacy : pas de réécriture, payload non livrable en HTTP).
-            if (! $dependsOnSoftware || $saveto === '') {
+            if (! $dependsOnStagedPayload || $saveto === '') {
                 $download->parentNode?->removeChild($download);
                 continue;
             }
@@ -223,7 +227,7 @@ class PackagesXmlService
             // classe de bug que cette story corrige). On strippe + on logue, pour
             // échouer de façon DIAGNOSTICABLE plutôt que de produire une URL morte.
             if (! str_starts_with($saveto, 'packages/')) {
-                Log::warning('[AppStore] payload %SOFTWARE% hors arbre /wpkg/files (non livrable HTTP), <download> retiré', [
+                Log::warning('[AppStore] payload stagé hors arbre /wpkg/files (non livrable HTTP), <download> retiré', [
                     'package' => $package->getAttribute('id'),
                     'saveto' => $saveto,
                 ]);
@@ -235,15 +239,15 @@ class PackagesXmlService
             $httpDownloads++;
         }
 
-        // 4. Réécrire %SOFTWARE% → %TEMP% dans les <install cmd> (uniquement si la
-        //    recette dépend de %SOFTWARE% — sinon il n'y a rien à réécrire).
-        if ($dependsOnSoftware) {
-            // Garde-fou cohérence (review #1/#3) : si la recette dépend de %SOFTWARE%
-            // mais qu'aucun payload n'a été réécrit en HTTP (tous strippés : sans
+        // 4. Réécrire le préfixe du payload stagé → %TEMP% dans les <install cmd>
+        //    (uniquement si la recette dépend d'un payload stagé — sinon rien à faire).
+        if ($dependsOnStagedPayload) {
+            // Garde-fou cohérence (review #1/#3) : si la recette dépend d'un payload
+            // stagé mais qu'aucun payload n'a été réécrit en HTTP (tous strippés : sans
             // saveto, hors `packages/`, ou archive extraite serveur), l'install
             // réécrit en %TEMP% n'aura aucune source → échec silencieux sur le poste.
             if ($httpDownloads === 0) {
-                Log::warning('[AppStore] recette %SOFTWARE% sans payload HTTP livrable — l\'install échouera sur le poste', [
+                Log::warning('[AppStore] recette à payload stagé sans payload HTTP livrable — l\'install échouera sur le poste', [
                     'package' => $package->getAttribute('id'),
                 ]);
             }
@@ -251,7 +255,7 @@ class PackagesXmlService
             foreach ($installNodes as $install) {
                 $cmd = $install->getAttribute('cmd');
                 if ($cmd !== '') {
-                    $install->setAttribute('cmd', $this->rewriteSoftwareToTemp($cmd));
+                    $install->setAttribute('cmd', $this->rewriteStagedPayloadToTemp($cmd));
                 }
             }
         }
@@ -306,22 +310,32 @@ class PackagesXmlService
     }
 
     /**
-     * Réécrit toutes les occurrences de `%SOFTWARE%` en `%TEMP%` dans une commande
-     * d'install (insensible à la casse, comme l'expansion des vars Windows). Le
-     * sous-chemin suivant la variable est conservé tel quel → le payload téléchargé
-     * dans %TEMP%\<même sous-chemin> est relu au bon endroit.
+     * Réécrit le préfixe d'un payload stagé en `%TEMP%` dans une commande d'install.
+     * Deux préfixes legacy pointent vers le même dossier `c:\windows\install\packages\`
+     * (vide en SE5) et doivent donc tous deux viser `%TEMP%\<rel>` (où le moteur a
+     * téléchargé le payload) :
+     *  - `%SOFTWARE%\<rel>`     → `%TEMP%\<rel>`  (`%SOFTWARE%` = …\install\packages)
+     *  - `%Z%\packages\<rel>`   → `%TEMP%\<rel>`  (`%Z%` = …\install)
+     * Insensible à la casse (vars d'env Windows). On NE touche PAS `%Z%\wpkg\tools\…`
+     * (outils partagés, hors scope — pas de <download> par-app). Ordre : `%Z%\packages\`
+     * d'abord (préfixe plus spécifique), puis `%SOFTWARE%`.
      */
-    private function rewriteSoftwareToTemp(string $cmd): string
+    private function rewriteStagedPayloadToTemp(string $cmd): string
     {
+        $cmd = str_ireplace('%Z%\\packages\\', '%TEMP%\\', $cmd);
+
         return (string) preg_replace('/%SOFTWARE%/i', '%TEMP%', $cmd);
     }
 
     /**
-     * Un attribut contient-il une référence à la variable WPKG `%SOFTWARE%` ?
+     * Un attribut référence-t-il un payload STAGÉ sous le partage legacy ? Marqueur =
+     * `%SOFTWARE%` OU `%Z%\packages\` (tous deux résolvent vers …\install\packages\).
+     * `%Z%\wpkg\tools\…` (outils partagés) n'est PAS un payload stagé → ignoré ici.
      */
-    private function referencesSoftwareVar(string $value): bool
+    private function referencesStagedPayloadVar(string $value): bool
     {
-        return stripos($value, '%SOFTWARE%') !== false;
+        return stripos($value, '%SOFTWARE%') !== false
+            || stripos($value, '%Z%\\packages\\') !== false;
     }
 
     /**

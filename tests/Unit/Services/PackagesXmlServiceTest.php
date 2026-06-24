@@ -608,6 +608,57 @@ class PackagesXmlServiceTest extends TestCase
     }
 
     #[Test]
+    public function http_delivery_rewrites_z_packages_recipe_like_software(): void
+    {
+        // La majorité des recettes legacy référencent `%Z%\packages\…` (≡ %SOFTWARE%,
+        // même dossier local …\install\packages). Elles doivent être livrées en HTTP
+        // de la même façon : download réécrit + install `%Z%\packages\X` → `%TEMP%\X`.
+        Application::where('status', ApplicationStatus::Installed)->delete();
+        config(['sambaedu.se4fs_name' => 'se4fs.lan']);
+
+        $this->installApp('id_airy', '<package id="id_airy" name="Airy" revision="1.0">
+            <check type="file" condition="exists" path="%ProgramFiles%\Airy\airy.exe"/>
+            <download url="http://deb.sambaedu.org/airy.msi" saveto="packages/Airy/airy.msi" sha256sum="aa"/>
+            <install cmd="msiexec /qn /i &quot;%Z%\packages\Airy\airy.msi&quot;"/>
+        </package>');
+
+        $package = $this->regenerateAndGetPackage();
+
+        $download = $package->getElementsByTagName('download')->item(0);
+        $this->assertNotNull($download, 'le <download> est conservé pour une recette %Z%\packages');
+        $this->assertSame('http://se4fs.lan/wpkg/files/Airy/airy.msi', $download->getAttribute('url'));
+        $this->assertSame('Airy\airy.msi', $download->getAttribute('target'));
+
+        $install = $package->getElementsByTagName('install')->item(0);
+        $this->assertSame('msiexec /qn /i "%TEMP%\Airy\airy.msi"', $install->getAttribute('cmd'));
+        $this->assertStringNotContainsString('%Z%\packages', $install->getAttribute('cmd'));
+    }
+
+    #[Test]
+    public function http_delivery_leaves_shared_tools_z_path_untouched(): void
+    {
+        // Les outils PARTAGÉS `%Z%\wpkg\tools\…` (7za archiveur, nircmd) ne sont PAS
+        // des payloads par-app (pas de <download>) → JAMAIS réécrits en %TEMP%. Seul
+        // le payload `%Z%\packages\…` de la recette est livré ; le chemin outil reste.
+        Application::where('status', ApplicationStatus::Installed)->delete();
+        config(['sambaedu.se4fs_name' => 'se4fs.lan']);
+
+        $this->installApp('id_adnarn', '<package id="id_adnarn" name="AdnArn" revision="1.0">
+            <download url="http://deb.sambaedu.org/adnarn.zip" saveto="packages/adnarn/adnarn.zip"/>
+            <install cmd="%ComSpec% /C %Z%\wpkg\tools\7za.exe e -o&quot;%ProgramFiles%\adnarn&quot; -y -bd %Z%\packages\adnarn\adnarn.zip &gt;NUL"/>
+        </package>');
+
+        $package = $this->regenerateAndGetPackage();
+        $cmd = $package->getElementsByTagName('install')->item(0)->getAttribute('cmd');
+
+        // Le payload %Z%\packages\… est réécrit en %TEMP%\… (livrable HTTP).
+        $this->assertStringContainsString('%TEMP%\adnarn\adnarn.zip', $cmd);
+        $this->assertStringNotContainsString('%Z%\packages', $cmd);
+        // L'outil partagé reste %Z%\wpkg\tools\… (follow-up : staging des outils).
+        $this->assertStringContainsString('%Z%\wpkg\tools\7za.exe', $cmd);
+    }
+
+    #[Test]
     public function http_delivery_strips_download_when_saveto_outside_packages_tree(): void
     {
         // review #3 — l'alias Apache /wpkg/files ne sert QUE `.../install/packages`.
