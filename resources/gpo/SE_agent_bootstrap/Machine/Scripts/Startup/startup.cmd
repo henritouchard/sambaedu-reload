@@ -13,8 +13,10 @@
 ::   (c) lance "agent.exe install" (idempotent : installe OU repare un agent
 ::       brique/supprime -- le filet eternel #27). Le token survit (hors perimetre
 ::       install) : un poste deja enrole repart en convergence directe ;
+::  (c2) pose le client WPKG wpkg-client.vbs en %WinDir% depuis le bundle HTTP
+::       (l'agent le declenche mais ne le telecharge pas -- D7) ;
 ::   (d) (re)cree une tache planifiee de refresh (SYSTEM, periodique) qui rejoue
-::       (a)-(c) -- le filet du "poste jamais eteint". Auto-reparation : la tache
+::       (a)-(c2) -- le filet du "poste jamais eteint". Auto-reparation : la tache
 ::       est recreee si absente.
 ::
 :: Une fois pose, l'agent DEMANDE son enrolement (porte 2) et converge des
@@ -39,6 +41,18 @@ curl.exe -s -o "%AGENT_EXE%" "http://%SE4FS%/api/v1/agent/stable/download"
 
 :: --- (c) install/reparation du service (idempotent) -------------------------
 if exist "%AGENT_EXE%" "%AGENT_EXE%" install -server-url "http://%SE4FS%"
+
+:: --- (c2) client WPKG : wpkg-client.vbs a %WinDir% (self-heal SYSTEM) --------
+:: L'agent DECLENCHE wpkg-client.vbs mais ne le telecharge pas (choix D7). La
+:: copie SMB a l'install (autologon se4install + auth ADS) est fragile ; on pose
+:: donc le client ICI, en SYSTEM (compte machine -> auth fiable), depuis le bundle
+:: HTTP. wpkg-se4.js est fetch au runtime par la vbs (SE4_WPKG_BUNDLE_URL fourni
+:: par l'agent au declenchement). Telechargement en .tmp + bascule SEULEMENT si
+:: taille plausible (>1000 o) : un corps d'erreur 404 (~50 o) n'ecrase jamais un
+:: client sain (lecon du faux agent.exe de 49 o).
+curl.exe -s -o "%TEMP%\wpkg-client.vbs.tmp" "http://%SE4FS%/wpkg/bundle/wpkg-client.vbs"
+for %%A in ("%TEMP%\wpkg-client.vbs.tmp") do if %%~zA GTR 1000 copy /Y "%TEMP%\wpkg-client.vbs.tmp" "%WINDIR%\wpkg-client.vbs" >nul
+if exist "%TEMP%\wpkg-client.vbs.tmp" del /f /q "%TEMP%\wpkg-client.vbs.tmp"
 
 :: --- (d) (re)creation de la tache de refresh (SYSTEM, toutes les 240 min) ----
 :: Auto-reparation : si la tache est absente, on la recree (le filet eternel).
