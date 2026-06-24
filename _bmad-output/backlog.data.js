@@ -337,6 +337,11 @@ const DATASETS = {
           "id": "4-12",
           "status": "review",
           "title": "Peuplement des groupes AD Equipe_X par rôle (parité SE4 — ACL prof effectives)"
+        },
+        {
+          "id": "4-13",
+          "status": "review",
+          "title": "Fold de l'import AD : une classe = une ligne user_groups au nom nu"
         }
       ]
     },
