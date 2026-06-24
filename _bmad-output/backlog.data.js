@@ -1125,6 +1125,11 @@ const DATASETS = {
           "id": "27-19",
           "status": "review",
           "title": "Livraison WPKG full HTTP (payloads servis par Apache, fin du transport SMB)"
+        },
+        {
+          "id": "27-20",
+          "status": "ready-for-dev",
+          "title": "Staging des outils WPKG partagés (%Z%\\wpkg\\tools\\) sur le poste"
         }
       ]
     }
