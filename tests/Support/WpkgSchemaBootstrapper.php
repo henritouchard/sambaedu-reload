@@ -93,6 +93,9 @@ final class WpkgSchemaBootstrapper
             Schema::create('applications', function (Blueprint $table): void {
                 $table->id();
                 $table->string('app_id', 100);
+                // Story 27.17 — app appliquée par défaut à tous les postes
+                // (couche Broadcast, lue par ApplicationsStateProvider).
+                $table->boolean('is_parc_default')->default(false);
                 $table->string('name', 100)->default('');
                 $table->string('status', 32)->default('available');
                 // Story 17.6 — fragment XML `<package>` lu par

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 
@@ -43,6 +44,19 @@ new class extends Component {
     public string $title = '';
     public string $description = '';
 
+    /**
+     * Permission qui garde l'édition. Défaut `wallpaper.manage` (pages ciblées
+     * d'origine — rétrocompat). La page « Configuration par défaut du parc »
+     * (Story 27.17) passe `server.admin` : décision Henri, tout en server.admin
+     * sur cette page de défauts.
+     *
+     * `#[Locked]` (pattern iso-Story 16.5, page liaisons GPO) : la gate est fixée
+     * au mount, jamais mutée côté client — un acteur ne peut pas la rabaisser à
+     * une permission qu'il détient via /livewire/update.
+     */
+    #[Locked]
+    public string $gate = 'wallpaper.manage';
+
     public $upload = null;
     public int $refreshToken = 0;
     public bool $showLibrary = false;
@@ -54,6 +68,7 @@ new class extends Component {
         bool $isDefault = false,
         string $title = '',
         string $description = '',
+        string $gate = 'wallpaper.manage',
     ): void {
         $this->type = $type;
         $this->ownerType = $ownerType;
@@ -61,6 +76,7 @@ new class extends Component {
         $this->isDefault = $isDefault;
         $this->title = $title;
         $this->description = $description;
+        $this->gate = $gate;
     }
 
     #[Computed(persist: false)]
@@ -84,7 +100,7 @@ new class extends Component {
 
     public function save(): void
     {
-        if (! Gate::allows('wallpaper.manage')) {
+        if (! Gate::allows($this->gate)) {
             $this->toastAccessDenied();
             return;
         }
@@ -140,7 +156,7 @@ new class extends Component {
 
     public function assignFromLibrary(int $assetId): void
     {
-        if (! Gate::allows('wallpaper.manage')) {
+        if (! Gate::allows($this->gate)) {
             $this->toastAccessDenied();
             return;
         }
@@ -175,7 +191,7 @@ new class extends Component {
 
     public function remove(): void
     {
-        if (! Gate::allows('wallpaper.manage')) {
+        if (! Gate::allows($this->gate)) {
             $this->toastAccessDenied();
             return;
         }
@@ -218,7 +234,7 @@ new class extends Component {
     <div class="card-body p-5">
         <h3 class="font-semibold text-base mb-3">{{ $title ?: ucfirst($type) }}</h3>
 
-        @can('wallpaper.manage')
+        @can($gate)
             <form>
                 <input type="file" id="{{ $inputId }}" wire:model="upload"
                     accept="image/jpeg,image/png,image/gif,image/bmp,image/webp"

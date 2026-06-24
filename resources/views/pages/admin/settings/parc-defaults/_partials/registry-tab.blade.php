@@ -5,30 +5,25 @@ use App\Models\Capability;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Story 27.12 — /admin/settings/capabilities : édition des VALEURS PAR DÉFAUT
- * diffusées des capacités (rewrite capability-first de /admin/settings/registry).
+ * Story 27.17 — Onglet « Registre / capacités » de /admin/settings/parc-defaults.
  *
- * L'admin fixe ici la valeur par défaut (`capabilities.default_value`) de chaque
- * capacité — le défaut DIFFUSÉ à TOUTE LA FLOTTE via la maille Broadcast. Il peut
- * aussi GELER une capacité (`overrides_locked`) : verrouiller l'ajout de NOUVEAUX
- * overrides sans rien cesser de gérer (la diffusion reste inchangée ; les parcs
- * qui dévient déjà gardent leur override). À NE PAS confondre avec « cesser de
- * gérer ». Même contrôle adapté au value_type + validation serveur que l'onglet
- * parc, + confirmation explicite si la capacité porte un `warning`.
+ * Édite le DÉFAUT DIFFUSÉ de chaque capacité (`capabilities.default_value`) via
+ * le flow `saveDefault()` / `toggleLock` (anciennement page /admin/settings/capabilities
+ * 27.12, désormais consolidée ici — page doublon supprimée, décision Henri 27.17).
+ * Le défaut est diffusé à toute la flotte par la maille Broadcast (provider
+ * `Registry{Machine,User}CapabilityProvider`, 27.12). Les OVERRIDES PAR PARC
+ * restent sur l'onglet « Options/Capacités » de la page du groupe — NON touchés
+ * ici (on n'écrit que `default_value` et `overrides_locked`).
  *
- * La page édite les défauts du CATALOGUE EXISTANT ; elle ne crée pas de capacité
- * arbitraire (le catalogue grossit par seed/migration de données).
- *
- * Sécurité : middleware `can:server.admin` sur la route + double guard mount().
+ * Décision Henri : tout en `server.admin` (le flow capabilities l'était déjà).
+ * Chaque action mutante re-garde `Gate::authorize('server.admin')`.
  */
-new #[Title('Capacités — valeurs par défaut')] class extends Component {
+new class extends Component {
     use WithToasts;
 
-    /** Modale d'édition du défaut d'une capacité (id) ; null = fermé. */
     public ?int $editingCapabilityId = null;
 
     public bool $showEditModal = false;
@@ -42,11 +37,7 @@ new #[Title('Capacités — valeurs par défaut')] class extends Component {
         $this->guardAdmin();
     }
 
-    /**
-     * Catalogue complet (actifs + inactifs) avec défaut formaté.
-     *
-     * @return array<int,array<string,mixed>>
-     */
+    /** @return array<int,array<string,mixed>> */
     #[Computed]
     public function capabilities(): array
     {
@@ -93,11 +84,6 @@ new #[Title('Capacités — valeurs par défaut')] class extends Component {
         $this->showEditModal = false;
     }
 
-    /**
-     * Gèle / dégèle une capacité : verrouille l'ajout de NOUVEAUX overrides par
-     * parc (`overrides_locked`). NE coupe PAS la diffusion (le défaut + les
-     * overrides existants restent gérés).
-     */
     public function toggleLock(int $capabilityId): void
     {
         $this->guardAdmin();
@@ -113,10 +99,6 @@ new #[Title('Capacités — valeurs par défaut')] class extends Component {
         unset($this->capabilities);
     }
 
-    /**
-     * Enregistre la valeur par DÉFAUT de la capacité : validation
-     * (value_type/options), confirmation du `warning`, écriture de `default_value`.
-     */
     public function saveDefault(): void
     {
         $this->guardAdmin();
@@ -141,8 +123,6 @@ new #[Title('Capacités — valeurs par défaut')] class extends Component {
         $this->closeModal();
         unset($this->capabilities);
     }
-
-    // ── Helpers (mêmes règles que l'onglet parc) ──────────────────────────
 
     private function validatedValue(Capability $capability): string
     {
@@ -184,28 +164,15 @@ new #[Title('Capacités — valeurs par défaut')] class extends Component {
 };
 ?>
 
-<x-organisms.page title="Capacités — valeurs par défaut"
-    icon="fa-solid fa-sliders"
-    description="Fixez la valeur par défaut de chaque capacité — diffusée à TOUTE la flotte (sauf override de parc)."
-    back="{{ route('admin.settings') }}">
+<div>
+    <x-molecules.settings-section
+        title="Registre / capacités — valeurs par défaut diffusées"
+        icon="fa-solid fa-sliders"
+        color="primary"
+        description="Valeur par défaut de chaque capacité (option métier des postes), diffusée à TOUTE la flotte (maille Broadcast). Un parc peut dévier une capacité via l'onglet « Options / Capacités » de sa page.">
 
-    <div class="space-y-6 pt-4">
-        <div class="alert alert-info shadow-sm">
-            <i class="fa-solid fa-circle-info"></i>
-            <div>
-                <p class="font-medium">Valeurs par défaut diffusées</p>
-                <p class="text-sm opacity-80">
-                    La valeur par défaut d'une capacité est appliquée à <strong>tous les parcs sans override</strong>.
-                    Un parc peut dévier une capacité via l'onglet « Options / Capacités » de sa page.
-                    Les capacités non listées appliquent leur valeur par défaut.
-                </p>
-            </div>
-        </div>
-
-        <div class="card bg-base-100 shadow-sm border border-base-200">
+        <div class="card bg-base-100 shadow-sm border border-base-200 w-full">
             <div class="card-body">
-                <h2 class="card-title text-base">Catalogue de capacités</h2>
-
                 <div class="overflow-x-auto">
                     <table class="table table-sm">
                         <thead>
@@ -266,70 +233,70 @@ new #[Title('Capacités — valeurs par défaut')] class extends Component {
                 </div>
             </div>
         </div>
+    </x-molecules.settings-section>
 
-        {{-- Modale réutilisable : éditer la valeur par défaut --}}
-        <x-molecules.modal wire:model="showEditModal"
-            title="{{ $this->editingCapability?->label ?? 'Valeur par défaut' }}"
-            icon="fa-pen-to-square text-primary"
-            size="max-w-2xl" height="h-auto max-h-[85vh]"
-            closeMethod="closeModal">
+    {{-- Modale réutilisable : éditer la valeur par défaut --}}
+    <x-molecules.modal wire:model="showEditModal"
+        title="{{ $this->editingCapability?->label ?? 'Valeur par défaut' }}"
+        icon="fa-pen-to-square text-primary"
+        size="max-w-2xl" height="h-auto max-h-[85vh]"
+        closeMethod="closeModal">
 
-            @if ($this->editingCapability !== null)
-                @php($capability = $this->editingCapability)
-                <x-molecules.modal.section title="Valeur par défaut diffusée">
-                    @if ($capability->description)
-                        <p class="text-sm opacity-70 mb-2">{{ $capability->description }}</p>
-                    @endif
-                    <p class="text-xs opacity-70 mb-3">
-                        Modifier ce défaut impacte <strong>tous les parcs sans override</strong> sur cette capacité.
-                    </p>
-
-                    <label class="form-control w-full">
-                        <span class="label-text mb-1">Valeur par défaut</span>
-
-                        @if ($capability->hasOptions())
-                            <select class="select select-bordered w-full" wire:model="formValue"
-                                data-testid="default-select">
-                                <option value="" disabled>— Choisir —</option>
-                                @foreach ($capability->options as $opt)
-                                    <option value="{{ $opt['value'] }}">{{ $opt['label'] }}</option>
-                                @endforeach
-                            </select>
-                        @else
-                            <input type="text" class="input input-bordered w-full"
-                                wire:model="formValue" data-testid="default-text" />
-                        @endif
-
-                        @error('formValue')
-                            <span class="text-error text-sm mt-1">{{ $message }}</span>
-                        @enderror
-                    </label>
-                </x-molecules.modal.section>
-
-                @if ($capability->hasWarning())
-                    <x-molecules.modal.section>
-                        <div class="alert alert-warning">
-                            <i class="fa-solid fa-triangle-exclamation"></i>
-                            <div class="text-sm">{{ $capability->warning }}</div>
-                        </div>
-                        <label class="label cursor-pointer justify-start gap-2 mt-2">
-                            <input type="checkbox" class="checkbox checkbox-warning checkbox-sm"
-                                wire:model="warningAcknowledged" data-testid="ack-warning" />
-                            <span class="label-text">J'ai lu et compris les implications de cette capacité.</span>
-                        </label>
-                        @error('warningAcknowledged')
-                            <span class="text-error text-sm">{{ $message }}</span>
-                        @enderror
-                    </x-molecules.modal.section>
+        @if ($this->editingCapability !== null)
+            @php($capability = $this->editingCapability)
+            <x-molecules.modal.section title="Valeur par défaut diffusée">
+                @if ($capability->description)
+                    <p class="text-sm opacity-70 mb-2">{{ $capability->description }}</p>
                 @endif
-            @endif
+                <p class="text-xs opacity-70 mb-3">
+                    Modifier ce défaut impacte <strong>tous les parcs sans override</strong> sur cette capacité.
+                </p>
 
-            <x-slot:footer>
-                <button type="button" class="btn btn-ghost" wire:click="closeModal">Annuler</button>
-                <button type="button" class="btn btn-primary" wire:click="saveDefault" data-testid="save-default">
-                    Enregistrer
-                </button>
-            </x-slot:footer>
-        </x-molecules.modal>
-    </div>
-</x-organisms.page>
+                <label class="form-control w-full">
+                    <span class="label-text mb-1">Valeur par défaut</span>
+
+                    @if ($capability->hasOptions())
+                        <select class="select select-bordered w-full" wire:model="formValue"
+                            data-testid="default-select">
+                            <option value="" disabled>— Choisir —</option>
+                            @foreach ($capability->options as $opt)
+                                <option value="{{ $opt['value'] }}">{{ $opt['label'] }}</option>
+                            @endforeach
+                        </select>
+                    @else
+                        <input type="text" class="input input-bordered w-full"
+                            wire:model="formValue" data-testid="default-text" />
+                    @endif
+
+                    @error('formValue')
+                        <span class="text-error text-sm mt-1">{{ $message }}</span>
+                    @enderror
+                </label>
+            </x-molecules.modal.section>
+
+            @if ($capability->hasWarning())
+                <x-molecules.modal.section>
+                    <div class="alert alert-warning">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        <div class="text-sm">{{ $capability->warning }}</div>
+                    </div>
+                    <label class="label cursor-pointer justify-start gap-2 mt-2">
+                        <input type="checkbox" class="checkbox checkbox-warning checkbox-sm"
+                            wire:model="warningAcknowledged" data-testid="ack-warning" />
+                        <span class="label-text">J'ai lu et compris les implications de cette capacité.</span>
+                    </label>
+                    @error('warningAcknowledged')
+                        <span class="text-error text-sm">{{ $message }}</span>
+                    @enderror
+                </x-molecules.modal.section>
+            @endif
+        @endif
+
+        <x-slot:footer>
+            <button type="button" class="btn btn-ghost" wire:click="closeModal">Annuler</button>
+            <button type="button" class="btn btn-primary" wire:click="saveDefault" data-testid="save-default">
+                Enregistrer
+            </button>
+        </x-slot:footer>
+    </x-molecules.modal>
+</div>

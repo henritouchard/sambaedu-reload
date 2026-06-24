@@ -21,6 +21,7 @@ use Livewire\Wireable;
  * @property bool $managed_by_control_hub Géré par ControlHub
  * @property int|null $depot_id ID du dépôt parent
  * @property string $app_id Identifiant technique de l'application
+ * @property bool $is_parc_default App appliquée par défaut à tous les postes (couche Broadcast — Story 27.17)
  * @property string $name Nom d'affichage
  * @property string|null $version Version de l'application
  * @property string|null $category Catégorie
@@ -74,6 +75,7 @@ class Application extends Model implements Wireable
         'managed_by_control_hub',
         'depot_id',
         'app_id',
+        'is_parc_default',
         'name',
         'version',
         'category',
@@ -106,6 +108,7 @@ class Application extends Model implements Wireable
         'depot_id' => 'integer',
         'status' => ApplicationStatus::class,
         'managed_by_control_hub' => 'boolean',
+        'is_parc_default' => 'boolean',
         'controlhub_version' => 'datetime',
         'installer_size' => 'integer',
         'installed_at' => 'datetime',
@@ -158,6 +161,15 @@ class Application extends Model implements Wireable
             $q->where('name', 'ILIKE', "%{$search}%")
                 ->orWhere('app_id', 'ILIKE', "%{$search}%");
         });
+    }
+
+    /**
+     * Story 27.17 — applications désignées « défaut parc » (appliquées par
+     * défaut à TOUS les postes, couche Broadcast).
+     */
+    public function scopeParcDefault(Builder $query): Builder
+    {
+        return $query->where('is_parc_default', true);
     }
 
     /**

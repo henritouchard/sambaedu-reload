@@ -405,15 +405,16 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('settings.agent');
 
-    // /admin/settings/capabilities — Story 27.12 (rewrite capability-first de
-    // 27.3ter) : édition des VALEURS PAR DÉFAUT diffusées des CAPACITÉS (intention
-    // métier OS-agnostique ; la clé de registre est un détail de mécanisme caché,
-    // porté par la projection). Le défaut est diffusé à toute la flotte via la
-    // maille Broadcast ; les overrides PAR PARC s'éditent dans l'onglet
-    // « Options/Capacités » de la page du parc. Remplace /admin/settings/registry.
-    Route::livewire('/settings/capabilities', 'pages::admin.settings.capabilities.index')
+    // /admin/settings/parc-defaults — Story 27.17 : surface d'édition consolidée
+    // de la couche Broadcast (« config par défaut du parc »). Page à onglets qui
+    // regroupe l'édition des DÉFAUTS établissement de plusieurs domaines
+    // (Wallpaper, Lockscreen, Registre/capacités, Apps défaut parc, Outils agent)
+    // — la maille Broadcast (StateCompiler::specificity() plancher), overridable
+    // par une config plus spécifique. Tout en `can:server.admin` (décision Henri).
+    // L'onglet Overlay est ajouté par la story 27.18.
+    Route::livewire('/settings/parc-defaults', 'pages::admin.settings.parc-defaults.index')
         ->middleware('can:server.admin')
-        ->name('settings.capabilities');
+        ->name('settings.parc-defaults');
     /*
     |--------------------------------------------------------------------------
     | Story 3.6 — Gestion ISO Windows (D2)

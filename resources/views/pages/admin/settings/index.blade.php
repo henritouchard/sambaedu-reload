@@ -111,13 +111,13 @@ new #[Title('Réglages')] class extends Component {
                 testid="card-agent" />
 
             <x-molecules.settings-card
-                href="{{ route('admin.settings.capabilities') }}"
-                icon="fa-solid fa-sliders"
+                href="{{ route('admin.settings.parc-defaults') }}"
+                icon="fa-solid fa-layer-group"
                 iconColor="primary"
-                title="Capacités — valeurs par défaut"
-                description="Valeur par défaut de chaque capacité (options des postes), diffusée à toute la flotte (déviable par parc)."
-                badge="Capacités"
-                testid="card-capabilities-defaults" />
+                title="Configuration par défaut du parc"
+                description="Couche Broadcast appliquée à tous les postes : fond d'écran, écran de verrouillage, registre, applications par défaut et outils agent."
+                badge="Broadcast"
+                testid="card-parc-defaults" />
         </x-molecules.settings-section>
 
         {{-- ============================================================

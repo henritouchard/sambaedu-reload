@@ -1,65 +1,44 @@
 <?php
 
-use App\Components\Traits\WithToasts;
+use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Page Livewire SFC — défauts établissement (wallpaper + lockscreen).
+ * Story 4.7 — page « défauts établissement » (wallpaper + lockscreen).
  *
- * Story 4.7 — AC 8. Convention maison filesystem-based router.
+ * Story 27.17 (option a) : l'édition du DÉFAUT Broadcast est désormais
+ * consolidée dans /admin/settings/parc-defaults (onglets « Fond d'écran » et
+ * « Écran de verrouillage »). Cette page ne contient plus d'éditeur propre —
+ * elle REDIRIGE vers la surface consolidée pour ne pas dédoubler le point
+ * d'édition (un seul endroit fait foi). Le lien profond GPO `?from_gpo=<GUID>`
+ * (généré par {@see \App\Gpo\Support\NativeSectionResolver}) reste fonctionnel :
+ * le paramètre est PROPAGÉ à la page cible, qui affiche le breadcrumb « Retour à
+ * la GPO ».
+ *
+ * Sécurité : l'accès reste gardé par `can:wallpaper.manage` (route) — la page
+ * cible re-garde `server.admin`.
  */
 new #[Title('Fonds d\'écran — SE4FS')] class extends Component {
-    use WithToasts;
-
     public function mount(): void
     {
         abort_unless(
-            auth()->check() && auth()->user()->can('wallpaper.manage'),
+            Gate::allows('wallpaper.manage') || Gate::allows('server.admin'),
             403,
             'Permission wallpaper.manage requise.',
         );
+
+        // Propage `from_gpo` (lien profond GPO) pour que la page cible rende le
+        // breadcrumb de retour. On ne le transmet que si présent et non vide.
+        $params = ['tab' => 'wallpaper'];
+        $fromGpo = request()->query('from_gpo');
+        if (is_string($fromGpo) && $fromGpo !== '') {
+            $params['from_gpo'] = $fromGpo;
+        }
+
+        $this->redirectRoute('admin.settings.parc-defaults', $params, navigate: false);
     }
 };
 ?>
 
-<x-organisms.page
-    title="Fonds d'écran"
-    :scrollable="true"
-    description="Paramétrez les fonds d'écran et écrans de verrouillage par défaut de l'établissement.">
-
-    {{-- Breadcrumb de retour GPO (Story 16.3a, AC4.1) — affiché uniquement si ?from_gpo présent --}}
-    <x-slot:actions>
-        <x-molecules.gpo-back-link />
-    </x-slot:actions>
-
-    <div class="space-y-6">
-        <div class="alert alert-info shadow-sm">
-            <i class="fa-solid fa-circle-info"></i>
-            <div>
-                <p class="font-medium">Hiérarchie de résolution</p>
-                <p class="text-sm opacity-80">
-                    Les fonds d'écran par défaut définis ici sont affichés quand aucun fond
-                    spécifique (salle, groupe, utilisateur) n'est configuré. La priorité
-                    va toujours au plus spécifique.
-                </p>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <livewire:components::molecules.wallpaper-card
-                type="wallpaper"
-                :isDefault="true"
-                title="Fond d'écran par défaut"
-                description="Affiché sur tous les postes si aucune configuration plus spécifique n'existe."
-                :key="'wallpaper-default'" />
-
-            <livewire:components::molecules.wallpaper-card
-                type="lockscreen"
-                :isDefault="true"
-                title="Écran de verrouillage par défaut"
-                description="Affiché quand la session est verrouillée ou avant login (startup / lockscreen)."
-                :key="'lockscreen-default'" />
-        </div>
-    </div>
-</x-organisms.page>
+<div></div>

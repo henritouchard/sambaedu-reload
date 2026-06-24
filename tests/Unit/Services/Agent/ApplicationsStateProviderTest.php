@@ -15,7 +15,6 @@ use App\Services\Agent\Providers\ApplicationsStateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
 use App\Wpkg\Deployment\Services\WorkstationPackagesResolver;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
@@ -34,8 +33,12 @@ use Tests\TestCase;
  */
 class ApplicationsStateProviderTest extends TestCase
 {
-    use RefreshDatabase;
-
+    // Schéma géré 100% par WpkgSchemaBootstrapper (create en setUp / drop en
+    // tearDown), iso WorkstationPackagesResolverTest. On NE combine PAS
+    // RefreshDatabase : sous SQLite :memory: + PHP 8.4 (transaction DEFERRED), le
+    // wrap transactionnel de RefreshDatabase entre en conflit avec les
+    // create/drop manuels du bootstrapper (« cannot start a transaction within a
+    // transaction » / drop FK order) → faux échecs au tearDown.
     private ApplicationsStateProvider $provider;
 
     protected function setUp(): void
@@ -177,6 +180,67 @@ class ApplicationsStateProviderTest extends TestCase
         $candidates = $this->provider->itemsFor($this->ctx($ws));
 
         self::assertCount(0, $candidates);
+    }
+
+    // ── Story 27.17 — apps « défaut parc » (is_parc_default → Broadcast) ──────
+
+    #[Test]
+    public function parc_default_apps_are_emitted_for_a_workstation_without_specific_config(): void
+    {
+        // Un poste SANS aucun rattachement (ni poste, ni parc, ni profil) reçoit
+        // tout de même les apps marquées is_parc_default (couche Broadcast 27.17).
+        $sevenZip = $this->newApp('7za', '7-Zip CLI');
+        $sevenZip->is_parc_default = true;
+        $sevenZip->save();
+
+        $this->newApp('vlc', 'VLC'); // non-défaut : ne doit PAS apparaître
+
+        $ws = Workstation::create(['name' => 'PCDEFAULT', 'status' => 'active']);
+
+        $candidates = $this->provider->itemsFor($this->ctx($ws));
+
+        $appIds = $candidates->map(fn (StateCandidate $c) => $c->payload['app_id'])->all();
+        self::assertSame(['7za'], $appIds, 'seule l\'app défaut parc est diffusée');
+
+        // Toujours en maille Broadcast (iso le reste du provider).
+        self::assertSame(StateMaille::Broadcast, $candidates->first()->maille);
+    }
+
+    #[Test]
+    public function parc_default_apps_union_with_resolved_apps_without_duplication(): void
+    {
+        $resolved = $this->newApp('alpha', 'Alpha');     // rattachée au poste
+        $default = $this->newApp('7za', '7-Zip CLI');    // défaut parc
+        $default->is_parc_default = true;
+        $default->save();
+
+        // Une app rattachée au poste ET marquée défaut parc : pas de doublon.
+        $both = $this->newApp('nircmd', 'NirCmd');
+        $both->is_parc_default = true;
+        $both->save();
+
+        $ws = Workstation::create(['name' => 'PCUNION', 'status' => 'active']);
+        $ws->applications()->attach([$resolved->id, $both->id]);
+
+        $candidates = $this->provider->itemsFor($this->ctx($ws));
+
+        $appIds = $candidates->map(fn (StateCandidate $c) => $c->payload['app_id'])->all();
+        sort($appIds);
+        self::assertSame(['7za', 'alpha', 'nircmd'], $appIds, 'union sans doublon');
+    }
+
+    #[Test]
+    public function no_parc_default_and_no_config_emits_no_candidate_regression(): void
+    {
+        // NON-RÉGRESSION 27.17 : aucune app défaut parc + aucune config spécifique
+        // ⇒ le state Broadcast reste VIDE, exactement comme avant la story.
+        $this->newApp('vlc', 'VLC'); // existe mais is_parc_default = false (défaut migration)
+
+        $ws = Workstation::create(['name' => 'PCREG', 'status' => 'active']);
+
+        $candidates = $this->provider->itemsFor($this->ctx($ws));
+
+        self::assertCount(0, $candidates, 'sans défaut parc ni config, le state reste inchangé (vide)');
     }
 
     #[Test]

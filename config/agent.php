@@ -68,6 +68,14 @@ return [
     // silencieusement (404). Surchargé en test vers un répertoire temporaire.
     'tools_path' => env('AGENT_TOOLS_PATH', storage_path('agent/tools')),
 
+    // Répertoire des portables d'outils EMBARQUÉS dans le dépôt (versionnés),
+    // découverts par `agent:tools:register-defaults` quand l'admin n'a pas passé
+    // `--path` (greenfield : provisioning enregistre l'outil obligatoire d'office).
+    // Défaut = `resources/agent/tools` (où vit `sambaedu-rainmeter-*.zip`). Clé
+    // surchargeable pour TESTER le cas « découverte vide » sans dépendre du zip
+    // réel du dépôt — la prod garde le défaut, comportement INCHANGÉ.
+    'tools_embedded_path' => env('AGENT_TOOLS_EMBEDDED_PATH', base_path('resources/agent/tools')),
+
     // Borne haute de l'upload du portable d'un outil de rendu (Story 25.6 —
     // catalogue agent_tools). Un portable Rainmeter complet pèse quelques
     // dizaines de Mio ; 200 Mio est une marge large mais FINIE — un upload

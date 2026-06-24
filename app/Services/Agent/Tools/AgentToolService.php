@@ -210,6 +210,124 @@ class AgentToolService
     }
 
     /**
+     * Story 27.17 — Enregistre un portable Rainmeter EMBARQUÉ dans le dépôt
+     * (chemin local `$sourcePath`, ex. `resources/agent/tools/sambaedu-rainmeter-0.1.zip`)
+     * via le SEUL écrivain, SANS passer par un `UploadedFile`. Idempotent :
+     * si la clé `rainmeter` existe DÉJÀ (peu importe sa version), on ne touche à
+     * rien et on retourne null — l'admin reste maître du contenu uploadé.
+     *
+     * Utilisé par le provisioning serveur (`install.sh`/`update.sh` →
+     * `php artisan agent:tools:register-defaults`) pour garantir la présence de
+     * l'outil OBLIGATOIRE même sur une instance greenfield où personne n'a encore
+     * uploadé le portable via l'UI.
+     *
+     * Mêmes garanties que {@see upload()} : structure ZIP vérifiée, SHA-256/taille
+     * CALCULÉS SERVEUR, filename DÉRIVÉ de la version (anti-traversal), stockage
+     * confiné. FAIL-SOFT côté appelant : toute {@see AgentToolException} doit être
+     * catchée par le provisioning (jamais d'échec d'install/update).
+     *
+     * @return AgentTool|null  l'outil créé, ou null si déjà présent (no-op idempotent)
+     * @throws AgentToolException  source illisible / structure invalide / stockage
+     */
+    public function registerEmbedded(string $sourcePath, string $version): ?AgentTool
+    {
+        // Idempotence : un upload admin (ou un précédent register) fait foi.
+        if (AgentTool::query()->where('key', self::RAINMETER_KEY)->exists()) {
+            return null;
+        }
+
+        $version = trim($version);
+        if (preg_match(self::VERSION_PATTERN, $version) !== 1) {
+            throw $this->reject('invalid_version', sprintf(
+                'Version embarquée « %s » malformée.',
+                Str::limit($version, 64),
+            ));
+        }
+
+        if (! is_file($sourcePath) || ! is_readable($sourcePath)) {
+            throw $this->reject('source_unavailable', sprintf(
+                'Portable embarqué introuvable/illisible : %s.',
+                $sourcePath,
+            ));
+        }
+
+        $filename = sprintf('sambaedu-rainmeter-%s.zip', $version);
+        if (strlen($filename) > 255 || preg_match(self::FILENAME_PATTERN, $filename) !== 1) {
+            throw $this->reject('invalid_filename', sprintf(
+                'Filename dérivé « %s » non conforme.',
+                Str::limit($filename, 128),
+            ));
+        }
+
+        // Structure ZIP (Rainmeter.exe + Skins/) sur la source embarquée.
+        $this->assertPortableStructure($sourcePath);
+
+        $toolsPath = $this->toolsPath();
+        if (! is_dir($toolsPath) && ! @mkdir($toolsPath, 0o755, true) && ! is_dir($toolsPath)) {
+            throw $this->reject('storage_unavailable', sprintf(
+                'Répertoire des outils indisponible : %s.',
+                $toolsPath,
+            ));
+        }
+
+        $destination = $toolsPath . DIRECTORY_SEPARATOR . $filename;
+        if (! @copy($sourcePath, $destination)) {
+            throw $this->reject('copy_failed', sprintf(
+                'Copie du portable embarqué impossible : %s → %s.',
+                $sourcePath,
+                $destination,
+            ));
+        }
+
+        $computed = hash_file('sha256', $destination);
+        if ($computed === false) {
+            @unlink($destination);
+            throw $this->reject('hash_failed', sprintf(
+                'Hachage du portable embarqué impossible : %s.',
+                $destination,
+            ));
+        }
+        $storedSize = filesize($destination);
+        if ($storedSize === false) {
+            $storedSize = (int) (@filesize($sourcePath) ?: 0);
+        }
+
+        try {
+            $tool = AgentTool::query()->create([
+                'key' => self::RAINMETER_KEY,
+                'name' => 'Rainmeter (overlay)',
+                'filename' => $filename,
+                'sha256' => $computed,
+                'size' => (int) $storedSize,
+                'uploaded_at' => now(),
+                'uploaded_by' => null,
+                // Premier enregistrement : laissé DÉSACTIVÉ (iso upload manuel) —
+                // l'admin l'active explicitement quand le parc doit le déployer.
+            ]);
+        } catch (\Throwable $e) {
+            @unlink($destination);
+            Log::channel('agent')->error('[AgentToolService] agent.tool.register_db_failed', [
+                'action_type' => 'agent.tool.register_db_failed',
+                'key' => self::RAINMETER_KEY,
+                'filename' => $filename,
+                'detail' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
+
+        Log::channel('agent')->info('[AgentToolService] agent.tool.registered_embedded', [
+            'action_type' => 'agent.tool.registered_embedded',
+            'key' => self::RAINMETER_KEY,
+            'filename' => $filename,
+            'sha256' => $computed,
+            'size' => (int) $storedSize,
+        ]);
+
+        return $tool->refresh();
+    }
+
+    /**
      * Bascule le drapeau `enabled` (toggle GLOBAL — D3). SEUL écrivain.
      */
     public function toggle(AgentTool $tool, bool $enabled): AgentTool

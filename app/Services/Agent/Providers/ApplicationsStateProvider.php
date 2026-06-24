@@ -66,6 +66,14 @@ use Illuminate\Support\Facades\Log;
  * **Zéro tri/précédence/dédup dans le provider** (discipline D2 : seul
  * `StateCompiler` le fait). Le provider étiquette ses candidats par maille et
  * s'arrête là.
+ *
+ * **Apps « défaut parc » (Story 27.17).** Les applications marquées
+ * `applications.is_parc_default = true` sont appliquées PAR DÉFAUT à TOUS les
+ * postes (équivalent applicatif du `is_default` du wallpaper). Le provider les
+ * UNIONNE à l'ensemble résolu par poste/groupe/profil, toujours en candidats
+ * `Broadcast`. Le resolver WPKG reste inchangé (il ne connaît que les
+ * rattachements poste/groupe/profil) ; la précédence n'est pas modifiée — le
+ * type `applications` est `aggregate`, l'union ne crée jamais de conflit.
  */
 final class ApplicationsStateProvider implements StateProvider
 {
@@ -105,9 +113,37 @@ final class ApplicationsStateProvider implements StateProvider
     public function itemsFor(TargetContext $ctx): Collection
     {
         // Résolution WPKG NON CACHÉE (NFR7) : ensemble final des app_id (déjà
-        // dédupliqué + trié alpha par le resolver) applicables au poste.
-        $appIds = $this->resolver
+        // dédupliqué + trié alpha par le resolver) applicables au poste via ses
+        // profils/apps × poste/groupes + dépendances transitives.
+        $resolvedAppIds = $this->resolver
             ->computePackages($ctx->workstation->name)
+            ->all();
+
+        // Story 27.17 — apps DÉFAUT PARC : marquées `is_parc_default=true`, elles
+        // sont appliquées par défaut à TOUS les postes (couche Broadcast — iso
+        // `is_default` du wallpaper). On les UNIONNE à l'ensemble résolu, sans
+        // toucher au resolver (qui reste poste/groupe/profil) ni à la précédence
+        // (`applications` est un type aggregate : l'union ne crée pas de conflit).
+        // Lecture PG-pure (NFR7) — aucun cache/AD.
+        $parcDefaultAppIds = Application::query()
+            ->parcDefault()
+            ->whereNotNull('app_id')
+            ->where('app_id', '!=', '')
+            ->orderBy('app_id')
+            ->pluck('app_id')
+            ->all();
+
+        // Union dédupliquée + ré-ordonnée (déterminisme : alpha insensible casse,
+        // iso le tri du resolver → ordre aggregate / ETag stables). Un poste sans
+        // config spécifique ET sans aucune app défaut parc retombe sur exactement
+        // le résultat antérieur (non-régression du state Broadcast).
+        $appIds = collect($resolvedAppIds)
+            ->concat($parcDefaultAppIds)
+            ->filter(fn ($v): bool => is_string($v) && $v !== '')
+            ->map(fn ($v): string => (string) $v)
+            ->unique()
+            ->sort(fn (string $a, string $b): int => strcasecmp($a, $b))
+            ->values()
             ->all();
 
         if ($appIds === []) {

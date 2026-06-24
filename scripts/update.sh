@@ -881,6 +881,101 @@ ensure_wpkg_smb_client() {
 }
 
 # ============================================================================
+# Outils agent OBLIGATOIRES embarqués (Story 27.17) — provisioning fail-soft
+# ============================================================================
+# La couche « config par défaut du parc » (Broadcast) comporte des éléments
+# OBLIGATOIRES (`required`) à garantir présents côté serveur. Aujourd'hui : le
+# portable Rainmeter, EMBARQUÉ dans le dépôt
+# (`resources/agent/tools/sambaedu-rainmeter-*.zip`), enregistré dans `agent_tools`
+# via le SEUL écrivain `AgentToolService` (clé `rainmeter`) si absent.
+#
+# Calque ensure_wpkg_bundle/ensure_wpkg_smb_client :
+#   - IDEMPOTENT : la commande artisan ne (ré)enregistre rien si la clé existe ;
+#   - FAIL-SOFT : un `required` sans source résolvable → WARNING explicite, JAMAIS
+#     d'échec d'install/update (la commande sort 0, on protège quand même par `|| true`) ;
+#   - HASH-VÉRIFIÉ : le SHA-256 est calculé SERVEUR par le service (jamais déclaré) ;
+#   - WORLD-READABLE (644) + owner www-admin sur le répertoire des outils
+#     (AGENT_TOOLS_PATH, défaut storage/agent/tools) : l'artefact est servi à
+#     l'agent via une route authentifiée, mais on aligne les droits sur la
+#     convention des payloads (lisible par le user PHP-FPM www-admin).
+#
+# Le déploiement effectif au parc reste un GESTE ADMIN explicite (toggle « activer »
+# dans /admin/settings/parc-defaults, onglet « Outils agent ») : on n'active pas
+# l'outil automatiquement ici (premier enregistrement = désactivé).
+
+ensure_agent_required_tools() {
+    log "Enregistrement des outils agent obligatoires embarqués (Story 27.17)..."
+    cd "$APP_DIR"
+
+    if ! php artisan list 2>/dev/null | grep -q 'agent:tools:register-defaults'; then
+        log_warning "Commande agent:tools:register-defaults non disponible (Story 27.17 pas déployée) — étape ignorée"
+        return 0
+    fi
+
+    # Enregistrement idempotent fail-soft (la commande sort 0 même sans source ;
+    # `|| true` en filet supplémentaire — un required NE casse JAMAIS l'update).
+    if id www-admin >/dev/null 2>&1; then
+        sudo -u www-admin php artisan agent:tools:register-defaults || true
+    else
+        php artisan agent:tools:register-defaults || true
+    fi
+
+    # Droits du répertoire des outils : world-readable (644) + owner www-admin.
+    local tools_path
+    tools_path="$(grep -oP '^AGENT_TOOLS_PATH=\K.*' "$APP_DIR/.env" 2>/dev/null || true)"
+    tools_path="${tools_path:-$APP_DIR/storage/agent/tools}"
+
+    if [[ -d "$tools_path" ]]; then
+        if id www-admin >/dev/null 2>&1; then
+            chown -R www-admin:www-admin "$tools_path" 2>/dev/null || \
+                log_warning "chown www-admin échoué sur $tools_path (artefact agent peut rester non servi)"
+        fi
+        # 644 sur les fichiers (lisibles « other »), 755 sur les dossiers.
+        find "$tools_path" -type f -exec chmod 644 {} \; 2>/dev/null || true
+        find "$tools_path" -type d -exec chmod 755 {} \; 2>/dev/null || true
+        log_success "Outils agent provisionnés ($tools_path : 644 fichiers, owner www-admin)"
+    else
+        log_warning "Répertoire des outils agent absent ($tools_path) — rien à provisionner (portable embarqué non enregistré ?)"
+    fi
+}
+
+# ============================================================================
+# Synchronisation du catalogue WPKG « système » (Story 27.17 — AC12a)
+# ============================================================================
+# La source par défaut des paquets WPKG « système » est le dépôt PRIMAIRE déjà
+# seedé (`depots.url = http://deb.sambaedu.org/wpkg/xml/packages.xml`,
+# DepotApplicationSeeder, is_primary=true). `php artisan appstore:sync` télécharge
+# ce packages.xml distant et rafraîchit le catalogue DISPONIBLE
+# (table `depot_applications`) — il n'INSTALLE ni ne POUSSE rien : choisir,
+# installer et marquer un paquet « obligatoire / défaut parc » (`is_parc_default`)
+# reste un GESTE ADMIN explicite (décision Henri 27.17 #8).
+#
+# Calque ensure_agent_required_tools :
+#   - IDEMPOTENT : `appstore:sync` ré-upsert sans dupliquer (skip si hash inchangé) ;
+#   - FAIL-SOFT : dépôt HTTP injoignable / réseau coupé → la commande log et sort,
+#     `|| true` en filet — une sync ratée NE casse JAMAIS l'update ;
+#   - www-admin : exécuté sous le user PHP-FPM pour cohérence des écritures.
+
+ensure_appstore_catalog_sync() {
+    log "Synchronisation du catalogue WPKG système (Story 27.17 — dépôt primaire)..."
+    cd "$APP_DIR"
+
+    if ! php artisan list 2>/dev/null | grep -q 'appstore:sync'; then
+        log_warning "Commande appstore:sync non disponible — synchronisation du catalogue ignorée"
+        return 0
+    fi
+
+    # Sync fail-soft : un dépôt distant injoignable NE casse JAMAIS l'update.
+    if id www-admin >/dev/null 2>&1; then
+        sudo -u www-admin php artisan appstore:sync || \
+            log_warning "Sync du catalogue WPKG échouée (dépôt injoignable ?) — catalogue inchangé, update poursuivi"
+    else
+        php artisan appstore:sync || \
+            log_warning "Sync du catalogue WPKG échouée (dépôt injoignable ?) — catalogue inchangé, update poursuivi"
+    fi
+}
+
+# ============================================================================
 # GPO bootstrap agent (Story 27.16) — déploiement automatisé idempotent fail-soft
 # ============================================================================
 # `php artisan gpo:deploy-agent-bootstrap` publie la GPO-dispatcher figée
@@ -944,6 +1039,7 @@ show_summary() {
     echo "  ✓ PXE bootstrap (Laravel native)"
     echo "  ✓ Amorçage helpers (wpkg.cmd)"
     echo "  ✓ Bundle WPKG natif (généré sous www-admin)"
+    echo "  ✓ Outils agent obligatoires (Rainmeter embarqué)"
     echo "  ✓ Permissions partage [install]"
     echo ""
 }
@@ -1042,10 +1138,16 @@ main() {
     ensure_wpkg_smb_client
 
     echo ""
+    ensure_agent_required_tools
+
+    echo ""
     ensure_agent_bootstrap_gpo
 
     echo ""
     ensure_appstore_write_dirs
+
+    echo ""
+    ensure_appstore_catalog_sync
 
     echo ""
     ensure_install_permissions
