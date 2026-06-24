@@ -51,6 +51,15 @@ class UserGroup extends Model implements Wireable
      * Eloquent sur les rows pivot pour l'Observer
      * `UserGroupUserPivotObserver` qui synchronise les ACLs FS lors d'un
      * changement de classe d'élève.
+     *
+     * Story 4.14 — `->withPivot('is_head_teacher')` : SANS ce withPivot, Laravel
+     * IGNORE l'attribut d'arête lors d'un `sync([$id => ['is_head_teacher' => …]])`
+     * (il ne le persiste pas). C'est la relation d'ÉCRITURE du fold de 4.13 ;
+     * c'est donc ici que le flag « professeur principal » est posé à l'import.
+     * (D4) On ne l'ajoute volontairement PAS sur `User::userGroups()`/`groups()`
+     * : aucune lecture aval ne consomme le flag en 4.14 — 4.15 le fera. Limiter
+     * le blast radius. `withPivot` n'introduit pas de timestamps (le pivot custom
+     * 5.2 reste `$timestamps=false`).
      */
     public function users(): BelongsToMany
     {
@@ -59,7 +68,9 @@ class UserGroup extends Model implements Wireable
             'user_group_user',
             'user_group_id',
             'user_id'
-        )->using(\App\Models\Pivot\UserGroupUserPivot::class);
+        )
+            ->using(\App\Models\Pivot\UserGroupUserPivot::class)
+            ->withPivot('is_head_teacher');
     }
 
     public function wallpapers(): MorphMany

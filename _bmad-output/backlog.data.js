@@ -342,6 +342,11 @@ const DATASETS = {
           "id": "4-13",
           "status": "review",
           "title": "Fold de l'import AD : une classe = une ligne user_groups au nom nu"
+        },
+        {
+          "id": "4-14",
+          "status": "review",
+          "title": "Migration data (fusion lignes héritées) + colonne is_head_teacher sur l'arête"
         }
       ]
     },

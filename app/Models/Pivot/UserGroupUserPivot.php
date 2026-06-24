@@ -32,4 +32,19 @@ class UserGroupUserPivot extends Pivot
     public $incrementing = false;
 
     public $timestamps = false;
+
+    /**
+     * Story 4.14 — cast booléen de l'attribut d'arête `is_head_teacher`.
+     *
+     * SQLite stocke les bool en 0/1 (string « 0 »/« 1 » à la lecture brute),
+     * PG en true/false. Sans ce cast, `$pivot->is_head_teacher` renvoie une
+     * valeur non fiable selon le driver — piège classique des tests pivot. Le
+     * cast garantit un vrai bool côté lecture (`assertTrue` fiable) sur les deux
+     * drivers.
+     *
+     * @var array<string,string>
+     */
+    protected $casts = [
+        'is_head_teacher' => 'boolean',
+    ];
 }

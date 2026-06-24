@@ -542,6 +542,73 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 'cd /var/www/sambaedu-reload && ph
 
 ---
 
+## Section 8 — Migration data (fusion lignes héritées) + `is_head_teacher` (Story 4.14, 2026-06-25)
+
+> **Contexte.** 4.13 a foldé le **flux d'import** (3 CN AD → 1 ligne nue) mais n'a PAS réécrit l'existant SQL déjà persisté (limite D5 de 4.13). 4.14 comble trois trous : (1) une **colonne d'arête** `is_head_teacher` (bool défaut false) sur le pivot `user_group_user` ; (2) une **migration de données** qui converge les bases héritées (3 lignes `Classe_X`/`Equipe_X`/`PP_X`) vers 1 ligne nue `X` — report des pivots AVANT suppression (zéro perte), survivante canonique (D1 : nue > `Classe_` > `Equipe_` > `PP_`), `ad_guid`/`ad_dn` du CN canonique, idempotente/rejouable, garde anti-collision `name` UNIQUE, `Equipe_` orphelin renommé sans fusion (D3) ; (3) l'**alimentation read-back** du flag à l'import : les membres issus du CN `PP_<base>` portent `is_head_teacher=true` via un `users()->sync()` ASSOCIATIF dans la boucle de fold 4.13. La logique de fusion est extraite dans `App\Actions\Groups\MergeLegacyUserGroups` (action invocable, pure SQL cross-driver) appelée par la migration `2026_06_25_120000_add_is_head_teacher_to_user_group_user`.
+
+> **HORS SCOPE (→ 4.15).** L'écriture SQL→AD vers `PP_<X>` pilotée par le flag (`syncRoleAwareAdGroupMembers` NON touché) et l'UI « Professeur principal ». 4.14 pose la colonne + alimente le flag en LECTURE ; rien ne le consomme encore côté AD/UI.
+
+> **Pré-requis spécifiques.** AD réel (VM). Une base avec lignes SQL héritées (3 lignes préfixées, typiquement une base importée AVANT 4.13). Migrations VM **non auto-jouées** → `migrate:status` puis `migrate` MANUEL (voir runbook 8.7).
+
+### Scénario 8.1 — Colonne `is_head_teacher` ajoutée, défaut false rétro-rempli
+
+1. Après `php artisan migrate`, la table `user_group_user` possède une colonne `is_head_teacher` boolean non nullable défaut `false`.
+2. SQL : `SELECT is_head_teacher FROM user_group_user LIMIT 5;` → les arêtes préexistantes (le cas échéant) valent `false`.
+3. La PK composite `(user_group_id, user_id)` est inchangée ; aucun timestamp ajouté (`\d user_group_user` en PG).
+
+### Scénario 8.2 — Fusion 3 lignes héritées → 1 ligne nue (aucun membre perdu)
+
+1. État de départ SQL : `Classe_3A` (membres {alice}), `Equipe_3A` (membres {bob}), `PP_3A` (membres {bob}).
+2. Lancer `php artisan migrate` (la migration appelle la fusion).
+3. `SELECT name, type FROM user_groups WHERE LOWER(name) IN ('classe_3a','equipe_3a','pp_3a','3a');` → **UNE** ligne `name='3A'`, `type='classe'` ; **aucune** ligne préfixée.
+4. Membres de `3A` → **union {alice, bob}** dédupliquée. Aucun membre perdu.
+
+### Scénario 8.3 — `ad_guid`/`ad_dn` canoniques après fusion
+
+1. La ligne survivante `3A` porte l'`ad_guid`/`ad_dn` de `Classe_3A` (canonique D1).
+2. Si `Classe_3A` est absente mais `Equipe_3A` présente, elle porte ceux d'`Equipe_3A` (fallback déterministe ; `PP_` seulement si `Equipe_` absent aussi).
+3. Aucun conflit d'unicité `name` levé.
+
+### Scénario 8.4 — Flag PP posé en migration data
+
+1. Après fusion de 8.2 : l'arête `(3A, bob)` a `is_head_teacher=true` (bob ∈ `PP_3A`) ; `(3A, alice)` a `is_head_teacher=false`.
+2. Multi-PP : si `PP_3A={bob, carol}`, les deux arêtes valent `true`.
+   `SELECT u.login, ugu.is_head_teacher FROM user_group_user ugu JOIN users u ON u.id=ugu.user_id JOIN user_groups g ON g.id=ugu.user_group_id WHERE g.name='3A';`
+
+### Scénario 8.5 — Idempotence (re-run = no-op)
+
+1. Rejouer la migration data (ou la lancer sur une base déjà foldée par 4.13, sans lignes préfixées) : **aucune** ligne créée/supprimée, **aucun** flag modifié, **aucune** exception.
+2. Vérifier le compte-rendu de l'action (`merged_bases=0`, `removed_rows=0` au 2e run) — ou simplement constater l'état SQL identique.
+
+### Scénario 8.6 — Collision nom nu préexistant + `Equipe_` orphelin
+
+1. **Collision** : ligne nue `3A` (type classe, {alice}) + reliquat `PP_3A` ({bob}). Après migration : UNE ligne `3A`, membres {alice, bob}, `(3A,bob)=true`, `(3A,alice)=false`. La ligne nue préexistante est la survivante (D1) ; pas de `UNIQUE constraint violation`.
+2. **Orphelin (D3)** : `Cours_Maths5A` (type cours) + `Equipe_Maths5A` (type equipe, sans `Classe_`/`PP_` Maths5A, sans ligne nue Maths5A). Après migration : `Cours_Maths5A` inchangée (CN, type cours) ; `Equipe_Maths5A` renommée `Maths5A` (type equipe) **sans fusion** avec le cours. Aucun flag PP.
+
+### Scénario 8.7 — Runbook migration VM (différé post-merge, MANUEL)
+
+> **Les migrations VM ne sont PAS auto-jouées** (`memory/project_vm_migrations_not_auto_applied.md` : le dev-cycle ne migre que SQLite pour les tests ; la VM reste `Pending`). L'exécution réelle sur PG est un geste **explicite post-merge** sur `/vm`.
+
+1. `php artisan migrate:status` → vérifier que `2026_06_25_120000_add_is_head_teacher_to_user_group_user` est `Pending`.
+2. `php artisan migrate --no-interaction` → la colonne est créée puis la fusion s'exécute.
+3. Vérifier en SQL (8.2/8.4) la fusion réelle sur les bases concernées et avec `samba-tool group listmembers <CN>` la cohérence AD↔SQL.
+4. La migration étant **rejouable**, un second `migrate` (après rollback) ne reproduit pas d'effet de fusion (idempotence 8.5).
+
+### Scénario 8.8 — Read-back du flag à l'import (AD réel)
+
+1. Sur AD : `Classe_3A={alice}`, `Equipe_3A={bob}`, `PP_3A={bob}`. Lancer un `syncFromAd` (UI ou commande).
+2. La ligne nue `3A` a pour membres {alice, bob} (invariant 4.13) **et** `(3A,bob).is_head_teacher=true`, `(3A,alice)=false`.
+3. **Multi-PP** : `PP_3A={bob, carol}` → bob et carol à `true`.
+4. **Retrait PP** : retirer bob de `PP_3A` (toujours dans `Classe_3A`), re-sync → bob reste membre, `(3A,bob)=false` (le flag suit l'état AD, pas de rémanence).
+5. **CN non foldé** : un `Cours_Histoire4A={prof}` → la ligne existe (type cours), `(Cours_Histoire4A, prof)=false`. Le flag n'est jamais `true` hors classe/équipe foldée.
+6. **Idempotence** : un 2e `syncFromAd` sans changement laisse membres et flags stables.
+
+> **Couverture automatisée.** `tests/Feature/Migrations/MergeLegacyUserGroupsMigrationTest.php` (hôte, sqlite) couvre 8.2–8.6 (fusion, GUID canonique + fallback, flag PP + multi-PP, idempotence + base déjà foldée, collision nue, orphelin equipe + idempotence orphelin). `tests/Unit/Services/UserGroupServiceLegacyCompatibilityTest.php` couvre 8.8 (read-back : `it_marks_head_teacher_from_pp_cn_on_import`, `it_marks_head_teacher_idempotently_across_repeated_imports`, `it_marks_multiple_head_teachers`, `it_clears_head_teacher_when_removed_from_pp`, `it_never_marks_head_teacher_on_non_class_cn`). L'exécution de la migration sur PG réel et l'import AD effectif (`samba-tool`) = validation manuelle /vm, différée post-merge (8.7).
+
+> **Checklist rapide pré-prod (4.14)** : `migrate:status` (migration `Pending` confirmée) → `migrate` /vm → fusion vérifiée en SQL (8.2/8.4) → re-run = no-op (8.5) → un `syncFromAd` réel pose `is_head_teacher` depuis `PP_` (8.8). Rappel : le flag n'est encore consommé par aucune projection AD ni UI (→ 4.15).
+
+---
+
 ## Post-correctifs & non-régressions
 
 ### Post-correctifs Story 7.2 (review 2026-04-23)
@@ -555,6 +622,18 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 'cd /var/www/sambaedu-reload && ph
 | #8 — Bulk reset bypass scoping | Scénario 3.3 |
 | #2 — `fromBitmask` sur-élargit les profils custom narrow | Scénario 2.4 edge case |
 | #7 — Cache non-invalidé via saveProfile Livewire | Scénario 4.3 |
+
+### Post-correctifs Story 4.14 (review 2026-06-25 — sonnet + 2e avis opus)
+
+| Incident | Couvert par |
+|----------|-------------|
+| #1/M3 — `resolveBareName` non déterministe (divergence de casse) → nom nu désync du lookup 4.13, risque doublon/violation UNIQUE en PG | Déterminisation : ligne nue prioritaire sinon strip du CN canonique (`Classe_`>`Equipe_`>`PP_`), byte-identique à `stripClasseLikePrefix`. Scénario 8.3 + tests fusion |
+| #2 — `PP_<X>` isolé renommé sans poser `is_head_teacher` (PP invisibles pour 4.15 sans resync) | Flag posé dans `renameLonelyPrefixedRow`. Test `it_flags_head_teacher_when_pp_row_is_lonely` |
+| #7 — Collision de nom nu silencieuse (ligne préfixée résiduelle indiagnosticable sur 75 étab) | `Log::warning` + compteur `skipped_collisions`. Test `it_skips_and_reports_collision` ; **vérifier les logs migration en prod** (cf. 8.7) |
+| M1 — Fusion data hors transaction → base semi-fusionnée en cas d'échec PG à mi-parcours | `DB::transaction` par base (atomicité). Vérifier 8.7 : un `migrate` interrompu ne laisse aucune base à mi-chemin, re-run idempotent |
+| AC1 — colonne / rétro-remplissage / `down()` non exercés par la migration réelle | Test `it_real_migration_adds_column_retrofills_false_and_down_drops_it` |
+
+> Angles documentés sans correction (jugés intentionnels/mitigés) : #5 (survivante `equipe`+`Classe_` hérité → type `classe`, voulu) ; M5 (N+1 acceptable pour une migration one-shot) ; M6 (la FK réelle `user_group_user` cascade en prod — pas d'orphelin ; écart de fidélité côté tables de test seulement).
 
 ### Non-régressions à vérifier
 

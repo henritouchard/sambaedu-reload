@@ -254,6 +254,10 @@ class UserGroupService
             'skipped' => 0,
             'linked_users' => 0,
             'detached_users' => 0,
+            // 4.14 — arêtes dont SEUL l'attribut de pivot a changé (ex.
+            // is_head_teacher true↔false sur retrait/ajout PP), sans
+            // attach/detach. Renvoyé par sync()['updated'].
+            'head_teacher_updated' => 0,
             'deleted' => 0,
             'errors' => 0,
             // total_groups_detected : conservé pour compat (= nb de CN bruts AD).
@@ -427,16 +431,43 @@ class UserGroupService
                         }
 
                         // Union des membres des CN du groupe foldé (un seul sync()).
+                        // 4.14 — on capture en parallèle les membres issus du/des
+                        // CN `PP_<base>` pour poser l'attribut d'arête
+                        // `is_head_teacher=true` sur leur ligne pivot. Le sync()
+                        // devient ASSOCIATIF `[$userId => ['is_head_teacher'=>bool]]`
+                        // tout en préservant l'union/dédup/idempotence de 4.13 :
+                        // la clé est l'`user_id` (un membre présent dans Classe_ ET
+                        // PP_ → une seule arête, PP-priorité), le sync() détache
+                        // toujours les membres absents de l'union.
                         $memberIds = [];
+                        $ppUserIds = [];
                         foreach ($folded['cns'] as $cn) {
+                            $isPpCn = $this->foldPrefixOf($cn) === 'PP_';
                             foreach ($this->resolveMemberUserIdsFromAdGroup($cn) as $memberId) {
-                                $memberIds[] = (int) $memberId;
+                                $memberId = (int) $memberId;
+                                $memberIds[] = $memberId;
+                                if ($isPpCn) {
+                                    $ppUserIds[$memberId] = true;
+                                }
                             }
                         }
 
-                        $syncChanges = $group->users()->sync(array_values(array_unique($memberIds)));
+                        // Le flag n'a de sens que pour les groupes foldés de
+                        // classe/équipe. Les CN standalone non-classe (Cours_,
+                        // Matiere_@, orphelin equipe…) ne portent jamais `true` :
+                        // ils n'ont pas de CN `PP_` dans `$folded['cns']`, donc
+                        // `$ppUserIds` y est vide — `is_head_teacher` reste false.
+                        $syncPayload = [];
+                        foreach (array_unique($memberIds) as $memberId) {
+                            $syncPayload[$memberId] = [
+                                'is_head_teacher' => isset($ppUserIds[$memberId]),
+                            ];
+                        }
+
+                        $syncChanges = $group->users()->sync($syncPayload);
                         $stats['linked_users'] += count($syncChanges['attached'] ?? []);
                         $stats['detached_users'] += count($syncChanges['detached'] ?? []);
+                        $stats['head_teacher_updated'] += count($syncChanges['updated'] ?? []);
                     } catch (\Throwable $e) {
                         Log::warning('[UserGroupService] Erreur sync group AD -> SQL', [
                             'error' => $e->getMessage(),
@@ -465,7 +496,8 @@ class UserGroupService
             'info',
             "Import groupes utilisateurs terminé: {$stats['created']} créés, {$stats['updated']} mis à jour, " .
                 "{$stats['skipped']} inchangés, {$stats['linked_users']} liaison(s) ajoutée(s), " .
-                "{$stats['detached_users']} liaison(s) retirée(s), {$stats['deleted']} supprimé(s), {$stats['errors']} erreur(s)"
+                "{$stats['detached_users']} liaison(s) retirée(s), {$stats['head_teacher_updated']} flag(s) PP mis à jour, " .
+                "{$stats['deleted']} supprimé(s), {$stats['errors']} erreur(s)"
         );
 
         return $stats;

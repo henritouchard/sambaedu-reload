@@ -861,6 +861,173 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $this->assertSame(['alice', 'bob'], $logins);
     }
 
+    #[Test]
+    public function it_marks_head_teacher_from_pp_cn_on_import(): void
+    {
+        // AC8 — sur AD Classe_3A={alice}, Equipe_3A={bob}, PP_3A={bob} : après
+        // syncFromAd, la ligne nue `3A` a pour membres {alice,bob} (invariant
+        // 4.13) ET (3A,bob).is_head_teacher=true, (3A,alice)=false.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['cn' => 'alice', 'dn' => 'CN=alice,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+                'PP_3A' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+            ],
+        );
+
+        $alice = User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
+        $bob = User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
+
+        $service->importFromUsersAdGroups();
+
+        $group = UserGroup::query()->where('name', '3A')->firstOrFail();
+        $this->assertSame(['alice', 'bob'], $group->users()->pluck('login')->sort()->values()->all());
+
+        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id), 'bob (PP) doit être PP');
+        $this->assertFalse($this->isHeadTeacher($group->id, $alice->id), 'alice (élève) ne doit pas être PP');
+    }
+
+    #[Test]
+    public function it_marks_head_teacher_idempotently_across_repeated_imports(): void
+    {
+        // AC8 — un 2e syncFromAd ne change ni membres ni flags.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['cn' => 'alice', 'dn' => 'CN=alice,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+                'PP_3A' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+            ],
+        );
+
+        $alice = User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
+        $bob = User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
+
+        $service->importFromUsersAdGroups();
+        $service->importFromUsersAdGroups();
+
+        $group = UserGroup::query()->where('name', '3A')->firstOrFail();
+        $this->assertSame(['alice', 'bob'], $group->users()->pluck('login')->sort()->values()->all());
+        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id));
+        $this->assertFalse($this->isHeadTeacher($group->id, $alice->id));
+    }
+
+    #[Test]
+    public function it_marks_multiple_head_teachers(): void
+    {
+        // AC9 — PP_3A={bob,carol} : les deux arêtes valent true.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['cn' => 'alice', 'dn' => 'CN=alice,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [],
+                'PP_3A' => [
+                    ['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local'],
+                    ['cn' => 'carol', 'dn' => 'CN=carol,OU=Users,DC=example,DC=local'],
+                ],
+            ],
+        );
+
+        $alice = User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
+        $bob = User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
+        $carol = User::query()->create(['login' => 'carol', 'role' => 'prof', 'is_active' => true]);
+
+        $service->importFromUsersAdGroups();
+
+        $group = UserGroup::query()->where('name', '3A')->firstOrFail();
+        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id));
+        $this->assertTrue($this->isHeadTeacher($group->id, $carol->id));
+        $this->assertFalse($this->isHeadTeacher($group->id, $alice->id));
+    }
+
+    #[Test]
+    public function it_clears_head_teacher_when_removed_from_pp(): void
+    {
+        // AC10 — bob était PP puis retiré de PP_3A (reste dans Classe_3A) : au
+        // sync suivant, bob reste membre mais (3A,bob).is_head_teacher=false.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+                'PP_3A' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+            ],
+        );
+
+        $bob = User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
+
+        $service->importFromUsersAdGroups();
+        $group = UserGroup::query()->where('name', '3A')->firstOrFail();
+        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id));
+
+        // bob n'est plus dans PP_3A (mais toujours dans Classe_3A).
+        $this->adMembersByCn['PP_3A'] = [];
+
+        $service->importFromUsersAdGroups();
+        $group = UserGroup::query()->where('name', '3A')->firstOrFail();
+        $this->assertSame(['bob'], $group->users()->pluck('login')->all(), 'bob reste membre');
+        $this->assertFalse($this->isHeadTeacher($group->id, $bob->id), 'le flag suit l\'état AD (pas de rémanence)');
+    }
+
+    #[Test]
+    public function it_never_marks_head_teacher_on_non_class_cn(): void
+    {
+        // AC11 — un Cours_Histoire4A (membre prof) : la ligne existe (type cours)
+        // et son arête vaut is_head_teacher=false. Le flag n'est jamais true hors
+        // classe/équipe foldée.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Cours_Histoire4A', 'OU=Cours'),
+            ]),
+            [],
+            [
+                'Cours_Histoire4A' => [['cn' => 'prof', 'dn' => 'CN=prof,OU=Users,DC=example,DC=local']],
+            ],
+        );
+
+        $prof = User::query()->create(['login' => 'prof', 'role' => 'prof', 'is_active' => true]);
+
+        $service->importFromUsersAdGroups();
+
+        $group = UserGroup::query()->where('name', 'Cours_Histoire4A')->firstOrFail();
+        $this->assertSame('cours', $group->type);
+        $this->assertFalse($this->isHeadTeacher($group->id, $prof->id));
+    }
+
+    /**
+     * Lit `is_head_teacher` brut sur l'arête (cross-driver : cast en bool).
+     */
+    private function isHeadTeacher(int $groupId, int $userId): bool
+    {
+        $value = \Illuminate\Support\Facades\DB::table('user_group_user')
+            ->where('user_group_id', $groupId)
+            ->where('user_id', $userId)
+            ->value('is_head_teacher');
+
+        return (bool) $value;
+    }
+
     /**
      * Court-circuite la résolution LDAP de `User::isProf()/isEleve()` en
      * pré-remplissant le cache request-scope statique avec `null` : sans
@@ -1043,6 +1210,8 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             Schema::create('user_group_user', function (Blueprint $table): void {
                 $table->unsignedBigInteger('user_group_id');
                 $table->unsignedBigInteger('user_id');
+                // Story 4.14 — colonne d'arête (parité avec la migration).
+                $table->boolean('is_head_teacher')->default(false);
                 $table->primary(['user_group_id', 'user_id']);
             });
             $this->createdTables = true;
