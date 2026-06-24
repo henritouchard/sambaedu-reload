@@ -274,6 +274,14 @@ new #[Title('Groupe utilisateur')] class extends Component {
                  Position : entre members-list et group-quota-section. --}}
             @if ($type === 'classe')
                 @livewire('pages::users.groups.[id]._partials.class-share-section', ['groupId' => $groupId], key('class-share-' . $groupId))
+
+                {{-- Story 4.15 — Section « Professeur principal » (Livewire SFC).
+                     Visible UNIQUEMENT si $type === 'classe' (le SFC fait aussi
+                     son propre abort en mount si le groupe n'est pas une classe).
+                     Désigne le(s) PP via le pivot is_head_teacher → écriture
+                     SQL→AD 3e cible PP_<base>. Directive @livewire(...) (les
+                     crochets [id] cassent la tag-syntax). --}}
+                @livewire('pages::users.groups.[id]._partials.head-teacher-section', ['groupId' => $groupId], key('head-teacher-' . $groupId))
             @endif
 
             {{-- Story 5.1c — Section Quota groupe (Livewire SFC).

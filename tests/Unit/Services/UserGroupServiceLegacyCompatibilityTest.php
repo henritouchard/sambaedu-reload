@@ -1015,6 +1015,429 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $this->assertFalse($this->isHeadTeacher($group->id, $prof->id));
     }
 
+    // =========================================================================
+    // Story 4.15 — Écriture SQL→AD 3ᵉ cible PP_<base> (is_head_teacher)
+    // =========================================================================
+
+    /**
+     * Crée le service + les 3 fixtures users (prof1, prof2, eleve) d'une classe
+     * `3A` avec membership AD mutable. Retourne [$service, $prof1, $prof2, $eleve].
+     *
+     * @return array{0:UserGroupService,1:User,2:User,3:User}
+     */
+    private function makeClassFixture(): array
+    {
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            ['Classe_3A' => [], 'Equipe_3A' => [], 'PP_3A' => []],
+            mutableMembership: true,
+        );
+
+        $prof1 = User::query()->create([
+            'login' => 'prof.un', 'role' => 'prof',
+            'dn' => 'CN=prof.un,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $prof2 = User::query()->create([
+            'login' => 'prof.deux', 'role' => 'prof',
+            'dn' => 'CN=prof.deux,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $eleve = User::query()->create([
+            'login' => 'eleve.un', 'role' => 'eleve',
+            'dn' => 'CN=eleve.un,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+
+        $this->primeNoLdap('prof.un', 'prof.deux', 'eleve.un');
+
+        return [$service, $prof1, $prof2, $eleve];
+    }
+
+    #[Test]
+    public function it_writes_head_teachers_to_pp_group(): void
+    {
+        // AC1 — prof1 est PP : il est écrit dans PP_3A ET reste dans Equipe_3A
+        // (orthogonalité, parité rwx prof 4.12). L'élève reste dans Classe_3A.
+        [$service, $prof1, $prof2, $eleve] = $this->makeClassFixture();
+
+        $service->createGroup([
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $prof2->id, $eleve->id],
+            'head_teacher_ids' => [$prof1->id],
+        ]);
+
+        $this->assertSame(
+            ['CN=prof.un,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('PP_3A')
+        );
+        // Orthogonalité : prof1 est aussi dans Equipe_3A (avec prof2).
+        $this->assertEqualsCanonicalizing(
+            [
+                'CN=prof.un,OU=Users,DC=example,DC=local',
+                'CN=prof.deux,OU=Users,DC=example,DC=local',
+            ],
+            $this->addedDnsFor('Equipe_3A')
+        );
+        // L'élève dans Classe_3A (partition 4.12 inchangée).
+        $this->assertSame(
+            ['CN=eleve.un,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('Classe_3A')
+        );
+    }
+
+    #[Test]
+    public function it_clears_pp_group_when_no_head_teacher(): void
+    {
+        // AC2 — PP_3A pré-peuplé de prof1 ; on repasse head_teacher_ids=[] :
+        // prof1 doit être retiré de PP_3A (pas de rémanence). Equipe_/Classe_
+        // inchangés (prof1 reste membre prof).
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [],
+                'Equipe_3A' => [['dn' => 'CN=prof.un,OU=Users,DC=example,DC=local']],
+                'PP_3A' => [['dn' => 'CN=prof.un,OU=Users,DC=example,DC=local']],
+            ],
+            mutableMembership: true,
+        );
+
+        $prof1 = User::query()->create([
+            'login' => 'prof.un', 'role' => 'prof',
+            'dn' => 'CN=prof.un,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('prof.un');
+
+        $group = UserGroup::query()->create([
+            'name' => 'Classe_3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+
+        $service->updateGroup($group->id, [
+            'name' => 'Classe_3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id],
+            'head_teacher_ids' => [],
+        ]);
+
+        $this->assertSame(
+            ['CN=prof.un,OU=Users,DC=example,DC=local'],
+            $this->removedDnsFor('PP_3A')
+        );
+        $this->assertSame([], $this->removedDnsFor('Equipe_3A'));
+    }
+
+    #[Test]
+    public function it_writes_multiple_head_teachers(): void
+    {
+        // AC3 — head_teacher_ids=[prof1,prof2] : les deux dans PP_3A.
+        [$service, $prof1, $prof2, $eleve] = $this->makeClassFixture();
+
+        $service->createGroup([
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $prof2->id, $eleve->id],
+            'head_teacher_ids' => [$prof1->id, $prof2->id],
+        ]);
+
+        $this->assertEqualsCanonicalizing(
+            [
+                'CN=prof.un,OU=Users,DC=example,DC=local',
+                'CN=prof.deux,OU=Users,DC=example,DC=local',
+            ],
+            $this->addedDnsFor('PP_3A')
+        );
+    }
+
+    #[Test]
+    public function it_never_writes_pp_for_non_class_type(): void
+    {
+        // AC4 — un type cours : aucune écriture sur PP_<base>.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Cours_Maths5A', 'OU=Cours'),
+            ]),
+            [],
+            ['Cours_Maths5A' => []],
+            mutableMembership: true,
+        );
+
+        $prof = User::query()->create([
+            'login' => 'prof.maths', 'role' => 'prof',
+            'dn' => 'CN=prof.maths,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('prof.maths');
+
+        $service->createGroup([
+            'name' => 'Maths5A',
+            'display_name' => 'Maths 5A',
+            'type' => 'cours',
+            'user_ids' => [$prof->id],
+            'head_teacher_ids' => [$prof->id],
+        ]);
+
+        $this->assertSame([], $this->addedDnsFor('PP_Maths5A'));
+        $this->assertSame([], $this->removedDnsFor('PP_Maths5A'));
+    }
+
+    #[Test]
+    public function it_ignores_head_teacher_not_in_members(): void
+    {
+        // AC5 — head_teacher_ids contient un id hors user_ids (ghost) : seul le
+        // PP membre est écrit, ghost ignoré (pas d'exception).
+        [$service, $prof1, $prof2, $eleve] = $this->makeClassFixture();
+        $ghost = User::query()->create([
+            'login' => 'ghost', 'role' => 'prof',
+            'dn' => 'CN=ghost,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('ghost');
+
+        $service->createGroup([
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $eleve->id],
+            'head_teacher_ids' => [$prof1->id, $ghost->id],
+        ]);
+
+        // ghost n'est pas membre → ignoré ; seul prof1 dans PP_3A.
+        $this->assertSame(
+            ['CN=prof.un,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('PP_3A')
+        );
+    }
+
+    #[Test]
+    public function it_persists_head_teacher_pivot_on_save(): void
+    {
+        // AC6 — après createGroup avec head_teacher_ids=[prof1], le pivot porte
+        // (3A,prof1).is_head_teacher=true et false pour prof2/eleve. Le flag
+        // converge via le read-back syncFromAd (PP_3A écrit AVANT, D2).
+        [$service, $prof1, $prof2, $eleve] = $this->makeClassFixture();
+
+        $service->createGroup([
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $prof2->id, $eleve->id],
+            'head_teacher_ids' => [$prof1->id],
+        ]);
+
+        $group = UserGroup::query()->where('name', '3A')->firstOrFail();
+        $this->assertTrue($this->isHeadTeacher($group->id, $prof1->id), 'prof1 (PP) doit être PP');
+        $this->assertFalse($this->isHeadTeacher($group->id, $prof2->id), 'prof2 non-PP');
+        $this->assertFalse($this->isHeadTeacher($group->id, $eleve->id), 'eleve non-PP');
+    }
+
+    #[Test]
+    public function it_is_idempotent_across_repeated_pp_writes(): void
+    {
+        // AC7 — deux updateGroup consécutifs avec le même head_teacher_ids : au
+        // 2e run, aucun add/remove superflu sur PP_3A (diff idempotent).
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            ['Classe_3A' => [], 'Equipe_3A' => [], 'PP_3A' => []],
+            mutableMembership: true,
+        );
+
+        $prof1 = User::query()->create([
+            'login' => 'prof.un', 'role' => 'prof',
+            'dn' => 'CN=prof.un,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('prof.un');
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+
+        $payload = [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id],
+            'head_teacher_ids' => [$prof1->id],
+        ];
+
+        $service->updateGroup($group->id, $payload);
+
+        // Réinitialiser le journal d'appels avant le 2e run.
+        $this->membershipCalls = [];
+        $service->updateGroup($group->id, $payload);
+
+        $this->assertSame([], $this->addedDnsFor('PP_3A'), '2e run : aucun add PP_ superflu');
+        $this->assertSame([], $this->removedDnsFor('PP_3A'), '2e run : aucun remove PP_ superflu');
+
+        // Pivot stable.
+        $this->assertTrue($this->isHeadTeacher($group->fresh()->id, $prof1->id));
+    }
+
+    #[Test]
+    public function it_keeps_pp_stable_after_syncFromAd_roundtrip(): void
+    {
+        // AC8 (D2) — après updateGroup (qui appelle syncFromAd en read-back),
+        // le flag PP persisté correspond au CN PP_3A projeté. Un syncFromAd
+        // ultérieur ne change ni membres ni flag (pas de clignotement).
+        [$service, $prof1, $prof2, $eleve] = $this->makeClassFixture();
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+
+        $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $prof2->id, $eleve->id],
+            'head_teacher_ids' => [$prof1->id],
+        ]);
+
+        $this->assertTrue($this->isHeadTeacher($group->id, $prof1->id));
+        $this->assertFalse($this->isHeadTeacher($group->id, $prof2->id));
+
+        // syncFromAd ultérieur isolé : l'état AD PP_3A={prof1} → flag stable.
+        $service->importFromUsersAdGroups();
+
+        $reloaded = UserGroup::query()->where('name', '3A')->firstOrFail();
+        $this->assertTrue($this->isHeadTeacher($reloaded->id, $prof1->id), 'flag stable après read-back');
+        $this->assertFalse($this->isHeadTeacher($reloaded->id, $prof2->id));
+        $this->assertSame(
+            ['eleve.un', 'prof.deux', 'prof.un'],
+            $reloaded->users()->pluck('login')->sort()->values()->all()
+        );
+    }
+
+    #[Test]
+    public function it_preserves_head_teachers_when_updateGroup_omits_head_teacher_ids(): void
+    {
+        // Régression M6 (post-review 4.15) — DISTINCTION clé ABSENTE vs `[]`.
+        //
+        // L'edit-form / removeMember appelle `updateGroup(... user_ids ...)` SANS
+        // la clé `head_teacher_ids`. Avant la correction M6, `$headTeacherUserIds`
+        // retombait à `[]` → `PP_<base>` était VIDÉ en AD, puis le read-back
+        // `syncFromAd` effaçait le pivot `is_head_teacher` : perte SILENCIEUSE du
+        // PP sur une édition sans rapport. On prouve ici que :
+        //  (a) la clé ABSENTE PRÉSERVE les PP existants (PP_3A garde prof1, pivot
+        //      reste true) ;
+        //  (b) `head_teacher_ids => []` EXPLICITE vide bien PP_3A (effacement
+        //      volontaire) ;
+        //  (c) retirer un membre PP (user_ids sans ce prof, sans la clé) le retire
+        //      de PP_ par intersection MAIS préserve les autres PP encore membres.
+
+        // -- (a) clé ABSENTE → PP préservé ------------------------------------
+        // Groupe au NOM NU `3A` (comme la ligne foldée persistée) : le read-back
+        // `syncFromAd` projette le pivot sur cette même ligne nue (cf. AC8).
+        [$service, $prof1, $prof2, $eleve] = $this->makeClassFixture();
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+
+        // 1re écriture : prof1 + prof2 PP (pose le pivot via le read-back).
+        $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $prof2->id, $eleve->id],
+            'head_teacher_ids' => [$prof1->id, $prof2->id],
+        ]);
+
+        // Pré-condition : prof1 ET prof2 sont membres de PP_3A en AD, pivot true.
+        $this->assertEqualsCanonicalizing(
+            [
+                'CN=prof.un,OU=Users,DC=example,DC=local',
+                'CN=prof.deux,OU=Users,DC=example,DC=local',
+            ],
+            collect($this->adMembersByCn['PP_3A'])->pluck('dn')->all(),
+            'pré-condition : PP_3A contient prof1 + prof2'
+        );
+        $this->assertTrue($this->isHeadTeacher($group->id, $prof1->id));
+        $this->assertTrue($this->isHeadTeacher($group->id, $prof2->id));
+
+        // Réinitialiser le journal pour n'observer que le 2e appel.
+        $this->membershipCalls = [];
+
+        // 2e appel : edit-form sauve la liste de membres SANS `head_teacher_ids`.
+        $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $prof2->id, $eleve->id],
+            // pas de head_teacher_ids → la correction M6 dérive les PP du pivot.
+        ]);
+
+        // PP_3A contient TOUJOURS prof1 ET prof2 (aucun retrait silencieux)…
+        $this->assertEqualsCanonicalizing(
+            [
+                'CN=prof.un,OU=Users,DC=example,DC=local',
+                'CN=prof.deux,OU=Users,DC=example,DC=local',
+            ],
+            collect($this->adMembersByCn['PP_3A'])->pluck('dn')->all(),
+            'M6 : clé absente → PP_3A préservé en AD'
+        );
+        // …et aucun remove n'a été émis sur PP_3A (PP dérivés du pivot).
+        $this->assertSame([], $this->removedDnsFor('PP_3A'), 'M6 : aucun retrait PP_ sur édition sans la clé');
+        // Le pivot reste true pour les deux PP.
+        $this->assertTrue($this->isHeadTeacher($group->id, $prof1->id), 'M6 : pivot prof1 toujours PP');
+        $this->assertTrue($this->isHeadTeacher($group->id, $prof2->id), 'M6 : pivot prof2 toujours PP');
+
+        // -- (c) retrait d'UN PP via removeMember (clé absente) ----------------
+        // On retire prof2 des membres (sans head_teacher_ids) : prof2 quitte PP_
+        // par intersection, prof1 (toujours membre + PP) est préservé.
+        $this->membershipCalls = [];
+        $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $eleve->id],
+            // toujours sans head_teacher_ids.
+        ]);
+
+        $this->assertSame(
+            ['CN=prof.deux,OU=Users,DC=example,DC=local'],
+            $this->removedDnsFor('PP_3A'),
+            'M6 : prof2 retiré des membres → retiré de PP_ (intersection)'
+        );
+        $this->assertSame(
+            ['CN=prof.un,OU=Users,DC=example,DC=local'],
+            collect($this->adMembersByCn['PP_3A'])->pluck('dn')->all(),
+            'M6 : prof1 (encore membre + PP) préservé dans PP_3A'
+        );
+        $this->assertTrue($this->isHeadTeacher($group->id, $prof1->id), 'M6 : prof1 reste PP après retrait de prof2');
+
+        // -- (b) `[]` EXPLICITE vide bien PP_ ---------------------------------
+        $this->membershipCalls = [];
+        $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $eleve->id],
+            'head_teacher_ids' => [], // effacement VOLONTAIRE.
+        ]);
+
+        $this->assertSame(
+            ['CN=prof.un,OU=Users,DC=example,DC=local'],
+            $this->removedDnsFor('PP_3A'),
+            'M6 : [] explicite retire le dernier PP'
+        );
+        $this->assertSame([], collect($this->adMembersByCn['PP_3A'])->pluck('dn')->all(), 'M6 : PP_3A vidé');
+        $this->assertFalse($this->isHeadTeacher($group->id, $prof1->id), 'M6 : pivot effacé après [] explicite');
+    }
+
     /**
      * Lit `is_head_teacher` brut sur l'arête (cross-driver : cast en bool).
      */
@@ -1128,7 +1551,21 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         );
 
         $groupRepository->method('getGroupMembers')->willReturnCallback(
-            fn(string $cn): Collection => collect($this->adMembersByCn[$cn] ?? [])
+            function (string $cn): Collection {
+                // Le read-back `syncFromAd` résout les membres par `cn` (login).
+                // Une écriture AD réelle (`addMember`) ne stocke que le `dn` ;
+                // on dérive donc le `cn` du DN À LA LECTURE quand il manque, sans
+                // muter l'état stocké (préserve les assertions sur adMembersByCn).
+                return collect($this->adMembersByCn[$cn] ?? [])->map(
+                    static function (array $member): array {
+                        if (!isset($member['cn']) && isset($member['dn'])
+                            && preg_match('/^CN=([^,]+)/i', (string) $member['dn'], $m) === 1) {
+                            $member['cn'] = $m[1];
+                        }
+                        return $member;
+                    }
+                );
+            }
         );
 
         $rightRepository = $this->createMock(RightRepository::class);

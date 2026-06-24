@@ -85,6 +85,8 @@ trait CreatesPermissionSchema
             Schema::create('user_group_user', function (Blueprint $table) {
                 $table->unsignedBigInteger('user_group_id');
                 $table->unsignedBigInteger('user_id');
+                // Story 4.14 — attribut d'arête « professeur principal ».
+                $table->boolean('is_head_teacher')->default(false);
                 $table->primary(['user_group_id', 'user_id']);
             });
             $this->createdTables[] = 'user_group_user';

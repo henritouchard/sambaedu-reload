@@ -609,6 +609,63 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 'cd /var/www/sambaedu-reload && ph
 
 ---
 
+## Section 9 — Écriture SQL→AD `PP_<X>` + UI Professeur principal (Story 4.15, 2026-06-25)
+
+> **But.** Rendre EFFECTIF le flag `is_head_teacher` posé en lecture par 4.14. Deux volets : (1) écriture SQL→AD d'une **3ᵉ cible** `PP_<base>` dans `syncRoleAwareAdGroupMembers`, pilotée par les arêtes `is_head_teacher=true`, **orthogonale** à `Equipe_`/`Classe_` ; (2) UI Livewire SFC « Professeur principal » sur la fiche de groupe pour désigner/visualiser les PP. Pas de migration de schéma (colonne livrée 4.14).
+
+> **Pré-requis communs.** AD réel /vm (DC se4ad) avec une classe foldée `3A` (CN `Classe_3A`, `Equipe_3A`, `PP_3A`). Un compte avec la permission `user.modify` (édition de groupe). La **migration data 4.14 doit avoir été jouée** (`migrate` /vm, §8.7) pour que les classes héritées portent déjà un flag cohérent — mais l'UI 4.15 pose le flag elle-même, donc une classe créée via SE5 ne dépend pas de la migration. `samba-tool group listmembers PP_3A` pour inspecter le groupe AD.
+
+### Scénario 9.1 — 3ᵉ cible `PP_<base>` écrite, orthogonale (CRITIQUE)
+
+1. Sur la fiche de `3A` (membres : prof1, prof2, élève), désigner **prof1** professeur principal (toggle) puis **Enregistrer**.
+2. AD : `samba-tool group listmembers PP_3A` → contient **prof1** uniquement.
+3. **Orthogonalité (clé)** : `Equipe_3A` contient toujours prof1 **et** prof2 (parité rwx prof 4.12 — `getfacl` `group:equipe_3a:rwx` inchangé) ; prof1 est donc dans `Equipe_3A` **ET** `PP_3A`. `Classe_3A` contient l'élève. Vérifier qu'aucun prof n'a été **retiré** d'`Equipe_3A` (régression R1 = haute).
+
+### Scénario 9.2 — `PP_<base>` vidé quand plus de PP (pas de rémanence)
+
+1. Sur `3A` avec prof1 PP, **décocher** prof1 puis Enregistrer.
+2. `samba-tool group listmembers PP_3A` → **vide**. Aucune rémanence.
+3. `Equipe_3A`/`Classe_3A` inchangés (prof1 reste membre prof).
+
+### Scénario 9.3 — Plusieurs PP
+
+1. Cocher prof1 **et** prof2, Enregistrer.
+2. `PP_3A` contient prof1 et prof2.
+
+### Scénario 9.4 — `PP_` jamais écrit hors classe/équipe
+
+1. Sur un groupe `type='cours'`/`'matiere'`/`'custom'` : la fiche **n'affiche pas** la section « Professeur principal » (gating `type === 'classe'`).
+2. Côté écriture, aucun `addMember("PP_…")` n'est jamais émis pour ces types (la branche `$isClasseLike` ne s'exécute pas).
+
+### Scénario 9.5 — Intersection garde-fou (PP hors membres)
+
+1. Cas défensif (forge / désync) : un `head_teacher_id` qui n'est pas membre du groupe est **ignoré** silencieusement à l'écriture AD (pas d'exception). Seuls les PP membres sont écrits dans `PP_3A`.
+
+### Scénario 9.6 — Aller-retour AD↔SQL stable (D2, anti-clignotement)
+
+1. Après l'enregistrement UI (qui écrit AD **puis** `syncFromAd`), l'arête `(3A,prof1).is_head_teacher=true` est persistée en SQL et **correspond** au CN `PP_3A`.
+2. Relancer un `syncFromAd` (bouton « Synchroniser avec AD ») : ni les membres ni le flag ne changent (l'AD `PP_3A` ayant été écrit AVANT le read-back, le flag ne « clignote » pas).
+
+### Scénario 9.7 — UI : section gated classe + abort anti-forge
+
+1. La fiche d'un groupe `type='classe'` **affiche** la section « Professeur principal » ; un groupe `type='cours'` ne l'affiche pas.
+2. Un payload Livewire forgé avec un `groupId` non-classe (ou inexistant) est **rejeté en `mount`** (`abort 404`), comme `class-share-section` — pas seulement par le `@if` de la vue.
+
+### Scénario 9.8 — UI : toggle limité aux profs (D5)
+
+1. La case « professeur principal » n'est proposée **que** pour les membres `isProf()`. Un élève membre n'a aucun contrôle PP (l'écriture service reste robuste si forcé, cf. 9.5).
+
+### Scénario 9.9 — UI : double guard d'autorisation
+
+1. Un utilisateur sans `user.modify` (ex. `user.read` seul) voit la section en **lecture seule** (badges PP, pas de toggle ni bouton).
+2. Une action `save` forcée sans `user.modify` est **rejetée serveur** (`AuthorizationException` / 403) — double guard (`@can` UI + `Gate::authorize('update-group')`).
+
+> **Couverture automatisée.** `tests/Unit/Services/UserGroupServiceLegacyCompatibilityTest.php` couvre l'écriture AD : `it_writes_head_teachers_to_pp_group` (9.1, orthogonalité), `it_clears_pp_group_when_no_head_teacher` (9.2), `it_writes_multiple_head_teachers` (9.3), `it_never_writes_pp_for_non_class_type` (9.4), `it_ignores_head_teacher_not_in_members` (9.5), `it_persists_head_teacher_pivot_on_save` (pivot/AC6), `it_is_idempotent_across_repeated_pp_writes` (AC7), `it_keeps_pp_stable_after_syncFromAd_roundtrip` (9.6, D2). `tests/Feature/Livewire/Users/HeadTeacherSectionTest.php` couvre l'UI : rendu gated (9.7), abort non-classe/introuvable, toggle limité profs (9.8), désignation/retrait persistant le pivot + toast (9.1 côté UI), double guard `update-group` (9.9). Le `GroupRepository` est mocké (assertions sur les appels `addMember`/`removeMember` `PP_3A`) ; l'écriture AD réelle (`samba-tool group listmembers PP_3A`) = validation manuelle /vm, **différée post-merge**.
+
+> **Checklist rapide pré-prod (4.15)** : migration data 4.14 jouée (§8.7) → désigner un PP en UI sur `3A` → `samba-tool group listmembers PP_3A` = {prof1} (9.1) → vérifier `Equipe_3A` toujours = {prof1,prof2} (orthogonalité, R1) → décocher → `PP_3A` vide (9.2) → re-`syncFromAd` ne fait pas clignoter le flag (9.6) → section absente sur un groupe non-classe (9.4/9.7) → toggle absent pour un élève (9.8).
+
+---
+
 ## Post-correctifs & non-régressions
 
 ### Post-correctifs Story 7.2 (review 2026-04-23)
@@ -707,6 +764,17 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 'cd /var/www/sambaedu-reload && ph
 - [ ] 7.4 Double `syncFromAd` idempotent (ligne survit, 0 doublon, membres stables)
 - [ ] 7.5 `Equipe_` orphelin (cours sans `Classe_`/`PP_`) → ligne nue type equipe, ne fold pas avec `Cours_`
 - [ ] 7.6 **Non-régression scope prof post-fold (CRITIQUE, manuel)** : prof rattaché à `3A` voit/reset uniquement ses élèves de `3A` (ni tous, ni zéro) ; bulk filtré ; eleve-admin idem ; admin global bypass
+
+**Section 9 — Écriture `PP_<X>` + UI Professeur principal (Story 4.15)**
+- [ ] 9.1 **PP désigné → `PP_3A`={prof1} ; orthogonalité (CRITIQUE)** : prof1 reste dans `Equipe_3A` (rwx prof inchangé), aucun prof retiré
+- [ ] 9.2 Dernier PP retiré → `PP_3A` vidé (pas de rémanence), `Equipe_`/`Classe_` inchangés
+- [ ] 9.3 Plusieurs PP → `PP_3A`={prof1,prof2}
+- [ ] 9.4 Type non-classe → section absente + aucun `addMember("PP_…")`
+- [ ] 9.5 PP hors membres → ignoré (pas d'exception)
+- [ ] 9.6 Aller-retour `syncFromAd` stable (flag ne clignote pas, D2)
+- [ ] 9.7 Section gated classe + abort `mount` sur groupId non-classe (anti-forge)
+- [ ] 9.8 Toggle PP limité aux membres `isProf()` (pas de contrôle sur un élève)
+- [ ] 9.9 Double guard `update-group` (lecture seule sans `user.modify`, `save` rejeté serveur)
 
 **Non-régressions**
 - [ ] Drawer Rôles + Permissions

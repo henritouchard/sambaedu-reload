@@ -58,6 +58,11 @@ class UserGroupService
             ? array_values(array_unique(array_map('intval', $data['user_ids'])))
             : [];
 
+        // Story 4.15 — IDs des professeurs principaux (arête `is_head_teacher`).
+        $headTeacherUserIds = !empty($data['head_teacher_ids']) && is_array($data['head_teacher_ids'])
+            ? array_values(array_unique(array_map('intval', $data['head_teacher_ids'])))
+            : [];
+
         $created = $this->groupRepository->createGroup(
             name: $payload['name'],
             description: $payload['display_name'] ?? $payload['name'],
@@ -74,8 +79,18 @@ class UserGroupService
         // les autres types, c'est le CN brut résolu (Cours_X, Matiere_X@Y, …).
         $lookupName = $this->resolveSqlLookupName($payload['name'], $payload['type']);
 
-        if (count($selectedUserIds) > 0) {
-            $this->syncRoleAwareAdGroupMembers($payload['name'], $payload['type'], $selectedUserIds);
+        // Story 4.15 (D2) — l'écriture AD (incluant la 3ᵉ cible `PP_<base>`)
+        // précède toujours `syncFromAd()` : le read-back 4.14 re-pose alors le
+        // flag `is_head_teacher` depuis le `PP_<base>` qu'on vient d'écrire,
+        // donc le pivot SQL converge sans clignotement. On force l'écriture dès
+        // qu'il y a des membres OU des PP à projeter.
+        if (count($selectedUserIds) > 0 || count($headTeacherUserIds) > 0) {
+            $this->syncRoleAwareAdGroupMembers(
+                $payload['name'],
+                $payload['type'],
+                $selectedUserIds,
+                $headTeacherUserIds,
+            );
         }
 
         $this->syncFromAd();
@@ -120,9 +135,44 @@ class UserGroupService
             }
         }
 
-        if (array_key_exists('user_ids', $data) && is_array($data['user_ids'])) {
-            $selectedUserIds = array_values(array_unique(array_map('intval', $data['user_ids'])));
-            $this->syncRoleAwareAdGroupMembers($newName, $payload['type'], $selectedUserIds);
+        // Story 4.15 — `head_teacher_ids` peut accompagner le payload (UI
+        // « Professeur principal »). Quand il est présent sans `user_ids`
+        // explicite, on dérive les membres courants depuis le pivot SQL pour
+        // que la partition Equipe_/Classe_ + la 3ᵉ cible PP_ restent cohérentes.
+        $hasUserIds = array_key_exists('user_ids', $data) && is_array($data['user_ids']);
+        $hasHeadTeacherIds = array_key_exists('head_teacher_ids', $data) && is_array($data['head_teacher_ids']);
+
+        if ($hasUserIds || $hasHeadTeacherIds) {
+            $selectedUserIds = $hasUserIds
+                ? array_values(array_unique(array_map('intval', $data['user_ids'])))
+                : $group->users()->pluck('users.id')->map(static fn(mixed $id): int => (int) $id)->all();
+
+            // Story 4.15 — distinction CLÉ ABSENTE vs `[]` EXPLICITE.
+            // La 3ᵉ cible `PP_<base>` est TOUJOURS resynchronisée par
+            // `syncRoleAwareAdGroupMembers` ; sans précaution, tout appel
+            // d'`updateGroup` qui omet `head_teacher_ids` (edit-form : retrait
+            // d'un membre, sauvegarde de la liste) écraserait `$headTeacherUserIds`
+            // à `[]` → `PP_<base>` vidé en AD, puis le read-back `syncFromAd`
+            // efface le pivot `is_head_teacher` : perte SILENCIEUSE des PP sur
+            // une édition sans rapport. On préserve donc les PP existants en les
+            // dérivant du pivot quand la clé est ABSENTE ; un `[]` EXPLICITE
+            // (section « Professeur principal » qui retire tous les PP) reste un
+            // effacement volontaire.
+            $headTeacherUserIds = $hasHeadTeacherIds
+                ? array_values(array_unique(array_map('intval', $data['head_teacher_ids'])))
+                : $group->users()
+                    ->wherePivot('is_head_teacher', true)
+                    ->pluck('users.id')
+                    ->map(static fn(mixed $id): int => (int) $id)
+                    ->all();
+
+            // Story 4.15 (D2) — écrire l'AD (PP_ compris) AVANT `syncFromAd()`.
+            $this->syncRoleAwareAdGroupMembers(
+                $newName,
+                $payload['type'],
+                $selectedUserIds,
+                $headTeacherUserIds,
+            );
         }
 
         $this->syncFromAd();
@@ -796,8 +846,12 @@ class UserGroupService
      * - `type ∈ {classe, equipe}` : les profs (`User::isProf()`) vont dans
      *   `Equipe_<name>`, tout le reste (élèves/admin/autre) dans `Classe_<name>`.
      *   Chaque cible est synchronisée par le diff idempotent fail-soft de
-     *   {@see syncAdGroupMembersByUserIds()}. `PP_<name>` n'est pas peuplé
-     *   (rôle par-arête non capturé par SE5 — limite connue documentée).
+     *   {@see syncAdGroupMembersByUserIds()}. Story 4.15 — 3ᵉ cible `PP_<name>`
+     *   peuplée par les `is_head_teacher=true` (`$headTeacherUserIds`). Cette
+     *   cible est ORTHOGONALE à `Equipe_`/`Classe_` : un prof principal reste
+     *   dans `Equipe_<name>` (parité rwx prof 4.12) **et** est ajouté à
+     *   `PP_<name>`. `PP_` n'est PAS exclusif de la partition prof/élève. Elle
+     *   est toujours synchronisée (vidage si plus de PP, pas de rémanence).
      * - autres types (`cours`, `matiere`, `projet`, `custom`…) : une seule
      *   cible résolue via {@see resolvePrimaryGroupName()} — comportement inchangé.
      *
@@ -813,9 +867,16 @@ class UserGroupService
      * jamais ré-expansé — on synchronise exactement ce groupe (1 SQL = 1 AD).
      *
      * @param array<int,int> $selectedUserIds
+     * @param array<int,int> $headTeacherUserIds Story 4.15 — `user_id` à
+     *        `is_head_teacher=true` à projeter vers `PP_<base>`. Intersecté
+     *        défensivement avec `$selectedUserIds` (un PP doit être membre).
      */
-    private function syncRoleAwareAdGroupMembers(string $rawName, string $type, array $selectedUserIds): void
-    {
+    private function syncRoleAwareAdGroupMembers(
+        string $rawName,
+        string $type,
+        array $selectedUserIds,
+        array $headTeacherUserIds = [],
+    ): void {
         $normalizedType = mb_strtolower(trim($type));
         $isClasseLike = in_array($normalizedType, ['class', 'classe', 'equipe'], true);
 
@@ -858,6 +919,19 @@ class UserGroupService
         // pour que le retrait/bascule de rôle retire bien du groupe d'origine.
         $this->syncAdGroupMembersByUserIds("Equipe_{$baseName}", $profIds);
         $this->syncAdGroupMembersByUserIds("Classe_{$baseName}", $nonProfIds);
+
+        // Story 4.15 — 3ᵉ cible `PP_<base>`, ORTHOGONALE aux deux précédentes.
+        // Garde-fou D1 : un PP doit être membre du groupe (intersection avec
+        // `$selectedUserIds`) — un id PP forgé hors membres est ignoré, sans
+        // exception. On préserve l'ordre/dédup de `$selectedUserIds` pour des
+        // assertions stables. La cible est TOUJOURS synchronisée (même `$ppIds`
+        // vide → le diff idempotent vide `PP_<base>`, pas de rémanence).
+        $selectedSet = array_flip($selectedUserIds);
+        $ppIds = array_values(array_unique(array_filter(
+            $headTeacherUserIds,
+            static fn(int $id): bool => isset($selectedSet[$id])
+        )));
+        $this->syncAdGroupMembersByUserIds("PP_{$baseName}", $ppIds);
     }
 
     /**
