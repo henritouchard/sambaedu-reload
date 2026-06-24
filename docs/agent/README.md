@@ -43,6 +43,11 @@ sequenceDiagram
   Voir `enrollment.md` et `../runbooks/gpo-se4-agent-bootstrap.md`.
 - **Convergence inconditionnelle.** L'agent ramène toujours le poste à son état
   cible : ce que le serveur décrit fait foi, sans exception tolérée.
+- **L'agent provisionne aussi les ressources de support partagées.** Au-delà des
+  9 types desired-state, il dépose sur le poste les **outils partagés** que les
+  recettes invoquent (archiveur, raccourcis…) via un module générique
+  *déclaratif serveur / impératif agent*, idempotent par hash et extensible à
+  d'autres OS. Voir [`shared-tools-provisioning.md`](shared-tools-provisioning.md).
 - **Une seule source de configuration.** Le canal de configuration legacy (SE4)
   est éteint en bloc (kill-switch `LEGACY_CONFIG_CHANNEL_ENABLED`) : agent et
   legacy ne cohabitent jamais comme deux sources de vérité concurrentes.
@@ -96,6 +101,7 @@ sequenceDiagram
 | [`session-companion.md`](session-companion.md) | technique | Contexte user de session (`?user=`) + companion |
 | [`handlers-wallpaper-overlay.md`](handlers-wallpaper-overlay.md) | technique | Handlers `wallpaper` + `overlay` (⚠️ 2 types sur 9 — voir note) |
 | [`release-distribution.md`](release-distribution.md) | technique + proc | Publication/ciblage canari des binaires (`agent_releases`, rings) |
+| [`shared-tools-provisioning.md`](shared-tools-provisioning.md) | technique | **Module `provision`** — staging générique des ressources partagées (outils WPKG) ; `manifest.json` déclaratif + `Reconcile` par hash. Orthogonal aux handlers |
 | [`agent-skeleton.md`](agent-skeleton.md) | technique | Squelette du runtime Go (structure des packages) |
 
 > ⚠️ **Couverture handlers incomplète.** Le contrat publie **9 types** de
@@ -131,7 +137,7 @@ Règles d'enforcement : une PR qui les viole se rejette.
 ## 7. Carte du code (ancrage `fichier:ligne`)
 
 > Points d'entrée réels pour plonger dans le code. Version agent courante :
-> **`2.2.17`** (`agent/shared/version.go`).
+> **`2.2.19`** (`agent/shared/version.go`).
 
 ### Agent (Go — module `sambaedu/agent`)
 
@@ -143,6 +149,7 @@ Règles d'enforcement : une PR qui les viole se rejette.
 | Lecture du token (à chaque cycle) | `agent/shared/files.go` (`Store.ReadToken`) |
 | Moteur générique + interface `Handler` (`Test`/`Apply`) | `agent/shared/engine.go` |
 | Handlers (1 fichier par type) | `agent/shared/handler_*.go` (+ `agent/windows/handler_*_windows.go`) |
+| Provisioning de ressources partagées (générique, hors moteur) | `agent/provision/provision.go` (+ `provision_windows.go`) — cf. [`shared-tools-provisioning.md`](shared-tools-provisioning.md) |
 | Reporting : collecte / purge / fusion par type | `agent/shared/dropcollect.go` |
 | Self-update (download, vérif hash + Authenticode, swap) | `agent/shared/update.go`, `agent/shared/swap.go` |
 | Build + signature + publication | `scripts/build-agent.sh` |
