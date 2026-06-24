@@ -171,7 +171,7 @@ new class extends Component {
         color="primary"
         description="Valeur par défaut de chaque capacité (option métier des postes), diffusée à TOUTE la flotte (maille Broadcast). Un parc peut dévier une capacité via l'onglet « Options / Capacités » de sa page.">
 
-        <div class="card bg-base-100 shadow-sm border border-base-200 w-full">
+        <div class="card bg-base-100 shadow-sm border border-base-200 w-full col-span-full">
             <div class="card-body">
                 <div class="overflow-x-auto">
                     <table class="table table-sm">

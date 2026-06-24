@@ -113,7 +113,7 @@ new class extends Component {
         color="primary"
         description="Outils livrés par l'agent via le MANIFEST (téléchargement + extraction sur le poste). Ce N'EST PAS un item de state : toujours-actif quand activé, NON overridable par poste.">
 
-        <div class="w-full flex flex-col gap-6">
+        <div class="w-full flex flex-col gap-6 col-span-full">
             <div class="alert alert-warning shadow-sm">
                 <i class="fa-solid fa-circle-info"></i>
                 <div class="text-sm">

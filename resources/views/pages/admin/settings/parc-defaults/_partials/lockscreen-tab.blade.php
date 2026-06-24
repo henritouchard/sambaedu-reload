@@ -29,7 +29,7 @@ new class extends Component {
         color="primary"
         description="Image de l'écran de verrouillage Windows (scope machine) appliquée par défaut à tous les postes. Élément facultatif.">
 
-        <div class="max-w-md">
+        <div class="max-w-md col-span-full">
             <livewire:components::molecules.wallpaper-card
                 type="lockscreen"
                 :ownerType="null"

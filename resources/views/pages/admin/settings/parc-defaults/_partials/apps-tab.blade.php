@@ -98,7 +98,7 @@ new class extends Component {
         color="primary"
         description="Applications déployées par défaut à TOUS les postes (couche Broadcast). Elles s'ajoutent à ce que chaque poste reçoit déjà via ses profils/parcs. Le déploiement effectif reste assuré par WPKG.">
 
-        <div class="w-full flex flex-col gap-6">
+        <div class="w-full flex flex-col gap-6 col-span-full">
 
             {{-- Liste des apps déjà en défaut parc --}}
             <div class="card bg-base-100 shadow-sm border border-base-200 w-full">

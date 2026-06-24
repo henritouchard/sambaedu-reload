@@ -32,7 +32,7 @@ new class extends Component {
         color="primary"
         description="Affiché sur tous les postes si aucune configuration plus spécifique (parc, utilisateur) ne s'applique. Élément facultatif : tant qu'aucun fond n'est défini, le poste garde son fond système.">
 
-        <div class="max-w-md">
+        <div class="max-w-md col-span-full">
             <livewire:components::molecules.wallpaper-card
                 type="wallpaper"
                 :ownerType="null"
