@@ -52,6 +52,8 @@ class UserGroupService
     {
         $payload = $this->validateData($data);
 
+        $this->guardReservedPrefixOnCreate($payload['name'], $payload['type']);
+
         $selectedUserIds = !empty($data['user_ids']) && is_array($data['user_ids'])
             ? array_values(array_unique(array_map('intval', $data['user_ids'])))
             : [];
@@ -66,10 +68,14 @@ class UserGroupService
             throw new RuntimeException("Création AD impossible pour le groupe '{$payload['name']}'.");
         }
 
+        // Sert UNIQUEMENT de sélecteur SQL post-syncFromAd (ci-dessous) : la sync
+        // des membres passe désormais par syncRoleAwareAdGroupMembers. Le nom NU
+        // étant garanti sans préfixe réservé (guardReservedPrefixOnCreate), la
+        // résolution donne bien le CN primaire stocké (`Classe_<name>`).
         $primaryGroupName = $this->resolvePrimaryGroupName($payload['name'], $payload['type']);
 
         if (count($selectedUserIds) > 0) {
-            $this->syncAdGroupMembersByUserIds($primaryGroupName, $selectedUserIds);
+            $this->syncRoleAwareAdGroupMembers($payload['name'], $payload['type'], $selectedUserIds);
         }
 
         $this->syncFromAd();
@@ -116,7 +122,7 @@ class UserGroupService
 
         if (array_key_exists('user_ids', $data) && is_array($data['user_ids'])) {
             $selectedUserIds = array_values(array_unique(array_map('intval', $data['user_ids'])));
-            $this->syncAdGroupMembersByUserIds($newName, $selectedUserIds);
+            $this->syncRoleAwareAdGroupMembers($newName, $payload['type'], $selectedUserIds);
         }
 
         $this->syncFromAd();
@@ -493,6 +499,120 @@ class UserGroupService
             ->map(static fn(mixed $id): int => (int) $id)
             ->values()
             ->all();
+    }
+
+    /**
+     * Projette les membres SQL sélectionnés vers le(s) groupe(s) AD cible(s),
+     * en partitionnant par rôle pour les groupes de classe/équipe (parité SE4).
+     *
+     * - `type ∈ {classe, equipe}` : les profs (`User::isProf()`) vont dans
+     *   `Equipe_<name>`, tout le reste (élèves/admin/autre) dans `Classe_<name>`.
+     *   Chaque cible est synchronisée par le diff idempotent fail-soft de
+     *   {@see syncAdGroupMembersByUserIds()}. `PP_<name>` n'est pas peuplé
+     *   (rôle par-arête non capturé par SE5 — limite connue documentée).
+     * - autres types (`cours`, `matiere`, `projet`, `custom`…) : une seule
+     *   cible résolue via {@see resolvePrimaryGroupName()} — comportement inchangé.
+     *
+     * Le nom reçu peut être NU (`3A`, depuis `createGroup`) ou déjà le CN
+     * primaire stocké en SQL (`Classe_3A`, depuis `updateGroup` dont le form
+     * renvoie `group->name`). Pour les classes/équipes on dérive donc la base
+     * nue (suppression d'un éventuel préfixe `Classe_`/`Equipe_`/`PP_`) avant
+     * de partitionner — c'est exactement la dé-duplication de la résolution
+     * exigée par la story (createGroup résolu vs updateGroup brut).
+     *
+     * Bypass CN legacy préfixé d'un AUTRE type : un nom déjà préfixé par une
+     * autre catégorie (`Matiere_*@*`, `Cours_*`, `Projet_*`, `Matiere_*`) n'est
+     * jamais ré-expansé — on synchronise exactement ce groupe (1 SQL = 1 AD).
+     *
+     * @param array<int,int> $selectedUserIds
+     */
+    private function syncRoleAwareAdGroupMembers(string $rawName, string $type, array $selectedUserIds): void
+    {
+        $normalizedType = mb_strtolower(trim($type));
+        $isClasseLike = in_array($normalizedType, ['class', 'classe', 'equipe'], true);
+
+        // Type non classe/équipe : un nom déjà préfixé (CN legacy d'une autre
+        // catégorie) ne doit jamais être ré-expansé — cible unique résolue.
+        if (!$isClasseLike) {
+            $this->syncAdGroupMembersByUserIds(
+                $this->resolvePrimaryGroupName($rawName, $type),
+                $selectedUserIds
+            );
+
+            return;
+        }
+
+        // Classe/équipe : dériver la base nue en retirant un éventuel préfixe
+        // de classe/équipe déjà présent (CN primaire stocké en SQL).
+        $baseName = $this->stripClasseLikePrefix($rawName);
+
+        $profIds = [];
+        $nonProfIds = [];
+
+        if (count($selectedUserIds) > 0) {
+            $usersById = User::query()
+                ->whereIn('id', $selectedUserIds)
+                ->get()
+                ->keyBy(static fn(User $user): int => (int) $user->id);
+
+            foreach ($selectedUserIds as $userId) {
+                $user = $usersById->get($userId);
+
+                if ($user !== null && $user->isProf()) {
+                    $profIds[] = $userId;
+                } else {
+                    $nonProfIds[] = $userId;
+                }
+            }
+        }
+
+        // Toujours synchroniser les DEUX cibles (même avec une partition vide)
+        // pour que le retrait/bascule de rôle retire bien du groupe d'origine.
+        $this->syncAdGroupMembersByUserIds("Equipe_{$baseName}", $profIds);
+        $this->syncAdGroupMembersByUserIds("Classe_{$baseName}", $nonProfIds);
+    }
+
+    /**
+     * Empêche la création d'un groupe classe/équipe dont le nom NU porte déjà un
+     * préfixe réservé géré par le serveur (`Classe_`/`Equipe_`/`PP_`). Sans ce
+     * garde-fou, l'expansion (`Equipe_<name>`/`Classe_<name>`) viserait des CN
+     * fantômes : les membres seraient écrits sur des groupes AD inexistants
+     * (add LDAP fail-soft → échec SILENCIEUX) et le sélecteur SQL post-sync
+     * lèverait « introuvable après synchronisation ». On bloque dès la saisie.
+     *
+     * Ne concerne QUE les types classe/équipe : les types à CN préfixé légitime
+     * (`matiere_classe` → `Matiere_…`) ne passent jamais par cette expansion.
+     */
+    private function guardReservedPrefixOnCreate(string $rawName, string $type): void
+    {
+        $normalizedType = mb_strtolower(trim($type));
+
+        if (!in_array($normalizedType, ['class', 'classe', 'equipe', 'équipe'], true)) {
+            return;
+        }
+
+        foreach (['Classe_', 'Equipe_', 'PP_'] as $prefix) {
+            if (str_starts_with($rawName, $prefix)) {
+                throw new \InvalidArgumentException(
+                    "Le nom « {$rawName} » ne peut pas commencer par le préfixe réservé « {$prefix} » pour un groupe de type classe/équipe."
+                );
+            }
+        }
+    }
+
+    /**
+     * Retire un éventuel préfixe de classe/équipe (`Classe_`, `Equipe_`, `PP_`)
+     * pour retrouver la base nue. Idempotent sur un nom déjà nu.
+     */
+    private function stripClasseLikePrefix(string $name): string
+    {
+        foreach (['Classe_', 'Equipe_', 'PP_'] as $prefix) {
+            if (str_starts_with($name, $prefix)) {
+                return substr($name, strlen($prefix));
+            }
+        }
+
+        return $name;
     }
 
     /**

@@ -12,6 +12,7 @@ use App\Repositories\GroupRepository;
 use App\Repositories\RightRepository;
 use App\Repositories\UserGroupRepository;
 use App\Services\UserGroupService;
+use ReflectionClass;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Collection;
@@ -43,6 +44,14 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             Schema::dropIfExists('users');
         }
         UserGroupObserver::enableSync();
+
+        // Purge le cache statique request-scope de User (rempli par primeNoLdap)
+        // pour éviter qu'un login réutilisé hérite d'une entrée d'un test antérieur.
+        $ref = new ReflectionClass(User::class);
+        $prop = $ref->getProperty('ldapCache');
+        $prop->setAccessible(true);
+        $prop->setValue(null, []);
+
         parent::tearDown();
     }
 
@@ -82,6 +91,8 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             'role' => 'eleve',
             'is_active' => true,
         ]);
+
+        $this->primeNoLdap('alice');
 
         $primary = $service->createGroup([
             'name' => '3emeA',
@@ -215,20 +226,509 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $this->assertFalse(UserGroup::query()->where('name', 'Classe_3emeA')->exists());
     }
 
+    #[Test]
+    public function it_partitions_members_by_role_between_equipe_and_classe(): void
+    {
+        // 1 prof + 2 élèves dans une classe 3A : le prof doit aller dans
+        // Equipe_3A, les 2 élèves dans Classe_3A. PP_3A reste vide.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [],
+                'Equipe_3A' => [],
+                'PP_3A' => [],
+            ],
+        );
+
+        $prof = User::query()->create([
+            'login' => 'prof.martin',
+            'role' => 'prof',
+            'dn' => 'CN=prof.martin,OU=Users,DC=example,DC=local',
+            'is_active' => true,
+        ]);
+        $eleve1 = User::query()->create([
+            'login' => 'eleve.un',
+            'role' => 'eleve',
+            'dn' => 'CN=eleve.un,OU=Users,DC=example,DC=local',
+            'is_active' => true,
+        ]);
+        $eleve2 = User::query()->create([
+            'login' => 'eleve.deux',
+            'role' => 'eleve',
+            'dn' => 'CN=eleve.deux,OU=Users,DC=example,DC=local',
+            'is_active' => true,
+        ]);
+
+        $this->primeNoLdap('prof.martin', 'eleve.un', 'eleve.deux');
+
+        $service->createGroup([
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof->id, $eleve1->id, $eleve2->id],
+        ]);
+
+        $this->assertSame(
+            ['CN=prof.martin,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('Equipe_3A')
+        );
+        $this->assertEqualsCanonicalizing(
+            [
+                'CN=eleve.un,OU=Users,DC=example,DC=local',
+                'CN=eleve.deux,OU=Users,DC=example,DC=local',
+            ],
+            $this->addedDnsFor('Classe_3A')
+        );
+
+        // PP_X jamais peuplé (D1 — différé).
+        $this->assertSame([], $this->addedDnsFor('PP_3A'));
+        $this->assertSame([], $this->removedDnsFor('PP_3A'));
+    }
+
+    #[Test]
+    public function it_is_idempotent_when_resyncing_same_partition(): void
+    {
+        // Le prof est déjà dans Equipe_3A et l'élève déjà dans Classe_3A :
+        // un nouveau sync ne doit produire aucun add ni remove.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['dn' => 'CN=eleve.un,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [['dn' => 'CN=prof.martin,OU=Users,DC=example,DC=local']],
+                'PP_3A' => [],
+            ],
+            mutableMembership: true,
+        );
+
+        $prof = User::query()->create([
+            'login' => 'prof.martin',
+            'role' => 'prof',
+            'dn' => 'CN=prof.martin,OU=Users,DC=example,DC=local',
+            'is_active' => true,
+        ]);
+        $eleve = User::query()->create([
+            'login' => 'eleve.un',
+            'role' => 'eleve',
+            'dn' => 'CN=eleve.un,OU=Users,DC=example,DC=local',
+            'is_active' => true,
+        ]);
+
+        $this->primeNoLdap('prof.martin', 'eleve.un');
+
+        // Le CN primaire stocké en SQL est `Classe_3A` (résolu à la création) ;
+        // l'edit-form renvoie ce nom. Le helper doit dériver la base `3A` et
+        // partitionner sans rien changer (membres déjà bien placés).
+        $group = UserGroup::query()->create([
+            'name' => 'Classe_3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+        ]);
+
+        $service->updateGroup($group->id, [
+            'name' => 'Classe_3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof->id, $eleve->id],
+        ]);
+
+        $this->assertSame([], $this->addedDnsFor('Equipe_3A'));
+        $this->assertSame([], $this->addedDnsFor('Classe_3A'));
+        $this->assertSame([], $this->removedDnsFor('Equipe_3A'));
+        $this->assertSame([], $this->removedDnsFor('Classe_3A'));
+    }
+
+    #[Test]
+    public function it_removes_prof_from_equipe_when_detached(): void
+    {
+        // Le prof est dans Equipe_3A puis n'est plus sélectionné : il doit
+        // être retiré d'Equipe_3A (fail-soft, DN connu SQL).
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['dn' => 'CN=eleve.un,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [['dn' => 'CN=prof.martin,OU=Users,DC=example,DC=local']],
+                'PP_3A' => [],
+            ],
+            mutableMembership: true,
+        );
+
+        // Le prof reste connu SQL (sa branche removeMember ne porte que sur les DN SQL).
+        User::query()->create([
+            'login' => 'prof.martin',
+            'role' => 'prof',
+            'dn' => 'CN=prof.martin,OU=Users,DC=example,DC=local',
+            'is_active' => true,
+        ]);
+        $eleve = User::query()->create([
+            'login' => 'eleve.un',
+            'role' => 'eleve',
+            'dn' => 'CN=eleve.un,OU=Users,DC=example,DC=local',
+            'is_active' => true,
+        ]);
+
+        $this->primeNoLdap('prof.martin', 'eleve.un');
+
+        $group = UserGroup::query()->create([
+            'name' => 'Classe_3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+        ]);
+
+        // On ne garde que l'élève.
+        $service->updateGroup($group->id, [
+            'name' => 'Classe_3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$eleve->id],
+        ]);
+
+        $this->assertSame(
+            ['CN=prof.martin,OU=Users,DC=example,DC=local'],
+            $this->removedDnsFor('Equipe_3A')
+        );
+        $this->assertSame([], $this->removedDnsFor('Classe_3A'));
+        $this->assertSame([], $this->addedDnsFor('Classe_3A')); // élève déjà présent
+    }
+
+    #[Test]
+    public function it_moves_member_between_equipe_and_classe_on_role_switch(): void
+    {
+        // Un membre était prof (dans Equipe_3A), devient élève : au sync suivant
+        // il doit être retiré d'Equipe_3A et ajouté à Classe_3A (jamais dans les deux).
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [],
+                'Equipe_3A' => [['dn' => 'CN=jean.dupont,OU=Users,DC=example,DC=local']],
+                'PP_3A' => [],
+            ],
+            mutableMembership: true,
+        );
+
+        // Bascule prof -> eleve.
+        $switched = User::query()->create([
+            'login' => 'jean.dupont',
+            'role' => 'eleve',
+            'dn' => 'CN=jean.dupont,OU=Users,DC=example,DC=local',
+            'is_active' => true,
+        ]);
+
+        $this->primeNoLdap('jean.dupont');
+
+        $group = UserGroup::query()->create([
+            'name' => 'Classe_3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+        ]);
+
+        $service->updateGroup($group->id, [
+            'name' => 'Classe_3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$switched->id],
+        ]);
+
+        // Retiré d'Equipe_3A, ajouté à Classe_3A.
+        $this->assertSame(
+            ['CN=jean.dupont,OU=Users,DC=example,DC=local'],
+            $this->removedDnsFor('Equipe_3A')
+        );
+        $this->assertSame(
+            ['CN=jean.dupont,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('Classe_3A')
+        );
+        $this->assertSame([], $this->addedDnsFor('Equipe_3A'));
+
+        // Plus présent dans Equipe_3A, présent dans Classe_3A (état mutable final).
+        $this->assertSame([], $this->adMembersByCn['Equipe_3A']);
+        $this->assertSame(
+            [['dn' => 'CN=jean.dupont,OU=Users,DC=example,DC=local']],
+            $this->adMembersByCn['Classe_3A']
+        );
+    }
+
+    #[Test]
+    public function it_moves_member_from_classe_to_equipe_on_eleve_to_prof_switch(): void
+    {
+        // Sens inverse (AC3 « ou inverse ») : un membre était élève (dans Classe_3A),
+        // devient prof : au sync suivant il doit être retiré de Classe_3A et ajouté
+        // à Equipe_3A (jamais dans les deux).
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['dn' => 'CN=jean.dupont,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [],
+                'PP_3A' => [],
+            ],
+            mutableMembership: true,
+        );
+
+        // Bascule eleve -> prof.
+        $switched = User::query()->create([
+            'login' => 'jean.dupont',
+            'role' => 'prof',
+            'dn' => 'CN=jean.dupont,OU=Users,DC=example,DC=local',
+            'is_active' => true,
+        ]);
+
+        $this->primeNoLdap('jean.dupont');
+
+        $group = UserGroup::query()->create([
+            'name' => 'Classe_3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+        ]);
+
+        $service->updateGroup($group->id, [
+            'name' => 'Classe_3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$switched->id],
+        ]);
+
+        // Retiré de Classe_3A, ajouté à Equipe_3A.
+        $this->assertSame(
+            ['CN=jean.dupont,OU=Users,DC=example,DC=local'],
+            $this->removedDnsFor('Classe_3A')
+        );
+        $this->assertSame(
+            ['CN=jean.dupont,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('Equipe_3A')
+        );
+        $this->assertSame([], $this->addedDnsFor('Classe_3A'));
+
+        // Plus présent dans Classe_3A, présent dans Equipe_3A (état mutable final).
+        $this->assertSame([], $this->adMembersByCn['Classe_3A']);
+        $this->assertSame(
+            [['dn' => 'CN=jean.dupont,OU=Users,DC=example,DC=local']],
+            $this->adMembersByCn['Equipe_3A']
+        );
+    }
+
+    #[Test]
+    public function it_rejects_reserved_prefix_name_for_classe_like_create(): void
+    {
+        // Garde-fou : un nom NU portant un préfixe réservé (Classe_/Equipe_/PP_)
+        // pour un type classe/équipe doit être rejeté dès la validation — sinon
+        // l'expansion viserait des CN AD fantômes (échec LDAP silencieux).
+        $service = $this->makeService(collect([]), []);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $service->createGroup([
+            'name' => 'PP_terminale',
+            'display_name' => 'PP terminale',
+            'type' => 'classe',
+        ]);
+    }
+
+    #[Test]
+    public function it_keeps_single_target_for_non_classe_types(): void
+    {
+        // Type cours : pas de partition par rôle, une seule cible (Cours_X).
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Cours_Maths5A', 'OU=Cours'),
+                $this->adGroupRow('Equipe_Maths5A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Cours_Maths5A' => [],
+                'Equipe_Maths5A' => [],
+            ],
+        );
+
+        $prof = User::query()->create([
+            'login' => 'prof.maths',
+            'role' => 'prof',
+            'dn' => 'CN=prof.maths,OU=Users,DC=example,DC=local',
+            'is_active' => true,
+        ]);
+
+        $this->primeNoLdap('prof.maths');
+
+        $service->createGroup([
+            'name' => 'Maths5A',
+            'display_name' => 'Maths 5A',
+            'type' => 'cours',
+            'user_ids' => [$prof->id],
+        ]);
+
+        $this->assertSame(
+            ['CN=prof.maths,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('Cours_Maths5A')
+        );
+        // Aucune écriture sur Equipe_Maths5A (pas de partition pour le type cours).
+        $this->assertSame([], $this->addedDnsFor('Equipe_Maths5A'));
+        $this->assertSame([], $this->removedDnsFor('Equipe_Maths5A'));
+    }
+
+    #[Test]
+    public function it_does_not_re_expand_prefixed_matiere_classe_cn(): void
+    {
+        // Un CN legacy préfixé (Matiere_Math@3emeA) ne doit jamais être ré-expansé
+        // en Equipe_/Classe_ : on cible exactement ce groupe.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Matiere_Math@3emeA', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Matiere_Math@3emeA' => [],
+            ],
+        );
+
+        $prof = User::query()->create([
+            'login' => 'prof.math',
+            'role' => 'prof',
+            'dn' => 'CN=prof.math,OU=Users,DC=example,DC=local',
+            'is_active' => true,
+        ]);
+
+        $this->primeNoLdap('prof.math');
+
+        $service->createGroup([
+            'name' => 'Math@3emeA',
+            'display_name' => 'Math 3ème A',
+            'type' => 'matiere_classe',
+            'user_ids' => [$prof->id],
+        ]);
+
+        $this->assertSame(
+            ['CN=prof.math,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('Matiere_Math@3emeA')
+        );
+        // Aucune expansion vers Equipe_/Classe_.
+        $this->assertSame([], $this->addedDnsFor('Equipe_Math@3emeA'));
+        $this->assertSame([], $this->addedDnsFor('Classe_Math@3emeA'));
+    }
+
+    /**
+     * Court-circuite la résolution LDAP de `User::isProf()/isEleve()` en
+     * pré-remplissant le cache request-scope statique avec `null` : sans
+     * connexion AD sur l'hôte de test, la résolution retombe alors sur
+     * `users.role` (comportement de fallback déjà présent dans le modèle).
+     */
+    private function primeNoLdap(string ...$logins): void
+    {
+        $ref = new ReflectionClass(User::class);
+        $prop = $ref->getProperty('ldapCache');
+        $prop->setAccessible(true);
+
+        /** @var array<string,mixed> $cache */
+        $cache = $prop->getValue();
+
+        foreach ($logins as $login) {
+            $cache['ldap:' . $login] = null;
+            $cache['bo:' . $login] = null;
+        }
+
+        $prop->setValue(null, $cache);
+    }
+
+    private function adGroupRow(string $cn, string $ou = 'OU=Classes'): array
+    {
+        return [
+            'cn' => $cn,
+            'dn' => "CN={$cn},{$ou},OU=Groups,DC=example,DC=local",
+            'description' => $cn,
+        ];
+    }
+
+    /**
+     * Journal des appels add/remove vers la couche AD du dernier service fabriqué.
+     * Forme : [['op' => 'add'|'remove', 'group' => string, 'dn' => string], …]
+     *
+     * @var array<int,array{op:string,group:string,dn:string}>
+     */
+    private array $membershipCalls = [];
+
+    /**
+     * État mutable des membres AD par CN, partagé entre getGroupMembers/add/remove
+     * pour simuler l'idempotence réelle de la couche LDAP.
+     *
+     * @var array<string,array<int,array{cn?:string,dn:string}>>
+     */
+    private array $adMembersByCn = [];
+
     /**
      * @param array<string,array<int,array{cn:string,dn:string}>> $groupMembersByCn
      */
-    private function makeService(Collection $groupsWithMemberCount, array $rights, array $groupMembersByCn = []): UserGroupService
-    {
+    private function makeService(
+        Collection $groupsWithMemberCount,
+        array $rights,
+        array $groupMembersByCn = [],
+        bool $mutableMembership = false,
+    ): UserGroupService {
+        $this->membershipCalls = [];
+        $this->adMembersByCn = $groupMembersByCn;
+
         $groupRepository = $this->createMock(GroupRepository::class);
         $groupRepository->method('getGroupsWithMemberCount')->willReturn($groupsWithMemberCount);
         $groupRepository->method('createGroup')->willReturn(true);
         $groupRepository->method('deleteGroup')->willReturn(true);
         $groupRepository->method('updateGroupDescription')->willReturn(true);
-        $groupRepository->method('addMember')->willReturn(true);
-        $groupRepository->method('removeMember')->willReturn(true);
+
+        $groupRepository->method('addMember')->willReturnCallback(
+            function (string $cn, string $dn) use ($mutableMembership): bool {
+                $this->membershipCalls[] = ['op' => 'add', 'group' => $cn, 'dn' => $dn];
+
+                if ($mutableMembership) {
+                    $this->adMembersByCn[$cn] ??= [];
+                    foreach ($this->adMembersByCn[$cn] as $member) {
+                        if (($member['dn'] ?? '') === $dn) {
+                            return true;
+                        }
+                    }
+                    $this->adMembersByCn[$cn][] = ['dn' => $dn];
+                }
+
+                return true;
+            }
+        );
+
+        $groupRepository->method('removeMember')->willReturnCallback(
+            function (string $cn, string $dn) use ($mutableMembership): bool {
+                $this->membershipCalls[] = ['op' => 'remove', 'group' => $cn, 'dn' => $dn];
+
+                if ($mutableMembership && isset($this->adMembersByCn[$cn])) {
+                    $this->adMembersByCn[$cn] = array_values(array_filter(
+                        $this->adMembersByCn[$cn],
+                        static fn(array $member): bool => ($member['dn'] ?? '') !== $dn
+                    ));
+                }
+
+                return true;
+            }
+        );
+
         $groupRepository->method('getGroupMembers')->willReturnCallback(
-            static fn(string $cn): Collection => collect($groupMembersByCn[$cn] ?? [])
+            fn(string $cn): Collection => collect($this->adMembersByCn[$cn] ?? [])
         );
 
         $rightRepository = $this->createMock(RightRepository::class);
@@ -239,6 +739,34 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
             $groupRepository,
             $rightRepository,
         );
+    }
+
+    /**
+     * @return array<int,string> DN ajoutés au groupe $cn dans l'ordre des appels
+     */
+    private function addedDnsFor(string $cn): array
+    {
+        return array_values(array_map(
+            static fn(array $call): string => $call['dn'],
+            array_filter(
+                $this->membershipCalls,
+                static fn(array $call): bool => $call['op'] === 'add' && $call['group'] === $cn
+            )
+        ));
+    }
+
+    /**
+     * @return array<int,string> DN retirés du groupe $cn dans l'ordre des appels
+     */
+    private function removedDnsFor(string $cn): array
+    {
+        return array_values(array_map(
+            static fn(array $call): string => $call['dn'],
+            array_filter(
+                $this->membershipCalls,
+                static fn(array $call): bool => $call['op'] === 'remove' && $call['group'] === $cn
+            )
+        ));
     }
 
     private function createTestTables(): void

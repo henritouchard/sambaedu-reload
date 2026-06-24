@@ -1,6 +1,6 @@
 # Story 4.12 : Peuplement des groupes AD `Equipe_X` par rôle (parité SE4 — ACL prof effectives)
 
-Status: ready
+Status: review
 
 > **Type** : quick spec mono-changement (parité ISO SE4). Pas de refonte de modèle.
 >
@@ -105,3 +105,55 @@ Les autres types (`cours`, `matiere`, `projet`, `custom`…) **conservent le com
 - Pas de colonne `role` sur le pivot, pas de profil/zones/matrice, pas de projection générique role-groups — orientation future parquée (`docs/group-model-multivertical-orientation.md`).
 - Pas de modification des ACLs ni de `ShareService`/`AclService`.
 - Pas de changement de l'UI de gestion des groupes (l'UI mono-nom reste la cible ISO SE4).
+
+---
+
+## Tasks / Subtasks
+
+- [x] **T1 — Helper de projection centralisé** `syncRoleAwareAdGroupMembers(rawName, type, userIds)` dans `UserGroupService` (AC1, AC2, AC3) :
+  - [x] type ∈ {classe, equipe} : partition binaire par `User::isProf()` → profs vers `Equipe_<base>`, reste vers `Classe_<base>` ;
+  - [x] dérivation de la base nue via `stripClasseLikePrefix()` (gère le nom NU de `createGroup` ET le CN primaire `Classe_X`/`Equipe_X` renvoyé par l'edit-form de `updateGroup`) ;
+  - [x] types non-classe : cible unique via `resolvePrimaryGroupName()` (bypass des CN legacy `Matiere_*@*`, `Cours_*`, `Projet_*`, `Matiere_*` — pas de ré-expansion) ;
+  - [x] sync systématique des DEUX cibles (même partition vide) pour garantir le retrait/bascule.
+- [x] **T2 — Branchement** dans `createGroup` (remplace l'appel `syncAdGroupMembersByUserIds($primaryGroupName, …)`) ET `updateGroup` (remplace `syncAdGroupMembersByUserIds($newName, …)`), supprimant l'incohérence nom-résolu vs nom-brut (AC1).
+- [x] **T3 — Idempotence / bascule de rôle** : réutilisation telle quelle du diff add/remove fail-soft de `syncAdGroupMembersByUserIds` (AC2, AC3). Aucune réécriture de la couche LDAP.
+- [x] **T4 — Non-régression ShareService/AclService/UI** : aucune modification (AC4, AC5).
+- [x] **T5 — Tests hôte** : extension de `UserGroupServiceLegacyCompatibilityTest` (partition par rôle, idempotence, retrait prof, bascule prof↔élève, type non-classe, bypass CN `matiere_classe`). Mocks `GroupRepository` add/remove/getGroupMembers.
+
+> **Limite connue (D1)** : `PP_X` reste non peuplé — rôle prof-principal par-arête non capturé par `users.role`. Sans effet sur l'objectif (aucune ACL `ShareService` sur `PP_X`).
+
+---
+
+## Dev Agent Record
+
+### Context
+
+- Modèle réel respecté : 1 ligne SQL (nom NU ou CN primaire) → le serveur expanse les CN AD. `createGroup` stocke le **CN primaire résolu** (`Classe_X`) comme `name` SQL ; l'edit-form de `updateGroup` renvoie donc ce CN. Le helper dérive la base nue (`stripClasseLikePrefix`) pour réconcilier les deux chemins — c'est la dé-duplication exigée par la story.
+- `User::isProf()` retombe sur `users.role` quand aucune résolution LDAP n'est disponible.
+
+### Completion Notes
+
+- **Partition par rôle** : profs → `Equipe_<base>`, tout le reste (élèves/admin/autre) → `Classe_<base>`. `PP_<base>` jamais touché.
+- **Idempotence & bascule** : le diff existant (add = `desired \ current`, remove = `current ∩ sqlKnown \ desired`) suffit ; en synchronisant systématiquement les deux cibles, un membre prof→élève est retiré d'`Equipe_X` et ajouté à `Classe_X` au sync suivant (jamais présent dans les deux). Vérifié par test mutable-membership.
+- **Bypass** : `matiere_classe` (`Matiere_X@Y`), `cours`, `projet`, `matiere` → cible unique inchangée (pas de ré-expansion en Classe_/Equipe_).
+- **Aucune modification** de `ShareService`/`AclService`/ACL/UI.
+
+#### Détail d'environnement de test (worktree)
+
+Le worktree n'a pas de `vendor/` ni `bootstrap/cache` propres. Pour exécuter les tests sur l'hôte **sans toucher la VM**, `vendor/` a été reconstruit localement (packages symlinkés depuis le repo principal, mais `vendor/autoload.php`, `vendor/composer/` et `vendor/bin/` recopiés en réel pour que l'autoloader PSR-4/classmap résolve vers le `app/` du **worktree** et non du repo principal). `bootstrap/cache/` créé. Ces répertoires sont gitignored (aucun impact sur le commit).
+
+### File List
+
+- `app/Services/UserGroupService.php` (modifié) — `createGroup`/`updateGroup` branchés sur le nouveau helper ; ajout de `syncRoleAwareAdGroupMembers()` et `stripClasseLikePrefix()`.
+- `tests/Unit/Services/UserGroupServiceLegacyCompatibilityTest.php` (modifié) — 6 nouveaux scénarios + helpers de capture des appels add/remove et `primeNoLdap()` (court-circuit LDAP → fallback `role`).
+- `docs/qa/domains/rights-management.md` (modifié) — section append-only scénarios e2e peuplement `Equipe_X` / getfacl prof / bascule de rôle.
+
+### Change Log
+
+- 2026-06-24 — Implémentation 4.12 : peuplement `Equipe_X` par rôle (partition `isProf()` centralisée), branchée sur create/update, idempotente fail-soft. Status → review.
+
+---
+
+## Senior Developer Review (AI)
+
+_(à compléter en phase de code-review)_

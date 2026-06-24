@@ -440,6 +440,50 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 'cd /var/www/sambaedu-reload && ph
 
 ---
 
+## Section 6 — Peuplement des groupes AD `Equipe_X` par rôle (Story 4.12, 2026-06-24)
+
+> **Contexte.** Sur une install greenfield SE5, profs ET élèves d'une classe atterrissaient tous dans `Classe_X` ; `Equipe_X` (et `PP_X`) restaient vides. Les ACLs `group:equipe_<x>:rwx` posées par `ShareService` ne mordaient donc sur aucun dossier → le prof n'avait aucun droit. La 4.12 partitionne les membres par rôle au moment de la sync AD : profs → `Equipe_X`, reste → `Classe_X`. `PP_X` reste volontairement non peuplé (limite connue D1). Aucune modification de `ShareService`/ACLs.
+
+> **Pré-requis spécifiques.** AD réel (VM). Au moins 1 user `role=prof` et 2 users `role=eleve` avec un `dn` AD valide. Vérifier les appartenances AD réelles avec `samba-tool group listmembers <CN>` et `getent group <cn>`. Migrations VM non auto-jouées → `php artisan migrate:status` avant. Chown `www-admin` si un fichier de config est touché.
+
+### Scénario 6.1 — Création d'une classe : partition prof/élève
+
+1. UI `/app/users/groups/new` : créer un groupe `type=classe`, nom `3A`, et y assigner 1 prof + 2 élèves.
+2. Vérifier l'appartenance AD réelle :
+   - `samba-tool group listmembers Equipe_3A` → **uniquement** le prof.
+   - `samba-tool group listmembers Classe_3A` → **uniquement** les 2 élèves.
+   - `samba-tool group listmembers PP_3A` → **vide** (limite connue D1, attendu).
+3. Read-back SQL : `/app/users/groups/[id]` du groupe primaire reste cohérent (pas de ligne dupliquée, l'UI mono-nom s'affiche normalement). Le membre d'`Equipe_3A` est classé `type=equipe` au prochain `syncFromAd`.
+
+### Scénario 6.2 — getfacl : le prof est effectivement `rwx`
+
+1. Après 6.1, lancer le partage de classe (`ShareService::createClassShare` via l'UI de la classe) puis l'assignation.
+2. `getfacl /var/sambaedu/Classes/Classe_3A/_travail` → ligne `group:equipe_3a:rwx` **effective** (groupe non vide, le prof l'applique).
+3. `getfacl` sur un dossier élève de la classe → idem `group:equipe_3a:rwx` effectif.
+4. Se connecter en tant que le prof sur un poste : il peut lire/écrire dans `_travail` et dans les dossiers élèves de la classe.
+
+### Scénario 6.3 — Retrait d'un prof (idempotence fail-soft)
+
+1. Dans l'edit-form du groupe, retirer le prof de la sélection des membres, enregistrer.
+2. `samba-tool group listmembers Equipe_3A` → le prof n'y est **plus**. Les élèves restent dans `Classe_3A`.
+3. Ré-enregistrer sans changement (re-sync) → aucun doublon, aucune erreur (le retrait ne porte que sur les DN connus SQL ; DN absent = no-op silencieux).
+
+### Scénario 6.4 — Bascule de rôle prof ↔ élève
+
+1. Un membre de la classe, initialement `role=prof` (donc dans `Equipe_3A`), voit son `role` passer à `eleve` (changement AD/SQL).
+2. Re-synchroniser le groupe (edit-form enregistré, ou `syncFromAd`).
+3. `samba-tool group listmembers Equipe_3A` → le membre n'y est **plus** ; `samba-tool group listmembers Classe_3A` → il y **est**. Jamais présent dans les deux.
+4. Cas inverse `eleve` → `prof` : le membre est déplacé `Classe_3A` → `Equipe_3A` au sync suivant.
+
+### Scénario 6.5 — Types non-classe inchangés (cible unique)
+
+1. Créer un groupe `type=cours` (ex. `Maths5A`) avec un prof, OU un groupe `matiere_classe` (CN préfixé `Matiere_Math@3emeA`).
+2. Vérifier qu'**aucune** ré-expansion `Equipe_`/`Classe_` n'a lieu : le membre est écrit dans la **seule** cible résolue (`Cours_Maths5A`, resp. `Matiere_Math@3emeA`). `Equipe_*`/`Classe_*` correspondants ne sont pas touchés.
+
+> **Couverture automatisée.** `tests/Unit/Services/UserGroupServiceLegacyCompatibilityTest.php` (hôte, sqlite) couvre 6.1 (partition), 6.3 (retrait + idempotence), 6.4 (bascule), 6.5 (cours + bypass `matiere_classe`). 6.2 (getfacl prof effectif) et l'appartenance AD réelle = validation manuelle /vm uniquement.
+
+---
+
 ## Post-correctifs & non-régressions
 
 ### Post-correctifs Story 7.2 (review 2026-04-23)
@@ -511,6 +555,13 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 'cd /var/www/sambaedu-reload && ph
 - [ ] 5.5 `RightsService::calculateRights()` fonctionne avec LDAP down
 - [ ] 5.6 Drawer `rights-drawer` affiche rôles + permissions Spatie (zéro hex)
 - [ ] 5.7 Round-trip identité bitmask LDAP-source vs Spatie-source
+
+**Section 6 — Peuplement `Equipe_X` par rôle (Story 4.12, 5 scénarios)**
+- [ ] 6.1 Création classe : prof → `Equipe_X`, élèves → `Classe_X`, `PP_X` vide
+- [ ] 6.2 `getfacl` : `group:equipe_<x>:rwx` effectif (prof rwx réel)
+- [ ] 6.3 Retrait d'un prof → enlevé d'`Equipe_X`, idempotent fail-soft
+- [ ] 6.4 Bascule prof↔élève → déplacé entre `Equipe_X` et `Classe_X` (jamais les deux)
+- [ ] 6.5 Types non-classe (cours / `matiere_classe`) → cible unique, pas de ré-expansion
 
 **Non-régressions**
 - [ ] Drawer Rôles + Permissions
