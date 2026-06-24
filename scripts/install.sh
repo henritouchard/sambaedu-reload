@@ -11,6 +11,10 @@ APP_DIR="$(dirname "$SCRIPT_DIR")"
 
 TARGET_INSTALL_DIR="/var/www/sambaedu-reload"
 
+# Composer tourne en root pendant l'install (VM/serveur dédié) : on supprime
+# le prompt « Continue as root/super user [yes]? » sans interaction.
+export COMPOSER_ALLOW_SUPERUSER=1
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'

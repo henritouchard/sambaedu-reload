@@ -523,9 +523,12 @@ return [
         'download_timeout_seconds' => (int) env('IPXE_ISO_DOWNLOAD_TIMEOUT', 7200),  // 2h curl
         'extract_timeout_seconds'  => (int) env('IPXE_ISO_EXTRACT_TIMEOUT', 1800),   // 30min install-win-iso.sh
 
-        // Nom de la queue Laravel dédiée. Doit matcher l'argument
-        // `--queue=ipxe_iso_downloads` du worker systemd (T0.5).
-        'queue_name' => env('IPXE_ISO_QUEUE', 'ipxe_iso_downloads'),
+        // Nom de la queue Laravel. Les uploads d'ISO étant rares et le Job
+        // portant son propre `$timeout` (download + extract ~9300s), on le
+        // route sur la queue `default` déjà consommée par les workers systemd
+        // (laravel-queue-worker / laravel-queue-general) plutôt que de
+        // maintenir un worker dédié `ipxe_iso_downloads`.
+        'queue_name' => env('IPXE_ISO_QUEUE', 'default'),
 
         // Cache::lock global (D15) — defense in depth couche 1 vs
         // `WithoutOverlapping` Job middleware couche 2.

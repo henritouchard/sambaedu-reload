@@ -56,6 +56,12 @@ class AgentBootstrapPublisher
     /** Cache de la sonde `kinit --password-file` (Heimdal=true, MIT=false). */
     private ?bool $kinitSupportsPasswordFile = null;
 
+    /** Handle /dev/null gardé vivant après détachement de fd 0 du TTY. */
+    private $nullStdin = null;
+
+    /** Garde : ne détacher stdin qu'une fois par instance. */
+    private bool $stdinDetached = false;
+
     public function __construct(
         private readonly GpoService $gpoService,
         private readonly GpoTemplateRegistry $registry,
@@ -308,6 +314,16 @@ class AgentBootstrapPublisher
         $ccache = $this->makeTempCcachePath();
         $previousCcache = getenv('KRB5CCNAME');
 
+        // Les fonctions legacy (gpocreate → `samba-tool gpo create`, sysvol_put →
+        // `smbclient`) sont lancées par `exec()` qui hérite du fd 0 du process PHP.
+        // En CLI (artisan, ou via update.sh) c'est un TTY : si l'auth Kerberos SMB
+        // vers SYSVOL échoue (ex. winbind WBC_ERR_DOMAIN_NOT_FOUND sur un DC mal
+        // résolu), l'outil retombe sur un PROMPT mot de passe et bloque
+        // INDÉFINIMENT — prompt invisible car la sortie est capturée par ob_start().
+        // On détache fd 0 du TTY (→ /dev/null) : l'outil reçoit EOF et échoue vite
+        // (fail-soft) au lieu de pendre. Sans effet sur le cas sain (pas de prompt).
+        $this->detachStdinFromTty();
+
         try {
             $this->kinitAdministrator($adminPasswd, $ccache, $writeLog);
 
@@ -497,6 +513,27 @@ class AgentBootstrapPublisher
                 . 'joignabilité du contrôleur de domaine.'
             );
         }
+    }
+
+    /**
+     * Réattache fd 0 (STDIN) à /dev/null pour que les `exec()` legacy
+     * (samba-tool/smbclient) n'héritent jamais d'un TTY → jamais de prompt mot de
+     * passe bloquant. Idempotent, CLI uniquement. Le publisher ne lit pas stdin,
+     * donc le détachement est sans effet de bord. Le handle /dev/null est conservé
+     * en propriété pour éviter que le GC ne referme fd 0.
+     */
+    private function detachStdinFromTty(): void
+    {
+        if ($this->stdinDetached || PHP_SAPI !== 'cli') {
+            return;
+        }
+        $this->stdinDetached = true;
+
+        if (defined('STDIN') && is_resource(STDIN)) {
+            @fclose(STDIN);
+        }
+        // fopen prend le plus bas descripteur libre (= fd 0 qu'on vient de fermer).
+        $this->nullStdin = @fopen('/dev/null', 'r');
     }
 
     // -----------------------------------------------------------------------

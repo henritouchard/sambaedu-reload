@@ -55,6 +55,17 @@ final class AgentToolsRegisterDefaultsCommand extends Command
             ));
 
             return self::SUCCESS;
+        } catch (\Throwable $e) {
+            // FAIL-SOFT élargi : toute autre erreur (DB indisponible, contrainte,
+            // I/O…) re-levée par registerEmbedded() ne doit PAS casser
+            // l'install/update — on warn et on sort en SUCCESS (docblock : « ne
+            // casse JAMAIS l'install/update »).
+            $this->warn(sprintf(
+                'Enregistrement du portable Rainmeter ignoré (erreur inattendue : %s) — l\'outil pourra être uploadé via l\'UI.',
+                $e->getMessage(),
+            ));
+
+            return self::SUCCESS;
         }
 
         if ($tool === null) {
@@ -78,7 +89,10 @@ final class AgentToolsRegisterDefaultsCommand extends Command
      */
     private function discoverEmbeddedRainmeter(): ?string
     {
-        $dir = base_path('resources/agent/tools');
+        // Répertoire de découverte = config `agent.tools_embedded_path` (défaut
+        // `resources/agent/tools`). Configurable pour tester le cas « découverte
+        // vide » sans dépendre du zip réel du dépôt.
+        $dir = rtrim((string) config('agent.tools_embedded_path', base_path('resources/agent/tools')), '/\\');
         $matches = glob($dir . DIRECTORY_SEPARATOR . 'sambaedu-rainmeter-*.zip') ?: [];
         if ($matches === []) {
             return null;
