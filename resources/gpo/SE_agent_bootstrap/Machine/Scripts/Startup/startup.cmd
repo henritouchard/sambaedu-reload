@@ -42,17 +42,24 @@ curl.exe -s -o "%AGENT_EXE%" "http://%SE4FS%/api/v1/agent/stable/download"
 :: --- (c) install/reparation du service (idempotent) -------------------------
 if exist "%AGENT_EXE%" "%AGENT_EXE%" install -server-url "http://%SE4FS%"
 
-:: --- (c2) client WPKG : wpkg-client.vbs a %WinDir% (self-heal SYSTEM) --------
+:: --- (c2) client WPKG : wpkg-client.vbs + wpkg-se4.js locaux (self-heal SYSTEM)
 :: L'agent DECLENCHE wpkg-client.vbs mais ne le telecharge pas (choix D7). La
 :: copie SMB a l'install (autologon se4install + auth ADS) est fragile ; on pose
 :: donc le client ICI, en SYSTEM (compte machine -> auth fiable), depuis le bundle
-:: HTTP. wpkg-se4.js est fetch au runtime par la vbs (SE4_WPKG_BUNDLE_URL fourni
-:: par l'agent au declenchement). Telechargement en .tmp + bascule SEULEMENT si
-:: taille plausible (>1000 o) : un corps d'erreur 404 (~50 o) n'ecrase jamais un
-:: client sain (lecon du faux agent.exe de 49 o).
+:: HTTP. La vbs localise le moteur a c:\windows\install\wpkg\wpkg-se4.js (MapZ,
+:: jadis symlink SMB pose par wpkg.cmd) ; sur greenfield ce symlink n'existe pas
+:: -> exit 13 (« wpkg-se4.js absent »). On pose donc le moteur LOCALEMENT au meme
+:: chemin (repertoire reel, pas de SMB) ; il est HTTP-aware (lit SE4_WPKG_BUNDLE_URL
+:: au runtime, fourni par l'agent au declenchement). Telechargement en .tmp +
+:: bascule SEULEMENT si taille plausible (>1000 o) : un corps d'erreur 404 (~50 o)
+:: n'ecrase jamais un fichier sain (lecon du faux agent.exe de 49 o).
 curl.exe -s -o "%TEMP%\wpkg-client.vbs.tmp" "http://%SE4FS%/wpkg/bundle/wpkg-client.vbs"
 for %%A in ("%TEMP%\wpkg-client.vbs.tmp") do if %%~zA GTR 1000 copy /Y "%TEMP%\wpkg-client.vbs.tmp" "%WINDIR%\wpkg-client.vbs" >nul
 if exist "%TEMP%\wpkg-client.vbs.tmp" del /f /q "%TEMP%\wpkg-client.vbs.tmp"
+if not exist "%WINDIR%\install\wpkg" md "%WINDIR%\install\wpkg" 2>nul
+curl.exe -s -o "%TEMP%\wpkg-se4.js.tmp" "http://%SE4FS%/wpkg/bundle/wpkg-se4.js"
+for %%A in ("%TEMP%\wpkg-se4.js.tmp") do if %%~zA GTR 1000 copy /Y "%TEMP%\wpkg-se4.js.tmp" "%WINDIR%\install\wpkg\wpkg-se4.js" >nul
+if exist "%TEMP%\wpkg-se4.js.tmp" del /f /q "%TEMP%\wpkg-se4.js.tmp"
 
 :: --- (d) (re)creation de la tache de refresh (SYSTEM, toutes les 240 min) ----
 :: Auto-reparation : si la tache est absente, on la recree (le filet eternel).
