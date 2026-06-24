@@ -177,6 +177,28 @@ cat > "$APACHE_SITES_AVAILABLE/sambaedu.conf" << VHOST_SER
         Require all granted
     </Directory>
 
+    # /wpkg/tools : OUTILS PARTAGÉS WPKG (Story 27.20) — archiveur 7za.exe,
+    # nircmd.exe (raccourcis), md5sum/wintail, tooltip/{wpkg-msg,tooltip}.exe.
+    # Contrairement aux PAYLOADS par-app (/wpkg/files, téléchargés dans %TEMP%),
+    # ce sont des outils « pareils pour tous » invoqués par les recettes via le
+    # chemin EN DUR %Z%\wpkg\tools\… (= c:\windows\install\wpkg\tools\). 27.19 ne
+    # les couvre PAS (aucun <download saveto> dans les recettes). On les sert donc
+    # ici en HTTP (transport cohérent 27.19, jamais SMB) ; le poste les dépose UNE
+    # FOIS sous %WinDir%\install\wpkg\tools\ via wpkg.cmd, de sorte que les recettes
+    # restent INCHANGÉES. GARDE-FOU SÉCURITÉ : pointe EXACTEMENT le sous-arbre des
+    # outils (`.../install/wpkg/tools`), JAMAIS `/var/sambaedu/unattended/install`
+    # entier (qui contient aussi wpkg/{tmp2,packages.xml,wpkg-client.vbs}, packages,
+    # ini, os, etc.), et JAMAIS storage/keys/pki (PFX code-signing + clés CA).
+    # -Indexes (pas de listing), PAS de FallbackResource (un 404 reste un 404, ne
+    # retombe pas sur Laravel). Outils world-readable 664, dossier à chown www-admin
+    # (lisible Apache) — sinon 404 silencieux. Outils publics : pas d'ACL requise.
+    Alias /wpkg/tools /var/sambaedu/unattended/install/wpkg/tools
+    <Directory /var/sambaedu/unattended/install/wpkg/tools>
+        Options -Indexes +FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+
     # /install/iso : ISO Windows *sources* (déposées par upload ou téléchargées
     # par curl), config ipxe.iso_management.iso_storage_path = storage/install/iso.
     # Déplacées hors du tree /os pour respecter la convention storage/ ; servies

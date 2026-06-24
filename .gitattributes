@@ -1,0 +1,3 @@
+# Scripts batch Windows servis verbatim dans le bundle WPKG : DOIVENT rester
+# en CRLF (un .cmd en LF echoue silencieusement sur cmd.exe, cf. update.sh).
+resources/wpkg/*.cmd text eol=crlf

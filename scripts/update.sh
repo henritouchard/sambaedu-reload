@@ -407,15 +407,18 @@ update_apache() {
         if grep -q "DocumentRoot.*sambaedu-reload/public" "$APACHE_CONF_TARGET" \
            && [[ -f "/etc/apache2/sites-available/sambaedu-legacy.conf" ]] \
            && grep -q "Alias /wpkg/bundle" "$APACHE_CONF_TARGET" \
-           && grep -q "Alias /wpkg/files" "$APACHE_CONF_TARGET"; then
+           && grep -q "Alias /wpkg/files" "$APACHE_CONF_TARGET" \
+           && grep -q "Alias /wpkg/tools" "$APACHE_CONF_TARGET"; then
             log_success "Apache déjà configuré pour SER (setupApache.sh)"
             return
         else
             # Vhost SER incomplet : legacy manquant OU alias /wpkg/bundle absent
             # (vhost antérieur à la Story 27.5) OU alias /wpkg/files absent (vhost
-            # antérieur à la Story 27.19 — livraison HTTP des payloads WPKG) →
-            # relancer setupApache.sh pour (re)poser les aliases. Idempotent.
-            log_warning "Configuration Apache SER incomplète (legacy ou alias /wpkg/bundle ou /wpkg/files manquant) — relance de setupApache.sh"
+            # antérieur à la Story 27.19 — livraison HTTP des payloads WPKG) OU
+            # alias /wpkg/tools absent (vhost antérieur à la Story 27.20 — outils
+            # partagés WPKG) → relancer setupApache.sh pour (re)poser les aliases.
+            # Idempotent.
+            log_warning "Configuration Apache SER incomplète (legacy ou alias /wpkg/bundle ou /wpkg/files ou /wpkg/tools manquant) — relance de setupApache.sh"
             if [[ -x "$SETUP_APACHE_SCRIPT" ]]; then
                 bash "$SETUP_APACHE_SCRIPT"
                 log_success "Apache reconfiguré via setupApache.sh"
@@ -883,6 +886,102 @@ ensure_wpkg_smb_client() {
 }
 
 # ============================================================================
+# Outils WPKG PARTAGÉS servis en HTTP (Story 27.20) — perms world-readable
+# ============================================================================
+# Les recettes WPKG invoquent des OUTILS partagés via le chemin EN DUR
+# %Z%\wpkg\tools\… (7za.exe, nircmd.exe, md5sum/wintail, tooltip/*). Ce ne sont
+# PAS des payloads par-app (aucun <download saveto>) : 27.19 ne les couvre pas.
+# 27.20 les sert en HTTP (alias Apache /wpkg/tools, posé par setupApache.sh) et
+# le poste les dépose une fois sous %WinDir%\install\wpkg\tools\ via wpkg.cmd.
+#
+# Source serveur : /var/sambaedu/unattended/install/wpkg/tools/ — DÉJÀ peuplé par
+# le `.deb` legacy `sambaedu-wpkg` (on ne re-livre PAS les binaires : ce ne sont
+# pas des assets versionnés du repo). Cette fonction garantit seulement les DROITS
+# pour qu'Apache les serve : world-readable (664 fichiers / 755 dossiers, le poste
+# est mappé classe SMB « other » côté legacy ET classe « other » Unix côté Apache —
+# un 660 échouerait en SILENCE, cf. payloads WPKG) + owner www-admin (sinon 404
+# silencieux). Sous-arbre tooltip/ préservé (find récursif). IDEMPOTENT (re-chmod).
+# FAIL-SOFT : dossier absent (VM greenfield sans le .deb) → WARNING explicite,
+# JAMAIS d'échec d'update — les recettes qui dépendent de ces outils échoueront
+# alors côté poste (diagnosticable dans wpkg.log), pas l'update serveur.
+
+ensure_wpkg_tools() {
+    log "Provisioning des droits sur les outils WPKG partagés (Story 27.20)..."
+
+    local install_root="${SE_INSTALL_ROOT:-/var/sambaedu/unattended/install}"
+    local tools_dir="$install_root/wpkg/tools"
+
+    if [[ ! -d "$tools_dir" ]]; then
+        log_warning "Répertoire des outils WPKG absent ($tools_dir) — outils partagés non servis (.deb sambaedu-wpkg non installé ?). Les recettes utilisant %Z%\\wpkg\\tools\\ (7za, nircmd) échoueront côté poste."
+        return 0
+    fi
+
+    if id www-admin >/dev/null 2>&1; then
+        chown -R www-admin:www-admin "$tools_dir" 2>/dev/null || \
+            log_warning "chown www-admin échoué sur $tools_dir (outils peuvent rester servis en 404)"
+    fi
+    # 664 fichiers (lisibles « other »), 755 dossiers. Sous-arbre tooltip/ inclus.
+    find "$tools_dir" -type f -exec chmod 664 {} \; 2>/dev/null || true
+    find "$tools_dir" -type d -exec chmod 755 {} \; 2>/dev/null || true
+
+    # ── manifest.json (Story 27.20, pivot agent-driven) ──────────────────────
+    # L'AGENT pilote le staging des outils : il fetch ce manifeste AVANT de
+    # déclencher WPKG, réconcilie PAR HASH (sha256) et dépose sous
+    # %WinDir%\install\wpkg\tools\. On l'énumère ici (sous-arbre tooltip/ inclus),
+    # on calcule le sha256 par fichier, et on écrit un tableau JSON aligné sur
+    # provision.Resource côté agent : [{id, kind:"wpkg-tool", relpath, sha256}].
+    # relpath = chemin RELATIF à tools_dir (slashes Unix, l'agent compose l'URL =
+    # toolsURL + "/" + relpath et préserve la sous-arbo). Le manifeste lui-même est
+    # exclu de l'énumération (jamais une ressource). World-readable 664 + www-admin
+    # (servi en « other » par Apache, comme les outils). IDEMPOTENT (réécrit à chaque
+    # update). Régénéré atomiquement (tmp + mv) — l'agent ne lit jamais un demi-fichier.
+    local manifest="$tools_dir/manifest.json"
+    # tmp HORS de tools_dir : sinon le `find` ci-dessous l'énumérerait (course).
+    local manifest_tmp
+    manifest_tmp="$(dirname "$tools_dir")/.wpkg-tools-manifest.$$.json.tmp"
+    {
+        echo "["
+        local first=1
+        # -print0 / read -d '' : robustesse aux espaces dans les noms.
+        while IFS= read -r -d '' f; do
+            local rel sha
+            rel="${f#"$tools_dir"/}"          # chemin relatif à tools_dir.
+            rel="${rel//\\//}"                # normalise en slashes Unix (défensif).
+            [[ "$rel" == "manifest.json" ]] && continue   # ne pas s'auto-référencer.
+            sha=$(sha256sum "$f" | awk '{print $1}')
+            local id="${rel##*/}"             # nom de fichier nu = id lisible.
+            # Échappement JSON défensif (backslash puis guillemet) : un nom de
+            # fichier contenant `"` produirait sinon un JSON malformé que l'agent
+            # rejetterait (fail-soft, mais diagnostic serveur difficile). sha = hex,
+            # sûr ; rel déjà normalisé en slashes Unix ci-dessus.
+            local id_esc="${id//\\/\\\\}";  id_esc="${id_esc//\"/\\\"}"
+            local rel_esc="${rel//\\/\\\\}"; rel_esc="${rel_esc//\"/\\\"}"
+            if [[ $first -eq 0 ]]; then echo "  ,"; fi
+            first=0
+            printf '  { "id": "%s", "kind": "wpkg-tool", "relpath": "%s", "sha256": "%s" }\n' \
+                "$id_esc" "$rel_esc" "$sha"
+        done < <(find "$tools_dir" -type f ! -name 'manifest.json' -print0 2>/dev/null)
+        echo "]"
+    } > "$manifest_tmp" 2>/dev/null
+
+    # Branche sur le résultat RÉEL du mv : un log_success inconditionnel masquerait
+    # un manifeste non écrit (droits/FS plein) → l'opérateur croit le manifeste en
+    # place alors que l'agent fetcherait un 404/une version périmée.
+    if mv -f "$manifest_tmp" "$manifest" 2>/dev/null; then
+        chmod 664 "$manifest" 2>/dev/null || true
+        if id www-admin >/dev/null 2>&1; then
+            chown www-admin:www-admin "$manifest" 2>/dev/null || true
+        fi
+        local tools_count
+        tools_count=$(find "$tools_dir" -type f ! -name 'manifest.json' | wc -l)
+        log_success "Outils WPKG partagés provisionnés ($tools_dir : $tools_count fichiers en 664, owner www-admin, sous-arbre tooltip/ inclus, manifest.json généré pour le staging agent-driven)"
+    else
+        rm -f "$manifest_tmp" 2>/dev/null || true
+        log_warning "manifest.json NON écrit ($manifest) — l'agent restera en fail-soft (pas de staging d'outils) au prochain cycle ; vérifier les droits/l'espace disque sur $tools_dir"
+    fi
+}
+
+# ============================================================================
 # Outils agent OBLIGATOIRES embarqués (Story 27.17) — provisioning fail-soft
 # ============================================================================
 # La couche « config par défaut du parc » (Broadcast) comporte des éléments
@@ -1138,6 +1237,9 @@ main() {
 
     echo ""
     ensure_wpkg_smb_client
+
+    echo ""
+    ensure_wpkg_tools
 
     echo ""
     ensure_agent_required_tools

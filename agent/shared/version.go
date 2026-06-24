@@ -59,6 +59,18 @@ package shared
 // %APPDATA%\Rainmeter\Rainmeter.ini durci, WRITABLE (atomique, idempotent, sans
 // ACL), au démarrage AVANT le lancement du watchdog. overlay.json reste écrit par
 // SYSTEM (NFR5 intact) ; contrat/golden inchangés.
+// 2.2.19 = staging AGENT-DRIVEN des outils WPKG partagés (Story 27.20, pivot
+// architectural). Le handler `applications` (windows) fetch désormais
+// `<server_url>/wpkg/tools/manifest.json` AVANT de déclencher `wpkg-client.vbs`,
+// puis appelle le NOUVEAU module générique `agent/provision` (Reconcile par hash)
+// pour déposer les outils (7za.exe, nircmd.exe, tooltip/*) sous
+// `%WinDir%\install\wpkg\tools\` (= `%Z%\wpkg\tools\`). Idempotence VRAIE par
+// sha256 (skip si déjà à jour), download atomique, fail-soft (un outil manquant
+// ne bloque pas le run). Remplace la tentative inerte de la 1re 27.20 (logique
+// outils dans `resources/wpkg/wpkg.cmd`, jamais exécuté sur le chemin agent —
+// reverti). Module `provision` OS-agnostique : adaptateur Windows seul réalisé,
+// TargetResolver = interface prête pour un futur resolver Linux. Contrat
+// wire/golden INCHANGÉS (aucune surface /state ou rapport touchée).
 // 2.2.10 = préchargement identité MACHINE de l'overlay (Story 27.10). La SALLE
 // (`machine.room`) passe de la portée session (item identity) à la portée
 // MACHINE (cache persistant) : ComposeOverlayDocument extrait `room` de l'item
@@ -71,4 +83,4 @@ package shared
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.2.18"
+var Version = "2.2.19"

@@ -44,6 +44,16 @@ const (
 	// (le serveur l'expose via config/agent.php `wpkg_bundle_url`).
 	WpkgBundlePath = "/wpkg/bundle"
 
+	// WpkgToolsPath : sous-chemin (relatif à server_url) de l'alias Apache
+	// servant les OUTILS PARTAGÉS WPKG (7za.exe, nircmd.exe, … — Story 27.20),
+	// énumérés par `manifest.json` (énumération + sha256, généré côté serveur par
+	// `ensure_wpkg_tools`). Contrairement au bundle (que `wpkg.cmd` télécharge),
+	// l'AGENT pilote ce provisioning : il fetch `<server_url>/wpkg/tools/manifest.json`
+	// AVANT de déclencher WPKG, réconcilie par hash et dépose les outils sous
+	// `%WinDir%\install\wpkg\tools\` (cf. agent/provision). Figé côté agent (le
+	// serveur expose le même alias `/wpkg/tools`).
+	WpkgToolsPath = "/wpkg/tools"
+
 	// MinLogonWakeIntervalSeconds : fenêtre de debounce anti-martèlement du
 	// réveil au logon (Story 27.9). Un réveil logon ne déclenche un cycle frais
 	// QUE si ce délai s'est écoulé depuis le DÉBUT du dernier cycle ; sinon le

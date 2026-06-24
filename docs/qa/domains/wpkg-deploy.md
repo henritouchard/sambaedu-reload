@@ -1325,3 +1325,169 @@ sans `/noDownload`.
 - [ ] Scénario 10.4 — e2e poste : 7za téléchargé HTTP → xcopy `%TEMP%` → check OK → rapport compliant ; 2ᵉ passage = no-op
 - [ ] Scénario 10.5 — `saveto` hors `packages/` : `<download>` strippé (pas d'URL 404) + warnings serveur `[AppStore]`
 - [ ] Scénario 10.6 — purge `%TEMP%` : `<install>` `del … & exit /b 0` en dernier ; payload supprimé si succès, conservé si échec ; idempotent
+
+---
+
+## Section 11 — Staging des outils WPKG partagés (`%Z%\wpkg\tools\`) — Story 27.20
+
+**Suite de 27.19.** 27.19 (+ extension `%Z%\packages`) livre en HTTP les **payloads
+par-app**. Mais une partie des recettes invoque aussi des **outils PARTAGÉS** via le
+chemin EN DUR `%Z%\wpkg\tools\…` (= `c:\windows\install\wpkg\tools\`) :
+
+- `%Z%\wpkg\tools\7za.exe` — archiveur (extraction `.zip`/`.7z`, ex. recette `adnarn`) ;
+- `%Z%\wpkg\tools\nircmd.exe` — création de raccourcis ;
+- `md5sum.exe`, `wintail.exe`, `tooltip/{wpkg-msg,tooltip}.exe` (du même canal).
+
+Ce ne sont **PAS** des payloads par-app (aucun `<download saveto>` dans les recettes) :
+27.19 ne les couvre pas. `%Z%\wpkg\tools\` est **vide en SE5** (le montage SMB legacy
+qui le peuplait est débranché). Symptôme e2e 27.19 (`C:\Windows\wpkg.log`, poste
+`testenrol`) : `adnarn` → `Exit code (1) on command '… %Z%\wpkg\tools\7za.exe e …'`
+même APRÈS livraison du payload — l'outil `7za.exe` absent fait échouer l'extraction.
+
+**PIVOT ARCHITECTURAL (post-review)** : la 1re implémentation déposait les outils via
+`resources/wpkg/wpkg.cmd`. **Bug critique** : ce `wpkg.cmd` ne s'exécute sur **AUCUN
+chemin runtime SE5** — l'agent déclenche WPKG via `cscript //B //NoLogo
+%WinDir%\wpkg-client.vbs /NOTempo` (`handler_applications_windows.go`), et le bundle
+HTTP ne re-fetche que la `wpkg-client.vbs`, jamais `wpkg.cmd`. La logique outils y était
+donc **inerte**. Direction Henri : « limiter le GPO, mettre un MAX de logique dans
+l'AGENT », extensible à d'autres OS. `wpkg.cmd` est **reverti à HEAD** ; le staging
+devient **AGENT-DRIVEN**.
+
+**Conception cible** — serveur DÉCLARATIF / agent IMPÉRATIF :
+
+- **(a) Source serveur = `manifest.json`** dédié (énumération + sha256 par fichier),
+  servi sous l'alias `/wpkg/tools`, généré par `ensure_wpkg_tools` (`update.sh`).
+  Découplé du StateCompiler/contrat desired-state.
+- **(b) Module Go générique `agent/provision`** (OS-agnostique, ~200 l) :
+  `Resource{ID,Kind,RelPath,URL,SHA256,Executable}` + interface `TargetResolver` +
+  `Reconcile(res, tgt) []Outcome`. Pour chaque ressource : TEST (présent ET sha256 ==
+  attendu ? → `skipped`) → APPLY (download atomique tmp+rename, vérif hash → `applied`)
+  → `failed` sinon. **Idempotence VRAIE par hash** (≠ « re-download à chaque run » de la
+  1re version). Le `7za.exe`/`nircmd` ne sont plus « des trucs WPKG » mais des ressources
+  `kind:"wpkg-tool"` ; un AppImage serait `kind:"appimage"` — même moteur.
+- **(c) Un seul adaptateur Windows** réalisé (`provision_windows.go`, build tag) :
+  `WindowsResolver` place `wpkg-tool` sous `%WinDir%\install\wpkg\tools\<RelPath>`
+  (= `%Z%\wpkg\tools\`, sous-arbo `tooltip/` préservée), `MkdirAll` du dossier cible.
+  L'interface Linux **n'est pas implémentée** (resolver Linux s'ajoute sans toucher
+  `Reconcile` — agent Linux post-MVP, pas de code mort).
+- **(d) Câblage** : `TriggerWpkg` (handler `applications`) dérive `toolsURL` =
+  `server_url + /wpkg/tools` (EXACTEMENT comme `SE4_WPKG_BUNDLE_URL` dérive
+  `/wpkg/bundle`), fetch `manifest.json`, construit `[]Resource`, appelle
+  `provision.Reconcile`, loggue les Outcomes — **AVANT** `cscript wpkg-client.vbs`.
+  **Fail-soft** : un manifeste/outil en échec **ne bloque jamais** le déclenchement WPKG.
+
+**Le piège `%Z%` — matérialisation côté agent (`WindowsResolver`)** : `MapZ()`
+(`wpkg-client.vbs`) renvoie le littéral `c:\windows\install` (mapping SMB legacy
+**commenté**, vérifié). Sur greenfield SE5, le GPO `startup.cmd` crée déjà
+`c:\windows\install\wpkg` en **vrai dossier** (mais PAS `…\wpkg\tools`). Le
+`WindowsResolver` garantit donc `MkdirAll(%WinDir%\install\wpkg\tools)` et **matérialise
+`%Z%`** : si `c:\windows\install` est un reparse point SMB pendouillant (poste MIGRÉ,
+legacy `MKLINK /D … \\%SE4FS%\install`), il le détecte (`Lstat` mode reparse + repli
+`fsutil reparsepoint query`) et le retire (`os.Remove` = lien seul, pas la cible
+distante) avant de recréer un dossier local. → `%Z%\wpkg\tools\7za.exe` résout vers les
+fichiers déposés → **recettes INCHANGÉES**.
+
+**Bump version agent** : `2.2.18` → `2.2.19` (toute édition agent/** = bump).
+
+**Code de référence 27.20** :
+
+- `agent/provision/provision.go` — moteur générique OS-agnostique (Resource, TargetResolver, Reconcile).
+- `agent/provision/provision_windows.go` — `WindowsResolver` (build tag windows) : `%Z%\wpkg\tools`, matérialisation reparse point.
+- `agent/provision/provision_test.go` — tests HÔTE (skip-si-hash, apply-si-drift, download atomique, hash mismatch, 404, sous-arbre, multi-ressources).
+- `agent/windows/handler_applications_windows.go` — `stageSharedTools()` (fetch manifest + Reconcile) appelé dans `TriggerWpkg` AVANT `cscript`, fail-soft.
+- `agent/shared/files.go` — constante `WpkgToolsPath = "/wpkg/tools"`.
+- `agent/shared/version.go` — `2.2.19`.
+- `scripts/setupApache.sh` — alias `/wpkg/tools` (scopé, `-Indexes`, `Require all granted`, pas de `FallbackResource`).
+- `scripts/update.sh` — `update_apache()` exige l'alias ; `ensure_wpkg_tools()` provisionne les droits (664/755, `chown www-admin`) **ET génère `manifest.json`** (énumération + sha256, world-readable 664/www-admin), fail-soft.
+- `resources/wpkg/wpkg.cmd` — **REVERTI à HEAD** (logique outils inerte retirée).
+- `tests/Unit/Wpkg/Deployment/WpkgSharedToolsStagingTest.php` — couverture infra serveur (HÔTE).
+
+### Scénario 11.1 — Alias Apache `/wpkg/tools` sert les outils, scopé (T1)
+
+1. **Serveur (VM)** : après `update.sh`, vérifier l'alias :
+   ```
+   curl -sI http://<se4fs>/wpkg/tools/7za.exe   # → 200
+   curl -sI http://<se4fs>/wpkg/tools/tooltip/wpkg-msg.exe   # → 200 (sous-arbre)
+   curl -s  http://<se4fs>/wpkg/tools/          # → 403/404, JAMAIS un listing (-Indexes)
+   ```
+2. **Garde-fou** : aucun chemin hors `.../install/wpkg/tools` n'est atteignable via cet
+   alias (ex. `curl -sI http://<se4fs>/wpkg/tools/../packages.xml` → ne sort pas de l'arbre).
+   L'alias ne pointe NI la racine `install` NI `storage/keys/pki`.
+3. **Complétude `update.sh`** : sur un vhost antérieur à 27.20 (sans l'alias),
+   `update_apache()` détecte l'absence et relance `setupApache.sh` (idempotent) — le
+   re-run pose l'alias sans dupliquer (un seul `Alias /wpkg/tools` dans la conf).
+4. **Droits** : `ls -l /var/sambaedu/unattended/install/wpkg/tools/` → fichiers `664`
+   (`-rw-rw-r--`, lisibles « other »), owner `www-admin`. Un `660` ferait un 404
+   silencieux côté Apache (poste = classe « other »).
+
+### Scénario 11.2 — Manifeste serveur + staging AGENT-DRIVEN par hash (T3+T2)
+
+1. **Serveur (VM)** : après `update.sh`, `ensure_wpkg_tools` a généré le manifeste :
+   ```
+   curl -s http://<se4fs>/wpkg/tools/manifest.json | jq .
+   # → [{ "id": "7za.exe", "kind": "wpkg-tool", "relpath": "7za.exe", "sha256": "…" },
+   #    { … "relpath": "tooltip/wpkg-msg.exe", "sha256": "…" }, …]
+   ```
+   Vérifier : un objet par fichier, `kind:"wpkg-tool"`, `relpath` relatif (sous-arbre
+   `tooltip/` préservé en slashes Unix), `sha256` non vide, `manifest.json` **absent**
+   de sa propre énumération (jamais auto-référencé), droits `664`/www-admin.
+2. **POSTE** : déclencher l'agent (cycle WPKG). L'agent (handler `applications`,
+   `stageSharedTools`) fetch le manifeste, **réconcilie par hash** puis dépose, **AVANT**
+   `cscript wpkg-client.vbs`. Vérifier le log agent (`C:\ProgramData\SambaEdu\Agent\logs\`) :
+   `Staging outils WPKG partagés : N déposé(s), M à jour, 0 en échec`. Puis sur le poste :
+   ```
+   dir C:\Windows\install\wpkg\tools\7za.exe          REM présent (vrai dossier local)
+   dir C:\Windows\install\wpkg\tools\tooltip\         REM sous-arbre préservé
+   fsutil reparsepoint query C:\Windows\install       REM → "n'est pas un point d'analyse"
+   ```
+3. **Idempotence VRAIE par hash** : 2ᵉ cycle agent → tous les outils `skipped` (sha256
+   déjà conforme), **zéro téléchargement** (`N=0 déposé(s), M à jour`). Modifier
+   manuellement un outil sur le poste (corruption simulée) → le cycle suivant le
+   détecte (hash divergent) et le re-`applied`.
+4. **Poste migré (reparse point legacy présent)** : avant le run, `C:\Windows\install`
+   est un `<SYMLINKD>`/jonction vers `\\<se4fs>\install`. `WindowsResolver` le détecte
+   (`fsutil reparsepoint query` → reparse) et le matérialise en dossier local peuplé —
+   l'ancienne cible distante n'est pas touchée (`os.Remove` = lien seul).
+
+### Scénario 11.3 — e2e poste `adnarn` : extraction OK (AC4)
+
+> Recette de référence du gap (révélée par l'e2e 27.19). Combine payload 27.19 +
+> outil 27.20.
+
+1. S'assurer que la recette `adnarn` est au catalogue (déployée au parc du poste).
+2. **POSTE** — déclencher WPKG (`wpkg-client.vbs /NOTempo`). Suivre `C:\Windows\wpkg.log` :
+   - le **payload** `adnarn.zip` est téléchargé en HTTP dans `%TEMP%\…` (27.19) ;
+   - l'**outil** `%Z%\wpkg\tools\7za.exe` est présent (déposé par l'AGENT via
+     `provision.Reconcile` avant le déclenchement, 27.20) ;
+   - la commande `%ComSpec% /C %Z%\wpkg\tools\7za.exe e … %Z%\packages\adnarn\adnarn.zip`
+     (ou `%TEMP%\…` selon la recette) **s'exécute** (plus de `Exit code (1)`) ;
+   - le `<check>` passe → la recette est rapportée **compliant**.
+3. **Idempotence** : 2ᵉ passage → `<check>` OK, aucune install ne tourne ; les outils
+   restent en place (NON purgés — ils persistent pour les recettes suivantes, AC5).
+
+### Scénario 11.4 — Non-régression 27.19 : payloads `%TEMP%` + purge intacts (AC5)
+
+1. Une recette `%SOFTWARE%` (ex. `7zip` lui-même) s'installe toujours via le canal
+   27.19 : `<download>` HTTP → `%TEMP%` → install → purge `%TEMP%` appendue. 27.20 ne
+   touche NI la réécriture du catalogue NI la purge `%TEMP%` (Section 10 intacte).
+2. Les **outils** déposés sous `%WinDir%\install\wpkg\tools\` ne sont **PAS** dans
+   `%TEMP%` → **jamais purgés** par le `del %TEMP%\…` de 27.19. Ils persistent entre
+   les runs (vérifier après plusieurs cycles WPKG : les outils restent présents).
+
+### Scénario 11.5 — Fail-soft serveur greenfield (AC6)
+
+1. **VM sans le `.deb` `sambaedu-wpkg`** (dossier `.../install/wpkg/tools` absent) :
+   `ensure_wpkg_tools` logue un WARNING explicite (« outils partagés non servis …
+   les recettes utilisant `%Z%\wpkg\tools\` échoueront côté poste ») et sort **0** —
+   l'update ne casse PAS. Les recettes 7za/nircmd échoueront alors côté poste, mais
+   c'est diagnosticable (`wpkg.log`).
+2. Dès que le dossier est peuplé (`.deb` installé OU outils copiés manuellement),
+   un re-run d'`update.sh` provisionne les droits (664/www-admin) — outils servis.
+
+### Checklist rapide Section 11 (relecteur)
+
+- [ ] Scénario 11.1 — alias `/wpkg/tools` → 200, sous-arbre `tooltip/` OK, pas de listing, scopé, 664/www-admin ; `update_apache()` exige l'alias
+- [ ] Scénario 11.2 — `manifest.json` serveur (sha256, sous-arbre, pas d'auto-réf, 664/www-admin) ; staging AGENT-DRIVEN (`provision.Reconcile`) AVANT `cscript` ; idempotence VRAIE par hash (2ᵉ run = tout `skipped`) ; poste migré : reparse point matérialisé en dossier local
+- [ ] Scénario 11.3 — e2e `adnarn` : payload 27.19 + 7za 27.20 → extraction OK → `<check>` OK → compliant ; idempotent
+- [ ] Scénario 11.4 — non-régression : payloads `%TEMP%`/purge 27.19 intacts ; outils NON purgés (persistent)
+- [ ] Scénario 11.5 — fail-soft : dossier serveur absent → WARNING + `return 0` (update ne casse pas) ; re-run après peuplement → 664/www-admin

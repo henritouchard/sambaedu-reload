@@ -1,15 +1,19 @@
 package main
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"sambaedu/agent/provision"
 	"sambaedu/agent/shared"
 )
 
@@ -60,6 +64,118 @@ func (o *applicationsOps) bundleURL() string {
 	}
 
 	return cfg.ServerURL + shared.WpkgBundlePath
+}
+
+// toolsURL : base URL de l'alias Apache servant les OUTILS PARTAGÉS WPKG + leur
+// `manifest.json` (Story 27.20). Dérivée de `server_url` + {@link
+// shared.WpkgToolsPath} — EXACTEMENT comme bundleURL dérive WpkgBundlePath.
+// Contrairement au bundle, c'est l'AGENT qui pilote ce provisioning (fetch du
+// manifeste + provision.Reconcile, AVANT de déclencher WPKG). Vide si la config
+// est illisible (le staging est alors sauté en fail-soft).
+func (o *applicationsOps) toolsURL() string {
+	if o.store == nil {
+		return ""
+	}
+	cfg, err := o.store.ReadConfig()
+	if err != nil {
+		return ""
+	}
+
+	return cfg.ServerURL + shared.WpkgToolsPath
+}
+
+// toolManifestEntry : une entrée du `manifest.json` servi sous /wpkg/tools
+// (généré côté serveur par `ensure_wpkg_tools`). Schéma figé, aligné sur
+// provision.Resource (l'agent compose l'URL = toolsURL + "/" + relpath).
+type toolManifestEntry struct {
+	ID      string `json:"id"`
+	Kind    string `json:"kind"`
+	RelPath string `json:"relpath"`
+	SHA256  string `json:"sha256"`
+}
+
+// stageSharedTools dépose/rafraîchit les outils partagés WPKG sous
+// `%WinDir%\install\wpkg\tools\` AVANT de déclencher le moteur (les recettes les
+// invoquent via `%Z%\wpkg\tools\…`). FAIL-SOFT par contrat : un manifeste
+// inaccessible ou un outil en échec n'empêche JAMAIS le déclenchement WPKG (les
+// recettes qui en dépendent échoueront côté poste, diagnosticables dans wpkg.log
+// — le déclenchement global reste possible pour les autres). Idempotence VRAIE
+// par hash : un outil déjà présent au bon sha256 est SKIPPÉ (zéro réseau).
+func (o *applicationsOps) stageSharedTools() {
+	base := o.toolsURL()
+	if base == "" {
+		o.logf("⚠ URL des outils WPKG vide (config agent illisible / store nil) — staging des outils partagés sauté (fail-soft)")
+
+		return
+	}
+
+	manifestURL := base + "/manifest.json"
+	entries, err := o.fetchToolManifest(manifestURL)
+	if err != nil {
+		o.logf("⚠ manifeste des outils WPKG inaccessible (%s) : %v — staging sauté (fail-soft, les recettes utilisant %%Z%%\\wpkg\\tools échoueront côté poste)", manifestURL, err)
+
+		return
+	}
+	if len(entries) == 0 {
+		o.logf("Manifeste des outils WPKG vide — aucun outil à déposer.")
+
+		return
+	}
+
+	resources := make([]provision.Resource, 0, len(entries))
+	for _, e := range entries {
+		resources = append(resources, provision.Resource{
+			ID:         e.ID,
+			Kind:       e.Kind,
+			RelPath:    e.RelPath,
+			URL:        base + "/" + strings.TrimPrefix(e.RelPath, "/"),
+			SHA256:     e.SHA256,
+			Executable: strings.HasSuffix(strings.ToLower(e.RelPath), ".exe"),
+		})
+	}
+
+	resolver := provision.NewWindowsResolver(o.logf)
+	outcomes := provision.Reconcile(resources, resolver)
+
+	var applied, skipped, failed int
+	for _, oc := range outcomes {
+		switch oc.Status {
+		case provision.StatusApplied:
+			applied++
+		case provision.StatusSkipped:
+			skipped++
+		case provision.StatusFailed:
+			failed++
+			o.logf("⚠ outil WPKG non déposé : %s — %v (fail-soft)", oc.ResourceID, oc.Err)
+		}
+	}
+	o.logf("Staging outils WPKG partagés : %d déposé(s), %d à jour, %d en échec (sur %d).", applied, skipped, failed, len(outcomes))
+}
+
+// fetchToolManifest récupère et décode le `manifest.json` des outils partagés.
+// GET statique simple (hors PHP-FPM, comme le bundle), timeout porté.
+func (o *applicationsOps) fetchToolManifest(url string) ([]toolManifestEntry, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(url) //nolint:noctx // GET statique simple, timeout client.
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("statut HTTP %d", resp.StatusCode)
+	}
+
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // garde-fou 1 Mio.
+	if err != nil {
+		return nil, err
+	}
+
+	var entries []toolManifestEntry
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return nil, fmt.Errorf("manifeste JSON illisible : %w", err)
+	}
+
+	return entries, nil
 }
 
 // wpkgDir : répertoire local où l'agent dépose le profil par-hôte
@@ -221,6 +337,13 @@ func (o *applicationsOps) TriggerWpkg(specs []shared.ApplicationsSpec) (shared.W
 	if err != nil {
 		return shared.WpkgResult{}, err
 	}
+
+	// 2bis. Stager les OUTILS PARTAGÉS WPKG (Story 27.20) AVANT le run : l'agent
+	//    fetch le manifeste (/wpkg/tools/manifest.json), réconcilie par hash et
+	//    dépose les outils sous %WinDir%\install\wpkg\tools\ (= %Z%\wpkg\tools\).
+	//    FAIL-SOFT : un manifeste/outil en échec ne bloque JAMAIS le déclenchement
+	//    (les recettes qui en dépendent échoueront côté poste, pas le run global).
+	o.stageSharedTools()
 
 	// 3. Garantir %SE4FS% (variable machine) pour le process déclenché + donner
 	//    l'URL du bundle au bootstrap (le client télécharge depuis Apache).
