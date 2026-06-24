@@ -1128,7 +1128,7 @@ const DATASETS = {
         },
         {
           "id": "27-20",
-          "status": "ready-for-dev",
+          "status": "done",
           "title": "Staging des outils WPKG partagés (%Z%\\wpkg\\tools\\) sur le poste"
         }
       ]

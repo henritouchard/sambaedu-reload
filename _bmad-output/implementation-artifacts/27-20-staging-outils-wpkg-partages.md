@@ -1,6 +1,6 @@
 # Story 27.20: Staging des outils WPKG partagés (`%Z%\wpkg\tools\`) sur le poste
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
