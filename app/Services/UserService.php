@@ -1429,9 +1429,13 @@ class UserService
             }
 
             // 2. Classes — sync atomique (detach implicite des classes absentes).
-            //    Détection par préfixe `Classe_` ET/OU type='classe' pour
-            //    tolérer les deux conventions (legacy=`class`, refactor=`classe`).
-            //    On résout les nouveaux IDs APRÈS avoir capturé les anciens.
+            //    Story 4.13 — l'import AD→SQL replie désormais les classes en UNE
+            //    ligne au NOM NU (`3A`, `type='classe'`). Le lookup `'Classe_'.$c`
+            //    ne matchait plus cette ligne nue (l'élève n'était plus rattaché
+            //    à sa classe). On résout désormais par NOM NU. On garde le
+            //    fallback `Classe_%` côté `oldClassIds` pour les lignes héritées
+            //    (pré-4.13) qui seront fusionnées par 4.14. On résout les
+            //    nouveaux IDs APRÈS avoir capturé les anciens.
             $oldClassIds = $sqlUser->groups()
                 ->where(function ($q) {
                     $q->where('type', 'classe')
@@ -1441,14 +1445,24 @@ class UserService
                 ->map(fn ($id) => (int) $id)
                 ->all();
 
-            $newClasseNames = array_map(fn ($c) => 'Classe_' . $c, $classes);
-            $newClassIds = $newClasseNames === []
+            // Lookup par NOM NU (post-fold) AVEC fallback `Classe_<c>` (lignes
+            // héritées non encore fusionnées) — tolérant aux deux modèles.
+            $newClasseLookups = [];
+            foreach ($classes as $c) {
+                $newClasseLookups[] = strtolower((string) $c);
+                $newClasseLookups[] = strtolower('Classe_' . $c);
+            }
+            $newClasseLookups = array_values(array_unique($newClasseLookups));
+
+            $newClassIds = $newClasseLookups === []
                 ? collect()
-                : \App\Models\UserGroup::where(function ($q) use ($newClasseNames) {
-                    foreach ($newClasseNames as $name) {
-                        $q->orWhereRaw('LOWER(name) = ?', [strtolower($name)]);
+                : \App\Models\UserGroup::where(function ($q) use ($newClasseLookups) {
+                    foreach ($newClasseLookups as $name) {
+                        $q->orWhereRaw('LOWER(name) = ?', [$name]);
                     }
-                })->pluck('id');
+                })
+                    ->whereIn('type', ['classe', 'class'])
+                    ->pluck('id');
             $newClassIdsArr = $newClassIds->map(fn ($id) => (int) $id)->all();
 
             // Désactivation de l'Observer pivot pendant le sync atomique (cf.

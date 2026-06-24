@@ -120,6 +120,58 @@ class User extends Authenticatable implements Wireable
     }
 
     /**
+     * Story 4.13 — Helper PARTAGÉ de résolution classe↔partage post-fold.
+     *
+     * Depuis le fold de l'import (4.13), une classe est UNE seule ligne
+     * `user_groups` au NOM NU (`3A`, `type='classe'`) : il n'existe plus de
+     * distinction SQL `Equipe_`/`Classe_`. Le professeur ET l'élève sont
+     * membres de la MÊME ligne nue ; la partition prof/élève vient de
+     * `User.role` (cohérent 4.12), pas du nom du groupe.
+     *
+     * Retourne donc les NOMS NUS des classes (`type='classe'`) dont CET
+     * utilisateur est membre — qu'il soit prof ou élève. Source de vérité
+     * unique réutilisée par `UserPolicy::sharesClassWithTarget` ET par le
+     * scoping du listing (`resources/views/pages/users/index.blade.php`).
+     *
+     * @return \Illuminate\Support\Collection<int,string>
+     */
+    public function classGroupNames(): \Illuminate\Support\Collection
+    {
+        return $this->userGroups()
+            ->where('type', 'classe')
+            ->pluck('name')
+            ->map(static fn(mixed $n): string => (string) $n)
+            ->unique()
+            ->values();
+    }
+
+    /**
+     * Story 4.13 — Deux utilisateurs partagent une classe s'ils sont membres
+     * d'une même ligne `user_groups` (`type='classe'`, même nom nu).
+     *
+     * Utilisé par la Policy pour décider si un prof peut voir/reset un élève :
+     * post-fold, prof et élève sont co-membres de la même classe nue. La
+     * distinction de rôle (qui PEUT agir) reste portée par `User.role` via les
+     * gates de la Policy ; ce helper ne décide QUE du partage de scope.
+     */
+    public function sharesClassGroupWith(User $other): bool
+    {
+        $mine = $this->classGroupNames();
+
+        if ($mine->isEmpty()) {
+            return false;
+        }
+
+        $theirs = $other->classGroupNames();
+
+        if ($theirs->isEmpty()) {
+            return false;
+        }
+
+        return $mine->intersect($theirs)->isNotEmpty();
+    }
+
+    /**
      * Groupes d'utilisateurs (classes, équipes, etc.)
      *
      * Story 5.2 (D5=A) — `->using(UserGroupUserPivot::class)` permet à

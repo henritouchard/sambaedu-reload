@@ -369,30 +369,24 @@ new class extends Component {
         // Eloquent, le listing contourne la Policy `UserPolicy::view()` qui
         // n'est appliquée que sur les targets individuels.
         //
-        // Un prof n'est PAS membre de `Classe_X` (réservé aux élèves) mais de
-        // `Equipe_X` et/ou `PP_X` (type='equipe'). Le lien équipe↔classe se
-        // fait par convention de nommage sur le suffixe X.
+        // Story 4.13 — Recâblage post-fold. L'import AD→SQL replie désormais
+        // les classes en UNE ligne au NOM NU (`type='classe'`) ; prof ET élève
+        // sont co-membres de cette même ligne. On résout les noms nus de
+        // classes de l'acteur via le helper PARTAGÉ `User::classGroupNames()`
+        // (le même qu'utilise `UserPolicy::sharesClassWithTarget`), puis on
+        // restreint le listing aux users co-membres de ces classes. La logique
+        // vestige (filtrage `Equipe_%`/`PP_%` + reconstruction `Classe_X`)
+        // renvoyait un ensemble vide après fold → `1=0` (déni total).
         $actor = auth()->user();
 
         if ($actor instanceof User
             && $actor->hasAnyRole(['prof', 'eleve-admin'])
             && !$actor->hasAnyRole(UserPolicy::GLOBAL_USER_ROLES)
         ) {
-            // ESCAPE '\' explicite : nécessaire pour SQLite (tests) qui ne
-            // reconnaît pas l'escape par défaut Postgres.
-            $classNames = $actor->userGroups()
-                ->where('type', 'equipe')
-                ->where(function (Builder $sub) {
-                    $sub->whereRaw("name LIKE 'Equipe\\_%' ESCAPE '\\'")
-                        ->orWhereRaw("name LIKE 'PP\\_%' ESCAPE '\\'");
-                })
-                ->pluck('name')
-                ->map(fn(string $n): string => 'Classe_' . preg_replace('/^(Equipe|PP)_/', '', $n))
-                ->unique()
-                ->values();
+            $classNames = $actor->classGroupNames();
 
             if ($classNames->isEmpty()) {
-                // Acteur scopé classe sans équipe pédagogique attachée : aucun user visible.
+                // Acteur scopé classe sans classe attachée : aucun user visible.
                 $query->whereRaw('1 = 0');
             } else {
                 $query->whereHas(

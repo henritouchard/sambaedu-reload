@@ -18,6 +18,12 @@ use Tests\Traits\CreatesPermissionSchema;
  * pour un Prof scopé classe (RGPD). Sans ce filtre, la Policy `UserPolicy::view`
  * est appliquée uniquement sur les targets individuels mais pas sur la liste.
  *
+ * Story 4.13 — Fixtures RÉÉCRITES pour le modèle POST-FOLD : une classe = UNE
+ * ligne au NOM NU (`type='classe'`), prof ET élève co-membres de cette même
+ * ligne. Les anciennes fixtures (`Equipe_X` pour le prof + `Classe_X` pour
+ * l'élève) reproduisaient la forme PRÉ-4.13 et masquaient le bug de scope du
+ * listing (`whereRaw('1=0')` après fold).
+ *
  * Scénarios :
  *  - Prof avec 1 classe → ne voit que ses élèves
  *  - Prof sans classe attachée → liste vide
@@ -51,21 +57,16 @@ class UsersListingScopedTest extends TestCase
         return User::create(['login' => $login, 'role' => $role, 'is_active' => true]);
     }
 
+    /**
+     * Story 4.13 — Classe foldée au NOM NU (`type='classe'`), prof ET élève
+     * co-membres de cette même ligne.
+     */
     private function makeClass(string $suffix): UserGroup
     {
         return UserGroup::create([
-            'name' => 'Classe_' . $suffix,
+            'name' => $suffix,
             'display_name' => 'Classe ' . $suffix,
             'type' => 'classe',
-        ]);
-    }
-
-    private function makeTeam(string $suffix, string $prefix = 'Equipe'): UserGroup
-    {
-        return UserGroup::create([
-            'name' => $prefix . '_' . $suffix,
-            'display_name' => $prefix . ' ' . $suffix,
-            'type' => 'equipe',
         ]);
     }
 
@@ -74,16 +75,14 @@ class UsersListingScopedTest extends TestCase
         $prof = $this->makeUser('list-prof-1', 'prof');
         $prof->assignRole('prof');
 
-        // Convention legacy : prof rattaché à Equipe_X (type='equipe'),
-        // élèves rattachés à Classe_X (type='classe'), lien par suffixe.
-        $teamA = $this->makeTeam('list-classeA');
+        // Post-fold : prof ET élèves co-membres de la même classe nue.
         $classA = $this->makeClass('list-classeA');
         $classB = $this->makeClass('list-classeB');
 
         $elSame = $this->makeUser('list-el-same');
         $elOther = $this->makeUser('list-el-other');
 
-        $prof->userGroups()->attach($teamA->id);
+        $prof->userGroups()->attach($classA->id);
         $elSame->userGroups()->attach($classA->id);
         $elOther->userGroups()->attach($classB->id);
 

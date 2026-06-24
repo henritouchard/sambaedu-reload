@@ -156,6 +156,38 @@ class UserServiceClassChangeTest extends TestCase
         $this->assertSame(1, $callCount, "ShareService::syncUserClassMemberships doit être appelé exactement 1 fois (call explicit), pas par l'Observer pendant le sync atomique.");
     }
 
+    #[Test]
+    public function it_attaches_student_to_folded_bare_name_class(): void
+    {
+        // Story 4.13 (review #8) — l'import AD→SQL replie les classes en UNE
+        // ligne au NOM NU (`6A`, type='classe'). Le lookup `'Classe_'.$c` ne
+        // matchait plus cette ligne → l'élève n'était plus rattaché à sa classe.
+        // persistUserGroupsToSql doit désormais résoudre par NOM NU.
+        $bob = SqlUser::create(['login' => 'bob-fold', 'role' => 'eleve', 'is_active' => true]);
+        $eleves = UserGroup::create(['name' => 'Eleves', 'type' => 'role']);
+        // Classe FOLDÉE : nom nu, type classe (pas de préfixe Classe_).
+        $classe6A = UserGroup::create(['name' => '6A', 'type' => 'classe']);
+
+        // ShareService mocké (on ne teste ici que le rattachement SQL).
+        $mock = Mockery::mock(ShareService::class);
+        $mock->shouldReceive('syncUserClassMemberships')->andReturn(true);
+        $this->app->instance(ShareService::class, $mock);
+
+        $service = app(UserService::class);
+        $this->callPersist($service, 'bob-fold', 'Eleves', '', ['6A']);
+
+        $bob->refresh();
+        $classIds = $bob->groups()->where('type', 'classe')->pluck('user_groups.id')->all();
+
+        $this->assertContains(
+            $classe6A->id,
+            $classIds,
+            "L'élève doit être rattaché à la classe FOLDÉE au nom nu `6A` (review #8)."
+        );
+        // Et toujours rattaché à son groupe de rôle (non touché par le sync classes).
+        $this->assertTrue($bob->groups()->where('user_groups.id', $eleves->id)->exists());
+    }
+
     /**
      * @return array<string, bool>
      */

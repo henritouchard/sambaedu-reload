@@ -484,6 +484,64 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 'cd /var/www/sambaedu-reload && ph
 
 ---
 
+## Section 7 — Fold import AD→SQL au nom nu (Story 4.13, 2026-06-24)
+
+> **Contexte.** L'import AD→SQL (`UserGroupService::syncFromAd`) créait auparavant **3 lignes** `user_groups` par classe (`Classe_3A`, `Equipe_3A`, `PP_3A`). La 4.13 replie (« fold ») ces variantes en **UNE** ligne au **nom nu** (`3A`, `type=classe`), avec l'**union** des membres des 3 CN. Le `ad_guid`/`ad_dn` canonique est celui de `Classe_` (fallback déterministe `Equipe_` puis `PP_`). C'est le pendant **lecture** de l'écriture nom-nu livrée en 4.12. AD reste la source ; SQL le cache (import = migration transitoire). La couche aval (`ShareService::resolveClassPath`, `GroupRepository`) re-préfixe par convention et tolère déjà le nom nu → **aucun changement aval**. `LegacyParcBridgeService` ne lit pas `user_groups` (confirmé : porte sur `WorkstationGroup`/`parc`) → no-op.
+
+> **Limite connue (D5).** Les lignes SQL héritées `Classe_X`/`Equipe_X`/`PP_X` **déjà présentes** sur une base existante ne sont PAS fusionnées par 4.13 (pas de migration de données). Le fold s'applique sur greenfield ou après un `syncFromAd` complet. La fusion de l'existant + la colonne `is_head_teacher` sont le scope de **4.14**.
+
+> **Pré-requis spécifiques.** AD réel (VM). Une classe avec ses 3 CN (`Classe_X`/`Equipe_X`/`PP_X`) réellement créés (cf. `GroupRepository::createGroup` expanse les 3). Migrations VM non auto-jouées → `migrate:status` avant. Vérifier les appartenances AD réelles avec `samba-tool group listmembers <CN>`.
+
+### Scénario 7.1 — Une classe importée donne UNE ligne nue
+
+1. Sur AD, s'assurer que `Classe_3A`, `Equipe_3A`, `PP_3A` existent (création d'une classe via l'UI les expanse).
+2. Lancer un import : `php artisan` (commande de sync groupes) **ou** créer la classe via `/app/users/groups/new`.
+3. SQL : `SELECT name, type FROM user_groups WHERE LOWER(name) IN ('classe_3a','equipe_3a','pp_3a','3a');`
+   - Attendu : **une seule** ligne `name='3A'`, `type='classe'`. **Aucune** ligne `Classe_3A`/`Equipe_3A`/`PP_3A`.
+4. L'UI `/app/users/groups` liste **une** entrée pour la classe (plus 3).
+
+### Scénario 7.2 — Union des membres des 3 CN
+
+1. Sur AD : `Classe_3A = {alice}`, `Equipe_3A = {bob}`, `PP_3A = {bob}` (bob en double volontaire).
+2. Lancer l'import.
+3. Membres de la ligne nue `3A` (UI ou `SELECT u.login FROM user_group_user ... WHERE name='3A'`) → **`{alice, bob}`** (union dédupliquée). Aucun membre perdu, aucun doublon.
+
+### Scénario 7.3 — `ad_guid` canonique `Classe_` + fallback
+
+1. Import d'une classe complète → `SELECT ad_guid, ad_dn FROM user_groups WHERE name='3A';` doit porter le **GUID/DN de `Classe_3A`**.
+2. Sur AD, supprimer `Classe_3A` en gardant `Equipe_3A`/`PP_3A`, ré-importer → la ligne `3A` porte désormais le **GUID/DN d'`Equipe_3A`** (fallback déterministe ; `PP_` seulement si `Equipe_` absent aussi).
+3. Aucun conflit `ad_guid` n'est levé pendant l'import (les 3 CN partagent la même ligne, un seul GUID écrit).
+
+### Scénario 7.4 — Idempotence du re-sync
+
+1. Lancer `syncFromAd` deux fois de suite sur le même lot AD.
+2. Attendu : la ligne `3A` **survit** (la passe `deleted` compare aux noms NUS persistés), aucun doublon créé, membres stables (0 attach / 0 detach au 2e run).
+
+### Scénario 7.5 — `Equipe_` orphelin (classe vs cours)
+
+1. Sur AD : un `Cours_Maths5A` + son `Equipe_Maths5A` co-créé, **sans** `Classe_Maths5A`/`PP_Maths5A`.
+2. Import → SQL doit contenir : `Cours_Maths5A` (`type=cours`, **CN conservé**, non foldé) **et** une ligne nue `Maths5A` (`type=equipe`) pour l'équipe orpheline. L'équipe du cours **ne fold pas** avec le cours.
+3. Cas inverse (sécurité) : si `Classe_Maths5A`/`PP_Maths5A` existaient, alors `Equipe_Maths5A` folderait avec eux en `Maths5A` type classe.
+
+> **Couverture automatisée.** `tests/Unit/Services/UserGroupServiceLegacyCompatibilityTest.php` (hôte, sqlite) couvre 7.1 (`it_folds_classe_variants_into_one_bare_name_group`), 7.2 (`it_unions_members_across_folded_variants`), 7.3 (`it_uses_canonical_classe_guid_for_folded_group` + `it_falls_back_to_equipe_guid_when_classe_absent`), 7.4 (`it_is_idempotent_across_repeated_imports`), 7.5 (`it_keeps_orphan_equipe_as_its_own_bare_group`). L'import AD réel (`samba-tool`, appartenances effectives) = validation manuelle /vm uniquement, différée post-merge.
+
+### Scénario 7.6 — Non-régression scope prof post-fold (RGPD) — **CRITIQUE, manuel**
+
+> **Contexte.** Le fold (4.13) supprime la distinction SQL `Equipe_X`/`Classe_X` : après import, **prof ET élève sont co-membres de la même ligne nue `X` (`type=classe`)** ; la distinction de rôle vient de `User.role`. Le scope « un prof ne voit/reset QUE ses élèves » repose désormais sur ce partage de classe nue. Les tests unitaires de la review d'origine fabriquaient des fixtures pré-fold (`Equipe_X` + `Classe_X` séparés) qui **masquaient** la régression : en condition réelle post-fold, l'ancienne policy renvoyait un ensemble vide → soit déni total (prof ne voit personne), soit (si recâblé sans scope) accès global non scopé. Ce scénario se vérifie en manuel sur données réellement importées.
+
+**Prérequis** : avoir lancé un `syncFromAd` réel (/vm) qui a foldé au moins 2 classes (`3A`, `3B`) avec un prof rattaché à `3A` uniquement, et des élèves dans `3A` et dans `3B`.
+
+1. Se connecter à `/app/users` en tant que **prof rattaché à `3A` seulement** (rôle `prof`, sans rôle admin global).
+2. **Listing** : le prof ne voit QUE les membres de `3A` (lui-même + ses élèves de `3A`). Il ne voit **AUCUN** élève de `3B`. Vérifier qu'il ne voit pas **tous** les utilisateurs (= pas de bascule en accès non-scopé) ni **zéro** utilisateur (= pas de déni total / `whereRaw('1=0')`).
+3. **Reset mot de passe** : le bouton « Réinitialiser » est actif sur un élève de `3A` (action réussit) et **refusé** sur un élève de `3B` (403 / action masquée).
+4. **Bulk reset** : sélectionner des élèves de `3A` ET `3B`, lancer le bulk → seuls les élèves de `3A` sont effectivement réinitialisés (filtrage Gate `resetPassword`).
+5. **EleveAdmin** : répéter 2–4 avec un acteur `eleve-admin` rattaché à `3A` → même scope strict que le prof.
+6. **Admin global** (`user-admin`/`super-admin`/`referent-numerique`) : voit et reset tous les élèves de `3A` et `3B` (bypass scope confirmé).
+
+> **Couverture automatisée (modèle post-fold).** `tests/Feature/Policies/UserPolicyResetPasswordScopedTest.php` et `tests/Feature/Livewire/UsersListingScopedTest.php` ont été RÉÉCRITS pour le modèle nom-nu (prof+élève co-membres d'une ligne nue `type=classe`) : ils échouent désormais si le scope régresse (vérifié en injectant la logique vestige). La résolution est factorisée dans `User::classGroupNames()` / `User::sharesClassGroupWith()`, partagée par la policy ET le listing blade. Ce scénario manuel reste requis car il valide le scope sur des appartenances **réellement importées** depuis AD (et non des fixtures).
+
+---
+
 ## Post-correctifs & non-régressions
 
 ### Post-correctifs Story 7.2 (review 2026-04-23)
@@ -562,6 +620,14 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 'cd /var/www/sambaedu-reload && ph
 - [ ] 6.3 Retrait d'un prof → enlevé d'`Equipe_X`, idempotent fail-soft
 - [ ] 6.4 Bascule prof↔élève → déplacé entre `Equipe_X` et `Classe_X` (jamais les deux)
 - [ ] 6.5 Types non-classe (cours / `matiere_classe`) → cible unique, pas de ré-expansion
+
+**Section 7 — Fold import nom nu (Story 4.13, 5 scénarios)**
+- [ ] 7.1 Une classe importée → **1** ligne `user_groups` nom nu `3A` type classe (0 ligne `Classe_/Equipe_/PP_`)
+- [ ] 7.2 Membres de `3A` = union dédupliquée des 3 CN
+- [ ] 7.3 `ad_guid`/`ad_dn` = `Classe_` (fallback `Equipe_` puis `PP_`), aucun conflit GUID
+- [ ] 7.4 Double `syncFromAd` idempotent (ligne survit, 0 doublon, membres stables)
+- [ ] 7.5 `Equipe_` orphelin (cours sans `Classe_`/`PP_`) → ligne nue type equipe, ne fold pas avec `Cours_`
+- [ ] 7.6 **Non-régression scope prof post-fold (CRITIQUE, manuel)** : prof rattaché à `3A` voit/reset uniquement ses élèves de `3A` (ni tous, ni zéro) ; bulk filtré ; eleve-admin idem ; admin global bypass
 
 **Non-régressions**
 - [ ] Drawer Rôles + Permissions

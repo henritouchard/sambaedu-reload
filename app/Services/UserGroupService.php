@@ -68,11 +68,11 @@ class UserGroupService
             throw new RuntimeException("Création AD impossible pour le groupe '{$payload['name']}'.");
         }
 
-        // Sert UNIQUEMENT de sélecteur SQL post-syncFromAd (ci-dessous) : la sync
-        // des membres passe désormais par syncRoleAwareAdGroupMembers. Le nom NU
-        // étant garanti sans préfixe réservé (guardReservedPrefixOnCreate), la
-        // résolution donne bien le CN primaire stocké (`Classe_<name>`).
-        $primaryGroupName = $this->resolvePrimaryGroupName($payload['name'], $payload['type']);
+        // Sélecteur SQL post-syncFromAd : depuis 4.13, les variantes de classe/
+        // équipe foldent en UNE ligne au NOM NU. Le payload `name` est déjà nu
+        // (garanti sans préfixe réservé par guardReservedPrefixOnCreate) ; pour
+        // les autres types, c'est le CN brut résolu (Cours_X, Matiere_X@Y, …).
+        $lookupName = $this->resolveSqlLookupName($payload['name'], $payload['type']);
 
         if (count($selectedUserIds) > 0) {
             $this->syncRoleAwareAdGroupMembers($payload['name'], $payload['type'], $selectedUserIds);
@@ -81,7 +81,7 @@ class UserGroupService
         $this->syncFromAd();
 
         $primaryGroup = UserGroup::query()
-            ->whereRaw('LOWER(name) = ?', [mb_strtolower($primaryGroupName)])
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($lookupName)])
             ->first();
 
         if ($primaryGroup === null) {
@@ -127,8 +127,13 @@ class UserGroupService
 
         $this->syncFromAd();
 
+        // 4.13 — lookup post-sync au NOM NU pour les classes/équipes foldées :
+        // l'edit-form peut renvoyer le CN stocké (`Classe_3A`) alors que la ligne
+        // foldée est persistée au nom nu (`3A`). Les autres types restent au CN.
+        $lookupName = $this->resolveSqlLookupName($newName, $payload['type']);
+
         $updatedGroup = UserGroup::query()
-            ->whereRaw('LOWER(name) = ?', [mb_strtolower($newName)])
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($lookupName)])
             ->with('users')
             ->first();
 
@@ -213,7 +218,9 @@ class UserGroupService
      *   detached_users:int,
      *   deleted:int,
      *   errors:int,
-     *   total_groups_detected:int
+     *   total_groups_detected:int,
+     *   total_cn_detected:int,
+     *   total_groups_folded:int
      * }
      */
     public function importFromUsersAdGroups(?callable $logger = null): array
@@ -234,7 +241,9 @@ class UserGroupService
      *   detached_users:int,
      *   deleted:int,
      *   errors:int,
-     *   total_groups_detected:int
+     *   total_groups_detected:int,
+     *   total_cn_detected:int,
+     *   total_groups_folded:int
      * }
      */
     public function syncFromAd(?callable $logger = null, array $onlyGroupNames = []): array
@@ -247,7 +256,13 @@ class UserGroupService
             'detached_users' => 0,
             'deleted' => 0,
             'errors' => 0,
+            // total_groups_detected : conservé pour compat (= nb de CN bruts AD).
+            // total_cn_detected : alias explicite des CN bruts.
+            // total_groups_folded : nb de LIGNES SQL réellement projetées (après
+            // fold) — la vraie « unité métier » présentée dans l'UI.
             'total_groups_detected' => 0,
+            'total_cn_detected' => 0,
+            'total_groups_folded' => 0,
         ];
 
         $log = $logger ?? fn(string $level, string $message) => Log::log($level, "[UserGroupService] {$message}");
@@ -260,31 +275,76 @@ class UserGroupService
                 $onlyGroupNames
             ));
 
+            // 4.13 — Les `name` SQL des classes/équipes sont désormais NUS
+            // (`3A`), mais les CN AD restent préfixés (`Classe_3A`/`Equipe_3A`/
+            // `PP_3A`). `syncGroupsWithAd` passe les noms NUS persistés ; il faut
+            // donc faire matcher chaque CN AD sur sa base nue AUTANT que sur le
+            // CN brut, sinon le filtre vide tout et la sync ciblée est un no-op
+            // (le bouton « Synchroniser avec AD » ne ferait plus rien).
             $eligibleGroups = array_values(array_filter(
                 $eligibleGroups,
-                static fn(array $group): bool => isset($allowed[mb_strtolower(trim((string) ($group['cn'] ?? '')))])
+                function (array $group) use ($allowed): bool {
+                    $cn = trim((string) ($group['cn'] ?? ''));
+                    if ($cn === '') {
+                        return false;
+                    }
+
+                    if (isset($allowed[mb_strtolower($cn)])) {
+                        return true;
+                    }
+
+                    // CN de classe/équipe (Classe_/Equipe_/PP_) → matcher aussi
+                    // sa base nue contre les noms NUS demandés.
+                    if ($this->foldPrefixOf($cn) !== null) {
+                        return isset($allowed[mb_strtolower($this->stripClasseLikePrefix($cn))]);
+                    }
+
+                    return false;
+                }
             ));
         }
 
+        // 4.13 — Fold import : on replie les variantes AD d'une même base
+        // (Classe_X / Equipe_X / PP_X) en UNE seule projection SQL au nom nu
+        // (X). On regroupe AVANT toute écriture pour faire un seul
+        // users()->sync() par ligne avec l'UNION des membres des CN — sinon un
+        // sync() par CN écraserait les membres déjà posés.
+        $foldedGroups = $this->buildFoldedGroups($eligibleGroups);
+
+        // Correction review #6 — distinguer les deux compteurs. Avant 4.13 une
+        // classe = 3 CN = 3 lignes ; après fold, 3 CN → 1 ligne. Compter les CN
+        // bruts comme « groupes détectés » est trompeur dans l'UI. On expose
+        // donc explicitement les CN bruts (`total_cn_detected`) ET les lignes
+        // réellement projetées (`total_groups_folded`). `total_groups_detected`
+        // (compat) reste l'alias des CN bruts.
+        $stats['total_cn_detected'] = count($eligibleGroups);
         $stats['total_groups_detected'] = count($eligibleGroups);
-        $log('info', $stats['total_groups_detected'] . ' groupe(s) utilisateur détecté(s) depuis AD');
+        $stats['total_groups_folded'] = count($foldedGroups);
+        $log(
+            'info',
+            sprintf(
+                '%d CN AD détecté(s) → %d groupe(s) projeté(s) après fold',
+                $stats['total_cn_detected'],
+                $stats['total_groups_folded']
+            )
+        );
 
         UserGroupObserver::disableSync();
 
         try {
-            DB::transaction(function () use (&$stats, $eligibleGroups, $onlyGroupNames): void {
+            DB::transaction(function () use (&$stats, $foldedGroups, $onlyGroupNames): void {
                 $detectedNames = [];
 
-                foreach ($eligibleGroups as $groupData) {
+                foreach ($foldedGroups as $folded) {
                     try {
-                        $groupName = trim((string) ($groupData['cn'] ?? ''));
+                        $groupName = $folded['name'];
                         if ($groupName === '') {
                             continue;
                         }
 
                         $detectedNames[] = mb_strtolower($groupName);
-                        $adGuid = $this->convertAdGuidToString($groupData['objectguid'] ?? null);
-                        $adDn = trim((string) ($groupData['dn'] ?? ''));
+                        $adGuid = $folded['ad_guid'];
+                        $adDn = $folded['ad_dn'];
 
                         $group = null;
 
@@ -316,9 +376,8 @@ class UserGroupService
                             }
                         }
 
-                        $detectedType = $this->detectTypeFromAdGroupName($groupName);
-                        $adDescription = trim((string) ($groupData['description'] ?? ''));
-                        $displayName = $adDescription !== '' ? $adDescription : $groupName;
+                        $detectedType = $folded['type'];
+                        $displayName = $folded['display_name'];
 
                         if ($group === null) {
                             $group = UserGroup::query()->create([
@@ -367,9 +426,15 @@ class UserGroupService
                             }
                         }
 
-                        $memberIds = $this->resolveMemberUserIdsFromAdGroup($groupName);
+                        // Union des membres des CN du groupe foldé (un seul sync()).
+                        $memberIds = [];
+                        foreach ($folded['cns'] as $cn) {
+                            foreach ($this->resolveMemberUserIdsFromAdGroup($cn) as $memberId) {
+                                $memberIds[] = (int) $memberId;
+                            }
+                        }
 
-                        $syncChanges = $group->users()->sync(array_values(array_unique(array_map('intval', $memberIds))));
+                        $syncChanges = $group->users()->sync(array_values(array_unique($memberIds)));
                         $stats['linked_users'] += count($syncChanges['attached'] ?? []);
                         $stats['detached_users'] += count($syncChanges['detached'] ?? []);
                     } catch (\Throwable $e) {
@@ -381,6 +446,10 @@ class UserGroupService
                 }
 
                 if (count($onlyGroupNames) === 0) {
+                    // Comparer aux noms NUS effectivement persistés (pas les CN
+                    // bruts d'origine) : sinon la ligne foldée `3A` tomberait dans
+                    // le whereNotIn (les CN `classe_3a`/`equipe_3a` ne sont plus des
+                    // `name` SQL) et serait supprimée à chaque sync.
                     $deleted = UserGroup::query()
                         ->whereNotIn(DB::raw('LOWER(name)'), $detectedNames)
                         ->delete();
@@ -470,6 +539,193 @@ class UserGroupService
 
             return [];
         }
+    }
+
+    /**
+     * Préfixes des variantes AD d'une même classe (foldables ensemble).
+     * Le CN canonique est toujours le premier disponible dans cet ordre
+     * (D2 : `Classe_` > `Equipe_` > `PP_`).
+     *
+     * @var array<int,string>
+     */
+    private const FOLD_PREFIXES = ['Classe_', 'Equipe_', 'PP_'];
+
+    /**
+     * 4.13 — Replie les CN AD éligibles en projections SQL « nom nu ».
+     *
+     * Pour les variantes de classe/équipe (`Classe_X`/`Equipe_X`/`PP_X`) d'une
+     * même base `X`, produit UNE seule entrée au nom nu `X` avec :
+     * - `cns` : la liste des CN AD à unir pour les membres (T1.4) ;
+     * - `ad_guid`/`ad_dn` du CN canonique (D2 : `Classe_` > `Equipe_` > `PP_`) ;
+     * - `type = 'classe'` (D3) ;
+     * - `display_name` = description du CN canonique (fallback nom nu).
+     *
+     * Règle D1 (`Equipe_` orphelin) : un `Equipe_Y` ne fold avec sa base que si
+     * un `Classe_Y`/`PP_Y` est présent dans le lot OU si une ligne nue `Y` de
+     * type classe/équipe préexiste en SQL. Sinon il reste sa propre projection
+     * (nom nu `Y`, type `equipe`) — il ne fold jamais avec un `Cours_Y`.
+     *
+     * Les autres CN (`Cours_`, `Projet_`, `Matiere_`, `Matiere_@`, rôle/
+     * fonction/custom) restent 1 CN = 1 projection (comportement inchangé) ;
+     * leur `name` reste le CN brut.
+     *
+     * @param array<int,array{cn:string,dn:string,description:string,objectguid:mixed}> $eligibleGroups
+     * @return array<int,array{name:string, cns:array<int,string>, ad_guid:?string, ad_dn:string, type:string, display_name:string}>
+     */
+    private function buildFoldedGroups(array $eligibleGroups): array
+    {
+        // 1) Recenser les bases qui possèdent au moins un CN « ancre » de classe
+        //    (Classe_ ou PP_) dans le lot — elles autorisent le fold d'un Equipe_.
+        $foldAnchorBases = [];
+        foreach ($eligibleGroups as $groupData) {
+            $cn = trim((string) ($groupData['cn'] ?? ''));
+            if ($cn === '') {
+                continue;
+            }
+            $prefix = $this->foldPrefixOf($cn);
+            if ($prefix === 'Classe_' || $prefix === 'PP_') {
+                $foldAnchorBases[mb_strtolower($this->stripClasseLikePrefix($cn))] = true;
+            }
+        }
+
+        /** @var array<string,array{name:string, cns:array<int,string>, byPrefix:array<string,array{ad_guid:?string,ad_dn:string,description:string}>}> $folds */
+        $folds = [];
+        /** @var array<int,array{name:string, cns:array<int,string>, ad_guid:?string, ad_dn:string, type:string, display_name:string}> $standalone */
+        $standalone = [];
+
+        foreach ($eligibleGroups as $groupData) {
+            $cn = trim((string) ($groupData['cn'] ?? ''));
+            if ($cn === '') {
+                continue;
+            }
+
+            $adGuid = $this->convertAdGuidToString($groupData['objectguid'] ?? null);
+            $adDn = trim((string) ($groupData['dn'] ?? ''));
+            $description = trim((string) ($groupData['description'] ?? ''));
+
+            $prefix = $this->foldPrefixOf($cn);
+            $base = $prefix !== null ? $this->stripClasseLikePrefix($cn) : $cn;
+            $baseKey = mb_strtolower($base);
+
+            $foldable = $prefix !== null && $this->shouldFold($prefix, $baseKey, $foldAnchorBases);
+
+            if (!$foldable) {
+                // Cas 1 — `Equipe_` orphelin (D1) : pas d'ancre Classe_/PP_ ni de
+                // ligne nue classe/équipe préexistante. Il ne fold pas avec un
+                // éventuel `Cours_Y`, mais devient quand même SA PROPRE ligne au
+                // NOM NU `Y` de type `equipe` (AC6) — pas le CN brut.
+                if ($prefix === 'Equipe_') {
+                    $standalone[] = [
+                        'name' => $base,
+                        'cns' => [$cn],
+                        'ad_guid' => $adGuid,
+                        'ad_dn' => $adDn,
+                        'type' => 'equipe',
+                        'display_name' => $description !== '' ? $description : $base,
+                    ];
+                    continue;
+                }
+
+                // Cas 2 — CN non foldable (Cours_, Projet_, Matiere_, Matiere_@,
+                // rôle/fonction/custom) : 1 CN = 1 projection (nom = CN brut,
+                // type détecté à l'identique).
+                $standalone[] = [
+                    'name' => $cn,
+                    'cns' => [$cn],
+                    'ad_guid' => $adGuid,
+                    'ad_dn' => $adDn,
+                    'type' => $this->detectTypeFromAdGroupName($cn),
+                    'display_name' => $description !== '' ? $description : $cn,
+                ];
+                continue;
+            }
+
+            $folds[$baseKey] ??= [
+                'name' => $base,
+                'cns' => [],
+                'byPrefix' => [],
+            ];
+            $folds[$baseKey]['cns'][] = $cn;
+            $folds[$baseKey]['byPrefix'][$prefix] = [
+                'ad_guid' => $adGuid,
+                'ad_dn' => $adDn,
+                'description' => $description,
+            ];
+        }
+
+        $result = [];
+
+        foreach ($folds as $fold) {
+            // CN canonique = premier prefix disponible dans l'ordre D2.
+            $canonical = null;
+            foreach (self::FOLD_PREFIXES as $prefix) {
+                if (isset($fold['byPrefix'][$prefix])) {
+                    $canonical = $fold['byPrefix'][$prefix];
+                    break;
+                }
+            }
+
+            // Garde-fou défensif (jamais atteint : un fold a toujours ≥ 1 prefix).
+            if ($canonical === null) {
+                $canonical = reset($fold['byPrefix']);
+            }
+
+            $result[] = [
+                'name' => $fold['name'],
+                'cns' => array_values(array_unique($fold['cns'])),
+                'ad_guid' => $canonical['ad_guid'],
+                'ad_dn' => $canonical['ad_dn'],
+                'type' => 'classe',
+                'display_name' => $canonical['description'] !== '' ? $canonical['description'] : $fold['name'],
+            ];
+        }
+
+        return array_merge($result, $standalone);
+    }
+
+    /**
+     * Retourne le préfixe de fold ({@see FOLD_PREFIXES}) du CN, ou null si le CN
+     * n'est pas une variante de classe/équipe. Casse stricte (CN AD réels =
+     * `Classe_`/`Equipe_`/`PP_`, cf. GroupRepository::createGroup).
+     */
+    private function foldPrefixOf(string $cn): ?string
+    {
+        foreach (self::FOLD_PREFIXES as $prefix) {
+            if (str_starts_with($cn, $prefix)) {
+                return $prefix;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * D1 — Décide si une variante doit folder vers le nom nu de sa base.
+     *
+     * `Classe_`/`PP_` foldent toujours. `Equipe_Y` ne fold que si la base `Y`
+     * possède un `Classe_`/`PP_` dans le LOT AD COURANT (`$foldAnchorBases`) —
+     * sinon il reste autonome (cas `Cours_Y` + `Equipe_Y` : pas d'ancre →
+     * l'équipe du cours ne fold pas, elle devient sa propre ligne `equipe`).
+     *
+     * Story 4.13 (correction review #4/#5) — la décision repose UNIQUEMENT sur
+     * le lot AD courant. L'ancienne dépendance à l'état SQL (`EXISTS` sur la
+     * ligne nue déjà persistée) était (a) NON IDEMPOTENTE — au 1er run un
+     * `Equipe_Y` orphelin se persistait en `type='equipe'`, puis au 2e run ce
+     * `EXISTS` matchait sa propre ligne et le faisait basculer en `type='classe'`
+     * (viole AC6) — et (b) une requête SQL par variante `Equipe_` (N requêtes).
+     * Décider sur le seul lot AD corrige idempotence ET perf.
+     *
+     * @param array<string,bool> $foldAnchorBases bases (lower) avec un Classe_/PP_ dans le lot AD
+     */
+    private function shouldFold(string $prefix, string $baseKey, array $foldAnchorBases): bool
+    {
+        if ($prefix === 'Classe_' || $prefix === 'PP_') {
+            return true;
+        }
+
+        // $prefix === 'Equipe_' : fold seulement si une ancre Classe_/PP_ de la
+        // même base est présente dans le LOT AD courant (jamais l'état SQL).
+        return isset($foldAnchorBases[$baseKey]);
     }
 
     /**
@@ -669,6 +925,25 @@ class UserGroupService
             'matiere_classe', 'matiere-classe' => 'matiere',
             default => 'other_group',
         };
+    }
+
+    /**
+     * 4.13 — Nom SQL attendu après `syncFromAd` pour le sélecteur post-sync.
+     *
+     * Pour les classes/équipes (foldées au nom nu depuis 4.13), c'est la base
+     * nue (`Classe_3A`/`Equipe_3A`/`3A` → `3A`). Pour les autres types, c'est le
+     * CN brut tel que stocké en SQL (`Cours_X`, `Matiere_X@Y`, …) — résolu via
+     * {@see resolvePrimaryGroupName()} pour conserver le comportement existant.
+     */
+    private function resolveSqlLookupName(string $rawName, string $type): string
+    {
+        $normalizedType = mb_strtolower(trim($type));
+
+        if (in_array($normalizedType, ['class', 'classe', 'equipe', 'équipe'], true)) {
+            return $this->stripClasseLikePrefix($rawName);
+        }
+
+        return $this->resolvePrimaryGroupName($rawName, $type);
     }
 
     private function resolvePrimaryGroupName(string $rawName, string $type): string

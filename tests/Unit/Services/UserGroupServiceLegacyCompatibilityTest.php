@@ -56,8 +56,11 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
     }
 
     #[Test]
-    public function it_creates_three_sql_groups_for_classe_like_legacy(): void
+    public function it_folds_classe_variants_into_one_bare_name_group(): void
     {
+        // 4.13 — Les 3 CN AD d'une classe (Classe_/Equipe_/PP_) foldent en UNE
+        // seule ligne SQL au nom nu (`3emeA`, type classe). Aucune ligne
+        // préfixée ne subsiste ; createGroup retourne la ligne nue.
         $service = $this->makeService(
             collect([
                 [
@@ -94,29 +97,166 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
 
         $this->primeNoLdap('alice');
 
-        $primary = $service->createGroup([
+        $folded = $service->createGroup([
             'name' => '3emeA',
             'display_name' => '3ème A',
             'type' => 'classe',
             'user_ids' => [$user->id],
         ]);
 
-        $this->assertSame('Classe_3emeA', $primary->name);
+        // createGroup retourne la ligne nue.
+        $this->assertSame('3emeA', $folded->name);
+        $this->assertSame('classe', $folded->type);
 
+        // UNE seule ligne, au nom nu — aucune variante préfixée.
         $names = UserGroup::query()->orderBy('name')->pluck('name')->all();
-        $this->assertSame(
-            ['Classe_3emeA', 'Equipe_3emeA', 'PP_3emeA'],
-            $names
-        );
+        $this->assertSame(['3emeA'], $names);
 
-        $this->assertSame(1, UserGroup::query()->where('name', 'Classe_3emeA')->firstOrFail()->users()->count());
-        $this->assertSame(0, UserGroup::query()->where('name', 'Equipe_3emeA')->firstOrFail()->users()->count());
-        $this->assertSame(0, UserGroup::query()->where('name', 'PP_3emeA')->firstOrFail()->users()->count());
+        $this->assertFalse(UserGroup::query()->where('name', 'Classe_3emeA')->exists());
+        $this->assertFalse(UserGroup::query()->where('name', 'Equipe_3emeA')->exists());
+        $this->assertFalse(UserGroup::query()->where('name', 'PP_3emeA')->exists());
+
+        // L'unique membre (alice, via Classe_3emeA) est sur la ligne nue.
+        $this->assertSame(1, $folded->users()->count());
     }
 
     #[Test]
-    public function it_creates_two_sql_groups_for_cours_like_legacy(): void
+    public function it_uses_canonical_classe_guid_for_folded_group(): void
     {
+        // AC3 — ad_guid/ad_dn de la ligne nue = ceux du CN canonique Classe_.
+        $classeGuid = '11111111-1111-1111-1111-111111111111';
+        $service = $this->makeService(
+            collect([
+                [
+                    'cn' => 'Equipe_3A',
+                    'dn' => 'CN=Equipe_3A,OU=Equipes,OU=Groups,DC=example,DC=local',
+                    'description' => 'Equipe 3A',
+                    'objectguid' => '22222222-2222-2222-2222-222222222222',
+                ],
+                [
+                    'cn' => 'Classe_3A',
+                    'dn' => 'CN=Classe_3A,OU=Classes,OU=Groups,DC=example,DC=local',
+                    'description' => '3A',
+                    'objectguid' => $classeGuid,
+                ],
+                [
+                    'cn' => 'PP_3A',
+                    'dn' => 'CN=PP_3A,OU=Equipes,OU=Groups,DC=example,DC=local',
+                    'description' => 'PP 3A',
+                    'objectguid' => '33333333-3333-3333-3333-333333333333',
+                ],
+            ]),
+            [],
+            ['Classe_3A' => [], 'Equipe_3A' => [], 'PP_3A' => []],
+        );
+
+        $service->importFromUsersAdGroups();
+
+        $group = UserGroup::query()->where('name', '3A')->firstOrFail();
+        $this->assertSame($classeGuid, $group->ad_guid);
+        $this->assertSame('CN=Classe_3A,OU=Classes,OU=Groups,DC=example,DC=local', $group->ad_dn);
+    }
+
+    #[Test]
+    public function it_falls_back_to_equipe_guid_when_classe_absent(): void
+    {
+        // AC3 — fallback déterministe Equipe_ quand Classe_ absent du lot.
+        $equipeGuid = '44444444-4444-4444-4444-444444444444';
+        $service = $this->makeService(
+            collect([
+                [
+                    'cn' => 'PP_3A',
+                    'dn' => 'CN=PP_3A,OU=Equipes,OU=Groups,DC=example,DC=local',
+                    'description' => 'PP 3A',
+                    'objectguid' => '55555555-5555-5555-5555-555555555555',
+                ],
+                [
+                    'cn' => 'Equipe_3A',
+                    'dn' => 'CN=Equipe_3A,OU=Equipes,OU=Groups,DC=example,DC=local',
+                    'description' => 'Equipe 3A',
+                    'objectguid' => $equipeGuid,
+                ],
+            ]),
+            [],
+            ['Equipe_3A' => [], 'PP_3A' => []],
+        );
+
+        $service->importFromUsersAdGroups();
+
+        $group = UserGroup::query()->where('name', '3A')->firstOrFail();
+        // Classe_ absent → fallback Equipe_ (prime sur PP_).
+        $this->assertSame($equipeGuid, $group->ad_guid);
+        $this->assertSame('CN=Equipe_3A,OU=Equipes,OU=Groups,DC=example,DC=local', $group->ad_dn);
+        $this->assertSame('classe', $group->type);
+    }
+
+    #[Test]
+    public function it_unions_members_across_folded_variants(): void
+    {
+        // AC2 — la ligne nue reçoit l'UNION dédupliquée des membres des 3 CN.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['cn' => 'alice', 'dn' => 'CN=alice,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+                // bob présent aussi dans PP_ → doit être dédupliqué.
+                'PP_3A' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+            ],
+        );
+
+        User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
+        User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
+
+        $service->importFromUsersAdGroups();
+
+        $group = UserGroup::query()->where('name', '3A')->firstOrFail();
+        $logins = $group->users()->pluck('login')->sort()->values()->all();
+        $this->assertSame(['alice', 'bob'], $logins);
+    }
+
+    #[Test]
+    public function it_is_idempotent_across_repeated_imports(): void
+    {
+        // AC5 — deux syncFromAd consécutifs ne dupliquent ni ne suppriment la
+        // ligne foldée, et laissent ses membres stables.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['cn' => 'alice', 'dn' => 'CN=alice,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+                'PP_3A' => [],
+            ],
+        );
+
+        User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
+        User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
+
+        $service->importFromUsersAdGroups();
+        $service->importFromUsersAdGroups();
+
+        $names = UserGroup::query()->orderBy('name')->pluck('name')->all();
+        $this->assertSame(['3A'], $names);
+
+        $group = UserGroup::query()->where('name', '3A')->firstOrFail();
+        $this->assertSame(['alice', 'bob'], $group->users()->pluck('login')->sort()->values()->all());
+    }
+
+    #[Test]
+    public function it_keeps_orphan_equipe_as_its_own_bare_group(): void
+    {
+        // AC6 / D1 — un Cours_ + son Equipe_ orphelin (pas de Classe_/PP_) :
+        // Cours_Maths5A → ligne nue Maths5A type cours ; Equipe_Maths5A ne fold
+        // PAS avec le cours → reste sa propre ligne nue type equipe.
         $service = $this->makeService(
             collect([
                 [
@@ -131,6 +271,7 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
                 ],
             ]),
             [],
+            ['Cours_Maths5A' => [], 'Equipe_Maths5A' => []],
         );
 
         $service->createGroup([
@@ -140,7 +281,11 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         ]);
 
         $names = UserGroup::query()->orderBy('name')->pluck('name')->all();
-        $this->assertSame(['Cours_Maths5A', 'Equipe_Maths5A'], $names);
+        // Cours_ reste CN (non foldé) ; Equipe_ orphelin → ligne nue type equipe.
+        $this->assertSame(['Cours_Maths5A', 'Maths5A'], $names);
+
+        $this->assertSame('cours', UserGroup::query()->where('name', 'Cours_Maths5A')->firstOrFail()->type);
+        $this->assertSame('equipe', UserGroup::query()->where('name', 'Maths5A')->firstOrFail()->type);
     }
 
     #[Test]
@@ -626,6 +771,94 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         // Aucune expansion vers Equipe_/Classe_.
         $this->assertSame([], $this->addedDnsFor('Equipe_Math@3emeA'));
         $this->assertSame([], $this->addedDnsFor('Classe_Math@3emeA'));
+    }
+
+    #[Test]
+    public function it_keeps_orphan_equipe_stable_type_across_repeated_imports(): void
+    {
+        // Correction review #4/#9 — IDEMPOTENCE de la décision de fold.
+        // Un Equipe_ orphelin (sans Classe_/PP_ dans le lot AD) doit rester
+        // de type `equipe` (nom nu) sur N runs. Avant la correction, le 2e run
+        // lisait l'état SQL (EXISTS sur la ligne nue déjà persistée) et faisait
+        // basculer le type equipe -> classe (viole AC6).
+        $service = $this->makeService(
+            collect([
+                [
+                    'cn' => 'Cours_Maths5A',
+                    'dn' => 'CN=Cours_Maths5A,OU=Cours,OU=Groups,DC=example,DC=local',
+                    'description' => 'Cours de Maths 5A',
+                ],
+                [
+                    'cn' => 'Equipe_Maths5A',
+                    'dn' => 'CN=Equipe_Maths5A,OU=Equipes,OU=Groups,DC=example,DC=local',
+                    'description' => 'Equipe pédagogique de Maths 5A',
+                ],
+            ]),
+            [],
+            ['Cours_Maths5A' => [], 'Equipe_Maths5A' => []],
+        );
+
+        // 1er import : Equipe_ orphelin → ligne nue type equipe.
+        $service->importFromUsersAdGroups();
+        $this->assertSame(
+            'equipe',
+            UserGroup::query()->where('name', 'Maths5A')->firstOrFail()->type,
+            'Run 1 : Equipe_ orphelin doit être de type equipe'
+        );
+
+        // 2e import sur le MÊME lot : le type doit RESTER equipe (idempotence).
+        $service->importFromUsersAdGroups();
+        $this->assertSame(
+            'equipe',
+            UserGroup::query()->where('name', 'Maths5A')->firstOrFail()->type,
+            'Run 2 : le type ne doit PAS basculer en classe (review #4)'
+        );
+
+        // Toujours 2 lignes, pas de doublon.
+        $names = UserGroup::query()->orderBy('name')->pluck('name')->all();
+        $this->assertSame(['Cours_Maths5A', 'Maths5A'], $names);
+    }
+
+    #[Test]
+    public function it_targets_folded_bare_names_when_syncing_selected_groups(): void
+    {
+        // Correction review #1/#7 — syncGroupsWithAd passe les noms NUS persistés
+        // (`3A`) en onlyGroupNames, alors que les CN AD restent préfixés
+        // (`Classe_3A`/…). Le filtre de syncFromAd doit matcher chaque CN sur sa
+        // base nue, sinon la sync ciblée est un NO-OP (bouton « Synchroniser
+        // avec AD » sans effet).
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['cn' => 'alice', 'dn' => 'CN=alice,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+                'PP_3A' => [],
+            ],
+        );
+
+        User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
+        User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
+
+        // La ligne nue `3A` existe déjà en SQL (persistée par un import antérieur).
+        $group = UserGroup::query()->create([
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+        ]);
+
+        // Resync ciblé sur l'ID du groupe → onlyGroupNames = ['3A'] (nom nu).
+        $count = $service->syncGroupsWithAd([$group->id]);
+
+        $this->assertSame(1, $count);
+
+        // Les membres des 3 CN ont bien été unis sur la ligne nue (pas un no-op).
+        $logins = $group->fresh()->users()->pluck('login')->sort()->values()->all();
+        $this->assertSame(['alice', 'bob'], $logins);
     }
 
     /**

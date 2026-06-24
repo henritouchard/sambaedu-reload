@@ -228,13 +228,21 @@ class UserPolicy
     }
 
     /**
-     * Décisions (a) et (b) : un prof voit une cible si la cible est membre
-     * d'une `Classe_X` (type='classe') dont le prof est lui-même rattaché à
-     * l'équipe pédagogique correspondante (`Equipe_X` ou `PP_X`, type='equipe').
+     * Décisions (a) et (b) : un prof voit/reset une cible élève si tous deux
+     * sont membres d'une même classe (`type='classe'`, même nom nu).
      *
-     * Convention de nommage confirmée par Henri 2026-04-28 : un prof n'est
-     * jamais membre de `Classe_X` (réservé aux élèves) ; le lien se fait sur
-     * le suffixe X commun à `Equipe_X` / `PP_X` / `Classe_X`.
+     * Story 4.13 — Recâblage post-fold. L'import AD→SQL replie désormais
+     * `Classe_X`/`Equipe_X`/`PP_X` en UNE seule ligne au NOM NU `X`
+     * (`type='classe'`) : il n'existe plus de distinction `Equipe_`/`Classe_`
+     * côté SQL. Prof ET élève sont co-membres de la MÊME ligne nue ; la
+     * distinction de rôle vient de `User.role` (déjà appliquée par le gate
+     * appelant — ce check ne décide QUE du partage de scope). La logique
+     * vestige (filtrage `Equipe_%`/`PP_%` + reconstruction `'Classe_'.X`) est
+     * supprimée : après fold, elle renvoyait systématiquement un ensemble vide
+     * (plus aucune ligne préfixée), masquant un déni total d'accès.
+     *
+     * La résolution est factorisée dans {@see User::sharesClassGroupWith()},
+     * réutilisée à l'identique par le scoping du listing (blade users/index).
      */
     private function sharesClassWithTarget(?Authenticatable $actor, User $target): bool
     {
@@ -242,31 +250,6 @@ class UserPolicy
             return false;
         }
 
-        // ESCAPE '\' explicite : Postgres tolère LIKE 'Equipe\_%' avec son
-        // escape par défaut, mais SQLite (utilisé en tests) ne l'interprète
-        // pas — l'underscore reste alors un wildcard et le scoping casse.
-        $actorClassNames = $actor->userGroups()
-            ->where('type', 'equipe')
-            ->where(function ($sub) {
-                $sub->whereRaw("name LIKE 'Equipe\\_%' ESCAPE '\\'")
-                    ->orWhereRaw("name LIKE 'PP\\_%' ESCAPE '\\'");
-            })
-            ->pluck('name')
-            ->map(fn(string $n): string => 'Classe_' . preg_replace('/^(Equipe|PP)_/', '', $n))
-            ->unique();
-
-        if ($actorClassNames->isEmpty()) {
-            return false;
-        }
-
-        $targetClassNames = $target->userGroups()
-            ->where('type', 'classe')
-            ->pluck('name');
-
-        if ($targetClassNames->isEmpty()) {
-            return false;
-        }
-
-        return $actorClassNames->intersect($targetClassNames)->isNotEmpty();
+        return $actor->sharesClassGroupWith($target);
     }
 }

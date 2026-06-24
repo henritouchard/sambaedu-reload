@@ -16,15 +16,19 @@ use Tests\Traits\CreatesPermissionSchema;
 /**
  * Story 7.2 (AC7, décisions a+b) — UserPolicy::resetPassword et view scopées classe pour Prof.
  *
- * Convention de nommage (Henri 2026-04-28) : un prof n'est jamais membre de
- * `Classe_X` (type='classe', réservé aux élèves) ; il est rattaché à l'équipe
- * pédagogique `Equipe_X` ou `PP_X` (type='equipe'). Le lien équipe↔classe se
- * fait par le suffixe X commun (cf. UserPolicy::sharesClassWithTarget).
+ * Story 4.13 — Fixtures RÉÉCRITES pour le modèle POST-FOLD. L'import AD→SQL
+ * replie désormais `Classe_X`/`Equipe_X`/`PP_X` en UNE seule ligne au NOM NU
+ * `X` (`type='classe'`). Il n'existe plus de distinction `Equipe_`/`Classe_`
+ * côté SQL : le prof ET l'élève sont co-membres de la MÊME ligne nue `X`. La
+ * distinction de rôle (qui PEUT agir) vient de `User.role` via le gate, pas du
+ * nom du groupe. Les anciennes fixtures (`Classe_X` pour l'élève + `Equipe_X`
+ * pour le prof) reproduisaient la forme PRÉ-4.13 et MASQUAIENT la régression de
+ * scope (`sharesClassWithTarget` renvoyait vide après fold → déni total).
  *
  * Scoping strict (review 7.2 #6 : `eleve-admin` désormais scopé classe aussi) :
- *  - Prof (Equipe_X) + élève (Classe_X) avec même X → ✅
- *  - Prof (Equipe_X) + élève (Classe_Y) suffixes différents → ❌
- *  - Prof sans équipe → ❌
+ *  - Prof + élève co-membres de la même classe nue X → ✅
+ *  - Prof (classe X) + élève (classe Y) → ❌
+ *  - Prof sans classe → ❌
  *  - EleveAdmin idem Prof (iso-legacy sovajon_is_admin)
  *  - UserAdmin / SuperAdmin / ReferentNumerique → ✅ global (bypass scoping)
  *  - Rôle custom avec user.password.init mais sans rôle admin global → ✅ global
@@ -61,21 +65,17 @@ class UserPolicyResetPasswordScopedTest extends TestCase
         return User::create(['login' => $login, 'role' => 'prof', 'is_active' => true]);
     }
 
+    /**
+     * Story 4.13 — Classe foldée au NOM NU (`type='classe'`). Prof ET élève
+     * sont co-membres de cette MÊME ligne (la distinction de rôle vient de
+     * `User.role`, plus du nom du groupe).
+     */
     private function makeClass(string $suffix): UserGroup
     {
         return UserGroup::create([
-            'name' => 'Classe_' . $suffix,
+            'name' => $suffix,
             'display_name' => 'Classe ' . $suffix,
             'type' => 'classe',
-        ]);
-    }
-
-    private function makeTeam(string $suffix, string $prefix = 'Equipe'): UserGroup
-    {
-        return UserGroup::create([
-            'name' => $prefix . '_' . $suffix,
-            'display_name' => $prefix . ' ' . $suffix,
-            'type' => 'equipe',
         ]);
     }
 
@@ -83,11 +83,11 @@ class UserPolicyResetPasswordScopedTest extends TestCase
     {
         $prof = $this->makeUser('prof1');
         $student = $this->makeUser('eleve1');
-        $team = $this->makeTeam('3emeA');
+        // Post-fold : prof ET élève co-membres de la MÊME classe nue.
         $class = $this->makeClass('3emeA');
 
         $prof->assignRole('prof');
-        $prof->userGroups()->attach($team->id);
+        $prof->userGroups()->attach($class->id);
         $student->userGroups()->attach($class->id);
 
         $this->assertTrue($this->policy->resetPassword($prof, $student));
@@ -97,11 +97,11 @@ class UserPolicyResetPasswordScopedTest extends TestCase
     {
         $prof = $this->makeUser('prof2');
         $student = $this->makeUser('eleve2');
-        $teamA = $this->makeTeam('3emeA');
+        $classA = $this->makeClass('3emeA');
         $classB = $this->makeClass('3emeB');
 
         $prof->assignRole('prof');
-        $prof->userGroups()->attach($teamA->id);
+        $prof->userGroups()->attach($classA->id);
         $student->userGroups()->attach($classB->id);
 
         $this->assertFalse($this->policy->resetPassword($prof, $student));
@@ -114,7 +114,7 @@ class UserPolicyResetPasswordScopedTest extends TestCase
         $class = $this->makeClass('3emeA');
 
         $prof->assignRole('prof');
-        // Prof sans équipe pédagogique attachée.
+        // Prof sans classe attachée.
         $student->userGroups()->attach($class->id);
 
         $this->assertFalse($this->policy->resetPassword($prof, $student));
@@ -162,14 +162,13 @@ class UserPolicyResetPasswordScopedTest extends TestCase
         $eleveEtab1 = $this->makeUser('e-etab1');
         $eleveEtab2 = $this->makeUser('e-etab2');
         $eleveEtab3 = $this->makeUser('e-etab3');
-        $teamEtab1 = $this->makeTeam('3A-college-victor-hugo');
-        $teamEtab2 = $this->makeTeam('5B-lycee-jean-jaures', 'PP');
         $classEtab1 = $this->makeClass('3A-college-victor-hugo');
         $classEtab2 = $this->makeClass('5B-lycee-jean-jaures');
         $classEtab3 = $this->makeClass('2nde-sans-prof');
 
         $prof->assignRole('prof');
-        $prof->userGroups()->attach([$teamEtab1->id, $teamEtab2->id]);
+        // Prof itinérant : co-membre des classes nues de ses 2 établissements.
+        $prof->userGroups()->attach([$classEtab1->id, $classEtab2->id]);
         $eleveEtab1->userGroups()->attach($classEtab1->id);
         $eleveEtab2->userGroups()->attach($classEtab2->id);
         $eleveEtab3->userGroups()->attach($classEtab3->id);
@@ -194,12 +193,11 @@ class UserPolicyResetPasswordScopedTest extends TestCase
         $prof = $this->makeUser('prof-v');
         $eleveSameClass = $this->makeUser('e-same');
         $eleveOtherClass = $this->makeUser('e-other');
-        $teamA = $this->makeTeam('classeA');
         $cA = $this->makeClass('classeA');
         $cB = $this->makeClass('classeB');
 
         $prof->assignRole('prof');
-        $prof->userGroups()->attach($teamA->id);
+        $prof->userGroups()->attach($cA->id);
         $eleveSameClass->userGroups()->attach($cA->id);
         $eleveOtherClass->userGroups()->attach($cB->id);
 
@@ -239,12 +237,11 @@ class UserPolicyResetPasswordScopedTest extends TestCase
         $prof = $this->makeUser('prof-scope-direct');
         $studentSame = $this->makeUser('eleve-same-direct');
         $studentOther = $this->makeUser('eleve-other-direct');
-        $teamA = $this->makeTeam('classeA-direct');
         $classA = $this->makeClass('classeA-direct');
         $classB = $this->makeClass('classeB-direct');
 
         $prof->assignRole('prof');
-        $prof->userGroups()->attach($teamA->id);
+        $prof->userGroups()->attach($classA->id);
         $studentSame->userGroups()->attach($classA->id);
         $studentOther->userGroups()->attach($classB->id);
 
@@ -265,12 +262,11 @@ class UserPolicyResetPasswordScopedTest extends TestCase
         $prof = $this->makeUser('prof-bulk');
         $studentSame = $this->makeUser('e-bulk-same');
         $studentOther = $this->makeUser('e-bulk-other');
-        $teamA = $this->makeTeam('c-bulk-A');
         $classA = $this->makeClass('c-bulk-A');
         $classB = $this->makeClass('c-bulk-B');
 
         $prof->assignRole('prof');
-        $prof->userGroups()->attach($teamA->id);
+        $prof->userGroups()->attach($classA->id);
         $studentSame->userGroups()->attach($classA->id);
         $studentOther->userGroups()->attach($classB->id);
 
@@ -294,12 +290,11 @@ class UserPolicyResetPasswordScopedTest extends TestCase
         $actor = $this->makeUser('eleve-admin-scoped');
         $studentSame = $this->makeUser('e-same-ea');
         $studentOther = $this->makeUser('e-other-ea');
-        $teamA = $this->makeTeam('cA-ea');
         $classA = $this->makeClass('cA-ea');
         $classB = $this->makeClass('cB-ea');
 
         $actor->assignRole('eleve-admin');
-        $actor->userGroups()->attach($teamA->id);
+        $actor->userGroups()->attach($classA->id);
         $studentSame->userGroups()->attach($classA->id);
         $studentOther->userGroups()->attach($classB->id);
 
