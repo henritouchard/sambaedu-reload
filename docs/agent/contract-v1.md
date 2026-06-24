@@ -1,34 +1,36 @@
 # Contrat agent `se5.desired-state/v1`
 
 > **Statut : figé (v1).** Ce document décrit le contrat HTTP/JSON entre le
-> serveur SambaEdu (SE5) et l'agent *desired-state* des postes (successeur des
-> GPO). Story 23.1 (Epic 23). Les golden files normatifs sont
-> `tests/Fixtures/Agent/state.v1.json` (état cible) et
-> `tests/Fixtures/Agent/report.v1.json` (rapport de conformité).
+> serveur SambaEdu (SE5) et l'agent *desired-state* des postes, successeur des
+> GPO. Il définit le **contenu** échangé dans les deux sens ; le **transport**
+> (token, rotation, auth) est orthogonal et vit dans
+> [token-lifecycle.md](token-lifecycle.md), les endpoints dans
+> [state-endpoint.md](state-endpoint.md) et [report-endpoint.md](report-endpoint.md),
+> la fabrication des items dans [state-providers.md](state-providers.md).
 >
-> Un agent déployé **fige le wire format**. Tant qu'aucun consommateur n'existe,
-> on peut décider de la forme de l'enveloppe et de l'algorithme de hash ;
-> **après, plus jamais** sans bump de version majeure. C'est l'objet de cette
-> story : figer les irréversibles.
->
-> **Story 27.8** : le mécanisme `mode` strict/default est **entièrement retiré**
-> (convergence STRICT inconditionnelle). L'item passe de 5 à 4 clés, le statut
-> `drifted_allowed` disparaît, les hashes figés sont bumpés (zéro prod → rupture
-> interne assumée, schéma reste `v1`).
+> Un agent déployé **fige le wire format** : la forme de l'enveloppe et
+> l'algorithme de hash sont **irréversibles** sans bump de version majeure. Les
+> golden files normatifs sont `tests/Fixtures/Agent/state.v1.json` (état cible)
+> et `tests/Fixtures/Agent/report.v1.json` (rapport de conformité).
 
 ## 1. Vue d'ensemble
 
-| Sens | Endpoint (stories futures) | Schéma | Golden file |
+```mermaid
+flowchart LR
+    S[Serveur SE5] -- "GET /api/v1/agent/state<br/>se5.desired-state/v1<br/>state.v1.json" --> A[Agent du poste]
+    A -- "POST /api/v1/agent/report<br/>se5.desired-state/v1<br/>report.v1.json" --> S
+```
+
+| Sens | Endpoint | Schéma | Golden file |
 |---|---|---|---|
-| Serveur → agent | `GET /api/v1/agent/state` (23.5) | `se5.desired-state/v1` | `state.v1.json` |
-| Agent → serveur | `POST /api/v1/agent/report` (24.1) | `se5.desired-state/v1` | `report.v1.json` |
+| Serveur → agent | `GET /api/v1/agent/state` | `se5.desired-state/v1` | `state.v1.json` |
+| Agent → serveur | `POST /api/v1/agent/report` | `se5.desired-state/v1` | `report.v1.json` |
 
 La source unique du nom de schéma est `App\Services\Agent\StateContract::SCHEMA`
-(constante figée, **jamais** une variable d'environnement — NFR12).
+(constante figée, **jamais** une variable d'environnement).
 
-Conventions communes (iso POC overlay `se5.wallpaper-overlay/v1`, commit
-`f9b3ad9`) : clés `snake_case`, structure plate, tableaux d'objets, timestamps
-UTC ISO 8601 (`Carbon::now('UTC')->toIso8601String()`).
+Conventions communes : clés `snake_case`, structure plate, tableaux d'objets,
+timestamps UTC ISO 8601 (`Carbon::now('UTC')->toIso8601String()`).
 
 ## 2. Enveloppe de l'état cible
 
@@ -63,9 +65,7 @@ Les valeurs sont **aussi** les clés de l'enveloppe.
 
 ## 3. Item
 
-Chaque item porte **exactement** ces quatre clés (ni plus, ni moins) — Story
-27.8 : la clé `mode` a été **retirée** (convergence STRICT inconditionnelle,
-cf. §5) :
+Chaque item porte **exactement** ces quatre clés (ni plus, ni moins) :
 
 ```json
 {
@@ -80,7 +80,7 @@ cf. §5) :
 |---|---|---|
 | `type` | string snake_case | Identifiant de type de ressource **figé** (cf. §7). |
 | `semantics` | `aggregate` \| `exclusive` | Règle de combinaison (cf. §3.1). |
-| `payload` | object | Données spécifiques au type — **owné par la story du provider** (§3.2). |
+| `payload` | object | Données spécifiques au type (cf. §3.2). |
 | `hash` | string (sha256 hex) | Hash opaque du contenu définissant de l'item (cf. §4). |
 
 ### 3.1 Sémantique `aggregate` vs `exclusive` (`App\Enums\ResourceSemantics`)
@@ -93,19 +93,17 @@ cf. §5) :
 
 ### 3.2 `payload` : frontière de responsabilité
 
-Ce qui est **figé en 23.1** = le *wrapper* (`type/semantics/payload/hash`)
-et l'enveloppe (Story 27.8 : la clé `mode` a été retirée du wrapper — convergence
-strict inconditionnelle, cf. §5). La **sous-structure interne de `payload`** par type est **owné
-par la story du provider correspondant** (wallpaper/overlay → 23.4 ; etc.). Les
-payloads présents dans `state.v1.json` sont **illustratifs** et n'engagent pas
-le détail final de chaque provider.
+Ce qui est figé par le contrat = le *wrapper* (`type/semantics/payload/hash`) et
+l'enveloppe. La **sous-structure interne de `payload`** par type est définie avec
+le provider correspondant (cf. [state-providers.md](state-providers.md)). Les
+payloads présents dans `state.v1.json` sont **illustratifs** et n'engagent pas le
+détail final de chaque provider.
 
 ## 4. Hash — `App\Services\Agent\StateHasher`
 
-Algorithme **unique et déterministe** (FR7). C'est la **source unique** du hash
-dans le canal agent : il sert l'ETag de `GET /state` (23.5) **et** la
-comparaison des rapports (24.1). **Jamais** de `md5` / `hash('sha256', …)` ad
-hoc ailleurs.
+Algorithme **unique et déterministe**. C'est la **source unique** du hash dans le
+canal agent : il sert l'ETag de `GET /state` **et** la comparaison des rapports.
+**Jamais** de `md5` / `hash('sha256', …)` ad hoc ailleurs.
 
 **Canonicalisation :**
 
@@ -152,39 +150,29 @@ les contraintes ci-dessous.
   de normalisation). Côté agent, la comparaison *réel vs cible* faite par les
   handlers doit **normaliser en NFC** avant comparaison — Windows peut produire
   du NFD (`é` = `e` + accent combinant) pour des chemins/noms visuellement
-  identiques, ce qui créerait de faux `drift`.
+  identiques, ce qui créerait de faux écarts.
 
-## 5. Convergence STRICT inconditionnelle (Story 27.8)
+## 5. Convergence
 
-> **Story 27.8 — RÉVISION.** Le mécanisme `mode ∈ {strict, default}` (gap 1
-> introduit par 27.1, déplacé par 27.3) est **entièrement RETIRÉ**. La review
-> 27.3 a établi que le grain réel du mode était `type × poste` (un seul verdict
-> de mode par type côté agent), pas `item × cible` : la promesse « un même
-> raccourci verrouillé sur un parc, modifiable sur un autre, sur le même poste »
-> était creuse au niveau agent. Henri a tranché : **comportement UNIQUE = la
-> cible fait TOUJOURS loi**.
-
-Comportement unique : **la cible fait loi, sans exception** (l'ancien
-`mode = strict`, rendu inconditionnel). La dérive humaine n'est **plus** tolérée.
+La cible fait loi, **sans exception** : tout écart entre l'état réel du poste et
+la cible est réappliqué, inconditionnellement.
 
 ```
 réel ≠ cible  →  l'agent RÉAPPLIQUE la cible  →  rapporte `drift`
 réel = cible  →  rien à faire                 →  rapporte `compliant`
 ```
 
-Il n'existe plus de statut `drifted_allowed`, plus de clé `mode` au payload, plus
-de paramètre `mode`/`lastAppliedHash` au verdict (`ResolveItemStatus(isCompliant)`).
+Le verdict ne dépend que de l'égalité réel/cible (`ResolveItemStatus(isCompliant)`).
 
-**Persistance du dernier-appliqué (conservée).** L'agent persiste toujours, par
-type, le dernier état qu'il a appliqué (horodatage — traçabilité, décision 24.4
-n° 9). Cette mémoire n'a **plus d'incidence sur le verdict** (elle ne sert qu'à
-la trace), mais le store applied-state est conservé (Story 27.8 D-B).
+**Persistance du dernier-appliqué.** L'agent persiste, par type, le dernier état
+qu'il a appliqué (horodatage). Cette mémoire ne sert qu'à la **trace** : elle n'a
+**aucune incidence sur le verdict**.
 
 **Premier passage** : aucune mémoire ⇒ même comportement que tout autre passage —
 `réel = cible → compliant` (+ persiste), `réel ≠ cible → APPLIQUE → drift`
 (+ persiste).
 
-## 6. Rapport de conformité — gap 2 (`POST /report`)
+## 6. Rapport de conformité (`POST /report`)
 
 ```json
 {
@@ -209,25 +197,23 @@ la trace), mais le store applied-state est conservé (Story 27.8 D-B).
 | `workstation` | Identité du poste (`hostname`, `uuid`). |
 | `items[].type` | Identifiant de type figé. |
 | `items[].status` | `compliant` \| `drift` \| `error` (`App\Enums\AgentResourceStatus`). |
-| `items[].hash` | Hash **opaque** de la cible que l'agent a traitée (échoué tel quel, jamais recalculé). |
+| `items[].hash` | Hash **opaque** de la cible que l'agent a traitée (renvoyé tel quel, jamais recalculé). |
 | `items[].detail` | **Obligatoire et non vide** quand `status = error` ; optionnel sinon. |
 
-Statuts (`App\Enums\AgentResourceStatus`) — Story 27.8 : 3 statuts (le
-`drifted_allowed` est retiré) :
+Statuts (`App\Enums\AgentResourceStatus`) :
 
 - `compliant` — réel = cible, rien à faire.
 - `drift` — dérive détectée **et réappliquée** (la cible fait toujours loi).
 - `error` — l'application a échoué ; `detail` documente la cause.
 
-**Champ additif `inventory` (Story 27.5, évolution MINEURE §9).** L'item
-`applications` du **rapport** peut porter un champ optionnel `inventory` : un
-**résultat par application** `[{app_id, status, detail?}]` (statut ∈
-`compliant|drift|error`). C'est une **donnée additive** sous la ligne d'état par
-type — **jamais** un verdict per-app : le `status`/`hash` de l'item RESTENT le
-verdict **PAR TYPE** (pire statut des apps ; grain 27.8 intact). Le serveur
-stocke l'inventaire dans `agent_application_inventory` (clé `(workstation_id,
-app_id)`, level-triggered) — **fondation des licences à pool**, sans UI. Un
-serveur antérieur ignore ce champ (reste `v1`).
+**Champ additif `inventory`.** L'item `applications` du **rapport** peut porter un
+champ optionnel `inventory` : un **résultat par application**
+`[{app_id, status, detail?}]` (statut ∈ `compliant|drift|error`). C'est une
+**donnée additive** sous la ligne d'état par type — **jamais** un verdict per-app :
+le `status`/`hash` de l'item RESTENT le verdict **PAR TYPE** (pire statut des
+apps). Le serveur stocke l'inventaire dans `agent_application_inventory` (clé
+`(workstation_id, app_id)`, level-triggered) — **fondation des licences à pool**,
+sans UI. Un serveur antérieur ignore ce champ (reste `v1`).
 
 ```json
 {
@@ -241,7 +227,7 @@ serveur antérieur ignore ce champ (reste `v1`).
 }
 ```
 
-## 7. Identifiants de type de ressource (NFR12 — figés)
+## 7. Identifiants de type de ressource (figés)
 
 Clé de voûte du contrat, **partagés** serveur / agent / JSON / DB / UI. Ils sont
 `snake_case` et **figés une fois publiés** : un identifiant publié ne se
@@ -253,7 +239,7 @@ Identifiants prévus :
 `wallpaper`, `overlay`, `shortcuts`, `printers`, `drives`, `associations`,
 `registry`, `app_config`, `applications`.
 
-### 7.1 Payload `registry` (Story 27.3)
+### 7.1 Payload `registry`
 
 Type `registry` — sémantique **`exclusive` PAR IDENTITÉ DE CLÉ** (une clé de
 registre = une valeur ; la maille la plus spécifique gagne POUR CETTE clé, les
@@ -282,29 +268,30 @@ clés distinctes s'accumulent). Le payload porte un item de registre **CONCRET**
 | `type` | string | `REG_SZ` \| `REG_DWORD` \| `REG_EXPAND_SZ` \| `REG_MULTI_SZ` \| `REG_QWORD`. |
 | `value` | int \| string \| list&lt;string&gt; | Valeur cible TYPÉE : `REG_DWORD`/`REG_QWORD` → **entier** (zéro float, §4.1) ; `REG_SZ`/`REG_EXPAND_SZ` → **string** ; `REG_MULTI_SZ` → **liste de strings** (jamais `{}` — §4.1). |
 
-> **🔴 Invariant central (27.3).** Le payload `registry` ne porte **JAMAIS** un
+> **🔴 Invariant central.** Le payload `registry` ne porte **JAMAIS** un
 > `setting_id` / `setting_key` de catalogue serveur. Le catalogue
 > (`registry_settings`) est un détail SERVEUR qui se **compile** en cet item
 > concret dans le provider. C'est ce qui garde l'option « éditeur de clés brutes »
-> (v2) gratuite : une 2ᵉ source d'autoring produira les **mêmes** items concrets
-> → zéro changement d'agent/contrat/provider.
+> gratuite : une 2ᵉ source d'autoring produira les **mêmes** items concrets →
+> zéro changement d'agent/contrat/provider.
 
-> **Story 27.3ter — `value` = override de parc, sinon défaut catalogue.** La
-> STRUCTURE du payload est INCHANGÉE (5 clés). Côté serveur, le `value` émis est
-> l'**override de parc** (`registry_setting_assignables.value`) si présent, sinon
-> la **valeur par défaut du catalogue** (`registry_settings.value`) — cette
-> dernière étant désormais **diffusée à TOUTES les machines** (maille Broadcast).
-> L'agent et le golden ne changent pas : une valeur concrète reste une valeur
-> concrète. « Retirer un override » = supprimer la ligne de pivot → le poste
-> **re-converge vers le défaut** au cycle suivant (PAS « cesser de gérer »).
+> **`value` = override de parc, sinon défaut catalogue.** La STRUCTURE du payload
+> est identique dans les deux cas (5 clés). Côté serveur, le `value` émis est
+> l'**override de parc**
+> (`registry_setting_assignables.value`) si présent, sinon la **valeur par défaut
+> du catalogue** (`registry_settings.value`) — cette dernière étant **diffusée à
+> TOUTES les machines** (maille Broadcast). L'agent et le golden ne changent pas :
+> une valeur concrète reste une valeur concrète. « Retirer un override » =
+> supprimer la ligne de pivot → le poste **re-converge vers le défaut** au cycle
+> suivant (PAS « cesser de gérer »).
 
-> **Portée → acteur (D-Q2).** UN seul handler Go `registry`, instancié deux fois :
-> le **service SYSTEM** applique les items HKLM (portée `machine`), le
-> **compagnon** applique les items HKCU (portée `session`). Comme les deux
-> portées émettent le type `registry`, l'agent **fusionne par type** avant le
-> rapport (pire statut gagne) pour respecter l'unicité des types §6.
+> **Portée → acteur.** UN seul handler Go `registry`, instancié deux fois : le
+> **service SYSTEM** applique les items HKLM (portée `machine`), le **compagnon**
+> applique les items HKCU (portée `session`). Comme les deux portées émettent le
+> type `registry`, l'agent **fusionne par type** avant le rapport (pire statut
+> gagne) pour respecter l'unicité des types §6.
 
-### 7.2 Payload `associations` (Story 27.3bis)
+### 7.2 Payload `associations`
 
 Type `associations` — sémantique **`exclusive` PAR IDENTIFIANT** (une
 extension/un protocole = UN programme par défaut ; la maille la plus spécifique
@@ -328,19 +315,20 @@ porte une association **CONCRÈTE** :
 | Clé | Type JSON | Sens |
 |---|---|---|
 | `identifier` | string | Extension (`.pdf`, `.html`) ou protocole (`http`, `https`). |
-| `progid` | string | ProgId Windows cible inscrit sous UserChoice (ex. `Acrobat.Document.DC`, `FirefoxURL`). Peut être un ProgId **générique** `Applications\<exe>` (cf. note ci-dessous, Story 27.11). |
+| `progid` | string | ProgId Windows cible inscrit sous UserChoice (ex. `Acrobat.Document.DC`, `FirefoxURL`). Peut être un ProgId **générique** `Applications\<exe>` (cf. note ci-dessous). |
 | `type` | string | `file` (→ `FileExts\<ext>\UserChoice`) \| `protocol` (→ `UrlAssociations\<proto>\UserChoice`). |
 
-> **`progid` peut être `Applications\<exe>` (Story 27.11 — composer).** Quand
-> l'admin compose une association *(extension, app)* sans ProgId riche déclaré pour
-> cette extension, le serveur fabrique le ProgId **générique** `Applications\<exe>`
-> (« Ouvrir avec », ce que Windows crée nativement) — ex. `Applications\vlc.exe`. Le
-> **payload ne change PAS** (`{identifier, progid, type}`) et le **hash** est calculé
-> sur la chaîne ProgId VERBATIM (le `\` n'est pas un cas particulier — confirmé
-> empiriquement 2026-06-18). Le **chemin complet** de l'exe n'est JAMAIS dans le
-> payload : le compagnon le résout sur le poste (App Paths/PATH) et auto-enregistre
-> per-user `HKCU\Software\Classes\Applications\<exe>\shell\open\command` AVANT
-> d'imposer UserChoice. Golden/contrat INCHANGÉS.
+> **`progid` peut être `Applications\<exe>`.** Quand l'admin compose une
+> association *(extension, app)* sans ProgId riche déclaré pour cette extension,
+> le serveur fabrique le ProgId **générique** `Applications\<exe>` (« Ouvrir
+> avec », ce que Windows crée nativement) — ex. `Applications\vlc.exe`. Le
+> **payload ne change PAS** (`{identifier, progid, type}`) et le **hash** est
+> calculé sur la chaîne ProgId VERBATIM (le `\` n'est pas un cas particulier —
+> confirmé empiriquement 2026-06-18). Le **chemin complet** de l'exe n'est JAMAIS
+> dans le payload : le compagnon le résout sur le poste (App Paths/PATH) et
+> auto-enregistre per-user
+> `HKCU\Software\Classes\Applications\<exe>\shell\open\command` AVANT d'imposer
+> UserChoice. Golden/contrat INCHANGÉS.
 
 > **🔴 Le hash UserChoice n'est JAMAIS au payload.** Windows protège
 > l'association par défaut par un hash anti-tamper dérivé de
@@ -349,27 +337,27 @@ porte une association **CONCRÈTE** :
 > `{D18B6DD5-…}` de `shell32.dll`) → le hash est calculé **100 % côté agent**.
 > Le contrat ne porte que la cible logique `{identifier, progid, type}`.
 
-> **🔴 Invariant central (27.3bis).** Le payload ne porte **JAMAIS** un
-> `key`/`id` de catalogue (`file_associations`). Le catalogue se **compile** en
-> cet item concret dans le provider — option « clés brutes » (v2) gratuite.
+> **🔴 Invariant central.** Le payload ne porte **JAMAIS** un `key`/`id` de
+> catalogue (`file_associations`). Le catalogue se **compile** en cet item
+> concret dans le provider — option « clés brutes » gratuite.
 
-> **`source`/`wpkg_package` sont SERVEUR-only (D-Henri n°7, 27.3bis).** Le
-> catalogue tague chaque association `native` (built-in Windows, toujours
-> applicable) ou `wpkg` (ProgId fourni par un paquet WPKG, `wpkg_package` = le
-> `<package id>` = `Application::app_id`). Ces colonnes alimentent la **validation
-> prédictive de l'UI** (« paquet non déployé sur ce parc → cette association
-> échouera ici », AVANT déploiement) mais **NE fuient JAMAIS au payload** : il
-> reste `{identifier, progid, type}` INCHANGÉ. **L'agent ne connaît pas la notion
+> **`source`/`wpkg_package` sont SERVEUR-only.** Le catalogue tague chaque
+> association `native` (built-in Windows, toujours applicable) ou `wpkg` (ProgId
+> fourni par un paquet WPKG, `wpkg_package` = le `<package id>` =
+> `Application::app_id`). Ces colonnes alimentent la **validation prédictive de
+> l'UI** (« paquet non déployé sur ce parc → cette association échouera ici »,
+> AVANT déploiement) mais **NE fuient JAMAIS au payload** : il reste
+> `{identifier, progid, type}` INCHANGÉ. **L'agent ne connaît pas la notion
 > native/wpkg** — il reste le dernier rempart via `ProgIDRegistered` (poste
 > divergent). Le croisement WPKG vit dans l'UI/assignation (Livewire), jamais dans
-> `AssociationsStateProvider` (PG-pur, NFR7), qui **émet toujours** (D-Henri n°3).
+> `AssociationsStateProvider` (PG-pur), qui **émet toujours**.
 
-> **ProgId absent → choix préservé (D-Henri n°5).** Si le ProgId cible n'est pas
-> enregistré sur le poste, l'agent **ne supprime pas et ne réécrit pas** la clé
-> UserChoice existante (pas de clobber), et `Apply` ne rejoue PAS ce défaut
-> inapplicable. `detail` = « ProgId X non enregistré, choix utilisateur conservé ».
+> **ProgId absent → choix préservé.** Si le ProgId cible n'est pas enregistré sur
+> le poste, l'agent **ne supprime pas et ne réécrit pas** la clé UserChoice
+> existante (pas de clobber), et `Apply` ne rejoue PAS ce défaut inapplicable.
+> `detail` = « ProgId X non enregistré, choix utilisateur conservé ».
 >
-> **⚠️ Granularité du statut = PAR TYPE, pas par item (grain §5 figé 27.8).** Le
+> **⚠️ Granularité du statut = PAR TYPE, pas par item (grain §5 figé).** Le
 > dispatch agent est par **type** : si AU MOINS un item `associations` échoue
 > (ProgId absent, clé verrouillée), le type ENTIER est reporté `error` et **n'est
 > pas persisté** (pas de cache 304 → re-convergence au cycle suivant). Les autres
@@ -377,15 +365,13 @@ porte une association **CONCRÈTE** :
 > best-effort), mais le rapport masque le type en `error` tant qu'un item résiste.
 > « error non fatal » signifie donc « n'avorte pas la passe / ne tue pas les autres
 > TYPES » — **pas** « n'affecte pas les autres associations du même type ». Avec la
-> non-intersection WPKG (D-Henri n°3), un défaut ciblant une app non installée
-> maintient `associations` en `error` à chaque cycle : c'est **attendu**, pas un
-> bug (un grain réel item×poste rouvrirait le débat 27.8, cf. mémoire
-> `drift_policy_strict_only`).
+> non-intersection WPKG, un défaut ciblant une app non installée maintient
+> `associations` en `error` à chaque cycle : c'est **attendu**, pas un bug.
 
 > **« Désactiver = cesser de gérer ».** Une association retirée d'un parc
 > DISPARAÎT → l'agent ne touche plus la clé (le choix courant reste, §8).
 
-### 7.3 Payload `app_config` (Story 27.4)
+### 7.3 Payload `app_config`
 
 Type `app_config` — sémantique **`aggregate` PAR `app_kind`** (un item par
 application configurable : Firefox ET Thunderbird coexistent ; pour UNE app, un
@@ -393,7 +379,7 @@ seul jeu de policies effectif déjà fusionné côté serveur). Portée **`machi
 (`policies.json` est **machine-wide**, posé sous `%ProgramFiles%\…\distribution\`
 en contexte admin-write → écrit par le **service SYSTEM** ; résolution **PAR
 PARC**, niveaux 1-4 : template → auto → défaut étab → WG, avec `$user = null`).
-Le par-user de Firefox = le **profil** (Mécanisme B / roaming, hors 27.4), PAS
+Le par-user de Firefox = le **profil** (Mécanisme B / roaming), PAS
 `policies.json`. Le payload porte les policies **RÉSOLUES CONCRÈTES** (le contenu
 exact que l'agent écrit dans `policies.json`) :
 
@@ -416,7 +402,7 @@ exact que l'agent écrit dans `policies.json`) :
 
 | Clé | Type JSON | Sens |
 |---|---|---|
-| `app_kind` | string | `firefox` \| `thunderbird` (les apps configurables par `policies.json` — `AppKind::cases()`). Pas de Chrome/Edge (le legacy ne gère aucune policy ; recadrage 2026-06-17). |
+| `app_kind` | string | `firefox` \| `thunderbird` (les apps configurables par `policies.json` — `AppKind::cases()`). Pas de Chrome/Edge. |
 | `policies` | object | Les policies **résolues** (6 niveaux fusionnés serveur) à écrire telles quelles dans `policies.json`. Forme native de l'app (Firefox/Thunderbird = `{ "policies": { … } }`). Strings/ints/bools/null/objets/listes — **jamais de float** (§4.1 ; un float de policy est normalisé en string par le provider). |
 
 **Mécanisme : UN SEUL — `policies.json` enterprise natif.** L'agent écrit un
@@ -424,14 +410,13 @@ exact que l'agent écrit dans `policies.json`) :
 `…\Mozilla Firefox\distribution\policies.json`, Thunderbird au chemin
 équivalent), en **écriture atomique**. PAS de mécanisme « registre policies »,
 PAS de redirection de profil (sujet **roaming** serveur, renvoyé au domaine
-roaming/`WorkstationEnvironment` — 26.x / story de suivi). Une app posée par
-`policies.json` future = data serveur (un `AppKind` + un adapter), **zéro release
-agent**.
+roaming/`WorkstationEnvironment`). Une app posée par `policies.json` future = data
+serveur (un `AppKind` + un adapter), **zéro release agent**.
 
-> **🔴 Invariant central (27.4).** Le payload `app_config` ne porte **JAMAIS** un
+> **🔴 Invariant central.** Le payload `app_config` ne porte **JAMAIS** un
 > `customization_id` ni un scope de catalogue (`app_customizations`). La
-> hiérarchie 6 niveaux (story 4.8) est un détail SERVEUR qui se **compile** en ces
-> policies concrètes dans le provider — option « 2ᵉ source d'authoring » gratuite.
+> hiérarchie 6 niveaux est un détail SERVEUR qui se **compile** en ces policies
+> concrètes dans le provider — option « 2ᵉ source d'authoring » gratuite.
 
 > **Marqueur de périmètre + conflit hors-périmètre (`error`).** Seul un
 > `policies.json` posé par l'agent (clé d'extension `_sambaedu_managed: true`,
@@ -443,8 +428,8 @@ agent**.
 > convergent (isolation).
 
 > **« Désactiver = cesser de gérer ».** Une app retirée des règles voit son
-> `policies.json` GÉRÉ **retiré** au passage suivant (level-triggered, drift
-> STRICT) ; jamais un fichier hors périmètre.
+> `policies.json` GÉRÉ **retiré** au passage suivant (level-triggered) ; jamais un
+> fichier hors périmètre.
 
 > **App butée = limite connue.** Une app qui écrirait un réglage **sans aucun
 > mécanisme enterprise natif** (pas de `policies.json` exploitable) n'est **PAS
@@ -453,18 +438,18 @@ agent**.
 > mécanisme enterprise documenté de l'app.
 
 > **Couplage installation (limite connue).** Pour que la policy ait un effet,
-> l'app doit être installée (Firefox/Thunderbird présents) → story 27.5
-> (applications/WPKG). Le service SYSTEM écrit sous Program Files ; si le dossier
+> l'app doit être installée (Firefox/Thunderbird présents — cf. type
+> `applications` §7.4). Le service SYSTEM écrit sous Program Files ; si le dossier
 > d'install est absent (app non installée), l'écriture échoue → `{status: error}`
 > pour le seul type `app_config`, les autres types convergent.
 
-### 7.4 Payload `applications` (Story 27.5)
+### 7.4 Payload `applications`
 
 Type `applications` — sémantique **`aggregate`** (un item par application
 affectée au poste ; l'union poste + groupes + dépendances transitives), portée
 **`machine`** (WPKG installe **machine-wide** → le **service SYSTEM** déclenche ;
-leçon 🔴 27.4 #1 : portée de livraison = machine, jamais session). Le payload
-porte un identifiant de paquet WPKG **CONCRET** :
+portée de livraison = machine, jamais session). Le payload porte un identifiant
+de paquet WPKG **CONCRET** :
 
 ```json
 {
@@ -493,13 +478,13 @@ bundle (Apache statique) au bootstrap + **dépose** localement le profil par-hô
 ne réimplémente **JAMAIS** l'installation, la détection de présence ou la
 résolution de dépendances.
 
-> **🔴 Invariant central (27.5).** Le payload `applications` ne porte **JAMAIS**
-> un id de catalogue/pivot/scope ni une recette d'installation (pas de version,
-> pas de `<check>`, pas de `<install>` — propriété de `packages.xml`). Juste
-> l'`app_id` concret + son libellé. L'ensemble cible est projeté en lecture seule
-> de la résolution WPKG existante (`WorkstationPackagesResolver::computePackages`,
-> méthode **NON CACHÉE** — NFR7) : single source of truth, jamais une
-> réimplémentation de l'union/BFS de dépendances.
+> **🔴 Invariant central.** Le payload `applications` ne porte **JAMAIS** un id de
+> catalogue/pivot/scope ni une recette d'installation (pas de version, pas de
+> `<check>`, pas de `<install>` — propriété de `packages.xml`). Juste l'`app_id`
+> concret + son libellé. L'ensemble cible est projeté en lecture seule de la
+> résolution WPKG existante (`WorkstationPackagesResolver::computePackages`,
+> méthode **NON CACHÉE**) : single source of truth, jamais une réimplémentation de
+> l'union/BFS de dépendances.
 
 > **« Désactiver = cesser de gérer ».** Une app retirée des affectations disparaît
 > de l'ensemble cible → l'agent ne l'exige plus installée (l'inventaire la
@@ -511,20 +496,18 @@ résolution de dépendances.
 > entièrement installé ? » (désiré ⊆ installé, lu dans `wpkg.xml`) → `compliant`
 > sans re-déclenchement. Ensemble modifié / installation incomplète → `Apply`
 > (déclenche WPKG, idempotent). Échec d'install après run = `error` + `detail`
-> (jamais un faux `compliant`). Fini le poste joint qui n'installe rien : le
-> déclencheur n'est plus l'événement GPO ponctuel au boot mais le **cycle agent
-> répété** (boot/login/timer/forcer).
+> (jamais un faux `compliant`). Le déclencheur n'est pas l'événement GPO ponctuel
+> au boot (qui pouvait laisser un poste joint sans rien installer) mais le **cycle
+> agent répété** (boot/login/timer/forcer).
 
-> **Livraison NATIVE SE5 (D6).** Le shim WPKG legacy (`/wpkg/hosts.xml`,
-> `/wpkg/profiles.xml`) est **supprimé**. SE5 **génère** le bundle pré-substitué
+> **Livraison native.** SE5 **génère** le bundle pré-substitué
 > (`php artisan wpkg:bundle` : scripts versionnés `resources/wpkg/*` + catalogue
 > `packages.xml`, `SE4FS_NAME` résolu) dans un sous-dossier servi en **statique
 > par Apache** (`config('agent.wpkg_bundle_path')`, pas via Laravel). Le profil
-> par-hôte est **déposé par l'agent** (D9). Les installeurs restent sur SMB
-> (D11). La GPO `se4_wpkg` n'est **plus publiée** par SE5 (l'agent est le seul
-> déclencheur — D2).
+> par-hôte est **déposé par l'agent**. Les installeurs restent sur SMB. La GPO
+> `se4_wpkg` n'est **plus publiée** par SE5 : l'agent est le seul déclencheur.
 
-## 8. Tableau vide ≠ type absent (décision de contrat — AC1)
+## 8. Tableau vide ≠ type absent (décision de contrat)
 
 Les items d'une portée sont une **liste**, pas une map. La distinction
 « rien à faire » vs « pas géré » se joue ainsi :
@@ -541,7 +524,7 @@ Les items d'une portée sont une **liste**, pas une map. La distinction
 Aucune ambiguïté « rien à faire » vs « pas géré » ne doit subsister : c'est une
 décision de contrat consommée par chaque handler côté agent.
 
-## 9. Règle d'évolution (AC5 — NFR13)
+## 9. Règle d'évolution
 
 - **Champ ajouté** → version **mineure**. L'agent **ignore l'inconnu**
   (forward-compat).
@@ -552,10 +535,10 @@ décision de contrat consommée par chaque handler côté agent.
 Les golden files `tests/Fixtures/Agent/{state,report}.v1.json` sont **normatifs**
 et **consommés par PHPUnit** (`tests/Unit/Services/Agent/ContractV1Test.php`) :
 structure validée + **hash d'état figé** (garde-fou de régression sur la
-canonicalisation). Quand l'agent existera (Epic 24), ces mêmes golden files
-seront partagés serveur ⇄ agent pour des tests croisés.
+canonicalisation). Ces mêmes golden files sont partagés serveur ⇄ agent pour des
+tests croisés.
 
-## 10. Aucune dépendance AD (critère Keycloak — NFR7, AC6)
+## 10. Aucune dépendance AD
 
 Rien dans le code livré (`app/Enums/*`, `app/Services/Agent/*`, fixtures) n'appelle
 l'AD / LdapRecord / Kerberos / `samba-tool`. Le canal agent est **neuf** et reste

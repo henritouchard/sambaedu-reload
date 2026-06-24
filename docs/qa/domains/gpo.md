@@ -1747,8 +1747,8 @@ php artisan tinker --execute='for($i=0;$i<25;$i++) \DB::table("jobs")->insert(["
 **Date livraison** : 2026-05-21
 **Migrations à appliquer** : aucune (refactor interne — pas de changement de schéma)
 **Pré-requis complémentaires** :
-- Driver APCu chargé en PHP-FPM (`php -r "echo apcu_enabled();"` → `1`).
-- `CACHE_DRIVER=apc` dans `/var/www/sambaedu-reload/.env` (défaut prod après 16.15).
+- Driver APCu chargé en PHP-FPM (`php -r "echo apcu_enabled();"` → `1`) — requis pour le store `app_context` (interop legacy), PAS pour le store par défaut.
+- `CACHE_DRIVER=file` dans `/var/www/sambaedu-reload/.env` : le store PAR DÉFAUT doit supporter `Cache::lock()` (cf. correctif 2026-06-23 — `apc` casse tous les `Cache::lock()`, dont l'install d'apps via `WithoutOverlapping`). L'interop legacy reste portée par le store `app_context` (hardcodé `apc` via `APP_CONTEXT_CACHE_DRIVER`, n'hérite PAS du global).
 - `php artisan config:clear && php artisan cache:clear` (après deploy).
 
 ### Scénario 16.15-1 — Vérification store `app_context` déclaré et configuré
@@ -1756,9 +1756,9 @@ php artisan tinker --execute='for($i=0;$i<25;$i++) \DB::table("jobs")->insert(["
 1. SSH sur la VM : `ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50`.
 2. `cd /var/www/sambaedu-reload && php artisan tinker --execute='print_r(config("cache.stores.app_context"));'`
 3. Vérifier la sortie :
-   - `driver` = `apc` (ou valeur de `APP_CONTEXT_CACHE_DRIVER` / `CACHE_DRIVER` env).
+   - `driver` = `apc` (hardcodé via `APP_CONTEXT_CACHE_DRIVER`, n'hérite PAS de `CACHE_DRIVER` — review #10).
    - `prefix` = `''` (chaîne vide — **critique** pour interop legacy D5).
-4. Vérifier que `config('cache.default')` = `apc` (fallback configuré).
+4. Vérifier que `config('cache.default')` = `file` (store par défaut lock-capable ; `app_context` reste `apc` indépendamment).
 
 **Attendu** : tableau `['driver' => 'apc', 'prefix' => '']`.
 
