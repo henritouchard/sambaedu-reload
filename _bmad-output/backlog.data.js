@@ -1157,6 +1157,149 @@ const DATASETS = {
           "title": "Staging des outils WPKG partagés (%Z%\\wpkg\\tools\\) sur le poste"
         }
       ]
+    },
+    {
+      "num": 28,
+      "title": "Contrat Amont — Réception & résolution (socle)",
+      "status": "backlog",
+      "summary": "<strong>Côté local SE5 du « Contrat Managé »</strong> — l'instance consomme un <strong>contrat amont générique</strong> imposé par controlHub. <strong>Aucune notion de « central » dans SER</strong> (principe fondateur PRD) : SE5 modélise une « autorité amont » abstraite, comme le login fédéré (Epic 20) et le desired-state (Epic 23). L'instance ingère le contrat, le persiste de façon idempotente, et calcule l'état effectif <code>amont &gt; local</code> via <code>StateCompiler::specificity()</code> ; sans contrat, comportement strictement inchangé. <strong>Cadré 2026-06-26 (PM John).</strong> Sources : <code>prd-contrat-manage-se5.md</code> + <code>epics-contrat-manage-se5.md</code>. Côté controlHub = <code>handoff-controlhub-contrat-manage.md</code> (BMAD séparé).",
+      "stories": [
+        {
+          "id": "28-1",
+          "title": "Modèle et persistance du contrat amont (items, catalogue, labels, groupes imposés, état du lien)",
+          "status": "backlog"
+        },
+        {
+          "id": "28-2",
+          "title": "Réception idempotente d'un contrat amont (NFR4)",
+          "status": "backlog"
+        },
+        {
+          "id": "28-3",
+          "title": "Résolution amont > local dans StateCompiler (FR2, standalone préservé)",
+          "status": "backlog"
+        }
+      ]
+    },
+    {
+      "num": 29,
+      "title": "Contrat Amont — Faire respecter le contrat (verrou & permissif)",
+      "status": "backlog",
+      "summary": "<strong>Cœur de valeur</strong> : c'est ici que la divergence non voulue entre établissements est stoppée. Le refnum ne peut plus défaire un item <strong>verrouillé</strong>, peut surcharger un item <strong>permissif</strong> au niveau d'un WorkstationGroup, et voit clairement les statuts (imposé/verrouillé/permissif). Enforcement réel via <strong>Gates scopés</strong> — inclut le correctif du trou connu <code>wpkg.*</code> (Gate global non scopé, cf. <code>project_delegation_enforcement_wpkg_gap</code>), <strong>prérequis bloquant d'Epic 31</strong>. Item verrouillé soumis au drift STRICT (27.8) ; overrides audités.",
+      "stories": [
+        {
+          "id": "29-1",
+          "title": "Scoper le Gate wpkg.* par périmètre (NFR1 — prérequis Epic 31)",
+          "status": "backlog"
+        },
+        {
+          "id": "29-2",
+          "title": "Refuser la modification d'un item verrouillé (UI + service + gate)",
+          "status": "backlog"
+        },
+        {
+          "id": "29-3",
+          "title": "Surcharger un item permissif par WorkstationGroup",
+          "status": "backlog"
+        },
+        {
+          "id": "29-4",
+          "title": "Lisibilité refnum — statuts imposé/verrouillé/permissif dans l'UI",
+          "status": "backlog"
+        },
+        {
+          "id": "29-5",
+          "title": "Drift STRICT sur item verrouillé + audit des overrides",
+          "status": "backlog"
+        }
+      ]
+    },
+    {
+      "num": 30,
+      "title": "Contrat Amont — Cibler par labels (types de parc)",
+      "status": "backlog",
+      "summary": "Les WorkstationGroups sont locaux et hétérogènes (un collège a 1 salle techno, un autre en a 3) → l'amont ne peut pas cibler un groupe qu'il ne connaît pas. Indirection par <strong>label</strong> (type de parc) : l'amont définit des labels, SE5 les mappe sur ses groupes, l'amont associe un item à un label → tous les groupes portant ce label héritent. <strong>1 label max par groupe</strong> (superposition via appartenance multiple aux parcs logiques). 3 modes : <code>libre</code> (refnum assigne/crée), <code>réservé</code> (non-attribuable, ex. compta), <code>groupe imposé</code> (création garantie, ex. bureau_direction). Conflit poste = règle verrou/permissif par propriété ; cas insoluble = validation prédictive à l'assignation.",
+      "stories": [
+        {
+          "id": "30-1",
+          "title": "Réception des labels (mode libre/réservé) et des groupes imposés",
+          "status": "backlog"
+        },
+        {
+          "id": "30-2",
+          "title": "Mapping d'un label par le refnum (1 label max ; réservé non attribuable)",
+          "status": "backlog"
+        },
+        {
+          "id": "30-3",
+          "title": "Garantie d'existence des groupes imposés (création/réconciliation)",
+          "status": "backlog"
+        },
+        {
+          "id": "30-4",
+          "title": "Résolution d'un item ciblant un label (règle verrou/permissif, pas d'ordre inter-parcs)",
+          "status": "backlog"
+        },
+        {
+          "id": "30-5",
+          "title": "Validation prédictive à l'assignation (collision de verrous amont)",
+          "status": "backlog"
+        }
+      ]
+    },
+    {
+      "num": 31,
+      "title": "Contrat Amont — Dépôt applicatif borné & install pilotée",
+      "status": "backlog",
+      "summary": "Central devient le dépôt applicatif faisant autorité côté instance : le canal d'install refnum reste utilisable mais <strong>filtré au catalogue amont</strong> (ajout libre, mais depuis le catalogue). L'amont peut <strong>déclencher</strong> des installs sous forme de <strong>désir d'état</strong> repris par le canal check-in de l'agent existant (idempotence/reprise). <strong>Dépend du correctif Gate <code>wpkg.*</code></strong> (story 29-1) pour que le bornage soit réellement opposable.",
+      "stories": [
+        {
+          "id": "31-1",
+          "title": "Borner le canal d'install refnum au catalogue amont (FR5)",
+          "status": "backlog"
+        },
+        {
+          "id": "31-2",
+          "title": "Déclenchement d'install en désir d'état via check-in agent (FR6)",
+          "status": "backlog"
+        }
+      ]
+    },
+    {
+      "num": 32,
+      "title": "Contrat Amont — Cycle de vie du lien & release",
+      "status": "backlog",
+      "summary": "À réception du signal de <strong>rupture du lien de management</strong>, SE5 libère proprement tous les verrous : les items quittent l'état imposé en conservant leur valeur courante effective, le bornage catalogue tombe, le refnum reprend la main — <strong>sans perte de ses ajouts locaux</strong>. Distinction clé : une simple <strong>indisponibilité amont</strong> (panne) ne libère rien (le dernier contrat reste en vigueur) ; seule la rupture délibérée déclenche le release. Transitions d'état du lien auditées (NFR5).",
+      "stories": [
+        {
+          "id": "32-1",
+          "title": "Release des verrous à la rupture du lien (valeurs conservées, ajouts préservés)",
+          "status": "backlog"
+        },
+        {
+          "id": "32-2",
+          "title": "Indisponibilité amont vs rupture + trace des transitions du lien",
+          "status": "backlog"
+        }
+      ]
+    },
+    {
+      "num": 33,
+      "title": "Contrat Amont — Contrat de données d'intégration controlHub↔SE5",
+      "status": "backlog",
+      "summary": "Formaliser et <strong>versionner</strong> le schéma d'échange partagé entre controlHub et SE5 (point de couture entre les deux BMAD, cf. §7 du handoff et §9 du mini-PRD). Source unique vérifiable : validation du payload contre le schéma versionné à l'ingestion, et <strong>rejet gracieux</strong> d'une version incompatible (sans corrompre l'état local). Durcit le format d'ingestion introduit unilatéralement en Epic 28. Coordination cross-équipe — à synchroniser avec le BMAD controlHub.",
+      "stories": [
+        {
+          "id": "33-1",
+          "title": "Schéma d'échange versionné (validation à l'ingestion)",
+          "status": "backlog"
+        },
+        {
+          "id": "33-2",
+          "title": "Négociation et rejet gracieux d'une version incompatible",
+          "status": "backlog"
+        }
+      ]
     }
   ],
   "central": [
