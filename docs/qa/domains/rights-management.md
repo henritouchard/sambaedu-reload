@@ -684,6 +684,60 @@ Le toast de succès n'est affiché que si l'état **persisté** du groupe couran
 
 ---
 
+## Section 10 — Scope du read-back `syncFromAd` de `updateGroup` (Story 4.16, 2026-06-25)
+
+> **But.** Chaque appel à `UserGroupService::updateGroup()` (rename, édition de membres, toggle Professeur principal…) déclenchait un `syncFromAd()` **global** : re-balayage de TOUS les groupes AD de l'établissement + risque de suppression hors scope via le cleanup `whereNotIn` (mode global). 4.16 scope ce read-back au seul groupe édité en passant `onlyGroupNames: [$lookupName]` (base nue pour classe/équipe → remonte les 3 variantes `Classe_`/`Equipe_`/`PP_` via le filtre l.335-368 ; CN brut pour les autres types). En mode scopé, le cleanup `whereNotIn` (l.433) **ne tourne pas** : aucune ligne hors scope n'est purgée. `deleteGroup` reste délibérément en read-back global (il dépend du `whereNotIn` pour retirer la ligne supprimée — D3).
+
+> **Pré-requis.** AD réel /vm (DC se4ad) avec des classes foldées (`Classe_3A`, `Equipe_3A`, `PP_3A`). La migration data 4.14 jouée (§8.7). Permission `user.modify`. Logs Laravel accessibles pour observer les compteurs « N CN AD détecté(s) → M groupe(s) projeté(s) ».
+
+> ⚠️ **CASSE DES CN AD (parc réel).** L'AD du parc porte majoritairement des CN legacy en **minuscule** (`classe_3a`/`equipe_3a`/`pp_3a`), pas la forme canonique `Classe_3A` (cf. mémoire `project_vm_ad_junk_classe_groups`). Les scénarios ci-dessous écrivent `Classe_3A` par lisibilité, mais sur `/vm` réel vous observerez `classe_3a` — c'est **normal**, pas une anomalie. 4.16 a rendu le fold (`foldPrefixOf`/`stripClasseLikePrefix`/détection de type) **insensible à la casse** : c'est ce qui permet au read-back **scopé** (qui passe le nom nu `3a` à `onlyGroupNames`) de reconnaître les 3 variantes minuscules. Sans ce durcissement, le read-back scopé serait un no-op sur le parc réel et l'édition lèverait « introuvable après synchronisation ». La détection de préfixe réservé à la création (`guardReservedPrefixOnCreate`) et la résolution `matiere_classe` sont aussi insensibles à la casse (Q2) pour éviter les CN à double préfixe (`Classe_classe_x`).
+
+### Scénario 10.1 — Read-back ciblé voit les 3 variantes (CRITIQUE)
+
+1. Éditer le groupe `3A` (toggle PP ou description) → cliquer « Enregistrer ».
+2. Observer les logs : le message `N CN AD détecté(s) → M groupe(s) projeté(s)` doit indiquer **3 CN, 1 groupe** (uniquement `Classe_3A`/`Equipe_3A`/`PP_3A`) — et non l'ensemble des groupes de l'établissement.
+3. La ligne nue `3A` conserve l'**union complète** de ses membres (`alice` de `Classe_3A`, `bob` de `Equipe_3A`) et le flag `is_head_teacher` re-posé depuis `PP_3A`.
+4. **Aucune autre ligne `user_groups`** n'est modifiée.
+
+### Scénario 10.2 — Aucune purge hors scope (CRITIQUE)
+
+1. Éditer `3A` pendant qu'un autre groupe `5C` existe en SQL.
+2. Simuler une **réponse AD incomplète** (momentanée : `5C` absent du lot renvoyé) — en pratique : observer que, même si l'AD était lent à répondre, `5C` n'est jamais supprimé de `user_groups` lors d'un `updateGroup('3A')`.
+3. Vérifier après l'édition que la ligne `5C` est toujours présente en SQL (`SELECT id, name FROM user_groups WHERE name='5C'`).
+4. Comparer le comportement de `deleteGroup('5C')` : lui passe par le read-back global et **supprime bien** la ligne `5C` (comportement intentionnel D3, à contraster avec 10.2).
+
+### Scénario 10.3 — Rename → scope sur le NOUVEAU nom
+
+1. Renommer la classe `3A` en `3B` depuis l'UI (AD renommé en `Classe_3B`/`Equipe_3B`/`PP_3B` avant le read-back).
+2. Observer les logs : le read-back cible **`3B`** (base du nouveau nom), pas `3A`.
+3. La ligne SQL converge vers `3B` avec ses membres ; `3A` n'existe plus en SQL.
+4. Un autre groupe préexistant (`5C`) **n'est pas purgé**.
+
+### Scénario 10.4 — Non-régression PP convergence (D2, aller-retour stable)
+
+1. Désigner `prof1` PP sur `3A` (UI) → enregistrement.
+2. Observer : `PP_3A={prof1}` en AD, `(3A,prof1).is_head_teacher=true` en SQL (read-back scopé a re-posé le flag depuis `PP_3A`).
+3. **Aller-retour stable** : relancer un `syncFromAd` (bouton « Synchroniser avec AD ») → flag inchangé, membres inchangés (pas de clignotement).
+4. Éditer la liste de membres (retirer `prof2`, sans `head_teacher_ids`) → `PP_3A` préserve `prof1` (M6, préservation des PP existants) ; le read-back scopé ré-affirme le flag.
+
+### Scénario 10.5 — Read-back scopé sur CN AD MINUSCULES (parc réel, CRITIQUE)
+
+> C'est le scénario qui reflète l'AD réel `/vm` (CN legacy minuscules) et qui justifie le durcissement casse-insensible de 4.16. À dérouler en priorité sur le parc.
+
+1. Identifier une classe dont les CN AD sont en minuscule : `samba-tool group list | grep -iE '^classe_'` → typiquement `classe_3a`, `equipe_3a`, `pp_3a`.
+2. Vérifier la ligne SQL foldée correspondante : `php artisan tinker --execute="echo App\\Models\\UserGroup::whereRaw('LOWER(name)=?',['3a'])->value('name');"` (le fold a projeté une ligne nue `3a`).
+3. Éditer ce groupe depuis l'UI (toggle PP ou description) → « Enregistrer ».
+4. **Attendu** : l'édition aboutit (pas d'erreur « introuvable après synchronisation »), la ligne nue conserve l'union de ses membres, et le flag `is_head_teacher` reste posé depuis `pp_3a`. Les logs montrent **3 CN → 1 groupe**, scope sur le nom nu minuscule.
+5. **Régression à surveiller** : si l'édition d'une classe à CN minuscule échoue avec « introuvable après synchronisation », c'est le signe que le fold est redevenu sensible à la casse (`str_starts_with` réintroduit) → le read-back scopé ne voit plus les CN minuscules.
+
+> **Couverture automatisée.** `tests/Unit/Services/UserGroupServiceLegacyCompatibilityTest.php` couvre : `it_scopes_read_back_to_edited_group_on_update` (10.1 — scope ciblé voit les 3 variantes + flag PP, AC1+AC2) ; `it_does_not_purge_out_of_scope_groups_on_update` (10.2 — `5C` survit, AC4) ; `it_scopes_read_back_to_new_name_on_rename` (10.3 — rename ciblé nouveau nom, AC3) ; `it_scopes_read_back_for_non_class_type` (type `cours`, scope CN brut, AC5) ; `it_scopes_read_back_to_edited_group_on_update_with_lowercase_ad_cns` (10.5 — read-back scopé sur CN minuscules, garde contre régression de casse) ; casse-insensibilité de la création : `it_rejects_lowercase_reserved_prefix_name_for_classe_like_create` + `it_does_not_re_expand_lowercase_prefixed_matiere_classe_cn` (Q2) ; non-régression PP : `it_keeps_pp_stable_after_syncFromAd_roundtrip` (10.4 aller-retour stable, AC6) et `it_preserves_head_teachers_when_updateGroup_omits_head_teacher_ids` (10.4 préservation M6, AC7). La réduction du balayage AD observable dans les logs (`N CN → M groupe(s)`) = **validation manuelle /vm, différée post-merge** (voir runbook ci-dessous).
+
+> **Runbook E2E /vm (différé post-merge).** (1) Ouvrir les logs Laravel : `tail -f /var/www/sambaedu-reload/storage/logs/laravel.log`. (2) Éditer un groupe `3A` (toggle PP ou description) depuis l'UI. (3) Vérifier que le message `[UserGroupService]` indique **3 CN AD détecté(s) → 1 groupe(s) projeté(s)** (vs N_établissement CN avant 4.16). (4) Vérifier qu'un second groupe SQL (`5C`) est toujours présent : `php artisan tinker --execute="echo App\\Models\\UserGroup::where('name','5C')->exists() ? 'OK' : 'PURGÉ';"`. (5) Contrôle `deleteGroup` : supprimer `5C` → ligne disparaît (comportement global D3 intentionnel préservé).
+
+> **Checklist rapide pré-prod (4.16)** : déployer (inotify synctomé) → config:cache + route:cache si nécessaire → éditer un groupe en UI → vérifier log « 3 CN → 1 groupe » → vérifier un groupe hors scope non purgé → `deleteGroup` d'un groupe test : ligne supprimée (read-back global D3 intact).
+
+---
+
 ## Post-correctifs & non-régressions
 
 ### Post-correctifs Story 7.2 (review 2026-04-23)
@@ -793,6 +847,12 @@ Le toast de succès n'est affiché que si l'état **persisté** du groupe couran
 - [ ] 9.7 Section gated classe + abort `mount` sur groupId non-classe (anti-forge)
 - [ ] 9.8 Toggle PP limité aux membres `isProf()` (pas de contrôle sur un élève)
 - [ ] 9.9 Double guard `update-group` (lecture seule sans `user.modify`, `save` rejeté serveur)
+
+**Section 10 — Scope du read-back `syncFromAd` de `updateGroup` (Story 4.16)**
+- [ ] 10.1 **Read-back ciblé voit les 3 variantes (CRITIQUE)** : log « 3 CN → 1 groupe » après édition de `3A` ; membres + flag PP intacts
+- [ ] 10.2 **Aucune purge hors scope (CRITIQUE)** : groupe `5C` SQL survit à un `updateGroup('3A')` même si AD ne retourne pas `5C`
+- [ ] 10.3 Rename → scope sur le NOUVEAU nom ; `5C` non purgé
+- [ ] 10.4 Non-régression PP convergence : flag re-posé depuis `PP_3A`, aller-retour stable (pas de clignotement)
 
 **Non-régressions**
 - [ ] Drawer Rôles + Permissions

@@ -184,12 +184,21 @@ class UserGroupService
             );
         }
 
-        $this->syncFromAd();
-
         // 4.13 — lookup post-sync au NOM NU pour les classes/équipes foldées :
         // l'edit-form peut renvoyer le CN stocké (`Classe_3A`) alors que la ligne
         // foldée est persistée au nom nu (`3A`). Les autres types restent au CN.
+        // 4.16 — hissé AVANT syncFromAd pour servir à la fois de scope du read-back
+        // (anti-divergence D5) ET de clé de lookup post-sync.
         $lookupName = $this->resolveSqlLookupName($newName, $payload['type']);
+
+        // 4.16 — scoper le read-back au seul groupe édité (parité syncGroupsWithAd).
+        // La base nue (ex. `3A`) fait remonter les 3 variantes Classe_/Equipe_/PP_
+        // via le filtre onlyGroupNames (l.335-368 : matche CN brut ET base nue),
+        // le fold 4.13 reste donc cohérent (1 ligne nue, union des membres, flag PP).
+        // En mode scopé, le cleanup whereNotIn (l.433) ne tourne PAS :
+        // aucune ligne hors scope n'est purgée (comportement voulu).
+        // D2 : on cible $newName (après rename, l'AD porte déjà le NOUVEAU CN).
+        $this->syncFromAd(onlyGroupNames: [$lookupName]);
 
         $updatedGroup = UserGroup::query()
             ->whereRaw('LOWER(name) = ?', [mb_strtolower($lookupName)])
@@ -217,6 +226,11 @@ class UserGroupService
             throw new RuntimeException("Suppression AD impossible pour le groupe '{$group->name}'.");
         }
 
+        // 4.16 — read-back global VOULU ici (NE PAS scoper).
+        // La suppression AD retire le CN du lot ; en mode global, le cleanup
+        // whereNotIn (l.433) puge la ligne SQL du groupe supprimé. Un scope sur le
+        // groupe supprimé ne verrait aucun CN et ne purgerait RIEN → ligne fantôme.
+        // D3 (story 4.16) : deleteGroup reste délibérément en read-back global.
         $this->syncFromAd();
     }
 
@@ -804,14 +818,20 @@ class UserGroupService
     }
 
     /**
-     * Retourne le préfixe de fold ({@see FOLD_PREFIXES}) du CN, ou null si le CN
-     * n'est pas une variante de classe/équipe. Casse stricte (CN AD réels =
-     * `Classe_`/`Equipe_`/`PP_`, cf. GroupRepository::createGroup).
+     * Retourne le préfixe CANONIQUE de fold ({@see FOLD_PREFIXES}) du CN, ou null
+     * si le CN n'est pas une variante de classe/équipe.
+     *
+     * Comparaison INSENSIBLE À LA CASSE : l'AD réel mélange des CN legacy en
+     * minuscules (`classe_3a`/`equipe_3a`/`pp_3a`, majoritaires sur le parc) et
+     * des CN SE5 canoniques (`Classe_3A`). On reconnaît le préfixe quelle que
+     * soit la casse du CN, et on renvoie TOUJOURS la forme canonique (valeur de
+     * FOLD_PREFIXES, p. ex. `'PP_'`) pour que l'aval (canonique D2, détection de
+     * type, flag PP) raisonne sur une forme stable — jamais sur un extrait du CN.
      */
     private function foldPrefixOf(string $cn): ?string
     {
         foreach (self::FOLD_PREFIXES as $prefix) {
-            if (str_starts_with($cn, $prefix)) {
+            if (strncasecmp($cn, $prefix, strlen($prefix)) === 0) {
                 return $prefix;
             }
         }
@@ -982,6 +1002,12 @@ class UserGroupService
      *
      * Ne concerne QUE les types classe/équipe : les types à CN préfixé légitime
      * (`matiere_classe` → `Matiere_…`) ne passent jamais par cette expansion.
+     *
+     * 4.16 (Q2) — détection INSENSIBLE À LA CASSE, par cohérence avec le fold
+     * casse-insensible (`foldPrefixOf`/`stripClasseLikePrefix`). Sans ça, une
+     * saisie minuscule `classe_x` échappait au garde-fou et partait en expansion
+     * fantôme `Classe_classe_x` — exactement le CN cassé que ce garde-fou existe
+     * pour empêcher.
      */
     private function guardReservedPrefixOnCreate(string $rawName, string $type): void
     {
@@ -992,7 +1018,7 @@ class UserGroupService
         }
 
         foreach (['Classe_', 'Equipe_', 'PP_'] as $prefix) {
-            if (str_starts_with($rawName, $prefix)) {
+            if (strncasecmp($rawName, $prefix, strlen($prefix)) === 0) {
                 throw new \InvalidArgumentException(
                     "Le nom « {$rawName} » ne peut pas commencer par le préfixe réservé « {$prefix} » pour un groupe de type classe/équipe."
                 );
@@ -1003,11 +1029,17 @@ class UserGroupService
     /**
      * Retire un éventuel préfixe de classe/équipe (`Classe_`, `Equipe_`, `PP_`)
      * pour retrouver la base nue. Idempotent sur un nom déjà nu.
+     *
+     * Strip INSENSIBLE À LA CASSE du préfixe (AD legacy minuscule : `classe_3a`,
+     * `pp_3a`…), mais le SUFFIXE conserve sa casse d'origine : `classe_3a` → `3a`,
+     * `Classe_3A` → `3A`. Le regroupement par nom nu en aval (`buildFoldedGroups`)
+     * normalise déjà la CLÉ via `mb_strtolower`, donc un lot mixte casse
+     * (`Classe_3A`+`equipe_3a`) fold bien en une seule ligne.
      */
     private function stripClasseLikePrefix(string $name): string
     {
         foreach (['Classe_', 'Equipe_', 'PP_'] as $prefix) {
-            if (str_starts_with($name, $prefix)) {
+            if (strncasecmp($name, $prefix, strlen($prefix)) === 0) {
                 return substr($name, strlen($prefix));
             }
         }
@@ -1099,7 +1131,9 @@ class UserGroupService
             'cours' => "Cours_{$rawName}",
             'projet' => "Projet_{$rawName}",
             'matiere', 'matière' => "Matiere_{$rawName}",
-            'matiere_classe', 'matiere-classe' => str_starts_with($rawName, 'Matiere_') ? $rawName : "Matiere_{$rawName}",
+            // 4.16 (Q2) — détection casse-insensible : `matiere_x@y` minuscule ne
+            // doit pas re-préfixer en `Matiere_matiere_x@y` (double préfixe).
+            'matiere_classe', 'matiere-classe' => strncasecmp($rawName, 'Matiere_', 8) === 0 ? $rawName : "Matiere_{$rawName}",
             default => $rawName,
         };
     }
@@ -1135,29 +1169,38 @@ class UserGroupService
         ];
     }
 
+    /**
+     * Détecte le type SE5 d'un CN AD à partir de son préfixe.
+     *
+     * Préfixes reconnus INSENSIBLEMENT À LA CASSE : l'AD legacy stocke des CN en
+     * minuscules (`classe_3a`/`equipe_3a`/`pp_3a`/`cours_…`/`projet_…`/`matiere_…`,
+     * majoritaires sur le parc). Sans ce relâchement, ces CN tombaient en
+     * `custom` (déclassement) au lieu de classe/équipe/cours/… Les valeurs de
+     * retour (chaînes de type) sont strictement inchangées.
+     */
     private function detectTypeFromAdGroupName(string $groupName): string
     {
-        if (str_starts_with($groupName, 'Matiere_') && str_contains($groupName, '@')) {
+        if (strncasecmp($groupName, 'Matiere_', 8) === 0 && str_contains($groupName, '@')) {
             return 'matiere_classe';
         }
 
-        if (str_starts_with($groupName, 'Classe_')) {
+        if (strncasecmp($groupName, 'Classe_', 7) === 0) {
             return 'classe';
         }
 
-        if (str_starts_with($groupName, 'Equipe_') || str_starts_with($groupName, 'PP_')) {
+        if (strncasecmp($groupName, 'Equipe_', 7) === 0 || strncasecmp($groupName, 'PP_', 3) === 0) {
             return 'equipe';
         }
 
-        if (str_starts_with($groupName, 'Cours_')) {
+        if (strncasecmp($groupName, 'Cours_', 6) === 0) {
             return 'cours';
         }
 
-        if (str_starts_with($groupName, 'Projet_')) {
+        if (strncasecmp($groupName, 'Projet_', 7) === 0) {
             return 'projet';
         }
 
-        if (str_starts_with($groupName, 'Matiere_')) {
+        if (strncasecmp($groupName, 'Matiere_', 8) === 0) {
             return 'matiere';
         }
 

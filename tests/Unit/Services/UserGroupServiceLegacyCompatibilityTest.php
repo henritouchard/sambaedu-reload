@@ -693,6 +693,24 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
     }
 
     #[Test]
+    public function it_rejects_lowercase_reserved_prefix_name_for_classe_like_create(): void
+    {
+        // 4.16 (Q2) — le garde-fou est INSENSIBLE À LA CASSE : un nom NU en
+        // minuscule `pp_terminale` doit être rejeté tout autant que `PP_terminale`.
+        // Sans ça, la saisie minuscule échappait au garde-fou et partait en
+        // expansion fantôme `Classe_pp_terminale`.
+        $service = $this->makeService(collect([]), []);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $service->createGroup([
+            'name' => 'pp_terminale',
+            'display_name' => 'pp terminale',
+            'type' => 'classe',
+        ]);
+    }
+
+    #[Test]
     public function it_keeps_single_target_for_non_classe_types(): void
     {
         // Type cours : pas de partition par rôle, une seule cible (Cours_X).
@@ -771,6 +789,47 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         // Aucune expansion vers Equipe_/Classe_.
         $this->assertSame([], $this->addedDnsFor('Equipe_Math@3emeA'));
         $this->assertSame([], $this->addedDnsFor('Classe_Math@3emeA'));
+    }
+
+    #[Test]
+    public function it_does_not_re_expand_lowercase_prefixed_matiere_classe_cn(): void
+    {
+        // 4.16 (Q2) — un CN legacy préfixé en MINUSCULE (`matiere_Math@3emeA`)
+        // ne doit pas être re-préfixé en `Matiere_matiere_Math@3emeA` (double
+        // préfixe). resolvePrimaryGroupName détecte désormais `Matiere_` quelle
+        // que soit la casse.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('matiere_Math@3emeA', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'matiere_Math@3emeA' => [],
+            ],
+        );
+
+        $prof = User::query()->create([
+            'login' => 'prof.math',
+            'role' => 'prof',
+            'dn' => 'CN=prof.math,OU=Users,DC=example,DC=local',
+            'is_active' => true,
+        ]);
+
+        $this->primeNoLdap('prof.math');
+
+        $service->createGroup([
+            'name' => 'matiere_Math@3emeA',
+            'display_name' => 'Math 3ème A',
+            'type' => 'matiere_classe',
+            'user_ids' => [$prof->id],
+        ]);
+
+        // La cible reste le CN minuscule tel quel — pas de double préfixe.
+        $this->assertSame(
+            ['CN=prof.math,OU=Users,DC=example,DC=local'],
+            $this->addedDnsFor('matiere_Math@3emeA')
+        );
+        $this->assertSame([], $this->addedDnsFor('Matiere_matiere_Math@3emeA'));
     }
 
     #[Test]
@@ -891,6 +950,108 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
 
         $this->assertTrue($this->isHeadTeacher($group->id, $bob->id), 'bob (PP) doit être PP');
         $this->assertFalse($this->isHeadTeacher($group->id, $alice->id), 'alice (élève) ne doit pas être PP');
+    }
+
+    #[Test]
+    public function it_folds_lowercase_legacy_cn_variants_case_insensitively(): void
+    {
+        // INVARIANT CIBLE — fold INSENSIBLE À LA CASSE (correctif 4.13/4.14).
+        //
+        // Sur le parc RÉEL l'AD stocke des CN legacy en MINUSCULES
+        // (`classe_3a`/`equipe_3a`/`pp_3a`, majoritaires). Le fold doit les
+        // reconnaître au même titre que les CN canoniques SE5 :
+        //   - foldPrefixOf('pp_3a') === 'PP_' (forme canonique renvoyée) ;
+        //   - detectTypeFromAdGroupName('pp_3a') !== 'custom' (classé equipe) ;
+        //   - stripClasseLikePrefix('classe_3a') === '3a', base nue commune.
+        // Les 3 CN tout-minuscule strippent en `3a` → MÊME clé de fold → UNE
+        // seule ligne nue, type classe, union des membres, flag PP posé.
+        $service = $this->makeService(
+            collect([
+                [
+                    'cn' => 'classe_3a',
+                    'dn' => 'CN=classe_3a,OU=Classes,OU=Groups,DC=example,DC=local',
+                    'description' => '3A',
+                ],
+                [
+                    'cn' => 'equipe_3a',
+                    'dn' => 'CN=equipe_3a,OU=Equipes,OU=Groups,DC=example,DC=local',
+                    'description' => 'Equipe 3A',
+                ],
+                [
+                    'cn' => 'pp_3a',
+                    'dn' => 'CN=pp_3a,OU=Equipes,OU=Groups,DC=example,DC=local',
+                    'description' => 'PP 3A',
+                ],
+            ]),
+            [],
+            [
+                'classe_3a' => [['cn' => 'alice', 'dn' => 'CN=alice,OU=Users,DC=example,DC=local']],
+                'equipe_3a' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+                'pp_3a' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+            ],
+        );
+
+        $alice = User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
+        $bob = User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
+
+        $service->importFromUsersAdGroups();
+
+        // (1) UNE seule ligne, au nom nu `3a`, type classe.
+        $rows = UserGroup::query()->get(['name', 'type']);
+        $this->assertCount(1, $rows, 'les 3 CN minuscules foldent en une seule ligne');
+        $this->assertSame('3a', $rows->first()->name);
+        $this->assertSame('classe', $rows->first()->type);
+
+        // (2) Union correcte des membres des 3 CN (alice via classe, bob via
+        // equipe+pp, dédupliqué).
+        $group = UserGroup::query()->where('name', '3a')->firstOrFail();
+        $this->assertSame(['alice', 'bob'], $group->users()->pluck('login')->sort()->values()->all());
+
+        // (3) is_head_teacher=true posé pour bob (issu de pp_3a), false pour alice.
+        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id), 'bob (pp_3a) doit être PP');
+        $this->assertFalse($this->isHeadTeacher($group->id, $alice->id), 'alice (élève) ne doit pas être PP');
+    }
+
+    #[Test]
+    public function it_folds_mixed_case_legacy_cn_variants_into_one_group(): void
+    {
+        // Cas MIXTE casse — un CN canonique SE5 (`Classe_3A`) et un CN legacy
+        // minuscule (`pp_3a`) cohabitent. Le regroupement par nom nu normalise la
+        // clé (`3A`/`3a` → même clé lower dans buildFoldedGroups) : les deux
+        // foldent en UNE ligne, et le PP issu de `pp_3a` est bien posé. Le nom
+        // d'affichage suit le 1er CN rencontré (`3A`, casse de Classe_3A).
+        $service = $this->makeService(
+            collect([
+                [
+                    'cn' => 'Classe_3A',
+                    'dn' => 'CN=Classe_3A,OU=Classes,OU=Groups,DC=example,DC=local',
+                    'description' => '3A',
+                ],
+                [
+                    'cn' => 'pp_3a',
+                    'dn' => 'CN=pp_3a,OU=Equipes,OU=Groups,DC=example,DC=local',
+                    'description' => 'PP 3A',
+                ],
+            ]),
+            [],
+            [
+                'Classe_3A' => [['cn' => 'alice', 'dn' => 'CN=alice,OU=Users,DC=example,DC=local']],
+                'pp_3a' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+            ],
+        );
+
+        $alice = User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
+        $bob = User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
+
+        $service->importFromUsersAdGroups();
+
+        // UNE seule ligne (clé de fold insensible à la casse).
+        $this->assertSame(1, UserGroup::query()->count());
+
+        $group = UserGroup::query()->firstOrFail();
+        $this->assertSame('classe', $group->type);
+        $this->assertSame(['alice', 'bob'], $group->users()->pluck('login')->sort()->values()->all());
+        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id), 'bob (pp_3a) doit être PP');
     }
 
     #[Test]
@@ -1499,6 +1660,285 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $this->assertSame('3ème A (rénovée)', $this->descriptionUpdateCalls[0]['description']);
     }
 
+    // =========================================================================
+    // Story 4.16 — scoping du read-back syncFromAd() de updateGroup
+    // =========================================================================
+
+    #[Test]
+    public function it_scopes_read_back_to_edited_group_on_update(): void
+    {
+        // AC1 + AC2 — updateGroup du groupe `3A` (classe) :
+        //  - le read-back scopé `onlyGroupNames=['3A']` voit les 3 variantes
+        //    Classe_3A/Equipe_3A/PP_3A (le filtre matche le nom nu),
+        //  - la ligne nue `3A` reçoit l'union des membres {alice, bob},
+        //  - le flag is_head_teacher est re-posé depuis PP_3A (bob=PP).
+        // Calqué sur it_targets_folded_bare_names_when_syncing_selected_groups.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3A' => [['cn' => 'alice', 'dn' => 'CN=alice,OU=Users,DC=example,DC=local']],
+                'Equipe_3A' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+                'PP_3A' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+            ],
+        );
+
+        User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
+        $bob = User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
+        $this->primeNoLdap('alice', 'bob');
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+
+        // updateGroup sans members (path sans syncRoleAwareAdGroupMembers) :
+        // le seul effet est le read-back scopé qui projette les 3 CN.
+        $updated = $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+        ]);
+
+        // AC1 — la ligne nue est retournée.
+        $this->assertSame('3A', $updated->name);
+
+        // AC2 — les 3 variantes ont bien été repliées (union des membres).
+        $logins = $updated->users()->pluck('login')->sort()->values()->all();
+        $this->assertSame(['alice', 'bob'], $logins);
+
+        // AC2 — flag PP re-posé depuis PP_3A (bob est PP).
+        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id), '4.16 : flag PP bob re-posé par le read-back scopé');
+        $alice = User::query()->where('login', 'alice')->firstOrFail();
+        $this->assertFalse($this->isHeadTeacher($group->id, $alice->id), '4.16 : alice non PP');
+    }
+
+    #[Test]
+    public function it_does_not_purge_out_of_scope_groups_on_update(): void
+    {
+        // AC4 — un second groupe SQL `5C` (absent du lot AD renvoyé lors de
+        // l'édition de `3A`) ne doit PAS être supprimé par updateGroup('3A').
+        // Preuve que whereNotIn ne tourne PAS en mode scopé.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Classe_3A'),
+                $this->adGroupRow('Equipe_3A', 'OU=Equipes'),
+                $this->adGroupRow('PP_3A', 'OU=Equipes'),
+                // Note : Classe_5C/Equipe_5C/PP_5C sont ABSENTS du lot AD mocké —
+                // simule une réponse AD incomplète ou un groupe hors établissement.
+            ]),
+            [],
+            [
+                'Classe_3A' => [],
+                'Equipe_3A' => [],
+                'PP_3A' => [],
+            ],
+        );
+
+        // Groupe hors scope préexistant en SQL.
+        UserGroup::query()->create([
+            'name' => '5C', 'display_name' => '5C', 'type' => 'classe',
+        ]);
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+
+        $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+        ]);
+
+        // AC4 — `5C` survit : whereNotIn n'a pas tourné en mode scopé.
+        $this->assertTrue(
+            UserGroup::query()->where('name', '5C')->exists(),
+            '4.16 : le groupe hors scope 5C ne doit PAS être purgé par updateGroup(3A)'
+        );
+    }
+
+    #[Test]
+    public function it_scopes_read_back_to_new_name_on_rename(): void
+    {
+        // AC3 — rename 3A→3B : l'AD porte déjà Classe_3B/Equipe_3B/PP_3B
+        // au moment du read-back. Le scope doit cibler la base nue du NOUVEAU nom
+        // `3B` (D2). Un scope sur `3A` (ancien nom) ne verrait rien et la ligne
+        // ne convergerait pas.
+        $service = $this->makeService(
+            collect([
+                // Après rename AD, seuls les CN `_3B` existent ; `_3A` disparus.
+                $this->adGroupRow('Classe_3B'),
+                $this->adGroupRow('Equipe_3B', 'OU=Equipes'),
+                $this->adGroupRow('PP_3B', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'Classe_3B' => [['cn' => 'alice', 'dn' => 'CN=alice,OU=Users,DC=example,DC=local']],
+                'Equipe_3B' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+                'PP_3B' => [],
+            ],
+        );
+
+        User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
+        User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
+        $this->primeNoLdap('alice', 'bob');
+
+        // Groupe préexistant au NOM `3A` (la ligne SQL avant rename).
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+
+        // Groupe hors scope `5C` — doit survivre.
+        UserGroup::query()->create([
+            'name' => '5C', 'display_name' => '5C', 'type' => 'classe',
+        ]);
+
+        // Rename 3A → 3B.
+        $updated = $service->updateGroup($group->id, [
+            'name' => '3B',
+            'display_name' => '3B',
+            'type' => 'classe',
+        ]);
+
+        // AC3 — la ligne SQL converge sur le NOUVEAU nom `3B`.
+        $this->assertSame('3B', $updated->name, '4.16 : ligne convergée sur 3B après rename');
+
+        // Les membres des 3 CN 3B ont bien été projetés.
+        $logins = $updated->users()->pluck('login')->sort()->values()->all();
+        $this->assertSame(['alice', 'bob'], $logins, '4.16 : membres 3B projetés');
+
+        // AC4 — `5C` hors scope n'a pas été purgé.
+        $this->assertTrue(
+            UserGroup::query()->where('name', '5C')->exists(),
+            '4.16 : groupe 5C non purgé lors du rename 3A→3B'
+        );
+    }
+
+    #[Test]
+    public function it_scopes_read_back_for_non_class_type(): void
+    {
+        // AC5 — updateGroup d'un groupe de type `cours` (nom payload = `Maths`,
+        // CN AD = `Cours_Maths`). resolveSqlLookupName('Maths', 'cours') renvoie
+        // le CN brut `Cours_Maths` (via resolvePrimaryGroupName) ; le filtre
+        // onlyGroupNames matche ce CN brut directement.
+        // La ligne SQL `Cours_Maths` converge et aucun autre groupe n'est purgé.
+        //
+        // Convention : le payload `name` pour les types non-classe est le nom NU
+        // sans préfixe (ex. `Maths`), cohérent avec createGroup (cf. test
+        // it_keeps_single_target_for_non_classe_types qui passe `Maths5A`).
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('Cours_Maths', 'OU=Cours'),
+            ]),
+            [],
+            [
+                'Cours_Maths' => [['cn' => 'prof.maths', 'dn' => 'CN=prof.maths,OU=Users,DC=example,DC=local']],
+            ],
+        );
+
+        User::query()->create([
+            'login' => 'prof.maths', 'role' => 'prof',
+            'dn' => 'CN=prof.maths,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $this->primeNoLdap('prof.maths');
+
+        // Groupe hors scope préexistant.
+        UserGroup::query()->create([
+            'name' => 'Cours_Phys', 'display_name' => 'Cours_Phys', 'type' => 'cours',
+        ]);
+
+        // La ligne SQL existante porte le CN brut (tel que projeté par syncFromAd).
+        $group = UserGroup::query()->create([
+            'name' => 'Cours_Maths', 'display_name' => 'Cours Maths', 'type' => 'cours',
+        ]);
+
+        // Le payload `name` est le nom NU `Maths` (sans préfixe Cours_) ;
+        // resolveSqlLookupName renvoie `Cours_Maths` = scope ET clé de lookup.
+        $updated = $service->updateGroup($group->id, [
+            'name' => 'Maths',
+            'display_name' => 'Cours Maths',
+            'type' => 'cours',
+        ]);
+
+        // AC5 — la ligne SQL `Cours_Maths` est retrouvée et convergée.
+        $this->assertSame('Cours_Maths', $updated->name, '4.16 : ligne Cours_Maths convergée');
+
+        $logins = $updated->users()->pluck('login')->sort()->values()->all();
+        $this->assertSame(['prof.maths'], $logins, '4.16 : membre prof.maths projeté sur Cours_Maths');
+
+        // AC4 — `Cours_Phys` hors scope n'a pas été purgé.
+        $this->assertTrue(
+            UserGroup::query()->where('name', 'Cours_Phys')->exists(),
+            '4.16 : Cours_Phys non purgé lors de updateGroup(Maths/Cours_Maths)'
+        );
+    }
+
+    #[Test]
+    public function it_scopes_read_back_to_edited_group_on_update_with_lowercase_ad_cns(): void
+    {
+        // 4.16 (#5) — CAS RÉEL : l'AD du parc porte des CN legacy en MINUSCULE
+        // (`classe_3a`/`equipe_3a`/`pp_3a`, cf. project_vm_ad_junk_classe_groups).
+        // C'est le seul motif qui rend le fix casse-insensible nécessaire : sans
+        // lui, `foldPrefixOf('classe_3a')` renverrait null, le filtre `onlyGroupNames`
+        // exclurait les 3 CN, le read-back scopé serait un no-op et la ligne ne
+        // convergerait pas (RuntimeException « introuvable après synchronisation »).
+        // Ce test garde le chemin scopé d'updateGroup contre une régression
+        // réintroduisant `str_starts_with` dans le filtre.
+        $service = $this->makeService(
+            collect([
+                $this->adGroupRow('classe_3a'),
+                $this->adGroupRow('equipe_3a', 'OU=Equipes'),
+                $this->adGroupRow('pp_3a', 'OU=Equipes'),
+            ]),
+            [],
+            [
+                'classe_3a' => [['cn' => 'alice', 'dn' => 'CN=alice,OU=Users,DC=example,DC=local']],
+                'equipe_3a' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+                'pp_3a' => [['cn' => 'bob', 'dn' => 'CN=bob,OU=Users,DC=example,DC=local']],
+            ],
+        );
+
+        User::query()->create(['login' => 'alice', 'role' => 'eleve', 'is_active' => true]);
+        $bob = User::query()->create(['login' => 'bob', 'role' => 'prof', 'is_active' => true]);
+        $this->primeNoLdap('alice', 'bob');
+
+        // La ligne SQL existante porte le nom nu minuscule `3a` (tel que projeté
+        // par le fold casse-insensible des CN minuscules).
+        $group = UserGroup::query()->create([
+            'name' => '3a', 'display_name' => '3a', 'type' => 'classe',
+        ]);
+
+        // Groupe hors scope — doit survivre (whereNotIn ne tourne pas en scopé).
+        UserGroup::query()->create([
+            'name' => '5c', 'display_name' => '5c', 'type' => 'classe',
+        ]);
+
+        $updated = $service->updateGroup($group->id, [
+            'name' => '3a',
+            'display_name' => '3a',
+            'type' => 'classe',
+        ]);
+
+        // Le read-back scopé a VU les 3 CN minuscules → ligne convergée.
+        $this->assertSame('3a', $updated->name);
+
+        // Union des membres des 3 variantes minuscules projetée.
+        $logins = $updated->users()->pluck('login')->sort()->values()->all();
+        $this->assertSame(['alice', 'bob'], $logins, '4.16 : membres des CN minuscules projetés');
+
+        // Flag PP re-posé depuis `pp_3a` malgré la casse.
+        $this->assertTrue($this->isHeadTeacher($group->id, $bob->id), '4.16 : flag PP bob re-posé depuis pp_3a');
+
+        // Groupe hors scope `5c` non purgé.
+        $this->assertTrue(
+            UserGroup::query()->where('name', '5c')->exists(),
+            '4.16 : groupe hors scope 5c non purgé'
+        );
+    }
+
     /**
      * Lit `is_head_teacher` brut sur l'arête (cross-driver : cast en bool).
      */
@@ -1585,6 +2025,8 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $groupRepository->method('getGroupsWithMemberCount')->willReturn($groupsWithMemberCount);
         $groupRepository->method('createGroup')->willReturn(true);
         $groupRepository->method('deleteGroup')->willReturn(true);
+        // 4.16 — renameGroup retourne toujours vrai dans les tests (l'AD est mocké).
+        $groupRepository->method('renameGroup')->willReturn(true);
 
         // Story 4.15 (Q1) — journaliser les appels description pour prouver
         // qu'un toggle PP (display_name inchangé, oldName==newName) ne déclenche
