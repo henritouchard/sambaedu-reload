@@ -79,7 +79,7 @@
 				</Password>
 				<Domain></Domain>
 				<Enabled>true</Enabled>
-				<LogonCount>2</LogonCount>
+				<LogonCount>1</LogonCount>
 				<Username></Username>
 			</AutoLogon>
 			<ComputerName></ComputerName>
@@ -158,9 +158,14 @@
 				     se4install finit ses FirstLogonCommands et reste ouverte sans reboot.
 				     `/t 30` laisse une fenêtre ; si un action.cmd futur planifie déjà un
 				     shutdown, ce 2e appel no-op (1190 « shutdown already in progress »).
-				     Pas de boucle : LogonCount=2 mais les FirstLogonCommands ne tournent
-				     qu'au 1er logon. Marqueur install.log posé pour le suivi (parité
-				     legacy `cmd_oobe`). -->
+				     LogonCount=1 : un SEUL autologon (celui qui exécute les
+				     FirstLogonCommands) ; le reboot ci-dessous tombe alors sur le
+				     lockscreen. Avec LogonCount>1, un autologon supplémentaire se
+				     déclencherait au reboot SANS FirstLogonCommands (1er logon
+				     seulement) et laisserait la session se4install ouverte sur le
+				     desktop — le legacy l'évitait via `cmd_oobe` (AutoLogonCount=0),
+				     non porté ici car `handleOobe` renvoie un body vide. Marqueur
+				     install.log posé pour le suivi (parité legacy `cmd_oobe`). -->
 				<SynchronousCommand wcm:action="add">
 					<Order>6</Order>
 					<Description>reboot fin install</Description>
