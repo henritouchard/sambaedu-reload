@@ -4,6 +4,7 @@ use App\Models\UserGroup;
 use App\Models\Wallpaper;
 use App\Services\UserGroupService;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Title;
@@ -49,12 +50,40 @@ new #[Title('Groupe utilisateur')] class extends Component {
                 $label = $user->login;
             }
 
+            // Rôle métier : prof / eleve / autre. On lit la colonne SQL `role`
+            // (déjà en mémoire via `with('users')`) plutôt que User::isProf()/
+            // isEleve() : ces helpers interrogent le LDAP « d'abord » (1 round-trip
+            // réseau par membre au render) pour une info déjà présente en base.
+            // SQL = source de vérité côté SE5 (alignée par syncFromAd).
+            $role = $user->role === 'prof' ? 'prof' : ($user->role === 'eleve' ? 'eleve' : 'autre');
+
             return [
                 'id' => $user->id,
                 'login' => $user->login,
                 'label' => $label,
+                'role' => $role,
+                // Badge PP : porté par l'arête pivot (withPivot 'is_head_teacher',
+                // story 4.14). N'a de sens que pour une classe + un prof.
+                'is_head_teacher' => (bool) ($user->pivot->is_head_teacher ?? false),
             ];
         }) ?? collect();
+    }
+
+    /** Membres « élèves » de la classe (onglet Élèves). */
+    #[Computed]
+    public function students(): Collection
+    {
+        return $this->members->where('role', 'eleve')->values();
+    }
+
+    /**
+     * Membres « profs » (onglet Profs). On y range aussi les rôles « autre »
+     * (admin/personnel) : tout ce qui n'est pas un élève est un encadrant.
+     */
+    #[Computed]
+    public function teachers(): Collection
+    {
+        return $this->members->where('role', '!=', 'eleve')->values();
     }
 
     #[Computed]
@@ -83,6 +112,11 @@ new #[Title('Groupe utilisateur')] class extends Component {
 
     public function removeMember(int $userId): void
     {
+        // Mutation : la route n'exige que `user.read`, on garde donc le double
+        // guard serveur (UI `@can('update-group')` + autorisation ici) aligné
+        // sur head-teacher-section. `update-group` → GroupPolicy::update.
+        Gate::authorize('update-group');
+
         $this->selectedUserIds = array_values(array_filter($this->selectedUserIds, fn(int $id): bool => $id !== $userId));
 
         $this->userGroupService->updateGroup($this->groupId, [
@@ -92,7 +126,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
             'user_ids' => $this->selectedUserIds,
         ]);
 
-        unset($this->members);
+        unset($this->members, $this->students, $this->teachers);
 
         session()->flash('toast', [
             'type' => 'success',
