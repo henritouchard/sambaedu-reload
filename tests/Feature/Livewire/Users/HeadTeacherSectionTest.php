@@ -244,29 +244,38 @@ class HeadTeacherSectionTest extends TestCase
     // =========================================================================
 
     #[Test]
-    public function it_renders_readonly_for_viewer_without_modify_permission(): void
+    public function it_does_not_open_modal_for_viewer_without_modify_permission(): void
     {
-        // Couverture #6 (post-review 4.15) — un viewer `user.read` SEUL (sans
-        // `user.modify`) voit la section (badge PP + titre) mais le rendu N'EXPOSE
-        // PAS le toggle ni le bouton d'action : `@can('update-group')` les masque
-        // au profit d'un badge readonly. Pendant de `it_blocks_save_without_modify_permission`
-        // (qui prouve le guard serveur) : ici on prouve le rendu UI readonly.
+        // Refonte UI — la désignation du PP est désormais une MODALE d'édition,
+        // gardée par `update-group`. Un viewer `user.read` SEUL ne peut pas
+        // l'ouvrir : le bouton déclencheur est masqué côté parent (@can) ET
+        // open() refuse un dispatch forgé (isOpen reste false + toast refus).
+        // Pendant de `it_blocks_save_without_modify_permission` (guard serveur).
         $viewer = $this->makeAdmin('viewer-only', perms: ['user.read']);
         $this->actingAs($viewer);
-        [$group, $prof1] = $this->makeClasseWithMembers('3A');
-        // prof1 est déjà PP → on doit voir le badge readonly, pas le toggle.
-        $group->users()->updateExistingPivot($prof1->id, ['is_head_teacher' => true]);
+        [$group] = $this->makeClasseWithMembers('3A');
 
         Livewire::test($this->componentPath(), ['groupId' => $group->id])
             ->assertSet('isClasse', true)
-            // La section reste affichée (titre + badge PP readonly).
-            ->assertSee('Professeur principal')
-            ->assertSee('PP')
-            // Mais aucun contrôle d'écriture : pas de toggle ni de bouton Enregistrer.
-            ->assertDontSee('toggleHeadTeacher')
-            ->assertDontSee('Enregistrer')
-            // Message d'explication readonly à la place du bouton.
-            ->assertSee('user.modify');
+            ->assertSet('isOpen', false)
+            ->call('open')
+            ->assertSet('isOpen', false);
+    }
+
+    #[Test]
+    public function it_opens_modal_for_editor_with_modify_permission(): void
+    {
+        // L'action « Nommer un professeur principal » (event open-head-teacher-modal)
+        // ouvre la modale pour un utilisateur disposant de `update-group`.
+        $this->actingAs($this->makeAdmin());
+        [$group] = $this->makeClasseWithMembers('3A');
+
+        Livewire::test($this->componentPath(), ['groupId' => $group->id])
+            ->assertSet('isOpen', false)
+            ->call('open')
+            ->assertSet('isOpen', true)
+            ->call('close')
+            ->assertSet('isOpen', false);
     }
 
     #[Test]

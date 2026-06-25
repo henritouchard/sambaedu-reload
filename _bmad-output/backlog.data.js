@@ -335,28 +335,33 @@ const DATASETS = {
         },
         {
           "id": "4-12",
-          "status": "review",
+          "status": "done",
           "title": "Peuplement des groupes AD Equipe_X par rôle (parité SE4 — ACL prof effectives)"
         },
         {
           "id": "4-13",
-          "status": "review",
+          "status": "done",
           "title": "Fold de l'import AD : une classe = une ligne user_groups au nom nu"
         },
         {
           "id": "4-14",
-          "status": "review",
+          "status": "done",
           "title": "Migration data (fusion lignes héritées) + colonne is_head_teacher sur l'arête"
         },
         {
           "id": "4-15",
-          "status": "review",
+          "status": "done",
           "title": "Écriture SQL→AD PP_<X> pilotée par is_head_teacher + UI Professeur principal"
         },
         {
           "id": "4-16",
-          "status": "backlog",
+          "status": "done",
           "title": "Scoper le syncFromAd global de updateGroup (onlyGroupNames) — dette LDAP"
+        },
+        {
+          "id": "4-17",
+          "status": "backlog",
+          "title": "Canonicaliser le name de la ligne foldée (non-déterminisme casse mixte) — follow-up #8 review 4-16"
         }
       ]
     },
@@ -1143,7 +1148,7 @@ const DATASETS = {
         },
         {
           "id": "27-19",
-          "status": "review",
+          "status": "done",
           "title": "Livraison WPKG full HTTP (payloads servis par Apache, fin du transport SMB)"
         },
         {

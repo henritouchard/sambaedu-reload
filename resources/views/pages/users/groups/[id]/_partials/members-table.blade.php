@@ -1,6 +1,6 @@
 {{-- Table de membres réutilisée par les onglets Élèves / Profs.
      Params : $rows (collection de membres mappés), $withHeadTeacher (bool —
-     affiche le badge « Professeur principal » dans l'onglet Profs). --}}
+     affiche l'icône « Professeur principal » après le nom dans l'onglet Profs). --}}
 @php($withHeadTeacher = $withHeadTeacher ?? false)
 <div class="overflow-x-auto">
     <table class="table table-zebra">
@@ -16,12 +16,13 @@
                 <tr>
                     <td class="font-medium">
                         <span class="inline-flex items-center gap-2">
-                            {{ $member['label'] }}
+                            <a href="{{ route('app.user.show', ['login' => $member['login']]) }}"
+                                class="link link-hover hover:text-primary">
+                                {{ $member['label'] }}
+                            </a>
                             @if ($withHeadTeacher && ($member['is_head_teacher'] ?? false) && ($member['role'] ?? null) === 'prof')
-                                <span class="badge badge-success badge-sm" title="Professeur principal">
-                                    <i class="fa-solid fa-chalkboard-user mr-1"></i>
-                                    PP
-                                </span>
+                                <i class="fa-solid fa-chalkboard-user text-success"
+                                    title="Professeur principal"></i>
                             @endif
                         </span>
                     </td>
@@ -30,11 +31,6 @@
                     </td>
                     <td class="text-right">
                         <div class="flex items-center justify-end gap-1">
-                            <a href="{{ route('app.user.show', ['login' => $member['login']]) }}"
-                                class="btn btn-ghost btn-xs gap-1">
-                                <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
-                                Voir
-                            </a>
                             @can('update-group')
                                 <button type="button" class="btn btn-ghost btn-xs text-error hover:bg-error/10"
                                     wire:click="removeMember({{ $member['id'] }})"

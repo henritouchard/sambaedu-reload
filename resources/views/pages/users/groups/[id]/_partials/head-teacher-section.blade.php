@@ -7,6 +7,7 @@ use App\Services\UserGroupService;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 /**
@@ -49,6 +50,9 @@ new class extends Component {
 
     public bool $isLoading = false;
 
+    /** Ouverture de la modale « Nommer un professeur principal ». */
+    public bool $isOpen = false;
+
     private UserGroupService $userGroupService;
 
     /** Cache mémoïsé per-render du UserGroup. */
@@ -79,6 +83,30 @@ new class extends Component {
         if ($this->isClasse) {
             $this->refreshState($group);
         }
+    }
+
+    /**
+     * Ouvre la modale (action « Nommer un professeur principal » du menu Actions).
+     * Geste d'ÉDITION → gate `update-group` (le bouton parent est déjà gardé ;
+     * ce check défend contre un dispatch forgé). Recharge l'état avant ouverture.
+     */
+    #[On('open-head-teacher-modal')]
+    public function open(): void
+    {
+        if (! $this->isClasse) {
+            return;
+        }
+        if (! Gate::allows('update-group', $this->groupModel())) {
+            $this->toastAccessDenied('Vous n\'avez pas la permission de désigner un professeur principal.');
+            return;
+        }
+        $this->refreshState();
+        $this->isOpen = true;
+    }
+
+    public function close(): void
+    {
+        $this->isOpen = false;
     }
 
     /**
@@ -189,6 +217,10 @@ new class extends Component {
 
             if ($persisted === $intended) {
                 $this->toastSuccess('Professeur(s) principal(aux) mis à jour.');
+                // Ferme la modale et demande au parent de rafraîchir la liste
+                // des membres (l'icône PP après le nom reflète le nouvel état).
+                $this->isOpen = false;
+                $this->dispatch('head-teachers-updated');
             } else {
                 $this->toastWarning(
                     'Professeur(s) principal(aux) enregistré(s) en base, mais la '
@@ -232,98 +264,68 @@ new class extends Component {
     {{-- Le component n'affiche rien si le UserGroup n'est pas de type classe. --}}
     <div></div>
 @else
-    <div class="card bg-base-100 shadow-sm border border-base-300">
-        <div class="card-body">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="card-title text-lg">
-                    <i class="fa-solid fa-chalkboard-user mr-2"></i>
-                    Professeur principal
-                </h3>
+    {{-- Story 4.15 (refonte UI) — la désignation du PP n'est plus une card
+         permanente mais une MODALE déclenchée par l'action « Nommer un
+         professeur principal » du menu Actions parent (event
+         `open-head-teacher-modal`). L'état PP se lit dans la liste des membres
+         via l'icône après le nom. --}}
+    <x-molecules.modal wire:model="isOpen" title="Professeur principal"
+        icon="fa-chalkboard-user" :subtitle="'Classe ' . $className" size="max-w-2xl" height="h-auto">
+        @php($profs = $this->profMembers())
+        @if (count($profs) === 0)
+            <div class="alert alert-info text-sm">
+                <i class="fa-solid fa-circle-info"></i>
+                Aucun enseignant membre de cette classe. Ajoutez un prof aux
+                membres pour pouvoir le désigner professeur principal.
             </div>
+        @else
+            <p class="text-sm opacity-70">
+                Cochez le(s) professeur(s) principal(aux) de
+                <code>{{ $className }}</code>. Plusieurs choix possibles ; seuls
+                les enseignants membres sont proposés.
+            </p>
+            <div class="overflow-x-auto">
+                <table class="table table-zebra">
+                    <thead>
+                        <tr>
+                            <th>Enseignant</th>
+                            <th>Login</th>
+                            <th class="text-center">Professeur principal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($profs as $prof)
+                            <tr>
+                                <td class="font-medium">{{ $prof['label'] }}</td>
+                                <td>
+                                    <code
+                                        class="text-sm bg-base-200 px-2 py-0.5 rounded font-mono">{{ $prof['login'] }}</code>
+                                </td>
+                                <td class="text-center">
+                                    <input type="checkbox" class="toggle toggle-primary toggle-sm"
+                                        @checked($prof['is_head_teacher'])
+                                        wire:click="toggleHeadTeacher({{ $prof['id'] }})"
+                                        wire:loading.attr="disabled" wire:target="save" />
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @endif
 
-            @can('view-group')
-                @php($profs = $this->profMembers())
-                @if (count($profs) === 0)
-                    <div class="alert alert-info text-sm">
-                        <i class="fa-solid fa-circle-info"></i>
-                        Aucun enseignant membre de cette classe. Ajoutez un prof
-                        aux membres pour pouvoir le désigner professeur principal.
-                    </div>
-                @else
-                    <p class="text-sm opacity-70 mb-3">
-                        Désignez le(s) professeur(s) principal(aux) de
-                        <code>{{ $className }}</code>. Plusieurs choix possibles.
-                        Seuls les enseignants membres sont proposés.
-                    </p>
-                    <div class="overflow-x-auto">
-                        <table class="table table-zebra">
-                            <thead>
-                                <tr>
-                                    <th>Enseignant</th>
-                                    <th>Login</th>
-                                    <th class="text-center">Professeur principal</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($profs as $prof)
-                                    <tr>
-                                        <td class="font-medium">{{ $prof['label'] }}</td>
-                                        <td>
-                                            <code
-                                                class="text-sm bg-base-200 px-2 py-0.5 rounded font-mono">{{ $prof['login'] }}</code>
-                                        </td>
-                                        <td class="text-center">
-                                            @can('update-group', $this->groupModel())
-                                                <input type="checkbox"
-                                                    class="toggle toggle-primary toggle-sm"
-                                                    @checked($prof['is_head_teacher'])
-                                                    wire:click="toggleHeadTeacher({{ $prof['id'] }})"
-                                                    wire:loading.attr="disabled" wire:target="save" />
-                                            @else
-                                                @if ($prof['is_head_teacher'])
-                                                    <span class="badge badge-success badge-sm">
-                                                        <i class="fa-solid fa-check mr-1"></i>
-                                                        PP
-                                                    </span>
-                                                @else
-                                                    <span class="text-base-content/40">—</span>
-                                                @endif
-                                            @endcan
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-
-                    @can('update-group', $this->groupModel())
-                        <div class="mt-4 flex items-center gap-2">
-                            <button type="button" class="btn btn-primary btn-sm"
-                                wire:click="save" wire:loading.attr="disabled"
-                                wire:target="save">
-                                <i class="fa-solid fa-floppy-disk"></i>
-                                Enregistrer
-                            </button>
-                            <span wire:loading wire:target="save"
-                                class="text-xs opacity-60 flex items-center gap-2">
-                                <span class="loading loading-spinner loading-xs"></span>
-                                Mise à jour…
-                            </span>
-                        </div>
-                    @else
-                        <p class="text-xs opacity-70 mt-3">
-                            Vous n'avez pas la permission <code>user.modify</code>
-                            requise pour modifier le professeur principal.
-                        </p>
-                    @endcan
-                @endif
-            @else
-                <div class="alert alert-info text-sm">
-                    <i class="fa-solid fa-lock"></i>
-                    Accès restreint — la consultation des groupes requiert la
-                    permission <code>user.read</code>.
-                </div>
-            @endcan
-        </div>
-    </div>
+        <x-slot:footer>
+            <button type="button" class="btn btn-ghost" wire:click="close"
+                wire:loading.attr="disabled" wire:target="save">
+                Annuler
+            </button>
+            @if (count($this->profMembers()) > 0)
+                <button type="button" class="btn btn-primary" wire:click="save"
+                    wire:loading.attr="disabled" wire:target="save">
+                    <i class="fa-solid fa-floppy-disk"></i>
+                    Enregistrer
+                </button>
+            @endif
+        </x-slot:footer>
+    </x-molecules.modal>
 @endif

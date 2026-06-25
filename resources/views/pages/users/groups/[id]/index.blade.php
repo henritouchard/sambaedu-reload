@@ -1,7 +1,5 @@
 <?php
 
-use App\Models\UserGroup;
-use App\Models\Wallpaper;
 use App\Services\UserGroupService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
@@ -19,7 +17,6 @@ new #[Title('Groupe utilisateur')] class extends Component {
     public string $type = 'custom';
     public array $selectedUserIds = [];
     public bool $editing = false;
-    public bool $showWallpaperCard = false;
 
     public function boot(UserGroupService $userGroupService): void
     {
@@ -67,6 +64,16 @@ new #[Title('Groupe utilisateur')] class extends Component {
                 'is_head_teacher' => (bool) ($user->pivot->is_head_teacher ?? false),
             ];
         }) ?? collect();
+    }
+
+    /**
+     * Rafraîchit la liste des membres après désignation d'un PP dans la modale
+     * (event émis par head-teacher-section) — l'icône PP suit le pivot.
+     */
+    #[On('head-teachers-updated')]
+    public function refreshMembers(): void
+    {
+        unset($this->members, $this->students, $this->teachers);
     }
 
     /** Membres « élèves » de la classe (onglet Élèves). */
@@ -190,23 +197,6 @@ new #[Title('Groupe utilisateur')] class extends Component {
         $this->editing = false;
     }
 
-    #[Computed(persist: false)]
-    public function hasWallpaper(): bool
-    {
-        return Wallpaper::where('type', 'wallpaper')->where('owner_type', UserGroup::class)->where('owner_id', $this->groupId)->exists();
-    }
-
-    #[On('wallpaper-updated')]
-    public function refreshWallpaperState(): void
-    {
-        unset($this->hasWallpaper);
-    }
-
-    public function openWallpaperCard(): void
-    {
-        $this->showWallpaperCard = true;
-    }
-
     public function typeLabel(): string
     {
         return match ($this->type) {
@@ -236,7 +226,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
 };
 ?>
 
-<x-organisms.page :title="$editing ? 'Modifier le groupe' : ($displayName ?: $name)" :scrollable="false" :description="$editing ? 'Éditez les informations et les membres du groupe' : null" :backUrl="!$editing ? route('app.users') : null" backText="Retour">
+<x-organisms.page :title="$editing ? 'Modifier le groupe' : ($displayName ?: $name)" :description="$editing ? 'Éditez les informations et les membres du groupe' : null" :backUrl="!$editing ? route('app.users') : null" backText="Retour">
     <x-slot:actions>
         <div class="flex items-center gap-2">
             @if ($editing)
@@ -263,6 +253,20 @@ new #[Title('Groupe utilisateur')] class extends Component {
                                 </div>
                             </button>
                         </li>
+                        @if ($type === 'classe')
+                            @can('update-group')
+                                <li>
+                                    <button type="button" class="flex items-center gap-3 w-full"
+                                        @click="Livewire.dispatch('open-head-teacher-modal'); document.activeElement.blur();">
+                                        <i class="fa-solid fa-chalkboard-user w-4"></i>
+                                        <div class="flex flex-col items-start">
+                                            <span class="font-medium">Nommer un professeur principal</span>
+                                            <span class="text-xs opacity-70">Désigner le(s) PP de la classe</span>
+                                        </div>
+                                    </button>
+                                </li>
+                            @endcan
+                        @endif
                         @can('user.password.init')
                             <li>
                                 <button type="button" class="flex items-center gap-3 w-full"
@@ -274,20 +278,6 @@ new #[Title('Groupe utilisateur')] class extends Component {
                                     </div>
                                 </button>
                             </li>
-                        @endcan
-                        @can('wallpaper.manage')
-                            @if (!$this->hasWallpaper && !$showWallpaperCard)
-                                <li>
-                                    <button type="button" class="flex items-center gap-3 w-full"
-                                        wire:click="openWallpaperCard" @click="document.activeElement.blur()">
-                                        <i class="fa-solid fa-image w-4"></i>
-                                        <div class="flex flex-col items-start">
-                                            <span class="font-medium">Définir un fond d'écran</span>
-                                            <span class="text-xs opacity-70">Fond d'écran pour ce groupe</span>
-                                        </div>
-                                    </button>
-                                </li>
-                            @endif
                         @endcan
                     </ul>
                 </div>
@@ -309,33 +299,23 @@ new #[Title('Groupe utilisateur')] class extends Component {
             @if ($type === 'classe')
                 @livewire('pages::users.groups.[id]._partials.class-share-section', ['groupId' => $groupId], key('class-share-' . $groupId))
 
-                {{-- Story 4.15 — Section « Professeur principal » (Livewire SFC).
-                     Visible UNIQUEMENT si $type === 'classe' (le SFC fait aussi
-                     son propre abort en mount si le groupe n'est pas une classe).
-                     Désigne le(s) PP via le pivot is_head_teacher → écriture
-                     SQL→AD 3e cible PP_<base>. Directive @livewire(...) (les
-                     crochets [id] cassent la tag-syntax). --}}
+                {{-- Story 4.15 (refonte UI) — MODALE « Professeur principal »
+                     (Livewire SFC, rendue masquée). Déclenchée par l'action
+                     « Nommer un professeur principal » du menu Actions
+                     (event open-head-teacher-modal). Désigne le(s) PP via le
+                     pivot is_head_teacher → écriture SQL→AD 3e cible PP_<base> ;
+                     l'état se lit dans la liste via l'icône après le nom.
+                     Directive @livewire(...) (les crochets [id] cassent la
+                     tag-syntax). --}}
                 @livewire('pages::users.groups.[id]._partials.head-teacher-section', ['groupId' => $groupId], key('head-teacher-' . $groupId))
             @endif
 
             {{-- Story 5.1c — Section Quota groupe (Livewire SFC).
-                 Insérée entre members-list et la wallpaper-card (D6=A — section
-                 verticale, pas d'onglets). Visible en lecture pour tout user, modifiable
+                 Section verticale (pas d'onglets). Visible en lecture pour tout user, modifiable
                  uniquement par server.admin (double guard UI + serveur).
                  NB : on utilise la directive @livewire(...) plutôt que la tag-syntax
                  car les crochets `[id]` du chemin SFC cassent le parsing Blade. --}}
             @livewire('pages::users.groups.[id]._partials.group-quota-section', ['groupId' => $groupId], key('group-quota-' . $groupId))
-
-            @can('wallpaper.manage')
-                @if ($this->hasWallpaper || $showWallpaperCard)
-                    <div class="max-w-xl">
-                        <livewire:components::molecules.wallpaper-card type="wallpaper" :ownerType="App\Models\UserGroup::class" :ownerId="$groupId"
-                            title="Fond d'écran du groupe"
-                            description="Affiché aux membres de ce groupe quand aucun fond plus spécifique (utilisateur) n'est défini."
-                            :key="'wallpaper-group-' . $groupId" />
-                    </div>
-                @endif
-            @endcan
         </div>
     @endif
 
