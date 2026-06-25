@@ -125,13 +125,22 @@ class UserGroupService
                 throw new RuntimeException("Renommage AD impossible pour le groupe '{$oldName}' -> '{$newName}'.");
             }
         } else {
-            $updated = $this->groupRepository->updateGroupDescription(
-                cn: $newName,
-                description: $payload['display_name'] ?? $newName,
-            );
+            // Story 4.15 (Q1/M1) — n'écrire la description AD que si elle a
+            // RÉELLEMENT changé. Sans cette garde, un simple toggle PP (qui
+            // renvoie display_name inchangé) déclenchait systématiquement un
+            // write LDAP (et une RuntimeException possible) inutile.
+            $desiredDescription = $payload['display_name'] ?? $newName;
+            $currentDescription = $group->display_name ?? $oldName;
 
-            if (!$updated) {
-                throw new RuntimeException("Mise à jour AD impossible pour le groupe '{$newName}'.");
+            if ($desiredDescription !== $currentDescription) {
+                $updated = $this->groupRepository->updateGroupDescription(
+                    cn: $newName,
+                    description: $desiredDescription,
+                );
+
+                if (!$updated) {
+                    throw new RuntimeException("Mise à jour AD impossible pour le groupe '{$newName}'.");
+                }
             }
         }
 
@@ -390,136 +399,31 @@ class UserGroupService
                 $detectedNames = [];
 
                 foreach ($foldedGroups as $folded) {
+                    $groupName = $folded['name'];
+                    if ($groupName === '') {
+                        continue;
+                    }
+
+                    // Détecté même si la projection échoue : préserve la ligne du
+                    // cleanup `whereNotIn` (pas de suppression accidentelle).
+                    $detectedNames[] = mb_strtolower($groupName);
+
                     try {
-                        $groupName = $folded['name'];
-                        if ($groupName === '') {
-                            continue;
-                        }
-
-                        $detectedNames[] = mb_strtolower($groupName);
-                        $adGuid = $folded['ad_guid'];
-                        $adDn = $folded['ad_dn'];
-
-                        $group = null;
-
-                        if ($adGuid !== null) {
-                            $group = UserGroup::query()->where('ad_guid', $adGuid)->first();
-                        }
-
-                        if ($group === null) {
-                            $group = UserGroup::query()->where('name', $groupName)->first();
-                        }
-
-                        if ($group === null && $adDn !== '') {
-                            $group = UserGroup::query()->where('ad_dn', $adDn)->first();
-                        }
-
-                        if ($adGuid !== null && $group !== null) {
-                            $conflict = UserGroup::query()
-                                ->where('ad_guid', $adGuid)
-                                ->where('id', '!=', $group->id)
-                                ->first();
-
-                            if ($conflict !== null) {
-                                throw new RuntimeException(sprintf(
-                                    'Conflit ad_guid %s entre groupes SQL "%s" et "%s"',
-                                    $adGuid,
-                                    $group->name,
-                                    $conflict->name
-                                ));
-                            }
-                        }
-
-                        $detectedType = $folded['type'];
-                        $displayName = $folded['display_name'];
-
-                        if ($group === null) {
-                            $group = UserGroup::query()->create([
-                                'name' => $groupName,
-                                'display_name' => $displayName,
-                                'type' => $detectedType,
-                                'ad_dn' => $adDn !== '' ? $adDn : null,
-                                'ad_guid' => $adGuid,
-                            ]);
-                            $stats['created']++;
-                        } else {
-                            $updated = false;
-
-                            if (($group->name ?? '') !== $groupName) {
-                                $group->name = $groupName;
-                                $updated = true;
-                            }
-
-                            if (($group->display_name ?? '') !== $displayName) {
-                                $group->display_name = $displayName;
-                                $updated = true;
-                            }
-
-                            // Le type n'existe pas dans l'AD, il est inféré depuis le nom du groupe.
-                            // On le recalcule systématiquement pour corriger tout écart SQL.
-                            $group->type = $detectedType;
-                            if ($group->isDirty('type')) {
-                                $updated = true;
-                            }
-
-                            if (($group->ad_dn ?? '') !== ($adDn !== '' ? $adDn : null)) {
-                                $group->ad_dn = $adDn !== '' ? $adDn : null;
-                                $updated = true;
-                            }
-
-                            if (($group->ad_guid ?? null) !== $adGuid) {
-                                $group->ad_guid = $adGuid;
-                                $updated = true;
-                            }
-
-                            if ($updated) {
-                                $group->save();
-                                $stats['updated']++;
-                            } else {
-                                $stats['skipped']++;
-                            }
-                        }
-
-                        // Union des membres des CN du groupe foldé (un seul sync()).
-                        // 4.14 — on capture en parallèle les membres issus du/des
-                        // CN `PP_<base>` pour poser l'attribut d'arête
-                        // `is_head_teacher=true` sur leur ligne pivot. Le sync()
-                        // devient ASSOCIATIF `[$userId => ['is_head_teacher'=>bool]]`
-                        // tout en préservant l'union/dédup/idempotence de 4.13 :
-                        // la clé est l'`user_id` (un membre présent dans Classe_ ET
-                        // PP_ → une seule arête, PP-priorité), le sync() détache
-                        // toujours les membres absents de l'union.
-                        $memberIds = [];
-                        $ppUserIds = [];
-                        foreach ($folded['cns'] as $cn) {
-                            $isPpCn = $this->foldPrefixOf($cn) === 'PP_';
-                            foreach ($this->resolveMemberUserIdsFromAdGroup($cn) as $memberId) {
-                                $memberId = (int) $memberId;
-                                $memberIds[] = $memberId;
-                                if ($isPpCn) {
-                                    $ppUserIds[$memberId] = true;
-                                }
-                            }
-                        }
-
-                        // Le flag n'a de sens que pour les groupes foldés de
-                        // classe/équipe. Les CN standalone non-classe (Cours_,
-                        // Matiere_@, orphelin equipe…) ne portent jamais `true` :
-                        // ils n'ont pas de CN `PP_` dans `$folded['cns']`, donc
-                        // `$ppUserIds` y est vide — `is_head_teacher` reste false.
-                        $syncPayload = [];
-                        foreach (array_unique($memberIds) as $memberId) {
-                            $syncPayload[$memberId] = [
-                                'is_head_teacher' => isset($ppUserIds[$memberId]),
-                            ];
-                        }
-
-                        $syncChanges = $group->users()->sync($syncPayload);
-                        $stats['linked_users'] += count($syncChanges['attached'] ?? []);
-                        $stats['detached_users'] += count($syncChanges['detached'] ?? []);
-                        $stats['head_teacher_updated'] += count($syncChanges['updated'] ?? []);
+                        // 25P02 — chaque projection tourne dans SON savepoint
+                        // (transaction imbriquée Laravel = SAVEPOINT Postgres).
+                        // Sans cela, la 1re violation de contrainte avorte TOUTE
+                        // la transaction : le catch ci-dessous masque l'erreur
+                        // d'origine mais ne « dé-avorte » pas Postgres, et chaque
+                        // requête suivante — jusqu'au DELETE de cleanup hors
+                        // boucle — échoue en « current transaction is aborted »
+                        // (25P02). Le savepoint isole l'échec à la seule
+                        // projection fautive et laisse vivre la transaction.
+                        DB::transaction(function () use ($folded, $groupName, &$stats): void {
+                            $this->projectFoldedGroup($folded, $groupName, $stats);
+                        });
                     } catch (\Throwable $e) {
                         Log::warning('[UserGroupService] Erreur sync group AD -> SQL', [
+                            'group' => $groupName,
                             'error' => $e->getMessage(),
                         ]);
                         $stats['errors']++;
@@ -551,6 +455,140 @@ class UserGroupService
         );
 
         return $stats;
+    }
+
+    /**
+     * Projette UNE entrée foldée (nom nu) en ligne SQL `user_groups` + arêtes de
+     * membres. Appelée dans un savepoint dédié par {@see syncFromAd()} : toute
+     * exception (violation de contrainte, conflit ad_guid…) n'avorte que cette
+     * projection, jamais la transaction d'ensemble.
+     *
+     * @param array{name:string, cns:array<int,string>, ad_guid:?string, ad_dn:string, type:string, display_name:string} $folded
+     * @param array<string,int> $stats
+     */
+    private function projectFoldedGroup(array $folded, string $groupName, array &$stats): void
+    {
+        $adGuid = $folded['ad_guid'];
+        $adDn = $folded['ad_dn'];
+
+        $group = null;
+
+        if ($adGuid !== null) {
+            $group = UserGroup::query()->where('ad_guid', $adGuid)->first();
+        }
+
+        if ($group === null) {
+            $group = UserGroup::query()->where('name', $groupName)->first();
+        }
+
+        if ($group === null && $adDn !== '') {
+            $group = UserGroup::query()->where('ad_dn', $adDn)->first();
+        }
+
+        if ($adGuid !== null && $group !== null) {
+            $conflict = UserGroup::query()
+                ->where('ad_guid', $adGuid)
+                ->where('id', '!=', $group->id)
+                ->first();
+
+            if ($conflict !== null) {
+                throw new RuntimeException(sprintf(
+                    'Conflit ad_guid %s entre groupes SQL "%s" et "%s"',
+                    $adGuid,
+                    $group->name,
+                    $conflict->name
+                ));
+            }
+        }
+
+        $detectedType = $folded['type'];
+        $displayName = $folded['display_name'];
+
+        if ($group === null) {
+            $group = UserGroup::query()->create([
+                'name' => $groupName,
+                'display_name' => $displayName,
+                'type' => $detectedType,
+                'ad_dn' => $adDn !== '' ? $adDn : null,
+                'ad_guid' => $adGuid,
+            ]);
+            $stats['created']++;
+        } else {
+            $updated = false;
+
+            if (($group->name ?? '') !== $groupName) {
+                $group->name = $groupName;
+                $updated = true;
+            }
+
+            if (($group->display_name ?? '') !== $displayName) {
+                $group->display_name = $displayName;
+                $updated = true;
+            }
+
+            // Le type n'existe pas dans l'AD, il est inféré depuis le nom du groupe.
+            // On le recalcule systématiquement pour corriger tout écart SQL.
+            $group->type = $detectedType;
+            if ($group->isDirty('type')) {
+                $updated = true;
+            }
+
+            if (($group->ad_dn ?? '') !== ($adDn !== '' ? $adDn : null)) {
+                $group->ad_dn = $adDn !== '' ? $adDn : null;
+                $updated = true;
+            }
+
+            if (($group->ad_guid ?? null) !== $adGuid) {
+                $group->ad_guid = $adGuid;
+                $updated = true;
+            }
+
+            if ($updated) {
+                $group->save();
+                $stats['updated']++;
+            } else {
+                $stats['skipped']++;
+            }
+        }
+
+        // Union des membres des CN du groupe foldé (un seul sync()).
+        // 4.14 — on capture en parallèle les membres issus du/des
+        // CN `PP_<base>` pour poser l'attribut d'arête
+        // `is_head_teacher=true` sur leur ligne pivot. Le sync()
+        // devient ASSOCIATIF `[$userId => ['is_head_teacher'=>bool]]`
+        // tout en préservant l'union/dédup/idempotence de 4.13 :
+        // la clé est l'`user_id` (un membre présent dans Classe_ ET
+        // PP_ → une seule arête, PP-priorité), le sync() détache
+        // toujours les membres absents de l'union.
+        $memberIds = [];
+        $ppUserIds = [];
+        foreach ($folded['cns'] as $cn) {
+            $isPpCn = $this->foldPrefixOf($cn) === 'PP_';
+            foreach ($this->resolveMemberUserIdsFromAdGroup($cn) as $memberId) {
+                $memberId = (int) $memberId;
+                $memberIds[] = $memberId;
+                if ($isPpCn) {
+                    $ppUserIds[$memberId] = true;
+                }
+            }
+        }
+
+        // Le flag n'a de sens que pour les groupes foldés de
+        // classe/équipe. Les CN standalone non-classe (Cours_,
+        // Matiere_@, orphelin equipe…) ne portent jamais `true` :
+        // ils n'ont pas de CN `PP_` dans `$folded['cns']`, donc
+        // `$ppUserIds` y est vide — `is_head_teacher` reste false.
+        $syncPayload = [];
+        foreach (array_unique($memberIds) as $memberId) {
+            $syncPayload[$memberId] = [
+                'is_head_teacher' => isset($ppUserIds[$memberId]),
+            ];
+        }
+
+        $syncChanges = $group->users()->sync($syncPayload);
+        $stats['linked_users'] += count($syncChanges['attached'] ?? []);
+        $stats['detached_users'] += count($syncChanges['detached'] ?? []);
+        $stats['head_teacher_updated'] += count($syncChanges['updated'] ?? []);
     }
 
     /**

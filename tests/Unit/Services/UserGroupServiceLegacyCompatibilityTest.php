@@ -1438,6 +1438,67 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         $this->assertFalse($this->isHeadTeacher($group->id, $prof1->id), 'M6 : pivot effacé après [] explicite');
     }
 
+    #[Test]
+    public function it_skips_ad_description_write_when_description_unchanged(): void
+    {
+        // Story 4.15 (Q1/M1) — un toggle PP (oldName==newName, display_name
+        // INCHANGÉ) ne doit PAS déclencher d'écriture LDAP de description.
+        [$service, $prof1, $prof2, $eleve] = $this->makeClassFixture();
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+
+        // Réinitialiser le journal (la création de fixture peut avoir appelé l'AD).
+        $this->descriptionUpdateCalls = [];
+
+        // Toggle PP : même nom, même display_name → description inchangée.
+        $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $prof2->id, $eleve->id],
+            'head_teacher_ids' => [$prof1->id],
+        ]);
+
+        $this->assertSame(
+            [],
+            $this->descriptionUpdateCalls,
+            'Q1 : description inchangée → aucun write LDAP de description'
+        );
+        // Le toggle PP a bien convergé (rien n'a cassé).
+        $this->assertTrue($this->isHeadTeacher($group->id, $prof1->id));
+    }
+
+    #[Test]
+    public function it_writes_ad_description_when_display_name_changes(): void
+    {
+        // Story 4.15 (Q1) — un changement réel de display_name déclenche TOUJOURS
+        // l'écriture LDAP de description (comportement nominal préservé).
+        [$service, $prof1, $prof2, $eleve] = $this->makeClassFixture();
+
+        $group = UserGroup::query()->create([
+            'name' => '3A', 'display_name' => '3A', 'type' => 'classe',
+        ]);
+
+        $this->descriptionUpdateCalls = [];
+
+        $service->updateGroup($group->id, [
+            'name' => '3A',
+            'display_name' => '3ème A (rénovée)',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $prof2->id, $eleve->id],
+        ]);
+
+        $this->assertCount(
+            1,
+            $this->descriptionUpdateCalls,
+            'Q1 : description changée → exactement un write LDAP'
+        );
+        $this->assertSame('3A', $this->descriptionUpdateCalls[0]['cn']);
+        $this->assertSame('3ème A (rénovée)', $this->descriptionUpdateCalls[0]['description']);
+    }
+
     /**
      * Lit `is_head_teacher` brut sur l'arête (cross-driver : cast en bool).
      */
@@ -1492,6 +1553,14 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
     private array $membershipCalls = [];
 
     /**
+     * Story 4.15 (Q1) — journal des appels `updateGroupDescription`.
+     * Forme : [['cn' => string, 'description' => string], …]
+     *
+     * @var array<int,array{cn:string,description:string}>
+     */
+    private array $descriptionUpdateCalls = [];
+
+    /**
      * État mutable des membres AD par CN, partagé entre getGroupMembers/add/remove
      * pour simuler l'idempotence réelle de la couche LDAP.
      *
@@ -1509,13 +1578,24 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
         bool $mutableMembership = false,
     ): UserGroupService {
         $this->membershipCalls = [];
+        $this->descriptionUpdateCalls = [];
         $this->adMembersByCn = $groupMembersByCn;
 
         $groupRepository = $this->createMock(GroupRepository::class);
         $groupRepository->method('getGroupsWithMemberCount')->willReturn($groupsWithMemberCount);
         $groupRepository->method('createGroup')->willReturn(true);
         $groupRepository->method('deleteGroup')->willReturn(true);
-        $groupRepository->method('updateGroupDescription')->willReturn(true);
+
+        // Story 4.15 (Q1) — journaliser les appels description pour prouver
+        // qu'un toggle PP (display_name inchangé, oldName==newName) ne déclenche
+        // AUCUN write LDAP de description, et qu'un changement le déclenche.
+        $groupRepository->method('updateGroupDescription')->willReturnCallback(
+            function (string $cn, string $description): bool {
+                $this->descriptionUpdateCalls[] = ['cn' => $cn, 'description' => $description];
+
+                return true;
+            }
+        );
 
         $groupRepository->method('addMember')->willReturnCallback(
             function (string $cn, string $dn) use ($mutableMembership): bool {

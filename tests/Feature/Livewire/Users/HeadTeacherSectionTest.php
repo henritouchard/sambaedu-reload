@@ -270,6 +270,24 @@ class HeadTeacherSectionTest extends TestCase
     }
 
     #[Test]
+    public function it_blocks_mount_without_read_permission(): void
+    {
+        // Story 4.15 (Q3) — `mount()` est gardé par `Gate::authorize('view-group')`
+        // (== `user.read`). Un utilisateur SANS `user.read` ne peut PAS instancier
+        // la section (et donc ne peut pas lire les membres profs via wire:call),
+        // même s'il dispose de `user.modify`. En prod, tous les rôles seedés avec
+        // `user.modify` ont aussi `user.read` ; ce test isole le guard de lecture.
+        $noReader = $this->makeAdmin('modify-only', perms: ['user.modify']);
+        $this->actingAs($noReader);
+        [$group] = $this->makeClasseWithMembers('3A');
+
+        $this->withoutExceptionHandling();
+        $this->expectException(\Illuminate\Auth\Access\AuthorizationException::class);
+
+        Livewire::test($this->componentPath(), ['groupId' => $group->id]);
+    }
+
+    #[Test]
     public function it_blocks_save_without_modify_permission(): void
     {
         $viewer = $this->makeAdmin('viewer-only', perms: ['user.read']);

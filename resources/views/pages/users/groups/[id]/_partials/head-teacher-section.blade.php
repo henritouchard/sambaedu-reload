@@ -67,6 +67,11 @@ new class extends Component {
             // Cohérence avec la page parente qui abort 404 en mount.
             abort(404);
         }
+        // Story 4.15 (Q3) — gate lecture AVANT d'exposer quoi que ce soit. Sans
+        // ça, un utilisateur sans `user.read` pourrait instancier la section et
+        // lire les membres profs via wire:call. `view-group` == `user.read`
+        // (GroupPolicy). Le @can('view-group') du template restait UI-only.
+        Gate::authorize('view-group', $group);
         // Anti-forge : un groupId non-classe est rejeté (pas seulement le @if
         // de la vue parente).
         $this->isClasse = ($group->type === 'classe');
@@ -160,7 +165,36 @@ new class extends Component {
                 'head_teacher_ids' => $ppIds,
             ]);
 
-            $this->toastSuccess('Professeur(s) principal(aux) mis à jour.');
+            // Story 4.15 (Q2) — toast honnête : ne claironner « mis à jour » que
+            // si l'état persisté du SEUL groupe courant a réellement convergé
+            // vers l'ensemble intendu ($ppIds). `updateGroup` est fail-soft sur
+            // l'AD ; si le read-back syncFromAd n'a pas posé `is_head_teacher`
+            // (échec AD), le pivot ne reflète pas l'intention. On compare donc
+            // l'ensemble persisté (requête FRAÎCHE, pas le modèle mémoïsé) à
+            // l'intendu. On cible le groupe courant, pas le compteur d'erreurs
+            // global de syncFromAd (qui agrégerait des erreurs d'autres groupes).
+            $intended = $ppIds;
+            sort($intended);
+
+            $persisted = UserGroup::query()
+                ->whereKey($this->groupId)
+                ->firstOrFail()
+                ->users()
+                ->wherePivot('is_head_teacher', true)
+                ->pluck('users.id')
+                ->map(static fn(mixed $id): int => (int) $id)
+                ->sort()
+                ->values()
+                ->all();
+
+            if ($persisted === $intended) {
+                $this->toastSuccess('Professeur(s) principal(aux) mis à jour.');
+            } else {
+                $this->toastWarning(
+                    'Professeur(s) principal(aux) enregistré(s) en base, mais la '
+                    . 'synchronisation AD est incomplète — réessayez.'
+                );
+            }
         } catch (\Throwable $e) {
             Log::error('UserGroupService: erreur UI head-teacher save', [
                 'group_id' => $this->groupId,

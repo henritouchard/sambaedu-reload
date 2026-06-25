@@ -664,6 +664,24 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 'cd /var/www/sambaedu-reload && ph
 
 > **Checklist rapide pré-prod (4.15)** : migration data 4.14 jouée (§8.7) → désigner un PP en UI sur `3A` → `samba-tool group listmembers PP_3A` = {prof1} (9.1) → vérifier `Equipe_3A` toujours = {prof1,prof2} (orthogonalité, R1) → décocher → `PP_3A` vide (9.2) → re-`syncFromAd` ne fait pas clignoter le flag (9.6) → section absente sur un groupe non-classe (9.4/9.7) → toggle absent pour un élève (9.8).
 
+### Scénario 9.10 — Post-review : write description AD conditionnel (Q1, 2026-06-25)
+
+Un **toggle PP** (`oldName == newName`, `display_name` inchangé) ne déclenche **aucune** écriture LDAP de description : avant le correctif, `updateGroupDescription` était appelé systématiquement (write + `RuntimeException` possible) même sans changement. Un changement réel de `display_name` déclenche **toujours** l'écriture (comportement nominal préservé). La branche **rename** (`oldName != newName`) est inchangée.
+
+> Couverture : `it_skips_ad_description_write_when_description_unchanged` (aucun write sur toggle PP), `it_writes_ad_description_when_display_name_changes` (write nominal) dans `UserGroupServiceLegacyCompatibilityTest.php`.
+
+### Scénario 9.11 — Post-review : toast honnête sur convergence du flag PP (Q2, 2026-06-25)
+
+Le toast de succès n'est affiché que si l'état **persisté** du groupe courant a réellement convergé vers l'ensemble PP intendu (`$ppIds` envoyé). En cas de read-back AD fail-soft incomplet (le pivot `is_head_teacher` ne reflète pas l'intention), la SFC affiche un **`toastWarning`** « Professeur(s) principal(aux) enregistré(s) en base, mais la synchronisation AD est incomplète — réessayez. ». La vérification cible **uniquement** le groupe courant (requête fraîche, pas le compteur d'erreurs global de `syncFromAd` qui agrégerait d'autres groupes).
+
+> Couverture : chemin nominal (PP convergent → `toastSuccess`) couvert par les tests Livewire existants (`it_designates_a_head_teacher_and_persists_pivot`). Le chemin `toastWarning` exige un read-back AD qui échoue : non simulable simplement avec le mock service actuel (qui pose le pivot directement) → couvert par **inspection**, validation manuelle /vm.
+
+### Scénario 9.12 — Post-review : section invisible/refusée sans `user.read` (Q3, 2026-06-25)
+
+`mount()` est gardé par `Gate::authorize('view-group', $group)` (== `user.read`, `GroupPolicy`) **après** le `abort(404)` anti-forge, **avant** d'exposer quoi que ce soit. Un utilisateur sans `user.read` ne peut pas instancier la section pour lire les membres profs via `wire:call` (le `@can('view-group')` du template ne couvrait que le rendu UI). En prod, tous les rôles seedés avec `user.modify` ont aussi `user.read`, donc `save()` reste fonctionnel.
+
+> Couverture : `it_blocks_mount_without_read_permission` (user `user.modify` seul → `AuthorizationException` au mount) dans `HeadTeacherSectionTest.php` ; non-régression `UserAdmin` (read+modify) monte normalement via les tests de rendu existants.
+
 ---
 
 ## Post-correctifs & non-régressions
