@@ -706,6 +706,49 @@ run_doctor_check() {
 }
 
 # ============================================================================
+# Release agent stable initiale (Epic 25)
+# ============================================================================
+# update.sh (ensure_agent_build) BUILDE le binaire agent signé mais ne PUBLIE
+# jamais de release (un update serveur ne pousse rien au parc). Conséquence sur
+# un déploiement from-scratch : agent_releases vide → /api/v1/agent/stable
+# répond `no_release`, et un poste qui s'amorce via la GPO/iPXE bootstrap n'a
+# AUCUN binaire à télécharger. On comble ce trou ici : si — et seulement si —
+# aucune release stable n'existe encore, on build+publie la dernière version en
+# stable (`build-agent.sh --stable`). Idempotent : sur un parc déjà pourvu d'une
+# stable, c'est un no-op (on ne rétrograde jamais la stable en place).
+# NON-FATAL : un échec (PFX absent, build KO) n'interrompt pas l'install.
+
+ensure_agent_stable_release() {
+  log "Vérification d'une release agent stable publiée..."
+  cd "$APP_DIR"
+
+  local build_script="$SCRIPT_DIR/build-agent.sh"
+  if [[ ! -f "$build_script" ]]; then
+    log_warning "build-agent.sh absent — étape ignorée"
+    return 0
+  fi
+
+  # La table agent_releases peut être absente (Epic 25 pas déployé) ou vide
+  # (install neuve). On ne publie que s'il n'existe AUCUNE stable.
+  local has_stable
+  has_stable="$(php artisan tinker --execute \
+    "echo \\Schema::hasTable('agent_releases') && \\App\\Models\\AgentRelease::where('is_stable', true)->exists() ? '1' : '0';" \
+    2>/dev/null | tail -1 | tr -d '[:space:]')"
+
+  if [[ "$has_stable" == "1" ]]; then
+    log_success "Release agent stable déjà publiée — rien à faire"
+    return 0
+  fi
+
+  log_warning "Aucune release agent stable — build + publication de la dernière version (--stable)..."
+  if bash "$build_script" --stable; then
+    log_success "Release agent stable publiée (storage/agent/releases/ + manifeste agent_releases)"
+  else
+    log_warning "Build/publication stable échouée (relancer : scripts/build-agent.sh --stable) — l'install continue"
+  fi
+}
+
+# ============================================================================
 # Affichage du résumé
 # ============================================================================
 
@@ -880,6 +923,14 @@ main() {
   else
     log_warning "update.sh a retourné une erreur — l'install de base est faite, mais des étapes 'ensure' ont pu échouer (dont la bascule PXE /ipxe/boot). Vérifier la sortie ci-dessus."
   fi
+
+  # ── Release agent stable initiale ──
+  # update.sh a buildé le binaire signé + émis le PFX, mais ne publie aucune
+  # stable. Sur une install neuve, on publie la dernière version en stable pour
+  # qu'un poste s'amorçant via la GPO/iPXE bootstrap trouve un binaire (sinon
+  # /api/v1/agent/stable → no_release). No-op si une stable existe déjà.
+  echo ""
+  ensure_agent_stable_release
 }
 
 main "$@"
