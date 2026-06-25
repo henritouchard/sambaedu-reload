@@ -347,6 +347,16 @@ const DATASETS = {
           "id": "4-14",
           "status": "review",
           "title": "Migration data (fusion lignes héritées) + colonne is_head_teacher sur l'arête"
+        },
+        {
+          "id": "4-15",
+          "status": "review",
+          "title": "Écriture SQL→AD PP_<X> pilotée par is_head_teacher + UI Professeur principal"
+        },
+        {
+          "id": "4-16",
+          "status": "backlog",
+          "title": "Scoper le syncFromAd global de updateGroup (onlyGroupNames) — dette LDAP"
         }
       ]
     },
