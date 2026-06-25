@@ -8,12 +8,20 @@ use App\Doctor\CheckResult;
 use App\Doctor\EnvironmentCheck;
 
 /**
- * Vérifie l'accessibilité des fichiers Samba critiques
- * (`passdb.tdb`, `netlogon_creds_cli.tdb`) par l'user PHP-FPM courant.
+ * Vérifie l'accessibilité des fichiers Samba privés (`passdb.tdb`,
+ * `netlogon_creds_cli.tdb`) par l'user PHP-FPM courant.
  *
- * Sur un serveur SE4FS membre de domaine, ces fichiers contiennent les
- * credentials machine permettant à `samba-tool` de s'authentifier
- * silencieusement auprès du DC AD.
+ * IMPORTANT — sémantique conditionnelle :
+ *
+ * - Si `sambaedu.gpo.kerb_option = --use-kerberos=required` (parité legacy),
+ *   samba-tool n'ouvre JAMAIS ces fichiers. Les permissions par défaut Samba
+ *   (`0600 root:root`) sont alors la **configuration correcte et recommandée**.
+ *   Le check passe ✓ même si www-admin ne peut pas les lire.
+ *
+ * - Si `kerb_option` vaut `desired` ou `off`, samba-tool tente d'ouvrir
+ *   `secrets.tdb` pour préparer un fallback NTLM via compte machine. Dans ce
+ *   mode, les fichiers privés DOIVENT être lisibles par le user PHP-FPM, sous
+ *   peine de `NT_STATUS_CANT_ACCESS_DOMAIN_INFO`.
  */
 final class SambaPrivateFilesAclCheck implements EnvironmentCheck
 {
@@ -33,6 +41,9 @@ final class SambaPrivateFilesAclCheck implements EnvironmentCheck
 
     public function run(): CheckResult
     {
+        $kerb = (string) config('sambaedu.gpo.kerb_option', '');
+        $requiresLocalSecrets = $kerb !== '--use-kerberos=required';
+
         $details = [];
         $worstLevel = 'ok';
         $fixes = [];
@@ -40,15 +51,25 @@ final class SambaPrivateFilesAclCheck implements EnvironmentCheck
         foreach ([self::PASSDB_TDB, self::NETLOGON_TDB] as $file) {
             if (! file_exists($file)) {
                 $details[] = sprintf('%s absent', basename($file));
-                $worstLevel = $this->bump($worstLevel, 'warn');
-                $fixes[] = sprintf('Normal sur un DC (secrets.ldb à la place). Sur un serveur membre : vérifier que `samba-common` est installé et que le serveur est joint au domaine.');
+                if ($requiresLocalSecrets) {
+                    $worstLevel = $this->bump($worstLevel, 'warn');
+                    $fixes[] = 'Normal sur un DC (secrets.ldb à la place). Sur un serveur membre : vérifier que `samba-common` est installé et que le serveur est joint au domaine.';
+                }
 
                 continue;
             }
             if (! is_readable($file)) {
-                $details[] = sprintf('%s non lisible', basename($file));
-                $worstLevel = $this->bump($worstLevel, 'error');
-                $fixes[] = sprintf('`sudo setfacl -m u:%s:r %s`', get_current_user(), $file);
+                if ($requiresLocalSecrets) {
+                    $details[] = sprintf('%s non lisible', basename($file));
+                    $worstLevel = $this->bump($worstLevel, 'error');
+                    $fixes[] = sprintf(
+                        '`sudo setfacl -m u:%s:r %s` — OU (recommandé) basculer `GPO_KERB_OPTION=--use-kerberos=required` pour éviter d\'accéder à ce fichier.',
+                        get_current_user(),
+                        $file,
+                    );
+                } else {
+                    $details[] = sprintf('%s non lisible (OK — mode required)', basename($file));
+                }
 
                 continue;
             }
