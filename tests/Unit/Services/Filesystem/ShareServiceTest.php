@@ -210,6 +210,82 @@ class ShareServiceTest extends TestCase
     }
 
     // =========================================================================
+    // Suffixe établissement (AD fédéré) — establishmentSuffix / aclGroupLocalPart
+    // =========================================================================
+
+    #[Test]
+    public function it_derives_establishment_suffix_from_uai_ou_in_dn(): void
+    {
+        // OU UAI présente → suffixe legacy "-" . substr(uai, 3) lowercase.
+        $this->assertSame(
+            '-1229y',
+            $this->service->establishmentSuffix('CN=Classe_3SB,OU=classes,OU=0991229y,OU=Groups,DC=lab1,DC=irundo,DC=fr')
+        );
+        // UAI déjà en minuscules / casse mixte → normalisé.
+        $this->assertSame(
+            '-1229y',
+            $this->service->establishmentSuffix('CN=Equipe_3SB,OU=equipes,OU=0991229Y,OU=Groups,DC=x')
+        );
+    }
+
+    #[Test]
+    public function it_returns_empty_suffix_when_no_uai_ou_present(): void
+    {
+        // Standalone : pas d'OU au format UAI → pas de suffixe (cohérent legacy).
+        $this->assertSame('', $this->service->establishmentSuffix('CN=Classe_6A,OU=classes,OU=Groups,DC=x'));
+        $this->assertSame('', $this->service->establishmentSuffix(null));
+        $this->assertSame('', $this->service->establishmentSuffix(''));
+        // Une OU "presque UAI" mais hors format ne déclenche pas le suffixe.
+        $this->assertSame('', $this->service->establishmentSuffix('CN=g,OU=12345,OU=Groups,DC=x'));
+    }
+
+    #[Test]
+    public function acl_group_local_part_appends_federated_suffix(): void
+    {
+        $group = UserGroup::create([
+            'name' => '3SB',
+            'display_name' => 'Classe Simon Bolivar',
+            'type' => 'classe',
+            'ad_dn' => 'CN=Classe_3SB,OU=classes,OU=0991229y,OU=Groups,DC=lab1,DC=irundo,DC=fr',
+        ]);
+        // Nom court foldé + suffixe établissement → matche le groupe Unix réel.
+        $this->assertSame('3sb-1229y', $this->service->aclGroupLocalPart($group));
+
+        // Sans ad_dn → pas de suffixe (rétrocompat standalone).
+        $bare = $this->makeClasse('6A');
+        $this->assertSame('6a', $this->service->aclGroupLocalPart($bare));
+    }
+
+    #[Test]
+    public function it_creates_class_share_with_federated_group_suffix(): void
+    {
+        $group = UserGroup::create([
+            'name' => '3SB',
+            'display_name' => 'Classe Simon Bolivar',
+            'type' => 'classe',
+            'ad_dn' => 'CN=Classe_3SB,OU=classes,OU=0991229y,OU=Groups,DC=lab1,DC=irundo,DC=fr',
+        ]);
+
+        $ok = $this->service->createClassShare($group, performedBy: 'admin');
+        $this->assertTrue($ok);
+
+        // L'ACL prof cible le vrai groupe suffixé `equipe_3sb-1229y`.
+        Process::assertRan(function ($p) {
+            return str_contains($p->command, 'setfacl')
+                && str_contains($p->command, 'group:equipe_3sb-1229y:rwx');
+        });
+        // Et JAMAIS la forme nue non résolvable `equipe_3sb:` (sans suffixe).
+        Process::assertNotRan(function ($p) {
+            return str_contains($p->command, 'group:equipe_3sb:rwx');
+        });
+        // Le dossier, lui, reste sans suffixe (Classe_3SB).
+        Process::assertRan(function ($p) {
+            return str_contains($p->command, 'Classe_3SB')
+                && ! str_contains($p->command, 'Classe_3SB-1229y');
+        });
+    }
+
+    // =========================================================================
     // ACL builders — décalque legacy
     // =========================================================================
 

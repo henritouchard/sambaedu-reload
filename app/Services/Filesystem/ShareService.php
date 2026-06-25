@@ -120,6 +120,58 @@ class ShareService
     }
 
     /**
+     * Suffixe d'établissement (espace de noms AD fédéré) dérivé de l'OU UAI
+     * présente dans le DN du groupe. Décalque le legacy `etab_suffix()`
+     * (config.inc.php l. 199-206) : `"-" . substr($uai, 3)` en minuscules,
+     * appliqué uniquement si une composante `OU=` du DN matche le format UAI
+     * (7 chiffres + 1 lettre), ex. `OU=0991229y` → `-1229y`.
+     *
+     * Pourquoi : sur un AD **central** mutualisant N établissements, les
+     * groupes Unix `equipe_<classe>` / `classe_<classe>` sont suffixés par
+     * établissement pour éviter les collisions inter-collèges (deux `3sb` dans
+     * des collèges différents). Le `samAccountName` réel est donc
+     * `equipe_3sb-1229y`, pas `equipe_3sb`. En standalone (DN sans OU UAI), le
+     * legacy renvoie `""` — pas de suffixe, pas de collision possible.
+     *
+     * Note : on ne se fie PAS à `config('suffix')` (non peuplé sur les
+     * établissements migrés) ; la dérivation depuis l'`ad_dn` de la classe est
+     * fédération-aware par construction et correcte ligne par ligne.
+     */
+    public function establishmentSuffix(?string $adDn): string
+    {
+        if ($adDn === null || $adDn === '') {
+            return '';
+        }
+        if (preg_match_all('/OU=([^,]+)/i', $adDn, $matches)) {
+            foreach ($matches[1] as $ou) {
+                $ou = trim($ou);
+                if (preg_match('/^[0-9]{7}[a-z]$/i', $ou)) {
+                    return strtolower('-' . substr($ou, 3));
+                }
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Partie locale du nom de groupe ACL pour une classe : nom court lowercase
+     * (sans préfixe `Classe_`) + suffixe établissement. Produit ex. `3sb` →
+     * `3sb-1229y`, de sorte que les builders construisent les sujets d'ACL
+     * `equipe_3sb-1229y` / `classe_3sb-1229y` qui correspondent aux vrais
+     * groupes Unix/AD (cf. {@see establishmentSuffix()}).
+     *
+     * @return string|null `null` si le nom de classe est invalide.
+     */
+    public function aclGroupLocalPart(UserGroup $group): ?string
+    {
+        $bare = $this->escapeAclClassName($group->name);
+        if ($bare === null) {
+            return null;
+        }
+        return $bare . $this->establishmentSuffix($group->ad_dn);
+    }
+
+    /**
      * Construit le path absolu du partage d'un groupe classe.
      *
      * Refuse si :
@@ -312,7 +364,9 @@ class ShareService
             return false;
         }
 
-        $classNameLower = $this->escapeAclClassName($group->name);
+        // Inclut le suffixe établissement (équivalent samAccountName réel des
+        // groupes `equipe_`/`classe_` sur un AD fédéré) — cf. aclGroupLocalPart().
+        $classNameLower = $this->aclGroupLocalPart($group);
         if ($classNameLower === null) {
             return false;
         }
@@ -437,7 +491,7 @@ class ShareService
                 $allOk = false;
                 continue;
             }
-            $classLower = $this->escapeAclClassName($newGroup->name);
+            $classLower = $this->aclGroupLocalPart($newGroup);
             if ($classLower === null) {
                 $allOk = false;
                 continue;
@@ -546,7 +600,7 @@ class ShareService
         if ($classPath === null) {
             return false;
         }
-        $classLower = $this->escapeAclClassName($group->name);
+        $classLower = $this->aclGroupLocalPart($group);
         if ($classLower === null) {
             return false;
         }
@@ -682,7 +736,7 @@ class ShareService
         if ($status['subdirs']['_echange']) {
             $facl = $this->aclService->getFacl($classPath . '/_echange');
             if (is_array($facl)) {
-                $classLower = $this->escapeAclClassName($group->name);
+                $classLower = $this->aclGroupLocalPart($group);
                 $key = $classLower !== null ? 'classe_' . $classLower : null;
                 if ($key !== null && isset($facl[$key]['mode'])) {
                     $status['echange_active'] = ($facl[$key]['mode'] === 'rwx');
