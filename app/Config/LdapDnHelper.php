@@ -109,15 +109,17 @@ class LdapDnHelper
     /**
      * Retourne le DN de base des parcs
      * 
-     * Les parcs sont directement sous la base DN (ou=Parcs,dc=...), pas sous ou=Groups
-     * 
+     * Les parcs vivent sous OU=Parcs (conteneur racine à part, PAS sous ou=Groups).
+     * En fédération, l'établissement est imbriqué SOUS ou=Parcs, comme pour les
+     * ordinateurs : OU=<etab>,ou=Parcs,dc=... (le préfixe précède le RDN, cf. computers()).
+     *
      * @param bool $global Si true, retourne le DN sans préfixe d'établissement (domaine entier)
      *                     Si false (défaut), inclut le préfixe OU=<etab> pour limiter à l'établissement
      */
     public function parcs(bool $global = false): string
     {
         $prefix = $global ? '' : $this->getEstablishmentPrefix();
-        return $this->ldap()->parcsRdn . ',' . $prefix . $this->ldap()->baseDn;
+        return $prefix . $this->ldap()->parcsRdn . ',' . $this->ldap()->baseDn;
     }
 
     /**
