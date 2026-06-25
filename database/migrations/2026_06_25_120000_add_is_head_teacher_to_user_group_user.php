@@ -6,19 +6,20 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 4.14 — Colonne d'arête `is_head_teacher` + fusion des lignes
- * `user_groups` héritées (convergence vers le modèle « 1 ligne = 1 classe »
- * de 4.13).
+ * Story 4.14 — Colonne d'arête `is_head_teacher` (convergence vers le modèle
+ * « 1 ligne = 1 classe » de 4.13).
  *
- * `up()` en deux temps, l'ordre est garanti :
- *  1. Ajoute la colonne `is_head_teacher` (bool, défaut false, non null) sur le
- *     pivot `user_group_user` (PK composite, pas de timestamps — on ne touche
- *     ni à la PK ni aux timestamps). Le défaut `false` est rétro-rempli sur les
- *     arêtes existantes (Laravel/SQLite + PG).
- *  2. Lance la fusion des lignes héritées (`Classe_X`/`Equipe_X`/`PP_X` → `X`)
- *     via {@see MergeLegacyUserGroups} — la colonne doit exister AVANT pour que
- *     l'action pose le flag PP. L'action est idempotente/rejouable et
- *     cross-driver (`insertOrIgnore`).
+ * `up()` ajoute uniquement la colonne `is_head_teacher` (bool, défaut false, non
+ * null) sur le pivot `user_group_user` (PK composite, pas de timestamps — on ne
+ * touche ni à la PK ni aux timestamps). Le défaut `false` est rétro-rempli sur
+ * les arêtes existantes (Laravel/SQLite + PG).
+ *
+ * La fusion des lignes héritées (`Classe_X`/`Equipe_X`/`PP_X` → `X`) via
+ * {@see MergeLegacyUserGroups} n'est PAS déclenchée par cette migration : à
+ * l'exécution du `migrate` la base est vide (install fraîche), il n'y a rien à
+ * folder. Le fold est porté par le flux d'import (`syncFromAd`) ; le
+ * rétro-remplissage d'une base peuplée AVANT 4.13 reste un geste manuel via
+ * l'action invocable (idempotente/rejouable, cross-driver `insertOrIgnore`).
  *
  * `down()` : supprime la colonne (idempotent via `Schema::hasColumn`). La partie
  * data n'est PAS ré-éclatée — la fusion est convergente, l'information « 3 lignes
@@ -40,8 +41,12 @@ return new class extends Migration {
             });
         }
 
-        // 2) Fusion des lignes héritées (idempotente — no-op si déjà foldé).
-        (new MergeLegacyUserGroups())();
+        // NB : la fusion des lignes héritées (MergeLegacyUserGroups) n'est PAS
+        // appelée ici. À l'exécution des migrations la base est vide (install
+        // fraîche) → il n'y a rien à folder. Le fold est porté par le flux
+        // d'import (syncFromAd / action MergeLegacyUserGroups invocable), pas
+        // par la migration de schéma. Le rétro-remplissage d'une base déjà
+        // peuplée avant 4.13 reste un geste manuel via l'action invocable.
     }
 
     public function down(): void
