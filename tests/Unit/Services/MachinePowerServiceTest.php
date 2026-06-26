@@ -25,6 +25,33 @@ class MachinePowerServiceTest extends TestCase
         $this->service = new MachinePowerService($this->configService);
     }
 
+    // ── ping (détection d'OS) ─────────────────────────────────────────
+
+    public function test_ping_detects_windows_via_rpc_when_smb_filtered(): void
+    {
+        // Scénario post-neofut : Windows fraîchement installé, pare-feu restrictif
+        // → 22 fermé, 445 (SMB) filtré, mais 135 (RPC) ouvert. La machine est
+        // bien allumée et doit être détectée 'windows' (et non false).
+        $service = Mockery::mock(MachinePowerService::class, [$this->configService])
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods();
+        $service->shouldReceive('checkPort')->with('172.20.1.103', 22, Mockery::any())->andReturn(false);
+        $service->shouldReceive('checkPort')->with('172.20.1.103', 445, Mockery::any())->andReturn(false);
+        $service->shouldReceive('checkPort')->with('172.20.1.103', 135, Mockery::any())->andReturn(true);
+
+        $this->assertSame('windows', $service->ping('172.20.1.103'));
+    }
+
+    public function test_ping_returns_false_when_no_port_open(): void
+    {
+        $service = Mockery::mock(MachinePowerService::class, [$this->configService])
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods();
+        $service->shouldReceive('checkPort')->andReturn(false);
+
+        $this->assertFalse($service->ping('172.20.1.103'));
+    }
+
     // ── resolveBroadcast ──────────────────────────────────────────────
 
     public function test_resolve_broadcast_from_dhcp_config(): void

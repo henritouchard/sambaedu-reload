@@ -23,12 +23,18 @@ class MachinePowerService
     ) {}
 
     /**
-     * Détecte si une machine est en ligne et son OS
+     * Détecte si une machine est en ligne et son OS via une sonde TCP.
      *
-     * Reproduit le comportement de fping() legacy :
-     * - Port 22 ouvert → 'linux'
-     * - Port 445 ouvert → 'windows'
+     * - Port 22 ouvert → 'linux' (SSH)
+     * - Port 445, 135 ou 139 ouvert → 'windows'
      * - Aucun port → false (éteint)
+     *
+     * On ne se limite PAS à 445 (SMB) côté Windows : un poste fraîchement
+     * installé ou pas encore joint au domaine applique un profil pare-feu
+     * restrictif qui FILTRE 445, alors que 135 (RPC endpoint mapper) reste
+     * ouvert — et 135 est précisément le canal qu'utilise `net rpc shutdown`.
+     * Ne sonder que 445 faisait passer une machine bien allumée pour « éteinte »
+     * (cf. post-neofut : 135 ouvert, 445 filtré, ICMP bloqué).
      *
      * @param  string  $ip  Adresse IP ou hostname
      * @param  float  $timeout  Timeout en secondes (par défaut 0.2s)
@@ -36,13 +42,16 @@ class MachinePowerService
      */
     public function ping(string $ip, float $timeout = 0.2): string|false
     {
+        // Port → OS. 445 d'abord (cas nominal d'un poste joint), puis 135/139
+        // (RPC/NetBIOS) pour les postes au pare-feu restrictif.
+        $probes = [22 => 'linux', 445 => 'windows', 135 => 'windows', 139 => 'windows'];
+
         // Boucle avec timeout croissant comme le legacy fping()
         for ($t = 0.002; $t <= $timeout; $t *= 4) {
-            if ($this->checkPort($ip, 22, $t)) {
-                return 'linux';
-            }
-            if ($this->checkPort($ip, 445, $t)) {
-                return 'windows';
+            foreach ($probes as $port => $os) {
+                if ($this->checkPort($ip, $port, $t)) {
+                    return $os;
+                }
             }
         }
 
@@ -514,8 +523,11 @@ class MachinePowerService
 
     /**
      * Vérifie si un port est ouvert sur une IP (fsockopen)
+     *
+     * protected (et non private) pour permettre de mocker la sonde TCP dans les
+     * tests de détection d'OS (cf. test_ping_*).
      */
-    private function checkPort(string $ip, int $port, float $timeout): bool
+    protected function checkPort(string $ip, int $port, float $timeout): bool
     {
         $fp = @fsockopen($ip, $port, $errno, $errstr, $timeout);
         if ($fp === false) {
