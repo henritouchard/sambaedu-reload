@@ -267,3 +267,134 @@ grep -riE "class .*central|function .*central|->central|\\\$central" \
 - [ ] Singleton ≤ 1 contrat actif (Scénario 5.5)
 - [ ] Payload invalide rejeté + rollback total (Scénario 5.6)
 - [ ] Aucun identifiant « central » (Scénario 5.7)
+
+---
+
+## Section 6 — Résolution AMONT > local dans StateCompiler (Story 28.3)
+
+> Branchement du **tier de précédence amont** dans le moteur de résolution
+> `App\Services\Agent\StateCompiler`. C'est la 1re story qui **lit** le contrat
+> persisté pour influencer le compilé. La précédence amont > local vit
+> **uniquement** dans `StateCompiler::specificity()` (nouvelle maille
+> `StateMaille::Upstream`, rang -1, plus spécifique que tout le local) ; les items
+> du contrat actif sont injectés comme **candidats bruts** étiquetés `Upstream`
+> par un **décorateur** (`UpstreamAwareProvider`) qui enrobe chaque provider, via
+> une **source partagée** (`UpstreamContractSource`) qui lit le contrat actif
+> (`link_state = active`, singleton 28.2).
+>
+> **Bornage 28.3** : injecte les items `target_type = instance`, états `locked` +
+> `permissive` (priment **tous deux** sur le local à ce stade) ; **exclut**
+> `absent` ; **ignore proprement** `target_type = label` (Epic 30). Bridge de
+> payload **minimal type-agnostique** démontré sur `registry` (exclusive par clé)
+> et `shortcuts` (aggregate) — expansion complète + schéma figé déférés **Epic 33**.
+> Conventions de `key` : `registry` = `"hive|path|name[|REG_TYPE]"`, `shortcuts` =
+> nom du raccourci (`value` = cible).
+>
+> **HORS scope** (couture documentée) : enforcement / refus d'édition + relaxation
+> permissive (override WG bat `permissive`) + drift STRICT + lisibilité refnum =
+> **Epic 29** ; ciblage label → `WorkstationGroup` = **Epic 30** ; bornage install
+> = **Epic 31** ; release des verrous `severed` = **Epic 32** ; schéma versionné +
+> représentation canonique du payload = **Epic 33**.
+
+**Validation automatisée (HÔTE) — préalable à tout test manuel :**
+
+```bash
+# Hôte (php8.4 + pdo_sqlite)
+php artisan test --filter UpstreamContractResolution   # 11/11 attendus
+php artisan test --filter StateCompiler                # nouveaux verts (2 échecs sync AD PRÉEXISTANTS, hors 28.3)
+php artisan test --filter ControlHubContract           # 48/48 (non-régression 28.1 + 28.2)
+```
+
+### Scénario 6.1 — L'amont prime sur le local pour la même clé (registry)
+
+**Procédure** : contrat actif avec un item `registry` `locked` ciblant l'instance
+(`key = "HKCU|Software\Foo|Bar|REG_DWORD"`, `value = 1`) + un réglage **local** sur
+la **même** clé `{hive,path,name}` (valeur `0`).
+
+**Attendu** : le compilé porte **une seule** valeur pour cette clé = **1** (valeur
+amont). L'item amont gagne parce qu'il porte la maille `Upstream` (rang -1, plus
+spécifique que toute maille locale) — arbitrage par `specificity()` **seul**.
+
+### Scénario 6.2 — Empilement : le local sans équivalent amont survit
+
+**Procédure** : (a) **aggregate** (`shortcuts`) — contrat avec un raccourci amont
++ raccourcis locaux distincts ; (b) **exclusive par clé** (`registry`) — l'amont
+impose la clé `Beta`, le local porte la clé `Alpha` (non imposée).
+
+**Attendu** : (a) l'item amont **s'ajoute** à l'union, les raccourcis locaux
+**restent** (3 items) ; (b) la clé `Alpha` conserve sa valeur **locale** gagnante,
+la clé `Beta` amont est présente — un item amont **n'efface jamais** un item local
+distinct.
+
+### Scénario 6.3 — Standalone byte-identique sans contrat (NFR3 — test révélateur)
+
+**Procédure** : aucun contrat actif. Comparer le compilé des providers **décorés**
+au compilé des **mêmes providers non décorés** (items par portée + `hashState()`).
+Mesurer le nombre de requêtes pendant la compilation décorée (`DB::enableQueryLog`).
+
+**Attendu** : sortie **strictement identique** (mêmes items, même ordre, même
+hash). **Au plus 1** requête « contrat actif ? » (sur `controlhub_contracts`,
+renvoie `null`), **0** requête sur `controlhub_contract_items` (court-circuit), et
+**pas** de N+1 par provider (résolution partagée/mémoïsée). Échouerait si le
+décorateur introduisait le moindre écart.
+
+### Scénario 6.4 — Déterminisme du hash avec contrat actif (NFR4 / ETag 23.5)
+
+**Procédure** : contrat actif + item amont ; compiler à deux instants différents
+(`travel()`).
+
+**Attendu** : `hashState()` **identique** (seul `generated_at` volatil) ;
+l'injection amont est stable (`sourceId` = id de l'item contrat, ordre `id` asc,
+jamais l'ordre SQL).
+
+### Scénario 6.5 — `absent` non injecté ; `locked` + `permissive` priment (AC #6)
+
+**Procédure** : (a) item amont `absent` sur une clé que le local règle → le local
+**survit** (l'amont `absent` n'est pas injecté, ne prime sur rien) ; (b) items
+`permissive` et `locked` sur des clés que le local règle → **les deux** valeurs
+amont gagnent.
+
+**Attendu** : (a) la valeur **locale** figure au compilé ; (b) `permissive` se
+comporte **comme `locked`** vis-à-vis du local (la **relaxation permissive** est
+**Epic 29** — couture documentée, non implémentée).
+
+### Scénario 6.6 — Bornage : label ignoré (Epic 30), severed inerte (Epic 32)
+
+**Procédure** : (a) item amont `target_type = label` sur une clé que le local
+règle ; (b) contrat `severed` (non actif) avec un item.
+
+**Attendu** : (a) l'item `label` est **ignoré proprement** (le local survit, aucun
+plantage) ; (b) un contrat `severed` n'injecte **aucun** candidat (seul l'actif est
+lu) — le local survit.
+
+### Scénario 6.7 — D2 ne fuit pas + R3
+
+**Procédure** :
+
+```bash
+# D2 : le SEUL changement dans StateCompiler est le rang Upstream dans specificity()
+git diff app/Services/Agent/StateCompiler.php   # uniquement le case Upstream => -1 + PHPDoc
+
+# R3 : aucun identifiant livré ne contient « central »
+grep -rin "central" app/Services/ControlHub/Resolution/   # uniquement des commentaires garde-fou « aucun central »
+```
+
+**Attendu** : `specificity()` est le seul `match(StateMaille)` modifié (le
+décorateur/la source n'arbitrent rien) ; aucun **identifiant** (classe, méthode,
+propriété, case d'enum) ne contient « central » — couvert par
+`r3_no_central_identifier` (le test scanne les identifiants, pas les commentaires).
+
+---
+
+## Checklist rapide Story 28.3
+
+- [ ] `php artisan test --filter UpstreamContractResolution` → 11/11 verts
+- [ ] `php artisan test --filter StateCompiler` → nouveaux verts (`specificity_covers_all_mailles`, `keyed_exclusive_marker_preserved_through_decorator`) ; 2 échecs sync AD PRÉEXISTANTS hors 28.3
+- [ ] `php artisan test --filter ControlHubContract` → 48/48 verts (non-régression 28.1 + 28.2)
+- [ ] Amont prime sur local même clé (Scénario 6.1)
+- [ ] Empilement local sans équivalent amont — aggregate + exclusive par clé (Scénario 6.2)
+- [ ] Standalone byte-identique + ≤ 1 requête, court-circuit (Scénario 6.3)
+- [ ] Déterminisme du hash avec contrat actif (Scénario 6.4)
+- [ ] `absent` non injecté, `locked`+`permissive` priment (Scénario 6.5)
+- [ ] Label ignoré + severed inerte (Scénario 6.6)
+- [ ] D2 confiné à `specificity()` + aucun identifiant « central » (Scénario 6.7)
