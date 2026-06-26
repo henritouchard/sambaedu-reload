@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Models\Delegation;
 use App\Models\Workstation;
 use App\Policies\AppCustomizationPolicy;
+use App\Policies\CapabilityPolicy;
 use App\Policies\DelegationPolicy;
 use App\Policies\DhcpPolicy;
 use App\Policies\GroupPolicy;
@@ -56,6 +57,9 @@ class AuthServiceProvider extends ServiceProvider
         WorkstationGroupPolicy::registerGates();
         // Story 4.8 — personnalisation applicative
         AppCustomizationPolicy::registerGates();
+        // Story 29.2 — verrou amont sur l'édition d'une capacité (gate
+        // `modify-capability`, DI de UpstreamLockResolver via le container).
+        CapabilityPolicy::registerGates();
 
         // Story 7.2 — 5 nouvelles Policies (AC5).
         DelegationPolicy::registerGates();

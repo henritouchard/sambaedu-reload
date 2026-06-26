@@ -3,7 +3,10 @@
 use App\Components\Traits\WithToasts;
 use App\Models\Capability;
 use App\Models\WorkstationGroup;
+use App\Services\ControlHub\UpstreamLockResolver;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
@@ -79,11 +82,16 @@ new class extends Component {
 
         $capabilities = Capability::query()
             ->whereIn('id', $rows->pluck('capability_id')->all())
+            ->with('projections')
             ->orderBy('label')
             ->get()
             ->keyBy('id');
 
-        return $rows->map(function ($row) use ($capabilities): array {
+        // Story 29.2 — pré-calcul du verrou amont une seule fois (set des clés
+        // `locked` mémoïsé ; court-circuit NFR3 sans contrat) pour éviter le N+1.
+        $lock = app(UpstreamLockResolver::class);
+
+        return $rows->map(function ($row) use ($capabilities, $lock): array {
             $capability = $capabilities->get($row->capability_id);
             if ($capability === null) {
                 return [];
@@ -100,6 +108,7 @@ new class extends Component {
                 'override_display' => $capability->optionLabel((string) $effective),
                 'default_display' => $capability->optionLabel((string) $capability->default_value),
                 'has_warning' => $capability->hasWarning(),
+                'is_upstream_locked' => $lock->isCapabilityLocked($capability),
             ];
         })->filter()->sortBy('label')->values()->all();
     }
@@ -120,12 +129,19 @@ new class extends Component {
             ->map(fn ($id): int => (int) $id)
             ->all();
 
+        // Story 29.2 — verrou amont pré-calculé une fois (court-circuit NFR3).
+        $lock = app(UpstreamLockResolver::class);
+
         return Capability::query()
             ->where('is_active', true)
             ->where('overrides_locked', false)
             ->when($overriddenIds !== [], fn ($q) => $q->whereNotIn('id', $overriddenIds))
+            ->with('projections')
             ->orderBy('label')
             ->get()
+            // Une capacité verrouillée amont n'est PAS proposée à l'ajout (le geste
+            // d'override serait défait au compilé ET refusé au serveur).
+            ->reject(fn (Capability $c): bool => $lock->isCapabilityLocked($c))
             ->map(fn (Capability $c): array => [
                 'id' => (int) $c->id,
                 'label' => (string) $c->label,
@@ -133,6 +149,7 @@ new class extends Component {
                 'category' => (string) ($c->category ?? ''),
                 'default_display' => $c->optionLabel((string) $c->default_value),
             ])
+            ->values()
             ->all();
     }
 
@@ -155,6 +172,10 @@ new class extends Component {
             ->where('overrides_locked', false)
             ->findOrFail($capabilityId);
 
+        if (! $this->authorizeUpstream($capability)) {
+            return;
+        }
+
         $this->resetForm();
         $this->editingCapabilityId = (int) $capability->id;
         $this->isEditing = false;
@@ -168,6 +189,11 @@ new class extends Component {
         $this->guardCustomize();
 
         $capability = Capability::query()->findOrFail($capabilityId);
+
+        if (! $this->authorizeUpstream($capability)) {
+            return;
+        }
+
         $current = DB::table('capability_assignments')
             ->where('assignable_type', WorkstationGroup::class)
             ->where('assignable_id', $this->groupId)
@@ -218,6 +244,12 @@ new class extends Component {
             return;
         }
 
+        // Story 29.2 — verrou amont (defense-in-depth) : refus SERVEUR même si
+        // l'UI est contournée (propriété publique hydratée / rejeu Livewire).
+        if (! $this->authorizeUpstream($capability)) {
+            return;
+        }
+
         $hasExistingOverride = DB::table('capability_assignments')
             ->where('assignable_type', WorkstationGroup::class)
             ->where('assignable_id', $this->groupId)
@@ -259,6 +291,15 @@ new class extends Component {
     public function removeOverride(int $capabilityId): void
     {
         $this->guardCustomize();
+
+        // Story 29.2 — bloquer AUSSI le retrait d'un item verrouillé amont : pour
+        // une UX « refus explicite » cohérente, le refnum ne « touche » pas un item
+        // verrouillé (le retrait serait de toute façon inerte, l'amont gagne au
+        // compilé). Même message que add/edit.
+        $capability = Capability::query()->find($capabilityId);
+        if ($capability !== null && ! $this->authorizeUpstream($capability)) {
+            return;
+        }
 
         DB::table('capability_assignments')
             ->where('assignable_type', WorkstationGroup::class)
@@ -319,6 +360,27 @@ new class extends Component {
             'Permission app.customize requise.',
         );
     }
+
+    /**
+     * Story 29.2 — garde de VERROU AMONT (defense-in-depth). `app.customize` est
+     * DÉJÀ vérifié par guardCustomize() en amont de chaque mutation ; ici le seul
+     * motif de refus du gate `modify-capability` est donc le verrou amont
+     * (item `locked`/`instance`/`registry` matchant une clé de la capacité). Le
+     * refus se traduit par un toast explicite (pas un échec silencieux) et
+     * l'arrêt de la mutation (retourne false). [AC #1, #5, #6]
+     */
+    private function authorizeUpstream(Capability $capability): bool
+    {
+        try {
+            Gate::authorize('modify-capability', $capability);
+
+            return true;
+        } catch (AuthorizationException) {
+            $this->toastError('Cette capacité est verrouillée par un contrat amont et ne peut pas être modifiée localement.');
+
+            return false;
+        }
+    }
 };
 ?>
 
@@ -369,6 +431,12 @@ new class extends Component {
                                             <i class="fa-solid fa-triangle-exclamation text-warning text-xs"
                                                 aria-label="Capacité sensible"></i>
                                         @endif
+                                        @if ($override['is_upstream_locked'])
+                                            <span class="badge badge-sm badge-neutral gap-1"
+                                                data-testid="upstream-locked-{{ $override['id'] }}">
+                                                <i class="fa-solid fa-lock text-xs"></i> Verrouillé par contrat amont
+                                            </span>
+                                        @endif
                                     </div>
                                     @if ($override['description'] !== '')
                                         <div class="text-sm opacity-70">{{ $override['description'] }}</div>
@@ -378,16 +446,20 @@ new class extends Component {
                                 <td class="font-medium">{{ $override['override_display'] }}</td>
                                 <td class="text-xs opacity-60">{{ $override['default_display'] }}</td>
                                 <td class="text-right whitespace-nowrap">
-                                    <button type="button" class="btn btn-ghost btn-xs"
-                                        wire:click="openEdit({{ $override['id'] }})"
-                                        data-testid="edit-override-{{ $override['id'] }}">
-                                        <i class="fa-solid fa-pen"></i> Éditer
-                                    </button>
-                                    <button type="button" class="btn btn-ghost btn-xs text-error"
-                                        wire:click="removeOverride({{ $override['id'] }})"
-                                        data-testid="remove-override-{{ $override['id'] }}">
-                                        <i class="fa-solid fa-rotate-left"></i> Retirer
-                                    </button>
+                                    @if ($override['is_upstream_locked'])
+                                        <span class="text-xs opacity-60 italic">Imposé par contrat amont</span>
+                                    @else
+                                        <button type="button" class="btn btn-ghost btn-xs"
+                                            wire:click="openEdit({{ $override['id'] }})"
+                                            data-testid="edit-override-{{ $override['id'] }}">
+                                            <i class="fa-solid fa-pen"></i> Éditer
+                                        </button>
+                                        <button type="button" class="btn btn-ghost btn-xs text-error"
+                                            wire:click="removeOverride({{ $override['id'] }})"
+                                            data-testid="remove-override-{{ $override['id'] }}">
+                                            <i class="fa-solid fa-rotate-left"></i> Retirer
+                                        </button>
+                                    @endif
                                 </td>
                             </tr>
                         @empty

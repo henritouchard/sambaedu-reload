@@ -33,6 +33,7 @@ use App\Services\Agent\WorkstationEnvironmentResolver;
 use App\Services\ControlHub\Resolution\RegistryUpstreamAdapter;
 use App\Services\ControlHub\Resolution\UpstreamAwareProvider;
 use App\Services\ControlHub\Resolution\UpstreamContractSource;
+use App\Services\ControlHub\UpstreamLockResolver;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 
@@ -108,6 +109,12 @@ class AgentServiceProvider extends ServiceProvider
         $this->app->singleton(UpstreamContractSource::class, fn () => new UpstreamContractSource([
             new RegistryUpstreamAdapter(),
         ]));
+        // Story 29.2 — VERROU d'écriture amont (pendant côté édition de
+        // UpstreamContractSource). Singleton ⇒ set des clés `locked`/`instance`/
+        // `registry` résolu UNE fois et partagé par les surfaces capacité (override
+        // parc + défaut instance) ; court-circuit NFR3 sans contrat actif (≤ 1
+        // requête, jamais la table `items`). Mémoïsation == par-requête (PHP-FPM).
+        $this->app->singleton(UpstreamLockResolver::class, fn () => new UpstreamLockResolver());
         $this->app->singleton(StateCompiler::class, fn ($app) => new StateCompiler(
             $app->make(StateHasher::class),
             // Story 28.3 — chaque provider est ENROBÉ par le décorateur amont :

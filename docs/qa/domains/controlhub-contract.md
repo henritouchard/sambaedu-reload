@@ -602,3 +602,98 @@ propriété, case d'enum) ne contient « central » — couvert par
 - [ ] `absent` non injecté, `locked`+`permissive` priment (Scénario 6.5)
 - [ ] Label ignoré + severed inerte (Scénario 6.6)
 - [ ] D2 confiné à `specificity()` + aucun identifiant « central » (Scénario 6.7)
+
+---
+
+## Section 7 — Refus de modification d'un item verrouillé amont (Story 29.2, 2026-06-27)
+
+> **Modèle** : 28.3 fait DÉJÀ gagner un item amont `locked` au compilé, mais rien
+> n'empêchait le refnum d'éditer sa config locale (simplement « défaite en
+> silence » au cycle suivant). 29.2 transforme ce « défait en silence » en REFUS
+> explicite à l'écriture (service `UpstreamLockResolver` + Gate `modify-capability`
+> + message), sur les DEUX surfaces capacité (override par parc + défaut instance).
+> Verrou = `type=registry` + `enforcement_state=locked` + `target_type=instance`
+> UNIQUEMENT. `permissive` (29.3/FR4) et `absent` restent éditables.
+
+**Pré-requis** : un contrat amont `active` (Section 5) avec au moins un item
+`registry`/`locked`/`instance` dont la clé `hive|path|name` correspond à une clé de
+projection d'une capacité du catalogue (ex. `EnableLUA` / UAC). Un user `refnum`
+avec `app.customize` (override parc) et un admin `server.admin`+`app.customize`
+(défaut instance).
+
+### Scénario 7.1 — Override de parc d'une capacité verrouillée → refus + message (CRITIQUE)
+
+**Procédure** : page d'un parc → onglet « Options / Capacités ». La capacité
+verrouillée amont affiche le badge « Verrouillé par contrat amont » et n'expose ni
+« Éditer » ni « Retirer » (mention « Imposé par contrat amont ») ; elle n'apparaît
+PAS dans la liste « Ajouter une capacité ». Forcer côté serveur (rejeu Livewire /
+`$wire.set('editingCapabilityId', …)` puis `saveOverride`).
+
+**Attendu** : un toast explicite « Cette capacité est verrouillée par un contrat
+amont et ne peut pas être modifiée localement. » ; AUCUNE ligne écrite dans
+`capability_assignments` pour ce parc/cette capacité (refus serveur, pas masquage
+seul).
+
+### Scénario 7.2 — Retrait d'un override existant d'une capacité verrouillée → refus
+
+**Procédure** : un override préexiste sur le parc pour une capacité ensuite
+verrouillée amont. Tenter `removeOverride`.
+
+**Attendu** : refus (même message) ; l'override n'est PAS supprimé (le refnum ne
+« touche » pas un item verrouillé ; le retrait serait de toute façon inerte, l'amont
+gagne au compilé).
+
+### Scénario 7.3 — Édition du défaut diffusé d'une capacité verrouillée → refus (CRITIQUE)
+
+**Procédure** : `/admin/settings/parc-defaults` → onglet « Registre / capacités ».
+La capacité verrouillée amont affiche le badge, le bouton « Éditer le défaut » est
+masqué (« Imposé par contrat amont ») et le toggle « Geler » est désactivé. Forcer
+côté serveur (`saveDefault` et `toggleLock` par rejeu).
+
+**Attendu** : refus serveur + message ; `capabilities.default_value` inchangé et
+`overrides_locked` inchangé. Le gel LOCAL 27.12 ne peut pas servir de contournement
+du verrou amont.
+
+### Scénario 7.4 — Capacité permissive → édition AUTORISÉE (ne pas sur-bloquer)
+
+**Procédure** : item amont `permissive` (et non `locked`) sur la clé d'une capacité.
+Éditer un override de parc ET le défaut.
+
+**Attendu** : les deux éditions sont AUTORISÉES (un item permissif n'est PAS un
+verrou — sa surcharge relève de la Story 29.3 / FR4). Aucun badge « verrouillé ».
+
+### Scénario 7.5 — Standalone (aucun contrat actif) → rien ne change (NFR3)
+
+**Procédure** : aucun contrat amont `active` (ou contrat `severed`). Dérouler les
+gestes capacité normaux (override parc, défaut instance).
+
+**Attendu** : comportement STRICTEMENT identique à 27.12/27.17 — aucune capacité
+n'est verrouillée, aucun badge. Au rendu des onglets, AU PLUS 1 requête
+`controlhub_contracts` (« contrat actif ? ») et ZÉRO requête
+`controlhub_contract_items` (court-circuit) :
+
+```bash
+grep -rin "central" app/Services/ControlHub/UpstreamLockResolver.php app/Policies/CapabilityPolicy.php
+# → uniquement les commentaires garde-fou « aucun central »
+```
+
+### Scénario 7.6 — Ciblage par label différé (Epic 30)
+
+**Procédure** : item amont `locked` mais `target_type = label`.
+
+**Attendu** : l'item est ignoré proprement (29.2 = `instance` only) ; la capacité
+reste éditable. Le verrou par label/parc viendra en Epic 30.
+
+---
+
+## Checklist rapide Story 29.2
+
+- [ ] `php artisan test --filter "UpstreamLockResolver|CapabilityPolicy|CapabilitiesTabUpstreamLock|ParcDefaultsUpstreamLock"` → 22/22 verts
+- [ ] `php artisan test --filter "CapabilitiesTab|AdminSettingsParcDefaults|ControlHubContract"` → non-régression verte (0 régression)
+- [ ] Override de parc d'une capacité verrouillée refusé + message, aucune écriture (Scénario 7.1)
+- [ ] Retrait d'override verrouillé refusé (Scénario 7.2)
+- [ ] Défaut diffusé + (dé)gel d'une capacité verrouillée refusés (Scénario 7.3)
+- [ ] Capacité permissive éditable (pas de sur-blocage — Scénario 7.4)
+- [ ] Standalone byte-identique + court-circuit ≤ 1 requête, 0 items (Scénario 7.5)
+- [ ] Label différé Epic 30 (Scénario 7.6)
+- [ ] R3 : aucun identifiant « central » dans `UpstreamLockResolver`/`CapabilityPolicy`

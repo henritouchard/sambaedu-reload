@@ -2,6 +2,8 @@
 
 use App\Components\Traits\WithToasts;
 use App\Models\Capability;
+use App\Services\ControlHub\UpstreamLockResolver;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
@@ -41,7 +43,12 @@ new class extends Component {
     #[Computed]
     public function capabilities(): array
     {
+        // Story 29.2 — verrou amont pré-calculé une fois (set des clés `locked`
+        // mémoïsé ; court-circuit NFR3 sans contrat) pour éviter le N+1.
+        $lock = app(UpstreamLockResolver::class);
+
         return Capability::query()
+            ->with('projections')
             ->orderBy('category')
             ->orderBy('label')
             ->get()
@@ -55,6 +62,7 @@ new class extends Component {
                 'overrides_locked' => (bool) $c->overrides_locked,
                 'is_active' => (bool) $c->is_active,
                 'has_warning' => $c->hasWarning(),
+                'is_upstream_locked' => $lock->isCapabilityLocked($c),
             ])
             ->all();
     }
@@ -72,6 +80,11 @@ new class extends Component {
         $this->guardAdmin();
 
         $capability = Capability::query()->findOrFail($capabilityId);
+
+        if (! $this->authorizeUpstream($capability)) {
+            return;
+        }
+
         $this->resetForm();
         $this->editingCapabilityId = (int) $capability->id;
         $this->formValue = (string) $capability->default_value;
@@ -89,6 +102,14 @@ new class extends Component {
         $this->guardAdmin();
 
         $capability = Capability::query()->findOrFail($capabilityId);
+
+        // Story 29.2 — un item verrouillé amont interdit aussi de (dé)geler
+        // localement la capacité correspondante (le gel local 27.12 ne doit pas
+        // servir de contournement du verrou amont).
+        if (! $this->authorizeUpstream($capability)) {
+            return;
+        }
+
         $capability->overrides_locked = ! $capability->overrides_locked;
         $capability->save();
 
@@ -106,6 +127,12 @@ new class extends Component {
         $capability = $this->editingCapability;
         if ($capability === null) {
             $this->toastError('Capacité introuvable.');
+            return;
+        }
+
+        // Story 29.2 — refus SERVEUR (defense-in-depth) : éditer le défaut diffusé
+        // d'une capacité verrouillée amont est refusé même si l'UI est contournée.
+        if (! $this->authorizeUpstream($capability)) {
             return;
         }
 
@@ -161,6 +188,33 @@ new class extends Component {
             abort(403);
         }
     }
+
+    /**
+     * Story 29.2 — garde de VERROU AMONT (defense-in-depth). `server.admin` est
+     * DÉJÀ vérifié par guardAdmin() en tête de chaque mutation. Le gate
+     * `modify-capability` ajoute le verrou amont : un item `locked`/`instance`/
+     * `registry` matchant une clé de la capacité refuse l'édition du défaut ET le
+     * (dé)gel local. Refus = toast explicite + arrêt (retourne false). [AC #2, #5, #6]
+     */
+    private function authorizeUpstream(Capability $capability): bool
+    {
+        try {
+            Gate::authorize('modify-capability', $capability);
+
+            return true;
+        } catch (AuthorizationException) {
+            // Le gate refuse pour DEUX raisons distinctes : verrou amont OU droit
+            // `app.customize` manquant. Ne pas afficher « verrouillé amont » si la
+            // vraie cause est l'absence de permission (message trompeur). [P1a review]
+            if (app(UpstreamLockResolver::class)->isCapabilityLocked($capability)) {
+                $this->toastError('Cette capacité est verrouillée par un contrat amont et ne peut pas être modifiée localement.');
+            } else {
+                $this->toastError("Vous n'avez pas le droit de modifier cette capacité.");
+            }
+
+            return false;
+        }
+    }
 };
 ?>
 
@@ -201,16 +255,23 @@ new class extends Component {
                                                 <i class="fa-solid fa-triangle-exclamation text-warning text-xs"
                                                     aria-label="Capacité sensible"></i>
                                             @endif
+                                            @if ($capability['is_upstream_locked'])
+                                                <span class="badge badge-sm badge-neutral gap-1"
+                                                    data-testid="upstream-locked-{{ $capability['id'] }}">
+                                                    <i class="fa-solid fa-lock text-xs"></i> Verrouillé par contrat amont
+                                                </span>
+                                            @endif
                                         </div>
                                     </td>
                                     <td class="text-xs opacity-60">{{ $capability['category'] }}</td>
                                     <td class="font-medium">{{ $capability['default_display'] }}</td>
                                     <td>
-                                        <label class="flex items-center gap-2 cursor-pointer"
+                                        <label class="flex items-center gap-2 {{ $capability['is_upstream_locked'] ? 'opacity-50' : 'cursor-pointer' }}"
                                             title="Gelé = plus de nouveaux overrides par parc (la diffusion reste inchangée).">
                                             <input type="checkbox" class="toggle toggle-warning toggle-sm"
                                                 @checked($capability['overrides_locked'])
-                                                wire:click="toggleLock({{ $capability['id'] }})"
+                                                @disabled($capability['is_upstream_locked'])
+                                                @if (! $capability['is_upstream_locked']) wire:click="toggleLock({{ $capability['id'] }})" @endif
                                                 data-testid="toggle-lock-{{ $capability['id'] }}" />
                                             <span class="badge badge-sm {{ $capability['overrides_locked'] ? 'badge-warning' : 'badge-ghost' }}">
                                                 {{ $capability['overrides_locked'] ? 'Gelé' : 'Ouvert' }}
@@ -218,11 +279,15 @@ new class extends Component {
                                         </label>
                                     </td>
                                     <td class="text-right whitespace-nowrap">
-                                        <button type="button" class="btn btn-ghost btn-xs"
-                                            wire:click="openEdit({{ $capability['id'] }})"
-                                            data-testid="edit-default-{{ $capability['id'] }}">
-                                            <i class="fa-solid fa-pen"></i> Éditer le défaut
-                                        </button>
+                                        @if ($capability['is_upstream_locked'])
+                                            <span class="text-xs opacity-60 italic">Imposé par contrat amont</span>
+                                        @else
+                                            <button type="button" class="btn btn-ghost btn-xs"
+                                                wire:click="openEdit({{ $capability['id'] }})"
+                                                data-testid="edit-default-{{ $capability['id'] }}">
+                                                <i class="fa-solid fa-pen"></i> Éditer le défaut
+                                            </button>
+                                        @endif
                                     </td>
                                 </tr>
                             @empty
