@@ -574,6 +574,59 @@ setup_acl_permissions() {
 }
 
 # ============================================================================
+# Dépendances système du pipeline iPXE / install Windows (Story 3.10)
+# ============================================================================
+
+# Installe les binaires requis par l'injection de pilotes NIC dans le boot.wim
+# WinPE (Story 3.10) et prépare le pack de pilotes persistant :
+#   - wimtools     → fournit `wimlib-imagex` (injection dans le boot.wim)
+#   - innoextract  → extraction des `.exe` InnoSetup Lenovo (7z ne suffit pas)
+#   - unzip        → extraction des `.zip` Intel
+# Le pack `storage/install/winpe-drivers/` est créé (vide = no-op à l'injection,
+# zéro régression pour les parcs à NIC inbox) et possédé par www-admin.
+install_ipxe_winpe_deps() {
+  log "Installation des dépendances iPXE/WinPE (injection pilotes NIC — Story 3.10)..."
+
+  local target_dir="${1:-$APP_DIR}"
+  local packages=(wimtools innoextract unzip)
+
+  if command -v apt-get &>/dev/null; then
+    # Best-effort : on n'échoue pas l'install globale si un paquet manque dans
+    # les dépôts (l'injection est no-op sans pack, et le message reste clair).
+    if apt-get install -y "${packages[@]}"; then
+      log_success "Paquets installés: ${packages[*]}"
+    else
+      log_warning "Échec d'installation d'au moins un paquet (${packages[*]})."
+      log_warning "Installez manuellement: sudo apt-get install -y ${packages[*]}"
+    fi
+  else
+    log_warning "apt-get indisponible — installez manuellement: ${packages[*]}"
+  fi
+
+  # Vérification des binaires effectivement disponibles.
+  local bin missing=()
+  for bin in wimlib-imagex innoextract unzip; do
+    command -v "$bin" &>/dev/null || missing+=("$bin")
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    log_warning "Binaires manquants après installation: ${missing[*]} — l'ingestion/injection de pilotes WinPE échouera tant qu'ils ne sont pas présents."
+  fi
+
+  # Pack de pilotes persistant (hors arbre extrait — survit aux ré-extractions
+  # d'ISO). Vide par défaut = injection no-op.
+  local pack_dir="$target_dir/storage/install/winpe-drivers"
+  if mkdir -p "$pack_dir"; then
+    if id www-admin &>/dev/null; then
+      chown -R www-admin:www-admin "$pack_dir" 2>/dev/null || \
+        log_warning "chown www-admin sur $pack_dir échoué (vérifier les droits)."
+    fi
+    log_success "Pack de pilotes WinPE prêt: $pack_dir (vide = no-op à l'injection)"
+  else
+    log_warning "Création de $pack_dir échouée — déposez-y les familles de pilotes manuellement."
+  fi
+}
+
+# ============================================================================
 # Queue workers systemd
 # ============================================================================
 
@@ -850,6 +903,9 @@ main() {
   else
     log_warning "NPM non disponible - frontend non compilé"
   fi
+
+  # Dépendances système du pipeline iPXE/WinPE (injection pilotes NIC — 3.10).
+  install_ipxe_winpe_deps "$APP_DIR"
 
   # Phase 4: Base de données
   echo ""

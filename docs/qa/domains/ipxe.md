@@ -2501,10 +2501,17 @@ tient pas. L'injection est désormais **rejouée automatiquement** à chaque
 extraction (service `WinpeDriverInjector`), idempotente *par construction* (le
 `cp -R` depuis l'ISO donne toujours un wim pristine).
 
-### Prérequis système (provisioning — action Henri / one-shot-install)
+### Prérequis système (provisioning)
+
+**Automatique via `scripts/install.sh`** : la fonction `install_ipxe_winpe_deps`
+(Phase 3) installe `wimtools` + `innoextract` + `unzip`, vérifie la présence des
+binaires (`wimlib-imagex`/`innoextract`/`unzip`) et crée le pack
+`storage/install/winpe-drivers/` (vide = no-op à l'injection) possédé par
+www-admin. `install.sh` rejoue aussi `update.sh` en fin de course.
 
 ```bash
-# Sur le serveur SE5 (VM) — paquets requis :
+# Installation neuve : rien à faire, install.sh s'en charge.
+# Parc DÉJÀ installé (ex. VM existante) — rejouer la phase manuellement :
 ssh /vm 'apt-get install -y wimtools innoextract unzip'
 # wimtools fournit `wimlib-imagex` (injection, en www-admin SANS sudo).
 # innoextract : ingestion des .exe InnoSetup Lenovo (7z ne voit que les
