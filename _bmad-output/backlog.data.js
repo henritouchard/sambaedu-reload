@@ -1161,13 +1161,13 @@ const DATASETS = {
     {
       "num": 28,
       "title": "Contrat Amont — Réception & résolution (socle)",
-      "status": "backlog",
+      "status": "in-progress",
       "summary": "<strong>Côté local SE5 du « Contrat Managé »</strong> — l'instance consomme un <strong>contrat amont générique</strong> imposé par controlHub. <strong>Aucune notion de « central » dans SER</strong> (principe fondateur PRD) : SE5 modélise une « autorité amont » abstraite, comme le login fédéré (Epic 20) et le desired-state (Epic 23). L'instance ingère le contrat, le persiste de façon idempotente, et calcule l'état effectif <code>amont &gt; local</code> via <code>StateCompiler::specificity()</code> ; sans contrat, comportement strictement inchangé. <strong>Cadré 2026-06-26 (PM John).</strong> Sources : <code>prd-contrat-manage-se5.md</code> + <code>epics-contrat-manage-se5.md</code>. Côté controlHub = <code>handoff-controlhub-contrat-manage.md</code> (BMAD séparé).",
       "stories": [
         {
           "id": "28-1",
           "title": "Modèle et persistance du contrat amont (items, catalogue, labels, groupes imposés, état du lien)",
-          "status": "backlog"
+          "status": "review"
         },
         {
           "id": "28-2",
