@@ -14,6 +14,10 @@
     $inheritedProfiles = $profiles['inherited'];
     $directApps = $apps['direct'];
     $inheritedApps = $apps['inherited'];
+    // Story 29.1 — Périmètre d'autorisation WPKG = salle physique du poste.
+    // Résolu UNE fois ici (l'accessor physicalRoom requête sinon à chaque @can,
+    // N+1) puis passé au Gate scopé. null (poste nomade) → fallback global.
+    $wpkgScope = $this->workstation?->physicalRoom;
 @endphp
 
 <div class="space-y-4">
@@ -47,7 +51,7 @@
                             Profils applicatifs
                             <span class="badge badge-ghost">{{ $directProfiles->count() + $inheritedProfiles->count() }}</span>
                         </h3>
-                        @can('wpkg.assign')
+                        @can('assign-wpkg-workstationGroup', $wpkgScope)
                             <button type="button" class="btn btn-primary btn-sm gap-2"
                                 wire:click="openAttachWpkgProfileModal">
                                 <i class="fa-solid fa-plus"></i>
@@ -75,7 +79,7 @@
                                             • {{ $profile->applications->count() ?? 0 }} app(s)
                                         </div>
                                     </div>
-                                    @can('wpkg.assign')
+                                    @can('assign-wpkg-workstationGroup', $wpkgScope)
                                         <button type="button" class="btn btn-ghost btn-xs btn-square text-error"
                                             wire:click="detachWpkgProfile({{ $profile->id }})"
                                             wire:confirm="Retirer ce profil du poste ?">
@@ -118,7 +122,7 @@
                             Applications
                             <span class="badge badge-ghost">{{ $directApps->count() + $inheritedApps->count() }}</span>
                         </h3>
-                        @can('wpkg.assign')
+                        @can('assign-wpkg-workstationGroup', $wpkgScope)
                             <button type="button" class="btn btn-primary btn-sm gap-2"
                                 wire:click="openAttachWpkgAppModal">
                                 <i class="fa-solid fa-plus"></i>
@@ -148,7 +152,7 @@
                                             @endif
                                         </div>
                                     </div>
-                                    @can('wpkg.assign')
+                                    @can('assign-wpkg-workstationGroup', $wpkgScope)
                                         <button type="button" class="btn btn-ghost btn-xs btn-square text-error"
                                             wire:click="detachWpkgApplication({{ $app->id }})"
                                             wire:confirm="Retirer cette application du poste ?">

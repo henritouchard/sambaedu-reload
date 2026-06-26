@@ -3,6 +3,12 @@
     8 options legacy via WorkstationIniGenerator::LEGACY_OPTIONS, toggles
     pilotés par $this->wpkgOptionsState (array<string,bool>).
 --}}
+@php
+    // Story 29.1 — Périmètre d'autorisation WPKG = salle physique du poste,
+    // résolu UNE fois (l'accessor requête sinon à chaque @cannot dans la boucle
+    // d'options, N+1). null (poste nomade) → fallback droit global.
+    $wpkgScope = $wpkgScope ?? $this->workstation?->physicalRoom;
+@endphp
 <div class="card bg-base-100 shadow-sm border border-base-200">
     <div class="card-body">
         <div class="flex items-center justify-between mb-3">
@@ -11,7 +17,7 @@
                 Options .ini WPKG
             </h3>
             <div class="flex gap-2">
-                @can('wpkg.assign')
+                @can('assign-wpkg-workstationGroup', $wpkgScope)
                     <button type="button" class="btn btn-ghost btn-sm gap-2"
                         wire:click="resetWpkgOptions"
                         wire:confirm="Réinitialiser toutes les options aux valeurs par défaut ?">
@@ -45,7 +51,7 @@
                         <input type="checkbox" class="toggle toggle-primary toggle-sm mt-0.5"
                             wire:click="toggleWpkgOption('{{ $key }}')"
                             @checked($isOn)
-                            @cannot('wpkg.assign') disabled @endcannot />
+                            @cannot('assign-wpkg-workstationGroup', $wpkgScope) disabled @endcannot />
                         <div class="flex-1">
                             <div class="font-medium">
                                 <code>{{ $key }}</code>

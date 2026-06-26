@@ -738,6 +738,65 @@ Le toast de succès n'est affiché que si l'état **persisté** du groupe couran
 
 ---
 
+## Section 11 — Scoping du Gate WPKG par périmètre (Story 29.1, 2026-06-26)
+
+> **But.** L'enforcement des assignations WPKG (profils/applications/options `.ini`) passait par un Gate **global** Spatie `wpkg.assign`, aveugle au périmètre : une délégation WPKG accordée sur **une salle** ne faisait rien (bloquée partout faute du droit global), et un technicien à droit global agissait sur **toutes** les salles. 29.1 remplace ce Gate global par un Gate **scopé** `assign-wpkg-workstationGroup` (méthode `WorkstationGroupPolicy::assignWpkg`, calquée sur `manage`/`computer.control`) : sur la page **groupe** le scope est le parc (`$this->group`), sur la page **machine** c'est la **salle physique** du poste (`Workstation::physicalRoom`). La logique de décision (exclusion négative prévalant, expiration, fallback global) est entièrement déléguée à `PermissionService::canOnWorkstationGroup` (réutilisé, pas réimplémenté). Un garde **defense-in-depth** double l'enforcement dans `AppProfileService` (inerte hors contexte HTTP : `Auth::check()===false`).
+
+> **Pré-requis.** Schéma Spatie + délégations 7.x (`delegations`, `PermissionService`). Permission `wpkg.assign` seedée. Deux salles physiques (`salle_a`, `salle_b`), au moins un poste rattaché à `salle_a`, un poste **sans** salle physique (nomade). Trois comptes : un **délégué** WPKG sur `salle_a` (non-admin), un **technicien global** (`wpkg.assign` direct/rôle), un **lambda** sans droit.
+
+### Scénario 11.1 — Délégué WPKG voit/agit sur SA salle, pas les autres (CRITIQUE)
+
+1. Accorder une délégation **positive active** `wpkg.assign` sur `salle_a` au délégué (drawer Délégations).
+2. Page **groupe** `salle_a` (onglet Applications WPKG) : les boutons d'ajout/retrait de profils, d'applications, « Bulk catégorie » et « Cloner cette configuration » sont **visibles** ; l'ajout d'un profil/app **aboutit**.
+3. Page **groupe** `salle_b` : les mêmes contrôles sont **masqués** (`@can` faux) ; toute action forcée (ex. via DOM) lève `AuthorizationException` (toast « Vous n'avez pas la permission… »).
+
+### Scénario 11.2 — Technicien global agit partout (non-régression, CRITIQUE)
+
+1. Donner le droit **global** `wpkg.assign` à un technicien (permission directe ou via rôle).
+2. Vérifier que sur `salle_a`, `salle_b`, **et** un poste **sans** salle physique, tous les contrôles WPKG sont visibles et les actions aboutissent.
+3. **Régression à surveiller** : si le technicien global est bloqué sur une salle, le fallback global de `assignWpkg` est cassé (le risque #1 de la story).
+
+### Scénario 11.3 — Exclusion négative active prévaut même sur le droit global
+
+1. Sur un user disposant du droit **global** `wpkg.assign`, poser une **exclusion négative active** `wpkg.assign` sur `salle_a`.
+2. Sur la page groupe `salle_a` : les contrôles WPKG sont **masqués** et toute action est **refusée** (l'exclusion prévaut sur le global).
+3. Sur `salle_b` (pas d'exclusion) : le droit global continue de couvrir → autorisé.
+
+### Scénario 11.4 — Délégation expirée → refus
+
+1. Accorder au délégué une délégation `wpkg.assign` sur `salle_a` avec `expires_at` **dépassé**.
+2. Page groupe `salle_a` : contrôles masqués, action refusée (le scope `->active()` exclut les délégations expirées).
+
+### Scénario 11.5 — Page machine = salle physique du poste
+
+1. Délégué de `salle_a` : ouvrir la fiche d'un **poste rattaché à `salle_a`** (onglet WPKG + sous-onglet Options) → contrôles visibles, action (attacher une app, basculer une option `.ini`, enregistrer) **aboutit**.
+2. Ouvrir un **poste rattaché à `salle_b`** → contrôles masqués, action refusée.
+
+### Scénario 11.6 — Poste sans salle physique (nomade) → admin global seul
+
+1. Délégué de `salle_a` : ouvrir un **poste nomade** (aucune salle physique). `Workstation::physicalRoom` vaut `null` → la policy se rabat sur le droit global : le délégué est **refusé** (pas de fausse ouverture).
+2. Technicien **global** : sur le même poste nomade, les contrôles sont visibles et les actions aboutissent.
+
+### Scénario 11.7 — Defense-in-depth couche service (appelant non-web inerte)
+
+1. Sous le **délégué de `salle_a`** (contexte web) : un appel à `AppProfileService::addApplicationsToWorkstationGroup(salle_b, …)` lève `AuthorizationException` (aucune écriture pivot).
+2. **Hors contexte utilisateur** (commande artisan / seed / agent, `Auth::check()===false`) : la même méthode **ne lève pas** et s'exécute (non-régression des appelants non-web).
+
+### Scénario 11.8 — Page profils : attache d'un profil à un POSTE hors périmètre (review 29.1, faille M1) (CRITIQUE)
+
+> **Pourquoi ce scénario** : la review (2e avis opus) a trouvé que le chemin **profil→poste** (`addWorkstations`/`removeWorkstations`, surface = page `parc-settings/profiles`) contournait entièrement le verrou WPKG — un rôle ayant `computer.install` mais **pas** `wpkg.assign` (ex: `ReferentNumerique`) pouvait attacher un profil d'apps à n'importe quel poste de n'importe quelle salle. La page profils n'ayant **pas** de garde UI `@can`, le seul rempart est le garde service. Test unitaire vert ≠ chemin couvert : angle détectable uniquement en pensant « toutes les surfaces qui matérialisent une assignation par-poste ».
+
+1. Sous un **délégué WPKG de `salle_a`** (ou un `ReferentNumerique` sans `wpkg.assign`) : ouvrir `parc-settings/profiles/{id}`, tenter d'**attacher** le profil à un **poste de `salle_b`** → l'action est **refusée** (`AuthorizationException` → toast d'erreur), **aucune** ligne dans `app_profile_workstation`.
+2. Le même délégué attache le profil à un **poste de `salle_a`** → **autorisé**, ligne pivot créée, le poste reçoit les apps au cycle WPKG suivant.
+3. Vérifier la symétrie sur le **détachement** (`removeWorkstations`) : refus hors périmètre, succès dans le périmètre.
+4. **Note UX (Q1 review)** : sur la page profils les boutons restent visibles même sans droit (pas de `@can`) → l'action échoue par toast générique. Acceptable en zero-prod ; à durcir (masquage `@can`) si l'UX le justifie.
+
+> **Couverture automatisée.** `tests/Unit/Policies/WorkstationGroupPolicyWpkgTest.php` : délégué autorisé sur A / refusé sur B (11.1), admin global partout + scope null (11.2), exclusion négative prévalant sur global (11.3), délégation expirée refusée (11.4), groupe logique → fallback global seul, user sans droit refusé, et résolution via la façade `Gate::allows('assign-wpkg-workstationGroup', …)` (enregistrement `RegistersGates`). `tests/Feature/AppProfile/AppProfileServiceWpkgScopingTest.php` : garde service délégué A OK / B refusé (11.7), appelant non authentifié non bloqué (11.7). La vérification visuelle des `@can`/`@cannot` (boutons masqués) et le scope page machine (11.5/11.6) = **validation manuelle UI**, l'enforcement serveur étant couvert par les tests ci-dessus.
+
+> **Checklist rapide pré-prod (29.1)** : déployer → grep garde-fou (`Gate::authorize('wpkg.assign')` global et `@can('wpkg.assign')` sans modèle = **0** dans `resources/views/pages/parc/`) → délégué WPKG sur une salle agit sur SA salle et pas les autres → technicien global agit partout → exclusion négative refuse même sur global → poste nomade : seul l'admin global passe.
+
+---
+
 ## Post-correctifs & non-régressions
 
 ### Post-correctifs Story 7.2 (review 2026-04-23)
@@ -751,6 +810,14 @@ Le toast de succès n'est affiché que si l'état **persisté** du groupe couran
 | #8 — Bulk reset bypass scoping | Scénario 3.3 |
 | #2 — `fromBitmask` sur-élargit les profils custom narrow | Scénario 2.4 edge case |
 | #7 — Cache non-invalidé via saveProfile Livewire | Scénario 4.3 |
+
+### Post-correctifs Story 29.1 (review 2026-06-26 — sonnet + 2e avis opus)
+
+| Incident | Couvert par |
+|----------|-------------|
+| M1 — chemin profil→poste (`addWorkstations`/`removeWorkstations`) non gardé → verrou WPKG contournable par-poste (page profils sans garde UI ; AC #6 faux pour ce chemin). Manqué par sonnet, rattrapé par opus | Garde service `assertCanAssignWpkgOnGroup($ws->physicalRoom)` ajouté (symétrique `addApplicationsToWorkstation`). Scénario **11.8** + tests `delegate_of_a_can/cannot_attach_profile_to_workstation_in_*` |
+| #1 — test `gate_denies_when_user_lacks_wpkg_assign` tautologique (testait l'ancien gate global) | Test supprimé ; scoping réel couvert par `WorkstationGroupPolicyWpkgTest` (7 cas) + `AppProfileServiceWpkgScopingTest` |
+| #3 — `app/Wpkg/Deployment/README.md` décrivait encore le gate global | Doc corrigée (gate scopé + fallback + defense-in-depth) |
 
 ### Post-correctifs Story 4.14 (review 2026-06-25 — sonnet + 2e avis opus)
 

@@ -17,6 +17,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -261,6 +262,15 @@ final class AppProfileService
             return false;
         }
 
+        // Story 29.1 — defense-in-depth : un profil assigné à des parcs matérialise
+        // une assignation WPKG par-parc. On garde CHAQUE parc cible ; un seul refus
+        // hors-périmètre fait échouer toute l'opération (AuthorizationException).
+        if (Auth::check()) {
+            foreach ($groupIds as $groupId) {
+                $this->assertCanAssignWpkgOnGroup(WorkstationGroup::find($groupId));
+            }
+        }
+
         DB::transaction(function () use ($profile, $profileId, $groupIds) {
             $profile->workstationGroups()->syncWithoutDetaching($groupIds);
             DB::afterCommit(function () use ($profileId, $groupIds) {
@@ -291,6 +301,14 @@ final class AppProfileService
         $profile = AppProfile::find($profileId);
         if (! $profile) {
             return false;
+        }
+
+        // Story 29.1 — defense-in-depth : retrait d'un profil d'un parc = mutation
+        // WPKG scopée par-parc. On garde chaque parc cible.
+        if (Auth::check()) {
+            foreach ($groupIds as $groupId) {
+                $this->assertCanAssignWpkgOnGroup(WorkstationGroup::find($groupId));
+            }
         }
 
         DB::transaction(function () use ($profile, $profileId, $groupIds) {
@@ -325,6 +343,16 @@ final class AppProfileService
             return false;
         }
 
+        // Story 29.1 — defense-in-depth : attacher un profil à des postes matérialise
+        // une assignation WPKG par-poste (symétrique de addApplicationsToWorkstation).
+        // On garde chaque poste sur sa salle physique ; un seul refus hors-périmètre
+        // fait échouer toute l'opération avant écriture (AuthorizationException).
+        if (Auth::check()) {
+            foreach ($workstationIds as $workstationId) {
+                $this->assertCanAssignWpkgOnGroup(Workstation::find($workstationId)?->physicalRoom);
+            }
+        }
+
         DB::transaction(function () use ($profile, $profileId, $workstationIds) {
             $profile->workstations()->syncWithoutDetaching($workstationIds);
             DB::afterCommit(function () use ($profileId, $workstationIds) {
@@ -355,6 +383,14 @@ final class AppProfileService
         $profile = AppProfile::find($profileId);
         if (! $profile) {
             return false;
+        }
+
+        // Story 29.1 — defense-in-depth : retrait d'un profil d'un poste = mutation
+        // WPKG scopée par-poste. On garde chaque poste sur sa salle physique.
+        if (Auth::check()) {
+            foreach ($workstationIds as $workstationId) {
+                $this->assertCanAssignWpkgOnGroup(Workstation::find($workstationId)?->physicalRoom);
+            }
         }
 
         DB::transaction(function () use ($profile, $profileId, $workstationIds) {
@@ -396,6 +432,9 @@ final class AppProfileService
             return [];
         }
 
+        // Story 29.1 — defense-in-depth : assignation scopée par parc.
+        $this->assertCanAssignWpkgOnGroup($group);
+
         $attached = DB::transaction(function () use ($group, $groupId, $applicationIds) {
             $changes = $group->applications()->syncWithoutDetaching($applicationIds);
             $attached = array_values(array_map('intval', $changes['attached'] ?? []));
@@ -435,6 +474,9 @@ final class AppProfileService
             return 0;
         }
 
+        // Story 29.1 — defense-in-depth : assignation scopée par parc.
+        $this->assertCanAssignWpkgOnGroup($group);
+
         $detached = DB::transaction(function () use ($group, $groupId, $applicationIds) {
             $detached = $group->applications()->detach($applicationIds);
             if ($detached > 0) {
@@ -472,6 +514,10 @@ final class AppProfileService
             return [];
         }
 
+        // Story 29.1 — defense-in-depth : scope = salle physique du poste
+        // (null si nomade → fallback global seul).
+        $this->assertCanAssignWpkgOnGroup($workstation->physicalRoom);
+
         $attached = DB::transaction(function () use ($workstation, $workstationId, $applicationIds) {
             $changes = $workstation->applications()->syncWithoutDetaching($applicationIds);
             $attached = array_values(array_map('intval', $changes['attached'] ?? []));
@@ -508,6 +554,10 @@ final class AppProfileService
         if (! $workstation) {
             return 0;
         }
+
+        // Story 29.1 — defense-in-depth : scope = salle physique du poste
+        // (null si nomade → fallback global seul).
+        $this->assertCanAssignWpkgOnGroup($workstation->physicalRoom);
 
         $detached = DB::transaction(function () use ($workstation, $workstationId, $applicationIds) {
             $detached = $workstation->applications()->detach($applicationIds);
@@ -569,6 +619,12 @@ final class AppProfileService
         if (! $source || ! $target) {
             throw new \RuntimeException('Parc source ou cible introuvable.');
         }
+
+        // Story 29.1 — defense-in-depth : le clone n'écrit QUE sur le parc CIBLE
+        // (la source est lue seule). On garde donc le périmètre cible. Appelée
+        // depuis l'UI sous un user → le garde Auth::check() la couvre ; inerte
+        // en contexte système (clone scripté/seed).
+        $this->assertCanAssignWpkgOnGroup($target);
 
         $sourceProfileIds = $source->appProfiles->pluck('id')->map('intval')->all();
         $targetProfileIds = $target->appProfiles->pluck('id')->map('intval')->all();
@@ -688,6 +744,35 @@ final class AppProfileService
                 'removed' => array_values(array_diff($tA, $sA)),
             ],
         ];
+    }
+
+    /**
+     * Story 29.1 — Garde defense-in-depth : refuse une assignation WPKG sur un
+     * parc hors du périmètre autorisé de l'utilisateur courant.
+     *
+     * INERTE hors contexte HTTP/Livewire (`Auth::check() === false` : console,
+     * agent desired-state, seeders, clone système) — ces appelants non-web ne
+     * sont pas soumis au Gate scopé (non-régression, AC #6). En contexte
+     * authentifié, lève `AuthorizationException` si l'utilisateur n'a ni
+     * délégation `wpkg.assign` active sur la salle ni le droit global (fallback).
+     * `$group === null` (poste nomade sans salle) ⇒ fallback global seul, cf.
+     * {@see \App\Policies\WorkstationGroupPolicy::assignWpkg()}.
+     *
+     * Cette couche double l'enforcement posé sur les pages parc/machine
+     * (`ensureWpkgAssignAuthorized`). Sur la page profils, en revanche, les
+     * boutons d'assignation n'ont pas (encore) de garde UI : pour le chemin
+     * profil→parc/poste, ce garde service est le seul rempart — d'où son
+     * importance (Story 29.1, finding MANQUÉ-1).
+     *
+     * @throws \Illuminate\Auth\Access\AuthorizationException
+     */
+    private function assertCanAssignWpkgOnGroup(?WorkstationGroup $group): void
+    {
+        if (! Auth::check()) {
+            return;
+        }
+
+        Gate::authorize('assign-wpkg-workstationGroup', $group);
     }
 
     /**

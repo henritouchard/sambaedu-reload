@@ -1688,7 +1688,11 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     private function ensureWpkgAssignAuthorized(): void
     {
         try {
-            Gate::authorize('wpkg.assign');
+            // Story 29.1 — Gate SCOPÉ par périmètre (salle physique) : remplace
+            // l'ancien `Gate::authorize('wpkg.assign')` GLOBAL aveugle au parc.
+            // Une délégation WPKG sur cette salle est désormais opposable ; le
+            // droit global reste un fallback (admin/technicien — non-régression).
+            Gate::authorize('assign-wpkg-workstationGroup', $this->group);
         } catch (AuthorizationException $e) {
             $this->toastError('Vous n\'avez pas la permission de modifier les assignations WPKG.');
             throw $e;

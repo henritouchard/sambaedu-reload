@@ -35,6 +35,7 @@ class WorkstationGroupPolicy
         'delete-workstationGroup' => 'delete',
         'manage-workstationGroup' => 'manage',
         'manage-workstationGroups' => 'viewAny',
+        'assign-wpkg-workstationGroup' => 'assignWpkg',
     ];
 
     /**
@@ -128,6 +129,38 @@ class WorkstationGroupPolicy
         }
 
         return $this->hasPermission($user, 'computer.control');
+    }
+
+    /**
+     * Story 29.1 — Vérifie si l'utilisateur peut assigner des applications WPKG
+     * (profils/applications/options) sur un WorkstationGroup.
+     *
+     * Calqué à l'identique sur {@see manage()} : on remplace le Gate GLOBAL
+     * `wpkg.assign` (Spatie non scopé, aveugle au périmètre) par une enveloppe
+     * de policy scopée par salle physique.
+     *
+     * Autorise si :
+     *  - groupe physique → délégation scopée `wpkg.assign` active sur ce group
+     *    via {@see PermissionService::canOnWorkstationGroup()} ;
+     *  - OU (fallback) droit global Spatie `wpkg.assign` (admin/technicien).
+     *
+     * Sans group (`null`, ex. poste nomade sans salle physique) → se rabat sur
+     * le droit global UNIQUEMENT : pas de fausse ouverture, seul l'admin global
+     * passe (AC #5).
+     *
+     * NOTE : l'exclusion négative active (qui prévaut même sur le droit global)
+     * et l'expiration (`->active()`) sont DÉJÀ honorées par
+     * `canOnWorkstationGroup` — ne pas les réimplémenter ici (AC #3, #4). Le
+     * fallback global préserve la non-régression admin/technicien (AC #2).
+     */
+    public function assignWpkg(?Authenticatable $user, ?WorkstationGroup $group = null): bool
+    {
+        if ($group !== null && $this->canCheckDelegation($user, $group)) {
+            return app(PermissionService::class)
+                ->canOnWorkstationGroup($user, 'wpkg.assign', $group);
+        }
+
+        return $this->hasPermission($user, 'wpkg.assign');
     }
 
     /**

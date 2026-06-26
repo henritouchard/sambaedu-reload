@@ -9,7 +9,7 @@
 
 <div class="space-y-4">
     <div class="flex flex-wrap items-center gap-2">
-        @can('wpkg.assign')
+        @can('assign-wpkg-workstationGroup', $group)
             <button type="button" class="btn btn-outline btn-sm gap-2"
                 wire:click="openBulkCategoryModal">
                 <i class="fa-solid fa-tags"></i>
@@ -33,7 +33,7 @@
                         Profils applicatifs
                         <span class="badge badge-ghost">{{ $attachedProfiles->count() }}</span>
                     </h3>
-                    @can('wpkg.assign')
+                    @can('assign-wpkg-workstationGroup', $group)
                         <button type="button" class="btn btn-primary btn-sm gap-2"
                             wire:click="openAttachWpkgProfileModal">
                             <i class="fa-solid fa-plus"></i>
@@ -65,7 +65,7 @@
                                         • {{ $profile->applications_count ?? $profile->applications->count() }} app(s)
                                     </div>
                                 </div>
-                                @can('wpkg.assign')
+                                @can('assign-wpkg-workstationGroup', $group)
                                     <button type="button" class="btn btn-ghost btn-xs btn-square text-error"
                                         wire:click="detachWpkgProfile({{ $profile->id }})"
                                         wire:confirm="Retirer ce profil du parc ?">
@@ -88,7 +88,7 @@
                         Applications directes
                         <span class="badge badge-ghost">{{ $attachedApps->count() }}</span>
                     </h3>
-                    @can('wpkg.assign')
+                    @can('assign-wpkg-workstationGroup', $group)
                         <button type="button" class="btn btn-primary btn-sm gap-2"
                             wire:click="openAttachWpkgAppModal">
                             <i class="fa-solid fa-plus"></i>
@@ -115,7 +115,7 @@
                                         @endif
                                     </div>
                                 </div>
-                                @can('wpkg.assign')
+                                @can('assign-wpkg-workstationGroup', $group)
                                     <button type="button" class="btn btn-ghost btn-xs btn-square text-error"
                                         wire:click="detachWpkgApplication({{ $app->id }})"
                                         wire:confirm="Retirer cette application du parc ?">

@@ -49,13 +49,74 @@ class ParcGroupWpkgPageTest extends TestCase
         // Stub Gate `wpkg.assign` à allow / deny selon les tests.
         Gate::define('wpkg.assign', fn ($user) => true);
         Gate::define('view', fn ($user, $model = null) => true);
+        // Story 29.1 — l'enforcement WPKG passe désormais par le Gate SCOPÉ
+        // (T4 : defense-in-depth dans AppProfileService). On le stube à allow
+        // ici (le schéma Spatie permissions n'est pas bootstrappé ; cf.
+        // WorkstationGroupPolicyWpkgTest / AppProfileServiceWpkgScopingTest pour
+        // la couverture réelle de la décision d'autorisation).
+        Gate::define('assign-wpkg-workstationGroup', fn ($user, $model = null) => true);
 
         $this->admin = $this->makeAdmin();
+        // Story 29.1 — le Gate scopé est invoqué sous un user authentifié, ce qui
+        // déclenche le before-hook Spatie (lecture de la table `permissions`).
+        // On crée les tables Spatie minimales (vides) pour que le before-hook
+        // n'échoue pas, puis le `Gate::define` stubé ci-dessus autorise l'action.
+        $this->bootstrapSpatieTables();
         $this->actingAs($this->admin);
+    }
+
+    private function bootstrapSpatieTables(): void
+    {
+        $schema = \Illuminate\Support\Facades\Schema::class;
+        if (! $schema::hasTable('permissions')) {
+            $schema::create('permissions', function ($t) {
+                $t->id();
+                $t->string('name');
+                $t->string('guard_name');
+                $t->timestamps();
+                $t->unique(['name', 'guard_name']);
+            });
+        }
+        if (! $schema::hasTable('roles')) {
+            $schema::create('roles', function ($t) {
+                $t->id();
+                $t->string('name');
+                $t->string('guard_name');
+                $t->timestamps();
+                $t->unique(['name', 'guard_name']);
+            });
+        }
+        if (! $schema::hasTable('model_has_permissions')) {
+            $schema::create('model_has_permissions', function ($t) {
+                $t->unsignedBigInteger('permission_id');
+                $t->string('model_type');
+                $t->unsignedBigInteger('model_id');
+                $t->primary(['permission_id', 'model_id', 'model_type'], 'mhp_primary');
+            });
+        }
+        if (! $schema::hasTable('model_has_roles')) {
+            $schema::create('model_has_roles', function ($t) {
+                $t->unsignedBigInteger('role_id');
+                $t->string('model_type');
+                $t->unsignedBigInteger('model_id');
+                $t->primary(['role_id', 'model_id', 'model_type'], 'mhr_primary');
+            });
+        }
+        if (! $schema::hasTable('role_has_permissions')) {
+            $schema::create('role_has_permissions', function ($t) {
+                $t->unsignedBigInteger('permission_id');
+                $t->unsignedBigInteger('role_id');
+                $t->primary(['permission_id', 'role_id']);
+            });
+        }
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
     }
 
     protected function tearDown(): void
     {
+        foreach (['role_has_permissions', 'model_has_roles', 'model_has_permissions', 'roles', 'permissions'] as $table) {
+            \Illuminate\Support\Facades\Schema::dropIfExists($table);
+        }
         WpkgSchemaBootstrapper::tearDown();
         parent::tearDown();
     }
@@ -124,24 +185,11 @@ class ParcGroupWpkgPageTest extends TestCase
         });
     }
 
-    #[Test]
-    public function gate_denies_when_user_lacks_wpkg_assign(): void
-    {
-        // Re-define Gate to deny for any user.
-        Gate::define('wpkg.assign', fn ($user) => false);
-
-        // Le `before` hook de Spatie\Permission interroge la table `permissions`
-        // dès qu'un User authentifié traverse Gate::authorize. Ici on n'a pas
-        // bootstrappé le schéma Spatie (hors-scope WpkgSchemaBootstrapper) — on
-        // se déconnecte donc pour que Laravel skip le before-hook (signature
-        // `Authorizable $user` non-nullable) et tombe directement sur le Gate
-        // défini ci-dessus.
-        \Illuminate\Support\Facades\Auth::logout();
-
-        // Le service lui-même ne vérifie pas le Gate (c'est fait dans le composant
-        // Livewire). On vérifie ici que `Gate::authorize('wpkg.assign')` lève bien
-        // AuthorizationException — appliqué par les méthodes du composant.
-        $this->expectException(\Illuminate\Auth\Access\AuthorizationException::class);
-        Gate::authorize('wpkg.assign');
-    }
+    // NB (Story 29.1) : l'ex-test `gate_denies_when_user_lacks_wpkg_assign` testait
+    // l'ANCIEN gate global `wpkg.assign` (tautologique, sans rapport avec le scoping).
+    // L'enforcement scopé `assign-wpkg-workstationGroup` est désormais couvert par
+    // tests/Unit/Policies/WorkstationGroupPolicyWpkgTest.php (7 cas : positif/négatif
+    // par salle, négative active, expiration, fallback global) et par
+    // tests/Feature/AppProfile/AppProfileServiceWpkgScopingTest.php (couche service +
+    // contexte non authentifié). Test supprimé pour ne pas créer de fausse confiance.
 }

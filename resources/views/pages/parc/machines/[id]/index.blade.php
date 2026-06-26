@@ -930,7 +930,13 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     private function ensureWpkgAssignAuthorized(): void
     {
         try {
-            Gate::authorize('wpkg.assign');
+            // Story 29.1 — Gate SCOPÉ sur la SALLE PHYSIQUE de rattachement du
+            // poste (`Workstation::physicalRoom`). Une délégation WPKG sur cette
+            // salle devient opposable au niveau poste.
+            // Poste sans salle physique (nomade/non rattaché) → `physicalRoom`
+            // vaut null : la policy se rabat alors sur le droit GLOBAL seul
+            // (AC #5 — pas de fausse ouverture, seul l'admin global passe).
+            Gate::authorize('assign-wpkg-workstationGroup', $this->workstation->physicalRoom);
         } catch (AuthorizationException $e) {
             $this->toastError('Vous n\'avez pas la permission de modifier les assignations WPKG.');
             throw $e;

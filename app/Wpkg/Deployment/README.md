@@ -111,8 +111,12 @@ Les 3 modales d'attach (apps / groupes / postes) sont mutualisées sous
 `tests/Feature/AppProfile/ProfileAttachModalsRegressionTest.php`).
 
 Permission : `wpkg.assign` (existant `SambaPermission::WpkgAssign`). Lecture
-libre via `viewAny-workstationGroup` (Gate route-level), Gate method-level
-`Gate::authorize('wpkg.assign')` sur les mutations.
+libre via `viewAny-workstationGroup` (Gate route-level). Depuis Story 29.1, les
+mutations passent par le Gate **scopé par périmètre**
+`Gate::authorize('assign-wpkg-workstationGroup', $workstationGroup)`
+(policy `WorkstationGroupPolicy::assignWpkg`, salle physique pour les postes) ;
+le droit Spatie global `wpkg.assign` reste utilisé en **fallback** par la policy.
+Defense-in-depth en couche service : `AppProfileService::assertCanAssignWpkgOnGroup`.
 
 ## Events émis par les services métier (Story 15.4 / AC6)
 
