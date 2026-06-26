@@ -38,12 +38,11 @@ return new class extends Migration
         Schema::create('controlhub_contracts', function (Blueprint $table): void {
             $table->id();
 
-            // Identifiant neutre de l'autorité amont émettrice.
-            // nullable : on peut stocker un contrat local avant d'avoir reçu la référence.
-            // unique : une seule ligne par autorité connue (upsert 28.2).
-            // ⚠️ JAMAIS le mot « central » — vocabulaire = « authority_ref ».
-            $table->string('authority_ref')->nullable()->unique()
-                ->comment('Identifiant neutre de l\'autorité amont émettrice — jamais « central »');
+            // SE5 ↔ une seule autorité amont (modèle mono-autorité) : le singleton
+            // « ≤ 1 contrat actif » est tenu par `link_state`, pas par une référence
+            // d'émetteur. Aucune colonne d'autorité n'est stockée — un re-pointage vers
+            // une autre instance ControlHub (≈ 1× dans la vie d'un serveur) ne nécessite
+            // aucun historique. ⚠️ JAMAIS le mot « central ».
 
             // État du lien : active (opérationnel) | severed (rompu/révoqué).
             // Valeur string castée en ControlHubLinkState côté modèle.

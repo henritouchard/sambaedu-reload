@@ -26,7 +26,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * Préfixe imposé : `ControlHubContract*`. [Source: prd-contrat-manage-se5.md#R3]
  *
  * @property int $id
- * @property string|null $authority_ref Identifiant neutre de l'autorité amont émettrice
  * @property \App\Enums\ControlHubLinkState $link_state État du lien (active | severed)
  * @property \Illuminate\Support\Carbon|null $received_at Horodatage de la dernière réception
  * @property \Illuminate\Support\Carbon $created_at
@@ -43,7 +42,6 @@ class ControlHubContract extends Model
     protected $table = 'controlhub_contracts';
 
     protected $fillable = [
-        'authority_ref',
         'link_state',
         'received_at',
     ];

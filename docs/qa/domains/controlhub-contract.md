@@ -176,4 +176,94 @@ App\Models\ControlHubContractCatalogApp::create($data); // exception attendue
 
 | Incident | Sévérité | Story | Scénario de couverture |
 |----------|----------|-------|------------------------|
-| #1 — clé naturelle item ne protège pas le cas `instance` (target_label NULL ⇒ NULL≠NULL, trou NFR4 sur le cas dominant) | 🔴 | 28.1 | Scénario 4.1bis ; correctif = `target_label NOT NULL DEFAULT ''`. **À re-vérifier en 28.2** : la réception répétée d'un contrat à items `instance` ne crée PAS de doublons (idempotence réelle, pas seulement la contrainte). |
+| #1 — clé naturelle item ne protège pas le cas `instance` (target_label NULL ⇒ NULL≠NULL, trou NFR4 sur le cas dominant) | 🔴 | 28.1 | Scénario 4.1bis ; correctif = `target_label NOT NULL DEFAULT ''`. **Re-vérifié en 28.2 (Scénario 5.4)** : la réception répétée d'un contrat à items `instance` (target_label null/absent/'') ne crée PAS de doublons et reste un no-op (idempotence réelle, pas seulement la contrainte). |
+
+---
+
+## Section 5 — Ingestion idempotente du contrat amont (Story 28.2)
+
+> Couche d'ingestion : `App\Services\ControlHub\ControlHubContractIngestionService::ingest(array $payload): ContractIngestionResult`.
+> C'est le **seul** écrivain des tables `controlhub_contract_*` (NFR3). Une réception identique est un **no-op** (NFR4). Validation/normalisation à l'entrée, passage du lien à `active`, singleton « ≤ 1 contrat actif ».
+>
+> Format de payload accepté (introduit unilatéralement par SE5) :
+> `['items' => [...], 'labels' => [...], 'imposed_groups' => [...], 'catalog_apps' => [...]]`.
+> Items : `{type, key, value?, enforcement_state, target_type, target_label?}`.
+> (SE5 ↔ une seule autorité amont : aucune référence d'émetteur n'est stockée — cf. migration 28.1.)
+
+**Validation automatisée (HÔTE) — préalable à tout test manuel :**
+
+```bash
+# Hôte (php8.4 + pdo_sqlite)
+vendor/bin/phpunit --filter ControlHubContractIngestionTest   # 10/10 attendus
+vendor/bin/phpunit --filter ControlHubContract                # 48/48 (28.1 + 28.2)
+```
+
+### Scénario 5.1 — Première réception : persistance + lien actif
+
+```php
+$svc = new App\Services\ControlHub\ControlHubContractIngestionService();
+$r = $svc->ingest([
+  'items' => [['type'=>'capabilities','key'=>'cap_x','value'=>'on','enforcement_state'=>'locked','target_type'=>'instance']],
+  'labels' => [['name'=>'salle-info','mode'=>'reserved']],
+  'imposed_groups' => [['name'=>'parc-term','label_name'=>'salle-info']],
+  'catalog_apps' => [['app_key'=>'firefox','display_name'=>'Firefox']],
+]);
+```
+
+**Attendu** : `$r->contractCreated === true`, `$r->mutated === true` ; 1 `controlhub_contracts` (`link_state=active`, `received_at` non null) ; items/labels/imposed_groups/catalog_apps reflètent **exactement** le payload.
+
+### Scénario 5.2 — Réception identique = no-op (aucune écriture, aucun event)
+
+**Procédure** : ré-injecter le **même** payload qu'en 5.1.
+
+**Attendu** : `$r->mutated === false` ; aucun comptage de ligne ne change ; `received_at` et `updated_at` du contrat **inchangés** ; **aucun** `App\Events\ControlHubContractChanged` émis (vérifiable via `Event::fake()` en test).
+
+### Scénario 5.3 — Réception modifiée : upsert + prune + event 1×
+
+**Procédure** : ré-injecter en modifiant la valeur d'un item, en ajoutant un item/label, et en retirant un label + une app.
+
+**Attendu** : `$r->mutated === true` ; les présents sont upsertés (aucune `QueryException` d'unicité), les disparus supprimés (prune) ; `ControlHubContractChanged` émis **exactement une fois** ; compteurs `$r->items['created']/['updated']/['deleted']` cohérents.
+
+### Scénario 5.4 — Normalisation `null → ''` de target_label + idempotence (HANDOFF 28.1 #1)
+
+**Procédure** : injecter 3 items `target_type=instance` dont `target_label` est tantôt `null`, tantôt absent, tantôt `''`. Ré-injecter en permutant ces 3 représentations.
+
+**Attendu** : tous persistés avec `target_label = ''` (jamais `null`) ; la ré-réception est un **no-op** (`mutated=false`, 3 items stables, aucun event). **Test révélateur** : échouerait si la normalisation manquait.
+
+### Scénario 5.5 — Singleton « au plus un contrat actif »
+
+**Procédure** : injecter un payload, puis ré-injecter un payload au **contenu modifié** (items différents).
+
+**Attendu** : `ControlHubContract::where('link_state','active')->count() === 1` et `controlhub_contracts` ne contient qu'une ligne ; la 2e réception **réutilise** le contrat actif (`$r->contractCreated === false`, `$r->mutated === true`), elle n'en crée pas un second. Le singleton est tenu par `link_state` (modèle mono-autorité, aucune référence d'émetteur).
+
+### Scénario 5.6 — Payload hors domaine rejeté + rollback total (HANDOFF 28.1 #3)
+
+**Procédure** : injecter un payload avec `enforcement_state='bogus'` (puis variantes `target_type='bogus'`, `mode='bogus'`, `target_type=label` sans `target_label`, `target_type=instance` avec `target_label` non vide).
+
+**Attendu** : `App\Exceptions\ControlHub\InvalidUpstreamContractException` levée ; **aucune** écriture (base strictement inchangée ; si un contrat préexistait, son `updated_at` reste inchangé) — il n'existe aucun `CHECK` DB, la validation applicative est l'unique garde-fou.
+
+### Scénario 5.7 — R3 : aucun identifiant « central »
+
+```bash
+grep -riE "class .*central|function .*central|->central|\\\$central" \
+  app/Services/ControlHub/ControlHubContractIngestionService.php \
+  app/Services/ControlHub/Data/ContractIngestionResult.php \
+  app/Events/ControlHubContractChanged.php \
+  app/Exceptions/ControlHub/InvalidUpstreamContractException.php
+```
+
+**Attendu** : sortie vide (aucun identifiant livré ne contient « central »). Couvert par `test_r3_no_central_identifier`.
+
+---
+
+## Checklist rapide Story 28.2
+
+- [ ] `vendor/bin/phpunit --filter ControlHubContractIngestionTest` → 10/10 verts
+- [ ] `vendor/bin/phpunit --filter ControlHubContract` → 48/48 verts (non-régression 28.1)
+- [ ] 1re réception persiste le contrat + lien `active` + `received_at` (Scénario 5.1)
+- [ ] Réception identique = no-op, aucun event (Scénario 5.2)
+- [ ] Réception modifiée = upsert + prune + event 1× (Scénario 5.3)
+- [ ] target_label normalisé `null→''` + idempotence (Scénario 5.4)
+- [ ] Singleton ≤ 1 contrat actif (Scénario 5.5)
+- [ ] Payload invalide rejeté + rollback total (Scénario 5.6)
+- [ ] Aucun identifiant « central » (Scénario 5.7)

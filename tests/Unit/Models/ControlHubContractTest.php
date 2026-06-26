@@ -71,7 +71,7 @@ class ControlHubContractTest extends TestCase
 
     public function test_controlhub_contracts_has_expected_columns(): void
     {
-        foreach (['id', 'authority_ref', 'link_state', 'received_at', 'created_at', 'updated_at'] as $col) {
+        foreach (['id', 'link_state', 'received_at', 'created_at', 'updated_at'] as $col) {
             $this->assertTrue(
                 Schema::hasColumn('controlhub_contracts', $col),
                 "Colonne manquante dans controlhub_contracts : {$col}",

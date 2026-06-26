@@ -1172,7 +1172,7 @@ const DATASETS = {
         {
           "id": "28-2",
           "title": "Réception idempotente d'un contrat amont (NFR4)",
-          "status": "backlog"
+          "status": "review"
         },
         {
           "id": "28-3",

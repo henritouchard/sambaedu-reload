@@ -20,7 +20,6 @@ class ControlHubContractFactory extends Factory
     public function definition(): array
     {
         return [
-            'authority_ref' => 'authority-'.$this->faker->unique()->slug(2),
             'link_state' => ControlHubLinkState::Active,
             'received_at' => now(),
         ];
@@ -31,14 +30,6 @@ class ControlHubContractFactory extends Factory
     {
         return $this->state(fn (): array => [
             'link_state' => ControlHubLinkState::Severed,
-        ]);
-    }
-
-    /** Contrat sans authority_ref (non encore rattaché à une autorité connue). */
-    public function withoutAuthorityRef(): self
-    {
-        return $this->state(fn (): array => [
-            'authority_ref' => null,
         ]);
     }
 
