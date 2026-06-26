@@ -226,36 +226,47 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
   </step>
 
   <step n="4" goal="Mark story in-progress" tag="sprint-status">
-    <check if="{{sprint_status}} file exists">
-      <action>Load the FULL file: {{sprint_status}}</action>
-      <action>Read all development_status entries to find {{story_key}}</action>
-      <action>Get current status value for development_status[{{story_key}}]</action>
+    <!-- WORKTREE GUARD: state updates are main-only (Option A) -->
+    <action>Run: git rev-parse --git-dir 2>/dev/null | head -1</action>
+    <check if="output is a path ending in .git (directory, not a file) — i.e., NOT a git worktree">
+      <check if="{{sprint_status}} file exists">
+        <action>Load the FULL file: {{sprint_status}}</action>
+        <action>Read all development_status entries to find {{story_key}}</action>
+        <action>Get current status value for development_status[{{story_key}}]</action>
 
-      <check if="current status == 'ready-for-dev' OR review_continuation == true">
-        <action>Update the story in the sprint status report to = "in-progress"</action>
-        <action>Update last_updated field to current date</action>
-        <output>🚀 Starting work on story {{story_key}}
-          Status updated: ready-for-dev → in-progress
-        </output>
+        <check if="current status == 'ready-for-dev' OR review_continuation == true">
+          <action>Update the story in the sprint status report to = "in-progress"</action>
+          <action>Update last_updated field to current date</action>
+          <output>🚀 Starting work on story {{story_key}}
+            Status updated: ready-for-dev → in-progress
+          </output>
+        </check>
+
+        <check if="current status == 'in-progress'">
+          <output>⏯️ Resuming work on story {{story_key}}
+            Story is already marked in-progress
+          </output>
+        </check>
+
+        <check if="current status is neither ready-for-dev nor in-progress">
+          <output>⚠️ Unexpected story status: {{current_status}}
+            Expected ready-for-dev or in-progress. Continuing anyway...
+          </output>
+        </check>
+
+        <action>Store {{current_sprint_status}} for later use</action>
       </check>
 
-      <check if="current status == 'in-progress'">
-        <output>⏯️ Resuming work on story {{story_key}}
-          Story is already marked in-progress
-        </output>
+      <check if="{{sprint_status}} file does NOT exist">
+        <output>ℹ️ No sprint status file exists - story progress will be tracked in story file only</output>
+        <action>Set {{current_sprint_status}} = "no-sprint-tracking"</action>
       </check>
-
-      <check if="current status is neither ready-for-dev nor in-progress">
-        <output>⚠️ Unexpected story status: {{current_status}}
-          Expected ready-for-dev or in-progress. Continuing anyway...
-        </output>
-      </check>
-
-      <action>Store {{current_sprint_status}} for later use</action>
     </check>
 
-    <check if="{{sprint_status}} file does NOT exist">
-      <output>ℹ️ No sprint status file exists - story progress will be tracked in story file only</output>
+    <check if="running in a git worktree (.git is a file, not a directory)">
+      <output>ℹ️ Git worktree détecté — mise à jour sprint-status.yaml ignorée (state = main only).
+        Après merge dans main, mettre à jour manuellement le statut de {{story_key}}.
+      </output>
       <action>Set {{current_sprint_status}} = "no-sprint-tracking"</action>
     </check>
   </step>
@@ -382,6 +393,7 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     </action>
 
     <!-- Mark story ready for review - sprint status conditional -->
+    <!-- WORKTREE GUARD: state updates are main-only (Option A) -->
     <check if="{sprint_status} file exists AND {{current_sprint_status}} != 'no-sprint-tracking'">
       <action>Load the FULL file: {sprint_status}</action>
       <action>Find development_status key matching {{story_key}}</action>
@@ -393,7 +405,14 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
     </check>
 
     <check if="{sprint_status} file does NOT exist OR {{current_sprint_status}} == 'no-sprint-tracking'">
-      <output>ℹ️ Story status updated to "review" in story file (no sprint tracking configured)</output>
+      <check if="{{current_sprint_status}} == 'no-sprint-tracking' AND reason is git worktree">
+        <output>ℹ️ Git worktree — sprint-status.yaml non mis à jour (state = main only).
+          Après merge dans main : passer {{story_key}} → "review" manuellement.
+        </output>
+      </check>
+      <check if="{{current_sprint_status}} == 'no-sprint-tracking' AND reason is missing file">
+        <output>ℹ️ Story status updated to "review" in story file (no sprint tracking configured)</output>
+      </check>
     </check>
 
     <check if="story key not found in sprint status">

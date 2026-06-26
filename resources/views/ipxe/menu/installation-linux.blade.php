@@ -6,6 +6,7 @@ params
      relatif double -> 404 -> reboot PXE. --}}
 param mac ${net0/mac}
 param uuid ${uuid}
+param product ${product}
 param username ${username}
 param password ${password:base64}
 console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }} ||

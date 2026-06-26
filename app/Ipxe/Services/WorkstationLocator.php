@@ -7,6 +7,7 @@ namespace App\Ipxe\Services;
 use App\Ipxe\Support\MacAddressNormalizer;
 use App\Ipxe\Support\UuidNormalizer;
 use App\Models\Workstation;
+use Illuminate\Support\Str;
 
 /**
  * Story 3.1 — D4 / AC2.1.
@@ -53,12 +54,12 @@ final class WorkstationLocator
      * `locate()` doit préserver ce contrat (test feature
      * `IpxeLinuxActionEndpointTest::it_resolves_workstation_by_uuid_only_when_mac_is_empty`).
      *
-     * @param  string|null  $mac      Adresse MAC brute (formats variés).
-     * @param  string|null  $uuid     UUID brut (peut être malformé/mixed case).
+     * @param  string|null  $mac  Adresse MAC brute (formats variés).
+     * @param  string|null  $uuid  UUID brut (peut être malformé/mixed case).
      * @param  string|null  $product  Modèle matériel optionnel — déclenche la
      *                                transformation hexa legacy si vide.
-     * @return Workstation|null       Modèle trouvé (avec relations eager-loaded)
-     *                                ou `null` si poste inconnu.
+     * @return Workstation|null Modèle trouvé (avec relations eager-loaded)
+     *                          ou `null` si poste inconnu.
      */
     public function locate(?string $mac, ?string $uuid, ?string $product = null): ?Workstation
     {
@@ -83,7 +84,21 @@ final class WorkstationLocator
 
         // Étape 1 — priorité UUID (iso-legacy `boot.php:42` get_action()
         // qui priorise l'UUID composite).
-        if ($normalizedUuid !== null) {
+        //
+        // Garde-fou format (fix crash terrain 2026-06-26) : la colonne
+        // `workstations.uuid` est de type natif PostgreSQL `uuid`. Toute valeur
+        // non conforme au format canonique 8-4-4-4-12 hex fait crasher la
+        // requête avec `SQLSTATE[22P02] invalid input syntax for type uuid`,
+        // exception non catchée (locate() est hors `safeRender`) → HTTP 500 →
+        // le `chain ... ||` iPXE échoue → boot disque local → « no OS found »
+        // → boucle de reboot. Cas réel : `applyLegacyProductEmptyTransformation()`
+        // reconstruit l'UUID via `dechex(hexdec(mac))` qui perd les zéros de
+        // tête pour une MAC en `00:..` (ex. `00:23:24:b0:bc:32` → segment final
+        // `2324b0bc32`, 10 chars au lieu de 12 → UUID invalide). Un UUID
+        // malformé ne peut de toute façon JAMAIS matcher une row (la colonne
+        // native ne stocke que des UUID canoniques) : on saute le lookup UUID
+        // et on retombe sur la MAC plutôt que de planter.
+        if ($normalizedUuid !== null && Str::isUuid($normalizedUuid)) {
             $ws = Workstation::query()
                 ->with($relations)
                 ->where('uuid', $normalizedUuid)
@@ -147,10 +162,10 @@ final class WorkstationLocator
         $decimal = (int) hexdec($macHex);
         $finx = dechex($decimal);
 
-        return $uuidSegments[0] . '-'
-            . $uuidSegments[1] . '-'
-            . $uuidSegments[2] . '-'
-            . $uuidSegments[3] . '-'
-            . $finx;
+        return $uuidSegments[0].'-'
+            .$uuidSegments[1].'-'
+            .$uuidSegments[2].'-'
+            .$uuidSegments[3].'-'
+            .$finx;
     }
 }

@@ -266,6 +266,44 @@ class WorkstationLocatorTest extends TestCase
     }
 
     #[Test]
+    public function it_does_not_crash_when_legacy_transformation_yields_malformed_uuid_for_zero_leading_mac(): void
+    {
+        // Régression crash terrain 2026-06-26 : une MAC en `00:..` passée par la
+        // transformation product-empty `dechex(hexdec(mac))` perd ses zéros de
+        // tête. Ex. `00:23:24:b0:bc:32` → `002324b0bc32` → dechex = `2324b0bc32`
+        // (10 chars au lieu de 12) → UUID reconstruit `4ee345b0-8dbb-11e7-a31c-2324b0bc32`
+        // SYNTAXIQUEMENT INVALIDE. Sur la colonne native `uuid` PostgreSQL, le
+        // lookup crashait alors avec `SQLSTATE[22P02] invalid input syntax for
+        // type uuid` → exception non catchée (locate() hors safeRender) → HTTP
+        // 500 → le `chain ... ||` iPXE échoue → boot disque → « no OS found ».
+        //
+        // locate() doit désormais détecter l'UUID malformé (Str::isUuid), sauter
+        // le lookup UUID et retomber proprement sur la MAC.
+        //
+        // NB : le crash 22P02 lui-même n'est PAS reproductible ici (les tests
+        // tournent sur SQLite, colonne uuid = text non typée — cf.
+        // [[project_sqlite_tests_no_varchar_enforcement]]). Ce test verrouille
+        // le comportement gracieux (résolution par MAC) que le garde-fou garantit.
+        $ws = $this->makeWorkstation([
+            'name' => 'PC-ZERO-MAC',
+            'uuid' => 'abcdef12-3456-7890-abcd-ef1234567890',
+            'mac' => '00:23:24:b0:bc:32',
+        ]);
+
+        $found = $this->locator->locate(
+            mac: '00:23:24:b0:bc:32',
+            uuid: '4ee345b0-8dbb-11e7-a31c-2324b0bc3299',  // UUID original valide
+            product: '',  // product vide → transformation → UUID malformé
+        );
+
+        self::assertNotNull(
+            $found,
+            'Le poste doit rester résoluble par MAC malgré l\'UUID transformé malformé.',
+        );
+        self::assertSame($ws->id, $found->id);
+    }
+
+    #[Test]
     public function it_eager_loads_relations_when_workstation_found(): void
     {
         $ws = $this->makeWorkstation([

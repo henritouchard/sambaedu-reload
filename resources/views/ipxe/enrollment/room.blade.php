@@ -6,6 +6,7 @@ params
      (sans creds) -> "identifiants invalides" + redirection boot. --}}
 param mac ${net0/mac}
 param uuid ${uuid}
+param product ${product}
 param username ${username}
 param password ${password:base64}
 console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }} ||

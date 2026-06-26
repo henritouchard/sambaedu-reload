@@ -9,6 +9,7 @@ params
      / `known.blade.php`. --}}
 param mac ${net0/mac}
 param uuid ${uuid}
+param product ${product}
 param platform {{ $platform }}
 param username ${username}
 param password ${password:base64}

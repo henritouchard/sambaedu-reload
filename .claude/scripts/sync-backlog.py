@@ -19,6 +19,10 @@ try:
 except Exception:
     sys.exit(0)
 
+# Skip if running in a git worktree — state updates are main-only (Option A)
+if os.path.isfile(os.path.join(os.getcwd(), '.git')):
+    sys.exit(0)
+
 # --- Parser sprint-status.yaml (sans dépendance pyyaml) ---
 statuses = {}
 in_section = False

@@ -4,6 +4,7 @@ params
 {{-- Variables iPXE SMBIOS (cf. name.blade.php / installation-linux.blade.php). --}}
 param mac ${net0/mac}
 param uuid ${uuid}
+param product ${product}
 param username ${username}
 param password ${password:base64}
 console --x {{ $resolutionX }} --y {{ $resolutionY }} --picture {{ $resolutionPng }} ||

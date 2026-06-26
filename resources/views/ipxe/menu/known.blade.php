@@ -30,6 +30,7 @@ params
      equivalent a ${uuid}. --}}
 param mac ${net0/mac}
 param uuid ${uuid}
+param product ${product}
 param username ${username}
 param password ${password:base64}
 param platform ${platform}
