@@ -26,6 +26,8 @@ use App\Services\Agent\StateCompiler;
 use App\Services\Agent\StateContract;
 use App\Services\Agent\StateHasher;
 use App\Services\Agent\TargetContext;
+use App\Services\ControlHub\Resolution\UpstreamAwareProvider;
+use App\Services\ControlHub\Resolution\UpstreamContractSource;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -664,6 +666,63 @@ class StateCompilerTest extends TestCase
             ['overlay', 'overlay', 'overlay', 'overlay', 'wallpaper'],
             array_column($state[StateContract::SCOPE_SESSION], 'type'),
         );
+    }
+
+    // ── Story 28.3 — tier amont : garde-fous compilateur/décorateur ───────
+
+    #[Test]
+    public function specificity_covers_all_mailles_and_upstream_is_the_minimum(): void
+    {
+        // Garde-fou architecture (Task 1) : CHAQUE valeur de StateMaille a un
+        // rang dans specificity() (pas d'UnhandledMatchError en prod si une
+        // maille est ajoutée), et le tier AMONT est STRICTEMENT le plus
+        // spécifique (rang minimum < User) → l'amont prime sur tout le local.
+        $method = new \ReflectionMethod(StateCompiler::class, 'specificity');
+        $method->setAccessible(true);
+        $compiler = $this->compiler([]);
+
+        $ranks = [];
+        foreach (StateMaille::cases() as $case) {
+            // L'invocation NE DOIT PAS lever (match exhaustif couvrant le case).
+            $ranks[$case->value] = $method->invoke($compiler, $case);
+        }
+
+        self::assertCount(count(StateMaille::cases()), $ranks, 'toutes les mailles ont un rang');
+        self::assertSame(
+            min($ranks),
+            $ranks[StateMaille::Upstream->value],
+            'la maille Upstream est la plus spécifique (rang minimum)',
+        );
+        self::assertLessThan(
+            $ranks[StateMaille::User->value],
+            $ranks[StateMaille::Upstream->value],
+            'specificity(Upstream) < specificity(User) — l\'amont prime sur le local (FR2)',
+        );
+    }
+
+    #[Test]
+    public function keyed_exclusive_marker_preserved_through_decorator(): void
+    {
+        // Le décorateur amont enrobant un KeyedExclusiveProvider DOIT rester vu
+        // comme tel par le compilateur : sinon selectExclusive retombe sur « un
+        // seul gagnant pour le type » et écrase les clés distinctes.
+        $inner = $this->keyedExclusiveProvider('registry', StateScope::Session, [
+            new StateCandidate(StateMaille::PhysicalGroup, $this->regPayload('HKCU', 'P', 'Alpha', 0), now(), 1),
+            new StateCandidate(StateMaille::LogicalGroup, $this->regPayload('HKCU', 'P', 'Beta', 1), now(), 2),
+        ]);
+
+        // Aucun contrat actif (RefreshDatabase) → source vide, pass-through strict.
+        $wrapped = UpstreamAwareProvider::wrap($inner, new UpstreamContractSource([]));
+
+        self::assertInstanceOf(
+            \App\Services\Agent\Contracts\KeyedExclusiveProvider::class,
+            $wrapped,
+            'le décorateur expose KeyedExclusiveProvider quand l\'interne l\'implémente',
+        );
+
+        $items = $this->compiler([$wrapped])->compile($this->machineOnlyContext())[StateContract::SCOPE_SESSION];
+
+        self::assertCount(2, $items, 'clés distinctes accumulées au travers du décorateur (marqueur préservé)');
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

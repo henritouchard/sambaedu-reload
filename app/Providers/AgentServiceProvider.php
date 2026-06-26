@@ -25,10 +25,14 @@ use App\Services\Agent\Releases\ReleaseCreationService;
 use App\Services\Agent\Releases\ReleaseManifestService;
 use App\Services\Agent\Reporting\ConformityService;
 use App\Services\Agent\Reporting\ReportIngestService;
+use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\StateCompiler;
 use App\Services\Agent\StateHasher;
 use App\Services\Agent\SyncRequestService;
 use App\Services\Agent\WorkstationEnvironmentResolver;
+use App\Services\ControlHub\Resolution\RegistryUpstreamAdapter;
+use App\Services\ControlHub\Resolution\UpstreamAwareProvider;
+use App\Services\ControlHub\Resolution\UpstreamContractSource;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 
@@ -86,9 +90,37 @@ class AgentServiceProvider extends ServiceProvider
         // consommable par les StateProviders de l'Epic 27. Stateless.
         $this->app->singleton(WorkstationEnvironmentResolver::class, fn () => new WorkstationEnvironmentResolver());
         $this->app->singleton(StateHasher::class, fn () => new StateHasher());
+        // Story 28.3 — SOURCE des candidats AMONT (contrat controlHub actif) +
+        // adaptateurs de payload (bridge minimal type-agnostique). Singleton ⇒
+        // résolution du contrat MÉMOÏSÉE et PARTAGÉE par tous les providers d'une
+        // compilation (≤ 1 requête « contrat actif ? », court-circuitée quand
+        // aucun lien actif — NFR3). PAS de cache ; l'event ControlHubContractChanged
+        // reste sans listener (28.2).
+        //
+        // ⚠️ SEUL `registry` (exclusive-par-clé) est enregistré en prod. L'adaptateur
+        // `shortcuts` (aggregate) EXISTE et démontre que le bridge est type-agnostique
+        // (test unitaire), mais n'est PAS câblé ici : son payload minimal {name,target}
+        // est INCOMPLET pour l'agent (manque `place`/`args`/`icon` — handler_shortcuts.go
+        // rejette en bloc tout spec sans `place`, cassant TOUTE la convergence shortcuts
+        // du poste). L'expansion par-type complète + le schéma d'échange figé relèvent
+        // d'Epic 33 (décision review 28.3, finding #1). Réenregistrer `shortcuts` ICI
+        // une fois le payload aligné sur ShortcutsStateProvider::payloadFor().
+        $this->app->singleton(UpstreamContractSource::class, fn () => new UpstreamContractSource([
+            new RegistryUpstreamAdapter(),
+        ]));
         $this->app->singleton(StateCompiler::class, fn ($app) => new StateCompiler(
             $app->make(StateHasher::class),
-            [
+            // Story 28.3 — chaque provider est ENROBÉ par le décorateur amont :
+            // itemsFor() = candidats_internes ∪ candidats_amont(maille Upstream).
+            // L'ordre et la liste des providers sont préservés (zéro retiré/
+            // ajouté) ; le marqueur KeyedExclusiveProvider est relayé (registry).
+            // Sans contrat actif, pass-through STRICT (compilé byte-identique).
+            array_map(
+                fn (StateProvider $p): StateProvider => UpstreamAwareProvider::wrap(
+                    $p,
+                    $app->make(UpstreamContractSource::class),
+                ),
+                [
                 $app->make(WallpaperStateProvider::class),
                 // Fond de l'écran de VERROUILLAGE (type `lockscreen`, portée
                 // machine) — pendant pré-login du wallpaper de bureau (session).
@@ -155,7 +187,8 @@ class AgentServiceProvider extends ServiceProvider
                 // l'ensemble cible est aussi la clé d'inventaire par poste (AC4).
                 // Une ligne, zéro modif du compilateur.
                 $app->make(ApplicationsStateProvider::class),
-            ],
+                ],
+            ),
         ));
     }
 

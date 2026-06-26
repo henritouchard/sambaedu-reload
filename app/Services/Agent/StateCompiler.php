@@ -379,10 +379,21 @@ final class StateCompiler
      * salle PHYSIQUE. `LogicalGroup` passe au rang 3, `PhysicalGroup` au rang 4.
      * S'applique à TOUS les types exclusifs (registry, wallpaper, et la
      * résolution du défaut `printers` côté provider est alignée séparément).
+     *
+     * Story 28.3 — TIER AMONT : `Upstream` au rang -1 (STRICTEMENT < `User`,
+     * donc plus spécifique que TOUTE maille locale). Conséquence : pour une même
+     * clé exclusive, un item imposé par le contrat amont (controlHub) bat le
+     * réglage local (FR2) — sans aucune autre logique de sélection (D2 reste
+     * ICI seul, exigence epic « réutiliser specificity(), ne pas réinventer »).
+     * Choix -1 (et non décalage +1 des autres) : diff minimal, invariant tenu
+     * `specificity(Upstream) < specificity(User)`. C'est l'UNIQUE match()
+     * exhaustif sur `StateMaille` : tout nouveau case DOIT être ajouté ici
+     * (sinon `UnhandledMatchError` en prod — garde-fou testé Story 28.3).
      */
     private function specificity(StateMaille $maille): int
     {
         return match ($maille) {
+            StateMaille::Upstream => -1,
             StateMaille::User => 0,
             StateMaille::UserGroup => 1,
             StateMaille::Workstation => 2,
