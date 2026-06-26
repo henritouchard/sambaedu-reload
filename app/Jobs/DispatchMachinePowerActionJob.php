@@ -6,6 +6,7 @@ namespace App\Jobs;
 
 use App\Models\MachinePowerActionTask;
 use App\Services\Parc\MachinePowerService;
+use App\Services\Parc\WorkstationAddressResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -65,15 +66,16 @@ class DispatchMachinePowerActionJob implements ShouldQueue
         }
     }
 
-    public function handle(MachinePowerService $powerService): void
+    public function handle(MachinePowerService $powerService, WorkstationAddressResolver $resolver): void
     {
         /** @var MachinePowerActionTask|null $task */
         $task = MachinePowerActionTask::find($this->taskId);
 
-        if (!$task) {
+        if (! $task) {
             Log::warning('DispatchMachinePowerActionJob: task introuvable', [
                 'task_id' => $this->taskId,
             ]);
+
             return;
         }
 
@@ -84,14 +86,36 @@ class DispatchMachinePowerActionJob implements ShouldQueue
         ]);
 
         $workstation = $task->workstation;
-        if (!$workstation) {
+        if (! $workstation) {
             $this->markFailed($task, 'Workstation associée introuvable (supprimée entre-temps ?).');
+
             return;
         }
 
         $name = (string) $workstation->name;
-        $ip = (string) ($workstation->ip ?? $name);
         $mac = (string) ($workstation->mac ?? '');
+
+        // IP résolue dynamiquement : bail DHCP actif (par MAC) > DNS > réservation
+        // stockée. Peut être null pour un poste sans bail ni réservation (typique
+        // d'un poste dynamique éteint, ou jamais réservé comme post-neofut). On NE
+        // retombe plus sur le hostname : ip2long/fsockopen ne savent pas le gérer.
+        $resolvedIp = $resolver->resolve($workstation);
+
+        // shutdown doit JOINDRE la machine vivante. Sans IP résolvable, on remonte
+        // une erreur honnête plutôt que le « déjà éteint » trompeur que produisait
+        // un ping sur hostname non résolu.
+        if ($resolvedIp === null && in_array($task->action, ['shutdown', 'shutdown-force'], true)) {
+            $this->markFailed(
+                $task,
+                "{$name} introuvable sur le réseau (aucun bail DHCP actif, DNS, ni réservation) — poste probablement déjà hors ligne.",
+            );
+
+            return;
+        }
+
+        // '' si null : `wake` arrose tous les broadcasts configurés (cible éteinte),
+        // et `reboot` bascule sur son fallback WOL quand le ping échoue.
+        $ip = (string) $resolvedIp;
 
         try {
             $result = match ($task->action) {
@@ -121,12 +145,13 @@ class DispatchMachinePowerActionJob implements ShouldQueue
             // Exception : si le service a échoué d'emblée (MAC invalide,
             // shutdown sur machine off, etc.), on marque failed tout de suite
             // pour court-circuiter le polling.
-            if (!$success) {
+            if (! $success) {
                 $this->markFailed(
                     $task,
                     (string) ($result['message'] ?? 'Échec action power'),
                     $result,
                 );
+
                 return;
             }
 
@@ -157,7 +182,7 @@ class DispatchMachinePowerActionJob implements ShouldQueue
     public function failed(?\Throwable $exception): void
     {
         $task = MachinePowerActionTask::find($this->taskId);
-        if (!$task || $task->isTerminal()) {
+        if (! $task || $task->isTerminal()) {
             return;
         }
 

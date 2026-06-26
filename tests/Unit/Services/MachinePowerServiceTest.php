@@ -6,8 +6,6 @@ namespace Tests\Unit\Services;
 
 use App\Config\NetworkConfig;
 use App\Config\SambaEduConfig;
-use App\Models\MachineBootLog;
-use App\Models\Workstation;
 use App\Services\Parc\MachinePowerService;
 use Illuminate\Support\Facades\Process;
 use Mockery;
@@ -16,6 +14,7 @@ use Tests\TestCase;
 class MachinePowerServiceTest extends TestCase
 {
     private MachinePowerService $service;
+
     private SambaEduConfig $configService;
 
     protected function setUp(): void
@@ -119,7 +118,75 @@ class MachinePowerServiceTest extends TestCase
         $this->assertFalse($result);
     }
 
+    // ── resolveAllBroadcasts ──────────────────────────────────────────
+
+    public function test_resolve_all_broadcasts_covers_every_configured_subnet(): void
+    {
+        // Sans IP connue (cas WOL d'un poste éteint) : on doit arroser le
+        // broadcast de CHAQUE subnet DHCP configuré.
+        $this->configService->shouldReceive('all')->andReturn([
+            'dhcp_reseau_0' => '10.0.0.0',
+            'dhcp_masque_0' => '255.255.255.0',
+            'dhcp_reseau_1' => '10.0.1.0',
+            'dhcp_masque_1' => '255.255.255.0',
+        ]);
+        $this->configService->shouldReceive('get')->with('wol_broadcast')->andReturn(null);
+
+        $result = $this->service->resolveAllBroadcasts(null);
+
+        $this->assertContains('10.0.0.255', $result);
+        $this->assertContains('10.0.1.255', $result);
+    }
+
+    public function test_resolve_all_broadcasts_includes_wol_broadcast_and_dedupes(): void
+    {
+        $this->configService->shouldReceive('all')->andReturn([
+            'dhcp_reseau_0' => '192.168.1.0',
+            'dhcp_masque_0' => '255.255.255.0',
+        ]);
+        $this->configService->shouldReceive('get')->with('wol_broadcast')->andReturn('10.255.255.255');
+
+        // IP dans le subnet 0 → le broadcast dérivé (192.168.1.255) == le broadcast
+        // du subnet : on vérifie qu'il n'apparaît qu'une fois (dédup).
+        $result = $this->service->resolveAllBroadcasts('192.168.1.42');
+
+        $this->assertEquals(['192.168.1.255', '10.255.255.255'], $result);
+    }
+
+    public function test_resolve_all_broadcasts_falls_back_to_global_when_no_config(): void
+    {
+        $this->configService->shouldReceive('all')->andReturn([]);
+        $this->configService->shouldReceive('get')->with('wol_broadcast')->andReturn(null);
+
+        $result = $this->service->resolveAllBroadcasts(null);
+
+        $this->assertEquals(['255.255.255.255'], $result);
+    }
+
     // ── wakeOnLan ─────────────────────────────────────────────────────
+
+    public function test_wol_without_ip_broadcasts_to_all_subnets(): void
+    {
+        // Scénario post-neofut : poste sans IP (NULL en base, éteint). Le WOL doit
+        // quand même partir sur tous les subnets configurés.
+        Process::fake();
+
+        $this->configService->shouldReceive('all')->andReturn([
+            'dhcp_reseau_0' => '10.0.0.0',
+            'dhcp_masque_0' => '255.255.255.0',
+            'dhcp_reseau_1' => '10.0.1.0',
+            'dhcp_masque_1' => '255.255.255.0',
+        ]);
+        $this->configService->shouldReceive('get')->with('wol_broadcast')->andReturn(null);
+
+        $result = $this->service->wakeOnLan('aa:bb:cc:dd:ee:ff', '');
+
+        $this->assertTrue($result['success']);
+        $this->assertEquals(202, $result['code']);
+
+        Process::assertRan(fn ($p) => str_contains($p->command, '10.0.0.255'));
+        Process::assertRan(fn ($p) => str_contains($p->command, '10.0.1.255'));
+    }
 
     public function test_wol_empty_mac_returns_error(): void
     {
@@ -309,9 +376,20 @@ class MachinePowerServiceTest extends TestCase
         $this->assertEquals(203, $this->getErrorCode());
     }
 
-    private function getWolSuccessCode(): int { return 202; }
-    private function getActionSuccessCode(): int { return 201; }
-    private function getErrorCode(): int { return 203; }
+    private function getWolSuccessCode(): int
+    {
+        return 202;
+    }
+
+    private function getActionSuccessCode(): int
+    {
+        return 201;
+    }
+
+    private function getErrorCode(): int
+    {
+        return 203;
+    }
 
     // ── Helper assertion ─────────────────────────────────────────────
 

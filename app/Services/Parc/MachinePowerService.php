@@ -20,8 +20,7 @@ class MachinePowerService
 {
     public function __construct(
         private SambaEduConfig $configService
-    ) {
-    }
+    ) {}
 
     /**
      * Détecte si une machine est en ligne et son OS
@@ -31,8 +30,8 @@ class MachinePowerService
      * - Port 445 ouvert → 'windows'
      * - Aucun port → false (éteint)
      *
-     * @param string $ip Adresse IP ou hostname
-     * @param float $timeout Timeout en secondes (par défaut 0.2s)
+     * @param  string  $ip  Adresse IP ou hostname
+     * @param  float  $timeout  Timeout en secondes (par défaut 0.2s)
      * @return string|false 'windows', 'linux', ou false
      */
     public function ping(string $ip, float $timeout = 0.2): string|false
@@ -53,9 +52,9 @@ class MachinePowerService
     /**
      * Envoie un paquet Wake-on-LAN à une machine
      *
-     * @param string $macAddress Adresse MAC (format xx:xx:xx:xx:xx:xx)
-     * @param string $ip Adresse IP de la machine (pour calculer le broadcast)
-     * @param string|null $machineName Nom de la machine (pour le logging)
+     * @param  string  $macAddress  Adresse MAC (format xx:xx:xx:xx:xx:xx)
+     * @param  string  $ip  Adresse IP de la machine (pour calculer le broadcast)
+     * @param  string|null  $machineName  Nom de la machine (pour le logging)
      * @return array{success: bool, code: int, message: string}
      */
     public function wakeOnLan(string $macAddress, string $ip, ?string $machineName = null): array
@@ -68,7 +67,7 @@ class MachinePowerService
             ];
         }
 
-        if (!$this->isValidMacAddress($macAddress)) {
+        if (! $this->isValidMacAddress($macAddress)) {
             return [
                 'success' => false,
                 'code' => 500,
@@ -76,32 +75,35 @@ class MachinePowerService
             ];
         }
 
-        $messages = [];
-        $broadcast = $this->resolveBroadcast($ip);
         $safeMac = escapeshellarg($macAddress);
 
-        if ($broadcast !== false) {
+        // Le WOL est une diffusion L2 : il ne dépend PAS de l'IP de la cible (qui
+        // est éteinte, donc sans IP). On arrose tous les broadcasts plausibles —
+        // broadcast de l'IP si connue, broadcast de chaque subnet DHCP configuré,
+        // wol_broadcast, et 255.255.255.255 en dernier recours.
+        $sent = 0;
+        $messages = [];
+        foreach ($this->resolveAllBroadcasts($ip !== '' ? $ip : null) as $broadcast) {
             $safeBroadcast = escapeshellarg($broadcast);
             $result = Process::run("/usr/bin/wakeonlan -i {$safeBroadcast} {$safeMac}");
-            $messages[] = trim($result->output());
+            if ($result->successful()) {
+                $sent++;
+            }
+            $output = trim($result->output());
+            if ($output !== '') {
+                $messages[] = $output;
+            }
         }
 
-        // Envoi supplémentaire sur wol_broadcast si configuré (fiabilité cross-VLAN)
-        $wolBroadcast = $this->configService->get('wol_broadcast');
-        if ($wolBroadcast) {
-            $safeWolBroadcast = escapeshellarg($wolBroadcast);
-            $result = Process::run("/usr/bin/wakeonlan -i {$safeWolBroadcast} {$safeMac}");
-            $messages[] = trim($result->output());
-        }
-
-        if (empty($messages)) {
+        if ($sent === 0) {
             if ($machineName) {
                 $this->logAction($machineName, 'wake', false);
             }
+
             return [
                 'success' => false,
                 'code' => 203,
-                'message' => "Impossible de déterminer l'adresse broadcast pour {$ip}",
+                'message' => "Échec de l'envoi du paquet WOL (aucun broadcast joignable)",
             ];
         }
 
@@ -112,7 +114,7 @@ class MachinePowerService
         return [
             'success' => true,
             'code' => 202,
-            'message' => 'WOL envoyé : ' . implode(' | ', array_filter($messages)),
+            'message' => 'WOL envoyé : '.implode(' | ', array_filter($messages)),
         ];
     }
 
@@ -129,9 +131,9 @@ class MachinePowerService
      *   est déjà inconditionnel. L'action est loggée sous `shutdown-force` dans
      *   `machine_boot_logs` pour audit trail (distinct de `shutdown` classique).
      *
-     * @param string $machineName Nom de la machine
-     * @param string $ip Adresse IP
-     * @param bool $force Forcer l'arrêt même si un utilisateur est connecté
+     * @param  string  $machineName  Nom de la machine
+     * @param  string  $ip  Adresse IP
+     * @param  bool  $force  Forcer l'arrêt même si un utilisateur est connecté
      * @return array{success: bool, code: int, message: string}
      */
     public function shutdown(string $machineName, string $ip, bool $force = false): array
@@ -142,6 +144,7 @@ class MachinePowerService
 
         if ($os === false) {
             $this->logAction($machineName, $logAction, false, null);
+
             return [
                 'success' => false,
                 'code' => 203,
@@ -165,18 +168,20 @@ class MachinePowerService
             if ($result->exitCode() !== 0) {
                 Log::warning("Échec shutdown Windows {$machineName}", ['output' => $result->output(), 'force' => $force]);
                 $this->logAction($machineName, $logAction, false, $os);
+
                 return [
                     'success' => false,
                     'code' => 203,
-                    'message' => "Arrêt impossible pour {$machineName}: " . trim($result->output()),
+                    'message' => "Arrêt impossible pour {$machineName}: ".trim($result->output()),
                 ];
             }
 
             $this->logAction($machineName, $logAction, true, $os);
+
             return [
                 'success' => true,
                 'code' => 201,
-                'message' => "Arrêt{$labelSuffix} de {$machineName} (Windows) : " . trim($result->output()),
+                'message' => "Arrêt{$labelSuffix} de {$machineName} (Windows) : ".trim($result->output()),
             ];
         }
 
@@ -188,14 +193,16 @@ class MachinePowerService
         if ($result->exitCode() !== 0) {
             Log::warning("Échec shutdown Linux {$machineName}", ['output' => $result->output(), 'force' => $force]);
             $this->logAction($machineName, $logAction, false, $os);
+
             return [
                 'success' => false,
                 'code' => 203,
-                'message' => "Arrêt impossible pour {$machineName}: " . trim($result->output()),
+                'message' => "Arrêt impossible pour {$machineName}: ".trim($result->output()),
             ];
         }
 
         $this->logAction($machineName, $logAction, true, $os);
+
         return [
             'success' => true,
             'code' => 201,
@@ -207,10 +214,10 @@ class MachinePowerService
      * Redémarre une machine (Windows via net rpc, Linux via SSH)
      * Si la machine est éteinte, fallback automatique vers WOL
      *
-     * @param string $machineName Nom de la machine
-     * @param string $ip Adresse IP
-     * @param string $macAddress Adresse MAC (pour fallback WOL)
-     * @param bool $force Forcer le reboot
+     * @param  string  $machineName  Nom de la machine
+     * @param  string  $ip  Adresse IP
+     * @param  string  $macAddress  Adresse MAC (pour fallback WOL)
+     * @param  bool  $force  Forcer le reboot
      * @return array{success: bool, code: int, message: string}
      */
     // NOTE: $force — même constat que shutdown(), non implémenté (fidèle au legacy).
@@ -221,17 +228,19 @@ class MachinePowerService
 
         // Machine éteinte → fallback WOL
         if ($os === false) {
-            if (!empty($macAddress)) {
+            if (! empty($macAddress)) {
                 $wolResult = $this->wakeOnLan($macAddress, $ip, $machineName);
                 $this->logAction($machineName, 'reboot', $wolResult['success'], null);
+
                 return [
                     'success' => $wolResult['success'],
                     'code' => $wolResult['code'],
-                    'message' => "{$machineName} est éteinte, tentative WOL : " . $wolResult['message'],
+                    'message' => "{$machineName} est éteinte, tentative WOL : ".$wolResult['message'],
                 ];
             }
 
             $this->logAction($machineName, 'reboot', false, null);
+
             return [
                 'success' => false,
                 'code' => 203,
@@ -248,26 +257,29 @@ class MachinePowerService
                 Log::warning("Échec reboot Windows {$machineName}", ['output' => $result->output()]);
                 $this->logAction($machineName, 'reboot', false, $os);
                 // Fallback WOL en cas d'échec reboot
-                if (!empty($macAddress)) {
+                if (! empty($macAddress)) {
                     $wolResult = $this->wakeOnLan($macAddress, $ip);
+
                     return [
                         'success' => false,
                         'code' => 203,
-                        'message' => "Reboot impossible pour {$machineName}, tentative WOL : " . $wolResult['message'],
+                        'message' => "Reboot impossible pour {$machineName}, tentative WOL : ".$wolResult['message'],
                     ];
                 }
+
                 return [
                     'success' => false,
                     'code' => 203,
-                    'message' => "Reboot impossible pour {$machineName}: " . trim($result->output()),
+                    'message' => "Reboot impossible pour {$machineName}: ".trim($result->output()),
                 ];
             }
 
             $this->logAction($machineName, 'reboot', true, $os);
+
             return [
                 'success' => true,
                 'code' => 201,
-                'message' => "Reboot de {$machineName} (Windows) : " . trim($result->output()),
+                'message' => "Reboot de {$machineName} (Windows) : ".trim($result->output()),
             ];
         }
 
@@ -279,22 +291,25 @@ class MachinePowerService
         if ($result->exitCode() !== 0) {
             Log::warning("Échec reboot Linux {$machineName}", ['output' => $result->output()]);
             $this->logAction($machineName, 'reboot', false, $os);
-            if (!empty($macAddress)) {
+            if (! empty($macAddress)) {
                 $wolResult = $this->wakeOnLan($macAddress, $ip);
+
                 return [
                     'success' => false,
                     'code' => 203,
-                    'message' => "Reboot impossible pour {$machineName}, tentative WOL : " . $wolResult['message'],
+                    'message' => "Reboot impossible pour {$machineName}, tentative WOL : ".$wolResult['message'],
                 ];
             }
+
             return [
                 'success' => false,
                 'code' => 203,
-                'message' => "Reboot impossible pour {$machineName}: " . trim($result->output()),
+                'message' => "Reboot impossible pour {$machineName}: ".trim($result->output()),
             ];
         }
 
         $this->logAction($machineName, 'reboot', true, $os);
+
         return [
             'success' => true,
             'code' => 201,
@@ -310,7 +325,7 @@ class MachinePowerService
      * 2. Sinon, calcule depuis l'IP et le masque réseau de la config
      * 3. En dernier recours, broadcast /24 par défaut
      *
-     * @param string $ip Adresse IP de la machine
+     * @param  string  $ip  Adresse IP de la machine
      * @return string|false Adresse broadcast ou false
      */
     public function resolveBroadcast(string $ip): string|false
@@ -332,7 +347,7 @@ class MachinePowerService
 
         // Stratégie 2 : Calcul depuis le masque réseau de la config
         $network = $this->configService->network();
-        if (!empty($network->mask)) {
+        if (! empty($network->mask)) {
             $maskLong = ip2long($network->mask);
             if ($maskLong !== false) {
                 return long2ip(($ipLong | ~$maskLong) & 0xFFFFFFFF);
@@ -341,6 +356,51 @@ class MachinePowerService
 
         // Stratégie 3 : Broadcast /24 par défaut
         return long2ip(($ipLong | 0x000000FF) & 0xFFFFFFFF);
+    }
+
+    /**
+     * Liste tous les broadcasts plausibles pour atteindre une machine.
+     *
+     * Utilisé par le WOL : la cible étant éteinte, on ne connaît pas son VLAN
+     * courant — on diffuse donc sur le broadcast de CHAQUE subnet DHCP configuré,
+     * plus éventuellement le broadcast dérivé d'une IP connue et le wol_broadcast
+     * explicite. 255.255.255.255 reste le dernier recours (segment local).
+     *
+     * @param  string|null  $ip  IP courante de la machine si connue (souvent null en WOL)
+     * @return list<string> Adresses broadcast dédupliquées, jamais vide
+     */
+    public function resolveAllBroadcasts(?string $ip = null): array
+    {
+        $broadcasts = [];
+
+        // 1. Broadcast dérivé de l'IP courante si on la connaît.
+        if (! empty($ip)) {
+            $perIp = $this->resolveBroadcast($ip);
+            if ($perIp !== false) {
+                $broadcasts[] = $perIp;
+            }
+        }
+
+        // 2. Broadcast de chaque subnet DHCP configuré (la machine peut être sur
+        //    n'importe quel VLAN quand elle est éteinte).
+        foreach ($this->allConfiguredBroadcasts() as $bc) {
+            $broadcasts[] = $bc;
+        }
+
+        // 3. wol_broadcast explicite (override site, fiabilité cross-VLAN).
+        $wolBroadcast = $this->configService->get('wol_broadcast');
+        if ($wolBroadcast) {
+            $broadcasts[] = (string) $wolBroadcast;
+        }
+
+        $broadcasts = array_values(array_unique(array_filter($broadcasts)));
+
+        // 4. Dernier recours : broadcast global (atteint le segment local du serveur).
+        if (empty($broadcasts)) {
+            $broadcasts[] = '255.255.255.255';
+        }
+
+        return $broadcasts;
     }
 
     /**
@@ -377,6 +437,7 @@ class MachinePowerService
                     'success' => false,
                     'error_flags' => 1,
                 ]);
+
                 return;
             }
 
@@ -461,6 +522,7 @@ class MachinePowerService
             return false;
         }
         fclose($fp);
+
         return true;
     }
 
@@ -471,36 +533,7 @@ class MachinePowerService
      */
     private function resolveVlanBroadcast(int $ipLong): string|false
     {
-        $rawConfig = $this->configService->all();
-
-        // Extraire les paramètres DHCP (dhcp_reseau_0, dhcp_masque_0, etc.)
-        $reseaux = [];
-        $masques = [];
-
-        foreach ($rawConfig as $key => $value) {
-            if (preg_match('/^dhcp_reseau_(\d+)$/', $key, $m)) {
-                $parsed = ip2long($value);
-                if ($parsed !== false) {
-                    $reseaux[(int) $m[1]] = $parsed;
-                }
-            } elseif ($key === 'dhcp_reseau') {
-                $parsed = ip2long($value);
-                if ($parsed !== false) {
-                    $reseaux[0] = $parsed;
-                }
-            }
-            if (preg_match('/^dhcp_masque_(\d+)$/', $key, $m)) {
-                $parsed = ip2long($value);
-                if ($parsed !== false) {
-                    $masques[(int) $m[1]] = $parsed;
-                }
-            } elseif ($key === 'dhcp_masque') {
-                $parsed = ip2long($value);
-                if ($parsed !== false) {
-                    $masques[0] = $parsed;
-                }
-            }
-        }
+        ['reseaux' => $reseaux, 'masques' => $masques] = $this->parseDhcpNetworks();
 
         if (empty($reseaux) || empty($masques)) {
             return false;
@@ -508,7 +541,7 @@ class MachinePowerService
 
         // Chercher le VLAN qui contient l'IP
         foreach ($reseaux as $idx => $reseauLong) {
-            if (!isset($masques[$idx])) {
+            if (! isset($masques[$idx])) {
                 continue;
             }
             $masqueLong = $masques[$idx];
@@ -521,6 +554,67 @@ class MachinePowerService
         }
 
         return false;
+    }
+
+    /**
+     * Calcule le broadcast de chaque subnet DHCP configuré (tous VLAN confondus).
+     *
+     * @return list<string>
+     */
+    private function allConfiguredBroadcasts(): array
+    {
+        ['reseaux' => $reseaux, 'masques' => $masques] = $this->parseDhcpNetworks();
+
+        $broadcasts = [];
+        foreach ($reseaux as $idx => $reseauLong) {
+            if (! isset($masques[$idx])) {
+                continue;
+            }
+            $broadcasts[] = long2ip(($reseauLong | ~$masques[$idx]) & 0xFFFFFFFF);
+        }
+
+        return $broadcasts;
+    }
+
+    /**
+     * Parse les paramètres DHCP legacy (dhcp_reseau_*, dhcp_masque_*, et les
+     * variantes sans suffixe) en deux maps indexées par VLAN.
+     *
+     * @return array{reseaux: array<int,int>, masques: array<int,int>}
+     */
+    private function parseDhcpNetworks(): array
+    {
+        $rawConfig = $this->configService->all();
+
+        $reseaux = [];
+        $masques = [];
+
+        foreach ($rawConfig as $key => $value) {
+            if (preg_match('/^dhcp_reseau_(\d+)$/', $key, $m)) {
+                $parsed = ip2long((string) $value);
+                if ($parsed !== false) {
+                    $reseaux[(int) $m[1]] = $parsed;
+                }
+            } elseif ($key === 'dhcp_reseau') {
+                $parsed = ip2long((string) $value);
+                if ($parsed !== false) {
+                    $reseaux[0] = $parsed;
+                }
+            }
+            if (preg_match('/^dhcp_masque_(\d+)$/', $key, $m)) {
+                $parsed = ip2long((string) $value);
+                if ($parsed !== false) {
+                    $masques[(int) $m[1]] = $parsed;
+                }
+            } elseif ($key === 'dhcp_masque') {
+                $parsed = ip2long((string) $value);
+                if ($parsed !== false) {
+                    $masques[0] = $parsed;
+                }
+            }
+        }
+
+        return ['reseaux' => $reseaux, 'masques' => $masques];
     }
 
     /**
