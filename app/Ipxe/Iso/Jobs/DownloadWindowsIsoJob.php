@@ -6,6 +6,7 @@ namespace App\Ipxe\Iso\Jobs;
 
 use App\Ipxe\Iso\Enums\WindowsIsoDownloadStatus;
 use App\Ipxe\Iso\Exceptions\WindowsIsoExtractionException;
+use App\Ipxe\Iso\Exceptions\WinpeDriverInjectionException;
 use App\Ipxe\Iso\Services\WindowsIsoExtractor;
 use App\Models\WindowsIsoDownload;
 use Illuminate\Bus\Queueable;
@@ -259,6 +260,15 @@ class DownloadWindowsIsoJob implements ShouldQueue
                 app(WindowsIsoExtractor::class)->extract($download->version, $isoPath, $extractTimeout);
             } catch (WindowsIsoExtractionException $e) {
                 $this->markFailed($download, $e->exitCode, $e->getMessage(), 'extract-failed');
+
+                return;
+            } catch (WinpeDriverInjectionException $e) {
+                // Story 3.10 (AC2.5) — l'injection des pilotes NIC dans le
+                // boot.wim a échoué (wimlib absent / exit non-zéro / index
+                // invalide). On marque `failed` avec l'exit code wimlib + le
+                // stderr (message exploitable, toast côté UI 3.6) plutôt que de
+                // laisser le Job livrer un boot.wim incomplet (demi-boot).
+                $this->markFailed($download, $e->exitCode, $e->getMessage(), 'winpe-driver-injection-failed');
 
                 return;
             }

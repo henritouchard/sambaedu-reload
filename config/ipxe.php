@@ -503,6 +503,46 @@ return [
         // ("Win11_24H2.iso") — écrit par install-win-iso.sh après extraction.
         'version_file_name' => env('IPXE_ISO_VERSION_FILE', 'version'),
 
+        // --- Story 3.10 — Injection pilotes NIC dans le boot.wim WinPE -------
+        //
+        // Pack de pilotes WinPE (NIC) injecté à CHAQUE extraction d'ISO dans le
+        // `boot.wim` cible par {@see App\Ipxe\Iso\Services\WinpeDriverInjector}.
+        // Corrige la régression 3.6 (l'extraction écrase le boot.wim par le
+        // stock Microsoft → toute injection one-shot DISM est perdue). L'idempo-
+        // tence est garantie *par construction* : la copie fraîche du boot.wim
+        // depuis l'ISO (cp -R) donne toujours un wim pristine avant injection.
+        //
+        // ⚠ Ce pack est **server-side UNIQUEMENT** : il est lu par
+        // `wimlib-imagex` (user www-admin) au moment de l'extraction ; les
+        // POSTES ne le téléchargent JAMAIS (ils reçoivent un boot.wim avec les
+        // pilotes déjà injectés). D'où le placement sous `storage/` (convention
+        // assets non-versionnés NON client-facing — cf.
+        // [[project_storage_convention_non_versioned]]) plutôt que sous `/os`.
+        // INVARIANT : il DOIT vivre HORS `{deployed_os_base_path}/Win{N}` pour
+        // échapper au `sudo rm -rf <target>` de l'extraction (persistance).
+        // Pour reproduire exactement le PoC (pack sous /os), poser :
+        //   IPXE_WINPE_DRIVERS_PATH=/var/sambaedu/unattended/install/os/winpe-drivers
+        //
+        // Structure attendue : `winpe_drivers_path/<famille>/` (ex.
+        // `intel-i219/`) contenant les triplets `.inf` + `.sys` + `.cat`.
+        // Plusieurs familles peuvent coexister (chacune injectée à
+        // `\drivers\<famille>` dans le wim).
+        //
+        // Prérequis système (provisioning, action Henri / one-shot-install) :
+        //   - `wimtools` (fournit `wimlib-imagex`) — injection, en www-admin
+        //     SANS sudo (le boot.wim lui appartient déjà après le chown de
+        //     l'extraction).
+        //   - `innoextract` — ingestion des `.exe` InnoSetup Lenovo.
+        //   - `unzip` — ingestion des `.zip` Intel.
+        'winpe_drivers_path' => env('IPXE_WINPE_DRIVERS_PATH', storage_path('install/winpe-drivers')),
+
+        // ⚠ PIÈGE INDEX 2. Sur un média d'install Windows, le `boot.wim`
+        // contient 2 images : index 1 = « Windows Setup », index 2 = WinPE
+        // bootable. Injecter les pilotes sur l'index 1 ne charge RIEN au boot —
+        // ils doivent aller sur l'index BOOTABLE 2 (validé PoC ; rendu
+        // configurable par prudence).
+        'winpe_boot_wim_image_index' => (int) env('IPXE_WINPE_BOOT_WIM_INDEX', 2),
+
         // Allowlist anti-SSRF — host de l'URL Microsoft saisie par l'admin.
         // CSV via env, sinon défauts iso-projet (3 hostnames Microsoft connus
         // pour servir les ISO en direct + sous-domaines via str_ends_with()).

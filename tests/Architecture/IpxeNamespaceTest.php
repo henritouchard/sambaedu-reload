@@ -918,6 +918,104 @@ class IpxeNamespaceTest extends TestCase
         );
     }
 
+    /* ------------------------------------------------------------------
+     * Story 3.10 — AC6.4 — Injection pilotes NIC boot.wim WinPE.
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Story 3.10 — Les services/exceptions/commande 3.10 vivent au bon
+     * emplacement (sous-namespace `App\Ipxe\Iso\*` cohérent avec 3.6 ;
+     * commande sous `App\Console\Commands` plat), et les exceptions portent
+     * le suffixe `Exception` + étendent `RuntimeException` (cohérence avec
+     * `WindowsIsoExtractionException`).
+     */
+    #[Test]
+    public function it_lists_all_ipxe_3_10_winpe_driver_classes_at_correct_locations(): void
+    {
+        $root = realpath(__DIR__ . '/../../app/Ipxe/Iso');
+        self::assertNotFalse($root, 'app/Ipxe/Iso introuvable.');
+
+        $required = [
+            $root . '/Services/WinpeDriverInjector.php',
+            $root . '/Services/WinpeDriverIngestor.php',
+            $root . '/Exceptions/WinpeDriverInjectionException.php',
+            $root . '/Exceptions/WinpeDriverIngestionException.php',
+        ];
+        foreach ($required as $file) {
+            self::assertFileExists($file, "Fichier 3.10 manquant : {$file}");
+        }
+
+        // Commande artisan : dossier app/Console/Commands PLAT (pas de
+        // sous-dossier Ipxe/).
+        self::assertFileExists(
+            realpath(__DIR__ . '/../../app/Console/Commands') . '/IngestWinpeDriversCommand.php',
+            'IngestWinpeDriversCommand doit être dans App\\Console\\Commands (dossier plat).',
+        );
+
+        // Suffixe + parenté des exceptions (cohérence WindowsIsoExtractionException).
+        foreach ([
+            \App\Ipxe\Iso\Exceptions\WinpeDriverInjectionException::class,
+            \App\Ipxe\Iso\Exceptions\WinpeDriverIngestionException::class,
+        ] as $exceptionClass) {
+            self::assertStringEndsWith('Exception', $exceptionClass);
+            self::assertTrue(
+                is_subclass_of($exceptionClass, \RuntimeException::class),
+                $exceptionClass . ' doit étendre RuntimeException (cohérence iso 3.6).',
+            );
+        }
+    }
+
+    /**
+     * Story 3.10 — `WindowsInstallBatBuilder` reste INCHANGÉ (D2 / AC3.3) :
+     * le drvload n'y est PAS préfixé (point unique = nicload.cmd injecté dans
+     * le wim). Garde-fou anti-régression : aucune référence drvload/nicload
+     * dans le builder iso-legacy.
+     */
+    #[Test]
+    public function it_ensures_windows_install_bat_builder_has_no_drvload_concern(): void
+    {
+        $builder = realpath(__DIR__ . '/../../app/Ipxe/Services/WindowsInstallBatBuilder.php');
+        self::assertNotFalse($builder, 'WindowsInstallBatBuilder introuvable.');
+        $content = (string) file_get_contents($builder);
+
+        self::assertStringNotContainsStringIgnoringCase(
+            'drvload',
+            $content,
+            'D2/AC3.3 : WindowsInstallBatBuilder doit rester iso-legacy (pas de drvload — point unique = nicload.cmd dans le wim).',
+        );
+        self::assertStringNotContainsStringIgnoringCase('nicload', $content);
+    }
+
+    /**
+     * Story 3.10 — AC3.1/AC3.2 — `nicload.cmd` et `winpeshl.ini` sont en CRLF
+     * STRICT (WinPE rejette silencieusement les `.cmd` en LF), winpeshl chaîne
+     * `nicload.cmd` AVANT `install.bat`.
+     */
+    #[Test]
+    public function it_ensures_winpe_assets_are_crlf_and_chained_in_order(): void
+    {
+        $winpeDir = realpath(__DIR__ . '/../../resources/ipxe/winpe');
+        self::assertNotFalse($winpeDir);
+
+        $nicload = (string) file_get_contents($winpeDir . '/nicload.cmd');
+        $winpeshl = (string) file_get_contents($winpeDir . '/winpeshl.ini');
+
+        // CRLF strict : aucun LF non précédé d'un CR.
+        self::assertSame(0, preg_match('/(?<!\r)\n/', $nicload), 'nicload.cmd contient un LF nu (doit être CRLF strict).');
+        self::assertSame(0, preg_match('/(?<!\r)\n/', $winpeshl), 'winpeshl.ini contient un LF nu (doit être CRLF strict).');
+
+        // Contenu nicload (drvload récursif sur X:\drivers).
+        self::assertStringContainsString('for /r X:\\drivers', $nicload);
+        self::assertStringContainsString('drvload', $nicload);
+
+        // Ordre strict : nicload.cmd AVANT install.bat.
+        $posNicload = strpos($winpeshl, 'nicload.cmd');
+        $posInstall = strpos($winpeshl, 'install.bat');
+        self::assertNotFalse($posNicload, 'winpeshl.ini doit lancer nicload.cmd');
+        self::assertNotFalse($posInstall, 'winpeshl.ini doit lancer install.bat');
+        self::assertLessThan($posInstall, $posNicload, 'winpeshl.ini doit lancer nicload.cmd AVANT install.bat.');
+    }
+
     /**
      * Story 3.6 — Vérifie que le Job 3.6 implémente `ShouldQueue`.
      */

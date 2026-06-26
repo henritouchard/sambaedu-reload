@@ -133,4 +133,25 @@ class WindowsIsoExtractorTest extends TestCase
 
         (new WindowsIsoExtractor())->extract('Win11', '/tmp/does-not-exist-' . getmypid() . '.iso', 60);
     }
+
+    /**
+     * Story 3.10 — AC6.3 — Non-régression : avec un pack de pilotes ABSENT/vide,
+     * l'extraction est strictement le comportement 3.6 (aucun appel
+     * `wimlib-imagex`, boot.wim stock préservé). Zéro régression pour les parcs
+     * à NIC inbox.
+     */
+    #[Test]
+    public function it_does_not_run_wimlib_when_driver_pack_is_empty(): void
+    {
+        Process::fake();
+        config([
+            'ipxe.iso_management.winpe_drivers_path' => sys_get_temp_dir() . '/se5-no-pack-' . getmypid() . '-' . uniqid(),
+        ]);
+
+        (new WindowsIsoExtractor())->extract('Win11', $this->isoPath, 60);
+
+        // Le comportement 3.6 est inchangé : aucune commande d'injection
+        // wimlib n'est lancée quand le pack est vide.
+        Process::assertNotRan(fn ($p) => str_starts_with($p->command, 'wimlib-imagex'));
+    }
 }

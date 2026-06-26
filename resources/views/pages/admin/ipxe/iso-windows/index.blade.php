@@ -4,14 +4,18 @@ use App\Components\Traits\WithToasts;
 use App\Ipxe\Iso\Enums\WindowsIsoDownloadStatus;
 use App\Ipxe\Iso\Exceptions\WindowsIsoLockException;
 use App\Ipxe\Iso\Exceptions\WindowsIsoValidationException;
+use App\Ipxe\Iso\Exceptions\WinpeDriverIngestionException;
 use App\Ipxe\Iso\Services\WindowsIsoDownloadOrchestrator;
 use App\Ipxe\Iso\Services\WindowsIsoSourcesReader;
 use App\Ipxe\Iso\Services\WindowsIsoUrlValidator;
+use App\Ipxe\Iso\Services\WinpeDriverIngestor;
+use App\Ipxe\Iso\Services\WinpeDriverInjector;
 use App\Models\WindowsIsoDownload;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Title;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 /**
  * Story 3.6 — D2 / D10 / AC5.* — Page admin web SE5 Livewire SFC qui porte
@@ -32,12 +36,33 @@ use Livewire\Component;
  *     iso_name + détection version) déléguée à `WindowsIsoDownloadOrchestrator`.
  */
 new #[Title('Gestion ISO Windows - SE5')] class extends Component {
+    use WithFileUploads;
     use WithToasts;
 
     // ---- État du formulaire URL ---------------------------------------------
 
     /** URL Microsoft saisie par l'admin. */
     public string $url = '';
+
+    // ---- État du formulaire d'ingestion de pilotes NIC (Story 3.10) ---------
+
+    /**
+     * Archive de pilotes uploadée (`.exe` Lenovo / `.zip` Intel). Livewire
+     * `TemporaryUploadedFile` — on lit son `getRealPath()` (JAMAIS `move()`,
+     * cf. [[project_livewire_reserved_upload_method]]).
+     */
+    public $driverArchive = null;
+
+    /** Famille cible saisie par l'admin (ex. `intel-i219`). */
+    public string $driverFamily = '';
+
+    /**
+     * Familles de pilotes présentes dans le pack `winpe_drivers_path`
+     * (lecture seule). `<famille> => nombre de .inf`.
+     *
+     * @var array<string, int>
+     */
+    public array $driverFamilies = [];
 
     // ---- État de la page ----------------------------------------------------
 
@@ -104,6 +129,82 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
         );
 
         $this->refreshData($sourcesReader);
+        $this->refreshDriverFamilies();
+    }
+
+    // ---- Ingestion de pilotes NIC WinPE (Story 3.10) ------------------------
+
+    /**
+     * Recharge la liste (lecture seule) des familles de pilotes présentes
+     * dans le pack `winpe_drivers_path` (sous-dossiers contenant ≥ 1 `.inf`).
+     *
+     * Délègue à {@see WinpeDriverInjector::collectFamilies()} — SOURCE UNIQUE de
+     * comptage (D3) : l'UI reflète exactement ce que l'injection trouvera
+     * (récursif + insensible à la casse, donc les `*.INF` majuscules comptent).
+     */
+    public function refreshDriverFamilies(): void
+    {
+        $packPath = rtrim(
+            (string) config('ipxe.iso_management.winpe_drivers_path', storage_path('install/winpe-drivers')),
+            '/',
+        );
+
+        // Résolution via le conteneur (méthode appelée en interne depuis mount()
+        // et ingestDrivers() — l'injection de méthode Livewire ne s'y applique pas).
+        $this->driverFamilies = app(WinpeDriverInjector::class)->collectFamilies($packPath);
+    }
+
+    /**
+     * Ingestion d'une archive de pilotes (`.exe` Lenovo / `.zip` Intel) via le
+     * service PARTAGÉ {@see WinpeDriverIngestor} (même logique que la commande
+     * artisan — D3, zéro duplication). Action volontairement NON nommée
+     * `upload` (réservé Livewire) ; on passe `getRealPath()` au service, jamais
+     * `move()` (cf. [[project_livewire_reserved_upload_method]]).
+     */
+    public function ingestDrivers(WinpeDriverIngestor $ingestor): void
+    {
+        $this->validate([
+            'driverFamily'  => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9._-]+$/'],
+            'driverArchive' => ['required', 'file', 'max:307200'], // 300 Mo
+        ], [
+            'driverFamily.regex' => 'Le nom de famille n\'accepte que lettres, chiffres, point, tiret et underscore.',
+        ]);
+
+        $originalName = $this->driverArchive->getClientOriginalName();
+        $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        if (! in_array($extension, ['exe', 'zip'], true)) {
+            $this->toastError('Archive non reconnue : déposez un `.exe` (Lenovo) ou un `.zip` (Intel).', 'Pilotes NIC');
+
+            return;
+        }
+
+        try {
+            $infFiles = $ingestor->ingest(
+                $this->driverFamily,
+                $this->driverArchive->getRealPath(),
+                $originalName,
+            );
+        } catch (WinpeDriverIngestionException $e) {
+            $this->toastError($e->getMessage(), 'Ingestion pilotes échouée');
+
+            return;
+        } catch (\Throwable $e) {
+            Log::channel((string) config('ipxe.log.channel', 'ipxe'))->error('ipxe.winpe.drivers.ingest.exception', [
+                'exception' => $e::class,
+                'message'   => $e->getMessage(),
+                'user_id'   => Auth::id(),
+            ]);
+            $this->toastError('Erreur inattendue lors de l\'ingestion des pilotes. Consultez les logs.');
+
+            return;
+        }
+
+        $this->toastSuccess(
+            sprintf('Famille « %s » : %d fichier(s) .inf ingéré(s). Injectés au boot.wim à la prochaine extraction d\'ISO.', $this->driverFamily, count($infFiles)),
+            'Pilotes NIC ingérés',
+        );
+        $this->reset(['driverArchive', 'driverFamily']);
+        $this->refreshDriverFamilies();
     }
 
     /**
@@ -787,6 +888,89 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        {{-- ============================================================
+             Card "Pilotes réseau WinPE (boot.wim)" — Story 3.10
+             ============================================================ --}}
+        <div class="card bg-base-100 shadow-sm border border-base-200">
+            <div class="card-body space-y-4">
+                <h2 class="card-title text-lg">
+                    <i class="fa-solid fa-network-wired text-primary"></i>
+                    Pilotes réseau WinPE (boot.wim)
+                </h2>
+                <p class="text-sm text-base-content/70">
+                    Certains postes récents (NIC non pris en charge nativement par WinPE depuis Windows 11 24H2)
+                    ne montent pas le réseau au démarrage de l'installation. Déposez ici les pilotes réseau
+                    (archive <code>.exe</code> Lenovo ou <code>.zip</code> Intel) : ils seront injectés
+                    automatiquement et durablement dans le <code>boot.wim</code> à chaque extraction d'ISO.
+                </p>
+
+                {{-- Familles déjà présentes (lecture seule). --}}
+                <div>
+                    <h3 class="font-medium text-sm mb-1">Familles de pilotes présentes</h3>
+                    @if (count($driverFamilies) === 0)
+                        <p class="text-sm text-base-content/60">
+                            Aucun pilote injecté — le <code>boot.wim</code> sert les pilotes Microsoft d'origine
+                            (suffisant pour les postes à NIC reconnu nativement).
+                        </p>
+                    @else
+                        <div class="flex flex-wrap gap-2">
+                            @foreach ($driverFamilies as $family => $infCount)
+                                <span class="badge badge-outline gap-1">
+                                    <i class="fa-solid fa-microchip"></i>
+                                    {{ $family }} <span class="opacity-60">({{ $infCount }} .inf)</span>
+                                </span>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+
+                {{-- Formulaire d'ingestion. --}}
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div class="form-control md:col-span-1">
+                        <label class="label"><span class="label-text font-medium">Famille</span></label>
+                        <input type="text" wire:model="driverFamily"
+                            class="input input-bordered input-sm font-mono"
+                            placeholder="intel-i219" data-testid="driver-family-input" />
+                        @error('driverFamily')
+                            <label class="label"><span class="label-text-alt text-error">{{ $message }}</span></label>
+                        @enderror
+                    </div>
+                    <div class="form-control md:col-span-2">
+                        <label class="label"><span class="label-text font-medium">Archive de pilotes (.exe / .zip)</span></label>
+                        <input type="file" wire:model="driverArchive"
+                            accept=".exe,.zip,application/octet-stream,application/zip"
+                            class="file-input file-input-bordered file-input-sm" data-testid="driver-archive-input" />
+                        @error('driverArchive')
+                            <label class="label"><span class="label-text-alt text-error">{{ $message }}</span></label>
+                        @enderror
+                    </div>
+                </div>
+
+                <div>
+                    <button type="button" wire:click="ingestDrivers"
+                        class="btn btn-primary btn-sm"
+                        wire:loading.attr="disabled" wire:target="ingestDrivers,driverArchive"
+                        data-testid="driver-ingest-button">
+                        <span wire:loading.remove wire:target="ingestDrivers,driverArchive">
+                            <i class="fa-solid fa-upload"></i>
+                            Ingérer les pilotes
+                        </span>
+                        <span wire:loading wire:target="ingestDrivers,driverArchive">
+                            <span class="loading loading-spinner loading-xs"></span>
+                            Traitement…
+                        </span>
+                    </button>
+                </div>
+
+                <p class="text-xs text-base-content/60">
+                    <i class="fa-solid fa-circle-info"></i>
+                    Les <code>.exe</code> Lenovo sont extraits via <code>innoextract</code> ; les <code>.zip</code> Intel
+                    via <code>unzip</code>. Prérequis serveur : <code>wimtools</code>, <code>innoextract</code>,
+                    <code>unzip</code>. Le pack est server-side uniquement (jamais téléchargé par les postes).
+                </p>
             </div>
         </div>
 

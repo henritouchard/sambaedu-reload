@@ -5,6 +5,9 @@
 /storage/*.key
 # Story 16.10 — PKI locale + JWT (clés privées sensibles, jamais en VCS)
 /storage/keys/
+# Story 3.6 / 3.10 — sources d'install runtime (ISO + pack pilotes NIC WinPE),
+# server-side, non client-facing → jamais en VCS (project_storage_convention_non_versioned).
+/storage/install/
 /bootstrap/cache/
 !/bootstrap/cache/.gitkeep
 .env

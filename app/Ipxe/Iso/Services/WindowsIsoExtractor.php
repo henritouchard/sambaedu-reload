@@ -99,12 +99,17 @@ final class WindowsIsoExtractor
                 'chown',
             );
 
-            // Fichier `version` = nom de l'ISO (lu par WindowsIsoSourcesReader
-            // pour afficher la version courante). www-admin possède le tree.
-            @file_put_contents($target . '/version', basename($isoPath) . "\n");
-
             // Parité legacy : boot.wim world-readable/writable (servi en SMB).
             @chmod($target . '/sources/boot.wim', 0666);
+
+            // Story 3.10 — Injection des pilotes NIC dans le boot.wim FRAÎCHEMENT
+            // copié (donc pristine → idempotence par construction). No-op propre
+            // si le pack est vide/absent (boot.wim stock préservé, zéro
+            // régression NIC inbox). L'injection re-`chmod 0666` + re-chown
+            // www-admin le wim qu'elle réécrit. Une WinpeDriverInjectionException
+            // remonte ici (PAS avalée par le `finally` umount) → le Job 3.6
+            // passe `failed` (parité avec WindowsIsoExtractionException).
+            app(WinpeDriverInjector::class)->inject($target . '/sources/boot.wim', $timeout);
 
             // Helpers WinPE (`wimboot` + `winpeshl.ini`) — NON présents dans
             // l'ISO Windows (ce sont des assets iPXE/SambaEdu). Semés depuis le
@@ -113,6 +118,15 @@ final class WindowsIsoExtractor
             // Remplace l'ancienne livraison par le paquet SE4
             // `sambaedu-client-windows` (direction SE5-autonome).
             $this->seedWinpeHelpers($base, $timeout);
+
+            // Fichier `version` = nom de l'ISO (lu par WindowsIsoSourcesReader
+            // pour afficher la version courante). Story 3.10 (M2) : écrit EN
+            // DERNIER, après l'injection des pilotes ET le seed des helpers, pour
+            // que le marqueur « déployé » ne reflète QUE des déploiements
+            // complets — une injection échouée à mi-parcours lève avant ici, donc
+            // pas de `version` posé sur un boot.wim demi-injecté. www-admin
+            // possède le tree.
+            @file_put_contents($target . '/version', basename($isoPath) . "\n");
         } finally {
             // Démontage + nettoyage du point de montage, quel que soit l'issue.
             Process::timeout($timeout)->run(sprintf('sudo -n umount %s', escapeshellarg($mountDir)));

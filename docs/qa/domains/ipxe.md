@@ -2483,3 +2483,160 @@ done
 **Attendu** : 30 premiers hits = `200` (écran iPXE `Acces refuse - identifiants
 invalides`), 31ème hit = `429 Too Many Requests`. Couverture automatisée :
 `IpxeAdminAuthTest::it_rate_limits_admin_endpoint_after_30_failures`.
+
+## Story 3.10 — Injection pilotes NIC boot.wim WinPE
+
+**Contexte (cause racine, NE PAS re-débattre).** Depuis Windows 11 24H2,
+Microsoft a retiré des pilotes Intel LAN legacy (`e1d`, ex. I219) du `boot.wim`.
+Sur un poste à NIC non-inbox, WinPE ne monte pas le réseau → le `@PING` de
+l'`install.bat` échoue (« défaillance générale ») et l'installation ne démarre
+jamais. Le SEUL levier pour le NIC est le `boot.wim` lui-même (`z:\os\drivers`
+de l'unattend exige déjà le réseau = chicken-and-egg). Cf. mémoire
+`project_winpe_nic_driver_boot_wim_gap`. PoC validée e2e le 2026-06-26 (lab1,
+Lenovo ThinkCentre M700 / Intel I219, 100 % Linux).
+
+**Régression 3.6 corrigée.** `WindowsIsoExtractor::extract()` ré-extrait l'ISO
+et écrase le `boot.wim` à chaque déploiement → une injection DISM one-shot ne
+tient pas. L'injection est désormais **rejouée automatiquement** à chaque
+extraction (service `WinpeDriverInjector`), idempotente *par construction* (le
+`cp -R` depuis l'ISO donne toujours un wim pristine).
+
+### Prérequis système (provisioning — action Henri / one-shot-install)
+
+```bash
+# Sur le serveur SE5 (VM) — paquets requis :
+ssh /vm 'apt-get install -y wimtools innoextract unzip'
+# wimtools fournit `wimlib-imagex` (injection, en www-admin SANS sudo).
+# innoextract : ingestion des .exe InnoSetup Lenovo (7z ne voit que les
+#               sections PE et rate les fichiers pilote — validé PoC).
+# unzip       : ingestion des .zip Intel.
+```
+
+> **Note hôte de dev** : `wimlib-imagex` et `unzip` présents ; `innoextract`
+> souvent absent (installer pour tester l'ingestion `.exe`, ou s'appuyer sur le
+> `Process::fake()` des tests). L'extension PHP `zip` (ZipArchive) n'est PAS
+> chargée sur l'hôte de test — les tests construisent les `.zip` via le binaire
+> `zip`.
+
+### Actions VM post-merge (cf. project_vm_config_cache_not_synced)
+
+```bash
+ssh /vm 'cd /var/www/sambaedu-reload && php artisan config:cache && \
+         chown www-admin:www-admin bootstrap/cache/*.php'
+# Créer le pack persistant (gitignored, hors de l'arbre extrait) :
+ssh /vm 'mkdir -p /var/www/sambaedu-reload/storage/install/winpe-drivers && \
+         chown -R www-admin:www-admin /var/www/sambaedu-reload/storage/install/winpe-drivers'
+```
+
+### Emplacement du pack
+
+- **Défaut** : `storage/install/winpe-drivers/<famille>/` (server-side
+  uniquement, gitignored, NON servi aux postes — ils reçoivent un `boot.wim`
+  déjà injecté). Override : `IPXE_WINPE_DRIVERS_PATH` (poser
+  `/var/sambaedu/unattended/install/os/winpe-drivers` reproduit le PoC).
+- **Invariant** : vit HORS `{deployed_os_base_path}/Win{N}` pour échapper au
+  `sudo rm -rf <target>` de l'extraction (persistance).
+- Structure : `<famille>/` (ex. `intel-i219/`) contenant les triplets `.inf` +
+  `.sys` + `.cat`. Plusieurs familles coexistent (chacune injectée à
+  `\drivers\<famille>` dans le wim, index 2).
+
+### Ingestion des pilotes — DEUX canaux (D3)
+
+**A. CLI (admin avec shell)**
+
+```bash
+# .exe Lenovo (InnoSetup → innoextract)
+ssh /vm 'cd /var/www/sambaedu-reload && \
+  php artisan ipxe:winpe-drivers:ingest intel-i219 /root/u1etn20us14avc.exe'
+
+# .zip Intel (→ unzip)
+ssh /vm 'cd /var/www/sambaedu-reload && \
+  php artisan ipxe:winpe-drivers:ingest intel-i219 /root/intel-pack.zip'
+```
+
+**Attendu** : récap des `.inf` ingérés + exit 0. Échec propre (exit ≠ 0,
+message clair, AUCUN pack partiel) si : archive non reconnue (ni `.exe` ni
+`.zip`), binaire d'extraction absent (message nommant le paquet à installer),
+ou aucun `.inf` dans l'archive.
+
+**B. Upload UI Livewire** — page `/admin/ipxe/iso-windows` (Gate
+`can:server.admin`), carte « Pilotes réseau WinPE (boot.wim) » : saisir la
+famille, déposer l'archive `.exe`/`.zip`, cliquer « Ingérer les pilotes ». Un
+toast confirme les `.inf` ingérés (ou l'erreur). La liste lecture-seule des
+familles présentes est affichée. Même service partagé (`WinpeDriverIngestor`)
+que la CLI — zéro duplication.
+
+### Injection (automatique à l'extraction)
+
+Au prochain téléchargement/dépôt d'ISO Windows (`/admin/ipxe/iso-windows`),
+`WindowsIsoExtractor` injecte le pack dans le `boot.wim` (index BOOTABLE **2**,
+piège : l'index 1 = Windows Setup ne charge rien au boot) + injecte
+`nicload.cmd` à `\Windows\System32\`. Le `winpeshl.ini` chaîne
+`nicload.cmd` (drvload récursif `X:\drivers\*.inf`) PUIS `install.bat`.
+
+```bash
+# Vérifier l'injection après extraction (sur la VM) :
+ssh /vm 'wimlib-imagex dir /var/sambaedu/unattended/install/os/Win11/sources/boot.wim 2 \
+         | grep -iE "drivers|nicload"'
+# Attendu : /drivers/intel-i219/... + /Windows/System32/nicload.cmd
+ssh /vm 'ls -l /var/sambaedu/unattended/install/os/Win11/sources/boot.wim'
+# Attendu : owner www-admin:www-admin, mode 0666.
+```
+
+**No-op propre (zéro régression NIC inbox)** : si le pack est vide/absent,
+l'injection est sautée (log info `ipxe.winpe.drivers.skipped_empty`), le
+`boot.wim` reste le stock Microsoft intact — comportement 3.6 strictement
+préservé.
+
+**Échec d'injection** : `wimlib-imagex` absent / exit non-zéro / index invalide
+→ `WinpeDriverInjectionException` (exit + stderr) remonte au
+`DownloadWindowsIsoJob` qui marque le download `failed` (toast côté UI 3.6),
+plutôt que de livrer un boot.wim incomplet (demi-boot).
+
+### Scénario smoke e2e (M700 / I219)
+
+1. Ingérer le pack Lenovo I219 : `php artisan ipxe:winpe-drivers:ingest intel-i219 <u1etn…exe>` (ou via l'UI).
+2. (Re)déployer l'ISO Win11 24H2+ depuis `/admin/ipxe/iso-windows`.
+3. Vérifier l'injection (commande `wimlib-imagex dir … 2` ci-dessus).
+4. Booter un Lenovo ThinkCentre M700 (NIC Intel I219) en iPXE → installation
+   Windows. **Attendu** : le réseau monte dans WinPE (`nicload.cmd` `drvload` le
+   pilote), le `@PING <se4fsIp>` de l'`install.bat` répond, l'installation
+   démarre (plus de boucle infinie `IPCONFIG /RENEW`→`PING`).
+5. **Non-régression** : un poste à NIC inbox (pack vide OU famille non concernée)
+   boote exactement comme en 3.6.
+
+### Couverture automatisée
+
+- `tests/Unit/Ipxe/Iso/WinpeDriverInjectorTest` — no-op pack vide (aucun
+  wimlib), commande `add` index 2 par famille, injection `nicload.cmd`, jamais
+  index 1, exception sur exit non-zéro (`Process::fake()`).
+- `tests/Feature/Ipxe/Iso/IngestWinpeDriversCommandTest` — dispatch innoextract
+  vs unzip, archive inconnue, binaire absent, aucun `.inf`, nom de famille
+  invalide ; chemin succès `.zip` réel (binaire `zip`/`unzip`).
+- `tests/Feature/Ipxe/Iso/WinpeDriverIngestLivewireTest` — upload UI (succès,
+  extension inconnue, famille invalide, aucun `.inf`, liste lecture-seule) +
+  invariants `project_livewire_reserved_upload_method` (action `ingestDrivers`,
+  `getRealPath()`, jamais `move()`).
+- `WindowsIsoExtractorTest::it_does_not_run_wimlib_when_driver_pack_is_empty` —
+  non-régression 3.6.
+- `IpxeNamespaceTest` (3 méthodes 3.10) — emplacements/exceptions, CRLF strict +
+  ordre nicload→install, `WindowsInstallBatBuilder` sans drvload (D2/AC3.3).
+
+### Post-correctifs & non-régressions (review 3.10)
+
+| Incident | Sévérité | Couvert par |
+|---|---|---|
+| M1 — `famille = ..`/`.` échappe le pack → suppression récursive de `storage/install` (ISO sources) | 🔴 Critique | `IngestWinpeDriversCommandTest::it_rejects_dot_only_family_names` (5 cas) |
+| #5 — résidu root-owned mélangé après purge silencieuse | 🟠 | garde `directoryHasFiles()` → exception explicite |
+| #1 — `.INF` majuscules comptés 0 par l'UI (scan case-sensitive) | 🟠 | `collectFamilies()` partagé (récursif + casse) |
+| #3 — gate `server.admin` non prouvée | 🟡 | `WinpeDriverIngestLivewireTest::it_forbids_the_component_for_a_non_admin` |
+
+#### Scénario 3.10-7 — Path traversal nom de famille (incident M1, à dérouler en manuel)
+
+> Angle de test nouveau : un bug **catastrophique** (perte des ISO sources) invisible aux tests unitaires initiaux car le seul cas testé était `../evil` (avec `/`, bloqué). Le `..` nu passe la regex liste-blanche.
+
+1. **Pré-requis** : pack `storage/install/winpe-drivers/` peuplé + au moins une ISO source présente sous `storage/install/iso/`.
+2. **CLI** : `php artisan ipxe:winpe-drivers:ingest .. /chemin/pack.zip` → **doit** échouer (exit 1, « au moins un caractère alphanumérique requis ») **sans** rien supprimer. Vérifier `storage/install/iso/` intact.
+3. Répéter avec `.`, `...`, `--`, `__` → tous refusés.
+4. **UI** : sur `/admin/ipxe/iso-windows`, saisir `..` en famille + déposer une archive → toast d'erreur, aucune suppression.
+5. Cas nominal `intel-i219` → toujours accepté (non-régression).
