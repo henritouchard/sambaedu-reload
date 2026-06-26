@@ -269,6 +269,12 @@ const DATASETS = {
           "id": "3-9",
           "status": "backlog",
           "title": "Mode LTSP — boot des postes sans disque"
+        },
+        {
+          "id": "3-10",
+          "status": "review",
+          "title": "Injection automatique de pilotes NIC dans le boot.wim WinPE",
+          "summary": "Permettre l'ajout de pilotes réseau (NIC) absents du boot.wim Microsoft (ex. Intel I219 retiré en Win11 24H2+), injectés automatiquement via wimlib dans l'index bootable du boot.wim à chaque extraction d'ISO (WindowsIsoExtractor) depuis un pack persistant os/winpe-drivers/, + livraison du drvload (nicload.cmd chaîné dans winpeshl.ini). Débloque l'installation iPXE/WinPE sur matériel à NIC non-inbox. PoC validé 2026-06-26 sur Lenovo ThinkCentre M700 (Intel I219, e1d65x64) au lab1."
         }
       ]
     },
