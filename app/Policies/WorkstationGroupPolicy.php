@@ -36,6 +36,7 @@ class WorkstationGroupPolicy
         'manage-workstationGroup' => 'manage',
         'manage-workstationGroups' => 'viewAny',
         'assign-wpkg-workstationGroup' => 'assignWpkg',
+        'customize-workstationGroup' => 'customize',
     ];
 
     /**
@@ -161,6 +162,41 @@ class WorkstationGroupPolicy
         }
 
         return $this->hasPermission($user, 'wpkg.assign');
+    }
+
+    /**
+     * Story 29.6 — Vérifie si l'utilisateur peut écrire un override de capacité
+     * (onglet « Options / Capacités ») sur un WorkstationGroup.
+     *
+     * Jumelle EXACTE de {@see assignWpkg()} (patron 29.1) : on remplace le droit
+     * Spatie GLOBAL `app.customize` (aveugle au périmètre, qui ouvrait l'écriture
+     * d'overrides sur n'importe quel parc dès lors que `groupId` était falsifiable
+     * côté client) par une enveloppe de policy scopée par salle physique.
+     *
+     * Autorise si :
+     *  - groupe physique → délégation scopée `app.customize` active sur ce group
+     *    via {@see PermissionService::canOnWorkstationGroup()} ;
+     *  - OU (fallback) droit global Spatie `app.customize` (admin/technicien).
+     *
+     * Sans group (`null`, ex. `WorkstationGroup::find()` sur un id inexistant) → se
+     * rabat sur le droit global UNIQUEMENT : pas de fausse ouverture, seul l'admin
+     * global passe.
+     *
+     * NOTE : l'exclusion négative active (qui prévaut même sur le droit global) et
+     * l'expiration (`->active()`) sont DÉJÀ honorées par `canOnWorkstationGroup` —
+     * ne pas les réimplémenter ici (AC #3, #4). Le fallback global préserve la
+     * non-régression admin/technicien (AC #2). La convention physique→délégation /
+     * logique→global (`canCheckDelegation`) est volontaire — à porter telle quelle,
+     * comme view/manage/assignWpkg (AC #5).
+     */
+    public function customize(?Authenticatable $user, ?WorkstationGroup $group = null): bool
+    {
+        if ($group !== null && $this->canCheckDelegation($user, $group)) {
+            return app(PermissionService::class)
+                ->canOnWorkstationGroup($user, 'app.customize', $group);
+        }
+
+        return $this->hasPermission($user, 'app.customize');
     }
 
     /**

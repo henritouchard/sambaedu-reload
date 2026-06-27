@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 /**
@@ -40,7 +41,16 @@ use Livewire\Component;
 new class extends Component {
     use WithToasts;
 
-    /** WorkstationGroup (parc/salle) édité — passé par la page parente. */
+    /**
+     * WorkstationGroup (parc/salle) édité — passé par la page parente.
+     *
+     * Story 29.6 — `#[Locked]` : le périmètre est SERVEUR-AUTORITATIF. L'hydratation
+     * initiale via le paramètre du `mount` reste autorisée, mais toute mutation
+     * côté client (`$set('groupId', …)` / payload falsifié) lève
+     * `CannotUpdateLockedPropertyException`. Sans ce verrou, `guardCustomize()`
+     * résoudrait le gate scopé sur un parc altéré → écriture hors-périmètre.
+     */
+    #[Locked]
     public int $groupId;
 
     /** Modale ajouter/éditer un override. */
@@ -60,8 +70,12 @@ new class extends Component {
 
     public function mount(int $groupId): void
     {
-        $this->guardCustomize();
+        // Story 29.6 — assigner le périmètre AVANT le garde : `guardCustomize()`
+        // résout désormais le WorkstationGroup côté serveur depuis `$this->groupId`
+        // pour évaluer le gate SCOPÉ. Sans cet ordre, le garde verrait `groupId`
+        // non initialisé → résolution `find(null)` → fallback global → scope cassé.
         $this->groupId = $groupId;
+        $this->guardCustomize();
     }
 
     /**
@@ -484,12 +498,26 @@ new class extends Component {
         $this->resetErrorBag();
     }
 
+    /**
+     * Story 29.6 — garde d'autorisation SCOPÉ par parc (defense-in-depth).
+     *
+     * Le périmètre est résolu CÔTÉ SERVEUR depuis `$this->groupId` (figé par
+     * `#[Locked]`), jamais depuis un flag/argument client. Le gate scopé
+     * `customize-workstationGroup` ({@see WorkstationGroupPolicy::customize()})
+     * remplace l'ancienne vérification GLOBALE `auth()->user()->can('app.customize')`
+     * qui ouvrait l'écriture d'overrides sur n'importe quel parc.
+     *
+     * `WorkstationGroup::find()` renvoyant `null` (id inexistant / rejeu) → le gate
+     * reçoit `null` → fallback global (seul l'admin passe) : pas de fausse ouverture
+     * (cohérent avec le rabat `null` de la policy `customize`/`assignWpkg`).
+     */
     private function guardCustomize(): void
     {
         abort_unless(
-            auth()->check() && auth()->user()->can('app.customize'),
+            auth()->check()
+                && Gate::allows('customize-workstationGroup', WorkstationGroup::find($this->groupId)),
             403,
-            'Permission app.customize requise.',
+            'Permission app.customize requise sur ce parc.',
         );
     }
 
@@ -508,7 +536,17 @@ new class extends Component {
 
             return true;
         } catch (AuthorizationException) {
-            $this->toastError('Cette capacité est verrouillée par un contrat amont et ne peut pas être modifiée localement.');
+            // Le gate `modify-capability` refuse pour DEUX raisons distinctes : verrou
+            // amont OU plancher `app.customize` (global) manquant. Depuis 29.6, le guard
+            // scopé `customize-workstationGroup` peut laisser passer un délégué positif
+            // sans droit global → le plancher de `modify-capability` le bloque ici : ne
+            // pas afficher « verrouillé amont » (message trompeur) si la vraie cause est
+            // l'absence de droit. [review 29.6 P4 — calqué sur registry-tab P1a]
+            if (app(UpstreamLockResolver::class)->isCapabilityLocked($capability)) {
+                $this->toastError('Cette capacité est verrouillée par un contrat amont et ne peut pas être modifiée localement.');
+            } else {
+                $this->toastError("Vous n'avez pas le droit de modifier cette capacité.");
+            }
 
             return false;
         }

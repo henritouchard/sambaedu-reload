@@ -926,3 +926,41 @@ Le toast de succès n'est affiché que si l'état **persisté** du groupe couran
 - [ ] `/parc` admin visibilité totale
 - [ ] Actions power / wallpaper / schedules
 - [ ] ~30 `@can` Blade spot-check
+
+---
+
+## Section 12 — Scoping de `app.customize` (override capacité par parc) (Story 29.6, 2026-06-27)
+
+> **Contexte.** L'onglet « Options / Capacités » d'un parc (`capabilities-tab`) autorisait l'écriture/le retrait d'overrides de capacité via le droit Spatie `app.customize` évalué **GLOBALEMENT**, et `groupId` était une propriété Livewire publique **hydratée côté client** (falsifiable). Un refnum disposant d'`app.customize` pouvait donc écrire/retirer (et faire auditer 29.5) un override sur **un autre parc** en altérant `groupId` (faille M4 tracée à la review 29.5).
+>
+> **Fix (LES DEUX, indissociables).** (1) `#[Locked] public int $groupId` (Livewire 4.3) → le périmètre est serveur-autoritatif, toute mutation client lève `CannotUpdateLockedPropertyException` ; (2) `WorkstationGroupPolicy::customize()` (jumelle de `assignWpkg` 29.1) + gate `customize-workstationGroup` ; `guardCustomize()` résout le `WorkstationGroup` **côté serveur** depuis `$this->groupId` et appelle le gate scopé (defense-in-depth, ne se fie à aucun flag client). `mount()` réordonné : `groupId` assigné **avant** le garde.
+>
+> **Interaction connue (hors-scope 29.6).** Le gate `modify-capability` (29.2, appelé par `authorizeUpstream`) exige le droit **global** `app.customize` comme plancher. Un délégué **positif-seul** passe donc le guard d'accès (mount/openAdd) mais ne peut pas **finaliser une écriture** tant que ce plancher reste global. Le scoping par-parc effectif de l'écriture concerne donc aujourd'hui un détenteur du droit global restreint par **exclusions négatives** par parc (et le figement anti-tampering). Le plancher scopé de `modify-capability` relève d'un suivi 29.2/Epic 31.
+
+### Scénario 12.1 — Délégué `app.customize` accède à SA salle, pas aux autres (CRITIQUE)
+- **Préparation** : refnum avec une **délégation positive active** `app.customize` sur le parc physique A (aucun droit global), aucune délégation sur B.
+- **Attendu** : l'onglet « Options / Capacités » du parc **A** s'ouvre (mount OK) ; celui du parc **B** renvoie **403**. Avant 29.6, le délégué positif-seul aurait été refusé même sur A (contrôle global).
+
+### Scénario 12.2 — Technicien global agit partout (non-régression, CRITIQUE)
+- **Préparation** : technicien avec le droit **global** Spatie `app.customize`, aucune exclusion.
+- **Attendu** : édition/retrait d'overrides autorisés sur **n'importe quel** parc (fallback global préservé, iso `assignWpkg`/`manage`).
+
+### Scénario 12.3 — Exclusion négative active prévaut même sur le droit global (CRITIQUE)
+- **Préparation** : refnum avec droit **global** `app.customize` **ET** une exclusion **négative active** `app.customize` sur le parc B.
+- **Attendu** : écriture autorisée sur A ; sur B → **403**, **aucune** ligne `capability_assignments`, **aucune** trace `capability_override_audit_logs`. (Le guard scopé honore la négative ; l'ancien contrôle global l'ignorait — c'est le cœur du fix M4.)
+
+### Scénario 12.4 — Délégation expirée → refus
+- **Préparation** : délégation `app.customize` sur A dont `expires_at` est dépassé.
+- **Attendu** : accès refusé (le scope `->active()` exclut les délégations expirées).
+
+### Scénario 12.5 — Parc LOGIQUE → décision globale
+- **Préparation** : parc `is_physical = false`.
+- **Attendu** : la voie déléguée ne s'applique pas (`canCheckDelegation`) ; seul le droit **global** ouvre l'édition (convention identique à `view`/`manage`/`assignWpkg`).
+
+### Scénario 12.6 — Tentative de falsification de `groupId` (anti-tampering, CRITIQUE)
+- **Préparation** : composant monté légitimement sur A, puis tentative client de muter `groupId` vers B (`$set('groupId', B)` / payload falsifié).
+- **Attendu** : Livewire lève `CannotUpdateLockedPropertyException` ; le périmètre reste figé à la valeur d'hydratation ; aucune écriture sur B.
+
+### Scénario 12.7 — Verrou amont 29.2 intact (non-régression)
+- **Préparation** : acteur autorisé par périmètre + capacité **verrouillée** par un item amont (`locked`/`registry`/`instance`).
+- **Attendu** : malgré l'autorisation de périmètre, l'écriture est refusée serveur par `authorizeUpstream` (toast « verrouillée par un contrat amont »), **aucune** écriture — le scoping 29.6 et le verrou 29.2 coexistent (refus orthogonaux).
