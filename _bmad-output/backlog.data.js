@@ -1227,14 +1227,20 @@ const DATASETS = {
         {
           "id": "29-7",
           "title": "Ne pas écraser created_at du pivot capability_assignments sur update — follow-up M1 review 29-5",
-          "status": "backlog",
-          "note": "Pré-existant (hérité 27.12) : saveOverride() passe created_at=now() dans les valeurs de updateOrInsert → l'update écrase le created_at d'origine du pivot. Faible sévérité (sans effet sur le compilé ni l'audit 29.5). Poser created_at sur INSERT seulement."
+          "status": "review",
+          "note": "Pré-existant (hérité 27.12) : saveOverride() passait created_at=now() dans les valeurs de updateOrInsert → l'update écrasait le created_at d'origine du pivot. CORRIGÉ (dev sonnet) : closure fn(bool $exists) pose created_at sur INSERT seulement. Review opus approuvée (2 tests durcis : updated_at figé/avancé, assert INSERT updated_at). Cf. codeReviews/29-7.md."
         },
         {
           "id": "29-8",
           "title": "Scoper le plancher de droit de modify-capability par surface — follow-up P1 review 29-6",
           "status": "backlog",
           "note": "CapabilityPolicy::modify exige le droit GLOBAL app.customize → un délégué positif-seul passe le guard scopé de 29.6 mais ne peut pas écrire d'override (habilitation AC#1 29.6 non livrée). modify-capability est dual-purpose (override par-parc + défaut diffusé global registry-tab) → retirer le plancher global et laisser chaque surface porter son contrôle. Prérequis réel d'AC#1 29.6 et de l'enforcement par périmètre Epic 31."
+        },
+        {
+          "id": "29-9",
+          "title": "Ne pas écraser created_at de queue_task_runs sur retry — follow-up P3 review 29-7",
+          "status": "backlog",
+          "note": "Occurrence sœur du bug 29.7 sur une autre table : AppServiceProvider Queue::before passe created_at=now() dans les valeurs de updateOrInsert(queue_task_runs) → un retry/re-dispatch d'un même task_uuid écrase le created_at d'origine du run. Handlers after/failing sains, sync_cursors sain. Même fix closure iso-29.7. Faible sévérité (historique d'un run de queue). Cf. codeReviews/29-7.md P3."
         }
       ]
     },

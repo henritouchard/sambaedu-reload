@@ -307,6 +307,90 @@ class CapabilitiesOverrideAuditTest extends TestCase
         ]);
     }
 
+    // ── Story 29.7 — préservation de `created_at` du pivot (AC#4 story 29.7) ─
+
+    #[Test]
+    public function inserting_a_new_override_sets_created_at(): void
+    {
+        $this->actAsRefnum();
+        $cap = $this->capabilityWithKey('show_ruler', 'HKCU', 'Software\\Ruler', 'Show');
+
+        Livewire::test(self::COMPONENT, ['groupId' => $this->parc->id])
+            ->call('openAdd', $cap->id)
+            ->set('formValue', 'off')
+            ->call('saveOverride');
+
+        $row = DB::table('capability_assignments')
+            ->where('capability_id', $cap->id)
+            ->where('assignable_type', WorkstationGroup::class)
+            ->where('assignable_id', $this->parc->id)
+            ->first();
+
+        self::assertNotNull($row, 'la ligne pivot doit exister après un INSERT');
+        self::assertNotNull($row->created_at, 'INSERT : created_at doit être posé (non nul)');
+        self::assertNotNull($row->updated_at, 'INSERT : updated_at doit être posé (non nul) — AC#2');
+        self::assertSame('off', $row->value, 'la valeur doit être enregistrée');
+    }
+
+    #[Test]
+    public function re_editing_an_override_preserves_original_created_at(): void
+    {
+        // AC#4 (cœur) — manqué par sonnet en review 29.5, détecté par opus.
+        // Technique : figer created_at dans le PASSÉ avant la ré-édition ;
+        // si updateOrInsert réécrit created_at à now(), l'assertion échoue.
+        $this->actAsRefnum();
+        $cap = $this->capabilityWithKey('show_scrollbar', 'HKCU', 'Software\\SBar', 'Visible');
+
+        // 1 — Premier override (INSERT).
+        Livewire::test(self::COMPONENT, ['groupId' => $this->parc->id])
+            ->call('openAdd', $cap->id)
+            ->set('formValue', 'on')
+            ->call('saveOverride');
+
+        // 2 — Figer `created_at` ET `updated_at` dans le passé (dates DISTINCTES) :
+        //   - created_at -3j prouve la non-réécriture sur UPDATE ;
+        //   - updated_at -2j (≠ now) prouve que l'UPDATE le fait réellement AVANCER
+        //     (sinon l'assertion serait trivialement vraie, AC#1 non gardé — opus P1).
+        $frozenDate = now()->subDays(3)->toDateTimeString();
+        $frozenUpdatedAt = now()->subDays(2)->toDateTimeString();
+        DB::table('capability_assignments')
+            ->where('capability_id', $cap->id)
+            ->where('assignable_type', WorkstationGroup::class)
+            ->where('assignable_id', $this->parc->id)
+            ->update(['created_at' => $frozenDate, 'updated_at' => $frozenUpdatedAt]);
+
+        // 3 — Ré-édition (chemin UPDATE).
+        Livewire::test(self::COMPONENT, ['groupId' => $this->parc->id])
+            ->call('openEdit', $cap->id)
+            ->set('formValue', 'off')
+            ->call('saveOverride');
+
+        // 4 — Vérifier que `created_at` est INCHANGÉ et que `updated_at` a avancé.
+        $row = DB::table('capability_assignments')
+            ->where('capability_id', $cap->id)
+            ->where('assignable_type', WorkstationGroup::class)
+            ->where('assignable_id', $this->parc->id)
+            ->first();
+
+        self::assertNotNull($row, 'la ligne pivot doit exister après un UPDATE');
+        self::assertSame('off', $row->value, 'la valeur doit avoir été mise à jour');
+
+        // `created_at` doit être strictement égal à la date figée.
+        self::assertSame(
+            $frozenDate,
+            $row->created_at,
+            'UPDATE ne doit PAS réécrire created_at (Story 29.7 — bug pré-existant 27.12)',
+        );
+
+        // `updated_at` doit avoir AVANCÉ par rapport à sa valeur figée (-2j) :
+        // preuve réelle que la branche UPDATE pose bien `updated_at => now()`.
+        self::assertGreaterThan(
+            $frozenUpdatedAt,
+            $row->updated_at,
+            'UPDATE doit rafraîchir updated_at à now() (AC#1)',
+        );
+    }
+
     // ── AC#6 — atomicité : échec d'audit → override NON persisté (rollback) ─
 
     #[Test]

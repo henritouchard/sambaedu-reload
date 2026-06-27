@@ -330,13 +330,20 @@ new class extends Component {
         // n'est pas confirmé). L'`action` est dérivée de l'EXISTENCE EN BASE
         // (`$hasExistingOverride`), jamais du flag client `isEditing`.
         DB::transaction(function () use ($capability, $parc, $value, $oldValue, $hasExistingOverride, $upstreamStatus, $actorId, $actorLogin): void {
+            // Story 29.7 — closure pour différencier INSERT vs UPDATE :
+            // sur UPDATE d'un override existant, `created_at` n'est PAS réécrit
+            // (préservation de l'horodatage de création d'origine du pivot) ;
+            // sur INSERT (premier override), `created_at` est posé à now().
+            // La closure capture `$value` (déjà disponible dans la closure de transaction).
             DB::table('capability_assignments')->updateOrInsert(
                 [
                     'capability_id' => $capability->id,
                     'assignable_type' => WorkstationGroup::class,
                     'assignable_id' => $parc->id,
                 ],
-                ['value' => $value, 'updated_at' => now(), 'created_at' => now()],
+                fn (bool $exists) => $exists
+                    ? ['value' => $value, 'updated_at' => now()]
+                    : ['value' => $value, 'created_at' => now(), 'updated_at' => now()],
             );
 
             CapabilityOverrideAuditLog::log(

@@ -964,3 +964,59 @@ Le toast de succès n'est affiché que si l'état **persisté** du groupe couran
 ### Scénario 12.7 — Verrou amont 29.2 intact (non-régression)
 - **Préparation** : acteur autorisé par périmètre + capacité **verrouillée** par un item amont (`locked`/`registry`/`instance`).
 - **Attendu** : malgré l'autorisation de périmètre, l'écriture est refusée serveur par `authorizeUpstream` (toast « verrouillée par un contrat amont »), **aucune** écriture — le scoping 29.6 et le verrou 29.2 coexistent (refus orthogonaux).
+
+---
+
+## Section 13 — Préservation de `created_at` du pivot lors d'un override édité (Story 29.7, 2026-06-27)
+
+> **Contexte.** `saveOverride()` dans `capabilities-tab` utilisait `updateOrInsert(…, ['value'=>…,'updated_at'=>now(),'created_at'=>now()])` — le 2e argument (les VALEURS) étant appliqué aussi bien à l'INSERT qu'à l'UPDATE. Sur un UPDATE d'override existant, `created_at` du pivot `capability_assignments` était **réécrit à `now()`** à chaque édition, effaçant l'horodatage de création d'origine (défaut pré-existant hérité de 27.12, pas une régression 29.5). Fix chirurgical : remplacer le tableau de valeurs par une **closure** `fn(bool $exists)` qui pose `created_at` uniquement à l'INSERT (signature `array|callable $values` de `Builder::updateOrInsert`, Laravel 12.x).
+>
+> **Ce qui NE change PAS.** L'audit 29.5 (`CapabilityOverrideAuditLog`) horodate sa **propre** trace (`created_at` via `useCurrent()` / `log()`), indépendamment du pivot — l'historique d'audit reste correct même avec l'ancien bug. Le compilé (`StateCompiler`) lit la `value` du pivot, jamais `created_at`. L'atomicité acte↔trace (29.5, NFR5) est préservée : la closure s'exécute dans le même `updateOrInsert`, lui-même dans la même `DB::transaction`.
+
+### Scénario 13.1 — Premier override d'une capacité : `created_at` posé à la création
+
+- **Préparation** : capacité sans override existant pour le parc cible.
+- **Action** : poser un premier override via l'onglet « Options / Capacités » du parc (bouton « Ajouter une capacité », choisir la valeur, enregistrer).
+- **Attendu** : la ligne `capability_assignments` est créée avec `created_at` **non nul** (≈ l'heure de la demande) et `updated_at` également posé. La valeur est correcte.
+
+  ```sql
+  SELECT value, created_at, updated_at
+  FROM capability_assignments
+  WHERE capability_id = <id>
+    AND assignable_type = 'App\\Models\\WorkstationGroup'
+    AND assignable_id   = <parc_id>;
+  -- created_at et updated_at : tous deux ≈ maintenant, non nuls.
+  ```
+
+### Scénario 13.2 — Ré-édition d'un override existant : `created_at` inchangé, `updated_at` rafraîchi (CRITIQUE)
+
+> C'est le scénario qui prouve la non-réécriture du `created_at` d'origine. Avant 29.7, chaque édition écrasait silencieusement cette colonne — invisible en prod faute de test dédié.
+
+- **Préparation** : un override existe déjà en base (posé via 13.1 ou directement en SQL) avec un `created_at` connu (ex : noté manuellement ou figé avec `UPDATE … SET created_at = '2026-01-01 10:00:00'`).
+- **Action** : ré-éditer la valeur de l'override via l'onglet « Options / Capacités » (bouton « Éditer », choisir une valeur différente, enregistrer).
+- **Attendu** :
+  1. `value` = nouvelle valeur.
+  2. `created_at` **strictement inchangé** (identique à la valeur d'avant l'édition).
+  3. `updated_at` **postérieur** à `created_at` (avancé à l'heure de l'édition).
+
+  ```sql
+  SELECT value, created_at, updated_at
+  FROM capability_assignments
+  WHERE capability_id = <id>
+    AND assignable_type = 'App\\Models\\WorkstationGroup'
+    AND assignable_id   = <parc_id>;
+  -- created_at : INCHANGÉ (valeur d'avant l'édition).
+  -- updated_at : > created_at (avancé).
+  ```
+
+- **Régression à surveiller** : si `created_at` vaut l'heure de la dernière édition (et non la date initiale), le bug pré-existant est revenu — la closure a été remplacée par un tableau statique.
+
+### Scénario 13.3 — Retrait d'un override (non concerné par 29.7)
+
+- `removeOverride()` effectue un `DELETE`, sans `updateOrInsert`. Ce scénario confirme que la suppression reste inchangée (pas de `created_at` concerné) et que l'audit de suppression (`action=delete`, `old_value` correct, `new_value=null`) reste intact (non-régression 29.5).
+
+### Scénario 13.4 — Audit 29.5 intact (non-régression)
+
+- Après chaque opération des scénarios 13.1 et 13.2, vérifier que la table `capability_override_audit_logs` contient bien les traces attendues (`action=create` à 13.1, `action=update` à 13.2 avec `old_value`/`new_value` corrects). L'horodatage de la trace d'audit (`created_at` de la ligne audit) ne dépend pas du pivot — il reste correct indépendamment du fix.
+
+> **Couverture automatisée.** `tests/Feature/Livewire/Parc/CapabilitiesOverrideAuditTest.php` : `inserting_a_new_override_sets_created_at` (13.1 — INSERT pose `created_at` non nul) et `re_editing_an_override_preserves_original_created_at` (13.2 — `created_at` figé dans le passé, inchangé après ré-édition, `updated_at` avancé). La vérification visuelle SQL en prod (13.2 sur override réel) = validation manuelle post-déploiement recommandée.
