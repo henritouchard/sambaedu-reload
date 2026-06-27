@@ -14,7 +14,9 @@ use RuntimeException;
  *   `target_type` (≠ instance|label) ou `mode` de label (≠ free|reserved) ;
  * - incohérence de cible : `target_type=label` avec `target_label` vide,
  *   ou `target_type=instance` avec `target_label` non vide ;
- * - champ structurant manquant (type/key d'item, name de label/groupe, app_key).
+ * - champ structurant manquant (type/key d'item, name de label/groupe, app_key) ;
+ * - intégrité référentielle `imposed_groups.label_name` : un `label_name` non-nul
+ *   ne référençant aucun label déclaré dans le même payload (FR9, Story 30.1).
  *
  * La levée survient **avant toute écriture** (validation pure en amont de la transaction),
  * ce qui garantit l'absence d'écriture partielle (rollback total — AC #6).

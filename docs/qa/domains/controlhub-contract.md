@@ -1118,3 +1118,115 @@ grep -rin "central" \
 - [ ] R3 : aucun identifiant/libellé « central » (Scénario 10.8)
 - [ ] Golden / `FROZEN_STATE_HASH` / `ContractV1` INCHANGÉS ; `StateCompiler` item 4 clés intact
 - [ ] ⚠️ VM : migration `capability_override_audit_logs` non auto-jouée → `php artisan migrate` avant e2e base
+
+---
+
+## Section 11 — Réception des labels + groupes imposés (preuve FR9) et durcissement `label_name` (Story 30.1, 2026-06-27)
+
+> **Story à DEUX moitiés (patron 29.5).**
+> **Moitié FR9 = PREUVE, pas construction.** Les labels (nom + `mode` libre/réservé) et les groupes imposés (nom + `label_name`) sont **DÉJÀ** reçus et persistés par 28.1 (schéma `controlhub_contract_labels` + `controlhub_contract_imposed_groups` + enum `ControlHubLabelMode`) + 28.2 (`ControlHubContractIngestionService`). 30.1 **prouve** cette chaîne par `UpstreamLabelsImposedGroupsReceptionTest` et **ne crée AUCUNE** table/modèle/enum/migration.
+> **Moitié durcissement = seule livraison.** Un groupe imposé dont le `label_name` (non-nul) ne référence **aucun** label déclaré dans le même contrat est désormais **refusé** à la réception (`InvalidUpstreamContractException` levée **avant** la transaction → rollback total).
+>
+> ⚠️ **Aucune migration** en 30.1 → rien à jouer en VM. Back-end pur (aucune UI/route).
+
+### Scénario 11.1 — Réception : labels (libre/réservé) + groupes imposés persistés et requêtables (CRITIQUE)
+
+**But** : prouver que le vocabulaire de ciblage amont (labels + groupes imposés) est reçu, persisté, et que `mode` est correctement casté.
+
+**Pré-requis** : aucun contrat actif (`controlhub_contracts` vide).
+
+**Étapes** :
+1. Ingérer un contrat avec deux labels (`salle-info` = `reserved`, `nomade` = `free`) et deux groupes imposés (`parc-terminales` → `salle-info` ; `parc-libre` sans `label_name`).
+2. Relire les labels **via le modèle** `ControlHubContractLabel` et les groupes via `ControlHubContractImposedGroup`.
+
+**Attendu** :
+- `controlhub_contract_labels` contient 2 lignes ; `salle-info`.`mode` === `ControlHubLabelMode::Reserved` (réservé), `nomade`.`mode` === `ControlHubLabelMode::Free` (libre) — **mode casté**, pas une chaîne brute.
+- `controlhub_contract_imposed_groups` contient 2 lignes ; `parc-terminales`.`label_name` === `salle-info` ; `parc-libre`.`label_name` === `null`.
+
+```bash
+php artisan test --filter "UpstreamLabelsImposedGroupsReception" # HÔTE php8.4+sqlite
+```
+
+### Scénario 11.2 — Re-réception identique → no-op (idempotence NFR4)
+
+**But** : une 2ᵉ réception du même vocabulaire n'écrit rien et n'émet aucun événement.
+
+**Étapes** :
+1. Ingérer le contrat du Scénario 11.1, puis l'ingérer **à l'identique**.
+
+**Attendu** :
+- 2ᵉ réception : `result.mutated === false`, aucun `ControlHubContractChanged` dispatché.
+- Compteurs `result.labels` / `result.imposedGroups` `{created:0, updated:0, deleted:0}` ; comptes de lignes inchangés.
+
+### Scénario 11.3 — Vocabulaire modifié → upsert + prune avec compteurs exacts
+
+**But** : un contrat ultérieur réconcilie labels et groupes imposés sur leurs clés naturelles.
+
+**Étapes** :
+1. Après le Scénario 11.1, ré-ingérer avec : `salle-info` passé en `free` (UPDATE), `labo` ajouté (CREATE) + `nomade` retiré (PRUNE) ; `parc-terminales` → `labo` (UPDATE) + `parc-secondes` → `labo` (CREATE).
+
+**Attendu** :
+- `result.labels` = `{created:1, updated:1, deleted:1}` ; `result.imposedGroups` = `{created:1, updated:1, deleted:0}`.
+- `nomade` absent ; `salle-info`.`mode` === `Free`.
+
+### Scénario 11.4 — Durcissement : `label_name` cohérent → ingestion réussit (AC#4)
+
+**But** : un groupe imposé désignant un label **déclaré** (en mode `free` OU `reserved`) est accepté.
+
+**Étapes** :
+1. Ingérer un contrat avec label `salle-info`/`reserved` (ou `nomade`/`free`) + groupe imposé `parc-terminales` → ce label.
+
+**Attendu** : ingestion réussie ; groupe persisté avec son `label_name`. (Le durcissement **n'exige pas** le mode `reserved`.)
+
+### Scénario 11.5 — Durcissement : `label_name` orphelin → ingestion REFUSÉE, rien n'est persisté (CRITIQUE, AC#5)
+
+**But** : un groupe imposé désignant un label **non déclaré** dans le même contrat est rejeté **avant** toute écriture.
+
+**Étapes** :
+1. Ingérer un contrat avec label `salle-info` + groupe imposé `parc-terminales` → `label_name = introuvable` (jamais déclaré).
+
+**Attendu** :
+- `InvalidUpstreamContractException` levée ; message = `Contrat amont invalide — imposed_groups.label_name (parc-terminales) : label associé « introuvable » non déclaré dans le contrat`.
+- **Rollback total** : `controlhub_contracts`, `controlhub_contract_labels`, `controlhub_contract_imposed_groups` restent à 0 (aucune écriture partielle).
+- Si un contrat valide préexistait : son état est **strictement intact** (l'ancien `label_name` cohérent demeure).
+
+### Scénario 11.6 — Durcissement : `label_name` nul/absent/'' → légitime (AC#6)
+
+**But** : un groupe imposé **sans** label associé n'est jamais contraint.
+
+**Étapes** :
+1. Ingérer des groupes imposés avec `label_name` = `null`, `''`, et absent.
+
+**Attendu** : ingestion réussie ; les trois groupes persistent avec `label_name === null` (jamais `''`).
+
+### Scénario 11.7 — Garde-fou inerte : standalone / sans groupes imposés (NFR3, AC#7)
+
+**But** : sans groupe imposé (ou payload vide), le cross-check ne se déclenche jamais.
+
+**Attendu** : aucune erreur ; comportement strictement inchangé (tables vides ou labels seuls persistés).
+
+### Scénario 11.8 — R3 : aucun identifiant/libellé « central »
+
+```bash
+grep -rin "central" \
+  app/Services/ControlHub/ControlHubContractIngestionService.php \
+  tests/Feature/ControlHub/UpstreamLabelsImposedGroupsReceptionTest.php
+# → uniquement les commentaires garde-fou (zéro identifiant/libellé/message)
+```
+
+---
+
+## Checklist rapide Story 30.1
+
+- [ ] `php artisan test --filter "UpstreamLabelsImposedGroupsReception"` → 10/10 verts (preuve FR9 + durcissement)
+- [ ] Réception : labels `mode` casté `ControlHubLabelMode` (libre/réservé) + groupes imposés `label_name` associé/null (Scénario 11.1)
+- [ ] Re-réception identique → no-op `mutated=false`, aucun event (Scénario 11.2)
+- [ ] Vocabulaire modifié → upsert/prune, compteurs `result.labels`/`result.imposedGroups` exacts (Scénario 11.3)
+- [ ] `label_name` cohérent (free OU reserved) → succès (Scénario 11.4)
+- [ ] `label_name` orphelin → `InvalidUpstreamContractException` + rollback total (Scénario 11.5)
+- [ ] `label_name` nul/''/absent → succès, `label_name = null` (Scénario 11.6)
+- [ ] Standalone / sans groupes imposés → garde-fou inerte (Scénario 11.7)
+- [ ] R3 : aucun identifiant/libellé/message « central » (Scénario 11.8)
+- [ ] Non-régression `ControlHubContractIngestion|ControlHubContract|UpstreamContractResolution|ContractV1` → 0 régression
+- [ ] AUCUNE migration/modèle/enum créé ; golden / `FROZEN_STATE_HASH` / `ContractV1` INCHANGÉS ; `StateCompiler` intact
+- [ ] ✅ VM : aucune migration en 30.1 → rien à jouer

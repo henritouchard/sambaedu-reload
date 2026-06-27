@@ -34,6 +34,8 @@ use Illuminate\Support\Facades\Log;
  *   `target_type=instance` recasse l'idempotence (NULL ≠ NULL en PG/SQLite). [HANDOFF 28.1 #1]
  * - **Validation des enums + cohérence de cible** avant toute écriture ⇒ rollback total
  *   en cas de payload invalide (il n'existe aucun `CHECK` DB). [HANDOFF 28.1 #3]
+ * - **Intégrité référentielle** `imposed_groups.label_name → label déclaré` avant écriture
+ *   (un `label_name` non-nul orphelin est rejeté ; rollback total). [Story 30.1, FR9]
  * - **Singleton** « au plus un contrat actif par instance » : réutilise le contrat actif
  *   existant plutôt que d'en créer un second. [HANDOFF 28.1 #2]
  * - Passage du lien à `active` + `received_at = now()` **uniquement** sur création ou mutation.
@@ -80,6 +82,13 @@ class ControlHubContractIngestionService
         $labels = $this->normalizeLabels($payload['labels'] ?? []);
         $imposedGroups = $this->normalizeImposedGroups($payload['imposed_groups'] ?? []);
         $catalogApps = $this->normalizeCatalogApps($payload['catalog_apps'] ?? []);
+
+        // Story 30.1 — Durcissement réception (intégrité référentielle) : un groupe imposé
+        // « avec son label associé » (FR9) présuppose que ce label fait partie du vocabulaire
+        // reçu. Le cross-check exige l'ensemble des labels normalisés ; il s'exécute donc ICI,
+        // après normalisation et AVANT la transaction (calque du patron cohérence-cible de
+        // normalizeItems) → un payload incohérent ne provoque AUCUNE écriture partielle.
+        $this->assertImposedGroupLabelsDeclared($labels, $imposedGroups);
 
         $result = new ContractIngestionResult();
 
@@ -395,6 +404,50 @@ class ControlHubContractIngestionService
         }
 
         return $rows;
+    }
+
+    /**
+     * Story 30.1 — Durcissement réception : intégrité référentielle `imposed_groups.label_name`.
+     *
+     * Un groupe imposé dont `label_name` est NON-NUL désigne un label « associé » : ce label
+     * DOIT être déclaré dans le même contrat (`imposed_groups[].label_name ∈ labels[].name`).
+     * Sinon le payload est incohérent (« groupe imposé avec son label associé » — FR9, label
+     * absent du vocabulaire reçu) et l'ingestion est refusée AVANT toute écriture (rollback total).
+     *
+     * Règle MINIMALE et suffisante : le label doit être DÉCLARÉ. On n'exige PAS qu'il soit en
+     * mode `reserved` (l'enum dit « *typiquement* » porté par un groupe imposé — pas une obligation,
+     * sur-contrainte spéculative écartée). Un groupe sans label associé (`label_name` nul) reste
+     * légitime : aucun cross-check ne s'y applique.
+     *
+     * @param  array<int, array{key: array<string, mixed>, attrs: array<string, mixed>}>  $labels         labels normalisés (clé naturelle dans `key.name`)
+     * @param  array<int, array{key: array<string, mixed>, attrs: array<string, mixed>}>  $imposedGroups  groupes imposés normalisés (`key.name` + `attrs.label_name`)
+     *
+     * @throws InvalidUpstreamContractException si un `label_name` non-nul ne référence aucun label déclaré
+     */
+    private function assertImposedGroupLabelsDeclared(array $labels, array $imposedGroups): void
+    {
+        $declaredLabels = [];
+        foreach ($labels as $label) {
+            $declaredLabels[$label['key']['name']] = true;
+        }
+
+        foreach ($imposedGroups as $group) {
+            $labelName = $group['attrs']['label_name'];
+
+            // Seuls les label_name non-nuls sont contraints (un groupe sans label est légitime).
+            if ($labelName === null) {
+                continue;
+            }
+
+            if (! isset($declaredLabels[$labelName])) {
+                $groupName = $group['key']['name'];
+
+                throw InvalidUpstreamContractException::for(
+                    "imposed_groups.label_name ({$groupName})",
+                    "label associé « {$labelName} » non déclaré dans le contrat",
+                );
+            }
+        }
     }
 
     /**
