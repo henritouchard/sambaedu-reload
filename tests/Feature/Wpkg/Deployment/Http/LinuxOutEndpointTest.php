@@ -38,6 +38,9 @@ class LinuxOutEndpointTest extends TestCase
         parent::setUp();
         WpkgSchemaBootstrapper::bootstrap();
         Cache::store('app_context')->flush();
+        // Isole du kill-switch legacy : l'.env /vm a LEGACY_CONFIG_CHANNEL_ENABLED=false
+        // (→ 410), ce qui masquerait le comportement testé ici. Défaut host = true.
+        config(['sambaedu.legacy_config_channel_enabled' => true]);
     }
 
     protected function tearDown(): void

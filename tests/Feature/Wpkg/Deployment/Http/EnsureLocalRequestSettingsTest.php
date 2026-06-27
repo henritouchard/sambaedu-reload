@@ -39,6 +39,9 @@ class EnsureLocalRequestSettingsTest extends TestCase
         // Activer winget pour ne pas obtenir 400 au lieu de 403.
         Config::set('sambaedu.wpkg.winget_enabled', true);
         SystemSetting::set('wpkg.winget_enabled', true);
+        // Isole du kill-switch legacy : l'.env /vm a LEGACY_CONFIG_CHANNEL_ENABLED=false
+        // (→ 410), ce qui masquerait le comportement testé ici. Défaut host = true.
+        Config::set('sambaedu.legacy_config_channel_enabled', true);
     }
 
     protected function tearDown(): void

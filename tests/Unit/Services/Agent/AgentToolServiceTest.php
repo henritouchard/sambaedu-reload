@@ -163,7 +163,16 @@ class AgentToolServiceTest extends TestCase
     #[Test]
     public function wrong_mime_is_rejected(): void
     {
-        $file = $this->makeUpload(['Rainmeter.exe' => 'MZ', 'Skins/x' => 'x'], originalName: 'portable.zip', mime: 'image/png');
+        // Le service détecte le MIME au CONTENU (getMimeType), jamais le MIME
+        // déclaré client — cf. principe « ne jamais faire confiance au client »
+        // (id. client_declared_filename_is_never_trusted). Un vrai zip avec un
+        // header client menteur PASSERAIT : pour exercer invalid_mime il faut un
+        // contenu réellement non-zip (PNG → image/png), extension .zip conservée.
+        $path = $this->workDir . '/wrong-mime.zip';
+        file_put_contents($path, base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+        ));
+        $file = new UploadedFile($path, 'portable.zip', 'application/zip', null, true);
         $this->assertRejected('invalid_mime', fn () => $this->service->upload($file, '1.0'));
     }
 
@@ -192,8 +201,12 @@ class AgentToolServiceTest extends TestCase
     #[Test]
     public function corrupt_zip_is_rejected(): void
     {
+        // En-tête ZIP (PK\x03\x04) mais corps corrompu : le contenu est détecté
+        // application/octet-stream (PASSE le contrôle MIME), puis ZipArchive::open
+        // échoue → invalid_zip. Un contenu texte brut serait, lui, arrêté plus tôt
+        // en invalid_mime (text/plain) et n'atteindrait jamais l'étape ZIP.
         $path = $this->workDir . '/corrupt.zip';
-        file_put_contents($path, "not-a-zip-at-all");
+        file_put_contents($path, "PK\x03\x04" . str_repeat("\x00", 40) . 'garbage-not-a-real-zip');
         $file = new UploadedFile($path, 'portable.zip', 'application/zip', null, true);
         $this->assertRejected('invalid_zip', fn () => $this->service->upload($file, '1.0'));
     }

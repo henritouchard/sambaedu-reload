@@ -34,6 +34,10 @@ class WingetOutEndpointTest extends TestCase
         // Flag winget activé par défaut pour la majorité des scénarios.
         Config::set('sambaedu.wpkg.winget_enabled', true);
 
+        // Isole du kill-switch legacy : l'.env /vm a LEGACY_CONFIG_CHANNEL_ENABLED=false
+        // (→ 410), ce qui masquerait le comportement testé ici. Défaut host = true.
+        Config::set('sambaedu.legacy_config_channel_enabled', true);
+
         // Par défaut, catalogues pointant vers des fichiers absents → [].
         $this->pointCatalogsToAbsent();
     }
