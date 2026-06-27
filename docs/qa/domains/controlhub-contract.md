@@ -829,3 +829,145 @@ grep -rin "central" app/Enums/StateMaille.php \
 - [ ] Standalone byte-identique + court-circuit ≤ 1 requête, 0 items (Scénario 8.7)
 - [ ] Golden / `FROZEN_STATE_HASH` / `ContractV1Test` INTACTS (maille interne jamais sérialisée)
 - [ ] R3 : aucun identifiant « central » dans les fichiers touchés
+
+---
+
+## Section 9 — Lisibilité tri-état du statut amont (Story 29.4, 2026-06-27)
+
+> **Modèle** : 29.4 est une story de LISIBILITÉ UI pure — elle n'ajoute aucune
+> mécanique d'enforcement (29.2 = verrou, 29.3 = relaxation permissive, tous deux
+> livrés). Elle EXPOSE en read-only le statut amont d'une capacité et rend visible
+> un **tri-état** : imposé-verrouillé / imposé-modifiable / local, sur les DEUX
+> surfaces de configuration des capacités (`capabilities-tab` parc +
+> `parc-defaults` registre).
+>
+> **Libellés (décision 2026-06-27)** : centrés sur l'ACTION possible —
+> - badge « **Verrouillé** » 🔒 (tooltip : « Amont — non modifiable. »),
+> - badge « **Modifiable** » ✏️ (tooltip : « Proposé par l'amont mais modifiable :
+>   votre réglage local prévaut. »),
+> - badge « **Local** » 📍 — tooltip différencié par surface :
+>   - `capabilities-tab` (override parc) : « Réglage propre à ce parc/groupe. »
+>   - `parc-defaults` (défaut diffusé flotte) : « **Défaut diffusé — aucune contrainte amont.** »
+>     (correction #1 post-review : « parc/groupe » était faux pour une surface Broadcast).
+>
+> **Garde-fou libellé permissif** : le badge « Modifiable » dit la RELAXABILITÉ
+> (votre local prévaut), JAMAIS « la valeur amont s'applique » (faux pour une
+> capacité à défaut diffusé, car `Broadcast=5` bat `UpstreamPermissive=6`).
+>
+> **NFR3 préservé** : sans contrat actif (standalone ou contrat `severed`),
+> **AUCUN badge** n'est rendu (y compris « Local ») ; l'UI est byte-identique à
+> 27.12/27.17 — zéro badge, aucune requête `controlhub_contract_items`.
+> Le tri-état complet (Verrouillé / Modifiable / Local) n'est visible que lorsqu'un
+> contrat amont est actif. Le bucketing locked+permissive est en ≤ 1 requête `items`.
+> (Correction #3 post-review : gating sur `hasActiveContract()`.)
+
+**Pré-requis** : voir Section 7 (contrat actif avec items `registry`/`instance`).
+Un user `refnum` avec `app.customize` (override parc) et un admin
+`server.admin`+`app.customize` (défaut instance).
+
+**Validation automatisée (HÔTE) — préalable à tout test manuel :**
+
+```bash
+# Hôte (php8.4 + pdo_sqlite)
+# Corrections post-review : +hasActiveContract, #3 gating, #6 severed, #7 query count
+php artisan test --filter "UpstreamLockResolver"             # 23/23 attendus (11 nouveaux 29.4)
+php artisan test --filter "CapabilitiesTabStatusBadge"       # 9/9 attendus (post-review : +severed +query_count, local→avec contrat)
+php artisan test --filter "ParcDefaultsStatusBadge"          # 8/8 attendus (post-review : +severed +query_count, local→avec contrat)
+php artisan test --filter "CapabilitiesTabUpstreamLock|ParcDefaultsUpstreamLock|PermissiveOverride"  # non-régression 29.2/29.3
+```
+
+### Scénario 9.1 — Capacité VERROUILLÉE amont : badge « Verrouillé » + contrôles désactivés (CRITIQUE)
+
+**Procédure** : contrat actif avec un item `registry`/`locked`/`instance` (ex. `EnableLUA`).
+(a) Page d'un parc → onglet « Options / Capacités ».
+(b) `/admin/settings/parc-defaults` → onglet « Registre / capacités ».
+
+**Attendu** :
+- Badge « Verrouillé » 🔒 affiché (tooltip « Amont — non modifiable. »).
+- `data-testid="upstream-locked-{id}"` présent.
+- Contrôles d'écriture masqués / texte « Imposé par contrat amont » (non-régression 29.2).
+- PAS de badge « Modifiable » ni « Local » pour cette capacité.
+- Un seul badge par capacité.
+
+### Scénario 9.2 — Capacité PERMISSIVE amont : badge « Modifiable » + contrôles actifs (CRITIQUE)
+
+**Procédure** : contrat actif avec un item `registry`/`permissive`/`instance` (ex. `show_hidden_files`).
+(a) Page d'un parc → onglet « Options / Capacités » (override existant ET dans le picker d'ajout).
+(b) `/admin/settings/parc-defaults` → onglet « Registre / capacités ».
+
+**Attendu** :
+- Badge « Modifiable » ✏️ affiché (tooltip « Proposé par l'amont mais modifiable : votre réglage local prévaut. »).
+- `data-testid="upstream-permissive-{id}"` présent.
+- Boutons « Éditer » / « Retirer » (surface A) et « Éditer le défaut » (surface B) **actifs** (un permissif n'est pas un verrou).
+- Note explicative : « Votre override s'applique à ce parc » (surface A) / « Votre réglage local s'applique » (surface B).
+- Dans le picker d'ajout (surface A) : badge « Modifiable » visible sur la capacité permissive (`data-testid="picker-permissive-{id}"`).
+- PAS de badge « Verrouillé » ni « Local » pour cette capacité.
+
+### Scénario 9.3 — Capacité sans contrainte amont : badge « Local » (contrat actif requis)
+
+**Procédure** : contrat actif présent mais aucun item amont pour cette capacité.
+
+> **Correction #3 post-review** : le badge « Local » n'est visible que si un contrat
+> amont est actif (`hasActiveContract() = true`). Sans contrat, voir Scénario 9.5
+> (aucun badge, UI byte-identique). Avec contrat actif sans item pour la capacité :
+> le tri-état s'affiche et la capacité porte « Local ».
+
+**Attendu** :
+- Badge « Local » 📍 affiché.
+  - Tooltip (surface A — `capabilities-tab` parc) : « Réglage propre à ce parc/groupe. »
+  - Tooltip (surface B — `parc-defaults` flotte) : « Défaut diffusé — aucune contrainte amont. »
+    (**correction #1** post-review : tooltip différencié, la surface B édite un défaut Broadcast).
+- `data-testid="upstream-local-{id}"` présent.
+- Contrôles d'écriture normalement actifs.
+- PAS de badge « Verrouillé » ni « Modifiable ».
+
+### Scénario 9.4 — Précédence verrouillé > modifiable (un seul badge par capacité, AC #4)
+
+**Procédure** : capacité avec DEUX clés de projection — l'une verrouillée amont, l'autre permissive.
+
+**Attendu** :
+- UN seul badge : « Verrouillé » (le verrou prime, AC #4).
+- PAS de badge « Modifiable » ni « Local ».
+- Les contrôles d'écriture sont masqués (le verrou s'applique à l'ensemble de la capacité).
+
+### Scénario 9.5 — Standalone (aucun contrat actif) → UI byte-identique, zéro badge (NFR3)
+
+**Procédure** : aucun contrat amont `active` (standalone pur OU contrat `severed`).
+
+> **Correction #3 post-review** : en standalone, **AUCUN badge** n'est rendu — y compris
+> « Local ». L'UI est byte-identique à 27.12/27.17 (zéro badge). Le tri-état n'apparaît
+> que si un contrat actif est présent. Correction également validée pour le cas `severed`
+> (lien coupé = plus de contrat actif effectif = même traitement que standalone).
+
+**Attendu** :
+- AUCUN badge « Verrouillé », « Modifiable » ni « Local » (NFR3 — zéro badge).
+- Contrôles d'écriture normalement actifs.
+- Au rendu des onglets : ≤ 1 requête `controlhub_contracts`, ZÉRO requête `controlhub_contract_items`
+  (court-circuit ; prouvé par test Feature #7 — `DB::getQueryLog()` autour du rendu Livewire).
+- UI **strictement byte-identique** à 27.12/27.17 (aucun badge ajouté).
+
+### Scénario 9.6 — R3 : aucun identifiant/libellé « central »
+
+```bash
+grep -rin "central" \
+  app/Services/ControlHub/UpstreamLockResolver.php \
+  resources/views/pages/parc/groups/_partials/capabilities-tab.blade.php \
+  resources/views/pages/admin/settings/parc-defaults/_partials/registry-tab.blade.php
+# → uniquement les commentaires garde-fou (zéro identifiant/libellé)
+```
+
+---
+
+## Checklist rapide Story 29.4
+
+- [ ] `php artisan test --filter "UpstreamLockResolver"` → 23/23 verts (11 nouveaux 29.4)
+- [ ] `php artisan test --filter "CapabilitiesTabStatusBadge"` → 9/9 verts (post-review)
+- [ ] `php artisan test --filter "ParcDefaultsStatusBadge"` → 8/8 verts (post-review)
+- [ ] `php artisan test --filter "CapabilitiesTabUpstreamLock|ParcDefaultsUpstreamLock|PermissiveOverride"` → non-régression verte (0 régression)
+- [ ] Badge « Verrouillé » + contrôles masqués sur les deux surfaces (Scénario 9.1)
+- [ ] Badge « Modifiable » + contrôles actifs + note FR8 sur les deux surfaces (Scénario 9.2)
+- [ ] Badge « Local » sur capacité sans contrainte **avec contrat actif** (Scénario 9.3)
+- [ ] Tooltip Local = « Réglage propre à ce parc/groupe. » (surface A) / « Défaut diffusé — aucune contrainte amont. » (surface B — correction #1)
+- [ ] Précédence : locked > permissive → un seul badge « Verrouillé » (Scénario 9.4)
+- [ ] Standalone/severed → **zéro badge** (y compris pas de « Local ») + court-circuit NFR3 (Scénario 9.5 — correction #3)
+- [ ] R3 : aucun identifiant/libellé « central » (Scénario 9.6)

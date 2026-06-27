@@ -43,8 +43,8 @@ new class extends Component {
     #[Computed]
     public function capabilities(): array
     {
-        // Story 29.2 — verrou amont pré-calculé une fois (set des clés `locked`
-        // mémoïsé ; court-circuit NFR3 sans contrat) pour éviter le N+1.
+        // Stories 29.2/29.4 — statut amont pré-calculé une fois (set mémoïsé ;
+        // court-circuit NFR3 sans contrat) pour éviter le N+1.
         $lock = app(UpstreamLockResolver::class);
 
         return Capability::query()
@@ -52,19 +52,38 @@ new class extends Component {
             ->orderBy('category')
             ->orderBy('label')
             ->get()
-            ->map(fn (Capability $c): array => [
-                'id' => (int) $c->id,
-                'label' => (string) $c->label,
-                'description' => (string) ($c->description ?? ''),
-                'category' => (string) ($c->category ?? ''),
-                'value_type' => (string) $c->value_type,
-                'default_display' => $c->optionLabel((string) $c->default_value),
-                'overrides_locked' => (bool) $c->overrides_locked,
-                'is_active' => (bool) $c->is_active,
-                'has_warning' => $c->hasWarning(),
-                'is_upstream_locked' => $lock->isCapabilityLocked($c),
-            ])
+            ->map(function (Capability $c) use ($lock): array {
+                // Story 29.4 — statut tri-état : 'locked'|'permissive'|'local'.
+                // `is_upstream_locked` dérivé du statut (évite un double appel).
+                $upstreamStatus = $lock->capabilityUpstreamStatus($c);
+
+                return [
+                    'id' => (int) $c->id,
+                    'label' => (string) $c->label,
+                    'description' => (string) ($c->description ?? ''),
+                    'category' => (string) ($c->category ?? ''),
+                    'value_type' => (string) $c->value_type,
+                    'default_display' => $c->optionLabel((string) $c->default_value),
+                    'overrides_locked' => (bool) $c->overrides_locked,
+                    'is_active' => (bool) $c->is_active,
+                    'has_warning' => $c->hasWarning(),
+                    'is_upstream_locked' => $upstreamStatus === 'locked',
+                    'upstream_status' => $upstreamStatus,
+                ];
+            })
             ->all();
+    }
+
+    /**
+     * Story 29.4 (#3) — Un contrat amont actif est-il présent ? Aucune requête
+     * supplémentaire (singleton mémoïsé — réutilise `ensureResolved()`). Permet
+     * de gater l'affichage des badges tri-état : en standalone (aucun contrat),
+     * AUCUN badge n'est rendu → UI byte-identique à 27.17 (NFR3).
+     */
+    #[Computed]
+    public function hasUpstreamContract(): bool
+    {
+        return app(UpstreamLockResolver::class)->hasActiveContract();
     }
 
     #[Computed]
@@ -242,7 +261,7 @@ new class extends Component {
                             @forelse ($this->capabilities as $capability)
                                 <tr @class(['opacity-50' => ! $capability['is_active']])>
                                     <td>
-                                        <div class="font-medium flex items-center gap-1">
+                                        <div class="font-medium flex items-center gap-1 flex-wrap">
                                             {{ $capability['label'] }}
                                             @if ($capability['description'] !== '')
                                                 <span class="tooltip tooltip-right before:max-w-xs before:whitespace-normal"
@@ -255,11 +274,32 @@ new class extends Component {
                                                 <i class="fa-solid fa-triangle-exclamation text-warning text-xs"
                                                     aria-label="Capacité sensible"></i>
                                             @endif
-                                            @if ($capability['is_upstream_locked'])
-                                                <span class="badge badge-sm badge-neutral gap-1"
-                                                    data-testid="upstream-locked-{{ $capability['id'] }}">
-                                                    <i class="fa-solid fa-lock text-xs"></i> Verrouillé par contrat amont
-                                                </span>
+                                            {{-- Story 29.4 — tri-état : verrouillé > permissif > local (AC #1-4).
+                                                 Libellés centrés sur l'ACTION possible (décision 2026-06-27).
+                                                 #3 : badges gatés sur hasUpstreamContract() — en standalone,
+                                                 AUCUN badge n'est rendu (UI byte-identique à 27.17, NFR3). --}}
+                                            @if ($this->hasUpstreamContract)
+                                                @if ($capability['is_upstream_locked'])
+                                                    <span class="badge badge-sm badge-neutral gap-1"
+                                                        data-testid="upstream-locked-{{ $capability['id'] }}"
+                                                        title="Amont — non modifiable.">
+                                                        <i class="fa-solid fa-lock text-xs"></i> Verrouillé
+                                                    </span>
+                                                @elseif ($capability['upstream_status'] === 'permissive')
+                                                    <span class="badge badge-sm badge-info gap-1"
+                                                        data-testid="upstream-permissive-{{ $capability['id'] }}"
+                                                        title="Proposé par l'amont mais modifiable : votre réglage local prévaut.">
+                                                        <i class="fa-solid fa-pen text-xs"></i> Modifiable
+                                                    </span>
+                                                @else
+                                                    {{-- #1 : surface = défaut diffusé flotte (Broadcast) — tooltip
+                                                         différencié de capabilities-tab (« parc/groupe »). --}}
+                                                    <span class="badge badge-sm badge-ghost gap-1"
+                                                        data-testid="upstream-local-{{ $capability['id'] }}"
+                                                        title="Défaut diffusé — aucune contrainte amont.">
+                                                        <i class="fa-solid fa-location-dot text-xs"></i> Local
+                                                    </span>
+                                                @endif
                                             @endif
                                         </div>
                                     </td>
@@ -279,6 +319,8 @@ new class extends Component {
                                         </label>
                                     </td>
                                     <td class="text-right whitespace-nowrap">
+                                        {{-- Story 29.4 — tri-état : locked masque le bouton (29.2) ;
+                                             permissif le garde actif + explication FR8 (AC #2). --}}
                                         @if ($capability['is_upstream_locked'])
                                             <span class="text-xs opacity-60 italic">Imposé par contrat amont</span>
                                         @else
@@ -287,6 +329,10 @@ new class extends Component {
                                                 data-testid="edit-default-{{ $capability['id'] }}">
                                                 <i class="fa-solid fa-pen"></i> Éditer le défaut
                                             </button>
+                                            @if ($capability['upstream_status'] === 'permissive')
+                                                <br><span class="text-xs opacity-60 italic"
+                                                    data-testid="upstream-permissive-note-{{ $capability['id'] }}">Votre réglage local s'applique</span>
+                                            @endif
                                         @endif
                                     </td>
                                 </tr>
