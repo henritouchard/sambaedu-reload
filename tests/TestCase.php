@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,19 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
         $this->guardAgainstProductionDatabase();
         $this->ensureErrorLogsTableOnSqlite();
+        // Les assets Vite ne sont pas buildés sur l'hôte de test (pas de
+        // public/build/manifest.json). Depuis que errors/layout.blade.php et le
+        // layout app utilisent @vite, toute réponse de page (200 ou page d'erreur
+        // 403/404) lèverait ViteManifestNotFoundException → 500, masquant le vrai
+        // statut. On neutralise Vite globalement : les tests ne dépendent pas des
+        // assets compilés.
+        $this->withoutVite();
+        // Model::unguard() est un flag statique global : plusieurs tests
+        // (Wallpaper, AppCustomization…) l'activent sans jamais Model::reguard(),
+        // ce qui rend les modèles mass-assignables pour TOUS les tests suivants et
+        // casse les assertions de garde (ex. ReportedVersionPersistenceTest). On
+        // restaure l'état gardé par défaut au début de chaque test.
+        Model::reguard();
         // $_SESSION est un superglobal PHP qui persiste dans le process PHPUnit.
         // Le bridge legacy (LegacyCatchallController::bridgeLegacySession) y écrit
         // login/level/etab et fait fuiter l'état d'un test vers les suivants.

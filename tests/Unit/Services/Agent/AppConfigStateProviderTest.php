@@ -148,11 +148,13 @@ class AppConfigStateProviderTest extends TestCase
         AppCustomization::factory()->firefox()->forScope($this->parc)->create([
             'policies_json' => ['policies' => ['Homepage' => ['URL' => 'https://parc.local/']]],
         ]);
-        // Niveau 6 (User) : impose une autre clé (ExtensionSettings). En portée
+        // Niveau 6 (User) : impose une autre clé ABSENTE du template (afin que
+        // sa non-résolution soit observable — `ExtensionSettings` étant déjà
+        // dans le template, elle resterait toujours présente). En portée
         // MACHINE (`$user = null`, review #1), ce niveau N'EST PAS résolu — le
         // par-user de Firefox = le profil (Mécanisme B / roaming, hors 27.4).
         AppCustomization::factory()->firefox()->forScope($this->user)->create([
-            'policies_json' => ['policies' => ['ExtensionSettings' => ['x' => ['installation_mode' => 'force_installed']]]],
+            'policies_json' => ['policies' => ['OfferToSaveLogins' => false]],
         ]);
 
         $candidates = $this->provider->itemsFor($this->ctx());
@@ -162,7 +164,7 @@ class AppConfigStateProviderTest extends TestCase
         // Le parc (niveau 4) EST appliqué.
         self::assertSame('https://parc.local/', $policies['Homepage']['URL']);
         // Le niveau user (niveau 6) N'EST PAS résolu en portée machine.
-        self::assertArrayNotHasKey('ExtensionSettings', $policies);
+        self::assertArrayNotHasKey('OfferToSaveLogins', $policies);
     }
 
     #[Test]

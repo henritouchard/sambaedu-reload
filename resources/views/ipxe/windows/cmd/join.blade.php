@@ -45,7 +45,7 @@ goto fin
 reg.exe delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "action" /F >NUL
 reg.exe delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "DefaultPassword" /F>NUL
 reg.exe delete "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "AutoAdminLogon" /F >NUL
-REM [LEGACY OFF 2026-06-12] canal legacy coupe pour test agent Go — restaurer ces 3 lignes pour reactiver
+REM [LEGACY OFF 2026-06-12] canal legacy coupe pour test agent Go - restaurer ces 3 lignes pour reactiver
 REM [LEGACY OFF 2026-06-12] gpupdate /force /target:computer
 REM  les fichiers ont ete copies lors de l'installation
 if not exist %WINDIR%\Web\SE4\ (md %WINDIR%\Web\SE4)

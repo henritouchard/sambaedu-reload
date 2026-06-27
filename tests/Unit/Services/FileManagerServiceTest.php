@@ -16,7 +16,14 @@ class FileManagerServiceTest extends TestCase
 
     protected function setUp(): void
     {
+        // extractZip() s'appuie sur ZipArchive : skip propre si ext-zip absent
+        // (vert sur /vm). Skip AVANT parent::setUp() pour ne rien initialiser.
+        if (! class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ext-zip absent : ces tests exigent ZipArchive (vert sur /vm).');
+        }
+
         parent::setUp();
+
         $this->service = app(FileManagerService::class);
         $this->tmpDir = sys_get_temp_dir() . '/filemanager_test_' . uniqid();
         mkdir($this->tmpDir, 0755, true);
@@ -24,7 +31,9 @@ class FileManagerServiceTest extends TestCase
 
     protected function tearDown(): void
     {
-        $this->cleanDir($this->tmpDir);
+        if (isset($this->tmpDir)) {
+            $this->cleanDir($this->tmpDir);
+        }
         parent::tearDown();
     }
 

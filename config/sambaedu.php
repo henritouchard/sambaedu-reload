@@ -643,7 +643,7 @@ return [
     | Veyon — prise de contrôle à distance (overlay + bandeau wallpaper)
     |--------------------------------------------------------------------------
     | `veyon_submarine` : si true, toute alerte « prise de contrôle à distance »
-    | (kind=remote_control) est MASQUÉE — ni cuite par WallpaperComposer ni
+    | (kind=remote_control) est MASQUÉE — ni produite comme signal overlay ni
     | renvoyée par OverlayService (enjeu consentement). Déclarée ici (review POC
     | overlay 2026-06-09, finding E) : le code lisait déjà
     | `config('sambaedu.veyon_submarine')` mais la clé n'était pas déclarée →

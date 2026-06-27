@@ -6,6 +6,9 @@ namespace Tests\Feature\Users;
 
 use App\Models\User as SqlUserModel;
 use App\Models\UserGroup;
+use App\Observers\UserGroupObserver;
+use App\Observers\UserGroupUserPivotObserver;
+use App\Observers\WorkstationGroupObserver;
 use App\Repositories\GroupRepository;
 use App\Repositories\RightRepository;
 use App\Repositories\UserGroupRepository;
@@ -27,6 +30,13 @@ class BulkPasswordResetGroupsTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Désactive la sync AD des observers : créer un UserGroup via factory
+        // dispatcherait UserGroupAdSyncJob inline (queue sync) → LDAP injoignable.
+        // L'AD du service sous test est simulé séparément via mocks GroupRepository.
+        WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
+        UserGroupUserPivotObserver::disableSync();
 
         // Créer un schéma minimal pour users + user_groups en SQLite :memory:
         if (!Schema::hasTable('users')) {
@@ -69,6 +79,9 @@ class BulkPasswordResetGroupsTest extends TestCase
 
     protected function tearDown(): void
     {
+        WorkstationGroupObserver::enableSync();
+        UserGroupObserver::enableSync();
+        UserGroupUserPivotObserver::enableSync();
         Mockery::close();
         parent::tearDown();
     }

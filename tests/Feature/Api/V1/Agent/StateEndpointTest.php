@@ -11,6 +11,9 @@ use App\Models\Wallpaper;
 use App\Models\WallpaperAsset;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
+use App\Observers\UserGroupObserver;
+use App\Observers\UserGroupUserPivotObserver;
+use App\Observers\WorkstationGroupObserver;
 use App\Services\Agent\Enrollment\TokenRotationService;
 use App\Services\Agent\StateContract;
 use App\Services\Agent\StateHasher;
@@ -44,8 +47,23 @@ final class StateEndpointTest extends TestCase
     {
         parent::setUp();
 
+        // Désactive la sync AD des observers : créer un WorkstationGroup via
+        // factory dispatcherait WorkstationGroupAdSyncJob inline (queue sync)
+        // → LDAP injoignable sur l'hôte de test.
+        WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
+        UserGroupUserPivotObserver::disableSync();
+
         $this->service = app(TokenRotationService::class);
         $this->hasher = app(StateHasher::class);
+    }
+
+    protected function tearDown(): void
+    {
+        WorkstationGroupObserver::enableSync();
+        UserGroupObserver::enableSync();
+        UserGroupUserPivotObserver::enableSync();
+        parent::tearDown();
     }
 
     private function state(string $token, array $headers = [], string $query = ''): TestResponse

@@ -7,6 +7,9 @@ namespace Tests\Feature\Console;
 use App\Models\QuotaAuditLog;
 use App\Models\QuotaRule;
 use App\Models\UserGroup;
+use App\Observers\UserGroupObserver;
+use App\Observers\UserGroupUserPivotObserver;
+use App\Observers\WorkstationGroupObserver;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Config;
@@ -44,12 +47,20 @@ class QuotaSeedFromLegacyCommandTest extends TestCase
     {
         parent::setUp();
 
+        // Neutraliser les observers AD (host sans LDAP).
+        WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
+        UserGroupUserPivotObserver::disableSync();
+
         $this->ensureMainTables();
         $this->setupLegacyConnection();
     }
 
     protected function tearDown(): void
     {
+        WorkstationGroupObserver::enableSync();
+        UserGroupObserver::enableSync();
+        UserGroupUserPivotObserver::enableSync();
         if ($this->createdLegacyConnection) {
             try {
                 Schema::connection('legacy_mysql')->dropIfExists('quotas');

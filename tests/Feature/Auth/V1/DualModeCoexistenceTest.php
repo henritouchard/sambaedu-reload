@@ -63,27 +63,27 @@ class DualModeCoexistenceTest extends TestCase
     }
 
     #[Test]
-    public function legacy_out_routes_are_preserved(): void
+    public function legacy_out_routes_are_extinguished(): void
     {
+        // Story 27.14 — le canal de config legacy `gpo/*_out.php` a été ÉTEINT
+        // EN BLOC (pas d'état transitoire legacy/agent). Ce test garde l'invariant
+        // « le canal reste mort » : aucune de ces routes ne doit réapparaître.
         $routes = collect(Route::getRoutes()->getRoutes());
 
         $uris = $routes->map(fn ($r) => $r->uri())->all();
 
-        // Story 4.7
-        $this->assertContains('gpo/wallpaper_out.php', $uris, 'wallpaper_out missing');
-        // Story 4.8
-        $this->assertContains('gpo/firefox_out.php', $uris, 'firefox_out missing');
-        $this->assertContains('gpo/thunderbird_out.php', $uris, 'thunderbird_out missing');
-        // Story 16.3a / 1bis.18e
-        $this->assertContains('gpo/shortcuts_out.php', $uris, 'shortcuts_out missing');
-        // Story 16.3b
-        $this->assertContains('gpo/network_out.php', $uris, 'network_out missing');
-        $this->assertContains('gpo/veyon_out.php', $uris, 'veyon_out missing');
-        // Story 16.3c
-        $this->assertContains('gpo/associations_out.php', $uris, 'associations_out missing');
-        // Story 16.7 — applications.php (sans `_out`) distribue les bootstrap tokens md5/APCu
-        // consommés par /api/v1/agent/enroll : si elle saute, toute la chaîne d'enrôlement casse.
-        $this->assertContains('gpo/applications.php', $uris, 'applications.php missing — bootstrap chain broken');
+        foreach ([
+            'gpo/wallpaper_out.php',     // ex-4.7
+            'gpo/firefox_out.php',       // ex-4.8
+            'gpo/thunderbird_out.php',   // ex-4.8
+            'gpo/shortcuts_out.php',     // ex-16.3a / 1bis.18e
+            'gpo/network_out.php',       // ex-16.3b
+            'gpo/veyon_out.php',         // ex-16.3b
+            'gpo/associations_out.php',  // ex-16.3c
+            'gpo/applications.php',      // ex-16.7
+        ] as $extinguished) {
+            $this->assertNotContains($extinguished, $uris, "{$extinguished} should be extinguished (story 27.14)");
+        }
     }
 
     #[Test]

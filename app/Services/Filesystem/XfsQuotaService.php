@@ -723,8 +723,8 @@ class XfsQuotaService
 
     /**
      * Story 4.7 — true si l'utilisateur est en over-hard sur home OU sambaedu
-     * (blocage effectif). Utilisé par WallpaperComposer pour overrider en
-     * cartouche rouge « Stockage saturé ».
+     * (blocage effectif). Utilisé par OverlaySignalBuilder pour le signal quota
+     * « Stockage saturé » (ex-cartouche du compositing WallpaperComposer retiré).
      */
     public function isUserOverQuota(string $username): bool
     {

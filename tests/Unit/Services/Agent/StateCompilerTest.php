@@ -14,6 +14,9 @@ use App\Models\Wallpaper;
 use App\Models\WallpaperAsset;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
+use App\Observers\UserGroupObserver;
+use App\Observers\UserGroupUserPivotObserver;
+use App\Observers\WorkstationGroupObserver;
 use App\Services\Agent\Contracts\KeyedExclusiveProvider;
 use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\Providers\OverlayStateProvider;
@@ -47,7 +50,19 @@ class StateCompilerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Neutraliser les observers AD (host sans LDAP).
+        WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
+        UserGroupUserPivotObserver::disableSync();
         $this->hasher = new StateHasher();
+    }
+
+    protected function tearDown(): void
+    {
+        WorkstationGroupObserver::enableSync();
+        UserGroupObserver::enableSync();
+        UserGroupUserPivotObserver::enableSync();
+        parent::tearDown();
     }
 
     // ── Enveloppe v1 (AC5) ───────────────────────────────────────────────

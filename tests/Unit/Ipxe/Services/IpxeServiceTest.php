@@ -148,7 +148,8 @@ class IpxeServiceTest extends TestCase
         self::assertStringStartsWith('#!ipxe', $body);
         self::assertStringContainsString('Installation Linux terminee avec succes', $body);
         self::assertStringContainsString('PC-NEUF-01', $body);
-        self::assertStringContainsString('sanboot', $body);
+        // Fallback boot disk : retour boot manager UEFI (plus de sanboot).
+        self::assertStringContainsString('exit 1 || sleep 100', $body);
         // Ce n'est PAS le menu known habituel.
         self::assertStringNotContainsString('item --key 1 login', $body);
     }

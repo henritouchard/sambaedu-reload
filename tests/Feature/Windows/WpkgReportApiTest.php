@@ -49,6 +49,7 @@ class WpkgReportApiTest extends TestCase
     protected function tearDown(): void
     {
         if ($this->createdTables) {
+            Schema::dropIfExists('system_settings');
             Schema::dropIfExists('wpkg_deployment_workstation_status');
             Schema::dropIfExists('wpkg_deployments');
             Schema::dropIfExists('app_profile_workstation_group');
@@ -168,6 +169,17 @@ class WpkgReportApiTest extends TestCase
             $table->string('client_status', 20)->default('pending');
             $table->json('details')->nullable();
             $table->text('error_message')->nullable();
+            $table->timestamps();
+        });
+
+        // Story 15.6 — EnsureLocalRequest::isAllowed() lit `wpkg.allowed_ips`
+        // via WpkgDeploymentSettings → SystemSetting::get(), donc la table
+        // system_settings doit exister sinon le middleware 500 (no such table)
+        // au lieu de renvoyer le 403 attendu.
+        Schema::create('system_settings', function (Blueprint $table) {
+            $table->id();
+            $table->string('key', 191)->unique();
+            $table->json('value')->nullable();
             $table->timestamps();
         });
     }

@@ -7,6 +7,9 @@ namespace Tests\Unit\Services\Agent;
 use App\Enums\WorkstationEnvironment;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
+use App\Observers\UserGroupObserver;
+use App\Observers\UserGroupUserPivotObserver;
+use App\Observers\WorkstationGroupObserver;
 use App\Services\Agent\WorkstationEnvironmentResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
@@ -30,7 +33,20 @@ class WorkstationEnvironmentResolverTest extends TestCase
     {
         parent::setUp();
 
+        // Projection Postgres-pure : neutraliser les observers AD (host sans LDAP).
+        WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
+        UserGroupUserPivotObserver::disableSync();
+
         $this->resolver = new WorkstationEnvironmentResolver();
+    }
+
+    protected function tearDown(): void
+    {
+        WorkstationGroupObserver::enableSync();
+        UserGroupObserver::enableSync();
+        UserGroupUserPivotObserver::enableSync();
+        parent::tearDown();
     }
 
     private function group(?WorkstationEnvironment $env, bool $physical = false): WorkstationGroup

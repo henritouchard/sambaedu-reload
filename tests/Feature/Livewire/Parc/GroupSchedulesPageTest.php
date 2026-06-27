@@ -215,6 +215,7 @@ class GroupSchedulesPageTest extends TestCase
                 $table->unsignedBigInteger('workstation_group_id');
                 $table->timestamp('attached_at')->useCurrent();
                 $table->unsignedBigInteger('attached_by_user_id')->nullable();
+                $table->boolean('is_default')->default(false);
                 $table->primary(['cups_name', 'workstation_group_id'], 'pwg_pk');
             });
             $this->createdTables = true;

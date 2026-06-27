@@ -59,8 +59,8 @@ if exist "%AGENT_EXE%" "%AGENT_EXE%" install -server-url "http://%SE4FS%"
 :: copie SMB a l'install (autologon se4install + auth ADS) est fragile ; on pose
 :: donc le client ICI, en SYSTEM, depuis le bundle HTTP. La vbs localise le moteur
 :: a c:\windows\install\wpkg\wpkg-se4.js (MapZ, jadis symlink SMB pose par
-:: wpkg.cmd) ; sur greenfield ce symlink n'existe pas -> exit 13 (« wpkg-se4.js
-:: absent »). On pose donc le moteur LOCALEMENT au meme chemin (repertoire reel,
+:: wpkg.cmd) ; sur greenfield ce symlink n'existe pas -> exit 13 ("wpkg-se4.js
+:: absent"). On pose donc le moteur LOCALEMENT au meme chemin (repertoire reel,
 :: pas de SMB) ; il est HTTP-aware (lit SE4_WPKG_BUNDLE_URL au runtime).
 ::
 :: GET CONDITIONNEL (curl -z = If-Modified-Since) : en regime etabli le serveur

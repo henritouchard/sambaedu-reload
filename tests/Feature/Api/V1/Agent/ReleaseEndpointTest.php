@@ -9,6 +9,9 @@ use App\Models\AgentRelease;
 use App\Models\AgentReleaseRing;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
+use App\Observers\UserGroupObserver;
+use App\Observers\UserGroupUserPivotObserver;
+use App\Observers\WorkstationGroupObserver;
 use App\Services\Agent\Enrollment\TokenRotationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -48,6 +51,13 @@ final class ReleaseEndpointTest extends TestCase
     {
         parent::setUp();
 
+        // Désactive la sync AD des observers : créer un WorkstationGroup via
+        // factory dispatcherait WorkstationGroupAdSyncJob inline (queue sync)
+        // → LDAP injoignable sur l'hôte de test.
+        WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
+        UserGroupUserPivotObserver::disableSync();
+
         $this->service = app(TokenRotationService::class);
         $this->releasesDir = storage_path('framework/testing/releases-' . uniqid());
         File::ensureDirectoryExists($this->releasesDir);
@@ -56,6 +66,9 @@ final class ReleaseEndpointTest extends TestCase
 
     protected function tearDown(): void
     {
+        WorkstationGroupObserver::enableSync();
+        UserGroupObserver::enableSync();
+        UserGroupUserPivotObserver::enableSync();
         File::deleteDirectory($this->releasesDir);
 
         parent::tearDown();

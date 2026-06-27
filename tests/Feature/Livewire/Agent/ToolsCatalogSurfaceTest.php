@@ -38,6 +38,15 @@ class ToolsCatalogSurfaceTest extends TestCase
 
     protected function setUp(): void
     {
+        // Ces tests uploadent un portable ZIP réel (ZipArchive). Skip propre si
+        // ext-zip absent (vert sur /vm). Le skip DOIT précéder parent::setUp() :
+        // RefreshDatabase y ouvre une transaction qui resterait orpheline si on
+        // skippait après (→ cascade « cannot start a transaction within a
+        // transaction » sur les tests suivants).
+        if (! class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ext-zip absent : ces tests exigent ZipArchive (vert sur /vm).');
+        }
+
         parent::setUp();
 
         Permission::firstOrCreate(['name' => 'server.admin', 'guard_name' => 'web']);
@@ -55,8 +64,13 @@ class ToolsCatalogSurfaceTest extends TestCase
 
     protected function tearDown(): void
     {
-        File::deleteDirectory($this->toolsDir);
-        File::deleteDirectory($this->workDir);
+        // Le skip ext-zip court-circuite setUp avant l'init des répertoires.
+        if (isset($this->toolsDir)) {
+            File::deleteDirectory($this->toolsDir);
+        }
+        if (isset($this->workDir)) {
+            File::deleteDirectory($this->workDir);
+        }
 
         parent::tearDown();
     }

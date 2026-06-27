@@ -7,6 +7,9 @@ namespace Tests\Feature\Console;
 use App\Models\AgentRelease;
 use App\Models\AgentReleaseRing;
 use App\Models\WorkstationGroup;
+use App\Observers\UserGroupObserver;
+use App\Observers\UserGroupUserPivotObserver;
+use App\Observers\WorkstationGroupObserver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -32,6 +35,11 @@ class AgentReleaseCommandsTest extends TestCase
     {
         parent::setUp();
 
+        // Neutraliser les observers AD (host sans LDAP).
+        WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
+        UserGroupUserPivotObserver::disableSync();
+
         $this->releasesDir = storage_path('framework/testing/releases-' . uniqid());
         File::ensureDirectoryExists($this->releasesDir);
         config(['agent.releases_path' => $this->releasesDir]);
@@ -41,6 +49,9 @@ class AgentReleaseCommandsTest extends TestCase
     {
         File::deleteDirectory($this->releasesDir);
 
+        WorkstationGroupObserver::enableSync();
+        UserGroupObserver::enableSync();
+        UserGroupUserPivotObserver::enableSync();
         parent::tearDown();
     }
 

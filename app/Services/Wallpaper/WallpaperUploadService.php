@@ -28,11 +28,40 @@ use Illuminate\Support\Facades\Log;
  */
 class WallpaperUploadService
 {
+    /** Flag statique : n'appliquer les limits Imagick qu'une seule fois par process. */
+    private static bool $imagickLimitsConfigured = false;
+
     public function __construct(
         private readonly WallpaperAssetCollector $collector = new WallpaperAssetCollector(),
     ) {
         // Protection contre les bombes pixel (post-review #10)
-        WallpaperComposer::configureImagickLimits();
+        self::configureImagickLimits();
+    }
+
+    /**
+     * Impose des limites de ressources Imagick pour protéger contre les bombes
+     * pixel (fichiers malformés consommant des GB de RAM). Idempotent via flag
+     * statique. (Anciennement WallpaperComposer::configureImagickLimits, déplacé
+     * ici lors du retrait du compositing serveur remplacé par l'overlay.)
+     */
+    private static function configureImagickLimits(): void
+    {
+        if (self::$imagickLimitsConfigured) {
+            return;
+        }
+        if (! class_exists('Imagick')) {
+            self::$imagickLimitsConfigured = true;
+            return;
+        }
+        try {
+            \Imagick::setResourceLimit(\Imagick::RESOURCETYPE_MEMORY, 256 * 1024 * 1024); // 256 MB
+            \Imagick::setResourceLimit(\Imagick::RESOURCETYPE_MAP, 512 * 1024 * 1024);    // 512 MB
+        } catch (\Throwable $e) {
+            Log::warning('[WallpaperUploadService] Imagick setResourceLimit failed', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+        self::$imagickLimitsConfigured = true;
     }
 
     /**

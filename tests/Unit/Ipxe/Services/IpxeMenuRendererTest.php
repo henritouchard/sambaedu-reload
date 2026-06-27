@@ -141,8 +141,9 @@ class IpxeMenuRendererTest extends TestCase
         self::assertStringContainsString('HP${sp}280${sp}G2${sp}SFF', $body);
         // Models sans espace inchangés.
         self::assertStringContainsString('10M8S1B000', $body);
-        // Sanboot final.
-        self::assertStringContainsString('sanboot --no-describe --drive 0x80', $body);
+        // Fallback final : retour au boot manager UEFI (re-init GOP) — `sanboot`
+        // a ete retire car il bypassait le reset du framebuffer (ecran corrompu).
+        self::assertStringContainsString('exit 1 || sleep 100', $body);
     }
 
     #[Test]
@@ -670,9 +671,9 @@ class IpxeMenuRendererTest extends TestCase
         self::assertStringContainsString('/ipxe/action/install_win11##params', $body);
         // Default = install_win11.
         self::assertStringContainsString('set menu-default install_win11', $body);
-        // Exit + fallback boot disk.
+        // Exit + fallback boot disk (retour boot manager UEFI, plus de sanboot).
         self::assertStringContainsString(':exit', $body);
-        self::assertStringContainsString('sanboot', $body);
+        self::assertStringContainsString('exit 1 || sleep 100', $body);
     }
 
     #[Test]

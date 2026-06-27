@@ -158,14 +158,16 @@ final class ReportEndpointTest extends TestCase
                 'success' => true,
                 'counts' => [
                     'compliant' => 1,
-                    'drift' => 1,
+                    'drift' => 2,
                     'error' => 1,
                 ],
             ]);
 
-        // 3 items golden = 3 lignes d'état, par (poste, type).
-        // Story 27.8 : l'item `drifted_allowed` a été retiré du golden.
-        self::assertSame(3, AgentResourceState::query()->where('workstation_id', $ws->id)->count());
+        // 4 items golden = 4 lignes d'état, par (poste, type) : wallpaper
+        // (compliant), overlay (drift), printers (error), applications (drift —
+        // ajouté en 27.5 pour illustrer l'inventaire). Story 27.8 : l'item
+        // `drifted_allowed` a été retiré du golden.
+        self::assertSame(4, AgentResourceState::query()->where('workstation_id', $ws->id)->count());
         $printers = AgentResourceState::query()
             ->where('workstation_id', $ws->id)->where('type', 'printers')->sole();
         self::assertSame(AgentResourceStatus::Error, $printers->status);
@@ -300,12 +302,13 @@ final class ReportEndpointTest extends TestCase
                 return $p;
             }],
             'detail absent sur error' => [function (array $p): array {
-                unset($p['items'][3]['detail']);
+                // L'item error du golden est `printers` à l'index 2.
+                unset($p['items'][2]['detail']);
 
                 return $p;
             }],
             'detail vide sur error' => [function (array $p): array {
-                $p['items'][3]['detail'] = '';
+                $p['items'][2]['detail'] = '';
 
                 return $p;
             }],

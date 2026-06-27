@@ -36,6 +36,15 @@ class AgentToolServiceTest extends TestCase
 
     protected function setUp(): void
     {
+        // Ces tests fabriquent/valident des ZIP réels (ZipArchive). Sur un hôte
+        // sans ext-zip, on skippe proprement (vert sur /vm). Le skip DOIT précéder
+        // parent::setUp() : RefreshDatabase y ouvre une transaction qui resterait
+        // orpheline si on skippait après (→ « cannot start a transaction within a
+        // transaction » sur tous les tests suivants).
+        if (! class_exists(\ZipArchive::class)) {
+            self::markTestSkipped('ext-zip absent : ces tests exigent ZipArchive (vert sur /vm).');
+        }
+
         parent::setUp();
 
         $this->service = new AgentToolService();
@@ -49,8 +58,13 @@ class AgentToolServiceTest extends TestCase
 
     protected function tearDown(): void
     {
-        File::deleteDirectory($this->toolsDir);
-        File::deleteDirectory($this->workDir);
+        // Le skip ext-zip court-circuite setUp avant l'init des répertoires.
+        if (isset($this->toolsDir)) {
+            File::deleteDirectory($this->toolsDir);
+        }
+        if (isset($this->workDir)) {
+            File::deleteDirectory($this->workDir);
+        }
 
         parent::tearDown();
     }

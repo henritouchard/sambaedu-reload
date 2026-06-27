@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\Log;
  * Cache : 30s via le repo Laravel (ne touche pas au cache APCu partagé).
  *
  * Consommé par :
- *   - `WallpaperComposer::detectMultiSessions()` pour afficher le cartouche
+ *   - `OverlaySignalBuilder` (signal `multi-session`) pour afficher le cartouche
  *     orange + badge bleu quand l'utilisateur a une session sur une autre
  *     machine que la machine courante.
  */

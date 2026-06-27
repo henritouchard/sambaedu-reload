@@ -8,6 +8,9 @@ use App\Models\AgentRelease;
 use App\Models\AgentReleaseRing;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
+use App\Observers\UserGroupObserver;
+use App\Observers\UserGroupUserPivotObserver;
+use App\Observers\WorkstationGroupObserver;
 use App\Services\Agent\Releases\ReleaseManifestService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -36,8 +39,21 @@ class ReleaseManifestServiceTest extends TestCase
     {
         parent::setUp();
 
+        // Neutraliser les observers AD (host sans LDAP).
+        WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
+        UserGroupUserPivotObserver::disableSync();
+
         $this->service = new ReleaseManifestService();
         $this->ws = Workstation::factory()->create();
+    }
+
+    protected function tearDown(): void
+    {
+        WorkstationGroupObserver::enableSync();
+        UserGroupObserver::enableSync();
+        UserGroupUserPivotObserver::enableSync();
+        parent::tearDown();
     }
 
     private function release(string $version, bool $stable = false): AgentRelease

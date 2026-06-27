@@ -9,6 +9,9 @@ use App\Models\AgentReleaseRing;
 use App\Models\User;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
+use App\Observers\UserGroupObserver;
+use App\Observers\UserGroupUserPivotObserver;
+use App\Observers\WorkstationGroupObserver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
@@ -32,10 +35,25 @@ class DeploymentProgressSurfaceTest extends TestCase
     {
         parent::setUp();
 
+        // Désactive la sync AD des observers : créer un WorkstationGroup via
+        // factory dispatcherait WorkstationGroupAdSyncJob inline (queue sync)
+        // → LDAP injoignable sur l'hôte de test.
+        WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
+        UserGroupUserPivotObserver::disableSync();
+
         Permission::firstOrCreate(['name' => 'server.admin', 'guard_name' => 'web']);
         $admin = User::query()->create(['login' => 'prog-admin', 'role' => 'prof', 'is_active' => true]);
         $admin->givePermissionTo('server.admin');
         $this->actingAs($admin);
+    }
+
+    protected function tearDown(): void
+    {
+        WorkstationGroupObserver::enableSync();
+        UserGroupObserver::enableSync();
+        UserGroupUserPivotObserver::enableSync();
+        parent::tearDown();
     }
 
     private function release(string $version): AgentRelease

@@ -39,6 +39,7 @@ trait CreatesPrintersSchema
                 $table->unsignedBigInteger('workstation_group_id');
                 $table->timestamp('attached_at')->useCurrent();
                 $table->unsignedBigInteger('attached_by_user_id')->nullable();
+                $table->boolean('is_default')->default(false); // story 27.2 (migration 2026_06_15_120000)
                 $table->primary(['cups_name', 'workstation_group_id'], 'pwg_pk');
                 $table->index('workstation_group_id', 'pwg_wg_idx');
             });

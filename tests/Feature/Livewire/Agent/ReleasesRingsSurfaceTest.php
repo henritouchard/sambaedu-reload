@@ -8,6 +8,9 @@ use App\Models\AgentRelease;
 use App\Models\AgentReleaseRing;
 use App\Models\User;
 use App\Models\WorkstationGroup;
+use App\Observers\UserGroupObserver;
+use App\Observers\UserGroupUserPivotObserver;
+use App\Observers\WorkstationGroupObserver;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -36,10 +39,25 @@ class ReleasesRingsSurfaceTest extends TestCase
     {
         parent::setUp();
 
+        // Désactive la sync AD des observers : créer un WorkstationGroup via
+        // factory dispatcherait WorkstationGroupAdSyncJob inline (queue sync)
+        // → LDAP injoignable sur l'hôte de test.
+        WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
+        UserGroupUserPivotObserver::disableSync();
+
         Permission::firstOrCreate(['name' => 'server.admin', 'guard_name' => 'web']);
         $this->admin = User::query()->create(['login' => 'rel-admin', 'role' => 'prof', 'is_active' => true]);
         $this->admin->givePermissionTo('server.admin');
         $this->actingAs($this->admin);
+    }
+
+    protected function tearDown(): void
+    {
+        WorkstationGroupObserver::enableSync();
+        UserGroupObserver::enableSync();
+        UserGroupUserPivotObserver::enableSync();
+        parent::tearDown();
     }
 
     private function release(string $version, bool $stable = false): AgentRelease

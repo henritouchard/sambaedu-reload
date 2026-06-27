@@ -7,6 +7,9 @@ namespace Tests\Unit\Services\Agent;
 use App\Models\AgentRelease;
 use App\Models\AgentReleaseRing;
 use App\Models\WorkstationGroup;
+use App\Observers\UserGroupObserver;
+use App\Observers\UserGroupUserPivotObserver;
+use App\Observers\WorkstationGroupObserver;
 use App\Services\Agent\Releases\ReleaseCreationService;
 use App\Services\Agent\Releases\ReleaseOperationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -37,6 +40,11 @@ class ReleaseCreationServiceTest extends TestCase
     {
         parent::setUp();
 
+        // Neutraliser les observers AD (host sans LDAP).
+        WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
+        UserGroupUserPivotObserver::disableSync();
+
         $this->service = new ReleaseCreationService();
         $this->releasesDir = storage_path('framework/testing/releases-' . uniqid());
         File::ensureDirectoryExists($this->releasesDir);
@@ -47,6 +55,9 @@ class ReleaseCreationServiceTest extends TestCase
     {
         File::deleteDirectory($this->releasesDir);
 
+        WorkstationGroupObserver::enableSync();
+        UserGroupObserver::enableSync();
+        UserGroupUserPivotObserver::enableSync();
         parent::tearDown();
     }
 

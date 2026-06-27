@@ -776,10 +776,10 @@ new #[Title('Gestion des GPOs - SE4FS')] class extends Component {
             <x-molecules.gpo-onboarding-card :dismissed="$heroDismissed" />
 
             {{-- Panneau filtres avancés (16.14 B) --}}
-            {{-- @include('pages.admin.settings.gpo._partials.advanced-filters-panel', [
+            @include('pages.admin.settings.gpo._partials.advanced-filters-panel', [
                 'advancedFiltersCount' => $advancedFiltersCount,
                 'ouSuggestions' => $ouSuggestions,
-            ]) --}}
+            ])
 
             {{-- Barre de recherche et filtres (16.2) --}}
             <div class="space-y-3" id="listing-gpos">

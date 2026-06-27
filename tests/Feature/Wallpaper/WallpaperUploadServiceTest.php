@@ -90,7 +90,10 @@ class WallpaperUploadServiceTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (is_dir($this->tmpLibrary)) {
+        // setUp() peut markTestSkipped() (Imagick absent) AVANT d'initialiser
+        // $tmpLibrary : sans ce garde, l'accès à la propriété typée non
+        // initialisée transforme le skip en Error.
+        if (isset($this->tmpLibrary) && is_dir($this->tmpLibrary)) {
             foreach (glob($this->tmpLibrary . '/*') ?: [] as $f) {
                 @unlink($f);
             }

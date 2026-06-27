@@ -439,7 +439,11 @@ class GroupRepository
     {
         try {
             $connection = Container::getDefaultConnection();
-            $baseDn = $this->config->get('ldap_base_dn');
+            // `ldap_base_dn` peut être absent de la config brute (hôte sans
+            // /etc/sambaedu/sambaedu.conf) → null casserait addGroup(string $baseDn).
+            // On passe par dnHelper->base() (renvoie '' au pire), cohérent avec
+            // l'usage ligne 128 de cette même classe.
+            $baseDn = $this->dnHelper->base();
             $suffix = $this->config->get('suffix', '');
 
             // Si le nom est déjà un CN "legacy" préfixé, on crée exactement

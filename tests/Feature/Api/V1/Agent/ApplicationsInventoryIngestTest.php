@@ -74,12 +74,20 @@ final class ApplicationsInventoryIngestTest extends TestCase
      */
     private function applicationsItem(string $status, array $inventory): array
     {
-        return [
+        $item = [
             'type' => 'applications',
             'status' => $status,
             'hash' => str_repeat('a', 64),
             'inventory' => $inventory,
         ];
+
+        // Règle `items.*.detail required_if status,error` (ReportRequest §6) :
+        // un item au verdict `error` doit porter un `detail` top-level non vide.
+        if ($status === 'error') {
+            $item['detail'] = 'au moins une application en échec';
+        }
+
+        return $item;
     }
 
     #[Test]

@@ -273,7 +273,8 @@ class IpxeConfigTest extends TestCase
     public function it_loads_iso_management_deployed_os_base_path_default(): void
     {
         self::assertSame('/var/sambaedu/unattended/install/os', config('ipxe.iso_management.deployed_os_base_path'));
-        self::assertSame('/var/sambaedu/unattended/install/os/iso', config('ipxe.iso_management.iso_storage_path'));
+        // Relocation storage/ : l'ISO source vit desormais sous storage/install/iso.
+        self::assertSame(storage_path('install/iso'), config('ipxe.iso_management.iso_storage_path'));
     }
 
     #[Test]
@@ -287,7 +288,7 @@ class IpxeConfigTest extends TestCase
     public function it_loads_iso_management_allowed_url_hosts_with_microsoft_defaults(): void
     {
         $hosts = (array) config('ipxe.iso_management.allowed_url_hosts');
-        self::assertContains('software-static.download.prss.microsoft.com', $hosts);
+        self::assertContains('download.prss.microsoft.com', $hosts);
         self::assertContains('software-download.microsoft.com', $hosts);
         self::assertContains('download.microsoft.com', $hosts);
     }
@@ -295,7 +296,7 @@ class IpxeConfigTest extends TestCase
     #[Test]
     public function it_loads_iso_management_queue_and_lock_config(): void
     {
-        self::assertSame('ipxe_iso_downloads', config('ipxe.iso_management.queue_name'));
+        self::assertSame('default', config('ipxe.iso_management.queue_name'));
         self::assertSame('ipxe.iso.download.global', config('ipxe.iso_management.global_lock_key'));
         self::assertSame(7200, (int) config('ipxe.iso_management.global_lock_ttl'));
         self::assertSame(10, (int) config('ipxe.iso_management.history_limit'));

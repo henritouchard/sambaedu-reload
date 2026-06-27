@@ -278,14 +278,14 @@ class IpxeActionEndpointTest extends TestCase
         $uniqueName = 'pc-known-' . substr(bin2hex(random_bytes(4)), 0, 8);
         Workstation::create([
             'name' => $uniqueName,
-            'uuid' => 'eeeeeeee-kkkk-1111-1111-111111111111',
-            'mac' => 'aa:bb:cc:dd:ee:k1',
+            'uuid' => 'eeeeeeee-1111-1111-1111-111111111111',
+            'mac' => 'aa:bb:cc:dd:ee:a1',
             'status' => 'active',
         ]);
 
         $response = $this->post('/ipxe/action/clonezilla_live', [
-            'mac' => 'aa:bb:cc:dd:ee:k1',
-            'uuid' => 'eeeeeeee-kkkk-1111-1111-111111111111',
+            'mac' => 'aa:bb:cc:dd:ee:a1',
+            'uuid' => 'eeeeeeee-1111-1111-1111-111111111111',
         ]);
 
         $response->assertStatus(200);

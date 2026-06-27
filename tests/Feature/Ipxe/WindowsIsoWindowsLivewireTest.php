@@ -401,8 +401,11 @@ class WindowsIsoWindowsLivewireTest extends TestCase
         $this->actingAs($admin);
 
         // 1) Acquière le lock applicatif (simule l'orchestrator l'a posé).
+        // Le code force-release sur le store dédié (config lock_store=file) ;
+        // on acquiert/relit donc via ce MÊME store, pas le cache par défaut.
         $lockKey = (string) config('ipxe.iso_management.global_lock_key');
-        $lock = Cache::lock($lockKey, 60);
+        $lockStore = (string) config('ipxe.iso_management.lock_store');
+        $lock = Cache::store($lockStore)->lock($lockKey, 60);
         self::assertTrue($lock->get());
 
         $running = WindowsIsoDownload::factory()->downloading()->create([
@@ -419,8 +422,8 @@ class WindowsIsoWindowsLivewireTest extends TestCase
         self::assertSame(WindowsIsoDownloadStatus::Cancelled, $running->status);
 
         // 3) Le lock doit être release immédiatement (pas après TTL 60s).
-        // On vérifie en tentant d'acquérir un nouveau lock.
-        $newLock = Cache::lock($lockKey, 60);
+        // On vérifie en tentant d'acquérir un nouveau lock sur le même store.
+        $newLock = Cache::store($lockStore)->lock($lockKey, 60);
         self::assertTrue(
             $newLock->get(),
             'Le lock global doit être release immédiatement après cancelDownload (pas zombi).',

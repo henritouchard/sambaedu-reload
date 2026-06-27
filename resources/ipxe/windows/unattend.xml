@@ -153,7 +153,7 @@
 					<CommandLine>%comspec% /c if exist %windir%\action.cmd (call %windir%\action.cmd)</CommandLine>
 				</SynchronousCommand>
 				<!-- Reboot terminal de fin d'install (ère agent) : porte le `shutdown -r`
-				     du legacy `cmd_oobe` (action.php:260), jamais porté car `handleOobe`
+				     du legacy `cmd_oobe` (legacy l.260), jamais porté car `handleOobe`
 				     renvoie un body vide (action.cmd 0 octet). Sans lui, la session OOBE
 				     se4install finit ses FirstLogonCommands et reste ouverte sans reboot.
 				     `/t 30` laisse une fenêtre ; si un action.cmd futur planifie déjà un

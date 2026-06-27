@@ -273,7 +273,8 @@ class WindowsUnattendBuilderTest extends TestCase
         $commands = $this->firstLogonCommandsByOrder($xml);
         // Story 25.4 : un Order d'install agent (CA + binaire + service) s'insère
         // entre le durcissement ACL (2) et le curl oobe (désormais 4).
-        self::assertSame([1, 2, 3, 4, 5], array_keys($commands));
+        // + Order 6 : reboot terminal de fin d'install (shutdown /r).
+        self::assertSame([1, 2, 3, 4, 5, 6], array_keys($commands));
         // 1 : échange ticket → token (dépôt C:\ProgramData\SambaEdu\Agent\token).
         self::assertStringContainsString('/api/v1/agent/enrollment', $commands[1]);
         self::assertStringContainsString('C:\ProgramData\SambaEdu\Agent\token', $commands[1]);
@@ -321,6 +322,8 @@ class WindowsUnattendBuilderTest extends TestCase
         // 4-5 : les commandes historiques glissent, inchangées.
         self::assertStringContainsString('etape=oobe', $commands[4]);
         self::assertStringContainsString('call %windir%\action.cmd', $commands[5]);
+        // 6 : reboot terminal de fin d'install (porte le `shutdown -r` du legacy).
+        self::assertStringContainsString('shutdown', $commands[6]);
     }
 
     #[Test]

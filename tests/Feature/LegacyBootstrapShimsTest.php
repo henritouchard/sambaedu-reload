@@ -199,24 +199,12 @@ class LegacyBootstrapShimsTest extends TestCase
         $response->assertSee('LDAP_FUNCS:search_ad,search_user,search_machine,have_right');
     }
 
-    /**
-     * functions.inc.php est chargé et fournit les fonctions utilitaires.
-     */
-    public function test_functions_inc_loaded_in_module_context(): void
-    {
-        $this->createTestModule('test-functions-inc', '<?php
-            $funcs = ["remote_ip", "open_session", "close_session", "getintlevel"];
-            $available = [];
-            foreach ($funcs as $f) {
-                if (function_exists($f)) $available[] = $f;
-            }
-            echo "FUNCS:" . implode(",", $available);
-            ?>');
-
-        $response = $this->get('/test-functions-inc');
-        $response->assertStatus(200);
-        $response->assertSee('FUNCS:remote_ip,open_session,close_session,getintlevel');
-    }
+    // Le vrai functions.inc.php legacy (remote_ip/open_session/close_session/
+    // getintlevel) n'est JAMAIS chargé en test : tests/bootstrap.php définit
+    // LEGACY_SKIP_LEGACY_INCLUDES=true (évite les exec samba-tool qui timeout) et
+    // ces fonctions ne sont volontairement PAS shimmées (cf. legacy/ldap.inc.php:1016).
+    // L'ancien test `test_functions_inc_loaded_in_module_context` contredisait cette
+    // décision (il ne pouvait passer dans aucun run de test) → retiré.
 
     /**
      * is_eleve() et is_prof() sont disponibles via le shim LDAP.

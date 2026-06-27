@@ -56,6 +56,15 @@ class AppStoreInstallFlowTest extends TestCase
         // Désactiver le Log pour ne pas polluer la sortie
         Log::spy();
 
+        // Story 27.5 — AppStoreService::add() régénère le bundle WPKG après le
+        // catalogue. En test il n'y a pas de catalogue source → generate() throw,
+        // et le catch défensif appelle Log::channel('wpkg-deploy')->error() qui
+        // renvoie null sous Log::spy() → « error() on null ». On neutralise le
+        // générateur pour isoler le flux d'installation.
+        $this->mock(\App\Wpkg\Deployment\Services\WpkgBundleGenerator::class, function ($mock) {
+            $mock->shouldReceive('generate')->andReturn([]);
+        });
+
         // Créer un dépôt et une application de dépôt pour les tests
         $this->depot = Depot::create([
             'name' => 'Test Depot',

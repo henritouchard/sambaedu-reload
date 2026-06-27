@@ -6,6 +6,9 @@ use App\Models\ErrorLog;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\Workstation;
+use App\Observers\UserGroupObserver;
+use App\Observers\UserGroupUserPivotObserver;
+use App\Observers\WorkstationGroupObserver;
 use App\Services\ErrorLoggerService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Config;
@@ -26,6 +29,12 @@ class LdapShimTest extends TestCase
     {
         parent::setUp();
         $this->withoutVite();
+
+        // Neutraliser les observers AD (host sans LDAP) — la création de
+        // UserGroup/User déclenche sinon un job AdSync inline.
+        WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
+        UserGroupUserPivotObserver::disableSync();
 
         // Créer les tables nécessaires en mémoire
         $this->createTestTables();
@@ -57,6 +66,9 @@ class LdapShimTest extends TestCase
         UserGroup::query()->delete();
         Workstation::query()->delete();
         ErrorLog::query()->delete();
+        WorkstationGroupObserver::enableSync();
+        UserGroupObserver::enableSync();
+        UserGroupUserPivotObserver::enableSync();
         parent::tearDown();
     }
 
@@ -99,6 +111,8 @@ class LdapShimTest extends TestCase
                 $table->id();
                 $table->foreignId('user_id');
                 $table->foreignId('user_group_id');
+                // Colonne pivot lue par la relation User↔UserGroup (PP sur l'arête).
+                $table->boolean('is_head_teacher')->default(false);
             });
         }
 

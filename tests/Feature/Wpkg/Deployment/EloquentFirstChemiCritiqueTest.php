@@ -158,30 +158,11 @@ class EloquentFirstChemiCritiqueTest extends TestCase
         self::assertTrue($packages->contains('libreoffice'));
     }
 
-    #[Test]
-    public function hosts_xml_endpoint_serves_xml_without_touching_ad(): void
-    {
-        $this->seedFixture('PC02');
-
-        $response = $this->withoutMiddleware()->get('/wpkg/hosts.xml?poste=PC02');
-
-        $response->assertOk();
-        $response->assertHeader('Content-Type', 'text/xml; charset=UTF-8');
-        self::assertStringContainsString('<host name="PC02"', (string) $response->getContent());
-    }
-
-    #[Test]
-    public function profiles_xml_endpoint_serves_xml_without_touching_ad(): void
-    {
-        $this->seedFixture('PC03');
-
-        $response = $this->withoutMiddleware()->get('/wpkg/profiles.xml?poste=PC03');
-
-        $response->assertOk();
-        $response->assertHeader('Content-Type', 'text/xml; charset=UTF-8');
-        $body = (string) $response->getContent();
-        self::assertStringContainsString('<package package-id="firefox"/>', $body);
-    }
+    // Story 27.5 — les endpoints HTTP `/wpkg/hosts.xml` et `/wpkg/profiles.xml`
+    // ont été SUPPRIMÉS (livraison WPKG native : profil par-hôte déposé localement
+    // par l'agent). Les tests `hosts_xml_endpoint_serves_xml_without_touching_ad`
+    // et `profiles_xml_endpoint_serves_xml_without_touching_ad` ont été retirés en
+    // conséquence ; le resolver et l'ini-generator restent couverts ci-dessus/dessous.
 
     #[Test]
     public function ini_generator_writes_file_without_touching_ad(): void

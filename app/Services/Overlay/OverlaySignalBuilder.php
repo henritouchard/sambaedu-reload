@@ -13,9 +13,9 @@ use Illuminate\Support\Facades\Log;
 /**
  * Construit les signaux overlay **dérivés** (recalculés à chaque poll).
  *
- * Réutilise les mêmes collaborateurs que `WallpaperComposer` pour rester
- * iso-comportemental, mais SANS toucher au composer (POC — duplication
- * temporaire assumée, unification ultérieure ; cf. spike §6ter).
+ * Reprend la logique de dégradation de l'ancien compositing serveur
+ * (WallpaperComposer, retiré au profit de l'overlay) pour rester
+ * iso-comportemental.
  *
  * Seuls les signaux **calculables côté serveur depuis le login** sont produits
  * ici : `multi-session` et `quota`. Le signal `veyon` (prise de contrôle à
@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\Log;
  * le garde-fou submarine appliqué par `OverlayService`.
  *
  * Les services sont optionnels : leur absence désactive silencieusement le
- * signal correspondant (parité dégradation `WallpaperComposer`).
+ * signal correspondant (parité dégradation de l'ancien compositing serveur).
  */
 class OverlaySignalBuilder
 {

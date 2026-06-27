@@ -15,9 +15,9 @@ use Illuminate\Support\Facades\Log;
  * Story 27.14 — les méthodes `legacyOut()` (ex-`gpo/wallpaper_out.php`) et
  * `apiV1()` (ex-`/api/v1/workstation-config/wallpaper`) ont été supprimées
  * avec le canal de config legacy. Le wallpaper du poste est désormais résolu
- * par le canal agent (`WallpaperStateProvider` → `WallpaperResolver`/
- * `WallpaperComposer`, qui survivent). Ce controller ne sert plus que les
- * miniatures admin :
+ * par le canal agent (`WallpaperStateProvider` → `WallpaperResolver`, qui
+ * survit) ; l'info dynamique (badges/cartouches) passe par l'overlay. Ce
+ * controller ne sert plus que les miniatures admin :
  * - `thumbnail(Wallpaper)` : miniature PNG d'un wallpaper en base (AC 8).
  * - `assetThumbnail(WallpaperAsset)` : miniature d'un asset de bibliothèque.
  */

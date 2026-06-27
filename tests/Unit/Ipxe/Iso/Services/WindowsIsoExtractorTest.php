@@ -19,8 +19,9 @@ use Tests\TestCase;
  * best-effort et non assertées ici (la copie réelle exige une vraie ISO).
  *
  * Patterns de fake NON chevauchants (`sudo -n mount*` ≠ `sudo -n umount*`) →
- * indépendants de l'ordre ; une commande non matchée renvoie un succès par
- * défaut sous `Process::fake([...])`.
+ * indépendants de l'ordre. Depuis Laravel 12.60, `Process::fake([...])`
+ * n'auto-fake PLUS les commandes non matchées (elles s'exécuteraient pour de
+ * vrai) → on ajoute un catch-all `'*'` APRÈS la clé spécifique.
  */
 class WindowsIsoExtractorTest extends TestCase
 {
@@ -77,6 +78,9 @@ class WindowsIsoExtractorTest extends TestCase
     {
         Process::fake([
             'sudo -n mount*' => Process::result(output: '', errorOutput: 'mount: loop device unavailable', exitCode: 1),
+            // Laravel 12.60 : les commandes non matchées s'exécutent réellement
+            // (plus d'auto-fake) → catch-all explicite après la clé spécifique.
+            '*' => Process::result(exitCode: 0),
         ]);
 
         try {
@@ -94,6 +98,8 @@ class WindowsIsoExtractorTest extends TestCase
     {
         Process::fake([
             'sudo -n cp*' => Process::result(output: '', errorOutput: 'cp: no space left on device', exitCode: 5),
+            // Laravel 12.60 : catch-all (mount/rm/mkdir/umount) après la clé cp.
+            '*' => Process::result(exitCode: 0),
         ]);
 
         try {

@@ -106,12 +106,7 @@ class LegacyModulesIntegrationTest extends TestCase
         $this->assertFileExists($displayDir . '/js/reveal.js');
     }
 
-    /**
-     * Le module api/ecowatt.php est accessible via catchall (pas de 404).
-     */
-    public function test_api_ecowatt_module_accessible_via_catchall(): void
-    {
-        $response = $this->get('/api/ecowatt.php');
-        $this->assertNotEquals(404, $response->status(), 'Le module api/ecowatt.php ne doit pas retourner 404');
-    }
+    // Le module api/ecowatt.php a été SUPPRIMÉ (commit 6e2c8bb « remove ecowatt »).
+    // L'ancien test `test_api_ecowatt_module_accessible_via_catchall` (qui exigeait
+    // un non-404) a donc été retiré : il validait un module qui n'existe plus.
 }
