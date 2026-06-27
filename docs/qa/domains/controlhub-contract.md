@@ -971,3 +971,150 @@ grep -rin "central" \
 - [ ] Précédence : locked > permissive → un seul badge « Verrouillé » (Scénario 9.4)
 - [ ] Standalone/severed → **zéro badge** (y compris pas de « Local ») + court-circuit NFR3 (Scénario 9.5 — correction #3)
 - [ ] R3 : aucun identifiant/libellé « central » (Scénario 9.6)
+
+---
+
+## Section 10 — Drift STRICT prouvé + audit append-only des overrides (Story 29.5, 2026-06-27)
+
+> **Modèle** : 29.5 est une story à DEUX moitiés de nature opposée.
+> **Moitié NFR2 (drift STRICT) = PREUVE, pas construction.** Un item verrouillé
+> amont est **DÉJÀ** soumis au drift STRICT inconditionnel par construction (livré
+> en 27.8 : item de desired-state à **4 clés** `{type, semantics, payload, hash}`
+> sans marqueur de mode, plus de `drifted_allowed`). L'item `locked` est injecté à
+> la maille `StateMaille::Upstream` (rang -1, inbattable) → il gagne au compilé et
+> entre dans le pipeline de réapplication STRICT côté agent Go (`provision.Reconcile`
+> réapplique sur toute divergence de hash). 29.5 **prouve** cette chaîne par un test
+> SE5 ; elle n'ajoute **aucun** marqueur/toggle de drift (en ajouter régresserait
+> 27.8 et casserait l'invariant « item à 4 clés »).
+> **Moitié NFR5 (audit) = la VRAIE livraison.** `saveOverride()`/`removeOverride()`
+> (`capabilities-tab`) écrivaient `capability_assignments` SANS trace. 29.5 ajoute
+> une table append-only `capability_override_audit_logs` + le modèle
+> `CapabilityOverrideAuditLog::log()` (patron MAISON `QuotaAuditLog`/
+> `DelegationHistory` — Spatie activitylog ABSENT, middleware fédéré ne couvre pas
+> le refnum AD-local). La trace est écrite DANS LA MÊME transaction que la mutation
+> (atomicité acte ↔ trace), en distinguant l'override d'un item imposé-**permissif**
+> (`upstream_status = permissive`) d'un override purement **local**
+> (`upstream_status = local`).
+>
+> **Hors scope (NE PAS tester ici)** : audit de la pose de verrou (décision amont,
+> Epic 28), audit de la rupture de lien `severed` (Epic 32, FR7), audit de la
+> surface `parc-defaults` (défaut diffusé ≠ override par `workstationGroup`),
+> ciblage par label (Epic 30).
+
+**Pré-requis** : voir Section 7 (contrat actif avec items `registry`/`instance`).
+Un user `refnum` avec `app.customize` (override parc). L'audit est **silencieux**
+(aucun toast nouveau) — il se vérifie en base (`capability_override_audit_logs`).
+
+**Validation automatisée (HÔTE) — préalable à tout test manuel :**
+
+```bash
+# Hôte (php8.4 + pdo_sqlite)
+php artisan test --filter "UpstreamLockedDriftStrict"        # 1/1 — preuve drift NFR2 (item locked → 4 clés, sans marqueur)
+php artisan test --filter "CapabilityOverrideAuditLog"       # 3/3 — modèle (log/append-only/nullOnDelete)
+php artisan test --filter "CapabilitiesOverrideAudit"        # 7/7 — create/update/delete, permissive vs local, standalone+NFR3, atomicité
+# Non-régression (0 régression attendue) :
+php artisan test --filter "StateCompiler|UpstreamContractResolution|CapabilitiesTab|ControlHubContract|PermissiveOverride|UpstreamLockResolver|ParcDefaults|ContractV1|CapabilityPolicy"
+```
+
+### Scénario 10.1 — Preuve drift : un item `locked` amont gagne au compilé et est réappliqué STRICT (CRITIQUE)
+
+**Procédure** : contrat actif avec un item `registry`/`locked`/`instance` (ex. `EnableLUA`)
+matchant une projection de capacité ; un réglage local existe sur la même clé avec
+une valeur DIVERGENTE (dérive simulée). Compiler le desired-state d'un poste cible.
+
+**Attendu** :
+- L'item compilé porte la **valeur amont** (la maille `Upstream` gagne — inbattable).
+- L'item compilé expose **exactement les 4 clés** `type`, `semantics`, `payload`, `hash`.
+- **AUCUN** marqueur `mode` / `drift` / `drift_policy` (le STRICT est implicite, 27.8).
+- Côté agent (comportement, non rejoué ici) : `provision.Reconcile` réapplique l'item
+  sur toute divergence de hash — cf. couverture STRICT Go 27.8 (`agent/shared/handler_*_test.go`).
+  Un item compilé étant **source-agnostique**, cette couverture vaut pour l'item verrouillé.
+
+### Scénario 10.2 — Override permissif posé → 1 ligne d'audit `permissive`
+
+**Procédure** : contrat actif avec un item `registry`/`permissive`/`instance` matchant
+une capacité. Page d'un parc → onglet « Options / Capacités » → ajouter/éditer un
+override sur cette capacité (le geste est AUTORISÉ — un permissif n'est pas un verrou).
+
+**Attendu** (table `capability_override_audit_logs`) :
+- **Un et un seul** événement, `action = create` (ou `update` si override préexistant).
+- `actor_user_id` + `actor_login` = le refnum ; `capability_id` + `capability_label` ;
+  `assignable_type = WorkstationGroup`, `assignable_id` = parc, `scope_label` = nom du parc.
+- `old_value` (valeur précédente, null si création) / `new_value` (valeur saisie).
+- `upstream_status = 'permissive'` ; `created_at` posé.
+
+### Scénario 10.3 — Override local (sans contrainte amont) → audit `local`
+
+**Procédure** : poser un override par parc sur une capacité **sans** contrainte amont
+(standalone OU contrat actif sans item pour cette capacité).
+
+**Attendu** :
+- Ligne d'audit `action = create` (ou `update`), `upstream_status = 'local'`.
+- Mêmes champs acteur/item/périmètre/old-new/horodatage.
+
+### Scénario 10.4 — Retrait d'un override → audit `delete`
+
+**Procédure** : retirer un override existant (bouton « Retirer ») sur une capacité
+non verrouillée.
+
+**Attendu** :
+- Ligne d'audit `action = delete`, `old_value` = ancienne valeur, `new_value = null`,
+  `upstream_status` résolu (`permissive` ou `local`).
+- L'override est bien supprimé de `capability_assignments` (retour au défaut).
+
+### Scénario 10.5 — Standalone : override audité `local`, court-circuit NFR3 préservé
+
+**Procédure** : aucun contrat amont actif. Poser un override par parc.
+
+**Attendu** :
+- Ligne d'audit `action = create`, `upstream_status = 'local'`.
+- **ZÉRO** requête `controlhub_contract_items` lors du `saveOverride` (court-circuit
+  NFR3 — prouvé par test Feature via `DB::getQueryLog()`).
+- Aucun badge/contrainte amont affiché (UI byte-identique à 27.12).
+
+### Scénario 10.6 — Atomicité acte ↔ trace (échec d'audit → override NON persisté)
+
+**Procédure** (automatisé) : simuler l'échec de l'écriture d'audit (table absente) →
+le `saveOverride` lève dans la transaction.
+
+**Attendu** :
+- L'override **n'est pas** confirmé dans `capability_assignments` (rollback complet) :
+  jamais d'acte sans trace, jamais de trace sans acte.
+
+### Scénario 10.7 — Append-only + survie aux suppressions
+
+**Procédure** (automatisé) : tenter un UPDATE d'une ligne d'audit ; supprimer
+l'utilisateur et la capacité référencés.
+
+**Attendu** :
+- UPDATE → `LogicException` (table append-only).
+- Après suppression : `actor_user_id` / `capability_id` mis à `null` (FK `nullOnDelete`),
+  mais `actor_login` / `capability_label` / `scope_label` **intacts** (dénormalisation).
+
+### Scénario 10.8 — R3 : aucun identifiant/libellé « central »
+
+```bash
+grep -rin "central" \
+  app/Models/CapabilityOverrideAuditLog.php \
+  database/migrations/2026_06_27_120000_create_capability_override_audit_logs_table.php \
+  resources/views/pages/parc/groups/_partials/capabilities-tab.blade.php
+# → uniquement les commentaires garde-fou (zéro identifiant/libellé)
+```
+
+---
+
+## Checklist rapide Story 29.5
+
+- [ ] `php artisan test --filter "UpstreamLockedDriftStrict"` → 1/1 vert (preuve drift, item 4 clés sans marqueur)
+- [ ] `php artisan test --filter "CapabilityOverrideAuditLog"` → 3/3 verts (log/append-only/nullOnDelete)
+- [ ] `php artisan test --filter "CapabilitiesOverrideAudit"` → 7/7 verts (create/update/delete, permissive vs local, standalone+NFR3, atomicité)
+- [ ] Non-régression `StateCompiler|UpstreamContractResolution|CapabilitiesTab|ControlHubContract|PermissiveOverride|UpstreamLockResolver|ParcDefaults|ContractV1|CapabilityPolicy` → 0 régression
+- [ ] Drift : item `locked` → desired-state 4 clés, valeur amont, AUCUN marqueur `mode`/`drift` (Scénario 10.1)
+- [ ] Override permissif → audit `permissive` (Scénario 10.2) ; override local → audit `local` (Scénario 10.3)
+- [ ] Retrait → audit `delete` `new_value=null` (Scénario 10.4)
+- [ ] Standalone → audit `local` + 0 requête items (Scénario 10.5)
+- [ ] Atomicité : échec d'audit → override non persisté (Scénario 10.6)
+- [ ] Append-only (UPDATE→LogicException) + FKs nullOnDelete + dénormalisés intacts (Scénario 10.7)
+- [ ] R3 : aucun identifiant/libellé « central » (Scénario 10.8)
+- [ ] Golden / `FROZEN_STATE_HASH` / `ContractV1` INCHANGÉS ; `StateCompiler` item 4 clés intact
+- [ ] ⚠️ VM : migration `capability_override_audit_logs` non auto-jouée → `php artisan migrate` avant e2e base

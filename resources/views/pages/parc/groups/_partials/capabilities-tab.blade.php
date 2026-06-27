@@ -2,9 +2,12 @@
 
 use App\Components\Traits\WithToasts;
 use App\Models\Capability;
+use App\Models\CapabilityOverrideAuditLog;
+use App\Models\User;
 use App\Models\WorkstationGroup;
 use App\Services\ControlHub\UpstreamLockResolver;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -291,14 +294,53 @@ new class extends Component {
 
         $parc = WorkstationGroup::query()->findOrFail($this->groupId);
 
-        DB::table('capability_assignments')->updateOrInsert(
-            [
-                'capability_id' => $capability->id,
-                'assignable_type' => WorkstationGroup::class,
-                'assignable_id' => $parc->id,
-            ],
-            ['value' => $value, 'updated_at' => now(), 'created_at' => now()],
-        );
+        // Story 29.5 (NFR5) — old_value lue AVANT la mutation (sinon perdue).
+        $oldValue = DB::table('capability_assignments')
+            ->where('assignable_type', WorkstationGroup::class)
+            ->where('assignable_id', $parc->id)
+            ->where('capability_id', $capability->id)
+            ->value('value');
+
+        // Statut amont au moment de l'acte : un `locked` n'arrive jamais ici (refusé
+        // par authorizeUpstream ci-dessus) → permissif imposé OU purement local. La
+        // résolution réutilise le resolver mémoïsé (court-circuit NFR3 préservé :
+        // sans contrat actif, aucune requête `controlhub_contract_items`).
+        $upstreamStatus = app(UpstreamLockResolver::class)->isCapabilityPermissive($capability)
+            ? CapabilityOverrideAuditLog::UPSTREAM_PERMISSIVE
+            : CapabilityOverrideAuditLog::UPSTREAM_LOCAL;
+
+        [$actorId, $actorLogin] = $this->resolveActor();
+
+        // Story 29.5 (NFR5, AC#6) — atomicité acte ↔ trace : la mutation du pivot ET
+        // l'écriture d'audit dans une MÊME transaction (si l'audit échoue, l'override
+        // n'est pas confirmé). L'`action` est dérivée de l'EXISTENCE EN BASE
+        // (`$hasExistingOverride`), jamais du flag client `isEditing`.
+        DB::transaction(function () use ($capability, $parc, $value, $oldValue, $hasExistingOverride, $upstreamStatus, $actorId, $actorLogin): void {
+            DB::table('capability_assignments')->updateOrInsert(
+                [
+                    'capability_id' => $capability->id,
+                    'assignable_type' => WorkstationGroup::class,
+                    'assignable_id' => $parc->id,
+                ],
+                ['value' => $value, 'updated_at' => now(), 'created_at' => now()],
+            );
+
+            CapabilityOverrideAuditLog::log(
+                action: $hasExistingOverride
+                    ? CapabilityOverrideAuditLog::ACTION_UPDATE
+                    : CapabilityOverrideAuditLog::ACTION_CREATE,
+                actorUserId: $actorId,
+                actorLogin: $actorLogin,
+                capabilityId: (int) $capability->id,
+                capabilityLabel: (string) $capability->label,
+                assignableType: WorkstationGroup::class,
+                assignableId: (int) $parc->id,
+                scopeLabel: (string) $parc->name,
+                oldValue: $oldValue !== null ? (string) $oldValue : null,
+                newValue: $value,
+                upstreamStatus: $upstreamStatus,
+            );
+        });
 
         $this->toastSuccess($this->isEditing
             ? 'Override mis à jour pour ce parc.'
@@ -322,17 +364,86 @@ new class extends Component {
             return;
         }
 
-        DB::table('capability_assignments')
+        $parc = WorkstationGroup::query()->find($this->groupId);
+
+        // Story 29.5 (NFR5, review #4) — pas de TRACE FANTÔME : si aucun override
+        // n'existe pour ce périmètre (rejeu / appel Livewire direct), il n'y a aucun
+        // acte à poser, donc aucun événement d'audit à consigner (« une trace fantôme
+        // sans acte serait trompeuse » — Dev Notes). `first()` distingue l'absence de
+        // ligne d'une ligne à `value` null (la colonne `value` est nullable).
+        $existing = DB::table('capability_assignments')
             ->where('assignable_type', WorkstationGroup::class)
             ->where('assignable_id', $this->groupId)
             ->where('capability_id', $capabilityId)
-            ->delete();
+            ->first(['value']);
+
+        if ($existing === null) {
+            return;
+        }
+
+        // Ancienne valeur lue AVANT le delete.
+        $oldValue = $existing->value;
+
+        // Statut amont (court-circuit NFR3 préservé). `null` capability → local.
+        $upstreamStatus = ($capability !== null
+            && app(UpstreamLockResolver::class)->isCapabilityPermissive($capability))
+            ? CapabilityOverrideAuditLog::UPSTREAM_PERMISSIVE
+            : CapabilityOverrideAuditLog::UPSTREAM_LOCAL;
+
+        [$actorId, $actorLogin] = $this->resolveActor();
+
+        // Story 29.5 (NFR5, AC#4/#6) — atomicité acte ↔ trace : delete + audit
+        // `delete` (new_value = null) dans une MÊME transaction. capability_id est
+        // null-safe (FK nullOnDelete) pour le cas où la capacité aurait disparu.
+        DB::transaction(function () use ($capability, $parc, $capabilityId, $oldValue, $upstreamStatus, $actorId, $actorLogin): void {
+            DB::table('capability_assignments')
+                ->where('assignable_type', WorkstationGroup::class)
+                ->where('assignable_id', $this->groupId)
+                ->where('capability_id', $capabilityId)
+                ->delete();
+
+            CapabilityOverrideAuditLog::log(
+                action: CapabilityOverrideAuditLog::ACTION_DELETE,
+                actorUserId: $actorId,
+                actorLogin: $actorLogin,
+                capabilityId: $capability?->id,
+                capabilityLabel: (string) ($capability?->label ?? ''),
+                assignableType: WorkstationGroup::class,
+                assignableId: (int) $this->groupId,
+                scopeLabel: $parc?->name,
+                oldValue: $oldValue !== null ? (string) $oldValue : null,
+                newValue: null,
+                upstreamStatus: $upstreamStatus,
+            );
+        });
 
         $this->toastSuccess('Override retiré — le parc revient à la valeur par défaut (réappliquée au cycle suivant).');
         unset($this->overrides, $this->addableCapabilities);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
+
+    /**
+     * Story 29.5 (NFR5) — acteur de l'audit : id (FK) + login DÉNORMALISÉ.
+     *
+     * En production `Auth::user()` est toujours un {@see User} (refnum AD-local) :
+     * on persiste son id (FK `nullOnDelete`) et son login. Le guard `instanceof
+     * User` garantit l'intégrité de la FK `actor_user_id` : si l'utilisateur
+     * authentifié n'est pas une entité Eloquent persistée (jamais en prod), on
+     * trace `null` plutôt que de violer la contrainte référentielle.
+     *
+     * @return array{0:int|null,1:string|null}
+     */
+    private function resolveActor(): array
+    {
+        $user = Auth::user();
+
+        if ($user instanceof User) {
+            return [(int) $user->getKey(), (string) $user->login];
+        }
+
+        return [null, null];
+    }
 
     /**
      * Valide la valeur de capacité saisie contre `value_type`/`options` (SQLite
