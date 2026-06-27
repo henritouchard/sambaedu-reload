@@ -43,15 +43,18 @@ use App\Services\Agent\StateCandidate;
  *  - **Cible** : seuls les items `target_type = instance` sont injectés. Les
  *    items `target_type = label` sont **différés Epic 30** (mapping label →
  *    `WorkstationGroup`) — ignorés proprement ici (ni résolution, ni plantage).
- *  - **Enforcement** : `locked` ET `permissive` sont injectés (les DEUX priment
- *    sur le local à ce stade) ; `absent` est **exclu** (l'autorité déclare ne pas
+ *  - **Enforcement** : `locked` ET `permissive` sont injectés mais à des mailles
+ *    DIVERGENTES (Story 29.3) ; `absent` est **exclu** (l'autorité déclare ne pas
  *    imposer cette clé — il ne prime sur rien — AC #6).
  *
- *    ⚠️ COUTURE Epic 29 — la **relaxation permissive** (un override
- *    `workstationGroup` local battant un item `permissive`) n'est PAS implémentée
- *    ici : à ce stade `permissive` se comporte EXACTEMENT comme `locked`
- *    vis-à-vis du local. La relaxation viendra en injectant `permissive` à un
- *    rang battable, ou via un mécanisme dédié — décision d'Epic 29.
+ *    ✅ RELAXATION PERMISSIVE LIVRÉE (Story 29.3 — couture Epic 29 fermée) : un
+ *    item `locked` est injecté à la maille `StateMaille::Upstream` (rang -1,
+ *    INBATTABLE — l'amont gagne toujours, FR3) ; un item `permissive` est injecté
+ *    à la maille `StateMaille::UpstreamPermissive` (rang 6, le MOINS spécifique de
+ *    toute la chaîne — un PLANCHER que toute maille locale surcharge, FR4). La
+ *    maille dérive DIRECTEMENT de l'`enforcement_state` de l'item (source de
+ *    vérité unique — pas de recalcul via `UpstreamLockResolver`). La précédence
+ *    elle-même reste arbitrée par `StateCompiler::specificity()` SEUL (D2).
  *
  * **Cache** : aucun cache applicatif (Redis/file). La mémoïsation `$resolved`/
  * `$grouped` EST néanmoins un cache à **durée de vie du conteneur** : sûr tant que
@@ -146,8 +149,17 @@ final class UpstreamContractSource
                 continue;
             }
 
+            // Story 29.3 — maille divergente selon l'enforcement de l'ITEM (source
+            // de vérité unique) : `locked` → `Upstream` (rang -1, inbattable, FR3) ;
+            // `permissive` → `UpstreamPermissive` (rang 6, plancher battable, FR4).
+            // Les deux états ont été retenus par le `whereIn` ci-dessus ; `absent`
+            // n'arrive jamais ici (exclu en amont).
+            $maille = $item->enforcement_state === ControlHubEnforcementState::Permissive
+                ? StateMaille::UpstreamPermissive
+                : StateMaille::Upstream;
+
             $this->grouped[$this->groupKey($adapter->providerType(), $adapter->scopeFor($item))][] = new StateCandidate(
-                maille: StateMaille::Upstream,
+                maille: $maille,
                 payload: $adapter->toPayload($item),
                 updatedAt: $item->updated_at,
                 sourceId: (int) $item->id,

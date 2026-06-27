@@ -698,6 +698,21 @@ class StateCompilerTest extends TestCase
             $ranks[StateMaille::Upstream->value],
             'specificity(Upstream) < specificity(User) — l\'amont prime sur le local (FR2)',
         );
+
+        // Story 29.3 — la maille AMONT PERMISSIVE est la MOINS spécifique de toute
+        // la chaîne (rang maximum, STRICTEMENT > Broadcast) : un item `permissive`
+        // est un plancher que toute maille locale — défaut diffusé inclus —
+        // surcharge (FR4). Distincte de `Upstream` (locked) qui reste inbattable.
+        self::assertSame(
+            max($ranks),
+            $ranks[StateMaille::UpstreamPermissive->value],
+            'la maille UpstreamPermissive est la MOINS spécifique (rang maximum)',
+        );
+        self::assertGreaterThan(
+            $ranks[StateMaille::Broadcast->value],
+            $ranks[StateMaille::UpstreamPermissive->value],
+            'specificity(UpstreamPermissive) > specificity(Broadcast) — le permissif est battu même par le défaut diffusé (FR4 — Story 29.3)',
+        );
     }
 
     #[Test]

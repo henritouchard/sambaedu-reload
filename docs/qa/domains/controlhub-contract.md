@@ -697,3 +697,135 @@ reste éditable. Le verrou par label/parc viendra en Epic 30.
 - [ ] Standalone byte-identique + court-circuit ≤ 1 requête, 0 items (Scénario 7.5)
 - [ ] Label différé Epic 30 (Scénario 7.6)
 - [ ] R3 : aucun identifiant « central » dans `UpstreamLockResolver`/`CapabilityPolicy`
+
+---
+
+## Section 8 — Relaxation permissive : l'override par workstationGroup MORD au compilé (Story 29.3, 2026-06-27)
+
+> **Modèle** : pendant INVERSE de 29.2. 29.2 transforme le « défait en silence »
+> d'un item `locked` en REFUS d'écriture. 29.3 transforme le « override écrit mais
+> SANS effet » d'un item `permissive` en override qui MORD réellement à l'état
+> compilé. Le geste d'écriture existait déjà (27.12) et 29.2 le laisse déjà passer
+> pour `permissive` (le gate ne refuse QUE `locked`) ; le trou était la
+> **résolution** — un `permissive` était injecté à la maille `Upstream` (rang -1)
+> EXACTEMENT comme `locked`, donc il battait l'override local.
+>
+> **Le correctif** : `UpstreamContractSource::ensureResolved()` injecte désormais
+> une maille DIVERGENTE selon l'`enforcement_state` de l'item :
+> `locked → StateMaille::Upstream` (rang -1, INBATTABLE, inchangé) ;
+> `permissive → StateMaille::UpstreamPermissive` (rang **6**, le MOINS spécifique
+> de toute la chaîne, **sous `Broadcast`**). **Règle métier (décision Henri
+> 2026-06-27)** : un `permissive` est un **plancher** ; **toute** maille locale le
+> surcharge — défaut diffusé (`Broadcast`), groupe logique, groupe physique, poste,
+> user — et il ne s'applique qu'en l'**absence totale** de candidat local. PAS de
+> nuance « permissif bat le défaut diffusé ». `locked` n'est JAMAIS relaxé.
+>
+> La maille interne n'est **jamais sérialisée** : le contrat agent
+> `se5.desired-state/v1`, le golden et le `FROZEN_STATE_HASH` restent **INTACTS**
+> (un échec golden serait un bug de fuite de maille). Scope `instance` uniquement
+> (label → Epic 30). Type `registry` (exclusive par clé).
+
+**Pré-requis** : un contrat amont `active` (Section 5) avec un item
+`registry`/`permissive`/`instance` dont la clé `hive|path|name` correspond à une
+projection d'une capacité (ex. `show_hidden_files`). Un parc G (workstationGroup
+logique) avec un poste membre, et un parc H avec un autre poste.
+
+**Validation automatisée (HÔTE) — préalable à tout test manuel :**
+
+```bash
+# Hôte (php8.4 + pdo_sqlite)
+php artisan test --filter PermissiveOverrideResolution            # 6/6 attendus
+php artisan test --filter CapabilitiesTabPermissiveOverride        # 3/3 attendus
+php artisan test --filter "UpstreamContractResolution|StateCompiler"  # non-régression (test 28.3 renommé)
+php artisan test --filter ContractV1                               # golden INTACT
+```
+
+### Scénario 8.1 — L'override de parc d'une capacité permissive MORD au compilé (CRITIQUE)
+
+**Procédure** : item amont `permissive` sur la clé d'une capacité C. Sur le parc G,
+poser un override de C (onglet « Options / Capacités » — autorisé, pas de badge
+verrou). Compiler l'état d'un poste de G.
+
+**Attendu** : l'état effectif du poste reflète la **valeur de l'override du
+refnum**, PAS la valeur amont permissive (le candidat de la maille de G — rang 3/4
+— bat le plancher `UpstreamPermissive` rang 6). L'override n'est plus une « promesse
+creuse ».
+
+### Scénario 8.2 — Sans aucun candidat local, le permissif s'applique comme baseline
+
+**Procédure** : item amont `permissive` sur une clé pour laquelle AUCUN candidat
+local n'existe (ni override, ni poste, ni **défaut diffusé** pour cette clé).
+
+**Attendu** : la valeur amont `permissive` s'applique (baseline). Le plancher n'est
+servi qu'en l'absence TOTALE de candidat local.
+
+### Scénario 8.3 — Le défaut diffusé (Broadcast) surcharge le permissif
+
+**Procédure** : item amont `permissive` sur la clé d'une capacité qui émet un
+**défaut diffusé** (Broadcast) pour cette clé, SANS override de parc.
+
+**Attendu** : c'est la **valeur du défaut diffusé** qui s'applique, pas la valeur
+amont permissive (le permissif est le rang le MOINS spécifique — décision Henri :
+pas de nuance « permissif bat Broadcast »).
+
+### Scénario 8.4 — Un item LOCKED n'est JAMAIS relaxé (non-régression 28.3/29.2)
+
+**Procédure** : item amont `locked` sur la clé de C + un override de parc (cas où
+il aurait malgré tout été écrit, ou un défaut local existe).
+
+**Attendu** : la valeur amont `locked` **prime** (maille `Upstream` rang -1,
+inchangé). La relaxation 29.3 ne touche QUE `permissive`. Et à l'écriture : un
+override de parc sur une capacité `locked` reste **refusé** (badge + message,
+aucune écriture — Section 7).
+
+### Scénario 8.5 — Scope : l'override de G ne fuit pas vers un poste de H
+
+**Procédure** : item amont `permissive` sur C ; override de C posé sur le parc G
+(et PAS sur H). Compiler un poste de G, puis un poste de H.
+
+**Attendu** : le poste de **G** porte la valeur de l'override ; le poste de **H**
+ne porte PAS cet override (il retombe sur son défaut diffusé / sa propre
+résolution). Le ciblage « ce groupe uniquement » est inhérent au provider de
+capacités. **Note** : conformément à la décision Henri, si C émet un défaut diffusé,
+le poste de H affiche ce défaut (le permissif est sous le Broadcast) — l'essentiel
+est que l'override de G **ne fuit pas**.
+
+### Scénario 8.6 — Retrait d'un override permissif → retour à la baseline (FR4)
+
+**Procédure** : un override de parc existe sur une capacité `permissive`. Le retirer
+(« Retirer » dans l'onglet).
+
+**Attendu** : le retrait est **autorisé** (le refnum reprend la valeur amont/défaut
+comme baseline — marge d'adaptation FR4) ; la ligne `capability_assignments` est
+supprimée. (Contraste avec `locked` où le retrait est refusé — Section 7.2.)
+
+### Scénario 8.7 — Standalone (aucun contrat actif) → rien ne change (NFR3)
+
+**Procédure** : aucun contrat amont `active`. Dérouler la résolution desired-state.
+
+**Attendu** : compilé STRICTEMENT identique au standalone 27.12/28.3 (aucun candidat
+`UpstreamPermissive` injecté) ; au plus 1 requête `controlhub_contracts`, ZÉRO
+requête `controlhub_contract_items` (court-circuit). Golden inchangé.
+
+```bash
+grep -rin "central" app/Enums/StateMaille.php \
+  app/Services/ControlHub/Resolution/UpstreamContractSource.php \
+  app/Services/Agent/StateCompiler.php
+# → uniquement les commentaires garde-fou « JAMAIS central »
+```
+
+---
+
+## Checklist rapide Story 29.3
+
+- [ ] `php artisan test --filter "PermissiveOverride|CapabilitiesTabPermissiveOverride"` → 9/9 verts
+- [ ] `php artisan test --filter "UpstreamContractResolution|StateCompiler|ControlHubContract|ContractV1"` → non-régression verte (0 régression ; test 28.3 renommé `locked_wins_over_local_but_permissive_is_overridden_by_local`)
+- [ ] Override de parc d'une capacité permissive MORD au compilé (Scénario 8.1)
+- [ ] Permissif seul → baseline amont (Scénario 8.2)
+- [ ] Défaut diffusé surcharge le permissif (Scénario 8.3)
+- [ ] `locked` jamais relaxé + override `locked` refusé (Scénario 8.4)
+- [ ] Override de G ne fuit pas vers H (Scénario 8.5)
+- [ ] Retrait d'override permissif autorisé (Scénario 8.6)
+- [ ] Standalone byte-identique + court-circuit ≤ 1 requête, 0 items (Scénario 8.7)
+- [ ] Golden / `FROZEN_STATE_HASH` / `ContractV1Test` INTACTS (maille interne jamais sérialisée)
+- [ ] R3 : aucun identifiant « central » dans les fichiers touchés

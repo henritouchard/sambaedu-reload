@@ -389,6 +389,15 @@ final class StateCompiler
      * `specificity(Upstream) < specificity(User)`. C'est l'UNIQUE match()
      * exhaustif sur `StateMaille` : tout nouveau case DOIT être ajouté ici
      * (sinon `UnhandledMatchError` en prod — garde-fou testé Story 28.3).
+     *
+     * Story 29.3 — TIER AMONT PERMISSIF : `UpstreamPermissive` au rang 6
+     * (STRICTEMENT > `Broadcast`, donc le MOINS spécifique de toute la chaîne).
+     * Conséquence : un item `permissive` est un **plancher** que TOUTE maille
+     * locale surcharge (défaut diffusé inclus) ; il ne gagne qu'en l'ABSENCE
+     * TOTALE de candidat local (FR4). `locked` reste INBATTABLE (`Upstream` rang
+     * -1, inchangé) : seul `permissive` est relaxé. La relaxation vit ICI SEUL
+     * (le rang de la maille), JAMAIS via une branche ad hoc dans
+     * `resolveExclusiveWinner` (D2 ne fuit pas — exigence Story 29.3).
      */
     private function specificity(StateMaille $maille): int
     {
@@ -400,6 +409,7 @@ final class StateCompiler
             StateMaille::LogicalGroup => 3,
             StateMaille::PhysicalGroup => 4,
             StateMaille::Broadcast => 5,
+            StateMaille::UpstreamPermissive => 6,
         };
     }
 }

@@ -306,8 +306,14 @@ class UpstreamContractResolutionTest extends TestCase
     }
 
     #[Test]
-    public function permissive_and_locked_both_win_over_local(): void
+    public function locked_wins_over_local_but_permissive_is_overridden_by_local(): void
     {
+        // Story 29.3 (relaxation permissive livrée) — la maille diverge selon
+        // l'enforcement : `locked` → `Upstream` (rang -1, INBATTABLE) ;
+        // `permissive` → `UpstreamPermissive` (rang 6, PLANCHER battable). Un
+        // override local (maille `LogicalGroup`) surcharge donc le `permissive`
+        // mais JAMAIS le `locked`. (Remplace l'ancien comportement 28.3 où
+        // `permissive` se comportait comme `locked` — couture Epic 29 fermée.)
         $contract = ControlHubContract::factory()->create();
         ControlHubContractItem::factory()->permissive()->create([
             'controlhub_contract_id' => $contract->id,
@@ -335,8 +341,8 @@ class UpstreamContractResolutionTest extends TestCase
         $items = $this->compileDecorated([$local], [new RegistryUpstreamAdapter()])[StateContract::SCOPE_SESSION];
         $byName = collect($items)->keyBy('payload.name');
 
-        self::assertSame(1, $byName['Perm']['payload']['value'], 'permissive prime sur le local (relaxation = Epic 29)');
-        self::assertSame(2, $byName['Lock']['payload']['value'], 'locked prime sur le local');
+        self::assertSame(0, $byName['Perm']['payload']['value'], 'permissive est un plancher : l\'override local le surcharge (FR4 — Story 29.3)');
+        self::assertSame(2, $byName['Lock']['payload']['value'], 'locked reste inbattable (Upstream rang -1) — l\'amont prime sur le local');
     }
 
     // ── Bornage : label ignoré (Epic 30) ; severed inerte (Epic 32) ───────
