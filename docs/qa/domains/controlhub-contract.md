@@ -394,3 +394,88 @@ grep -riE "central" \
 
 1. Tenter `WorkstationGroupLabelService::detachLabel($group)` (équivalent d'une requête forgée `controlhubLabel=''`).
 2. **Attendu** : `LabelAssignmentException` (« réservé ») ; `controlhub_label` du parc **inchangé** (`direction`). Le refus est tenu CÔTÉ SERVICE, pas seulement par l'UI.
+
+## Section 7 — Garantie d'existence des groupes imposés (Story 30.3)
+
+Réconciliation « désir d'état » des `WorkstationGroup` exigés par le contrat amont :
+créer si absent (avec label réservé + verrou), confirmer sans doublon si existant,
+lever le verrou des groupes non-imposés — **sans aucune migration** (colonnes `locked`,
+`managed_by_control_hub`, `controlhub_label` déjà présentes). Service
+`ImposedWorkstationGroupReconciler`, listener `ReconcileImposedWorkstationGroups` sur
+`ControlHubContractChanged`, commande `controlhub:reconcile-imposed-groups`. Verrou de
+suppression = **réutilisation** du mécanisme `locked` (aucun nouveau code de refus).
+
+> **Pré-requis (HÔTE)** : php8.4 + pdo_sqlite, `RefreshDatabase`, `Queue::fake()` pour
+> neutraliser/asserter `WorkstationGroupAdSyncJob`. Seeder via factories 28.1
+> (`ControlHubContractFactory`, `ControlHubContractImposedGroupFactory->withLabel()`,
+> `ControlHubContractLabelFactory->reserved()`) + `WorkstationGroupFactory`. **JAMAIS la VM.**
+
+### Scénario 7.1 — Création d'un groupe imposé absent (chemin parc → AD)
+
+**Pré-requis** : contrat actif imposant `bureau_direction` (label réservé `direction`) ; aucun `WorkstationGroup` de ce nom.
+
+1. Exécuter `ImposedWorkstationGroupReconciler::reconcile()` (ou la commande artisan).
+2. **Attendu** : un `WorkstationGroup` `bureau_direction` est créé via le chemin parc existant (`WorkstationGroupService::createGroup`), avec `is_physical = false`, `is_active = true`, `managed_by_control_hub = true`, `locked = control_hub`, `controlhub_label = direction`.
+3. Le `WorkstationGroupAdSyncJob` est dispatché (création réelle du parc en `OU=Parcs` côté VM). Un groupe imposé **sans** label → `controlhub_label` reste `null`.
+
+### Scénario 7.2 — Confirmation idempotente d'un groupe existant (sans doublon)
+
+**Pré-requis** : contrat actif imposant `bureau_direction` (label `direction`) ; un `WorkstationGroup` `bureau_direction` existe déjà (sans label, non verrouillé).
+
+1. `reconcile()`.
+2. **Attendu** : aucun doublon (`count('bureau_direction') === 1`) ; `controlhub_label` posé à `direction`, `managed_by_control_hub = true`, `locked = control_hub`. L'écriture est **ciblée** (pas via `updateGroup()` qui throw sur `isLocked()`), uniquement si un champ change.
+3. **Variante adopt ROOT** : si le groupe pré-existant porte `locked = root`, le verrou `root` est **préservé** (jamais écrasé par `control_hub`), `managed_by_control_hub` passe quand même à `true`.
+
+### Scénario 7.3 — Idempotence sur exécutions répétées (NFR4)
+
+**Pré-requis** : groupes imposés déjà réconciliés.
+
+1. `reconcile()` une seconde fois (mêmes données).
+2. **Attendu** : no-op fonctionnel — `created = 0`, `confirmed = 0`, `released = 0`, aucun doublon, aucune exception, aucun `save()` (donc aucun réveil parasite de l'observer `updated()`).
+
+### Scénario 7.4 — Verrou de suppression sous contrat (refnum bloqué)
+
+**Pré-requis** : groupe imposé `bureau_direction` réconcilié (`locked = control_hub`).
+
+1. `WorkstationGroupService::deleteGroup($group->id)` (ou action UI « Supprimer »).
+2. **Attendu** : `\RuntimeException` (mécanisme `isLocked()` existant) ; le groupe **persiste** en base. L'UI affiche le bouton « Supprimer » désactivé (cadenas) + le badge « Imposé par le contrat amont — non supprimable » sur la fiche du groupe.
+
+### Scénario 7.5 — Levée du verrou d'un groupe non-imposé (sans suppression)
+
+**Pré-requis** : contrat actif n'imposant **plus** `ancien_parc` (qui porte `managed_by_control_hub = true`, `locked = control_hub`, `controlhub_label = ancien-label`).
+
+1. `reconcile()`.
+2. **Attendu** : `ancien_parc` **n'est PAS supprimé** ; `locked` repasse à `null` (uniquement car il valait `control_hub`), `managed_by_control_hub = false`. Le `controlhub_label` devenu « dangling » est laissé tel quel (sans effet — cf. 30.4). La rupture totale du lien (suppression/déverrouillage de masse) relève d'Epic 32, **hors 30.3**.
+3. **Variante root** : un groupe non-imposé portant `locked = root` n'est **pas** déverrouillé (seul `managed_by_control_hub` est levé).
+
+### Scénario 7.6 — Déclenchement automatique via listener (AC5)
+
+**Pré-requis** : aucune VM, ingestion réelle 28.2.
+
+1. `ControlHubContractIngestionService::ingest(['imposed_groups' => [['name' => 'parc-terminales', 'label_name' => 'salle-info']], 'labels' => [['name' => 'salle-info', 'mode' => 'reserved']]])`.
+2. **Attendu** : l'événement `ControlHubContractChanged` (émis après commit, sur mutation) déclenche le listener `ReconcileImposedWorkstationGroups` → le `WorkstationGroup` `parc-terminales` existe ensuite (`managed_by_control_hub`, `locked = control_hub`, label `salle-info`). **L'ingestion 28.2 n'est pas modifiée.** Une ingestion sans `imposed_groups` → réconciliation no-op (aucun groupe créé).
+
+### Scénario 7.7 — Commande artisan (ops/recovery)
+
+1. `php artisan controlhub:reconcile-imposed-groups` **avec** contrat actif → groupes créés/confirmés, compteurs affichés, exit 0.
+2. **Sans** contrat actif → message « Aucun contrat amont actif … », exit 0, **rien d'écrit** (NFR3).
+
+### Scénario 7.8 — Standalone (NFR3) + R3
+
+1. Sans contrat amont actif (`ControlHubContract::active() === null`), `reconcile()` est un **no-op total** : aucun `WorkstationGroup` créé/modifié, aucun verrou posé, `Queue::assertNothingPushed()` côté AD-sync de ce service. Un contrat `severed` n'est **pas** actif → même no-op.
+2. **R3** : introspection (reflection) des classes livrées (`ImposedWorkstationGroupReconciler`, `ImposedGroupReconciliationResult`, listener, commande) → **aucun** identifiant ne contient « central » (`control_hub`/`ControlHub` conformes).
+
+## Checklist rapide Story 30.3
+
+- [ ] `vendor/bin/phpunit --filter Imposed` → 20/20 verts
+- [ ] `vendor/bin/phpunit --filter ReconcileImposedGroups` → 4/4 verts
+- [ ] Non-régression `--filter ControlHubContract` (48) + `--filter WorkstationGroupLabel` (19) verts
+- [ ] Création d'un groupe imposé absent via le chemin parc + dispatch AD (Scénario 7.1)
+- [ ] Confirmation idempotente sans doublon + adopt ROOT non écrasé (Scénario 7.2)
+- [ ] Idempotence 2 passes = no-op (Scénario 7.3)
+- [ ] `deleteGroup()` refuse + groupe persiste + badge UI (Scénario 7.4)
+- [ ] Levée du verrou d'un non-imposé sans suppression, root préservé (Scénario 7.5)
+- [ ] Listener déclenché par l'ingestion réelle (Scénario 7.6)
+- [ ] Commande artisan avec/sans contrat (Scénario 7.7)
+- [ ] Standalone no-op total (NFR3) + R3 sans « central » (Scénario 7.8)
+- [ ] **Aucune migration ajoutée** ; aucun chemin parc existant modifié hors badge UI lecture seule

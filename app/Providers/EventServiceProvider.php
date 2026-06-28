@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Events\ControlHubContractChanged;
 use App\Listeners\NotifyQuotaOverageOnLogin;
+use App\Listeners\ReconcileImposedWorkstationGroups;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
@@ -26,6 +28,15 @@ class EventServiceProvider extends ServiceProvider
         // (Login event = vrai login effectif, pas re-session cookie).
         Login::class => [
             NotifyQuotaOverageOnLogin::class,
+        ],
+
+        // Story 30.3 — Garantie d'existence des groupes imposés par le contrat
+        // amont (controlHub). 1er consommateur de cet événement (inerte depuis
+        // 28.2) : à chaque mutation du contrat, la réconciliation crée/confirme
+        // les WorkstationGroup imposés et lève le verrou des groupes non-imposés.
+        // shouldDiscoverEvents() === false → enregistrement explicite obligatoire.
+        ControlHubContractChanged::class => [
+            ReconcileImposedWorkstationGroups::class,
         ],
     ];
 

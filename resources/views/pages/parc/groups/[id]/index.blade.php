@@ -1851,6 +1851,18 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                                         Groupe logique
                                     </span>
                                 @endif
+                                {{-- Story 30.3 — Badge lecture seule « imposé par le contrat amont ».
+                                     Couvre TOUS les groupes managed_by_control_hub, y compris le cas
+                                     « adopted » (groupe pré-existant verrouillé root, AC4) où le verrou
+                                     affiché reste root mais le groupe est tout de même imposé et non
+                                     supprimable. --}}
+                                @if ($group->managed_by_control_hub)
+                                    <span class="badge badge-warning gap-1"
+                                        title="Ce parc est exigé par le contrat amont et ne peut pas être supprimé tant que le contrat l'impose.">
+                                        <i class="fa-solid fa-lock text-xs"></i>
+                                        Imposé par le contrat amont — non supprimable
+                                    </span>
+                                @endif
                             </div>
                             @if ($group->description)
                                 <p class="text-base-content/60 mt-1 text-sm">{{ $group->description }}</p>
