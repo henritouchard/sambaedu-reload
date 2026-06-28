@@ -28,4 +28,9 @@ class WorkstationGroupFactory extends Factory
     {
         return $this->state(fn() => ['is_physical' => false]);
     }
+
+    public function physical(): static
+    {
+        return $this->state(fn() => ['is_physical' => true]);
+    }
 }

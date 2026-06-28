@@ -83,7 +83,11 @@ class UpstreamAwareProvider implements StateProvider
      */
     public function itemsFor(TargetContext $ctx): Collection
     {
-        $upstream = $this->source->candidatesFor($this->inner->type(), $this->inner->scope());
+        // Story 30.4 — on relaie `$ctx` à la source : elle en a besoin pour
+        // résoudre les labels portés par le poste (items `target_type = label`).
+        // Sans item label dans le contrat, la source court-circuite (NFR3 : aucune
+        // requête WG, pass-through strict inchangé).
+        $upstream = $this->source->candidatesFor($this->inner->type(), $this->inner->scope(), $ctx);
 
         return $this->inner->itemsFor($ctx)->concat($upstream);
     }

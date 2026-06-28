@@ -1230,3 +1230,122 @@ grep -rin "central" \
 - [ ] Non-régression `ControlHubContractIngestion|ControlHubContract|UpstreamContractResolution|ContractV1` → 0 régression
 - [ ] AUCUNE migration/modèle/enum créé ; golden / `FROZEN_STATE_HASH` / `ContractV1` INCHANGÉS ; `StateCompiler` intact
 - [ ] ✅ VM : aucune migration en 30.1 → rien à jouer
+
+---
+
+## Section 12 — Résolution d'un item ciblant un label (Story 30.4, 2026-06-28)
+
+> **Modèle** : dernier maillon de la propagation par label (FR12). 28.3 chargeait
+> uniquement les items `target_type = instance` et **ignorait proprement** les items
+> `target_type = label` (couture Epic 30). 30.4 **lève** ce filtre dans
+> `App\Services\ControlHub\Resolution\UpstreamContractSource` : un item amont ciblant
+> `label:<nom>` s'applique désormais à **tout poste** membre d'un `WorkstationGroup`
+> portant `controlhub_label = <nom>` (mapping 30.2, par NOM, sans FK dure).
+>
+> **Point d'extension (ZÉRO changement du moteur)** : toute l'expansion vit dans la
+> **source** amont — `ensureResolved()` charge `whereIn(target_type, [instance, label])`
+> et pré-groupe les items label par `target_label` dans `groupedByLabel[label][type|scope]` ;
+> `candidatesFor(type, scope, $ctx)` réunit `instance ∪ (labels portés par le poste)` ;
+> le helper `labelsCarriedBy($ctx)` lit `WorkstationGroup.controlhub_label` via
+> `TargetContext::workstationGroupIds()`, **mémoïsé par poste** (anti-N+1). Le
+> `TargetContext` est relayé par `UpstreamAwareProvider::itemsFor()` (1 ligne). **AUCUNE**
+> ligne ajoutée à `StateCompiler`/`StateMaille`/`specificity()`/`AgentServiceProvider`
+> (D2 ne fuit pas) ; la maille dérive **uniquement** de `enforcement_state`
+> (`locked → Upstream` rang -1, `permissive → UpstreamPermissive` rang 6).
+>
+> **Règle verrou/permissif SANS spécificité inter-parcs (FR12)** : deux items de même
+> état (ex. 2 verrous via 2 parcs) sont au **même rang** ⇒ aucun arbitrage par parc
+> (ni logique>physique) — le tiebreak intra-maille (`updated_at` desc / `sourceId` desc)
+> tranche. **Collision** (2 verrous contradictoires même clé) : 30.4 NE résout PAS ;
+> elle réutilise le warning `agent.state.conflict` existant + tiebreak déterministe (pas
+> d'état vide). La **prévention prédictive** à l'assignation relève de la **Story 30.5**.
+
+**Validation automatisée (HÔTE) — préalable à tout test manuel :**
+
+```bash
+# Hôte (php8.4 + pdo_sqlite) — l'hôte n'a pas APCu
+CACHE_DRIVER=array vendor/bin/phpunit --filter UpstreamContractResolution   # 18/18 attendus
+CACHE_DRIVER=array vendor/bin/phpunit --filter 'StateCompiler|ControlHubContract|Upstream|Imposed|WorkstationGroupLabel'  # non-régression verte
+```
+
+### Scénario 12.1 — Un item `label:<nom>` s'applique à un poste portant le label (AC #1)
+
+**Procédure** : contrat actif avec un item `registry`/`locked` ciblant `target_type = label`,
+`target_label = salle-info` (`key = HKCU|P|Foo|REG_DWORD`, `value = 1`) ; un `WorkstationGroup`
+portant `controlhub_label = salle-info` auquel le poste appartient (salle ou parc) ; un
+réglage **local** sur la même clé (valeur `0`).
+
+**Attendu** : le compilé du poste porte **une seule** valeur = **1** (valeur amont) — l'item
+label gagne EXACTEMENT comme un item `instance` (maille `Upstream` rang -1, via `specificity()`).
+
+### Scénario 12.2 — Un poste NE portant PAS le label n'est pas touché (AC #2)
+
+**Procédure** : même item `label:salle-info`, mais le poste n'appartient à **aucun** groupe
+portant `controlhub_label = salle-info` (il porte un autre label, ou aucun).
+
+**Attendu** : l'item amont **n'est pas injecté** ; le réglage **local** gagnant subsiste —
+compilé strictement comme si l'item label n'existait pas pour ce poste.
+
+### Scénario 12.3 — Cumul deux parcs/labels même propriété : règle verrou/permissif (AC #3)
+
+**Procédure** : poste membre de deux groupes portant deux labels `<A>` et `<B>` ; deux items
+amont sur la **même** `exclusiveKey()`, l'un via `label:<A>` l'autre via `label:<B>`.
+
+**Attendu** :
+- les deux items **permissifs** (`UpstreamPermissive` rang 6) → **toute** maille locale gagne
+  (plancher battu) ;
+- un item **verrouillé** (`Upstream` rang -1) → l'amont gagne sur le local ;
+- entre deux candidats amont de **même état** (même maille) : **aucune** spécificité
+  inter-parcs — l'arbitrage retombe sur le tiebreak intra-maille (`updated_at`/`sourceId`),
+  **jamais** sur un ordre logique>physique ni un classement des parcs.
+
+### Scénario 12.4 — Collision insoluble : warning + tiebreak déterministe (AC #4)
+
+**Procédure** : deux items amont **`locked`** ciblant des labels portés par le **même** poste,
+imposant des valeurs **contradictoires** sur la **même** `exclusiveKey()`.
+
+**Attendu** : les deux candidats sont à la **même** maille `Upstream` (rang -1) ⇒
+`resolveExclusiveWinner` détecte « tied-at-top » et **émet `agent.state.conflict`** (channel
+`agent`, `maille = upstream`, `rule_ids = [<id item A>, <id item B>]`), puis applique le
+**tiebreak déterministe** (`updated_at`/`sourceId`) — un état **non vide** et **déterministe**
+est servi (NFR4). 30.4 NE résout PAS la collision et n'introduit **aucune** résolution
+silencieuse/arbitraire (la prévention prédictive = **Story 30.5**).
+
+### Scénario 12.5 — Standalone & inertie sans label : byte-identique + zéro requête (AC #5/#6)
+
+**Procédure** : (a) aucun contrat actif ; (b) contrat actif **sans aucun** item
+`target_type = label`. Dans les deux cas, compiler l'état d'un poste — y compris un poste
+**membre d'un parc porteur de label**.
+
+**Attendu** : compilé **byte-identique** au comportement 28.3 (mêmes items, même ordre, même
+`hashState()`) ; **aucune** requête `workstation_groups` pour la résolution des labels portés
+(court-circuit `groupedByLabel === []`) — vérifié par `DB::enableQueryLog()`. Avec item label
+présent, l'injection est **déterministe** (`travel()` → même hash).
+
+### Scénario 12.6 — D2 confiné & R3 (AC #7)
+
+```bash
+# (a) D2 : aucune ligne ajoutée au moteur
+git diff app/Services/Agent/StateCompiler.php app/Enums/StateMaille.php   # vide pour 30.4
+
+# (b) R3 : aucun identifiant « central »
+grep -rin "central" app/Services/ControlHub/Resolution/   # uniquement commentaires garde-fou
+```
+
+**Attendu** : toute l'expansion vit dans `UpstreamContractSource` (+ relais `$ctx` par
+`UpstreamAwareProvider`) ; aucun **identifiant** (classe, méthode, propriété, message, test)
+ne contient « central » — couvert par `r3_no_central_identifier` (scan reflection + littéraux).
+
+---
+
+## Checklist rapide Story 30.4
+
+- [ ] `CACHE_DRIVER=array vendor/bin/phpunit --filter UpstreamContractResolution` → 18/18 verts
+- [ ] Non-régression `--filter 'StateCompiler|ControlHubContract|Upstream|Imposed|WorkstationGroupLabel'` → verte (182)
+- [ ] Item `label:<nom>` appliqué au poste portant le label (Scénario 12.1)
+- [ ] Poste sans le label → non touché (Scénario 12.2)
+- [ ] Cumul 2 parcs/labels : verrou>local, permissif<local, sans spécificité inter-parcs (Scénario 12.3)
+- [ ] Collision 2 verrous → warning `agent.state.conflict` + tiebreak déterministe (Scénario 12.4)
+- [ ] Standalone & sans-item-label byte-identique + zéro requête WG + déterminisme (Scénario 12.5)
+- [ ] D2 confiné (zéro ligne `StateCompiler`/`StateMaille`) + R3 sans « central » (Scénario 12.6)
+- [ ] Test 28.3 `label_targeted_item_is_ignored` RÉÉCRIT (poste sans le label → non appliqué) + AC #1 ajouté
