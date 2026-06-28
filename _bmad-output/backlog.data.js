@@ -1183,73 +1183,91 @@ const DATASETS = {
         {
           "id": "28-3",
           "title": "Résolution amont > local dans StateCompiler (FR2, standalone préservé)",
-          "status": "backlog"
+          "status": "review"
         }
       ]
     },
     {
       "num": 29,
       "title": "Contrat Amont — Faire respecter le contrat (verrou & permissif)",
-      "status": "backlog",
+      "status": "in-progress",
       "summary": "<strong>Cœur de valeur</strong> : c'est ici que la divergence non voulue entre établissements est stoppée. Le refnum ne peut plus défaire un item <strong>verrouillé</strong>, peut surcharger un item <strong>permissif</strong> au niveau d'un WorkstationGroup, et voit clairement les statuts (imposé/verrouillé/permissif). Enforcement réel via <strong>Gates scopés</strong> — inclut le correctif du trou connu <code>wpkg.*</code> (Gate global non scopé, cf. <code>project_delegation_enforcement_wpkg_gap</code>), <strong>prérequis bloquant d'Epic 31</strong>. Item verrouillé soumis au drift STRICT (27.8) ; overrides audités.",
       "stories": [
         {
           "id": "29-1",
           "title": "Scoper le Gate wpkg.* par périmètre (NFR1 — prérequis Epic 31)",
-          "status": "backlog"
+          "status": "review"
         },
         {
           "id": "29-2",
           "title": "Refuser la modification d'un item verrouillé (UI + service + gate)",
-          "status": "backlog"
+          "status": "review"
         },
         {
           "id": "29-3",
           "title": "Surcharger un item permissif par WorkstationGroup",
-          "status": "backlog"
+          "status": "review"
         },
         {
           "id": "29-4",
           "title": "Lisibilité refnum — statuts imposé/verrouillé/permissif dans l'UI",
-          "status": "backlog"
+          "status": "review"
         },
         {
           "id": "29-5",
           "title": "Drift STRICT sur item verrouillé + audit des overrides",
-          "status": "backlog"
+          "status": "review"
+        },
+        {
+          "id": "29-6",
+          "title": "Scoper app.customize par WorkstationGroup (groupId client-hydraté) — follow-up M4 review 29-5",
+          "status": "review",
+          "note": "Correctif sécurité M4 livré : guardCustomize() scopé via gate customize-workstationGroup (jumeau assignWpkg) + #[Locked] sur groupId (fin du tampering). Review APPROVE WITH CHANGES (P4 toast + P2 test corrigés). Habilitation du délégué positif-seul reportée en 29-8 (plancher global modify-capability). Cf. codeReviews/29-6.md."
+        },
+        {
+          "id": "29-7",
+          "title": "Ne pas écraser created_at du pivot capability_assignments sur update — follow-up M1 review 29-5",
+          "status": "backlog",
+          "note": "Pré-existant (hérité 27.12) : saveOverride() passe created_at=now() dans les valeurs de updateOrInsert → l'update écrase le created_at d'origine du pivot. Faible sévérité (sans effet sur le compilé ni l'audit 29.5). Poser created_at sur INSERT seulement."
+        },
+        {
+          "id": "29-8",
+          "title": "Scoper le plancher de droit de modify-capability par surface — follow-up P1 review 29-6",
+          "status": "backlog",
+          "note": "CapabilityPolicy::modify exige le droit GLOBAL app.customize → un délégué positif-seul passe le guard scopé de 29.6 mais ne peut pas écrire d'override (habilitation AC#1 29.6 non livrée). modify-capability est dual-purpose (override par-parc + défaut diffusé global registry-tab) → retirer le plancher global et laisser chaque surface porter son contrôle. Prérequis réel d'AC#1 29.6 et de l'enforcement par périmètre Epic 31."
         }
       ]
     },
     {
       "num": 30,
       "title": "Contrat Amont — Cibler par labels (types de parc)",
-      "status": "backlog",
+      "status": "in-progress",
       "summary": "Les WorkstationGroups sont locaux et hétérogènes (un collège a 1 salle techno, un autre en a 3) → l'amont ne peut pas cibler un groupe qu'il ne connaît pas. Indirection par <strong>label</strong> (type de parc) : l'amont définit des labels, SE5 les mappe sur ses groupes, l'amont associe un item à un label → tous les groupes portant ce label héritent. <strong>1 label max par groupe</strong> (superposition via appartenance multiple aux parcs logiques). 3 modes : <code>libre</code> (refnum assigne/crée), <code>réservé</code> (non-attribuable, ex. compta), <code>groupe imposé</code> (création garantie, ex. bureau_direction). Conflit poste = règle verrou/permissif par propriété ; cas insoluble = validation prédictive à l'assignation.",
       "stories": [
         {
           "id": "30-1",
           "title": "Réception des labels (mode libre/réservé) et des groupes imposés",
-          "status": "backlog"
+          "status": "review"
         },
         {
           "id": "30-2",
           "title": "Mapping d'un label par le refnum (1 label max ; réservé non attribuable)",
-          "status": "backlog"
+          "status": "review"
         },
         {
           "id": "30-3",
           "title": "Garantie d'existence des groupes imposés (création/réconciliation)",
-          "status": "backlog"
+          "status": "review"
         },
         {
           "id": "30-4",
           "title": "Résolution d'un item ciblant un label (règle verrou/permissif, pas d'ordre inter-parcs)",
-          "status": "backlog"
+          "status": "review"
         },
         {
           "id": "30-5",
           "title": "Validation prédictive à l'assignation (collision de verrous amont)",
-          "status": "backlog"
+          "status": "review"
         }
       ]
     },
