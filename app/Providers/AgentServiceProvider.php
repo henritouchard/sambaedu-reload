@@ -34,6 +34,7 @@ use App\Services\ControlHub\Resolution\RegistryUpstreamAdapter;
 use App\Services\ControlHub\Resolution\UpstreamAwareProvider;
 use App\Services\ControlHub\Resolution\UpstreamContractSource;
 use App\Services\ControlHub\Resolution\UpstreamLockCollisionDetector;
+use App\Services\ControlHub\UpstreamCatalogResolver;
 use App\Services\ControlHub\UpstreamLockResolver;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
@@ -116,6 +117,13 @@ class AgentServiceProvider extends ServiceProvider
         // parc + défaut instance) ; court-circuit NFR3 sans contrat actif (≤ 1
         // requête, jamais la table `items`). Mémoïsation == par-requête (PHP-FPM).
         $this->app->singleton(UpstreamLockResolver::class, fn () => new UpstreamLockResolver());
+        // Story 31.1 — BORNAGE du canal d'install refnum au catalogue applicatif
+        // amont. Singleton ⇒ catalogue (`app_key` du contrat actif) résolu UNE fois
+        // et partagé par le scope de consultation (Application::scopeInUpstreamCatalog)
+        // ET le garde service (AppProfileService::assertApplicationsInUpstreamCatalog).
+        // Court-circuit NFR3 sans contrat actif (≤ 1 requête `controlhub_contracts`,
+        // jamais la table catalog). Mémoïsation == par-requête (PHP-FPM).
+        $this->app->singleton(UpstreamCatalogResolver::class, fn () => new UpstreamCatalogResolver());
         // Story 30.5 — DÉTECTEUR de collision verrou/verrou à l'assignation
         // (prévention prédictive, FR13). Singleton par-requête : réutilise le
         // singleton UpstreamContractSource (28.3, contrat mémoïsé) + les providers

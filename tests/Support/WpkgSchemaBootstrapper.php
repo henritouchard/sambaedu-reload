@@ -181,11 +181,40 @@ final class WpkgSchemaBootstrapper
                 $table->timestamps();
             });
         }
+
+        // Story 31.1 — le bornage catalogue (AppProfileService::assertApplications-
+        // InUpstreamCatalog + Application::scopeInUpstreamCatalog) résout
+        // ControlHubContract::active(). La table est requise même vide : sans contrat
+        // actif, le résolveur court-circuite (NFR3) et aucun bornage n'est appliqué,
+        // donc le comportement WPKG de ces tests reste inchangé.
+        if (! Schema::hasTable('controlhub_contracts')) {
+            Schema::create('controlhub_contracts', function (Blueprint $table): void {
+                $table->id();
+                $table->string('link_state')->default('active');
+                $table->timestamp('received_at')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        // Anti foot-gun (review 31.1 #3) : si un futur test de ce bootstrapper crée
+        // un contrat ACTIF, le résolveur requête catalogApps() → cette table doit
+        // exister (sinon « no such table »). Vide = aucun bornage (catalogue vide, D1).
+        if (! Schema::hasTable('controlhub_contract_catalog_apps')) {
+            Schema::create('controlhub_contract_catalog_apps', function (Blueprint $table): void {
+                $table->id();
+                $table->unsignedBigInteger('controlhub_contract_id');
+                $table->string('app_key');
+                $table->string('display_name')->nullable();
+                $table->timestamps();
+            });
+        }
     }
 
     public static function tearDown(): void
     {
         foreach ([
+            'controlhub_contract_catalog_apps',
+            'controlhub_contracts',
             'system_settings',
             'wpkg_workstation_options',
             'application_dependencies',

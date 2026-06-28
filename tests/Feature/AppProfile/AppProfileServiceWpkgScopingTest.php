@@ -125,10 +125,22 @@ class AppProfileServiceWpkgScopingTest extends TestCase
                 $table->primary(['app_profile_id', 'workstation_id'], 'apw_primary');
             });
         }
+        // Story 31.1 — le garde catalogue (assertApplicationsInUpstreamCatalog) résout
+        // ControlHubContract::active() ; table requise même si vide (court-circuit NFR3
+        // → null → aucun bornage, comportement 29.1 inchangé).
+        if (!Schema::hasTable('controlhub_contracts')) {
+            Schema::create('controlhub_contracts', function (Blueprint $table) {
+                $table->id();
+                $table->string('link_state')->default('active');
+                $table->timestamp('received_at')->nullable();
+                $table->timestamps();
+            });
+        }
     }
 
     private function dropWpkgPivotSchema(): void
     {
+        Schema::dropIfExists('controlhub_contracts');
         Schema::dropIfExists('app_profile_workstation');
         Schema::dropIfExists('app_profiles');
         Schema::dropIfExists('workstation_group_workstation');

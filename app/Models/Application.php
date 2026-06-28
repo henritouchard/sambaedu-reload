@@ -197,6 +197,33 @@ class Application extends Model implements Wireable
     }
 
     /**
+     * Story 31.1 — Restreint les applications proposables au CATALOGUE applicatif
+     * AMONT (controlHub) faisant autorité (FR5).
+     *
+     * Si un contrat amont actif borne le canal d'install (catalogue non vide), ne
+     * renvoie que les apps dont `app_id` figure dans le catalogue. Sinon (standalone
+     * OU catalogue vide — D1), **pass-through** strict : aucune clause ajoutée, le
+     * résultat est byte-identique au comportement pré-31.1 (NFR3).
+     *
+     * Le bornage matche sur `app_id` (string), iso `controlhub_contract_catalog_apps.app_key`
+     * (D2) — JAMAIS sur l'`id` numérique local. La décision « borné ? » est déléguée
+     * à {@see \App\Services\ControlHub\UpstreamCatalogResolver} (mémoïsé, court-circuit
+     * NFR3 : zéro requête catalogue sans contrat actif).
+     *
+     * ⚠️ GARDE-FOU R3 : aucun mot « central ». [Source: prd-contrat-manage-se5.md#R3]
+     */
+    public function scopeInUpstreamCatalog(Builder $query): Builder
+    {
+        $resolver = app(\App\Services\ControlHub\UpstreamCatalogResolver::class);
+
+        if (! $resolver->isBounded()) {
+            return $query; // pass-through NFR3 (standalone OU catalogue vide).
+        }
+
+        return $query->whereIn('app_id', $resolver->allowedAppIds());
+    }
+
+    /**
      * Relation avec les logs d'installation
      */
     public function installationLogs(): HasMany

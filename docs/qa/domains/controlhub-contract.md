@@ -1473,3 +1473,103 @@ pas touché ; aucun identifiant/littéral « central » (couvert par
 - [ ] Déterminisme du rapport `travel()` (Scénario 13.6)
 - [ ] Collision pré-existante non aggravée → non bloquée (Scénario 13.7)
 - [ ] D2 confiné (zéro ligne `StateCompiler`/`StateMaille`/décoration) + R3 (Scénario 13.8)
+
+---
+
+## Section 14 — Bornage de l'install au catalogue amont (Story 31.1, 2026-06-28)
+
+Le canal d'install refnum (ajout d'apps WPKG aux parcs/postes/profils) est
+**conservé mais filtré** au catalogue applicatif faisant autorité du contrat amont
+actif (`controlhub_contract_catalog_apps`, livré en 28.1). Deux couches symétriques
+à 29.1 :
+
+- **Consultation** — `Application::scopeInUpstreamCatalog` retire de toutes les
+  listes proposées (page parc, page machine, bulk catégorie, sélecteur de profil)
+  les apps dont `app_id` n'est pas dans le catalogue.
+- **Enforcement** — `AppProfileService::assertApplicationsInUpstreamCatalog`
+  (defense-in-depth, filet contre un payload Livewire forgé) refuse l'écriture
+  pivot avec `ApplicationNotInUpstreamCatalogException` (toast « hors catalogue
+  amont »).
+
+Source unique : `UpstreamCatalogResolver` (mémoïsé, court-circuit NFR3 via
+`ControlHubContract::active()` — zéro requête `controlhub_contract_catalog_apps`
+sans contrat actif). Match sur `app_key == applications.app_id` (string, D2).
+Borner = filtrer l'**ajout** seulement (D4 : retrait et inventaire local libres).
+
+### Scénario 14.1 — Contrat actif, catalogue {firefox}
+
+Pré-requis : un contrat amont `active` dont le catalogue contient `firefox` ; deux
+apps locales `firefox` (en catalogue) et `chrome` (hors).
+
+1. Page parc → onglet WPKG → « Ajouter une application » : **seul `firefox`** est
+   proposé (`chrome` absent de la liste). Idem page machine et bulk catégorie.
+2. Forcer (payload Livewire) l'ajout de `chrome` à un parc → **toast « hors
+   catalogue amont »**, aucune ligne `application_workstation_group` écrite.
+3. Ajouter `firefox` → succès, pivot écrit (canal d'install pleinement utilisable).
+
+### Scénario 14.2 — Standalone (aucun contrat actif)
+
+Aucun `ControlHubContract` : **toutes** les apps locales proposées et installables,
+comportement byte-identique au pré-31.1 (NFR3). Court-circuit prouvé par comptage
+de requêtes (aucune requête sur `controlhub_contract_catalog_apps`).
+
+### Scénario 14.3 — Catalogue vide (D1)
+
+Contrat `active` SANS aucune `catalogApps` ⇒ `isBounded() === false` ⇒ pas de
+bornage (le refnum n'est pas verrouillé hors de toutes ses apps). Identique au
+standalone.
+
+### Scénario 14.4 — Appelant non-web / rupture du lien
+
+- Console / agent / seeder (`Auth::check() === false`) : garde catalogue inerte
+  (no-op), non-régression (AC #6).
+- Lien rompu (`link_state = severed`) ⇒ `active()` null ⇒ bornage **levé
+  automatiquement** (release à la rupture = Story 32.1, hors scope ici).
+
+```bash
+# Hôte (php8.4 + pdo_sqlite)
+CACHE_DRIVER=array vendor/bin/phpunit --filter UpstreamCatalogBoundary   # 15/15
+# Non-régression canal d'install + domaine ControlHub
+CACHE_DRIVER=array vendor/bin/phpunit --filter 'AppProfile|Wpkg|ControlHubContract|UpstreamCatalog'  # 416/416
+
+# R3 : aucun identifiant/message « central » (uniquement commentaires garde-fou)
+grep -rin central app/Services/ControlHub/UpstreamCatalogResolver.php \
+  app/Exceptions/ControlHub/ApplicationNotInUpstreamCatalogException.php
+```
+
+**Attendu** : le bornage vit dans le résolveur + le scope + le garde service ;
+sans contrat actif, comportement strictement inchangé (NFR3) ; aucun identifiant
+« central » (couvert par les en-têtes garde-fou R3).
+
+### Scénario 14.5 — Canaux d'install additionnels bornés (post-correctifs review, 2026-06-28)
+
+La review a révélé des canaux d'install que le bornage initial ne couvrait pas. Tous
+corrigés ; à dérouler avec un contrat actif catalogue `{firefox}` + apps `firefox`/`chrome` :
+
+1. **Composition de profil** (page `parc-settings/profiles`, onglet Applications) :
+   « Ajouter des applications » ne propose que `firefox` ; forcer `chrome` → toast
+   « hors catalogue amont » (et non « Erreur lors de l'ajout » opaque), aucun pivot écrit.
+2. **Clone de configuration** (page parc → cloner un parc source contenant `chrome`
+   vers une cible) → toast « hors catalogue amont », la cible ne reçoit pas `chrome`.
+3. **Défaut diffusé fleet-wide** (`admin/settings/parc-defaults` → onglet Applications) :
+   la recherche d'ajout ne propose que `firefox` ; tenter « Appliquer par défaut » sur
+   `chrome` (payload forcé) → toast d'erreur, `is_parc_default` reste `false`.
+4. **Retrait toujours permis (D4)** : retirer un défaut `chrome` posé avant le contrat
+   → réussit (le retrait n'est jamais borné). Idem retrait d'apps parc/poste/profil.
+
+```bash
+CACHE_DRIVER=array vendor/bin/phpunit --filter ParcDefaultsCatalogBoundary   # 4/4
+CACHE_DRIVER=array vendor/bin/phpunit --filter 'AppProfile|Wpkg|ControlHubContract|UpstreamCatalog|ParcDefaults'  # 451/451
+```
+
+## Checklist rapide Story 31.1
+
+- [ ] `CACHE_DRIVER=array vendor/bin/phpunit --filter UpstreamCatalogBoundary` → 15/15 verts
+- [ ] Non-régression `--filter 'AppProfile|Wpkg|ControlHubContract|UpstreamCatalog'` → verte (416)
+- [ ] Suite parc Livewire `tests/Feature/Livewire/Parc` → verte (aucune régression d'affichage)
+- [ ] Contrat actif catalogue {A} : seule A proposée ; tenter B = toast « hors catalogue amont » + pivot inchangé (Scénario 14.1)
+- [ ] Standalone : tout proposé + installable + zéro requête catalogue (Scénario 14.2)
+- [ ] Catalogue vide = pas de bornage (Scénario 14.3)
+- [ ] Appelant non authentifié non bloqué + severed = bornage levé (Scénario 14.4)
+- [ ] Canaux additionnels bornés : profil, clone, défaut diffusé ; retrait toujours permis (Scénario 14.5)
+- [ ] R3 : aucun identifiant/message « central » dans les fichiers livrés
