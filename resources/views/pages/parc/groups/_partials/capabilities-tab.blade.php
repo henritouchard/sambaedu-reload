@@ -543,12 +543,15 @@ new class extends Component {
 
             return true;
         } catch (AuthorizationException) {
-            // Le gate `modify-capability` refuse pour DEUX raisons distinctes : verrou
-            // amont OU plancher `app.customize` (global) manquant. Depuis 29.6, le guard
-            // scopé `customize-workstationGroup` peut laisser passer un délégué positif
-            // sans droit global → le plancher de `modify-capability` le bloque ici : ne
-            // pas afficher « verrouillé amont » (message trompeur) si la vraie cause est
-            // l'absence de droit. [review 29.6 P4 — calqué sur registry-tab P1a]
+            // Story 29.8 — depuis le retrait du plancher de droit dans
+            // `CapabilityPolicy::modify`, ce gate ne refuse PLUS que pour VERROU
+            // AMONT : le droit est filtré EN AMONT par `guardCustomize()` (scopé
+            // `customize-workstationGroup`) qui aborte 403 avant d'atteindre ce
+            // point. La branche « pas le droit » ci-dessous est donc théoriquement
+            // INATTEIGNABLE par défaut de droit, mais on CONSERVE la double-branche
+            // (ceinture + bretelles) comme garde-fou contre un futur appelant qui
+            // invoquerait `modify-capability` sans garde de droit en amont : on
+            // afficherait un message correct plutôt qu'un faux « verrouillé amont ».
             if (app(UpstreamLockResolver::class)->isCapabilityLocked($capability)) {
                 $this->toastError('Cette capacité est verrouillée par un contrat amont et ne peut pas être modifiée localement.');
             } else {

@@ -1233,8 +1233,8 @@ const DATASETS = {
         {
           "id": "29-8",
           "title": "Scoper le plancher de droit de modify-capability par surface — follow-up P1 review 29-6",
-          "status": "backlog",
-          "note": "CapabilityPolicy::modify exige le droit GLOBAL app.customize → un délégué positif-seul passe le guard scopé de 29.6 mais ne peut pas écrire d'override (habilitation AC#1 29.6 non livrée). modify-capability est dual-purpose (override par-parc + défaut diffusé global registry-tab) → retirer le plancher global et laisser chaque surface porter son contrôle. Prérequis réel d'AC#1 29.6 et de l'enforcement par périmètre Epic 31."
+          "status": "review",
+          "note": "LIVRÉ (review/to-validate, commit worktree-contract-CH). Plancher global app.customize retiré de CapabilityPolicy::modify → le gate modify-capability ne porte plus QUE le verrou amont ; droit filtré par surface en amont (capabilities-tab guardCustomize scopé / registry-tab guardAdmin server.admin). Habilitation AC#1 de 29.6 enfin livrée pour le délégué positif-seul. Review APPROVE (sonnet + 2e avis opus concordants) : opus a vérifié les 2 call-sites / 9 chemins tous gardés → aucune écriture non gardée. 5 findings mineurs corrigés (P1/P2 doc, P3 commentaire, P4 test discriminant, P5 audit). Tests 120 passed, 0 régression. Cf. codeReviews/29-8.md."
         },
         {
           "id": "29-9",

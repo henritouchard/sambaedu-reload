@@ -1020,3 +1020,36 @@ Le toast de succès n'est affiché que si l'état **persisté** du groupe couran
 - Après chaque opération des scénarios 13.1 et 13.2, vérifier que la table `capability_override_audit_logs` contient bien les traces attendues (`action=create` à 13.1, `action=update` à 13.2 avec `old_value`/`new_value` corrects). L'horodatage de la trace d'audit (`created_at` de la ligne audit) ne dépend pas du pivot — il reste correct indépendamment du fix.
 
 > **Couverture automatisée.** `tests/Feature/Livewire/Parc/CapabilitiesOverrideAuditTest.php` : `inserting_a_new_override_sets_created_at` (13.1 — INSERT pose `created_at` non nul) et `re_editing_an_override_preserves_original_created_at` (13.2 — `created_at` figé dans le passé, inchangé après ré-édition, `updated_at` avancé). La vérification visuelle SQL en prod (13.2 sur override réel) = validation manuelle post-déploiement recommandée.
+
+---
+
+## Section 14 — Habilitation du délégué `app.customize` positif-seul (retrait du plancher `modify-capability`) (Story 29.8, 2026-06-27)
+
+> **Contexte.** Le gate `modify-capability` (`CapabilityPolicy::modify`, posé en 29.2 et appelé par `authorizeUpstream()` sur les deux surfaces capacité) imposait DEUX conditions cumulées : (1) un **plancher de droit GLOBAL** `app.customize` (`$user->can('app.customize')`, jamais scopé par parc) ET (2) l'**absence de verrou amont**. Depuis 29.6, l'onglet « Options / Capacités » garde déjà l'accès via le gate **scopé** `customize-workstationGroup` (délégation par parc opposable). Mais au write-through, le plancher GLOBAL (1) rebloquait un **délégué positif-seul** (délégation `app.customize` scopée sur son parc, **sans** droit global) que le guard scopé venait d'autoriser → l'habilitation promise par l'AC#1 de 29.6 n'était pas livrée pour ce persona (P1 review 29.6).
+>
+> **Constat clé — `modify-capability` est DUAL-PURPOSE.** Il sert l'override **par-parc** (`capabilities-tab`, droit **scopé** `customize-workstationGroup`) ET le défaut diffusé **global** d'instance (`registry-tab`, droit **global** `server.admin`). Scoper le plancher *dans* le gate empièterait sur l'une ou l'autre surface.
+>
+> **Fix.** Retrait du plancher de droit de `CapabilityPolicy::modify` → le gate ne conserve **que** le verrou amont (`return $capability === null ? true : ! isCapabilityLocked($capability)`). Le droit est désormais porté **par chaque surface en amont** : `guardCustomize()` (scopé) sur `capabilities-tab`, `guardAdmin()` (`server.admin` global) sur `registry-tab` — tous deux abortent **403 avant** d'atteindre `authorizeUpstream()`. La **sécurité n'est pas perdue, elle a migré vers les surfaces** (prouvé par les scénarios 14.2/14.3 ci-dessous). La double-branche du message d'erreur (`catch`) est **conservée** en defense-in-depth (la branche « pas le droit » est désormais théoriquement inatteignable par défaut de droit, mais reste un garde-fou contre un futur appelant non gardé).
+
+### Scénario 14.1 — Délégué positif-seul édite/ajoute/retire un override sur SON parc (désormais OK, CRITIQUE)
+- **Préparation** : refnum avec une **délégation positive active** `app.customize` sur le parc physique A (**aucun** droit global Spatie), aucune délégation sur B.
+- **Action** : sur l'onglet « Options / Capacités » du parc **A**, ajouter un override (choisir une capacité non verrouillée, poser une valeur, enregistrer), puis éditer cet override, puis le retirer.
+- **Attendu** : les trois opérations **réussissent** (ligne `capability_assignments` créée puis supprimée ; formulaire d'édition ouvert). **Avant 29.8**, l'écriture échouait (bloquée par le plancher global) bien que l'onglet s'ouvre. C'est l'habilitation AC#1 de 29.6 enfin livrée.
+
+### Scénario 14.2 — Délégué positif-seul reste bloqué sur un AUTRE parc (non-régression sécurité M4, CRITIQUE)
+- **Préparation** : même délégué de A, composant ouvert sur le parc **B** (hors périmètre).
+- **Attendu** : **403** dès le mount (`guardCustomize()` scopé), **aucune** ligne `capability_assignments`, **aucune** trace `capability_override_audit_logs`. Le retrait du plancher n'ouvre **aucun** chemin d'écriture hors-périmètre.
+
+### Scénario 14.3 — Non-admin bloqué sur le défaut diffusé (registry-tab) (non-régression garde globale, CRITIQUE)
+- **Préparation** : acteur porteur de `app.customize` (même délégation par-parc) mais **sans** `server.admin`, sur l'onglet « Registre / capacités » de `/admin/settings/parc-defaults`.
+- **Attendu** : **403** (`guardAdmin()`) sur `openEdit` / `saveDefault` / `toggleLock` (et dès le mount) ; `capabilities.default_value` et `overrides_locked` **inchangés**. Le retrait du plancher **n'affaiblit pas** la garde globale `server.admin` du réglage d'instance.
+
+### Scénario 14.4 — Capacité verrouillée amont refusée sur les DEUX surfaces (verrou = seul motif restant, CRITIQUE)
+- **Préparation** : un item amont `locked`/`registry`/`instance` matche une clé de la capacité.
+- **Attendu** : sur `capabilities-tab` (délégué autorisé sur SON parc) **ET** sur `registry-tab` (admin global), la mutation est refusée serveur par `authorizeUpstream` (toast « verrouillée par un contrat amont »), **aucune** écriture. Le **verrou amont 29.2** devient le **seul** motif de refus restant de `modify-capability`, sur les deux surfaces.
+
+### Scénario 14.5 — Admin global inchangé (non-régression)
+- **Préparation** : technicien avec le droit **global** `app.customize` (et `server.admin` pour registry-tab), aucune exclusion.
+- **Attendu** : write-through autorisé sur n'importe quel parc (capabilities-tab) et sur le défaut diffusé (registry-tab), strictement comme avant 29.8.
+
+> **Couverture automatisée.** `tests/Feature/Livewire/Parc/CapabilitiesTabCustomizeScopingTest.php` : `positive_delegate_can_complete_write_through_on_a` / `…can_open_edit_on_a` / `…can_remove_override_on_a` (14.1), `positive_delegate_is_forbidden_on_b_without_write_or_audit_trace` (14.2), `positive_delegate_is_still_blocked_by_upstream_lock` (14.4 capabilities-tab), `global_admin_can_save_override_on_a_and_b` (14.5). `tests/Feature/Livewire/Admin/ParcDefaultsUpstreamLockTest.php` : `non_admin_is_blocked_on_registry_tab` (14.3 — la fermeture au mount est aussi couverte par `AdminSettingsParcDefaultsPageTest::registry_tab_gate_blocks_mount_without_server_admin`), `save_default_is_blocked_for_upstream_locked_capability` / `toggle_lock_is_blocked_for_upstream_locked_capability` (14.4 registry-tab). `tests/Unit/Policies/CapabilityPolicyTest.php` : contrat unitaire révisé (`right_is_no_longer_enforced_at_policy_level`, `null_capability_is_always_allowed`, `deny_when_capability_is_upstream_locked`).

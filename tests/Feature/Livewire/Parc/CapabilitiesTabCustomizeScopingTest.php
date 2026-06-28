@@ -38,12 +38,14 @@ use Tests\TestCase;
  *    bloqué SERVEUR par `authorizeUpstream` sur une capacité verrouillée amont ;
  *  - non-régression 29.5 (audit) : une écriture autorisée trace acteur + périmètre.
  *
- * ⚠️ Interaction 29.2 (constat de dev, hors-scope 29.6) : `CapabilityPolicy::modify`
- * (gate `modify-capability`, appelé par `authorizeUpstream`) exige le droit GLOBAL
- * `app.customize` comme PLANCHER. Un délégué POSITIF-seul passe donc le guard
- * d'accès (mount/openAdd) mais ne peut PAS finaliser une écriture tant que ce
- * plancher reste global. Le write-through est donc prouvé avec l'acteur de la
- * menace M4 (droit global scopé par exclusion négative) — voir Dev Agent Record.
+ * ✅ Story 29.8 — le plancher de droit GLOBAL `app.customize` a été RETIRÉ de
+ * `CapabilityPolicy::modify` (gate `modify-capability`). Un délégué POSITIF-seul
+ * (délégation scopée sur SON parc, SANS droit global) peut désormais finaliser un
+ * write-through complet (openAdd/saveOverride, openEdit, removeOverride) sur SON
+ * parc — l'habilitation AC#1 de 29.6 est enfin livrée (voir
+ * `positive_delegate_can_complete_write_through_on_a` & co). Le verrou amont reste
+ * le SEUL motif de refus serveur de ce gate
+ * (`positive_delegate_is_still_blocked_by_upstream_lock`).
  *
  * Délégation = système EXISTANT (PermissionService) sur la permission Spatie
  * `app.customize` (aucune nouvelle permission). Parcs PHYSIQUES (la voie déléguée
@@ -244,6 +246,132 @@ class CapabilitiesTabCustomizeScopingTest extends TestCase
 
         $this->assertSame(0, DB::table('capability_assignments')->count(), 'aucune écriture hors-périmètre');
         $this->assertSame(0, CapabilityOverrideAuditLog::query()->count(), 'aucune trace d\'audit hors-périmètre');
+    }
+
+    // ── Story 29.8 — write-through du délégué POSITIF-seul (habilitation AC#1) ─
+
+    #[Test]
+    public function positive_delegate_can_complete_write_through_on_a(): void
+    {
+        // Story 29.8 AC#1 — AVANT le retrait du plancher de droit GLOBAL, ce test
+        // ÉCHOUAIT : le délégué positif-seul passait guardCustomize() (scopé) mais
+        // était rebloqué à l'écriture par le plancher `app.customize` de
+        // `modify-capability`. APRÈS retrait, l'écriture aboutit : l'habilitation
+        // promise par 29.6 est enfin livrée pour ce persona.
+        $user = $this->positiveDelegateOfA();
+        $cap = $this->capabilityWithKey('pos_write', 'HKCU', 'Software\\PW', 'V');
+
+        Livewire::test(self::COMPONENT, ['groupId' => $this->parcA->id])
+            ->call('openAdd', $cap->id)
+            ->set('formValue', 'off')
+            ->call('saveOverride')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('capability_assignments', [
+            'capability_id' => $cap->id,
+            'assignable_type' => WorkstationGroup::class,
+            'assignable_id' => $this->parcA->id,
+            'value' => 'off',
+        ]);
+
+        // Non-régression 29.5 — l'écriture du persona positif-seul est tracée (audit
+        // append-only), dans la MÊME transaction que l'override.
+        $this->assertDatabaseHas('capability_override_audit_logs', [
+            'action' => 'create',
+            'actor_user_id' => $user->id,
+            'capability_id' => $cap->id,
+            'assignable_id' => $this->parcA->id,
+            'new_value' => 'off',
+        ]);
+    }
+
+    #[Test]
+    public function positive_delegate_can_open_edit_on_a(): void
+    {
+        $this->positiveDelegateOfA();
+        $cap = $this->capabilityWithKey('pos_edit', 'HKCU', 'Software\\PE', 'V');
+
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => WorkstationGroup::class,
+            'assignable_id' => $this->parcA->id,
+            'value' => 'off',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Livewire::test(self::COMPONENT, ['groupId' => $this->parcA->id])
+            ->call('openEdit', $cap->id)
+            ->assertSet('isEditing', true)
+            ->assertSet('editingCapabilityId', $cap->id);
+    }
+
+    #[Test]
+    public function positive_delegate_can_remove_override_on_a(): void
+    {
+        $this->positiveDelegateOfA();
+        $cap = $this->capabilityWithKey('pos_remove', 'HKCU', 'Software\\PR', 'V');
+
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => WorkstationGroup::class,
+            'assignable_id' => $this->parcA->id,
+            'value' => 'off',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Livewire::test(self::COMPONENT, ['groupId' => $this->parcA->id])
+            ->call('removeOverride', $cap->id);
+
+        $this->assertDatabaseMissing('capability_assignments', [
+            'capability_id' => $cap->id,
+            'assignable_id' => $this->parcA->id,
+        ]);
+    }
+
+    #[Test]
+    public function positive_delegate_is_forbidden_on_b_without_write_or_audit_trace(): void
+    {
+        // Story 29.8 AC#2 (non-régression sécurité M4) : le retrait du plancher
+        // n'ouvre AUCUN chemin hors-périmètre. Le délégué de A reste refusé DÈS le
+        // mount sur B (guardCustomize scopé), 0 écriture, 0 trace.
+        $this->positiveDelegateOfA();
+
+        Livewire::test(self::COMPONENT, ['groupId' => $this->parcB->id])
+            ->assertStatus(403);
+
+        $this->assertSame(0, DB::table('capability_assignments')->count(), 'aucune écriture hors-périmètre');
+        $this->assertSame(0, CapabilityOverrideAuditLog::query()->count(), 'aucune trace d\'audit hors-périmètre');
+    }
+
+    #[Test]
+    public function positive_delegate_is_still_blocked_by_upstream_lock(): void
+    {
+        // Story 29.8 AC#4 — le verrou amont mord toujours, MÊME sans plancher et
+        // MÊME pour un délégué scopé autorisé sur SON parc : authorizeUpstream
+        // (29.2) refuse → aucune écriture.
+        $this->positiveDelegateOfA();
+        $cap = $this->capabilityWithKey('pos_locked', 'HKCU', 'Software\\PL', 'V');
+        ControlHubContractItem::factory()->create([
+            'type' => CapabilityProjection::MECHANISM_REGISTRY,
+            'key' => 'HKCU|Software\\PL|V|REG_DWORD',
+        ]);
+
+        Livewire::test(self::COMPONENT, ['groupId' => $this->parcA->id])
+            ->call('openAdd', $cap->id)
+            // Discriminant : c'est bien le VERROU AMONT (authorizeUpstream) qui refuse,
+            // pas un échec latéral — openAdd émet le toast verrou et n'ouvre pas la modale.
+            ->assertDispatched('toastMagic', fn ($event, $params) => ($params['status'] ?? null) === 'error'
+                && str_contains($params['message'] ?? '', 'verrouillée par un contrat amont'))
+            ->assertSet('showOverrideModal', false)
+            ->set('formValue', 'off')
+            ->call('saveOverride');
+
+        $this->assertDatabaseMissing('capability_assignments', [
+            'capability_id' => $cap->id,
+            'assignable_id' => $this->parcA->id,
+        ]);
     }
 
     // ── AC #2 — admin global : autorisé partout (fallback préservé) ────────

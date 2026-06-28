@@ -222,9 +222,14 @@ new class extends Component {
 
             return true;
         } catch (AuthorizationException) {
-            // Le gate refuse pour DEUX raisons distinctes : verrou amont OU droit
-            // `app.customize` manquant. Ne pas afficher « verrouillé amont » si la
-            // vraie cause est l'absence de permission (message trompeur). [P1a review]
+            // Story 29.8 — depuis le retrait du plancher de droit dans
+            // `CapabilityPolicy::modify`, ce gate ne refuse PLUS que pour VERROU
+            // AMONT : le droit GLOBAL est filtré EN AMONT par `guardAdmin()`
+            // (`server.admin`) qui aborte 403 avant d'atteindre ce point. La branche
+            // « pas le droit » ci-dessous est donc théoriquement INATTEIGNABLE par
+            // défaut de droit, mais on CONSERVE la double-branche (ceinture +
+            // bretelles) comme garde-fou contre un futur appelant non gardé : on
+            // afficherait un message correct plutôt qu'un faux « verrouillé amont ».
             if (app(UpstreamLockResolver::class)->isCapabilityLocked($capability)) {
                 $this->toastError('Cette capacité est verrouillée par un contrat amont et ne peut pas être modifiée localement.');
             } else {

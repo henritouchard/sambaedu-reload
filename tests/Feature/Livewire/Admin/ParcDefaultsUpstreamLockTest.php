@@ -75,6 +75,33 @@ class ParcDefaultsUpstreamLockTest extends TestCase
         Gate::before(fn ($u, string $ability) => $ability === 'server.admin' ? true : null);
     }
 
+    /**
+     * Story 29.8 AC#3 — acteur SANS `server.admin` mais porteur de `app.customize`
+     * (le persona « délégué par-parc » qui pourrait croire pouvoir toucher le défaut
+     * diffusé global). Pas de `Gate::before` → `Gate::allows('server.admin')` = false.
+     */
+    private function actAsNonAdmin(): void
+    {
+        $user = Mockery::mock(
+            \Illuminate\Contracts\Auth\Authenticatable::class,
+            \Illuminate\Contracts\Auth\Access\Authorizable::class,
+        );
+        // Stubs `can()` INERTES pour ce test : `guardAdmin()` lit `Gate::allows('server.admin')`
+        // (résolu via le before-hook Spatie, absent ici → false), JAMAIS `$user->can()`. Ils
+        // documentent l'intention du persona (porteur de `app.customize`, pas de `server.admin`) ;
+        // le 403 vient de l'absence de `Gate::before` accordant `server.admin`.
+        $user->shouldReceive('can')->with('app.customize')->andReturn(true);
+        $user->shouldReceive('can')->andReturn(false);
+        $user->shouldReceive('getAuthIdentifier')->andReturn(2);
+        $user->shouldReceive('getAuthIdentifierName')->andReturn('id');
+        $user->shouldReceive('getAuthPassword')->andReturn('');
+        $user->shouldReceive('getRememberToken')->andReturn('');
+        $user->shouldReceive('setRememberToken');
+        $user->shouldReceive('getRememberTokenName')->andReturn('');
+        $this->actingAs($user);
+        // Pas de Gate::before → server.admin refusé.
+    }
+
     private function capabilityWithKey(string $key, string $hive, string $path, string $name, string $default = 'on'): Capability
     {
         $cap = Capability::factory()->create([
@@ -133,6 +160,26 @@ class ParcDefaultsUpstreamLockTest extends TestCase
             (bool) Capability::query()->find($cap->id)->overrides_locked,
             'le (dé)gel local est refusé sur une capacité verrouillée amont',
         );
+    }
+
+    #[Test]
+    public function non_admin_is_blocked_on_registry_tab(): void
+    {
+        // Story 29.8 AC#3 — le retrait du plancher `app.customize` de
+        // `modify-capability` n'AFFAIBLIT PAS la garde GLOBALE `server.admin` du
+        // défaut diffusé : un acteur porteur de `app.customize` mais SANS
+        // `server.admin` est refusé (403) DÈS le mount par guardAdmin(), qui garde
+        // aussi openEdit/saveDefault/toggleLock. Le défaut reste inchangé.
+        // (La fermeture au mount est également couverte par
+        // AdminSettingsParcDefaultsPageTest::registry_tab_gate_blocks_mount_without_server_admin ;
+        // ici on prouve en plus le point 29.8 : défaut intact après retrait du plancher.)
+        $this->actAsNonAdmin();
+        $cap = $this->capabilityWithKey('non_admin_blocked', 'HKCU', 'Software\\NAB', 'V', 'on');
+
+        Livewire::test(self::REGISTRY_TAB)->assertStatus(403);
+
+        self::assertSame('on', Capability::query()->find($cap->id)->default_value, 'défaut inchangé pour le non-admin');
+        self::assertFalse((bool) Capability::query()->find($cap->id)->overrides_locked);
     }
 
     #[Test]
