@@ -2,15 +2,22 @@
 
 use Livewire\Component;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Locked;
 use App\Services\Parc\WorkstationGroupService;
+use App\Services\ControlHub\WorkstationGroupLabelService;
+use App\Exceptions\ControlHub\LabelAssignmentException;
 use App\Enums\WorkstationEnvironment;
+use App\Enums\ControlHubLabelMode;
+use App\Models\ControlHubContract;
 use App\Models\WorkstationGroup;
 use App\Components\Traits\WithToasts;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
 
 new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
     use WithToasts;
+    use AuthorizesRequests;
 
     private WorkstationGroupService $parcService;
 
@@ -25,6 +32,21 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
     // Nature des postes du parc (Story 26.1). '' = « non déclaré » → null en base
     // (distinct de shared_local, le défaut étant résolu côté serveur).
     public string $environment = '';
+
+    // Label de contrat amont (Story 30.2). '' = aucun → null en base (miroir exact
+    // du pattern `environment`). Section masquée si pas de contrat amont actif.
+    public string $controlhubLabel = '';
+    // Propriétés DÉRIVÉES côté serveur (loadControlHubLabels) : #[Locked] interdit
+    // leur mutation par requête Livewire forgée — sinon un client pourrait neutraliser
+    // l'affichage lecture seule ou injecter un label assignable (review 30.2 M2).
+    #[Locked]
+    public bool $hasActiveContract = false;
+    /** @var array<int,string> Noms des labels libres assignables du contrat actif. */
+    #[Locked]
+    public array $freeLabelNames = [];
+    /** Label réservé/hors-liste actuellement porté (affiché en lecture seule), ou null. */
+    #[Locked]
+    public ?string $reservedLabelHeld = null;
 
     // Données pour les sélecteurs
     public Collection $availableParents;
@@ -63,6 +85,9 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
             $this->parent_id = $this->group->parent_id;
             $this->is_physical = (bool) $this->group->is_physical;
             $this->environment = $this->group->environment?->value ?? '';
+            $this->controlhubLabel = $this->group->controlhub_label ?? '';
+
+            $this->loadControlHubLabels();
         } catch (\Exception $e) {
             Log::error('[GroupEdit] Erreur chargement: ' . $e->getMessage());
             $this->toastError('Erreur lors du chargement du groupe');
@@ -79,6 +104,37 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
         }
     }
 
+    /**
+     * Story 30.2 — Charge le contrat amont actif et les labels assignables (free).
+     *
+     * NFR3 : sans contrat actif, la section UI est masquée (hasActiveContract=false)
+     * et aucune contrainte n'est ajoutée. Le label actuellement porté qui n'est PAS
+     * dans la liste free (réservé — cf. 30.3 — ou « dangling ») est exposé en lecture
+     * seule via $reservedLabelHeld, jamais sélectionnable par le refnum.
+     */
+    public function loadControlHubLabels(): void
+    {
+        $activeContract = ControlHubContract::active();
+        $this->hasActiveContract = $activeContract !== null;
+
+        if ($activeContract === null) {
+            $this->freeLabelNames = [];
+            $this->reservedLabelHeld = null;
+            return;
+        }
+
+        $this->freeLabelNames = $activeContract->labels()
+            ->where('mode', ControlHubLabelMode::Free)
+            ->orderBy('name')
+            ->pluck('name')
+            ->all();
+
+        $current = $this->group->controlhub_label;
+        $this->reservedLabelHeld = ($current !== null && !in_array($current, $this->freeLabelNames, true))
+            ? $current
+            : null;
+    }
+
     public function rules(): array
     {
         return [
@@ -86,6 +142,9 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
             'description' => 'nullable|string|max:500',
             'parent_id' => 'nullable|integer|exists:workstation_groups,id',
             'is_physical' => 'boolean',
+            // Story 30.2 — borne défensive ; l'appartenance réelle au contrat actif
+            // (free/reserved/inconnu) est tranchée par WorkstationGroupLabelService.
+            'controlhubLabel' => 'nullable|string|max:255',
         ];
     }
 
@@ -99,8 +158,13 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
         ];
     }
 
-    public function save(): void
+    public function save(WorkstationGroupLabelService $labelService): void
     {
+        // Story 30.2 (AC #8) — Gate scopé AVANT toute écriture : le refnum (admin
+        // instance) passe ; un délégué hors périmètre est refusé. Le mapping de
+        // label EST une modification du parc → on réutilise `update-workstationGroup`.
+        $this->authorize('update-workstationGroup', $this->group);
+
         $validated = $this->validate();
 
         if ($validated['parent_id'] == $this->id) {
@@ -128,6 +192,23 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
                 'is_physical' => $validated['is_physical'],
                 'environment' => $environment,
             ]);
+
+            // Story 30.2 — Mapping du label de contrat amont via le service dédié
+            // (jamais via updateGroup, qui throw sur isLocked — concern distinct).
+            // '' = détacher ; sinon assigner. Capture des refus métier → toast,
+            // sans redirection (on reste sur le formulaire). NFR3 : sans contrat
+            // actif, $controlhubLabel reste '' et detachLabel() est un no-op.
+            try {
+                if ($this->controlhubLabel === '') {
+                    $labelService->detachLabel($this->group);
+                } else {
+                    $labelService->assignLabel($this->group, $this->controlhubLabel);
+                }
+            } catch (LabelAssignmentException $e) {
+                $this->toastError($e->getMessage());
+                $this->loadGroup();
+                return;
+            }
 
             session()->flash('toast', [
                 'type' => 'success',

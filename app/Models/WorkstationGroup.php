@@ -35,6 +35,7 @@ use App\Enums\LockReason;
  * @property bool $is_active
  * @property string|null $locked Raison du verrouillage (si non-null, empêche modification/suppression)
  * @property bool $managed_by_control_hub
+ * @property string|null $controlhub_label Nom du label de contrat amont (free) rattaché à ce parc (Story 30.2) — null = aucun label ; rattachement par nom, pas de FK dure
  * @property \App\Enums\WorkstationEnvironment|null $environment Nature des postes du parc (Story 26.1) — null = non déclaré
  * @property \DateTimeInterface|null $archived_at Archivage logique (Story 15.3, AC3.4)
  * @property \DateTime|null $created_at
@@ -72,6 +73,7 @@ class WorkstationGroup extends Model implements Wireable
         'locked',
         'managed_by_control_hub',
         'controlhub_version',
+        'controlhub_label',
         'environment',
         'archived_at',
     ];
@@ -416,6 +418,40 @@ class WorkstationGroup extends Model implements Wireable
     public function scopeManagedByControlHub(Builder $query): Builder
     {
         return $query->where('managed_by_control_hub', true);
+    }
+
+    // ========================================
+    // LABEL DE CONTRAT AMONT (Story 30.2)
+    // ========================================
+
+    /**
+     * Story 30.2 — Indique si ce groupe porte un label de contrat amont.
+     *
+     * Style des helpers existants ({@see isLocked()}, {@see hasAppProfile()}).
+     */
+    public function hasControlHubLabel(): bool
+    {
+        return !empty($this->controlhub_label);
+    }
+
+    /**
+     * Story 30.2 — Nom du label de contrat amont porté par ce groupe (ou null).
+     */
+    public function controlHubLabel(): ?string
+    {
+        return $this->controlhub_label;
+    }
+
+    /**
+     * Story 30.2 — Scope « tous les groupes portant ce label de contrat amont ».
+     *
+     * Rattachement par nom (cf. décision de design 30.2 : pas de FK dure).
+     * Livré ici car réutilisé par la résolution-par-label de la Story 30.4
+     * (`label:<nom>` → propagation à tous les groupes portant le label).
+     */
+    public function scopeCarryingControlHubLabel(Builder $query, string $name): Builder
+    {
+        return $query->where('controlhub_label', $name);
     }
 
     /**

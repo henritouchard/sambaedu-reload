@@ -122,6 +122,40 @@
                     @endforeach
                 </select>
             </div>
+
+            {{-- Label de contrat amont (Story 30.2) — masqué si pas de contrat actif (NFR3). --}}
+            @if ($hasActiveContract)
+                <div class="form-control w-full">
+                    <label class="label py-2">
+                        <x-atoms.tooltip label="Label de contrat amont" labelClass="label-text font-medium" icon="true"
+                            iconClass="fa-solid fa-circle-info text-base-content/40 text-xs ml-1">
+                            Rattache ce parc à un label « libre » défini par l'autorité amont, pour cibler les
+                            politiques imposées. Au plus un label par groupe. Les labels réservés à l'autorité amont ne
+                            sont pas attribuables.
+                        </x-atoms.tooltip>
+                    </label>
+
+                    @if ($reservedLabelHeld !== null)
+                        {{-- Label réservé porté (cas 30.3) : lecture seule, jamais éditable par le refnum. --}}
+                        <select class="select select-bordered w-full" disabled>
+                            <option>{{ $reservedLabelHeld }}</option>
+                        </select>
+                        <label class="label py-1">
+                            <span class="label-text-alt text-warning whitespace-normal">
+                                <i class="fa-solid fa-lock text-xs"></i>
+                                Label réservé — imposé par l'autorité amont, non modifiable.
+                            </span>
+                        </label>
+                    @else
+                        <select wire:model="controlhubLabel" class="select select-bordered w-full">
+                            <option value="">Aucun</option>
+                            @foreach ($freeLabelNames as $labelName)
+                                <option value="{{ $labelName }}">{{ $labelName }}</option>
+                            @endforeach
+                        </select>
+                    @endif
+                </div>
+            @endif
         </div>
     </div>
 

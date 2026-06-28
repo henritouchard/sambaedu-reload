@@ -2,13 +2,20 @@
 
 use Livewire\Component;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Locked;
 use App\Services\Parc\WorkstationGroupService;
+use App\Services\ControlHub\WorkstationGroupLabelService;
+use App\Exceptions\ControlHub\LabelAssignmentException;
+use App\Enums\ControlHubLabelMode;
+use App\Models\ControlHubContract;
 use App\Components\Traits\WithToasts;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
 
 new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
     use WithToasts;
+    use AuthorizesRequests;
 
     private WorkstationGroupService $parcService;
 
@@ -22,6 +29,16 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
     public array $selectedMachines = [];
     public bool $showMachineModal = false;
 
+    // Label de contrat amont (Story 30.2). '' = aucun. Section masquée si pas de
+    // contrat amont actif (NFR3). Seuls les labels libres sont assignables ici.
+    public string $controlhubLabel = '';
+    // Propriétés DÉRIVÉES côté serveur (#[Locked] : non mutables par requête forgée — review 30.2 M2).
+    #[Locked]
+    public bool $hasActiveContract = false;
+    /** @var array<int,string> Noms des labels libres assignables du contrat actif. */
+    #[Locked]
+    public array $freeLabelNames = [];
+
     // Données pour les sélecteurs
     public Collection $availableParents;
 
@@ -34,6 +51,25 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
     {
         $this->availableParents = collect();
         $this->loadParents();
+        $this->loadControlHubLabels();
+    }
+
+    /**
+     * Story 30.2 — Charge le contrat amont actif et ses labels libres (free).
+     * NFR3 : sans contrat actif, la section est masquée et aucun label proposé.
+     */
+    public function loadControlHubLabels(): void
+    {
+        $activeContract = ControlHubContract::active();
+        $this->hasActiveContract = $activeContract !== null;
+
+        $this->freeLabelNames = $activeContract === null
+            ? []
+            : $activeContract->labels()
+                ->where('mode', ControlHubLabelMode::Free)
+                ->orderBy('name')
+                ->pluck('name')
+                ->all();
     }
 
     public function loadParents(): void
@@ -55,6 +91,9 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
             'is_physical' => 'boolean',
             'createAppProfile' => 'boolean',
             'appProfileName' => 'nullable|string|max:255',
+            // Story 30.2 — borne défensive ; l'appartenance au contrat actif est
+            // tranchée par WorkstationGroupLabelService::assignLabel().
+            'controlhubLabel' => 'nullable|string|max:255',
         ];
     }
 
@@ -85,8 +124,14 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
         }
     }
 
-    public function save(): void
+    public function save(WorkstationGroupLabelService $labelService): void
     {
+        // Story 30.2 (AC #8) — Gate scopé AVANT toute écriture. La création d'un
+        // groupe est protégée par `create-workstationGroup` (= canAdminComputers,
+        // même socle que `update-workstationGroup` utilisé en édition) ; un délégué
+        // hors périmètre est refusé avant toute création/assignation de label.
+        $this->authorize('create-workstationGroup');
+
         $validated = $this->validate();
 
         try {
@@ -103,6 +148,28 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
                 'is_physical' => $validated['is_physical'],
                 'app_profile_name' => $appProfileName,
             ]);
+
+            // Story 30.2 (AC #3) — Rattacher le label libre choisi via le service
+            // dédié (chemin de création parc existant réutilisé, pas un chemin
+            // parallèle). Un refus métier annule l'assignation mais pas la création
+            // (le groupe existe déjà) → toast + on reste sur place.
+            if ($this->controlhubLabel !== '') {
+                try {
+                    $labelService->assignLabel($group, $this->controlhubLabel);
+                } catch (LabelAssignmentException $e) {
+                    // Le groupe est créé mais le label a été refusé. On redirige vers
+                    // l'édition pour corriger → le toast DOIT survivre au redirect :
+                    // session flash (toastError = event navigateur, perdu au redirect,
+                    // review 30.2 M3).
+                    session()->flash('toast', [
+                        'type' => 'error',
+                        'title' => 'Label non attribué',
+                        'message' => $e->getMessage(),
+                    ]);
+                    $this->redirect(route('app.parc.groups.edit', $group->id));
+                    return;
+                }
+            }
 
             // Ajouter les machines sélectionnées au groupe
             if (!empty($this->selectedMachines)) {
@@ -251,6 +318,26 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
                                     Le parent définit la hiérarchie des OU dans Active Directory.
                                 </span>
                             </label>
+                        </div>
+                    @endif
+
+                    {{-- Label de contrat amont (Story 30.2) — masqué si pas de contrat actif (NFR3). --}}
+                    @if ($hasActiveContract)
+                        <div class="form-control w-full">
+                            <label class="label py-2">
+                                <x-atoms.tooltip label="Label de contrat amont" labelClass="label-text font-medium"
+                                    icon="true"
+                                    iconClass="fa-solid fa-circle-info text-base-content/40 text-xs ml-1">
+                                    Rattache ce parc à un label « libre » défini par l'autorité amont. Au plus un label
+                                    par groupe. Les labels réservés à l'autorité amont ne sont pas attribuables.
+                                </x-atoms.tooltip>
+                            </label>
+                            <select wire:model="controlhubLabel" class="select select-bordered w-full">
+                                <option value="">Aucun</option>
+                                @foreach ($freeLabelNames as $labelName)
+                                    <option value="{{ $labelName }}">{{ $labelName }}</option>
+                                @endforeach
+                            </select>
                         </div>
                     @endif
                 </div>

@@ -8,6 +8,7 @@ use App\Enums\WorkstationEnvironment;
 use App\Models\User;
 use App\Models\WorkstationGroup;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
@@ -37,6 +38,12 @@ class GroupEditEnvironmentTest extends TestCase
 
         $admin = User::query()->create(['login' => 'grp-admin', 'role' => 'prof', 'is_active' => true]);
         $this->actingAs($admin);
+
+        // Story 30.2 : la page d'édition autorise désormais explicitement la gate
+        // `update-workstationGroup` en tête de save() (défense en profondeur, le
+        // mapping de label EST une modification du parc). On l'accorde ici sans
+        // monter de permissions Spatie (iso ParcBulkEnvironmentTest).
+        Gate::before(fn ($user, string $ability) => $ability === 'update-workstationGroup' ? true : null);
     }
 
     #[Test]

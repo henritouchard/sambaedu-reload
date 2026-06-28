@@ -52,6 +52,23 @@ class ControlHubContract extends Model
     ];
 
     /**
+     * Story 30.2 — Résout le contrat amont **actif** (singleton « ≤ 1 contrat
+     * actif par instance »), ou null si le lien n'est pas établi (standalone).
+     *
+     * ⚠️ Résolution IDENTIQUE à celle de
+     * {@see \App\Services\ControlHub\ControlHubContractIngestionService::resolveActiveContract()}
+     * (28.2) : filtre sur `link_state = active`. Ne pas diverger (heuristique
+     * « dernier reçu » interdite). NFR3 : sans contrat actif → null, aucun label
+     * proposé, comportement parc strictement inchangé.
+     */
+    public static function active(): ?self
+    {
+        return static::query()
+            ->where('link_state', ControlHubLinkState::Active->value)
+            ->first();
+    }
+
+    /**
      * Items imposés par l'autorité amont (type, clé, valeur, état d'enforcement, cible).
      *
      * @return HasMany<ControlHubContractItem>
