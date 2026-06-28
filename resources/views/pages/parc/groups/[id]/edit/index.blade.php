@@ -6,6 +6,7 @@ use Livewire\Attributes\Locked;
 use App\Services\Parc\WorkstationGroupService;
 use App\Services\ControlHub\WorkstationGroupLabelService;
 use App\Exceptions\ControlHub\LabelAssignmentException;
+use App\Exceptions\ControlHub\UpstreamLockCollisionException;
 use App\Enums\WorkstationEnvironment;
 use App\Enums\ControlHubLabelMode;
 use App\Models\ControlHubContract;
@@ -204,7 +205,9 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
                 } else {
                     $labelService->assignLabel($this->group, $this->controlhubLabel);
                 }
-            } catch (LabelAssignmentException $e) {
+            } catch (LabelAssignmentException | UpstreamLockCollisionException $e) {
+                // Story 30.5 — collision verrou/verrou prédite : message explicite
+                // (item/périmètre/valeurs) en toast, sans redirection.
                 $this->toastError($e->getMessage());
                 $this->loadGroup();
                 return;

@@ -212,6 +212,56 @@ final class UpstreamContractSource
     }
 
     /**
+     * Story 30.5 — accesseur LECTURE SEULE des candidats `label` VERROUILLÉS
+     * (maille {@see StateMaille::Upstream}), au service de la **prévention
+     * prédictive** d'une collision verrou/verrou à l'assignation (FR13). Réutilise
+     * STRICTEMENT le socle 30.4 ({@see self::$groupedByLabel}, déjà peuplé par
+     * {@see self::ensureResolved()} via les MÊMES adaptateurs / `toPayload` /
+     * `sourceId`) — aucune re-requête, aucun re-parsing.
+     *
+     * Filtre `StateMaille::Upstream` (locked SEULEMENT) : un candidat `permissive`
+     * (maille `UpstreamPermissive`, rang 6) est un **plancher** surchargeable — il
+     * ne peut JAMAIS entrer en collision insoluble (AC #3) et est donc exclu ici.
+     * Les items `absent` n'ont jamais été indexés (exclus en amont).
+     *
+     * **Court-circuit NFR3** : si {@see self::$groupedByLabel} est vide (aucun item
+     * `label`, ou aucun contrat actif), retour `[]` immédiat — cohérent avec le
+     * court-circuit de {@see self::candidatesFor()}. L'appelant (détecteur 30.5)
+     * traite `[]` comme « rien à valider » (zéro garde, hot-path d'assignation
+     * intact).
+     *
+     * ⚠️ Cet accesseur n'ARBITRE RIEN : pas de précédence, pas de tiebreak — la
+     * discipline D2 reste confinée au `StateCompiler`. Il EXPOSE des candidats
+     * BRUTS que le détecteur 30.5 keye par `exclusiveKey()` (providers existants).
+     *
+     * @return array<string, array<string, list<StateCandidate>>> `label →
+     *                       "providerType|scope" → candidats locked`
+     */
+    public function lockedLabelCandidates(): array
+    {
+        $this->ensureResolved();
+
+        if ($this->groupedByLabel === []) {
+            return []; // court-circuit NFR3 : rien à valider.
+        }
+
+        $locked = [];
+        foreach ($this->groupedByLabel as $label => $byGroupKey) {
+            foreach ($byGroupKey as $groupKey => $candidates) {
+                foreach ($candidates as $candidate) {
+                    // Locked uniquement : le permissif (UpstreamPermissive) ne
+                    // collisionne jamais — c'est un plancher surchargeable (AC #3).
+                    if ($candidate->maille === StateMaille::Upstream) {
+                        $locked[$label][$groupKey][] = $candidate;
+                    }
+                }
+            }
+        }
+
+        return $locked;
+    }
+
+    /**
      * Labels portés par le poste = `controlhub_label` (30.2) des `WorkstationGroup`
      * DIRECTS du poste (salles physiques + parcs logiques résolus une fois par
      * `TargetContext`). Mémoïsé par poste (anti-N+1). Liste triée + dédupliquée

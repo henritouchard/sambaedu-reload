@@ -314,6 +314,9 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
             }
             $this->toastSuccess("{$count} machine(s) ajoutée(s) au groupe");
             $this->selectedMachines = [];
+        } catch (\App\Exceptions\ControlHub\UpstreamLockCollisionException $e) {
+            // Story 30.5 — collision verrou/verrou prédite : message explicite.
+            $this->toastError($e->getMessage());
         } catch (\Exception $e) {
             Log::error('[Parc] Erreur ajout machines au groupe: ' . $e->getMessage());
             $this->toastError('Erreur lors de l\'ajout des machines');

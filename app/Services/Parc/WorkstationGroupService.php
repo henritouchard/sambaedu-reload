@@ -18,6 +18,8 @@ use App\Models\WorkstationGroup;
 use App\Observers\WorkstationGroupObserver;
 use App\Repositories\WorkstationGroupRepository;
 use App\Services\Parc\RemoteAccessService;
+use App\Services\ControlHub\Resolution\UpstreamLockCollisionDetector;
+use App\Exceptions\ControlHub\UpstreamLockCollisionException;
 use App\Enums\LockReason;
 use Illuminate\Support\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -48,6 +50,9 @@ class WorkstationGroupService
         private WorkstationGroupRepository $repository,
         private WorkstationService $workstationService,
         private RemoteAccessService $remoteAccessService,
+        // Story 30.5 — garde prédictive verrou/verrou au rattachement. Nullable +
+        // résolu paresseusement (préserve les instanciations directes à 3 args).
+        private ?UpstreamLockCollisionDetector $lockCollisionDetector = null,
     ) {
     }
 
@@ -891,6 +896,10 @@ class WorkstationGroupService
      */
     public function addMachineToGroup(int $machineId, int $groupId): void
     {
+        // Story 30.5 — garde prédictive verrou/verrou AVANT l'écriture du pivot.
+        // Surface ADDITIVE : post = pre ∪ label(groupe cible).
+        $this->guardUpstreamLockCollision([$machineId], [$groupId], $this->additivePostLabels());
+
         $this->repository->addMachineToGroup($machineId, $groupId);
 
         Log::info('Machine ajoutée au groupe', [
@@ -917,6 +926,19 @@ class WorkstationGroupService
      */
     public function setMachineGroups(int $machineId, array $groupIds): void
     {
+        // Story 30.5 — garde prédictive verrou/verrou AVANT l'écriture du pivot.
+        // Surface de REMPLACEMENT : `groups()->sync()` remplace TOUTES les
+        // appartenances du poste (la relation `groups()` n'est pas filtrée), donc
+        // l'état final ne porte QUE les labels des groupes ciblés (fix #1 : les
+        // appartenances actuelles hors cibles sont supprimées, leurs labels ne
+        // doivent pas compter). `post = labels(groupIds)`.
+        $targetGroupIds = array_map('intval', $groupIds);
+        $this->guardUpstreamLockCollision(
+            [$machineId],
+            $targetGroupIds,
+            static fn (int $id, array $preLabels, array $introducedLabels): array => $introducedLabels,
+        );
+
         $this->repository->setMachineGroups($machineId, $groupIds);
 
         Log::info('Groupes de la machine mis à jour', [
@@ -930,6 +952,17 @@ class WorkstationGroupService
      */
     public function setGroupMachines(int $groupId, array $machineIds): void
     {
+        // Story 30.5 — garde prédictive verrou/verrou AVANT l'écriture du pivot.
+        // Surface ADDITIVE par poste : chaque poste ciblé gagne le label de G ; un
+        // poste DÉJÀ membre (label déjà dans `pre`) ne « gagne » rien — le modèle
+        // `gained = post \ pre` l'exclut donc (fix #2). Les postes retirés de G
+        // (absents de `machineIds`) ne sont pas dans le périmètre.
+        $this->guardUpstreamLockCollision(
+            array_map('intval', $machineIds),
+            [$groupId],
+            $this->additivePostLabels(),
+        );
+
         $this->repository->setGroupMachines($groupId, $machineIds);
 
         Log::info('Machines du groupe mises à jour', [
@@ -943,6 +976,16 @@ class WorkstationGroupService
      */
     public function bulkAddMachinesToGroup(array $machineIds, int $groupId): int
     {
+        // Story 30.5 — garde prédictive verrou/verrou AVANT l'écriture du pivot.
+        // Surface ADDITIVE. M2 (acté) : fail-closed — si UN poste du lot
+        // collisionne, l'opération est refusée EN ENTIER (la prévention échoue
+        // fermé), avant toute écriture pivot.
+        $this->guardUpstreamLockCollision(
+            array_map('intval', $machineIds),
+            [$groupId],
+            $this->additivePostLabels(),
+        );
+
         $count = 0;
 
         DB::transaction(function () use ($machineIds, $groupId, &$count) {
@@ -998,6 +1041,128 @@ class WorkstationGroupService
         return $count;
     }
 
+    /**
+     * Story 30.5 — garde prédictive verrou/verrou à l'ASSIGNATION d'appartenance
+     * (FR13), en MODÈLE générique pré-set / post-set par poste (post-review
+     * 30-5.md). Helper UNIQUE appelé par tous les points qui modifient
+     * l'appartenance (AJOUT, REMPLACEMENT `sync()`, SWAP de salle) — jamais par
+     * les retraits purs (retirer une appartenance ne peut pas CRÉER de collision).
+     *
+     * Refuse, AVANT l'écriture du pivot, toute opération qui introduirait, pour au
+     * moins un poste, une collision insoluble : dans son ÉTAT FINAL d'appartenance,
+     * deux items amont `locked` imposant des valeurs contradictoires sur la même
+     * `exclusiveKey`, dont AU MOINS un côté provient d'un label GAGNÉ par l'op
+     * (`gained = post \ pre`, filtre AC #8). Le calcul de `post(ws)` est confié à
+     * `$postLabelsOf` (propre à chaque surface : additif, remplacement, swap) —
+     * `pre(ws)` = TOUS les labels actuellement portés (le détecteur compare post à
+     * pre, donc les appartenances retirées par l'op n'y figurent plus et ne
+     * produisent pas de collision fantôme — fix #1/M1).
+     *
+     * **Bornage strict / NFR3** : court-circuit EN TÊTE, AVANT tout eager-load de
+     * population — (1) aucun item label `locked` (ou pas de contrat actif) ⇒
+     * `return` immédiat sans requête parc ; (2) aucun groupe nouvellement rattaché
+     * ne porte de label ⇒ `return` (rien ne peut être introduit). Le hot-path parc
+     * standalone reste byte-équivalent.
+     *
+     * **M2 (acté, fail-closed)** : un lot (`bulkAddMachinesToGroup`) dont UN SEUL
+     * poste collisionne est refusé EN ENTIER. La prévention échoue fermé — choix
+     * volontaire, cohérent avec une garde prédictive (mieux vaut refuser tout le
+     * lot que laisser passer un poste insoluble).
+     *
+     * @param  list<int>  $machineIds
+     * @param  list<int>  $introducedLabelGroupIds  groupes nouvellement rattachés
+     *                    par l'op (leurs labels sont les seuls candidats au GAIN —
+     *                    sert au court-circuit (2) ET de garde-fou de pertinence).
+     * @param  callable(int $machineId, list<string> $preLabels, list<string> $introducedLabels): list<string>  $postLabelsOf
+     *
+     * @throws UpstreamLockCollisionException
+     */
+    private function guardUpstreamLockCollision(array $machineIds, array $introducedLabelGroupIds, callable $postLabelsOf): void
+    {
+        $machineIds = array_values(array_unique(array_map('intval', $machineIds)));
+        $introducedLabelGroupIds = array_values(array_unique(array_map('intval', $introducedLabelGroupIds)));
+        if ($machineIds === [] || $introducedLabelGroupIds === []) {
+            return;
+        }
+
+        $detector = $this->lockCollisionDetector ?? app(UpstreamLockCollisionDetector::class);
+
+        // Court-circuit NFR3 EN TÊTE : aucun item label locked ⇒ zéro requête parc.
+        if (! $detector->hasLockedLabelItems()) {
+            return;
+        }
+
+        // Court-circuit : aucun groupe nouvellement rattaché ne porte de label ⇒
+        // rien ne peut être INTRODUIT, donc aucune collision possible.
+        $introducedLabels = array_values(array_unique(
+            WorkstationGroup::query()
+                ->whereIn('id', $introducedLabelGroupIds)
+                ->whereNotNull('controlhub_label')
+                ->where('controlhub_label', '!=', '')
+                ->pluck('controlhub_label')
+                ->map(static fn ($label): string => (string) $label)
+                ->all(),
+        ));
+        if ($introducedLabels === []) {
+            return;
+        }
+
+        // pre(ws) = TOUS les labels actuellement portés (n'exclut RIEN). Le
+        // détecteur dérive `gained = post \ pre` ; les appartenances qui seront
+        // retirées (hors `post`) n'entrent donc jamais dans une collision.
+        $preLabels = $detector->carriedLabelsExcludingGroups($machineIds, []);
+        $workstations = Workstation::query()->whereIn('id', $machineIds)->get();
+
+        $collisions = $detector->collisionsFromFinalState(
+            $workstations,
+            fn (Workstation $workstation): array => $preLabels[(int) $workstation->getKey()] ?? [],
+            fn (Workstation $workstation): array => $postLabelsOf(
+                (int) $workstation->getKey(),
+                $preLabels[(int) $workstation->getKey()] ?? [],
+                $introducedLabels,
+            ),
+        );
+
+        if ($collisions !== []) {
+            throw UpstreamLockCollisionException::fromCollisions($collisions);
+        }
+    }
+
+    /**
+     * Closure `post(ws)` pour une surface ADDITIVE (`addMachineToGroup`,
+     * `bulkAddMachinesToGroup`, `setGroupMachines`) : le poste CONSERVE toutes ses
+     * appartenances et GAGNE les labels des groupes cibles. `post = pre ∪ cibles`.
+     *
+     * @return callable(int, list<string>, list<string>): list<string>
+     */
+    private function additivePostLabels(): callable
+    {
+        return static fn (int $machineId, array $preLabels, array $introducedLabels): array
+            => array_values(array_unique([...$preLabels, ...$introducedLabels]));
+    }
+
+    /**
+     * Labels (controlhub_label) portés par les salles PHYSIQUES courantes d'un
+     * poste (≤ 1 en pratique). Une requête, après court-circuit NFR3 — utilisé par
+     * la closure `post` du SWAP de salle (`assignMachineToPhysicalRoom`).
+     *
+     * @return list<string>
+     */
+    private function labelsOfCurrentPhysicalRooms(int $machineId): array
+    {
+        return array_values(array_unique(
+            DB::table('workstation_group_workstation as pivot')
+                ->join('workstation_groups as wg', 'wg.id', '=', 'pivot.workstation_group_id')
+                ->where('pivot.workstation_id', $machineId)
+                ->where('wg.is_physical', true)
+                ->whereNotNull('wg.controlhub_label')
+                ->where('wg.controlhub_label', '!=', '')
+                ->pluck('wg.controlhub_label')
+                ->map(static fn ($label): string => (string) $label)
+                ->all(),
+        ));
+    }
+
     // ========================================
     // GESTION DES SALLES PHYSIQUES
     // ========================================
@@ -1045,6 +1210,22 @@ class WorkstationGroupService
             if (!$room->is_physical) {
                 throw new \InvalidArgumentException("Le groupe '{$room->name}' n'est pas une salle physique");
             }
+
+            // Story 30.5 — garde prédictive verrou/verrou : la salle physique est
+            // rarement labellisée, mais si la cible porte un label le rattachement
+            // peut introduire une collision. Le helper court-circuite sinon.
+            // Surface de SWAP : la/les salle(s) physique(s) COURANTE(S) sont
+            // détachées par l'op ; leurs labels quittent l'état final (fix M1 : ne
+            // pas les compter dans `pre` post-op). `post = (pre \ labels(salles
+            // physiques courantes)) ∪ label(cible)`.
+            $this->guardUpstreamLockCollision(
+                [$machineId],
+                [$roomId],
+                fn (int $id, array $preLabels, array $introducedLabels): array => array_values(array_unique([
+                    ...array_diff($preLabels, $this->labelsOfCurrentPhysicalRooms($id)),
+                    ...$introducedLabels,
+                ])),
+            );
         }
 
         // Capture AVANT la transaction. En cas de swaps concurrents du même

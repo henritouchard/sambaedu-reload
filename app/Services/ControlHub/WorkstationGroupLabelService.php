@@ -6,8 +6,11 @@ namespace App\Services\ControlHub;
 
 use App\Enums\ControlHubLabelMode;
 use App\Exceptions\ControlHub\LabelAssignmentException;
+use App\Exceptions\ControlHub\UpstreamLockCollisionException;
 use App\Models\ControlHubContract;
+use App\Models\Workstation;
 use App\Models\WorkstationGroup;
+use App\Services\ControlHub\Resolution\UpstreamLockCollisionDetector;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -38,6 +41,16 @@ use Illuminate\Support\Facades\Log;
 class WorkstationGroupLabelService
 {
     /**
+     * @param  ?UpstreamLockCollisionDetector  $collisionDetector  Story 30.5 —
+     *         garde prédictive verrou/verrou. Nullable + résolu paresseusement via
+     *         le conteneur pour préserver l'instanciation directe `new
+     *         WorkstationGroupLabelService()` (tests 30.2) sans dépendance dure.
+     */
+    public function __construct(
+        private readonly ?UpstreamLockCollisionDetector $collisionDetector = null,
+    ) {}
+
+    /**
      * Assigne un label libre du contrat amont actif à un WorkstationGroup.
      *
      * Matrice de refus (ordre : idempotence AVANT tout — cf. review 30.2 #1/#7) :
@@ -54,6 +67,8 @@ class WorkstationGroupLabelService
      *    labellisé lèverait une fausse erreur (review 30.2 finding #1).
      *
      * @throws LabelAssignmentException
+     * @throws UpstreamLockCollisionException Story 30.5 — l'assignation
+     *         introduirait une collision verrou/verrou insoluble (refus avant écriture)
      */
     public function assignLabel(WorkstationGroup $group, string $labelName): void
     {
@@ -84,6 +99,10 @@ class WorkstationGroupLabelService
             throw LabelAssignmentException::alreadyLabeled($group, $labelName);
         }
 
+        // Story 30.5 — garde prédictive : refuse AVANT toute écriture si
+        // l'assignation introduit une collision verrou/verrou insoluble (FR13).
+        $this->guardUpstreamLockCollision($group, $labelName);
+
         DB::transaction(function () use ($group, $labelName): void {
             $group->controlhub_label = $labelName;
             $group->save();
@@ -94,6 +113,50 @@ class WorkstationGroupLabelService
             'group_name' => $group->name,
             'label' => $labelName,
         ]);
+    }
+
+    /**
+     * Story 30.5 — garde prédictive verrou/verrou (FR13). Refuse l'assignation de
+     * `$labelName` à `$group` si elle INTRODUIRAIT, pour au moins un poste membre,
+     * une collision insoluble : deux items amont `locked` imposant des valeurs
+     * contradictoires sur la MÊME `exclusiveKey`.
+     *
+     * **NFR3** : court-circuit AVANT tout eager-load de la population — si aucun
+     * item label `locked` (ou pas de contrat actif), on ne charge JAMAIS
+     * `$group->workstations` (assignation 30.2 strictement inchangée).
+     *
+     * @throws UpstreamLockCollisionException
+     */
+    private function guardUpstreamLockCollision(WorkstationGroup $group, string $labelName): void
+    {
+        $detector = $this->collisionDetector ?? app(UpstreamLockCollisionDetector::class);
+
+        // Court-circuit NFR3 EN TÊTE : zéro requête population sans item label locked.
+        if (! $detector->hasLockedLabelItems()) {
+            return;
+        }
+
+        $workstations = $group->workstations()->get();
+        if ($workstations->isEmpty()) {
+            return; // population vide ⇒ aucune collision possible.
+        }
+
+        // Labels portés par chaque poste HORS le slot de `$group` (il portait au
+        // plus 1 label, remplacé par `$labelName`).
+        $existingLabels = $detector->carriedLabelsExcludingGroups(
+            $workstations->pluck('id')->all(),
+            [(int) $group->id],
+        );
+
+        $collisions = $detector->collisionsFromLabelGainedBy(
+            $workstations,
+            $labelName,
+            fn (Workstation $workstation): array => $existingLabels[(int) $workstation->getKey()] ?? [],
+        );
+
+        if ($collisions !== []) {
+            throw UpstreamLockCollisionException::fromCollisions($collisions);
+        }
     }
 
     /**

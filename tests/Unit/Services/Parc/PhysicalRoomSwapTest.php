@@ -46,6 +46,7 @@ class PhysicalRoomSwapTest extends TestCase
         WorkstationGroupObserver::enableSync();
 
         if ($this->createdTables) {
+            Schema::dropIfExists('controlhub_contracts');
             Schema::dropIfExists('workstation_application_status');
             Schema::dropIfExists('workstation_group_workstation');
             Schema::dropIfExists('workstation_groups');
@@ -79,6 +80,8 @@ class PhysicalRoomSwapTest extends TestCase
                 $table->string('ad_dn')->nullable();
                 $table->string('ad_guid')->nullable();
                 $table->string('app_profile_name')->nullable();
+                // Story 30.5 — la garde prédictive lit le label porté par le parc.
+                $table->string('controlhub_label')->nullable();
                 $table->timestamp('archived_at')->nullable();
                 $table->timestamps();
             });
@@ -100,6 +103,18 @@ class PhysicalRoomSwapTest extends TestCase
                 $table->id();
                 $table->unsignedBigInteger('workstation_id');
                 $table->string('status', 32)->nullable();
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        // Story 30.5 — la garde prédictive au rattachement sonde le contrat amont
+        // actif (court-circuit NFR3). Table minimale vide ⇒ aucun contrat actif ⇒
+        // garde inerte (hot-path salle physique strictement préservé).
+        if (!Schema::hasTable('controlhub_contracts')) {
+            Schema::create('controlhub_contracts', function (Blueprint $table) {
+                $table->id();
+                $table->string('link_state')->default('active');
                 $table->timestamps();
             });
             $this->createdTables = true;

@@ -1349,3 +1349,127 @@ ne contient « central » — couvert par `r3_no_central_identifier` (scan refle
 - [ ] Standalone & sans-item-label byte-identique + zéro requête WG + déterminisme (Scénario 12.5)
 - [ ] D2 confiné (zéro ligne `StateCompiler`/`StateMaille`) + R3 sans « central » (Scénario 12.6)
 - [ ] Test 28.3 `label_targeted_item_is_ignored` RÉÉCRIT (poste sans le label → non appliqué) + AC #1 ajouté
+
+---
+
+## Section 13 — Validation prédictive à l'assignation (Story 30.5, 2026-06-28)
+
+**But.** Dernier maillon de l'Epic 30 (FR13) : intercepter, **à l'assignation d'un
+label** ou **au rattachement d'un poste à un parc labellisé**, une collision
+**insoluble** — deux items amont VERROUILLÉS (`locked`) imposant des valeurs
+CONTRADICTOIRES sur la MÊME propriété exclusive (`exclusiveKey`) d'un même poste —
+et **refuser** l'opération AVANT toute écriture, avec un message explicite
+(propriété, périmètre, valeurs). C'est la **PRÉVENTION** proactive ; le filet
+runtime observable (warning `agent.state.conflict`) reste 30.4.
+
+> **Frontière 30.4 ↔ 30.5.** 30.4 OBSERVE au runtime (tiebreak déterministe, pas
+> d'état vide). 30.5 PRÉVIENT à l'assignation. Les deux coexistent : 30.5 ferme la
+> porte d'entrée, 30.4 reste le filet pour les collisions résiduelles (contrat mis
+> à jour APRÈS coup, anomalies). Aucune ligne ajoutée à `StateCompiler` /
+> `StateMaille` / la décoration des providers (D2 confiné, AC #5b).
+
+**Architecture (réutilisation stricte).** `UpstreamContractSource::lockedLabelCandidates()`
+expose, filtrés à `StateMaille::Upstream` (locked SEULEMENT), les candidats label
+déjà construits par 30.4 (`$groupedByLabel`) — court-circuit `[]` si aucun item
+label ou pas de contrat (NFR3). `UpstreamLockCollisionDetector` (pur lecture) keye
+ces candidats via l'`exclusiveKey()` des `KeyedExclusiveProvider` EXISTANTS
+(`registry` ; `shortcuts` aggregate exclu) et détecte ≥ 2 valeurs `locked`
+distinctes dont **au moins une provient d'un label gagné** (filtre AC #8). Refus
+via `UpstreamLockCollisionException` (message FR toast). Surfaces gardées :
+`WorkstationGroupLabelService::assignLabel` (après la matrice 30.2, avant écriture)
+et les points d'AJOUT d'appartenance de `WorkstationGroupService`
+(`addMachineToGroup` / `setMachineGroups` / `setGroupMachines` /
+`bulkAddMachinesToGroup` / `assignMachineToPhysicalRoom`) via un helper unique —
+JAMAIS les retraits.
+
+### Scénario 13.1 — Assignation d'un label introduisant une collision : REFUS (AC #1)
+
+**Préparation** : contrat amont actif ; deux items `registry` `locked` même clé
+`HKCU\…\Foo` valeurs ≠ (label `parc-a` → 1, label `parc-b` → 2) ; un parc `G_A`
+`controlhub_label = parc-a` et un parc `G_B` sans label ; un poste membre de `G_A`
+ET `G_B`.
+
+**Action** : assigner le label `parc-b` à `G_B` (page parc → édition du groupe).
+
+**Attendu** : refus en toast nommant la propriété (`hkcu|…|foo`), les **deux**
+sources amont (`#id`) et les **deux** valeurs (1 / 2) ; **aucune** écriture — la
+colonne `controlhub_label` de `G_B` reste `null`. Pas de redirection.
+
+### Scénario 13.2 — Pas de collision / valeurs concordantes : transparent (AC #2)
+
+Clés DISJOINTES, OU même clé même valeur (1 des deux côtés) ⇒ l'assignation
+**réussit exactement comme en 30.2** (colonne écrite, toast de succès). Des valeurs
+**identiques** ne constituent PAS une collision (rien à trancher).
+
+### Scénario 13.3 — Permissif / absent jamais bloquant (AC #3)
+
+Un item `permissive` (d'un côté) sur la propriété partagée — ou `locked` d'un côté
+et `permissive`/`absent` de l'autre — ⇒ **aucun** blocage. Un permissif est un
+**plancher** surchargeable (filtré dès `lockedLabelCandidates()`) ; un `absent`
+n'impose rien. Seul `locked`/`locked` contradictoire bloque.
+
+### Scénario 13.4 — Rattachement d'un poste à un parc labellisé : REFUS (AC #4)
+
+Poste portant déjà `parc-a` (locked X=1) ; parc `G_B` `controlhub_label = parc-b`
+(locked X=2). Rattacher le poste à `G_B` (`addMachineToGroup` / `bulkAdd` /
+sélection batch) ⇒ refus, **aucune** ligne `workstation_group_workstation` ajoutée.
+Un rattachement à un parc **non labellisé** (ou label sans collision) **réussit
+inchangé** (hot-path parc préservé).
+
+### Scénario 13.5 — Standalone & court-circuit NFR3 (AC #6)
+
+(a) Sans contrat actif, (b) contrat actif SANS aucun item label `locked` ⇒ le
+détecteur **court-circuite** (`hasLockedLabelItems() === false`) AVANT tout
+eager-load de population : **zéro** requête parc/pivot imputable à la garde
+(`DB::enableQueryLog()`), assignation 30.2 et rattachement parc **byte-équivalents**.
+
+```bash
+# Court-circuit prouvé par comptage de requêtes (test révélateur)
+CACHE_DRIVER=array vendor/bin/phpunit --filter 'detector_short_circuits'
+```
+
+### Scénario 13.6 — Déterminisme du rapport (AC #7)
+
+Collision touchant plusieurs postes ⇒ message/DTO **identiques** sur deux
+exécutions (et via `travel()`), périmètre énuméré de façon stable (clés / labels /
+`sourceId` / postes triés).
+
+### Scénario 13.7 — Collision pré-existante non aggravée : NON bloquée (AC #8)
+
+Un poste cumulant DÉJÀ deux labels `locked` contradictoires (collision pré-existante,
+ressort de 30.4) ⇒ une assignation **orthogonale** (label sans item `locked` sur la
+clé en conflit) **n'est PAS bloquée** : la garde ne refuse que les collisions
+**introduites** par l'opération (au moins un côté provient du label ajouté). Pas de
+faux refus paralysant.
+
+### Scénario 13.8 — D2 confiné & R3 (AC #5)
+
+```bash
+# (a) D2 : aucune ligne ajoutée au moteur ni à la décoration des providers
+git diff app/Services/Agent/StateCompiler.php app/Enums/StateMaille.php   # vide pour 30.5
+# AgentServiceProvider : SEUL le binding du détecteur est ajouté (array_map wrap intact)
+
+# (b) R3 : aucun identifiant/message « central » dans les fichiers livrés
+grep -rin "central" app/Services/ControlHub/Resolution/UpstreamLockCollision*.php \
+  app/Exceptions/ControlHub/UpstreamLockCollisionException.php   # commentaires garde-fou only
+```
+
+**Attendu** : la prévention vit dans les services d'ASSIGNATION ; le moteur n'est
+pas touché ; aucun identifiant/littéral « central » (couvert par
+`r3_no_central_identifier` + `d2_engine_files_do_not_reference_30_5_collision_logic`).
+
+---
+
+## Checklist rapide Story 30.5
+
+- [ ] `CACHE_DRIVER=array vendor/bin/phpunit --filter UpstreamLockCollision` → 16/16 verts
+- [ ] Non-régression `--filter 'UpstreamContractResolution|WorkstationGroupLabel|StateCompiler|ControlHubContract|Imposed'` → verte (143)
+- [ ] Suite parc `--filter 'WorkstationGroup|Parc|Machine'` → verte (536, 1 skip pré-existant)
+- [ ] Assignation introduisant une collision → refus + DB inchangée (Scénario 13.1)
+- [ ] Pas de collision / valeurs égales → succès 30.2 (Scénario 13.2)
+- [ ] Permissif / absent jamais bloquant (Scénario 13.3)
+- [ ] Rattachement à un parc labellisé collisionnant → refus + pivot inchangé (Scénario 13.4)
+- [ ] Standalone / sans item label locked → court-circuit + zéro requête parc (Scénario 13.5)
+- [ ] Déterminisme du rapport `travel()` (Scénario 13.6)
+- [ ] Collision pré-existante non aggravée → non bloquée (Scénario 13.7)
+- [ ] D2 confiné (zéro ligne `StateCompiler`/`StateMaille`/décoration) + R3 (Scénario 13.8)

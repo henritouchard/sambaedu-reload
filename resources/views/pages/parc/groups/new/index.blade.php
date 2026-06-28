@@ -188,6 +188,10 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
             ]);
 
             $this->redirect(route('app.parc.groups.show', $group->id));
+        } catch (\App\Exceptions\ControlHub\UpstreamLockCollisionException $e) {
+            // Story 30.5 — collision verrou/verrou prédite au rattachement des
+            // machines initiales : message explicite, sans redirection.
+            $this->toastError($e->getMessage());
         } catch (\InvalidArgumentException $e) {
             $this->toastError($e->getMessage());
         } catch (\Exception $e) {

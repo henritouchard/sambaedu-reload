@@ -191,6 +191,9 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             $this->selectedLogicalGroupIds = [];
             $this->loadMachine();
             $this->loadAvailableGroups();
+        } catch (\App\Exceptions\ControlHub\UpstreamLockCollisionException $e) {
+            // Story 30.5 — collision verrou/verrou prédite : message explicite.
+            $this->toastError($e->getMessage());
         } catch (\Exception $e) {
             Log::error('[MachineShow] Erreur ajout au groupe: ' . $e->getMessage());
             $this->toastError('Erreur lors de l\'ajout au groupe');

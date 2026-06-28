@@ -33,6 +33,7 @@ use App\Services\Agent\WorkstationEnvironmentResolver;
 use App\Services\ControlHub\Resolution\RegistryUpstreamAdapter;
 use App\Services\ControlHub\Resolution\UpstreamAwareProvider;
 use App\Services\ControlHub\Resolution\UpstreamContractSource;
+use App\Services\ControlHub\Resolution\UpstreamLockCollisionDetector;
 use App\Services\ControlHub\UpstreamLockResolver;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
@@ -115,6 +116,20 @@ class AgentServiceProvider extends ServiceProvider
         // parc + défaut instance) ; court-circuit NFR3 sans contrat actif (≤ 1
         // requête, jamais la table `items`). Mémoïsation == par-requête (PHP-FPM).
         $this->app->singleton(UpstreamLockResolver::class, fn () => new UpstreamLockResolver());
+        // Story 30.5 — DÉTECTEUR de collision verrou/verrou à l'assignation
+        // (prévention prédictive, FR13). Singleton par-requête : réutilise le
+        // singleton UpstreamContractSource (28.3, contrat mémoïsé) + les providers
+        // EXCLUSIFS `registry` (KeyedExclusiveProvider) pour DÉLÉGUER `exclusiveKey()`
+        // — aucune dérivation de clé réinventée, aucune écriture. Court-circuit NFR3
+        // sans item label locked. NE touche NI StateCompiler NI StateMaille NI la
+        // décoration des providers (D2 confiné, AC #5b) : on AJOUTE seulement ce binding.
+        $this->app->singleton(UpstreamLockCollisionDetector::class, fn ($app) => new UpstreamLockCollisionDetector(
+            $app->make(UpstreamContractSource::class),
+            [
+                $app->make(RegistryMachineCapabilityProvider::class),
+                $app->make(RegistryUserCapabilityProvider::class),
+            ],
+        ));
         $this->app->singleton(StateCompiler::class, fn ($app) => new StateCompiler(
             $app->make(StateHasher::class),
             // Story 28.3 — chaque provider est ENROBÉ par le décorateur amont :
