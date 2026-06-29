@@ -244,6 +244,16 @@ class AppServiceProvider extends ServiceProvider
 
             return $route;
         });
+
+        // Story 29.9 — réactive le tracking d'exécution des jobs queue.
+        // Cet appel avait été retiré de boot() dans le commit 997df15 (« fix
+        // livewire update redirection ») ; conséquence : le dashboard /workers
+        // (WorkerMonitoringService → queue_task_runs) n'enregistrait plus aucun
+        // run. On le rétablit ici. Le garde Schema::hasTable rend les handlers
+        // inertes si la table n'existe pas encore.
+        // Dette connue (hors-scope 29.9, à traiter en story dédiée) : rétention
+        // de queue_task_runs (croissance non bornée) et coût DB par job.
+        $this->registerQueueTaskTracking();
     }
 
     private function registerQueueTaskTracking(): void
@@ -257,9 +267,13 @@ class AppServiceProvider extends ServiceProvider
             $taskUuid = (string) ($payload['uuid'] ?? sha1($event->job->getRawBody()));
             $jobName = (string) ($payload['displayName'] ?? $payload['job'] ?? 'UnknownJob');
 
+            // Closure : `created_at` est posé UNIQUEMENT à l'INSERT.
+            // Sur un retry (UPDATE — même task_uuid), `created_at` d'origine est
+            // PRÉSERVÉ. Les autres champs (reset intentionnel) sont écrits dans les
+            // deux cas. (Story 29.9 — correctif du bug pré-existant.)
             DB::table('queue_task_runs')->updateOrInsert(
                 ['task_uuid' => $taskUuid],
-                [
+                fn (bool $exists): array => array_merge([
                     'queue' => (string) $event->job->getQueue(),
                     'job_name' => $jobName,
                     'status' => 'running',
@@ -269,8 +283,7 @@ class AppServiceProvider extends ServiceProvider
                     'error_message' => null,
                     'log_lines' => "[" . now()->toDateTimeString() . "] START {$jobName}",
                     'updated_at' => now(),
-                    'created_at' => now(),
-                ],
+                ], $exists ? [] : ['created_at' => now()]),
             );
         });
 
@@ -286,16 +299,19 @@ class AppServiceProvider extends ServiceProvider
             $existingLogs = (string) (DB::table('queue_task_runs')->where('task_uuid', $taskUuid)->value('log_lines') ?? '');
             $appendedLogs = trim($existingLogs . "\n[" . now()->toDateTimeString() . "] DONE {$jobName}");
 
+            // Closure iso-`before` : si `before` n'a pas tourné (course rare,
+            // table migrée en cours de vie du worker), l'INSERT par `after` pose
+            // `created_at` ; sur l'UPDATE normal, `created_at` d'origine préservé.
             DB::table('queue_task_runs')->updateOrInsert(
                 ['task_uuid' => $taskUuid],
-                [
+                fn (bool $exists): array => array_merge([
                     'queue' => (string) $event->job->getQueue(),
                     'job_name' => $jobName,
                     'status' => 'done',
                     'finished_at' => now(),
                     'updated_at' => now(),
                     'log_lines' => $appendedLogs,
-                ],
+                ], $exists ? [] : ['created_at' => now()]),
             );
         });
 
@@ -312,9 +328,11 @@ class AppServiceProvider extends ServiceProvider
             $existingLogs = (string) (DB::table('queue_task_runs')->where('task_uuid', $taskUuid)->value('log_lines') ?? '');
             $appendedLogs = trim($existingLogs . "\n[" . now()->toDateTimeString() . "] FAILED {$jobName}: {$message}");
 
+            // Closure iso-`before` : INSERT (cas où seul `failing` est observé)
+            // pose `created_at` ; UPDATE préserve le `created_at` d'origine.
             DB::table('queue_task_runs')->updateOrInsert(
                 ['task_uuid' => $taskUuid],
-                [
+                fn (bool $exists): array => array_merge([
                     'queue' => (string) $event->job->getQueue(),
                     'job_name' => $jobName,
                     'status' => 'failed',
@@ -322,7 +340,7 @@ class AppServiceProvider extends ServiceProvider
                     'error_message' => $message,
                     'updated_at' => now(),
                     'log_lines' => $appendedLogs,
-                ],
+                ], $exists ? [] : ['created_at' => now()]),
             );
         });
     }
