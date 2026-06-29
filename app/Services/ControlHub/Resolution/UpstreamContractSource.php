@@ -9,6 +9,7 @@ use App\Enums\ControlHubEnforcementState;
 use App\Enums\ControlHubLinkState;
 use App\Enums\StateMaille;
 use App\Enums\StateScope;
+use App\Models\Application;
 use App\Models\ControlHubContract;
 use App\Models\WorkstationGroup;
 use App\Services\Agent\StateCandidate;
@@ -166,6 +167,28 @@ final class UpstreamContractSource
     private array $labelsCarriedByWorkstation = [];
 
     /**
+     * Story 31.2 — ORDRES D'INSTALL amont (FR6) de cible `instance` : les `app_id`
+     * (= clé d'un item `type='applications'`) que l'autorité amont impose à TOUTE
+     * la flotte. Peuplé dans la MÊME passe que {@see self::$grouped} /
+     * {@see self::$groupedByLabel} (zéro requête de plus). Lu par
+     * {@see self::orderedApplicationAppIds()}. Vide ⇒ court-circuit NFR3 (avec
+     * {@see self::$applicationOrdersByLabel}, aucune résolution des labels portés).
+     *
+     * @var list<string>
+     */
+    private array $applicationOrdersInstance = [];
+
+    /**
+     * Story 31.2 — ORDRES D'INSTALL amont de cible `label` : `app_id` indexés par
+     * nom de label ciblé (`target_label`). Injectés UNIQUEMENT aux postes portant
+     * le label (rattachement par NOM, iso 30.4). Vide (avec
+     * {@see self::$applicationOrdersInstance}) ⇒ court-circuit NFR3.
+     *
+     * @var array<string, list<string>>
+     */
+    private array $applicationOrdersByLabel = [];
+
+    /**
      * @param  iterable<UpstreamPayloadAdapter>  $adapters  bridge extensible :
      *                                            un adaptateur par type amont démontré
      */
@@ -262,6 +285,82 @@ final class UpstreamContractSource
     }
 
     /**
+     * Story 31.2 — accesseur LECTURE SEULE des ORDRES D'INSTALL amont (FR6) : les
+     * `app_id` (= clé d'un item `type='applications'`) que l'autorité amont
+     * ORDONNE d'installer sur le poste `$ctx` — cible `instance` (toute la flotte)
+     * ∪ les `app_id` portés par un label que le poste porte (réutilisation STRICTE
+     * de {@see self::labelsCarriedBy()}, socle 30.4). 3ᵉ jumeau de
+     * {@see self::candidatesFor()} / {@see self::lockedLabelCandidates()} : même
+     * discipline (mémoïsé via {@see self::ensureResolved()}, aucune écriture,
+     * aucune re-requête). `key == applications.app_id` (jamais un id de pivot/scope).
+     *
+     * **Pont au niveau ENSEMBLE (D3)** : l'{@see \App\Services\Agent\Providers\ApplicationsStateProvider}
+     * UNIONNE ces `app_id` à son ensemble cible AVANT hydratation → le payload
+     * `{app_id, name}` est IDENTIQUE quelle que soit la source (résolu localement
+     * OU ordonné amont) ⇒ la dédup aggregate du `StateCompiler` collapse un doublon
+     * de source en UN item (idempotence d'état). On NE passe PAS par un
+     * {@see UpstreamPayloadAdapter} : `toPayload()` est pur (pas d'accès DB) et ne
+     * pourrait hydrater le `name` depuis l'`Application` locale → deux payloads
+     * divergents → doublon. C'est pourquoi `applications` n'a (volontairement)
+     * AUCUN adaptateur — il ne peuple jamais {@see self::$grouped}.
+     *
+     * **aggregate ⇒ pas d'enforcement à projeter (D1)** : seule la PRÉSENCE dans
+     * l'ensemble compte. `locked` et `permissive` signifient tous deux « app
+     * présente » (install) — aucune distinction, aucun rang `Upstream` ici (rien à
+     * arbitrer : l'union EST le but, pas une précédence). Le RETRAIT existe DÉJÀ par
+     * omission (WPKG synchronise `profiles.xml` par poste) — on ne pose aucun canal
+     * `<remove>`/`absent` (l'`absent` est de toute façon exclu en amont par
+     * {@see self::ensureResolved()}).
+     *
+     * **Court-circuit NFR3 (CRITIQUE)** : sans aucun ordre d'install (standalone,
+     * ou contrat actif sans item `applications`), retour `[]` IMMÉDIAT —
+     * {@see self::labelsCarriedBy()} (donc la requête `workstation_groups`) n'est
+     * JAMAIS appelée. L'ensemble cible du provider reste byte-identique au 27.5.
+     * Ce court-circuit est garanti POUR CET ACCESSEUR SEUL ; en production le
+     * décorateur {@see UpstreamAwareProvider} (qui enrobe le même provider) peut
+     * appeler {@see self::labelsCarriedBy()} pour d'AUTRES types de cible label
+     * (items `registry`/`label` du contrat) — mais le résultat est MÉMOÏSÉ par
+     * poste ({@see self::$labelsCarriedByWorkstation}), donc partagé avec cet
+     * accesseur SANS requête supplémentaire (cet accesseur n'ajoute zéro requête).
+     *
+     * **Déterminisme NFR4** : union dédupliquée + triée `strcasecmp` (iso le tri du
+     * provider) — ordre stable entre deux compilations identiques.
+     *
+     * ⚠️ GARDE-FOU R3 : aucun « central » ; vocabulaire « amont » / `Upstream`.
+     * Caveat long-running identique aux autres accesseurs (mémoïsation
+     * par-conteneur sûre PHP-FPM ; sous Octane brancher `ControlHubContractChanged`).
+     *
+     * @return list<string> `app_id` ordonnés, dédupliqués + triés (déterminisme)
+     */
+    public function orderedApplicationAppIds(TargetContext $ctx): array
+    {
+        $this->ensureResolved();
+
+        // Court-circuit NFR3 : aucun ordre d'install (pas de contrat, ou contrat
+        // sans item `applications`) ⇒ rien à unionner, et SURTOUT aucune résolution
+        // des labels portés (zéro requête `workstation_groups`).
+        if ($this->applicationOrdersInstance === [] && $this->applicationOrdersByLabel === []) {
+            return [];
+        }
+
+        // Cible `instance` (toute la flotte) — toujours appliquée.
+        $appIds = $this->applicationOrdersInstance;
+
+        // Cible `label` — uniquement les ordres portés par un label du poste.
+        foreach ($this->labelsCarriedBy($ctx) as $label) {
+            foreach ($this->applicationOrdersByLabel[$label] ?? [] as $appId) {
+                $appIds[] = $appId;
+            }
+        }
+
+        // Dédup + tri déterministe (iso ApplicationsStateProvider) — NFR4.
+        $appIds = array_values(array_unique($appIds));
+        usort($appIds, static fn (string $a, string $b): int => strcasecmp($a, $b));
+
+        return $appIds;
+    }
+
+    /**
      * Labels portés par le poste = `controlhub_label` (30.2) des `WorkstationGroup`
      * DIRECTS du poste (salles physiques + parcs logiques résolus une fois par
      * `TargetContext`). Mémoïsé par poste (anti-N+1). Liste triée + dédupliquée
@@ -338,6 +437,34 @@ final class UpstreamContractSource
             ->get();
 
         foreach ($items as $item) {
+            // Story 31.2 — ORDRE D'INSTALL amont (type `applications`, FR6) : pont
+            // au niveau ENSEMBLE (D3), PAS via adaptateur. On indexe l'`app_id`
+            // (= $item->key) dans des structures dédiées lues par
+            // {@see self::orderedApplicationAppIds()}, en RÉUTILISANT cette passe
+            // items (zéro requête de plus). On `continue` ensuite : l'item
+            // `applications` n'a (volontairement) aucun adaptateur ⇒ il ne peuple ni
+            // `grouped` ni `groupedByLabel` (zéro double comptage côté
+            // `candidatesFor()`). Les deux états retenus par le `whereIn`
+            // (`locked`/`permissive`) signifient « app présente » : aggregate, aucune
+            // valeur à relaxer/verrouiller (D1) ; `absent` n'arrive jamais ici.
+            if ($item->type === Application::TYPE_APPLICATIONS) {
+                if ($item->target_type === ControlHubContractTarget::Label) {
+                    // Garde-fou SYMÉTRIQUE (iso le label de `grouped`, cf. plus bas et
+                    // {@see self::labelsCarriedBy()}) : un `target_label` vide ne cible
+                    // aucun parc identifiable — jamais indexé (sinon il s'appliquerait
+                    // à tort à un parc à `controlhub_label` vide, anomalie 30.2).
+                    if ($item->target_label === null || $item->target_label === '') {
+                        continue;
+                    }
+                    $this->applicationOrdersByLabel[$item->target_label][] = (string) $item->key;
+                } else {
+                    // Cible `instance` (toute la flotte).
+                    $this->applicationOrdersInstance[] = (string) $item->key;
+                }
+
+                continue;
+            }
+
             $adapter = $this->adapters[$item->type] ?? null;
             if ($adapter === null) {
                 // Type amont sans adaptateur enregistré : ignoré proprement

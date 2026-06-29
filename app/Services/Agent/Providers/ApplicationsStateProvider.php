@@ -11,6 +11,7 @@ use App\Models\Application;
 use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
+use App\Services\ControlHub\Resolution\UpstreamContractSource;
 use App\Wpkg\Deployment\Services\WorkstationPackagesResolver;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -74,11 +75,30 @@ use Illuminate\Support\Facades\Log;
  * `Broadcast`. Le resolver WPKG reste inchangé (il ne connaît que les
  * rattachements poste/groupe/profil) ; la précédence n'est pas modifiée — le
  * type `applications` est `aggregate`, l'union ne crée jamais de conflit.
+ *
+ * **Ordres d'install amont (Story 31.2 — FR6).** L'autorité amont (controlHub)
+ * peut ORDONNER l'install d'une app — un item de contrat `type='applications'`,
+ * cible `instance` (toute la flotte) ∪ labels portés par le poste. Ces `app_id`
+ * sont UNIONNÉS à l'ensemble cible AVANT hydratation, via l'accesseur LECTURE
+ * SEULE {@see UpstreamContractSource::orderedApplicationAppIds()} : le payload
+ * `{app_id, name}` hydraté est IDENTIQUE quelle que soit la source ⇒ une app
+ * aussi résolue localement collapse en UN item (dédup aggregate du compilateur =
+ * idempotence d'état). Pont au niveau ENSEMBLE (décision D3) — JAMAIS un
+ * `UpstreamPayloadAdapter` (un adaptateur ne pourrait hydrater le `name` depuis
+ * l'`Application` locale → doublon). Court-circuit NFR3 : sans contrat actif (ou
+ * sans ordre d'install), l'accesseur renvoie `[]` et l'ensemble reste
+ * byte-identique au 27.5. Le moteur d'install (WPKG) n'est pas absorbé : SE5 ne
+ * livre que l'ensemble d'`app_id`.
  */
 final class ApplicationsStateProvider implements StateProvider
 {
     public function __construct(
         private readonly WorkstationPackagesResolver $resolver,
+        // Story 31.2 — SOURCE des ordres d'install amont (contrat actif). Singleton
+        // mémoïsé partagé (≤ 1 requête « contrat actif ? », court-circuit NFR3 sans
+        // lien actif). N'enregistre AUCUN adaptateur `applications` (pont au niveau
+        // ensemble, pas par décorateur — anti double-injection, cf. AgentServiceProvider).
+        private readonly UpstreamContractSource $source,
     ) {}
 
     public function type(): string
@@ -133,12 +153,23 @@ final class ApplicationsStateProvider implements StateProvider
             ->pluck('app_id')
             ->all();
 
+        // Story 31.2 — ORDRES D'INSTALL amont (FR6) : `app_id` qu'un contrat actif
+        // ORDONNE d'installer sur ce poste (cible `instance` ∪ labels portés). On
+        // les UNIONNE à l'ensemble cible AVANT dédup/hydratation : le payload
+        // {app_id, name} hydraté est IDENTIQUE quelle que soit la source ⇒ dédup
+        // aggregate naturelle (idempotence AC3). Pont au niveau ENSEMBLE (D3) — pas
+        // via UpstreamPayloadAdapter (toPayload ne pourrait hydrater le name local).
+        // Court-circuit NFR3 : sans contrat actif / sans ordre, l'accesseur renvoie
+        // [] (zéro requête items, ensemble byte-identique au 27.5).
+        $orderedAppIds = $this->source->orderedApplicationAppIds($ctx);
+
         // Union dédupliquée + ré-ordonnée (déterminisme : alpha insensible casse,
         // iso le tri du resolver → ordre aggregate / ETag stables). Un poste sans
         // config spécifique ET sans aucune app défaut parc retombe sur exactement
         // le résultat antérieur (non-régression du state Broadcast).
         $appIds = collect($resolvedAppIds)
             ->concat($parcDefaultAppIds)
+            ->concat($orderedAppIds)
             ->filter(fn ($v): bool => is_string($v) && $v !== '')
             ->map(fn ($v): string => (string) $v)
             ->unique()

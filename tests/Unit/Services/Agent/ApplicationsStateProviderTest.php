@@ -14,6 +14,7 @@ use App\Observers\WorkstationGroupObserver;
 use App\Services\Agent\Providers\ApplicationsStateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
+use App\Services\ControlHub\Resolution\UpstreamContractSource;
 use App\Wpkg\Deployment\Services\WorkstationPackagesResolver;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -51,7 +52,13 @@ class ApplicationsStateProviderTest extends TestCase
         WpkgSchemaBootstrapper::bootstrap();
         Cache::flush();
 
-        $this->provider = new ApplicationsStateProvider(new WorkstationPackagesResolver());
+        // Story 31.2 — 2ᵉ dépendance : SOURCE des ordres d'install amont. Sans
+        // contrat actif (ces tests n'en créent aucun), `orderedApplicationAppIds()`
+        // court-circuite (NFR3) → l'ensemble cible reste inchangé vs 27.5.
+        $this->provider = new ApplicationsStateProvider(
+            new WorkstationPackagesResolver(),
+            new UpstreamContractSource([]),
+        );
     }
 
     protected function tearDown(): void

@@ -108,6 +108,17 @@ class AgentServiceProvider extends ServiceProvider
         // du poste). L'expansion par-type complète + le schéma d'échange figé relèvent
         // d'Epic 33 (décision review 28.3, finding #1). Réenregistrer `shortcuts` ICI
         // une fois le payload aligné sur ShortcutsStateProvider::payloadFor().
+        //
+        // ⚠️ STORY 31.2 — GARDE ANTI DOUBLE-INJECTION (NE PAS enregistrer d'adaptateur
+        // `applications` ici). Les ORDRES D'INSTALL amont (items `type='applications'`)
+        // sont unionnés à l'ensemble cible DIRECTEMENT par
+        // `ApplicationsStateProvider` via l'accesseur `orderedApplicationAppIds()`
+        // (pont au niveau ENSEMBLE — D3). Le décorateur `UpstreamAwareProvider` qui
+        // enrobe ce provider reste donc un NO-OP pour ce type. Ajouter un
+        // `UpstreamPayloadAdapter` pour `applications` produirait une DOUBLE injection
+        // (accesseur + décorateur) ET un doublon d'item (le `toPayload` pur ne peut
+        // hydrater le `name` depuis l'`Application` locale → payloads divergents, hash
+        // instable). Interdit.
         $this->app->singleton(UpstreamContractSource::class, fn () => new UpstreamContractSource([
             new RegistryUpstreamAdapter(),
         ]));
@@ -216,6 +227,13 @@ class AgentServiceProvider extends ServiceProvider
                 // handler agent DÉCLENCHE WPKG (service SYSTEM = portée machine) ;
                 // l'ensemble cible est aussi la clé d'inventaire par poste (AC4).
                 // Une ligne, zéro modif du compilateur.
+                //
+                // Story 31.2 — le 2ᵉ argument `UpstreamContractSource` (pont des
+                // ORDRES D'INSTALL amont, FR6) est résolu par AUTO-WIRING (singleton
+                // déjà bindé ci-dessus). Le décorateur `UpstreamAwareProvider` reste
+                // un no-op pour `applications` (aucun adaptateur — garde anti
+                // double-injection ci-dessus) : l'union amont passe UNIQUEMENT par
+                // l'accesseur dédié du provider, jamais par la décoration.
                 $app->make(ApplicationsStateProvider::class),
                 ],
             ),

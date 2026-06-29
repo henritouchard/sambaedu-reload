@@ -61,6 +61,10 @@ final class WpkgSchemaBootstrapper
                 $table->string('ad_guid', 36)->nullable();
                 $table->string('display_name', 255)->nullable();
                 $table->text('description')->nullable();
+                // Story 30.2 — label refnum d'un parc (par NOM, sans FK). Story 31.2
+                // en a besoin pour le ciblage `target_type=label` des ordres d'install
+                // (labelsCarriedBy lit `controlhub_label != ''`). Nullable, additif.
+                $table->string('controlhub_label')->nullable();
                 $table->timestamp('archived_at')->nullable();
                 $table->timestamps();
             });
@@ -208,11 +212,32 @@ final class WpkgSchemaBootstrapper
                 $table->timestamps();
             });
         }
+
+        // Story 31.2 — items imposés du contrat (28.1). Le pont des ORDRES D'INSTALL
+        // amont (UpstreamContractSource::orderedApplicationAppIds, type='applications')
+        // lit cette table dès qu'un contrat est ACTIF ; ApplicationsStateProvider
+        // l'interroge désormais à chaque itemsFor(). Requise même vide : sans contrat
+        // actif, `ensureResolved()` court-circuite (NFR3) et ne la touche jamais.
+        // Colonnes alignées sur la migration 28.1 (target_label NOT NULL DEFAULT '').
+        if (! Schema::hasTable('controlhub_contract_items')) {
+            Schema::create('controlhub_contract_items', function (Blueprint $table): void {
+                $table->id();
+                $table->unsignedBigInteger('controlhub_contract_id');
+                $table->string('type');
+                $table->string('key');
+                $table->text('value')->nullable();
+                $table->string('enforcement_state');
+                $table->string('target_type')->default('instance');
+                $table->string('target_label')->default('');
+                $table->timestamps();
+            });
+        }
     }
 
     public static function tearDown(): void
     {
         foreach ([
+            'controlhub_contract_items',
             'controlhub_contract_catalog_apps',
             'controlhub_contracts',
             'system_settings',

@@ -1573,3 +1573,94 @@ CACHE_DRIVER=array vendor/bin/phpunit --filter 'AppProfile|Wpkg|ControlHubContra
 - [ ] Appelant non authentifié non bloqué + severed = bornage levé (Scénario 14.4)
 - [ ] Canaux additionnels bornés : profil, clone, défaut diffusé ; retrait toujours permis (Scénario 14.5)
 - [ ] R3 : aucun identifiant/message « central » dans les fichiers livrés
+
+## Section 15 — Déclenchement d'install en désir d'état (Story 31.2, 2026-06-28)
+
+L'autorité amont peut **ORDONNER l'install d'une app** sur une cible : un
+`controlhub_contract_items` `type='applications'`, `key=<app_id>`,
+`enforcement_state` non-`absent`, `target_type=instance|label` (le schéma 28.1 et
+l'ingestion 28.2 l'acceptent **déjà**, sans whitelist de `type`). 31.2 **projette**
+cet ordre dans l'ensemble `applications` désiré que l'agent récupère au check-in
+(`GET /api/v1/agent/state`, portée `machine`).
+
+- **Pont** : `UpstreamContractSource::orderedApplicationAppIds($ctx)` (accesseur
+  lecture seule, court-circuit NFR3) renvoie `instance ∪ labels portés` ;
+  `ApplicationsStateProvider` UNIONNE ces `app_id` à son ensemble cible **avant
+  hydratation** ⇒ payload `{app_id, name}` **identique** quelle que soit la source.
+- **Idempotence** : une app aussi résolue localement collapse en **UN** item (dédup
+  aggregate du compilateur) — la présence dans l'ensemble pilote WPKG `<check>`, ce
+  n'est **pas** un acte impératif (pas de réinstallation). Le **retrait** existe déjà
+  par omission (`profiles.xml` synchronisé par WPKG) : 31.2 ne pose aucun canal
+  `<remove>`/`absent`.
+- **Gap connu (D4)** : un ordre visant un `app_id` **absent** de l'inventaire local
+  `applications` est **skip+warn** (journalisé, non livré) — comblé par la **Story
+  31.3** (approvisionnement auto depuis le dépôt SambaEdu).
+
+> Pré-requis VM : un contrat amont `active`, un poste enrôlé `PC1`, son token agent.
+> `APPID=firefox` doit exister comme `Application` locale (sinon → 31.3).
+
+### Scénario 15.1 — Ordre cible `instance` (toute la flotte)
+
+1. Poser un item `applications`/`locked`/`instance` `key=firefox` dans le contrat actif.
+2. `curl -s -H "Authorization: Bearer <token>" https://<se5>/api/v1/agent/state | jq '.machine[] | select(.type=="applications") | .payload.app_id'`
+   ⇒ `firefox` **figure** dans `machine.applications` (item `{app_id, name}`), pour
+   **n'importe quel** poste enrôlé.
+3. Vérifier le payload : exactement `{app_id, name}` (4 clés d'item `type/semantics/payload/hash` — contrat agent figé, aucun champ ajouté).
+
+### Scénario 15.2 — Ordre cible `label` (porté vs non porté)
+
+Pré-requis : un parc `salle-info` portant `controlhub_label = salle-info` (mapping
+30.2) ; `PC1` membre de ce parc, `PC2` membre d'un autre parc.
+
+1. Poser un item `applications`/`locked`/`label` `key=vlc`, `target_label=salle-info`.
+2. `state` de **PC1** ⇒ `vlc` présent dans `machine.applications`.
+3. `state` de **PC2** (ne porte pas le label) ⇒ `vlc` **absent**.
+
+### Scénario 15.3 — App déjà affectée localement (dédup / idempotence)
+
+1. Affecter `firefox` au parc de `PC1` **ET** poser l'ordre amont `instance` `firefox`.
+2. `curl … | jq '[.machine[] | select(.payload.app_id=="firefox")] | length'` ⇒ **`1`**
+   (un seul item malgré les deux sources).
+3. Deux check-ins consécutifs (sans changement) renvoient le **même** ETag/hash ⇒
+   l'agent ne redéclenche **aucune** réinstallation (réconciliation level-triggered).
+
+### Scénario 15.4 — Standalone (aucun contrat actif)
+
+Aucun `ControlHubContract` ⇒ l'ensemble `applications` est **byte-identique** au
+pré-31.2 (seules les sources locales). Court-circuit NFR3 prouvé par query log :
+**zéro** requête `controlhub_contract_items`. Idem contrat actif **sans** item
+`applications` (que du `registry`) : `orderedApplicationAppIds()` court-circuite
+(`[]`), **zéro** requête « labels portés » (`controlhub_label`).
+
+### Scénario 15.5 — Rupture du lien (Story 32.1, hors scope)
+
+`link_state = severed` ⇒ `ControlHubContract::active()` null ⇒
+`orderedApplicationAppIds()` renvoie `[]` ⇒ ordres d'install **levés
+automatiquement** (release à la rupture validée en 32.1).
+
+```bash
+# Hôte (php8.4 + pdo_sqlite)
+CACHE_DRIVER=array php artisan test tests/Feature/ControlHub/UpstreamInstallOrderTest.php   # 11/11
+# Non-régression desired-state + domaine ControlHub + contrat figé
+CACHE_DRIVER=array php artisan test --filter 'Agent|Application|UpstreamContract|UpstreamInstallOrder|ControlHubContract|ContractV1|StateCompiler'  # 720/720 (22 skip env)
+
+# R3 : aucun identifiant/message « central » (uniquement commentaires garde-fou)
+grep -rin central app/Services/ControlHub/Resolution/UpstreamContractSource.php \
+  app/Services/Agent/Providers/ApplicationsStateProvider.php
+```
+
+**Attendu** : l'ordre d'install figure dans l'`applications` désiré du poste ciblé ;
+une app déjà présente = un seul item, hash stable (pas de réinstall) ; sans contrat
+actif, ensemble inchangé + zéro requête items ; contrat agent figé intact
+(`FROZEN_STATE_HASH` inchangé) ; aucun identifiant « central ».
+
+## Checklist rapide Story 31.2
+
+- [ ] `CACHE_DRIVER=array php artisan test tests/Feature/ControlHub/UpstreamInstallOrderTest.php` → 11/11 verts
+- [ ] Non-régression `--filter 'Agent|Application|UpstreamContract|UpstreamInstallOrder|ControlHubContract|ContractV1|StateCompiler'` → verte (720, 22 skip env)
+- [ ] Ordre `instance` : l'app figure dans `machine.applications` de tout poste enrôlé (Scénario 15.1)
+- [ ] Ordre `label` : présent pour le poste portant le label, absent sinon (Scénario 15.2)
+- [ ] App locale + ordonnée amont = un seul item + hash stable sur 2 check-ins (Scénario 15.3)
+- [ ] Standalone / contrat sans item applications : ensemble inchangé + zéro requête items/labels (Scénario 15.4)
+- [ ] Contrat agent figé : `ContractV1Test` vert, `FROZEN_STATE_HASH` inchangé, golden non modifié
+- [ ] R3 : aucun identifiant/message « central » dans les fichiers livrés
