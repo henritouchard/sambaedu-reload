@@ -191,6 +191,16 @@ final class IpxeSchemaBootstrapper
                 $table->timestamps();
             });
         }
+
+        // Story 30.5 — assignMachineToPhysicalRoom() (et autres ops parc) appellent
+        // désormais guardUpstreamLockCollision() qui lit le contrat amont
+        // (ControlHubContract → controlhub_contracts + items/labels). Sans ces
+        // tables, la garde lève « no such table: controlhub_contracts », exception
+        // avalée par WorkstationEnrollmentService::assignRoom() → retour false.
+        // On exécute la VRAIE migration (zéro dérive de schéma vs migrations).
+        if (! Schema::hasTable('controlhub_contracts')) {
+            (require database_path('migrations/2026_06_26_100000_create_controlhub_contract_tables.php'))->up();
+        }
     }
 
     /**
