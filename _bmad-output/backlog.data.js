@@ -1341,6 +1341,20 @@ const DATASETS = {
           "status": "backlog"
         }
       ]
+    },
+    {
+      "num": 34,
+      "title": "Lecteurs réseau gérés",
+      "status": "in-progress",
+      "summary": "Module de <strong>répertoires réseau nommés</strong> gérés par l'admin (refnum) : créer un répertoire, l'assigner par maille (<strong>utilisateur / groupe d'utilisateurs / parc WorkstationGroup</strong>) avec un accès <strong>lecture seule ou lecture-écriture</strong>, et le diffuser en lecteur sur les postes via le canal <code>drives</code> natif de l'agent. C'est le « MVP-B » délibérément écarté en 27.2 (table + pivot d'assignation + UI configurable). Modèle d'accès à deux axes : la <strong>visibilité</strong> (où la lettre apparaît) par n'importe quelle maille, l'<strong>ACL POSIX</strong> (qui lit/écrit) par les grants user/group. Templates de répertoire (échanges direction/profs/élèves/user↔user/groupes) prévus en stories ultérieures.",
+      "stories": [
+        {
+          "id": "34-1",
+          "title": "Fondations des lecteurs réseau gérés (modèle, provisioning FS/ACL, projection agent)",
+          "status": "ready-for-dev",
+          "note": "Fondation backend (décision Henri : pas d'UI, pas de templates) : table network_shares + pivot polymorphe network_share_assignables (User|UserGroup|WorkstationGroup, access ro|rw) ; NetworkShareService (provisioning /var/sambaedu/Partages + ACL POSIX rx/rwx, WG=montage-seul) ; extension DrivesStateProvider (émet les répertoires configurés par maille en plus de K:/H:, payload {letter,unc,label} inchangé). Golden state figé préservé quand 0 ligne ; zéro modif agent."
+        }
+      ]
     }
   ],
   "central": [
