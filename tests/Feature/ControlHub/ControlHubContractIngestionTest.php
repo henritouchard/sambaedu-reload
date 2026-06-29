@@ -354,6 +354,83 @@ class ControlHubContractIngestionTest extends TestCase
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    // Story 31.3 (AC #5) — référence de source par-app sur le catalogue (« Option B »)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    public function test_catalog_app_source_reference_is_persisted(): void
+    {
+        $this->service()->ingest($this->payload([
+            'catalog_apps' => [
+                [
+                    'app_key' => 'firefox',
+                    'display_name' => 'Firefox',
+                    'source_xml_url' => 'https://depot.example/firefox.xml',
+                    'source_xml_sha' => 'sha-firefox',
+                ],
+            ],
+        ]));
+
+        $this->assertDatabaseHas('controlhub_contract_catalog_apps', [
+            'app_key' => 'firefox',
+            'source_xml_url' => 'https://depot.example/firefox.xml',
+            'source_xml_sha' => 'sha-firefox',
+        ]);
+    }
+
+    public function test_reingesting_identical_source_reference_is_noop(): void
+    {
+        $payload = $this->payload([
+            'catalog_apps' => [
+                [
+                    'app_key' => 'firefox',
+                    'display_name' => 'Firefox',
+                    'source_xml_url' => 'https://depot.example/firefox.xml',
+                    'source_xml_sha' => 'sha-firefox',
+                ],
+            ],
+        ]);
+
+        $this->service()->ingest($payload);
+        $second = $this->service()->ingest($payload);
+
+        // La clé naturelle (controlhub_contract_id, app_key) est INCHANGÉE : ré-réception
+        // identique = no-op (NFR4), aucune création/mise à jour sur ces colonnes.
+        $this->assertFalse($second->mutated);
+        $this->assertDatabaseCount('controlhub_contract_catalog_apps', 1);
+    }
+
+    public function test_catalog_app_without_source_reference_is_accepted_and_nulled(): void
+    {
+        // Rétrocompatibilité du payload (NFR3) : champs source optionnels ⇒ contrat accepté.
+        $this->service()->ingest($this->payload([
+            'catalog_apps' => [
+                ['app_key' => 'firefox', 'display_name' => 'Firefox'],
+            ],
+        ]));
+
+        $this->assertDatabaseHas('controlhub_contract_catalog_apps', [
+            'app_key' => 'firefox',
+            'source_xml_url' => null,
+            'source_xml_sha' => null,
+        ]);
+    }
+
+    public function test_empty_string_source_reference_is_normalized_to_null(): void
+    {
+        $this->service()->ingest($this->payload([
+            'catalog_apps' => [
+                ['app_key' => 'firefox', 'display_name' => 'Firefox', 'source_xml_url' => '', 'source_xml_sha' => ''],
+            ],
+        ]));
+
+        $this->assertDatabaseHas('controlhub_contract_catalog_apps', [
+            'app_key' => 'firefox',
+            'source_xml_url' => null,
+            'source_xml_sha' => null,
+        ]);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     // AC #7c — Garde-fou R3 : aucun identifiant livré ne contient « central »
     // ──────────────────────────────────────────────────────────────────────────
 

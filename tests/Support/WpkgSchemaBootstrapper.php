@@ -6,6 +6,7 @@ namespace Tests\Support;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -107,8 +108,31 @@ final class WpkgSchemaBootstrapper
                 // noeuds <linux type=apt> / <windows type=winget>). Nullable :
                 // non-breaking pour les tests 15.2 qui ne le renseignent pas.
                 $table->text('xml')->nullable();
+                // Story 31.3 — colonnes alimentées par la matérialisation depuis la
+                // source de dépôt (AppStoreService::materializeFromSource). Nullables,
+                // additives : non-breaking pour les tests antérieurs.
+                $table->unsignedBigInteger('depot_id')->nullable();
+                $table->string('version', 100)->nullable();
+                $table->string('category', 100)->nullable();
+                $table->string('compatibility', 100)->nullable();
+                $table->string('branch', 100)->nullable();
+                $table->string('xml_url', 512)->nullable();
+                $table->string('xml_sha', 128)->nullable();
+                $table->string('log_url', 512)->nullable();
+                $table->text('description')->nullable();
+                $table->string('author', 191)->nullable();
+                $table->string('icon_url', 512)->nullable();
                 $table->timestamps();
             });
+
+            // Story 31.3 (review #A) — index unique partiel sur `app_id` quand
+            // `depot_id IS NULL` : fidélité avec la migration de prod (ferme la fenêtre
+            // de doublon concurrent du chemin de matérialisation amont). SQLite supporte
+            // les index partiels.
+            DB::statement(
+                'CREATE UNIQUE INDEX IF NOT EXISTS applications_materialized_app_id_unique'
+                .' ON applications (app_id) WHERE depot_id IS NULL'
+            );
         }
 
         if (! Schema::hasTable('app_profile_workstation_group')) {
@@ -209,6 +233,10 @@ final class WpkgSchemaBootstrapper
                 $table->unsignedBigInteger('controlhub_contract_id');
                 $table->string('app_key');
                 $table->string('display_name')->nullable();
+                // Story 31.3 — référence de source par-app (« Option B », D1). Nullables,
+                // additives : un contrat sans source reste accepté (NFR3).
+                $table->string('source_xml_url')->nullable();
+                $table->string('source_xml_sha')->nullable();
                 $table->timestamps();
             });
         }

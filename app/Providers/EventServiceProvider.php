@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Events\ControlHubContractChanged;
 use App\Listeners\NotifyQuotaOverageOnLogin;
+use App\Listeners\ProvisionOrderedApplications;
 use App\Listeners\ReconcileImposedWorkstationGroups;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Registered;
@@ -35,8 +36,12 @@ class EventServiceProvider extends ServiceProvider
         // 28.2) : à chaque mutation du contrat, la réconciliation crée/confirme
         // les WorkstationGroup imposés et lève le verrou des groupes non-imposés.
         // shouldDiscoverEvents() === false → enregistrement explicite obligatoire.
+        // Story 31.3 — 2e consommateur : approvisionne en inventaire les applications
+        // ORDONNÉES par le contrat amont (matérialisation depuis la source de dépôt,
+        // status Available, sans install serveur) → comble le gap D4 de 31.2.
         ControlHubContractChanged::class => [
             ReconcileImposedWorkstationGroups::class,
+            ProvisionOrderedApplications::class,
         ],
     ];
 

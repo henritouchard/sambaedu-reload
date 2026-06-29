@@ -1,6 +1,6 @@
 # Story 31.3: Approvisionnement d'une app ordonnée depuis le dépôt SambaEdu
 
-Status: backlog
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -73,32 +73,30 @@ so that **l'ordre soit PLEINEMENT honoré — l'app entre dans l'ensemble désir
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Cadrage & décision de la forme de source (D1, à confirmer)** (AC: #1, #5)
-  - [ ] Acter la **référence de source** portée par le catalogue (extension transverse 28.1/28.2 **assumée**). **Proposition (D1)** : `source_depot_url` (string nullable) + `source_branch` (string nullable, défaut `stable`) — la vue filtrée référence **le dépôt SambaEdu** d'où provient l'app ; SE5 réutilise alors `DepotSyncService::syncDepot()` (CIBLÉ = un dépôt) pour peupler `depot_applications`, puis matérialise. **Alternative notée** : source **par-app** (`source_xml_url` + `source_xml_sha` + `display_name`/version) → matérialisation directe sans synchro de dépôt complet (plus léger, mais s'écarte du pipeline `DepotSyncService`). **Trancher avec l'utilisateur** (touche le payload d'échange controlHub↔SE5 — territoire Epic 33 « schéma versionné »).
-  - [ ] Garde-fou de confiance : la synchro d'un `source_depot_url` issu du contrat = fetch d'une URL fournie par l'autorité **enrôlée** (controlHub, de confiance) — acceptable ; documenter (pas de fetch d'URL arbitraire hors contrat actif).
+- [x] **T0 — Cadrage & décision de la forme de source (D1 — TRANCHÉE : Option B par-app)** (AC: #1, #5)
+  - [x] **DÉCISION HENRI (2026-06-29)** : **Option B — source par-app**. Le catalogue porte `source_xml_url` (string nullable) + `source_xml_sha` (string nullable) [+ métadonnées optionnelles `version`/`category` si déjà présentes au payload]. **Matérialisation DIRECTE** : SE5 crée la ligne `Application` à partir de ces champs de source **SANS** synchro de dépôt complet (`DepotSyncService::syncDepot()` **NON utilisé** dans 31.3) et **SANS** créer de `Depot`/`DepotApplication`. Plus léger, hors pipeline de sync de dépôt. (Impacte le payload d'échange controlHub↔SE5 — territoire Epic 33.)
+  - [x] Garde-fou de confiance : `source_xml_url` provient du **contrat amont actif** (autorité **enrôlée**, de confiance) — fetch acceptable ; documenter (pas de fetch d'URL arbitraire hors contrat actif). NB : 31.3 ne fait **aucun** fetch réseau lui-même — `xml_url`/`xml_sha` sont stockés dans la ligne `Application` (recette WPKG consommée par l'agent).
 
-- [ ] **T1 — Étendre le catalogue amont pour porter la source** (AC: #5) — *extension transverse 28.1/28.2 (en `review`), assumée*
-  - [ ] **Migration** additive (NOUVELLE migration, **ne pas réécrire** `2026_06_26_100000_*`) : ajouter les colonnes de source (cf. D1) à `controlhub_contract_catalog_apps`, **nullable** (rétrocompat NFR3). **NE PAS** changer la clé naturelle `(controlhub_contract_id, app_key)`.
-  - [ ] `ControlHubContractCatalogApp` : ajouter les colonnes au `$fillable`.
-  - [ ] `ControlHubContractIngestionService::normalizeCatalogApps()` [:459-480] : lire les champs de source (optionnels, `null`/'' → `null` comme `display_name`) et les inclure dans `attrs` ; `reconcileChildren()` upsert+prune **inchangé** (même clé). Idempotence (28.2) préservée — un contrat sans source = accepté, no-op sur ces colonnes.
-  - [ ] Tests d'ingestion : un `catalog_apps[]` avec source → persistée ; ré-réception identique = no-op ; sans source = accepté. **NE PAS** dupliquer le schéma (extension, pas réécriture) ; R3.
+- [x] **T1 — Étendre le catalogue amont pour porter la source** (AC: #5) — *extension transverse 28.1/28.2 (en `review`), assumée*
+  - [x] **Migration** additive (NOUVELLE migration, **ne pas réécrire** `2026_06_26_100000_*`) : ajouter les colonnes de source **Option B** — `source_xml_url` (string nullable) + `source_xml_sha` (string nullable) à `controlhub_contract_catalog_apps`, **nullable** (rétrocompat NFR3). **NE PAS** changer la clé naturelle `(controlhub_contract_id, app_key)`.
+  - [x] `ControlHubContractCatalogApp` : ajouter les colonnes au `$fillable`.
+  - [x] `ControlHubContractIngestionService::normalizeCatalogApps()` [:459-480] : lire les champs de source (optionnels, `null`/'' → `null` comme `display_name`) et les inclure dans `attrs` ; `reconcileChildren()` upsert+prune **inchangé** (même clé). Idempotence (28.2) préservée — un contrat sans source = accepté, no-op sur ces colonnes.
+  - [x] Tests d'ingestion : un `catalog_apps[]` avec source → persistée ; ré-réception identique = no-op ; sans source = accepté. **NE PAS** dupliquer le schéma (extension, pas réécriture) ; R3.
 
-- [ ] **T2 — Méthode de matérialisation SEULE (sans install serveur)** (AC: #1, #3)
-  - [ ] Ajouter `AppStoreService::materializeFromDepot(DepotApplication $depotApp): Application` (ou service dédié `UpstreamOrderProvisioner`) : **extraire** le bloc `Application::firstOrCreate(['app_id' => …], […])` de `installApplication()` [:93-111], status **`Available`** (PAS `Downloading`), **SANS** la suite (download/parse/install). Idempotent (`firstOrCreate` no-op si la ligne existe — AC3, ne touche jamais une `Application` locale préexistante).
-  - [ ] **Garde-fou (documenter)** : 31.3 **n'appelle JAMAIS** `installApplication()` (install serveur). La pose réelle sur le poste = agent + WPKG (la ligne `Application` porte `xml_url`/`xml_sha` = recette WPKG).
+- [x] **T2 — Méthode de matérialisation SEULE (sans install serveur)** (AC: #1, #3) — *Option B : depuis champs de source par-app, PAS de `DepotApplication`*
+  - [x] Ajouter une méthode de matérialisation directe acceptant les **champs de source par-app** (pas un `DepotApplication`). Forme recommandée : `AppStoreService::materializeFromSource(string $appId, array $source): Application` (ou service dédié `UpstreamOrderProvisioner`), où `$source` = `{name, xml_url, xml_sha[, version, category]}` issus de l'entrée catalogue. **Extraire/adapter** le bloc `Application::firstOrCreate(['app_id' => $appId], [...])` de `installApplication()` [:93-111] en l'alimentant depuis `$source` au lieu d'un `DepotApplication`, status **`Available`** (PAS `Downloading`), **SANS** la suite (download/parse/install) et **SANS** créer de `Depot`/`DepotApplication`. Idempotent (`firstOrCreate` no-op si la ligne existe — AC3, ne touche jamais une `Application` locale préexistante).
+  - [x] **Garde-fou (documenter)** : 31.3 **n'appelle JAMAIS** `installApplication()` (install serveur). La pose réelle sur le poste = agent + WPKG (la ligne `Application` porte `xml_url`/`xml_sha` = recette WPKG).
 
-- [ ] **T3 — Provisionneur d'ordres (listener + commande, patron 30.3)** (AC: #1, #2, #4, #6)
-  - [ ] Listener `App\Listeners\ProvisionOrderedApplications` sur `ControlHubContractChanged` (enregistrer dans `EventServiceProvider.php:38`, à côté de `ReconcileImposedWorkstationGroups`) **+** commande `controlhub:provision-ordered-apps` (calquer `App\Console\Commands\ReconcileImposedWorkstationGroups`) — réconciliation **idempotente, re-jouable**.
-  - [ ] Logique : **court-circuit NFR3** si pas de contrat actif (`ControlHubContract::active()` null) → no-op. Sinon : lire les `app_id` des items `type='applications'` du contrat actif ; pour chaque `app_id` **absent** de `applications` :
-    1. résoudre l'entrée catalogue `controlhub_contract_catalog_apps{app_key}` → source (D1) ; **absente** → log + `continue` (AC6) ;
-    2. (D1 dépôt) `Depot::firstOrCreate(['url' => source_depot_url], ['is_active'=>true, …])` puis `DepotSyncService::syncDepot($depot)` (peuple `depot_applications`) ;
-    3. résoudre `DepotApplication` pour `(app_id[, branch])` → **introuvable / sync KO** → log + `continue` (AC6) ;
-    4. `AppStoreService::materializeFromDepot($depotApp)` → `Application` matérialisée.
-  - [ ] **Résilience** : une app en échec (source absente, sync KO) **n'interrompt PAS** l'ingestion ni les autres matérialisations (try/catch par app + log `agent.applications.provisioned` / `…provision_failed`). L'ingestion 28.2 ne doit **jamais** être cassée par 31.3 (le listener s'exécute **après** la transaction d'ingestion ; envisager une **queue** si la synchro HTTP de dépôt est longue — NFR4 volumétrie, ne pas bloquer).
-  - [ ] **Idempotence globale** : `Depot::firstOrCreate` + `Application::firstOrCreate` + `DepotSyncService` (déjà idempotent) ⇒ réconciliation rejouable sans effet (AC3).
+- [x] **T3 — Provisionneur d'ordres (listener + commande, patron 30.3)** (AC: #1, #2, #4, #6)
+  - [x] Listener `App\Listeners\ProvisionOrderedApplications` sur `ControlHubContractChanged` (enregistrer dans `EventServiceProvider.php:38`, à côté de `ReconcileImposedWorkstationGroups`) **+** commande `controlhub:provision-ordered-apps` (calquer `App\Console\Commands\ReconcileImposedWorkstationGroups`) — réconciliation **idempotente, re-jouable**.
+  - [x] Logique (**Option B — matérialisation directe**) : **court-circuit NFR3** si pas de contrat actif (`ControlHubContract::active()` null) → no-op. Sinon : lire les `app_id` des items `type='applications'` du contrat actif ; pour chaque `app_id` **absent** de `applications` :
+    1. résoudre l'entrée catalogue `controlhub_contract_catalog_apps{app_key}` → champs de source par-app (`source_xml_url`/`source_xml_sha`) ; entrée **absente** OU `source_xml_url` vide → log + `continue` (AC6) ;
+    2. `AppStoreService::materializeFromSource($appId, $source)` → `Application` matérialisée (status `Available`, `xml_url`/`xml_sha` peuplés). **PAS** de `Depot`/`DepotApplication`/`syncDepot`.
+  - [x] **Résilience** : une app en échec (source absente/`source_xml_url` vide, exception de matérialisation) **n'interrompt PAS** l'ingestion ni les autres matérialisations (try/catch par app + log `agent.applications.provisioned` / `…provision_failed`). L'ingestion 28.2 ne doit **jamais** être cassée par 31.3 (le listener s'exécute **après** la transaction d'ingestion).
+  - [x] **Idempotence globale** : `Application::firstOrCreate` ⇒ réconciliation rejouable sans effet ni doublon (AC3). (Option B = pas de dépendance à l'idempotence de `DepotSyncService`.)
 
-- [ ] **T4 — Tests HÔTE (php8.4 + sqlite)** (AC: #1–#8)
-  - [ ] Harnais : factories `ControlHubContract`/`ControlHubContractItem`/`ControlHubContractCatalogApp`, `Depot`/`DepotApplication`, `Application` ; `WpkgSchemaBootstrapper` (tables controlhub + dépôt/applications). Mocker/faker la résolution HTTP de `DepotSyncService` (pas d'appel réseau réel en test — injecter un `DepotApplication` pré-créé pour court-circuiter le fetch, ou stub HTTP).
+- [x] **T4 — Tests HÔTE (php8.4 + sqlite)** (AC: #1–#8)
+  - [x] Harnais : factories `ControlHubContract`/`ControlHubContractItem`/`ControlHubContractCatalogApp`, `Depot`/`DepotApplication`, `Application` ; `WpkgSchemaBootstrapper` (tables controlhub + dépôt/applications). Mocker/faker la résolution HTTP de `DepotSyncService` (pas d'appel réseau réel en test — injecter un `DepotApplication` pré-créé pour court-circuiter le fetch, ou stub HTTP).
     - **AC1** : ordre + catalogue avec source + pas d'`Application` ⇒ après listener/commande, `Application{app_id}` existe (status `Available`, `xml_url` peuplé).
     - **AC2** : enchaînement avec 31.2 — après matérialisation, `ApplicationsStateProvider`/`StateCompiler` émet l'app dans `machine.applications` (plus de skip).
     - **AC3** : `Application` préexistante (status `Installed`, métadonnées custom) ⇒ réconciliation = **no-op**, ligne **inchangée** (assert status/colonnes).
@@ -106,17 +104,17 @@ so that **l'ordre soit PLEINEMENT honoré — l'app entre dans l'ensemble désir
     - **AC5** : ingestion d'un `catalog_apps[]` avec source ⇒ colonnes persistées ; ré-ingestion identique = no-op (28.2) ; sans source = accepté.
     - **AC6** : ordre sans entrée catalogue / source introuvable ⇒ pas de crash, log émis, autres apps du lot **quand même** matérialisées.
     - **AC7** : `ContractV1Test` + golden `state.v1.json` ⇒ **verts inchangés**.
-  - [ ] **Pièges** : SQLite n'applique pas varchar/enum PG → tester décisions (présence/absence/status/count), pas bornes de colonne. Matcher sur `app_id` (string).
+  - [x] **Pièges** : SQLite n'applique pas varchar/enum PG → tester décisions (présence/absence/status/count), pas bornes de colonne. Matcher sur `app_id` (string).
 
-- [ ] **T5 — Runbook QA** (AC: #1–#6)
-  - [ ] **Append** `## Section 16 — Approvisionnement auto d'une app ordonnée (Story 31.3)` à `docs/qa/domains/controlhub-contract.md` (append-only ; dernière = Section 15 / 31.2). Scénarios : poser ordre + catalogue-avec-source pour un app_id absent localement → ingérer → vérifier `Application` matérialisée (status Available) → `curl GET /api/v1/agent/state` ⇒ app présente ; ordre sans source ⇒ app non matérialisée + log ; ré-ingestion ⇒ idempotent ; standalone ⇒ inchangé ; commande `php artisan controlhub:provision-ordered-apps` rejouable.
-  - [ ] Mettre à jour la **ligne cumulative** du domaine dans `docs/qa/README.md` (mention Story 31.3, suffixe la ligne 31.2).
+- [x] **T5 — Runbook QA** (AC: #1–#6)
+  - [x] **Append** `## Section 16 — Approvisionnement auto d'une app ordonnée (Story 31.3)` à `docs/qa/domains/controlhub-contract.md` (append-only ; dernière = Section 15 / 31.2). Scénarios : poser ordre + catalogue-avec-source pour un app_id absent localement → ingérer → vérifier `Application` matérialisée (status Available) → `curl GET /api/v1/agent/state` ⇒ app présente ; ordre sans source ⇒ app non matérialisée + log ; ré-ingestion ⇒ idempotent ; standalone ⇒ inchangé ; commande `php artisan controlhub:provision-ordered-apps` rejouable.
+  - [x] Mettre à jour la **ligne cumulative** du domaine dans `docs/qa/README.md` (mention Story 31.3, suffixe la ligne 31.2).
 
-- [ ] **T6 — Validation finale & garde-fous** (AC: #4, #7)
-  - [ ] `php artisan test --filter "AppStore|Depot|ControlHubContract|Provision|Agent|ContractV1|StateCompiler"` sur HÔTE → vert, 0 régression.
-  - [ ] **R3** : `grep -rin central` sur les fichiers livrés ⇒ uniquement en-têtes garde-fou.
-  - [ ] **NFR3** : court-circuit prouvé (pas de contrat → listener no-op, `DepotSyncService` jamais appelé).
-  - [ ] **Contrat agent figé** : `git diff` ⇒ aucune ligne sur `StateContract.php`/`StateHasher.php`/`tests/Fixtures/Agent/*.json`/`ContractV1`.
+- [x] **T6 — Validation finale & garde-fous** (AC: #4, #7)
+  - [x] `php artisan test --filter "AppStore|Depot|ControlHubContract|Provision|Agent|ContractV1|StateCompiler"` sur HÔTE → vert, 0 régression.
+  - [x] **R3** : `grep -rin central` sur les fichiers livrés ⇒ uniquement en-têtes garde-fou.
+  - [x] **NFR3** : court-circuit prouvé (pas de contrat → listener no-op, `DepotSyncService` jamais appelé).
+  - [x] **Contrat agent figé** : `git diff` ⇒ aucune ligne sur `StateContract.php`/`StateHasher.php`/`tests/Fixtures/Agent/*.json`/`ContractV1`.
 
 ## Dev Notes
 
@@ -134,7 +132,7 @@ so that **l'ordre soit PLEINEMENT honoré — l'app entre dans l'ensemble désir
 
 ### Décisions de cadrage
 
-- **D1 — Forme de la source (À CONFIRMER)** : `source_depot_url` + `source_branch` (niveau dépôt, réutilise `DepotSyncService::syncDepot`) **recommandé** par alignement avec la directive « réutilise DepotSyncService/DepotApplication/Depot ». Alternative par-app (`source_xml_url`+`source_xml_sha`) = matérialisation directe plus légère mais hors pipeline de sync. **Point ouvert principal** (impacte le payload d'échange — Epic 33).
+- **D1 — Forme de la source (TRANCHÉE 2026-06-29 : Option B par-app)** : `source_xml_url` + `source_xml_sha` portés par le catalogue → **matérialisation directe** de l'`Application` (status Available, recette WPKG), **SANS** `Depot`/`DepotApplication`/`DepotSyncService::syncDepot`. Plus léger, hors pipeline de sync de dépôt. (Impacte le payload d'échange — Epic 33.) ⇒ `DepotSyncService` **jamais appelé** par 31.3 (AC4 trivialement satisfait : aucune synchro de dépôt déclenchée par ce mécanisme — le spy de test ne doit JAMAIS voir d'appel).
 - **D2 — Déclenchement à l'ingestion, pas au check-in** : la matérialisation (qui peut faire un fetch HTTP de dépôt) vit dans un **listener `ControlHubContractChanged`** (+ commande re-jouable), **JAMAIS** dans `ApplicationsStateProvider`/`GET /state` (hot path ~0,7 req/s, NFR4 — pas de HTTP dépôt synchrone dans la requête agent). Envisager une **queue** pour la synchro de dépôt.
 - **D3 — `firstOrCreate`, jamais d'écrasement** : une `Application` locale préexistante (même `app_id`) est **intouchée** (AC3) — la matérialisation ne fait qu'ajouter ce qui manque. Idempotence par construction.
 - **D4 — Ordre sans source = dégradé gracieux** : log + skip (AC6), pas d'exception. L'app retombe sur le skip+warn de 31.2. Re-tentable via la commande.
@@ -203,8 +201,52 @@ Justification : story **transverse et à frontières fines**. Elle touche **deux
 
 ### Agent Model Used
 
+claude-opus-4-8[1m] (dev-story)
+
 ### Debug Log References
+
+- `php artisan test --filter "UpstreamOrderProvisioning|ControlHubContractIngestion"` → **28 passed** (179 assertions) — net-new + AC5 ingestion source.
+- `php artisan test --filter "AppStore|Depot|ControlHubContract|Provision|Agent|ContractV1|StateCompiler"` → **674 passed, 22 skipped** (env : LDAP/zip/imagick), **0 régression**, 2340 assertions.
+- R3 : `grep -rin central` sur les 11 fichiers livrés ⇒ uniquement 4 en-têtes garde-fou (« aucun mot central »). Aucun identifiant/message « central ».
+- Contrat agent figé : `git status`/`git diff` ⇒ **aucune** ligne sur `StateContract.php`/`StateHasher.php`/`tests/Fixtures/Agent/*.json`/`ContractV1` (inclus dans le filtre de non-régression, verts).
 
 ### Completion Notes List
 
+- **T0 (D1 = Option B par-app)** : déjà tranché ; aucune création de `Depot`/`DepotApplication`/`DepotSyncService::syncDepot` — matérialisation DIRECTE depuis les champs de source du catalogue.
+- **T1** : migration ADDITIVE `2026_06_29_100000_add_source_to_controlhub_catalog_apps.php` (`source_xml_url`+`source_xml_sha` nullables, clé naturelle inchangée) ; `ControlHubContractCatalogApp` +`$fillable`+docblock ; `normalizeCatalogApps()` lit les champs optionnels (`null/''→null`), `reconcileChildren()` upsert+prune INCHANGÉ. Idempotence 28.2 préservée (tests AC5).
+- **T2** : `AppStoreService::materializeFromSource(string $appId, array $source): Application` — `firstOrCreate` sur `app_id`, status **`Available`**, `xml_url`/`xml_sha` posés ; **n'appelle JAMAIS** `installApplication()` ni le pipeline de dépôt.
+- **T3** : service `OrderedApplicationProvisioner` (patron 30.3) + DTO `OrderedApplicationProvisioningResult` + listener `ProvisionOrderedApplications` (enregistré dans `EventServiceProvider` à côté de `ReconcileImposedWorkstationGroups`) + commande `controlhub:provision-ordered-apps`. Court-circuit NFR3 (pas de contrat actif → no-op). Pour chaque ordre `type='applications'` non-`absent` dont l'`app_id` manque : résout la source catalogue → matérialise ; entrée absente/source vide → log `agent.applications.provision_skipped` + `continue` (AC6) ; résilience try/catch par app (`…provisioned`/`…provision_failed`). L'ingestion 28.2 n'est jamais cassée (listener post-commit + try/catch).
+- **T4** : `tests/Feature/ControlHub/UpstreamOrderProvisioningTest.php` (14 tests, AC1–AC4/AC6 + listener + commande) sur HÔTE via `WpkgSchemaBootstrapper` (offline) ; AC5 (4 tests) ajoutés à `ControlHubContractIngestionTest`. `DepotSyncService` **spy** prouve qu'il n'est JAMAIS appelé (AC4). `WpkgSchemaBootstrapper` augmenté (colonnes source sur catalog_apps + colonnes dépôt/recette sur `applications`).
+- **T5** : Section 16 appendée à `docs/qa/domains/controlhub-contract.md` + checklist 31.3 ; ligne cumulative du domaine suffixée (31.3) dans `docs/qa/README.md`.
+- **T6** : suites ciblées vertes (0 régression) ; R3 OK ; NFR3 court-circuit prouvé (AC4 + commande standalone) ; contrat agent figé intact.
+- **Écart vs Dev Notes** : la section « Périmètre » mentionne historiquement `materializeFromDepot`/sync dépôt (rédigée avant D1) ; la décision tranchée D1 (Option B par-app) prime — méthode nommée `materializeFromSource`, AUCUN `DepotSyncService`/`Depot`/`DepotApplication`. Conforme à T0/T1/T2/T3 et à D1.
+
 ### File List
+
+**Créés :**
+- `database/migrations/2026_06_29_100000_add_source_to_controlhub_catalog_apps.php`
+- `database/migrations/2026_06_29_110000_add_materialized_app_id_unique_to_applications.php` *(review #A — index unique partiel `app_id` WHERE `depot_id IS NULL`)*
+- `app/Services/ControlHub/OrderedApplicationProvisioner.php`
+- `app/Services/ControlHub/Data/OrderedApplicationProvisioningResult.php`
+- `app/Listeners/ProvisionOrderedApplications.php`
+- `app/Console/Commands/ProvisionOrderedApplications.php`
+- `tests/Feature/ControlHub/UpstreamOrderProvisioningTest.php`
+- `_bmad-output/codeReviews/31-3.md` *(document de review)*
+
+**Modifiés :**
+- `app/Models/ControlHubContractCatalogApp.php` (+`$fillable` source + docblock)
+- `app/Services/ControlHub/ControlHubContractIngestionService.php` (`normalizeCatalogApps` +champs source)
+- `app/Services/AppStore/AppStoreService.php` (+`materializeFromSource`)
+- `app/Services/ControlHub/OrderedApplicationProvisioner.php` *(review #7 — simplification garde source vide)*
+- `app/Listeners/ProvisionOrderedApplications.php` *(review #C — log de synthèse `provision_summary`)*
+- `app/Providers/EventServiceProvider.php` (+listener `ProvisionOrderedApplications`)
+- `tests/Support/WpkgSchemaBootstrapper.php` (colonnes source catalog_apps + colonnes dépôt/recette `applications` + index unique partiel review #A)
+- `tests/Feature/ControlHub/ControlHubContractIngestionTest.php` (+4 tests AC5)
+- `tests/Feature/ControlHub/UpstreamOrderProvisioningTest.php` *(review #1/#2/#5 — spy réel, chemin exception + exit FAILURE, R3 réflexion)*
+- `docs/qa/domains/controlhub-contract.md` (Section 16 + checklist 31.3)
+- `docs/qa/README.md` (ligne cumulative domaine controlhub-contract suffixée 31.3)
+- `_bmad-output/planning-artifacts/epics-contrat-manage-se5.md` *(report backlog 32.x — review #6/#B)*
+
+### Review Record (corrections post-review 2026-06-29)
+
+Review sonnet (7 findings) + second avis opus (pertinence + 4 findings manqués). **Corrigés** : #1 (spy `DepotSyncService` dans chemin de matérialisation réel), #2 🔴 (test exception par-app + exit FAILURE commande), #5 (test R3 réflexion sur les 4 classes 31.3), #7 (cleanup garde), #C (log synthèse listener), **#A 🟠** (index unique partiel `app_id` — décision utilisateur). **Reportés backlog 32.x** : #6/#B (réalignement recette + flag `managed_by_control_hub`). **Non retenus** (négligeables) : #3 (double `active()`), #4 (N+1 cold path), #D (`permissive` intentionnel). Validation : provisioning **17/17**, périmètre review **195 passed**, 0 régression. Détail : `_bmad-output/codeReviews/31-3.md`.

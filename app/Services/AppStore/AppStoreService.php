@@ -65,6 +65,45 @@ class AppStoreService
     }
 
     // ========================================
+    // MATERIALISATION DEPUIS LA SOURCE (Story 31.3 — sans install serveur)
+    // ========================================
+
+    /**
+     * Story 31.3 — Matérialise UNIQUEMENT la ligne d'inventaire `Application` à partir
+     * des champs de SOURCE par-app (« Option B », D1) portés par le catalogue amont
+     * (controlHub), SANS télécharger ni installer côté serveur.
+     *
+     * Contrairement à {@see self::installApplication()} (qui enchaîne download + parse +
+     * install serveur), cette méthode N'appelle AUCUN pipeline d'install : elle pose la
+     * recette WPKG (`xml_url`/`xml_sha`) sur une `Application` en statut `Available`. La
+     * pose RÉELLE sur le poste reste à l'agent + WPKG (FR21, « un tuyau, deux outils »).
+     *
+     * Aucune dépendance au pipeline de dépôt (`DepotSyncService`/`Depot`/`DepotApplication`) :
+     * la matérialisation est DIRECTE depuis `$source`. Idempotent par construction —
+     * `firstOrCreate` sur `app_id` : une `Application` locale préexistante (même `app_id`)
+     * est INTOUCHÉE (status/métadonnées préservés — AC3).
+     *
+     * @param  string  $appId  Identifiant technique (== `applications.app_id` == catalogue `app_key`)
+     * @param  array{name?: string|null, xml_url?: string|null, xml_sha?: string|null, version?: string|null, category?: string|null}  $source
+     */
+    public function materializeFromSource(string $appId, array $source): Application
+    {
+        return Application::firstOrCreate(
+            ['app_id' => $appId],
+            [
+                'name' => ($source['name'] ?? null) !== null && $source['name'] !== '' ? (string) $source['name'] : $appId,
+                'version' => $source['version'] ?? null,
+                'category' => $source['category'] ?? null,
+                'xml_url' => $source['xml_url'] ?? null,
+                'xml_sha' => $source['xml_sha'] ?? null,
+                // Statut « Available » (PAS Downloading) : aucune install serveur déclenchée
+                // (ne JAMAIS appeler installApplication() ici).
+                'status' => ApplicationStatus::Available,
+            ]
+        );
+    }
+
+    // ========================================
     // INSTALLATION D'APPLICATION
     // ========================================
 

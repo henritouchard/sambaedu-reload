@@ -24,6 +24,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $controlhub_contract_id
  * @property string $app_key Identifiant de l'app faisant autorité (applications.app_id)
  * @property string|null $display_name Nom d'affichage reçu de l'autorité amont (informatif)
+ * @property string|null $source_xml_url Story 31.3 — URL de la recette WPKG (xml) du dépôt SambaEdu (référence de source, nullable)
+ * @property string|null $source_xml_sha Story 31.3 — empreinte attendue de la recette WPKG source (nullable)
  * @property \Illuminate\Support\Carbon $created_at
  * @property \Illuminate\Support\Carbon $updated_at
  * @property-read ControlHubContract $contract
@@ -38,6 +40,10 @@ class ControlHubContractCatalogApp extends Model
         'controlhub_contract_id',
         'app_key',
         'display_name',
+        // Story 31.3 — référence de source du dépôt SambaEdu (« Option B par-app », D1).
+        // Optionnels (nullable) : un contrat sans source reste accepté (NFR3).
+        'source_xml_url',
+        'source_xml_sha',
     ];
 
     /**

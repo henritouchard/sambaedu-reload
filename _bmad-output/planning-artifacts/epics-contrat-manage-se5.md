@@ -370,6 +370,10 @@ So that je reprenne la main sans rien casser sur les postes (FR7).
 **And** le bornage catalogue tombe et le refnum retrouve un droit de modification plein
 **And** les ajouts locaux antérieurs sont conservés.
 
+> **Report depuis review Story 31.3 (2026-06-29)** — deux angles à couvrir ici (les `Application` matérialisées depuis l'amont sont des « ajouts locaux conservés ») :
+> - **Traçabilité d'origine** : marquer les `Application` matérialisées par le provisionneur amont (`managed_by_control_hub`) pour les distinguer des apps purement locales (Missed B). Aujourd'hui elles sont indistinguables → décider si elles « deviennent locales » à la rupture (flag retombe) ou conservent une trace d'origine.
+> - **Réalignement de recette** : aujourd'hui `materializeFromSource` fait `firstOrCreate` (jamais d'écrasement, AC3/D3 de 31.3) → si l'amont republie une recette (`source_xml_url`/`sha`) différente pour une app déjà matérialisée, l'`Application` reste figée. Décider d'un chemin de réalignement (probablement seulement tant que l'app est `Available` et managée amont). Cf. `_bmad-output/codeReviews/31-3.md` #6/#B.
+
 ### Story 32.2: Indisponibilité amont et trace du lien
 
 As a SE5 (le système),

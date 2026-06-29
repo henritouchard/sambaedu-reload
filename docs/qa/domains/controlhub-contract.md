@@ -1664,3 +1664,120 @@ actif, ensemble inchangé + zéro requête items ; contrat agent figé intact
 - [ ] Standalone / contrat sans item applications : ensemble inchangé + zéro requête items/labels (Scénario 15.4)
 - [ ] Contrat agent figé : `ContractV1Test` vert, `FROZEN_STATE_HASH` inchangé, golden non modifié
 - [ ] R3 : aucun identifiant/message « central » dans les fichiers livrés
+
+## Section 16 — Approvisionnement auto d'une app ordonnée (Story 31.3, 2026-06-29)
+
+Comble le **gap D4** de la Story 31.2 : un ORDRE d'install amont visant un `app_id`
+**absent** de l'inventaire local `applications` était `skip+warn`. 31.3 **matérialise
+automatiquement** la ligne `Application` depuis la **référence de source** que le
+catalogue amont porte désormais — l'ordre est alors **pleinement honoré**.
+
+- **Source par-app (« Option B », D1)** : `controlhub_contract_catalog_apps` porte
+  deux colonnes **nullables** `source_xml_url` + `source_xml_sha` (recette WPKG du
+  dépôt SambaEdu, référencée par l'autorité **enrôlée**). Migration **additive** ;
+  clé naturelle `(controlhub_contract_id, app_key)` **inchangée** (idempotence 28.2).
+- **Matérialisation seule** : `AppStoreService::materializeFromSource($appId, $source)`
+  pose une `Application` (status **`Available`**, `xml_url`/`xml_sha`) via `firstOrCreate`
+  — **SANS** install serveur (jamais `installApplication()`), **SANS**
+  `Depot`/`DepotApplication`/`DepotSyncService`. La pose réelle sur le poste = agent + WPKG.
+- **Provisionneur** (patron 30.3) : listener `ProvisionOrderedApplications` sur
+  `ControlHubContractChanged` (à côté de `ReconcileImposedWorkstationGroups`) **+**
+  commande `controlhub:provision-ordered-apps` re-jouable. Pour chaque ordre
+  `type='applications'` non-`absent` dont l'`app_id` manque : résout la source →
+  matérialise. **Court-circuit NFR3** sans contrat actif (no-op total).
+- **Résilience (AC6)** : ordre sans entrée catalogue / sans `source_xml_url` ⇒ **log +
+  skip** (`agent.applications.provision_skipped`), exception isolée par app — l'ingestion
+  28.2 et les autres matérialisations ne sont **jamais** cassées.
+- **Idempotence (AC3)** : une `Application` locale préexistante (même `app_id`) n'est
+  **jamais** écrasée (`firstOrCreate` no-op) ; réconciliation rejouable sans doublon.
+
+> Pré-requis VM : un contrat amont `active`, un poste enrôlé `PC1`, son token agent.
+> `APPID=firefox` ne doit **pas** exister en `Application` locale (sinon AC3 = no-op).
+
+### Scénario 16.1 — Matérialisation depuis la source (AC1) puis honneur (AC2)
+
+1. Dans le contrat actif, poser (a) un ordre `applications`/`locked`/`instance`
+   `key=firefox` ET (b) une entrée catalogue `app_key=firefox` avec
+   `source_xml_url=https://depot…/firefox.xml` + `source_xml_sha=…`.
+2. Vérifier l'absence locale : `php artisan tinker --execute "echo \App\Models\Application::where('app_id','firefox')->exists();"` ⇒ vide.
+3. Déclencher : ré-ingérer le contrat (le listener s'exécute) **ou**
+   `php artisan controlhub:provision-ordered-apps`.
+4. ⇒ une `Application{app_id:firefox}` existe (status `Available`, `xml_url` peuplé).
+5. `curl -s -H "Authorization: Bearer <token>" https://<se5>/api/v1/agent/state | jq '.machine[] | select(.type=="applications") | .payload.app_id'`
+   ⇒ `firefox` **figure** désormais dans `machine.applications` (plus de skip+warn).
+
+### Scénario 16.2 — Ordre sans source = dégradé gracieux (AC6)
+
+1. Poser un ordre `applications` `key=ghost` **sans** entrée catalogue (ou catalogue
+   **sans** `source_xml_url`).
+2. `php artisan controlhub:provision-ordered-apps` ⇒ pas d'exception ; compteur
+   `Ignorées : 1` ; log `agent.applications.provision_skipped`.
+3. `ghost` reste **non** matérialisé ; les autres ordres du lot **sont** matérialisés.
+
+### Scénario 16.3 — Idempotence / non-écrasement (AC3)
+
+1. `firefox` existe localement (`status=installed`, métadonnées custom).
+2. `php artisan controlhub:provision-ordered-apps` ⇒ `Déjà présentes : 1`,
+   `Matérialisées : 0` ; la ligne `firefox` est **inchangée** (status/métadonnées).
+3. Rejouer la commande ⇒ aucun doublon, aucun effet.
+
+### Scénario 16.4 — Standalone (AC4)
+
+Aucun `ControlHubContract` actif ⇒ `controlhub:provision-ordered-apps` affiche
+« Aucun contrat amont actif », exit 0, **rien écrit**. `DepotSyncService` **jamais**
+appelé (Option B : aucune synchro de dépôt déclenchée par ce mécanisme).
+
+```bash
+# Hôte (php8.4 + pdo_sqlite)
+CACHE_DRIVER=array php artisan test tests/Feature/ControlHub/UpstreamOrderProvisioningTest.php   # 14/14
+# AC5 (ingestion source idempotente) — dans la suite d'ingestion 28.2
+CACHE_DRIVER=array php artisan test tests/Feature/ControlHub/ControlHubContractIngestionTest.php # 14/14
+# Non-régression desired-state + AppStore + dépôt + domaine ControlHub + contrat figé
+CACHE_DRIVER=array php artisan test --filter 'AppStore|Depot|ControlHubContract|Provision|Agent|ContractV1|StateCompiler'  # 674/674 (22 skip env)
+
+# R3 : aucun identifiant/message « central » (uniquement commentaires garde-fou)
+grep -rin central app/Services/ControlHub/OrderedApplicationProvisioner.php \
+  app/Listeners/ProvisionOrderedApplications.php \
+  app/Console/Commands/ProvisionOrderedApplications.php
+```
+
+**Attendu** : l'app ordonnée absente est matérialisée (status `Available`) depuis sa
+source ; l'ordre figure ensuite dans le désiré du poste ; une app locale préexistante
+n'est jamais écrasée ; ordre sans source = log sans crash ; sans contrat actif, rien
+écrit et `DepotSyncService` jamais appelé ; contrat agent figé intact ; aucun « central ».
+
+## Checklist rapide Story 31.3
+
+- [ ] `CACHE_DRIVER=array php artisan test tests/Feature/ControlHub/UpstreamOrderProvisioningTest.php` → 17/17 verts (14 + 3 post-review)
+- [ ] AC5 ingestion source : `ControlHubContractIngestionTest` → vert (persistance + no-op + sans-source accepté + ''→null)
+- [ ] Non-régression `--filter 'AppStore|Depot|ControlHubContract|Provision|ContractV1|StateCompiler|ApplicationsState'` → verte (195)
+- [ ] AC1/AC2 : app ordonnée absente matérialisée (status Available) puis présente dans `machine.applications` (Scénario 16.1)
+- [ ] AC6 : ordre sans source = skip + log, sans crash, autres apps quand même matérialisées (Scénario 16.2)
+- [ ] AC3 : `Application` locale préexistante jamais écrasée, réconciliation rejouable sans doublon (Scénario 16.3)
+- [ ] AC4 : standalone = rien écrit, `DepotSyncService` jamais appelé (Scénario 16.4)
+- [ ] Contrat agent figé : `ContractV1Test` vert, `FROZEN_STATE_HASH` inchangé, golden non modifié
+- [ ] R3 : aucun identifiant/message « central » dans les fichiers livrés
+- [ ] Post-correctifs review : unicité PG de l'app matérialisée prouvée (16.5)
+
+## Post-correctifs & non-régressions — Story 31.3 (review 2026-06-29)
+
+| Incident / angle | Origine | Couverture |
+|---|---|---|
+| Doublon concurrent d'`app_id` matérialisé (PG : NULL distincts dans `unique(depot_id, app_id)` avec `depot_id=null`) | Review #A (manqué sonnet, relevé opus) | Index unique partiel `applications_materialized_app_id_unique` + Scénario 16.5 |
+| Résilience par-app non testée (exception pendant matérialisation) | Review #2 🔴 | Tests `an_app_that_throws…` + `artisan_command_returns_failure…` |
+| `DepotSyncService` jamais appelé en chemin réel | Review #1 | Spy ajouté au test de matérialisation effective |
+
+### Scénario 16.5 — Unicité PG d'une app matérialisée (anti-doublon concurrent)
+
+> ⚠️ **À jouer sur PostgreSQL réel** (le piège est invisible en SQLite ET non couvert par un test unitaire : il dépend de la sémantique NULL des index PG + de la concurrence).
+
+**Pré-requis** : instance avec contrat amont actif portant un ordre `applications` (`app_idX`) + entrée catalogue avec `source_xml_url`, `app_idX` absent de `applications`.
+
+1. **Migration appliquée** : `php artisan migrate` → vérifier l'index `applications_materialized_app_id_unique` :
+   `psql -c "\d applications"` ⇒ présence de `... UNIQUE INDEX ... (app_id) WHERE (depot_id IS NULL)`.
+2. **Matérialisation simple** : `php artisan controlhub:provision-ordered-apps` ⇒ 1 ligne `applications` pour `app_idX` (`depot_id` NULL, status `available`).
+3. **Tentative de doublon manuel** (preuve du garde-fou) :
+   `psql -c "INSERT INTO applications (app_id, name, status, created_at, updated_at) VALUES ('app_idX','dup','available',now(),now());"`
+   ⇒ **erreur attendue** `duplicate key value violates unique constraint "applications_materialized_app_id_unique"`. (Sans le garde-fou, l'insert passait → 2 lignes.)
+4. **Idempotence préservée** : rejouer `controlhub:provision-ordered-apps` ⇒ aucune nouvelle ligne, aucune erreur (le provisionneur court-circuite via `exists()` avant l'insert).
+5. **App adossée à un dépôt non contrainte** : une `Application` avec `depot_id` renseigné (flux AppStore classique) reste régie par `unique(depot_id, app_id)` — l'index partiel ne s'y applique pas (vérifier qu'un install AppStore normal fonctionne toujours).

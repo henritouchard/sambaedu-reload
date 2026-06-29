@@ -1295,7 +1295,7 @@ const DATASETS = {
         },
         {
           "id": "31-3",
-          "title": "Approvisionner une app ordonnée absente de l'inventaire (FR6, gap D4 de 31.2)",
+          "title": "Approvisionnement d'une app ordonnée depuis le dépôt SambaEdu (FR6, gap D4)",
           "status": "review"
         }
       ]

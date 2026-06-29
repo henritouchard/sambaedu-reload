@@ -465,6 +465,13 @@ class ControlHubContractIngestionService
             $appKey = $this->requireString($app['app_key'] ?? null, 'catalog_apps.app_key');
             $displayName = $app['display_name'] ?? null;
 
+            // Story 31.3 — référence de source du dépôt SambaEdu (« Option B par-app », D1).
+            // Champs OPTIONNELS (rétrocompat NFR3 : un contrat sans source reste accepté) ;
+            // normalisation null/'' → null, à l'identique de display_name. La clé naturelle
+            // (controlhub_contract_id, app_key) reste INCHANGÉE (idempotence 28.2/NFR4).
+            $sourceXmlUrl = $app['source_xml_url'] ?? null;
+            $sourceXmlSha = $app['source_xml_sha'] ?? null;
+
             $rows[] = [
                 'key' => [
                     'controlhub_contract_id' => null,
@@ -472,6 +479,8 @@ class ControlHubContractIngestionService
                 ],
                 'attrs' => [
                     'display_name' => $displayName === null || $displayName === '' ? null : (string) $displayName,
+                    'source_xml_url' => $sourceXmlUrl === null || $sourceXmlUrl === '' ? null : (string) $sourceXmlUrl,
+                    'source_xml_sha' => $sourceXmlSha === null || $sourceXmlSha === '' ? null : (string) $sourceXmlSha,
                 ],
             ];
         }
