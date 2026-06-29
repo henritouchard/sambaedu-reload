@@ -1240,7 +1240,13 @@ const DATASETS = {
           "id": "29-9",
           "title": "Ne pas écraser created_at de queue_task_runs sur retry — follow-up P3 review 29-7",
           "status": "review",
-          "note": "DEV sonnet + REVIEW opus (APPROVE post-corrections, codeReviews/29-9.md). Fix closure iso-29.7 sur Queue::before (created_at à l'INSERT seulement), étendu à after/failing (#7). DÉCOUVERTE review : registerQueueTaskTracking() avait été retiré de boot() en 997df15 (dashboard /workers inerte ~3,5 mois) → RÉTABLI sur décision Henri (vraie feature). Dette tracée hors-scope (story d'assainissement) : rétention/purge queue_task_runs + coût DB par job. Test fiabilisé (Carbon cross-driver, 3 tests). Suite hôte complète : 4715 passed ; 3 failed PRÉEXISTANTS (assignRoom() Story 4.11, vérifiés sur main propre) → 0 régression. Cf. codeReviews/29-7.md P3."
+          "note": "DEV sonnet + REVIEW opus (APPROVE post-corrections, codeReviews/29-9.md). Fix closure iso-29.7 sur Queue::before (created_at à l'INSERT seulement), étendu à after/failing (#7). DÉCOUVERTE review : registerQueueTaskTracking() avait été retiré de boot() en 997df15 (dashboard /workers inerte ~3,5 mois) → RÉTABLI sur décision Henri (vraie feature). Dette tracée hors-scope (story 29-10) : rétention/purge queue_task_runs + coût DB par job. Test fiabilisé (Carbon cross-driver, 3 tests). Suite hôte complète : 4715 passed ; 3 failed PRÉEXISTANTS (assignRoom() Story 4.11, vérifiés sur main propre) → 0 régression. Cf. codeReviews/29-7.md P3."
+        },
+        {
+          "id": "29-10",
+          "title": "Assainissement du tracking queue_task_runs (rétention, coût/job, code mort) — dette review 29-9",
+          "status": "backlog",
+          "note": "Dette tracée en review 29-9 (#3/#4/#6). registerQueueTaskTracking() rétabli en 29.9 (alimente dashboard /workers) avec défauts déférés : (#3) queue_task_runs à croissance NON BORNÉE (aucune purge ; WorkerMonitoringService lit limit(100) sans supprimer) → commande de purge planifiée + seuil config ; (#4) coût DB/job (Schema::hasTable dans before+after+failing + SELECT log_lines avant updateOrInsert) → mémoïser hasTable ; (#6) configureRateLimits() morte depuis 997df15 (aucune route n'utilise discovery/se4fs-api) → supprimer ou rebrancher. Story d'assainissement, pas une feature. Modèle dev : sonnet. Cf. codeReviews/29-9.md."
         }
       ]
     },
