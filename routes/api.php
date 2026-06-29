@@ -68,10 +68,9 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 
 /*
 |--------------------------------------------------------------------------
-| SE4FS API Routes - PRIORITÉ 1 : Découverte
+| SE4FS API Routes
 |--------------------------------------------------------------------------
-| APIs pour l'intégration d'applications tierces selon Discovery.md
-| TODO: vu qu'il n'y a plus de discovery, vérifier si on peut supprimer ce service
+| APIs pour l'intégration d'applications tierces.
 */
 // Route legacy
 Route::get('/ecowatt/status', [EcowattController::class, 'status']);

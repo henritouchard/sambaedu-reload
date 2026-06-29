@@ -258,8 +258,24 @@ class AppServiceProvider extends ServiceProvider
 
     private function registerQueueTaskTracking(): void
     {
-        Queue::before(function (JobProcessing $event): void {
-            if (!Schema::hasTable('queue_task_runs')) {
+        // Story 29.10 — Mémoïsation : Schema::hasTable est une introspection
+        // coûteuse (information_schema sur PG). On mémoïse UNIQUEMENT le `true` :
+        // dès que la table est vue présente, plus aucune introspection (coût/job
+        // = 0 en régime établi, AC#2). Tant qu'elle est absente (fenêtre greenfield
+        // : worker démarré avant `migrate`), on re-vérifie à chaque événement — son
+        // apparition en cours de vie du worker est ainsi captée (comportement
+        // préservé ; les chemins INSERT de `after`/`failing` restent atteignables).
+        // Variable partagée par référence entre les trois closures.
+        $tableExists = false;
+        $checkTable = static function () use (&$tableExists): bool {
+            if (! $tableExists) {
+                $tableExists = Schema::hasTable('queue_task_runs');
+            }
+            return $tableExists;
+        };
+
+        Queue::before(function (JobProcessing $event) use ($checkTable): void {
+            if (! $checkTable()) {
                 return;
             }
 
@@ -287,8 +303,8 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
-        Queue::after(function (JobProcessed $event): void {
-            if (!Schema::hasTable('queue_task_runs')) {
+        Queue::after(function (JobProcessed $event) use ($checkTable): void {
+            if (! $checkTable()) {
                 return;
             }
 
@@ -315,8 +331,8 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
-        Queue::failing(function (JobFailed $event): void {
-            if (!Schema::hasTable('queue_task_runs')) {
+        Queue::failing(function (JobFailed $event) use ($checkTable): void {
+            if (! $checkTable()) {
                 return;
             }
 
@@ -342,24 +358,6 @@ class AppServiceProvider extends ServiceProvider
                     'log_lines' => $appendedLogs,
                 ], $exists ? [] : ['created_at' => now()]),
             );
-        });
-    }
-
-    /**
-     * TODO: supprimer le discovery (endpoint obsolète)
-     * Configure les rate limits pour les endpoints SE4FS
-     */
-    private function configureRateLimits(): void
-    {
-        // Rate limit pour discovery: 30 req/min par IP
-        \Illuminate\Support\Facades\RateLimiter::for('discovery', function ($request) {
-            return \Illuminate\Cache\RateLimiting\Limit::perMinute(10)->by($request->ip());
-        });
-
-        // Rate limit pour APIs authentifiées: 100 req/min par token
-        \Illuminate\Support\Facades\RateLimiter::for('se4fs-api', function ($request) {
-            $token = $request->attributes->get('se4fs_token', $request->ip());
-            return \Illuminate\Cache\RateLimiting\Limit::perMinute(100)->by($token);
         });
     }
 }

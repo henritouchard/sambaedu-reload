@@ -652,4 +652,23 @@ return [
     */
     'veyon_submarine' => (bool) env('SAMBAEDU_VEYON_SUBMARINE', false),
     'veyon_message' => env('SAMBAEDU_VEYON_MESSAGE', ''),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Story 29.10 — Rétention du tracking d'exécution des jobs (queue_task_runs)
+    |--------------------------------------------------------------------------
+    | Seuils de conservation des runs terminés avant purge par
+    | `queue-task-runs:prune` (planifiée daily). Les runs `running`
+    | (sans finished_at/failed_at) sont TOUJOURS préservés.
+    |
+    |  - done_days  : runs terminés avec succès (finished_at)  → 14 j par défaut.
+    |  - failed_days: runs en échec (failed_at)                → 30 j par défaut
+    |                 (conservés plus longtemps pour diagnostic).
+    */
+    'workers' => [
+        'retention' => [
+            'done_days'   => (int) env('SAMBAEDU_WORKERS_RETENTION_DONE_DAYS', 14),
+            'failed_days' => (int) env('SAMBAEDU_WORKERS_RETENTION_FAILED_DAYS', 30),
+        ],
+    ],
 ];

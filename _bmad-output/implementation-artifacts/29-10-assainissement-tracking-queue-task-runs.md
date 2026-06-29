@@ -1,6 +1,6 @@
 # Story 29.10: Assainissement du tracking `queue_task_runs` (rétention, coût, code mort)
 
-Status: backlog
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -28,21 +28,19 @@ Chaque job déclenche `Schema::hasTable('queue_task_runs')` dans **`before`, `af
 
 ## Acceptance Criteria
 
-1. **Rétention** — **Given** `queue_task_runs` accumule des lignes `done`/`failed`,
-   **When** une purge planifiée s'exécute (commande artisan + planification, ou `prunable`),
-   **Then** les lignes terminées plus anciennes qu'un seuil configurable (ex. `config('…retention_days')`, défaut raisonnable type 14 j) sont supprimées, et les runs `running` récents sont préservés.
+1. **Rétention (configurable par statut — décision Henri)** — **Given** `queue_task_runs` accumule des lignes `done`/`failed`,
+   **When** une purge planifiée s'exécute (commande artisan + planification),
+   **Then** les lignes terminées plus anciennes que leur seuil de rétention sont supprimées, avec des **délais configurables et distincts par statut** : `config('sambaedu.workers.retention.done_days')` (défaut **14**) et `config('sambaedu.workers.retention.failed_days')` (défaut **30** — les échecs sont conservés plus longtemps pour diagnostic). Les runs `running` (non terminés) sont **toujours préservés** quel que soit leur âge.
 
 2. **Coût par job** — **Given** chaque cycle de job passe par les 3 handlers,
    **When** le tracking s'exécute,
    **Then** l'existence de la table est résolue **au plus une fois** (mémoïsation au boot worker / flag) au lieu d'une introspection par événement ; le comportement du dashboard est inchangé.
 
-3. **Flag de coupure** *(optionnel selon arbitrage)* — **Given** un besoin d'exploitation,
-   **When** un flag de config (ex. `sambaedu.workers.tracking_enabled`) est à `false`,
-   **Then** les handlers ne s'enregistrent pas (coût nul), le dashboard se dégrade proprement (vide), sans erreur.
+3. **Flag de coupure — NON RETENU (décision Henri)** : pas de `tracking_enabled`. Le tracking reste **toujours actif** (le coût est traité par AC#2 via la mémoïsation `hasTable`). Ne pas ajouter de flag.
 
-4. **Code mort** — **Given** `configureRateLimits()` morte,
-   **When** on tranche,
-   **Then** soit elle est **supprimée** (option par défaut — aucun consommateur), soit **rebranchée** si Henri veut réactiver les limiters ; décision tracée. L'endpoint `discovery` obsolète peut être nettoyé dans la foulée ou laissé selon arbitrage.
+4. **Code mort — SUPPRESSION (décision Henri)** — **Given** `configureRateLimits()` morte (aucun consommateur : `throttle:discovery`/`throttle:se4fs-api` = 0 occurrence),
+   **When** on assainit,
+   **Then** la méthode `configureRateLimits()` est **supprimée** d'`AppServiceProvider`, et le TODO `discovery` obsolète (`routes/api.php`) est nettoyé. **Ne PAS** rebrancher les limiters.
 
 5. **Tests** — **Given** la suite HÔTE (php8.4 + sqlite, `RefreshDatabase`),
    **When** elle s'exécute,
@@ -50,17 +48,17 @@ Chaque job déclenche `Schema::hasTable('queue_task_runs')` dans **`before`, `af
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Rétention** : commande artisan de purge `queue_task_runs` (`status in (done,failed)` + `finished_at`/`failed_at` < seuil) + planification (`routes/console.php` ou `Schedule`), seuil en config. (AC#1)
-- [ ] **T2 — Coût par job** : mémoïser la résolution `Schema::hasTable('queue_task_runs')` (une fois) ; évaluer le `SELECT log_lines` préalable (le rendre conditionnel/économe). (AC#2)
-- [ ] **T3 — Flag de coupure** (si retenu) : `config('sambaedu.workers.tracking_enabled')` gardant l'enregistrement des handlers dans `boot()`. (AC#3)
-- [ ] **T4 — Code mort** : supprimer (défaut) ou rebrancher `configureRateLimits()` selon décision ; nettoyer le TODO `discovery` si arbitré. (AC#4)
-- [ ] **T5 — Tests + validation** : test purge + non-régression 29.9 ; suite hôte complète verte. (AC#5)
+- [x] **T1 — Rétention configurable par statut** : commande artisan de purge `queue_task_runs` supprimant les `done` plus vieux que `retention.done_days` (14) **et** les `failed` plus vieux que `retention.failed_days` (30), via `finished_at`/`failed_at` ; **jamais** les `running`. Seuils dans `config/sambaedu.php` (clé `workers.retention.{done,failed}_days`). Planification dans `routes/console.php` (`Schedule::command(...)->daily()`). (AC#1)
+- [x] **T2 — Coût par job** : mémoïser la résolution `Schema::hasTable('queue_task_runs')` (résolue une fois, pas par événement) ; rendre le `SELECT log_lines` préalable (after/failing) plus économe si possible, sans changer le comportement du dashboard. (AC#2)
+- [x] **T3 — Suppression `configureRateLimits()`** : retirer la méthode morte d'`AppServiceProvider` ; nettoyer le TODO `discovery` obsolète (`routes/api.php`). NE PAS rebrancher de limiter. (AC#4)
+- [x] **T4 — Tests + validation** : test de purge (done>14j et failed>30j supprimés ; running et récents conservés ; seuils config respectés) + non-régression 29.9 (les 3 tests `QueueTaskRun*` restent verts) ; suite hôte complète verte. (AC#5)
 
 ## Dev Notes
 
 - **Périmètre** : assainissement du canal `queue_task_runs` (rétention/coût) + nettoyage `configureRateLimits`. **PAS** de refonte du dashboard `/workers` ni du `WorkerMonitoringService` (lecture inchangée).
 - **Garde-fous projet** : tests HÔTE uniquement (php8.4 + sqlite) ; racine = projet Laravel ; vocabulaire R3 (aucun « central »). Aucune incidence contrat agent / golden / `FROZEN_STATE_HASH` / `ContractV1`.
-- **À décider avec Henri** : seuil de rétention exact ; flag de coupure (T3) souhaité ou non ; sort de `configureRateLimits()`/endpoint `discovery`.
+- **Arbitrages tranchés (Henri, 2026-06-29)** : (1) rétention **configurable par statut** — `done` 14 j / `failed` 30 j par défaut, clés `config('sambaedu.workers.retention.{done,failed}_days')` ; (2) **pas** de flag de coupure (tracking toujours actif, coût géré par mémoïsation) ; (3) **supprimer** `configureRateLimits()` + nettoyer le TODO `discovery`.
+- **Status `running` préservé** : ne jamais purger un run non terminé (pas de `finished_at`/`failed_at`), même ancien (worker bloqué = info utile).
 
 ## Dépendances
 
@@ -76,3 +74,32 @@ Chaque job déclenche `Schema::hasTable('queue_task_runs')` dans **`before`, `af
 ## Recommandation Modèle Dev
 
 **`sonnet`** — assainissement bien cadré (commande de purge + mémoïsation + suppression de code mort), patterns Laravel établis, faible risque, zéro impact contrat/compilé. Arbitrages produit (seuil, flag, sort de `configureRateLimits`) à confirmer avec Henri avant dev.
+
+## Dev Agent Record
+
+**Agent Model Used**: claude-sonnet-4-6
+
+**Date Completed**: 2026-06-29
+
+**Completion Notes**:
+- T1 : commande `queue-task-runs:prune` créée (`app/Console/Commands/PruneQueueTaskRunsCommand.php`), iso-pattern `PruneAgentReportsCommand`. Clés `workers.retention.{done_days,failed_days}` ajoutées à `config/sambaedu.php`. Planification dans `routes/console.php` (`Schedule::command(...)->daily()->withoutOverlapping()->runInBackground()`).
+- T2 : `Schema::hasTable` mémoïsé via une closure `$checkTable` capturée par référence (`&$tableExists`) partagée entre les 3 handlers. La résolution se fait au plus une fois (au premier événement). Le `SELECT log_lines` (after/failing) est conservé tel quel : déjà économe (`->value('log_lines')`), la story le qualifie de "si possible".
+- T3 : méthode `configureRateLimits()` supprimée d'`AppServiceProvider` (aucun appel dans `boot()`). TODO `discovery` nettoyé dans `routes/api.php` (commentaire de section mis à jour). Aucun limiter rebranché.
+- T4 : 4 tests (`PruneQueueTaskRunsCommandTest`) + non-régression des 3 tests 29.9 (`QueueTaskRunCreatedAtPreservationTest`) — 7/7 verts, 29 assertions.
+- Aucun fichier Epic 34 / agent / drives touché.
+
+**Corrections post-review (orchestrateur opus, APPROVE WITH CHANGES — codeReviews/29-10.md)** :
+- #1 🟡 : mémoïsation revue → mémoïse UNIQUEMENT le `true` (`if (! $tableExists)`). Steady-state coût/job=0 (AC#2) ET fenêtre greenfield préservée (table apparue mid-life captée) → les commentaires INSERT de `after`/`failing` redeviennent valides. Commentaire d'en-tête réécrit.
+- #2 🟡 : planification `->daily()` (00:00, empilait error-logs:prune) → `->dailyAt('02:40')` (discipline d'échelonnement 24.1, fenêtre maintenance 02:xx). Vérifié `schedule:list`.
+- #4 🟡 : 2 env vars ajoutées à `.env.example` (`SAMBAEDU_WORKERS_RETENTION_{DONE,FAILED}_DAYS`). Runbook /vm : `config:cache` + chown www-admin après modif config.
+- #3 🟡 (accepté) : DELETE non chunké = parité stricte `PruneAgentReportsCommand` ; volume borné (accumulation depuis merge 29.9). #5 🟡 (accepté) : invariant `done`⇒`finished_at`/`failed`⇒`failed_at` garanti par les handlers (anomalie = corruption, hors flux).
+- Tests post-corrections : 7/7 ciblés verts ; **suite hôte COMPLÈTE : 4721 passed, 0 failed** (25219 assertions) → 0 régression (le changement de mémoïsation `boot()` n'impacte aucun test).
+
+**Files Created/Modified**:
+- `app/Console/Commands/PruneQueueTaskRunsCommand.php` — créé
+- `tests/Feature/Queue/PruneQueueTaskRunsCommandTest.php` — créé
+- `app/Providers/AppServiceProvider.php` — mémoïsation hasTable + suppression configureRateLimits()
+- `config/sambaedu.php` — ajout section `workers.retention`
+- `routes/console.php` — ajout `Schedule::command('queue-task-runs:prune')->daily()`
+- `routes/api.php` — nettoyage TODO discovery
+- `_bmad-output/implementation-artifacts/29-10-assainissement-tracking-queue-task-runs.md` — tâches cochées + Dev Agent Record + Status review

@@ -1245,8 +1245,8 @@ const DATASETS = {
         {
           "id": "29-10",
           "title": "Assainissement du tracking queue_task_runs (rétention, coût/job, code mort) — dette review 29-9",
-          "status": "backlog",
-          "note": "Dette tracée en review 29-9 (#3/#4/#6). registerQueueTaskTracking() rétabli en 29.9 (alimente dashboard /workers) avec défauts déférés : (#3) queue_task_runs à croissance NON BORNÉE (aucune purge ; WorkerMonitoringService lit limit(100) sans supprimer) → commande de purge planifiée + seuil config ; (#4) coût DB/job (Schema::hasTable dans before+after+failing + SELECT log_lines avant updateOrInsert) → mémoïser hasTable ; (#6) configureRateLimits() morte depuis 997df15 (aucune route n'utilise discovery/se4fs-api) → supprimer ou rebrancher. Story d'assainissement, pas une feature. Modèle dev : sonnet. Cf. codeReviews/29-9.md."
+          "status": "review",
+          "note": "DEV TERMINÉ sonnet (claude-sonnet-4-6, 2026-06-29). queue-task-runs:prune + workers.retention config + Schedule routes/console.php + mémoïsation hasTable + suppression configureRateLimits() + nettoyage TODO discovery. 7/7 tests verts (29 assertions). Cf. sprint-status.yaml 29-10."
         }
       ]
     },
