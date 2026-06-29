@@ -1167,23 +1167,23 @@ const DATASETS = {
     {
       "num": 28,
       "title": "Contrat Amont — Réception & résolution (socle)",
-      "status": "in-progress",
+      "status": "done",
       "summary": "<strong>Côté local SE5 du « Contrat Managé »</strong> — l'instance consomme un <strong>contrat amont générique</strong> imposé par controlHub. <strong>Aucune notion de « central » dans SER</strong> (principe fondateur PRD) : SE5 modélise une « autorité amont » abstraite, comme le login fédéré (Epic 20) et le desired-state (Epic 23). L'instance ingère le contrat, le persiste de façon idempotente, et calcule l'état effectif <code>amont &gt; local</code> via <code>StateCompiler::specificity()</code> ; sans contrat, comportement strictement inchangé. <strong>Cadré 2026-06-26 (PM John).</strong> Sources : <code>prd-contrat-manage-se5.md</code> + <code>epics-contrat-manage-se5.md</code>. Côté controlHub = <code>handoff-controlhub-contrat-manage.md</code> (BMAD séparé).",
       "stories": [
         {
           "id": "28-1",
           "title": "Modèle et persistance du contrat amont (items, catalogue, labels, groupes imposés, état du lien)",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "28-2",
           "title": "Réception idempotente d'un contrat amont (NFR4)",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "28-3",
           "title": "Résolution amont > local dans StateCompiler (FR2, standalone préservé)",
-          "status": "review"
+          "status": "done"
         }
       ]
     },
@@ -1196,84 +1196,84 @@ const DATASETS = {
         {
           "id": "29-1",
           "title": "Scoper le Gate wpkg.* par périmètre (NFR1 — prérequis Epic 31)",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "29-2",
           "title": "Refuser la modification d'un item verrouillé (UI + service + gate)",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "29-3",
           "title": "Surcharger un item permissif par WorkstationGroup",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "29-4",
           "title": "Lisibilité refnum — statuts imposé/verrouillé/permissif dans l'UI",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "29-5",
           "title": "Drift STRICT sur item verrouillé + audit des overrides",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "29-6",
           "title": "Scoper app.customize par WorkstationGroup (groupId client-hydraté) — follow-up M4 review 29-5",
-          "status": "review",
+          "status": "done",
           "note": "Correctif sécurité M4 livré : guardCustomize() scopé via gate customize-workstationGroup (jumeau assignWpkg) + #[Locked] sur groupId (fin du tampering). Review APPROVE WITH CHANGES (P4 toast + P2 test corrigés). Habilitation du délégué positif-seul reportée en 29-8 (plancher global modify-capability). Cf. codeReviews/29-6.md."
         },
         {
           "id": "29-7",
           "title": "Ne pas écraser created_at du pivot capability_assignments sur update — follow-up M1 review 29-5",
-          "status": "review",
+          "status": "done",
           "note": "Pré-existant (hérité 27.12) : saveOverride() passait created_at=now() dans les valeurs de updateOrInsert → l'update écrasait le created_at d'origine du pivot. CORRIGÉ (dev sonnet) : closure fn(bool $exists) pose created_at sur INSERT seulement. Review opus approuvée (2 tests durcis : updated_at figé/avancé, assert INSERT updated_at). Cf. codeReviews/29-7.md."
         },
         {
           "id": "29-8",
           "title": "Scoper le plancher de droit de modify-capability par surface — follow-up P1 review 29-6",
-          "status": "review",
+          "status": "done",
           "note": "LIVRÉ (review/to-validate, commit worktree-contract-CH). Plancher global app.customize retiré de CapabilityPolicy::modify → le gate modify-capability ne porte plus QUE le verrou amont ; droit filtré par surface en amont (capabilities-tab guardCustomize scopé / registry-tab guardAdmin server.admin). Habilitation AC#1 de 29.6 enfin livrée pour le délégué positif-seul. Review APPROVE (sonnet + 2e avis opus concordants) : opus a vérifié les 2 call-sites / 9 chemins tous gardés → aucune écriture non gardée. 5 findings mineurs corrigés (P1/P2 doc, P3 commentaire, P4 test discriminant, P5 audit). Tests 120 passed, 0 régression. Cf. codeReviews/29-8.md."
         },
         {
           "id": "29-9",
           "title": "Ne pas écraser created_at de queue_task_runs sur retry — follow-up P3 review 29-7",
-          "status": "backlog",
-          "note": "Occurrence sœur du bug 29.7 sur une autre table : AppServiceProvider Queue::before passe created_at=now() dans les valeurs de updateOrInsert(queue_task_runs) → un retry/re-dispatch d'un même task_uuid écrase le created_at d'origine du run. Handlers after/failing sains, sync_cursors sain. Même fix closure iso-29.7. Faible sévérité (historique d'un run de queue). Cf. codeReviews/29-7.md P3."
+          "status": "review",
+          "note": "DEV sonnet + REVIEW opus (APPROVE post-corrections, codeReviews/29-9.md). Fix closure iso-29.7 sur Queue::before (created_at à l'INSERT seulement), étendu à after/failing (#7). DÉCOUVERTE review : registerQueueTaskTracking() avait été retiré de boot() en 997df15 (dashboard /workers inerte ~3,5 mois) → RÉTABLI sur décision Henri (vraie feature). Dette tracée hors-scope (story d'assainissement) : rétention/purge queue_task_runs + coût DB par job. Test fiabilisé (Carbon cross-driver, 3 tests). Suite hôte complète : 4715 passed ; 3 failed PRÉEXISTANTS (assignRoom() Story 4.11, vérifiés sur main propre) → 0 régression. Cf. codeReviews/29-7.md P3."
         }
       ]
     },
     {
       "num": 30,
       "title": "Contrat Amont — Cibler par labels (types de parc)",
-      "status": "in-progress",
+      "status": "done",
       "summary": "Les WorkstationGroups sont locaux et hétérogènes (un collège a 1 salle techno, un autre en a 3) → l'amont ne peut pas cibler un groupe qu'il ne connaît pas. Indirection par <strong>label</strong> (type de parc) : l'amont définit des labels, SE5 les mappe sur ses groupes, l'amont associe un item à un label → tous les groupes portant ce label héritent. <strong>1 label max par groupe</strong> (superposition via appartenance multiple aux parcs logiques). 3 modes : <code>libre</code> (refnum assigne/crée), <code>réservé</code> (non-attribuable, ex. compta), <code>groupe imposé</code> (création garantie, ex. bureau_direction). Conflit poste = règle verrou/permissif par propriété ; cas insoluble = validation prédictive à l'assignation.",
       "stories": [
         {
           "id": "30-1",
           "title": "Réception des labels (mode libre/réservé) et des groupes imposés",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "30-2",
           "title": "Mapping d'un label par le refnum (1 label max ; réservé non attribuable)",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "30-3",
           "title": "Garantie d'existence des groupes imposés (création/réconciliation)",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "30-4",
           "title": "Résolution d'un item ciblant un label (règle verrou/permissif, pas d'ordre inter-parcs)",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "30-5",
           "title": "Validation prédictive à l'assignation (collision de verrous amont)",
-          "status": "review"
+          "status": "done"
         }
       ]
     },
