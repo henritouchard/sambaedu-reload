@@ -67,7 +67,12 @@ import (
 // ApplicationsStateProvider (projection de l'ensemble cible WPKG). Type DÉJÀ figé
 // §7, payload ajouté = forward-compatible. machine = 3, 10 items au total, hash
 // d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
-const frozenStateHash = "283f391d005d2ec42b305d0c093ed48b16b2bfa4f9bc6b895c65ccf61ba29daf"
+// Re-bumpé (lecteurs réseau natifs, décision Henri 2026-06-29) : DrivesStateProvider
+// émet le jeu standard FIXE {K: home `\\<se4fs>\users\<user>\`, H: classes
+// `\\<se4fs>\classes\`} au lieu d'un lecteur de classe sur K:. Le golden passe d'UN
+// à DEUX items drives (11 items au total) → hash item drives ET hash d'état
+// recalculés. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
+const frozenStateHash = "c1467c74018990bbcf42e788e19d93e973e8489d086d81e58a5c35a31a4a0af6"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -171,8 +176,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 10 {
-		t.Errorf("10 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5), %d vérifiés", checked)
+	if checked != 11 {
+		t.Errorf("11 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs), %d vérifiés", checked)
 	}
 }
 

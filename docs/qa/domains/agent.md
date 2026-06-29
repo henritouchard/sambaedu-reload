@@ -1347,13 +1347,15 @@ La page `parc-settings/agent/` (route `parc-settings.agent`, `can:computer.insta
    groupe). Rattacher l'utilisateur du poste à une **classe** (`UserGroup
    type='classe'`) ayant un partage de classe.
 2. Sur le poste lab : ouvrir une session. **Attendu** : l'imprimante de la salle
-   est **installée** (connexion `\\<se4fs>\<cups_name>`) et le lecteur `K:` est
-   **monté** vers `\\<se4fs>\Classe_<name>\<login>\`.
+   est **installée** (connexion `\\<se4fs>\<cups_name>`) et le jeu standard de
+   lecteurs est **monté** : `K:` → `\\<se4fs>\users\<login>\` (home) et `H:` →
+   `\\<se4fs>\classes\` (racine du partage classes).
 3. Vérifier le payload servi : `GET /api/v1/agent/state?user=<login>` → items
    `printers` et `drives` (portée `session`). `printers.connection` =
    `\\<se4fs>\<cups_name>` (connexion LOGIQUE, **jamais** l'URI back-end CUPS
-   `socket://…`) ; `drives.unc` = `\\<se4fs>\Classe_<name>\<login>\` (tokens
-   substitués côté poste, pas dans le JSON serveur).
+   `socket://…`) ; `drives` = deux items `{K: \\<se4fs>\users\<user>\,
+   H: \\<se4fs>\classes\}` (tokens `<se4fs>`/`<user>` substitués côté poste, pas
+   dans le JSON serveur).
 
 ### Scénario 14.2 — Union multi-mailles (salle physique + parc logique)
 

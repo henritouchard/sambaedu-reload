@@ -110,7 +110,14 @@ class ContractV1Test extends TestCase
     // forward-compatible, pas un major → machine = 3 items, 10 items au total,
     // hash d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte
     // la même valeur (test croisé NFR13 — canonicalisation équivalente PHP↔Go).
-    private const FROZEN_STATE_HASH = '283f391d005d2ec42b305d0c093ed48b16b2bfa4f9bc6b895c65ccf61ba29daf';
+    //
+    // Re-bumpé (lecteurs réseau natifs, décision Henri 2026-06-29) : le
+    // `DrivesStateProvider` n'émet plus un lecteur de CLASSE sur K: (qui écrasait
+    // le home natif AD) mais le jeu standard FIXE {K: home `\\<se4fs>\users\<user>\`,
+    // H: classes `\\<se4fs>\classes\`}. Le golden passe d'UN à DEUX items `drives`
+    // (session = 7 items, 11 items au total) → hash de chaque item drives ET hash
+    // d'état RECALCULÉS. Bumpé à l'IDENTIQUE côté Go (hasher_test.go::frozenStateHash).
+    private const FROZEN_STATE_HASH = 'c1467c74018990bbcf42e788e19d93e973e8489d086d81e58a5c35a31a4a0af6';
 
     private StateHasher $hasher;
 

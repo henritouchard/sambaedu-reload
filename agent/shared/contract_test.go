@@ -37,8 +37,10 @@ func TestParseStateGoldenFile(t *testing.T) {
 	// résolu PAR PARC) → machine = 2, session reste 6.
 	// Story 27.5 : +1 item `applications` (aggregate, portée MACHINE — l'agent
 	// DÉCLENCHE WPKG, qui installe machine-wide) → machine = 3, session reste 6.
-	if len(state.Machine) != 3 || len(state.Session) != 6 || len(state.MachineUser) != 1 {
-		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 3/6/1)",
+	// Lecteurs natifs (2026-06-29) : `drives` passe d'1 à 2 items (K: home +
+	// H: classes) → session = 7.
+	if len(state.Machine) != 3 || len(state.Session) != 7 || len(state.MachineUser) != 1 {
+		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 3/7/1)",
 			len(state.Machine), len(state.Session), len(state.MachineUser))
 	}
 }

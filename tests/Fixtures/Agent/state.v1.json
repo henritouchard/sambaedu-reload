@@ -76,10 +76,20 @@
             "semantics": "aggregate",
             "payload": {
                 "letter": "K:",
-                "unc": "\\\\<se4fs>\\Classe_3emeA\\<user>\\",
-                "label": "Classe 3emeA"
+                "unc": "\\\\<se4fs>\\users\\<user>\\",
+                "label": "Mes documents"
             },
-            "hash": "e8fcecfea26778b610f1edf34cecba2f07c8c95def4d9d6c43939607e0341a93"
+            "hash": "82808b07314cdc29ef9cb2b096fd612b781e2271bae1e5b5c70ad383162ec9e5"
+        },
+        {
+            "type": "drives",
+            "semantics": "aggregate",
+            "payload": {
+                "letter": "H:",
+                "unc": "\\\\<se4fs>\\classes\\",
+                "label": "Classes"
+            },
+            "hash": "7d7bca4326ae00ba94fa3a505bb710664a918a62bc96a69a6530b7b4ca352541"
         },
         {
             "type": "registry",

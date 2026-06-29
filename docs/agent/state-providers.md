@@ -341,35 +341,34 @@ Un item **par (imprimante × maille POSTE applicable)** — union des mailles
 
 ### `drives` — `aggregate` / `session`
 
-Un item **par classe du user** (projection des partages de classe existants —
-**pas de table SQL**) :
+Le jeu **standard FIXE** des lecteurs réseau SambaEdu, géré **nativement** par
+l'agent (et non plus par l'attribut AD `homeDrive`/`homeDirectory` ni la GPO
+« lecteurs reseau » legacy — décision Henri 2026-06-29, successeur de GPO/AD) :
 
 ```json
-{ "letter": "K:",
-  "unc": "\\\\<se4fs>\\Classe_3emeA\\<login>\\",
-  "label": "Classe 3emeA" }
+{ "letter": "K:", "unc": "\\\\<se4fs>\\users\\<user>\\",  "label": "Mes documents" }
+{ "letter": "H:", "unc": "\\\\<se4fs>\\classes\\",        "label": "Classes" }
 ```
 
-- **Projection en lecture seule** : aucun modèle `Share`, aucune table de
-  partages, aucune notion de lettre de lecteur dans le codebase — les partages
-  de classe sont **filesystem-truth** (`/var/sambaedu/Classes/Classe_<name>`,
-  gérés par `ShareService`, **lu/projeté jamais modifié**). Le provider DÉRIVE
-  les montages depuis les **classes du user** (`UserGroup type='classe'` parmi
-  les `userGroupIds` du `TargetContext`) — maille `user_group`. Aucun ciblage
-  AD-CN.
-- **Lettres conventionnelles figées serveur** : aucune convention legacy
-  historique n'existe (le `net use` SE4 ne montait que `z:` pour l'installeur
-  WPKG). Convention retenue : **`K:` = classe** (incrément `K:`, `L:`, `M:`… par
-  classe, ordre déterministe par nom asc). `H:` (home user) est **réservé** pour
-  une projection future et non émis ici.
-- **UNC tokenisé** : `\\<se4fs>\Classe_<name>\<login>\` (iso legacy
-  `Classes/Classe_<name>/<login>`). Le préfixe `Classe_` est normalisé via
-  `ShareService::bareClassName()` (pas de double préfixe). Tokens `<se4fs>` /
-  `<login>` substitués **localement** par l'agent.
-- **Émis PARTOUT** : indépendamment du `WorkstationEnvironment` (le resolver
-  n'est **pas** consommé) — un montage réseau est réseau par nature, y compris
-  sur poste local/nomade. Contexte machine-only (user null) = aucun lecteur (un
-  montage de classe dépend du login).
+- **K: = home** de l'utilisateur (partage `users`, sous-dossier = login) —
+  `\\<se4fs>\users\<user>\`. C'est « Mes documents / Bureau ». Maille `user`.
+- **H: = racine du partage `classes`** — `\\<se4fs>\classes\`. L'utilisateur
+  navigue vers sa/ses classe(s) (`H:\Classe_<nom>\<login>`, ACL POSIX par élève).
+  On ne cible **jamais** une classe unique : un user peut en avoir plusieurs
+  (jusqu'à 3) — un lecteur par classe écraserait les autres. Maille `broadcast`.
+- **Pourquoi natif** : le bon `K: = home` venait jusqu'ici du compte AD, pas de
+  SE5 ; l'ancien provider posait un lecteur de CLASSE sur K:, **écrasant le home
+  natif** pour les élèves. L'agent devient l'autorité sur les lecteurs.
+- `I:` (Docs) et `L:` (Progs) ne sont **pas** portés : leur usage est couvert
+  autrement en SE5 (fonds d'écran natifs, distribution applicative WPKG) ou
+  relève d'un futur système de partages/ACL (module legacy `acls/`, restauration
+  au déploiement via `/admin/sync-from-ad`).
+- **Lettres figées serveur** (iso-legacy `individuel.php` : K=home, H=Classes).
+  Tokens `<se4fs>` / `<user>` substitués **localement** par l'agent.
+- **Émis pour toute session user**, indépendamment du `WorkstationEnvironment`
+  (le resolver n'est **pas** consommé — un montage réseau est réseau par nature)
+  et de l'appartenance à une classe (H: = racine du partage, ACL-gated). Contexte
+  machine-only (user null) = aucun lecteur (un montage dépend du login).
 - **`scope=session`** ; **`semantics=aggregate`**. Convergence level-triggered :
   un mapping retiré des règles est **démonté** ; un lecteur monté par
   l'utilisateur hors périmètre SambaEdu n'est **jamais** démonté (marqueur de
