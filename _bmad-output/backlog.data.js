@@ -1286,23 +1286,23 @@ const DATASETS = {
     {
       "num": 31,
       "title": "Contrat Amont — Dépôt applicatif borné & install pilotée",
-      "status": "in-progress",
+      "status": "done",
       "summary": "Central devient le dépôt applicatif faisant autorité côté instance : le canal d'install refnum reste utilisable mais <strong>filtré au catalogue amont</strong> (ajout libre, mais depuis le catalogue). L'amont peut <strong>déclencher</strong> des installs sous forme de <strong>désir d'état</strong> repris par le canal check-in de l'agent existant (idempotence/reprise). <strong>Dépend du correctif Gate <code>wpkg.*</code></strong> (story 29-1) pour que le bornage soit réellement opposable.",
       "stories": [
         {
           "id": "31-1",
           "title": "Borner le canal d'install refnum au catalogue amont (FR5)",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "31-2",
           "title": "Déclenchement d'install en désir d'état via check-in agent (FR6)",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "31-3",
           "title": "Approvisionnement d'une app ordonnée depuis le dépôt SambaEdu (FR6, gap D4)",
-          "status": "review"
+          "status": "done"
         }
       ]
     },
