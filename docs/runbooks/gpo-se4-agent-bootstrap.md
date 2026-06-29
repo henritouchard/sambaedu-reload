@@ -188,7 +188,9 @@ samba-tool gpo setlink "$ETAB_OU" "{GUID}" -U Administrator
 
 ## 5. Vérifier sur un poste
 
-1. `gpupdate /force` puis reboot.
+1. `gpupdate /force` puis reboot. → si la stratégie **ordinateur** échoue
+   (« horloge non synchronisée avec le DC »), voir **§5bis** (clock skew Kerberos)
+   AVANT de creuser bundle/lien GPO.
 2. Le `startup.cmd` s'exécute en **SYSTEM** au démarrage :
    - `certutil -store Root` liste la racine CA SambaEdu ;
    - `%ProgramFiles%\SambaEdu\Agent\agent.exe` présent ;
@@ -196,6 +198,80 @@ samba-tool gpo setlink "$ETAB_OU" "{GUID}" -U Administrator
    - tâche `SambaEduAgent-Bootstrap-Refresh` présente (`schtasks /Query`).
 3. L'agent **demande son enrôlement** (porte 2) : une demande `pending` apparaît
    dans l'UI ; après approbation un-clic (ou campagne), le poste converge.
+
+## 5bis. Dépannage — la stratégie ORDINATEUR ne s'applique pas (horloge désynchronisée / Kerberos)
+
+> ⚠️ **Piège terrain le plus retors : tout est vert côté serveur, mais le poste
+> n'applique RIEN.** Le bootstrap entier (CA, install agent, dépôt
+> `wpkg-client.vbs`, tâche de refresh) repose sur le **script de démarrage
+> Machine** de cette GPO. Si la **stratégie ordinateur** ne peut pas s'appliquer,
+> `startup.cmd` ne tourne jamais → aucun de ces artefacts n'est posé, **quoi
+> qu'on fasse côté serveur**.
+
+**Symptômes corrélés :**
+
+- `gpupdate /force` (PowerShell admin sur le poste) renvoie :
+  > « La stratégie de l'**ordinateur** n'a pas pu être mise à jour correctement…
+  > Windows n'a pas pu déterminer si de nouveaux paramètres de stratégie de groupe
+  > … doivent être appliqués … parce que **l'horloge de cet ordinateur n'est pas
+  > synchronisée avec celle de l'un des contrôleurs du domaine**. »
+  >
+  > (la stratégie **utilisateur**, elle, « s'est terminée sans erreur » — c'est le
+  > tell : seul le canal **machine**, qui s'authentifie via le **compte machine**
+  > en Kerberos, est cassé.)
+- Log agent (`C:\ProgramData\SambaEdu\Agent\logs\agent.log`) :
+  `déclenchement WPKG : wpkg-client.vbs introuvable (C:\Windows\wpkg-client.vbs)`
+  — l'agent ne dépose **jamais** le vbs (choix D7) ; c'est le `startup.cmd` (§ c2)
+  qui le pose depuis le bundle HTTP, et il n'a pas tourné.
+- Les paramètres registry/raccourcis posés par GPO n'arrivent qu'« après un reboot »
+  (resync ponctuel au démarrage), puis re-dérivent.
+
+**Cause racine :** **décalage d'horloge (clock skew) > 5 min** entre le poste et
+le DC. Kerberos refuse alors d'authentifier le **compte machine** → le traitement
+de la **GPO ordinateur** échoue → `startup.cmd` n'est pas exécuté. Ce n'est PAS un
+problème de bundle, de lien GPO ni de `gPCMachineExtensionNames` (les vérifier est
+inutile tant que l'horloge n'est pas recalée).
+
+**Correctif — sur le poste (PowerShell admin) :**
+
+```powershell
+# 1. Constater l'écart (comparer à l'heure du DC/serveur)
+w32tm /query /status ; Get-Date
+
+# 2. Si l'écart est ÉNORME (mauvaise date/année), recaler à la main D'ABORD
+#    (sinon Kerberos reste cassé et la resync domaine échoue) :
+Set-Date "AAAA-MM-JJ hh:mm:ss"      # adapter à l'heure réelle du DC
+
+# 3. Resynchroniser depuis la hiérarchie de temps du domaine (le DC)
+w32tm /config /syncfromflags:domhier /update
+Restart-Service w32time
+w32tm /resync /rediscover /force
+
+# 4. Rejouer la GPO : la stratégie ORDINATEUR doit maintenant réussir
+gpupdate /force
+Test-Path $env:WINDIR\wpkg-client.vbs   # → True une fois startup.cmd repassé
+```
+
+**Déblocage immédiat du vbs** (indépendant de la GPO, en attendant le recalage) —
+⚠️ utiliser `Invoke-WebRequest`/`curl.exe`, **pas** l'alias PowerShell `curl`
+(qui mappe `Invoke-WebRequest` : `-o` n'écrit pas le fichier) :
+
+```powershell
+Invoke-WebRequest -UseBasicParsing `
+  -Uri "http://<SE4FS_NAME>/wpkg/bundle/wpkg-client.vbs" `
+  -OutFile "$env:WINDIR\wpkg-client.vbs"
+```
+
+**Récurrence / périmètre :**
+
+- Typique des **VMs** (Proxmox/VirtualBox) suspendues/snapshotées/restaurées →
+  l'horloge saute. Activer la synchro hôte→invité, ou un `w32tm /resync` au boot.
+- Aussi : **pile CMOS morte**, poste éteint longtemps, ou **UDP 123 bloqué** vers
+  le DC.
+- Sur du **parc physique lambda** régulièrement allumé et joignant le DC, le skew
+  ne se forme pas (`w32time`/`domhier` recale au démarrage). Le voir sur **tout le
+  parc** d'un coup = suspecter l'**horloge du DC** (et sa source NTP amont), pas
+  chaque poste.
 
 ## 6. Le filet éternel (#27)
 

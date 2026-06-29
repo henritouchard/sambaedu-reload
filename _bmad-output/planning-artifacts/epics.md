@@ -1452,6 +1452,32 @@ So que je puisse gérer la rentrée scolaire (reset toutes les classes entrantes
 
 *Portage de l'entrée LTSP dans le menu iPXE SE5 — iso-legacy, postes sans disque (thin clients). À détailler après investigation du legacy.*
 
+### Story 3.10 : Injection automatique de pilotes NIC dans le boot.wim WinPE
+
+As a **responsable de collège qui déploie Windows par iPXE**,
+I want que les pilotes réseau (NIC) absents du `boot.wim` Microsoft soient injectés automatiquement dans l'image WinPE servie,
+So que l'installation démarre sur du matériel dont la carte réseau n'est plus prise en charge nativement par WinPE.
+
+> **Déclencheur (cause racine validée) :** Microsoft a retiré des pilotes Intel LAN legacy (`e1d`, ex. Intel I219) du `boot.wim` ET de l'`install.wim` à partir de Win11 24H2 (builds 26100 et 26200 vérifiés). Résultat : sur un poste à NIC non-inbox (ex. Lenovo ThinkCentre M700 / Intel I219), le WinPE ne monte pas le réseau (`PING` → « défaillance générale »), la boucle `IPCONFIG /RENEW`→`PING` tourne sans fin et l'install ne démarre jamais.
+>
+> **Régression à corriger :** `WindowsIsoExtractor` (Story 3.6) ré-extrait l'ISO et **écrase le `boot.wim`** par le stock Microsoft (backup best-effort `boot.wim-<version>-old`), détruisant toute injection manuelle. Une injection one-shot ne tient pas — elle doit être rejouée automatiquement.
+>
+> **Périmètre :** le NIC uniquement, dans le **`boot.wim` (WinPE)**. PAS l'ISO ni l'`install.wim`. Le `z:\os\drivers` de l'`unattend.xml` (disque/chipset, post-réseau) reste hors-scope : il est inutile pour le NIC (chicken-and-egg, `z:` exige déjà le réseau).
+>
+> **Recette PoC validée e2e (2026-06-26, lab1, M700/I219), 100% Linux sans poste Windows :**
+> - Pack de pilotes **persistant hors arbre extrait** : `os/winpe-drivers/<famille>/` (`.inf/.sys/.cat`).
+> - À chaque extraction, `WindowsIsoExtractor` injecte le pack via `wimlib-imagex update <boot.wim> <index> --command="add ..."` sur l'**index BOOTABLE** (attention : index 2 sur média d'install, pas 1).
+> - Livraison du `drvload` : `nicload.cmd` (`for /r X:\drivers %%f in (*.inf) do drvload "%%f"`) injecté dans le wim + chaînage `winpeshl.ini` → `nicload.cmd` PUIS `install.bat`.
+> - Alimentation du pack : ingestion d'un `.exe` Lenovo (`innoextract` — PAS 7z) ou `.zip` Intel (`unzip`) → range les fichiers pilote.
+>
+> **Points à trancher en création de story :**
+> - UI/CLI d'upload des pilotes dans le pack, ou simple dépôt fichier + commande d'ingestion ?
+> - `drvload` via injection wim (`nicload.cmd`) vs préfixe dans `WindowsInstallBatBuilder` — choisir le point unique.
+> - Idempotence + `log()` explicite de ce qui est injecté ; no-op propre si pack vide.
+> - Dépendance runtime `wimtools` + `innoextract` sur le serveur (provisioning).
+
+*Option d'injection automatique de pilotes NIC dans le `boot.wim` WinPE, idempotente et persistante à travers les ré-extractions d'ISO. Débloque l'install iPXE sur matériel à carte réseau non-inbox.*
+
 ---
 
 ## Epic 4 : Gestion des Machines, WorkstationGroups & AppProfiles SER

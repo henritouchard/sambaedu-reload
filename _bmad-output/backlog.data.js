@@ -272,7 +272,7 @@ const DATASETS = {
         },
         {
           "id": "3-10",
-          "status": "review",
+          "status": "done",
           "title": "Injection automatique de pilotes NIC dans le boot.wim WinPE",
           "summary": "Permettre l'ajout de pilotes réseau (NIC) absents du boot.wim Microsoft (ex. Intel I219 retiré en Win11 24H2+), injectés automatiquement via wimlib dans l'index bootable du boot.wim à chaque extraction d'ISO (WindowsIsoExtractor) depuis un pack persistant os/winpe-drivers/, + livraison du drvload (nicload.cmd chaîné dans winpeshl.ini). Débloque l'installation iPXE/WinPE sur matériel à NIC non-inbox. PoC validé 2026-06-26 sur Lenovo ThinkCentre M700 (Intel I219, e1d65x64) au lab1."
         }
@@ -1274,18 +1274,23 @@ const DATASETS = {
     {
       "num": 31,
       "title": "Contrat Amont — Dépôt applicatif borné & install pilotée",
-      "status": "backlog",
+      "status": "in-progress",
       "summary": "Central devient le dépôt applicatif faisant autorité côté instance : le canal d'install refnum reste utilisable mais <strong>filtré au catalogue amont</strong> (ajout libre, mais depuis le catalogue). L'amont peut <strong>déclencher</strong> des installs sous forme de <strong>désir d'état</strong> repris par le canal check-in de l'agent existant (idempotence/reprise). <strong>Dépend du correctif Gate <code>wpkg.*</code></strong> (story 29-1) pour que le bornage soit réellement opposable.",
       "stories": [
         {
           "id": "31-1",
           "title": "Borner le canal d'install refnum au catalogue amont (FR5)",
-          "status": "backlog"
+          "status": "review"
         },
         {
           "id": "31-2",
           "title": "Déclenchement d'install en désir d'état via check-in agent (FR6)",
-          "status": "backlog"
+          "status": "review"
+        },
+        {
+          "id": "31-3",
+          "title": "Approvisionner une app ordonnée absente de l'inventaire (FR6, gap D4 de 31.2)",
+          "status": "review"
         }
       ]
     },
