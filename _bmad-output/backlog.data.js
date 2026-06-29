@@ -1190,7 +1190,7 @@ const DATASETS = {
     {
       "num": 29,
       "title": "Contrat Amont — Faire respecter le contrat (verrou & permissif)",
-      "status": "in-progress",
+      "status": "done",
       "summary": "<strong>Cœur de valeur</strong> : c'est ici que la divergence non voulue entre établissements est stoppée. Le refnum ne peut plus défaire un item <strong>verrouillé</strong>, peut surcharger un item <strong>permissif</strong> au niveau d'un WorkstationGroup, et voit clairement les statuts (imposé/verrouillé/permissif). Enforcement réel via <strong>Gates scopés</strong> — inclut le correctif du trou connu <code>wpkg.*</code> (Gate global non scopé, cf. <code>project_delegation_enforcement_wpkg_gap</code>), <strong>prérequis bloquant d'Epic 31</strong>. Item verrouillé soumis au drift STRICT (27.8) ; overrides audités.",
       "stories": [
         {
@@ -1239,13 +1239,13 @@ const DATASETS = {
         {
           "id": "29-9",
           "title": "Ne pas écraser created_at de queue_task_runs sur retry — follow-up P3 review 29-7",
-          "status": "review",
+          "status": "done",
           "note": "DEV sonnet + REVIEW opus (APPROVE post-corrections, codeReviews/29-9.md). Fix closure iso-29.7 sur Queue::before (created_at à l'INSERT seulement), étendu à after/failing (#7). DÉCOUVERTE review : registerQueueTaskTracking() avait été retiré de boot() en 997df15 (dashboard /workers inerte ~3,5 mois) → RÉTABLI sur décision Henri (vraie feature). Dette tracée hors-scope (story 29-10) : rétention/purge queue_task_runs + coût DB par job. Test fiabilisé (Carbon cross-driver, 3 tests). Suite hôte complète : 4715 passed ; 3 failed PRÉEXISTANTS (assignRoom() Story 4.11, vérifiés sur main propre) → 0 régression. Cf. codeReviews/29-7.md P3."
         },
         {
           "id": "29-10",
           "title": "Assainissement du tracking queue_task_runs (rétention, coût/job, code mort) — dette review 29-9",
-          "status": "review",
+          "status": "done",
           "note": "DEV TERMINÉ sonnet (claude-sonnet-4-6, 2026-06-29). queue-task-runs:prune + workers.retention config + Schedule routes/console.php + mémoïsation hasTable + suppression configureRateLimits() + nettoyage TODO discovery. 7/7 tests verts (29 assertions). Cf. sprint-status.yaml 29-10."
         }
       ]
