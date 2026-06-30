@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\ControlHub;
 
 use App\Events\ControlHubContractChanged;
+use App\Exceptions\ControlHub\UnsupportedSchemaVersionException;
 use App\Models\ControlHubContract;
 use App\Services\ControlHub\ControlHubContractIngestionService;
 use App\Services\ControlHub\ControlHubContractSchema;
@@ -279,19 +280,25 @@ class ControlHubContractSchemaVersionTest extends TestCase
         $this->assertTrue(ControlHubContractSchema::isSupported(ControlHubContractSchema::CURRENT_VERSION));
     }
 
-    public function test_unsupported_version_falls_back_to_current_and_is_logged(): void
+    public function test_unsupported_version_is_rejected_and_logged(): void
     {
-        // Review 33.1 #3 — une version NON supportée n'est ni conforme ni absente : 33.1 retombe
-        // sur la version courante (le rejet est 33.2) MAIS trace le repli (observabilité non bloquante).
+        // Story 33.2 — bascule du repli au REJET strict : une version DÉCLARÉE non supportée
+        // n'est plus tolérée (plus de retour CURRENT_VERSION). negotiate() trace l'écart puis
+        // lève l'exception dédiée. (Le no-op/écriture est couvert dans UnsupportedSchemaVersionRejectionTest.)
         Log::spy();
 
-        $resolved = ControlHubContractSchema::negotiate('99.0');
+        try {
+            ControlHubContractSchema::negotiate('99.0');
+            $this->fail('Une version déclarée non supportée doit être rejetée.');
+        } catch (UnsupportedSchemaVersionException $e) {
+            $this->assertSame('99.0', $e->declared());
+            $this->assertSame(ControlHubContractSchema::SUPPORTED_VERSIONS, $e->supported());
+        }
 
-        $this->assertSame(ControlHubContractSchema::CURRENT_VERSION, $resolved);
         Log::shouldHaveReceived('warning')->once()->withArgs(function (string $message, array $context): bool {
             return str_contains($message, 'non supportée')
                 && ($context['declared'] ?? null) === '99.0'
-                && ($context['fallback'] ?? null) === ControlHubContractSchema::CURRENT_VERSION;
+                && ($context['supported'] ?? null) === ControlHubContractSchema::SUPPORTED_VERSIONS;
         });
     }
 

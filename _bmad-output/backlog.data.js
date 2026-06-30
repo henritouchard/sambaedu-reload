@@ -1340,7 +1340,8 @@ const DATASETS = {
         {
           "id": "33-2",
           "title": "Négociation et rejet gracieux d'une version incompatible",
-          "status": "backlog"
+          "status": "done",
+          "note": "Dev opus + review sonnet/2e avis opus (dev-cycle 2026-06-30). Livré : UnsupportedSchemaVersionException (distincte d'InvalidUpstreamContractException, AC#5) ; negotiate() repli→REJET strict (log warning {declared,supported} puis throw) ; ingest() propage en validation pure pré-transaction (zéro écriture, état inchangé). Review : 7 findings — corrigés #1 (fail() manquant), #2 (negotiate() déplacé AVANT normalizeX : la VERSION prime sur le CONTENU, AC#5 non trompeur), #3 (snapshot valeurs+timestamps enfants), #5 (schema_version float JSON = fausse acceptation silencieuse → is_float au cast, vrai bug relevé par Opus), #7 (message log couvert par test R3) ; #4/#6 conservés (mandaté story / inoffensif). Décisions Henri : Q1 égalité stricte, Q2 exception dans negotiate(), Q3 warning+log sans table, Q4 service-only ; #2 = appliquer maintenant. Tests 34/34 + 171/171 non-rég. Garde-fous : R3, contrat agent figé intact, 0 migration, 0 route. Clôt l'Epic 33 (sous réserve clôture review 33.1)."
         }
       ]
     },

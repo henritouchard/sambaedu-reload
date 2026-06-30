@@ -2203,3 +2203,96 @@ php artisan tinker --execute="
 - [ ] AC7d/R3 : aucun identifiant/colonne/message livré ne contient « central »
 - [ ] Contrat agent figé : `ContractV1` / `StateCompiler` / golden / `FROZEN_STATE_HASH` / `agent/**` non touchés
 - [ ] VM (différé) : `migrate` ajoute `schema_version` + payload avec/sans version accepté + version lisible en base (Scénario 19.2)
+
+## Section 20 — Rejet gracieux d'une version incompatible (Story 33.2, 2026-06-30)
+
+**Clôt l'Epic 33.** La négociation de version devient **stricte** : un payload du contrat amont
+déclarant une `schema_version` **non supportée** (chaîne non vide ∉ `SUPPORTED_VERSIONS`, à ce jour
+`1.0` seul) est **rejeté à l'ingestion**. Le repli tolérant de 33.1 (version inconnue → repli sur
+la version courante + `warning`) est **remplacé** par une exception **dédiée**
+`App\Exceptions\ControlHub\UnsupportedSchemaVersionException`, levée par
+`ControlHubContractSchema::negotiate()` et **propagée telle quelle** par
+`ControlHubContractIngestionService::ingest()`.
+
+> **Seule la branche « version DÉCLARÉE non supportée » bascule au rejet.** Le chemin heureux 33.1
+> est **strictement inchangé** : version **absente** (`null`/`''`) → défaut `CURRENT_VERSION`
+> (rétro-compat 28.2) ; version **supportée** → acceptée. Une version absente n'est JAMAIS un motif
+> de rejet — c'est le piège de régression n°1 (basculer une réception légitime en rejet).
+
+- **Validation PURE pré-transaction** : `negotiate()` est appelée AVANT `DB::transaction()` ⇒ la
+  levée garantit **zéro écriture** (aucun contrat/enfant créé/modifié/supprimé), **aucun** event
+  `ControlHubContractChanged`, état d'un contrat pré-existant **strictement inchangé** (rollback
+  total trivial — même patron qu'`InvalidUpstreamContractException`).
+- **Type DÉDIÉ (AC #5)** : `UnsupportedSchemaVersionException` (rejet de **VERSION**) est **distinct**
+  d'`InvalidUpstreamContractException` (rejet de **CONTENU** : enum/cohérence/intégrité). Aucune
+  des deux n'étend l'autre. Un appelant futur peut différencier les deux causes.
+- **Trace (AC #3)** : message « reçue ‹X› vs supportées ‹…› » + log structuré `warning`
+  `{declared, supported}`. **Aucune** persistance d'audit (un rejet ne mute pas l'état).
+- **Politique de compat (Q1)** : **égalité stricte** (`1.0` seul) ; la compat MAJOR (`1.x`) est
+  **différée** tant qu'une seule version existe (anti sur-engineering).
+- **Service-only (Q4)** : `ingest()` n'est appelé par **aucun** contrôleur HTTP → aucune route,
+  aucun mapping `4xx` ajouté. Le jour où un transport est câblé, il traduira l'exception.
+- **AUCUNE migration** (rejet = logique pure) ; **contrat agent figé intact** (versionnement
+  d'échange serveur-only ; `StateCompiler`/`ContractV1`/golden/`FROZEN_STATE_HASH`/`agent/**` non
+  touchés ; pas de bump `agent/shared/version.go`).
+
+### Scénario 20.1 — Tests HÔTE (php8.4 + sqlite, hors VM)
+
+```bash
+# Suite 33.2 (8 tests) — rejet + zéro écriture + état inchangé + trace + type distinct + R3
+CACHE_DRIVER=array DB_CONNECTION=sqlite vendor/bin/phpunit --filter UnsupportedSchemaVersionRejection
+
+# Non-régression OBLIGATOIRE (piège central : aucune réception légitime ne doit basculer en rejet)
+CACHE_DRIVER=array DB_CONNECTION=sqlite vendor/bin/phpunit \
+  --filter 'ControlHubContractSchemaVersion|ControlHubContractIngestion|ControlHubContract|ContractV1|StateCompiler'
+
+# R3 : aucun identifiant « central » dans les fichiers livrés par 33.2
+grep -rin central \
+  app/Exceptions/ControlHub/UnsupportedSchemaVersionException.php \
+  app/Services/ControlHub/ControlHubContractSchema.php
+```
+
+### Scénario 20.2 — VM (différé, hors dev-cycle) : comportement de rejet
+
+> ⚠️ **Aucune migration** dans cette story : rien à `migrate`. Seul le **comportement de rejet** est
+> à confirmer. La colonne `schema_version` (33.1) est présumée déjà migrée. [mémoire `vm_migrations_not_auto_applied`]
+
+```bash
+ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50
+cd /var/www/sambaedu-reload
+
+# 1. Un payload portant une version NON supportée → exception (rien écrit)
+php artisan tinker --execute="
+  try {
+    app(\App\Services\ControlHub\ControlHubContractIngestionService::class)
+      ->ingest(['schema_version' => '2.0', 'items' => [], 'labels' => [], 'imposed_groups' => [], 'catalog_apps' => []]);
+    echo 'KO — aucune exception';
+  } catch (\App\Exceptions\ControlHub\UnsupportedSchemaVersionException \$e) {
+    echo 'OK rejet : ' . \$e->getMessage();  // « reçue « 2.0 » ; supportées : 1.0 »
+  }
+"
+
+# 2. Vérifier que la base n'a PAS bougé (greenfield : aucun contrat) / l'état pré-existant est intact
+php artisan tinker --execute="echo \App\Models\ControlHubContract::count();"
+
+# 3. Non-régression chemin heureux : une version supportée reste acceptée
+php artisan tinker --execute="
+  app(\App\Services\ControlHub\ControlHubContractIngestionService::class)
+    ->ingest(['schema_version' => '1.0', 'items' => [], 'labels' => [], 'imposed_groups' => [], 'catalog_apps' => []]);
+  echo \App\Models\ControlHubContract::active()->schema_version;  // attendu : 1.0
+"
+```
+
+## Checklist rapide Story 33.2 (clôt l'Epic 33)
+
+- [ ] `CACHE_DRIVER=array DB_CONNECTION=sqlite vendor/bin/phpunit --filter UnsupportedSchemaVersionRejection` → 8/8 verts
+- [ ] AC1 : version déclarée non supportée (`2.0`) → `UnsupportedSchemaVersionException` (pas de DTO)
+- [ ] AC1/2 : rejet n'écrit RIEN (comptes des 5 tables inchangés, aucun event `ControlHubContractChanged`)
+- [ ] AC2 : contrat pré-existant strictement inchangé (`schema_version`/`received_at`/`link_state`/agrégats)
+- [ ] AC3 : message « reçue vs supportées » + log structuré `warning` `{declared, supported}`
+- [ ] AC4 : chemin heureux 33.1 intact (absente → courante, supportée → acceptée) ; non-régression 33.1/28.2 verte
+- [ ] AC5 : `UnsupportedSchemaVersionException` distincte d'`InvalidUpstreamContractException` (ni l'une sous-type de l'autre)
+- [ ] AC6/Q1 : égalité stricte (`1.0` seul), compat MAJOR différée ; artefact `schema-echange-controlhub-se5.md` MAJ (rejet livré)
+- [ ] AC7c/R3 : aucun identifiant/message livré ne contient « central »
+- [ ] AC7d/e : contrat agent figé intact (`ContractV1`/`StateCompiler`/golden/`FROZEN_STATE_HASH`/`agent/**`) ; aucune migration ; aucune route
+- [ ] VM (différé) : payload `2.0` → exception + base inchangée ; payload `1.0` accepté (Scénario 20.2)

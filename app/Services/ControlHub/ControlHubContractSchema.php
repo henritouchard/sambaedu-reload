@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\ControlHub;
 
+use App\Exceptions\ControlHub\UnsupportedSchemaVersionException;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -22,10 +23,16 @@ use Illuminate\Support\Facades\Log;
  *
  * --- Politique de compatibilité (Q2 — semver chaîne) ---
  *
- * La version est une **chaîne semver** (ex. `'1.0'`). « Supportée » signifie, en Story 33.1,
- * **égalité stricte** avec une version de {@see self::SUPPORTED_VERSIONS} (en 33.1, la seule
- * version courante). La **compatibilité sur le MAJOR** (accepter toute `1.x`) est documentée
- * mais **ouverte à la Story 33.2** : 33.1 ne livre que le chemin heureux (conforme/absent).
+ * La version est une **chaîne semver** (ex. `'1.0'`). « Supportée » signifie **égalité stricte**
+ * avec une version de {@see self::SUPPORTED_VERSIONS} (à ce jour, la seule version courante). La
+ * **compatibilité sur le MAJOR** (accepter toute `1.x`) est **différée tant qu'une seule version
+ * existe** : la coder sans 2ᵉ version réelle à confronter serait spéculatif et non testable de
+ * bout en bout (anti sur-engineering). {@see self::SUPPORTED_VERSIONS}/{@see self::isSupported()}
+ * restent le point d'extension propre le jour où une 2ᵉ version apparaît.
+ *
+ * Story 33.2 — la négociation est **stricte** : une version **déclarée** non supportée est
+ * **rejetée** ({@see UnsupportedSchemaVersionException}), plus de repli tolérant. Le chemin heureux
+ * 33.1 (absent → courant, supporté → accepté) est strictement inchangé.
  *
  * --- Garde-fou R3 ---
  *
@@ -54,17 +61,21 @@ final class ControlHubContractSchema
     public const SUPPORTED_VERSIONS = [self::CURRENT_VERSION];
 
     /**
-     * Résout la version de schéma à enregistrer pour un payload **conforme ou absent**.
+     * Résout la version de schéma à enregistrer, ou **rejette** une version incompatible.
      *
-     * Contrat de la Story 33.1 (chemin heureux uniquement) :
+     * Chemin heureux (33.1, inchangé) :
      * - `null` / absente → {@see self::CURRENT_VERSION} (Q1=A — défaut tolérant, rétro-compat 28.2) ;
      * - version **supportée** (∈ {@see self::SUPPORTED_VERSIONS}) → elle-même.
      *
-     * Le **rejet** d'une version non supportée n'est **PAS** implémenté ici (Story 33.2). Une
-     * version déclarée mais non supportée retombe aujourd'hui sur la version courante via le seam
-     * ci-dessous ; 33.2 substituera à ce repli un rejet gracieux tracé (« reçue vs supportées »).
+     * Story 33.2 — négociation **stricte** : une version **déclarée** (chaîne non vide) mais non
+     * supportée est **rejetée** par {@see UnsupportedSchemaVersionException} (plus de repli sur la
+     * version courante). Le rejet est tracé (log structuré `{declared, supported}`) au point de
+     * décision. Comme l'ingestion négocie en phase de validation PURE (avant toute écriture), la
+     * levée garantit l'état persisté strictement inchangé (rollback total trivial).
      *
      * @param  string|null  $declared  Valeur brute de `schema_version` du payload (ou null si absent).
+     *
+     * @throws UnsupportedSchemaVersionException si `$declared` est une chaîne non vide non supportée.
      */
     public static function negotiate(?string $declared): string
     {
@@ -77,26 +88,22 @@ final class ControlHubContractSchema
             return $declared;
         }
 
-        // Story 33.2 — rejet gracieux d'une version incompatible.
-        // En 33.1, aucune version n'est rejetée : on retombe sur la version courante (chemin
-        // heureux). 33.2 remplacera ce repli par une négociation stricte (trace de l'écart,
-        // état inchangé) en s'appuyant sur ce même seam.
-        //
-        // Observabilité (review 33.1, #3) : une version déclarée NON supportée n'est ni conforme
-        // ni absente — on trace le repli (non bloquant) pour ne pas masquer un écart d'émission
-        // amont entre 33.1 et 33.2. Ce log NE rejette PAS (le rejet reste 33.2).
-        Log::warning('ControlHubContractSchema: version de schéma non supportée — repli sur la version courante (seam Story 33.2)', [
+        // Story 33.2 — rejet gracieux d'une version incompatible. Une version déclarée NON
+        // supportée n'est ni conforme ni absente : on TRACE l'écart (log structuré, condition
+        // attendue et gérée ⇒ niveau `warning`, Q3) PUIS on lève l'exception dédiée. L'ingestion
+        // négocie AVANT d'ouvrir sa transaction : la levée garantit zéro écriture (état inchangé).
+        Log::warning('ControlHubContractSchema: version de schéma d\'échange amont non supportée — payload rejeté', [
             'declared' => $declared,
-            'fallback' => self::CURRENT_VERSION,
             'supported' => self::SUPPORTED_VERSIONS,
         ]);
 
-        return self::CURRENT_VERSION;
+        throw UnsupportedSchemaVersionException::for($declared, self::SUPPORTED_VERSIONS);
     }
 
     /**
-     * Une version est « supportée » par égalité stricte à une version de
-     * {@see self::SUPPORTED_VERSIONS} (politique 33.1 ; compat sur le MAJOR ouverte à 33.2).
+     * Une version est « supportée » par **égalité stricte** à une version de
+     * {@see self::SUPPORTED_VERSIONS} (Q1 — la compat sur le MAJOR est différée tant qu'une seule
+     * version existe ; ne pas introduire de comparaison MAJOR ici).
      */
     public static function isSupported(string $version): bool
     {

@@ -4,10 +4,13 @@
 > du **contrat amont** échangé entre l'autorité **controlHub** (amont) et **SE5**. Toute évolution
 > du format doit être répercutée **des deux côtés** et reflétée ici.
 >
-> **Story d'origine** : 33.1 — « Schéma d'échange versionné » (Epic 33).
+> **Stories d'origine** : 33.1 — « Schéma d'échange versionné » + 33.2 — « Négociation et rejet
+> gracieux d'une version incompatible » (Epic 33, **clos**).
 > **Périmètre 33.1** : formaliser + versionner le schéma ; accepter un payload **conforme** ou
-> **sans version** (chemin heureux). Le **rejet gracieux** d'une version incompatible est la
-> **Story 33.2** (hors de ce périmètre, mais s'appuiera sur ce même schéma).
+> **sans version** (chemin heureux).
+> **Périmètre 33.2** (livré) : la négociation devient **stricte** — une version **déclarée** non
+> supportée est **rejetée** (état inchangé, écart tracé « reçue vs supportées »). Le chemin heureux
+> 33.1 est inchangé.
 >
 > ⚠️ **Vocabulaire (R3)** : « amont » / `upstream` / `authority` / `ControlHub*`. Le mot
 > « central » est **proscrit** dans tout identifiant, colonne, message ou champ de schéma.
@@ -19,14 +22,22 @@
 - **Version courante** : `1.0` (champ `schema_version`, **chaîne semver**).
 - Côté code SE5, la version de référence et la liste des versions supportées vivent dans
   `App\Services\ControlHub\ControlHubContractSchema` (`CURRENT_VERSION`, `SUPPORTED_VERSIONS`).
-- **« Supportée »** signifie, en Story 33.1, **égalité stricte** avec une version de
-  `SUPPORTED_VERSIONS` (en 33.1, la seule version courante).
-- **Compatibilité sur le MAJOR** (accepter toute `1.x`) : **documentée mais non livrée** en 33.1.
-  Elle est **ouverte à la Story 33.2**, qui prolongera le point de négociation
-  `ControlHubContractSchema::negotiate()` sans en réécrire la couture.
+- **« Supportée »** signifie **égalité stricte** avec une version de `SUPPORTED_VERSIONS` (à ce
+  jour, la seule version courante).
+- **Compatibilité sur le MAJOR** (accepter toute `1.x`) : **différée tant qu'une seule version
+  existe** (Story 33.2, Q1). La coder sans 2ᵉ version réelle à confronter serait spéculatif et non
+  testable de bout en bout (anti sur-engineering). `SUPPORTED_VERSIONS`/`isSupported()` restent le
+  point d'extension propre le jour où une 2ᵉ version apparaît.
 - **Payload sans `schema_version`** (cas de transition — les payloads de l'Epic 28 n'en portent
   pas) : **accepté**, version enregistrée = **version courante** (rétro-compatibilité, décision
-  Q1=A). Le **rejet** d'une version absente ou inconnue relève de la **Story 33.2**.
+  Q1=A). Une version **absente** n'est **jamais** un motif de rejet.
+- **Rejet d'une version déclarée non supportée (Story 33.2, livré)** : une `schema_version`
+  **déclarée** (chaîne non vide) hors `SUPPORTED_VERSIONS` est **rejetée** —
+  `ControlHubContractSchema::negotiate()` lève `UnsupportedSchemaVersionException` (type **dédié**,
+  distinct de `InvalidUpstreamContractException`). La négociation a lieu en **validation pure**
+  (avant la transaction d'ingestion) ⇒ **aucune écriture**, état persisté **strictement inchangé**.
+  **Trace** de l'écart : message « reçue ‹X› vs supportées ‹…› » + log structuré `warning`
+  `{declared, supported}`. **Aucune** persistance d'audit (un rejet ne mute pas l'état).
 
 ## 2. Placement du champ `schema_version`
 
@@ -133,4 +144,7 @@ schéma reçue. Il n'est **pas** un agrégat du payload : ses attributs sont **d
 
 Toute évolution du format = bump de `schema_version` + mise à jour de ce document + répercussion
 des deux côtés. Le **rejet gracieux** d'une version incompatible (négociation stricte, trace de
-l'écart « reçue vs supportées », état inchangé) est livré par la **Story 33.2**.
+l'écart « reçue vs supportées », état inchangé) est **livré par la Story 33.2** (cf. §1) ;
+l'**Epic 33 est clos**. Côté code SE5, le rejet est `App\Exceptions\ControlHub\UnsupportedSchemaVersionException`
+levée par `ControlHubContractSchema::negotiate()` et propagée telle quelle par
+`ControlHubContractIngestionService::ingest()`.

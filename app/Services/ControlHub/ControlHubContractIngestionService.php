@@ -10,6 +10,7 @@ use App\Enums\ControlHubLabelMode;
 use App\Enums\ControlHubLinkState;
 use App\Events\ControlHubContractChanged;
 use App\Exceptions\ControlHub\InvalidUpstreamContractException;
+use App\Exceptions\ControlHub\UnsupportedSchemaVersionException;
 use App\Models\ControlHubContract;
 use App\Models\ControlHubContractCatalogApp;
 use App\Models\ControlHubContractImposedGroup;
@@ -26,9 +27,10 @@ use Illuminate\Support\Facades\Log;
  * (racine) ; l'ingestion la **négocie** ({@see ControlHubContractSchema::negotiate()}) et
  * **enregistre** la version retenue sur le contrat (colonne `schema_version`). Format figé
  * dans l'artefact partagé _bmad-output/planning-artifacts/schema-echange-controlhub-se5.md
- * (source unique pointée par les deux BMAD — R2). En 33.1, un payload **conforme** (version
- * supportée) ou **sans version** (défaut = version courante, rétro-compat 28.2) est accepté ;
- * le **rejet** d'une version incompatible relève de la Story 33.2 (seam posé, non implémenté).
+ * (source unique pointée par les deux BMAD — R2). Un payload **conforme** (version supportée) ou
+ * **sans version** (défaut = version courante, rétro-compat 28.2) est accepté ; une version
+ * **déclarée non supportée** est **rejetée** (Story 33.2 — {@see UnsupportedSchemaVersionException}
+ * propagée par la négociation, en phase de validation pure ⇒ zéro écriture, état inchangé).
  *
  * Reçoit un payload de contrat (émis par l'autorité amont) et le persiste de façon idempotente :
  *
@@ -84,10 +86,35 @@ class ControlHubContractIngestionService
      * @param  array<string, mixed>  $payload
      *
      * @throws InvalidUpstreamContractException si le payload est hors domaine (rollback total)
+     * @throws UnsupportedSchemaVersionException si la `schema_version` déclarée est non supportée
+     *                                           (Story 33.2 — rejet en validation pure, état inchangé)
      */
     public function ingest(array $payload): ContractIngestionResult
     {
-        // 1. Normalisation + validation PURE (aucune écriture) — garantit le rollback total
+        // 0. Négociation de la VERSION du schéma d'ÉCHANGE — AVANT toute validation de CONTENU.
+        // Story 33.1/33.2 — phase de validation PURE (aucune écriture, AVANT DB::transaction,
+        // cohérent avec le rollback total 28.2) : version supportée → elle-même ; absente → version
+        // courante (Q1=A, rétro-compat 28.2) ; version DÉCLARÉE non supportée →
+        // UnsupportedSchemaVersionException (Story 33.2) LAISSÉE SE PROPAGER (pas de try/catch) — la
+        // levée précède toute écriture ⇒ état inchangé.
+        // Review 33.2 (#2) — la version est négociée AVANT les `normalizeX()` : un payload émis sous
+        // une version non supportée ne doit PAS être interprété sous les règles de la version
+        // courante. Sinon un contenu légal dans une future version mais hors-domaine en v1.0 lèverait
+        // `InvalidUpstreamContractException` (CONTENU) au lieu d'`UnsupportedSchemaVersionException`
+        // (VERSION), masquant la vraie cause (AC#5). La négociation est pure (O(1), zéro DB).
+        // Review 33.2 (#5) — tout scalaire numérique DÉCLARÉ est coercé en chaîne pour être négocié :
+        // un `schema_version` float JSON (ex. 2.0) ne doit PAS retomber sur `null`→version courante
+        // (fausse ACCEPTATION silencieuse d'une version incompatible, viole AC#1). Coercé, il est
+        // rejeté en égalité stricte comme un int/string non supporté. (array/bool/objet restent
+        // traités comme absents — non couverts par 33.2.)
+        // Cf. artefact partagé _bmad-output/planning-artifacts/schema-echange-controlhub-se5.md.
+        $declaredVersion = $payload['schema_version'] ?? null;
+        $declaredVersion = is_string($declaredVersion) || is_int($declaredVersion) || is_float($declaredVersion)
+            ? (string) $declaredVersion
+            : null;
+        $schemaVersion = ControlHubContractSchema::negotiate($declaredVersion);
+
+        // 1. Normalisation + validation PURE du CONTENU (aucune écriture) — garantit le rollback total
         //    (AC #6) : une valeur hors domaine lève l'exception AVANT d'ouvrir la transaction.
         $items = $this->normalizeItems($payload['items'] ?? []);
         $labels = $this->normalizeLabels($payload['labels'] ?? []);
@@ -100,17 +127,6 @@ class ControlHubContractIngestionService
         // après normalisation et AVANT la transaction (calque du patron cohérence-cible de
         // normalizeItems) → un payload incohérent ne provoque AUCUNE écriture partielle.
         $this->assertImposedGroupLabelsDeclared($labels, $imposedGroups);
-
-        // Story 33.1 — Négociation de la version du schéma d'ÉCHANGE en phase de validation PURE
-        // (aucune écriture ici, cohérent avec le rollback total 28.2). En 33.1 (chemin heureux) :
-        // version supportée → elle-même ; absente → version courante (Q1=A, rétro-compat 28.2).
-        // Le REJET d'une version incompatible relève de la Story 33.2 (seam posé, non implémenté).
-        // Cf. artefact partagé _bmad-output/planning-artifacts/schema-echange-controlhub-se5.md.
-        $declaredVersion = $payload['schema_version'] ?? null;
-        $declaredVersion = is_string($declaredVersion) || is_int($declaredVersion)
-            ? (string) $declaredVersion
-            : null;
-        $schemaVersion = ControlHubContractSchema::negotiate($declaredVersion);
 
         $result = new ContractIngestionResult();
         $result->schemaVersion = $schemaVersion;
