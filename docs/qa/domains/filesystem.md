@@ -1058,4 +1058,120 @@ Gardée par la policy **dédiée** `NetworkSharePolicy` (permissions
 
 ---
 
-*Dernière mise à jour : 2026-06-30 (Story 34.2 — UI admin lecteurs réseau gérés : page liste + modale + page détail (assignation par maille pivot SQL, RO/RW), policy dédiée `networkshare.*`, validation prédictive `NetworkShareValidator` (WG-montage-seul / collision de lettre / lettre réservée) ; dette pickers non scopés par établissement documentée)*
+## Story 34.3 — Templates de répertoire (préfabrication d'échanges)
+
+Couche de **préfabrication** par-dessus 34.1/34.2 (socle figé INTOUCHÉ). Une
+seconde modale « Créer depuis un template » sur `/app/shares` matérialise en un
+geste un `NetworkShare` + toutes ses assignations par maille, à partir d'une
+RECETTE choisie. Les recettes vivent dans la table `directory_templates`, peuplée
+par `DirectoryTemplateSeeder` ; `DirectoryTemplateService::materialize` lit la
+recette en DB et délègue au socle (`provision()`, `NetworkShareValidator`).
+
+> **Pré-requis VM (NOUVEAU 34.3)** : exécuter
+> `php artisan db:seed --class=DirectoryTemplateSeeder` sur la VM pour peupler les
+> **4 recettes**. Idempotent (re-seed sans doublon, `updateOrCreate` sur `key`).
+> Tant que ce seed n'est pas joué, le sélecteur de template est vide.
+
+### Périmètre des 4 templates (arbitrage Henri 2026-06-30)
+
+| Template (`key`) | Qui dépose (RW) | Qui lit (RO) | Mailles |
+|---|---|---|---|
+| `direction_to_all` | source (groupe direction/équipe) | destinataires (groupes) | 1 `UserGroup` + N `UserGroup` |
+| `profs_to_eleves` | équipe enseignante | classe | 1 `UserGroup` type `equipe` + 1 type `classe` |
+| `user_to_user` | les 2 utilisateurs | — | 2 × `User` (RW/RW) |
+| `group_space` | le groupe | — | 1 × `UserGroup` (RW) |
+
+> **HORS 34.3 — casiers « élèves → profs » / rendus par-élève (REPORTÉ 34.x).** Le
+> socle pose l'ACL au RÉPERTOIRE racine (pas de sous-dossier ACLé par élève) ; un
+> template « rendus » donnerait un dépôt partagé où chaque élève voit/écrase les
+> rendus des autres — faux sens métier dangereux. Le template `élèves → profs`
+> N'EST PAS livré. Les vrais casiers (sous-dossier + ACL par élève = extension
+> `NetworkShareService`) sont reportés à 34.x.
+
+### Invariants (rappel, vérifiés en test)
+
+- **WG = montage-seul** : AUCUNE recette ne porte de maille `WorkstationGroup`
+  (l'ACL ne porte que sur `User`/`UserGroup`). Le service refuse toute maille hors
+  `User`/`UserGroup` (defense-in-depth).
+- **Mapping de maille NON redérivé** (piège #3) : le template ASSIGNE le bon
+  `UserGroup` typé ; `NetworkShareService::unixGroupFor` mappe au groupe Unix
+  (`classe_`/`equipe_` + suffixe étab) à `provision()`. Le template ne calcule
+  aucun nom de groupe Unix.
+- **Dette 34.2 non aggravée** : pickers `User`/`UserGroup` NON scopés par
+  établissement ; collision cross-maille (M-A) toujours best-effort.
+
+### Scénarios manuels
+
+#### Scénario 34.3-1 — Matérialisation `profs_to_eleves`
+
+1. `/app/shares` → « Créer depuis un template » → choisir « Profs → élèves ».
+2. Le formulaire expose DYNAMIQUEMENT deux pickers : équipe (`equipe`) + classe
+   (`classe`). Saisir `name`, `directory_name` (MANUEL, validé format/unique),
+   `letter` (pré-remplie prochaine libre).
+3. Sélectionner une équipe + une classe → l'**aperçu** liste
+   `équipe → Groupe → Lecture/écriture` et `classe → Groupe → Lecture seule`.
+4. Matérialiser → toast succès + redirection vers la fiche du répertoire créé ;
+   en base : 1 `NetworkShare` + 2 `network_share_assignables` (equipe `rw`,
+   classe `ro`) ; provisioning FS/ACL déclenché.
+
+#### Scénario 34.3-2 — `user_to_user` (deux RW)
+
+1. Choisir « Utilisateur ↔ utilisateur », sélectionner deux utilisateurs.
+2. Aperçu = deux lignes Lecture/écriture → matérialiser → 2 assignations `User`
+   `rw`. (Sélectionner deux fois le même utilisateur → refus « cible deux fois ».)
+
+#### Scénario 34.3-3 — Collision de lettre = rollback total
+
+1. Pré-existant : répertoire `P:` assigné au groupe G.
+2. Matérialiser un template (groupe G, lettre `P:`) → **toast d'erreur** collision ;
+   **aucune** ligne `network_shares`/pivot créée (rollback transactionnel) ;
+   aucun provisioning.
+
+#### Scénario 34.3-4 — `directory_name` déjà pris
+
+1. Matérialiser avec un `directory_name` déjà utilisé → erreur de champ « déjà
+   utilisé. Éditez le répertoire existant depuis sa page » (one-shot, Q4 — pas de
+   sync template↔share en 34.3).
+
+#### Scénario 34.3-5 — Lettre réservée + format invalide
+
+1. `letter` ∈ K/H/I/L/A-D → refus à la saisie. `directory_name` avec espace/`..`/`/`
+   → refus format. Dans les deux cas : **aucune écriture**.
+
+#### Scénario 34.3-6 — Gating refnum
+
+1. Un compte sans `networkshare.manage` (viewer) ne voit pas le bouton ; toute
+   tentative d'appel `createFromTemplate` / `openTemplate` → 403.
+
+### Checklist rapide — Story 34.3
+
+- [ ] 34.3-1 : matérialisation des 4 templates (assignations + access corrects)
+- [ ] 34.3-2 : `user_to_user` deux RW ; doublon de cible refusé
+- [ ] 34.3-3 : collision de lettre = rollback total (0 ligne) + toast erreur
+- [ ] 34.3-4 : `directory_name` déjà pris = message « éditez-le depuis sa page »
+- [ ] 34.3-5 : lettre réservée + format invalide refusés AVANT écriture
+- [ ] 34.3-6 : gating `manage-networkshare` (viewer 403, bouton masqué)
+- [ ] 34.3-7 : invariant WG-montage-seul (aucune recette ne grant un parc)
+- [ ] **Élèves→profs / casiers par-élève = HORS 34.3, reporté 34.x** (vérifier que le template n'apparaît PAS dans le sélecteur)
+- [ ] 34.3-8 : non-régression golden/agent figé (ContractV1 vert, `state.v1.json` + `FROZEN_STATE_HASH` inchangés)
+- [ ] **Pré-déploiement VM** : `db:seed --class=DirectoryTemplateSeeder` joué (4 recettes)
+
+### Post-correctifs review 2026-06-30 (Story 34.3)
+
+| Incident couvert (corrigé post-review) | Scénario |
+|---|---|
+| #1 warnings prédictifs (WG-montage-seul) non surfacés après matérialisation (AC2 non honoré, inerte pour les 4 recettes mais contrat non tenu) → flash enrichi | 34.3-1, 34.3-7 (surfaçage warning) |
+| #2 cardinalité des rôles validée côté service seulement (cible requise manquante → toast générique, pas d'erreur de champ) ; trou de couverture | 34.3-9 |
+| M-1 unicité `directory_name` non pré-checkée dans le service (appel direct → `QueryException` au lieu d'`InvalidArgumentException`) → pré-check amont | 34.3-4 (même message UI + service) |
+| M-2 seeder non-pruning → recettes orphelines si le catalogue rétrécit → test garde-fou « DB = clés canoniques » | 34.3 checklist (sélecteur ne liste QUE les 4 recettes) |
+
+#### Scénario 34.3-9 — Cible requise manquante = refus propre, rien créé
+
+1. Ouvrir « Créer depuis un template », choisir `user_to_user` (ou `group_space`).
+2. Renseigner `name` + `directory_name`, MAIS laisser un picker de rôle requis **vide** (ne pas sélectionner le second utilisateur / le groupe).
+3. Cliquer « Matérialiser ».
+4. **Attendu** : toast d'erreur explicite (« Le rôle « … » attend exactement une cible » / « au moins une cible »), **aucun** répertoire ni assignation créés (vérifier la liste `/app/shares` inchangée). Le refus a lieu AVANT toute écriture (pas de transaction partielle).
+
+---
+
+*Dernière mise à jour : 2026-06-30 (Story 34.3 — Templates de répertoire : table `directory_templates` + `DirectoryTemplateSeeder` (4 recettes, Q3 option B) + `DirectoryTemplateService::materialize` (transaction + validation réutilisée 34.2, mapping de maille non redérivé) + 2e modale « Créer depuis un template » sur `/app/shares` (formulaire dynamique, aperçu, gating `networkshare.manage`) ; casiers « élèves→profs » par-élève reportés 34.x ; socle figé INTOUCHÉ ; **post-review** : surfaçage warnings AC2 [#1], pré-check unicité service [M-1], garde-fou seeder [M-2], test cible manquante [#2])*

@@ -2,7 +2,11 @@
 
 use App\Components\Traits\WithToasts;
 use App\Exceptions\Filesystem\NetworkShareLetterCollisionException;
+use App\Models\DirectoryTemplate;
 use App\Models\NetworkShare;
+use App\Models\User;
+use App\Models\UserGroup;
+use App\Services\Filesystem\DirectoryTemplateService;
 use App\Services\Filesystem\NetworkShareService;
 use App\Services\Filesystem\NetworkShareValidator;
 use Illuminate\Support\Facades\Gate;
@@ -41,6 +45,22 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     public string $directoryName = '';
     public string $label = '';
     public string $letter = '';
+
+    // --- Modale « Créer depuis un template » (Story 34.3) -------------------
+    public bool $isTemplateOpen = false;
+    public string $selectedTemplateKey = '';
+    public string $templateName = '';
+    public string $templateDirectoryName = '';
+    public string $templateLabel = '';
+    public string $templateLetter = '';
+
+    /**
+     * Sélections de cibles par rôle de la recette : `[roleKey => id|null]`
+     * (cardinalité `one`) ou `[roleKey => [id, …]]` (cardinalité `many`).
+     *
+     * @var array<string, mixed>
+     */
+    public array $roleSelections = [];
 
     public function mount(): void
     {
@@ -238,6 +258,274 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         $this->loadShares();
     }
 
+    // --- Matérialisation depuis un template (Story 34.3) --------------------
+
+    /**
+     * Catalogue des recettes (lu depuis la table `directory_templates`, Q3 option B).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function templates(): array
+    {
+        return DirectoryTemplate::orderBy('id')->get()
+            ->map(fn (DirectoryTemplate $t): array => [
+                'key' => $t->key,
+                'label' => $t->label,
+                'description' => $t->description,
+                'roles' => $t->roles(),
+            ])->all();
+    }
+
+    /** Recette sélectionnée (modèle), ou null. */
+    public function selectedTemplate(): ?DirectoryTemplate
+    {
+        if ($this->selectedTemplateKey === '') {
+            return null;
+        }
+
+        return DirectoryTemplate::where('key', $this->selectedTemplateKey)->first();
+    }
+
+    /**
+     * Candidats par rôle de la recette sélectionnée (pickers SQL `User`/`UserGroup`,
+     * zéro CN AD ; `UserGroup` filtré par `group_type` quand la recette le contraint).
+     *
+     * @return array<string, array<int, array{id:int,label:string}>>
+     */
+    public function roleCandidates(): array
+    {
+        $template = $this->selectedTemplate();
+        if ($template === null) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($template->roles() as $role) {
+            $roleKey = (string) ($role['key'] ?? '');
+            $maille = (string) ($role['maille'] ?? '');
+            $groupType = $role['group_type'] ?? null;
+
+            if ($maille === User::class) {
+                $out[$roleKey] = User::query()
+                    ->orderBy('login')
+                    ->limit(100)
+                    ->get(['id', 'login'])
+                    ->map(fn (User $u): array => ['id' => $u->id, 'label' => (string) $u->login])
+                    ->all();
+            } elseif ($maille === UserGroup::class) {
+                $out[$roleKey] = UserGroup::query()
+                    ->when($groupType !== null, fn ($q) => $q->where('type', $groupType))
+                    ->orderBy('name')
+                    ->limit(100)
+                    ->get(['id', 'name', 'display_name'])
+                    ->map(fn (UserGroup $g): array => ['id' => $g->id, 'label' => (string) ($g->display_name ?: $g->name)])
+                    ->all();
+            } else {
+                $out[$roleKey] = [];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Aperçu des assignations qui seront créées (cible → maille → access), AVANT
+     * matérialisation.
+     *
+     * @return array<int, array{label:string,maille:string,access:string}>
+     */
+    public function templatePreview(): array
+    {
+        $template = $this->selectedTemplate();
+        if ($template === null) {
+            return [];
+        }
+
+        $candidates = $this->roleCandidates();
+        $preview = [];
+
+        foreach ($template->roles() as $role) {
+            $roleKey = (string) ($role['key'] ?? '');
+            $maille = (string) ($role['maille'] ?? '');
+            $access = ($role['access'] ?? 'ro') === 'rw' ? 'Lecture/écriture' : 'Lecture seule';
+            $mailleLabel = $maille === User::class ? 'Utilisateur' : "Groupe d'utilisateurs";
+
+            $byId = collect($candidates[$roleKey] ?? [])->keyBy('id');
+
+            foreach ($this->normalizedRoleIds($roleKey) as $id) {
+                $preview[] = [
+                    'label' => (string) ($byId[$id]['label'] ?? "#{$id}"),
+                    'maille' => $mailleLabel,
+                    'access' => $access,
+                ];
+            }
+        }
+
+        return $preview;
+    }
+
+    /**
+     * IDs sélectionnés pour un rôle, normalisés en liste d'entiers (gère les deux
+     * formes de binding : scalaire pour `one`, tableau pour `many`).
+     *
+     * @return list<int>
+     */
+    private function normalizedRoleIds(string $roleKey): array
+    {
+        $raw = $this->roleSelections[$roleKey] ?? null;
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+        $list = is_array($raw) ? $raw : [$raw];
+
+        return array_values(array_filter(array_map(
+            static fn ($v): int => (int) $v,
+            $list,
+        ), static fn (int $id): bool => $id > 0));
+    }
+
+    public function openTemplate(): void
+    {
+        abort_unless(Gate::allows('manage-networkshare'), 403);
+
+        $this->resetTemplateForm();
+        // Pré-remplir la prochaine lettre sûre libre (encourager l'explicite — Q5
+        // : le NOM, lui, reste manuel, pas d'auto-dérivation slug).
+        $this->templateLetter = app(NetworkShareValidator::class)->suggestNextFreeLetter() ?? '';
+        $this->isTemplateOpen = true;
+    }
+
+    public function closeTemplate(): void
+    {
+        $this->isTemplateOpen = false;
+        $this->resetTemplateForm();
+    }
+
+    public function updatedSelectedTemplateKey(): void
+    {
+        // Changement de recette → réinitialise les sélections de cibles (les rôles
+        // exposés changent dynamiquement).
+        $this->roleSelections = [];
+        $this->resetErrorBag();
+    }
+
+    private function resetTemplateForm(): void
+    {
+        $this->selectedTemplateKey = '';
+        $this->templateName = '';
+        $this->templateDirectoryName = '';
+        $this->templateLabel = '';
+        $this->templateLetter = '';
+        $this->roleSelections = [];
+        $this->resetErrorBag();
+    }
+
+    protected function templateRules(): array
+    {
+        return [
+            'selectedTemplateKey' => ['required', 'string', 'exists:directory_templates,key'],
+            'templateName' => ['required', 'string', 'max:255'],
+            'templateDirectoryName' => [
+                'required',
+                'string',
+                'max:255',
+                'regex:' . NetworkShareService::DIRECTORY_NAME_PATTERN,
+                'unique:network_shares,directory_name',
+            ],
+            'templateLabel' => ['nullable', 'string', 'max:255'],
+            'templateLetter' => [
+                'nullable',
+                'string',
+                'max:8',
+                function (string $attribute, $value, $fail): void {
+                    if (app(NetworkShareValidator::class)->isReservedLetter($value)) {
+                        $fail('Cette lettre est réservée par le système (A-D, H, I, K, L). '
+                            . 'Choisissez une autre lettre ou laissez le champ vide (attribution automatique).');
+                    }
+                },
+            ],
+        ];
+    }
+
+    protected function templateMessages(): array
+    {
+        return [
+            'selectedTemplateKey.required' => 'Choisissez un template.',
+            'templateName.required' => 'Le nom est requis.',
+            'templateDirectoryName.required' => 'Le nom de répertoire est requis.',
+            'templateDirectoryName.regex' => 'Le nom de répertoire ne peut contenir que des lettres, chiffres, '
+                . '« . », « _ » et « - » (sans espace), et ne peut pas commencer par « . ».',
+            'templateDirectoryName.unique' => 'Ce nom de répertoire est déjà utilisé. Éditez le répertoire existant depuis sa page.',
+        ];
+    }
+
+    public function createFromTemplate(): void
+    {
+        abort_unless(Gate::allows('manage-networkshare'), 403);
+
+        $validated = $this->validate($this->templateRules(), $this->templateMessages());
+
+        $template = $this->selectedTemplate();
+        if ($template === null) {
+            $this->toastError('Template introuvable.');
+            return;
+        }
+
+        // Construit le mapping rôle → liste d'IDs sélectionnés (normalisé).
+        $roles = [];
+        foreach ($template->roles() as $role) {
+            $roleKey = (string) ($role['key'] ?? '');
+            $roles[$roleKey] = $this->normalizedRoleIds($roleKey);
+        }
+
+        try {
+            $result = app(DirectoryTemplateService::class)->materialize($template, [
+                'name' => $validated['templateName'],
+                'directory_name' => $validated['templateDirectoryName'],
+                'label' => $validated['templateLabel'] ?? null,
+                'letter' => $validated['templateLetter'] ?? null,
+                'roles' => $roles,
+            ]);
+        } catch (NetworkShareLetterCollisionException $e) {
+            // Collision de lettre : rollback transactionnel déjà effectué (aucune
+            // écriture partielle). On surface le message en toast (pas de création).
+            $this->toastError($e->getMessage());
+            return;
+        } catch (\InvalidArgumentException $e) {
+            // Format / lettre réservée / rôles invalides (cardinalité, cible
+            // introuvable, typage de groupe) — refus AVANT écriture.
+            $this->toastError($e->getMessage());
+            return;
+        }
+
+        $message = $result->provisioned
+            ? "Le répertoire « {$result->share->name} » a été créé depuis le template et provisionné."
+            : "Le répertoire « {$result->share->name} » a été créé, mais son provisioning a échoué. Consultez les journaux serveur.";
+
+        // Surfaçage des avertissements prédictifs non bloquants (WG-montage-seul,
+        // AC2). Inerte pour les 4 recettes seedées (aucune n'assigne de parc),
+        // mais on honore le contrat et on défend les recettes futures : un warning
+        // bascule le toast en statut « warning » et l'annexe au message.
+        $warnings = $result->warnings;
+        if ($warnings !== []) {
+            $message .= ' ⚠ ' . implode(' ', $warnings);
+        }
+
+        session()->flash('toast', [
+            'status' => ($result->provisioned && $warnings === []) ? 'success' : 'warning',
+            'title' => $result->provisioned
+                ? ($warnings === [] ? 'Répertoire créé' : 'Répertoire créé (avec avertissements)')
+                : 'Provisioning incomplet',
+            'message' => $message,
+        ]);
+
+        $this->isTemplateOpen = false;
+        $this->resetTemplateForm();
+
+        // Retour vers la page détail du share créé (édition fine ensuite, 34.2).
+        $this->redirect(route('app.shares.show', $result->share->id), navigate: true);
+    }
+
     private function normalizedLetter(?string $raw): ?string
     {
         if ($raw === null) {
@@ -268,6 +556,10 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
 
     <x-slot:actions>
         @can('manage-networkshare')
+            <button type="button" class="btn btn-outline" wire:click="openTemplate">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                Créer depuis un template
+            </button>
             <button type="button" class="btn highlight btn-primary" wire:click="openCreate">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
@@ -412,6 +704,131 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
             <button type="button" class="btn btn-primary" wire:click="createShare" wire:loading.attr="disabled" wire:target="createShare">
                 <span wire:loading.remove wire:target="createShare"><i class="fa-solid fa-plus"></i> Créer</span>
                 <span wire:loading wire:target="createShare"><span class="loading loading-spinner loading-xs"></span> Création...</span>
+            </button>
+        </x-slot:footer>
+    </x-molecules.modal>
+
+    {{-- Modale « Créer depuis un template » (Story 34.3) --}}
+    @php($selectedTpl = $this->selectedTemplate())
+    @php($roleCandidates = $selectedTpl ? $this->roleCandidates() : [])
+    @php($preview = $selectedTpl ? $this->templatePreview() : [])
+    <x-molecules.modal wire:model="isTemplateOpen" size="max-w-3xl" height="h-auto"
+        title="Créer un répertoire depuis un template" icon="fa-wand-magic-sparkles text-primary">
+
+        <x-molecules.modal.section title="Template d'échange" icon="fa-layer-group text-primary" dense>
+            <div class="form-control">
+                <label class="label"><span class="label-text font-medium">Type d'échange <span class="text-error">*</span></span></label>
+                <select wire:model.live="selectedTemplateKey" class="select select-bordered">
+                    <option value="">— choisir un template —</option>
+                    @foreach ($this->templates() as $tpl)
+                        <option value="{{ $tpl['key'] }}">{{ $tpl['label'] }}</option>
+                    @endforeach
+                </select>
+                @error('selectedTemplateKey') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
+            </div>
+            @if ($selectedTpl && $selectedTpl->description)
+                <div class="alert alert-info mt-3 text-sm">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <span>{{ $selectedTpl->description }}</span>
+                </div>
+            @endif
+        </x-molecules.modal.section>
+
+        @if ($selectedTpl)
+            <x-molecules.modal.section title="Informations" icon="fa-circle-info text-primary" dense>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-medium">Nom <span class="text-error">*</span></span></label>
+                        <input type="text" wire:model="templateName" class="input input-bordered" placeholder="Devoirs 6eB" />
+                        @error('templateName') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-medium">Nom de répertoire (FS) <span class="text-error">*</span></span></label>
+                        <input type="text" wire:model="templateDirectoryName" class="input input-bordered font-mono" placeholder="devoirs_6eb" />
+                        @error('templateDirectoryName') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-medium">Libellé du lecteur</span></label>
+                        <input type="text" wire:model="templateLabel" class="input input-bordered" placeholder="(par défaut : le nom)" />
+                        @error('templateLabel') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
+                    </div>
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-medium">Lettre</span>
+                            <span class="label-text-alt text-base-content/50">vide = auto</span>
+                        </label>
+                        <input type="text" wire:model="templateLetter" class="input input-bordered" maxlength="8" placeholder="P:" />
+                        @error('templateLetter') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
+                    </div>
+                </div>
+            </x-molecules.modal.section>
+
+            <x-molecules.modal.section title="Cibles du template" icon="fa-users text-primary" dense>
+                <div class="space-y-3">
+                    @foreach ($selectedTpl->roles() as $role)
+                        @php($roleKey = $role['key'])
+                        @php($isMany = ($role['cardinality'] ?? 'one') === 'many')
+                        <div class="form-control">
+                            <label class="label py-1">
+                                <span class="label-text font-medium">{{ $role['label'] }}</span>
+                                <span class="label-text-alt badge badge-sm {{ ($role['access'] ?? 'ro') === 'rw' ? 'badge-success' : 'badge-info' }}">
+                                    {{ ($role['access'] ?? 'ro') === 'rw' ? 'Lecture/écriture' : 'Lecture seule' }}
+                                </span>
+                            </label>
+                            <select wire:model.live="roleSelections.{{ $roleKey }}" class="select select-bordered select-sm"
+                                @if($isMany) multiple size="4" @endif>
+                                @unless($isMany)
+                                    <option value="">— choisir —</option>
+                                @endunless
+                                @foreach ($roleCandidates[$roleKey] ?? [] as $cand)
+                                    <option value="{{ $cand['id'] }}">{{ $cand['label'] }}</option>
+                                @endforeach
+                            </select>
+                            @if ($isMany)
+                                <span class="label-text-alt text-base-content/50 mt-1">Maintenez Ctrl (ou Cmd) pour sélectionner plusieurs groupes.</span>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
+            </x-molecules.modal.section>
+
+            <x-molecules.modal.section title="Aperçu des assignations" icon="fa-list-check text-primary" dense>
+                @if (count($preview) === 0)
+                    <div class="text-sm text-base-content/50 py-2">Sélectionnez les cibles ci-dessus pour prévisualiser les assignations.</div>
+                @else
+                    <table class="table table-sm">
+                        <thead>
+                            <tr class="text-xs uppercase"><th>Cible</th><th>Maille</th><th>Accès</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($preview as $row)
+                                <tr>
+                                    <td class="font-medium">{{ $row['label'] }}</td>
+                                    <td class="text-xs text-base-content/60">{{ $row['maille'] }}</td>
+                                    <td>
+                                        <span class="badge badge-sm {{ $row['access'] === 'Lecture/écriture' ? 'badge-success' : 'badge-info' }}">{{ $row['access'] }}</span>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @endif
+                <div class="alert alert-warning mt-3 text-xs">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span>Les accès portent sur des utilisateurs et groupes d'utilisateurs (jamais sur un parc — un parc ne donnerait que la visibilité, sans accès réel). Le répertoire est un dépôt partagé : il n'y a pas de cloisonnement par utilisateur (casiers individuels = à venir).</span>
+                </div>
+            </x-molecules.modal.section>
+        @endif
+
+        <x-slot:footerNote>
+            Le répertoire et toutes ses assignations seront créés puis provisionnés (FS + ACL). Vous pourrez ensuite l'éditer depuis sa page.
+        </x-slot:footerNote>
+        <x-slot:footer>
+            <button type="button" class="btn btn-ghost" wire:click="closeTemplate">Annuler</button>
+            <button type="button" class="btn btn-primary" wire:click="createFromTemplate" wire:loading.attr="disabled" wire:target="createFromTemplate"
+                @disabled(! $selectedTpl)>
+                <span wire:loading.remove wire:target="createFromTemplate"><i class="fa-solid fa-wand-magic-sparkles"></i> Matérialiser</span>
+                <span wire:loading wire:target="createFromTemplate"><span class="loading loading-spinner loading-xs"></span> Création...</span>
             </button>
         </x-slot:footer>
     </x-molecules.modal>

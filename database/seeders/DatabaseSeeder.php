@@ -29,6 +29,10 @@ class DatabaseSeeder extends Seeder
             // défauts sont déjà en base. Idempotent/rejouable.
             FileAssociationSeeder::class,
             WpkgReportSeeder::class,
+            // Story 34.3 — catalogue des templates de répertoire (4 recettes
+            // d'échange préfabriquées). Idempotent/rejouable. ⚠️ Pré-déploiement
+            // VM : `db:seed --class=DirectoryTemplateSeeder`.
+            DirectoryTemplateSeeder::class,
         ]);
     }
 }
