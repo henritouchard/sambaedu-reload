@@ -738,4 +738,173 @@ détection/purge des profils orphelins. **Aucun routage vers le legacy**
 
 ---
 
-*Dernière mise à jour : 2026-06-15 (Story 26.3 — nettoyage natif profils itinérants ; post-correctifs review #1/S1)*
+## Story 34.1 — Lecteurs réseau gérés (fondations backend)
+
+**Date livraison** : 2026-06-30 par Opus 4.8.
+
+**Migrations à appliquer** :
+`2026_06_29_120000_create_network_shares_table`,
+`2026_06_29_120100_create_network_share_assignables_table`.
+
+**Cadrage** : FONDATION BACKEND (décision Henri — PAS d'UI, PAS de templates).
+La création/assignation se fait par `php artisan tinker` (ou factory). L'UI =
+Story 34.2.
+
+**Pré-requis VM** :
+
+- Sudoers (déjà couvert 5.2) : `/etc/sudoers.d/sambaedu` whiteliste
+  `setfacl/getfacl/mkdir/mv/chown/chgrp` par binaire (path-agnostique) — aucune
+  nouvelle entrée pour `Partages`. Si manquant : escalader à Henri.
+- **`smb.conf`** : déclarer un partage `[partages]` →
+  `path = /var/sambaedu/Partages`, utilisateurs authentifiés, traversable
+  (l'accès réel est gaté par l'ACL POSIX de chaque sous-dossier). Infra serveur,
+  hors git — iso `[users]`/`[classes]`.
+  ```bash
+  grep -A6 '^\[partages\]' /etc/samba/smb.conf
+  ```
+- Racine FS : le service crée `/var/sambaedu/Partages` au 1er `provision()`
+  (`mkdir -p`, `chown www-admin:'domain admins'`). Vérifier après le 1er scénario.
+
+### Scénario 34.1-1 — Migrations + schéma
+
+1. `php artisan migrate:status | grep network_share` → les 2 migrations sont
+   listées. `php artisan migrate` si `Pending`.
+2. Vérifier en BDD : tables `network_shares` (colonnes `name`, `directory_name`
+   UNIQUE, `label`, `letter`, `created_by_user_id`) et `network_share_assignables`
+   (`network_share_id`, `assignable_id`, `assignable_type`, `access`, contrainte
+   `network_share_assignable_unique`).
+
+### Scénario 34.1-2 — Provisioning nominal + ACLs RO/RW (assignations user)
+
+1. Tinker :
+   ```php
+   $s = App\Models\NetworkShare::create(['name'=>'Échanges direction','directory_name'=>'direction','letter'=>'P:']);
+   $alice = App\Models\User::where('login','alice')->first();
+   $bob   = App\Models\User::where('login','bob')->first();
+   $s->users()->attach($alice->id, ['access'=>'rw']);
+   $s->users()->attach($bob->id,   ['access'=>'ro']);
+   app(App\Services\Filesystem\NetworkShareService::class)->provision($s, 'qa-runbook');
+   ```
+2. **Attendu FS** :
+   ```bash
+   ls -la /var/sambaedu/Partages/direction        # dossier créé, owner www-admin, grp 'domain admins'
+   getfacl /var/sambaedu/Partages/direction
+   # → user:alice:rwx, user:bob:r-x, group:domain admins:rwx, mask::rwx, other::---
+   #   + default:* miroir (héritage)
+   ```
+3. Audit BDD : `SELECT * FROM quota_audit_logs WHERE target_type='share' AND target_name='direction' ORDER BY id DESC LIMIT 1`
+   → `action='provision_share'`, `partition='/var/sambaedu'`, `performed_by='qa-runbook'`.
+
+### Scénario 34.1-3 — Assignation classe/équipe → groupe Unix dérivé
+
+1. Tinker (groupe classe `3emeA`) :
+   ```php
+   $g = App\Models\UserGroup::where('name','3emeA')->where('type','classe')->first();
+   $s = App\Models\NetworkShare::create(['name'=>'Travaux 3A','directory_name'=>'travaux3a','letter'=>'Q:']);
+   $s->userGroups()->attach($g->id, ['access'=>'rw']);
+   app(App\Services\Filesystem\NetworkShareService::class)->provision($s);
+   ```
+2. **Attendu** : `getfacl /var/sambaedu/Partages/travaux3a` montre
+   `group:classe_3emea<suffixe-etab>:rwx` (mapping `classe_<localPart>`,
+   suffixe établissement fédéré inclus si AD central). Un groupe `type='equipe'`
+   donnerait `group:equipe_<localPart>:…`.
+
+### Scénario 34.1-4 — WorkstationGroup = MONTAGE-SEUL (aucune ACL)
+
+1. Tinker :
+   ```php
+   $wg = App\Models\WorkstationGroup::where('is_physical',false)->first();
+   $s = App\Models\NetworkShare::create(['name'=>'Parc info','directory_name'=>'parcinfo','letter'=>'R:']);
+   $s->workstationGroups()->attach($wg->id, ['access'=>'rw']);
+   app(App\Services\Filesystem\NetworkShareService::class)->provision($s);
+   ```
+2. **Attendu** : `getfacl /var/sambaedu/Partages/parcinfo` ne contient
+   **AUCUNE** ligne `user:`/`group:` spécifique au-delà du set canonique
+   (`user::`, `group::`, `group:domain admins`, `mask`, `other`). La visibilité
+   de la lettre par parc est gérée par l'agent (projection), pas par le FS.
+
+### Scénario 34.1-5 — Idempotence
+
+1. Altérer une ACL manuellement :
+   `sudo setfacl -m group:nobody:rwx /var/sambaedu/Partages/direction`.
+2. Re-jouer `provision($s)` (même share que 34.1-2).
+3. **Attendu** : `getfacl` ne montre plus `group:nobody:rwx` (wipe `setfacl -b`
+   puis batch). Aucune donnée dans le dossier altérée. 2 lignes d'audit
+   `provision_share` (idempotent).
+
+### Scénario 34.1-6 — Anti-injection `directory_name`
+
+1. Tinker :
+   ```php
+   $s = new App\Models\NetworkShare(['name'=>'x','directory_name'=>'../etc']);
+   echo app(App\Services\Filesystem\NetworkShareService::class)->provision($s) ? 'OK' : 'REFUSÉ';
+   ```
+2. **Attendu** : `REFUSÉ` (false). Aucun `mkdir`/`setfacl` exécuté (garde de path
+   durcie `validateSharePath` : regex anti-traversal + profondeur ≤ 2). Idem
+   pour `'a/b'`, `'foo bar'`, `'evil;rm'`, `'.hidden'`.
+
+### Scénario 34.1-7 — Projection agent : la lettre apparaît dans le desired-state
+
+**Pré-requis** : 34.1-2 OK (share `direction` `P:` assigné à `alice` rw).
+
+1. Tinker — compiler l'état pour (poste, alice) :
+   ```php
+   $ws = App\Models\Workstation::first();
+   $alice = App\Models\User::where('login','alice')->first();
+   $ctx = App\Services\Agent\TargetContext::for($ws, $alice);
+   (new App\Services\Agent\Providers\DrivesStateProvider())->itemsFor($ctx)
+       ->map(fn($c)=>$c->payload)->all();
+   ```
+2. **Attendu** : le jeu fixe `K:`/`H:` PLUS un item
+   `{letter:'P:', unc:'\\<se4fs>\partages\direction\', label:'Échanges direction'}`.
+   Le payload ne contient PAS de champ `access`.
+3. **Lettre auto-assignée** : créer un share sans `letter` assigné à `alice` →
+   ré-exécuter → il reçoit `M:` (1re lettre libre du pool `M..Z`, déterministe).
+4. **Machine-only** : `TargetContext::for($ws, null)` → AUCUN lecteur (montage =
+   session user, même pour les shares assignés à un WG du poste).
+
+### Scénario 34.1-8 — Non-régression golden (zéro ligne ⇒ sortie figée)
+
+1. Sur une BDD **sans** `network_shares` : la sortie de `DrivesStateProvider`
+   est byte-identique au jeu fixe K:/H: (golden `state.v1.json` +
+   `FROZEN_STATE_HASH` PHP/Go INCHANGÉS). Verrouillé par
+   `DrivesStateProviderTest::zero_network_shares_yields_byte_identical_fixed_output`
+   et `ContractV1Test` (HÔTE php8.4+sqlite). Aucun bump de version agent
+   (`agent/**` intouché).
+
+### Checklist rapide — Story 34.1
+
+- [ ] 34.1-1 : migrations + schéma (tables + unique)
+- [ ] 34.1-2 : provisioning nominal + ACL rwx/r-x (user)
+- [ ] 34.1-3 : mapping groupe Unix classe/équipe (+ suffixe étab)
+- [ ] 34.1-4 : WG = montage-seul (aucune ACL)
+- [ ] 34.1-5 : idempotence (wipe + batch)
+- [ ] 34.1-6 : anti-injection `directory_name`
+- [ ] 34.1-7 : projection agent (lettre P: + auto M.., machine-only vide)
+- [ ] 34.1-8 : non-régression golden (zéro ligne = sortie figée)
+
+### Post-correctifs review 2026-06-30 (Story 34.1)
+
+| Incident | Scénario de non-régression |
+|---|---|
+| #1 lettre **explicite réservée** (`letter='K:'`) sur un `network_share` → 2ᵉ candidat K: collisionnant le home fixe | 34.1-9 |
+| #3 + bug révélé : >14 répertoires auto (pool `M..Z` épuisé) → `Undefined array key` faisait **planter** toute la compilation `drives` (le « fail-soft » n'était jamais atteint) | 34.1-10 |
+
+#### Scénario 34.1-9 — Lettre explicite réservée ne casse pas le home
+
+1. `tinker` : `$s = NetworkShare::factory()->create(['directory_name'=>'pirate','letter'=>'K:']); $s->assignments()->create(['assignable_type'=>App\Models\User::class,'assignable_id'=>$u->id,'access'=>'rw']);`
+2. Compiler le desired-state du user `$u` (cf. 34.1-7).
+3. **Attendu** : `K:` pointe TOUJOURS `\\<se4fs>\users\<user>\` (le home) ; le répertoire `pirate` apparaît sur une lettre **auto-assignée** du pool (`M:`…), jamais sur K:. Un `warning` `agent.drives.reserved_letter_ignored` est tracé dans le canal `agent`. Une seule entrée K: dans la sortie.
+
+#### Scénario 34.1-10 — Pool de lettres épuisé : omission propre (pas de crash)
+
+1. Créer **15** `network_shares` à `letter=null` tous assignés au même user.
+2. Compiler le desired-state.
+3. **Attendu** : aucune exception ; **14** lecteurs émis (pool `M..Z` complet) + K:/H:, le 15ᵉ répertoire **omis** proprement avec un `warning` `agent.drives.letter_pool_exhausted`. (Avant correctif : `ErrorException: Undefined array key` cassait toute la projection `drives` du user.)
+
+- [ ] 34.1-9 : lettre explicite réservée → bascule auto, home intact
+- [ ] 34.1-10 : pool épuisé → 14 émis + omission tracée, zéro crash
+
+---
+
+*Dernière mise à jour : 2026-06-30 (Story 34.1 — fondations lecteurs réseau gérés : `network_shares` + pivot polymorphe + `NetworkShareService` + extension `DrivesStateProvider` ; post-correctifs review #1/#3 + bug pool épuisé)*

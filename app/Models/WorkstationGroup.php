@@ -250,6 +250,22 @@ class WorkstationGroup extends Model implements Wireable
             'shortcut_id'
         )->withTimestamps();
     }
+    /**
+     * Story 34.1 — répertoires réseau assignés à ce parc/salle (MONTAGE-SEUL :
+     * la lettre s'affiche sur les postes du groupe, mais l'ACL POSIX réelle
+     * vient des grants user/group, pas du WG). Porte le pivot `access`.
+     */
+    public function networkShares(): MorphToMany
+    {
+        return $this->morphToMany(
+            NetworkShare::class,
+            'assignable',
+            'network_share_assignables',
+            'assignable_id',
+            'network_share_id',
+        )->withPivot('access')->withTimestamps();
+    }
+
     public function appProfiles(): BelongsToMany
     {
         return $this->belongsToMany(

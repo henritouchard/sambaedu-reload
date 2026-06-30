@@ -1,6 +1,6 @@
 # Story 34.1 : Fondations des lecteurs réseau gérés (modèle, provisioning FS/ACL, projection agent)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -117,40 +117,40 @@ afin que **la fondation backend du module « lecteurs réseau gérés » existe 
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Persistance** (AC1, AC2)
-  - [ ] Migration `create_network_shares_table` : `id`, `name`, `directory_name` (unique), `label` (nullable), `letter` (nullable), `created_by_user_id` (FK nullable, `nullOnDelete`), `timestamps`. (Note SQLite : domaine `access` non contraint en SQLite — mémoire `sqlite_tests_no_varchar_enforcement` ; valider applicativement.)
-  - [ ] Migration `create_network_share_assignables_table` : `id`, `network_share_id` (FK cascade), `morphs('assignable')`, `access` (string `ro|rw` défaut `ro`), `timestamps`, `unique(network_share_id, assignable_id, assignable_type)`.
-  - [ ] Modèle `App\Models\NetworkShare` (`final` non requis si Eloquent, suivre le style des modèles existants) : `$fillable`, const `TYPE_DRIVES`, `assignments()`, `users()`/`userGroups()`/`workstationGroups()` (morphedByMany), accesseur `effectiveLabel()`.
-  - [ ] Relations inverses `networkShares()` (morphToMany avec pivot `access`) sur `User`, `UserGroup`, `WorkstationGroup`.
-  - [ ] Map morph (`Relation::enforceMorphMap` si le projet en a une — vérifier `AppServiceProvider`/`config`) pour `User|UserGroup|WorkstationGroup`.
-  - [ ] Factory `NetworkShareFactory` (pour tests + tinker en l'absence d'UI).
+- [x] **T1 — Persistance** (AC1, AC2)
+  - [x] Migration `create_network_shares_table` : `id`, `name`, `directory_name` (unique), `label` (nullable), `letter` (nullable), `created_by_user_id` (FK nullable, `nullOnDelete`), `timestamps`. (Note SQLite : domaine `access` non contraint en SQLite — mémoire `sqlite_tests_no_varchar_enforcement` ; valider applicativement.)
+  - [x] Migration `create_network_share_assignables_table` : `id`, `network_share_id` (FK cascade), `morphs('assignable')`, `access` (string `ro|rw` défaut `ro`), `timestamps`, `unique(network_share_id, assignable_id, assignable_type)`.
+  - [x] Modèle `App\Models\NetworkShare` : `$fillable`, const `TYPE_DRIVES`, `assignments()` (hasMany vers `NetworkShareAssignable`), `users()`/`userGroups()`/`workstationGroups()` (morphedByMany, pivot `access`), accesseur `effectiveLabel()`. + modèle pivot `NetworkShareAssignable` (morphTo + `isWritable()`).
+  - [x] Relations inverses `networkShares()` (morphToMany avec pivot `access`) sur `User`, `UserGroup`, `WorkstationGroup`.
+  - [x] Map morph : le projet n'a PAS de `Relation::enforceMorphMap` — on stocke le FQCN en clair (iso `shortcut_assignables`). `ALLOWED_ASSIGNABLE_TYPES` documente les 3 types autorisés.
+  - [x] Factory `NetworkShareFactory` (pour tests + tinker en l'absence d'UI).
 
-- [ ] **T2 — `NetworkShareService` (provisioning FS/ACL générique)** (AC3)
-  - [ ] `app/Services/Filesystem/NetworkShareService.php` (calqué sur `ShareService`, injecte `AclService`). `$sharesRoot = '/var/sambaedu/Partages'` + `sharesRoot()` lisant `config('filesystem.shares_root', …)`.
-  - [ ] Généraliser la validation de path : soit `AclService::validatePathUnder($path, $root)` (refactor mince, réutilisé par `validatePath`), soit méthode privée dans `NetworkShareService` calquée 1:1. **Préserver la triple garde.** Borne profondeur adaptée.
-  - [ ] `resolveSharePath($share)` → `/var/sambaedu/Partages/<directory_name>` (validé) ou `null`.
-  - [ ] `buildAcls($share)` : set canonique + une ligne `user:`/`group:` par assignation user/group (rx|rwx), défauts miroir. WG ignoré (aucune ACL).
-  - [ ] Mapping `UserGroup → groupe Unix` : réutiliser `ShareService::aclGroupLocalPart()` pour `type=classe`/`equipe` (suffixe établissement fédéré, mémoire `acl_equipe_group_missing_etab_suffix`) ; pour les autres groupes, documenter le nom retenu. **Décider et documenter dans le code** (commentaire) — ne pas laisser ambigu.
-  - [ ] `provision($share, ?performedBy)` : lock `Cache::lock` (mémoire `apcu_cache_no_lock` → `Cache::store('file')->lock()` si APCu), mkdir idempotent, `setAcls -b`, chown/chgrp, audit `quota_audit_logs`, fail-soft, invalidation cache éventuelle.
-  - [ ] `getStatus($share)` (lecture sans side-effect, pour future UI/commande).
+- [x] **T2 — `NetworkShareService` (provisioning FS/ACL générique)** (AC3)
+  - [x] `app/Services/Filesystem/NetworkShareService.php`. `$sharesRoot = '/var/sambaedu/Partages'` + `sharesRoot()` lisant `config('filesystem.shares_root', …)`. **Décision** : self-contained (shell-outs propres) — `AclService::setAcls/validatePath` est verrouillé sur `classesRoot` et refuse `Partages` ; on N'A PAS détendu `AclService` (garde-fou « ZÉRO touche AclService » + baseline 5.2 préservée). Injecte `ShareService` UNIQUEMENT pour réutiliser ses helpers de nommage PUBLICS (`aclGroupLocalPart`/`establishmentSuffix`).
+  - [x] Garde de path durcie : méthode privée `validateSharePath()` calquée 1:1 sur `AclService::validatePath`, paramétrée sur `sharesRoot()` + `MAX_DEPTH=2`. Triple garde préservée (regex anti-traversal + `escapeshellarg` + whitelist sudo).
+  - [x] `resolveSharePath($share)` → `/var/sambaedu/Partages/<directory_name>` (validé) ou `null`.
+  - [x] `buildAcls($share)` : set canonique + une ligne `user:`/`group:` par assignation user/group (rx|rwx), défauts miroir. WG ignoré (aucune ACL).
+  - [x] Mapping `UserGroup → groupe Unix` (documenté dans le code) : `classe` → `classe_<localPart>`, `equipe` → `equipe_<localPart>` (localPart via `aclGroupLocalPart` = nom court + suffixe étab fédéré), sinon `<localPart>` (« à défaut le name du groupe »). Anti double-préfixe (`stripAclPrefix`).
+  - [x] `provision($share, ?performedBy)` : lock `Cache::store('file')->lock()` (mémoire `apcu_cache_no_lock`), mkdir idempotent, `setAcls -b`, chown/chgrp, audit `quota_audit_logs`, fail-soft, invalidation cache.
+  - [x] `getStatus($share)` (lecture sans side-effect, pour future UI/commande).
 
-- [ ] **T3 — Extension `DrivesStateProvider`** (AC4)
-  - [ ] Conserver K:/H: à l'identique (candidats fixes inchangés).
-  - [ ] Après K:/H:, charger les `network_shares` applicables au `TargetContext` (une requête bornée par les ids du contexte : `assignable` ∈ {user.id} ∪ userGroupIds ∪ physicalGroupIds ∪ logicalGroupIds, par type). Étiqueter chaque candidat de sa `StateMaille`.
-  - [ ] Auto-assignation de lettre déterministe (pool `M..Z`, exclusions, tri `id` asc) quand `letter` null. Helper pur + testé.
-  - [ ] Payload `{letter, unc:'\\<se4fs>\\partages\\<directory_name>\\', label}`. `sourceId` déterministe (≥3, après K=1/H=2, ordre par `id`).
-  - [ ] Vérifier en review : zéro AD, zéro re-requête d'appartenance, `declare(strict_types=1)`.
+- [x] **T3 — Extension `DrivesStateProvider`** (AC4)
+  - [x] Conserver K:/H: à l'identique (candidats fixes inchangés ; constructeur sans dépendance préservé).
+  - [x] Après K:/H:, charger les `network_shares` applicables au `TargetContext` (une requête `DB::table` bornée par les ids du contexte : `assignable` ∈ {user.id} ∪ userGroupIds ∪ workstationGroupIds, par type). Étiqueter chaque candidat de sa `StateMaille`.
+  - [x] Auto-assignation de lettre déterministe (pool `M..Z`, exclusions, tri `id` asc) quand `letter` null. Helpers purs `resolveLetters`/`nextFreeLetter` + testés.
+  - [x] Payload `{letter, unc:'\\<se4fs>\\partages\\<directory_name>\\', label}`. `sourceId = 2 + pivot.id` (déterministe, injectif, ≥3 après K=1/H=2).
+  - [x] Vérifié en review : zéro AD, zéro re-requête d'appartenance, `declare(strict_types=1)`.
 
-- [ ] **T4 — Tests** (AC5)
-  - [ ] Étendre `DrivesStateProviderTest` (cas ci-dessus + test « zéro ligne ⇒ sortie identique »).
-  - [ ] `NetworkShareServiceTest` avec `Process::fake()`.
-  - [ ] Tests modèles/relations/morph/unicité.
-  - [ ] Relever la baseline `--filter Agent`/`--filter ContractV1` AVANT, re-valider APRÈS (filtres ciblés, hôte).
+- [x] **T4 — Tests** (AC5)
+  - [x] Étendu `DrivesStateProviderTest` (mailles user/userGroup/physical/logical, auto-lettre, dédup multi-maille, machine-only, + test « zéro ligne ⇒ sortie identique »). 20 tests.
+  - [x] `NetworkShareServiceTest` avec `Process::fake()` (provision, ACL rx/rwx, WG=aucune ACL, garde de path, audit, fail-soft, idempotence). 13 tests.
+  - [x] Tests modèles/relations/morph/unicité (`NetworkShareTest`). 8 tests.
+  - [x] Baseline relevée AVANT (Agent 526 / ContractV1 5 / Drives 8) et re-validée APRÈS (Agent 538 / ContractV1 5 / NetworkShare 21) — filtres ciblés, HÔTE php8.4+sqlite.
 
-- [ ] **T5 — Documentation + backlog** (AC6)
-  - [ ] `docs/agent/state-providers.md` (section drives enrichie) + note `[PROD]` export SMB.
-  - [ ] `_bmad-output/backlog.data.js` : Epic 34 + story 34-1 ; committer les 4 fichiers backlog.
-  - [ ] Vérifier `contract-v1.md §7` et `agent/**` intouchés.
+- [x] **T5 — Documentation + backlog** (AC6)
+  - [x] `docs/agent/state-providers.md` (section drives enrichie d'un sous-chapitre 34.1 + note `[PROD]` export SMB).
+  - [x] `_bmad-output/backlog.data.js` : story 34-1 → `review` (Epic 34 déjà présent). `runbook` QA `docs/qa/domains/filesystem.md` enrichi (Story 34.1, scénarios 34.1-1..8) + entrée README mise à jour.
+  - [x] Vérifié `contract-v1.md §7`, golden `state.v1.json`, `FROZEN_STATE_HASH` PHP/Go et `agent/**` INTOUCHÉS (git status).
 
 ## Dev Notes
 
@@ -212,10 +212,47 @@ afin que **la fondation backend du module « lecteurs réseau gérés » existe 
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Opus 4.8 (1M context) — `claude-opus-4-8[1m]`.
 
 ### Debug Log References
 
+- **Piège `Process::fake()` (résolu)** : un 2ᵉ appel à `Process::fake()` sur un fake déjà actif est IGNORÉ (les handlers ne sont configurables qu'au 1er appel). Le fake `'*' => exit 0` de `setUp()` shadowait le `'sudo setfacl*' => exit 1` du test fail-soft → `provision()` retournait `true` à tort. Correctif : `NetworkShareServiceTest::setUp()` ne fake PAS ; chaque test appelle `Process::fake(...)` une seule fois avec ses handlers.
+- **Régression évitée `config/filesystem.php`** : ne PAS déclarer `classes_root` dans le nouveau fichier — sa présence masquerait l'override statique `AclService::$classesRoot` et casserait `ShareServiceTest`/`AclServiceTest`. Le fichier ne porte QUE `shares_root` (vérifié : « supports classes root override via static property » reste vert).
+- Tests HÔTE (php8.4.5 + pdo_sqlite). `vendor/` + `.env` + `bootstrap/cache` matérialisés localement dans le worktree pour exécuter la suite (artefacts non versionnés, gitignored).
+
 ### Completion Notes List
 
+- **Périmètre** : fondation backend pure (zéro UI, zéro template) conforme aux 5 décisions Henri.
+- **Modèle d'accès 2 axes** : visibilité = toute maille (provider étiquette `User`/`UserGroup`/`PhysicalGroup`/`LogicalGroup` ; le `StateCompiler` arbitre, ZÉRO modif) ; ACL POSIX = grants `User`/`UserGroup` seulement (rx/rwx selon `access`) ; `WorkstationGroup` = montage-seul (aucune ACL — invariant documenté + testé `buildAcls`).
+- **Décision mapping `UserGroup → groupe Unix`** (documentée code + runbook) : `classe`→`classe_<localPart>`, `equipe`→`equipe_<localPart>` (localPart = `ShareService::aclGroupLocalPart` = nom court + suffixe étab fédéré), sinon `<localPart>`. Anti double-préfixe `stripAclPrefix`.
+- **Décision `NetworkShareService` self-contained** : `AclService::validatePath`/`setAcls` est verrouillé sur `classesRoot` et refuserait `Partages` ; plutôt que détendre cette garde partagée (risque baseline 5.2 + garde-fou « ZÉRO touche AclService »), le service porte sa propre triple garde (`validateSharePath`, MAX_DEPTH=2) et ses propres shell-outs `setfacl/mkdir/chown/chgrp`. `ShareService` réutilisé en lecture seule (helpers de nommage publics) — non modifié.
+- **Lettre auto-assignée** : pool `M..Z`, exclut `A,B,C,D,H,I,K,L` + lettres déjà émises dans le set ; déterministe (tri `network_shares.id` asc). Helpers purs `resolveLetters`/`nextFreeLetter`, testés (pool, exclusions, déterminisme).
+- **Payload INCHANGÉ** `{letter, unc, label}` — `access` n'y figure jamais (grep en revue). UNC `\\<se4fs>\partages\<directory_name>\` (token substitué localement par l'agent).
+- **GARDE-FOUS PROUVÉS** : golden `state.v1.json` + `FROZEN_STATE_HASH` PHP/Go INCHANGÉS (test dédié `zero_network_shares_yields_byte_identical_fixed_output` + ContractV1 vert) ; `agent/**`, `StateCompiler`, `AclService`, `ShareService`, `PrintersStateProvider`, `contract-v1.md §7` INTOUCHÉS (git status) ; pas de bump de version agent ; zéro AD/LdapRecord/APCu dans le code livré.
+- **Résultats tests (HÔTE, filtres ciblés)** : `--filter Agent` → 538 passed / 22 skipped (1862 assertions) [baseline 526] ; `--filter ContractV1` → 5 passed (104) [inchangé] ; `--filter NetworkShare` → 21 passed (56) ; `ShareServiceTest`+`AclServiceTest` → 67 passed (141) [non-régression config].
+
 ### File List
+
+**Créés :**
+- `config/filesystem.php`
+- `database/migrations/2026_06_29_120000_create_network_shares_table.php`
+- `database/migrations/2026_06_29_120100_create_network_share_assignables_table.php`
+- `app/Models/NetworkShare.php`
+- `app/Models/NetworkShareAssignable.php`
+- `app/Services/Filesystem/NetworkShareService.php`
+- `database/factories/NetworkShareFactory.php`
+- `tests/Unit/Models/NetworkShareTest.php`
+- `tests/Unit/Services/Filesystem/NetworkShareServiceTest.php`
+
+**Modifiés :**
+- `app/Services/Agent/Providers/DrivesStateProvider.php` (extension : émission des `network_shares` par maille + auto-lettre ; K:/H: inchangés)
+- `app/Models/User.php` (relation inverse `networkShares()`)
+- `app/Models/UserGroup.php` (relation inverse `networkShares()` + import `MorphToMany`)
+- `app/Models/WorkstationGroup.php` (relation inverse `networkShares()`)
+- `tests/Unit/Services/Agent/DrivesStateProviderTest.php` (12 nouveaux tests network_shares)
+- `docs/agent/state-providers.md` (section `drives` enrichie + [PROD] export SMB)
+- `docs/qa/domains/filesystem.md` (Story 34.1, scénarios 34.1-1..8)
+- `docs/qa/README.md` (entrée domaine filesystem → +Story 34.1)
+- `_bmad-output/backlog.data.js` (story 34-1 → `review`)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (34-1 → `review`)
+- `_bmad-output/implementation-artifacts/34-1-fondations-lecteurs-reseau-geres.md` (cette story)

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Spatie\Permission\Traits\HasRoles;
@@ -187,6 +188,23 @@ class User extends Authenticatable implements Wireable
             'user_id',
             'user_group_id'
         )->using(\App\Models\Pivot\UserGroupUserPivot::class);
+    }
+
+    /**
+     * Story 34.1 — répertoires réseau assignés directement à cet utilisateur.
+     * Maille `User` : la lettre s'affiche dans sa session ET l'ACL POSIX réelle
+     * est dérivée (`user:<login>` rx/rwx selon `access`). Porte le pivot
+     * `access`.
+     */
+    public function networkShares(): MorphToMany
+    {
+        return $this->morphToMany(
+            NetworkShare::class,
+            'assignable',
+            'network_share_assignables',
+            'assignable_id',
+            'network_share_id',
+        )->withPivot('access')->withTimestamps();
     }
 
     /**

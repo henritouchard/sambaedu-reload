@@ -374,6 +374,63 @@ l'agent (et non plus par l'attribut AD `homeDrive`/`homeDirectory` ni la GPO
   l'utilisateur hors périmètre SambaEdu n'est **jamais** démonté (marqueur de
   périmètre = serveur SambaEdu).
 
+#### Répertoires réseau gérés CONFIGURABLES (Story 34.1)
+
+En **plus** du jeu fixe K:/H:, le provider émet un candidat par `network_shares`
+applicable au `TargetContext`. Le payload reste **identique** au type figé —
+`{letter, unc, label}`, aucun champ ajouté, donc **golden `state.v1.json` /
+`FROZEN_STATE_HASH` PHP+Go INCHANGÉS** (quand aucune ligne `network_shares`
+n'existe, la sortie est byte-identique au jeu fixe ; un test l'asserte) :
+
+```json
+{ "letter": "P:", "unc": "\\\\<se4fs>\\partages\\<directory_name>\\", "label": "<label>" }
+```
+
+- **Source** : table `network_shares` (le répertoire nommé) + pivot **polymorphe
+  SQL** `network_share_assignables` (cible `User | UserGroup | WorkstationGroup`,
+  porte `access = ro|rw`). Lecture **Postgres only** (ids du `TargetContext`),
+  **zéro AD/LdapRecord/APCu**, zéro re-requête d'appartenance (NFR7, Keycloak).
+- **Modèle d'accès à DEUX axes orthogonaux** (décision Henri 2026-06-29) sur le
+  MÊME jeu d'assignations :
+  - **Visibilité (montage)** : N'IMPORTE QUELLE maille assignée fait apparaître
+    la lettre — `User` → maille `user`, `UserGroup` → `user_group`,
+    `WorkstationGroup` → `physical_group`/`logical_group` selon `is_physical`.
+    L'union / dédup / précédence du `StateCompiler` gère tout (ZÉRO modif
+    compilateur). Un même répertoire atteint par plusieurs mailles produit le
+    **même** payload → dédupliqué naturellement (zéro doublon).
+  - **ACL POSIX (RO/RW réel)** : gouvernée **côté serveur** par
+    `NetworkShareService` (`user:<login>` / `group:<unix>` à `rx`/`rwx` selon
+    `access`), JAMAIS par le payload — `access` n'apparaît pas dans `{letter,
+    unc, label}`. Une assignation `WorkstationGroup` est **montage-seul** (la
+    lettre s'affiche sur les postes du parc, mais POSIX ne sait pas exprimer
+    « les users de la machine X » — l'accès réel vient des grants user/group).
+- **Lettre auto-assignée** : si `network_shares.letter` est null, le provider
+  attribue déterministiquement la première lettre libre du pool **`M..Z`**
+  (exclut `A,B,C,D,H,I,K,L` + toute lettre déjà émise « dans le même set »),
+  shares triés par `id` asc. Une lettre forcée (`letter = 'P:'`) la fixe. La
+  **collision de lettre entre deux répertoires DIFFÉRENTS** n'est pas gérée ici
+  (volontaire — pas de surface de création en 34.1 ; sera bloquée par la
+  validation prédictive d'une story UI ultérieure).
+- **Export SMB** : un seul partage Samba `[partages]` → `/var/sambaedu/Partages`
+  (infra serveur, hors git — voir §[PROD] ci-dessous), chaque répertoire = un
+  sous-dossier. L'agent Go monte n'importe quelle lettre→UNC **sans
+  modification** (`handler_drives.go` réutilisé tel quel, **pas de bump de
+  version agent**).
+
+##### [PROD] — Infra serveur de l'export `[partages]`
+
+À déclarer côté serveur (hors git, iso `[users]`/`[classes]`) :
+
+- Dans `smb.conf`, un partage `[partages]` → `path = /var/sambaedu/Partages`,
+  accessible aux utilisateurs authentifiés, **traversable** (`other` au niveau
+  racine permet la traversée ; l'accès réel est gaté par l'ACL POSIX de chaque
+  sous-dossier, posée par `NetworkShareService`).
+- La racine `/var/sambaedu/Partages` est créée idempotemment par le service au
+  premier `provision()` (`mkdir -p`), `chown www-admin`, `chgrp 'domain admins'`.
+- **Sudoers** : déjà couvert — `/etc/sudoers.d/sambaedu` whiteliste
+  `setfacl/getfacl/mkdir/mv/chown/chgrp` **par binaire** (path-agnostique), donc
+  les commandes sous `Partages` passent sans nouvelle entrée.
+
 ### `registry` — `exclusive` PAR IDENTITÉ DE CLÉ / `machine` + `session`
 
 > Le registre n'est **pas** une table d'authoring : c'est une **PROJECTION de
