@@ -28,6 +28,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $id
  * @property \App\Enums\ControlHubLinkState $link_state État du lien (active | severed)
  * @property \Illuminate\Support\Carbon|null $received_at Horodatage de la dernière réception
+ * @property ?string $schema_version Version du schéma d'échange du dernier payload reçu (Story 33.1)
  * @property \Illuminate\Support\Carbon $created_at
  * @property \Illuminate\Support\Carbon $updated_at
  * @property-read \Illuminate\Database\Eloquent\Collection<int,ControlHubContractItem> $items
@@ -44,6 +45,7 @@ class ControlHubContract extends Model
     protected $fillable = [
         'link_state',
         'received_at',
+        'schema_version',
     ];
 
     protected $casts = [

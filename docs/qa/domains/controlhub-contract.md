@@ -2122,3 +2122,84 @@ grep -rin central \
 - [ ] R3 : aucun identifiant/message « central » dans les fichiers livrés par 32.2
 - [ ] Non-régression 32.1 : `ContractSeveranceTest` + `ContractSeveranceChannelsTest` toujours verts
 - [ ] VM/lab (différé) : e2e signal real controlHub → panne simulée → vérif verrous maintenus → rupture → libération ; `migrate:status` avant e2e VM
+
+## Section 19 — Schéma d'échange versionné (Story 33.1, 2026-06-30)
+
+**Ouvre l'Epic 33 (« Contrat de données d'intégration controlHub ↔ SE5 »).** Le payload du
+contrat amont déclare désormais une **version de schéma d'échange** (`schema_version`, chaîne
+semver, racine du payload). L'ingestion **négocie** la version
+(`ControlHubContractSchema::negotiate()`), l'**enregistre** sur le contrat actif (colonne
+`controlhub_contracts.schema_version`) et l'expose dans le DTO de résultat
+(`ContractIngestionResult::$schemaVersion`). Le format est figé dans l'**artefact partagé**
+`_bmad-output/planning-artifacts/schema-echange-controlhub-se5.md` (source unique, R2).
+
+> **Partie heureuse uniquement.** Un payload **conforme** (version supportée) ou **sans version**
+> (défaut = version courante, rétro-compat 28.2) est **accepté**. Le **rejet gracieux** d'une
+> version incompatible est la **Story 33.2** (seam `negotiate()` posé, chemin de rejet non livré).
+> Le versionnement est **serveur-only**, invisible de l'agent (à ne pas confondre avec `ContractV1`
+> du contrat agent).
+
+- **Version courante** : `1.0` (`ControlHubContractSchema::CURRENT_VERSION`). Politique 33.1 :
+  égalité stricte ; compat sur le MAJOR documentée mais ouverte à 33.2.
+- **NFR4 (cœur du risque)** : enregistrer la version NE transforme PAS une réception identique en
+  mutation. Même version + même contenu = no-op total (aucune écriture, `schema_version`/
+  `received_at` inchangés, aucun event). Changement de version supportée = mutation (event 1×).
+- **NFR3** : sans contrat reçu, comportement SE5 inchangé. L'ingestion reste le seul écrivain.
+- **NFR7** : migration **additive** (`schema_version` nullable), portable PG + SQLite, **aucun**
+  `CHECK` SQL (domaine de version validé en PHP).
+
+### Scénario 19.1 — Tests HÔTE (php8.4 + sqlite, hors VM)
+
+```bash
+# Suite 33.1 (8 tests) — conforme/absent/no-op/changement de version/R3
+CACHE_DRIVER=array DB_CONNECTION=sqlite vendor/bin/phpunit --filter ControlHubContractSchemaVersion
+
+# Non-régression : ingestion 28.x + contrat agent figé
+CACHE_DRIVER=array DB_CONNECTION=sqlite vendor/bin/phpunit \
+  --filter 'ControlHubContractIngestion|ControlHubContract|ContractV1|StateCompiler'
+
+# R3 : aucun identifiant « central » dans les fichiers livrés par 33.1
+grep -rin central \
+  app/Services/ControlHub/ControlHubContractSchema.php \
+  database/migrations/2026_06_30_120000_add_schema_version_to_controlhub_contracts.php
+```
+
+### Scénario 19.2 — VM (différé, hors dev-cycle) : migration + lecture de la version
+
+> ⚠️ Le dev-cycle migre **SQLite uniquement**. La colonne `schema_version` n'est **pas** présumée
+> présente côté VM tant que `migrate` n'a pas été joué. [mémoire `vm_migrations_not_auto_applied`]
+
+```bash
+ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50
+cd /var/www/sambaedu-reload
+
+# 1. La migration additive apparaît et s'applique
+php artisan migrate:status | grep add_schema_version_to_controlhub_contracts
+php artisan migrate            # ajoute controlhub_contracts.schema_version (nullable)
+
+# 2. Un payload AVEC version → version lisible en base
+php artisan tinker --execute="
+  app(\App\Services\ControlHub\ControlHubContractIngestionService::class)
+    ->ingest(['schema_version' => '1.0', 'items' => [], 'labels' => [], 'imposed_groups' => [], 'catalog_apps' => []]);
+  echo \App\Models\ControlHubContract::active()->schema_version;  // attendu : 1.0
+"
+
+# 3. Un payload SANS version → défaut = version courante enregistrée
+php artisan tinker --execute="
+  app(\App\Services\ControlHub\ControlHubContractIngestionService::class)
+    ->ingest(['items' => [], 'labels' => [], 'imposed_groups' => [], 'catalog_apps' => []]);
+  echo \App\Models\ControlHubContract::active()->schema_version;  // attendu : 1.0 (CURRENT_VERSION)
+"
+```
+
+## Checklist rapide Story 33.1 (ouvre l'Epic 33)
+
+- [ ] `CACHE_DRIVER=array DB_CONNECTION=sqlite vendor/bin/phpunit --filter ControlHubContractSchemaVersion` → 8/8 verts
+- [ ] AC1/2 : version conforme `1.0` → acceptée, lisible sur le modèle ET le DTO (Scénario 19.1)
+- [ ] AC3 : payload sans version → accepté, version enregistrée = `CURRENT_VERSION` ; tests 28.2 verts
+- [ ] AC4/NFR4 : réception identique (même version) = no-op (mutated=false, timestamps + version inchangés, aucun event)
+- [ ] AC5 : changement de version supportée = mutation (event 1×) — conditionnel ≥ 2 versions ; sinon couvert par construction
+- [ ] AC6/R2 : artefact partagé `schema-echange-controlhub-se5.md` créé + ref croisée prd §9 ; handoff controlHub §7 à pointer (autre BMAD)
+- [ ] AC7d/R3 : aucun identifiant/colonne/message livré ne contient « central »
+- [ ] Contrat agent figé : `ContractV1` / `StateCompiler` / golden / `FROZEN_STATE_HASH` / `agent/**` non touchés
+- [ ] VM (différé) : `migrate` ajoute `schema_version` + payload avec/sans version accepté + version lisible en base (Scénario 19.2)

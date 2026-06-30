@@ -23,6 +23,13 @@ class ContractIngestionResult
 
     public ?int $contractId = null;
 
+    /**
+     * Story 33.1 — Version du schéma d'échange négociée pour ce payload (conforme ou défaut
+     * courant si absente). Renseignée à chaque ingestion (observabilité + assertions de test) ;
+     * indépendante de `$mutated` (la version est négociée même sur un no-op).
+     */
+    public ?string $schemaVersion = null;
+
     /** @var array{created: int, updated: int, deleted: int} */
     public array $items = ['created' => 0, 'updated' => 0, 'deleted' => 0];
 
@@ -44,6 +51,7 @@ class ContractIngestionResult
             'contract_created' => $this->contractCreated,
             'mutated' => $this->mutated,
             'contract_id' => $this->contractId,
+            'schema_version' => $this->schemaVersion,
             'items' => $this->items,
             'labels' => $this->labels,
             'imposed_groups' => $this->imposedGroups,

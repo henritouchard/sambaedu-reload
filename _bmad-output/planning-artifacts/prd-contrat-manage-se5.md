@@ -172,6 +172,8 @@ SE5 **attend de recevoir** (format à co-spécifier avec le BMAD controlHub — 
 - état du lien (actif/rompu).
 
 > 🔗 Le **schéma d'échange** est un contrat de données partagé : toute évolution doit être répercutée des deux côtés. À traiter comme une story de **dépendance/intégration**, pas comme une invention locale.
+>
+> 📐 **Source unique du schéma** (versionné, R2) : [`schema-echange-controlhub-se5.md`](schema-echange-controlhub-se5.md) — format de payload, version courante (`schema_version`) et politique de compatibilité. Référencé symétriquement par le handoff controlHub §7 (Story 33.1).
 
 ---
 

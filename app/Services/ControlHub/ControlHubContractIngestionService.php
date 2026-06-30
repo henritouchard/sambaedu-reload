@@ -22,9 +22,15 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Story 28.2 — Ingestion idempotente du contrat amont (controlHub).
+ * Story 33.1 — Schéma d'ÉCHANGE versionné : le payload déclare une `schema_version`
+ * (racine) ; l'ingestion la **négocie** ({@see ControlHubContractSchema::negotiate()}) et
+ * **enregistre** la version retenue sur le contrat (colonne `schema_version`). Format figé
+ * dans l'artefact partagé _bmad-output/planning-artifacts/schema-echange-controlhub-se5.md
+ * (source unique pointée par les deux BMAD — R2). En 33.1, un payload **conforme** (version
+ * supportée) ou **sans version** (défaut = version courante, rétro-compat 28.2) est accepté ;
+ * le **rejet** d'une version incompatible relève de la Story 33.2 (seam posé, non implémenté).
  *
- * Reçoit un payload de contrat émis **unilatéralement** par SE5 (le format n'est PAS
- * un schéma versionné — réservé Epic 33) et le persiste de façon idempotente :
+ * Reçoit un payload de contrat (émis par l'autorité amont) et le persiste de façon idempotente :
  *
  * - **Upsert** des 4 agrégats enfants (items, labels, groupes imposés, apps catalogue)
  *   sur les clés naturelles de la Story 28.1, puis **prune** des enfants disparus
@@ -46,9 +52,10 @@ use Illuminate\Support\Facades\Log;
  * ni n'écrit aucune autre table, ne touche pas `StateCompiler` (→ Story 28.3), et l'événement
  * émis reste **sans listener** en 28.2 (comportement standalone strictement inchangé).
  *
- * Format de payload accepté (introduit unilatéralement par SE5) :
+ * Format de payload accepté (schéma d'échange versionné — Story 33.1) :
  * <code>
  * [
+ *   'schema_version' => '1.0', // optionnel ; absent ⇒ version courante (rétro-compat 28.2)
  *   'items'          => [['type'=>'capabilities','key'=>'cap_x','value'=>'on',
  *                         'enforcement_state'=>'locked','target_type'=>'instance',
  *                         'target_label'=>null], ...],
@@ -70,6 +77,10 @@ class ControlHubContractIngestionService
      * Le `link_state` n'est **jamais** lu du payload : à la réception, le lien passe à
      * `active` par définition. La rupture (`severed`) relève d'Epic 32 (hors scope).
      *
+     * Story 33.1 — La `schema_version` racine est négociée et enregistrée sur le contrat. Elle
+     * participe au calcul de mutation : réception identique (même version) = no-op total (NFR4) ;
+     * changement de version supportée sur contenu sinon identique = mutation (event émis 1×).
+     *
      * @param  array<string, mixed>  $payload
      *
      * @throws InvalidUpstreamContractException si le payload est hors domaine (rollback total)
@@ -90,7 +101,19 @@ class ControlHubContractIngestionService
         // normalizeItems) → un payload incohérent ne provoque AUCUNE écriture partielle.
         $this->assertImposedGroupLabelsDeclared($labels, $imposedGroups);
 
+        // Story 33.1 — Négociation de la version du schéma d'ÉCHANGE en phase de validation PURE
+        // (aucune écriture ici, cohérent avec le rollback total 28.2). En 33.1 (chemin heureux) :
+        // version supportée → elle-même ; absente → version courante (Q1=A, rétro-compat 28.2).
+        // Le REJET d'une version incompatible relève de la Story 33.2 (seam posé, non implémenté).
+        // Cf. artefact partagé _bmad-output/planning-artifacts/schema-echange-controlhub-se5.md.
+        $declaredVersion = $payload['schema_version'] ?? null;
+        $declaredVersion = is_string($declaredVersion) || is_int($declaredVersion)
+            ? (string) $declaredVersion
+            : null;
+        $schemaVersion = ControlHubContractSchema::negotiate($declaredVersion);
+
         $result = new ContractIngestionResult();
+        $result->schemaVersion = $schemaVersion;
 
         Log::info('ControlHubContractIngestionService: ingestion started', [
             'items' => count($items),
@@ -105,9 +128,10 @@ class ControlHubContractIngestionService
             $labels,
             $imposedGroups,
             $catalogApps,
+            $schemaVersion,
             $result,
         ): void {
-            $contract = $this->resolveActiveContract($result);
+            $contract = $this->resolveActiveContract($result, $schemaVersion);
             $mutated = $result->contractCreated;
 
             $mutated = $this->reconcileChildren(
@@ -138,11 +162,21 @@ class ControlHubContractIngestionService
                 $result->catalogApps,
             ) || $mutated;
 
-            // Le lien et received_at ne sont rafraîchis QUE sur mutation d'un contrat réutilisé
-            // (no-op préservé : une réception identique ne touche aucun timestamp).
+            // Story 33.1 — La version de schéma fait partie de l'état du contrat racine : sur un
+            // contrat RÉUTILISÉ, un changement de version (contenu sinon identique) est une mutation
+            // légitime (AC #5). À l'identique (même version), la comparaison est fausse ⇒ aucune
+            // écriture déclenchée par la version (no-op 28.2 préservé — AC #4 / NFR4). On n'écrit
+            // donc JAMAIS schema_version inconditionnellement : il est intégré au calcul de $mutated.
+            $versionChanged = ! $result->contractCreated && $contract->schema_version !== $schemaVersion;
+            $mutated = $mutated || $versionChanged;
+
+            // Le lien, received_at et schema_version ne sont rafraîchis QUE sur mutation d'un
+            // contrat réutilisé (no-op préservé : une réception identique ne touche aucun timestamp
+            // ni la version). À la création, la version a déjà été posée par resolveActiveContract().
             if ($mutated && ! $result->contractCreated) {
                 $contract->link_state = ControlHubLinkState::Active;
                 $contract->received_at = now();
+                $contract->schema_version = $schemaVersion;
                 $contract->save();
             }
 
@@ -184,7 +218,7 @@ class ControlHubContractIngestionService
      * théorique ; la défense DB (index partiel `WHERE link_state='active'`, non portable SQLite)
      * a été délibérément différée par la Story 28.2 (Task 3 optionnelle).
      */
-    private function resolveActiveContract(ContractIngestionResult $result): ControlHubContract
+    private function resolveActiveContract(ContractIngestionResult $result, string $schemaVersion): ControlHubContract
     {
         $contract = ControlHubContract::query()
             ->where('link_state', ControlHubLinkState::Active->value)
@@ -194,6 +228,8 @@ class ControlHubContractIngestionService
             $contract = new ControlHubContract();
             $contract->link_state = ControlHubLinkState::Active;
             $contract->received_at = now();
+            // Story 33.1 — version de schéma posée d'emblée à la création (création = mutation).
+            $contract->schema_version = $schemaVersion;
             $contract->save();
 
             $result->contractCreated = true;

@@ -1328,13 +1328,14 @@ const DATASETS = {
     {
       "num": 33,
       "title": "Contrat Amont — Contrat de données d'intégration controlHub↔SE5",
-      "status": "backlog",
+      "status": "in-progress",
       "summary": "Formaliser et <strong>versionner</strong> le schéma d'échange partagé entre controlHub et SE5 (point de couture entre les deux BMAD, cf. §7 du handoff et §9 du mini-PRD). Source unique vérifiable : validation du payload contre le schéma versionné à l'ingestion, et <strong>rejet gracieux</strong> d'une version incompatible (sans corrompre l'état local). Durcit le format d'ingestion introduit unilatéralement en Epic 28. Coordination cross-équipe — à synchroniser avec le BMAD controlHub.",
       "stories": [
         {
           "id": "33-1",
           "title": "Schéma d'échange versionné (validation à l'ingestion)",
-          "status": "backlog"
+          "status": "review",
+          "note": "Dev opus + review sonnet/opus (dev-cycle 2026-06-30). Livré : ControlHubContractSchema (CURRENT_VERSION='1.0', SUPPORTED_VERSIONS, negotiate() — seam rejet 33.2) + colonne additive schema_version + enregistrement à l'ingestion sans casser le no-op 28.2 (versionChanged intégré au gating $mutated) + DTO schemaVersion + artefact partagé schema-echange-controlhub-se5.md (R2). Review : 7 findings, corrigés #1/#3/#5/#6/#7 (test branche legacy-null = AC#5, Log::warning repli version non supportée, asserts received_at/constantes), #2 confirmé légitime, #4 = note déploiement. Tests 10/10 + 170/170 non-rég. ⚠️ Migration schema_version à jouer sur /vm (différée, QA 19.2)."
         },
         {
           "id": "33-2",
