@@ -99,6 +99,16 @@ class AppStoreService
                 // Statut « Available » (PAS Downloading) : aucune install serveur déclenchée
                 // (ne JAMAIS appeler installApplication() ici).
                 'status' => ApplicationStatus::Available,
+                // Story 32.1 (Q2 — report review 31.3 #B) : TRACE D'ORIGINE. Une app
+                // matérialisée depuis le catalogue amont est marquée « gérée par
+                // controlHub » (la colonne existe déjà — $fillable + cast bool). Posé
+                // UNIQUEMENT à la CRÉATION (firstOrCreate) : une `Application` locale
+                // préexistante n'est jamais touchée (AC3). À la rupture du lien
+                // (32.1), ce flag est CONSERVÉ comme marqueur d'origine historique —
+                // l'enforcement, lui, vient de `active()` (déjà neutralisé). En UI il
+                // se traduit par un libellé FR (« Origine : controlHub »), jamais le
+                // nom brut de colonne.
+                'managed_by_control_hub' => true,
             ]
         );
     }

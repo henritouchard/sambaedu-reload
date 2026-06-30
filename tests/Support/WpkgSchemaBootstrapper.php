@@ -101,6 +101,10 @@ final class WpkgSchemaBootstrapper
                 // Story 27.17 — app appliquée par défaut à tous les postes
                 // (couche Broadcast, lue par ApplicationsStateProvider).
                 $table->boolean('is_parc_default')->default(false);
+                // Story 32.1 (Q2 — report review 31.3 #B) : trace d'origine posée par
+                // AppStoreService::materializeFromSource (managed_by_control_hub=true).
+                // Miroir de la colonne de prod ; nullable-default false, non-breaking.
+                $table->boolean('managed_by_control_hub')->default(false);
                 $table->string('name', 100)->default('');
                 $table->string('status', 32)->default('available');
                 // Story 17.6 — fragment XML `<package>` lu par
@@ -260,11 +264,34 @@ final class WpkgSchemaBootstrapper
                 $table->timestamps();
             });
         }
+
+        // Story 32.1 (NFR5) — miroir de la migration additive
+        // 2026_06_30_100000_create_controlhub_link_audit_logs_table : audit
+        // append-only de la transition `active → severed`. Requise dès qu'un test
+        // s'appuyant sur ce bootstrapper (sans `RefreshDatabase`) exerce la rupture
+        // (`ControlHubContractSeveranceService`). Colonnes alignées sur la migration
+        // (created_at manuel, summary JSON, FK nullable).
+        if (! Schema::hasTable('controlhub_link_audit_logs')) {
+            Schema::create('controlhub_link_audit_logs', function (Blueprint $table): void {
+                $table->id();
+                $table->unsignedBigInteger('controlhub_contract_id')->nullable();
+                $table->string('from_state');
+                $table->string('to_state');
+                $table->string('origin');
+                $table->string('actor_label')->nullable();
+                $table->text('reason')->nullable();
+                $table->json('summary')->nullable();
+                // Correctif review #3 : aligné sur la migration (useCurrent(), NON
+                // nullable) — l'audit pose toujours `created_at` (manuel, now()).
+                $table->timestamp('created_at')->useCurrent();
+            });
+        }
     }
 
     public static function tearDown(): void
     {
         foreach ([
+            'controlhub_link_audit_logs',
             'controlhub_contract_items',
             'controlhub_contract_catalog_apps',
             'controlhub_contracts',

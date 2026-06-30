@@ -1781,3 +1781,172 @@ n'est jamais écrasée ; ordre sans source = log sans crash ; sans contrat actif
    ⇒ **erreur attendue** `duplicate key value violates unique constraint "applications_materialized_app_id_unique"`. (Sans le garde-fou, l'insert passait → 2 lignes.)
 4. **Idempotence préservée** : rejouer `controlhub:provision-ordered-apps` ⇒ aucune nouvelle ligne, aucune erreur (le provisionneur court-circuite via `exists()` avant l'insert).
 5. **App adossée à un dépôt non contrainte** : une `Application` avec `depot_id` renseigné (flux AppStore classique) reste régie par `unique(depot_id, app_id)` — l'index partiel ne s'y applique pas (vérifier qu'un install AppStore normal fonctionne toujours).
+
+## Section 17 — Release des verrous à la rupture du lien (Story 32.1, 2026-06-30)
+
+**Ouvre l'Epic 32 (« Cycle de vie du lien & release »).** À réception d'un **signal
+explicite de rupture** du lien de management, SE5 passe le contrat amont actif en
+`link_state = severed` de façon **tracée** et **idempotente**. Cela **lève
+AUTOMATIQUEMENT** tous les verrous et le bornage catalogue (le refnum retrouve un droit
+de modification plein), tout en **conservant** les ajouts locaux ET la **valeur courante
+effective** des items qui étaient imposés (FR7 + NFR5).
+
+> **« Preuve + construction ».** La **levée** des verrous / catalogue est ACQUISE
+> GRATUITEMENT : dès `severed`, `ControlHubContract::active()` → `null` et TOUS les
+> consommateurs court-circuitent (`UpstreamContractSource`, `UpstreamCatalogResolver`,
+> `UpstreamLockResolver`, `CapabilityPolicy`, tier `StateMaille::Upstream`). 32.1 ne
+> RE-CONSTRUIT AUCUN déverrouillage ; elle construit la **réception du signal** (severed
+> n'était posé nulle part), la **conservation de valeur** (matérialisation), l'**audit
+> NFR5** et l'émission de `ControlHubContractChanged`.
+
+- **Canaux du signal (Q4)** : commande artisan `controlhub:sever-link` (`--actor`,
+  `--reason`) **ET** endpoint authentifié `POST /api/v1/controlhub/sever-link`
+  (`controlhub.auth`). Les DEUX partagent le service UNIQUE
+  `ControlHubContractSeveranceService`.
+- **Idempotence stricte** : un signal en **standalone** (aucun contrat actif) OU sur un
+  contrat **déjà `severed`** est un **no-op TOTAL** — aucune matérialisation, aucun
+  audit, aucun event, aucune écriture.
+- **Conservation de l'état effectif COMPLET, déverrouillé (M1 — correction de cadrage
+  2026-06-30)** : à la rupture « l'état du parc reste identique, en retirant les
+  verrous » (Henri). On FIGE LOCALEMENT, AVANT de poser `severed`, l'état effectif des
+  canaux **réellement imposés** :
+  - **Capacités via le VRAI canal `registry`** (PAS le pseudo-canal `capabilities`, sans
+    adaptateur amont = canal mort, ancien bug M1) : pour chaque capacité **verrouillée**
+    amont (détection par identité de clé registre, iso `UpstreamLockResolver`), on
+    **recouvre** la valeur de capacité imposée en INVERSANT la projection
+    (`CapabilityProjection.spec`, sens valeur-registre → valeur-capacité, à partir de la
+    valeur connue de l'item). **Portée selon la cible (correctif #7, décision Henri
+    2026-06-30)** :
+      - `target_type = instance` → on FIGE la valeur dans le **DÉFAUT D'INSTANCE**
+        `capabilities.default_value` (patron `saveDefault()` des parc-defaults). UNE
+        écriture, couvre UNIFORMÉMENT tous les postes (même hors de tout parc), éditable
+        sur la **page des défauts**. PAS d'override par parc (l'ancienne portée « tous
+        les parcs actifs incl. salles physiques » était over-wide). Idempotent.
+      - `target_type = label` → override `capability_assignments` (patron 29.5,
+        `insertOrIgnore`) sur chaque parc portant le `controlhub_label`. Inchangé.
+    Désormais **local-libre** (éditable / supprimable). Les overrides locaux par parc
+    **plus spécifiques** restent intacts et **priment** sur le défaut d'instance
+    (`effective = assignment.value ?? default_value`) — AC3. Un `permissive` n'est PAS
+    matérialisé (plancher déjà battu par le défaut local).
+  - **Apps ordonnées amont → conservées selon la cible (correctif #7)** :
+      - `target_type = instance` → on pose `Application.is_parc_default = true` (DÉFAUT
+        D'INSTANCE app, couche Broadcast 27.17 : l'app est appliquée par défaut à TOUS
+        les postes via `ApplicationsStateProvider`, même hors parc). PAS d'affectation
+        par groupe.
+      - `target_type = label` → **affectation locale** par parc porteur (pivot
+        `application_workstation_group`, via `AppProfileService::addApplicationsToWorkstationGroup`).
+    Pour qu'un poste qui ne recevait l'app QUE via l'ordre amont la **CONSERVE**. Les
+    lignes `Application` restaient déjà conservées (AC3) ; ici on conserve aussi l'**affectation**.
+  - **Preuve = PARITÉ D'ÉTAT** : `StateCompiler::compile()` d'un poste du parc émet la
+    MÊME sortie (clé registre imposée / app présente) **avant et après** la rupture.
+- **Trace d'origine des apps (Q2)** : `materializeFromSource` pose désormais
+  `managed_by_control_hub = true` ; à la rupture le flag est **CONSERVÉ** (marqueur
+  d'origine historique, l'enforcement venant de `active()` déjà neutralisé). Tout
+  libellé front-facing dérivé est en **français** (« Origine : controlHub »), jamais le
+  nom brut de colonne.
+- **Audit NFR5 (Q5)** : table dédiée append-only `controlhub_link_audit_logs` (patron
+  `CapabilityOverrideAuditLog`) — une ligne par transition `active → severed`
+  (`origin`, `actor_label`, `controlhub_contract_id`, `summary` = `items_lifted`
+  [locked+permissive uniquement, l'`absent` exclu — correctif #2] / `apps_preserved` /
+  `values_materialized` / `applications_assigned` [clé alignée sur `toArray()`,
+  correctif #9]). Écrite DANS la transaction de la rupture.
+
+> Pré-requis VM : un contrat amont `active` portant des items `locked` + `permissive`,
+> un catalogue applicatif (bornage), un poste enrôlé `PC1` + token agent, au moins un
+> override `capability_assignments` local et une app matérialisée
+> (`managed_by_control_hub`).
+
+### Scénario 17.1 — Rupture → verrous + bornage levés (AC1/AC2)
+
+1. AVANT : `curl -s -H "Authorization: Bearer <token>" https://<se5>/api/v1/agent/state`
+   ⇒ les items imposés (`Upstream`) figurent ; le refnum NE peut PAS réinstaller hors
+   catalogue ; une capacité verrouillée est non éditable (badge « Verrouillé »).
+2. Déclencher la rupture : `php artisan controlhub:sever-link --actor=refnum01 --reason="fin de contrat"`
+   **ou** `curl -X POST -H "Authorization: Bearer <clé controlHub>" https://<se5>/api/v1/controlhub/sever-link`.
+3. ⇒ `link_state = severed` (`php artisan tinker --execute "echo \App\Models\ControlHubContract::query()->value('link_state');"` ⇒ `severed`).
+4. APRÈS : `GET /api/v1/agent/state` ⇒ **plus aucun** item `Upstream` ; le refnum
+   réinstalle **hors catalogue** (bornage tombé) ; la capacité redevient **éditable**
+   (plus de badge « Verrouillé »).
+
+### Scénario 17.2 — PARITÉ D'ÉTAT : registry locked + app ordonnée conservés (AC3/AC4)
+
+**Preuve par parité** : la sortie compilée (`GET /api/v1/agent/state` d'un poste enrôlé,
+ou `StateCompiler::compile()`) doit être **identique avant/après** la rupture pour les
+canaux concernés — seuls les verrous tombent.
+
+1. AVANT la rupture, sur un poste `PC1` d'un parc cible, noter dans `GET .../agent/state` :
+   (a) la **valeur registre imposée** d'une capacité **verrouillée `registry`** (ex. clé
+   `HKLM\Software\Se5\Kiosk = 1`, alors que le défaut local serait `0`) ; (b) la présence
+   d'une **app ordonnée amont** (ex. `firefox`) que `PC1` ne reçoit QUE via l'ordre amont
+   (aucune affectation locale). Noter aussi un override **local** distinct préexistant.
+2. Rompre le lien (Scénario 17.1).
+3. ⇒ **Capacité (cible `instance`)** : `capabilities.default_value` porte désormais la
+   valeur de capacité **recouvrée** (ex. `on`, inversée depuis la valeur registre `1`),
+   visible/éditable sur la **page des défauts**. `GET .../agent/state` réémet **toujours**
+   `HKLM\Software\Se5\Kiosk = 1` (parité) — y compris pour un poste **hors de tout parc**.
+   (Cible `label` : la valeur est dans `capability_assignments` des parcs porteurs.) La
+   capacité est désormais éditable.
+4. ⇒ **App (cible `instance`)** : `Application.is_parc_default = true` (défaut d'instance
+   Broadcast) ; `GET .../agent/state` contient **toujours** `firefox` (parité), même ordre
+   amont levé. (Cible `label` : affectation dans `application_workstation_group` des parcs
+   porteurs.)
+5. ⇒ l'override **local préexistant** par parc est **inchangé** (jamais écrasé) et **prime**
+   sur le défaut d'instance : un poste de ce parc garde sa valeur locale.
+6. ⇒ les `Application` `managed_by_control_hub` survivent : `php artisan tinker --execute
+   "echo \App\Models\Application::where('managed_by_control_hub',true)->count();"` ⇒ inchangé.
+
+### Scénario 17.3 — Idempotence du re-signal (AC1/AC6)
+
+1. Rejouer `php artisan controlhub:sever-link` (ou re-POST l'endpoint).
+2. ⇒ message « Aucun contrat amont actif — rupture ignorée » (commande) / `severed:false`
+   (endpoint), **rien écrit**.
+3. ⇒ `controlhub_link_audit_logs` contient **toujours une seule** ligne pour la
+   transition (aucun nouvel audit, aucun nouvel event).
+
+### Scénario 17.4 — Audit consigné (AC6)
+
+`php artisan tinker --execute "print_r(\App\Models\ControlHubLinkAuditLog::latest('id')->first()->toArray());"`
+⇒ une ligne `from_state=active`, `to_state=severed`, `origin` (`command`|`api`),
+`actor_label`, `controlhub_contract_id`, `summary` (`items_lifted` / `apps_preserved` /
+`values_materialized` / `applications_assigned`).
+
+### Scénario 17.5 — Standalone strictement no-op (AC5/NFR3)
+
+Sur une instance **sans contrat actif** : `php artisan controlhub:sever-link` ⇒ « Aucun
+contrat amont actif », exit 0, **rien écrit** ; `GET /api/v1/agent/state` **byte-identique**
+(golden `state.v1.json` / `FROZEN_STATE_HASH` PHP & Go inchangés). Le contrat agent figé
+n'est **pas** touché.
+
+```bash
+# Hôte (php8.4 + pdo_sqlite)
+CACHE_DRIVER=array php artisan test tests/Feature/ControlHub/ContractSeveranceTest.php          # 15/15
+CACHE_DRIVER=array php artisan test tests/Feature/ControlHub/ContractSeveranceChannelsTest.php  # 4/4
+# Levée prouvée par construction (chokepoint active() → null) + non-régression domaine
+CACHE_DRIVER=array php artisan test --filter 'ControlHubContract|UpstreamCatalog|UpstreamContract|UpstreamLock|Capability|Provision|ContractV1|StateCompiler'
+# Contrat agent figé : ContractV1Test vert, FROZEN_STATE_HASH inchangé, golden non modifié
+
+# R3 : aucun identifiant/message « central » (uniquement commentaires garde-fou)
+grep -rin central app/Services/ControlHub/ControlHubContractSeveranceService.php \
+  app/Models/ControlHubLinkAuditLog.php \
+  app/Console/Commands/SeverControlHubLink.php \
+  app/Http/Controllers/Api/v1/ControlHub/LinkSeveranceController.php
+```
+
+**Attendu** : la rupture passe le contrat à `severed`, lève verrous + bornage + refus de
+modif (via `active()` → null) ; conserve les supports locaux et matérialise la valeur
+effective ; trace **une** ligne d'audit ; re-signal et standalone = no-op total ; contrat
+agent figé intact ; aucun « central ».
+
+## Checklist rapide Story 32.1
+
+- [ ] `CACHE_DRIVER=array php artisan test tests/Feature/ControlHub/ContractSeveranceTest.php` → 13/13 verts
+- [ ] `CACHE_DRIVER=array php artisan test tests/Feature/ControlHub/ContractSeveranceChannelsTest.php` → 4/4 verts (commande + endpoint)
+- [ ] AC1/AC2 : rupture → `severed` + verrous/bornage/refus levés (Scénario 17.1) ; `ControlHubContractChanged` émis
+- [ ] AC3 : override local + app `managed_by_control_hub` conservés (Scénario 17.2)
+- [ ] AC4 : PARITÉ d'état — clé registre imposée + app ordonnée identiques avant/après rupture (Scénario 17.2)
+- [ ] AC5/NFR3 : standalone = no-op total, golden/`FROZEN_STATE_HASH` inchangés (Scénario 17.5)
+- [ ] AC6 : 1 ligne d'audit par transition, 0 sur re-signal (Scénarios 17.3/17.4)
+- [ ] Idempotence : re-signal sur contrat déjà `severed` = no-op (Scénario 17.3)
+- [ ] Contrat agent figé : `ContractV1Test` vert, `FROZEN_STATE_HASH` inchangé, golden + `agent/**` non modifiés
+- [ ] R3 : aucun identifiant/message « central » dans les fichiers livrés
+- [ ] Migration additive `controlhub_link_audit_logs` (`migrate:status` avant e2e VM)

@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\Api\v1\EcowattController;
 use App\Http\Controllers\Api\v1\ControlHub\ShortcutController;
+use App\Http\Controllers\Api\v1\ControlHub\LinkSeveranceController;
 use App\Http\Controllers\Api\v1\ControlHub\InstanceStatusController;
 use App\Http\Controllers\Api\v1\ControlHub\GreetmeController;
 use App\Http\Controllers\Api\v1\ControlHub\TaskController;
@@ -370,6 +371,26 @@ Route::get('/v1/agent/stable/download', [AgentBootstrapController::class, 'downl
 Route::get('/v1/agent/ca', [AgentBootstrapController::class, 'ca'])
     ->middleware(['auth.v1.lan-only', 'auth.v1.secure-headers', 'throttle:60,1'])
     ->name('agent.v1.ca');
+
+/*
+|--------------------------------------------------------------------------
+| Story 32.1 — Réception du signal de RUPTURE du lien amont (controlHub)
+|--------------------------------------------------------------------------
+| Endpoint authentifié `controlhub.auth` (clé API instance/master), CANAL
+| JUMEAU de la commande artisan `controlhub:sever-link` — les deux partagent
+| le service UNIQUE `ControlHubContractSeveranceService`. À réception, le
+| contrat amont actif passe à `severed` (lève AUTOMATIQUEMENT verrous +
+| bornage catalogue via `active()` → null), conserve les valeurs effectives
+| (matérialisation) et trace la transition (audit NFR5). Idempotent :
+| standalone OU déjà `severed` ⇒ no-op (`severed=false`, 200). La forme du
+| payload wire reste minimale (motif optionnel) — figée en Epic 33.
+|
+| Placée ICI, à la FIN du fichier (APRÈS le groupe 16.12), pour la fenêtre
+| 1500 chars de `ScriptsOsNamespaceTest` (mémoire api_routes_arch_test_window).
+*/
+Route::post('/v1/controlhub/sever-link', LinkSeveranceController::class)
+    ->middleware('controlhub.auth')
+    ->name('controlhub.link.sever');
 
 /*
 |--------------------------------------------------------------------------
