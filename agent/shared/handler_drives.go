@@ -35,6 +35,15 @@ import (
 type DriveSpec struct {
 	Letter string // lettre de lecteur, ex. "K:" (clé d'identité du montage)
 	UNC    string // chemin UNC \\<se4fs>\Classe_<name>\<user>\ (tokens substitués localement)
+	Label  string // libellé d'affichage (optionnel) — appliqué via _LabelFromReg (MountPoints2)
+}
+
+// driveTarget : cible résolue d'une lettre (UNC réel + libellé d'affichage).
+// Le `label` fait partie de l'IDENTITÉ de convergence : un changement de label
+// seul (UNC inchangé) est une dérive → réappliqué sans attendre un remontage.
+type driveTarget struct {
+	unc   string
+	label string
 }
 
 // DriveOps : opérations de montage réseau spécifiques à l'OS, injectées
@@ -54,18 +63,21 @@ type DriveOps interface {
 	// SambaEdu). N'inclut JAMAIS une lettre montée par l'utilisateur.
 	ListManaged() ([]string, error)
 
-	// Mapped : la lettre est-elle montée par l'agent vers `unc` (exactement) ?
+	// Mapped : la lettre est-elle montée par l'agent vers `unc` ET porte-t-elle
+	// le `label` attendu ? (label vide = non géré → seul l'UNC compte.)
 	//   - non montée / montée vers un autre UNC → (false, nil).
-	//   - montée gérée vers le bon UNC          → (true, nil).
-	Mapped(letter, unc string) (bool, error)
+	//   - bon UNC mais mauvais label            → (false, nil).
+	//   - bon UNC + bon label                   → (true, nil).
+	Mapped(letter, unc, label string) (bool, error)
 
 	// Blocked : la lettre est-elle occupée par un montage HORS périmètre
 	// SambaEdu (monté par l'utilisateur) ? true → on ne touche pas (ni map, ni
 	// unmap). Libre / gérée par l'agent = false.
 	Blocked(letter string) (bool, error)
 
-	// Map monte (ou remonte) la lettre vers l'UNC. Idempotent.
-	Map(letter, unc string) error
+	// Map monte (ou remonte) la lettre vers l'UNC et applique le `label`
+	// d'affichage (vide = aucun label posé). Idempotent.
+	Map(letter, unc, label string) error
 
 	// Unmap démonte une lettre GÉRÉE. Absente = pas d'erreur (idempotent).
 	Unmap(letter string) error
@@ -78,9 +90,9 @@ type DrivesHandler struct {
 	Log *Logger
 }
 
-// desiredSet : map lettre → UNC résolu, calculée depuis les items cible.
-func (h *DrivesHandler) desiredSet(items []StateItem) (map[string]string, error) {
-	desired := map[string]string{}
+// desiredSet : map lettre → cible (UNC résolu + label), depuis les items cible.
+func (h *DrivesHandler) desiredSet(items []StateItem) (map[string]driveTarget, error) {
+	desired := map[string]driveTarget{}
 	for _, item := range items {
 		spec, ok := parseDriveSpec(item.Payload)
 		if !ok {
@@ -90,7 +102,7 @@ func (h *DrivesHandler) desiredSet(items []StateItem) (map[string]string, error)
 		if err != nil {
 			return nil, fmt.Errorf("UNC %q non résoluble : %w", spec.UNC, err)
 		}
-		desired[spec.Letter] = unc
+		desired[spec.Letter] = driveTarget{unc: unc, label: spec.Label}
 	}
 
 	return desired, nil
@@ -118,7 +130,7 @@ func (h *DrivesHandler) Test(items []StateItem) (bool, error) {
 	// Chaque cible doit être montée vers le bon UNC — SAUF si un montage
 	// utilisateur (homonyme hors périmètre) occupe la lettre : ignoré (ni
 	// conforme ni dérive), les autres convergent quand même.
-	for letter, unc := range desired {
+	for letter, t := range desired {
 		blocked, err := h.Ops.Blocked(letter)
 		if err != nil {
 			return false, err
@@ -126,7 +138,7 @@ func (h *DrivesHandler) Test(items []StateItem) (bool, error) {
 		if blocked {
 			continue
 		}
-		ok, err := h.Ops.Mapped(letter, unc)
+		ok, err := h.Ops.Mapped(letter, t.unc, t.label)
 		if err != nil {
 			return false, err
 		}
@@ -170,7 +182,7 @@ func (h *DrivesHandler) Apply(items []StateItem) error {
 	}
 	sort.Strings(letters)
 	for _, letter := range letters {
-		unc := desired[letter]
+		t := desired[letter]
 		// Montage utilisateur (homonyme hors périmètre) : on ne l'écrase JAMAIS
 		// (décision n° 8). On saute (les autres convergent quand même).
 		blocked, err := h.Ops.Blocked(letter)
@@ -182,17 +194,17 @@ func (h *DrivesHandler) Apply(items []StateItem) error {
 
 			continue
 		}
-		ok, err := h.Ops.Mapped(letter, unc)
+		ok, err := h.Ops.Mapped(letter, t.unc, t.label)
 		if err != nil {
 			return err
 		}
 		if ok {
-			continue // déjà monté au bon UNC → idempotence (aucune écriture)
+			continue // déjà monté au bon UNC + bon label → idempotence (aucune écriture)
 		}
-		if err := h.Ops.Map(letter, unc); err != nil {
-			return fmt.Errorf("montage du lecteur %q → %q : %w", letter, unc, err)
+		if err := h.Ops.Map(letter, t.unc, t.label); err != nil {
+			return fmt.Errorf("montage du lecteur %q → %q : %w", letter, t.unc, err)
 		}
-		logInfo(h.Log, "Lecteur monté : %s → %s", letter, unc)
+		logInfo(h.Log, "Lecteur monté : %s → %s (label %q)", letter, t.unc, t.label)
 	}
 
 	return nil
@@ -218,7 +230,10 @@ func parseDriveSpec(raw any) (DriveSpec, bool) {
 		return DriveSpec{}, false
 	}
 
-	return DriveSpec{Letter: letter, UNC: unc}, true
+	// Label optionnel (absent/non-string toléré → "" = aucun label géré).
+	label, _ := payload["label"].(string)
+
+	return DriveSpec{Letter: letter, UNC: unc, Label: label}, true
 }
 
 // normalizeLetter : "k" / "K" / "k:" / "K:" → "K:". Une seule lettre A-Z, sinon

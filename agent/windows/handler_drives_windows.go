@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 
 	"sambaedu/agent/shared"
 )
@@ -125,14 +126,21 @@ func (o *driveOps) printServerPrefix() string {
 	return `\\` + se4fs + `\`
 }
 
-// Mapped : la lettre est-elle montée vers exactement `unc` ?
-func (o *driveOps) Mapped(letter, unc string) (bool, error) {
+// Mapped : la lettre est-elle montée vers exactement `unc` ET porte-t-elle le
+// `label` attendu ? (label vide = non géré → seul l'UNC compte.)
+func (o *driveOps) Mapped(letter, unc, label string) (bool, error) {
 	current, ok := currentMapping(letter)
 	if !ok {
 		return false, nil
 	}
+	if !strings.EqualFold(strings.TrimRight(current, `\`), strings.TrimRight(unc, `\`)) {
+		return false, nil
+	}
+	if label == "" {
+		return true, nil
+	}
 
-	return strings.EqualFold(strings.TrimRight(current, `\`), strings.TrimRight(unc, `\`)), nil
+	return currentLabel(unc) == label, nil
 }
 
 // Blocked : la lettre est-elle occupée par un montage HORS périmètre (vers un
@@ -152,39 +160,89 @@ func (o *driveOps) Blocked(letter string) (bool, error) {
 	return !strings.HasPrefix(strings.ToLower(current), strings.ToLower(server)), nil
 }
 
-// Map monte la lettre vers l'UNC (WNetAddConnection2W, persistant). Si la lettre
-// est déjà montée (gérée, vers un autre UNC), on démonte d'abord puis on
-// remonte (idempotence de la convergence).
-func (o *driveOps) Map(letter, unc string) error {
-	// Si une connexion gérée diverge déjà sur cette lettre, la retirer d'abord.
-	if _, ok := currentMapping(letter); ok {
-		_ = o.Unmap(letter)
+// Map monte la lettre vers l'UNC (WNetAddConnection2W, persistant) et applique
+// le label d'affichage. On ne (re)monte QUE si la lettre n'est pas déjà sur le
+// bon UNC : un changement de label seul ne justifie pas un démontage/remontage
+// (on se contente de réécrire _LabelFromReg).
+func (o *driveOps) Map(letter, unc, label string) error {
+	current, ok := currentMapping(letter)
+	sameUNC := ok && strings.EqualFold(strings.TrimRight(current, `\`), strings.TrimRight(unc, `\`))
+
+	if !sameUNC {
+		// Connexion gérée divergente sur cette lettre : la retirer d'abord.
+		if ok {
+			_ = o.Unmap(letter)
+		}
+
+		local, err := windows.UTF16PtrFromString(strings.TrimRight(letter, `\`)) // "K:"
+		if err != nil {
+			return err
+		}
+		remote, err := windows.UTF16PtrFromString(unc)
+		if err != nil {
+			return err
+		}
+		nr := netResource{
+			Type:       resourceTypeDisk,
+			LocalName:  local,
+			RemoteName: remote,
+		}
+		r, _, callErr := procWNetAddConnection2W.Call(
+			uintptr(unsafe.Pointer(&nr)),
+			0, // lpPassword (NULL — auth Kerberos/NTLM de la session)
+			0, // lpUserName (NULL — user courant)
+			uintptr(connectUpdateProfile),
+		)
+		if r != 0 { // != NO_ERROR
+			return fmt.Errorf("WNetAddConnection2(%s → %s) en échec (code=%d) : %v", letter, unc, r, callErr)
+		}
 	}
 
-	local, err := windows.UTF16PtrFromString(strings.TrimRight(letter, `\`)) // "K:"
-	if err != nil {
-		return err
-	}
-	remote, err := windows.UTF16PtrFromString(unc)
-	if err != nil {
-		return err
-	}
-	nr := netResource{
-		Type:       resourceTypeDisk,
-		LocalName:  local,
-		RemoteName: remote,
-	}
-	r, _, callErr := procWNetAddConnection2W.Call(
-		uintptr(unsafe.Pointer(&nr)),
-		0, // lpPassword (NULL — auth Kerberos/NTLM de la session)
-		0, // lpUserName (NULL — user courant)
-		uintptr(connectUpdateProfile),
-	)
-	if r != 0 { // != NO_ERROR
-		return fmt.Errorf("WNetAddConnection2(%s → %s) en échec (code=%d) : %v", letter, unc, r, callErr)
+	// Label d'affichage (Explorer montre `label` au lieu du défaut
+	// « <dossier> (\\srv\share) »). HKCU toujours écrivable par le compagnon :
+	// une erreur est remontée (sinon dérive permanente masquée).
+	if label != "" {
+		if err := setLabel(unc, label); err != nil {
+			return fmt.Errorf("pose du label %q sur %s : %w", label, letter, err)
+		}
 	}
 
 	return nil
+}
+
+// mountPointKey : sous-clé HKCU MountPoints2 d'un UNC. Windows encode l'UNC en
+// remplaçant chaque "\" par "#" : \\SE4FS\partages\echange_test →
+// ##SE4FS#partages#echange_test.
+func mountPointKey(unc string) string {
+	enc := strings.ReplaceAll(strings.TrimRight(unc, `\`), `\`, "#")
+
+	return `Software\Microsoft\Windows\CurrentVersion\Explorer\MountPoints2\` + enc
+}
+
+// currentLabel : valeur _LabelFromReg actuelle du montage (vide si absente).
+func currentLabel(unc string) string {
+	key, err := registry.OpenKey(registry.CURRENT_USER, mountPointKey(unc), registry.QUERY_VALUE)
+	if err != nil {
+		return ""
+	}
+	defer key.Close()
+	val, _, err := key.GetStringValue("_LabelFromReg")
+	if err != nil {
+		return ""
+	}
+
+	return val
+}
+
+// setLabel : pose _LabelFromReg (REG_SZ) sous la clé MountPoints2 de l'UNC.
+func setLabel(unc, label string) error {
+	key, _, err := registry.CreateKey(registry.CURRENT_USER, mountPointKey(unc), registry.SET_VALUE)
+	if err != nil {
+		return err
+	}
+	defer key.Close()
+
+	return key.SetStringValue("_LabelFromReg", label)
 }
 
 // Unmap démonte une lettre gérée (WNetCancelConnection2W, force). Absente = pas

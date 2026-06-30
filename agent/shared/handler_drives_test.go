@@ -8,10 +8,11 @@ import (
 )
 
 // driveMapping : état d'une lettre dans le fake (montée gérée ou non, vers quel
-// UNC).
+// UNC, avec quel label d'affichage).
 type driveMapping struct {
 	mapped bool
 	unc    string
+	label  string
 }
 
 // fakeDriveOps : DriveOps en mémoire (testable hôte). `mapped` modélise les
@@ -57,13 +58,19 @@ func (o *fakeDriveOps) ListManaged() ([]string, error) {
 	return out, nil
 }
 
-func (o *fakeDriveOps) Mapped(letter, unc string) (bool, error) {
+func (o *fakeDriveOps) Mapped(letter, unc, label string) (bool, error) {
 	m, ok := o.mapped[letter]
 	if !ok || !m.mapped {
 		return false, nil
 	}
+	if !strings.EqualFold(m.unc, unc) {
+		return false, nil
+	}
+	if label == "" {
+		return true, nil
+	}
 
-	return strings.EqualFold(m.unc, unc), nil
+	return m.label == label, nil
 }
 
 func (o *fakeDriveOps) Blocked(letter string) (bool, error) {
@@ -72,9 +79,9 @@ func (o *fakeDriveOps) Blocked(letter string) (bool, error) {
 	return blocked, nil
 }
 
-func (o *fakeDriveOps) Map(letter, unc string) error {
+func (o *fakeDriveOps) Map(letter, unc, label string) error {
 	o.mapCalls++
-	o.mapped[letter] = driveMapping{mapped: true, unc: unc}
+	o.mapped[letter] = driveMapping{mapped: true, unc: unc, label: label}
 
 	return nil
 }
@@ -316,7 +323,9 @@ func TestDrivesThroughEngineSection5(t *testing.T) {
 				ops.mapped["Z:"] = driveMapping{mapped: true, unc: resolvedUNC(`\\<se4fs>\Classe_ghost\<user>\`)}
 			}
 			if tc.name == "conforme → compliant" {
-				ops.mapped["K:"] = driveMapping{mapped: true, unc: resolvedUNC(`\\<se4fs>\Classe_3A\<user>\`)}
+				// État convergé = bon UNC ET bon label (le label fait partie de
+				// l'identité de convergence) — cf. driveItem (label "Classe K").
+				ops.mapped["K:"] = driveMapping{mapped: true, unc: resolvedUNC(`\\<se4fs>\Classe_3A\<user>\`), label: "Classe K"}
 			}
 
 			h := &DrivesHandler{Ops: ops}
@@ -356,5 +365,43 @@ func TestDrivesAggregateHashIsServerOrderConcat(t *testing.T) {
 	}
 	if AggregateHash(items) != got {
 		t.Fatalf("empreinte non déterministe")
+	}
+}
+
+// --- Label : changement de label seul = dérive, réappliqué (sans démontage) ---
+
+func TestDrivesRelabelsOnLabelDriftOnly(t *testing.T) {
+	ops := newFakeDriveOps()
+	// K: montée au BON UNC mais avec un mauvais label.
+	ops.mapped["K:"] = driveMapping{
+		mapped: true,
+		unc:    resolvedUNC(`\\<se4fs>\Classe_3A\<user>\`),
+		label:  "ancien label",
+	}
+	h := &DrivesHandler{Ops: ops}
+	items := []StateItem{driveItem("K", `\\<se4fs>\Classe_3A\<user>\`)} // label cible "Classe K"
+
+	// Le label fait partie de l'identité → non conforme malgré le bon UNC.
+	ok, err := h.Test(items)
+	if err != nil {
+		t.Fatalf("test: %v", err)
+	}
+	if ok {
+		t.Fatalf("label divergent (bon UNC) devrait être non conforme")
+	}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if ops.mapped["K:"].label != "Classe K" {
+		t.Fatalf("label aurait dû être réécrit en %q, obtenu %q", "Classe K", ops.mapped["K:"].label)
+	}
+	// Le drive géré reste en place (jamais démonté pour un simple relabel).
+	if ops.unmapCalls != 0 {
+		t.Fatalf("un changement de label seul ne doit pas démonter (unmapCalls=%d)", ops.unmapCalls)
+	}
+
+	if ok, err := h.Test(items); err != nil || !ok {
+		t.Fatalf("après apply : conforme attendu (ok=%v err=%v)", ok, err)
 	}
 }

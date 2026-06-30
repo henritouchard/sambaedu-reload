@@ -83,4 +83,4 @@ package shared
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.2.19"
+var Version = "2.2.20"
