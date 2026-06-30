@@ -1950,3 +1950,175 @@ agent figé intact ; aucun « central ».
 - [ ] Contrat agent figé : `ContractV1Test` vert, `FROZEN_STATE_HASH` inchangé, golden + `agent/**` non modifiés
 - [ ] R3 : aucun identifiant/message « central » dans les fichiers livrés
 - [ ] Migration additive `controlhub_link_audit_logs` (`migrate:status` avant e2e VM)
+
+---
+
+## Section 18 — Indisponibilité amont et trace du lien (Story 32.2, 2026-06-30)
+
+**Clôt l'Epic 32 (« Cycle de vie du lien & release »).** Distingue **panne transitoire**
+(absence de MAJ reçue = silence) de **rupture explicite** (signal `severed`, Story 32.1) —
+le PRD §5.3 exige que **l'indisponibilité seule ne libère JAMAIS les verrous**. Prouve aussi
+que la **couverture NFR5 du cycle de vie est complète par construction** (une seule
+transition d'état = `active → severed`, déjà tracée par 32.1).
+
+> **Story PREUVE DOMINANTE (Q1=A).** La non-libération et la couverture NFR5 sont toutes
+> deux ACQUISES GRATUITEMENT — aucune construction. Livrables : tests de preuve
+> (`UpstreamUnavailabilityTest`) + Section 18 QA. Aucune nouvelle migration, aucune nouvelle
+> colonne, aucun nouvel état d'enum.
+
+> **⚠️ ANTI-PATTERN CENTRAL (le seul vrai risque de cette story).** Ne **JAMAIS** coupler
+> `ControlHubContract::active()` à `received_at` / TTL / staleness. Le faire libérerait les
+> verrous sur une simple panne, violant le PRD §5.3. Les tests de la Section 18 sont des
+> **GARDE-FOUS ANTI-RÉGRESSION** : si ce couplage était introduit un jour, ils échoueraient.
+
+### Prérequis / contexte
+
+- Story 32.1 déployée (`controlhub_link_audit_logs` migrée, `ControlHubContractSeveranceService` actif).
+- Pas de nouvelle migration pour 32.2 (Q1=A — aucun état persisté de fraîcheur).
+
+### Concepts clés (à avoir en tête)
+
+| Concept | Description |
+|---------|-------------|
+| **Panne / indisponibilité** | Absence de MAJ reçue du contrat amont. Se traduit par un `received_at` qui vieillit. **Non matérialisée** : aucune écriture, aucun état SQL, aucun audit. |
+| **Rupture explicite** | Signal `severed` reçu via commande ou endpoint (32.1). La SEULE chose qui libère les verrous. |
+| **`active()`** | Filtre `link_state = active` UNIQUEMENT. Ignore `received_at`. Un contrat reste actif jusqu'à la rupture explicite, jamais jusqu'à un TTL. |
+| **NFR5** | L'enum `{Active, Severed}` n'a que 2 états → 1 seule transition → 32.1 la trace → couverture complète. |
+
+### Scénario 18.1 — Panne amont (silence) : verrous maintenus, aucun audit
+
+**But** : prouver qu'une interruption de la communication controlHub (réseau coupé, serveur
+arrêté, etc.) ne libère PAS les verrous (le dernier contrat reste en vigueur).
+
+**Prérequis** : une instance SE5 avec un contrat amont **actif** (items `locked`), un parc
+borné au catalogue, une capacité verrouillée.
+
+**Procédure** (en l'absence de controlHub émetteur branché, utiliser `artisan tinker`) :
+
+1. Vérifier l'état avant la panne :
+   ```bash
+   php artisan tinker --execute "
+     \$c = \App\Models\ControlHubContract::active();
+     echo 'link_state=' . \$c->link_state->value . ' received_at=' . \$c->received_at;
+   "
+   # Attendu : link_state=active, received_at = date récente
+   ```
+
+2. Simuler la panne : ne rien faire pendant N heures/jours. **Aucune** commande
+   `controlhub:sever-link` n'est lancée.
+
+3. Vérifier l'état après le silence :
+   ```bash
+   php artisan tinker --execute "
+     \$c = \App\Models\ControlHubContract::active();
+     echo 'link_state=' . (\$c ? \$c->link_state->value : 'null') . ' received_at=' . (\$c ? \$c->received_at : 'N/A');
+   "
+   # Attendu : link_state=active (INCHANGÉ), received_at = même date qu'avant
+   ```
+
+4. Vérifier que les verrous sont **toujours en vigueur** :
+   ```bash
+   php artisan tinker --execute "print_r(\App\Models\ControlHubLinkAuditLog::count());"
+   # Attendu : 0 (aucun audit produit pendant la panne)
+   ```
+
+5. Vérifier que `GET /api/v1/agent/state` retourne toujours le même état compilé
+   (capacités verrouillées = valeur imposée toujours servie). **Le contrat agent est figé.**
+
+**Attendu** : verrous maintenus, `active()` non-null, bornage catalogue actif, 0 ligne d'audit.
+
+### Scénario 18.2 — Comparaison panne vs rupture explicite
+
+**But** : prouver que seule la rupture explicite (32.1) libère, pas la panne.
+
+**Procédure** :
+
+1. Avec un contrat actif, simuler une longue panne (attendre ou utiliser `tinker`).
+2. Constater que rien n'a changé (voir Scénario 18.1).
+3. **Lancer la rupture** :
+   ```bash
+   php artisan controlhub:sever-link --actor="maintenance-2026-06-30"
+   ```
+4. Vérifier :
+   ```bash
+   php artisan tinker --execute "
+     echo 'active=' . (\App\Models\ControlHubContract::active() ? 'oui' : 'null') . PHP_EOL;
+     echo 'audit count=' . \App\Models\ControlHubLinkAuditLog::count() . PHP_EOL;
+   "
+   # Attendu : active=null, audit count=1
+   ```
+
+**Attendu** : SEULE la rupture explicite produit l'état `severed` + 1 audit. La panne
+précédente n'a produit aucune trace.
+
+### Scénario 18.3 — Reprise après silence (NFR4)
+
+**But** : prouver qu'une reprise de communication après une longue panne n'a pas d'effet
+de bord (pas de traitement spécial « sortie d'indisponibilité »).
+
+**Procédure** (depuis controlHub réel ou `artisan tinker` qui simule une ingestion) :
+
+1. Simuler une reprise avec le **même payload** qu'avant la panne :
+   - `ControlHubContractIngestionService::ingest($payload)` → doit retourner `mutated=false`
+   - `received_at` **inchangé** (no-op NFR4)
+   - Aucun `ControlHubContractChanged` dispatché
+
+2. Simuler une reprise avec un **payload différent** (contrat mis à jour) :
+   - `ingest($newPayload)` → `mutated=true`
+   - `received_at` rafraîchi
+   - `ControlHubContractChanged` dispatché 1×
+
+**Attendu** : reprise transparente sans effet de bord. Pas d'état « indisponible » à quitter.
+
+### Scénario 18.4 — Enum des états du lien (NFR5 couverture)
+
+**But** : prouver que la couverture NFR5 du cycle de vie est complète.
+
+```bash
+php artisan tinker --execute "
+  \$cases = \App\Enums\ControlHubLinkState::cases();
+  foreach (\$cases as \$c) { echo \$c->name . '=' . \$c->value . PHP_EOL; }
+"
+# Attendu :
+# Active=active
+# Severed=severed
+# (exactement 2 cas — aucun état 'stale'/'unavailable')
+```
+
+**Analyse** : l'enum n'a que 2 états → 1 seule transition possible (`active → severed`) →
+32.1 la trace → NFR5 satisfait par construction. L'indisponibilité n'est PAS une transition
+d'état du lien → jamais auditée → pas d'audit manquant.
+
+### Vérifications rapides HÔTE (php8.4 + pdo_sqlite)
+
+```bash
+# Suite PREUVE 32.2 (13 tests, 53 assertions)
+CACHE_DRIVER=array php artisan test tests/Feature/ControlHub/UpstreamUnavailabilityTest.php
+
+# Non-régression domaine (inclut 32.1, 32.2, catalog, lock, policy…)
+CACHE_DRIVER=array php artisan test --filter \
+  'ControlHubContract|ContractSeverance|UpstreamCatalog|UpstreamContract|UpstreamLock|CapabilityPolicy|UpstreamUnavailability'
+
+# Contrat agent figé : golden / FROZEN_STATE_HASH / ContractV1 intacts
+CACHE_DRIVER=array php artisan test --filter 'ContractV1|StateCompiler|Capability'
+
+# R3 : aucun « central » dans les fichiers livrés par 32.2
+grep -rin central \
+  tests/Feature/ControlHub/UpstreamUnavailabilityTest.php \
+  docs/qa/domains/controlhub-contract.md
+```
+
+## Checklist rapide Story 32.2 (clôt l'Epic 32)
+
+- [ ] `CACHE_DRIVER=array php artisan test tests/Feature/ControlHub/UpstreamUnavailabilityTest.php` → 13/13 verts (53 assertions)
+- [ ] AC1 : `active()` non-null avec `received_at` nul/ancien/très ancien (Scénario 18.1) — GARDE-FOU anti-couplage received_at
+- [ ] AC2(a) : panne = 0 écriture + 0 audit + 0 event + `received_at` inchangé (Scénario 18.1)
+- [ ] AC2(b) : seule la rupture explicite 32.1 libère verrous+bornage (Scénario 18.2)
+- [ ] AC3/Q1=A : aucune API de fraîcheur introduite ; `active()` indépendant de TTL/staleness
+- [ ] AC4/NFR5 : enum 2 états → 1 transition → 32.1 trace → couverture complète (Scénario 18.4)
+- [ ] AC5/NFR4 : reprise identique = no-op ; reprise différente = refresh + event (Scénario 18.3)
+- [ ] AC6/NFR3 : standalone unchanged (0 write, 0 audit, 0 query items, bornage false)
+- [ ] Contrat agent figé : `ContractV1Test` vert, `FROZEN_STATE_HASH` / golden / `agent/**` non modifiés
+- [ ] R3 : aucun identifiant/message « central » dans les fichiers livrés par 32.2
+- [ ] Non-régression 32.1 : `ContractSeveranceTest` + `ContractSeveranceChannelsTest` toujours verts
+- [ ] VM/lab (différé) : e2e signal real controlHub → panne simulée → vérif verrous maintenus → rupture → libération ; `migrate:status` avant e2e VM

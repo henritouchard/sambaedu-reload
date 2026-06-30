@@ -1320,7 +1320,8 @@ const DATASETS = {
         {
           "id": "32-2",
           "title": "Indisponibilité amont vs rupture + trace des transitions du lien",
-          "status": "backlog"
+          "status": "review",
+          "note": "Story PREUVE DOMINANTE (Q1=A, aucune migration). Prouve que active() filtre link_state SEUL (ignore received_at) → une panne amont MAINTIENT les verrous ; seule la rupture explicite (sever()) libère. Audit NFR5 complet par construction (active→severed = unique transition, tracée par 32.1). Review opus : 2🟠/3🟡, 0 critique → garde-fous appliqués (introspection scheduler anti-décroissance + invariant ingest n'écrit jamais severed + assertion AC7 contribution Upstream). 16 tests/62 assertions verts ; non-régression 198 passed. Validation /vm différée (idem 32.1, aucun controlHub émetteur branché)."
         }
       ]
     },
