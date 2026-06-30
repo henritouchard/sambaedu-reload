@@ -61,6 +61,10 @@ enum SambaRole: string
                 // `partages/rep_classes.php`, donc ShareAdmin reçoit la
                 // permission Spatie `share.manage` par défaut.
                 SambaPermission::ShareManage,
+                // Story 34.2 (Q5) — l'admin partages gère aussi les lecteurs
+                // réseau gérés (module SE5-natif).
+                SambaPermission::NetworkShareView,
+                SambaPermission::NetworkShareManage,
             ],
             self::UserAdmin => [
                 SambaPermission::UserPasswordInit,
@@ -75,6 +79,10 @@ enum SambaRole: string
                 // classes (cohérent : un changement de classe d'élève via
                 // la page utilisateur peut nécessiter un sync ACLs partage).
                 SambaPermission::ShareManage,
+                // Story 34.2 (Q5) — l'admin utilisateurs gère aussi les lecteurs
+                // réseau gérés (module SE5-natif).
+                SambaPermission::NetworkShareView,
+                SambaPermission::NetworkShareManage,
             ],
             self::Technicien => [
                 SambaPermission::ComputerView,
@@ -87,6 +95,12 @@ enum SambaRole: string
                 SambaPermission::UserCreateTemp,
                 SambaPermission::ComputerView,
                 SambaPermission::ComputerInstall,
+                // Story 34.2 (Q5) — le Référent Numérique pilote les lecteurs
+                // réseau gérés de son établissement (cœur de la story 34.2). Il
+                // n'a AUCUNE permission `share.*` (partages de classe) : d'où la
+                // permission DÉDIÉE `networkshare.*`.
+                SambaPermission::NetworkShareView,
+                SambaPermission::NetworkShareManage,
             ],
             self::ComputerAdmin => [
                 SambaPermission::ComputerView,

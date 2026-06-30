@@ -71,6 +71,15 @@ class NetworkShareService
     // =========================================================================
 
     /**
+     * Motif d'un `directory_name` valide (segment FS sûr) : alphanum + `._-`,
+     * 1er char ≠ `.`. Source de vérité UNIQUE du format — consommée à la fois par
+     * {@see isValidDirectoryName()} (garde de provisioning) ET par la règle
+     * `regex:` du formulaire de création/édition 34.2 (finding 34.1 M4 : le format
+     * n'était validé qu'au provisioning, un nom malformé pouvait être persisté).
+     */
+    public const DIRECTORY_NAME_PATTERN = '/^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/';
+
+    /**
      * Valide un `directory_name` (segment FS sûr, unique) : alphanum + `._-`,
      * 1er char ≠ `.` (calqué `ShareService::bareClassName`). Aucun `/`, espace,
      * métacaractère.
@@ -79,7 +88,7 @@ class NetworkShareService
     {
         return $name !== null
             && $name !== ''
-            && preg_match('/^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/', $name) === 1;
+            && preg_match(self::DIRECTORY_NAME_PATTERN, $name) === 1;
     }
 
     /**

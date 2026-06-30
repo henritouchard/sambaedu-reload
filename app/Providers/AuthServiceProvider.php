@@ -10,6 +10,7 @@ use App\Policies\DelegationPolicy;
 use App\Policies\DhcpPolicy;
 use App\Policies\GroupPolicy;
 use App\Policies\MachinePolicy;
+use App\Policies\NetworkSharePolicy;
 use App\Policies\PrinterPolicy;
 use App\Policies\SharePolicy;
 use App\Policies\UserPolicy;
@@ -67,5 +68,7 @@ class AuthServiceProvider extends ServiceProvider
         PrinterPolicy::registerGates();
         SharePolicy::registerGates();
         DhcpPolicy::registerGates();
+        // Story 34.2 — lecteurs réseau gérés (permissions dédiées networkshare.*).
+        NetworkSharePolicy::registerGates();
     }
 }

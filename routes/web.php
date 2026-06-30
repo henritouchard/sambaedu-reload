@@ -139,6 +139,16 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
     Route::livewire('/shortcuts/new', 'pages::shortcuts.new.index')->name('shortcuts.new');
     Route::livewire('/shortcuts/{id}', 'pages::shortcuts.[id].index')->name('shortcuts.show');
 
+    // Routes Livewire pour les lecteurs réseau gérés (Story 34.2).
+    // Permissions DÉDIÉES networkshare.* (Q5) — refnum + admins partages/users.
+    Route::livewire('/shares', 'pages::shares.index')
+        ->middleware('can:networkshare.view')
+        ->name('shares');
+    Route::livewire('/shares/{id}', 'pages::shares.[id].index')
+        ->middleware('can:networkshare.view')
+        ->whereNumber('id')
+        ->name('shares.show');
+
     // ========================================
     // Paramètres du Parc - Profils applicatifs et catalogue
     // Story 7.2 AC8 : can:computer.install sur l'index.

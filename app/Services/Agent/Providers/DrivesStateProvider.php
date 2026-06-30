@@ -75,8 +75,16 @@ final class DrivesStateProvider implements StateProvider
     /**
      * Lettres réservées (jamais auto-assignées) : `K:`/`H:` émis ici en dur,
      * `I:`/`L:` legacy (Docs/Progs), `A:`/`B:` floppy, `C:`/`D:` disques locaux.
+     *
+     * Story 34.2 (finding 34.1 #4, Q4) — `public` : foyer canonique unique de la
+     * liste des lettres réservées, CONSOMMÉE par la validation prédictive
+     * {@see \App\Services\Filesystem\NetworkShareValidator} (refus à la saisie
+     * d'une lettre explicite réservée). Aucune nouvelle abstraction (mémoire
+     * `no_overengineered_choices`). L'algorithme d'auto-assignation
+     * ({@see resolveLetters()}) reste INCHANGÉ — seule la visibilité de la const
+     * a évolué (golden / `FROZEN_STATE_HASH` non affectés).
      */
-    private const RESERVED_LETTERS = ['A', 'B', 'C', 'D', 'H', 'I', 'K', 'L'];
+    public const RESERVED_LETTERS = ['A', 'B', 'C', 'D', 'H', 'I', 'K', 'L'];
 
     /**
      * Pool sûr d'auto-assignation (`M..Z`) — par construction disjoint des
@@ -84,7 +92,7 @@ final class DrivesStateProvider implements StateProvider
      *
      * @var list<string>
      */
-    private const LETTER_POOL = ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+    public const LETTER_POOL = ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
 
     public function type(): string
     {

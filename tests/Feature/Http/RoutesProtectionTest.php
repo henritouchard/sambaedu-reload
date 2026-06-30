@@ -79,6 +79,10 @@ class RoutesProtectionTest extends TestCase
             // été corrigée (#1 : computer.modify → computer.install).
             'parc groups new'   => ['/app/parc/groups/new', 'computer.install'],
             'parc groups edit'  => ['/app/parc/groups/1/edit', 'computer.install'],
+            // Story 34.2 — lecteurs réseau gérés : feature réservée admin+refnum,
+            // gardée par la permission dédiée `networkshare.view` (review #4).
+            'shares listing'    => ['/app/shares', 'networkshare.view'],
+            'shares show'       => ['/app/shares/1', 'networkshare.view'],
         ];
     }
 

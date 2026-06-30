@@ -907,4 +907,155 @@ Story 34.2.
 
 ---
 
-*Dernière mise à jour : 2026-06-30 (Story 34.1 — fondations lecteurs réseau gérés : `network_shares` + pivot polymorphe + `NetworkShareService` + extension `DrivesStateProvider` ; post-correctifs review #1/#3 + bug pool épuisé)*
+## Story 34.2 — UI admin (refnum) des lecteurs réseau gérés
+
+Couche UI Livewire + **validation prédictive** PAR-DESSUS la fondation 34.1
+(inchangée). Surfaces : page liste `/app/shares`, modale de création, page détail
+`/app/shares/{id}` (édition + assignation par maille pivot SQL + suppression).
+Gardée par la policy **dédiée** `NetworkSharePolicy` (permissions
+`networkshare.view` / `networkshare.manage`, Q5).
+
+> **Pré-requis VM** : les permissions `networkshare.*` sont nouvelles — exécuter
+> un (re)seed `php artisan db:seed --class=PermissionSeeder` sur la VM pour les
+> matérialiser et les rattacher aux rôles `referent-numerique` / `share-admin` /
+> `user-admin` / `super-admin`. Tant que ce seed n'est pas joué, l'accès à
+> `/app/shares` renvoie 403 même pour un refnum.
+
+### Modèle d'accès (rappel 34.1, surfacé en UI 34.2)
+
+- **Visibilité (montage)** : N'IMPORTE QUELLE maille (User / UserGroup /
+  WorkstationGroup) fait apparaître la lettre.
+- **ACL POSIX (RO/RW réel)** : SEULES les assignations `User`/`UserGroup`
+  contribuent une ACL. Une assignation `WorkstationGroup` est **montage-seul**
+  (la lettre est visible mais aucun accès réel) → la validation prédictive
+  l'AVERTIT.
+
+### Validation prédictive (`NetworkShareValidator`, pure lecture, calquée 30.5)
+
+1. **WG-montage-seul** → *warning non bloquant* : répertoire assigné UNIQUEMENT à
+   des parcs, sans grant user/groupe.
+2. **Collision de lettre** → *erreur bloquante* : deux répertoires DISTINCTS à
+   lettre EXPLICITE identique pour une audience qui se recouvre (≥ 1 cible
+   commune). Refus AVANT écriture.
+3. **Lettre réservée** (`A-D`, `H`, `I`, `K`, `L`) → *erreur* à la saisie
+   (consomme `DrivesStateProvider::RESERVED_LETTERS`, foyer canonique unique).
+
+### Dette connue (v1 — à documenter au QA)
+
+- **Pickers user/groupe/parc NON scopés par établissement (Q3).** Faute de scope
+  établissement SQL homogène (la résolution établissement vit côté LDAP,
+  délibérément bannie du chemin SQL en 34.1), les listes de cibles proposées
+  (`User`/`UserGroup`/`WorkstationGroup`) ne sont PAS filtrées au périmètre du
+  refnum. L'accès à la feature reste gardé par la policy `networkshare.*` ; seul
+  le périmètre des cibles assignables n'est pas restreint. **Déploiements
+  mono-établissement non impactés.** Un scope par établissement est un sujet
+  ultérieur (nécessiterait une colonne établissement SQL sur `User`/`UserGroup`).
+- **Suppression FS non gérée (34.x).** Supprimer un répertoire en UI retire les
+  lignes SQL + ACL (cascade pivot) mais NE supprime PAS le dossier sous
+  `/var/sambaedu/Partages` (archivage deux-temps = story ultérieure).
+- **Lettre auto encore instable par set (M2 / 34.x).** L'UI ENCOURAGE une lettre
+  explicite (pré-remplissage de la prochaine lettre sûre libre) ; un champ laissé
+  vide retombe sur l'auto-assignation provider (stable par set, pas globalement).
+
+### Scénarios manuels
+
+#### Scénario 34.2-1 — Accès gardé par la policy dédiée
+
+1. Se connecter avec un `referent-numerique` (après seed des permissions).
+2. **Attendu** : `/app/shares` accessible (liste). Avec un compte `prof`/`eleve`
+   → **403**. Le bouton « Nouveau répertoire » n'apparaît que sous
+   `manage-networkshare`.
+
+#### Scénario 34.2-2 — Création + provisioning synchrone
+
+1. « Nouveau répertoire » → la lettre est pré-remplie (prochaine libre `M:`…).
+2. Saisir `name`, `directory_name` valide, laisser ou changer la lettre, créer.
+3. **Attendu** : ligne `network_shares` créée (`created_by_user_id` = refnum),
+   `NetworkShareService::provision()` appelé (toast succès/échec), retour à la
+   liste.
+
+#### Scénario 34.2-3 — Format `directory_name` validé au formulaire (finding M4)
+
+1. Saisir `directory_name = "salle info/.."` (ou avec espace).
+2. **Attendu** : erreur de validation au formulaire (regex miroir de
+   `NetworkShareService::isValidDirectoryName`) — **rien n'est persisté**.
+3. Un `directory_name` déjà pris → erreur d'unicité.
+
+#### Scénario 34.2-4 — Lettre réservée refusée à la saisie (finding #4)
+
+1. Saisir `letter = "K:"` (ou H/I/L/A-D).
+2. **Attendu** : erreur « lettre réservée par le système » au formulaire — pas
+   de création.
+
+#### Scénario 34.2-5 — Assignation par maille + RO/RW + re-provision
+
+1. Sur `/app/shares/{id}`, ajouter un `User` en `rw`, un `UserGroup` en `ro`.
+2. **Attendu** : lignes pivot `network_share_assignables` créées (`access`
+   correct), re-provisioning déclenché (ACL recalculées : `setfacl -b` + batch).
+   Un même couple (cible) ré-ajouté met à jour l'`access` (pas de doublon —
+   contrainte d'unicité du pivot).
+
+#### Scénario 34.2-6 — WG-montage-seul = warning (piège #1 / finding M5)
+
+1. Assigner UNIQUEMENT un `WorkstationGroup` (aucun user/groupe).
+2. **Attendu** : *warning non bloquant* (« assignation parc = visibilité seule ;
+   l'accès réel exige un grant utilisateur/groupe ») affiché en bandeau + toast.
+   Le répertoire reste créable/assignable (pas un refus).
+
+#### Scénario 34.2-7 — Collision de lettre = refus (piège #3 34.1 / finding M1)
+
+1. Répertoire A : `letter = P:` assigné à l'utilisateur `u`.
+2. Répertoire B : assigné aussi à `u` ; tenter de fixer `letter = P:`.
+3. **Attendu** : **refus** (`toastError` nommant les deux répertoires et la
+   lettre) AVANT écriture — la lettre de B n'est PAS enregistrée. Audiences
+   disjointes ou lettres distinctes → PAS de refus.
+
+#### Scénario 34.2-8 — Suppression (cascade pivot, FS conservé)
+
+1. Supprimer un répertoire (confirmation `wire:confirm`).
+2. **Attendu** : `network_shares` + pivot supprimés (cascade), redirection vers
+   la liste avec toast. Le dossier `/var/sambaedu/Partages/<dir>` est **conservé**
+   (suppression FS = 34.x).
+
+#### Scénario 34.2-9 — Non-régression contrat agent (golden figé)
+
+1. Exécuter `--filter ContractV1`, `--filter DrivesStateProvider`,
+   `--filter Agent` (HÔTE php8.4+sqlite).
+2. **Attendu** : golden `state.v1.json` + `FROZEN_STATE_HASH` (PHP + Go)
+   **INCHANGÉS** ; aucune modif du payload `drives` ; `agent/**` intouché (pas de
+   bump version agent). Seule modif provider = `RESERVED_LETTERS` `private`→`public`.
+
+### Checklist rapide — Story 34.2
+
+- [ ] 34.2-1 : accès gardé policy dédiée (`networkshare.*`), 403 prof/élève
+- [ ] 34.2-2 : création + provisioning synchrone + toast
+- [ ] 34.2-3 : format `directory_name` validé + unicité (M4)
+- [ ] 34.2-4 : lettre réservée refusée à la saisie (#4)
+- [ ] 34.2-5 : assignation par maille RO/RW + re-provision + upsert
+- [ ] 34.2-6 : WG-montage-seul = warning non bloquant (M5)
+- [ ] 34.2-7 : collision de lettre = refus bloquant (M1)
+- [ ] 34.2-8 : suppression cascade pivot, FS conservé
+- [ ] 34.2-9 : non-régression golden/agent figé
+- [ ] **Pré-déploiement VM** : `db:seed --class=PermissionSeeder` joué (permissions `networkshare.*`)
+
+### Post-correctifs review 2026-06-30 (Story 34.2)
+
+| Incident | Scénario de non-régression |
+|---|---|
+| #1 collision de lettre non détectée sur le vecteur **ajout d'assignation** (`addAssignment` ne validait pas) → 2 montages même lettre | 34.2-10 |
+| #5 index `mount()` sans `abort_unless` (asymétrie vs détail) | couvert par test `user_without_view_permission_is_forbidden_on_index` |
+
+**Limitation connue (M-A) — collision CROSS-MAILLE non détectée (best-effort).** La validation prédictive ne signale PAS une collision quand un même utilisateur est atteint par DEUX mailles différentes (assigné en direct à un répertoire `P:` ET via son groupe/un parc à un autre répertoire `P:`). Le détecter exigerait d'expandre l'appartenance (à rebours du « pure lecture, zéro re-requête » du provider) ; le cas parc est de toute façon imprédictible. **Reco : limitation assumée, fermeture en 34.x avec la lettre stable.** En QA manuel : si deux répertoires partagent une lettre explicite et que leurs audiences se recouvrent par appartenance, vérifier manuellement (le filet automatique ne couvre que le recouvrement littéral / même maille).
+
+#### Scénario 34.2-10 — Collision de lettre bloquée à l'ajout d'assignation (+ rollback)
+
+1. Créer le répertoire A (`directory_name=direction`, lettre `P:`), lui assigner l'utilisateur `dave`.
+2. Créer le répertoire B (`directory_name=projets`, lettre `P:`) **sans audience**.
+3. Sur la fiche de B, assigner l'utilisateur `dave` (même maille User).
+4. **Attendu** : toast d'erreur « collision de lettre P: » ; l'assignation de `dave` à B **n'est PAS persistée** (rollback transactionnel) ; aucun re-provisioning de B.
+
+- [ ] 34.2-10 : collision bloquée à l'ajout d'assignation + rollback
+
+---
+
+*Dernière mise à jour : 2026-06-30 (Story 34.2 — UI admin lecteurs réseau gérés : page liste + modale + page détail (assignation par maille pivot SQL, RO/RW), policy dédiée `networkshare.*`, validation prédictive `NetworkShareValidator` (WG-montage-seul / collision de lettre / lettre réservée) ; dette pickers non scopés par établissement documentée)*

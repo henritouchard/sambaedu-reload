@@ -33,6 +33,27 @@ enum SambaPermission: string
      */
     case ShareManage = 'share.manage';
 
+    // Lecteurs réseau gérés (story 34.2)
+    /**
+     * Story 34.2 (Q5) — consultation des répertoires réseau gérés
+     * (`network_shares`) : page liste `/app/shares`, ouverture en lecture.
+     * Permission DÉDIÉE (NE réutilise PAS `share.view`, qui gouverne les
+     * partages de CLASSE) — accordée au Référent Numérique, qui n'a aucune
+     * permission `share.*`.
+     */
+    case NetworkShareView = 'networkshare.view';
+    /**
+     * Story 34.2 (Q5) — gestion des répertoires réseau gérés : création,
+     * édition (`name`/`directory_name`/`label`/`letter`), assignation par maille
+     * (User/UserGroup/WorkstationGroup, access ro|rw), provisioning, suppression.
+     * Permission DÉDIÉE — `share.manage` gouverne aussi les partages de CLASSE,
+     * la réutiliser sur-octroierait le refnum. Comme `ShareManage`, marquée
+     * `isSecondaryBitPermission()` : elle partage le bit legacy représentatif
+     * `SE_SHARE_REFRESH` mais n'est JAMAIS auto-attribuée par un import bitmask
+     * (octroi explicite par seeder/rôle uniquement).
+     */
+    case NetworkShareManage = 'networkshare.manage';
+
     // Machines
     case ComputerView = 'computer.view';
     case ComputerControl = 'computer.control';
@@ -85,6 +106,14 @@ enum SambaPermission: string
             // ayant `share.refresh` recevrait `share.manage` après import
             // bitmask). Attribuée explicitement par seeder/UI rights mgmt.
             self::ShareManage => LegacyRight::ShareRefresh,
+            // Story 34.2 — pas de bit legacy dédié (module SE5-natif, aucune GPO
+            // « lecteurs reseau » legacy). On pointe le bit représentatif
+            // `SE_SHARE_REFRESH` (comme `ShareManage`) UNIQUEMENT pour satisfaire
+            // le `match` exhaustif ; les deux permissions `networkshare.*` sont
+            // `isSecondaryBitPermission()` donc exclues des conversions bitmask
+            // (jamais sur-attribuées par un import LDAP).
+            self::NetworkShareView => LegacyRight::ShareRefresh,
+            self::NetworkShareManage => LegacyRight::ShareRefresh,
             self::ComputerView => LegacyRight::ComputerView,
             self::ComputerControl => LegacyRight::ComputerControl,
             self::ComputerElevate => LegacyRight::ComputerElevate,
@@ -135,6 +164,8 @@ enum SambaPermission: string
             self::ShareView => 'Voir les partages',
             self::ShareRefresh => 'Actualiser les partages',
             self::ShareManage => 'Gérer les partages de classe (ACLs POSIX)',
+            self::NetworkShareView => 'Voir les lecteurs réseau gérés',
+            self::NetworkShareManage => 'Gérer les lecteurs réseau gérés',
             self::ComputerView => 'Voir les machines',
             self::ComputerControl => 'Contrôle à distance',
             self::ComputerElevate => 'Admin de poste',
@@ -155,6 +186,7 @@ enum SambaPermission: string
             self::UserPasswordInit, self::UserRead, self::UserModify,
             self::UserCreateTemp, self::UserAssignRight, self::UserDelegate => 'user',
             self::ShareView, self::ShareRefresh, self::ShareManage => 'share',
+            self::NetworkShareView, self::NetworkShareManage => 'network-share',
             self::ComputerView, self::ComputerControl,
             self::ComputerElevate, self::ComputerInstall,
             self::ComputerRemoteRdp => 'computer',
@@ -170,6 +202,7 @@ enum SambaPermission: string
         return match ($category) {
             'user' => 'Utilisateurs',
             'share' => 'Partages',
+            'network-share' => 'Lecteurs réseau gérés',
             'computer' => 'Machines',
             'wpkg' => 'Applications WPKG',
             'server' => 'Serveur',
@@ -210,7 +243,13 @@ enum SambaPermission: string
         // Story 5.2 — `ShareManage` partage le bit legacy `ShareRefresh`
         // (cf. mapping ci-dessus). Exclu du bitmask mapping pour ne pas
         // sur-élargir les profils custom rapatriés depuis le LDAP.
-        return $this === self::ComputerRemoteRdp || $this === self::ShareManage;
+        return $this === self::ComputerRemoteRdp
+            || $this === self::ShareManage
+            // Story 34.2 — permissions SE5-natives sans bit legacy : partagent le
+            // bit représentatif `SE_SHARE_REFRESH` mais sont exclues des imports
+            // bitmask (octroi explicite par rôle seulement).
+            || $this === self::NetworkShareView
+            || $this === self::NetworkShareManage;
     }
 
     /**
