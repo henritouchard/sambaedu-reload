@@ -412,21 +412,35 @@ n'existe, la sortie est byte-identique au jeu fixe ; un test l'asserte) :
   (volontaire — pas de surface de création en 34.1 ; sera bloquée par la
   validation prédictive d'une story UI ultérieure).
 - **Export SMB** : un seul partage Samba `[partages]` → `/var/sambaedu/Partages`
-  (infra serveur, hors git — voir §[PROD] ci-dessous), chaque répertoire = un
-  sous-dossier. L'agent Go monte n'importe quelle lettre→UNC **sans
-  modification** (`handler_drives.go` réutilisé tel quel, **pas de bump de
-  version agent**).
+  (provisionné en git — voir §ci-dessous), chaque répertoire = un sous-dossier.
+  L'agent Go monte n'importe quelle lettre→UNC **sans modification**
+  (`handler_drives.go` réutilisé tel quel, **pas de bump de version agent**).
 
-##### [PROD] — Infra serveur de l'export `[partages]`
+##### Provisioning de l'export `[partages]`
 
-À déclarer côté serveur (hors git, iso `[users]`/`[classes]`) :
+> Historique : initialement cadré « infra serveur hors git ». Internalisé après
+> validation e2e (sans le partage, le montage échoue `WNetAddConnection2 code=67`
+> « Nom de réseau introuvable » — le paquet Debian `sambaedu` ne livre que
+> `[users]/[classes]/[docs]/[progs]`, jamais `[partages]`).
 
-- Dans `smb.conf`, un partage `[partages]` → `path = /var/sambaedu/Partages`,
-  accessible aux utilisateurs authentifiés, **traversable** (`other` au niveau
-  racine permet la traversée ; l'accès réel est gaté par l'ACL POSIX de chaque
-  sous-dossier, posée par `NetworkShareService`).
-- La racine `/var/sambaedu/Partages` est créée idempotemment par le service au
-  premier `provision()` (`mkdir -p`), `chown www-admin`, `chgrp 'domain admins'`.
+Provisionné automatiquement, idempotemment, par
+`scripts/update.sh:ensure_samba_partages_share()` (rejoué à chaque
+`update.sh`/`install.sh`) :
+
+- Dépôt du stanza versionné `scripts/config/smb-partages.conf` vers
+  `/etc/samba/smb.conf.d/partages.conf`, inclus depuis `smb.conf` via une
+  directive `include = <fichier précis>` (la directive `include` **ne globe
+  pas**). Le stanza : `path = /var/sambaedu/Partages`, `read only = no`
+  (l'accès réel est gaté par l'ACL POSIX de chaque sous-dossier), `inherit acls
+  = yes`, `vfs objects = acl_xattr`.
+- La racine `/var/sambaedu/Partages` est garantie par la fonction (`mkdir -p`,
+  **traversable** `other r-x` → les participants `ro` atteignent leur
+  sous-dossier) ; elle est sinon créée au premier `provision()` de
+  `NetworkShareService`. `hide unreadable = Yes` (global) masque côté SMB les
+  dossiers non lisibles.
+- Validation `testparm` + reload `smbd` à chaud intégrés à la fonction.
+- Diagnostic : `php artisan sambaedu:doctor --tag=filesystem`
+  (`PartagesShareCheck`) signale l'absence ou le mauvais `path` du partage.
 - **Sudoers** : déjà couvert — `/etc/sudoers.d/sambaedu` whiteliste
   `setfacl/getfacl/mkdir/mv/chown/chgrp` **par binaire** (path-agnostique), donc
   les commandes sous `Partages` passent sans nouvelle entrée.

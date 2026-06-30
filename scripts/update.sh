@@ -575,6 +575,94 @@ ensure_ldap_sasl_nocanon() {
 }
 
 # ============================================================================
+# Export SMB [partages] des lecteurs réseau gérés (Epic 34)
+# ============================================================================
+# NetworkShareService crée les répertoires /var/sambaedu/Partages/<dir> + ACL
+# POSIX, et DrivesStateProvider projette une lettre vers
+# \\<se4fs>\partages\<dir>\. Mais le partage Samba `[partages]` qui expose
+# /var/sambaedu/Partages n'est livré ni par le code, ni par le paquet Debian
+# `sambaedu` (qui ne fournit que [users]/[classes]/[docs]/[progs]). Sans lui,
+# l'agent reçoit la lettre mais le montage échoue (WNetAddConnection2 code=67
+# « Nom de réseau introuvable »).
+#
+# On internalise donc ici le provisioning, idempotent : dépôt du stanza
+# versionné dans /etc/samba/smb.conf.d/partages.conf + directive `include`
+# en fin de smb.conf (un fichier précis — `include` ne globe pas), puis
+# validation testparm + reload smbd. Profite aussi aux parcs déjà installés
+# (update.sh rejoué à chaque déploiement).
+# ============================================================================
+
+ensure_samba_partages_share() {
+    log "Vérification de l'export SMB [partages] (lecteurs réseau gérés)..."
+
+    local src="$APP_DIR/scripts/config/smb-partages.conf"
+    local smb_conf="/etc/samba/smb.conf"
+    local smb_conf_d="/etc/samba/smb.conf.d"
+    local dst="$smb_conf_d/partages.conf"
+    local include_line="include = $dst"
+    local shares_root="/var/sambaedu/Partages"
+
+    if [[ ! -f "$smb_conf" ]]; then
+        log_warning "$smb_conf absent (Samba non installé sur cet hôte ?) — export [partages] ignoré"
+        return 0
+    fi
+    if [[ ! -f "$src" ]]; then
+        log_error "Fichier source manquant: $src"
+        return 1
+    fi
+
+    # Racine du partage : NetworkShareService la crée au 1er provision(), mais
+    # sur un déploiement neuf (aucun share encore) le path du share Samba
+    # n'existerait pas. On la garantit ici (idempotent ; 0755 root:root via
+    # umask root → traversable par les participants ro).
+    mkdir -p "$shares_root"
+
+    # Stanza versionné → smb.conf.d (autoritaire : on écrase à chaque update).
+    mkdir -p "$smb_conf_d"
+    install -o root -g root -m 0644 "$src" "$dst"
+
+    # Directive include en [global]. `include` n'est pas un paramètre de
+    # section : on l'append en fin de fichier (le stanza inclus rouvre sa
+    # propre section [partages]). Idempotent : on n'ajoute qu'une fois.
+    if grep -qE "^[[:space:]]*include[[:space:]]*=[[:space:]]*${dst//\//\\/}([[:space:]]|$)" "$smb_conf"; then
+        log "  → include déjà présent dans $smb_conf"
+    else
+        cp -a "$smb_conf" "${smb_conf}.bak-$(date +%Y%m%d-%H%M%S)"
+        {
+            echo ""
+            echo "# SambaEdu (Epic 34) — export SMB des lecteurs réseau gérés."
+            echo "# Inclusion d'un fichier précis (la directive include ne globe pas)."
+            echo "$include_line"
+        } >> "$smb_conf"
+        log "  → include ajouté dans $smb_conf"
+    fi
+
+    # Validation : le partage [partages] doit être effectif et pointer sur la
+    # racine attendue. testparm renvoie rc=1 si la section est absente.
+    local effective_path
+    if ! effective_path="$(testparm -s --section-name partages --parameter-name path 2>/dev/null)"; then
+        log_error "Validation testparm KO : le partage [partages] n'est pas effectif après injection. Vérifier $smb_conf et $dst."
+        return 1
+    fi
+    if [[ "$effective_path" != "$shares_root" ]]; then
+        log_error "[partages] pointe sur \"$effective_path\" au lieu de \"$shares_root\"."
+        return 1
+    fi
+
+    # Reload à chaud (pas de coupure). smbcontrol si smbd tourne, sinon
+    # systemctl reload ; non-fatal (la conf sera lue au prochain démarrage).
+    if command -v smbcontrol >/dev/null 2>&1 && smbcontrol all reload-config >/dev/null 2>&1; then
+        log "  → smbd: configuration rechargée (smbcontrol)"
+    elif systemctl reload smbd >/dev/null 2>&1; then
+        log "  → smbd: configuration rechargée (systemctl)"
+    else
+        log_warning "  → reload smbd non effectué (smbd non démarré ?) — la conf sera prise au prochain démarrage"
+    fi
+
+    log_success "Export SMB [partages] → $shares_root OK"
+}
+
+# ============================================================================
 # Bascule PXE bootstrap vers la route Laravel native (Story 4.9 / 3.7)
 # ============================================================================
 # La conf legacy `/etc/sambaedu/sambaedu.conf.d/dhcp.conf` posée par les
@@ -1225,6 +1313,9 @@ main() {
 
     echo ""
     ensure_ldap_sasl_nocanon
+
+    echo ""
+    ensure_samba_partages_share
 
     echo ""
     ensure_ipxe_bootstrap_native
