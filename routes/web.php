@@ -491,11 +491,6 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
             ->middleware('can:server.admin')
             ->name('by-ou');
 
-        // D — Catalogue sections natives (AC4.1).
-        Route::livewire('/sections', 'pages::admin.settings.gpo.sections.index')
-            ->middleware('can:server.admin')
-            ->name('sections');
-
         // Route détail paramétrée {guid} (regex Microsoft GUID, accolades
         // optionnelles — iso-pattern Story 16.2 fix #9 anti open-redirect).
         Route::livewire('/{guid}', 'pages::admin.settings.gpo.[guid].index')

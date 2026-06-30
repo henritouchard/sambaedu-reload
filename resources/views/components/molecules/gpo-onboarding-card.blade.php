@@ -33,8 +33,8 @@
                         SE5 permet de consulter, lier et gérer nativement les sections reconnues.
                     </p>
 
-                    {{-- 3 parcours guidés --}}
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {{-- 2 parcours guidés --}}
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {{-- Card 1 : Consulter --}}
                         <a href="#listing-gpos"
                             class="card bg-base-100 border border-base-300 hover:border-primary hover:shadow-md transition-all duration-200 cursor-pointer"
@@ -64,23 +64,6 @@
                                     <div>
                                         <p class="font-semibold text-sm">Lier une GPO à une OU</p>
                                         <p class="text-xs text-base-content/60">Vue inverse : GPOs par OU + héritage</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </a>
-
-                        {{-- Card 3 : Sections natives --}}
-                        <a href="{{ route('admin.gpo.sections') }}"
-                            class="card bg-base-100 border border-base-300 hover:border-accent hover:shadow-md transition-all duration-200 cursor-pointer"
-                            data-testid="hero-card-sections">
-                            <div class="card-body py-3 px-4">
-                                <div class="flex items-center gap-3">
-                                    <div class="p-2 bg-accent/10 rounded-lg">
-                                        <i class="fa-solid fa-puzzle-piece text-accent text-lg"></i>
-                                    </div>
-                                    <div>
-                                        <p class="font-semibold text-sm">Éditer une section native</p>
-                                        <p class="text-xs text-base-content/60">Wallpapers, Firefox, Shortcuts, Wine…</p>
                                     </div>
                                 </div>
                             </div>

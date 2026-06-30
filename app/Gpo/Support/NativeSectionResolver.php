@@ -113,19 +113,6 @@ final class NativeSectionResolver
     }
 
     /**
-     * Retourne l'intégralité du catalogue MAPPING.
-     *
-     * Story 16.14 D6 / AC4.3 — getter public minimal pour la page sections.
-     * Pas d'autre modification : resolve/hasMatch/buildUrl restent intacts.
-     *
-     * @return array<string, array{patterns: list<string>, url: string, label: string, icon: string}>
-     */
-    public static function all(): array
-    {
-        return self::MAPPING;
-    }
-
-    /**
      * Construit l'URL de navigation vers une section native, avec ou sans
      * paramètre `?from_gpo={guid}` pour le breadcrumb de retour.
      *

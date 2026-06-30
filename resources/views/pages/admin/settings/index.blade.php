@@ -148,15 +148,6 @@ new #[Title('Réglages')] class extends Component {
                 testid="card-gpo-by-ou" />
 
             <x-molecules.settings-card
-                href="{{ route('admin.gpo.sections') }}"
-                icon="fa-solid fa-puzzle-piece"
-                iconColor="secondary"
-                title="Sections natives"
-                description="Catalogue des sections reconnues (wallpapers, shortcuts, firefox…)."
-                badge="Sections"
-                testid="card-gpo-sections" />
-
-            <x-molecules.settings-card
                 href="{{ route('admin.gpo.wine') }}"
                 icon="fa-solid fa-wine-bottle"
                 iconColor="secondary"
