@@ -1309,13 +1309,13 @@ const DATASETS = {
     {
       "num": 32,
       "title": "Contrat Amont — Cycle de vie du lien & release",
-      "status": "backlog",
+      "status": "in-progress",
       "summary": "À réception du signal de <strong>rupture du lien de management</strong>, SE5 libère proprement tous les verrous : les items quittent l'état imposé en conservant leur valeur courante effective, le bornage catalogue tombe, le refnum reprend la main — <strong>sans perte de ses ajouts locaux</strong>. Distinction clé : une simple <strong>indisponibilité amont</strong> (panne) ne libère rien (le dernier contrat reste en vigueur) ; seule la rupture délibérée déclenche le release. Transitions d'état du lien auditées (NFR5).",
       "stories": [
         {
           "id": "32-1",
           "title": "Release des verrous à la rupture du lien (valeurs conservées, ajouts préservés)",
-          "status": "backlog"
+          "status": "review"
         },
         {
           "id": "32-2",
