@@ -28,6 +28,16 @@ class NetworkShareAssignable extends Model
     public const ACCESS_RO = 'ro';
     public const ACCESS_RW = 'rw';
 
+    /**
+     * Libellés métier des niveaux d'accès, source unique pour l'UI (selects et
+     * badges des pages de gestion des partages). `ro` = consultation seule,
+     * `rw` = consultation + écriture.
+     */
+    public const ACCESS_LABELS = [
+        self::ACCESS_RO => 'Lire',
+        self::ACCESS_RW => 'Modifier',
+    ];
+
     protected $table = 'network_share_assignables';
 
     protected $fillable = [
@@ -59,5 +69,14 @@ class NetworkShareAssignable extends Model
     public function isWritable(): bool
     {
         return $this->access === self::ACCESS_RW;
+    }
+
+    /**
+     * Libellé métier lisible d'un niveau d'accès brut (`ro|rw`). Retombe sur la
+     * valeur brute pour toute clé inconnue (jamais d'affichage vide).
+     */
+    public static function accessLabel(string $access): string
+    {
+        return self::ACCESS_LABELS[$access] ?? $access;
     }
 }

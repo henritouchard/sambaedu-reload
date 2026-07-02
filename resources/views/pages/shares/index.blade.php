@@ -106,7 +106,6 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
 
             $rows = $query
                 ->withCount(['users', 'userGroups', 'workstationGroups'])
-                ->withCount(['assignments as rw_count' => fn ($q) => $q->where('access', 'rw')])
                 ->orderBy('name')
                 ->skip($offset)
                 ->take($this->perPage)
@@ -116,12 +115,12 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                 'id' => $s->id,
                 'name' => $s->name,
                 'directory_name' => $s->directory_name,
+                'description' => $s->description,
                 'letter' => $s->letter,
                 'users_count' => $s->users_count,
                 'user_groups_count' => $s->user_groups_count,
                 'workstation_groups_count' => $s->workstation_groups_count,
                 'total_assignments' => $s->users_count + $s->user_groups_count + $s->workstation_groups_count,
-                'rw_count' => $s->rw_count,
             ])->all();
 
             $this->pagination = [
@@ -347,7 +346,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         foreach ($template->roles() as $role) {
             $roleKey = (string) ($role['key'] ?? '');
             $maille = (string) ($role['maille'] ?? '');
-            $access = ($role['access'] ?? 'ro') === 'rw' ? 'Lecture/écriture' : 'Lecture seule';
+            $access = \App\Models\NetworkShareAssignable::accessLabel((string) ($role['access'] ?? 'ro'));
             $mailleLabel = $maille === User::class ? 'Utilisateur' : "Groupe d'utilisateurs";
 
             $byId = collect($candidates[$roleKey] ?? [])->keyBy('id');
@@ -583,19 +582,26 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
             </div>
 
             <x-organisms.data-table
-                colgroup="<colgroup><col style='width: 28%'><col style='width: 22%'><col style='width: 10%'><col style='width: auto'><col style='width: 12%'></colgroup>">
+                colgroup="<colgroup><col style='width: 22%'><col style='width: 18%'><col style='width: auto'><col style='width: 8%'><col style='width: 16%'></colgroup>">
                 <x-slot:header>
                     <th>Nom</th>
                     <th>Répertoire</th>
+                    <th>Description</th>
                     <th>Lettre</th>
                     <th>Assignations</th>
-                    <th>Accès</th>
                 </x-slot:header>
                 @foreach ($shares as $share)
                     <tr class="hover:bg-sky-50 cursor-pointer"
                         onclick="window.location.href='{{ route('app.shares.show', $share['id']) }}'">
                         <td class="font-bold">{{ $share['name'] }}</td>
                         <td><span class="font-mono text-sm">{{ $share['directory_name'] }}</span></td>
+                        <td>
+                            @if (!empty($share['description']))
+                                <span class="text-sm text-base-content/70 line-clamp-2" title="{{ $share['description'] }}">{{ $share['description'] }}</span>
+                            @else
+                                <span class="text-sm text-base-content/30">—</span>
+                            @endif
+                        </td>
                         <td>
                             @if ($share['letter'])
                                 <span class="badge badge-primary">{{ $share['letter'] }}</span>
@@ -624,15 +630,6 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                                         </span>
                                     @endif
                                 </div>
-                            @endif
-                        </td>
-                        <td>
-                            @if ($share['total_assignments'] === 0)
-                                <span class="text-sm text-base-content/40">—</span>
-                            @elseif ($share['rw_count'] > 0)
-                                <span class="badge badge-sm badge-success">Lecture/écriture</span>
-                            @else
-                                <span class="badge badge-sm badge-info">Lecture seule</span>
                             @endif
                         </td>
                     </tr>
@@ -687,8 +684,12 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                 </div>
                 <div class="form-control">
                     <label class="label">
-                        <span class="label-text font-medium">Lettre</span>
-                        <span class="label-text-alt text-base-content/50">vide = auto</span>
+                        <span class="label-text font-medium">
+                            Lettre
+                            <span class="tooltip align-middle" data-tip="Laisser vide pour une attribution automatique (pool M..Z).">
+                                <i class="fa-solid fa-circle-info text-base-content/40 ml-0.5"></i>
+                            </span>
+                        </span>
                     </label>
                     <input type="text" wire:model="letter" class="input input-bordered" maxlength="8" placeholder="P:" />
                     @error('letter') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
@@ -754,8 +755,12 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                     </div>
                     <div class="form-control">
                         <label class="label">
-                            <span class="label-text font-medium">Lettre</span>
-                            <span class="label-text-alt text-base-content/50">vide = auto</span>
+                            <span class="label-text font-medium">
+                                Lettre
+                                <span class="tooltip align-middle" data-tip="Laisser vide pour une attribution automatique (pool M..Z).">
+                                    <i class="fa-solid fa-circle-info text-base-content/40 ml-0.5"></i>
+                                </span>
+                            </span>
                         </label>
                         <input type="text" wire:model="templateLetter" class="input input-bordered" maxlength="8" placeholder="P:" />
                         @error('templateLetter') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
@@ -770,9 +775,16 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                         @php($isMany = ($role['cardinality'] ?? 'one') === 'many')
                         <div class="form-control">
                             <label class="label py-1">
-                                <span class="label-text font-medium">{{ $role['label'] }}</span>
+                                <span class="label-text font-medium">
+                                    {{ $role['label'] }}
+                                    @if ($isMany)
+                                        <span class="tooltip align-middle" data-tip="Maintenez Ctrl (ou Cmd) pour sélectionner plusieurs groupes.">
+                                            <i class="fa-solid fa-circle-info text-base-content/40 ml-0.5"></i>
+                                        </span>
+                                    @endif
+                                </span>
                                 <span class="label-text-alt badge badge-sm {{ ($role['access'] ?? 'ro') === 'rw' ? 'badge-success' : 'badge-info' }}">
-                                    {{ ($role['access'] ?? 'ro') === 'rw' ? 'Lecture/écriture' : 'Lecture seule' }}
+                                    {{ \App\Models\NetworkShareAssignable::accessLabel((string) ($role['access'] ?? 'ro')) }}
                                 </span>
                             </label>
                             <select wire:model.live="roleSelections.{{ $roleKey }}" class="select select-bordered select-sm"
@@ -784,9 +796,6 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                                     <option value="{{ $cand['id'] }}">{{ $cand['label'] }}</option>
                                 @endforeach
                             </select>
-                            @if ($isMany)
-                                <span class="label-text-alt text-base-content/50 mt-1">Maintenez Ctrl (ou Cmd) pour sélectionner plusieurs groupes.</span>
-                            @endif
                         </div>
                     @endforeach
                 </div>

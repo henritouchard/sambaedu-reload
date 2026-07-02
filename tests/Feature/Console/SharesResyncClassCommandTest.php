@@ -216,6 +216,9 @@ class SharesResyncClassCommandTest extends TestCase
         $this->assertTrue($lock5B->get());
 
         $mock = \Mockery::mock(ShareService::class);
+        // Pré-check ajouté : groupes résolus ([]), pour que la classe ATTEIGNE
+        // createClassShare (→ false → probe lock → « verrouillée »).
+        $mock->shouldReceive('unresolvedClassGroups')->andReturn([]);
         $mock->shouldReceive('createClassShare')->andReturn(false);
         $mock->shouldReceive('resolveClassPath')->andReturn(null);
         $this->app->instance(ShareService::class, $mock);
@@ -226,6 +229,27 @@ class SharesResyncClassCommandTest extends TestCase
 
         $lock6A->release();
         $lock5B->release();
+    }
+
+    #[Test]
+    public function it_skips_classes_whose_ad_groups_do_not_resolve(): void
+    {
+        $this->makeClasse('473'); // classe déchet : groupes AD non résolus
+
+        $mock = \Mockery::mock(ShareService::class);
+        // Le pré-check signale des groupes manquants → la classe est SKIP…
+        $mock->shouldReceive('unresolvedClassGroups')->andReturn(['equipe_473', 'classe_473']);
+        // …et createClassShare n'est JAMAIS appelé (pas de side-effect FS).
+        $mock->shouldReceive('createClassShare')->never();
+        $this->app->instance(ShareService::class, $mock);
+
+        $this->artisan('shares:resync-class', ['--performed-by' => 'tester'])
+            ->expectsOutputToContain('[SKIP]')
+            ->expectsOutputToContain('Ignorées (groupes AD absents) : 1')
+            ->assertSuccessful(); // skip ≠ échec : exit 0
+
+        $log = QuotaAuditLog::query()->where('action', 'resync_class')->first();
+        self::assertSame(1, $log->new_values['skipped_no_groups'] ?? null);
     }
 
     #[Test]

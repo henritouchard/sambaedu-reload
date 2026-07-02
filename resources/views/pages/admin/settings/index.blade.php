@@ -236,6 +236,17 @@ new #[Title('Réglages')] class extends Component {
                     testid="card-dhcp" />
             @endcan
 
+            @can('view-networkshare')
+                <x-molecules.settings-card
+                    href="{{ route('app.shares') }}"
+                    icon="fa-solid fa-hard-drive"
+                    iconColor="info"
+                    title="Lecteurs réseau gérés"
+                    description="Répertoires réseau (lecteurs) assignés par utilisateur, groupe ou parc."
+                    badge="Partages"
+                    testid="card-shares" />
+            @endcan
+
             <x-molecules.settings-card
                 href="{{ route('admin.controlHub.control-hub') }}"
                 icon="fa-solid fa-satellite-dish"

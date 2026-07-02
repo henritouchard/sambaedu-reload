@@ -30,6 +30,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
     public string $name = '';
     public string $directoryName = '';
     public string $label = '';
+    public string $description = '';
     public string $letter = '';
 
     // Formulaire d'ajout d'assignation.
@@ -38,11 +39,23 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
     public ?int $assignTargetId = null;
     public string $assignAccess = 'ro';
 
+    // Modale d'ajout d'assignation (recherche dynamique de la cible).
+    public bool $isAssignOpen = false;
+
+    // Édition de l'identité : header en lecture seule par défaut, formulaire à la demande.
+    public bool $editingDetails = false;
+
+    // Audit de dérive ACL (désiré SQL vs effectif disque). Rafraîchi sur mount +
+    // après chaque (re)provisioning — PAS un computed live (éviterait un getfacl
+    // à chaque frappe). `null` = non calculé.
+    public ?array $drift = null;
+
     public function mount(string $id): void
     {
         abort_unless(Gate::allows('view-networkshare'), 403);
         $this->id = (int) $id;
         $this->loadShare();
+        $this->refreshDrift();
     }
 
     public function loadShare(): void
@@ -55,6 +68,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         $this->name = (string) $share->name;
         $this->directoryName = (string) $share->directory_name;
         $this->label = (string) ($share->label ?? '');
+        $this->description = (string) ($share->description ?? '');
         $this->letter = (string) ($share->letter ?? '');
     }
 
@@ -169,6 +183,19 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
 
     // --- Édition des champs -------------------------------------------------
 
+    public function editDetails(): void
+    {
+        abort_unless(Gate::allows('manage-networkshare'), 403);
+        $this->editingDetails = true;
+    }
+
+    public function cancelEditDetails(): void
+    {
+        $this->editingDetails = false;
+        $this->resetErrorBag();
+        $this->loadShare(); // restaure les valeurs d'origine si modifiées sans enregistrer
+    }
+
     public function saveDetails(): void
     {
         abort_unless(Gate::allows('manage-networkshare'), 403);
@@ -183,6 +210,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
                 'unique:network_shares,directory_name,' . $this->id,
             ],
             'label' => ['nullable', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:1000'],
             'letter' => [
                 'nullable', 'string', 'max:8',
                 function (string $attr, $value, $fail) use ($validator): void {
@@ -213,13 +241,34 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         $share->name = $validated['name'];
         $share->directory_name = $validated['directoryName'];
         $share->label = $validated['label'] !== '' ? $validated['label'] : null;
+        $share->description = ($validated['description'] ?? '') !== '' ? $validated['description'] : null;
         $share->save();
 
+        $this->editingDetails = false;
         $this->reprovision('Répertoire mis à jour');
         $this->loadShare();
     }
 
     // --- Assignations -------------------------------------------------------
+
+    public function openAssign(): void
+    {
+        abort_unless(Gate::allows('manage-networkshare'), 403);
+        $this->assignType = User::class;
+        $this->assignSearch = '';
+        $this->assignTargetId = null;
+        $this->assignAccess = NetworkShareAssignable::ACCESS_RO;
+        unset($this->candidates);
+        $this->isAssignOpen = true;
+    }
+
+    public function closeAssign(): void
+    {
+        $this->isAssignOpen = false;
+        $this->assignSearch = '';
+        $this->assignTargetId = null;
+        unset($this->candidates);
+    }
 
     public function addAssignment(): void
     {
@@ -270,6 +319,7 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
 
         $this->assignTargetId = null;
         $this->assignSearch = '';
+        $this->isAssignOpen = false;
         unset($this->assignments, $this->candidates, $this->warnings);
 
         $this->reprovision('Assignation ajoutée');
@@ -310,15 +360,24 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
     public function deleteShare()
     {
         abort_unless(Gate::allows('manage-networkshare'), 403);
-        $name = $this->share?->name ?? '';
-        // La suppression cascade le pivot (onDelete cascade, 34.1). Le dossier FS
-        // sous /var/sambaedu/Partages N'EST PAS supprimé (archivage = 34.x).
+        $share = $this->share;
+        $name = $share?->name ?? '';
+
+        // Déprovisionne AVANT de perdre la ligne SQL : révoque les ACL POSIX et
+        // sort le dossier de l'espace exposé par le share SMB [partages] (sinon
+        // un dossier « supprimé » reste atteignable en UNC avec ses grants). Le
+        // contenu est archivé (mv en poubelle), pas détruit.
+        $deprovisioned = $share !== null && app(NetworkShareService::class)->deprovision($share);
+
+        // La suppression cascade le pivot (onDelete cascade, 34.1).
         NetworkShare::where('id', $this->id)->delete();
 
         session()->flash('toast', [
-            'status' => 'success',
+            'status' => $deprovisioned ? 'success' : 'warning',
             'title' => 'Suppression réussie',
-            'message' => "Le répertoire « {$name} » a été supprimé (le dossier serveur est conservé).",
+            'message' => $deprovisioned
+                ? "Le répertoire « {$name} » a été supprimé : accès révoqués et dossier archivé."
+                : "Le répertoire « {$name} » a été supprimé, mais la révocation des accès serveur a échoué. Consultez les journaux.",
         ]);
 
         return redirect()->route('app.shares');
@@ -338,6 +397,27 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         } else {
             $this->toastWarning($okPrefix . ", mais le provisioning a échoué. Consultez les journaux serveur.");
         }
+        $this->refreshDrift();
+    }
+
+    /**
+     * Recalcule l'état de dérive ACL (désiré SQL vs effectif disque). Appelé sur
+     * mount et après chaque provisioning. Read-only (getfacl).
+     */
+    private function refreshDrift(): void
+    {
+        $share = $this->share?->fresh();
+        $this->drift = $share === null ? null : app(NetworkShareService::class)->computeDrift($share);
+    }
+
+    /**
+     * Reconvergence manuelle depuis l'UI (analogue SE5 du « ré-appliquer » du
+     * legacy visuacls.php, mais idempotent : wipe + ré-application canonique).
+     */
+    public function resync(): void
+    {
+        abort_unless(Gate::allows('manage-networkshare'), 403);
+        $this->reprovision('Lecteur resynchronisé');
     }
 
     private function surfaceWarnings(): void
@@ -401,102 +481,201 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
         @endforeach
     @endif
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {{-- Édition des champs --}}
-        <div class="card bg-base-100 shadow">
-            <div class="card-body">
-                <h2 class="card-title text-base"><i class="fa-solid fa-circle-info text-primary"></i> Informations</h2>
-                <div class="form-control">
-                    <label class="label"><span class="label-text font-medium">Nom</span></label>
-                    <input type="text" wire:model="name" class="input input-bordered" @cannot('manage-networkshare') disabled @endcannot />
-                    @error('name') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
+    {{-- ===================== Header : identité du lecteur ===================== --}}
+    <div class="card bg-base-100 shadow mb-6">
+        <div class="card-body">
+            <div class="flex items-start gap-4">
+                <div class="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <i class="fa-solid fa-hard-drive text-xl"></i>
                 </div>
-                <div class="form-control">
-                    <label class="label"><span class="label-text font-medium">Nom de répertoire (FS)</span></label>
-                    <input type="text" wire:model="directoryName" class="input input-bordered font-mono" @cannot('manage-networkshare') disabled @endcannot />
-                    @error('directoryName') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
+                <div class="flex-1 min-w-0">
+                    @if ($editingDetails)
+                        {{-- Mode édition : formulaire --}}
+                        <h2 class="card-title text-base">
+                            <i class="fa-solid fa-pen text-primary"></i> Modifier le lecteur
+                        </h2>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 mt-1">
+                            <div class="form-control">
+                                <label class="label">
+                                    <span class="label-text font-medium">Nom <span class="text-error">*</span></span>
+                                </label>
+                                <input type="text" wire:model="name" class="input input-bordered" />
+                                @error('name') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
+                            </div>
+                            <div class="form-control">
+                                <label class="label">
+                                    <span class="label-text font-medium">
+                                        Nom de répertoire (FS) <span class="text-error">*</span>
+                                        <span class="tooltip align-middle" data-tip="Lettres, chiffres, « . » « _ » « - » — sans espace, ne commence pas par « . ».">
+                                            <i class="fa-solid fa-circle-info text-base-content/40 ml-0.5"></i>
+                                        </span>
+                                    </span>
+                                </label>
+                                <input type="text" wire:model="directoryName" class="input input-bordered font-mono" />
+                                @error('directoryName') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text font-medium">Libellé du lecteur</span></label>
+                                <input type="text" wire:model="label" class="input input-bordered" placeholder="(par défaut : le nom)" />
+                            </div>
+                            <div class="form-control">
+                                <label class="label">
+                                    <span class="label-text font-medium">
+                                        Lettre
+                                        <span class="tooltip align-middle" data-tip="Laisser vide pour une attribution automatique (pool M..Z).">
+                                            <i class="fa-solid fa-circle-info text-base-content/40 ml-0.5"></i>
+                                        </span>
+                                    </span>
+                                </label>
+                                <input type="text" wire:model="letter" class="input input-bordered" maxlength="8" placeholder="P:" />
+                                @error('letter') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
+                            </div>
+                        </div>
+                        <div class="form-control mt-1">
+                            <label class="label"><span class="label-text font-medium">Description</span></label>
+                            <textarea wire:model="description" rows="2" class="textarea textarea-bordered"
+                                placeholder="À quoi sert ce lecteur ?"></textarea>
+                            @error('description') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
+                        </div>
+                        <div class="card-actions justify-end mt-3 gap-2">
+                            <button type="button" class="btn btn-ghost btn-sm" wire:click="cancelEditDetails">Annuler</button>
+                            <button type="button" class="btn btn-primary btn-sm" wire:click="saveDetails">
+                                <i class="fa-solid fa-floppy-disk"></i> Enregistrer
+                            </button>
+                        </div>
+                    @else
+                        {{-- Mode lecture seule (défaut) --}}
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                                <h2 class="card-title text-lg flex items-center gap-2 flex-wrap">
+                                    <span class="truncate">{{ $name }}</span>
+                                    @if ($letter !== '')
+                                        <span class="badge badge-neutral badge-sm font-mono">{{ $letter }}</span>
+                                    @else
+                                        <span class="badge badge-ghost badge-sm">Lettre auto</span>
+                                    @endif
+                                </h2>
+                            </div>
+                            @can('manage-networkshare')
+                                <button type="button" class="btn btn-ghost btn-sm shrink-0" wire:click="editDetails">
+                                    <i class="fa-solid fa-pen"></i> Modifier
+                                </button>
+                            @endcan
+                        </div>
+                        <dl class="mt-3 space-y-2 text-sm">
+                            <div class="flex items-center gap-2 text-base-content/70">
+                                <i class="fa-solid fa-folder w-4 text-center opacity-50"></i>
+                                <span class="font-mono">{{ $directoryName }}</span>
+                                <span class="text-base-content/40 text-xs">(nom de répertoire serveur)</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-base-content/70">
+                                <i class="fa-solid fa-tag w-4 text-center opacity-50"></i>
+                                <span>{{ $label !== '' ? $label : $name }}</span>
+                                <span class="text-base-content/40 text-xs">(libellé affiché côté poste)</span>
+                            </div>
+                            @if ($description !== '')
+                                <div class="flex items-start gap-2 text-base-content/70">
+                                    <i class="fa-solid fa-align-left w-4 text-center opacity-50 mt-0.5"></i>
+                                    <span class="whitespace-pre-line">{{ $description }}</span>
+                                </div>
+                            @endif
+                        </dl>
+                    @endif
                 </div>
-                <div class="form-control">
-                    <label class="label"><span class="label-text font-medium">Libellé du lecteur</span></label>
-                    <input type="text" wire:model="label" class="input input-bordered" placeholder="(par défaut : le nom)" @cannot('manage-networkshare') disabled @endcannot />
-                </div>
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text font-medium">Lettre</span>
-                        <span class="label-text-alt text-base-content/50">vide = auto</span>
-                    </label>
-                    <input type="text" wire:model="letter" class="input input-bordered" maxlength="8" placeholder="P:" @cannot('manage-networkshare') disabled @endcannot />
-                    @error('letter') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
-                </div>
-                @can('manage-networkshare')
-                    <div class="card-actions justify-end mt-3">
-                        <button type="button" class="btn btn-primary btn-sm" wire:click="saveDetails">
-                            <i class="fa-solid fa-floppy-disk"></i> Enregistrer
-                        </button>
-                    </div>
-                @endcan
             </div>
         </div>
+    </div>
 
-        {{-- Assignations --}}
-        <div class="card bg-base-100 shadow">
-            <div class="card-body">
+    {{-- ===================== Conformité ACL (audit de dérive) ===================== --}}
+    @if ($drift !== null)
+        @php
+            $driftMeta = match ($drift['status']) {
+                'conforme' => ['alert-success', 'fa-circle-check', 'ACL disque conformes au paramétrage.'],
+                'drifted' => ['alert-warning', 'fa-triangle-exclamation', 'Dérive détectée : le disque ne correspond plus au paramétrage.'],
+                'absent' => ['alert-info', 'fa-folder-plus', 'Répertoire pas encore provisionné sur le serveur.'],
+                default => ['alert-error', 'fa-circle-xmark', 'Impossible de lire les ACL du serveur (voir journaux).'],
+            };
+        @endphp
+        <div class="alert {{ $driftMeta[0] }} mb-6 flex items-start justify-between gap-3">
+            <div class="flex items-start gap-2 min-w-0">
+                <i class="fa-solid {{ $driftMeta[1] }} mt-0.5"></i>
+                <div class="min-w-0">
+                    <div class="text-sm font-medium">Conformité ACL — {{ $driftMeta[2] }}</div>
+                    @if ($drift['status'] === 'drifted')
+                        <div class="text-xs mt-1 space-y-0.5">
+                            @if (count($drift['missing']) > 0)
+                                <div><span class="font-semibold">Manquant sur disque :</span>
+                                    <span class="font-mono">{{ implode(', ', array_slice($drift['missing'], 0, 6)) }}</span>
+                                    @if (count($drift['missing']) > 6) … @endif
+                                </div>
+                            @endif
+                            @if (count($drift['unexpected']) > 0)
+                                <div><span class="font-semibold">En trop sur disque :</span>
+                                    <span class="font-mono">{{ implode(', ', array_slice($drift['unexpected'], 0, 6)) }}</span>
+                                    @if (count($drift['unexpected']) > 6) … @endif
+                                </div>
+                            @endif
+                        </div>
+                    @endif
+                </div>
+            </div>
+            @can('manage-networkshare')
+                @if (in_array($drift['status'], ['drifted', 'absent', 'error'], true))
+                    <button type="button" class="btn btn-sm shrink-0" wire:click="resync"
+                        wire:loading.attr="disabled" wire:target="resync">
+                        <span wire:loading.remove wire:target="resync"><i class="fa-solid fa-rotate"></i> Resynchroniser</span>
+                        <span wire:loading wire:target="resync"><span class="loading loading-spinner loading-xs"></span> …</span>
+                    </button>
+                @endif
+            @endcan
+        </div>
+    @endif
+
+    {{-- ===================== Assignations : tableau + bouton « Ajouter » ===================== --}}
+            <div class="flex items-center justify-between gap-2">
                 <h2 class="card-title text-base">
                     <i class="fa-solid fa-share-nodes text-primary"></i> Assignations
                     <span class="badge badge-neutral badge-sm">{{ count($this->assignments()) }}</span>
                 </h2>
-
                 @can('manage-networkshare')
-                    <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end p-3 bg-base-200 rounded-lg">
-                        <div class="form-control sm:col-span-4">
-                            <label class="label py-1"><span class="label-text text-xs">Type</span></label>
-                            <select wire:model.live="assignType" class="select select-bordered select-sm">
-                                @foreach ($this->typeOptions() as $value => $lbl)
-                                    <option value="{{ $value }}">{{ $lbl }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="form-control sm:col-span-5">
-                            <label class="label py-1"><span class="label-text text-xs">Cible</span></label>
-                            <input type="text" wire:model.live.debounce.300ms="assignSearch" class="input input-bordered input-sm mb-1" placeholder="Rechercher..." />
-                            <select wire:model="assignTargetId" class="select select-bordered select-sm">
-                                <option value="">— choisir —</option>
-                                @foreach ($this->candidates() as $cand)
-                                    <option value="{{ $cand['id'] }}">{{ $cand['label'] }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="form-control sm:col-span-2">
-                            <label class="label py-1"><span class="label-text text-xs">Accès</span></label>
-                            <select wire:model="assignAccess" class="select select-bordered select-sm"
-                                @if($assignType === \App\Models\WorkstationGroup::class) disabled title="Parc = montage seul" @endif>
-                                <option value="ro">RO</option>
-                                <option value="rw">RW</option>
-                            </select>
-                        </div>
-                        <div class="sm:col-span-1">
-                            <button type="button" class="btn btn-primary btn-sm w-full" wire:click="addAssignment" title="Ajouter">
-                                <i class="fa-solid fa-plus"></i>
-                            </button>
-                        </div>
-                    </div>
+                    <button type="button" class="btn btn-primary btn-sm" wire:click="openAssign">
+                        <i class="fa-solid fa-plus"></i> Ajouter
+                    </button>
                 @endcan
+            </div>
 
-                <div class="mt-3">
-                    @if (count($this->assignments()) === 0)
-                        <div class="text-sm text-base-content/50 text-center py-6">Aucune assignation.</div>
-                    @else
-                        <table class="table table-sm">
+            @if (count($this->assignments()) === 0)
+                <div class="text-sm text-base-content/50 text-center py-10">
+                    <i class="fa-regular fa-folder-open text-2xl mb-2 block opacity-40"></i>
+                    Aucune assignation. Cliquez sur « Ajouter » pour donner accès à un utilisateur, un groupe ou un parc.
+                </div>
+            @else
+                <div class="card bg-base-100 shadow-sm overflow-hidden border border-base-300 mt-3">
+                    <div class="px-4 py-3 border-b border-base-300 text-sm text-base-content/70">
+                        {{ count($this->assignments()) }} assignation(s) sur ce lecteur
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-zebra">
                             <thead>
-                                <tr class="text-xs uppercase"><th>Cible</th><th>Type</th><th>Accès</th><th></th></tr>
+                                <tr>
+                                    <th>Cible</th>
+                                    <th>Type</th>
+                                    <th>Accès</th>
+                                    <th class="text-right">Actions</th>
+                                </tr>
                             </thead>
                             <tbody>
                                 @foreach ($this->assignments() as $a)
-                                    <tr wire:key="assign-{{ $a['id'] }}">
+                                    <tr wire:key="assign-{{ $a['id'] }}" class="hover:bg-sky-50">
                                         <td class="font-medium">
-                                            <i class="fa-solid {{ $a['icon'] }} mr-1 opacity-60"></i>{{ $a['label'] }}
+                                            <i class="fa-solid {{ $a['icon'] }} mr-1.5 opacity-60"></i>{{ $a['label'] }}
                                         </td>
-                                        <td class="text-xs text-base-content/60">{{ $a['type_label'] }}</td>
+                                        <td>
+                                            <span class="badge badge-ghost badge-sm gap-1">
+                                                <i class="fa-solid {{ $a['icon'] }} text-[10px]"></i>
+                                                {{ $a['type_label'] }}
+                                            </span>
+                                        </td>
                                         <td>
                                             @if ($a['mount_only'])
                                                 <span class="badge badge-ghost badge-sm" title="Parc = aucune ACL POSIX">—</span>
@@ -504,11 +683,12 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
                                                 @can('manage-networkshare')
                                                     <select class="select select-bordered select-xs"
                                                         wire:change="changeAccess({{ $a['id'] }}, $event.target.value)">
-                                                        <option value="ro" @selected($a['access'] === 'ro')>RO</option>
-                                                        <option value="rw" @selected($a['access'] === 'rw')>RW</option>
+                                                        @foreach (\App\Models\NetworkShareAssignable::ACCESS_LABELS as $val => $label)
+                                                            <option value="{{ $val }}" @selected($a['access'] === $val)>{{ $label }}</option>
+                                                        @endforeach
                                                     </select>
                                                 @else
-                                                    <span class="badge badge-sm {{ $a['access'] === 'rw' ? 'badge-success' : 'badge-info' }}">{{ strtoupper($a['access']) }}</span>
+                                                    <span class="badge badge-sm {{ $a['access'] === 'rw' ? 'badge-success' : 'badge-info' }}">{{ \App\Models\NetworkShareAssignable::accessLabel($a['access']) }}</span>
                                                 @endcan
                                             @endif
                                         </td>
@@ -525,9 +705,102 @@ new #[Title('Lecteur réseau - Instance SE4FS')] class extends Component {
                                 @endforeach
                             </tbody>
                         </table>
-                    @endif
+                    </div>
                 </div>
-            </div>
-        </div>
-    </div>
+            @endif
+
+    {{-- ===================== Modale : ajouter une assignation (recherche dynamique) ===================== --}}
+    @can('manage-networkshare')
+        <x-molecules.modal wire:model="isAssignOpen" size="max-w-2xl" height="h-auto"
+            close-method="closeAssign"
+            title="Ajouter une assignation" icon="fa-user-plus text-primary">
+
+            <x-molecules.modal.section title="Type de cible" icon="fa-filter text-primary" dense>
+                <select wire:model.live="assignType" class="select select-bordered w-full">
+                    @foreach ($this->typeOptions() as $value => $lbl)
+                        <option value="{{ $value }}">{{ $lbl }}</option>
+                    @endforeach
+                </select>
+            </x-molecules.modal.section>
+
+            @php
+                $typeIcon = match ($assignType) {
+                    \App\Models\User::class => 'fa-user',
+                    \App\Models\UserGroup::class => 'fa-users',
+                    \App\Models\WorkstationGroup::class => 'fa-layer-group',
+                    default => 'fa-question',
+                };
+            @endphp
+            <x-molecules.modal.section title="Rechercher la cible" icon="fa-magnifying-glass text-primary" dense>
+                <label class="input input-bordered flex items-center gap-2">
+                    <i class="fa-solid fa-magnifying-glass opacity-50"></i>
+                    <input type="search" wire:model.live.debounce.300ms="assignSearch" class="grow"
+                        placeholder="Nom d'utilisateur, groupe, parc..." />
+                    <span wire:loading wire:target="assignSearch" class="loading loading-spinner loading-xs"></span>
+                </label>
+
+                <div class="mt-2 max-h-64 overflow-y-auto rounded-lg border border-base-300 divide-y divide-base-200">
+                    @forelse ($this->candidates() as $cand)
+                        <button type="button" wire:key="cand-{{ $cand['id'] }}"
+                            class="w-full text-left px-3 py-2 hover:bg-base-200 flex items-center gap-2 transition-colors {{ $assignTargetId === $cand['id'] ? 'bg-primary/10' : '' }}"
+                            wire:click="$set('assignTargetId', {{ $cand['id'] }})">
+                            <i class="fa-solid {{ $typeIcon }} opacity-50 shrink-0 w-4 text-center"></i>
+                            <span class="text-sm truncate grow">{{ $cand['label'] }}</span>
+                            @if ($assignTargetId === $cand['id'])
+                                <i class="fa-solid fa-check text-primary shrink-0"></i>
+                            @endif
+                        </button>
+                    @empty
+                        <div class="px-3 py-6 text-center text-sm text-base-content/50">
+                            {{ trim($assignSearch) === '' ? 'Aucune cible disponible.' : 'Aucun résultat pour « ' . $assignSearch . ' ».' }}
+                        </div>
+                    @endforelse
+                </div>
+                <p class="text-xs text-base-content/40 mt-1">50 premiers résultats — affinez la recherche si besoin.</p>
+            </x-molecules.modal.section>
+
+            <x-molecules.modal.section title="Niveau d'accès" icon="fa-shield-halved text-primary" dense>
+                @if ($assignType === \App\Models\WorkstationGroup::class)
+                    <div class="alert alert-info py-2">
+                        <i class="fa-solid fa-circle-info"></i>
+                        <span class="text-sm">Un parc est un <strong>montage seul</strong> (aucune ACL POSIX) : le niveau d'accès ne s'applique pas.</span>
+                    </div>
+                @else
+                    @php
+                        $accessMeta = [
+                            \App\Models\NetworkShareAssignable::ACCESS_RO => ['icon' => 'fa-eye', 'desc' => 'Consultation seule.'],
+                            \App\Models\NetworkShareAssignable::ACCESS_RW => ['icon' => 'fa-pen', 'desc' => 'Lecture et écriture des fichiers.'],
+                        ];
+                    @endphp
+                    <div class="grid grid-cols-2 gap-3">
+                        @foreach (\App\Models\NetworkShareAssignable::ACCESS_LABELS as $val => $label)
+                            @php($meta = $accessMeta[$val])
+                            <button type="button" wire:click="$set('assignAccess', '{{ $val }}')"
+                                class="flex items-start gap-3 rounded-lg border-2 p-3 text-left transition-all {{ $assignAccess === $val ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-base-300 hover:border-base-content/30 hover:bg-base-200/50' }}">
+                                <i class="fa-solid {{ $meta['icon'] }} text-lg mt-0.5 {{ $assignAccess === $val ? 'text-primary' : 'text-base-content/40' }}"></i>
+                                <div class="min-w-0">
+                                    <div class="font-medium text-sm flex items-center gap-1.5">
+                                        {{ $label }}
+                                        @if ($assignAccess === $val)
+                                            <i class="fa-solid fa-circle-check text-primary text-xs"></i>
+                                        @endif
+                                    </div>
+                                    <div class="text-xs text-base-content/60">{{ $meta['desc'] }}</div>
+                                </div>
+                            </button>
+                        @endforeach
+                    </div>
+                @endif
+            </x-molecules.modal.section>
+
+            <x-slot:footer>
+                <button type="button" class="btn btn-ghost" wire:click="closeAssign">Annuler</button>
+                <button type="button" class="btn btn-primary" wire:click="addAssignment"
+                    wire:loading.attr="disabled" wire:target="addAssignment" @disabled($assignTargetId === null)>
+                    <span wire:loading.remove wire:target="addAssignment"><i class="fa-solid fa-plus"></i> Ajouter</span>
+                    <span wire:loading wire:target="addAssignment"><span class="loading loading-spinner loading-xs"></span> Ajout...</span>
+                </button>
+            </x-slot:footer>
+        </x-molecules.modal>
+    @endcan
 </x-organisms.page>

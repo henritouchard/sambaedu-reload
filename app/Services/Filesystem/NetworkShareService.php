@@ -7,6 +7,7 @@ namespace App\Services\Filesystem;
 use App\Models\NetworkShare;
 use App\Models\NetworkShareAssignable;
 use App\Models\QuotaAuditLog;
+use App\Services\Filesystem\Acl\AclFormat;
 use App\Models\User;
 use App\Models\UserGroup;
 use Illuminate\Support\Facades\Cache;
@@ -251,6 +252,19 @@ class NetworkShareService
             return null;
         }
 
+        return $this->unixGroupForGroup($group);
+    }
+
+    /**
+     * Projette un {@see UserGroup} sur son nom de groupe Unix POSIX (sujet
+     * d'ACL `group:<unix>`). Source de vérité UNIQUE du mapping forward,
+     * réutilisée en LECTURE par {@see AclInspectionService} pour construire
+     * l'index INVERSE (nom disque → UserGroup) par forward-projection — approche
+     * robuste qui évite tout strip fragile du suffixe établissement. Cf.
+     * {@see unixGroupFor()} pour la sémantique du mapping (classe_/equipe_/nu).
+     */
+    public function unixGroupForGroup(UserGroup $group): ?string
+    {
         $local = $this->shareService->aclGroupLocalPart($group);
         if ($local === null) {
             // Nom non conforme à la regex de durcissement : repli sur le name nu
@@ -367,6 +381,147 @@ class NetworkShareService
     }
 
     /**
+     * DÉPROVISIONNE le répertoire d'un share supprimé : révoque tout accès POSIX
+     * puis archive le dossier HORS de l'espace de noms exposé.
+     *
+     * **Pourquoi (sécurité).** `Partages/` est exporté en entier par le share SMB
+     * `[partages]` : un sous-dossier « supprimé » côté SQL mais laissé sur disque
+     * AVEC ses ACL reste atteignable en UNC (`\\serveur\partages\<name>`) par tous
+     * ceux qui avaient un grant — fuite de contrôle d'accès. La suppression SQL
+     * seule ne suffit donc pas.
+     *
+     * Séquence idempotente et data-safe (on NE détruit PAS les données —
+     * cohérent CLAUDE.md « jamais rm -rf ») :
+     *  1. `setfacl -R -P -b` : purge des ACL étendues (retire tous les grants) ;
+     *  2. `chmod -R 0770` : retire l'accès `other` que le mode de base laissait
+     *     traîner après le wipe (sinon dossier world-readable via la perm de base) ;
+     *  3. `mv` vers `Partages/.trash/<directory_name>-<id>` (répertoire poubelle
+     *     en `0700 www-admin` — non listable par les autres), sortant le dossier
+     *     de la vue des partages actifs sans perdre son contenu.
+     *
+     * Fail-soft (retour `bool`, `Log::error` préfixé). No-op réussi si le dossier
+     * n'existe déjà plus.
+     */
+    public function deprovision(NetworkShare $share, ?string $performedBy = null): bool
+    {
+        $performedBy = $performedBy ?? (string) (auth()->user()?->getAuthIdentifier() ?? 'system');
+
+        $path = $this->resolveSharePath($share);
+        if ($path === null) {
+            Log::error('NetworkShareService: deprovision refusé (directory_name invalide)', [
+                'share_id' => $share->id,
+                'directory_name' => $share->directory_name,
+            ]);
+
+            return false;
+        }
+
+        $lock = Cache::store('file')->lock('network-shares:provision:' . $share->id, 60);
+        if (! $lock->get()) {
+            Log::warning('NetworkShareService: deprovision verrouillé (autre opération en cours)', [
+                'share_id' => $share->id,
+                'directory_name' => $share->directory_name,
+            ]);
+
+            return false;
+        }
+
+        try {
+            // Déjà absent : rien à révoquer (idempotent).
+            if (! is_dir($path)) {
+                return true;
+            }
+
+            $escaped = escapeshellarg($path);
+            $allOk = true;
+
+            // 1. Purge des ACL étendues (retire tous les grants).
+            $wipe = Process::run(sprintf('sudo setfacl -R -P -b %s', $escaped));
+            if (! $wipe->successful()) {
+                Log::error('NetworkShareService: deprovision échec wipe ACL', [
+                    'path' => $path,
+                    'output' => trim($wipe->errorOutput() ?: $wipe->output()),
+                ]);
+                $allOk = false;
+            }
+
+            // 2. Retire l'accès `other` résiduel du mode de base.
+            $chmod = Process::run(sprintf('sudo chmod -R 0770 %s', $escaped));
+            if (! $chmod->successful()) {
+                Log::error('NetworkShareService: deprovision échec chmod', [
+                    'path' => $path,
+                    'output' => trim($chmod->errorOutput() ?: $chmod->output()),
+                ]);
+                $allOk = false;
+            }
+
+            // 3. Archive hors de l'espace exposé.
+            $archived = $this->archiveOutOfBand($path, $share);
+            $allOk = $archived && $allOk;
+
+            $this->writeAudit('deprovision_share', $performedBy, $share, [
+                'directory_name' => $share->directory_name,
+                'path' => $path,
+                'archived' => $archived,
+                'success' => $allOk,
+            ]);
+
+            Log::info('NetworkShareService: deprovision terminé', [
+                'share_id' => $share->id,
+                'directory_name' => $share->directory_name,
+                'success' => $allOk,
+            ]);
+
+            return $allOk;
+        } finally {
+            $lock->release();
+            Cache::forget('network-share-status:' . $share->id);
+        }
+    }
+
+    /**
+     * Déplace un répertoire dé-provisionné vers `Partages/.trash/<name>-<id>`
+     * (poubelle `0700 www-admin`, non listable). Data-safe (mv, pas rm).
+     */
+    private function archiveOutOfBand(string $path, NetworkShare $share): bool
+    {
+        $trashRoot = $this->sharesRoot() . '/.trash';
+        $target = $trashRoot . '/' . $share->directory_name . '-' . $share->id;
+
+        if (! $this->validateSharePath($target)) {
+            Log::error('NetworkShareService: archiveOutOfBand cible refusée', ['target' => $target]);
+
+            return false;
+        }
+
+        // Poubelle : créée en 0700 www-admin (contenu protégé des autres).
+        $mk = Process::run(sprintf('sudo mkdir -p -m 0700 %s', escapeshellarg($trashRoot)));
+        if ($mk->successful()) {
+            Process::run(sprintf('sudo chown www-admin %s', escapeshellarg($trashRoot)));
+        } else {
+            Log::error('NetworkShareService: archiveOutOfBand échec mkdir poubelle', [
+                'trash' => $trashRoot,
+                'output' => trim($mk->errorOutput() ?: $mk->output()),
+            ]);
+
+            return false;
+        }
+
+        $mv = Process::run(sprintf('sudo mv %s %s', escapeshellarg($path), escapeshellarg($target)));
+        if (! $mv->successful()) {
+            Log::error('NetworkShareService: archiveOutOfBand échec mv', [
+                'path' => $path,
+                'target' => $target,
+                'output' => trim($mv->errorOutput() ?: $mv->output()),
+            ]);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Lecture de l'état d'un répertoire (sans side-effect, pour future UI /
      * commande). Ne shell-oute pas.
      *
@@ -380,6 +535,74 @@ class NetworkShareService
             'exists' => $path !== null && is_dir($path),
             'path' => $path,
             'assignments_count' => $share->assignments()->count(),
+        ];
+    }
+
+    /**
+     * Audit de dérive : compare le set d'ACL DÉSIRÉ ({@see buildAcls()}, dérivé
+     * du SQL autoritaire) au set EFFECTIF lu sur le disque (`getfacl` du
+     * répertoire de tête). Rend l'idempotence VISIBLE : c'est l'analogue SE5
+     * programmatique du « relire getfacl » manuel du legacy `visuacls.php`, mais
+     * avec un diff exploitable et une reconvergence 1-clic (= {@see provision()}).
+     *
+     * Read-only (aucun `setfacl`). `getfacl` normalisé via {@see AclFormat} pour
+     * que la comparaison reflète l'égalité SÉMANTIQUE (raccourci `rx` vs sortie
+     * `r-x`). Limite assumée : ne compare que l'ACL du répertoire de tête (pas
+     * une descente récursive) — suffisant pour détecter une dérive de contrat.
+     *
+     * @return array{
+     *   status: 'conforme'|'drifted'|'absent'|'error',
+     *   path: string|null,
+     *   expected: list<string>,
+     *   effective: list<string>|null,
+     *   missing: list<string>,
+     *   unexpected: list<string>,
+     * }
+     */
+    public function computeDrift(NetworkShare $share): array
+    {
+        $path = $this->resolveSharePath($share);
+        $share->loadMissing(['assignments', 'assignments.assignable']);
+        $expected = AclFormat::normalizeSet($this->buildAcls($share));
+
+        $base = [
+            'path' => $path,
+            'expected' => $expected,
+            'effective' => null,
+            'missing' => [],
+            'unexpected' => [],
+        ];
+
+        if ($path === null) {
+            return ['status' => 'error'] + $base;
+        }
+        if (! is_dir($path)) {
+            return ['status' => 'absent'] + $base;
+        }
+
+        $cmd = sprintf('sudo getfacl -c -E -p %s 2>/dev/null', escapeshellarg($path));
+        $r = Process::run($cmd);
+        if (! $r->successful()) {
+            Log::warning('NetworkShareService: computeDrift échec getfacl', [
+                'share_id' => $share->id,
+                'path' => $path,
+                'output' => trim($r->errorOutput() ?: $r->output()),
+            ]);
+
+            return ['status' => 'error'] + $base;
+        }
+
+        $effective = AclFormat::normalizeSet(preg_split('/\R/', $r->output()) ?: []);
+        $missing = array_values(array_diff($expected, $effective));    // désiré absent du disque
+        $unexpected = array_values(array_diff($effective, $expected)); // présent sur disque, non désiré
+
+        return [
+            'status' => ($missing === [] && $unexpected === []) ? 'conforme' : 'drifted',
+            'path' => $path,
+            'expected' => $expected,
+            'effective' => $effective,
+            'missing' => $missing,
+            'unexpected' => $unexpected,
         ];
     }
 

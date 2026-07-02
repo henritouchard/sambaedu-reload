@@ -145,9 +145,27 @@ class SharesResyncClassCommand extends Command
         $resynced = 0;
         $failed = 0;
         $locked = 0;
+        $skippedNoGroups = 0;
 
         foreach ($classes as $group) {
             try {
+                // Pré-check : si les groupes système (`equipe_<x>`/`classe_<x>`)
+                // ne se résolvent pas (classe déchet/malformée dont l'AD porte un
+                // autre nom, ex. `classe_classe_473`), `setfacl` échouerait avec
+                // « Argument invalide ». On SKIP proprement avec le motif plutôt
+                // que de générer un [FAIL] opaque qui noie les vrais problèmes.
+                $missingGroups = $this->shareService->unresolvedClassGroups($group);
+                if ($missingGroups !== []) {
+                    $skippedNoGroups++;
+                    $this->line(sprintf(
+                        '  [SKIP] %s (id=%d) : groupes AD non résolus (%s) — classe déchet/malformée, non provisionnable.',
+                        $group->name,
+                        $group->id,
+                        implode(', ', $missingGroups),
+                    ));
+                    continue;
+                }
+
                 // Si une autre opération tient le lock, `createClassShare` log
                 // un warning et retourne false ; on l'attribue au compteur
                 // `locked` via une vérification rapide de l'état du lock
@@ -195,17 +213,27 @@ class SharesResyncClassCommand extends Command
             'resynced' => $resynced,
             'failed' => $failed,
             'locked' => $locked,
+            'skipped_no_groups' => $skippedNoGroups,
             'duration_s' => $duration,
         ]);
 
         $this->info(sprintf(
-            'Classes : %d traitée(s). Re-synchronisées : %d. Échecs : %d. Verrouillées : %d. Durée : %ss.',
+            'Classes : %d traitée(s). Re-synchronisées : %d. Échecs : %d. Verrouillées : %d. Ignorées (groupes AD absents) : %d. Durée : %ss.',
             $classes->count(),
             $resynced,
             $failed,
             $locked,
+            $skippedNoGroups,
             $duration
         ));
+
+        if ($skippedNoGroups > 0) {
+            $this->warn(sprintf(
+                '%d classe(s) ignorée(s) : leurs groupes AD ne se résolvent pas (classes déchets/malformées). '
+                . 'Ce ne sont PAS des échecs — nettoyez-les à la source (AD/sync) pour les faire disparaître.',
+                $skippedNoGroups,
+            ));
+        }
 
         // Codes de retour (review 5.2 #2 Q3) :
         //   - 1 (FAILURE) si au moins une classe a échoué.

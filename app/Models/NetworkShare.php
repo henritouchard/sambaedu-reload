@@ -30,6 +30,7 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
  * @property string $name
  * @property string $directory_name
  * @property string|null $label
+ * @property string|null $description
  * @property string|null $letter
  * @property int|null $created_by_user_id
  * @property \DateTime|null $created_at
@@ -63,6 +64,7 @@ class NetworkShare extends Model
         'name',
         'directory_name',
         'label',
+        'description',
         'letter',
         'created_by_user_id',
     ];

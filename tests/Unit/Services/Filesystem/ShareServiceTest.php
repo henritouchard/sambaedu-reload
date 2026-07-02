@@ -330,6 +330,24 @@ class ShareServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_creates_devoirs_deposit_dir_under_travail(): void
+    {
+        $group = $this->makeClasse('6A');
+        $this->service->createClassShare($group, performedBy: 'admin');
+
+        // Le dépôt de devoirs est créé sous _travail…
+        Process::assertRan(fn ($p) => str_contains($p->command, 'mkdir -p')
+            && str_contains($p->command, 'Classe_6A/_travail/devoirs'));
+        // …avec l'ACL équipe (écrit) / élèves (lisent) — même set que _travail.
+        Process::assertRan(fn ($p) => str_contains($p->command, 'setfacl')
+            && str_contains($p->command, 'group:equipe_6a:rwx')
+            && str_contains($p->command, '_travail/devoirs'));
+        Process::assertRan(fn ($p) => str_contains($p->command, 'setfacl')
+            && str_contains($p->command, 'group:classe_6a:rx')
+            && str_contains($p->command, '_travail/devoirs'));
+    }
+
+    #[Test]
     public function it_activates_echange_by_default_at_creation_d6(): void
     {
         $group = $this->makeClasse('6A');

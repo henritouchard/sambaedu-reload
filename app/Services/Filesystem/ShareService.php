@@ -172,6 +172,47 @@ class ShareService
     }
 
     /**
+     * Retourne les groupes système que les ACL canoniques référenceraient
+     * (`equipe_<local>`, `classe_<local>`) MAIS qui ne se résolvent PAS via
+     * `getent group` (AD/winbind/local). Liste VIDE = tout résout (classe
+     * provisionnable). Non-vide = classe à sauter (`setfacl` échouerait).
+     *
+     * Sert de pré-check fail-closed à {@see createClassShare()} et de critère de
+     * skip lisible pour `shares:resync-class`. Un nom de classe indérivable
+     * (`aclGroupLocalPart` null) est traité ailleurs (`resolveClassPath`) → on
+     * renvoie `[]` ici pour ne pas doublonner ce rejet.
+     *
+     * @return list<string>
+     */
+    public function unresolvedClassGroups(UserGroup $group): array
+    {
+        $local = $this->aclGroupLocalPart($group);
+        if ($local === null) {
+            return [];
+        }
+
+        $missing = [];
+        foreach (["equipe_{$local}", "classe_{$local}"] as $systemGroup) {
+            if (! $this->systemGroupExists($systemGroup)) {
+                $missing[] = $systemGroup;
+            }
+        }
+
+        return $missing;
+    }
+
+    /**
+     * `true` si le groupe est résolu par `getent group` (base locale + AD via
+     * winbind/nsswitch). Read-only, pas de sudo (getent est world-readable). Le
+     * nom est déjà contraint (bare alphanum + suffixe), `escapeshellarg` par
+     * défense en profondeur.
+     */
+    private function systemGroupExists(string $name): bool
+    {
+        return Process::run('getent group ' . escapeshellarg($name))->successful();
+    }
+
+    /**
      * Construit le path absolu du partage d'un groupe classe.
      *
      * Refuse si :
@@ -371,6 +412,25 @@ class ShareService
             return false;
         }
 
+        // Pré-check de résolution des groupes système (AD/winbind). Les ACL
+        // canoniques référencent `equipe_<local>`/`classe_<local>` : si `setfacl`
+        // ne peut PAS résoudre ces groupes, il échoue avec « Argument invalide »
+        // et laisse une ACL partielle. Ça arrive sur les classes MALFORMÉES/déchets
+        // (ex. nom `classe_473` dont le vrai groupe AD est `classe_classe_473`) que
+        // le sync AD recrée. On refuse AVANT tout side-effect FS, avec un motif
+        // clair (fail-closed), plutôt que de laisser `setfacl` cracher un échec
+        // opaque. Cf. mémoire acl_equipe_group_missing_etab_suffix / classes déchets.
+        $missingGroups = $this->unresolvedClassGroups($group);
+        if ($missingGroups !== []) {
+            Log::warning('ShareService: createClassShare sauté (groupes AD non résolus)', [
+                'group_id' => $group->id,
+                'group_name' => $group->name,
+                'missing_groups' => $missingGroups,
+            ]);
+
+            return false;
+        }
+
         $lock = Cache::lock('shares:resync:' . $group->id, 60);
         if (! $lock->get()) {
             Log::warning('ShareService: createClassShare verrouillé (autre opération en cours)', [
@@ -420,6 +480,24 @@ class ShareService
                     $allOk = false;
                 }
                 $allOk = $this->chownAndChgrp($subPath) && $allOk;
+            }
+
+            // 5b. Dépôt de devoirs `_travail/devoirs` (comble le gap legacy
+            //     find_devoirs()). Même ACL que _travail : l'équipe pédagogique
+            //     écrit (dépose sujets), les élèves lisent. Le legacy chownait ce
+            //     dossier à UN prof (modèle mono-enseignant) ; SE5 s'appuie sur
+            //     l'ACL `equipe_<classe>` (multi-enseignant, cohérent socle).
+            //     NB : le WORKFLOW de collecte des copies rendues (récupération)
+            //     reste une feature à concevoir — ici on ne garantit QUE le
+            //     dossier de dépôt avec les bons droits.
+            $devoirsPath = $classPath . '/_travail/devoirs';
+            if (! $this->ensureDirectory($devoirsPath)) {
+                $allOk = false;
+            } else {
+                if (! $this->aclService->setAcls($devoirsPath, $this->buildTravailAcls($classNameLower), recurse: true)) {
+                    $allOk = false;
+                }
+                $allOk = $this->chownAndChgrp($devoirsPath) && $allOk;
             }
 
             // 6. Dossiers élèves (membres du groupe classe).
