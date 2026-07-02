@@ -1,1 +1,0 @@
-Voir d'ou viennent les raccourcis admin qui aidnet (nettoyage wpkg, gpo update...)
