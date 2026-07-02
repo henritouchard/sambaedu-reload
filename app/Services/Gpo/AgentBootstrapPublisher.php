@@ -610,11 +610,15 @@ class AgentBootstrapPublisher
                 if ($remoteSize !== $expectedSize) {
                     throw new RuntimeException(sprintf(
                         'Vérification d\'écriture SYSVOL ÉCHOUÉE pour %s : startup.cmd en SYSVOL fait %d octets, '
-                        . '%d attendus (fichier spécialisé). Écriture de CE run non confirmée (probable faux-succès '
-                        . 'masquant un ACCESS_DENIED en re-run).',
+                        . '%d attendus (fichier spécialisé). Écriture de CE run non confirmée. Causes probables : '
+                        . '(1) le contenu du template a changé sans incrément de GPT.INI [General] Version — '
+                        . 'import_gpo (force=false) saute alors la republication SYSVOL et laisse le fichier périmé '
+                        . '(remède : bumper Version dans resources/gpo/%s/GPT.INI, ou relancer avec --force) ; '
+                        . '(2) faux-succès masquant un ACCESS_DENIED en re-run (droits Administrator / ACL SYSVOL).',
                         self::DISPLAY_NAME,
                         $remoteSize,
                         $expectedSize,
+                        self::DISPLAY_NAME,
                     ));
                 }
                 $verifyLog->success(['verified' => true, 'remote_size' => $remoteSize, 'expected_size' => $expectedSize]);
