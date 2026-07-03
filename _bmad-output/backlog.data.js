@@ -1070,17 +1070,17 @@ const DATASETS = {
         {
           "id": "27-3bis",
           "title": "Handler associations de fichiers — le vice UserChoice confiné",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "27-3ter",
           "title": "Registre — valeur par défaut diffusée + override de valeur par parc",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "27-4",
           "title": "Handler config d'app — policies.json Firefox/Thunderbird (scope machine)",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "27-5",
@@ -1090,12 +1090,12 @@ const DATASETS = {
         {
           "id": "27-6",
           "title": "Catalogue WPKG — source unique depuis le module (fix désync bundle/module + malformation)",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "27-14",
           "title": "Extinction du canal legacy — parité validée, la dette part en bloc",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "27-7",
@@ -1115,17 +1115,17 @@ const DATASETS = {
         {
           "id": "27-10",
           "title": "Préchargement de l'identité machine dans l'overlay (salle en portée machine)",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "27-11",
           "title": "Composer d'associations par défaut — extension libre + app par nom",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "27-12",
           "title": "Config en capacités — registre capability-first (l'admin gère des intentions, la clé devient un détail)",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "27-13",
@@ -1309,18 +1309,18 @@ const DATASETS = {
     {
       "num": 32,
       "title": "Contrat Amont — Cycle de vie du lien & release",
-      "status": "in-progress",
+      "status": "done",
       "summary": "À réception du signal de <strong>rupture du lien de management</strong>, SE5 libère proprement tous les verrous : les items quittent l'état imposé en conservant leur valeur courante effective, le bornage catalogue tombe, le refnum reprend la main — <strong>sans perte de ses ajouts locaux</strong>. Distinction clé : une simple <strong>indisponibilité amont</strong> (panne) ne libère rien (le dernier contrat reste en vigueur) ; seule la rupture délibérée déclenche le release. Transitions d'état du lien auditées (NFR5).",
       "stories": [
         {
           "id": "32-1",
           "title": "Release des verrous à la rupture du lien (valeurs conservées, ajouts préservés)",
-          "status": "review"
+          "status": "done"
         },
         {
           "id": "32-2",
           "title": "Indisponibilité amont vs rupture + trace des transitions du lien",
-          "status": "review",
+          "status": "done",
           "note": "Story PREUVE DOMINANTE (Q1=A, aucune migration). Prouve que active() filtre link_state SEUL (ignore received_at) → une panne amont MAINTIENT les verrous ; seule la rupture explicite (sever()) libère. Audit NFR5 complet par construction (active→severed = unique transition, tracée par 32.1). Review opus : 2🟠/3🟡, 0 critique → garde-fous appliqués (introspection scheduler anti-décroissance + invariant ingest n'écrit jamais severed + assertion AC7 contribution Upstream). 16 tests/62 assertions verts ; non-régression 198 passed. Validation /vm différée (idem 32.1, aucun controlHub émetteur branché)."
         }
       ]
@@ -1328,13 +1328,13 @@ const DATASETS = {
     {
       "num": 33,
       "title": "Contrat Amont — Contrat de données d'intégration controlHub↔SE5",
-      "status": "in-progress",
+      "status": "done",
       "summary": "Formaliser et <strong>versionner</strong> le schéma d'échange partagé entre controlHub et SE5 (point de couture entre les deux BMAD, cf. §7 du handoff et §9 du mini-PRD). Source unique vérifiable : validation du payload contre le schéma versionné à l'ingestion, et <strong>rejet gracieux</strong> d'une version incompatible (sans corrompre l'état local). Durcit le format d'ingestion introduit unilatéralement en Epic 28. Coordination cross-équipe — à synchroniser avec le BMAD controlHub.",
       "stories": [
         {
           "id": "33-1",
           "title": "Schéma d'échange versionné (validation à l'ingestion)",
-          "status": "review",
+          "status": "done",
           "note": "Dev opus + review sonnet/opus (dev-cycle 2026-06-30). Livré : ControlHubContractSchema (CURRENT_VERSION='1.0', SUPPORTED_VERSIONS, negotiate() — seam rejet 33.2) + colonne additive schema_version + enregistrement à l'ingestion sans casser le no-op 28.2 (versionChanged intégré au gating $mutated) + DTO schemaVersion + artefact partagé schema-echange-controlhub-se5.md (R2). Review : 7 findings, corrigés #1/#3/#5/#6/#7 (test branche legacy-null = AC#5, Log::warning repli version non supportée, asserts received_at/constantes), #2 confirmé légitime, #4 = note déploiement. Tests 10/10 + 170/170 non-rég. ⚠️ Migration schema_version à jouer sur /vm (différée, QA 19.2)."
         },
         {
@@ -1348,7 +1348,7 @@ const DATASETS = {
     {
       "num": 34,
       "title": "Lecteurs réseau gérés",
-      "status": "in-progress",
+      "status": "done",
       "summary": "Module de <strong>répertoires réseau nommés</strong> gérés par l'admin (refnum) : créer un répertoire, l'assigner par maille (<strong>utilisateur / groupe d'utilisateurs / parc WorkstationGroup</strong>) avec un accès <strong>lecture seule ou lecture-écriture</strong>, et le diffuser en lecteur sur les postes via le canal <code>drives</code> natif de l'agent. C'est le « MVP-B » délibérément écarté en 27.2 (table + pivot d'assignation + UI configurable). Modèle d'accès à deux axes : la <strong>visibilité</strong> (où la lettre apparaît) par n'importe quelle maille, l'<strong>ACL POSIX</strong> (qui lit/écrit) par les grants user/group. Templates de répertoire (échanges direction/profs/élèves/user↔user/groupes) prévus en stories ultérieures.",
       "stories": [
         {
@@ -1366,7 +1366,7 @@ const DATASETS = {
         {
           "id": "34-3",
           "title": "Templates de répertoire (préfabrication d'échanges réutilisables)",
-          "status": "review",
+          "status": "done",
           "note": "[REVIEW — code+story sur branche worktree-E34-lecteurs, PAS encore mergé sur main] IMPLÉMENTÉE 2026-06-30 (dev-story, DEV Opus 4.8 claude-opus-4-8[1m]), ready-for-dev → review. ARBITRAGES HENRI appliqués : Q1 casiers « élèves→profs » REPORTÉ 34.x → 4 templates seulement (direction→tous, profs→élèves, user↔user, groupe) ; Q3 option B = TABLE directory_templates (migration additive) + DirectoryTemplateSeeder idempotent (4 recettes JSON roles_spec, recette LUE en DB par le service, PAS d'enum/CRUD) ; Q5 nommage MANUEL (directory_name saisi + validé format/unique, pas d'auto-slug) ; Q2/Q4/Q6 défauts. LIVRÉ : migration directory_templates + modèle DirectoryTemplate (ALLOWED_ROLE_MAILLES=User|UserGroup, respectsMountOnlyInvariant) + DirectoryTemplateSeeder (4 recettes, invariant WG=jamais d'ACL) + wire DatabaseSeeder ; DirectoryTemplateService::materialize → TemplateMaterializationResult (valide format/lettre réservée AVANT écriture ; DB::transaction crée NetworkShare+assignables par maille → assertNoLetterCollision AVANT commit → rollback si collision ; provision() synchrone après commit ; cardinalité + typage group_type + existence cibles validés ; NE redérive AUCUN nom de groupe Unix, piège #3) ; UI « Créer depuis un template » = 2e modale x-molecules.modal sur /app/shares (formulaire DYNAMIQUE selon roles_spec lu en DB, pickers SQL User/UserGroup zéro CN AD, letter pré-remplie suggestNextFreeLetter, APERÇU cible→maille→access + warning WG/casiers, gating abort_unless manage-networkshare, redirect page détail). GARDE-FOUS PROUVÉS : socle figé INTOUCHÉ (DrivesStateProvider/StateCompiler/agent/**/ShareService/NetworkShareService::provision-buildAcls-unixGroupFor/contract-v1 §7 — git status) ; golden state.v1.json + FROZEN_STATE_HASH INCHANGÉS (ContractV1 5/104) ; zéro AD/LdapRecord/APCu ; pas de bump version agent ; UI sur modale = pas de nouvelle route. Tests HÔTE php8.4.5+sqlite (filtres ciblés) : net-new DirectoryTemplateService 12, DirectoryTemplateSeeder 4, SharesFromTemplate (Livewire) 10 ; non-régression ContractV1+DrivesStateProvider+NetworkShare+RoutesProtection+Policy 96, Agent 540/22skip. ⚠️ PRÉ-DÉPLOIEMENT VM : db:seed --class=DirectoryTemplateSeeder requis (peuple les 4 recettes). Doc QA filesystem.md enrichie (Section 34.3, casiers HORS scope notés). PAS de commit (orchestrateur). Cf. story 34-3 Dev Agent Record. --- ANTÉRIEUR : CRÉÉE 2026-06-30 (create-story, Opus 4.8) → ready-for-dev. Couche de PRÉFABRICATION (« templates d'échange ») PAR-DESSUS la fondation 34.1 + l'UI 34.2 — réutilisation STRICTE du socle figé (NetworkShare/pivot/NetworkShareService::provision/NetworkShareValidator/NetworkSharePolicy/DrivesStateProvider INTOUCHÉS). C'est le « MVP-B templates » annoncé HORS scope en 34.1/34.2. LIVRE : (1) catalogue de templates = recettes paramétrables des patterns récurrents de l'éducation nationale (direction→tous RO descendante ; profs→élèves devoirs prof RW/élèves RO ; élèves→profs rendus ; user↔user bilatéral RW/RW ; groupe espace commun), chacune encodant les DEUX axes (visibilité/ACL) + le mapping de maille + l'invariant WG=jamais d'ACL ; (2) DirectoryTemplateService::materialize (DB::transaction : crée NetworkShare + assignations par maille → NetworkShareValidator::assertNoLetterCollision AVANT commit, rollback si collision [patron addAssignment 34.2] → provision() synchrone, warnings WG-montage-seul surfacés) ; (3) UI « Créer depuis un template » sur /app/shares (modale x-molecules.modal, formulaire DYNAMIQUE selon le template, pickers SQL réutilisés zéro CN AD, directory_name pré-rempli slug + letter suggestNextFreeLetter, APERÇU des assignations, gating networkshare.manage). GARDE-FOUS : payload drives/golden state.v1.json/FROZEN_STATE_HASH PHP+Go/agent/**/StateCompiler/contract-v1 §7/ShareService/NetworkShareService::provision-buildAcls-unixGroupFor/RESERVED_LETTERS/LETTER_POOL INTOUCHÉS (couche au-dessus, zéro modif socle). HORS scope : casiers/sous-espaces par-utilisateur (le socle pose l'ACL au répertoire racine, pas de sous-dossier par élève → 34.x), resync/archivage/suppression FS (34.x), templates éditables en DB (si Q3→table = story dédiée). 6 AC, T1-T5. AUCUNE migration (défaut Q3 presets en code, pas de table directory_templates). DETTE 34.2 NON aggravée (pickers non scopés étab Q3-34.2 ; collision cross-maille M-A assumée). Questions ouvertes Henri : Q1 casiers élèves→profs (défaut dépôt partagé assumé vs report 34.x) [STRUCTURANT], Q2 résolution « tous » (défaut multi-UserGroup explicite, pas de parc=montage-seul sans ACL), Q3 persistance templates (défaut presets en code vs table éditable), Q4 idempotence/ré-application (défaut one-shot, sync=34.x), Q5 nommage auto répertoire (défaut slug pré-rempli modifiable), Q6 mailles exposées (défaut rôles du pattern only, option parc montage-seul masquée). Tests HÔTE php8.4+sqlite filtres ciblés (DirectoryTemplateService unit + Livewire UI + catalogue 5 patterns/invariant WG + non-régression ContractV1/DrivesStateProvider/NetworkShare/Agent golden inchangé). Dépendances : 34-1 + 34-2 (toutes deux en review). Reco dev : OPUS (modélisation métier des recettes à 2 axes + piège casiers « ce que le socle sait faire vs gap à signaler » + préservation socle figé + 6 arbitrages ouverts, pas le CRUD). Cf. story 34-3-templates-de-repertoire.md."
         },
       ]
@@ -1374,37 +1374,37 @@ const DATASETS = {
     {
       "num": 35,
       "title": "Capacités v2 — couverture des GPO spéciales (CD95)",
-      "status": "in-progress",
+      "status": "done",
       "summary": "Étendre le mécanisme capability/registry pour couvrir les GPO ad-hoc CD95 non projetables (paliers B/C de l'analyse 2026-07-02, le palier A — 11 capacités — étant déjà seedé) : <strong>verbe <code>ensure present|absent</code></strong> (socle delete, off honnête pour les capacités on-only), <strong>type <code>registry_list</code></strong> (listes à sous-clés indexées \\N : Forcelist Pix, DisallowRun élèves — cmd.exe inclus, remplace DisableCMD sans broker d'élévation), <strong>ruche <code>HKU</code></strong> (SYSTEM écrit .DEFAULT + ruches chargées : numlock logon, HKCU\\Policies diffusable), <strong>geste UI override par groupe d'utilisateurs</strong> (arme Outlook/regedit/blocked_executables déjà en base), seed <code>photo_viewer_restored</code> (zéro moteur), et mécanisme <code>privilege</code> LSA SeDeny* <strong>gated</strong> (validation métier RDP élèves d'abord). Contrat additif uniquement, StateCompiler intouché, réconciliation liste par clé-conteneur. Cadrage : <code>planning-artifacts/epics-capacites-v2.md</code>.",
       "stories": [
         {
           "id": "35-1",
           "title": "Verbe ensure — present/absent sur les items registry (socle delete)",
-          "status": "review",
+          "status": "done",
           "note": "[REVIEW passée + mergée main — ultradev vague 1] Verbe `ensure present|absent` : contrat §7.1 additif (item absent 4 clés), marqueur $ensure dans les specs (3 régimes écrire/supprimer/UNMANAGED), StateHasher canonicalise (hasher intouché), handler Go delete (valeur nommée seulement, jamais la clé-conteneur), retrofit off honnête llmnr_disabled+windows_updates_managed, golden +1 item (hashes jumeaux f3d22e9f…), agent 2.3.0. Review opus 3 findings corrigés dont Read/type non géré (sentinelle REG_UNSUPPORTED — résidu silencieux fermé). Cf. codeReviews/35-1.md. VM : migrate retrofit + publier ≥2.4.0."
         },
         {
           "id": "35-2",
           "title": "Type registry_list — listes à sous-clés indexées \\N (Pix, DisallowRun)",
-          "status": "review",
+          "status": "done",
           "note": "[REVIEW passée + mergée main — ultradev vague 2, worktree] Type `registry_list` : payload {hive,path,entry_type,values}, exclusiveKey=clé-conteneur (StateCompiler intouché), handler Go réconciliation D3 (écrit 1..N, purge noms numériques surnuméraires only, liste vide=purge, RegistryOps.ValueNames), CapabilitySpecCollisionGuard (scalaire↔conteneur refusé ; DETTE : sans appelant runtime, à câbler par la future UI de spec), seed pix_extension_forced (Chrome id SEUL iso-GPO vérifié source + Edge id;url) + blocked_executables (bi-projection D5, cmd.exe remplace DisableCMD). + SCOPE AJOUTÉ : name=\"\" = valeur par défaut (débloque 35.5). Golden +1 item (état fe8eb6ea…), agent 2.4.0 (binaire antérieur IGNORE le type en silence → publier). Cf. codeReviews/35-2.md. VM : migrate seed + publier."
         },
         {
           "id": "35-3",
           "title": "Ruche HKU — écriture SYSTEM des ruches utilisateur (.DEFAULT + sessions)",
-          "status": "review",
+          "status": "done",
           "note": "[REVIEW passée — ultradev vague 3] Ruche HKU : provider MACHINE émet hive:'HKU' (jamais Session), handler Go fan-out .DEFAULT + ruches chargées (filtre SID service/_Classes), drift AGRÉGÉ, session tardive couverte au cycle suivant ; registry_list refuse HKU (borné guard). Retrofit numlock écran de logon (InitialKeyboardIndicators=2 sous .DEFAULT). Golden INCHANGÉS (HKU = valeur de hive). Agent 2.4.1→2.5.0. Review opus : race logoff → sonde anti-orpheline avant Write + test chemin réel ; Test franc/isolation Apply documenté. Cf. codeReviews/35-3.md. ⚠️ VM : PUBLIER 2.5.0 AVANT de migrer (binaire antérieur = type registry machine entier en error, HKLM gelées)."
         },
         {
           "id": "35-4",
           "title": "Geste UI — override de capacité par groupe d'utilisateurs",
-          "status": "review",
+          "status": "done",
           "note": "[REVIEW passée + mergée main — ultradev vague 2, worktree] Section « Capacités » sur la page d'édition d'un UserGroup : capacités assignables (≥1 clé HKCU), override ou « suit le défaut », poser/modifier/retirer (retrait=retour défaut), warning confirmé, overrides_locked gelé, audit capability_override_audit_logs réutilisé (29.5), gate customize-userGroup (app.customize global, délégué par-salle refusé testé — anti-piège 29.1 ; hypothèse « 1 instance = 1 étab » documentée, à re-valider si multi-étab). Précédence UserGroup>Broadcast prouvée au compilé réel (registry_editing_disabled). Zéro moteur/agent/golden. Review sonnet + éval : PoC override machine-only inerte fermé (garde serveur isAssignableByUserGroup). Cf. codeReviews/35-4.md. VM : rien."
         },
         {
           "id": "35-5",
           "title": "Capacité photo_viewer_restored (seed, zéro moteur)",
-          "status": "review",
+          "status": "done",
           "note": "[REVIEW passée + mergée main + GATE LEVÉ — ultradev vague 2, worktree] Seed photo_viewer_restored fidèle à l'octet au Registry.xml source (4 clés HKCR→HKCU\\Software\\Classes, 2 commands name=\"\" ImageView_Fullscreen open ET print, 2 Clsid distincts), off=$ensure:absent, opt-in unmanaged Session. Seedée is_active=false (gate honnêteté name=\"\") puis ACTIVÉE par migration 2026_07_03_150000 (support prouvé par 35.2 ; description réécrite). Review sonnet + éval : description>varchar(255) PG corrigée + test structurel tous-seeds, garde is_active sur parc-defaults (openEdit/saveDefault + bouton disabled). Limite : UserChoice = composer 27.11 hors story. Cf. codeReviews/35-5.md. VM : migrate (seed+flip), effet conditionné à agent ≥2.4.0."
         },
         {
@@ -1424,7 +1424,8 @@ const DATASETS = {
         {
           "id": "36-1",
           "title": "Mécanisme fs_acl — ACE NTFS gérées + capacité program_files_browse_denied",
-          "status": "todo"
+          "status": "todo",
+          "note": "📌 RAPPEL 35.6 au create-story : cette story livre la résolution SID côté agent (LSA) = la plomberie du mécanisme privilege. Réévaluer l'ouverture de la 35.6 (gate D6 fermé 2026-07-03) à ce moment-là — cf. note en tête de Story 36.1 dans epics-mecanismes-hors-registre.md et ultradev/35-questions.md Q1."
         },
         {
           "id": "36-2",

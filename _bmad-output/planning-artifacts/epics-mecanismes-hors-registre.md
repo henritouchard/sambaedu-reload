@@ -130,6 +130,16 @@ mécanismes réutiliseront).
 
 ### Story 36.1 : Mécanisme `fs_acl` — ACE NTFS gérées sur le poste
 
+> **📌 Rappel 35.6 (décision Henri 2026-07-03, gate D6 fermé — cf.
+> `_bmad-output/ultradev/35-questions.md` Q1)** : cette story livre la résolution
+> de SID côté agent (LSA, jetons d'audience) — c'est exactement la plomberie dont
+> le mécanisme `privilege` (Story 35.6, SeDeny*/RDP élèves) a besoin. **Au moment
+> de créer/développer la 36.1, réévaluer l'ouverture de la 35.6** : son coût
+> marginal s'effondre une fois `fs_acl` livré. L'ouvrir SEULEMENT si le besoin
+> terrain « RDP interdit aux élèves mais autorisé aux profs sur le MÊME parc »
+> s'est confirmé (le per-parc `remote_desktop_enabled=off` couvre le reste) ; si
+> un mécanisme `localgroup` est cadré entre-temps, il rend la 35.6 caduque.
+
 En tant que référent numérique,
 je veux restreindre (ou accorder) l'accès à un dossier du poste pour un type d'utilisateur,
 afin de masquer Program Files aux élèves — sans casser le lancement des applications.
