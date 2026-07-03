@@ -1370,6 +1370,72 @@ const DATASETS = {
           "note": "[REVIEW — code+story sur branche worktree-E34-lecteurs, PAS encore mergé sur main] IMPLÉMENTÉE 2026-06-30 (dev-story, DEV Opus 4.8 claude-opus-4-8[1m]), ready-for-dev → review. ARBITRAGES HENRI appliqués : Q1 casiers « élèves→profs » REPORTÉ 34.x → 4 templates seulement (direction→tous, profs→élèves, user↔user, groupe) ; Q3 option B = TABLE directory_templates (migration additive) + DirectoryTemplateSeeder idempotent (4 recettes JSON roles_spec, recette LUE en DB par le service, PAS d'enum/CRUD) ; Q5 nommage MANUEL (directory_name saisi + validé format/unique, pas d'auto-slug) ; Q2/Q4/Q6 défauts. LIVRÉ : migration directory_templates + modèle DirectoryTemplate (ALLOWED_ROLE_MAILLES=User|UserGroup, respectsMountOnlyInvariant) + DirectoryTemplateSeeder (4 recettes, invariant WG=jamais d'ACL) + wire DatabaseSeeder ; DirectoryTemplateService::materialize → TemplateMaterializationResult (valide format/lettre réservée AVANT écriture ; DB::transaction crée NetworkShare+assignables par maille → assertNoLetterCollision AVANT commit → rollback si collision ; provision() synchrone après commit ; cardinalité + typage group_type + existence cibles validés ; NE redérive AUCUN nom de groupe Unix, piège #3) ; UI « Créer depuis un template » = 2e modale x-molecules.modal sur /app/shares (formulaire DYNAMIQUE selon roles_spec lu en DB, pickers SQL User/UserGroup zéro CN AD, letter pré-remplie suggestNextFreeLetter, APERÇU cible→maille→access + warning WG/casiers, gating abort_unless manage-networkshare, redirect page détail). GARDE-FOUS PROUVÉS : socle figé INTOUCHÉ (DrivesStateProvider/StateCompiler/agent/**/ShareService/NetworkShareService::provision-buildAcls-unixGroupFor/contract-v1 §7 — git status) ; golden state.v1.json + FROZEN_STATE_HASH INCHANGÉS (ContractV1 5/104) ; zéro AD/LdapRecord/APCu ; pas de bump version agent ; UI sur modale = pas de nouvelle route. Tests HÔTE php8.4.5+sqlite (filtres ciblés) : net-new DirectoryTemplateService 12, DirectoryTemplateSeeder 4, SharesFromTemplate (Livewire) 10 ; non-régression ContractV1+DrivesStateProvider+NetworkShare+RoutesProtection+Policy 96, Agent 540/22skip. ⚠️ PRÉ-DÉPLOIEMENT VM : db:seed --class=DirectoryTemplateSeeder requis (peuple les 4 recettes). Doc QA filesystem.md enrichie (Section 34.3, casiers HORS scope notés). PAS de commit (orchestrateur). Cf. story 34-3 Dev Agent Record. --- ANTÉRIEUR : CRÉÉE 2026-06-30 (create-story, Opus 4.8) → ready-for-dev. Couche de PRÉFABRICATION (« templates d'échange ») PAR-DESSUS la fondation 34.1 + l'UI 34.2 — réutilisation STRICTE du socle figé (NetworkShare/pivot/NetworkShareService::provision/NetworkShareValidator/NetworkSharePolicy/DrivesStateProvider INTOUCHÉS). C'est le « MVP-B templates » annoncé HORS scope en 34.1/34.2. LIVRE : (1) catalogue de templates = recettes paramétrables des patterns récurrents de l'éducation nationale (direction→tous RO descendante ; profs→élèves devoirs prof RW/élèves RO ; élèves→profs rendus ; user↔user bilatéral RW/RW ; groupe espace commun), chacune encodant les DEUX axes (visibilité/ACL) + le mapping de maille + l'invariant WG=jamais d'ACL ; (2) DirectoryTemplateService::materialize (DB::transaction : crée NetworkShare + assignations par maille → NetworkShareValidator::assertNoLetterCollision AVANT commit, rollback si collision [patron addAssignment 34.2] → provision() synchrone, warnings WG-montage-seul surfacés) ; (3) UI « Créer depuis un template » sur /app/shares (modale x-molecules.modal, formulaire DYNAMIQUE selon le template, pickers SQL réutilisés zéro CN AD, directory_name pré-rempli slug + letter suggestNextFreeLetter, APERÇU des assignations, gating networkshare.manage). GARDE-FOUS : payload drives/golden state.v1.json/FROZEN_STATE_HASH PHP+Go/agent/**/StateCompiler/contract-v1 §7/ShareService/NetworkShareService::provision-buildAcls-unixGroupFor/RESERVED_LETTERS/LETTER_POOL INTOUCHÉS (couche au-dessus, zéro modif socle). HORS scope : casiers/sous-espaces par-utilisateur (le socle pose l'ACL au répertoire racine, pas de sous-dossier par élève → 34.x), resync/archivage/suppression FS (34.x), templates éditables en DB (si Q3→table = story dédiée). 6 AC, T1-T5. AUCUNE migration (défaut Q3 presets en code, pas de table directory_templates). DETTE 34.2 NON aggravée (pickers non scopés étab Q3-34.2 ; collision cross-maille M-A assumée). Questions ouvertes Henri : Q1 casiers élèves→profs (défaut dépôt partagé assumé vs report 34.x) [STRUCTURANT], Q2 résolution « tous » (défaut multi-UserGroup explicite, pas de parc=montage-seul sans ACL), Q3 persistance templates (défaut presets en code vs table éditable), Q4 idempotence/ré-application (défaut one-shot, sync=34.x), Q5 nommage auto répertoire (défaut slug pré-rempli modifiable), Q6 mailles exposées (défaut rôles du pattern only, option parc montage-seul masquée). Tests HÔTE php8.4+sqlite filtres ciblés (DirectoryTemplateService unit + Livewire UI + catalogue 5 patterns/invariant WG + non-régression ContractV1/DrivesStateProvider/NetworkShare/Agent golden inchangé). Dépendances : 34-1 + 34-2 (toutes deux en review). Reco dev : OPUS (modélisation métier des recettes à 2 axes + piège casiers « ce que le socle sait faire vs gap à signaler » + préservation socle figé + 6 arbitrages ouverts, pas le CRUD). Cf. story 34-3-templates-de-repertoire.md."
         },
       ]
+    },
+    {
+      "num": 35,
+      "title": "Capacités v2 — couverture des GPO spéciales (CD95)",
+      "status": "todo",
+      "summary": "Étendre le mécanisme capability/registry pour couvrir les GPO ad-hoc CD95 non projetables (paliers B/C de l'analyse 2026-07-02, le palier A — 11 capacités — étant déjà seedé) : <strong>verbe <code>ensure present|absent</code></strong> (socle delete, off honnête pour les capacités on-only), <strong>type <code>registry_list</code></strong> (listes à sous-clés indexées \\N : Forcelist Pix, DisallowRun élèves — cmd.exe inclus, remplace DisableCMD sans broker d'élévation), <strong>ruche <code>HKU</code></strong> (SYSTEM écrit .DEFAULT + ruches chargées : numlock logon, HKCU\\Policies diffusable), <strong>geste UI override par groupe d'utilisateurs</strong> (arme Outlook/regedit/blocked_executables déjà en base), seed <code>photo_viewer_restored</code> (zéro moteur), et mécanisme <code>privilege</code> LSA SeDeny* <strong>gated</strong> (validation métier RDP élèves d'abord). Contrat additif uniquement, StateCompiler intouché, réconciliation liste par clé-conteneur. Cadrage : <code>planning-artifacts/epics-capacites-v2.md</code>.",
+      "stories": [
+        {
+          "id": "35-1",
+          "title": "Verbe ensure — present/absent sur les items registry (socle delete)",
+          "status": "todo"
+        },
+        {
+          "id": "35-2",
+          "title": "Type registry_list — listes à sous-clés indexées \\N (Pix, DisallowRun)",
+          "status": "todo"
+        },
+        {
+          "id": "35-3",
+          "title": "Ruche HKU — écriture SYSTEM des ruches utilisateur (.DEFAULT + sessions)",
+          "status": "todo"
+        },
+        {
+          "id": "35-4",
+          "title": "Geste UI — override de capacité par groupe d'utilisateurs",
+          "status": "todo"
+        },
+        {
+          "id": "35-5",
+          "title": "Capacité photo_viewer_restored (seed, zéro moteur)",
+          "status": "todo"
+        },
+        {
+          "id": "35-6",
+          "title": "Mécanisme privilege — droits LSA SeDeny* (GATED : besoin métier à valider)",
+          "status": "todo"
+        }
+      ]
+    },
+    {
+      "num": 36,
+      "title": "Bibliothèque de capacités — mécanismes fs_acl et firewall",
+      "status": "todo",
+      "summary": "Direction « bibliothèque de capacités » (décision 2026-07-02) : PAS de collection de scripts (leçon WPKG — pas de test/drift, pas d'off fiable, surface C2) mais des <strong>mécanismes typés</strong> — handler Go générique test/apply/report payé UNE fois, puis capacités = donnée seedée illimitée. Cet epic paie les deux premiers mécanismes hors-registre : <strong><code>fs_acl</code></strong> (ACE NTFS chirurgicales, enums métier — jamais de masque/SDDL, deny dangereux INEXPRIMABLE, jetons d'audience @eleves/@profs résolus à l'expansion, SID côté agent, store dernier-appliqué pour zéro ACE orpheline) et <strong><code>firewall</code></strong> (règles possédées via le groupe SambaEdu-Agent — off symétrique gratuit ; block lan/any REFUSÉ pour ne jamais couper l'agent du serveur). Décision D8 : <strong>deux surfaces d'authoring</strong> sur UN mécanisme — capacité catalogue (intention figée : Program Files, internet_access) ET fonctionnalité à formulaire (règles d'accès aux dossiers créées par le refnum, patron Epic 34). + lot registre pur (pins barre latérale, Accès rapide) témoin du coût marginal zéro-moteur. Cadrage : <code>planning-artifacts/epics-mecanismes-hors-registre.md</code>.",
+      "stories": [
+        {
+          "id": "36-1",
+          "title": "Mécanisme fs_acl — ACE NTFS gérées + capacité program_files_browse_denied",
+          "status": "todo"
+        },
+        {
+          "id": "36-2",
+          "title": "Mécanisme firewall — règles possédées par groupe + capacité internet_access",
+          "status": "todo"
+        },
+        {
+          "id": "36-3",
+          "title": "Lot bibliothèque n°2 — capacités registre pures (pins sidebar, Accès rapide)",
+          "status": "todo"
+        },
+        {
+          "id": "36-4",
+          "title": "Règles d'accès aux dossiers — formulaire refnum (D8, patron Epic 34)",
+          "status": "todo"
+        }
+      ]
     }
   ],
   "central": [
