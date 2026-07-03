@@ -19,7 +19,10 @@ Traçabilité des questions soumises à Henri pendant l'orchestration ultradev d
     d'utilisateurs (le per-parc ne distingue pas élèves/profs sur un même poste).
 - **Recommandation** : A tant que le besoin « RDP interdit aux élèves mais autorisé aux
   profs sur le même parc » n'est pas confirmé sur le terrain ; sinon B.
-- **Réponse retenue** : _(en attente)_
+- **Réponse retenue** : **A — Ne pas ouvrir** (Henri, 2026-07-03, synthèse ultradev).
+  RDP-élèves couvert par `remote_desktop_enabled=off` par parc (livré) ; la story reste
+  au backlog, réouvrable si le besoin « RDP interdit aux élèves mais autorisé aux profs
+  sur le MÊME parc » se confirme sur le terrain.
 
 ## D1 — Décision d'orchestration (non bloquante, révocable) : support `name=""` et flip `photo_viewer_restored`
 

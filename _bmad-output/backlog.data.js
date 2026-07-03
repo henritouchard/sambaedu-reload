@@ -1411,7 +1411,7 @@ const DATASETS = {
           "id": "35-6",
           "title": "Mécanisme privilege — droits LSA SeDeny* (GATED : besoin métier à valider)",
           "status": "todo",
-          "note": "[GATED D6 — question posée à Henri en synthèse ultradev 2026-07-03, cf. _bmad-output/ultradev/35-questions.md Q1] Ne s'ouvre qu'après validation métier : besoin unique connu = RDP refusé aux élèves ; alternatives remote_desktop_enabled par parc (livré) / futur mécanisme localgroup."
+          "note": "[GATE FERMÉ — décision Henri 2026-07-03 (synthèse ultradev, Q1 de ultradev/35-questions.md) : NE PAS OUVRIR] RDP-élèves couvert par remote_desktop_enabled=off par parc (livré) ; futur mécanisme localgroup en alternative. Story réouvrable si le besoin « RDP interdit aux élèves mais autorisé aux profs sur le MÊME parc » se confirme sur le terrain."
         }
       ]
     },
