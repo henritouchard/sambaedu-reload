@@ -93,7 +93,7 @@
                             <th>OS</th>
                             <th>IP</th>
                             <th>Dernier rapport</th>
-                            <th>Statut</th>
+                            <th class="text-center">État</th>
                             {{-- Story 24.7 — colonne conformité agent (worst-status) --}}
                             <th class="text-center">Conformité</th>
                             {{-- Story 16.13bis — colonne migration SE4 → SE5 --}}
@@ -117,7 +117,15 @@
                                             <i class="fa-solid fa-computer text-primary text-sm"></i>
                                         </div>
                                         <div>
-                                            <div class="font-bold">{{ $machine->name }}</div>
+                                            <div class="font-bold">
+                                                {{ $machine->name }}
+                                                @if ($machine->isProtected())
+                                                    <span class="badge badge-warning badge-xs align-middle ml-1"
+                                                          title="Poste protégé">
+                                                        <i class="fa-solid fa-lock"></i> Protégé
+                                                    </span>
+                                                @endif
+                                            </div>
                                             @if ($machine->ad_guid)
                                                 <div class="text-xs text-base-content/50 font-mono">
                                                     {{ Str::limit($machine->ad_guid, 8) }}...
@@ -131,25 +139,34 @@
                                 </td>
                                 <td class="font-mono text-sm">{{ $machine->ip }}</td>
                                 <td>
-                                    @if ($machine->date_rapport_poste)
-                                        <span class="text-sm" title="{{ $machine->date_rapport_poste }}">
-                                            {{ $machine->date_rapport_poste->diffForHumans() }}
+                                    @if ($machine->last_report_at)
+                                        <span class="text-sm" title="{{ $machine->last_report_at }}">
+                                            {{ $machine->last_report_at->diffForHumans() }}
                                         </span>
                                     @else
                                         <span class="text-base-content/50">-</span>
                                     @endif
                                 </td>
-                                <td>
-                                    @php
-                                        $statusClass = match ($machine->status) {
-                                            1 => 'badge-success',
-                                            2 => 'badge-warning',
-                                            default => 'badge-error',
-                                        };
-                                    @endphp
-                                    <span class="badge {{ $statusClass }} badge-sm">
-                                        {{ $machine->getStatusLabel() }}
-                                    </span>
+                                {{-- État de présence dérivé du canal agent : extinction
+                                     signalée au shutdown, sinon check-in < 2 × ttl —
+                                     voir agentPresence(). --}}
+                                <td class="text-center">
+                                    @php $presence = $machine->agentPresence(); @endphp
+                                    @if ($presence === 'online')
+                                        <span class="status status-success"
+                                              title="Allumé — check-in {{ $machine->agent_last_checkin_at->diffForHumans() }}"
+                                              aria-label="Allumé"></span>
+                                    @elseif ($presence === 'reported_off')
+                                        <span class="status"
+                                              title="Éteint — extinction signalée {{ $machine->agent_reported_offline_at->diffForHumans() }}"
+                                              aria-label="Éteint"></span>
+                                    @elseif ($presence === 'silent')
+                                        <span class="status status-warning"
+                                              title="Injoignable — dernier check-in {{ $machine->agent_last_checkin_at->diffForHumans() }}"
+                                              aria-label="Injoignable"></span>
+                                    @else
+                                        <span class="text-base-content/30" title="Présence inconnue (pas d'agent)">—</span>
+                                    @endif
                                 </td>
                                 {{-- Story 24.7 — badge conformité agent (worst-status par
                                      poste, calculé en 1 requête agrégée pour la page —
@@ -163,19 +180,20 @@
                                         <span class="text-base-content/30" title="Poste non enrôlé">—</span>
                                     @endif
                                 </td>
-                                {{-- Story 16.13bis — badge migration ✅/❌ --}}
+                                {{-- Story 16.13bis — badge migration SE4 → SE5. Un poste
+                                     natif SE5 (enrôlé agent, jamais passé par le legacy)
+                                     n'est pas concerné : tiret, pas de ❌ anxiogène. --}}
                                 <td class="text-center">
-                                    @php
-                                        $isMigrated = $machine->migrated;
-                                        $migrationBadge = $isMigrated
-                                            ? ['class' => 'badge-success', 'icon' => '✅', 'label' => 'Migré']
-                                            : ['class' => 'badge-ghost', 'icon' => '❌', 'label' => 'Non migré'];
-                                    @endphp
-                                    <span class="badge {{ $migrationBadge['class'] }} badge-sm"
-                                          title="{{ $migrationBadge['label'] }}"
-                                          aria-label="{{ $migrationBadge['label'] }}">
-                                        {{ $migrationBadge['icon'] }}
-                                    </span>
+                                    @if ($machine->migrated)
+                                        <span class="badge badge-success badge-sm"
+                                              title="Migré" aria-label="Migré">✅</span>
+                                    @elseif ($machine->isAgentEnrolled())
+                                        <span class="text-base-content/30"
+                                              title="Non applicable — poste natif SE5">—</span>
+                                    @else
+                                        <span class="badge badge-ghost badge-sm"
+                                              title="Non migré" aria-label="Non migré">❌</span>
+                                    @endif
                                 </td>
                                 <td class="text-center">
                                     @if (($machine->installed_apps_count ?? 0) > 0 || ($machine->error_apps_count ?? 0) > 0)

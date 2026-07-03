@@ -41,6 +41,8 @@ use App\Http\Controllers\Api\V1\Agent\AssetController as AgentAssetController;
 use App\Http\Controllers\Api\V1\Agent\ReleaseController as AgentReleaseController;
 // Story 27.1bis — Canal agent desired-state : GET /tools/{filename} (artefact outil de rendu portable — Rainmeter ; alias iso AgentReleaseController).
 use App\Http\Controllers\Api\V1\Agent\ToolController as AgentToolController;
+// Détection d'extinction — POST /shutdown (signal best-effort du service au shutdown Windows ; alias iso AgentToolController).
+use App\Http\Controllers\Api\V1\Agent\PresenceController as AgentPresenceController;
 // Story 25.4 — Endpoints d'amorçage LAN NON authentifiés (binaire stable + CA)
 // servis aux deux chemins d'installation (GPO-dispatcher figée + unattend iPXE)
 // AVANT que l'agent ait un token. `auth.v1.lan-only` (RFC1918), HORS du groupe `agent.token`.
@@ -333,6 +335,15 @@ Route::get('/v1/agent/tools-manifest', [AgentToolController::class, 'manifest'])
 Route::get('/v1/agent/overlay-skin', [AgentToolController::class, 'skin'])
     ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
     ->name('agent.v1.tools.skin');
+
+// `POST /v1/agent/shutdown` : signal d'extinction best-effort envoyé par le
+// service Windows au shutdown machine (svc.Shutdown). Pose
+// `agent_reported_offline_at` → présence « éteint » immédiate dans l'UI
+// (voir Workstation::agentPresence()) ; un signal perdu retombe sur le seuil
+// de silence 2 × ttl. Corps vide ; chaîne iso state/report.
+Route::post('/v1/agent/shutdown', [AgentPresenceController::class, 'shutdown'])
+    ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
+    ->name('agent.v1.shutdown');
 
 /*
 |--------------------------------------------------------------------------

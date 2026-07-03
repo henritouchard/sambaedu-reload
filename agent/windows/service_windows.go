@@ -83,6 +83,21 @@ func (s *agentService) Execute(_ []string, requests <-chan svc.ChangeRequest, st
 				status <- req.CurrentStatus
 			case svc.Stop, svc.Shutdown:
 				status <- svc.Status{State: svc.StopPending}
+				if req.Cmd == svc.Shutdown {
+					// Extinction MACHINE (pas un stop manuel du service, où le
+					// poste reste allumé) : on signale le serveur AVANT d'annuler
+					// la boucle — best-effort borné 3 s (budget shutdown SCM
+					// ~5 s), sous garde recover (une panique ne bloque jamais
+					// l'arrêt du système).
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								agent.Log.Errorf("Signal d'extinction en échec (panique rattrapée) : %v", r)
+							}
+						}()
+						agent.NotifyShutdown(3 * time.Second)
+					}()
+				}
 				cancel()
 				select {
 				case <-done:

@@ -1023,11 +1023,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             $deployInProgress = $deployment['in_progress'];
             $deployFinished   = $deploySuccess->count() + $deployErrors->count();
             $deployRate       = $deployFinished > 0 ? round(($deploySuccess->count() / $deployFinished) * 100) : 0;
-            $statusClass = match ($workstation->status) {
-                1 => 'badge-success',
-                2 => 'badge-warning',
-                default => 'badge-error',
-            };
+            $presence         = $workstation->agentPresence();
         @endphp
 
         <div class="space-y-6">
@@ -1037,8 +1033,24 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                 <div class="card-body">
                     {{-- En-tête identité --}}
                     <div class="flex items-start gap-4 mb-6">
-                            <div class="bg-primary/10 text-primary flex items-center justify-center rounded-xl w-16 h-16">
-                                <i class="fa-solid fa-computer text-2xl"></i>
+                            {{-- Pin d'état de présence (canal agent) sur l'icône poste --}}
+                            <div class="indicator">
+                                @if ($presence === 'online')
+                                    <span class="indicator-item status status-success status-lg"
+                                          title="Allumé — check-in {{ $workstation->agent_last_checkin_at->diffForHumans() }}"
+                                          aria-label="Allumé"></span>
+                                @elseif ($presence === 'reported_off')
+                                    <span class="indicator-item status status-lg"
+                                          title="Éteint — extinction signalée {{ $workstation->agent_reported_offline_at->diffForHumans() }}"
+                                          aria-label="Éteint"></span>
+                                @elseif ($presence === 'silent')
+                                    <span class="indicator-item status status-warning status-lg"
+                                          title="Injoignable — dernier check-in {{ $workstation->agent_last_checkin_at->diffForHumans() }}"
+                                          aria-label="Injoignable"></span>
+                                @endif
+                                <div class="bg-primary/10 text-primary flex items-center justify-center rounded-xl w-16 h-16">
+                                    <i class="fa-solid fa-computer text-2xl"></i>
+                                </div>
                             </div>
                         <div class="flex-1">
                             <h2 class="text-2xl font-bold">{{ $workstation->name }}</h2>
@@ -1047,9 +1059,11 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                             </p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
-                            <span class="badge badge-lg {{ $statusClass }}">
-                                {{ $workstation->getStatusLabel() }}
-                            </span>
+                            @if ($workstation->isProtected())
+                                <span class="badge badge-lg badge-warning" title="Poste protégé">
+                                    <i class="fa-solid fa-lock mr-1"></i> Protégé
+                                </span>
+                            @endif
                             @if ($deployErrors->isNotEmpty())
                                 <span class="badge badge-lg badge-error">
                                     <i class="fa-solid fa-triangle-exclamation mr-1"></i>
@@ -1125,7 +1139,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                         <div>
                             <span class="text-xs text-base-content/60 uppercase tracking-wide">Dernier rapport</span>
                             <p class="font-medium mt-0.5">
-                                {{ $workstation->date_rapport_poste?->format('d/m/Y H:i') ?? '—' }}
+                                {{ $workstation->last_report_at?->format('d/m/Y H:i') ?? '—' }}
                             </p>
                         </div>
                     </div>

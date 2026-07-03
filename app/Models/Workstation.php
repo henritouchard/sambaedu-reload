@@ -37,6 +37,7 @@ use Livewire\Wireable;
  * @property string|null $agent_previous_token_hash Fenêtre de grâce rotation D5 (Story 23.2)
  * @property \DateTimeInterface|null $agent_token_rotated_at Dernière émission/rotation token agent (Story 23.2)
  * @property \DateTimeInterface|null $agent_last_checkin_at Dernier check-in canal agent (Story 23.2)
+ * @property \DateTimeInterface|null $agent_reported_offline_at Extinction signalée par l'agent au shutdown Windows
  * @property \DateTimeInterface|null $agent_quarantined_at Quarantaine anti-clonage (Story 23.2)
  * @property string|null $agent_enroll_ticket_hash SHA-256 hex du ticket d'enrôlement one-time (Story 23.3)
  * @property \DateTimeInterface|null $agent_enroll_ticket_expires_at Expiration du ticket d'enrôlement (Story 23.3)
@@ -101,6 +102,7 @@ class Workstation extends Model implements Wireable
         // touchent (anti mass-assignment).
         'agent_token_rotated_at' => 'datetime',
         'agent_last_checkin_at' => 'datetime',
+        'agent_reported_offline_at' => 'datetime',
         'agent_quarantined_at' => 'datetime',
         // Story 23.3 — ticket d'enrôlement one-time (porte 1 iPXE). Hors
         // $fillable pour la même raison : seul EnrollmentService écrit.
@@ -449,6 +451,32 @@ class Workstation extends Model implements Wireable
         $ttl = (int) (config('agent.ttl_seconds') ?? 3600);
 
         return $this->agent_last_checkin_at->lt(now()->subSeconds(2 * $ttl));
+    }
+
+    /**
+     * Présence du poste dérivée du canal agent :
+     *  - 'reported_off' : l'agent a signalé son extinction (`POST /shutdown`
+     *    au shutdown Windows) et aucun check-in plus récent ne l'a démenti —
+     *    éteint immédiat, sans attendre le seuil de silence ;
+     *  - 'online' : dernier check-in < 2 × `agent.ttl_seconds` (même seuil
+     *    que {@see isAgentSilent()}) ;
+     *  - 'silent' : enrôlé mais muet au-delà du seuil sans signal d'extinction
+     *    (coupure brutale, agent planté, réseau) — probablement éteint, sans
+     *    certitude ; granularité ≈ 2 × ttl ;
+     *  - 'unknown' : pas enrôlé ou jamais checké — rien d'affirmable.
+     */
+    public function agentPresence(): string
+    {
+        if (! $this->isAgentEnrolled() || $this->agent_last_checkin_at === null) {
+            return 'unknown';
+        }
+
+        if ($this->agent_reported_offline_at !== null
+            && $this->agent_reported_offline_at->gte($this->agent_last_checkin_at)) {
+            return 'reported_off';
+        }
+
+        return $this->isAgentSilent() ? 'silent' : 'online';
     }
 
     /**

@@ -108,7 +108,12 @@ package shared
 // erreur : « réglage sans effet ») → PUBLIER la release 2.4.0 (update.sh ne
 // publie jamais seul).
 //
+// 2.4.1 : détection d'extinction — le service signale le shutdown MACHINE au
+// serveur (`POST /v1/agent/shutdown`, best-effort 3 s, svc.Shutdown seulement,
+// jamais le stop manuel du service) → présence « éteint » immédiate dans l'UI
+// au lieu du seuil de silence 2 × ttl (NotifyShutdown, shared/shutdown.go).
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.4.0"
+var Version = "2.4.1"

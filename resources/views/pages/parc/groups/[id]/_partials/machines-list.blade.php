@@ -101,7 +101,7 @@
                                 <th>Nom</th>
                                 <th>OS</th>
                                 <th>IP</th>
-                                <th>Statut</th>
+                                <th class="text-center">État</th>
                                 <th>Action</th>
                                 <th class="w-20"></th>
                             </tr>
@@ -137,23 +137,37 @@
                                                 class="font-medium hover:text-primary">
                                                 {{ $machine->name }}
                                             </a>
+                                            @if ($machine->isProtected())
+                                                <span class="badge badge-warning badge-xs" title="Poste protégé">
+                                                    <i class="fa-solid fa-lock"></i> Protégé
+                                                </span>
+                                            @endif
                                         </div>
                                     </td>
                                     <td>
                                         <span class="badge badge-ghost badge-sm">{{ $machine->os }}</span>
                                     </td>
                                     <td class="font-mono text-sm">{{ $machine->ip }}</td>
-                                    <td>
-                                        @php
-                                            $statusClass = match ($machine->status) {
-                                                1 => 'badge-success',
-                                                2 => 'badge-warning',
-                                                default => 'badge-error',
-                                            };
-                                        @endphp
-                                        <span class="badge {{ $statusClass }} badge-sm">
-                                            {{ $machine->getStatusLabel() }}
-                                        </span>
+                                    {{-- État de présence dérivé du canal agent : extinction
+                                         signalée au shutdown, sinon check-in < 2 × ttl —
+                                         voir agentPresence(). --}}
+                                    <td class="text-center">
+                                        @php $presence = $machine->agentPresence(); @endphp
+                                        @if ($presence === 'online')
+                                            <span class="status status-success"
+                                                  title="Allumé — check-in {{ $machine->agent_last_checkin_at->diffForHumans() }}"
+                                                  aria-label="Allumé"></span>
+                                        @elseif ($presence === 'reported_off')
+                                            <span class="status"
+                                                  title="Éteint — extinction signalée {{ $machine->agent_reported_offline_at->diffForHumans() }}"
+                                                  aria-label="Éteint"></span>
+                                        @elseif ($presence === 'silent')
+                                            <span class="status status-warning"
+                                                  title="Injoignable — dernier check-in {{ $machine->agent_last_checkin_at->diffForHumans() }}"
+                                                  aria-label="Injoignable"></span>
+                                        @else
+                                            <span class="text-base-content/30" title="Présence inconnue (pas d'agent)">—</span>
+                                        @endif
                                     </td>
                                     <td>
                                         {{-- Badge d'état de la task associée (story 4-3, AC3). --}}
