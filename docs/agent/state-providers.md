@@ -497,6 +497,18 @@ SZ/EXPAND_SZ→chaîne) pour le contrat §4.1 (**zéro float**).
   `AbstractCapabilityStateProvider`. Côté agent : UN seul handler Go `registry`
   (HKLM par le service SYSTEM, HKCU par le compagnon). Note **HKCR** : routé en
   `HKCU\Software\Classes\…` (vue per-user, ex. `onedrive_hidden`).
+- **Ruche `HKU` (Story 35.3, contrat §7.1) : troisième valeur de `hive`,
+  MACHINE-only.** Une clé `hive: 'HKU'` est émise par le provider **Machine**
+  seul (prédicat `handlesHive()` surchargé — les autres providers gardent le
+  défaut byte-identique) : le service SYSTEM la **fan-out** vers `HKU\.DEFAULT`
+  (écran de logon, ex. numlock au logon) + chaque ruche utilisateur chargée
+  (`HKU\<SID>`), à chaque cycle — fan-out INTERNE au handler agent, l'item
+  reste UN item (hash inchangé par le nombre de sessions), drift AGRÉGÉ. Le
+  `path` de `spec` ne porte jamais `.DEFAULT\` (le handler préfixe). Pas de
+  ciblage par utilisateur (structurel : le service fetch sans `?user`) ; maps
+  HKU/HKCU jumelles valeur-consistantes ; `HKU` REFUSÉ en `registry_list`
+  (guard). Débouché : les clés `HKCU\Software\Policies\*` (lecture seule pour
+  l'utilisateur, leçon fix-Copilot) deviennent diffusables en machine/parc.
 - **Broadcast (défaut diffusé) + override par maille.** Le provider émet, par
   capacité applicable : (1) un lot de candidats **Broadcast** pour `default_value`
   (`sourceId` = `capability.id`, maille `Broadcast`) ; (2) un lot par maille par

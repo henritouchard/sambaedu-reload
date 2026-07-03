@@ -276,6 +276,102 @@ class CapabilityRegistryCompilationTest extends TestCase
         self::assertSame('absent', $registry[0]['payload']['ensure']);
     }
 
+    // ── Story 35.3 : ruche HKU — coexistence, précédence, machine-only ─────
+    // `exclusiveKey()` est INCHANGÉE ({hive|path|name} minuscules) : l'identité
+    // `hku|…` est DISTINCTE de la clé HKCU jumelle — les deux items coexistent
+    // (machine + session) via le StateCompiler INTOUCHÉ (D2).
+
+    /** La spec numlock bi-ruche (miroir du retrofit 2026_07_03_160000). */
+    private const NUMLOCK_KEYS = [
+        ['hive' => 'HKCU', 'path' => 'Control Panel\\Keyboard', 'name' => 'InitialKeyboardIndicators', 'type' => 'REG_SZ', 'value' => ['on' => '2', 'off' => '0']],
+        ['hive' => 'HKU', 'path' => 'Control Panel\\Keyboard', 'name' => 'InitialKeyboardIndicators', 'type' => 'REG_SZ', 'value' => ['on' => '2', 'off' => '0']],
+    ];
+
+    #[Test]
+    public function hku_and_hkcu_twin_numlock_items_coexist_across_scopes(): void
+    {
+        // (a) les items numlock HKU (machine) et HKCU (session) COEXISTENT :
+        // identités distinctes (hku|… ≠ hkcu|…), un item par portée, aucune
+        // ligne modifiée au StateCompiler.
+        $this->makeCapability('numlock_on_logon', 'on', self::NUMLOCK_KEYS);
+
+        $state = $this->compiler()->compile(TargetContext::for($this->ws, null));
+
+        $machine = array_values(array_filter($state[StateContract::SCOPE_MACHINE], fn ($i): bool => $i['type'] === 'registry'));
+        $session = array_values(array_filter($state[StateContract::SCOPE_SESSION], fn ($i): bool => $i['type'] === 'registry'));
+
+        self::assertCount(1, $machine, 'la clé HKU compile en portée machine');
+        self::assertSame('HKU', $machine[0]['payload']['hive']);
+        self::assertSame('2', $machine[0]['payload']['value']);
+
+        self::assertCount(1, $session, 'la clé HKCU jumelle compile en portée session');
+        self::assertSame('HKCU', $session[0]['payload']['hive']);
+        self::assertSame('2', $session[0]['payload']['value']);
+
+        // Identités exclusives DISTINCTES (même {path|name}, ruches différentes).
+        $provider = new RegistryMachineCapabilityProvider();
+        self::assertNotSame(
+            $provider->exclusiveKey($machine[0]['payload']),
+            $provider->exclusiveKey($session[0]['payload']),
+            'hku|path|name est une identité distincte de hkcu|path|name',
+        );
+    }
+
+    #[Test]
+    public function parc_override_beats_broadcast_on_the_hku_key(): void
+    {
+        // (b) précédence broadcast/parc EXISTANTE sur la clé HKU : le parc
+        // dévie vers off → la valeur '0' bat le défaut broadcast '2'.
+        $cap = $this->makeCapability('numlock_on_logon', 'on', self::NUMLOCK_KEYS);
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => WorkstationGroup::class,
+            'assignable_id' => $this->logical->id,
+            'value' => 'off',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $state = $this->compiler()->compile(TargetContext::for($this->ws, null));
+
+        $machine = array_values(array_filter($state[StateContract::SCOPE_MACHINE], fn ($i): bool => $i['type'] === 'registry'));
+        self::assertCount(1, $machine, 'une seule valeur gagne pour l\'identité hku|…');
+        self::assertSame('0', $machine[0]['payload']['value'], 'l\'override de parc (off=>0) bat le broadcast (on=>2)');
+    }
+
+    #[Test]
+    public function user_group_override_never_reaches_the_hku_item_in_machine_only_compile(): void
+    {
+        // (c) « pas de ciblage par utilisateur » est STRUCTUREL (piège #4) : le
+        // service SYSTEM fetch son state SANS ?user (TargetContext::for($ws,
+        // null) → userGroupIds = []) — un override UserGroup posé en base
+        // n'atteint JAMAIS l'item HKU compilé en machine.
+        $user = User::factory()->create();
+        $group = UserGroup::factory()->create();
+        $user->groups()->attach($group->id);
+
+        $cap = $this->makeCapability('numlock_on_logon', 'on', self::NUMLOCK_KEYS);
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => UserGroup::class,
+            'assignable_id' => $group->id,
+            'value' => 'off',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Compile MACHINE-ONLY (contexte du service : user null).
+        $state = $this->compiler()->compile(TargetContext::for($this->ws, null));
+
+        $machine = array_values(array_filter($state[StateContract::SCOPE_MACHINE], fn ($i): bool => $i['type'] === 'registry'));
+        self::assertCount(1, $machine);
+        self::assertSame(
+            '2',
+            $machine[0]['payload']['value'],
+            'l\'override UserGroup (off) est SANS EFFET sur l\'item HKU : le contexte machine n\'a pas de user',
+        );
+    }
+
     #[Test]
     public function two_capabilities_defining_the_same_key_collide_and_recency_wins(): void
     {

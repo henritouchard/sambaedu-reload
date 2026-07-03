@@ -125,6 +125,25 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
     abstract protected function hive(): string;
 
     /**
+     * Ce provider émet-il les clés de cette ruche de `spec` ? (Story 35.3)
+     *
+     * Défaut = comportement HISTORIQUE : égalité stricte (insensible à la
+     * casse) avec {@see hive()} — les providers non surchargés restent
+     * byte-identiques. Le mécanisme `registry` connaît TROIS ruches :
+     *   - `HKLM` → provider Machine (service SYSTEM) ;
+     *   - `HKCU` → provider Session (compagnon) ;
+     *   - `HKU`  → provider MACHINE UNIQUEMENT ({@see RegistryMachineCapabilityProvider}
+     *     surcharge ce prédicat) : le service SYSTEM fan-out l'item vers
+     *     `HKU\.DEFAULT` + chaque ruche utilisateur chargée. JAMAIS émise en
+     *     Session, ni par les providers `registry_list` (dont l'`expand()`
+     *     garde son filtre direct — HKU hors scope list, contrat §7.6).
+     */
+    protected function handlesHive(string $hive): bool
+    {
+        return strcasecmp($hive, $this->hive()) === 0;
+    }
+
+    /**
      * Identité d'une clé de registre exclusive : `{hive, path, name}`. Insensible
      * à la casse (Windows l'est sur les clés/valeurs) → normalisée en minuscules
      * pour la STABILITÉ de la sélection. Déterministe (ETag 23.5). Iso 27.3.
@@ -265,9 +284,9 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
             }
 
             $hive = (string) ($key['hive'] ?? '');
-            // Filtre par ruche du provider : une clé HKLM n'est émise que par le
-            // provider machine, une clé HKCU que par le provider session.
-            if (strcasecmp($hive, $this->hive()) !== 0) {
+            // Filtre par ruche du provider (prédicat surchargeable, Story 35.3) :
+            // HKLM + HKU → provider machine, HKCU → provider session.
+            if (! $this->handlesHive($hive)) {
                 continue;
             }
 

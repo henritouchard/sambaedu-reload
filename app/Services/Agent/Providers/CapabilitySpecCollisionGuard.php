@@ -35,9 +35,43 @@ use App\Models\CapabilityProjection;
  *   3. `values` bien formées : littéral = liste de scalaires ; map
  *      valeur-capacité = chaque entrée liste de scalaires (jamais `$ensure`
  *      ni forme assoc — non supportés en registry_list).
+ *   4. BORNÉ DES RUCHES par mécanisme (Story 35.3) : `registry` ∈
+ *      {HKLM, HKCU, HKU} ; `registry_list` ∈ {HKLM, HKCU} — un conteneur
+ *      `hive: HKU` est une violation NOMMÉE (le fan-out d'une réconciliation
+ *      de clé-conteneur multiplierait la propriété de clé par N ruches sans
+ *      consommateur connu — hors scope 35.3, extension future si besoin réel).
+ *
+ * **Sémantique `HKU` (Story 35.3, contrat §7.1).** Une clé `hive: 'HKU'` est
+ * émise par le provider MACHINE seul et appliquée par le service SYSTEM à
+ * « toutes les ruches utilisateur du poste + `.DEFAULT` » (fan-out agent, drift
+ * agrégé) — PAS de ciblage par utilisateur sur cette ruche (structurel : le
+ * service fetch son state sans `?user` ; le ciblage fin reste au Session/HKCU).
+ * **Discipline double-clé** : la double-clé HKU + HKCU sur le même `{path|name}`
+ * (ex. numlock : `.DEFAULT`/ruches via SYSTEM + session courante via compagnon)
+ * est un cas NOMINAL, pas une violation — MAIS une capacité portant une clé HKU
+ * ne doit pas être ciblée par utilisateur/groupe d'utilisateurs, et ses maps
+ * HKU/HKCU jumelles doivent être VALEUR-CONSISTANTES : un override user-maille
+ * divergeant de la valeur machine ferait se battre compagnon et SYSTEM
+ * (réécriture croisée à chaque cycle, drift perpétuel des deux côtés). Règle
+ * d'authoring documentaire — pas de garde-fou runtime au-delà de cette doc.
  */
 final class CapabilitySpecCollisionGuard
 {
+    /**
+     * Ruches admises par mécanisme (Story 35.3) : `HKU` n'existe qu'en
+     * `registry` (fan-out scalaire) — refusé en `registry_list`.
+     *
+     * Convention d'authoring : forme COURTE exclusive (HKLM/HKCU/HKU). Le
+     * binaire tolère aussi les alias longs (HKEY_LOCAL_MACHINE, …) mais le
+     * catalogue n'en écrit jamais — un import amont devra normaliser vers la
+     * forme courte avant d'entrer ici (review 35.3 #3).
+     *
+     * @var array<string, list<string>>
+     */
+    private const ALLOWED_HIVES = [
+        CapabilityProjection::MECHANISM_REGISTRY => ['HKLM', 'HKCU', 'HKU'],
+        CapabilityProjection::MECHANISM_REGISTRY_LIST => ['HKLM', 'HKCU'],
+    ];
     /**
      * Valide un ensemble de projections d'authoring.
      *
@@ -73,6 +107,28 @@ final class CapabilitySpecCollisionGuard
                     );
                 }
 
+                // 4. Borné des ruches (Story 35.3) : HKU refusé en registry_list
+                // (violation NOMMÉE — fan-out de clé-conteneur hors scope) ;
+                // toute autre ruche inconnue refusée aussi. Ruche vide déjà
+                // couverte par la violation « hive et path sont requis ».
+                $hive = strtoupper(trim((string) ($key['hive'] ?? '')));
+                if ($hive !== '' && ! in_array($hive, self::ALLOWED_HIVES[CapabilityProjection::MECHANISM_REGISTRY_LIST], true)) {
+                    $violations[] = $hive === strtoupper(CapabilityProjection::HIVE_USERS)
+                        ? sprintf(
+                            "registry_list [%s] conteneur '%s' : ruche HKU non admise en registry_list "
+                            .'(hors scope 35.3 — le fan-out multi-ruches d\'une clé-conteneur n\'a pas de '
+                            .'consommateur connu ; extension future si besoin réel). Ruches admises : HKLM|HKCU.',
+                            $projection['capability'],
+                            $identity,
+                        )
+                        : sprintf(
+                            "registry_list [%s] conteneur '%s' : ruche '%s' hors borné (HKLM|HKCU).",
+                            $projection['capability'],
+                            $identity,
+                            $hive,
+                        );
+                }
+
                 // 2. entry_type borné (défaut REG_SZ admis).
                 $entryType = strtoupper((string) ($key['entry_type'] ?? 'REG_SZ'));
                 if (! in_array($entryType, AbstractRegistryListCapabilityProvider::ALLOWED_ENTRY_TYPES, true)) {
@@ -103,6 +159,23 @@ final class CapabilitySpecCollisionGuard
             }
             foreach ($this->specKeys($projection['spec'] ?? null) as $key) {
                 $identity = $this->identity($key);
+
+                // 4. Borné des ruches (Story 35.3) : une clé scalaire `registry`
+                // n'admet que HKLM | HKCU | HKU — toute autre valeur (typo
+                // 'HKX', ruche vide, HKCR non routé…) ne serait émise par AUCUN
+                // provider (silence d'authoring) : refus AMONT.
+                $hive = strtoupper(trim((string) ($key['hive'] ?? '')));
+                if (! in_array($hive, self::ALLOWED_HIVES[CapabilityProjection::MECHANISM_REGISTRY], true)) {
+                    $violations[] = sprintf(
+                        "registry [%s] clé '%s' (name '%s') : ruche '%s' hors borné (HKLM|HKCU|HKU) — "
+                        .'aucun provider ne l\'émettrait (clé silencieusement morte), authoring refusé.',
+                        $projection['capability'],
+                        $identity,
+                        (string) ($key['name'] ?? ''),
+                        $hive,
+                    );
+                }
+
                 foreach ($containers[$identity] ?? [] as $listCapability) {
                     $violations[] = sprintf(
                         "Collision registre : la clé-conteneur '%s' est possédée par le registry_list de [%s] "

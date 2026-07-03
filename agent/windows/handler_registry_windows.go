@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"golang.org/x/sys/windows"
@@ -16,12 +17,13 @@ import (
 // le handler wallpaper). Zéro dépendance ajoutée, zéro shell-out (`reg add`).
 //
 // UN SEUL handler générique (D-Q2) : le binaire l'instancie DEUX fois — une
-// pour le SERVICE SYSTEM (items HKLM, portée machine) et une pour le COMPAGNON
-// (items HKCU, portée session, ruche de l'utilisateur connecté). La logique de
-// convergence (Test/Apply, idempotence, isolation par clé) vit dans
+// pour le SERVICE SYSTEM (items HKLM + HKU, portée machine — Story 35.3) et une
+// pour le COMPAGNON (items HKCU, portée session, ruche de l'utilisateur
+// connecté). La logique de convergence (Test/Apply, idempotence, isolation par
+// clé, fan-out HKU vers .DEFAULT + ruches chargées) vit dans
 // shared.RegistryHandler (testée hôte avec un fake) ; ce fichier ne fait que
-// résoudre la ruche, ouvrir/créer les clés et lire/écrire les valeurs typées
-// REG_*.
+// résoudre la ruche, ouvrir/créer les clés, lire/écrire les valeurs typées
+// REG_* et énumérer les cibles HKU (UserHives).
 //
 // Les droits viennent du contexte d'exécution : HKLM\SOFTWARE\... exige le
 // service SYSTEM ; HKCU\Software\... s'écrit dans la ruche de la session
@@ -35,16 +37,21 @@ type registryOps struct {
 }
 
 // rootKey : mappe la ruche du payload vers la racine x/sys/windows/registry.
-// HKLM → LOCAL_MACHINE, HKCU → CURRENT_USER. Toute autre ruche est refusée
-// (le handler générique ne gère que ces deux portées — D-Q2).
+// HKLM → LOCAL_MACHINE, HKCU → CURRENT_USER, HKU → USERS (Story 35.3 : la 3e
+// ruche est MACHINE-scope — le service SYSTEM fan-out les items HKU vers
+// `.DEFAULT` + les ruches chargées, paths préfixés par le handler shared ;
+// D-Q2 reste : un handler générique, la séparation des portées est serveur).
+// Toute autre ruche est refusée.
 func rootKey(hive string) (registry.Key, error) {
 	switch strings.ToUpper(strings.TrimSpace(hive)) {
 	case "HKLM", "HKEY_LOCAL_MACHINE":
 		return registry.LOCAL_MACHINE, nil
 	case "HKCU", "HKEY_CURRENT_USER":
 		return registry.CURRENT_USER, nil
+	case "HKU", "HKEY_USERS":
+		return registry.USERS, nil
 	default:
-		return 0, fmt.Errorf("ruche de registre non supportée : %q (HKLM|HKCU attendu)", hive)
+		return 0, fmt.Errorf("ruche de registre non supportée : %q (HKLM|HKCU|HKU attendu)", hive)
 	}
 }
 
@@ -136,6 +143,26 @@ func (o *registryOps) Write(spec shared.RegistrySpec) error {
 		return err
 	}
 
+	// Race logoff (Story 35.3, review #1) : une cible HKU dont la ruche a été
+	// DÉMONTÉE entre l'énumération (UserHives) et l'écriture ne doit PAS être
+	// matérialisée — CreateKey ne renverrait pas d'erreur, il créerait une clé
+	// ORPHELINE persistante directement sous HKEY_USERS (résidu + collision au
+	// remontage du profil). Sonde de la racine de fan-out (`.DEFAULT`/`<SID>`) :
+	// absente ⇒ no-op nil (la ruche a disparu, la cible aussi — le prochain
+	// cycle ne l'énumérera plus, l'item redevient conforme).
+	if root == registry.USERS {
+		base, _, _ := strings.Cut(spec.Path, `\`)
+		probe, probeErr := registry.OpenKey(registry.USERS, base, registry.QUERY_VALUE)
+		if probeErr != nil {
+			if errors.Is(probeErr, registry.ErrNotExist) {
+				return nil // ruche démontée pendant le cycle : skip (jamais d'orpheline)
+			}
+
+			return fmt.Errorf("sonde de la ruche %s\\%s : %w", spec.Hive, base, probeErr)
+		}
+		probe.Close()
+	}
+
 	key, _, err := registry.CreateKey(root, spec.Path, registry.SET_VALUE)
 	if err != nil {
 		return fmt.Errorf("création/ouverture de %s\\%s : %w", spec.Hive, spec.Path, err)
@@ -220,6 +247,53 @@ func (o *registryOps) ValueNames(hive, path string) ([]string, error) {
 	}
 
 	return names, nil
+}
+
+// UserHives énumère les CIBLES du fan-out HKU (Story 35.3) : sous-clés de
+// HKEY_USERS filtrées STRICTEMENT — ".DEFAULT" (profil de l'écran de logon) +
+// ruches utilisateur chargées `S-1-5-21-*` SANS le suffixe `_Classes`
+// (jumelles HKCR per-user : y écrire `Control Panel\…` créerait des débris).
+// Les SID de service S-1-5-18/19/20 ne matchent pas le préfixe S-1-5-21-
+// (exclusion naturelle) ; les comptes AAD (S-1-12-1-*) sont hors périmètre
+// (parc AD). Tri pour des logs déterministes. Énuméré à CHAQUE appel — jamais
+// de cache (une session ouverte après coup est couverte au cycle suivant).
+// err = accès refusé / énumération impossible (l'item HKU devient inapplicable
+// → {status: error} pour le type).
+func (o *registryOps) UserHives() ([]string, error) {
+	key, err := registry.OpenKey(registry.USERS, "", registry.ENUMERATE_SUB_KEYS)
+	if err != nil {
+		return nil, fmt.Errorf("ouverture de HKEY_USERS : %w", err)
+	}
+	defer key.Close()
+
+	names, err := key.ReadSubKeyNames(-1)
+	if err != nil {
+		return nil, fmt.Errorf("énumération de HKEY_USERS : %w", err)
+	}
+
+	targets := []string{}
+	for _, name := range names {
+		if isHkuFanOutTarget(name) {
+			targets = append(targets, name)
+		}
+	}
+	sort.Strings(targets)
+
+	return targets, nil
+}
+
+// isHkuFanOutTarget : filtre STRICT des sous-clés de HKEY_USERS (piège n° 7,
+// insensible à la casse) — garder ".DEFAULT" + `S-1-5-21-*` hors `_Classes`.
+func isHkuFanOutTarget(name string) bool {
+	upper := strings.ToUpper(strings.TrimSpace(name))
+	if upper == ".DEFAULT" {
+		return true
+	}
+	if !strings.HasPrefix(upper, "S-1-5-21-") {
+		return false // SID de service (S-1-5-18/19/20), AAD (S-1-12-1-*), divers
+	}
+
+	return !strings.HasSuffix(upper, "_CLASSES")
 }
 
 // SHChangeNotify (shell32) — signale au shell un changement global afin que

@@ -520,6 +520,109 @@ class CapabilityRegistryProviderTest extends TestCase
         ]));
     }
 
+    // ── Ruche HKU : machine-only (Story 35.3) ──────────────────────────────
+    // `HKU` est la TROISIÈME valeur admise de `hive` (portée machine) : émise
+    // par le provider Machine (le service SYSTEM fan-out .DEFAULT + ruches
+    // chargées côté agent), JAMAIS par le provider Session ni par les
+    // providers registry_list.
+
+    #[Test]
+    public function hku_key_is_emitted_by_the_machine_provider_as_a_five_key_item(): void
+    {
+        // (a) clé HKU émise par le provider Machine : item CONCRET iso-format
+        // 5 clés, path SANS préfixe .DEFAULT (piège n°6 — le handler préfixe),
+        // zéro fuite d'id, zéro float (REG_SZ → string).
+        $cap = $this->makeCapability('numlock_on_logon', 'on', [
+            ['hive' => 'HKU', 'path' => 'Control Panel\\Keyboard', 'name' => 'InitialKeyboardIndicators', 'type' => 'REG_SZ', 'value' => ['on' => '2', 'off' => '0']],
+        ]);
+
+        $items = $this->machineProvider()->itemsFor($this->ctx());
+
+        self::assertCount(1, $items);
+        $payload = $items->first()->payload;
+        self::assertSame(['hive', 'path', 'name', 'type', 'value'], array_keys($payload));
+        self::assertSame('HKU', $payload['hive']);
+        self::assertSame('Control Panel\\Keyboard', $payload['path'], 'path SANS .DEFAULT (le handler préfixe)');
+        self::assertSame('InitialKeyboardIndicators', $payload['name']);
+        self::assertSame('REG_SZ', $payload['type']);
+        self::assertSame('2', $payload['value']);
+        self::assertSame((int) $cap->id, $items->first()->sourceId);
+        foreach (['id', 'key', 'capability_id', 'label', 'spec'] as $forbidden) {
+            self::assertArrayNotHasKey($forbidden, $payload);
+        }
+    }
+
+    #[Test]
+    public function hku_key_is_never_emitted_by_the_user_provider(): void
+    {
+        // (b) une spec mixte HKU + HKCU : le provider User n'émet QUE la clé
+        // HKCU (le ciblage fin reste au Session), le Machine QUE la clé HKU.
+        $this->makeCapability('numlock_on_logon', 'on', [
+            ['hive' => 'HKU', 'path' => 'Control Panel\\Keyboard', 'name' => 'InitialKeyboardIndicators', 'type' => 'REG_SZ', 'value' => ['on' => '2', 'off' => '0']],
+            ['hive' => 'HKCU', 'path' => 'Control Panel\\Keyboard', 'name' => 'InitialKeyboardIndicators', 'type' => 'REG_SZ', 'value' => ['on' => '2', 'off' => '0']],
+        ]);
+
+        $machineItems = $this->machineProvider()->itemsFor($this->ctx());
+        $userItems = $this->userProvider()->itemsFor($this->ctx());
+
+        self::assertCount(1, $machineItems);
+        self::assertSame('HKU', $machineItems->first()->payload['hive']);
+
+        self::assertCount(1, $userItems, 'le provider Session n\'émet JAMAIS de clé HKU');
+        self::assertSame('HKCU', $userItems->first()->payload['hive']);
+    }
+
+    #[Test]
+    public function ensure_marker_on_hku_key_emits_a_four_key_absent_item(): void
+    {
+        // (c) le marqueur $ensure (35.1) vaut aussi en HKU : item de
+        // SUPPRESSION 4 clés émis par le provider Machine (l'agent supprime la
+        // valeur dans TOUTES les ruches du fan-out).
+        $this->makeCapability('a_hku_cap', 'off', [
+            ['hive' => 'HKU', 'path' => 'Software\\X', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 1, 'off' => ['$ensure' => 'absent']]],
+        ]);
+
+        $items = $this->machineProvider()->itemsFor($this->ctx());
+
+        self::assertCount(1, $items);
+        $payload = $items->first()->payload;
+        self::assertSame(['hive', 'path', 'name', 'ensure'], array_keys($payload));
+        self::assertSame('HKU', $payload['hive']);
+        self::assertSame('absent', $payload['ensure']);
+    }
+
+    #[Test]
+    public function unmanaged_sentinel_on_hku_key_emits_nothing(): void
+    {
+        // (d) la sentinelle UNMANAGED (clé de map absente) vaut aussi en HKU :
+        // rien n'est émis, par aucun provider.
+        $this->makeCapability('a_hku_cap', 'unmanaged', [
+            ['hive' => 'HKU', 'path' => 'Software\\X', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
+        ]);
+
+        self::assertCount(0, $this->machineProvider()->itemsFor($this->ctx()));
+        self::assertCount(0, $this->userProvider()->itemsFor($this->ctx()));
+    }
+
+    #[Test]
+    public function registry_list_providers_never_emit_an_hku_container(): void
+    {
+        // (e bis) HKU HORS scope registry_list (piège n°11) : l'expand() des
+        // providers list garde son filtre DIRECT par ruche — un conteneur HKU
+        // (que le guard refuse déjà à l'authoring) n'est émis par AUCUN des
+        // deux providers list (défense en profondeur au render).
+        $cap = Capability::factory()->create(['key' => 'rogue_hku_list', 'default_value' => 'on']);
+        CapabilityProjection::factory()->for($cap)->create([
+            'mechanism' => CapabilityProjection::MECHANISM_REGISTRY_LIST,
+            'spec' => ['keys' => [
+                ['hive' => 'HKU', 'path' => 'Software\\Policies\\X\\List', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['a', 'b']]],
+            ]],
+        ]);
+
+        self::assertCount(0, (new \App\Services\Agent\Providers\RegistryListMachineCapabilityProvider())->itemsFor($this->ctx()));
+        self::assertCount(0, (new \App\Services\Agent\Providers\RegistryListUserCapabilityProvider())->itemsFor($this->ctx()));
+    }
+
     // ── exclusiveKey : identité insensible à la casse ─────────────────────
 
     #[Test]

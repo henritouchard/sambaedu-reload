@@ -3258,3 +3258,99 @@ agent hors story (« `name: ""` = valeur par défaut de la clé »).
       (`ImageView_Fullscreen` × 2), 2 Clsid REG_SZ DISTINCTS ; off = marqueur `$ensure`.
 - [ ] 35.5.4 — (DIFFÉRÉ activation) réenregistrement fonctionnel au logon, off = suppression,
       `UserChoice` NON touché (limite 27.11), exclusion `NativeApplicationSeeder` tenue.
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- Story 35.3 — Ruche HKU : écriture SYSTEM des ruches utilisateur          -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+
+## Story 35.3 — Ruche `HKU` : écriture SYSTEM des ruches utilisateur
+
+**Périmètre** : `HKU` devient la TROISIÈME valeur admise du champ `hive` des items
+`registry` (contrat §7.1 — une VALEUR de domaine, pas un champ ni un type : golden et
+hashes figés INCHANGÉS). Un item `hive: 'HKU'` est émis par le provider MACHINE seul
+(appliqué par le service SYSTEM) : le handler le FAN-OUT en interne vers `HKU\.DEFAULT`
+(le profil lu par l'écran de logon) + chaque ruche utilisateur CHARGÉE (`HKU\<SID>`,
+`S-1-5-21-*` hors jumelles `_Classes`), énumérées à CHAQUE cycle via le nouvel op requis
+`RegistryOps.UserHives`. Drift AGRÉGÉ (une ruche divergente ⇒ `drift` du type),
+idempotence PAR CIBLE, `ensure:"absent"` supprime dans TOUTES les ruches. Pas de ciblage
+par utilisateur (structurel : le service fetch sans `?user`). `registry_list` sur HKU
+HORS scope (refusé par le guard). Migration de complément : `numlock_on_logon` gagne la
+clé HKU miroir (le numlock vaut aussi à l'écran de logon — exclusion du palier A levée).
+Agent bumpé **2.5.0**.
+
+### Scénario 35.3.1 — ⚠️ ORDRE DE DÉPLOIEMENT : release AVANT migration (VM — ACTION HUMAINE Henri)
+
+1. **PUBLIER d'abord la release agent 2.5.0** (update.sh ne publie JAMAIS seul) et
+   attendre que la flotte l'ait remontée (version rapportée au check-in fait foi).
+2. **PUIS** `php artisan migrate` sur /vm (migration
+   `2026_07_03_160000_retrofit_numlock_hku_logon_screen`, jamais auto-appliquée).
+3. POURQUOI cet ordre est NON NÉGOCIABLE : `numlock_on_logon` est en broadcast `on` →
+   l'item HKU part à la flotte ENTIÈRE dès la migration. Un binaire ≤ 2.4.1 PARSE l'item
+   HKU puis `rootKey()` le refuse à la première lecture → `Test` en erreur →
+   `{status: error}` pour le type `registry` machine ENTIER, SANS Apply : TOUTES les clés
+   HKLM du poste cessent de converger (dérives non corrigées) tant que l'item est au
+   state. Symptôme : `agent_resource_states(poste, 'registry') = error`, detail « ruche
+   de registre non supportée: "HKU" ». Remède : publier 2.5.0 (l'item redevient
+   applicable au cycle suivant, aucune donnée à corriger).
+
+### Scénario 35.3.2 — Payload `/state` : item HKU en portée machine (curl VM — ACTION HUMAINE Henri)
+
+1. `GET /api/v1/agent/state` (token machine, SANS `?user`) : la portée `machine` porte
+   l'item 5 clés `{"hive":"HKU","path":"Control Panel\\Keyboard","name":
+   "InitialKeyboardIndicators","type":"REG_SZ","value":"2"}` — path SANS préfixe
+   `.DEFAULT\` (c'est le handler qui préfixe chaque cible), aucun id de capacité.
+2. La portée `session` (`?user=<login>`) porte toujours l'item HKCU jumeau (`'2'`) —
+   les deux identités `{hive|path|name}` coexistent, valeurs CONSISTANTES.
+3. Le hash de l'item HKU est STABLE quel que soit le nombre de sessions ouvertes sur le
+   poste (le fan-out est interne à l'agent, invisible du wire).
+
+### Scénario 35.3.3 — Numlock à l'écran de logon + fan-out (lab Windows — ACTION HUMAINE Henri)
+
+1. Poste avec agent **2.5.0 publié** + migration jouée : au cycle suivant, regedit
+   affiche `HKEY_USERS\.DEFAULT\Control Panel\Keyboard\InitialKeyboardIndicators = "2"`
+   ET la même valeur sous chaque `HKEY_USERS\S-1-5-21-…` de session ouverte (PAS sous
+   les jumelles `_Classes`, PAS sous S-1-5-18/19/20).
+2. Redémarrer : le pavé numérique est ACTIF à l'écran de logon (LogonUI lit `.DEFAULT`
+   à chaque affichage — c'est l'effet visé, exclu du palier A).
+3. Modifier à la main la valeur dans UNE ruche `S-1-5-21-…` (regedit) : au cycle
+   suivant, rapport `drift` (agrégé) puis re-`compliant` — SEULE la ruche modifiée est
+   réécrite (idempotence par cible, vérifiable au log agent).
+
+### Scénario 35.3.4 — Session ouverte après coup = cycle suivant (lab Windows — ACTION HUMAINE Henri)
+
+1. Poste convergé (compliant), AUCUNE session ouverte : seule `.DEFAULT` porte la valeur.
+2. Ouvrir une session (la ruche `HKU\<SID>` se charge) : au CYCLE SUIVANT (pas
+   instantanément — level-triggered, énumération par appel), rapport `drift` puis la
+   valeur apparaît dans la ruche du user connecté ; re-`compliant`.
+3. Fermer la session (ruche déchargée) : aucun drift fantôme au cycle suivant (la cible
+   s'évapore de l'énumération) ; si le logoff tombe ENTRE l'énumération et l'op, l'erreur
+   est isolée et bénigne (re-résolue au cycle suivant).
+
+### Scénario 35.3.5 — Garde-fous d'authoring (revue de code + tests)
+
+1. `CapabilitySpecCollisionGuard` borne les ruches : `registry` ∈ {HKLM, HKCU, HKU} ;
+   `registry_list` ∈ {HKLM, HKCU} — un conteneur `hive: HKU` = violation NOMMÉE (hors
+   scope 35.3) ; une ruche inconnue (`HKX`) = refusée (clé silencieusement morte sinon).
+   Invariant vert sur le catalogue réellement seedé.
+2. La double-clé HKU + HKCU sur le même `{path|name}` (numlock) est prouvée
+   NON-violation — cas nominal. Discipline documentée (guard + §7.1) : pas de ciblage
+   user sur une capacité à clé HKU, maps jumelles VALEUR-CONSISTANTES (sinon compagnon
+   et SYSTEM se réécrivent mutuellement à chaque cycle).
+3. « Pas de ciblage par utilisateur » : test de compilation machine-only — un override
+   UserGroup posé en base n'atteint JAMAIS l'item HKU (contexte machine sans user).
+
+### Checklist rapide (Story 35.3)
+
+- [ ] 35.3.1 — Release 2.5.0 publiée AVANT la migration (ordre vérifié) ; migration
+      jouée sur /vm ; aucun poste en `error` registry.
+- [ ] 35.3.2 — `/state` machine : item HKU 5 clés, path sans `.DEFAULT`, hash stable ;
+      session : item HKCU jumeau consistant.
+- [ ] 35.3.3 — Numlock actif à l'écran de logon ; fan-out visible dans regedit
+      (`.DEFAULT` + SID chargés, jamais `_Classes` ni SID de service) ; drift agrégé +
+      réécriture de la seule ruche divergente.
+- [ ] 35.3.4 — Session ouverte après coup couverte au cycle suivant ; session fermée
+      sans drift fantôme.
+- [ ] 35.3.5 — Guard : HKU refusé en registry_list, HKX refusé en registry, double-clé
+      numlock non-violation ; override UserGroup sans effet sur l'item HKU.
+- [ ] Golden : `state.v1.json`, `report.v1.json` et hashes figés jumeaux PHP↔Go
+      INCHANGÉS (HKU = valeur de `hive`, pas un champ — rien à figer).

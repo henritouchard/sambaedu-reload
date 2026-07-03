@@ -45,6 +45,26 @@ import (
 // est en EFFORT MAXIMAL : une clé en échec ne doit pas empêcher les AUTRES clés
 // du même type de converger — la première erreur est remontée APRÈS avoir tenté
 // toutes les clés (le moteur n'a qu'un verdict par type).
+//
+// RUCHE `HKU` (Story 35.3, contrat §7.1) — FAN-OUT interne au handler : un item
+// `hive: "HKU"` (portée MACHINE, service SYSTEM — seul à pouvoir écrire les
+// ruches des autres utilisateurs) désigne UNE cible logique que le handler
+// applique à `HKU\.DEFAULT` (le « profil » lu par l'écran de logon) ET à chaque
+// ruche utilisateur CHARGÉE (`HKU\<SID>`, sessions ouvertes). Les cibles sont
+// énumérées À CHAQUE appel Test/Apply via RegistryOps.UserHives (jamais de
+// cache : une session ouverte après coup est couverte au cycle suivant,
+// level-triggered). L'IDENTITÉ LOGIQUE prime : l'item reste UN item du state —
+// payload/hash INCHANGÉS par le nombre de sessions (desiredSpecs/identity
+// intouchés) ; seul l'op physique voit les paths préfixés (`.DEFAULT\<path>`,
+// `<SID>\<path>`). Drift AGRÉGÉ : Test conforme ssi TOUTES les cibles sont
+// conformes ; Apply ne converge QUE les cibles divergentes (idempotence par
+// cible) ; `ensure:"absent"` supprime la valeur dans TOUTES les cibles. Une
+// ruche en échec (accès refusé / déchargée en course logoff) est ISOLÉE (effort
+// maximal, re-résolue au cycle suivant) ; une erreur d'ÉNUMÉRATION rend l'item
+// inapplicable (erreur franche → {status: error} pour le type). Aucun
+// rafraîchissement shell pour HKU (isUserHive rend false : le service écrit
+// depuis la session 0 — l'effet dans les sessions ouvertes vient au prochain
+// re-read de l'app, et l'écran de logon relit .DEFAULT à chaque affichage).
 
 // RegistryValue : la valeur cible TYPÉE d'une clé de registre.
 //   - DWORD/QWORD : Int (Kind = "REG_DWORD" | "REG_QWORD") ;
@@ -93,7 +113,7 @@ const (
 // RegistrySpec : une clé de registre cible (un item du payload `registry`). Les
 // champs hive/path/name sont des strings ; value est typée.
 type RegistrySpec struct {
-	Hive string // "HKLM" | "HKCU"
+	Hive string // "HKLM" | "HKCU" | "HKU" (fan-out multi-ruches, Story 35.3)
 	Path string // chemin de clé sous la ruche
 	Name string // nom de la valeur
 	// Ensure : verbe de convergence (Story 35.1). "" ou "present" = écrire la
@@ -127,6 +147,10 @@ type RegistryOps interface {
 
 	// Write (ré)écrit la valeur cible (crée la clé/valeur au besoin). Idempotent
 	// du point de vue du résultat. err = accès refusé / ruche absente.
+	// Cible HKU dont la ruche de fan-out (`.DEFAULT`/`<SID>`) a été DÉMONTÉE
+	// depuis l'énumération (race logoff, review 35.3 #1) : no-op nil — JAMAIS
+	// de clé orpheline matérialisée sous HKEY_USERS ; la cible disparaît de
+	// l'énumération au cycle suivant.
 	Write(spec RegistrySpec) error
 
 	// Delete supprime la VALEUR NOMMÉE d'une clé (Story 35.1) — JAMAIS la
@@ -141,6 +165,20 @@ type RegistryOps interface {
 	// (idempotence, iso Delete : la cible « aucune entrée » est déjà
 	// atteinte). err = accès refusé / ruche invalide.
 	ValueNames(hive, path string) ([]string, error)
+
+	// UserHives énumère les CIBLES du fan-out HKU (Story 35.3) : les sous-clés
+	// de HKEY_USERS à converger — ".DEFAULT" (le profil lu par l'écran de
+	// logon) + chaque ruche utilisateur CHARGÉE (SID `S-1-5-21-*`, hors
+	// jumelles `_Classes` — HKCR per-user, y écrire créerait des débris ; les
+	// SID de service S-1-5-18/19/20 ne matchent pas le préfixe et sont exclus
+	// naturellement ; comptes AAD S-1-12-1-* hors périmètre, parc AD). Ordre
+	// TRIÉ (logs déterministes). Op REQUIS (pas une assertion optionnelle type
+	// registryNotifier : sans lui un item HKU est INAPPLICABLE — l'échec doit
+	// être franc). Énuméré par APPEL, jamais mis en cache : une session
+	// ouverte/fermée entre deux cycles est couverte/évaporée au cycle suivant.
+	// err = accès refusé / énumération impossible (l'item HKU devient
+	// inapplicable → {status: error} pour le type).
+	UserHives() ([]string, error)
 }
 
 // registryNotifier : hook OPTIONNEL (assertion de type sur Ops) implémenté par
@@ -157,7 +195,10 @@ type registryNotifier interface {
 
 // isUserHive : la ruche est-elle celle de l'utilisateur (HKCU) ? Gate le
 // rafraîchissement shell sur les seules clés per-user — les écritures HKLM du
-// service (session 0) ne rafraîchissent aucun bureau interactif.
+// service (session 0) ne rafraîchissent aucun bureau interactif. HKU rend
+// false (branche default, Story 35.3 piège n° 9) : le service écrit depuis la
+// session 0, SHChangeNotify n'y rafraîchirait aucun bureau interactif — NE PAS
+// l'étendre.
 func isUserHive(hive string) bool {
 	switch strings.ToUpper(strings.TrimSpace(hive)) {
 	case "HKCU", "HKEY_CURRENT_USER":
@@ -165,6 +206,54 @@ func isUserHive(hive string) bool {
 	default:
 		return false
 	}
+}
+
+// isUsersHive : la ruche est-elle HKEY_USERS (HKU, Story 35.3) ? Gate le
+// FAN-OUT multi-ruches du handler (cibles = RegistryOps.UserHives) — distincte
+// de isUserHive (HKCU, gate du rafraîchissement shell).
+func isUsersHive(hive string) bool {
+	switch strings.ToUpper(strings.TrimSpace(hive)) {
+	case "HKU", "HKEY_USERS":
+		return true
+	default:
+		return false
+	}
+}
+
+// hkuEnumeration : mémo PAR APPEL (un Test ou un Apply) des cibles du fan-out
+// HKU — UNE énumération par passe (vue cohérente pour toutes les clés HKU de la
+// passe), JAMAIS retenue entre deux cycles (piège n° 7 : une session ouverte
+// après coup est couverte au cycle suivant, une session fermée s'évapore).
+type hkuEnumeration struct {
+	ops     RegistryOps
+	fetched bool
+	hives   []string
+	err     error
+}
+
+func (e *hkuEnumeration) targets() ([]string, error) {
+	if !e.fetched {
+		e.hives, e.err = e.ops.UserHives()
+		e.fetched = true
+	}
+
+	return e.hives, e.err
+}
+
+// fanOutUserHives : expanse un spec HKU logique vers ses cibles PHYSIQUES —
+// même Hive ("HKU", résolue par rootKey), Path préfixé par la ruche cible
+// (`.DEFAULT\<path>`, `<SID>\<path>`). Le path du payload ne porte JAMAIS le
+// préfixe `.DEFAULT\` lui-même (piège n° 6 : un path de seed commençant par
+// `.DEFAULT\` produirait un double-préfixe silencieux).
+func fanOutUserHives(spec RegistrySpec, hives []string) []RegistrySpec {
+	targets := make([]RegistrySpec, 0, len(hives))
+	for _, hive := range hives {
+		target := spec
+		target.Path = hive + `\` + spec.Path
+		targets = append(targets, target)
+	}
+
+	return targets
 }
 
 // RegistryHandler : handler exclusive-par-clé branché dans le moteur
@@ -206,26 +295,48 @@ func (h *RegistryHandler) desiredSpecs(items []StateItem) ([]RegistrySpec, error
 // ou divergente = non conforme. Item `ensure:"absent"` : conforme ssi la valeur
 // N'EXISTE PAS (peu importe son type/contenu). Une erreur d'accès (ruche
 // absente / refusé) remonte (le moteur rend error pour le type).
+// Item HKU (Story 35.3) : drift AGRÉGÉ — conforme ssi TOUTES les cibles du
+// fan-out (`.DEFAULT` + ruches chargées, énumérées pour CETTE passe) sont
+// conformes ; une erreur d'énumération est franche (l'item est inapplicable).
+// DESIGN ASSUMÉ (review 35.3 #2) : les erreurs de LECTURE restent franches en
+// Test — y compris par-cible HKU. HKU multiplie donc la surface de lecture :
+// une ruche chargée à ACL hostile (ACCESS_DENIED) met le type `registry` de
+// la portée en {status: error} pour LE cycle, Apply non atteint (les HKLM ne
+// convergent pas ce cycle-là). L'isolation par-cible ne vaut qu'en Apply
+// (effort maximal). Contrepartie acceptée : un Test menteur (erreur avalée en
+// drift) masquerait des pannes réelles à la policy STRICT.
 func (h *RegistryHandler) Test(items []StateItem) (bool, error) {
 	specs, err := h.desiredSpecs(items)
 	if err != nil {
 		return false, err
 	}
 
+	enum := &hkuEnumeration{ops: h.Ops}
 	for _, spec := range specs {
-		actual, present, err := h.Ops.Read(spec.Hive, spec.Path, spec.Name)
-		if err != nil {
-			return false, fmt.Errorf("lecture de %s : %w", spec.identity(), err)
-		}
-		if spec.absent() {
-			if present {
-				return false, nil // la valeur existe → dérive (à supprimer)
+		targets := []RegistrySpec{spec}
+		if isUsersHive(spec.Hive) {
+			hives, err := enum.targets()
+			if err != nil {
+				return false, fmt.Errorf("énumération des ruches utilisateur pour %s : %w", spec.identity(), err)
 			}
-
-			continue
+			targets = fanOutUserHives(spec, hives)
 		}
-		if !present || !actual.Equal(spec.Value) {
-			return false, nil
+
+		for _, target := range targets {
+			actual, present, err := h.Ops.Read(target.Hive, target.Path, target.Name)
+			if err != nil {
+				return false, fmt.Errorf("lecture de %s : %w", target.identity(), err)
+			}
+			if target.absent() {
+				if present {
+					return false, nil // la valeur existe → dérive (à supprimer)
+				}
+
+				continue
+			}
+			if !present || !actual.Equal(target.Value) {
+				return false, nil
+			}
 		}
 	}
 
@@ -238,6 +349,10 @@ func (h *RegistryHandler) Test(items []StateItem) (bool, error) {
 // clés ; la première erreur est remontée à la fin (les clés saines convergent
 // quand même, isolation inter-items AC5). Ne supprime/efface JAMAIS une clé
 // absente de la cible (piège n° 5 : « ne pas gérer » = ne pas toucher).
+// Item HKU (Story 35.3) : converge CHAQUE cible du fan-out en effort maximal
+// (idempotence PAR CIBLE — seules les ruches divergentes sont réécrites/
+// purgées) ; une erreur d'énumération rend les items HKU inapplicables (erreur
+// remontée) SANS empêcher les autres clés de la passe de converger.
 func (h *RegistryHandler) Apply(items []StateItem) error {
 	specs, err := h.desiredSpecs(items)
 	if err != nil {
@@ -246,51 +361,37 @@ func (h *RegistryHandler) Apply(items []StateItem) error {
 
 	var firstErr error
 	shellRefresh := false // au moins une clé HKCU a changé → rafraîchir le shell
+	enum := &hkuEnumeration{ops: h.Ops}
 	for _, spec := range specs {
-		actual, present, err := h.Ops.Read(spec.Hive, spec.Path, spec.Name)
-		if err != nil {
-			logError(h.Log, "Lecture du réglage registre %s en échec : %v", spec.identity(), err)
-			if firstErr == nil {
-				firstErr = fmt.Errorf("lecture de %s : %w", spec.identity(), err)
-			}
-
-			continue
-		}
-		if spec.absent() {
-			if !present {
-				continue // déjà absente → idempotence (aucune suppression)
-			}
-			if err := h.Ops.Delete(spec.Hive, spec.Path, spec.Name); err != nil {
-				logError(h.Log, "Suppression du réglage registre %s en échec : %v", spec.identity(), err)
+		targets := []RegistrySpec{spec}
+		if isUsersHive(spec.Hive) {
+			hives, err := enum.targets()
+			if err != nil {
+				logError(h.Log, "Énumération des ruches utilisateur (HKU) en échec : %v", err)
 				if firstErr == nil {
-					firstErr = fmt.Errorf("suppression de %s : %w", spec.identity(), err)
+					firstErr = fmt.Errorf("énumération des ruches utilisateur pour %s : %w", spec.identity(), err)
 				}
 
-				continue
+				continue // item HKU inapplicable — les autres clés convergent
 			}
-			logInfo(h.Log, "Réglage registre supprimé (ensure: absent) : %s", spec.identity())
-			// Une suppression EFFECTIVE d'une valeur HKCU compte comme un
-			// changement (même gate que l'écriture — décision de design n° 6).
-			if isUserHive(spec.Hive) {
+			targets = fanOutUserHives(spec, hives)
+		}
+
+		for _, target := range targets {
+			changed, err := h.applyTarget(target)
+			if err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+
+				continue // effort maximal : cible suivante / clé suivante
+			}
+			// Un changement EFFECTIF d'une valeur HKCU (écriture OU suppression)
+			// déclenche le rafraîchissement shell (décision de design n° 6).
+			// HKU : jamais (isUserHive rend false — piège n° 9).
+			if changed && isUserHive(target.Hive) {
 				shellRefresh = true
 			}
-
-			continue
-		}
-		if present && actual.Equal(spec.Value) {
-			continue // déjà conforme → idempotence (aucune écriture)
-		}
-		if err := h.Ops.Write(spec); err != nil {
-			logError(h.Log, "Écriture du réglage registre %s en échec : %v", spec.identity(), err)
-			if firstErr == nil {
-				firstErr = fmt.Errorf("écriture de %s : %w", spec.identity(), err)
-			}
-
-			continue
-		}
-		logInfo(h.Log, "Réglage registre appliqué : %s = %s", spec.identity(), formatValue(spec.Value))
-		if isUserHive(spec.Hive) {
-			shellRefresh = true
 		}
 	}
 
@@ -307,6 +408,43 @@ func (h *RegistryHandler) Apply(items []StateItem) error {
 	}
 
 	return firstErr
+}
+
+// applyTarget : converge UNE cible physique (une clé simple, ou une cible du
+// fan-out HKU au path préfixé). changed=true ssi une écriture/suppression
+// EFFECTIVE a eu lieu (gate du rafraîchissement shell). Erreur loggée puis
+// remontée à l'appelant (qui l'isole — effort maximal).
+func (h *RegistryHandler) applyTarget(target RegistrySpec) (bool, error) {
+	actual, present, err := h.Ops.Read(target.Hive, target.Path, target.Name)
+	if err != nil {
+		logError(h.Log, "Lecture du réglage registre %s en échec : %v", target.identity(), err)
+
+		return false, fmt.Errorf("lecture de %s : %w", target.identity(), err)
+	}
+	if target.absent() {
+		if !present {
+			return false, nil // déjà absente → idempotence (aucune suppression)
+		}
+		if err := h.Ops.Delete(target.Hive, target.Path, target.Name); err != nil {
+			logError(h.Log, "Suppression du réglage registre %s en échec : %v", target.identity(), err)
+
+			return false, fmt.Errorf("suppression de %s : %w", target.identity(), err)
+		}
+		logInfo(h.Log, "Réglage registre supprimé (ensure: absent) : %s", target.identity())
+
+		return true, nil
+	}
+	if present && actual.Equal(target.Value) {
+		return false, nil // déjà conforme → idempotence (aucune écriture)
+	}
+	if err := h.Ops.Write(target); err != nil {
+		logError(h.Log, "Écriture du réglage registre %s en échec : %v", target.identity(), err)
+
+		return false, fmt.Errorf("écriture de %s : %w", target.identity(), err)
+	}
+	logInfo(h.Log, "Réglage registre appliqué : %s = %s", target.identity(), formatValue(target.Value))
+
+	return true, nil
 }
 
 // parseRegistrySpec : extrait un RegistrySpec d'un payload §3 brut. Champs

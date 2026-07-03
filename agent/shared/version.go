@@ -113,7 +113,24 @@ package shared
 // jamais le stop manuel du service) → présence « éteint » immédiate dans l'UI
 // au lieu du seuil de silence 2 × ttl (NotifyShutdown, shared/shutdown.go).
 //
+// 2.5.0 = ruche `HKU` sur les items `registry` (Story 35.3, contrat §7.1) :
+// troisième VALEUR admise du champ `hive` (pas un champ ni un type nouveau —
+// golden/hashes figés INCHANGÉS). Un item `hive:"HKU"` (portée MACHINE,
+// service SYSTEM) est FAN-OUT en interne par le handler vers `HKU\.DEFAULT`
+// (écran de logon — numlock au logon) ET chaque ruche utilisateur CHARGÉE
+// (`HKU\<SID>`, `S-1-5-21-*` hors `_Classes`), énumérées à CHAQUE cycle via le
+// NOUVEL op REQUIS `RegistryOps.UserHives` (session ouverte après coup =
+// couverte au cycle suivant). Drift AGRÉGÉ (une ruche divergente ⇒ drift du
+// type), idempotence PAR CIBLE, `ensure:"absent"` supprime dans TOUTES les
+// ruches, erreur par ruche ISOLÉE (effort maximal) / erreur d'énumération
+// franche. Aucun rafraîchissement shell pour HKU (session 0). Débouché :
+// `HKCU\Software\Policies\*` diffusable en machine/parc via HKU. ⚠️ Un binaire
+// ≤ 2.4.1 PARSE un item HKU puis `rootKey()` le refuse à l'op → `{status:
+// error}` pour le type `registry` machine ENTIER, SANS Apply : toutes les clés
+// HKLM cessent de converger → PUBLIER la release 2.5.0 AVANT de jouer la
+// migration numlock HKU (update.sh ne publie jamais seul).
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.4.1"
+var Version = "2.5.0"

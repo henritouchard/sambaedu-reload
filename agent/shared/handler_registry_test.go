@@ -23,6 +23,18 @@ type fakeRegistryOps struct {
 	deleteCnt int // appels Delete EFFECTIFS (valeur supprimée)
 	namesCnt  int // appels ValueNames
 	notifyCnt int // appels NotifyShellChanged (rafraîchissement shell émis)
+	// unmountedHku : bases HKU (`.default`/`<sid>` en minuscules) DÉMONTÉES
+	// après l'énumération (race logoff, review 35.3 #1) — Read les voit
+	// absentes (aucune value posée), Write les SAUTE (no-op, iso Windows).
+	unmountedHku map[string]bool
+	// userHives : cibles du fan-out HKU (Story 35.3, RegistryOps.UserHives) —
+	// ".DEFAULT" + SID chargés, injectables par le test (l'impl Windows filtre
+	// et trie ; le fake rend la liste telle quelle). userHivesErr simule un
+	// échec d'énumération (item HKU inapplicable) ; userHivesCnt prouve
+	// l'énumération PAR APPEL (jamais de cache entre cycles).
+	userHives    []string
+	userHivesErr error
+	userHivesCnt int
 }
 
 // NotifyShellChanged : implémente registryNotifier (optionnel) → compte les
@@ -31,11 +43,12 @@ func (o *fakeRegistryOps) NotifyShellChanged() { o.notifyCnt++ }
 
 func newFakeRegistryOps() *fakeRegistryOps {
 	return &fakeRegistryOps{
-		values:    map[string]RegistryValue{},
-		readErr:   map[string]error{},
-		writeErr:  map[string]error{},
-		deleteErr: map[string]error{},
-		namesErr:  map[string]error{},
+		values:       map[string]RegistryValue{},
+		readErr:      map[string]error{},
+		writeErr:     map[string]error{},
+		deleteErr:    map[string]error{},
+		namesErr:     map[string]error{},
+		unmountedHku: map[string]bool{},
 	}
 }
 
@@ -58,6 +71,15 @@ func (o *fakeRegistryOps) Write(spec RegistrySpec) error {
 	id := keyID(spec.Hive, spec.Path, spec.Name)
 	if err := o.writeErr[id]; err != nil {
 		return err
+	}
+	// Iso impl Windows (review 35.3 #1) : une cible HKU dont la ruche de
+	// fan-out a été DÉMONTÉE depuis l'énumération est SAUTÉE (no-op nil,
+	// jamais d'orpheline) — la base est le premier segment du path.
+	if isUsersHive(spec.Hive) {
+		base, _, _ := strings.Cut(strings.ToLower(spec.Path), `\`)
+		if o.unmountedHku[base] {
+			return nil
+		}
 	}
 	o.writeCnt++
 	o.values[id] = spec.Value
@@ -111,6 +133,17 @@ func (o *fakeRegistryOps) ValueNames(hive, path string) ([]string, error) {
 	}
 
 	return names, nil
+}
+
+// UserHives : cibles du fan-out HKU (Story 35.3). Copie défensive, comptée par
+// appel (l'énumération est PAR APPEL Test/Apply — jamais de cache).
+func (o *fakeRegistryOps) UserHives() ([]string, error) {
+	o.userHivesCnt++
+	if o.userHivesErr != nil {
+		return nil, o.userHivesErr
+	}
+
+	return append([]string{}, o.userHives...), nil
 }
 
 // dwordItem construit un StateItem `registry` REG_DWORD.
@@ -872,5 +905,353 @@ func TestMergeReportItemsByTypeNoopOnUniqueTypes(t *testing.T) {
 	merged := MergeReportItemsByType(items)
 	if len(merged) != 2 {
 		t.Fatalf("types déjà uniques : aucune fusion attendue, obtenu %+v", merged)
+	}
+}
+
+// --- Ruche HKU : fan-out .DEFAULT + ruches chargées (Story 35.3) --------------
+//
+// Un item `hive:"HKU"` (portée machine, service SYSTEM) est UNE cible logique
+// que le handler applique à `HKU\.DEFAULT` + chaque ruche utilisateur chargée
+// (RegistryOps.UserHives, énuméré PAR APPEL). Drift AGRÉGÉ, idempotence PAR
+// CIBLE, identité/hash de l'item inchangés par le nombre de sessions.
+
+const hkuNumlockPath = `Control Panel\Keyboard`
+
+const hkuNumlockName = "InitialKeyboardIndicators"
+
+// hkuItem : l'item numlock écran de logon (cas réel de la story). Le path ne
+// porte JAMAIS `.DEFAULT\` (piège n° 6 : c'est le handler qui préfixe).
+func hkuItem(value string) StateItem {
+	return szItem("HKU", hkuNumlockPath, hkuNumlockName, value)
+}
+
+func TestRegistryHkuWriteFansOutToAllHivesThenIdempotent(t *testing.T) {
+	// (a) écriture HKU : fan-out .DEFAULT + 2 SID, re-Test true, 2e Apply =
+	// zéro op — et l'énumération est PAR APPEL (userHivesCnt suit les appels).
+	ops := newFakeRegistryOps()
+	ops.userHives = []string{".DEFAULT", "S-1-5-21-111", "S-1-5-21-222"}
+	h := &RegistryHandler{Ops: ops}
+	items := []StateItem{hkuItem("2")}
+
+	ok, err := h.Test(items)
+	if err != nil {
+		t.Fatalf("test: %v", err)
+	}
+	if ok {
+		t.Fatalf("aucune ruche ne porte la valeur → non conforme attendu")
+	}
+	if ops.userHivesCnt != 1 {
+		t.Fatalf("Test = 1 énumération, obtenu %d", ops.userHivesCnt)
+	}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if ops.writeCnt != 3 {
+		t.Fatalf("fan-out attendu vers 3 ruches (3 écritures), obtenu %d", ops.writeCnt)
+	}
+	for _, hive := range ops.userHives {
+		got := ops.values[keyID("HKU", hive+`\`+hkuNumlockPath, hkuNumlockName)]
+		if got.Str != "2" {
+			t.Fatalf("ruche %s : valeur '2' attendue, obtenu %q", hive, got.Str)
+		}
+	}
+	if ops.userHivesCnt != 2 {
+		t.Fatalf("Test + Apply = 2 énumérations (une PAR APPEL), obtenu %d", ops.userHivesCnt)
+	}
+
+	ok, err = h.Test(items)
+	if err != nil || !ok {
+		t.Fatalf("re-test après fan-out : ok=%v err=%v (conforme attendu)", ok, err)
+	}
+
+	// 2e Apply sur état stable : ZÉRO écriture (idempotence par cible).
+	before := ops.writeCnt
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply 2: %v", err)
+	}
+	if ops.writeCnt != before {
+		t.Fatalf("apply idempotent attendu : %d écriture(s) de plus", ops.writeCnt-before)
+	}
+}
+
+func TestRegistryHkuWriteSkipsHiveUnmountedAfterEnumeration(t *testing.T) {
+	// Race logoff RÉELLE (review 35.3 #1) : UserHives a énuméré un SID, la
+	// ruche est démontée avant l'écriture. Chemin Windows réel : Read
+	// not-present (drift) puis Write SKIP no-op — JAMAIS de clé orpheline
+	// matérialisée sous HKEY_USERS. Les autres ruches convergent, aucune
+	// erreur. Le cycle suivant n'énumère plus la ruche → item conforme.
+	ops := newFakeRegistryOps()
+	ops.userHives = []string{".DEFAULT", "S-1-5-21-999"}
+	ops.unmountedHku["s-1-5-21-999"] = true // démontée APRÈS l'énumération
+	h := &RegistryHandler{Ops: ops}
+	items := []StateItem{hkuItem("2")}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v (le skip d'une ruche démontée n'est pas une erreur)", err)
+	}
+	if ops.writeCnt != 1 {
+		t.Fatalf("seule .DEFAULT doit être écrite (1 écriture), obtenu %d", ops.writeCnt)
+	}
+	if _, orphan := ops.values[keyID("HKU", `S-1-5-21-999\`+hkuNumlockPath, hkuNumlockName)]; orphan {
+		t.Fatalf("clé ORPHELINE matérialisée dans une ruche démontée — interdit")
+	}
+
+	// Cycle suivant : la ruche a disparu de l'énumération → conforme.
+	ops.userHives = []string{".DEFAULT"}
+	ok, err := h.Test(items)
+	if err != nil || !ok {
+		t.Fatalf("cycle suivant sans la ruche : conforme attendu (ok=%v err=%v)", ok, err)
+	}
+}
+
+func TestRegistryHkuAggregatedDriftRewritesOnlyTheDivergentHive(t *testing.T) {
+	// (b) UNE ruche divergente ⇒ Test false (drift agrégé) ; Apply ne réécrit
+	// QUE cette ruche (idempotence par cible : les conformes sont intouchées).
+	ops := newFakeRegistryOps()
+	ops.userHives = []string{".DEFAULT", "S-1-5-21-111", "S-1-5-21-222"}
+	ops.values[keyID("HKU", `.DEFAULT\`+hkuNumlockPath, hkuNumlockName)] = RegistryValue{Kind: "REG_SZ", Str: "2"}
+	ops.values[keyID("HKU", `S-1-5-21-111\`+hkuNumlockPath, hkuNumlockName)] = RegistryValue{Kind: "REG_SZ", Str: "2"}
+	ops.values[keyID("HKU", `S-1-5-21-222\`+hkuNumlockPath, hkuNumlockName)] = RegistryValue{Kind: "REG_SZ", Str: "0"} // divergente
+	h := &RegistryHandler{Ops: ops}
+	items := []StateItem{hkuItem("2")}
+
+	ok, err := h.Test(items)
+	if err != nil {
+		t.Fatalf("test: %v", err)
+	}
+	if ok {
+		t.Fatalf("une ruche divergente ⇒ item NON conforme (drift agrégé)")
+	}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if ops.writeCnt != 1 {
+		t.Fatalf("seule la ruche divergente doit être réécrite (1 écriture), obtenu %d", ops.writeCnt)
+	}
+	if got := ops.values[keyID("HKU", `S-1-5-21-222\`+hkuNumlockPath, hkuNumlockName)]; got.Str != "2" {
+		t.Fatalf("la ruche divergente aurait dû converger à '2', obtenu %q", got.Str)
+	}
+}
+
+func TestRegistryHkuNewSessionCoveredNextCycleThroughEngineStrict(t *testing.T) {
+	// (c) policy STRICT via le moteur (engine.go INTOUCHÉ, iso
+	// TestRegistryAbsentThroughEngineStrictRedrift) : une ruche AJOUTÉE entre
+	// deux passes (session ouverte après coup) est vue au cycle suivant —
+	// énumération par appel, jamais de cache.
+	ops := newFakeRegistryOps()
+	ops.userHives = []string{".DEFAULT"}
+	h := &RegistryHandler{Ops: ops}
+	engine := &Engine{Handlers: map[string]Handler{"registry": h}}
+	target := []StateItem{hkuItem("2")}
+
+	// Cycle 1 : .DEFAULT vierge → drift + écriture.
+	report := engine.RunPass(target, AppliedState{})
+	if len(report) != 1 || report[0].Status != "drift" {
+		t.Fatalf("cycle 1 : drift attendu, obtenu %+v", report)
+	}
+	if ops.writeCnt != 1 {
+		t.Fatalf("cycle 1 : 1 écriture (.DEFAULT), obtenu %d", ops.writeCnt)
+	}
+
+	// Cycle 2 : stable → compliant, zéro op.
+	report = engine.RunPass(target, AppliedState{})
+	if len(report) != 1 || report[0].Status != "compliant" {
+		t.Fatalf("cycle 2 : compliant attendu, obtenu %+v", report)
+	}
+
+	// Une session S'OUVRE (ruche chargée entre deux cycles) → cycle 3 :
+	// re-drift (la nouvelle ruche n'a pas la valeur) + convergence de la seule
+	// nouvelle ruche.
+	ops.userHives = append(ops.userHives, "S-1-5-21-333")
+	report = engine.RunPass(target, AppliedState{})
+	if len(report) != 1 || report[0].Status != "drift" {
+		t.Fatalf("cycle 3 (session ouverte après coup) : drift attendu, obtenu %+v", report)
+	}
+	if ops.writeCnt != 2 {
+		t.Fatalf("cycle 3 : 1 écriture de plus (nouvelle ruche seule), obtenu %d au total", ops.writeCnt)
+	}
+	if got := ops.values[keyID("HKU", `S-1-5-21-333\`+hkuNumlockPath, hkuNumlockName)]; got.Str != "2" {
+		t.Fatalf("la nouvelle ruche aurait dû converger à '2', obtenu %q", got.Str)
+	}
+
+	// Cycle 4 : stable → compliant.
+	report = engine.RunPass(target, AppliedState{})
+	if len(report) != 1 || report[0].Status != "compliant" {
+		t.Fatalf("cycle 4 : compliant attendu, obtenu %+v", report)
+	}
+}
+
+func TestRegistryHkuAbsentDeletesAcrossAllHivesIncludingUnsupportedKind(t *testing.T) {
+	// (d) `ensure:"absent"` HKU supprime la valeur nommée dans TOUTES les
+	// ruches — y compris une valeur d'un type hors contrat (sentinelle
+	// REG_UNSUPPORTED, piège n° 10) présente dans UNE seule ruche alors que
+	// .DEFAULT est déjà propre (drift agrégé).
+	ops := newFakeRegistryOps()
+	ops.userHives = []string{".DEFAULT", "S-1-5-21-111", "S-1-5-21-222"}
+	// .DEFAULT : déjà propre. 111 : REG_DWORD résiduel. 222 : REG_BINARY (kind
+	// sentinelle) résiduel.
+	ops.values[keyID("HKU", `S-1-5-21-111\`+hkuNumlockPath, hkuNumlockName)] = RegistryValue{Kind: "REG_DWORD", Int: 2}
+	ops.values[keyID("HKU", `S-1-5-21-222\`+hkuNumlockPath, hkuNumlockName)] = RegistryValue{Kind: "REG_UNSUPPORTED"}
+	h := &RegistryHandler{Ops: ops}
+	items := []StateItem{absentItem("HKU", hkuNumlockPath, hkuNumlockName)}
+
+	ok, err := h.Test(items)
+	if err != nil {
+		t.Fatalf("test: %v", err)
+	}
+	if ok {
+		t.Fatalf("valeurs résiduelles dans 2 ruches ⇒ non conforme attendu")
+	}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if ops.deleteCnt != 2 {
+		t.Fatalf("2 suppressions effectives attendues (111 + 222), obtenu %d", ops.deleteCnt)
+	}
+
+	ok, err = h.Test(items)
+	if err != nil || !ok {
+		t.Fatalf("après purge : conforme attendu (ok=%v err=%v)", ok, err)
+	}
+
+	// Idempotence : 2e Apply = zéro suppression de plus.
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply 2: %v", err)
+	}
+	if ops.deleteCnt != 2 {
+		t.Fatalf("apply idempotent : aucune suppression de plus, obtenu %d", ops.deleteCnt)
+	}
+}
+
+func TestRegistryHkuEnumerationErrorIsFrankButOtherKeysConverge(t *testing.T) {
+	// (e-1) une erreur d'ÉNUMÉRATION rend l'item HKU inapplicable : Test =
+	// erreur franche (le moteur rendra {status: error} pour le type SANS
+	// Apply) ; en Apply (course), l'erreur est remontée mais les AUTRES clés
+	// de la passe convergent (effort maximal).
+	ops := newFakeRegistryOps()
+	ops.userHivesErr = fmt.Errorf("accès refusé à HKEY_USERS")
+	h := &RegistryHandler{Ops: ops}
+	items := []StateItem{
+		hkuItem("2"),
+		dwordItem("HKLM", `SOFTWARE\Test\System`, "EnableLUA", 0),
+	}
+
+	// Test sur l'item HKU seul : erreur FRANCHE (NB : dans une passe mixte,
+	// Test peut court-circuiter en (false, nil) sur une dérive HKLM rencontrée
+	// AVANT l'item HKU — ordre d'identité — sans que ça change le verdict :
+	// le moteur appelle alors Apply, qui remonte l'erreur d'énumération).
+	if _, err := h.Test(items[:1]); err == nil {
+		t.Fatalf("erreur d'énumération : erreur franche attendue de Test")
+	}
+
+	err := h.Apply(items)
+	if err == nil {
+		t.Fatalf("erreur d'énumération : erreur attendue d'Apply")
+	}
+	if ops.values[keyID("HKLM", `SOFTWARE\Test\System`, "EnableLUA")].Int != 0 {
+		t.Fatalf("la clé HKLM de la même passe aurait dû converger malgré l'échec HKU")
+	}
+}
+
+func TestRegistryHkuPerHiveErrorIsIsolated(t *testing.T) {
+	// (e-2) une ruche en échec (accès refusé / déchargée en course logoff)
+	// n'empêche NI les autres ruches NI les autres clés de converger ; la
+	// première erreur est remontée à la fin.
+	ops := newFakeRegistryOps()
+	ops.userHives = []string{".DEFAULT", "S-1-5-21-111", "S-1-5-21-222"}
+	ops.writeErr[keyID("HKU", `S-1-5-21-111\`+hkuNumlockPath, hkuNumlockName)] = fmt.Errorf("ruche déchargée")
+	h := &RegistryHandler{Ops: ops}
+	items := []StateItem{
+		hkuItem("2"),
+		dwordItem("HKLM", `SOFTWARE\Test\System`, "ZZZ", 1),
+	}
+
+	err := h.Apply(items)
+	if err == nil {
+		t.Fatalf("une ruche en échec devrait remonter une erreur d'apply")
+	}
+	// Les 2 autres ruches ont convergé.
+	for _, hive := range []string{".DEFAULT", "S-1-5-21-222"} {
+		if got := ops.values[keyID("HKU", hive+`\`+hkuNumlockPath, hkuNumlockName)]; got.Str != "2" {
+			t.Fatalf("ruche %s : aurait dû converger malgré l'échec de 111, obtenu %q", hive, got.Str)
+		}
+	}
+	// L'autre clé de la passe aussi.
+	if ops.values[keyID("HKLM", `SOFTWARE\Test\System`, "ZZZ")].Int != 1 {
+		t.Fatalf("la clé HKLM aurait dû converger malgré l'échec d'une ruche HKU")
+	}
+}
+
+func TestRegistryHkuAndHklmMixedInOneMachinePass(t *testing.T) {
+	// (f) mix HKLM + HKU dans une même passe machine : le service SYSTEM
+	// applique les deux via le MÊME handler (wiring inchangé).
+	ops := newFakeRegistryOps()
+	ops.userHives = []string{".DEFAULT", "S-1-5-21-111"}
+	h := &RegistryHandler{Ops: ops}
+	items := []StateItem{
+		dwordItem("HKLM", `SOFTWARE\X`, "M", 7),
+		hkuItem("2"),
+	}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if ops.values[keyID("HKLM", `SOFTWARE\X`, "M")].Int != 7 {
+		t.Fatalf("clé HKLM non appliquée")
+	}
+	if ops.writeCnt != 3 {
+		t.Fatalf("1 écriture HKLM + 2 cibles HKU = 3 écritures, obtenu %d", ops.writeCnt)
+	}
+}
+
+func TestRegistryHkuNeverTriggersShellRefresh(t *testing.T) {
+	// (g) aucun NotifyShellChanged pour HKU (piège n° 9) : le service écrit
+	// depuis la session 0 — isUserHive rend false pour HKU, écriture ET
+	// suppression effectives comprises.
+	ops := newFakeRegistryOps()
+	ops.userHives = []string{".DEFAULT", "S-1-5-21-111"}
+	ops.values[keyID("HKU", `S-1-5-21-111\Software\Residue`, "Old")] = RegistryValue{Kind: "REG_DWORD", Int: 1}
+	h := &RegistryHandler{Ops: ops}
+	items := []StateItem{
+		hkuItem("2"),
+		absentItem("HKU", `Software\Residue`, "Old"),
+	}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if ops.writeCnt == 0 || ops.deleteCnt == 0 {
+		t.Fatalf("précondition : écriture (%d) et suppression (%d) effectives attendues", ops.writeCnt, ops.deleteCnt)
+	}
+	if ops.notifyCnt != 0 {
+		t.Fatalf("HKU : aucun rafraîchissement shell attendu, obtenu %d", ops.notifyCnt)
+	}
+}
+
+func TestRegistryHkuDedupKeepsLastOccurrence(t *testing.T) {
+	// (h) identité/dédup INCHANGÉES : deux items sur la MÊME identité logique
+	// {hku|path|name} → la DERNIÈRE occurrence fait foi (desiredSpecs intouché),
+	// le fan-out n'écrit qu'UNE valeur par ruche.
+	ops := newFakeRegistryOps()
+	ops.userHives = []string{".DEFAULT", "S-1-5-21-111"}
+	h := &RegistryHandler{Ops: ops}
+	items := []StateItem{
+		hkuItem("0"), // écrasée par la suivante (même identité)
+		hkuItem("2"),
+	}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if ops.writeCnt != 2 {
+		t.Fatalf("1 spec dédupliqué × 2 ruches = 2 écritures, obtenu %d", ops.writeCnt)
+	}
+	for _, hive := range ops.userHives {
+		if got := ops.values[keyID("HKU", hive+`\`+hkuNumlockPath, hkuNumlockName)]; got.Str != "2" {
+			t.Fatalf("ruche %s : la dernière occurrence ('2') fait foi, obtenu %q", hive, got.Str)
+		}
 	}
 }

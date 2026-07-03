@@ -263,7 +263,7 @@ clés distinctes s'accumulent). Le payload porte un item de registre **CONCRET**
 
 | Clé | Type JSON | Sens |
 |---|---|---|
-| `hive` | string | `HKLM` (portée machine, service SYSTEM) \| `HKCU` (portée session, compagnon). |
+| `hive` | string | `HKLM` (portée machine, service SYSTEM) \| `HKCU` (portée session, compagnon) \| `HKU` (Story 35.3 — portée **machine**, service SYSTEM). **Sémantique `HKU`** : l'item désigne UNE cible logique que le service applique à **toutes les ruches utilisateur du poste + `.DEFAULT`** (le « profil » lu par l'écran de logon) — fan-out **interne au handler** : `HKU\.DEFAULT\<path>` + `HKU\<SID>\<path>` pour chaque ruche chargée (`S-1-5-21-*`, hors jumelles `_Classes` ; les SID de service `S-1-5-18/19/20` ne matchent pas le préfixe), énumérées à **chaque cycle** (une session ouverte après coup est couverte au cycle suivant). Le `path` du payload ne porte **JAMAIS** le préfixe `.DEFAULT\` (c'est le handler qui préfixe). Drift **AGRÉGÉ** : une seule ruche divergente ⇒ l'item (donc le type) rapporte `drift` ; `ensure: "absent"` supprime la valeur dans TOUTES les ruches. **Pas de ciblage par utilisateur** sur cette ruche — structurel : le service fetch son state en contexte machine (sans `?user`), les overrides UserGroup/User n'atteignent jamais ces items ; le ciblage fin reste au Session/HKCU. **Discipline d'authoring** : une capacité portant une clé HKU ne se cible pas par utilisateur/groupe d'utilisateurs, et ses maps HKU/HKCU jumelles (même `{path\|name}`, ex. numlock) doivent être **valeur-consistantes** — sinon compagnon et SYSTEM se réécriraient mutuellement à chaque cycle. |
 | `path` | string | Chemin de clé sous la ruche (backslashes échappés en JSON). |
 | `name` | string | Nom de la valeur de registre. **`""` (chaîne vide) est un nom LÉGITIME** : la valeur **par défaut** de la clé (`(Default)` dans regedit) — Story 35.2 (besoin 35.5, ex. `HKCU\Software\Classes\Applications\photoviewer.dll\shell\open\command`). La clé `name` doit toujours être **présente** dans le payload (absence = enveloppe invalide) ; c'est le comportement documenté des API registre (`RegQueryValueEx`/`RegSetValueEx`/`RegDeleteValue` avec un nom vide ciblent la valeur par défaut, relayé tel quel par `golang.org/x/sys/windows/registry`). |
 | `type` | string | `REG_SZ` \| `REG_DWORD` \| `REG_EXPAND_SZ` \| `REG_MULTI_SZ` \| `REG_QWORD`. |
@@ -325,10 +325,19 @@ Item de **suppression** (`ensure: "absent"`) — EXACTEMENT 4 clés, ni `type` n
 > suivant (PAS « cesser de gérer »).
 
 > **Portée → acteur.** UN seul handler Go `registry`, instancié deux fois : le
-> **service SYSTEM** applique les items HKLM (portée `machine`), le **compagnon**
-> applique les items HKCU (portée `session`). Comme les deux portées émettent le
-> type `registry`, l'agent **fusionne par type** avant le rapport (pire statut
-> gagne) pour respecter l'unicité des types §6.
+> **service SYSTEM** applique les items HKLM **et HKU** (portée `machine` —
+> seul SYSTEM peut écrire les ruches des autres utilisateurs et `.DEFAULT`),
+> le **compagnon** applique les items HKCU (portée `session`). Comme les deux
+> portées émettent le type `registry`, l'agent **fusionne par type** avant le
+> rapport (pire statut gagne) pour respecter l'unicité des types §6.
+>
+> **Agents antérieurs à 2.5.0 face à un item `HKU`** : le parse réussit (les
+> valeurs de `hive` ne sont pas validées au parse) puis `rootKey()` refuse la
+> ruche à la première lecture → `Test` retourne une **erreur** → `{status:
+> error}` pour le type `registry` machine **ENTIER**, sans Apply : toutes les
+> clés HKLM du poste **cessent de converger** tant que l'item HKU est au state.
+> La release 2.5.0 DOIT être **publiée AVANT** d'armer une clé HKU (update.sh
+> ne publie jamais seul).
 
 ### 7.2 Payload `associations`
 
@@ -611,7 +620,7 @@ capacité, zéro float (§4.1) :
 
 | Clé | Type JSON | Sens |
 |---|---|---|
-| `hive` | string | `HKLM` (portée machine) \| `HKCU` (portée session). |
+| `hive` | string | `HKLM` (portée machine) \| `HKCU` (portée session). **`HKU` n'est PAS admis en `registry_list`** (hors scope Story 35.3, refusé à l'authoring par le garde-fou) : le fan-out d'une réconciliation de clé-conteneur multiplierait la propriété de clé par N ruches sans consommateur connu — extension future si besoin réel. |
 | `path` | string | Chemin de la **clé-conteneur** sous la ruche (la clé dont les sous-valeurs `1..N` sont la liste). |
 | `entry_type` | string | Type des entrées : `REG_SZ` \| `REG_EXPAND_SZ` **uniquement** (les listes indexées Windows sont des chaînes — borné par le contrat). |
 | `values` | list&lt;string&gt; | Liste **ORDONNÉE** de chaînes. L'ordre est **porteur de sens** : la canonicalisation du hash ne trie pas les listes (§4) — le même contenu dans un autre ordre est un autre hash. **`[]` (liste vide) est une vraie valeur** : « purger toutes les entrées numérotées » (le « off » honnête d'une liste). |
@@ -682,9 +691,20 @@ décision de contrat consommée par chaque handler côté agent.
   au champ ajouté, un agent ANTÉRIEUR **ignore un type inconnu EN SILENCE**
   (§8 : type sans handler = aucun statut émis) — « réglage sans effet, zéro
   erreur ». La publication de la release n'est pas optionnelle.
+- **Valeur de domaine ajoutée à un champ existant** → version **mineure**, golden
+  **INCHANGÉS** (rien à figer : ni champ ni type nouveau, la forme du wire ne
+  change pas — la couverture vit dans les tests dédiés du handler). Ex. Story
+  35.3 : `HKU` troisième valeur admise de `hive` (§7.1), agent bumpé 2.5.0.
+  ⚠️ Cas limite le PLUS piégeux des trois : un agent ANTÉRIEUR **parse** l'item
+  HKU sans broncher, puis `rootKey()` le refuse à l'op → `{status: error}` pour
+  le type `registry` machine **ENTIER**, **sans Apply** — toutes les clés HKLM
+  cessent de converger (dérives non corrigées) tant que l'item est au state.
+  Publication de la release **AVANT** l'armement de la donnée, obligatoire.
 - **Champ retiré / renommé** OU **sémantique changée** → version **MAJEURE**
   (`se5.desired-state/v2`). L'agent **refuse un major inconnu**.
-- Toute évolution = **mise à jour des golden files + bump de version explicite**.
+- Toute évolution = **mise à jour des golden files + bump de version explicite**
+  (ou justification écrite de golden inchangés quand seule une valeur de domaine
+  s'ajoute).
 
 Les golden files `tests/Fixtures/Agent/{state,report}.v1.json` sont **normatifs**
 et **consommés par PHPUnit** (`tests/Unit/Services/Agent/ContractV1Test.php`) :

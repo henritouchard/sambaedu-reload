@@ -60,6 +60,18 @@ class CapabilityProjection extends Model
     /** Ruche utilisateur (portée session / compagnon) — idem. */
     public const HIVE_USER = 'HKCU';
 
+    /**
+     * Ruche des profils utilisateurs HKEY_USERS (Story 35.3) — TROISIÈME valeur
+     * admise de `spec.keys[].hive` du mécanisme `registry`, PORTÉE MACHINE :
+     * émise par le provider Machine uniquement ({@see \App\Services\Agent\Providers\RegistryMachineCapabilityProvider}),
+     * appliquée par le service SYSTEM qui FAN-OUT la clé vers `HKU\.DEFAULT`
+     * (écran de logon) + chaque ruche utilisateur chargée (`HKU\<SID>`), à
+     * chaque cycle. Jamais émise en portée Session ; non admise en
+     * `registry_list` (garde-fou d'authoring). Pas de ciblage par utilisateur
+     * (structurel : le service fetch son state sans `?user`).
+     */
+    public const HIVE_USERS = 'HKU';
+
     protected $fillable = [
         'capability_id',
         'os',

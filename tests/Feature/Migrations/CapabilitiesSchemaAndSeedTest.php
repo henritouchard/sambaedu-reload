@@ -734,6 +734,197 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         self::assertStringContainsString('hive et path sont requis', $violations[1]);
     }
 
+    // ── Story 35.3 (AC1) — borné des ruches par mécanisme ───────────────────
+
+    #[Test]
+    public function guard_refuses_a_registry_list_container_on_hku(): void
+    {
+        // HKU HORS scope registry_list (piège n°11) : violation NOMMÉE — le
+        // fan-out d'une réconciliation de clé-conteneur multiplierait la
+        // propriété de clé par N ruches sans consommateur connu.
+        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+
+        $violations = $guard->violations([
+            [
+                'capability' => 'rogue_hku_list',
+                'mechanism' => 'registry_list',
+                'spec' => ['keys' => [[
+                    'hive' => 'HKU',
+                    'path' => 'Software\\Policies\\X\\List',
+                    'entry_type' => 'REG_SZ',
+                    'values' => ['on' => ['a']],
+                ]]],
+            ],
+        ]);
+
+        self::assertCount(1, $violations);
+        self::assertStringContainsString('rogue_hku_list', $violations[0]);
+        self::assertStringContainsString('HKU non admise en registry_list', $violations[0]);
+    }
+
+    #[Test]
+    public function guard_refuses_a_registry_scalar_with_an_unknown_hive(): void
+    {
+        // Borné registry ∈ {HKLM, HKCU, HKU} : une ruche inconnue ('HKX') ne
+        // serait émise par AUCUN provider (clé silencieusement morte) → refus.
+        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+
+        $violations = $guard->violations([
+            [
+                'capability' => 'typo_cap',
+                'mechanism' => 'registry',
+                'spec' => ['keys' => [[
+                    'hive' => 'HKX',
+                    'path' => 'Software\\X',
+                    'name' => 'K',
+                    'type' => 'REG_DWORD',
+                    'value' => ['on' => 1],
+                ]]],
+            ],
+        ]);
+
+        self::assertCount(1, $violations);
+        self::assertStringContainsString('typo_cap', $violations[0]);
+        self::assertStringContainsString("ruche 'HKX' hors borné (HKLM|HKCU|HKU)", $violations[0]);
+    }
+
+    #[Test]
+    public function hku_hkcu_twin_keys_on_the_same_path_name_are_not_a_violation(): void
+    {
+        // Piège n°5 (cas nominal numlock) : la double-clé HKU + HKCU sur le
+        // MÊME {path|name} est VOULUE (SYSTEM couvre .DEFAULT/ruches, le
+        // compagnon la session courante) — le guard ne la refuse PAS. Prouvé
+        // sur la projection numlock RÉELLEMENT seedée (post-retrofit 35.3).
+        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+
+        $numlock = array_values(array_filter(
+            $this->seededWindowsProjections(),
+            static fn (array $p): bool => $p['capability'] === 'numlock_on_logon',
+        ));
+        self::assertCount(1, $numlock, 'projection numlock présente');
+        self::assertSame([], $guard->violations($numlock), 'double-clé HKU+HKCU = non-violation');
+    }
+
+    // ── Story 35.3 (AC3) — retrofit numlock : la clé HKU de l'écran de logon ─
+
+    #[Test]
+    public function numlock_on_logon_gains_the_hku_logon_screen_key(): void
+    {
+        // La spec passe à 2 clés : la clé HKCU du palier A INCHANGÉE + la clé
+        // HKU miroir SYMÉTRIQUE (même path/name/type, même map on/off — si
+        // l'UI propose off, off écrit une vraie valeur). Le path ne porte
+        // JAMAIS `.DEFAULT\` (piège n°6 : le handler agent préfixe).
+        $cap = Capability::query()->where('key', 'numlock_on_logon')->firstOrFail();
+
+        $keys = $cap->projections()
+            ->where('os', 'windows')->where('mechanism', 'registry')
+            ->firstOrFail()->spec['keys'];
+        self::assertCount(2, $keys, 'palier A (HKCU) + retrofit 35.3 (HKU)');
+
+        // Clé HKCU du palier A : INCHANGÉE.
+        self::assertSame('HKCU', $keys[0]['hive']);
+        self::assertSame('Control Panel\\Keyboard', $keys[0]['path']);
+        self::assertSame('InitialKeyboardIndicators', $keys[0]['name']);
+        self::assertSame('REG_SZ', $keys[0]['type']);
+        self::assertSame(['on' => '2', 'off' => '0'], $keys[0]['value']);
+
+        // Clé HKU ajoutée : miroir symétrique, SANS préfixe .DEFAULT.
+        self::assertSame('HKU', $keys[1]['hive']);
+        self::assertSame('Control Panel\\Keyboard', $keys[1]['path'], 'path SANS .DEFAULT (le handler fan-out préfixe)');
+        self::assertStringNotContainsString('.DEFAULT', $keys[1]['path']);
+        self::assertSame('InitialKeyboardIndicators', $keys[1]['name']);
+        self::assertSame('REG_SZ', $keys[1]['type']);
+        self::assertSame($keys[0]['value'], $keys[1]['value'], 'maps HKU/HKCU jumelles VALEUR-CONSISTANTES (piège n°5)');
+    }
+
+    #[Test]
+    public function numlock_hku_retrofit_migration_is_idempotent_and_reversible(): void
+    {
+        // Iso pattern retrofit_migration_is_idempotent_and_reversible (35.1) :
+        // up() rejoué = aucun effet de bord ; down() restaure la spec 1-clé
+        // (HKCU seule) du palier A ; up() après down() = état identique.
+        $migration = require database_path('migrations/2026_07_03_160000_retrofit_numlock_hku_logon_screen.php');
+
+        $snapshot = fn (): array => Capability::query()->where('key', 'numlock_on_logon')->firstOrFail()
+            ->projections()->where('os', 'windows')->where('mechanism', 'registry')
+            ->firstOrFail()->spec;
+
+        // up() déjà joué par RefreshDatabase → le rejouer ne change RIEN.
+        $before = $snapshot();
+        $migration->up();
+        self::assertSame($before, $snapshot(), 'up() rejoué = aucun effet de bord');
+
+        // down() restaure la spec 1-clé du palier A (HKCU intacte, HKU retirée).
+        $migration->down();
+        $reverted = $snapshot();
+        self::assertCount(1, $reverted['keys'], 'down() restaure la spec 1-clé du palier A');
+        self::assertSame('HKCU', $reverted['keys'][0]['hive']);
+        self::assertSame($before['keys'][0], $reverted['keys'][0], 'la clé HKCU est byte-identique au palier A');
+
+        // up() après down() = état retrofitté identique (rejouable).
+        $migration->up();
+        self::assertSame($before, $snapshot(), 'up() après down() = état identique');
+    }
+
+    #[Test]
+    public function numlock_on_logon_emits_hku_machine_and_hkcu_session_items_via_the_real_providers(): void
+    {
+        // Story 35.3 (AC3) — chaîne seed→retrofit→spec→expand→payload sur
+        // données RÉELLES : effectif `on` ⇒ le provider Machine émet l'item
+        // HKU ('2') ET le provider User émet l'item HKCU ('2') ; effectif
+        // `off` (override de parc) ⇒ '0' des deux côtés.
+        WorkstationGroupObserver::disableSync();
+
+        try {
+            $ws = Workstation::factory()->create();
+            $parc = WorkstationGroup::factory()->logical()->create();
+            $ws->groups()->attach($parc->id);
+            $ctx = fn (): TargetContext => TargetContext::for($ws, null);
+
+            $cap = Capability::query()->where('key', 'numlock_on_logon')->firstOrFail();
+            self::assertSame('on', $cap->default_value, 'défaut seedé = on (broadcast flotte)');
+            $forCap = fn ($items) => $items->filter(
+                fn ($c): bool => (int) $c->sourceId === (int) $cap->id,
+            )->values();
+
+            // ── Effectif `on` (broadcast, aucun override) ───────────────────
+            $machineOn = $forCap((new RegistryMachineCapabilityProvider())->itemsFor($ctx()));
+            self::assertCount(1, $machineOn, 'le provider Machine émet la clé HKU');
+            self::assertSame('HKU', $machineOn[0]->payload['hive']);
+            self::assertSame('2', $machineOn[0]->payload['value']);
+
+            $userOn = $forCap((new RegistryUserCapabilityProvider())->itemsFor($ctx()));
+            self::assertCount(1, $userOn, 'le provider User émet la clé HKCU jumelle');
+            self::assertSame('HKCU', $userOn[0]->payload['hive']);
+            self::assertSame('2', $userOn[0]->payload['value']);
+
+            // ── Effectif `off` (override de parc) : '0' des deux côtés ──────
+            DB::table('capability_assignments')->insert([
+                'capability_id' => $cap->id,
+                'assignable_type' => WorkstationGroup::class,
+                'assignable_id' => $parc->id,
+                'value' => 'off',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $offMaille = fn ($items) => $forCap($items)->first(
+                fn ($c): bool => $c->maille === \App\Enums\StateMaille::LogicalGroup,
+            );
+            $machineOff = $offMaille((new RegistryMachineCapabilityProvider())->itemsFor($ctx()));
+            self::assertNotNull($machineOff);
+            self::assertSame('HKU', $machineOff->payload['hive']);
+            self::assertSame('0', $machineOff->payload['value'], 'off écrit une VRAIE valeur (map symétrique)');
+
+            $userOff = $offMaille((new RegistryUserCapabilityProvider())->itemsFor($ctx()));
+            self::assertNotNull($userOff);
+            self::assertSame('HKCU', $userOff->payload['hive']);
+            self::assertSame('0', $userOff->payload['value']);
+        } finally {
+            WorkstationGroupObserver::enableSync();
+        }
+    }
+
     // ── Story 35.2 (AC5) — intégration providers sur données RÉELLES ───────
 
     #[Test]
