@@ -22,6 +22,12 @@ use App\Http\Controllers\ChangePasswordController;
 |
 */
 
+// Racine du site : pas de page dédiée, on renvoie vers le tableau de bord
+// (l'utilisateur non authentifié sera redirigé vers le login par sambaedu.auth).
+Route::get('/', function () {
+    return redirect()->route('app.dashboard');
+});
+
 // Route de test avec middleware sambaedu.auth
 // Story 20.4 (post-review P-5) : `federated.audit` ajouté pour rendre TOTAL
 // l'invariant « toute route `sambaedu.auth` porte `federated.audit` » (cf.
