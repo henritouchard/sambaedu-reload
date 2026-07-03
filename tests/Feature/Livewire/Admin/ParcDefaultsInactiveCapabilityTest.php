@@ -68,9 +68,11 @@ class ParcDefaultsInactiveCapabilityTest extends TestCase
     #[Test]
     public function open_edit_refuses_an_inactive_capability(): void
     {
+        // Fixture factory : photo_viewer_restored a été ACTIVÉE par le flip
+        // 2026_07_03_150000 — la garde reste nécessaire pour toute future
+        // capacité gatée inactive.
         $this->actAsAdmin();
-        $inactive = Capability::query()->where('key', 'photo_viewer_restored')->firstOrFail();
-        self::assertFalse((bool) $inactive->is_active, 'prérequis : le seed 35.5 la gate inactive');
+        $inactive = Capability::factory()->create(['key' => 'gated_cap', 'is_active' => false]);
 
         Livewire::test(self::REGISTRY_TAB)
             ->call('openEdit', $inactive->id)
@@ -82,7 +84,7 @@ class ParcDefaultsInactiveCapabilityTest extends TestCase
     public function save_default_refuses_an_inactive_capability_even_if_ui_is_bypassed(): void
     {
         $this->actAsAdmin();
-        $inactive = Capability::query()->where('key', 'photo_viewer_restored')->firstOrFail();
+        $inactive = Capability::factory()->create(['key' => 'gated_cap', 'is_active' => false]);
         $before = $inactive->default_value;
 
         Livewire::test(self::REGISTRY_TAB)

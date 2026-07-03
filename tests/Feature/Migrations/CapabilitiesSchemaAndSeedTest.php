@@ -958,21 +958,34 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         // par une micro-évolution agent hors story (migration d'activation postérieure).
         $cap = Capability::query()->where('key', 'photo_viewer_restored')->firstOrFail();
 
-        // FLIP 35.2 : cette assertion basculera à assertTrue quand la micro-évolution
-        // agent « name:'' = valeur par défaut » sera prouvée (migration d'activation
-        // dédiée, à l'intégration de la vague). C'est la SEULE assertion à retoucher.
-        self::assertFalse(
+        // FLIP 35.2 (FAIT) : support name:"" livré/prouvé par 35.2 (agent 2.4.0)
+        // → gate levé par la migration 2026_07_03_150000 (is_active=true +
+        // description réécrite, review 35.5 #3). L'assertion balisée a basculé.
+        self::assertTrue(
             $cap->is_active,
-            'gate d\'honnêteté : inactive tant que parseRegistrySpec (agent) rejette name=="" '
-            .'(valeur par défaut de clé) — activation via migration d\'une ligne hors story',
+            'gate levé : parseRegistrySpec (agent 2.4.0) accepte name=="" — '
+            .'activation par la migration 2026_07_03_150000',
+        );
+        self::assertStringNotContainsString(
+            'Inactive tant que',
+            (string) $cap->description,
+            'la migration de flip réécrit la description (le tooltip ne ment pas)',
         );
 
-        // Preuve du gating par la MÉCANIQUE EXISTANTE : armée `on` par override de
-        // parc mais INACTIVE, le provider User n'émet AUCUN item pour cette capacité
-        // (le filtre `is_active` du provider est le gate).
+        // Preuve du gating par la MÉCANIQUE EXISTANTE : on RE-GATE via le down()
+        // de la migration de flip (inverse exact), on prouve qu'armée `on` mais
+        // INACTIVE le provider User n'émet RIEN (le filtre `is_active` est le
+        // gate), puis on relève le gate (up()) — réversibilité du flip prouvée
+        // au passage.
+        $flip = require database_path('migrations/2026_07_03_150000_activate_capability_photo_viewer_restored.php');
         \App\Observers\WorkstationGroupObserver::disableSync();
 
         try {
+            $flip->down();
+            $gated = Capability::query()->where('key', 'photo_viewer_restored')->firstOrFail();
+            self::assertFalse($gated->is_active, 'down() du flip re-gate la capacité');
+            self::assertStringContainsString('Inactive tant que', (string) $gated->description);
+
             $ws = \App\Models\Workstation::factory()->create();
             $parc = \App\Models\WorkstationGroup::factory()->logical()->create();
             $ws->groups()->attach($parc->id);
@@ -991,6 +1004,10 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
 
             $mine = $items->filter(fn ($c): bool => (int) $c->sourceId === (int) $cap->id)->values();
             self::assertCount(0, $mine, 'capacité inactive ⇒ provider n\'émet RIEN même armée on');
+
+            // Gate relevé : le flip est rejouable et l'état actif revient.
+            $flip->up();
+            self::assertTrue(Capability::query()->where('key', 'photo_viewer_restored')->firstOrFail()->is_active);
         } finally {
             \App\Observers\WorkstationGroupObserver::enableSync();
         }
@@ -999,10 +1016,14 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function photo_viewer_restored_seed_is_idempotent_and_reversible(): void
     {
-        // AC1 (idempotence/réversibilité) : up() rejoué = snapshot identique ;
-        // down() supprime capacité ET projection ; up() re-seed à l'identique
-        // (pattern retrofit_migration_is_idempotent_and_reversible, version seed).
-        $migration = require database_path('migrations/2026_07_03_130000_seed_capability_photo_viewer_restored.php');
+        // AC1 (idempotence/réversibilité) : la CHAÎNE seed (2026_07_03_130000) +
+        // flip d'activation (2026_07_03_150000) rejouée = snapshot identique ;
+        // down() du seed supprime capacité ET projection ; chaîne rejouée après
+        // down() = identique. NB : le seed seul re-gate (updateOrInsert pose
+        // is_active=false) — dans la réalité les migrations rejouent EN ORDRE,
+        // le flip suit toujours le seed.
+        $seed = require database_path('migrations/2026_07_03_130000_seed_capability_photo_viewer_restored.php');
+        $flip = require database_path('migrations/2026_07_03_150000_activate_capability_photo_viewer_restored.php');
 
         $snapshot = function (): array {
             $cap = Capability::query()->where('key', 'photo_viewer_restored')->firstOrFail();
@@ -1017,15 +1038,16 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             ];
         };
 
-        // up() déjà joué par RefreshDatabase → le rejouer ne change RIEN
+        // Chaîne déjà jouée par RefreshDatabase → la rejouer ne change RIEN
         // (updateOrInsert par key + par (capability_id, os, mechanism)).
         $before = $snapshot();
-        $migration->up();
-        self::assertSame($before, $snapshot(), 'up() rejoué = aucun effet de bord');
-        self::assertFalse($before['is_active'], 'is_active reste false à chaque rejeu (dernier seed fait foi)');
+        $seed->up();
+        $flip->up();
+        self::assertSame($before, $snapshot(), 'chaîne seed+flip rejouée = aucun effet de bord');
+        self::assertTrue($before['is_active'], 'état final = actif (flip 2026_07_03_150000)');
 
-        // down() : suppression par key → cascade FK sur la projection.
-        $migration->down();
+        // down() du seed : suppression par key → cascade FK sur la projection.
+        $seed->down();
         self::assertNull(
             Capability::query()->where('key', 'photo_viewer_restored')->first(),
             'down() supprime la capacité',
@@ -1039,9 +1061,10 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             'down() supprime la projection (cascade FK)',
         );
 
-        // up() re-seed à l'identique (rejouable après down()).
-        $migration->up();
-        self::assertSame($before, $snapshot(), 'up() après down() = état seedé identique');
+        // Chaîne rejouée après down() = état final identique.
+        $seed->up();
+        $flip->up();
+        self::assertSame($before, $snapshot(), 'chaîne rejouée après down() = état identique');
     }
 
     #[Test]
