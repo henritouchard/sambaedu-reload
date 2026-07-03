@@ -1,6 +1,6 @@
 # Story 35.4 : Geste UI — override de capacité par groupe d'utilisateurs
 
-Status: ready-for-dev
+Status: review
 
 <!-- Source d'autorité : _bmad-output/planning-artifacts/epics-capacites-v2.md (Epic 35 ne figure PAS dans epics.md). -->
 
@@ -87,31 +87,23 @@ afin **d'utiliser réellement les capacités CD95 ciblées déjà seedées (Outl
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Gate `customize-userGroup` (AC4)**
-  - [ ] 1.1 `app/Policies/GroupPolicy.php` : ajouter `'customize-userGroup' => 'customize'` à `$gates` + méthode `customize(?Authenticatable $user): bool` = `$this->hasPermission($user, 'app.customize')`. Docblock complet : permission capacités existante, rationale « instance = établissement du groupe », refus assumé du délégué par-salle (pas de délégation par-UserGroup dans le modèle — point d'extension unique si elle naît), référence anti-piège 29.1.
-  - [ ] 1.2 Test policy (dans le test Feature de la Task 3 ou `tests/Unit/Policies/`) : admin global passe ; user `app.customize` global passe ; user avec SEULEMENT `grantDelegation($user, 'app.customize', $salle)` (pattern `CapabilitiesTabCustomizeScopingTest`) est refusé ; invité refusé.
-- [ ] **Task 2 — SFC `capabilities-section` (AC1, AC2, AC3, AC4)**
-  - [ ] 2.1 Créer `resources/views/pages/users/groups/[id]/_partials/capabilities-section.blade.php` (Livewire SFC anonyme, `new class extends Component`) en **transposant** `resources/views/pages/parc/groups/_partials/capabilities-tab.blade.php` : `use WithToasts`, `#[Locked] public int $groupId`, propriétés modale (`showOverrideModal`, `editingCapabilityId`, `isEditing`, `formValue`, `warningAcknowledged`), `mount()` (groupId AVANT garde), `guardCustomize()` → `abort_unless(auth()->check() && Gate::allows('customize-userGroup'), 403, …)`, `authorizeUpstream()` (Gate `modify-capability` + toasts) repris tel quel.
-  - [ ] 2.2 Computed `capabilities()` : capacités `is_active` filtrées « assignables » (≥ 1 clé `hive === 'HKCU'` — insensible à la casse — dans la `spec` de la projection windows/registry eager-loadée), jointes aux overrides du groupe (`capability_assignments` where `assignable_type = UserGroup::class and assignable_id = $groupId`) ; chaque ligne : label, description, catégorie, `has_override`, `override_display` (optionLabel), `default_display` (optionLabel du défaut), `has_warning`, `overrides_locked`. Tri par label. Rejeter les capacités verrouillées amont du geste « Dévier » (iso `addableCapabilities` parc, resolver mémoïsé pré-instancié hors boucle — pas de N+1).
-  - [ ] 2.3 Mutations `openAdd()`/`openEdit()`/`closeModal()`/`saveOverride()`/`removeOverride()` : transposer le parc en remplaçant `WorkstationGroup::class` → `UserGroup::class` et le garde scopé → `guardCustomize()` de 2.1. Conserver : re-validation serveur `is_active` + gel dérivé de l'existence en base (piège #3), `validatedValue()` (options/scalaire), warning exigé, `old_value` avant mutation, `DB::transaction` mutation+audit, closure `updateOrInsert` created_at (piège #5), pas de trace fantôme au remove, `resolveActor()` (id + login dénormalisé), `upstream_status` via `UpstreamLockResolver`, `unset()` des computed après mutation. `scopeLabel` = `display_name ?? name`.
-  - [ ] 2.4 Markup : tableau des capacités (colonnes Capacité / Catégorie / Valeur pour ce groupe / Défaut / Actions), encart d'intro expliquant « override par groupe d'utilisateurs — retirer = revenir au défaut », modale `x-molecules.modal` (étapes : pas de picker séparé — le « Dévier » de chaque ligne ouvre directement la modale pré-remplie), sélecteur `value_type`/`options`, encart warning + checkbox, `data-testid` sur chaque contrôle (pattern parc : `open-add-…`, `override-select`, `ack-warning`, `save-override`, `edit-override-{id}`, `remove-override-{id}`). UX : label au-dessus, étoile sur « Valeur pour ce groupe * », hints en tooltip (piège #11).
-  - [ ] 2.5 `resources/views/pages/users/groups/[id]/index.blade.php` : inclure la section en mode consultation (après `group-quota-section`), pour tous les types de groupes, gatée `@can('customize-userGroup')`, via la directive `@livewire(…, key('capabilities-' . $groupId))` (piège #7 — les crochets cassent la tag-syntax).
-- [ ] **Task 3 — Tests Feature Livewire (AC1, AC2, AC3, AC4)**
-  - [ ] 3.1 Créer `tests/Feature/Livewire/Users/GroupCapabilitiesSectionTest.php` (pattern `ClassShareSectionTest` : `CreatesPermissionSchema` + `PermissionSeeder`, observers AD désactivés, `componentPath()` = `pages::users.groups.[id]._partials.capabilities-section`) couvrant :
-    (a) listing : capacité HKCU active affichée avec « Suit le défaut » + libellé du défaut ; capacité machine-only (HKLM) ABSENTE ; capacité inactive absente ;
-    (b) pose d'un override (`registry_editing_disabled` → `on`) : pivot écrit (`assignable_type = UserGroup::class`), toast, valeur affichée ;
-    (c) édition : valeur mise à jour, `created_at` du pivot préservé ;
-    (d) retrait : pivot supprimé, message « retour au défaut » ; retrait sur inexistant = aucun audit ;
-    (e) validation : valeur hors `options` rejetée ; warning non confirmé rejeté ;
-    (f) `overrides_locked` : nouvel override refusé (toast), override existant toujours éditable ;
-    (g) audit : lignes `create`/`update`/`delete` complètes (acteur, groupe, old/new, scope_label, upstream_status=local) — pattern d'asserts de `CapabilitiesOverrideAuditTest` ;
-    (h) scoping : sans `app.customize` → 403 au mount ; délégué par-salle SEULEMENT → 403 (Task 1.2) ; mutation directe sans droit → 403.
-- [ ] **Task 4 — Test d'intégration précédence (AC5)**
-  - [ ] 4.1 `tests/Feature/Migrations/CapabilitiesSchemaAndSeedTest.php` (données réelles seedées, pattern Task 4.3 de 35.1) : poser un override `on` de `registry_editing_disabled` sur un UserGroup ; user MEMBRE (via `user_group_user`) ⇒ les items du `RegistryUserCapabilityProvider` compilés (`StateCompiler`) contiennent `{hive: HKCU, path: …\Policies\System, name: DisableRegistryTools, value: 1}` ; user NON-membre ⇒ aucun item pour cette clé (Broadcast `unmanaged` n'émet rien — piège #8).
-  - [ ] 4.2 `tests/Unit/Services/Agent/CapabilityRegistryCompilationTest.php` : test synthétique « override UserGroup bat le Broadcast » quand les DEUX émettent — capacité `default 'off'` → valeur X, override UserGroup `'on'` → valeur Y sur la même clé HKCU, le compilé porte Y (et le miroir : override `off`, broadcast `on`). Réutiliser les helpers du fichier (`makeCapability`, pattern du test parc l.157) et `TargetContext::for($ws, $user)` avec membership réel. `StateCompiler` INTOUCHÉ.
-- [ ] **Task 5 — Validation finale**
-  - [ ] 5.1 Tests HÔTE ciblés (php8.4 + sqlite, JAMAIS de run massif) : `php artisan test --filter='GroupCapabilitiesSectionTest'`, `--filter='CapabilitiesSchemaAndSeedTest'`, `--filter='CapabilityRegistryCompilationTest|CapabilityRegistryProviderTest'`, et non-régression `--filter='CapabilitiesTabTest|CapabilitiesOverrideAuditTest|CapabilitiesTabCustomizeScopingTest'` (surface parc intouchée) + `--filter='GroupShowPageTest|GroupShowMembersTabsTest'` (page groupe).
-  - [ ] 5.2 Vérifier zéro modif : `app/Services/Agent/StateCompiler.php`, providers, `agent/**`, `tests/Fixtures/Agent/` (golden), migrations existantes.
+- [x] **Task 1 — Gate `customize-userGroup` (AC4)**
+  - [x] 1.1 `app/Policies/GroupPolicy.php` : ajouté `'customize-userGroup' => 'customize'` à `$gates` + méthode `customize(?Authenticatable $user): bool` = `$this->hasPermission($user, 'app.customize')`. Docblock complet : permission capacités existante, rationale « instance = établissement du groupe », refus assumé du délégué par-salle (pas de délégation par-UserGroup dans le modèle — point d'extension unique si elle naît), référence anti-piège 29.1.
+  - [x] 1.2 Test policy (dans le test Feature de la Task 3) : admin global passe ; user avec SEULEMENT `grantDelegation($user, 'app.customize', $salle)` est refusé (403) ; user sans droit refusé (403). Le gate est prouvé via le mount du composant (`it_forbids_a_user_without_global_customize`, `it_forbids_a_room_scoped_delegate_only`, + tous les cas admin passants).
+- [x] **Task 2 — SFC `capabilities-section` (AC1, AC2, AC3, AC4)**
+  - [x] 2.1 Créé `resources/views/pages/users/groups/[id]/_partials/capabilities-section.blade.php` (Livewire SFC anonyme) en transposant le parc : `use WithToasts`, `#[Locked] public int $groupId`, propriétés modale, `mount()` (groupId AVANT garde), `guardCustomize()` → `abort_unless(auth()->check() && Gate::allows('customize-userGroup'), 403, …)`, `authorizeUpstream()` repris tel quel.
+  - [x] 2.2 Computed `capabilities()` : capacités `is_active` filtrées « assignables » (≥ 1 clé `hive === 'HKCU'` insensible à la casse via `isAssignableByUserGroup()`), jointes aux overrides du groupe ; chaque ligne : label/description/catégorie/`has_override`/`override_display`/`default_display`/`has_warning`/`overrides_locked`/`is_upstream_locked`. Tri par label. Resolver amont mémoïsé pré-instancié hors boucle (pas de N+1).
+  - [x] 2.3 Mutations `openAdd()`/`openEdit()`/`closeModal()`/`saveOverride()`/`removeOverride()` : transposées (WorkstationGroup → UserGroup, garde scopé → `guardCustomize()`). Conservé : re-validation serveur `is_active` + gel dérivé de l'existence en base, `validatedValue()`, warning exigé, `old_value` avant mutation, `DB::transaction` mutation+audit, closure `updateOrInsert` created_at, pas de trace fantôme au remove, `resolveActor()`, `upstream_status` via `UpstreamLockResolver`, `unset()` du computed. `scopeLabel` = `display_name ?? name`.
+  - [x] 2.4 Markup : tableau (Capacité / Catégorie / Valeur pour ce groupe / Défaut / Actions) avec « Suit le défaut (…) » sinon la valeur d'override, encart d'intro « retirer = revenir au défaut », modale `x-molecules.modal` ouverte directement pré-remplie (« Dévier » de chaque ligne), sélecteur `value_type`/`options`, encart warning + checkbox, `data-testid` (`open-add-{id}`, `override-select`, `override-text`, `ack-warning`, `save-override`, `edit-override-{id}`, `remove-override-{id}`, `frozen-{id}`, `upstream-locked-{id}`). UX : label au-dessus, étoile sur « Valeur pour ce groupe * », pas de hint inutile.
+  - [x] 2.5 `resources/views/pages/users/groups/[id]/index.blade.php` : section incluse en mode consultation (après `group-quota-section`), pour tous les types, gatée `@can('customize-userGroup')`, via `@livewire(…, key('capabilities-' . $groupId))`.
+- [x] **Task 3 — Tests Feature Livewire (AC1, AC2, AC3, AC4)**
+  - [x] 3.1 Créé `tests/Feature/Livewire/Users/GroupCapabilitiesSectionTest.php` (18 cas). ÉCART ASSUMÉ vs la story : `RefreshDatabase` (comme la surface parc `CapabilitiesOverrideAuditTest`) au lieu de `CreatesPermissionSchema` + `PermissionSeeder` — ce dernier ne crée PAS les tables `capabilities`/`capability_projections`/`capability_assignments`/`capability_override_audit_logs`, qui viennent des migrations. Couvre (a) listing HKCU/machine-only/inactive ; (b) pose ; (c) édition + `created_at` préservé ; (d) retrait + pas de trace fantôme ; (e) validation options + warning ; (f) gel ; (g) audit create/update/delete + fallback scope_label ; (h) scoping 403 sans droit + délégué par-salle + `#[Locked]`.
+- [x] **Task 4 — Test d'intégration précédence (AC5)**
+  - [x] 4.1 `tests/Feature/Migrations/CapabilitiesSchemaAndSeedTest.php` : `registry_editing_disabled_override_on_a_user_group_compiles_for_members_only` (données réelles seedées) — override `on` sur UserGroup ⇒ user MEMBRE : item session `{hive:HKCU, path:…\Policies\System, name:DisableRegistryTools, value:1}` ; user NON-membre : aucun item pour cette clé (Broadcast `unmanaged`).
+  - [x] 4.2 `tests/Unit/Services/Agent/CapabilityRegistryCompilationTest.php` : `user_group_override_beats_broadcast_when_both_emit` + `..._inverse` (les deux mailles émettent une valeur divergente sur la même clé HKCU → l'override UserGroup gagne). `StateCompiler` INTOUCHÉ.
+- [x] **Task 5 — Validation finale**
+  - [x] 5.1 Tests HÔTE ciblés PASSANTS : `GroupCapabilitiesSectionTest` (18), `CapabilitiesSchemaAndSeedTest` (16), `CapabilityRegistryCompilationTest` (8) + `CapabilityRegistryProviderTest`, non-régression `CapabilitiesTabTest|CapabilitiesOverrideAuditTest|CapabilitiesTabCustomizeScopingTest` (56) + `GroupShowPageTest|GroupShowMembersTabsTest` (20).
+  - [x] 5.2 Zéro modif vérifiée (`git status`) : `app/Services/Agent/StateCompiler.php`, providers, `agent/**`, `tests/Fixtures/Agent/` (golden), migrations existantes, `routes/web.php`, `sprint-status.yaml`, `backlog.*`.
 
 ## Dev Notes
 
@@ -192,8 +184,61 @@ afin **d'utiliser réellement les capacités CD95 ciblées déjà seedées (Outl
 
 ### Agent Model Used
 
+opus (Opus 4.8, 1M) — prescription de l'epic « opus pour l'UI (35.4) ».
+
 ### Debug Log References
+
+- **Faux ComponentNotFoundException initial** : au 1er run, `Livewire::test` levait
+  `ComponentNotFoundException` sur le nouveau SFC alors que `view()->exists()` et
+  `Livewire::new()` le résolvaient. Cause = ENVIRONNEMENT (le `vendor/` du worktree
+  était un symlink vers le repo principal → autoload PSR-4 + `base_path` résolvaient
+  vers le repo principal, où le SFC n'existe pas). Corrigé par l'orchestrateur (copie
+  hardlink de `vendor/`) ; re-run → 18/18 verts. Aucun changement de code requis.
 
 ### Completion Notes List
 
+- **Gate `customize-userGroup` INSTANCE-WIDE** (pas d'argument `?UserGroup`) : exige
+  le droit GLOBAL Spatie `app.customize`. Rationale documentée dans le docblock du
+  gate ET du `guardCustomize()` : la base SE5 est par-établissement (instance =
+  établissement), et il n'existe AUCUNE délégation par-UserGroup — le délégué par-salle
+  est donc REFUSÉ (anti-piège 29.1 inversé), prouvé par
+  `it_forbids_a_room_scoped_delegate_only`. Point d'extension unique balisé si une
+  délégation par-UserGroup naît.
+- **Différence de PRÉSENTATION vs parc** : la section liste TOUTES les capacités
+  assignables (« Suit le défaut (<libellé>) » sinon la valeur d'override), là où le
+  parc ne liste que les overrides. Le filtre d'assignabilité (`isAssignableByUserGroup`)
+  ne garde que les capacités actives à ≥ 1 clé HKCU (piège #6 — un override UserGroup
+  ne mord qu'en session/HKCU ; une capacité machine-only serait inerte).
+- **Discipline 29.x conservée à l'identique** : `#[Locked] $groupId` + garde
+  serveur-autoritatif (mount ET chaque mutation), re-validation `is_active` + gel
+  dérivé de l'EXISTENCE en base, transaction acte↔trace, closure `updateOrInsert`
+  (created_at préservé, prouvé par `it_updates_an_override_and_preserves_created_at`),
+  pas de trace fantôme, `authorizeUpstream()` (verrou amont defense-in-depth).
+- **Audit réutilisé TEL QUEL** : `CapabilityOverrideAuditLog::log()` avec
+  `assignable_type = UserGroup::class` et `scopeLabel = display_name ?? name` — aucune
+  migration, format iso audit parc.
+- **StateCompiler / providers / agent / golden INTOUCHÉS** : la maille UserGroup
+  existait déjà (`resolveOverrides`/`mailleFor`/`specificity`). AC5 prouvé au COMPILÉ
+  sans toucher une ligne moteur.
+- **Rappel VM** : nouvelle route ? NON (la route `/app/users/groups/{id}` existe déjà).
+  Le SFC est un partial Livewire inclus par directive `@livewire` — pas de
+  `route:cache` requis. Livewire : aucune méthode d'action nommée `upload` (respecté).
+- **MIGRATIONS_VM** : AUCUNE migration ni seeder nouveaux — le lot CD95
+  (`2026_07_02_100000`) est déjà sur /vm ; story serveur/UI pure.
+
 ### File List
+
+- `app/Policies/GroupPolicy.php` (modifié) — gate `customize-userGroup` → `customize()`
+- `resources/views/pages/users/groups/[id]/_partials/capabilities-section.blade.php` (NOUVEAU) — SFC Livewire, transposition de `capabilities-tab`
+- `resources/views/pages/users/groups/[id]/index.blade.php` (modifié) — inclusion `@livewire` gatée `@can('customize-userGroup')`
+- `tests/Feature/Livewire/Users/GroupCapabilitiesSectionTest.php` (NOUVEAU) — 18 cas CRUD/validation/gel/audit/scoping
+- `tests/Feature/Migrations/CapabilitiesSchemaAndSeedTest.php` (modifié) — test d'intégration membre/non-membre sur `registry_editing_disabled`
+- `tests/Unit/Services/Agent/CapabilityRegistryCompilationTest.php` (modifié) — précédence UserGroup > Broadcast (deux sens)
+- `docs/qa/domains/parc.md` (modifié) — runbook QA « Story 35.4 » (Scénarios 5.1→5.5 + checklist)
+
+### Change Log
+
+- 2026-07-03 — Story 35.4 implémentée (status → review). Gate instance-wide
+  `customize-userGroup`, SFC `capabilities-section` (override de capacité par
+  UserGroup), audit réutilisé, tests Feature + précédence au compilé + intégration
+  seedée. StateCompiler/providers/agent/golden intouchés.

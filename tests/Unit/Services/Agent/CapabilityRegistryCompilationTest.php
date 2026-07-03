@@ -6,8 +6,11 @@ namespace Tests\Unit\Services\Agent;
 
 use App\Models\Capability;
 use App\Models\CapabilityProjection;
+use App\Models\User;
+use App\Models\UserGroup;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
+use App\Observers\UserGroupObserver;
 use App\Observers\WorkstationGroupObserver;
 use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
 use App\Services\Agent\Providers\RegistryUserCapabilityProvider;
@@ -43,6 +46,7 @@ class CapabilityRegistryCompilationTest extends TestCase
     {
         parent::setUp();
         WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
 
         DB::table('capability_assignments')->delete();
         DB::table('capability_projections')->delete();
@@ -59,6 +63,7 @@ class CapabilityRegistryCompilationTest extends TestCase
     protected function tearDown(): void
     {
         WorkstationGroupObserver::enableSync();
+        UserGroupObserver::enableSync();
         parent::tearDown();
     }
 
@@ -107,6 +112,68 @@ class CapabilityRegistryCompilationTest extends TestCase
         $registry = array_values(array_filter($session, fn ($i): bool => $i['type'] === 'registry'));
         self::assertCount(1, $registry);
         self::assertSame(1, $registry[0]['payload']['value']);
+    }
+
+    // ── Story 35.4 : précédence UserGroup > Broadcast (deux sens) ─────────
+    // Le StateCompiler est INTOUCHÉ : la maille `UserGroup` (rang 1) bat déjà le
+    // `Broadcast` (rang 5) via `specificity()`. On prouve ici que quand les DEUX
+    // mailles ÉMETTENT une valeur divergente sur la MÊME clé HKCU, l'override
+    // UserGroup gagne au compilé — miroir du test parc `override_beats_broadcast`.
+
+    #[Test]
+    public function user_group_override_beats_broadcast_when_both_emit(): void
+    {
+        $user = User::factory()->create();
+        $group = UserGroup::factory()->create();
+        $user->groups()->attach($group->id);
+
+        // Défaut 'off' → Broadcast émet off=>1 ; override UserGroup 'on' → 0.
+        $cap = $this->makeCapability('both_emit', 'off', [
+            ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 0, 'off' => 1]],
+        ]);
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => UserGroup::class,
+            'assignable_id' => $group->id,
+            'value' => 'on',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $session = $this->sessionItems($this->compiler()->compile(TargetContext::for($this->ws, $user)));
+
+        $registry = array_values(array_filter($session, fn ($i): bool => $i['type'] === 'registry'));
+        self::assertCount(1, $registry, 'une seule valeur gagne pour l\'identité {hive|path|name}');
+        self::assertSame(0, $registry[0]['payload']['value'], 'override UserGroup (on=>0) bat le Broadcast (off=>1)');
+    }
+
+    #[Test]
+    public function user_group_override_beats_broadcast_inverse(): void
+    {
+        // Miroir : le Broadcast et l'override échangent leurs valeurs → l'override
+        // UserGroup gagne toujours (précédence, pas la valeur).
+        $user = User::factory()->create();
+        $group = UserGroup::factory()->create();
+        $user->groups()->attach($group->id);
+
+        // Défaut 'on' → Broadcast on=>0 ; override UserGroup 'off' → 1.
+        $cap = $this->makeCapability('both_emit_inv', 'on', [
+            ['hive' => 'HKCU', 'path' => 'Software\\Y', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 0, 'off' => 1]],
+        ]);
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => UserGroup::class,
+            'assignable_id' => $group->id,
+            'value' => 'off',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $session = $this->sessionItems($this->compiler()->compile(TargetContext::for($this->ws, $user)));
+
+        $registry = array_values(array_filter($session, fn ($i): bool => $i['type'] === 'registry'));
+        self::assertCount(1, $registry);
+        self::assertSame(1, $registry[0]['payload']['value'], 'override UserGroup (off=>1) bat le Broadcast (on=>0)');
     }
 
     #[Test]
