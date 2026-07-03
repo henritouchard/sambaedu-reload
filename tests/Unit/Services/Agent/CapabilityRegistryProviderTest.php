@@ -247,7 +247,128 @@ class CapabilityRegistryProviderTest extends TestCase
         self::assertSame(['a', 'b', 'c'], $c->payload['value']);
     }
 
-    // ── Invariant central : payload concret 5 clés, jamais d'id ───────────
+    // ── Marqueur `$ensure` (Story 35.1) : trois régimes ────────────────────
+
+    #[Test]
+    public function ensure_marker_emits_a_four_key_absent_item(): void
+    {
+        // (a) map `off => {$ensure: absent}` : la valeur effective `off` émet un
+        // item de SUPPRESSION 4 clés au lieu de la sentinelle (rien).
+        $this->makeCapability('llmnr_disabled', 'off', [
+            ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'EnableMulticast', 'type' => 'REG_DWORD', 'value' => ['on' => 0, 'off' => ['$ensure' => 'absent']]],
+        ]);
+
+        $items = $this->userProvider()->itemsFor($this->ctx());
+
+        self::assertCount(1, $items);
+        $payload = $items->first()->payload;
+        self::assertSame(['hive', 'path', 'name', 'ensure'], array_keys($payload));
+        self::assertSame('HKCU', $payload['hive']);
+        self::assertSame('Software\\X', $payload['path']);
+        self::assertSame('EnableMulticast', $payload['name']);
+        self::assertSame('absent', $payload['ensure']);
+    }
+
+    #[Test]
+    public function unmanaged_sentinel_still_emits_nothing_alongside_the_marker(): void
+    {
+        // (b) la sentinelle UNMANAGED (clé de map ABSENTE) reste disponible et
+        // DISTINCTE du marqueur : `unmanaged` hors map ⇒ rien n'est émis.
+        $this->makeCapability('a_cap', 'unmanaged', [
+            ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 1, 'off' => ['$ensure' => 'absent']]],
+        ]);
+
+        self::assertCount(0, $this->userProvider()->itemsFor($this->ctx()));
+    }
+
+    #[Test]
+    public function the_three_regimes_coexist_in_a_single_spec(): void
+    {
+        // (c) une MÊME spec porte les trois régimes selon la valeur effective :
+        // `on` écrit, `off` supprime, `unmanaged` (hors map) n'émet rien.
+        $keys = [
+            ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 1, 'off' => ['$ensure' => 'absent']]],
+        ];
+
+        // Régime 1 : écrire (défaut on).
+        $cap = $this->makeCapability('tri_regime', 'on', $keys);
+        $write = $this->userProvider()->itemsFor($this->ctx())->first();
+        self::assertSame(['hive', 'path', 'name', 'type', 'value'], array_keys($write->payload));
+        self::assertSame(1, $write->payload['value']);
+        self::assertArrayNotHasKey('ensure', $write->payload, 'ensure:"present" n\'est JAMAIS émis explicitement');
+
+        // Régime 2 : supprimer (override de parc vers off).
+        $this->setOverride($cap, $this->parc, 'off');
+        $items = $this->userProvider()->itemsFor($this->ctx());
+        self::assertCount(2, $items, 'Broadcast (écriture) + maille (suppression)');
+        $absent = $items->first(fn (StateCandidate $c): bool => $c->maille === StateMaille::LogicalGroup);
+        self::assertSame(['hive', 'path', 'name', 'ensure'], array_keys($absent->payload));
+
+        // Régime 3 : ne pas gérer (override vers une valeur hors map).
+        $this->setOverride($cap, $this->parc, 'unmanaged');
+        $items = $this->userProvider()->itemsFor($this->ctx());
+        self::assertCount(1, $items, 'seul le Broadcast subsiste, la maille ne gère plus la clé');
+        self::assertSame(StateMaille::Broadcast, $items->first()->maille);
+    }
+
+    #[Test]
+    public function absent_item_carries_no_value_no_type_and_no_capability_id(): void
+    {
+        // (d) l'item de suppression ne porte ni value/type ni fuite d'id (invariant
+        // central 27.12, étendu au payload 4 clés).
+        $this->makeCapability('llmnr_disabled', 'off', [
+            ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 0, 'off' => ['$ensure' => 'absent']]],
+        ]);
+
+        $payload = $this->userProvider()->itemsFor($this->ctx())->first()->payload;
+
+        foreach (['value', 'type', 'id', 'key', 'capability_id', 'label', 'spec'] as $forbidden) {
+            self::assertArrayNotHasKey($forbidden, $payload);
+        }
+    }
+
+    #[Test]
+    public function unknown_assoc_form_in_map_emits_nothing_defensively(): void
+    {
+        // (e) forme assoc NON reconnue (ni marqueur, ni liste) ⇒ clé non émise —
+        // défensif, jamais d'exception au render (piège n°4 : avant 35.1,
+        // typedValue() la coerçait silencieusement en 0/'').
+        $this->makeCapability('weird_cap', 'off', [
+            ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'A', 'type' => 'REG_DWORD', 'value' => ['off' => ['$ensure' => 'present']]],
+            ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'B', 'type' => 'REG_DWORD', 'value' => ['off' => ['unexpected' => 'shape']]],
+            ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'C', 'type' => 'REG_DWORD', 'value' => ['off' => 7]],
+        ]);
+
+        $items = $this->userProvider()->itemsFor($this->ctx());
+
+        self::assertCount(1, $items, 'seule la clé C (valeur réelle) est émise');
+        self::assertSame('C', $items->first()->payload['name']);
+        self::assertSame(7, $items->first()->payload['value']);
+    }
+
+    #[Test]
+    public function each_provider_filters_absent_items_by_its_hive_too(): void
+    {
+        // (f) le filtre de ruche s'applique aussi aux items de suppression : une
+        // spec mixte HKLM+HKCU émet chaque item absent par SON provider.
+        $this->makeCapability('mixed_cap', 'off', [
+            ['hive' => 'HKLM', 'path' => 'SOFTWARE\\X', 'name' => 'MachineKey', 'type' => 'REG_DWORD', 'value' => ['on' => 1, 'off' => ['$ensure' => 'absent']]],
+            ['hive' => 'HKCU', 'path' => 'Software\\Y', 'name' => 'UserKey', 'type' => 'REG_DWORD', 'value' => ['on' => 1, 'off' => ['$ensure' => 'absent']]],
+        ]);
+
+        $machineItems = $this->machineProvider()->itemsFor($this->ctx());
+        $userItems = $this->userProvider()->itemsFor($this->ctx());
+
+        self::assertCount(1, $machineItems);
+        self::assertSame('MachineKey', $machineItems->first()->payload['name']);
+        self::assertSame('absent', $machineItems->first()->payload['ensure']);
+
+        self::assertCount(1, $userItems);
+        self::assertSame('UserKey', $userItems->first()->payload['name']);
+        self::assertSame('absent', $userItems->first()->payload['ensure']);
+    }
+
+    // ── Invariant central : payload d'ÉCRITURE concret 5 clés, jamais d'id ─
 
     #[Test]
     public function payload_is_concrete_five_keys_without_any_capability_id(): void

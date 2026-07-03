@@ -266,7 +266,45 @@ clés distinctes s'accumulent). Le payload porte un item de registre **CONCRET**
 | `path` | string | Chemin de clé sous la ruche (backslashes échappés en JSON). |
 | `name` | string | Nom de la valeur de registre. |
 | `type` | string | `REG_SZ` \| `REG_DWORD` \| `REG_EXPAND_SZ` \| `REG_MULTI_SZ` \| `REG_QWORD`. |
-| `value` | int \| string \| list&lt;string&gt; | Valeur cible TYPÉE : `REG_DWORD`/`REG_QWORD` → **entier** (zéro float, §4.1) ; `REG_SZ`/`REG_EXPAND_SZ` → **string** ; `REG_MULTI_SZ` → **liste de strings** (jamais `{}` — §4.1). |
+| `value` | int \| string \| list&lt;string&gt; | Valeur cible TYPÉE : `REG_DWORD`/`REG_QWORD` → **entier** (zéro float, §4.1) ; `REG_SZ`/`REG_EXPAND_SZ` → **string** ; `REG_MULTI_SZ` → **liste de strings** (jamais `{}` — §4.1). Absent sur un item `ensure: "absent"`. |
+| `ensure` | string (**optionnel**) | `present` \| `absent`. **Absence du champ = `present`** (rétro-compatible §9). `absent` = l'agent **supprime la valeur nommée** si elle existe (jamais la clé-conteneur). Le serveur n'émet **JAMAIS** `ensure: "present"` explicitement — un item d'écriture reste EXACTEMENT 5 clés (byte-identité des payloads existants). |
+
+Item de **suppression** (`ensure: "absent"`) — EXACTEMENT 4 clés, ni `type` ni
+`value` :
+
+```json
+{
+  "type": "registry",
+  "semantics": "exclusive",
+  "payload": {
+    "hive": "HKLM",
+    "path": "SOFTWARE\\Policies\\Microsoft\\Windows NT\\DNSClient",
+    "name": "EnableMulticast",
+    "ensure": "absent"
+  },
+  "hash": "8e81903a…b050314d"
+}
+```
+
+> **Trois régimes coexistent** (Story 35.1) :
+>
+> 1. **Écrire** — item 5 clés `{hive, path, name, type, value}` (sans `ensure`,
+>    qui vaut implicitement `present`) : l'agent (ré)impose la valeur cible.
+> 2. **Supprimer** — item 4 clés `{hive, path, name, ensure: "absent"}` : l'agent
+>    supprime la **valeur nommée** (`compliant` si déjà absente, `drift` +
+>    suppression si elle existe/réapparaît — policy STRICT). Windows reprend son
+>    défaut. Jamais la clé-conteneur (des valeurs voisines non gérées y vivent —
+>    la réconciliation de clé entière est le type `registry_list`).
+> 3. **Ne pas gérer** — la clé n'apparaît PAS dans la cible : l'agent n'y touche
+>    plus (§8, la valeur en place reste celle qu'elle avait).
+>
+> Un item `absent` et un item d'écriture sur la MÊME identité `{hive|path|name}`
+> s'arbitrent par la précédence de compilation EXISTANTE (exclusive par clé) —
+> ex. un défaut Broadcast « supprimer » battu par un override de parc « écrire ».
+>
+> **Agents antérieurs à 2.3.0** : un item `absent` (sans `value`) échoue leur
+> parse → `{status: error}` isolé sur le type `registry` (comportement D1
+> assumé, motivant le bump de version et la publication de release).
 
 > **🔴 Invariant central.** Le payload `registry` ne porte **JAMAIS** un
 > `setting_id` / `setting_key` de catalogue serveur. Le catalogue
@@ -563,7 +601,11 @@ décision de contrat consommée par chaque handler côté agent.
 ## 9. Règle d'évolution
 
 - **Champ ajouté** → version **mineure**. L'agent **ignore l'inconnu**
-  (forward-compat).
+  (forward-compat). Ex. Story 35.1 : champ optionnel `ensure` sur les items
+  `registry` (§7.1) — absence = `present`, golden `state.v1.json` bumpé avec
+  justification, agent bumpé 2.3.0. Cas limite assumé : un agent ANTÉRIEUR ne
+  peut pas « ignorer » un item `absent` (pas de `value` à écrire) → parse en
+  `{status: error}` isolé sur le type `registry`, d'où publication de release.
 - **Champ retiré / renommé** OU **sémantique changée** → version **MAJEURE**
   (`se5.desired-state/v2`). L'agent **refuse un major inconnu**.
 - Toute évolution = **mise à jour des golden files + bump de version explicite**.

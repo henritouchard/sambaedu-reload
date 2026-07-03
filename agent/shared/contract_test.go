@@ -39,8 +39,10 @@ func TestParseStateGoldenFile(t *testing.T) {
 	// DÉCLENCHE WPKG, qui installe machine-wide) → machine = 3, session reste 6.
 	// Lecteurs natifs (2026-06-29) : `drives` passe d'1 à 2 items (K: home +
 	// H: classes) → session = 7.
-	if len(state.Machine) != 3 || len(state.Session) != 7 || len(state.MachineUser) != 1 {
-		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 3/7/1)",
+	// Story 35.1 : +1 item `registry` de SUPPRESSION (`ensure:"absent"`, payload
+	// 4 clés sans type/value) en portée MACHINE → machine = 4.
+	if len(state.Machine) != 4 || len(state.Session) != 7 || len(state.MachineUser) != 1 {
+		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 4/7/1)",
 			len(state.Machine), len(state.Session), len(state.MachineUser))
 	}
 }

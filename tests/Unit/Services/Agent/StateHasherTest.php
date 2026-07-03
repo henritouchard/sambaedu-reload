@@ -129,6 +129,56 @@ class StateHasherTest extends TestCase
         );
     }
 
+    // ── Champ `ensure` (Story 35.1) : entre dans la canonicalisation ──────
+    // AUCUNE modification du StateHasher : la canonicalisation générique
+    // (sortRecursive + JSON compact) intègre naturellement tout champ nouveau
+    // du payload. Ces tests le PROUVENT (AC1) — jumeaux des tests Go
+    // (hasher_test.go::TestHashItemEnsureField*).
+
+    #[Test]
+    public function ensure_field_changes_the_item_hash(): void
+    {
+        $base = [
+            'type' => 'registry',
+            'semantics' => 'exclusive',
+            'payload' => ['hive' => 'HKLM', 'path' => 'SOFTWARE\\P', 'name' => 'N'],
+        ];
+        $absent = $base;
+        $absent['payload']['ensure'] = 'absent';
+
+        $this->assertNotSame(
+            $this->hasher->hashItem($base),
+            $this->hasher->hashItem($absent),
+            'deux items qui ne diffèrent que par `ensure` doivent avoir des hashes distincts',
+        );
+    }
+
+    #[Test]
+    public function write_item_without_ensure_keeps_its_pre_story_hash(): void
+    {
+        // Non-régression byte-identité (piège n°1, Story 35.1) : un item
+        // d'écriture 5 clés SANS `ensure` garde EXACTEMENT son hash d'avant la
+        // story (hash historique de l'item registry HKCU du golden, inchangé
+        // depuis 27.3).
+        $hash = $this->hasher->hashItem([
+            'type' => 'registry',
+            'semantics' => 'exclusive',
+            'payload' => [
+                'hive' => 'HKCU',
+                'path' => 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced',
+                'name' => 'HideFileExt',
+                'type' => 'REG_DWORD',
+                'value' => 0,
+            ],
+        ]);
+
+        $this->assertSame(
+            '92730f99ed3e64f81e99c955e64bfb37da8fcc765aa1eb44373c9c4e4af686b5',
+            $hash,
+            'le hash d\'un item d\'écriture sans `ensure` ne doit PAS changer',
+        );
+    }
+
     #[Test]
     public function canonicalization_is_compact_utf8_without_escaping(): void
     {

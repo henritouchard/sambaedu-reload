@@ -22,14 +22,22 @@ import (
 //
 // CONVERGENCE level-triggered, JAMAIS accumulation :
 //   - test  : chaque clé cible a-t-elle EXACTEMENT sa valeur/type cible ?
-//   - apply : (ré)écrire les clés divergentes. IDEMPOTENT (2 passes sur état
-//     stable = aucune écriture).
+//     (item `ensure:"absent"` : conforme ssi la valeur N'EXISTE PAS) ;
+//   - apply : (ré)écrire les clés divergentes / supprimer les valeurs des items
+//     `absent`. IDEMPOTENT (2 passes sur état stable = aucune écriture ni
+//     suppression).
 //
-// « DÉSACTIVER = CESSER DE GÉRER » (piège n° 5) : un réglage retiré côté serveur
-// DISPARAÎT de la liste d'items → le handler NE TOUCHE PLUS à cette clé (la
-// valeur reste celle qu'elle avait). Contrairement à `drives`, le handler
-// registry ne DÉMONTE / n'efface RIEN : il ne connaît que les clés présentes
-// dans la cible (contrat §8 — type/clé absent = non géré). Pas de reset OFF.
+// TROIS RÉGIMES (Story 35.1, contrat §7.1) :
+//   1. ÉCRIRE — item 5 clés {hive, path, name, type, value} (champ `ensure`
+//      absent = `present`) : (ré)imposer la valeur cible ;
+//   2. SUPPRIMER — item 4 clés {hive, path, name, ensure:"absent"} : supprimer
+//      la VALEUR NOMMÉE si elle existe (jamais la clé-conteneur : des valeurs
+//      voisines non gérées y vivent — la réconciliation de clé entière est le
+//      type `registry_list`, D3/35.2). Déjà absente = compliant (idempotent) ;
+//   3. NE PAS GÉRER — la clé N'EST PAS dans la cible : le handler NE TOUCHE
+//      PLUS à cette clé (la valeur reste celle qu'elle avait, contrat §8 —
+//      type/clé absent = non géré). Le handler ne touche toujours JAMAIS une
+//      clé hors cible.
 //
 // ISOLATION des erreurs (AC5) : une clé protégée / ruche absente → l'op renvoie
 // une erreur → le moteur (engine.go RunPass) rend {status: error, detail} pour
@@ -76,13 +84,27 @@ func (v RegistryValue) Equal(other RegistryValue) bool {
 	}
 }
 
+// Verbe `ensure` du contrat §7.1 (Story 35.1) : optionnel, absence = present.
+const (
+	ensurePresent = "present"
+	ensureAbsent  = "absent"
+)
+
 // RegistrySpec : une clé de registre cible (un item du payload `registry`). Les
 // champs hive/path/name sont des strings ; value est typée.
 type RegistrySpec struct {
-	Hive  string // "HKLM" | "HKCU"
-	Path  string // chemin de clé sous la ruche
-	Name  string // nom de la valeur
-	Value RegistryValue
+	Hive string // "HKLM" | "HKCU"
+	Path string // chemin de clé sous la ruche
+	Name string // nom de la valeur
+	// Ensure : verbe de convergence (Story 35.1). "" ou "present" = écrire la
+	// valeur cible ; "absent" = supprimer la valeur nommée (Value est vide).
+	Ensure string
+	Value  RegistryValue
+}
+
+// absent : l'item demande la SUPPRESSION de la valeur nommée.
+func (s RegistrySpec) absent() bool {
+	return s.Ensure == ensureAbsent
 }
 
 // identity : clé d'identité {hive,path,name} insensible à la casse (Windows
@@ -95,14 +117,23 @@ func (s RegistrySpec) identity() string {
 // L'impl Windows vit dans agent/windows/handler_registry_windows.go
 // (golang.org/x/sys/windows/registry) ; un fake en mémoire couvre les tests.
 type RegistryOps interface {
-	// Read lit la valeur réelle d'une clé. present=false si la clé/valeur
-	// n'existe pas (pas une erreur : c'est une dérive à corriger). err = accès
-	// refusé / ruche absente (devient {status: error} pour le type).
+	// Read lit la valeur réelle d'une clé. present=false ssi la clé/valeur
+	// N'EXISTE PAS (pas une erreur : c'est une dérive à corriger) — la présence
+	// est indépendante du type réel : une valeur d'un type hors contrat
+	// (REG_BINARY, …) est present=true avec un Kind sentinelle non comparable
+	// (l'item `absent` doit la voir pour la supprimer, review 35.1 #1). err =
+	// accès refusé / ruche absente (devient {status: error} pour le type).
 	Read(hive, path, name string) (value RegistryValue, present bool, err error)
 
 	// Write (ré)écrit la valeur cible (crée la clé/valeur au besoin). Idempotent
 	// du point de vue du résultat. err = accès refusé / ruche absente.
 	Write(spec RegistrySpec) error
+
+	// Delete supprime la VALEUR NOMMÉE d'une clé (Story 35.1) — JAMAIS la
+	// clé-conteneur (des valeurs voisines non gérées y vivent). Une valeur (ou
+	// une clé) déjà absente N'EST PAS une erreur (idempotence : nil). err =
+	// accès refusé / ruche invalide.
+	Delete(hive, path, name string) error
 }
 
 // registryNotifier : hook OPTIONNEL (assertion de type sur Ops) implémenté par
@@ -165,8 +196,9 @@ func (h *RegistryHandler) desiredSpecs(items []StateItem) ([]RegistrySpec, error
 }
 
 // Test : chaque clé cible a-t-elle EXACTEMENT sa valeur cible ? Une clé absente
-// ou divergente = non conforme. Une erreur d'accès (ruche absente / refusé)
-// remonte (le moteur rend error pour le type).
+// ou divergente = non conforme. Item `ensure:"absent"` : conforme ssi la valeur
+// N'EXISTE PAS (peu importe son type/contenu). Une erreur d'accès (ruche
+// absente / refusé) remonte (le moteur rend error pour le type).
 func (h *RegistryHandler) Test(items []StateItem) (bool, error) {
 	specs, err := h.desiredSpecs(items)
 	if err != nil {
@@ -178,6 +210,13 @@ func (h *RegistryHandler) Test(items []StateItem) (bool, error) {
 		if err != nil {
 			return false, fmt.Errorf("lecture de %s : %w", spec.identity(), err)
 		}
+		if spec.absent() {
+			if present {
+				return false, nil // la valeur existe → dérive (à supprimer)
+			}
+
+			continue
+		}
 		if !present || !actual.Equal(spec.Value) {
 			return false, nil
 		}
@@ -186,11 +225,12 @@ func (h *RegistryHandler) Test(items []StateItem) (bool, error) {
 	return true, nil
 }
 
-// Apply : converge — (ré)écrit les clés divergentes. Idempotent (une clé déjà
-// conforme n'est pas réécrite). EFFORT MAXIMAL : on tente TOUTES les clés ;
-// la première erreur est remontée à la fin (les clés saines convergent quand
-// même, isolation inter-items AC5). Ne supprime/efface JAMAIS une clé absente
-// de la cible (piège n° 5 : désactiver = cesser de gérer).
+// Apply : converge — (ré)écrit les clés divergentes, SUPPRIME les valeurs des
+// items `ensure:"absent"` encore présentes. Idempotent (une clé déjà conforme
+// n'est ni réécrite ni re-supprimée). EFFORT MAXIMAL : on tente TOUTES les
+// clés ; la première erreur est remontée à la fin (les clés saines convergent
+// quand même, isolation inter-items AC5). Ne supprime/efface JAMAIS une clé
+// absente de la cible (piège n° 5 : « ne pas gérer » = ne pas toucher).
 func (h *RegistryHandler) Apply(items []StateItem) error {
 	specs, err := h.desiredSpecs(items)
 	if err != nil {
@@ -205,6 +245,27 @@ func (h *RegistryHandler) Apply(items []StateItem) error {
 			logError(h.Log, "Lecture du réglage registre %s en échec : %v", spec.identity(), err)
 			if firstErr == nil {
 				firstErr = fmt.Errorf("lecture de %s : %w", spec.identity(), err)
+			}
+
+			continue
+		}
+		if spec.absent() {
+			if !present {
+				continue // déjà absente → idempotence (aucune suppression)
+			}
+			if err := h.Ops.Delete(spec.Hive, spec.Path, spec.Name); err != nil {
+				logError(h.Log, "Suppression du réglage registre %s en échec : %v", spec.identity(), err)
+				if firstErr == nil {
+					firstErr = fmt.Errorf("suppression de %s : %w", spec.identity(), err)
+				}
+
+				continue
+			}
+			logInfo(h.Log, "Réglage registre supprimé (ensure: absent) : %s", spec.identity())
+			// Une suppression EFFECTIVE d'une valeur HKCU compte comme un
+			// changement (même gate que l'écriture — décision de design n° 6).
+			if isUserHive(spec.Hive) {
+				shellRefresh = true
 			}
 
 			continue
@@ -242,8 +303,12 @@ func (h *RegistryHandler) Apply(items []StateItem) error {
 }
 
 // parseRegistrySpec : extrait un RegistrySpec d'un payload §3 brut. Champs
-// hive/path/name/type manquants ou type inconnu = enveloppe invalide (false) →
-// le moteur rapporte error. La valeur est typée selon `type`.
+// hive/path/name manquants = enveloppe invalide (false) → le moteur rapporte
+// error. Verbe `ensure` (Story 35.1, optionnel) : `"absent"` ⇒ item de
+// SUPPRESSION — seuls hive/path/name sont exigés (type/value sont ABSENTS du
+// payload 4 clés) ; champ absent ou `"present"` ⇒ item d'écriture (parcours
+// historique : type exigé, valeur typée selon `type`) ; toute autre valeur ⇒
+// enveloppe invalide.
 func parseRegistrySpec(raw any) (RegistrySpec, bool) {
 	payload, ok := raw.(map[string]any)
 	if !ok || payload == nil {
@@ -253,8 +318,30 @@ func parseRegistrySpec(raw any) (RegistrySpec, bool) {
 	hive, _ := payload["hive"].(string)
 	path, _ := payload["path"].(string)
 	name, _ := payload["name"].(string)
+	if hive == "" || path == "" || name == "" {
+		return RegistrySpec{}, false
+	}
+
+	// Branche `ensure` AVANT l'exigence type/value (piège n° 5 de la story) :
+	// un item `absent` n'a ni `type` ni `value` à parser.
+	if rawEnsure, exists := payload["ensure"]; exists {
+		ensure, ok := rawEnsure.(string)
+		if !ok {
+			return RegistrySpec{}, false // ensure non-string = enveloppe invalide
+		}
+		switch ensure {
+		case ensureAbsent:
+			return RegistrySpec{Hive: hive, Path: path, Name: name, Ensure: ensureAbsent}, true
+		case ensurePresent:
+			// Explicite ≡ item d'écriture classique (le serveur ne l'émet
+			// jamais — byte-identité — mais le contrat l'admet).
+		default:
+			return RegistrySpec{}, false // valeur inconnue = enveloppe invalide
+		}
+	}
+
 	regType, _ := payload["type"].(string)
-	if hive == "" || path == "" || name == "" || regType == "" {
+	if regType == "" {
 		return RegistrySpec{}, false
 	}
 

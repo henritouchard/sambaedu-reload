@@ -72,7 +72,17 @@ import (
 // `\\<se4fs>\classes\`} au lieu d'un lecteur de classe sur K:. Le golden passe d'UN
 // à DEUX items drives (11 items au total) → hash item drives ET hash d'état
 // recalculés. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH).
-const frozenStateHash = "c1467c74018990bbcf42e788e19d93e973e8489d086d81e58a5c35a31a4a0af6"
+// Re-bumpé SCIEMMENT par la Story 35.1 (§9) : champ additif `ensure ∈
+// present|absent` sur les items `registry` — le golden gagne UN item de
+// SUPPRESSION en portée MACHINE (payload 4 clés `{hive, path, name,
+// ensure:"absent"}`, clé DNSClient\EnableMulticast de `llmnr_disabled`, ni
+// `type` ni `value`). Champ OPTIONNEL dont l'absence vaut `present` : les items
+// d'écriture existants restent BYTE-IDENTIQUES (le serveur n'émet jamais
+// `ensure:"present"` explicite) → forward-compatible, pas un major.
+// `report.v1.json` INCHANGÉ (les items de rapport ne portent aucun payload).
+// machine = 4, 12 items au total, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE
+// côté PHP (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
+const frozenStateHash = "f3d22e9f81d927d3cfc54ecf7f850d92a9a012135857df53e7fd91d82392be7f"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -176,8 +186,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 11 {
-		t.Errorf("11 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs), %d vérifiés", checked)
+	if checked != 12 {
+		t.Errorf("12 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1), %d vérifiés", checked)
 	}
 }
 
@@ -194,6 +204,43 @@ func TestHashItemExcludesItsOwnHashKey(t *testing.T) {
 	}
 	if got != want {
 		t.Errorf("la clé hash doit être exclue (dépendance circulaire) : got %s, want %s", got, want)
+	}
+}
+
+// --- Champ `ensure` (Story 35.1) : entre dans la canonicalisation ------------
+//
+// AUCUNE modification du hasher : la canonicalisation générique (tri récursif
+// + JSON compact) intègre naturellement tout champ nouveau du payload. Ces
+// tests le PROUVENT (AC1) — jumeaux des tests PHP (StateHasherTest).
+func TestHashItemEnsureFieldChangesTheHash(t *testing.T) {
+	withEnsure := decodeMap(t, []byte(`{"type":"registry","semantics":"exclusive","payload":{"hive":"HKLM","path":"SOFTWARE\\P","name":"N","ensure":"absent"}}`))
+	withoutEnsure := decodeMap(t, []byte(`{"type":"registry","semantics":"exclusive","payload":{"hive":"HKLM","path":"SOFTWARE\\P","name":"N"}}`))
+
+	a, err := HashItem(withEnsure)
+	if err != nil {
+		t.Fatalf("HashItem : %v", err)
+	}
+	b, err := HashItem(withoutEnsure)
+	if err != nil {
+		t.Fatalf("HashItem : %v", err)
+	}
+	if a == b {
+		t.Errorf("deux items qui ne diffèrent que par `ensure` doivent avoir des hashes DISTINCTS (got %s)", a)
+	}
+}
+
+func TestHashItemWriteItemWithoutEnsureKeepsPreStoryHash(t *testing.T) {
+	// Non-régression byte-identité (piège n°1) : un item d'écriture 5 clés SANS
+	// `ensure` garde EXACTEMENT son hash d'avant la story 35.1 (valeur figée =
+	// hash historique de l'item registry HKCU du golden, inchangé depuis 27.3).
+	item := decodeMap(t, []byte(`{"type":"registry","semantics":"exclusive","payload":{"hive":"HKCU","path":"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced","name":"HideFileExt","type":"REG_DWORD","value":0}}`))
+
+	got, err := HashItem(item)
+	if err != nil {
+		t.Fatalf("HashItem : %v", err)
+	}
+	if got != "92730f99ed3e64f81e99c955e64bfb37da8fcc765aa1eb44373c9c4e4af686b5" {
+		t.Errorf("le hash d'un item d'écriture sans `ensure` ne doit PAS changer : got %s", got)
 	}
 }
 

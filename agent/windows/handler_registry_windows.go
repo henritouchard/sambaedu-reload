@@ -50,7 +50,10 @@ func rootKey(hive string) (registry.Key, error) {
 
 // Read lit la valeur réelle d'une clé. present=false si la clé OU la valeur
 // n'existe pas (ce n'est PAS une erreur : c'est une dérive à corriger par
-// apply). err = ruche invalide / accès refusé.
+// apply). Une valeur existante d'un type NON géré (REG_BINARY, …) est
+// present=true avec Kind sentinelle "REG_UNSUPPORTED" — la présence est
+// indépendante du type (chemin `ensure:"absent"`). err = ruche invalide /
+// accès refusé.
 func (o *registryOps) Read(hive, path, name string) (shared.RegistryValue, bool, error) {
 	root, err := rootKey(hive)
 	if err != nil {
@@ -115,9 +118,13 @@ func (o *registryOps) Read(hive, path, name string) (shared.RegistryValue, bool,
 
 		return shared.RegistryValue{Kind: "REG_MULTI_SZ", Multi: v}, true, nil
 	default:
-		// Type réel inattendu (BINARY, etc.) : on considère « non conforme »
-		// (present=false) → apply réécrira avec le type cible.
-		return shared.RegistryValue{}, false, nil
+		// Type réel non géré à la lecture (REG_BINARY, REG_NONE, …) : la valeur
+		// EXISTE → present=true avec un Kind sentinelle hors contrat (review
+		// 35.1 #1). Item d'écriture : Equal() échoue sur le Kind → apply réécrit
+		// au type cible (comportement historique conservé). Item `ensure:
+		// "absent"` : la valeur présente est une dérive → apply la SUPPRIME
+		// (AC3 : « peu importe son type/contenu » — pas de résidu silencieux).
+		return shared.RegistryValue{Kind: "REG_UNSUPPORTED"}, true, nil
 	}
 }
 
@@ -149,6 +156,39 @@ func (o *registryOps) Write(spec shared.RegistrySpec) error {
 	default:
 		return fmt.Errorf("type REG_* non supporté à l'écriture : %q", spec.Value.Kind)
 	}
+}
+
+// Delete supprime la VALEUR NOMMÉE d'une clé (Story 35.1, item `ensure:"absent"`)
+// — JAMAIS la clé-conteneur (des valeurs voisines non gérées y vivent ; la
+// réconciliation de clé entière est le type `registry_list`, D3/35.2).
+// registry.ErrNotExist sur la CLÉ ou la VALEUR ⇒ nil (succès idempotent : la
+// cible « valeur absente » est déjà atteinte). Autres erreurs (accès refusé /
+// ruche invalide) remontées → {status: error} pour le type (isolation AC5).
+func (o *registryOps) Delete(hive, path, name string) error {
+	root, err := rootKey(hive)
+	if err != nil {
+		return err
+	}
+
+	key, err := registry.OpenKey(root, path, registry.SET_VALUE)
+	if err != nil {
+		if errors.Is(err, registry.ErrNotExist) {
+			return nil // clé-conteneur absente → la valeur l'est aussi (idempotent)
+		}
+
+		return fmt.Errorf("ouverture de %s\\%s : %w", hive, path, err)
+	}
+	defer key.Close()
+
+	if err := key.DeleteValue(name); err != nil {
+		if errors.Is(err, registry.ErrNotExist) {
+			return nil // valeur déjà absente (idempotent)
+		}
+
+		return fmt.Errorf("suppression de %s\\%s!%s : %w", hive, path, name, err)
+	}
+
+	return nil
 }
 
 // SHChangeNotify (shell32) — signale au shell un changement global afin que

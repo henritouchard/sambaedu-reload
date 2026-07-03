@@ -44,9 +44,20 @@ use Illuminate\Support\Collection;
  * LdapRecord / APCu / `samba-tool` (ciblage = relations Postgres uniquement).
  *
  * **Invariant central (piège n°1).** Ni `id`/`key` de capacité, ni de projection,
- * ne fuit au payload — l'item registry reste `{hive, path, name, type, value}`
- * concrets. C'est CE qui garde « éditeur de clés brutes » (v2) gratuit ET garantit
- * que l'agent ne change pas.
+ * ne fuit au payload — l'item registry reste CONCRET : `{hive, path, name, type,
+ * value}` (5 clés) pour une ÉCRITURE, `{hive, path, name, ensure: "absent"}`
+ * (4 clés, Story 35.1) pour une SUPPRESSION. C'est CE qui garde « éditeur de
+ * clés brutes » (v2) gratuit ET garantit que l'agent ne change pas.
+ *
+ * **Trois régimes par clé de `spec`** (Story 35.1) :
+ *   1. **écrire** — valeur résolue scalaire/liste → item 5 clés (le provider
+ *      n'émet JAMAIS `ensure: "present"` explicite : byte-identité des payloads
+ *      existants, contrat additif D1) ;
+ *   2. **supprimer** — marqueur réservé {@see self::SPEC_ENSURE}
+ *      (`'off' => ['$ensure' => 'absent']` dans une map valeur-capacité) →
+ *      item 4 clés `ensure: "absent"` (l'agent supprime la valeur nommée) ;
+ *   3. **ne pas gérer** — sentinelle UNMANAGED (clé de map ABSENTE pour la
+ *      valeur effective) → rien n'est émis.
  *
  * **Sémantique `exclusive` PAR IDENTITÉ DE CLÉ** ({@see KeyedExclusiveProvider}) :
  * une clé de registre = UNE valeur ; la maille la plus spécifique gagne pour CETTE
@@ -74,6 +85,18 @@ use Illuminate\Support\Collection;
  */
 abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider, StateProvider
 {
+    /**
+     * Marqueur d'authoring RÉSERVÉ dans une map valeur-capacité de `spec`
+     * (Story 35.1) : `'off' => ['$ensure' => 'absent']` (forme JSON seed :
+     * `{"$ensure": "absent"}`) fait émettre un item de SUPPRESSION 4 clés
+     * `{hive, path, name, ensure: "absent"}` au lieu d'une écriture. PUBLIC :
+     * réutilisé par les seeds/retrofits (35.1) et les stories 35.2 / 35.5.
+     */
+    public const SPEC_ENSURE = '$ensure';
+
+    /** Valeur du marqueur {@see self::SPEC_ENSURE} : suppression de la valeur nommée. */
+    public const ENSURE_ABSENT = 'absent';
+
     public function type(): string
     {
         return CapabilityProjection::MECHANISM_REGISTRY;
@@ -196,9 +219,16 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
      *   - **map** valeur-capacité → donnée (objet assoc, ex. `{"on":0,"off":1}`) →
      *     on cherche `$capabilityValue` ; **clé de map absente ⇒ clé NON émise**
      *     (= cesser de gérer cette clé pour cette valeur, piège n°5).
-     * Puis coercition finale par `type` (DWORD/QWORD→int, MULTI_SZ→liste de
-     * chaînes, SZ/EXPAND_SZ→chaîne — zéro float §4.1). Le payload est CONCRET et
-     * EXACTEMENT 5 clés (invariant central).
+     * La valeur résolue peut porter le marqueur réservé {@see self::SPEC_ENSURE}
+     * (`['$ensure' => 'absent']`, Story 35.1) → item de SUPPRESSION 4 clés
+     * `{hive, path, name, ensure}` (ni `type` ni `value`) ; toute AUTRE forme
+     * assoc inattendue ⇒ clé NON émise (défensif, jamais d'exception au render —
+     * iso discipline UNMANAGED). Détection APRÈS `resolveKeyValue()` et AVANT
+     * `typedValue()` (piège n°4 : la coercition écraserait le marqueur en 0/'').
+     * Sinon, coercition finale par `type` (DWORD/QWORD→int, MULTI_SZ→liste de
+     * chaînes, SZ/EXPAND_SZ→chaîne — zéro float §4.1). Le payload est CONCRET :
+     * EXACTEMENT 5 clés pour une écriture, EXACTEMENT 4 pour une suppression
+     * (invariant central).
      *
      * @return list<array<string,mixed>> un payload par clé émise
      */
@@ -230,6 +260,23 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
             if ($resolved === self::UNMANAGED) {
                 // Clé de map absente pour la valeur effective : cesser de gérer
                 // cette clé (rien n'est émis).
+                continue;
+            }
+
+            // Marqueur de SUPPRESSION (Story 35.1) — détecté APRÈS la résolution
+            // et AVANT la coercition typedValue() (piège n°4). Une forme assoc
+            // NON reconnue ⇒ clé non émise (défensif, pas d'exception au render).
+            if (is_array($resolved) && ! array_is_list($resolved)) {
+                if (($resolved[self::SPEC_ENSURE] ?? null) === self::ENSURE_ABSENT) {
+                    // Item de suppression : EXACTEMENT 4 clés, ni type ni value.
+                    $payloads[] = [
+                        'hive' => $hive,
+                        'path' => (string) ($key['path'] ?? ''),
+                        'name' => (string) ($key['name'] ?? ''),
+                        'ensure' => self::ENSURE_ABSENT,
+                    ];
+                }
+
                 continue;
             }
 

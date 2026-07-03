@@ -147,6 +147,68 @@ class CapabilityRegistryCompilationTest extends TestCase
         self::assertSame(['KeyA', 'KeyB'], $names);
     }
 
+    // ── Story 35.1 : items `ensure:absent` vs items d'écriture ────────────
+    // `exclusiveKey()` est IDENTIQUE pour les deux formes ({hive|path|name}) :
+    // la précédence EXISTANTE du StateCompiler (INTOUCHÉ, D2) arbitre.
+
+    #[Test]
+    public function parc_override_write_beats_broadcast_absent_for_a_key(): void
+    {
+        // Broadcast `off` → suppression ; le parc dévie vers `on` → écriture.
+        // L'override (maille logique) bat le défaut Broadcast pour CETTE clé.
+        $cap = $this->makeCapability('llmnr_disabled', 'off', [
+            ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'EnableMulticast', 'type' => 'REG_DWORD', 'value' => ['on' => 0, 'off' => ['$ensure' => 'absent']]],
+        ]);
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => WorkstationGroup::class,
+            'assignable_id' => $this->logical->id,
+            'value' => 'on',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $session = $this->sessionItems($this->compiler()->compile(TargetContext::for($this->ws, null)));
+
+        $registry = array_values(array_filter($session, fn ($i): bool => $i['type'] === 'registry'));
+        self::assertCount(1, $registry, 'une seule valeur gagne pour l\'identité {hive|path|name}');
+        self::assertSame(
+            ['hive', 'path', 'name', 'type', 'value'],
+            array_keys($registry[0]['payload']),
+            'l\'override d\'écriture (5 clés) bat le broadcast absent',
+        );
+        self::assertSame(0, $registry[0]['payload']['value']);
+    }
+
+    #[Test]
+    public function parc_override_absent_beats_broadcast_write_for_a_key(): void
+    {
+        // Inverse : Broadcast `on` → écriture ; le parc dévie vers `off` →
+        // suppression. L'item `absent` gagne par la MÊME précédence.
+        $cap = $this->makeCapability('llmnr_disabled', 'on', [
+            ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'EnableMulticast', 'type' => 'REG_DWORD', 'value' => ['on' => 0, 'off' => ['$ensure' => 'absent']]],
+        ]);
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => WorkstationGroup::class,
+            'assignable_id' => $this->logical->id,
+            'value' => 'off',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $session = $this->sessionItems($this->compiler()->compile(TargetContext::for($this->ws, null)));
+
+        $registry = array_values(array_filter($session, fn ($i): bool => $i['type'] === 'registry'));
+        self::assertCount(1, $registry);
+        self::assertSame(
+            ['hive', 'path', 'name', 'ensure'],
+            array_keys($registry[0]['payload']),
+            'l\'override de suppression (4 clés) bat le broadcast d\'écriture',
+        );
+        self::assertSame('absent', $registry[0]['payload']['ensure']);
+    }
+
     #[Test]
     public function two_capabilities_defining_the_same_key_collide_and_recency_wins(): void
     {

@@ -3007,3 +3007,69 @@ type, value}`. Les anciennes tables/providers/UI registry sont retirées.
       au seed).
 - [ ] Contrat & agent INCHANGÉS : `ContractV1Test` vert sans modif ; `go test ./shared/...`
       + cross-compile `GOOS=windows` verts ; aucun fichier Go modifié.
+
+## Story 35.1 — Verbe `ensure` : suppression de valeurs registre (socle delete)
+
+Le contrat `registry` gagne le champ optionnel `ensure ∈ present|absent` (§7.1, additif D1 :
+absence = `present`, items d'écriture byte-identiques). Un item 4 clés
+`{hive, path, name, ensure:"absent"}` fait SUPPRIMER la valeur nommée par l'agent (2.3.0)
+— jamais la clé-conteneur. Marqueur d'authoring `'off' => {"$ensure": "absent"}` dans les
+maps de `spec` ; retrofit des deux capacités on-only (`llmnr_disabled`,
+`windows_updates_managed`) qui exposent désormais un vrai « off » par suppression
+(migration `2026_07_03_100000`). Trois régimes coexistent : écrire / supprimer / ne pas
+gérer (sentinelle UNMANAGED intacte).
+
+### Scénario 35.1.1 — Migration de retrofit sur /vm (VM — ACTION HUMAINE Henri)
+
+1. `php artisan migrate` sur /vm (les migrations ne sont PAS auto-appliquées).
+2. `/admin/settings/capabilities` : `llmnr_disabled` et `windows_updates_managed` proposent
+   désormais « Désactivé (clés supprimées) » en plus de leur état géré — le libellé n'est
+   PAS « Non géré » (réservé à la sentinelle des capacités opt-in).
+
+### Scénario 35.1.2 — Payload `/state` : item de suppression 4 clés (curl VM — ACTION HUMAINE Henri)
+
+1. Poser un override `off` sur `llmnr_disabled` pour un parc de test.
+2. `GET /api/v1/agent/state` (token d'un poste du parc) : la portée `machine` porte pour
+   `EnableMulticast` et `NodeType` des items `{"hive","path","name","ensure":"absent"}` —
+   EXACTEMENT 4 clés, ni `type` ni `value`, aucun id de capacité.
+3. Les items d'écriture restent EXACTEMENT 5 clés — `ensure:"present"` n'apparaît JAMAIS
+   dans le payload (byte-identité anti-drift de flotte).
+
+### Scénario 35.1.3 — Convergence delete + re-drift STRICT (lab Windows — ACTION HUMAINE Henri)
+
+1. Sur un poste du parc avec l'agent **2.3.0 publié** : au cycle suivant, les valeurs
+   `EnableMulticast` (HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient) et `NodeType`
+   (HKLM\SYSTEM\CurrentControlSet\Services\NetBT\Parameters) sont SUPPRIMÉES ; le rapport
+   passe `drift` (suppression appliquée) puis `compliant` aux cycles suivants.
+2. La clé-conteneur (`DNSClient`, `Parameters`) existe toujours — seules les valeurs
+   nommées disparaissent (les valeurs voisines non gérées sont intactes).
+3. Recréer manuellement `EnableMulticast` (regedit) : au cycle suivant, re-`drift` +
+   re-suppression (policy STRICT, pas de tolérance).
+4. Repasser l'override à l'état géré (`on`) : les valeurs sont réécrites (l'item
+   d'écriture bat l'item absent par la précédence de compilation existante).
+
+### Scénario 35.1.4 — Suppression HKCU : rafraîchissement shell (lab Windows — ACTION HUMAINE Henri)
+
+1. Sur une capacité HKCU à marqueur (post-35.1, ex. futur retrofit session) : une
+   suppression EFFECTIVE d'une valeur HKCU déclenche SHChangeNotify (même gate que
+   l'écriture — changement effectif seulement, pas de « flicker » au régime stable).
+
+### Scénario 35.1.5 — Piège binaire antérieur (lab Windows — ACTION HUMAINE Henri)
+
+1. Sur un poste resté en agent ≤ 2.2.20 : un item `ensure:"absent"` fait échouer le parse
+   du type `registry` → rapport `{status: error}` ISOLÉ sur ce type (les autres types
+   convergent). Ce n'est PAS un bug : publier la release 2.3.0 (update.sh ne publie
+   jamais seul — amorçage manuel).
+
+### Checklist rapide (Story 35.1)
+
+- [ ] 35.1.1 — Migration retrofit jouée sur /vm ; les 2 capacités exposent le off
+      « Désactivé (clés supprimées) » (jamais « Non géré »).
+- [ ] 35.1.2 — `/state` : item absent = 4 clés exactes ; items d'écriture = 5 clés,
+      jamais `ensure:"present"`.
+- [ ] 35.1.3 — Delete effectif au poste, clé-conteneur intacte, re-drift STRICT à la
+      réapparition, retour `on` = réécriture.
+- [ ] 35.1.4 — Suppression HKCU effective ⇒ rafraîchissement shell (0 op = 0 notification).
+- [ ] 35.1.5 — Agent antérieur : `{status: error}` isolé sur `registry` → publier 2.3.0.
+- [ ] Golden : `state.v1.json` +1 item absent machine, hashes figés JUMEAUX PHP↔Go
+      recalculés ; `report.v1.json` INCHANGÉ (le rapport ne porte pas de payload).

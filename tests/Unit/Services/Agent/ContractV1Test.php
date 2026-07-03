@@ -117,7 +117,20 @@ class ContractV1Test extends TestCase
     // H: classes `\\<se4fs>\classes\`}. Le golden passe d'UN à DEUX items `drives`
     // (session = 7 items, 11 items au total) → hash de chaque item drives ET hash
     // d'état RECALCULÉS. Bumpé à l'IDENTIQUE côté Go (hasher_test.go::frozenStateHash).
-    private const FROZEN_STATE_HASH = 'c1467c74018990bbcf42e788e19d93e973e8489d086d81e58a5c35a31a4a0af6';
+    //
+    // Re-bumpé SCIEMMENT par la Story 35.1 (évolution MINEURE du contrat, §9) :
+    // champ additif `ensure ∈ present|absent` sur les items `registry` — le golden
+    // gagne UN item de SUPPRESSION en portée `machine` (payload 4 clés
+    // `{hive, path, name, ensure:"absent"}`, clé DNSClient\EnableMulticast de
+    // `llmnr_disabled`, ni `type` ni `value`). Champ OPTIONNEL dont l'absence vaut
+    // `present` : les items d'écriture existants restent BYTE-IDENTIQUES (le
+    // serveur n'émet jamais `ensure:"present"` explicite) → forward-compatible,
+    // pas un major. `report.v1.json` est INCHANGÉ : les items de rapport
+    // `{type, status, hash[, detail]}` ne portent aucun payload — le verbe
+    // `ensure` n'y a pas de surface. machine = 4 items, 12 items au total, hash
+    // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
+    // même valeur (test croisé NFR13).
+    private const FROZEN_STATE_HASH = 'f3d22e9f81d927d3cfc54ecf7f850d92a9a012135857df53e7fd91d82392be7f';
 
     private StateHasher $hasher;
 

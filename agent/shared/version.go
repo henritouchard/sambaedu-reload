@@ -79,8 +79,20 @@ package shared
 // attendre le fetch per-user (login/fullname arrivent ensuite avec le cache
 // session). Byte-format overlay.json INCHANGÉ ; contrat bumpé (golden + 2 hashes
 // figés croisés PHP↔Go).
+// 2.3.0 = verbe `ensure` sur les items `registry` (Story 35.1, contrat §7.1) :
+// champ optionnel `ensure ∈ present|absent` (absence = present, contrat ADDITIF
+// D1 — les items d'écriture 5 clés restent byte-identiques). Un item 4 clés
+// `{hive, path, name, ensure:"absent"}` fait SUPPRIMER la valeur nommée
+// (RegistryOps.Delete → DeleteValue ; ErrNotExist = succès idempotent — JAMAIS
+// la clé-conteneur), portées Machine (SYSTEM/HKLM) ET Session (compagnon/HKCU,
+// avec rafraîchissement shell sur suppression effective). Policy STRICT
+// inchangée (drift + re-suppression si la valeur réapparaît). Golden
+// state.v1.json bumpé (+1 item absent machine, hashes figés jumeaux PHP↔Go
+// recalculés). Un binaire ANTÉRIEUR parse un item `absent` en {status: error}
+// isolé sur le type registry → publier la release (update.sh ne publie jamais
+// seul).
 //
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.2.20"
+var Version = "2.3.0"

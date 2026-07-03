@@ -161,11 +161,13 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function on_off_capabilities_emit_a_real_value_for_off(): void
     {
-        // Décision Henri (review #2) : si l'UI propose « off », « off » doit écrire
-        // une vraie valeur registre (réactivant la fonctionnalité), PAS être un
-        // no-op silencieux. Toutes les capacités à 2 états portent donc une map
-        // SYMÉTRIQUE {on, off} sur CHAQUE clé.
-        $symmetric = [
+        // Décision Henri (review #2) : si l'UI propose « off », « off » doit faire
+        // une VRAIE action, PAS être un no-op silencieux. Story 35.1 : une vraie
+        // action = écrire une vraie valeur registre OU supprimer la clé via le
+        // marqueur `{"$ensure": "absent"}` (l'agent supprime la valeur nommée,
+        // Windows reprend son défaut). Chaque clé porte donc une map avec `on`
+        // ET un `off` valide (valeur réelle ou marqueur).
+        $withOff = [
             'windows_consumer_features_off',
             'offline_files_disabled',
             'windows_copilot_off',
@@ -175,28 +177,153 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             'show_hidden_files',
             'uac_enabled',
             'windows_store_disabled',
+            // Retrofit 35.1 : les deux ex-« Géré » on-only exposent désormais un
+            // vrai off par suppression.
+            'llmnr_disabled',
+            'windows_updates_managed',
         ];
 
-        foreach ($symmetric as $key) {
+        foreach ($withOff as $key) {
             $cap = Capability::query()->where('key', $key)->firstOrFail();
             self::assertContains('off', $cap->allowedOptionValues(), "{$key} propose off");
             foreach ($cap->projections()->firstOrFail()->spec['keys'] as $regKey) {
                 self::assertArrayHasKey('on', $regKey['value'], "{$key}/{$regKey['name']} a une valeur on");
-                self::assertArrayHasKey('off', $regKey['value'], "{$key}/{$regKey['name']} a une valeur off (pas un no-op)");
+                self::assertArrayHasKey('off', $regKey['value'], "{$key}/{$regKey['name']} a un off (pas un no-op)");
+
+                $off = $regKey['value']['off'];
+                $isRealValue = is_scalar($off);
+                $isEnsureMarker = is_array($off) && ($off['$ensure'] ?? null) === 'absent';
+                self::assertTrue(
+                    $isRealValue || $isEnsureMarker,
+                    "{$key}/{$regKey['name']} : off doit être une valeur réelle OU le marqueur \$ensure",
+                );
             }
         }
     }
 
     #[Test]
-    public function windows_update_is_managed_only_no_misleading_off(): void
+    public function retrofitted_on_only_capabilities_expose_a_real_off_by_deletion(): void
     {
-        // Vraie exception on-only : « ne plus gérer » Windows Update = retirer les
-        // clés (verbe `delete`, hors MVP). On n'expose donc PAS d'« off » trompeur.
-        $wu = Capability::query()->where('key', 'windows_updates_managed')->firstOrFail();
+        // Story 35.1 (remplace `windows_update_is_managed_only_no_misleading_off`) :
+        // les deux capacités on-only du parc sont RETROFITTÉES — leurs `options`
+        // abandonnent le régime « Géré » on-only et exposent un vrai « off » dont
+        // CHAQUE clé porte le marqueur de suppression. Le libellé n'est PAS
+        // « Non géré » (réservé à la sentinelle UNMANAGED des capacités opt-in).
+        foreach (['llmnr_disabled', 'windows_updates_managed'] as $key) {
+            $cap = Capability::query()->where('key', $key)->firstOrFail();
 
-        self::assertSame(['on'], $wu->allowedOptionValues(), 'Windows Update n\'expose que « on » (géré)');
-        foreach ($wu->projections()->firstOrFail()->spec['keys'] as $regKey) {
-            self::assertArrayNotHasKey('off', $regKey['value'], "{$regKey['name']} reste on-only (clé non émise si off)");
+            self::assertSame(['on', 'off'], $cap->allowedOptionValues(), "{$key} expose on ET off");
+            self::assertStringNotContainsString(
+                'Non géré',
+                $cap->optionLabel('off'),
+                "{$key} : le libellé off ne doit pas usurper « Non géré » (sentinelle)",
+            );
+
+            foreach ($cap->projections()->firstOrFail()->spec['keys'] as $regKey) {
+                self::assertSame(
+                    ['$ensure' => 'absent'],
+                    $regKey['value']['off'],
+                    "{$key}/{$regKey['name']} : off = marqueur de suppression",
+                );
+                self::assertArrayHasKey('on', $regKey['value'], "{$key}/{$regKey['name']} : la valeur on d'origine est conservée");
+                self::assertIsNotArray($regKey['value']['on'], "{$key}/{$regKey['name']} : la valeur on reste une valeur réelle");
+            }
+        }
+
+        // Périmètre exact du retrofit : LLMNR = 2 clés, WindowsUpdate = 6 clés.
+        self::assertCount(2, Capability::query()->where('key', 'llmnr_disabled')->firstOrFail()
+            ->projections()->firstOrFail()->spec['keys']);
+        self::assertCount(6, Capability::query()->where('key', 'windows_updates_managed')->firstOrFail()
+            ->projections()->firstOrFail()->spec['keys']);
+    }
+
+    #[Test]
+    public function retrofit_migration_is_idempotent_and_reversible(): void
+    {
+        // Story 35.1 (AC4) : la migration de retrofit est REJOUABLE sans effet de
+        // bord (update ciblé par `key`) et son down() restaure l'état on-only
+        // d'origine des seeds.
+        $migration = require database_path('migrations/2026_07_03_100000_retrofit_ensure_off_on_only_capabilities.php');
+
+        $snapshot = fn (): array => Capability::query()
+            ->whereIn('key', ['llmnr_disabled', 'windows_updates_managed'])
+            ->orderBy('key')
+            ->get()
+            ->map(fn (Capability $c): array => [
+                'options' => $c->options,
+                'spec' => $c->projections()->firstOrFail()->spec,
+            ])
+            ->all();
+
+        // up() déjà joué par RefreshDatabase → le rejouer ne change RIEN.
+        $before = $snapshot();
+        $migration->up();
+        self::assertSame($before, $snapshot(), 'up() rejoué = aucun effet de bord');
+
+        // down() restaure on-only : plus de off (ni option ni entrée de map),
+        // LIBELLÉ d'origine compris (review 35.1 #3 : les libellés font partie
+        // de l'état restauré, pas seulement les valeurs).
+        $migration->down();
+        foreach (['llmnr_disabled', 'windows_updates_managed'] as $key) {
+            $cap = Capability::query()->where('key', $key)->firstOrFail();
+            self::assertSame(['on'], $cap->allowedOptionValues(), "{$key} redevient on-only");
+            self::assertSame(
+                [['value' => 'on', 'label' => 'Géré']],
+                $cap->options,
+                "{$key} : libellé d'origine « Géré » restauré",
+            );
+            foreach ($cap->projections()->firstOrFail()->spec['keys'] as $regKey) {
+                self::assertArrayNotHasKey('off', $regKey['value'], "{$key}/{$regKey['name']} : off retiré");
+                self::assertArrayHasKey('on', $regKey['value'], "{$key}/{$regKey['name']} : on conservé");
+            }
+        }
+
+        // up() re-retrofitte à l'identique (rejouable après down()).
+        $migration->up();
+        self::assertSame($before, $snapshot(), 'up() après down() = état retrofitté identique');
+    }
+
+    #[Test]
+    public function llmnr_disabled_off_emits_ensure_absent_items_via_the_real_provider(): void
+    {
+        // Story 35.1 (AC4) — chaîne seed→retrofit→spec→expand→payload prouvée sur
+        // données RÉELLES : un override de parc `off` sur `llmnr_disabled` fait
+        // émettre par le provider machine 2 items de SUPPRESSION HKLM 4 clés
+        // (EnableMulticast + NodeType), en plus du Broadcast `on` (écritures).
+        \App\Observers\WorkstationGroupObserver::disableSync();
+
+        try {
+            $ws = \App\Models\Workstation::factory()->create();
+            $parc = \App\Models\WorkstationGroup::factory()->logical()->create();
+            $ws->groups()->attach($parc->id);
+
+            $cap = Capability::query()->where('key', 'llmnr_disabled')->firstOrFail();
+            DB::table('capability_assignments')->insert([
+                'capability_id' => $cap->id,
+                'assignable_type' => \App\Models\WorkstationGroup::class,
+                'assignable_id' => $parc->id,
+                'value' => 'off',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $items = (new \App\Services\Agent\Providers\RegistryMachineCapabilityProvider())
+                ->itemsFor(\App\Services\Agent\TargetContext::for($ws, null));
+
+            $absent = $items->filter(
+                fn ($c): bool => (int) $c->sourceId === (int) $cap->id
+                    && ($c->payload['ensure'] ?? null) === 'absent',
+            )->values();
+
+            self::assertCount(2, $absent, 'off → 2 items de suppression (EnableMulticast + NodeType)');
+            $names = $absent->map(fn ($c): string => $c->payload['name'])->sort()->values()->all();
+            self::assertSame(['EnableMulticast', 'NodeType'], $names);
+            foreach ($absent as $c) {
+                self::assertSame(['hive', 'path', 'name', 'ensure'], array_keys($c->payload));
+                self::assertSame('HKLM', $c->payload['hive']);
+            }
+        } finally {
+            \App\Observers\WorkstationGroupObserver::enableSync();
         }
     }
 

@@ -37,6 +37,17 @@
                 "name": "Mozilla Firefox"
             },
             "hash": "145bf5328ba494df8bc260e650c82e1e39ded6e0b9b092466ea81450e0237a2d"
+        },
+        {
+            "type": "registry",
+            "semantics": "exclusive",
+            "payload": {
+                "hive": "HKLM",
+                "path": "SOFTWARE\\Policies\\Microsoft\\Windows NT\\DNSClient",
+                "name": "EnableMulticast",
+                "ensure": "absent"
+            },
+            "hash": "8e81903af9ba97c6981f51fa75982c17c309bd94aa38312fa90e5b89b050314d"
         }
     ],
     "session": [

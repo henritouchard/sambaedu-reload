@@ -13,8 +13,10 @@ type fakeRegistryOps struct {
 	values    map[string]RegistryValue // identité → valeur réelle (présente)
 	readErr   map[string]error         // identité → erreur de lecture
 	writeErr  map[string]error         // identité → erreur d'écriture
+	deleteErr map[string]error         // identité → erreur de suppression
 	writeCnt  int
 	readCnt   int
+	deleteCnt int // appels Delete EFFECTIFS (valeur supprimée)
 	notifyCnt int // appels NotifyShellChanged (rafraîchissement shell émis)
 }
 
@@ -24,9 +26,10 @@ func (o *fakeRegistryOps) NotifyShellChanged() { o.notifyCnt++ }
 
 func newFakeRegistryOps() *fakeRegistryOps {
 	return &fakeRegistryOps{
-		values:   map[string]RegistryValue{},
-		readErr:  map[string]error{},
-		writeErr: map[string]error{},
+		values:    map[string]RegistryValue{},
+		readErr:   map[string]error{},
+		writeErr:  map[string]error{},
+		deleteErr: map[string]error{},
 	}
 }
 
@@ -52,6 +55,22 @@ func (o *fakeRegistryOps) Write(spec RegistrySpec) error {
 	}
 	o.writeCnt++
 	o.values[id] = spec.Value
+
+	return nil
+}
+
+// Delete : supprime la valeur nommée. Iso impl Windows : une valeur déjà
+// absente ⇒ nil (idempotent) SANS compter comme une suppression effective.
+func (o *fakeRegistryOps) Delete(hive, path, name string) error {
+	id := keyID(hive, path, name)
+	if err := o.deleteErr[id]; err != nil {
+		return err
+	}
+	if _, ok := o.values[id]; !ok {
+		return nil // déjà absente (idempotent)
+	}
+	o.deleteCnt++
+	delete(o.values, id)
 
 	return nil
 }
@@ -352,6 +371,287 @@ func TestRegistryMultiSzConvergence(t *testing.T) {
 	}
 	if ops.writeCnt != before {
 		t.Fatalf("MULTI_SZ non idempotent")
+	}
+}
+
+// --- Verbe `ensure:"absent"` (Story 35.1) : convergence du delete ------------
+
+// absentItem construit un StateItem `registry` de SUPPRESSION (payload 4 clés,
+// ni type ni value — contrat §7.1).
+func absentItem(hive, path, name string) StateItem {
+	return StateItem{
+		Type:      "registry",
+		Semantics: "exclusive",
+		Hash:      name + "-h",
+		Payload: map[string]any{
+			"hive":   hive,
+			"path":   path,
+			"name":   name,
+			"ensure": "absent",
+		},
+	}
+}
+
+func TestRegistryAbsentDeletesPresentValueThenIdempotent(t *testing.T) {
+	// (a) valeur présente ⇒ Test false, Apply supprime, re-Test true, 2e Apply
+	// = zéro opération (idempotence).
+	ops := newFakeRegistryOps()
+	ops.values[keyID("HKLM", `SOFTWARE\Policies\DNSClient`, "EnableMulticast")] = RegistryValue{Kind: "REG_DWORD", Int: 0}
+	h := &RegistryHandler{Ops: ops}
+	items := []StateItem{absentItem("HKLM", `SOFTWARE\Policies\DNSClient`, "EnableMulticast")}
+
+	ok, err := h.Test(items)
+	if err != nil {
+		t.Fatalf("test: %v", err)
+	}
+	if ok {
+		t.Fatalf("valeur présente + ensure:absent → devrait être non conforme")
+	}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if ops.deleteCnt != 1 {
+		t.Fatalf("attendu 1 suppression, obtenu %d", ops.deleteCnt)
+	}
+	if _, still := ops.values[keyID("HKLM", `SOFTWARE\Policies\DNSClient`, "EnableMulticast")]; still {
+		t.Fatalf("la valeur aurait dû être supprimée")
+	}
+
+	ok, err = h.Test(items)
+	if err != nil || !ok {
+		t.Fatalf("test après suppression : ok=%v err=%v (attendu conforme)", ok, err)
+	}
+
+	// 2e passe sur état stable : ZÉRO suppression/écriture supplémentaire.
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply 2: %v", err)
+	}
+	if ops.deleteCnt != 1 || ops.writeCnt != 0 {
+		t.Fatalf("apply idempotent attendu : deleteCnt=%d writeCnt=%d", ops.deleteCnt, ops.writeCnt)
+	}
+}
+
+func TestRegistryAbsentValueAlreadyGoneIsCompliant(t *testing.T) {
+	// (b) valeur absente ⇒ compliant, aucune écriture ni suppression.
+	ops := newFakeRegistryOps()
+	h := &RegistryHandler{Ops: ops}
+	items := []StateItem{absentItem("HKLM", `SOFTWARE\Policies\DNSClient`, "EnableMulticast")}
+
+	ok, err := h.Test(items)
+	if err != nil || !ok {
+		t.Fatalf("valeur déjà absente : conforme attendu (ok=%v err=%v)", ok, err)
+	}
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if ops.deleteCnt != 0 || ops.writeCnt != 0 {
+		t.Fatalf("aucune opération attendue : deleteCnt=%d writeCnt=%d", ops.deleteCnt, ops.writeCnt)
+	}
+}
+
+func TestRegistryAbsentDeletesValueOfUnmanagedKind(t *testing.T) {
+	// Review 35.1 #1 : une valeur EXISTANTE d'un type hors contrat (REG_BINARY,
+	// REG_NONE, … — impl Windows : present=true, Kind sentinelle) est une dérive
+	// pour un item `ensure:"absent"` : Test false, Apply la SUPPRIME (AC3 « peu
+	// importe son type/contenu » — jamais de résidu rapporté compliant).
+	ops := newFakeRegistryOps()
+	ops.values[keyID("HKLM", `SOFTWARE\Policies\DNSClient`, "EnableMulticast")] =
+		RegistryValue{Kind: "REG_UNSUPPORTED"}
+	h := &RegistryHandler{Ops: ops}
+
+	items := []StateItem{absentItem("HKLM", `SOFTWARE\Policies\DNSClient`, "EnableMulticast")}
+
+	ok, err := h.Test(items)
+	if err != nil {
+		t.Fatalf("test: %v", err)
+	}
+	if ok {
+		t.Fatalf("valeur présente (type non géré) : l'item absent doit être NON conforme")
+	}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if ops.deleteCnt != 1 {
+		t.Fatalf("la valeur de type non géré doit être supprimée (1 delete), obtenu %d", ops.deleteCnt)
+	}
+
+	ok, err = h.Test(items)
+	if err != nil {
+		t.Fatalf("re-test: %v", err)
+	}
+	if !ok {
+		t.Fatalf("après suppression, l'item absent doit être conforme")
+	}
+}
+
+func TestRegistryAbsentThroughEngineStrictRedrift(t *testing.T) {
+	// (c) policy STRICT via le moteur (engine.go INTOUCHÉ, iso
+	// TestRegistryThroughEngineSection5) : valeur présente ⇒ drift + suppression ;
+	// RÉAPPARUE au cycle suivant ⇒ re-drift + re-suppression ; ensuite compliant.
+	ops := newFakeRegistryOps()
+	id := keyID("HKLM", `SOFTWARE\Policies\DNSClient`, "EnableMulticast")
+	ops.values[id] = RegistryValue{Kind: "REG_DWORD", Int: 0}
+	h := &RegistryHandler{Ops: ops}
+	engine := &Engine{Handlers: map[string]Handler{"registry": h}}
+	target := []StateItem{absentItem("HKLM", `SOFTWARE\Policies\DNSClient`, "EnableMulticast")}
+
+	// Cycle 1 : présente → drift + suppression.
+	report := engine.RunPass(target, AppliedState{})
+	if len(report) != 1 || report[0].Status != "drift" {
+		t.Fatalf("cycle 1 : drift attendu, obtenu %+v", report)
+	}
+	if ops.deleteCnt != 1 {
+		t.Fatalf("cycle 1 : 1 suppression attendue, obtenu %d", ops.deleteCnt)
+	}
+
+	// La valeur RÉAPPARAÎT (autre outil / utilisateur) → re-drift au cycle 2.
+	ops.values[id] = RegistryValue{Kind: "REG_SZ", Str: "revenant"}
+	report = engine.RunPass(target, AppliedState{})
+	if len(report) != 1 || report[0].Status != "drift" {
+		t.Fatalf("cycle 2 (réapparition) : re-drift attendu, obtenu %+v", report)
+	}
+	if ops.deleteCnt != 2 {
+		t.Fatalf("cycle 2 : 2 suppressions cumulées attendues, obtenu %d", ops.deleteCnt)
+	}
+
+	// Cycle 3 : stable → compliant, zéro op.
+	report = engine.RunPass(target, AppliedState{})
+	if len(report) != 1 || report[0].Status != "compliant" {
+		t.Fatalf("cycle 3 : compliant attendu, obtenu %+v", report)
+	}
+	if ops.deleteCnt != 2 {
+		t.Fatalf("cycle 3 : aucune suppression supplémentaire attendue, obtenu %d", ops.deleteCnt)
+	}
+}
+
+func TestRegistryMixedWriteAndDeleteWithErrorIsolation(t *testing.T) {
+	// (d) items écrire + supprimer dans une MÊME passe ; une suppression en
+	// échec n'empêche ni les écritures ni les autres suppressions (effort
+	// maximal), l'erreur est remontée.
+	ops := newFakeRegistryOps()
+	ops.values[keyID("HKLM", `SOFTWARE\Test`, "DeleteMe")] = RegistryValue{Kind: "REG_DWORD", Int: 1}
+	ops.values[keyID("HKLM", `SOFTWARE\Test`, "Protected")] = RegistryValue{Kind: "REG_DWORD", Int: 1}
+	ops.deleteErr[keyID("HKLM", `SOFTWARE\Test`, "Protected")] = fmt.Errorf("accès refusé")
+	h := &RegistryHandler{Ops: ops}
+	items := []StateItem{
+		absentItem("HKLM", `SOFTWARE\Test`, "Protected"), // échoue
+		absentItem("HKLM", `SOFTWARE\Test`, "DeleteMe"),  // doit être supprimée
+		dwordItem("HKLM", `SOFTWARE\Test`, "WriteMe", 7), // doit être écrite
+	}
+
+	err := h.Apply(items)
+	if err == nil {
+		t.Fatalf("une suppression en erreur devrait remonter une erreur d'apply")
+	}
+	if _, still := ops.values[keyID("HKLM", `SOFTWARE\Test`, "DeleteMe")]; still {
+		t.Fatalf("DeleteMe aurait dû être supprimée malgré l'échec de Protected")
+	}
+	if ops.values[keyID("HKLM", `SOFTWARE\Test`, "WriteMe")].Int != 7 {
+		t.Fatalf("WriteMe aurait dû être écrite malgré l'échec de Protected")
+	}
+}
+
+func TestRegistryAbsentShellRefreshOnEffectiveHkcuDeleteOnly(t *testing.T) {
+	// (e) même gate que l'écriture : suppression HKCU EFFECTIVE ⇒ notification
+	// shell ; suppression no-op (déjà absente) ou HKLM ⇒ aucune notification.
+	t.Run("delete HKCU effectif → notification shell", func(t *testing.T) {
+		ops := newFakeRegistryOps()
+		ops.values[keyID("HKCU", `Software\Test\Policies`, "NoDrives")] = RegistryValue{Kind: "REG_DWORD", Int: 4}
+		h := &RegistryHandler{Ops: ops}
+
+		if err := h.Apply([]StateItem{absentItem("HKCU", `Software\Test\Policies`, "NoDrives")}); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if ops.notifyCnt != 1 {
+			t.Fatalf("suppression HKCU effective : 1 rafraîchissement shell attendu, obtenu %d", ops.notifyCnt)
+		}
+	})
+
+	t.Run("delete no-op (déjà absente) → pas de notification", func(t *testing.T) {
+		ops := newFakeRegistryOps()
+		h := &RegistryHandler{Ops: ops}
+
+		if err := h.Apply([]StateItem{absentItem("HKCU", `Software\Test\Policies`, "NoDrives")}); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if ops.notifyCnt != 0 {
+			t.Fatalf("no-op : aucune notification attendue, obtenu %d", ops.notifyCnt)
+		}
+	})
+
+	t.Run("delete HKLM effectif (service, session 0) → pas de notification", func(t *testing.T) {
+		ops := newFakeRegistryOps()
+		ops.values[keyID("HKLM", `SOFTWARE\Test`, "M")] = RegistryValue{Kind: "REG_DWORD", Int: 1}
+		h := &RegistryHandler{Ops: ops}
+
+		if err := h.Apply([]StateItem{absentItem("HKLM", `SOFTWARE\Test`, "M")}); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if ops.notifyCnt != 0 {
+			t.Fatalf("HKLM : aucune notification attendue, obtenu %d", ops.notifyCnt)
+		}
+	})
+}
+
+func TestRegistryEnsureInvalidOrIncompletePayloadIsError(t *testing.T) {
+	// (f) `ensure` de valeur inconnue / non-string, item absent incomplet ⇒
+	// enveloppe invalide ⇒ error pour le type (comportement existant).
+	h := &RegistryHandler{Ops: newFakeRegistryOps()}
+	cases := []struct {
+		name    string
+		payload map[string]any
+	}{
+		{"ensure inconnu", map[string]any{"hive": "HKLM", "path": "p", "name": "n", "ensure": "gone"}},
+		{"ensure vide", map[string]any{"hive": "HKLM", "path": "p", "name": "n", "ensure": ""}},
+		{"ensure non-string", map[string]any{"hive": "HKLM", "path": "p", "name": "n", "ensure": 1}},
+		{"absent sans hive", map[string]any{"hive": "", "path": "p", "name": "n", "ensure": "absent"}},
+		{"absent sans path", map[string]any{"hive": "HKLM", "path": "", "name": "n", "ensure": "absent"}},
+		{"absent sans name", map[string]any{"hive": "HKLM", "path": "p", "name": "", "ensure": "absent"}},
+		{"present sans type ni value", map[string]any{"hive": "HKLM", "path": "p", "name": "n", "ensure": "present"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			items := []StateItem{{Type: "registry", Semantics: "exclusive", Hash: "h", Payload: tc.payload}}
+			if _, err := h.Test(items); err == nil {
+				t.Fatalf("payload invalide attendu en erreur")
+			}
+			if err := h.Apply(items); err == nil {
+				t.Fatalf("payload invalide attendu en erreur d'apply")
+			}
+		})
+	}
+}
+
+func TestRegistryEnsurePresentExplicitBehavesAsWriteItem(t *testing.T) {
+	// (g) `ensure:"present"` explicite ≡ item d'écriture classique (le serveur
+	// ne l'émet jamais — byte-identité — mais le contrat l'admet).
+	ops := newFakeRegistryOps()
+	h := &RegistryHandler{Ops: ops}
+	items := []StateItem{{
+		Type: "registry", Semantics: "exclusive", Hash: "h",
+		Payload: map[string]any{
+			"hive": "HKCU", "path": `Software\Test`, "name": "K",
+			"type": "REG_DWORD", "value": 3, "ensure": "present",
+		},
+	}}
+
+	ok, err := h.Test(items)
+	if err != nil {
+		t.Fatalf("test: %v", err)
+	}
+	if ok {
+		t.Fatalf("valeur absente → non conforme attendu")
+	}
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if ops.values[keyID("HKCU", `Software\Test`, "K")].Int != 3 {
+		t.Fatalf("la valeur aurait dû être écrite (ensure:present ≡ écriture)")
+	}
+	if ops.deleteCnt != 0 {
+		t.Fatalf("aucune suppression attendue pour un item present")
 	}
 }
 
