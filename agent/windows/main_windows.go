@@ -186,6 +186,16 @@ func newAgent(echo bool) *shared.Agent {
 					Ops: &registryOps{log: logger},
 					Log: logger,
 				},
+				// Story 35.2 — listes registre a sous-valeurs indexees `\1..\N`
+				// (contrat §7.6, reconciliation de cle-conteneur D3). Le SERVICE
+				// SYSTEM reconcilie les conteneurs HKLM (ex. Forcelist Chrome/
+				// Edge de pix_extension_forced) : ecrit 1..N dans l'ordre,
+				// supprime les noms numeriques hors canon — jamais les valeurs
+				// non numeriques, jamais la cle-conteneur.
+				"registry_list": &shared.RegistryListHandler{
+					Ops: &registryOps{log: logger},
+					Log: logger,
+				},
 				// Fond de l'écran de VERROUILLAGE (exclusive / machine) : le
 				// SERVICE SYSTEM impose l'image via PersonalizationCSP (HKLM —
 				// le verrouillage est pré-login, LogonUI tourne en SYSTEM). Le

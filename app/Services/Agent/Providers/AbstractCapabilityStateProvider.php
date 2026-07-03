@@ -97,9 +97,21 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
     /** Valeur du marqueur {@see self::SPEC_ENSURE} : suppression de la valeur nommée. */
     public const ENSURE_ABSENT = 'absent';
 
-    public function type(): string
+    /**
+     * Mécanisme de projection expansé par CE provider (Story 35.2 —
+     * généralisation MINIMALE : le provider abstrait devient la base des
+     * mécanismes de capacité, `registry` reste le DÉFAUT historique pour la
+     * byte-identité des providers existants). Le mécanisme EST le `type()` du
+     * contrat (identifiants alignés, NFR12) et filtre `itemsFor()`.
+     */
+    protected function mechanism(): string
     {
         return CapabilityProjection::MECHANISM_REGISTRY;
+    }
+
+    public function type(): string
+    {
+        return $this->mechanism();
     }
 
     public function semantics(): ResourceSemantics
@@ -141,17 +153,19 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
      */
     public function itemsFor(TargetContext $ctx): Collection
     {
-        // Capacités actives qui ont une projection registry pour Windows.
-        // Eager-load la projection registry uniquement (filtre os/mécanisme).
+        // Capacités actives qui ont une projection du MÉCANISME de ce provider
+        // pour Windows. Eager-load cette projection uniquement (filtre
+        // os/mécanisme) : en bi-projection D5 (Story 35.2), chaque provider ne
+        // voit QUE la sienne (`projections->first()` est déjà filtré).
         $capabilities = Capability::query()
             ->where('capabilities.is_active', true)
             ->whereHas('projections', function ($q): void {
                 $q->where('os', Capability::OS_WINDOWS)
-                    ->where('mechanism', CapabilityProjection::MECHANISM_REGISTRY);
+                    ->where('mechanism', $this->mechanism());
             })
             ->with(['projections' => function ($q): void {
                 $q->where('os', Capability::OS_WINDOWS)
-                    ->where('mechanism', CapabilityProjection::MECHANISM_REGISTRY);
+                    ->where('mechanism', $this->mechanism());
             }])
             ->get();
 
@@ -230,9 +244,13 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
      * EXACTEMENT 5 clés pour une écriture, EXACTEMENT 4 pour une suppression
      * (invariant central).
      *
+     * PROTECTED (Story 35.2) : surchargée par les mécanismes dérivés
+     * ({@see AbstractRegistryListCapabilityProvider}) — le corps registry
+     * ci-dessous reste BYTE-IDENTIQUE pour les providers registry.
+     *
      * @return list<array<string,mixed>> un payload par clé émise
      */
-    private function expand(CapabilityProjection $projection, string $capabilityValue): array
+    protected function expand(CapabilityProjection $projection, string $capabilityValue): array
     {
         $spec = $projection->spec;
         $keys = is_array($spec) && isset($spec['keys']) && is_array($spec['keys'])
@@ -292,8 +310,12 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
         return $payloads;
     }
 
-    /** Sentinelle « clé non émise » (distincte de toute valeur de registre réelle). */
-    private const UNMANAGED = "\0__capability_unmanaged__\0";
+    /**
+     * Sentinelle « clé non émise » (distincte de toute valeur de registre
+     * réelle). PROTECTED (Story 35.2) : consommée par les mécanismes dérivés
+     * qui réutilisent {@see resolveKeyValue()}.
+     */
+    protected const UNMANAGED = "\0__capability_unmanaged__\0";
 
     /**
      * Résout la `value` brute d'une clé de `spec` (D5) :
@@ -302,10 +324,13 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
      *   - objet assoc ⇒ MAP valeur-capacité → donnée : on cherche
      *     `$capabilityValue` (clé string) ; absente ⇒ {@see self::UNMANAGED}.
      *
+     * PROTECTED (Story 35.2) : réutilisée telle quelle par les mécanismes
+     * dérivés (la résolution map/littéral est commune à tous les mécanismes).
+     *
      * @param  mixed  $raw  la `value` de la clé telle qu'issue de la `spec`
      * @return mixed  valeur brute (avant coercition par type) ou self::UNMANAGED
      */
-    private function resolveKeyValue(mixed $raw, string $capabilityValue): mixed
+    protected function resolveKeyValue(mixed $raw, string $capabilityValue): mixed
     {
         // Littéral liste (MULTI_SZ) — disambiguïsation map vs littéral via
         // array_is_list (piège n°5).

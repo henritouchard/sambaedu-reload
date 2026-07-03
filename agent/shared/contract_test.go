@@ -41,8 +41,10 @@ func TestParseStateGoldenFile(t *testing.T) {
 	// H: classes) → session = 7.
 	// Story 35.1 : +1 item `registry` de SUPPRESSION (`ensure:"absent"`, payload
 	// 4 clés sans type/value) en portée MACHINE → machine = 4.
-	if len(state.Machine) != 4 || len(state.Session) != 7 || len(state.MachineUser) != 1 {
-		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 4/7/1)",
+	// Story 35.2 : +1 item `registry_list` (conteneur Forcelist Chrome, payload
+	// 4 clés {hive, path, entry_type, values}) en portée MACHINE → machine = 5.
+	if len(state.Machine) != 5 || len(state.Session) != 7 || len(state.MachineUser) != 1 {
+		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 5/7/1)",
 			len(state.Machine), len(state.Session), len(state.MachineUser))
 	}
 }
@@ -247,8 +249,9 @@ func TestContractConstantsAreFrozen(t *testing.T) {
 	if ContractSchema != "se5.desired-state/v1" {
 		t.Errorf("ContractSchema modifié : %q — le contrat est FIGÉ (NFR12)", ContractSchema)
 	}
-	if len(ResourceTypes) != 10 {
-		t.Errorf("10 identifiants de type publiés (§7), got %d", len(ResourceTypes))
+	// Story 35.2 : +1 type `registry_list` (ajout ADDITIF D1) → 11.
+	if len(ResourceTypes) != 11 {
+		t.Errorf("11 identifiants de type publiés (§7), got %d", len(ResourceTypes))
 	}
 	// Story 27.8 : `drifted_allowed` retiré → 3 statuts (STRICT inconditionnel).
 	if len(ResourceStatuses) != 3 {

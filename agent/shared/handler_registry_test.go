@@ -2,6 +2,7 @@ package shared
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -14,9 +15,13 @@ type fakeRegistryOps struct {
 	readErr   map[string]error         // identité → erreur de lecture
 	writeErr  map[string]error         // identité → erreur d'écriture
 	deleteErr map[string]error         // identité → erreur de suppression
+	// namesErr : identité de CONTENEUR {hive\path} → erreur d'énumération
+	// (Story 35.2, RegistryOps.ValueNames).
+	namesErr  map[string]error
 	writeCnt  int
 	readCnt   int
 	deleteCnt int // appels Delete EFFECTIFS (valeur supprimée)
+	namesCnt  int // appels ValueNames
 	notifyCnt int // appels NotifyShellChanged (rafraîchissement shell émis)
 }
 
@@ -30,6 +35,7 @@ func newFakeRegistryOps() *fakeRegistryOps {
 		readErr:   map[string]error{},
 		writeErr:  map[string]error{},
 		deleteErr: map[string]error{},
+		namesErr:  map[string]error{},
 	}
 }
 
@@ -73,6 +79,38 @@ func (o *fakeRegistryOps) Delete(hive, path, name string) error {
 	delete(o.values, id)
 
 	return nil
+}
+
+// ValueNames : énumère les noms des valeurs d'une clé (Story 35.2). Iso impl
+// Windows : clé sans aucune valeur ⇒ (nil, nil), jamais une erreur. Les noms
+// rendus sont en minuscules (le fake indexe par identité insensible à la
+// casse) — sans incidence : les noms possédés par la réconciliation de liste
+// sont NUMÉRIQUES (casse-invariants) et la comparaison de canon est stricte.
+// Tri pour un ordre déterministe.
+func (o *fakeRegistryOps) ValueNames(hive, path string) ([]string, error) {
+	o.namesCnt++
+	container := strings.ToLower(hive) + `\` + strings.ToLower(path)
+	if err := o.namesErr[container]; err != nil {
+		return nil, err
+	}
+	prefix := container + `\`
+	names := []string{}
+	for id := range o.values {
+		if !strings.HasPrefix(id, prefix) {
+			continue
+		}
+		name := id[len(prefix):]
+		if strings.Contains(name, `\`) {
+			continue // valeur d'une SOUS-clé, pas de ce conteneur
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return nil, nil
+	}
+
+	return names, nil
 }
 
 // dwordItem construit un StateItem `registry` REG_DWORD.
@@ -329,7 +367,10 @@ func TestRegistryInvalidPayloadIsError(t *testing.T) {
 	}{
 		{"hive vide", map[string]any{"hive": "", "path": "p", "name": "n", "type": "REG_DWORD", "value": 0}},
 		{"path vide", map[string]any{"hive": "HKCU", "path": "", "name": "n", "type": "REG_DWORD", "value": 0}},
-		{"name vide", map[string]any{"hive": "HKCU", "path": "p", "name": "", "type": "REG_DWORD", "value": 0}},
+		// Story 35.2 : `name: ""` n'est PLUS invalide (valeur PAR DÉFAUT de la
+		// clé, contrat §7.1) — c'est l'ABSENCE de la clé `name` qui l'est.
+		{"name absent", map[string]any{"hive": "HKCU", "path": "p", "type": "REG_DWORD", "value": 0}},
+		{"name non-string", map[string]any{"hive": "HKCU", "path": "p", "name": 3, "type": "REG_DWORD", "value": 0}},
 		{"type vide", map[string]any{"hive": "HKCU", "path": "p", "name": "n", "type": "", "value": 0}},
 		{"type inconnu", map[string]any{"hive": "HKCU", "path": "p", "name": "n", "type": "REG_BINARY", "value": 0}},
 		{"dword value non entier", map[string]any{"hive": "HKCU", "path": "p", "name": "n", "type": "REG_DWORD", "value": "x"}},
@@ -608,7 +649,9 @@ func TestRegistryEnsureInvalidOrIncompletePayloadIsError(t *testing.T) {
 		{"ensure non-string", map[string]any{"hive": "HKLM", "path": "p", "name": "n", "ensure": 1}},
 		{"absent sans hive", map[string]any{"hive": "", "path": "p", "name": "n", "ensure": "absent"}},
 		{"absent sans path", map[string]any{"hive": "HKLM", "path": "", "name": "n", "ensure": "absent"}},
-		{"absent sans name", map[string]any{"hive": "HKLM", "path": "p", "name": "", "ensure": "absent"}},
+		// Story 35.2 : `name: ""` = valeur par défaut (LÉGITIME) — seule
+		// l'ABSENCE de la clé `name` reste une enveloppe invalide.
+		{"absent sans clé name", map[string]any{"hive": "HKLM", "path": "p", "ensure": "absent"}},
 		{"present sans type ni value", map[string]any{"hive": "HKLM", "path": "p", "name": "n", "ensure": "present"}},
 	}
 	for _, tc := range cases {
@@ -652,6 +695,91 @@ func TestRegistryEnsurePresentExplicitBehavesAsWriteItem(t *testing.T) {
 	}
 	if ops.deleteCnt != 0 {
 		t.Fatalf("aucune suppression attendue pour un item present")
+	}
+}
+
+// --- Valeur PAR DÉFAUT d'une clé : `name: ""` (Story 35.2, scope 35.5) -------
+//
+// `""` est le nom LÉGITIME de la valeur par défaut d'une clé Windows
+// (`(Default)` dans regedit) : les API registre (RegQueryValueEx/RegSetValueEx/
+// RegDeleteValue via golang.org/x/sys/windows/registry) traitent un nom vide
+// comme cette valeur — Get/Set/DeleteValue("") la ciblent, aucun cas
+// particulier côté handler. Besoin réel : 35.5 pose
+// `Applications\photoviewer.dll\shell\open\command` (default value).
+
+func TestRegistryDefaultValueNameParsesWriteAndAbsent(t *testing.T) {
+	// (a) parse : `name` PRÉSENT et vide = valide, en écriture ET en absent.
+	write, ok := parseRegistrySpec(map[string]any{
+		"hive": "HKCU", "path": `Software\Classes\Applications\pv.dll\shell\open\command`,
+		"name": "", "type": "REG_EXPAND_SZ", "value": `%SystemRoot%\pv.dll %1`,
+	})
+	if !ok {
+		t.Fatalf("name \"\" (valeur par défaut) doit parser en item d'écriture")
+	}
+	if write.Name != "" || write.Value.Kind != "REG_EXPAND_SZ" {
+		t.Fatalf("spec inattendu : %+v", write)
+	}
+
+	absent, ok := parseRegistrySpec(map[string]any{
+		"hive": "HKCU", "path": `Software\Classes\X`, "name": "", "ensure": "absent",
+	})
+	if !ok || !absent.absent() {
+		t.Fatalf("name \"\" doit parser en item absent (ok=%v spec=%+v)", ok, absent)
+	}
+
+	// (b) l'ABSENCE de la clé `name` reste une enveloppe invalide.
+	if _, ok := parseRegistrySpec(map[string]any{
+		"hive": "HKCU", "path": "p", "type": "REG_SZ", "value": "v",
+	}); ok {
+		t.Fatalf("payload sans clé name : enveloppe invalide attendue")
+	}
+}
+
+func TestRegistryDefaultValueNameConvergesTestApplyDelete(t *testing.T) {
+	// (c) Test/Apply écrivent la valeur par défaut via le fake (Ops reçoit
+	// name "" tel quel), puis un item absent la SUPPRIME.
+	ops := newFakeRegistryOps()
+	h := &RegistryHandler{Ops: ops}
+	path := `Software\Classes\Applications\pv.dll\shell\open\command`
+	writeItems := []StateItem{{
+		Type: "registry", Semantics: "exclusive", Hash: "h",
+		Payload: map[string]any{
+			"hive": "HKCU", "path": path, "name": "",
+			"type": "REG_SZ", "value": "cmd %1",
+		},
+	}}
+
+	ok, err := h.Test(writeItems)
+	if err != nil {
+		t.Fatalf("test: %v", err)
+	}
+	if ok {
+		t.Fatalf("valeur par défaut absente → non conforme attendu")
+	}
+	if err := h.Apply(writeItems); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if got := ops.values[keyID("HKCU", path, "")]; got.Str != "cmd %1" {
+		t.Fatalf("valeur par défaut attendue 'cmd %%1', obtenu %q", got.Str)
+	}
+	ok, err = h.Test(writeItems)
+	if err != nil || !ok {
+		t.Fatalf("après apply : conforme attendu (ok=%v err=%v)", ok, err)
+	}
+
+	// Suppression de la valeur par défaut (ensure:"absent", name "").
+	absentItems := []StateItem{{
+		Type: "registry", Semantics: "exclusive", Hash: "h2",
+		Payload: map[string]any{"hive": "HKCU", "path": path, "name": "", "ensure": "absent"},
+	}}
+	if err := h.Apply(absentItems); err != nil {
+		t.Fatalf("apply absent: %v", err)
+	}
+	if _, still := ops.values[keyID("HKCU", path, "")]; still {
+		t.Fatalf("la valeur par défaut aurait dû être supprimée (DeleteValue(\"\"))")
+	}
+	if ops.deleteCnt != 1 {
+		t.Fatalf("1 suppression effective attendue, obtenu %d", ops.deleteCnt)
 	}
 }
 

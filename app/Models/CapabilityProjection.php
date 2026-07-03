@@ -34,6 +34,16 @@ class CapabilityProjection extends Model
     /** Mécanisme registre — déjà publié au contrat (gratuit). */
     public const MECHANISM_REGISTRY = 'registry';
 
+    /**
+     * Mécanisme liste registre à sous-valeurs indexées `\1..\N` (Story 35.2,
+     * contrat §7.6 — type `registry_list`). La `spec` porte des CONTENEURS
+     * `{hive, path, entry_type, values}` : l'agent possède les valeurs au nom
+     * numérique de la clé-conteneur (réconciliation D3). Une capacité peut
+     * porter registry ET registry_list sur le même OS (bi-projection D5 —
+     * l'unique `(capability_id, os, mechanism)` le permet).
+     */
+    public const MECHANISM_REGISTRY_LIST = 'registry_list';
+
     /** Mécanisme pare-feu — slice B (ajout contrat + handler agent requis). */
     public const MECHANISM_FIREWALL = 'firewall';
 

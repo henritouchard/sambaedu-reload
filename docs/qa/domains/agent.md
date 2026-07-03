@@ -3073,3 +3073,98 @@ gérer (sentinelle UNMANAGED intacte).
 - [ ] 35.1.5 — Agent antérieur : `{status: error}` isolé sur `registry` → publier 2.3.0.
 - [ ] Golden : `state.v1.json` +1 item absent machine, hashes figés JUMEAUX PHP↔Go
       recalculés ; `report.v1.json` INCHANGÉ (le rapport ne porte pas de payload).
+
+## Story 35.2 — Type `registry_list` : listes à sous-clés indexées `\N`
+
+**Périmètre** : nouveau type de contrat `registry_list` (§7.6, ajout ADDITIF D1) — listes
+registre à sous-valeurs indexées `\1..\N`. L'agent POSSÈDE la clé-conteneur (D3) : il
+écrit les valeurs `1..N` dans l'ordre et supprime toute autre valeur AU NOM NUMÉRIQUE
+(canon strconv strict, `"01" ≠ "1"`) — jamais les valeurs non numériques, jamais la
+clé-conteneur ; liste vide = purge. Deux providers serveur (HKLM→machine, HKCU→session),
+`exclusiveKey = {hive|path}` : la maille la plus spécifique gagne le conteneur ENTIER
+(jamais d'union), StateCompiler INTOUCHÉ (D2). Seed : `pix_extension_forced` (Forcelist
+Chrome/Edge, machine) + `blocked_executables` (première capacité BI-PROJECTION D5 : flag
+`DisallowRun` registry + entrées registry_list, session, cible override UserGroup élèves).
+Bonus contrat : `name: ""` accepté sur les items `registry` (valeur PAR DÉFAUT d'une clé,
+besoin 35.5). Agent bumpé **2.4.0**.
+
+### Scénario 35.2.1 — Migration seed sur /vm (VM — ACTION HUMAINE Henri)
+
+1. `php artisan migrate` sur /vm (migration `2026_07_03_110000_seed_capabilities_registry_list_lot`,
+   jamais auto-appliquée).
+2. `/admin/settings/capabilities` : `pix_extension_forced` (Non géré / Forcée) et
+   `blocked_executables` (Non géré / Activé / Désactivé (valeurs supprimées)) apparaissent —
+   opt-in (défaut « Non géré » = rien en broadcast).
+
+### Scénario 35.2.2 — Payload `/state` : conteneur 4 clés (curl VM — ACTION HUMAINE Henri)
+
+1. Poser un override `on` sur `pix_extension_forced` pour un parc de test.
+2. `GET /api/v1/agent/state` (token d'un poste du parc) : la portée `machine` porte DEUX
+   items `registry_list` `{"hive","path","entry_type","values"}` — EXACTEMENT 4 clés,
+   jamais de `name`, jamais d'id de capacité :
+   - Chrome `SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist`,
+     `values = ["pgpjajcmfbfdmcgjlbiengidaknopaok"]` (id SEUL, iso-GPO CD95) ;
+   - Edge `…\Microsoft\Edge\ExtensionInstallForcelist`,
+     `values = ["pgpjajcmfbfdmcgjlbiengidaknopaok;https://clients2.google.com/service/update2/crx"]`.
+3. Retirer l'override : les items disparaissent au state suivant (sentinelle unmanaged).
+
+### Scénario 35.2.3 — Convergence de conteneur + réconciliation D3 (lab Windows — ACTION HUMAINE Henri)
+
+1. Poste avec agent **2.4.0 publié**, override pix `on` : au cycle suivant, les valeurs
+   `1` apparaissent sous les deux clés Forcelist (HKLM) ; rapport `drift` puis `compliant`.
+2. Ajouter à la main (regedit) une valeur `2 = "rogue"` et une valeur `01 = "dup"` sous la
+   clé Chrome : au cycle suivant, les DEUX sont supprimées (noms numériques hors canon),
+   re-`drift` puis `compliant` — policy STRICT.
+3. Ajouter une valeur NON numérique (ex. `Comment = "x"`) dans la même clé : elle SURVIT
+   à tous les cycles (jamais touchée) ; la clé-conteneur n'est jamais supprimée.
+4. Chrome/Edge : l'extension Pix s'installe de force (chrome://extensions — « installée
+   par votre administrateur »).
+
+### Scénario 35.2.4 — blocked_executables bi-projection : on/off élèves (lab Windows — ACTION HUMAINE Henri)
+
+1. Armer `blocked_executables = on` en override sur un UserGroup de test (donnée
+   `capability_assignments` — le geste UI arrive en 35.4).
+2. Session d'un membre du groupe : le compagnon écrit le flag
+   `HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer!DisallowRun = 1`
+   (type `registry`) ET les entrées `…\Policies\Explorer\DisallowRun\1..5`
+   (powershell.exe, powershell_ise.exe, pwsh.exe, mstsc.exe, cmd.exe — type `registry_list`).
+3. ⚠️ Effet au LOGON SUIVANT (DisallowRun est lu par l'Explorer au logon — mémoire
+   projet) : après relogon, cmd.exe/powershell.exe lancés depuis l'Explorer sont refusés
+   (« restrictions en vigueur ») ; les scripts .bat restent exécutables (iso-intention
+   CD95 : cmd.exe remplace DisableCMD).
+4. Passer l'override à `off` : flag SUPPRIMÉ (ensure:absent) + entrées 1..5 PURGÉES
+   (values: []) — après relogon, tout relance normalement. `unmanaged` : plus rien n'est
+   émis, l'état en place n'est plus géré.
+
+### Scénario 35.2.5 — Piège binaire antérieur : SILENCE (lab Windows — ACTION HUMAINE Henri)
+
+1. Sur un poste resté en agent ≤ 2.3.0 : un item `registry_list` est ignoré EN SILENCE
+   (contrat §8 — AUCUN statut au rapport, AUCUNE erreur visible). Symptôme : « réglage
+   sans effet, zéro erreur » — plus sournois que 35.1 (qui rendait un `error` visible).
+2. Publier la release **2.4.0** (update.sh ne publie JAMAIS seul) puis re-vérifier : le
+   type apparaît au rapport (`agent_resource_states(poste, 'registry_list')`, une ligne —
+   dual-scope fusionné par type, pire statut).
+
+### Scénario 35.2.6 — Garde-fou d'authoring + name "" (revue de code + tests)
+
+1. `CapabilitySpecCollisionGuard` : une clé-conteneur registry_list ciblée AUSSI par un
+   scalaire registry ⇒ violation explicite (capacités + conteneur nommés) — invariant
+   `no_container_is_targeted_by_both_registry_scalar_and_registry_list` sur les données
+   seedées ; le couple parent/enfant de blocked_executables est prouvé NON-collision.
+2. `name: ""` (valeur par défaut d'une clé, §7.1) : accepté par `parseRegistrySpec`
+   (la clé `name` doit être PRÉSENTE ; absence = enveloppe invalide) et par le provider
+   PHP — Get/Set/DeleteValue("") ciblent nativement `(Default)`. Consommé par 35.5.
+
+### Checklist rapide (Story 35.2)
+
+- [ ] 35.2.1 — Migration seed jouée sur /vm ; les 2 capacités visibles, opt-in.
+- [ ] 35.2.2 — `/state` : conteneurs 4 clés exactes (Chrome id seul, Edge id;url).
+- [ ] 35.2.3 — Convergence 1..N ordonnée ; surnuméraires + hors-canon supprimés ;
+      non-numériques et clé-conteneur INTACTES ; extension Pix forcée.
+- [ ] 35.2.4 — Bi-projection on/off élèves : flag + 5 entrées ; effet au relogon ;
+      off = flag supprimé + entrées purgées.
+- [ ] 35.2.5 — Binaire ≤ 2.3.0 : SILENCE (pas d'erreur) → release 2.4.0 publiée.
+- [ ] 35.2.6 — Garde-fou collision vert sur le catalogue ; name "" accepté bout en bout.
+- [ ] Golden : `state.v1.json` +1 item registry_list machine, hashes figés JUMEAUX
+      PHP↔Go recalculés (`fe8eb6ea…`) ; `report.v1.json` INCHANGÉ (aucun payload au
+      rapport ; type accepté via Rule::in(RESOURCE_TYPES)).

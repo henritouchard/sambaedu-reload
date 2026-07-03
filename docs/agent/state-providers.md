@@ -540,6 +540,61 @@ SZ/EXPAND_SZ→chaîne) pour le contrat §4.1 (**zéro float**).
   (sous-type `registry:machine`/`registry:session` ou portée au rapport) lèverait
   la limite.
 
+### `registry_list` — `exclusive` PAR CLÉ-CONTENEUR / `machine` + `session`
+
+Story 35.2 (contrat §7.6) — listes registre à **sous-valeurs indexées** `\1..\N`
+(policies Windows type `ExtensionInstallForcelist`, `DisallowRun`), hors
+d'atteinte du mécanisme `registry` (item à `name` fixe, rien ne réconcilie les
+entrées surnuméraires). Même modèle capability-first que `registry` : la table
+d'authoring est `capabilities`, la liste est UNE projection
+(`capability_projections.mechanism = registry_list`).
+
+- **Bi-projection (D5).** L'unique `(capability_id, os, mechanism)` autorise
+  une capacité à porter `registry` ET `registry_list` sur le même OS —
+  `blocked_executables` inaugure : flag `…\Policies\Explorer!DisallowRun = 1`
+  (registry) + entrées `…\Policies\Explorer\DisallowRun\1..N` (registry_list).
+  Chaque provider ne voit que SA projection (`itemsFor()` filtre par mécanisme).
+- **Interpréteur de `spec`.** `spec = { "keys": [ {hive, path, entry_type,
+  values}, … ] }` ; `values` = littéral LISTE (toujours émis) ou map
+  valeur-capacité → liste (clé absente ⇒ UNMANAGED ⇒ conteneur non émis).
+  **Liste vide `[]` = vraie valeur** (« purger les entrées numérotées », le
+  « off » honnête d'une liste) — le marqueur `$ensure` de 35.1 n'existe PAS en
+  registry_list (forme assoc résolue ⇒ non émis défensif). `entry_type ∈
+  REG_SZ | REG_EXPAND_SZ` (défaut REG_SZ ; hors contrat ⇒ non émis). Payload
+  émis = EXACTEMENT `{hive, path, entry_type, values: list<string>}` — jamais
+  de `name`, jamais d'id de capacité, zéro float.
+- **DEUX providers, UN handler Go.** `RegistryListMachineCapabilityProvider`
+  (HKLM, `scope=Machine`, SYSTEM) et `RegistryListUserCapabilityProvider`
+  (HKCU, `scope=Session`, compagnon) — mêmes casiers que `registry`, logique
+  commune dans `AbstractRegistryListCapabilityProvider` (généralisation
+  minimale de `AbstractCapabilityStateProvider` : `mechanism()` paramétré,
+  `expand()` surchargé — le mécanisme `registry` reste byte-identique).
+- **Exclusive PAR CLÉ-CONTENEUR** (`exclusiveKey = {hive|path}` minuscules,
+  2 segments — jamais de `name`) : la maille la plus spécifique gagne la
+  clé-conteneur **ENTIÈRE** par la précédence existante du `StateCompiler`
+  (INTOUCHÉ, D2) — **jamais d'union/fusion de listes entre mailles** ; les
+  conteneurs distincts s'accumulent.
+- **Réconciliation D3 côté agent** (`RegistryListHandler`, op additif
+  `RegistryOps.ValueNames`) : l'agent POSSÈDE les valeurs au nom NUMÉRIQUE
+  (`^[0-9]+$`) de la clé-conteneur — écrit `"1".."N"` dans l'ordre, supprime
+  les noms numériques hors canon strconv (`"01" ≠ "1"`, comparaison stricte).
+  Jamais une valeur à nom non numérique, jamais la clé-conteneur elle-même
+  (liste vide = purge des seules entrées numérotées). Changement effectif HKCU
+  ⇒ rafraîchissement shell (même gate que registry ; `DisallowRun` est lu par
+  l'Explorer au logon SUIVANT).
+- **Garde-fou d'authoring** (`CapabilitySpecCollisionGuard`, service pur +
+  invariant `CapabilitiesSchemaAndSeedTest`) : une clé-conteneur ciblée à la
+  fois par un scalaire `registry` et un `registry_list` est REFUSÉE (les
+  `exclusiveKey` sont incomparables, le compilateur ne peut pas arbitrer).
+  Parent/enfant (`…\Explorer` vs `…\Explorer\DisallowRun`) ≠ collision.
+- **`registry_list` machine + session collapsé en UNE ligne d'état serveur** —
+  même mécanique (et mêmes limites) que `registry` : fusion par type au
+  rapport (`MergeReportItemsByType`, pire statut), ingestion
+  `agent_resource_states(poste, 'registry_list')`.
+- **⚠️ Binaire antérieur = silence.** Un agent ≤ 2.3.0 IGNORE le type (contrat
+  §8, aucun statut au rapport, aucune erreur) — publier la release **2.4.0**
+  (update.sh ne publie jamais seul).
+
 ### `associations` — `exclusive` PAR IDENTIFIANT / `session`
 
 Successeur natif du volet poste `associations.ps1`/`SFTA.ps1` (le canal legacy

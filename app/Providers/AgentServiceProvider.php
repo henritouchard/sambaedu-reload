@@ -16,6 +16,8 @@ use App\Services\Agent\Providers\DrivesStateProvider;
 use App\Services\Agent\Providers\OverlayMachineStateProvider;
 use App\Services\Agent\Providers\OverlayStateProvider;
 use App\Services\Agent\Providers\PrintersStateProvider;
+use App\Services\Agent\Providers\RegistryListMachineCapabilityProvider;
+use App\Services\Agent\Providers\RegistryListUserCapabilityProvider;
 use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
 use App\Services\Agent\Providers\RegistryUserCapabilityProvider;
 use App\Services\Agent\Providers\ShortcutsStateProvider;
@@ -201,6 +203,22 @@ class AgentServiceProvider extends ServiceProvider
                 // suffit). Remplace Registry{Machine,User}StateProvider (retirés).
                 $app->make(RegistryMachineCapabilityProvider::class),
                 $app->make(RegistryUserCapabilityProvider::class),
+                // Story 35.2 — type `registry_list` (exclusive PAR CLÉ-CONTENEUR,
+                // contrat §7.6) : listes registre à sous-valeurs indexées `\1..\N`
+                // (Forcelist Chrome/Edge, DisallowRun). Même modèle capability-first
+                // que `registry` (projection `capability_projections.mechanism =
+                // registry_list`, bi-projection D5 admise), mais l'agent POSSÈDE la
+                // clé-conteneur (D3 : écrit `1..N`, supprime les noms numériques
+                // hors canon). `exclusiveKey() = {hive|path}` (2 segments) : la
+                // maille la plus spécifique gagne le conteneur ENTIER — jamais
+                // d'union de listes entre mailles, StateCompiler INTOUCHÉ (D2).
+                // DEUX providers, UN handler Go `registry_list` : HKLM → portée
+                // machine (SYSTEM), HKCU → portée session (compagnon). Le canal
+                // amont (UpstreamLockCollisionDetector / RegistryUpstreamAdapter)
+                // reste registry-only — aucun adaptateur ajouté. Deux lignes, zéro
+                // modif du compilateur.
+                $app->make(RegistryListMachineCapabilityProvider::class),
+                $app->make(RegistryListUserCapabilityProvider::class),
                 // Story 27.3bis — type `associations` (exclusive PAR IDENTIFIANT,
                 // portée session/compagnon HKCU) : catalogue d'associations de
                 // fichiers/protocoles par défaut activables par parc, compilées

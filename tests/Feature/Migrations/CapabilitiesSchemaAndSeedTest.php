@@ -167,6 +167,9 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         // marqueur `{"$ensure": "absent"}` (l'agent supprime la valeur nommée,
         // Windows reprend son défaut). Chaque clé porte donc une map avec `on`
         // ET un `off` valide (valeur réelle ou marqueur).
+        // Story 35.2 : invariant ÉTENDU au mécanisme `registry_list` — un off
+        // valide y est une LISTE (y compris VIDE : purge des entrées numérotées,
+        // le « off » honnête d'une liste) ; le marqueur $ensure n'y existe pas.
         $withOff = [
             'windows_consumer_features_off',
             'offline_files_disabled',
@@ -181,22 +184,45 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             // vrai off par suppression.
             'llmnr_disabled',
             'windows_updates_managed',
+            // Lot 35.2 : off combiné = flag supprimé (registry, marqueur) +
+            // entrées purgées (registry_list, liste vide).
+            'blocked_executables',
         ];
 
         foreach ($withOff as $key) {
             $cap = Capability::query()->where('key', $key)->firstOrFail();
             self::assertContains('off', $cap->allowedOptionValues(), "{$key} propose off");
-            foreach ($cap->projections()->firstOrFail()->spec['keys'] as $regKey) {
-                self::assertArrayHasKey('on', $regKey['value'], "{$key}/{$regKey['name']} a une valeur on");
-                self::assertArrayHasKey('off', $regKey['value'], "{$key}/{$regKey['name']} a un off (pas un no-op)");
 
-                $off = $regKey['value']['off'];
-                $isRealValue = is_scalar($off);
-                $isEnsureMarker = is_array($off) && ($off['$ensure'] ?? null) === 'absent';
-                self::assertTrue(
-                    $isRealValue || $isEnsureMarker,
-                    "{$key}/{$regKey['name']} : off doit être une valeur réelle OU le marqueur \$ensure",
-                );
+            $projections = $cap->projections()->where('os', 'windows')->get();
+            self::assertNotEmpty($projections, "{$key} a au moins une projection windows");
+
+            foreach ($projections as $projection) {
+                foreach ($projection->spec['keys'] as $regKey) {
+                    if ($projection->mechanism === CapabilityProjection::MECHANISM_REGISTRY_LIST) {
+                        $label = "{$key}/{$regKey['path']}";
+                        self::assertArrayHasKey('on', $regKey['values'], "{$label} a une liste on");
+                        self::assertArrayHasKey('off', $regKey['values'], "{$label} a un off (pas un no-op)");
+
+                        $off = $regKey['values']['off'];
+                        self::assertTrue(
+                            is_array($off) && array_is_list($off),
+                            "{$label} : off doit être une LISTE (y compris vide = purge), jamais \$ensure",
+                        );
+
+                        continue;
+                    }
+
+                    self::assertArrayHasKey('on', $regKey['value'], "{$key}/{$regKey['name']} a une valeur on");
+                    self::assertArrayHasKey('off', $regKey['value'], "{$key}/{$regKey['name']} a un off (pas un no-op)");
+
+                    $off = $regKey['value']['off'];
+                    $isRealValue = is_scalar($off);
+                    $isEnsureMarker = is_array($off) && ($off['$ensure'] ?? null) === 'absent';
+                    self::assertTrue(
+                        $isRealValue || $isEnsureMarker,
+                        "{$key}/{$regKey['name']} : off doit être une valeur réelle OU le marqueur \$ensure",
+                    );
+                }
             }
         }
     }
@@ -375,5 +401,382 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         // (point-and-print) EXCLUS du lot MVP.
         self::assertNull(Capability::query()->where('key', 'windows_telemetry_off')->first());
         self::assertNull(Capability::query()->where('key', 'printers_point_and_print')->first());
+    }
+
+    // ── Story 35.2 (AC5) — lot registry_list : pix + blocked_executables ──
+
+    #[Test]
+    public function pix_extension_forced_is_seeded_with_one_registry_list_projection(): void
+    {
+        $cap = Capability::query()->where('key', 'pix_extension_forced')->firstOrFail();
+
+        self::assertSame('unmanaged', $cap->default_value, 'opt-in : rien en broadcast');
+        self::assertSame(['unmanaged', 'on'], $cap->allowedOptionValues());
+        self::assertSame('Non géré', $cap->optionLabel('unmanaged'));
+        self::assertSame('Forcée', $cap->optionLabel('on'));
+        self::assertSame(['windows'], $cap->applies_to_os);
+
+        // UNE seule projection : registry_list (pas de bi-projection ici).
+        $projections = $cap->projections()->where('os', 'windows')->get();
+        self::assertCount(1, $projections);
+        self::assertSame(CapabilityProjection::MECHANISM_REGISTRY_LIST, $projections[0]->mechanism);
+
+        // DEUX conteneurs HKLM (Chrome + Edge), entry_type REG_SZ, valeurs
+        // iso-GPO CD95 : Chrome = id SEUL, Edge = id;update_url CRX.
+        $keys = $projections[0]->spec['keys'];
+        self::assertCount(2, $keys);
+        self::assertSame('HKLM', $keys[0]['hive']);
+        self::assertSame('SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallForcelist', $keys[0]['path']);
+        self::assertSame('REG_SZ', $keys[0]['entry_type']);
+        self::assertSame(['pgpjajcmfbfdmcgjlbiengidaknopaok'], $keys[0]['values']['on']);
+        self::assertSame('HKLM', $keys[1]['hive']);
+        self::assertSame('SOFTWARE\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist', $keys[1]['path']);
+        self::assertSame(
+            ['pgpjajcmfbfdmcgjlbiengidaknopaok;https://clients2.google.com/service/update2/crx'],
+            $keys[1]['values']['on'],
+        );
+    }
+
+    #[Test]
+    public function blocked_executables_is_seeded_as_the_first_bi_projection_capability(): void
+    {
+        $cap = Capability::query()->where('key', 'blocked_executables')->firstOrFail();
+
+        self::assertSame('unmanaged', $cap->default_value, 'opt-in : la cible métier est un override UserGroup élèves (armement = donnée/35.4)');
+        self::assertSame(['unmanaged', 'on', 'off'], $cap->allowedOptionValues());
+        self::assertSame('Non géré', $cap->optionLabel('unmanaged'), 'réservé à la sentinelle');
+        self::assertSame('Activé', $cap->optionLabel('on'));
+        self::assertSame('Désactivé (valeurs supprimées)', $cap->optionLabel('off'));
+
+        // Bi-projection D5 : DEUX lignes windows, mécanismes distincts.
+        $projections = $cap->projections()->where('os', 'windows')->orderBy('mechanism')->get();
+        self::assertCount(2, $projections, 'bi-projection = 2 lignes (registry + registry_list)');
+        self::assertSame(
+            [CapabilityProjection::MECHANISM_REGISTRY, CapabilityProjection::MECHANISM_REGISTRY_LIST],
+            $projections->pluck('mechanism')->all(),
+        );
+
+        // Flag registry : tree restrictions user-writable (PAS HKCU\Software\
+        // Policies), on=1, off=marqueur de suppression 35.1.
+        $flag = $projections[0]->spec['keys'][0];
+        self::assertSame('HKCU', $flag['hive']);
+        self::assertSame('Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer', $flag['path']);
+        self::assertSame('DisallowRun', $flag['name']);
+        self::assertSame('REG_DWORD', $flag['type']);
+        self::assertSame(1, $flag['value']['on']);
+        self::assertSame(['$ensure' => 'absent'], $flag['value']['off']);
+
+        // Conteneur registry_list : les 5 entrées ORDONNÉES (cmd.exe remplace
+        // DisableCMD, iso-intention CD95), off = purge (liste vide).
+        $container = $projections[1]->spec['keys'][0];
+        self::assertSame('HKCU', $container['hive']);
+        self::assertSame('Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\\DisallowRun', $container['path']);
+        self::assertSame('REG_SZ', $container['entry_type']);
+        self::assertSame(
+            ['powershell.exe', 'powershell_ise.exe', 'pwsh.exe', 'mstsc.exe', 'cmd.exe'],
+            $container['values']['on'],
+            'ordre significatif préservé',
+        );
+        self::assertSame([], $container['values']['off'], 'off = purge des entrées numérotées');
+    }
+
+    #[Test]
+    public function registry_list_lot_migration_is_idempotent_and_reversible(): void
+    {
+        $migration = require database_path('migrations/2026_07_03_110000_seed_capabilities_registry_list_lot.php');
+
+        $snapshot = fn (): array => Capability::query()
+            ->whereIn('key', ['pix_extension_forced', 'blocked_executables'])
+            ->orderBy('key')
+            ->get()
+            ->map(fn (Capability $c): array => [
+                'options' => $c->options,
+                'specs' => $c->projections()->orderBy('mechanism')->pluck('spec')->all(),
+            ])
+            ->all();
+
+        // up() déjà joué par RefreshDatabase → rejouer = aucun effet de bord.
+        $before = $snapshot();
+        self::assertCount(2, $before);
+        $migration->up();
+        self::assertSame($before, $snapshot(), 'up() rejoué = idempotent');
+
+        // down() retire les 2 capacités (cascade projections/assignments)…
+        $migration->down();
+        self::assertSame([], $snapshot());
+
+        // …et up() les re-seed à l'identique.
+        $migration->up();
+        self::assertSame($before, $snapshot(), 'up() après down() = état identique');
+    }
+
+    // ── Story 35.2 (AC3) — garde-fou d'authoring scalaire↔conteneur ────────
+
+    /**
+     * Projections windows du catalogue RÉELLEMENT seedé, au format du garde-fou.
+     *
+     * @return list<array{capability:string, mechanism:string, spec:mixed}>
+     */
+    private function seededWindowsProjections(): array
+    {
+        return CapabilityProjection::query()
+            ->where('os', 'windows')
+            ->whereIn('mechanism', [
+                CapabilityProjection::MECHANISM_REGISTRY,
+                CapabilityProjection::MECHANISM_REGISTRY_LIST,
+            ])
+            ->with('capability')
+            ->get()
+            ->map(fn (CapabilityProjection $p): array => [
+                'capability' => (string) $p->capability->key,
+                'mechanism' => (string) $p->mechanism,
+                'spec' => $p->spec,
+            ])
+            ->all();
+    }
+
+    #[Test]
+    public function no_container_is_targeted_by_both_registry_scalar_and_registry_list(): void
+    {
+        // AC3 — invariant sur les DONNÉES RÉELLEMENT SEEDÉES (authoring
+        // catalogue-first) : aucune clé-conteneur registry_list n'est aussi la
+        // clé d'un scalaire registry ; entry_type et values bien formés partout.
+        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+
+        self::assertSame(
+            [],
+            $guard->violations($this->seededWindowsProjections()),
+            'le catalogue seedé ne doit porter AUCUNE violation d\'authoring registre',
+        );
+    }
+
+    #[Test]
+    public function blocked_executables_parent_flag_vs_child_container_is_not_a_collision(): void
+    {
+        // AC3 (cas nominal, piège n°11) : le flag `…\Policies\Explorer` (name
+        // DisallowRun) et le conteneur `…\Policies\Explorer\DisallowRun` sont
+        // des paths PARENT/ENFANT distincts → PAS une collision. Prouvé sur le
+        // sous-ensemble blocked_executables seul.
+        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+
+        $blocked = array_values(array_filter(
+            $this->seededWindowsProjections(),
+            static fn (array $p): bool => $p['capability'] === 'blocked_executables',
+        ));
+        self::assertCount(2, $blocked, 'bi-projection présente');
+        self::assertSame([], $guard->violations($blocked), 'parent/enfant ≠ collision');
+    }
+
+    #[Test]
+    public function guard_refuses_a_scalar_key_equal_to_a_list_container(): void
+    {
+        // AC3 (cas refusé) : un scalaire dont le path ÉGALE le conteneur (peu
+        // importe son name — il vivrait DANS la clé possédée par l'agent) est
+        // une violation explicite nommant les deux capacités et le conteneur.
+        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+
+        $violations = $guard->violations([
+            [
+                'capability' => 'blocked_executables',
+                'mechanism' => 'registry_list',
+                'spec' => ['keys' => [[
+                    'hive' => 'HKCU',
+                    'path' => 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\\DisallowRun',
+                    'entry_type' => 'REG_SZ',
+                    'values' => ['on' => ['cmd.exe']],
+                ]]],
+            ],
+            [
+                'capability' => 'rogue_scalar_cap',
+                'mechanism' => 'registry',
+                'spec' => ['keys' => [[
+                    // MÊME clé que le conteneur (casse différente : identité
+                    // normalisée), name numérique — vivrait DANS la clé possédée.
+                    'hive' => 'hkcu',
+                    'path' => 'software\\microsoft\\windows\\currentversion\\policies\\explorer\\disallowrun',
+                    'name' => '6',
+                    'type' => 'REG_SZ',
+                    'value' => ['on' => 'rogue.exe'],
+                ]]],
+            ],
+        ]);
+
+        self::assertCount(1, $violations);
+        self::assertStringContainsString('blocked_executables', $violations[0]);
+        self::assertStringContainsString('rogue_scalar_cap', $violations[0]);
+        self::assertStringContainsString('disallowrun', $violations[0]);
+    }
+
+    #[Test]
+    public function guard_reports_malformed_entry_type_and_values(): void
+    {
+        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+
+        $violations = $guard->violations([
+            [
+                'capability' => 'bad_list_cap',
+                'mechanism' => 'registry_list',
+                'spec' => ['keys' => [
+                    // entry_type hors contrat.
+                    ['hive' => 'HKLM', 'path' => 'SOFTWARE\\A', 'entry_type' => 'REG_DWORD', 'values' => ['on' => ['1']]],
+                    // map dont une valeur n'est pas une liste ($ensure interdit).
+                    ['hive' => 'HKLM', 'path' => 'SOFTWARE\\B', 'entry_type' => 'REG_SZ', 'values' => ['off' => ['$ensure' => 'absent']]],
+                    // littéral avec entrée non scalaire.
+                    ['hive' => 'HKLM', 'path' => 'SOFTWARE\\C', 'entry_type' => 'REG_SZ', 'values' => [['nested']]],
+                ]],
+            ],
+        ]);
+
+        self::assertCount(3, $violations);
+        self::assertStringContainsString("entry_type 'REG_DWORD' hors contrat", $violations[0]);
+        self::assertStringContainsString('$ensure', $violations[1]);
+        self::assertStringContainsString('non scalaire', $violations[2]);
+    }
+
+    #[Test]
+    public function guard_refuses_a_list_container_with_empty_hive_or_path(): void
+    {
+        // Review 35.2 #3 : un conteneur à hive/path vide passait l'authoring
+        // puis devenait {status: error} silencieux côté agent → refus AMONT.
+        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+
+        $violations = $guard->violations([
+            [
+                'capability' => 'empty_container_cap',
+                'mechanism' => 'registry_list',
+                'spec' => ['keys' => [
+                    ['hive' => '', 'path' => 'SOFTWARE\\A', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['1']]],
+                    ['hive' => 'HKLM', 'path' => '  ', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['1']]],
+                ]],
+            ],
+        ]);
+
+        self::assertCount(2, $violations);
+        self::assertStringContainsString('hive et path sont requis', $violations[0]);
+        self::assertStringContainsString('hive et path sont requis', $violations[1]);
+    }
+
+    // ── Story 35.2 (AC5) — intégration providers sur données RÉELLES ───────
+
+    #[Test]
+    public function pix_extension_forced_on_emits_two_hklm_registry_list_items(): void
+    {
+        // Chaîne seed→spec→expand→payload sur données réelles : un override de
+        // parc `on` fait émettre par le provider list MACHINE les 2 conteneurs
+        // Forcelist (Chrome + Edge), payload 4 clés, jamais d'id de capacité.
+        \App\Observers\WorkstationGroupObserver::disableSync();
+
+        try {
+            $ws = \App\Models\Workstation::factory()->create();
+            $parc = \App\Models\WorkstationGroup::factory()->logical()->create();
+            $ws->groups()->attach($parc->id);
+
+            $cap = Capability::query()->where('key', 'pix_extension_forced')->firstOrFail();
+            DB::table('capability_assignments')->insert([
+                'capability_id' => $cap->id,
+                'assignable_type' => \App\Models\WorkstationGroup::class,
+                'assignable_id' => $parc->id,
+                'value' => 'on',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $items = (new \App\Services\Agent\Providers\RegistryListMachineCapabilityProvider())
+                ->itemsFor(\App\Services\Agent\TargetContext::for($ws, null));
+
+            // Défaut unmanaged (sentinelle) : le Broadcast n'émet RIEN — seuls
+            // les 2 conteneurs de l'override existent.
+            self::assertCount(2, $items);
+            foreach ($items as $c) {
+                self::assertSame(\App\Enums\StateMaille::LogicalGroup, $c->maille);
+                self::assertSame(['hive', 'path', 'entry_type', 'values'], array_keys($c->payload));
+                self::assertSame('HKLM', $c->payload['hive']);
+            }
+            $byPath = $items->keyBy(fn ($c): string => $c->payload['path']);
+            self::assertSame(
+                ['pgpjajcmfbfdmcgjlbiengidaknopaok'],
+                $byPath['SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallForcelist']->payload['values'],
+            );
+            self::assertSame(
+                ['pgpjajcmfbfdmcgjlbiengidaknopaok;https://clients2.google.com/service/update2/crx'],
+                $byPath['SOFTWARE\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist']->payload['values'],
+            );
+        } finally {
+            \App\Observers\WorkstationGroupObserver::enableSync();
+        }
+    }
+
+    #[Test]
+    public function blocked_executables_bi_projection_emits_flag_and_list_per_provider(): void
+    {
+        // Bi-projection D5 sur données réelles : chaque provider User ne voit
+        // que SA projection — `on` ⇒ 1 flag (registry) + 1 conteneur 5 entrées
+        // (registry_list) ; `off` ⇒ 1 item ensure:absent + 1 conteneur values:[] ;
+        // `unmanaged` (défaut) ⇒ rien.
+        \App\Observers\WorkstationGroupObserver::disableSync();
+        \App\Observers\UserGroupObserver::disableSync();
+        \App\Observers\UserGroupUserPivotObserver::disableSync();
+
+        try {
+            $ws = \App\Models\Workstation::factory()->create();
+            $user = \App\Models\User::factory()->create();
+            $group = \App\Models\UserGroup::factory()->create();
+            $user->groups()->attach($group->id);
+
+            $cap = Capability::query()->where('key', 'blocked_executables')->firstOrFail();
+            $ctx = fn () => \App\Services\Agent\TargetContext::for($ws, $user);
+            $registryProvider = new \App\Services\Agent\Providers\RegistryUserCapabilityProvider();
+            $listProvider = new \App\Services\Agent\Providers\RegistryListUserCapabilityProvider();
+            $forCap = fn ($items) => $items->filter(
+                fn ($c): bool => (int) $c->sourceId === (int) $cap->id,
+            )->values();
+
+            // unmanaged (défaut, aucun override) ⇒ RIEN des deux providers.
+            self::assertCount(0, $forCap($registryProvider->itemsFor($ctx())));
+            self::assertCount(0, $forCap($listProvider->itemsFor($ctx())));
+
+            // Override UserGroup `on` (la cible métier — élèves).
+            DB::table('capability_assignments')->insert([
+                'capability_id' => $cap->id,
+                'assignable_type' => \App\Models\UserGroup::class,
+                'assignable_id' => $group->id,
+                'value' => 'on',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $flagItems = $forCap($registryProvider->itemsFor($ctx()));
+            self::assertCount(1, $flagItems, 'le provider registry ne voit que le flag');
+            self::assertSame(['hive', 'path', 'name', 'type', 'value'], array_keys($flagItems[0]->payload));
+            self::assertSame('DisallowRun', $flagItems[0]->payload['name']);
+            self::assertSame(1, $flagItems[0]->payload['value']);
+
+            $listItems = $forCap($listProvider->itemsFor($ctx()));
+            self::assertCount(1, $listItems, 'le provider list ne voit que le conteneur');
+            self::assertSame(['hive', 'path', 'entry_type', 'values'], array_keys($listItems[0]->payload));
+            self::assertSame(
+                ['powershell.exe', 'powershell_ise.exe', 'pwsh.exe', 'mstsc.exe', 'cmd.exe'],
+                $listItems[0]->payload['values'],
+                'les 5 entrées, ordre préservé',
+            );
+
+            // Override `off` ⇒ action combinée : flag SUPPRIMÉ + entrées PURGÉES.
+            DB::table('capability_assignments')
+                ->where('capability_id', $cap->id)
+                ->update(['value' => 'off']);
+
+            $flagOff = $forCap($registryProvider->itemsFor($ctx()));
+            self::assertCount(1, $flagOff);
+            self::assertSame(['hive', 'path', 'name', 'ensure'], array_keys($flagOff[0]->payload));
+            self::assertSame('absent', $flagOff[0]->payload['ensure']);
+
+            $listOff = $forCap($listProvider->itemsFor($ctx()));
+            self::assertCount(1, $listOff);
+            self::assertSame([], $listOff[0]->payload['values'], 'off = purge (liste vide)');
+        } finally {
+            \App\Observers\WorkstationGroupObserver::enableSync();
+            \App\Observers\UserGroupObserver::enableSync();
+            \App\Observers\UserGroupUserPivotObserver::enableSync();
+        }
     }
 }

@@ -32,6 +32,9 @@ var ContractScopes = []string{"machine", "session", "machine_user"}
 var ResourceTypes = []string{
 	"wallpaper", "lockscreen", "overlay", "shortcuts", "printers", "drives",
 	"associations", "registry", "app_config", "applications",
+	// Story 35.2 (D1) — listes registre à sous-valeurs indexées `\1..\N`
+	// (réconciliation de clé-conteneur D3, contrat §7.6). Ajout ADDITIF.
+	"registry_list",
 }
 
 // ResourceStatuses : statuts de conformité du rapport (§6 — iso

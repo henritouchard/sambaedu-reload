@@ -237,7 +237,8 @@ nouvel identifiant, jamais renommer en place.
 Identifiants prévus :
 
 `wallpaper`, `lockscreen`, `overlay`, `shortcuts`, `printers`, `drives`,
-`associations`, `registry`, `app_config`, `applications`.
+`associations`, `registry`, `app_config`, `applications`, `registry_list`
+(Story 35.2, cf. §7.6).
 
 ### 7.1 Payload `registry`
 
@@ -264,7 +265,7 @@ clés distinctes s'accumulent). Le payload porte un item de registre **CONCRET**
 |---|---|---|
 | `hive` | string | `HKLM` (portée machine, service SYSTEM) \| `HKCU` (portée session, compagnon). |
 | `path` | string | Chemin de clé sous la ruche (backslashes échappés en JSON). |
-| `name` | string | Nom de la valeur de registre. |
+| `name` | string | Nom de la valeur de registre. **`""` (chaîne vide) est un nom LÉGITIME** : la valeur **par défaut** de la clé (`(Default)` dans regedit) — Story 35.2 (besoin 35.5, ex. `HKCU\Software\Classes\Applications\photoviewer.dll\shell\open\command`). La clé `name` doit toujours être **présente** dans le payload (absence = enveloppe invalide) ; c'est le comportement documenté des API registre (`RegQueryValueEx`/`RegSetValueEx`/`RegDeleteValue` avec un nom vide ciblent la valeur par défaut, relayé tel quel par `golang.org/x/sys/windows/registry`). |
 | `type` | string | `REG_SZ` \| `REG_DWORD` \| `REG_EXPAND_SZ` \| `REG_MULTI_SZ` \| `REG_QWORD`. |
 | `value` | int \| string \| list&lt;string&gt; | Valeur cible TYPÉE : `REG_DWORD`/`REG_QWORD` → **entier** (zéro float, §4.1) ; `REG_SZ`/`REG_EXPAND_SZ` → **string** ; `REG_MULTI_SZ` → **liste de strings** (jamais `{}` — §4.1). Absent sur un item `ensure: "absent"`. |
 | `ensure` | string (**optionnel**) | `present` \| `absent`. **Absence du champ = `present`** (rétro-compatible §9). `absent` = l'agent **supprime la valeur nommée** si elle existe (jamais la clé-conteneur). Le serveur n'émet **JAMAIS** `ensure: "present"` explicitement — un item d'écriture reste EXACTEMENT 5 clés (byte-identité des payloads existants). |
@@ -581,6 +582,75 @@ local de l'asset). Idempotent ; `asset: null` = no-op compliant.
 > a pas d'utilisateur au verrouillage. C'est la restriction « niveaux 1-3 » que
 > le résolveur legacy appliquait déjà au lockscreen.
 
+### 7.6 Payload `registry_list`
+
+Type `registry_list` (Story 35.2) — listes registre à **sous-valeurs indexées**
+`\1..\N` (policies Windows type `ExtensionInstallForcelist`, `DisallowRun`).
+Sémantique **`exclusive` PAR CLÉ-CONTENEUR** : une clé-conteneur = UNE liste ;
+la maille la plus spécifique gagne la clé-conteneur **ENTIÈRE** (jamais
+d'union/fusion de listes entre mailles), les conteneurs distincts s'accumulent.
+Portées : `machine` (HKLM, service SYSTEM) et `session` (HKCU, compagnon) —
+mêmes casiers que `registry`.
+
+```json
+{
+  "type": "registry_list",
+  "semantics": "exclusive",
+  "payload": {
+    "hive": "HKLM",
+    "path": "SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallForcelist",
+    "entry_type": "REG_SZ",
+    "values": ["pgpjajcmfbfdmcgjlbiengidaknopaok"]
+  },
+  "hash": "e0a9c51e…0e9b0759"
+}
+```
+
+Le payload porte **EXACTEMENT 4 clés** — jamais de `name`, jamais d'id de
+capacité, zéro float (§4.1) :
+
+| Clé | Type JSON | Sens |
+|---|---|---|
+| `hive` | string | `HKLM` (portée machine) \| `HKCU` (portée session). |
+| `path` | string | Chemin de la **clé-conteneur** sous la ruche (la clé dont les sous-valeurs `1..N` sont la liste). |
+| `entry_type` | string | Type des entrées : `REG_SZ` \| `REG_EXPAND_SZ` **uniquement** (les listes indexées Windows sont des chaînes — borné par le contrat). |
+| `values` | list&lt;string&gt; | Liste **ORDONNÉE** de chaînes. L'ordre est **porteur de sens** : la canonicalisation du hash ne trie pas les listes (§4) — le même contenu dans un autre ordre est un autre hash. **`[]` (liste vide) est une vraie valeur** : « purger toutes les entrées numérotées » (le « off » honnête d'une liste). |
+
+**Sémantique de réconciliation (D3 — l'agent POSSÈDE la clé-conteneur) :**
+
+- L'agent possède, dans la clé-conteneur, les valeurs dont le **nom est
+  composé uniquement de chiffres** (`^[0-9]+$`). Canon = `"1".."N"`
+  (`strconv.Itoa`) : `"01"`, `"007"`, `"12"` hors canon sont **SUPPRIMÉS**
+  (comparaison de chaînes STRICTE — `"01" ≠ "1"`).
+- `Apply` écrit les valeurs nommées `"1".."N"` dans l'ordre de `values`
+  (Kind = `entry_type`, création de la clé au besoin), puis supprime toute
+  autre valeur **au nom numérique** de la clé.
+- Les valeurs à nom **NON numérique** de la même clé ne sont **JAMAIS
+  touchées** ; la clé-conteneur elle-même n'est **JAMAIS supprimée** (même à
+  liste vide — des valeurs voisines non gérées peuvent y vivre).
+- `values: []` ⇒ conforme ssi aucune valeur au nom numérique n'existe (clé
+  absente = conforme) ; sinon purge des entrées numérotées.
+- Une valeur numérotée existante d'un **type hors contrat** (REG_BINARY, … —
+  sentinelle `REG_UNSUPPORTED` de `Read`) est **présente et divergente** :
+  réécrite au `entry_type` cible si elle est dans le canon, supprimée sinon.
+- Policy **STRICT** (§5) : entrée surnuméraire (ré)apparue ⇒ `drift` +
+  suppression au cycle. Verdict **PAR TYPE** (grain 27.8) : un statut pour le
+  type `registry_list`, dual-scope fusionné par type au rapport (pire statut).
+
+> **`registry` scalaire vs `registry_list` : jamais la même clé-conteneur.**
+> Les deux types ont des `exclusiveKey()` incomparables (`{hive|path|name}` vs
+> `{hive|path}`) — le compilateur ne peut PAS arbitrer une collision. La
+> validation d'authoring serveur REFUSE une clé-conteneur ciblée à la fois par
+> un item `registry` scalaire et un `registry_list` (garde-fou 35.2). Un flag
+> voisin dans la clé **PARENTE** (ex. `…\Policies\Explorer!DisallowRun` = flag,
+> `…\Policies\Explorer\DisallowRun` = conteneur) n'est PAS une collision
+> (paths distincts parent/enfant).
+
+> **Agents antérieurs à 2.4.0** : un type inconnu est **ignoré EN SILENCE**
+> (§8 — aucun statut au rapport, aucune erreur visible). Symptôme « réglage
+> sans effet, zéro erreur » → la release 2.4.0 DOIT être publiée (update.sh ne
+> publie jamais seul).
+
 ## 8. Tableau vide ≠ type absent (décision de contrat)
 
 Les items d'une portée sont une **liste**, pas une map. La distinction
@@ -606,6 +676,12 @@ décision de contrat consommée par chaque handler côté agent.
   justification, agent bumpé 2.3.0. Cas limite assumé : un agent ANTÉRIEUR ne
   peut pas « ignorer » un item `absent` (pas de `value` à écrire) → parse en
   `{status: error}` isolé sur le type `registry`, d'où publication de release.
+- **Type ajouté** → version **mineure** aussi (constante `RESOURCE_TYPES`
+  additive, `ReportRequest` suit). Ex. Story 35.2 : type `registry_list`
+  (§7.6), golden bumpé avec justification, agent bumpé 2.4.0. ⚠️ Contrairement
+  au champ ajouté, un agent ANTÉRIEUR **ignore un type inconnu EN SILENCE**
+  (§8 : type sans handler = aucun statut émis) — « réglage sans effet, zéro
+  erreur ». La publication de la release n'est pas optionnelle.
 - **Champ retiré / renommé** OU **sémantique changée** → version **MAJEURE**
   (`se5.desired-state/v2`). L'agent **refuse un major inconnu**.
 - Toute évolution = **mise à jour des golden files + bump de version explicite**.
