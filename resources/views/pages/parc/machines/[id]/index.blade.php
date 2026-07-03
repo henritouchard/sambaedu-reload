@@ -359,6 +359,16 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         return app(ConformityService::class)->recentEventsFor($this->workstation, 10);
     }
 
+    /**
+     * Version stable publiée du binaire agent (`agent_releases.is_stable`,
+     * au plus une ligne — invariant 25.1). Null si aucune release publiée.
+     * Sert au badge « à jour » de l'onglet Agent.
+     */
+    public function getStableAgentVersionProperty(): ?string
+    {
+        return \App\Models\AgentRelease::query()->where('is_stable', true)->value('version');
+    }
+
     public function executeMachinePowerAction(string $action): void
     {
         // Guard review #14 (2026-04-20) : empêche de lancer une seconde action
@@ -1209,11 +1219,33 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                             </div>
                         </div>
                         @can('computer.control')
+                            {{-- Modale réutilisable plutôt que wire:confirm : sur un
+                                 checkbox, annuler wire:confirm bloque bien l'action
+                                 serveur mais laisse le toggle basculer visuellement
+                                 (livewire#8424). @click.prevent fige le visuel : seul
+                                 le re-render post-confirmation le fait changer. --}}
+                            @php
+                                $debugConfirm = $workstation->debug
+                                    ? ['message' => 'Désactiver le mode debug de ce poste ?', 'confirm' => 'Désactiver']
+                                    : ['message' => 'Activer le mode debug de ce poste ? La console agent restera visible et les logs WPKG passeront en mode verbeux.', 'confirm' => 'Activer'];
+                            @endphp
+                            {{-- wire:key dépendante de l'état : le morph remplace le
+                                 nœud au lieu de patcher l'attribut checked (que le
+                                 navigateur ne resynchronise pas avec la propriété
+                                 sur un checkbox déjà rendu). --}}
                             <input type="checkbox" class="toggle toggle-warning"
-                                wire:click="toggleDebugMode"
-                                wire:confirm="{{ $workstation->debug
-                                    ? 'Désactiver le mode debug de ce poste ?'
-                                    : 'Activer le mode debug de ce poste ? La console agent restera visible et les logs WPKG passeront en mode verbeux.' }}"
+                                wire:key="debug-toggle-{{ $workstation->debug ? 'on' : 'off' }}"
+                                x-data
+                                @click.prevent="$dispatch('open-confirm-modal', {
+                                    title: 'Mode debug',
+                                    message: @js($debugConfirm['message']),
+                                    confirmText: @js($debugConfirm['confirm']),
+                                    cancelText: 'Annuler',
+                                    variant: 'warning',
+                                    method: 'toggleDebugMode',
+                                    params: [],
+                                    wireId: @js($this->getId()),
+                                })"
                                 @checked($workstation->debug) />
                         @else
                             <input type="checkbox" class="toggle toggle-warning" @checked($workstation->debug) disabled />
@@ -1252,6 +1284,20 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 
                     @if ($workstation->isAgentEnrolled())
                         <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            <div>
+                                <span class="text-xs text-base-content/60 uppercase tracking-wide">Version de l'agent</span>
+                                <p class="font-medium mt-0.5"
+                                   @if ($workstation->agent_reported_version_at)
+                                       title="Rapportée le {{ $workstation->agent_reported_version_at->format('d/m/Y H:i') }}"
+                                   @endif>
+                                    {{ $workstation->agent_reported_version ?? '—' }}
+                                    @if ($workstation->agent_reported_version !== null
+                                        && $workstation->agent_reported_version === $this->stableAgentVersion)
+                                        <span class="badge badge-success badge-xs align-middle ml-1"
+                                              title="Version stable publiée">Stable</span>
+                                    @endif
+                                </p>
+                            </div>
                             <div>
                                 <span class="text-xs text-base-content/60 uppercase tracking-wide">Dernière rotation du token</span>
                                 <p class="font-medium mt-0.5">
