@@ -762,4 +762,23 @@ class GroupShowPageTest extends TestCase
         $this->assertNotNull($enrolled->refresh()->agent_sync_requested_at);
         $this->assertNull($machines[1]->refresh()->agent_sync_requested_at);
     }
+
+    // ─── Story 37.1 — Câblage de l'onglet « État cible » (review #1) ─────────
+
+    public function test_state_tab_wires_desired_state_component(): void
+    {
+        // Review #1 — `setTab('state')` autorisé (inconditionnel sur la page parc)
+        // + la directive @elseif ($tab === 'state') monte le SFC `desired-state-tab`
+        // du groupe. #[Lazy] ⇒ le rendu ne contient que le placeholder (titre NEUTRE
+        // « État cible » + squelette : le groupe n'y est pas chargé, review #5) —
+        // le câblage réel est exercé sans dépendre des tables raccourcis/apps.
+        [$group, ] = $this->makeGroupWithMachine();
+        $this->mockGroupService($group);
+
+        Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id])
+            ->call('setTab', 'state')
+            ->assertSet('tab', 'state')
+            ->assertSee('État cible')
+            ->assertSee('Chargement');
+    }
 }

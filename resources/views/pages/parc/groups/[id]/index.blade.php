@@ -1239,7 +1239,9 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         // Onglets capacités/associations (27.12/27.3bis) : gestes par
         // WorkstationGroup, réservés à app.customize — l'onglet n'est cliquable que
         // si la permission est accordée (sinon retombe sur « general »).
-        $allowed = ['general', 'wpkg'];
+        // Story 37.1 — onglet « État cible » : consultation pure, INCONDITIONNEL
+        // (aucun droit supplémentaire ; visible sous le gate de page existant).
+        $allowed = ['general', 'wpkg', 'state'];
         if (auth()->user()?->can('app.customize')) {
             $allowed[] = 'capabilities';
             $allowed[] = 'associations';
@@ -1997,6 +1999,13 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                     <i class="fa-solid fa-cube mr-2"></i>
                     Applications WPKG
                 </button>
+                {{-- Story 37.1 — État cible (contribution du parc + planchers). --}}
+                <button type="button" role="tab"
+                    class="tab {{ $tab === 'state' ? 'tab-active' : '' }}"
+                    wire:click="setTab('state')">
+                    <i class="fa-solid fa-bullseye mr-2"></i>
+                    État cible
+                </button>
                 @can('app.customize')
                     {{-- Story 27.12 — Options/Capacités par parc (registre = mécanisme caché). --}}
                     <button type="button" role="tab"
@@ -2058,6 +2067,11 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
             @elseif ($tab === 'associations')
                 {{-- Story 27.3bis — onglet associations par défaut, composant Livewire scopé au groupe. --}}
                 <livewire:pages::parc.groups._partials.associations-tab :group-id="$group->id" :key="'associations-tab-'.$group->id" />
+            @elseif ($tab === 'state')
+                {{-- Story 37.1 — onglet « État cible » scopé au groupe. Partial sous
+                     groups/[id]/_partials/ ⇒ inclusion via @livewire (crochets [id],
+                     piège #6). --}}
+                @livewire('pages::parc.groups.[id]._partials.desired-state-tab', ['groupId' => $group->id], key('state-'.$group->id))
             @else
                 @include('pages.parc.groups.[id]._partials.batch-summary')
                 @include('pages.parc.groups.[id]._partials.machines-list')

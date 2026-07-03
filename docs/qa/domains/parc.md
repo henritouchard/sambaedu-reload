@@ -424,3 +424,81 @@ direction / vie scolaire).
 - [ ] Validation options + warning confirmé ; gel refuse un nouvel override, override existant éditable (Scénario 5.3)
 - [ ] Délégué par-salle SEUL → 403 (pas de fuite 29.1) ; admin global OK ; verrou amont refusé (Scénario 5.4)
 - [ ] Audit `create`/`update`/`delete` complet + pas de trace fantôme, iso audit parc (Scénario 5.5)
+
+## Story 37.1 — Onglet « État cible » (raccourcis + applications + origine)
+
+Onglet **consultation pure** sur la fiche poste (`/parc/machines/{id}?tab=state`) et la
+page parc (`/parc/groups/{id}?tab=state`) : liste des raccourcis + applications
+résolus avec un **badge d'origine** par item (réglage propre, hérité parc/salle,
+socle commun, contrat amont, dépendance). Aucun formulaire, aucune mutation. La
+projection lit les MÊMES sources que les providers agent (`DesiredStateOriginService`,
+`WorkstationPackagesResolver::explainPackages()`) sans jamais toucher le pipeline
+agent (`StateCompiler`/providers/contrat v1 intacts).
+
+### Scénario 6.1 — Onglet État cible de la fiche poste
+
+1. Ouvrir la fiche d'un poste rattaché à un parc + une salle, avec au moins une app
+   directe, une app de parc, un raccourci de parc.
+2. Cliquer l'onglet **« État cible »** (icône cible). L'URL porte `?tab=state`
+   (deep-link : recharger l'URL rouvre directement l'onglet).
+3. Section **Raccourcis** : chaque raccourci actif (nom, cible, emplacement) avec son
+   badge d'origine. Vérifier la note de bas de section « Les raccourcis ciblés par
+   utilisateur ou groupe d'utilisateurs dépendent de la session… ».
+4. Section **Applications** : chaque app (nom + identifiant WPKG) avec son badge.
+5. Les badges « parc logique » (bleu, `fa-layer-group`) et « salle » (orange,
+   `fa-door-open`) sont des **liens** vers la page du groupe source.
+6. Un poste SANS salle/parc/assignation affiche « Aucun raccourci résolu » / « Aucune
+   application résolue » (pas d'erreur), avec les seuls items socle commun / amont
+   s'ils existent.
+
+### Scénario 6.2 — Origines exactes (badges)
+
+Vérifier, poste avec assignations mixtes, que le badge PRINCIPAL est :
+1. app directe poste (ou profil direct) → **Ce poste** (vert).
+2. app apportée par le parc X → lien vers le parc (bleu logique / orange salle).
+3. app tirée UNIQUEMENT comme dépendance WPKG → **Dépendance de <app parente>**.
+4. app `is_parc_default` sans autre rattachement → **Socle commun** (gris, tooltip
+   « configurable dans Réglages → Configuration par défaut du parc »).
+5. app ordonnée par contrat amont sans résolution locale → **Contrat amont** (verrou).
+6. item MULTI-ORIGINES (ex. app directe poste ET du parc X) → badge le plus spécifique
+   (**Ce poste**) + « +N » au survol listant les autres origines.
+
+### Scénario 6.3 — Onglet État cible de la page parc
+
+1. Ouvrir un parc portant des apps directes, des apps via profil, et un raccourci
+   assigné ; ouvrir l'onglet **« État cible »** (`?tab=state`, visible sans droit
+   supplémentaire).
+2. Encart d'intro : « contribution de ce parc… les réglages propres à chaque poste
+   membre sont visibles sur leur fiche ».
+3. Applications : apps directes → **Ce parc** ; apps de profils → **via profil X** ;
+   apps `is_parc_default` → **Socle commun** ; ordres d'install amont → **Contrat amont**.
+4. Raccourcis assignés au groupe → **Ce parc**.
+5. Salle physique vs parc logique : ouvrir une salle et un parc, vérifier que la
+   nature de l'origine (badge) est cohérente sur chacun.
+
+**Post-correctifs & non-régression** :
+- **Invariant byte-identique WPKG (AC3/AC5)** — `WorkstationPackagesResolverExplainTest`
+  (`array_keys(explainPackages($h)) == computePackages($h)->all()`, ordre compris) +
+  suite `WorkstationPackagesResolverTest` verte : le refactor `explainPackages()` ne
+  change PAS la sortie servie à l'agent (`StateEndpointTest`, `ApplicationsStateProviderTest`,
+  `ContractV1Test` intacts).
+- **Fidélité aux providers (AC3)** — `DesiredStateOriginServiceTest` compare l'ensemble
+  affiché aux candidats réels de `ApplicationsStateProvider::itemsFor()` et
+  `ShortcutsStateProvider::itemsFor(TargetContext::for($ws, null))` (ciblages
+  User/UserGroup exclus de la fiche poste).
+- **Pipeline agent sanctuarisé (AC5)** — `git status` : zéro modif `StateCompiler`,
+  `StateCandidate`, `Providers/*`, `agent/**`, golden, `routes/web.php` ; aucune migration.
+- **Portée amont fiche parc** — les ordres d'install amont affichés sur la page parc
+  sont ceux ciblant toute la flotte (`instance`) ; les ordres ciblés par label restent
+  visibles sur les fiches des postes qui portent ce label (le parc n'est pas un poste).
+
+### Checklist rapide — Story 37.1
+
+- [ ] Onglet « État cible » présent sur fiche poste ET page parc, deep-link `?tab=state` (Scénarios 6.1, 6.3)
+- [ ] Sections Raccourcis + Applications rendues avec badge d'origine par item (Scénario 6.1)
+- [ ] Badges parc logique / salle = liens vers le groupe source (Scénario 6.1)
+- [ ] Note session (raccourcis User/UserGroup non listés sur la fiche poste) (Scénario 6.1)
+- [ ] Origines exactes : Ce poste / parc / salle / Dépendance / Socle commun / Contrat amont / multi-origines `+N` (Scénario 6.2)
+- [ ] Page parc : Ce parc / via profil X / Socle commun / Contrat amont ; encart d'intro (Scénario 6.3)
+- [ ] Poste/parc nu → états vides propres, aucune erreur (Scénarios 6.1, 6.3)
+- [ ] Consultation pure : aucun formulaire, aucune mutation, aucun nouveau droit

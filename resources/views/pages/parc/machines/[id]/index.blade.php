@@ -676,7 +676,9 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 
     public function setTab(string $tab): void
     {
-        $allowed = ['general', 'wpkg', 'agent'];
+        // Story 37.1 — onglet « État cible » (consultation pure, aucun droit
+        // supplémentaire ; visible sous le gate de page existant).
+        $allowed = ['general', 'wpkg', 'agent', 'state'];
         $this->tab = in_array($tab, $allowed, true) ? $tab : 'general';
     }
 
@@ -1185,6 +1187,13 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                     <i class="fa-solid fa-tower-broadcast mr-2"></i>
                     Agent
                 </button>
+                {{-- Story 37.1 — État cible (raccourcis + applications + origine). --}}
+                <button type="button" role="tab"
+                    class="tab {{ $tab === 'state' ? 'tab-active' : '' }}"
+                    wire:click="setTab('state')">
+                    <i class="fa-solid fa-bullseye mr-2"></i>
+                    État cible
+                </button>
             </div>
 
             @if ($tab === 'wpkg')
@@ -1330,6 +1339,15 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                     @include('pages.parc.machines.[id]._partials.agent-conformity')
                 </div>
             </div>
+
+            @elseif ($tab === 'state')
+                {{-- Story 37.1 — onglet « État cible », SFC Livewire scopé au poste.
+                     Branche PLATE de la chaîne d'onglets (review #7 : elle était à
+                     tort imbriquée dans le @else Général / le @if déploiement, d'où
+                     la card « Groupes logiques » qui fuitait et l'état cible masqué
+                     sur un poste ayant des statuts de déploiement). Crochets [id]
+                     ⇒ inclusion via @livewire (jamais la tag-syntax, piège #6). --}}
+                @livewire('pages::parc.machines.[id]._partials.desired-state-tab', ['workstationId' => $workstation->id], key('state-'.$workstation->id))
 
             @else
             {{-- Card groupes logiques --}}
@@ -1516,7 +1534,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                         @endif
                     </div>
                 </div>
-            @endif
+            @endif {{-- /card déploiement --}}
             @endif {{-- /tab === wpkg --}}
 
         </div>{{-- /space-y-6 --}}

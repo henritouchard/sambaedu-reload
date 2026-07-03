@@ -10,7 +10,9 @@ use App\Models\MachinePowerActionTask;
 use App\Enums\AgentResourceStatus;
 use App\Models\AgentReportEvent;
 use App\Models\AgentResourceState;
+use App\Models\Application;
 use App\Models\Workstation;
+use App\Models\WorkstationApplicationStatus;
 use App\Services\Agent\Reporting\ReportIngestService;
 use App\Services\Parc\MachinePowerService;
 use App\Services\Parc\RemoteAccessService;
@@ -66,6 +68,7 @@ class MachineShowPageTest extends TestCase
         if ($this->createdTables) {
             Schema::dropIfExists('agent_report_events');
             Schema::dropIfExists('agent_resource_states');
+            Schema::dropIfExists('applications');
             Schema::dropIfExists('wpkg_workstation_options');
             Schema::dropIfExists('machine_power_action_tasks');
             Schema::dropIfExists('machine_boot_logs');
@@ -215,6 +218,20 @@ class MachineShowPageTest extends TestCase
                 $table->json('result')->nullable();
                 $table->text('error_message')->nullable();
                 $table->string('restart_phase', 16)->nullable();
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
+        // Story 37.1 (review #7) — le résumé de déploiement (toujours rendu) eager-load
+        // `application` : sans cette table, un WorkstationApplicationStatus casse le render.
+        if (!Schema::hasTable('applications')) {
+            Schema::create('applications', function (Blueprint $table) {
+                $table->id();
+                $table->string('app_id')->nullable();
+                $table->string('name')->nullable();
+                $table->boolean('is_parc_default')->default(false);
+                $table->timestamp('archived_at')->nullable();
                 $table->timestamps();
             });
             $this->createdTables = true;
@@ -755,5 +772,61 @@ class MachineShowPageTest extends TestCase
         Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
             ->call('setTab', 'agent')
             ->assertDontSee('En écart');
+    }
+
+    // ─── Story 37.1 — Câblage de l'onglet « État cible » (review #1 + #7) ────
+
+    public function test_state_tab_wires_desired_state_component(): void
+    {
+        // Review #1 — câblage réel : `setTab('state')` autorisé + directive
+        // @elseif ($tab === 'state') monte le SFC `desired-state-tab`. #[Lazy] ⇒
+        // le rendu ne contient que le placeholder (« État cible du poste »).
+        // Review #7 — la branche `state` est PLATE : sur tab=state, la branche
+        // Général ne doit PAS fuiter (pas de card « Groupes logiques »).
+        $ws = $this->makeWorkstation();
+        $this->mockGroupService($ws);
+
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('setTab', 'state')
+            ->assertSet('tab', 'state')
+            ->assertSee('État cible du poste')
+            ->assertDontSee('Groupes logiques');
+    }
+
+    public function test_state_tab_renders_even_with_deployment_statuses(): void
+    {
+        // Review #7 — cas régressif : sur un poste AYANT des statuts de déploiement
+        // (deploy non vide), l'ancien câblage imbriquait `state` dans le @if
+        // déploiement ⇒ l'état cible n'était JAMAIS atteint. La branche plate le
+        // rend désormais quel que soit l'état du déploiement.
+        $ws = $this->makeWorkstation();
+        $this->mockGroupService($ws);
+
+        $app = Application::create(['app_id' => 'wpkgapp', 'name' => 'WPKG App']);
+        WorkstationApplicationStatus::create([
+            'workstation_id' => $ws->id,
+            'application_id' => $app->id,
+            'status' => 'installed',
+            'installed_version' => '1.0.0',
+            'reported_at' => now(),
+        ]);
+
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->call('setTab', 'state')
+            ->assertSet('tab', 'state')
+            ->assertSee('État cible du poste')
+            ->assertDontSee('Déploiement des applications'); // titre de la card déploiement (branche Général)
+    }
+
+    public function test_general_tab_still_shows_logical_groups(): void
+    {
+        // Review #7 — non-régression du déplacement : l'onglet Général (défaut)
+        // affiche toujours la card « Groupes logiques ».
+        $ws = $this->makeWorkstation();
+        $this->mockGroupService($ws);
+
+        Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
+            ->assertSet('tab', 'general')
+            ->assertSee('Groupes logiques');
     }
 }
