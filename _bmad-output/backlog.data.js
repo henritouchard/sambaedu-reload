@@ -1374,38 +1374,44 @@ const DATASETS = {
     {
       "num": 35,
       "title": "Capacités v2 — couverture des GPO spéciales (CD95)",
-      "status": "todo",
+      "status": "in-progress",
       "summary": "Étendre le mécanisme capability/registry pour couvrir les GPO ad-hoc CD95 non projetables (paliers B/C de l'analyse 2026-07-02, le palier A — 11 capacités — étant déjà seedé) : <strong>verbe <code>ensure present|absent</code></strong> (socle delete, off honnête pour les capacités on-only), <strong>type <code>registry_list</code></strong> (listes à sous-clés indexées \\N : Forcelist Pix, DisallowRun élèves — cmd.exe inclus, remplace DisableCMD sans broker d'élévation), <strong>ruche <code>HKU</code></strong> (SYSTEM écrit .DEFAULT + ruches chargées : numlock logon, HKCU\\Policies diffusable), <strong>geste UI override par groupe d'utilisateurs</strong> (arme Outlook/regedit/blocked_executables déjà en base), seed <code>photo_viewer_restored</code> (zéro moteur), et mécanisme <code>privilege</code> LSA SeDeny* <strong>gated</strong> (validation métier RDP élèves d'abord). Contrat additif uniquement, StateCompiler intouché, réconciliation liste par clé-conteneur. Cadrage : <code>planning-artifacts/epics-capacites-v2.md</code>.",
       "stories": [
         {
           "id": "35-1",
           "title": "Verbe ensure — present/absent sur les items registry (socle delete)",
-          "status": "todo"
+          "status": "review",
+          "note": "[REVIEW passée + mergée main — ultradev vague 1] Verbe `ensure present|absent` : contrat §7.1 additif (item absent 4 clés), marqueur $ensure dans les specs (3 régimes écrire/supprimer/UNMANAGED), StateHasher canonicalise (hasher intouché), handler Go delete (valeur nommée seulement, jamais la clé-conteneur), retrofit off honnête llmnr_disabled+windows_updates_managed, golden +1 item (hashes jumeaux f3d22e9f…), agent 2.3.0. Review opus 3 findings corrigés dont Read/type non géré (sentinelle REG_UNSUPPORTED — résidu silencieux fermé). Cf. codeReviews/35-1.md. VM : migrate retrofit + publier ≥2.4.0."
         },
         {
           "id": "35-2",
           "title": "Type registry_list — listes à sous-clés indexées \\N (Pix, DisallowRun)",
-          "status": "todo"
+          "status": "review",
+          "note": "[REVIEW passée + mergée main — ultradev vague 2, worktree] Type `registry_list` : payload {hive,path,entry_type,values}, exclusiveKey=clé-conteneur (StateCompiler intouché), handler Go réconciliation D3 (écrit 1..N, purge noms numériques surnuméraires only, liste vide=purge, RegistryOps.ValueNames), CapabilitySpecCollisionGuard (scalaire↔conteneur refusé ; DETTE : sans appelant runtime, à câbler par la future UI de spec), seed pix_extension_forced (Chrome id SEUL iso-GPO vérifié source + Edge id;url) + blocked_executables (bi-projection D5, cmd.exe remplace DisableCMD). + SCOPE AJOUTÉ : name=\"\" = valeur par défaut (débloque 35.5). Golden +1 item (état fe8eb6ea…), agent 2.4.0 (binaire antérieur IGNORE le type en silence → publier). Cf. codeReviews/35-2.md. VM : migrate seed + publier."
         },
         {
           "id": "35-3",
           "title": "Ruche HKU — écriture SYSTEM des ruches utilisateur (.DEFAULT + sessions)",
-          "status": "todo"
+          "status": "review",
+          "note": "[REVIEW passée — ultradev vague 3] Ruche HKU : provider MACHINE émet hive:'HKU' (jamais Session), handler Go fan-out .DEFAULT + ruches chargées (filtre SID service/_Classes), drift AGRÉGÉ, session tardive couverte au cycle suivant ; registry_list refuse HKU (borné guard). Retrofit numlock écran de logon (InitialKeyboardIndicators=2 sous .DEFAULT). Golden INCHANGÉS (HKU = valeur de hive). Agent 2.4.1→2.5.0. Review opus : race logoff → sonde anti-orpheline avant Write + test chemin réel ; Test franc/isolation Apply documenté. Cf. codeReviews/35-3.md. ⚠️ VM : PUBLIER 2.5.0 AVANT de migrer (binaire antérieur = type registry machine entier en error, HKLM gelées)."
         },
         {
           "id": "35-4",
           "title": "Geste UI — override de capacité par groupe d'utilisateurs",
-          "status": "todo"
+          "status": "review",
+          "note": "[REVIEW passée + mergée main — ultradev vague 2, worktree] Section « Capacités » sur la page d'édition d'un UserGroup : capacités assignables (≥1 clé HKCU), override ou « suit le défaut », poser/modifier/retirer (retrait=retour défaut), warning confirmé, overrides_locked gelé, audit capability_override_audit_logs réutilisé (29.5), gate customize-userGroup (app.customize global, délégué par-salle refusé testé — anti-piège 29.1 ; hypothèse « 1 instance = 1 étab » documentée, à re-valider si multi-étab). Précédence UserGroup>Broadcast prouvée au compilé réel (registry_editing_disabled). Zéro moteur/agent/golden. Review sonnet + éval : PoC override machine-only inerte fermé (garde serveur isAssignableByUserGroup). Cf. codeReviews/35-4.md. VM : rien."
         },
         {
           "id": "35-5",
           "title": "Capacité photo_viewer_restored (seed, zéro moteur)",
-          "status": "todo"
+          "status": "review",
+          "note": "[REVIEW passée + mergée main + GATE LEVÉ — ultradev vague 2, worktree] Seed photo_viewer_restored fidèle à l'octet au Registry.xml source (4 clés HKCR→HKCU\\Software\\Classes, 2 commands name=\"\" ImageView_Fullscreen open ET print, 2 Clsid distincts), off=$ensure:absent, opt-in unmanaged Session. Seedée is_active=false (gate honnêteté name=\"\") puis ACTIVÉE par migration 2026_07_03_150000 (support prouvé par 35.2 ; description réécrite). Review sonnet + éval : description>varchar(255) PG corrigée + test structurel tous-seeds, garde is_active sur parc-defaults (openEdit/saveDefault + bouton disabled). Limite : UserChoice = composer 27.11 hors story. Cf. codeReviews/35-5.md. VM : migrate (seed+flip), effet conditionné à agent ≥2.4.0."
         },
         {
           "id": "35-6",
           "title": "Mécanisme privilege — droits LSA SeDeny* (GATED : besoin métier à valider)",
-          "status": "todo"
+          "status": "todo",
+          "note": "[GATED D6 — question posée à Henri en synthèse ultradev 2026-07-03, cf. _bmad-output/ultradev/35-questions.md Q1] Ne s'ouvre qu'après validation métier : besoin unique connu = RDP refusé aux élèves ; alternatives remote_desktop_enabled par parc (livré) / futur mécanisme localgroup."
         }
       ]
     },
