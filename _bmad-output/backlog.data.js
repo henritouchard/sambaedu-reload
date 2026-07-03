@@ -1447,14 +1447,14 @@ const DATASETS = {
     {
       "num": 37,
       "title": "UX consultation — état cible visible (postes & parcs)",
-      "status": "in-progress",
+      "status": "done",
       "summary": "Conteneur léger (story indépendante, demande directe 2026-07-03) : rendre <strong>consultable dans l'UI</strong> l'état cible que le serveur compile pour l'agent — aujourd'hui backend-only et éclaté entre 4 onglets/3 pages. Onglet « État cible » sur la fiche poste et la page parc : tous les <strong>raccourcis</strong> et toutes les <strong>applications</strong> résolus, avec l'<strong>origine</strong> de chaque item (réglage propre, parc logique/salle avec lien, dépendance WPKG, socle commun, contrat amont). Pipeline agent SANCTUARISÉ : la provenance vit dans un chemin de consultation parallèle (DesiredStateOriginService + explainPackages() dans le resolver WPKG, computePackages() byte-identique).",
       "stories": [
         {
           "id": "37-1",
           "title": "Onglet « État cible » — raccourcis + applications + origine (fiche poste & page parc)",
-          "status": "review",
-          "note": "[REVIEW passée (sonnet + second avis opus) + corrections appliquées] Onglet ?tab=state sur /parc/machines/{id} et /parc/groups/{id} : consultation pure, badges d'origine (Ce poste/Cette salle/Ce parc, parc/salle avec lien, Dépendance de <nom>, Socle commun, Contrat amont), multi-origines en tooltip, lazy-loading (#[Lazy]+squelette). Moteur : explainPackages() DANS WorkstationPackagesResolver (invariant byte-identique testé), DesiredStateOriginService PG-pur (périmètre machine DIRECT iso-agent, amont via UpstreamContractSource NFR3). Post-review : bug câblage fiche poste (#7 — état cible dans le @else Général, trouvé par Henri en test réel) corrigé + verrouillé par tests de page ; #5 room_self « Cette salle » ; M1 nom d'affichage dépendance ; #6b ordres amont label = poste-portés (mention UI). Écart assumé : raccourcis User/UserGroup exclus de la fiche poste (session-dépendants). Cf. codeReviews/37-1.md. VM : rien (zéro migration, zéro route)."
+          "status": "done",
+          "note": "[DONE — validée par Henri 2026-07-03 après test VM (post-sync inotify). REVIEW passée (sonnet + second avis opus) + corrections appliquées] Onglet ?tab=state sur /parc/machines/{id} et /parc/groups/{id} : consultation pure, badges d'origine (Ce poste/Cette salle/Ce parc, parc/salle avec lien, Dépendance de <nom>, Socle commun, Contrat amont), multi-origines en tooltip, lazy-loading (#[Lazy]+squelette). Moteur : explainPackages() DANS WorkstationPackagesResolver (invariant byte-identique testé), DesiredStateOriginService PG-pur (périmètre machine DIRECT iso-agent, amont via UpstreamContractSource NFR3). Post-review : bug câblage fiche poste (#7 — état cible dans le @else Général, trouvé par Henri en test réel) corrigé + verrouillé par tests de page ; #5 room_self « Cette salle » ; M1 nom d'affichage dépendance ; #6b ordres amont label = poste-portés (mention UI). Écart assumé : raccourcis User/UserGroup exclus de la fiche poste (session-dépendants). Cf. codeReviews/37-1.md. VM : rien (zéro migration, zéro route)."
         }
       ]
     }

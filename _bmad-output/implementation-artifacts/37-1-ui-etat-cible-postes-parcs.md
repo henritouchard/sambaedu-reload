@@ -1,6 +1,6 @@
 # Story 37.1 : Réforme UI — onglet « État cible » (raccourcis + applications + origine) sur la fiche poste et la page parc
 
-Status: review
+Status: done
 
 <!-- Source d'autorité : demande directe Henri (2026-07-03) — story INDÉPENDANTE, hors epics.md
      (aucun fichier de cadrage epic dédié ; epic-37 ouvert comme conteneur léger dans sprint-status.yaml).
