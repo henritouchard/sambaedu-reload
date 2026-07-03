@@ -325,3 +325,102 @@ fonctionnel après la consolidation de l'édition dans `parc-defaults`.
 - [ ] App `is_parc_default` diffusée à un poste neuf, union sans doublon, non-régression vide (Scénario 4.6)
 - [ ] `agent:tools:register-defaults` idempotent + fail-soft + 644/www-admin + migrate VM (Scénario 4.7)
 - [ ] Retour GPO : `?from_gpo` propagé par la redirection + breadcrumb `gpo-back-link` présent et persistant à la navigation onglets (Scénario 4.8)
+
+---
+
+## Story 35.4 — Override de capacité par groupe d'utilisateurs
+
+Section « Capacités » sur la page d'un GROUPE D'UTILISATEURS
+(`/app/users/groups/{id}`, mode consultation) : le référent numérique arme une
+capacité pour un groupe (élèves, direction, vie scolaire) en posant un override de
+valeur à la maille `UserGroup`. Transposition de l'onglet « Options / Capacités » du
+parc (27.12→29.8) — même modèle d'audit, même discipline de garde, StateCompiler
+INTOUCHÉ. Cibles CD95 armées : `registry_editing_disabled` (élèves, HKCU) et
+`outlook_disable_o365_account_creation` (personnels, HKCU).
+
+**Pré-requis** : user avec le droit GLOBAL `app.customize` ; lot CD95 seedé
+(`2026_07_02_100000_seed_capabilities_gpo_cd95_lot`) présent en base
+(`php artisan migrate:status` sur /vm — aucune migration nouvelle à jouer) ; au moins
+un groupe d'utilisateurs (une classe pour les élèves, un groupe custom pour la
+direction / vie scolaire).
+
+### Scénario 5.1 — Section visible + listing des capacités assignables
+
+1. Se connecter avec le droit `app.customize`, ouvrir `/app/users/groups/{id}` d'une
+   classe → la carte « Capacités assignables à ce groupe » est présente (après la
+   section Quota).
+2. Vérifier que la liste ne contient QUE des capacités actives dont la projection
+   registre porte ≥ 1 clé HKCU (ex. « Désactiver l'éditeur du Registre »). Une
+   capacité 100 % HKLM (ex. « Ouvertures de session en cache ») est ABSENTE (un
+   override par groupe y serait inerte — piège #6).
+3. Pour une capacité sans override, la colonne « Valeur pour ce groupe » affiche
+   « Suit le défaut (<libellé du défaut>) » (ex. « Non géré » pour
+   `registry_editing_disabled`).
+4. Se connecter avec un user SANS `app.customize` global → la section n'est PAS
+   rendue (gate `@can('customize-userGroup')`).
+
+### Scénario 5.2 — Poser / modifier / retirer un override
+
+1. Cliquer « Dévier » sur « Désactiver l'éditeur du Registre » → la modale s'ouvre
+   pré-remplie sur le défaut ; choisir « Activé » → Enregistrer → toast succès, la
+   ligne affiche « Activé », actions « Éditer » / « Retirer ».
+2. « Éditer » → modifier la valeur → la valeur d'affichage change ; en base le
+   `created_at` du pivot `capability_assignments` n'est PAS réécrit (29.7).
+3. « Retirer » → toast « le groupe revient à la valeur par défaut (réappliquée au
+   cycle suivant) » — PAS « cesser de gérer » ; la ligne repasse à « Suit le défaut ».
+4. Convergence e2e (VM) : un poste ouvert par un ÉLÈVE membre du groupe reçoit
+   `HKCU\...\Policies\System\DisableRegistryTools = 1` (regedit bloqué) ; un user
+   NON-membre ne reçoit RIEN pour cette clé (le Broadcast `unmanaged` n'émet rien).
+
+### Scénario 5.3 — Validation, warning, gel
+
+1. Ouvrir la modale d'une capacité à choix fermé, forcer une valeur hors options via
+   rejeu Livewire → refus serveur (erreur `formValue`), aucune écriture.
+2. Une capacité portant un `warning` : la case de confirmation est exigée
+   (persistance refusée tant qu'elle n'est pas cochée).
+3. Une capacité `overrides_locked` SANS override : action « Dévier » ABSENTE (mention
+   « Gelée — lecture seule ») ; un rejeu direct de `saveOverride` est refusé (toast
+   « gelée »). Une capacité gelée AVEC override existant reste éditable / retirable.
+
+### Scénario 5.4 — Délégation : gate scopé, pas de fuite (anti-piège 29.1)
+
+1. Un refnum ne détenant `app.customize` QUE par délégation scopée sur une salle
+   (aucun droit GLOBAL) ouvre la page groupe → la section « Capacités » n'apparaît
+   pas, et tout appel direct au composant renvoie **403** (la délégation par-salle NE
+   fuite PAS sur les groupes d'utilisateurs).
+2. Un admin avec le droit GLOBAL `app.customize` passe (fallback préservé).
+3. Une capacité verrouillée par un contrat amont est refusée à l'écriture (toast
+   « verrouillée par un contrat amont ») ; sans contrat amont actif, aucune requête
+   `controlhub_contract_items` (court-circuit NFR3).
+
+### Scénario 5.5 — Audit cohérent avec la surface parc
+
+1. Poser / modifier / retirer un override → une ligne `capability_override_audit_logs`
+   par acte : `action` (`create`/`update`/`delete`), acteur (`actor_user_id` +
+   `actor_login`), `assignable_type = App\Models\UserGroup`, `assignable_id`,
+   `scope_label` (`display_name` sinon `name` du groupe), `old_value`/`new_value`,
+   `upstream_status` (`local` en standalone).
+2. Un retrait sur un override INEXISTANT (rejeu) n'écrit AUCUNE trace (pas de trace
+   fantôme).
+3. Vérifier que le format est identique à l'audit des overrides par parc (même modèle
+   `CapabilityOverrideAuditLog`, même fabrique `::log()` — seuls `assignable_type` /
+   `scope_label` diffèrent).
+
+**Post-correctifs & non-régression** :
+- **Précédence UserGroup > Broadcast** — `CapabilityRegistryCompilationTest`
+  (`user_group_override_beats_broadcast_when_both_emit` + inverse) et
+  `CapabilitiesSchemaAndSeedTest::registry_editing_disabled_override_on_a_user_group_compiles_for_members_only`
+  (données réelles seedées, membre vs non-membre). StateCompiler INTOUCHÉ.
+- **Gel / audit / scoping** — `GroupCapabilitiesSectionTest` (18 cas : listing,
+  CRUD, préservation `created_at`, validation, gel, audit, 403 sans droit + refus
+  délégué par-salle, `#[Locked]`).
+
+### Checklist rapide — Story 35.4
+
+- [ ] Section « Capacités » visible sur la page groupe pour `app.customize` global (Scénario 5.1)
+- [ ] Listing = capacités actives HKCU uniquement ; machine-only exclue ; « Suit le défaut » sinon (Scénario 5.1)
+- [ ] Poser / modifier / retirer un override ; `created_at` préservé ; retrait = retour au défaut (Scénario 5.2)
+- [ ] Élève membre → `DisableRegistryTools=1` ; non-membre → rien (Scénario 5.2)
+- [ ] Validation options + warning confirmé ; gel refuse un nouvel override, override existant éditable (Scénario 5.3)
+- [ ] Délégué par-salle SEUL → 403 (pas de fuite 29.1) ; admin global OK ; verrou amont refusé (Scénario 5.4)
+- [ ] Audit `create`/`update`/`delete` complet + pas de trace fantôme, iso audit parc (Scénario 5.5)

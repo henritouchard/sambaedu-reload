@@ -316,6 +316,18 @@ new #[Title('Groupe utilisateur')] class extends Component {
                  NB : on utilise la directive @livewire(...) plutôt que la tag-syntax
                  car les crochets `[id]` du chemin SFC cassent le parsing Blade. --}}
             @livewire('pages::users.groups.[id]._partials.group-quota-section', ['groupId' => $groupId], key('group-quota-' . $groupId))
+
+            {{-- Story 35.4 — Section « Capacités » du groupe d'utilisateurs (Livewire
+                 SFC). Arme une capacité par groupe (override de valeur, maille
+                 UserGroup). Visible pour TOUS les types de groupes (les cibles CD95
+                 sont « élèves » = classes ET « direction/vie scolaire » = groupes
+                 custom), gatée par le gate instance-wide `customize-userGroup`
+                 (droit global `app.customize`) — le SFC re-garde 403 en mount +
+                 chaque mutation. Directive @livewire(...) car les crochets `[id]`
+                 du chemin SFC cassent le parsing Blade. --}}
+            @can('customize-userGroup')
+                @livewire('pages::users.groups.[id]._partials.capabilities-section', ['groupId' => $groupId], key('capabilities-' . $groupId))
+            @endcan
         </div>
     @endif
 

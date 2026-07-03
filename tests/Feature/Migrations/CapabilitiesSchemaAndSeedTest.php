@@ -6,6 +6,19 @@ namespace Tests\Feature\Migrations;
 
 use App\Models\Capability;
 use App\Models\CapabilityProjection;
+use App\Models\User;
+use App\Models\UserGroup;
+use App\Models\Workstation;
+use App\Models\WorkstationGroup;
+use App\Observers\UserGroupObserver;
+use App\Observers\UserGroupUserPivotObserver;
+use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
+use App\Services\Agent\Providers\RegistryUserCapabilityProvider;
+use App\Services\Agent\StateCompiler;
+use App\Services\Agent\StateContract;
+use App\Services\Agent\StateHasher;
+use App\Services\Agent\TargetContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -392,6 +405,67 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         self::assertSame('REG_DWORD', $key['type']);
         self::assertSame(1, $key['value']['on'], 'on = Store bloqué');
         self::assertSame(0, $key['value']['off'], 'off = Store accessible (défaut Windows)');
+    }
+
+    // ── Story 35.4 — armement `registry_editing_disabled` par override UserGroup ─
+
+    #[Test]
+    public function registry_editing_disabled_override_on_a_user_group_compiles_for_members_only(): void
+    {
+        // Story 35.4 (AC5) — sur DONNÉES RÉELLES seedées (lot CD95) : un override `on`
+        // de `registry_editing_disabled` posé sur un UserGroup fait émettre, pour un
+        // user MEMBRE, l'item session `DisableRegistryTools = 1` (HKCU, Policies\System)
+        // via le StateCompiler INTOUCHÉ ; pour un user NON-membre, AUCUN item pour cette
+        // clé — le Broadcast `unmanaged` n'émet rien (piège #8).
+        WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
+        UserGroupUserPivotObserver::disableSync();
+
+        try {
+            $cap = Capability::query()->where('key', 'registry_editing_disabled')->firstOrFail();
+            self::assertSame('unmanaged', $cap->default_value, 'défaut seedé = unmanaged (Broadcast n\'émet rien)');
+
+            $group = UserGroup::factory()->create();
+            DB::table('capability_assignments')->insert([
+                'capability_id' => $cap->id,
+                'assignable_type' => UserGroup::class,
+                'assignable_id' => $group->id,
+                'value' => 'on',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $ws = Workstation::factory()->create();
+            $member = User::factory()->create();
+            $member->groups()->attach($group->id);
+            $nonMember = User::factory()->create();
+
+            $compiler = new StateCompiler(new StateHasher(), [
+                new RegistryMachineCapabilityProvider(),
+                new RegistryUserCapabilityProvider(),
+            ]);
+
+            // MEMBRE : DisableRegistryTools = 1 (HKCU, Policies\System).
+            $sessionMember = $compiler->compile(TargetContext::for($ws, $member))[StateContract::SCOPE_SESSION];
+            $item = collect($sessionMember)->first(
+                fn ($i): bool => $i['type'] === 'registry' && ($i['payload']['name'] ?? null) === 'DisableRegistryTools',
+            );
+            self::assertNotNull($item, 'membre → DisableRegistryTools émis en session');
+            self::assertSame(1, $item['payload']['value']);
+            self::assertSame('HKCU', $item['payload']['hive']);
+            self::assertStringContainsString('Policies\\System', $item['payload']['path']);
+
+            // NON-MEMBRE : aucun item pour cette clé (Broadcast unmanaged n'émet rien).
+            $sessionNon = $compiler->compile(TargetContext::for($ws, $nonMember))[StateContract::SCOPE_SESSION];
+            $itemNon = collect($sessionNon)->first(
+                fn ($i): bool => $i['type'] === 'registry' && ($i['payload']['name'] ?? null) === 'DisableRegistryTools',
+            );
+            self::assertNull($itemNon, 'non-membre → aucun item pour cette clé');
+        } finally {
+            WorkstationGroupObserver::enableSync();
+            UserGroupObserver::enableSync();
+            UserGroupUserPivotObserver::enableSync();
+        }
     }
 
     #[Test]
