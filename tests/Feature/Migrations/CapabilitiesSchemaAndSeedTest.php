@@ -200,6 +200,10 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             // Lot 35.2 : off combiné = flag supprimé (registry, marqueur) +
             // entrées purgées (registry_list, liste vide).
             'blocked_executables',
+            // Story 35.5 : la visionneuse expose un vrai off par suppression des 4
+            // clés (marqueur $ensure). Seedée INACTIVE (gate) mais la DONNÉE porte
+            // bien un off honnête — l'invariant s'applique à la spec, pas à is_active.
+            'photo_viewer_restored',
         ];
 
         foreach ($withOff as $key) {
@@ -851,6 +855,291 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             \App\Observers\WorkstationGroupObserver::enableSync();
             \App\Observers\UserGroupObserver::enableSync();
             \App\Observers\UserGroupUserPivotObserver::enableSync();
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Story 35.5 — Capacité `photo_viewer_restored` (seed sans évolution moteur)
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Commande de réenregistrement iso-GPO CD95 (Registry.xml source, à l'octet
+     * près). Guillemets DOUBLES littéraux, backslashes doublés en PHP. Quirk GPO :
+     * `ImageView_Fullscreen` sur open ET print (PAS `ImageView_PrintTo`).
+     */
+    private const PHOTO_VIEWER_COMMAND = '%SystemRoot%\\System32\\rundll32.exe "%ProgramFiles%\\Windows Photo Viewer\\PhotoViewer.dll", ImageView_Fullscreen %1';
+
+    #[Test]
+    public function all_seeded_capability_strings_fit_their_postgres_varchar_columns(): void
+    {
+        // Review 35.5 #1 — `capabilities.label/description/category` sont des
+        // varchar(255) sur Postgres ; SQLite (tests hôte) n'applique JAMAIS la
+        // longueur (mémoire projet : overflow PG 22001 invisible). Ce test
+        // structurel couvre TOUS les seeds, présents et futurs.
+        foreach (Capability::query()->get() as $cap) {
+            foreach (['label', 'description', 'category'] as $col) {
+                self::assertLessThanOrEqual(
+                    255,
+                    mb_strlen((string) $cap->{$col}),
+                    "capabilities.{$col} de « {$cap->key} » dépasse varchar(255) — casserait migrate sur /vm (PG 22001)",
+                );
+            }
+        }
+    }
+
+    #[Test]
+    public function photo_viewer_restored_is_seeded_iso_gpo_cd95_with_four_hkcr_keys_routed_hkcu(): void
+    {
+        // AC1 — capacité + projection iso-GPO : les 4 clés HKCR routées HKCU\Software\Classes.
+        $cap = Capability::query()->where('key', 'photo_viewer_restored')->first();
+        self::assertNotNull($cap, 'capacité photo_viewer_restored seedée');
+
+        self::assertSame('Visionneuse de photos Windows', $cap->label, 'label = sujet neutre (convention sujet+état)');
+        self::assertSame('Bureau', $cap->category);
+        self::assertSame('toggle', $cap->value_type);
+        self::assertSame('unmanaged', $cap->default_value, 'opt-in : rien n\'est émis en broadcast');
+        self::assertSame(['windows'], $cap->applies_to_os);
+        self::assertFalse($cap->hasWarning(), 'warning null');
+        self::assertSame(['unmanaged', 'on', 'off'], $cap->allowedOptionValues());
+        // « Non géré » RÉSERVÉ à la sentinelle unmanaged (convention libellés).
+        self::assertSame('Non géré', $cap->optionLabel('unmanaged'));
+        self::assertStringNotContainsString('Non géré', $cap->optionLabel('on'));
+        self::assertStringNotContainsString('Non géré', $cap->optionLabel('off'));
+
+        $keys = $cap->projections()
+            ->where('os', 'windows')->where('mechanism', 'registry')
+            ->firstOrFail()->spec['keys'];
+        self::assertCount(4, $keys, 'EXACTEMENT les 4 clés HKCR de la GPO');
+
+        // Toutes routées HKCU\Software\Classes\… (portée Session, iso onedrive_hidden).
+        foreach ($keys as $k) {
+            self::assertSame('HKCU', $k['hive'], 'HKCR routé HKCU (portée Session)');
+            self::assertStringStartsWith('Software\\Classes\\Applications\\photoviewer.dll\\', $k['path']);
+        }
+
+        // #1 — open\command : name = valeur PAR DÉFAUT (''), REG_EXPAND_SZ, commande exacte.
+        self::assertSame('Software\\Classes\\Applications\\photoviewer.dll\\shell\\open\\command', $keys[0]['path']);
+        self::assertSame('', $keys[0]['name'], 'open\\command écrit la valeur PAR DÉFAUT (name="")');
+        self::assertSame('REG_EXPAND_SZ', $keys[0]['type']);
+        self::assertSame(self::PHOTO_VIEWER_COMMAND, $keys[0]['value']['on']);
+
+        // #2 — print\command : name '', REG_EXPAND_SZ, MÊME commande (quirk print préservé).
+        self::assertSame('Software\\Classes\\Applications\\photoviewer.dll\\shell\\print\\command', $keys[1]['path']);
+        self::assertSame('', $keys[1]['name'], 'print\\command écrit la valeur PAR DÉFAUT (name="")');
+        self::assertSame('REG_EXPAND_SZ', $keys[1]['type']);
+        self::assertSame(self::PHOTO_VIEWER_COMMAND, $keys[1]['value']['on'], 'quirk GPO : ImageView_Fullscreen sur print AUSSI');
+
+        // #3 — open\DropTarget : Clsid REG_SZ.
+        self::assertSame('Software\\Classes\\Applications\\photoviewer.dll\\shell\\open\\DropTarget', $keys[2]['path']);
+        self::assertSame('Clsid', $keys[2]['name']);
+        self::assertSame('REG_SZ', $keys[2]['type']);
+        self::assertSame('{FFE2A43C-56B9-4bf5-9A79-CC6D4285608A}', $keys[2]['value']['on']);
+
+        // #4 — print\DropTarget : Clsid REG_SZ, GUID DISTINCT de open (source GPO fait foi).
+        self::assertSame('Software\\Classes\\Applications\\photoviewer.dll\\shell\\print\\DropTarget', $keys[3]['path']);
+        self::assertSame('Clsid', $keys[3]['name']);
+        self::assertSame('REG_SZ', $keys[3]['type']);
+        self::assertSame('{60fd46de-f830-4894-a628-6fa81bc0190d}', $keys[3]['value']['on']);
+
+        self::assertNotSame(
+            $keys[2]['value']['on'],
+            $keys[3]['value']['on'],
+            'les 2 DropTarget\\Clsid sont DISTINCTS (open ≠ print)',
+        );
+    }
+
+    #[Test]
+    public function photo_viewer_restored_is_gated_inactive_until_agent_supports_default_value_names(): void
+    {
+        // AC3 — gate d'honnêteté : la capacité est seedée is_active=false parce que
+        // l'agent actuel (parseRegistrySpec) rejette `name == ""` (valeur par défaut
+        // de clé) → une capacité armée écrirait les 2 Clsid mais pas les 2 command
+        // (nœud à moitié enregistré, pire que rien). Le flip is_active=true est gated
+        // par une micro-évolution agent hors story (migration d'activation postérieure).
+        $cap = Capability::query()->where('key', 'photo_viewer_restored')->firstOrFail();
+
+        // FLIP 35.2 : cette assertion basculera à assertTrue quand la micro-évolution
+        // agent « name:'' = valeur par défaut » sera prouvée (migration d'activation
+        // dédiée, à l'intégration de la vague). C'est la SEULE assertion à retoucher.
+        self::assertFalse(
+            $cap->is_active,
+            'gate d\'honnêteté : inactive tant que parseRegistrySpec (agent) rejette name=="" '
+            .'(valeur par défaut de clé) — activation via migration d\'une ligne hors story',
+        );
+
+        // Preuve du gating par la MÉCANIQUE EXISTANTE : armée `on` par override de
+        // parc mais INACTIVE, le provider User n'émet AUCUN item pour cette capacité
+        // (le filtre `is_active` du provider est le gate).
+        \App\Observers\WorkstationGroupObserver::disableSync();
+
+        try {
+            $ws = \App\Models\Workstation::factory()->create();
+            $parc = \App\Models\WorkstationGroup::factory()->logical()->create();
+            $ws->groups()->attach($parc->id);
+
+            DB::table('capability_assignments')->insert([
+                'capability_id' => $cap->id,
+                'assignable_type' => \App\Models\WorkstationGroup::class,
+                'assignable_id' => $parc->id,
+                'value' => 'on',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $items = (new \App\Services\Agent\Providers\RegistryUserCapabilityProvider())
+                ->itemsFor(\App\Services\Agent\TargetContext::for($ws, null));
+
+            $mine = $items->filter(fn ($c): bool => (int) $c->sourceId === (int) $cap->id)->values();
+            self::assertCount(0, $mine, 'capacité inactive ⇒ provider n\'émet RIEN même armée on');
+        } finally {
+            \App\Observers\WorkstationGroupObserver::enableSync();
+        }
+    }
+
+    #[Test]
+    public function photo_viewer_restored_seed_is_idempotent_and_reversible(): void
+    {
+        // AC1 (idempotence/réversibilité) : up() rejoué = snapshot identique ;
+        // down() supprime capacité ET projection ; up() re-seed à l'identique
+        // (pattern retrofit_migration_is_idempotent_and_reversible, version seed).
+        $migration = require database_path('migrations/2026_07_03_130000_seed_capability_photo_viewer_restored.php');
+
+        $snapshot = function (): array {
+            $cap = Capability::query()->where('key', 'photo_viewer_restored')->firstOrFail();
+
+            return [
+                'options' => $cap->options,
+                'default_value' => $cap->default_value,
+                'is_active' => $cap->is_active,
+                'spec' => $cap->projections()
+                    ->where('os', 'windows')->where('mechanism', 'registry')
+                    ->firstOrFail()->spec,
+            ];
+        };
+
+        // up() déjà joué par RefreshDatabase → le rejouer ne change RIEN
+        // (updateOrInsert par key + par (capability_id, os, mechanism)).
+        $before = $snapshot();
+        $migration->up();
+        self::assertSame($before, $snapshot(), 'up() rejoué = aucun effet de bord');
+        self::assertFalse($before['is_active'], 'is_active reste false à chaque rejeu (dernier seed fait foi)');
+
+        // down() : suppression par key → cascade FK sur la projection.
+        $migration->down();
+        self::assertNull(
+            Capability::query()->where('key', 'photo_viewer_restored')->first(),
+            'down() supprime la capacité',
+        );
+        self::assertSame(
+            0,
+            DB::table('capability_projections')
+                ->join('capabilities', 'capabilities.id', '=', 'capability_projections.capability_id')
+                ->where('capabilities.key', 'photo_viewer_restored')
+                ->count(),
+            'down() supprime la projection (cascade FK)',
+        );
+
+        // up() re-seed à l'identique (rejouable après down()).
+        $migration->up();
+        self::assertSame($before, $snapshot(), 'up() après down() = état seedé identique');
+    }
+
+    #[Test]
+    public function photo_viewer_restored_emits_session_items_via_the_real_provider_once_activated(): void
+    {
+        // AC4 — chaîne seed→spec→expand→payload prouvée sur données RÉELLES (pattern
+        // llmnr_disabled_off_emits_ensure_absent_items_via_the_real_provider). On
+        // SIMULE le flip post-gate (`update(is_active=true)`) pour prouver que la
+        // DONNÉE est correcte de bout en bout — le gate lui-même est prouvé par
+        // photo_viewer_restored_is_gated_inactive_until_agent_supports_default_value_names.
+        \App\Observers\WorkstationGroupObserver::disableSync();
+
+        try {
+            $cap = Capability::query()->where('key', 'photo_viewer_restored')->firstOrFail();
+            $cap->update(['is_active' => true]); // simulation du flip post-gate (hors story)
+
+            $ws = \App\Models\Workstation::factory()->create();
+            $parc = \App\Models\WorkstationGroup::factory()->logical()->create();
+            $ws->groups()->attach($parc->id);
+
+            $assignmentId = DB::table('capability_assignments')->insertGetId([
+                'capability_id' => $cap->id,
+                'assignable_type' => \App\Models\WorkstationGroup::class,
+                'assignable_id' => $parc->id,
+                'value' => 'on',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $userCtx = \App\Services\Agent\TargetContext::for($ws, null);
+
+            // ── override `on` → 4 items d'ÉCRITURE 5 clés, tous HKCU ────────────
+            $onItems = (new \App\Services\Agent\Providers\RegistryUserCapabilityProvider())
+                ->itemsFor($userCtx)
+                ->filter(fn ($c): bool => (int) $c->sourceId === (int) $cap->id)
+                ->values();
+            self::assertCount(4, $onItems, 'on → 4 items d\'écriture (4 clés)');
+
+            foreach ($onItems as $c) {
+                self::assertSame(['hive', 'path', 'name', 'type', 'value'], array_keys($c->payload), 'item d\'écriture = 5 clés');
+                self::assertSame('HKCU', $c->payload['hive']);
+            }
+
+            // 2 items name==='' / REG_EXPAND_SZ / commande exacte (open + print).
+            $commands = $onItems->filter(fn ($c): bool => $c->payload['name'] === '')->values();
+            self::assertCount(2, $commands, '2 command à name=="" (valeur par défaut)');
+            foreach ($commands as $c) {
+                self::assertSame('REG_EXPAND_SZ', $c->payload['type']);
+                self::assertSame(self::PHOTO_VIEWER_COMMAND, $c->payload['value']);
+            }
+
+            // 2 items name==='Clsid' / REG_SZ / les 2 GUID distincts.
+            $dropTargets = $onItems->filter(fn ($c): bool => $c->payload['name'] === 'Clsid')->values();
+            self::assertCount(2, $dropTargets, '2 DropTarget à name=="Clsid"');
+            $guids = $dropTargets->map(fn ($c): string => $c->payload['value'])->sort()->values()->all();
+            self::assertSame(
+                ['{60fd46de-f830-4894-a628-6fa81bc0190d}', '{FFE2A43C-56B9-4bf5-9A79-CC6D4285608A}'],
+                $guids,
+                'les 2 Clsid distincts sont émis',
+            );
+            foreach ($dropTargets as $c) {
+                self::assertSame('REG_SZ', $c->payload['type']);
+            }
+
+            // Pas de fuite d'id/key de capacité dans le payload (invariant central).
+            foreach ($onItems as $c) {
+                self::assertArrayNotHasKey('capability_id', $c->payload);
+                self::assertArrayNotHasKey('key', $c->payload);
+            }
+
+            // ── override `off` → 4 items de SUPPRESSION 4 clés {hive,path,name,ensure} ─
+            DB::table('capability_assignments')->where('id', $assignmentId)->update(['value' => 'off']);
+
+            $offItems = (new \App\Services\Agent\Providers\RegistryUserCapabilityProvider())
+                ->itemsFor(\App\Services\Agent\TargetContext::for($ws, null))
+                ->filter(fn ($c): bool => (int) $c->sourceId === (int) $cap->id)
+                ->values();
+            self::assertCount(4, $offItems, 'off → 4 items de suppression (4 clés)');
+            foreach ($offItems as $c) {
+                self::assertSame(['hive', 'path', 'name', 'ensure'], array_keys($c->payload), 'item de suppression = 4 clés');
+                self::assertSame('HKCU', $c->payload['hive']);
+                self::assertSame(
+                    \App\Services\Agent\Providers\AbstractCapabilityStateProvider::ENSURE_ABSENT,
+                    $c->payload['ensure'],
+                );
+            }
+            // Mêmes identités de clé qu'en écriture (2 command à name="" + 2 Clsid).
+            $offNames = $offItems->map(fn ($c): string => $c->payload['name'])->sort()->values()->all();
+            self::assertSame(['', '', 'Clsid', 'Clsid'], $offNames);
+
+            // ── RegistryMachineCapabilityProvider n'émet RIEN (aucune clé HKLM) ─
+            $machineItems = (new \App\Services\Agent\Providers\RegistryMachineCapabilityProvider())
+                ->itemsFor(\App\Services\Agent\TargetContext::for($ws, null))
+                ->filter(fn ($c): bool => (int) $c->sourceId === (int) $cap->id)
+                ->values();
+            self::assertCount(0, $machineItems, 'aucune clé HKLM → provider machine muet');
+        } finally {
+            \App\Observers\WorkstationGroupObserver::enableSync();
         }
     }
 }

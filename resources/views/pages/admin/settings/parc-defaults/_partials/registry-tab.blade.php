@@ -100,6 +100,14 @@ new class extends Component {
 
         $capability = Capability::query()->findOrFail($capabilityId);
 
+        // Story 35.5 (review #2) : une capacité inactive (gate is_active) est
+        // ignorée par le provider — éditer son défaut serait un réglage sans
+        // effet posé silencieusement. Refus explicite, pas d'opacité seule.
+        if (! $capability->is_active) {
+            $this->toastError('Capacité inactive : le réglage n\'aurait aucun effet tant que le gate n\'est pas levé.');
+            return;
+        }
+
         if (! $this->authorizeUpstream($capability)) {
             return;
         }
@@ -146,6 +154,13 @@ new class extends Component {
         $capability = $this->editingCapability;
         if ($capability === null) {
             $this->toastError('Capacité introuvable.');
+            return;
+        }
+
+        // Story 35.5 (review #2) — defense-in-depth : refus même si l'UI est
+        // contournée (openEdit refuse déjà, mais l'action reste appelable).
+        if (! $capability->is_active) {
+            $this->toastError('Capacité inactive : le réglage n\'aurait aucun effet tant que le gate n\'est pas levé.');
             return;
         }
 
@@ -329,8 +344,12 @@ new class extends Component {
                                         @if ($capability['is_upstream_locked'])
                                             <span class="text-xs opacity-60 italic">Imposé par contrat amont</span>
                                         @else
+                                            {{-- Story 35.5 (review #2) : capacité inactive = bouton désactivé,
+                                                 le réglage serait sans effet (garde serveur dans openEdit/saveDefault). --}}
                                             <button type="button" class="btn btn-ghost btn-xs"
                                                 wire:click="openEdit({{ $capability['id'] }})"
+                                                @disabled(! $capability['is_active'])
+                                                @if (! $capability['is_active']) title="Capacité inactive : réglage sans effet" @endif
                                                 data-testid="edit-default-{{ $capability['id'] }}">
                                                 <i class="fa-solid fa-pen"></i> Éditer le défaut
                                             </button>

@@ -3168,3 +3168,93 @@ besoin 35.5). Agent bumpé **2.4.0**.
 - [ ] Golden : `state.v1.json` +1 item registry_list machine, hashes figés JUMEAUX
       PHP↔Go recalculés (`fe8eb6ea…`) ; `report.v1.json` INCHANGÉ (aucun payload au
       rapport ; type accepté via Rule::in(RESOURCE_TYPES)).
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- Story 35.5 — Capacité `photo_viewer_restored` (seed GATÉ inactif)        -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+
+## Story 35.5 — Visionneuse de photos Windows (`photo_viewer_restored`)
+
+Dernière brique de la GPO CD95 « Ajustement_Photo » : le RÉENREGISTREMENT de la
+Visionneuse de photos Windows (rendre l'app existante invocable) devient une capacité
+`registry` pure — 4 clés HKCR routées `HKCU\Software\Classes` (portée Session), iso-GPO à
+l'octet près (migration `2026_07_03_130000`). **Zéro évolution moteur, zéro UI.**
+
+**GATE D'HONNÊTETÉ — la capacité est seedée `is_active = false`.** Les deux clés
+`…\shell\open\command` et `…\shell\print\command` écrivent la valeur PAR DÉFAUT de la clé
+(`name == ""`, iso `Registry.xml` source) — c'est ce que lit le shell Windows. Or l'agent
+actuel (`parseRegistrySpec`) rejette `name == ""` (garde AVANT la branche `ensure`, pour
+l'écriture comme la suppression). Une capacité ARMÉE écrirait donc les 2 `Clsid` mais pas
+les 2 `command` → nœud à moitié enregistré, PIRE que rien. La donnée est donc seedée
+COMPLÈTE et FIDÈLE mais INACTIVE : invisible des onglets d'armement, grisée dans les
+réglages parc-defaults, ignorée par le provider (`where('is_active', true)`) → **rien n'est
+émis, golden files strictement intacts.** L'activation est gated par une micro-évolution
+agent hors story (« `name: ""` = valeur par défaut de la clé »).
+
+> ⚠️ **Tant que le gate est posé, il n'y a RIEN d'armable à scénariser au poste.** Les
+> scénarios ci-dessous sont donc (a) une vérification de la DONNÉE seedée côté serveur
+> (jouables tout de suite) et (b) le scénario poste DIFFÉRÉ à la story d'activation
+> (`is_active = true`) — reproduits ici pour que l'activation soit « QA-ready » sans
+> re-cadrage.
+
+### Scénario 35.5.1 — Migration de seed sur /vm (VM — ACTION HUMAINE Henri)
+
+1. `php artisan migrate` sur /vm (les migrations ne sont PAS auto-appliquées ; AUCUNE
+   release agent à publier — zéro modif `agent/**`).
+2. `/admin/settings/capabilities` (ou parc-defaults) : `photo_viewer_restored` apparaît
+   **grisée / inactive** (opacity-50), ABSENTE des onglets d'armement des parcs — c'est le
+   comportement attendu du gate (mécanique `is_active` existante, aucun code neuf).
+3. Sa `description` énonce les 3 idées : réenregistre la visionneuse, ne choisit PAS l'app
+   par extension (Associations), inactive tant que l'agent ne sait pas écrire la valeur par
+   défaut d'une clé.
+
+### Scénario 35.5.2 — Gate prouvé : rien n'est émis même armé (serveur — jouable tout de suite)
+
+1. Poser (en base) un override de parc `on` sur `photo_viewer_restored` pour un poste de
+   test, puis `GET /api/v1/agent/state` (token du poste) : **AUCUN item** pour cette
+   capacité dans la portée `session` (le filtre `is_active` du provider est le gate).
+2. En broadcast (défaut `unmanaged`), rien non plus. Golden `state.v1.json` / `report.v1.json`
+   et `FROZEN_STATE_HASH` INCHANGÉS. Couvert automatiquement par
+   `photo_viewer_restored_is_gated_inactive_until_agent_supports_default_value_names`.
+
+### Scénario 35.5.3 — Donnée iso-GPO (serveur — jouable tout de suite)
+
+1. La projection `windows`/`registry` porte EXACTEMENT 4 clés HKCU :
+   - `…\shell\open\command` et `…\shell\print\command` : `name = ""` (valeur par défaut),
+     `REG_EXPAND_SZ`, commande `…rundll32.exe "…PhotoViewer.dll", ImageView_Fullscreen %1`
+     (quirk GPO : `ImageView_Fullscreen` sur print AUSSI, PAS `ImageView_PrintTo`) ;
+   - `…\shell\open\DropTarget` et `…\shell\print\DropTarget` : `name = "Clsid"`, `REG_SZ`,
+     deux GUID **DISTINCTS** (open `{FFE2A43C-…}` ≠ print `{60fd46de-…}`).
+2. Chaque clé porte `'off' => {"$ensure":"absent"}` (vrai off par suppression, marqueur
+   35.1). Couvert par `photo_viewer_restored_is_seeded_iso_gpo_cd95_with_four_hkcr_keys_routed_hkcu`
+   et `photo_viewer_restored_emits_session_items_via_the_real_provider_once_activated`
+   (ce dernier SIMULE le flip `is_active=true` pour prouver la chaîne provider de bout en
+   bout : `on` → 4 écritures HKCU 5 clés ; `off` → 4 suppressions 4 clés ; provider machine
+   muet — aucune clé HKLM).
+
+### Scénario 35.5.4 — Post-activation au poste (lab Windows — DIFFÉRÉ à la story d'activation)
+
+> À NE JOUER QU'APRÈS le flip `is_active=true` ET la micro-évolution agent « `name:""` =
+> valeur par défaut » publiée (nouvelle release agent). Tant que le gate est posé, ce
+> scénario n'est PAS applicable.
+
+1. Poste avec l'agent supportant `name == ""` + capacité activée + override parc `on` : au
+   logon suivant, la Visionneuse de photos Windows réapparaît dans « Ouvrir avec » avec des
+   commandes open/print FONCTIONNELLES (les 4 clés HKCU\Software\Classes sont écrites).
+2. Override `off` : les 4 valeurs sont supprimées (désenregistrement), Windows reprend son
+   état ; la clé-conteneur reste, seules les valeurs nommées disparaissent.
+3. **Limite de périmètre à vérifier** : la capacité RÉENREGISTRE la visionneuse mais ne
+   modifie PAS `UserChoice` — le choix effectif de l'app par extension (`.jpg`, `.png`)
+   reste géré par le composer d'associations (27.11), HORS de cette capacité. La visionneuse
+   reste EXCLUE du catalogue `NativeApplicationSeeder` (curation inchangée).
+
+### Checklist rapide (Story 35.5)
+
+- [ ] 35.5.1 — Migration seed jouée sur /vm ; capacité VISIBLE mais grisée/inactive,
+      absente des onglets d'armement ; description = 3 idées.
+- [ ] 35.5.2 — Armée `on` par override, `/state` n'émet RIEN (gate `is_active`) ; golden
+      + `FROZEN_STATE_HASH` intacts.
+- [ ] 35.5.3 — Donnée iso-GPO : 4 clés HKCU, 2 command `name=""` REG_EXPAND_SZ
+      (`ImageView_Fullscreen` × 2), 2 Clsid REG_SZ DISTINCTS ; off = marqueur `$ensure`.
+- [ ] 35.5.4 — (DIFFÉRÉ activation) réenregistrement fonctionnel au logon, off = suppression,
+      `UserChoice` NON touché (limite 27.11), exclusion `NativeApplicationSeeder` tenue.
