@@ -1,6 +1,6 @@
 # Story 35.5 : Capacité `photo_viewer_restored` — seed sans évolution moteur
 
-Status: ready-for-dev
+Status: review
 
 <!-- Source d'autorité : _bmad-output/planning-artifacts/epics-capacites-v2.md#Story-35.5 (Epic 35 ne figure PAS dans epics.md). -->
 <!-- Valeurs iso-GPO vérifiées sur la SOURCE : ../GPO_spécialesCD95/Ajustement_Photo/{B1E4CA63-2196-40A7-A7AF-50B0FFE099BD}/DomainSysvol/GPO/Machine/Preferences/Registry/Registry.xml -->
@@ -111,21 +111,21 @@ En PHP, la commande s'écrit : `'%SystemRoot%\\System32\\rundll32.exe "%ProgramF
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Migration de seed (AC1, AC2, AC3, AC5)**
-  - [ ] 1.1 Créer `database/migrations/2026_07_03_130000_seed_capability_photo_viewer_restored.php` (timestamp à ajuster si une story parallèle de l'epic a pris le créneau — les noms de fichiers diffèrent, seul l'ordre importe peu ici) : patron EXACT du palier A `2026_07_02_100000_seed_capabilities_gpo_cd95_lot.php` (up : `updateOrInsert` capacité par `key` + projection par `(capability_id, os, mechanism)` ; down : delete par `key` ; garde `hasTable` ; `JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES`).
-  - [ ] 1.2 Donnée conforme au tableau « Spécification » : options `[unmanaged, on, off]` avec libellés convention sujet+état, `default_value = 'unmanaged'`, **`is_active => false`**, marqueur `'off' => ['$ensure' => 'absent']` en littéral sur les 4 clés (iso retrofit 35.1).
-  - [ ] 1.3 Docblock : routage HKCR→HKCU (iso commentaire `onedrive_hidden`), quirk print `ImageView_Fullscreen`, les 2 Clsid distincts sourcés du `Registry.xml` GPO, limite de périmètre 27.11, motif du gate (valeur par défaut `name:''` rejetée par `parseRegistrySpec` — activation via migration d'une ligne quand l'agent la supportera).
-- [ ] **Task 2 — Tests seed (AC1, AC2, AC3)** — dans `tests/Feature/Migrations/CapabilitiesSchemaAndSeedTest.php`, section « Story 35.5 » (append, style des tests retrofit 35.1)
-  - [ ] 2.1 `photo_viewer_restored_is_seeded_iso_gpo_cd95_with_four_hkcr_keys_routed_hkcu` : champs de la capacité + les 4 clés EXACTES (assertSame sur paths/names/types/valeurs `on`, y compris `'' === $key['name']` des 2 command et l'inégalité des 2 Clsid).
-  - [ ] 2.2 Ajouter `photo_viewer_restored` à `$withOff` dans `on_off_capabilities_emit_a_real_value_for_off` (2.2 suffit pour le marqueur — le test générique vérifie déjà valeur réelle OU marqueur sur chaque clé).
-  - [ ] 2.3 `photo_viewer_restored_is_gated_inactive_until_agent_supports_default_value_names` : `is_active === false` (message = motif), et provider User n'émet RIEN même armé `on` par override de parc (pattern du test provider retrofit : `WorkstationGroupObserver::disableSync()`, factories, `TargetContext::for($ws, null)`).
-  - [ ] 2.4 Idempotence/réversibilité : `up()` rejoué = snapshot identique (options + spec + is_active) ; `down()` supprime capacité ET projection ; `up()` re-seed à l'identique (pattern `retrofit_migration_is_idempotent_and_reversible`, en version seed).
-- [ ] **Task 3 — Test chaîne provider post-gate (AC4)**
-  - [ ] 3.1 `photo_viewer_restored_emits_session_items_via_the_real_provider_once_activated` : activer la capacité DANS le test (`update(['is_active' => true])` — simulation du flip), override parc `on` → 4 items 5 clés HKCU exacts ; override `off` → 4 items 4 clés `ensure:absent` ; `RegistryMachineCapabilityProvider` → 0 item. Utiliser les constantes `AbstractCapabilityStateProvider::SPEC_ENSURE`/`ENSURE_ABSENT` côté assertions si utile.
-- [ ] **Task 4 — Validation finale**
-  - [ ] 4.1 Tests HÔTE ciblés (php8.4 + sqlite, JAMAIS de run massif) : `php artisan test --filter='CapabilitiesSchemaAndSeedTest'` puis `--filter='CapabilityRegistryProviderTest|CapabilityRegistryCompilationTest|ContractV1Test'` (non-régression : la nouvelle donnée ne perturbe ni providers ni golden).
-  - [ ] 4.2 Vérifier `git status` : AUCUN fichier `app/Services/Agent/**`, `agent/**`, `tests/Fixtures/Agent/**` modifié (AC4).
-  - [ ] 4.3 Signaler en Dev Agent Record : migration **à rejouer sur /vm** (`php artisan migrate` — jamais auto-appliquée) ; AUCUNE release agent à publier (zéro modif agent).
+- [x] **Task 1 — Migration de seed (AC1, AC2, AC3, AC5)**
+  - [x] 1.1 Créer `database/migrations/2026_07_03_130000_seed_capability_photo_viewer_restored.php` (timestamp à ajuster si une story parallèle de l'epic a pris le créneau — les noms de fichiers diffèrent, seul l'ordre importe peu ici) : patron EXACT du palier A `2026_07_02_100000_seed_capabilities_gpo_cd95_lot.php` (up : `updateOrInsert` capacité par `key` + projection par `(capability_id, os, mechanism)` ; down : delete par `key` ; garde `hasTable` ; `JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES`).
+  - [x] 1.2 Donnée conforme au tableau « Spécification » : options `[unmanaged, on, off]` avec libellés convention sujet+état, `default_value = 'unmanaged'`, **`is_active => false`**, marqueur `'off' => ['$ensure' => 'absent']` en littéral sur les 4 clés (iso retrofit 35.1).
+  - [x] 1.3 Docblock : routage HKCR→HKCU (iso commentaire `onedrive_hidden`), quirk print `ImageView_Fullscreen`, les 2 Clsid distincts sourcés du `Registry.xml` GPO, limite de périmètre 27.11, motif du gate (valeur par défaut `name:''` rejetée par `parseRegistrySpec` — activation via migration d'une ligne quand l'agent la supportera).
+- [x] **Task 2 — Tests seed (AC1, AC2, AC3)** — dans `tests/Feature/Migrations/CapabilitiesSchemaAndSeedTest.php`, section « Story 35.5 » (append, style des tests retrofit 35.1)
+  - [x] 2.1 `photo_viewer_restored_is_seeded_iso_gpo_cd95_with_four_hkcr_keys_routed_hkcu` : champs de la capacité + les 4 clés EXACTES (assertSame sur paths/names/types/valeurs `on`, y compris `'' === $key['name']` des 2 command et l'inégalité des 2 Clsid).
+  - [x] 2.2 Ajouter `photo_viewer_restored` à `$withOff` dans `on_off_capabilities_emit_a_real_value_for_off` (2.2 suffit pour le marqueur — le test générique vérifie déjà valeur réelle OU marqueur sur chaque clé).
+  - [x] 2.3 `photo_viewer_restored_is_gated_inactive_until_agent_supports_default_value_names` : `is_active === false` (message = motif), et provider User n'émet RIEN même armé `on` par override de parc (pattern du test provider retrofit : `WorkstationGroupObserver::disableSync()`, factories, `TargetContext::for($ws, null)`).
+  - [x] 2.4 Idempotence/réversibilité (`photo_viewer_restored_seed_is_idempotent_and_reversible`) : `up()` rejoué = snapshot identique (options + spec + is_active) ; `down()` supprime capacité ET projection ; `up()` re-seed à l'identique (pattern `retrofit_migration_is_idempotent_and_reversible`, en version seed).
+- [x] **Task 3 — Test chaîne provider post-gate (AC4)**
+  - [x] 3.1 `photo_viewer_restored_emits_session_items_via_the_real_provider_once_activated` : activer la capacité DANS le test (`update(['is_active' => true])` — simulation du flip), override parc `on` → 4 items 5 clés HKCU exacts ; override `off` → 4 items 4 clés `ensure:absent` ; `RegistryMachineCapabilityProvider` → 0 item. Utiliser les constantes `AbstractCapabilityStateProvider::SPEC_ENSURE`/`ENSURE_ABSENT` côté assertions si utile.
+- [x] **Task 4 — Validation finale**
+  - [x] 4.1 Tests HÔTE ciblés (php8.4 + sqlite, JAMAIS de run massif) : `CapabilitiesSchemaAndSeedTest` (19/19) puis `CapabilityRegistryProviderTest|CapabilityRegistryCompilationTest|ContractV1Test` (33/33). Voir Dev Agent Record pour la commande (override `APP_BASE_PATH` imposé par le symlink `vendor/`).
+  - [x] 4.2 Vérifier `git status` : AUCUN fichier `app/Services/Agent/**`, `agent/**`, `tests/Fixtures/Agent/**` modifié (AC4) — seuls la migration (nouveau) et le test sont touchés.
+  - [x] 4.3 Signaler en Dev Agent Record : migration **à rejouer sur /vm** (`php artisan migrate` — jamais auto-appliquée) ; AUCUNE release agent à publier (zéro modif agent).
 
 ## Dev Notes
 
@@ -188,8 +188,79 @@ En PHP, la commande s'écrit : `'%SystemRoot%\\System32\\rundll32.exe "%ProgramF
 
 ### Agent Model Used
 
+opus (Opus 4.8, 1M) — worktree `ultradev/35-5`, dev-story workflow BMAD.
+
 ### Debug Log References
+
+- Valeurs iso-GPO RE-VÉRIFIÉES à la source avant seed :
+  `GPO_spécialesCD95/Ajustement_Photo/{B1E4CA63-…}/DomainSysvol/GPO/Machine/Preferences/Registry/Registry.xml`
+  → 4 `<Properties>` : les 2 `command` ont `name=""` / `type="REG_EXPAND_SZ"` / value
+  `%SystemRoot%\System32\rundll32.exe "%ProgramFiles%\Windows Photo Viewer\PhotoViewer.dll", ImageView_Fullscreen %1`
+  (identique open & print — quirk confirmé) ; les 2 `DropTarget` ont `name="Clsid"` /
+  `type="REG_SZ"` / GUID distincts (`{FFE2A43C-…}` open, `{60fd46de-…}` print). Aucune
+  valeur « de mémoire ».
+- **Piège d'environnement worktree (à connaître pour la review et les prochaines stories).**
+  `vendor/` est un SYMLINK vers le repo principal ; le composer autoload PSR-4 mappe donc
+  `App\`, `Tests\`, `Database\Factories\` vers le repo PRINCIPAL. Résultat : `php artisan test`
+  charge `Tests\CreatesApplication` depuis le repo principal → `bootstrap/app.php` principal →
+  `base_path()` = repo principal → le migrateur (et `database_path()`) lit les migrations du
+  repo PRINCIPAL (140), IGNORANT la nouvelle migration du worktree (141) → capacité non
+  seedée, faux échecs. De plus `variables_order = GPCS` (pas de `E`) ⇒ un simple
+  `APP_BASE_PATH=… php artisan test` ne remplit PAS `$_ENV`. Commande de test qui FONCTIONNE
+  (base = worktree, PHPUnit découvre les fichiers de test du worktree via `phpunit.xml`) :
+  `APP_BASE_PATH="$PWD" php -d variables_order=EGPCS vendor/bin/phpunit --configuration phpunit.xml --filter='…'`.
+  Aucun fichier de conf modifié (override 100 % en ligne de commande).
 
 ### Completion Notes List
 
+- Capacité `photo_viewer_restored` seedée FIDÈLE et COMPLÈTE (4 clés HKCR → HKCU\Software\Classes,
+  portée Session) mais **`is_active = false`** (gate d'honnêteté D3) : le provider filtre
+  `is_active` ⇒ rien n'est émis, golden `tests/Fixtures/Agent/*` et `FROZEN_STATE_HASH`
+  STRICTEMENT intacts (vérifié : `ContractV1Test` vert, non modifié).
+- `off` = vraie action par suppression (marqueur `{"$ensure":"absent"}` sur les 4 clés,
+  35.1) ; `photo_viewer_restored` ajoutée à `$withOff` de l'invariant on/off.
+- Task 3 SIMULE le flip post-gate (`update(['is_active' => true])` DANS le test) pour prouver
+  la chaîne provider de bout en bout sur données réelles : `on` → 4 écritures HKCU 5 clés
+  (2 `name===''`/REG_EXPAND_SZ/commande, 2 `name==='Clsid'`/REG_SZ/GUID distincts, sans fuite
+  d'id de capacité) ; `off` → 4 suppressions 4 clés `ensure:absent` ; `RegistryMachineCapabilityProvider`
+  muet (aucune clé HKLM). C'est la preuve que la DONNÉE est correcte — la production reste gatée.
+- **Assertion balisée `FLIP 35.2`** (pour la review) : dans
+  `photo_viewer_restored_is_gated_inactive_until_agent_supports_default_value_names`,
+  l'assertion `assertFalse($cap->is_active, …)` porte le commentaire `FLIP 35.2` — c'est la
+  SEULE assertion à basculer en `assertTrue` quand l'orchestrateur jouera le flip
+  `is_active=true` (via migration dédiée, une fois le support `name==""` prouvé côté agent,
+  scope ajouté à la story 35.2). Les 3 autres tests prouvent le gate par la mécanique
+  EXISTANTE (capacité inactive ⇒ provider muet) et restent verts avant/après flip (Task 3
+  active déjà localement la capacité pour prouver la donnée).
+- Limite de périmètre documentée (docblock migration + QA + story) : réenregistrement ≠
+  `UserChoice` (composer associations 27.11, HORS story) ; visionneuse EXCLUE de
+  `NativeApplicationSeeder` (curation inchangée).
+- **Contexte d'orchestration intégré** : la découverte `name=""` (rejeté par
+  `parseRegistrySpec` Go) a été AJOUTÉE AU SCOPE de la story 35.2 (branche `ultradev/35-2`)
+  par l'orchestrateur ; le flip `is_active=true` de cette capacité sera fait PAR
+  L'ORCHESTRATEUR à l'intégration de la vague, via une migration dédiée POSTÉRIEURE, une fois
+  le support `name==""` prouvé. Cette story livre bien le fail-safe `is_active=false`.
+
+**Tests (hôte php8.4 + sqlite, filtres ciblés) :**
+
+- `CapabilitiesSchemaAndSeedTest` → **19/19 OK, 316 assertions** (4 nouveaux tests 35.5 +
+  `$withOff` étendu).
+- `CapabilityRegistryProviderTest|CapabilityRegistryCompilationTest|ContractV1Test` →
+  **33/33 OK, 226 assertions** (non-régression providers + golden figé).
+
+**MIGRATION À REJOUER SUR /vm (ACTION HUMAINE, jamais auto-appliquée) :**
+`php artisan migrate` sur /vm (`2026_07_03_130000_seed_capability_photo_viewer_restored`).
+**AUCUNE release agent à publier** (zéro modif `agent/**`, pas de bump `version.go`) — la
+capacité est inactive, rien n'atteint le poste tant que le flip d'activation n'est pas joué.
+
 ### File List
+
+- `database/migrations/2026_07_03_130000_seed_capability_photo_viewer_restored.php` (NOUVEAU)
+- `tests/Feature/Migrations/CapabilitiesSchemaAndSeedTest.php` (modifié — section 35.5 : 4 tests + `$withOff`)
+- `docs/qa/domains/agent.md` (modifié — section runbook « Story 35.5 » append-only)
+
+### Change Log
+
+- 2026-07-03 — Seed capacité `photo_viewer_restored` (4 clés HKCR→HKCU, iso-GPO CD95), gatée
+  `is_active=false` (agent ne sait pas écrire `name==""`), off par suppression (35.1).
+  Tests seed + gate + chaîne provider post-gate. Runbook QA 35.5. Aucune évolution moteur.
