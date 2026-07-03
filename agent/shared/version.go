@@ -91,8 +91,24 @@ package shared
 // recalculés). Un binaire ANTÉRIEUR parse un item `absent` en {status: error}
 // isolé sur le type registry → publier la release (update.sh ne publie jamais
 // seul).
+// 2.4.0 = type `registry_list` (Story 35.2, contrat §7.6) : listes registre à
+// sous-valeurs indexées `\1..\N` (ExtensionInstallForcelist, DisallowRun) —
+// NOUVEAU handler `RegistryListHandler` (portées Machine/SYSTEM et Session/
+// compagnon), réconciliation de CLÉ-CONTENEUR (D3) : écrit les valeurs `1..N`
+// dans l'ordre (Kind = entry_type ∈ REG_SZ|REG_EXPAND_SZ), supprime toute
+// autre valeur AU NOM NUMÉRIQUE (canon strconv strict, "01" ≠ "1") — jamais
+// les valeurs non numériques, jamais la clé-conteneur ; liste vide = purge.
+// NOUVEL op additif `RegistryOps.ValueNames(hive, path)` (clé absente ⇒
+// nil,nil). AUSSI : `parseRegistrySpec` accepte `name: ""` (valeur PAR DÉFAUT
+// d'une clé, `(Default)` — besoin 35.5) : la clé `name` doit être PRÉSENTE
+// (absence = invalide), vide = default value (Get/Set/DeleteValue("") la
+// ciblent nativement). Golden state.v1.json bumpé (+1 item registry_list
+// machine, hashes figés jumeaux PHP↔Go recalculés). ⚠️ Un binaire ≤ 2.3.0
+// IGNORE le type registry_list EN SILENCE (contrat §8 — aucun statut, aucune
+// erreur : « réglage sans effet ») → PUBLIER la release 2.4.0 (update.sh ne
+// publie jamais seul).
 //
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.3.0"
+var Version = "2.4.0"

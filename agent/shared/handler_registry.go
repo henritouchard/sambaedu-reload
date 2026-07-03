@@ -134,6 +134,13 @@ type RegistryOps interface {
 	// une clé) déjà absente N'EST PAS une erreur (idempotence : nil). err =
 	// accès refusé / ruche invalide.
 	Delete(hive, path, name string) error
+
+	// ValueNames énumère les NOMS des valeurs d'une clé (Story 35.2 — la
+	// réconciliation de clé-conteneur du type `registry_list` doit VOIR les
+	// entrées surnuméraires). Clé ABSENTE ⇒ (nil, nil) — pas une erreur
+	// (idempotence, iso Delete : la cible « aucune entrée » est déjà
+	// atteinte). err = accès refusé / ruche invalide.
+	ValueNames(hive, path string) ([]string, error)
 }
 
 // registryNotifier : hook OPTIONNEL (assertion de type sur Ops) implémenté par
@@ -303,8 +310,15 @@ func (h *RegistryHandler) Apply(items []StateItem) error {
 }
 
 // parseRegistrySpec : extrait un RegistrySpec d'un payload §3 brut. Champs
-// hive/path/name manquants = enveloppe invalide (false) → le moteur rapporte
-// error. Verbe `ensure` (Story 35.1, optionnel) : `"absent"` ⇒ item de
+// hive/path manquants = enveloppe invalide (false) → le moteur rapporte
+// error. `name` (Story 35.2, scope 35.5) : la clé DOIT être PRÉSENTE dans le
+// payload (absence = enveloppe invalide), mais `""` est un nom LÉGITIME — la
+// valeur PAR DÉFAUT de la clé (`(Default)` dans regedit, contrat §7.1). Les
+// API registre (RegQueryValueEx/RegSetValueEx/RegDeleteValue, relayées par
+// golang.org/x/sys/windows/registry) traitent un nom vide comme la valeur par
+// défaut : GetValue("", …) / SetStringValue("", …) / DeleteValue("") ciblent
+// bien `(Default)` — aucun cas particulier côté handler.
+// Verbe `ensure` (Story 35.1, optionnel) : `"absent"` ⇒ item de
 // SUPPRESSION — seuls hive/path/name sont exigés (type/value sont ABSENTS du
 // payload 4 clés) ; champ absent ou `"present"` ⇒ item d'écriture (parcours
 // historique : type exigé, valeur typée selon `type`) ; toute autre valeur ⇒
@@ -317,8 +331,9 @@ func parseRegistrySpec(raw any) (RegistrySpec, bool) {
 
 	hive, _ := payload["hive"].(string)
 	path, _ := payload["path"].(string)
-	name, _ := payload["name"].(string)
-	if hive == "" || path == "" || name == "" {
+	rawName, hasName := payload["name"]
+	name, nameIsString := rawName.(string)
+	if hive == "" || path == "" || !hasName || !nameIsString {
 		return RegistrySpec{}, false
 	}
 

@@ -191,6 +191,37 @@ func (o *registryOps) Delete(hive, path, name string) error {
 	return nil
 }
 
+// ValueNames énumère les NOMS des valeurs d'une clé (Story 35.2 — la
+// réconciliation de clé-conteneur `registry_list` doit voir les entrées
+// surnuméraires). Clé ABSENTE ⇒ (nil, nil) : pas une erreur (idempotence, iso
+// Delete — la cible « aucune entrée » est déjà atteinte). err = accès refusé /
+// ruche invalide. NB : la valeur PAR DÉFAUT de la clé, si définie, est
+// énumérée sous le nom "" (jamais numérique → jamais touchée par la
+// réconciliation de liste).
+func (o *registryOps) ValueNames(hive, path string) ([]string, error) {
+	root, err := rootKey(hive)
+	if err != nil {
+		return nil, err
+	}
+
+	key, err := registry.OpenKey(root, path, registry.QUERY_VALUE)
+	if err != nil {
+		if errors.Is(err, registry.ErrNotExist) {
+			return nil, nil // clé-conteneur absente → aucune entrée (idempotent)
+		}
+
+		return nil, fmt.Errorf("ouverture de %s\\%s : %w", hive, path, err)
+	}
+	defer key.Close()
+
+	names, err := key.ReadValueNames(-1)
+	if err != nil {
+		return nil, fmt.Errorf("énumération de %s\\%s : %w", hive, path, err)
+	}
+
+	return names, nil
+}
+
 // SHChangeNotify (shell32) — signale au shell un changement global afin que
 // l'Explorer DÉJÀ ouvert relise ses réglages de vue (Hidden, HideFileExt) sans
 // attendre un relogon. Sans cet appel, écrire HKCU\…\Explorer\Advanced ne change

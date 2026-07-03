@@ -130,7 +130,23 @@ class ContractV1Test extends TestCase
     // `ensure` n'y a pas de surface. machine = 4 items, 12 items au total, hash
     // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
     // même valeur (test croisé NFR13).
-    private const FROZEN_STATE_HASH = 'f3d22e9f81d927d3cfc54ecf7f850d92a9a012135857df53e7fd91d82392be7f';
+    //
+    // Re-bumpé SCIEMMENT par la Story 35.2 (évolution MINEURE du contrat, §9) :
+    // NOUVEAU type `registry_list` (D1, listes registre à sous-valeurs indexées
+    // `\1..\N`) — le golden gagne UN item en portée `machine` (conteneur
+    // Forcelist Chrome de `pix_extension_forced`, payload EXACTEMENT 4 clés
+    // `{hive, path, entry_type, values}`, `values` = liste ORDONNÉE de chaînes —
+    // l'ordre est porteur de sens, la canonicalisation NE trie PAS les listes
+    // §4). Type AJOUTÉ (constante RESOURCE_TYPES additive) = forward-compatible,
+    // pas un major : un agent ≤ 2.3.0 IGNORE le type EN SILENCE (§8 — aucun
+    // statut au rapport), d'où publication de release 2.4.0 obligatoire.
+    // `report.v1.json` est INCHANGÉ : les items de rapport
+    // `{type, status, hash[, detail]}` ne portent aucun payload et le nouveau
+    // type entre dans ReportRequest via Rule::in(RESOURCE_TYPES) — zéro autre
+    // changement d'ingestion. machine = 5 items, 13 items au total, hash
+    // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
+    // même valeur (test croisé NFR13).
+    private const FROZEN_STATE_HASH = 'fe8eb6eae22994ed2e35c45a726d9b53c5a562fca34fedbf63aebd25ba43fb44';
 
     private StateHasher $hasher;
 

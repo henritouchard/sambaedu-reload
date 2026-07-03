@@ -82,7 +82,18 @@ import (
 // `report.v1.json` INCHANGÉ (les items de rapport ne portent aucun payload).
 // machine = 4, 12 items au total, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE
 // côté PHP (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
-const frozenStateHash = "f3d22e9f81d927d3cfc54ecf7f850d92a9a012135857df53e7fd91d82392be7f"
+// Re-bumpé SCIEMMENT par la Story 35.2 (§9) : NOUVEAU type `registry_list`
+// (D1, listes registre à sous-valeurs indexées `\1..\N`) — le golden gagne UN
+// item en portée MACHINE (conteneur Forcelist Chrome de `pix_extension_forced`,
+// payload EXACTEMENT 4 clés `{hive, path, entry_type, values}`, `values` =
+// liste ORDONNÉE de chaînes — jamais triée par la canonicalisation §4). Type
+// AJOUTÉ (ResourceTypes additive) = forward-compatible, pas un major : un agent
+// ≤ 2.3.0 IGNORE le type EN SILENCE (§8, aucun statut au rapport) → publication
+// de release 2.4.0 obligatoire. `report.v1.json` INCHANGÉ (les items de rapport
+// ne portent aucun payload). machine = 5, 13 items au total, hash d'état
+// RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH —
+// test croisé NFR13).
+const frozenStateHash = "fe8eb6eae22994ed2e35c45a726d9b53c5a562fca34fedbf63aebd25ba43fb44"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -186,8 +197,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 12 {
-		t.Errorf("12 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1), %d vérifiés", checked)
+	if checked != 13 {
+		t.Errorf("13 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2), %d vérifiés", checked)
 	}
 }
 

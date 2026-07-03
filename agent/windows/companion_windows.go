@@ -131,6 +131,16 @@ func runCompanion() error {
 					Ops: &registryOps{log: logger},
 					Log: logger,
 				},
+				// Story 35.2 — listes registre a sous-valeurs indexees `\1..\N`
+				// (contrat §7.6, reconciliation de cle-conteneur D3). Le
+				// COMPAGNON reconcilie les conteneurs HKCU (ex. Policies\
+				// Explorer\DisallowRun de blocked_executables — effet Explorer
+				// au LOGON SUIVANT). Changement effectif => rafraichissement
+				// shell, meme gate que `registry`.
+				"registry_list": &shared.RegistryListHandler{
+					Ops: &registryOps{log: logger},
+					Log: logger,
+				},
 				// Story 27.3bis — associations de fichiers/protocoles (exclusive
 				// par identifiant / session) : le COMPAGNON impose le ProgId par
 				// defaut sous HKCU UserChoice + le HASH anti-tamper (calcule

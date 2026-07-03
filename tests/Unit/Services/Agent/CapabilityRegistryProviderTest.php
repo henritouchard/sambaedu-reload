@@ -491,6 +491,35 @@ class CapabilityRegistryProviderTest extends TestCase
         self::assertSame(7, $ugOverride->payload['value']);
     }
 
+    // ── Valeur PAR DÉFAUT d'une clé : name "" (Story 35.2, scope 35.5) ────
+
+    #[Test]
+    public function empty_name_default_value_key_is_emitted_and_hashable(): void
+    {
+        // `""` est le nom légitime de la valeur PAR DÉFAUT d'une clé Windows
+        // (`(Default)`, contrat §7.1) — besoin 35.5 (photoviewer command).
+        // AUCUNE garde ne doit le refuser : le provider l'émet tel quel, le
+        // StateHasher le canonicalise sans erreur, l'exclusiveKey reste stable.
+        $this->makeCapability('photoviewer_default_command', 'on', [
+            ['hive' => 'HKCU', 'path' => 'Software\\Classes\\Applications\\photoviewer.dll\\shell\\open\\command', 'name' => '', 'type' => 'REG_EXPAND_SZ', 'value' => ['on' => '%SystemRoot%\\pv.dll %1']],
+        ]);
+
+        $items = $this->userProvider()->itemsFor($this->ctx());
+
+        self::assertCount(1, $items);
+        $payload = $items->first()->payload;
+        self::assertSame(['hive', 'path', 'name', 'type', 'value'], array_keys($payload));
+        self::assertSame('', $payload['name'], 'name vide ÉMIS tel quel (valeur par défaut)');
+        self::assertSame('REG_EXPAND_SZ', $payload['type']);
+
+        // exclusiveKey stable (3 segments, dernier vide) et hash calculable.
+        self::assertStringEndsWith('|', $this->userProvider()->exclusiveKey($payload));
+        self::assertSame(2, substr_count($this->userProvider()->exclusiveKey($payload), '|'));
+        self::assertNotEmpty((new \App\Services\Agent\StateHasher())->hashItem([
+            'type' => 'registry', 'semantics' => 'exclusive', 'payload' => $payload,
+        ]));
+    }
+
     // ── exclusiveKey : identité insensible à la casse ─────────────────────
 
     #[Test]

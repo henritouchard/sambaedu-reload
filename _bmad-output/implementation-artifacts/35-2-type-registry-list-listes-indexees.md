@@ -1,6 +1,6 @@
 # Story 35.2 : Type `registry_list` — listes à sous-clés indexées `\N`
 
-Status: ready-for-dev
+Status: review
 
 <!-- Source d'autorité : _bmad-output/planning-artifacts/epics-capacites-v2.md (Epic 35 ne figure PAS dans epics.md). -->
 
@@ -125,38 +125,44 @@ Deuxième mur de l'Epic 35 (Capacités v2 — GPO spéciales CD95) : les policie
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Contrat & golden files (AC1)** *(commencer ici : fige le wire format)*
-  - [ ] 1.1 `app/Services/Agent/StateContract.php` : `'registry_list'` dans `RESOURCE_TYPES` (constante additive — `ReportRequest::rules()` suit automatiquement).
-  - [ ] 1.2 `docs/agent/contract-v1.md` : §7 liste des identifiants ; nouvelle sous-section payload `registry_list` (tableau 4 clés + exemple + sémantique D3 complète : exclusif PAR CLÉ-CONTENEUR, noms numériques possédés, liste vide = purge, non-numériques intouchés, jamais la clé) ; §9 mention (nouveau type = mineur, agent antérieur ignore silencieusement).
-  - [ ] 1.3 `tests/Fixtures/Agent/state.v1.json` : +1 item machine `{"type":"registry_list","semantics":"exclusive","payload":{"hive":"HKLM","path":"SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallForcelist","entry_type":"REG_SZ","values":["pgpjajcmfbfdmcgjlbiengidaknopaok;https://clients2.google.com/service/update2/crx"]},"hash":"<recalculé via StateHasher::hashItem>"}`.
-  - [ ] 1.4 `ContractV1Test.php` : `FROZEN_STATE_HASH` recalculé + justification 35.2 dans la chaîne de commentaires (règle 23.1) ; vérifier les assertions de structure (nouveau type accepté).
-  - [ ] 1.5 `agent/shared/hasher_test.go` : `frozenStateHash` = MÊME valeur + justification ; comptage 12→13. `agent/shared/contract_test.go` : machine 4→5 (commentaire motivé). `loop_test.go` (`mustReadGolden`) : vérifier, normalement aucun ajustement (le golden est un corps HTTP non compté).
-  - [ ] 1.6 Justification écrite `report.v1.json` INCHANGÉ (aucun payload au rapport ; type validé par `Rule::in(RESOURCE_TYPES)`).
-- [ ] **Task 2 — Providers serveur + garde-fou (AC2, AC3)**
-  - [ ] 2.1 `app/Models/CapabilityProjection.php` : `public const MECHANISM_REGISTRY_LIST = 'registry_list';` (+ docblock).
-  - [ ] 2.2 `AbstractCapabilityStateProvider.php` : `protected function mechanism(): string` (défaut `MECHANISM_REGISTRY`) utilisé par `type()` et les deux filtres de `itemsFor()` ; `expand()` private→**protected** ; `resolveKeyValue()` + `UNMANAGED` private→**protected** ; docblocks mis à jour (le provider abstrait devient la base des mécanismes de capacité, registry = défaut historique).
-  - [ ] 2.3 NOUVEAU `AbstractRegistryListCapabilityProvider.php` (extends AbstractCapabilityStateProvider) : `mechanism()` = MECHANISM_REGISTRY_LIST ; `exclusiveKey()` = `{hive|path}` minuscules ; `expand()` : itère `spec.keys`, filtre `hive()` du provider, résout `values` via `resolveKeyValue()` (UNMANAGED ⇒ continue ; assoc inattendue dont `$ensure` ⇒ continue défensif ; résolu non-liste ⇒ continue) ; `entry_type` défaut `REG_SZ`, hors `{REG_SZ, REG_EXPAND_SZ}` ⇒ non émis ; émet EXACTEMENT `{hive, path, entry_type, values: list<string> castée}`.
-  - [ ] 2.4 NOUVEAUX `RegistryListMachineCapabilityProvider.php` (scope Machine, hive HKLM) + `RegistryListUserCapabilityProvider.php` (scope Session, hive HKCU) — coquilles iso providers registry.
-  - [ ] 2.5 `app/Providers/AgentServiceProvider.php` : +2 lignes dans le tableau de providers du `StateCompiler` (avec commentaire 35.2), enrobées `UpstreamAwareProvider::wrap` comme les autres. NE PAS toucher `UpstreamLockCollisionDetector` (canal amont = registry only, hors scope, iso piège 35.1 #12) ni ajouter d'adaptateur amont.
-  - [ ] 2.6 NOUVEAU garde-fou d'authoring (service pur, ex. `app/Services/Agent/Providers/CapabilitySpecCollisionGuard.php`) : entrée = projections windows (registry + registry_list), sortie = violations (collision `{hive|path}` scalaire↔conteneur, `entry_type` invalide, `values` mal formées) ; message d'erreur nommant capacités + conteneur.
-  - [ ] 2.7 NOUVEAU `tests/Unit/Services/Agent/CapabilityRegistryListProviderTest.php` : (a) map on→liste émise 4 clés ; (b) `'off' => []` émet `values: []` ; (c) UNMANAGED n'émet rien ; (d) littéral liste toujours émis ; (e) assoc inattendue/`$ensure` non émis ; (f) `entry_type` invalide non émis ; (g) filtre par ruche (HKLM vs HKCU) ; (h) pas de fuite d'id, exactement 4 clés, strings only ; (i) `exclusiveKey` = 2 segments minuscules.
-  - [ ] 2.8 Test de compilation (`CapabilityRegistryCompilationTest.php` étendu OU nouveau fichier dédié, StateCompiler INTOUCHÉ) : override de parc remplace la liste ENTIÈRE du broadcast (jamais d'union) ; deux conteneurs distincts s'accumulent ; UserGroup bat Broadcast (blocked_executables est Session/UserGroup-ciblée).
-  - [ ] 2.9 Invariant `CapabilitiesSchemaAndSeedTest` : `no_container_is_targeted_by_both_registry_scalar_and_registry_list` (guard sur données seedées réelles) + cas non-collision `blocked_executables` (parent/enfant).
-- [ ] **Task 3 — Handler Go `registry_list` (AC4)**
-  - [ ] 3.1 `agent/shared/handler_registry.go` : méthode `ValueNames(hive, path string) ([]string, error)` sur l'interface `RegistryOps` (doc : clé absente ⇒ nil,nil).
-  - [ ] 3.2 NOUVEAU `agent/shared/handler_registry_list.go` : `RegistryListHandler{Ops RegistryOps, Log *Logger}` ; parse payload (4 clés, `entry_type` borné, `values` []string, vide admis) ; dédoublonnage par identité de conteneur `{hive|path}` minuscules (dernière occurrence, ordre trié — iso `desiredSpecs`) ; helpers noms numériques (digits-only) + canon strconv ; `Test`/`Apply` selon AC4 (effort maximal, idempotence, shellRefresh HKCU via `registryNotifier` sur changement effectif, réutilise `RegistrySpec`/`RegistryValue`/`isUserHive` existants pour l'écriture) ; doc de tête (D3 : le handler POSSÈDE les noms numériques de la clé, ne touche jamais le reste).
-  - [ ] 3.3 `agent/windows/handler_registry_windows.go` : impl `ValueNames` (`registry.OpenKey(root, path, registry.QUERY_VALUE)` + `ReadValueNames(-1)` ; `registry.ErrNotExist` ⇒ nil,nil).
-  - [ ] 3.4 `agent/windows/main_windows.go` (map SYSTEM) + `agent/windows/companion_windows.go` (map compagnon) : entrée `"registry_list": &shared.RegistryListHandler{Ops: &registryOps{log: logger}, Log: logger}` avec commentaire 35.2.
-  - [ ] 3.5 `agent/shared/handler_registry_test.go` : `fakeRegistryOps.ValueNames` (+ compteurs). NOUVEAU `handler_registry_list_test.go` : (a) écriture 1..N ordonnée + relecture conforme ; (b) surnuméraire `"3"` supprimé, non-numérique `"NoDriveTypeAutoRun"` intouché ; (c) `"01"`/`"007"` hors canon supprimés ; (d) liste vide purge les numérotés, clé absente = compliant ; (e) idempotence 2 passes = zéro op ; (f) valeur numérotée Kind `REG_UNSUPPORTED` réécrite/supprimée ; (g) re-drift STRICT à travers le moteur (iso `TestRegistryAbsentThroughEngineStrictRedrift`) ; (h) shellRefresh HKCU sur changement effectif, silence sinon ; (i) payloads invalides ⇒ error ; (j) mix multi-conteneurs avec isolation des erreurs ; (k) la clé-conteneur n'est JAMAIS supprimée.
-  - [ ] 3.6 `agent/shared/version.go` : bump `2.4.0` + entrée changelog.
-- [ ] **Task 4 — Seed du lot (AC5)**
-  - [ ] 4.1 NOUVELLE migration `database/migrations/2026_07_03_110000_seed_capabilities_registry_list_lot.php` : les 2 capacités + 3 lignes de projection (pix: 1 registry_list ; blocked: 1 registry + 1 registry_list), pattern CD95 exact, idempotente, `down()` par `whereIn('key', …)->delete()` ; commentaires de tête : bi-projection D5, off honnête, cmd.exe≈DisableCMD, armement UserGroup = donnée/35.4.
-  - [ ] 4.2 `CapabilitiesSchemaAndSeedTest.php` : tests seed (options/défauts/projections des 2 capacités, bi-projection = 2 lignes) + extension de `on_off_capabilities_emit_a_real_value_for_off` au mécanisme `registry_list` (off = liste y compris vide OU marqueur) + tests d'intégration provider AC5 (on/off/unmanaged, ordre des 5 entrées préservé).
-- [ ] **Task 5 — Validation finale**
-  - [ ] 5.1 Tests HÔTE ciblés (php8.4 + sqlite, JAMAIS de run massif) : `ContractV1Test|StateHasherTest`, `CapabilityRegistryProviderTest|CapabilityRegistryListProviderTest|CapabilityRegistryCompilationTest`, `CapabilitiesSchemaAndSeedTest`.
-  - [ ] 5.2 Tests Go (`~/go-toolchain/go/bin/go`) : `cd agent && go test ./...` ; `GOOS=windows go build ./...` ; `go vet ./...` (linux ET GOOS=windows).
-  - [ ] 5.3 `docs/agent/state-providers.md` : section `registry_list` (iso section registry : mécanisme, bi-projection D5, exclusiveKey conteneur, collapse machine+session en une ligne d'état `agent_resource_states(poste, 'registry_list')`). `docs/qa/domains/agent.md` : section « Story 35.2 » append-only (scénarios + checklist).
-  - [ ] 5.4 Signaler en Dev Agent Record : migration seed **à rejouer sur /vm** (`php artisan migrate` — jamais auto-appliquée) + release agent **2.4.0 à publier manuellement** (binaire antérieur = type ignoré EN SILENCE).
+- [x] **Task 1 — Contrat & golden files (AC1)** *(commencer ici : fige le wire format)*
+  - [x] 1.1 `app/Services/Agent/StateContract.php` : `'registry_list'` dans `RESOURCE_TYPES` (constante additive — `ReportRequest::rules()` suit automatiquement).
+  - [x] 1.2 `docs/agent/contract-v1.md` : §7 liste des identifiants ; nouvelle sous-section payload `registry_list` (tableau 4 clés + exemple + sémantique D3 complète : exclusif PAR CLÉ-CONTENEUR, noms numériques possédés, liste vide = purge, non-numériques intouchés, jamais la clé) ; §9 mention (nouveau type = mineur, agent antérieur ignore silencieusement).
+  - [x] 1.3 `tests/Fixtures/Agent/state.v1.json` : +1 item machine `{"type":"registry_list","semantics":"exclusive","payload":{"hive":"HKLM","path":"SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallForcelist","entry_type":"REG_SZ","values":["pgpjajcmfbfdmcgjlbiengidaknopaok;https://clients2.google.com/service/update2/crx"]},"hash":"<recalculé via StateHasher::hashItem>"}`.
+  - [x] 1.4 `ContractV1Test.php` : `FROZEN_STATE_HASH` recalculé + justification 35.2 dans la chaîne de commentaires (règle 23.1) ; vérifier les assertions de structure (nouveau type accepté).
+  - [x] 1.5 `agent/shared/hasher_test.go` : `frozenStateHash` = MÊME valeur + justification ; comptage 12→13. `agent/shared/contract_test.go` : machine 4→5 (commentaire motivé). `loop_test.go` (`mustReadGolden`) : vérifier, normalement aucun ajustement (le golden est un corps HTTP non compté).
+  - [x] 1.6 Justification écrite `report.v1.json` INCHANGÉ (aucun payload au rapport ; type validé par `Rule::in(RESOURCE_TYPES)`).
+- [x] **Task 2 — Providers serveur + garde-fou (AC2, AC3)**
+  - [x] 2.1 `app/Models/CapabilityProjection.php` : `public const MECHANISM_REGISTRY_LIST = 'registry_list';` (+ docblock).
+  - [x] 2.2 `AbstractCapabilityStateProvider.php` : `protected function mechanism(): string` (défaut `MECHANISM_REGISTRY`) utilisé par `type()` et les deux filtres de `itemsFor()` ; `expand()` private→**protected** ; `resolveKeyValue()` + `UNMANAGED` private→**protected** ; docblocks mis à jour (le provider abstrait devient la base des mécanismes de capacité, registry = défaut historique).
+  - [x] 2.3 NOUVEAU `AbstractRegistryListCapabilityProvider.php` (extends AbstractCapabilityStateProvider) : `mechanism()` = MECHANISM_REGISTRY_LIST ; `exclusiveKey()` = `{hive|path}` minuscules ; `expand()` : itère `spec.keys`, filtre `hive()` du provider, résout `values` via `resolveKeyValue()` (UNMANAGED ⇒ continue ; assoc inattendue dont `$ensure` ⇒ continue défensif ; résolu non-liste ⇒ continue) ; `entry_type` défaut `REG_SZ`, hors `{REG_SZ, REG_EXPAND_SZ}` ⇒ non émis ; émet EXACTEMENT `{hive, path, entry_type, values: list<string> castée}`.
+  - [x] 2.4 NOUVEAUX `RegistryListMachineCapabilityProvider.php` (scope Machine, hive HKLM) + `RegistryListUserCapabilityProvider.php` (scope Session, hive HKCU) — coquilles iso providers registry.
+  - [x] 2.5 `app/Providers/AgentServiceProvider.php` : +2 lignes dans le tableau de providers du `StateCompiler` (avec commentaire 35.2), enrobées `UpstreamAwareProvider::wrap` comme les autres. NE PAS toucher `UpstreamLockCollisionDetector` (canal amont = registry only, hors scope, iso piège 35.1 #12) ni ajouter d'adaptateur amont.
+  - [x] 2.6 NOUVEAU garde-fou d'authoring (service pur, ex. `app/Services/Agent/Providers/CapabilitySpecCollisionGuard.php`) : entrée = projections windows (registry + registry_list), sortie = violations (collision `{hive|path}` scalaire↔conteneur, `entry_type` invalide, `values` mal formées) ; message d'erreur nommant capacités + conteneur.
+  - [x] 2.7 NOUVEAU `tests/Unit/Services/Agent/CapabilityRegistryListProviderTest.php` : (a) map on→liste émise 4 clés ; (b) `'off' => []` émet `values: []` ; (c) UNMANAGED n'émet rien ; (d) littéral liste toujours émis ; (e) assoc inattendue/`$ensure` non émis ; (f) `entry_type` invalide non émis ; (g) filtre par ruche (HKLM vs HKCU) ; (h) pas de fuite d'id, exactement 4 clés, strings only ; (i) `exclusiveKey` = 2 segments minuscules.
+  - [x] 2.8 Test de compilation (`CapabilityRegistryCompilationTest.php` étendu OU nouveau fichier dédié, StateCompiler INTOUCHÉ) : override de parc remplace la liste ENTIÈRE du broadcast (jamais d'union) ; deux conteneurs distincts s'accumulent ; UserGroup bat Broadcast (blocked_executables est Session/UserGroup-ciblée).
+  - [x] 2.9 Invariant `CapabilitiesSchemaAndSeedTest` : `no_container_is_targeted_by_both_registry_scalar_and_registry_list` (guard sur données seedées réelles) + cas non-collision `blocked_executables` (parent/enfant).
+- [x] **Task 3 — Handler Go `registry_list` (AC4)**
+  - [x] 3.1 `agent/shared/handler_registry.go` : méthode `ValueNames(hive, path string) ([]string, error)` sur l'interface `RegistryOps` (doc : clé absente ⇒ nil,nil).
+  - [x] 3.2 NOUVEAU `agent/shared/handler_registry_list.go` : `RegistryListHandler{Ops RegistryOps, Log *Logger}` ; parse payload (4 clés, `entry_type` borné, `values` []string, vide admis) ; dédoublonnage par identité de conteneur `{hive|path}` minuscules (dernière occurrence, ordre trié — iso `desiredSpecs`) ; helpers noms numériques (digits-only) + canon strconv ; `Test`/`Apply` selon AC4 (effort maximal, idempotence, shellRefresh HKCU via `registryNotifier` sur changement effectif, réutilise `RegistrySpec`/`RegistryValue`/`isUserHive` existants pour l'écriture) ; doc de tête (D3 : le handler POSSÈDE les noms numériques de la clé, ne touche jamais le reste).
+  - [x] 3.3 `agent/windows/handler_registry_windows.go` : impl `ValueNames` (`registry.OpenKey(root, path, registry.QUERY_VALUE)` + `ReadValueNames(-1)` ; `registry.ErrNotExist` ⇒ nil,nil).
+  - [x] 3.4 `agent/windows/main_windows.go` (map SYSTEM) + `agent/windows/companion_windows.go` (map compagnon) : entrée `"registry_list": &shared.RegistryListHandler{Ops: &registryOps{log: logger}, Log: logger}` avec commentaire 35.2.
+  - [x] 3.5 `agent/shared/handler_registry_test.go` : `fakeRegistryOps.ValueNames` (+ compteurs). NOUVEAU `handler_registry_list_test.go` : (a) écriture 1..N ordonnée + relecture conforme ; (b) surnuméraire `"3"` supprimé, non-numérique `"NoDriveTypeAutoRun"` intouché ; (c) `"01"`/`"007"` hors canon supprimés ; (d) liste vide purge les numérotés, clé absente = compliant ; (e) idempotence 2 passes = zéro op ; (f) valeur numérotée Kind `REG_UNSUPPORTED` réécrite/supprimée ; (g) re-drift STRICT à travers le moteur (iso `TestRegistryAbsentThroughEngineStrictRedrift`) ; (h) shellRefresh HKCU sur changement effectif, silence sinon ; (i) payloads invalides ⇒ error ; (j) mix multi-conteneurs avec isolation des erreurs ; (k) la clé-conteneur n'est JAMAIS supprimée.
+  - [x] 3.6 `agent/shared/version.go` : bump `2.4.0` + entrée changelog.
+- [x] **Task 4 — Seed du lot (AC5)**
+  - [x] 4.1 NOUVELLE migration `database/migrations/2026_07_03_110000_seed_capabilities_registry_list_lot.php` : les 2 capacités + 3 lignes de projection (pix: 1 registry_list ; blocked: 1 registry + 1 registry_list), pattern CD95 exact, idempotente, `down()` par `whereIn('key', …)->delete()` ; commentaires de tête : bi-projection D5, off honnête, cmd.exe≈DisableCMD, armement UserGroup = donnée/35.4.
+  - [x] 4.2 `CapabilitiesSchemaAndSeedTest.php` : tests seed (options/défauts/projections des 2 capacités, bi-projection = 2 lignes) + extension de `on_off_capabilities_emit_a_real_value_for_off` au mécanisme `registry_list` (off = liste y compris vide OU marqueur) + tests d'intégration provider AC5 (on/off/unmanaged, ordre des 5 entrées préservé).
+- [x] **Task 5 — Validation finale**
+  - [x] 5.1 Tests HÔTE ciblés (php8.4 + sqlite, JAMAIS de run massif) : `ContractV1Test|StateHasherTest`, `CapabilityRegistryProviderTest|CapabilityRegistryListProviderTest|CapabilityRegistryCompilationTest`, `CapabilitiesSchemaAndSeedTest`.
+  - [x] 5.2 Tests Go (`~/go-toolchain/go/bin/go`) : `cd agent && go test ./...` ; `GOOS=windows go build ./...` ; `go vet ./...` (linux ET GOOS=windows).
+  - [x] 5.3 `docs/agent/state-providers.md` : section `registry_list` (iso section registry : mécanisme, bi-projection D5, exclusiveKey conteneur, collapse machine+session en une ligne d'état `agent_resource_states(poste, 'registry_list')`). `docs/qa/domains/agent.md` : section « Story 35.2 » append-only (scénarios + checklist).
+  - [x] 5.4 Signaler en Dev Agent Record : migration seed **à rejouer sur /vm** (`php artisan migrate` — jamais auto-appliquée) + release agent **2.4.0 à publier manuellement** (binaire antérieur = type ignoré EN SILENCE).
+
+- [x] **Task 6 — SCOPE AJOUTÉ (orchestrateur) : valeur PAR DÉFAUT d'une clé (`name: ""`) sur le type `registry`** *(livré dans le même bump 2.4.0 — besoin 35.5 : `Applications\photoviewer.dll\shell\open\command`)*
+  - [x] 6.1 `agent/shared/handler_registry.go` : `parseRegistrySpec` accepte `name` PRÉSENT et vide (`""` = valeur par défaut de la clé, `(Default)`) ; l'ABSENCE de la clé `name` (ou un non-string) reste une enveloppe invalide. Doc de la fonction : comportement documenté des API registre (RegQueryValueEx/RegSetValueEx/RegDeleteValue via x/sys — `GetValue("")`/`SetStringValue("")`/`DeleteValue("")` ciblent la valeur par défaut, aucun cas particulier handler).
+  - [x] 6.2 Vérif ops Windows : `handler_registry_windows.go` relaie le `name` verbatim aux API (aucune garde) ; commentaire ajouté sur `ValueNames` (la valeur par défaut est énumérée sous `""` — jamais numérique, jamais touchée par la réconciliation de liste).
+  - [x] 6.3 Côté PHP : vérifié — ni `AbstractCapabilityStateProvider::expand()` (émet `name` tel quel, `''` inclus), ni `StateHasher` (canonicalisation générique), ni `ReportRequest` ne refusent un `name` vide. Aucun correctif nécessaire ; test additif `empty_name_default_value_key_is_emitted_and_hashable` (CapabilityRegistryProviderTest).
+  - [x] 6.4 Doc contrat §7.1 (ligne `name` du tableau : `""` légitime, clé toujours présente) + tests Go dédiés : `TestRegistryDefaultValueNameParsesWriteAndAbsent` (parse write/absent/clé absente) et `TestRegistryDefaultValueNameConvergesTestApplyDelete` (Test/Apply/delete d'une valeur par défaut via le fake) ; les 2 anciens cas « name vide = invalide » remplacés par « name absent/non-string = invalide ».
 
 ## Dev Notes
 
@@ -244,8 +250,123 @@ Deuxième mur de l'Epic 35 (Capacités v2 — GPO spéciales CD95) : les policie
 
 ### Agent Model Used
 
+claude-fable-5 (Fable 5) — prescription epic (stories agent Go).
+
 ### Debug Log References
+
+- Hashes golden recalculés via le `StateHasher` RÉEL (script scratchpad, hôte php8.4) :
+  item `registry_list` = `e0a9c51ec51ec3ed14ae76c542e3957e3e5aae20e55efdd0234c72a60e9b0759`,
+  état = `fe8eb6eae22994ed2e35c45a726d9b53c5a562fca34fedbf63aebd25ba43fb44` — vérifiés
+  JUMEAUX par `TestHashStateGoldenMatchesFrozenHash` (Go) et `state_hash_is_frozen_regression_guard` (PHP).
+- Incident d'environnement worktree (résolu par l'orchestrateur en cours de dev) :
+  `vendor/` était un SYMLINK vers le repo principal → l'autoload composer (classmap
+  optimisé, chemins realpath) résolvait `App\`/`Tests\` vers le repo PRINCIPAL (tests
+  exécutant un autre code + base_path principal). Remplacé par une copie hardlink par
+  l'orchestrateur ; le contournement temporaire dans `tests/bootstrap.php` a été REVERTI
+  (fichier inchangé). Tous les tests relancés après correction.
 
 ### Completion Notes List
 
+1. **AC1 — Contrat.** `'registry_list'` ajouté à `RESOURCE_TYPES` (PHP) et `ResourceTypes`
+   (Go) — `ReportRequest` (Rule::in) suit sans autre changement. Golden `state.v1.json` :
+   +1 item machine (conteneur Forcelist **Chrome**) ; comptages ajustés (`contract_test.go`
+   machine 4→5 + types 10→11, `hasher_test.go` 12→13) ; hashes figés jumeaux recalculés
+   avec justification 23.1 dans les DEUX chaînes de commentaires. **`report.v1.json`
+   INCHANGÉ** (justifié : les items de rapport `{type,status,hash[,detail]}` ne portent
+   aucun payload ; le type entre à l'ingestion par la constante additive). Doc contrat :
+   §7 liste + **§7.6** (payload + sémantique D3 complète + garde-fou + piège silence) +
+   §9 (« type ajouté = mineur, agent antérieur ignore EN SILENCE »).
+2. **⚠️ Écart assumé vs Task 1.3 de la story** : le golden porte
+   `values: ["pgpjajcmfbfdmcgjlbiengidaknopaok"]` (id SEUL) et non `id;update_url` —
+   données iso-GPO EXACTES fournies par l'orchestrateur (vérifiées à la source
+   `Registry.xml` CD95) : Chrome = id seul (Web Store = défaut), SEUL Edge porte
+   `id;https://clients2.google.com/service/update2/crx`. Le golden illustre le conteneur
+   Chrome du seed réel — cohérence seed⇄golden préférée au littéral de la story.
+3. **AC2 — Providers.** Généralisation MINIMALE de `AbstractCapabilityStateProvider`
+   (`mechanism()` protected défaut registry, utilisé par `type()` + les 2 filtres
+   d'`itemsFor()` ; `expand()`/`resolveKeyValue()`/`UNMANAGED` private→protected) —
+   mécanisme `registry` byte-identique (28 tests existants verts SANS modification
+   d'attendus). Nouveau `AbstractRegistryListCapabilityProvider` (exclusiveKey 2 segments,
+   expand list : littéral/map→liste, `[]` émis, `$ensure`/assoc/scalaire non émis
+   défensif, entry_type borné défaut REG_SZ) + coquilles Machine/User + 2 lignes wiring
+   `AgentServiceProvider` (enrobage UpstreamAwareProvider iso autres ; canal amont
+   registry-only NON touché).
+4. **AC3 — Garde-fou.** `CapabilitySpecCollisionGuard` (service PUR : projections en
+   entrée, violations nommées en sortie — collision {hive|path} scalaire↔conteneur
+   normalisée, entry_type borné, values bien formées). Invariant
+   `no_container_is_targeted_by_both_registry_scalar_and_registry_list` sur les données
+   RÉELLEMENT seedées + cas nominal parent/enfant blocked_executables prouvé NON-collision
+   + cas refusé fabriqué (violation nommant capacités + conteneur).
+5. **AC4 — Handler Go.** `RegistryListHandler` (shared, pur) : parse strict 4 clés,
+   dédoublonnage par identité de conteneur (dernière occurrence, ordre trié), Test/Apply
+   D3 (canon strconv strict `"01"≠"1"`, non-numériques et clé-conteneur JAMAIS touchées,
+   liste vide = purge, clé absente = compliant), effort maximal intra ET inter-conteneurs,
+   Kind exotique `REG_UNSUPPORTED` réécrit/supprimé, shellRefresh HKCU sur changement
+   effectif (même gate que registry). Nouvel op additif `RegistryOps.ValueNames` (fake
+   EXISTANT étendu + impl Windows `OpenKey(QUERY_VALUE)+ReadValueNames`, ErrNotExist ⇒
+   nil,nil). Handler câblé dans les maps SYSTEM (`main_windows.go`) et compagnon
+   (`companion_windows.go`). STRICT re-drift prouvé À TRAVERS le moteur (engine.go
+   INTOUCHÉ). 16 tests Go dédiés.
+6. **AC5 — Seed.** Migration `2026_07_03_110000_seed_capabilities_registry_list_lot`
+   (pattern CD95 exact, idempotente + réversible — testé) : `pix_extension_forced`
+   (1 projection registry_list, 2 conteneurs HKLM, données iso-GPO : Chrome id seul /
+   Edge id;url) + `blocked_executables` (PREMIÈRE bi-projection D5 : flag registry
+   `$ensure:absent` en off + conteneur registry_list 5 entrées ordonnées, off = `[]`).
+   Invariant on/off ÉTENDU au mécanisme registry_list (off = liste, vide incluse).
+   Tests d'intégration provider sur données réelles : pix on ⇒ 2 items HKLM ; blocked
+   on ⇒ flag + 5 entrées (chaque provider ne voit que SA projection) ; off ⇒
+   `ensure:absent` + `values:[]` ; unmanaged ⇒ rien.
+7. **AC6 + Task 6 — Version + name "".** Bump `2.3.0 → 2.4.0` (changelog complet).
+   `parseRegistrySpec` accepte `name: ""` (valeur PAR DÉFAUT `(Default)` — la clé `name`
+   doit être PRÉSENTE, absence/non-string = invalide) ; comportement API documenté en
+   commentaire (Get/Set/DeleteValue("") ciblent la default value) ; PHP vérifié sans
+   garde (test additif provider + hash) ; doc §7.1 ; tests Go parse + Test/Apply/delete
+   via le fake. La réconciliation list ne touche jamais `""` (non numérique).
+8. **⚠️ À FAIRE HORS STORY (opérateur)** :
+   - migration seed **à rejouer sur /vm** (`php artisan migrate` — jamais auto-appliquée) ;
+   - release agent **2.4.0 à PUBLIER MANUELLEMENT** (update.sh ne publie jamais seul) —
+     un binaire ≤ 2.3.0 ignore `registry_list` EN SILENCE (aucun statut, aucune erreur).
+
 ### File List
+
+Serveur (PHP) :
+- app/Services/Agent/StateContract.php (M — +'registry_list')
+- app/Models/CapabilityProjection.php (M — const MECHANISM_REGISTRY_LIST)
+- app/Services/Agent/Providers/AbstractCapabilityStateProvider.php (M — mechanism() + visibilités protected)
+- app/Services/Agent/Providers/AbstractRegistryListCapabilityProvider.php (A)
+- app/Services/Agent/Providers/RegistryListMachineCapabilityProvider.php (A)
+- app/Services/Agent/Providers/RegistryListUserCapabilityProvider.php (A)
+- app/Services/Agent/Providers/CapabilitySpecCollisionGuard.php (A)
+- app/Providers/AgentServiceProvider.php (M — +2 providers)
+- database/migrations/2026_07_03_110000_seed_capabilities_registry_list_lot.php (A)
+
+Agent (Go) :
+- agent/shared/contract.go (M — ResourceTypes +registry_list)
+- agent/shared/handler_registry.go (M — RegistryOps.ValueNames + parseRegistrySpec name "")
+- agent/shared/handler_registry_list.go (A — RegistryListHandler)
+- agent/shared/version.go (M — 2.4.0 + changelog)
+- agent/windows/handler_registry_windows.go (M — impl ValueNames)
+- agent/windows/main_windows.go (M — +handler registry_list SYSTEM)
+- agent/windows/companion_windows.go (M — +handler registry_list compagnon)
+
+Golden & docs :
+- tests/Fixtures/Agent/state.v1.json (M — +1 item registry_list machine)
+- docs/agent/contract-v1.md (M — §7, §7.1 name "", §7.6, §9)
+- docs/agent/state-providers.md (M — section registry_list)
+- docs/qa/domains/agent.md (M — section Story 35.2 append-only)
+
+Tests :
+- tests/Unit/Services/Agent/ContractV1Test.php (M — FROZEN_STATE_HASH + justification)
+- agent/shared/hasher_test.go (M — frozenStateHash jumeau + 12→13)
+- agent/shared/contract_test.go (M — machine 4→5, types 10→11)
+- agent/shared/handler_registry_test.go (M — fake ValueNames, cas name ""/name absent, tests default value)
+- agent/shared/handler_registry_list_test.go (A — 16 tests)
+- tests/Unit/Services/Agent/CapabilityRegistryProviderTest.php (M — test additif name "")
+- tests/Unit/Services/Agent/CapabilityRegistryListProviderTest.php (A — 11 tests)
+- tests/Unit/Services/Agent/CapabilityRegistryListCompilationTest.php (A — 5 tests, compilateur intouché)
+- tests/Feature/Migrations/CapabilitiesSchemaAndSeedTest.php (M — invariant off étendu + 8 tests 35.2)
+
+NON touchés (garde-fous vérifiés) : app/Services/Agent/StateCompiler.php,
+app/Services/Agent/StateHasher.php, agent/shared/hasher.go, agent/shared/engine.go,
+tests/Fixtures/Agent/report.v1.json, RegistryUpstreamAdapter/UpstreamLockCollisionDetector,
+seeds antérieurs, sprint-status.yaml, backlog.*, routes/web.php.

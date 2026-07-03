@@ -48,6 +48,19 @@
                 "ensure": "absent"
             },
             "hash": "8e81903af9ba97c6981f51fa75982c17c309bd94aa38312fa90e5b89b050314d"
+        },
+        {
+            "type": "registry_list",
+            "semantics": "exclusive",
+            "payload": {
+                "hive": "HKLM",
+                "path": "SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallForcelist",
+                "entry_type": "REG_SZ",
+                "values": [
+                    "pgpjajcmfbfdmcgjlbiengidaknopaok"
+                ]
+            },
+            "hash": "e0a9c51ec51ec3ed14ae76c542e3957e3e5aae20e55efdd0234c72a60e9b0759"
         }
     ],
     "session": [

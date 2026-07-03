@@ -52,6 +52,12 @@ final class StateContract
         'registry',
         'app_config',
         'applications',
+        // Story 35.2 (D1) — listes registre à sous-valeurs indexées `\1..\N`
+        // (ExtensionInstallForcelist, DisallowRun). Ajout ADDITIF : la
+        // constante est consommée par `ReportRequest` (Rule::in) — l'ingestion
+        // accepte le type sans autre changement. Un agent ≤ 2.3.0 IGNORE ce
+        // type en silence (contrat §8) → release 2.4.0 à publier.
+        'registry_list',
     ];
 
     /**
