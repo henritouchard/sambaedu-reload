@@ -823,6 +823,53 @@ table de policies = doublon de source de vérité, interdit).
   déclaratif, non absorbé) et lit `wpkg.xml`. Inventaire par app rapporté en
   champ additif (contrat §6) → `agent_application_inventory`.
 
+### `fs_acl` — `exclusive` PAR ACE / `machine`
+
+**Story 36.1.** Premier mécanisme **HORS-REGISTRE** de la bibliothèque de
+capacités : des **ACE NTFS gérées** sur le poste. `FsAclCapabilityProvider`
+(portée **Machine** — le service SYSTEM est le seul acteur des ACE NTFS) EXPANSE
+une capacité → items concrets 6 clés `{path, trustee, ace_type, rights,
+applies_to, ensure}` (cf. contrat §7.7). Même modèle capability-first que
+`registry` : `AbstractCapabilityStateProvider` fournit Broadcast + overrides par
+maille, `resolveKeyValue()` (map/littéral), `UNMANAGED` ; le provider ne SURCHARGE
+que l'interpréteur `expand()` — `StateCompiler` INTOUCHÉ (D2). `hive()` renvoie
+`''` (non applicable — piège #14 : `expand()` surchargé, `handlesHive()` jamais
+consulté).
+
+- **`exclusiveKey() = {path|trustee|ace_type}`** (3 segments minuscules) : la
+  maille la plus spécifique gagne CETTE ACE ; deux ACE d'identités distinctes
+  (mêmes `path`, trustees différents) **COEXISTENT** (cumul assumé, pas
+  remplacement — pour un deny c'est un sur-masquage bénin). La précédence par
+  maille se joue sur identité ÉGALE (ex. broadcast `off`/`absent` battu par un
+  override de parc `eleves`/`present`).
+- **Jetons d'audience (Q1, `AudienceTokens`)** : un `trustee` `@eleves`/`@profs`/
+  `@personnels` est un **enum FERMÉ EN DUR** résolu par convention vers le groupe
+  principal global (`Eleves`/`Profs`/`Administratifs`) — SI ce groupe existe dans
+  `user_groups`. Jeton inconnu OU groupe absent ⇒ **entrée non émise + log
+  warning** (jamais de payload avec un jeton brut). Un trustee littéral
+  (`Domain Users`) part VERBATIM (résolu par LSA côté poste). AUCUNE UI, AUCUNE
+  table d'audiences ; le groupe arbitraire est le formulaire 36.4.
+- **Résolution SID côté POSTE (D5)** : le provider n'émet que des NOMS
+  (Postgres pur, NFR7) ; l'agent résout le SID par LSA sur le poste joint.
+- **Pas de ciblage par utilisateur** (piège #10, STRUCTUREL) : portée Machine ⇒
+  le service fetch sans `?user` → un override UserGroup/User est SANS EFFET. « Qui
+  est bridé » = le `trustee` du payload, « quels postes » = les assignations.
+- **Validation d'authoring** (`FsAclAuthoringGuard`, service PUR réutilisé tel
+  quel par 36.4) : refuse un `deny` sur principal système (`SYSTEM_TRUSTEES`), un
+  `deny` à héritage descendant sur racine protégée (`PROTECTED_ROOTS` Q2 — le
+  `deny list_folder folder_only` y reste autorisé), les enums hors domaine, un
+  path non absolu, un jeton inconnu, et une capacité avec un `deny` sans
+  `warning` non vide.
+- **Limites (à documenter, pas sur-conçu)** : deux valeurs qui résolvent des
+  TRUSTEES DIFFÉRENTS produisent des identités distinctes → les DEUX ACE
+  convergent (piège #2) ; le retrait PROPRE passe par un `off` réel
+  (`ensure:absent`), JAMAIS par la sentinelle `unmanaged` (piège #3 : type absent
+  du state ⇒ handler non invoqué). Le store agent « dernier appliqué » réconcilie
+  les orphelins au cycle suivant.
+
+Capacité de preuve seedée : `program_files_browse_denied` (2 chemins × 2 trustees
+= 4 entrées `deny list_folder folder_only`).
+
 ## Ajouter un type de ressource
 
 1. **Identifiant figé** : ajouter le type à [contract-v1.md](contract-v1.md) §7

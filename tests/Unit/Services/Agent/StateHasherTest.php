@@ -153,6 +153,47 @@ class StateHasherTest extends TestCase
         );
     }
 
+    // ── Payload `fs_acl` (Story 36.1) : ensure ET trustee entrent dans le hash ─
+    // AUCUNE modification du StateHasher : la canonicalisation générique intègre
+    // le payload 6 clés. Jumeaux des tests Go (hasher_test.go).
+
+    #[Test]
+    public function fs_acl_ensure_and_trustee_change_the_item_hash(): void
+    {
+        $base = [
+            'type' => 'fs_acl',
+            'semantics' => 'exclusive',
+            'payload' => [
+                'path' => 'C:\\Program Files',
+                'trustee' => 'Eleves',
+                'ace_type' => 'deny',
+                'rights' => 'list_folder',
+                'applies_to' => 'folder_only',
+                'ensure' => 'present',
+            ],
+        ];
+        $absent = $base;
+        $absent['payload']['ensure'] = 'absent';
+        $otherTrustee = $base;
+        $otherTrustee['payload']['trustee'] = 'Domain Users';
+
+        $this->assertNotSame(
+            $this->hasher->hashItem($base),
+            $this->hasher->hashItem($absent),
+            'deux items fs_acl qui ne diffèrent que par `ensure` doivent avoir des hashes distincts',
+        );
+        $this->assertNotSame(
+            $this->hasher->hashItem($base),
+            $this->hasher->hashItem($otherTrustee),
+            'deux items fs_acl qui ne diffèrent que par `trustee` doivent avoir des hashes distincts',
+        );
+        // Hash figé de l'item golden (Eleves / present) — jumeau Go.
+        $this->assertSame(
+            'a8f1c92bd6e067a7f5c817047552b6d1dec1e1ba8fb29e4e0677aa45ab7df0e9',
+            $this->hasher->hashItem($base),
+        );
+    }
+
     #[Test]
     public function write_item_without_ensure_keeps_its_pre_story_hash(): void
     {

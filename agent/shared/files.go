@@ -29,7 +29,13 @@ const (
 	stateCacheFile   = "state.json"
 	etagCacheFile    = "etag.txt"
 	appliedStateFile = "applied-state.json"
-	logsDirName      = "logs"
+	// fsAclStateFile : store « dernier état appliqué » du mécanisme fs_acl
+	// (Story 36.1). Une ACE NTFS ne porte AUCUN marqueur de propriété — ce
+	// fichier est la SEULE mémoire des ACE que l'agent a posées (identité d'item
+	// → ACE exacte). MACHINE-only (le type n'existe pas côté compagnon) ; racine
+	// ProgramData\SambaEdu\Agent déjà ACL SYSTEM+Administrators (dogme 23.1).
+	fsAclStateFile = "fsacl-state.json"
+	logsDirName    = "logs"
 
 	// DefaultIntervalSeconds : cadence par défaut (D7), iso ttl_seconds
 	// conseillé par le serveur.
@@ -107,6 +113,15 @@ func (s *Store) EtagCachePath() string {
 }
 func (s *Store) AppliedStatePath() string {
 	return filepath.Join(s.root(), appliedStateFile)
+}
+
+// FsAclStatePath : chemin du store « dernier état appliqué » du mécanisme
+// fs_acl (Story 36.1) — <root>\fsacl-state.json, écrit ATOMIQUEMENT
+// (WriteFileAtomic) après chaque Apply effectif, ACL héritée de la racine
+// SYSTEM. Map identité d'item (path|trustee|ace_type minuscules) → ACE
+// exactement posée {path, trustee, sid, ace_type, mask, flags}. MACHINE-only.
+func (s *Store) FsAclStatePath() string {
+	return filepath.Join(s.root(), fsAclStateFile)
 }
 func (s *Store) LogsDir() string { return filepath.Join(s.root(), logsDirName) }
 

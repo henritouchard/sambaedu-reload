@@ -13,6 +13,7 @@ use App\Services\Agent\Providers\AppConfigStateProvider;
 use App\Services\Agent\Providers\ApplicationsStateProvider;
 use App\Services\Agent\Providers\AssociationsStateProvider;
 use App\Services\Agent\Providers\DrivesStateProvider;
+use App\Services\Agent\Providers\FsAclCapabilityProvider;
 use App\Services\Agent\Providers\OverlayMachineStateProvider;
 use App\Services\Agent\Providers\OverlayStateProvider;
 use App\Services\Agent\Providers\PrintersStateProvider;
@@ -219,6 +220,18 @@ class AgentServiceProvider extends ServiceProvider
                 // modif du compilateur.
                 $app->make(RegistryListMachineCapabilityProvider::class),
                 $app->make(RegistryListUserCapabilityProvider::class),
+                // Story 36.1 — type `fs_acl` (exclusive PAR ACE / portée MACHINE,
+                // premier mécanisme HORS-REGISTRE de la bibliothèque de
+                // capacités). Le provider EXPANSE une capacité → items concrets
+                // {path, trustee, ace_type, rights, applies_to, ensure} (6 clés,
+                // interpréteur de `spec` surchargé — `StateCompiler` INTOUCHÉ
+                // D2). `exclusiveKey() = {path|trustee|ace_type}` : la maille la
+                // plus spécifique gagne CETTE ACE, les ACE distinctes s'accumulent.
+                // Jetons d'audience @eleves|@profs|@personnels résolus par
+                // AudienceTokens (enum FERMÉ, Q1). Postgres pur (la résolution SID
+                // est côté POSTE, LSA D5). UN seul provider (portée Machine — pas
+                // de variante ruche/session). Une ligne, zéro modif du compilateur.
+                $app->make(FsAclCapabilityProvider::class),
                 // Story 27.3bis — type `associations` (exclusive PAR IDENTIFIANT,
                 // portée session/compagnon HKCU) : catalogue d'associations de
                 // fichiers/protocoles par défaut activables par parc, compilées

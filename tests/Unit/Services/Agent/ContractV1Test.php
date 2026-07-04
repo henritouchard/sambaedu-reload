@@ -146,7 +146,22 @@ class ContractV1Test extends TestCase
     // changement d'ingestion. machine = 5 items, 13 items au total, hash
     // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
     // même valeur (test croisé NFR13).
-    private const FROZEN_STATE_HASH = 'fe8eb6eae22994ed2e35c45a726d9b53c5a562fca34fedbf63aebd25ba43fb44';
+    //
+    // Re-bumpé SCIEMMENT par la Story 36.1 (évolution MINEURE du contrat, §9) :
+    // NOUVEAU type `fs_acl` (D1, mécanisme HORS-REGISTRE — ACE NTFS gérées,
+    // chirurgie DACL, portée Machine) — le golden gagne UN item en portée
+    // `machine` (`deny list_folder folder_only` sur `C:\Program Files` pour le
+    // trustee `Eleves`, payload EXACTEMENT 6 clés `{path, trustee, ace_type,
+    // rights, applies_to, ensure}` — enums fermés de mots métier, aucun masque
+    // brut ni SDDL). Type AJOUTÉ (constante RESOURCE_TYPES additive) =
+    // forward-compatible, pas un major : un agent ≤ 2.5.0 IGNORE le type EN
+    // SILENCE (§8 — aucun statut au rapport), d'où publication de release 2.6.0
+    // obligatoire. `report.v1.json` est INCHANGÉ : les items de rapport
+    // `{type, status, hash[, detail]}` ne portent aucun payload et le nouveau
+    // type entre dans ReportRequest via Rule::in(RESOURCE_TYPES). machine = 6
+    // items, 14 items au total, hash d'état RECALCULÉ. Le jumeau Go
+    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
+    private const FROZEN_STATE_HASH = '6a41357d8a1ef725afc48c63cba67d5f097ea9844daa101e9303a333edff94a8';
 
     private StateHasher $hasher;
 
