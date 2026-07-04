@@ -26,6 +26,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $display_name Nom d'affichage reçu de l'autorité amont (informatif)
  * @property string|null $source_xml_url Story 31.3 — URL de la recette WPKG (xml) du dépôt SambaEdu (référence de source, nullable)
  * @property string|null $source_xml_sha Story 31.3 — empreinte attendue de la recette WPKG source (nullable)
+ * @property string|null $executable_checksum Story 39.4 — sha256 hex de l'exécutable (persistance SEULE, pull différé — AC7)
+ * @property string|null $executable_filename Story 39.4 — nom informatif de l'exécutable (persistance SEULE)
+ * @property int|null $executable_size Story 39.4 — taille attendue de l'exécutable en octets (persistance SEULE)
  * @property \Illuminate\Support\Carbon $created_at
  * @property \Illuminate\Support\Carbon $updated_at
  * @property-read ControlHubContract $contract
@@ -44,6 +47,15 @@ class ControlHubContractCatalogApp extends Model
         // Optionnels (nullable) : un contrat sans source reste accepté (NFR3).
         'source_xml_url',
         'source_xml_sha',
+        // Story 39.4 — descripteur d'exécutable (PERSISTANCE SEULE, AC7 ; pull différé).
+        // executable_url N'EST PAS une colonne (même piège d'idempotence que artifact_url, AC5).
+        'executable_checksum',
+        'executable_filename',
+        'executable_size',
+    ];
+
+    protected $casts = [
+        'executable_size' => 'integer',
     ];
 
     /**

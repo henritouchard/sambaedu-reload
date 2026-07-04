@@ -17,9 +17,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * AVANT extraction (D6) — remplace la constante Go `RainmeterToolChecksum`
  * figée de 27.1bis.
  *
- * Écrit UNIQUEMENT par {@see \App\Services\Agent\Tools\AgentToolService} (SEUL
- * écrivain — pattern `ReleaseCreationService`) : l'UI Livewire n'appelle jamais
- * `save()`/`updateOrCreate()` directement. Lu par
+ * Écrit par {@see \App\Services\Agent\Tools\AgentToolService} (écrivain
+ * PRINCIPAL — pattern `ReleaseCreationService`) : l'UI Livewire n'appelle jamais
+ * `save()`/`updateOrCreate()` directement. Story 39.4 — SECOND écrivain
+ * en CRÉATION SEULE : {@see \App\Services\ControlHub\ArtifactPullService} peut
+ * `updateOrCreate(['key' => ...])` un outil tiré du canal ④ amont, mais
+ * UNIQUEMENT quand la clé est absente localement (précédence AC8 : le pull ne
+ * remplace jamais une source locale). Tout observer/effet de bord censé être
+ * exclusif à `AgentToolService` doit donc couvrir aussi ce chemin. Lu par
  * {@see \App\Services\Agent\Tools\AgentToolManifestService} (manifest servi à
  * l'agent) et {@see \App\Http\Controllers\Api\V1\Agent\ToolController} (serving
  * binaire du portable, déjà existant).
