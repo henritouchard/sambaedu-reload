@@ -2510,3 +2510,70 @@ grep -i "$TOKEN" storage/logs/laravel.log && echo "FUITE — à corriger" || ech
 - [ ] AC8/NFR-A4/A5 : `StateCompiler`/golden/`FROZEN_STATE_HASH`/`agent/**` non touchés, zéro bump version ; R3 vérifié
 - [ ] R2 : mismatch `registry`/`capabilities` signalé au BMAD controlHub (ratification), pas de remap silencieux
 - [ ] VM (différé) : `Cache::forget` + `controlhub:report-compliance` observés ; endpoint amont curl 200/ignored
+---
+
+## Section 23 — Canal ④ : ingestion + pull des binaires amont (Story 39.4, 2026-07-04)
+
+> **Portée.** SE5 ingère `items[].delivery_mode` + `items[].artifact{url,checksum,filename,size}`
+> (significatif pour `type ∈ {wallpapers, agent_tools}`) et `catalog_apps[].executable{...}`
+> (**persistance seule**, pull différé). Pour un `artifact` complet dont l'asset est absent
+> localement, un job asynchrone tire le binaire depuis l'URL signée, **vérifie le sha256 serveur**,
+> puis matérialise dans le foyer local. **Idempotence par checksum, jamais par URL.**
+
+### 22.1 Scénarios HÔTE (php8.4 + sqlite)
+
+```bash
+# Nouveaux tests 39.4 (ciblés)
+php artisan test --filter=UpstreamArtifactIngestion   # persistance additive, no-op, AC5 URL/checksum
+php artisan test --filter=ArtifactPullService         # sha256 OK/KO, précédence locale, ré-pull no-op
+
+# Non-régression (invariants 28.2/33/39.1 + golden)
+php artisan test --filter=ControlHubContractIngestion
+php artisan test --filter=ContractV1Test              # FROZEN_STATE_HASH inchangé
+```
+
+### 22.2 Pull sha256 OK (bout en bout, VM après sync — indicatif)
+
+1. Émettre un contrat portant un item `wallpapers` avec `artifact.{url,checksum}` pour un
+   `checksum` **absent** de `wallpaper_assets`.
+2. Attendre le worker de queue (le job `PullContractArtifactJob` est dispatché **après commit**).
+3. Vérifier : un fichier `<checksum>.jpg` apparaît sous `config('wallpapers.library_path')`, une
+   ligne `wallpaper_assets` existe pour ce `checksum`, l'item porte `pull_status=downloaded`.
+   Pour un `agent_tools` : une ligne `agent_tools` (par `key`) est créée **désactivée** (`enabled=0`),
+   `sha256` = checksum vérifié, fichier `sambaedu-tool-<key>-<checksum>.<ext>` sous `agent.tools_path`.
+
+### 22.3 Pull sha256 KO (rejet d'intégrité)
+
+1. Émettre un contrat dont l'`artifact.checksum` **ne correspond pas** au contenu réellement servi
+   par l'URL.
+2. Vérifier : **aucune** ligne `wallpaper_assets`/`agent_tools` créée, **aucun** fichier matérialisé,
+   fichier temporaire supprimé, item en `pull_status=error` + `pull_error` renseigné.
+3. NFR-A3 : l'URL signée (secret de signature) n'apparaît **pas** dans `pull_error` ni les logs.
+
+### 22.4 Précédence locale (le pull comble l'absence, ne remplace jamais)
+
+1. Pré-charger un `WallpaperAsset` pour un `checksum` donné (ou un `AgentTool` pour une `key`).
+2. Émettre un contrat imposant le même binaire (même checksum / même clé).
+3. Vérifier : **aucun appel HTTP** (rien tiré), l'asset local est **conservé intact** (pas de
+   remplacement), aucun job de pull dispatché depuis l'ingestion. Comportement à **0 binaire amont
+   strictement inchangé**.
+
+### 22.5 Piège d'idempotence (AC5 — le garde-fou critique)
+
+1. Émettre deux fois le même contrat dont **seule l'`artifact.url` diffère** (URL signée régénérée),
+   `checksum`/`filename`/`size` identiques.
+2. Vérifier : 2ᵉ réception → `mutated=false`, aucun `ControlHubContractChanged`, **aucun nouveau job
+   de pull**. (L'URL n'est pas une colonne ⇒ ne peut pas polluer `wasChanged()`.)
+
+### Checklist rapide Story 39.4
+
+- [ ] `php artisan test --filter=UpstreamArtifactIngestion` → vert
+- [ ] `php artisan test --filter=ArtifactPullService` → vert
+- [ ] AC4 : `delivery_mode`/`artifact.*` persistés ; payload sans artefact byte-identique à l'existant
+- [ ] AC5 : ré-ingestion URL≠ / checksum= → `mutated=false`, aucun job (garde-fou)
+- [ ] AC6 : `delivery_mode` inconnu accepté, non arbitré
+- [ ] AC7 : `catalog_apps.executable` persisté SANS pull (aucun job pour catalog_apps)
+- [ ] AC8 : dispatch conditionnel à la précédence locale (absent→pending+job ; présent→aucun job)
+- [ ] AC9 : sha256 OK→matérialisé/downloaded ; KO→error, aucune écriture, tmp supprimé ; filename dérivé serveur
+- [ ] AC10/NFR-A4 : `StateCompiler`/`ContractV1`/golden/`FROZEN_STATE_HASH`/`agent/**` non touchés ; pas de bump `version.go`
+- [ ] VM (différé) : 2 migrations additives à jouer (`migrate`) + `route:cache`/`config:cache` + chown www-admin après sync

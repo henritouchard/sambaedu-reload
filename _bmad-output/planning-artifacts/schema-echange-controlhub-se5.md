@@ -79,10 +79,27 @@ Tous les agrégats sont des **listes** ; absence ⇒ liste vide (prune complet d
 | `enforcement_state` | enum     | `locked` \| `permissive` \| `absent` (`ControlHubEnforcementState`)        | oui    |
 | `target_type`       | enum     | `instance` \| `label` (`ControlHubContractTarget`) ; défaut `instance`     | non    |
 | `target_label`      | string?  | nom du label ciblé si `target_type=label` ; `null`/absent/`''` ⇒ cible `instance` (normalisé `null→''`) | conditionnel |
+| `delivery_mode`     | string?  | **additif optionnel (Story 39.4)** — mode de livraison du binaire côté amont (ex. `install` \| `download_direct`, vocabulaire du contrat amont). **Capturé, non arbitré** côté SE5 : stocké pour traçabilité/évolution, aucun domaine fermé imposé, aucun rejet sur ce champ | non |
+| `artifact`          | object?  | **additif optionnel (Story 39.4)** — descripteur du binaire imposé, **significatif uniquement** pour `type ∈ {wallpapers, agent_tools}`. Sous-champs : `url` (string, URL **signée régénérée à chaque émission** — jamais persistée en colonne), `checksum` (string, sha256 hex — **identité stable** du binaire), `filename` (string, informatif — jamais utilisé tel quel pour le nommage disque), `size` (int, octets). Le binaire **ne transite jamais** dans le payload (canal ④, pull par URL signée) | non |
 
 Cohérence de cible (rejet à la réception sinon) : `target_type=label` exige un `target_label`
 non vide ; `target_type=instance` exige un `target_label` vide.
 Clé naturelle : `(contract, type, key, target_type, target_label)`.
+
+> **Canal ④ — pull des binaires imposés (Story 39.4).** Côté SE5, l'ingestion **lit et persiste**
+> `delivery_mode` + `artifact.{checksum,filename,size}` sur `controlhub_contract_items` (colonnes
+> additives nullables ; `artifact.url` est **délibérément non persisté** — cf. ci-dessous). Pour un
+> item `wallpapers`/`agent_tools` porteur d'un `artifact` complet dont l'asset **n'existe pas déjà
+> localement** (précédence : `WallpaperAsset` par `checksum`, `AgentTool` par `key`), SE5 **tire**
+> (pull, asynchrone, après commit) le binaire depuis `artifact.url`, **vérifie le sha256 côté
+> serveur**, puis le matérialise dans le foyer local (bibliothèque wallpaper content-addressée /
+> `agent.tools_path`). Un checksum non concordant → item en `error` (aucune matérialisation),
+> consommable par le canal ③ (conformité). **Idempotence par checksum, jamais par URL** : les URL
+> signées étant régénérées à chaque émission, le calcul de mutation ne porte que sur l'identité
+> stable (`checksum`/`filename`/`size`) — `artifact.url` n'est **pas** une colonne, donc ne peut
+> polluer le no-op (NFR-A2). Un payload **sans** `artifact` reste accepté **à l'identique** (28.2/33
+> non régressés). **Hors périmètre 39.4** : un asset pullé devient **disponible en bibliothèque**,
+> pas **imposé** sur un poste (aucun branchement `StateCompiler` pour ces types).
 
 ### 3.2 `labels` — labels imposés
 
@@ -110,6 +127,7 @@ Clé naturelle : `(contract, name)`.
 | `display_name`   | string? | nom d'affichage (informatif) ; `''` normalisé `null`            | non    |
 | `source_xml_url` | string? | référence de source par-app (dépôt SambaEdu, Story 31.3) ; `''`→`null` | non |
 | `source_xml_sha` | string? | empreinte de la source par-app (Story 31.3) ; `''`→`null`       | non    |
+| `executable`     | object? | **additif optionnel (Story 39.4)** — descripteur d'exécutable d'app, même forme que `artifact` (`url`, `checksum`, `filename`, `size`). **Persistance SEULE en 39.4** : SE5 lit et stocke `checksum`/`filename`/`size` (colonnes additives nullables) ; **aucun pull, aucune matérialisation** n'est déclenché (`url` non persistée). Recouvre un mécanisme SE5 déjà tenté et abandonné (`applications.installer_*`) — le pull reste **explicitement différé** en l'absence de spécification concrète côté amont | non |
 
 Clé naturelle : `(contract, app_key)`.
 
@@ -141,6 +159,14 @@ schéma reçue. Il n'est **pas** un agrégat du payload : ses attributs sont **d
 >   worktree E30) doit **renvoyer symétriquement** à ce document comme source unique du format.
 >   Action de coordination **consignée ici** ; l'édition du handoff est **hors périmètre** de la
 >   Story 33.1 (autre dépôt).
+
+> **Remise en cohérence 39.4 (canal ④).** Les champs additifs `items[].delivery_mode`,
+> `items[].artifact` et `catalog_apps[].executable` (§3.1, §3.4) sont **optionnels** et **ne bumpent
+> pas** `schema_version` (doctrine additive, déjà appliquée pour `source_xml_url`/`source_xml_sha`
+> en 31.3). **Les deux BMAD** doivent refléter ces champs : côté controlHub, l'émetteur des blocs
+> `artifact`/`executable`/`delivery_mode` (Epic D/D.7) pointe ce document comme source unique du
+> format. L'édition du handoff controlHub reste **hors périmètre** de la Story 39.4 (autre dépôt) —
+> action de coordination **consignée ici**.
 
 Toute évolution du format = bump de `schema_version` + mise à jour de ce document + répercussion
 des deux côtés. Le **rejet gracieux** d'une version incompatible (négociation stricte, trace de

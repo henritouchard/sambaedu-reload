@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\ControlHubArtifactPullStatus;
 use App\Enums\ControlHubContractTarget;
 use App\Enums\ControlHubEnforcementState;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -36,6 +37,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property \App\Enums\ControlHubEnforcementState $enforcement_state État d'enforcement
  * @property \App\Enums\ControlHubContractTarget $target_type Cible (instance | label)
  * @property string $target_label Nom du label ciblé si target_type=label ; '' = cible instance (NOT NULL, NFR4)
+ * @property string|null $delivery_mode Story 39.4 — mode de livraison amont (capturé, non arbitré)
+ * @property string|null $artifact_checksum Story 39.4 — sha256 hex = identité stable du binaire imposé
+ * @property string|null $artifact_filename Story 39.4 — nom informatif (jamais utilisé pour le nommage disque)
+ * @property int|null $artifact_size Story 39.4 — taille attendue du binaire en octets
+ * @property \App\Enums\ControlHubArtifactPullStatus|null $pull_status Story 39.4 — état du pull (pending|downloaded|error)
+ * @property string|null $pull_error Story 39.4 — message court d'échec du pull
  * @property \Illuminate\Support\Carbon $created_at
  * @property \Illuminate\Support\Carbon $updated_at
  * @property-read ControlHubContract $contract
@@ -54,11 +61,21 @@ class ControlHubContractItem extends Model
         'enforcement_state',
         'target_type',
         'target_label',
+        // Story 39.4 — canal ④ (additifs nullables ; artifact_url N'EST PAS une colonne, cf. AC5).
+        'delivery_mode',
+        'artifact_checksum',
+        'artifact_filename',
+        'artifact_size',
+        'pull_status',
+        'pull_error',
     ];
 
     protected $casts = [
         'enforcement_state' => ControlHubEnforcementState::class,
         'target_type' => ControlHubContractTarget::class,
+        // Story 39.4
+        'artifact_size' => 'integer',
+        'pull_status' => ControlHubArtifactPullStatus::class,
     ];
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\ControlHub;
 
+use App\Enums\ControlHubArtifactPullStatus;
 use App\Enums\ControlHubContractTarget;
 use App\Enums\ControlHubEnforcementState;
 use App\Enums\ControlHubLabelMode;
@@ -11,11 +12,14 @@ use App\Enums\ControlHubLinkState;
 use App\Events\ControlHubContractChanged;
 use App\Exceptions\ControlHub\InvalidUpstreamContractException;
 use App\Exceptions\ControlHub\UnsupportedSchemaVersionException;
+use App\Jobs\ControlHub\PullContractArtifactJob;
+use App\Models\AgentTool;
 use App\Models\ControlHubContract;
 use App\Models\ControlHubContractCatalogApp;
 use App\Models\ControlHubContractImposedGroup;
 use App\Models\ControlHubContractItem;
 use App\Models\ControlHubContractLabel;
+use App\Models\WallpaperAsset;
 use App\Services\ControlHub\Data\ContractIngestionResult;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -206,6 +210,13 @@ class ControlHubContractIngestionService
         // que les écritures soient committées.
         if ($result->mutated) {
             ControlHubContractChanged::dispatch(ControlHubContract::find($result->contractId));
+
+            // Story 39.4 — Canal ④ : déclenchement du pull des binaires imposés, au MÊME point que
+            // l'événement (hors transaction, uniquement sur mutation). Sur un no-op (mutated=false —
+            // ex. ré-réception identique dont SEULE artifact.url diffère, AC5), rien n'est dispatché :
+            // ni événement, ni job de pull. Le pull est STRICTEMENT asynchrone (jamais un
+            // téléchargement synchrone dans la requête HTTP d'ingestion 39.1).
+            $this->dispatchArtifactPulls((int) $result->contractId, $items);
         }
 
         Log::info('ControlHubContractIngestionService: ingestion completed', [
@@ -255,6 +266,114 @@ class ControlHubContractIngestionService
 
         // Réutilisation du contrat actif existant (singleton).
         return $contract;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Story 39.4 — Canal ④ : déclenchement du pull des binaires imposés
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Story 39.4 (AC8) — Déclenche le pull ASYNCHRONE des binaires imposés, APRÈS le commit de
+     * l'ingestion (hors transaction, uniquement sur mutation). Seuls les items
+     * `type ∈ {wallpapers, agent_tools}` porteurs d'un `artifact` complet (checksum + url non vides)
+     * sont candidats.
+     *
+     * **Précédence locale stricte** (le pull COMBLE l'absence, ne REMPLACE jamais une source locale) :
+     *  - `wallpapers`  : présent si un {@see WallpaperAsset} existe pour ce `checksum` (identité par
+     *    contenu, cohérente avec la bibliothèque content-addressée) ;
+     *  - `agent_tools` : présent si un {@see AgentTool} existe pour cette `key` (identité par clé
+     *    fonctionnelle, mono-version, cohérente avec `AgentToolService::registerEmbedded()`).
+     *
+     * Si l'asset est présent localement → AUCUN pull, `pull_status` laissé inchangé (rien à faire ;
+     * ce n'est pas un « pending »). Si absent → `pull_status = pending` puis dispatch du job avec
+     * l'URL signée EN ARGUMENT (jamais en colonne — AC5).
+     *
+     * @param  array<int, array{key: array<string, mixed>, attrs: array<string, mixed>, artifact_url?: string|null}>  $items  items normalisés (portent l'URL volatile hors key/attrs)
+     */
+    private function dispatchArtifactPulls(int $contractId, array $items): void
+    {
+        $pullableTypes = ['wallpapers', 'agent_tools'];
+
+        foreach ($items as $row) {
+            $type = (string) $row['key']['type'];
+            if (! in_array($type, $pullableTypes, true)) {
+                continue;
+            }
+
+            $checksum = $row['attrs']['artifact_checksum'] ?? null;
+            $url = $row['artifact_url'] ?? null;
+
+            // Un artefact « complet » exige au minimum checksum (identité stable) + url (pull).
+            // Un checksum sans url reste persisté mais NON pullable (rien à tirer).
+            if ($checksum === null || $checksum === '' || $url === null || $url === '') {
+                continue;
+            }
+
+            $itemKey = (string) $row['key']['key'];
+
+            // Précédence locale : le pull ne se déclenche QUE si l'asset est absent localement.
+            $presentLocally = match ($type) {
+                'wallpapers' => WallpaperAsset::query()->where('checksum', $checksum)->exists(),
+                'agent_tools' => AgentTool::query()->where('key', $itemKey)->exists(),
+                default => true,
+            };
+            if ($presentLocally) {
+                continue;
+            }
+
+            // Retrouve l'item persisté (par clé naturelle) pour porter son id + pull_status.
+            /** @var ControlHubContractItem|null $item */
+            $item = ControlHubContractItem::query()
+                ->where('controlhub_contract_id', $contractId)
+                ->where('type', $type)
+                ->where('key', $itemKey)
+                ->where('target_type', (string) $row['key']['target_type'])
+                ->where('target_label', (string) $row['key']['target_label'])
+                ->first();
+
+            if ($item === null) {
+                continue;
+            }
+
+            // Review 39.4 #4 — isolation d'erreur PAR ITEM : sans try/catch, un dispatch en échec
+            // (backend de queue transitoirement indisponible) avorterait la boucle → les items
+            // SUIVANTS ne seraient ni marqués `pending` ni dispatchés, et comme `dispatchArtifactPulls`
+            // n'est rappelée que sur mutation du contrat, un item identique en ré-émission resterait
+            // bloqué sans signal. On log + continue pour ne pas contaminer les autres items ; l'item
+            // fautif reste marquable/récupérable (pull_status non figé à Pending si le save a échoué).
+            try {
+                $item->pull_status = ControlHubArtifactPullStatus::Pending;
+                $item->pull_error = null;
+                $item->save();
+
+                PullContractArtifactJob::dispatch(
+                    $item->id,
+                    $type,
+                    $itemKey,
+                    (string) $url,
+                    (string) $checksum,
+                    $row['attrs']['artifact_filename'] ?? null,
+                    $row['attrs']['artifact_size'] ?? null,
+                );
+
+                Log::info('ControlHubContractIngestionService: artifact pull dispatched', [
+                    'item_id' => $item->id,
+                    'type' => $type,
+                    'key' => $itemKey,
+                    // NFR-A3 : jamais l'URL signée en clair (secret de signature possible).
+                    'checksum' => $checksum,
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('ControlHubContractIngestionService: artifact pull dispatch failed', [
+                    'item_id' => $item->id,
+                    'type' => $type,
+                    'key' => $itemKey,
+                    'exception' => $e::class,
+                    'message' => $e->getMessage(),
+                ]);
+                // continue : ne pas priver les autres items imposés de leur pull.
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -375,6 +494,22 @@ class ControlHubContractIngestionService
 
             $value = $item['value'] ?? null;
 
+            // Story 39.4 — Canal ④ (lecture ADDITIVE, iso source_xml_url/sha en 31.3) :
+            //  - `delivery_mode` : capturé tel quel, non arbitré (AC6 — aucun domaine fermé,
+            //    aucun rejet ; un payload qui ne le porte pas reste accepté à l'identique).
+            //  - `artifact.{checksum,filename,size}` : identité STABLE du binaire imposé, écrite en
+            //    colonnes. `artifact.url` est LU mais JAMAIS écrit en colonne (AC2/AC5, piège
+            //    d'idempotence) : il ne sert qu'à alimenter, EN MÉMOIRE, le déclenchement du pull
+            //    (AC8) hors transaction. On l'attache donc au niveau de la row (clé `artifact_url`,
+            //    sœur de key/attrs) — reconcileChildren() n'utilise QUE key/attrs, l'URL ne peut
+            //    donc structurellement pas polluer wasChanged() (pas de colonne = pas de churn).
+            $deliveryMode = $item['delivery_mode'] ?? null;
+            $artifact = is_array($item['artifact'] ?? null) ? $item['artifact'] : [];
+            $artifactChecksum = $artifact['checksum'] ?? null;
+            $artifactFilename = $artifact['filename'] ?? null;
+            $artifactSize = $artifact['size'] ?? null;
+            $artifactUrl = $artifact['url'] ?? null;
+
             $rows[] = [
                 'key' => [
                     'controlhub_contract_id' => null, // injecté à la réconciliation
@@ -386,7 +521,22 @@ class ControlHubContractIngestionService
                 'attrs' => [
                     'value' => $value === null ? null : (string) $value,
                     'enforcement_state' => $enforcementRaw,
+                    // Additifs 39.4 — normalisation '' → null (iso source_xml_*). pull_status /
+                    // pull_error NE sont PAS dans les attrs : ils sont pilotés par le flux de pull
+                    // (post-commit + job), jamais par le payload ⇒ jamais réécrits/écrasés par une
+                    // ré-ingestion (no-op 28.2 préservé sur un item déjà téléchargé/en erreur).
+                    'delivery_mode' => $deliveryMode === null || $deliveryMode === '' ? null : (string) $deliveryMode,
+                    // Review 39.4 #1 — checksum NORMALISÉ en minuscule au point CANONIQUE (ingestion),
+                    // iso `hash_file()` de WallpaperUploadService/AgentToolService qui écrit toujours en
+                    // minuscule. Sans ça, un `checksum` amont en MAJUSCULE échoue la dédup content-adressée
+                    // en Postgres (comparaison `=` sensible à la casse) → doublon de bibliothèque + pull
+                    // inutile. Colonne DB + tous les lookups (precedence, materialize) deviennent cohérents.
+                    'artifact_checksum' => $artifactChecksum === null || $artifactChecksum === '' ? null : strtolower((string) $artifactChecksum),
+                    'artifact_filename' => $artifactFilename === null || $artifactFilename === '' ? null : (string) $artifactFilename,
+                    'artifact_size' => is_numeric($artifactSize) ? (int) $artifactSize : null,
                 ],
+                // Hors key/attrs : URL signée volatile (jamais persistée — AC5).
+                'artifact_url' => $artifactUrl === null || $artifactUrl === '' ? null : (string) $artifactUrl,
             ];
         }
 
@@ -524,6 +674,19 @@ class ControlHubContractIngestionService
             $sourceXmlUrl = $app['source_xml_url'] ?? null;
             $sourceXmlSha = $app['source_xml_sha'] ?? null;
 
+            // Story 39.4 — Canal ④, `executable` : PERSISTANCE SEULE (AC7). On lit et stocke
+            // `checksum`/`filename`/`size` (mêmes normalisations que source_xml_*), mais AUCUN pull
+            // n'est déclenché ici (pas de dispatch de job pour catalog_apps — cf. dispatchArtifactPulls,
+            // limité à wallpapers/agent_tools). `executable.url` n'est PAS lu en colonne (même piège
+            // d'idempotence que artifact.url, AC5). Ce champ recouvre un mécanisme SE5 déjà tenté et
+            // abandonné (`applications.installer_*`, destruction séparée planifiée) : on résiste
+            // délibérément à matérialiser par mimétisme avec `artifact` (note de risque de la story) —
+            // le pull reste le point d'extension propre d'une story dédiée si un besoin réel émerge.
+            $executable = is_array($app['executable'] ?? null) ? $app['executable'] : [];
+            $executableChecksum = $executable['checksum'] ?? null;
+            $executableFilename = $executable['filename'] ?? null;
+            $executableSize = $executable['size'] ?? null;
+
             $rows[] = [
                 'key' => [
                     'controlhub_contract_id' => null,
@@ -533,6 +696,11 @@ class ControlHubContractIngestionService
                     'display_name' => $displayName === null || $displayName === '' ? null : (string) $displayName,
                     'source_xml_url' => $sourceXmlUrl === null || $sourceXmlUrl === '' ? null : (string) $sourceXmlUrl,
                     'source_xml_sha' => $sourceXmlSha === null || $sourceXmlSha === '' ? null : (string) $sourceXmlSha,
+                    // Review 39.4 #1 — checksum normalisé minuscule (cohérence avec artifact_checksum ;
+                    // persistance seule pour executable, mais on garde l'identité stable homogène).
+                    'executable_checksum' => $executableChecksum === null || $executableChecksum === '' ? null : strtolower((string) $executableChecksum),
+                    'executable_filename' => $executableFilename === null || $executableFilename === '' ? null : (string) $executableFilename,
+                    'executable_size' => is_numeric($executableSize) ? (int) $executableSize : null,
                 ],
             ];
         }
