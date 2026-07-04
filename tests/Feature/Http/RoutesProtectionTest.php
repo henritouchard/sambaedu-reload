@@ -83,6 +83,11 @@ class RoutesProtectionTest extends TestCase
             // gardée par la permission dédiée `networkshare.view` (review #4).
             'shares listing'    => ['/app/shares', 'networkshare.view'],
             'shares show'       => ['/app/shares/1', 'networkshare.view'],
+            // Story 36.4 — règles d'accès aux dossiers : gate policy-backed
+            // `viewAny-folderrule` (correction review #1/#2). Le droit global
+            // `folderrule.view` franchit le gate ; sans lui → 403.
+            'folder rules listing' => ['/app/folder-rules', 'folderrule.view'],
+            'folder rules show'    => ['/app/folder-rules/1', 'folderrule.view'],
         ];
     }
 
@@ -138,6 +143,11 @@ class RoutesProtectionTest extends TestCase
             'parc group show'        => ['/app/parc/groups/1', 'computer.view'],
             'parc machine show'      => ['/app/parc/machines/1', 'computer.view'],
             'parc schedules runs'    => ['/app/parc/groups/1/schedules/1/runs', 'computer.view'],
+            // Story 36.4 (correction review #1/#2) — un délégué scopé parc, avec
+            // UNIQUEMENT `folderrule.manage` sur une salle et AUCUN droit global,
+            // atteint la liste des règles (gate `viewAny-folderrule` accepte le
+            // scoping, comme `/app/parc`).
+            'folder rules index'     => ['/app/folder-rules', 'folderrule.manage'],
         ];
     }
 

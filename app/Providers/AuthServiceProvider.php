@@ -8,6 +8,7 @@ use App\Policies\AppCustomizationPolicy;
 use App\Policies\CapabilityPolicy;
 use App\Policies\DelegationPolicy;
 use App\Policies\DhcpPolicy;
+use App\Policies\FolderAccessRulePolicy;
 use App\Policies\GroupPolicy;
 use App\Policies\MachinePolicy;
 use App\Policies\NetworkSharePolicy;
@@ -70,5 +71,7 @@ class AuthServiceProvider extends ServiceProvider
         DhcpPolicy::registerGates();
         // Story 34.2 — lecteurs réseau gérés (permissions dédiées networkshare.*).
         NetworkSharePolicy::registerGates();
+        // Story 36.4 — règles d'accès aux dossiers (permissions dédiées folderrule.*).
+        FolderAccessRulePolicy::registerGates();
     }
 }
