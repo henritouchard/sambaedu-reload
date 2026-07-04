@@ -18,6 +18,16 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping()
                  ->runInBackground();
 
+        // Story 39.2 (canal ③) — Émission du rapport de conformité amont.
+        // Tick 1 min ; la commande gère elle-même sa cadence fixe
+        // (config controlHub.compliance.interval, défaut 15 min) et court-circuite
+        // sans contrat actif / sans connexion valide (NFR-A1). Dispatche un job fin
+        // (retry) traité par le worker laravel-queue-general habituel.
+        $schedule->command('controlhub:report-compliance')
+                 ->everyMinute()
+                 ->withoutOverlapping()
+                 ->runInBackground();
+
         // Story 4-4 : Exécution des programmations horaires WorkstationGroup (tick 1 min)
         // Tick scheduler léger (1 SELECT + N enqueue) → les workers habituels
         // (laravel-queue-general) traitent ensuite les DispatchMachinePowerActionJob.
