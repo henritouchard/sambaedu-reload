@@ -149,6 +149,18 @@ final class FsAclAuthoringGuard
                     $violations[] = sprintf("fs_acl [%s] : chemin '%s' non absolu (attendu : chemin Windows absolu <lettre>:\\…).", $capability, $path);
                 }
 
+                // Noms courts 8.3 REFUSÉS (contournement Q2) : `C:\PROGRA~1`
+                // désigne `C:\Program Files` sans matcher aucune racine protégée
+                // littéralement. On exige le nom long (l'agent applique la même
+                // garde en défense en profondeur).
+                if ($this->hasShortName83($path)) {
+                    $violations[] = sprintf(
+                        "fs_acl [%s] : chemin '%s' en nom court 8.3 non autorisé (contournement des racines protégées) — utiliser le nom long.",
+                        $capability,
+                        $path,
+                    );
+                }
+
                 if ($aceType === 'deny') {
                     $hasDeny = true;
                 }
@@ -280,6 +292,17 @@ final class FsAclAuthoringGuard
     }
 
     /**
+     * Un segment du chemin porte-t-il un marqueur de nom court 8.3 (`~` suivi
+     * d'un chiffre, ex. `PROGRA~1`) ? Un tel chemin désigne une racine protégée
+     * sans la matcher littéralement → contournement de Q2 (miroir de la garde
+     * agent `hasShortName83`).
+     */
+    private function hasShortName83(string $path): bool
+    {
+        return (bool) preg_match('/~[0-9]/', $path);
+    }
+
+    /**
      * Normalise un chemin pour la comparaison EXACTE (Q2) : minuscules,
      * backslashes multiples réduits, backslash final retiré (la racine `C:\`
      * devient `c:` — forme stable).
@@ -305,12 +328,30 @@ final class FsAclAuthoringGuard
     }
 
     /**
-     * Un trustee littéral est-il un principal SYSTÈME ? Normalise en retirant le
-     * préfixe domaine (`NT AUTHORITY\SYSTEM`, `BUILTIN\Administrators` → dernier
-     * segment) puis compare insensiblement à la casse.
+     * Un trustee littéral est-il un principal SYSTÈME ?
+     *
+     * Le serveur ne résout PAS les SID (NFR7 : l'autorité finale reste l'agent,
+     * qui refuse par SID well-known après résolution LSA). Le guard couvre donc
+     * les cas NOMMABLES, alignés sur ce que l'agent refuse :
+     *   1. tout trustee sous les autorités `BUILTIN\` (S-1-5-32-*, ex.
+     *      `BUILTIN\Backup Operators`) ou `NT SERVICE\` (S-1-5-80-*) — sinon un
+     *      `deny` passerait le guard puis échouerait à CHAQUE cycle agent
+     *      (capacité inerte silencieuse) ;
+     *   2. les noms bien connus énumérés ({@see SYSTEM_TRUSTEES}), avec ou sans
+     *      préfixe domaine (`NT AUTHORITY\SYSTEM`, `BUILTIN\Administrators` →
+     *      dernier segment), insensibles à la casse.
      */
     private function isSystemTrustee(string $trustee): bool
     {
+        $lower = strtolower(trim($trustee));
+
+        // (1) Autorités système entières (BUILTIN / NT SERVICE) — alignement sur
+        // les préfixes SID S-1-5-32-* / S-1-5-80- que l'agent refuse.
+        if (str_starts_with($lower, 'builtin\\') || str_starts_with($lower, 'nt service\\')) {
+            return true;
+        }
+
+        // (2) Noms bien connus énumérés (préfixe domaine retiré).
         $bare = $trustee;
         $pos = strrpos($trustee, '\\');
         if ($pos !== false) {

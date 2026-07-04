@@ -216,6 +216,23 @@ class AppServiceProvider extends ServiceProvider
             \App\Observers\UserGroupUserPivotObserver::class
         );
 
+        // Story 36.1 (corr. review #2b) — garde-fou d'authoring fs_acl RÉEL :
+        // une projection windows/fs_acl dangereuse (Q2 : deny descendant sur
+        // racine protégée, deny principal système, nom court 8.3, deny sans
+        // warning…) ne peut plus être persistée (FsAclAuthoringException).
+        // Enregistré hors environnement de test (patron Workstation ci-dessous) :
+        // de nombreux tests unitaires du provider fabriquent volontairement des
+        // specs fs_acl ADVERSARIALES via factory Eloquent pour prouver la
+        // non-émission défensive ; l'observer les ferait échouer. Les tests qui
+        // veulent l'observer l'enregistrent explicitement (cf.
+        // CapabilityProjectionObserverTest::setUp). Le seed passe de toute façon
+        // (Query Builder → aucun événement Eloquent).
+        if (! $this->app->environment('testing')) {
+            \App\Models\CapabilityProjection::observe(
+                \App\Observers\CapabilityProjectionObserver::class
+            );
+        }
+
         // Forcer l'URL root et HTTPS pour le reverse proxy
         if ($appUrl = config('app.url')) {
             $parsedUrl = parse_url($appUrl);

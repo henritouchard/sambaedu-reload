@@ -755,6 +755,67 @@ Opus 4.8 (1M context) — dev-story (ultradev vague 1, worktree `ultradev/36-1`)
   SID (`FsAclOps.LookupSid` via LSA) et les jetons d'audience que le mécanisme
   `privilege` réutiliserait — RIEN n'est ouvert.
 
+### Corrections review (sonnet — décisions Opus)
+
+Cinq corrections appliquées après relecture du code (contrat wire INCHANGÉ —
+`FROZEN_STATE_HASH` = `6a41357d8a1ef725afc48c63cba67d5f097ea9844daa101e9303a333edff94a8`
+en PHP ET Go, aucune régression golden) :
+
+1. **[🔴 #1] Branche `absent` : retrait de l'ACE DU STORE, pas celle recalculée.**
+   `handler_fs_acl.go` — `Apply` (branche `absent`) et `Test` retiraient/jugeaient
+   sur `spec.targetAce(sid)` (payload courant). Si le masque avait dérivé depuis la
+   pose, l'ACE réelle (mémorisée au store) restait orpheline et `Test` rapportait
+   `compliant` à tort. Désormais on vise `store[id].ace()` si l'entrée existe (fallback
+   `target` sinon). Test Go `TestFsAclAbsentRemovesStoredAceNotRecomputed` (arme
+   `modify`, bascule `absent` avec payload `list_folder` → l'ACE `modify` du store est
+   bien retirée).
+
+2. **[🔴 #2a] Refus AGENT du deny descendant sur racine protégée (défense en
+   profondeur, garde-fou epic Q2).** `handler_fs_acl.go` — nouvelles constantes/helpers
+   Go MIROIR du guard PHP (`fsAclProtectedRoots`, `normalizeFsAclPath`,
+   `isFsAclProtectedRoot`, `hasShortName83`, `fsAclAuthoringViolation`). Un `present`
+   `deny` à héritage descendant sur `C:\`, `C:\Windows`, `C:\Program Files`,
+   `C:\Program Files (x86)`, `C:\ProgramData` (ou un nom court 8.3) ⇒ erreur d'item
+   ISOLÉE, jamais posé — indépendant du serveur. Tests Go
+   `TestFsAclDenyDescendantOnProtectedRootRefused` / `…ShortName83Refused` /
+   `TestFsAclSafeDenyOnProtectedRootPasses` (la variante sûre `list_folder folder_only`
+   PASSE).
+
+   **[🔴 #2b] Wiring SERVEUR du guard.** `FsAclAuthoringGuard::violations()` n'avait
+   AUCUN appelant hors tests → décision Q2 inopérante en prod. Nouvel observer Eloquent
+   `CapabilityProjectionObserver` (événement `saving`, UNIQUEMENT `mechanism==='fs_acl'`)
+   enregistré dans `AppServiceProvider::boot` (gaté hors env `testing`, patron Workstation :
+   les tests unitaires du provider fabriquent des specs adversariales via factory) : une
+   projection fautive lève `FsAclAuthoringException` (message FR listant les violations),
+   l'INSERT/UPDATE est annulé. Le seed passe (Query Builder → aucun événement Eloquent).
+   Test Feature `CapabilityProjectionObserverTest` (combo Q2 refusé + non écrit,
+   `BUILTIN\` refusé, projection valide passe, autre mécanisme ignoré, seed présent).
+
+3. **[🟠 #3] Noms courts 8.3 (contournement Q2).** `FsAclAuthoringGuard` — nouveau
+   `hasShortName83` (motif `~[0-9]`) : tout chemin en nom court (`PROGRA~1`) refusé au
+   guard (message FR) + même garde côté agent (#2a). Test
+   `guard_refuses_a_short_name_8_3_path`.
+
+4. **[🟠 #4] Alignement principals serveur↔agent.** `FsAclAuthoringGuard::isSystemTrustee`
+   refuse désormais aussi tout trustee sous les autorités `BUILTIN\` (S-1-5-32-*) ou
+   `NT SERVICE\` (S-1-5-80-*), en plus des noms énumérés — sinon un `deny` sur p.ex.
+   `BUILTIN\Backup Operators` passait le guard puis échouait à chaque cycle agent
+   (inerte silencieux). Docblock : autorité finale = agent (résolution SID), guard couvre
+   les cas nommables. Tests `guard_refuses_deny_on_builtin_and_nt_service_authorities` +
+   Feature `it_refuses_a_deny_on_a_builtin_authority_trustee`.
+
+5. **[🟡 #5] Persistance du store après CHAQUE mutation.** `handler_fs_acl.go` — `Apply`
+   remplace le flag `dirty` + écriture unique en fin de passe par une closure `persist()`
+   appelée immédiatement après chaque mutation réussie (retrait d'orphelin, retrait
+   d'ancienne ACE en branche `present`, pose, purge `absent`). Ferme la fenêtre fail-open
+   (crash entre un `RemoveAce` réussi et l'écriture différée). Écriture uniquement sur
+   mutation ⇒ 2 passes stables = zéro I/O (tests d'idempotence existants verts).
+
+Vérifs : PHP HÔTE ciblés = **115 passed** (dont golden `state_hash_is_frozen_regression_guard`
+et non-régression registry) ; Go `go test ./...` = ok, `GOOS=windows go build/vet` = OK,
+`go vet` linux = OK. Version agent INCHANGÉE (2.6.0 non encore publiée — ces corrections
+font partie de la même livraison).
+
 ### File List
 
 **Contrat & golden**

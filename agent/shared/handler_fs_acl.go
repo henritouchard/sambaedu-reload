@@ -247,6 +247,84 @@ func isWellKnownSystemSID(sid string) bool {
 	return strings.HasPrefix(s, "S-1-5-32-") || strings.HasPrefix(s, "S-1-5-80-")
 }
 
+// --- Refus d'AUTHORING = défense en profondeur (Q2), miroir Go du guard PHP ----
+//
+// FsAclAuthoringGuard (serveur) refuse déjà ces combos à la SOURCE, mais le
+// serveur peut avoir tort (projection fautive servie) : l'agent REFUSE lui aussi,
+// INDÉPENDAMMENT, un `deny` à héritage DESCENDANT sur une racine protégée — cette
+// variante casserait le poste et doit être INEXPRIMABLE (piège #8, garde-fou
+// epic Q2). Constantes et normalisation IDENTIQUES au guard PHP.
+
+// fsAclProtectedRoots : racines protégées (Q2 telle quelle), forme NORMALISÉE
+// (minuscules, sans backslash final — cf. normalizeFsAclPath). Miroir EXACT de
+// FsAclAuthoringGuard::PROTECTED_ROOTS.
+var fsAclProtectedRoots = []string{
+	`c:`,
+	`c:\windows`,
+	`c:\program files`,
+	`c:\program files (x86)`,
+	`c:\programdata`,
+}
+
+// normalizeFsAclPath : minuscules, backslashes multiples réduits, backslash
+// final retiré (`C:\` → `c:`). Normalisation IDENTIQUE au guard PHP.
+func normalizeFsAclPath(path string) string {
+	lower := strings.ToLower(strings.TrimSpace(path))
+	for strings.Contains(lower, `\\`) {
+		lower = strings.ReplaceAll(lower, `\\`, `\`)
+	}
+
+	return strings.TrimRight(lower, `\`)
+}
+
+func isFsAclProtectedRoot(path string) bool {
+	n := normalizeFsAclPath(path)
+	for _, root := range fsAclProtectedRoots {
+		if n == root {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasShortName83 : un segment du chemin porte-t-il un marqueur de nom court 8.3
+// (`~` suivi d'un chiffre, ex. PROGRA~1) ? Un nom court DÉSIGNE une racine
+// protégée sans la matcher littéralement (`C:\PROGRA~1` = `C:\Program Files`) →
+// contournement de Q2. Refusé côté agent comme côté guard.
+func hasShortName83(path string) bool {
+	for i := 0; i+1 < len(path); i++ {
+		if path[i] == '~' && path[i+1] >= '0' && path[i+1] <= '9' {
+			return true
+		}
+	}
+
+	return false
+}
+
+func fsAclDescendantAppliesTo(appliesTo string) bool {
+	return appliesTo == "folder_subfolders_files" || appliesTo == "subfolders_files_only"
+}
+
+// fsAclAuthoringViolation : raison NON vide si l'item `present` doit être REFUSÉ
+// (défense en profondeur, Q2), sinon "". Un `deny` à héritage DESCENDANT sur une
+// racine protégée — ou sur un chemin en nom court 8.3 qui pourrait en désigner
+// une — n'est JAMAIS posé. Un `absent` (retrait) reste toujours autorisé :
+// retirer une ACE dangereuse est sûr.
+func fsAclAuthoringViolation(spec FsAclSpec) string {
+	if spec.absent() || spec.AceType != "deny" || !fsAclDescendantAppliesTo(spec.AppliesTo) {
+		return ""
+	}
+	if hasShortName83(spec.Path) {
+		return fmt.Sprintf("deny à héritage descendant refusé sur le chemin en nom court 8.3 %q (racine protégée potentielle — utiliser le nom long, Q2)", spec.Path)
+	}
+	if isFsAclProtectedRoot(spec.Path) {
+		return fmt.Sprintf("deny à héritage descendant interdit sur la racine protégée %q (Q2)", spec.Path)
+	}
+
+	return ""
+}
+
 // --- Store « dernier appliqué » (piège #4) -----------------------------------
 
 // appliedFsAce : l'ACE exactement posée, persistée par identité d'item. Porte
@@ -420,6 +498,12 @@ func (h *FsAclHandler) Test(items []StateItem) (bool, error) {
 	// (a)/(b) Items désirés.
 	memo := newSidMemo(h.Ops)
 	for _, spec := range specs {
+		// Refus d'authoring (Q2, défense en profondeur) : un item refusé ne sera
+		// jamais posé → non conforme (l'Apply surfacera l'erreur d'item).
+		if fsAclAuthoringViolation(spec) != "" {
+			return false, nil
+		}
+
 		sid, err := memo.resolve(spec.Trustee)
 		if err != nil {
 			return false, nil // irrésoluble → Apply surfacera l'erreur d'item
@@ -440,15 +524,21 @@ func (h *FsAclHandler) Test(items []StateItem) (bool, error) {
 			return false, nil
 		}
 
-		present := acePresent(current, spec.targetAce(sid))
 		if spec.absent() {
-			if present {
+			// La conformité d'un `absent` se juge sur l'ACE RÉELLEMENT POSÉE
+			// (mémorisée au store), pas sur le payload courant : si le masque a
+			// dérivé, `targetAce` ne matcherait plus l'ACE encore sur le disque.
+			toCheck := spec.targetAce(sid)
+			if rec, ok := store[spec.identity()]; ok {
+				toCheck = rec.ace()
+			}
+			if acePresent(current, toCheck) {
 				return false, nil
 			}
 
 			continue
 		}
-		if !present {
+		if !acePresent(current, spec.targetAce(sid)) {
 			return false, nil
 		}
 	}
@@ -477,7 +567,19 @@ func (h *FsAclHandler) Apply(items []StateItem) error {
 			firstErr = e
 		}
 	}
-	dirty := false
+	// persist : réécrit le store IMMÉDIATEMENT après CHAQUE mutation réussie
+	// (retrait d'orphelin, retrait d'ancienne ACE, pose, purge `absent`) — pas
+	// seulement en fin de passe. Un crash entre un RemoveAce réussi et une
+	// écriture différée laisserait le disque sans l'ACE et le store désynchronisé
+	// (fenêtre fail-open sur un deny). Coût I/O négligeable (écriture atomique).
+	// Écriture UNIQUEMENT sur mutation → un état stable ne touche pas le disque
+	// (2 passes stables = zéro op).
+	persist := func() {
+		if err := writeFsAclState(h.StatePath, store); err != nil {
+			logError(h.Log, "Écriture du store fs_acl en échec : %v", err)
+			record(fmt.Errorf("écriture du store fs_acl : %w", err))
+		}
+	}
 
 	desiredIDs := map[string]bool{}
 	for _, s := range specs {
@@ -498,7 +600,7 @@ func (h *FsAclHandler) Apply(items []StateItem) error {
 		if err := h.Ops.RemoveAce(rec.Path, rec.ace()); err != nil {
 			if errors.Is(err, ErrFsPathNotExist) {
 				delete(store, id) // chemin parti → l'ACE l'est aussi
-				dirty = true
+				persist()
 
 				continue
 			}
@@ -507,7 +609,7 @@ func (h *FsAclHandler) Apply(items []StateItem) error {
 			continue // garder l'entrée (retentée au cycle suivant)
 		}
 		delete(store, id)
-		dirty = true
+		persist()
 		logInfo(h.Log, "ACE fs_acl orpheline retirée : %s", id)
 	}
 
@@ -515,6 +617,15 @@ func (h *FsAclHandler) Apply(items []StateItem) error {
 	memo := newSidMemo(h.Ops)
 	for _, spec := range specs {
 		id := spec.identity()
+
+		// Refus d'authoring (Q2, défense en profondeur, INDÉPENDANT du serveur) :
+		// un deny à héritage descendant sur racine protégée (ou nom court 8.3)
+		// n'est JAMAIS posé — erreur d'item isolée, les autres convergent.
+		if reason := fsAclAuthoringViolation(spec); reason != "" {
+			record(fmt.Errorf("fs_acl refusé (%s) : %s", id, reason))
+
+			continue
+		}
 
 		sid, err := memo.resolve(spec.Trustee)
 		if err != nil {
@@ -538,7 +649,7 @@ func (h *FsAclHandler) Apply(items []StateItem) error {
 					// ACE définitionnellement absente → purge l'entrée du store.
 					if _, ok := store[id]; ok {
 						delete(store, id)
-						dirty = true
+						persist()
 					}
 
 					continue
@@ -553,8 +664,18 @@ func (h *FsAclHandler) Apply(items []StateItem) error {
 		}
 
 		if spec.absent() {
-			if acePresent(current, target) {
-				if err := h.Ops.RemoveAce(spec.Path, target); err != nil {
+			// Retirer l'ACE ENREGISTRÉE AU STORE (rights/applies_to réellement
+			// posés), PAS celle recalculée du payload courant : si le masque a
+			// changé depuis la pose, `target` ne matcherait plus l'ACE réelle et
+			// le retrait raterait (ACE orpheline permanente + Test faussement
+			// conforme). On ne retombe sur `target` que si aucune entrée de store
+			// (identité jamais appliquée).
+			toRemove := target
+			if rec, ok := store[id]; ok {
+				toRemove = rec.ace()
+			}
+			if acePresent(current, toRemove) {
+				if err := h.Ops.RemoveAce(spec.Path, toRemove); err != nil {
 					record(fmt.Errorf("retrait de l'ACE %s : %w", id, err))
 
 					continue
@@ -563,7 +684,7 @@ func (h *FsAclHandler) Apply(items []StateItem) error {
 			}
 			if _, ok := store[id]; ok {
 				delete(store, id)
-				dirty = true
+				persist()
 			}
 
 			continue
@@ -579,6 +700,11 @@ func (h *FsAclHandler) Apply(items []StateItem) error {
 
 					continue
 				}
+				// Le store ne doit plus prétendre que l'ancienne ACE est posée :
+				// purge + persistance IMMÉDIATE (un crash avant la pose de la
+				// nouvelle ⇒ le cycle suivant repose proprement, aucune orpheline).
+				delete(store, id)
+				persist()
 				current, err = h.Ops.ListExplicitAces(spec.Path)
 				if err != nil {
 					record(fmt.Errorf("relecture de la DACL de %s : %w", id, err))
@@ -595,10 +721,11 @@ func (h *FsAclHandler) Apply(items []StateItem) error {
 
 		if acePresent(current, target) {
 			// Déjà conforme : aucune op DACL ; on aligne le store si besoin
-			// (idempotent — 2 passes stables = zéro op car le store matche déjà).
+			// (idempotent — 2 passes stables = zéro op car le store matche déjà,
+			// donc aucune écriture disque).
 			if store[id] != wantRec {
 				store[id] = wantRec
-				dirty = true
+				persist()
 			}
 
 			continue
@@ -610,15 +737,8 @@ func (h *FsAclHandler) Apply(items []StateItem) error {
 			continue
 		}
 		store[id] = wantRec
-		dirty = true
+		persist()
 		logInfo(h.Log, "ACE fs_acl posée : %s (mask=0x%X flags=0x%X)", id, target.Mask, target.Flags)
-	}
-
-	if dirty {
-		if err := writeFsAclState(h.StatePath, store); err != nil {
-			logError(h.Log, "Écriture du store fs_acl en échec : %v", err)
-			record(fmt.Errorf("écriture du store fs_acl : %w", err))
-		}
 	}
 
 	return firstErr

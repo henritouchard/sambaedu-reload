@@ -425,6 +425,31 @@ class CapabilityFsAclProviderTest extends TestCase
     }
 
     #[Test]
+    public function guard_refuses_deny_on_builtin_and_nt_service_authorities(): void
+    {
+        // Corr. review #4 : alignement serveur↔agent (S-1-5-32-* / S-1-5-80-).
+        // Un deny sur ces autorités passait le guard puis échouait à chaque
+        // cycle agent (capacité inerte silencieuse) — désormais refusé au NOM.
+        foreach (['BUILTIN\\Backup Operators', 'builtin\\Users', 'NT SERVICE\\TrustedInstaller', 'NT Service\\MSSQLSERVER'] as $principal) {
+            $v = $this->guardOne('auth', 'w', [
+                ['path' => 'C:\\Data', 'ace_type' => 'deny', 'rights' => 'modify', 'applies_to' => 'folder_only', 'trustee' => $principal, 'ensure' => 'present'],
+            ]);
+            self::assertNotEmpty($v, "deny sur l'autorité système '{$principal}' doit être refusé (alignement agent)");
+        }
+    }
+
+    #[Test]
+    public function guard_refuses_a_short_name_8_3_path(): void
+    {
+        // Corr. review #3 : `C:\PROGRA~1` désigne C:\Program Files sans matcher
+        // aucune racine protégée littéralement → contournement de Q2, refusé.
+        $v = $this->guardOne('short', 'w', [
+            ['path' => 'C:\\PROGRA~1', 'ace_type' => 'deny', 'rights' => 'list_folder', 'applies_to' => 'folder_only', 'trustee' => '@eleves', 'ensure' => 'present'],
+        ]);
+        self::assertNotEmpty($v, 'un chemin en nom court 8.3 (~1) doit être refusé');
+    }
+
+    #[Test]
     public function guard_allows_allow_ace_on_a_system_principal(): void
     {
         // Le refus ne vaut que pour `deny` : accorder (allow) à SYSTEM est légitime.

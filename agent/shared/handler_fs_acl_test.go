@@ -518,6 +518,132 @@ func TestFsAclNeverTouchesThirdPartyAces(t *testing.T) {
 	}
 }
 
+// --- (n) absent : retire l'ACE DU STORE, pas celle recalculée (corr. review #1)
+//
+// Le payload courant d'un item `absent` peut décrire un masque DIFFÉRENT de
+// l'ACE réellement posée (mémorisée au store) : le retrait DOIT viser l'ACE du
+// store, sinon l'ACE réelle reste orpheline sur le disque et Test rapporte
+// `compliant` à tort.
+func TestFsAclAbsentRemovesStoredAceNotRecomputed(t *testing.T) {
+	ops := newFakeFsAclOps()
+	ops.existPath(pfPath)
+	sid := "S-1-5-21-1-2-3-1001"
+	ops.setSid("Eleves", sid)
+	h := newFsAclHandler(t, ops)
+
+	// 1) On ARME avec rights=modify : le store mémorise l'ACE modify réellement
+	//    posée.
+	if err := h.Apply([]StateItem{fsAclItem(pfPath, "Eleves", "deny", "modify", "folder_only", "present")}); err != nil {
+		t.Fatalf("apply present modify: %v", err)
+	}
+	modifyAce := ExplicitAce{SID: sid, AceType: "deny", Mask: fsAclModifyMask, Flags: 0}
+	if !ops.hasAce(pfPath, modifyAce) {
+		t.Fatalf("l'ACE modify aurait dû être posée")
+	}
+
+	// 2) Bascule `absent` avec un payload de masque DIFFÉRENT (list_folder) :
+	//    l'identité (path|trustee|ace_type) est la MÊME, mais l'ACE recalculée du
+	//    payload (list_folder) ne correspond PAS à l'ACE posée (modify).
+	items := []StateItem{fsAclItem(pfPath, "Eleves", "deny", "list_folder", "folder_only", "absent")}
+
+	// Test doit voir NON conforme (l'ACE modify du store est toujours là).
+	if ok, _ := h.Test(items); ok {
+		t.Fatalf("l'ACE du store (modify) est encore posée → non conforme attendu")
+	}
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply absent: %v", err)
+	}
+	// L'ACE RÉELLEMENT posée (modify, celle du store) doit avoir été retirée.
+	if ops.hasAce(pfPath, modifyAce) {
+		t.Fatalf("l'ACE du store (modify) aurait dû être retirée, pas l'ACE recalculée du payload")
+	}
+	if ops.removeCnt != 1 {
+		t.Fatalf("exactement 1 retrait attendu (l'ACE du store), obtenu %d", ops.removeCnt)
+	}
+	// Et Test est maintenant conforme (plus rien d'orphelin).
+	if ok, err := h.Test(items); err != nil || !ok {
+		t.Fatalf("après retrait : conforme attendu (ok=%v err=%v)", ok, err)
+	}
+}
+
+// --- (o) refus agent Q2 : deny descendant sur racine protégée (corr. review #2a)
+//
+// Défense en profondeur INDÉPENDANTE du serveur : un `deny` à héritage
+// descendant sur une racine protégée est refusé (erreur d'item isolée, jamais
+// posé) ; la variante SÛRE `deny list_folder folder_only` sur la même racine
+// PASSE.
+func TestFsAclDenyDescendantOnProtectedRootRefused(t *testing.T) {
+	ops := newFakeFsAclOps()
+	ops.existPath(pfPath)
+	sid := "S-1-5-21-1-2-3-1001"
+	ops.setSid("Eleves", sid)
+	h := newFsAclHandler(t, ops)
+
+	// Combo INTERDIT (Q2) : deny modify à héritage descendant sur Program Files,
+	// ISOLÉ avec un item SÛR qui, lui, doit converger (effort maximal).
+	safe := fsAclItem(pfPath, "Eleves", "deny", "list_folder", "folder_only", "present")
+	forbidden := fsAclItem(pfPath, "Domain Users", "deny", "modify", "folder_subfolders_files", "present")
+	ops.setSid("Domain Users", "S-1-5-21-1-2-3-513")
+
+	err := h.Apply([]StateItem{forbidden, safe})
+	if err == nil {
+		t.Fatalf("un deny descendant sur une racine protégée doit remonter une erreur d'item")
+	}
+	// L'ACE interdite n'a JAMAIS été posée.
+	if ops.hasAce(pfPath, ExplicitAce{SID: "S-1-5-21-1-2-3-513", AceType: "deny", Mask: fsAclModifyMask, Flags: fsAclContainerInherit | fsAclObjectInherit}) {
+		t.Fatalf("l'ACE deny descendant sur racine protégée n'aurait JAMAIS dû être posée")
+	}
+	// L'item sûr a convergé malgré l'erreur isolée.
+	if !ops.hasAce(pfPath, denyListFolder(sid)) {
+		t.Fatalf("l'item SÛR (deny list_folder folder_only) aurait dû converger")
+	}
+
+	// Verdict `error` pour le type à travers le moteur.
+	engine := &Engine{Handlers: map[string]Handler{"fs_acl": h}}
+	report := engine.RunPass([]StateItem{forbidden, safe}, AppliedState{})
+	if len(report) != 1 || report[0].Status != "error" {
+		t.Fatalf("verdict error attendu pour le type fs_acl, obtenu %+v", report)
+	}
+}
+
+func TestFsAclSafeDenyOnProtectedRootPasses(t *testing.T) {
+	ops := newFakeFsAclOps()
+	ops.existPath(pfPath)
+	sid := "S-1-5-21-1-2-3-1001"
+	ops.setSid("Eleves", sid)
+	h := newFsAclHandler(t, ops)
+	// deny list_folder folder_only sur Program Files = variante SÛRE (Q2) → PASSE.
+	items := []StateItem{fsAclItem(pfPath, "Eleves", "deny", "list_folder", "folder_only", "present")}
+
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("la variante sûre ne doit PAS être refusée: %v", err)
+	}
+	if !ops.hasAce(pfPath, denyListFolder(sid)) {
+		t.Fatalf("l'ACE sûre aurait dû être posée")
+	}
+	if ok, err := h.Test(items); err != nil || !ok {
+		t.Fatalf("conforme attendu après pose (ok=%v err=%v)", ok, err)
+	}
+}
+
+// Un chemin en nom court 8.3 (PROGRA~1) désigne Program Files sans le matcher
+// littéralement : le deny descendant y est AUSSI refusé (anti-contournement Q2).
+func TestFsAclDenyDescendantOnShortName83Refused(t *testing.T) {
+	ops := newFakeFsAclOps()
+	shortPath := `C:\PROGRA~1`
+	ops.existPath(shortPath)
+	ops.setSid("Eleves", "S-1-5-21-1-2-3-1001")
+	h := newFsAclHandler(t, ops)
+	items := []StateItem{fsAclItem(shortPath, "Eleves", "deny", "modify", "subfolders_files_only", "present")}
+
+	if err := h.Apply(items); err == nil {
+		t.Fatalf("deny descendant sur un nom court 8.3 doit être refusé (anti-contournement Q2)")
+	}
+	if ops.addCnt != 0 {
+		t.Fatalf("aucune pose attendue sur un chemin 8.3 refusé, obtenu %d", ops.addCnt)
+	}
+}
+
 // --- (m) mémo SID par passe (compteur du fake) --------------------------------
 
 func TestFsAclSidMemoizedPerPass(t *testing.T) {
