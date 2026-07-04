@@ -118,7 +118,11 @@ final class FirewallCapabilityProvider extends AbstractCapabilityStateProvider
                 continue;
             }
 
-            $ruleId = (string) ($rule['rule_id'] ?? '');
+            // `rule_id` émis en MINUSCULE (corr. review #3), cohérent avec
+            // {@see exclusiveKey()} : le nom de règle Windows dérivé côté agent
+            // (`SambaEdu-Agent: <rule_id>`) hérite ainsi d'une casse stable — pas
+            // de règle orpheline si un `Remove` s'avérait sensible à la casse.
+            $ruleId = strtolower((string) ($rule['rule_id'] ?? ''));
             if ($ruleId === '') {
                 continue;
             }

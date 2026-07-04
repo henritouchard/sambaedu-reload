@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,6 +54,13 @@ const FirewallRuleGroup = "SambaEdu-Agent"
 func FirewallRuleName(ruleID string) string {
 	return FirewallRuleGroup + ": " + ruleID
 }
+
+// firewallRuleIDSlug : MIROIR EXACT de FirewallAuthoringGuard::RULE_ID côté
+// serveur (corr. review #4 — défense en profondeur symétrique, iso les plages
+// protégées). Un `rule_id` malformé qui atteindrait l'agent (serveur contourné/
+// buggé) produit une ERREUR d'enveloppe, jamais un nom de règle Windows non
+// slugifié.
+var firewallRuleIDSlug = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
 // FwRule : une règle pare-feu vue/posée sur le poste. Les enums sont en MOTS
 // MÉTIER (l'impl COM traduit ↔ les constantes NET_FW_*) : la comparaison de
@@ -546,7 +554,7 @@ func parseFirewallSpec(raw any) (FirewallSpec, bool) {
 	}
 
 	ruleID, _ := payload["rule_id"].(string)
-	if ruleID == "" {
+	if ruleID == "" || !firewallRuleIDSlug.MatchString(ruleID) {
 		return FirewallSpec{}, false
 	}
 

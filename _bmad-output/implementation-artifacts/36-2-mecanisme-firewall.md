@@ -803,8 +803,47 @@ d'intégration `ultradev/epic-36`).
 - **Note IPv6 lab** : si le lab n'a pas d'IPv6, le volet IPv6 de la traduction
   reste validé par le test Go seul (chaîne exacte figée).
 
+### Corrections review (sonnet — 5 fixes)
+
+Corrections appliquées après review Opus (finding #1 laissé EN L'ÉTAT sur décision
+orchestrateur, voir note en bas). Golden `FROZEN_STATE_HASH` INCHANGÉ
+(`76f6d9ac…`, PHP = Go) — aucune correction ne touche le wire format.
+
+- **#2 — session COM STA épinglée au thread OS** (`agent/windows/handler_firewall_windows.go`,
+  `withFwRules`). `runtime.LockOSThread()` en première ligne (avant `CoInitializeEx`),
+  `defer runtime.UnlockOSThread()` juste après (⇒ unlock APRÈS `CoUninitialize`,
+  ordre des defers). Sans ce verrou, la préemption asynchrone de Go (≥1.14) pouvait
+  migrer la goroutine entre deux `SyscallN` d'une même session apartment-threaded
+  (usage COM illégal). Import `runtime` ajouté. `GOOS=windows go build` + `go vet` OK.
+- **#3 — `rule_id` émis en minuscule** (`FirewallCapabilityProvider::expand()`).
+  `strtolower()` dès l'émission du payload (cohérent avec `exclusiveKey()`) — le nom
+  de règle Windows dérivé côté agent hérite d'une casse stable (pas de règle orpheline
+  si un `Remove` s'avérait sensible à la casse). Sans régression golden (l'item
+  `internet-block` est déjà minuscule).
+- **#4 — slug `rule_id` validé côté agent** (`agent/shared/handler_firewall.go::parseFirewallSpec`).
+  Ajout de la MÊME regex `^[a-z0-9][a-z0-9_-]{0,63}$` que le serveur
+  (`FirewallAuthoringGuard::RULE_ID`), en constante miroir. Un rule_id malformé atteignant
+  l'agent produit désormais une erreur d'enveloppe, jamais un nom de règle non slugifié.
+  Test Go ajouté (`TestFirewallRuleIDSlugRejected`).
+- **#5 — `ensure` en LISTE = violation explicite** (`FirewallAuthoringGuard::violations()`).
+  Une liste (ni littéral ni map) est refusée avec « forme `ensure` inattendue » au lieu
+  de passer en silence (aucune valeur validée). Test PHP ajouté (`guard_refuses_ensure_as_list`).
+- **#6 — commentaire observer complété** (`app/Providers/AppServiceProvider.php`).
+  Le bloc au-dessus de l'enregistrement de `CapabilityProjectionObserver` mentionne
+  désormais que la Story 36.2 réutilise le MÊME enregistrement pour gater le guard
+  firewall (dispatch par mécanisme). Aucun changement fonctionnel.
+
+**Note #1 (angle mort assumé, PAS implémenté).** Le finding #1 (garde-fou sur
+`action: allow`) reste EN ATTENTE d'une décision de politique utilisateur : `allow`
+n'est validé par AUCUN garde-fou en v1. Tracé dans le docblock de
+`FirewallAuthoringGuard` (section « Angle mort assumé v1 »), non implémenté.
+
 ### Tests
 
+- **Corrections review** : `--filter='ContractV1Test|StateHasherTest|CapabilityFirewall|
+  Firewall|CapabilityProjectionObserver|CapabilityFsAcl'` → **98 passed (411 assertions)** ;
+  Go `cd agent && go test ./...` → `ok shared/provision` ; `GOOS=windows go build ./...`
+  OK ; `go vet ./...` (linux) + `GOOS=windows go vet ./...` → clean.
 - **PHP HÔTE** (php8.4 + sqlite) : `--filter='ContractV1Test|StateHasherTest|
   CapabilityFirewall|Firewall|CapabilityProjectionObserver|CapabilityFsAcl'` →
   **97 passed (407 assertions)** ; non-régression registry

@@ -380,6 +380,29 @@ class CapabilityFirewallProviderTest extends TestCase
         self::assertNotEmpty($v, 'une projection avec un block sans warning non vide est refusée');
     }
 
+    #[Test]
+    public function guard_refuses_ensure_as_list(): void
+    {
+        // corr. review #5 : un `ensure` en LISTE (ni littéral ni map) est une
+        // forme d'authoring malformée — REFUSÉE explicitement (auparavant passée
+        // en silence : aucune valeur validée).
+        $rule = [
+            'rule_id' => 'r',
+            'direction' => 'out',
+            'action' => 'allow',
+            'remote_scope' => 'internet',
+            'protocol' => 'any',
+            'ensure' => ['present', 'absent'], // liste (array_is_list)
+        ];
+        $v = $this->guardOne('listshape', 'w', [$rule]);
+        self::assertNotEmpty($v, 'un `ensure` en liste doit être refusé (forme inattendue)');
+        self::assertStringContainsString('forme `ensure` inattendue', implode(' ', $v));
+
+        // Contrôle : un littéral et une map restent acceptés.
+        self::assertSame([], $this->guardOne('lit', null, [array_merge($rule, ['ensure' => 'present'])]));
+        self::assertSame([], $this->guardOne('map', null, [array_merge($rule, ['ensure' => ['off' => 'present', 'on' => 'absent']])]));
+    }
+
     // ── Piège #10/#15 : override UserGroup sans effet (compile machine-only)
 
     #[Test]

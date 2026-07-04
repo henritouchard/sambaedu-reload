@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -194,6 +195,16 @@ func (o *firewallOps) logf(format string, args ...any) {
 // withFwRules initialise COM, crée INetFwPolicy2, résout get_Rules → INetFwRules,
 // exécute fn, libère tout (jamais de fuite de référence).
 func withFwRules(fn func(rules *iNetFwRules) error) (retErr error) {
+	// Épingle la goroutine à SON thread OS pour TOUTE la durée de la session COM
+	// (corr. review #2). CoInitializeEx ouvre un apartment STA lié au thread
+	// courant ; sans ce verrou, la préemption asynchrone de Go (≥1.14) peut
+	// migrer la goroutine entre deux SyscallN d'une même session STA — usage COM
+	// illégal aux HRESULT imprévisibles. LockOSThread AVANT CoInitializeEx et
+	// UnlockOSThread APRÈS CoUninitialize (ordre des defers : verrou posé en
+	// premier ⇒ libéré en DERNIER).
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	hr, _, _ := procCoInitializeEx.Call(0, coinitApartmentThreaded)
 	if int32(hr) < 0 {
 		return fmt.Errorf("CoInitializeEx en échec (hr=0x%x)", uint32(hr))

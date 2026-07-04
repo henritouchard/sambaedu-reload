@@ -454,6 +454,41 @@ func TestFirewallInvalidPayloadIsError(t *testing.T) {
 	}
 }
 
+// --- (k bis) rule_id hors slug ⇒ error pour le type (corr. review #4) ---------
+
+// Défense en profondeur SYMÉTRIQUE : l'agent valide `rule_id` contre le MÊME
+// slug que le serveur (FirewallAuthoringGuard::RULE_ID). Un rule_id malformé qui
+// atteindrait l'agent produit une erreur d'enveloppe (jamais un nom de règle
+// Windows non slugifié).
+func TestFirewallRuleIDSlugRejected(t *testing.T) {
+	h := &FirewallHandler{Ops: newFakeFirewallOps()}
+	badIDs := []string{
+		"UPPER",              // majuscules interdites
+		"has space",          // espace interdit
+		"-leading-dash",      // ne peut pas commencer par un tiret
+		"emoji💥",             // hors [a-z0-9_-]
+		"trailing/slash",     // slash interdit
+		strings.Repeat("a", 65), // > 64 caractères
+	}
+	for _, id := range badIDs {
+		t.Run(id, func(t *testing.T) {
+			payload := map[string]any{"rule_id": id, "direction": "out", "action": "block", "remote_scope": "internet", "protocol": "any", "ensure": "present"}
+			items := []StateItem{{Type: "firewall", Semantics: "exclusive", Hash: "h", Payload: payload}}
+			if _, err := h.Test(items); err == nil {
+				t.Fatalf("rule_id hors slug %q attendu en erreur de Test", id)
+			}
+			if err := h.Apply(items); err == nil {
+				t.Fatalf("rule_id hors slug %q attendu en erreur d'Apply", id)
+			}
+		})
+	}
+
+	// Contrôle positif : un slug valide passe le parse.
+	if _, ok := parseFirewallSpec(map[string]any{"rule_id": "internet-block_2", "direction": "out", "action": "block", "remote_scope": "internet", "protocol": "any", "ensure": "present"}); !ok {
+		t.Fatalf("un rule_id slug valide doit être accepté")
+	}
+}
+
 // --- (l) normalisation d'écho : CIDR vs masque pointé ⇒ compliant ------------
 
 func TestFirewallEchoNormalizationNoDriftLoop(t *testing.T) {

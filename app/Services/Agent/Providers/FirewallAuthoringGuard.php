@@ -39,6 +39,12 @@ namespace App\Services\Agent\Providers;
  * MACHINE : « couper Internet » se cible par parc/salle (un override
  * UserGroup/User est structurellement SANS EFFET) — pas un garde-fou runtime, un
  * fait de compilation.
+ *
+ * **Angle mort assumé v1 — `action: allow` N'EST PAS validé.** Seul `block` est
+ * soumis au refus Q3 (couper le LAN) ; une règle `allow` (rouvrir une portée)
+ * n'est aujourd'hui contrainte par AUCUN garde-fou de politique. C'est une
+ * décision de politique EN ATTENTE (question ouverte utilisateur) — tracée ici
+ * comme angle mort connu, pas comme oubli.
  */
 final class FirewallAuthoringGuard
 {
@@ -127,9 +133,18 @@ final class FirewallAuthoringGuard
                 if (! in_array($protocol, self::PROTOCOLS, true)) {
                     $violations[] = sprintf("firewall [%s] règle '%s' : protocol '%s' hors domaine (any|tcp|udp).", $capability, $ruleId, $protocol);
                 }
-                foreach ($this->ensureValues($rule['ensure'] ?? null) as $ensure) {
-                    if (! in_array(strtolower(trim((string) $ensure)), self::ENSURE, true)) {
-                        $violations[] = sprintf("firewall [%s] règle '%s' : ensure '%s' hors domaine (present|absent).", $capability, $ruleId, (string) $ensure);
+                $rawEnsure = $rule['ensure'] ?? null;
+                if (is_array($rawEnsure) && array_is_list($rawEnsure)) {
+                    // Une LISTE n'est ni un littéral ni une map valeur-capacité
+                    // (corr. review #5) : forme d'authoring malformée refusée
+                    // EXPLICITEMENT (sinon elle passait en silence — aucune valeur
+                    // n'était validée, fail-closed en aval mais erreur masquée).
+                    $violations[] = sprintf("firewall [%s] règle '%s' : forme `ensure` inattendue (ni littéral ni map valeur-capacité).", $capability, $ruleId);
+                } else {
+                    foreach ($this->ensureValues($rawEnsure) as $ensure) {
+                        if (! in_array(strtolower(trim((string) $ensure)), self::ENSURE, true)) {
+                            $violations[] = sprintf("firewall [%s] règle '%s' : ensure '%s' hors domaine (present|absent).", $capability, $ruleId, (string) $ensure);
+                        }
                     }
                 }
 
@@ -209,6 +224,9 @@ final class FirewallAuthoringGuard
     /**
      * Valeurs possibles d'un champ `ensure` : littéral (1) OU chaque valeur d'une
      * map valeur-capacité. Absent ⇒ aucune valeur à valider (défaut `present`).
+     * Le cas LISTE (ni littéral ni map) est traité EN AMONT par {@see violations()}
+     * comme une violation explicite (corr. review #5) — la branche `array_is_list`
+     * ci-dessous reste un garde défensif au cas où ce helper serait réutilisé.
      *
      * @return list<mixed>
      */
