@@ -204,6 +204,12 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             // clés (marqueur $ensure). Seedée INACTIVE (gate) mais la DONNÉE porte
             // bien un off honnête — l'invariant s'applique à la spec, pas à is_active.
             'photo_viewer_restored',
+            // Story 36.3 : lot Explorateur, tout opt-in, maps symétriques à
+            // valeurs réelles (aucun $ensure dans ce lot).
+            'explorer_sidebar_pins_hidden',
+            'quick_access_hidden',
+            'explorer_gallery_hidden',
+            'quick_access_history_hidden',
         ];
 
         foreach ($withOff as $key) {
@@ -1354,6 +1360,348 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             self::assertCount(0, $machineItems, 'aucune clé HKLM → provider machine muet');
         } finally {
             \App\Observers\WorkstationGroupObserver::enableSync();
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Story 36.3 — Lot bibliothèque n°2 : capacités registre pures Explorateur
+    // (zéro moteur — témoin de doctrine « capacité = donnée, coût marginal ≈ 0 »)
+    // ══════════════════════════════════════════════════════════════════════
+
+    #[Test]
+    public function explorer_lot_is_seeded_with_expected_capabilities_and_keys(): void
+    {
+        // ── 1. explorer_sidebar_pins_hidden — portée Machine (HKLM, D3) ──────
+        $sidebar = Capability::query()->where('key', 'explorer_sidebar_pins_hidden')->firstOrFail();
+        self::assertSame('unmanaged', $sidebar->default_value, 'opt-in : rien en broadcast');
+        self::assertSame(['unmanaged', 'on', 'off'], $sidebar->allowedOptionValues());
+        self::assertSame('Non géré', $sidebar->optionLabel('unmanaged'));
+        self::assertSame('Masqués', $sidebar->optionLabel('on'));
+        self::assertSame('Affichés', $sidebar->optionLabel('off'));
+        self::assertSame('Bureau', $sidebar->category);
+        self::assertSame(['windows'], $sidebar->applies_to_os);
+        self::assertFalse($sidebar->hasWarning());
+
+        $sidebarKeys = $sidebar->projections()
+            ->where('os', 'windows')->where('mechanism', 'registry')
+            ->firstOrFail()->spec['keys'];
+        self::assertCount(6, $sidebarKeys, 'les 6 dossiers utilisateur du volet');
+
+        $expectedGuids = [
+            '{f42ee2d3-909f-4907-8871-4c22fc0bf756}', // Documents
+            '{0ddd015d-b06c-45d5-8c4c-f59713854639}', // Images
+            '{a0c69a99-21c8-4671-8703-7934162fcf1d}', // Musique
+            '{35286a68-3c57-41a1-bbb1-0eae73d76c95}', // Vidéos
+            '{7d83ee9b-2244-4e70-b1f5-5393042af1e4}', // Téléchargements
+            '{B4BFCC3A-DB2C-424C-B029-7FE99A87C641}', // Bureau
+        ];
+        foreach ($sidebarKeys as $i => $key) {
+            self::assertSame('HKLM', $key['hive'], "clé {$i} : portée Machine (D3)");
+            self::assertSame(
+                'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FolderDescriptions\\'.$expectedGuids[$i].'\\PropertyBag',
+                $key['path'],
+                "clé {$i} : GUID exact (candidate décodage documentaire)",
+            );
+            self::assertSame('ThisPCPolicy', $key['name']);
+            self::assertSame('REG_SZ', $key['type']);
+            self::assertSame(['on' => 'Hide', 'off' => 'Show'], $key['value'], "clé {$i} : map symétrique, Show = défaut Windows");
+        }
+
+        // ── 2. quick_access_hidden — portées mixtes HKLM+HKCU (D4) ──────────
+        $quickAccess = Capability::query()->where('key', 'quick_access_hidden')->firstOrFail();
+        self::assertSame('unmanaged', $quickAccess->default_value);
+        self::assertSame(['unmanaged', 'on', 'off'], $quickAccess->allowedOptionValues());
+        self::assertSame('Masqué (volet réduit à Ce PC)', $quickAccess->optionLabel('on'));
+        self::assertSame('Affiché', $quickAccess->optionLabel('off'));
+
+        $quickAccessKeys = $quickAccess->projections()
+            ->where('os', 'windows')->where('mechanism', 'registry')
+            ->firstOrFail()->spec['keys'];
+        self::assertCount(3, $quickAccessKeys, '1 clé HKLM (HubMode) + 2 clés HKCU (LaunchTo, CLSID Accueil)');
+
+        self::assertSame('HKLM', $quickAccessKeys[0]['hive']);
+        self::assertSame('SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer', $quickAccessKeys[0]['path']);
+        self::assertSame('HubMode', $quickAccessKeys[0]['name']);
+        self::assertSame('REG_DWORD', $quickAccessKeys[0]['type']);
+        self::assertSame(['on' => 1, 'off' => 0], $quickAccessKeys[0]['value']);
+
+        self::assertSame('HKCU', $quickAccessKeys[1]['hive']);
+        self::assertSame('Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced', $quickAccessKeys[1]['path']);
+        self::assertSame('LaunchTo', $quickAccessKeys[1]['name']);
+        self::assertSame('REG_DWORD', $quickAccessKeys[1]['type']);
+        self::assertSame(['on' => 1, 'off' => 2], $quickAccessKeys[1]['value']);
+
+        self::assertSame('HKCU', $quickAccessKeys[2]['hive']);
+        self::assertSame('Software\\Classes\\CLSID\\{f874310e-b6b7-47dc-bc84-b9e6b38f5903}', $quickAccessKeys[2]['path']);
+        self::assertSame('System.IsPinnedToNameSpaceTree', $quickAccessKeys[2]['name']);
+        self::assertSame('REG_DWORD', $quickAccessKeys[2]['type']);
+        self::assertSame(['on' => 0, 'off' => 1], $quickAccessKeys[2]['value']);
+        self::assertNotSame(
+            '{018D5C66-4533-4307-9B53-224DE2ED1FE6}',
+            $quickAccessKeys[2]['path'],
+            'CLSID Accueil DISTINCT du CLSID OneDrive (onedrive_hidden)',
+        );
+
+        // ── 3. explorer_gallery_hidden — portée Session (HKCU), candidat ────
+        $gallery = Capability::query()->where('key', 'explorer_gallery_hidden')->firstOrFail();
+        self::assertSame('unmanaged', $gallery->default_value);
+        self::assertSame('Masquée', $gallery->optionLabel('on'));
+        self::assertSame('Affichée', $gallery->optionLabel('off'));
+
+        $galleryKeys = $gallery->projections()
+            ->where('os', 'windows')->where('mechanism', 'registry')
+            ->firstOrFail()->spec['keys'];
+        self::assertCount(1, $galleryKeys);
+        self::assertSame('HKCU', $galleryKeys[0]['hive']);
+        self::assertSame('Software\\Classes\\CLSID\\{e88865ea-0e1c-4e20-9aa6-edcd0212c87c}', $galleryKeys[0]['path']);
+        self::assertSame('System.IsPinnedToNameSpaceTree', $galleryKeys[0]['name']);
+        self::assertSame('REG_DWORD', $galleryKeys[0]['type']);
+        self::assertSame(['on' => 0, 'off' => 1], $galleryKeys[0]['value']);
+
+        // ── 4. quick_access_history_hidden — portée Session (HKCU), candidat ─
+        $history = Capability::query()->where('key', 'quick_access_history_hidden')->firstOrFail();
+        self::assertSame('unmanaged', $history->default_value);
+        self::assertSame('Masqué', $history->optionLabel('on'));
+        self::assertSame('Affiché', $history->optionLabel('off'));
+
+        $historyKeys = $history->projections()
+            ->where('os', 'windows')->where('mechanism', 'registry')
+            ->firstOrFail()->spec['keys'];
+        self::assertCount(2, $historyKeys);
+        self::assertSame('HKCU', $historyKeys[0]['hive']);
+        self::assertSame('Software\\Microsoft\\Windows\\CurrentVersion\\Explorer', $historyKeys[0]['path']);
+        self::assertSame('ShowRecent', $historyKeys[0]['name']);
+        self::assertSame(['on' => 0, 'off' => 1], $historyKeys[0]['value']);
+        self::assertSame('HKCU', $historyKeys[1]['hive']);
+        self::assertSame('Software\\Microsoft\\Windows\\CurrentVersion\\Explorer', $historyKeys[1]['path']);
+        self::assertSame('ShowFrequent', $historyKeys[1]['name']);
+        self::assertSame(['on' => 0, 'off' => 1], $historyKeys[1]['value']);
+    }
+
+    #[Test]
+    public function explorer_lot_migration_is_idempotent_and_reversible(): void
+    {
+        $migration = require database_path('migrations/2026_07_04_100000_seed_capabilities_explorer_lot.php');
+
+        $keys = [
+            'explorer_sidebar_pins_hidden',
+            'quick_access_hidden',
+            'explorer_gallery_hidden',
+            'quick_access_history_hidden',
+        ];
+
+        $snapshot = fn (): array => Capability::query()
+            ->whereIn('key', $keys)
+            ->orderBy('key')
+            ->get()
+            ->map(fn (Capability $c): array => [
+                'options' => $c->options,
+                'default_value' => $c->default_value,
+                'spec' => $c->projections()->firstOrFail()->spec,
+            ])
+            ->all();
+
+        // up() déjà joué par RefreshDatabase → le rejouer ne change RIEN.
+        $before = $snapshot();
+        self::assertCount(4, $before);
+        $migration->up();
+        self::assertSame($before, $snapshot(), 'up() rejoué = aucun effet de bord');
+
+        // down() retire les 4 capacités (cascade projections/assignments)…
+        $migration->down();
+        self::assertSame([], $snapshot());
+
+        // …et up() les re-seed à l'identique.
+        $migration->up();
+        self::assertSame($before, $snapshot(), 'up() après down() = état identique');
+    }
+
+    #[Test]
+    public function explorer_lot_keys_do_not_collide_with_any_seeded_registry_key(): void
+    {
+        // AC2 — anti-collision structurel : identité normalisée `{hive|path|name}`
+        // (iso AbstractCapabilityStateProvider::exclusiveKey) des clés `registry`
+        // scalaires du lot 36.3, UNIQUE entre elles et DISJOINTE de toutes les
+        // autres projections `registry`/`registry_list` du catalogue seedé.
+        $lotKeys = [
+            'explorer_sidebar_pins_hidden',
+            'quick_access_hidden',
+            'explorer_gallery_hidden',
+            'quick_access_history_hidden',
+        ];
+
+        $normalize = fn (string $hive, string $path, string $name): string => strtolower($hive.'|'.$path.'|'.$name);
+
+        /** @var array<string, list<string>> $identities identité → [capacité, …] */
+        $identities = [];
+        foreach ($this->seededWindowsProjections() as $projection) {
+            if ($projection['mechanism'] === CapabilityProjection::MECHANISM_REGISTRY) {
+                foreach ($projection['spec']['keys'] ?? [] as $key) {
+                    $identity = $normalize((string) $key['hive'], (string) $key['path'], (string) ($key['name'] ?? ''));
+                    $identities[$identity][] = $projection['capability'];
+                }
+
+                continue;
+            }
+
+            // registry_list : identité conteneur `{hive|path|}` (name vide —
+            // insensible au name du scalaire, iso CapabilitySpecCollisionGuard).
+            foreach ($projection['spec']['keys'] ?? [] as $key) {
+                $identity = $normalize((string) $key['hive'], (string) $key['path'], '');
+                $identities[$identity][] = $projection['capability'];
+            }
+        }
+
+        // 1. Unicité INTERNE au lot : chaque identité du lot n'apparaît qu'une
+        // fois PARMI LES CAPACITÉS DU LOT (les capacités hors-lot ne comptent
+        // pas ici — testé au point 2).
+        $lotOnly = array_filter(
+            $identities,
+            fn (array $capabilities): bool => count(array_unique($capabilities)) > 0
+                && count(array_intersect($capabilities, $lotKeys)) > 0,
+        );
+        foreach ($lotOnly as $identity => $capabilities) {
+            $lotCapabilities = array_values(array_intersect($capabilities, $lotKeys));
+            self::assertCount(
+                1,
+                array_unique($lotCapabilities),
+                "identité '{$identity}' : une seule capacité DU LOT ne doit la porter (trouvé : ".implode(', ', $lotCapabilities).')',
+            );
+
+            // Durcissement (review 36.3 #4) : aucune capacité DU LOT ne porte
+            // DEUX FOIS la même identité `{hive|path|name}` (doublon
+            // intra-capacité — invisible à `array_unique` ci-dessus). On compte
+            // les occurrences BRUTES par capacité. Verrouille les futurs lots.
+            foreach (array_count_values($lotCapabilities) as $capability => $occurrences) {
+                self::assertSame(
+                    1,
+                    $occurrences,
+                    "identité '{$identity}' : la capacité '{$capability}' la porte {$occurrences} fois (doublon intra-capacité)",
+                );
+            }
+
+            // 2. Disjonction avec le RESTE du catalogue : aucune capacité
+            // hors-lot ne partage cette identité avec une capacité du lot.
+            $foreignCapabilities = array_values(array_diff(array_unique($capabilities), $lotKeys));
+            self::assertSame(
+                [],
+                $foreignCapabilities,
+                "identité '{$identity}' (lot 36.3) COLLISIONNE avec une capacité hors-lot : ".implode(', ', $foreignCapabilities),
+            );
+        }
+
+        // 3. Le CLSID OneDrive n'apparaît dans AUCUNE clé du lot.
+        foreach ($this->seededWindowsProjections() as $projection) {
+            if (! in_array($projection['capability'], $lotKeys, true)) {
+                continue;
+            }
+            foreach ($projection['spec']['keys'] ?? [] as $key) {
+                self::assertStringNotContainsStringIgnoringCase(
+                    '{018D5C66-4533-4307-9B53-224DE2ED1FE6}',
+                    (string) $key['path'],
+                    "{$projection['capability']} ne doit JAMAIS porter le CLSID OneDrive (possédé par onedrive_hidden)",
+                );
+            }
+        }
+    }
+
+    #[Test]
+    public function quick_access_hidden_emits_split_machine_and_session_items_via_the_real_providers(): void
+    {
+        // AC4 — chaîne seed→spec→expand→payload sur données RÉELLES (pattern
+        // numlock_on_logon_emits_hku_machine_and_hkcu_session_items_via_the_real_providers) :
+        // ruches mixtes HKLM+HKCU d'une même projection, chaque provider ne voit
+        // que la sienne.
+        WorkstationGroupObserver::disableSync();
+
+        try {
+            $ws = Workstation::factory()->create();
+            $parc = WorkstationGroup::factory()->logical()->create();
+            $ws->groups()->attach($parc->id);
+            $ctx = fn (): TargetContext => TargetContext::for($ws, null);
+
+            $cap = Capability::query()->where('key', 'quick_access_hidden')->firstOrFail();
+            self::assertSame('unmanaged', $cap->default_value, 'défaut seedé = unmanaged (Broadcast n\'émet rien)');
+            $forCap = fn ($items) => $items->filter(
+                fn ($c): bool => (int) $c->sourceId === (int) $cap->id,
+            )->values();
+
+            // ── Défaut unmanaged (sans override) : AUCUN item des 4 capacités ──
+            $machineProvider = new RegistryMachineCapabilityProvider();
+            $userProvider = new RegistryUserCapabilityProvider();
+            foreach ([
+                'explorer_sidebar_pins_hidden',
+                'quick_access_hidden',
+                'explorer_gallery_hidden',
+                'quick_access_history_hidden',
+            ] as $key) {
+                $otherCap = Capability::query()->where('key', $key)->firstOrFail();
+                $forOther = fn ($items) => $items->filter(fn ($c): bool => (int) $c->sourceId === (int) $otherCap->id);
+                self::assertCount(0, $forOther($machineProvider->itemsFor($ctx())), "{$key} : Machine muet par défaut");
+                self::assertCount(0, $forOther($userProvider->itemsFor($ctx())), "{$key} : Session muette par défaut");
+            }
+
+            // ── Override `on` de parc ────────────────────────────────────────
+            DB::table('capability_assignments')->insert([
+                'capability_id' => $cap->id,
+                'assignable_type' => WorkstationGroup::class,
+                'assignable_id' => $parc->id,
+                'value' => 'on',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $machineOn = $forCap($machineProvider->itemsFor($ctx()));
+            self::assertCount(1, $machineOn, 'Machine : 1 item HubMode');
+            self::assertSame(['hive', 'path', 'name', 'type', 'value'], array_keys($machineOn[0]->payload));
+            self::assertSame('HKLM', $machineOn[0]->payload['hive']);
+            self::assertSame('HubMode', $machineOn[0]->payload['name']);
+            self::assertSame(1, $machineOn[0]->payload['value']);
+
+            $userOn = $forCap($userProvider->itemsFor($ctx()));
+            self::assertCount(2, $userOn, 'Session : 2 items (LaunchTo + CLSID Accueil)');
+            foreach ($userOn as $c) {
+                self::assertSame(['hive', 'path', 'name', 'type', 'value'], array_keys($c->payload));
+                self::assertSame('HKCU', $c->payload['hive']);
+            }
+            $byName = $userOn->keyBy(fn ($c): string => $c->payload['name']);
+            self::assertSame(1, $byName['LaunchTo']->payload['value']);
+            self::assertSame(0, $byName['System.IsPinnedToNameSpaceTree']->payload['value']);
+
+            // ── Override `off` : MÊMES identités de clé, valeurs réelles 0/2/1 ──
+            DB::table('capability_assignments')
+                ->where('capability_id', $cap->id)
+                ->update(['value' => 'off']);
+
+            $machineOff = $forCap($machineProvider->itemsFor($ctx()));
+            self::assertCount(1, $machineOff);
+            self::assertSame('HubMode', $machineOff[0]->payload['name']);
+            self::assertSame(0, $machineOff[0]->payload['value'], 'off écrit une VRAIE valeur (map symétrique)');
+
+            $userOff = $forCap($userProvider->itemsFor($ctx()))->keyBy(fn ($c): string => $c->payload['name']);
+            self::assertSame(2, $userOff['LaunchTo']->payload['value']);
+            self::assertSame(1, $userOff['System.IsPinnedToNameSpaceTree']->payload['value']);
+
+            // ── explorer_gallery_hidden `on` : 0 item Machine, 1 item Session ──
+            $gallery = Capability::query()->where('key', 'explorer_gallery_hidden')->firstOrFail();
+            DB::table('capability_assignments')->insert([
+                'capability_id' => $gallery->id,
+                'assignable_type' => WorkstationGroup::class,
+                'assignable_id' => $parc->id,
+                'value' => 'on',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $forGallery = fn ($items) => $items->filter(fn ($c): bool => (int) $c->sourceId === (int) $gallery->id)->values();
+
+            self::assertCount(0, $forGallery($machineProvider->itemsFor($ctx())), 'galerie : aucune clé HKLM → Machine muet');
+            $galleryUser = $forGallery($userProvider->itemsFor($ctx()));
+            self::assertCount(1, $galleryUser, 'galerie : 1 item Session');
+            self::assertSame('HKCU', $galleryUser[0]->payload['hive']);
+            self::assertSame('System.IsPinnedToNameSpaceTree', $galleryUser[0]->payload['name']);
+            self::assertSame(0, $galleryUser[0]->payload['value']);
+        } finally {
+            WorkstationGroupObserver::enableSync();
         }
     }
 }
