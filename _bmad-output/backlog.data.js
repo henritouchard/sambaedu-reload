@@ -1457,6 +1457,78 @@ const DATASETS = {
           "note": "[DONE — validée par Henri 2026-07-03 après test VM (post-sync inotify). REVIEW passée (sonnet + second avis opus) + corrections appliquées] Onglet ?tab=state sur /parc/machines/{id} et /parc/groups/{id} : consultation pure, badges d'origine (Ce poste/Cette salle/Ce parc, parc/salle avec lien, Dépendance de <nom>, Socle commun, Contrat amont), multi-origines en tooltip, lazy-loading (#[Lazy]+squelette). Moteur : explainPackages() DANS WorkstationPackagesResolver (invariant byte-identique testé), DesiredStateOriginService PG-pur (périmètre machine DIRECT iso-agent, amont via UpstreamContractSource NFR3). Post-review : bug câblage fiche poste (#7 — état cible dans le @else Général, trouvé par Henri en test réel) corrigé + verrouillé par tests de page ; #5 room_self « Cette salle » ; M1 nom d'affichage dépendance ; #6b ordres amont label = poste-portés (mention UI). Écart assumé : raccourcis User/UserGroup exclus de la fiche poste (session-dépendants). Cf. codeReviews/37-1.md. VM : rien (zéro migration, zéro route)."
         }
       ]
+    },
+    {
+      "num": 38,
+      "title": "Extinction SE4 — suppression de /var/www/sambaedu",
+      "status": "todo",
+      "summary": "Objectif Henri (2026-07-03) : pouvoir supprimer le repo legacy <code>/var/www/sambaedu</code> de la VM <strong>sans impacter SE5</strong>, et faire remonter les appels silencieux (classe firefox.php). Contrainte forte : les anciennes routes encore appelées par des postes non/mal migrés reçoivent une réponse <strong>terminale correcte</strong> (script no-op typé, XML vide valide — jamais du HTML d'erreur exécuté en .cmd) — la migration elle-même passe par l'AD (GPO SE_agent_bootstrap liée à OU=computers), pas par HTTP (doctrine 27.14 préservée : tombstones ≠ canal maintenu). État des lieux constaté (logs /vm) : netboot iPXE servi depuis le legacy (alias /ipxe), DHCP/DNS générés par le legacy (→ gated Story 8.3), postes qui curl-ent encore gpo/applications.php via crochets locaux, 4 requires FS legacy dans le code (import_gpo bootstrap agent, Guacamole, embed add_group, catchall abort 500). Étape clé : <strong>extinction à blanc réversible</strong> (a2dissite + mv .off) + observation legacy_catchall_logs AVANT suppression (trash). Cadrage : <code>planning-artifacts/epics-extinction-se4.md</code> (questions ouvertes Q1-Q4 : auto-nettoyage, ENT, quotas/cloud/stats, canal Linux).",
+      "stories": [
+        {
+          "id": "38-1",
+          "title": "Relocalisation des statiques iPXE (+ racine TFTP) + catchall 404 si legacy absent",
+          "status": "todo"
+        },
+        {
+          "id": "38-2",
+          "title": "Tombstones natifs du canal client legacy (gpo/*_out, applications, wpkg xml_out, install) + observabilité + retrait kill-switch",
+          "status": "todo"
+        },
+        {
+          "id": "38-3",
+          "title": "Nettoyage des crochets legacy des postes via l'agent (curl applications-*.cmd, déclencheurs wpkg, helpers obsolètes)",
+          "status": "todo"
+        },
+        {
+          "id": "38-4",
+          "title": "Sortie des require FS legacy : import_gpo natif (bootstrap agent), Guacamole remote, bootstrap/bridge/fallbacks",
+          "status": "todo"
+        },
+        {
+          "id": "38-5",
+          "title": "Débranchement crons legacy + embed (add_group/GPEI) — décisions Q2/Q3 (ENT, quotas, cloud, stats)",
+          "status": "todo",
+          "note": "make_dhcpd_conf.sh remplacé par la Story 8.3 (dépendance)."
+        },
+        {
+          "id": "38-6",
+          "title": "Extinction à blanc réversible + observation (critère GO logs) + suppression définitive + nettoyage code/env/scripts",
+          "status": "todo",
+          "note": "Gated : 38.1→38.5 done + Story 8.3 livrée + zéro appel legacy non-tombstone sur N jours."
+        }
+      ]
+    },
+    {
+      "num": 39,
+      "title": "Alignement de la couture controlHub ↔ SE5 (activation du lien managé)",
+      "status": "todo",
+      "summary": "Suite des Epics 28-33 (clos). Issu d'un <strong>audit de compatibilité croisé</strong> (2026-07-04) entre l'implémentation SE5 et le contrat tel qu'implémenté côté central (docs <code>CONTRAT-MANAGE-SE5-IRUNDO.md</code> + <code>SE5-CONTRACT-COMPLIANCE-V1.md</code>). Rend le lien managé <strong>réellement opérant de bout en bout</strong> en fermant 4 écarts : ① l'ingestion existe mais <strong>aucune route HTTP</strong> ne l'expose (OPEN-5) ; ③ <strong>aucun émetteur de conformité</strong> SE5→central (OPEN-5) ; ⑤ SSO fédéré — la clé/kid/iss reçus au handshake sont <strong>stockés mais jamais branchés</strong> sur le verifier (lit l'env seul ; <code>aud</code> par défaut = SE4FS_NAME ≠ uuid) ; ④ binaires — <code>artifact</code>/<code>executable</code>/<code>delivery_mode</code> émis par le central (Epic D/D.7) mais <strong>ignorés à l'ingestion</strong> et absents de l'artefact partagé R2. Le canal ② (rupture) est déjà <strong>compatible</strong>. Décision Henri 2026-07-04 : adopter le <strong>pull central (canal ④)</strong> pour les binaires. Cadrage haut niveau (ACs à figer story par story) : <code>planning-artifacts/epics-alignement-controlhub-se5.md</code>.",
+      "stories": [
+        {
+          "id": "39-1",
+          "title": "Exposer l'endpoint HTTP d'ingestion du contrat amont (POST /api/v1/controlhub/contract, canal ①)",
+          "status": "todo",
+          "note": "Câble l'ingestion idempotente DÉJÀ livrée (ControlHubContractIngestionService::ingest, Epics 28/33) sur une route controlhub.auth (Bearer clé instance, symétrique du sever-link 32.1). Mapping UnsupportedSchemaVersion/InvalidUpstreamContract → 422. Route APRÈS le groupe 16.12 (fenêtre 1500 chars). BLOQUANT pour 39.2/39.4. Tâche annexe : trancher la branche morte master_api_key (absente de config/controlHub.php)."
+        },
+        {
+          "id": "39-2",
+          "title": "Émetteur de conformité se5-contract-compliance/v1 (SE5 → central, canal ③)",
+          "status": "todo",
+          "note": "Service+job+command : compile l'état d'application des items (applied|pending|error|overridden, overridden=indicateur override permissif FR24) en rapport ÉTAT-INTÉGRAL, clé naturelle miroir de l'émission, POST vers /api/sambaedu/contract-compliance/{instance} avec le api_token du handshake (via ControlHubApiClient). Aligné sur SE5-CONTRACT-COMPLIANCE-V1.md (spec central NON ratifiée → divergence = story d'alignement). Q ouvertes : cadence (heartbeat vs job périodique), source des statuts (agrégation reporting agent 24.x)."
+        },
+        {
+          "id": "39-3",
+          "title": "Brancher l'IdP fédéré du handshake sur le vérificateur JWT (canal ⑤)",
+          "status": "todo",
+          "note": "🔴 Bug de câblage : clé/kid/iss reçus au handshake (controlhub_connection.idp_public_key/idp_kid/idp_iss) stockés mais jamais lus par FederatedJwtVerifier (lit config/federated_auth.* seul). Bridge DB→verifier (env en repli), aud validé contre l'uuid d'instance (controlHub.se4fs.instance_id) et non SE4FS_NAME. Garantir l'existence Spatie du rôle porté (super-admin). Anti-régression RS256/exp/nbf/jti. Indépendante de 39.1/2/4."
+        },
+        {
+          "id": "39-4",
+          "title": "Ingestion + pull des binaires amont (artifact/executable/delivery_mode, canal ④)",
+          "status": "todo",
+          "note": "Décision Henri 2026-07-04 = ADOPTER LE PULL CENTRAL. SE5 est désir d'état pur (binaires aujourd'hui 100% locaux : biblio wallpapers, tools_path, WPKG via source_xml_url) ; le central héberge et diffuse des URL signées+sha256 (Epic D/D.7). Story : artefact R2 d'abord (documenter delivery_mode/artifact/executable en additifs, PAS de bump schema_version) ; migration additive ; ingestion lit+persiste ; client de pull (vérif sha256, no-op au même checksum, échec checksum→item error remonté par 39.2) ; PRÉCÉDENCE local prioritaire, pull en fallback d'absence. Golden préservé à 0 binaire amont ; bump agent/shared/version.go SEULEMENT si payload agent change. Q ouvertes : foyer de stockage, moment du pull (ingestion vs résolution)."
+        }
+      ]
     }
   ],
   "central": [
