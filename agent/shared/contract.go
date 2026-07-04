@@ -39,6 +39,11 @@ var ResourceTypes = []string{
 	// (chirurgie DACL, service SYSTEM, portée Machine, contrat §7.7). Ajout
 	// ADDITIF. Un agent ≤ 2.5.0 IGNORE ce type EN SILENCE (contrat §8).
 	"fs_acl",
+	// Story 36.2 (D1) — mécanisme HORS-REGISTRE `firewall` : règles pare-feu
+	// Windows possédées par groupe (`SambaEdu-Agent`, service SYSTEM, portée
+	// Machine, contrat §7.8). Ajout ADDITIF. Un agent ≤ 2.6.0 IGNORE ce type
+	// EN SILENCE (contrat §8).
+	"firewall",
 }
 
 // ResourceStatuses : statuts de conformité du rapport (§6 — iso

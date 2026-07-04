@@ -66,6 +66,15 @@ final class StateContract
         // sans autre changement. Un agent ≤ 2.5.0 IGNORE ce type EN SILENCE
         // (contrat §8 — aucun statut au rapport) → release 2.6.0 à publier.
         'fs_acl',
+        // Story 36.2 (D1) — mécanisme HORS-REGISTRE `firewall` : règles pare-feu
+        // Windows POSSÉDÉES PAR GROUPE (`SambaEdu-Agent`) sur le poste (service
+        // SYSTEM, portée Machine). Payload `{rule_id, direction, action,
+        // remote_scope, protocol, ensure}` + `remote_addresses` ssi `explicit`
+        // + `ports` ssi tcp|udp (§7.8) — enums fermés de mots métier, AUCUNE
+        // syntaxe netsh/SDDL. Ajout ADDITIF : `ReportRequest` (Rule::in) accepte
+        // le type sans autre changement. Un agent ≤ 2.6.0 IGNORE ce type EN
+        // SILENCE (contrat §8 — aucun statut au rapport) → release 2.7.0 à publier.
+        'firewall',
     ];
 
     /**

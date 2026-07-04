@@ -870,6 +870,54 @@ consulté).
 Capacité de preuve seedée : `program_files_browse_denied` (2 chemins × 2 trustees
 = 4 entrées `deny list_folder folder_only`).
 
+### `firewall` — `exclusive` PAR `rule_id` / `machine`
+
+**Story 36.2.** Deuxième mécanisme **HORS-REGISTRE** : des **règles pare-feu
+Windows possédées PAR GROUPE**. `FirewallCapabilityProvider` (portée **Machine**)
+EXPANSE une capacité → items concrets `{rule_id, direction, action, remote_scope,
+protocol, ensure}` (+ `remote_addresses` ssi `explicit`, + `ports` ssi tcp|udp —
+cf. contrat §7.8). Jumeau structurel de `fs_acl` : `expand()` surchargé,
+`StateCompiler` INTOUCHÉ (D2), `hive()` renvoie `''` (piège #14), `resolveKeyValue()`
+hérité pour `ensure` (seul champ mappable — v1 minimal).
+
+- **`exclusiveKey() = rule_id`** (1 segment minuscule) : la maille la plus
+  spécifique gagne CETTE règle ; les `rule_id` distincts s'accumulent dans le
+  groupe. Le `rule_id` est une **identité GLOBALE inter-capacités** (piège #10) :
+  deux capacités émettant le même `rule_id` collisionnent (invariant de test
+  d'unicité sur le catalogue seedé).
+- **Propriété PAR CONTENEUR (D4, marqueur = le GROUPE, PAS de store)** : côté
+  agent, le champ `Grouping = SambaEdu-Agent` de la règle EST le marqueur ; le
+  handler réconcilie le groupe entier (iso `registry_list`), jamais les règles
+  hors groupe, la politique par défaut ou le service. La traduction
+  `remote_scope: internet` → plages inverses-RFC1918 (IPv4 `a-b` + IPv6
+  `2000::/3`) vit dans le HANDLER (D6, figée + testée).
+- **Écart assumé `ensure`** (piège #2) : `on` émet le MÊME `rule_id` en
+  `ensure:absent` → la précédence par maille joue dans les deux sens et le groupe
+  finit VIDE (« on ⇒ groupe vide »). `unmanaged` (défaut) = sentinelle (rien
+  émis).
+- **Validation d'authoring Q3** (`FirewallAuthoringGuard`, service PUR, câblé au
+  runtime via `CapabilityProjectionObserver` en dispatch par mécanisme) : un
+  `action: block` couvrant le réseau local (RFC1918/loopback/link-local/ULA) ou
+  tout (`/0`) est REFUSÉ par **INTERSECTION mathématique d'intervalles** IPv4/IPv6
+  (`PROTECTED_RANGES`, MIROIR du Go) — jamais un match textuel (`192.160.0.0/12`,
+  `0.0.0.0/0`, `::/0` refusés). `block internet` reste AUTORISÉ (usage nominal).
+  Échappatoire = `explicit` avec adresses PUBLIQUES. Le REFUS est aussi appliqué
+  côté agent (Test ET Apply, défense en profondeur). Enums hors domaine, slug
+  invalide, cohérences conditionnelles, ports hors 1-65535, et `block` sans
+  `warning` sont également refusés.
+- **Pas de ciblage par utilisateur** (piège #15, Q4, STRUCTUREL) : portée Machine
+  → override UserGroup/User SANS EFFET. « Couper Internet » se cible par
+  parc/salle.
+- **Limites (à documenter, pas sur-conçu)** : type absent du state ⇒ handler non
+  invoqué (piège #3) → une règle `block` survivrait (la salle resterait coupée) ;
+  le retrait PROPRE passe par `on`, JAMAIS par `unmanaged`. Remède manuel : les
+  règles du groupe `SambaEdu-Agent` sont visibles/supprimables dans `wf.msc`
+  (marqueur DANS l'objet). Un proxy d'établissement peut re-donner Internet : le
+  couper via une règle `explicit` sur son adresse PUBLIQUE.
+
+Capacité de preuve seedée : `internet_access` (enum `unmanaged`/`on`/`off` — `off`
+⇒ règle `block out internet any`).
+
 ## Ajouter un type de ressource
 
 1. **Identifiant figé** : ajouter le type à [contract-v1.md](contract-v1.md) §7

@@ -55,7 +55,20 @@ class CapabilityProjection extends Model
      */
     public const MECHANISM_FS_ACL = 'fs_acl';
 
-    /** Mécanisme pare-feu — slice B (ajout contrat + handler agent requis). */
+    /**
+     * Mécanisme HORS-REGISTRE `firewall` (Story 36.2, contrat §7.8 — type
+     * `firewall`) : règles pare-feu Windows possédées PAR GROUPE, portée
+     * **Machine** (service SYSTEM seul). La `spec` porte des règles
+     * `{rule_id, direction, action, remote_scope, protocol, ensure?, ports?,
+     * remote_addresses?}` — l'agent POSSÈDE le conteneur de règles
+     * `SambaEdu-Agent` EN ENTIER (le champ `Grouping` de la règle EST le
+     * marqueur de propriété — PAS de store, contrairement à `fs_acl` D4) : il le
+     * réconcilie (iso `registry_list`, désirées présentes+conformes, toute règle
+     * du groupe hors état désiré SUPPRIMÉE). Le serveur n'émet que des MOTS
+     * MÉTIER (enums fermés) ; la traduction `remote_scope: internet` en plages
+     * inverses-RFC1918 vit dans le HANDLER (D6). La politique par défaut, les
+     * profils et le service MpsSvc ne sont JAMAIS touchés — provider Postgres pur.
+     */
     public const MECHANISM_FIREWALL = 'firewall';
 
     /** Mécanisme membership de groupe local — slice C (idem). */

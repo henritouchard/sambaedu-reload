@@ -238,7 +238,8 @@ Identifiants prévus :
 
 `wallpaper`, `lockscreen`, `overlay`, `shortcuts`, `printers`, `drives`,
 `associations`, `registry`, `app_config`, `applications`, `registry_list`
-(Story 35.2, cf. §7.6), `fs_acl` (Story 36.1, cf. §7.7).
+(Story 35.2, cf. §7.6), `fs_acl` (Story 36.1, cf. §7.7), `firewall`
+(Story 36.2, cf. §7.8).
 
 ### 7.1 Payload `registry`
 
@@ -754,6 +755,110 @@ supprimée à la main ⇒ `drift` + re-pose au cycle.
 > (§8 — aucun statut, aucune erreur). Symptôme « réglage sans effet ». La release
 > 2.6.0 DOIT être publiée manuellement (update.sh ne publie jamais seul).
 
+### 7.8 Payload `firewall`
+
+Type `firewall` (Story 36.2) — **règles pare-feu Windows POSSÉDÉES PAR GROUPE**,
+DEUXIÈME mécanisme HORS-REGISTRE. La demande fondatrice « couper l'accès Internet
+d'un parc de postes (salle d'examen) en gardant le réseau local » se projette sur
+UNE règle `block out internet any` dans le conteneur `SambaEdu-Agent`. Sémantique
+**`exclusive` PAR `rule_id`** : la maille la plus spécifique gagne CETTE règle,
+les `rule_id` distincts s'accumulent dans le groupe. Portée **`machine`
+UNIQUEMENT** (le service SYSTEM est le seul acteur ; le pare-feu par-utilisateur
+n'existe pas — Q4).
+
+```json
+{
+  "type": "firewall",
+  "semantics": "exclusive",
+  "payload": {
+    "rule_id": "internet-block",
+    "direction": "out",
+    "action": "block",
+    "remote_scope": "internet",
+    "protocol": "any",
+    "ensure": "present"
+  },
+  "hash": "4851bc92…cf19afdc"
+}
+```
+
+Le payload porte **6 clés** (+ 2 conditionnelles) — enums fermés de **mots
+métier**, AUCUNE syntaxe netsh/SDDL, jamais d'id de capacité, zéro float (§4.1) :
+
+| Clé | Type JSON | Sens |
+|---|---|---|
+| `rule_id` | string | Slug d'identité `^[a-z0-9][a-z0-9_-]{0,63}$`. **Identité GLOBALE inter-capacités** : deux capacités émettant le même `rule_id` collisionnent au compilateur (la plus spécifique gagne LA règle). Le nom de règle Windows en est dérivé : `SambaEdu-Agent: <rule_id>`. |
+| `direction` | string | `in` \| `out`. |
+| `action` | string | `allow` \| `block`. |
+| `remote_scope` | string | `internet` (plages figées côté handler, cf. ci-dessous) \| `explicit` (adresses fournies). |
+| `protocol` | string | `any` \| `tcp` \| `udp`. |
+| `ensure` | string | `present` \| `absent`. **TOUJOURS émis** (écart assumé vs epic — cf. ci-dessous). `absent` = l'agent RETIRE la règle du groupe si présente. |
+| `remote_addresses` | list&lt;string&gt; | **Présent SSI `explicit`** (et non vide). Chaque entrée = IP littérale OU CIDR `addr/n` (IPv4 ou IPv6), jamais un mot-clé Windows (`LocalSubnet`) ni une plage `a-b`. |
+| `ports` | list&lt;string&gt; | **Présent SSI `protocol ∈ tcp\|udp`** et des ports sont ciblés. Chaque entrée = `"N"` ou `"N-M"` (1-65535, N ≤ M). Sémantique : ports **DISTANTS** pour `out`, **LOCAUX** pour `in`. `protocol: any` ⇒ `ports` INTERDIT. |
+
+**Traduction `internet` (indicative — FIGÉE dans le HANDLER, D6).** « Internet » =
+le complément des plages non routables/privées. Le serveur n'émet JAMAIS ces
+plages (il émet `remote_scope: "internet"`) ; le handler les matérialise :
+
+| famille | `RemoteAddresses` |
+|---|---|
+| IPv4 (plages `a-b`, stables à l'écho Windows) | `1.0.0.0-9.255.255.255`, `11.0.0.0-126.255.255.255`, `128.0.0.0-169.253.255.255`, `169.255.0.0-172.15.255.255`, `172.32.0.0-192.167.255.255`, `192.169.0.0-223.255.255.255` |
+| IPv6 | `2000::/3` (unicast global — `fe80::/10`, `fc00::/7`, `::1` restent joignables) |
+
+**Propriété PAR CONTENEUR (D4).** Contrairement à `fs_acl` (store « dernier
+appliqué »), une règle pare-feu PORTE son marqueur de propriété : son champ
+`Grouping = SambaEdu-Agent`. L'agent possède le GROUPE **EN ENTIER** et le
+réconcilie (iso `registry_list`) — **AUCUN store** n'est nécessaire. `Test`
+énumère les règles du groupe SEULEMENT ; `Apply` supprime toute règle du groupe
+hors état désiré (items `absent`, règles étrangères au state) et pose/recrée
+(Remove + Add) les règles désirées non conformes. Une règle qu'un tiers aurait
+étiquetée de notre groupe est ASSUMÉE nôtre (supprimée). Les règles **HORS
+groupe**, la **politique par défaut**, les **profils** et le **service MpsSvc**
+ne sont **JAMAIS** touchés (l'op agent ne les expose même pas — interdit
+structurel). L'impl Windows est en **COM natif** (`INetFwPolicy2`) : `netsh` ne
+sait pas poser `Grouping`.
+
+**Anti drift-loop (byte-echo Windows).** Le service pare-feu NORMALISE certaines
+formes à l'écriture (un CIDR IPv4 est relu `adresse/masque` pointé). La
+comparaison de convergence passe par une **normalisation canonique** (parse des
+deux côtés en intervalles fusionnés) — jamais un match de chaîne brute.
+
+**Écart assumé `ensure`.** L'epic parlait d'un enum « sans verbe ensure » ; le
+compilateur arbitre par IDENTITÉ (`rule_id`) entre items ÉMIS par maille : une
+valeur qui n'émet RIEN ne peut JAMAIS battre une maille plus large qui émet
+quelque chose. `on` émet donc le MÊME `rule_id` en `ensure:absent` (même
+identité) → un override de parc `on` annule un broadcast `off`, et le groupe
+finit VIDE (l'AC epic « on ⇒ groupe vide » à la lettre). `unmanaged` (défaut) est
+la SENTINELLE : rien n'est émis.
+
+**Fenêtres d'orphelin & retrait propre.** Le type ABSENT du state ⇒ le handler
+n'est jamais invoqué (§8) : la règle `block` **SURVIVRAIT** — conséquence GRAVE
+(la salle reste sans Internet). Le retrait PROPRE passe donc par `on`
+(« Autorisé »), **JAMAIS** par `unmanaged` (« Non géré »). Remède manuel : les
+règles du groupe `SambaEdu-Agent` sont VISIBLES dans `wf.msc` et supprimables.
+
+**Refus agent = défense en profondeur (Q3, INDÉPENDANT du serveur).** Un
+`action: block` dont la portée `explicit` **CHEVAUCHE une plage protégée**
+(RFC1918 `10/8` `172.16/12` `192.168/16`, loopback `127/8` `::1`, link-local
+`169.254/16` `fe80::/10`, ULA `fc00::/7`, ou tout `/0`) ⇒ **erreur d'item**
+(jamais posée), dans `Test` ET `Apply`. Le chevauchement est une **INTERSECTION
+mathématique d'intervalles** (jamais un match textuel : `192.160.0.0/12`,
+`0.0.0.0/0`, `::/0` sont refusés sans qu'aucune plage privée ne soit écrite).
+`remote_scope: internet` est SÛRE par construction. L'échappatoire = `explicit`
+avec des adresses **publiques** uniquement (ex. couper un proxy par son adresse
+publique). L'autorité finale est l'agent ; le serveur refuse en amont (garde-fou
+d'authoring, mêmes plages).
+
+**Pas de ciblage par utilisateur (Q4).** Portée machine ⇒ le service SYSTEM fetch
+sans `?user` : un override UserGroup/User d'une capacité `firewall` est SANS
+EFFET. « Couper Internet » se cible par parc/salle.
+
+> **Agents antérieurs à 2.7.0** : le type `firewall` est **ignoré EN SILENCE**
+> (§8 — aucun statut, aucune erreur). Symptôme « salle coupée sans effet ». La
+> release 2.7.0 DOIT être publiée manuellement (update.sh ne publie jamais seul).
+> La 2.6.0 (`fs_acl`) n'ayant pas encore été publiée, la 2.7.0 livre les DEUX
+> mécanismes.
+
 ## 8. Tableau vide ≠ type absent (décision de contrat)
 
 Les items d'une portée sont une **liste**, pas une map. La distinction
@@ -783,8 +888,11 @@ décision de contrat consommée par chaque handler côté agent.
   additive, `ReportRequest` suit). Ex. Story 35.2 : type `registry_list`
   (§7.6), golden bumpé avec justification, agent bumpé 2.4.0. Ex. Story 36.1 :
   type `fs_acl` (§7.7, mécanisme HORS-REGISTRE — ACE NTFS gérées), golden bumpé
-  avec justification, agent bumpé 2.6.0. ⚠️ Contrairement au champ ajouté, un
-  agent ANTÉRIEUR **ignore un type inconnu EN SILENCE** (§8 : type sans handler =
+  avec justification, agent bumpé 2.6.0. Ex. Story 36.2 : type `firewall`
+  (§7.8, mécanisme HORS-REGISTRE — règles pare-feu possédées par groupe), golden
+  bumpé avec justification, agent bumpé 2.7.0 (publication qui livre AUSSI la
+  2.6.0 fs_acl jamais publiée). ⚠️ Contrairement au champ ajouté, un agent
+  ANTÉRIEUR **ignore un type inconnu EN SILENCE** (§8 : type sans handler =
   aucun statut émis) — « réglage sans effet, zéro erreur ». La publication de la
   release n'est pas optionnelle.
 - **Valeur de domaine ajoutée à un champ existant** → version **mineure**, golden

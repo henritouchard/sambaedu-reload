@@ -45,8 +45,10 @@ func TestParseStateGoldenFile(t *testing.T) {
 	// 4 clés {hive, path, entry_type, values}) en portée MACHINE → machine = 5.
 	// Story 36.1 : +1 item `fs_acl` (deny list_folder folder_only sur C:\Program
 	// Files, payload 6 clés) en portée MACHINE → machine = 6.
-	if len(state.Machine) != 6 || len(state.Session) != 7 || len(state.MachineUser) != 1 {
-		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 6/7/1)",
+	// Story 36.2 : +1 item `firewall` (internet-block, payload 6 clés) en portée
+	// MACHINE → machine = 7.
+	if len(state.Machine) != 7 || len(state.Session) != 7 || len(state.MachineUser) != 1 {
+		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 7/7/1)",
 			len(state.Machine), len(state.Session), len(state.MachineUser))
 	}
 }
@@ -253,8 +255,9 @@ func TestContractConstantsAreFrozen(t *testing.T) {
 	}
 	// Story 35.2 : +1 type `registry_list` (ajout ADDITIF D1) → 11.
 	// Story 36.1 : +1 type `fs_acl` (ajout ADDITIF D1, mécanisme hors-registre) → 12.
-	if len(ResourceTypes) != 12 {
-		t.Errorf("12 identifiants de type publiés (§7), got %d", len(ResourceTypes))
+	// Story 36.2 : +1 type `firewall` (ajout ADDITIF D1, mécanisme hors-registre) → 13.
+	if len(ResourceTypes) != 13 {
+		t.Errorf("13 identifiants de type publiés (§7), got %d", len(ResourceTypes))
 	}
 	// Story 27.8 : `drifted_allowed` retiré → 3 statuts (STRICT inconditionnel).
 	if len(ResourceStatuses) != 3 {

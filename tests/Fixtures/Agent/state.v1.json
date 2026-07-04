@@ -74,6 +74,19 @@
                 "ensure": "present"
             },
             "hash": "a8f1c92bd6e067a7f5c817047552b6d1dec1e1ba8fb29e4e0677aa45ab7df0e9"
+        },
+        {
+            "type": "firewall",
+            "semantics": "exclusive",
+            "payload": {
+                "rule_id": "internet-block",
+                "direction": "out",
+                "action": "block",
+                "remote_scope": "internet",
+                "protocol": "any",
+                "ensure": "present"
+            },
+            "hash": "4851bc92aaf16cd71a5e0d595a0f7cad3e0fa77faba420adeed18044cf19afdc"
         }
     ],
     "session": [

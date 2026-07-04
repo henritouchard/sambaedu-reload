@@ -153,7 +153,33 @@ package shared
 // d'audience sont livrés ici — le gate 35.6 (privilege) reste FERMÉ, RIEN
 // n'est ouvert.
 //
+// 2.7.0 = mécanisme HORS-REGISTRE `firewall` (Story 36.2, contrat §7.8) :
+// NOUVEAU type + NOUVEAU handler `FirewallHandler` (portée MACHINE / service
+// SYSTEM seul) qui gère des règles pare-feu Windows POSSÉDÉES PAR GROUPE
+// (`SambaEdu-Agent`). Contrairement à fs_acl (store « dernier appliqué »), le
+// champ `Grouping` de la règle EST le marqueur de propriété (D4) : le handler
+// réconcilie le GROUPE (iso registry_list — désirées présentes+conformes, toute
+// règle du groupe hors désir SUPPRIMÉE, groupe vide = « off » symétrique),
+// JAMAIS les règles hors groupe, la politique par défaut ou le service MpsSvc
+// (FirewallOps 3 ops seulement, interdit structurel). Payload
+// `{rule_id, direction, action, remote_scope, protocol, ensure}`
+// (+ remote_addresses ssi explicit + ports ssi tcp|udp), enums fermés de mots
+// métier (AUCUNE syntaxe netsh/SDDL). Traduction `remote_scope: internet` FIGÉE
+// dans le code (plages inverses-RFC1918 IPv4 `a-b` + IPv6 `2000::/3`), comparaison
+// par NORMALISATION CANONIQUE d'intervalles (anti drift-loop d'écho Windows,
+// piège #4). REFUS agent défense en profondeur Q3 (dans Test ET Apply) : un
+// `block explicit` chevauchant une plage protégée (RFC1918/loopback/link-local/
+// ULA ou /0, INTERSECTION mathématique) ⇒ erreur d'item — MIROIR des plages du
+// guard PHP. Impl Windows en COM natif vtable INetFwPolicy2 (ZÉRO dépendance —
+// netsh ne sait pas poser Grouping ; agent/windows/handler_firewall_windows.go).
+// ⚠️ Un binaire ≤ 2.6.0 IGNORE le type firewall EN SILENCE (contrat §8 — aucun
+// statut, aucune erreur : « salle coupée sans effet »). Golden state.v1.json
+// bumpé (+1 item firewall machine, hashes figés jumeaux PHP↔Go recalculés).
+// ⚠️ PUBLICATION : la 2.6.0 (fs_acl) N'A PAS ENCORE ÉTÉ PUBLIÉE — la publication
+// MANUELLE de la release 2.7.0 (update.sh ne publie jamais seul) livre les DEUX
+// mécanismes fs_acl ET firewall d'un coup.
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.6.0"
+var Version = "2.7.0"

@@ -247,6 +247,18 @@ func newAgent(echo bool) *shared.Agent {
 					StatePath: store.FsAclStatePath(),
 					Log:       logger,
 				},
+				// Story 36.2 — firewall (exclusive PAR rule_id / scope MACHINE) :
+				// le SERVICE SYSTEM converge les règles pare-feu POSSÉDÉES PAR
+				// GROUPE (`SambaEdu-Agent`, réconciliation par conteneur — le champ
+				// Grouping EST le marqueur, PAS de store). Les règles hors groupe,
+				// la politique par défaut et le service MpsSvc ne sont JAMAIS
+				// touchés (FirewallOps 3 ops). Refus Q3 en défense en profondeur
+				// (block couvrant le LAN interdit). Impl COM natif INetFwPolicy2
+				// (netsh ne sait pas poser le Grouping). SYSTEM UNIQUEMENT.
+				"firewall": &shared.FirewallHandler{
+					Ops: &firewallOps{log: logger},
+					Log: logger,
+				},
 			},
 			Log: logger,
 		},

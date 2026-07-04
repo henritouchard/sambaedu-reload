@@ -3544,3 +3544,89 @@ de publier 2.6.0.
 - [ ] 36.1.6 — Binaire 2.5.0 : type ignoré en silence.
 - [ ] Golden : `state.v1.json` +1 item fs_acl machine, `FROZEN_STATE_HASH` PHP =
       `frozenStateHash` Go recalculés à l'identique ; `report.v1.json` INCHANGÉ.
+
+## Story 36.2 — Mécanisme `firewall` (règles pare-feu possédées par groupe)
+
+Deuxième mécanisme HORS-REGISTRE. Capacité de preuve `internet_access` (enum
+`unmanaged`/`on`/`off`). `off` ⇒ règle `block out internet any` dans le conteneur
+`SambaEdu-Agent`. **Publier la release 2.7.0 AVANT d'armer** (un binaire ≤ 2.6.0
+IGNORE le type EN SILENCE) — cette publication livre AUSSI la 2.6.0 fs_acl jamais
+publiée. Migration de seed **à rejouer sur /vm** (`migrate:status` d'abord).
+
+### Scénario 36.2.1 — Coupure Internet + LAN préservé (lab Windows, poste joint)
+
+1. Armer `internet_access = off` sur le parc de la salle d'examen. Au cycle
+   suivant : `wf.msc` montre la règle **`SambaEdu-Agent: internet-block`** (groupe
+   `SambaEdu-Agent`, direction sortante, action bloquer, portée = plages Internet).
+2. Depuis le poste : `ping 8.8.8.8` **KO**, HTTP externe **KO** (IPv4, et IPv6 si
+   le lab en a). `nslookup`/navigation Internet KO.
+3. **Le réseau local RESTE ouvert** : check-in agent OK (le poste rapporte), UI
+   SE5 joignable, partages SMB montés OK, DNS local (le DC) répond. C'est le cœur
+   de Q3 : couper Internet ne coupe JAMAIS le poste de son serveur.
+
+### Scénario 36.2.2 — Retour `on` sans reboot (lab)
+
+Basculer la valeur sur `on` (« Autorisé ») : au cycle suivant, la règle est
+RETIRÉE (même `rule_id` en `ensure:absent`), le groupe `SambaEdu-Agent` est VIDE,
+Internet est restauré **SANS reboot**. ⚠️ Ne PAS utiliser « Non géré »
+(`unmanaged`) pour rétablir : la sentinelle cesse d'émettre l'item → la règle
+`block` survivrait et la salle resterait coupée (le handler n'est plus invoqué).
+Remède manuel de secours : supprimer la règle du groupe `SambaEdu-Agent` dans
+`wf.msc`.
+
+### Scénario 36.2.3 — 2 cycles stables ⇒ zéro op (anti drift-loop, lab)
+
+Poste armé `off`, stable. Sur DEUX cycles consécutifs : verdict `compliant`,
+**zéro op** (aucune règle re-posée). Attrape toute normalisation d'écho imprévue
+(le service pare-feu relit un CIDR IPv4 en `adresse/masque` pointé ; la
+comparaison canonique par intervalles doit rendre les deux formes équivalentes).
+
+### Scénario 36.2.4 — Règle étrangère au groupe purgée (lab)
+
+Ajouter à la main une règle quelconque **dans le groupe `SambaEdu-Agent`** (le
+groupe nous appartient EN ENTIER, D4) : au cycle suivant, elle est SUPPRIMÉE
+(`drift` puis purge). À l'inverse, une règle **hors groupe** (Core Networking,
+règles Windows, applis tierces) n'est JAMAIS touchée. La politique par défaut et
+le service MpsSvc ne sont jamais modifiés.
+
+### Scénario 36.2.5 — Défense en profondeur & refus Q3 (revue + lab)
+
+- Le `FirewallAuthoringGuard` refuse à l'authoring : `block` `explicit` couvrant
+  RFC1918/loopback/link-local/ULA ou `/0` — par INTERSECTION mathématique
+  (`192.168.0.0/16`, `192.160.0.0/12`, `0.0.0.0/0`, `::/0` refusés) ; enums hors
+  domaine ; slug invalide ; `explicit` sans adresses / `internet` avec adresses ;
+  `ports` avec `any` ; port hors 1-65535 ; `block` sans warning. `block internet`
+  reste AUTORISÉ ; `block explicit` sur adresses PUBLIQUES aussi (échappatoire).
+- L'agent (défense en profondeur, INDÉPENDANT du serveur) applique les MÊMES
+  plages protégées dans `Test` ET `Apply` : un `block explicit` dangereux ⇒ erreur
+  d'item isolée (jamais posée), les autres items convergent.
+
+### Scénario 36.2.6 — Binaire antérieur silencieux (lab — régression)
+
+Sur un poste resté en ≤ 2.6.0, armer `internet_access = off` : AUCUN statut
+firewall au rapport, aucune règle posée, Internet toujours accessible (« salle
+coupée sans effet »). Confirme la nécessité de publier 2.7.0.
+
+### Note IPv6 lab
+
+Si le lab n'a pas d'IPv6, le volet IPv6 de la traduction `internet` (`2000::/3`)
+reste validé par le test Go (`TestFirewallInternetTranslationIsFrozen`, chaîne
+EXACTE) : le poste posera quand même la plage IPv6, inerte faute de trafic v6.
+
+### Checklist rapide (Story 36.2)
+
+- [ ] 36.2.0 — Release 2.7.0 publiée AVANT armement (livre AUSSI 2.6.0 fs_acl) ;
+      migration de seed rejouée sur /vm (`migrate:status` d'abord).
+- [ ] 36.2.1 — `off` : ping/HTTP externes KO (IPv4, IPv6 si dispo) ; check-in +
+      SE5 + partages SMB + DNS local OK ; `wf.msc` montre `SambaEdu-Agent:
+      internet-block`.
+- [ ] 36.2.2 — Retour `on` : Internet restauré SANS reboot, groupe vide ; jamais
+      via `unmanaged`.
+- [ ] 36.2.3 — 2 cycles stables ⇒ `compliant`, zéro op (écho normalisé).
+- [ ] 36.2.4 — Règle étrangère AU groupe purgée ; règles hors groupe + politique
+      par défaut + service intacts.
+- [ ] 36.2.5 — Guard Q3 (intersection) + refus agent Test/Apply ; block internet
+      et block explicit public autorisés.
+- [ ] 36.2.6 — Binaire ≤ 2.6.0 : type ignoré en silence.
+- [ ] Golden : `state.v1.json` +1 item firewall machine, `FROZEN_STATE_HASH` PHP =
+      `frozenStateHash` Go recalculés à l'identique ; `report.v1.json` INCHANGÉ.

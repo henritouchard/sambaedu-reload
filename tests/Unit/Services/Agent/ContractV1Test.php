@@ -161,7 +161,23 @@ class ContractV1Test extends TestCase
     // type entre dans ReportRequest via Rule::in(RESOURCE_TYPES). machine = 6
     // items, 14 items au total, hash d'état RECALCULÉ. Le jumeau Go
     // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
-    private const FROZEN_STATE_HASH = '6a41357d8a1ef725afc48c63cba67d5f097ea9844daa101e9303a333edff94a8';
+    //
+    // Re-bumpé SCIEMMENT par la Story 36.2 (évolution MINEURE du contrat, §9) :
+    // NOUVEAU type `firewall` (D1, mécanisme HORS-REGISTRE — règles pare-feu
+    // possédées par groupe, portée Machine) — le golden gagne UN item en portée
+    // `machine` (`internet-block` : `out block internet any present`, payload
+    // EXACTEMENT 6 clés `{rule_id, direction, action, remote_scope, protocol,
+    // ensure}` — enums fermés de mots métier, aucune syntaxe netsh/SDDL, pas de
+    // `remote_addresses`/`ports` ici). Type AJOUTÉ (constante RESOURCE_TYPES
+    // additive) = forward-compatible, pas un major : un agent ≤ 2.6.0 IGNORE le
+    // type EN SILENCE (§8 — aucun statut au rapport), d'où publication de release
+    // 2.7.0 obligatoire (qui livre AUSSI la 2.6.0 fs_acl jamais publiée).
+    // `report.v1.json` est INCHANGÉ : les items de rapport
+    // `{type, status, hash[, detail]}` ne portent aucun payload et le nouveau
+    // type entre dans ReportRequest via Rule::in(RESOURCE_TYPES). machine = 7
+    // items, 15 items au total, hash d'état RECALCULÉ. Le jumeau Go
+    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
+    private const FROZEN_STATE_HASH = '76f6d9acb82b4d16c13cb87d5a10b0066e4da3f9b376750b9ad19b8cd8fb7d9b';
 
     private StateHasher $hasher;
 

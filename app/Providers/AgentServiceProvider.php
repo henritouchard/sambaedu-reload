@@ -13,6 +13,7 @@ use App\Services\Agent\Providers\AppConfigStateProvider;
 use App\Services\Agent\Providers\ApplicationsStateProvider;
 use App\Services\Agent\Providers\AssociationsStateProvider;
 use App\Services\Agent\Providers\DrivesStateProvider;
+use App\Services\Agent\Providers\FirewallCapabilityProvider;
 use App\Services\Agent\Providers\FsAclCapabilityProvider;
 use App\Services\Agent\Providers\OverlayMachineStateProvider;
 use App\Services\Agent\Providers\OverlayStateProvider;
@@ -232,6 +233,20 @@ class AgentServiceProvider extends ServiceProvider
                 // est côté POSTE, LSA D5). UN seul provider (portée Machine — pas
                 // de variante ruche/session). Une ligne, zéro modif du compilateur.
                 $app->make(FsAclCapabilityProvider::class),
+                // Story 36.2 — type `firewall` (exclusive PAR rule_id / portée
+                // MACHINE, deuxième mécanisme HORS-REGISTRE). Le provider EXPANSE
+                // une capacité → items concrets {rule_id, direction, action,
+                // remote_scope, protocol, ensure} (+ remote_addresses/ports
+                // conditionnels — interpréteur de `spec` surchargé, `StateCompiler`
+                // INTOUCHÉ D2). `exclusiveKey() = rule_id` : la maille la plus
+                // spécifique gagne CETTE règle, les rule_id distincts s'accumulent
+                // dans le groupe `SambaEdu-Agent`. La traduction
+                // `remote_scope: internet` en plages inverses-RFC1918 vit dans le
+                // handler (D6). Postgres pur (la propriété par groupe + la
+                // convergence sont côté POSTE). UN seul provider (portée Machine).
+                // Une ligne, zéro modif du compilateur (⚠️ fichier partagé avec la
+                // story 36.4 — conflit de merge trivial, garder les deux lignes).
+                $app->make(FirewallCapabilityProvider::class),
                 // Story 27.3bis — type `associations` (exclusive PAR IDENTIFIANT,
                 // portée session/compagnon HKCU) : catalogue d'associations de
                 // fichiers/protocoles par défaut activables par parc, compilées
