@@ -68,10 +68,12 @@ return new class extends Migration
             ['key' => 'program_files_browse_denied'],
             [
                 'label' => 'Navigation dans Program Files (Explorateur)',
-                'description' => 'Masque l\'énumération de C:\\Program Files et C:\\Program Files (x86) '
+                // Description ≤ 255 (contrainte varchar PG, test structurel 35.5 —
+                // sinon migrate /vm casse en 22001, invisible en SQLite).
+                'description' => 'Masque l\'énumération de C:\\Program Files et Program Files (x86) '
                     .'dans l\'Explorateur (ACE NTFS deny list_folder, dossier seul). Les applications '
-                    .'installées sous Program Files se lancent TOUJOURS (traverse/execute intacts). '
-                    .'Remplace, sans GPO, l\'usage « interdire l\'Explorateur sur Program Files ».',
+                    .'installées se lancent toujours. Remplace « interdire l\'Explorateur sur Program '
+                    .'Files », sans GPO.',
                 'category' => 'Sécurité',
                 'value_type' => 'enum',
                 'options' => json_encode([
