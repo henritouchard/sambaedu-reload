@@ -728,3 +728,106 @@ ni le flux AD. (Host : `FederatedLoginEndpointTest` + `Unit/Auth/Federated/*` +
 - [ ] 20.4-7 `actor_role` = rôle Spatie actif (cohérence 20.3)
 - [ ] 20.4-8 Suites 20.1 + 20.2 + 20.3 restent vertes (non-régression stricte)
 - [ ] Aucun JWT brut / clé / PII dans le channel `federated-auth` (y c. logs de purge **et** audit KO)
+
+## Story 39.3 — Bridge de l'IdP fédéré du handshake vers le vérificateur JWT (canal ⑤)
+
+> **Append-only.** Ne modifie aucun scénario 20.x ci-dessus. Ferme le risque
+> résiduel documenté (review F8) : la clé publique / `kid` / `iss` de l'IdP amont
+> **réellement provisionnés au handshake** (`controlhub_connection.idp_public_key`
+> / `idp_kid` / `idp_iss`) étaient persistés mais **jamais lus** — le
+> `FederatedJwtVerifier` ne résolvait que `config('federated_auth.*')`. Après
+> 39.3, la **DB est source de vérité prioritaire** (clé, kid, iss) dès que
+> `ControlHubConnection::current()?->hasFederatedIdp()` est vrai ; la config env
+> n'est plus qu'un **repli explicite** couvrant l'ABSENCE de handshake (jamais
+> une fusion, jamais un correctif d'un handshake présent). En parallèle, l'`aud`
+> attendu retombe sur l'**uuid d'instance** (`controlHub.se4fs.instance_id`) et
+> non plus `sambaedu.se4fs_name`.
+
+### Périmètre & garanties (rappel implémentation)
+
+- **3 points de résolution touchés**, `verify()` sinon **intact** : `buildKeyMap()`
+  (DB → `buildKeyMapFromConfig()` en repli), `expectedIss()` (nouvelle, symétrique
+  à `expectedAud()`), `expectedAud()` (fallback `sambaedu.se4fs_name` →
+  `controlHub.se4fs.instance_id`). **RS256 pinné**, claims `sub/jti/kid/iss/aud/tier/exp/nbf`,
+  anti-rejeu `jti` (`FederatedJwtReplayChecker`, déclenché par le controller) et
+  `FederatedRoleMapper` **NON touchés**.
+- **PEM lu littéralement** depuis la colonne texte `idp_public_key` (ce n'est PAS
+  un chemin de fichier — le repli config, lui, lit un path via `file_get_contents`).
+- **Pas d'injection** : résolution statique `ControlHubConnection::current()` —
+  `new FederatedJwtVerifier()` reste instanciable sans dépendances (les 2 suites
+  existantes le construisent directement).
+- **Prérequis de test** : la table `controlhub_connection` est désormais créée par
+  `ensureFederatedTables()` (helper `seedFederatedIdpConnection()` +
+  `issueHandshakeIdpJwt()` — paire RS256 **dédiée**, distincte des fixtures
+  `auth-v1`, pour prouver l'origine DB de la clé).
+
+### Section 12 — Bridge IdP du handshake → vérificateur
+
+#### Scénario 39.3-1 — JWT du handshake accepté SANS aucun réglage env
+
+**Pré-requis** : une `ControlHubConnection` active portant `idp_public_key`
+(PEM), `idp_kid`, `idp_iss` (seed via `seedFederatedIdpConnection()`).
+`config('controlHub.se4fs.instance_id')` positionné à l'uuid de l'instance.
+
+**Setup discriminant** : VIDER `federated_auth.jwt.keys`, `federated_auth.expected_iss`,
+`federated_auth.expected_aud` (défauts `.env` vides) — pour prouver que **seule la
+DB répond**.
+
+**Action** : émettre un JWT signé par la clé **privée** correspondant à la publique
+stockée en base, `iss=idp_iss`, `kid=idp_kid`, `aud=instance_id`.
+
+**Attendu** : `verify()` **réussit** et retourne les claims (`iss`, `aud`, `kid`
+= ceux de la connexion). Aucune clé/iss/aud config n'a été nécessaire.
+
+#### Scénario 39.3-2 — La clé DB est bien la clé pivot (anti-confusion de source)
+
+**Action** : DB active seedée ; présenter un jeton au bon `kid`/`iss`/`aud` du
+handshake mais **signé par la paire config** (≠ paire du handshake).
+
+**Attendu** : rejet `jwt.signature_invalid` — la clé publique DB ne valide pas la
+signature (RS256 pinné, aucune retombée silencieuse sur la clé config).
+
+#### Scénario 39.3-3 — Repli config en l'absence de handshake (non-régression totale)
+
+**Action** : **aucune** `ControlHubConnection` active (`current()` null) ; config
+`federated_auth.*` renseignée (chemin historique) ; JWT config.
+
+**Attendu** : comportement **rigoureusement identique** à avant 39.3 — résolution
+100 % config, JWT accepté. Les suites `FederatedJwtVerifierTest` /
+`FederatedLoginEndpointTest` restent vertes **sans modification d'assertion**.
+
+#### Scénario 39.3-4 — Connexion active mais INCOMPLÈTE → repli config, pas de crash
+
+**Action** : `ControlHubConnection` active mais `hasFederatedIdp() === false`
+(ex. `idp_kid` null) ; config renseignée ; JWT config.
+
+**Attendu** : repli config (la DB incomplète n'écrase rien), pas d'exception SQL,
+JWT config accepté.
+
+#### Scénario 39.3-5 — `aud` = uuid d'instance (indépendant du bridge clé/kid/iss)
+
+**Action** : DB absente, `federated_auth.expected_aud` **non** configuré,
+`controlHub.se4fs.instance_id` positionné ; JWT dont `aud` = cet uuid.
+
+**Attendu** : accepté. Un jeton dont `aud` vaut l'ancien identifiant
+(`sambaedu.se4fs_name`) est **rejeté** `aud_mismatch` (preuve du changement de
+fallback). L'override explicite `expected_aud`, s'il est posé, reste prioritaire
+(inchangé).
+
+| Risque | Sévérité | Couverture |
+|---|---|---|
+| 39.3 — clé/kid/iss du handshake morts (verifier config-only, review F8) | 🔴 | Bridge DB prioritaire ; Scénario 39.3-1 + Unit (`handshake_idp_jwt_is_accepted_from_db_without_env_config`) |
+| 39.3 — confusion de source clé DB vs config (surface sécurité RS256) | 🔴 | Paire dédiée + RS256 pinné ; Scénario 39.3-2 + Unit (`handshake_idp_jwt_signed_with_wrong_key_is_rejected`) |
+| 39.3 — régression du chemin config (absence de handshake) | 🟠 | Repli explicite sans fusion ; Scénario 39.3-3 + Unit (`db_absent_falls_back_to_config`) + suites 20.x vertes |
+| 39.3 — connexion incomplète casse la suite (crash SQL/logique) | 🟠 | Table seedée + `hasFederatedIdp()` faux → repli ; Scénario 39.3-4 + Unit (`incomplete_db_connection_falls_back_to_config`) |
+| 39.3 — `aud` par défaut ≠ uuid d'instance (rejet légitime impossible) | 🟠 | Fallback `instance_id` ; Scénario 39.3-5 + Unit (`aud_falls_back_to_instance_id_when_expected_aud_not_set`, `aud_bound_to_se4fs_name_is_rejected_after_instance_id_switch`) |
+
+### Checklist rapide (39.3)
+
+- [ ] 39.3-1 JWT du handshake (clé/kid/iss DB) accepté **sans** env `jwt.keys`/`expected_iss`/`expected_aud`
+- [ ] 39.3-2 Jeton bon kid/iss/aud mais signé par la paire config → `jwt.signature_invalid` (clé DB pivot)
+- [ ] 39.3-3 DB absente → repli config identique ; suites 20.x + verifier + endpoint vertes sans changer d'assertion
+- [ ] 39.3-4 Connexion active incomplète (`hasFederatedIdp()` faux) → repli config, pas de crash
+- [ ] 39.3-5 `aud` retombe sur `controlHub.se4fs.instance_id` (plus `sambaedu.se4fs_name`) ; override `expected_aud` toujours prioritaire
+- [ ] 39.3 RS256 pinné, `jti`/`exp`/`nbf`/`tier`/`FederatedRoleMapper` intacts ; clé publique jamais loggée (DB ou config)
+- [ ] 39.3 `super-admin` résolu par le seed existant (`super_admin_is_applied_when_it_exists` vert)

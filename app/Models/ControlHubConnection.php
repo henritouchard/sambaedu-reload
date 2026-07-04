@@ -136,9 +136,13 @@ class ControlHubConnection extends Model
      */
     public function hasFederatedIdp(): bool
     {
-        return !empty($this->idp_public_key)
-            && !empty($this->idp_kid)
-            && !empty($this->idp_iss);
+        // Review 39.3 #4 — comparaison STRICTE (pas `empty()`) : `empty()` traiterait
+        // la chaîne littérale « 0 » comme absente et ferait basculer SILENCIEUSEMENT
+        // le verifier vers la config de repli alors que la colonne porte une valeur.
+        // Portillon de toute la précédence DB>config de la Story 39.3 → fail-closed net.
+        return $this->idp_public_key !== null && $this->idp_public_key !== ''
+            && $this->idp_kid !== null && $this->idp_kid !== ''
+            && $this->idp_iss !== null && $this->idp_iss !== '';
     }
 
     public function isExpired(): bool

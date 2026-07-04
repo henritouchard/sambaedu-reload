@@ -87,7 +87,8 @@ return [
     |   configuré). Domain-neutral : c'est une string opaque, pas « central ».
     | - `expected_aud` : claim `aud` attendu = identifiant de CETTE instance
     |   SE5. Un JWT dont `aud` ≠ cette valeur est rejeté (anti-rejeu inter-
-    |   instance). Fallback dynamique sur `sambaedu.se4fs_name` si vide.
+    |   instance). Fallback dynamique sur `controlHub.se4fs.instance_id` si vide
+    |   (Story 39.3 — l'uuid d'instance émis par l'amont, pas l'ex-`se4fs_name`).
     | - `expected_tier` : claim `tier` attendu (défense en profondeur : un
     |   JWT « workstation » ne doit pas pouvoir ouvrir une session humaine).
     |
