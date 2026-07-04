@@ -3354,3 +3354,86 @@ Agent bumpé **2.5.0**.
       numlock non-violation ; override UserGroup sans effet sur l'item HKU.
 - [ ] Golden : `state.v1.json`, `report.v1.json` et hashes figés jumeaux PHP↔Go
       INCHANGÉS (HKU = valeur de `hive`, pas un champ — rien à figer).
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- Story 36.3 — Lot registre pures Explorateur (zéro moteur)               -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+
+## Story 36.3 — Lot bibliothèque n°2 : capacités registre pures Explorateur
+
+**Témoin de doctrine de l'Epic 36** : le mécanisme `registry` étant payé (27.12 + Epic 35),
+4 capacités supplémentaires (épuration du volet de navigation de l'Explorateur) sont de la
+DONNÉE PURE — migration `2026_07_04_100000_seed_capabilities_explorer_lot.php`, **zéro
+évolution moteur, zéro UI, zéro bump agent**. Toutes **opt-in** (`default_value = unmanaged`)
+⇒ rien n'est émis en broadcast tant qu'aucun override de parc n'est posé (golden/`FROZEN_STATE_HASH`
+intacts par construction).
+
+| Capacité | Portée | Clés |
+|---|---|---|
+| `explorer_sidebar_pins_hidden` | Machine (HKLM) — écart D3 vs « Session » du cadrage epic | 6 × `ThisPCPolicy` (FolderDescriptions par dossier) |
+| `quick_access_hidden` | Mixte HKLM+HKCU | `HubMode` (HKLM) + `LaunchTo` + CLSID Accueil Win11 (HKCU) |
+| `explorer_gallery_hidden` | Session (HKCU) | CLSID Galerie Win11 |
+| `quick_access_history_hidden` | Session (HKCU) | `ShowRecent` + `ShowFrequent` |
+
+> ⚠️ **GATE DE VÉRACITÉ DES CLÉS — BLOQUANT AVANT `migrate` /vm.** Les GUID/paths/valeurs
+> ci-dessus sont des **candidates issues du décodage documentaire** (patron `onedrive_hidden`
+> + tweaks Windows documentés), **PAS d'une vérification sur poste** : le dev n'a aucun accès
+> à un poste Windows lab. Le protocole ci-dessous DOIT être déroulé par Henri (ou l'e2e lab)
+> AVANT `php artisan migrate` sur /vm ; toute clé invalidée est retirée de la migration avant
+> merge (jamais de clé « au cas où ») ; si toutes les clés d'une capacité tombent, la capacité
+> sort du lot.
+
+### Scénario 36.3.1 — Protocole de vérification lab (poste Windows — ACTION HUMAINE Henri, GATE bloquant)
+
+Pour CHAQUE capacité : poser les clés « on », fermer/rouvrir la session (clés HKCU) ou
+redémarrer Explorer (`taskkill /f /im explorer.exe & start explorer.exe`), vérifier l'effet ;
+poser les valeurs « off », re-vérifier le retour au comportement par défaut. **Les deux faces
+doivent être prouvées** (maps symétriques, aucun `$ensure` dans ce lot) :
+
+1. `explorer_sidebar_pins_hidden` — `reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FolderDescriptions\{GUID}\PropertyBag" /v ThisPCPolicy /t REG_SZ /d Hide /f`
+   pour chacun des 6 GUID (Documents `{f42ee2d3-909f-4907-8871-4c22fc0bf756}`, Images
+   `{0ddd015d-b06c-45d5-8c4c-f59713854639}`, Musique `{a0c69a99-21c8-4671-8703-7934162fcf1d}`,
+   Vidéos `{35286a68-3c57-41a1-bbb1-0eae73d76c95}`, Téléchargements
+   `{7d83ee9b-2244-4e70-b1f5-5393042af1e4}`, Bureau `{B4BFCC3A-DB2C-424C-B029-7FE99A87C641}`) :
+   le dossier disparaît de « Ce PC » ET du volet ; `/d Show` le réaffiche. Vérifier AUSSI que
+   chaque GUID candidat correspond bien au dossier annoncé (`reg query …\{GUID} /v Name` ou
+   contenu du `PropertyBag`).
+2. `quick_access_hidden` — `reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer" /v HubMode /t REG_DWORD /d 1 /f`
+   + `reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v LaunchTo /t REG_DWORD /d 1 /f`
+   + `reg add "HKCU\Software\Classes\CLSID\{f874310e-b6b7-47dc-bc84-b9e6b38f5903}" /v System.IsPinnedToNameSpaceTree /t REG_DWORD /d 0 /f` :
+   Win10 « Accès rapide » absent du volet, Win11 « Accueil » absent, Explorateur ouvre sur
+   « Ce PC ». `off` (0/2/1) restaure — vérifier en particulier que `HubMode=0` restaure
+   vraiment (pas la seule suppression de la valeur).
+3. `explorer_gallery_hidden` — `reg add "HKCU\Software\Classes\CLSID\{e88865ea-0e1c-4e20-9aa6-edcd0212c87c}" /v System.IsPinnedToNameSpaceTree /t REG_DWORD /d 0 /f` :
+   Win11 « Galerie » absente du volet ; `off` (1) la réaffiche ; Win10 aucun effet (assumé).
+4. `quick_access_history_hidden` — `reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer" /v ShowRecent /t REG_DWORD /d 0 /f`
+   + idem `ShowFrequent` : Accès rapide/Accueil ne liste plus fichiers récents ni dossiers
+   fréquents ; `off` (1/1) restaure.
+
+Issues possibles à consigner : GUID/valeur divergente selon build Windows (corriger la
+migration avant merge) ; besoin `Wow6432Node` pour les dialogues 32 bits (extension future) ;
+`ShowCloudFilesInQuickAccess` (Win11, extension future) — HORS seed v1.
+
+### Scénario 36.3.2 — Après le gate : migration + armement par override de parc (serveur — jouable après migrate /vm)
+
+1. `php artisan migrate` sur /vm — **UNIQUEMENT après le gate 36.3.1** (jamais auto-appliquée ;
+   aucune release agent à publier, l'agent ≥ 2.5.0 sait déjà appliquer ces clés).
+2. Les 4 capacités apparaissent dans les onglets d'armement (parc-defaults/`registry-tab`)
+   avec l'option par défaut « Non géré » — aucun poste n'est affecté tant qu'aucun override
+   n'est posé.
+3. Poser un override `on` sur `quick_access_hidden` pour un parc de test → `GET
+   /api/v1/agent/state` (token d'un poste du parc) fait apparaître `HubMode` en portée
+   `machine` et `LaunchTo` + CLSID Accueil en portée `session`. Retirer l'override → retour au
+   silence (défaut `unmanaged`, PAS un `$ensure`).
+
+### Checklist rapide (Story 36.3)
+
+- [ ] 36.3.1 — GATE LAB déroulé par Henri : les 4 capacités × leurs clés vérifiées sur poste
+      Windows réel, deux faces on/off prouvées ; toute clé invalidée retirée avant merge.
+- [ ] 36.3.2 — Migration jouée sur /vm APRÈS le gate ; capacités visibles dans les onglets
+      d'armement, défaut « Non géré » ; override de parc `on`/`off` sur `quick_access_hidden`
+      compilé côté Machine (HubMode) ET Session (LaunchTo + CLSID Accueil).
+- [ ] Golden : `state.v1.json`, `report.v1.json` et `FROZEN_STATE_HASH`/`frozenStateHash`
+      jumeaux PHP↔Go INCHANGÉS (tout opt-in `unmanaged` ⇒ rien en broadcast).
+- [ ] Anti-collision : le CLSID OneDrive `{018D5C66-4533-4307-9B53-224DE2ED1FE6}`
+      (`onedrive_hidden`) n'apparaît dans AUCUNE clé du lot — verrouillé par test structurel.
