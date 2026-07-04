@@ -2296,3 +2296,128 @@ php artisan tinker --execute="
 - [ ] AC7c/R3 : aucun identifiant/message livré ne contient « central »
 - [ ] AC7d/e : contrat agent figé intact (`ContractV1`/`StateCompiler`/golden/`FROZEN_STATE_HASH`/`agent/**`) ; aucune migration ; aucune route
 - [ ] VM (différé) : payload `2.0` → exception + base inchangée ; payload `1.0` accepté (Scénario 20.2)
+
+## Section 21 — Exposition HTTP de l'ingestion, canal ① du lien managé (Story 39.1, 2026-07-04)
+
+**Ouvre l'Epic 39 (alignement de la couture controlHub ↔ SE5).** L'ingestion idempotente
+`ControlHubContractIngestionService::ingest()` (Epics 28/33) existait et était testée **sans être
+jamais atteignable par HTTP** (gap OPEN-5, bloquant pour tout le reste de l'Epic 39). Cette story
+**câble** — n'ajoute **aucune** logique métier neuve : `POST /api/v1/controlhub/contract`
+(middleware `controlhub.auth`, nom de route `controlhub.contract.ingest`), contrôleur invocable
+**mince** `App\Http\Controllers\Api\v1\ControlHub\ContractIngestionController` (patron
+`LinkSeveranceController` 32.1), placé en **fin de fichier** `routes/api.php` (après le groupe
+16.12 — fenêtre 1500 chars `ScriptsOsNamespaceTest`).
+
+- **200 nominal** : résumé **complet** `['success' => true] + ContractIngestionResult::toArray()`
+  (`contract_created`, `mutated`, `contract_id`, `schema_version`, compteurs `{created,updated,
+  deleted}` par agrégat `items`/`labels`/`imposed_groups`/`catalog_apps`).
+- **No-op idempotent (NFR-A2)** : 2ᵉ POST identique → `mutated=false`, compteurs à zéro,
+  `ControlHubContractChanged` dispatché **une seule fois** au total.
+- **422** : `UnsupportedSchemaVersionException` → `error=unsupported_schema_version` ;
+  `InvalidUpstreamContractException` → `error=invalid_upstream_contract`. Les deux sont levées en
+  validation **pure**, avant la transaction ⇒ **zéro écriture**, état pré-existant inchangé. Toute
+  autre exception n'est **pas** interceptée (500 standard).
+- **403 (auth avant corps, NFR-A3)** : réponse **existante**, inchangée, du middleware
+  `controlhub.auth` (`{"success":false,"error":"Forbidden","message":...}`) — jamais 401. Le
+  middleware ne lit que le header `Authorization` ; le contrôleur (seul lecteur du body) n'est
+  atteint qu'après authentification réussie. Le token n'apparaît dans **aucun** log.
+- **Branche morte `master_api_key` RETIRÉE** de `ControlHubAuth::handle()` (clé absente de
+  `config/controlHub.php`, jamais définie ailleurs — code mort par construction). Après retrait,
+  `controlhub_key_type` vaut invariablement `'instance'` ; `LinkSeveranceController` (sever-link,
+  32.1) continue de fonctionner sans changement (non-régression `ContractSeveranceChannelsTest`
+  vérifiée verte — le middleware partagé a changé).
+- **Aucun rate-limit dédié** (symétrie avec le sever-link, anti sur-engineering) ; **aucune**
+  migration ; **contrat agent figé intact** (`StateCompiler`/`ContractV1`/golden/
+  `FROZEN_STATE_HASH`/`agent/**` non touchés, zéro bump `agent/shared/version.go`).
+
+### Scénario 21.1 — Tests HÔTE (php8.4 + sqlite, hors VM)
+
+```bash
+# Suite 39.1 (6 tests) — 200 nominal, no-op, 422 version, 422 contenu, 403×2
+php artisan test --filter=ContractIngestionEndpointTest
+
+# Non-régression du middleware partagé `controlhub.auth` (sever-link, canal jumeau)
+php artisan test --filter=ContractSeveranceChannelsTest
+
+# Non-régression de l'ingestion sous-jacente (28.2/33.1/33.2 — service non réécrit)
+php artisan test --filter=ControlHubContractIngestionTest
+php artisan test --filter=ControlHubContractSchemaVersionTest
+php artisan test --filter=UnsupportedSchemaVersionRejectionTest
+
+# R3 : aucun identifiant « central » dans les fichiers livrés par 39.1
+grep -rin central \
+  app/Http/Controllers/Api/v1/ControlHub/ContractIngestionController.php \
+  app/Http/Middleware/ControlHubAuth.php
+```
+
+### Scénario 21.2 — VM (curl authentifié) : 200 / 422 / 403
+
+> ⚠️ **Aucune migration** dans cette story. La route n'est visible sur la VM qu'**après**
+> `php artisan route:cache` + `chown www-admin` (cache de routes non synchronisé par inotify —
+> mémoire `route_cache_vm_ephemeral_test_routes`). Clé d'instance : `SE4FS_INSTANCE_API_KEY`
+> (`.env` de la VM, cf. `config('controlHub.se4fs.instance_api_key')`).
+
+```bash
+ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50
+cd /var/www/sambaedu-reload
+
+# 0. S'assurer que la route est bien enregistrée après un sync
+php artisan route:cache && chown www-admin bootstrap/cache/routes-v7.php
+php artisan route:list --name=controlhub.contract.ingest
+
+KEY=$(php artisan tinker --execute="echo config('controlHub.se4fs.instance_api_key');")
+
+# 1. 200 nominal — payload conforme se5-contract/v1 (4 agrégats)
+curl -s -X POST http://127.0.0.1/api/v1/controlhub/contract \
+  -H "Authorization: Bearer ${KEY}" -H "Content-Type: application/json" \
+  -d '{
+        "schema_version": "1.0",
+        "items": [{"type":"capabilities","key":"cap_show_ext","value":"on","enforcement_state":"locked","target_type":"instance"}],
+        "labels": [], "imposed_groups": [], "catalog_apps": []
+      }' | jq
+# Attendu : {"success":true,"contract_created":true,"mutated":true,"schema_version":"1.0", ...}
+
+# 2. No-op — rejouer EXACTEMENT le même payload → mutated=false, compteurs à zéro
+curl -s -X POST http://127.0.0.1/api/v1/controlhub/contract \
+  -H "Authorization: Bearer ${KEY}" -H "Content-Type: application/json" \
+  -d '{"schema_version":"1.0","items":[{"type":"capabilities","key":"cap_show_ext","value":"on","enforcement_state":"locked","target_type":"instance"}],"labels":[],"imposed_groups":[],"catalog_apps":[]}' | jq
+
+# 3. 422 — version de schéma non supportée
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1/api/v1/controlhub/contract \
+  -H "Authorization: Bearer ${KEY}" -H "Content-Type: application/json" \
+  -d '{"schema_version":"99.0","items":[],"labels":[],"imposed_groups":[],"catalog_apps":[]}'
+# Attendu : 422
+
+# 4. 422 — contenu hors domaine (enforcement_state invalide)
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1/api/v1/controlhub/contract \
+  -H "Authorization: Bearer ${KEY}" -H "Content-Type: application/json" \
+  -d '{"items":[{"type":"capabilities","key":"cap_x","value":"on","enforcement_state":"bogus","target_type":"instance"}],"labels":[],"imposed_groups":[],"catalog_apps":[]}'
+# Attendu : 422
+
+# 5. 403 — sans header Authorization
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1/api/v1/controlhub/contract \
+  -H "Content-Type: application/json" -d '{}'
+# Attendu : 403
+
+# 6. 403 — Bearer invalide (≥16 car., différent de la clé d'instance)
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1/api/v1/controlhub/contract \
+  -H "Authorization: Bearer not-the-instance-key-999999" -H "Content-Type: application/json" -d '{}'
+# Attendu : 403
+
+# 7. Vérifier qu'aucun log n'expose le token (recherche du Bearer/clé en clair)
+grep -i "Bearer ${KEY}" storage/logs/laravel.log || echo "OK — token absent des logs"
+```
+
+## Checklist rapide Story 39.1
+
+- [ ] `php artisan test --filter=ContractIngestionEndpointTest` → 6/6 verts
+- [ ] `php artisan test --filter=ContractSeveranceChannelsTest` → vert (middleware partagé non régressé)
+- [ ] AC1 : route `controlhub.contract.ingest` déclarée après le groupe 16.12 (fenêtre 1500 chars préservée — `ScriptsOsNamespaceTest` vert)
+- [ ] AC2 : contrôleur mince, zéro validation/normalisation/transaction locale, délègue à `ingest()`
+- [ ] AC3 : 200 = résumé complet (`contract_created`/`mutated`/`contract_id`/`schema_version` + 4 compteurs)
+- [ ] AC4/NFR-A2 : 2ᵉ POST identique → `mutated=false`, compteurs à zéro, event dispatché 1× au total
+- [ ] AC5 : 422 `unsupported_schema_version` / `invalid_upstream_contract`, zéro écriture dans les deux cas
+- [ ] AC6/NFR-A3 : 403 (jamais 401) sans header et avec Bearer invalide ; token absent des logs
+- [ ] AC7 : branche `master_api_key` retirée de `ControlHubAuth` ; `controlhub_key_type` toujours `'instance'`
+- [ ] AC8/NFR-A4/A5 : `StateCompiler`/`ContractV1`/golden/`FROZEN_STATE_HASH`/`agent/**` non touchés ; R3 vérifié
+- [ ] VM (Scénario 21.2, différé) : `route:cache` rejoué après sync, 200/422×2/403×2 confirmés en curl réel

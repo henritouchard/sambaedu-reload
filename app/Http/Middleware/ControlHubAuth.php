@@ -32,15 +32,11 @@ class ControlHubAuth
         }
 
         $expectedInstanceKey = (string) config('controlHub.se4fs.instance_api_key', '');
-        $masterKey = (string) config('controlHub.master_api_key', '');
 
         $isValid = false;
         $keyType = null;
 
-        if (!empty($masterKey) && hash_equals($masterKey, $providedKey)) {
-            $isValid = true;
-            $keyType = 'master';
-        } elseif (!empty($expectedInstanceKey) && hash_equals($expectedInstanceKey, $providedKey)) {
+        if (!empty($expectedInstanceKey) && hash_equals($expectedInstanceKey, $providedKey)) {
             $isValid = true;
             $keyType = 'instance';
         }

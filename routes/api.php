@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\v1\EcowattController;
 use App\Http\Controllers\Api\v1\ControlHub\ShortcutController;
 use App\Http\Controllers\Api\v1\ControlHub\LinkSeveranceController;
+use App\Http\Controllers\Api\v1\ControlHub\ContractIngestionController;
 use App\Http\Controllers\Api\v1\ControlHub\InstanceStatusController;
 use App\Http\Controllers\Api\v1\ControlHub\GreetmeController;
 use App\Http\Controllers\Api\v1\ControlHub\TaskController;
@@ -402,6 +403,24 @@ Route::get('/v1/agent/ca', [AgentBootstrapController::class, 'ca'])
 Route::post('/v1/controlhub/sever-link', LinkSeveranceController::class)
     ->middleware('controlhub.auth')
     ->name('controlhub.link.sever');
+
+/*
+|--------------------------------------------------------------------------
+| Story 39.1 — Réception du CONTRAT amont (controlHub), canal ① du lien managé
+|--------------------------------------------------------------------------
+| Endpoint authentifié `controlhub.auth`, câblage pur vers l'ingestion
+| idempotente déjà livrée (Epics 28/33) : `ControlHubContractIngestionService::
+| ingest()` reste le SEUL écrivain des tables `controlhub_contract_*` (NFR-A1).
+| Contrôleur mince : lit le payload, délègue, mappe `UnsupportedSchemaVersion`
+| / `InvalidUpstreamContract` en 422. Auth AVANT lecture du corps (NFR-A3) : le
+| middleware ne lit que le header `Authorization`, jamais le body.
+|
+| Placée ICI, à la FIN du fichier (APRÈS le groupe 16.12), pour la fenêtre
+| 1500 chars de `ScriptsOsNamespaceTest` (mémoire api_routes_arch_test_window).
+*/
+Route::post('/v1/controlhub/contract', ContractIngestionController::class)
+    ->middleware('controlhub.auth')
+    ->name('controlhub.contract.ingest');
 
 /*
 |--------------------------------------------------------------------------
