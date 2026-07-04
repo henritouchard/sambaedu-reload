@@ -40,11 +40,27 @@ namespace App\Services\Agent\Providers;
  * UserGroup/User est structurellement SANS EFFET) — pas un garde-fou runtime, un
  * fait de compilation.
  *
- * **Angle mort assumé v1 — `action: allow` N'EST PAS validé.** Seul `block` est
- * soumis au refus Q3 (couper le LAN) ; une règle `allow` (rouvrir une portée)
- * n'est aujourd'hui contrainte par AUCUN garde-fou de politique. C'est une
- * décision de politique EN ATTENTE (question ouverte utilisateur) — tracée ici
- * comme angle mort connu, pas comme oubli.
+ * **Garde-fou Q5 — `allow` ENTRANT ouvert sur Internet ⇒ warning obligatoire
+ * (décision Henri).** MIROIR du warning-sur-`deny` de {@see FsAclAuthoringGuard} :
+ * une règle `action: allow` + `direction: in` dont la portée remote COUVRE
+ * l'Internet ouvert — `remote_scope: internet`, OU `remote_scope: explicit`
+ * contenant une plage ENGLOBANT `/0` (`0.0.0.0/0` / `::/0`) — EXIGE un `warning`
+ * de capacité non vide (ouvrir le poste ENTRANT à tout l'Internet est une
+ * implication qui doit être confirmée). Le critère « couvre l'Internet ouvert »
+ * est déterminé par la MÊME logique d'intervalles que le refus Q3 (jamais un
+ * match textuel : {@see coversOpenInternet}), sur la source de `warning`
+ * IDENTIQUE au `block`/`deny` (le `warning` de la capacité). Un `allow` entrant
+ * sur une plage ÉTROITE (host public précis, /24 privé…) N'EST PAS concerné, ni
+ * un `allow out`.
+ *
+ * **SERVEUR-only (défense en profondeur agent INEXPRIMABLE ici).** Ce garde-fou
+ * est une exigence d'AUTHORING, pas un état poste : le `warning` est une
+ * métadonnée de capacité qui n'atteint JAMAIS le payload (invariant 27.12).
+ * L'agent, qui ne voit pas le `warning`, ne peut donc PAS distinguer un `allow`
+ * ouvert légitime (warning authoré) d'un illégitime (warning absent) — un refus
+ * agent miroir casserait les `allow` légitimes. Contrairement au refus Q3
+ * `block` (duplicable côté agent car il ne dépend QUE des adresses du payload),
+ * ce garde-fou reste donc SERVEUR-only (cf. `handler_firewall.go`).
  */
 final class FirewallAuthoringGuard
 {
@@ -107,6 +123,7 @@ final class FirewallAuthoringGuard
             $capability = (string) ($projection['capability'] ?? '?');
             $warning = $projection['warning'] ?? null;
             $hasBlock = false;
+            $hasOpenAllowIn = false;
 
             foreach ($this->rules($projection['spec'] ?? null) as $rule) {
                 $ruleId = (string) ($rule['rule_id'] ?? '');
@@ -152,6 +169,13 @@ final class FirewallAuthoringGuard
                     $hasBlock = true;
                 }
 
+                // Q5 : un `allow` ENTRANT `internet` ouvre le poste à tout
+                // l'Internet routable (les plages `internet` figées côté handler
+                // couvrent l'Internet ouvert par construction) ⇒ warning exigé.
+                if ($action === 'allow' && $direction === 'in' && $remoteScope === 'internet') {
+                    $hasOpenAllowIn = true;
+                }
+
                 $addresses = $this->stringList($rule['remote_addresses'] ?? null);
 
                 // Cohérence conditionnelle de `remote_scope`.
@@ -165,6 +189,12 @@ final class FirewallAuthoringGuard
                             $violations[] = sprintf("firewall [%s] règle '%s' : adresse '%s' non parsable (attendu : IP ou CIDR IPv4/IPv6, jamais un mot-clé Windows ni une plage a-b).", $capability, $ruleId, $addr);
 
                             continue;
+                        }
+                        // Q5 : un `allow in explicit` dont une plage ENGLOBE
+                        // l'Internet ouvert (`0.0.0.0/0` / `::/0`) équivaut à
+                        // `internet` ⇒ warning exigé (intervalle, jamais textuel).
+                        if ($action === 'allow' && $direction === 'in' && $this->coversOpenInternet($range)) {
+                            $hasOpenAllowIn = true;
                         }
                         // Q3 : un `block explicit` chevauchant une plage protégée
                         // est REFUSÉ (intersection mathématique, piège #7).
@@ -199,6 +229,15 @@ final class FirewallAuthoringGuard
             if ($hasBlock && trim((string) ($warning ?? '')) === '') {
                 $violations[] = sprintf(
                     "firewall [%s] : au moins une règle `block` sans `warning` non vide — l'implication (connectivité coupée) doit être confirmée.",
+                    $capability,
+                );
+            }
+
+            // Q5 : `allow` entrant ouvert sur Internet ⇒ warning non vide
+            // (miroir deny⇒warning de fs_acl 36.1, décision Henri).
+            if ($hasOpenAllowIn && trim((string) ($warning ?? '')) === '') {
+                $violations[] = sprintf(
+                    "firewall [%s] : une règle `allow` entrante ouverte sur Internet (remote_scope 'internet', ou 'explicit' englobant 0.0.0.0/0 / ::/0) exige un `warning` non vide — l'implication (poste exposé en entrée à tout l'Internet) doit être confirmée.",
                     $capability,
                 );
             }
@@ -361,6 +400,24 @@ final class FirewallAuthoringGuard
         }
 
         return pack('C*', ...$bytes);
+    }
+
+    /**
+     * L'intervalle COUVRE-t-il l'Internet ouvert (Q5) — c.-à-d. englobe-t-il
+     * `/0` de sa famille (`0.0.0.0/0` en IPv4, `::/0` en IPv6) ? Vrai ssi la
+     * borne basse est l'adresse nulle ET la borne haute l'adresse maximale de la
+     * famille (bornes binaires `inet_pton`). Comparaison NUMÉRIQUE, jamais un
+     * match de chaîne : `0.0.0.0/0`, `0.0.0.0/1 + 128.0.0.0/1`… produisent le
+     * même intervalle plein.
+     *
+     * @param  array{0:int,1:string,2:string}  $range
+     */
+    private function coversOpenInternet(array $range): bool
+    {
+        [$family, $lo, $hi] = $range;
+        $width = $family === 4 ? 4 : 16;
+
+        return $lo === str_repeat("\x00", $width) && $hi === str_repeat("\xFF", $width);
     }
 
     /**

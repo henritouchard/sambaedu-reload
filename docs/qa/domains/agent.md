@@ -3600,6 +3600,17 @@ le service MpsSvc ne sont jamais modifiés.
 - L'agent (défense en profondeur, INDÉPENDANT du serveur) applique les MÊMES
   plages protégées dans `Test` ET `Apply` : un `block explicit` dangereux ⇒ erreur
   d'item isolée (jamais posée), les autres items convergent.
+- **Garde-fou Q5 (`allow` entrant ouvert ⇒ `warning`, décision Henri)** : le
+  `FirewallAuthoringGuard` refuse à l'authoring une règle `action: allow` +
+  `direction: in` COUVRANT l'Internet ouvert (`remote_scope: internet`, ou
+  `explicit` englobant `0.0.0.0/0` / `::/0` — détecté par INTERSECTION, jamais
+  textuel) SANS `warning` non vide. Un `allow` entrant sur une plage ÉTROITE
+  (host public, /24 privé) ou un `allow out` ne sont PAS concernés. **SERVEUR-only
+  (asymétrie assumée vs le refus Q3 `block`)** : le `warning` est une métadonnée
+  d'authoring qui n'atteint jamais le payload (invariant 27.12) — l'agent ne le
+  voit pas, donc un refus agent miroir est INEXPRIMABLE (il casserait les `allow`
+  ouverts légitimes, ceux qui ONT un warning authoré). Le refus Q3 `block`, lui,
+  reste duplicable côté agent car il ne dépend QUE des adresses du payload.
 
 ### Scénario 36.2.6 — Binaire antérieur silencieux (lab — régression)
 
@@ -3626,7 +3637,9 @@ EXACTE) : le poste posera quand même la plage IPv6, inerte faute de trafic v6.
 - [ ] 36.2.4 — Règle étrangère AU groupe purgée ; règles hors groupe + politique
       par défaut + service intacts.
 - [ ] 36.2.5 — Guard Q3 (intersection) + refus agent Test/Apply ; block internet
-      et block explicit public autorisés.
+      et block explicit public autorisés. Guard Q5 : `allow in` ouvert sur
+      Internet (internet ou explicit englobant /0) sans warning REFUSÉ (SERVEUR-only,
+      pas de miroir agent) ; allow in étroit + allow out non concernés.
 - [ ] 36.2.6 — Binaire ≤ 2.6.0 : type ignoré en silence.
 - [ ] Golden : `state.v1.json` +1 item firewall machine, `FROZEN_STATE_HASH` PHP =
       `frozenStateHash` Go recalculés à l'identique ; `report.v1.json` INCHANGÉ.

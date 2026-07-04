@@ -380,6 +380,62 @@ class CapabilityFirewallProviderTest extends TestCase
         self::assertNotEmpty($v, 'une projection avec un block sans warning non vide est refusée');
     }
 
+    // ── Garde-fou Q5 : `allow` ENTRANT ouvert sur Internet ⇒ warning exigé ──
+
+    private function allowInRule(string $scope, array $addrs = []): array
+    {
+        $rule = [
+            'rule_id' => 'r',
+            'direction' => 'in',
+            'action' => 'allow',
+            'remote_scope' => $scope,
+            'protocol' => 'any',
+            'ensure' => 'present',
+        ];
+        if ($addrs !== []) {
+            $rule['remote_addresses'] = $addrs;
+        }
+
+        return $rule;
+    }
+
+    #[Test]
+    public function guard_refuses_open_allow_in_without_warning(): void
+    {
+        // internet + /0 explicite (v4 & v6) : « ouverts sur l'Internet » par
+        // intervalle (chaque plage englobe /0) → warning EXIGÉ (absent = KO). Le
+        // critère est PAR PLAGE (iso le refus Q3 `block`, par adresse) : une plage
+        // qui englobe /0, jamais une union de plages plus étroites.
+        $cases = [
+            'internet' => $this->allowInRule('internet'),
+            '0.0.0.0/0' => $this->allowInRule('explicit', ['0.0.0.0/0']),
+            '::/0' => $this->allowInRule('explicit', ['::/0']),
+        ];
+        foreach ($cases as $label => $rule) {
+            $v = $this->guardOne('nowarn', null, [$rule]);
+            self::assertNotEmpty($v, "allow in ouvert ({$label}) sans warning doit être refusé (Q5)");
+            self::assertStringContainsString('exposé en entrée à tout l\'Internet', implode(' ', $v));
+        }
+    }
+
+    #[Test]
+    public function guard_accepts_open_allow_in_with_warning(): void
+    {
+        self::assertSame([], $this->guardOne('ok', 'attention exposition', [$this->allowInRule('internet')]));
+        self::assertSame([], $this->guardOne('ok', 'attention exposition', [$this->allowInRule('explicit', ['0.0.0.0/0'])]));
+    }
+
+    #[Test]
+    public function guard_accepts_narrow_or_outbound_allow_without_warning(): void
+    {
+        // Plage ÉTROITE (host public précis, /24 privé) entrante : NON concernée.
+        self::assertSame([], $this->guardOne('x', null, [$this->allowInRule('explicit', ['203.0.113.7'])]));
+        self::assertSame([], $this->guardOne('x', null, [$this->allowInRule('explicit', ['192.168.1.0/24'])]));
+        // `allow out` ouvert sur Internet : NON concerné (seul l'ENTRANT expose).
+        $allowOut = array_merge($this->allowInRule('internet'), ['direction' => 'out']);
+        self::assertSame([], $this->guardOne('x', null, [$allowOut]));
+    }
+
     #[Test]
     public function guard_refuses_ensure_as_list(): void
     {

@@ -905,6 +905,17 @@ hérité pour `ensure` (seul champ mappable — v1 minimal).
   côté agent (Test ET Apply, défense en profondeur). Enums hors domaine, slug
   invalide, cohérences conditionnelles, ports hors 1-65535, et `block` sans
   `warning` sont également refusés.
+- **Garde-fou Q5 (`allow` entrant ouvert ⇒ `warning`, décision Henri)** : MIROIR
+  du warning-sur-`deny` de `fs_acl`. Une règle `action: allow` + `direction: in`
+  dont la portée COUVRE l'Internet ouvert — `remote_scope: internet`, OU
+  `explicit` avec une plage ENGLOBANT `/0` (`0.0.0.0/0` / `::/0`, détecté par
+  INTERVALLE, jamais textuel) — EXIGE un `warning` de capacité non vide (exposer
+  le poste en ENTRÉE à tout l'Internet doit être confirmé). Un `allow` entrant
+  sur une plage ÉTROITE (host public, /24…) ou un `allow out` ne sont PAS
+  concernés. **SERVEUR-only** : le `warning` est une métadonnée d'authoring qui
+  n'atteint jamais le payload (invariant 27.12) ; l'agent ne le voit pas et ne
+  peut donc PAS l'exiger sans casser les `allow` légitimes (un refus miroir
+  agent, comme pour le `block` Q3, est INEXPRIMABLE ici faute de `warning`).
 - **Pas de ciblage par utilisateur** (piège #15, Q4, STRUCTUREL) : portée Machine
   → override UserGroup/User SANS EFFET. « Couper Internet » se cible par
   parc/salle.

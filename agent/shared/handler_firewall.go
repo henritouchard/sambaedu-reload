@@ -179,6 +179,15 @@ func parseAuthoringPrefix(s string) (netip.Prefix, bool) {
 	return netip.PrefixFrom(a, a.BitLen()), true
 }
 
+// GARDE-FOU Q5 (allow entrant ouvert ⇒ warning) = SERVEUR-ONLY, PAS ici. Le
+// warning-sur-`allow in` couvrant l'Internet est une exigence d'AUTHORING
+// (FirewallAuthoringGuard, décision Henri), pas un état poste : le `warning` est
+// une métadonnée de capacité qui n'atteint JAMAIS le payload (invariant 27.12).
+// L'agent ne voit donc pas le warning et ne peut pas distinguer un `allow`
+// ouvert légitime (warning authoré) d'un illégitime — un refus agent miroir
+// casserait les `allow` légitimes. Contrairement au refus Q3 `block` ci-dessous
+// (duplicable car il ne dépend QUE des adresses du payload), Q5 reste serveur-only.
+//
 // firewallItemViolation : raison NON vide si l'item `present` doit être REFUSÉ
 // (défense en profondeur Q3, dans Test ET Apply), sinon "". Un `absent`
 // (retrait) reste toujours autorisé (retirer une règle dangereuse est sûr).
