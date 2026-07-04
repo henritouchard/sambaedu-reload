@@ -1418,29 +1418,32 @@ const DATASETS = {
     {
       "num": 36,
       "title": "Bibliothèque de capacités — mécanismes fs_acl et firewall",
-      "status": "todo",
+      "status": "in-progress",
       "summary": "Direction « bibliothèque de capacités » (décision 2026-07-02) : PAS de collection de scripts (leçon WPKG — pas de test/drift, pas d'off fiable, surface C2) mais des <strong>mécanismes typés</strong> — handler Go générique test/apply/report payé UNE fois, puis capacités = donnée seedée illimitée. Cet epic paie les deux premiers mécanismes hors-registre : <strong><code>fs_acl</code></strong> (ACE NTFS chirurgicales, enums métier — jamais de masque/SDDL, deny dangereux INEXPRIMABLE, jetons d'audience @eleves/@profs résolus à l'expansion, SID côté agent, store dernier-appliqué pour zéro ACE orpheline) et <strong><code>firewall</code></strong> (règles possédées via le groupe SambaEdu-Agent — off symétrique gratuit ; block lan/any REFUSÉ pour ne jamais couper l'agent du serveur). Décision D8 : <strong>deux surfaces d'authoring</strong> sur UN mécanisme — capacité catalogue (intention figée : Program Files, internet_access) ET fonctionnalité à formulaire (règles d'accès aux dossiers créées par le refnum, patron Epic 34). + lot registre pur (pins barre latérale, Accès rapide) témoin du coût marginal zéro-moteur. Cadrage : <code>planning-artifacts/epics-mecanismes-hors-registre.md</code>.",
       "stories": [
         {
           "id": "36-1",
           "title": "Mécanisme fs_acl — ACE NTFS gérées + capacité program_files_browse_denied",
-          "status": "todo",
-          "note": "📌 RAPPEL 35.6 au create-story : cette story livre la résolution SID côté agent (LSA) = la plomberie du mécanisme privilege. Réévaluer l'ouverture de la 35.6 (gate D6 fermé 2026-07-03) à ce moment-là — cf. note en tête de Story 36.1 dans epics-mecanismes-hors-registre.md et ultradev/35-questions.md Q1."
+          "status": "review",
+          "note": "Ultradev 2026-07-04 (dev opus / review sonnet / éval Opus), branche ultradev/epic-36. Type contrat fs_acl jumeau PHP↔Go (golden bumpé), provider + FsAclAuthoringGuard (Q2 racines protégées + jetons audience Q1 en dur), handler Go chirurgie DACL + store dernier-appliqué + refus défense en profondeur, seed program_files_browse_denied, agent 2.6.0. 5 findings corrigés (2🔴 : branche absent recalculait la cible ; guard Q2 jamais câblé au runtime → observer serveur + refus agent) + fix varchar. 35.6 resté FERMÉ (plomberie SID livrée, rien ouvert). Doc review 36-1.md."
         },
         {
           "id": "36-2",
           "title": "Mécanisme firewall — règles possédées par groupe + capacité internet_access",
-          "status": "todo"
+          "status": "review",
+          "note": "Ultradev 2026-07-04 (dev opus / review sonnet / éval Opus). Type contrat firewall jumeau PHP↔Go, handler Go réconciliation par groupe SambaEdu-Agent + traduction internet→inverse-RFC1918 + refus Q3 par intersection mathématique (Test+Apply), COM natif INetFwPolicy2 (zéro dépendance), seed internet_access, agent 2.7.0. 5 findings corrigés (LockOSThread COM, slug rule_id agent, ensure liste, casse rule_id, doc). Q5 tranchée par Henri : warning obligatoire sur allow entrant ouvert (serveur ; agent server-only justifié, invariant 27.12). Doc review 36-2.md."
         },
         {
           "id": "36-3",
           "title": "Lot bibliothèque n°2 — capacités registre pures (pins sidebar, Accès rapide)",
-          "status": "todo"
+          "status": "review",
+          "note": "Ultradev 2026-07-04 (dev sonnet / review opus). Zéro moteur : migration de seed (4 capacités Explorateur opt-in unmanaged) + tests structurels. 4 findings 🟡 (protocole lab HubMode HKLM renforcé, décision is_active, durcissement anti-collision). ⚠️ Gate lab : clés registre candidates À VÉRIFIER sur poste avant migrate /vm. Doc review 36-3.md."
         },
         {
           "id": "36-4",
           "title": "Règles d'accès aux dossiers — formulaire refnum (D8, patron Epic 34)",
-          "status": "todo"
+          "status": "review",
+          "note": "Ultradev 2026-07-04 (dev opus / review sonnet / éval Opus). Table folder_access_rules + pivot par parc + audit, provider composite D1 (UNE seule entrée fs_acl, StateCompiler intouché, golden inchangé), guard fs_acl appelé explicitement, délégation scopée établissement/parc, UI Volt + modale. 5 findings corrigés (1🔴 : délégation scopée inatteignable via l'app → patron WorkstationGroupPolicy 7.1 répliqué + couverture RoutesProtection). Doc review 36-4.md."
         }
       ]
     },
