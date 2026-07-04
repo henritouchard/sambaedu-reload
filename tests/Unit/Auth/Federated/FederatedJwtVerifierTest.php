@@ -278,4 +278,155 @@ class FederatedJwtVerifierTest extends TestCase
 
         $this->assertRejected($emitted['token'], FederatedJwtErrorCodes::JWT_SIGNATURE_INVALID);
     }
+
+    // ---------------------------------------------------------------------
+    // Story 39.3 — bridge IdP « du handshake » (DB) → vérificateur JWT (canal ⑤)
+    // ---------------------------------------------------------------------
+
+    #[Test]
+    public function handshake_idp_jwt_is_accepted_from_db_without_env_config(): void
+    {
+        // AC3 — preuve end-to-end : un JWT signé par l'IdP réellement provisionné
+        // au handshake (clé/kid/iss stockés en base) est accepté SANS aucun
+        // réglage env. On VIDE explicitement les 3 sources config du chemin
+        // « repli » pour prouver que c'est bien la DB qui répond.
+        config([
+            'federated_auth.jwt.keys' => [],
+            'federated_auth.expected_iss' => '',
+            'federated_auth.expected_aud' => '',
+            'controlHub.se4fs.instance_id' => 'se5-instance-uuid-39-3',
+        ]);
+
+        $this->seedFederatedIdpConnection();
+
+        $token = $this->issueHandshakeIdpJwt('se5-instance-uuid-39-3', ['sub' => 'ext-handshake']);
+
+        $claims = $this->makeVerifier()->verify($token);
+
+        $this->assertSame('ext-handshake', $claims->sub);
+        $this->assertSame($this->federatedIdpIss, $claims->iss);
+        $this->assertSame('se5-instance-uuid-39-3', $claims->aud);
+        $this->assertSame($this->federatedIdpKid, $claims->kid);
+        $this->assertSame('federated-user', $claims->tier);
+    }
+
+    #[Test]
+    public function handshake_idp_jwt_signed_with_wrong_key_is_rejected(): void
+    {
+        // Corollaire sécurité AC3/AC6 : la clé DB est bien la clé pivot. Un jeton
+        // qui prétend le bon kid/iss/aud mais signé par la paire CONFIG (≠ paire
+        // du handshake) est rejeté en signature — RS256 pinné, pas de confusion
+        // de source.
+        config([
+            'federated_auth.jwt.keys' => [],
+            'federated_auth.expected_iss' => '',
+            'federated_auth.expected_aud' => '',
+            'controlHub.se4fs.instance_id' => 'se5-instance-uuid-39-3',
+        ]);
+
+        $this->seedFederatedIdpConnection();
+
+        // Signé avec la clé PRIVÉE des fixtures config, mais présenté avec le kid
+        // du handshake → la clé publique DB ne valide pas la signature.
+        $now = Carbon::now()->getTimestamp();
+        $forged = $this->signFederatedJwt([
+            'iss' => $this->federatedIdpIss,
+            'aud' => 'se5-instance-uuid-39-3',
+            'sub' => 'x', 'jti' => 'j-forged', 'kid' => $this->federatedIdpKid,
+            'tier' => 'federated-user', 'role' => 'technicien', 'login' => 'l',
+            'iat' => $now, 'nbf' => $now, 'exp' => $now + 600,
+        ], 'RS256', null, $this->federatedIdpKid);
+
+        $this->assertRejected($forged, FederatedJwtErrorCodes::JWT_SIGNATURE_INVALID);
+    }
+
+    #[Test]
+    public function db_precedence_wins_over_a_conflicting_non_empty_config(): void
+    {
+        // Review 39.3 #1 — preuve de précédence RÉELLE (pas seulement « la DB marche
+        // quand la config est vide »). La config reste PLEINE (clés/iss du setUp,
+        // différentes de la DB) PENDANT que la ControlHubConnection est active. Un
+        // jeton signé avec la paire CONFIG (kid=federatedTestKid, iss=federatedTestIss)
+        // — qui serait accepté en l'ABSENCE de DB (cf. db_absent_falls_back_to_config)
+        // — doit être REJETÉ : le verifier ne connaît QUE la clé DB (key-map à 1 entrée,
+        // aucune fusion DB+config). Si une régression future réintroduisait un merge,
+        // ce test le détecterait.
+        $this->seedFederatedIdpConnection();
+        $connection = \App\Models\ControlHubConnection::current();
+        $this->assertTrue($connection->hasFederatedIdp(), 'précondition : IdP DB provisionné');
+
+        $emitted = $this->issueFederatedJwt(['sub' => 'ext-config-should-lose']);
+
+        $this->assertRejected($emitted['token']);
+    }
+
+    #[Test]
+    public function db_absent_falls_back_to_config(): void
+    {
+        // AC4 — repli : aucune ControlHubConnection active. Résolution 100%
+        // config, strictement identique à l'existant → JWT config accepté.
+        $this->assertSame(0, \App\Models\ControlHubConnection::query()->count());
+
+        $emitted = $this->issueFederatedJwt(['sub' => 'ext-config-path']);
+
+        $claims = $this->makeVerifier()->verify($emitted['token']);
+
+        $this->assertSame('ext-config-path', $claims->sub);
+        $this->assertSame($this->federatedTestIss, $claims->iss);
+        $this->assertSame($this->federatedTestAud, $claims->aud);
+    }
+
+    #[Test]
+    public function incomplete_db_connection_falls_back_to_config(): void
+    {
+        // AC4 — DB présente mais INCOMPLÈTE (`hasFederatedIdp() === false`, ici
+        // `idp_kid` null) → repli config, pas de crash, JWT config accepté.
+        $this->seedFederatedIdpConnection(['idp_kid' => null]);
+
+        $connection = \App\Models\ControlHubConnection::current();
+        $this->assertNotNull($connection);
+        $this->assertFalse($connection->hasFederatedIdp());
+
+        $emitted = $this->issueFederatedJwt(['sub' => 'ext-incomplete-db']);
+
+        $claims = $this->makeVerifier()->verify($emitted['token']);
+
+        $this->assertSame('ext-incomplete-db', $claims->sub);
+        $this->assertSame($this->federatedTestIss, $claims->iss);
+    }
+
+    #[Test]
+    public function aud_falls_back_to_instance_id_when_expected_aud_not_set(): void
+    {
+        // AC2 — indépendant du bridge clé/kid/iss : DB absente, `expected_aud`
+        // NON configuré → le repli `aud` porte sur l'uuid d'instance
+        // (`controlHub.se4fs.instance_id`), pas sur `sambaedu.se4fs_name`.
+        config([
+            'federated_auth.expected_aud' => '',
+            'sambaedu.se4fs_name' => 'legacy-se4fs-name-should-not-be-used',
+            'controlHub.se4fs.instance_id' => 'se5-instance-aud-uuid',
+        ]);
+
+        $emitted = $this->issueFederatedJwt(['sub' => 'ext-aud', 'aud' => 'se5-instance-aud-uuid']);
+
+        $claims = $this->makeVerifier()->verify($emitted['token']);
+        $this->assertSame('se5-instance-aud-uuid', $claims->aud);
+    }
+
+    #[Test]
+    public function aud_bound_to_se4fs_name_is_rejected_after_instance_id_switch(): void
+    {
+        // AC2 — preuve du changement de fallback : un jeton dont `aud` vaut
+        // l'ANCIEN identifiant (`sambaedu.se4fs_name`) n'est PLUS accepté ; seul
+        // l'uuid d'instance l'est désormais.
+        config([
+            'federated_auth.expected_aud' => '',
+            'sambaedu.se4fs_name' => 'legacy-se4fs-name',
+            'controlHub.se4fs.instance_id' => 'se5-instance-aud-uuid',
+        ]);
+
+        $emitted = $this->issueFederatedJwt(['aud' => 'legacy-se4fs-name']);
+
+        $this->assertRejected($emitted['token'], FederatedJwtErrorCodes::AUD_MISMATCH);
+    }
 }

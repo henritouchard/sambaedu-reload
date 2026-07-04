@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Concerns;
 
+use App\Models\ControlHubConnection;
 use Firebase\JWT\JWT;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
@@ -31,6 +32,19 @@ trait IssuesFederatedJwt
     protected string $federatedTestIss = 'idp-test';
 
     protected string $federatedTestAud = 'se5-instance-test';
+
+    // Story 39.3 — IdP « du handshake » : paire RS256 DÉDIÉE, DISTINCTE des
+    // fixtures `tests/fixtures/auth-v1/*.pem` (celles-ci servent le chemin
+    // CONFIG). Une paire distincte prouve, sans ambiguïté, qu'un JWT accepté
+    // via le bridge DB tient à la clé stockée en base (`controlhub_connection`)
+    // et non à la config env.
+    protected string $federatedIdpKid = 'idp-handshake-kid';
+
+    protected string $federatedIdpIss = 'https://idp.handshake.test/realms/se5';
+
+    protected ?string $federatedIdpPrivateKeyPem = null;
+
+    protected ?string $federatedIdpPublicKeyPem = null;
 
     protected function federatedPrivateKeyPath(): string
     {
@@ -213,6 +227,38 @@ trait IssuesFederatedJwt
             });
         }
 
+        // Story 39.3 — table de connexion controlHub (IdP fédéré du handshake).
+        // PRÉREQUIS BLOQUANT : `FederatedJwtVerifier` appelle désormais
+        // `ControlHubConnection::current()` dans `buildKeyMap()`/`expectedIss()`.
+        // Sans cette table, TOUTES les suites fédérées (qui bâtissent leur
+        // schéma SQLite à la main, sans migrations) crasheraient sur « no such
+        // table » dès le 1er `verify()`, y compris les tests hors bridge.
+        // Colonnes calquées sur la migration de base + `2026_06_04_130000…`
+        // (idp_*). `base_url`/`api_token`/`se4fs_api_token` rendus nullable ici
+        // (le seed n'a pas à les fournir), le reste reprend les défauts réels.
+        if (! Schema::hasTable('controlhub_connection')) {
+            Schema::create('controlhub_connection', function (Blueprint $table): void {
+                $table->id();
+                $table->string('base_url', 512)->nullable();
+                $table->text('api_token')->nullable();
+                $table->string('se4fs_api_token', 64)->nullable();
+                // Bloc idp_federated (migration 2026_06_04_130000).
+                $table->text('idp_public_key')->nullable();
+                $table->string('idp_kid', 100)->nullable();
+                $table->string('idp_iss', 512)->nullable();
+                $table->integer('heartbeat_interval')->default(300);
+                $table->boolean('heartbeat_enabled')->default(true);
+                $table->integer('heartbeat_failures')->default(0);
+                $table->string('status', 20)->default('unknown');
+                $table->string('error_type', 100)->nullable();
+                $table->timestamp('last_handshake_at')->nullable();
+                $table->timestamp('last_heartbeat_at')->nullable();
+                $table->timestamp('expires_at')->nullable();
+                $table->boolean('is_active')->default(true);
+                $table->timestamps();
+            });
+        }
+
         if (! Schema::hasTable('federated_jwt_consumptions')) {
             Schema::create('federated_jwt_consumptions', function (Blueprint $table): void {
                 $table->uuid('id')->primary();
@@ -266,5 +312,93 @@ trait IssuesFederatedJwt
                 $table->primary(['permission_id', 'role_id']);
             });
         }
+    }
+
+    /**
+     * Story 39.3 — génère (paresseusement) la paire RS256 dédiée à l'IdP « du
+     * handshake » et la mémorise sur l'instance de test. Distincte des fixtures
+     * `auth-v1` : c'est ce qui rend les tests du bridge discriminants.
+     */
+    protected function ensureFederatedIdpKeyPair(): void
+    {
+        if ($this->federatedIdpPrivateKeyPem !== null && $this->federatedIdpPublicKeyPem !== null) {
+            return;
+        }
+
+        $resource = openssl_pkey_new([
+            'private_key_bits' => 2048,
+            'private_key_type' => OPENSSL_KEYTYPE_RSA,
+        ]);
+        if ($resource === false) {
+            self::fail('openssl_pkey_new failed: ext-openssl requis pour les tests du bridge IdP fédéré');
+        }
+
+        $privPem = '';
+        openssl_pkey_export($resource, $privPem);
+        $details = openssl_pkey_get_details($resource);
+
+        $this->federatedIdpPrivateKeyPem = $privPem;
+        $this->federatedIdpPublicKeyPem = (string) ($details['key'] ?? '');
+    }
+
+    /**
+     * Story 39.3 — seed une `ControlHubConnection` active portant l'IdP fédéré
+     * reçu au handshake (clé publique PEM en clair + kid + iss). Réutilise le
+     * vrai chemin d'écriture `ControlHubConnection::createOrUpdate()`.
+     *
+     * Passer `['idp_kid' => null]` (ou `idp_public_key`/`idp_iss` = null) permet
+     * de simuler une ligne active INCOMPLÈTE (`hasFederatedIdp() === false`),
+     * qui doit retomber sur le repli config.
+     *
+     * @param array<string,mixed> $overrides
+     */
+    protected function seedFederatedIdpConnection(array $overrides = []): ControlHubConnection
+    {
+        $this->ensureFederatedIdpKeyPair();
+
+        return ControlHubConnection::createOrUpdate(array_merge([
+            'se4fs_api_token' => 'seed-se4fs-token',
+            'base_url' => 'https://handshake.test',
+            'idp_public_key' => $this->federatedIdpPublicKeyPem,
+            'idp_kid' => $this->federatedIdpKid,
+            'idp_iss' => $this->federatedIdpIss,
+        ], $overrides));
+    }
+
+    /**
+     * Story 39.3 — émet un JWT signé par la clé PRIVÉE de l'IdP « du handshake »
+     * (celle dont la publique est stockée en base par `seedFederatedIdpConnection`).
+     * `iss`/`kid` défaut = ceux de la connexion ; `aud` = uuid d'instance passé
+     * (= `config('controlHub.se4fs.instance_id')` côté vérificateur).
+     *
+     * @param array<string,mixed> $overrides
+     */
+    protected function issueHandshakeIdpJwt(string $instanceId, array $overrides = []): string
+    {
+        $this->ensureFederatedIdpKeyPair();
+
+        $now = Carbon::now()->getTimestamp();
+        $payload = array_merge([
+            'iss' => $this->federatedIdpIss,
+            'aud' => $instanceId,
+            'sub' => (string) Str::uuid(),
+            'jti' => (string) Str::uuid(),
+            'kid' => $this->federatedIdpKid,
+            'tier' => 'federated-user',
+            'role' => 'technicien',
+            'login' => 'tech.externe',
+            'name' => 'Tech Externe',
+            'email' => 'tech@example.org',
+            'iat' => $now,
+            'nbf' => $now,
+            'exp' => $now + 600,
+        ], $overrides);
+
+        return $this->signFederatedJwt(
+            $payload,
+            'RS256',
+            $this->federatedIdpPrivateKeyPem,
+            (string) ($payload['kid'] ?? $this->federatedIdpKid),
+        );
     }
 }

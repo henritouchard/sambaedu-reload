@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Auth\Federated\Jwt;
 
 use App\Auth\Federated\Jwt\Exceptions\InvalidFederatedJwtException;
+use App\Models\ControlHubConnection;
 use Firebase\JWT\BeforeValidException;
 use Firebase\JWT\ExpiredException;
 use Firebase\JWT\JWT;
@@ -136,8 +137,9 @@ class FederatedJwtVerifier
 
         // --- Validation fonctionnelle stricte (H1) ---
 
-        // iss : émetteur configuré (domain-neutral, identifié par config).
-        $expectedIss = (string) config('federated_auth.expected_iss', '');
+        // iss : émetteur attendu. Source DB (IdP réellement provisionné au
+        // handshake) prioritaire, config env en repli explicite (cf. expectedIss()).
+        $expectedIss = $this->expectedIss();
         if ($expectedIss === '' || ! hash_equals($expectedIss, $iss)) {
             $this->logRejection('federated.jwt.iss_mismatch', $jwt, ['iss' => $iss]);
             throw InvalidFederatedJwtException::issMismatch();
@@ -232,8 +234,35 @@ class FederatedJwtVerifier
     }
 
     /**
-     * Audience attendue = identifiant de cette instance SE5. Fallback dynamique
-     * sur `sambaedu.se4fs_name` si `expected_aud` non configuré.
+     * Émetteur (`iss`) attendu. Story 39.3 — symétrique à {@see expectedAud()} :
+     * si l'IdP fédéré a réellement été provisionné au handshake
+     * (`ControlHubConnection::current()?->hasFederatedIdp()`), la DB est la SEULE
+     * source de vérité (`idp_iss`) ; sinon repli EXPLICITE sur la config env.
+     * Aucune fusion : la config ne corrige jamais un handshake présent, elle ne
+     * couvre que son ABSENCE (cf. commentaire F8 de `ControlHubConnection`).
+     */
+    private function expectedIss(): string
+    {
+        $connection = ControlHubConnection::current();
+        if ($connection !== null && $connection->hasFederatedIdp()) {
+            return (string) $connection->idp_iss;
+        }
+
+        return (string) config('federated_auth.expected_iss', '');
+    }
+
+    /**
+     * Audience attendue = identifiant de CETTE instance SE5. `expected_aud`
+     * (override explicite env) reste prioritaire ; à défaut, Story 39.3 fait
+     * porter le repli par l'uuid d'instance (`controlHub.se4fs.instance_id`) —
+     * l'identifiant que l'IdP amont emploie réellement comme `aud` — et non plus
+     * `sambaedu.se4fs_name` (qui n'est pas cet identifiant).
+     *
+     * ⚠️ Rappel opérationnel (hors périmètre 39.3) : si `SE4FS_INSTANCE_ID`
+     * n'est pas figé en `.env`, `config('controlHub.se4fs.instance_id')` par
+     * défaut régénère un UUID aléatoire à chaque chargement de config
+     * (`Str::uuid()`, cf. config/controlHub.php). Le provisioning
+     * (`scripts/create-env.sh`) doit écrire cette valeur.
      */
     private function expectedAud(): string
     {
@@ -242,7 +271,32 @@ class FederatedJwtVerifier
             return $configured;
         }
 
-        return (string) config('sambaedu.se4fs_name', '');
+        return (string) config('controlHub.se4fs.instance_id', '');
+    }
+
+    /**
+     * Construit la key-map `kid => Key('RS256')`. Story 39.3 — source DB
+     * prioritaire : si l'IdP fédéré a été provisionné au handshake
+     * (`ControlHubConnection::current()?->hasFederatedIdp()`), la map n'a QU'UNE
+     * entrée, bâtie DIRECTEMENT depuis la colonne PEM en clair (`idp_public_key`
+     * n'est PAS un chemin de fichier) ; aucune fusion avec les clés de config.
+     * Sinon, repli sur la résolution config existante ({@see buildKeyMapFromConfig()}),
+     * strictement inchangée.
+     *
+     * @return array<string, Key>
+     */
+    private function buildKeyMap(): array
+    {
+        $connection = ControlHubConnection::current();
+        if ($connection !== null && $connection->hasFederatedIdp()) {
+            // PEM lu littéralement depuis la colonne texte (pas un path).
+            // RS256 EXCLUSIVEMENT — parité stricte avec le chemin config.
+            return [
+                (string) $connection->idp_kid => new Key((string) $connection->idp_public_key, 'RS256'),
+            ];
+        }
+
+        return $this->buildKeyMapFromConfig();
     }
 
     /**
@@ -252,7 +306,7 @@ class FederatedJwtVerifier
      *
      * @return array<string, Key>
      */
-    private function buildKeyMap(): array
+    private function buildKeyMapFromConfig(): array
     {
         $keys = config('federated_auth.jwt.keys', []);
         if (! is_array($keys) || $keys === []) {
