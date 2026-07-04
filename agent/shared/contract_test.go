@@ -43,8 +43,12 @@ func TestParseStateGoldenFile(t *testing.T) {
 	// 4 clés sans type/value) en portée MACHINE → machine = 4.
 	// Story 35.2 : +1 item `registry_list` (conteneur Forcelist Chrome, payload
 	// 4 clés {hive, path, entry_type, values}) en portée MACHINE → machine = 5.
-	if len(state.Machine) != 5 || len(state.Session) != 7 || len(state.MachineUser) != 1 {
-		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 5/7/1)",
+	// Story 36.1 : +1 item `fs_acl` (deny list_folder folder_only sur C:\Program
+	// Files, payload 6 clés) en portée MACHINE → machine = 6.
+	// Story 36.2 : +1 item `firewall` (internet-block, payload 6 clés) en portée
+	// MACHINE → machine = 7.
+	if len(state.Machine) != 7 || len(state.Session) != 7 || len(state.MachineUser) != 1 {
+		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 7/7/1)",
 			len(state.Machine), len(state.Session), len(state.MachineUser))
 	}
 }
@@ -250,8 +254,10 @@ func TestContractConstantsAreFrozen(t *testing.T) {
 		t.Errorf("ContractSchema modifié : %q — le contrat est FIGÉ (NFR12)", ContractSchema)
 	}
 	// Story 35.2 : +1 type `registry_list` (ajout ADDITIF D1) → 11.
-	if len(ResourceTypes) != 11 {
-		t.Errorf("11 identifiants de type publiés (§7), got %d", len(ResourceTypes))
+	// Story 36.1 : +1 type `fs_acl` (ajout ADDITIF D1, mécanisme hors-registre) → 12.
+	// Story 36.2 : +1 type `firewall` (ajout ADDITIF D1, mécanisme hors-registre) → 13.
+	if len(ResourceTypes) != 13 {
+		t.Errorf("13 identifiants de type publiés (§7), got %d", len(ResourceTypes))
 	}
 	// Story 27.8 : `drifted_allowed` retiré → 3 statuts (STRICT inconditionnel).
 	if len(ResourceStatuses) != 3 {

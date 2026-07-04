@@ -823,6 +823,135 @@ table de policies = doublon de source de vérité, interdit).
   déclaratif, non absorbé) et lit `wpkg.xml`. Inventaire par app rapporté en
   champ additif (contrat §6) → `agent_application_inventory`.
 
+### `fs_acl` — `exclusive` PAR ACE / `machine`
+
+**Story 36.1.** Premier mécanisme **HORS-REGISTRE** de la bibliothèque de
+capacités : des **ACE NTFS gérées** sur le poste. `FsAclCapabilityProvider`
+(portée **Machine** — le service SYSTEM est le seul acteur des ACE NTFS) EXPANSE
+une capacité → items concrets 6 clés `{path, trustee, ace_type, rights,
+applies_to, ensure}` (cf. contrat §7.7). Même modèle capability-first que
+`registry` : `AbstractCapabilityStateProvider` fournit Broadcast + overrides par
+maille, `resolveKeyValue()` (map/littéral), `UNMANAGED` ; le provider ne SURCHARGE
+que l'interpréteur `expand()` — `StateCompiler` INTOUCHÉ (D2). `hive()` renvoie
+`''` (non applicable — piège #14 : `expand()` surchargé, `handlesHive()` jamais
+consulté).
+
+- **`exclusiveKey() = {path|trustee|ace_type}`** (3 segments minuscules) : la
+  maille la plus spécifique gagne CETTE ACE ; deux ACE d'identités distinctes
+  (mêmes `path`, trustees différents) **COEXISTENT** (cumul assumé, pas
+  remplacement — pour un deny c'est un sur-masquage bénin). La précédence par
+  maille se joue sur identité ÉGALE (ex. broadcast `off`/`absent` battu par un
+  override de parc `eleves`/`present`).
+- **Jetons d'audience (Q1, `AudienceTokens`)** : un `trustee` `@eleves`/`@profs`/
+  `@personnels` est un **enum FERMÉ EN DUR** résolu par convention vers le groupe
+  principal global (`Eleves`/`Profs`/`Administratifs`) — SI ce groupe existe dans
+  `user_groups`. Jeton inconnu OU groupe absent ⇒ **entrée non émise + log
+  warning** (jamais de payload avec un jeton brut). Un trustee littéral
+  (`Domain Users`) part VERBATIM (résolu par LSA côté poste). AUCUNE UI, AUCUNE
+  table d'audiences ; le groupe arbitraire est le formulaire 36.4.
+- **Résolution SID côté POSTE (D5)** : le provider n'émet que des NOMS
+  (Postgres pur, NFR7) ; l'agent résout le SID par LSA sur le poste joint.
+- **Pas de ciblage par utilisateur** (piège #10, STRUCTUREL) : portée Machine ⇒
+  le service fetch sans `?user` → un override UserGroup/User est SANS EFFET. « Qui
+  est bridé » = le `trustee` du payload, « quels postes » = les assignations.
+- **Validation d'authoring** (`FsAclAuthoringGuard`, service PUR réutilisé tel
+  quel par 36.4) : refuse un `deny` sur principal système (`SYSTEM_TRUSTEES`), un
+  `deny` à héritage descendant sur racine protégée (`PROTECTED_ROOTS` Q2 — le
+  `deny list_folder folder_only` y reste autorisé), les enums hors domaine, un
+  path non absolu, un jeton inconnu, et une capacité avec un `deny` sans
+  `warning` non vide.
+- **Limites (à documenter, pas sur-conçu)** : deux valeurs qui résolvent des
+  TRUSTEES DIFFÉRENTS produisent des identités distinctes → les DEUX ACE
+  convergent (piège #2) ; le retrait PROPRE passe par un `off` réel
+  (`ensure:absent`), JAMAIS par la sentinelle `unmanaged` (piège #3 : type absent
+  du state ⇒ handler non invoqué). Le store agent « dernier appliqué » réconcilie
+  les orphelins au cycle suivant.
+
+Capacité de preuve seedée : `program_files_browse_denied` (2 chemins × 2 trustees
+= 4 entrées `deny list_folder folder_only`).
+
+### `firewall` — `exclusive` PAR `rule_id` / `machine`
+
+**Story 36.2.** Deuxième mécanisme **HORS-REGISTRE** : des **règles pare-feu
+Windows possédées PAR GROUPE**. `FirewallCapabilityProvider` (portée **Machine**)
+EXPANSE une capacité → items concrets `{rule_id, direction, action, remote_scope,
+protocol, ensure}` (+ `remote_addresses` ssi `explicit`, + `ports` ssi tcp|udp —
+cf. contrat §7.8). Jumeau structurel de `fs_acl` : `expand()` surchargé,
+`StateCompiler` INTOUCHÉ (D2), `hive()` renvoie `''` (piège #14), `resolveKeyValue()`
+hérité pour `ensure` (seul champ mappable — v1 minimal).
+
+- **`exclusiveKey() = rule_id`** (1 segment minuscule) : la maille la plus
+  spécifique gagne CETTE règle ; les `rule_id` distincts s'accumulent dans le
+  groupe. Le `rule_id` est une **identité GLOBALE inter-capacités** (piège #10) :
+  deux capacités émettant le même `rule_id` collisionnent (invariant de test
+  d'unicité sur le catalogue seedé).
+- **Propriété PAR CONTENEUR (D4, marqueur = le GROUPE, PAS de store)** : côté
+  agent, le champ `Grouping = SambaEdu-Agent` de la règle EST le marqueur ; le
+  handler réconcilie le groupe entier (iso `registry_list`), jamais les règles
+  hors groupe, la politique par défaut ou le service. La traduction
+  `remote_scope: internet` → plages inverses-RFC1918 (IPv4 `a-b` + IPv6
+  `2000::/3`) vit dans le HANDLER (D6, figée + testée).
+- **Écart assumé `ensure`** (piège #2) : `on` émet le MÊME `rule_id` en
+  `ensure:absent` → la précédence par maille joue dans les deux sens et le groupe
+  finit VIDE (« on ⇒ groupe vide »). `unmanaged` (défaut) = sentinelle (rien
+  émis).
+- **Validation d'authoring Q3** (`FirewallAuthoringGuard`, service PUR, câblé au
+  runtime via `CapabilityProjectionObserver` en dispatch par mécanisme) : un
+  `action: block` couvrant le réseau local (RFC1918/loopback/link-local/ULA) ou
+  tout (`/0`) est REFUSÉ par **INTERSECTION mathématique d'intervalles** IPv4/IPv6
+  (`PROTECTED_RANGES`, MIROIR du Go) — jamais un match textuel (`192.160.0.0/12`,
+  `0.0.0.0/0`, `::/0` refusés). `block internet` reste AUTORISÉ (usage nominal).
+  Échappatoire = `explicit` avec adresses PUBLIQUES. Le REFUS est aussi appliqué
+  côté agent (Test ET Apply, défense en profondeur). Enums hors domaine, slug
+  invalide, cohérences conditionnelles, ports hors 1-65535, et `block` sans
+  `warning` sont également refusés.
+- **Garde-fou Q5 (`allow` entrant ouvert ⇒ `warning`, décision Henri)** : MIROIR
+  du warning-sur-`deny` de `fs_acl`. Une règle `action: allow` + `direction: in`
+  dont la portée COUVRE l'Internet ouvert — `remote_scope: internet`, OU
+  `explicit` avec une plage ENGLOBANT `/0` (`0.0.0.0/0` / `::/0`, détecté par
+  INTERVALLE, jamais textuel) — EXIGE un `warning` de capacité non vide (exposer
+  le poste en ENTRÉE à tout l'Internet doit être confirmé). Un `allow` entrant
+  sur une plage ÉTROITE (host public, /24…) ou un `allow out` ne sont PAS
+  concernés. **SERVEUR-only** : le `warning` est une métadonnée d'authoring qui
+  n'atteint jamais le payload (invariant 27.12) ; l'agent ne le voit pas et ne
+  peut donc PAS l'exiger sans casser les `allow` légitimes (un refus miroir
+  agent, comme pour le `block` Q3, est INEXPRIMABLE ici faute de `warning`).
+- **Pas de ciblage par utilisateur** (piège #15, Q4, STRUCTUREL) : portée Machine
+  → override UserGroup/User SANS EFFET. « Couper Internet » se cible par
+  parc/salle.
+- **Limites (à documenter, pas sur-conçu)** : type absent du state ⇒ handler non
+  invoqué (piège #3) → une règle `block` survivrait (la salle resterait coupée) ;
+  le retrait PROPRE passe par `on`, JAMAIS par `unmanaged`. Remède manuel : les
+  règles du groupe `SambaEdu-Agent` sont visibles/supprimables dans `wf.msc`
+  (marqueur DANS l'objet). Un proxy d'établissement peut re-donner Internet : le
+  couper via une règle `explicit` sur son adresse PUBLIQUE.
+
+Capacité de preuve seedée : `internet_access` (enum `unmanaged`/`on`/`off` — `off`
+⇒ règle `block out internet any`).
+
+**Bi-alimentation (Story 36.4, D8).** Le canal `fs_acl` a DEUX surfaces
+d'authoring : la CAPACITÉ catalogue (36.1, intention figée) ET la RÈGLE d'accès
+instanciée par le refnum via formulaire (`folder_access_rules`, « interdire/
+autoriser CE dossier à CE groupe »). Les deux passent par UN SEUL provider
+compilé : `FolderAccessRulesStateProvider` COMPOSE `FsAclCapabilityProvider`
+(`final`) et unionne les candidats-règles aux candidats-capacités —
+`type()`/`semantics()`/`scope()`/`exclusiveKey()` DÉLÉGUÉS. **Pourquoi un seul
+provider** : `StateCompiler::selectExclusive()` arbitre PAR provider ; deux
+providers `fs_acl` produiraient deux items de même identité au state (dédup Go
+aveugle à la maille). Un provider = les deux flux passent par la MÊME sélection
+exclusive ⇒ une collision règle↔capacité sur `{path|trustee|ace_type}` est
+arbitrée maille/récence par le compilateur EXISTANT (StateCompiler INTOUCHÉ) ;
+les identités distinctes coexistent. Sans aucune règle en base, la sortie est
+byte-identique aux candidats capacités (`FROZEN_STATE_HASH` inchangé).
+
+- **Trustee dérivé (D9)** : une règle cible un VRAI groupe SQL ; le trustee émis
+  est le CN de `user_groups.ad_dn` (fallback `name`) — le nom SQL est folded au
+  nom nu, l'émettre casserait la résolution LSA des classes.
+- **Retrait propre (D3)** : désactiver une règle (`is_active=false`) émet ses
+  items avec `ensure:'absent'` (off réel — le type doit rester dans le state
+  pour que le handler retire l'ACE) ; la suppression d'une règle ACTIVE est
+  refusée. Portée MACHINE (ciblage par PARC, jamais par utilisateur — piège #10).
+
 ## Ajouter un type de ressource
 
 1. **Identifiant figé** : ajouter le type à [contract-v1.md](contract-v1.md) §7

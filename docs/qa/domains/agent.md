@@ -3354,3 +3354,365 @@ Agent bumpé **2.5.0**.
       numlock non-violation ; override UserGroup sans effet sur l'item HKU.
 - [ ] Golden : `state.v1.json`, `report.v1.json` et hashes figés jumeaux PHP↔Go
       INCHANGÉS (HKU = valeur de `hive`, pas un champ — rien à figer).
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- Story 36.3 — Lot registre pures Explorateur (zéro moteur)               -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+
+## Story 36.3 — Lot bibliothèque n°2 : capacités registre pures Explorateur
+
+**Témoin de doctrine de l'Epic 36** : le mécanisme `registry` étant payé (27.12 + Epic 35),
+4 capacités supplémentaires (épuration du volet de navigation de l'Explorateur) sont de la
+DONNÉE PURE — migration `2026_07_04_100000_seed_capabilities_explorer_lot.php`, **zéro
+évolution moteur, zéro UI, zéro bump agent**. Toutes **opt-in** (`default_value = unmanaged`)
+⇒ rien n'est émis en broadcast tant qu'aucun override de parc n'est posé (golden/`FROZEN_STATE_HASH`
+intacts par construction).
+
+| Capacité | Portée | Clés |
+|---|---|---|
+| `explorer_sidebar_pins_hidden` | Machine (HKLM) — écart D3 vs « Session » du cadrage epic | 6 × `ThisPCPolicy` (FolderDescriptions par dossier) |
+| `quick_access_hidden` | Mixte HKLM+HKCU | `HubMode` (HKLM) + `LaunchTo` + CLSID Accueil Win11 (HKCU) |
+| `explorer_gallery_hidden` | Session (HKCU) | CLSID Galerie Win11 |
+| `quick_access_history_hidden` | Session (HKCU) | `ShowRecent` + `ShowFrequent` |
+
+> ⚠️ **GATE DE VÉRACITÉ DES CLÉS — BLOQUANT AVANT `migrate` /vm.** Les GUID/paths/valeurs
+> ci-dessus sont des **candidates issues du décodage documentaire** (patron `onedrive_hidden`
+> + tweaks Windows documentés), **PAS d'une vérification sur poste** : le dev n'a aucun accès
+> à un poste Windows lab. Le protocole ci-dessous DOIT être déroulé par Henri (ou l'e2e lab)
+> AVANT `php artisan migrate` sur /vm ; toute clé invalidée est retirée de la migration avant
+> merge (jamais de clé « au cas où ») ; si toutes les clés d'une capacité tombent, la capacité
+> sort du lot.
+
+### Scénario 36.3.1 — Protocole de vérification lab (poste Windows — ACTION HUMAINE Henri, GATE bloquant)
+
+Pour CHAQUE capacité : poser les clés « on », fermer/rouvrir la session (clés HKCU) ou
+redémarrer Explorer (`taskkill /f /im explorer.exe & start explorer.exe`), vérifier l'effet ;
+poser les valeurs « off », re-vérifier le retour au comportement par défaut. **Les deux faces
+doivent être prouvées** (maps symétriques, aucun `$ensure` dans ce lot) :
+
+1. `explorer_sidebar_pins_hidden` — `reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FolderDescriptions\{GUID}\PropertyBag" /v ThisPCPolicy /t REG_SZ /d Hide /f`
+   pour chacun des 6 GUID (Documents `{f42ee2d3-909f-4907-8871-4c22fc0bf756}`, Images
+   `{0ddd015d-b06c-45d5-8c4c-f59713854639}`, Musique `{a0c69a99-21c8-4671-8703-7934162fcf1d}`,
+   Vidéos `{35286a68-3c57-41a1-bbb1-0eae73d76c95}`, Téléchargements
+   `{7d83ee9b-2244-4e70-b1f5-5393042af1e4}`, Bureau `{B4BFCC3A-DB2C-424C-B029-7FE99A87C641}`) :
+   le dossier disparaît de « Ce PC » ET du volet ; `/d Show` le réaffiche. Vérifier AUSSI que
+   chaque GUID candidat correspond bien au dossier annoncé (`reg query …\{GUID} /v Name` ou
+   contenu du `PropertyBag`).
+2. `quick_access_hidden` — `reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer" /v HubMode /t REG_DWORD /d 1 /f`
+   + `reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v LaunchTo /t REG_DWORD /d 1 /f`
+   + `reg add "HKCU\Software\Classes\CLSID\{f874310e-b6b7-47dc-bc84-b9e6b38f5903}" /v System.IsPinnedToNameSpaceTree /t REG_DWORD /d 0 /f` :
+   Win10 « Accès rapide » absent du volet, Win11 « Accueil » absent, Explorateur ouvre sur
+   « Ce PC ». `off` (0/2/1) restaure — vérifier en particulier que `HubMode=0` restaure
+   vraiment (pas la seule suppression de la valeur).
+   ⚠️ **PARI LE PLUS FRAGILE DU LOT (review 36.3 #1)** : `HubMode` est très
+   largement documenté comme clé **per-user (HKCU)**, or il est seedé ici en
+   **HKLM** (face Machine D4). Test DÉTERMINANT : poser `HubMode` en **HKLM
+   SEUL** (sans la variante HKCU) et confirmer que « Accès rapide » disparaît
+   bien. Si SEUL `HKCU\…\Explorer\Advanced\HubMode` a de l'effet ⇒ **déplacer la
+   clé en HKCU dans la migration AVANT merge** (elle bascule alors côté provider
+   Session ; le split-provider AC4 reste valide). Ne pas armer la capacité tant
+   que ce point n'est pas tranché.
+3. `explorer_gallery_hidden` — `reg add "HKCU\Software\Classes\CLSID\{e88865ea-0e1c-4e20-9aa6-edcd0212c87c}" /v System.IsPinnedToNameSpaceTree /t REG_DWORD /d 0 /f` :
+   Win11 « Galerie » absente du volet ; `off` (1) la réaffiche ; Win10 aucun effet (assumé).
+4. `quick_access_history_hidden` — `reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer" /v ShowRecent /t REG_DWORD /d 0 /f`
+   + idem `ShowFrequent` : Accès rapide/Accueil ne liste plus fichiers récents ni dossiers
+   fréquents ; `off` (1/1) restaure.
+
+Issues possibles à consigner : GUID/valeur divergente selon build Windows (corriger la
+migration avant merge) ; besoin `Wow6432Node` pour les dialogues 32 bits (extension future) ;
+`ShowCloudFilesInQuickAccess` (Win11, extension future) — HORS seed v1.
+
+### Scénario 36.3.2 — Après le gate : migration + armement par override de parc (serveur — jouable après migrate /vm)
+
+1. `php artisan migrate` sur /vm — **UNIQUEMENT après le gate 36.3.1** (jamais auto-appliquée ;
+   aucune release agent à publier, l'agent ≥ 2.5.0 sait déjà appliquer ces clés).
+2. Les 4 capacités apparaissent dans les onglets d'armement (parc-defaults/`registry-tab`)
+   avec l'option par défaut « Non géré » — aucun poste n'est affecté tant qu'aucun override
+   n'est posé.
+3. Poser un override `on` sur `quick_access_hidden` pour un parc de test → `GET
+   /api/v1/agent/state` (token d'un poste du parc) fait apparaître `HubMode` en portée
+   `machine` et `LaunchTo` + CLSID Accueil en portée `session`. Retirer l'override → retour au
+   silence (défaut `unmanaged`, PAS un `$ensure`).
+
+### Checklist rapide (Story 36.3)
+
+- [ ] 36.3.1 — GATE LAB déroulé par Henri : les 4 capacités × leurs clés vérifiées sur poste
+      Windows réel, deux faces on/off prouvées ; toute clé invalidée retirée avant merge.
+- [ ] 36.3.2 — Migration jouée sur /vm APRÈS le gate ; capacités visibles dans les onglets
+      d'armement, défaut « Non géré » ; override de parc `on`/`off` sur `quick_access_hidden`
+      compilé côté Machine (HubMode) ET Session (LaunchTo + CLSID Accueil).
+- [ ] Golden : `state.v1.json`, `report.v1.json` et `FROZEN_STATE_HASH`/`frozenStateHash`
+      jumeaux PHP↔Go INCHANGÉS (tout opt-in `unmanaged` ⇒ rien en broadcast).
+- [ ] Anti-collision : le CLSID OneDrive `{018D5C66-4533-4307-9B53-224DE2ED1FE6}`
+      (`onedrive_hidden`) n'apparaît dans AUCUNE clé du lot — verrouillé par test structurel.
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- Story 36.1 — Mécanisme fs_acl : ACE NTFS gérées sur le poste            -->
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+
+## Story 36.1 — Mécanisme `fs_acl` : ACE NTFS gérées sur le poste
+
+**Ce que la story livre** : un NOUVEAU type de contrat `fs_acl` (§7.7) + handler
+Go `FsAclHandler` (portée MACHINE / service SYSTEM), qui gère des ACE NTFS
+explicites par CHIRURGIE DACL (merge `SetNamedSecurityInfo` DACL-only, jamais de
+réécriture ; owner/SACL/héritées/tierces intacts). Store « dernier appliqué »
+(`C:\ProgramData\SambaEdu\Agent\fsacl-state.json`). Résolution SID par LSA sur le
+poste joint. Capacité de preuve : `program_files_browse_denied`.
+
+⚠️ **Résolution SID + jetons + poste joint au domaine = e2e MANUEL** (impossible
+à simuler hors lab). Les tests hôte (Go fake + PHPUnit sqlite) couvrent la
+convergence, la précédence, le store, les refus et le seed ; les DEUX faces
+métier (masquage + lancement) exigent un poste réel.
+
+### Scénario 36.1.1 — ⚠️ Publication AVANT armement (VM — ACTION HUMAINE Henri)
+
+Un binaire ≤ 2.5.0 IGNORE le type `fs_acl` EN SILENCE (contrat §8 — aucun statut,
+aucune erreur : « réglage sans effet »). L'ordre publication/migration n'est PAS
+critique ici (pas d'effet de bord inter-types, contrairement à HKU 35.3), MAIS
+sans publication la capacité est inerte.
+
+1. Publier la release agent **2.6.0** (build + `update.sh` de publication — jamais
+   automatique). Vérifier que le manifeste de release expose 2.6.0.
+2. Rejouer la migration de seed sur /vm : `php artisan migrate` (jamais
+   auto-appliquée — `php artisan migrate:status` d'abord). La capacité
+   `program_files_browse_denied` apparaît, `default_value = unmanaged` (inerte
+   tant qu'aucun override/valeur n'est armé).
+
+### Scénario 36.1.2 — Payload `/state` : item fs_acl en portée machine (curl VM)
+
+Armer la capacité (valeur `eleves` en broadcast OU override de parc), puis
+`curl` le `/state` du poste cible : la portée `machine` porte les items
+`{"type":"fs_acl","payload":{"path":"C:\\Program Files","trustee":"Eleves",
+"ace_type":"deny","rights":"list_folder","applies_to":"folder_only",
+"ensure":"present"}}` (2 chemins). Le `trustee` est un NOM (jamais un SID, jamais
+un jeton `@…` brut). Vérifier que `Program Files (x86)` est présent aussi.
+
+### Scénario 36.1.3 — LES DEUX FACES au poste joint (lab Windows — ACTION HUMAINE)
+
+Sur un poste joint au domaine, agent 2.6.0, capacité armée `eleves` :
+
+1. **Masquage** — se connecter en ÉLÈVE, ouvrir l'Explorateur sur
+   `C:\Program Files` : le contenu N'EST PLUS énumérable (accès refusé en
+   listing). Idem `C:\Program Files (x86)`.
+2. **Lancement PRÉSERVÉ** — toujours en élève, lancer une application installée
+   sous Program Files via son raccourci (l'exe se lance : traverse/execute
+   intact). L'appli se lance AUSSI pour un PROF (le deny ne vise que le trustee
+   `Eleves`).
+3. **Retrait propre** — basculer la valeur sur `off` (« Parcours autorisé ») :
+   au cycle suivant, les ACE gérées sont RETIRÉES, le parcours de Program Files
+   est restauré pour l'élève. ⚠️ Ne PAS utiliser « Non géré » (`unmanaged`) pour
+   retirer : la sentinelle cesse d'émettre l'item → l'ACE survivrait jusqu'à ce
+   qu'un autre item fs_acl déclenche la réconciliation d'orphelins.
+
+### Scénario 36.1.4 — Changement d'audience sans ACE orpheline (lab Windows)
+
+Capacité armée `eleves` (ACE deny Eleves posée), puis bascule vers `tous`
+(trustee `Domain Users`) : au cycle suivant, l'ACE Eleves (orpheline du store —
+identité différente) est RETIRÉE et l'ACE Domain Users posée. Vérifier dans
+l'onglet Sécurité qu'il ne reste PAS deux ACE deny cumulées de SambaEdu.
+
+### Scénario 36.1.5 — Défense en profondeur & refus (revue + lab)
+
+- Le `FsAclAuthoringGuard` refuse à l'authoring : deny sur SYSTEM/Administrators/
+  TrustedInstaller/Everyone/Authenticated Users ; deny à héritage descendant sur
+  `C:\`, `C:\Windows`, `C:\Program Files`, `C:\Program Files (x86)`,
+  `C:\ProgramData` ; enums hors domaine ; path non absolu ; jeton inconnu ; deny
+  sans warning. Le `deny list_folder folder_only` sur Program Files reste
+  AUTORISÉ (prouvé par test).
+- L'agent (défense en profondeur, INDÉPENDANT du serveur) refuse : deny sur SID
+  well-known système ⇒ erreur d'item ; chemin inexistant ⇒ erreur (jamais de
+  mkdir) ; trustee irrésoluble LSA ⇒ erreur. Les autres items convergent ;
+  l'erreur remonte (verdict `error` du type).
+- Policy STRICT : ACE gérée supprimée à la main ⇒ `drift` + re-pose au cycle.
+
+### Scénario 36.1.6 — Binaire antérieur silencieux (lab — régression)
+
+Sur un poste resté en 2.5.0, armer la capacité : AUCUN statut fs_acl au rapport,
+aucune erreur, aucune ACE posée (« réglage sans effet »). Confirme la nécessité
+de publier 2.6.0.
+
+### Checklist rapide (Story 36.1)
+
+- [ ] 36.1.1 — Release 2.6.0 publiée AVANT armement ; migration de seed rejouée
+      sur /vm (`migrate:status` d'abord).
+- [ ] 36.1.2 — `/state` porte les items fs_acl machine (trustee = NOM, 2 chemins).
+- [ ] 36.1.3 — Élève : Program Files non énumérable ET appli lançable ; prof :
+      appli lançable ; `off` restaure le parcours.
+- [ ] 36.1.4 — Changement d'audience : ancienne ACE retirée, pas de cumul.
+- [ ] 36.1.5 — Guard (Q2 + principals système) et refus agent (SID système /
+      chemin inexistant / trustee irrésoluble) ; STRICT re-drift.
+- [ ] 36.1.6 — Binaire 2.5.0 : type ignoré en silence.
+- [ ] Golden : `state.v1.json` +1 item fs_acl machine, `FROZEN_STATE_HASH` PHP =
+      `frozenStateHash` Go recalculés à l'identique ; `report.v1.json` INCHANGÉ.
+
+## Story 36.2 — Mécanisme `firewall` (règles pare-feu possédées par groupe)
+
+Deuxième mécanisme HORS-REGISTRE. Capacité de preuve `internet_access` (enum
+`unmanaged`/`on`/`off`). `off` ⇒ règle `block out internet any` dans le conteneur
+`SambaEdu-Agent`. **Publier la release 2.7.0 AVANT d'armer** (un binaire ≤ 2.6.0
+IGNORE le type EN SILENCE) — cette publication livre AUSSI la 2.6.0 fs_acl jamais
+publiée. Migration de seed **à rejouer sur /vm** (`migrate:status` d'abord).
+
+### Scénario 36.2.1 — Coupure Internet + LAN préservé (lab Windows, poste joint)
+
+1. Armer `internet_access = off` sur le parc de la salle d'examen. Au cycle
+   suivant : `wf.msc` montre la règle **`SambaEdu-Agent: internet-block`** (groupe
+   `SambaEdu-Agent`, direction sortante, action bloquer, portée = plages Internet).
+2. Depuis le poste : `ping 8.8.8.8` **KO**, HTTP externe **KO** (IPv4, et IPv6 si
+   le lab en a). `nslookup`/navigation Internet KO.
+3. **Le réseau local RESTE ouvert** : check-in agent OK (le poste rapporte), UI
+   SE5 joignable, partages SMB montés OK, DNS local (le DC) répond. C'est le cœur
+   de Q3 : couper Internet ne coupe JAMAIS le poste de son serveur.
+
+### Scénario 36.2.2 — Retour `on` sans reboot (lab)
+
+Basculer la valeur sur `on` (« Autorisé ») : au cycle suivant, la règle est
+RETIRÉE (même `rule_id` en `ensure:absent`), le groupe `SambaEdu-Agent` est VIDE,
+Internet est restauré **SANS reboot**. ⚠️ Ne PAS utiliser « Non géré »
+(`unmanaged`) pour rétablir : la sentinelle cesse d'émettre l'item → la règle
+`block` survivrait et la salle resterait coupée (le handler n'est plus invoqué).
+Remède manuel de secours : supprimer la règle du groupe `SambaEdu-Agent` dans
+`wf.msc`.
+
+### Scénario 36.2.3 — 2 cycles stables ⇒ zéro op (anti drift-loop, lab)
+
+Poste armé `off`, stable. Sur DEUX cycles consécutifs : verdict `compliant`,
+**zéro op** (aucune règle re-posée). Attrape toute normalisation d'écho imprévue
+(le service pare-feu relit un CIDR IPv4 en `adresse/masque` pointé ; la
+comparaison canonique par intervalles doit rendre les deux formes équivalentes).
+
+### Scénario 36.2.4 — Règle étrangère au groupe purgée (lab)
+
+Ajouter à la main une règle quelconque **dans le groupe `SambaEdu-Agent`** (le
+groupe nous appartient EN ENTIER, D4) : au cycle suivant, elle est SUPPRIMÉE
+(`drift` puis purge). À l'inverse, une règle **hors groupe** (Core Networking,
+règles Windows, applis tierces) n'est JAMAIS touchée. La politique par défaut et
+le service MpsSvc ne sont jamais modifiés.
+
+### Scénario 36.2.5 — Défense en profondeur & refus Q3 (revue + lab)
+
+- Le `FirewallAuthoringGuard` refuse à l'authoring : `block` `explicit` couvrant
+  RFC1918/loopback/link-local/ULA ou `/0` — par INTERSECTION mathématique
+  (`192.168.0.0/16`, `192.160.0.0/12`, `0.0.0.0/0`, `::/0` refusés) ; enums hors
+  domaine ; slug invalide ; `explicit` sans adresses / `internet` avec adresses ;
+  `ports` avec `any` ; port hors 1-65535 ; `block` sans warning. `block internet`
+  reste AUTORISÉ ; `block explicit` sur adresses PUBLIQUES aussi (échappatoire).
+- L'agent (défense en profondeur, INDÉPENDANT du serveur) applique les MÊMES
+  plages protégées dans `Test` ET `Apply` : un `block explicit` dangereux ⇒ erreur
+  d'item isolée (jamais posée), les autres items convergent.
+- **Garde-fou Q5 (`allow` entrant ouvert ⇒ `warning`, décision Henri)** : le
+  `FirewallAuthoringGuard` refuse à l'authoring une règle `action: allow` +
+  `direction: in` COUVRANT l'Internet ouvert (`remote_scope: internet`, ou
+  `explicit` englobant `0.0.0.0/0` / `::/0` — détecté par INTERSECTION, jamais
+  textuel) SANS `warning` non vide. Un `allow` entrant sur une plage ÉTROITE
+  (host public, /24 privé) ou un `allow out` ne sont PAS concernés. **SERVEUR-only
+  (asymétrie assumée vs le refus Q3 `block`)** : le `warning` est une métadonnée
+  d'authoring qui n'atteint jamais le payload (invariant 27.12) — l'agent ne le
+  voit pas, donc un refus agent miroir est INEXPRIMABLE (il casserait les `allow`
+  ouverts légitimes, ceux qui ONT un warning authoré). Le refus Q3 `block`, lui,
+  reste duplicable côté agent car il ne dépend QUE des adresses du payload.
+
+### Scénario 36.2.6 — Binaire antérieur silencieux (lab — régression)
+
+Sur un poste resté en ≤ 2.6.0, armer `internet_access = off` : AUCUN statut
+firewall au rapport, aucune règle posée, Internet toujours accessible (« salle
+coupée sans effet »). Confirme la nécessité de publier 2.7.0.
+
+### Note IPv6 lab
+
+Si le lab n'a pas d'IPv6, le volet IPv6 de la traduction `internet` (`2000::/3`)
+reste validé par le test Go (`TestFirewallInternetTranslationIsFrozen`, chaîne
+EXACTE) : le poste posera quand même la plage IPv6, inerte faute de trafic v6.
+
+### Checklist rapide (Story 36.2)
+
+- [ ] 36.2.0 — Release 2.7.0 publiée AVANT armement (livre AUSSI 2.6.0 fs_acl) ;
+      migration de seed rejouée sur /vm (`migrate:status` d'abord).
+- [ ] 36.2.1 — `off` : ping/HTTP externes KO (IPv4, IPv6 si dispo) ; check-in +
+      SE5 + partages SMB + DNS local OK ; `wf.msc` montre `SambaEdu-Agent:
+      internet-block`.
+- [ ] 36.2.2 — Retour `on` : Internet restauré SANS reboot, groupe vide ; jamais
+      via `unmanaged`.
+- [ ] 36.2.3 — 2 cycles stables ⇒ `compliant`, zéro op (écho normalisé).
+- [ ] 36.2.4 — Règle étrangère AU groupe purgée ; règles hors groupe + politique
+      par défaut + service intacts.
+- [ ] 36.2.5 — Guard Q3 (intersection) + refus agent Test/Apply ; block internet
+      et block explicit public autorisés. Guard Q5 : `allow in` ouvert sur
+      Internet (internet ou explicit englobant /0) sans warning REFUSÉ (SERVEUR-only,
+      pas de miroir agent) ; allow in étroit + allow out non concernés.
+- [ ] 36.2.6 — Binaire ≤ 2.6.0 : type ignoré en silence.
+- [ ] Golden : `state.v1.json` +1 item firewall machine, `FROZEN_STATE_HASH` PHP =
+      `frozenStateHash` Go recalculés à l'identique ; `report.v1.json` INCHANGÉ.
+## Story 36.4 — Règles d'accès aux dossiers (formulaire, D8)
+
+Seconde surface d'authoring du mécanisme `fs_acl` (36.1) : le référent numérique
+crée des règles « interdire/autoriser CE dossier à CE groupe » via un formulaire
+100 % métier (`/app/folder-rules`). AUCUN changement agent/contrat/golden (la
+release 2.6.0 de 36.1 porte déjà le handler). Provider `fs_acl` **bi-alimenté**
+(capacités + règles, UN seul provider compilé — arbitrage règle↔capacité par le
+compilateur).
+
+### Prérequis d'exploitation (/vm, AVANT le lab)
+
+- **Migrations à rejouer** (`migrate:status` d'abord — mémoire
+  `vm_migrations_not_auto_applied`) : `folder_access_rules` +
+  `folder_access_rule_assignables` + `folder_access_rule_audit_logs`.
+- **Reseed `PermissionSeeder`** sur /vm (sinon **403 même pour un refnum** : les
+  permissions `folderrule.view`/`folderrule.manage` n'existent pas). Le refnum et
+  l'admin machines les reçoivent ; superadmin auto.
+- **`route:cache`** après ajout des routes réelles `/app/folder-rules[/{id}]`
+  (mémoire `route_cache_vm_ephemeral_test_routes`).
+- **AUCUNE publication agent** (2.6.0 de 36.1 suffit) — MAIS sans release 2.6.0
+  publiée, les items `fs_acl` sont ignorés EN SILENCE par un binaire ≤ 2.5.0.
+
+### Scénario 36.4.1 — Règle deny sur un dossier arbitraire (lab, poste joint)
+
+1. En UI, créer une règle « Interdire » sur `D:\Ressources` (niveau Parcourir,
+   portée « Ce dossier seul ») pour un GROUPE RÉEL (une classe). Acquitter
+   l'encart d'implications (obligatoire pour un deny).
+2. Sur la page de la règle, assigner le PARC du poste de test, puis activer.
+3. Sur un poste joint au domaine, au prochain cycle : l'Explorateur REFUSE
+   l'ouverture de `D:\Ressources` à un MEMBRE du groupe ; l'accès reste INTACT
+   pour les autres (un prof, un autre élève hors groupe).
+4. Vérifier au passage la **résolution du trustee dérivé (D9)** : le payload
+   `trustee` doit être le CN AD du groupe (`Classe_<nom>`), PAS le nom nu folded —
+   sinon l'agent tombe en erreur d'item tracée (jamais silencieux).
+
+### Scénario 36.4.2 — Off réel puis suppression (retrait honnête, D3)
+
+1. **Désactiver** la règle (bouton « Désactiver ») : au prochain cycle, l'ACE est
+   RETIRÉE (la règle émet toujours ses items, en `ensure:absent`) — l'accès est
+   restauré. Ce n'est PAS un simple oubli : le type reste dans le state, le
+   handler retire proprement.
+2. La suppression d'une règle ACTIVE est REFUSÉE (toast : « Désactivez d'abord la
+   règle… »). Une fois INACTIVE, la règle est supprimable (cascade pivot).
+
+### Scénario 36.4.3 — Recouvrement de capacité (avertissement non bloquant)
+
+Créer une règle dont l'identité `{path|trustee|ace_type}` recouvre une capacité
+catalogue ACTIVE (ex. `program_files_browse_denied` avec `@eleves`) : un
+`toastWarning` NON bloquant nomme la capacité. La création reste possible ; en cas
+de conflit réel, la maille la plus spécifique / la plus récente gagne (arbitrage
+compilateur, un seul provider).
+
+### Scénario 36.4.4 — Délégation scopée par parc (anti-piège Gate global)
+
+Un délégué disposant de `folderrule.manage` UNIQUEMENT sur le parc A (délégation
+positive scopée, sans droit global) : il PEUT assigner le parc A à une règle, mais
+l'assignation du parc B est REFUSÉE (`canOnWorkstationGroup` par parc) ; le picker
+de parcs ne propose que ses parcs autorisés. L'admin global voit tout. Chaque
+create/update/delete (activation/désactivation et (dé)assignation comprises) écrit
+une ligne d'audit append-only (`folder_access_rule_audit_logs`) avec acteur +
+snapshots.
+
+### Checklist rapide (Story 36.4)
+
+- [ ] 36.4.1 — Migrations + `PermissionSeeder` rejoués + `route:cache` sur /vm.
+- [ ] 36.4.2 — Règle deny sur `D:\Ressources` pour une classe → Explorer refuse
+      au membre, intact pour les autres ; trustee = CN AD (pas nom nu).
+- [ ] 36.4.3 — Désactivation → ACE retirée (off réel) ; suppression active
+      refusée, inactive OK.
+- [ ] 36.4.4 — Recouvrement capacité → toastWarning ; groupe sans ad_dn →
+      avertissement.
+- [ ] 36.4.5 — Délégation scopée : parc A OK, parc B refusé ; audit tracé.
+- [ ] Golden : `FROZEN_STATE_HASH` INCHANGÉ (aucune règle en base = byte-identité).

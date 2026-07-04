@@ -146,7 +146,38 @@ class ContractV1Test extends TestCase
     // changement d'ingestion. machine = 5 items, 13 items au total, hash
     // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
     // même valeur (test croisé NFR13).
-    private const FROZEN_STATE_HASH = 'fe8eb6eae22994ed2e35c45a726d9b53c5a562fca34fedbf63aebd25ba43fb44';
+    //
+    // Re-bumpé SCIEMMENT par la Story 36.1 (évolution MINEURE du contrat, §9) :
+    // NOUVEAU type `fs_acl` (D1, mécanisme HORS-REGISTRE — ACE NTFS gérées,
+    // chirurgie DACL, portée Machine) — le golden gagne UN item en portée
+    // `machine` (`deny list_folder folder_only` sur `C:\Program Files` pour le
+    // trustee `Eleves`, payload EXACTEMENT 6 clés `{path, trustee, ace_type,
+    // rights, applies_to, ensure}` — enums fermés de mots métier, aucun masque
+    // brut ni SDDL). Type AJOUTÉ (constante RESOURCE_TYPES additive) =
+    // forward-compatible, pas un major : un agent ≤ 2.5.0 IGNORE le type EN
+    // SILENCE (§8 — aucun statut au rapport), d'où publication de release 2.6.0
+    // obligatoire. `report.v1.json` est INCHANGÉ : les items de rapport
+    // `{type, status, hash[, detail]}` ne portent aucun payload et le nouveau
+    // type entre dans ReportRequest via Rule::in(RESOURCE_TYPES). machine = 6
+    // items, 14 items au total, hash d'état RECALCULÉ. Le jumeau Go
+    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
+    //
+    // Re-bumpé SCIEMMENT par la Story 36.2 (évolution MINEURE du contrat, §9) :
+    // NOUVEAU type `firewall` (D1, mécanisme HORS-REGISTRE — règles pare-feu
+    // possédées par groupe, portée Machine) — le golden gagne UN item en portée
+    // `machine` (`internet-block` : `out block internet any present`, payload
+    // EXACTEMENT 6 clés `{rule_id, direction, action, remote_scope, protocol,
+    // ensure}` — enums fermés de mots métier, aucune syntaxe netsh/SDDL, pas de
+    // `remote_addresses`/`ports` ici). Type AJOUTÉ (constante RESOURCE_TYPES
+    // additive) = forward-compatible, pas un major : un agent ≤ 2.6.0 IGNORE le
+    // type EN SILENCE (§8 — aucun statut au rapport), d'où publication de release
+    // 2.7.0 obligatoire (qui livre AUSSI la 2.6.0 fs_acl jamais publiée).
+    // `report.v1.json` est INCHANGÉ : les items de rapport
+    // `{type, status, hash[, detail]}` ne portent aucun payload et le nouveau
+    // type entre dans ReportRequest via Rule::in(RESOURCE_TYPES). machine = 7
+    // items, 15 items au total, hash d'état RECALCULÉ. Le jumeau Go
+    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
+    private const FROZEN_STATE_HASH = '76f6d9acb82b4d16c13cb87d5a10b0066e4da3f9b376750b9ad19b8cd8fb7d9b';
 
     private StateHasher $hasher;
 

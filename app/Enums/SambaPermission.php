@@ -54,6 +54,27 @@ enum SambaPermission: string
      */
     case NetworkShareManage = 'networkshare.manage';
 
+    // Règles d'accès aux dossiers (story 36.4 — feature à formulaire du mécanisme fs_acl)
+    /**
+     * Story 36.4 (D6) — consultation des règles d'accès aux dossiers
+     * (`folder_access_rules`) : page liste `/app/folder-rules`, ouverture en
+     * lecture. Permission DÉDIÉE (module SE5-natif, aucune GPO/bit legacy) —
+     * accordée au Référent Numérique et au ComputerAdmin.
+     */
+    case FolderRuleView = 'folderrule.view';
+    /**
+     * Story 36.4 (D6) — gestion des règles d'accès aux dossiers : création,
+     * édition, activation/désactivation, assignation par parc, suppression.
+     * Permission DÉDIÉE. Comme `NetworkShareManage`, marquée
+     * `isSecondaryBitPermission()` : elle pointe le bit représentatif
+     * `SE_SHARE_REFRESH` UNIQUEMENT pour satisfaire le `match` exhaustif, mais
+     * n'est JAMAIS auto-attribuée par un import bitmask (octroi explicite par
+     * seeder/rôle). Le contrôle PAR PARC (délégation scopée) est porté par le
+     * service via `PermissionService::canOnWorkstationGroup` (anti-piège Gate
+     * global non scopé).
+     */
+    case FolderRuleManage = 'folderrule.manage';
+
     // Machines
     case ComputerView = 'computer.view';
     case ComputerControl = 'computer.control';
@@ -114,6 +135,12 @@ enum SambaPermission: string
             // (jamais sur-attribuées par un import LDAP).
             self::NetworkShareView => LegacyRight::ShareRefresh,
             self::NetworkShareManage => LegacyRight::ShareRefresh,
+            // Story 36.4 — module SE5-natif sans bit legacy dédié. On pointe le
+            // bit représentatif `SE_SHARE_REFRESH` UNIQUEMENT pour satisfaire le
+            // `match` exhaustif ; les deux permissions `folderrule.*` sont
+            // `isSecondaryBitPermission()` donc exclues des conversions bitmask.
+            self::FolderRuleView => LegacyRight::ShareRefresh,
+            self::FolderRuleManage => LegacyRight::ShareRefresh,
             self::ComputerView => LegacyRight::ComputerView,
             self::ComputerControl => LegacyRight::ComputerControl,
             self::ComputerElevate => LegacyRight::ComputerElevate,
@@ -166,6 +193,8 @@ enum SambaPermission: string
             self::ShareManage => 'Gérer les partages de classe (ACLs POSIX)',
             self::NetworkShareView => 'Voir les lecteurs réseau gérés',
             self::NetworkShareManage => 'Gérer les lecteurs réseau gérés',
+            self::FolderRuleView => 'Voir les règles d\'accès aux dossiers',
+            self::FolderRuleManage => 'Gérer les règles d\'accès aux dossiers',
             self::ComputerView => 'Voir les machines',
             self::ComputerControl => 'Contrôle à distance',
             self::ComputerElevate => 'Admin de poste',
@@ -187,6 +216,7 @@ enum SambaPermission: string
             self::UserCreateTemp, self::UserAssignRight, self::UserDelegate => 'user',
             self::ShareView, self::ShareRefresh, self::ShareManage => 'share',
             self::NetworkShareView, self::NetworkShareManage => 'network-share',
+            self::FolderRuleView, self::FolderRuleManage => 'folder-rule',
             self::ComputerView, self::ComputerControl,
             self::ComputerElevate, self::ComputerInstall,
             self::ComputerRemoteRdp => 'computer',
@@ -203,6 +233,7 @@ enum SambaPermission: string
             'user' => 'Utilisateurs',
             'share' => 'Partages',
             'network-share' => 'Lecteurs réseau gérés',
+            'folder-rule' => 'Règles d\'accès aux dossiers',
             'computer' => 'Machines',
             'wpkg' => 'Applications WPKG',
             'server' => 'Serveur',
@@ -249,7 +280,12 @@ enum SambaPermission: string
             // bit représentatif `SE_SHARE_REFRESH` mais sont exclues des imports
             // bitmask (octroi explicite par rôle seulement).
             || $this === self::NetworkShareView
-            || $this === self::NetworkShareManage;
+            || $this === self::NetworkShareManage
+            // Story 36.4 — permissions SE5-natives sans bit legacy : partagent le
+            // bit représentatif `SE_SHARE_REFRESH` mais sont exclues des imports
+            // bitmask (octroi explicite par rôle seulement).
+            || $this === self::FolderRuleView
+            || $this === self::FolderRuleManage;
     }
 
     /**

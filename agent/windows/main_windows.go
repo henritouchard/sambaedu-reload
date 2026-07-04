@@ -233,6 +233,32 @@ func newAgent(echo bool) *shared.Agent {
 					Ops: &applicationsOps{log: logger, store: store},
 					Log: logger,
 				},
+				// Story 36.1 — fs_acl (exclusive PAR ACE / scope MACHINE) : le
+				// SERVICE SYSTEM converge les ACE NTFS gérées (chirurgie DACL —
+				// merge SetNamedSecurityInfo DACL-only, jamais de réécriture ;
+				// owner/SACL/héritées/tierces intacts, D4). Le store « dernier
+				// appliqué » (fsacl-state.json) est la SEULE mémoire des ACE
+				// posées (aucune orpheline au changement de valeur). Résolution
+				// SID par LSA sur le poste joint (D5) ; refus deny système en
+				// défense en profondeur (piège #8). SYSTEM UNIQUEMENT (jamais
+				// companion_windows.go).
+				"fs_acl": &shared.FsAclHandler{
+					Ops:       &fsAclOps{log: logger},
+					StatePath: store.FsAclStatePath(),
+					Log:       logger,
+				},
+				// Story 36.2 — firewall (exclusive PAR rule_id / scope MACHINE) :
+				// le SERVICE SYSTEM converge les règles pare-feu POSSÉDÉES PAR
+				// GROUPE (`SambaEdu-Agent`, réconciliation par conteneur — le champ
+				// Grouping EST le marqueur, PAS de store). Les règles hors groupe,
+				// la politique par défaut et le service MpsSvc ne sont JAMAIS
+				// touchés (FirewallOps 3 ops). Refus Q3 en défense en profondeur
+				// (block couvrant le LAN interdit). Impl COM natif INetFwPolicy2
+				// (netsh ne sait pas poser le Grouping). SYSTEM UNIQUEMENT.
+				"firewall": &shared.FirewallHandler{
+					Ops: &firewallOps{log: logger},
+					Log: logger,
+				},
 			},
 			Log: logger,
 		},

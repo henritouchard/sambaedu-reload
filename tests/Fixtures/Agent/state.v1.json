@@ -61,6 +61,32 @@
                 ]
             },
             "hash": "e0a9c51ec51ec3ed14ae76c542e3957e3e5aae20e55efdd0234c72a60e9b0759"
+        },
+        {
+            "type": "fs_acl",
+            "semantics": "exclusive",
+            "payload": {
+                "path": "C:\\Program Files",
+                "trustee": "Eleves",
+                "ace_type": "deny",
+                "rights": "list_folder",
+                "applies_to": "folder_only",
+                "ensure": "present"
+            },
+            "hash": "a8f1c92bd6e067a7f5c817047552b6d1dec1e1ba8fb29e4e0677aa45ab7df0e9"
+        },
+        {
+            "type": "firewall",
+            "semantics": "exclusive",
+            "payload": {
+                "rule_id": "internet-block",
+                "direction": "out",
+                "action": "block",
+                "remote_scope": "internet",
+                "protocol": "any",
+                "ensure": "present"
+            },
+            "hash": "4851bc92aaf16cd71a5e0d595a0f7cad3e0fa77faba420adeed18044cf19afdc"
         }
     ],
     "session": [

@@ -93,7 +93,28 @@ import (
 // ne portent aucun payload). machine = 5, 13 items au total, hash d'état
 // RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH —
 // test croisé NFR13).
-const frozenStateHash = "fe8eb6eae22994ed2e35c45a726d9b53c5a562fca34fedbf63aebd25ba43fb44"
+// Re-bumpé SCIEMMENT par la Story 36.1 (§9) : NOUVEAU type `fs_acl` (D1,
+// mécanisme HORS-REGISTRE — ACE NTFS gérées, chirurgie DACL, portée MACHINE) —
+// le golden gagne UN item en portée MACHINE (`deny list_folder folder_only` sur
+// `C:\Program Files` pour le trustee `Eleves`, payload EXACTEMENT 6 clés
+// `{path, trustee, ace_type, rights, applies_to, ensure}` — enums fermés de
+// mots métier, aucun masque brut ni SDDL). Type AJOUTÉ (ResourceTypes additive)
+// = forward-compatible, pas un major : un agent ≤ 2.5.0 IGNORE le type EN
+// SILENCE (§8, aucun statut au rapport) → publication de release 2.6.0
+// obligatoire. `report.v1.json` INCHANGÉ. machine = 6, 14 items au total, hash
+// d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (test croisé NFR13).
+// Re-bumpé SCIEMMENT par la Story 36.2 (§9) : NOUVEAU type `firewall` (D1,
+// mécanisme HORS-REGISTRE — règles pare-feu possédées par groupe, portée
+// MACHINE) — le golden gagne UN item en portée MACHINE (`internet-block` :
+// `out block internet any present`, payload EXACTEMENT 6 clés `{rule_id,
+// direction, action, remote_scope, protocol, ensure}` — enums fermés de mots
+// métier, aucune syntaxe netsh/SDDL). Type AJOUTÉ (ResourceTypes additive) =
+// forward-compatible, pas un major : un agent ≤ 2.6.0 IGNORE le type EN SILENCE
+// (§8, aucun statut au rapport) → publication de release 2.7.0 obligatoire
+// (livre AUSSI la 2.6.0 fs_acl). `report.v1.json` INCHANGÉ. machine = 7, 15
+// items au total, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (test
+// croisé NFR13).
+const frozenStateHash = "76f6d9acb82b4d16c13cb87d5a10b0066e4da3f9b376750b9ad19b8cd8fb7d9b"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -197,8 +218,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 13 {
-		t.Errorf("13 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2), %d vérifiés", checked)
+	if checked != 15 {
+		t.Errorf("15 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2 + fs_acl machine 36.1 + firewall machine 36.2), %d vérifiés", checked)
 	}
 }
 
@@ -238,6 +259,81 @@ func TestHashItemEnsureFieldChangesTheHash(t *testing.T) {
 	if a == b {
 		t.Errorf("deux items qui ne diffèrent que par `ensure` doivent avoir des hashes DISTINCTS (got %s)", a)
 	}
+}
+
+// --- Champ `fs_acl` (Story 36.1) : ensure ET trustee entrent dans le hash ----
+//
+// AUCUNE modification du hasher : la canonicalisation générique intègre
+// naturellement le payload 6 clés. Jumeaux des tests PHP (StateHasherTest).
+func TestHashItemFsAclEnsureAndTrusteeChangeTheHash(t *testing.T) {
+	present := decodeMap(t, []byte(`{"type":"fs_acl","semantics":"exclusive","payload":{"path":"C:\\Program Files","trustee":"Eleves","ace_type":"deny","rights":"list_folder","applies_to":"folder_only","ensure":"present"}}`))
+	absent := decodeMap(t, []byte(`{"type":"fs_acl","semantics":"exclusive","payload":{"path":"C:\\Program Files","trustee":"Eleves","ace_type":"deny","rights":"list_folder","applies_to":"folder_only","ensure":"absent"}}`))
+	otherTrustee := decodeMap(t, []byte(`{"type":"fs_acl","semantics":"exclusive","payload":{"path":"C:\\Program Files","trustee":"Domain Users","ace_type":"deny","rights":"list_folder","applies_to":"folder_only","ensure":"present"}}`))
+
+	hPresent, err := HashItem(present)
+	if err != nil {
+		t.Fatalf("HashItem : %v", err)
+	}
+	hAbsent, err := HashItem(absent)
+	if err != nil {
+		t.Fatalf("HashItem : %v", err)
+	}
+	hTrustee, err := HashItem(otherTrustee)
+	if err != nil {
+		t.Fatalf("HashItem : %v", err)
+	}
+	if hPresent == hAbsent {
+		t.Errorf("deux items fs_acl qui ne diffèrent que par `ensure` doivent avoir des hashes DISTINCTS (got %s)", hPresent)
+	}
+	if hPresent == hTrustee {
+		t.Errorf("deux items fs_acl qui ne diffèrent que par `trustee` doivent avoir des hashes DISTINCTS (got %s)", hPresent)
+	}
+	// Le golden item (Eleves/present) porte bien le hash figé du golden.
+	if hPresent != "a8f1c92bd6e067a7f5c817047552b6d1dec1e1ba8fb29e4e0677aa45ab7df0e9" {
+		t.Errorf("hash de l'item fs_acl golden divergent du StateHasher PHP : got %s", hPresent)
+	}
+}
+
+// --- Payload `firewall` (Story 36.2) : ensure/rule_id + clés optionnelles -----
+//
+// AUCUNE modification du hasher : la canonicalisation générique intègre
+// naturellement le payload (6 clés + optionnelles). Jumeaux des tests PHP.
+func TestHashItemFirewallCanonicalization(t *testing.T) {
+	base := `{"type":"firewall","semantics":"exclusive","payload":{"rule_id":"internet-block","direction":"out","action":"block","remote_scope":"internet","protocol":"any","ensure":"present"}}`
+	absent := `{"type":"firewall","semantics":"exclusive","payload":{"rule_id":"internet-block","direction":"out","action":"block","remote_scope":"internet","protocol":"any","ensure":"absent"}}`
+	otherID := `{"type":"firewall","semantics":"exclusive","payload":{"rule_id":"other","direction":"out","action":"block","remote_scope":"internet","protocol":"any","ensure":"present"}}`
+	// Même règle mais explicit + ports : les clés optionnelles entrent au canon.
+	withOpt := `{"type":"firewall","semantics":"exclusive","payload":{"rule_id":"internet-block","direction":"out","action":"block","remote_scope":"explicit","protocol":"tcp","remote_addresses":["8.8.8.8"],"ports":["443"],"ensure":"present"}}`
+
+	hBase := fwHashOf(t, base)
+	hAbsent := fwHashOf(t, absent)
+	hID := fwHashOf(t, otherID)
+	hOpt := fwHashOf(t, withOpt)
+
+	if hBase == hAbsent {
+		t.Errorf("deux items firewall qui ne diffèrent que par `ensure` doivent avoir des hashes DISTINCTS (got %s)", hBase)
+	}
+	if hBase == hID {
+		t.Errorf("deux items firewall qui ne diffèrent que par `rule_id` doivent avoir des hashes DISTINCTS (got %s)", hBase)
+	}
+	if hBase == hOpt {
+		t.Errorf("un item firewall AVEC remote_addresses/ports doit hasher différemment du même sans (got %s)", hBase)
+	}
+	// Le golden item porte bien le hash figé du golden.
+	if hBase != "4851bc92aaf16cd71a5e0d595a0f7cad3e0fa77faba420adeed18044cf19afdc" {
+		t.Errorf("hash de l'item firewall golden divergent du StateHasher PHP : got %s", hBase)
+	}
+}
+
+func fwHashOf(t *testing.T, raw string) string {
+	t.Helper()
+	item := decodeMap(t, []byte(raw))
+	h, err := HashItem(item)
+	if err != nil {
+		t.Fatalf("HashItem : %v", err)
+	}
+
+	return h
 }
 
 func TestHashItemWriteItemWithoutEnsureKeepsPreStoryHash(t *testing.T) {

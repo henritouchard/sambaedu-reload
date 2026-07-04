@@ -238,7 +238,8 @@ Identifiants prévus :
 
 `wallpaper`, `lockscreen`, `overlay`, `shortcuts`, `printers`, `drives`,
 `associations`, `registry`, `app_config`, `applications`, `registry_list`
-(Story 35.2, cf. §7.6).
+(Story 35.2, cf. §7.6), `fs_acl` (Story 36.1, cf. §7.7), `firewall`
+(Story 36.2, cf. §7.8).
 
 ### 7.1 Payload `registry`
 
@@ -660,6 +661,204 @@ capacité, zéro float (§4.1) :
 > sans effet, zéro erreur » → la release 2.4.0 DOIT être publiée (update.sh ne
 > publie jamais seul).
 
+### 7.7 Payload `fs_acl`
+
+Type `fs_acl` (Story 36.1) — **ACE NTFS gérées** sur le poste, PREMIER mécanisme
+HORS-REGISTRE de la bibliothèque de capacités. La demande fondatrice « masquer
+Program Files aux élèves sans casser le lancement des applications » se projette
+sur UNE ACE `deny list_folder folder_only` : l'Explorateur ne peut plus
+ÉNUMÉRER le dossier, mais le traverse/execute reste intact → les raccourcis vers
+des exe sous Program Files se lancent toujours. Sémantique **`exclusive` PAR
+ACE** : la maille la plus spécifique gagne CETTE ACE (identité
+`{path, trustee, ace_type}`), les ACE distinctes s'accumulent. Portée **`machine`
+UNIQUEMENT** (le service SYSTEM est le seul acteur des ACE NTFS ; le compagnon
+n'a pas les droits, et le type n'existe pas côté session).
+
+```json
+{
+  "type": "fs_acl",
+  "semantics": "exclusive",
+  "payload": {
+    "path": "C:\\Program Files",
+    "trustee": "Eleves",
+    "ace_type": "deny",
+    "rights": "list_folder",
+    "applies_to": "folder_only",
+    "ensure": "present"
+  },
+  "hash": "a8f1c92b…ab7df0e9"
+}
+```
+
+Le payload porte **EXACTEMENT 6 clés** — enums fermés de **mots métier**, AUCUN
+masque brut ni SDDL, jamais d'id de capacité, zéro float (§4.1) :
+
+| Clé | Type JSON | Sens |
+|---|---|---|
+| `path` | string | Chemin Windows absolu (`<lettre>:\…`) du dossier ciblé. |
+| `trustee` | string | **NOM** du principal (`Eleves`, `Domain Users`, `DOMAINE\Profs`). Le serveur n'émet QUE des noms ; la résolution en SID est **côté POSTE** (LSA `LookupAccountName`, D5) — zéro SID en SQL. Un jeton d'audience serveur (`@eleves`/`@profs`/`@personnels`) est déjà résolu en nom conventionnel côté serveur (jamais transporté brut). |
+| `ace_type` | string | `allow` \| `deny`. |
+| `rights` | string | `list_folder` \| `read` \| `write` \| `modify` (mots métier). |
+| `applies_to` | string | `folder_only` \| `folder_subfolders_files` \| `subfolders_files_only`. |
+| `ensure` | string | `present` \| `absent`. **TOUJOURS émis** (forme unique — contrairement à `registry` où `ensure` est optionnel). `absent` = l'agent RETIRE l'ACE gérée si présente (déjà absente = idempotent) ; l'item `absent` garde `rights`/`applies_to` (ils décrivent l'ACE exacte à retirer). |
+
+**Table de traduction (indicative — la traduction vit dans le HANDLER, masques
+SPÉCIFIQUES uniquement, jamais GENERIC_\* qui seraient remappés à l'écriture) :**
+
+| `rights` | masque d'accès |
+|---|---|
+| `list_folder` | `FILE_LIST_DIRECTORY` (0x1) SEUL — c'est CE qui « masque sans casser » (traverse/execute/read intacts). |
+| `read` | `FILE_GENERIC_READ` (0x120089). |
+| `write` | `FILE_GENERIC_WRITE` (0x120116). |
+| `modify` | `READ\|WRITE\|EXECUTE\|DELETE` (0x1301BF — le « Modification » de l'onglet Sécurité). |
+
+| `applies_to` | flags d'héritage |
+|---|---|
+| `folder_only` | 0 |
+| `folder_subfolders_files` | `CONTAINER_INHERIT \| OBJECT_INHERIT` (0x3) |
+| `subfolders_files_only` | `… \| INHERIT_ONLY` (0xB) |
+
+**Propriété CHIRURGICALE (D4).** Une ACE NTFS ne porte AUCUN marqueur de
+propriété. L'agent possède SES ACE explicites IDENTIFIÉES PAR UN STORE « dernier
+appliqué » (`C:\ProgramData\SambaEdu\Agent\fsacl-state.json`, écriture atomique)
+— jamais la DACL, jamais l'owner/SACL, jamais les ACE héritées ou tierces.
+`Apply` ajoute par MERGE (`SetEntriesInAcl` + `SetNamedSecurityInfo`
+DACL-only, SANS `PROTECTED_DACL_SECURITY_INFORMATION`) et retire en
+reconstruisant la DACL MOINS l'ACE exactement égale — la DACL n'est **JAMAIS
+réécrite en bloc**.
+
+**Fenêtres d'orphelin & retrait propre (piège #3).** Le type ABSENT du state ⇒
+le handler n'est jamais invoqué (§8 : engine itère les types présents) : une ACE
+gérée survivrait si l'item disparaissait. Le retrait PROPRE passe donc par un
+`off` réel (items `ensure:absent`), **JAMAIS** par « cesser de gérer »
+(sentinelle `unmanaged` côté serveur). Quand une valeur change (trustee A → B,
+identités différentes), le store est la seule mémoire qui dit « l'ACE A est à
+nous » : la réconciliation retire l'ancienne PUIS pose la nouvelle (zéro
+orpheline).
+
+**Refus agent = défense en profondeur (INDÉPENDANT du serveur).** Après
+résolution LSA : un `deny` dont le SID est well-known système (`S-1-1-0`
+Everyone, `S-1-5-11` Authenticated Users, `S-1-5-18/19/20`, préfixe `S-1-5-32-`
+BUILTIN dont Administrators, préfixe `S-1-5-80-` comptes de service dont
+TrustedInstaller) ⇒ **erreur d'item** ; chemin **INEXISTANT** ⇒ erreur d'item
+(JAMAIS de création de dossier) ; trustee irrésoluble via LSA ⇒ erreur d'item.
+Les AUTRES items convergent ; l'erreur remonte TOUJOURS (verdict `error` du type,
+jamais d'application partielle silencieuse). Policy **STRICT** (§5) : ACE gérée
+supprimée à la main ⇒ `drift` + re-pose au cycle.
+
+**Pas de ciblage par utilisateur.** Portée machine ⇒ le service SYSTEM fetch sans
+`?user` : un override UserGroup/User d'une capacité `fs_acl` est SANS EFFET.
+« Quel utilisateur est bridé » = le `trustee` DANS le payload ; « quels postes »
+= les assignations parc/salle/poste/broadcast.
+
+> **Agents antérieurs à 2.6.0** : le type `fs_acl` est **ignoré EN SILENCE**
+> (§8 — aucun statut, aucune erreur). Symptôme « réglage sans effet ». La release
+> 2.6.0 DOIT être publiée manuellement (update.sh ne publie jamais seul).
+
+### 7.8 Payload `firewall`
+
+Type `firewall` (Story 36.2) — **règles pare-feu Windows POSSÉDÉES PAR GROUPE**,
+DEUXIÈME mécanisme HORS-REGISTRE. La demande fondatrice « couper l'accès Internet
+d'un parc de postes (salle d'examen) en gardant le réseau local » se projette sur
+UNE règle `block out internet any` dans le conteneur `SambaEdu-Agent`. Sémantique
+**`exclusive` PAR `rule_id`** : la maille la plus spécifique gagne CETTE règle,
+les `rule_id` distincts s'accumulent dans le groupe. Portée **`machine`
+UNIQUEMENT** (le service SYSTEM est le seul acteur ; le pare-feu par-utilisateur
+n'existe pas — Q4).
+
+```json
+{
+  "type": "firewall",
+  "semantics": "exclusive",
+  "payload": {
+    "rule_id": "internet-block",
+    "direction": "out",
+    "action": "block",
+    "remote_scope": "internet",
+    "protocol": "any",
+    "ensure": "present"
+  },
+  "hash": "4851bc92…cf19afdc"
+}
+```
+
+Le payload porte **6 clés** (+ 2 conditionnelles) — enums fermés de **mots
+métier**, AUCUNE syntaxe netsh/SDDL, jamais d'id de capacité, zéro float (§4.1) :
+
+| Clé | Type JSON | Sens |
+|---|---|---|
+| `rule_id` | string | Slug d'identité `^[a-z0-9][a-z0-9_-]{0,63}$`. **Identité GLOBALE inter-capacités** : deux capacités émettant le même `rule_id` collisionnent au compilateur (la plus spécifique gagne LA règle). Le nom de règle Windows en est dérivé : `SambaEdu-Agent: <rule_id>`. |
+| `direction` | string | `in` \| `out`. |
+| `action` | string | `allow` \| `block`. |
+| `remote_scope` | string | `internet` (plages figées côté handler, cf. ci-dessous) \| `explicit` (adresses fournies). |
+| `protocol` | string | `any` \| `tcp` \| `udp`. |
+| `ensure` | string | `present` \| `absent`. **TOUJOURS émis** (écart assumé vs epic — cf. ci-dessous). `absent` = l'agent RETIRE la règle du groupe si présente. |
+| `remote_addresses` | list&lt;string&gt; | **Présent SSI `explicit`** (et non vide). Chaque entrée = IP littérale OU CIDR `addr/n` (IPv4 ou IPv6), jamais un mot-clé Windows (`LocalSubnet`) ni une plage `a-b`. |
+| `ports` | list&lt;string&gt; | **Présent SSI `protocol ∈ tcp\|udp`** et des ports sont ciblés. Chaque entrée = `"N"` ou `"N-M"` (1-65535, N ≤ M). Sémantique : ports **DISTANTS** pour `out`, **LOCAUX** pour `in`. `protocol: any` ⇒ `ports` INTERDIT. |
+
+**Traduction `internet` (indicative — FIGÉE dans le HANDLER, D6).** « Internet » =
+le complément des plages non routables/privées. Le serveur n'émet JAMAIS ces
+plages (il émet `remote_scope: "internet"`) ; le handler les matérialise :
+
+| famille | `RemoteAddresses` |
+|---|---|
+| IPv4 (plages `a-b`, stables à l'écho Windows) | `1.0.0.0-9.255.255.255`, `11.0.0.0-126.255.255.255`, `128.0.0.0-169.253.255.255`, `169.255.0.0-172.15.255.255`, `172.32.0.0-192.167.255.255`, `192.169.0.0-223.255.255.255` |
+| IPv6 | `2000::/3` (unicast global — `fe80::/10`, `fc00::/7`, `::1` restent joignables) |
+
+**Propriété PAR CONTENEUR (D4).** Contrairement à `fs_acl` (store « dernier
+appliqué »), une règle pare-feu PORTE son marqueur de propriété : son champ
+`Grouping = SambaEdu-Agent`. L'agent possède le GROUPE **EN ENTIER** et le
+réconcilie (iso `registry_list`) — **AUCUN store** n'est nécessaire. `Test`
+énumère les règles du groupe SEULEMENT ; `Apply` supprime toute règle du groupe
+hors état désiré (items `absent`, règles étrangères au state) et pose/recrée
+(Remove + Add) les règles désirées non conformes. Une règle qu'un tiers aurait
+étiquetée de notre groupe est ASSUMÉE nôtre (supprimée). Les règles **HORS
+groupe**, la **politique par défaut**, les **profils** et le **service MpsSvc**
+ne sont **JAMAIS** touchés (l'op agent ne les expose même pas — interdit
+structurel). L'impl Windows est en **COM natif** (`INetFwPolicy2`) : `netsh` ne
+sait pas poser `Grouping`.
+
+**Anti drift-loop (byte-echo Windows).** Le service pare-feu NORMALISE certaines
+formes à l'écriture (un CIDR IPv4 est relu `adresse/masque` pointé). La
+comparaison de convergence passe par une **normalisation canonique** (parse des
+deux côtés en intervalles fusionnés) — jamais un match de chaîne brute.
+
+**Écart assumé `ensure`.** L'epic parlait d'un enum « sans verbe ensure » ; le
+compilateur arbitre par IDENTITÉ (`rule_id`) entre items ÉMIS par maille : une
+valeur qui n'émet RIEN ne peut JAMAIS battre une maille plus large qui émet
+quelque chose. `on` émet donc le MÊME `rule_id` en `ensure:absent` (même
+identité) → un override de parc `on` annule un broadcast `off`, et le groupe
+finit VIDE (l'AC epic « on ⇒ groupe vide » à la lettre). `unmanaged` (défaut) est
+la SENTINELLE : rien n'est émis.
+
+**Fenêtres d'orphelin & retrait propre.** Le type ABSENT du state ⇒ le handler
+n'est jamais invoqué (§8) : la règle `block` **SURVIVRAIT** — conséquence GRAVE
+(la salle reste sans Internet). Le retrait PROPRE passe donc par `on`
+(« Autorisé »), **JAMAIS** par `unmanaged` (« Non géré »). Remède manuel : les
+règles du groupe `SambaEdu-Agent` sont VISIBLES dans `wf.msc` et supprimables.
+
+**Refus agent = défense en profondeur (Q3, INDÉPENDANT du serveur).** Un
+`action: block` dont la portée `explicit` **CHEVAUCHE une plage protégée**
+(RFC1918 `10/8` `172.16/12` `192.168/16`, loopback `127/8` `::1`, link-local
+`169.254/16` `fe80::/10`, ULA `fc00::/7`, ou tout `/0`) ⇒ **erreur d'item**
+(jamais posée), dans `Test` ET `Apply`. Le chevauchement est une **INTERSECTION
+mathématique d'intervalles** (jamais un match textuel : `192.160.0.0/12`,
+`0.0.0.0/0`, `::/0` sont refusés sans qu'aucune plage privée ne soit écrite).
+`remote_scope: internet` est SÛRE par construction. L'échappatoire = `explicit`
+avec des adresses **publiques** uniquement (ex. couper un proxy par son adresse
+publique). L'autorité finale est l'agent ; le serveur refuse en amont (garde-fou
+d'authoring, mêmes plages).
+
+**Pas de ciblage par utilisateur (Q4).** Portée machine ⇒ le service SYSTEM fetch
+sans `?user` : un override UserGroup/User d'une capacité `firewall` est SANS
+EFFET. « Couper Internet » se cible par parc/salle.
+
+> **Agents antérieurs à 2.7.0** : le type `firewall` est **ignoré EN SILENCE**
+> (§8 — aucun statut, aucune erreur). Symptôme « salle coupée sans effet ». La
+> release 2.7.0 DOIT être publiée manuellement (update.sh ne publie jamais seul).
+> La 2.6.0 (`fs_acl`) n'ayant pas encore été publiée, la 2.7.0 livre les DEUX
+> mécanismes.
+
 ## 8. Tableau vide ≠ type absent (décision de contrat)
 
 Les items d'une portée sont une **liste**, pas une map. La distinction
@@ -687,10 +886,15 @@ décision de contrat consommée par chaque handler côté agent.
   `{status: error}` isolé sur le type `registry`, d'où publication de release.
 - **Type ajouté** → version **mineure** aussi (constante `RESOURCE_TYPES`
   additive, `ReportRequest` suit). Ex. Story 35.2 : type `registry_list`
-  (§7.6), golden bumpé avec justification, agent bumpé 2.4.0. ⚠️ Contrairement
-  au champ ajouté, un agent ANTÉRIEUR **ignore un type inconnu EN SILENCE**
-  (§8 : type sans handler = aucun statut émis) — « réglage sans effet, zéro
-  erreur ». La publication de la release n'est pas optionnelle.
+  (§7.6), golden bumpé avec justification, agent bumpé 2.4.0. Ex. Story 36.1 :
+  type `fs_acl` (§7.7, mécanisme HORS-REGISTRE — ACE NTFS gérées), golden bumpé
+  avec justification, agent bumpé 2.6.0. Ex. Story 36.2 : type `firewall`
+  (§7.8, mécanisme HORS-REGISTRE — règles pare-feu possédées par groupe), golden
+  bumpé avec justification, agent bumpé 2.7.0 (publication qui livre AUSSI la
+  2.6.0 fs_acl jamais publiée). ⚠️ Contrairement au champ ajouté, un agent
+  ANTÉRIEUR **ignore un type inconnu EN SILENCE** (§8 : type sans handler =
+  aucun statut émis) — « réglage sans effet, zéro erreur ». La publication de la
+  release n'est pas optionnelle.
 - **Valeur de domaine ajoutée à un champ existant** → version **mineure**, golden
   **INCHANGÉS** (rien à figer : ni champ ni type nouveau, la forme du wire ne
   change pas — la couverture vit dans les tests dédiés du handler). Ex. Story
