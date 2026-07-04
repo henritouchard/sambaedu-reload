@@ -70,7 +70,11 @@ return [
     'blocked_legacy_routes' => [
         '^annu2/annu\.php' => 'app/users',
         'parcs/show_parc.php' => 'app/parcs',
-        'gpo/shortcuts_out\.php' => 'app/shortcuts',
+        // Consommé par les scripts logon/startup des postes (curl + CALL) :
+        // convention `noop:` (200 + commentaire) et JAMAIS un 302 — le corps
+        // HTML de la redirection, CALLé par cmd, avorte le batch logon entier
+        // et tue tous les fragments suivants (constaté 2026-07-03).
+        'gpo/shortcuts_out\.php' => 'noop:raccourcis servis nativement par l agent SE5',
         // Story 16.2 — Décision SM D5 : bloquer uniquement la page d'index legacy.
         // Les pages d'édition (gpo-maj.php, gpo-export.php, etc.) restent
         // accessibles pour la cohabitation jusqu'aux Stories 16.4/16.5.

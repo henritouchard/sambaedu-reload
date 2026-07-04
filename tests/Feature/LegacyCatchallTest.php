@@ -102,6 +102,39 @@ class LegacyCatchallTest extends TestCase
     }
 
     /**
+     * Convention `noop:` — endpoint script poste bloqué → 200 + commentaire
+     * cmd (jamais un 302 : son corps HTML, CALLé par cmd, avorte le batch
+     * logon entier).
+     */
+    public function test_blocked_script_route_with_noop_returns_comment_not_redirect(): void
+    {
+        Config::set('sambaedu.blocked_legacy_routes', [
+            'gpo/shortcuts_out\.php' => 'noop:raccourcis servis nativement par l agent SE5',
+        ]);
+
+        $response = $this->post('/gpo/shortcuts_out.php', ['os' => 'windows', 'action' => 'logon']);
+
+        $response->assertStatus(200);
+        $response->assertHeader('Content-Type', 'text/plain; charset=UTF-8');
+        $this->assertStringStartsWith('REM ', $response->getContent());
+    }
+
+    /**
+     * Convention `noop:` — variante linux : commentaire bash `#`.
+     */
+    public function test_blocked_script_route_noop_uses_bash_comment_for_linux(): void
+    {
+        Config::set('sambaedu.blocked_legacy_routes', [
+            'gpo/shortcuts_out\.php' => 'noop:raccourcis servis nativement par l agent SE5',
+        ]);
+
+        $response = $this->post('/gpo/shortcuts_out.php', ['os' => 'linux', 'action' => 'logon']);
+
+        $response->assertStatus(200);
+        $this->assertStringStartsWith('# ', $response->getContent());
+    }
+
+    /**
      * AC3 — Route bloquée + LEGACY_BLOCK_MIGRATED_ROUTES=false → contenu legacy servi via proxy
      */
     public function test_blocked_route_with_blocking_disabled_serves_legacy(): void

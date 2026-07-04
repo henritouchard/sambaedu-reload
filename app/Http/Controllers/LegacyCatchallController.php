@@ -80,6 +80,30 @@ class LegacyCatchallController extends Controller
                     );
                 }
 
+                // Convention `noop:<message>` : script no-op 200 pour les
+                // endpoints consommés par les scripts logon/startup des postes
+                // (cmd `CALL` / bash). Un 302 est mortel ici : le script poste
+                // fait `curl -o x.cmd … && CALL x.cmd` — le corps HTML de la
+                // redirection est exécuté par cmd et AVORTE le batch entier
+                // (constaté 2026-07-03 : le blob applications.php mourait au
+                // fragment shortcuts, tout ce qui suivait ne tournait jamais).
+                if (str_starts_with($redirect, 'noop:')) {
+                    $message = substr($redirect, 5);
+                    Log::channel('legacylog')->info('legacy.catchall.noop', [
+                        'path' => $path,
+                        'message' => $message,
+                        'ip' => $request->ip(),
+                    ]);
+
+                    $comment = $request->input('os') === 'linux' ? '#' : 'REM';
+
+                    return new Response(
+                        "{$comment} SE5 : route legacy neutralisee - {$message}\r\n",
+                        200,
+                        ['Content-Type' => 'text/plain'],
+                    );
+                }
+
                 // Pas de log pour les redirections SER
                 return redirect($redirect);
             }
