@@ -238,7 +238,7 @@ Identifiants prévus :
 
 `wallpaper`, `lockscreen`, `overlay`, `shortcuts`, `printers`, `drives`,
 `associations`, `registry`, `app_config`, `applications`, `registry_list`
-(Story 35.2, cf. §7.6).
+(Story 35.2, cf. §7.6), `fs_acl` (Story 36.1, cf. §7.7).
 
 ### 7.1 Payload `registry`
 
@@ -660,6 +660,100 @@ capacité, zéro float (§4.1) :
 > sans effet, zéro erreur » → la release 2.4.0 DOIT être publiée (update.sh ne
 > publie jamais seul).
 
+### 7.7 Payload `fs_acl`
+
+Type `fs_acl` (Story 36.1) — **ACE NTFS gérées** sur le poste, PREMIER mécanisme
+HORS-REGISTRE de la bibliothèque de capacités. La demande fondatrice « masquer
+Program Files aux élèves sans casser le lancement des applications » se projette
+sur UNE ACE `deny list_folder folder_only` : l'Explorateur ne peut plus
+ÉNUMÉRER le dossier, mais le traverse/execute reste intact → les raccourcis vers
+des exe sous Program Files se lancent toujours. Sémantique **`exclusive` PAR
+ACE** : la maille la plus spécifique gagne CETTE ACE (identité
+`{path, trustee, ace_type}`), les ACE distinctes s'accumulent. Portée **`machine`
+UNIQUEMENT** (le service SYSTEM est le seul acteur des ACE NTFS ; le compagnon
+n'a pas les droits, et le type n'existe pas côté session).
+
+```json
+{
+  "type": "fs_acl",
+  "semantics": "exclusive",
+  "payload": {
+    "path": "C:\\Program Files",
+    "trustee": "Eleves",
+    "ace_type": "deny",
+    "rights": "list_folder",
+    "applies_to": "folder_only",
+    "ensure": "present"
+  },
+  "hash": "a8f1c92b…ab7df0e9"
+}
+```
+
+Le payload porte **EXACTEMENT 6 clés** — enums fermés de **mots métier**, AUCUN
+masque brut ni SDDL, jamais d'id de capacité, zéro float (§4.1) :
+
+| Clé | Type JSON | Sens |
+|---|---|---|
+| `path` | string | Chemin Windows absolu (`<lettre>:\…`) du dossier ciblé. |
+| `trustee` | string | **NOM** du principal (`Eleves`, `Domain Users`, `DOMAINE\Profs`). Le serveur n'émet QUE des noms ; la résolution en SID est **côté POSTE** (LSA `LookupAccountName`, D5) — zéro SID en SQL. Un jeton d'audience serveur (`@eleves`/`@profs`/`@personnels`) est déjà résolu en nom conventionnel côté serveur (jamais transporté brut). |
+| `ace_type` | string | `allow` \| `deny`. |
+| `rights` | string | `list_folder` \| `read` \| `write` \| `modify` (mots métier). |
+| `applies_to` | string | `folder_only` \| `folder_subfolders_files` \| `subfolders_files_only`. |
+| `ensure` | string | `present` \| `absent`. **TOUJOURS émis** (forme unique — contrairement à `registry` où `ensure` est optionnel). `absent` = l'agent RETIRE l'ACE gérée si présente (déjà absente = idempotent) ; l'item `absent` garde `rights`/`applies_to` (ils décrivent l'ACE exacte à retirer). |
+
+**Table de traduction (indicative — la traduction vit dans le HANDLER, masques
+SPÉCIFIQUES uniquement, jamais GENERIC_\* qui seraient remappés à l'écriture) :**
+
+| `rights` | masque d'accès |
+|---|---|
+| `list_folder` | `FILE_LIST_DIRECTORY` (0x1) SEUL — c'est CE qui « masque sans casser » (traverse/execute/read intacts). |
+| `read` | `FILE_GENERIC_READ` (0x120089). |
+| `write` | `FILE_GENERIC_WRITE` (0x120116). |
+| `modify` | `READ\|WRITE\|EXECUTE\|DELETE` (0x1301BF — le « Modification » de l'onglet Sécurité). |
+
+| `applies_to` | flags d'héritage |
+|---|---|
+| `folder_only` | 0 |
+| `folder_subfolders_files` | `CONTAINER_INHERIT \| OBJECT_INHERIT` (0x3) |
+| `subfolders_files_only` | `… \| INHERIT_ONLY` (0xB) |
+
+**Propriété CHIRURGICALE (D4).** Une ACE NTFS ne porte AUCUN marqueur de
+propriété. L'agent possède SES ACE explicites IDENTIFIÉES PAR UN STORE « dernier
+appliqué » (`C:\ProgramData\SambaEdu\Agent\fsacl-state.json`, écriture atomique)
+— jamais la DACL, jamais l'owner/SACL, jamais les ACE héritées ou tierces.
+`Apply` ajoute par MERGE (`SetEntriesInAcl` + `SetNamedSecurityInfo`
+DACL-only, SANS `PROTECTED_DACL_SECURITY_INFORMATION`) et retire en
+reconstruisant la DACL MOINS l'ACE exactement égale — la DACL n'est **JAMAIS
+réécrite en bloc**.
+
+**Fenêtres d'orphelin & retrait propre (piège #3).** Le type ABSENT du state ⇒
+le handler n'est jamais invoqué (§8 : engine itère les types présents) : une ACE
+gérée survivrait si l'item disparaissait. Le retrait PROPRE passe donc par un
+`off` réel (items `ensure:absent`), **JAMAIS** par « cesser de gérer »
+(sentinelle `unmanaged` côté serveur). Quand une valeur change (trustee A → B,
+identités différentes), le store est la seule mémoire qui dit « l'ACE A est à
+nous » : la réconciliation retire l'ancienne PUIS pose la nouvelle (zéro
+orpheline).
+
+**Refus agent = défense en profondeur (INDÉPENDANT du serveur).** Après
+résolution LSA : un `deny` dont le SID est well-known système (`S-1-1-0`
+Everyone, `S-1-5-11` Authenticated Users, `S-1-5-18/19/20`, préfixe `S-1-5-32-`
+BUILTIN dont Administrators, préfixe `S-1-5-80-` comptes de service dont
+TrustedInstaller) ⇒ **erreur d'item** ; chemin **INEXISTANT** ⇒ erreur d'item
+(JAMAIS de création de dossier) ; trustee irrésoluble via LSA ⇒ erreur d'item.
+Les AUTRES items convergent ; l'erreur remonte TOUJOURS (verdict `error` du type,
+jamais d'application partielle silencieuse). Policy **STRICT** (§5) : ACE gérée
+supprimée à la main ⇒ `drift` + re-pose au cycle.
+
+**Pas de ciblage par utilisateur.** Portée machine ⇒ le service SYSTEM fetch sans
+`?user` : un override UserGroup/User d'une capacité `fs_acl` est SANS EFFET.
+« Quel utilisateur est bridé » = le `trustee` DANS le payload ; « quels postes »
+= les assignations parc/salle/poste/broadcast.
+
+> **Agents antérieurs à 2.6.0** : le type `fs_acl` est **ignoré EN SILENCE**
+> (§8 — aucun statut, aucune erreur). Symptôme « réglage sans effet ». La release
+> 2.6.0 DOIT être publiée manuellement (update.sh ne publie jamais seul).
+
 ## 8. Tableau vide ≠ type absent (décision de contrat)
 
 Les items d'une portée sont une **liste**, pas une map. La distinction
@@ -687,10 +781,12 @@ décision de contrat consommée par chaque handler côté agent.
   `{status: error}` isolé sur le type `registry`, d'où publication de release.
 - **Type ajouté** → version **mineure** aussi (constante `RESOURCE_TYPES`
   additive, `ReportRequest` suit). Ex. Story 35.2 : type `registry_list`
-  (§7.6), golden bumpé avec justification, agent bumpé 2.4.0. ⚠️ Contrairement
-  au champ ajouté, un agent ANTÉRIEUR **ignore un type inconnu EN SILENCE**
-  (§8 : type sans handler = aucun statut émis) — « réglage sans effet, zéro
-  erreur ». La publication de la release n'est pas optionnelle.
+  (§7.6), golden bumpé avec justification, agent bumpé 2.4.0. Ex. Story 36.1 :
+  type `fs_acl` (§7.7, mécanisme HORS-REGISTRE — ACE NTFS gérées), golden bumpé
+  avec justification, agent bumpé 2.6.0. ⚠️ Contrairement au champ ajouté, un
+  agent ANTÉRIEUR **ignore un type inconnu EN SILENCE** (§8 : type sans handler =
+  aucun statut émis) — « réglage sans effet, zéro erreur ». La publication de la
+  release n'est pas optionnelle.
 - **Valeur de domaine ajoutée à un champ existant** → version **mineure**, golden
   **INCHANGÉS** (rien à figer : ni champ ni type nouveau, la forme du wire ne
   change pas — la couverture vit dans les tests dédiés du handler). Ex. Story

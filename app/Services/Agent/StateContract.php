@@ -58,6 +58,14 @@ final class StateContract
         // accepte le type sans autre changement. Un agent ≤ 2.3.0 IGNORE ce
         // type en silence (contrat §8) → release 2.4.0 à publier.
         'registry_list',
+        // Story 36.1 (D1) — mécanisme HORS-REGISTRE `fs_acl` : ACE NTFS gérées
+        // sur le poste (chirurgie DACL, service SYSTEM, portée Machine). Payload
+        // EXACTEMENT 6 clés `{path, trustee, ace_type, rights, applies_to,
+        // ensure}` — enums fermés de mots métier, aucun masque brut ni SDDL
+        // (§7.7). Ajout ADDITIF : `ReportRequest` (Rule::in) accepte le type
+        // sans autre changement. Un agent ≤ 2.5.0 IGNORE ce type EN SILENCE
+        // (contrat §8 — aucun statut au rapport) → release 2.6.0 à publier.
+        'fs_acl',
     ];
 
     /**

@@ -35,6 +35,10 @@ var ResourceTypes = []string{
 	// Story 35.2 (D1) — listes registre à sous-valeurs indexées `\1..\N`
 	// (réconciliation de clé-conteneur D3, contrat §7.6). Ajout ADDITIF.
 	"registry_list",
+	// Story 36.1 (D1) — mécanisme HORS-REGISTRE `fs_acl` : ACE NTFS gérées
+	// (chirurgie DACL, service SYSTEM, portée Machine, contrat §7.7). Ajout
+	// ADDITIF. Un agent ≤ 2.5.0 IGNORE ce type EN SILENCE (contrat §8).
+	"fs_acl",
 }
 
 // ResourceStatuses : statuts de conformité du rapport (§6 — iso

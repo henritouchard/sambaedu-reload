@@ -3354,3 +3354,98 @@ Agent bumpé **2.5.0**.
       numlock non-violation ; override UserGroup sans effet sur l'item HKU.
 - [ ] Golden : `state.v1.json`, `report.v1.json` et hashes figés jumeaux PHP↔Go
       INCHANGÉS (HKU = valeur de `hive`, pas un champ — rien à figer).
+
+## Story 36.1 — Mécanisme `fs_acl` : ACE NTFS gérées sur le poste
+
+**Ce que la story livre** : un NOUVEAU type de contrat `fs_acl` (§7.7) + handler
+Go `FsAclHandler` (portée MACHINE / service SYSTEM), qui gère des ACE NTFS
+explicites par CHIRURGIE DACL (merge `SetNamedSecurityInfo` DACL-only, jamais de
+réécriture ; owner/SACL/héritées/tierces intacts). Store « dernier appliqué »
+(`C:\ProgramData\SambaEdu\Agent\fsacl-state.json`). Résolution SID par LSA sur le
+poste joint. Capacité de preuve : `program_files_browse_denied`.
+
+⚠️ **Résolution SID + jetons + poste joint au domaine = e2e MANUEL** (impossible
+à simuler hors lab). Les tests hôte (Go fake + PHPUnit sqlite) couvrent la
+convergence, la précédence, le store, les refus et le seed ; les DEUX faces
+métier (masquage + lancement) exigent un poste réel.
+
+### Scénario 36.1.1 — ⚠️ Publication AVANT armement (VM — ACTION HUMAINE Henri)
+
+Un binaire ≤ 2.5.0 IGNORE le type `fs_acl` EN SILENCE (contrat §8 — aucun statut,
+aucune erreur : « réglage sans effet »). L'ordre publication/migration n'est PAS
+critique ici (pas d'effet de bord inter-types, contrairement à HKU 35.3), MAIS
+sans publication la capacité est inerte.
+
+1. Publier la release agent **2.6.0** (build + `update.sh` de publication — jamais
+   automatique). Vérifier que le manifeste de release expose 2.6.0.
+2. Rejouer la migration de seed sur /vm : `php artisan migrate` (jamais
+   auto-appliquée — `php artisan migrate:status` d'abord). La capacité
+   `program_files_browse_denied` apparaît, `default_value = unmanaged` (inerte
+   tant qu'aucun override/valeur n'est armé).
+
+### Scénario 36.1.2 — Payload `/state` : item fs_acl en portée machine (curl VM)
+
+Armer la capacité (valeur `eleves` en broadcast OU override de parc), puis
+`curl` le `/state` du poste cible : la portée `machine` porte les items
+`{"type":"fs_acl","payload":{"path":"C:\\Program Files","trustee":"Eleves",
+"ace_type":"deny","rights":"list_folder","applies_to":"folder_only",
+"ensure":"present"}}` (2 chemins). Le `trustee` est un NOM (jamais un SID, jamais
+un jeton `@…` brut). Vérifier que `Program Files (x86)` est présent aussi.
+
+### Scénario 36.1.3 — LES DEUX FACES au poste joint (lab Windows — ACTION HUMAINE)
+
+Sur un poste joint au domaine, agent 2.6.0, capacité armée `eleves` :
+
+1. **Masquage** — se connecter en ÉLÈVE, ouvrir l'Explorateur sur
+   `C:\Program Files` : le contenu N'EST PLUS énumérable (accès refusé en
+   listing). Idem `C:\Program Files (x86)`.
+2. **Lancement PRÉSERVÉ** — toujours en élève, lancer une application installée
+   sous Program Files via son raccourci (l'exe se lance : traverse/execute
+   intact). L'appli se lance AUSSI pour un PROF (le deny ne vise que le trustee
+   `Eleves`).
+3. **Retrait propre** — basculer la valeur sur `off` (« Parcours autorisé ») :
+   au cycle suivant, les ACE gérées sont RETIRÉES, le parcours de Program Files
+   est restauré pour l'élève. ⚠️ Ne PAS utiliser « Non géré » (`unmanaged`) pour
+   retirer : la sentinelle cesse d'émettre l'item → l'ACE survivrait jusqu'à ce
+   qu'un autre item fs_acl déclenche la réconciliation d'orphelins.
+
+### Scénario 36.1.4 — Changement d'audience sans ACE orpheline (lab Windows)
+
+Capacité armée `eleves` (ACE deny Eleves posée), puis bascule vers `tous`
+(trustee `Domain Users`) : au cycle suivant, l'ACE Eleves (orpheline du store —
+identité différente) est RETIRÉE et l'ACE Domain Users posée. Vérifier dans
+l'onglet Sécurité qu'il ne reste PAS deux ACE deny cumulées de SambaEdu.
+
+### Scénario 36.1.5 — Défense en profondeur & refus (revue + lab)
+
+- Le `FsAclAuthoringGuard` refuse à l'authoring : deny sur SYSTEM/Administrators/
+  TrustedInstaller/Everyone/Authenticated Users ; deny à héritage descendant sur
+  `C:\`, `C:\Windows`, `C:\Program Files`, `C:\Program Files (x86)`,
+  `C:\ProgramData` ; enums hors domaine ; path non absolu ; jeton inconnu ; deny
+  sans warning. Le `deny list_folder folder_only` sur Program Files reste
+  AUTORISÉ (prouvé par test).
+- L'agent (défense en profondeur, INDÉPENDANT du serveur) refuse : deny sur SID
+  well-known système ⇒ erreur d'item ; chemin inexistant ⇒ erreur (jamais de
+  mkdir) ; trustee irrésoluble LSA ⇒ erreur. Les autres items convergent ;
+  l'erreur remonte (verdict `error` du type).
+- Policy STRICT : ACE gérée supprimée à la main ⇒ `drift` + re-pose au cycle.
+
+### Scénario 36.1.6 — Binaire antérieur silencieux (lab — régression)
+
+Sur un poste resté en 2.5.0, armer la capacité : AUCUN statut fs_acl au rapport,
+aucune erreur, aucune ACE posée (« réglage sans effet »). Confirme la nécessité
+de publier 2.6.0.
+
+### Checklist rapide (Story 36.1)
+
+- [ ] 36.1.1 — Release 2.6.0 publiée AVANT armement ; migration de seed rejouée
+      sur /vm (`migrate:status` d'abord).
+- [ ] 36.1.2 — `/state` porte les items fs_acl machine (trustee = NOM, 2 chemins).
+- [ ] 36.1.3 — Élève : Program Files non énumérable ET appli lançable ; prof :
+      appli lançable ; `off` restaure le parcours.
+- [ ] 36.1.4 — Changement d'audience : ancienne ACE retirée, pas de cumul.
+- [ ] 36.1.5 — Guard (Q2 + principals système) et refus agent (SID système /
+      chemin inexistant / trustee irrésoluble) ; STRICT re-drift.
+- [ ] 36.1.6 — Binaire 2.5.0 : type ignoré en silence.
+- [ ] Golden : `state.v1.json` +1 item fs_acl machine, `FROZEN_STATE_HASH` PHP =
+      `frozenStateHash` Go recalculés à l'identique ; `report.v1.json` INCHANGÉ.

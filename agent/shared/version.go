@@ -130,7 +130,30 @@ package shared
 // HKLM cessent de converger → PUBLIER la release 2.5.0 AVANT de jouer la
 // migration numlock HKU (update.sh ne publie jamais seul).
 //
+// 2.6.0 = mécanisme HORS-REGISTRE `fs_acl` (Story 36.1, contrat §7.7) : NOUVEAU
+// type + NOUVEAU handler `FsAclHandler` (portée MACHINE / service SYSTEM seul)
+// qui gère des ACE NTFS explicites par CHIRURGIE DACL — merge
+// SetEntriesInAcl + SetNamedSecurityInfo DACL-only (SANS PROTECTED_*), la DACL
+// n'est JAMAIS réécrite, owner/SACL/ACE héritées/ACE tierces JAMAIS touchés
+// (D4). Payload 6 clés `{path, trustee, ace_type, rights, applies_to, ensure}`,
+// enums fermés de mots métier (masques/flags SPÉCIFIQUES traduits côté handler,
+// jamais GENERIC_*). STORE « dernier appliqué » par item (fsacl-state.json,
+// WriteFileAtomic) = SEULE mémoire des ACE posées → réconciliation d'orphelins
+// (aucune ACE orpheline au changement de valeur). Résolution SID par LSA sur le
+// poste joint (LookupAccountName, D5 — zéro SID en SQL). REFUS agent défense en
+// profondeur : deny sur SID well-known système (Everyone/Authenticated Users/
+// SYSTEM/BUILTIN/comptes de service) ⇒ erreur d'item ; chemin inexistant ⇒
+// erreur (jamais de mkdir) ; trustee irrésoluble ⇒ erreur. Policy STRICT (ACE
+// gérée supprimée à la main ⇒ drift + re-pose). NOUVEAU chemin de store
+// `Store.FsAclStatePath()`. ⚠️ Un binaire ≤ 2.5.0 IGNORE le type fs_acl EN
+// SILENCE (contrat §8 — aucun statut, aucune erreur : « réglage sans effet »)
+// → PUBLIER la release 2.6.0 (update.sh ne publie jamais seul). Golden
+// state.v1.json bumpé (+1 item fs_acl machine, hashes figés jumeaux PHP↔Go
+// recalculés). PLOMBERIE 35.6 : la résolution SID (LSA) et les jetons
+// d'audience sont livrés ici — le gate 35.6 (privilege) reste FERMÉ, RIEN
+// n'est ouvert.
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.5.0"
+var Version = "2.6.0"

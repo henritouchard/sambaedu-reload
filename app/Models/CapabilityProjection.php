@@ -44,6 +44,17 @@ class CapabilityProjection extends Model
      */
     public const MECHANISM_REGISTRY_LIST = 'registry_list';
 
+    /**
+     * Mécanisme HORS-REGISTRE `fs_acl` (Story 36.1, contrat §7.7 — type
+     * `fs_acl`) : ACE NTFS gérées sur le poste, portée **Machine** (service
+     * SYSTEM seul). La `spec` porte des ACE `{path, trustee, ace_type, rights,
+     * applies_to, ensure?}` — l'agent POSSÈDE ses ACE explicites (store
+     * dernier-appliqué), jamais la DACL entière (chirurgie SetNamedSecurityInfo,
+     * D4). Le serveur n'émet que des NOMS (`Eleves`, `Domain Users`) ; la
+     * résolution SID est côté POSTE (LSA, D5) — provider Postgres pur.
+     */
+    public const MECHANISM_FS_ACL = 'fs_acl';
+
     /** Mécanisme pare-feu — slice B (ajout contrat + handler agent requis). */
     public const MECHANISM_FIREWALL = 'firewall';
 

@@ -233,6 +233,20 @@ func newAgent(echo bool) *shared.Agent {
 					Ops: &applicationsOps{log: logger, store: store},
 					Log: logger,
 				},
+				// Story 36.1 — fs_acl (exclusive PAR ACE / scope MACHINE) : le
+				// SERVICE SYSTEM converge les ACE NTFS gérées (chirurgie DACL —
+				// merge SetNamedSecurityInfo DACL-only, jamais de réécriture ;
+				// owner/SACL/héritées/tierces intacts, D4). Le store « dernier
+				// appliqué » (fsacl-state.json) est la SEULE mémoire des ACE
+				// posées (aucune orpheline au changement de valeur). Résolution
+				// SID par LSA sur le poste joint (D5) ; refus deny système en
+				// défense en profondeur (piège #8). SYSTEM UNIQUEMENT (jamais
+				// companion_windows.go).
+				"fs_acl": &shared.FsAclHandler{
+					Ops:       &fsAclOps{log: logger},
+					StatePath: store.FsAclStatePath(),
+					Log:       logger,
+				},
 			},
 			Log: logger,
 		},
