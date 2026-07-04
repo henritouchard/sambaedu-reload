@@ -56,9 +56,13 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
 
     public function mount(string $id): void
     {
-        abort_unless(Gate::allows('view-folderrule'), 403);
         $this->id = (int) $id;
         $this->loadRule();
+        // Correction review #1 : autorisation policy-backed AVEC la règle en
+        // ressource (le délégué scopé parc devient ATTEIGNABLE) — même patron
+        // que `/app/parc/groups/{id}` (`can:viewAny-workstationGroup` en route +
+        // scoping fin dans le mount). La route porte `can:viewAny-folderrule`.
+        abort_unless(Gate::allows('view-folderrule', $this->rule), 403);
     }
 
     public function loadRule(): void
@@ -86,11 +90,19 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
             return [];
         }
 
+        $user = $this->currentUser();
+        $permissions = app(PermissionService::class);
+
         return $this->rule->workstationGroups()->get()
             ->map(fn (WorkstationGroup $w): array => [
                 'id' => $w->id,
                 'label' => (string) ($w->display_name ?: $w->name),
                 'is_physical' => (bool) $w->is_physical,
+                // Correction review #5 : le bouton de retrait par parc n'est offert
+                // que si l'acteur peut gérer CE parc (délégation scopée, piège #9) —
+                // sinon on afficherait un bouton inopérant (le service refuserait).
+                'can_manage' => $user !== null
+                    && $permissions->canOnWorkstationGroup($user, 'folderrule.manage', $w),
             ])->all();
     }
 
@@ -143,7 +155,9 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
 
     public function editRule(): void
     {
-        abort_unless(Gate::allows('manage-folderrule'), 403);
+        // Correction review #1 : gate policy-backed AVEC la règle (délégué scopé
+        // gérant au moins un parc assigné passe ; global aussi).
+        abort_unless(Gate::allows('manage-folderrule', $this->rule), 403);
         $this->editing = true;
     }
 
@@ -156,7 +170,7 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
 
     public function saveRule(): void
     {
-        abort_unless(Gate::allows('manage-folderrule'), 403);
+        abort_unless(Gate::allows('manage-folderrule', $this->rule), 403);
 
         $validated = $this->validate([
             'label' => ['required', 'string', 'max:255'],
@@ -201,7 +215,7 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
 
     public function toggleActive(): void
     {
-        abort_unless(Gate::allows('manage-folderrule'), 403);
+        abort_unless(Gate::allows('manage-folderrule', $this->rule), 403);
         $active = ! (bool) $this->rule->is_active;
         $this->rule = app(FolderAccessRuleService::class)->setActive($this->rule, $active, $this->currentUser());
         $this->loadRule();
@@ -215,7 +229,7 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
 
     public function deleteRule()
     {
-        abort_unless(Gate::allows('manage-folderrule'), 403);
+        abort_unless(Gate::allows('manage-folderrule', $this->rule), 403);
         try {
             app(FolderAccessRuleService::class)->delete($this->rule, $this->currentUser());
         } catch (\RuntimeException $e) {
@@ -236,7 +250,10 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
 
     public function attachParc(): void
     {
-        abort_unless(Gate::allows('manage-folderrule'), 403);
+        // Correction review #1 : PAS de gate GLOBAL ici — le contrôle PAR PARC
+        // (piège #9) est délégué au service, qui vérifie `canOnWorkstationGroup`
+        // sur CE parc (et refuse un acteur null, correction #3). Un gate global
+        // aurait pris 403 avant même que le scoping ne s'exécute.
         if ($this->assignParcId === null) {
             $this->toastWarning('Sélectionnez un parc à assigner.');
             return;
@@ -261,7 +278,8 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
 
     public function detachParc(int $wgId): void
     {
-        abort_unless(Gate::allows('manage-folderrule'), 403);
+        // Correction review #1 : contrôle PAR PARC délégué au service (piège #9),
+        // pas de gate global (qui bloquerait un délégué scopé légitime).
         $group = WorkstationGroup::find($wgId);
         if ($group === null) {
             return;
@@ -315,7 +333,7 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
         <a href="{{ route('app.folder-rules') }}" class="btn btn-ghost btn-sm">
             <i class="fa-solid fa-arrow-left"></i> Retour
         </a>
-        @can('manage-folderrule')
+        @can('manage-folderrule', $rule)
             @if (! $rule->is_active)
                 <button type="button" class="btn btn-error btn-sm" wire:click="deleteRule"
                     wire:confirm="Supprimer définitivement cette règle inactive ?">
@@ -419,7 +437,7 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
                         </h2>
                     </div>
                     <div class="flex gap-2 shrink-0">
-                        @can('manage-folderrule')
+                        @can('manage-folderrule', $rule)
                             <button type="button" class="btn btn-ghost btn-sm {{ $rule->is_active ? 'text-warning' : 'text-success' }}" wire:click="toggleActive">
                                 <i class="fa-solid {{ $rule->is_active ? 'fa-toggle-off' : 'fa-toggle-on' }}"></i>
                                 {{ $rule->is_active ? 'Désactiver' : 'Activer' }}
@@ -458,7 +476,7 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
             </div>
             <p class="text-xs text-base-content/50 mb-2">La règle ne s'applique qu'aux postes des parcs assignés (portée machine).</p>
 
-            @can('manage-folderrule')
+            @can('manage-folderrule', $rule)
                 <div class="flex items-end gap-2 mb-3">
                     <div class="form-control flex-1">
                         <label class="label py-1"><span class="label-text text-sm">Ajouter un parc</span></label>
@@ -484,12 +502,14 @@ new #[Title('Règle d\'accès - Instance SE4FS')] class extends Component {
                         <span wire:key="parc-{{ $parc['id'] }}" class="badge badge-lg gap-2 {{ $parc['is_physical'] ? 'badge-info' : 'badge-warning' }}">
                             <i class="fa-solid {{ $parc['is_physical'] ? 'fa-door-open' : 'fa-layer-group' }} text-xs"></i>
                             {{ $parc['label'] }}
-                            @can('manage-folderrule')
+                            {{-- Correction review #5 : retrait offert PAR PARC (canOnWorkstationGroup),
+                                 pas via le gate global — sinon bouton inopérant pour un délégué scopé. --}}
+                            @if ($parc['can_manage'])
                                 <button type="button" class="hover:text-error" wire:click="detachParc({{ $parc['id'] }})"
                                     wire:confirm="Retirer ce parc de la règle ?">
                                     <i class="fa-solid fa-xmark"></i>
                                 </button>
-                            @endcan
+                            @endif
                         </span>
                     @endforeach
                 </div>

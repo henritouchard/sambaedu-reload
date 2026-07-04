@@ -201,15 +201,29 @@ class FolderAccessRuleServiceTest extends TestCase
         $rule = $this->service()->create($this->payload($this->group()), null);
         $wg = WorkstationGroup::factory()->logical()->create();
 
-        // Acteur null → autorisé (contexte serveur/seed) : le contrôle scopé est
-        // testé séparément (policy test).
-        $this->service()->attachParc($rule, $wg, null);
+        // Contexte serveur/seed → méthodes SYSTÈME (correction review #3 : les
+        // méthodes UI `attachParc/detachParc` REFUSENT désormais un acteur null).
+        // Le contrôle scopé UI est testé séparément (policy test).
+        $this->service()->attachParcAsSystem($rule, $wg);
         self::assertContains($wg->id, $rule->fresh()->assignedWorkstationGroupIds());
 
-        $this->service()->detachParc($rule, $wg, null);
+        $this->service()->detachParcAsSystem($rule, $wg);
         self::assertNotContains($wg->id, $rule->fresh()->assignedWorkstationGroupIds());
 
         // 1 create + 1 attach(update) + 1 detach(update) = 2 update.
         self::assertSame(2, FolderAccessRuleAuditLog::forRule($rule->id)->forAction('update')->count());
+    }
+
+    #[Test]
+    public function attaching_a_parc_from_ui_with_a_null_actor_is_refused(): void
+    {
+        // Correction review #3 : la surface UI (`attachParc`) ne doit JAMAIS
+        // autoriser sur acteur null (bypass silencieux) — seule la voie SYSTÈME le
+        // fait explicitement.
+        $rule = $this->service()->create($this->payload($this->group()), null);
+        $wg = WorkstationGroup::factory()->logical()->create();
+
+        $this->expectException(RuntimeException::class);
+        $this->service()->attachParc($rule, $wg, null);
     }
 }

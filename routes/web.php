@@ -158,11 +158,17 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
     // Routes Livewire pour les règles d'accès aux dossiers (Story 36.4).
     // Permissions DÉDIÉES folderrule.* (D6) — refnum + admin machines. Le
     // contrôle PAR PARC des (dé)assignations est dans le service (piège #9).
+    //
+    // Correction review #1 : middleware `can:viewAny-folderrule` (GATE
+    // policy-backed) et NON `can:folderrule.view` (permission Spatie nue). Comme
+    // `/app/parc` (`can:viewAny-workstationGroup`, story 7.1), le gate laisse
+    // entrer un délégué scopé parc SANS droit global — le middleware `folderrule.view`
+    // fermait la porte avant que le scoping (`canOnWorkstationGroup`) n'entre en jeu.
     Route::livewire('/folder-rules', 'pages::folder-rules.index')
-        ->middleware('can:folderrule.view')
+        ->middleware('can:viewAny-folderrule')
         ->name('folder-rules');
     Route::livewire('/folder-rules/{id}', 'pages::folder-rules.[id].index')
-        ->middleware('can:folderrule.view')
+        ->middleware('can:viewAny-folderrule')
         ->whereNumber('id')
         ->name('folder-rules.show');
 

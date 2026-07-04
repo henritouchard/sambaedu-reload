@@ -204,15 +204,56 @@ class FolderAccessRuleService
     }
 
     /**
-     * Assigne un parc à une règle (contrôle PAR PARC, piège #9). No-op si déjà
-     * assigné. Audité (`update`).
+     * Assigne un parc à une règle depuis l'UI (contrôle PAR PARC, piège #9). No-op
+     * si déjà assigné. Audité (`update`).
      *
-     * @throws RuntimeException  si l'acteur n'a pas `folderrule.manage` sur CE parc
+     * **Correction review #3.** L'acteur est OBLIGATOIRE : un acteur `null`
+     * (session absente, ou guard fédéré renvoyant un `Authenticatable` non-`User`,
+     * cf. login fédéré controlHub) est REFUSÉ — jamais autorisé par défaut. Le
+     * contexte serveur/seed passe par {@see attachParcAsSystem()}.
+     *
+     * @throws RuntimeException  si l'acteur est absent OU n'a pas `folderrule.manage` sur CE parc
      */
     public function attachParc(FolderAccessRule $rule, WorkstationGroup $group, ?User $actor): void
     {
-        $this->assertCanManageParc($actor, $group);
+        $this->assertActorCanManageParc($actor, $group);
+        $this->doAttachParc($rule, $group, $actor);
+    }
 
+    /**
+     * Retire un parc d'une règle depuis l'UI (contrôle PAR PARC, piège #9).
+     * Audité (`update`). Acteur OBLIGATOIRE (correction review #3).
+     *
+     * @throws RuntimeException  si l'acteur est absent OU n'a pas `folderrule.manage` sur CE parc
+     */
+    public function detachParc(FolderAccessRule $rule, WorkstationGroup $group, ?User $actor): void
+    {
+        $this->assertActorCanManageParc($actor, $group);
+        $this->doDetachParc($rule, $group, $actor);
+    }
+
+    /**
+     * Assigne un parc SANS contrôle d'acteur — RÉSERVÉ aux seeds / CLI / contexte
+     * serveur (aucune session). Ne JAMAIS exposer à une surface UI (correction
+     * review #3 : l'autorisation par défaut sur acteur `null` était un bypass
+     * silencieux).
+     */
+    public function attachParcAsSystem(FolderAccessRule $rule, WorkstationGroup $group): void
+    {
+        $this->doAttachParc($rule, $group, null);
+    }
+
+    /**
+     * Retire un parc SANS contrôle d'acteur — RÉSERVÉ aux seeds / CLI / contexte
+     * serveur (correction review #3).
+     */
+    public function detachParcAsSystem(FolderAccessRule $rule, WorkstationGroup $group): void
+    {
+        $this->doDetachParc($rule, $group, null);
+    }
+
+    private function doAttachParc(FolderAccessRule $rule, WorkstationGroup $group, ?User $actor): void
+    {
         DB::transaction(function () use ($rule, $group, $actor): void {
             $old = $this->snapshot($rule);
 
@@ -234,15 +275,8 @@ class FolderAccessRuleService
         });
     }
 
-    /**
-     * Retire un parc d'une règle (contrôle PAR PARC, piège #9). Audité (`update`).
-     *
-     * @throws RuntimeException  si l'acteur n'a pas `folderrule.manage` sur CE parc
-     */
-    public function detachParc(FolderAccessRule $rule, WorkstationGroup $group, ?User $actor): void
+    private function doDetachParc(FolderAccessRule $rule, WorkstationGroup $group, ?User $actor): void
     {
-        $this->assertCanManageParc($actor, $group);
-
         DB::transaction(function () use ($rule, $group, $actor): void {
             $old = $this->snapshot($rule);
 
@@ -299,16 +333,22 @@ class FolderAccessRuleService
     }
 
     /**
-     * Vérifie que l'acteur peut gérer CE parc (délégation scopée, piège #9). Un
-     * acteur `null` (contexte serveur/seed) est autorisé (aucune session). Le
-     * type polymorphe est borné à {@see FolderAccessRule::ALLOWED_ASSIGNABLE_TYPES}.
+     * Vérifie qu'un acteur UI peut gérer CE parc (délégation scopée, piège #9).
+     *
+     * **Correction review #3.** Un acteur `null` est REFUSÉ (jamais autorisé par
+     * défaut) : la session est absente, ou un guard fédéré a renvoyé un
+     * `Authenticatable` non-`User` (login fédéré controlHub) → la surface UI ne
+     * doit PAS agir. Le contexte serveur/seed passe explicitement par
+     * `attachParcAsSystem()`/`detachParcAsSystem()` (aucun contrôle d'acteur).
      *
      * @throws RuntimeException
      */
-    private function assertCanManageParc(?User $actor, WorkstationGroup $group): void
+    private function assertActorCanManageParc(?User $actor, WorkstationGroup $group): void
     {
         if ($actor === null) {
-            return;
+            throw new RuntimeException(
+                "Action non autorisée : aucun acteur authentifié pour gérer les parcs de cette règle."
+            );
         }
 
         if (! $this->permissions->canOnWorkstationGroup($actor, 'folderrule.manage', $group)) {

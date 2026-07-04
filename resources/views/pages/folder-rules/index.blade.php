@@ -5,8 +5,10 @@ use App\Exceptions\FsAclAuthoringException;
 use App\Models\FolderAccessRule;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Models\WorkstationGroup;
 use App\Services\Agent\FolderAccessRuleService;
 use App\Services\Agent\FolderAccessRuleValidator;
+use App\Services\PermissionService;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Title;
@@ -68,7 +70,10 @@ new #[Title('Règles d\'accès aux dossiers - Instance SE4FS')] class extends Co
 
     public function mount(): void
     {
-        abort_unless(Gate::allows('view-folderrule'), 403);
+        // Correction review #1 : gate policy-backed `viewAny-folderrule` (accepte
+        // le délégué scopé parc, patron `WorkstationGroupPolicy::viewAny`), pas la
+        // permission Spatie nue.
+        abort_unless(Gate::allows('viewAny-folderrule'), 403);
         $this->loadRules();
     }
 
@@ -91,6 +96,22 @@ new #[Title('Règles d\'accès aux dossiers - Instance SE4FS')] class extends Co
     {
         try {
             $query = FolderAccessRule::query()->with('userGroup');
+
+            // Correction review #1 : un délégué scopé (sans droit global) ne voit
+            // QUE les règles dont au moins un parc lui est délégué (comme la page
+            // parc filtre par `scopedUser`). L'admin global voit tout.
+            $scoped = $this->scopedUser();
+            if ($scoped !== null) {
+                $authorizedIds = app(PermissionService::class)
+                    ->getAuthorizedWorkstationGroups($scoped, 'folderrule.manage')
+                    ->pluck('id')
+                    ->all();
+
+                $query->whereHas('assignments', function ($q) use ($authorizedIds): void {
+                    $q->where('assignable_type', WorkstationGroup::class)
+                        ->whereIn('assignable_id', $authorizedIds);
+                });
+            }
 
             if ($this->search !== '') {
                 $needle = '%' . strtolower($this->search) . '%';
@@ -293,6 +314,23 @@ new #[Title('Règles d\'accès aux dossiers - Instance SE4FS')] class extends Co
     {
         $user = auth()->user();
         return $user instanceof User ? $user : null;
+    }
+
+    /**
+     * Retourne l'utilisateur SI la liste doit être scopée à ses parcs délégués
+     * (délégué sans droit global), sinon `null` (admin global → voit tout).
+     */
+    private function scopedUser(): ?User
+    {
+        $user = $this->currentUser();
+        if ($user === null) {
+            return null;
+        }
+        if ($user->can('folderrule.view') || $user->can('folderrule.manage')) {
+            return null; // droit global → pas de scoping
+        }
+
+        return $user;
     }
 }; ?>
 

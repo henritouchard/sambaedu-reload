@@ -748,6 +748,66 @@ NI l'observer, NI le seed 36.1.
   sur le filtre), `StateCompiler*` (29), `PermissionSeeder|SambaPermission|
   RoutesProtection` (42).
 
+### Corrections review (post-review — 5 fixes)
+
+Statut inchangé : `review`. Toutes les corrections confinées aux fichiers 36.4
+(sanctuaire vérifié INTACT : `agent/**`, `StateCompiler/StateHasher/StateCandidate/
+TargetContext`, `FsAclCapabilityProvider/FsAclAuthoringGuard/AudienceTokens`,
+`state.v1.json` + `FROZEN_STATE_HASH`, observer, seed 36.1 — non touchés).
+
+- **#1 [🔴] Délégation scopée ATTEIGNABLE de bout en bout (patron 7.1).** La
+  policy vérifiait UNIQUEMENT le droit GLOBAL `folderrule.*` et les routes/actions
+  posaient des gates GLOBAUX → un délégué scopé parc prenait 403 AVANT que
+  `canOnWorkstationGroup` ne s'exécute. Réplique 7.1 :
+  - `FolderAccessRulePolicy::viewAny()` = global OU `getAuthorizedWorkstationGroups
+    ($user,'folderrule.manage')` non vide ; `view($rule)`/`manage($rule)` = global
+    OU `canOnWorkstationGroup` sur AU MOINS UN parc assigné à la règle (helpers
+    `hasAnyScopedParc`/`canOnAnyAssignedParc`, injectant `PermissionService`).
+  - Routes `folder-rules` : middleware `can:folderrule.view` → **`can:viewAny-folderrule`**
+    (gate policy-backed, comme `/app/parc` avec `can:viewAny-workstationGroup`), pour
+    laisser entrer le délégué scopé avant le scoping.
+  - `mount()` liste = `Gate::allows('viewAny-folderrule')` ; `mount()` détail charge
+    la règle PUIS `Gate::allows('view-folderrule', $rule)`.
+  - Liste (`loadRules`) : `scopedUser()` restreint les règles affichées à celles
+    dont un parc est délégué à l'acteur (comme la page parc filtre par `scopedUser`).
+  - `attachParc()/detachParc()` (détail) : suppression du gate GLOBAL — le contrôle
+    PAR PARC est délégué au service (`canOnWorkstationGroup`, lève sinon → toast).
+    `editRule/saveRule/toggleActive/deleteRule` → `Gate::allows('manage-folderrule',
+    $rule)` (ressource). Création (sans règle) reste réservée au droit global.
+  - PREUVE : `FolderAccessRulePolicyTest::a_delegate_scoped_to_a_parc_reaches_viewAny
+    _and_manages_its_rule` (viewAny OK, view/manage règle parc A OK, parc B refusé,
+    manage global refusé).
+
+- **#2 [🟠] Non-régression AC6.** `RoutesProtectionTest` :
+  `protectedRoutesProvider` + `folder-rules` (listing/show, 403 sans permission) ;
+  `scopedParcRoutesProvider` + `/app/folder-rules` avec `folderrule.manage` (délégué
+  scopé parc seul atteint la page). Verts.
+
+- **#3 [🟡] `actor === null` = bypass silencieux.** Séparation contexte serveur /
+  UI : nouvelles méthodes `attachParcAsSystem()/detachParcAsSystem()` (seeds/CLI,
+  aucun contrôle d'acteur) ; les `attachParc()/detachParc()` UI **REFUSENT** un
+  acteur `null` (`assertActorCanManageParc` lève — garde le cas guard fédéré
+  renvoyant un `Authenticatable` non-`User`). Tests seeds/CLI routés vers les
+  méthodes système + test `attaching_a_parc_from_ui_with_a_null_actor_is_refused`.
+
+- **#4 [🟡] `deriveTrustee` cassait sur virgule échappée.** Aucun helper DN CN dans
+  `app/` (`LdapDnHelper` n'en expose pas ; introduire LdapRecord dans le modèle
+  consommé par le provider PG-pur = tension critère Keycloak) → regex DURCIE :
+  `CN=((?:[^,\\]|\\.)*)` + dé-échappement `\<char>`. Test
+  `FolderAccessRuleTest::it_keeps_an_escaped_comma_inside_the_cn`
+  (`CN=Salle B\, annexe,OU=Groups` → `Salle B, annexe`).
+
+- **#5 [🟡] Bouton detachParc via Gate global.** Page détail : `assignedParcs()`
+  calcule `can_manage` PAR PARC (`canOnWorkstationGroup`) ; le bouton de retrait
+  est conditionné `@if ($parc['can_manage'])` (plus `@can` global) ; les `@can`
+  toggle/edit/delete/add-parc passent la règle en ressource (`@can('manage-folderrule',
+  $rule)`) — cohérent avec le filtrage `parcCandidates`.
+
+**Résultats tests HÔTE (php 8.4 + sqlite) :** filtre `FolderAccessRule|FolderRule|
+FolderRules|RoutesProtection|FolderAccessRulePolicy` = **96 passed** ; `PermissionSeeder|
+SambaPermission` = **10 passed** ; golden `ContractV1Test|CapabilityFsAcl|StateHasher`
+= **54 passed** (`FROZEN_STATE_HASH` INCHANGÉ) ; `StateCompiler` = **29 passed**.
+
 ### File List
 
 **Nouveaux fichiers**

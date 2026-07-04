@@ -88,8 +88,16 @@ class FolderAccessRule extends Model
      */
     public static function deriveTrustee(?string $adDn, string $name): string
     {
-        if ($adDn !== null && preg_match('/(?:^|,)\s*CN=([^,]+)/i', $adDn, $m) === 1) {
-            $cn = trim($m[1]);
+        // Correction review #4 : la regex naïve `CN=([^,]+)` tronquait un CN
+        // contenant une virgule ÉCHAPPÉE (`\,`, DN RFC 4514 valide — ex.
+        // `CN=Salle B\, annexe,OU=Groups`) → trustee irrésoluble côté LSA.
+        // Ici la valeur du CN est une suite de caractères non spéciaux
+        // (`[^,\\]`) OU de paires échappées (`\\.` : `\,`, `\\`, `\+`…) : une
+        // virgule échappée ne termine donc PAS le RDN.
+        if ($adDn !== null && preg_match('/(?:^|,)\s*CN=((?:[^,\\\\]|\\\\.)*)/i', $adDn, $m) === 1) {
+            // Dé-échappe les séquences `\<char>` (RFC 4514) → caractère littéral
+            // (`\,` → `,`, `\\` → `\`).
+            $cn = trim((string) preg_replace('/\\\\(.)/', '$1', $m[1]));
             if ($cn !== '') {
                 return $cn;
             }
