@@ -3544,3 +3544,77 @@ de publier 2.6.0.
 - [ ] 36.1.6 — Binaire 2.5.0 : type ignoré en silence.
 - [ ] Golden : `state.v1.json` +1 item fs_acl machine, `FROZEN_STATE_HASH` PHP =
       `frozenStateHash` Go recalculés à l'identique ; `report.v1.json` INCHANGÉ.
+
+## Story 36.4 — Règles d'accès aux dossiers (formulaire, D8)
+
+Seconde surface d'authoring du mécanisme `fs_acl` (36.1) : le référent numérique
+crée des règles « interdire/autoriser CE dossier à CE groupe » via un formulaire
+100 % métier (`/app/folder-rules`). AUCUN changement agent/contrat/golden (la
+release 2.6.0 de 36.1 porte déjà le handler). Provider `fs_acl` **bi-alimenté**
+(capacités + règles, UN seul provider compilé — arbitrage règle↔capacité par le
+compilateur).
+
+### Prérequis d'exploitation (/vm, AVANT le lab)
+
+- **Migrations à rejouer** (`migrate:status` d'abord — mémoire
+  `vm_migrations_not_auto_applied`) : `folder_access_rules` +
+  `folder_access_rule_assignables` + `folder_access_rule_audit_logs`.
+- **Reseed `PermissionSeeder`** sur /vm (sinon **403 même pour un refnum** : les
+  permissions `folderrule.view`/`folderrule.manage` n'existent pas). Le refnum et
+  l'admin machines les reçoivent ; superadmin auto.
+- **`route:cache`** après ajout des routes réelles `/app/folder-rules[/{id}]`
+  (mémoire `route_cache_vm_ephemeral_test_routes`).
+- **AUCUNE publication agent** (2.6.0 de 36.1 suffit) — MAIS sans release 2.6.0
+  publiée, les items `fs_acl` sont ignorés EN SILENCE par un binaire ≤ 2.5.0.
+
+### Scénario 36.4.1 — Règle deny sur un dossier arbitraire (lab, poste joint)
+
+1. En UI, créer une règle « Interdire » sur `D:\Ressources` (niveau Parcourir,
+   portée « Ce dossier seul ») pour un GROUPE RÉEL (une classe). Acquitter
+   l'encart d'implications (obligatoire pour un deny).
+2. Sur la page de la règle, assigner le PARC du poste de test, puis activer.
+3. Sur un poste joint au domaine, au prochain cycle : l'Explorateur REFUSE
+   l'ouverture de `D:\Ressources` à un MEMBRE du groupe ; l'accès reste INTACT
+   pour les autres (un prof, un autre élève hors groupe).
+4. Vérifier au passage la **résolution du trustee dérivé (D9)** : le payload
+   `trustee` doit être le CN AD du groupe (`Classe_<nom>`), PAS le nom nu folded —
+   sinon l'agent tombe en erreur d'item tracée (jamais silencieux).
+
+### Scénario 36.4.2 — Off réel puis suppression (retrait honnête, D3)
+
+1. **Désactiver** la règle (bouton « Désactiver ») : au prochain cycle, l'ACE est
+   RETIRÉE (la règle émet toujours ses items, en `ensure:absent`) — l'accès est
+   restauré. Ce n'est PAS un simple oubli : le type reste dans le state, le
+   handler retire proprement.
+2. La suppression d'une règle ACTIVE est REFUSÉE (toast : « Désactivez d'abord la
+   règle… »). Une fois INACTIVE, la règle est supprimable (cascade pivot).
+
+### Scénario 36.4.3 — Recouvrement de capacité (avertissement non bloquant)
+
+Créer une règle dont l'identité `{path|trustee|ace_type}` recouvre une capacité
+catalogue ACTIVE (ex. `program_files_browse_denied` avec `@eleves`) : un
+`toastWarning` NON bloquant nomme la capacité. La création reste possible ; en cas
+de conflit réel, la maille la plus spécifique / la plus récente gagne (arbitrage
+compilateur, un seul provider).
+
+### Scénario 36.4.4 — Délégation scopée par parc (anti-piège Gate global)
+
+Un délégué disposant de `folderrule.manage` UNIQUEMENT sur le parc A (délégation
+positive scopée, sans droit global) : il PEUT assigner le parc A à une règle, mais
+l'assignation du parc B est REFUSÉE (`canOnWorkstationGroup` par parc) ; le picker
+de parcs ne propose que ses parcs autorisés. L'admin global voit tout. Chaque
+create/update/delete (activation/désactivation et (dé)assignation comprises) écrit
+une ligne d'audit append-only (`folder_access_rule_audit_logs`) avec acteur +
+snapshots.
+
+### Checklist rapide (Story 36.4)
+
+- [ ] 36.4.1 — Migrations + `PermissionSeeder` rejoués + `route:cache` sur /vm.
+- [ ] 36.4.2 — Règle deny sur `D:\Ressources` pour une classe → Explorer refuse
+      au membre, intact pour les autres ; trustee = CN AD (pas nom nu).
+- [ ] 36.4.3 — Désactivation → ACE retirée (off réel) ; suppression active
+      refusée, inactive OK.
+- [ ] 36.4.4 — Recouvrement capacité → toastWarning ; groupe sans ad_dn →
+      avertissement.
+- [ ] 36.4.5 — Délégation scopée : parc A OK, parc B refusé ; audit tracé.
+- [ ] Golden : `FROZEN_STATE_HASH` INCHANGÉ (aucune règle en base = byte-identité).

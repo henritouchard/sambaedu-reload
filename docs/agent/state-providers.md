@@ -870,6 +870,29 @@ consulté).
 Capacité de preuve seedée : `program_files_browse_denied` (2 chemins × 2 trustees
 = 4 entrées `deny list_folder folder_only`).
 
+**Bi-alimentation (Story 36.4, D8).** Le canal `fs_acl` a DEUX surfaces
+d'authoring : la CAPACITÉ catalogue (36.1, intention figée) ET la RÈGLE d'accès
+instanciée par le refnum via formulaire (`folder_access_rules`, « interdire/
+autoriser CE dossier à CE groupe »). Les deux passent par UN SEUL provider
+compilé : `FolderAccessRulesStateProvider` COMPOSE `FsAclCapabilityProvider`
+(`final`) et unionne les candidats-règles aux candidats-capacités —
+`type()`/`semantics()`/`scope()`/`exclusiveKey()` DÉLÉGUÉS. **Pourquoi un seul
+provider** : `StateCompiler::selectExclusive()` arbitre PAR provider ; deux
+providers `fs_acl` produiraient deux items de même identité au state (dédup Go
+aveugle à la maille). Un provider = les deux flux passent par la MÊME sélection
+exclusive ⇒ une collision règle↔capacité sur `{path|trustee|ace_type}` est
+arbitrée maille/récence par le compilateur EXISTANT (StateCompiler INTOUCHÉ) ;
+les identités distinctes coexistent. Sans aucune règle en base, la sortie est
+byte-identique aux candidats capacités (`FROZEN_STATE_HASH` inchangé).
+
+- **Trustee dérivé (D9)** : une règle cible un VRAI groupe SQL ; le trustee émis
+  est le CN de `user_groups.ad_dn` (fallback `name`) — le nom SQL est folded au
+  nom nu, l'émettre casserait la résolution LSA des classes.
+- **Retrait propre (D3)** : désactiver une règle (`is_active=false`) émet ses
+  items avec `ensure:'absent'` (off réel — le type doit rester dans le state
+  pour que le handler retire l'ACE) ; la suppression d'une règle ACTIVE est
+  refusée. Portée MACHINE (ciblage par PARC, jamais par utilisateur — piège #10).
+
 ## Ajouter un type de ressource
 
 1. **Identifiant figé** : ajouter le type à [contract-v1.md](contract-v1.md) §7

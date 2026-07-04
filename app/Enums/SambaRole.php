@@ -101,6 +101,11 @@ enum SambaRole: string
                 // permission DÉDIÉE `networkshare.*`.
                 SambaPermission::NetworkShareView,
                 SambaPermission::NetworkShareManage,
+                // Story 36.4 (D6) — le Référent Numérique crée les règles d'accès
+                // aux dossiers de son établissement (formulaire fs_acl). Contrôle
+                // PAR PARC dans le service (délégation scopée).
+                SambaPermission::FolderRuleView,
+                SambaPermission::FolderRuleManage,
             ],
             self::ComputerAdmin => [
                 SambaPermission::ComputerView,
@@ -111,6 +116,10 @@ enum SambaRole: string
                 SambaPermission::WpkgAdd,
                 SambaPermission::WpkgCreate,
                 SambaPermission::AppCustomize,
+                // Story 36.4 (D6) — l'admin machines gère aussi les règles d'accès
+                // aux dossiers (mécanisme fs_acl de portée machine).
+                SambaPermission::FolderRuleView,
+                SambaPermission::FolderRuleManage,
                 // Story 7.3 (décision Henri 2026-04-25 — option C) : RDP est
                 // une élévation de `ComputerControl`. Le ComputerAdmin doit
                 // l'avoir par défaut pour préserver la couverture fonctionnelle

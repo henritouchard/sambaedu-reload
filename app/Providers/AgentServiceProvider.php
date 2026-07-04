@@ -13,7 +13,7 @@ use App\Services\Agent\Providers\AppConfigStateProvider;
 use App\Services\Agent\Providers\ApplicationsStateProvider;
 use App\Services\Agent\Providers\AssociationsStateProvider;
 use App\Services\Agent\Providers\DrivesStateProvider;
-use App\Services\Agent\Providers\FsAclCapabilityProvider;
+use App\Services\Agent\Providers\FolderAccessRulesStateProvider;
 use App\Services\Agent\Providers\OverlayMachineStateProvider;
 use App\Services\Agent\Providers\OverlayStateProvider;
 use App\Services\Agent\Providers\PrintersStateProvider;
@@ -220,18 +220,29 @@ class AgentServiceProvider extends ServiceProvider
                 // modif du compilateur.
                 $app->make(RegistryListMachineCapabilityProvider::class),
                 $app->make(RegistryListUserCapabilityProvider::class),
-                // Story 36.1 — type `fs_acl` (exclusive PAR ACE / portée MACHINE,
-                // premier mécanisme HORS-REGISTRE de la bibliothèque de
-                // capacités). Le provider EXPANSE une capacité → items concrets
-                // {path, trustee, ace_type, rights, applies_to, ensure} (6 clés,
-                // interpréteur de `spec` surchargé — `StateCompiler` INTOUCHÉ
-                // D2). `exclusiveKey() = {path|trustee|ace_type}` : la maille la
-                // plus spécifique gagne CETTE ACE, les ACE distinctes s'accumulent.
-                // Jetons d'audience @eleves|@profs|@personnels résolus par
-                // AudienceTokens (enum FERMÉ, Q1). Postgres pur (la résolution SID
-                // est côté POSTE, LSA D5). UN seul provider (portée Machine — pas
-                // de variante ruche/session). Une ligne, zéro modif du compilateur.
-                $app->make(FsAclCapabilityProvider::class),
+                // Story 36.1 + 36.4 — type `fs_acl` (exclusive PAR ACE / portée
+                // MACHINE, premier mécanisme HORS-REGISTRE). Le provider EXPANSE
+                // une capacité → items concrets {path, trustee, ace_type, rights,
+                // applies_to, ensure} (6 clés, interpréteur de `spec` surchargé —
+                // `StateCompiler` INTOUCHÉ D2). `exclusiveKey() =
+                // {path|trustee|ace_type}` : la maille la plus spécifique gagne
+                // CETTE ACE, les ACE distinctes s'accumulent. Jetons d'audience
+                // @eleves|@profs|@personnels résolus par AudienceTokens (enum
+                // FERMÉ, Q1). Postgres pur (résolution SID côté POSTE, LSA D5).
+                //
+                // Story 36.4 (D1) — BI-ALIMENTATION D8 : la ligne
+                // `FsAclCapabilityProvider` est REMPLACÉE par le composite
+                // `FolderAccessRulesStateProvider`, qui l'enveloppe et unionne les
+                // candidats-RÈGLES (formulaire refnum) aux candidats-CAPACITÉS.
+                // UN SEUL provider `fs_acl` compilé = condition STRUCTURELLE de
+                // l'arbitrage règle↔capacité par le compilateur (selectExclusive
+                // arbitre PAR provider — deux providers = collision non arbitrée,
+                // piège #1). `exclusiveKey()`/type/semantics/scope DÉLÉGUÉS ;
+                // byte-identité golden sans règles (piège #5). Zéro modif du
+                // compilateur, zéro changement agent/contrat (2.6.0 porte déjà le
+                // handler). ⚠️ Fichier partagé avec 36.2 (firewall AJOUTE sa ligne
+                // ici) — conflit de merge trivial, garder les deux.
+                $app->make(FolderAccessRulesStateProvider::class),
                 // Story 27.3bis — type `associations` (exclusive PAR IDENTIFIANT,
                 // portée session/compagnon HKCU) : catalogue d'associations de
                 // fichiers/protocoles par défaut activables par parc, compilées
