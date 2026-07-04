@@ -2421,3 +2421,92 @@ grep -i "Bearer ${KEY}" storage/logs/laravel.log || echo "OK — token absent de
 - [ ] AC7 : branche `master_api_key` retirée de `ControlHubAuth` ; `controlhub_key_type` toujours `'instance'`
 - [ ] AC8/NFR-A4/A5 : `StateCompiler`/`ContractV1`/golden/`FROZEN_STATE_HASH`/`agent/**` non touchés ; R3 vérifié
 - [ ] VM (Scénario 21.2, différé) : `route:cache` rejoué après sync, 200/422×2/403×2 confirmés en curl réel
+
+## Section 22 — Émetteur de conformité, canal ③ du lien managé (Story 39.2, 2026-07-04)
+
+Premier ÉMETTEUR SE5 → autorité amont du lien managé : la commande `controlhub:report-compliance`
+construit et POST un rapport de conformité **état-intégral** (`se5-contract-compliance/v1`) décrivant
+l'état d'application de chaque item du contrat amont. 100 % SORTANT (aucune route HTTP entrante nouvelle).
+Le rapport est émis vers `POST {base_url}/api/sambaedu/contract-compliance/{instance_id}` avec le Bearer
+`api_token` du handshake.
+
+### Prérequis
+
+- Un contrat amont ACTIF ingéré (Section 21) : `ControlHubContract::active()` non null.
+- Une connexion amont valide en BDD (`controlhub_connection` : `is_active=1`, non expirée, `api_token` présent).
+- `config('controlHub.compliance.enabled')` = true (défaut). Intervalle : `controlHub.compliance.interval` (défaut 15 min).
+
+### Scénario 22.1 — Émission manuelle et observation côté amont (mock)
+
+```bash
+# Sur la VM. Forcer une émission immédiate : purger le watermark de cadence puis lancer la commande.
+php artisan tinker --execute="Cache::forget('controlHub_compliance_last_run');"
+php artisan controlhub:report-compliance
+# Attendu (contrat actif + connexion valide) : "ControlHub Compliance : job d'émission dispatché"
+# Puis le worker laravel-queue-general traite ControlHubReportComplianceJob (POST réel).
+
+# Journal : l'émission logue endpoint + nb d'items + http_status, JAMAIS le token.
+grep "rapport de conformité émis" storage/logs/laravel.log | tail -1
+
+# Court-circuits (aucune émission) :
+#  - sans contrat actif       → "ignoré : aucun contrat amont actif"
+#  - sans connexion valide     → "ignoré : aucune connexion amont valide"
+#  - intervalle non écoulé      → "ignoré : intervalle non écoulé"
+```
+
+### Scénario 22.2 — Test unilatéral direct de l'endpoint amont (curl, sans passer par le job)
+
+Le canal est testable unilatéralement contre l'amont (mock/central exposant l'endpoint). Reconstituer
+l'enveloppe à la main pour valider le contrat de l'endpoint récepteur :
+
+```bash
+INSTANCE="<instance-id>"          # config('controlHub.se4fs.instance_id')
+TOKEN="<api_token de l'instance>" # controlhub_connection.api_token (déchiffré)
+BASE="https://<amont>"
+
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "$BASE/api/sambaedu/contract-compliance/$INSTANCE" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -H "Accept: application/json" \
+  -d '{
+    "schema_version": "1.0",
+    "instance_id": "'"$INSTANCE"'",
+    "link_state": "active",
+    "contract_received_at": "2026-07-03T08:15:00Z",
+    "reported_at": "2026-07-03T10:30:00Z",
+    "items": [
+      { "type": "applications", "key": "firefox", "target_type": "label",
+        "target_label": "compta", "status": "applied", "detail": null,
+        "observed_at": "2026-07-03T10:29:12Z" }
+    ]
+  }'
+# Attendu : 200 { success, data: { created/updated/deleted } } | 200 { ignored:true } (rapport périmé)
+```
+
+### Scénario 22.3 — Non-fuite du token dans les logs
+
+```bash
+# Après une émission, vérifier qu'aucun log n'expose le Bearer/api_token en clair.
+grep -i "$TOKEN" storage/logs/laravel.log && echo "FUITE — à corriger" || echo "OK — token absent des logs"
+```
+
+> ⚠ **Point de RATIFICATION R2 (mismatch `registry`/`capabilities`)** : SE5 émet le `type` tel que
+> stocké (`'registry'` pour les capacités — seul canal réellement câblé), alors que l'enum
+> `ContractItemType` documenté côté amont attend `'capabilities'` (`'registry'` absent du domaine). Un
+> amont qui valide STRICTEMENT son enum **rejettera en 422** un item `type='registry'`. Ceci est un
+> point à trancher avec le BMAD controlHub AVANT tout e2e réel — PAS un bug de cette story (mirror
+> strict volontaire). E2E réel contre un amont émetteur : différé (famille OPEN).
+
+## Checklist rapide Story 39.2
+
+- [ ] `php artisan test --filter=ControlHubComplianceReport` → 16/16 verts
+- [ ] Non-régression `UpstreamLockResolver` : `--filter="PermissiveOverrideResolution|UpstreamLock|UpstreamContractResolution"` → vert
+- [ ] AC1 : enveloppe conforme (5 clés top-level + 7 clés/item, `target_label` jamais null)
+- [ ] AC2/NFR-A1 : aucune émission sans contrat actif / connexion valide / token (ApiClient `shouldNotReceive`)
+- [ ] AC3 : items `absent` exclus ; `items:[]` émis comme rapport valide
+- [ ] AC4 : `locked`→applied ; `permissive`+registry+instance+override→overridden (detail non vide) ; sinon applied
+- [ ] AC4/NFR-A2 : `reported_at` monotone entre deux rapports
+- [ ] AC5 : POST via `ControlHubApiClient::callEndpoint()` (Bearer `getToken()`), token absent des logs
+- [ ] AC6 : `config/controlHub.php` — ajouts additifs (`endpoints.contract_compliance` + bloc `compliance`), zéro clé existante touchée
+- [ ] AC7 : service+job(`tries=3`)+command(`controlhub:report-compliance`) ; entrée Kernel `everyMinute` ; `ControlHubHeartbeatJob` NON reproduit
+- [ ] AC8/NFR-A4/A5 : `StateCompiler`/golden/`FROZEN_STATE_HASH`/`agent/**` non touchés, zéro bump version ; R3 vérifié
+- [ ] R2 : mismatch `registry`/`capabilities` signalé au BMAD controlHub (ratification), pas de remap silencieux
+- [ ] VM (différé) : `Cache::forget` + `controlhub:report-compliance` observés ; endpoint amont curl 200/ignored

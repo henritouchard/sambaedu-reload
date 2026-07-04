@@ -104,6 +104,18 @@ final class UpstreamLockResolver
     private bool $activeContract = false;
 
     /**
+     * Story 39.2 (review #4) — Catalogue mémoïsé des capacités portant AU MOINS une
+     * projection `registry` (avec leurs projections `registry` eager-loaded). Chargé
+     * paresseusement une seule fois par instance (le resolver est un singleton
+     * par-requête), pour que `capabilitiesForRegistryKey()` — appelée une fois par
+     * item `permissive`/`registry`/`instance` du rapport (jusqu'à `max:5000` items) —
+     * filtre en mémoire au lieu de re-scanner le catalogue à CHAQUE appel.
+     *
+     * @var Collection<int, Capability>|null
+     */
+    private ?Collection $registryCapabilitiesCatalog = null;
+
+    /**
      * Set des clés registre VERROUILLÉES amont (lecture mémoïsée).
      *
      * @return array<string, true>
@@ -322,6 +334,50 @@ final class UpstreamLockResolver
                 $this->permissiveRegistryKeys[$normalized] = true;
             }
         }
+    }
+
+    /**
+     * Story 39.2 — Capacités dont AU MOINS UNE projection `registry` matche la clé
+     * d'item amont `$key` (`hive|path|name[|type]`), par l'identité EXCLUSIVE
+     * normalisée. Réutilise la MÊME normalisation que le verrou/permissif
+     * (`normalizeItemKey()` + `exclusiveKey()`) — AUCUNE 3ᵉ normalisation inventée
+     * (garde-fou du fichier). Lecture pure : indépendante de la résolution du
+     * contrat actif (`ensureResolved()` non appelé), utilisable pour qualifier un
+     * override local sur la clé d'un item de contrat lors de l'émission de
+     * conformité.
+     *
+     * @return Collection<int, Capability>
+     */
+    public function capabilitiesForRegistryKey(string $key): Collection
+    {
+        $normalized = $this->normalizeItemKey($key);
+
+        // Review 39.2 #4 — scan du catalogue mémoïsé (1× par instance) au lieu d'une
+        // requête complète par appel. Le filtre par clé, lui, reste par appel.
+        $this->registryCapabilitiesCatalog ??= Capability::query()
+            ->whereHas('projections', static fn ($q) => $q->where('mechanism', CapabilityProjection::MECHANISM_REGISTRY))
+            ->with(['projections' => static fn ($q) => $q->where('mechanism', CapabilityProjection::MECHANISM_REGISTRY)])
+            ->get();
+
+        return $this->registryCapabilitiesCatalog
+            ->filter(function (Capability $capability) use ($normalized): bool {
+                foreach ($this->registryProjections($capability) as $projection) {
+                    foreach ($this->specKeys($projection) as $specKey) {
+                        $exclusive = $this->exclusiveKey(
+                            (string) ($specKey['hive'] ?? ''),
+                            (string) ($specKey['path'] ?? ''),
+                            (string) ($specKey['name'] ?? ''),
+                        );
+
+                        if ($exclusive === $normalized) {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            })
+            ->values();
     }
 
     /**

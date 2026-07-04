@@ -29,6 +29,23 @@ return [
         'webhook' => '/api/sambaedu/webhook',
         'token_renewal' => '/api/sambaedu/token/renew',
         'disconnect' => '/api/sambaedu/unregister/{instance_id}',
+        // Story 39.2 (canal ③) — émission SE5 → amont du rapport de conformité
+        // état-intégral `se5-contract-compliance/v1`. Chemin figé côté amont mais
+        // NON ratifié (SE5-CONTRACT-COMPLIANCE-V1.md) — point de coordination R2.
+        'contract_compliance' => '/api/sambaedu/contract-compliance/{instance_id}',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Compliance Reporting Configuration (Story 39.2 — canal ③)
+    |--------------------------------------------------------------------------
+    | Cadence FIXE de l'émetteur de conformité (pas de piggyback heartbeat, pas
+    | de colonne BDD de throttle). L'amont applique de toute façon sa propre garde
+    | de fraîcheur `reported_at` (rejeu = no-op) — une cadence configurable suffit.
+    */
+    'compliance' => [
+        'enabled' => env('CONTROLHUB_COMPLIANCE_ENABLED', true),
+        'interval' => env('CONTROLHUB_COMPLIANCE_INTERVAL', 15), // minutes
     ],
 
     /*
