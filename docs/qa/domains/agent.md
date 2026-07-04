@@ -3404,6 +3404,14 @@ doivent être prouvées** (maps symétriques, aucun `$ensure` dans ce lot) :
    Win10 « Accès rapide » absent du volet, Win11 « Accueil » absent, Explorateur ouvre sur
    « Ce PC ». `off` (0/2/1) restaure — vérifier en particulier que `HubMode=0` restaure
    vraiment (pas la seule suppression de la valeur).
+   ⚠️ **PARI LE PLUS FRAGILE DU LOT (review 36.3 #1)** : `HubMode` est très
+   largement documenté comme clé **per-user (HKCU)**, or il est seedé ici en
+   **HKLM** (face Machine D4). Test DÉTERMINANT : poser `HubMode` en **HKLM
+   SEUL** (sans la variante HKCU) et confirmer que « Accès rapide » disparaît
+   bien. Si SEUL `HKCU\…\Explorer\Advanced\HubMode` a de l'effet ⇒ **déplacer la
+   clé en HKCU dans la migration AVANT merge** (elle bascule alors côté provider
+   Session ; le split-provider AC4 reste valide). Ne pas armer la capacité tant
+   que ce point n'est pas tranché.
 3. `explorer_gallery_hidden` — `reg add "HKCU\Software\Classes\CLSID\{e88865ea-0e1c-4e20-9aa6-edcd0212c87c}" /v System.IsPinnedToNameSpaceTree /t REG_DWORD /d 0 /f` :
    Win11 « Galerie » absente du volet ; `off` (1) la réaffiche ; Win10 aucun effet (assumé).
 4. `quick_access_history_hidden` — `reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer" /v ShowRecent /t REG_DWORD /d 0 /f`

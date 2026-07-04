@@ -1568,6 +1568,18 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
                 "identité '{$identity}' : une seule capacité DU LOT ne doit la porter (trouvé : ".implode(', ', $lotCapabilities).')',
             );
 
+            // Durcissement (review 36.3 #4) : aucune capacité DU LOT ne porte
+            // DEUX FOIS la même identité `{hive|path|name}` (doublon
+            // intra-capacité — invisible à `array_unique` ci-dessus). On compte
+            // les occurrences BRUTES par capacité. Verrouille les futurs lots.
+            foreach (array_count_values($lotCapabilities) as $capability => $occurrences) {
+                self::assertSame(
+                    1,
+                    $occurrences,
+                    "identité '{$identity}' : la capacité '{$capability}' la porte {$occurrences} fois (doublon intra-capacité)",
+                );
+            }
+
             // 2. Disjonction avec le RESTE du catalogue : aucune capacité
             // hors-lot ne partage cette identité avec une capacité du lot.
             $foreignCapabilities = array_values(array_diff(array_unique($capabilities), $lotKeys));

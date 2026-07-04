@@ -186,6 +186,15 @@ return new class extends Migration
                     'default_value' => $row['default_value'],
                     'warning' => $row['warning'],
                     'applies_to_os' => json_encode(['windows'], JSON_UNESCAPED_UNICODE),
+                    // is_active=true assumé (review 36.3 #2, décision orchestrateur) :
+                    // patron DOMINANT du projet pour un seed opt-in (lot CD95,
+                    // registry_list). La sûreté vient de default_value='unmanaged'
+                    // (RIEN n'est émis à l'agent tant qu'un override de parc ne
+                    // l'arme pas délibérément) + du gate-migrate (36.3.1 AVANT
+                    // migrate /vm). Le is_active=false de 35.5 était l'exception
+                    // d'une limitation de PARSEUR (name=""), pas de clés non
+                    // vérifiées — non transposable ici. Aucune clé du lot n'est
+                    // destructive une fois armée.
                     'is_active' => true,
                     'overrides_locked' => false,
                     'updated_at' => $now,
