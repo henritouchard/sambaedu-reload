@@ -47,8 +47,11 @@ func TestParseStateGoldenFile(t *testing.T) {
 	// Files, payload 6 clés) en portée MACHINE → machine = 6.
 	// Story 36.2 : +1 item `firewall` (internet-block, payload 6 clés) en portée
 	// MACHINE → machine = 7.
-	if len(state.Machine) != 7 || len(state.Session) != 7 || len(state.MachineUser) != 1 {
-		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 7/7/1)",
+	// Story 35.6 : +1 item `privilege` (SeDenyRemoteInteractiveLogonRight refusé
+	// au groupe Eleves, payload 2 clés {privilege, accounts}) en portée MACHINE
+	// → machine = 8.
+	if len(state.Machine) != 8 || len(state.Session) != 7 || len(state.MachineUser) != 1 {
+		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 8/7/1)",
 			len(state.Machine), len(state.Session), len(state.MachineUser))
 	}
 }
@@ -256,8 +259,9 @@ func TestContractConstantsAreFrozen(t *testing.T) {
 	// Story 35.2 : +1 type `registry_list` (ajout ADDITIF D1) → 11.
 	// Story 36.1 : +1 type `fs_acl` (ajout ADDITIF D1, mécanisme hors-registre) → 12.
 	// Story 36.2 : +1 type `firewall` (ajout ADDITIF D1, mécanisme hors-registre) → 13.
-	if len(ResourceTypes) != 13 {
-		t.Errorf("13 identifiants de type publiés (§7), got %d", len(ResourceTypes))
+	// Story 35.6 : +1 type `privilege` (ajout ADDITIF D1, mécanisme hors-registre) → 14.
+	if len(ResourceTypes) != 14 {
+		t.Errorf("14 identifiants de type publiés (§7), got %d", len(ResourceTypes))
 	}
 	// Story 27.8 : `drifted_allowed` retiré → 3 statuts (STRICT inconditionnel).
 	if len(ResourceStatuses) != 3 {

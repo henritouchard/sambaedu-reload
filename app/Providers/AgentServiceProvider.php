@@ -18,6 +18,7 @@ use App\Services\Agent\Providers\FolderAccessRulesStateProvider;
 use App\Services\Agent\Providers\OverlayMachineStateProvider;
 use App\Services\Agent\Providers\OverlayStateProvider;
 use App\Services\Agent\Providers\PrintersStateProvider;
+use App\Services\Agent\Providers\PrivilegeCapabilityProvider;
 use App\Services\Agent\Providers\RegistryListMachineCapabilityProvider;
 use App\Services\Agent\Providers\RegistryListUserCapabilityProvider;
 use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
@@ -258,6 +259,20 @@ class AgentServiceProvider extends ServiceProvider
                 // handler). ⚠️ Fichier partagé avec 36.2 (firewall AJOUTE sa ligne
                 // ici) — conflit de merge trivial, garder les deux.
                 $app->make(FolderAccessRulesStateProvider::class),
+                // Story 35.6 — type `privilege` (exclusive PAR nom de privilège /
+                // portée MACHINE, troisième mécanisme HORS-REGISTRE). Le provider
+                // EXPANSE une capacité → AU PLUS un item concret 2 clés
+                // {privilege, accounts} (interpréteur de `spec` surchargé,
+                // `StateCompiler` INTOUCHÉ D2). `exclusiveKey() = <privilège>`
+                // minuscule (1 segment) : la maille la plus spécifique gagne la
+                // liste `accounts` ENTIÈRE (NON cumulatif — le ciblage « qui est
+                // refusé » vit DANS la liste). Enum FERMÉ SeDeny*-only (un grant
+                // verrouillerait la machine — refus guard + agent). Jetons
+                // d'audience @eleves|@profs|@personnels résolus par AudienceTokens
+                // (36.1, réutilisé). Postgres pur (résolution SID côté POSTE, LSA
+                // D5, conteneur SANS store D4). UN seul provider (portée Machine).
+                // Une ligne, zéro modif du compilateur.
+                $app->make(PrivilegeCapabilityProvider::class),
                 // Story 27.3bis — type `associations` (exclusive PAR IDENTIFIANT,
                 // portée session/compagnon HKCU) : catalogue d'associations de
                 // fichiers/protocoles par défaut activables par parc, compilées

@@ -75,6 +75,18 @@ final class StateContract
         // le type sans autre changement. Un agent ≤ 2.6.0 IGNORE ce type EN
         // SILENCE (contrat §8 — aucun statut au rapport) → release 2.7.0 à publier.
         'firewall',
+        // Story 35.6 (D1) — mécanisme HORS-REGISTRE `privilege` : droits de
+        // logon LSA `SeDeny*` gérés sur le poste (réconciliation de CONTENEUR
+        // sans store — le privilège EST le conteneur, titulaires énumérables via
+        // LsaEnumerateAccountsWithUserRight ; service SYSTEM, portée Machine).
+        // Payload EXACTEMENT 2 clés `{privilege, accounts}` — enum FERMÉ des 5
+        // droits SeDeny* (tout droit *grant* est INEXPRIMABLE : une convergence
+        // « possède la liste entière » sur un grant verrouillerait la machine),
+        // `accounts` = liste TRIÉE de noms Windows (jamais de SID ni de LUID,
+        // §7.9). Ajout ADDITIF : `ReportRequest` (Rule::in) accepte le type sans
+        // autre changement. Un agent ≤ 2.7.0 IGNORE ce type EN SILENCE (contrat
+        // §8 — aucun statut au rapport) → release 2.8.0 à publier.
+        'privilege',
     ];
 
     /**

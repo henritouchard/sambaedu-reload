@@ -1409,9 +1409,9 @@ const DATASETS = {
         },
         {
           "id": "35-6",
-          "title": "Mécanisme privilege — droits LSA SeDeny* (GATED : besoin métier à valider)",
-          "status": "todo",
-          "note": "[GATE FERMÉ — décision Henri 2026-07-03 (synthèse ultradev, Q1 de ultradev/35-questions.md) : NE PAS OUVRIR] RDP-élèves couvert par remote_desktop_enabled=off par parc (livré) ; futur mécanisme localgroup en alternative. Story réouvrable si le besoin « RDP interdit aux élèves mais autorisé aux profs sur le MÊME parc » se confirme sur le terrain."
+          "title": "Mécanisme privilege — droits LSA SeDeny* (RDP élèves)",
+          "status": "ready-for-dev",
+          "note": "[GATE D6 RÉOUVERT — décision Henri 2026-07-04 + story créée → ready-for-dev] Réouverture : (a) besoin terrain « RDP interdit aux élèves mais autorisé aux profs sur le MÊME parc » confirmé (le per-parc remote_desktop_enabled=off est machine-wide) ; (b) Epic 36 LIVRÉ → coût marginal effondré (plomberie LSA windows.LookupSID + jetons AudienceTokens + patron provider/guard/handler/golden/observer déjà payés). Livre : type contrat additif privilege (exclusive, portée Machine, {privilege, accounts}), provider PrivilegeCapabilityProvider (exclusiveKey=nom du privilège, AudienceTokens réutilisé), guard PrivilegeAuthoringGuard (SeDeny*-only, grant refusé serveur+agent), handler Go réconciliation conteneur SANS store (iso firewall) + impl Win32 LSA, seed rdp_denied_for_group (SeDenyRemoteInteractiveLogonRight, off réel), agent 2.7.0→2.8.0. Reco : dev fable / review opus. Cf. 35-6-mecanisme-privilege-lsa-sedeny.md."
         }
       ]
     },

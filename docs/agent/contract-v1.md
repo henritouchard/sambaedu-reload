@@ -239,7 +239,7 @@ Identifiants prévus :
 `wallpaper`, `lockscreen`, `overlay`, `shortcuts`, `printers`, `drives`,
 `associations`, `registry`, `app_config`, `applications`, `registry_list`
 (Story 35.2, cf. §7.6), `fs_acl` (Story 36.1, cf. §7.7), `firewall`
-(Story 36.2, cf. §7.8).
+(Story 36.2, cf. §7.8), `privilege` (Story 35.6, cf. §7.9).
 
 ### 7.1 Payload `registry`
 
@@ -859,6 +859,107 @@ EFFET. « Couper Internet » se cible par parc/salle.
 > La 2.6.0 (`fs_acl`) n'ayant pas encore été publiée, la 2.7.0 livre les DEUX
 > mécanismes.
 
+### 7.9 Payload `privilege`
+
+Type `privilege` (Story 35.6) — **droits de logon LSA `SeDeny*` gérés**,
+TROISIÈME mécanisme HORS-REGISTRE. La demande fondatrice « refuser le RDP aux
+élèves mais l'autoriser aux profs sur le MÊME parc » se projette sur le privilège
+`SeDenyRemoteInteractiveLogonRight` accordé au groupe des élèves : Windows
+refuse alors l'ouverture de session Bureau à distance à tout membre du groupe,
+en laissant les autres passer. Sémantique **`exclusive` PAR nom de privilège**
+(la maille la plus spécifique gagne la liste `accounts` **ENTIÈRE** — NON
+cumulatif : le ciblage « qui est refusé » vit DANS la liste, pas dans une union
+de mailles). Portée **`machine` UNIQUEMENT** (le service SYSTEM est le seul
+acteur de la LSA locale ; le compagnon n'a pas les droits).
+
+```json
+{
+  "type": "privilege",
+  "semantics": "exclusive",
+  "payload": {
+    "privilege": "SeDenyRemoteInteractiveLogonRight",
+    "accounts": ["Eleves"]
+  },
+  "hash": "047048d1…a34a6b9a"
+}
+```
+
+Le payload porte **EXACTEMENT 2 clés** — jamais d'id de capacité, zéro float
+(§4.1) :
+
+| Clé | Type JSON | Sens |
+|---|---|---|
+| `privilege` | string | Un des **5 droits de logon `SeDeny*`** (enum FERMÉ, D3) : `SeDenyInteractiveLogonRight`, `SeDenyNetworkLogonRight`, `SeDenyBatchLogonRight`, `SeDenyServiceLogonRight`, `SeDenyRemoteInteractiveLogonRight`. Tout autre nom — un droit *grant* (`SeInteractiveLogonRight`, …) ou un SeDeny inconnu — est REFUSÉ à l'authoring ET par l'agent (cf. ci-dessous). |
+| `accounts` | list&lt;string&gt; | Titulaires désirés du privilège : **NOMS Windows** (`Eleves`, `SE4\Eleves`, `Domain Users`) — **jamais de SID ni de LUID** (D5, la résolution `nom → SID` est côté POSTE via LSA). Liste **TRIÉE** par le serveur (byte-identité du hash) ; l'ordre n'est pas porteur de sens. **`accounts: []` est LÉGITIME** : l'agent VIDE le privilège (révoque tous les titulaires) — c'est le `off` réel. |
+
+**Propriété du CONTENEUR SANS store (D4, iso `firewall` — PAS `fs_acl`).** Un
+privilège LSA porte une liste de titulaires **ÉNUMÉRABLE**
+(`LsaEnumerateAccountsWithUserRight`) — contrairement à une ACE NTFS, aucun
+store « dernier appliqué » n'est nécessaire. L'agent possède la liste du
+privilège **EN ENTIER** et la réconcilie à chaque cycle : accorde
+(`LsaAddAccountRights`) chaque compte désiré manquant, révoque
+(`LsaRemoveAccountRights`) tout titulaire hors état désiré — y compris un compte
+accordé à la main. AUCUN store, AUCUN marqueur.
+
+**Pourquoi SeDeny*-only n'est PAS cosmétique (sûreté).** « Posséder la liste
+entière » signifie **révoquer** tout titulaire hors état désiré. C'est SÛR
+uniquement parce que les privilèges `SeDeny*` sont **vides par défaut** sous
+Windows (aucun titulaire légitime préexistant à écraser). La même convergence
+sur un droit *grant* (`SeRemoteInteractiveLogonRight`, `SeInteractiveLogonRight`)
+révoquerait le droit de session à tout le monde → **machine verrouillée,
+injoignable**. L'enum fermé rend cette variante catastrophique **INEXPRIMABLE**
+(D3) — refus à l'authoring (guard serveur) **ET** refus agent.
+
+**Le TYPE ne suffit pas : la PORTÉE est bornée aussi.** L'allowlist `SeDeny*`
+protège du *grant*, mais une SeDeny* **légitime** pointée sur un principal trop
+large verrouille le poste tout autant : `SeDenyInteractiveLogonRight` sur
+`Domain Users` (ou `Everyone`, `Authenticated Users`, `Users`, `Administrators`,
+`SYSTEM`, `Interactive`…) = **plus aucune session console possible**. Les
+`accounts` à large portée sont donc REFUSÉS — à l'authoring (guard serveur, par
+NOM bien connu FR/EN et par SID/RID well-known : `S-1-1-0`, `S-1-5-11`,
+`S-1-5-32-544/545`, RID `-513/-512/-515`…) **ET** par l'agent (défense en
+profondeur, sur le **SID résolu** par la LSA — robuste à la locale et aux
+alias : le compte fautif ⇒ **erreur d'item, JAMAIS d'application partielle**).
+Les jetons d'audience `@eleves/@profs/@personnels` résolvent des groupes
+MÉTIER — jamais larges — et restent acceptés ; « qui est refusé » se cible par
+groupe métier, jamais par un principal universel.
+
+**Effet au LOGON SUIVANT, jamais de session tuée.** Les droits de logon
+`SeDeny*` sont évalués par Windows **à l'ouverture de session** : accorder le
+deny à un élève déjà connecté en RDP ne coupe PAS sa session en cours — la
+PROCHAINE tentative est refusée. Symétriquement, retirer le droit (`accounts:
+[]`) rétablit le logon au logon suivant, sans reboot. Ce n'est pas un bug,
+c'est la sémantique Windows.
+
+**Refus agent = défense en profondeur (INDÉPENDANT du serveur).** Un
+`privilege` HORS de l'allowlist `SeDeny*` (miroir Go de
+`PrivilegeAuthoringGuard::ALLOWED_PRIVILEGES`) ⇒ **erreur d'item**, JAMAIS
+appliqué — le serveur peut avoir tort, l'agent ne verrouille jamais la machine.
+Un compte **irrésoluble** via LSA ⇒ erreur d'item avec détail, et la
+réconciliation de CE privilège n'est **PAS appliquée partiellement** (un trou
+« un élève non refusé » serait silencieux) — les AUTRES privilèges convergent,
+l'erreur remonte TOUJOURS (`{status: error}` du type). Payload statiquement
+invalide (clé manquante, `accounts` non-liste) ⇒ enveloppe invalide ⇒
+`{status: error}` pour le type.
+
+**Fenêtre d'orphelin & retrait propre.** Le type ABSENT du state ⇒ le handler
+n'est jamais invoqué (§8) : un privilège peuplé **SURVIVRAIT** (les élèves
+resteraient refusés). Le retrait PROPRE passe par la valeur `off` (item ÉMIS
+avec `accounts: []` → privilège vidé), **JAMAIS** par `unmanaged` (sentinelle,
+rien émis). Remède manuel : `secpol.msc` → Attribution des droits utilisateur.
+
+**Pas de ciblage par utilisateur (structurel).** Portée machine ⇒ le service
+SYSTEM fetch sans `?user` : un override UserGroup/User d'une capacité
+`privilege` est SANS EFFET. « Qui est refusé » = la liste `accounts` du payload
+(jeton d'audience `@eleves` résolu à l'expansion) ; « quels postes » = les
+assignations parc/salle/poste/broadcast.
+
+> **Agents antérieurs à 2.8.0** : le type `privilege` est **ignoré EN SILENCE**
+> (§8 — aucun statut, aucune erreur). Symptôme « RDP toujours ouvert aux
+> élèves, zéro erreur ». La release 2.8.0 DOIT être publiée manuellement
+> (update.sh ne publie jamais seul). Les 2.6.0 (`fs_acl`) et 2.7.0 (`firewall`)
+> n'ayant pas encore été publiées, la 2.8.0 livre les TROIS mécanismes.
+
 ## 8. Tableau vide ≠ type absent (décision de contrat)
 
 Les items d'une portée sont une **liste**, pas une map. La distinction
@@ -891,7 +992,10 @@ décision de contrat consommée par chaque handler côté agent.
   avec justification, agent bumpé 2.6.0. Ex. Story 36.2 : type `firewall`
   (§7.8, mécanisme HORS-REGISTRE — règles pare-feu possédées par groupe), golden
   bumpé avec justification, agent bumpé 2.7.0 (publication qui livre AUSSI la
-  2.6.0 fs_acl jamais publiée). ⚠️ Contrairement au champ ajouté, un agent
+  2.6.0 fs_acl jamais publiée). Ex. Story 35.6 : type `privilege` (§7.9,
+  mécanisme HORS-REGISTRE — droits de logon LSA SeDeny* gérés), golden bumpé
+  avec justification, agent bumpé 2.8.0 (publication qui livre les 2.6.0/2.7.0
+  jamais publiées). ⚠️ Contrairement au champ ajouté, un agent
   ANTÉRIEUR **ignore un type inconnu EN SILENCE** (§8 : type sans handler =
   aucun statut émis) — « réglage sans effet, zéro erreur ». La publication de la
   release n'est pas optionnelle.

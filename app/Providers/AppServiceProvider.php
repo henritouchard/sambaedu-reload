@@ -224,6 +224,10 @@ class AppServiceProvider extends ServiceProvider
         // l'observer dispatche par mécanisme (fs_acl → FsAclAuthoringGuard ;
         // firewall → FirewallAuthoringGuard, Q3 = refus block couvrant le LAN),
         // une projection windows/firewall dangereuse lève FirewallAuthoringException.
+        // Story 35.6 — idem pour le mécanisme privilege (privilege →
+        // PrivilegeAuthoringGuard, SeDeny*-only : un droit *grant* verrouillerait
+        // la machine) : une projection windows/privilege fautive lève
+        // PrivilegeAuthoringException.
         // Enregistré hors environnement de test (patron Workstation ci-dessous) :
         // de nombreux tests unitaires du provider fabriquent volontairement des
         // specs fs_acl ADVERSARIALES via factory Eloquent pour prouver la

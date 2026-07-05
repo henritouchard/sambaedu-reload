@@ -114,7 +114,20 @@ import (
 // (livre AUSSI la 2.6.0 fs_acl). `report.v1.json` INCHANGÉ. machine = 7, 15
 // items au total, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP (test
 // croisé NFR13).
-const frozenStateHash = "76f6d9acb82b4d16c13cb87d5a10b0066e4da3f9b376750b9ad19b8cd8fb7d9b"
+// Re-bumpé SCIEMMENT par la Story 35.6 (§9) : NOUVEAU type `privilege` (D1,
+// mécanisme HORS-REGISTRE — droits de logon LSA `SeDeny*` gérés,
+// réconciliation de CONTENEUR sans store : le privilège EST le conteneur,
+// titulaires énumérables, portée MACHINE) — le golden gagne UN item en portée
+// MACHINE (`SeDenyRemoteInteractiveLogonRight` refusé au groupe `Eleves`,
+// payload EXACTEMENT 2 clés `{privilege, accounts}` — enum FERMÉ des 5
+// SeDeny*, `accounts` = liste TRIÉE de noms Windows, jamais de SID/LUID). Type
+// AJOUTÉ (ResourceTypes additive) = forward-compatible, pas un major : un
+// agent ≤ 2.7.0 IGNORE le type EN SILENCE (§8, aucun statut au rapport) →
+// publication de release 2.8.0 obligatoire (livre AUSSI les 2.6.0 fs_acl et
+// 2.7.0 firewall jamais publiées). `report.v1.json` INCHANGÉ. machine = 8, 16
+// items au total, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP
+// (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
+const frozenStateHash = "e87fed1610a0c206065fb19cca444223725d8c6660b9c4b09f44a672f2d43fbd"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -218,8 +231,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 15 {
-		t.Errorf("15 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2 + fs_acl machine 36.1 + firewall machine 36.2), %d vérifiés", checked)
+	if checked != 16 {
+		t.Errorf("16 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2 + fs_acl machine 36.1 + firewall machine 36.2 + privilege machine 35.6), %d vérifiés", checked)
 	}
 }
 
@@ -322,6 +335,39 @@ func TestHashItemFirewallCanonicalization(t *testing.T) {
 	// Le golden item porte bien le hash figé du golden.
 	if hBase != "4851bc92aaf16cd71a5e0d595a0f7cad3e0fa77faba420adeed18044cf19afdc" {
 		t.Errorf("hash de l'item firewall golden divergent du StateHasher PHP : got %s", hBase)
+	}
+}
+
+// --- Payload `privilege` (Story 35.6) : accounts ET privilege entrent au hash --
+//
+// AUCUNE modification du hasher : la canonicalisation générique intègre
+// naturellement le payload 2 clés (`accounts` = liste ORDONNÉE — le provider la
+// TRIE pour la byte-identité, la canonicalisation NE trie PAS les listes §4).
+// Jumeaux des tests PHP (StateHasherTest).
+func TestHashItemPrivilegeAccountsAndPrivilegeChangeTheHash(t *testing.T) {
+	base := `{"type":"privilege","semantics":"exclusive","payload":{"privilege":"SeDenyRemoteInteractiveLogonRight","accounts":["Eleves"]}}`
+	otherAccounts := `{"type":"privilege","semantics":"exclusive","payload":{"privilege":"SeDenyRemoteInteractiveLogonRight","accounts":["Eleves","Invites"]}}`
+	emptyAccounts := `{"type":"privilege","semantics":"exclusive","payload":{"privilege":"SeDenyRemoteInteractiveLogonRight","accounts":[]}}`
+	otherPrivilege := `{"type":"privilege","semantics":"exclusive","payload":{"privilege":"SeDenyInteractiveLogonRight","accounts":["Eleves"]}}`
+
+	hBase := fwHashOf(t, base)
+	hAccounts := fwHashOf(t, otherAccounts)
+	hEmpty := fwHashOf(t, emptyAccounts)
+	hPrivilege := fwHashOf(t, otherPrivilege)
+
+	if hBase == hAccounts {
+		t.Errorf("deux items privilege qui ne diffèrent que par `accounts` doivent avoir des hashes DISTINCTS (got %s)", hBase)
+	}
+	if hBase == hEmpty {
+		t.Errorf("un item privilege `accounts: []` (off réel) doit hasher différemment du même peuplé (got %s)", hBase)
+	}
+	if hBase == hPrivilege {
+		t.Errorf("deux items privilege qui ne diffèrent que par `privilege` doivent avoir des hashes DISTINCTS (got %s)", hBase)
+	}
+	// Le golden item (SeDenyRemoteInteractiveLogonRight / [Eleves]) porte bien
+	// le hash figé du golden.
+	if hBase != "047048d1b6374caaf5fbbc3e53a94c1ea05a9e6719d607a1ffba42c2a34a6b9a" {
+		t.Errorf("hash de l'item privilege golden divergent du StateHasher PHP : got %s", hBase)
 	}
 }
 

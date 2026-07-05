@@ -44,6 +44,11 @@ var ResourceTypes = []string{
 	// Machine, contrat §7.8). Ajout ADDITIF. Un agent ≤ 2.6.0 IGNORE ce type
 	// EN SILENCE (contrat §8).
 	"firewall",
+	// Story 35.6 (D1) — mécanisme HORS-REGISTRE `privilege` : droits de logon
+	// LSA `SeDeny*` gérés (réconciliation de CONTENEUR sans store, service
+	// SYSTEM, portée Machine, contrat §7.9). Ajout ADDITIF. Un agent ≤ 2.7.0
+	// IGNORE ce type EN SILENCE (contrat §8).
+	"privilege",
 }
 
 // ResourceStatuses : statuts de conformité du rapport (§6 — iso

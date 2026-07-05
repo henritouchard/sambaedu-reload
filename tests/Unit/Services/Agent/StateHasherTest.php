@@ -245,6 +245,52 @@ class StateHasherTest extends TestCase
         );
     }
 
+    // ── Payload `privilege` (Story 35.6) : accounts ET privilege au hash ──────
+    // AUCUNE modification du StateHasher : la canonicalisation générique intègre
+    // le payload 2 clés (`accounts` = liste ORDONNÉE — le provider la TRIE pour
+    // la byte-identité, la canonicalisation NE trie PAS les listes §4). Jumeaux
+    // des tests Go (hasher_test.go).
+
+    #[Test]
+    public function privilege_accounts_and_privilege_change_the_item_hash(): void
+    {
+        $base = [
+            'type' => 'privilege',
+            'semantics' => 'exclusive',
+            'payload' => [
+                'privilege' => 'SeDenyRemoteInteractiveLogonRight',
+                'accounts' => ['Eleves'],
+            ],
+        ];
+        $otherAccounts = $base;
+        $otherAccounts['payload']['accounts'] = ['Eleves', 'Invites'];
+        $emptyAccounts = $base;
+        $emptyAccounts['payload']['accounts'] = [];
+        $otherPrivilege = $base;
+        $otherPrivilege['payload']['privilege'] = 'SeDenyInteractiveLogonRight';
+
+        $this->assertNotSame(
+            $this->hasher->hashItem($base),
+            $this->hasher->hashItem($otherAccounts),
+            'deux items privilege qui ne diffèrent que par `accounts` doivent avoir des hashes distincts',
+        );
+        $this->assertNotSame(
+            $this->hasher->hashItem($base),
+            $this->hasher->hashItem($emptyAccounts),
+            'un item privilege `accounts: []` (off réel) hashe différemment du même peuplé',
+        );
+        $this->assertNotSame(
+            $this->hasher->hashItem($base),
+            $this->hasher->hashItem($otherPrivilege),
+            'deux items privilege qui ne diffèrent que par `privilege` doivent avoir des hashes distincts',
+        );
+        // Hash figé de l'item golden — jumeau Go.
+        $this->assertSame(
+            '047048d1b6374caaf5fbbc3e53a94c1ea05a9e6719d607a1ffba42c2a34a6b9a',
+            $this->hasher->hashItem($base),
+        );
+    }
+
     #[Test]
     public function write_item_without_ensure_keeps_its_pre_story_hash(): void
     {

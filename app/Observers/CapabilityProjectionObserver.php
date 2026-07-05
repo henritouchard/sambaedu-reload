@@ -6,10 +6,12 @@ namespace App\Observers;
 
 use App\Exceptions\FirewallAuthoringException;
 use App\Exceptions\FsAclAuthoringException;
+use App\Exceptions\PrivilegeAuthoringException;
 use App\Models\Capability;
 use App\Models\CapabilityProjection;
 use App\Services\Agent\Providers\FirewallAuthoringGuard;
 use App\Services\Agent\Providers\FsAclAuthoringGuard;
+use App\Services\Agent\Providers\PrivilegeAuthoringGuard;
 
 /**
  * Rend les garde-fous d'authoring des mécanismes HORS-REGISTRE RÉELS au runtime
@@ -19,9 +21,13 @@ use App\Services\Agent\Providers\FsAclAuthoringGuard;
  *
  * **Dispatch PAR MÉCANISME (Story 36.2).** L'observer route la projection vers
  * le guard de SON mécanisme (`fs_acl` → {@see FsAclAuthoringGuard} ; `firewall` →
- * {@see FirewallAuthoringGuard}) ; les autres mécanismes (`registry`,
- * `registry_list`, `localgroup`…) ne sont PAS concernés et retournent
- * immédiatement. Le comportement `fs_acl` de la Story 36.1 est INCHANGÉ.
+ * {@see FirewallAuthoringGuard} ; `privilege` → {@see PrivilegeAuthoringGuard},
+ * Story 35.6 — SeDeny*-only : un droit *grant* verrouillerait la machine) ; les
+ * autres mécanismes (`registry`, `registry_list`, `localgroup`…) ne sont PAS
+ * concernés et retournent immédiatement. Les comportements `fs_acl` (36.1) et
+ * `firewall` (36.2) sont INCHANGÉS — l'extension 35.6 réutilise le patron
+ * existant (décision de conception : ÉTENDRE l'observer, pas de jumeau — un
+ * seul point de dispatch par modèle, zéro double enregistrement).
  *
  * **Événement `saving`** (couvre create ET update) : le spec est validé AVANT
  * écriture ; une violation lève l'exception du mécanisme (l'INSERT/UPDATE est
@@ -40,6 +46,7 @@ class CapabilityProjectionObserver
         match ($projection->mechanism) {
             CapabilityProjection::MECHANISM_FS_ACL => $this->guardFsAcl($projection),
             CapabilityProjection::MECHANISM_FIREWALL => $this->guardFirewall($projection),
+            CapabilityProjection::MECHANISM_PRIVILEGE => $this->guardPrivilege($projection),
             default => null, // mécanisme non concerné.
         };
     }
@@ -71,6 +78,21 @@ class CapabilityProjectionObserver
 
         if ($violations !== []) {
             throw new FirewallAuthoringException($violations);
+        }
+    }
+
+    private function guardPrivilege(CapabilityProjection $projection): void
+    {
+        $capability = Capability::find($projection->capability_id);
+
+        $violations = (new PrivilegeAuthoringGuard())->violations([[
+            'capability' => $capability->key ?? (string) $projection->capability_id,
+            'warning' => $capability?->warning,
+            'spec' => $projection->spec,
+        ]]);
+
+        if ($violations !== []) {
+            throw new PrivilegeAuthoringException($violations);
         }
     }
 }

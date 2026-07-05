@@ -952,6 +952,64 @@ byte-identique aux candidats capacités (`FROZEN_STATE_HASH` inchangé).
   pour que le handler retire l'ACE) ; la suppression d'une règle ACTIVE est
   refusée. Portée MACHINE (ciblage par PARC, jamais par utilisateur — piège #10).
 
+### `privilege` — `exclusive` PAR nom de privilège / `machine`
+
+**Story 35.6.** Troisième mécanisme **HORS-REGISTRE** : des **droits de logon
+LSA `SeDeny*` gérés**. `PrivilegeCapabilityProvider` (portée **Machine**)
+EXPANSE une capacité → AU PLUS un item concret 2 clés `{privilege, accounts}`
+(cf. contrat §7.9). Jumeau structurel de `fs_acl`/`firewall` : `expand()`
+surchargé, `StateCompiler` INTOUCHÉ (D2), `hive()` renvoie `''`,
+`resolveKeyValue()` hérité pour `accounts` (liste littérale OU map
+valeur-capacité `{capValue: [comptes]}` — clé absente = sentinelle
+`unmanaged`).
+
+- **`exclusiveKey() = <privilège>`** (1 segment minuscule) : la maille la plus
+  spécifique gagne la liste `accounts` **ENTIÈRE** — **NON cumulatif** (piège
+  #4, contrairement aux ACE `fs_acl` cumulables). C'est VOULU : « qui est
+  refusé » vit DANS la liste (`@eleves` seul → les profs, absents de la liste,
+  gardent le RDP), pas dans une union de mailles ni un ciblage par utilisateur.
+  Les privilèges DISTINCTS coexistent (identités distinctes).
+- **Conteneur SANS store (D4, iso `firewall` — PAS `fs_acl`)** : un privilège
+  LSA porte une liste de titulaires ÉNUMÉRABLE
+  (`LsaEnumerateAccountsWithUserRight`) — le handler possède la liste EN ENTIER
+  et la réconcilie (accorde les manquants, révoque les surnuméraires — y
+  compris un compte accordé à la main) ; `accounts: []` VIDE le privilège.
+  AUCUN store, AUCUN marqueur.
+- **SeDeny*-only (`PrivilegeAuthoringGuard`, câblé au runtime via
+  `CapabilityProjectionObserver` en dispatch par mécanisme)** : seuls les
+  **5 droits de logon `SeDeny*`** sont admis (`ALLOWED_PRIVILEGES`, enum
+  fermé). Tout droit *grant* est REFUSÉ — une convergence « possède la liste
+  entière » sur `SeInteractiveLogonRight`/`SeRemoteInteractiveLogonRight`
+  révoquerait le droit de session à tout le monde → **machine VERROUILLÉE**.
+  Le refus vit des DEUX côtés (guard serveur + allowlist miroir agent
+  `privilegeAllowlist`) : le serveur peut avoir tort, l'agent ne verrouille
+  jamais la machine. Exigés aussi : `warning` non vide (mécanisme de refus par
+  nature), jeton d'audience connu. `accounts: []` reste LÉGITIME (= off réel).
+- **Jetons d'audience (D6, `AudienceTokens` de 36.1 RÉUTILISÉ)** : un compte
+  `@eleves|@profs|@personnels` est résolu par convention SI le groupe existe
+  dans `user_groups`. Jeton irrésoluble ⇒ **item ENTIER non émis + log
+  warning** (jamais une liste PARTIELLE qui sous-refuserait — un deny à trous
+  serait silencieux). Un littéral (`Domain Users`) part VERBATIM (résolu par
+  LSA côté poste — compte irrésoluble = erreur d'item, visible).
+- **Résolution SID côté POSTE (D5)** : le provider n'émet que des NOMS
+  (Postgres pur, NFR7) ; l'agent résout via `windows.LookupSID` (pattern
+  `fsAclOps.LookupSid` de 36.1 réutilisé), mémoïsé PAR PASSE seulement.
+- **Pas de ciblage par utilisateur** (piège #11, STRUCTUREL) : portée Machine ⇒
+  le service fetch sans `?user` → un override UserGroup/User est SANS EFFET.
+- **Limites (à documenter, pas sur-conçu)** : effet au **LOGON SUIVANT**
+  (piège #5 — les droits de logon sont évalués à l'ouverture de session,
+  aucune session en cours n'est coupée) ; type absent du state ⇒ handler non
+  invoqué (piège #6) → un privilège armé puis remis à `unmanaged` resterait
+  PEUPLÉ — le retrait PROPRE passe par `off` (`accounts: []`), JAMAIS par
+  `unmanaged`. Remède manuel : `secpol.msc` → Attribution des droits
+  utilisateur.
+
+Capacité de preuve seedée : `rdp_denied_for_group` (enum
+`unmanaged`/`eleves`/`off` — `eleves` ⇒ `SeDenyRemoteInteractiveLogonRight`
+accordé au jeton `@eleves`, `off` ⇒ privilège vidé). Couvre la dernière brique
+GPO CD95 « Blocages élèves » : RDP refusé aux élèves / autorisé aux profs sur
+le MÊME poste.
+
 ## Ajouter un type de ressource
 
 1. **Identifiant figé** : ajouter le type à [contract-v1.md](contract-v1.md) §7

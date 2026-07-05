@@ -179,7 +179,33 @@ package shared
 // MANUELLE de la release 2.7.0 (update.sh ne publie jamais seul) livre les DEUX
 // mécanismes fs_acl ET firewall d'un coup.
 //
+// 2.8.0 = mécanisme HORS-REGISTRE `privilege` (Story 35.6, contrat §7.9) :
+// NOUVEAU type + NOUVEAU handler `PrivilegeHandler` (portée MACHINE / service
+// SYSTEM seul) qui gère des droits de logon LSA `SeDeny*` par RÉCONCILIATION
+// DE CONTENEUR SANS STORE (iso firewall, PAS fs_acl) : le privilège EST le
+// conteneur, ses titulaires sont ÉNUMÉRABLES (LsaEnumerateAccountsWithUserRight)
+// — le handler possède la liste ENTIÈRE (accorde les SID désirés manquants via
+// LsaAddAccountRights, révoque tout titulaire hors état désiré via
+// LsaRemoveAccountRights ; `accounts: []` VIDE le privilège = off réel). Payload
+// 2 clés `{privilege, accounts}` — noms Windows seulement (résolution SID via
+// windows.LookupSID, RÉUTILISE le pattern fsAclOps.LookupSid de 36.1, D5 ; mémo
+// PAR PASSE). REFUS agent SeDeny*-only en DOUBLE RIDEAU (miroir de
+// PrivilegeAuthoringGuard::ALLOWED_PRIVILEGES) : un droit *grant* possédé en
+// liste entière révoquerait le logon de tout le monde → machine VERROUILLÉE —
+// erreur d'item, jamais appliqué. Compte irrésoluble ⇒ erreur d'item SANS
+// application partielle (jamais de deny à trous silencieux). EFFET AU LOGON
+// SUIVANT (sémantique Windows : les droits de logon sont évalués à l'ouverture
+// de session — aucune session tuée ; le retrait rétablit au logon suivant).
+// Débouché : RDP refusé aux élèves / autorisé aux profs sur le MÊME poste
+// (capacité `rdp_denied_for_group`, SeDenyRemoteInteractiveLogonRight).
+// ⚠️ Un binaire ≤ 2.7.0 IGNORE le type privilege EN SILENCE (contrat §8 —
+// aucun statut, aucune erreur : « RDP toujours ouvert, zéro erreur »). Golden
+// state.v1.json bumpé (+1 item privilege machine, hashes figés jumeaux PHP↔Go
+// recalculés). ⚠️ PUBLICATION : les 2.6.0 (fs_acl) ET 2.7.0 (firewall) N'ONT
+// PAS ENCORE ÉTÉ PUBLIÉES — la publication MANUELLE de la release 2.8.0
+// (update.sh ne publie jamais seul) livre les TROIS mécanismes d'un coup.
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.7.0"
+var Version = "2.8.0"

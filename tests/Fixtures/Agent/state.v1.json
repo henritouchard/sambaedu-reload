@@ -87,6 +87,17 @@
                 "ensure": "present"
             },
             "hash": "4851bc92aaf16cd71a5e0d595a0f7cad3e0fa77faba420adeed18044cf19afdc"
+        },
+        {
+            "type": "privilege",
+            "semantics": "exclusive",
+            "payload": {
+                "privilege": "SeDenyRemoteInteractiveLogonRight",
+                "accounts": [
+                    "Eleves"
+                ]
+            },
+            "hash": "047048d1b6374caaf5fbbc3e53a94c1ea05a9e6719d607a1ffba42c2a34a6b9a"
         }
     ],
     "session": [

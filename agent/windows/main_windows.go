@@ -259,6 +259,19 @@ func newAgent(echo bool) *shared.Agent {
 					Ops: &firewallOps{log: logger},
 					Log: logger,
 				},
+				// Story 35.6 — privilege (exclusive PAR nom de privilège / scope
+				// MACHINE) : le SERVICE SYSTEM converge les droits de logon LSA
+				// `SeDeny*` gérés (réconciliation de CONTENEUR — le privilège EST
+				// le conteneur, titulaires énumérables via
+				// LsaEnumerateAccountsWithUserRight : accorde les manquants,
+				// révoque les surnuméraires — AUCUN store). Refus SeDeny*-only en
+				// défense en profondeur (un grant possédé en liste entière
+				// verrouillerait la machine). Résolution SID via windows.LookupSID
+				// (iso fs_acl, D5). SYSTEM UNIQUEMENT (jamais companion_windows.go).
+				"privilege": &shared.PrivilegeHandler{
+					Ops: &privilegeOps{log: logger},
+					Log: logger,
+				},
 			},
 			Log: logger,
 		},

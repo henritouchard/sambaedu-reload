@@ -3716,3 +3716,126 @@ snapshots.
       avertissement.
 - [ ] 36.4.5 — Délégation scopée : parc A OK, parc B refusé ; audit tracé.
 - [ ] Golden : `FROZEN_STATE_HASH` INCHANGÉ (aucune règle en base = byte-identité).
+
+## Story 35.6 — Mécanisme `privilege` (droits de logon LSA `SeDeny*`)
+
+Troisième mécanisme HORS-REGISTRE : le serveur émet des items
+`{privilege, accounts}` (contrat §7.9), l'agent SYSTEM réconcilie la liste de
+titulaires du privilège EN ENTIER via la LSA (accorde les manquants, révoque
+les surnuméraires — CONTENEUR SANS store, iso `firewall`). Capacité de preuve :
+`rdp_denied_for_group` (`SeDenyRemoteInteractiveLogonRight`, jeton `@eleves`) —
+« RDP refusé aux élèves, autorisé aux profs, sur le MÊME poste ». Enum FERMÉ
+SeDeny*-only : tout droit *grant* est refusé serveur ET agent (un grant possédé
+en liste entière verrouillerait la machine).
+
+### Prérequis d'exploitation (/vm, AVANT le lab)
+
+- **Migration à rejouer** (`migrate:status` d'abord — mémoire
+  `vm_migrations_not_auto_applied`) :
+  `2026_07_04_140000_seed_capability_rdp_denied_for_group`.
+- **Release agent 2.8.0 à PUBLIER MANUELLEMENT** (update.sh ne publie jamais
+  seul) : un binaire ≤ 2.7.0 IGNORE le type `privilege` EN SILENCE (§8 — aucun
+  statut, aucune erreur : « RDP toujours ouvert aux élèves, zéro erreur »).
+  ⚠️ Les 2.6.0 (`fs_acl`) et 2.7.0 (`firewall`) n'ayant jamais été publiées,
+  la 2.8.0 livre les TROIS mécanismes d'un coup.
+- Le groupe `Eleves` doit exister dans `user_groups` (sinon le jeton `@eleves`
+  est irrésoluble → item non émis + warning serveur, capacité inerte).
+- Poste de test JOINT AU DOMAINE (résolution SID + logon RDP impossibles à
+  simuler ailleurs), RDP activé (`remote_desktop_enabled` per-parc PAS à off).
+
+### Scénario 35.6.1 — RDP refusé à l'élève, autorisé au prof, sur le MÊME poste (e2e lab)
+
+1. En UI (défauts du parc du poste de test), passer « Ouverture de session RDP
+   (droit de logon) » à **« RDP refusé aux élèves »**. Acquitter le warning.
+2. Attendre un cycle agent (ou forcer la synchro). Sur le poste, vérifier dans
+   `secpol.msc` → Stratégies locales → Attribution des droits utilisateur →
+   « Interdire l'ouverture de session par les services Bureau à distance » :
+   le groupe `Eleves` y figure.
+3. Depuis un AUTRE poste, `mstsc` vers le poste de test avec un compte MEMBRE
+   du groupe élèves : la connexion est REFUSÉE (« The connection was denied
+   because the user account is not authorized for remote login » /
+   « Votre compte n'est pas autorisé… »).
+4. Même `mstsc`, compte PROF (hors liste) : la session RDP s'OUVRE normalement,
+   sur le MÊME poste. C'est LE critère de la story (per-parc
+   `remote_desktop_enabled=off` ne sait pas faire ça).
+5. Rapport agent : type `privilege` en `compliant` sur la fiche poste.
+
+### Scénario 35.6.2 — Effet au LOGON SUIVANT (pas de session tuée)
+
+1. Ouvrir une session RDP ÉLÈVE sur le poste AVANT d'armer la capacité.
+2. Armer « RDP refusé aux élèves » (35.6.1) : la session élève EN COURS n'est
+   PAS coupée (sémantique Windows : les droits de logon sont évalués à
+   l'ouverture de session).
+3. Fermer la session élève, retenter `mstsc` : REFUSÉ cette fois.
+
+### Scénario 35.6.3 — `off` réel : le droit est retiré, RDP rétabli
+
+1. Passer la capacité à **« RDP autorisé (droit retiré) »** (PAS « Non géré »).
+2. Au cycle suivant : `secpol.msc` montre le privilège VIDE (le groupe `Eleves`
+   a disparu de la liste). L'élève ré-ouvre une session RDP au logon suivant.
+3. Contre-épreuve piège #6 : repasser par « armé » puis « Non géré »
+   (sentinelle) — le privilège RESTE peuplé (orphelin assumé, le handler n'est
+   plus invoqué) : le retrait propre passe TOUJOURS par « RDP autorisé ».
+   Remède manuel : retirer le groupe dans `secpol.msc`.
+
+### Scénario 35.6.4 — Réconciliation de conteneur : titulaire manuel révoqué
+
+1. Capacité armée (`eleves`). Dans `secpol.msc`, ajouter À LA MAIN un autre
+   groupe (ex. `Invites`) au privilège « Interdire l'ouverture de session par
+   les services Bureau à distance ».
+2. Au cycle suivant : le groupe ajouté à la main est RÉVOQUÉ (l'agent possède
+   la liste ENTIÈRE — D4), `Eleves` reste seul titulaire ; rapport `drift` au
+   cycle de correction puis `compliant`.
+
+### Scénario 35.6.5 — Compte irrésoluble ⇒ item `error`, jamais de deny partiel
+
+1. Fabriquer (SQL, table `capability_projections`) une projection `privilege`
+   dont `accounts` contient un compte inexistant (`FANTOME`) À CÔTÉ d'un compte
+   valide, l'armer sur le poste de test.
+2. Au cycle : le type `privilege` remonte en **`error`** avec le compte fautif
+   au détail ; AUCUN des comptes de CE privilège n'est appliqué (pas de deny à
+   trous silencieux — piège #8). Les AUTRES privilèges (autres items)
+   convergent.
+
+### Scénario 35.6.6 — Binaire antérieur : silence total (piège #1)
+
+1. Sur un poste resté en agent ≤ 2.7.0, armer la capacité : AUCUN statut
+   `privilege` au rapport, aucune erreur — RDP toujours ouvert aux élèves.
+2. Publier la 2.8.0, laisser l'agent s'auto-mettre à jour : le type apparaît
+   au rapport et converge.
+
+### Scénario 35.6.7 — Compte à LARGE PORTÉE refusé (borne portée, post-review #1)
+
+Objet : une SeDeny* **légitime** (donc hors du filet allowlist) posée sur un
+principal universel verrouillerait le poste — bornée des DEUX côtés.
+
+1. **Serveur** : tenter de créer (UI future / SQL via observer) une projection
+   `privilege` `{privilege: SeDenyInteractiveLogonRight, accounts: ['Domain Users']}`
+   (ou `Everyone`, `Authenticated Users`, `Users`, `Administrators`, `SYSTEM`,
+   `Interactive`, un SID `S-1-1-0` / RID `…-513`). Attendu : **refus** à
+   l'authoring (`PrivilegeAuthoringException`), message « poste VERROUILLÉ ». Un
+   groupe métier nommé (`Eleves`, `SE4\Eleves`, jeton `@eleves`) reste accepté.
+2. **Agent (défense en profondeur)** : fabriquer malgré tout (SQL brut,
+   contournant l'observer) une projection ciblant un principal large, l'armer
+   sur le poste. Attendu : le type `privilege` remonte en **`error`** (le SID
+   résolu est large) ; AUCUNE application partielle, la SeDeny* n'est jamais
+   posée — le poste reste ouvrable.
+
+### Checklist rapide (Story 35.6)
+
+- [ ] 35.6.0 — Migration seed rejouée sur /vm + release 2.8.0 publiée + groupe
+      `Eleves` présent dans `user_groups`.
+- [ ] 35.6.1 — RDP élève REFUSÉ / prof OK sur le MÊME poste ; `secpol.msc`
+      montre `Eleves` au privilège ; rapport `compliant`.
+- [ ] 35.6.2 — Session élève en cours PAS coupée ; refus au logon suivant.
+- [ ] 35.6.3 — `off` vide le privilège (RDP rétabli) ; `unmanaged` n'y touche
+      PAS (orphelin assumé, retrait propre = off).
+- [ ] 35.6.4 — Titulaire ajouté à la main révoqué (liste entière, sans store).
+- [ ] 35.6.5 — Compte irrésoluble ⇒ `error` nominatif, zéro application
+      partielle ; autres items convergent.
+- [ ] 35.6.6 — Binaire ≤ 2.7.0 : type ignoré en silence ; 2.8.0 le réveille.
+- [ ] 35.6.7 — Principal large (`Domain Users`/`Everyone`/SID well-known)
+      REFUSÉ à l'authoring ET en `error` côté agent ; groupe métier accepté.
+- [ ] Golden : `state.v1.json` +1 item privilege machine, `FROZEN_STATE_HASH`
+      PHP = `frozenStateHash` Go recalculés à l'identique (`e87fed16…`) ;
+      `report.v1.json` INCHANGÉ.

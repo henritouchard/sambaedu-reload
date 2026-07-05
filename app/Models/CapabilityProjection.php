@@ -71,6 +71,23 @@ class CapabilityProjection extends Model
      */
     public const MECHANISM_FIREWALL = 'firewall';
 
+    /**
+     * Mécanisme HORS-REGISTRE `privilege` (Story 35.6, contrat §7.9 — type
+     * `privilege`) : droits de logon LSA `SeDeny*` gérés sur le poste, portée
+     * **Machine** (service SYSTEM seul). La `spec` porte
+     * `{privilege, accounts}` — `privilege` ∈ enum FERMÉ des 5 droits SeDeny*
+     * ({@see \App\Services\Agent\Providers\PrivilegeAuthoringGuard::ALLOWED_PRIVILEGES},
+     * tout droit *grant* est REFUSÉ : une convergence « possède la liste
+     * entière » sur un grant VERROUILLERAIT la machine), `accounts` = liste OU
+     * map valeur-capacité de NOMS Windows (jetons d'audience `@eleves|@profs|
+     * @personnels` résolus à l'expansion). L'agent possède la liste de
+     * titulaires du privilège EN ENTIER et la réconcilie — CONTENEUR SANS
+     * store (les titulaires sont énumérables via LSA, iso `firewall`, PAS
+     * `fs_acl`). Le serveur n'émet que des NOMS ; la résolution SID est côté
+     * POSTE (LSA, D5) — provider Postgres pur.
+     */
+    public const MECHANISM_PRIVILEGE = 'privilege';
+
     /** Mécanisme membership de groupe local — slice C (idem). */
     public const MECHANISM_LOCALGROUP = 'localgroup';
 

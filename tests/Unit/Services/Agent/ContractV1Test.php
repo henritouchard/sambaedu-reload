@@ -177,7 +177,24 @@ class ContractV1Test extends TestCase
     // type entre dans ReportRequest via Rule::in(RESOURCE_TYPES). machine = 7
     // items, 15 items au total, hash d'état RECALCULÉ. Le jumeau Go
     // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
-    private const FROZEN_STATE_HASH = '76f6d9acb82b4d16c13cb87d5a10b0066e4da3f9b376750b9ad19b8cd8fb7d9b';
+    //
+    // Re-bumpé SCIEMMENT par la Story 35.6 (évolution MINEURE du contrat, §9) :
+    // NOUVEAU type `privilege` (D1, mécanisme HORS-REGISTRE — droits de logon
+    // LSA `SeDeny*` gérés, réconciliation de CONTENEUR sans store, portée
+    // Machine) — le golden gagne UN item en portée `machine`
+    // (`SeDenyRemoteInteractiveLogonRight` refusé au groupe `Eleves`, payload
+    // EXACTEMENT 2 clés `{privilege, accounts}` — enum FERMÉ des 5 SeDeny*,
+    // `accounts` = liste TRIÉE de noms Windows, jamais de SID/LUID). Type
+    // AJOUTÉ (constante RESOURCE_TYPES additive) = forward-compatible, pas un
+    // major : un agent ≤ 2.7.0 IGNORE le type EN SILENCE (§8 — aucun statut au
+    // rapport), d'où publication de release 2.8.0 obligatoire (qui livre AUSSI
+    // les 2.6.0 fs_acl et 2.7.0 firewall jamais publiées). `report.v1.json`
+    // est INCHANGÉ : les items de rapport `{type, status, hash[, detail]}` ne
+    // portent aucun payload et le nouveau type entre dans ReportRequest via
+    // Rule::in(RESOURCE_TYPES). machine = 8 items, 16 items au total, hash
+    // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
+    // même valeur (test croisé NFR13).
+    private const FROZEN_STATE_HASH = 'e87fed1610a0c206065fb19cca444223725d8c6660b9c4b09f44a672f2d43fbd';
 
     private StateHasher $hasher;
 
