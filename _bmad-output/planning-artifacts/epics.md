@@ -2207,6 +2207,34 @@ So que chaque machine du parc dispose d'une adresse IP fixe sans configuration m
 
 ---
 
+### Story 8.3 : Sous-réseaux DHCP (VLANs) — CRUD natif + scripts DHCP versionnés
+
+> **Ajout 2026-07-03 (réouverture Epic 8)** — porte la dernière fonctionnalité DHCP legacy non couverte
+> (`dhcp/config.php` : création de VLANs). La clé 8-2 étant consommée par la série appstore, numérotation 8.3.
+> Analyse legacy + décisions structurantes : voir la story `_bmad-output/implementation-artifacts/8-3-sous-reseaux-dhcp-vlans.md`.
+
+As a **responsable de collège**,
+I want créer, modifier et supprimer des sous-réseaux DHCP (VLANs) avec leurs plages dynamiques,
+So que le serveur DHCP desserve plusieurs VLANs sans édition manuelle de `dhcpd.conf` ni UI legacy.
+
+**Acceptance Criteria (synthèse — détail BDD dans la story) :**
+
+**Given** l'onglet « Sous-réseaux » de la page réseau
+**When** je crée/modifie/supprime un VLAN (n° 1..999, réseau CIDR, gateway, plages dynamiques multiples)
+**Then** la table SQL `dhcp_subnets` (source de vérité) est mutée en transaction tout-ou-rien, le fichier
+`sambaedu.conf.d/dhcp-subnets.conf` est régénéré atomiquement et `make_dhcpd_conf.sh` rechargé
+**And** les validations de cohérence réseau refusent en bloc les configurations invalides (gateway/plages hors
+réseau, chevauchements inter-VLAN et avec les réservations)
+**And** aucun comportement destructeur du legacy n'est reproduit (pas d'autoconf AD-sites implicite, jamais de
+purge des baux)
+
+**Given** un déploiement futur sans les paquets Debian `sambaedu-*`
+**When** `scripts/update.sh` s'exécute
+**Then** les scripts `make_dhcpd_conf.sh` + `dhcp-dyndns.sh` versionnés dans `scripts/system/` sont déployés
+idempotents vers `/usr/share/sambaedu/sbin/` (`ensure_dhcp_scripts()`) — cf. `docs/audit-dependances-systeme.md` §2.2bis
+
+---
+
 ## Epic 9 : Déploiement Windows SER
 
 *Le responsable peut gérer les GPOs, les packages WPKG, les scripts de démarrage Windows, et consulter les logs d'installation.*

@@ -78,6 +78,26 @@ Légende bucket : **[A]** couplage legacy · **[B]** plateforme.
 | `/usr/share/sambaedu/scripts/install` | `SystemStatus/Distro.php`, `RunDistroInstallScriptJob.php` | Scripts install distro |
 | `/usr/share/sambaedu/applications/{associations,firefox,thunderbird,winget,wallpaper}/*` | seeders + `config/app-customizations.php` | Templates défaut d'apps |
 
+#### 2.2bis Suivi de versionnement — scripts exécutés au runtime par SE5
+
+Ces scripts sont **invoqués par le code SE5** mais ne vivent que dans les paquets `sambaedu-*`
+(figés en 4.17.36) : un déploiement sans le socle SE4 les perdrait silencieusement
+(`update.sh:738` se contente déjà d'un warning si `make_dhcpd_conf.sh` est introuvable).
+
+**Convention cible** : tout script exécuté au runtime par SE5 est versionné dans **`scripts/system/`**
+du repo et déployé de façon idempotente par `update.sh` (fonction `ensure_*`), le chemin canonique
+`/usr/share/sambaedu/…` restant le contrat d'exécution (sudoers, crons, `config/sambaedu.php`).
+L'écrasement de fichiers possédés par dpkg est assumé — les paquets 4.17.36 ne bougeront plus.
+
+| Script | Paquet source | Consommé par | Versionné SE5 ? |
+|---|---|---|---|
+| `sbin/make_dhcpd_conf.sh` | `sambaedu-boot-server` | `DhcpService.php:335`, `update.sh:727`, cron `*/5` | ❌ → **story sous-réseaux DHCP** (copie `scripts/system/` + `ensure_dhcp_scripts()`) |
+| `sbin/dhcp-dyndns.sh` | `sambaedu-web-common` | hooks `on commit/release/expiry` du `dhcpd.conf` généré | ❌ → même story (compagnon indissociable du précédent) |
+| `includes/config.inc.sh` (+ `utils.inc.sh`) | `sambaedu-config` | sourcé par `make_dhcpd_conf.sh` et les autres scripts sbin | ❌ — reste [A], traité en Vague 1 (config auto-portée) |
+| `scripts/make_wine_image.sh` | `sambaedu-web-common` | `GenerateWineImageJob.php:20-49` | ❌ — Vague 3 |
+| `scripts/install-{debian,ubuntu,primtux,nird}-*-iso.sh` | **aucun — absents de la VM** | `SystemStatus/Distro.php`, `RunDistroInstallScriptJob.php` | ❌ référencés mais **inexistants** (gap connu du pipeline ISO) |
+| `sbin/renew_ticket.sh`, `sbin/smbstatus.sh`, `sbin/check_config.sh` | `sambaedu-web-common` | crons legacy uniquement (pas d'appel direct SE5) | ❌ — Vague 4 (portage scheduler Laravel) |
+
 ### 2.3 Samba / AD / Kerberos / SYSVOL — **[B]** (binaires) + **[A]** (chemins legacy)
 
 | Élément | Consommé par | Usage |
