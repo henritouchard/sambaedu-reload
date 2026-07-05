@@ -102,9 +102,12 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(LegacyParcBridgeService::class);
 
         // Binding AuthGuard — swap Phase 2 : remplacer SambaEduAuthGuard par KeycloakAuthGuard
+        // Sous APP_ENV=dusk : guard de test sans LDAP (voir DuskAuthGuard).
         $this->app->bind(
             \App\Http\Middleware\Auth\AuthGuardInterface::class,
-            \App\Http\Middleware\Auth\SambaEduAuthGuard::class
+            $this->app->environment('dusk')
+                ? \App\Http\Middleware\Auth\DuskAuthGuard::class
+                : \App\Http\Middleware\Auth\SambaEduAuthGuard::class
         );
 
         // Story 6.1 — CommandRunner injectable pour les services CUPS.

@@ -145,6 +145,24 @@ class AuthenticationService
     }
 
     /**
+     * Seam e2e Dusk : vrai UNIQUEMENT sous APP_ENV=dusk quand le couple
+     * (login,password) correspond à DUSK_TEST_LOGIN / DUSK_TEST_PASSWORD.
+     * Retourne toujours false si l'un des deux env n'est pas défini.
+     */
+    private function matchesDuskTestCredentials(string $login, string $password): bool
+    {
+        $expectedLogin = env('DUSK_TEST_LOGIN');
+        $expectedPassword = env('DUSK_TEST_PASSWORD');
+
+        if (empty($expectedLogin) || empty($expectedPassword)) {
+            return false;
+        }
+
+        return hash_equals((string) $expectedLogin, $login)
+            && hash_equals((string) $expectedPassword, $password);
+    }
+
+    /**
      * Vérifier si l'utilisateur est déjà authentifié
      */
     public function isAlreadyAuthenticated(): bool
@@ -291,6 +309,15 @@ class AuthenticationService
      */
     private function validatePassword(string $login, string $password): int
     {
+        // --- Seam e2e Laravel Dusk (host isolé, jamais actif hors APP_ENV=dusk).
+        // L'auth réelle = bind LDAP/AD, injoignable hors VM. Sous `dusk`
+        // uniquement, on accepte un couple de test (DUSK_TEST_LOGIN/PASSWORD)
+        // pour couvrir le happy-path form→dashboard. Aucun effet en prod : la
+        // valeur de retour 1 fait ensuite tourner le vrai flux (createSession…).
+        if (app()->environment('dusk') && $this->matchesDuskTestCredentials($login, $password)) {
+            return 1;
+        }
+
         try {
             // Rechercher l'utilisateur via le repository
             // Le legacy utilise search_user($config, $login, "all", true) qui cherche dans toute la base DN

@@ -43,6 +43,7 @@
     "require-dev": {
         "barryvdh/laravel-debugbar": "^4.2",
         "fakerphp/faker": "^1.9.1",
+        "laravel/dusk": "^8.6",
         "laravel/pint": "^1.0",
         "laravel/sail": "^1.18",
         "mockery/mockery": "^1.4.4",
@@ -110,6 +111,9 @@
         ],
         "test:coverage": [
             "@php artisan test --coverage"
+        ],
+        "dusk": [
+            "bin/dusk"
         ],
         "lint": [
             "@php ./vendor/bin/pint --test"

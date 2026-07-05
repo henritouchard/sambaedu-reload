@@ -96,3 +96,7 @@ Desktop.ini
 # servie par la route agent. L'autorité reste resources/ ; cette copie est
 # régénérée par OverlaySkinProvisioner (chown www-admin requis en prod).
 /storage/assets/overlay/
+
+# Laravel Dusk (host isolé)
+.env.dusk
+/database/dusk.sqlite

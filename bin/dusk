@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+#
+# Runner Laravel Dusk — tests e2e en HOST ISOLÉ (pas la VM).
+#
+# `artisan serve` et le process de test partagent le même environnement
+# (APP_ENV=dusk → .env.dusk) et la même base sqlite FICHIER (`:memory:` est
+# per-process, donc inutilisable ici). Prérequis :
+#   - `.env.dusk` présent à la racine (voir `.env.dusk.example`) ;
+#   - Chrome for Testing + chromedriver installés, chemins renseignés dans
+#     `.env.dusk` (DUSK_CHROMEDRIVER / DUSK_CHROME_BINARY).
+#
+# Usage :
+#   bin/dusk                       # tous les tests Browser
+#   bin/dusk --filter=LoginTest    # ciblé
+#
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_DIR"
+
+if [[ ! -f .env.dusk ]]; then
+  echo "ERREUR : .env.dusk introuvable. Copier .env.dusk.example et l'adapter." >&2
+  exit 1
+fi
+
+export APP_ENV=dusk
+
+# Pas de config cachée qui masquerait .env.dusk.
+php artisan config:clear >/dev/null 2>&1 || true
+
+# Schéma frais sur la base sqlite dusk (tables vides ; guards/tests créent le
+# nécessaire). Idempotent, quelques secondes.
+php artisan migrate:fresh --no-interaction --force >/tmp/dusk-migrate.log 2>&1 || {
+  echo "migrate:fresh KO — voir /tmp/dusk-migrate.log" >&2
+  tail -20 /tmp/dusk-migrate.log >&2
+  exit 1
+}
+
+# Serveur applicatif (même env que les tests).
+php artisan serve --port=8000 >/tmp/dusk-serve.log 2>&1 &
+SERVE_PID=$!
+trap 'kill "$SERVE_PID" 2>/dev/null || true' EXIT
+
+# Attendre que le serveur réponde.
+for _ in $(seq 1 30); do
+  if curl -sf -o /dev/null "http://127.0.0.1:8000/authentication/login"; then
+    break
+  fi
+  sleep 0.5
+done
+
+php artisan dusk "$@"
