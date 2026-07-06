@@ -50,6 +50,16 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Artifact Pull Configuration (Story 39.4 — canal ④)
+    |--------------------------------------------------------------------------
+    | Borne de taille dure d'un binaire amont tiré (wallpapers/outils = petits ;
+    | ce canal ne transporte pas d'ISO multi-Go). Défaut 256 MiB. Le pull rejette
+    | et marque `error` tout binaire dépassant la borne.
+    */
+    'artifact_max_bytes' => env('CONTROLHUB_ARTIFACT_MAX_BYTES', 268435456), // 256 MiB
+
+    /*
+    |--------------------------------------------------------------------------
     | API Configuration
     |--------------------------------------------------------------------------
     */

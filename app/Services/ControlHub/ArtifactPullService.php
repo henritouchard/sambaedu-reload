@@ -191,7 +191,12 @@ class ArtifactPullService
             ]);
         } catch (Throwable $e) {
             @unlink($tmp);
-            $this->markError($item, 'échec du pull : ' . $e->getMessage());
+            // Review 39.4 #E11 (NFR-A3) — NE JAMAIS persister `$e->getMessage()` dans
+            // `pull_error` : Guzzle suffixe l'URI complète (query string `?sig=…`) à ses
+            // messages (ConnectException/RequestException), et cette colonne est remontée
+            // à l'amont par le canal ③. On persiste une catégorie stable (classe d'exception) ;
+            // le détail complet — URL incluse — reste dans le log serveur uniquement.
+            $this->markError($item, 'échec du pull (' . class_basename($e) . ')');
 
             Log::error('ArtifactPullService: pull failed', [
                 'item_id' => $item->id,

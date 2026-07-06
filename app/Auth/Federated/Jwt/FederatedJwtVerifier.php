@@ -112,9 +112,12 @@ class FederatedJwtVerifier
         $exp = (int) ($payload['exp'] ?? 0);
 
         // Profil d'affichage (non sécurité-critique, mais requis fonctionnel).
+        // Review 39.3 #E22 — passer par `stringClaim()` (garde `is_scalar`) comme tous
+        // les autres claims : un `name`/`email` array JSON casterait sinon en `"Array"`
+        // (warning PHP 8 + donnée corrompue silencieuse en base).
         $login = $this->stringClaim($payload, 'login');
-        $name = isset($payload['name']) ? (string) $payload['name'] : '';
-        $email = isset($payload['email']) ? (string) $payload['email'] : '';
+        $name = $this->stringClaim($payload, 'name');
+        $email = $this->stringClaim($payload, 'email');
 
         foreach (['sub' => $sub, 'jti' => $jti, 'kid' => $kid, 'iss' => $iss, 'tier' => $tier, 'role' => $role, 'login' => $login] as $claim => $value) {
             if ($value === '') {

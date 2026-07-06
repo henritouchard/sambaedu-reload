@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\ControlHubConnection;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -31,14 +32,27 @@ class ControlHubAuth
             return $this->forbiddenResponse('Invalid API key format');
         }
 
-        $expectedInstanceKey = (string) config('controlHub.se4fs.instance_api_key', '');
-
         $isValid = false;
         $keyType = null;
 
-        if (!empty($expectedInstanceKey) && hash_equals($expectedInstanceKey, $providedKey)) {
+        // Credential normalisé (E10) : le token négocié au handshake fait foi.
+        // Le CH doit présenter le se4fs_api_token qu'il a frappé pour cette
+        // instance, validé ici via le primitif du modèle de connexion.
+        $connection = ControlHubConnection::current();
+        if ($connection && $connection->validateSE4FSToken($providedKey)) {
             $isValid = true;
-            $keyType = 'instance';
+            $keyType = 'handshake';
+        }
+
+        // Repli legacy dual-accept : clé d'instance statique de config.
+        // À retirer une fois le CH basculé sur le token de handshake et la
+        // couture ratifiée amont — voir E10.
+        if (!$isValid) {
+            $expectedInstanceKey = (string) config('controlHub.se4fs.instance_api_key', '');
+            if (!empty($expectedInstanceKey) && hash_equals($expectedInstanceKey, $providedKey)) {
+                $isValid = true;
+                $keyType = 'instance';
+            }
         }
 
         if (!$isValid) {

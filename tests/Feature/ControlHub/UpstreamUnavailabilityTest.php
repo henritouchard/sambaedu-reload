@@ -485,17 +485,28 @@ class UpstreamUnavailabilityTest extends TestCase
             'Sanity : l\'introspection du scheduler doit voir au moins controlhub:heartbeat',
         );
 
-        $nonHeartbeat = $controlhubCommands
-            ->reject(static fn (string $cmd): bool => str_contains($cmd, 'controlhub:heartbeat'))
+        // Allowlist des commandes controlhub AUTORISÉES à être planifiées : uniquement
+        // celles qui ne peuvent PAS faire « décroître » le contrat sur l'ancienneté.
+        //  - controlhub:heartbeat          → transport sortant, ne touche jamais le contrat.
+        //  - controlhub:report-compliance  → émetteur de conformité (canal ③, story 39.2).
+        //    STRICTEMENT read-only sur le contrat (lit items + link_state pour bâtir
+        //    l'enveloppe, n'écrit JAMAIS link_state ni ne prune) → compatible PRD §5.3.
+        //    Confronté au §5.3 le 2026-07-06 (review epic 39, finding E2) : autorisé.
+        $decayAllowlist = ['controlhub:heartbeat', 'controlhub:report-compliance'];
+
+        $nonAllowlisted = $controlhubCommands
+            ->reject(static fn (string $cmd): bool => collect($decayAllowlist)
+                ->contains(static fn (string $allowed): bool => str_contains($cmd, $allowed)))
             ->values()
             ->all();
 
         self::assertSame(
             [],
-            $nonHeartbeat,
-            'GARDE-FOU : seul controlhub:heartbeat (transport) est planifié. Un nouveau job '
-            .'controlhub planifié (décroissance/TTL/expire) doit être confronté au PRD §5.3 (panne ≠ rupture) '
-            .'avant d\'être autorisé ici.',
+            $nonAllowlisted,
+            'GARDE-FOU : seules les commandes controlhub read-only-sur-contrat (heartbeat, '
+            .'report-compliance) sont planifiées. Un nouveau job controlhub planifié '
+            .'(décroissance/TTL/expire) doit être confronté au PRD §5.3 (panne ≠ rupture) '
+            .'ET ajouté explicitement à $decayAllowlist avec justification avant d\'être autorisé ici.',
         );
     }
 

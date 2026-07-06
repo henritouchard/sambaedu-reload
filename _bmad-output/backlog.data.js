@@ -1530,6 +1530,12 @@ const DATASETS = {
           "title": "Ingestion + pull des binaires amont (artifact/executable/delivery_mode, canal ④)",
           "status": "todo",
           "note": "Décision Henri 2026-07-04 = ADOPTER LE PULL CENTRAL. SE5 est désir d'état pur (binaires aujourd'hui 100% locaux : biblio wallpapers, tools_path, WPKG via source_xml_url) ; le central héberge et diffuse des URL signées+sha256 (Epic D/D.7). Story : artefact R2 d'abord (documenter delivery_mode/artifact/executable en additifs, PAS de bump schema_version) ; migration additive ; ingestion lit+persiste ; client de pull (vérif sha256, no-op au même checksum, échec checksum→item error remonté par 39.2) ; PRÉCÉDENCE local prioritaire, pull en fallback d'absence. Golden préservé à 0 binaire amont ; bump agent/shared/version.go SEULEMENT si payload agent change. Q ouvertes : foyer de stockage, moment du pull (ingestion vs résolution)."
+        },
+        {
+          "id": "39-5",
+          "title": "Normaliser le credential entrant CH→SE5 sur le token de handshake (finding E10, review epic 39)",
+          "status": "in-progress",
+          "note": "Bug de couture E10 (review epic 39, 2026-07-06) : l'auth entrante 39.1 (ControlHubAuth) validait contre la clé d'IDENTITÉ SORTANTE de SE5 (instance_api_key statique), pas contre le se4fs_api_token NÉGOCIÉ au handshake (frappé par le CH, stocké par connexion) ; ControlHubConnection::validateSE4FSToken() était DU CODE MORT. ✅ CÔTÉ SE5 LIVRÉ (non commité) : middleware passé en DUAL-ACCEPT (validateSE4FSToken PRIORITAIRE + repli legacy instance_api_key), + couverture test 2 branches (token handshake accepté / token inconnu 403 avec connexion active) — ContractIngestionEndpointTest 11/11. ⏳ BLOQUÉ CÔTÉ CH (bilatéral) : irundoo doit émettre le se4fs_api_token du handshake en Bearer sur ses POST d'ingestion vers SE5 (prompt BMAD rédigé dans codeReviews/39-epic.md). ⏳ CLÔTURE ULTÉRIEURE : retirer le repli legacy instance_api_key une fois le CH basculé + ratifié en pré-prod. Ne PAS toucher au canal sortant SE5→CH (instance_api_key y reste légitimement l'identité SE5)."
         }
       ]
     }

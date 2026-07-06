@@ -263,4 +263,63 @@ class ContractIngestionEndpointTest extends TestCase
         $response->assertForbidden();
         $this->assertDatabaseCount('controlhub_contracts', 0);
     }
+
+    // ── Credential normalisé E10 — token de handshake (dual-accept) ───────────
+
+    /**
+     * E10 — le credential négocié au handshake (`se4fs_api_token` frappé par
+     * l'amont, stocké par connexion) fait foi pour l'auth entrante, indépendamment
+     * de la clé d'instance statique de config. C'est la branche PRIORITAIRE du
+     * middleware (le repli legacy `instance_api_key` reste testé par les cas 200
+     * nominaux qui n'ont pas de connexion active).
+     */
+    #[Test]
+    public function a_request_signed_with_the_handshake_negotiated_token_is_accepted(): void
+    {
+        $handshakeToken = 'se4fs_handshake_tok_abcdef123456';
+        $this->activeConnection($handshakeToken);
+
+        // Clé d'instance de config VOLONTAIREMENT différente : prouve que
+        // l'acceptation vient bien du token de handshake, pas du repli legacy.
+        config(['controlHub.se4fs.instance_api_key' => 'a-totally-different-instance-key']);
+
+        $response = $this->postContract($this->payload(), bearer: $handshakeToken);
+
+        $response->assertOk()->assertJson(['success' => true]);
+        $this->assertDatabaseCount('controlhub_contracts', 1);
+    }
+
+    /**
+     * E10 — en présence d'une connexion active, un bearer qui ne correspond NI au
+     * token de handshake NI à la clé d'instance est rejeté (la branche
+     * `validateSE4FSToken` renvoie false sans faussement authentifier).
+     */
+    #[Test]
+    public function an_unknown_token_is_forbidden_even_with_an_active_connection(): void
+    {
+        $this->activeConnection('se4fs_handshake_tok_abcdef123456');
+
+        $response = $this->postContract($this->payload(), bearer: 'neither-handshake-nor-instance-key');
+
+        $response->assertForbidden();
+        $this->assertDatabaseCount('controlhub_contracts', 0);
+    }
+
+    /**
+     * Crée une connexion amont active portant le `se4fs_api_token` négocié.
+     * `ControlHubConnection::current()` la résout (is_active + non expirée).
+     */
+    private function activeConnection(string $se4fsToken): \App\Models\ControlHubConnection
+    {
+        return \App\Models\ControlHubConnection::create([
+            'base_url' => 'https://amont.example',
+            'api_token' => 'api_tok_local_secret',
+            'se4fs_api_token' => $se4fsToken,
+            'heartbeat_interval' => 300,
+            'is_active' => true,
+            'last_handshake_at' => now(),
+            'expires_at' => now()->addDay(),
+            'status' => 'online',
+        ]);
+    }
 }
