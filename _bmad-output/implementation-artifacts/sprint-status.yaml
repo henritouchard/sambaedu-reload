@@ -504,6 +504,7 @@ development_status:
   # ─── Epic 40 : Guide des fonctionnalités — documentation gatée par permissions ───
   epic-40: in-progress  # 2026-07-06 : ouvert à la création de la 40.1 (1re story). Axe = domaine fonctionnel + how-to ; gating = afficher+verrouiller ; scope 40.1 = socle + domaine pilote « Utilisateurs ».
   40-1-socle-guide-et-domaine-pilote-utilisateurs: to-validate  # 2026-07-06 : REVIEW dev-cycle (code-review sonnet claude-sonnet-4-6 adversariale + 2e avis opus claude-opus-4-8[1m]) → APPROVE-WITH-CHANGES ; corrections auto #1,#2,#3,#5,#6,#8,#9 appliquées → to-validate. Reste : #7/#10 non-bloquants + rejouer GuideTest sur env PHP. Commit branche `guides`. | DEV opus (dev-story) : socle hub /app/guide + feature-guide-item (accès injectable) + FeatureGuideRegistry + domaine pilote Utilisateurs.
+  40-2-domaine-guide-machines: to-validate  # 2026-07-07 : REVIEW dev-cycle (code-review sonnet claude-sonnet-4-6 adversariale + 2e avis opus claude-opus-4-8[1m]) → APPROVE. Sonnet sur-cote (#1 🔴→🟡, #2/#5 invalidés) ; durcissement test #1 appliqué + limite connue #4 documentée (runbook QA). Reste : rejouer GuideTest+GuideMachinesTest sur env PHP. Commit branche `guides`. | DEV opus (dev-story) : domaine Machines (5 perms computer) + hub généralisé documentedDomains().
 
 # ─── Notes personnelles — Henri ─────────────────────────────────────────────
 personal_notes:

@@ -78,6 +78,7 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
     // niveau de la route. Hub + domaine pilote « Utilisateurs ».
     Route::livewire('/guide', 'pages::guide.index')->name('guide');
     Route::livewire('/guide/utilisateurs', 'pages::guide.utilisateurs.index')->name('guide.utilisateurs');
+    Route::livewire('/guide/machines', 'pages::guide.machines.index')->name('guide.machines');
 
     // Story 7.2 — AC8 : middleware can: sur routes sensibles.
     Route::livewire('/users', 'pages::users.index')

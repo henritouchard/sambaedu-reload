@@ -59,6 +59,32 @@ final class FeatureGuideRegistry
     }
 
     /**
+     * Source de vérité DATA-DRIVEN des domaines documentés (= disposant d'une
+     * page domaine dédiée dans le Guide). Indexée par CATÉGORIE de permission,
+     * valeur = NOM de route Laravel de la page domaine correspondante.
+     *
+     * Le hub (`pages/guide/index.blade.php`) s'appuie sur cette table pour
+     * décider quelles cartes sont cliquables (Story 40.2, AC4) : un domaine est
+     * « disponible » s'il figure ici ET que sa route existe (`Route::has(...)`).
+     * Les stories 40.3+ n'ont qu'à AJOUTER une ligne ici (aucune logique à
+     * réécrire dans le hub).
+     *
+     * Clés ancrées sur `SambaPermission::category()` (pas de littéraux `'user'`
+     * / `'computer'`) pour rester couplées à l'enum si ces valeurs évoluent.
+     *
+     * @return array<string, string> catégorie => nom de route de la page domaine
+     */
+    public static function documentedDomains(): array
+    {
+        return [
+            // Domaine pilote « Utilisateurs » (Story 40.1).
+            SambaPermission::UserRead->category()     => 'app.guide.utilisateurs',
+            // Domaine « Machines » (Story 40.2).
+            SambaPermission::ComputerView->category() => 'app.guide.machines',
+        ];
+    }
+
+    /**
      * Catalogue complet des how-to rédigés (indexé par valeur de permission).
      *
      * @return array<string, array{objective: string, steps: string[], route: ?string, routeLabel: ?string}>
@@ -139,6 +165,68 @@ final class FeatureGuideRegistry
                 ],
                 'route' => 'app.rights-management',
                 'routeLabel' => 'Ouvrir la gestion des droits',
+            ],
+
+            // ================================================================
+            // Domaine « Machines » (catégorie `computer`) — Story 40.2
+            // ================================================================
+            // Toutes les entrées pointent vers `app.parc.index` (gestion du
+            // parc, sans paramètre d'URL) : la fiche machine `app.parc.machines.show`
+            // exige un `{id}` — inutilisable en lien générique depuis un guide.
+            SambaPermission::ComputerView->value => [
+                'objective' => "Consulter l'inventaire des postes du parc et le détail d'une machine (état, groupe, session).",
+                'steps' => [
+                    "Ouvrez la page « Parc » depuis le menu latéral.",
+                    "Placez-vous dans l'onglet « Machines » pour parcourir l'inventaire.",
+                    "Filtrez par groupe de machines, nom ou état de connexion pour retrouver un poste.",
+                    "Cliquez sur une ligne pour ouvrir la fiche détaillée du poste (matériel, session en cours, historique).",
+                ],
+                'route' => 'app.parc.index',
+                'routeLabel' => 'Ouvrir la gestion du parc',
+            ],
+            SambaPermission::ComputerControl->value => [
+                'objective' => "Prendre la main à distance sur un poste pour assister un utilisateur ou diagnostiquer un incident.",
+                'steps' => [
+                    "Ouvrez la page « Parc », onglet « Machines ».",
+                    "Sélectionnez le poste à dépanner pour ouvrir sa fiche détaillée.",
+                    "Lancez le contrôle à distance depuis les actions de la machine.",
+                    "Assistez l'utilisateur, puis refermez la session de contrôle une fois l'intervention terminée.",
+                ],
+                'route' => 'app.parc.index',
+                'routeLabel' => 'Ouvrir la gestion du parc',
+            ],
+            SambaPermission::ComputerElevate->value => [
+                'objective' => "Accorder temporairement les droits d'administrateur local à un utilisateur sur un poste.",
+                'steps' => [
+                    "Ouvrez la page « Parc » et repérez le poste concerné (ou son groupe de machines).",
+                    "Ouvrez la fiche du poste, ou éditez le groupe de machines pour un réglage collectif.",
+                    "Activez l'option « Admin de poste » pour l'utilisateur ciblé.",
+                    "Validez : l'élévation est propagée au poste (une synchronisation GPO peut être nécessaire).",
+                ],
+                'route' => 'app.parc.index',
+                'routeLabel' => 'Ouvrir la gestion du parc',
+            ],
+            SambaPermission::ComputerInstall->value => [
+                'objective' => "Installer ou réinstaller un poste et l'enrôler dans un groupe de machines du parc.",
+                'steps' => [
+                    "Ouvrez la page « Parc » et créez au besoin le groupe de machines cible.",
+                    "Préparez le poste au démarrage réseau (amorçage iPXE) pour lancer l'installation.",
+                    "Suivez le déroulé de l'installation, puis rattachez le poste au groupe de machines voulu.",
+                    "Vérifiez que le poste remonte bien dans l'inventaire du parc une fois provisionné.",
+                ],
+                'route' => 'app.parc.index',
+                'routeLabel' => 'Ouvrir la gestion du parc',
+            ],
+            SambaPermission::ComputerRemoteRdp->value => [
+                'objective' => "Autoriser l'accès en Bureau à distance (RDP) sur un poste ou un groupe de machines.",
+                'steps' => [
+                    "Ouvrez la page « Parc » et sélectionnez le poste ou éditez le groupe de machines.",
+                    "Ouvrez le réglage « Bureau à distance (RDP) ».",
+                    "Autorisez ou refusez l'accès RDP pour le périmètre choisi selon la politique de l'établissement.",
+                    "Validez : la règle est appliquée aux postes concernés à la prochaine synchronisation.",
+                ],
+                'route' => 'app.parc.index',
+                'routeLabel' => 'Ouvrir la gestion du parc',
             ],
         ];
     }

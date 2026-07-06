@@ -1543,7 +1543,13 @@ const DATASETS = {
           "id": "40-1",
           "title": "Socle du Guide des fonctionnalités (hub + gating réutilisable) + domaine pilote « Utilisateurs »",
           "status": "review",
-          "note": "Fondation : route /app/guide (name app.guide, sans middleware can: — gating intra-page), entrée sidebar « Guide » hors @can, hub listant les domaines via SambaPermission::groupedByCategory() (compteur accessibles/total par utilisateur), composant réutilisable x-molecules.feature-guide-item (état déverrouillé si $user->can(perm) / verrouillé grisé+cadenas sinon), et domaine pilote /app/guide/utilisateurs documentant en how-to les 6 permissions de la catégorie user. Contenu how-to authored (registre PHP, pas en base). Ancré sur les enums SambaPermission/SambaRole (aucune duplication de libellés). Compat future prévue pour les domaines scopés WorkstationGroup (computer/wpkg). Modèle dev préconisé : claude-opus-4-8[1m]."
+          "note": "Fondation : route /app/guide (name app.guide, sans middleware can: — gating intra-page), entrée sidebar « Guide » hors @can, hub listant les domaines via SambaPermission::groupedByCategory() (compteur accessibles/total par utilisateur), composant réutilisable x-molecules.feature-guide-item (état déverrouillé si $user->can(perm) / verrouillé grisé+cadenas sinon), et domaine pilote /app/guide/utilisateurs documentant en how-to les 6 permissions de la catégorie user. Contenu how-to authored (registre PHP, pas en base). Ancré sur les enums SambaPermission/SambaRole (aucune duplication de libellés). Compat future prévue pour les domaines scopés WorkstationGroup (computer/wpkg). REVIEW dev-cycle (sonnet + 2e avis opus, APPROVE-WITH-CHANGES) → corrections #1/#2/#3/#5/#6/#8/#9 appliquées → to-validate, commit branche guides. Modèle dev : claude-opus-4-8[1m]."
+        },
+        {
+          "id": "40-2",
+          "title": "Domaine Guide « Machines » (catégorie computer)",
+          "status": "review",
+          "note": "Incrément réutilisant le socle 40.1 : 2e domaine documenté = Machines (catégorie computer, 5 perms : view/control/elevate/install/remote.rdp). Route /app/guide/machines, page calquée sur utilisateurs, 5 how-to ajoutés à FeatureGuideRegistry, hub généralisé (available data-driven via documentedDomains() catégorie→route, plus de === user codé en dur). Gating can() GLOBAL (décision Henri : un guide n'est pas scopé par parc, bien que computer.* soit délégable WorkstationGroup). Tests technicien 2/5, computer-admin 5/5, eleve 5/5 verrouillé + non-régression carte Utilisateurs. Modèle dev : opus."
         }
       ]
     }

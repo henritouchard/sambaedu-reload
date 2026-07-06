@@ -1,6 +1,8 @@
 <?php
 
 use App\Enums\SambaPermission;
+use App\Support\Help\FeatureGuideRegistry;
+use Illuminate\Support\Facades\Route;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -19,12 +21,17 @@ new #[Title('Guide des fonctionnalités')] class extends Component {
      * « accessibles / total ». Le domaine pilote « Utilisateurs » est cliquable ;
      * les autres sont présents mais marqués « Bientôt disponible ».
      *
-     * @return array<int, array{category: string, label: string, total: int, accessible: int, available: bool}>
+     * @return array<int, array{category: string, label: string, total: int, accessible: int, available: bool, route: ?string}>
      */
     #[Computed]
     public function domains(): array
     {
         $user = auth()->user();
+        // Source de vérité DATA-DRIVEN des domaines documentés (Story 40.2, AC4) :
+        // catégorie → nom de route de la page domaine. Étendre cette table (dans
+        // le registre) suffit à rendre un nouveau domaine cliquable — plus de
+        // `=== UserRead->category()` codé en dur, plus de route en dur dans la vue.
+        $documented = FeatureGuideRegistry::documentedDomains();
         $domains = [];
 
         foreach (SambaPermission::groupedByCategory() as $category => $data) {
@@ -36,16 +43,21 @@ new #[Title('Guide des fonctionnalités')] class extends Component {
                 }
             }
 
+            // Un domaine est « disponible » (carte cliquable) s'il figure dans la
+            // table des domaines documentés ET que sa route existe réellement
+            // (`Route::has()` : garde anti-500 si la route n'est pas encore posée).
+            $routeName = $documented[$category] ?? null;
+            $available = $routeName !== null && Route::has($routeName);
+
             $domains[] = [
                 'category'   => $category,
                 'label'      => $data['label'],
                 'total'      => count($permissions),
                 'accessible' => $accessible,
-                // Domaine pilote documenté en 40.1 = catégorie `user`. Les autres
-                // suivront (40.2, 40.3…) : cartes « Bientôt disponible » sans lien
-                // mort. Ancré sur l'enum (pas de littéral) pour rester couplé à
-                // `SambaPermission::category()` si sa valeur évolue.
-                'available'  => $category === SambaPermission::UserRead->category(),
+                'available'  => $available,
+                // URL résolue de la page domaine (null si non documenté) : la vue
+                // n'a plus à connaître le nom de route — elle suit ce champ.
+                'route'      => $available ? route($routeName) : null,
             ];
         }
 
@@ -84,13 +96,13 @@ new #[Title('Guide des fonctionnalités')] class extends Component {
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
         @foreach ($this->domains as $domain)
             @php
-                $isUser = $domain['available'];
+                $isAvailable = $domain['available'];
                 $icon = $this->domainIcon($domain['category']);
             @endphp
 
-            @if ($isUser)
-                {{-- Domaine pilote documenté → carte cliquable --}}
-                <a href="{{ route('app.guide.utilisateurs') }}"
+            @if ($isAvailable)
+                {{-- Domaine documenté → carte cliquable (route résolue en amont) --}}
+                <a href="{{ $domain['route'] }}"
                     data-testid="domain-{{ $domain['category'] }}"
                     class="card bg-base-100 shadow-md hover:shadow-xl transition-all duration-200 hover:-translate-y-1 border border-base-300/50 hover:border-primary/40">
                     <div class="card-body">

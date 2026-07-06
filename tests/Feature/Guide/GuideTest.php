@@ -184,8 +184,14 @@ class GuideTest extends TestCase
             ->assertSeeHtml('data-testid="domain-user"')
             ->assertSeeHtml('href="' . route('app.guide.utilisateurs') . '"')
             ->assertSee('6 / 6 accessibles')
-            // Domaines non documentés présents mais « Bientôt disponible ».
+            // Story 40.2 : `computer` est désormais documenté → sa carte DOIT elle
+            // aussi être cliquable (garde de non-régression du hub généralisé
+            // data-driven : `documentedDomains()` doit conserver la clé computer).
             ->assertSeeHtml('data-testid="domain-computer"')
+            ->assertSeeHtml('href="' . route('app.guide.machines') . '"')
+            // Domaines non documentés présents mais « Bientôt disponible ».
+            // On cible un domaine encore non documenté (`share`) pour ce cas.
+            ->assertSeeHtml('data-testid="domain-share"')
             ->assertSee('Bientôt disponible');
     }
 
