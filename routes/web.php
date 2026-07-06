@@ -72,6 +72,13 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
     Route::livewire('/workers', 'pages::workers.index')->name('workers.index');
     Route::livewire('/workers/{pid}', 'pages::workers.[pid].index')->whereNumber('pid')->name('workers.show');
 
+    // Story 40.1 — Guide des fonctionnalités (documentation how-to gatée).
+    // AUCUN middleware `can:` : le Guide est ouvert à TOUT utilisateur
+    // authentifié ; le gating est INTRA-page (afficher + verrouiller), jamais au
+    // niveau de la route. Hub + domaine pilote « Utilisateurs ».
+    Route::livewire('/guide', 'pages::guide.index')->name('guide');
+    Route::livewire('/guide/utilisateurs', 'pages::guide.utilisateurs.index')->name('guide.utilisateurs');
+
     // Story 7.2 — AC8 : middleware can: sur routes sensibles.
     Route::livewire('/users', 'pages::users.index')
         ->middleware('can:user.read')

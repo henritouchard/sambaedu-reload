@@ -1532,6 +1532,20 @@ const DATASETS = {
           "note": "Décision Henri 2026-07-04 = ADOPTER LE PULL CENTRAL. SE5 est désir d'état pur (binaires aujourd'hui 100% locaux : biblio wallpapers, tools_path, WPKG via source_xml_url) ; le central héberge et diffuse des URL signées+sha256 (Epic D/D.7). Story : artefact R2 d'abord (documenter delivery_mode/artifact/executable en additifs, PAS de bump schema_version) ; migration additive ; ingestion lit+persiste ; client de pull (vérif sha256, no-op au même checksum, échec checksum→item error remonté par 39.2) ; PRÉCÉDENCE local prioritaire, pull en fallback d'absence. Golden préservé à 0 binaire amont ; bump agent/shared/version.go SEULEMENT si payload agent change. Q ouvertes : foyer de stockage, moment du pull (ingestion vs résolution)."
         }
       ]
+    },
+    {
+      "num": 40,
+      "title": "Guide des fonctionnalités — documentation how-to gatée par permissions",
+      "status": "in-progress",
+      "summary": "Expose à chaque utilisateur connecté une documentation <strong>how-to</strong> (guides pas-à-pas) des fonctionnalités de SambaEdu, <strong>classée par domaine fonctionnel</strong> (= les catégories de <code>SambaPermission</code>). Gating <strong>« afficher + verrouiller »</strong> : chaque fonctionnalité est visible mais grisée + badge « Verrouillé » si l'utilisateur ne dispose pas de la permission Spatie requise (jamais de masquage). Décisions Henri 2026-07-06. Route <code>/guide</code>. Le socle (hub + composant de gating réutilisable) est livré en 40.1 avec un domaine pilote « Utilisateurs » ; les autres domaines suivront (une story par domaine).",
+      "stories": [
+        {
+          "id": "40-1",
+          "title": "Socle du Guide des fonctionnalités (hub + gating réutilisable) + domaine pilote « Utilisateurs »",
+          "status": "review",
+          "note": "Fondation : route /app/guide (name app.guide, sans middleware can: — gating intra-page), entrée sidebar « Guide » hors @can, hub listant les domaines via SambaPermission::groupedByCategory() (compteur accessibles/total par utilisateur), composant réutilisable x-molecules.feature-guide-item (état déverrouillé si $user->can(perm) / verrouillé grisé+cadenas sinon), et domaine pilote /app/guide/utilisateurs documentant en how-to les 6 permissions de la catégorie user. Contenu how-to authored (registre PHP, pas en base). Ancré sur les enums SambaPermission/SambaRole (aucune duplication de libellés). Compat future prévue pour les domaines scopés WorkstationGroup (computer/wpkg). Modèle dev préconisé : claude-opus-4-8[1m]."
+        }
+      ]
     }
   ],
   "central": [

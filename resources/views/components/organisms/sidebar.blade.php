@@ -51,6 +51,16 @@
                         Applications
                     </a>
                 </li>
+                {{-- Guide des fonctionnalités (Story 40.1) — visible pour TOUS les
+                     utilisateurs authentifiés (hors @can) : le Guide n'est jamais
+                     fermé, son contenu est gaté page par page. --}}
+                <li>
+                    <a href="{{ route('app.guide') }}"
+                        class="flex items-center gap-4 px-4 py-3 text-base font-medium {{ request()->is('app/guide*') ? 'active bg-primary/20 text-primary shadow-lg' : 'hover:bg-base-200/70' }} rounded-xl transition-all duration-200 hover:shadow-md hover:scale-[1.02]">
+                        <i class="fa-solid fa-circle-question text-xl"></i>
+                        Guide
+                    </a>
+                </li>
                 @can('server.admin')
                     {{-- Réglages — landing cards regroupant Système / GPO / Migration / Réseau.
                          Visible uniquement server.admin (action critique). --}}
