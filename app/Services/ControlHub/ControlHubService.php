@@ -5,7 +5,6 @@ namespace App\Services\ControlHub;
 use App\Services\ControlHub\Data\HandshakeRequest;
 use App\Services\ControlHub\Data\HandshakeResponse;
 use App\Services\ControlHub\Data\HeartbeatResponse;
-use App\Services\ControlHub\Data\TokenRenewalResponse;
 use App\Services\ControlHub\Data\DisconnectionResponse;
 use App\Repositories\ControlHubConnectionRepository;
 use Illuminate\Support\Facades\Cache;
@@ -39,8 +38,8 @@ class ControlHubService
             'se4fs_instance_id' => $this->instanceId,
         ]);
 
-        // Créer un client temporaire avec la nouvelle URL
-        $tempClient = new ControlHubApiClient($baseUrl);
+        // Client dédié à l'URL cible du handshake (seam surchargeable en test).
+        $tempClient = $this->makeHandshakeClient($baseUrl);
 
         // Préparer la requête de handshake
         $request = HandshakeRequest::create(
@@ -73,11 +72,23 @@ class ControlHubService
             return $handshakeResponse;
         }
 
-        // Sauvegarder la connexion
+        // Sauvegarder la connexion.
+        //
+        // E10 — couture d'auth entrante CH→SE5 : le credential que le controlHub
+        // présentera sur ses appels entrants (ingestion de contrat, rupture de
+        // lien) est le token qu'il frappe et nous renvoie AU handshake
+        // (`api_token`). C'est donc CE token — et non notre clé d'instance
+        // statique — qui doit alimenter `se4fs_api_token`, la colonne validée par
+        // `ControlHubConnection::validateSE4FSToken()` dans le middleware
+        // `ControlHubAuth`. Les deux colonnes portent alors le même token : le
+        // bearer commun aux deux sens (sortant SE5→CH via `api_token` chiffré,
+        // entrant CH→SE5 via `se4fs_api_token` en clair). Rotation = re-handshake
+        // seul (aucun renouvellement hors handshake — le mécanisme token/renew a
+        // été retiré, il aurait désynchronisé les deux colonnes).
         $this->repository->saveHandshakeConnection(
             baseUrl: $baseUrl,
             apiToken: $handshakeResponse->apiToken,
-            se4fsApiToken: $this->instanceApiKey,
+            se4fsApiToken: $handshakeResponse->apiToken,
             heartbeatInterval: $handshakeResponse->heartbeatInterval ?? 120,
             expiresAt: $handshakeResponse->expiresAt,
             idpFederated: $handshakeResponse->idpFederated
@@ -97,6 +108,17 @@ class ControlHubService
         ]);
 
         return $handshakeResponse;
+    }
+
+    /**
+     * Fabrique le client HTTP dédié au handshake (URL cible saisie à la volée,
+     * pas encore persistée). Isolé en méthode protégée pour permettre au test de
+     * substituer un client factice — le `new` direct sur Guzzle n'est pas
+     * interceptable autrement (couture E10 testable sans réseau, Story 39.5).
+     */
+    protected function makeHandshakeClient(string $baseUrl): ControlHubApiClient
+    {
+        return new ControlHubApiClient($baseUrl);
     }
 
     /**
@@ -237,7 +259,14 @@ class ControlHubService
     }
 
     /**
-     * Obtenir le token (avec renouvellement automatique si nécessaire)
+     * Obtenir le token sortant (SE5→CH) de la connexion active.
+     *
+     * Rotation = re-handshake seul. Le renouvellement hors handshake
+     * (endpoint amont `token/renew`) a été retiré : côté amont il était
+     * hors service, et depuis la couture E10 le token est dual-use
+     * (`api_token` sortant == `se4fs_api_token` entrant) — une rotation qui
+     * n'aurait mis à jour que `api_token` aurait rebasculé l'ingress en 403
+     * jusqu'au re-handshake. Cf. Story 39.5.
      */
     public function getToken(): ?string
     {
@@ -247,72 +276,7 @@ class ControlHubService
             return null;
         }
 
-        // Renouveler le token si nécessaire
-        if ($connection->needsRenewal()) {
-            Log::info('Token ControlHub doit être renouvelé', [
-                'expires_at' => $connection->expires_at,
-            ]);
-
-            try {
-                $renewedConnection = $this->performTokenRenewal();
-                if ($renewedConnection) {
-                    return $renewedConnection->api_token;
-                }
-            } catch (\Exception $e) {
-                Log::error('Échec du renouvellement de token ControlHub', [
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
-
         return $connection->api_token;
-    }
-
-    /**
-     * Renouveler le token
-     */
-    public function performTokenRenewal(): ?\App\Models\ControlHubConnection
-    {
-        $connection = $this->repository->getCurrentConnection();
-        if (!$connection) {
-            return null;
-        }
-
-        try {
-            $apiResponse = $this->apiClient->renewToken(
-                $connection->api_token,
-                $this->instanceId
-            );
-
-            $renewalResponse = TokenRenewalResponse::fromApiResponse($apiResponse);
-
-            if (!$renewalResponse->success || !$renewalResponse->newToken) {
-                log::warning('ControlHub Token - Échec du renouvellement via API', [
-                    'error' => $renewalResponse->message
-                ]);
-                return null;
-            }
-
-            // Calculer la nouvelle date d'expiration
-            $newExpiresAt = null;
-            if ($renewalResponse->previousTokenExpiresAt) {
-                $tokenLifetime = $connection->last_handshake_at->diffInSeconds($connection->expires_at);
-                $newExpiresAt = now()->addSeconds($tokenLifetime);
-            }
-
-            // Sauvegarder le nouveau token
-            $renewedConnection = $this->repository->renewToken(
-                $renewalResponse->newToken,
-                $newExpiresAt
-            );
-
-            return $renewedConnection;
-        } catch (\Exception $e) {
-            Log::warning('ControlHub Token - Échec du renouvellement', [
-                'error' => $e->getMessage()
-            ]);
-            return null;
-        }
     }
 
     /**

@@ -52,6 +52,7 @@ class ControlHubAuth
             if (!empty($expectedInstanceKey) && hash_equals($expectedInstanceKey, $providedKey)) {
                 $isValid = true;
                 $keyType = 'instance';
+                $this->logLegacyFallbackAccepted($request);
             }
         }
 
@@ -91,6 +92,27 @@ class ControlHubAuth
     {
         // Clé API doit contenir au moins 16 caractères alphanumériques
         return preg_match('/^[a-zA-Z0-9_-]{16,}$/', $key) === 1;
+    }
+
+    /**
+     * Signal dédié : une requête entrante a été acceptée par le REPLI LEGACY
+     * (clé d'instance statique de config), pas par le token de handshake E10.
+     *
+     * Métrique de bascule (Story 39.5 / Q7) : tant que ce signal apparaît, des
+     * appelants amont présentent encore l'ancien credential. Le critère de
+     * clôture (retrait du repli + durcissement du format `^irundo_[A-Za-z0-9]{32}$`)
+     * est « plus aucune occurrence observée sur le parc ». Message et marqueur
+     * `controlhub_legacy_fallback` STABLES : ne pas les renommer (base d'alerte).
+     */
+    private function logLegacyFallbackAccepted(Request $request): void
+    {
+        Log::warning('ControlHub auth: legacy instance_api_key fallback accepted', [
+            'controlhub_legacy_fallback' => true,
+            'ip' => $request->ip(),
+            'url' => $request->fullUrl(),
+            'method' => $request->method(),
+            'timestamp' => now()->toISOString(),
+        ]);
     }
 
     /**

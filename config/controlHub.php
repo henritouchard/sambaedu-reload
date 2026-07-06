@@ -27,7 +27,9 @@ return [
         'heartbeat' => '/api/sambaedu/heartbeat',
         'users' => '/api/sambaedu/users',
         'webhook' => '/api/sambaedu/webhook',
-        'token_renewal' => '/api/sambaedu/token/renew',
+        // 'token_renewal' retiré (Story 39.5) : rotation = re-handshake seul.
+        // L'endpoint amont était hors service et incompatible avec le token
+        // dual-use E10 (une rotation aurait rebasculé l'ingress en 403).
         'disconnect' => '/api/sambaedu/unregister/{instance_id}',
         // Story 39.2 (canal ③) — émission SE5 → amont du rapport de conformité
         // état-intégral `se5-contract-compliance/v1`. Chemin figé côté amont mais

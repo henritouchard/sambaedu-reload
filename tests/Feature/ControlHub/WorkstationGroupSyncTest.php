@@ -38,6 +38,7 @@ class WorkstationGroupSyncTest extends TestCase
     {
         Schema::dropIfExists('workstation_groups');
         Schema::dropIfExists('controlhub_tasks');
+        Schema::dropIfExists('controlhub_connection');
         parent::tearDown();
     }
 
@@ -77,6 +78,21 @@ class WorkstationGroupSyncTest extends TestCase
             $table->timestamp('callback_sent_at')->nullable();
             $table->json('callback_response')->nullable();
             $table->text('callback_error')->nullable();
+            $table->timestamps();
+        });
+
+        // Depuis la couture E10, le middleware ControlHubAuth interroge
+        // `controlhub_connection` (ControlHubConnection::current()) sur chaque
+        // requête entrante authentifiée. Table présente mais VIDE : current()
+        // renvoie null → repli legacy `instance_api_key` (le credential utilisé
+        // par authHeaders() de cette suite). Sans elle : « no such table ».
+        Schema::create('controlhub_connection', function (Blueprint $table) {
+            $table->id();
+            $table->string('base_url', 512)->nullable();
+            $table->text('api_token')->nullable();
+            $table->string('se4fs_api_token', 64)->nullable();
+            $table->boolean('is_active')->default(false);
+            $table->timestamp('expires_at')->nullable();
             $table->timestamps();
         });
     }

@@ -72,22 +72,6 @@ class ControlHubApiClient
     }
 
     /**
-     * Renouveler un token
-     */
-    public function renewToken(string $currentToken, string $instanceId): ApiResponse
-    {
-        return $this->request(
-            'POST',
-            config('controlHub.endpoints.token_renewal', '/api/sambaedu/token/renew'),
-            [
-                'current_token' => $currentToken,
-                'instance_id' => $instanceId
-            ],
-            $currentToken
-        );
-    }
-
-    /**
      * Notifier la déconnexion de l'instance
      */
     public function notifyDisconnection(string $instanceId, string $token): ApiResponse

@@ -12,7 +12,6 @@ app/Services/ControlHub/
     ├── HandshakeRequest.php
     ├── HandshakeResponse.php
     ├── HeartbeatResponse.php
-    ├── TokenRenewalResponse.php
     └── ApiResponse.php
 
 app/Repositories/

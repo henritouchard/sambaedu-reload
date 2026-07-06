@@ -150,18 +150,6 @@ class ControlHubConnection extends Model
         return $this->expires_at && $this->expires_at->isPast();
     }
 
-    public function needsRenewal(): bool
-    {
-        if (!$this->expires_at) {
-            return false;
-        }
-        $createdAt = $this->last_handshake_at ?? $this->created_at;
-        $totalDuration = $createdAt->diffInSeconds($this->expires_at);
-        $twoThirdsDuration = $totalDuration * (2 / 3);
-        $renewalTime = $createdAt->addSeconds($twoThirdsDuration);
-        return now()->greaterThan($renewalTime);
-    }
-
     public function updateLastHandshake(): void
     {
         $this->update(['last_handshake_at' => now()]);

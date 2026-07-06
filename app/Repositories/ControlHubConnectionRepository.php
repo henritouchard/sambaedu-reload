@@ -75,29 +75,6 @@ class ControlHubConnectionRepository
     }
 
     /**
-     * Renouveler le token de connexion
-     */
-    public function renewToken(
-        string $newToken,
-        ?Carbon $expiresAt = null,
-        ?ControlHubConnection $connection = null
-    ): ControlHubConnection {
-        $connection = $connection ?? $this->getCurrentConnection();
-        
-        if (!$connection) {
-            throw new \Exception('Aucune connexion active à renouveler');
-        }
-
-        $connection->update([
-            'api_token' => $newToken,
-            'expires_at' => $expiresAt,
-            'last_handshake_at' => now()
-        ]);
-
-        return $connection->fresh();
-    }
-
-    /**
      * Désactiver une connexion
      */
     public function deactivate(?ControlHubConnection $connection = null): void
@@ -129,15 +106,6 @@ class ControlHubConnectionRepository
     public function exists(): bool
     {
         return $this->getCurrentConnection() !== null;
-    }
-
-    /**
-     * Vérifier si le token nécessite un renouvellement
-     */
-    public function needsRenewal(?ControlHubConnection $connection = null): bool
-    {
-        $connection = $connection ?? $this->getCurrentConnection();
-        return $connection ? $connection->needsRenewal() : false;
     }
 
     /**
