@@ -274,14 +274,12 @@ new #[Title('Control Hub - Instance SE4FS')] class extends Component {
             $tokenStatus = 'valid';
             $tokenAlert = null;
 
-            if ($connection) {
-                if ($connection->isExpired()) {
-                    $tokenStatus = 'expired';
-                    $tokenAlert = 'Le token ControlHub a expiré. Un nouveau handshake est nécessaire.';
-                } elseif ($connection->needsRenewal()) {
-                    $tokenStatus = 'needs_renewal';
-                    $tokenAlert = 'Le token ControlHub nécessite un renouvellement automatique.';
-                }
+            // Rotation = re-handshake seul depuis la story 39.5 (renouvellement
+            // hors-handshake retiré, `needsRenewal()` supprimé du modèle) : seul
+            // l'état "expiré" subsiste.
+            if ($connection && $connection->isExpired()) {
+                $tokenStatus = 'expired';
+                $tokenAlert = 'Le token ControlHub a expiré. Un nouveau handshake est nécessaire.';
             }
 
             return [
