@@ -122,7 +122,9 @@ new class extends Component {
 
         $search = strtolower($this->search);
         return $groups->filter(function ($group) use ($search) {
-            $name = is_array($group) ? $group['name'] ?? '' : $group->name ?? '';
+            $name = is_array($group)
+                ? trim(($group['display_name'] ?? '') . ' ' . ($group['name'] ?? ''))
+                : trim(($group->display_name ?? '') . ' ' . ($group->name ?? ''));
             $description = is_array($group) ? $group['description'] ?? '' : $group->description ?? '';
             return str_contains(strtolower($name), $search) || str_contains(strtolower($description), $search);
         });
@@ -231,7 +233,9 @@ new class extends Component {
                             @foreach ($this->filteredGroups as $group)
                                 @php
                                     $groupId = is_array($group) ? ($group['id'] ?? 0) : ($group->id ?? 0);
-                                    $groupName = is_array($group) ? ($group['name'] ?? '') : ($group->name ?? '');
+                                    $groupName = is_array($group)
+                                        ? ($group['display_name'] ?? $group['name'] ?? '')
+                                        : ($group->display_name_or_name ?? '');
                                     $groupDescription = is_array($group)
                                         ? $group['description'] ?? ''
                                         : $group->description ?? '';

@@ -19,8 +19,9 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
 
     private WorkstationGroupService $parcService;
 
-    // Données du formulaire
-    public string $name = '';
+    // Données du formulaire. Le nom technique (`name`) est auto-généré (slug)
+    // et immuable côté service ; l'utilisateur ne saisit que le nom affiché.
+    public string $display_name = '';
     public string $description = '';
     public ?int $parent_id = null;
     public bool $is_physical = true;
@@ -85,7 +86,7 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
     public function rules(): array
     {
         return [
-            'name' => 'required|string|max:255',
+            'display_name' => 'required|string|max:255',
             'description' => 'nullable|string|max:500',
             'parent_id' => 'nullable|integer|exists:workstation_groups,id',
             'is_physical' => 'boolean',
@@ -100,18 +101,18 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
     public function messages(): array
     {
         return [
-            'name.required' => 'Le nom du groupe est requis.',
-            'name.max' => 'Le nom ne peut pas dépasser 255 caractères.',
+            'display_name.required' => 'Le nom du groupe est requis.',
+            'display_name.max' => 'Le nom ne peut pas dépasser 255 caractères.',
             'description.max' => 'La description ne peut pas dépasser 500 caractères.',
             'parent_id.exists' => 'Le groupe parent sélectionné n\'existe pas.',
             'appProfileName.max' => 'Le nom du profil applicatif ne peut pas dépasser 255 caractères.',
         ];
     }
 
-    public function updatedName($value): void
+    public function updatedDisplayName($value): void
     {
         // Pré-remplir le nom du profil applicatif avec le nom du groupe
-        if (empty($this->appProfileName) || $this->appProfileName === $this->getOriginal('name')) {
+        if (empty($this->appProfileName) || $this->appProfileName === $this->getOriginal('display_name')) {
             $this->appProfileName = $value;
         }
     }
@@ -120,7 +121,7 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
     {
         // Si on active le toggle et que le nom du profil est vide, le pré-remplir
         if ($value && empty($this->appProfileName)) {
-            $this->appProfileName = $this->name;
+            $this->appProfileName = $this->display_name;
         }
     }
 
@@ -141,8 +142,9 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
                 $appProfileName = trim($this->appProfileName);
             }
 
+            // `name` (technique) est dérivé (slug) par le service depuis `display_name`.
             $group = $this->parcService->createGroup([
-                'name' => $validated['name'],
+                'display_name' => $validated['display_name'],
                 'description' => $validated['description'] ?: null,
                 'parent_id' => $validated['parent_id'] ?: null,
                 'is_physical' => $validated['is_physical'],
@@ -176,7 +178,7 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
                 $this->parcService->bulkAddMachinesToGroup($this->selectedMachines, $group->id);
             }
 
-            $message = "Le groupe \"{$group->name}\" a été créé avec succès.";
+            $message = "Le groupe \"{$group->display_name_or_name}\" a été créé avec succès.";
             if ($appProfileName) {
                 $message .= " Un profil applicatif \"{$appProfileName}\" a également été créé.";
             }
@@ -220,10 +222,10 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
                         <label class="label py-2">
                             <span class="label-text font-medium">Nom du groupe <span class="text-error">*</span></span>
                         </label>
-                        <input type="text" wire:model="name"
-                            class="input input-bordered w-full @error('name') input-error @enderror"
-                            placeholder="Ex: Salle-Info-101, Parc-Portables">
-                        @error('name')
+                        <input type="text" wire:model="display_name"
+                            class="input input-bordered w-full @error('display_name') input-error @enderror"
+                            placeholder="Ex: Salle Info 101, Parc Portables">
+                        @error('display_name')
                             <label class="label py-1">
                                 <span class="label-text-alt text-error">{{ $message }}</span>
                             </label>
@@ -314,7 +316,7 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
                             <select wire:model="parent_id" class="select select-bordered w-full">
                                 <option value="">Aucun (groupe racine)</option>
                                 @foreach ($availableParents as $parent)
-                                    <option value="{{ $parent->id }}">{{ $parent->name }}</option>
+                                    <option value="{{ $parent->id }}">{{ $parent->display_name_or_name }}</option>
                                 @endforeach
                             </select>
                             <label class="label py-1">

@@ -282,6 +282,49 @@ class AppServiceProvider extends ServiceProvider
         // Dette connue (hors-scope 29.9, à traiter en story dédiée) : rétention
         // de queue_task_runs (croissance non bornée) et coût DB par job.
         $this->registerQueueTaskTracking();
+
+        $this->applyConfigurableSessionLifetime();
+    }
+
+    /**
+     * Déconnexion automatique sur inactivité — applique le réglage admin
+     * `SystemSetting('security.session_idle')` à `config('session.lifetime')`.
+     *
+     * La session admin est une session Laravel classique (rolling / idle-based) :
+     * réduire `session.lifetime` = déconnexion après N minutes sans activité.
+     * boot() s'exécute avant le middleware StartSession, l'override est donc pris
+     * en compte. Piloté depuis /admin/settings/security.
+     *
+     * Inerte en console (worker/migrations) et tant que la table n'existe pas
+     * (greenfield), pour ne jamais casser un bootstrap.
+     */
+    private function applyConfigurableSessionLifetime(): void
+    {
+        if ($this->app->runningInConsole()) {
+            return;
+        }
+
+        try {
+            if (! Schema::hasTable('system_settings')) {
+                return;
+            }
+
+            $cfg = \App\Models\SystemSetting::get('security.session_idle', null);
+
+            if (is_array($cfg) && ($cfg['enabled'] ?? false) === true) {
+                $minutes = (int) ($cfg['minutes'] ?? 0);
+                // Borne défensive iso-UI (5 min .. 24h) : jamais 0 (= session infinie).
+                if ($minutes >= 5 && $minutes <= 1440) {
+                    config(['session.lifetime' => $minutes]);
+                }
+            }
+        } catch (\Throwable $e) {
+            // Ne jamais faire échouer le boot pour un réglage de confort.
+            \Illuminate\Support\Facades\Log::warning(
+                'AppServiceProvider: échec application session_idle',
+                ['error' => $e->getMessage()],
+            );
+        }
     }
 
     private function registerQueueTaskTracking(): void

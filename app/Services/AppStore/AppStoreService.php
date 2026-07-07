@@ -13,6 +13,7 @@ use App\Models\InstallationLog;
 use App\Wpkg\Deployment\Services\WpkgBundleGenerator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -341,6 +342,40 @@ class AppStoreService
             'local_installer_path' => null,
         ]);
 
+        $this->updateLocalPackagesXml();
+    }
+
+    /**
+     * Supprime définitivement une application du catalogue local :
+     * fichiers locaux + ligne SQL + rattachements (profils, postes, groupes,
+     * dépendances, logs, statuts poste), puis régénère le catalogue WPKG.
+     */
+    public function deleteApplication(Application $application): void
+    {
+        Log::info('[AppStore] Suppression complète', ['app_id' => $application->app_id]);
+
+        // 1. Supprimer les fichiers locaux (payloads + recette XML)
+        $dir = $this->getAppStoragePath($application);
+        if (is_dir($dir)) {
+            $this->removeDirectory($dir);
+        }
+
+        // 2. Détacher les rattachements pivot + supprimer les enregistrements liés
+        $application->appProfiles()->detach();
+        $application->workstations()->detach();
+        $application->workstationGroups()->detach();
+        $application->dependencies()->detach();
+        // Rows où cette application est une dépendance requise d'une autre
+        DB::table('application_dependencies')
+            ->where('required_application_id', $application->id)
+            ->delete();
+        $application->installationLogs()->delete();
+        $application->workstationStatuses()->delete();
+
+        // 3. Supprimer la ligne SQL
+        $application->delete();
+
+        // 4. Régénérer le catalogue WPKG local sans cette application
         $this->updateLocalPackagesXml();
     }
 

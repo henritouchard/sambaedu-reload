@@ -1538,6 +1538,44 @@ const DATASETS = {
           "note": "Bug de couture E10 (review epic 39, 2026-07-06) : l'auth entrante 39.1 (ControlHubAuth) validait contre la clé d'IDENTITÉ SORTANTE de SE5 (instance_api_key statique), pas contre le se4fs_api_token NÉGOCIÉ au handshake (frappé par le CH, stocké par connexion) ; ControlHubConnection::validateSE4FSToken() était DU CODE MORT. ✅ CÔTÉ SE5 LIVRÉ (non commité) : middleware passé en DUAL-ACCEPT (validateSE4FSToken PRIORITAIRE + repli legacy instance_api_key), + couverture test 2 branches (token handshake accepté / token inconnu 403 avec connexion active) — ContractIngestionEndpointTest 11/11. ⏳ BLOQUÉ CÔTÉ CH (bilatéral) : irundoo doit émettre le se4fs_api_token du handshake en Bearer sur ses POST d'ingestion vers SE5 (prompt BMAD rédigé dans codeReviews/39-epic.md). ⏳ CLÔTURE ULTÉRIEURE : retirer le repli legacy instance_api_key une fois le CH basculé + ratifié en pré-prod. Ne PAS toucher au canal sortant SE5→CH (instance_api_key y reste légitimement l'identité SE5)."
         }
       ]
+    },
+    {
+      "num": 40,
+      "title": "Canal technicien MeshCentral (dépannage système via controlHub)",
+      "status": "todo",
+      "summary": "Doter SE5 d'un canal de <strong>dépannage système par les techniciens</strong> (connectés à controlHub) : prise en main <strong>en arrière-plan, sans login/mdp, pendant l'usage</strong> du poste (shadow session active), terminal SYSTEM, transfert de fichiers — via <strong>MeshCentral</strong>. <strong>Distinct et complémentaire de Guacamole</strong> (Epic 19 = accès <em>usager</em> élève/prof). Décisions Henri 2026-07-06 : <strong>broker controlHub</strong> (forge un device-sharing link temporaire par poste ; aucun compte MeshCentral technicien ; authz+audit dans controlHub, symétrique du token Guacamole) ; <strong>déploiement du MeshAgent par l'agent Go</strong> (handler desired-state <code>meshagent</code>, pattern <code>provision/</code>) ; <strong>consentement RGPD</strong> (notification + consentement shadow session, SYSTEM hors-session libre). MeshAgent en connexion <strong>sortante 443</strong> (aucun flux entrant côté étab). Périmètre = SE5 uniquement ; infra serveur MeshCentral + broker <code>meshctrl</code> = hors-scope, côté controlHub (dataset central). Cadrage : <code>planning-artifacts/epics-canal-technicien-meshcentral.md</code> + étude <code>planning-artifacts/study-meshcentral-technicien-controlhub.md</code>.",
+      "stories": [
+        {
+          "id": "40-1",
+          "title": "Type de contrat meshagent + résolution serveur du device-group par établissement",
+          "status": "todo",
+          "note": "Item desired-state meshagent (portée MACHINE) : version, server_url, mesh_install_string. Serveur résout le device-group depuis l'établissement du poste (se4fs_etab_rattachement, OU par étab) et injecte le mesh install string (configurable, pas en dur). Golden PHP↔Go + docs/agent/contract-v1.md. BLOQUANT pour 40.2. Tâche : émission pour tous les postes d'un étab couvert vs opt-in par groupe/parc."
+        },
+        {
+          "id": "40-2",
+          "title": "Handler agent meshagent — staging signé, install & self-heal",
+          "status": "todo",
+          "note": "Handler desired-state meshagent : stage le MeshAgent SIGNÉ (pattern agent/provision/, porte SHA-256 comme update.go), installe/configure le service sur server_url + device-group, converge Test/Apply, self-heal. Rien réimplémenté du MeshAgent (binaire C). Bump agent/shared/version.go ; publier la release AVANT migrate (gate Epic 35). Amont 40.1. BLOQUANT pour 40.3. Reco dev : opus."
+        },
+        {
+          "id": "40-3",
+          "title": "Remontée & persistance du nodeid (mapping node ↔ poste)",
+          "status": "todo",
+          "note": "Le nodeid MeshCentral n'est pas déterministe (dérive du cert agent) → l'agent le remonte dans /api/v1/agent/report ; serveur persiste workstations.meshcentral_node_id + santé service (migration additive, ingestion idempotente). Amont 40.2. BLOQUANT pour 40.4. Tâche : comportement si le nodeid change (réinstall) — écrasement vs historique."
+        },
+        {
+          "id": "40-4",
+          "title": "Exposer le mapping node ↔ poste à controlHub (broker-ready)",
+          "status": "todo",
+          "note": "Endpoint sous controlhub.auth (Bearer clé instance / token handshake 39.5) exposant { workstation, meshcentral_node_id, agentPresence, etab } en lecture seule, scopé au périmètre de la connexion appelante (403 jamais 401 ; route APRÈS groupe 16.12). Permet au broker controlHub de forger le device-sharing link. Amont 40.3 + Epic 39. Coordination : broker côté irundoo. Tâche : batch par étab vs unitaire par poste."
+        },
+        {
+          "id": "40-5",
+          "title": "Politique de consentement/notification + audit RGPD des sessions",
+          "status": "todo",
+          "note": "Politique de prise en main par device-group (notification systématique + consentement pour shadow session utilisateur ; terminal/fichiers SYSTEM hors-session sans prompt). Journalisation des sessions techniciens (qui/quel poste/quand/durée) + rétention RGPD (postes potentiellement élèves mineurs). Transverse (démarre en parallèle dès 40.2). Coordination : infra MeshCentral + broker (irundoo). Tâche : où vit l'audit faisant foi (controlHub vs SE5 vs double) + durée de rétention."
+        }
+      ]
     }
   ],
   "central": [

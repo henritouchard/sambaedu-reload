@@ -121,6 +121,26 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
     }
 
     #[Test]
+    public function create_group_rejects_an_already_existing_group(): void
+    {
+        // Régression : recréer un groupe existant (ex. une classe déjà présente,
+        // fold 4.13 → ligne nue) doit lever une erreur EN AMONT de tout write AD,
+        // et non « réussir » silencieusement en retombant sur la ligne existante.
+        $service = $this->makeService(collect(), []);
+
+        UserGroup::query()->create([
+            'name' => '6A',
+            'display_name' => '6A',
+            'type' => 'classe',
+        ]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('existe déjà');
+
+        $service->createGroup(['name' => '6A', 'type' => 'classe']);
+    }
+
+    #[Test]
     public function it_uses_canonical_classe_guid_for_folded_group(): void
     {
         // AC3 — ad_guid/ad_dn de la ligne nue = ceux du CN canonique Classe_.

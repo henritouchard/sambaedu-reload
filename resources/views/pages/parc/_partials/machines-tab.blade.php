@@ -49,7 +49,15 @@
                         <option value="compliant">Conformes</option>
                     </select>
                 </div>
-                @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter || $conformityFilter)
+                {{-- Filtre par état de présence (allumé / éteint), dérivé du canal agent --}}
+                <div class="form-control w-40">
+                    <select wire:model.live="presenceFilter" class="select select-bordered" aria-label="État du poste">
+                        <option value="">État : tous</option>
+                        <option value="online">Allumés</option>
+                        <option value="off">Éteints</option>
+                    </select>
+                </div>
+                @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter || $conformityFilter || $presenceFilter)
                     <button type="button" class="btn btn-ghost btn-sm" wire:click="resetMachineFilters">
                         <i class="fa-solid fa-eraser"></i>
                     </button>
@@ -59,7 +67,7 @@
     </div>
 
     <!-- Tableau des machines -->
-    <div class="card bg-base-100 shadow-sm flex-1 min-h-0">
+    <div class="card bg-base-100 shadow-sm flex-1 min-h-0 flex flex-col overflow-hidden">
         @if ($this->machines->isEmpty())
             <div class="card-body flex flex-col items-center justify-center py-16">
                 <div class="text-6xl mb-6 opacity-20">
@@ -67,13 +75,13 @@
                 </div>
                 <h3 class="text-xl font-semibold mb-3">Aucun poste trouvé</h3>
                 <p class="text-base-content/60 text-center max-w-md">
-                    @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter || $conformityFilter)
+                    @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter || $conformityFilter || $presenceFilter)
                         Aucun poste ne correspond aux critères de recherche.
                     @else
                         Aucun poste n'est enregistré dans le système.
                     @endif
                 </p>
-                @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter || $conformityFilter)
+                @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter || $conformityFilter || $presenceFilter)
                     <button type="button" class="btn btn-outline mt-4" wire:click="resetMachineFilters">
                         <i class="fa-solid fa-eraser"></i>
                         Effacer les filtres
@@ -81,8 +89,8 @@
                 @endif
             </div>
         @else
-            <div class="overflow-x-auto">
-                <table class="table table-zebra">
+            <div class="overflow-auto flex-1 min-h-0">
+                <table class="table table-zebra table-pin-rows">
                     <thead>
                         <tr>
                             <th class="w-12">
@@ -161,9 +169,12 @@
                                               title="Éteint — extinction signalée {{ $machine->agent_reported_offline_at->diffForHumans() }}"
                                               aria-label="Éteint"></span>
                                     @elseif ($presence === 'silent')
-                                        <span class="status status-warning"
-                                              title="Injoignable — dernier check-in {{ $machine->agent_last_checkin_at->diffForHumans() }}"
-                                              aria-label="Injoignable"></span>
+                                        {{-- Pas d'alerte : rien n'interdit qu'un poste reste
+                                             éteint. On affiche un simple tiret neutre plutôt
+                                             qu'un warning anxiogène. --}}
+                                        <span class="text-base-content/50"
+                                              title="Éteint ou injoignable — dernier check-in {{ $machine->agent_last_checkin_at->diffForHumans() }}"
+                                              aria-label="Éteint ou injoignable">-</span>
                                     @else
                                         <span class="text-base-content/30" title="Présence inconnue (pas d'agent)">—</span>
                                     @endif

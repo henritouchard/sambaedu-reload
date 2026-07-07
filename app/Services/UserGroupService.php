@@ -54,6 +54,21 @@ class UserGroupService
 
         $this->guardReservedPrefixOnCreate($payload['name'], $payload['type']);
 
+        // Sélecteur SQL post-syncFromAd : depuis 4.13, les variantes de classe/
+        // équipe foldent en UNE ligne au NOM NU. Le payload `name` est déjà nu
+        // (garanti sans préfixe réservé par guardReservedPrefixOnCreate) ; pour
+        // les autres types, c'est le CN brut résolu (Cours_X, Matiere_X@Y, …).
+        $lookupName = $this->resolveSqlLookupName($payload['name'], $payload['type']);
+
+        // Garde doublon : sans elle, recréer un groupe déjà existant (typiquement
+        // une classe déjà présente) « réussit » silencieusement — l'écriture AD
+        // est idempotente et le read-back ci-dessous retombe sur la ligne SQL
+        // existante — et l'appelant est redirigé vers ce groupe au lieu d'être
+        // averti. On refuse EN AMONT de toute écriture AD.
+        if (UserGroup::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($lookupName)])->exists()) {
+            throw new \InvalidArgumentException("Le groupe « {$lookupName} » existe déjà.");
+        }
+
         $selectedUserIds = !empty($data['user_ids']) && is_array($data['user_ids'])
             ? array_values(array_unique(array_map('intval', $data['user_ids'])))
             : [];
@@ -72,12 +87,6 @@ class UserGroupService
         if (!$created) {
             throw new RuntimeException("Création AD impossible pour le groupe '{$payload['name']}'.");
         }
-
-        // Sélecteur SQL post-syncFromAd : depuis 4.13, les variantes de classe/
-        // équipe foldent en UNE ligne au NOM NU. Le payload `name` est déjà nu
-        // (garanti sans préfixe réservé par guardReservedPrefixOnCreate) ; pour
-        // les autres types, c'est le CN brut résolu (Cours_X, Matiere_X@Y, …).
-        $lookupName = $this->resolveSqlLookupName($payload['name'], $payload['type']);
 
         // Story 4.15 (D2) — l'écriture AD (incluant la 3ᵉ cible `PP_<base>`)
         // précède toujours `syncFromAd()` : le read-back 4.14 re-pose alors le

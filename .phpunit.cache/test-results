@@ -1,0 +1,1 @@
+{"version":2,"defects":[],"times":{"Tests\\Browser\\LoginTest::test_login_page_renders":0.793,"Tests\\Browser\\LoginTest::test_invalid_credentials_show_error":0.441,"Tests\\Browser\\LoginTest::test_valid_credentials_reach_dashboard":0.472}}

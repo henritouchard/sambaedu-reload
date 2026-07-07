@@ -25,8 +25,9 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
     public string|int $id;
     public ?WorkstationGroup $group = null;
 
-    // Données du formulaire
-    public string $name = '';
+    // Données du formulaire. Le nom technique (`name`) est immuable : il n'est
+    // ni saisi ni renvoyé au service. Seul le nom affiché est modifiable.
+    public string $display_name = '';
     public string $description = '';
     public ?int $parent_id = null;
     public bool $is_physical = false;
@@ -80,8 +81,9 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
                 return;
             }
 
-            // Remplir le formulaire
-            $this->name = $this->group->name;
+            // Remplir le formulaire (repli sur le nom technique pour un groupe
+            // legacy sans display_name).
+            $this->display_name = $this->group->display_name ?? $this->group->name;
             $this->description = $this->group->description ?? '';
             $this->parent_id = $this->group->parent_id;
             $this->is_physical = (bool) $this->group->is_physical;
@@ -139,7 +141,7 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
     public function rules(): array
     {
         return [
-            'name' => 'required|string|max:255',
+            'display_name' => 'required|string|max:255',
             'description' => 'nullable|string|max:500',
             'parent_id' => 'nullable|integer|exists:workstation_groups,id',
             'is_physical' => 'boolean',
@@ -152,8 +154,8 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
     public function messages(): array
     {
         return [
-            'name.required' => 'Le nom du groupe est requis.',
-            'name.max' => 'Le nom ne peut pas dépasser 255 caractères.',
+            'display_name.required' => 'Le nom du groupe est requis.',
+            'display_name.max' => 'Le nom ne peut pas dépasser 255 caractères.',
             'description.max' => 'La description ne peut pas dépasser 500 caractères.',
             'parent_id.exists' => 'Le groupe parent sélectionné n\'existe pas.',
         ];
@@ -186,8 +188,9 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
         }
 
         try {
+            // `name` (technique) est immuable : on ne l'envoie jamais en édition.
             $this->parcService->updateGroup($this->id, [
-                'name' => $validated['name'],
+                'display_name' => $validated['display_name'],
                 'description' => $validated['description'] ?: null,
                 'parent_id' => $validated['parent_id'] ?: null,
                 'is_physical' => $validated['is_physical'],
@@ -216,7 +219,7 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
             session()->flash('toast', [
                 'type' => 'success',
                 'title' => 'Groupe modifié',
-                'message' => "Le groupe \"{$validated['name']}\" a été modifié avec succès.",
+                'message' => "Le groupe \"{$validated['display_name']}\" a été modifié avec succès.",
             ]);
 
             $this->redirect(route('app.parc.groups.show', $this->id));
@@ -230,7 +233,7 @@ new #[Title('Modifier le Groupe - SE4FS')] class extends Component {
 };
 ?>
 
-<x-organisms.page title="Modifier {{ $group?->name ?? 'Groupe' }}" :scrollable="true"
+<x-organisms.page title="Modifier {{ $group?->display_name_or_name ?? 'Groupe' }}" :scrollable="true"
     description="Modifier les informations du groupe"
     backUrl="{{ route('app.parc.groups.show', $id) }}" backText="Retour">
 

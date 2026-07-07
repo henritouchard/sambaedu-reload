@@ -133,22 +133,24 @@ class WorkstationGroupLabelTest extends TestCase
         $this->activeContractWithLabels(['salle-info' => ControlHubLabelMode::Free]);
 
         Livewire::test(self::NEW_COMPONENT)
-            ->set('name', 'parc-nouveau')
+            ->set('display_name', 'parc-nouveau')
             ->set('is_physical', false)
             ->set('controlhubLabel', 'salle-info')
             ->call('save')
             ->assertRedirect(); // chemin de SUCCÈS → redirect (pas le retour-édition d'échec).
 
-        $group = WorkstationGroup::where('name', 'parc-nouveau')->first();
+        // Le nom technique est désormais auto-généré (slug) depuis le nom affiché ;
+        // on localise le groupe par son nom affiché, pas par le slug.
+        $group = WorkstationGroup::where('display_name', 'parc-nouveau')->first();
         self::assertNotNull($group);
         self::assertSame('salle-info', $group->controlhub_label);
         // Le redirect de succès pointe la fiche du groupe, pas la page d'édition (refus label).
         Livewire::test(self::NEW_COMPONENT)
-            ->set('name', 'parc-bis')
+            ->set('display_name', 'parc-bis')
             ->set('is_physical', false)
             ->set('controlhubLabel', 'salle-info')
             ->call('save')
-            ->assertRedirect(route('app.parc.groups.show', WorkstationGroup::where('name', 'parc-bis')->first()->id));
+            ->assertRedirect(route('app.parc.groups.show', WorkstationGroup::where('display_name', 'parc-bis')->first()->id));
     }
 
     #[Test]
@@ -162,13 +164,13 @@ class WorkstationGroupLabelTest extends TestCase
         self::assertTrue(Gate::forUser($user)->denies('create-workstationGroup'));
 
         Livewire::test(self::NEW_COMPONENT)
-            ->set('name', 'parc-interdit')
+            ->set('display_name', 'parc-interdit')
             ->set('is_physical', false)
             ->set('controlhubLabel', 'salle-info')
             ->call('save')
             ->assertForbidden();
 
-        self::assertNull(WorkstationGroup::where('name', 'parc-interdit')->first());
+        self::assertNull(WorkstationGroup::where('display_name', 'parc-interdit')->first());
     }
 
     // ── AC #4 — Invariant « 1 label max » + idempotence ──────────────────────
@@ -375,12 +377,13 @@ class WorkstationGroupLabelTest extends TestCase
 
         Livewire::test(self::EDIT_COMPONENT, ['id' => $group->id])
             ->assertSet('reservedLabelHeld', 'direction') // affiché en lecture seule
-            ->set('name', 'apres')
+            ->set('display_name', 'apres')
             ->call('save')
             ->assertRedirect(route('app.parc.groups.show', $group->id)); // succès, pas de retour-erreur
 
         $group->refresh();
-        self::assertSame('apres', $group->name);
+        self::assertSame('apres', $group->display_name);
+        self::assertSame('avant', $group->name); // nom technique immuable
         self::assertSame('direction', $group->controlhub_label); // label réservé préservé
     }
 
@@ -395,12 +398,13 @@ class WorkstationGroupLabelTest extends TestCase
 
         Livewire::test(self::EDIT_COMPONENT, ['id' => $group->id])
             ->assertSet('reservedLabelHeld', 'label-disparu')
-            ->set('name', 'apres')
+            ->set('display_name', 'apres')
             ->call('save')
             ->assertRedirect(route('app.parc.groups.show', $group->id));
 
         $group->refresh();
-        self::assertSame('apres', $group->name);
+        self::assertSame('apres', $group->display_name);
+        self::assertSame('avant', $group->name); // nom technique immuable
         self::assertSame('label-disparu', $group->controlhub_label);
     }
 

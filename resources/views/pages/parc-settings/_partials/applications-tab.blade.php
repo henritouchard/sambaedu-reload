@@ -145,6 +145,39 @@ new class extends Component
         $this->selectedApps = [];
     }
 
+    public function deleteSelectedApps(): void
+    {
+        $apps = Application::whereIn('id', $this->selectedApps)->get();
+
+        if ($apps->isEmpty()) {
+            $this->toastWarning('Aucune application sélectionnée');
+            return;
+        }
+
+        $deleted = 0;
+        $errors = 0;
+
+        foreach ($apps as $app) {
+            try {
+                $this->appStoreService->deleteApplication($app);
+                $deleted++;
+            } catch (\Exception $e) {
+                Log::error("[ApplicationsTab] Erreur suppression {$app->app_id}: " . $e->getMessage());
+                $errors++;
+            }
+        }
+
+        if ($deleted > 0) {
+            $this->toastSuccess("{$deleted} installation(s) supprimée(s)");
+        }
+        if ($errors > 0) {
+            $this->toastWarning("{$errors} erreur(s) lors de la suppression");
+        }
+
+        $this->selectedApps = [];
+        $this->resetPage();
+    }
+
     public function addAppsToProfile(): void
     {
         $this->toastWarning('Fonctionnalité non encore implémentée');
@@ -536,6 +569,14 @@ new class extends Component
                                 <button type="button" wire:click="deployApps">
                                     <i class="fa-solid fa-rocket"></i>
                                     Déployer sur un groupe
+                                </button>
+                            </li>
+                            <li>
+                                <button type="button" class="text-error"
+                                    wire:click="deleteSelectedApps"
+                                    wire:confirm="Supprimer définitivement la ou les installation(s) sélectionnée(s) ? Les fichiers locaux et l'entrée du catalogue seront supprimés. Cette action est irréversible.">
+                                    <i class="fa-solid fa-trash"></i>
+                                    Supprimer l'installation
                                 </button>
                             </li>
                         </ul>

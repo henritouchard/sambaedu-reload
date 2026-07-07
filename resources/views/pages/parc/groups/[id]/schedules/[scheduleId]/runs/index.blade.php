@@ -91,7 +91,7 @@ new #[Title("Historique d'exécution — SE4FS")] class extends Component {
                         <div class="text-xs text-base-content/60 mb-1">Groupe</div>
                         <div class="font-semibold">
                             <i class="fa-solid fa-layer-group mr-1"></i>
-                            {{ $group->name }}
+                            {{ $group->display_name_or_name }}
                         </div>
                     </div>
                     <div>

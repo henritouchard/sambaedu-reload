@@ -452,8 +452,13 @@ return [
         // Chemin de stockage local des applications
         'storage_path' => env('WPKG_STORAGE_PATH', '/var/sambaedu/unattended/install'),
 
-        // Timeout pour le téléchargement des installeurs (secondes)
-        'download_timeout' => env('WPKG_DOWNLOAD_TIMEOUT', 300),
+        // Timeout total pour le téléchargement des installeurs (secondes).
+        // Volontairement généreux et figé ici : le téléchargement tourne dans un worker
+        // asynchrone (InstallApplicationJob), donc ce plafond ne bloque aucune requête web —
+        // aucune raison de le raccourcir. La coupure d'un transfert réellement bloqué est
+        // gérée par la garde bas-débit (CURLOPT_LOW_SPEED_*) dans
+        // FileManagerService::downloadWithHash(), pas par ce plafond.
+        'download_timeout' => 1800,
 
         // Timeout pour la synchronisation des dépôts (secondes)
         'sync_timeout' => env('WPKG_SYNC_TIMEOUT', 30),

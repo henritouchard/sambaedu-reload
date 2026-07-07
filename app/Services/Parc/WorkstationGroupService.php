@@ -25,6 +25,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * Service pour la gestion des groupes de postes de travail (WorkstationGroups)
@@ -83,14 +84,15 @@ class WorkstationGroupService
         ?int $groupId = null,
         ?User $scopeFor = null,
         ?string $migrationFilter = null,
-        ?string $conformityFilter = null
+        ?string $conformityFilter = null,
+        ?string $presenceFilter = null
     ): LengthAwarePaginator {
         $authorizedGroupIds = $this->resolveAuthorizedGroupIds($scopeFor);
 
         // $authorizedGroupIds === null : pas de scope demandé ou user a le droit
         // global — on retombe sur le comportement historique.
         if ($authorizedGroupIds === null) {
-            return $this->repository->getMachines($perPage, $search, $os, $groupId, $migrationFilter, $conformityFilter);
+            return $this->repository->getMachines($perPage, $search, $os, $groupId, $migrationFilter, $conformityFilter, $presenceFilter);
         }
 
         // Si un groupId explicite est demandé mais qu'il n'est pas dans le
@@ -112,6 +114,7 @@ class WorkstationGroupService
             authorizedGroupIds: $authorizedGroupIds,
             migrationFilter: $migrationFilter,
             conformityFilter: $conformityFilter,
+            presenceFilter: $presenceFilter,
         );
     }
 
@@ -502,13 +505,55 @@ class WorkstationGroupService
     }
 
     /**
+     * Génère le nom technique (slug) unique d'un groupe à partir de son nom
+     * affiché.
+     *
+     * Le slug alimente la projection AD (OU/CN, et `sAMAccountName` ≤ 20 pour les
+     * groupes logiques) : on impose donc un format `[a-z0-9_]`, sans espaces,
+     * accents ni ponctuation, borné à 20 caractères. Les collisions sont
+     * résolues par un suffixe numérique (`_2`, `_3`, …) qui reste dans la borne.
+     *
+     * @param string $displayName Nom affiché saisi par l'utilisateur
+     * @return string Slug technique unique, immuable après création
+     */
+    public function generateTechnicalName(string $displayName): string
+    {
+        $base = trim(Str::slug($displayName, '_'), '_');
+        $base = substr($base, 0, 20);
+
+        // Garde : un nom affiché composé uniquement de ponctuation/accents peut
+        // produire un slug vide → repli déterministe.
+        if ($base === '') {
+            $base = 'groupe';
+        }
+
+        $name = $base;
+        $i = 2;
+        while (WorkstationGroup::where('name', $name)->exists()) {
+            $suffix = '_' . $i;
+            $name = substr($base, 0, 20 - strlen($suffix)) . $suffix;
+            $i++;
+        }
+
+        return $name;
+    }
+
+    /**
      * Crée un nouveau groupe
-     * 
+     *
      * Note: La création automatique de l'AppProfile (si app_profile_name est rempli)
      * est gérée par le WorkstationGroupObserver.
      */
     public function createGroup(array $data): WorkstationGroup
     {
+        // Nom technique auto-généré depuis le nom affiché lorsqu'il n'est pas
+        // fourni explicitement. Le chemin explicite-`name` (imposition controlHub
+        // via ImposedWorkstationGroupReconciler, import AD) reste intact : il
+        // fournit toujours son propre `name` et ne passe pas par le slug.
+        if (empty($data['name']) && !empty($data['display_name'])) {
+            $data['name'] = $this->generateTechnicalName($data['display_name']);
+        }
+
         $this->validateGroupData($data);
 
         return DB::transaction(function () use ($data) {
@@ -1812,18 +1857,25 @@ class WorkstationGroupService
      */
     private function validateGroupData(array $data, ?WorkstationGroup $existingGroup = null): void
     {
-        if (empty($data['name'])) {
-            throw new \InvalidArgumentException('Le nom du groupe est requis');
-        }
+        // Le `name` technique est immuable : les chemins d'édition ne l'envoient
+        // plus (cf. formulaires groupes). On ne valide donc non-vide + unicité
+        // que lorsque `name` est effectivement présent (création, imposition
+        // controlHub, import AD). En création via l'UI, il a déjà été dérivé et
+        // dédupliqué par generateTechnicalName() en amont.
+        if (array_key_exists('name', $data)) {
+            if (empty($data['name'])) {
+                throw new \InvalidArgumentException('Le nom du groupe est requis');
+            }
 
-        $query = WorkstationGroup::where('name', $data['name']);
+            $query = WorkstationGroup::where('name', $data['name']);
 
-        if ($existingGroup) {
-            $query->where('id', '!=', $existingGroup->id);
-        }
+            if ($existingGroup) {
+                $query->where('id', '!=', $existingGroup->id);
+            }
 
-        if ($query->exists()) {
-            throw new \InvalidArgumentException("Un groupe avec le nom '{$data['name']}' existe déjà");
+            if ($query->exists()) {
+                throw new \InvalidArgumentException("Un groupe avec le nom '{$data['name']}' existe déjà");
+            }
         }
 
         if (!empty($data['parent_id'])) {

@@ -415,8 +415,19 @@ class FileManagerService
             throw new \RuntimeException("Impossible de creer le repertoire: {$dir}");
         }
 
+        // timeout = plafond total du transfert (généreux pour les gros installeurs).
+        // connectTimeout = échec rapide si l'hôte est injoignable.
+        // Garde bas-débit : coupe un transfert réellement bloqué (< 1 Ko/s pendant 60 s)
+        // au lieu d'attendre le plafond total. Distingue « lent mais progresse » de « bloqué ».
         $response = Http::timeout($timeout)
-            ->withOptions(['sink' => $targetPath])
+            ->connectTimeout(30)
+            ->withOptions([
+                'sink' => $targetPath,
+                'curl' => [
+                    CURLOPT_LOW_SPEED_LIMIT => 1024,
+                    CURLOPT_LOW_SPEED_TIME => 60,
+                ],
+            ])
             ->get($url);
 
         if (!$response->successful()) {

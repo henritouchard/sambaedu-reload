@@ -30,8 +30,10 @@ new class extends Component {
     /** null = création ; sinon id du groupe édité. */
     public ?int $editingId = null;
 
-    // Champs du formulaire
-    public string $name = '';
+    // Champs du formulaire. Le nom technique (`name`) n'est plus saisi : il est
+    // auto-généré (slug) et immuable côté service. L'utilisateur ne renseigne
+    // que le nom affiché.
+    public string $display_name = '';
     public string $description = '';
     public ?int $parent_id = null;
     public bool $is_physical = true;
@@ -65,7 +67,8 @@ new class extends Component {
                 $this->toastError('Groupe introuvable.');
                 return;
             }
-            $this->name = $group->name;
+            // Repli sur le nom technique pour un groupe legacy sans display_name.
+            $this->display_name = $group->display_name ?? $group->name;
             $this->description = $group->description ?? '';
             $this->parent_id = $group->parent_id;
             $this->is_physical = (bool) $group->is_physical;
@@ -86,7 +89,7 @@ new class extends Component {
 
     private function resetForm(): void
     {
-        $this->reset(['name', 'description', 'parent_id', 'environment', 'editingId']);
+        $this->reset(['display_name', 'description', 'parent_id', 'environment', 'editingId']);
         $this->is_physical = true;
         // « Partagé » coché par défaut (plus d'option « non déclaré »).
         $this->environment = WorkstationEnvironment::SharedLocal->value;
@@ -114,7 +117,7 @@ new class extends Component {
     public function rules(): array
     {
         return [
-            'name' => 'required|string|max:255',
+            'display_name' => 'required|string|max:255',
             'description' => 'nullable|string|max:500',
             'parent_id' => 'nullable|integer|exists:workstation_groups,id',
             'is_physical' => 'boolean',
@@ -124,8 +127,8 @@ new class extends Component {
     public function messages(): array
     {
         return [
-            'name.required' => 'Le nom du groupe est requis.',
-            'name.max' => 'Le nom ne peut pas dépasser 255 caractères.',
+            'display_name.required' => 'Le nom du groupe est requis.',
+            'display_name.max' => 'Le nom ne peut pas dépasser 255 caractères.',
             'description.max' => 'La description ne peut pas dépasser 500 caractères.',
             'parent_id.exists' => 'Le groupe parent sélectionné n\'existe pas.',
         ];
@@ -159,8 +162,10 @@ new class extends Component {
 
         try {
             if ($this->editingId !== null) {
+                // `name` (technique) est immuable : on ne l'envoie jamais en
+                // édition, seul le nom affiché est modifiable.
                 $this->parcService->updateGroup($this->editingId, [
-                    'name' => $validated['name'],
+                    'display_name' => $validated['display_name'],
                     'description' => $validated['description'] ?: null,
                     'parent_id' => $parentId,
                     'is_physical' => $validated['is_physical'],
@@ -170,15 +175,16 @@ new class extends Component {
                 session()->flash('toast', [
                     'type' => 'success',
                     'title' => 'Groupe modifié',
-                    'message' => "Le groupe \"{$validated['name']}\" a été modifié avec succès.",
+                    'message' => "Le groupe \"{$validated['display_name']}\" a été modifié avec succès.",
                 ]);
 
                 $this->redirect(route('app.parc.groups.show', $this->editingId));
                 return;
             }
 
+            // `name` est dérivé (slug) par le service depuis `display_name`.
             $group = $this->parcService->createGroup([
-                'name' => $validated['name'],
+                'display_name' => $validated['display_name'],
                 'description' => $validated['description'] ?: null,
                 'parent_id' => $parentId,
                 'is_physical' => $validated['is_physical'],
@@ -188,7 +194,7 @@ new class extends Component {
             session()->flash('toast', [
                 'type' => 'success',
                 'title' => 'Groupe créé',
-                'message' => "Le groupe \"{$group->name}\" a été créé avec succès.",
+                'message' => "Le groupe \"{$group->display_name_or_name}\" a été créé avec succès.",
             ]);
 
             $this->redirect(route('app.parc.groups.show', $group->id));
@@ -205,17 +211,17 @@ new class extends Component {
 <div>
     <x-molecules.modal wire:model="isOpen" size="max-w-2xl" height="h-auto max-h-[90vh]"
         :title="$editingId ? 'Modifier le groupe' : 'Nouveau groupe'"
-        :subtitle="$editingId ? $name : 'Créer un groupe de postes'" icon="fa-layer-group text-primary">
+        :subtitle="$editingId ? $display_name : 'Créer un groupe de postes'" icon="fa-layer-group text-primary">
 
-        {{-- Nom --}}
+        {{-- Nom affiché (le nom technique est auto-généré) --}}
         <div class="form-control w-full">
             <label class="label py-2">
                 <span class="label-text font-medium">Nom du groupe <span class="text-error">*</span></span>
             </label>
-            <input type="text" wire:model="name"
-                class="input input-bordered w-full @error('name') input-error @enderror"
-                placeholder="Ex: Salle-Info-101, Parc-Portables">
-            @error('name')
+            <input type="text" wire:model="display_name"
+                class="input input-bordered w-full @error('display_name') input-error @enderror"
+                placeholder="Ex: Salle Info 101, Parc Portables">
+            @error('display_name')
                 <label class="label py-1">
                     <span class="label-text-alt text-error">{{ $message }}</span>
                 </label>
@@ -302,7 +308,7 @@ new class extends Component {
                 <select wire:model="parent_id" class="select select-bordered w-full">
                     <option value="">Aucun (groupe racine)</option>
                     @foreach ($availableParents as $parent)
-                        <option value="{{ $parent->id }}">{{ $parent->name }}</option>
+                        <option value="{{ $parent->id }}">{{ $parent->display_name_or_name }}</option>
                     @endforeach
                 </select>
                 <label class="label py-1">

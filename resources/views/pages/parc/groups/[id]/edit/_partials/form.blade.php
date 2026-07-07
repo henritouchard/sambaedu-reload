@@ -12,10 +12,10 @@
                 <label class="label py-2">
                     <span class="label-text font-medium">Nom du groupe <span class="text-error">*</span></span>
                 </label>
-                <input type="text" wire:model="name"
-                    class="input input-bordered w-full @error('name') input-error @enderror"
-                    placeholder="Ex: Salle-Info-101, Parc-Portables">
-                @error('name')
+                <input type="text" wire:model="display_name"
+                    class="input input-bordered w-full @error('display_name') input-error @enderror"
+                    placeholder="Ex: Salle Info 101, Parc Portables">
+                @error('display_name')
                     <label class="label py-1">
                         <span class="label-text-alt text-error">{{ $message }}</span>
                     </label>
@@ -101,7 +101,7 @@
                 <select wire:model="parent_id" class="select select-bordered w-full">
                     <option value="">Aucun (groupe racine)</option>
                     @foreach ($availableParents as $parent)
-                        <option value="{{ $parent->id }}">{{ $parent->name }}</option>
+                        <option value="{{ $parent->id }}">{{ $parent->display_name_or_name }}</option>
                     @endforeach
                 </select>
             </div>

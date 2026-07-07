@@ -7,14 +7,14 @@
             type="wallpaper"
             :ownerType="App\Models\WorkstationGroup::class"
             :ownerId="$group->id"
-            title="Fond d'écran — {{ $group->name }}"
+            title="Fond d'écran — {{ $group->display_name_or_name }}"
             :key="'wp-picker-wallpaper-' . $group->id" />
 
         <livewire:components::molecules.wallpaper-library-picker
             type="lockscreen"
             :ownerType="App\Models\WorkstationGroup::class"
             :ownerId="$group->id"
-            title="Écran de verrouillage — {{ $group->name }}"
+            title="Écran de verrouillage — {{ $group->display_name_or_name }}"
             :key="'wp-picker-lockscreen-' . $group->id" />
     @endcan
 @endif

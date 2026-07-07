@@ -315,250 +315,237 @@ new #[Title('Control Hub - Instance SE4FS')] class extends Component {
 ?>
 
 <x-organisms.page title="Control Hub" description="Administrez la connexion au hub centralisé" icon="fa-brands fa-hubspot">
-    <div class="space-y-4">
+    @php
+        $isConfigured = $handshakeStatus['configured'] ?? false;
+        $heartbeatActive = $handshakeStatus['heartbeat_active'] ?? false;
+        $lastHeartbeat = $currentStatus['last_heartbeat'] ?? null;
+        $failures = $currentStatus['failures_count'] ?? 0;
+        $statusColor = $currentStatus['color'] ?? 'info';
+        $statusLabel = ucfirst($currentStatus['status'] ?? 'offline');
+        $intervalSec = $handshakeStatus['heartbeat_interval'] ?? null;
+        $intervalLabel = $intervalSec ? intdiv((int) $intervalSec, 60) . ' min' : null;
+        $baseUrl = $handshakeStatus['base_url'] ?? ($config['base_url'] ?? null);
+    @endphp
 
-        <!-- Status section -->
-        <div class="card bg-base-100 shadow-md">
-            <div class="card-body">
-                <div class="flex justify-between items-center">
-                    <h4 class="card-title text-2xl mb-4 flex items-center gap-2">
-                        <i class="fas fa-signal text-primary"></i>
-                        Statut actuel
-                    </h4>
-                    <button wire:click="refreshStatus" wire:loading.attr="disabled"
-                        class="btn btn-outline btn-primary btn-sm">
-                        <i class="fas fa-refresh" wire:loading.class="fa-spin" wire:target="refreshStatus"></i>
-                        Actualiser
-                    </button>
-                </div>
-                <div class="ml-8">
-                    <!-- Nouveau statut de connexion -->
-                    @if ($handshakeStatus['configured'] ?? false)
-                        <div class="flex gap-2 items-center">
-                            <div class="inline-grid *:[grid-area:1/1]">
-                                <div class="status status-lg status-success animate-ping"></div>
-                                <div class="status status-lg status-success"></div>
-                            </div> Le handshake a été configuré avec succès.
-                        </div>
-                    @else
-                        <div class="flex gap-2 items-center">
-                            <div class="inline-grid *:[grid-area:1/1]">
-                                <div class="status status-lg status-error animate-ping"></div>
-                                <div class="status status-lg status-error"></div>
-                            </div> Le handshake n'a pas été configuré ou a échoué.
-                        </div>
-                    @endif
+    <x-slot name="actions">
+        @if ($currentStatus)
+            <span class="badge badge-{{ $statusColor }} badge-lg gap-2 py-3 font-medium">
+                <span class="inline-grid *:[grid-area:1/1]">
+                    <span class="status status-{{ $statusColor }} animate-ping"></span>
+                    <span class="status status-{{ $statusColor }}"></span>
+                </span>
+                {{ $statusLabel }}
+            </span>
+        @endif
+        <button wire:click="refreshStatus" wire:loading.attr="disabled" wire:target="refreshStatus"
+            class="btn btn-circle btn-ghost btn-sm" title="Actualiser le statut">
+            <i class="fas fa-rotate-right" wire:loading.class="fa-spin" wire:target="refreshStatus"></i>
+        </button>
+    </x-slot>
 
-                    @if ($currentStatus)
-                        <div class="flex gap-2 items-center">
-                            <div class="inline-grid *:[grid-area:1/1]">
-                                <div class="status status-lg status-{{ $currentStatus['color'] }} animate-ping">
-                                </div>
-                                <div class="status status-lg status-{{ $currentStatus['color'] }}"></div>
-                            </div> Statut de la connexion : <div class="badge badge-{{ $currentStatus['color'] }}">
-                                {{ ucfirst($currentStatus['status']) }}</div>
-                        </div>
-                    @endif
-                </div>
-            </div>
-        </div>
-
-        @if ($handshakeStatus['configured'] ?? false)
-            @php
-                $heartbeatActive = $handshakeStatus['heartbeat_active'] ?? false;
-                $lastHeartbeat = $handshakeStatus['last_heartbeat_at'] ?? null;
-                $failures = $handshakeStatus['heartbeat_failures'] ?? 0;
-            @endphp
-
-            <div class="card bg-base-100 shadow-md">
-                <div class="card-body">
-                    <x-atoms.tooltip color="" position="top" icon="true">
-                        <x-slot name="label">
-                            <h4 class="card-title text-2xl flex items-center gap-2">
-                                <i class="fa-solid fa-heart-pulse text-primary"></i>
-                                Heartbeat Automatique
-                            </h4>
-                        </x-slot>
-                        Le heartbeat automatique est un appel à l'API ControlHub qui s'exécute toutes les 5
-                        minutes pour maintenir la connexion avec le hub connecté.
-                    </x-atoms.tooltip>
-
-                    <div class="ml-8 space-y-4">
-                        <div class="mt-4">
-                            @if ($heartbeatActive)
-                                <div class="flex gap-2 items-center">
-                                    <div class="inline-grid *:[grid-area:1/1]">
-                                        <div class="status status-lg status-success animate-ping"></div>
-                                        <div class="status status-lg status-success"></div>
-                                    </div> Le heartbeat est actif.
-                                </div>
-                            @else
-                                <div class="flex gap-2 items-center">
-                                    <div class="inline-grid *:[grid-area:1/1]">
-                                        <div class="status status-lg status-error animate-ping"></div>
-                                        <div class="status status-lg status-error"></div>
-                                    </div> Le heartbeat est inactif.
-                                </div>
-                            @endif
-                        </div>
-                        <div class="mt-4">
-                            Dernier Heartbeat :
-                            {{ $currentStatus['last_heartbeat'] ? $currentStatus['last_heartbeat']->format('d/m/Y H:i:s') : 'Aucun' }}
-                            - après {{ $currentStatus['failures_count'] }} échecs.
-                        </div>
-                    </div>
-                    <div class="flex gap-4 mt-4 justify-center w-full">
-                        @if (!$heartbeatActive)
-                            <button wire:click="restartHeartbeat" wire:loading.attr="disabled" class="btn btn-success">
-                                <i class="fas fa-play"></i>
-                                Démarrer
-                            </button>
-                        @else
-                            <button wire:click="stopHeartbeat" wire:loading.attr="disabled" class="btn btn-error">
-                                <i class="fas fa-stop"></i>
-                                Arrêter
-                            </button>
-                        @endif
-                        <button wire:click="testHeartbeat" wire:loading.attr="disabled" class="btn btn-info">
-                            <i class="fas fa-vial"></i>
-                            Tester
-                        </button>
-                    </div>
-                </div>
+    <div class="mx-auto max-w-4xl">
+        @if ($error)
+            <div role="alert" class="alert alert-error mb-4 shadow-sm">
+                <i class="fas fa-triangle-exclamation"></i>
+                <span>{{ $error }}</span>
             </div>
         @endif
 
-        <!-- Handshake form with modern styling -->
-        <div class="card bg-base-100 shadow-md">
-            <div class="card-body">
-                <h3 class="card-title text-2xl mb-6 flex items-center gap-2">
-                    <i class="fas fa-handshake text-primary"></i>
-                    Handshake
-                </h3>
-
-                <!-- Infos configuration actuelle du handshake -->
-                @if ($handshakeStatus['configured'] ?? false)
-                    <div class="ml-8">
-                        <h4 class="card-title text-xl mb-6 flex items-center gap-2">
-                            <i class="fas fa-cog"></i>
-                            Configuration actuelle
-                        </h4>
-
-                        <div class="overflow-x-auto mb-4">
-                            <table class="table table-zebra w-full">
-                                <tbody>
-                                    <tr>
-                                        <th class="font-semibold">URL ControlHub</th>
-                                        <td>
-                                            @if (!empty($handshakeStatus['configured']) && !empty($handshakeStatus['base_url']))
-                                                <span
-                                                    class="text-success font-semibold">{{ $handshakeStatus['base_url'] }}</span>
-                                                <div class="text-xs text-base-content/70 mt-1">URL utilisée lors
-                                                    du
-                                                    dernier handshake</div>
-                                            @else
-                                                <span
-                                                    class="text-base-content/70">{{ $config['base_url'] ?? 'Non définie' }}</span>
-                                                <div class="text-xs text-base-content/70 mt-1">URL par défaut
-                                                    (aucun handshake effectué)</div>
-                                            @endif
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <th class="font-semibold">Instance ID SE4FS</th>
-                                        <td class="font-mono">{{ $config['instance_id'] ?? 'Non défini' }}</td>
-                                    </tr>
-                                    <tr>
-                                        <th class="font-semibold">API Token</th>
-                                        <td class="font-mono text-sm">
-                                            {{ $handshakeStatus['api_token'] ?? 'Non défini' }}</td>
-                                    </tr>
-                                    <tr>
-                                        <th class="font-semibold">Token SE4FS</th>
-                                        <td class="font-mono text-sm">
-                                            {{ $handshakeStatus['se4fs_api_token'] ?? 'Non défini' }}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
+        <div class="card bg-base-100 border border-base-200 shadow-xl overflow-hidden">
+            <div class="card-body gap-6">
+                @if ($isConfigured)
+                    {{-- ============ Rangée de statistiques ============ --}}
+                    <div
+                        class="stats stats-vertical w-full rounded-2xl border border-base-200 bg-base-200/30 md:stats-horizontal">
+                        <div class="stat">
+                            <div class="stat-figure text-success"><i class="fas fa-handshake text-2xl"></i></div>
+                            <div class="stat-title">Handshake</div>
+                            <div class="stat-value text-2xl text-success">Établi</div>
+                            <div class="stat-desc">
+                                {{ $handshakeStatus['last_handshake'] ? $handshakeStatus['last_handshake']->diffForHumans() : 'Actif' }}
+                            </div>
                         </div>
-                        <div class="flex justify-center gap-4 mt-8">
-                            <x-atoms.tooltip color="warning" position="top">
-                                <x-slot name="label">
-                                    <button type="button" class="btn btn-error btn-outline"
-                                        onclick="deleteConnectionModal.showModal()">
-                                        <i class="fas fa-trash"></i>
-                                        Supprimer la connexion
-                                    </button>
-                                </x-slot>
-                                Cette action supprimera définitivement toutes les données de connexion
-                                ControlHub et arrêtera le heartbeat automatique.
-                            </x-atoms.tooltip>
+                        <div class="stat">
+                            <div class="stat-figure {{ $heartbeatActive ? 'text-success' : 'text-error' }}">
+                                <i class="fa-solid fa-heart-pulse text-2xl {{ $heartbeatActive ? 'animate-pulse' : '' }}"></i>
+                            </div>
+                            <div class="stat-title">Heartbeat</div>
+                            <div class="stat-value text-2xl {{ $heartbeatActive ? 'text-success' : 'text-error' }}">
+                                {{ $heartbeatActive ? 'Actif' : 'Inactif' }}
+                            </div>
+                            <div class="stat-desc">{{ $intervalLabel ? 'Toutes les ' . $intervalLabel : '—' }}</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-figure text-base-content/40"><i class="fas fa-clock text-2xl"></i></div>
+                            <div class="stat-title">Dernier battement</div>
+                            <div class="stat-value text-lg">
+                                {{ $lastHeartbeat ? $lastHeartbeat->diffForHumans(null, true) : 'Aucun' }}
+                            </div>
+                            <div class="stat-desc">
+                                {{ $lastHeartbeat ? $lastHeartbeat->format('d/m/Y H:i:s') : 'En attente' }}
+                            </div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-figure {{ $failures > 0 ? 'text-warning' : 'text-base-content/40' }}">
+                                <i class="fas fa-{{ $failures > 0 ? 'triangle-exclamation' : 'shield-halved' }} text-2xl"></i>
+                            </div>
+                            <div class="stat-title">Échecs consécutifs</div>
+                            <div class="stat-value text-2xl {{ $failures > 0 ? 'text-warning' : '' }}">{{ $failures }}</div>
+                            <div class="stat-desc">{{ $failures > 0 ? 'Surveillance requise' : 'Stable' }}</div>
                         </div>
                     </div>
-                @endif
-                @if (empty($handshakeStatus['configured']) ?? true)
-                    <div class="ml-8">
-                        <h4 class="card-title text-xl mb-6 flex items-center gap-2">
-                            <i class="fas fa-cog"></i>
-                            Paramètres du handshake
-                        </h4>
-                        <form wire:submit="executeHandshake" class="space-y-6">
-                            <div class="form-control flex flex-col gap-2">
-                                <x-atoms.tooltip color="" position="right" icon="true">
+
+                    {{-- ============ Détails + panneau heartbeat ============ --}}
+                    <div class="grid gap-6 lg:grid-cols-5">
+                        {{-- Détails de connexion --}}
+                        <section class="lg:col-span-3">
+                            <h3 class="mb-3 flex items-center gap-2 text-base font-semibold text-base-content/80">
+                                <i class="fas fa-circle-info text-primary"></i>
+                                Détails de la connexion
+                            </h3>
+                            <dl class="divide-y divide-base-200 overflow-hidden rounded-2xl border border-base-200">
+                                <div class="flex items-center justify-between gap-4 px-4 py-3">
+                                    <dt class="text-sm font-medium text-base-content/60">URL ControlHub</dt>
+                                    <dd class="truncate font-mono text-sm text-success">{{ $baseUrl ?? 'Non définie' }}</dd>
+                                </div>
+                                <div class="flex items-center justify-between gap-4 px-4 py-3">
+                                    <dt class="text-sm font-medium text-base-content/60">Instance ID SE4FS</dt>
+                                    <dd class="truncate font-mono text-sm">{{ $config['instance_id'] ?? 'Non défini' }}</dd>
+                                </div>
+                                <div class="flex items-center justify-between gap-4 px-4 py-3">
+                                    <dt class="text-sm font-medium text-base-content/60">API Token</dt>
+                                    <dd class="font-mono text-sm">
+                                        <span class="badge badge-ghost badge-sm font-mono">{{ $handshakeStatus['api_token'] ?? '—' }}</span>
+                                    </dd>
+                                </div>
+                                <div class="flex items-center justify-between gap-4 px-4 py-3">
+                                    <dt class="text-sm font-medium text-base-content/60">Token SE4FS</dt>
+                                    <dd class="font-mono text-sm">
+                                        <span class="badge badge-ghost badge-sm font-mono">{{ $handshakeStatus['se4fs_api_token'] ?? '—' }}</span>
+                                    </dd>
+                                </div>
+                            </dl>
+                        </section>
+
+                        {{-- Panneau heartbeat + zone danger --}}
+                        <section class="space-y-4 lg:col-span-2">
+                            <div class="rounded-2xl border border-base-200 bg-base-200/30 p-4">
+                                <x-atoms.tooltip color="" position="top" icon="true">
                                     <x-slot name="label">
-                                        <h3 class="font-bold">URL ou IP de l'application ControlHub</h3>
+                                        <h3 class="flex items-center gap-2 text-base font-semibold text-base-content/80">
+                                            <i class="fa-solid fa-heart-pulse text-primary"></i>
+                                            Heartbeat automatique
+                                        </h3>
                                     </x-slot>
-                                    Saisissez l'URL complète ou l'adresse IP avec le port
-                                    de votre instance ControlHub.
-                                    Ex: http://192.168.1.100:8080 ou https://controlhub.example.com
-
+                                    Appel périodique à l'API ControlHub qui maintient la connexion active auprès du hub.
                                 </x-atoms.tooltip>
-                                <input type="text"
-                                    class="input input-bordered w-[70%] @error('controlHubUrl') input-error @enderror"
-                                    wire:model="controlHubUrl"
-                                    placeholder="Ex: http://192.168.1.100:8080 ou https://controlhub.example.com"
-                                    required>
 
-                                @error('controlHubUrl')
-                                    <div class="alert alert-error">
-                                        <i class="fas fa-exclamation-circle"></i>
-                                        <span><strong>URL ControlHub :</strong> {{ $message }}</span>
-                                    </div>
-                                @enderror
+                                <div class="mt-3 flex items-center gap-2 text-sm">
+                                    <span class="inline-grid *:[grid-area:1/1]">
+                                        <span class="status status-{{ $heartbeatActive ? 'success' : 'error' }} animate-ping"></span>
+                                        <span class="status status-{{ $heartbeatActive ? 'success' : 'error' }}"></span>
+                                    </span>
+                                    {{ $heartbeatActive ? 'Le heartbeat est actif.' : 'Le heartbeat est inactif.' }}
+                                </div>
+
+                                <div class="mt-4 flex flex-wrap gap-2">
+                                    @if (!$heartbeatActive)
+                                        <button wire:click="restartHeartbeat" wire:loading.attr="disabled"
+                                            class="btn btn-success btn-sm flex-1">
+                                            <i class="fas fa-play"></i> Démarrer
+                                        </button>
+                                    @else
+                                        <button wire:click="stopHeartbeat" wire:loading.attr="disabled"
+                                            class="btn btn-error btn-sm flex-1">
+                                            <i class="fas fa-stop"></i> Arrêter
+                                        </button>
+                                    @endif
+                                    <button wire:click="testHeartbeat" wire:loading.attr="disabled"
+                                        class="btn btn-info btn-outline btn-sm flex-1">
+                                        <i class="fas fa-vial"></i> Tester
+                                    </button>
+                                </div>
                             </div>
 
-                            <div class="form-control flex flex-col gap-2">
-                                <x-atoms.tooltip color="" position="right" icon="true">
-                                    <x-slot name="label">
-                                        <h3 class="font-bold">Master API Key</h3>
-                                    </x-slot>
-                                    La master API key ne peut être utilisée qu'une seule fois.
-                                    Elle vous est fournie par l'administrateur ControlHub.
-                                </x-atoms.tooltip>
-                                <input type="text"
-                                    class="input input-bordered w-[70%] @error('masterApiKey') input-error @enderror"
-                                    wire:model="masterApiKey"
-                                    placeholder="Entrez la master API key fournie par ControlHub" required
-                                    minlength="32" maxlength="255">
-                                @error('masterApiKey')
-                                    <div class="alert alert-error">
-                                        <i class="fas fa-exclamation-circle"></i>
-                                        <span><strong>Master API Key :</strong> {{ $message }}</span>
-                                    </div>
-                                @enderror
-                            </div>
-
-                            <div class="flex justify-center">
-                                <button type="submit" class="btn btn-primary btn-lg" wire:loading.attr="disabled">
-                                    <span wire:loading wire:target="executeHandshake"
-                                        class="loading loading-spinner"></span>
-                                    <i class="fas fa-handshake" wire:loading.remove
-                                        wire:target="executeHandshake"></i>
-                                    Exécuter le handshake
+                            <div class="rounded-2xl border border-error/30 bg-error/5 p-4">
+                                <h3 class="flex items-center gap-2 text-sm font-semibold text-error">
+                                    <i class="fas fa-triangle-exclamation"></i>
+                                    Zone sensible
+                                </h3>
+                                <p class="mt-1 text-xs text-base-content/60">
+                                    Supprime toutes les données de connexion et arrête le heartbeat. Un nouveau
+                                    handshake sera nécessaire.
+                                </p>
+                                <button type="button" class="btn btn-error btn-outline btn-sm mt-3 w-full"
+                                    onclick="deleteConnectionModal.showModal()">
+                                    <i class="fas fa-trash"></i> Supprimer la connexion
                                 </button>
                             </div>
-                        </form>
+                        </section>
                     </div>
+                @else
+                    {{-- ============ Non connecté : hero + formulaire ============ --}}
+                    <div class="flex flex-col items-center gap-2 py-4 text-center">
+                        <div class="grid size-16 place-items-center rounded-full bg-error/10 text-error">
+                            <i class="fas fa-plug-circle-xmark text-3xl"></i>
+                        </div>
+                        <h3 class="text-lg font-semibold">Aucun handshake configuré</h3>
+                        <p class="max-w-md text-sm text-base-content/60">
+                            Renseignez l'URL du hub et la master API key pour établir la connexion.
+                        </p>
+                    </div>
+
+                    <form wire:submit="executeHandshake" class="mx-auto w-full max-w-lg space-y-6">
+                        <div class="form-control flex flex-col gap-2">
+                            <x-atoms.tooltip color="" position="right" icon="true">
+                                <x-slot name="label">
+                                    <span class="font-semibold">URL ou IP de l'application ControlHub</span>
+                                </x-slot>
+                                Saisissez l'URL complète ou l'adresse IP avec le port de votre instance ControlHub.
+                                Ex: http://192.168.1.100:8080 ou https://controlhub.example.com
+                            </x-atoms.tooltip>
+                            <input type="text"
+                                class="input input-bordered w-full @error('controlHubUrl') input-error @enderror"
+                                wire:model="controlHubUrl"
+                                placeholder="Ex: http://192.168.1.100:8080 ou https://controlhub.example.com" required>
+                            @error('controlHubUrl')
+                                <div class="alert alert-error">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                    <span><strong>URL ControlHub :</strong> {{ $message }}</span>
+                                </div>
+                            @enderror
+                        </div>
+
+                        <div class="form-control flex flex-col gap-2">
+                            <x-atoms.tooltip color="" position="right" icon="true">
+                                <x-slot name="label">
+                                    <span class="font-semibold">Master API Key</span>
+                                </x-slot>
+                                La master API key ne peut être utilisée qu'une seule fois. Elle vous est fournie par
+                                l'administrateur ControlHub.
+                            </x-atoms.tooltip>
+                            <input type="text"
+                                class="input input-bordered w-full @error('masterApiKey') input-error @enderror"
+                                wire:model="masterApiKey"
+                                placeholder="Entrez la master API key fournie par ControlHub" required minlength="32"
+                                maxlength="255">
+                            @error('masterApiKey')
+                                <div class="alert alert-error">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                    <span><strong>Master API Key :</strong> {{ $message }}</span>
+                                </div>
+                            @enderror
+                        </div>
+
+                        <div class="flex justify-center">
+                            <button type="submit" class="btn btn-primary btn-lg" wire:loading.attr="disabled"
+                                wire:target="executeHandshake">
+                                <span wire:loading wire:target="executeHandshake" class="loading loading-spinner"></span>
+                                <i class="fas fa-handshake" wire:loading.remove wire:target="executeHandshake"></i>
+                                Exécuter le handshake
+                            </button>
+                        </div>
+                    </form>
                 @endif
             </div>
         </div>

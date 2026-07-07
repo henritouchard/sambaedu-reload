@@ -28,7 +28,7 @@
                     <x-atoms.icon-avatar icon="fa-folder-tree" bgColor="bg-secondary/10" textColor="text-secondary"
                         size="w-8 h-8" iconSize="text-sm" />
                     <div class="flex-1">
-                        <div class="font-medium">{{ $group->name }}</div>
+                        <div class="font-medium">{{ $group->display_name_or_name }}</div>
                         <div class="text-xs text-base-content/60">
                             {{ $group->workstations()->count() }} poste(s)
                             @if (method_exists($group, 'isSyncedWithAd') && $group->isSyncedWithAd())

@@ -411,10 +411,12 @@ new class extends Component {
 <x-organisms.page title="Utilisateurs" :scrollable="false" description="Liste des utilisateurs synchronisés en base SQL">
     <x-slot:actions>
         @if ($activeTab === 'groups')
-            <a href="{{ route('app.users.groups.new') }}" class="btn btn-primary">
-                <i class="fa-solid fa-plus"></i>
-                Nouveau groupe
-            </a>
+            @can('user.modify')
+                <button type="button" class="btn btn-primary" wire:click="$dispatch('open-user-group-modal')">
+                    <i class="fa-solid fa-plus"></i>
+                    Nouveau groupe
+                </button>
+            @endcan
         @else
             <a href="{{ route('app.users.new') }}" class="btn btn-primary">
                 <i class="fa-solid fa-plus"></i>
@@ -856,6 +858,7 @@ new class extends Component {
     <livewire:components::organisms.groups-drawer />
     @livewire('pages::users._partials.rights-drawer')
     <livewire:pages::users._partials.delegation-modal />
+    <livewire:pages::users.groups._partials.group-form-modal />
     <livewire:components::organisms.password-reset-modal />
     <livewire:components::organisms.password-reset-banner />
 </x-organisms.page>

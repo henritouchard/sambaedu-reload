@@ -10,17 +10,22 @@
                         placeholder="Rechercher un groupe..." class="input input-bordered w-48" />
                 </div>
 
-                <!-- Toggle groupes physiques/logiques -->
+                <!-- Filtre type de groupes : tous / physiques / logiques -->
                 <div class="flex items-center gap-2">
                     <label class="label-text text-xs">Groupes</label>
                     <div class="join">
-                        <button type="button" class="join-item btn btn-sm {{ !$showLogical ? 'btn-active' : '' }}"
-                            wire:click="$set('showLogical', false)">
+                        <button type="button" class="join-item btn btn-sm {{ $groupTypeFilter === 'all' ? 'btn-active' : '' }}"
+                            wire:click="$set('groupTypeFilter', 'all')">
+                            <i class="fa-solid fa-layer-group text-xs"></i>
+                            Tous
+                        </button>
+                        <button type="button" class="join-item btn btn-sm {{ $groupTypeFilter === 'physical' ? 'btn-active' : '' }}"
+                            wire:click="$set('groupTypeFilter', 'physical')">
                             <i class="fa-solid fa-building text-xs"></i>
                             Physiques
                         </button>
-                        <button type="button" class="join-item btn btn-sm {{ $showLogical ? 'btn-active' : '' }}"
-                            wire:click="$set('showLogical', true)">
+                        <button type="button" class="join-item btn btn-sm {{ $groupTypeFilter === 'logical' ? 'btn-active' : '' }}"
+                            wire:click="$set('groupTypeFilter', 'logical')">
                             <i class="fa-solid fa-network-wired text-xs"></i>
                             Logiques
                         </button>

@@ -105,10 +105,10 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
         ->middleware('can:user.assign.right')
         ->name('rights-management.profiles.show');
 
-    // Groupes d'utilisateurs — Story 7.2 AC8 : middleware can: user.read
-    Route::livewire('/users/groups/new', 'pages::users.groups.new.index')
-        ->middleware('can:user.modify')
-        ->name('users.groups.new');
+    // Groupes d'utilisateurs — Story 7.2 AC8 : middleware can: user.read.
+    // La création passe désormais par la modale `group-form-modal` (event
+    // `open-user-group-modal`) sur la page /users, gardée par `can:user.modify` ;
+    // l'ancienne route /users/groups/new a été retirée avec sa page.
     Route::match(['GET', 'POST'], '/users/groups/legacy-new', [\App\Http\Controllers\LegacyEmbedController::class, 'show'])
         ->defaults('module', 'annu2/add_group.php')
         ->name('users.groups.legacy-new');
@@ -422,6 +422,12 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     Route::livewire('/settings/credentials', 'pages::admin.settings.credentials.index')
         ->middleware('can:server.admin')
         ->name('settings.credentials');
+
+    // /admin/settings/security — Sécurité & session : déconnexion auto sur inactivité
+    // (durée de vie de la session serveur, pilotée via SystemSetting `security.session_idle`).
+    Route::livewire('/settings/security', 'pages::admin.settings.security.index')
+        ->middleware('can:server.admin')
+        ->name('settings.security');
 
     // /admin/settings/system-status — État du système : checks à la demande
     // (AD / PostgreSQL / controlHub / Apache / iPXE via app/Doctor) +

@@ -40,12 +40,17 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     // Story 27.8 : valeur 'drifted_allowed' retirée (mécanisme strict/default supprimé).
     #[Url]
     public string $conformityFilter = '';
+    // Filtre par état de présence (canal agent). Valeurs admises : '' (tous),
+    // 'online' (allumé), 'off' (éteint = extinction signalée ou muet).
+    #[Url]
+    public string $presenceFilter = '';
 
     // Filtres groupes
     #[Url]
     public string $groupSearch = '';
+    // 'all' (physiques + logiques), 'physical' ou 'logical'
     #[Url]
-    public bool $showLogical = false;
+    public string $groupTypeFilter = 'all';
 
     // Sélection
     public array $selectedMachines = [];
@@ -201,6 +206,13 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
         $this->resetPage();
     }
 
+    public function updatedPresenceFilter(): void
+    {
+        // Le filtre présence ne modifie pas les compteurs globaux (inventaire),
+        // il ne fait que restreindre le listing — pas de reload des stats.
+        $this->resetPage();
+    }
+
     public function getMachinesProperty()
     {
         try {
@@ -214,6 +226,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
                 scopeFor: $this->scopedUser(),
                 migrationFilter: $this->migrationFilter ?: null,
                 conformityFilter: $this->conformityFilter ?: null,
+                presenceFilter: $this->presenceFilter ?: null,
             );
         } catch (\Exception $e) {
             Log::error('[Parc] Erreur chargement machines: ' . $e->getMessage());
@@ -229,7 +242,11 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
             return $this->parcService->listGroups(
                 perPage: $this->groupsPerPage,
                 search: $this->groupSearch ?: null,
-                isPhysical: !$this->showLogical,
+                isPhysical: match ($this->groupTypeFilter) {
+                    'physical' => true,
+                    'logical' => false,
+                    default => null,
+                },
                 scopeFor: $this->scopedUser(),
             );
         } catch (\Exception $e) {
@@ -264,6 +281,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
         $this->groupFilter = null;
         $this->migrationFilter = '';
         $this->conformityFilter = '';
+        $this->presenceFilter = '';
         $this->selectedMachines = [];
         // Story 16.13bis — Correction Q2 / Opus-A : recharger les stats
         // pour refléter le nouveau périmètre global après reset.
@@ -274,7 +292,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     public function resetGroupFilters(): void
     {
         $this->groupSearch = '';
-        $this->showLogical = false;
+        $this->groupTypeFilter = 'all';
         $this->selectedGroups = [];
         $this->resetPage();
     }

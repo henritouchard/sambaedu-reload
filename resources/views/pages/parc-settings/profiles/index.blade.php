@@ -506,6 +506,10 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
                                     <div class="stat-title text-xs">Groupes</div>
                                     <div class="stat-value text-2xl">{{ $profile->workstationGroups->count() }}</div>
                                 </div>
+                                <div class="stat p-0">
+                                    <div class="stat-title text-xs">Postes</div>
+                                    <div class="stat-value text-2xl">{{ $profile->workstations->count() }}</div>
+                                </div>
                                 @if ($profile->is_active)
                                     <span class="badge badge-success">Actif</span>
                                 @else

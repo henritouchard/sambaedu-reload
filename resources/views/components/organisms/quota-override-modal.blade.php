@@ -50,24 +50,14 @@
 <x-molecules.modal wire:model="showOverrideModal" closeMethod="closeOverrideModal"
     :title="$title" icon="fa-hard-drive text-primary" size="max-w-2xl" height="h-auto">
 
+    {{-- La partition est déjà déterminée par le bouton « Modifier le quota » de la
+         carte d'origine (une carte par partition) : on l'affiche en lecture seule
+         plutôt que de redemander le choix (redondant et trompeur). --}}
     <x-molecules.modal.section title="Partition" icon="fa-folder-open text-primary" dense>
-        <details class="dropdown w-full" x-data @click.outside="$el.removeAttribute('open')">
-            <summary class="btn btn-sm btn-outline w-full justify-between font-normal">
-                <span class="truncate">{{ $partitionLabels[$overridePartition] ?? 'Choisir une partition' }}</span>
-                <i class="fa-solid fa-chevron-down text-xs"></i>
-            </summary>
-            <ul class="menu dropdown-content bg-base-100 rounded-box z-20 mt-1 p-1 shadow border border-base-300 w-full">
-                @foreach ($partitionLabels as $value => $label)
-                    <li>
-                        <a class="text-sm py-1"
-                            wire:click="$set('overridePartition', '{{ $value }}')"
-                            onclick="this.closest('details').removeAttribute('open')">
-                            {{ $label }}
-                        </a>
-                    </li>
-                @endforeach
-            </ul>
-        </details>
+        <div class="flex items-center gap-2 text-sm font-medium">
+            <i class="fa-solid fa-folder text-base-content/50"></i>
+            <span class="truncate">{{ $partitionLabels[$overridePartition] ?? $overridePartition }}</span>
+        </div>
     </x-molecules.modal.section>
 
     <x-molecules.modal.section title="Type de quota" icon="fa-sliders text-primary" dense>

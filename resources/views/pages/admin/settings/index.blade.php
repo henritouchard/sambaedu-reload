@@ -90,6 +90,15 @@ new #[Title('Réglages')] class extends Component {
                 description="Rotation TOTP 6 h du mot de passe AD du compte de déploiement."
                 badge="Sécurité"
                 testid="card-credentials" />
+
+            <x-molecules.settings-card
+                href="{{ route('admin.settings.security') }}"
+                icon="fa-solid fa-user-clock"
+                iconColor="primary"
+                title="Sécurité & session"
+                description="Déconnexion automatique de l'interface sur inactivité (durée de session)."
+                badge="Sécurité"
+                testid="card-security" />
         </x-molecules.settings-section>
 
         {{-- ============================================================

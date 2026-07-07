@@ -135,7 +135,8 @@ class WorkstationGroupRepository
         ?string $os = null,
         ?int $groupId = null,
         ?string $migrationFilter = null,
-        ?string $conformityFilter = null
+        ?string $conformityFilter = null,
+        ?string $presenceFilter = null
     ): LengthAwarePaginator {
         $query = Workstation::query();
 
@@ -158,6 +159,9 @@ class WorkstationGroupRepository
 
         // Story 24.7 — filtre par conformité agent (worst-status / dérivés).
         $this->applyConformityFilter($query, $conformityFilter);
+
+        // Filtre par état de présence (allumé / éteint), dérivé du canal agent.
+        $this->applyPresenceFilter($query, $presenceFilter);
 
         $query->withCount([
             'applicationStatuses as installed_apps_count' => fn ($q) => $q->where('status', 'installed'),
@@ -248,6 +252,53 @@ class WorkstationGroupRepository
     }
 
     /**
+     * Applique le filtre d'état de présence à la query, en reproduisant en SQL
+     * la dérivation de {@see \App\Models\Workstation::agentPresence()} :
+     *
+     *  - `online` (Allumé)  : poste enrôlé, dernier check-in récent
+     *    (< 2 × `agent.ttl_seconds`) et aucune extinction plus récente que ce
+     *    check-in.
+     *  - `off` (Éteint)     : poste enrôlé ayant déjà rapporté, dont l'agent a
+     *    signalé son extinction (`agent_reported_offline_at` ≥ dernier check-in)
+     *    OU devenu muet au-delà du seuil (coupure brutale / injoignable). Réunit
+     *    les états `reported_off` et `silent` de `agentPresence()`.
+     *
+     * Les deux filtres sont bornés aux postes ENRÔLÉS (`agent_token_hash` non
+     * null) avec un check-in connu : un poste sans agent est en présence
+     * `unknown` (rien d'affirmable) et ne ressort d'aucune des deux catégories.
+     */
+    private function applyPresenceFilter(Builder $query, ?string $presenceFilter): void
+    {
+        if ($presenceFilter === null || $presenceFilter === '') {
+            return;
+        }
+
+        $threshold = now()->subSeconds(2 * (int) (config('agent.ttl_seconds') ?? 3600));
+
+        $query->whereNotNull('agent_token_hash')
+            ->whereNotNull('agent_last_checkin_at');
+
+        if ($presenceFilter === 'online') {
+            // Récent ET non démenti par une extinction plus récente.
+            $query->where('agent_last_checkin_at', '>=', $threshold)
+                ->where(function (Builder $q) {
+                    $q->whereNull('agent_reported_offline_at')
+                        ->orWhereColumn('agent_reported_offline_at', '<', 'agent_last_checkin_at');
+                });
+
+            return;
+        }
+
+        if ($presenceFilter === 'off') {
+            // reported_off (extinction ≥ check-in) ∪ silent (check-in < seuil).
+            $query->where(function (Builder $q) use ($threshold) {
+                $q->whereColumn('agent_reported_offline_at', '>=', 'agent_last_checkin_at')
+                    ->orWhere('agent_last_checkin_at', '<', $threshold);
+            });
+        }
+    }
+
+    /**
      * Story 7.1 — variante scopée de `getMachines()` : restreint aux machines
      * appartenant (via pivot `workstation_group_workstation`) à l'un des
      * WorkstationGroups autorisés.
@@ -261,7 +312,8 @@ class WorkstationGroupRepository
         ?int $groupId = null,
         array $authorizedGroupIds = [],
         ?string $migrationFilter = null,
-        ?string $conformityFilter = null
+        ?string $conformityFilter = null,
+        ?string $presenceFilter = null
     ): LengthAwarePaginator {
         $query = Workstation::query()
             ->whereHas('groups', function (Builder $q) use ($authorizedGroupIds) {
@@ -287,6 +339,9 @@ class WorkstationGroupRepository
 
         // Story 24.7 — filtre par conformité agent (worst-status / dérivés).
         $this->applyConformityFilter($query, $conformityFilter);
+
+        // Filtre par état de présence (allumé / éteint), dérivé du canal agent.
+        $this->applyPresenceFilter($query, $presenceFilter);
 
         $query->withCount([
             'applicationStatuses as installed_apps_count' => fn ($q) => $q->where('status', 'installed'),
