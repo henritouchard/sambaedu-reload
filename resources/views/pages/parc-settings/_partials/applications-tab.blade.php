@@ -2,11 +2,14 @@
 
 use App\Components\Traits\WithToasts;
 use App\Enums\ApplicationStatus;
+use App\Exceptions\ControlHub\ApplicationNotInUpstreamCatalogException;
 use App\Models\Application;
 use App\Models\Depot;
 use App\Models\DepotApplication;
+use App\Models\WorkstationGroup;
 use App\Services\AppProfile\AppProfileService;
 use App\Services\AppStore\AppStoreService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
@@ -58,6 +61,20 @@ new class extends Component
     public bool $isInstalling = false;
 
     public ?string $lastSyncMessage = null;
+
+    // Modal "Ajouter à un profil"
+    public bool $showAssignProfileModal = false;
+
+    public array $profileOptions = [];
+
+    public array $selectedProfileIds = [];
+
+    // Modal "Déployer sur un groupe"
+    public bool $showDeployGroupModal = false;
+
+    public array $groupOptions = [];
+
+    public array $selectedGroupIds = [];
 
     public function boot(AppProfileService $appProfileService, AppStoreService $appStoreService): void
     {
@@ -178,14 +195,170 @@ new class extends Component
         $this->resetPage();
     }
 
+    // ========================================
+    // Ajouter les apps sélectionnées à un profil
+    // ========================================
+
     public function addAppsToProfile(): void
     {
-        $this->toastWarning('Fonctionnalité non encore implémentée');
+        if (empty($this->selectedApps)) {
+            $this->toastWarning('Aucune application sélectionnée');
+
+            return;
+        }
+
+        $this->selectedProfileIds = [];
+        $this->profileOptions = $this->appProfileService->listProfilesForSelect()
+            ->map(fn ($p) => [
+                'id' => $p->id,
+                'name' => $p->display_name ?? $p->name,
+            ])
+            ->toArray();
+        $this->showAssignProfileModal = true;
     }
+
+    public function toggleProfileSelection(int $profileId): void
+    {
+        $this->selectedProfileIds = in_array($profileId, $this->selectedProfileIds)
+            ? array_values(array_diff($this->selectedProfileIds, [$profileId]))
+            : [...$this->selectedProfileIds, $profileId];
+    }
+
+    public function closeAssignProfileModal(): void
+    {
+        $this->showAssignProfileModal = false;
+        $this->selectedProfileIds = [];
+    }
+
+    public function confirmAddToProfile(): void
+    {
+        if (empty($this->selectedApps)) {
+            $this->toastWarning('Aucune application sélectionnée');
+
+            return;
+        }
+        if (empty($this->selectedProfileIds)) {
+            $this->toastWarning('Aucun profil sélectionné');
+
+            return;
+        }
+
+        $added = 0;
+        try {
+            foreach ($this->selectedProfileIds as $profileId) {
+                if ($this->appProfileService->addApplications((int) $profileId, $this->selectedApps)) {
+                    $added++;
+                }
+            }
+        } catch (ApplicationNotInUpstreamCatalogException $e) {
+            $this->toastError($e->getMessage());
+
+            return;
+        } catch (AuthorizationException $e) {
+            $this->toastAccessDenied();
+
+            return;
+        } catch (\Exception $e) {
+            Log::error('[ApplicationsTab] Erreur ajout apps au profil: '.$e->getMessage());
+            $this->toastError("Erreur lors de l'ajout au profil");
+
+            return;
+        }
+
+        $count = count($this->selectedApps);
+        if ($added > 0) {
+            $this->toastSuccess("{$count} application(s) ajoutée(s) à {$added} profil(s)");
+        }
+
+        $this->showAssignProfileModal = false;
+        $this->selectedProfileIds = [];
+        $this->selectedApps = [];
+    }
+
+    // ========================================
+    // Déployer les apps sélectionnées sur un groupe de postes
+    // ========================================
 
     public function deployApps(): void
     {
-        $this->toastWarning('Fonctionnalité non encore implémentée');
+        if (empty($this->selectedApps)) {
+            $this->toastWarning('Aucune application sélectionnée');
+
+            return;
+        }
+
+        $this->selectedGroupIds = [];
+        $this->groupOptions = WorkstationGroup::active()
+            ->orderBy('name')
+            ->get(['id', 'name', 'display_name', 'is_physical'])
+            ->map(fn (WorkstationGroup $g) => [
+                'id' => $g->id,
+                'name' => $g->display_name ?? $g->name,
+                'is_physical' => $g->is_physical,
+            ])
+            ->toArray();
+        $this->showDeployGroupModal = true;
+    }
+
+    public function toggleGroupSelection(int $groupId): void
+    {
+        $this->selectedGroupIds = in_array($groupId, $this->selectedGroupIds)
+            ? array_values(array_diff($this->selectedGroupIds, [$groupId]))
+            : [...$this->selectedGroupIds, $groupId];
+    }
+
+    public function closeDeployGroupModal(): void
+    {
+        $this->showDeployGroupModal = false;
+        $this->selectedGroupIds = [];
+    }
+
+    public function confirmDeployToGroup(): void
+    {
+        if (empty($this->selectedApps)) {
+            $this->toastWarning('Aucune application sélectionnée');
+
+            return;
+        }
+        if (empty($this->selectedGroupIds)) {
+            $this->toastWarning('Aucun groupe sélectionné');
+
+            return;
+        }
+
+        $deployed = 0;
+        try {
+            foreach ($this->selectedGroupIds as $groupId) {
+                $attached = $this->appProfileService->addApplicationsToWorkstationGroup((int) $groupId, $this->selectedApps);
+                if ($attached !== []) {
+                    $deployed++;
+                }
+            }
+        } catch (ApplicationNotInUpstreamCatalogException $e) {
+            $this->toastError($e->getMessage());
+
+            return;
+        } catch (AuthorizationException $e) {
+            $this->toastAccessDenied('Vous n\'avez pas les droits pour déployer sur ce groupe.');
+
+            return;
+        } catch (\Exception $e) {
+            Log::error('[ApplicationsTab] Erreur déploiement apps sur groupe: '.$e->getMessage());
+            $this->toastError('Erreur lors du déploiement');
+
+            return;
+        }
+
+        $count = count($this->selectedApps);
+        if ($deployed > 0) {
+            $this->toastSuccess("{$count} application(s) déployée(s) sur {$deployed} groupe(s)");
+        } else {
+            $this->toastInfo('Aucune nouvelle application à déployer (déjà présentes sur les groupes choisis)');
+        }
+
+        $this->showDeployGroupModal = false;
+        $this->selectedGroupIds = [];
+        $this->selectedApps = [];
     }
 
     public function resetAppFilters(): void
@@ -727,6 +900,144 @@ new class extends Component
                 </div>
             </div>
             <div class="modal-backdrop" wire:click="closeAppStoreModal"></div>
+        </div>
+    @endif
+
+    <!-- Modal "Ajouter à un profil" -->
+    @if ($showAssignProfileModal)
+        <div class="modal modal-open">
+            <div class="modal-box max-w-lg max-h-[80vh] flex flex-col">
+                <div class="flex items-center justify-between mb-1">
+                    <h3 class="font-bold text-lg">
+                        <i class="fa-solid fa-folder-plus mr-2 text-primary"></i>
+                        Ajouter à un profil
+                    </h3>
+                    <button type="button" class="btn btn-ghost btn-sm btn-circle" wire:click="closeAssignProfileModal">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <p class="text-sm text-base-content/60 mb-4">
+                    {{ count($selectedApps) }} application(s) seront ajoutée(s) au(x) profil(s) sélectionné(s).
+                </p>
+
+                <div class="flex-1 overflow-auto border border-base-300 rounded-lg">
+                    @if (count($profileOptions) > 0)
+                        <div class="divide-y divide-base-200">
+                            @foreach ($profileOptions as $profile)
+                                <label wire:key="assign-profile-{{ $profile['id'] }}"
+                                    class="flex items-center gap-3 p-3 cursor-pointer hover:bg-base-200 transition-colors">
+                                    <input type="checkbox" class="checkbox checkbox-primary checkbox-sm"
+                                        wire:click="toggleProfileSelection({{ $profile['id'] }})"
+                                        @checked(in_array($profile['id'], $selectedProfileIds)) />
+                                    <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-secondary/20">
+                                        <i class="fa-solid fa-layer-group text-secondary"></i>
+                                    </div>
+                                    <span class="font-medium truncate">{{ $profile['name'] }}</span>
+                                </label>
+                            @endforeach
+                        </div>
+                    @else
+                        <div class="flex flex-col items-center justify-center py-12 text-base-content/60">
+                            <i class="fa-solid fa-layer-group text-4xl mb-3 opacity-30"></i>
+                            <p>Aucun profil applicatif disponible</p>
+                        </div>
+                    @endif
+                </div>
+
+                <div class="modal-action mt-4">
+                    <span class="text-sm text-base-content/70 mr-auto">
+                        {{ count($selectedProfileIds) }} profil(s) sélectionné(s)
+                    </span>
+                    <button type="button" class="btn btn-ghost" wire:click="closeAssignProfileModal">
+                        Annuler
+                    </button>
+                    <button type="button" class="btn btn-primary" wire:click="confirmAddToProfile"
+                        @if (count($selectedProfileIds) === 0) disabled @endif
+                        wire:loading.attr="disabled" wire:target="confirmAddToProfile">
+                        <span wire:loading.remove wire:target="confirmAddToProfile">
+                            <i class="fa-solid fa-folder-plus mr-2"></i>
+                            Ajouter
+                        </span>
+                        <span wire:loading wire:target="confirmAddToProfile">
+                            <i class="fa-solid fa-spinner fa-spin mr-2"></i>
+                            Ajout...
+                        </span>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-backdrop" wire:click="closeAssignProfileModal"></div>
+        </div>
+    @endif
+
+    <!-- Modal "Déployer sur un groupe" -->
+    @if ($showDeployGroupModal)
+        <div class="modal modal-open">
+            <div class="modal-box max-w-lg max-h-[80vh] flex flex-col">
+                <div class="flex items-center justify-between mb-1">
+                    <h3 class="font-bold text-lg">
+                        <i class="fa-solid fa-rocket mr-2 text-primary"></i>
+                        Déployer sur un groupe
+                    </h3>
+                    <button type="button" class="btn btn-ghost btn-sm btn-circle" wire:click="closeDeployGroupModal">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <p class="text-sm text-base-content/60 mb-4">
+                    {{ count($selectedApps) }} application(s) seront déployée(s) sur le(s) groupe(s) sélectionné(s).
+                </p>
+
+                <div class="flex-1 overflow-auto border border-base-300 rounded-lg">
+                    @if (count($groupOptions) > 0)
+                        <div class="divide-y divide-base-200">
+                            @foreach ($groupOptions as $group)
+                                <label wire:key="deploy-group-{{ $group['id'] }}"
+                                    class="flex items-center gap-3 p-3 cursor-pointer hover:bg-base-200 transition-colors">
+                                    <input type="checkbox" class="checkbox checkbox-primary checkbox-sm"
+                                        wire:click="toggleGroupSelection({{ $group['id'] }})"
+                                        @checked(in_array($group['id'], $selectedGroupIds)) />
+                                    <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0
+                                        {{ $group['is_physical'] ? 'bg-warning/20' : 'bg-primary/20' }}">
+                                        <i class="fa-solid {{ $group['is_physical'] ? 'fa-door-open text-warning' : 'fa-layer-group text-primary' }}"></i>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="font-medium truncate">{{ $group['name'] }}</div>
+                                        <div class="text-xs text-base-content/60">
+                                            {{ $group['is_physical'] ? 'Salle' : 'Parc' }}
+                                        </div>
+                                    </div>
+                                </label>
+                            @endforeach
+                        </div>
+                    @else
+                        <div class="flex flex-col items-center justify-center py-12 text-base-content/60">
+                            <i class="fa-solid fa-layer-group text-4xl mb-3 opacity-30"></i>
+                            <p>Aucun groupe de postes disponible</p>
+                        </div>
+                    @endif
+                </div>
+
+                <div class="modal-action mt-4">
+                    <span class="text-sm text-base-content/70 mr-auto">
+                        {{ count($selectedGroupIds) }} groupe(s) sélectionné(s)
+                    </span>
+                    <button type="button" class="btn btn-ghost" wire:click="closeDeployGroupModal">
+                        Annuler
+                    </button>
+                    <button type="button" class="btn btn-primary" wire:click="confirmDeployToGroup"
+                        @if (count($selectedGroupIds) === 0) disabled @endif
+                        wire:loading.attr="disabled" wire:target="confirmDeployToGroup">
+                        <span wire:loading.remove wire:target="confirmDeployToGroup">
+                            <i class="fa-solid fa-rocket mr-2"></i>
+                            Déployer
+                        </span>
+                        <span wire:loading wire:target="confirmDeployToGroup">
+                            <i class="fa-solid fa-spinner fa-spin mr-2"></i>
+                            Déploiement...
+                        </span>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-backdrop" wire:click="closeDeployGroupModal"></div>
         </div>
     @endif
 </div>

@@ -238,7 +238,7 @@ new class extends Component {
 
 <div>
     <dialog class="modal" x-data="{ open: @entangle('isOpen') }" :class="{ 'modal-open': open }" x-cloak>
-        <div class="modal-box max-w-2xl max-h-[85vh] flex flex-col p-0">
+        <div class="modal-box max-w-4xl max-h-[85vh] flex flex-col p-0">
 
             <!-- Header -->
             <div class="flex items-center justify-between p-4 border-b border-base-300 shrink-0">
@@ -255,9 +255,9 @@ new class extends Component {
 
             <!-- Tabs -->
             <div class="border-b border-base-300 shrink-0">
-                <div class="tabs tabs-bordered px-4">
+                <div class="tabs tabs-bordered px-4 flex-nowrap">
                     <button wire:click="setTab('workstation_groups')"
-                        class="tab {{ $activeTab === 'workstation_groups' ? 'tab-active' : '' }}">
+                        class="tab whitespace-nowrap {{ $activeTab === 'workstation_groups' ? 'tab-active' : '' }}">
                         <i class="fa-solid fa-layer-group mr-1"></i>
                         Groupes de postes
                         @if (count($selectedWg) > 0)
@@ -265,7 +265,7 @@ new class extends Component {
                         @endif
                     </button>
                     <button wire:click="setTab('workstations')"
-                        class="tab {{ $activeTab === 'workstations' ? 'tab-active' : '' }}">
+                        class="tab whitespace-nowrap {{ $activeTab === 'workstations' ? 'tab-active' : '' }}">
                         <i class="fa-solid fa-computer mr-1"></i>
                         Postes
                         @if (count($selectedWs) > 0)
@@ -273,7 +273,7 @@ new class extends Component {
                         @endif
                     </button>
                     <button wire:click="setTab('user_groups')"
-                        class="tab {{ $activeTab === 'user_groups' ? 'tab-active' : '' }}">
+                        class="tab whitespace-nowrap {{ $activeTab === 'user_groups' ? 'tab-active' : '' }}">
                         <i class="fa-solid fa-users mr-1"></i>
                         Groupes utilisateurs
                         @if (count($selectedUserGroups) > 0)
@@ -281,7 +281,7 @@ new class extends Component {
                         @endif
                     </button>
                     <button wire:click="setTab('users')"
-                        class="tab {{ $activeTab === 'users' ? 'tab-active' : '' }}">
+                        class="tab whitespace-nowrap {{ $activeTab === 'users' ? 'tab-active' : '' }}">
                         <i class="fa-solid fa-user mr-1"></i>
                         Utilisateurs
                         @if (count($selectedUsers) > 0)
