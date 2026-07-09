@@ -22,7 +22,7 @@
             <div class="form-control max-w-xs">
                 <label class="label"><span class="label-text">Type</span></label>
                 <select class="select select-bordered" wire:model="type">
-                    <option value="custom">Custom</option>
+                    <option value="custom">Personnalisé</option>
                     <option value="classe">Classe</option>
                     <option value="cours">Cours</option>
                     <option value="matiere">Matière</option>

@@ -63,11 +63,11 @@
                         </div>
                         @if ($isSeeded)
                             <div>
-                                <span class="badge badge-info badge-xs">seeded</span>
+                                <span class="badge badge-info badge-xs">prédéfini</span>
                             </div>
                         @else
                             <div>
-                                <span class="badge badge-accent badge-xs">custom</span>
+                                <span class="badge badge-accent badge-xs">personnalisé</span>
                             </div>
                         @endif
                     </div>

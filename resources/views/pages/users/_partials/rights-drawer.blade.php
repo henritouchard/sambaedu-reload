@@ -519,8 +519,8 @@ new class extends Component {
                                         <span class="font-medium text-sm">{{ $role['label'] }}</span>
                                         @if (!($role['is_seeded'] ?? true))
                                             <span class="badge badge-accent badge-xs"
-                                                title="Profil custom créé via /app/rights-management ou rapatrié AD">
-                                                custom
+                                                title="Profil personnalisé créé via /app/rights-management ou rapatrié AD">
+                                                personnalisé
                                             </span>
                                         @endif
                                         @if ($rState['total'] > 0)

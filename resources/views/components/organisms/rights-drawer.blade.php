@@ -230,9 +230,9 @@ new class extends Component {
                                 <div class="flex items-center gap-2 flex-wrap">
                                     <span class="font-medium text-sm">{{ $meta['label'] }}</span>
                                     @if ($meta['is_seeded'])
-                                        <span class="badge badge-xs badge-info">seed</span>
+                                        <span class="badge badge-xs badge-info">prédéfini</span>
                                     @else
-                                        <span class="badge badge-xs badge-ghost">custom</span>
+                                        <span class="badge badge-xs badge-ghost">personnalisé</span>
                                     @endif
                                     <code class="text-xs text-base-content/40">{{ $roleName }}</code>
                                 </div>

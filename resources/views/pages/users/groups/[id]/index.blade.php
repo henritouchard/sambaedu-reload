@@ -206,7 +206,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
             'matiere_classe' => 'Matière / Classe',
             'projet' => 'Projet',
             'equipe' => 'Équipe',
-            'custom' => 'Custom',
+            'custom' => 'Personnalisé',
             'other_group' => 'Autre',
             default => ucfirst($this->type),
         };

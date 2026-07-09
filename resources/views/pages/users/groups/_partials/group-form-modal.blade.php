@@ -121,7 +121,7 @@ new class extends Component {
                 <span class="label-text font-medium">Type</span>
             </label>
             <select wire:model="type" class="select select-bordered w-full @error('type') select-error @enderror">
-                <option value="custom">Custom</option>
+                <option value="custom">Personnalisé</option>
                 <option value="classe">Classe</option>
                 <option value="cours">Cours</option>
                 <option value="matiere">Matière</option>
