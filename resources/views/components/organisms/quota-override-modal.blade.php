@@ -75,7 +75,12 @@
             <div class="grid grid-cols-2 gap-3 mt-3">
                 <div class="form-control">
                     <label class="label py-1">
-                        <span class="label-text text-xs">Quota soft (Mo)</span>
+                        <x-atoms.tooltip label="Quota souple (Mo)" labelClass="label-text text-xs" icon="true"
+                            iconClass="fa-solid fa-circle-info text-base-content/40 text-xs ml-1">
+                            Quota souple : non bloquant, l'utilisateur dispose du délai de grâce
+                            configuré pour se conformer. Par opposition au quota dur (limite +
+                            dépassement ci-dessous), qui interdit l'écriture une fois atteint.
+                        </x-atoms.tooltip>
                     </label>
                     <input type="number" wire:model="overrideSoftMb"
                         class="input input-bordered input-sm" min="0" />

@@ -249,7 +249,7 @@ new class extends Component {
                 <x-atoms.tooltip label="Type de groupe" labelClass="label-text font-medium" icon="true"
                     iconClass="fa-solid fa-circle-info text-base-content/40 text-xs ml-1">
                     Les groupes physiques sont synchronisés avec l'AD et appliquent les GPO selon la hiérarchie des
-                    salles. Les groupes logiques sont gérés localement pour WPKG, indépendamment de l'emplacement
+                    salles. Les groupes logiques sont gérés localement pour les applications, indépendamment de l'emplacement
                     physique.
                 </x-atoms.tooltip>
                 <span class="text-error">*</span>
@@ -289,7 +289,7 @@ new class extends Component {
                                     <span class="font-semibold">Groupe logique</span>
                                 </div>
                                 <p class="text-xs text-base-content/70 leading-relaxed">
-                                    Parc de machines (CN dans OU=Parcs). Utilisé pour WPKG et les permissions,
+                                    Parc de machines (CN dans OU=Parcs). Utilisé pour les applications et les permissions,
                                     indépendamment de l'emplacement physique.
                                 </p>
                             </div>

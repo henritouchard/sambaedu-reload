@@ -259,7 +259,7 @@ new class extends Component {
                     <button wire:click="setTab('workstation_groups')"
                         class="tab {{ $activeTab === 'workstation_groups' ? 'tab-active' : '' }}">
                         <i class="fa-solid fa-layer-group mr-1"></i>
-                        Groupes
+                        Groupes de postes
                         @if (count($selectedWg) > 0)
                             <span class="badge badge-primary badge-xs ml-1">{{ count($selectedWg) }}</span>
                         @endif
@@ -275,7 +275,7 @@ new class extends Component {
                     <button wire:click="setTab('user_groups')"
                         class="tab {{ $activeTab === 'user_groups' ? 'tab-active' : '' }}">
                         <i class="fa-solid fa-users mr-1"></i>
-                        Groupes AD
+                        Groupes utilisateurs
                         @if (count($selectedUserGroups) > 0)
                             <span class="badge badge-primary badge-xs ml-1">{{ count($selectedUserGroups) }}</span>
                         @endif
@@ -382,7 +382,7 @@ new class extends Component {
                             <label class="input input-bordered flex items-center gap-2 w-full">
                                 <i class="fa-solid fa-magnifying-glass opacity-50"></i>
                                 <input type="text" wire:model.live.debounce.300ms="searchUserGroups"
-                                    placeholder="Rechercher un groupe AD..." class="grow" />
+                                    placeholder="Rechercher un groupe utilisateur..." class="grow" />
                             </label>
                         </div>
                     @endif
@@ -410,7 +410,7 @@ new class extends Component {
                         @else
                             <div class="flex flex-col items-center justify-center h-32 text-base-content/60">
                                 <i class="fa-solid fa-users text-3xl mb-2"></i>
-                                <span>{{ $searchUserGroups ? 'Aucun résultat' : 'Aucun groupe AD disponible' }}</span>
+                                <span>{{ $searchUserGroups ? 'Aucun résultat' : 'Aucun groupe utilisateur disponible' }}</span>
                             </div>
                         @endif
                     </div>

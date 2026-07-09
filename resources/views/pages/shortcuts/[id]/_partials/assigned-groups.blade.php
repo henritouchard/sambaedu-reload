@@ -80,11 +80,11 @@
                     </div>
                 @endif
 
-                {{-- Groupes AD --}}
+                {{-- Groupes utilisateurs --}}
                 @if (count($assignedAdUserGroups) > 0)
                     <div>
                         <h4 class="text-sm font-semibold text-base-content/70 mb-2">
-                            <i class="fa-solid fa-users mr-1"></i> Groupes AD
+                            <i class="fa-solid fa-users mr-1"></i> Groupes utilisateurs
                         </h4>
                         <div class="flex flex-wrap gap-2">
                             @foreach ($assignedAdUserGroups as $cn)
@@ -94,7 +94,7 @@
                                     @if (!$isGlobal)
                                         <button type="button" class="ml-1 hover:text-error"
                                             wire:click="detachAdUserGroup('{{ $cn }}')"
-                                            wire:confirm="Retirer le groupe AD « {{ $cn }} » ?">
+                                            wire:confirm="Retirer le groupe utilisateur « {{ $cn }} » ?">
                                             <i class="fa-solid fa-xmark text-xs"></i>
                                         </button>
                                     @endif

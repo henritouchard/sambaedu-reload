@@ -169,7 +169,7 @@ new #[Lazy] class extends Component {
                     <thead>
                         <tr>
                             <th>Application</th>
-                            <th>Identifiant WPKG</th>
+                            <th>Identifiant application</th>
                             <th>Origine</th>
                         </tr>
                     </thead>

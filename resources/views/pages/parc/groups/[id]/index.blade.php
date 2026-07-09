@@ -11,6 +11,7 @@ use App\Services\AppProfile\AppProfileService;
 use App\Models\AppProfile;
 use App\Models\Application;
 use App\Models\MachinePowerActionTask;
+use App\Models\Shortcut;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Models\WorkstationGroupSchedule;
@@ -81,6 +82,11 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     public bool $showAttachWpkgAppModal = false;
     public array $selectedWpkgAppIdsToAdd = [];
     public string $wpkgAppSearch = '';
+
+    // ── Onglet « Raccourcis » — assignation raccourci ↔ groupe de postes ──────
+    public bool $showAttachShortcutModal = false;
+    public array $selectedShortcutIdsToAdd = [];
+    public string $shortcutSearch = '';
 
     public bool $showCloneModal = false;
     public ?int $cloneTargetGroupId = null;
@@ -1241,7 +1247,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         // si la permission est accordée (sinon retombe sur « general »).
         // Story 37.1 — onglet « État cible » : consultation pure, INCONDITIONNEL
         // (aucun droit supplémentaire ; visible sous le gate de page existant).
-        $allowed = ['general', 'wpkg', 'state'];
+        $allowed = ['general', 'wpkg', 'shortcuts', 'state'];
         if (auth()->user()?->can('app.customize')) {
             $allowed[] = 'capabilities';
             $allowed[] = 'associations';
@@ -1531,6 +1537,95 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
         } catch (\Throwable $e) {
             Log::error('[GroupWpkg] Erreur detach app: '.$e->getMessage());
             $this->toastError('Erreur lors du retrait');
+        }
+    }
+
+    // ============================================================
+    // Onglet Raccourcis — assignation raccourci ↔ groupe de postes
+    // ============================================================
+    //
+    // Miroir de l'assignation gérée côté page raccourci
+    // (shortcuts/[id] : `Shortcut::workstationGroups()`). Ici on opère depuis
+    // le versant groupe via la relation inverse `WorkstationGroup::shortcuts()`
+    // (pivot polymorphique `shortcut_assignables`). Gate `update-workstationGroup`
+    // — cohérent avec les mutations d'appartenance du groupe (ajout/retrait de
+    // machines). Les raccourcis globaux (ControlHub) sont exclus de la liste
+    // proposée : leur assignation est pilotée par le contrat amont.
+
+    public function getAttachedShortcutsProperty()
+    {
+        if (! $this->group) {
+            return collect();
+        }
+        return $this->group->shortcuts()->orderBy('name')->get();
+    }
+
+    public function getAvailableShortcutsProperty()
+    {
+        if (! $this->group) {
+            return collect();
+        }
+        $existing = $this->group->shortcuts()->pluck('shortcuts.id')->toArray();
+        $query = Shortcut::query()
+            ->where('is_global', false)
+            ->whereNotIn('id', $existing);
+        if ($this->shortcutSearch !== '') {
+            $query->where(function ($q) {
+                $q->where('name', 'LIKE', "%{$this->shortcutSearch}%")
+                    ->orWhere('key', 'LIKE', "%{$this->shortcutSearch}%");
+            });
+        }
+
+        return $query->orderBy('name')->limit(50)->get();
+    }
+
+    public function openAttachShortcutModal(): void
+    {
+        Gate::authorize('update-workstationGroup', $this->group);
+        $this->selectedShortcutIdsToAdd = [];
+        $this->shortcutSearch = '';
+        $this->showAttachShortcutModal = true;
+    }
+
+    public function closeAttachShortcutModal(): void
+    {
+        $this->showAttachShortcutModal = false;
+    }
+
+    public function attachShortcuts(): void
+    {
+        Gate::authorize('update-workstationGroup', $this->group);
+        if (empty($this->selectedShortcutIdsToAdd)) {
+            $this->toastError('Aucun raccourci sélectionné');
+            return;
+        }
+        try {
+            // syncWithoutDetaching : idempotent, n'écrase pas les assignations
+            // existantes (parité avec le versant raccourci, Story 27.8 STRICT).
+            $this->group->shortcuts()->syncWithoutDetaching($this->selectedShortcutIdsToAdd);
+            $this->toastSuccess(count($this->selectedShortcutIdsToAdd) . ' raccourci(s) attribué(s) au groupe');
+            $this->closeAttachShortcutModal();
+            $this->loadGroup();
+        } catch (AuthorizationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            Log::error('[GroupShortcuts] Erreur attach raccourcis: ' . $e->getMessage());
+            $this->toastError('Erreur lors de l\'attribution des raccourcis');
+        }
+    }
+
+    public function detachShortcut(int $shortcutId): void
+    {
+        Gate::authorize('update-workstationGroup', $this->group);
+        try {
+            $this->group->shortcuts()->detach($shortcutId);
+            $this->toastSuccess('Raccourci retiré du groupe');
+            $this->loadGroup();
+        } catch (AuthorizationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            Log::error('[GroupShortcuts] Erreur detach raccourci: ' . $e->getMessage());
+            $this->toastError('Erreur lors du retrait du raccourci');
         }
     }
 
@@ -1997,7 +2092,14 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                     class="tab {{ $tab === 'wpkg' ? 'tab-active' : '' }}"
                     wire:click="setTab('wpkg')">
                     <i class="fa-solid fa-cube mr-2"></i>
-                    Applications WPKG
+                    Applications
+                </button>
+                {{-- Onglet Raccourcis — assignation raccourci ↔ groupe de postes. --}}
+                <button type="button" role="tab"
+                    class="tab {{ $tab === 'shortcuts' ? 'tab-active' : '' }}"
+                    wire:click="setTab('shortcuts')">
+                    <i class="fa-solid fa-link mr-2"></i>
+                    Raccourcis
                 </button>
                 {{-- Story 37.1 — État cible (contribution du parc + planchers). --}}
                 <button type="button" role="tab"
@@ -2060,6 +2162,12 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 
                 @if ($showCloneModal)
                     @include('pages.parc.groups.[id]._partials.wpkg-clone-modal')
+                @endif
+            @elseif ($tab === 'shortcuts')
+                @include('pages.parc.groups.[id]._partials.shortcuts-tab')
+
+                @if ($showAttachShortcutModal)
+                    @include('pages.parc.groups.[id]._partials.attach-shortcuts-modal')
                 @endif
             @elseif ($tab === 'capabilities')
                 {{-- Story 27.12 — onglet Options/Capacités, composant Livewire scopé au groupe. --}}

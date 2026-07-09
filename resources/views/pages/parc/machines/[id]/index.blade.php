@@ -1179,7 +1179,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                     class="tab {{ $tab === 'wpkg' ? 'tab-active' : '' }}"
                     wire:click="setTab('wpkg')">
                     <i class="fa-solid fa-cube mr-2"></i>
-                    Applications WPKG
+                    Applications
                 </button>
                 <button type="button" role="tab"
                     class="tab {{ $tab === 'agent' ? 'tab-active' : '' }}"

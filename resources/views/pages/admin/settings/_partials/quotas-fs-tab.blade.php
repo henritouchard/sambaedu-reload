@@ -565,7 +565,13 @@ new class extends Component {
             </div>
             <p class="text-sm opacity-70 mb-4">
                 Délai (en jours) accordé à un utilisateur après dépassement du
-                quota soft avant que l'écriture ne soit bloquée. Appliquée aussi
+                <x-atoms.tooltip label="quota souple" labelClass="font-medium" icon="true"
+                    iconClass="fa-solid fa-circle-info text-base-content/40 text-xs ml-1">
+                    Quota souple : non bloquant, l'utilisateur est invité à se conformer dans le
+                    délai ci-dessous. À la différence du quota dur, qui interdit immédiatement
+                    l'écriture au-delà de la limite.
+                </x-atoms.tooltip>
+                avant que l'écriture ne soit bloquée. Appliquée aussi
                 sur le filesystem XFS si la commande est disponible.
             </p>
 

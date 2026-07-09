@@ -126,7 +126,7 @@ new class extends Component {
                             <thead>
                                 <tr>
                                     <th>Application</th>
-                                    <th>Identifiant WPKG</th>
+                                    <th>Identifiant application</th>
                                     <th class="text-right">Action</th>
                                 </tr>
                             </thead>
