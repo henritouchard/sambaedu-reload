@@ -176,7 +176,7 @@ GPO de domaine « applications » et son cache DataStore (voir Piège #1).
    Ce n'est PAS un échec du module : l'idempotence signifie re-nettoyage des blobs à
    chaque passe, sans erreur. L'e2e « zéro hit » (AC7) se joue sur un poste LAB migré
    (GPO legacy = coquilles vides là-bas) OU sur /vm APRÈS neutralisation de la GPO
-   domaine (opération AD dev : délier `{D418994B-…}` de la racine ou vider ses scripts
+   domaine (opération dev : VIDER `{D418994B-…}` — coquille + bump GPT.INI, patron des shells se4_*.zip legacy, cf. lab1 —, JAMAIS la délier ni la supprimer : GPO globale multi-étabs. Vider ses scripts
    avec bump `GPT.INI` — `project_gpo_template_edit_needs_version_bump`). Sur lab1
    (AD fédéré, 75 étabs) : ne JAMAIS toucher les GPO racine
    (`project_ad_federated_root_gpos`). **À REMONTER à Henri / à la 38.2-38.6** : les hits
@@ -513,7 +513,7 @@ par fichier avant reprise.
 - **Remontée 38.6 (piège #1)** : sur /vm, la GPO de DOMAINE « applications »
   `{D418994B-…}` est PLEINE et liée à la racine — les hits `gpo/*.php` pilotés
   par elle ne s'éteindront PAS par le nettoyage local seul ; le critère GO de
-  la 38.6 doit intégrer la neutralisation AD (délier/vider + bump GPT.INI).
+  la 38.6 doit intégrer la neutralisation (VIDER la GPO + bump GPT.INI — jamais délier/supprimer, elle est globale multi-étabs ; c'est le mécanisme standard des coquilles se4_*.zip du paquet legacy, absent de la VM dev d'où la GPO restée pleine).
   Documenté au runbook QA (limite /vm).
 - **E2e lab (AC7) RESTANT après merge** : publication 2.9.0 → migrate → armer
   parc pilote → scénarios 38.3.1→38.3.5 du runbook `docs/qa/domains/agent.md`.

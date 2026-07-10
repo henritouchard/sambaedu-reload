@@ -3863,7 +3863,7 @@ les blobs `%TEMP%`. Le nettoyage local ne peut donc PAS produire « zéro hit »
 sur /vm à lui seul (re-nettoyage idempotent des blobs à chaque passe, sans
 erreur — ce n'est PAS un échec du module). L'e2e « zéro hit » exige :
 **un poste LAB migré** (GPO legacy = coquilles vides là-bas), OU sur /vm la
-**neutralisation AD préalable** de `{D418994B-…}` (délier de la racine ou vider
+**neutralisation préalable** de `{D418994B-…}` (VIDER la GPO — coquille + bump GPT.INI, patron se4_*.zip legacy —, JAMAIS délier/supprimer : GPO globale multi-étabs ; vider
 ses scripts avec bump `GPT.INI` Version). Sur lab1 (AD fédéré 75 étabs) : ne
 JAMAIS toucher les GPO racine. **REMONTÉE 38.6** : les hits tombstones pilotés
 par cette GPO domaine ne s'éteindront pas sans action AD — le critère GO de
