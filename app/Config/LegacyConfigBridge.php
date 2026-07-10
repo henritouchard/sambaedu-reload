@@ -26,8 +26,6 @@ use Illuminate\Support\Facades\Log;
  */
 class LegacyConfigBridge
 {
-    private const LEGACY_PATH = '/var/www/sambaedu';
-
     private static ?array $config = null;
     private static bool $legacyLoaded = false;
 
@@ -212,7 +210,13 @@ class LegacyConfigBridge
     }
 
     /**
-     * Charge les fichiers legacy nécessaires
+     * Charge les shims de configuration nécessaires.
+     *
+     * Story 38.4 (AC2) — les fichiers sont désormais les **shims IN-REPO**
+     * (`legacy/config.inc.php`, `legacy/ldap.inc.php`) qui définissent
+     * nativement `get_config`, `search_user`, `have_right`, `list_rights`… —
+     * plus AUCUN chemin `/var/www/sambaedu`. Le bridge reste `@deprecated`,
+     * seul son backend change.
      */
     private function loadLegacyFiles(): void
     {
@@ -221,22 +225,21 @@ class LegacyConfigBridge
         }
 
         $files = [
-            self::LEGACY_PATH . '/includes/config.inc.php',
-            self::LEGACY_PATH . '/includes/ldap.inc.php',
-            self::LEGACY_PATH . '/includes/functions.inc.php',
+            base_path('legacy/config.inc.php'),
+            base_path('legacy/ldap.inc.php'),
         ];
 
         foreach ($files as $file) {
             if (file_exists($file)) {
                 try {
-                    include_once $file;
+                    require_once $file;
                 } catch (\Throwable $e) {
                     Log::error("LegacyConfigBridge: Erreur lors du chargement de {$file}", [
                         'error' => $e->getMessage(),
                     ]);
                 }
             } else {
-                Log::warning("LegacyConfigBridge: Fichier non trouvé: {$file}");
+                Log::warning("LegacyConfigBridge: Shim in-repo non trouvé: {$file}");
             }
         }
 

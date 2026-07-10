@@ -400,11 +400,10 @@ class ShortcutsService
      *
      * Story 16.3c — AC1.4, AC2.2.
      *
-     * Délègue à `get_wine_shortcuts($config, $application)` legacy (port en
-     * shim `@legacy-port` — `@todo Story 16.4` reprise native). Le helper
-     * legacy scanne `/home/{se4install_name}/Bureau/*.desktop`, parse les
-     * containers Wine et copie les icônes dans
-     * `/etc/sambaedu/applications/shortcuts/`.
+     * Story 38.4 : port NATIF de `get_wine_shortcuts` ({@see scanWineShortcuts})
+     * — scanne `/home/{se4install_name}/Bureau/*.desktop`, parse les containers
+     * Wine et copie les icônes dans `/etc/sambaedu/applications/shortcuts/`,
+     * sans plus AUCUN `require` du legacy `/var/www/sambaedu`.
      *
      * Merge dans `/etc/sambaedu/applications/shortcuts/shortcuts.json` :
      * - Lecture JSON existant (gracieux si fichier absent)
@@ -419,9 +418,8 @@ class ShortcutsService
      * @return int Nombre de raccourcis Wine ajoutés au merge.
      * @throws \RuntimeException Si l'atomic write échoue après lock acquis.
      *
-     * @legacy-port path="sambaedu/includes/shortcuts.inc.php:523"
-     * @todo Story 16.4 — porter `get_wine_shortcuts` en service natif (scan
-     *       FS direct + parsing .desktop sans dépendre du legacy bootstrap).
+     * Story 38.4 — `get_wine_shortcuts` porté nativement ({@see scanWineShortcuts}),
+     * l'ancien `@todo Story 16.4` est soldé.
      */
     public function importWineShortcuts(string $application): int
     {
@@ -454,11 +452,12 @@ class ShortcutsService
     }
 
     /**
-     * Récupère les raccourcis Wine via le helper legacy `get_wine_shortcuts`.
+     * Récupère les raccourcis Wine — port natif de `get_wine_shortcuts`
+     * (Story 38.4, ex-`@todo Story 16.4`). Plus AUCUN `require` legacy.
      *
-     * Charge `shortcuts.inc.php` à la demande si la fonction n'est pas
-     * disponible (cas testing — `legacy/bootstrap.php` skippé). Override
-     * possible via container binding pour les tests :
+     * Un hook test reste supporté : le binding container
+     * `legacy.get_wine_shortcuts` (utilisé par les tests pour injecter un jeu
+     * déterministe sans toucher au FS). Sinon, scan natif du dossier Wine.
      * ```php
      * app()->bind('legacy.get_wine_shortcuts', fn() => fn($app) => [...]);
      * ```
@@ -476,56 +475,134 @@ class ShortcutsService
             }
         }
 
-        // Chargement conditionnel iso-legacy : requiert config + bootstrap legacy.
-        if (! function_exists('get_wine_shortcuts')) {
-            $this->loadLegacyShortcuts();
+        return $this->scanWineShortcuts($application);
+    }
+
+    /**
+     * Scan natif de `/home/<se4install_name>/Bureau/*.desktop` — port 1:1 du
+     * legacy `get_wine_shortcuts` (`shortcuts.inc.php:523`).
+     *
+     * Pour chaque `.desktop` dont la ligne `Exec=env "WINEPREFIX=…" wine "…"`
+     * matche : construit l'entrée `linux.link` (WINEPREFIX réécrit vers
+     * `$HOME/.wine`), copie l'icône trouvée récursivement sous
+     * `~/.local/share/icons` vers
+     * `/etc/sambaedu/applications/shortcuts/<name>.png` (chemin de DONNÉES
+     * existant, conservé — pas un require).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function scanWineShortcuts(string $application): array
+    {
+        $se4install = (string) config('sambaedu.se4install_name', 'se4install');
+        $desktopDir = '/home/' . $se4install . '/Bureau/';
+        $iconsRoot = '/home/' . $se4install . '/.local/share/icons';
+
+        if (! is_dir($desktopDir)) {
+            return [];
         }
 
-        if (! function_exists('get_wine_shortcuts')) {
-            throw new \RuntimeException(
-                'ShortcutsService::importWineShortcuts: legacy function get_wine_shortcuts() unavailable. '
-                . 'Vérifier que legacy/bootstrap.php a chargé shortcuts.inc.php.',
+        // Parité legacy : rend l'arbre .local lisible avant scan des icônes.
+        @exec('sudo chmod -R 755 /home/' . escapeshellarg($se4install) . '/.local 2>/dev/null');
+
+        $result = [];
+        $entries = @scandir($desktopDir) ?: [];
+
+        foreach ($entries as $file) {
+            if (pathinfo($file, PATHINFO_EXTENSION) !== 'desktop') {
+                continue;
+            }
+
+            $link = $this->readDesktopEntry($desktopDir . $file);
+            if ($link === null || ! isset($link['Exec'])) {
+                continue;
+            }
+
+            if (preg_match('/^env "WINEPREFIX=(.*)" wine "(.*)"$/', $link['Exec'], $m) !== 1) {
+                continue;
+            }
+
+            $prefix = $m[1];
+            $exe = $m[2];
+            $name = $link['Name'] ?? pathinfo($file, PATHINFO_FILENAME);
+
+            $entry = [
+                'name' => $name,
+                'linux' => [
+                    'link' => 'env WINEPREFIX="$HOME/.wine" wine "' . $exe . '"',
+                ],
+                'owner' => '',
+                'place' => '',
+            ];
+
+            if (isset($link['Path'])) {
+                $entry['linux']['path'] = (string) preg_replace(
+                    '#' . preg_quote($prefix, '#') . '#',
+                    '$HOME/.wine',
+                    $link['Path'],
+                );
+            }
+            if (isset($link['StartupWMClass'])) {
+                $entry['startupwmclass'] = $link['StartupWMClass'];
+            }
+
+            // Recherche + copie de l'icône (chemin de données existant).
+            if (isset($link['Icon'])) {
+                $this->copyWineIcon($iconsRoot, (string) $link['Icon'], (string) $name);
+            }
+
+            $result[] = $entry;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Parse un fichier `.desktop` (paires `clé=valeur`) — port `read_shortcut`.
+     *
+     * @return array<string,string>|null
+     */
+    private function readDesktopEntry(string $path): ?array
+    {
+        $lines = @file($path);
+        if (! is_array($lines)) {
+            return null;
+        }
+
+        $entry = [];
+        foreach ($lines as $line) {
+            $parts = explode('=', $line, 2);
+            if (count($parts) === 2) {
+                $entry[$parts[0]] = trim($parts[1]);
+            }
+        }
+
+        return $entry;
+    }
+
+    /**
+     * Recherche récursive de l'icône `$iconName` sous `$iconsRoot` et copie du
+     * premier match vers `/etc/sambaedu/applications/shortcuts/<name>.png`
+     * (parité legacy). Best-effort (aucune exception si absent).
+     */
+    private function copyWineIcon(string $iconsRoot, string $iconName, string $name): void
+    {
+        if (! is_dir($iconsRoot)) {
+            return;
+        }
+
+        try {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($iconsRoot, \FilesystemIterator::SKIP_DOTS),
             );
+            foreach ($iterator as $f) {
+                if (pathinfo($f, PATHINFO_FILENAME) === $iconName) {
+                    @copy($f->getPathname(), '/etc/sambaedu/applications/shortcuts/' . $name . '.png');
+                    break;
+                }
+            }
+        } catch (\Throwable) {
+            // best-effort : l'absence d'icône ne bloque pas l'import.
         }
-
-        $config = $this->resolveLegacyConfig();
-        $shortcuts = call_user_func('get_wine_shortcuts', $config, $application);
-        return is_array($shortcuts) ? $shortcuts : [];
-    }
-
-    /**
-     * Charge `shortcuts.inc.php` legacy à la demande.
-     *
-     * @legacy-port path="sambaedu/includes/shortcuts.inc.php"
-     */
-    private function loadLegacyShortcuts(): void
-    {
-        $legacyPath = config('sambaedu.legacy_path', '/var/www/sambaedu');
-        $shortcutsInc = rtrim($legacyPath, '/') . '/includes/shortcuts.inc.php';
-
-        if (is_file($shortcutsInc) && is_readable($shortcutsInc)) {
-            require_once $shortcutsInc;
-        }
-    }
-
-    /**
-     * Récupère le `$config` legacy (dict) requis par `get_wine_shortcuts`.
-     *
-     * Délègue à `get_config()` du legacy si la fonction existe, sinon
-     * fallback minimal avec `se4install_name` depuis env/config.
-     *
-     * @return array<string, mixed>
-     */
-    private function resolveLegacyConfig(): array
-    {
-        if (function_exists('get_config')) {
-            $config = call_user_func('get_config');
-            return is_array($config) ? $config : [];
-        }
-
-        return [
-            'se4install_name' => config('sambaedu.se4install_name', 'se4install'),
-        ];
     }
 
     /**

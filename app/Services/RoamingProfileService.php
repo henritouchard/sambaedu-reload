@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Gpo\Dto\GpoSummary;
+use App\Gpo\Services\GpoService;
+use App\Gpo\Support\PregCodec;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Services\Gpo\SysvolPolicyService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
@@ -14,15 +18,22 @@ use RuntimeException;
 /**
  * Service de gestion des profils itinérants (story 1bis.18f).
  *
- * Décalqué sur `App\Services\GpoSyncService` : appelle les fonctions legacy
- * (read_gpo_sysvol, update_gpo_sysvol, increment_gpo_sysvol, get_pol_key,
- * change_pol_key, write_gpo_json, search_ad) via `function_exists()` après
- * chargement idempotent de `legacy/bootstrap.php`.
+ * Story 38.4 (AC2) — **port natif** : ce service ne charge plus le bootstrap
+ * legacy `/var/www/sambaedu` ni n'appelle les fonctions legacy
+ * (`read_gpo_sysvol`, `update_gpo_sysvol`, `increment_gpo_sysvol`,
+ * `get_pol_key`, `change_pol_key`, `search_ad`). Il résout la GPO
+ * `redirections` via {@see GpoService::findByDisplayName}, lit/écrit son
+ * `Registry.pol` User via {@see SysvolPolicyService} (+ {@see PregCodec}), et
+ * bumpe la version côté user via `SysvolPolicyService::bumpUserVersion`.
  *
  * Bridge SYSVOL : la GPO `redirections` (User Configuration / Registry.pol)
  * stocke la clé `ExcludeProfileDirs` lue par winlogon.exe au login Windows.
- * On ne peut pas remplacer la persistance SYSVOL par Eloquent sans casser
- * le contrat GPO — d'où ce service qui orchestre les wrappers 18g.
+ * On ne peut pas remplacer la persistance SYSVOL par Eloquent sans casser le
+ * contrat GPO.
+ *
+ * Décision consignée (Story 38.4) : `write_gpo_json` (traçage de l'état pour
+ * l'UI legacy dans `/etc/sambaedu/applications/gpos.json`) est **abandonné** —
+ * aucun consommateur SE5.
  *
  * Stats `/tmp/du.txt` : réimplémentées en pur PHP (decoupling complet de
  * `partages.inc.php:roaming_profiles_stats`).
@@ -32,6 +43,51 @@ use RuntimeException;
  */
 class RoamingProfileService
 {
+    /** DisplayName de la GPO qui porte `ExcludeProfileDirs` (User side). */
+    private const REDIRECTIONS_GPO = 'redirections';
+
+    /** Nom de la valeur de registre lue par winlogon (multi-sz `;`). */
+    private const EXCLUDE_KEY = 'ExcludeProfileDirs';
+
+    private ?GpoService $gpoService = null;
+
+    private ?SysvolPolicyService $sysvolPolicy = null;
+
+    private ?PregCodec $codec = null;
+
+    public function __construct(
+        ?GpoService $gpoService = null,
+        ?SysvolPolicyService $sysvolPolicy = null,
+        ?PregCodec $codec = null,
+    ) {
+        $this->gpoService = $gpoService;
+        $this->sysvolPolicy = $sysvolPolicy;
+        $this->codec = $codec;
+    }
+
+    /** Résolution paresseuse (permet `new RoamingProfileService()` en test). */
+    private function gpoService(): GpoService
+    {
+        return $this->gpoService ??= app(GpoService::class);
+    }
+
+    private function sysvolPolicy(): SysvolPolicyService
+    {
+        return $this->sysvolPolicy ??= app(SysvolPolicyService::class);
+    }
+
+    private function codec(): PregCodec
+    {
+        return $this->codec ??= app(PregCodec::class);
+    }
+
+    /**
+     * Résout la GPO `redirections` dans l'AD (ou `null` si absente).
+     */
+    private function resolveRedirectionsGpo(): ?GpoSummary
+    {
+        return $this->gpoService()->findByDisplayName(self::REDIRECTIONS_GPO);
+    }
     /**
      * Regex stricte de validation des entrées d'exclusion (anti path-traversal
      * + anti injection bash). Autorise [A-Za-z0-9_], `-`, `.`, `/`, ` `.
@@ -82,60 +138,21 @@ class RoamingProfileService
     }
 
     /**
-     * Charge le bootstrap legacy de manière idempotente.
-     *
-     * `legacy/bootstrap.php` est lui-même guardé par `defined('LEGACY_BOOTSTRAP_LOADED')`
-     * — double appel sans effet.
-     */
-    private function ensureBootstrap(): void
-    {
-        require_once base_path('legacy/bootstrap.php');
-    }
-
-    /**
-     * Vérifie qu'une fonction legacy est disponible après bootstrap, sinon log
-     * critique et lève une exception (environnement dégradé).
-     */
-    private function requireFunction(string $name): void
-    {
-        if (!function_exists($name)) {
-            Log::critical('[RoamingProfileService] Fonction legacy manquante après bootstrap', [
-                'function' => $name,
-            ]);
-            throw new RuntimeException("Fonction legacy `{$name}` indisponible après bootstrap.");
-        }
-    }
-
-    /**
      * Récupère la liste plate des `ExcludeProfileDirs` lus depuis la GPO
-     * `redirections` (User Configuration / Registry.pol).
+     * `redirections` (User Configuration / Registry.pol) — port natif
+     * (`SysvolPolicyService` + `PregCodec`, plus aucun `require` legacy).
      *
      * Comportement graceful :
      *  - GPO introuvable → retour `[]` + log warning.
      *  - Politique illisible → retour `[]` + log warning.
-     *  - Exception sur appel legacy → retour `[]` + log error.
+     *  - Exception (SYSVOL/Kerberos) → retour `[]` + log error.
      *
      * @return array<int, string>
      */
     public function getExclusions(): array
     {
         try {
-            $this->ensureBootstrap();
-
-            $this->requireFunction('search_ad');
-            $this->requireFunction('read_gpo_sysvol');
-            $this->requireFunction('get_pol_key');
-            $this->requireFunction('get_config');
-
-            if (!defined('USER_GPO')) {
-                Log::warning('[RoamingProfileService] Constante USER_GPO non définie après bootstrap');
-                return [];
-            }
-
-            $config = get_config();
-            $gpos = search_ad($config, 'redirections', 'gpo');
-            $gpo = (is_array($gpos) && isset($gpos[0]) && is_array($gpos[0])) ? $gpos[0] : null;
-
+            $gpo = $this->resolveRedirectionsGpo();
             if ($gpo === null) {
                 Log::warning('[RoamingProfileService] GPO redirections introuvable', [
                     'op' => 'getExclusions',
@@ -143,18 +160,8 @@ class RoamingProfileService
                 return [];
             }
 
-            $policy = read_gpo_sysvol($config, $gpo, USER_GPO);
-            if (!is_array($policy)) {
-                Log::warning('[RoamingProfileService] Politique illisible (read_gpo_sysvol n\'a pas retourné un tableau)', [
-                    'op' => 'getExclusions',
-                ]);
-                return [];
-            }
-
-            $values = get_pol_key($policy, 'ExcludeProfileDirs');
-            if (!is_array($values)) {
-                return [];
-            }
+            $policy = $this->sysvolPolicy()->readUserPolicy($gpo);
+            $values = $this->codec()->getKeyValues($policy, self::EXCLUDE_KEY);
 
             // Cohérence avec setExclusions : on filtre aussi à la lecture
             // les valeurs héritées non-conformes (ex. backslash Windows non
@@ -200,18 +207,6 @@ class RoamingProfileService
     public function setExclusions(array $values, bool $applyVersionBump = false): void
     {
         try {
-            $this->ensureBootstrap();
-
-            $this->requireFunction('search_ad');
-            $this->requireFunction('read_gpo_sysvol');
-            $this->requireFunction('change_pol_key');
-            $this->requireFunction('update_gpo_sysvol');
-            $this->requireFunction('get_config');
-
-            if (!defined('USER_GPO')) {
-                throw new RuntimeException('Constante USER_GPO non définie après bootstrap legacy.');
-            }
-
             // Filtrage sécurité : refuse silencieusement les valeurs malformées.
             $clean = [];
             foreach ($values as $v) {
@@ -240,9 +235,7 @@ class RoamingProfileService
                 throw new RuntimeException('Aucune valeur d\'exclusion valide à persister.');
             }
 
-            $config = get_config();
-            $gpos = search_ad($config, 'redirections', 'gpo');
-            $gpo = (is_array($gpos) && isset($gpos[0]) && is_array($gpos[0])) ? $gpos[0] : null;
+            $gpo = $this->resolveRedirectionsGpo();
             if ($gpo === null) {
                 Log::warning('[RoamingProfileService] GPO redirections introuvable', [
                     'op' => 'setExclusions',
@@ -250,28 +243,29 @@ class RoamingProfileService
                 throw new RuntimeException('GPO redirections introuvable.');
             }
 
-            $policy = read_gpo_sysvol($config, $gpo, USER_GPO);
-            if (!is_array($policy)) {
-                throw new RuntimeException('Lecture de la politique GPO impossible.');
+            // Lecture → mutation en place de la clé (parité change_pol_key) →
+            // réécriture SYSVOL native (PregCodec + SysvolPolicyService).
+            $policy = $this->sysvolPolicy()->readUserPolicy($gpo);
+            if (! $this->codec()->setKeyValues($policy, self::EXCLUDE_KEY, $clean)) {
+                // Clé absente du Registry.pol : réécrire tel quel + bumper la
+                // version ferait croire à un enregistrement (review 38.4 #7).
+                Log::warning('[RoamingProfileService] Clé ExcludeProfileDirs absente du Registry.pol', [
+                    'op' => 'setExclusions',
+                    'gpo' => $gpo->name,
+                ]);
+                throw new RuntimeException(
+                    'Clé ' . self::EXCLUDE_KEY . ' absente du Registry.pol de la GPO redirections — exclusions non persistées.',
+                );
             }
-
-            $data = change_pol_key($policy, 'ExcludeProfileDirs', $clean);
-            update_gpo_sysvol($config, $gpo, USER_GPO, $policy);
+            $this->sysvolPolicy()->writeUserPolicy($gpo, $policy);
 
             if ($applyVersionBump) {
-                if (function_exists('write_gpo_json')) {
-                    write_gpo_json($gpo, USER_GPO, 'ExcludeProfileDirs', $data);
-                }
-                if (function_exists('increment_gpo_sysvol')) {
-                    increment_gpo_sysvol($config, $gpo, USER_GPO);
-                }
+                // write_gpo_json ABANDONNÉ (Story 38.4) : aucun consommateur SE5.
+                $this->sysvolPolicy()->bumpUserVersion($gpo);
 
                 // Story 16.14 Q2 — invalider le cache santé GPO après bump version.
-                // Le `$gpo` legacy ne nous donne pas un GUID au format Microsoft
-                // exploitable directement → flush global (acceptable car action
-                // admin rare). Best-effort silencieux.
                 try {
-                    app(\App\Gpo\Support\CachedGpoLookups::class)->forgetAll();
+                    app(\App\Gpo\Support\CachedGpoLookups::class)->forgetGpo($gpo->name);
                 } catch (\Throwable) {
                     // pas d'impact métier.
                 }
