@@ -1297,6 +1297,92 @@ ensure_agent_bootstrap_gpo() {
 }
 
 # ============================================================================
+# Story 38.5 — Re-possession SE5 du cron système (lignes vitales)
+# ============================================================================
+# Provisionne /etc/cron.d/sambaedu-system (renew_ticket ×2 dont @reboot + smbstatus).
+# Ces 3 lignes NE servent PAS le web legacy mais sont VITALES :
+#  - renew_ticket.sh : ticket Kerberos www-sambaedu requis pour l'écriture SYSVOL
+#    (project_sysvol_write_needs_wwwadmin_kinit) ; @reboot = ccache avant tout write
+#    post-boot (pas d'équivalent scheduler Laravel propre, feedback_no_overengineered_choices).
+#  - smbstatus.sh : produit /tmp/smbstatus, LU par UserSessionsService.
+# DOIT être appelée AVANT ensure_legacy_crons_retired (T1.4 : zéro fenêtre sans ticket).
+# Provision idempotente (rendu identique → pas de réécriture).
+
+ensure_system_cron() {
+    log "Provisioning du cron système SambaEdu (renew_ticket, smbstatus)..."
+
+    local src="$APP_DIR/scripts/config/sambaedu-system.cron"
+    local dst="/etc/cron.d/sambaedu-system"
+
+    if [[ ! -f "$src" ]]; then
+        log_warning "Source du cron système absente ($src) — provisioning ignoré"
+        return 0
+    fi
+
+    # Lignes statiques (aucun rendu __PHP_BIN__) : diff -q avant écriture.
+    if [[ ! -f "$dst" ]] || ! diff -q "$src" "$dst" >/dev/null 2>&1; then
+        log "Mise à jour cron système: $dst"
+        cp "$src" "$dst"
+        chown root:root "$dst"
+        chmod 644 "$dst"
+        log_success "Cron système provisionné dans $dst"
+    else
+        log_success "Cron système déjà à jour ($dst)"
+    fi
+}
+
+# ============================================================================
+# Story 38.5 — Retrait des crons legacy (débranchement du web legacy)
+# ============================================================================
+# Retire EXACTEMENT les 3 fichiers cron.d qui invoquent le web legacy via
+# action_cron_php.sh (curl http://<name>/<page>.php). Liste EXPLICITE — JAMAIS un
+# glob sambaedu-* qui avalerait sambaedu-{scheduler,system,boot-server}.
+#  - sambaedu-boot-server est EXCLU : make_dhcpd_conf est vivant, son remplacement
+#    appartient à Story 8.3 (gating). Le retirer casserait DHCP/DNS.
+#  - sambaedu-scheduler et sambaedu-system sont SE5 (intouchables).
+# Retrait réversible par `mv` vers /var/backups/sambaedu-legacy-crons/ (JAMAIS rm -rf).
+# Idempotent (fichier absent → no-op) et rejoué à CHAQUE update : couvre une
+# réapparition par conffile (`apt reinstall sambaedu-web-common` reposerait le fichier).
+
+ensure_legacy_crons_retired() {
+    log "Retrait des crons legacy (débranchement du web legacy, Story 38.5)..."
+
+    local backup_dir="/var/backups/sambaedu-legacy-crons"
+    # Liste EXPLICITE — ne JAMAIS remplacer par un glob.
+    local legacy_crons=(
+        "sambaedu-web-common"
+        "sambaedu-shares"
+        "sambaedu-wpkg"
+    )
+
+    local removed=0
+    local cron_name cron_path dst
+    for cron_name in "${legacy_crons[@]}"; do
+        cron_path="/etc/cron.d/${cron_name}"
+        if [[ ! -f "$cron_path" ]]; then
+            continue
+        fi
+
+        mkdir -p "$backup_dir"
+        dst="${backup_dir}/${cron_name}"
+        # Suffixe horodaté si une sauvegarde du même nom existe déjà (collision).
+        if [[ -e "$dst" ]]; then
+            dst="${dst}.$(date +%Y%m%d%H%M%S)"
+        fi
+
+        mv "$cron_path" "$dst"
+        log_success "Cron legacy retiré : $cron_path → $dst"
+        removed=$((removed + 1))
+    done
+
+    if (( removed == 0 )); then
+        log_success "Aucun cron legacy présent (déjà retirés)"
+    else
+        log_success "Crons legacy retirés : $removed (réversibles depuis $backup_dir)"
+    fi
+}
+
+# ============================================================================
 # Affichage du résumé
 # ============================================================================
 
@@ -1431,6 +1517,14 @@ main() {
 
     echo ""
     ensure_agent_bootstrap_gpo
+
+    # Story 38.5 : provisionner le cron système AVANT de retirer les crons legacy
+    # (T1.4 — zéro fenêtre sans ticket Kerberos www-sambaedu pour l'écriture SYSVOL).
+    echo ""
+    ensure_system_cron
+
+    echo ""
+    ensure_legacy_crons_retired
 
     echo ""
     ensure_appstore_write_dirs

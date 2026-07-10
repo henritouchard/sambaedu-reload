@@ -109,9 +109,8 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
     // La création passe désormais par la modale `group-form-modal` (event
     // `open-user-group-modal`) sur la page /users, gardée par `can:user.modify` ;
     // l'ancienne route /users/groups/new a été retirée avec sa page.
-    Route::match(['GET', 'POST'], '/users/groups/legacy-new', [\App\Http\Controllers\LegacyEmbedController::class, 'show'])
-        ->defaults('module', 'annu2/add_group.php')
-        ->name('users.groups.legacy-new');
+    // Story 38.5 : la route legacy /users/groups/legacy-new (embed
+    // annu2/add_group.php) a été retirée — création native livrée, route orpheline.
     Route::livewire('/users/groups/{id}', 'pages::users.groups.[id].index')
         ->whereNumber('id')
         ->middleware('can:user.read')

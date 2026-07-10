@@ -109,3 +109,82 @@ php artisan test \
 ```
 
 Attendu : tous verts (29 tests 38.2 — 6 architecture + 23 endpoints — + 110 non-régression au moment de la livraison ; DualModeCoexistenceTest adapté : URIs tombstone présentes mais nommées legacy.tombstone.*).
+
+---
+
+## Story 38.5 — Débranchement des crons et embed legacy (2026-07-10)
+
+### Contexte
+
+Les crons legacy (`/etc/cron.d/sambaedu-{web-common,shares,wpkg}`) étaient la
+MAJORITÉ du trafic vers le web legacy PHP (`action_cron_php.sh` = `curl -F se4_key…
+http://<name>/<page>.php`). Story 38.5 les débranche à sec :
+
+- Retrait idempotent par `ensure_legacy_crons_retired()` dans `update.sh` (liste
+  EXPLICITE des 3 fichiers, `mv` vers `/var/backups/sambaedu-legacy-crons/`,
+  JAMAIS un glob `sambaedu-*`, JAMAIS `rm -rf`). Rejoué à chaque update (couvre une
+  réapparition par conffile `apt reinstall`).
+- Lignes vitales RE-POSSÉDÉES AVANT le retrait : `sambaedu-system.cron`
+  (`renew_ticket.sh` ×2 dont `@reboot` + `smbstatus.sh`) provisionné par
+  `install.sh`/`update.sh` — zéro fenêtre sans ticket Kerberos www-sambaedu.
+- `sambaedu-boot-server` (`make_dhcpd_conf.sh`) **NON TOUCHÉ** (gating Story 8.3) ;
+  `sambaedu-scheduler` intouchable (c'est SE5).
+- Embed legacy débranché sec : route `users.groups.legacy-new` +
+  `LegacyEmbedController` + `LegacyEmbedService` SUPPRIMÉS (création de groupe
+  native livrée). Vue `legacy-embed.blade.php` CONSERVÉE (catchall `:280,:442`).
+
+### Pré-requis VM (ops manuelles, avec Henri — JAMAIS depuis un worktree)
+
+1. **Fantômes PHP** (`project_inotify_no_delete_sync`) : `LegacyEmbedController.php`
+   et `LegacyEmbedService.php` survivent sur la VM (inotify ne sync pas les
+   deletes). Les retirer À LA MAIN (`gio trash` / `mv`), puis
+   `composer dump-autoload` — sinon l'autoload peut encore les résoudre.
+2. `bash scripts/update.sh` sur /vm (LE vecteur du retrait des crons).
+3. Route retirée ⇒ `php artisan route:cache && php artisan config:cache` + chown
+   www-admin des caches (`project_route_cache_vm_ephemeral_test_routes`,
+   `project_vm_config_cache_not_synced`).
+
+### Scénario 38.5-1 — Crons débranchés, lignes vitales survivantes
+
+1. `ls /etc/cron.d/` → il reste EXACTEMENT `sambaedu-{scheduler,system,boot-server}`
+   (plus de `-web-common`, `-shares`, `-wpkg`).
+2. `ls /var/backups/sambaedu-legacy-crons/` → contient les 3 fichiers retirés
+   (réversibles).
+3. `cat /etc/cron.d/sambaedu-system` → 3 lignes actives (`renew_ticket` ×2 dont
+   `@reboot`, `smbstatus`).
+4. Rejouer `bash scripts/update.sh` → idempotent (« Aucun cron legacy présent » +
+   « Cron système déjà à jour »).
+
+### Scénario 38.5-2 — Fonctions vitales toujours en vie (H+1)
+
+1. `sudo -u www-admin klist` → ticket `www-sambaedu` frais (renew_ticket vit).
+2. `stat -c %Y /tmp/smbstatus` → mtime < 1h (smbstatus vit).
+3. Page sessions/wallpapers SE5 OK (consomme `/tmp/smbstatus`).
+
+### Scénario 38.5-3 — Embed débranché
+
+1. `php artisan route:list | grep legacy-new` → ZÉRO.
+2. `GET /users/groups/legacy-new` → retombe dans le catchall (proxy legacy tant que
+   le legacy vit, 404 loggé après extinction 38.6). Acceptable : personne n'y est lié.
+3. Création de groupe native (modale `group-form-modal` sur `/users`) fonctionnelle.
+
+### Scénario 38.5-4 — Vérif AC1 finale (critère GO 38.6)
+
+Observer les access-logs Apache (vhost SE5 + legacy) sur ≥ 1h : plus AUCUN
+`POST *.php` provenant des crons. Ne doit rester que `make_dhcpd_conf.sh` →
+`script_make_reservations.php`/`dnsupdate.php` toutes les 5 min (résiduel gated 8.3)
+et le trafic postes → tombstones 38.2. La ligne de base `legacy_catchall_logs` chute
+massivement — c'est ATTENDU (instrument de mesure du GO 38.6, D3), le DOCUMENTER.
+
+### Non-régression automatisée (HÔTE)
+
+```
+php artisan test \
+  tests/Architecture/LegacyCronRetirementTest.php \
+  tests/Feature/LegacyEmbedRouteRemovedTest.php \
+  tests/Architecture/GpoLegacyIsolationTest.php \
+  tests/Feature/LegacyCatchallTest.php \
+  tests/Architecture/LegacyTombstoneRoutesTest.php
+```
+
+Attendu : verts. `LegacyModuleBbbTest` est skippé (pré-existant, hors 38.5).

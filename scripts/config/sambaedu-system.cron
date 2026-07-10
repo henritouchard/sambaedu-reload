@@ -1,0 +1,18 @@
+# Crons système SambaEdu (sambaedu-reload) — lignes vitales RE-POSSÉDÉES par SE5.
+# Installé dans /etc/cron.d/sambaedu-system par scripts/install.sh et update.sh.
+# Ne pas éditer ce fichier manuellement sur la VM — source : scripts/config/sambaedu-system.cron
+#
+# Story 38.5 : ces 3 lignes NE servent PAS le web legacy et sont conservées iso-legacy
+# (déclenchement re-possédé ; les scripts eux-mêmes restent dans /usr/share/sambaedu,
+# leur internalisation est la Vague 3 de l'audit, hors cette story).
+#  - renew_ticket.sh : ticket Kerberos www-sambaedu VITAL pour l'écriture SYSVOL
+#    (project_sysvol_write_needs_wwwadmin_kinit). @reboot obligatoire : le ccache doit
+#    exister AVANT toute écriture SYSVOL post-boot (pas d'équivalent scheduler propre).
+#  - smbstatus.sh : produit /tmp/smbstatus, LU par app/Services/UserSessionsService.php.
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+50 * * * * www-admin /usr/share/sambaedu/sbin/renew_ticket.sh
+@reboot www-admin /usr/share/sambaedu/sbin/renew_ticket.sh
+1 * * * * root /usr/share/sambaedu/sbin/smbstatus.sh

@@ -96,7 +96,7 @@ L'écrasement de fichiers possédés par dpkg est assumé — les paquets 4.17.3
 | `includes/config.inc.sh` (+ `utils.inc.sh`) | `sambaedu-config` | sourcé par `make_dhcpd_conf.sh` et les autres scripts sbin | ❌ — reste [A], traité en Vague 1 (config auto-portée) |
 | `scripts/make_wine_image.sh` | `sambaedu-web-common` | `GenerateWineImageJob.php:20-49` | ❌ — Vague 3 |
 | `scripts/install-{debian,ubuntu,primtux,nird}-*-iso.sh` | **aucun — absents de la VM** | `SystemStatus/Distro.php`, `RunDistroInstallScriptJob.php` | ❌ référencés mais **inexistants** (gap connu du pipeline ISO) |
-| `sbin/renew_ticket.sh`, `sbin/smbstatus.sh`, `sbin/check_config.sh` | `sambaedu-web-common` | crons legacy uniquement (pas d'appel direct SE5) | ❌ — Vague 4 (portage scheduler Laravel) |
+| `sbin/renew_ticket.sh`, `sbin/smbstatus.sh`, `sbin/check_config.sh` | `sambaedu-web-common` | crons legacy uniquement (pas d'appel direct SE5) | ✅ Story 38.5 — déclenchement re-possédé : `renew_ticket`/`smbstatus` → `sambaedu-system.cron` (scripts inchangés dans `/usr/share/sambaedu`, internalisation = Vague 3) ; `check_config.sh` ABANDONNÉ (canal config→web legacy mort) |
 
 ### 2.3 Samba / AD / Kerberos / SYSVOL — **[B]** (binaires) + **[A]** (chemins legacy)
 
@@ -172,6 +172,30 @@ L'écrasement de fichiers possédés par dpkg est assumé — les paquets 4.17.3
 
 > Le seul cron « propre » SE5 est `sambaedu-scheduler` (`* * * * * www-admin … artisan schedule:run`).
 > Tout le reste appartient au legacy et devra être porté ou supprimé.
+
+**Story 38.5 — volet crons SOLDÉ (décision PAR FONCTION).** Retrait idempotent des 3
+fichiers cron legacy (`ensure_legacy_crons_retired` dans `update.sh` — liste EXPLICITE
+`sambaedu-{web-common,shares,wpkg}`, jamais un glob ; `mv` vers
+`/var/backups/sambaedu-legacy-crons/`, réversible). Décisions ligne à ligne :
+
+| Ligne cron legacy | Décision 38.5 | Successeur / trace |
+|---|---|---|
+| `renew_ticket.sh` (×2, dont `@reboot`) | **RE-POSSESSION SE5** | `scripts/config/sambaedu-system.cron` (ticket Kerberos www-sambaedu VITAL SYSVOL, `project_sysvol_write_needs_wwwadmin_kinit`) |
+| `smbstatus.sh` | **RE-POSSESSION SE5** | `sambaedu-system.cron` (`/tmp/smbstatus` lu par `UserSessionsService`) |
+| `check_config.sh` | ABANDON | canal config→web legacy mort ; successeur = capacités 27.3 (`project_config_capabilities_model`) |
+| `parcs/action_cron.php` | portage acté | `parc:execute-group-schedules` (`Kernel.php:35`) |
+| `parcs/clean_connexions.php` | ABANDON | présence agent (check-in + shutdown, 4 états) |
+| `infos/repquota.php` | ABANDON | `quota:snapshot` (Story 5.1b, `Kernel.php:97`) |
+| `stats.php` / `stats/update_stats.php` | ABANDON | backlog « chantier fréquentation » (signal présence agent) |
+| `annu/sync_cron.php` / `mfa_ent.php` / `test_ent.php` | **ABANDON acté (Q2)** | réouvrable en epic dédié ENT sur besoin réel |
+| `annu/delete_temp_users.php` | ABANDON | notion « users temporaires » legacy sans équivalent ; cycle de vie natif + `trash:purge` |
+| `clean_profiles.sh` | ABANDON (Q3) | `profiles:snapshot` (`Kernel.php:186`) + purge `RoamingProfileService:741` ; caches navigateur `/home` non reconduits |
+| `wpkg/wpkg_depot_import.php` | portage acté | import dépôt AppStore (série 8.2.x, `ensure_appstore_catalog_sync`) |
+| `wpkg/wpkg_rapport.php` | portage acté | rapports WPKG natifs (9.4/9.5, canal SMB) |
+| `wpkg/wpkg_ldap_update.php` | portage acté | `users:sync-from-ad` / `user-groups:sync-from-ad` / MachineObserver |
+| `partages/rep_cloud_cron.php` | ABANDON | chantier Nextcloud cadré (`project_nextcloud_file_plane_direction`) |
+| `systemctl restart php8.2-fpm` (cron `-shares`) | ABANDON | hygiène anti-fuites legacy non reconduite (décision ops, pas héritage silencieux) |
+| `make_dhcpd_conf.sh` (`sambaedu-boot-server`) | **NON TOUCHÉ — gating Story 8.3** | fonction vivante (dhcpd.conf/DNS) ; remplacement = 8.3 (versionne le script + retire l'appel `script_make_reservations.php`) |
 
 ### 2.10 Services système supposés actifs — **[B]**
 
@@ -255,8 +279,12 @@ Ordonné par dépendance et par risque (du moins au plus intrusif).
 - Effet : plus de dépendance à `/usr/share/sambaedu/{sbin,scripts}` ni aux paquets `sambaedu-boot-server`/`-shares`.
 
 ### Vague 4 — Retirer le legacy PHP `/var/www/sambaedu`
-- Porter les derniers `action_cron_php.sh` (wpkg import/rapport/ldap_update, sync annuaire, repquota, stats)
-  vers le **scheduler Laravel**. Supprimer `/etc/cron.d/sambaedu-{web-common,wpkg,shares,boot-server}`.
+- ✅ **Volet crons FAIT (Story 38.5)** : `/etc/cron.d/sambaedu-{web-common,wpkg,shares}` retirés
+  (`ensure_legacy_crons_retired`, décision par fonction ci-dessus §2.9) ; lignes vitales
+  re-possédées (`sambaedu-system.cron`). `sambaedu-boot-server` (`make_dhcpd_conf.sh`)
+  **renvoyé à Story 8.3** (dernier `curl *.php` serveur résiduel — disparaîtra avec 8.3,
+  AVANT le GO 38.6). Aucun portage de cron n'a été fait dans 38.5 (les portages étaient
+  déjà livrés — quota:snapshot, appstore sync, sync-from-ad — ou abandonnés/renvoyés backlog).
 - Supprimer le catch-all `LegacyCatchallController` une fois toutes les routes migrées.
 - Effet : plus de `sambaedu-php-libs`, plus de `LEGACY_PATH`.
 

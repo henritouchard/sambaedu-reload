@@ -729,6 +729,31 @@ install_scheduler_cron() {
 }
 
 # ============================================================================
+# Story 38.5 — cron système SE5 (lignes vitales re-possédées) + retrait legacy
+# ============================================================================
+# install_system_cron provisionne /etc/cron.d/sambaedu-system (renew_ticket ×2 dont
+# @reboot + smbstatus). DOIT s'exécuter AVANT retire_legacy_crons — zéro fenêtre sans
+# ticket Kerberos www-sambaedu (l'écriture SYSVOL en dépend, Story 38.4).
+
+install_system_cron() {
+  log "Installation du cron système SambaEdu (renew_ticket, smbstatus)..."
+
+  local src="$APP_DIR/scripts/config/sambaedu-system.cron"
+  local dst="/etc/cron.d/sambaedu-system"
+
+  if [[ ! -f "$src" ]]; then
+    log_error "Fichier source manquant: $src"
+    return 1
+  fi
+
+  # Pas de rendu (lignes statiques) : copie directe.
+  cp "$src" "$dst"
+  chown root:root "$dst"
+  chmod 644 "$dst"
+  log_success "Cron système installé dans $dst"
+}
+
+# ============================================================================
 # Vérification des pré-requis environnementaux (doctor)
 # ============================================================================
 
@@ -949,6 +974,12 @@ main() {
 
   install_queue_workers
   install_scheduler_cron
+  # Story 38.5 : provisionne sambaedu-system (renew_ticket/smbstatus) AVANT tout
+  # retrait des crons legacy. Le retrait effectif (ensure_legacy_crons_retired)
+  # est joué par le replay update.sh en fin d'install (cf. « Finalisation »
+  # ci-dessous) — une machine greenfield avec paquets legacy résiduels ne relance
+  # donc pas les crons web legacy.
+  install_system_cron
 
   # Phase 9: Doctor (vérification post-install)
   echo ""

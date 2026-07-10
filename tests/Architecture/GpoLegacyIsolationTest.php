@@ -18,11 +18,14 @@ use Symfony\Component\Finder\Finder;
  *
  * Les commentaires/docblocks sont ignorés (on ne teste que le CODE effectif).
  *
- * Liste blanche (frontière assumée jusqu'à 38.5/38.1) :
+ * Liste blanche (frontière refermée d'un cran par 38.5) :
  *  - `LegacyCatchallController` : sert les modules in-repo + dégrade en 404 ;
- *  - `LegacyEmbedService` : dernière route legacy embarquée (supprimée en 38.5) ;
  *  - `legacy/stubs/config.inc.php` : chaîne `include_path` FPM générée (inerte,
  *    référence documentée « à ne pas toucher »).
+ *
+ * Story 38.5 : `LegacyEmbedService` (dernière route legacy embarquée) a été
+ * SUPPRIMÉ — retiré de la liste blanche (la frontière architecturale s'est
+ * refermée : plus aucun couple contrôleur/service embed dédié).
  */
 class GpoLegacyIsolationTest extends TestCase
 {
@@ -34,7 +37,6 @@ class GpoLegacyIsolationTest extends TestCase
      */
     private const WHITELIST = [
         'LegacyCatchallController.php',
-        'LegacyEmbedService.php',
         'config.inc.php', // stub : include_path FPM inerte
     ];
 
