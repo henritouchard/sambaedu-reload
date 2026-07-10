@@ -25,8 +25,14 @@ use RuntimeException;
  *
  * **Byte-stabilité** (AC — `project_severance_freezes_effective_state`) : un
  * `decode()` suivi d'un `encode()` sans modification reproduit EXACTEMENT les
- * octets d'origine pour les types manipulés (REG_SZ / REG_DWORD / REG_MULTI_SZ),
- * comme le legacy (les types non manipulés sont conservés bruts).
+ * octets d'origine pour REG_SZ/REG_EXPAND_SZ **ASCII** et REG_DWORD (les types
+ * non manipulés sont conservés bruts). LIMITES héritées du port fidèle de
+ * `dstr2str` (retrait de TOUS les NUL, review 38.4 #6) : REG_MULTI_SZ perd ses
+ * séparateurs NUL internes, et le non-ASCII n'est PAS round-trip — n'utiliser
+ * ce codec que sur des politiques ASCII à valeurs `;`-séparées (cas
+ * ExcludeProfileDirs). Divergence volontaire vs legacy : `dwordToInt` lit le
+ * DWORD en little-endian (`V`) là où `dword2int` legacy lisait en big-endian
+ * (`n`, non round-trip) — c'est un fix assumé, cohérent avec `int2dword`.
  *
  * Types de registre — reprend les define() legacy pour rester autonome (plus
  * aucune dépendance à `gpo.inc.php`).
@@ -191,23 +197,26 @@ final class PregCodec
     /**
      * Remplace (in place) les données d'une clé (par nom de `value`) par la
      * liste `$data` jointe sur `;` — port de `change_pol_key` (mode replace).
-     * Si la clé n'existe pas, la liste est retournée inchangée (parité legacy :
-     * legacy ne créait pas la clé absente).
+     * Si la clé n'existe pas, RIEN n'est modifié (parité legacy : change_pol_key
+     * ne créait pas la clé absente) et `false` est retourné — l'appelant DOIT
+     * décider (log/erreur) plutôt que laisser croire à une écriture
+     * (review 38.4 #7 : no-op silencieux).
      *
      * @param  list<array<string,mixed>>  $entries  Modifié par référence.
      * @param  list<string>  $data
-     * @return list<string>  Les données appliquées.
+     * @return bool  true si la clé existait et a été remplacée.
      */
-    public function setKeyValues(array &$entries, string $value, array $data): array
+    public function setKeyValues(array &$entries, string $value, array $data): bool
     {
         foreach ($entries as $i => $entry) {
             if (($entry['value'] ?? null) === $value) {
                 $entries[$i]['data'] = implode(';', $data);
-                break;
+
+                return true;
             }
         }
 
-        return $data;
+        return false;
     }
 
     // -----------------------------------------------------------------------

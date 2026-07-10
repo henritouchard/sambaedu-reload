@@ -88,10 +88,21 @@ class NativeGpoPublisher
 
         $adVersion = $gpo->versionNumber ?? 0;
 
-        // (2) Idempotence de version (parité gpo.inc.php:1000-1012).
+        // Incréments CSE : chaque publication écrit versionNumber =
+        // max(tpl, ad) + increment. Le versionNumber AD est donc TOUJOURS
+        // gonflé de l'increment par rapport à la version template publiée.
+        $incU = $this->hasCse($info, 'gpcuserextensionnames') ? 1 : 0;
+        $incM = $this->hasCse($info, 'gpcmachineextensionnames') ? 1 : 0;
+
+        // (2) Idempotence de version. Contrairement au legacy (qui comparait à
+        // la version template stockée dans gpos.json, SANS increment), la
+        // baseline est reconstituée en retranchant l'increment du versionNumber
+        // AD — sinon un bump unitaire du template (le geste nominal de
+        // republication, project_gpo_template_edit_needs_version_bump) serait
+        // absorbé par l'inflation et skippé (review 38.4 #1).
         [$tplU, $tplM] = $this->gpoVersion($templateVersion);
         [$adU, $adM] = $this->gpoVersion((string) $adVersion);
-        if (! $force && $tplU <= $adU && $tplM <= $adM) {
+        if (! $force && $tplU <= $adU - $incU && $tplM <= $adM - $incM) {
             $log->step('publication ignorée : version SYSVOL à jour (idempotent)', [
                 'template_version' => $templateVersion,
                 'ad_version' => $adVersion,
@@ -109,16 +120,8 @@ class NativeGpoPublisher
             $this->specialise($workDir);
 
             // (4) Calcul de version parité legacy + réécriture GPT.INI CRLF.
-            $increment = 0;
-            if ($this->hasCse($info, 'gpcuserextensionnames')) {
-                $increment += 0x10000;
-            }
-            if ($this->hasCse($info, 'gpcmachineextensionnames')) {
-                $increment += 1;
-            }
-            $vU = max($tplU, $adU);
-            $vM = max($tplM, $adM);
-            $version = $vU * 0x10000 + $vM + $increment;
+            $version = max($tplU, $adU) * 0x10000 + max($tplM, $adM)
+                + $incU * 0x10000 + $incM;
 
             $gptContent = "[General]\r\nVersion=" . $version . "\r\ndisplayName=" . $displayName . "\r\n";
             file_put_contents($workDir . '/GPT.INI', $gptContent);

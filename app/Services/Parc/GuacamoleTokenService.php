@@ -197,12 +197,13 @@ class GuacamoleTokenService
             return null;
         }
 
-        // Tronque à 16 octets si nécessaire (parité comportement legacy AES-128).
+        // Parité legacy stricte (remote.inc.php:746,758, review 38.4 #5) :
+        // le HMAC est calculé sur la clé NON tronquée, PUIS la clé est
+        // tronquée à 16 octets pour l'AES-128.
+        $hmac = hash_hmac('sha256', $json, $key, true);
         if (strlen($key) > 16) {
             $key = substr($key, 0, 16);
         }
-
-        $hmac = hash_hmac('sha256', $json, $key, true);
         $signed = $hmac . $json;
 
         $cipher = openssl_encrypt($signed, 'AES-128-CBC', $key, OPENSSL_RAW_DATA, $iv);

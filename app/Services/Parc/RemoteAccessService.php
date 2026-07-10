@@ -63,6 +63,13 @@ class RemoteAccessService
                 throw new \RuntimeException('Service d\'accès distant non disponible');
             }
 
+            // Défense en profondeur iso-legacy (create_remote_token s'auto-gardait
+            // via have_right(SE_COMPUTER_CONTROL)) : les appelants actuels gatent
+            // déjà en amont, mais un futur appelant ne doit pas pouvoir contourner.
+            if (!$this->hasRemoteAccessRights()) {
+                throw new \RuntimeException('Droits insuffisants pour l\'accès distant (computer.control)');
+            }
+
             $machine = $this->resolveMachine($machineName);
             if ($machine === null) {
                 throw new \RuntimeException("Machine '{$machineName}' non trouvée");

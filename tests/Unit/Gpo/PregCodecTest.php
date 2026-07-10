@@ -84,6 +84,58 @@ final class PregCodecTest extends TestCase
         );
     }
 
+    /**
+     * Review 38.4 #3 — fixture d'octets HAND-AUTHORED conforme au format PReg
+     * réel (MS-GPREG), indépendante d'encode() : détecte une erreur systématique
+     * de convention (délimiteur/ordre/endianness) que le round-trip
+     * encode→decode→encode ne peut pas voir (auto-cohérence).
+     */
+    #[Test]
+    public function decodes_hand_authored_preg_bytes_and_is_byte_stable(): void
+    {
+        // [ K\0 ; V\0 ; REG_SZ ; 8 ; "A;B\0" UTF-16LE ]  — le ';' INTERNE aux
+        // data ne doit pas être pris pour un délimiteur (lecture par size).
+        $blob = "\x50\x52\x65\x67\x01\x00\x00\x00"  // magic PReg v1
+            . "\x5B\x00"                              // '['
+            . "\x4B\x00\x00\x00"                      // "K" + NUL
+            . "\x3B\x00"                              // ';'
+            . "\x56\x00\x00\x00"                      // "V" + NUL
+            . "\x3B\x00"                              // ';'
+            . "\x01\x00\x00\x00"                      // type REG_SZ (DWORD LE)
+            . "\x3B\x00"                              // ';'
+            . "\x08\x00\x00\x00"                      // size 8 (DWORD LE)
+            . "\x3B\x00"                              // ';'
+            . "\x41\x00\x3B\x00\x42\x00\x00\x00"      // "A;B" + NUL UTF-16LE
+            . "\x5D\x00";                             // ']'
+
+        $decoded = $this->codec->decode($blob);
+
+        self::assertCount(1, $decoded);
+        self::assertSame('K', $decoded[0]['key']);
+        self::assertSame('V', $decoded[0]['value']);
+        self::assertSame(PregCodec::REG_SZ, $decoded[0]['type']);
+        self::assertSame(8, $decoded[0]['size']);
+        self::assertSame('A;B', $decoded[0]['data']);
+
+        self::assertSame(
+            bin2hex($blob),
+            bin2hex($this->codec->encode($decoded)),
+            'La ré-sérialisation doit reproduire les octets PReg réels à l\'identique.',
+        );
+    }
+
+    /** Review 38.4 #7 — clé absente : aucun no-op silencieux, retour false. */
+    #[Test]
+    public function set_key_values_returns_false_when_key_absent(): void
+    {
+        $entries = $this->codec->decode($this->goldenBlob());
+        $before = $entries;
+
+        self::assertFalse($this->codec->setKeyValues($entries, 'Absente', ['X']));
+        self::assertSame($before, $entries, 'Les entrées ne doivent pas être modifiées.');
+        self::assertTrue($this->codec->setKeyValues($entries, 'ExcludeProfileDirs', ['X']));
+    }
+
     #[Test]
     public function reg_dword_round_trips(): void
     {

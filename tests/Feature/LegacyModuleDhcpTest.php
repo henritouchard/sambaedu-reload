@@ -37,18 +37,20 @@ class LegacyModuleDhcpTest extends TestCase
 
         Config::set('sambaedu.block_migrated_routes', false);
 
+        // D6 (AC2, review 38.4 #2) : le FS legacy est FORCÉ absent — le module
+        // doit résoudre TOUS ses includes dans legacy/stubs/ in-repo. Sans ça,
+        // sur un hôte où /var/www/sambaedu existe, un stub manquant serait
+        // silencieusement masqué par le vrai legacy (faux-vert).
+        Config::set('sambaedu.legacy_path', '/nonexistent-legacy-38-4');
+
         // Réinitialiser $_SESSION pour éviter les fuites entre tests
         $_SESSION = [];
 
         $stubsPath = base_path('legacy/stubs');
-        $legacyIncludesPath = config('sambaedu.legacy_path', '/var/www/sambaedu') . '/includes';
         $currentPath = get_include_path();
 
         if (is_dir($stubsPath) && !str_contains($currentPath, $stubsPath)) {
             $currentPath = $stubsPath . PATH_SEPARATOR . $currentPath;
-        }
-        if (is_dir($legacyIncludesPath) && !str_contains($currentPath, $legacyIncludesPath)) {
-            $currentPath .= PATH_SEPARATOR . $legacyIncludesPath;
         }
         set_include_path($currentPath);
 

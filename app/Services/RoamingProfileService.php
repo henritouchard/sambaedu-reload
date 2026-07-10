@@ -246,7 +246,17 @@ class RoamingProfileService
             // Lecture → mutation en place de la clé (parité change_pol_key) →
             // réécriture SYSVOL native (PregCodec + SysvolPolicyService).
             $policy = $this->sysvolPolicy()->readUserPolicy($gpo);
-            $this->codec()->setKeyValues($policy, self::EXCLUDE_KEY, $clean);
+            if (! $this->codec()->setKeyValues($policy, self::EXCLUDE_KEY, $clean)) {
+                // Clé absente du Registry.pol : réécrire tel quel + bumper la
+                // version ferait croire à un enregistrement (review 38.4 #7).
+                Log::warning('[RoamingProfileService] Clé ExcludeProfileDirs absente du Registry.pol', [
+                    'op' => 'setExclusions',
+                    'gpo' => $gpo->name,
+                ]);
+                throw new RuntimeException(
+                    'Clé ' . self::EXCLUDE_KEY . ' absente du Registry.pol de la GPO redirections — exclusions non persistées.',
+                );
+            }
             $this->sysvolPolicy()->writeUserPolicy($gpo, $policy);
 
             if ($applyVersionBump) {
