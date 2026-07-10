@@ -66,23 +66,32 @@ class DualModeCoexistenceTest extends TestCase
     public function legacy_out_routes_are_extinguished(): void
     {
         // Story 27.14 — le canal de config legacy `gpo/*_out.php` a été ÉTEINT
-        // EN BLOC (pas d'état transitoire legacy/agent). Ce test garde l'invariant
-        // « le canal reste mort » : aucune de ces routes ne doit réapparaître.
+        // EN BLOC (pas d'état transitoire legacy/agent). Story 38.2 : ces URIs
+        // réapparaissent dans la table de routes MAIS uniquement comme
+        // TOMBSTONES inertes (réponses terminales typées — D1 epic 38 :
+        // tombstone ≠ canal maintenu ; comportement inerte verrouillé par
+        // LegacyTombstoneRoutesTest/LegacyTombstoneEndpointsTest).
+        // Invariant : chaque URI est soit ABSENTE, soit portée par une route
+        // `legacy.tombstone.*` — jamais une route fonctionnelle.
         $routes = collect(Route::getRoutes()->getRoutes());
 
-        $uris = $routes->map(fn ($r) => $r->uri())->all();
-
         foreach ([
-            'gpo/wallpaper_out.php',     // ex-4.7
-            'gpo/firefox_out.php',       // ex-4.8
-            'gpo/thunderbird_out.php',   // ex-4.8
-            'gpo/shortcuts_out.php',     // ex-16.3a / 1bis.18e
-            'gpo/network_out.php',       // ex-16.3b
-            'gpo/veyon_out.php',         // ex-16.3b
-            'gpo/associations_out.php',  // ex-16.3c
-            'gpo/applications.php',      // ex-16.7
+            'gpo/wallpaper_out.php',     // ex-4.7 — tombstone 38.2
+            'gpo/firefox_out.php',       // ex-4.8 — tombstone 38.2
+            'gpo/thunderbird_out.php',   // ex-4.8 — tombstone 38.2
+            'gpo/shortcuts_out.php',     // ex-16.3a / 1bis.18e — tombstone 38.2
+            'gpo/network_out.php',       // ex-16.3b — HORS tombstone (Q4 : canal Linux vivant → catchall)
+            'gpo/veyon_out.php',         // ex-16.3b — tombstone 38.2
+            'gpo/associations_out.php',  // ex-16.3c — tombstone 38.2
+            'gpo/applications.php',      // ex-16.7 — tombstone 38.2 (os=linux → passthrough)
         ] as $extinguished) {
-            $this->assertNotContains($extinguished, $uris, "{$extinguished} should be extinguished (story 27.14)");
+            foreach ($routes->filter(fn ($r) => $r->uri() === $extinguished) as $route) {
+                $this->assertStringStartsWith(
+                    'legacy.tombstone.',
+                    (string) $route->getName(),
+                    "{$extinguished} ne doit exister que comme tombstone inerte (38.2), jamais comme route fonctionnelle (27.14).",
+                );
+            }
         }
     }
 

@@ -133,6 +133,42 @@ class LegacyTombstoneEndpointsTest extends TestCase
         );
     }
 
+    /**
+     * AC3 (review 38.2 #3) — les DEUX routes Linux hors tombstone atteignent
+     * toujours le CATCHALL (proxy) : aucune route native ne doit jamais les
+     * shadow (le canal Linux vivant de lab1 en dépend jusqu'à extinction
+     * mesurée ou agent Linux).
+     */
+    #[Test]
+    public function network_out_and_printers_stay_on_catchall_passthrough(): void
+    {
+        foreach (['gpo/network_out.php', 'printers/out_printers.php'] as $path) {
+            mkdir(dirname($this->legacyTmpDir . '/' . $path), 0777, true);
+            file_put_contents($this->legacyTmpDir . '/' . $path, '<?php echo "linux"; ?>');
+        }
+
+        Http::preventStrayRequests();
+        Http::fake(['*' => Http::response('# proxied', 200, ['Content-Type' => 'text/plain'])]);
+
+        foreach (['gpo/network_out.php', 'printers/out_printers.php'] as $path) {
+            $response = $this->post('/' . $path, ['os' => 'linux']);
+
+            $response->assertOk();
+            $response->assertSee('# proxied');
+            self::assertTrue(
+                LegacyCatchallLog::query()
+                    ->where('path', $path)
+                    ->where('source', '!=', 'tombstone')
+                    ->exists(),
+                "{$path} doit passer par le catchall (proxy loggé), jamais par un tombstone.",
+            );
+        }
+        self::assertFalse(
+            LegacyCatchallLog::query()->where('source', 'tombstone')->exists(),
+            'Aucune ligne tombstone ne doit exister pour les routes Linux hors périmètre.',
+        );
+    }
+
     #[Test]
     public function no_internet_out_returns_inert_script(): void
     {
@@ -344,6 +380,22 @@ class LegacyTombstoneEndpointsTest extends TestCase
 
         self::assertNotNull($row);
         self::assertSame(255, mb_strlen((string) $row->machine));
+    }
+
+    /** Review 38.2 #5 — même garde de troncature pour user_login. */
+    #[Test]
+    public function tombstone_truncates_overlong_user_login_to_column_width(): void
+    {
+        $long = str_repeat('u', 300);
+        $this->get('/gpo/wallpaper_out.php?user=' . $long);
+
+        $row = LegacyCatchallLog::query()
+            ->where('source', 'tombstone')
+            ->where('path', 'gpo/wallpaper_out.php')
+            ->first();
+
+        self::assertNotNull($row);
+        self::assertSame(255, mb_strlen((string) $row->user_login));
     }
 
     /**

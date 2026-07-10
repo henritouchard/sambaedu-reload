@@ -2351,9 +2351,9 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 \
 ### Checklist rapide 27.14
 
 - [ ] **27.14-0** Gate de parité documenté (table de la story remplie, démo réaliste postes migrés+neufs/salles multiples)
-- [ ] **27.14-1** `route:list` : 0 route `gpo/*_out.php` / `gpo/applications.php` / `workstation-config/*` / `shortcuts/export/*` / `api/policies/*` ; survivants (linux_out/winget_out, agent, 301, thumbnails, ControlHub) présents
+- [ ] **27.14-1** `route:list` : 0 route FONCTIONNELLE `gpo/*_out.php` / `gpo/applications.php` (depuis 38.2 ces URIs existent comme tombstones inertes `legacy.tombstone.*` — cf. legacy-shims.md) ; 0 route `workstation-config/*` / `shortcuts/export/*` / `api/policies/*` ; survivants (linux_out/winget_out, agent, 301, thumbnails, ControlHub) présents
 - [ ] **27.14-2** Bootstrap `se4_agent_bootstrap` diff vide + `Se4AgentBootstrapTemplateTest` vert + `isPublishable` true
-- [ ] **27.14-3** Kill-switch + linux_out/winget_out + carte réglages déploiement préservés ; audit/re-publish `se4_wpkg` retirés
+- [ ] **27.14-3** linux_out/winget_out natifs protégés (local.request+throttle) + carte réglages déploiement préservés ; audit/re-publish `se4_wpkg` retirés ; kill-switch SUPPRIMÉ depuis 38.2 (tombstones à la place)
 - [ ] **27.14-4** KPI 0 GPO hors bootstrap (audit SYSVOL opérateur lab) ; fantômes inotify nettoyés hors worktree
 - [ ] **27.14-5** Postes migrés convergent par l'agent (zéro appel `*_out.php`) ; parc migré couvert par l'agent avant bascule prod
 

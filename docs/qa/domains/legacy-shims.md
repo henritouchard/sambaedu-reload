@@ -108,4 +108,4 @@ php artisan test \
   tests/Feature/Wpkg/Deployment/Http/
 ```
 
-Attendu : tous verts (33 tests 38.2 + 110 non-régression au moment de la livraison).
+Attendu : tous verts (29 tests 38.2 — 6 architecture + 23 endpoints — + 110 non-régression au moment de la livraison ; DualModeCoexistenceTest adapté : URIs tombstone présentes mais nommées legacy.tombstone.*).

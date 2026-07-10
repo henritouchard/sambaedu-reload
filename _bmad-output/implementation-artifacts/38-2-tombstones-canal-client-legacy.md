@@ -174,7 +174,7 @@ la story 38.3 (agent), pas celle-ci.
   - [x] `legacy-monitor/index.blade.php` : colonne + filtre `source` (groupBy intègre `source`) — page hors travail utilisateur (re-vérifié `git status`)
 - [x] Task 7 — Tests (AC: 8)
   - [x] `tests/Architecture/LegacyTombstoneRoutesTest.php` (6 tests : présence, ordre < catchall, local.request+throttle, pas d'auth, withoutMiddleware web, ordre linux<version)
-  - [x] `tests/Feature/Legacy/LegacyTombstoneEndpointsTest.php` (27 tests : formats par famille, POST sans CSRF, log DB source+machine/user, troncature, passthrough os=linux, matrice applications, pas d'écho de params)
+  - [x] `tests/Feature/Legacy/LegacyTombstoneEndpointsTest.php` (23 tests : formats par famille, POST sans CSRF, log DB source+machine/user, troncature machine+user_login, passthrough os=linux + network_out/out_printers, matrice applications, pas d'écho de params — chiffres corrigés en review #2, tests AC3/#5 ajoutés en review)
   - [x] Lancé sur l'HÔTE par filtres ciblés : nouveaux (33✓) + `WpkgOutRoutesTest` + `LegacyCatchallTest` + `IpxeNamespaceTest` + `IpxeLegacyRoutingNonRegressionTest` + 4 tests wpkg (110✓)
 - [ ] Task 8 — Application VM + e2e (AC: 9 — manuel avec Henri, hors CI, JAMAIS depuis un worktree) — **NON exécuté (ops VM manuelles, cf. Dev Agent Record)**
   - [ ] Vérifier la boucle inotify + `migrate:status` ; `php artisan migrate`
@@ -357,7 +357,7 @@ claude-opus-4-8[1m] (dev-story, imposé par l'epic).
 
 Tests HÔTE (php 8.4.5 + SQLite :memory:) :
 - `tests/Architecture/LegacyTombstoneRoutesTest.php` — 6 passed.
-- `tests/Feature/Legacy/LegacyTombstoneEndpointsTest.php` — 27 passed (294 assertions).
+- `tests/Feature/Legacy/LegacyTombstoneEndpointsTest.php` — 23 passed (post-review ; le Dev Agent Record initial annonçait à tort 27/294 — review 38.2 #2).
 - Non-régression `tests/Feature/LegacyCatchallTest.php` + `tests/Architecture/WpkgOutRoutesTest.php` + `tests/Feature/Ipxe/IpxeLegacyRoutingNonRegressionTest.php` + `tests/Architecture/IpxeNamespaceTest.php` + `tests/Feature/Wpkg/Deployment/Http/` — 110 passed.
 - Grep `legacy_config_channel|LEGACY_CONFIG_CHANNEL|X-Legacy-Config-Channel|legacy.config.channel` sur `app/ config/ routes/ tests/ .env.example` → ZÉRO occurrence.
 
@@ -411,4 +411,4 @@ Tests HÔTE (php 8.4.5 + SQLite :memory:) :
 | Date | Version | Description | Auteur |
 |---|---|---|---|
 | 2026-07-10 | 0.1 | Création de la story (create-story, périmètre Q4 acté sur mesure lab1). Status → ready-for-dev. | SM (claude-fable-5) |
-| 2026-07-10 | 1.0 | Implémentation intégrale (18 tombstones + migration additive + retrait kill-switch + retrait noop + monitor source). 33 tests neufs + 110 non-régression verts (HÔTE). Status → review. Ops VM consignées. | Dev (claude-opus-4-8) |
+| 2026-07-10 | 1.0 | Implémentation intégrale (18 tombstones + migration additive + retrait kill-switch + retrait noop + monitor source). 29 tests neufs (6 archi + 23 endpoints, chiffres corrigés en review) + 110 non-régression verts (HÔTE). Status → review. Ops VM consignées. Volume legacy_catchall_logs mesuré sur VM : 29 592 lignes → lock ALTER TABLE négligeable (review #4). | Dev (claude-opus-4-8) |
