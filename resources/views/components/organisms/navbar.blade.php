@@ -7,7 +7,7 @@
         </svg>
     </label>
 
-    <x-organisms.search-modal />
+    <livewire:organisms.search-modal />
     <div class="gap-y-2">
         <!-- Theme toggle button -->
         <a href="/blank.php" target="_blank" title="Accès à l'ancienne interface">
