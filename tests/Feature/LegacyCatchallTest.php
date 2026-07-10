@@ -159,27 +159,69 @@ class LegacyCatchallTest extends TestCase
     }
 
     /**
-     * AC4 — LEGACY_PATH invalide → erreur 500 explicite
+     * Story 38.1 (D4) — LEGACY_PATH invalide (dossier inexistant) → 404 loggé,
+     * plus jamais 500. Le monitoring d'extinction (legacy_catchall_logs) reste
+     * fonctionnel sans le FS legacy.
      */
-    public function test_invalid_legacy_path_returns_500(): void
+    public function test_invalid_legacy_path_returns_404_and_is_logged(): void
     {
         Config::set('sambaedu.legacy_path', '/this/path/does/not/exist');
 
         $response = $this->get('/some/route.php');
 
-        $response->assertStatus(500);
+        $response->assertStatus(404);
+
+        $this->assertDatabaseHas('legacy_catchall_logs', [
+            'method' => 'GET',
+            'path'   => 'some/route.php',
+        ]);
     }
 
     /**
-     * AC4 — LEGACY_PATH absent (null) → erreur 500 explicite
+     * Story 38.1 (D4) — LEGACY_PATH absent (null) → 404 loggé, plus jamais 500.
      */
-    public function test_missing_legacy_path_returns_500(): void
+    public function test_missing_legacy_path_returns_404_and_is_logged(): void
     {
         Config::set('sambaedu.legacy_path', null);
 
         $response = $this->get('/some/route.php');
 
-        $response->assertStatus(500);
+        $response->assertStatus(404);
+
+        $this->assertDatabaseHas('legacy_catchall_logs', [
+            'method' => 'GET',
+            'path'   => 'some/route.php',
+        ]);
+    }
+
+    /**
+     * Story 38.1 (D4) — LEGACY_PATH absent + log_404=false → 404 sans ligne DB
+     * (le drapeau LEGACY_LOG_404 gouverne aussi ce chemin dégradé).
+     */
+    public function test_missing_legacy_path_with_log_404_disabled_returns_404_without_log(): void
+    {
+        Config::set('sambaedu.legacy_path', null);
+        Config::set('sambaedu.log_404', false);
+
+        $response = $this->get('/some/route.php');
+
+        $response->assertStatus(404);
+
+        $this->assertDatabaseCount('legacy_catchall_logs', 0);
+    }
+
+    /**
+     * Story 38.1 (D4) — les early-returns du catchall (ici la redirection native
+     * gpo/no_roam.php → page admin, story 1bis.18f) précèdent la résolution FS et
+     * restent fonctionnels même avec legacy_path absent.
+     */
+    public function test_early_return_redirect_still_works_with_missing_legacy_path(): void
+    {
+        Config::set('sambaedu.legacy_path', null);
+
+        $response = $this->get('/gpo/no_roam.php');
+
+        $response->assertRedirect('/admin/settings?tab=profils-itinerants');
     }
 
     /**

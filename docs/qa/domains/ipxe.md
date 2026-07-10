@@ -2647,3 +2647,96 @@ plutôt que de livrer un boot.wim incomplet (demi-boot).
 3. Répéter avec `.`, `...`, `--`, `__` → tous refusés.
 4. **UI** : sur `/admin/ipxe/iso-windows`, saisir `..` en famille + déposer une archive → toast d'erreur, aucune suppression.
 5. Cas nominal `intel-i219` → toujours accepté (non-régression).
+
+---
+
+## Story 38.1 — Relocalisation des statiques iPXE + catchall 404 (Epic 38)
+
+**Date livraison** : 2026-07-10
+**Migrations à appliquer** : aucune (table `legacy_catchall_logs` déjà en place)
+**Permissions requises** : aucune (statiques servis en HTTP anonyme, iso-legacy)
+
+### Contexte
+
+Les statiques iPXE (`boot.ipxe`, `png/ipxe-se4.png`, `diconf/{authorized_keys,install_se4_from0.sh}`,
+binaires `undionly.kpxe` / `snponly_x64.efi`) vivaient sous `/var/www/sambaedu/ipxe`
+(legacy). Ils sont désormais **versionnés** dans le repo (`resources/ipxe/static/`)
+et **provisionnés** vers `storage/ipxe/static/` par `ensure_ipxe_statics` (update.sh) ;
+l'alias Apache `/ipxe` est repointé sur `$SER_ROOT/storage/ipxe/static`
+(setupApache.sh). Objectif : rendre `/var/www/sambaedu` supprimable sans casser le
+netboot. En parallèle, le catchall `LegacyCatchallController` ne répond plus jamais
+`500` quand le FS legacy est absent — il dégrade en `404` loggé (D4), pour que le
+monitoring d'extinction (`legacy_catchall_logs`) reste exploitable sans le legacy.
+
+### Section 1 — Provisioning + alias Apache
+
+1. **Sync + update** : après arrivée des fichiers par inotify (vérifier
+   `ps aux | grep inotifywait` actif, comparer md5 hôte/VM des 2 binaires), lancer
+   `bash scripts/update.sh` sur la VM. Vérifier `storage/ipxe/static/` peuplé
+   (6 fichiers, arbo `boot.ipxe`, `diconf/`, `png/`, binaires racine),
+   `chown www-admin`, lisible « other » (`ls -la`).
+2. **Idempotence** : relancer `bash scripts/update.sh` → `ensure_ipxe_statics`
+   loggue « Binaires iPXE TFTP déjà présents et identiques » (no-op TFTP).
+3. **Vhost** : `bash scripts/setupApache.sh` (le vhost n'est PAS régénéré par
+   update.sh — re-run manuel requis), puis `apache2ctl configtest` = Syntax OK.
+   Vérifier `/etc/apache2/sites-enabled/sambaedu.conf` : `Alias /ipxe
+   /var/www/sambaedu-reload/storage/ipxe/static` + `FallbackResource /index.php`.
+4. **Service HTTP** : `curl -sI http://<ip>/ipxe/png/ipxe-se4.png` = 200 ;
+   `curl -s http://<ip>/ipxe/boot.ipxe | head` = menu iPXE serveur (byte-identique
+   à l'original) ; `curl -sI http://<ip>/ipxe/boot` = route Laravel native (200,
+   handshake — non shadowée par un fichier physique).
+
+### Section 2 — Racine TFTP (constat + greenfield)
+
+1. **Constat** : `/var/lib/tftpboot` = racine atftpd (`grep OPTIONS
+   /etc/default/atftpd`), binaires réels propriété du paquet `sambaedu-boot-server`
+   (`dpkg -S /var/lib/tftpboot/undionly.kpxe`). Le TFTP ne sert RIEN depuis
+   `/var/www/sambaedu` (le legacy symlinke vers le TFTP, pas l'inverse).
+2. **md5 attendus** : `undionly.kpxe = 49e53c73677941fd8d4f5e634fc4220f`,
+   `snponly_x64.efi = 3c745bf0c61d72f5e7326a271e34cae4` (identiques côté repo et TFTP).
+3. **Greenfield** : sur un hôte vierge sans le `.deb`, `ensure_ipxe_statics` dépose
+   les 2 binaires (`install -m 644`) — sur la VM actuelle c'est un no-op.
+
+### Section 3 — `dhcpd.conf` inchangé
+
+1. `md5sum /etc/dhcp/dhcpd.conf` avant/après update+setupApache → identique.
+2. Filenames TFTP inchangés (`undionly.kpxe`, `snponly_x64.efi`), URL de chain
+   `http://<ip>/ipxe/boot` inchangée. Gap pré-existant `snponly_x32.efi`
+   (référencé arch 00:06, absent partout) documenté, PAS corrigé (aucun client
+   arch 00:06 au parc).
+
+### Section 4 — Catchall 404 (D4)
+
+1. **Legacy absent → 404, jamais 500** : renommer temporairement le legacy
+   (`mv /var/www/sambaedu{,.test-38-1}` — opération VM pure, réversible), puis
+   `curl -sI http://<ip>/une-url-legacy-inexistante.php` = **404** (plus 500).
+   Vérifier une ligne dans `legacy_catchall_logs` (monitoring vivant sans FS legacy).
+2. **Restaurer** : `mv /var/www/sambaedu.test-38-1 /var/www/sambaedu`.
+
+### Section 5 — E2E netboot (avec legacy renommé)
+
+> Preuve que la suppression du legacy ne casse ni le TFTP ni le chain HTTP.
+
+1. Legacy renommé (`/var/www/sambaedu.test-38-1`).
+2. **Poste BIOS** (arch 00:00) : reboot PXE → TFTP délivre `undionly.kpxe` →
+   chain `http://<ip>/ipxe/boot` (route Laravel) répond → menu/handshake OK.
+3. **Poste UEFI** (arch 00:07) : reboot PXE → TFTP délivre `snponly_x64.efi` →
+   chain HTTP OK.
+4. `GET /ipxe/png/ipxe-se4.png` + `GET /ipxe/boot.ipxe` servis (200, octets
+   identiques aux originaux) depuis le nouvel emplacement.
+5. Restaurer le legacy.
+
+### Couverture automatisée
+
+- `tests/Feature/LegacyCatchallTest` — `invalid_legacy_path_returns_404_and_is_logged`,
+  `missing_legacy_path_returns_404_and_is_logged`,
+  `missing_legacy_path_with_log_404_disabled_returns_404_without_log`,
+  `early_return_redirect_still_works_with_missing_legacy_path` (early-returns
+  précèdent la résolution FS).
+- `tests/Architecture/IpxeStaticAliasTest` — alias repointé + plus de
+  `/var/www/sambaedu/ipxe` + `FallbackResource` conservé (setupApache.sh) ;
+  `ensure_ipxe_statics` déclarée ET appelée (update.sh) ; existence + md5 des
+  6 statiques versionnés.
+- Non-régression : `IpxeNamespaceTest`, `IpxeLegacyRoutingNonRegressionTest`,
+  `IpxeBootEndpointTest` (ordre routes `/ipxe/*` avant catchall — aucune route
+  ajoutée/déplacée).

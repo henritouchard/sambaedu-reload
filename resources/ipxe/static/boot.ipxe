@@ -1,0 +1,44 @@
+#!ipxe
+console --x 1024 --y 768 --picture png/ipxe-se4.png
+:menu
+menu Preboot eXecution Environment
+set menu-default exit
+set menu-timeout 5000
+item --gap -- ---------------------------------------------------Menu----------------------------------------------------
+item --key 1 Se4AD  (1) Installation du serveur Active Directory Sambaedu
+item --key 2 Se4AD_autre  (2) Installation du serveur Active Directory sur VM VMware ou VirtualBox ou XCP-ng
+#item --key 2 Se4FS  (2) Installation du serveur de fichiers Sambaedu
+item --key 3 Debian  (3) Installation Debian de base
+item --key 4 shell  (4) Shell iPXE
+item --key 0 exit  (0) Quitter iPXE et booter le disque dur
+choose --default ${menu-default} --timeout ${menu-timeout} selected && goto ${selected} || exit 0
+
+
+:Se4AD
+kernel http://192.168.122.50/os/debian-installer/amd64/linux initrd=initrd.gz auto=true hostname=se4ad netcfg/disable_autoconfig=true netcfg/choose_interface=enp1s0 netcfg/get_hostname=se4ad netcfg/dhcp_options=Configure network manually netcfg/get_ipaddress=192.168.122.60 netcfg/get_netmask=${net0/netmask} netcfg/get_gateway=${net0/gateway} netcfg/get_nameservers=192.168.122.1 netcfg/confirm_static=true priority=critical auto url=http://192.168.122.50/ipxe/diconf/se4ad.preseed
+#kernel http://192.168.122.50/os/debian-installer/amd64/linux initrd=initrd.gz auto=true hostname=se4ad netcfg/disable_autoconfig=true netcfg/get_hostname=se4ad netcfg/dhcp_options=Configure network manually netcfg/get_ipaddress=192.168.122.60 netcfg/get_netmask=${net0/netmask} netcfg/get_gateway=${net0/gateway} netcfg/get_nameservers=192.168.122.1 netcfg/confirm_static=true priority=critical auto url=http://192.168.122.50/ipxe/diconf/se4ad.preseed
+initrd --name initrd.gz http://192.168.122.50/os/debian-installer/amd64/initrd.gz
+boot
+
+#installation sur VMware ou VirtualBox ou XCP-ng
+:Se4AD_autre
+kernel http://192.168.122.50/os/debian-installer/amd64/linux initrd=initrd.gz auto=true hostname=se4ad netcfg/disable_autoconfig=true netcfg/get_hostname=se4ad netcfg/dhcp_options=Configure network manually netcfg/get_ipaddress=192.168.122.60 netcfg/get_netmask=255.255.255.0 netcfg/get_gateway=192.168.122.1 netcfg/get_nameservers=192.168.122.1 netcfg/confirm_static=true priority=critical auto url=http://192.168.122.50/ipxe/diconf/se4ad.preseed
+initrd --name initrd.gz http://192.168.122.50/os/debian-installer/amd64/initrd.gz
+boot
+
+:Se4FS
+kernel http://192.168.122.50/os/debian-installer/amd64/linux initrd=initrd.gz initrd=preseed.cfg
+initrd http://192.168.122.50/os/debian-installer/amd64/initrd.gz
+initrd http://192.168.122.50/ipxe/diconf/se4fs.preseed preseed.cfg
+boot
+:Debian
+kernel http://192.168.122.50/os/debian-installer/amd64/linux
+initrd http://192.168.122.50/os/debian-installer/amd64/initrd.gz
+boot
+:shell
+echo iPXE shell...
+shell
+:exit
+echo Booting harddisk ...
+sanboot --no-describe --drive 0x80
+
