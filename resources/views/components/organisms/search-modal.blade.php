@@ -254,7 +254,7 @@ new class extends Component {
                                         <span class="uppercase tracking-wide">{{ $group['category'] }}</span>
                                         <span class="ml-auto text-xs font-normal text-base-content/50">{{ count($group['items']) }}</span>
                                     </div>
-                                    <div class="space-y-1">
+                                    <div class="space-y-1 pl-8">
                                         @foreach ($group['items'] as $item)
                                             <a href="{{ $item['url'] }}" wire:navigate
                                                 @click="searchOpen = false; $wire.set('query', '')"
