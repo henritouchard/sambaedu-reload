@@ -82,6 +82,39 @@ class IpxeStaticAliasTest extends TestCase
     }
 
     /**
+     * Review 38.1 #1 — le vhost FALLBACK config/apache/sambaedu.conf (utilisé
+     * par update.sh quand setupApache.sh est absent) doit rester EN PHASE :
+     * alias /ipxe repointé hors legacy, FallbackResource conservé.
+     */
+    #[Test]
+    public function apache_conf_fallback_template_stays_in_phase(): void
+    {
+        $content = $this->fileContent('config/apache/sambaedu.conf');
+
+        self::assertStringNotContainsString(
+            '/var/www/sambaedu/ipxe',
+            $content,
+            'Le template fallback ne doit plus référencer /var/www/sambaedu/ipxe (legacy).',
+        );
+
+        self::assertStringContainsString(
+            'Alias /ipxe /var/www/sambaedu-reload/storage/ipxe/static',
+            $content,
+            'L\'alias /ipxe du template fallback doit pointer sur storage/ipxe/static.',
+        );
+
+        $blockStart = strpos($content, 'Alias /ipxe /var/www/sambaedu-reload/storage/ipxe/static');
+        self::assertNotFalse($blockStart, 'Bloc alias /ipxe introuvable dans le template fallback');
+        $blockEnd = strpos($content, '</Directory>', $blockStart);
+        self::assertNotFalse($blockEnd, 'Fermeture du bloc /ipxe introuvable dans le template fallback');
+        self::assertStringContainsString(
+            'FallbackResource /index.php',
+            substr($content, $blockStart, $blockEnd - $blockStart),
+            'Le bloc /ipxe du template fallback doit conserver FallbackResource /index.php.',
+        );
+    }
+
+    /**
      * AC 2 — update.sh : ensure_ipxe_statics déclarée ET appelée.
      */
     #[Test]

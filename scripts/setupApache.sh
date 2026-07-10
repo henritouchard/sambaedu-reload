@@ -112,6 +112,10 @@ cat > "$APACHE_SITES_AVAILABLE/sambaedu.conf" << VHOST_SER
     # /ipxe/enrollment/name, etc. — story 3.x + 4.9) : les routes natives priment
     # tant qu'aucun fichier ne shadow l'URL (ex. /ipxe/boot.ipxe reste servi en
     # statique, iso-fonctionnel au comportement legacy). À chown www-admin.
+    #
+    # GARDE-FOU SÉCURITÉ : l'Alias pointe EXACTEMENT sur le sous-dossier dédié
+    # storage/ipxe/static, JAMAIS sur storage/ entier (storage/keys/pki/
+    # contient les PFX code-signing + clés CA).
     Alias /ipxe $SER_ROOT/storage/ipxe/static
     <Directory $SER_ROOT/storage/ipxe/static>
         Options -Indexes +FollowSymLinks

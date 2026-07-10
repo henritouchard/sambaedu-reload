@@ -120,6 +120,24 @@ class LegacyCatchallTest extends TestCase
     }
 
     /**
+     * AC7 (review 38.1 #4) — la convention `noop:` est indifférente à l'état
+     * du FS legacy : même réponse inerte avec `legacy_path` absent (null).
+     */
+    public function test_blocked_script_route_noop_still_works_with_missing_legacy_path(): void
+    {
+        Config::set('sambaedu.legacy_path', null);
+        Config::set('sambaedu.blocked_legacy_routes', [
+            'gpo/shortcuts_out\.php' => 'noop:raccourcis servis nativement par l agent SE5',
+        ]);
+
+        $response = $this->post('/gpo/shortcuts_out.php', ['os' => 'windows', 'action' => 'logon']);
+
+        $response->assertStatus(200);
+        $response->assertHeader('Content-Type', 'text/plain; charset=UTF-8');
+        $this->assertStringStartsWith('REM ', $response->getContent());
+    }
+
+    /**
      * Convention `noop:` — variante linux : commentaire bash `#`.
      */
     public function test_blocked_script_route_noop_uses_bash_comment_for_linux(): void

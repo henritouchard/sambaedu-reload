@@ -781,12 +781,27 @@ ensure_ipxe_statics() {
     # src/. copie le CONTENU (pas le dossier lui-même). Re-copie idempotente.
     cp -a "$src"/. "$dest"/
 
+    # Miroir strict : un fichier retiré de resources/ipxe/static/ ne doit plus
+    # être servi (sinon il resterait exposé en HTTP anonyme indéfiniment).
+    # Purge fichier par fichier (pas de rm -rf), puis dossiers vides.
+    (
+        cd "$dest" || exit 0
+        find . -type f | while IFS= read -r f; do
+            [[ -f "$src/$f" ]] || rm -f "$f"
+        done
+        find . -depth -mindepth 1 -type d -empty -exec rmdir {} \; 2>/dev/null
+    )
+
     if id www-admin >/dev/null 2>&1; then
         chown -R www-admin:www-admin "$dest" 2>/dev/null \
             || log_warning "chown www-admin échoué sur $dest (risque de 404 Apache)"
     fi
     # Lisible Apache (« other » : r sur fichiers, rx sur dossiers). u+rwX conserve
-    # l'écriture propriétaire ; X = exécution seulement sur dossiers.
+    # l'écriture propriétaire ; X = exécution seulement sur dossiers. Le parent
+    # storage/ipxe/ créé par mkdir -p hérite de l'umask courant : le chmoder
+    # explicitement, sinon umask durci (027) = traversée Apache perdue → 404
+    # silencieux sur TOUS les statiques.
+    chmod u+rwX,go+rX "$APP_DIR/storage/ipxe" 2>/dev/null || true
     chmod -R u+rwX,go+rX "$dest" 2>/dev/null || true
     log_success "Statiques iPXE publiés dans $dest (chown www-admin, lisible Apache)"
 
