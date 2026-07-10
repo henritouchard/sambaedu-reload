@@ -51,8 +51,9 @@ import (
 //   - D jonctions install/rapports : reparse point SEULEMENT (un vrai dossier
 //     = provisionné par le module natif 27.20, INTOUCHABLE — piège #3) ;
 //     `%SystemRoot%\wpkg.xml` (base WPKG du canal natif) HORS catalogue ;
-//     RemoveAll UNIQUEMENT sur C:\Netinst et %WINDIR%\Web\SE4 (chemins
-//     exclusivement legacy) ; autologon Winlogon purgé SSI
+//     RemoveAll UNIQUEMENT sur C:\Netinst (exclusivement legacy) ;
+//     %WINDIR%\Web\SE4 en forme conservatrice (fichier nommé + rmdir si
+//     vide — review 38.3 #2) ; autologon Winlogon purgé SSI
 //     DefaultUserName == se4install (jamais casser un autologon légitime) ;
 //   - E helpers %ProgramFiles%\SambaEdu : LISTE BLANCHE NOMMÉE de fichiers —
 //     jamais le dossier, jamais Agent\** (l'agent lui-même est INEXPRIMABLE :
@@ -100,7 +101,7 @@ type LegacyDirEntry struct {
 // LegacyCleanupOps : accès OS injectés (testable hôte). L'impl Windows vit
 // dans agent/windows/handler_legacy_cleanup_windows.go ; un fake en mémoire
 // couvre les tests. Les INTERDITS sont structurels : AUCUNE op récursive hors
-// RemoveAll (que le handler ne pointe QUE sur C:\Netinst et %WINDIR%\Web\SE4).
+// RemoveAll (que le handler ne pointe QUE sur C:\Netinst).
 type LegacyCleanupOps interface {
 	// Glob retourne les chemins matchant le motif (`*` par segment). Aucun
 	// match ⇒ (nil, nil).
@@ -115,7 +116,7 @@ type LegacyCleanupOps interface {
 	// (idempotent).
 	Remove(path string) error
 	// RemoveAll supprime récursivement — le handler ne l'appelle QUE sur
-	// C:\Netinst et %WINDIR%\Web\SE4 (piège #4). Déjà absent ⇒ nil.
+	// C:\Netinst (piège #4). Déjà absent ⇒ nil.
 	RemoveAll(path string) error
 	// Stat inspecte un chemin SANS suivre les liens (Lstat + détection reparse
 	// point). Absent ⇒ ({Exists: false}, nil) — pas une erreur.
@@ -684,16 +685,54 @@ func (h *LegacyCleanupHandler) scanWpkgAndInstall(add func(legacyFinding)) error
 		}
 	}
 
-	// Staging install legacy : RemoveAll AUTORISÉ sur CES chemins précis
-	// SEULEMENT (exclusivement legacy — piège #4).
-	for _, path := range []string{h.netinstDir(), win + `\Web\SE4`} {
-		info, err := h.Ops.Stat(path)
+	// Staging install legacy : RemoveAll AUTORISÉ sur C:\Netinst SEULEMENT
+	// (exclusivement legacy — piège #4).
+	netinst := h.netinstDir()
+	info, err := h.Ops.Stat(netinst)
+	if err != nil {
+		return fmt.Errorf("inspection de %s : %w", netinst, err)
+	}
+	if info.Exists {
+		add(legacyFinding{id: "dir:" + netinst, remove: func() error { return h.Ops.RemoveAll(netinst) }})
+	}
+
+	// %WINDIR%\Web\SE4 — forme CONSERVATRICE (inventaire E, review 38.3 #2) :
+	// on supprime le fichier NOMMÉ SetWallpaper.ps1, puis le dossier SEULEMENT
+	// s'il est vide. JAMAIS de RemoveAll sous %WINDIR%\Web : un contenu
+	// inattendu y est laissé intact (et visible au drift suivant du .ps1 s'il
+	// revient, jamais collatéral).
+	se4Web := win + `\Web\SE4`
+	wallpaper := se4Web + `\SetWallpaper.ps1`
+	winfo, err := h.Ops.Stat(wallpaper)
+	if err != nil {
+		return fmt.Errorf("inspection de %s : %w", wallpaper, err)
+	}
+	if winfo.Exists {
+		add(legacyFinding{id: "file:" + wallpaper, remove: func() error {
+			if err := h.Ops.Remove(wallpaper); err != nil {
+				return err
+			}
+			// rmdir best-effort : Remove ne supprime qu'un dossier VIDE.
+			entries, err := h.Ops.ListDir(se4Web)
+			if err == nil && len(entries) == 0 {
+				return h.Ops.Remove(se4Web)
+			}
+
+			return nil
+		}})
+	} else {
+		dinfo, err := h.Ops.Stat(se4Web)
 		if err != nil {
-			return fmt.Errorf("inspection de %s : %w", path, err)
+			return fmt.Errorf("inspection de %s : %w", se4Web, err)
 		}
-		if info.Exists {
-			target := path
-			add(legacyFinding{id: "dir:" + target, remove: func() error { return h.Ops.RemoveAll(target) }})
+		if dinfo.Exists && dinfo.IsDir {
+			entries, err := h.Ops.ListDir(se4Web)
+			if err != nil {
+				return fmt.Errorf("énumération de %s : %w", se4Web, err)
+			}
+			if len(entries) == 0 {
+				add(legacyFinding{id: "dir:" + se4Web, remove: func() error { return h.Ops.Remove(se4Web) }})
+			}
 		}
 	}
 
@@ -839,13 +878,28 @@ func (h *LegacyCleanupHandler) scanMozilla(add func(legacyFinding)) error {
 }
 
 // referencesSambaeduProfile : GARDE — le profiles.ini référence-t-il le profil
-// forcé legacy ? Lignes `Default=sambaedu.default` (section [InstallXXXX] —
-// hash constaté 308046B0AF4A39CB) ou `Path=sambaedu.default` (section
-// [ProfileN]), insensible à la casse.
+// forcé legacy ? Clés `Default`/`Path` dont la VALEUR est `sambaedu.default`
+// (nue ou en fin de chemin), insensible à la casse et aux espaces.
+//
+// Format réel VÉRIFIÉ à la source (review 38.3 #1) : les fragments paquet
+// `/usr/share/sambaedu/applications/{firefox,thunderbird}/logon.windows`
+// écrivent la forme NUE (`Default=sambaedu.default` / `Path=sambaedu.default`,
+// hash install constaté 308046B0AF4A39CB). Le match par suffixe couvre en
+// plus les variantes historiques (`Path=Profiles/sambaedu.default` — forme
+// Linux du fragment — ou séparateur `\`), sans jamais matcher un profil
+// utilisateur légitime (frontière `/` exigée).
 func referencesSambaeduProfile(content string) bool {
 	for _, line := range strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n") {
-		trimmed := strings.ToLower(strings.TrimSpace(line))
-		if trimmed == "default=sambaedu.default" || trimmed == "path=sambaedu.default" {
+		key, value, found := strings.Cut(strings.TrimSpace(line), "=")
+		if !found {
+			continue
+		}
+		k := strings.ToLower(strings.TrimSpace(key))
+		if k != "default" && k != "path" {
+			continue
+		}
+		v := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(value)), `\`, "/")
+		if v == "sambaedu.default" || strings.HasSuffix(v, "/sambaedu.default") {
 			return true
 		}
 	}

@@ -3,7 +3,8 @@
 // agent/shared/handler_legacy_cleanup.go ; ce fichier n'apporte que les
 // primitives OS :
 //   - fichiers : os.* (Remove ciblé JAMAIS récursif ; RemoveAll réservé par le
-//     handler à C:\Netinst et %WINDIR%\Web\SE4) ;
+//     handler à C:\Netinst — %WINDIR%\Web\SE4 en forme conservatrice, review
+//     38.3 #2) ;
 //   - reparse points : détection iso provision_windows.go (Lstat + repli
 //     locale-agnostique `fsutil reparsepoint query`) — un vrai dossier
 //     `%WinDir%\install` (provisioning natif 27.20) reste INTOUCHABLE ;
@@ -63,8 +64,32 @@ func newLegacyCleanupHandler(logger *shared.Logger) *shared.LegacyCleanupHandler
 
 // --- Fichiers -------------------------------------------------------------------
 
+// Glob : équivalent filepath.Glob mais INSENSIBLE à la casse sur le dernier
+// segment (review 38.3 #4) — NTFS est insensible, filepath.Match ne l'est pas
+// (un `Applications-Logon.CMD` échapperait au motif minuscule). Un seul
+// ReadDir, pas de fsutil (contrairement à ListDir, réservé aux gardes reparse).
 func (o *legacyCleanupOps) Glob(pattern string) ([]string, error) {
-	return filepath.Glob(pattern)
+	dir, base := filepath.Split(pattern)
+	dir = strings.TrimSuffix(dir, `\`)
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, entry := range entries {
+		ok, err := filepath.Match(strings.ToLower(base), strings.ToLower(entry.Name()))
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, filepath.Join(dir, entry.Name()))
+		}
+	}
+
+	return out, nil
 }
 
 func (o *legacyCleanupOps) ReadFile(path string) ([]byte, error) {
@@ -100,10 +125,19 @@ func (o *legacyCleanupOps) Stat(path string) (shared.LegacyPathInfo, error) {
 		return shared.LegacyPathInfo{}, err
 	}
 
+	// fsutil (spawn) UNIQUEMENT pour les entrées non régulières : les jonctions
+	// visées (install/rapports/Netinst) ne sont jamais des fichiers réguliers —
+	// éviter un spawn par fichier staté (profiles.ini de CHAQUE profil, chaque
+	// convergence — review 38.3 #3).
+	isReparse := info.Mode()&os.ModeSymlink != 0
+	if !isReparse && !info.Mode().IsRegular() {
+		isReparse = isLegacyReparsePoint(path)
+	}
+
 	return shared.LegacyPathInfo{
 		Exists:    true,
 		IsDir:     info.IsDir(),
-		IsReparse: info.Mode()&os.ModeSymlink != 0 || isLegacyReparsePoint(path),
+		IsReparse: isReparse,
 	}, nil
 }
 

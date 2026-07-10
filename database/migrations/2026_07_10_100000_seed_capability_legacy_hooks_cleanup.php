@@ -79,7 +79,10 @@ return new class extends Migration
                     .'repassant à « Non géré » (l\'agent cesse simplement de scanner). Les paires profiles.ini/'
                     .'installs.ini Mozilla référençant sambaedu.default sont supprimées (dossiers de profil '
                     .'préservés — Firefox/Thunderbird recréent un profil local sain). Requiert l\'agent ≥ 2.9.0 '
-                    .'publié : un binaire antérieur ignore ce réglage EN SILENCE.',
+                    .'publié : un binaire antérieur ignore ce réglage EN SILENCE. Pour exclure un parc alors '
+                    .'qu\'une diffusion générale est « Activé », NE PAS utiliser « Non géré » en surcharge '
+                    .'(sans effet — le Broadcast prime) : ne pas armer la diffusion générale et activer '
+                    .'parc par parc.',
                 'applies_to_os' => json_encode(['windows'], JSON_UNESCAPED_UNICODE),
                 'is_active' => true,
                 'overrides_locked' => false,

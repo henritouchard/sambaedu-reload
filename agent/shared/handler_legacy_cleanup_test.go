@@ -715,3 +715,59 @@ func TestLegacyCleanupContentGuards(t *testing.T) {
 		t.Errorf("contenu non 32-hex : garde fermée")
 	}
 }
+
+// Review 38.3 #1 — garde Mozilla robuste : la valeur (pas la ligne entière)
+// est testée, avec suffixe de chemin toléré (variantes historiques du
+// fragment) et frontière stricte (jamais un profil légitime approchant).
+func TestReferencesSambaeduProfileVariants(t *testing.T) {
+	matching := []string{
+		"[Profile0]\nName=default\nPath=sambaedu.default\n",               // forme nue (paquet, vérifiée)
+		"[Install308046B0AF4A39CB]\nDefault=sambaedu.default\nLocked=1\n", // installs-style
+		"[Profile0]\nPath=Profiles/sambaedu.default\nIsRelative=1\n",      // variante préfixée (forme Linux)
+		"[Profile0]\nPath=Profiles\\sambaedu.default\n",                   // séparateur Windows
+		"[Profile0]\n Default = SAMBAEDU.DEFAULT \n",                      // espaces + casse
+	}
+	for _, content := range matching {
+		if !referencesSambaeduProfile(content) {
+			t.Errorf("aurait dû matcher : %q", content)
+		}
+	}
+
+	nonMatching := []string{
+		"[Profile0]\nName=default\nPath=abc123.default-release\nDefault=1\n", // profil sain
+		"[Profile0]\nPath=xsambaedu.default\n",                               // frontière : pas un préfixe de chemin
+		"[Profile0]\nName=sambaedu.default\n",                                // mauvaise clé
+		"sambaedu.default\n",                                                 // pas une paire clé=valeur
+	}
+	for _, content := range nonMatching {
+		if referencesSambaeduProfile(content) {
+			t.Errorf("n'aurait PAS dû matcher : %q", content)
+		}
+	}
+}
+
+// Review 38.3 #2 — %WINDIR%\Web\SE4 : forme conservatrice. Un contenu
+// inattendu dans le dossier est PRÉSERVÉ (fichier nommé seul supprimé,
+// dossier non vide conservé) — jamais de RemoveAll sous %WINDIR%\Web.
+func TestLegacyCleanupWebSE4ForeignContentPreserved(t *testing.T) {
+	ops := newFakeLegacyOps()
+	ops.dirs[tWin+`\Web\SE4`] = true
+	ops.addFile(tWin+`\Web\SE4\SetWallpaper.ps1`, "ps1")
+	ops.addFile(tWin+`\Web\SE4\note-de-l-admin.txt`, "à conserver")
+
+	engine := &Engine{Handlers: map[string]Handler{"legacy_cleanup": newLegacyHandler(ops)}}
+	report := engine.RunPass(legacyItems(), AppliedState{})
+	if len(report) != 1 || report[0].Status != "drift" {
+		t.Fatalf("drift attendu, obtenu %+v", report)
+	}
+
+	if hasFile(ops, tWin+`\Web\SE4\SetWallpaper.ps1`) {
+		t.Errorf("le fichier nommé SetWallpaper.ps1 aurait dû être supprimé")
+	}
+	if !hasFile(ops, tWin+`\Web\SE4\note-de-l-admin.txt`) {
+		t.Errorf("un contenu inattendu de Web\\SE4 ne doit JAMAIS être supprimé")
+	}
+	if !ops.dirs[tWin+`\Web\SE4`] {
+		t.Errorf("le dossier non vide doit être conservé")
+	}
+}
