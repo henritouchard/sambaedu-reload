@@ -16,11 +16,17 @@ new #[Title('Legacy Monitor - Instance SE4FS')] class extends Component {
     public string $filterMethod = '';
     #[Url]
     public string $filterIp = '';
+    // Story 38.2 — filtre sur l'origine de la réponse (tombstone natif vs proxy
+    // catchall). Critère GO 38.6 : zéro hit `source='catchall'` sur les routes
+    // clients, hits `tombstone` en décroissance.
+    #[Url]
+    public string $filterSource = '';
     public int $perPage = 50;
 
     public function updatingFilterPath(): void { $this->resetPage(); }
     public function updatingFilterMethod(): void { $this->resetPage(); }
     public function updatingFilterIp(): void { $this->resetPage(); }
+    public function updatingFilterSource(): void { $this->resetPage(); }
 
     public function getLogs()
     {
@@ -30,8 +36,9 @@ new #[Title('Legacy Monitor - Instance SE4FS')] class extends Component {
             ->when($this->filterPath, fn($q) => $q->where('path', 'like', '%' . addcslashes($this->filterPath, '%_\\') . '%'))
             ->when($this->filterMethod, fn($q) => $q->where('method', $this->filterMethod))
             ->when($this->filterIp, fn($q) => $q->where('ip', 'like', '%' . addcslashes($this->filterIp, '%_\\') . '%'))
-            ->selectRaw('method, path, COUNT(*) as frequency, MAX(created_at) as last_seen, MAX(ip) as last_ip')
-            ->groupBy('method', 'path')
+            ->when($this->filterSource, fn($q) => $q->where('source', $this->filterSource))
+            ->selectRaw('source, method, path, COUNT(*) as frequency, MAX(created_at) as last_seen, MAX(ip) as last_ip')
+            ->groupBy('source', 'method', 'path')
             ->orderByDesc('frequency')
             ->orderBy('path')
             ->paginate($perPage);
@@ -69,6 +76,11 @@ new #[Title('Legacy Monitor - Instance SE4FS')] class extends Component {
             <option value="DELETE">DELETE</option>
             <option value="PATCH">PATCH</option>
         </select>
+        <select class="select select-bordered" wire:model.live="filterSource">
+            <option value="">Toutes les origines</option>
+            <option value="catchall">Catchall (proxy legacy)</option>
+            <option value="tombstone">Tombstone (natif SE5)</option>
+        </select>
     </div>
 
     {{-- Tableau avec polling automatique toutes les 5 secondes --}}
@@ -89,6 +101,7 @@ new #[Title('Legacy Monitor - Instance SE4FS')] class extends Component {
                 <table class="table table-zebra w-full">
                     <thead>
                         <tr>
+                            <th>Origine</th>
                             <th>Méthode</th>
                             <th>Path</th>
                             <th>Dernière IP</th>
@@ -99,6 +112,16 @@ new #[Title('Legacy Monitor - Instance SE4FS')] class extends Component {
                     <tbody>
                         @foreach ($logs as $log)
                             <tr>
+                                <td>
+                                    @php
+                                        $sourceBadge = match($log->source) {
+                                            'tombstone' => 'badge-success',
+                                            'catchall'  => 'badge-error',
+                                            default     => 'badge-neutral',
+                                        };
+                                    @endphp
+                                    <span class="badge {{ $sourceBadge }}">{{ $log->source ?? 'catchall' }}</span>
+                                </td>
                                 <td>
                                     @php
                                         $badgeClass = match($log->method) {

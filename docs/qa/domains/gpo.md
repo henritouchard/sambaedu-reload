@@ -2319,8 +2319,20 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 \
 
 ### Scénario 27.14-3 — Kill-switch + canal Linux/install Windows préservés (hors scope)
 
-1. **Attendu** : le middleware `legacy.config.channel` (`EnsureLegacyConfigChannelEnabled`), le flag `LEGACY_CONFIG_CHANNEL_ENABLED` (`config/sambaedu.php` défaut `true`) et la ligne `.env.example` sont CONSERVÉS — ils gatent encore `linux_out`/`winget_out`.
-2. `LEGACY_CONFIG_CHANNEL_ENABLED=true` (défaut) → `GET /wpkg/linux_out.php` (depuis une IP LAN allowlistée) répond 200 (liste APT). `LEGACY_CONFIG_CHANNEL_ENABLED=false` → 410. La page `/admin/settings/gpo/wpkg-deployment` conserve sa carte « Réglages de déploiement » (toggle winget + allowlist IP) ; l'AUDIT GPO `se4_wpkg` et le bouton « Re-publier » ont disparu.
+> **MISE À JOUR story 38.2** : le kill-switch `legacy.config.channel` /
+> `LEGACY_CONFIG_CHANNEL_ENABLED` a été RETIRÉ (middleware, alias Kernel, clé config
+> et ligne `.env.example` supprimés). La sémantique 410 est remplacée par les
+> tombstones natifs (cf. `legacy-shims.md`). Les scénarios 1-2 ci-dessous sont
+> conservés pour l'historique mais ne reflètent plus le code — voir l'encadré actualisé.
+
+1. **Attendu (historique, avant 38.2)** : le middleware `legacy.config.channel`
+   (`EnsureLegacyConfigChannelEnabled`), le flag `LEGACY_CONFIG_CHANNEL_ENABLED` et la
+   ligne `.env.example` gataient `linux_out`/`winget_out`. **Depuis 38.2 : supprimés.**
+2. **Attendu (depuis 38.2)** : `GET /wpkg/linux_out.php` (depuis une IP LAN allowlistée)
+   répond 200 (liste APT) sans aucun gate kill-switch — les 2 endpoints restent natifs,
+   protégés `local.request` + `throttle:300,1`. La page `/admin/settings/gpo/wpkg-deployment`
+   conserve sa carte « Réglages de déploiement » (toggle winget + allowlist IP) ; l'AUDIT
+   GPO `se4_wpkg` et le bouton « Re-publier » ont disparu.
 
 ### Scénario 27.14-4 — KPI « 0 GPO créée/modifiée hors bootstrap » (audit SYSVOL opérateur)
 
@@ -2404,7 +2416,8 @@ vendorés in-repo.
 
 ### Scénario 38.4-1 — GPO bootstrap agent republiée NATIVEMENT (AC1, e2e /vm — jamais depuis un worktree)
 
-Pré-requis : `LEGACY_CONFIG_CHANNEL_ENABLED`/creds Administrator OK ; `config:cache` + chown après tout `.env`.
+Pré-requis : creds Administrator OK ; `config:cache` + chown après tout `.env`. (Le
+kill-switch `LEGACY_CONFIG_CHANNEL_ENABLED` a été RETIRÉ en story 38.2.)
 
 1. **Pré-état** : `samba-tool gpo listall | grep -A4 SE_agent_bootstrap` (noter versionNumber) ;
    `smbclient //<se4ad>/sysvol -c 'ls <domain>/Policies/<GUID>/GPT.INI'`.

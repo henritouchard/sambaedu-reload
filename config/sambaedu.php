@@ -28,20 +28,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Kill-switch canal de config legacy (2026-06-12)
-    |--------------------------------------------------------------------------
-    | Quand false, neutralise tout le canal historique qui livre au poste le
-    | wallpaper, les raccourcis, le wpkg, les registres et les applications :
-    |   - /gpo/*_out.php (garde inline MigrationController::serveFragment)
-    |   - /api/v1/workstation-config/* et /wpkg/* (middleware legacy.config.channel)
-    | Objectif : tester l'agent Go (/api/v1/agent/*, indépendant) sans
-    | interférence. Aucun code supprimé — bascule réversible via .env.
-    | Default true → comportement inchangé.
-    */
-    'legacy_config_channel_enabled' => (bool) env('LEGACY_CONFIG_CHANNEL_ENABLED', true),
-
-    /*
-    |--------------------------------------------------------------------------
     | Legacy Catchall
     |--------------------------------------------------------------------------
     | Chemin absolu vers le répertoire legacy PHP SambAEdu.
@@ -70,11 +56,10 @@ return [
     'blocked_legacy_routes' => [
         '^annu2/annu\.php' => 'app/users',
         'parcs/show_parc.php' => 'app/parcs',
-        // Consommé par les scripts logon/startup des postes (curl + CALL) :
-        // convention `noop:` (200 + commentaire) et JAMAIS un 302 — le corps
-        // HTML de la redirection, CALLé par cmd, avorte le batch logon entier
-        // et tue tous les fragments suivants (constaté 2026-07-03).
-        'gpo/shortcuts_out\.php' => 'noop:raccourcis servis nativement par l agent SE5',
+        // Story 38.2 — l'entrée `gpo/shortcuts_out\.php` => `noop:…` a été RETIRÉE :
+        // le tombstone natif `/gpo/shortcuts_out.php` (route `legacy.tombstone.shortcuts`,
+        // déclarée AVANT le catchall) la supersède. La convention `noop:` de
+        // LegacyCatchallController reste disponible comme mécanisme générique.
         // Story 16.2 — Décision SM D5 : bloquer uniquement la page d'index legacy.
         // Les pages d'édition (gpo-maj.php, gpo-export.php, etc.) restent
         // accessibles pour la cohabitation jusqu'aux Stories 16.4/16.5.

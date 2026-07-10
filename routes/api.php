@@ -430,8 +430,10 @@ Route::post('/v1/controlhub/contract', ContractIngestionController::class)
 | et le groupe `v1/shortcuts/export` (`shortcuts.export.*`) — 100 % legacy
 | (méthodes `apiV1`/`script`/`file`/`icon`) — ont été SUPPRIMÉS. Le canal AGENT
 | desired-state (`/api/v1/agent/*` + StateProviders) est totalement indépendant
-| et reste intact. Le middleware `legacy.config.channel` est CONSERVÉ (gate les
-| endpoints WPKG `linux_out`/`winget_out`, hors scope 27.14).
+| et reste intact. L'ancien kill-switch de dev (middleware + flag) a été RETIRÉ
+| en story 38.2 : la sémantique 410 est remplacée par les tombstones natifs
+| (`routes/web.php`), et les endpoints WPKG `linux_out`/`winget_out` restent
+| natifs, protégés par `local.request` + `throttle`.
 */
 
 

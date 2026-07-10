@@ -625,8 +625,8 @@ Route::get('/shortcuts/icon/{name}', function (string $name) {
 | le fragment de migration / passthrough de conf legacy (`MigrationController::
 | serveFragment` + `PASSTHROUGH_HANDLERS`) ont été SUPPRIMÉES. Le poste migré
 | reçoit désormais TOUTE sa configuration par l'agent desired-state
-| (bootstrap GPO 25.4 → enrôlement → convergence). Le kill-switch
-| `LEGACY_CONFIG_CHANNEL_ENABLED=false` (actif depuis 2026-06-12) montrait
+| (bootstrap GPO 25.4 → enrôlement → convergence). L'ancien kill-switch de dev
+| (2026-06-12, retiré en story 38.2 au profit des tombstones natifs) montrait
 | déjà le comportement cible (fragment no-op) ; la suppression le rend
 | permanent. Cf. story 27.14 / mémoire `project_no_legacy_transition_state`.
 */
@@ -658,7 +658,7 @@ Route::get('admin/gpo/del-roam.sh', [\App\Http\Controllers\Admin\RoamingProfileC
 |--------------------------------------------------------------------------
 | Les anciens endpoints HTTP WPKG `/wpkg/hosts.xml` (wpkg.hosts-xml) et
 | `/wpkg/profiles.xml` (wpkg.profiles-xml) — derniers vestiges du serving
-| WPKG legacy (gating `legacy.config.channel`, → 410 kill-switch / 500
+| WPKG legacy (jadis gatés par l'ancien kill-switch de dev, retiré en 38.2 ;
 | `*_xml_out.php`) — sont RETIRÉS. La livraison WPKG est désormais NATIVE :
 |   - le catalogue `packages.xml` (pré-substitué SE4FS_NAME) + les scripts
 |     sont GÉNÉRÉS (`php artisan wpkg:bundle`) et servis en STATIQUE par Apache
@@ -699,7 +699,7 @@ Route::match(['GET', 'POST'], '/wpkg/linux_out.php', [
     \App\Wpkg\Deployment\Http\Controllers\LinuxOutController::class,
     'handle',
 ])
-    ->middleware(['legacy.config.channel', 'local.request', 'throttle:300,1'])
+    ->middleware(['local.request', 'throttle:300,1'])
     ->name('wpkg.linux-out')
     ->withoutMiddleware(['web']);
 
@@ -707,7 +707,7 @@ Route::match(['GET', 'POST'], '/wpkg/winget_out.php', [
     \App\Wpkg\Deployment\Http\Controllers\WingetOutController::class,
     'handle',
 ])
-    ->middleware(['legacy.config.channel', 'local.request', 'throttle:300,1'])
+    ->middleware(['local.request', 'throttle:300,1'])
     ->name('wpkg.winget-out')
     ->withoutMiddleware(['web']);
 
@@ -1046,6 +1046,154 @@ Route::post('/auth/federated/callback', [
     \App\Auth\Federated\Http\FederatedLoginController::class,
     'callback',
 ])->name('auth.federated.callback');
+
+/*
+|--------------------------------------------------------------------------
+| Story 38.2 — Tombstones canal client legacy (extinction SE4)
+|--------------------------------------------------------------------------
+| Doctrine D1/D2 (epics-extinction-se4.md) : chaque route encore appelée par un
+| poste SE4 reçoit une réponse NATIVE terminale, TYPÉE et INERTE (200/204 no-op,
+| XML vide valide, JSON vide, 204) — JAMAIS une réimplémentation, JAMAIS du HTML
+| d'erreur sur un endpoint dont le corps est EXÉCUTÉ côté poste (`curl > x.cmd &&
+| call x.cmd`, `eval` du corps par le démon autorun). Les corps sont des messages
+| FIXES : aucun paramètre de requête n'est réfléchi (réflexion dans un corps
+| CALLé/eval'é = injection). Un tombstone n'installe et n'exécute rien d'actif.
+|
+| **ORDRE STRICT** : ces routes DOIVENT rester AVANT le catchall `{path}`
+| ci-dessous, sinon le catchall proxifie vers le vhost legacy et le poste
+| exécute du HTML/erreur. Test garde-fou : `LegacyTombstoneRoutesTest`.
+|
+| **Sécurité iso 17.6 (`feedback_auth_iso_legacy`)** : appels machine sans
+| session/CSRF → `withoutMiddleware(['web'])` ; AUCUN middleware d'auth (postes
+| non enrôlés au logon/boot) ; protection = `local.request` (allowlist LAN) +
+| `throttle:300,1` (logon/boot de masse à la rentrée).
+|
+| **Exception bornée — canal Linux vivant (Q4, mesure lab1 2026-07-10)** :
+| `gpo/applications.php` avec `os=linux` n'est PAS tombstoné → PASSTHROUGH vers
+| le catchall (comportement fonctionnel préservé, hit loggé par le catchall).
+| `gpo/network_out.php` et `printers/out_printers.php` n'ont AUCUNE route native
+| (poste Linux 172.20.1.101 réel constaté) — elles continuent d'atteindre le
+| catchall. **Critère de sortie de l'exception** : extinction mesurée du canal
+| (zéro hit `os=linux` / `network_out` / `out_printers` sur la période
+| d'observation 38.6) OU livraison de l'agent Linux (post-MVP,
+| `project_linux_no_gpo_http_scripts`).
+|
+| **Explicitement HORS tombstone** (pas de route native — restent au catchall) :
+|   - `gpo/network_out.php`, `printers/out_printers.php` (canal Linux vivant) ;
+|   - `gpo/del_roam.php`, `gpo/no_roam.php`, `gpo/user_profile_stats.php`
+|     (early-returns natifs existants du catchall, 1bis.18f) ;
+|   - `ipxe/Win10/repair.bat.php` et `ipxe/Win10/diskpart.php` (encore consommés
+|     par le flow WinPE natif — les tombstoner CASSERAIT la réparation Windows) ;
+|   - `wpkg/{linux,winget}_out.php` (natifs 17.6, inchangés) ;
+|   - `ipxe/sysrescuecd/*`, `ipxe/clonezilla/*` (plus atteignables depuis un boot
+|     neuf — catchall/404 suffit, doctrine zéro-prod).
+*/
+$tombstone = \App\Http\Controllers\LegacyTombstoneController::class;
+
+// --- /gpo/* ---
+Route::match(['GET', 'POST'], '/gpo/applications.php', [$tombstone, 'applications'])
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.applications')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/gpo/shortcuts_out.php', [$tombstone, 'shortcuts'])
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.shortcuts')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/gpo/wallpaper_out.php', [$tombstone, 'noContent'])
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.wallpaper')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/gpo/veyon_out.php', [$tombstone, 'json'])
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.veyon')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/gpo/no_internet_out.php', [$tombstone, 'script'])
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.no-internet')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/gpo/associations_out.php', [$tombstone, 'json'])
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.associations')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/gpo/firefox_out.php', [$tombstone, 'json'])
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.firefox')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/gpo/thunderbird_out.php', [$tombstone, 'json'])
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.thunderbird')
+    ->withoutMiddleware(['web']);
+
+// --- /partages/* ---
+Route::match(['GET', 'POST'], '/partages/cloud_out.php', [$tombstone, 'script'])
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.cloud')
+    ->withoutMiddleware(['web']);
+
+// --- /wpkg/* (XML vide valide + puits de logs) ---
+Route::match(['GET', 'POST'], '/wpkg/hosts_xml_out.php', [$tombstone, 'xml'])
+    ->defaults('element', '<wpkg/>')
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.hosts-xml')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/wpkg/profiles_xml_out.php', [$tombstone, 'xml'])
+    ->defaults('element', '<profiles/>')
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.profiles-xml')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/wpkg/packages_xml_out.php', [$tombstone, 'xml'])
+    ->defaults('element', '<packages/>')
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.packages-xml')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/wpkg/wpkg_log.php', [$tombstone, 'emptyBody'])
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.wpkg-log')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/wpkg/download_prefix.php', [$tombstone, 'script'])
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.download-prefix')
+    ->withoutMiddleware(['web']);
+
+// --- /ipxe/* ---
+// Le démon Linux `autorun` fait `eval` du corps en boucle → commentaire bash
+// STRICT (`#`). DÉCLARÉE AVANT la variante `{version}/action.php` ci-dessous :
+// le littéral doit gagner (sinon `{version}=linux` capturerait cette URL).
+Route::match(['GET', 'POST'], '/ipxe/linux/action.php', [$tombstone, 'bashScript'])
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.ipxe-linux-action')
+    ->withoutMiddleware(['web']);
+
+// Machine à états d'install Windows (legacy `action.php`, cmd) — `{version}`
+// contraint pour ne pas déborder sur d'autres segments. APRÈS la variante linux.
+Route::match(['GET', 'POST'], '/ipxe/{version}/action.php', [$tombstone, 'script'])
+    ->where('version', '[A-Za-z0-9_.-]+')
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.ipxe-action')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/Win10/sysprep.xml.php', [$tombstone, 'xml'])
+    ->defaults('element', '<unattend/>')
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.ipxe-sysprep')
+    ->withoutMiddleware(['web']);
+
+Route::match(['GET', 'POST'], '/ipxe/Win10/unattend.xml.php', [$tombstone, 'xml'])
+    ->defaults('element', '<unattend xmlns="urn:schemas-microsoft-com:unattend"/>')
+    ->middleware(['local.request', 'throttle:300,1'])
+    ->name('legacy.tombstone.ipxe-unattend')
+    ->withoutMiddleware(['web']);
 
 /*
 |--------------------------------------------------------------------------

@@ -49,7 +49,9 @@ sequenceDiagram
   *déclaratif serveur / impératif agent*, idempotent par hash et extensible à
   d'autres OS. Voir [`shared-tools-provisioning.md`](shared-tools-provisioning.md).
 - **Une seule source de configuration.** Le canal de configuration legacy (SE4)
-  est éteint en bloc (kill-switch `LEGACY_CONFIG_CHANNEL_ENABLED`) : agent et
+  est éteint en bloc : chaque route client encore appelée reçoit une réponse native
+  **terminale, typée et inerte** (tombstones, story 38.2) — le kill-switch
+  `LEGACY_CONFIG_CHANNEL_ENABLED` a été RETIRÉ, remplacé par ces tombstones. Agent et
   legacy ne cohabitent jamais comme deux sources de vérité concurrentes.
 - **Le token EST l'identité.** Un poste = un bearer token opaque, de portée
   minimale (lire *son* état, écrire *ses* rapports). Les endpoints n'acceptent

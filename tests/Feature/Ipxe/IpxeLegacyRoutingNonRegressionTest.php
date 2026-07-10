@@ -39,9 +39,13 @@ class IpxeLegacyRoutingNonRegressionTest extends TestCase
         if (! Schema::hasTable('legacy_catchall_logs')) {
             Schema::create('legacy_catchall_logs', function (Blueprint $table) {
                 $table->id();
+                // Story 38.2 — colonnes additives (observabilité tombstones).
+                $table->string('source', 16)->default('catchall')->index();
                 $table->string('method', 10);
                 $table->string('path', 2048);
                 $table->string('ip', 45);
+                $table->string('machine', 255)->nullable();
+                $table->string('user_login', 255)->nullable();
                 $table->text('query_string')->nullable();
                 $table->text('referer')->nullable();
                 $table->timestamp('created_at');

@@ -37,9 +37,6 @@ class WingetOutSettingsTest extends TestCase
         SystemSetting::query()->whereIn('key', ['wpkg.winget_enabled', 'wpkg.allowed_ips'])->delete();
         // env défaut : false (fail-closed)
         Config::set('sambaedu.wpkg.winget_enabled', false);
-        // Isole du kill-switch legacy : l'.env /vm a LEGACY_CONFIG_CHANNEL_ENABLED=false
-        // (→ 410), ce qui masquerait le comportement testé ici. Défaut host = true.
-        Config::set('sambaedu.legacy_config_channel_enabled', true);
     }
 
     protected function tearDown(): void

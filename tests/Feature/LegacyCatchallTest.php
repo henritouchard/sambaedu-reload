@@ -37,9 +37,13 @@ class LegacyCatchallTest extends TestCase
         if (! Schema::hasTable('legacy_catchall_logs')) {
             Schema::create('legacy_catchall_logs', function (Blueprint $table) {
                 $table->id();
+                // Story 38.2 — colonnes additives (observabilité tombstones).
+                $table->string('source', 16)->default('catchall')->index();
                 $table->string('method', 10);
                 $table->string('path', 2048);
                 $table->string('ip', 45);
+                $table->string('machine', 255)->nullable();
+                $table->string('user_login', 255)->nullable();
                 $table->text('query_string')->nullable();
                 $table->text('referer')->nullable();
                 $table->timestamp('created_at');
@@ -108,11 +112,14 @@ class LegacyCatchallTest extends TestCase
      */
     public function test_blocked_script_route_with_noop_returns_comment_not_redirect(): void
     {
+        // Path SYNTHÉTIQUE (story 38.2) : `gpo/shortcuts_out.php` matche désormais
+        // le tombstone natif AVANT le catchall — on exerce la convention `noop:`
+        // générique sur un path fictif qui atteint bien le catchall.
         Config::set('sambaedu.blocked_legacy_routes', [
-            'gpo/shortcuts_out\.php' => 'noop:raccourcis servis nativement par l agent SE5',
+            'gpo/fake_noop_route\.php' => 'noop:route legacy neutralisee (test convention noop)',
         ]);
 
-        $response = $this->post('/gpo/shortcuts_out.php', ['os' => 'windows', 'action' => 'logon']);
+        $response = $this->post('/gpo/fake_noop_route.php', ['os' => 'windows', 'action' => 'logon']);
 
         $response->assertStatus(200);
         $response->assertHeader('Content-Type', 'text/plain; charset=UTF-8');
@@ -127,10 +134,10 @@ class LegacyCatchallTest extends TestCase
     {
         Config::set('sambaedu.legacy_path', null);
         Config::set('sambaedu.blocked_legacy_routes', [
-            'gpo/shortcuts_out\.php' => 'noop:raccourcis servis nativement par l agent SE5',
+            'gpo/fake_noop_route\.php' => 'noop:route legacy neutralisee (test convention noop)',
         ]);
 
-        $response = $this->post('/gpo/shortcuts_out.php', ['os' => 'windows', 'action' => 'logon']);
+        $response = $this->post('/gpo/fake_noop_route.php', ['os' => 'windows', 'action' => 'logon']);
 
         $response->assertStatus(200);
         $response->assertHeader('Content-Type', 'text/plain; charset=UTF-8');
@@ -143,10 +150,10 @@ class LegacyCatchallTest extends TestCase
     public function test_blocked_script_route_noop_uses_bash_comment_for_linux(): void
     {
         Config::set('sambaedu.blocked_legacy_routes', [
-            'gpo/shortcuts_out\.php' => 'noop:raccourcis servis nativement par l agent SE5',
+            'gpo/fake_noop_route\.php' => 'noop:route legacy neutralisee (test convention noop)',
         ]);
 
-        $response = $this->post('/gpo/shortcuts_out.php', ['os' => 'linux', 'action' => 'logon']);
+        $response = $this->post('/gpo/fake_noop_route.php', ['os' => 'linux', 'action' => 'logon']);
 
         $response->assertStatus(200);
         $this->assertStringStartsWith('# ', $response->getContent());

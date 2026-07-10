@@ -106,9 +106,11 @@ sans exception. Ce que le serveur décrit fait foi.
 transition créerait deux sources de vérité concurrentes — donc des conflits
 indécidables sur un même poste.
 
-**Décision.** Le canal de configuration legacy est **éteint en bloc** (kill-switch
-`LEGACY_CONFIG_CHANNEL_ENABLED`) ; il n'existe pas d'état transitoire où les deux
-canaux configurent le même poste.
+**Décision.** Le canal de configuration legacy est **éteint en bloc** : chaque route
+client encore appelée reçoit une réponse native **terminale, typée et inerte**
+(tombstones, story 38.2) — le kill-switch `LEGACY_CONFIG_CHANNEL_ENABLED` (sémantique
+410) a été RETIRÉ, remplacé par ces tombstones. Il n'existe pas d'état transitoire où
+les deux canaux configurent le même poste.
 
 **Conséquences.**
 - Un poste donné est configuré par **un** canal, jamais par les deux.

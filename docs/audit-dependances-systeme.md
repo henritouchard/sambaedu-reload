@@ -238,7 +238,9 @@ Ordonné par dépendance et par risque (du moins au plus intrusif).
 - SE5 **possède** sa config : `.env` + `config/*.php` comme source de vérité ; `sambaedu.conf` devient
   une **projection écrite par SE5**, plus une source lue. Retirer la lecture au boot dans
   `LdapRecordServiceProvider` au profit de `.env`.
-- Couper définitivement le canal legacy : `LEGACY_CONFIG_CHANNEL_ENABLED=false` (kill-switch déjà en place).
+- Couper définitivement le canal legacy : chaque route client encore appelée reçoit une réponse
+  native **terminale, typée et inerte** (tombstones, story 38.2) — le kill-switch
+  `LEGACY_CONFIG_CHANNEL_ENABLED` (sémantique 410) a été RETIRÉ, remplacé par ces tombstones.
 - Supprimer le pont TOTP `/etc/sambaedu/hashes` et le pont token APCu `apps.<token>` (autonomie session).
 
 ### Vague 2 — Internaliser les templates `/usr/share/sambaedu/*`

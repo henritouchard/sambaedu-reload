@@ -612,8 +612,9 @@ La commande retourne désormais 3 codes distincts (mise à jour `--description` 
 
 Réimplémentation native du nettoyage legacy `ldap_cleaner.php?do=3` /
 `clean_profiles('*')` : snapshot nocturne des tailles de `/home/profiles` +
-détection/purge des profils orphelins. **Aucun routage vers le legacy**
-(kill-switch `LEGACY_CONFIG_CHANNEL_ENABLED=false`).
+détection/purge des profils orphelins. **Aucun routage vers le legacy** (le kill-switch
+`LEGACY_CONFIG_CHANNEL_ENABLED` a été RETIRÉ en story 38.2 — les routes client legacy
+répondent désormais en tombstones natifs inertes).
 
 **Pré-requis spécifiques** :
 
