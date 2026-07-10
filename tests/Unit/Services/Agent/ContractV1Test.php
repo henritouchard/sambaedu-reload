@@ -194,7 +194,27 @@ class ContractV1Test extends TestCase
     // Rule::in(RESOURCE_TYPES). machine = 8 items, 16 items au total, hash
     // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
     // même valeur (test croisé NFR13).
-    private const FROZEN_STATE_HASH = 'e87fed1610a0c206065fb19cca444223725d8c6660b9c4b09f44a672f2d43fbd';
+    //
+    // Re-bumpé SCIEMMENT par la Story 38.3 (évolution MINEURE du contrat, §9) :
+    // NOUVEAU type `legacy_cleanup` (D1, nettoyage des crochets legacy SE4 du
+    // poste — suppression idempotente par SCAN sans store du catalogue
+    // d'artefacts legacy LOCAUX versionné DANS l'agent, portée Machine) — le
+    // golden gagne UN item en portée `machine` (payload EXACTEMENT 1 clé
+    // `{mozilla: "vanilla"}` — enum FERMÉ 1 valeur, trace contractuelle de la
+    // décision Q5-a : traitement VANILLA des paires profiles.ini/installs.ini
+    // référençant `sambaedu.default`, aucun profil forcé posé). Type AJOUTÉ
+    // (constante RESOURCE_TYPES additive) = forward-compatible, pas un major :
+    // un agent ≤ 2.8.0 IGNORE le type EN SILENCE (§8 — aucun statut au
+    // rapport), d'où publication de release 2.9.0 obligatoire (qui livre AUSSI
+    // les 2.6.0 fs_acl, 2.7.0 firewall et 2.8.0 privilege jamais publiées).
+    // `report.v1.json` est INCHANGÉ : les items de rapport
+    // `{type, status, hash[, detail]}` ne portent aucun payload (le `detail`
+    // « artefacts supprimés » de l'AC5 utilise le champ EXISTANT du §6, déjà
+    // illustré au golden) et le nouveau type entre dans ReportRequest via
+    // Rule::in(RESOURCE_TYPES). machine = 9 items, 17 items au total, hash
+    // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
+    // même valeur (test croisé NFR13).
+    private const FROZEN_STATE_HASH = 'fc8a5324db242927b502bd4861d72bb526d6e652e4fb3501fd84e41af698738b';
 
     private StateHasher $hasher;
 

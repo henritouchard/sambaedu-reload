@@ -98,6 +98,14 @@
                 ]
             },
             "hash": "047048d1b6374caaf5fbbc3e53a94c1ea05a9e6719d607a1ffba42c2a34a6b9a"
+        },
+        {
+            "type": "legacy_cleanup",
+            "semantics": "exclusive",
+            "payload": {
+                "mozilla": "vanilla"
+            },
+            "hash": "a0a1097487671bcacdb4722b8246b5b98de991fd5ef80d2c734ad324eb23164c"
         }
     ],
     "session": [

@@ -112,6 +112,20 @@ type InventoryReporter interface {
 	ReportInventory() []ReportInventoryItem
 }
 
+// DetailReporter : interface OPTIONNELLE qu'un handler peut implémenter pour
+// joindre un `detail` à son item de rapport sur les chemins de SUCCÈS
+// (compliant/drift — Story 38.3, AC5 : l'item `legacy_cleanup` en drift liste
+// les artefacts supprimés). Le moteur l'appelle APRÈS le dispatch (Test/Apply)
+// et n'attache le détail que s'il est non vide, borné à 2000 runes (contrat
+// §6). Le chemin d'ERREUR reste INCHANGÉ (le detail y est le message d'erreur,
+// errorReportItem). Cela NE change PAS le verdict du type (grain 27.8 intact) :
+// le détail est une DONNÉE additive — un handler « silencieux » (poste sain)
+// retourne "" et l'item reste sans detail (dédup serveur par hash préservée).
+type DetailReporter interface {
+	// ReportDetail : détail du DERNIER Test/Apply. Vide → champ omis.
+	ReportDetail() string
+}
+
 // AppliedEntry : dernier-appliqué d'un type (contrat §5) — hash OPAQUE
 // (hash d'item exclusive ou empreinte d'agrégat) + horodatage informatif.
 type AppliedEntry struct {
@@ -285,7 +299,22 @@ func (e *Engine) dispatch(handler Handler, typ string, typeItems []StateItem, ta
 
 	report := ReportItem{Type: typ, Status: verdict.Status, Hash: targetHash}
 
-	return e.withInventory(handler, report), verdict.ShouldPersist
+	return e.withInventory(handler, e.withDetail(handler, report)), verdict.ShouldPersist
+}
+
+// withDetail joint le détail d'un handler (s'il implémente DetailReporter,
+// ex. `legacy_cleanup` — Story 38.3) à son item de rapport de SUCCÈS
+// (compliant/drift). Jamais sur le chemin d'erreur (le detail y est déjà le
+// message d'erreur — errorReportItem, appelé avant withDetail n'est pas
+// concerné). Vide → champ omis (omitempty) ; borné à 2000 runes (contrat §6).
+func (e *Engine) withDetail(handler Handler, item ReportItem) ReportItem {
+	if reporter, ok := handler.(DetailReporter); ok && item.Detail == "" {
+		if detail := reporter.ReportDetail(); detail != "" {
+			item.Detail = truncateRunes(detail, detailMaxLength)
+		}
+	}
+
+	return item
 }
 
 // withInventory joint l'inventaire PAR SOUS-ENTITÉ d'un handler (s'il implémente

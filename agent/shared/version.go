@@ -205,7 +205,37 @@ package shared
 // PAS ENCORE ÉTÉ PUBLIÉES — la publication MANUELLE de la release 2.8.0
 // (update.sh ne publie jamais seul) livre les TROIS mécanismes d'un coup.
 //
+// 2.9.0 = nettoyage des crochets legacy SE4 (Story 38.3, contrat §7.10) :
+// NOUVEAU type `legacy_cleanup` + NOUVEAU handler `LegacyCleanupHandler`
+// (portée MACHINE / service SYSTEM seul) qui retire du poste les artefacts
+// legacy LOCAUX par SCAN idempotent SANS store (iso firewall/privilege — les
+// artefacts sont énumérables à chaque passe). Catalogue versionné DANS l'agent
+// (D3) : blobs `applications-*` (%windir%, %windir%\Temp, %TEMP% per-user),
+// marqueurs `.md5` (garde 32-hex), tâches planifiées `wpkg4`/`*-system`
+// (garde : l'action référence gpo/applications.php|wpkg — sinon conservée +
+// rapportée), scripts GPO LOCALE curl-ant `gpo/*.php` + purge `scripts.ini`
+// (JAMAIS GroupPolicy\DataStore), `wpkg-client.vbs`/`wpkg-gpo.txt`, jonctions
+// `install`/`rapports` (reparse-only — un vrai dossier = provisioning natif
+// 27.20, INTOUCHABLE), `action.cmd`/`autorun.cmd`/`gpo.txt`/`C:\Netinst`/
+// `%WINDIR%\Web\SE4`, valeur Run `action`, autologon résiduel `se4install`
+// (garde DefaultUserName), helpers `%ProgramFiles%\SambaEdu` en LISTE BLANCHE
+// nommée (JAMAIS Agent\**), paires Mozilla `profiles.ini`/`installs.ini`
+// référençant `sambaedu.default` (Firefox ET Thunderbird, chaque C:\Users\* —
+// Q5-a VANILLA : la PAIRE seulement, JAMAIS le dossier de profil, JAMAIS un
+// profiles.ini sain, AUCUN profil forcé posé). Payload `{mozilla: "vanilla"}`
+// (enum fermé). Reporting : drift + Detail listant les artefacts supprimés
+// (nouvelle interface OPTIONNELLE DetailReporter du moteur, additive) ; poste
+// sain = compliant sans Detail (zéro écriture, dédup serveur). Gating serveur :
+// capacité `legacy_hooks_cleanup` (unmanaged/on, défaut Broadcast unmanaged).
+// ⚠️ Un binaire ≤ 2.8.0 IGNORE le type legacy_cleanup EN SILENCE (contrat §8 —
+// aucun statut, aucune erreur : « poste jamais nettoyé, zéro erreur »). Golden
+// state.v1.json bumpé (+1 item legacy_cleanup machine, hashes figés jumeaux
+// PHP↔Go recalculés). ⚠️ PUBLICATION : les 2.6.0 (fs_acl), 2.7.0 (firewall) ET
+// 2.8.0 (privilege) N'ONT PAS ENCORE ÉTÉ PUBLIÉES — la publication MANUELLE de
+// la release 2.9.0 (update.sh ne publie jamais seul) livre les QUATRE
+// mécanismes d'un coup.
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.8.0"
+var Version = "2.9.0"

@@ -87,6 +87,18 @@ final class StateContract
         // autre changement. Un agent ≤ 2.7.0 IGNORE ce type EN SILENCE (contrat
         // §8 — aucun statut au rapport) → release 2.8.0 à publier.
         'privilege',
+        // Story 38.3 (D1) — nettoyage des crochets legacy SE4 du poste
+        // (`legacy_cleanup`) : suppression idempotente par SCAN sans store du
+        // catalogue d'artefacts legacy LOCAUX versionné DANS l'agent (blobs
+        // applications-*, tâches WPKG, scripts GPO locale, helpers, autologon
+        // se4install, paires Mozilla `sambaedu.default` — Q5-a VANILLA).
+        // Payload EXACTEMENT 1 clé `{mozilla: "vanilla"}` (enum FERMÉ 1
+        // valeur, §7.10) — le serveur GATE (capacité `legacy_hooks_cleanup`),
+        // l'agent sait QUOI nettoyer (D3). Ajout ADDITIF : `ReportRequest`
+        // (Rule::in) accepte le type sans autre changement. Un agent ≤ 2.8.0
+        // IGNORE ce type EN SILENCE (contrat §8 — aucun statut au rapport) →
+        // release 2.9.0 à publier.
+        'legacy_cleanup',
     ];
 
     /**

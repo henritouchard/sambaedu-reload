@@ -15,6 +15,7 @@ use App\Services\Agent\Providers\AssociationsStateProvider;
 use App\Services\Agent\Providers\DrivesStateProvider;
 use App\Services\Agent\Providers\FirewallCapabilityProvider;
 use App\Services\Agent\Providers\FolderAccessRulesStateProvider;
+use App\Services\Agent\Providers\LegacyCleanupCapabilityProvider;
 use App\Services\Agent\Providers\OverlayMachineStateProvider;
 use App\Services\Agent\Providers\OverlayStateProvider;
 use App\Services\Agent\Providers\PrintersStateProvider;
@@ -273,6 +274,18 @@ class AgentServiceProvider extends ServiceProvider
                 // D5, conteneur SANS store D4). UN seul provider (portée Machine).
                 // Une ligne, zéro modif du compilateur.
                 $app->make(PrivilegeCapabilityProvider::class),
+                // Story 38.3 — type `legacy_cleanup` (exclusive à IDENTITÉ FIXE /
+                // portée MACHINE, quatrième mécanisme HORS-REGISTRE). Le provider
+                // EXPANSE la capacité de gating `legacy_hooks_cleanup` → AU PLUS
+                // un item concret 1 clé {mozilla: "vanilla"} (enum FERMÉ §7.10,
+                // Q5-a VANILLA ; interpréteur de `spec` surchargé, `StateCompiler`
+                // INTOUCHÉ). `exclusiveKey() = "legacy_cleanup"` FIXE : UN seul
+                // nettoyage par poste, la maille la plus spécifique gagne l'item
+                // ENTIER (patron défaut Broadcast + override parc, 27.3ter). Le
+                // CATALOGUE d'artefacts legacy est versionné DANS l'agent (D3) —
+                // le serveur ne fait que GATER. Une ligne, zéro modif du
+                // compilateur.
+                $app->make(LegacyCleanupCapabilityProvider::class),
                 // Story 27.3bis — type `associations` (exclusive PAR IDENTIFIANT,
                 // portée session/compagnon HKCU) : catalogue d'associations de
                 // fichiers/protocoles par défaut activables par parc, compilées
