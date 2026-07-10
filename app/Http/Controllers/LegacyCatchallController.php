@@ -140,8 +140,19 @@ class LegacyCatchallController extends Controller
         // 4. Résolution legacy via proxy HTTP vers le vhost legacy (port 80)
         $legacyBasePath = config('sambaedu.legacy_path');
 
+        // Story 38.1 (D4) — Legacy absent = 404, jamais 500. Quand le FS legacy
+        // (`/var/www/sambaedu`) est absent ou invalide, on ne peut plus résoudre
+        // aucune URL legacy : on saute la résolution FS, on logge selon `log_404`
+        // (le monitoring d'extinction `legacy_catchall_logs` doit rester
+        // fonctionnel sans le FS legacy — cf. 38.6) et on répond 404, pas 500.
+        // L'ancien `abort(500)` faisait tomber TOUTE URL non matchée dès que le
+        // legacy était supprimé, ce qui interdisait l'extinction observable.
         if (empty($legacyBasePath) || ! is_dir($legacyBasePath)) {
-            abort(500, 'LEGACY_PATH est absent ou invalide. Vérifiez la configuration.');
+            if (config('sambaedu.log_404', true)) {
+                $this->logLegacyAccess($request, $path);
+            }
+
+            abort(404, 'Page non trouvée');
         }
 
         $legacyPath = rtrim($legacyBasePath, '/') . '/' . $path;

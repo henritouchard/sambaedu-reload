@@ -744,6 +744,97 @@ ensure_ipxe_bootstrap_native() {
 }
 
 # ============================================================================
+# Statiques iPXE servis par l'alias Apache /ipxe (Story 38.1)
+# ============================================================================
+# Les statiques iPXE (boot.ipxe, png/ipxe-se4.png, diconf/*, binaires
+# undionly.kpxe / snponly_x64.efi) vivaient sous /var/www/sambaedu/ipxe (legacy)
+# et étaient servis par l'alias Apache /ipxe. Pour rendre /var/www/sambaedu
+# supprimable (Epic 38 — extinction SE4), ils sont désormais VERSIONNÉS dans le
+# repo (resources/ipxe/static/) et provisionnés ici vers storage/ipxe/static/
+# (emplacement hors legacy servi par l'alias repointé dans setupApache.sh).
+#
+# Deux volets :
+#   1. Publier resources/ipxe/static/ → storage/ipxe/static/ (chown www-admin,
+#      lisible Apache « other » — sinon 404 silencieux, cf. project_php_fpm_user_www_admin).
+#   2. GREENFIELD TFTP : déposer undionly.kpxe / snponly_x64.efi dans
+#      /var/lib/tftpboot/ SEULEMENT s'ils y sont absents ou différents
+#      (cmp -s || install). Sur la VM actuelle c'est un no-op (fichiers identiques,
+#      propriété du paquet Debian sambaedu-boot-server) ; sur un hôte vierge sans
+#      les paquets SE4 cela rend le TFTP autonome. On NE touche PAS la config
+#      atftpd (racine /var/lib/tftpboot inchangée). FAIL-SOFT : /var/lib/tftpboot
+#      absent → log_warning + continuer (hôte sans serveur TFTP). IDEMPOTENT.
+
+ensure_ipxe_statics() {
+    log "Provisioning des statiques iPXE (Story 38.1)..."
+
+    local src="$APP_DIR/resources/ipxe/static"
+    local dest="$APP_DIR/storage/ipxe/static"
+
+    if [[ ! -d "$src" ]]; then
+        log_warning "Source des statiques iPXE absente ($src) — provisioning ignoré"
+        return 0
+    fi
+
+    # ── 1. Publier resources/ipxe/static/ → storage/ipxe/static/ ─────────────
+    mkdir -p "$dest"
+    # cp -a préserve l'arborescence (boot.ipxe, diconf/, png/, binaires) ;
+    # src/. copie le CONTENU (pas le dossier lui-même). Re-copie idempotente.
+    cp -a "$src"/. "$dest"/
+
+    # Miroir strict : un fichier retiré de resources/ipxe/static/ ne doit plus
+    # être servi (sinon il resterait exposé en HTTP anonyme indéfiniment).
+    # Purge fichier par fichier (pas de rm -rf), puis dossiers vides.
+    (
+        cd "$dest" || exit 0
+        find . -type f | while IFS= read -r f; do
+            [[ -f "$src/$f" ]] || rm -f "$f"
+        done
+        find . -depth -mindepth 1 -type d -empty -exec rmdir {} \; 2>/dev/null
+    )
+
+    if id www-admin >/dev/null 2>&1; then
+        chown -R www-admin:www-admin "$dest" 2>/dev/null \
+            || log_warning "chown www-admin échoué sur $dest (risque de 404 Apache)"
+    fi
+    # Lisible Apache (« other » : r sur fichiers, rx sur dossiers). u+rwX conserve
+    # l'écriture propriétaire ; X = exécution seulement sur dossiers. Le parent
+    # storage/ipxe/ créé par mkdir -p hérite de l'umask courant : le chmoder
+    # explicitement, sinon umask durci (027) = traversée Apache perdue → 404
+    # silencieux sur TOUS les statiques.
+    chmod u+rwX,go+rX "$APP_DIR/storage/ipxe" 2>/dev/null || true
+    chmod -R u+rwX,go+rX "$dest" 2>/dev/null || true
+    log_success "Statiques iPXE publiés dans $dest (chown www-admin, lisible Apache)"
+
+    # ── 2. Greenfield TFTP : déposer les binaires s'ils manquent/diffèrent ────
+    local tftp_dir="/var/lib/tftpboot"
+    if [[ ! -d "$tftp_dir" ]]; then
+        log_warning "Racine TFTP absente ($tftp_dir) — dépôt greenfield des binaires iPXE ignoré (hôte sans serveur TFTP ?)"
+        return 0
+    fi
+
+    local bin changed=0
+    for bin in undionly.kpxe snponly_x64.efi; do
+        if [[ ! -f "$src/$bin" ]]; then
+            log_warning "Binaire iPXE source absent ($src/$bin) — non déposé dans le TFTP"
+            continue
+        fi
+        # cmp -s : identique → no-op (cas VM, fichiers du paquet sambaedu-boot-server).
+        if cmp -s "$src/$bin" "$tftp_dir/$bin"; then
+            continue
+        fi
+        install -m 644 "$src/$bin" "$tftp_dir/$bin"
+        changed=1
+        log "Binaire TFTP déposé/mis à jour : $tftp_dir/$bin"
+    done
+
+    if [[ "$changed" -eq 0 ]]; then
+        log_success "Binaires iPXE TFTP déjà présents et identiques ($tftp_dir) — aucun changement"
+    else
+        log_success "Binaires iPXE greenfield déposés dans $tftp_dir (644)"
+    fi
+}
+
+# ============================================================================
 # Permissions du partage [install] (lecture par le compte machine des postes)
 # ============================================================================
 # La tâche planifiée GPO `wpkg4` lance la post-install en SYSTEM (= compte
@@ -1319,6 +1410,9 @@ main() {
 
     echo ""
     ensure_ipxe_bootstrap_native
+
+    echo ""
+    ensure_ipxe_statics
 
     echo ""
     ensure_wpkg_bootstrap

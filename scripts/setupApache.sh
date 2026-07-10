@@ -103,12 +103,21 @@ cat > "$APACHE_SITES_AVAILABLE/sambaedu.conf" << VHOST_SER
         Require all granted
     </Directory>
 
-    # /ipxe : sert les fichiers statiques volumineux (.wim, .sdi, wimboot, etc.)
-    # directement depuis le legacy, .php legacy via FPM, et FallbackResource
-    # délègue à Laravel pour les URL sans fichier physique (/ipxe/boot,
-    # /ipxe/admin, /ipxe/enrollment/name, etc. — story 3.x + 4.9).
-    Alias /ipxe /var/www/sambaedu/ipxe
-    <Directory /var/www/sambaedu/ipxe>
+    # /ipxe : sert les statiques iPXE (boot.ipxe, png/, diconf/, binaires
+    # undionly.kpxe/snponly_x64.efi) depuis le repo SE5 (Story 38.1) — plus AUCUNE
+    # dépendance à /var/www/sambaedu : ces fichiers sont désormais versionnés sous
+    # resources/ipxe/static/ et provisionnés dans storage/ipxe/static/ par
+    # ensure_ipxe_statics (update.sh), chown www-admin. FallbackResource délègue à
+    # Laravel pour toute URL SANS fichier physique (/ipxe/boot, /ipxe/admin,
+    # /ipxe/enrollment/name, etc. — story 3.x + 4.9) : les routes natives priment
+    # tant qu'aucun fichier ne shadow l'URL (ex. /ipxe/boot.ipxe reste servi en
+    # statique, iso-fonctionnel au comportement legacy). À chown www-admin.
+    #
+    # GARDE-FOU SÉCURITÉ : l'Alias pointe EXACTEMENT sur le sous-dossier dédié
+    # storage/ipxe/static, JAMAIS sur storage/ entier (storage/keys/pki/
+    # contient les PFX code-signing + clés CA).
+    Alias /ipxe $SER_ROOT/storage/ipxe/static
+    <Directory $SER_ROOT/storage/ipxe/static>
         Options -Indexes +FollowSymLinks
         AllowOverride None
         Require all granted
