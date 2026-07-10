@@ -272,6 +272,18 @@ func newAgent(echo bool) *shared.Agent {
 					Ops: &privilegeOps{log: logger},
 					Log: logger,
 				},
+				// Story 38.3 — legacy_cleanup (exclusive / scope MACHINE) : le
+				// SERVICE SYSTEM retire les crochets clients legacy SE4 par
+				// SCAN idempotent SANS store (catalogue versionné DANS l'agent :
+				// blobs applications-*, tâches wpkg4/*-system gardées par
+				// action, scripts GPO locale curl-ant gpo/*.php, jonctions
+				// install/rapports reparse-only, helpers en liste blanche,
+				// autologon se4install gardé, paires Mozilla sambaedu.default —
+				// Q5-a VANILLA). Chaque suppression est individuellement gardée
+				// (piège #4) ; JAMAIS GroupPolicy\DataStore, wpkg.xml, le
+				// dossier SambaEdu ni Agent\**. MACHINE SEULEMENT (HKLM,
+				// schtasks, C:\Users\* — jamais le compagnon, D2).
+				"legacy_cleanup": newLegacyCleanupHandler(logger),
 			},
 			Log: logger,
 		},

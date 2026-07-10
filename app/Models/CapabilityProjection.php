@@ -88,6 +88,20 @@ class CapabilityProjection extends Model
      */
     public const MECHANISM_PRIVILEGE = 'privilege';
 
+    /**
+     * Mécanisme `legacy_cleanup` (Story 38.3, contrat §7.10 — type
+     * `legacy_cleanup`) : nettoyage des crochets clients legacy SE4 du poste,
+     * portée **Machine** (service SYSTEM seul). La `spec` porte `{mozilla}` —
+     * enum FERMÉ (`vanilla` seule valeur v1, décision Q5-a : suppression des
+     * paires profiles.ini/installs.ini référençant `sambaedu.default`, AUCUN
+     * profil forcé posé). Le CATALOGUE d'artefacts (blobs applications-*,
+     * tâches WPKG, scripts GPO locale, helpers, autologon se4install) est
+     * versionné DANS l'agent (D3 : connaissance legacy figée, pas du
+     * paramétrage métier) — le serveur ne fait que GATER. Réconciliation par
+     * SCAN sans store (iso `firewall`/`privilege`, PAS `fs_acl`).
+     */
+    public const MECHANISM_LEGACY_CLEANUP = 'legacy_cleanup';
+
     /** Mécanisme membership de groupe local — slice C (idem). */
     public const MECHANISM_LOCALGROUP = 'localgroup';
 

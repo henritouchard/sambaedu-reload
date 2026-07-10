@@ -239,7 +239,8 @@ Identifiants prévus :
 `wallpaper`, `lockscreen`, `overlay`, `shortcuts`, `printers`, `drives`,
 `associations`, `registry`, `app_config`, `applications`, `registry_list`
 (Story 35.2, cf. §7.6), `fs_acl` (Story 36.1, cf. §7.7), `firewall`
-(Story 36.2, cf. §7.8), `privilege` (Story 35.6, cf. §7.9).
+(Story 36.2, cf. §7.8), `privilege` (Story 35.6, cf. §7.9), `legacy_cleanup`
+(Story 38.3, cf. §7.10).
 
 ### 7.1 Payload `registry`
 
@@ -960,6 +961,83 @@ assignations parc/salle/poste/broadcast.
 > (update.sh ne publie jamais seul). Les 2.6.0 (`fs_acl`) et 2.7.0 (`firewall`)
 > n'ayant pas encore été publiées, la 2.8.0 livre les TROIS mécanismes.
 
+### 7.10 Payload `legacy_cleanup`
+
+Type `legacy_cleanup` (Story 38.3) — **nettoyage des crochets clients legacy
+SE4**, QUATRIÈME mécanisme HORS-REGISTRE. Les postes (y compris migrés à
+l'agent) appellent encore `gpo/applications.php`/`gpo/shortcuts_out.php` au
+logon via des artefacts LOCAUX (blobs, tâches planifiées, scripts GPO locale,
+helpers) : ce type fait retirer ces artefacts par le canal authentifié de
+l'agent — jamais par du code servi en HTTP (D2 de l'epic 38). Sémantique
+**`exclusive` à IDENTITÉ FIXE** (`legacy_cleanup` — il n'existe qu'UN nettoyage
+par poste : la maille la plus spécifique gagne l'item ENTIER). Portée
+**`machine` UNIQUEMENT** (HKLM, schtasks, `C:\Users\*` : SYSTEM seul — aucun
+volet compagnon).
+
+```json
+{
+  "type": "legacy_cleanup",
+  "semantics": "exclusive",
+  "payload": {
+    "mozilla": "vanilla"
+  },
+  "hash": "a0a10974…eb23164c"
+}
+```
+
+Le payload porte **EXACTEMENT 1 clé** — jamais d'id de capacité, zéro float
+(§4.1) :
+
+| Clé | Type JSON | Sens |
+|---|---|---|
+| `mozilla` | string | Traitement des paires Mozilla forcées — **enum FERMÉ à la SEULE valeur `vanilla`** en v1 (décision Q5-a, 2026-07-10) : pour chaque profil réel sous `C:\Users\*`, si `profiles.ini` référence `sambaedu.default`, la PAIRE `profiles.ini`+`installs.ini` est supprimée (Firefox ET Thunderbird), le dossier `sambaedu.default` et le reste du profil sont PRÉSERVÉS, AUCUN profil forcé n'est posé — Firefox/Thunderbird recréent leur profil localement. Un `profiles.ini` ne référençant pas `sambaedu.default` (géré par l'utilisateur) est INTOUCHÉ. L'enum est la trace CONTRACTUELLE de Q5 — extensible si une option (b)/(c) revenait un jour. |
+
+**Le serveur GATE, l'agent sait QUOI nettoyer (D3).** Le CATALOGUE des
+artefacts (blobs `applications-*.cmd/.ps1` + marqueurs `.md5` gardés 32-hex,
+tâches `wpkg4`/`*-system` gardées par lecture de l'ACTION, scripts GPO LOCALE
+curl-ant `gpo/*.php` + purge `scripts.ini`, `wpkg-client.vbs`/`wpkg-gpo.txt`,
+jonctions `install`/`rapports` reparse-only, `action.cmd`/`autorun.cmd`/
+`gpo.txt`/`C:\Netinst`/`%WINDIR%\Web\SE4`, valeur Run `action`, autologon
+résiduel `se4install` gardé par `DefaultUserName`, helpers
+`%ProgramFiles%\SambaEdu` en LISTE BLANCHE nommée) est **versionné DANS
+l'agent** — connaissance legacy FIGÉE (chemins Windows), pas du paramétrage
+métier. Le payload reste donc minimal : la seule donnée contractuelle est le
+traitement Mozilla.
+
+**Réconciliation par SCAN SANS store (iso `firewall`/`privilege` — PAS
+`fs_acl`).** Les artefacts sont énumérables à chaque passe : `Test` scanne
+(zéro artefact ⇒ compliant, AUCUNE écriture), `Apply` supprime avec la GARDE
+propre à chaque catégorie — liste blanche stricte, jamais de récursif large
+(`RemoveAll` borné à `C:\Netinst` et `%WINDIR%\Web\SE4`). INTERDITS
+STRUCTURELS : `%ProgramFiles%\SambaEdu\Agent\**` (l'agent lui-même),
+`%SystemRoot%\wpkg.xml` (base WPKG du canal natif), `GroupPolicy\DataStore\`
+(cache des GPO de DOMAINE — contient SE_agent_bootstrap), les VRAIS dossiers
+`install` (provisionnés par le module natif 27.20), les dossiers
+`sambaedu.default` (données utilisateur).
+
+**Reporting (§6).** Passe de nettoyage ⇒ `drift` + `detail` listant les
+artefacts supprimés (identifiants stables `file:…`, `task:…`, `reg:…`,
+`mozilla:…` — borné 2000 runes, interface additive `DetailReporter` du
+moteur). Échec partiel (fichier verrouillé) ⇒ `error` avec le détail des
+échecs, les suppressions réussies restent acquises (level-triggered, la passe
+suivante retente). Poste sain ⇒ `compliant` SANS detail : aucune écriture
+disque, rapport identique au précédent, dédup serveur par hash ⇒ ZÉRO
+événement.
+
+**Nettoyage ONE-WAY, gating `unmanaged`/`on` (pas de `off`).** On ne
+« restaure » pas des crochets legacy : la capacité serveur
+`legacy_hooks_cleanup` (défaut Broadcast `unmanaged` = type ABSENT du state =
+agent inactif) n'a pas de valeur `off` — la règle « off écrit une vraie
+valeur » s'applique aux maps registre symétriques, pas à un mécanisme qui ne
+POSE rien.
+
+> **Agents antérieurs à 2.9.0** : le type `legacy_cleanup` est **ignoré EN
+> SILENCE** (§8 — aucun statut, aucune erreur). Symptôme « poste jamais
+> nettoyé, zéro erreur ». La release 2.9.0 DOIT être publiée manuellement
+> (update.sh ne publie jamais seul). Les 2.6.0 (`fs_acl`), 2.7.0 (`firewall`)
+> et 2.8.0 (`privilege`) n'ayant pas encore été publiées, la 2.9.0 livre les
+> QUATRE mécanismes.
+
 ## 8. Tableau vide ≠ type absent (décision de contrat)
 
 Les items d'une portée sont une **liste**, pas une map. La distinction
@@ -995,7 +1073,13 @@ décision de contrat consommée par chaque handler côté agent.
   2.6.0 fs_acl jamais publiée). Ex. Story 35.6 : type `privilege` (§7.9,
   mécanisme HORS-REGISTRE — droits de logon LSA SeDeny* gérés), golden bumpé
   avec justification, agent bumpé 2.8.0 (publication qui livre les 2.6.0/2.7.0
-  jamais publiées). ⚠️ Contrairement au champ ajouté, un agent
+  jamais publiées). Ex. Story 38.3 : type `legacy_cleanup` (§7.10, mécanisme
+  HORS-REGISTRE — nettoyage des crochets clients legacy SE4), golden
+  `state.v1.json` bumpé avec justification, `report.v1.json` INCHANGÉ (aucun
+  champ de rapport nouveau — `detail` existait déjà, seule l'interface Go
+  additive `DetailReporter` l'alimente sur les chemins de succès), agent bumpé
+  2.9.0 (publication qui livre les 2.6.0/2.7.0/2.8.0 jamais publiées).
+  ⚠️ Contrairement au champ ajouté, un agent
   ANTÉRIEUR **ignore un type inconnu EN SILENCE** (§8 : type sans handler =
   aucun statut émis) — « réglage sans effet, zéro erreur ». La publication de la
   release n'est pas optionnelle.

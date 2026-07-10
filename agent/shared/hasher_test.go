@@ -127,7 +127,18 @@ import (
 // 2.7.0 firewall jamais publiées). `report.v1.json` INCHANGÉ. machine = 8, 16
 // items au total, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP
 // (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
-const frozenStateHash = "e87fed1610a0c206065fb19cca444223725d8c6660b9c4b09f44a672f2d43fbd"
+// Re-bumpé SCIEMMENT par la Story 38.3 (§9) : NOUVEAU type `legacy_cleanup`
+// (D1, nettoyage des crochets legacy SE4 — suppression idempotente par SCAN
+// sans store du catalogue d'artefacts legacy LOCAUX versionné DANS l'agent,
+// portée MACHINE) — le golden gagne UN item en portée MACHINE (payload
+// EXACTEMENT 1 clé `{mozilla: "vanilla"}` — enum FERMÉ 1 valeur, décision
+// Q5-a VANILLA). Type AJOUTÉ (ResourceTypes additive) = forward-compatible,
+// pas un major : un agent ≤ 2.8.0 IGNORE le type EN SILENCE (§8, aucun statut
+// au rapport) → publication de release 2.9.0 obligatoire (livre AUSSI les
+// 2.6.0/2.7.0/2.8.0 jamais publiées). `report.v1.json` INCHANGÉ. machine = 9,
+// 17 items au total, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP
+// (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
+const frozenStateHash = "fc8a5324db242927b502bd4861d72bb526d6e652e4fb3501fd84e41af698738b"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -231,8 +242,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 16 {
-		t.Errorf("16 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2 + fs_acl machine 36.1 + firewall machine 36.2 + privilege machine 35.6), %d vérifiés", checked)
+	if checked != 17 {
+		t.Errorf("17 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2 + fs_acl machine 36.1 + firewall machine 36.2 + privilege machine 35.6 + legacy_cleanup machine 38.3), %d vérifiés", checked)
 	}
 }
 

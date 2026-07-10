@@ -3839,3 +3839,116 @@ principal universel verrouillerait le poste — bornée des DEUX côtés.
 - [ ] Golden : `state.v1.json` +1 item privilege machine, `FROZEN_STATE_HASH`
       PHP = `frozenStateHash` Go recalculés à l'identique (`e87fed16…`) ;
       `report.v1.json` INCHANGÉ.
+
+## Story 38.3 — Nettoyage des crochets legacy SE4 (`legacy_cleanup`)
+
+Nouveau mécanisme HORS-REGISTRE (quatrième, patron 35.6/36.1/36.2) : type
+contrat `legacy_cleanup` (§7.10 — exclusive à identité FIXE, portée Machine,
+payload `{mozilla: "vanilla"}` enum fermé Q5-a), capacité de gating
+`legacy_hooks_cleanup` (toggle `unmanaged`/`on`, défaut Broadcast `unmanaged`
+— PAS de `off` : nettoyage one-way), handler Go `LegacyCleanupHandler` (SYSTEM
+seul, scan SANS store iso firewall/privilege). Le CATALOGUE d'artefacts est
+versionné DANS l'agent (D3). Agent **2.9.0** — publication MANUELLE obligatoire
+(un binaire ≤ 2.8.0 ignore le type EN SILENCE ; les 2.6.0/2.7.0/2.8.0 n'ayant
+jamais été publiées, la 2.9.0 livre fs_acl + firewall + privilege +
+legacy_cleanup d'un coup).
+
+### ⚠️ Limite d'environnement /vm (piège #1 — GPO de DOMAINE pleine)
+
+Sur /vm, le déclencheur des appels `gpo/*.php` N'EST PAS local au poste : la
+GPO de domaine « applications » `{D418994B-0F25-4C3D-8627-4EB4F913BC12}` est
+PLEINE sur le DC dev (`se4ad.localdev.fr`) et liée à la RACINE — ses
+`logon.cmd`/`startup.cmd` re-curl-ent à CHAQUE logon depuis SYSVOL et recréent
+les blobs `%TEMP%`. Le nettoyage local ne peut donc PAS produire « zéro hit »
+sur /vm à lui seul (re-nettoyage idempotent des blobs à chaque passe, sans
+erreur — ce n'est PAS un échec du module). L'e2e « zéro hit » exige :
+**un poste LAB migré** (GPO legacy = coquilles vides là-bas), OU sur /vm la
+**neutralisation AD préalable** de `{D418994B-…}` (délier de la racine ou vider
+ses scripts avec bump `GPT.INI` Version). Sur lab1 (AD fédéré 75 étabs) : ne
+JAMAIS toucher les GPO racine. **REMONTÉE 38.6** : les hits tombstones pilotés
+par cette GPO domaine ne s'éteindront pas sans action AD — le critère GO de
+l'extinction doit en tenir compte.
+
+### Scénario 38.3.1 — Chaîne complète e2e lab (AC7)
+
+Ordre STRICT (piège #2 — publier AVANT migrate/armement) :
+
+1. **Publier** la release 2.9.0 (manuelle — `php artisan agent:release` +
+   publication ; update.sh ne publie jamais). Vérifier le check-in : la version
+   RAPPORTÉE par le poste pilote passe à 2.9.0.
+2. **Migrer** : `php artisan migrate` sur la cible (seed
+   `legacy_hooks_cleanup`, défaut Broadcast `unmanaged` = inactif partout).
+3. **Armer** : capacité `on` en override sur le PARC PILOTE (UI capacités du
+   groupe — patron défaut Broadcast + override parc), postes porteurs
+   d'artefacts legacy (poste installé par SE4 ou migré).
+4. **Convergence** : au cycle suivant, rapport `drift` avec `detail` listant
+   les artefacts supprimés (`file:…`, `task:…`, `reg:…`, `mozilla:…`).
+5. **Reboot + logon** d'un compte élève : plus AUCUN hit `gpo/applications.php`
+   / `gpo/shortcuts_out.php` de ce poste dans les logs serveur
+   (`grep 'gpo/.*\.php' /var/log/apache2/access.log` filtré sur l'IP du poste).
+6. **Firefox vanilla** : lancer Firefox avec un compte dont la paire
+   `profiles.ini`/`installs.ini` référençait `sambaedu.default` → il recrée un
+   profil LOCAL sain (PAS de « profil manquant ou inaccessible ») ; le dossier
+   `sambaedu.default` est toujours là (données préservées). Idem Thunderbird.
+7. **Stabilité** : cycle suivant sans changement local → rapport `compliant`
+   SANS detail, AUCUN nouvel événement `agent_report_events` (dédup par hash).
+
+### Scénario 38.3.2 — Gardes de sûreté (ne JAMAIS toucher)
+
+Sur le poste de test, vérifier après convergence que sont INTACTS :
+
+1. `%ProgramFiles%\SambaEdu\Agent\**` (l'agent lui-même) et tout dossier
+   d'outils/overlay provisionné par SE5.
+2. `%SystemRoot%\wpkg.xml` (base locale WPKG du canal natif).
+3. `GroupPolicy\DataStore\**` (cache GPO de DOMAINE — contient
+   SE_agent_bootstrap `{A5B9AB83-…}`).
+4. Un VRAI dossier `%WinDir%\install` (module provision 27.20) — seule une
+   JONCTION (reparse point vers `\\<serveur>\…`) est supprimée.
+5. Un fichier `.md5` de `%windir%` dont le contenu N'EST PAS 32-hex.
+6. Une tâche nommée `wpkg4`/`logon-system` dont l'ACTION ne référence NI
+   `gpo/applications.php` NI wpkg : conservée + rapportée en detail (suspect).
+7. Un `profiles.ini` ne référençant PAS `sambaedu.default` (profil géré par
+   l'utilisateur) ; le dossier `sambaedu.default` lui-même (jamais supprimé).
+8. Autologon Winlogon dont `DefaultUserName ≠ se4install` : intouché (la
+   purge des 5 valeurs n'a lieu QUE si `DefaultUserName == se4install`).
+
+### Scénario 38.3.3 — Poste sain silencieux (AC5)
+
+1. Poste déjà nettoyé (ou jamais installé par SE4), capacité `on`.
+2. Cycles successifs : item `compliant` SANS detail, zéro écriture disque,
+   rapport identique ⇒ dédup serveur ⇒ ZÉRO événement nouveau.
+
+### Scénario 38.3.4 — Retrait du gating (piège #7, one-way)
+
+1. Parc repassé à `unmanaged` (ou capacité désactivée) : le type disparaît du
+   state, l'agent cesse de scanner — RIEN n'est « restauré » (le handler ne
+   pose rien, il n'y a pas d'orphelin possible). Pas de valeur `off` : c'est
+   VOULU (la règle « off écrit une vraie valeur » vaut pour les maps registre
+   symétriques).
+2. NOTE sémantique compilateur (discipline UNMANAGED commune) : un override
+   parc `unmanaged` N'ÉMET PAS de candidat — il ne masque donc PAS un défaut
+   Broadcast `on`. Pour désarmer globalement, repasser le DÉFAUT Broadcast à
+   `unmanaged` (les parcs pilotes restant armés par leur override `on`).
+
+### Scénario 38.3.5 — Binaire antérieur : silence total (piège #2)
+
+1. Sur un poste resté en agent ≤ 2.8.0, armer la capacité : AUCUN statut
+   `legacy_cleanup` au rapport, aucune erreur — poste jamais nettoyé.
+2. Publier la 2.9.0, laisser l'agent s'auto-mettre à jour : le type apparaît
+   au rapport et converge.
+
+### Check-list
+
+- [ ] 38.3.1 — Chaîne publier → migrer → armer parc pilote → drift+detail →
+      reboot+logon → zéro hit `gpo/*.php` → Firefox/Thunderbird vanilla →
+      compliant stable.
+- [ ] 38.3.2 — Les 8 gardes/interdits vérifiés intacts après convergence.
+- [ ] 38.3.3 — Poste sain : compliant sans detail, zéro événement (dédup).
+- [ ] 38.3.4 — `unmanaged` cesse de scanner, ne restaure rien ; désarmement
+      global par le défaut Broadcast.
+- [ ] 38.3.5 — Binaire ≤ 2.8.0 : type ignoré en silence ; 2.9.0 le réveille.
+- [ ] /vm : e2e « zéro hit » UNIQUEMENT après neutralisation AD de
+      `{D418994B-…}` (sinon blobs %TEMP% recréés à chaque logon — attendu).
+- [ ] Golden : `state.v1.json` +1 item legacy_cleanup machine,
+      `FROZEN_STATE_HASH` PHP = `frozenStateHash` Go recalculés à l'identique
+      (`fc8a5324…`) ; `report.v1.json` INCHANGÉ.

@@ -49,6 +49,15 @@ var ResourceTypes = []string{
 	// SYSTEM, portée Machine, contrat §7.9). Ajout ADDITIF. Un agent ≤ 2.7.0
 	// IGNORE ce type EN SILENCE (contrat §8).
 	"privilege",
+	// Story 38.3 (D1) — nettoyage des crochets legacy SE4 du poste
+	// (`legacy_cleanup`) : suppression idempotente du catalogue d'artefacts
+	// legacy LOCAUX (blobs applications-*, tâches WPKG, scripts GPO locale,
+	// helpers, autologon se4install, paires Mozilla `sambaedu.default` —
+	// catalogue versionné DANS l'agent, D3). Réconciliation par SCAN sans
+	// store (iso firewall/privilege), service SYSTEM, portée Machine, contrat
+	// §7.10, payload `{mozilla: "vanilla"}` (enum fermé 1 valeur, Q5-a). Ajout
+	// ADDITIF. Un agent ≤ 2.8.0 IGNORE ce type EN SILENCE (contrat §8).
+	"legacy_cleanup",
 }
 
 // ResourceStatuses : statuts de conformité du rapport (§6 — iso
