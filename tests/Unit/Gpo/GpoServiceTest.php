@@ -166,7 +166,8 @@ class GpoServiceTest extends TestCase
      */
     public static function writeStubsProvider(): iterable
     {
-        yield 'create' => ['create', ['my-gpo'], 'Story 16.4'];
+        // Story 38.4 : `create` n'est plus un stub (implémenté pour le port
+        // natif d'import_gpo) — couvert par les tests `create_*` ci-dessous.
         yield 'delete' => ['delete', ['{AAAA-BBBB}'], 'Story 16.4'];
         yield 'fetch' => ['fetch', ['{AAAA-BBBB}', '/tmp/policies'], 'Story 16.3/16.4'];
     }
@@ -183,6 +184,71 @@ class GpoServiceTest extends TestCase
             $this->assertStringContainsString('not implemented yet', $e->getMessage());
             $this->assertStringContainsString($expectedStoryRef, $e->getMessage());
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 38.4 — GpoService::create() natif (port d'import_gpo / gpocreate).
+    // -----------------------------------------------------------------------
+
+    #[Test]
+    public function create_invokes_samba_tool_and_parses_returned_guid(): void
+    {
+        $guid = '{11111111-2222-3333-4444-555555555555}';
+
+        // 1er appel : list() (idempotence) → aucune GPO. 2e : gpo create → GUID.
+        $calls = 0;
+        Process::fake(function () use (&$calls, $guid) {
+            $calls++;
+            // list() = listall (vide) ; create = sortie avec GUID.
+            return $calls === 1
+                ? Process::result(output: '', exitCode: 0)
+                : Process::result(output: "GPO {$guid} created", exitCode: 0);
+        });
+
+        $summary = FakesGpoService::makeService()->create('SE_test_gpo');
+
+        $this->assertSame($guid, $summary->name);
+        $this->assertSame('SE_test_gpo', $summary->displayName);
+
+        Process::assertRan(fn ($p) => is_array($p->command)
+            && in_array('gpo', $p->command, true)
+            && in_array('create', $p->command, true)
+            && in_array('SE_test_gpo', $p->command, true));
+    }
+
+    #[Test]
+    public function create_is_idempotent_when_gpo_already_exists(): void
+    {
+        // list() renvoie déjà une GPO du même displayName → pas de `create`.
+        $existing = "GPO          : {AAAABBBB-CCCC-DDDD-EEEE-FFFF00001111}\n"
+            . "display name : SE_test_gpo\n"
+            . "path         : \\\\dc\\sysvol\\x\n"
+            . "dn           : CN={...},CN=Policies\n"
+            . "version      : 5\n";
+
+        Process::fake(['*' => Process::result(output: $existing, exitCode: 0)]);
+
+        $summary = FakesGpoService::makeService()->create('SE_test_gpo');
+
+        $this->assertSame('{AAAABBBB-CCCC-DDDD-EEEE-FFFF00001111}', $summary->name);
+        // Aucun `gpo create` ne doit être lancé (GPO préexistante).
+        Process::assertNotRan(fn ($p) => is_array($p->command) && in_array('create', $p->command, true));
+    }
+
+    #[Test]
+    public function create_throws_when_samba_tool_fails(): void
+    {
+        $calls = 0;
+        Process::fake(function () use (&$calls) {
+            $calls++;
+
+            return $calls === 1
+                ? Process::result(output: '', exitCode: 0)             // list() vide
+                : Process::result(output: '', errorOutput: 'boom', exitCode: 1); // create KO
+        });
+
+        $this->expectException(RuntimeException::class);
+        FakesGpoService::makeService()->create('SE_test_gpo');
     }
 
     #[Test]

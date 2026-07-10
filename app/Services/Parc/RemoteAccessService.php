@@ -1,74 +1,56 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services\Parc;
 
+use App\Models\Workstation;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Session;
 
-// Constantes legacy pour les droits
-if (!defined('SE_COMPUTER_CONTROL')) {
-    define('SE_COMPUTER_CONTROL', 0x0080);
-}
-
 /**
- * Service pour la gestion de l'accès distant aux machines (Guacamole)
- * 
- * Ce service encapsule la logique legacy de l'accès distant via Guacamole
- * en utilisant les fonctions existantes du système SambaEdu.
+ * Service de gestion de l'accès distant aux machines (Guacamole).
+ *
+ * Story 38.4 (AC2) — **port natif** : ce service ne charge plus AUCUN fichier
+ * legacy `/var/www/sambaedu/includes/*` (les anciens `legacyRootPath()` /
+ * `includeLegacyConfig()` / `includeLegacyRemoteStack()` pointaient un
+ * `dirname(base_path())/includes` DÉJÀ MORT depuis le root-move,
+ * `project_root_is_laravel`). Il :
+ *  - résout la machine via le modèle {@see Workstation} (SQL, Postgres-first) ;
+ *  - construit et signe le token via {@see GuacamoleTokenService} (port 1:1) ;
+ *  - vérifie les droits via la permission Spatie native `computer.control`
+ *    (l'ancien bitmask legacy `SE_COMPUTER_CONTROL` — divergent 0x0080/0x200
+ *    entre le service et le shim ldap — n'est plus perpétué).
+ *
+ * Le mot de passe utilisateur reste lu depuis la session (`passwd`), auth
+ * iso-legacy (`feedback_auth_iso_legacy`).
  */
 class RemoteAccessService
 {
     public const DEFAULT_CONNECTION_TYPE = 'rdp';
-    /**
-     * @return string Absolute path to legacy sambaedu root (sibling of /laravel)
-     */
-    private function legacyRootPath(): string
-    {
-        return dirname(base_path());
-    }
 
-    private function includeLegacyConfig(): void
-    {
-        if (function_exists('get_config')) {
-            return;
-        }
-
-        $legacyRoot = $this->legacyRootPath();
-        require_once $legacyRoot . '/includes/config.inc.php';
-        require_once $legacyRoot . '/includes/functions.inc.php';
-    }
-
-    private function includeLegacyRemoteStack(): void
-    {
-        if (function_exists('search_machine') && function_exists('create_remote_token')) {
-            return;
-        }
-
-        $legacyRoot = $this->legacyRootPath();
-        require_once $legacyRoot . '/includes/ldap.inc.php';
-        require_once $legacyRoot . '/includes/functions.inc.php';
-        require_once $legacyRoot . '/includes/remote.inc.php';
-    }
+    public function __construct(
+        private readonly GuacamoleTokenService $tokenService,
+    ) {}
 
     /**
-     * Vérifie si le service d'accès distant est disponible
+     * Vérifie si le service d'accès distant est disponible.
      */
     public function isRemoteAccessAvailable(): bool
     {
         try {
-            $this->includeLegacyConfig();
-
-            $config = get_config();
-            return !empty($config['guacamole_url']) && file_exists('/etc/sambaedu/sambaedu.conf.d/guacamole.conf');
-        } catch (\Exception $e) {
+            return $this->tokenService->isAvailable();
+        } catch (\Throwable $e) {
             Log::error('[RemoteAccess] Erreur vérification disponibilité: ' . $e->getMessage());
+
             return false;
         }
     }
 
     /**
-     * Génère un token d'accès distant pour une machine spécifique
-     * 
+     * Génère un token d'accès distant pour une machine spécifique.
+     *
      * @param string $machineName Nom de la machine
      * @param string $type Type de connexion (rdp, ssh, veyon, master)
      * @param int $timeout Durée de validité du token en secondes
@@ -78,48 +60,48 @@ class RemoteAccessService
     {
         try {
             if (!$this->isRemoteAccessAvailable()) {
-                throw new \Exception('Service d\'accès distant non disponible');
+                throw new \RuntimeException('Service d\'accès distant non disponible');
             }
 
-            $this->includeLegacyConfig();
-            $this->includeLegacyRemoteStack();
-
-            $config = get_config();
-
-            // Récupérer les informations de la machine
-            $machine = search_machine($config, $machineName);
-            if (!$machine) {
-                throw new \Exception("Machine '{$machineName}' non trouvée");
+            $machine = $this->resolveMachine($machineName);
+            if ($machine === null) {
+                throw new \RuntimeException("Machine '{$machineName}' non trouvée");
             }
 
-            // Récupérer le mot de passe utilisateur depuis la session
-            $password = Session::get('passwd', '');
+            $login = (string) (Auth::user()?->login ?? Session::get('login', ''));
+            $password = (string) Session::get('passwd', '');
 
-            // Générer le token via la fonction legacy
-            $tokenUrl = create_remote_token($config, $machine, $type, $config['login'], $password, $timeout);
+            $tokenUrl = $this->tokenService->createRemoteToken($machine, $type, $login, $password, $timeout);
 
-            if ($tokenUrl && is_string($tokenUrl)) {
+            if ($tokenUrl !== null) {
                 Log::info('[RemoteAccess] Token généré pour la machine', [
                     'machine' => $machineName,
                     'type' => $type,
-                    'timeout' => $timeout
+                    'timeout' => $timeout,
                 ]);
+
                 return $tokenUrl;
             }
 
-            throw new \Exception('Échec de la génération du token');
-        } catch (\Exception $e) {
+            throw new \RuntimeException('Échec de la génération du token');
+        } catch (\Throwable $e) {
             Log::error('[RemoteAccess] Erreur génération token: ' . $e->getMessage(), [
                 'machine' => $machineName,
-                'type' => $type
+                'type' => $type,
             ]);
+
             return null;
         }
     }
 
     /**
-     * Génère un token d'accès distant administrateur
-     * 
+     * Génère un token d'accès distant administrateur.
+     *
+     * Story 38.4 : le legacy `create_remote_admin_token` n'a pas été porté
+     * (aucun consommateur SE5 — `generateAdminRemoteToken` n'est appelé nulle
+     * part). On délègue à `generateRemoteToken` (même token JSON chiffré) pour
+     * conserver une signature stable si un appelant réapparaissait.
+     *
      * @param string $machineName Nom de la machine
      * @param string $type Type de connexion (rdp, ssh, veyon, master)
      * @param int $timeout Durée de validité du token en secondes
@@ -127,47 +109,12 @@ class RemoteAccessService
      */
     public function generateAdminRemoteToken(string $machineName, string $type = 'rdp', int $timeout = 7200): ?string
     {
-        try {
-            if (!$this->isRemoteAccessAvailable()) {
-                throw new \Exception('Service d\'accès distant non disponible');
-            }
-
-            $this->includeLegacyConfig();
-            $this->includeLegacyRemoteStack();
-
-            $config = get_config();
-
-            // Récupérer les informations de la machine
-            $machine = search_machine($config, $machineName);
-            if (!$machine) {
-                throw new \Exception("Machine '{$machineName}' non trouvée");
-            }
-
-            // Générer le token admin via la fonction legacy
-            $tokenUrl = create_remote_admin_token($config, $machineName, $type, $timeout);
-
-            if ($tokenUrl && is_string($tokenUrl)) {
-                Log::info('[RemoteAccess] Token admin généré pour la machine', [
-                    'machine' => $machineName,
-                    'type' => $type,
-                    'timeout' => $timeout
-                ]);
-                return $tokenUrl;
-            }
-
-            throw new \Exception('Échec de la génération du token admin');
-        } catch (\Exception $e) {
-            Log::error('[RemoteAccess] Erreur génération token admin: ' . $e->getMessage(), [
-                'machine' => $machineName,
-                'type' => $type
-            ]);
-            return null;
-        }
+        return $this->generateRemoteToken($machineName, $type, $timeout);
     }
 
     /**
-     * Retourne les types de connexions disponibles
-     * 
+     * Retourne les types de connexions disponibles.
+     *
      * @return array<int, array{key: string, label: string, icon: string, description: string}>
      */
     public function getAvailableConnectionTypes(): array
@@ -200,28 +147,50 @@ class RemoteAccessService
         ];
     }
 
-
     /**
-     * Vérifie si l'utilisateur a les droits pour l'accès distant
-     * 
-     * @return bool
+     * Vérifie si l'utilisateur a les droits pour l'accès distant.
+     *
+     * Story 38.4 : permission Spatie native `computer.control` (aligne sur les
+     * gates parc de {@see \App\Services\Parc\WorkstationGroupService} et
+     * {@see \App\Policies\WorkstationGroupPolicy}) — remplace l'ancien
+     * `have_right($config, SE_COMPUTER_CONTROL)` legacy.
      */
     public function hasRemoteAccessRights(): bool
     {
         try {
-            $this->includeLegacyConfig();
-            $config = get_config();
-
-            // Inclure les fonctions legacy nécessaires
-            if (!function_exists('have_right')) {
-                require_once $this->legacyRootPath() . '/includes/functions.inc.php';
+            $user = Auth::user();
+            if ($user === null) {
+                return false;
             }
 
-            // Vérifier les droits de contrôle de machine
-            return have_right($config, SE_COMPUTER_CONTROL);
-        } catch (\Exception $e) {
+            return method_exists($user, 'can')
+                ? (bool) $user->can('computer.control')
+                : false;
+        } catch (\Throwable $e) {
             Log::error('[RemoteAccess] Erreur vérification droits: ' . $e->getMessage());
+
             return false;
         }
+    }
+
+    /**
+     * Résout une machine par son nom en une structure legacy-like consommée par
+     * {@see GuacamoleTokenService} (`cn`, `etab`). Retourne `null` si absente.
+     *
+     * @return array<string,mixed>|null
+     */
+    private function resolveMachine(string $machineName): ?array
+    {
+        $name = strtolower(trim($machineName));
+        $workstation = Workstation::query()->whereRaw('LOWER(name) = ?', [$name])->first();
+
+        if ($workstation === null) {
+            return null;
+        }
+
+        return [
+            'cn' => $workstation->name,
+            'etab' => (string) config('sambaedu.etab_ou', ''),
+        ];
     }
 }

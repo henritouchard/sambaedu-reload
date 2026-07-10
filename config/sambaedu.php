@@ -563,9 +563,9 @@ return [
         // pour tests/CI ou installation atypique.
         'templates_dir' => env('GPO_TEMPLATES_DIR', '/usr/share/sambaedu/gpo/'),
 
-        // Répertoire de travail pour `samba-tool gpo fetch` — parité legacy
-        // gpo.inc.php:1053. À garder lisible/écrivable par le user PHP-FPM.
-        'policies_temp_path' => '/var/www/sambaedu/temp/policies',
+        // Story 38.4 — `policies_temp_path` (`/var/www/sambaedu/temp/policies`,
+        // config morte, 0 consommateur) SUPPRIMÉE avec la sortie des chemins FS
+        // legacy du code serveur.
 
         // Timeout (secondes) appliqué à chaque appel `samba-tool` via
         // SambaToolRunner. Override possible avec ->withTimeout() côté caller.

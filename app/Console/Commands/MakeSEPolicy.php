@@ -82,13 +82,12 @@ class MakeSEPolicy extends Command
 namespace App\Policies;
 
 use App\Models\User;
-use App\Config\SambaEduConfig;
 use App\Policies\Traits\RegistersGates;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Policy pour la gestion des {$nameLower}s
- * 
+ *
  * Utilise le trait RegistersGates pour l'enregistrement automatique des gates.
  */
 class {$name}Policy
@@ -106,11 +105,6 @@ class {$name}Policy
         'delete-{$nameKebab}' => 'delete',
         'manage-{$nameKebab}s' => 'viewAny',
     ];
-
-    public function __construct(
-        private SambaEduConfig \$configService
-    ) {
-    }
 
     /**
      * Vérifie si l'utilisateur peut voir la liste
@@ -155,45 +149,25 @@ class {$name}Policy
     }
 
     /**
-     * Vérifie si l'utilisateur a les droits d'administration
-     * 
+     * Vérifie si l'utilisateur a les droits d'administration.
+     *
+     * Squelette NATIF (Story 38.4) : la vérification passe par les permissions
+     * Spatie via `\$user->can()` — NE JAMAIS réintroduire les fonctions legacy
+     * `have_right`/`search_user`/`legacy()->getConfig()` (retirées du runtime).
+     *
      * @param User|null \$user L'utilisateur Laravel
      */
     private function hasAdminRights(?User \$user): bool
     {
         try {
-            // Récupérer le login depuis l'utilisateur Laravel ou la session
-            \$login = \$user?->getLogin() ?? \$_SESSION['login'] ?? null;
-
-            if (!\$login) {
+            if (\$user === null) {
                 return false;
             }
 
-            \$config = \$this->configService->legacy()->getConfig();
-
-            if (!isset(\$config['bind']) || \$config['bind'] === null) {
-                Log::warning('{$name}Policy: Pas de connexion LDAP');
-                return false;
-            }
-
-            if (!function_exists('have_right') || !function_exists('search_user')) {
-                Log::warning('{$name}Policy: Fonctions legacy non disponibles');
-                return false;
-            }
-
-            \$ldapUser = search_user(\$config, \$login);
-
-            if (empty(\$ldapUser)) {
-                return false;
-            }
-
-            // TODO: Définir la constante de droit appropriée
-            // Exemples: SE_USER_ADMIN (0xEE00), SE_COMPUTER_ADMIN (0xEF00)
-            \$adminRight = 0xEE00;
-
-            return have_right(\$config, \$adminRight, \$ldapUser, true);
-
-        } catch (\Exception \$e) {
+            // TODO: Remplacer par la permission Spatie appropriée à ce domaine
+            // (ex: 'user.admin', 'computer.admin', …).
+            return (bool) \$user->can('admin');
+        } catch (\Throwable \$e) {
             Log::error('{$name}Policy error: ' . \$e->getMessage());
             return false;
         }

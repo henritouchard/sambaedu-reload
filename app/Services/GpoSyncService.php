@@ -119,6 +119,13 @@ class GpoSyncService
 
     /**
      * Fallback : utilise samba-tool directement
+     *
+     * Story 38.4 — depuis le retrait des includes GPO legacy de
+     * `legacy/bootstrap.php` (T6.1), `add_delegation_salle` /
+     * `remove_delegation_salle` ne sont PLUS définies : ce service bascule
+     * DÉSORMAIS systématiquement sur ce fallback loggué (comportement inchangé,
+     * `syncGpoViaSambaTool` reste un TODO). Non porté ici (hors scope 38.4) —
+     * remplaçant = {@see \App\Gpo\Services\GpoService} (Story 16.5).
      */
     private function syncGpoViaSambaTool(User $user, WorkstationGroup $group, string $action): bool
     {

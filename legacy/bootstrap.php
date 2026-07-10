@@ -48,63 +48,21 @@ try {
     //     modules non encore chargés (printers, partages, parcs).
     require_once __DIR__ . '/stubs/gpo_deps.inc.php';
 
-    // 6. Include path legacy — les modules font des include("xxx.inc.php")
-    //    qui doivent résoudre vers le dossier includes/ du legacy original.
-    //    IMPORTANT : les stubs doivent être AVANT le legacy includes/ pour que
-    //    require 'ldap.inc.php' / 'config.inc.php' / 'admin_ui.inc.php'
-    //    résolvent vers nos stubs (qui bridgent vers les shims) et non vers
-    //    les originaux legacy (qui redéclareraient des fonctions = fatal error).
+    // 6. Include path — Story 38.4 : PLUS AUCUN chemin `/var/www/sambaedu`.
+    //    Les modules legacy in-repo (legacy/modules/*) font des
+    //    include("xxx.inc.php") nus qui résolvent EXCLUSIVEMENT vers les stubs
+    //    IN-REPO (legacy/stubs/, D6) + le dossier courant (`.`, déjà présent
+    //    dans l'include_path pour les includes de même dossier des modules,
+    //    ex. display.inc.php, bbb/config.php). Le retrait des includes GPO
+    //    legacy (functions/samba-tool/gpo/delegations/gpo_ui) est acté :
+    //    leurs consommateurs sont portés en natif (Story 38.4 T1/T2) ;
+    //    GpoSyncService bascule sur son fallback loggué (dette assumée).
     $stubsPath = base_path('legacy/stubs');
-    $legacyIncludesPath = config('sambaedu.legacy_path', '/var/www/sambaedu') . '/includes';
     $newIncludePath = get_include_path();
-    if (is_dir($stubsPath)) {
+    if (is_dir($stubsPath) && ! str_contains($newIncludePath, $stubsPath)) {
         $newIncludePath = $stubsPath . PATH_SEPARATOR . $newIncludePath;
     }
-    if (is_dir($legacyIncludesPath)) {
-        $newIncludePath .= PATH_SEPARATOR . $legacyIncludesPath;
-    }
     set_include_path($newIncludePath);
-
-    // ─── LEGACY INCLUDES ─────────────────────────────────────────────────
-    // Fichiers legacy chargés directement car utilisés par les modules.
-    // SUPPRIMER chaque ligne au fur et à mesure que la fonction est shimmée
-    // ou que le module qui l'utilise est réécrit en Livewire.
-    // En tests, la constante LEGACY_SKIP_LEGACY_INCLUDES (définie par
-    // tests/bootstrap.php) saute ce bloc : les shims if-guardés ci-dessous
-    // prennent le relais et évitent les exec(samba-tool) qui timeout sur
-    // Kerberos dans l'environnement de test.
-    // ─────────────────────────────────────────────────────────────────────
-    if (is_dir($legacyIncludesPath) && ! defined('LEGACY_SKIP_LEGACY_INCLUDES')) {
-        // Fonctions utilitaires globales (utilisées partout)
-        require_once $legacyIncludesPath . '/functions.inc.php';
-
-        // ─── GPO core includes (story 1bis.18a) ─────────────────────────
-        // Ordre critique — respecter les dépendances croisées :
-        // samba-tool (pas de dep sur gpo/delegations)
-        // → gpo (dep sur samba-tool: gpocreate, gpodel, etc.)
-        // → delegations (dep sur samba-tool + gpo)
-        // → gpo_ui (dep sur partages: roaming_profiles_stats — stubbée)
-        require_once $legacyIncludesPath . '/samba-tool.inc.php';
-        require_once $legacyIncludesPath . '/gpo.inc.php';
-        require_once $legacyIncludesPath . '/delegations.inc.php';
-        require_once $legacyIncludesPath . '/gpo_ui.inc.php';
-
-        // DHCP
-        // require_once $legacyIncludesPath . '/dhcpd.inc.php';
-
-        // Gestion des parcs
-        // require_once $legacyIncludesPath . '/fonc_parc.inc.php';
-
-        // Annuaire
-        // require_once $legacyIncludesPath . '/annu.inc.php';
-
-        // Délégations — chargé ci-dessus avec les GPO includes
-        // require_once $legacyIncludesPath . '/delegations.inc.php';
-
-        // ENT (import GPEI, etc.)
-        // require_once $legacyIncludesPath . '/ent.inc.php';
-    }
-    // ─── FIN LEGACY INCLUDES ─────────────────────────────────────────────
 
     // ─── GPO shim (story 1bis.18g) — RETIRÉ par Story 16.13bis ─────────────
     // Le `gpo_shim.inc.php` a été archivé dans

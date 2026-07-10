@@ -208,16 +208,96 @@ class GpoService
     /**
      * Crée une nouvelle GPO (`samba-tool gpo create`).
      *
-     * @throws RuntimeException  Stub : implémentation déléguée à Story 16.4.
+     * Story 38.4 (AC1) — implémentation native de l'ancien stub 16.4, requise
+     * par le port de `import_gpo` ({@see \App\Services\Gpo\NativeGpoPublisher}).
+     * Parité de la branche `gpocreate` legacy (`samba-tool.inc.php:1183`) :
+     * `samba-tool gpo create <displayName>` puis extraction du GUID `{...}` de
+     * la sortie.
+     *
+     * **Idempotence** : si une GPO du même `displayName` existe déjà dans l'AD,
+     * on la retourne SANS re-créer (via {@see list()}), au lieu de laisser
+     * samba-tool créer un doublon. Le matching est insensible à la casse +
+     * trim (cohérent {@see \App\Gpo\Support\GpoTemplateRegistry::templateFor}).
+     *
+     * @throws RuntimeException Si la création échoue ou si le GUID n'est pas
+     *                          résolvable après création.
      */
     public function create(string $displayName): GpoSummary
     {
         $log = GpoLogger::action('gpo.create', context: ['display_name' => $displayName]);
-        $log->step('stub — implementation pending Story 16.4');
-        $e = new RuntimeException('GpoService::create() — not implemented yet, see Story 16.4');
-        $log->failure($e);
 
-        throw $e;
+        try {
+            // Idempotence : une GPO de ce displayName existe déjà → la retourner.
+            $existing = $this->findByDisplayName($displayName);
+            if ($existing !== null) {
+                $log->step('idempotent: GPO déjà présente — création évitée', ['gpo_name' => $existing->name]);
+                $log->success(['created' => false, 'gpo_name' => $existing->name]);
+
+                return $existing;
+            }
+
+            $log->step('samba-tool gpo create invoked');
+            $result = $this->runner->run(['gpo', 'create', $displayName], $log);
+
+            if (! $result->successful()) {
+                throw new RuntimeException(sprintf(
+                    'samba-tool gpo create failed (exit=%d): %s',
+                    $result->exitCode() ?? -1,
+                    $result->errorOutput(),
+                ));
+            }
+
+            // La sortie contient le GUID `{XXXX-...-XXXX}` de la GPO créée.
+            $guid = null;
+            if (preg_match('/(\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\})/', $result->output(), $m) === 1) {
+                $guid = $m[1];
+            }
+
+            // Filet : si le GUID n'a pas pu être extrait de la sortie, on le
+            // résout par displayName (la GPO vient d'être créée).
+            $summary = $guid !== null
+                ? new GpoSummary(name: $guid, displayName: $displayName)
+                : $this->findByDisplayName($displayName);
+
+            if ($summary === null) {
+                throw new RuntimeException(sprintf(
+                    'GPO %s créée mais GUID non résolvable (sortie samba-tool inattendue).',
+                    $displayName,
+                ));
+            }
+
+            // Story 16.14 Q2 — nouvelle GPO : invalider le cache de listing.
+            $this->invalidateCacheAll();
+
+            $log->success(['created' => true, 'gpo_name' => $summary->name]);
+
+            return $summary;
+        } catch (\Throwable $e) {
+            $log->failure($e);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Résout une GPO par son `displayName` (insensible casse + trim) via
+     * `list()`. Retourne `null` si absente. Helper de {@see create()}
+     * (idempotence) réutilisable.
+     */
+    public function findByDisplayName(string $displayName): ?GpoSummary
+    {
+        $needle = mb_strtolower(trim($displayName));
+        if ($needle === '') {
+            return null;
+        }
+
+        foreach ($this->list() as $summary) {
+            if (mb_strtolower(trim($summary->displayName)) === $needle) {
+                return $summary;
+            }
+        }
+
+        return null;
     }
 
     /**

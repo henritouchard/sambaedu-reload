@@ -2392,3 +2392,50 @@ ssh -i ~/.ssh/id_se4fs_vm root@192.168.122.50 \
 - [ ] **27.16-3** Héritage bloqué sur l'OU computers de NOTRE établissement ; GPO legacy ne s'appliquent plus à nos postes ; 74 autres collèges intacts ; aucune GPO legacy supprimée/déliée/éditée
 - [ ] **27.16-4** `SE_agent_bootstrap` liée à l'OU établissement (jamais racine) ; poste agent-less se ré-installe l'agent au reboot (filet éternel)
 - [ ] **27.16-5** Garde fail-soft (DC/creds absents → skip non bloquant) ; idempotence (re-run = noop) ; `--dry-run` sans side effect ; `update.sh`/`install.sh` ne cassent jamais
+
+## Story 38.4 — Sortie des `require` FS legacy (import_gpo natif + stubs in-repo)
+
+Extinction SE4 (Epic 38) : plus aucun `require`/`include` sous `/var/www/sambaedu`
+dans le code serveur. `import_gpo` porté en natif (`NativeGpoPublisher` +
+`GpoService::create()` + `SysvolPolicyService`/`PregCodec` + `AdministratorKerberosContext`),
+Guacamole/roaming/wine portés, `LegacyConfigBridge`/`PowerShellRemoteService` rebranchés
+sur les shims in-repo, `legacy/bootstrap.php` sans include_path legacy, stubs Tier 3
+vendorés in-repo.
+
+### Scénario 38.4-1 — GPO bootstrap agent republiée NATIVEMENT (AC1, e2e /vm — jamais depuis un worktree)
+
+Pré-requis : `LEGACY_CONFIG_CHANNEL_ENABLED`/creds Administrator OK ; `config:cache` + chown après tout `.env`.
+
+1. **Pré-état** : `samba-tool gpo listall | grep -A4 SE_agent_bootstrap` (noter versionNumber) ;
+   `smbclient //<se4ad>/sysvol -c 'ls <domain>/Policies/<GUID>/GPT.INI'`.
+2. Bumper `Version` dans `resources/gpo/SE_agent_bootstrap/GPT.INI` (ou `--force`), puis
+   `sudo -u www-admin php artisan gpo:deploy-agent-bootstrap`. Ré-exécuter sans `--force` → **skip idempotent** (version à jour).
+3. **Attendu** : `versionNumber` AD incrémenté ; `GPT.INI` SYSVOL réécrit (Version + **CRLF**) ;
+   `startup.cmd` re-déposé (taille = spécialisée) ; `gPCMachineExtensionNames` présent ;
+   `samba-tool gpo getlink <OU computers étab>` = **lien présent** ; `getlink <racine>` = **ABSENT** (fédération 75 étabs).
+4. Poste lab : `gpupdate /force` + reboot → `startup.cmd` exécuté (agent bootstrap OK).
+
+### Scénario 38.4-2 — Indépendance FS legacy (AC2, /vm — SANS extinction réelle, réservée 38.6)
+
+1. Pointer temporairement `LEGACY_PATH=/nonexistent` dans `.env` + `config:cache`.
+2. Rejouer : `gpo:deploy-agent-bootstrap --force` ; onglet **profils itinérants** (lecture + écriture d'exclusions `ExcludeProfileDirs`) ;
+   un **token Guacamole RDP** depuis une fiche poste ; l'**import Wine** (`admin/settings/gpo/wine`).
+3. **Attendu** : tout passe sans fatal PHP (plus aucun `require` `/var/www/sambaedu`). Restaurer `.env` + `config:cache`.
+
+### Scénario 38.4-3 — Roaming : Registry.pol byte-stable (AC2)
+
+1. Sur SYSVOL, comparer AVANT/APRÈS **octet à octet** un `writeUserPolicy` sans modification (le codec `PregCodec` est byte-stable).
+2. **Attendu** : contenu binaire identique (aucune dérive d'encodage UTF-16LE / DWORD).
+
+### Scénario 38.4-4 — Modules Tier 3 in-repo (AC2, D6)
+
+1. **HÔTE** : `LEGACY_PATH=/nonexistent php artisan test --filter 'LegacyModuleDhcp|LegacyBootstrap|GpoLegacyIsolation'` → **vert**
+   (prouve que les modules `legacy/modules/{bbb,dhcp}` résolvent leurs includes dans `legacy/stubs/` exclusivement).
+2. **Attendu** : aucun `Fatal error` PHP ; `legacy/bootstrap.php` ne référence plus `/var/www/sambaedu` ni en `require` ni en include_path.
+
+### Checklist rapide 38.4
+
+- [ ] **38.4-1** GPO bootstrap publiée/republiée NATIVEMENT (bump GPT.INI CRLF + versionNumber AD + gPCMachineExtensionNames) ; lien OU établissement, JAMAIS racine ; idempotence
+- [ ] **38.4-2** `LEGACY_PATH=/nonexistent` → deploy-agent-bootstrap + profils itinérants + token Guacamole + import Wine passent sans fatal
+- [ ] **38.4-3** `PregCodec` byte-stable (Registry.pol identique AVANT/APRÈS write sans modif)
+- [ ] **38.4-4** Modules Tier 3 (bbb/dhcp) résolvent in-repo (`legacy/stubs/`) ; test archi `GpoLegacyIsolationTest` interdit toute réintroduction de `/var/www/sambaedu` / `sambaedu.legacy_path`

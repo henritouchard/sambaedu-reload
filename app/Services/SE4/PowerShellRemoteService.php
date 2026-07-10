@@ -41,8 +41,9 @@ class PowerShellRemoteService
             ];
         }
 
-        // Rechercher la machine dans l'AD via les fonctions legacy
-        $this->loadLegacyFunctions();
+        // Rechercher la machine via le shim in-repo `search_machine`
+        // (défini par legacy/ldap.inc.php, chargé par legacy()->getConfig()
+        // ci-dessus — Story 38.4 : plus de require FS legacy).
         $machine = search_machine($config, $machineName, true);
         if (empty($machine)) {
             return [
@@ -331,29 +332,4 @@ class PowerShellRemoteService
         return file_exists('/usr/bin/winexe');
     }
 
-    /**
-     * Charge les fonctions legacy nécessaires
-     */
-    private function loadLegacyFunctions(): void
-    {
-        static $loaded = false;
-
-        if ($loaded) {
-            return;
-        }
-
-        $basePath = base_path('../includes/');
-
-        if (file_exists($basePath . 'config.inc.php')) {
-            require_once $basePath . 'config.inc.php';
-        }
-        if (file_exists($basePath . 'ldap.inc.php')) {
-            require_once $basePath . 'ldap.inc.php';
-        }
-        if (file_exists($basePath . 'parcs.inc.php')) {
-            require_once $basePath . 'parcs.inc.php';
-        }
-
-        $loaded = true;
-    }
 }
