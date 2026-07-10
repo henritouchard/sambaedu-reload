@@ -187,6 +187,64 @@ class LegacyCronRetirementTest extends TestCase
         );
     }
 
+    /**
+     * Review 38.5 #1 — robustesse greenfield : avec `set -e`, les deux
+     * fonctions doivent être appelées EN TÊTE de main() (avant update_composer,
+     * première étape susceptible d'échouer) — sinon un échec d'une étape
+     * antérieure laisse les crons legacy actifs en silence.
+     */
+    #[Test]
+    public function cron_functions_run_before_any_fallible_step(): void
+    {
+        $content = $this->fileContent('scripts/update.sh');
+
+        $callRetire = strpos($content, "\n    ensure_legacy_crons_retired\n");
+        $callComposer = strpos($content, "\n    update_composer\n");
+        self::assertNotFalse($callRetire, 'Appel de ensure_legacy_crons_retired introuvable.');
+        self::assertNotFalse($callComposer, 'Appel de update_composer introuvable.');
+        self::assertLessThan(
+            $callComposer,
+            $callRetire,
+            'ensure_legacy_crons_retired doit être appelée AVANT update_composer '
+                . '(set -e : un échec en aval ne doit pas laisser les crons legacy actifs).',
+        );
+    }
+
+    /**
+     * Review 38.5 #2 — install.sh (T5.1) : install_system_cron déclarée ET
+     * appelée, et AUCUN retrait direct / glob sambaedu-* dans install.sh
+     * (le retrait passe exclusivement par le replay update.sh).
+     */
+    #[Test]
+    public function install_script_provisions_system_cron_and_never_retires_directly(): void
+    {
+        $content = $this->fileContent('scripts/install.sh');
+
+        self::assertMatchesRegularExpression(
+            '/^install_system_cron\(\)\s*\{/m',
+            $content,
+            'La fonction install_system_cron() doit être déclarée dans install.sh.',
+        );
+        self::assertMatchesRegularExpression(
+            '/^\s*install_system_cron\s*$/m',
+            $content,
+            'install_system_cron doit être appelée dans le bloc principal d\'install.sh.',
+        );
+
+        self::assertStringNotContainsString(
+            'sambaedu-*',
+            $content,
+            'ANTI-GLOB : install.sh ne doit jamais employer un glob sambaedu-*.',
+        );
+        foreach (['sambaedu-web-common', 'sambaedu-shares'] as $legacy) {
+            self::assertStringNotContainsString(
+                $legacy,
+                $content,
+                "install.sh ne doit pas retirer $legacy directement (retrait = replay update.sh).",
+            );
+        }
+    }
+
     /** T5.1 — retrait réversible : aucun rm -rf dans la fonction de retrait. */
     #[Test]
     public function retirement_function_uses_no_rm_rf(): void

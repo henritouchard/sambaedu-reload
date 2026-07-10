@@ -1452,6 +1452,20 @@ main() {
     check_root
     check_artisan
 
+    # Story 38.5 (review #1) : cron système + retrait des crons legacy JOUÉS EN
+    # TÊTE de main() — fonctions pures (fichiers /etc/cron.d, aucun prérequis
+    # composer/laravel). Avec set -e, les laisser en fin de main() signifiait
+    # qu'un échec de n'importe quelle étape antérieure laissait les crons
+    # legacy actifs en silence (greenfield : install.sh ne fait que rejouer
+    # update.sh avec un simple log_warning en cas d'échec).
+    # Ordre INTANGIBLE : ensure_system_cron AVANT ensure_legacy_crons_retired
+    # (T1.4 — zéro fenêtre sans ticket Kerberos www-sambaedu pour SYSVOL).
+    echo ""
+    ensure_system_cron
+
+    echo ""
+    ensure_legacy_crons_retired
+
     echo ""
     update_composer
 
@@ -1517,14 +1531,6 @@ main() {
 
     echo ""
     ensure_agent_bootstrap_gpo
-
-    # Story 38.5 : provisionner le cron système AVANT de retirer les crons legacy
-    # (T1.4 — zéro fenêtre sans ticket Kerberos www-sambaedu pour l'écriture SYSVOL).
-    echo ""
-    ensure_system_cron
-
-    echo ""
-    ensure_legacy_crons_retired
 
     echo ""
     ensure_appstore_write_dirs

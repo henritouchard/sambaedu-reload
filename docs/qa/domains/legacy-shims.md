@@ -154,6 +154,10 @@ http://<name>/<page>.php`). Story 38.5 les débranche à sec :
    `@reboot`, `smbstatus`).
 4. Rejouer `bash scripts/update.sh` → idempotent (« Aucun cron legacy présent » +
    « Cron système déjà à jour »).
+5. **Échec partiel (review 38.5 #1)** : le cron système + le retrait sont joués EN
+   TÊTE de `main()` (avant composer). Si `update.sh` sort néanmoins en erreur
+   pendant une install/finalisation, rejouer manuellement `bash scripts/update.sh`
+   AVANT de considérer l'install terminée — vérifier ensuite le point 1.
 
 ### Scénario 38.5-2 — Fonctions vitales toujours en vie (H+1)
 
