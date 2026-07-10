@@ -226,7 +226,7 @@ new class extends Component {
         x-init="$watch('searchOpen', value => { if (value) $nextTick(() => $refs.searchInput?.focus()) })"
         style="display: none;">
         <div class="fixed inset-0 bg-black/50" @click="searchOpen = false; $wire.set('query', '')"></div>
-        <div class="relative w-full max-w-lg bg-base-100 rounded-lg shadow-xl border border-base-200" @click.stop>
+        <div class="relative w-full max-w-2xl bg-base-100 rounded-lg shadow-xl border border-base-200" @click.stop>
             <div class="p-4">
                 <div class="relative">
                     <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-base-content/60"
@@ -244,14 +244,15 @@ new class extends Component {
                 </div>
 
                 <!-- Résultats -->
-                <div class="mt-4 max-h-96 overflow-y-auto">
+                <div class="mt-4 max-h-[65vh] min-h-[16rem] overflow-y-auto">
                     @if ($this->totalResults > 0)
-                        <div class="space-y-4">
+                        <div class="space-y-6">
                             @foreach ($this->results as $group)
                                 <div>
-                                    <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-base-content/50 mb-1 px-1">
-                                        <i class="fa-solid {{ $group['icon'] }}"></i>
-                                        <span>{{ $group['category'] }}</span>
+                                    <div class="flex items-center gap-2 text-sm font-bold text-base-content bg-base-200 rounded-md px-3 py-2 mb-2 sticky top-0">
+                                        <i class="fa-solid {{ $group['icon'] }} text-primary"></i>
+                                        <span class="uppercase tracking-wide">{{ $group['category'] }}</span>
+                                        <span class="ml-auto text-xs font-normal text-base-content/50">{{ count($group['items']) }}</span>
                                     </div>
                                     <div class="space-y-1">
                                         @foreach ($group['items'] as $item)
