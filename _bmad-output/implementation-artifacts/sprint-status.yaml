@@ -524,6 +524,7 @@ development_status:
   42-2-projection-ad-depuis-aretes: todo  # syncRoleAwareAdGroupMembers routé par rôle d'arête (member→Classe_, manager→Equipe_, owner→PP_ orthogonale conservée) — bascule ATOMIQUE depuis isProf/is_head_teacher, resync sur changement d'arête (observer pivot), fail-soft AD fédéré, matching GUID/sAMAccountName. Tests parité FR-S6/NFR-S2. Amont 42.1 + statuer 4.12 (review). Reco dev : fable/opus.
   42-3-ui-role-editable-page-groupe: todo  # Colonne « Rôle » éditable sur la liste des membres (pages groupes, Livewire SFC), défaut dérivé User.role, édition→resync AD, WithToasts. Amont 42.1+42.2, parallèle 42.4. Reco dev : sonnet.
   42-4-readback-roles-sync-from-ad: todo  # Import AD→SQL : arêtes avec rôle depuis le trio legacy (précédence owner>manager>member), suffixes étab/OU par UAI, données sales lab1 (equipe_ de cours, espaces, savepoint 25P02), idempotent. Amont 42.1+42.2, parallèle 42.3. Reco dev : opus.
+  43-3-ttl-seconds-dynamique: review  # Dev terminé : AgentTtlResolver (D1-D5) livré + wiring StateCompiler/AgentServiceProvider, ttl_seconds exclu du hash PHP+Go (golden recalculé, zéro bump version.go), doc state-endpoint.md § cadence + procédure abaissement, tests ciblés + go test verts. Gap corrigé : 15 tests hors périmètre initial adaptés au nouveau constructeur.
 
 # ─── Notes personnelles — Henri ─────────────────────────────────────────────
 personal_notes:

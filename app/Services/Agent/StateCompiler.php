@@ -42,6 +42,11 @@ final class StateCompiler
     public function __construct(
         private readonly StateHasher $hasher,
         private readonly array $providers,
+        // Story 43.3 — cadence de propagation PAR CONTEXTE (D1, FR-A4) :
+        // remplace la constante `ttl_seconds` par un résolveur dédié. D2
+        // (précédence) et `specificity()` restent INTOUCHÉS — ce résolveur ne
+        // participe à aucun arbitrage d'items, seulement à l'enveloppe.
+        private readonly AgentTtlResolver $ttlResolver,
     ) {}
 
     /**
@@ -68,10 +73,13 @@ final class StateCompiler
         $state = [
             'schema' => StateContract::SCHEMA,
             'generated_at' => now()->utc()->toIso8601String(),
-            // Le défaut de config() ne couvre que l'ABSENCE de clé : une clé
-            // présente mais null (env vide) casterait en 0 sans le `??`
-            // (defer review 23.4). Plancher iso config/agent.php.
-            'ttl_seconds' => max(1, (int) (config('agent.ttl_seconds') ?? 3600)),
+            // Story 43.3 — TTL PAR CONTEXTE (D1, FR-A4) : court si le contexte
+            // est en « bascule sensible » (AgentTtlResolver::ttlSeconds()),
+            // défaut global sinon. Champ VOLATIL exclu du hash (AC3,
+            // StateHasher::VOLATILE_STATE_KEYS) : un changement de TTL seul
+            // (sans changement d'items) ne franchit pas le cache 304 — piège
+            // n°1, cf. docs/agent/state-endpoint.md § cadence.
+            'ttl_seconds' => $this->ttlResolver->ttlSeconds($ctx),
             // Mode debug du poste (drapeau `workstations.debug`) : pilote le
             // comportement console du compagnon agent. Champ d'enveloppe (pas
             // un item de portée) — opérationnel, non convergent. Inclus dans

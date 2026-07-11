@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Api\V1\Agent;
 
 use App\Http\Middleware\AuthenticateAgentToken;
+use App\Models\Capability;
 use App\Models\OverlaySignal;
 use App\Models\User;
 use App\Models\Wallpaper;
@@ -18,6 +19,7 @@ use App\Services\Agent\Enrollment\TokenRotationService;
 use App\Services\Agent\StateContract;
 use App\Services\Agent\StateHasher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\Test;
@@ -364,6 +366,111 @@ final class StateEndpointTest extends TestCase
         [, $token] = $this->enrolledWorkstationWithBroadcastWallpaper();
 
         $this->state($token)->assertOk()->assertJsonPath('ttl_seconds', 3600);
+    }
+
+    // ── Story 43.3 — TTL PAR CONTEXTE (AgentTtlResolver) ────────────────────
+
+    #[Test]
+    public function sensitive_switch_on_the_room_yields_the_short_ttl_machine_only_and_with_user(): void
+    {
+        [$ws, $token] = $this->enrolledWorkstationWithBroadcastWallpaper();
+        $room = WorkstationGroup::factory()->create(['is_physical' => true]);
+        $ws->groups()->attach($room->id);
+        $cap = Capability::factory()->create(['key' => 'restrict_run']);
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => WorkstationGroup::class,
+            'assignable_id' => $room->id,
+            'value' => 'on',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $sensitiveSeconds = (int) config('agent.ttl_sensitive_seconds');
+
+        $this->state($token)->assertOk()->assertJsonPath('ttl_seconds', $sensitiveSeconds);
+
+        $user = User::factory()->create();
+        $this->state($token, [], '?user='.$user->login)
+            ->assertOk()
+            ->assertJsonPath('ttl_seconds', $sensitiveSeconds);
+    }
+
+    #[Test]
+    public function null_value_assignment_on_the_room_does_not_trigger_the_short_ttl(): void
+    {
+        // Jumeau négatif (D2) : une ligne `capability_assignments.value = null`
+        // est un « repli sur le défaut diffusé », pas une bascule sensible —
+        // l'endpoint doit servir le TTL global (3600), pas le TTL court.
+        [$ws, $token] = $this->enrolledWorkstationWithBroadcastWallpaper();
+        $room = WorkstationGroup::factory()->create(['is_physical' => true]);
+        $ws->groups()->attach($room->id);
+        $cap = Capability::factory()->create(['key' => 'restrict_run']);
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => WorkstationGroup::class,
+            'assignable_id' => $room->id,
+            'value' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->state($token)->assertOk()->assertJsonPath('ttl_seconds', 3600);
+
+        $user = User::factory()->create();
+        $this->state($token, [], '?user='.$user->login)
+            ->assertOk()
+            ->assertJsonPath('ttl_seconds', 3600);
+    }
+
+    #[Test]
+    public function etag_is_stable_across_a_sensitive_switch_toggle_and_a_304_is_served(): void
+    {
+        [$ws, $token] = $this->enrolledWorkstationWithBroadcastWallpaper();
+        $room = WorkstationGroup::factory()->create(['is_physical' => true]);
+        $ws->groups()->attach($room->id);
+        $cap = Capability::factory()->create(['key' => 'restrict_run']);
+
+        // Premier appel : liste config VIDE, aucune bascule, TTL global.
+        config(['agent.ttl_sensitive_capabilities' => []]);
+        $first = $this->state($token)->assertOk();
+        $etag = $first->headers->get('ETag');
+        self::assertSame(3600, $first->json('ttl_seconds'));
+
+        // Bascule le contexte en « sensible » (assignment posé) SANS changer
+        // aucun item d'état — AC3 : ttl_seconds est volatil, l'ETag ne bouge
+        // pas et le second appel obtient un 304.
+        config(['agent.ttl_sensitive_capabilities' => ['restrict_run']]);
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => WorkstationGroup::class,
+            'assignable_id' => $room->id,
+            'value' => 'on',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $second = $this->state($token, ['If-None-Match' => $etag]);
+        $second->assertStatus(304);
+        self::assertSame($etag, $second->headers->get('ETag'), 'même ETag malgré le TTL basculé (AC3)');
+    }
+
+    #[Test]
+    public function sensitive_ttl_config_is_floored_at_60_seconds(): void
+    {
+        config(['agent.ttl_sensitive_seconds' => 10]);
+        [$ws, $token] = $this->enrolledWorkstationWithBroadcastWallpaper();
+        $cap = Capability::factory()->create(['key' => 'restrict_run']);
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => Workstation::class,
+            'assignable_id' => $ws->id,
+            'value' => 'on',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->state($token)->assertOk()->assertJsonPath('ttl_seconds', 60);
     }
 
     // ── AC5 — sécurité du canal ───────────────────────────────────────────

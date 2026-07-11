@@ -75,6 +75,34 @@ class StateHasherTest extends TestCase
     }
 
     #[Test]
+    public function hash_state_excludes_volatile_ttl_seconds(): void
+    {
+        // Story 43.3 (AC3, D6) — jumeau du test generated_at ci-dessus :
+        // `ttl_seconds` dépend désormais du contexte (bascule sensible ou
+        // non, AgentTtlResolver) mais reste volatil vis-à-vis du hash.
+        $a = $this->sampleState();
+        $a['ttl_seconds'] = 3600;
+
+        $b = $this->sampleState();
+        $b['ttl_seconds'] = 90;
+
+        // Le seul écart est `ttl_seconds` → même hash.
+        $this->assertSame(
+            $this->hasher->hashState($a),
+            $this->hasher->hashState($b),
+        );
+
+        // Absent d'un des deux côtés → toujours le même hash.
+        $c = $this->sampleState();
+        unset($c['ttl_seconds']);
+
+        $this->assertSame(
+            $this->hasher->hashState($a),
+            $this->hasher->hashState($c),
+        );
+    }
+
+    #[Test]
     public function hash_state_changes_when_meaningful_content_changes(): void
     {
         $a = $this->sampleState();

@@ -214,7 +214,19 @@ class ContractV1Test extends TestCase
     // Rule::in(RESOURCE_TYPES). machine = 9 items, 17 items au total, hash
     // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
     // même valeur (test croisé NFR13).
-    private const FROZEN_STATE_HASH = 'fc8a5324db242927b502bd4861d72bb526d6e652e4fb3501fd84e41af698738b';
+    //
+    // Re-bumpé SCIEMMENT par la Story 43.3 (ttl_seconds volatil, §9) : le
+    // champ `ttl_seconds` de l'enveloppe entre désormais dans
+    // `StateHasher::VOLATILE_STATE_KEYS` (AC3, D6) — il dépend du CONTEXTE
+    // compilé (bascule sensible ou non, {@see \App\Services\Agent\AgentTtlResolver})
+    // et un changement de TTL seul ne doit pas invalider l'ETag. Le golden
+    // `state.v1.json` lui-même est INCHANGÉ (le champ reste dans l'enveloppe,
+    // seulement exclu du hash) : seule l'exclusion recalcule le hash d'état.
+    // 17 items au total (inchangé). Le jumeau Go
+    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé
+    // NFR13) — AUCUN bump de `agent/shared/version.go` (HashState Go sans
+    // appelant runtime, cf. Dev Agent Record de la story).
+    private const FROZEN_STATE_HASH = 'b1eb0560eec1c59a6908967f0c3e402dd79528591891ffddc33d90f2d0c8a3d7';
 
     private StateHasher $hasher;
 

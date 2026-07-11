@@ -138,7 +138,18 @@ import (
 // 2.6.0/2.7.0/2.8.0 jamais publiées). `report.v1.json` INCHANGÉ. machine = 9,
 // 17 items au total, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP
 // (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
-const frozenStateHash = "fc8a5324db242927b502bd4861d72bb526d6e652e4fb3501fd84e41af698738b"
+// Re-bumpé SCIEMMENT par la Story 43.3 (ttl_seconds volatil, §9) : le champ
+// `ttl_seconds` de l'enveloppe entre désormais dans `volatileStateKeys` (AC3,
+// D6) — il dépend du CONTEXTE compilé (bascule sensible ou non, cf.
+// app/Services/Agent/AgentTtlResolver.php côté PHP) et un changement de TTL
+// seul ne doit pas invalider l'ETag. Le golden `state.v1.json` est INCHANGÉ
+// (le champ reste dans l'enveloppe, seulement exclu du hash) : seule
+// l'exclusion recalcule le hash d'état. 17 items au total (inchangé). Bumpé
+// à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH). AUCUN bump de
+// `agent/shared/version.go` : `HashState` Go n'a AUCUN appelant runtime (seul
+// ce test l'appelle ; l'agent stocke l'ETag verbatim et ne recalcule jamais
+// le hash d'état) — voir Dev Agent Record de la story 43.3.
+const frozenStateHash = "b1eb0560eec1c59a6908967f0c3e402dd79528591891ffddc33d90f2d0c8a3d7"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -211,6 +222,32 @@ func TestHashStateExcludesVolatileGeneratedAt(t *testing.T) {
 	}
 	if got != frozenStateHash {
 		t.Errorf("generated_at absent doit donner le même hash : got %s, want %s", got, frozenStateHash)
+	}
+}
+
+// TestHashStateExcludesVolatileTtlSeconds — jumeau du test ci-dessus pour
+// `ttl_seconds` (Story 43.3, AC3) : le TTL dépend désormais du contexte
+// compilé (bascule sensible ou non) mais reste volatil — muter ou supprimer
+// la clé ne doit PAS changer le hash d'état figé.
+func TestHashStateExcludesVolatileTtlSeconds(t *testing.T) {
+	state := decodeMap(t, goldenFile(t, "state.v1.json"))
+	state.Set("ttl_seconds", json.Number("90"))
+
+	got, err := HashState(state)
+	if err != nil {
+		t.Fatalf("HashState : %v", err)
+	}
+	if got != frozenStateHash {
+		t.Errorf("ttl_seconds muté doit être exclu du hash : got %s, want %s", got, frozenStateHash)
+	}
+
+	state.Delete("ttl_seconds")
+	got, err = HashState(state)
+	if err != nil {
+		t.Fatalf("HashState : %v", err)
+	}
+	if got != frozenStateHash {
+		t.Errorf("ttl_seconds absent doit donner le même hash : got %s, want %s", got, frozenStateHash)
 	}
 }
 

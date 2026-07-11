@@ -13,6 +13,7 @@ use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\AgentTtlResolver;
 use App\Services\Agent\Providers\PrivilegeCapabilityProvider;
 use App\Services\Agent\StateCompiler;
 use App\Services\Agent\StateContract;
@@ -85,7 +86,7 @@ class CapabilityPrivilegeCompilationTest extends TestCase
 
     private function compiler(): StateCompiler
     {
-        return new StateCompiler(new StateHasher(), [new PrivilegeCapabilityProvider()]);
+        return new StateCompiler(new StateHasher(), [new PrivilegeCapabilityProvider()], new AgentTtlResolver());
     }
 
     /**

@@ -13,6 +13,7 @@ use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\AgentTtlResolver;
 use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
 use App\Services\Agent\Providers\RegistryUserCapabilityProvider;
 use App\Services\Agent\StateCompiler;
@@ -453,7 +454,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             $compiler = new StateCompiler(new StateHasher(), [
                 new RegistryMachineCapabilityProvider(),
                 new RegistryUserCapabilityProvider(),
-            ]);
+            ], new AgentTtlResolver());
 
             // MEMBRE : DisableRegistryTools = 1 (HKCU, Policies\System).
             $sessionMember = $compiler->compile(TargetContext::for($ws, $member))[StateContract::SCOPE_SESSION];

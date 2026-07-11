@@ -12,6 +12,7 @@ use App\Models\ControlHubContractItem;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\AgentTtlResolver;
 use App\Services\Agent\Providers\ApplicationsStateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\StateCompiler;
@@ -483,7 +484,14 @@ class UpstreamInstallOrderTest extends TestCase
     {
         $hasher ??= new StateHasher();
 
-        return (new StateCompiler($hasher, [$this->provider()]))->compile($this->ctx($ws));
+        // Story 43.3 — STUB du résolveur TTL (pas de mock réel) : ce harnais
+        // (WpkgSchemaBootstrapper) ne crée PAS les tables `capabilities` /
+        // `capability_assignments` (shim Story 15.2, antérieur au modèle de
+        // capacités) — un vrai AgentTtlResolver y échouerait (« no such table »).
+        $ttlResolver = $this->createMock(AgentTtlResolver::class);
+        $ttlResolver->method('ttlSeconds')->willReturn(3600);
+
+        return (new StateCompiler($hasher, [$this->provider()], $ttlResolver))->compile($this->ctx($ws));
     }
 
     /**

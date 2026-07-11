@@ -13,6 +13,7 @@ use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\AgentTtlResolver;
 use App\Services\Agent\Providers\RegistryListMachineCapabilityProvider;
 use App\Services\Agent\Providers\RegistryListUserCapabilityProvider;
 use App\Services\Agent\StateCompiler;
@@ -85,7 +86,7 @@ class CapabilityRegistryListCompilationTest extends TestCase
         return new StateCompiler(new StateHasher(), [
             new RegistryListMachineCapabilityProvider(),
             new RegistryListUserCapabilityProvider(),
-        ]);
+        ], new AgentTtlResolver());
     }
 
     /**

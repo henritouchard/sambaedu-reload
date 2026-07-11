@@ -13,6 +13,7 @@ use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\AgentTtlResolver;
 use App\Services\Agent\Providers\FsAclCapabilityProvider;
 use App\Services\Agent\StateCompiler;
 use App\Services\Agent\StateContract;
@@ -86,7 +87,7 @@ class CapabilityFsAclCompilationTest extends TestCase
 
     private function compiler(): StateCompiler
     {
-        return new StateCompiler(new StateHasher(), [new FsAclCapabilityProvider()]);
+        return new StateCompiler(new StateHasher(), [new FsAclCapabilityProvider()], new AgentTtlResolver());
     }
 
     /**
