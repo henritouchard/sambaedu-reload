@@ -618,41 +618,41 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
         closeMethod="closeSubnet">
         <form wire:submit.prevent="saveSubnet" class="space-y-4">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="form-control">
-                    <label class="label">
+                <div class="flex flex-col gap-1">
+                    <label class="label justify-between">
                         <span class="label-text">N° de VLAN *</span>
                         <span class="tooltip tooltip-left" data-tip="Entier de 1 à 999, unique. Identifie le sous-réseau dans le fichier de configuration généré.">
                             <i class="fa-solid fa-circle-info text-base-content/40"></i>
                         </span>
                     </label>
-                    <input type="number" min="1" max="999" wire:model="vlan_id" class="input input-bordered" required
+                    <input type="number" min="1" max="999" wire:model="vlan_id" class="input input-bordered w-full" required
                         placeholder="20" />
                 </div>
-                <div class="form-control">
-                    <label class="label">
+                <div class="flex flex-col gap-1">
+                    <label class="label justify-between">
                         <span class="label-text">Réseau (CIDR) *</span>
                         <span class="tooltip tooltip-left" data-tip="Notation CIDR complète, ex. 192.168.20.0/24. Le masque en est dérivé ; l'adresse est ramenée à sa base réseau.">
                             <i class="fa-solid fa-circle-info text-base-content/40"></i>
                         </span>
                     </label>
-                    <input type="text" wire:model="network" class="input input-bordered" required
+                    <input type="text" wire:model="network" class="input input-bordered w-full" required
                         placeholder="192.168.20.0/24" maxlength="45" />
                 </div>
             </div>
 
-            <div class="form-control">
-                <label class="label">
+            <div class="flex flex-col gap-1">
+                <label class="label justify-between">
                     <span class="label-text">Passerelle *</span>
                     <span class="tooltip tooltip-left" data-tip="Adresse IPv4 de la passerelle du VLAN. Doit appartenir au réseau déclaré.">
                         <i class="fa-solid fa-circle-info text-base-content/40"></i>
                     </span>
                 </label>
-                <input type="text" wire:model="gateway" class="input input-bordered" required
+                <input type="text" wire:model="gateway" class="input input-bordered w-full" required
                     placeholder="192.168.20.254" maxlength="45" />
             </div>
 
-            <div class="form-control">
-                <label class="label">
+            <div class="flex flex-col gap-1">
+                <label class="label justify-between">
                     <span class="label-text">Plages dynamiques *</span>
                     <span class="tooltip tooltip-left" data-tip="Au moins une plage. Début et fin inclus dans le réseau, début ≤ fin. Ne doit recouvrir aucune IP déjà réservée.">
                         <i class="fa-solid fa-circle-info text-base-content/40"></i>
@@ -678,20 +678,20 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
                 </button>
             </div>
 
-            <div class="form-control">
-                <label class="label">
+            <div class="flex flex-col gap-1">
+                <label class="label justify-between">
                     <span class="label-text">Fichier d'option supplémentaire</span>
                     <span class="tooltip tooltip-left" data-tip="Optionnel. Chemin absolu d'un fichier d'options DHCP à inclure, ex. /etc/dhcp/vlan20.conf. Sans espace ni caractère spécial (‘ ; $ ` { } | &).">
                         <i class="fa-solid fa-circle-info text-base-content/40"></i>
                     </span>
                 </label>
-                <input type="text" wire:model="extra_option" class="input input-bordered" maxlength="255"
+                <input type="text" wire:model="extra_option" class="input input-bordered w-full" maxlength="255"
                     placeholder="/etc/dhcp/vlan20-extra.conf" />
             </div>
 
-            <div class="form-control">
+            <div class="flex flex-col gap-1">
                 <label class="label"><span class="label-text">Description</span></label>
-                <input type="text" wire:model="subnetDescription" class="input input-bordered" maxlength="255" />
+                <input type="text" wire:model="subnetDescription" class="input input-bordered w-full" maxlength="255" />
             </div>
 
             @error('subnetForm')
