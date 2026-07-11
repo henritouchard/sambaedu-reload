@@ -50,7 +50,7 @@ timestamps UTC ISO 8601 (`Carbon::now('UTC')->toIso8601String()`).
 |---|---|---|
 | `schema` | string | Version du contrat. L'agent **refuse un major inconnu**. |
 | `generated_at` | string (ISO 8601 **avec timezone**) | Instant de compilation. **Champ volatil exclu du hash.** |
-| `ttl_seconds` | int | Cadence de poll/rafraîchissement conseillée. |
+| `ttl_seconds` | int | Cadence de poll/rafraîchissement conseillée — calculée PAR CONTEXTE depuis la Story 43.3 (court si le contexte est en « bascule sensible », défaut global sinon ; voir `App\Services\Agent\AgentTtlResolver`). **Champ volatil exclu du hash** (Story 43.3, AC3) : un changement de TTL seul ne fait pas franchir le cache 304 (voir [state-endpoint.md](state-endpoint.md) § cadence). |
 | `debug` | bool | Mode debug du poste (`workstations.debug`). En debug, le compagnon de session garde sa console ouverte (toutes sessions) et y recopie ses logs. **Champ opérationnel inclus dans le hash** : un toggle change l'ETag et franchit le cache 304. L'agent ignore ce champ s'il ne le connaît pas (forward-compat). |
 | `machine` / `session` / `machine_user` | list\<item\> | Les trois **portées** d'application. |
 
@@ -122,10 +122,12 @@ canal agent : il sert l'ETag de `GET /state` **et** la comparaison des rapports.
 
 **Deux portes d'entrée :**
 
-- `hashState(array $state)` — exclut le champ volatil `generated_at` **avant**
-  canonicalisation. Deux compilations du même état à des instants différents →
-  **hash identique**. (Tout futur champ volatil s'exclut au même endroit —
-  single point of truth.)
+- `hashState(array $state)` — exclut les champs volatils `generated_at` **et**
+  `ttl_seconds` (Story 43.3, AC3) **avant** canonicalisation. Deux compilations
+  du même état à des instants différents, ou avec un `ttl_seconds` différent
+  (bascule sensible ou non), → **hash identique**. (Tout futur champ volatil
+  s'exclut au même endroit — single point of truth,
+  `StateHasher::VOLATILE_STATE_KEYS` / miroir Go `hasher.go::volatileStateKeys`.)
 - `hashItem(array $item)` — exclut la clé `hash` de l'item (sinon dépendance
   circulaire). Le hash dérive du seul contenu *définissant*.
 

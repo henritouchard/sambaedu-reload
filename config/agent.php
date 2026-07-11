@@ -37,7 +37,48 @@ return [
     // de l'enveloppe se5.desired-state/v1 servie par GET /api/v1/agent/state.
     // 3600 s = 60 min (D7), aligné sur le golden file du contrat. Indicatif :
     // le serveur ne refuse pas un poll plus fréquent (throttle à part).
+    // Défaut global — abaisser cette valeur est une action OPÉRATEUR (env +
+    // config:cache), PAS une décision de code (Story 43.3, D5) : lire
+    // docs/agent/state-endpoint.md § cadence AVANT de la changer (mesure de
+    // charge, effets de bord sur les seuils de présence 2×ttl et l'adoption
+    // paresseuse par les agents).
     'ttl_seconds' => max(1, (int) env('AGENT_STATE_TTL_SECONDS', 3600)),
+
+    // Story 43.3 (D4, FR-A4) — TTL COURT servi quand le contexte compilé est en
+    // « bascule sensible » (AgentTtlResolver::ttlSeconds()). Fenêtre epic
+    // 60-120 s, défaut 90 s ; plancher serveur max(60, …) — l'agent clampe de
+    // toute façon à 60 s (loop.go MinServerIntervalSeconds), pas de dé-clamp
+    // possible côté serveur.
+    'ttl_sensitive_seconds' => max(60, (int) env('AGENT_STATE_TTL_SENSITIVE_SECONDS', 90)),
+
+    // Story 43.3 (D1) — liste des capacités (`capabilities.key`) dont un
+    // `capability_assignments.value` non-null sur une maille du contexte fait
+    // basculer ce contexte en TTL court. Array PHP volontaire (PAS d'env) :
+    // c'est une liste de clés techniques, pas un scalaire d'exploitation.
+    //
+    // Défaut = `['restrict_run']` : la capacité n'existe pas encore (41.2 non
+    // livrée à ce jour) → zéro ligne → comportement inchangé aujourd'hui ; le
+    // branchement de la bascule examen (41.3) se fait SANS une ligne de code
+    // ici — poser un assignment `restrict_run` non-null sur le parc suffit.
+    //
+    // ⚠️ Piège n°4 (43.3) : ne JAMAIS y mettre `internet_access` — l'exemption
+    // enseignante (FR-E4, epic 41) est un assignment PERMANENT sur le groupe
+    // logique du poste prof ; un slug permanent ici donnerait un TTL court À
+    // VIE (poll 90 s en continu, à tort). Réserver cette liste aux capacités
+    // dont les assignments sont TRANSITOIRES par construction (posés au flag,
+    // purgés au déflag).
+    //
+    // ⚠️ CONTRAINTE IMPOSÉE au consommateur (41.3, correction post-review #1
+    // de la 43.3) : le critère TTL court est `whereNotNull('value')`
+    // (AgentTtlResolver, D2) — les capacités listées ici DOIVENT être
+    // déflaguées par SUPPRESSION de l'assignment (DELETE), JAMAIS par
+    // écriture d'une valeur `off` non-null. Si 41.3 posait `value = 'off'`
+    // au déflag (convention UI « off = vraie valeur »,
+    // project_capability_value_map_symmetric_rule), la ligne resterait
+    // non-null en base et le contexte resterait EN PERMANENCE au TTL court
+    // (poll 90 s à vie) — le flag examen : créer l'assignment au flag,
+    // SUPPRIMER la ligne (pas mettre `off`) au déflag.
+    'ttl_sensitive_capabilities' => ['restrict_run'],
 
     // Historique de débogage des rapports agent (flag D3, consommé en 24.1) :
     // off par défaut — seuls le dernier état rapporté et le journal des

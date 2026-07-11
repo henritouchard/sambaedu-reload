@@ -12,6 +12,7 @@ use App\Enums\StateScope;
 use App\Models\ControlHubContract;
 use App\Models\ControlHubContractItem;
 use App\Models\Workstation;
+use App\Services\Agent\AgentTtlResolver;
 use App\Services\Agent\Contracts\KeyedExclusiveProvider;
 use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\StateCandidate;
@@ -128,7 +129,7 @@ class UpstreamLockedDriftStrictTest extends TestCase
             $providers,
         );
 
-        return (new StateCompiler($this->hasher, $decorated))->compile($this->machineOnlyContext());
+        return (new StateCompiler($this->hasher, $decorated, new AgentTtlResolver()))->compile($this->machineOnlyContext());
     }
 
     private function machineOnlyContext(): TargetContext

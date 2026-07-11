@@ -20,6 +20,7 @@ use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Observers\WorkstationGroupObserver;
 use App\Policies\CapabilityPolicy;
+use App\Services\Agent\AgentTtlResolver;
 use App\Services\Agent\Providers\ApplicationsStateProvider;
 use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
 use App\Services\Agent\Providers\RegistryUserCapabilityProvider;
@@ -672,7 +673,7 @@ class ContractSeveranceTest extends TestCase
             UpstreamAwareProvider::wrap(new RegistryUserCapabilityProvider(), $source),
         ];
 
-        return (new StateCompiler(new StateHasher(), $providers))->compile(TargetContext::for($ws, null));
+        return (new StateCompiler(new StateHasher(), $providers, new AgentTtlResolver()))->compile(TargetContext::for($ws, null));
     }
 
     /**
@@ -688,7 +689,7 @@ class ContractSeveranceTest extends TestCase
             new UpstreamContractSource([]),
         );
 
-        return (new StateCompiler(new StateHasher(), [$provider]))->compile(TargetContext::for($ws, null));
+        return (new StateCompiler(new StateHasher(), [$provider], new AgentTtlResolver()))->compile(TargetContext::for($ws, null));
     }
 
     /**

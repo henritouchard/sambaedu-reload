@@ -15,6 +15,7 @@ use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\AgentTtlResolver;
 use App\Services\Agent\Providers\AssociationsStateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\StateCompiler;
@@ -231,7 +232,7 @@ class AssociationsStateProviderTest extends TestCase
 
     private function compiler(): StateCompiler
     {
-        return new StateCompiler(new StateHasher(), [$this->provider()]);
+        return new StateCompiler(new StateHasher(), [$this->provider()], new AgentTtlResolver());
     }
 
     // ── NFR7 — lecture seule Postgres, zéro AD/APCu/samba ─────────────────

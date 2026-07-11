@@ -17,6 +17,7 @@ use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\AgentTtlResolver;
 use App\Services\Agent\Contracts\KeyedExclusiveProvider;
 use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\Providers\OverlayStateProvider;
@@ -83,6 +84,17 @@ class StateCompilerTest extends TestCase
         foreach (StateContract::scopes() as $scope) {
             self::assertSame([], $state[$scope], "portée {$scope} : doit être présente et vide");
         }
+    }
+
+    #[Test]
+    public function ttl_seconds_delegates_to_the_injected_resolver(): void
+    {
+        // Story 43.3 (AC1, AC4) — `compile()` remplace la constante par
+        // `ttlResolver->ttlSeconds($ctx)` : la valeur de l'enveloppe DOIT être
+        // exactement celle renvoyée par le résolveur injecté, court ou non.
+        $state = $this->compiler([], $this->stubTtlResolver(90))->compile($this->machineOnlyContext());
+
+        self::assertSame(90, $state['ttl_seconds']);
     }
 
     #[Test]
@@ -743,11 +755,24 @@ class StateCompilerTest extends TestCase
     // ── Helpers ───────────────────────────────────────────────────────────
 
     /**
+     * Story 43.3 (piège n°7) : le résolveur TTL est un STUB par défaut (aucune
+     * requête SQL en Unit — le critère SQL est couvert en Feature par
+     * `AgentTtlResolverTest`). Défaut 3600 : iso comportement historique
+     * (non-régression de la constante `ttl_seconds` ex-ligne 74).
+     *
      * @param  list<StateProvider>  $providers
      */
-    private function compiler(array $providers): StateCompiler
+    private function compiler(array $providers, ?AgentTtlResolver $ttlResolver = null): StateCompiler
     {
-        return new StateCompiler($this->hasher, $providers);
+        return new StateCompiler($this->hasher, $providers, $ttlResolver ?? $this->stubTtlResolver(3600));
+    }
+
+    private function stubTtlResolver(int $seconds): AgentTtlResolver
+    {
+        $resolver = $this->createMock(AgentTtlResolver::class);
+        $resolver->method('ttlSeconds')->willReturn($seconds);
+
+        return $resolver;
     }
 
     private function machineOnlyContext(): TargetContext

@@ -4068,3 +4068,102 @@ si ces capacités devront porter `explorer_restart` en 43.2.
       2.6.0→2.9.0 vérifié : jamais publiées à la création de la 38.3).
 - [ ] Golden : `tests/Fixtures/Agent/*.v1.json` STRICTEMENT inchangés (le hint
       vit dans le payload provider-defined §3.2 ; l'émission serveur = 43.2).
+## Story 43.3 — Cadence de propagation pilotée (`ttl_seconds` dynamique)
+
+Le `ttl_seconds` de l'enveloppe `/state` n'est plus une constante globale : il
+est calculé PAR CONTEXTE par `App\Services\Agent\AgentTtlResolver::ttlSeconds()`
+(TTL court `config('agent.ttl_sensitive_seconds')`, défaut 90 s, plancher
+serveur 60 s, si le contexte porte AU MOINS un `capability_assignments.value`
+non-null d'une capacité dont la `key` figure dans
+`config('agent.ttl_sensitive_capabilities')`, défaut `['restrict_run']` ;
+sinon TTL global `config('agent.ttl_seconds')`, défaut 3600 s INCHANGÉ). Aucun
+comportement agent modifié (mécanisme livré depuis la 2.2.0), aucune
+publication de release requise — **serveur-only**. `ttl_seconds` est désormais
+un champ VOLATIL exclu du hash d'état (PHP + miroir Go) : un changement de TTL
+seul ne franchit pas le cache 304.
+
+Ce runbook est purement SERVEUR (API + config) — pas de manipulation lab
+Windows requise pour ce lot.
+
+### Scénario 43.3.1 — TTL court servi sur bascule sensible (curl /vm ou lab1)
+
+1. Créer une capacité `restrict_run` (`php artisan tinker` ou seed manuel) et
+   poser un `capability_assignments.value` non-null sur le parc physique
+   (salle) d'un poste pilote.
+2. `curl -sS -H "Authorization: Bearer $TOKEN" https://se4fs/api/v1/agent/state | jq .ttl_seconds`
+   → attendu **90** (ou la valeur de `AGENT_STATE_TTL_SENSITIVE_SECONDS` si
+   surchargée, plancher 60).
+3. Même vérification en contexte compagnon (`?user=<login>` d'une session sur
+   ce poste) : le TTL court doit AUSSI sortir (D3 — le poste, SYSTEM, voit les
+   assignments de sa salle même sans user).
+4. Retirer l'assignment (ou remettre `value` à `null`) : au prochain appel,
+   `ttl_seconds` revient à la valeur globale (3600 par défaut).
+
+### Scénario 43.3.2 — ETag stable malgré un TTL basculé (limite 2, piège #1)
+
+1. Poste sans assignment sensible : `GET /state` → noter l'`ETag`.
+2. Poser l'assignment `restrict_run` (value non-null) SANS toucher aux autres
+   réglages du poste (pas de changement d'item) : rejouer `GET /state` avec
+   `If-None-Match: "<etag noté>"` → **304 attendu**, MÊME ETag conservé (le
+   TTL a changé mais le hash d'état est insensible à `ttl_seconds`).
+3. Vérifier que le TTL frais N'EST PAS livré tant que le poste ne franchit pas
+   un 200 naturel (nouveau item modifié, ex. `internet_access=off` posé en
+   même temps que le flag examen) ou une **synchro forcée** (Story 24.7,
+   scénario dédié plus haut dans ce runbook) — remède documenté, pas un bug.
+
+### Scénario 43.3.3 — Abaissement du défaut global (action opérateur — NE PAS faire sans mesurer)
+
+⚠️ Procédure RÉVERSIBLE, PAS une recommandation à appliquer par défaut. À
+dérouler uniquement si un besoin réel de resserrement global est identifié.
+
+1. **Mesurer AVANT** : les `GET /state` 304 sont quasi gratuits, mais chaque
+   cycle de poll embarque un `POST /report` (écriture check-in + ingestion) —
+   abaisser `AGENT_STATE_TTL_SECONDS` de 3600 à 600 (recommandation cible)
+   MULTIPLIE PAR 6 la fréquence de ces écritures sur tout le parc. Vérifier la
+   charge DB/logs AVANT de généraliser.
+2. Modifier `AGENT_STATE_TTL_SECONDS` dans l'env de la VM, puis
+   `php artisan config:cache` **+ chown** www-admin (le cache de config n'est
+   PAS synchronisé par inotify — `project_vm_config_cache_not_synced`).
+3. **Effet de bord n°1 (immédiat)** : les seuils de présence « muet »/« online »
+   (`2 × config('agent.ttl_seconds')`, `Workstation::isAgentSilent()`/
+   `agentPresence()`/`WorkstationGroupRepository`) se resserrent DÈS le
+   `config:cache` — AVANT que les postes n'aient adopté la nouvelle cadence.
+   Vérifier dans les pages parc : des postes bien vivants peuvent apparaître
+   « silencieux » en masse pendant la fenêtre de transition. CE N'EST PAS UNE
+   PANNE — c'est le couplage documenté (piège #3 de la story).
+4. **Effet de bord n°2** : le nouveau TTL n'atteint un agent qu'à son PROCHAIN
+   `200` (limite 1 du § cadence, `docs/agent/state-endpoint.md`) — tant qu'un
+   poste n'a vu aucun changement d'item, il continue de poller à l'ancien
+   rythme.
+5. **Remède** : lancer une synchro forcée du parc concerné (Story 24.7, UI ou
+   `agent_sync_requested_at`) juste après le changement d'env, pour réduire la
+   fenêtre de faux « silencieux » et faire adopter le nouveau TTL au plus vite.
+6. Revenir en arrière si besoin : ré-élever `AGENT_STATE_TTL_SECONDS`,
+   `config:cache` + chown, même remède de synchro forcée pour re-desserrer les
+   seuils de présence sans attendre.
+
+### Scénario 43.3.4 — Non-régression golden/contrat (revue de code + tests)
+
+1. `tests/Fixtures/Agent/state.v1.json` INCHANGÉ (le champ `ttl_seconds` reste
+   dans l'enveloppe, seulement exclu du hash).
+2. `FROZEN_STATE_HASH` (PHP `ContractV1Test`) = `frozenStateHash` (Go
+   `hasher_test.go`), recalculés à l'identique
+   (`b1eb0560eec1c59a6908967f0c3e402dd79528591891ffddc33d90f2d0c8a3d7`).
+3. `agent/**` INTOUCHÉ hors `hasher.go`/`hasher_test.go` (miroir de contrat) —
+   `loop.go`/`engine.go`/`companion.go`/`version.go` inchangés, AUCUNE
+   publication de release requise pour cette story.
+4. `go test ./shared/...` et les suites PHP ciblées (`StateCompilerTest`,
+   `ContractV1Test`, `StateHasherTest`, `AgentTtlResolverTest`,
+   `StateEndpointTest`) vertes sur l'hôte.
+
+### Check-list
+
+- [ ] 43.3.1 — TTL court servi (machine-only ET `?user=`) sur assignment
+      `restrict_run` non-null ; retour au défaut au retrait.
+- [ ] 43.3.2 — ETag/304 STABLES malgré la bascule de TTL seule ; livraison au
+      prochain 200 naturel ou via synchro forcée (24.7).
+- [ ] 43.3.3 — Abaissement du défaut global : mesure de charge AVANT, procédure
+      `config:cache`+chown, DEUX effets de bord connus et acceptés (présence
+      resserrée immédiatement, adoption paresseuse), remède synchro forcée.
+- [ ] 43.3.4 — Golden `state.v1.json` inchangé, hash gelé PHP=Go recalculé,
+      `agent/**` limité au miroir hasher, zéro publication requise.

@@ -12,6 +12,7 @@ use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\AgentTtlResolver;
 use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
 use App\Services\Agent\Providers\RegistryUserCapabilityProvider;
 use App\Services\Agent\StateCompiler;
@@ -83,7 +84,7 @@ class CapabilityRegistryCompilationTest extends TestCase
         return new StateCompiler(new StateHasher(), [
             new RegistryMachineCapabilityProvider(),
             new RegistryUserCapabilityProvider(),
-        ]);
+        ], new AgentTtlResolver());
     }
 
     private function sessionItems(array $state): array

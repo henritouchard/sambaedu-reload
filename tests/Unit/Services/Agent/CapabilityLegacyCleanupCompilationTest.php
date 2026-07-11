@@ -10,6 +10,7 @@ use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\AgentTtlResolver;
 use App\Services\Agent\Providers\LegacyCleanupCapabilityProvider;
 use App\Services\Agent\StateCompiler;
 use App\Services\Agent\StateContract;
@@ -92,7 +93,7 @@ class CapabilityLegacyCleanupCompilationTest extends TestCase
      */
     private function machineLegacyCleanup(): array
     {
-        $compiler = new StateCompiler(new StateHasher(), [new LegacyCleanupCapabilityProvider()]);
+        $compiler = new StateCompiler(new StateHasher(), [new LegacyCleanupCapabilityProvider()], new AgentTtlResolver());
         $state = $compiler->compile(TargetContext::for($this->ws, null));
 
         return array_values(array_filter(

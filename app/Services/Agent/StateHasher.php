@@ -26,13 +26,22 @@ final class StateHasher
      * l'autre sans changer le sens de la cible). Single point of truth : tout
      * nouveau champ volatil s'ajoute ici.
      *
+     * `ttl_seconds` ajouté par la Story 43.3 (AC3, D6) : le TTL dépend
+     * désormais du CONTEXTE (bascule sensible ou non — {@see AgentTtlResolver}),
+     * mais reste une cadence de poll CONSEILLÉE, pas une donnée sémantique de
+     * la cible — un changement de TTL seul (sans changement d'items) ne doit
+     * pas invalider l'ETag. Miroir Go OBLIGATOIRE :
+     * `agent/shared/hasher.go::volatileStateKeys` doit porter EXACTEMENT la
+     * même liste (piège n°2, contrat gelé des deux côtés).
+     *
      * @var list<string>
      */
-    private const VOLATILE_STATE_KEYS = ['generated_at'];
+    private const VOLATILE_STATE_KEYS = ['generated_at', 'ttl_seconds'];
 
     /**
-     * Hash d'un état cible complet (enveloppe). `generated_at` est exclu, de
-     * sorte que seuls des changements sémantiques modifient le hash.
+     * Hash d'un état cible complet (enveloppe). `generated_at` et
+     * `ttl_seconds` sont exclus (Story 43.3), de sorte que seuls des
+     * changements sémantiques modifient le hash.
      *
      * @param  array<string,mixed>  $state
      */
