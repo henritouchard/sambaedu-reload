@@ -454,7 +454,7 @@ const DATASETS = {
     {
       "num": 8,
       "title": "Réseau (DHCP/DNS) SER",
-      "status": "in-progress",
+      "status": "done",
       "category": "post-prod",
       "summary": "Gestion des réservations DHCP et consultation des baux actifs depuis l'interface SER. <strong>Reportée post-prod</strong> — le shim <code>1bis-16 dhcp</code> (SHIM EXPRESS ~2h) couvre le besoin MVP, la refonte native est donc différée. <strong>Rouvert 2026-07-03</strong> par la Story 8.3 (VLANs — dernière feature DHCP legacy non couverte).",
       "stories": [
