@@ -91,8 +91,8 @@ L'écrasement de fichiers possédés par dpkg est assumé — les paquets 4.17.3
 
 | Script | Paquet source | Consommé par | Versionné SE5 ? |
 |---|---|---|---|
-| `sbin/make_dhcpd_conf.sh` | `sambaedu-boot-server` | `DhcpService.php:335`, `update.sh:727`, cron `*/5` | ❌ → **story sous-réseaux DHCP** (copie `scripts/system/` + `ensure_dhcp_scripts()`) |
-| `sbin/dhcp-dyndns.sh` | `sambaedu-web-common` | hooks `on commit/release/expiry` du `dhcpd.conf` généré | ❌ → même story (compagnon indissociable du précédent) |
+| `sbin/make_dhcpd_conf.sh` | `sambaedu-boot-server` | `DhcpService.php:335`, `update.sh:727`, cron `*/5` | ✅ Story 8.3 — `scripts/system/make_dhcpd_conf.sh` + `ensure_dhcp_scripts()` (appel `script_make_reservations.php` retiré) |
+| `sbin/dhcp-dyndns.sh` | `sambaedu-web-common` | hooks `on commit/release/expiry` du `dhcpd.conf` généré | ✅ Story 8.3 — `scripts/system/dhcp-dyndns.sh` (iso-octet) + `ensure_dhcp_scripts()` |
 | `includes/config.inc.sh` (+ `utils.inc.sh`) | `sambaedu-config` | sourcé par `make_dhcpd_conf.sh` et les autres scripts sbin | ❌ — reste [A], traité en Vague 1 (config auto-portée) |
 | `scripts/make_wine_image.sh` | `sambaedu-web-common` | `GenerateWineImageJob.php:20-49` | ❌ — Vague 3 |
 | `scripts/install-{debian,ubuntu,primtux,nird}-*-iso.sh` | **aucun — absents de la VM** | `SystemStatus/Distro.php`, `RunDistroInstallScriptJob.php` | ❌ référencés mais **inexistants** (gap connu du pipeline ISO) |

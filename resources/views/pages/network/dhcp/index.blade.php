@@ -2,8 +2,10 @@
 
 use App\Components\Traits\WithToasts;
 use App\Models\DhcpReservation;
+use App\Models\DhcpSubnet;
 use App\Models\Workstation;
 use App\Services\Network\DhcpService;
+use App\Services\Network\DhcpSubnetService;
 use App\Services\Network\Exceptions\DhcpCommandException;
 use App\Services\Network\Exceptions\DhcpValidationException;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -22,11 +24,27 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
     public string $tab = 'reservations';
 
     /** Onglets valides (allow-list du switch). */
-    private const TABS = ['reservations', 'leases'];
+    private const TABS = ['reservations', 'leases', 'subnets'];
     public string $search = '';
     public bool $modalOpen = false;
     public bool $editing = false;
     public ?int $editingId = null;
+
+    // === Sous-réseaux (VLAN) — Story 8.3 ===
+    public bool $subnetModalOpen = false;
+    public bool $subnetEditing = false;
+    public ?int $subnetEditingId = null;
+    public ?int $vlan_id = null;
+    public string $network = '';
+    public string $gateway = '';
+    /** @var array<int,array{begin:string,end:string}> */
+    public array $ranges = [['begin' => '', 'end' => '']];
+    public ?string $extra_option = null;
+    public ?string $subnetDescription = null;
+
+    public bool $subnetDeleteOpen = false;
+    public ?int $subnetDeleteId = null;
+    public ?string $subnetDeleteLabel = null;
 
     // === Form fields ===
     public string $name = '';
@@ -260,6 +278,164 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
         }
     }
 
+    // ====================================================================
+    // Sous-réseaux (VLAN) — Story 8.3
+    // ====================================================================
+
+    private function resetSubnetForm(): void
+    {
+        $this->subnetEditing = false;
+        $this->subnetEditingId = null;
+        $this->vlan_id = null;
+        $this->network = '';
+        $this->gateway = '';
+        $this->ranges = [['begin' => '', 'end' => '']];
+        $this->extra_option = null;
+        $this->subnetDescription = null;
+        $this->resetErrorBag();
+    }
+
+    public function openCreateSubnetModal(): void
+    {
+        if (Gate::denies('manage-dhcp')) {
+            $this->toastAccessDenied();
+            return;
+        }
+        $this->resetSubnetForm();
+        $this->subnetModalOpen = true;
+    }
+
+    public function openEditSubnetModal(int $id): void
+    {
+        if (Gate::denies('manage-dhcp')) {
+            $this->toastAccessDenied();
+            return;
+        }
+        $subnet = DhcpSubnet::findOrFail($id);
+        $this->subnetEditing = true;
+        $this->subnetEditingId = $subnet->id;
+        $this->vlan_id = $subnet->vlan_id;
+        $this->network = $subnet->network;
+        $this->gateway = $subnet->gateway;
+        $ranges = is_array($subnet->ranges) ? array_values($subnet->ranges) : [];
+        $this->ranges = $ranges !== [] ? $ranges : [['begin' => '', 'end' => '']];
+        $this->extra_option = $subnet->extra_option;
+        $this->subnetDescription = $subnet->description;
+        $this->resetErrorBag();
+        $this->subnetModalOpen = true;
+    }
+
+    public function closeSubnet(): void
+    {
+        $this->subnetModalOpen = false;
+        $this->subnetDeleteOpen = false;
+    }
+
+    public function addRange(): void
+    {
+        $this->ranges[] = ['begin' => '', 'end' => ''];
+    }
+
+    public function removeRange(int $index): void
+    {
+        if (isset($this->ranges[$index])) {
+            unset($this->ranges[$index]);
+            $this->ranges = array_values($this->ranges);
+        }
+        if ($this->ranges === []) {
+            $this->ranges = [['begin' => '', 'end' => '']];
+        }
+    }
+
+    public function saveSubnet(): void
+    {
+        if (Gate::denies('manage-dhcp')) {
+            $this->toastAccessDenied();
+            return;
+        }
+
+        $service = app(DhcpSubnetService::class);
+        try {
+            $attrs = [
+                'vlan_id' => (int) $this->vlan_id,
+                'network' => $this->network,
+                'gateway' => $this->gateway,
+                'ranges' => $this->ranges,
+                'extra_option' => $this->extra_option,
+                'description' => $this->subnetDescription,
+            ];
+
+            if ($this->subnetEditing && $this->subnetEditingId !== null) {
+                $subnet = DhcpSubnet::findOrFail($this->subnetEditingId);
+                $service->updateSubnet($subnet, $attrs);
+                $this->toastSuccess('Sous-réseau modifié et service DHCP rechargé.');
+            } else {
+                $service->createSubnet($attrs);
+                $this->toastSuccess('Sous-réseau créé et service DHCP rechargé.');
+            }
+
+            $this->subnetModalOpen = false;
+        } catch (DhcpValidationException $e) {
+            $this->addError('subnetForm', $e->getMessage());
+            $this->toastError($e->getMessage());
+        } catch (DhcpCommandException $e) {
+            // AC5 — Mode dégradé : SQL + fichier conservés, seul le reload a échoué.
+            Log::channel('network')->error('DhcpSubnetService: reload échoué', [
+                'context' => 'page dhcp/index saveSubnet',
+                'error' => $e->getMessage(),
+            ]);
+            $this->toastWarning(
+                "Sous-réseau enregistré. Le service DHCP n'a pas pu être rechargé — relancer le service manuellement. (cause : " . $e->firstStderrLine() . ')',
+                'Avertissement reload DHCP',
+            );
+            $this->subnetModalOpen = false;
+        } catch (\Throwable $e) {
+            Log::channel('network')->error('DhcpSubnetService: exception saveSubnet', ['error' => $e->getMessage()]);
+            $this->toastError('Erreur inattendue : ' . $e->getMessage());
+        }
+    }
+
+    public function confirmDeleteSubnet(int $id): void
+    {
+        if (Gate::denies('manage-dhcp')) {
+            $this->toastAccessDenied();
+            return;
+        }
+        $subnet = DhcpSubnet::findOrFail($id);
+        $this->subnetDeleteId = $subnet->id;
+        $this->subnetDeleteLabel = 'VLAN ' . $subnet->vlan_id . ' (' . $subnet->network . ')';
+        $this->subnetDeleteOpen = true;
+    }
+
+    public function deleteSubnetConfirmed(): void
+    {
+        if (Gate::denies('manage-dhcp')) {
+            $this->toastAccessDenied();
+            return;
+        }
+        if ($this->subnetDeleteId === null) {
+            return;
+        }
+
+        $service = app(DhcpSubnetService::class);
+        try {
+            $subnet = DhcpSubnet::findOrFail($this->subnetDeleteId);
+            $service->deleteSubnet($subnet);
+            $this->toastSuccess('Sous-réseau supprimé et service DHCP rechargé.');
+        } catch (DhcpCommandException $e) {
+            $this->toastWarning(
+                'Sous-réseau supprimé. Reload service échoué — à relancer manuellement.',
+                'Avertissement reload DHCP',
+            );
+        } catch (\Throwable $e) {
+            $this->toastError('Erreur suppression : ' . $e->getMessage());
+        } finally {
+            $this->subnetDeleteOpen = false;
+            $this->subnetDeleteId = null;
+            $this->subnetDeleteLabel = null;
+        }
+    }
+
     public function with(): array
     {
         $service = app(DhcpService::class);
@@ -299,10 +475,17 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
                 ->get(['id', 'name', 'ip', 'mac']);
         }
 
+        // Sous-réseaux gérés (VLAN) + sous-réseau par défaut (lecture seule).
+        $subnetService = app(DhcpSubnetService::class);
+        $subnets = DhcpSubnet::query()->orderBy('vlan_id')->get();
+        $defaultSubnet = $subnetService->defaultSubnet();
+
         return [
             'reservations' => $reservations,
             'leases' => $leases,
             'workstationSuggestions' => $workstationSuggestions,
+            'subnets' => $subnets,
+            'defaultSubnet' => $defaultSubnet,
         ];
     }
 };
@@ -312,11 +495,19 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
     description="Gestion native des réservations et baux DHCP (FR20 + FR22)">
 
     <x-slot:actions>
-        <button type="button" wire:click="openCreateModal" class="btn btn-primary"
-            @cannot('manage-dhcp') disabled @endcannot>
-            <i class="fa-solid fa-plus"></i>
-            Nouvelle réservation
-        </button>
+        @if ($tab === 'subnets')
+            <button type="button" wire:click="openCreateSubnetModal" class="btn btn-primary"
+                @cannot('manage-dhcp') disabled @endcannot>
+                <i class="fa-solid fa-plus"></i>
+                Nouveau sous-réseau
+            </button>
+        @elseif ($tab !== 'leases')
+            <button type="button" wire:click="openCreateModal" class="btn btn-primary"
+                @cannot('manage-dhcp') disabled @endcannot>
+                <i class="fa-solid fa-plus"></i>
+                Nouvelle réservation
+            </button>
+        @endif
     </x-slot:actions>
 
     <div class="space-y-4">
@@ -327,12 +518,15 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
             $dhcpTabs = [
                 'reservations' => ['label' => 'Réservations ('.$reservations->total().')', 'icon' => 'fa-solid fa-bookmark'],
                 'leases' => ['label' => 'Baux actifs'.($leasesAvailable ? ' ('.$leases->count().')' : ''), 'icon' => 'fa-solid fa-network-wired'],
+                'subnets' => ['label' => 'Sous-réseaux ('.$subnets->count().')', 'icon' => 'fa-solid fa-sitemap'],
             ];
         @endphp
         <x-molecules.tabs :tabs="$dhcpTabs" :active="$tab" class="bg-base-200 w-fit" />
 
         {{-- Contenu des onglets --}}
-        @if ($tab === 'leases')
+        @if ($tab === 'subnets')
+            @include('pages.network.dhcp._partials.subnets-table', ['subnets' => $subnets, 'defaultSubnet' => $defaultSubnet])
+        @elseif ($tab === 'leases')
             @include('pages.network.dhcp._partials.leases-table', ['leases' => $leases, 'leasesAvailable' => $leasesAvailable])
         @else
             {{-- Recherche (réservations uniquement) --}}
@@ -412,6 +606,106 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
                 wire:loading.attr="disabled" wire:target="deleteConfirmed">
                 <span wire:loading wire:target="deleteConfirmed" class="loading loading-spinner loading-sm"></span>
                 <i wire:loading.remove wire:target="deleteConfirmed" class="fa-solid fa-trash"></i> Supprimer
+            </button>
+        </x-slot:footer>
+    </x-molecules.modal>
+
+    {{-- Modale création / édition sous-réseau (VLAN) — Story 8.3 --}}
+    <x-molecules.modal wire:model="subnetModalOpen"
+        :title="$subnetEditing ? 'Modifier le sous-réseau (VLAN)' : 'Nouveau sous-réseau (VLAN)'"
+        size="max-w-2xl"
+        height="h-auto"
+        closeMethod="closeSubnet">
+        <form wire:submit.prevent="saveSubnet" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="form-control">
+                    <label class="label"><span class="label-text">N° de VLAN *</span></label>
+                    <input type="number" min="1" max="999" wire:model="vlan_id" class="input input-bordered" required
+                        placeholder="20" />
+                    <p class="text-xs text-base-content/50 mt-1">Entier de 1 à 999, unique.</p>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text">Réseau (CIDR) *</span></label>
+                    <input type="text" wire:model="network" class="input input-bordered" required
+                        placeholder="192.168.20.0/24" maxlength="45" />
+                    <p class="text-xs text-base-content/50 mt-1">Notation CIDR complète (le masque en est dérivé).</p>
+                </div>
+            </div>
+
+            <div class="form-control">
+                <label class="label"><span class="label-text">Passerelle *</span></label>
+                <input type="text" wire:model="gateway" class="input input-bordered" required
+                    placeholder="192.168.20.254" maxlength="45" />
+            </div>
+
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text">Plages dynamiques *</span>
+                </label>
+                <div class="space-y-2">
+                    @foreach ($ranges as $i => $range)
+                        <div class="flex items-center gap-2" wire:key="range-{{ $i }}">
+                            <input type="text" wire:model="ranges.{{ $i }}.begin" class="input input-bordered input-sm flex-1"
+                                placeholder="Début (192.168.20.10)" maxlength="45" />
+                            <span class="text-base-content/40">→</span>
+                            <input type="text" wire:model="ranges.{{ $i }}.end" class="input input-bordered input-sm flex-1"
+                                placeholder="Fin (192.168.20.200)" maxlength="45" />
+                            <button type="button" wire:click="removeRange({{ $i }})" class="btn btn-ghost btn-sm text-error"
+                                title="Retirer la plage">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    @endforeach
+                </div>
+                <button type="button" wire:click="addRange" class="btn btn-ghost btn-sm mt-2 w-fit">
+                    <i class="fa-solid fa-plus"></i> Ajouter une plage
+                </button>
+            </div>
+
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text">Fichier d'option supplémentaire</span>
+                    <span class="tooltip tooltip-left" data-tip="Chemin d'un fichier d'options DHCP à inclure (sans espace). Optionnel.">
+                        <i class="fa-solid fa-circle-info text-base-content/40"></i>
+                    </span>
+                </label>
+                <input type="text" wire:model="extra_option" class="input input-bordered" maxlength="255"
+                    placeholder="/etc/dhcp/vlan20-extra.conf" />
+            </div>
+
+            <div class="form-control">
+                <label class="label"><span class="label-text">Description</span></label>
+                <input type="text" wire:model="subnetDescription" class="input input-bordered" maxlength="255" />
+            </div>
+
+            @error('subnetForm')
+                <div class="alert alert-error py-2"><i class="fa-solid fa-triangle-exclamation"></i>{{ $message }}</div>
+            @enderror
+        </form>
+
+        <x-slot:footer>
+            <button type="button" wire:click="closeSubnet" class="btn btn-ghost" wire:loading.attr="disabled" wire:target="saveSubnet">Annuler</button>
+            <button type="button" wire:click="saveSubnet" class="btn btn-primary"
+                wire:loading.attr="disabled" wire:target="saveSubnet">
+                <span wire:loading wire:target="saveSubnet" class="loading loading-spinner loading-sm"></span>
+                {{ $subnetEditing ? 'Enregistrer' : 'Créer' }}
+            </button>
+        </x-slot:footer>
+    </x-molecules.modal>
+
+    {{-- Modale confirmation suppression sous-réseau --}}
+    <x-molecules.modal wire:model="subnetDeleteOpen" title="Supprimer le sous-réseau" size="max-w-md" height="h-auto"
+        closeMethod="closeSubnet">
+        <p>Voulez-vous vraiment supprimer le sous-réseau <strong>{{ $subnetDeleteLabel }}</strong> ?</p>
+        <p class="text-sm text-base-content/60 mt-2">
+            Les clés <code>dhcp_*_N</code> correspondantes seront retirées et le service DHCP sera rechargé.
+        </p>
+        <x-slot:footer>
+            <button type="button" wire:click="closeSubnet" class="btn btn-ghost" wire:loading.attr="disabled" wire:target="deleteSubnetConfirmed">Annuler</button>
+            <button type="button" wire:click="deleteSubnetConfirmed" class="btn btn-error"
+                wire:loading.attr="disabled" wire:target="deleteSubnetConfirmed">
+                <span wire:loading wire:target="deleteSubnetConfirmed" class="loading loading-spinner loading-sm"></span>
+                <i wire:loading.remove wire:target="deleteSubnetConfirmed" class="fa-solid fa-trash"></i> Supprimer
             </button>
         </x-slot:footer>
     </x-molecules.modal>

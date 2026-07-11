@@ -466,8 +466,8 @@ const DATASETS = {
         {
           "id": "8-3",
           "title": "Sous-réseaux DHCP (VLANs) — CRUD natif + scripts DHCP versionnés",
-          "status": "ready-for-dev",
-          "note": "CRÉÉE 2026-07-03 (create-story, claude-fable-5) → ready-for-dev. Porte la gestion des VLANs de sambaedu/dhcp/config.php (dernière feature DHCP legacy non couverte). SQL source de vérité (table dhcp_subnets) + export fichier DÉDIÉ /etc/sambaedu/sambaedu.conf.d/dhcp-subnets.conf (zéro conflit avec dhcp.conf legacy) ; make_dhcpd_conf.sh CONSERVÉ ; sous-réseau défaut lecture seule v1 ; vlan_id 1..999 ; format INI strict. VOLET 2 : versionner scripts/system/{make_dhcpd_conf.sh,dhcp-dyndns.sh} + ensure_dhcp_scripts() dans update.sh. Réutilisation 8.1 : DhcpService::reloadService(), Cache::lock('dhcp.reload'), AtomicFileWriter, onglet dans page network/dhcp existante. 7 AC, T1-T7. Prérequis à la clôture de l'Epic 38 (débranche make_dhcpd_conf.sh legacy). Reco dev : OPUS."
+          "status": "review",
+          "note": "DÉVELOPPÉE 2026-07-11 (dev-cycle, dev opus 4.8). Table dhcp_subnets + DhcpSubnetService (validations CIDR/vlan/overlap/réservation, export atomique dhcp-subnets.conf, reload sous lock partagé 8.1, mode dégradé AC5) + onglet Sous-réseaux Livewire + scripts versionnés scripts/system/ + ensure_dhcp_scripts() dans update.sh. Review adversariale sonnet + 2e avis opus → 6 findings + 2 ajouts opus, 7 corrigés auto (dont #1 🔴 RCE root via extra_option → whitelist chemin absolu + tests d'attaque ; #3 TOCTOU lock avant validation ; #2 idempotence -x). Reste #5 (/31-/32) backlog. Tests HÔTE : 45 passed (75 assertions) filter DhcpSubnet + non-régression 8.1 OK. 2 questions non bloquantes (périmètre greenfield config.inc.sh ; extra_option espaces). RESTE /vm : migrate + rejouer update.sh. Détail : _bmad-output/codeReviews/8-3.md. Reco dev : OPUS."
         }
       ]
     },

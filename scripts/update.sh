@@ -663,6 +663,58 @@ ensure_samba_partages_share() {
 }
 
 # ============================================================================
+# Scripts DHCP versionnés (Story 8.3 — greenfield-proof)
+# ============================================================================
+# `make_dhcpd_conf.sh` (régénère /etc/dhcp/dhcpd.conf + restart isc-dhcp-server,
+# porte les options boot iPXE 00:00/06/07 + hooks dyndns + AppArmor) et son
+# compagnon `dhcp-dyndns.sh` ne vivent que dans les paquets Debian figés
+# `sambaedu-*` (4.17.36). Un déploiement sans ce socle les perdrait
+# silencieusement (l'ancien update.sh se contentait d'un warning). On les
+# internalise ici depuis `scripts/system/` (versionnés dans le repo) et on les
+# déploie de façon idempotente vers le chemin canonique
+# `/usr/share/sambaedu/sbin/` (contrat sudoers / cron / config/sambaedu.php).
+#
+# La copie SE5 de `make_dhcpd_conf.sh` n'appelle plus le cron legacy
+# `script_make_reservations.php` : c'est `DhcpService::exportReservationsFile()`
+# qui écrit `reservations.inc` (source SQL). L'inclusion conditionnelle de
+# `reservations.inc` est conservée.
+# ============================================================================
+
+ensure_dhcp_scripts() {
+    log "Vérification des scripts DHCP versionnés (make_dhcpd_conf.sh, dhcp-dyndns.sh)..."
+
+    local src_dir="$APP_DIR/scripts/system"
+    local dst_dir="/usr/share/sambaedu/sbin"
+    local scripts=("make_dhcpd_conf.sh" "dhcp-dyndns.sh")
+
+    mkdir -p "$dst_dir"
+
+    local script src dst
+    for script in "${scripts[@]}"; do
+        src="$src_dir/$script"
+        dst="$dst_dir/$script"
+
+        if [[ ! -f "$src" ]]; then
+            log_error "Script source manquant : $src"
+            return 1
+        fi
+
+        # Comparaison de contenu ET du bit exécutable avant écrasement
+        # (idempotence + log clair). Le test `-x` est indispensable (review 8.3
+        # #2) : un dst au bon contenu mais sans droit d'exécution (chmod/cp
+        # accidentel) casserait sudo make_dhcpd_conf.sh — on redéploie alors.
+        if [[ -f "$dst" ]] && [[ -x "$dst" ]] && cmp -s "$src" "$dst"; then
+            log "  → $script déjà à jour"
+        else
+            install -m 755 "$src" "$dst"
+            log_success "  → $script déployé vers $dst"
+        fi
+    done
+
+    log_success "Scripts DHCP versionnés en place"
+}
+
+# ============================================================================
 # Bascule PXE bootstrap vers la route Laravel native (Story 4.9 / 3.7)
 # ============================================================================
 # La conf legacy `/etc/sambaedu/sambaedu.conf.d/dhcp.conf` posée par les
@@ -1507,6 +1559,9 @@ main() {
 
     echo ""
     ensure_samba_partages_share
+
+    echo ""
+    ensure_dhcp_scripts
 
     echo ""
     ensure_ipxe_bootstrap_native

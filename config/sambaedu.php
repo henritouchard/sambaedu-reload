@@ -431,6 +431,15 @@ return [
         'leases_file' => env('DHCP_LEASES_FILE', '/var/lib/dhcp/dhcpd.leases'),
         'reload_command' => env('DHCP_RELOAD_COMMAND', '/usr/share/sambaedu/sbin/make_dhcpd_conf.sh'),
         'service_name' => env('DHCP_SERVICE_NAME', 'isc-dhcp-server.service'),
+
+        // Story 8.3 — Fichier de paramètres des sous-réseaux/VLAN gérés. Rendu
+        // atomiquement par `DhcpSubnetService::exportSubnetsFile()` (clés plates
+        // `dhcp_reseau_<N>`, `dhcp_masque_<N>`, …) puis consommé par
+        // `make_dhcpd_conf.sh` (boucle `config_dhcp_reseau_$i`). Vit dans
+        // `sambaedu.conf.d/` : `config.inc.sh` charge TOUS les `*.conf` du
+        // dossier → le fichier dédié est vu sans toucher au `dhcp.conf` legacy
+        // (décision D1). Overridable en test pour ne pas écrire dans `/etc`.
+        'subnets_file' => env('DHCP_SUBNETS_FILE', '/etc/sambaedu/sambaedu.conf.d/dhcp-subnets.conf'),
     ],
 
     'wpkg' => [

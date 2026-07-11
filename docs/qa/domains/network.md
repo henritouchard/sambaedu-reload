@@ -3,8 +3,9 @@
 > Runbook E2E pour le domaine réseau SE4FS. Append-only : chaque story
 > ajoute une section avec ses scénarios numérotés stables.
 
-**Stories couvertes** : 8.1 (DHCP — FR20). _Import CSV (FR22) désactivé.
-Stories futures Epic 8.2 ajouteront DNS (FR21 reporté) et multi-VLAN._
+**Stories couvertes** : 8.1 (réservations DHCP — FR20), 8.3 (sous-réseaux/VLAN
++ scripts DHCP versionnés). _Import CSV (FR22) désactivé. Story future ajoutera
+DNS (FR21 reporté)._
 
 **Code de référence (Story 8.1)** :
 
@@ -327,3 +328,168 @@ L'opérateur de test doit avoir la permission Spatie **`server.admin`**
 - [ ] Section 6 (Migration legacy via /sync-from-ad) verte — idempotente, lien Workstation OK, source préservée
 - [ ] Logs channel `network` lisibles (`storage/logs/network/network-*.log`)
 - [ ] Permission 403 correct pour profil non `server.admin`
+
+---
+
+## Story 8.3 — Sous-réseaux DHCP (VLAN) + scripts DHCP versionnés
+
+**Date livraison** : 2026-07-11
+**Migration à appliquer** : `2026_07_11_120000_create_dhcp_subnets_table`
+
+> **Décision archi (D1)** : la table `dhcp_subnets` est la source de vérité des
+> VLAN gérés. `DhcpSubnetService::exportSubnetsFile()` rend atomiquement le
+> fichier de params `/etc/sambaedu/sambaedu.conf.d/dhcp-subnets.conf` (clés
+> plates `dhcp_reseau_<N>`, `dhcp_masque_<N>`, …) que `make_dhcpd_conf.sh`
+> consomme pour émettre les blocs `subnet {}`. **Pas** de génération native de
+> `dhcpd.conf` (D2 — zone iPXE à risque). Le **sous-réseau par défaut** (VLAN 0)
+> reste géré par l'autoconf serveur (`dhcp.conf`) et est affiché en LECTURE
+> SEULE (D3). N° de VLAN ∈ 1..999 (D4). Fichier de params INI strict
+> `clé = "valeur"` sans espace dans les valeurs (D5).
+
+**Code de référence** :
+
+- `app/Models/DhcpSubnet.php` — modèle Eloquent (`ranges` cast array)
+- `app/Services/Network/DhcpSubnetService.php` — validations pures + CRUD + export
+- `database/migrations/2026_07_11_120000_create_dhcp_subnets_table.php`
+- `config/sambaedu.php` — clé `dhcp.subnets_file`
+- `resources/views/pages/network/dhcp/index.blade.php` — onglet « Sous-réseaux »
+- `resources/views/pages/network/dhcp/_partials/subnets-table.blade.php`
+- `scripts/system/make_dhcpd_conf.sh`, `scripts/system/dhcp-dyndns.sh` — scripts versionnés
+- `scripts/update.sh` — `ensure_dhcp_scripts()`
+
+### Pré-requis spécifiques
+
+- Reload DHCP disponible (mêmes sudoers que 8.1 : `make_dhcpd_conf.sh` + `systemctl is-active`).
+- Fichier de params writable par `www-admin` :
+  `sudo touch /etc/sambaedu/sambaedu.conf.d/dhcp-subnets.conf && sudo chown www-admin: /etc/sambaedu/sambaedu.conf.d/dhcp-subnets.conf`
+  (créé automatiquement au 1er export ; si le dossier est root-only, poser les droits une fois).
+
+---
+
+### Section 8 — Sous-réseaux (VLAN) : CRUD
+
+#### Scénario 8.3-8.1 — Création d'un VLAN mono-plage
+
+1. `/app/network/dhcp` → onglet « Sous-réseaux ». Vérifier la carte
+   « Sous-réseau par défaut » (lecture seule, badge « géré par l'autoconf serveur »).
+2. « Nouveau sous-réseau » → VLAN `20`, réseau `192.168.20.0/24`, passerelle
+   `192.168.20.254`, plage `192.168.20.10` → `192.168.20.200`. Créer.
+3. Toast succès « Sous-réseau créé et service DHCP rechargé. »
+4. La ligne apparaît dans la table (VLAN 20, CIDR, passerelle, plage).
+5. Vérifier le fichier généré :
+   `grep dhcp_reseau_20 /etc/sambaedu/sambaedu.conf.d/dhcp-subnets.conf`
+   → `dhcp_reseau_20 = "192.168.20.0"`, `dhcp_masque_20 = "255.255.255.0"`,
+   `dhcp_gateway_20 = "192.168.20.254"`, `dhcp_begin_range_20`/`dhcp_end_range_20`.
+6. Vérifier le `dhcpd.conf` régénéré :
+   `grep -A3 'SUBNET DECLARATION 20' /etc/dhcp/dhcpd.conf` → bloc `subnet 192.168.20.0 netmask 255.255.255.0 { range … ; option routers 192.168.20.254; }`.
+
+#### Scénario 8.3-8.2 — Plages dynamiques multiples
+
+1. Éditer le VLAN 20 → « Ajouter une plage ». Déclarer 2 plages :
+   `192.168.20.10`→`192.168.20.50` et `192.168.20.100`→`192.168.20.150`. Enregistrer.
+2. Fichier de params :
+   `dhcp_begin_range_20 = "192.168.20.10"` (1re plage sans suffixe) ET
+   `dhcp_begin_range_20_1 = "192.168.20.100"` (2e plage, suffixe `_1` contigu dès 1).
+3. `dhcpd.conf` : le bloc `subnet … 20` contient **deux** lignes `range`.
+
+#### Scénario 8.3-8.3 — Validations refusées en bloc
+
+Tenter puis vérifier le refus (toast erreur, aucune écriture, transaction tout-ou-rien) :
+
+1. CIDR invalide (`192.168.20.0` sans `/`, `/33`).
+2. N° VLAN hors 1..999 (`0`, `1000`) ou déjà pris.
+3. Passerelle hors réseau (`10.0.0.1` pour `192.168.20.0/24`).
+4. Plage hors réseau ; début > fin.
+5. Réseau chevauchant un autre VLAN OU le sous-réseau par défaut.
+6. Plage recouvrant l'IP d'une réservation DHCP existante
+   (créer d'abord une réservation `192.168.20.50` puis un VLAN dont la plage
+   englobe `.50` → refus).
+
+#### Scénario 8.3-8.4 — Suppression (retrait réel des clés)
+
+1. Supprimer le VLAN 20 (modale de confirmation).
+2. Toast succès. Le fichier de params ne contient PLUS de clé `dhcp_*_20`
+   (`grep dhcp_reseau_20 …` → vide) — capacité absente du legacy.
+3. `dhcpd.conf` régénéré ne contient plus le bloc `SUBNET DECLARATION 20`.
+
+#### Scénario 8.3-8.5 — Mode dégradé (AC5)
+
+1. Arrêter isc-dhcp-server (`sudo systemctl stop isc-dhcp-server`) OU casser
+   temporairement le reload.
+2. Créer/éditer un VLAN. Attendu : toast **warning** « Sous-réseau enregistré.
+   Le service DHCP n'a pas pu être rechargé — relancer le service manuellement. »
+   (pas d'erreur bloquante).
+3. Vérifier que le sous-réseau est **persisté en SQL** et que le fichier de
+   params a bien été régénéré (la saisie n'est jamais perdue).
+
+---
+
+### Section 9 — Scripts DHCP versionnés (greenfield `ensure_dhcp_scripts`)
+
+#### Scénario 8.3-9.1 — Déploiement idempotent
+
+1. Sur une VM sans les paquets `sambaedu-*` (ou pour valider) :
+   `sudo bash /var/www/sambaedu-reload/scripts/update.sh` (ou rejouer l'update).
+2. Vérifier que les 2 scripts sont déployés :
+   `ls -l /usr/share/sambaedu/sbin/make_dhcpd_conf.sh /usr/share/sambaedu/sbin/dhcp-dyndns.sh`
+   (mode `755`).
+3. Rejouer l'update : les logs indiquent « déjà à jour » (comparaison de
+   contenu `cmp -s` **et** du bit exécutable `-x`, pas de réécriture inutile ;
+   cf. Scénario 8.3-PC.2 pour le cas d'un mode dégradé).
+4. Vérifier que la copie SE5 de `make_dhcpd_conf.sh` **n'appelle plus**
+   `action_cron_php.sh dhcp/script_make_reservations.php`
+   (`grep script_make_reservations /usr/share/sambaedu/sbin/make_dhcpd_conf.sh` → vide)
+   mais conserve l'inclusion conditionnelle de `reservations.inc`
+   (`grep 'reservations.inc' …` → présent).
+5. Vérifier que le `dhcpd.conf` généré chaîne toujours le bootstrap natif
+   `/ipxe/boot` (options boot iPXE arch 00:00/06/07 intactes) et les hooks
+   `on commit/release/expiry` vers `dhcp-dyndns.sh`.
+
+---
+
+## Checklist rapide — Story 8.3
+
+- [ ] Migration `dhcp_subnets` appliquée
+- [ ] Section 8 (CRUD VLAN) verte — création mono/multi-plages, validations, suppression
+- [ ] Fichier `dhcp-subnets.conf` généré, clés `dhcp_*_N` correctes, writable `www-admin`
+- [ ] `dhcpd.conf` régénéré contient les blocs `subnet {}` par VLAN (multi-`range` OK)
+- [ ] Sous-réseau par défaut affiché en lecture seule
+- [ ] Mode dégradé (AC5) — VLAN persiste même si reload échoué, toast warning
+- [ ] Section 9 (scripts versionnés) verte — `ensure_dhcp_scripts` idempotent, appel legacy retiré, hooks iPXE/dyndns intacts
+
+---
+
+## Post-correctifs & non-régressions — Story 8.3
+
+> Incidents détectés en code review (2026-07-11) et corrigés avant merge. Angles
+> de test à re-dérouler en priorité, car non couverts par l'intuition initiale.
+
+| Incident | Type | Correctif | Couvert par |
+|----------|------|-----------|-------------|
+| #1 — Injection shell RCE root via `extra_option` | Sécurité 🔴 | Liste blanche stricte chemin absolu | Unit `validate_extra_option_rejects_injection_payloads` + Scénario 8.3-PC.1 |
+| #2 — `ensure_dhcp_scripts` non idempotent sur le mode | Robustesse | `[[ -x "$dst" ]]` ajouté à la condition de skip | Scénario 8.3-PC.2 |
+| #3 — TOCTOU chevauchement / `vlan_id` | Concurrence | Lock `dhcp.reload` acquis avant validation+écriture | Section 5 (concurrence) transposée aux VLAN |
+
+#### Scénario 8.3-PC.1 — `extra_option` refuse toute injection (sécurité)
+
+1. Onglet Sous-réseaux → créer/éditer un VLAN. Dans le champ « Fichier d'option
+   supplémentaire », saisir successivement :
+   - `/a';{touch,/tmp/pwned};x='` (payload d'injection réel)
+   - `/etc/$(id)`, `/etc/\`id\``, `/etc/x;reboot`, `/etc/a b.conf`
+2. **Attendu** : chaque valeur est **refusée** (toast/erreur « chemin absolu sans
+   espace ni caractère spécial ») ; aucune écriture en base ni dans
+   `dhcp-subnets.conf`.
+3. Vérifier qu'aucun fichier `/tmp/pwned` n'a été créé sur la VM :
+   `ls /tmp/pwned` → « No such file » (le parseur `config.inc.sh` `eval`-ue en
+   root — un seul passage suffirait à l'exécution).
+4. **Cas nominal** : `/etc/dhcp/vlan20.conf` est accepté et bien exporté
+   (`grep dhcp_extra_option_20 /etc/sambaedu/sambaedu.conf.d/dhcp-subnets.conf`).
+
+#### Scénario 8.3-PC.2 — Redéploiement si bit exécutable perdu
+
+1. Scripts déjà déployés (Section 9). Simuler une perte du bit x :
+   `chmod 644 /usr/share/sambaedu/sbin/make_dhcpd_conf.sh`.
+2. Rejouer `sudo bash …/scripts/update.sh`.
+3. **Attendu** : le log indique « déployé » (pas « déjà à jour ») et
+   `ls -l …/make_dhcpd_conf.sh` montre de nouveau le mode `755` — `sudo
+   make_dhcpd_conf.sh` refonctionne (pas d'EACCES silencieux).

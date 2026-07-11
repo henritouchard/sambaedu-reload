@@ -62,11 +62,28 @@ trait CreatesDhcpSchema
             });
             $this->createdDhcpTables[] = 'dhcp_reservations';
         }
+
+        // Story 8.3 — sous-réseaux (VLAN).
+        if (!Schema::hasTable('dhcp_subnets')) {
+            Schema::create('dhcp_subnets', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedInteger('vlan_id');
+                $table->string('network', 45);
+                $table->string('gateway', 45);
+                $table->json('ranges');
+                $table->string('extra_option', 255)->nullable();
+                $table->string('description', 255)->nullable();
+                $table->timestamps();
+
+                $table->unique('vlan_id');
+            });
+            $this->createdDhcpTables[] = 'dhcp_subnets';
+        }
     }
 
     protected function dropDhcpSchema(): void
     {
-        $dropOrder = ['dhcp_reservations', 'workstations'];
+        $dropOrder = ['dhcp_subnets', 'dhcp_reservations', 'workstations'];
         foreach ($dropOrder as $table) {
             if (in_array($table, $this->createdDhcpTables, true)) {
                 Schema::dropIfExists($table);
