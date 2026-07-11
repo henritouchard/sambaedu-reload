@@ -47,4 +47,4 @@ Défaut global 3600 s inchangé (abaissement = action opérateur documentée au 
 | B. 41.3 écrit `off` et 43.3 affine son critère (interprétation de la valeur « active ») | Critère par-capacité plus complexe, contredit D2 (pas d'interprétation de valeur), sur-conception V1 |
 
 **Recommandation** : A — la contrainte est documentée de façon contraignante aux 3 endroits ; le
-create-story de la 41.3 la lira. Réponse : _(en attente — à ratifier, n'empêche rien pour l'epic 43)_.
+create-story de la 41.3 la lira. Réponse : **A ratifiée par Henri le 2026-07-11** — 41.3 déflaguera par DELETE de l'assignment.
