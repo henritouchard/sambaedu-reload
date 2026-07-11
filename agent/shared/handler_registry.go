@@ -120,6 +120,12 @@ type RegistrySpec struct {
 	// valeur cible ; "absent" = supprimer la valeur nommée (Value est vide).
 	Ensure string
 	Value  RegistryValue
+	// Refresh : hint OPTIONNEL du payload (Story 43.1, champ `refresh`) — le
+	// geste de rafraîchissement requis si CET item change effectivement.
+	// Lecture indulgente (D3) : absent/vide/inconnu = RefreshNone, jamais une
+	// enveloppe invalide. Un hint ne peut qu'ESCALADER le plancher shell_notify
+	// des changements HKCU (D2), jamais l'affaiblir.
+	Refresh RefreshLevel
 }
 
 // absent : l'item demande la SUPPRESSION de la valeur nommée.
@@ -172,8 +178,8 @@ type RegistryOps interface {
 	// jumelles `_Classes` — HKCR per-user, y écrire créerait des débris ; les
 	// SID de service S-1-5-18/19/20 ne matchent pas le préfixe et sont exclus
 	// naturellement ; comptes AAD S-1-12-1-* hors périmètre, parc AD). Ordre
-	// TRIÉ (logs déterministes). Op REQUIS (pas une assertion optionnelle type
-	// registryNotifier : sans lui un item HKU est INAPPLICABLE — l'échec doit
+	// TRIÉ (logs déterministes). Op REQUIS (pas une assertion optionnelle :
+	// sans lui un item HKU est INAPPLICABLE — l'échec doit
 	// être franc). Énuméré par APPEL, jamais mis en cache : une session
 	// ouverte/fermée entre deux cycles est couverte/évaporée au cycle suivant.
 	// err = accès refusé / énumération impossible (l'item HKU devient
@@ -181,23 +187,20 @@ type RegistryOps interface {
 	UserHives() ([]string, error)
 }
 
-// registryNotifier : hook OPTIONNEL (assertion de type sur Ops) implémenté par
-// l'impl OS pour signaler au shell qu'au moins une clé HKCU affectant l'UI a
-// changé. L'impl Windows émet SHChangeNotify(SHCNE_ASSOCCHANGED) → l'Explorer
-// DÉJÀ ouvert relit ses réglages de vue (Hidden, HideFileExt) sans relogon.
-// Optionnel : RegistryOps ne l'exige PAS — un fake de test / un OS sans impl ne
-// le fournit pas (l'assertion échoue → aucune notification, comportement
-// inchangé). Best-effort : un shell non rafraîchi n'est JAMAIS une erreur de
-// convergence (la clé EST écrite ; au pire l'effet apparaît au prochain relogon).
-type registryNotifier interface {
-	NotifyShellChanged()
-}
+// NB (Story 43.1) : UserHives est un op REQUIS de l'interface — contrairement
+// au rafraîchissement shell, qui n'est PLUS un hook sur Ops : l'ancien
+// `registryNotifier` (SHChangeNotify inline en fin d'Apply) est REMPLACÉ par
+// l'échelle de rafraîchissement — les handlers ACCUMULENT le besoin
+// (RefreshRequester, refresh.go), le COMPAGNON exécute UN geste en fin de
+// passe. Une seule voie d'émission (piège n° 5 : plus jamais deux
+// SHChangeNotify pour un même changement).
 
-// isUserHive : la ruche est-elle celle de l'utilisateur (HKCU) ? Gate le
-// rafraîchissement shell sur les seules clés per-user — les écritures HKLM du
-// service (session 0) ne rafraîchissent aucun bureau interactif. HKU rend
-// false (branche default, Story 35.3 piège n° 9) : le service écrit depuis la
-// session 0, SHChangeNotify n'y rafraîchirait aucun bureau interactif — NE PAS
+// isUserHive : la ruche est-elle celle de l'utilisateur (HKCU) ? Gate
+// l'accumulation du besoin de rafraîchissement (échelle 43.1 — plancher
+// shell_notify) sur les seules clés per-user : les écritures HKLM du service
+// (session 0) ne rafraîchissent aucun bureau interactif. HKU rend false
+// (branche default, Story 35.3 piège n° 9) : le service écrit depuis la
+// session 0, aucun geste n'y rafraîchirait un bureau interactif — NE PAS
 // l'étendre.
 func isUserHive(hive string) bool {
 	switch strings.ToUpper(strings.TrimSpace(hive)) {
@@ -261,18 +264,43 @@ func fanOutUserHives(spec RegistrySpec, hives []string) []RegistrySpec {
 type RegistryHandler struct {
 	Ops RegistryOps
 	Log *Logger
+
+	// refreshWanted : besoin de rafraîchissement accumulé pendant l'Apply de
+	// la passe courante (Story 43.1) — max(plancher shell_notify, hint) de
+	// chaque item HKCU EFFECTIVEMENT changé. État PAR INSTANCE, mono-thread
+	// (patron acquis) : l'instance du MachineEngine SYSTEM (mêmes types Go,
+	// piège n° 2) n'accumule jamais (gate isUserHive — HKLM/HKU rendent false)
+	// et n'est jamais consommée. Consommé + remis à zéro par
+	// TakeRefreshRequest (compagnon, fin de RunPass).
+	refreshWanted RefreshLevel
+}
+
+// TakeRefreshRequest : implémente RefreshRequester (refresh.go) — retourne le
+// niveau max accumulé pendant la passe et remet l'accumulation à zéro
+// (consommation PAR PASSE : pas de geste fantôme au tick suivant).
+func (h *RegistryHandler) TakeRefreshRequest() RefreshLevel {
+	level := h.refreshWanted
+	h.refreshWanted = RefreshNone
+
+	return level
 }
 
 // desiredSpecs : parse + dédoublonne par identité de clé les items cible. Le
 // serveur garantit déjà une clé unique par identité (exclusive par clé au
 // compilateur) ; défense : la DERNIÈRE occurrence fait foi.
-func (h *RegistryHandler) desiredSpecs(items []StateItem) ([]RegistrySpec, error) {
+// logHints (review 43.1 #3) : la trace du hint `refresh` inconnu n'est émise
+// que depuis le chemin Test (Apply re-parse les MÊMES items dans la même
+// passe — sans le gate, la ligne partirait deux fois par passe et par item).
+func (h *RegistryHandler) desiredSpecs(items []StateItem, logHints bool) ([]RegistrySpec, error) {
 	byIdentity := map[string]RegistrySpec{}
 	order := []string{}
 	for _, item := range items {
 		spec, ok := parseRegistrySpec(item.Payload)
 		if !ok {
 			return nil, fmt.Errorf("payload registry inattendu : enveloppe invalide")
+		}
+		if logHints {
+			logUnknownRefreshHint(h.Log, item.Payload, spec.identity())
 		}
 		id := spec.identity()
 		if _, seen := byIdentity[id]; !seen {
@@ -306,7 +334,7 @@ func (h *RegistryHandler) desiredSpecs(items []StateItem) ([]RegistrySpec, error
 // (effort maximal). Contrepartie acceptée : un Test menteur (erreur avalée en
 // drift) masquerait des pannes réelles à la policy STRICT.
 func (h *RegistryHandler) Test(items []StateItem) (bool, error) {
-	specs, err := h.desiredSpecs(items)
+	specs, err := h.desiredSpecs(items, true)
 	if err != nil {
 		return false, err
 	}
@@ -354,13 +382,12 @@ func (h *RegistryHandler) Test(items []StateItem) (bool, error) {
 // purgées) ; une erreur d'énumération rend les items HKU inapplicables (erreur
 // remontée) SANS empêcher les autres clés de la passe de converger.
 func (h *RegistryHandler) Apply(items []StateItem) error {
-	specs, err := h.desiredSpecs(items)
+	specs, err := h.desiredSpecs(items, false)
 	if err != nil {
 		return err
 	}
 
 	var firstErr error
-	shellRefresh := false // au moins une clé HKCU a changé → rafraîchir le shell
 	enum := &hkuEnumeration{ops: h.Ops}
 	for _, spec := range specs {
 		targets := []RegistrySpec{spec}
@@ -387,23 +414,19 @@ func (h *RegistryHandler) Apply(items []StateItem) error {
 				continue // effort maximal : cible suivante / clé suivante
 			}
 			// Un changement EFFECTIF d'une valeur HKCU (écriture OU suppression)
-			// déclenche le rafraîchissement shell (décision de design n° 6).
-			// HKU : jamais (isUserHive rend false — piège n° 9).
+			// ACCUMULE le besoin de rafraîchissement (Story 43.1) : plancher
+			// shell_notify (D2, iso-comportement du SHChangeNotify historique),
+			// escaladé par le hint `refresh` de l'item. Gate sur HKCU +
+			// changement EFFECTIF : 0 écriture = 0 geste (au régime stable,
+			// l'idempotence est préservée et l'Explorer ne « flicke » pas).
+			// HKU : jamais (isUserHive rend false — piège n° 9). Le geste
+			// lui-même est exécuté par le COMPAGNON en fin de RunPass
+			// (RefreshRequester) — plus d'émission inline ici (piège n° 5 :
+			// une seule voie d'émission).
 			if changed && isUserHive(target.Hive) {
-				shellRefresh = true
+				h.refreshWanted = maxRefreshLevel(h.refreshWanted,
+					maxRefreshLevel(RefreshShellNotify, spec.Refresh))
 			}
-		}
-	}
-
-	// Une clé HKCU affectant l'UI vient de changer (ex. Explorer\Advanced :
-	// Hidden, HideFileExt) : sans signal au shell, l'Explorer DÉJÀ ouvert garde
-	// ses anciens réglages de vue jusqu'au prochain relogon. On émet un
-	// rafraîchissement best-effort (impl OS optionnelle — hôte/tests : no-op).
-	// Gate sur HKCU + changement EFFECTIF : 0 écriture = 0 notification (au régime
-	// stable, l'idempotence est préservée et l'Explorer ne « flicke » pas).
-	if shellRefresh {
-		if notifier, ok := h.Ops.(registryNotifier); ok {
-			notifier.NotifyShellChanged()
 		}
 	}
 
@@ -475,6 +498,13 @@ func parseRegistrySpec(raw any) (RegistrySpec, bool) {
 		return RegistrySpec{}, false
 	}
 
+	// Hint `refresh` OPTIONNEL (Story 43.1) — lecture INDULGENTE (D3, piège
+	// n° 1) : absent, vide, non-string ou vocabulaire inconnu ⇒ RefreshNone,
+	// JAMAIS une enveloppe invalide (aucune validation de « clés exactes » —
+	// le champ est additif sûr pour un agent antérieur).
+	refreshHint, _ := payload["refresh"].(string)
+	refresh := ParseRefreshLevel(refreshHint)
+
 	// Branche `ensure` AVANT l'exigence type/value (piège n° 5 de la story) :
 	// un item `absent` n'a ni `type` ni `value` à parser.
 	if rawEnsure, exists := payload["ensure"]; exists {
@@ -484,7 +514,7 @@ func parseRegistrySpec(raw any) (RegistrySpec, bool) {
 		}
 		switch ensure {
 		case ensureAbsent:
-			return RegistrySpec{Hive: hive, Path: path, Name: name, Ensure: ensureAbsent}, true
+			return RegistrySpec{Hive: hive, Path: path, Name: name, Ensure: ensureAbsent, Refresh: refresh}, true
 		case ensurePresent:
 			// Explicite ≡ item d'écriture classique (le serveur ne l'émet
 			// jamais — byte-identité — mais le contrat l'admet).
@@ -503,7 +533,7 @@ func parseRegistrySpec(raw any) (RegistrySpec, bool) {
 		return RegistrySpec{}, false
 	}
 
-	return RegistrySpec{Hive: hive, Path: path, Name: name, Value: value}, true
+	return RegistrySpec{Hive: hive, Path: path, Name: name, Value: value, Refresh: refresh}, true
 }
 
 // parseRegistryValue : typage de la valeur selon REG_*. Le JSON est décodé par

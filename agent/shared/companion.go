@@ -71,10 +71,27 @@ type Companion struct {
 	// blocage — NFR1).
 	EnsureUserRainmeterIni func() error
 
+	// Refresh : gestes de rafraîchissement de session (Story 43.1, D4) —
+	// exécutés en TOUTE FIN de RunPass (après applied-state et drop, D5) : UN
+	// seul geste par passe, le plus fort requis par les items EFFECTIVEMENT
+	// changés (RefreshRequester des handlers), zéro geste si passe stable.
+	// nil = no-op (tests hôte, non-Windows) — l'accumulation des handlers est
+	// DRAINÉE quand même (pas de geste fantôme si l'ops apparaît plus tard).
+	// Best-effort : un geste en échec = warning, JAMAIS une erreur de passe ni
+	// un statut d'item (D4). Purement local : ni réseau ni token (NFR5).
+	Refresh RefreshOps
+
 	Log *Logger
 
 	// Now : horloge injectable (tests). nil = time.Now.
 	Now func() time.Time
+
+	// lastExplorerRestart : horodatage du dernier explorer_restart TENTÉ par
+	// CETTE instance (throttle anti-thrash, review 43.1 #1). En mémoire
+	// seulement, jamais persisté : le thrash visé est INTRA-vie du compagnon
+	// (drift récurrent re-convergé à chaque passe) — un redémarrage du
+	// compagnon ré-arme légitimement le premier restart.
+	lastExplorerRestart time.Time
 
 	// Cadences — défauts iso-24.3/24.4, injectables (tests).
 	PollInterval time.Duration // poll du cache frais (~2 s)
@@ -97,6 +114,15 @@ func (c *Companion) pollTimeout() time.Duration  { return defaultDuration(c.Poll
 func (c *Companion) freshWindow() time.Duration  { return defaultDuration(c.FreshWindow, 5*time.Minute) }
 func (c *Companion) cachePoll() time.Duration    { return defaultDuration(c.CachePoll, 60*time.Second) }
 func (c *Companion) periodicPass() time.Duration { return defaultDuration(c.PeriodicPass, 5*time.Minute) }
+
+// explorerRestartMinInterval : intervalle MINIMAL entre deux explorer_restart
+// par instance de Companion (review 43.1 #1, anti-thrash). En drift RÉCURRENT
+// (une force externe réécrit une clé à CHAQUE passe : GPO tierce, antivirus,
+// script legacy), le geste le plus fort partirait à chaque cycle de re-test
+// (~5 min) → session cassée en boucle, à rebours de l'esprit NFR-A1. Dans la
+// fenêtre d'interdiction, le geste est DÉGRADÉ en policy_broadcast + warning
+// explicite. Le premier restart d'une instance n'est JAMAIS throttlé.
+const explorerRestartMinInterval = 10 * time.Minute
 
 func defaultDuration(v, fallback time.Duration) time.Duration {
 	if v <= 0 {
@@ -195,7 +221,77 @@ func (c *Companion) RunPass() (bool, error) {
 	c.Log.Infof("Passe compagnon terminée : %d item(s) traité(s), %d statut(s) (generated_at=%s).",
 		len(items), len(reportItems), state.GeneratedAt)
 
+	// Échelle de rafraîchissement (Story 43.1, D5) : en TOUTE FIN de passe —
+	// après applied-state et drop, pour qu'un SendMessageTimeout qui traîne ne
+	// retarde ni la persistance ni le rapport. UN geste max par passe.
+	c.runRefreshGesture()
+
 	return true, nil
+}
+
+// runRefreshGesture : collecte le besoin de rafraîchissement accumulé par les
+// handlers pendant la passe (RefreshRequester — interface optionnelle,
+// consommée ICI et jamais par le moteur : engine.go zéro diff, D1) et exécute
+// LE geste le plus fort. Passe stable (aucun item effectivement changé) =
+// RefreshNone = aucun geste (NFR-A2, pas de « flicker »). Best-effort (D4) :
+// échec = warning, la passe et le rapport sont déjà terminés.
+func (c *Companion) runRefreshGesture() {
+	// Toujours DRAINER l'accumulation (Take… remet à zéro), même sans ops
+	// injectée : sinon un geste fantôme partirait à la passe suivante.
+	level := RefreshNone
+	for _, handler := range c.Engine.Handlers {
+		if requester, ok := handler.(RefreshRequester); ok {
+			level = maxRefreshLevel(level, requester.TakeRefreshRequest())
+		}
+	}
+	if level == RefreshNone {
+		return
+	}
+	if c.Refresh == nil {
+		c.Log.Debugf("Geste de rafraîchissement %s requis mais aucune ops injectée (hôte/tests) : no-op.", level)
+
+		return
+	}
+
+	switch level {
+	case RefreshShellNotify:
+		// SHChangeNotify n'a aucun retour exploitable (void) : succès supposé.
+		c.Refresh.ShellNotify()
+		c.Log.Infof("Rafraîchissement de session émis : shell_notify (SHChangeNotify — l'Explorer relit ses réglages de vue).")
+	case RefreshPolicyBroadcast:
+		if err := c.Refresh.PolicyBroadcast(); err != nil {
+			c.Log.Warningf("Rafraîchissement policy_broadcast en échec : %v — les clés sont écrites, l'effet attendra le relogon (best-effort).", err)
+
+			return
+		}
+		c.Log.Infof("Rafraîchissement de session émis : policy_broadcast (WM_SETTINGCHANGE \"Policy\").")
+	case RefreshExplorerRestart:
+		// Throttle anti-thrash (review 43.1 #1) : jamais deux restarts en
+		// moins de explorerRestartMinInterval par instance — dans la fenêtre,
+		// DÉGRADATION en policy_broadcast (les clés sont écrites ; au pire
+		// l'effet plein attendra la fin de fenêtre ou le relogon).
+		if !c.lastExplorerRestart.IsZero() && c.now().Sub(c.lastExplorerRestart) < explorerRestartMinInterval {
+			c.Log.Warningf("Rafraîchissement explorer_restart requis mais THROTTLÉ (dernier restart < %s — drift récurrent probable : une force externe réécrit une clé HKCU à chaque passe ?) : dégradé en policy_broadcast.",
+				explorerRestartMinInterval)
+			if err := c.Refresh.PolicyBroadcast(); err != nil {
+				c.Log.Warningf("Rafraîchissement policy_broadcast (dégradé) en échec : %v — les clés sont écrites, l'effet attendra le relogon (best-effort).", err)
+
+				return
+			}
+			c.Log.Infof("Rafraîchissement de session émis : policy_broadcast (dégradé — explorer_restart throttlé).")
+
+			return
+		}
+		// Horodaté à la TENTATIVE (même en échec : le shell a pu être tué) —
+		// le throttle protège la session, pas le succès du geste.
+		c.lastExplorerRestart = c.now()
+		if err := c.Refresh.RestartExplorer(); err != nil {
+			c.Log.Warningf("Rafraîchissement explorer_restart en échec : %v — les clés sont écrites, l'effet attendra le relogon (best-effort).", err)
+
+			return
+		}
+		c.Log.Infof("Rafraîchissement de session émis : explorer_restart (Explorer relancé dans la session).")
+	}
 }
 
 // writeDrop écrit session-report.json dans le drop per-SID — la SEULE

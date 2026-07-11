@@ -235,7 +235,37 @@ package shared
 // la release 2.9.0 (update.sh ne publie jamais seul) livre les QUATRE
 // mécanismes d'un coup.
 //
+// 2.10.0 = échelle de rafraîchissement du compagnon (Story 43.1, Epic 43 —
+// application immédiate) : le champ OPTIONNEL `refresh` du PAYLOAD des items
+// `registry`/`registry_list` (shell_notify < policy_broadcast <
+// explorer_restart) déclare le geste Windows minimal rendant un réglage HKCU
+// effectif EN SESSION COURANTE (fin du « double logon » — Explorer lit ses
+// policies au démarrage). Les handlers ACCUMULENT le besoin pendant Apply
+// (max(plancher shell_notify, hint) par item HKCU EFFECTIVEMENT changé —
+// nouvelle interface optionnelle RefreshRequester) ; le COMPAGNON exécute UN
+// SEUL geste en toute fin de RunPass (le plus fort ; passe stable = zéro
+// geste ; best-effort : échec = warning, jamais une erreur de passe). Trois
+// gestes FFI NewLazySystemDLL, session user seulement
+// (agent/windows/refresh_windows.go) : SHChangeNotify (MIGRÉ de l'ancien
+// registryNotifier inline — une seule voie d'émission, non-régression lot
+// vues Explorer), SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE,
+// "Policy", SMTO_ABORTIFHUNG 5 s), kill+relaunch d'explorer.exe de LA session
+// (Toolhelp32, garde anti-double-lancement — Windows relance parfois le shell
+// seul). JAMAIS de geste côté service SYSTEM/MachineEngine ni sur fan-out HKU
+// (session 0). Parsing INDULGENT : `refresh` absent/vide/inconnu =
+// comportement plancher actuel (additif sûr NFR-A4) — la validation stricte
+// du vocabulaire est serveur (AuthoringGuard 43.2). Contrat wire/golden
+// INCHANGÉS (le hint vit dans le payload provider-defined §3.2 ; AUCUN
+// provider ne l'émet encore — c'est la 43.2). ⚠️ Un binaire ≤ 2.9.0 IGNORE le
+// hint EN SILENCE (parseurs indulgents — clés écrites mais AUCUN geste :
+// l'« effet immédiat » promis par l'UI serait un mensonge sur les postes non
+// à jour) → PUBLIER la release 2.10.0 (manuelle — update.sh ne publie jamais
+// seul) AVANT de jouer tout seeder/retrofit 43.2. ⚠️ ÉTAT DES PUBLICATIONS :
+// à la création de la 38.3, les 2.6.0 (fs_acl), 2.7.0 (firewall) et 2.8.0
+// (privilege) n'avaient JAMAIS été publiées — vérifier au moment de publier
+// si la 2.9.0 l'a été depuis (sinon la 2.10.0 livre les cinq lots d'un coup).
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.9.0"
+var Version = "2.10.0"

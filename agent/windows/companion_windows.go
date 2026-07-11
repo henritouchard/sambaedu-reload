@@ -175,7 +175,14 @@ func runCompanion() error {
 		// writable » / « Safe Start » sur un user standard. Le SYSTEM a, lui,
 		// retiré tout Rainmeter.ini de l'arbre ProgramData (mode installé).
 		EnsureUserRainmeterIni: func() error { return ensureUserRainmeterIni(logger) },
-		Log:                    logger,
+		// Story 43.1 : échelle de rafraîchissement de session (shell_notify <
+		// policy_broadcast < explorer_restart) — UN geste max en fin de passe,
+		// le plus fort requis par les items HKCU effectivement changés
+		// (RefreshRequester des handlers registry/registry_list). Injectée ICI
+		// SEULEMENT : le MachineEngine SYSTEM (main_windows.go) n'a AUCUNE ops
+		// de refresh — jamais de geste en session 0 (piège n° 2).
+		Refresh: &refreshOps{log: logger},
+		Log:     logger,
 	}
 
 	// Le processus meurt à la fin de session (logoff) ; Interrupt couvre le

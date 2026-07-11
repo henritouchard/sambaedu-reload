@@ -3952,3 +3952,119 @@ Sur le poste de test, vérifier après convergence que sont INTACTS :
 - [ ] Golden : `state.v1.json` +1 item legacy_cleanup machine,
       `FROZEN_STATE_HASH` PHP = `frozenStateHash` Go recalculés à l'identique
       (`fc8a5324…`) ; `report.v1.json` INCHANGÉ.
+
+## Story 43.1 — Échelle de rafraîchissement du compagnon (hint `refresh`)
+
+Application immédiate en session courante (Epic 43) : le champ OPTIONNEL
+`refresh` du payload des items `registry`/`registry_list` (`shell_notify` <
+`policy_broadcast` < `explorer_restart`) pilote UN geste Windows en fin de
+passe compagnon — le plus fort requis par les items HKCU EFFECTIVEMENT
+changés ; passe stable = zéro geste ; jamais de geste côté SYSTEM/HKU.
+Plancher : tout changement HKCU sans hint (ou hint inconnu) émet
+`shell_notify`, exactement comme le SHChangeNotify historique (migré — une
+seule voie d'émission). Agent **2.10.0** — publication MANUELLE obligatoire
+AVANT tout seeder/retrofit 43.2 (un binaire ≤ 2.9.0 ignore le hint EN
+SILENCE : clés écrites, aucun geste — vérifier au passage si la 2.9.0 a été
+publiée, sinon la 2.10.0 livre aussi fs_acl/firewall/privilege/legacy_cleanup).
+
+NB pré-43.2 : AUCUN provider serveur n'émet encore `refresh` — pour tester un
+hint AVANT la 43.2, éditer à la main le cache per-SID
+`C:\ProgramData\SambaEdu\Agent\cache\sessions\<SID>\state.json` (ajouter
+`"refresh":"…"` dans le payload d'un item session `registry`) : le compagnon
+re-converge sur changement de mtime ; le prochain fetch SYSTEM écrase
+l'édition (one-shot, sans danger).
+
+Throttle anti-thrash (review 43.1 #1) : jamais deux `explorer_restart` en
+moins de **10 minutes** par instance de compagnon (en mémoire, non persisté —
+un relogon ré-arme). En drift RÉCURRENT (force externe réécrivant une clé HKCU
+à chaque passe), le geste est DÉGRADÉ en `policy_broadcast` avec un warning
+« THROTTLÉ … drift récurrent probable » dans `companion.log` — ce warning
+répété est le SYMPTÔME à investiguer (qui réécrit la clé ?), pas un bug de
+l'agent. `shell_notify` et `policy_broadcast` ne sont jamais throttlés.
+
+### Scénario 43.1.1 — Validation lab de `policy_broadcast` (AC7 — décision pour la 43.2)
+
+But : décider si `WM_SETTINGCHANGE "Policy"` suffit à rendre effectives les
+restrictions Explorer (`RestrictRun`/`DisallowRun`) en session courante — ou
+si ces capacités devront porter `explorer_restart` en 43.2.
+
+1. Poste lab migré en **2.10.0** (version rapportée au check-in = 2.10.0).
+2. Session utilisateur OUVERTE (élève standard), Explorer démarré.
+3. Faire converger un item HKCU `Software\Microsoft\Windows\CurrentVersion\
+   Policies\Explorer` type `RestrictRun` (ou conteneur `DisallowRun` via
+   `registry_list`) AVEC hint `policy_broadcast` (édition du cache per-SID,
+   cf. NB — ou seed 43.2 si déjà mergée).
+4. `companion.log` : « Rafraîchissement de session émis : policy_broadcast ».
+5. SANS relogon NI restart d'Explorer : tenter de lancer un exécutable bloqué
+   (Win+R, double-clic). **Critère de décision consigné pour la 43.2** :
+   - refus immédiat ⇒ `policy_broadcast` SUFFIT → `explorer_restart` devient
+     l'exception (hint par défaut des capacités policies = `policy_broadcast`) ;
+   - toujours permis ⇒ insuffisant → les capacités `restrict_run`/
+     `disallow_run` devront porter `explorer_restart` en 43.2.
+6. Contre-épreuve : relogon → la restriction s'applique dans tous les cas
+   (l'échelle n'affecte QUE la latence, jamais l'état convergé).
+
+### Scénario 43.1.2 — Non-régression lot vues Explorer (plancher `shell_notify`)
+
+1. Poste 2.10.0, session ouverte, un dossier Explorer affiché.
+2. Basculer une capacité vues Explorer (Hidden/HideFileExt — items HKCU SANS
+   hint) : au cycle suivant, `companion.log` montre « shell_notify » et
+   l'Explorer DÉJÀ ouvert reflète le réglage sans relogon (comportement
+   identique à l'avant-43.1).
+3. Cycles suivants SANS changement : AUCUNE ligne « Rafraîchissement de
+   session émis » (passe stable = zéro geste, pas de « flicker »).
+
+### Scénario 43.1.3 — `explorer_restart` : garde anti-double-lancement
+
+1. Item HKCU changé avec hint `explorer_restart` (cf. NB), session ouverte
+   avec 2-3 fenêtres Explorer.
+2. À la convergence : la barre des tâches disparaît puis revient (~qq s) ;
+   les fenêtres Explorer sont perdues (assumé NFR-A1), les AUTRES applis
+   restent intactes ; **UNE SEULE** instance shell à l'arrivée — AUCUNE
+   fenêtre parasite de l'Explorateur ne s'ouvre (garde : si Windows relance
+   le shell tout seul, le compagnon ne relance pas par-dessus).
+3. Répéter la convergence au régime stable : AUCUN restart (gate changed).
+4. Vérifier dans le Gestionnaire des tâches que explorer.exe appartient bien
+   à la session du user (jamais tué/relancé dans une autre session RDP
+   ouverte sur le même poste).
+5. Limite RÉSIDUELLE assumée (review 43.1 #4, non testable hôte) : la garde
+   suppose une « relance rapide par Windows » — poll 3 s puis délai de grâce
+   de 1 s et ULTIME re-vérification juste avant la relance. Si Windows relance
+   le shell APRÈS cette dernière vérification (course incompressible entre le
+   check et le Start), une fenêtre parasite peut s'ouvrir — bénin et rarissime,
+   à consigner si observé au lab.
+6. Drift récurrent (throttle, review 43.1 #1) : reproduire un re-drift < 10 min
+   après un restart ⇒ `companion.log` montre le warning « THROTTLÉ » et un
+   `policy_broadcast` dégradé À LA PLACE d'un second restart (la session ne
+   casse jamais en boucle) ; > 10 min après, le restart repart.
+
+### Scénario 43.1.4 — Jamais de geste côté SYSTEM / HKU
+
+1. Faire converger un item MACHINE `hive:"HKU"` changé (ex. numlock 35.3) et
+   un item HKLM : `agent.log` (service) ne montre AUCUN « Rafraîchissement de
+   session émis », aucun restart d'Explorer dans aucune session.
+2. Un hint `refresh` posé sur un item machine (forgé) reste sans effet :
+   l'échelle n'est consommée que par le compagnon.
+
+### Scénario 43.1.5 — Binaire antérieur : silence sans casse (NFR-A4)
+
+1. Poste resté en ≤ 2.9.0 : un item porteur de `refresh` converge NORMALEMENT
+   (clés écrites, statuts identiques) — aucun geste, aucune erreur (parseurs
+   indulgents ; le hash d'item ayant changé côté serveur, un drift ponctuel
+   de re-application est attendu, bénin).
+2. Après auto-update en 2.10.0 : les gestes apparaissent au cycle suivant.
+
+### Check-list
+
+- [ ] 43.1.1 — Verdict `policy_broadcast` sur RestrictRun/DisallowRun consigné
+      (critère de choix du hint pour la 43.2) — NON BLOQUANT pour la 43.1 (D6).
+- [ ] 43.1.2 — Lot vues Explorer : shell_notify iso-comportement, zéro geste
+      au régime stable.
+- [ ] 43.1.3 — explorer_restart : un seul shell à l'arrivée, jamais de fenêtre
+      parasite, applis intactes, session du user uniquement.
+- [ ] 43.1.4 — SYSTEM/HKU : zéro geste en session 0.
+- [ ] 43.1.5 — Binaire ≤ 2.9.0 : hint ignoré en silence, convergence intacte.
+- [ ] Publication 2.10.0 MANUELLE faite AVANT tout seeder 43.2 (état des
+      2.6.0→2.9.0 vérifié : jamais publiées à la création de la 38.3).
+- [ ] Golden : `tests/Fixtures/Agent/*.v1.json` STRICTEMENT inchangés (le hint
+      vit dans le payload provider-defined §3.2 ; l'émission serveur = 43.2).
