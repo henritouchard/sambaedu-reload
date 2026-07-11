@@ -6,6 +6,7 @@ namespace App\Services\Agent\Providers;
 
 use App\Enums\ResourceSemantics;
 use App\Enums\StateMaille;
+use App\Enums\StateScope;
 use App\Models\Capability;
 use App\Models\CapabilityProjection;
 use App\Models\User;
@@ -16,7 +17,9 @@ use App\Services\Agent\Contracts\KeyedExclusiveProvider;
 use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\StateCandidate;
 use App\Services\Agent\TargetContext;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Story 27.12 — base COMMUNE des deux providers `registry` CAPABILITY-FIRST (D1/D2).
@@ -45,9 +48,12 @@ use Illuminate\Support\Collection;
  *
  * **Invariant central (piège n°1).** Ni `id`/`key` de capacité, ni de projection,
  * ne fuit au payload — l'item registry reste CONCRET : `{hive, path, name, type,
- * value}` (5 clés) pour une ÉCRITURE, `{hive, path, name, ensure: "absent"}`
- * (4 clés, Story 35.1) pour une SUPPRESSION. C'est CE qui garde « éditeur de
- * clés brutes » (v2) gratuit ET garantit que l'agent ne change pas.
+ * value}` (5 clés, **+ `refresh` OPTIONNEL** — Story 43.2, {@see withRefreshHint()})
+ * pour une ÉCRITURE, `{hive, path, name, ensure: "absent"}` (4 clés, Story 35.1,
+ * **+ `refresh` OPTIONNEL** idem) pour une SUPPRESSION. Le hint `refresh` n'est
+ * JAMAIS recopié sur un item émis par un provider de portée Machine (jamais sur
+ * une clé HKLM/HKU) — seuls Session/MachineUser le portent. C'est CE qui garde
+ * « éditeur de clés brutes » (v2) gratuit ET garantit que l'agent ne change pas.
  *
  * **Trois régimes par clé de `spec`** (Story 35.1) :
  *   1. **écrire** — valeur résolue scalaire/liste → item 5 clés (le provider
@@ -189,7 +195,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
             ->get();
 
         if ($capabilities->isEmpty()) {
-            return new Collection();
+            return new Collection;
         }
 
         // Overrides applicables au contexte, indexés par capability_id → maille +
@@ -197,7 +203,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
         $overrides = $this->resolveOverrides($ctx, $capabilities->pluck('id')->all());
 
         /** @var Collection<int, StateCandidate> $candidates */
-        $candidates = new Collection();
+        $candidates = new Collection;
 
         foreach ($capabilities as $capability) {
             /** @var CapabilityProjection|null $projection */
@@ -212,7 +218,9 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
             foreach ($this->expand($projection, (string) $capability->default_value) as $payload) {
                 $candidates->push(new StateCandidate(
                     maille: StateMaille::Broadcast,
-                    payload: $payload,
+                    // Story 43.2 (D3) — recopie le hint refresh de spec.refresh
+                    // (foyer UNIQUE, double gate mécanisme + portée dans le helper).
+                    payload: $this->withRefreshHint($projection, $payload),
                     updatedAt: $capability->updated_at,
                     sourceId: (int) $capability->id,
                 ));
@@ -226,7 +234,8 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
                 foreach ($this->expand($projection, (string) $effective) as $payload) {
                     $candidates->push(new StateCandidate(
                         maille: $override['maille'],
-                        payload: $payload,
+                        // Story 43.2 (D3) — même foyer que la source Broadcast ci-dessus.
+                        payload: $this->withRefreshHint($projection, $payload),
                         // Récence portée par l'assignation (override le plus récent
                         // gagne au sein d'une maille, iso compilateur).
                         updatedAt: $override['updated_at'] ?? $capability->updated_at,
@@ -241,6 +250,61 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
         }
 
         return $candidates->values();
+    }
+
+    /**
+     * Story 43.2 (D3) — recopie le hint `refresh` de la RACINE de `spec` au
+     * payload émis, SSI les trois conditions suivantes sont réunies (double
+     * gate mécanisme + portée) :
+     *   1. le MÉCANISME de CE provider ({@see mechanism()}) ∈
+     *      {registry, registry_list} — `legacy_cleanup` hérite d'`itemsFor()`
+     *      mais est EXCLU explicitement même s'il est Machine (son mécanisme
+     *      diffère) ;
+     *   2. la PORTÉE de CE provider ({@see scope()}) ∈
+     *      {@see StateScope::Session}/{@see StateScope::MachineUser}
+     *      — JAMAIS {@see StateScope::Machine} (un item HKLM/HKU ne
+     *      porte JAMAIS `refresh`, même si le spec mixte le déclare — piège n°4) ;
+     *   3. `spec.refresh` est une STRING du vocabulaire fermé
+     *      ({@see CapabilityProjection::REFRESH_HINTS}) — absent,
+     *      non-string ou hors vocabulaire (donnée corrompue hypothétique, déjà
+     *      refusée à l'authoring par {@see CapabilitySpecCollisionGuard}) ⇒
+     *      payload INCHANGÉ, JAMAIS d'exception au render (discipline UNMANAGED).
+     *
+     * Le hint est recopié sur TOUS les payloads émis par la projection, y
+     * compris les items de SUPPRESSION `ensure: "absent"` (supprimer une
+     * policy exige le même geste ; le gate `changed` de l'agent neutralise le
+     * régime stable). Clé `refresh` en DERNIÈRE position (lisibilité fixtures
+     * — le hash canonicalise en triant les clés, la position est indifférente).
+     *
+     * FOYER UNIQUE : appelé aux DEUX sites de push d'{@see itemsFor()} (Broadcast
+     * ET overrides) — JAMAIS dans `expand()` (deux foyers → dérive), hérité tel
+     * quel par {@see AbstractRegistryListCapabilityProvider} (même `itemsFor()`).
+     *
+     * @param  array<string,mixed>  $payload
+     * @return array<string,mixed>
+     */
+    protected function withRefreshHint(CapabilityProjection $projection, array $payload): array
+    {
+        if (! in_array($this->mechanism(), [
+            CapabilityProjection::MECHANISM_REGISTRY,
+            CapabilityProjection::MECHANISM_REGISTRY_LIST,
+        ], true)) {
+            return $payload;
+        }
+
+        if (! in_array($this->scope(), [StateScope::Session, StateScope::MachineUser], true)) {
+            return $payload;
+        }
+
+        $spec = $projection->spec;
+        $refresh = is_array($spec) ? ($spec['refresh'] ?? null) : null;
+        if (! is_string($refresh) || ! in_array($refresh, CapabilityProjection::REFRESH_HINTS, true)) {
+            return $payload;
+        }
+
+        $payload['refresh'] = $refresh;
+
+        return $payload;
     }
 
     /**
@@ -261,7 +325,10 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
      * Sinon, coercition finale par `type` (DWORD/QWORD→int, MULTI_SZ→liste de
      * chaînes, SZ/EXPAND_SZ→chaîne — zéro float §4.1). Le payload est CONCRET :
      * EXACTEMENT 5 clés pour une écriture, EXACTEMENT 4 pour une suppression
-     * (invariant central).
+     * (invariant central) — **+ `refresh` OPTIONNEL** (Story 43.2), recopié
+     * APRÈS `expand()` par {@see withRefreshHint()} au foyer unique d'`itemsFor()`,
+     * jamais ICI (deux foyers → dérive) ; portée Session/MachineUser uniquement,
+     * jamais sur un item Machine/HKU.
      *
      * PROTECTED (Story 35.2) : surchargée par les mécanismes dérivés
      * ({@see AbstractRegistryListCapabilityProvider}) — le corps registry
@@ -347,7 +414,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
      * dérivés (la résolution map/littéral est commune à tous les mécanismes).
      *
      * @param  mixed  $raw  la `value` de la clé telle qu'issue de la `spec`
-     * @return mixed  valeur brute (avant coercition par type) ou self::UNMANAGED
+     * @return mixed valeur brute (avant coercition par type) ou self::UNMANAGED
      */
     protected function resolveKeyValue(mixed $raw, string $capabilityValue): mixed
     {
@@ -440,7 +507,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
             $ctx->logicalGroupIds,
         )));
 
-        $rows = \Illuminate\Support\Facades\DB::table('capability_assignments')
+        $rows = DB::table('capability_assignments')
             ->whereIn('capability_id', $capabilityIds)
             ->where(function ($q) use ($ctx, $wgIds): void {
                 if ($wgIds !== []) {
@@ -483,7 +550,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
                 'maille' => $maille,
                 'value' => $row->value === null ? null : (string) $row->value,
                 'updated_at' => $row->updated_at !== null
-                    ? \Illuminate\Support\Carbon::parse($row->updated_at)
+                    ? Carbon::parse($row->updated_at)
                     : null,
                 // Profondeur physique : renseignée pour la maille `physical_group`
                 // (chaîne salle directe → ancêtres), `null` partout ailleurs.

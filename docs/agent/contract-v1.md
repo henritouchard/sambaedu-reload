@@ -50,7 +50,7 @@ timestamps UTC ISO 8601 (`Carbon::now('UTC')->toIso8601String()`).
 |---|---|---|
 | `schema` | string | Version du contrat. L'agent **refuse un major inconnu**. |
 | `generated_at` | string (ISO 8601 **avec timezone**) | Instant de compilation. **Champ volatil exclu du hash.** |
-| `ttl_seconds` | int | Cadence de poll/rafraîchissement conseillée. |
+| `ttl_seconds` | int | Cadence de poll/rafraîchissement conseillée — calculée PAR CONTEXTE depuis la Story 43.3 (court si le contexte est en « bascule sensible », défaut global sinon ; voir `App\Services\Agent\AgentTtlResolver`). **Champ volatil exclu du hash** (Story 43.3, AC3) : un changement de TTL seul ne fait pas franchir le cache 304 (voir [state-endpoint.md](state-endpoint.md) § cadence). |
 | `debug` | bool | Mode debug du poste (`workstations.debug`). En debug, le compagnon de session garde sa console ouverte (toutes sessions) et y recopie ses logs. **Champ opérationnel inclus dans le hash** : un toggle change l'ETag et franchit le cache 304. L'agent ignore ce champ s'il ne le connaît pas (forward-compat). |
 | `machine` / `session` / `machine_user` | list\<item\> | Les trois **portées** d'application. |
 
@@ -122,10 +122,12 @@ canal agent : il sert l'ETag de `GET /state` **et** la comparaison des rapports.
 
 **Deux portes d'entrée :**
 
-- `hashState(array $state)` — exclut le champ volatil `generated_at` **avant**
-  canonicalisation. Deux compilations du même état à des instants différents →
-  **hash identique**. (Tout futur champ volatil s'exclut au même endroit —
-  single point of truth.)
+- `hashState(array $state)` — exclut les champs volatils `generated_at` **et**
+  `ttl_seconds` (Story 43.3, AC3) **avant** canonicalisation. Deux compilations
+  du même état à des instants différents, ou avec un `ttl_seconds` différent
+  (bascule sensible ou non), → **hash identique**. (Tout futur champ volatil
+  s'exclut au même endroit — single point of truth,
+  `StateHasher::VOLATILE_STATE_KEYS` / miroir Go `hasher.go::volatileStateKeys`.)
 - `hashItem(array $item)` — exclut la clé `hash` de l'item (sinon dépendance
   circulaire). Le hash dérive du seul contenu *définissant*.
 
@@ -271,9 +273,11 @@ clés distinctes s'accumulent). Le payload porte un item de registre **CONCRET**
 | `type` | string | `REG_SZ` \| `REG_DWORD` \| `REG_EXPAND_SZ` \| `REG_MULTI_SZ` \| `REG_QWORD`. |
 | `value` | int \| string \| list&lt;string&gt; | Valeur cible TYPÉE : `REG_DWORD`/`REG_QWORD` → **entier** (zéro float, §4.1) ; `REG_SZ`/`REG_EXPAND_SZ` → **string** ; `REG_MULTI_SZ` → **liste de strings** (jamais `{}` — §4.1). Absent sur un item `ensure: "absent"`. |
 | `ensure` | string (**optionnel**) | `present` \| `absent`. **Absence du champ = `present`** (rétro-compatible §9). `absent` = l'agent **supprime la valeur nommée** si elle existe (jamais la clé-conteneur). Le serveur n'émet **JAMAIS** `ensure: "present"` explicitement — un item d'écriture reste EXACTEMENT 5 clés (byte-identité des payloads existants). |
+| `refresh` | string (**optionnel**, Story 43.2) | `shell_notify` \| `policy_broadcast` \| `explorer_restart` (vocabulaire FERMÉ, casse canonique minuscule). Geste de rafraîchissement que le **compagnon de session** exécute en fin de passe (le PLUS FORT des items changés, 43.1) pour rendre le réglage effectif SANS attendre le prochain logon Windows. Posé par le serveur au **niveau RACINE du `spec`** de la projection (une valeur par projection, jamais par clé) et recopié TEL QUEL sur chaque item émis — **UNIQUEMENT** pour un item de portée **session/machine_user** (JAMAIS machine/HKU : le compagnon de session n'existe pas côté service SYSTEM). **Absence du champ** = comportement legacy inchangé (« effet au prochain logon Windows »). Un agent **≤ 2.9.0** ignore ce champ inconnu **SANS ERREUR** (§9, champ ajouté) — il écrit la valeur mais n'exécute AUCUN geste : publier la release 2.10.0 (43.1) est un prérequis pour que le hint soit honoré. |
 
-Item de **suppression** (`ensure: "absent"`) — EXACTEMENT 4 clés, ni `type` ni
-`value` :
+Item de **suppression** (`ensure: "absent"`) — EXACTEMENT 4 clés (+ `refresh`
+optionnel, portée session/machine_user uniquement — jamais émis sur un item
+machine/HKU), ni `type` ni `value` :
 
 ```json
 {
@@ -300,6 +304,11 @@ Item de **suppression** (`ensure: "absent"`) — EXACTEMENT 4 clés, ni `type` n
 >    la réconciliation de clé entière est le type `registry_list`).
 > 3. **Ne pas gérer** — la clé n'apparaît PAS dans la cible : l'agent n'y touche
 >    plus (§8, la valeur en place reste celle qu'elle avait).
+>
+> **Invariant amendé (Story 43.2) :** les items 1 et 2 ci-dessus restent
+> EXACTEMENT 5/4 clés — **+ `refresh` optionnel**, émis UNIQUEMENT sur un item
+> de portée session/machine_user (JAMAIS machine/HKU). L'invariant qui NE BOUGE
+> JAMAIS : ni `id`/`key` de capacité au payload.
 >
 > Un item `absent` et un item d'écriture sur la MÊME identité `{hive|path|name}`
 > s'arbitrent par la précédence de compilation EXISTANTE (exclusive par clé) —
@@ -617,8 +626,9 @@ mêmes casiers que `registry`.
 }
 ```
 
-Le payload porte **EXACTEMENT 4 clés** — jamais de `name`, jamais d'id de
-capacité, zéro float (§4.1) :
+Le payload porte **EXACTEMENT 4 clés** (+ `refresh` OPTIONNEL, Story 43.2 —
+portée session/machine_user uniquement, jamais émis sur un conteneur
+machine/HKLM) — jamais de `name`, jamais d'id de capacité, zéro float (§4.1) :
 
 | Clé | Type JSON | Sens |
 |---|---|---|
@@ -626,6 +636,7 @@ capacité, zéro float (§4.1) :
 | `path` | string | Chemin de la **clé-conteneur** sous la ruche (la clé dont les sous-valeurs `1..N` sont la liste). |
 | `entry_type` | string | Type des entrées : `REG_SZ` \| `REG_EXPAND_SZ` **uniquement** (les listes indexées Windows sont des chaînes — borné par le contrat). |
 | `values` | list&lt;string&gt; | Liste **ORDONNÉE** de chaînes. L'ordre est **porteur de sens** : la canonicalisation du hash ne trie pas les listes (§4) — le même contenu dans un autre ordre est un autre hash. **`[]` (liste vide) est une vraie valeur** : « purger toutes les entrées numérotées » (le « off » honnête d'une liste). |
+| `refresh` | string (**optionnel**, Story 43.2) | Même vocabulaire/sémantique que §7.1 (`shell_notify` \| `policy_broadcast` \| `explorer_restart`) — geste de rafraîchissement exécuté par le compagnon en fin de passe (43.1). Recopié depuis la RACINE du `spec` de la projection ; jamais sur un conteneur émis par le provider Machine. |
 
 **Sémantique de réconciliation (D3 — l'agent POSSÈDE la clé-conteneur) :**
 
@@ -1063,6 +1074,30 @@ décision de contrat consommée par chaque handler côté agent.
   justification, agent bumpé 2.3.0. Cas limite assumé : un agent ANTÉRIEUR ne
   peut pas « ignorer » un item `absent` (pas de `value` à écrire) → parse en
   `{status: error}` isolé sur le type `registry`, d'où publication de release.
+  Ex. Story 43.2 : champ optionnel `refresh` sur les items `registry`/
+  `registry_list` (§7.1/§7.6, vocabulaire fermé `shell_notify` \|
+  `policy_broadcast` \| `explorer_restart`, portée session/machine_user
+  uniquement) — absence = comportement legacy (effet au prochain logon),
+  golden `state.v1.json` bumpé (item `registry` HideFileExt gagne le champ +
+  AJOUT d'un item `registry_list` en portée session), agent DÉJÀ bumpé 2.10.0
+  (43.1, mécanisme de lecture mergé en amont de cette story). Cas limite
+  BÉNIN (contrairement à `ensure`) : un agent ≤ 2.9.0 **ignore le champ EN
+  SILENCE** (il écrit la valeur registre normalement, aucune erreur) — mais
+  **n'exécute aucun geste de rafraîchissement**, ce qui rend l'« Immédiat »
+  affiché par l'UI mensonger tant que la release 2.10.0 n'est pas publiée
+  (NFR-A4, D9). **Drift ponctuel attendu** : le hint entre dans le `hash`
+  de chaque item concerné → au premier state compilé après le retrofit
+  (`2026_07_11_100000_retrofit_capabilities_refresh_hints.php`), chaque poste
+  re-applique une fois les items dont le hash a changé (rapport `drift` puis
+  `compliant` — écriture idempotente de la même valeur + un geste), bénin et
+  documenté (ne jamais « corriger » — le hash est opaque côté agent). Nuance
+  par geste : pour les items retrofités en `shell_notify` ce tir unique est
+  iso-comportement (c'était déjà le plancher émis sur tout changement HKCU) ;
+  pour ceux en `policy_broadcast` (`blocked_executables`,
+  `registry_editing_disabled`) c'est UN `WM_SETTINGCHANGE("Policy")` broadcast
+  par poste ayant la capacité assignée, à sa première convergence
+  post-migration — le geste que le moteur GPO émet après chaque application,
+  inoffensif, borné à un tir par poste.
 - **Type ajouté** → version **mineure** aussi (constante `RESOURCE_TYPES`
   additive, `ReportRequest` suit). Ex. Story 35.2 : type `registry_list`
   (§7.6), golden bumpé avec justification, agent bumpé 2.4.0. Ex. Story 36.1 :

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
+use Illuminate\Support\Carbon;
 
 /**
  * Epic 27 — Capacité : intention métier OS-agnostique donnée aux postes
@@ -32,8 +33,8 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
  * @property list<string> $applies_to_os
  * @property bool $is_active
  * @property bool $overrides_locked
- * @property \Illuminate\Support\Carbon $created_at
- * @property \Illuminate\Support\Carbon $updated_at
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
  */
 class Capability extends Model
 {
@@ -193,5 +194,120 @@ class Capability extends Model
     public function hasWarning(): bool
     {
         return is_string($this->warning) && trim($this->warning) !== '';
+    }
+
+    /**
+     * Story 43.2 (D6) — hint de rafraîchissement le plus FORT parmi les
+     * projections windows `registry`/`registry_list` dont le `spec` porte un
+     * `refresh` VALIDE (vocabulaire fermé) — la bi-projection (ex.
+     * `blocked_executables`) prend le max. `null` si aucune projection ne porte
+     * de hint valide (comportement legacy : effet au prochain logon).
+     *
+     * Lit la relation `projections` DÉJÀ eager-loaded par l'appelant (zéro
+     * requête ajoutée, D6) — un appelant qui n'a chargé qu'un sous-ensemble de
+     * mécanismes ne verra que les hints de ce sous-ensemble (sans impact
+     * pratique aujourd'hui : le retrofit 43.2 pose le MÊME hint dans les deux
+     * specs d'une bi-projection).
+     */
+    public function refreshHint(): ?string
+    {
+        $best = null;
+        $bestRank = -1;
+
+        foreach ($this->projections as $projection) {
+            if (! in_array($projection->mechanism, [
+                CapabilityProjection::MECHANISM_REGISTRY,
+                CapabilityProjection::MECHANISM_REGISTRY_LIST,
+            ], true)) {
+                continue;
+            }
+
+            $spec = $projection->spec;
+            $hint = is_array($spec) ? ($spec['refresh'] ?? null) : null;
+            if (! is_string($hint)) {
+                continue;
+            }
+
+            $rank = array_search($hint, CapabilityProjection::REFRESH_HINTS, true);
+            if ($rank === false) {
+                continue; // valeur hors vocabulaire (donnée corrompue hypothétique) : ignorée.
+            }
+
+            if ($rank > $bestRank) {
+                $bestRank = $rank;
+                $best = $hint;
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * Une projection windows registry/registry_list de cette capacité porte-t-elle
+     * AU MOINS une clé/conteneur `hive: HKCU` ? (D5 — condition d'affichage d'un
+     * badge : une capacité 100 % machine/HKLM/HKU — firewall, fs_acl, machine-only…
+     * — n'a AUCUNE clé HKCU registre et n'affiche donc jamais de badge de
+     * temporalité, sous peine de mensonge inverse.)
+     */
+    private function hasHkcuRegistryKey(): bool
+    {
+        foreach ($this->projections as $projection) {
+            if (! in_array($projection->mechanism, [
+                CapabilityProjection::MECHANISM_REGISTRY,
+                CapabilityProjection::MECHANISM_REGISTRY_LIST,
+            ], true)) {
+                continue;
+            }
+
+            $spec = $projection->spec;
+            $keys = is_array($spec) && isset($spec['keys']) && is_array($spec['keys'])
+                ? $spec['keys']
+                : [];
+
+            foreach ($keys as $key) {
+                if (is_array($key)
+                    && strcasecmp((string) ($key['hive'] ?? ''), CapabilityProjection::HIVE_USER) === 0) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Story 43.2 (D5/D6, FR-A3) — temporalité d'effet affichée en UI. `null` =
+     * AUCUN badge (D5 : capacité sans clé HKCU registre — machine-only, firewall,
+     * fs_acl… — afficher « à la prochaine session » y serait un mensonge inverse).
+     * Sinon : `shell_notify`/`policy_broadcast` → « Immédiat » ; `explorer_restart`
+     * → « Immédiat (le bureau redémarre) » ; hint ABSENT (mais ≥ 1 clé HKCU) →
+     * « À la prochaine session » (comportement legacy honnête). Tooltip courte,
+     * sans jargon (ni « logon », ni « HKCU », ni « broadcast »).
+     *
+     * @return array{label:string, tooltip:string}|null
+     */
+    public function effectTiming(): ?array
+    {
+        if (! $this->hasHkcuRegistryKey()) {
+            return null;
+        }
+
+        return match ($this->refreshHint()) {
+            CapabilityProjection::REFRESH_EXPLORER_RESTART => [
+                'label' => 'Immédiat (le bureau redémarre)',
+                'tooltip' => 'Effectif en session ouverte dès que le poste applique le réglage '
+                    .'(au plus tard à son prochain contact serveur). Les fenêtres de l\'Explorateur '
+                    .'sont rouvertes.',
+            ],
+            CapabilityProjection::REFRESH_SHELL_NOTIFY, CapabilityProjection::REFRESH_POLICY_BROADCAST => [
+                'label' => 'Immédiat',
+                'tooltip' => 'Effectif en session ouverte dès que le poste applique le réglage '
+                    .'(au plus tard à son prochain contact serveur).',
+            ],
+            default => [
+                'label' => 'À la prochaine session',
+                'tooltip' => 'Prendra effet à la prochaine ouverture de session Windows.',
+            ],
+        };
     }
 }

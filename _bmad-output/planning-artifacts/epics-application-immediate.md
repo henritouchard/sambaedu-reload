@@ -183,6 +183,14 @@ create-story.
   `policy_broadcast` si validé au lab) dans son seed — l'FR-E3 « au logon suivant » devient
   « en session courante » pour les sessions déjà ouvertes. La fenêtre au logon (~10-60 s) reste
   assumée (NFR-A5, cohérente avec NFR-E1 « contournable assumé »).
+  **Contrainte imposée par 43.3 (TTL dynamique)** : le critère de bascule sensible
+  (`AgentTtlResolver`, `config('agent.ttl_sensitive_capabilities')`) exige `value` NON-null sur
+  l'assignment `restrict_run` — 41.3 **DOIT** poser le flag examen en CRÉANT l'assignment et le
+  retirer au déflag en le **SUPPRIMANT (DELETE)**, jamais en écrivant une valeur `off` non-null
+  (ce que ferait la convention UI « off = vraie valeur »,
+  `project_capability_value_map_symmetric_rule`). Une capacité déflaguée par une valeur `off` non
+  supprimée laisserait le TTL court (90 s) posé À VIE sur la salle. Voir le commentaire de
+  `config/agent.php::ttl_sensitive_capabilities`.
 - **`service:<nom>` whitelisté** (restart de service après réglage HKLM, ex. lockscreen) : geste
   machine côté SYSTEM, hors V1 — à ouvrir si un cas concret l'exige.
 - **Apply synchrone pré-shell** (équivalent traitement GPO synchrone au logon) : seul moyen de

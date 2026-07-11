@@ -134,6 +134,87 @@ aux postes. Les binaires 2.1.x et antérieurs ignorent ce champ (intervalle
 local fixe ≤ 60 min). Aucun push (WoL/reboot/WinRM) : choix
 anti-couteau-suisse.
 
+### Cadence PAR CONTEXTE — `ttl_seconds` dynamique (Story 43.3)
+
+Le `ttl_seconds` de l'enveloppe n'est plus une constante globale : il est
+calculé par `App\Services\Agent\AgentTtlResolver::ttlSeconds(TargetContext)`,
+appelé par `StateCompiler::compile()` à chaque compilation.
+
+- **TTL court** (`config('agent.ttl_sensitive_seconds')`, défaut 90 s,
+  plancher serveur `max(60, …)`) si le contexte (poste + chaîne physique
+  étendue aux ancêtres + parcs logiques directs + user + groupes user) porte
+  AU MOINS un `capability_assignments.value` non-null pour une capacité dont
+  la `key` figure dans `config('agent.ttl_sensitive_capabilities')` (défaut
+  `['restrict_run']` — la capacité n'existe pas encore tant que 41.2 n'est
+  pas livrée : zéro ligne, zéro changement de comportement).
+- **TTL global** (`config('agent.ttl_seconds')`, défaut 3600 s) sinon —
+  comportement historique inchangé.
+
+Consommateur cible : la bascule mode examen (Epic 41, story 41.3) pose/retire
+un assignment `restrict_run` sur le parc physique de la salle flaguée — le
+poste bascule automatiquement sur une cadence de poll resserrée pendant la
+fenêtre sensible, sans aucun code supplémentaire côté serveur agent.
+
+**Limite 1 — la première bascule reste bornée par l'ancien TTL.** Le TTL
+court n'atteint l'agent qu'à son **prochain check-in** (`noteServerTtl`,
+`loop.go:561-565` — un 304 ne re-livre rien). Concrètement, pour la bascule
+mode examen : créer/retirer l'assignment `restrict_run` change AUSSI les
+items machine du poste (ex. `internet_access=off` → item `firewall`), donc
+l'ETag machine change lui aussi → 200 → le TTL court est livré **dans la
+même réponse**. C'est le défaut global (3600 s) qui borne le pire cas de
+cette première latence ; le TTL court sert les bascules **suivantes**
+(reflag, déflag, retour à la normale) une fois le poste déjà en cadence
+resserrée.
+
+**Limite 2 — un changement de TTL sans changement d'items ne franchit pas le
+304.** `ttl_seconds` est un champ **volatil** exclu du hash d'état (AC3,
+`StateHasher::VOLATILE_STATE_KEYS`) : si SEUL le TTL change (ex. abaissement
+du défaut global, voir procédure ci-dessous) sans qu'aucun item ne change,
+l'ETag reste identique et le poste continue de recevoir des 304 jusqu'à son
+prochain 200 naturel. Le remède existe déjà : **« forcer la synchro »**
+(story 24.7, ci-dessus) bypass le 304 et re-livre l'enveloppe avec le TTL
+frais dès le prochain contact.
+
+**Hors-scope** : le vrai temps réel (un canal wake serveur→agent qui
+pousserait le TTL sans attendre un check-in) n'est PAS traité ici — le
+transport reste 100 % pull. À n'ouvrir que si un besoin résiduel le
+justifie après usage du mécanisme ci-dessus.
+
+#### Procédure d'abaissement du défaut global (action opérateur, PAS de code)
+
+Le défaut global (`AGENT_STATE_TTL_SECONDS`, 3600 s en code, INCHANGÉ par la
+story 43.3) peut être abaissé en exploitation — recommandation cible **600 s**
+— mais c'est une décision **opérateur réversible**, jamais gravée dans le
+code :
+
+1. **Mesurer AVANT de trancher.** Les `GET /state` conditionnels (304) sont
+   quasi gratuits, mais chaque cycle de poll embarque AUSSI un
+   `POST /report` (écriture check-in + ingestion de conformité) — à 600 s
+   au lieu de 3600 s, c'est **×6 la fréquence des écritures `POST /report`**
+   sur tout le parc. Mesurer la charge réelle (DB, logs) avant de généraliser.
+2. **Effet de bord n°1 — seuils de présence resserrés IMMÉDIATEMENT.**
+   `Workstation::isAgentSilent()`, `agentPresence()` et
+   `WorkstationGroupRepository` dérivent « muet »/« online » de
+   `2 × config('agent.ttl_seconds')`. Abaisser l'env resserre CES seuils dès
+   le `config:cache`, alors que les agents n'adoptent la nouvelle cadence
+   qu'à leur **prochain 200** (limite 1 ci-dessus) → des postes bien vivants
+   peuvent apparaître « silencieux » en masse pendant la transition.
+3. **Effet de bord n°2 — adoption paresseuse.** Un agent qui n'a vu aucun
+   changement d'items depuis l'abaissement reste sur son ancien intervalle
+   tant qu'il n'a pas franchi un 200 (limite 2 ci-dessus).
+4. **Remède recommandé** : après le changement d'env, lancer une **synchro
+   forcée du parc** (story 24.7 — `agent_sync_requested_at` sur les postes
+   concernés) pour faire franchir le 304 et livrer le nouveau TTL au plus
+   vite, réduisant la fenêtre de faux « silencieux ».
+5. **Déploiement** : modifier `AGENT_STATE_TTL_SECONDS` dans l'env de la VM,
+   puis `config:cache` **+ chown** (le cache de config n'est pas synchronisé
+   par inotify — cf. `project_vm_config_cache_not_synced`).
+
+Le TTL **par contexte** (bascule sensible) n'est PAS concerné par ces effets
+de bord : un poste qui polle plus souvent que le seuil `2×ttl` reste
+« online » de toute façon — seul l'abaissement du **défaut global** couple
+aux seuils de présence.
+
 ## Codes de réponse
 
 | Code | Sens | Corps |
@@ -148,7 +229,9 @@ anti-couteau-suisse.
 
 | Clé | Défaut | Rôle |
 |---|---|---|
-| `ttl_seconds` | 3600 | cadence de poll, champ `ttl_seconds` de l'enveloppe (env `AGENT_STATE_TTL_SECONDS`). **Gouverne l'intervalle de l'agent ≥ 2.2.0** (clamp côté agent [60 s, 24 h]) ; indicatif pour les 2.1.x. Pilote AUSSI le seuil « muet » UI (2 × ttl) |
+| `ttl_seconds` | 3600 | TTL **global** (défaut), servi hors bascule sensible — champ `ttl_seconds` de l'enveloppe (env `AGENT_STATE_TTL_SECONDS`). **Gouverne l'intervalle de l'agent ≥ 2.2.0** (clamp côté agent [60 s, 24 h]) ; indicatif pour les 2.1.x. Pilote AUSSI le seuil « muet » UI (2 × ttl). Voir § cadence PAR CONTEXTE avant de l'abaisser |
+| `ttl_sensitive_seconds` | 90 | TTL **court** (Story 43.3) servi quand le contexte est en « bascule sensible » (env `AGENT_STATE_TTL_SENSITIVE_SECONDS`), plancher serveur `max(60, …)` |
+| `ttl_sensitive_capabilities` | `['restrict_run']` | Clés de capacités (`capabilities.key`) dont un assignment non-null déclenche le TTL court (array PHP, pas d'env — Story 43.3) |
 | `report_history` | `false` | historique de débogage des rapports |
 | `report_events_retention_days` | 14 | rétention courte du journal des changements rapportés |
 | `report_history_retention_days` | 30 | purge auto de l'historique de débogage |

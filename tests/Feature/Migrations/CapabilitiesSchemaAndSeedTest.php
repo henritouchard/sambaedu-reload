@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Migrations;
 
+use App\Enums\StateMaille;
 use App\Models\Capability;
 use App\Models\CapabilityProjection;
 use App\Models\User;
@@ -13,12 +14,18 @@ use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\AgentTtlResolver;
+use App\Services\Agent\Providers\AbstractCapabilityStateProvider;
+use App\Services\Agent\Providers\CapabilitySpecCollisionGuard;
+use App\Services\Agent\Providers\RegistryListMachineCapabilityProvider;
+use App\Services\Agent\Providers\RegistryListUserCapabilityProvider;
 use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
 use App\Services\Agent\Providers\RegistryUserCapabilityProvider;
 use App\Services\Agent\StateCompiler;
 use App\Services\Agent\StateContract;
 use App\Services\Agent\StateHasher;
 use App\Services\Agent\TargetContext;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -65,7 +72,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     {
         Capability::factory()->create(['key' => 'dup_key']);
 
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
         Capability::factory()->create(['key' => 'dup_key']);
     }
 
@@ -75,7 +82,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         $cap = Capability::factory()->create();
         CapabilityProjection::factory()->for($cap)->create(['os' => 'windows', 'mechanism' => 'registry']);
 
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
         CapabilityProjection::factory()->for($cap)->create(['os' => 'windows', 'mechanism' => 'registry']);
     }
 
@@ -87,7 +94,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
 
         DB::table('capability_assignments')->insert([
             'capability_id' => $cap->id,
-            'assignable_type' => \App\Models\WorkstationGroup::class,
+            'assignable_type' => WorkstationGroup::class,
             'assignable_id' => 1,
             'value' => null,
             'created_at' => now(),
@@ -339,25 +346,25 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         // données RÉELLES : un override de parc `off` sur `llmnr_disabled` fait
         // émettre par le provider machine 2 items de SUPPRESSION HKLM 4 clés
         // (EnableMulticast + NodeType), en plus du Broadcast `on` (écritures).
-        \App\Observers\WorkstationGroupObserver::disableSync();
+        WorkstationGroupObserver::disableSync();
 
         try {
-            $ws = \App\Models\Workstation::factory()->create();
-            $parc = \App\Models\WorkstationGroup::factory()->logical()->create();
+            $ws = Workstation::factory()->create();
+            $parc = WorkstationGroup::factory()->logical()->create();
             $ws->groups()->attach($parc->id);
 
             $cap = Capability::query()->where('key', 'llmnr_disabled')->firstOrFail();
             DB::table('capability_assignments')->insert([
                 'capability_id' => $cap->id,
-                'assignable_type' => \App\Models\WorkstationGroup::class,
+                'assignable_type' => WorkstationGroup::class,
                 'assignable_id' => $parc->id,
                 'value' => 'off',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
 
-            $items = (new \App\Services\Agent\Providers\RegistryMachineCapabilityProvider())
-                ->itemsFor(\App\Services\Agent\TargetContext::for($ws, null));
+            $items = (new RegistryMachineCapabilityProvider)
+                ->itemsFor(TargetContext::for($ws, null));
 
             $absent = $items->filter(
                 fn ($c): bool => (int) $c->sourceId === (int) $cap->id
@@ -372,7 +379,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
                 self::assertSame('HKLM', $c->payload['hive']);
             }
         } finally {
-            \App\Observers\WorkstationGroupObserver::enableSync();
+            WorkstationGroupObserver::enableSync();
         }
     }
 
@@ -450,10 +457,10 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             $member->groups()->attach($group->id);
             $nonMember = User::factory()->create();
 
-            $compiler = new StateCompiler(new StateHasher(), [
-                new RegistryMachineCapabilityProvider(),
-                new RegistryUserCapabilityProvider(),
-            ]);
+            $compiler = new StateCompiler(new StateHasher, [
+                new RegistryMachineCapabilityProvider,
+                new RegistryUserCapabilityProvider,
+            ], new AgentTtlResolver);
 
             // MEMBRE : DisableRegistryTools = 1 (HKCU, Policies\System).
             $sessionMember = $compiler->compile(TargetContext::for($ws, $member))[StateContract::SCOPE_SESSION];
@@ -569,13 +576,28 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     {
         $migration = require database_path('migrations/2026_07_03_110000_seed_capabilities_registry_list_lot.php');
 
+        // Story 43.2 — le retrofit `2026_07_11_100000` (POSTÉRIEUR, orthogonal)
+        // pose `spec.refresh` sur `blocked_executables` APRÈS ce seed. Rejouer
+        // CE seed isolément (hors séquence complète) réécrit sa `spec` ENTIÈRE
+        // (piège n°7 : littéraux `keys` dupliqués, colonne remplacée) et efface
+        // donc `refresh` — orthogonal à ce que CETTE migration possède. On
+        // normalise `refresh` HORS du snapshot pour tester l'idempotence des
+        // champs QUE ce seed possède (`keys`), pas ceux d'un retrofit ultérieur.
+        $stripRefresh = static function (array $spec): array {
+            unset($spec['refresh']);
+
+            return $spec;
+        };
+
         $snapshot = fn (): array => Capability::query()
             ->whereIn('key', ['pix_extension_forced', 'blocked_executables'])
             ->orderBy('key')
             ->get()
             ->map(fn (Capability $c): array => [
                 'options' => $c->options,
-                'specs' => $c->projections()->orderBy('mechanism')->pluck('spec')->all(),
+                'specs' => $c->projections()->orderBy('mechanism')->get()
+                    ->map(fn (CapabilityProjection $p): array => $stripRefresh($p->spec))
+                    ->all(),
             ])
             ->all();
 
@@ -625,7 +647,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         // AC3 — invariant sur les DONNÉES RÉELLEMENT SEEDÉES (authoring
         // catalogue-first) : aucune clé-conteneur registry_list n'est aussi la
         // clé d'un scalaire registry ; entry_type et values bien formés partout.
-        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+        $guard = new CapabilitySpecCollisionGuard;
 
         self::assertSame(
             [],
@@ -641,7 +663,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         // DisallowRun) et le conteneur `…\Policies\Explorer\DisallowRun` sont
         // des paths PARENT/ENFANT distincts → PAS une collision. Prouvé sur le
         // sous-ensemble blocked_executables seul.
-        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+        $guard = new CapabilitySpecCollisionGuard;
 
         $blocked = array_values(array_filter(
             $this->seededWindowsProjections(),
@@ -657,7 +679,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         // AC3 (cas refusé) : un scalaire dont le path ÉGALE le conteneur (peu
         // importe son name — il vivrait DANS la clé possédée par l'agent) est
         // une violation explicite nommant les deux capacités et le conteneur.
-        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+        $guard = new CapabilitySpecCollisionGuard;
 
         $violations = $guard->violations([
             [
@@ -694,7 +716,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     #[Test]
     public function guard_reports_malformed_entry_type_and_values(): void
     {
-        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+        $guard = new CapabilitySpecCollisionGuard;
 
         $violations = $guard->violations([
             [
@@ -722,7 +744,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     {
         // Review 35.2 #3 : un conteneur à hive/path vide passait l'authoring
         // puis devenait {status: error} silencieux côté agent → refus AMONT.
-        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+        $guard = new CapabilitySpecCollisionGuard;
 
         $violations = $guard->violations([
             [
@@ -748,7 +770,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         // HKU HORS scope registry_list (piège n°11) : violation NOMMÉE — le
         // fan-out d'une réconciliation de clé-conteneur multiplierait la
         // propriété de clé par N ruches sans consommateur connu.
-        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+        $guard = new CapabilitySpecCollisionGuard;
 
         $violations = $guard->violations([
             [
@@ -773,7 +795,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     {
         // Borné registry ∈ {HKLM, HKCU, HKU} : une ruche inconnue ('HKX') ne
         // serait émise par AUCUN provider (clé silencieusement morte) → refus.
-        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+        $guard = new CapabilitySpecCollisionGuard;
 
         $violations = $guard->violations([
             [
@@ -794,6 +816,116 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         self::assertStringContainsString("ruche 'HKX' hors borné (HKLM|HKCU|HKU)", $violations[0]);
     }
 
+    // ── Story 43.2 (AC2) — règle 5/5b : spec.refresh (vocabulaire + HKCU) ───
+
+    #[Test]
+    public function guard_accepts_the_three_canonical_refresh_values_on_both_mechanisms(): void
+    {
+        $guard = new CapabilitySpecCollisionGuard;
+
+        foreach (['shell_notify', 'policy_broadcast', 'explorer_restart'] as $hint) {
+            $violations = $guard->violations([
+                [
+                    'capability' => 'ok_registry_cap',
+                    'mechanism' => 'registry',
+                    'spec' => ['refresh' => $hint, 'keys' => [
+                        ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
+                    ]],
+                ],
+                [
+                    'capability' => 'ok_list_cap',
+                    'mechanism' => 'registry_list',
+                    'spec' => ['refresh' => $hint, 'keys' => [
+                        ['hive' => 'HKCU', 'path' => 'Software\\Y\\List', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['a']]],
+                    ]],
+                ],
+            ]);
+
+            self::assertSame([], $violations, "hint '{$hint}' doit passer sur les deux mécanismes");
+        }
+    }
+
+    #[Test]
+    public function guard_passes_a_spec_without_refresh_unchanged(): void
+    {
+        // Champ optionnel ABSENT (AC1) : aucune des deux sous-règles ne s'applique.
+        $guard = new CapabilitySpecCollisionGuard;
+
+        $violations = $guard->violations([
+            [
+                'capability' => 'no_refresh_cap',
+                'mechanism' => 'registry',
+                'spec' => ['keys' => [
+                    ['hive' => 'HKLM', 'path' => 'SOFTWARE\\X', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
+                ]],
+            ],
+        ]);
+
+        self::assertSame([], $violations);
+    }
+
+    #[Test]
+    public function guard_refuses_refresh_values_outside_the_closed_vocabulary(): void
+    {
+        // AC2 : non-string, variante de casse (SHELL_NOTIFY), valeur 41.x
+        // anticipée (logoff) — toutes REFUSÉES, sur les DEUX mécanismes.
+        $guard = new CapabilitySpecCollisionGuard;
+
+        $cases = [
+            'SHELL_NOTIFY', // variante de casse (D1 : casse canonique EXACTE minuscule)
+            'logoff', // valeur 41.x anticipée, hors V1
+            42, // non-string
+        ];
+
+        foreach ($cases as $refresh) {
+            $violations = $guard->violations([
+                [
+                    'capability' => 'bad_refresh_cap',
+                    'mechanism' => 'registry',
+                    'spec' => ['refresh' => $refresh, 'keys' => [
+                        ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
+                    ]],
+                ],
+            ]);
+
+            self::assertCount(1, $violations, 'valeur '.var_export($refresh, true).' doit être refusée');
+            self::assertStringContainsString('bad_refresh_cap', $violations[0]);
+            self::assertStringContainsString('hors vocabulaire fermé', $violations[0]);
+        }
+    }
+
+    #[Test]
+    public function guard_refuses_a_refresh_hint_without_any_hkcu_key_rule_5b(): void
+    {
+        // Règle 5b : un hint sur une spec SANS AUCUNE clé hive=HKCU est INERTE
+        // (withRefreshHint() ne recopie jamais sur un item Machine/HKLM/HKU) —
+        // refus AMONT plutôt que silence. Testé sur les DEUX mécanismes.
+        $guard = new CapabilitySpecCollisionGuard;
+
+        $violations = $guard->violations([
+            [
+                'capability' => 'inert_registry_cap',
+                'mechanism' => 'registry',
+                'spec' => ['refresh' => 'shell_notify', 'keys' => [
+                    ['hive' => 'HKLM', 'path' => 'SOFTWARE\\X', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
+                ]],
+            ],
+            [
+                'capability' => 'inert_list_cap',
+                'mechanism' => 'registry_list',
+                'spec' => ['refresh' => 'policy_broadcast', 'keys' => [
+                    ['hive' => 'HKLM', 'path' => 'SOFTWARE\\X\\List', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['a']]],
+                ]],
+            ],
+        ]);
+
+        self::assertCount(2, $violations);
+        self::assertStringContainsString('inert_registry_cap', $violations[0]);
+        self::assertStringContainsString('hint INERTE', $violations[0]);
+        self::assertStringContainsString('inert_list_cap', $violations[1]);
+        self::assertStringContainsString('hint INERTE', $violations[1]);
+    }
+
     #[Test]
     public function hku_hkcu_twin_keys_on_the_same_path_name_are_not_a_violation(): void
     {
@@ -801,7 +933,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         // MÊME {path|name} est VOULUE (SYSTEM couvre .DEFAULT/ruches, le
         // compagnon la session courante) — le guard ne la refuse PAS. Prouvé
         // sur la projection numlock RÉELLEMENT seedée (post-retrofit 35.3).
-        $guard = new \App\Services\Agent\Providers\CapabilitySpecCollisionGuard();
+        $guard = new CapabilitySpecCollisionGuard;
 
         $numlock = array_values(array_filter(
             $this->seededWindowsProjections(),
@@ -894,12 +1026,12 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             )->values();
 
             // ── Effectif `on` (broadcast, aucun override) ───────────────────
-            $machineOn = $forCap((new RegistryMachineCapabilityProvider())->itemsFor($ctx()));
+            $machineOn = $forCap((new RegistryMachineCapabilityProvider)->itemsFor($ctx()));
             self::assertCount(1, $machineOn, 'le provider Machine émet la clé HKU');
             self::assertSame('HKU', $machineOn[0]->payload['hive']);
             self::assertSame('2', $machineOn[0]->payload['value']);
 
-            $userOn = $forCap((new RegistryUserCapabilityProvider())->itemsFor($ctx()));
+            $userOn = $forCap((new RegistryUserCapabilityProvider)->itemsFor($ctx()));
             self::assertCount(1, $userOn, 'le provider User émet la clé HKCU jumelle');
             self::assertSame('HKCU', $userOn[0]->payload['hive']);
             self::assertSame('2', $userOn[0]->payload['value']);
@@ -915,14 +1047,14 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             ]);
 
             $offMaille = fn ($items) => $forCap($items)->first(
-                fn ($c): bool => $c->maille === \App\Enums\StateMaille::LogicalGroup,
+                fn ($c): bool => $c->maille === StateMaille::LogicalGroup,
             );
-            $machineOff = $offMaille((new RegistryMachineCapabilityProvider())->itemsFor($ctx()));
+            $machineOff = $offMaille((new RegistryMachineCapabilityProvider)->itemsFor($ctx()));
             self::assertNotNull($machineOff);
             self::assertSame('HKU', $machineOff->payload['hive']);
             self::assertSame('0', $machineOff->payload['value'], 'off écrit une VRAIE valeur (map symétrique)');
 
-            $userOff = $offMaille((new RegistryUserCapabilityProvider())->itemsFor($ctx()));
+            $userOff = $offMaille((new RegistryUserCapabilityProvider)->itemsFor($ctx()));
             self::assertNotNull($userOff);
             self::assertSame('HKCU', $userOff->payload['hive']);
             self::assertSame('0', $userOff->payload['value']);
@@ -939,31 +1071,31 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         // Chaîne seed→spec→expand→payload sur données réelles : un override de
         // parc `on` fait émettre par le provider list MACHINE les 2 conteneurs
         // Forcelist (Chrome + Edge), payload 4 clés, jamais d'id de capacité.
-        \App\Observers\WorkstationGroupObserver::disableSync();
+        WorkstationGroupObserver::disableSync();
 
         try {
-            $ws = \App\Models\Workstation::factory()->create();
-            $parc = \App\Models\WorkstationGroup::factory()->logical()->create();
+            $ws = Workstation::factory()->create();
+            $parc = WorkstationGroup::factory()->logical()->create();
             $ws->groups()->attach($parc->id);
 
             $cap = Capability::query()->where('key', 'pix_extension_forced')->firstOrFail();
             DB::table('capability_assignments')->insert([
                 'capability_id' => $cap->id,
-                'assignable_type' => \App\Models\WorkstationGroup::class,
+                'assignable_type' => WorkstationGroup::class,
                 'assignable_id' => $parc->id,
                 'value' => 'on',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
 
-            $items = (new \App\Services\Agent\Providers\RegistryListMachineCapabilityProvider())
-                ->itemsFor(\App\Services\Agent\TargetContext::for($ws, null));
+            $items = (new RegistryListMachineCapabilityProvider)
+                ->itemsFor(TargetContext::for($ws, null));
 
             // Défaut unmanaged (sentinelle) : le Broadcast n'émet RIEN — seuls
             // les 2 conteneurs de l'override existent.
             self::assertCount(2, $items);
             foreach ($items as $c) {
-                self::assertSame(\App\Enums\StateMaille::LogicalGroup, $c->maille);
+                self::assertSame(StateMaille::LogicalGroup, $c->maille);
                 self::assertSame(['hive', 'path', 'entry_type', 'values'], array_keys($c->payload));
                 self::assertSame('HKLM', $c->payload['hive']);
             }
@@ -977,7 +1109,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
                 $byPath['SOFTWARE\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist']->payload['values'],
             );
         } finally {
-            \App\Observers\WorkstationGroupObserver::enableSync();
+            WorkstationGroupObserver::enableSync();
         }
     }
 
@@ -988,20 +1120,20 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         // que SA projection — `on` ⇒ 1 flag (registry) + 1 conteneur 5 entrées
         // (registry_list) ; `off` ⇒ 1 item ensure:absent + 1 conteneur values:[] ;
         // `unmanaged` (défaut) ⇒ rien.
-        \App\Observers\WorkstationGroupObserver::disableSync();
-        \App\Observers\UserGroupObserver::disableSync();
-        \App\Observers\UserGroupUserPivotObserver::disableSync();
+        WorkstationGroupObserver::disableSync();
+        UserGroupObserver::disableSync();
+        UserGroupUserPivotObserver::disableSync();
 
         try {
-            $ws = \App\Models\Workstation::factory()->create();
-            $user = \App\Models\User::factory()->create();
-            $group = \App\Models\UserGroup::factory()->create();
+            $ws = Workstation::factory()->create();
+            $user = User::factory()->create();
+            $group = UserGroup::factory()->create();
             $user->groups()->attach($group->id);
 
             $cap = Capability::query()->where('key', 'blocked_executables')->firstOrFail();
-            $ctx = fn () => \App\Services\Agent\TargetContext::for($ws, $user);
-            $registryProvider = new \App\Services\Agent\Providers\RegistryUserCapabilityProvider();
-            $listProvider = new \App\Services\Agent\Providers\RegistryListUserCapabilityProvider();
+            $ctx = fn () => TargetContext::for($ws, $user);
+            $registryProvider = new RegistryUserCapabilityProvider;
+            $listProvider = new RegistryListUserCapabilityProvider;
             $forCap = fn ($items) => $items->filter(
                 fn ($c): bool => (int) $c->sourceId === (int) $cap->id,
             )->values();
@@ -1013,27 +1145,33 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             // Override UserGroup `on` (la cible métier — élèves).
             DB::table('capability_assignments')->insert([
                 'capability_id' => $cap->id,
-                'assignable_type' => \App\Models\UserGroup::class,
+                'assignable_type' => UserGroup::class,
                 'assignable_id' => $group->id,
                 'value' => 'on',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
 
+            // Story 43.2 (D3, D4) — le retrofit `2026_07_11_100000` pose
+            // `refresh: policy_broadcast` dans LES DEUX specs de la
+            // bi-projection : recopié en DERNIÈRE clé de CHAQUE payload Session
+            // (flag ET conteneur), y compris l'item de SUPPRESSION `ensure`.
             $flagItems = $forCap($registryProvider->itemsFor($ctx()));
             self::assertCount(1, $flagItems, 'le provider registry ne voit que le flag');
-            self::assertSame(['hive', 'path', 'name', 'type', 'value'], array_keys($flagItems[0]->payload));
+            self::assertSame(['hive', 'path', 'name', 'type', 'value', 'refresh'], array_keys($flagItems[0]->payload));
             self::assertSame('DisallowRun', $flagItems[0]->payload['name']);
             self::assertSame(1, $flagItems[0]->payload['value']);
+            self::assertSame('policy_broadcast', $flagItems[0]->payload['refresh']);
 
             $listItems = $forCap($listProvider->itemsFor($ctx()));
             self::assertCount(1, $listItems, 'le provider list ne voit que le conteneur');
-            self::assertSame(['hive', 'path', 'entry_type', 'values'], array_keys($listItems[0]->payload));
+            self::assertSame(['hive', 'path', 'entry_type', 'values', 'refresh'], array_keys($listItems[0]->payload));
             self::assertSame(
                 ['powershell.exe', 'powershell_ise.exe', 'pwsh.exe', 'mstsc.exe', 'cmd.exe'],
                 $listItems[0]->payload['values'],
                 'les 5 entrées, ordre préservé',
             );
+            self::assertSame('policy_broadcast', $listItems[0]->payload['refresh']);
 
             // Override `off` ⇒ action combinée : flag SUPPRIMÉ + entrées PURGÉES.
             DB::table('capability_assignments')
@@ -1042,16 +1180,18 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
 
             $flagOff = $forCap($registryProvider->itemsFor($ctx()));
             self::assertCount(1, $flagOff);
-            self::assertSame(['hive', 'path', 'name', 'ensure'], array_keys($flagOff[0]->payload));
+            self::assertSame(['hive', 'path', 'name', 'ensure', 'refresh'], array_keys($flagOff[0]->payload));
             self::assertSame('absent', $flagOff[0]->payload['ensure']);
+            self::assertSame('policy_broadcast', $flagOff[0]->payload['refresh'], 'supprimer une policy exige le même geste (D3)');
 
             $listOff = $forCap($listProvider->itemsFor($ctx()));
             self::assertCount(1, $listOff);
             self::assertSame([], $listOff[0]->payload['values'], 'off = purge (liste vide)');
+            self::assertSame('policy_broadcast', $listOff[0]->payload['refresh']);
         } finally {
-            \App\Observers\WorkstationGroupObserver::enableSync();
-            \App\Observers\UserGroupObserver::enableSync();
-            \App\Observers\UserGroupUserPivotObserver::enableSync();
+            WorkstationGroupObserver::enableSync();
+            UserGroupObserver::enableSync();
+            UserGroupUserPivotObserver::enableSync();
         }
     }
 
@@ -1175,7 +1315,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         // gate), puis on relève le gate (up()) — réversibilité du flip prouvée
         // au passage.
         $flip = require database_path('migrations/2026_07_03_150000_activate_capability_photo_viewer_restored.php');
-        \App\Observers\WorkstationGroupObserver::disableSync();
+        WorkstationGroupObserver::disableSync();
 
         try {
             $flip->down();
@@ -1183,21 +1323,21 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             self::assertFalse($gated->is_active, 'down() du flip re-gate la capacité');
             self::assertStringContainsString('Inactive tant que', (string) $gated->description);
 
-            $ws = \App\Models\Workstation::factory()->create();
-            $parc = \App\Models\WorkstationGroup::factory()->logical()->create();
+            $ws = Workstation::factory()->create();
+            $parc = WorkstationGroup::factory()->logical()->create();
             $ws->groups()->attach($parc->id);
 
             DB::table('capability_assignments')->insert([
                 'capability_id' => $cap->id,
-                'assignable_type' => \App\Models\WorkstationGroup::class,
+                'assignable_type' => WorkstationGroup::class,
                 'assignable_id' => $parc->id,
                 'value' => 'on',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
 
-            $items = (new \App\Services\Agent\Providers\RegistryUserCapabilityProvider())
-                ->itemsFor(\App\Services\Agent\TargetContext::for($ws, null));
+            $items = (new RegistryUserCapabilityProvider)
+                ->itemsFor(TargetContext::for($ws, null));
 
             $mine = $items->filter(fn ($c): bool => (int) $c->sourceId === (int) $cap->id)->values();
             self::assertCount(0, $mine, 'capacité inactive ⇒ provider n\'émet RIEN même armée on');
@@ -1206,7 +1346,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             $flip->up();
             self::assertTrue(Capability::query()->where('key', 'photo_viewer_restored')->firstOrFail()->is_active);
         } finally {
-            \App\Observers\WorkstationGroupObserver::enableSync();
+            WorkstationGroupObserver::enableSync();
         }
     }
 
@@ -1272,29 +1412,29 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         // SIMULE le flip post-gate (`update(is_active=true)`) pour prouver que la
         // DONNÉE est correcte de bout en bout — le gate lui-même est prouvé par
         // photo_viewer_restored_is_gated_inactive_until_agent_supports_default_value_names.
-        \App\Observers\WorkstationGroupObserver::disableSync();
+        WorkstationGroupObserver::disableSync();
 
         try {
             $cap = Capability::query()->where('key', 'photo_viewer_restored')->firstOrFail();
             $cap->update(['is_active' => true]); // simulation du flip post-gate (hors story)
 
-            $ws = \App\Models\Workstation::factory()->create();
-            $parc = \App\Models\WorkstationGroup::factory()->logical()->create();
+            $ws = Workstation::factory()->create();
+            $parc = WorkstationGroup::factory()->logical()->create();
             $ws->groups()->attach($parc->id);
 
             $assignmentId = DB::table('capability_assignments')->insertGetId([
                 'capability_id' => $cap->id,
-                'assignable_type' => \App\Models\WorkstationGroup::class,
+                'assignable_type' => WorkstationGroup::class,
                 'assignable_id' => $parc->id,
                 'value' => 'on',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
 
-            $userCtx = \App\Services\Agent\TargetContext::for($ws, null);
+            $userCtx = TargetContext::for($ws, null);
 
             // ── override `on` → 4 items d'ÉCRITURE 5 clés, tous HKCU ────────────
-            $onItems = (new \App\Services\Agent\Providers\RegistryUserCapabilityProvider())
+            $onItems = (new RegistryUserCapabilityProvider)
                 ->itemsFor($userCtx)
                 ->filter(fn ($c): bool => (int) $c->sourceId === (int) $cap->id)
                 ->values();
@@ -1335,8 +1475,8 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             // ── override `off` → 4 items de SUPPRESSION 4 clés {hive,path,name,ensure} ─
             DB::table('capability_assignments')->where('id', $assignmentId)->update(['value' => 'off']);
 
-            $offItems = (new \App\Services\Agent\Providers\RegistryUserCapabilityProvider())
-                ->itemsFor(\App\Services\Agent\TargetContext::for($ws, null))
+            $offItems = (new RegistryUserCapabilityProvider)
+                ->itemsFor(TargetContext::for($ws, null))
                 ->filter(fn ($c): bool => (int) $c->sourceId === (int) $cap->id)
                 ->values();
             self::assertCount(4, $offItems, 'off → 4 items de suppression (4 clés)');
@@ -1344,7 +1484,7 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
                 self::assertSame(['hive', 'path', 'name', 'ensure'], array_keys($c->payload), 'item de suppression = 4 clés');
                 self::assertSame('HKCU', $c->payload['hive']);
                 self::assertSame(
-                    \App\Services\Agent\Providers\AbstractCapabilityStateProvider::ENSURE_ABSENT,
+                    AbstractCapabilityStateProvider::ENSURE_ABSENT,
                     $c->payload['ensure'],
                 );
             }
@@ -1353,13 +1493,13 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             self::assertSame(['', '', 'Clsid', 'Clsid'], $offNames);
 
             // ── RegistryMachineCapabilityProvider n'émet RIEN (aucune clé HKLM) ─
-            $machineItems = (new \App\Services\Agent\Providers\RegistryMachineCapabilityProvider())
-                ->itemsFor(\App\Services\Agent\TargetContext::for($ws, null))
+            $machineItems = (new RegistryMachineCapabilityProvider)
+                ->itemsFor(TargetContext::for($ws, null))
                 ->filter(fn ($c): bool => (int) $c->sourceId === (int) $cap->id)
                 ->values();
             self::assertCount(0, $machineItems, 'aucune clé HKLM → provider machine muet');
         } finally {
-            \App\Observers\WorkstationGroupObserver::enableSync();
+            WorkstationGroupObserver::enableSync();
         }
     }
 
@@ -1490,15 +1630,25 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             'quick_access_history_hidden',
         ];
 
+        // Story 43.2 — le retrofit `2026_07_11_100000` (POSTÉRIEUR, orthogonal)
+        // pose `spec.refresh` sur 3 des 4 capacités de ce lot. Rejouer CE seed
+        // isolément réécrit sa `spec` ENTIÈRE et efface donc `refresh` — hors
+        // scope de ce seed. On normalise `refresh` hors du snapshot (idem
+        // registry_list_lot_migration_is_idempotent_and_reversible).
         $snapshot = fn (): array => Capability::query()
             ->whereIn('key', $keys)
             ->orderBy('key')
             ->get()
-            ->map(fn (Capability $c): array => [
-                'options' => $c->options,
-                'default_value' => $c->default_value,
-                'spec' => $c->projections()->firstOrFail()->spec,
-            ])
+            ->map(function (Capability $c): array {
+                $spec = $c->projections()->firstOrFail()->spec;
+                unset($spec['refresh']);
+
+                return [
+                    'options' => $c->options,
+                    'default_value' => $c->default_value,
+                    'spec' => $spec,
+                ];
+            })
             ->all();
 
         // up() déjà joué par RefreshDatabase → le rejouer ne change RIEN.
@@ -1627,8 +1777,8 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             )->values();
 
             // ── Défaut unmanaged (sans override) : AUCUN item des 4 capacités ──
-            $machineProvider = new RegistryMachineCapabilityProvider();
-            $userProvider = new RegistryUserCapabilityProvider();
+            $machineProvider = new RegistryMachineCapabilityProvider;
+            $userProvider = new RegistryUserCapabilityProvider;
             foreach ([
                 'explorer_sidebar_pins_hidden',
                 'quick_access_hidden',
@@ -1661,8 +1811,12 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             $userOn = $forCap($userProvider->itemsFor($ctx()));
             self::assertCount(2, $userOn, 'Session : 2 items (LaunchTo + CLSID Accueil)');
             foreach ($userOn as $c) {
-                self::assertSame(['hive', 'path', 'name', 'type', 'value'], array_keys($c->payload));
+                // Story 43.2 (D4) — retrofit shell_notify sur les clés HKCU de
+                // quick_access_hidden (la clé HKLM HubMode ci-dessus n'en porte
+                // JAMAIS, gate par portée : la clé Machine reste 5 clés).
+                self::assertSame(['hive', 'path', 'name', 'type', 'value', 'refresh'], array_keys($c->payload));
                 self::assertSame('HKCU', $c->payload['hive']);
+                self::assertSame('shell_notify', $c->payload['refresh']);
             }
             $byName = $userOn->keyBy(fn ($c): string => $c->payload['name']);
             self::assertSame(1, $byName['LaunchTo']->payload['value']);
@@ -1703,5 +1857,126 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         } finally {
             WorkstationGroupObserver::enableSync();
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Story 43.2 (AC4) — retrofit du hint `spec.refresh` (D4, CONSERVATEUR)
+    // ══════════════════════════════════════════════════════════════════════
+
+    #[Test]
+    public function retrofit_migration_seeds_the_conservative_refresh_hints_per_capability(): void
+    {
+        // D4 : `shell_notify` sur le lot de vues Explorer HKCU.
+        foreach ([
+            'show_file_extensions',
+            'show_hidden_files',
+            'quick_access_history_hidden',
+            'onedrive_hidden',
+            'quick_access_hidden',
+            'explorer_gallery_hidden',
+        ] as $key) {
+            $projection = Capability::query()->where('key', $key)->firstOrFail()
+                ->projections()->where('os', 'windows')->where('mechanism', 'registry')->firstOrFail();
+            self::assertSame('shell_notify', $projection->spec['refresh'] ?? null, "{$key} : hint shell_notify attendu");
+        }
+
+        // D4 : `policy_broadcast` sur blocked_executables (LES DEUX projections
+        // de la bi-projection) et registry_editing_disabled.
+        $blocked = Capability::query()->where('key', 'blocked_executables')->firstOrFail()
+            ->projections()->where('os', 'windows')->orderBy('mechanism')->get();
+        self::assertCount(2, $blocked);
+        foreach ($blocked as $p) {
+            self::assertSame('policy_broadcast', $p->spec['refresh'] ?? null, "blocked_executables [{$p->mechanism}] : hint policy_broadcast attendu");
+        }
+
+        $registryEditing = Capability::query()->where('key', 'registry_editing_disabled')->firstOrFail()
+            ->projections()->where('os', 'windows')->where('mechanism', 'registry')->firstOrFail();
+        self::assertSame('policy_broadcast', $registryEditing->spec['refresh'] ?? null);
+
+        // D4 : AUCUN hint ailleurs — dont explorer_sidebar_pins_hidden (HKLM
+        // only, la règle 5b du guard REFUSERAIT un hint), numlock_on_logon
+        // (lu au logon), outlook_disable_o365_account_creation (lu au
+        // lancement d'Outlook), et AUCUN `explorer_restart` nulle part.
+        foreach ([
+            'explorer_sidebar_pins_hidden',
+            'numlock_on_logon',
+            'outlook_disable_o365_account_creation',
+        ] as $key) {
+            $capability = Capability::query()->where('key', $key)->first();
+            if ($capability === null) {
+                continue; // capacité hors périmètre de cette instance : no-op.
+            }
+            foreach ($capability->projections()->where('os', 'windows')->get() as $projection) {
+                self::assertArrayNotHasKey(
+                    'refresh',
+                    $projection->spec,
+                    "{$key} [{$projection->mechanism}] : AUCUN hint attendu (D4)",
+                );
+            }
+        }
+
+        foreach (CapabilityProjection::query()->where('os', 'windows')
+            ->whereIn('mechanism', ['registry', 'registry_list'])->get() as $projection
+        ) {
+            self::assertNotSame(
+                'explorer_restart',
+                $projection->spec['refresh'] ?? null,
+                'AUCUN explorer_restart au retrofit (choix conservateur D4)',
+            );
+        }
+    }
+
+    #[Test]
+    public function refresh_hints_retrofit_migration_is_idempotent_and_reversible(): void
+    {
+        $migration = require database_path('migrations/2026_07_11_100000_retrofit_capabilities_refresh_hints.php');
+
+        $snapshot = fn (): array => Capability::query()
+            ->whereIn('key', [
+                'show_file_extensions', 'show_hidden_files', 'quick_access_history_hidden',
+                'onedrive_hidden', 'quick_access_hidden', 'explorer_gallery_hidden',
+                'blocked_executables', 'registry_editing_disabled',
+            ])
+            ->orderBy('key')
+            ->get()
+            ->map(fn (Capability $c): array => [
+                'key' => $c->key,
+                'specs' => $c->projections()->orderBy('mechanism')->pluck('spec')->all(),
+            ])
+            ->all();
+
+        // up() déjà joué par RefreshDatabase → rejouer = aucun effet de bord.
+        $before = $snapshot();
+        self::assertCount(8, $before);
+        $migration->up();
+        self::assertSame($before, $snapshot(), 'up() rejoué = idempotent');
+
+        // down() retire SEULEMENT la clé `refresh` (les capacités/projections
+        // d'origine restent — down() n'est PAS une suppression de seed).
+        $migration->down();
+        $afterDown = $snapshot();
+        foreach ($afterDown as $row) {
+            foreach ($row['specs'] as $spec) {
+                self::assertArrayNotHasKey('refresh', $spec, "{$row['key']} : refresh retiré par down()");
+            }
+        }
+
+        // …et up() les repose à l'identique.
+        $migration->up();
+        self::assertSame($before, $snapshot(), 'up() après down() = état identique');
+    }
+
+    #[Test]
+    public function guard_still_passes_on_the_full_seeded_catalog_after_the_refresh_retrofit(): void
+    {
+        // AC2/AC4 (piège n°6) — la règle 5/5b tourne sur TOUT le catalogue
+        // seedé APRÈS toutes les migrations (retrofit inclus) et reste verte.
+        $guard = new CapabilitySpecCollisionGuard;
+
+        self::assertSame(
+            [],
+            $guard->violations($this->seededWindowsProjections()),
+            'le catalogue seedé (retrofit 43.2 inclus) ne doit porter AUCUNE violation d\'authoring',
+        );
     }
 }

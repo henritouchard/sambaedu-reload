@@ -18,7 +18,11 @@ use App\Models\CapabilityProjection;
  * provider ne voit que SA projection (`itemsFor()` filtre par mécanisme).
  *
  * **Payload EXACTEMENT 4 clés** `{hive, path, entry_type, values}` (invariant
- * central 27.12 : jamais d'id/key de capacité) :
+ * central 27.12 : jamais d'id/key de capacité) — **+ `refresh` OPTIONNEL**
+ * (Story 43.2) recopié par le foyer UNIQUE hérité d'`itemsFor()`
+ * ({@see AbstractCapabilityStateProvider::withRefreshHint()}), portée
+ * Session/MachineUser uniquement, jamais sur un conteneur Machine/HKLM. Le
+ * code hérité ci-dessous (`expand()`) reste INCHANGÉ — la recopie ne vit pas ici :
  *   - `entry_type ∈ REG_SZ | REG_EXPAND_SZ` (borné par le contrat — les listes
  *     indexées Windows sont des chaînes), défaut de `spec` : REG_SZ ;
  *   - `values` = liste ORDONNÉE de chaînes (cast défensif, zéro float §4.1).

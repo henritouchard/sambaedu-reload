@@ -3952,3 +3952,334 @@ Sur le poste de test, vérifier après convergence que sont INTACTS :
 - [ ] Golden : `state.v1.json` +1 item legacy_cleanup machine,
       `FROZEN_STATE_HASH` PHP = `frozenStateHash` Go recalculés à l'identique
       (`fc8a5324…`) ; `report.v1.json` INCHANGÉ.
+
+## Story 43.1 — Échelle de rafraîchissement du compagnon (hint `refresh`)
+
+Application immédiate en session courante (Epic 43) : le champ OPTIONNEL
+`refresh` du payload des items `registry`/`registry_list` (`shell_notify` <
+`policy_broadcast` < `explorer_restart`) pilote UN geste Windows en fin de
+passe compagnon — le plus fort requis par les items HKCU EFFECTIVEMENT
+changés ; passe stable = zéro geste ; jamais de geste côté SYSTEM/HKU.
+Plancher : tout changement HKCU sans hint (ou hint inconnu) émet
+`shell_notify`, exactement comme le SHChangeNotify historique (migré — une
+seule voie d'émission). Agent **2.10.0** — publication MANUELLE obligatoire
+AVANT tout seeder/retrofit 43.2 (un binaire ≤ 2.9.0 ignore le hint EN
+SILENCE : clés écrites, aucun geste — vérifier au passage si la 2.9.0 a été
+publiée, sinon la 2.10.0 livre aussi fs_acl/firewall/privilege/legacy_cleanup).
+
+NB pré-43.2 : AUCUN provider serveur n'émet encore `refresh` — pour tester un
+hint AVANT la 43.2, éditer à la main le cache per-SID
+`C:\ProgramData\SambaEdu\Agent\cache\sessions\<SID>\state.json` (ajouter
+`"refresh":"…"` dans le payload d'un item session `registry`) : le compagnon
+re-converge sur changement de mtime ; le prochain fetch SYSTEM écrase
+l'édition (one-shot, sans danger).
+
+Throttle anti-thrash (review 43.1 #1) : jamais deux `explorer_restart` en
+moins de **10 minutes** par instance de compagnon (en mémoire, non persisté —
+un relogon ré-arme). En drift RÉCURRENT (force externe réécrivant une clé HKCU
+à chaque passe), le geste est DÉGRADÉ en `policy_broadcast` avec un warning
+« THROTTLÉ … drift récurrent probable » dans `companion.log` — ce warning
+répété est le SYMPTÔME à investiguer (qui réécrit la clé ?), pas un bug de
+l'agent. `shell_notify` et `policy_broadcast` ne sont jamais throttlés.
+
+### Scénario 43.1.1 — Validation lab de `policy_broadcast` (AC7 — décision pour la 43.2)
+
+But : décider si `WM_SETTINGCHANGE "Policy"` suffit à rendre effectives les
+restrictions Explorer (`RestrictRun`/`DisallowRun`) en session courante — ou
+si ces capacités devront porter `explorer_restart` en 43.2.
+
+1. Poste lab migré en **2.10.0** (version rapportée au check-in = 2.10.0).
+2. Session utilisateur OUVERTE (élève standard), Explorer démarré.
+3. Faire converger un item HKCU `Software\Microsoft\Windows\CurrentVersion\
+   Policies\Explorer` type `RestrictRun` (ou conteneur `DisallowRun` via
+   `registry_list`) AVEC hint `policy_broadcast` (édition du cache per-SID,
+   cf. NB — ou seed 43.2 si déjà mergée).
+4. `companion.log` : « Rafraîchissement de session émis : policy_broadcast ».
+5. SANS relogon NI restart d'Explorer : tenter de lancer un exécutable bloqué
+   (Win+R, double-clic). **Critère de décision consigné pour la 43.2** :
+   - refus immédiat ⇒ `policy_broadcast` SUFFIT → `explorer_restart` devient
+     l'exception (hint par défaut des capacités policies = `policy_broadcast`) ;
+   - toujours permis ⇒ insuffisant → les capacités `restrict_run`/
+     `disallow_run` devront porter `explorer_restart` en 43.2.
+6. Contre-épreuve : relogon → la restriction s'applique dans tous les cas
+   (l'échelle n'affecte QUE la latence, jamais l'état convergé).
+
+### Scénario 43.1.2 — Non-régression lot vues Explorer (plancher `shell_notify`)
+
+1. Poste 2.10.0, session ouverte, un dossier Explorer affiché.
+2. Basculer une capacité vues Explorer (Hidden/HideFileExt — items HKCU SANS
+   hint) : au cycle suivant, `companion.log` montre « shell_notify » et
+   l'Explorer DÉJÀ ouvert reflète le réglage sans relogon (comportement
+   identique à l'avant-43.1).
+3. Cycles suivants SANS changement : AUCUNE ligne « Rafraîchissement de
+   session émis » (passe stable = zéro geste, pas de « flicker »).
+
+### Scénario 43.1.3 — `explorer_restart` : garde anti-double-lancement
+
+1. Item HKCU changé avec hint `explorer_restart` (cf. NB), session ouverte
+   avec 2-3 fenêtres Explorer.
+2. À la convergence : la barre des tâches disparaît puis revient (~qq s) ;
+   les fenêtres Explorer sont perdues (assumé NFR-A1), les AUTRES applis
+   restent intactes ; **UNE SEULE** instance shell à l'arrivée — AUCUNE
+   fenêtre parasite de l'Explorateur ne s'ouvre (garde : si Windows relance
+   le shell tout seul, le compagnon ne relance pas par-dessus).
+3. Répéter la convergence au régime stable : AUCUN restart (gate changed).
+4. Vérifier dans le Gestionnaire des tâches que explorer.exe appartient bien
+   à la session du user (jamais tué/relancé dans une autre session RDP
+   ouverte sur le même poste).
+5. Limite RÉSIDUELLE assumée (review 43.1 #4, non testable hôte) : la garde
+   suppose une « relance rapide par Windows » — poll 3 s puis délai de grâce
+   de 1 s et ULTIME re-vérification juste avant la relance. Si Windows relance
+   le shell APRÈS cette dernière vérification (course incompressible entre le
+   check et le Start), une fenêtre parasite peut s'ouvrir — bénin et rarissime,
+   à consigner si observé au lab.
+6. Drift récurrent (throttle, review 43.1 #1) : reproduire un re-drift < 10 min
+   après un restart ⇒ `companion.log` montre le warning « THROTTLÉ » et un
+   `policy_broadcast` dégradé À LA PLACE d'un second restart (la session ne
+   casse jamais en boucle) ; > 10 min après, le restart repart.
+
+### Scénario 43.1.4 — Jamais de geste côté SYSTEM / HKU
+
+1. Faire converger un item MACHINE `hive:"HKU"` changé (ex. numlock 35.3) et
+   un item HKLM : `agent.log` (service) ne montre AUCUN « Rafraîchissement de
+   session émis », aucun restart d'Explorer dans aucune session.
+2. Un hint `refresh` posé sur un item machine (forgé) reste sans effet :
+   l'échelle n'est consommée que par le compagnon.
+
+### Scénario 43.1.5 — Binaire antérieur : silence sans casse (NFR-A4)
+
+1. Poste resté en ≤ 2.9.0 : un item porteur de `refresh` converge NORMALEMENT
+   (clés écrites, statuts identiques) — aucun geste, aucune erreur (parseurs
+   indulgents ; le hash d'item ayant changé côté serveur, un drift ponctuel
+   de re-application est attendu, bénin).
+2. Après auto-update en 2.10.0 : les gestes apparaissent au cycle suivant.
+
+### Check-list
+
+- [ ] 43.1.1 — Verdict `policy_broadcast` sur RestrictRun/DisallowRun consigné
+      (critère de choix du hint pour la 43.2) — NON BLOQUANT pour la 43.1 (D6).
+- [ ] 43.1.2 — Lot vues Explorer : shell_notify iso-comportement, zéro geste
+      au régime stable.
+- [ ] 43.1.3 — explorer_restart : un seul shell à l'arrivée, jamais de fenêtre
+      parasite, applis intactes, session du user uniquement.
+- [ ] 43.1.4 — SYSTEM/HKU : zéro geste en session 0.
+- [ ] 43.1.5 — Binaire ≤ 2.9.0 : hint ignoré en silence, convergence intacte.
+- [ ] Publication 2.10.0 MANUELLE faite AVANT tout seeder 43.2 (état des
+      2.6.0→2.9.0 vérifié : jamais publiées à la création de la 38.3).
+- [ ] Golden : `tests/Fixtures/Agent/*.v1.json` STRICTEMENT inchangés (le hint
+      vit dans le payload provider-defined §3.2 ; l'émission serveur = 43.2).
+
+## Story 43.3 — Cadence de propagation pilotée (`ttl_seconds` dynamique)
+
+Le `ttl_seconds` de l'enveloppe `/state` n'est plus une constante globale : il
+est calculé PAR CONTEXTE par `App\Services\Agent\AgentTtlResolver::ttlSeconds()`
+(TTL court `config('agent.ttl_sensitive_seconds')`, défaut 90 s, plancher
+serveur 60 s, si le contexte porte AU MOINS un `capability_assignments.value`
+non-null d'une capacité dont la `key` figure dans
+`config('agent.ttl_sensitive_capabilities')`, défaut `['restrict_run']` ;
+sinon TTL global `config('agent.ttl_seconds')`, défaut 3600 s INCHANGÉ). Aucun
+comportement agent modifié (mécanisme livré depuis la 2.2.0), aucune
+publication de release requise — **serveur-only**. `ttl_seconds` est désormais
+un champ VOLATIL exclu du hash d'état (PHP + miroir Go) : un changement de TTL
+seul ne franchit pas le cache 304.
+
+Ce runbook est purement SERVEUR (API + config) — pas de manipulation lab
+Windows requise pour ce lot.
+
+### Scénario 43.3.1 — TTL court servi sur bascule sensible (curl /vm ou lab1)
+
+1. Créer une capacité `restrict_run` (`php artisan tinker` ou seed manuel) et
+   poser un `capability_assignments.value` non-null sur le parc physique
+   (salle) d'un poste pilote.
+2. `curl -sS -H "Authorization: Bearer $TOKEN" https://se4fs/api/v1/agent/state | jq .ttl_seconds`
+   → attendu **90** (ou la valeur de `AGENT_STATE_TTL_SENSITIVE_SECONDS` si
+   surchargée, plancher 60).
+3. Même vérification en contexte compagnon (`?user=<login>` d'une session sur
+   ce poste) : le TTL court doit AUSSI sortir (D3 — le poste, SYSTEM, voit les
+   assignments de sa salle même sans user).
+4. Retirer l'assignment (ou remettre `value` à `null`) : au prochain appel,
+   `ttl_seconds` revient à la valeur globale (3600 par défaut).
+
+### Scénario 43.3.2 — ETag stable malgré un TTL basculé (limite 2, piège #1)
+
+1. Poste sans assignment sensible : `GET /state` → noter l'`ETag`.
+2. Poser l'assignment `restrict_run` (value non-null) SANS toucher aux autres
+   réglages du poste (pas de changement d'item) : rejouer `GET /state` avec
+   `If-None-Match: "<etag noté>"` → **304 attendu**, MÊME ETag conservé (le
+   TTL a changé mais le hash d'état est insensible à `ttl_seconds`).
+3. Vérifier que le TTL frais N'EST PAS livré tant que le poste ne franchit pas
+   un 200 naturel (nouveau item modifié, ex. `internet_access=off` posé en
+   même temps que le flag examen) ou une **synchro forcée** (Story 24.7,
+   scénario dédié plus haut dans ce runbook) — remède documenté, pas un bug.
+
+### Scénario 43.3.3 — Abaissement du défaut global (action opérateur — NE PAS faire sans mesurer)
+
+⚠️ Procédure RÉVERSIBLE, PAS une recommandation à appliquer par défaut. À
+dérouler uniquement si un besoin réel de resserrement global est identifié.
+
+1. **Mesurer AVANT** : les `GET /state` 304 sont quasi gratuits, mais chaque
+   cycle de poll embarque un `POST /report` (écriture check-in + ingestion) —
+   abaisser `AGENT_STATE_TTL_SECONDS` de 3600 à 600 (recommandation cible)
+   MULTIPLIE PAR 6 la fréquence de ces écritures sur tout le parc. Vérifier la
+   charge DB/logs AVANT de généraliser.
+2. Modifier `AGENT_STATE_TTL_SECONDS` dans l'env de la VM, puis
+   `php artisan config:cache` **+ chown** www-admin (le cache de config n'est
+   PAS synchronisé par inotify — `project_vm_config_cache_not_synced`).
+3. **Effet de bord n°1 (immédiat)** : les seuils de présence « muet »/« online »
+   (`2 × config('agent.ttl_seconds')`, `Workstation::isAgentSilent()`/
+   `agentPresence()`/`WorkstationGroupRepository`) se resserrent DÈS le
+   `config:cache` — AVANT que les postes n'aient adopté la nouvelle cadence.
+   Vérifier dans les pages parc : des postes bien vivants peuvent apparaître
+   « silencieux » en masse pendant la fenêtre de transition. CE N'EST PAS UNE
+   PANNE — c'est le couplage documenté (piège #3 de la story).
+4. **Effet de bord n°2** : le nouveau TTL n'atteint un agent qu'à son PROCHAIN
+   `200` (limite 1 du § cadence, `docs/agent/state-endpoint.md`) — tant qu'un
+   poste n'a vu aucun changement d'item, il continue de poller à l'ancien
+   rythme.
+5. **Remède** : lancer une synchro forcée du parc concerné (Story 24.7, UI ou
+   `agent_sync_requested_at`) juste après le changement d'env, pour réduire la
+   fenêtre de faux « silencieux » et faire adopter le nouveau TTL au plus vite.
+6. Revenir en arrière si besoin : ré-élever `AGENT_STATE_TTL_SECONDS`,
+   `config:cache` + chown, même remède de synchro forcée pour re-desserrer les
+   seuils de présence sans attendre.
+
+### Scénario 43.3.4 — Non-régression golden/contrat (revue de code + tests)
+
+1. `tests/Fixtures/Agent/state.v1.json` INCHANGÉ (le champ `ttl_seconds` reste
+   dans l'enveloppe, seulement exclu du hash).
+2. `FROZEN_STATE_HASH` (PHP `ContractV1Test`) = `frozenStateHash` (Go
+   `hasher_test.go`), recalculés à l'identique
+   (`b1eb0560eec1c59a6908967f0c3e402dd79528591891ffddc33d90f2d0c8a3d7`).
+3. `agent/**` INTOUCHÉ hors `hasher.go`/`hasher_test.go` (miroir de contrat) —
+   `loop.go`/`engine.go`/`companion.go`/`version.go` inchangés, AUCUNE
+   publication de release requise pour cette story.
+4. `go test ./shared/...` et les suites PHP ciblées (`StateCompilerTest`,
+   `ContractV1Test`, `StateHasherTest`, `AgentTtlResolverTest`,
+   `StateEndpointTest`) vertes sur l'hôte.
+
+### Check-list
+
+- [ ] 43.3.1 — TTL court servi (machine-only ET `?user=`) sur assignment
+      `restrict_run` non-null ; retour au défaut au retrait.
+- [ ] 43.3.2 — ETag/304 STABLES malgré la bascule de TTL seule ; livraison au
+      prochain 200 naturel ou via synchro forcée (24.7).
+- [ ] 43.3.3 — Abaissement du défaut global : mesure de charge AVANT, procédure
+      `config:cache`+chown, DEUX effets de bord connus et acceptés (présence
+      resserrée immédiatement, adoption paresseuse), remède synchro forcée.
+- [ ] 43.3.4 — Golden `state.v1.json` inchangé, hash gelé PHP=Go recalculé,
+      `agent/**` limité au miroir hasher, zéro publication requise.
+
+## Story 43.2 — Hint `refresh` déclaré par projection + badge de temporalité d'effet
+
+Versant SERVEUR de l'échelle 43.1 : le champ OPTIONNEL `spec.refresh`
+(vocabulaire fermé `shell_notify | policy_broadcast | explorer_restart`,
+casse minuscule) se déclare au NIVEAU RACINE du `spec` d'une projection
+`registry`/`registry_list` (constantes `CapabilityProjection::REFRESH_*`,
+zéro migration de schéma) et se recopie au payload des items émis en portée
+**Session/MachineUser UNIQUEMENT** (jamais Machine/HKU). Retrofit
+CONSERVATEUR livré par migration (`2026_07_11_100000_retrofit_capabilities_
+refresh_hints.php`, choix motivés en D4, lab `policy_broadcast` NON validé —
+cf. scénario 43.1.1 ci-dessus) : `shell_notify` sur les 6 capacités de vues/
+épingles Explorer HKCU (`show_file_extensions`, `show_hidden_files`,
+`quick_access_history_hidden`, `onedrive_hidden`, `quick_access_hidden`,
+`explorer_gallery_hidden`) ; `policy_broadcast` sur `blocked_executables`
+(bi-projection — flag `registry` ET conteneur `registry_list`) et
+`registry_editing_disabled` ; AUCUN `explorer_restart` posé. L'UI (catalogue
+`/admin/settings/parc-defaults` onglet Registre/capacités, onglet Options/
+Capacités d'un parc, section Capacités d'un groupe d'utilisateurs) affiche un
+badge de temporalité (« Immédiat » / « Immédiat (le bureau redémarre) » /
+« À la prochaine session »), dérivé de `Capability::effectTiming()`, AUCUN
+badge pour une capacité sans clé HKCU registre.
+
+⚠️ **ROLLOUT (NFR-A4, gate Epic 35)** : cette migration de retrofit ne doit
+être JOUÉE en prod/VM qu'APRÈS la publication MANUELLE de la release agent
+**2.10.0** (déjà buildée par la 43.1, jamais publiée à ce jour — `update.sh`
+ne publie jamais seul). Un binaire ≤ 2.9.0 ignore le hint EN SILENCE (la
+valeur registre est bien écrite, mais AUCUN geste de rafraîchissement n'est
+exécuté) : l'« Immédiat » affiché par l'UI serait un MENSONGE sur un parc non
+à jour. Vérifier au check-in que la version rapportée du parc ciblé est bien
+2.10.0 AVANT de jouer `migrate` en prod/VM (`migrate:status` d'abord — les
+migrations VM ne sont PAS auto-jouées).
+
+### Scénario 43.2.1 — Retrofit posé + drift ponctuel bénin (AC4, NFR-A4)
+
+But : vérifier que le retrofit a bien tourné et que le drift ponctuel attendu
+(hash d'item recalculé une fois) ne se reproduit pas au cycle suivant.
+
+1. Sur un parc où l'agent 2.10.0 est déjà publié et actif, jouer/rejouer la
+   migration `2026_07_11_100000_retrofit_capabilities_refresh_hints.php`.
+2. Premier check-in post-retrofit d'un poste ayant DÉJÀ convergé les
+   capacités du lot D4 : le rapport `POST /report` montre `drift` PUIS
+   application (ré-écriture idempotente de la même valeur) suivie d'`UN`
+   geste de rafraîchissement dans `companion.log` (shell_notify ou
+   policy_broadcast selon la capacité).
+3. Cycle SUIVANT (aucun changement de donnée) : `compliant` partout, AUCUN
+   geste de rafraîchissement (passe stable = zéro geste, iso 43.1.2). Si le
+   drift PERSISTE au-delà d'un cycle, investiguer AVANT de conclure à un bug
+   du hint (candidats habituels : autre override qui réécrit la même clé,
+   throttle `explorer_restart` en cours — cf. section 43.1).
+
+### Scénario 43.2.2 — Badge UI cohérent avec le geste réellement exécuté
+
+But : vérifier que le badge affiché correspond au comportement RÉEL du poste
+(pas de mensonge dans un sens ni dans l'autre).
+
+1. `/admin/settings/parc-defaults` onglet Registre/capacités : `show_file_
+   extensions` affiche « Immédiat » (tooltip : effet en session ouverte, pas
+   de mention HKCU/broadcast/logon) ; `numlock_on_logon` affiche « À la
+   prochaine session » (SANS hint — c'est honnête, la clé est lue au logon) ;
+   une capacité 100 % machine (`internet_access`, `uac_enabled`…) N'AFFICHE
+   AUCUN badge.
+2. Onglet Options/Capacités d'un parc + section Capacités d'un groupe
+   d'utilisateurs : mêmes badges pour les overrides posés, et dans le picker
+   d'ajout (avant de poser l'override).
+3. Contre-épreuve poste RÉEL (2.10.0) : basculer `show_file_extensions` sur
+   ce parc, observer que le réglage s'applique SANS relogon (badge
+   « Immédiat » honoré) ; basculer `numlock_on_logon`, observer qu'il faut un
+   relogon (badge « À la prochaine session » honoré).
+
+### Scénario 43.2.3 — Garde-fou : jamais de hint sur un item machine/HKU
+
+But : non-régression du gate par PORTÉE (piège n°4 de la story), vérifiable
+par lecture du state servi (sans poste, juste `curl`/`GET /api/v1/agent/state`
+en lab ou VM).
+
+1. Sur un poste dont une capacité mixte HKLM+HKCU porte un hint (ex.
+   `quick_access_hidden`, `shell_notify`), inspecter le JSON servi : la clé
+   HKLM `HubMode` (portée `machine`) NE PORTE PAS `refresh` ; la/les clé(s)
+   HKCU (portée `session`) PORTENT `"refresh": "shell_notify"`.
+2. Aucune capacité machine-only (firewall, fs_acl, `internet_access`,
+   `uac_enabled`, `hide_drives`…) ne porte jamais `refresh`, quelle que soit
+   la portée.
+
+### Scénario 43.2.4 — Non-régression golden/contrat (revue de code + tests)
+
+1. `tests/Fixtures/Agent/state.v1.json` : l'item session `registry`
+   (HideFileExt) porte `"refresh": "shell_notify"` ; UN NOUVEL item session
+   `registry_list` (conteneur `…\Policies\Explorer\DisallowRun`,
+   `"refresh": "policy_broadcast"`) est présent — 18 items au total (session
+   7→8).
+2. `FROZEN_STATE_HASH` (PHP `ContractV1Test`) = `frozenStateHash` (Go
+   `hasher_test.go`), recalculés à l'identique
+   (`5beb682b413ac2c5cef74baef19a17d3f47efe7cf163371201db0db954d506b0`).
+3. `agent/**` INTOUCHÉ hors `hasher_test.go`/`contract_test.go` (fichiers de
+   TEST seuls, compte d'items du golden) — `loop.go`/`engine.go`/`companion.go`/
+   `refresh.go`/`version.go` inchangés, AUCUNE publication de release requise
+   pour CETTE story (le mécanisme de lecture est déjà livré par la 43.1).
+4. `go test ./shared/...` et les suites PHP ciblées (`CapabilityRegistry
+   {,List}ProviderTest`, `CapabilityRegistry{,List}CompilationTest`,
+   `ContractV1Test`, `CapabilitiesSchemaAndSeedTest`, `CapabilityRefreshHintTest`,
+   les 3 suites Livewire `*EffectTimingBadgeTest`) vertes sur l'hôte.
+
+### Check-list
+
+- [ ] 43.2.1 — Retrofit posé (guard vert sur le catalogue complet), drift
+      ponctuel UNE fois puis stable au cycle suivant.
+- [ ] 43.2.2 — Badge UI cohérent avec le geste réel sur les 3 surfaces
+      (catalogue, onglet parc, section groupe d'utilisateurs + picker).
+- [ ] 43.2.3 — Aucun `refresh` sur un item machine/HKU, y compris spec mixte.
+- [ ] 43.2.4 — Golden `state.v1.json` (18 items), hash gelé PHP=Go recalculé,
+      `agent/**` limité aux 2 fichiers de test (hasher/contract), zéro
+      publication requise pour cette story (2.10.0 déjà due à la 43.1).
+- [ ] ROLLOUT — release agent 2.10.0 publiée AVANT de jouer la migration de
+      retrofit en prod/VM (sinon hint ignoré en silence, UI mensongère).

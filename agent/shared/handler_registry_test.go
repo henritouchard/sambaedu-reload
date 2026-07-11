@@ -2,6 +2,8 @@ package shared
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -22,7 +24,6 @@ type fakeRegistryOps struct {
 	readCnt   int
 	deleteCnt int // appels Delete EFFECTIFS (valeur supprimée)
 	namesCnt  int // appels ValueNames
-	notifyCnt int // appels NotifyShellChanged (rafraîchissement shell émis)
 	// unmountedHku : bases HKU (`.default`/`<sid>` en minuscules) DÉMONTÉES
 	// après l'énumération (race logoff, review 35.3 #1) — Read les voit
 	// absentes (aucune value posée), Write les SAUTE (no-op, iso Windows).
@@ -37,9 +38,9 @@ type fakeRegistryOps struct {
 	userHivesCnt int
 }
 
-// NotifyShellChanged : implémente registryNotifier (optionnel) → compte les
-// rafraîchissements shell émis par Apply après un changement HKCU.
-func (o *fakeRegistryOps) NotifyShellChanged() { o.notifyCnt++ }
+// NB (Story 43.1) : plus de NotifyShellChanged ici — le rafraîchissement n'est
+// PLUS un hook sur Ops : les handlers ACCUMULENT (RefreshRequester), le
+// compagnon exécute. Les tests lisent h.TakeRefreshRequest().
 
 func newFakeRegistryOps() *fakeRegistryOps {
 	return &fakeRegistryOps{
@@ -339,10 +340,13 @@ func TestRegistryHandlesBothHivesGenerically(t *testing.T) {
 	}
 }
 
-// --- Rafraîchissement shell : émis sur changement HKCU seul ------------------
+// --- Rafraîchissement : accumulé sur changement HKCU seul (Story 43.1) -------
+// Migration des tests `notifyCnt` : la même séquence observable (plancher
+// shell_notify sur changement HKCU effectif, silence sinon) se lit désormais
+// via TakeRefreshRequest() — plus aucune émission inline par le handler.
 
 func TestRegistryShellRefreshOnUserHiveChangeOnly(t *testing.T) {
-	t.Run("changement HKCU → notification shell émise (puis idempotente)", func(t *testing.T) {
+	t.Run("changement HKCU → plancher shell_notify accumulé (puis idempotent)", func(t *testing.T) {
 		ops := newFakeRegistryOps()
 		h := &RegistryHandler{Ops: ops}
 		items := []StateItem{dwordItem("HKCU", `Software\Test\Advanced`, "Hidden", 1)}
@@ -350,19 +354,20 @@ func TestRegistryShellRefreshOnUserHiveChangeOnly(t *testing.T) {
 		if err := h.Apply(items); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
-		if ops.notifyCnt != 1 {
-			t.Fatalf("changement HKCU : 1 rafraîchissement shell attendu, obtenu %d", ops.notifyCnt)
+		if got := h.TakeRefreshRequest(); got != RefreshShellNotify {
+			t.Fatalf("changement HKCU sans hint : plancher shell_notify attendu, obtenu %s", got)
 		}
-		// État stable : 2e passe sans écriture → aucune notification de plus.
+		// État stable : 2e passe sans écriture → aucun besoin de plus (et la
+		// consommation précédente a bien remis l'accumulation à zéro).
 		if err := h.Apply(items); err != nil {
 			t.Fatalf("apply 2: %v", err)
 		}
-		if ops.notifyCnt != 1 {
-			t.Fatalf("état stable : aucune notification supplémentaire attendue, obtenu %d", ops.notifyCnt)
+		if got := h.TakeRefreshRequest(); got != RefreshNone {
+			t.Fatalf("état stable : aucun geste attendu, obtenu %s", got)
 		}
 	})
 
-	t.Run("HKLM seul (service, session 0) → aucune notification shell", func(t *testing.T) {
+	t.Run("HKLM seul (service, session 0) → aucun besoin accumulé", func(t *testing.T) {
 		ops := newFakeRegistryOps()
 		h := &RegistryHandler{Ops: ops}
 		items := []StateItem{dwordItem("HKLM", `SOFTWARE\Test\System`, "EnableLUA", 0)}
@@ -370,12 +375,12 @@ func TestRegistryShellRefreshOnUserHiveChangeOnly(t *testing.T) {
 		if err := h.Apply(items); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
-		if ops.notifyCnt != 0 {
-			t.Fatalf("HKLM : aucun rafraîchissement shell attendu, obtenu %d", ops.notifyCnt)
+		if got := h.TakeRefreshRequest(); got != RefreshNone {
+			t.Fatalf("HKLM : aucun geste attendu, obtenu %s", got)
 		}
 	})
 
-	t.Run("déjà conforme → aucune écriture, aucune notification", func(t *testing.T) {
+	t.Run("déjà conforme → aucune écriture, aucun besoin", func(t *testing.T) {
 		ops := newFakeRegistryOps()
 		ops.values[keyID("HKCU", `Software\Test\Advanced`, "Hidden")] = RegistryValue{Kind: "REG_DWORD", Int: 1}
 		h := &RegistryHandler{Ops: ops}
@@ -384,10 +389,122 @@ func TestRegistryShellRefreshOnUserHiveChangeOnly(t *testing.T) {
 		if err := h.Apply(items); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
-		if ops.notifyCnt != 0 {
-			t.Fatalf("état déjà conforme : aucune notification attendue, obtenu %d", ops.notifyCnt)
+		if got := h.TakeRefreshRequest(); got != RefreshNone {
+			t.Fatalf("état déjà conforme : aucun geste attendu, obtenu %s", got)
 		}
 	})
+}
+
+// --- Hint `refresh` du payload : escalade du plancher (Story 43.1, AC1/AC3) --
+
+func TestRegistryRefreshHintEscalatesFloorOnChange(t *testing.T) {
+	t.Run("item changé avec hint explorer_restart → niveau escaladé", func(t *testing.T) {
+		ops := newFakeRegistryOps()
+		h := &RegistryHandler{Ops: ops}
+		item := dwordItem("HKCU", `Software\P\Explorer`, "RestrictRun", 1)
+		item.Payload.(map[string]any)["refresh"] = "explorer_restart"
+
+		if err := h.Apply([]StateItem{item}); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if got := h.TakeRefreshRequest(); got != RefreshExplorerRestart {
+			t.Fatalf("hint explorer_restart sur item changé : explorer_restart attendu, obtenu %s", got)
+		}
+	})
+
+	t.Run("hints hétérogènes → le plus fort des items CHANGÉS", func(t *testing.T) {
+		ops := newFakeRegistryOps()
+		h := &RegistryHandler{Ops: ops}
+		soft := dwordItem("HKCU", `Software\Test\Advanced`, "Hidden", 1)
+		soft.Payload.(map[string]any)["refresh"] = "shell_notify"
+		strong := dwordItem("HKCU", `Software\P\Explorer`, "RestrictRun", 1)
+		strong.Payload.(map[string]any)["refresh"] = "policy_broadcast"
+
+		if err := h.Apply([]StateItem{soft, strong}); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if got := h.TakeRefreshRequest(); got != RefreshPolicyBroadcast {
+			t.Fatalf("max des items changés attendu (policy_broadcast), obtenu %s", got)
+		}
+	})
+
+	t.Run("item NON changé avec hint fort → le hint ne compte pas", func(t *testing.T) {
+		// Seul l'item changé (sans hint) pèse : plancher shell_notify — le
+		// hint fort d'un item déjà conforme n'escalade RIEN (gate changed).
+		ops := newFakeRegistryOps()
+		ops.values[keyID("HKCU", `Software\P\Explorer`, "RestrictRun")] = RegistryValue{Kind: "REG_DWORD", Int: 1}
+		h := &RegistryHandler{Ops: ops}
+		compliantStrong := dwordItem("HKCU", `Software\P\Explorer`, "RestrictRun", 1)
+		compliantStrong.Payload.(map[string]any)["refresh"] = "explorer_restart"
+		changedNoHint := dwordItem("HKCU", `Software\Test\Advanced`, "Hidden", 1)
+
+		if err := h.Apply([]StateItem{compliantStrong, changedNoHint}); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if got := h.TakeRefreshRequest(); got != RefreshShellNotify {
+			t.Fatalf("seul l'item changé pèse (plancher shell_notify), obtenu %s", got)
+		}
+	})
+
+	t.Run("hint inconnu / non-string → plancher shell_notify, jamais une erreur", func(t *testing.T) {
+		ops := newFakeRegistryOps()
+		h := &RegistryHandler{Ops: ops, Log: &Logger{}}
+		unknown := dwordItem("HKCU", `Software\Test\Advanced`, "Hidden", 1)
+		unknown.Payload.(map[string]any)["refresh"] = "reboot_the_universe"
+		nonString := dwordItem("HKCU", `Software\Test\Advanced2`, "HideFileExt", 0)
+		nonString.Payload.(map[string]any)["refresh"] = 42
+
+		if ok, err := h.Test([]StateItem{unknown, nonString}); err != nil || ok {
+			t.Fatalf("hint inconnu = enveloppe VALIDE, drift attendu (ok=%v err=%v)", ok, err)
+		}
+		if err := h.Apply([]StateItem{unknown, nonString}); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if got := h.TakeRefreshRequest(); got != RefreshShellNotify {
+			t.Fatalf("hint inconnu ⇒ comportement plancher (shell_notify), obtenu %s", got)
+		}
+	})
+
+	t.Run("hint fort sur HKLM changé → jamais de geste (session 0)", func(t *testing.T) {
+		ops := newFakeRegistryOps()
+		h := &RegistryHandler{Ops: ops}
+		item := dwordItem("HKLM", `SOFTWARE\P\System`, "EnableLUA", 1)
+		item.Payload.(map[string]any)["refresh"] = "explorer_restart"
+
+		if err := h.Apply([]StateItem{item}); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if got := h.TakeRefreshRequest(); got != RefreshNone {
+			t.Fatalf("HKLM : aucun geste même avec hint fort, obtenu %s", got)
+		}
+	})
+}
+
+func TestRegistryUnknownRefreshHintLoggedOncePerPass(t *testing.T) {
+	// Review 43.1 #3 : Test PUIS Apply re-parsent les MÊMES items dans une
+	// passe (dispatch §5) — la trace debug du hint inconnu ne part qu'UNE fois
+	// par passe et par item (chemin Test seulement, logHints).
+	ops := newFakeRegistryOps()
+	dir := t.TempDir()
+	h := &RegistryHandler{Ops: ops, Log: &Logger{Dir: dir}}
+	item := dwordItem("HKCU", `Software\Test\Advanced`, "Hidden", 1)
+	item.Payload.(map[string]any)["refresh"] = "warp_speed"
+	items := []StateItem{item}
+
+	if ok, err := h.Test(items); err != nil || ok {
+		t.Fatalf("drift attendu : %v %v", ok, err)
+	}
+	if err := h.Apply(items); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(dir, "agent.log"))
+	if err != nil {
+		t.Fatalf("log attendu : %v", err)
+	}
+	if got := strings.Count(string(raw), "Hint refresh inconnu"); got != 1 {
+		t.Fatalf("UNE trace de hint inconnu par passe attendue, obtenu %d :\n%s", got, raw)
+	}
 }
 
 // --- Payload invalide → error (enveloppe) ------------------------------------
@@ -628,9 +745,9 @@ func TestRegistryMixedWriteAndDeleteWithErrorIsolation(t *testing.T) {
 }
 
 func TestRegistryAbsentShellRefreshOnEffectiveHkcuDeleteOnly(t *testing.T) {
-	// (e) même gate que l'écriture : suppression HKCU EFFECTIVE ⇒ notification
-	// shell ; suppression no-op (déjà absente) ou HKLM ⇒ aucune notification.
-	t.Run("delete HKCU effectif → notification shell", func(t *testing.T) {
+	// (e) même gate que l'écriture : suppression HKCU EFFECTIVE ⇒ besoin
+	// shell_notify accumulé ; suppression no-op (déjà absente) ou HKLM ⇒ rien.
+	t.Run("delete HKCU effectif → plancher shell_notify", func(t *testing.T) {
 		ops := newFakeRegistryOps()
 		ops.values[keyID("HKCU", `Software\Test\Policies`, "NoDrives")] = RegistryValue{Kind: "REG_DWORD", Int: 4}
 		h := &RegistryHandler{Ops: ops}
@@ -638,24 +755,24 @@ func TestRegistryAbsentShellRefreshOnEffectiveHkcuDeleteOnly(t *testing.T) {
 		if err := h.Apply([]StateItem{absentItem("HKCU", `Software\Test\Policies`, "NoDrives")}); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
-		if ops.notifyCnt != 1 {
-			t.Fatalf("suppression HKCU effective : 1 rafraîchissement shell attendu, obtenu %d", ops.notifyCnt)
+		if got := h.TakeRefreshRequest(); got != RefreshShellNotify {
+			t.Fatalf("suppression HKCU effective : shell_notify attendu, obtenu %s", got)
 		}
 	})
 
-	t.Run("delete no-op (déjà absente) → pas de notification", func(t *testing.T) {
+	t.Run("delete no-op (déjà absente) → aucun besoin", func(t *testing.T) {
 		ops := newFakeRegistryOps()
 		h := &RegistryHandler{Ops: ops}
 
 		if err := h.Apply([]StateItem{absentItem("HKCU", `Software\Test\Policies`, "NoDrives")}); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
-		if ops.notifyCnt != 0 {
-			t.Fatalf("no-op : aucune notification attendue, obtenu %d", ops.notifyCnt)
+		if got := h.TakeRefreshRequest(); got != RefreshNone {
+			t.Fatalf("no-op : aucun geste attendu, obtenu %s", got)
 		}
 	})
 
-	t.Run("delete HKLM effectif (service, session 0) → pas de notification", func(t *testing.T) {
+	t.Run("delete HKLM effectif (service, session 0) → aucun besoin", func(t *testing.T) {
 		ops := newFakeRegistryOps()
 		ops.values[keyID("HKLM", `SOFTWARE\Test`, "M")] = RegistryValue{Kind: "REG_DWORD", Int: 1}
 		h := &RegistryHandler{Ops: ops}
@@ -663,8 +780,8 @@ func TestRegistryAbsentShellRefreshOnEffectiveHkcuDeleteOnly(t *testing.T) {
 		if err := h.Apply([]StateItem{absentItem("HKLM", `SOFTWARE\Test`, "M")}); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
-		if ops.notifyCnt != 0 {
-			t.Fatalf("HKLM : aucune notification attendue, obtenu %d", ops.notifyCnt)
+		if got := h.TakeRefreshRequest(); got != RefreshNone {
+			t.Fatalf("HKLM : aucun geste attendu, obtenu %s", got)
 		}
 	})
 }
@@ -1208,15 +1325,19 @@ func TestRegistryHkuAndHklmMixedInOneMachinePass(t *testing.T) {
 }
 
 func TestRegistryHkuNeverTriggersShellRefresh(t *testing.T) {
-	// (g) aucun NotifyShellChanged pour HKU (piège n° 9) : le service écrit
-	// depuis la session 0 — isUserHive rend false pour HKU, écriture ET
-	// suppression effectives comprises.
+	// (g) aucun besoin de rafraîchissement pour HKU (piège n° 9, test négatif
+	// piège n° 2 de 43.1) : le service écrit depuis la session 0 — isUserHive
+	// rend false pour HKU, écriture ET suppression effectives comprises, MÊME
+	// avec un hint `refresh` fort sur l'item (le fan-out HKU changé rend
+	// TakeRefreshRequest() == RefreshNone).
 	ops := newFakeRegistryOps()
 	ops.userHives = []string{".DEFAULT", "S-1-5-21-111"}
 	ops.values[keyID("HKU", `S-1-5-21-111\Software\Residue`, "Old")] = RegistryValue{Kind: "REG_DWORD", Int: 1}
 	h := &RegistryHandler{Ops: ops}
+	strongHku := hkuItem("2")
+	strongHku.Payload.(map[string]any)["refresh"] = "explorer_restart"
 	items := []StateItem{
-		hkuItem("2"),
+		strongHku,
 		absentItem("HKU", `Software\Residue`, "Old"),
 	}
 
@@ -1226,8 +1347,8 @@ func TestRegistryHkuNeverTriggersShellRefresh(t *testing.T) {
 	if ops.writeCnt == 0 || ops.deleteCnt == 0 {
 		t.Fatalf("précondition : écriture (%d) et suppression (%d) effectives attendues", ops.writeCnt, ops.deleteCnt)
 	}
-	if ops.notifyCnt != 0 {
-		t.Fatalf("HKU : aucun rafraîchissement shell attendu, obtenu %d", ops.notifyCnt)
+	if got := h.TakeRefreshRequest(); got != RefreshNone {
+		t.Fatalf("HKU : aucun geste attendu (session 0), obtenu %s", got)
 	}
 }
 

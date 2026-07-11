@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Http\Middleware\AuthenticateAgentToken;
+use App\Services\Agent\AgentTtlResolver;
 use App\Services\Agent\Enrollment\EnrollmentCampaign;
 use App\Services\Agent\Enrollment\EnrollmentMatchService;
 use App\Services\Agent\Enrollment\EnrollmentService;
@@ -99,6 +100,10 @@ class AgentServiceProvider extends ServiceProvider
         // consommable par les StateProviders de l'Epic 27. Stateless.
         $this->app->singleton(WorkstationEnvironmentResolver::class, fn () => new WorkstationEnvironmentResolver());
         $this->app->singleton(StateHasher::class, fn () => new StateHasher());
+        // Story 43.3 — résolveur du TTL de poll PAR CONTEXTE (D1, FR-A4) :
+        // lecture Postgres pure (capability_assignments), stateless (aucun
+        // cache du verdict — cf. docblock AgentTtlResolver).
+        $this->app->singleton(AgentTtlResolver::class, fn () => new AgentTtlResolver());
         // Story 28.3 — SOURCE des candidats AMONT (contrat controlHub actif) +
         // adaptateurs de payload (bridge minimal type-agnostique). Singleton ⇒
         // résolution du contrat MÉMOÏSÉE et PARTAGÉE par tous les providers d'une
@@ -322,6 +327,9 @@ class AgentServiceProvider extends ServiceProvider
                 $app->make(ApplicationsStateProvider::class),
                 ],
             ),
+            // Story 43.3 — 3ᵉ argument : résolveur du TTL par contexte (D1),
+            // remplace la constante `ttl_seconds` ligne 74 de StateCompiler.
+            $app->make(AgentTtlResolver::class),
         ));
     }
 

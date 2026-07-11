@@ -40,6 +40,18 @@ use App\Models\CapabilityProjection;
  *      `hive: HKU` est une violation NOMMÉE (le fan-out d'une réconciliation
  *      de clé-conteneur multiplierait la propriété de clé par N ruches sans
  *      consommateur connu — hors scope 35.3, extension future si besoin réel).
+ *   5. HINT `spec.refresh` (Story 43.2, D1/D2) — pour les DEUX mécanismes, si
+ *      la RACINE du `spec` porte la clé `refresh` : (a) la valeur DOIT être
+ *      une string du vocabulaire fermé
+ *      {@see CapabilityProjection::REFRESH_HINTS} (rejette
+ *      non-string, valeurs hors vocabulaire — variantes de casse type
+ *      `SHELL_NOTIFY`, valeurs 41.x anticipées type `logoff`) ; (b) — règle
+ *      5b — la spec doit porter AU MOINS une clé/conteneur `hive: HKCU` : un
+ *      hint sans clé de portée session est INERTE (jamais recopié par
+ *      {@see AbstractCapabilityStateProvider::withRefreshHint()},
+ *      gaté par portée Session/MachineUser) — une erreur d'authoring, refusée
+ *      en amont plutôt que silence. `spec.refresh` ABSENT est un no-op (champ
+ *      optionnel, AC1) : aucune des deux sous-règles ne s'applique.
  *
  * **Sémantique `HKU` (Story 35.3, contrat §7.1).** Une clé `hive: 'HKU'` est
  * émise par le provider MACHINE seul et appliquée par le service SYSTEM à
@@ -72,6 +84,7 @@ final class CapabilitySpecCollisionGuard
         CapabilityProjection::MECHANISM_REGISTRY => ['HKLM', 'HKCU', 'HKU'],
         CapabilityProjection::MECHANISM_REGISTRY_LIST => ['HKLM', 'HKCU'],
     ];
+
     /**
      * Valide un ensemble de projections d'authoring.
      *
@@ -84,6 +97,48 @@ final class CapabilitySpecCollisionGuard
     public function violations(array $projections): array
     {
         $violations = [];
+
+        // ── 5. spec.refresh (Story 43.2) : vocabulaire fermé + non-inertie ──
+        foreach ($projections as $projection) {
+            $mechanism = $projection['mechanism'] ?? null;
+            if (! in_array($mechanism, [
+                CapabilityProjection::MECHANISM_REGISTRY,
+                CapabilityProjection::MECHANISM_REGISTRY_LIST,
+            ], true)) {
+                continue;
+            }
+
+            $spec = $projection['spec'] ?? null;
+            if (! is_array($spec) || ! array_key_exists('refresh', $spec)) {
+                continue; // champ optionnel ABSENT : rien à valider (AC1).
+            }
+
+            $refresh = $spec['refresh'];
+            if (! is_string($refresh) || ! in_array($refresh, CapabilityProjection::REFRESH_HINTS, true)) {
+                $violations[] = sprintf(
+                    '%s [%s] : spec.refresh %s hors vocabulaire fermé (%s).',
+                    $mechanism,
+                    (string) ($projection['capability'] ?? ''),
+                    is_string($refresh) ? "'{$refresh}'" : '('.get_debug_type($refresh).')',
+                    implode('|', CapabilityProjection::REFRESH_HINTS),
+                );
+
+                continue; // valeur invalide : la règle 5b (HKCU) n'ajoute rien.
+            }
+
+            // 5b — un hint sans AUCUNE clé/conteneur hive=HKCU serait INERTE
+            // (withRefreshHint() ne recopie qu'en portée Session/MachineUser,
+            // donc jamais sur un item HKLM/HKU) : refus AMONT plutôt que silence.
+            if (! $this->specHasHkcuKey($this->specKeys($spec))) {
+                $violations[] = sprintf(
+                    "%s [%s] : spec.refresh '%s' posé mais AUCUNE clé hive=HKCU dans la spec "
+                    .'— hint INERTE (jamais recopié au payload), authoring refusé.',
+                    $mechanism,
+                    (string) ($projection['capability'] ?? ''),
+                    $refresh,
+                );
+            }
+        }
 
         // ── Index des conteneurs registry_list par identité {hive|path} ─────
         /** @var array<string, list<string>> $containers identité → capacités */
@@ -214,6 +269,24 @@ final class CapabilitySpecCollisionGuard
     }
 
     /**
+     * Story 43.2 (règle 5b) — au moins une clé/conteneur `hive: HKCU` parmi les
+     * clés d'une spec (générique registry/registry_list : les deux formes
+     * portent un champ `hive`).
+     *
+     * @param  list<array<string,mixed>>  $keys
+     */
+    private function specHasHkcuKey(array $keys): bool
+    {
+        foreach ($keys as $key) {
+            if (strcasecmp((string) ($key['hive'] ?? ''), CapabilityProjection::HIVE_USER) === 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Problèmes de forme d'un champ `values` de conteneur.
      *
      * @return list<string>
@@ -221,7 +294,7 @@ final class CapabilitySpecCollisionGuard
     private function malformedValues(mixed $values): array
     {
         if (! is_array($values)) {
-            return ["values doit être une liste ou une map valeur-capacité → liste (obtenu : ".get_debug_type($values).')'];
+            return ['values doit être une liste ou une map valeur-capacité → liste (obtenu : '.get_debug_type($values).')'];
         }
 
         // Littéral liste (vide admise = purge) : chaque entrée scalaire.

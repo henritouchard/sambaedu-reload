@@ -14,6 +14,7 @@ use App\Models\ControlHubContractItem;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\AgentTtlResolver;
 use App\Services\Agent\Contracts\KeyedExclusiveProvider;
 use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\StateCandidate;
@@ -235,12 +236,12 @@ class UpstreamContractResolutionTest extends TestCase
         $source = new UpstreamContractSource([new RegistryUpstreamAdapter(), new ShortcutsUpstreamAdapter()]);
         $decorated = array_map(fn (StateProvider $p): StateProvider => UpstreamAwareProvider::wrap($p, $source), $providers);
 
-        $bare = (new StateCompiler($this->hasher, $providers))->compile($ctx);
+        $bare = (new StateCompiler($this->hasher, $providers, new AgentTtlResolver()))->compile($ctx);
 
         // Comptage de requêtes pendant la compilation décorée.
         DB::flushQueryLog();
         DB::enableQueryLog();
-        $deco = (new StateCompiler($this->hasher, $decorated))->compile($ctx);
+        $deco = (new StateCompiler($this->hasher, $decorated, new AgentTtlResolver()))->compile($ctx);
         $log = DB::getQueryLog();
         DB::disableQueryLog();
 
@@ -531,7 +532,7 @@ class UpstreamContractResolutionTest extends TestCase
 
         DB::flushQueryLog();
         DB::enableQueryLog();
-        $deco = (new StateCompiler($this->hasher, $decorated))->compile($ctx);
+        $deco = (new StateCompiler($this->hasher, $decorated, new AgentTtlResolver()))->compile($ctx);
         $log = DB::getQueryLog();
         DB::disableQueryLog();
 
@@ -800,7 +801,7 @@ class UpstreamContractResolutionTest extends TestCase
             $providers,
         );
 
-        return (new StateCompiler($this->hasher, $decorated))->compile($ctx);
+        return (new StateCompiler($this->hasher, $decorated, new AgentTtlResolver()))->compile($ctx);
     }
 
     private function machineOnlyContext(): TargetContext

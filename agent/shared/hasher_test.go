@@ -138,7 +138,32 @@ import (
 // 2.6.0/2.7.0/2.8.0 jamais publiées). `report.v1.json` INCHANGÉ. machine = 9,
 // 17 items au total, hash d'état RECALCULÉ. Bumpé à l'IDENTIQUE côté PHP
 // (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
-const frozenStateHash = "fc8a5324db242927b502bd4861d72bb526d6e652e4fb3501fd84e41af698738b"
+// Re-bumpé SCIEMMENT par la Story 43.3 (ttl_seconds volatil, §9) : le champ
+// `ttl_seconds` de l'enveloppe entre désormais dans `volatileStateKeys` (AC3,
+// D6) — il dépend du CONTEXTE compilé (bascule sensible ou non, cf.
+// app/Services/Agent/AgentTtlResolver.php côté PHP) et un changement de TTL
+// seul ne doit pas invalider l'ETag. Le golden `state.v1.json` est INCHANGÉ
+// (le champ reste dans l'enveloppe, seulement exclu du hash) : seule
+// l'exclusion recalcule le hash d'état. 17 items au total (inchangé). Bumpé
+// à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH). AUCUN bump de
+// `agent/shared/version.go` : `HashState` Go n'a AUCUN appelant runtime (seul
+// ce test l'appelle ; l'agent stocke l'ETag verbatim et ne recalcule jamais
+// le hash d'état) — voir Dev Agent Record de la story 43.3.
+// Re-bumpé SCIEMMENT par la Story 43.2 (hint `refresh` au payload session,
+// §7.1/§7.6, §9) : champ additif OPTIONNEL `refresh` (vocabulaire fermé
+// shell_notify|policy_broadcast|explorer_restart), consommé côté agent par
+// le mécanisme 43.1 (`payload["refresh"]`, déjà mergé) — (a) l'item session
+// `registry` existant (HideFileExt) gagne `"refresh": "shell_notify"` ; (b)
+// AJOUT d'UN item session `registry_list` (conteneur
+// `…\Policies\Explorer\DisallowRun`, `"refresh": "policy_broadcast"`). Champ
+// additif + type DÉJÀ figé (registry_list existe depuis 35.2) =
+// forward-compatible, pas un major : un agent ≤ 2.9.0 ignore le champ
+// inconnu SANS ERREUR. session = 8, 18 items au total, hash d'état RECALCULÉ.
+// Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH — test
+// croisé NFR13). AUCUN bump de `agent/shared/version.go` : SEUL ce fichier de
+// TEST bouge côté agent/ (le mécanisme 2.10.0 qui lit le hint est déjà livré
+// par la 43.1 mergée) — voir Dev Agent Record de la story 43.2.
+const frozenStateHash = "5beb682b413ac2c5cef74baef19a17d3f47efe7cf163371201db0db954d506b0"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -214,6 +239,32 @@ func TestHashStateExcludesVolatileGeneratedAt(t *testing.T) {
 	}
 }
 
+// TestHashStateExcludesVolatileTtlSeconds — jumeau du test ci-dessus pour
+// `ttl_seconds` (Story 43.3, AC3) : le TTL dépend désormais du contexte
+// compilé (bascule sensible ou non) mais reste volatil — muter ou supprimer
+// la clé ne doit PAS changer le hash d'état figé.
+func TestHashStateExcludesVolatileTtlSeconds(t *testing.T) {
+	state := decodeMap(t, goldenFile(t, "state.v1.json"))
+	state.Set("ttl_seconds", json.Number("90"))
+
+	got, err := HashState(state)
+	if err != nil {
+		t.Fatalf("HashState : %v", err)
+	}
+	if got != frozenStateHash {
+		t.Errorf("ttl_seconds muté doit être exclu du hash : got %s, want %s", got, frozenStateHash)
+	}
+
+	state.Delete("ttl_seconds")
+	got, err = HashState(state)
+	if err != nil {
+		t.Fatalf("HashState : %v", err)
+	}
+	if got != frozenStateHash {
+		t.Errorf("ttl_seconds absent doit donner le même hash : got %s, want %s", got, frozenStateHash)
+	}
+}
+
 func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 	state := decodeMap(t, goldenFile(t, "state.v1.json"))
 
@@ -242,8 +293,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 17 {
-		t.Errorf("17 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2 + fs_acl machine 36.1 + firewall machine 36.2 + privilege machine 35.6 + legacy_cleanup machine 38.3), %d vérifiés", checked)
+	if checked != 18 {
+		t.Errorf("18 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2 + fs_acl machine 36.1 + firewall machine 36.2 + privilege machine 35.6 + legacy_cleanup machine 38.3 + registry_list session 43.2), %d vérifiés", checked)
 	}
 }
 

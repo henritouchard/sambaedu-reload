@@ -43,8 +43,16 @@ import (
 //     ensemble — une map Go native perd cette information (review 24.5 #1).
 
 // volatileStateKeys : champs volatils exclus du hash d'état (single point of
-// truth, iso StateHasher::VOLATILE_STATE_KEYS).
-var volatileStateKeys = []string{"generated_at"}
+// truth, iso StateHasher::VOLATILE_STATE_KEYS). `ttl_seconds` ajouté par la
+// Story 43.3 (AC3, D6) : le TTL dépend désormais du contexte (bascule
+// sensible ou non, cf. app/Services/Agent/AgentTtlResolver.php côté PHP) mais
+// reste une cadence de poll CONSEILLÉE, pas une donnée sémantique de la
+// cible — un changement de TTL seul ne doit pas invalider l'ETag. HashState
+// Go n'a AUCUN appelant runtime (seul le test l'appelle ; l'agent stocke
+// l'ETag verbatim et ne recalcule jamais le hash d'état) : ce miroir n'est
+// exercé que par les tests croisés (NFR13), aucun changement de comportement
+// agent.
+var volatileStateKeys = []string{"generated_at", "ttl_seconds"}
 
 // OrderedMap — objet JSON dont l'ordre d'insertion des clés (= ordre du
 // document) est préservé. Indispensable au miroir PHP : `json_decode(assoc)`
@@ -201,9 +209,10 @@ func decodeOrderedValue(dec *json.Decoder) (any, error) {
 	}
 }
 
-// HashState hashe un état cible complet (enveloppe) : `generated_at` est
-// exclu AVANT canonicalisation, de sorte que seuls des changements
-// sémantiques modifient le hash (iso StateHasher::hashState).
+// HashState hashe un état cible complet (enveloppe) : `generated_at` et
+// `ttl_seconds` (Story 43.3, AC3) sont exclus AVANT canonicalisation, de
+// sorte que seuls des changements sémantiques modifient le hash (iso
+// StateHasher::hashState).
 func HashState(state *OrderedMap) (string, error) {
 	clone := state.clone()
 	for _, key := range volatileStateKeys {

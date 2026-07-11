@@ -39,17 +39,25 @@ import (
 // MergeReportItemsByType).
 //
 // Un changement EFFECTIF (écriture OU suppression) sur un conteneur HKCU
-// déclenche le rafraîchissement shell (même gate que `registry` : zéro
-// changement = zéro notification). NB : `DisallowRun` est lu par l'Explorer au
-// LOGON SUIVANT (mémoire projet) — ce n'est pas un bug de convergence.
+// ACCUMULE le besoin de rafraîchissement (échelle Story 43.1 — plancher
+// shell_notify escaladé par le hint `refresh`, même gate que `registry` : zéro
+// changement = zéro geste) ; le geste est exécuté par le COMPAGNON en fin de
+// RunPass (RefreshRequester). NB : `DisallowRun` est lu par l'Explorer au
+// LOGON SUIVANT sans geste fort (mémoire projet) — d'où l'échelle : la 43.2
+// posera le hint adapté par capacité.
 
 // RegistryListSpec : une clé-conteneur cible (un item du payload
-// `registry_list`, contrat §7.6 — EXACTEMENT 4 clés).
+// `registry_list`, contrat §7.6 — 4 clés émises par le serveur, + le hint
+// optionnel `refresh` de 43.2 ; le parsing reste indulgent, piège n° 1).
 type RegistryListSpec struct {
 	Hive      string   // "HKLM" | "HKCU"
 	Path      string   // clé-conteneur sous la ruche
 	EntryType string   // "REG_SZ" | "REG_EXPAND_SZ" (borné par le contrat)
 	Values    []string // liste ORDONNÉE ; vide = purge des entrées numérotées
+	// Refresh : hint OPTIONNEL `refresh` du payload (Story 43.1) — lecture
+	// indulgente (D3) : absent/vide/inconnu = RefreshNone. Escalade le
+	// plancher shell_notify des changements HKCU effectifs, jamais l'inverse.
+	Refresh RefreshLevel
 }
 
 // identity : identité du conteneur {hive\path} insensible à la casse (Windows
@@ -79,19 +87,40 @@ func isNumericName(name string) bool {
 type RegistryListHandler struct {
 	Ops RegistryOps
 	Log *Logger
+
+	// refreshWanted : besoin de rafraîchissement accumulé pendant l'Apply de
+	// la passe courante (Story 43.1, iso RegistryHandler) — max(plancher
+	// shell_notify, hint) par changement HKCU effectif. Par instance,
+	// mono-thread ; jamais alimenté ni consommé côté MachineEngine SYSTEM
+	// (gate isUserHive, piège n° 2).
+	refreshWanted RefreshLevel
+}
+
+// TakeRefreshRequest : implémente RefreshRequester (refresh.go) — consommation
+// PAR PASSE : retourne le max accumulé et remet à zéro.
+func (h *RegistryListHandler) TakeRefreshRequest() RefreshLevel {
+	level := h.refreshWanted
+	h.refreshWanted = RefreshNone
+
+	return level
 }
 
 // desiredListSpecs : parse + dédoublonne par identité de conteneur les items
 // cible. Le serveur garantit déjà un conteneur unique par identité (exclusive
 // par clé au compilateur) ; défense : la DERNIÈRE occurrence fait foi, ordre
 // de sortie trié (logs/erreurs stables — iso desiredSpecs de registry).
-func (h *RegistryListHandler) desiredListSpecs(items []StateItem) ([]RegistryListSpec, error) {
+// logHints (review 43.1 #3) : trace du hint inconnu depuis le chemin Test
+// SEULEMENT — une ligne par passe et par item (Apply re-parse les mêmes items).
+func (h *RegistryListHandler) desiredListSpecs(items []StateItem, logHints bool) ([]RegistryListSpec, error) {
 	byIdentity := map[string]RegistryListSpec{}
 	order := []string{}
 	for _, item := range items {
 		spec, ok := parseRegistryListSpec(item.Payload)
 		if !ok {
 			return nil, fmt.Errorf("payload registry_list inattendu : enveloppe invalide")
+		}
+		if logHints {
+			logUnknownRefreshHint(h.Log, item.Payload, spec.identity())
 		}
 		id := spec.identity()
 		if _, seen := byIdentity[id]; !seen {
@@ -124,7 +153,7 @@ func canonName(i int) string {
 // values vide ⇒ conforme ssi aucune valeur numérique (clé absente = conforme :
 // ValueNames rend nil,nil). Une erreur d'accès remonte (verdict error du type).
 func (h *RegistryListHandler) Test(items []StateItem) (bool, error) {
-	specs, err := h.desiredListSpecs(items)
+	specs, err := h.desiredListSpecs(items, true)
 	if err != nil {
 		return false, err
 	}
@@ -169,16 +198,25 @@ func (h *RegistryListHandler) Test(items []StateItem) (bool, error) {
 // stables = zéro op). EFFORT MAXIMAL : toutes les entrées de tous les
 // conteneurs sont tentées, la première erreur est remontée à la fin.
 func (h *RegistryListHandler) Apply(items []StateItem) error {
-	specs, err := h.desiredListSpecs(items)
+	specs, err := h.desiredListSpecs(items, false)
 	if err != nil {
 		return err
 	}
 
 	var firstErr error
-	shellRefresh := false // au moins un changement effectif HKCU → notifier le shell
 	recordErr := func(err error) {
 		if firstErr == nil {
 			firstErr = err
+		}
+	}
+	// Changement HKCU EFFECTIF → accumuler le besoin de rafraîchissement
+	// (Story 43.1) : plancher shell_notify escaladé par le hint de l'item.
+	// Même gate qu'avant (zéro op = zéro geste) ; le geste est exécuté par le
+	// compagnon en fin de RunPass — plus d'émission inline (piège n° 5).
+	recordRefresh := func(spec RegistryListSpec) {
+		if isUserHive(spec.Hive) {
+			h.refreshWanted = maxRefreshLevel(h.refreshWanted,
+				maxRefreshLevel(RefreshShellNotify, spec.Refresh))
 		}
 	}
 
@@ -217,9 +255,7 @@ func (h *RegistryListHandler) Apply(items []StateItem) error {
 				continue
 			}
 			logInfo(h.Log, "Entrée de liste registre appliquée : %s!%s = %s", spec.identity(), name, norm.NFC.String(want))
-			if isUserHive(spec.Hive) {
-				shellRefresh = true
-			}
+			recordRefresh(spec)
 		}
 
 		// 2. Supprimer les noms NUMÉRIQUES hors canon — JAMAIS un nom non
@@ -240,17 +276,7 @@ func (h *RegistryListHandler) Apply(items []StateItem) error {
 			}
 			logInfo(h.Log, "Entrée de liste registre surnuméraire supprimée : %s!%s", spec.identity(), name)
 			// Le nom était ÉNUMÉRÉ (présent) → suppression EFFECTIVE.
-			if isUserHive(spec.Hive) {
-				shellRefresh = true
-			}
-		}
-	}
-
-	// Même gate que RegistryHandler : changement HKCU EFFECTIF seulement —
-	// au régime stable, zéro op = zéro notification (pas de « flicker »).
-	if shellRefresh {
-		if notifier, ok := h.Ops.(registryNotifier); ok {
-			notifier.NotifyShellChanged()
+			recordRefresh(spec)
 		}
 	}
 
@@ -297,5 +323,10 @@ func parseRegistryListSpec(raw any) (RegistryListSpec, bool) {
 		values = append(values, s)
 	}
 
-	return RegistryListSpec{Hive: hive, Path: path, EntryType: entryType, Values: values}, true
+	// Hint `refresh` OPTIONNEL (Story 43.1) — lecture INDULGENTE (D3, piège
+	// n° 1 : le « 4 clés exactement » du contrat décrit l'ÉMISSION serveur,
+	// pas une règle de parsing) : absent/vide/non-string/inconnu ⇒ RefreshNone.
+	refreshHint, _ := payload["refresh"].(string)
+
+	return RegistryListSpec{Hive: hive, Path: path, EntryType: entryType, Values: values, Refresh: ParseRefreshLevel(refreshHint)}, true
 }

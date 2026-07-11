@@ -69,6 +69,11 @@ new class extends Component {
                     'has_warning' => $c->hasWarning(),
                     'is_upstream_locked' => $upstreamStatus === 'locked',
                     'upstream_status' => $upstreamStatus,
+                    // Story 43.2 (D5/D6) — temporalité d'effet ; null = AUCUN
+                    // badge (capacité sans clé HKCU registre). Dérivé sur la
+                    // relation `projections` DÉJÀ eager-loaded ci-dessus (zéro
+                    // requête ajoutée).
+                    'effect_timing' => $c->effectTiming(),
                 ];
             })
             ->all();
@@ -89,8 +94,10 @@ new class extends Component {
     #[Computed]
     public function editingCapability(): ?Capability
     {
+        // Story 43.2 — `with('projections')` : la modale affiche AUSSI le
+        // badge de temporalité d'effet (effectTiming()) sans requête ajoutée.
         return $this->editingCapabilityId !== null
-            ? Capability::query()->find($this->editingCapabilityId)
+            ? Capability::query()->with('projections')->find($this->editingCapabilityId)
             : null;
     }
 
@@ -294,6 +301,16 @@ new class extends Component {
                                                 <i class="fa-solid fa-triangle-exclamation text-warning text-xs"
                                                     aria-label="Capacité sensible"></i>
                                             @endif
+                                            {{-- Story 43.2 (D5/D6) — badge de temporalité d'effet : AUCUN badge
+                                                 pour une capacité sans clé HKCU registre (piège n°8). --}}
+                                            @if ($capability['effect_timing'] !== null)
+                                                <span class="badge badge-sm badge-outline gap-1"
+                                                    data-testid="effect-timing-{{ $capability['id'] }}"
+                                                    title="{{ $capability['effect_timing']['tooltip'] }}">
+                                                    <i class="fa-solid fa-clock text-xs"></i>
+                                                    {{ $capability['effect_timing']['label'] }}
+                                                </span>
+                                            @endif
                                             {{-- Story 29.4 — tri-état : verrouillé > permissif > local (AC #1-4).
                                                  Libellés centrés sur l'ACTION possible (décision 2026-06-27).
                                                  #3 : badges gatés sur hasUpstreamContract() — en standalone,
@@ -386,6 +403,13 @@ new class extends Component {
             <x-molecules.modal.section title="Valeur par défaut diffusée">
                 @if ($capability->description)
                     <p class="text-sm opacity-70 mb-2">{{ $capability->description }}</p>
+                @endif
+                {{-- Story 43.2 (D5/D6) — badge de temporalité d'effet. --}}
+                @php($timing = $capability->effectTiming())
+                @if ($timing !== null)
+                    <span class="badge badge-sm badge-outline gap-1 mb-2" title="{{ $timing['tooltip'] }}">
+                        <i class="fa-solid fa-clock text-xs"></i> {{ $timing['label'] }}
+                    </span>
                 @endif
                 <p class="text-xs opacity-70 mb-3">
                     Modifier ce défaut impacte <strong>tous les parcs sans override</strong> sur cette capacité.

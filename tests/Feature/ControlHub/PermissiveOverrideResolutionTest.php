@@ -16,6 +16,7 @@ use App\Models\ControlHubContractItem;
 use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\AgentTtlResolver;
 use App\Services\Agent\Contracts\KeyedExclusiveProvider;
 use App\Services\Agent\Contracts\StateProvider;
 use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
@@ -223,11 +224,11 @@ class PermissiveOverrideResolutionTest extends TestCase
         $source = new UpstreamContractSource([new RegistryUpstreamAdapter()]);
         $decorated = UpstreamAwareProvider::wrap($local, $source);
 
-        $bare = (new StateCompiler($this->hasher, [$local]))->compile($ctx);
+        $bare = (new StateCompiler($this->hasher, [$local], new AgentTtlResolver()))->compile($ctx);
 
         DB::flushQueryLog();
         DB::enableQueryLog();
-        $deco = (new StateCompiler($this->hasher, [$decorated]))->compile($ctx);
+        $deco = (new StateCompiler($this->hasher, [$decorated], new AgentTtlResolver()))->compile($ctx);
         $log = DB::getQueryLog();
         DB::disableQueryLog();
 
@@ -288,7 +289,7 @@ class PermissiveOverrideResolutionTest extends TestCase
             $providers,
         );
 
-        return (new StateCompiler($this->hasher, $decorated))->compile($ctx);
+        return (new StateCompiler($this->hasher, $decorated, new AgentTtlResolver()))->compile($ctx);
     }
 
     private function machineOnlyContext(): TargetContext

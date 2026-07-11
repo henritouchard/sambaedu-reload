@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Services\Agent\Providers\AbstractCapabilityStateProvider;
+use App\Services\Agent\Providers\CapabilitySpecCollisionGuard;
+use App\Services\Agent\Providers\PrivilegeAuthoringGuard;
+use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * Epic 27 — Projection d'une {@see Capability} : comment l'intention se
@@ -22,8 +27,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $os windows | linux
  * @property string $mechanism registry | firewall | localgroup | …
  * @property array<string,mixed> $spec
- * @property \Illuminate\Support\Carbon $created_at
- * @property \Illuminate\Support\Carbon $updated_at
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
  */
 class CapabilityProjection extends Model
 {
@@ -76,10 +81,11 @@ class CapabilityProjection extends Model
      * `privilege`) : droits de logon LSA `SeDeny*` gérés sur le poste, portée
      * **Machine** (service SYSTEM seul). La `spec` porte
      * `{privilege, accounts}` — `privilege` ∈ enum FERMÉ des 5 droits SeDeny*
-     * ({@see \App\Services\Agent\Providers\PrivilegeAuthoringGuard::ALLOWED_PRIVILEGES},
+     * ({@see PrivilegeAuthoringGuard::ALLOWED_PRIVILEGES},
      * tout droit *grant* est REFUSÉ : une convergence « possède la liste
      * entière » sur un grant VERROUILLERAIT la machine), `accounts` = liste OU
      * map valeur-capacité de NOMS Windows (jetons d'audience `@eleves|@profs|
+     *
      * @personnels` résolus à l'expansion). L'agent possède la liste de
      * titulaires du privilège EN ENTIER et la réconcilie — CONTENEUR SANS
      * store (les titulaires sont énumérables via LSA, iso `firewall`, PAS
@@ -106,6 +112,49 @@ class CapabilityProjection extends Model
     public const MECHANISM_LOCALGROUP = 'localgroup';
 
     /**
+     * Hint « geste de rafraîchissement » — shell_notify (Story 43.2, D1, contrat
+     * §7.1/§7.6). Convention d'authoring : champ OPTIONNEL `refresh` au NIVEAU
+     * RACINE du `spec` JSON des projections `registry`/`registry_list`
+     * (`{"keys": […], "refresh": "shell_notify"}`) — UNE seule valeur par
+     * projection (jamais un hint par clé : aucune capacité n'a deux temporalités
+     * dans la même projection ; la bi-projection `blocked_executables` porte le
+     * hint dans CHACUN de ses deux specs). ZÉRO migration de schéma (le `spec`
+     * est du JSON) — les trois constantes ci-dessous + {@see self::REFRESH_HINTS}
+     * sont la single source de vérité consommée par
+     * {@see CapabilitySpecCollisionGuard} (règle 5,
+     * authoring) et
+     * {@see AbstractCapabilityStateProvider::withRefreshHint()}
+     * (recopie au payload, portées Session/MachineUser UNIQUEMENT — jamais
+     * machine/HKU). Absence du champ = comportement legacy inchangé (« effet au
+     * prochain logon Windows »). Casse canonique EXACTE minuscule (iso convention
+     * « forme courte exclusive » des ruches) : l'agent tolère trim+lowercase
+     * (43.1, `ParseRefreshLevel`), le catalogue n'écrit jamais que la forme
+     * canonique. Force de l'échelle côté PHP = ORDRE de {@see self::REFRESH_HINTS}
+     * (index croissant = plus fort, {@see Capability::refreshHint()}) —
+     * pas de duplication d'enum avec `agent/shared/refresh.go`.
+     */
+    public const REFRESH_SHELL_NOTIFY = 'shell_notify';
+
+    /** Geste WM_SETTINGCHANGE "Policy" (broadcast) — {@see self::REFRESH_SHELL_NOTIFY}. */
+    public const REFRESH_POLICY_BROADCAST = 'policy_broadcast';
+
+    /** Geste kill+relaunch de l'Explorateur — le plus FORT de l'échelle. */
+    public const REFRESH_EXPLORER_RESTART = 'explorer_restart';
+
+    /**
+     * Vocabulaire fermé, ORDONNÉ par force croissante (index 0 = le plus
+     * faible). Single source de vérité pour le guard d'authoring, la recopie
+     * provider et {@see Capability::refreshHint()}.
+     *
+     * @var list<string>
+     */
+    public const REFRESH_HINTS = [
+        self::REFRESH_SHELL_NOTIFY,
+        self::REFRESH_POLICY_BROADCAST,
+        self::REFRESH_EXPLORER_RESTART,
+    ];
+
+    /**
      * Ruche machine (portée machine / service SYSTEM) — clé de `spec.keys[].hive`
      * du mécanisme `registry`. Foyer canonique de la constante depuis le rewrite
      * capability-first (le modèle `RegistrySetting` est superseded — Story 27.12).
@@ -118,7 +167,7 @@ class CapabilityProjection extends Model
     /**
      * Ruche des profils utilisateurs HKEY_USERS (Story 35.3) — TROISIÈME valeur
      * admise de `spec.keys[].hive` du mécanisme `registry`, PORTÉE MACHINE :
-     * émise par le provider Machine uniquement ({@see \App\Services\Agent\Providers\RegistryMachineCapabilityProvider}),
+     * émise par le provider Machine uniquement ({@see RegistryMachineCapabilityProvider}),
      * appliquée par le service SYSTEM qui FAN-OUT la clé vers `HKU\.DEFAULT`
      * (écran de logon) + chaque ruche utilisateur chargée (`HKU\<SID>`), à
      * chaque cycle. Jamais émise en portée Session ; non admise en
