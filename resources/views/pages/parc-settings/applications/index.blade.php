@@ -2,8 +2,10 @@
 
 use Livewire\Component;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
 use App\Services\AppProfile\AppProfileService;
 use App\Components\Traits\WithToasts;
+use App\Components\Traits\WithReturnBack;
 use App\Enums\AppKind;
 use App\Enums\ApplicationStatus;
 use App\Models\AppCustomization;
@@ -14,12 +16,23 @@ use Illuminate\Support\Facades\Log;
 
 new #[Title('Détails de l\'application - SE4FS')] class extends Component {
     use WithToasts;
+    use WithReturnBack;
 
     private AppProfileService $appProfileService;
 
     public int $applicationId;
     public ?Application $application = null;
     public string $deploymentTab = 'errors';
+
+    // Onglet d'origine (URL relative) pour le bouton retour — voir WithReturnBack.
+    #[Url]
+    public ?string $from = null;
+
+    /** URL de retour : provenance dynamique, repli sur le catalogue d'applications. */
+    public function backUrl(): string
+    {
+        return $this->resolveBack(route('app.parc-settings.index', ['tab' => 'applications']));
+    }
 
     public function boot(AppProfileService $appProfileService): void
     {
@@ -94,7 +107,7 @@ new #[Title('Détails de l\'application - SE4FS')] class extends Component {
 ?>
 
 <x-organisms.page title="Détails de l'application" :scrollable="false"
-    backUrl="{{ route('app.parc-settings.index', ['tab' => 'applications']) }}" backText="Retour au catalogue">
+    backUrl="{{ $this->backUrl() }}" backText="Retour au catalogue">
 
     @php
         $customizableKind = $this->customizableKind;

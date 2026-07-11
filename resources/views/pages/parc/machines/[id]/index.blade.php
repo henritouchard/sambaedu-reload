@@ -16,6 +16,7 @@ use App\Models\Workstation;
 use App\Models\WorkstationApplicationStatus;
 use App\Models\WorkstationGroup;
 use App\Components\Traits\WithToasts;
+use App\Components\Traits\WithReturnBack;
 use App\Exceptions\ControlHub\ApplicationNotInUpstreamCatalogException;
 use App\Services\Agent\Enrollment\TokenRotationService;
 use App\Services\Agent\Reporting\ConformityService;
@@ -30,6 +31,7 @@ use Illuminate\Support\Collection;
 
 new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     use WithToasts;
+    use WithReturnBack;
 
     private WorkstationGroupService $parcService;
     private MachinePowerService $machinePowerService;
@@ -37,12 +39,22 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     public ?Workstation $workstation = null;
     public string|int $id;
 
+    // Onglet d'origine (URL relative) pour le bouton retour — voir WithReturnBack.
+    #[Url]
+    public ?string $from = null;
+
     public string $deploymentTab = 'errors';
 
     // Story 15.4 / Décision A 2026-05-07 — onglet de premier niveau (général | wpkg).
     // Le sous-onglet `wpkgSubTab` bascule entre assignation et options `.ini`.
-    #[Url(as: 'tab')]
+    #[Url(as: 'tab', keep: true)]
     public string $tab = 'general';
+
+    /** URL de retour : provenance dynamique, repli sur l'onglet Postes du parc. */
+    public function backUrl(): string
+    {
+        return $this->resolveBack(route('app.parc.index', ['tab' => 'machines']));
+    }
 
     public string $wpkgSubTab = 'assignment';
 
@@ -967,7 +979,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 ?>
 
 <x-organisms.page title="Détails du Poste" :scrollable="true" description="Détail du poste"
-    backUrl="{{ route('app.parc.index') }}" backText="Retour">
+    backUrl="{{ $this->backUrl() }}" backText="Retour aux postes">
 
     <x-slot:actions>
         <div class="flex gap-2 items-center">

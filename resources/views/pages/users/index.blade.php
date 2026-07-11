@@ -18,6 +18,7 @@ new class extends Component {
 
     private UserGroupService $userGroupService;
 
+    #[Url(as: 'tab', keep: true)]
     public string $activeTab = 'users';
     public string $search = '';
     public string $groupsSearch = '';
@@ -303,7 +304,7 @@ new class extends Component {
 
         $query = User::query()->select(['id', 'login', 'firstname', 'lastname', 'fullname', 'is_active', 'school_code', 'quota_snapshot', 'profile_snapshot']);
 
-        if (mb_strlen($term) >= 4) {
+        if (mb_strlen($term) >= 2) {
             $normalizedSearch = '%' . mb_strtolower($term) . '%';
 
             $query->where(function (Builder $builder) use ($normalizedSearch) {
@@ -425,25 +426,20 @@ new class extends Component {
         @endif
     </x-slot:actions>
 
-    <div class="tabs tabs-boxed mb-4 w-fit bg-base-200/60 p-1">
-        <button type="button" class="tab {{ $activeTab === 'users' ? 'tab-active' : '' }}"
-            wire:click="switchTab('users')">
-            <i class="fa-solid fa-user mr-1"></i>
-            Utilisateurs
-        </button>
-        <button type="button" class="tab {{ $activeTab === 'groups' ? 'tab-active' : '' }}"
-            wire:click="switchTab('groups')">
-            <i class="fa-solid fa-users mr-1"></i>
-            Groupes
-        </button>
-    </div>
+    @php
+        $usersTabs = [
+            'users' => ['label' => 'Utilisateurs', 'icon' => 'fa-solid fa-user'],
+            'groups' => ['label' => 'Groupes', 'icon' => 'fa-solid fa-users'],
+        ];
+    @endphp
+    <x-molecules.tabs :tabs="$usersTabs" :active="$activeTab" action="switchTab"
+        class="mb-4 w-fit bg-base-200/60 p-1" />
 
     <div class="card bg-base-100 shadow-sm mb-4">
         <div class="card-body py-4">
             @if ($activeTab === 'users')
                 <label class="label">
                     <span class="label-text font-medium">Recherche utilisateur</span>
-                    <span class="label-text-alt text-xs text-base-content/60">Déclenchement à partir de 4 lettres</span>
                 </label>
 
                 <div class="flex gap-2">
@@ -513,7 +509,6 @@ new class extends Component {
             @else
                 <label class="label">
                     <span class="label-text font-medium">Recherche groupe</span>
-                    <span class="label-text-alt text-xs text-base-content/60">Déclenchement à partir de 2 lettres</span>
                 </label>
 
                 <div class="flex gap-2">
@@ -581,7 +576,7 @@ new class extends Component {
 
         <div class="card bg-base-100 shadow-sm overflow-hidden">
             <div class="px-4 py-3 border-b border-base-300 text-sm text-base-content/70">
-                @if ($searchLength >= 4)
+                @if ($searchLength >= 2)
                     Résultats filtrés sur "{{ $search }}" ({{ $this->users->total() }} résultat(s))
                 @else
                     Affichage des utilisateurs synchronisés (page {{ $this->users->currentPage() }})
@@ -606,7 +601,7 @@ new class extends Component {
                     <tbody>
                         @forelse ($this->users as $user)
                             <tr class="hover:bg-sky-50 cursor-pointer"
-                                onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.user.show', $user->login) }}'">
+                                onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.user.show', ['login' => $user->login, 'from' => route('app.users', ['tab' => 'users'], false)]) }}'">
                                 <td class="checkbox-cell p-0">
                                     <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">
                                         <input type="checkbox" class="checkbox" @checked(in_array($user->login, $selectedUsers, true))
@@ -773,7 +768,7 @@ new class extends Component {
                     <tbody>
                         @forelse ($this->groups as $groupItem)
                             <tr class="hover cursor-pointer"
-                                onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.users.groups.edit', $groupItem->id) }}'">
+                                onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.users.groups.edit', ['id' => $groupItem->id, 'from' => route('app.users', ['tab' => 'groups'], false)]) }}'">
                                 <td class="checkbox-cell p-0">
                                     <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">
                                         <input type="checkbox" class="checkbox" @checked(in_array($groupItem->id, $selectedUserGroups, true))

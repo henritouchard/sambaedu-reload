@@ -9,12 +9,6 @@
 --}}
 
 <div class="flex flex-col flex-1 min-h-0 space-y-3">
-    <p class="text-sm text-base-content/60 shrink-0">
-        Rôles Spatie — seedés (livrés par défaut) ou personnalisés. Les profils
-        seedés sont protégés contre la suppression et le renommage. Cliquez sur
-        une ligne pour éditer un profil.
-    </p>
-
     @if (empty($profilesList))
         <div class="card bg-base-100 border border-base-300 shadow-sm">
             <div class="card-body text-center py-12">
@@ -65,12 +59,12 @@
                             @if ($profile['is_seeded'])
                                 <span class="badge badge-info badge-sm" title="Profil livré par défaut">
                                     <i class="fa-solid fa-lock mr-1"></i>
-                                    seeded
+                                    initial
                                 </span>
                             @else
                                 <span class="badge badge-accent badge-sm">
                                     <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>
-                                    custom
+                                    personnalisé
                                 </span>
                             @endif
                         </td>

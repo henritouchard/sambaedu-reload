@@ -16,6 +16,7 @@ use App\Models\Workstation;
 use App\Models\WorkstationGroup;
 use App\Models\WorkstationGroupSchedule;
 use App\Components\Traits\WithToasts;
+use App\Components\Traits\WithReturnBack;
 use App\Exceptions\ControlHub\ApplicationNotInUpstreamCatalogException;
 use App\Services\Agent\Reporting\ConformityService;
 use App\Services\Agent\SyncRequestService;
@@ -28,6 +29,7 @@ use Illuminate\Support\Collection;
 
 new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     use WithToasts;
+    use WithReturnBack;
 
     private WorkstationGroupService $parcService;
     private MachinePowerService $machinePowerService;
@@ -35,6 +37,16 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 
     public ?WorkstationGroup $group = null;
     public string|int $id;
+
+    // Onglet d'origine (URL relative) pour le bouton retour — voir WithReturnBack.
+    #[Url]
+    public ?string $from = null;
+
+    /** URL de retour : provenance dynamique, repli sur l'onglet Groupes du parc. */
+    public function backUrl(): string
+    {
+        return $this->resolveBack(route('app.parc.index', ['tab' => 'groups']));
+    }
     public array $selectedMachines = [];
     public bool $showAddMachinesModal = false;
     public array $selectedGroupMachineIds = [];
@@ -72,7 +84,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
     public bool $batchTimeoutFired = false;
 
     // ── Story 15.4 / Décision A — Onglet « Applications WPKG » ─────────────
-    #[Url(as: 'tab')]
+    #[Url(as: 'tab', keep: true)]
     public string $tab = 'general';
 
     public bool $showAttachWpkgProfileModal = false;
@@ -138,7 +150,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                     'title' => 'Erreur',
                     'message' => 'Groupe non trouvé',
                 ]);
-                $this->redirect(route('app.parc.index'));
+                $this->redirect(route('app.parc.index', ['tab' => 'groups']));
                 return;
             }
 
@@ -160,7 +172,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                     'title' => 'Accès refusé',
                     'message' => 'Vous n\'avez pas accès à cette ressource.',
                 ]);
-                $this->redirect(route('app.parc.index'));
+                $this->redirect(route('app.parc.index', ['tab' => 'groups']));
                 return;
             }
         } catch (\Exception $e) {
@@ -1229,7 +1241,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
                 'message' => 'Le groupe a été supprimé avec succès.',
             ]);
 
-            $this->redirect(route('app.parc.index'));
+            $this->redirect(route('app.parc.index', ['tab' => 'groups']));
         } catch (\Exception $e) {
             Log::error('[GroupShow] Erreur suppression: ' . $e->getMessage());
             $this->toastError($e->getMessage());
@@ -1828,7 +1840,7 @@ new #[Title('Détail du Groupe - SE4FS')] class extends Component {
 @endphp
 
 <x-organisms.page title="{{ $group?->is_physical ? 'Salle' : 'Groupe de postes' }}" :scrollable="true"
-    backUrl="{{ route('app.parc.index') }}" backText="Retour">
+    backUrl="{{ $this->backUrl() }}" backText="Retour">
 
     <x-slot:actions>
         <div class="flex gap-2 items-center">

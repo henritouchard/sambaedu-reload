@@ -27,7 +27,7 @@ new #[Title('Rapport d\'import DHCP')] class extends Component {
 };
 ?>
 
-<x-organisms.page :backUrl="route('app.network.dhcp')" title="Rapport d'import CSV — DHCP"
+<x-organisms.page :backUrl="route('app.network.dhcp', ['tab' => 'reservations'])" title="Rapport d'import CSV — DHCP"
     backText="Retour à la liste">
 
     <div class="space-y-4">

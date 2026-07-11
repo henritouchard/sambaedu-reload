@@ -33,6 +33,8 @@ new #[Title('Nouvel utilisateur - Instance SE4FS')] class extends Component {
     #[Validate('nullable|regex:/^[0-9]{8}$/')]
     public string $naissance = '';
 
+    public ?string $naissanceDate = null;
+
     #[Validate('nullable|min:8|max:13')]
     public string $password = '';
 
@@ -121,6 +123,12 @@ new #[Title('Nouvel utilisateur - Instance SE4FS')] class extends Component {
         } catch (\Exception $e) {
             $this->availableClasses = [];
         }
+    }
+
+    public function updatedNaissanceDate(?string $value)
+    {
+        // Le date-time-picker renvoie un ISO Y-m-d (ou null tant que la saisie est incomplète)
+        $this->naissance = $value ? str_replace('-', '', $value) : '';
     }
 
     public function updatedCategorie()
@@ -238,14 +246,14 @@ new #[Title('Nouvel utilisateur - Instance SE4FS')] class extends Component {
 
     public function resetForm()
     {
-        $this->reset(['nom', 'prenom', 'login', 'categorie', 'fonction', 'classes', 'naissance', 'password', 'createdLogin', 'createdPassword']);
+        $this->reset(['nom', 'prenom', 'login', 'categorie', 'fonction', 'classes', 'naissance', 'naissanceDate', 'password', 'createdLogin', 'createdPassword']);
         $this->categorie = 'Eleves';
     }
 };
 
 ?>
 
-<x-organisms.page :backUrl="route('app.users')" title="Nouvel utilisateur" backText="Retour à la liste">
+<x-organisms.page :backUrl="route('app.users', ['tab' => 'users'])" title="Nouvel utilisateur" backText="Retour à la liste">
     <x-slot:actions>
         <button type="button" wire:click="resetForm" class="btn btn-ghost gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -309,7 +317,7 @@ new #[Title('Nouvel utilisateur - Instance SE4FS')] class extends Component {
 
         <!-- Actions -->
         <div class="flex justify-end gap-3 pt-4">
-            <a href="{{ route('app.users') }}" class="btn btn-ghost gap-2">
+            <a href="{{ route('app.users', ['tab' => 'users']) }}" class="btn btn-ghost gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
                     </path>

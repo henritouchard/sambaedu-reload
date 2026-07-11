@@ -122,7 +122,7 @@
                                     };
                                 @endphp
                                 <tr class="hover cursor-pointer {{ $rowHighlight }}"
-                                    onclick="if (!event.target.closest('.checkbox-cell') && !event.target.closest('.action-cell')) window.location.href='{{ route('app.parc.machines.show', $machine->id) }}'">
+                                    onclick="if (!event.target.closest('.checkbox-cell') && !event.target.closest('.action-cell')) window.location.href='{{ route('app.parc.machines.show', ['id' => $machine->id, 'from' => route('app.parc.groups.show', ['id' => $group->id], false)]) }}'">
                                     <td class="checkbox-cell p-0">
                                         <label
                                             class="flex items-center justify-center w-full h-full p-3 cursor-pointer">
@@ -133,7 +133,7 @@
                                     <td>
                                         <div class="flex items-center gap-2">
                                             <i class="fa-solid fa-computer text-base-content/50"></i>
-                                            <a href="{{ route('app.parc.machines.show', $machine->id) }}"
+                                            <a href="{{ route('app.parc.machines.show', ['id' => $machine->id, 'from' => route('app.parc.groups.show', ['id' => $group->id], false)]) }}"
                                                 class="font-medium hover:text-primary">
                                                 {{ $machine->name }}
                                             </a>

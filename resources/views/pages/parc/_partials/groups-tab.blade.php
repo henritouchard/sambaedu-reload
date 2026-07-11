@@ -89,7 +89,7 @@
                     <tbody>
                         @foreach ($this->groups as $group)
                             <tr class="hover cursor-pointer"
-                                onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.parc.groups.show', $group->id) }}'">
+                                onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.parc.groups.show', ['id' => $group->id, 'from' => route('app.parc.index', ['tab' => 'groups'], false)]) }}'">
                                 <td class="checkbox-cell p-0">
                                     <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">
                                         <input type="checkbox" class="checkbox" wire:model.live="selectedGroups"

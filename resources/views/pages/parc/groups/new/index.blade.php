@@ -205,7 +205,7 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
 ?>
 
 <x-organisms.page title="Nouveau Groupe" :scrollable="true" description="Créer un nouveau groupe de machines"
-    backUrl="{{ route('app.parc.index') }}" backText="Retour">
+    backUrl="{{ route('app.parc.index', ['tab' => 'groups']) }}" backText="Retour">
 
     <div class="max-w-2xl mx-auto">
         <form wire:submit="save" class="space-y-6">
@@ -476,7 +476,7 @@ new #[Title('Nouveau Groupe - SE4FS')] class extends Component {
 
             <!-- Actions -->
             <div class="flex justify-end gap-3">
-                <a href="{{ route('app.parc.index') }}" class="btn btn-ghost">
+                <a href="{{ route('app.parc.index', ['tab' => 'groups']) }}" class="btn btn-ghost">
                     Annuler
                 </a>
                 <button type="submit" class="btn btn-primary">

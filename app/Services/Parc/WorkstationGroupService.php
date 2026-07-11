@@ -85,14 +85,15 @@ class WorkstationGroupService
         ?User $scopeFor = null,
         ?string $migrationFilter = null,
         ?string $conformityFilter = null,
-        ?string $presenceFilter = null
+        ?string $presenceFilter = null,
+        ?string $cardFilter = null
     ): LengthAwarePaginator {
         $authorizedGroupIds = $this->resolveAuthorizedGroupIds($scopeFor);
 
         // $authorizedGroupIds === null : pas de scope demandé ou user a le droit
         // global — on retombe sur le comportement historique.
         if ($authorizedGroupIds === null) {
-            return $this->repository->getMachines($perPage, $search, $os, $groupId, $migrationFilter, $conformityFilter, $presenceFilter);
+            return $this->repository->getMachines($perPage, $search, $os, $groupId, $migrationFilter, $conformityFilter, $presenceFilter, $cardFilter);
         }
 
         // Si un groupId explicite est demandé mais qu'il n'est pas dans le
@@ -115,6 +116,7 @@ class WorkstationGroupService
             migrationFilter: $migrationFilter,
             conformityFilter: $conformityFilter,
             presenceFilter: $presenceFilter,
+            cardFilter: $cardFilter,
         );
     }
 

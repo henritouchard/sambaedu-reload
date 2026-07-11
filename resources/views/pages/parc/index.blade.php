@@ -20,9 +20,12 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
 
     private WorkstationGroupService $parcService;
 
-    // Onglet actif
-    #[Url]
+    // Onglet actif — toujours reflété dans l'URL (?tab=), deep-link supporté.
+    #[Url(keep: true)]
     public string $tab = 'groups';
+
+    /** Onglets valides de la page (allow-list du switch). */
+    private const TABS = ['groups', 'machines', 'printers', 'drivers'];
 
     // Filtres machines
     #[Url]
@@ -31,19 +34,23 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     public string $osFilter = '';
     #[Url]
     public ?int $groupFilter = null;
-    // Story 16.13bis — filtre par statut de migration SE4 → SE5.
-    // Valeurs admises : '' (tous), 'migrated', 'not-migrated'.
+    // Filtre rapide « carte » — piloté par le clic sur les tuiles de
+    // statistiques de l'onglet Postes. Mutuellement exclusif (« montre
+    // uniquement ce type »). Absorbe les anciens filtres migration (16.13bis)
+    // et conformité (24.7), désormais représentés par des cartes cliquables.
+    // Valeurs admises : '' (tous), 'active', 'enrolled', 'compliant',
+    // 'migrated', 'without_group', 'exceptions', 'silent'.
     #[Url]
-    public string $migrationFilter = '';
-    // Story 24.7 — filtre par conformité agent.
-    // Valeurs admises : '' (tous), 'exceptions', 'compliant', 'silent'.
-    // Story 27.8 : valeur 'drifted_allowed' retirée (mécanisme strict/default supprimé).
-    #[Url]
-    public string $conformityFilter = '';
+    public string $cardFilter = '';
     // Filtre par état de présence (canal agent). Valeurs admises : '' (tous),
     // 'online' (allumé), 'off' (éteint = extinction signalée ou muet).
     #[Url]
     public string $presenceFilter = '';
+
+    /** Cartes-filtres valides de l'onglet Postes (allow-list du clic). */
+    private const CARD_FILTERS = [
+        'active', 'enrolled', 'compliant', 'migrated', 'without_group', 'exceptions', 'silent',
+    ];
 
     // Filtres groupes
     #[Url]
@@ -121,13 +128,13 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
         }
 
         try {
-            // Story 16.13bis — Correction Q2 / Opus-A (2026-05-20) : on passe
-            // les filtres actifs au service pour scoper le compteur "Postes
-            // migrés" + le total (cohérence visuelle avec le listing).
+            // Les tuiles sont des filtres rapides (cliquables) : leurs
+            // compteurs restent l'inventaire du parc (scopé OS/groupe pour le
+            // dénominateur « Postes migrés »), indépendamment de la carte
+            // active — sinon cliquer une carte fausserait son propre chiffre.
             $this->machineStats = $this->parcService->getMachineStats(
                 os: $this->osFilter ?: null,
                 groupId: $this->groupFilter,
-                migrationFilter: $this->migrationFilter ?: null,
             );
             $this->groupStats = $this->parcService->getGroupStats();
             // Story 24.7 — compteurs de conformité agent (périmètre = postes
@@ -194,22 +201,25 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
         $this->statsLoaded = false;
     }
 
-    public function updatedMigrationFilter(): void
-    {
-        $this->statsLoaded = false;
-    }
-
-    public function updatedConformityFilter(): void
-    {
-        // Le filtre conformité ne change pas les compteurs globaux (ils
-        // restent sur tout le parc enrôlé) — pas de reload des stats requis.
-        $this->resetPage();
-    }
-
     public function updatedPresenceFilter(): void
     {
         // Le filtre présence ne modifie pas les compteurs globaux (inventaire),
         // il ne fait que restreindre le listing — pas de reload des stats.
+        $this->resetPage();
+    }
+
+    /**
+     * Clic sur une tuile de statistique : bascule le filtre rapide « carte »
+     * sur la catégorie cliquée (« montre uniquement ce type »). Re-cliquer la
+     * carte active la désélectionne (retour à « tous »). Les compteurs restent
+     * l'inventaire du parc — pas de reload des stats, juste un reset de page.
+     */
+    public function filterByCard(string $card): void
+    {
+        $this->cardFilter = ($this->cardFilter === $card || !in_array($card, self::CARD_FILTERS, true))
+            ? ''
+            : $card;
+        $this->selectedMachines = [];
         $this->resetPage();
     }
 
@@ -224,9 +234,8 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
                 os: $this->osFilter ?: null,
                 groupId: $this->groupFilter,
                 scopeFor: $this->scopedUser(),
-                migrationFilter: $this->migrationFilter ?: null,
-                conformityFilter: $this->conformityFilter ?: null,
                 presenceFilter: $this->presenceFilter ?: null,
+                cardFilter: $this->cardFilter ?: null,
             );
         } catch (\Exception $e) {
             Log::error('[Parc] Erreur chargement machines: ' . $e->getMessage());
@@ -270,7 +279,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
 
     public function setTab(string $tab): void
     {
-        $this->tab = $tab;
+        $this->tab = in_array($tab, self::TABS, true) ? $tab : 'groups';
         $this->resetPage();
     }
 
@@ -279,8 +288,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
         $this->machineSearch = '';
         $this->osFilter = '';
         $this->groupFilter = null;
-        $this->migrationFilter = '';
-        $this->conformityFilter = '';
+        $this->cardFilter = '';
         $this->presenceFilter = '';
         $this->selectedMachines = [];
         // Story 16.13bis — Correction Q2 / Opus-A : recharger les stats
@@ -541,30 +549,17 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
 
     <div class="h-full flex flex-col gap-4">
         <!-- Onglets -->
-        <div role="tablist" class="tabs tabs-boxed bg-base-200 w-fit">
-            <button type="button" role="tab" class="tab {{ $tab === 'groups' ? 'tab-active' : '' }}"
-                wire:click="setTab('groups')">
-                <i class="fa-solid fa-folder-tree mr-2"></i>
-                Groupes
-            </button>
-            <button type="button" role="tab" class="tab {{ $tab === 'machines' ? 'tab-active' : '' }}"
-                wire:click="setTab('machines')">
-                <i class="fa-solid fa-computer mr-2"></i>
-                Postes
-            </button>
-            <button type="button" role="tab" class="tab {{ $tab === 'printers' ? 'tab-active' : '' }}"
-                wire:click="setTab('printers')">
-                <i class="fa-solid fa-print mr-2"></i>
-                Imprimantes
-            </button>
-            @can('manage-printer')
-                <button type="button" role="tab" class="tab {{ $tab === 'drivers' ? 'tab-active' : '' }}"
-                    wire:click="setTab('drivers')">
-                    <i class="fa-solid fa-floppy-disk mr-2"></i>
-                    Drivers
-                </button>
-            @endcan
-        </div>
+        @php
+            $parcTabs = [
+                'groups' => ['label' => 'Groupes', 'icon' => 'fa-solid fa-folder-tree'],
+                'machines' => ['label' => 'Postes', 'icon' => 'fa-solid fa-computer'],
+                'printers' => ['label' => 'Imprimantes', 'icon' => 'fa-solid fa-print'],
+            ];
+            if (Gate::allows('manage-printer')) {
+                $parcTabs['drivers'] = ['label' => 'Drivers', 'icon' => 'fa-solid fa-floppy-disk'];
+            }
+        @endphp
+        <x-molecules.tabs :tabs="$parcTabs" :active="$tab" class="bg-base-200 w-fit" />
 
         <!-- Contenu des onglets -->
         <div class="flex-1 min-h-0 flex flex-col">

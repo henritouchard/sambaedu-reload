@@ -53,7 +53,7 @@ new #[Title('Import CSV — Réservations DHCP')] class extends Component {
 };
 ?>
 
-<x-organisms.page :backUrl="route('app.network.dhcp')" title="Importer des réservations DHCP"
+<x-organisms.page :backUrl="route('app.network.dhcp', ['tab' => 'reservations'])" title="Importer des réservations DHCP"
     backText="Retour à la liste">
 
     <div class="max-w-2xl space-y-6">
@@ -81,7 +81,7 @@ imprimanteCDI,AA:BB:CC:DD:EE:FF,10.0.0.30,Imprimante CDI</pre>
             </div>
 
             <div class="flex gap-2">
-                <a href="{{ route('app.network.dhcp') }}" class="btn btn-ghost">Annuler</a>
+                <a href="{{ route('app.network.dhcp', ['tab' => 'reservations']) }}" class="btn btn-ghost">Annuler</a>
                 <button type="submit" class="btn btn-primary" wire:loading.attr="disabled">
                     <span wire:loading.remove wire:target="import">
                         <i class="fa-solid fa-file-import"></i> Importer

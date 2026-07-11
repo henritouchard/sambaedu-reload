@@ -16,6 +16,9 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
     #[Url(keep: true)]
     public string $tab = 'profiles';
 
+    /** Onglets valides de la page (allow-list du switch). */
+    private const TABS = ['profiles', 'applications', 'depot', 'shortcuts'];
+
     // Stats (pour les badges d'onglets)
     public array $stats = [];
 
@@ -52,7 +55,7 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
 
     public function setTab(string $tab): void
     {
-        $this->redirect(route('app.parc-settings.index') . '?tab=' . $tab);
+        $this->tab = in_array($tab, self::TABS, true) ? $tab : 'profiles';
     }
 };
 ?>
@@ -121,37 +124,26 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
 
     <div class="h-full flex flex-col gap-4">
         <!-- Onglets -->
-        <div role="tablist" class="tabs tabs-boxed bg-base-200 w-fit">
-            <button type="button" role="tab" class="tab {{ $tab === 'profiles' ? 'tab-active' : '' }}"
-                wire:click="setTab('profiles')">
-                <i class="fa-solid fa-layer-group mr-2"></i>
-                Profils Applicatifs
-                @if ($statsLoaded && isset($stats['profiles_count']))
-                    <span class="badge badge-sm ml-2">{{ $stats['profiles_count'] }}</span>
-                @endif
-            </button>
-            <button type="button" role="tab" class="tab {{ $tab === 'applications' ? 'tab-active' : '' }}"
-                wire:click="setTab('applications')">
-                <i class="fa-solid fa-cube mr-2"></i>
-                Catalogue d'Applications
-                @if ($statsLoaded && isset($stats['applications_count']))
-                    <span class="badge badge-sm ml-2">{{ $stats['applications_count'] }}</span>
-                @endif
-            </button>
-            <button type="button" role="tab" class="tab {{ $tab === 'depot' ? 'tab-active' : '' }}"
-                wire:click="setTab('depot')">
-                <i class="fa-solid fa-warehouse mr-2"></i>
-                Dépôt
-            </button>
-            <button type="button" role="tab" class="tab {{ $tab === 'shortcuts' ? 'tab-active' : '' }}"
-                wire:click="setTab('shortcuts')">
-                <i class="fa-solid fa-arrow-up-right-from-square mr-2"></i>
-                Raccourcis
-            </button>
-        </div>
+        @php
+            $parcSettingsTabs = [
+                'profiles' => [
+                    'label' => 'Profils Applicatifs',
+                    'icon' => 'fa-solid fa-layer-group',
+                    'badge' => $statsLoaded ? ($stats['profiles_count'] ?? null) : null,
+                ],
+                'applications' => [
+                    'label' => "Catalogue d'Applications",
+                    'icon' => 'fa-solid fa-cube',
+                    'badge' => $statsLoaded ? ($stats['applications_count'] ?? null) : null,
+                ],
+                'depot' => ['label' => 'Dépôt', 'icon' => 'fa-solid fa-warehouse'],
+                'shortcuts' => ['label' => 'Raccourcis', 'icon' => 'fa-solid fa-arrow-up-right-from-square'],
+            ];
+        @endphp
+        <x-molecules.tabs :tabs="$parcSettingsTabs" :active="$tab" class="bg-base-200 w-fit" />
 
         <!-- Contenu des onglets -->
-        <div class="flex-1 min-h-0 flex flex-col">
+        <div class="flex-1 min-h-0 flex flex-col" wire:key="parc-settings-tab-{{ $tab }}">
             @if ($tab === 'profiles')
                 <livewire:pages::parc-settings._partials.profiles-tab />
             @elseif ($tab === 'applications')

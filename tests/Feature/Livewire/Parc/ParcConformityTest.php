@@ -108,7 +108,7 @@ class ParcConformityTest extends TestCase
         $this->seedState($ok, 'wallpaper', AgentResourceStatus::Compliant);
 
         $component = Livewire::test('pages::parc.index', ['tab' => 'machines'])
-            ->set('conformityFilter', 'exceptions');
+            ->set('cardFilter', 'exceptions');
 
         $ids = $component->get('machines')->pluck('id')->all();
         $this->assertContains($exc->id, $ids);
@@ -129,13 +129,13 @@ class ParcConformityTest extends TestCase
         $this->seedState($talking, 'wallpaper', AgentResourceStatus::Drift);
 
         $exceptions = Livewire::test('pages::parc.index', ['tab' => 'machines'])
-            ->set('conformityFilter', 'exceptions')
+            ->set('cardFilter', 'exceptions')
             ->get('machines')->pluck('id')->all();
         $this->assertNotContains($silent->id, $exceptions);
         $this->assertContains($talking->id, $exceptions);
 
         $silents = Livewire::test('pages::parc.index', ['tab' => 'machines'])
-            ->set('conformityFilter', 'silent')
+            ->set('cardFilter', 'silent')
             ->get('machines')->pluck('id')->all();
         $this->assertContains($silent->id, $silents);
 
@@ -150,9 +150,9 @@ class ParcConformityTest extends TestCase
     public function test_reset_filters_clears_conformity_filter(): void
     {
         Livewire::test('pages::parc.index', ['tab' => 'machines'])
-            ->set('conformityFilter', 'silent')
+            ->set('cardFilter', 'silent')
             ->call('resetMachineFilters')
-            ->assertSet('conformityFilter', '');
+            ->assertSet('cardFilter', '');
     }
 
     public function test_drift_returns_to_compliant_on_reingest(): void
@@ -168,13 +168,13 @@ class ParcConformityTest extends TestCase
 
         $ingest->ingest($ws, $report('drift', str_repeat('d', 64)));
         $exceptions = Livewire::test('pages::parc.index', ['tab' => 'machines'])
-            ->set('conformityFilter', 'exceptions')
+            ->set('cardFilter', 'exceptions')
             ->get('machines')->pluck('id')->all();
         $this->assertContains($ws->id, $exceptions);
 
         $ingest->ingest($ws, $report('compliant', str_repeat('e', 64)));
         $exceptions = Livewire::test('pages::parc.index', ['tab' => 'machines'])
-            ->set('conformityFilter', 'exceptions')
+            ->set('cardFilter', 'exceptions')
             ->get('machines')->pluck('id')->all();
         $this->assertNotContains($ws->id, $exceptions);
     }

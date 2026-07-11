@@ -23,10 +23,8 @@
                 <label class="label">
                     <span class="label-text font-medium text-base-content/70">Date de naissance</span>
                 </label>
-                <input type="text" wire:model="naissance"
-                    class="input input-bordered w-full @error('naissance') input-error @enderror" placeholder="YYYYMMDD"
-                    maxlength="8">
-                <p class="text-xs text-base-content/50 mt-1">Format : YYYYMMDD (ex: 20050315)</p>
+                <x-molecules.date-time-picker wire:model.live="naissanceDate" />
+                <p class="text-xs text-base-content/50 mt-1">Format : jj/mm/aaaa</p>
                 @error('naissance')
                     <span class="text-error text-sm">{{ $message }}</span>
                 @enderror

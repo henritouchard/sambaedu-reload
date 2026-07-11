@@ -44,7 +44,7 @@
             </div>
 
             <!-- Établissement -->
-            <div>
+            <div class="flex flex-col">
                 <label class="label">
                     <span class="label-text font-medium text-base-content/70">Établissement</span>
                 </label>
@@ -67,12 +67,14 @@
             <!-- Login suggéré -->
             <div>
                 <label class="label">
-                    <span class="label-text font-medium text-base-content/70">Login (optionnel)</span>
+                    <x-atoms.tooltip position="top" icon="true">
+                        <x-slot name="label">Login</x-slot>
+                        Généré automatiquement si vide
+                    </x-atoms.tooltip>
                 </label>
                 <input type="text" wire:model="login"
-                    class="input input-bordered w-full @error('login') input-error @enderror"
-                    placeholder="Généré automatiquement si vide">
-                <p class="text-xs text-base-content/50 mt-1">Laissez vide pour génération automatique</p>
+                    placeholder="Ex: jean.dupont"
+                    class="input input-bordered w-full @error('login') input-error @enderror" placeholder="">
                 @error('login')
                     <span class="text-error text-sm">{{ $message }}</span>
                 @enderror

@@ -509,11 +509,23 @@ class Workstation extends Model implements Wireable
     }
 
     /**
-     * Statuts d'application liés à ce poste
+     * Statuts d'application liés à ce poste (canal WPKG legacy — rapport
+     * `.txt` ingéré par {@see \App\Services\Windows\WpkgReportIngestionService}).
      */
     public function applicationStatuses(): HasMany
     {
         return $this->hasMany(WorkstationApplicationStatus::class);
+    }
+
+    /**
+     * Story 27.5 — inventaire per-app rapporté par l'AGENT (canal natif SE5).
+     * `status` ∈ {compliant, drift = installé, error = non installé}. Alimente
+     * la colonne « Déploiement » du parc pour les postes natifs, en lieu et
+     * place du canal WPKG en extinction.
+     */
+    public function agentApplicationInventory(): HasMany
+    {
+        return $this->hasMany(AgentApplicationInventory::class);
     }
 
     /**

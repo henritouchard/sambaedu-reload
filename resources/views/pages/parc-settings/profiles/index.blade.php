@@ -7,6 +7,7 @@ use Livewire\WithPagination;
 use App\Services\AppProfile\AppProfileService;
 use App\Exceptions\ControlHub\ApplicationNotInUpstreamCatalogException;
 use App\Components\Traits\WithToasts;
+use App\Components\Traits\WithReturnBack;
 use App\Models\AppProfile;
 use App\Models\Application;
 use App\Models\WorkstationGroup;
@@ -16,15 +17,29 @@ use Illuminate\Support\Facades\Log;
 new #[Title('Détail du Profil - SE4FS')] class extends Component {
     use WithToasts;
     use WithPagination;
+    use WithReturnBack;
 
     private AppProfileService $appProfileService;
 
     public int $profileId;
     public ?AppProfile $profile = null;
 
-    // Onglet actif
+    // Onglet d'origine (URL relative) pour le bouton retour — voir WithReturnBack.
     #[Url]
+    public ?string $from = null;
+
+    // Onglet actif — toujours reflété dans l'URL, deep-link supporté.
+    #[Url(keep: true)]
     public string $tab = 'applications';
+
+    /** Onglets valides (allow-list du switch). */
+    private const TABS = ['applications', 'groups', 'workstations'];
+
+    /** URL de retour : provenance dynamique, repli sur l'onglet Profils. */
+    public function backUrl(): string
+    {
+        return $this->resolveBack(route('app.parc-settings.index', ['tab' => 'profiles']));
+    }
 
     // Recherche applications
     public string $appSearch = '';
@@ -84,7 +99,7 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
 
     public function setTab(string $tab): void
     {
-        $this->tab = $tab;
+        $this->tab = in_array($tab, self::TABS, true) ? $tab : 'applications';
         $this->resetPage();
     }
 
@@ -425,7 +440,7 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
 };
 ?>
 
-<x-organisms.page title="Profil applicatif" :scrollable="false" backUrl="{{ route('app.parc-settings.index') }}"
+<x-organisms.page title="Profil applicatif" :scrollable="false" backUrl="{{ $this->backUrl() }}"
     backText="Retour aux paramètres">
 
     <x-slot:actions>
@@ -522,26 +537,14 @@ new #[Title('Détail du Profil - SE4FS')] class extends Component {
             </div>
 
             <!-- Onglets -->
-            <div role="tablist" class="tabs tabs-boxed bg-base-200 w-fit">
-                <button type="button" role="tab" class="tab {{ $tab === 'applications' ? 'tab-active' : '' }}"
-                    wire:click="setTab('applications')">
-                    <i class="fa-solid fa-cube mr-2"></i>
-                    Applications
-                    <span class="badge badge-sm ml-2">{{ $profile->applications->count() }}</span>
-                </button>
-                <button type="button" role="tab" class="tab {{ $tab === 'groups' ? 'tab-active' : '' }}"
-                    wire:click="setTab('groups')">
-                    <i class="fa-solid fa-folder-tree mr-2"></i>
-                    Groupes de postes
-                    <span class="badge badge-sm ml-2">{{ $profile->workstationGroups->count() }}</span>
-                </button>
-                <button type="button" role="tab" class="tab {{ $tab === 'workstations' ? 'tab-active' : '' }}"
-                    wire:click="setTab('workstations')">
-                    <i class="fa-solid fa-computer mr-2"></i>
-                    Postes
-                    <span class="badge badge-sm ml-2">{{ $profile->workstations->count() }}</span>
-                </button>
-            </div>
+            @php
+                $profileTabs = [
+                    'applications' => ['label' => 'Applications', 'icon' => 'fa-solid fa-cube', 'badge' => $profile->applications->count()],
+                    'groups' => ['label' => 'Groupes de postes', 'icon' => 'fa-solid fa-folder-tree', 'badge' => $profile->workstationGroups->count()],
+                    'workstations' => ['label' => 'Postes', 'icon' => 'fa-solid fa-computer', 'badge' => $profile->workstations->count()],
+                ];
+            @endphp
+            <x-molecules.tabs :tabs="$profileTabs" :active="$tab" class="bg-base-200 w-fit" />
 
             <!-- Contenu des onglets -->
             <div class="flex-1 min-h-0">

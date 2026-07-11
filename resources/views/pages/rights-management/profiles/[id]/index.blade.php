@@ -93,7 +93,7 @@ new #[Title('Édition d\'un profil — Gestion des droits')] class extends Compo
         // `php artisan sambaedu:app:update --resync-seeded-roles` (le simple
         // `db:seed --force` ne re-synchronise PAS les rôles existants).
         if ($this->isSeeded) {
-            abort(403, 'Les permissions des rôles seedés ne sont pas éditables via l\'UI.');
+            abort(403, 'Les permissions des rôles initiaux ne sont pas éditables via l\'UI.');
         }
 
         $role = Role::where('name', $this->originalName)->where('guard_name', 'web')->firstOrFail();
@@ -153,7 +153,7 @@ new #[Title('Édition d\'un profil — Gestion des droits')] class extends Compo
         abort_unless(\Illuminate\Support\Facades\Gate::allows('user.assign.right'), 403);
 
         if ($this->isSeeded) {
-            $this->toastError('Le profil est seedé et ne peut pas être supprimé.');
+            $this->toastError('Le profil est initial et ne peut pas être supprimé.');
             return;
         }
         if ($this->usersCount > 0) {

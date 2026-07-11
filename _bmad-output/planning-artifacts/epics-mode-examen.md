@@ -173,6 +173,13 @@ au create-story.
 
 ## Notes de coordination / évolutions (hors V1)
 
+- **Application immédiate (Epic 43, `epics-application-immediate.md`)** : une fois 43.1/43.2
+  livrées, 41.2 pose un hint `refresh` (`explorer_restart` ou `policy_broadcast` selon validation
+  lab) dans son seed — l'effet « au logon suivant » (FR-E3) devient effectif **en session
+  courante** (~2 s, session préservée) pour les élèves déjà logués au moment de la bascule.
+  43.3 (ttl dynamique) borne en plus la latence de *réception* de la bascule par les postes
+  allumés (TTL global 3600 s aujourd'hui). 41.x n'est **pas gated** par 43 (V1 au logon suivant
+  reste valide), mais la bascule en cours de session est l'UX cible.
 - **AppLocker / WDAC (intégrité anti-triche)** : nouveau mécanisme agent (policy AppLocker via GPO
   locale / `Set-AppLockerPolicy` + `AppIDSvc`, ou SRP registre) consommant la **même** liste d'apps
   autorisées (via la donnée app→éditeur/hash, extension de 41.1). Epic dédié.

@@ -6,10 +6,24 @@ use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
 use Livewire\Component;
+use App\Components\Traits\WithReturnBack;
 
 new #[Title('Groupe utilisateur')] class extends Component {
+    use WithReturnBack;
+
     private UserGroupService $userGroupService;
+
+    // Onglet d'origine (URL relative) pour le bouton retour — voir WithReturnBack.
+    #[Url]
+    public ?string $from = null;
+
+    /** URL de retour : provenance dynamique, repli sur l'onglet Groupes. */
+    public function backUrl(): string
+    {
+        return $this->resolveBack(route('app.users', ['tab' => 'groups']));
+    }
 
     public int $groupId;
     public string $name = '';
@@ -226,7 +240,7 @@ new #[Title('Groupe utilisateur')] class extends Component {
 };
 ?>
 
-<x-organisms.page :title="$editing ? 'Modifier le groupe' : ($displayName ?: $name)" :description="$editing ? 'Éditez les informations et les membres du groupe' : null" :backUrl="!$editing ? route('app.users') : null" backText="Retour">
+<x-organisms.page :title="$editing ? 'Modifier le groupe' : ($displayName ?: $name)" :description="$editing ? 'Éditez les informations et les membres du groupe' : null" :backUrl="!$editing ? $this->backUrl() : null" backText="Retour">
     <x-slot:actions>
         <div class="flex items-center gap-2">
             @if ($editing)

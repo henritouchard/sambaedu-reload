@@ -18,8 +18,11 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
     use WithPagination, WithToasts;
 
     // === État UI ===
-    #[Url]
+    #[Url(keep: true)]
     public string $tab = 'reservations';
+
+    /** Onglets valides (allow-list du switch). */
+    private const TABS = ['reservations', 'leases'];
     public string $search = '';
     public bool $modalOpen = false;
     public bool $editing = false;
@@ -71,7 +74,7 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
 
     public function setTab(string $tab): void
     {
-        $this->tab = $tab;
+        $this->tab = in_array($tab, self::TABS, true) ? $tab : 'reservations';
         $this->resetPage();
     }
 
@@ -320,18 +323,13 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
         @include('pages.network.dhcp._partials.service-status-banner')
 
         {{-- Onglets --}}
-        <div role="tablist" class="tabs tabs-boxed bg-base-200 w-fit">
-            <button type="button" role="tab" class="tab {{ $tab === 'reservations' ? 'tab-active' : '' }}"
-                wire:click="setTab('reservations')">
-                <i class="fa-solid fa-bookmark mr-2"></i>
-                Réservations ({{ $reservations->total() }})
-            </button>
-            <button type="button" role="tab" class="tab {{ $tab === 'leases' ? 'tab-active' : '' }}"
-                wire:click="setTab('leases')">
-                <i class="fa-solid fa-network-wired mr-2"></i>
-                Baux actifs{{ $leasesAvailable ? ' (' . $leases->count() . ')' : '' }}
-            </button>
-        </div>
+        @php
+            $dhcpTabs = [
+                'reservations' => ['label' => 'Réservations ('.$reservations->total().')', 'icon' => 'fa-solid fa-bookmark'],
+                'leases' => ['label' => 'Baux actifs'.($leasesAvailable ? ' ('.$leases->count().')' : ''), 'icon' => 'fa-solid fa-network-wired'],
+            ];
+        @endphp
+        <x-molecules.tabs :tabs="$dhcpTabs" :active="$tab" class="bg-base-200 w-fit" />
 
         {{-- Contenu des onglets --}}
         @if ($tab === 'leases')

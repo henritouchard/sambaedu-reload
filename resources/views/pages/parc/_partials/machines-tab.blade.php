@@ -32,23 +32,9 @@
                         @endforeach
                     </select>
                 </div>
-                {{-- Story 16.13bis — filtre par statut de migration SE4 → SE5 --}}
-                <div class="form-control w-48">
-                    <select wire:model.live="migrationFilter" class="select select-bordered" aria-label="Statut migration">
-                        <option value="">Migration : tous</option>
-                        <option value="migrated">Migrés</option>
-                        <option value="not-migrated">Non migrés</option>
-                    </select>
-                </div>
-                {{-- Story 24.7 — filtre par conformité agent (calque 16.13bis) --}}
-                <div class="form-control w-48">
-                    <select wire:model.live="conformityFilter" class="select select-bordered" aria-label="Conformité agent">
-                        <option value="">Conformité : tous</option>
-                        <option value="exceptions">En écart</option>
-                        <option value="silent">Muets</option>
-                        <option value="compliant">Conformes</option>
-                    </select>
-                </div>
+                {{-- Migration + conformité sont désormais des cartes-filtres
+                     cliquables (voir stats-cards) : le clic sur une tuile
+                     restreint le tableau à cette catégorie. --}}
                 {{-- Filtre par état de présence (allumé / éteint), dérivé du canal agent --}}
                 <div class="form-control w-40">
                     <select wire:model.live="presenceFilter" class="select select-bordered" aria-label="État du poste">
@@ -57,7 +43,7 @@
                         <option value="off">Éteints</option>
                     </select>
                 </div>
-                @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter || $conformityFilter || $presenceFilter)
+                @if ($machineSearch || $osFilter || $groupFilter || $cardFilter || $presenceFilter)
                     <button type="button" class="btn btn-ghost btn-sm" wire:click="resetMachineFilters">
                         <i class="fa-solid fa-eraser"></i>
                     </button>
@@ -75,13 +61,13 @@
                 </div>
                 <h3 class="text-xl font-semibold mb-3">Aucun poste trouvé</h3>
                 <p class="text-base-content/60 text-center max-w-md">
-                    @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter || $conformityFilter || $presenceFilter)
+                    @if ($machineSearch || $osFilter || $groupFilter || $cardFilter || $presenceFilter)
                         Aucun poste ne correspond aux critères de recherche.
                     @else
                         Aucun poste n'est enregistré dans le système.
                     @endif
                 </p>
-                @if ($machineSearch || $osFilter || $groupFilter || $migrationFilter || $conformityFilter || $presenceFilter)
+                @if ($machineSearch || $osFilter || $groupFilter || $cardFilter || $presenceFilter)
                     <button type="button" class="btn btn-outline mt-4" wire:click="resetMachineFilters">
                         <i class="fa-solid fa-eraser"></i>
                         Effacer les filtres
@@ -112,7 +98,7 @@
                     <tbody>
                         @foreach ($this->machines as $machine)
                             <tr class="hover cursor-pointer"
-                                onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.parc.machines.show', $machine->id) }}'">
+                                onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.parc.machines.show', ['id' => $machine->id, 'from' => route('app.parc.index', ['tab' => 'machines'], false)]) }}'">
                                 <td class="checkbox-cell p-0">
                                     <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">
                                         <input type="checkbox" class="checkbox" wire:model.live="selectedMachines"
@@ -206,16 +192,22 @@
                                               title="Non migré" aria-label="Non migré">❌</span>
                                     @endif
                                 </td>
+                                {{-- Déploiement applicatif via le canal natif de
+                                     l'agent (AgentApplicationInventory, 27.5) :
+                                     compteur installées ✓ / en échec ✗. Le canal
+                                     WPKG legacy (GPO) n'alimente plus cette colonne. --}}
                                 <td class="text-center">
                                     @if (($machine->installed_apps_count ?? 0) > 0 || ($machine->error_apps_count ?? 0) > 0)
-                                        <span class="font-mono text-sm">
+                                        <span class="font-mono text-sm"
+                                              title="Applications rapportées par l'agent : {{ $machine->installed_apps_count }} installée(s){{ ($machine->error_apps_count ?? 0) > 0 ? ', ' . $machine->error_apps_count . ' en échec' : '' }}">
                                             <span class="text-success">{{ $machine->installed_apps_count }} ✓</span>
                                             @if ($machine->error_apps_count > 0)
                                                 <span class="text-error ml-1">{{ $machine->error_apps_count }} ✗</span>
                                             @endif
                                         </span>
                                     @else
-                                        <span class="text-base-content/30">—</span>
+                                        <span class="text-base-content/30"
+                                              title="Aucune application rapportée par l'agent">—</span>
                                     @endif
                                 </td>
                             </tr>

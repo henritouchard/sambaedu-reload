@@ -145,8 +145,8 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
             // Story 7.2 — AC4 : rapatriement non-destructif des profils LDAP custom.
             'rights_profiles' => [
                 'id' => 'rights_profiles',
-                'title' => '9. Rapatrier les profils LDAP custom',
-                'description' => 'Scanne la branche Rights (rights_rdn) et crée côté SER les profils custom absents (non-destructif, n\'écrase jamais un profil existant)',
+                'title' => '9. Rapatrier les profils LDAP personnalisés',
+                'description' => 'Scanne la branche Rights (rights_rdn) et crée côté SER les profils personnalisés absents (non-destructif, n\'écrase jamais un profil existant)',
                 'status' => 'pending',
                 'stats' => null,
                 'error' => null,
@@ -565,7 +565,7 @@ new #[Title('Synchronisation depuis l\'AD - SE4FS')] class extends Component {
                 'rights_profiles',
                 'success',
                 sprintf(
-                    '%d profils scannés, %d seedés ignorés, %d historiques mappés, %d nouveaux custom, %d custom inchangés',
+                    '%d profils scannés, %d initiaux ignorés, %d historiques mappés, %d nouveaux personnalisés, %d personnalisés inchangés',
                     $stats['scanned'], $stats['seeded_skipped'], $stats['historic_mapped'],
                     $stats['custom_new'], $stats['custom_unchanged']
                 )

@@ -300,6 +300,33 @@
     font-size: 1rem !important;
 }
 
+/* Bulle de tooltip : rayon ~12px (le --radius-field du thème = 2.5rem est prévu
+   pour les inputs/pilules et rend la bulle trop ronde) + fine bordure + ombre
+   portée marquée. Cible les deux approches DaisyUI : data-tip (::before) et
+   <div class="tooltip-content">. S'applique à TOUS les tooltips (défaut ET
+   variantes de couleur). currentColor = couleur de texte de la bulle. */
+.tooltip::before,
+.tooltip > .tooltip-content {
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in oklch, currentColor 25%, transparent);
+    box-shadow:
+        0 12px 32px -8px rgba(0, 0, 0, 0.45),
+        0 6px 14px -6px rgba(0, 0, 0, 0.30);
+}
+
+/* Inversion des couleurs (fond clair légèrement détaché du fond de page + texte
+   foncé, au lieu du blanc-sur-noir DaisyUI) — UNIQUEMENT pour les tooltips sans
+   variante de couleur, afin de préserver tooltip-error/-info/-primary/… Le fond
+   et le texte basculent avec le thème (base-100/base-content). */
+.tooltip:not(.tooltip-primary):not(.tooltip-secondary):not(.tooltip-accent):not(.tooltip-info):not(.tooltip-success):not(.tooltip-warning):not(.tooltip-error) {
+    --tt-bg: color-mix(in oklch, var(--color-base-100) 90%, var(--color-base-content) 10%);
+}
+
+.tooltip:not(.tooltip-primary):not(.tooltip-secondary):not(.tooltip-accent):not(.tooltip-info):not(.tooltip-success):not(.tooltip-warning):not(.tooltip-error)::before,
+.tooltip:not(.tooltip-primary):not(.tooltip-secondary):not(.tooltip-accent):not(.tooltip-info):not(.tooltip-success):not(.tooltip-warning):not(.tooltip-error) > .tooltip-content {
+    color: var(--color-base-content);
+}
+
 .tooltip-content {
     @apply text-left font-bold;
 }

@@ -4,11 +4,19 @@ declare(strict_types=1);
 
 use App\Services\WorkerMonitoringService;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 
 new #[Title('Détail Worker')] class extends Component {
     public string $selectedWorkerId = '';
+
+    // Onglet actif — toujours reflété dans l'URL (?tab=), deep-link supporté.
+    #[Url(as: 'tab', keep: true)]
     public string $selectedTab = 'running';
+
+    /** Onglets valides (allow-list du switch). */
+    private const TABS = ['running', 'queued', 'done'];
+
     public string $selectedTaskId = '';
 
     public function mount(int $pid): void
@@ -18,7 +26,7 @@ new #[Title('Détail Worker')] class extends Component {
 
     public function selectTab(string $tab): void
     {
-        $this->selectedTab = $tab;
+        $this->selectedTab = in_array($tab, self::TABS, true) ? $tab : 'running';
         $this->selectedTaskId = '';
     }
 
@@ -110,14 +118,10 @@ new #[Title('Détail Worker')] class extends Component {
                 </div>
             </div>
 
-            <div class="tabs tabs-boxed w-fit">
-                @foreach ($tabs as $tabValue => $tabLabel)
-                    <button type="button" class="tab {{ $selectedTab === $tabValue ? 'tab-active' : '' }}"
-                        wire:click="selectTab('{{ $tabValue }}')">
-                        {{ $tabLabel }}
-                    </button>
-                @endforeach
-            </div>
+            @php
+                $workerTabs = collect($tabs)->map(fn (string $label): array => ['label' => $label])->all();
+            @endphp
+            <x-molecules.tabs :tabs="$workerTabs" :active="$selectedTab" action="selectTab" class="w-fit" />
 
             <div class="card bg-base-100 shadow-sm border border-base-200">
                 <div class="card-body p-0 overflow-hidden">

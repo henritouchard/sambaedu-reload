@@ -611,7 +611,7 @@ new class extends Component
                     <tbody>
                         @forelse ($this->applications as $app)
                             <tr wire:key="app-{{ $app->id }}" class="hover cursor-pointer"
-                                onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.parc-settings.applications.show', $app->id) }}'">
+                                onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.parc-settings.applications.show', ['id' => $app->id, 'from' => route('app.parc-settings.index', ['tab' => 'applications'], false)]) }}'">
                                 <td class="checkbox-cell p-0">
                                     <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">
                                         <input type="checkbox" class="checkbox checkbox-sm"

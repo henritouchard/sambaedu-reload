@@ -289,6 +289,14 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
         $this->resetPage('historyPage');
     }
 
+    /** Onglets valides (allow-list du switch). */
+    private const TABS = ['profiles', 'user-lookup', 'delegations', 'history'];
+
+    public function setTab(string $tab): void
+    {
+        $this->activeTab = in_array($tab, self::TABS, true) ? $tab : 'profiles';
+    }
+
     /**
      * Story 7.2 — recharge la liste des délégations actives quand la modale
      * partagée a appliqué une action (édition ouverte par clic ligne).
@@ -451,7 +459,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
             $this->toastSuccess("{$deleted} profil(s) supprimé(s).");
         }
         if ($skippedSeeded > 0) {
-            $this->toastWarning("{$skippedSeeded} profil(s) seedé(s) ignoré(s).");
+            $this->toastWarning("{$skippedSeeded} profil(s) initial(aux) ignoré(s).");
         }
         if ($skippedAssigned > 0) {
             $this->toastError("{$skippedAssigned} profil(s) ignoré(s) car portés par des utilisateurs.");
@@ -484,7 +492,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
                                 Nouveau profil
                             </a>
                         </li>
-                        <li class="{{ empty($selectedProfiles) ? 'disabled' : '' }}">
+                        <li class="{{ empty($selectedProfiles) ? 'menu-disabled' : '' }}">
                             <button type="button"
                                 class="text-error"
                                 @disabled(empty($selectedProfiles))
@@ -498,7 +506,7 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
                             </button>
                         </li>
                     @elseif ($activeTab === 'delegations')
-                        <li class="{{ empty($selectedDelegations) ? 'disabled' : '' }}">
+                        <li class="{{ empty($selectedDelegations) ? 'menu-disabled' : '' }}">
                             <button type="button"
                                 class="text-error"
                                 @disabled(empty($selectedDelegations))
@@ -520,28 +528,16 @@ new #[Title('Gestion des droits - Instance SE4FS')] class extends Component {
     <div wire:init="loadData" class="flex flex-col flex-1 min-h-0">
 
         {{-- Navigation par onglets --}}
-        <div class="flex-shrink-0 tabs tabs-bordered mb-4">
-            <button wire:click="$set('activeTab', 'profiles')"
-                class="tab tab-lg {{ $activeTab === 'profiles' ? 'tab-active' : '' }}">
-                <i class="fa-solid fa-id-card-clip mr-2"></i>
-                Profils
-            </button>
-            <button wire:click="$set('activeTab', 'user-lookup')"
-                class="tab tab-lg {{ $activeTab === 'user-lookup' ? 'tab-active' : '' }}">
-                <i class="fa-solid fa-user-magnifying-glass mr-2"></i>
-                Droits d'un utilisateur
-            </button>
-            <button wire:click="$set('activeTab', 'delegations')"
-                class="tab tab-lg {{ $activeTab === 'delegations' ? 'tab-active' : '' }}">
-                <i class="fa-solid fa-building mr-2"></i>
-                Délégations actives
-            </button>
-            <button wire:click="$set('activeTab', 'history')"
-                class="tab tab-lg {{ $activeTab === 'history' ? 'tab-active' : '' }}">
-                <i class="fa-solid fa-clock-rotate-left mr-2"></i>
-                Historique
-            </button>
-        </div>
+        @php
+            $rightsTabs = [
+                'profiles' => ['label' => 'Profils', 'icon' => 'fa-solid fa-id-card-clip'],
+                'user-lookup' => ['label' => "Droits d'un utilisateur", 'icon' => 'fa-solid fa-user-magnifying-glass'],
+                'delegations' => ['label' => 'Délégations actives', 'icon' => 'fa-solid fa-building'],
+                'history' => ['label' => 'Historique', 'icon' => 'fa-solid fa-clock-rotate-left'],
+            ];
+        @endphp
+        <x-molecules.tabs :tabs="$rightsTabs" :active="$activeTab" variant="bordered" size="tab-lg"
+            class="flex-shrink-0 mb-4" />
 
         {{-- ============================================================ --}}
         {{-- ONGLET DROITS D'UN UTILISATEUR --}}

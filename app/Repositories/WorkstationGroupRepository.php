@@ -136,7 +136,8 @@ class WorkstationGroupRepository
         ?int $groupId = null,
         ?string $migrationFilter = null,
         ?string $conformityFilter = null,
-        ?string $presenceFilter = null
+        ?string $presenceFilter = null,
+        ?string $cardFilter = null
     ): LengthAwarePaginator {
         $query = Workstation::query();
 
@@ -163,9 +164,17 @@ class WorkstationGroupRepository
         // Filtre par état de présence (allumé / éteint), dérivé du canal agent.
         $this->applyPresenceFilter($query, $presenceFilter);
 
+        // Filtre rapide « carte » (une catégorie à la fois) — piloté par le
+        // clic sur les tuiles de statistiques de l'onglet Postes.
+        $this->applyCardFilter($query, $cardFilter);
+
+        // Colonne « Déploiement » — canal natif de l'agent (Story 27.5,
+        // AgentApplicationInventory). compliant/drift = installé, error = non
+        // installé. Remplace le canal WPKG legacy (distribution via GPO) en
+        // extinction, qui laissait les postes natifs à zéro.
         $query->withCount([
-            'applicationStatuses as installed_apps_count' => fn ($q) => $q->where('status', 'installed'),
-            'applicationStatuses as error_apps_count' => fn ($q) => $q->whereIn('status', ['error', 'not-installed']),
+            'agentApplicationInventory as installed_apps_count' => fn ($q) => $q->whereIn('status', ['compliant', 'drift']),
+            'agentApplicationInventory as error_apps_count' => fn ($q) => $q->where('status', 'error'),
         ]);
 
         // Story 16.13bis — eager loading de la relation pour éviter N+1
@@ -173,6 +182,61 @@ class WorkstationGroupRepository
         $query->with('migrationStatus');
 
         return $query->orderBy('name')->paginate($perPage);
+    }
+
+    /**
+     * Filtre rapide « carte » : traduit le clic sur une tuile de statistique
+     * de l'onglet Postes en une contrainte unique (mutuellement exclusive —
+     * « montre uniquement ce type »). Chaque clé mappe le compteur affiché sur
+     * la carte, pour que le total du listing filtré corresponde à la tuile.
+     *
+     *  - `active`        : postes actifs (statut `active`, incluant l'entier
+     *    legacy `1`) — parité avec le compteur « Postes actifs ».
+     *  - `enrolled`      : postes disposant d'un agent (`agent_token_hash`).
+     *  - `without_group` : postes rattachés à aucun groupe (ni salle, ni parc).
+     *  - `migrated`      : délègue au scope migration SE4 → SE5.
+     *  - `compliant`/`exceptions` : délègue à {@see applyConformityFilter()}.
+     *  - `silent`        : « Muets » = enrôlés muets (check-in > 2 × ttl) OU
+     *    n'ayant jamais rapporté — union alignée sur le compteur de la carte
+     *    (silent + never_reported), plus large que `conformityFilter='silent'`.
+     */
+    private function applyCardFilter(Builder $query, ?string $cardFilter): void
+    {
+        switch ($cardFilter) {
+            case 'active':
+                $query->where(fn (Builder $q) => $q->where('status', 'active')->orWhere('status', 1));
+                break;
+
+            case 'enrolled':
+                $query->whereNotNull('agent_token_hash');
+                break;
+
+            case 'without_group':
+                // Story 4.11 — appartenance globale : couvre salles ET parcs.
+                $query->whereDoesntHave('groups');
+                break;
+
+            case 'migrated':
+                $this->applyMigrationFilter($query, 'migrated');
+                break;
+
+            case 'compliant':
+            case 'exceptions':
+                $this->applyConformityFilter($query, $cardFilter);
+                break;
+
+            case 'silent':
+                $threshold = now()->subSeconds(2 * (int) (config('agent.ttl_seconds') ?? 3600));
+                $query->whereNotNull('agent_token_hash')
+                    ->where(fn (Builder $q) => $q
+                        ->whereNull('agent_last_checkin_at')
+                        ->orWhere('agent_last_checkin_at', '<', $threshold));
+                break;
+
+            default:
+                // '' ou clé inconnue → aucune contrainte de catégorie.
+                break;
+        }
     }
 
     /**
@@ -313,7 +377,8 @@ class WorkstationGroupRepository
         array $authorizedGroupIds = [],
         ?string $migrationFilter = null,
         ?string $conformityFilter = null,
-        ?string $presenceFilter = null
+        ?string $presenceFilter = null,
+        ?string $cardFilter = null
     ): LengthAwarePaginator {
         $query = Workstation::query()
             ->whereHas('groups', function (Builder $q) use ($authorizedGroupIds) {
@@ -343,9 +408,16 @@ class WorkstationGroupRepository
         // Filtre par état de présence (allumé / éteint), dérivé du canal agent.
         $this->applyPresenceFilter($query, $presenceFilter);
 
+        // Filtre rapide « carte » (clic sur les tuiles de statistiques).
+        $this->applyCardFilter($query, $cardFilter);
+
+        // Colonne « Déploiement » — canal natif de l'agent (Story 27.5,
+        // AgentApplicationInventory). compliant/drift = installé, error = non
+        // installé. Remplace le canal WPKG legacy (distribution via GPO) en
+        // extinction, qui laissait les postes natifs à zéro.
         $query->withCount([
-            'applicationStatuses as installed_apps_count' => fn ($q) => $q->where('status', 'installed'),
-            'applicationStatuses as error_apps_count' => fn ($q) => $q->whereIn('status', ['error', 'not-installed']),
+            'agentApplicationInventory as installed_apps_count' => fn ($q) => $q->whereIn('status', ['compliant', 'drift']),
+            'agentApplicationInventory as error_apps_count' => fn ($q) => $q->where('status', 'error'),
         ]);
 
         // Story 16.13bis — eager loading pour éviter N+1.

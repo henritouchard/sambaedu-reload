@@ -15,7 +15,7 @@
     <div class="alert alert-info mb-4">
         <i class="fa-solid fa-lock"></i>
         <div class="text-xs">
-            <strong>Rôle seedé</strong> — permissions gérées par le système.
+            <strong>Rôle initial</strong> — permissions gérées par le système.
             Pour modifier les défauts, éditez
             <code>database/seeders/PermissionSeeder.php</code>
             puis relancez
@@ -47,7 +47,7 @@
                     />
                     @if ($isSeeded)
                         <p class="text-xs text-base-content/50 mt-1">
-                            Le nom d'un profil seedé ne peut pas être modifié.
+                            Le nom d'un profil initial ne peut pas être modifié.
                         </p>
                     @endif
                     @error('name')
@@ -94,7 +94,7 @@
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-1">
                                 @foreach ($cat['permissions'] as $perm)
                                     <label class="label cursor-pointer justify-start gap-2 py-1"
-                                        @if ($isSeeded) title="Rôle seedé — permissions verrouillées." @endif>
+                                        @if ($isSeeded) title="Rôle initial — permissions verrouillées." @endif>
                                         <input
                                             type="checkbox"
                                             class="checkbox checkbox-sm checkbox-primary"

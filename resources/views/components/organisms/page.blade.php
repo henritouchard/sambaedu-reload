@@ -20,9 +20,12 @@
         <div class="">
             <div class="flex items-center gap-2">
                 @if ($back)
-                    <a href="{{ $back }}" class="btn btn-ghost btn-md p-1">
-                        <i class="fa-solid fa-arrow-left text-xl"></i>
-                    </a>
+                    <span class="tooltip tooltip-right" data-tip="{{ $backText ?: 'Retour' }}">
+                        <a href="{{ $back }}" class="btn btn-ghost btn-md p-1"
+                            aria-label="{{ $backText ?: 'Retour' }}">
+                            <i class="fa-solid fa-arrow-left text-xl"></i>
+                        </a>
+                    </span>
                 @endif
                 <h1 class="text-3xl font-bold text-base-content flex items-center gap-2">
                     @if ($icon)

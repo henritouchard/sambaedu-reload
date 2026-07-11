@@ -82,7 +82,7 @@ new #[Title('Modification groupe utilisateur')] class extends Component {
 ?>
 
 <x-organisms.page title="Modifier un groupe utilisateur" :scrollable="false" description="Éditez un groupe et ses membres"
-    backUrl="{{ route('app.users') }}" backText="Retour">
+    backUrl="{{ route('app.users', ['tab' => 'groups']) }}" backText="Retour">
 
     <div class="max-w-4xl">
         <div class="card bg-base-100 shadow-sm">

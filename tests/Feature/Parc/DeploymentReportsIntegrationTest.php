@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Parc;
 
+use App\Models\AgentApplicationInventory;
 use App\Models\Application;
 use App\Models\Workstation;
 use App\Models\WorkstationApplicationStatus;
@@ -43,6 +44,7 @@ class DeploymentReportsIntegrationTest extends TestCase
     protected function tearDown(): void
     {
         if ($this->createdTables) {
+            Schema::dropIfExists('agent_application_inventory');
             Schema::dropIfExists('workstation_application_status');
             Schema::dropIfExists('applications');
             Schema::dropIfExists('workstations');
@@ -102,6 +104,19 @@ class DeploymentReportsIntegrationTest extends TestCase
             $table->unique(['workstation_id', 'application_id']);
         });
 
+        // Story 27.5 — inventaire per-app rapporté par l'agent (canal natif),
+        // source de la colonne « Déploiement » depuis l'extinction du WPKG.
+        Schema::create('agent_application_inventory', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('workstation_id');
+            $table->string('app_id', 191);
+            $table->string('status', 32);
+            $table->string('detail', 2000)->nullable();
+            $table->timestamp('reported_at')->nullable();
+            $table->timestamps();
+            $table->unique(['workstation_id', 'app_id']);
+        });
+
         // Story 16.13bis — table consultée par l'eager-load `migrationStatus`
         // du repo paginateMachines (Workstation::with('migrationStatus')).
         Schema::create('workstations_migration_status', function (Blueprint $table) {
@@ -139,6 +154,20 @@ class DeploymentReportsIntegrationTest extends TestCase
         ]);
     }
 
+    /**
+     * Story 27.5 — ligne d'inventaire rapportée par l'agent (canal natif).
+     * status ∈ {compliant, drift = installé, error = non installé}.
+     */
+    private function makeAgentInventory(int $workstationId, string $appId, string $status): AgentApplicationInventory
+    {
+        return AgentApplicationInventory::create([
+            'workstation_id' => $workstationId,
+            'app_id'         => $appId,
+            'status'         => $status,
+            'reported_at'    => now(),
+        ]);
+    }
+
     // ─── T2 : Champ message ───────────────────────────────────────────────────
 
     #[Test]
@@ -167,19 +196,17 @@ class DeploymentReportsIntegrationTest extends TestCase
         $this->assertNull($status->fresh()->message);
     }
 
-    // ─── T3 : getMachines() withCount ─────────────────────────────────────────
+    // ─── T3 : getMachines() withCount (canal natif agent — Story 27.5) ────────
 
     #[Test]
     public function get_machines_returns_installed_and_error_counts(): void
     {
-        $ws  = $this->makeWorkstation('PC-COUNT-01');
-        $app1 = $this->makeApplication('app-ok');
-        $app2 = $this->makeApplication('app-err');
-        $app3 = $this->makeApplication('app-missing');
+        $ws = $this->makeWorkstation('PC-COUNT-01');
 
-        $this->makeStatus($ws->id, $app1->id, 'installed');
-        $this->makeStatus($ws->id, $app2->id, 'error');
-        $this->makeStatus($ws->id, $app3->id, 'not-installed');
+        // compliant = installé ; error = non installé (canal AGENT).
+        $this->makeAgentInventory($ws->id, 'app-ok', 'compliant');
+        $this->makeAgentInventory($ws->id, 'app-err', 'error');
+        $this->makeAgentInventory($ws->id, 'app-missing', 'error');
 
         $repo   = app(WorkstationGroupRepository::class);
         $result = $repo->getMachines(perPage: 50);
@@ -188,7 +215,7 @@ class DeploymentReportsIntegrationTest extends TestCase
 
         $this->assertNotNull($machine, 'Machine introuvable dans les résultats');
         $this->assertEquals(1, $machine->installed_apps_count, 'installed_apps_count incorrect');
-        $this->assertEquals(2, $machine->error_apps_count, 'error_apps_count incorrect (error + not-installed)');
+        $this->assertEquals(2, $machine->error_apps_count, 'error_apps_count incorrect');
     }
 
     #[Test]
@@ -207,12 +234,13 @@ class DeploymentReportsIntegrationTest extends TestCase
     }
 
     #[Test]
-    public function get_machines_excludes_in_progress_from_error_count(): void
+    public function get_machines_counts_drift_as_installed(): void
     {
-        $ws  = $this->makeWorkstation('PC-COUNT-PROG');
-        $app = $this->makeApplication('upgrading-app');
+        // Une dérive réappliquée (STRICT) reste une app installée : elle doit
+        // gonfler installed_apps_count, jamais error_apps_count.
+        $ws = $this->makeWorkstation('PC-COUNT-DRIFT');
 
-        $this->makeStatus($ws->id, $app->id, 'upgrading');
+        $this->makeAgentInventory($ws->id, 'drifted-app', 'drift');
 
         $repo   = app(WorkstationGroupRepository::class);
         $result = $repo->getMachines(perPage: 50);
@@ -220,8 +248,28 @@ class DeploymentReportsIntegrationTest extends TestCase
         $machine = $result->firstWhere('id', $ws->id);
 
         $this->assertNotNull($machine);
-        $this->assertEquals(0, $machine->installed_apps_count);
-        $this->assertEquals(0, $machine->error_apps_count, 'upgrading ne doit pas compter comme erreur');
+        $this->assertEquals(1, $machine->installed_apps_count, 'drift doit compter comme installé');
+        $this->assertEquals(0, $machine->error_apps_count, 'drift ne doit pas compter comme erreur');
+    }
+
+    #[Test]
+    public function get_machines_ignores_legacy_wpkg_statuses(): void
+    {
+        // Preuve du basculement de canal : des rapports WPKG legacy ne doivent
+        // plus alimenter la colonne « Déploiement » (source = agent uniquement).
+        $ws  = $this->makeWorkstation('PC-COUNT-WPKG');
+        $app = $this->makeApplication('legacy-wpkg-app');
+
+        $this->makeStatus($ws->id, $app->id, 'installed');
+
+        $repo   = app(WorkstationGroupRepository::class);
+        $result = $repo->getMachines(perPage: 50);
+
+        $machine = $result->firstWhere('id', $ws->id);
+
+        $this->assertNotNull($machine);
+        $this->assertEquals(0, $machine->installed_apps_count, 'le canal WPKG legacy ne doit plus être compté');
+        $this->assertEquals(0, $machine->error_apps_count);
     }
 
     // ─── T4 : listApplications() withCount ───────────────────────────────────

@@ -246,6 +246,16 @@ Pour qu'un `apt install se5` sur Debian nu suffise, l'installeur SE5 devra fourn
 > samba-tool, keytabs, ticket krb, sudoers, partages, iPXE, APCu, Apache, PostgreSQL, DC joignable…
 > C'est le socle idéal d'un « installeur idempotent qui répare ce qui manque ».
 
+### 3bis. Dépendance dev/test (hors périmètre provisioning prod)
+
+`php8.2-sqlite3` (fournit `pdo_sqlite`) **n'est pas** un paquet de prod (absent de la checklist §3) :
+la suite PHPUnit tourne par défaut en sqlite `:memory:` (`phpunit.xml`), et la VM n'a normalement
+que `mysql,pgsql` (cf. §2.12). Installé manuellement en dev-dependency le 2026-07-11 sur `se4fs`
+(192.168.122.50) pour permettre `php artisan test` directement sur cette VM. Non versionné dans
+l'installeur SE5 — à réinstaller (`apt-get install -y php8.2-sqlite3`) sur toute VM de dev/test qui
+en aurait besoin. L'hôte reste l'environnement de référence pour lancer la suite (cf.
+`docs/qa/domains/controlhub-contract.md`).
+
 ---
 
 ## 4. Plan de découplage progressif

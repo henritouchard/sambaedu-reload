@@ -51,7 +51,7 @@ new #[Title('Nouveau profil — Gestion des droits')] class extends Component {
         ]);
 
         if (SambaRole::isSeeded($this->name)) {
-            $this->toastError('Ce nom est réservé à un profil seedé.');
+            $this->toastError('Ce nom est réservé à un profil initial.');
             return;
         }
 

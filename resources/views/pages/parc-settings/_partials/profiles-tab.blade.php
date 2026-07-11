@@ -220,7 +220,7 @@ new class extends Component
                     <tbody>
                         @forelse ($this->profiles as $profile)
                             <tr wire:key="profile-{{ $profile->id }}" class="hover cursor-pointer"
-                                onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.parc-settings.profiles.show', $profile->id) }}'">
+                                onclick="if (!event.target.closest('.checkbox-cell')) window.location.href='{{ route('app.parc-settings.profiles.show', ['id' => $profile->id, 'from' => route('app.parc-settings.index', ['tab' => 'profiles'], false)]) }}'">
                                 <td class="checkbox-cell p-0">
                                     <label class="flex items-center justify-center w-full h-full p-3 cursor-pointer">
                                         <input type="checkbox" class="checkbox checkbox-sm"

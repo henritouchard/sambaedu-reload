@@ -272,7 +272,7 @@ const DATASETS = {
         },
         {
           "id": "3-10",
-          "status": "done",
+          "status": "review",
           "title": "Injection automatique de pilotes NIC dans le boot.wim WinPE",
           "summary": "Permettre l'ajout de pilotes réseau (NIC) absents du boot.wim Microsoft (ex. Intel I219 retiré en Win11 24H2+), injectés automatiquement via wimlib dans l'index bootable du boot.wim à chaque extraction d'ISO (WindowsIsoExtractor) depuis un pack persistant os/winpe-drivers/, + livraison du drvload (nicload.cmd chaîné dans winpeshl.ini). Débloque l'installation iPXE/WinPE sur matériel à NIC non-inbox. PoC validé 2026-06-26 sur Lenovo ThinkCentre M700 (Intel I219, e1d65x64) au lab1."
         }
@@ -361,7 +361,7 @@ const DATASETS = {
         },
         {
           "id": "4-16",
-          "status": "done",
+          "status": "review",
           "title": "Scoper le syncFromAd global de updateGroup (onlyGroupNames) — dette LDAP"
         },
         {
@@ -454,14 +454,20 @@ const DATASETS = {
     {
       "num": 8,
       "title": "Réseau (DHCP/DNS) SER",
-      "status": "done",
+      "status": "in-progress",
       "category": "post-prod",
-      "summary": "Gestion des réservations DHCP et consultation des baux actifs depuis l'interface SER. <strong>Reportée post-prod</strong> — le shim <code>1bis-16 dhcp</code> (SHIM EXPRESS ~2h) couvre le besoin MVP, la refonte native est donc différée.",
+      "summary": "Gestion des réservations DHCP et consultation des baux actifs depuis l'interface SER. <strong>Reportée post-prod</strong> — le shim <code>1bis-16 dhcp</code> (SHIM EXPRESS ~2h) couvre le besoin MVP, la refonte native est donc différée. <strong>Rouvert 2026-07-03</strong> par la Story 8.3 (VLANs — dernière feature DHCP legacy non couverte).",
       "stories": [
         {
           "id": "8-1",
           "title": "Gestion des Réservations DHCP et Baux Actifs",
           "status": "done"
+        },
+        {
+          "id": "8-3",
+          "title": "Sous-réseaux DHCP (VLANs) — CRUD natif + scripts DHCP versionnés",
+          "status": "ready-for-dev",
+          "note": "CRÉÉE 2026-07-03 (create-story, claude-fable-5) → ready-for-dev. Porte la gestion des VLANs de sambaedu/dhcp/config.php (dernière feature DHCP legacy non couverte). SQL source de vérité (table dhcp_subnets) + export fichier DÉDIÉ /etc/sambaedu/sambaedu.conf.d/dhcp-subnets.conf (zéro conflit avec dhcp.conf legacy) ; make_dhcpd_conf.sh CONSERVÉ ; sous-réseau défaut lecture seule v1 ; vlan_id 1..999 ; format INI strict. VOLET 2 : versionner scripts/system/{make_dhcpd_conf.sh,dhcp-dyndns.sh} + ensure_dhcp_scripts() dans update.sh. Réutilisation 8.1 : DhcpService::reloadService(), Cache::lock('dhcp.reload'), AtomicFileWriter, onglet dans page network/dhcp existante. 7 AC, T1-T7. Prérequis à la clôture de l'Epic 38 (débranche make_dhcpd_conf.sh legacy). Reco dev : OPUS."
         }
       ]
     },
@@ -1464,33 +1470,33 @@ const DATASETS = {
     {
       "num": 38,
       "title": "Extinction SE4 — suppression de /var/www/sambaedu",
-      "status": "todo",
+      "status": "in-progress",
       "summary": "Objectif Henri (2026-07-03) : pouvoir supprimer le repo legacy <code>/var/www/sambaedu</code> de la VM <strong>sans impacter SE5</strong>, et faire remonter les appels silencieux (classe firefox.php). Contrainte forte : les anciennes routes encore appelées par des postes non/mal migrés reçoivent une réponse <strong>terminale correcte</strong> (script no-op typé, XML vide valide — jamais du HTML d'erreur exécuté en .cmd) — la migration elle-même passe par l'AD (GPO SE_agent_bootstrap liée à OU=computers), pas par HTTP (doctrine 27.14 préservée : tombstones ≠ canal maintenu). État des lieux constaté (logs /vm) : netboot iPXE servi depuis le legacy (alias /ipxe), DHCP/DNS générés par le legacy (→ gated Story 8.3), postes qui curl-ent encore gpo/applications.php via crochets locaux, 4 requires FS legacy dans le code (import_gpo bootstrap agent, Guacamole, embed add_group, catchall abort 500). Étape clé : <strong>extinction à blanc réversible</strong> (a2dissite + mv .off) + observation legacy_catchall_logs AVANT suppression (trash). Cadrage : <code>planning-artifacts/epics-extinction-se4.md</code> (questions ouvertes Q1-Q4 : auto-nettoyage, ENT, quotas/cloud/stats, canal Linux).",
       "stories": [
         {
           "id": "38-1",
           "title": "Relocalisation des statiques iPXE (+ racine TFTP) + catchall 404 si legacy absent",
-          "status": "todo"
+          "status": "review"
         },
         {
           "id": "38-2",
           "title": "Tombstones natifs du canal client legacy (gpo/*_out, applications, wpkg xml_out, install) + observabilité + retrait kill-switch",
-          "status": "todo"
+          "status": "review"
         },
         {
           "id": "38-3",
           "title": "Nettoyage des crochets legacy des postes via l'agent (curl applications-*.cmd, déclencheurs wpkg, helpers obsolètes)",
-          "status": "todo"
+          "status": "review"
         },
         {
           "id": "38-4",
           "title": "Sortie des require FS legacy : import_gpo natif (bootstrap agent), Guacamole remote, bootstrap/bridge/fallbacks",
-          "status": "todo"
+          "status": "review"
         },
         {
           "id": "38-5",
           "title": "Débranchement crons legacy + embed (add_group/GPEI) — décisions Q2/Q3 (ENT, quotas, cloud, stats)",
-          "status": "todo",
+          "status": "review",
           "note": "make_dhcpd_conf.sh remplacé par la Story 8.3 (dépendance)."
         },
         {
@@ -1504,38 +1510,38 @@ const DATASETS = {
     {
       "num": 39,
       "title": "Alignement de la couture controlHub ↔ SE5 (activation du lien managé)",
-      "status": "todo",
+      "status": "in-progress",
       "summary": "Suite des Epics 28-33 (clos). Issu d'un <strong>audit de compatibilité croisé</strong> (2026-07-04) entre l'implémentation SE5 et le contrat tel qu'implémenté côté central (docs <code>CONTRAT-MANAGE-SE5-IRUNDO.md</code> + <code>SE5-CONTRACT-COMPLIANCE-V1.md</code>). Rend le lien managé <strong>réellement opérant de bout en bout</strong> en fermant 4 écarts : ① l'ingestion existe mais <strong>aucune route HTTP</strong> ne l'expose (OPEN-5) ; ③ <strong>aucun émetteur de conformité</strong> SE5→central (OPEN-5) ; ⑤ SSO fédéré — la clé/kid/iss reçus au handshake sont <strong>stockés mais jamais branchés</strong> sur le verifier (lit l'env seul ; <code>aud</code> par défaut = SE4FS_NAME ≠ uuid) ; ④ binaires — <code>artifact</code>/<code>executable</code>/<code>delivery_mode</code> émis par le central (Epic D/D.7) mais <strong>ignorés à l'ingestion</strong> et absents de l'artefact partagé R2. Le canal ② (rupture) est déjà <strong>compatible</strong>. Décision Henri 2026-07-04 : adopter le <strong>pull central (canal ④)</strong> pour les binaires. Cadrage haut niveau (ACs à figer story par story) : <code>planning-artifacts/epics-alignement-controlhub-se5.md</code>.",
       "stories": [
         {
           "id": "39-1",
           "title": "Exposer l'endpoint HTTP d'ingestion du contrat amont (POST /api/v1/controlhub/contract, canal ①)",
-          "status": "todo",
-          "note": "Câble l'ingestion idempotente DÉJÀ livrée (ControlHubContractIngestionService::ingest, Epics 28/33) sur une route controlhub.auth (Bearer clé instance, symétrique du sever-link 32.1). Mapping UnsupportedSchemaVersion/InvalidUpstreamContract → 422. Route APRÈS le groupe 16.12 (fenêtre 1500 chars). BLOQUANT pour 39.2/39.4. Tâche annexe : trancher la branche morte master_api_key (absente de config/controlHub.php)."
+          "status": "review",
+          "note": "[LIVRÉ ultradev + mergé main (d0671ce), review opus APPROVE-WITH-FIXES → attente validation Henri] Route controlhub.auth POST /api/v1/controlhub/contract (contrôleur invocable mince patron LinkSeveranceController, délègue ingest() sans réécriture, 422 sur UnsupportedSchemaVersion/InvalidUpstreamContract). Correction review 🟠 : garde de frontière HTTP (const CONTRACT_ENVELOPE_KEYS + array_intersect) → corps vide/hors-enveloppe rejeté 422 AVANT écriture (empêchait un prune destructif + ré-activation silencieuse d'un lien rompu). Branche morte master_api_key retirée de ControlHubAuth. Tests HÔTE 9/9 + non-régr 18/18. Cf. codeReviews/39-1.md."
         },
         {
           "id": "39-2",
           "title": "Émetteur de conformité se5-contract-compliance/v1 (SE5 → central, canal ③)",
-          "status": "todo",
-          "note": "Service+job+command : compile l'état d'application des items (applied|pending|error|overridden, overridden=indicateur override permissif FR24) en rapport ÉTAT-INTÉGRAL, clé naturelle miroir de l'émission, POST vers /api/sambaedu/contract-compliance/{instance} avec le api_token du handshake (via ControlHubApiClient). Aligné sur SE5-CONTRACT-COMPLIANCE-V1.md (spec central NON ratifiée → divergence = story d'alignement). Q ouvertes : cadence (heartbeat vs job périodique), source des statuts (agrégation reporting agent 24.x)."
+          "status": "review",
+          "note": "[LIVRÉ ultradev + mergé main (1a20167), review sonnet + éval Opus APPROVE-WITH-FIXES → attente validation Henri] ControlHubComplianceReportService (buildEnvelope + emit, gardes no_active_contract/connection/token) + ControlHubReportComplianceJob (ShouldQueue) + command controlhub:report-compliance (throttle Cache, PAS de heartbeat mort) + Kernel everyMinute. Enveloppe se5-contract-compliance/v1, mapping locked→applied / permissif+override→overridden+detail. Corrections review : tries=3 rendu effectif (job relève sur http_error + backoff), garde no_token testée, detail déterministe, catalogue mémoïsé. Mismatch registry/capabilities = mirror STRICT (point de ratification R2 amont). Tests HÔTE 18/18 + non-régr 81/81. Cf. codeReviews/39-2.md."
         },
         {
           "id": "39-3",
           "title": "Brancher l'IdP fédéré du handshake sur le vérificateur JWT (canal ⑤)",
-          "status": "todo",
-          "note": "🔴 Bug de câblage : clé/kid/iss reçus au handshake (controlhub_connection.idp_public_key/idp_kid/idp_iss) stockés mais jamais lus par FederatedJwtVerifier (lit config/federated_auth.* seul). Bridge DB→verifier (env en repli), aud validé contre l'uuid d'instance (controlHub.se4fs.instance_id) et non SE4FS_NAME. Garantir l'existence Spatie du rôle porté (super-admin). Anti-régression RS256/exp/nbf/jti. Indépendante de 39.1/2/4."
+          "status": "review",
+          "note": "[LIVRÉ ultradev + mergé main (cda8fe8), review sonnet + éval Opus APPROVE-WITH-FIXES → attente validation Henri] Bridge DB→verifier : FederatedJwtVerifier.buildKeyMap() résout clé/kid/iss depuis controlhub_connection.idp_* (DB prioritaire, config en repli SANS fusion) ; expectedAud() fallback SE4FS_NAME → controlHub.se4fs.instance_id. verify() intact (RS256/exp/nbf/jti/rôle super-admin). Corrections review : précédence testée contre config PLEINE, hasFederatedIdp() edge-case '0'. Tests HÔTE 26/26 + 15/15. ⚠️ PRÉREQUIS DÉPLOIEMENT (remonté Henri) : SE4FS_INSTANCE_ID doit être figé sinon aud=UUID aléatoire → tous logins fédérés rejetés (fail-closed correct, risque rollout). Indépendante de 39.1/2/4. Cf. codeReviews/39-3.md."
         },
         {
           "id": "39-4",
           "title": "Ingestion + pull des binaires amont (artifact/executable/delivery_mode, canal ④)",
-          "status": "todo",
-          "note": "Décision Henri 2026-07-04 = ADOPTER LE PULL CENTRAL. SE5 est désir d'état pur (binaires aujourd'hui 100% locaux : biblio wallpapers, tools_path, WPKG via source_xml_url) ; le central héberge et diffuse des URL signées+sha256 (Epic D/D.7). Story : artefact R2 d'abord (documenter delivery_mode/artifact/executable en additifs, PAS de bump schema_version) ; migration additive ; ingestion lit+persiste ; client de pull (vérif sha256, no-op au même checksum, échec checksum→item error remonté par 39.2) ; PRÉCÉDENCE local prioritaire, pull en fallback d'absence. Golden préservé à 0 binaire amont ; bump agent/shared/version.go SEULEMENT si payload agent change. Q ouvertes : foyer de stockage, moment du pull (ingestion vs résolution)."
+          "status": "review",
+          "note": "[LIVRÉ ultradev + mergé main (c2b9fe8), review sonnet + éval Opus APPROVE-WITH-FIXES → attente validation Henri] Ingestion additive delivery_mode/artifact (items) + executable (catalog_apps, persistance seule) + pull async des binaires wallpapers/agent_tools (PullContractArtifactJob, sha256 serveur, précédence locale prioritaire). URL portée hors key/attrs (piège idempotence AC5 : re-ingestion URL≠/checksum= → 0 event, 0 pull). Corrections review : 🔴 checksum wallpaper strtolower au point canonique (dédup content-adressée PG cassée) ; validation image anti-bombe-pixel au pull ; streaming borné ; isolation d'erreur par item. Tests HÔTE 17/17 + non-régr 37/37 + golden 5/5 FROZEN inchangé. ⚠️ MIGRATIONS À JOUER /vm : 2 additives. Cf. codeReviews/39-4.md."
         },
         {
           "id": "39-5",
           "title": "Normaliser le credential entrant CH→SE5 sur le token de handshake (finding E10, review epic 39)",
-          "status": "in-progress",
-          "note": "Bug de couture E10 (review epic 39, 2026-07-06) : l'auth entrante 39.1 (ControlHubAuth) validait contre la clé d'IDENTITÉ SORTANTE de SE5 (instance_api_key statique), pas contre le se4fs_api_token NÉGOCIÉ au handshake (frappé par le CH, stocké par connexion) ; ControlHubConnection::validateSE4FSToken() était DU CODE MORT. ✅ CÔTÉ SE5 LIVRÉ (non commité) : middleware passé en DUAL-ACCEPT (validateSE4FSToken PRIORITAIRE + repli legacy instance_api_key), + couverture test 2 branches (token handshake accepté / token inconnu 403 avec connexion active) — ContractIngestionEndpointTest 11/11. ⏳ BLOQUÉ CÔTÉ CH (bilatéral) : irundoo doit émettre le se4fs_api_token du handshake en Bearer sur ses POST d'ingestion vers SE5 (prompt BMAD rédigé dans codeReviews/39-epic.md). ⏳ CLÔTURE ULTÉRIEURE : retirer le repli legacy instance_api_key une fois le CH basculé + ratifié en pré-prod. Ne PAS toucher au canal sortant SE5→CH (instance_api_key y reste légitimement l'identité SE5)."
+          "status": "review",
+          "note": "[DEV direct orchestrateur (opus) + commité main (9390eff) → review sonnet — attente validation Henri] FIX BLOQUANT : performHandshake() alimentait se4fs_api_token avec instanceApiKey (clé statique) au lieu du token de handshake → dès la bascule E10 du CH, 403 systématique sur ingestion ET rupture. Option A (décision Henri) : se4fsApiToken = handshakeResponse->apiToken (bearer commun aux 2 sens). RETRAIT COMPLET de la rotation hors-handshake (Q8 : endpoint token/renew mort + token dual-use ⇒ rotation désynchroniserait les colonnes). Métrique Q7 : logLegacyFallbackAccepted() sur la branche repli legacy = critère de clôture. Harness E10 réparé (21 tests). Tests HÔTE : ControlHub 362/362, fédérées 41/41. ROLLOUT : re-handshake requis post-déploiement (repli legacy couvre l'intervalle). Contrat figé côté CH (leur doc QA §31). Cf. codeReviews/39-epic.md."
         }
       ]
     },
@@ -1574,6 +1580,96 @@ const DATASETS = {
           "title": "Politique de consentement/notification + audit RGPD des sessions",
           "status": "todo",
           "note": "Politique de prise en main par device-group (notification systématique + consentement pour shadow session utilisateur ; terminal/fichiers SYSTEM hors-session sans prompt). Journalisation des sessions techniciens (qui/quel poste/quand/durée) + rétention RGPD (postes potentiellement élèves mineurs). Transverse (démarre en parallèle dès 40.2). Coordination : infra MeshCentral + broker (irundoo). Tâche : où vit l'audit faisant foi (controlHub vs SE5 vs double) + durée de rétention."
+        }
+      ]
+    },
+    {
+      "num": 41,
+      "title": "Mode examen (session élève restreinte)",
+      "status": "todo",
+      "summary": "Basculer une <strong>salle</strong> (parc physique) en examen : tout utilisateur s'y connectant hérite d'un environnement « presque rien » — <strong>pas d'internet</strong> (<code>internet_access=off</code>, firewall) et <strong>seules les apps autorisées</strong> d'un <strong>profil d'examen</strong> prédéfini (liste positive → <code>RestrictRun</code>, mécanisme <code>registry_list</code> existant). Décisions Henri 2026-07-07 : granularité = salle ; flag manuel persistant (pas d'ordonnanceur) ; V1 = « environnement épuré » RestrictRun <strong>contournable assumé</strong>, anti-triche AppLocker/WDAC = V2 sur la même donnée ; <strong>aucun nouveau mécanisme agent, zéro bump</strong>. Exception enseignant via groupe logique <code>internet_access=on</code> (précédence logique&gt;physique). Cadrage : <code>planning-artifacts/epics-mode-examen.md</code> + étude <code>study-mode-examen-session-restreinte.md</code>.",
+      "stories": [
+        {
+          "id": "41-1",
+          "title": "Catalogue — correspondance application → exécutable(s)",
+          "status": "todo",
+          "note": "Donnée manquante commune V1+V2 : liste d'exe par app (WPKG + natives curées), table/colonne additive + seed apps scolaires courantes. Une app peut mapper plusieurs exe ; apps sans exe signalées (inéligibles whitelist). BLOQUANT pour 41.2/41.3. Tâche : saisie manuelle vs pré-remplissage depuis AgentApplicationInventory."
+        },
+        {
+          "id": "41-2",
+          "title": "Capacité RestrictRun — whitelist d'exécution Explorer",
+          "status": "todo",
+          "note": "Seed restrict_run (jumeau whitelist de blocked_executables) : bi-projection registry (flag HKCU Policies\\Explorer RestrictRun=1) + registry_list (RestrictRun\\1..N). Zéro code agent. Liste portée par l'assignment (issue du profil examen). off/absent = purge flag+liste. Socle d'exe toujours inclus (explorer.exe, compagnon…) pour ne pas verrouiller la session. Effet immédiat en session courante via hint refresh (Epic 43) sinon logon suivant. Amont 41.1."
+        },
+        {
+          "id": "41-3",
+          "title": "Profil d'examen + assignation salle + flag manuel",
+          "status": "todo",
+          "note": "Objet profil examen (nommé, réutilisable) = apps autorisées (compilées en restrict_run) + internet_access=off + durcissements. Flag = assignments sur le parc physique de la salle, persistant. Retrait PROPRE : internet_access → on/absent (jamais unmanaged sinon la règle firewall survit), restrict_run purgé. Test résolution StateCompiler : salle off (rang 4) battue par groupe logique enseignant on (rang 3). Amont 41.2. Tâche : entité dédiée vs preset d'assignments (éviter la sur-conception)."
+        },
+        {
+          "id": "41-4",
+          "title": "UI admin — profils, bascule salle, badge de suivi",
+          "status": "todo",
+          "note": "Pages sous resources/views/pages/ : édition des profils (apps sans exe mappé signalées), bascule salle avec confirmation, badge « N salle(s) en examen » + déflag en un clic (anti-oubli), avertissement si salle sans poste enseignant exempté (FR-E4). Livewire SFC + modale réutilisable + WithToasts. Amont 41.3. Tâche : emplacement dans la nav."
+        }
+      ]
+    },
+    {
+      "num": 42,
+      "title": "Socle rôle sur l'arête user↔groupe",
+      "status": "todo",
+      "summary": "Phase 1 du modèle de groupes multi-vertical (<strong>décision Henri 2026-07-07</strong>, <code>docs/group-model-multivertical-orientation.md</code>) : porter le <strong>rôle sur l'arête</strong> user↔groupe (colonne <code>role</code> sur le pivot <code>user_group_user</code>) et projeter les memberships AD <strong>depuis les arêtes</strong>, en gardant <code>ShareService</code> hard-codé et le nommage AD legacy (<code>Classe_X</code>/<code>Equipe_X</code>/<code>PP_X</code>). La source de vérité du rôle devient l'arête : le peuplement <code>Equipe_X</code> cesse de dépendre de la partition <code>User::isProf()</code> (quick-spec 4.12, en review) et <code>PP_X</code> — non couvrable par un rôle global — devient enfin peuplable. Vocabulaire seedé pour l'école : <code>member</code> (élève), <code>manager</code> (prof), <code>owner</code> (prof principal). <strong>Hors périmètre</strong> (phases suivantes) : tables profils/zones/matrice, moteur <code>setfacl</code>, role-groups <code>grp_&lt;groupe&gt;__&lt;role&gt;</code>, Nextcloud. Cadrage : <code>planning-artifacts/epics-socle-role-groupes.md</code>.",
+      "stories": [
+        {
+          "id": "42-1",
+          "title": "Colonne rôle sur l'arête + backfill",
+          "status": "todo",
+          "note": "Migration additive user_group_user.role (défaut member, vocabulaire applicatif borné, pas d'enum SQL figé) + backfill (isProf→manager, is_head_teacher→owner, sinon member) + withPivot. is_head_teacher écrit en MIROIR jusqu'à 42.2 (la projection 4.15 le lit encore) ; sa suppression = tâche 42.2. Aucune écriture AD. BLOQUANT 42.2/3/4. Reco dev : sonnet."
+        },
+        {
+          "id": "42-2",
+          "title": "Projection AD dérivée des arêtes",
+          "status": "todo",
+          "note": "syncRoleAwareAdGroupMembers routé par rôle d'arête (member→Classe_, manager→Equipe_, owner→PP_ orthogonale conservée) — bascule ATOMIQUE depuis isProf/is_head_teacher, resync sur changement d'arête (observer pivot), fail-soft AD fédéré, matching GUID/sAMAccountName. Tests parité FR-S6/NFR-S2. Amont 42.1 + statuer 4.12 (review). Reco dev : fable/opus."
+        },
+        {
+          "id": "42-3",
+          "title": "UI — rôle éditable sur la page groupe",
+          "status": "todo",
+          "note": "Colonne « Rôle » éditable sur la liste des membres (pages groupes, Livewire SFC), défaut dérivé User.role, édition→resync AD, WithToasts. Amont 42.1+42.2, parallèle 42.4. Reco dev : sonnet."
+        },
+        {
+          "id": "42-4",
+          "title": "Readback des rôles au sync AD→SQL",
+          "status": "todo",
+          "note": "Import AD→SQL : arêtes avec rôle depuis le trio legacy (précédence owner>manager>member), suffixes étab/OU par UAI, données sales lab1 (equipe_ de cours, espaces, savepoint 25P02), idempotent. Amont 42.1+42.2, parallèle 42.3. Reco dev : opus."
+        }
+      ]
+    },
+    {
+      "num": 43,
+      "title": "Application immédiate des réglages (refresh post-apply + propagation)",
+      "status": "todo",
+      "summary": "Supprimer le « double logon » : le compagnon écrit les policies HKCU <strong>après</strong> le démarrage d'Explorer (course au logon structurelle) → effet visible seulement au relogon. L'epic ajoute une <strong>échelle de rafraîchissement post-apply</strong> dans le compagnon (SHChangeNotify existant → broadcast <code>WM_SETTINGCHANGE \"Policy\"</code> → restart <code>explorer.exe</code>, session préservée, applis intactes), pilotée par un hint <code>refresh</code> <strong>déclaré par projection</strong> (spec JSON, vocabulaire fermé, défaut = logon suivant), plus la <strong>cadence de check-in pilotée serveur</strong> (l'agent honore déjà le ttl_seconds par réponse — levier serveur-only, TTL global 3600 s aujourd'hui). Consommateur immédiat : Epic 41 (restrict_run effectif en ~2 s en session courante) + lot Explorer existant. Analyse 2026-07-10. Cadrage : <code>planning-artifacts/epics-application-immediate.md</code>.",
+      "stories": [
+        {
+          "id": "43-1",
+          "title": "Agent — échelle de rafraîchissement du compagnon (hint refresh du payload)",
+          "status": "todo",
+          "note": "Gestes FFI : shell_notify (SHChangeNotify, existant), policy_broadcast (SendMessageTimeout HWND_BROADCAST WM_SETTINGCHANGE \"Policy\"), explorer_restart (kill+respawn dans la session user). Agrégation centralisée fin de Companion.RunPass : UN geste (le plus fort) par passe, gated sur changed, jamais au régime stable ; fan-out HKU SYSTEM jamais concerné. Bump version + PUBLIER AVANT les seeders 43.2 (gate Epic 35). BLOQUANT pour 43.2. Tâche lab : policy_broadcast suffit-il pour RestrictRun ? Reco dev : fable."
+        },
+        {
+          "id": "43-2",
+          "title": "Serveur — hint refresh par projection + affichage temporalité d'effet",
+          "status": "todo",
+          "note": "Convention spec.refresh (registry/registry_list), vocabulaire fermé validé par AuthoringGuard ; AbstractCapabilityStateProvider recopie dans le payload (portées session/machine_user seulement). Le hash change → drift ponctuel de re-application, bénin. Golden PHP↔Go. Retrofit lot Explorer + blocked_executables. UI : catalogue + formulaires affichent « immédiat / après rafraîchissement du bureau / au prochain logon ». Amont : 43.1 PUBLIÉE."
+        },
+        {
+          "id": "43-3",
+          "title": "Serveur — ttl_seconds dynamique (cadence de propagation pilotée)",
+          "status": "todo",
+          "note": "StateCompiler calcule le ttl_seconds par poste (constante config aujourd'hui, StateCompiler.php:74) : court (60-120 s) si parc en bascule sensible (flag examen 41.3), défaut sinon ; abaissement du défaut global à mesurer (les 304 ETag sont quasi gratuits). Limite honnête : le TTL court n'arrive qu'au prochain check-in — le défaut global borne le pire cas ; canal wake serveur→agent hors-scope. Zéro code agent. Vérifier que ttl_seconds n'entre pas dans le StateHasher. Parallélisable."
         }
       ]
     }

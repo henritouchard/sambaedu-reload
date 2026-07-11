@@ -3,6 +3,7 @@ use Livewire\Component;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\Url;
 use App\Services\UserService;
 use App\Services\AuthenticationService;
 use App\Services\AdDataTransformer;
@@ -18,9 +19,22 @@ use App\Models\Delegation;
 use Illuminate\Support\Facades\Gate;
 use Devrabiul\ToastMagic\Facades\ToastMagic;
 use App\Components\Traits\WithToasts;
+use App\Components\Traits\WithReturnBack;
 
 new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
     use WithToasts;
+    use WithReturnBack;
+
+    // Onglet d'origine (URL relative) pour le bouton retour — voir WithReturnBack.
+    #[Url]
+    public ?string $from = null;
+
+    /** URL de retour : provenance dynamique, repli sur l'onglet Utilisateurs. */
+    public function backUrl(): string
+    {
+        return $this->resolveBack(route('app.users', ['tab' => 'users']));
+    }
+
     public ?User $user = null;
     #[Locked]
     public ?SqlUserModel $sqlUserModel = null;
@@ -305,7 +319,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
 
         if ($result['success']) {
             $this->toastSuccess($result['message']);
-            $this->redirect(route('app.users'), navigate: true);
+            $this->redirect(route('app.users', ['tab' => 'users']), navigate: true);
             return;
         }
 
@@ -315,7 +329,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
 
 ?>
 
-<x-organisms.page :backUrl="route('app.users')" title="Utilisateur" backText="Retour à la liste">
+<x-organisms.page :backUrl="$this->backUrl()" title="Utilisateur" backText="Retour à la liste">
 
     <!-- Composant Livewire de gestion des groupes -->
     <livewire:components::organisms.groups-drawer />

@@ -96,34 +96,17 @@ new #[Title('Configuration par défaut du parc')] class extends Component {
             </div>
         </div>
 
-        {{-- Onglets (pattern maison DaisyUI tabs-boxed, #[Url] $tab) --}}
-        <div role="tablist" class="tabs tabs-boxed bg-base-200 w-fit">
-            <button type="button" role="tab"
-                class="tab {{ $tab === 'wallpaper' ? 'tab-active' : '' }}"
-                wire:click="setTab('wallpaper')" data-testid="tab-wallpaper">
-                <i class="fa-solid fa-image mr-2"></i> Fond d'écran
-            </button>
-            <button type="button" role="tab"
-                class="tab {{ $tab === 'lockscreen' ? 'tab-active' : '' }}"
-                wire:click="setTab('lockscreen')" data-testid="tab-lockscreen">
-                <i class="fa-solid fa-lock mr-2"></i> Écran de verrouillage
-            </button>
-            <button type="button" role="tab"
-                class="tab {{ $tab === 'registry' ? 'tab-active' : '' }}"
-                wire:click="setTab('registry')" data-testid="tab-registry">
-                <i class="fa-solid fa-sliders mr-2"></i> Registre / capacités
-            </button>
-            <button type="button" role="tab"
-                class="tab {{ $tab === 'apps' ? 'tab-active' : '' }}"
-                wire:click="setTab('apps')" data-testid="tab-apps">
-                <i class="fa-solid fa-cube mr-2"></i> Applications
-            </button>
-            <button type="button" role="tab"
-                class="tab {{ $tab === 'tools' ? 'tab-active' : '' }}"
-                wire:click="setTab('tools')" data-testid="tab-tools">
-                <i class="fa-solid fa-screwdriver-wrench mr-2"></i> Outils agent
-            </button>
-        </div>
+        {{-- Onglets (composant partagé x-molecules.tabs, #[Url] $tab) --}}
+        @php
+            $parcDefaultsTabs = [
+                'wallpaper' => ['label' => "Fond d'écran", 'icon' => 'fa-solid fa-image'],
+                'lockscreen' => ['label' => 'Écran de verrouillage', 'icon' => 'fa-solid fa-lock'],
+                'registry' => ['label' => 'Registre / capacités', 'icon' => 'fa-solid fa-sliders'],
+                'apps' => ['label' => 'Applications', 'icon' => 'fa-solid fa-cube'],
+                'tools' => ['label' => 'Outils agent', 'icon' => 'fa-solid fa-screwdriver-wrench'],
+            ];
+        @endphp
+        <x-molecules.tabs :tabs="$parcDefaultsTabs" :active="$tab" class="bg-base-200 w-fit" />
 
         {{-- Contenu des onglets --}}
         <div class="flex flex-col">
