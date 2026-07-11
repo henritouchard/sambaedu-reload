@@ -226,14 +226,32 @@ class ContractV1Test extends TestCase
     // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé
     // NFR13) — AUCUN bump de `agent/shared/version.go` (HashState Go sans
     // appelant runtime, cf. Dev Agent Record de la story).
-    private const FROZEN_STATE_HASH = 'b1eb0560eec1c59a6908967f0c3e402dd79528591891ffddc33d90f2d0c8a3d7';
+    //
+    // Re-bumpé SCIEMMENT par la Story 43.2 (hint `refresh` au payload, §7.1/
+    // §7.6, §9) : champ additif OPTIONNEL `refresh` (vocabulaire fermé
+    // shell_notify|policy_broadcast|explorer_restart), recopié UNIQUEMENT sur
+    // les payloads émis en portée session/machine_user (jamais machine/HKU) —
+    // (a) l'item session `registry` existant (HideFileExt) gagne
+    // `"refresh": "shell_notify"` (D7, cohérent avec le retrofit conservateur
+    // D4) ; (b) AJOUT d'UN item session `registry_list` (conteneur
+    // `…\Policies\Explorer\DisallowRun`, `"refresh": "policy_broadcast"`) — la
+    // portée session n'avait AUCUN item registry_list avant cette story.
+    // Champ additif + type DÉJÀ figé (registry_list existait depuis 35.2) =
+    // forward-compatible, pas un major : un agent ≤ 2.9.0 ignore le champ
+    // inconnu SANS ERREUR (§9, champ ajouté). session = 8 items, 18 items au
+    // total, hash d'état RECALCULÉ. Le jumeau Go
+    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé
+    // NFR13) — AUCUN bump de `agent/shared/version.go` (le mécanisme agent
+    // 2.10.0 qui LIT `payload["refresh"]` est déjà livré par la 43.1 mergée ;
+    // seul le hash gelé de TEST bouge, cf. Dev Agent Record de la story).
+    private const FROZEN_STATE_HASH = '5beb682b413ac2c5cef74baef19a17d3f47efe7cf163371201db0db954d506b0';
 
     private StateHasher $hasher;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->hasher = new StateHasher();
+        $this->hasher = new StateHasher;
     }
 
     #[Test]

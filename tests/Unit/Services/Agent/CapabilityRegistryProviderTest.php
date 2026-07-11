@@ -16,9 +16,12 @@ use App\Models\WorkstationGroup;
 use App\Observers\UserGroupObserver;
 use App\Observers\UserGroupUserPivotObserver;
 use App\Observers\WorkstationGroupObserver;
+use App\Services\Agent\Providers\RegistryListMachineCapabilityProvider;
+use App\Services\Agent\Providers\RegistryListUserCapabilityProvider;
 use App\Services\Agent\Providers\RegistryMachineCapabilityProvider;
 use App\Services\Agent\Providers\RegistryUserCapabilityProvider;
 use App\Services\Agent\StateCandidate;
+use App\Services\Agent\StateHasher;
 use App\Services\Agent\TargetContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -75,12 +78,12 @@ class CapabilityRegistryProviderTest extends TestCase
 
     private function machineProvider(): RegistryMachineCapabilityProvider
     {
-        return new RegistryMachineCapabilityProvider();
+        return new RegistryMachineCapabilityProvider;
     }
 
     private function userProvider(): RegistryUserCapabilityProvider
     {
-        return new RegistryUserCapabilityProvider();
+        return new RegistryUserCapabilityProvider;
     }
 
     /**
@@ -515,7 +518,7 @@ class CapabilityRegistryProviderTest extends TestCase
         // exclusiveKey stable (3 segments, dernier vide) et hash calculable.
         self::assertStringEndsWith('|', $this->userProvider()->exclusiveKey($payload));
         self::assertSame(2, substr_count($this->userProvider()->exclusiveKey($payload), '|'));
-        self::assertNotEmpty((new \App\Services\Agent\StateHasher())->hashItem([
+        self::assertNotEmpty((new StateHasher)->hashItem([
             'type' => 'registry', 'semantics' => 'exclusive', 'payload' => $payload,
         ]));
     }
@@ -619,8 +622,125 @@ class CapabilityRegistryProviderTest extends TestCase
             ]],
         ]);
 
-        self::assertCount(0, (new \App\Services\Agent\Providers\RegistryListMachineCapabilityProvider())->itemsFor($this->ctx()));
-        self::assertCount(0, (new \App\Services\Agent\Providers\RegistryListUserCapabilityProvider())->itemsFor($this->ctx()));
+        self::assertCount(0, (new RegistryListMachineCapabilityProvider)->itemsFor($this->ctx()));
+        self::assertCount(0, (new RegistryListUserCapabilityProvider)->itemsFor($this->ctx()));
+    }
+
+    // ── Story 43.2 (D3, AC3) — recopie du hint `refresh` au payload ────────
+
+    /**
+     * Fabrique une capacité toggle + sa projection registry portant un
+     * `spec.refresh` à la RACINE (D1), en plus des `keys`.
+     *
+     * @param  list<array<string,mixed>>  $keys
+     */
+    private function makeCapabilityWithRefresh(string $key, string $default, array $keys, string $refresh): Capability
+    {
+        $cap = Capability::factory()->create(['key' => $key, 'default_value' => $default]);
+        CapabilityProjection::factory()->for($cap)->create([
+            'mechanism' => CapabilityProjection::MECHANISM_REGISTRY,
+            'spec' => ['keys' => $keys, 'refresh' => $refresh],
+        ]);
+
+        return $cap;
+    }
+
+    #[Test]
+    public function session_provider_recopies_the_refresh_hint_on_broadcast_and_override_writes(): void
+    {
+        $cap = $this->makeCapabilityWithRefresh('show_file_extensions', 'on', [
+            ['hive' => 'HKCU', 'path' => 'Software\\X\\Advanced', 'name' => 'HideFileExt', 'type' => 'REG_DWORD', 'value' => ['on' => 0, 'off' => 1]],
+        ], CapabilityProjection::REFRESH_SHELL_NOTIFY);
+
+        // Broadcast (défaut).
+        $broadcast = $this->userProvider()->itemsFor($this->ctx())->first();
+        self::assertSame(['hive', 'path', 'name', 'type', 'value', 'refresh'], array_keys($broadcast->payload));
+        self::assertSame('shell_notify', $broadcast->payload['refresh']);
+
+        // Override de maille — MÊME hint recopié.
+        $this->setOverride($cap, $this->parc, 'off');
+        $override = $this->userProvider()->itemsFor($this->ctx())
+            ->first(fn (StateCandidate $c): bool => $c->maille === StateMaille::LogicalGroup);
+        self::assertSame('shell_notify', $override->payload['refresh']);
+    }
+
+    #[Test]
+    public function session_provider_recopies_the_refresh_hint_on_ensure_absent_suppression_items_too(): void
+    {
+        // D3 : « supprimer une policy exige le même geste » — le hint est
+        // recopié y compris sur l'item de SUPPRESSION 4 clés.
+        $cap = $this->makeCapabilityWithRefresh('blocked_executables_flag', 'on', [
+            ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'DisallowRun', 'type' => 'REG_DWORD', 'value' => ['on' => 1, 'off' => ['$ensure' => 'absent']]],
+        ], CapabilityProjection::REFRESH_POLICY_BROADCAST);
+
+        $this->setOverride($cap, $this->parc, 'off');
+        $absent = $this->userProvider()->itemsFor($this->ctx())
+            ->first(fn (StateCandidate $c): bool => $c->maille === StateMaille::LogicalGroup);
+
+        self::assertSame(['hive', 'path', 'name', 'ensure', 'refresh'], array_keys($absent->payload));
+        self::assertSame('absent', $absent->payload['ensure']);
+        self::assertSame('policy_broadcast', $absent->payload['refresh']);
+    }
+
+    #[Test]
+    public function machine_provider_never_recopies_the_refresh_hint_even_on_a_mixed_spec(): void
+    {
+        // Piège n°4 (test négatif OBLIGATOIRE) : un spec PORTANT un hint valide
+        // + des clés HKLM/HKU/HKCU mixtes ne recopie le hint QUE sur les items
+        // du provider Session — jamais Machine (HKLM ni HKU).
+        $this->makeCapabilityWithRefresh('mixed_hint_cap', 'on', [
+            ['hive' => 'HKLM', 'path' => 'SOFTWARE\\X', 'name' => 'MachineKey', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
+            ['hive' => 'HKU', 'path' => 'Software\\X', 'name' => 'HkuKey', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
+            ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'UserKey', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
+        ], CapabilityProjection::REFRESH_EXPLORER_RESTART);
+
+        $machineItems = $this->machineProvider()->itemsFor($this->ctx());
+        $userItems = $this->userProvider()->itemsFor($this->ctx());
+
+        self::assertCount(2, $machineItems, 'HKLM + HKU');
+        foreach ($machineItems as $c) {
+            self::assertArrayNotHasKey('refresh', $c->payload, 'JAMAIS de refresh sur un item Machine/HKU');
+        }
+
+        self::assertCount(1, $userItems);
+        self::assertSame('explorer_restart', $userItems->first()->payload['refresh']);
+    }
+
+    #[Test]
+    public function an_invalid_spec_refresh_is_tolerated_at_render_and_emits_no_refresh_key(): void
+    {
+        // Donnée corrompue hypothétique (déjà refusée à l'authoring par le
+        // guard) : le render reste DÉFENSIF, jamais d'exception.
+        foreach ([null, 42, 'SHELL_NOTIFY', 'logoff', ''] as $i => $invalidRefresh) {
+            $cap = Capability::factory()->create(['key' => 'invalid_refresh_cap_'.$i, 'default_value' => 'on']);
+            CapabilityProjection::factory()->for($cap)->create([
+                'mechanism' => CapabilityProjection::MECHANISM_REGISTRY,
+                'spec' => [
+                    'keys' => [['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 1]]],
+                    'refresh' => $invalidRefresh,
+                ],
+            ]);
+
+            $item = $this->userProvider()->itemsFor($this->ctx())
+                ->first(fn (StateCandidate $c): bool => (int) $c->sourceId === (int) $cap->id);
+
+            self::assertNotNull($item);
+            self::assertArrayNotHasKey('refresh', $item->payload, "valeur invalide '".var_export($invalidRefresh, true)."' ne doit jamais être recopiée");
+        }
+    }
+
+    #[Test]
+    public function a_spec_without_refresh_emits_byte_identical_payloads(): void
+    {
+        // Non-régression (AC3) : un spec SANS `refresh` reste byte-identique
+        // à avant la story (5 clés, jamais de clé `refresh`).
+        $this->makeCapability('show_hidden_files', 'on', [
+            ['hive' => 'HKCU', 'path' => 'Software\\X\\Advanced', 'name' => 'Hidden', 'type' => 'REG_DWORD', 'value' => ['on' => 1, 'off' => 0]],
+        ]);
+
+        $item = $this->userProvider()->itemsFor($this->ctx())->first();
+
+        self::assertSame(['hive', 'path', 'name', 'type', 'value'], array_keys($item->payload));
     }
 
     // ── exclusiveKey : identité insensible à la casse ─────────────────────

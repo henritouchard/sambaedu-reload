@@ -83,10 +83,10 @@ class CapabilityRegistryListCompilationTest extends TestCase
     private function compiler(): StateCompiler
     {
         // Compilateur RÉEL non modifié (D2) + les seuls providers list.
-        return new StateCompiler(new StateHasher(), [
-            new RegistryListMachineCapabilityProvider(),
-            new RegistryListUserCapabilityProvider(),
-        ], new AgentTtlResolver());
+        return new StateCompiler(new StateHasher, [
+            new RegistryListMachineCapabilityProvider,
+            new RegistryListUserCapabilityProvider,
+        ], new AgentTtlResolver);
     }
 
     /**
@@ -215,6 +215,42 @@ class CapabilityRegistryListCompilationTest extends TestCase
             $session[0]['payload']['values'],
             'UserGroup remplace la liste du Broadcast pour ce conteneur',
         );
+    }
+
+    // ── Story 43.2 (AC3) — hint `refresh` bout-en-bout (mécanisme registry_list) ─
+
+    #[Test]
+    public function compiled_state_carries_the_refresh_hint_on_the_session_container_but_never_on_the_machine_one(): void
+    {
+        $machineCap = Capability::factory()->create(['key' => 'machine_list_refresh', 'default_value' => 'on']);
+        CapabilityProjection::factory()->for($machineCap)->create([
+            'mechanism' => CapabilityProjection::MECHANISM_REGISTRY_LIST,
+            'spec' => [
+                'keys' => [['hive' => 'HKLM', 'path' => 'SOFTWARE\\X\\List', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['a']]]],
+                'refresh' => 'shell_notify',
+            ],
+        ]);
+
+        $sessionCap = Capability::factory()->create(['key' => 'session_list_refresh', 'default_value' => 'on']);
+        CapabilityProjection::factory()->for($sessionCap)->create([
+            'mechanism' => CapabilityProjection::MECHANISM_REGISTRY_LIST,
+            'spec' => [
+                'keys' => [['hive' => 'HKCU', 'path' => 'Software\\Y\\List', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['b']]]],
+                'refresh' => 'policy_broadcast',
+            ],
+        ]);
+
+        $state = $this->compiler()->compile(TargetContext::for($this->ws, null));
+
+        $machine = $this->listItems($state, StateContract::SCOPE_MACHINE);
+        $session = $this->listItems($state, StateContract::SCOPE_SESSION);
+
+        self::assertCount(1, $machine);
+        self::assertArrayNotHasKey('refresh', $machine[0]['payload'], 'JAMAIS de refresh sur un conteneur machine compilé');
+
+        self::assertCount(1, $session);
+        self::assertSame('policy_broadcast', $session[0]['payload']['refresh']);
+        self::assertNotEmpty((new StateHasher)->hashItem($session[0]));
     }
 
     #[Test]

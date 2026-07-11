@@ -81,10 +81,10 @@ class CapabilityRegistryCompilationTest extends TestCase
 
     private function compiler(): StateCompiler
     {
-        return new StateCompiler(new StateHasher(), [
-            new RegistryMachineCapabilityProvider(),
-            new RegistryUserCapabilityProvider(),
-        ], new AgentTtlResolver());
+        return new StateCompiler(new StateHasher, [
+            new RegistryMachineCapabilityProvider,
+            new RegistryUserCapabilityProvider,
+        ], new AgentTtlResolver);
     }
 
     private function sessionItems(array $state): array
@@ -310,7 +310,7 @@ class CapabilityRegistryCompilationTest extends TestCase
         self::assertSame('2', $session[0]['payload']['value']);
 
         // Identités exclusives DISTINCTES (même {path|name}, ruches différentes).
-        $provider = new RegistryMachineCapabilityProvider();
+        $provider = new RegistryMachineCapabilityProvider;
         self::assertNotSame(
             $provider->exclusiveKey($machine[0]['payload']),
             $provider->exclusiveKey($session[0]['payload']),
@@ -394,5 +394,42 @@ class CapabilityRegistryCompilationTest extends TestCase
         $registry = array_values(array_filter($session, fn ($i): bool => $i['type'] === 'registry'));
         self::assertCount(1, $registry, 'une seule valeur gagne pour la clé en collision');
         self::assertSame(20, $registry[0]['payload']['value'], 'la capacité la plus récente gagne');
+    }
+
+    // ── Story 43.2 (AC3) — hint `refresh` bout-en-bout via le VRAI StateCompiler ─
+
+    #[Test]
+    public function compiled_state_carries_the_refresh_hint_on_the_session_item_but_never_on_the_machine_item(): void
+    {
+        // Spec MIXTE HKLM+HKCU portant `spec.refresh` : le compilé PORTE le hint
+        // sur l'item `session` (compagnon) et NE LE PORTE JAMAIS sur l'item
+        // `machine` (service SYSTEM) — le StateCompiler est INTOUCHÉ (D3), le
+        // double gate mécanisme+portée vit dans le provider.
+        $cap = Capability::factory()->create(['key' => 'mixed_refresh_compiled', 'default_value' => 'on']);
+        CapabilityProjection::factory()->for($cap)->create([
+            'mechanism' => CapabilityProjection::MECHANISM_REGISTRY,
+            'spec' => [
+                'keys' => [
+                    ['hive' => 'HKLM', 'path' => 'SOFTWARE\\X', 'name' => 'MachineKey', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
+                    ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'UserKey', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
+                ],
+                'refresh' => 'shell_notify',
+            ],
+        ]);
+
+        $state = $this->compiler()->compile(TargetContext::for($this->ws, null));
+
+        $machine = array_values(array_filter($state[StateContract::SCOPE_MACHINE], fn ($i): bool => $i['type'] === 'registry' && $i['payload']['name'] === 'MachineKey'));
+        $session = array_values(array_filter($state[StateContract::SCOPE_SESSION], fn ($i): bool => $i['type'] === 'registry' && $i['payload']['name'] === 'UserKey'));
+
+        self::assertCount(1, $machine);
+        self::assertArrayNotHasKey('refresh', $machine[0]['payload'], 'JAMAIS de refresh sur un item machine compilé');
+
+        self::assertCount(1, $session);
+        self::assertSame('shell_notify', $session[0]['payload']['refresh']);
+
+        // Le hash de l'item session est calculable (le hint entre au canon,
+        // NFR-A4 : drift ponctuel de re-application documenté).
+        self::assertNotEmpty((new StateHasher)->hashItem($session[0]));
     }
 }

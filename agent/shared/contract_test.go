@@ -52,8 +52,12 @@ func TestParseStateGoldenFile(t *testing.T) {
 	// → machine = 8.
 	// Story 38.3 : +1 item `legacy_cleanup` (nettoyage crochets legacy SE4,
 	// payload 1 clé {mozilla: "vanilla"} — Q5-a) en portée MACHINE → machine = 9.
-	if len(state.Machine) != 9 || len(state.Session) != 7 || len(state.MachineUser) != 1 {
-		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 9/7/1)",
+	// Story 43.2 : +1 item `registry_list` (conteneur DisallowRun, payload 4
+	// clés + `refresh` optionnel additif) en portée SESSION → session = 8.
+	// L'item `registry` HideFileExt existant gagne aussi `refresh` (champ
+	// additif, ne change PAS le COMPTE d'items).
+	if len(state.Machine) != 9 || len(state.Session) != 8 || len(state.MachineUser) != 1 {
+		t.Errorf("portées : machine=%d session=%d machine_user=%d (attendu 9/8/1)",
 			len(state.Machine), len(state.Session), len(state.MachineUser))
 	}
 }

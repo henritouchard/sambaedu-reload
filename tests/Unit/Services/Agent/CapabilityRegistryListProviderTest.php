@@ -72,12 +72,12 @@ class CapabilityRegistryListProviderTest extends TestCase
 
     private function machineProvider(): RegistryListMachineCapabilityProvider
     {
-        return new RegistryListMachineCapabilityProvider();
+        return new RegistryListMachineCapabilityProvider;
     }
 
     private function userProvider(): RegistryListUserCapabilityProvider
     {
-        return new RegistryListUserCapabilityProvider();
+        return new RegistryListUserCapabilityProvider;
     }
 
     /**
@@ -288,6 +288,95 @@ class CapabilityRegistryListProviderTest extends TestCase
         self::assertSame($a, $b, 'insensible à la casse ET aux values (identité = conteneur)');
         self::assertSame('hkcu|software\\p\\disallowrun', $a, '2 segments {hive|path}, jamais de name');
         self::assertSame(1, substr_count($a, '|'), 'exactement 2 segments');
+    }
+
+    // ── Story 43.2 (D3, AC3) — recopie du hint `refresh` au payload ────────
+
+    /**
+     * @param  list<array<string,mixed>>  $keys
+     */
+    private function makeListCapabilityWithRefresh(string $key, string $default, array $keys, string $refresh): Capability
+    {
+        $cap = Capability::factory()->create(['key' => $key, 'default_value' => $default]);
+        CapabilityProjection::factory()->for($cap)->create([
+            'mechanism' => CapabilityProjection::MECHANISM_REGISTRY_LIST,
+            'spec' => ['keys' => $keys, 'refresh' => $refresh],
+        ]);
+
+        return $cap;
+    }
+
+    #[Test]
+    public function session_provider_recopies_the_refresh_hint_on_the_container_payload(): void
+    {
+        $cap = $this->makeListCapabilityWithRefresh('blocked_executables', 'on', [
+            ['hive' => 'HKCU', 'path' => 'Software\\P\\Explorer\\DisallowRun', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['cmd.exe'], 'off' => []]],
+        ], CapabilityProjection::REFRESH_POLICY_BROADCAST);
+
+        $broadcast = $this->userProvider()->itemsFor($this->ctx())->first();
+        self::assertSame(['hive', 'path', 'entry_type', 'values', 'refresh'], array_keys($broadcast->payload));
+        self::assertSame('policy_broadcast', $broadcast->payload['refresh']);
+
+        // Override de maille (purge `off`) — le hint reste recopié.
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => WorkstationGroup::class,
+            'assignable_id' => $this->parc->id,
+            'value' => 'off',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $override = $this->userProvider()->itemsFor($this->ctx())
+            ->first(fn (StateCandidate $c): bool => $c->maille === StateMaille::LogicalGroup);
+        self::assertSame([], $override->payload['values'], 'off = purge (liste vide), toujours une VRAIE valeur émise');
+        self::assertSame('policy_broadcast', $override->payload['refresh']);
+    }
+
+    #[Test]
+    public function machine_provider_never_recopies_the_refresh_hint(): void
+    {
+        // Piège n°4 — test négatif sur le mécanisme registry_list aussi.
+        $this->makeListCapabilityWithRefresh('pix_extension_forced', 'on', [
+            ['hive' => 'HKLM', 'path' => 'SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallForcelist', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['abc']]],
+        ], CapabilityProjection::REFRESH_SHELL_NOTIFY);
+
+        $machineItems = $this->machineProvider()->itemsFor($this->ctx());
+
+        self::assertCount(1, $machineItems);
+        self::assertArrayNotHasKey('refresh', $machineItems->first()->payload, 'JAMAIS de refresh sur un conteneur Machine');
+    }
+
+    #[Test]
+    public function an_invalid_spec_refresh_is_tolerated_at_render_and_emits_no_refresh_key(): void
+    {
+        foreach ([null, 42, 'SHELL_NOTIFY', ''] as $i => $invalidRefresh) {
+            $cap = Capability::factory()->create(['key' => 'invalid_refresh_list_cap_'.$i, 'default_value' => 'on']);
+            CapabilityProjection::factory()->for($cap)->create([
+                'mechanism' => CapabilityProjection::MECHANISM_REGISTRY_LIST,
+                'spec' => [
+                    'keys' => [['hive' => 'HKCU', 'path' => 'Software\\X\\List', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['a']]]],
+                    'refresh' => $invalidRefresh,
+                ],
+            ]);
+
+            $item = $this->userProvider()->itemsFor($this->ctx())
+                ->first(fn (StateCandidate $c): bool => (int) $c->sourceId === (int) $cap->id);
+
+            self::assertNotNull($item);
+            self::assertArrayNotHasKey('refresh', $item->payload);
+        }
+    }
+
+    #[Test]
+    public function a_spec_without_refresh_emits_byte_identical_container_payloads(): void
+    {
+        $this->makeListCapability('blocked_executables', 'on', [
+            ['hive' => 'HKCU', 'path' => 'Software\\P\\Explorer\\DisallowRun', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['cmd.exe']]],
+        ]);
+
+        $item = $this->userProvider()->itemsFor($this->ctx())->first();
+
+        self::assertSame(['hive', 'path', 'entry_type', 'values'], array_keys($item->payload));
     }
 
     // ── NFR7 — zéro AD/APCu dans les sources ───────────────────────────────

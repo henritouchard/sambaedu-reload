@@ -4168,3 +4168,118 @@ dérouler uniquement si un besoin réel de resserrement global est identifié.
       resserrée immédiatement, adoption paresseuse), remède synchro forcée.
 - [ ] 43.3.4 — Golden `state.v1.json` inchangé, hash gelé PHP=Go recalculé,
       `agent/**` limité au miroir hasher, zéro publication requise.
+
+## Story 43.2 — Hint `refresh` déclaré par projection + badge de temporalité d'effet
+
+Versant SERVEUR de l'échelle 43.1 : le champ OPTIONNEL `spec.refresh`
+(vocabulaire fermé `shell_notify | policy_broadcast | explorer_restart`,
+casse minuscule) se déclare au NIVEAU RACINE du `spec` d'une projection
+`registry`/`registry_list` (constantes `CapabilityProjection::REFRESH_*`,
+zéro migration de schéma) et se recopie au payload des items émis en portée
+**Session/MachineUser UNIQUEMENT** (jamais Machine/HKU). Retrofit
+CONSERVATEUR livré par migration (`2026_07_11_100000_retrofit_capabilities_
+refresh_hints.php`, choix motivés en D4, lab `policy_broadcast` NON validé —
+cf. scénario 43.1.1 ci-dessus) : `shell_notify` sur les 6 capacités de vues/
+épingles Explorer HKCU (`show_file_extensions`, `show_hidden_files`,
+`quick_access_history_hidden`, `onedrive_hidden`, `quick_access_hidden`,
+`explorer_gallery_hidden`) ; `policy_broadcast` sur `blocked_executables`
+(bi-projection — flag `registry` ET conteneur `registry_list`) et
+`registry_editing_disabled` ; AUCUN `explorer_restart` posé. L'UI (catalogue
+`/admin/settings/parc-defaults` onglet Registre/capacités, onglet Options/
+Capacités d'un parc, section Capacités d'un groupe d'utilisateurs) affiche un
+badge de temporalité (« Immédiat » / « Immédiat (le bureau redémarre) » /
+« À la prochaine session »), dérivé de `Capability::effectTiming()`, AUCUN
+badge pour une capacité sans clé HKCU registre.
+
+⚠️ **ROLLOUT (NFR-A4, gate Epic 35)** : cette migration de retrofit ne doit
+être JOUÉE en prod/VM qu'APRÈS la publication MANUELLE de la release agent
+**2.10.0** (déjà buildée par la 43.1, jamais publiée à ce jour — `update.sh`
+ne publie jamais seul). Un binaire ≤ 2.9.0 ignore le hint EN SILENCE (la
+valeur registre est bien écrite, mais AUCUN geste de rafraîchissement n'est
+exécuté) : l'« Immédiat » affiché par l'UI serait un MENSONGE sur un parc non
+à jour. Vérifier au check-in que la version rapportée du parc ciblé est bien
+2.10.0 AVANT de jouer `migrate` en prod/VM (`migrate:status` d'abord — les
+migrations VM ne sont PAS auto-jouées).
+
+### Scénario 43.2.1 — Retrofit posé + drift ponctuel bénin (AC4, NFR-A4)
+
+But : vérifier que le retrofit a bien tourné et que le drift ponctuel attendu
+(hash d'item recalculé une fois) ne se reproduit pas au cycle suivant.
+
+1. Sur un parc où l'agent 2.10.0 est déjà publié et actif, jouer/rejouer la
+   migration `2026_07_11_100000_retrofit_capabilities_refresh_hints.php`.
+2. Premier check-in post-retrofit d'un poste ayant DÉJÀ convergé les
+   capacités du lot D4 : le rapport `POST /report` montre `drift` PUIS
+   application (ré-écriture idempotente de la même valeur) suivie d'`UN`
+   geste de rafraîchissement dans `companion.log` (shell_notify ou
+   policy_broadcast selon la capacité).
+3. Cycle SUIVANT (aucun changement de donnée) : `compliant` partout, AUCUN
+   geste de rafraîchissement (passe stable = zéro geste, iso 43.1.2). Si le
+   drift PERSISTE au-delà d'un cycle, investiguer AVANT de conclure à un bug
+   du hint (candidats habituels : autre override qui réécrit la même clé,
+   throttle `explorer_restart` en cours — cf. section 43.1).
+
+### Scénario 43.2.2 — Badge UI cohérent avec le geste réellement exécuté
+
+But : vérifier que le badge affiché correspond au comportement RÉEL du poste
+(pas de mensonge dans un sens ni dans l'autre).
+
+1. `/admin/settings/parc-defaults` onglet Registre/capacités : `show_file_
+   extensions` affiche « Immédiat » (tooltip : effet en session ouverte, pas
+   de mention HKCU/broadcast/logon) ; `numlock_on_logon` affiche « À la
+   prochaine session » (SANS hint — c'est honnête, la clé est lue au logon) ;
+   une capacité 100 % machine (`internet_access`, `uac_enabled`…) N'AFFICHE
+   AUCUN badge.
+2. Onglet Options/Capacités d'un parc + section Capacités d'un groupe
+   d'utilisateurs : mêmes badges pour les overrides posés, et dans le picker
+   d'ajout (avant de poser l'override).
+3. Contre-épreuve poste RÉEL (2.10.0) : basculer `show_file_extensions` sur
+   ce parc, observer que le réglage s'applique SANS relogon (badge
+   « Immédiat » honoré) ; basculer `numlock_on_logon`, observer qu'il faut un
+   relogon (badge « À la prochaine session » honoré).
+
+### Scénario 43.2.3 — Garde-fou : jamais de hint sur un item machine/HKU
+
+But : non-régression du gate par PORTÉE (piège n°4 de la story), vérifiable
+par lecture du state servi (sans poste, juste `curl`/`GET /api/v1/agent/state`
+en lab ou VM).
+
+1. Sur un poste dont une capacité mixte HKLM+HKCU porte un hint (ex.
+   `quick_access_hidden`, `shell_notify`), inspecter le JSON servi : la clé
+   HKLM `HubMode` (portée `machine`) NE PORTE PAS `refresh` ; la/les clé(s)
+   HKCU (portée `session`) PORTENT `"refresh": "shell_notify"`.
+2. Aucune capacité machine-only (firewall, fs_acl, `internet_access`,
+   `uac_enabled`, `hide_drives`…) ne porte jamais `refresh`, quelle que soit
+   la portée.
+
+### Scénario 43.2.4 — Non-régression golden/contrat (revue de code + tests)
+
+1. `tests/Fixtures/Agent/state.v1.json` : l'item session `registry`
+   (HideFileExt) porte `"refresh": "shell_notify"` ; UN NOUVEL item session
+   `registry_list` (conteneur `…\Policies\Explorer\DisallowRun`,
+   `"refresh": "policy_broadcast"`) est présent — 18 items au total (session
+   7→8).
+2. `FROZEN_STATE_HASH` (PHP `ContractV1Test`) = `frozenStateHash` (Go
+   `hasher_test.go`), recalculés à l'identique
+   (`5beb682b413ac2c5cef74baef19a17d3f47efe7cf163371201db0db954d506b0`).
+3. `agent/**` INTOUCHÉ hors `hasher_test.go`/`contract_test.go` (fichiers de
+   TEST seuls, compte d'items du golden) — `loop.go`/`engine.go`/`companion.go`/
+   `refresh.go`/`version.go` inchangés, AUCUNE publication de release requise
+   pour CETTE story (le mécanisme de lecture est déjà livré par la 43.1).
+4. `go test ./shared/...` et les suites PHP ciblées (`CapabilityRegistry
+   {,List}ProviderTest`, `CapabilityRegistry{,List}CompilationTest`,
+   `ContractV1Test`, `CapabilitiesSchemaAndSeedTest`, `CapabilityRefreshHintTest`,
+   les 3 suites Livewire `*EffectTimingBadgeTest`) vertes sur l'hôte.
+
+### Check-list
+
+- [ ] 43.2.1 — Retrofit posé (guard vert sur le catalogue complet), drift
+      ponctuel UNE fois puis stable au cycle suivant.
+- [ ] 43.2.2 — Badge UI cohérent avec le geste réel sur les 3 surfaces
+      (catalogue, onglet parc, section groupe d'utilisateurs + picker).
+- [ ] 43.2.3 — Aucun `refresh` sur un item machine/HKU, y compris spec mixte.
+- [ ] 43.2.4 — Golden `state.v1.json` (18 items), hash gelé PHP=Go recalculé,
+      `agent/**` limité aux 2 fichiers de test (hasher/contract), zéro
+      publication requise pour cette story (2.10.0 déjà due à la 43.1).
+- [ ] ROLLOUT — release agent 2.10.0 publiée AVANT de jouer la migration de
+      retrofit en prod/VM (sinon hint ignoré en silence, UI mensongère).

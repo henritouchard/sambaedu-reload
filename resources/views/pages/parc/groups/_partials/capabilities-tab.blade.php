@@ -130,6 +130,8 @@ new class extends Component {
                 'has_warning' => $capability->hasWarning(),
                 'is_upstream_locked' => $upstreamStatus === 'locked',
                 'upstream_status' => $upstreamStatus,
+                // Story 43.2 (D5/D6) — temporalité d'effet ; null = aucun badge.
+                'effect_timing' => $capability->effectTiming(),
             ];
         })->filter()->sortBy('label')->values()->all();
     }
@@ -174,6 +176,8 @@ new class extends Component {
                 // #4 : `locked` déjà rejeté par reject() ci-dessus → les survivants sont
                 // soit permissifs soit locaux. Évite le double appel à isCapabilityLocked().
                 'upstream_status' => $lock->isCapabilityPermissive($c) ? 'permissive' : 'local',
+                // Story 43.2 (D5/D6) — temporalité d'effet dans le picker.
+                'effect_timing' => $c->effectTiming(),
             ])
             ->values()
             ->all();
@@ -195,8 +199,10 @@ new class extends Component {
     #[Computed]
     public function editingCapability(): ?Capability
     {
+        // Story 43.2 — `with('projections')` : la modale affiche AUSSI le
+        // badge de temporalité d'effet (effectTiming()) sans requête ajoutée.
         return $this->editingCapabilityId !== null
-            ? Capability::query()->find($this->editingCapabilityId)
+            ? Capability::query()->with('projections')->find($this->editingCapabilityId)
             : null;
     }
 
@@ -611,6 +617,15 @@ new class extends Component {
                                             <i class="fa-solid fa-triangle-exclamation text-warning text-xs"
                                                 aria-label="Capacité sensible"></i>
                                         @endif
+                                        {{-- Story 43.2 (D5/D6) — badge de temporalité d'effet. --}}
+                                        @if ($override['effect_timing'] !== null)
+                                            <span class="badge badge-sm badge-outline gap-1"
+                                                data-testid="effect-timing-{{ $override['id'] }}"
+                                                title="{{ $override['effect_timing']['tooltip'] }}">
+                                                <i class="fa-solid fa-clock text-xs"></i>
+                                                {{ $override['effect_timing']['label'] }}
+                                            </span>
+                                        @endif
                                         {{-- Story 29.4 — tri-état : verrouillé > permissif > local (AC #1-4).
                                              Libellés centrés sur l'ACTION possible (décision 2026-06-27).
                                              #3 : badges gatés sur hasUpstreamContract() — en standalone,
@@ -717,6 +732,15 @@ new class extends Component {
                                             <i class="fa-solid fa-pen text-xs"></i> Modifiable
                                         </span>
                                     @endif
+                                    {{-- Story 43.2 (D5/D6) — badge de temporalité d'effet dans le picker. --}}
+                                    @if ($capability['effect_timing'] !== null)
+                                        <span class="badge badge-sm badge-outline gap-1"
+                                            data-testid="picker-effect-timing-{{ $capability['id'] }}"
+                                            title="{{ $capability['effect_timing']['tooltip'] }}">
+                                            <i class="fa-solid fa-clock text-xs"></i>
+                                            {{ $capability['effect_timing']['label'] }}
+                                        </span>
+                                    @endif
                                     @if ($capability['category'] !== '')
                                         <span class="badge badge-sm badge-ghost">{{ $capability['category'] }}</span>
                                     @endif
@@ -732,6 +756,13 @@ new class extends Component {
             <x-molecules.modal.section title="{{ $capability->label }}">
                 @if ($capability->description)
                     <p class="text-sm opacity-70 mb-2">{{ $capability->description }}</p>
+                @endif
+                {{-- Story 43.2 (D5/D6) — badge de temporalité d'effet. --}}
+                @php($timing = $capability->effectTiming())
+                @if ($timing !== null)
+                    <span class="badge badge-sm badge-outline gap-1 mb-2" title="{{ $timing['tooltip'] }}">
+                        <i class="fa-solid fa-clock text-xs"></i> {{ $timing['label'] }}
+                    </span>
                 @endif
 
                 <label class="form-control w-full">

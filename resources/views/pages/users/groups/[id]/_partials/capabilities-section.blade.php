@@ -98,13 +98,20 @@ new class extends Component {
     #[Computed]
     public function capabilities(): array
     {
-        // Capacités actives + leur projection registry Windows (eager-load) pour le
-        // filtre HKCU calculé en PHP (pas de JSON query SQLite-hostile).
+        // Capacités actives + leurs projections registry/registry_list Windows
+        // (eager-load) pour le filtre HKCU calculé en PHP (pas de JSON query
+        // SQLite-hostile). registry_list inclus (review 43.2 #1) : refreshHint()
+        // agrège les hints des DEUX mécanismes — sans lui, une bi-projection dont
+        // le hint ne vivrait que côté registry_list afficherait une temporalité
+        // divergente des deux autres surfaces.
         $capabilities = Capability::query()
             ->where('is_active', true)
             ->with(['projections' => function ($q): void {
                 $q->where('os', Capability::OS_WINDOWS)
-                    ->where('mechanism', CapabilityProjection::MECHANISM_REGISTRY);
+                    ->whereIn('mechanism', [
+                        CapabilityProjection::MECHANISM_REGISTRY,
+                        CapabilityProjection::MECHANISM_REGISTRY_LIST,
+                    ]);
             }])
             ->orderBy('label')
             ->get()
@@ -151,6 +158,10 @@ new class extends Component {
                 // au serveur par `authorizeUpstream()`). En standalone, toujours false
                 // (court-circuit NFR3).
                 'is_upstream_locked' => $lock->isCapabilityLocked($c),
+                // Story 43.2 (D5/D6) — temporalité d'effet ; null = aucun badge.
+                // Dérivé sur la relation `projections` DÉJÀ eager-loaded (mécanisme
+                // registry, filtre HKCU piège #6) — zéro requête ajoutée.
+                'effect_timing' => $c->effectTiming(),
             ];
         })->values()->all();
     }
@@ -159,8 +170,20 @@ new class extends Component {
     #[Computed]
     public function editingCapability(): ?Capability
     {
+        // Story 43.2 — `with('projections')` (filtre registry Windows, piège #6
+        // déjà appliqué par isAssignableByUserGroup côté eager-load) : la
+        // modale affiche AUSSI le badge de temporalité d'effet sans requête
+        // ajoutée.
         return $this->editingCapabilityId !== null
-            ? Capability::query()->find($this->editingCapabilityId)
+            ? Capability::query()
+                ->with(['projections' => function ($q): void {
+                    $q->where('os', Capability::OS_WINDOWS)
+                        ->whereIn('mechanism', [
+                            CapabilityProjection::MECHANISM_REGISTRY,
+                            CapabilityProjection::MECHANISM_REGISTRY_LIST,
+                        ]);
+                }])
+                ->find($this->editingCapabilityId)
             : null;
     }
 
@@ -420,21 +443,24 @@ new class extends Component {
      */
     private function isAssignableByUserGroup(Capability $capability): bool
     {
-        /** @var CapabilityProjection|null $projection */
-        $projection = $capability->projections->first();
-        if ($projection === null) {
-            return false;
-        }
+        // Seul le mécanisme registry définit l'assignabilité par groupe-user
+        // (inchangé) — l'eager-load charge aussi registry_list pour le badge de
+        // temporalité, d'où le filtre explicite ici (review 43.2 #1).
+        foreach ($capability->projections as $projection) {
+            if ($projection->mechanism !== CapabilityProjection::MECHANISM_REGISTRY) {
+                continue;
+            }
 
-        $spec = $projection->spec;
-        $keys = is_array($spec) && isset($spec['keys']) && is_array($spec['keys'])
-            ? $spec['keys']
-            : [];
+            $spec = $projection->spec;
+            $keys = is_array($spec) && isset($spec['keys']) && is_array($spec['keys'])
+                ? $spec['keys']
+                : [];
 
-        foreach ($keys as $key) {
-            if (is_array($key)
-                && strcasecmp((string) ($key['hive'] ?? ''), CapabilityProjection::HIVE_USER) === 0) {
-                return true;
+            foreach ($keys as $key) {
+                if (is_array($key)
+                    && strcasecmp((string) ($key['hive'] ?? ''), CapabilityProjection::HIVE_USER) === 0) {
+                    return true;
+                }
             }
         }
 
@@ -579,6 +605,15 @@ new class extends Component {
                                             <i class="fa-solid fa-triangle-exclamation text-warning text-xs"
                                                 aria-label="Capacité sensible"></i>
                                         @endif
+                                        {{-- Story 43.2 (D5/D6) — badge de temporalité d'effet. --}}
+                                        @if ($capability['effect_timing'] !== null)
+                                            <span class="badge badge-sm badge-outline gap-1"
+                                                data-testid="effect-timing-{{ $capability['id'] }}"
+                                                title="{{ $capability['effect_timing']['tooltip'] }}">
+                                                <i class="fa-solid fa-clock text-xs"></i>
+                                                {{ $capability['effect_timing']['label'] }}
+                                            </span>
+                                        @endif
                                     </div>
                                     @if ($capability['description'] !== '')
                                         <div class="text-sm opacity-70">{{ $capability['description'] }}</div>
@@ -647,6 +682,13 @@ new class extends Component {
             <x-molecules.modal.section title="{{ $capability->label }}">
                 @if ($capability->description)
                     <p class="text-sm opacity-70 mb-2">{{ $capability->description }}</p>
+                @endif
+                {{-- Story 43.2 (D5/D6) — badge de temporalité d'effet. --}}
+                @php($timing = $capability->effectTiming())
+                @if ($timing !== null)
+                    <span class="badge badge-sm badge-outline gap-1 mb-2" title="{{ $timing['tooltip'] }}">
+                        <i class="fa-solid fa-clock text-xs"></i> {{ $timing['label'] }}
+                    </span>
                 @endif
 
                 <label class="form-control w-full">

@@ -149,7 +149,21 @@ import (
 // `agent/shared/version.go` : `HashState` Go n'a AUCUN appelant runtime (seul
 // ce test l'appelle ; l'agent stocke l'ETag verbatim et ne recalcule jamais
 // le hash d'état) — voir Dev Agent Record de la story 43.3.
-const frozenStateHash = "b1eb0560eec1c59a6908967f0c3e402dd79528591891ffddc33d90f2d0c8a3d7"
+// Re-bumpé SCIEMMENT par la Story 43.2 (hint `refresh` au payload session,
+// §7.1/§7.6, §9) : champ additif OPTIONNEL `refresh` (vocabulaire fermé
+// shell_notify|policy_broadcast|explorer_restart), consommé côté agent par
+// le mécanisme 43.1 (`payload["refresh"]`, déjà mergé) — (a) l'item session
+// `registry` existant (HideFileExt) gagne `"refresh": "shell_notify"` ; (b)
+// AJOUT d'UN item session `registry_list` (conteneur
+// `…\Policies\Explorer\DisallowRun`, `"refresh": "policy_broadcast"`). Champ
+// additif + type DÉJÀ figé (registry_list existe depuis 35.2) =
+// forward-compatible, pas un major : un agent ≤ 2.9.0 ignore le champ
+// inconnu SANS ERREUR. session = 8, 18 items au total, hash d'état RECALCULÉ.
+// Bumpé à l'IDENTIQUE côté PHP (ContractV1Test::FROZEN_STATE_HASH — test
+// croisé NFR13). AUCUN bump de `agent/shared/version.go` : SEUL ce fichier de
+// TEST bouge côté agent/ (le mécanisme 2.10.0 qui lit le hint est déjà livré
+// par la 43.1 mergée) — voir Dev Agent Record de la story 43.2.
+const frozenStateHash = "5beb682b413ac2c5cef74baef19a17d3f47efe7cf163371201db0db954d506b0"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -279,8 +293,8 @@ func TestHashItemGoldenItemsMatchTheirHashFields(t *testing.T) {
 			checked++
 		}
 	}
-	if checked != 17 {
-		t.Errorf("17 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2 + fs_acl machine 36.1 + firewall machine 36.2 + privilege machine 35.6 + legacy_cleanup machine 38.3), %d vérifiés", checked)
+	if checked != 18 {
+		t.Errorf("18 items attendus dans le golden state (machine room 27.10 + registry session 27.3 + associations session 27.3bis + app_config machine 27.4 + applications machine 27.5 + drives K:/H: natifs + registry absent machine 35.1 + registry_list machine 35.2 + fs_acl machine 36.1 + firewall machine 36.2 + privilege machine 35.6 + legacy_cleanup machine 38.3 + registry_list session 43.2), %d vérifiés", checked)
 	}
 }
 
