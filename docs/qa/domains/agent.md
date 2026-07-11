@@ -4068,6 +4068,7 @@ si ces capacités devront porter `explorer_restart` en 43.2.
       2.6.0→2.9.0 vérifié : jamais publiées à la création de la 38.3).
 - [ ] Golden : `tests/Fixtures/Agent/*.v1.json` STRICTEMENT inchangés (le hint
       vit dans le payload provider-defined §3.2 ; l'émission serveur = 43.2).
+
 ## Story 43.3 — Cadence de propagation pilotée (`ttl_seconds` dynamique)
 
 Le `ttl_seconds` de l'enveloppe `/state` n'est plus une constante globale : il
