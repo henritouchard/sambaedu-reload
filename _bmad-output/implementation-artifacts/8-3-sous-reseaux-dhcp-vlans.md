@@ -1,6 +1,6 @@
 # Story 8.3 : Sous-réseaux DHCP (VLANs) — CRUD natif + scripts DHCP versionnés
 
-Status: review
+Status: done
 
 > **Story Epic 8 #3** — Réouverture de l'Epic 8 (clôturé 2026-05-13 après la 8.1). Porte la dernière
 > fonctionnalité DHCP legacy non couverte : la **gestion des sous-réseaux/VLANs** de `sambaedu/dhcp/config.php`.

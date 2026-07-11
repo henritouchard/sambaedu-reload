@@ -466,7 +466,7 @@ const DATASETS = {
         {
           "id": "8-3",
           "title": "Sous-réseaux DHCP (VLANs) — CRUD natif + scripts DHCP versionnés",
-          "status": "review",
+          "status": "done",
           "note": "DÉVELOPPÉE 2026-07-11 (dev-cycle, dev opus 4.8). Table dhcp_subnets + DhcpSubnetService (validations CIDR/vlan/overlap/réservation, export atomique dhcp-subnets.conf, reload sous lock partagé 8.1, mode dégradé AC5) + onglet Sous-réseaux Livewire + scripts versionnés scripts/system/ + ensure_dhcp_scripts() dans update.sh. Review adversariale sonnet + 2e avis opus → 6 findings + 2 ajouts opus, 7 corrigés auto (dont #1 🔴 RCE root via extra_option → whitelist chemin absolu + tests d'attaque ; #3 TOCTOU lock avant validation ; #2 idempotence -x). Reste #5 (/31-/32) backlog. Tests HÔTE : 45 passed (75 assertions) filter DhcpSubnet + non-régression 8.1 OK. 2 questions non bloquantes (périmètre greenfield config.inc.sh ; extra_option espaces). RESTE /vm : migrate + rejouer update.sh. Détail : _bmad-output/codeReviews/8-3.md. Reco dev : OPUS."
         }
       ]
