@@ -1650,26 +1650,26 @@ const DATASETS = {
     {
       "num": 43,
       "title": "Application immédiate des réglages (refresh post-apply + propagation)",
-      "status": "todo",
+      "status": "in-progress",
       "summary": "Supprimer le « double logon » : le compagnon écrit les policies HKCU <strong>après</strong> le démarrage d'Explorer (course au logon structurelle) → effet visible seulement au relogon. L'epic ajoute une <strong>échelle de rafraîchissement post-apply</strong> dans le compagnon (SHChangeNotify existant → broadcast <code>WM_SETTINGCHANGE \"Policy\"</code> → restart <code>explorer.exe</code>, session préservée, applis intactes), pilotée par un hint <code>refresh</code> <strong>déclaré par projection</strong> (spec JSON, vocabulaire fermé, défaut = logon suivant), plus la <strong>cadence de check-in pilotée serveur</strong> (l'agent honore déjà le ttl_seconds par réponse — levier serveur-only, TTL global 3600 s aujourd'hui). Consommateur immédiat : Epic 41 (restrict_run effectif en ~2 s en session courante) + lot Explorer existant. Analyse 2026-07-10. Cadrage : <code>planning-artifacts/epics-application-immediate.md</code>.",
       "stories": [
         {
           "id": "43-1",
           "title": "Agent — échelle de rafraîchissement du compagnon (hint refresh du payload)",
-          "status": "todo",
-          "note": "Gestes FFI : shell_notify (SHChangeNotify, existant), policy_broadcast (SendMessageTimeout HWND_BROADCAST WM_SETTINGCHANGE \"Policy\"), explorer_restart (kill+respawn dans la session user). Agrégation centralisée fin de Companion.RunPass : UN geste (le plus fort) par passe, gated sur changed, jamais au régime stable ; fan-out HKU SYSTEM jamais concerné. Bump version + PUBLIER AVANT les seeders 43.2 (gate Epic 35). BLOQUANT pour 43.2. Tâche lab : policy_broadcast suffit-il pour RestrictRun ? Reco dev : fable."
+          "status": "review",
+          "note": "LIVRÉE ultradev 2026-07-11 (dev fable, review opus, 4 findings corrigés dont throttle 10 min explorer_restart). Agent bumpé 2.10.0 — PUBLICATION MANUELLE requise avant migration retrofit 43.2. Gestes FFI : shell_notify (SHChangeNotify, existant), policy_broadcast (SendMessageTimeout HWND_BROADCAST WM_SETTINGCHANGE \"Policy\"), explorer_restart (kill+respawn dans la session user). Agrégation centralisée fin de Companion.RunPass : UN geste (le plus fort) par passe, gated sur changed, jamais au régime stable ; fan-out HKU SYSTEM jamais concerné. Bump version + PUBLIER AVANT les seeders 43.2 (gate Epic 35). BLOQUANT pour 43.2. Tâche lab : policy_broadcast suffit-il pour RestrictRun ? Reco dev : fable."
         },
         {
           "id": "43-2",
           "title": "Serveur — hint refresh par projection + affichage temporalité d'effet",
-          "status": "todo",
-          "note": "Convention spec.refresh (registry/registry_list), vocabulaire fermé validé par AuthoringGuard ; AbstractCapabilityStateProvider recopie dans le payload (portées session/machine_user seulement). Le hash change → drift ponctuel de re-application, bénin. Golden PHP↔Go. Retrofit lot Explorer + blocked_executables. UI : catalogue + formulaires affichent « immédiat / après rafraîchissement du bureau / au prochain logon ». Amont : 43.1 PUBLIÉE."
+          "status": "review",
+          "note": "LIVRÉE ultradev 2026-07-11 (dev sonnet, review opus, 3 findings corrigés). Retrofit conservateur sans explorer_restart (lab non validé — ajustement = UPDATE de seed) ; hash gelés 5beb682b… ; migration retrofit à jouer APRÈS publication 2.10.0. Convention spec.refresh (registry/registry_list), vocabulaire fermé validé par AuthoringGuard ; AbstractCapabilityStateProvider recopie dans le payload (portées session/machine_user seulement). Le hash change → drift ponctuel de re-application, bénin. Golden PHP↔Go. Retrofit lot Explorer + blocked_executables. UI : catalogue + formulaires affichent « immédiat / après rafraîchissement du bureau / au prochain logon ». Amont : 43.1 PUBLIÉE."
         },
         {
           "id": "43-3",
           "title": "Serveur — ttl_seconds dynamique (cadence de propagation pilotée)",
-          "status": "todo",
-          "note": "StateCompiler calcule le ttl_seconds par poste (constante config aujourd'hui, StateCompiler.php:74) : court (60-120 s) si parc en bascule sensible (flag examen 41.3), défaut sinon ; abaissement du défaut global à mesurer (les 304 ETag sont quasi gratuits). Limite honnête : le TTL court n'arrive qu'au prochain check-in — le défaut global borne le pire cas ; canal wake serveur→agent hors-scope. Zéro code agent. Vérifier que ttl_seconds n'entre pas dans le StateHasher. Parallélisable."
+          "status": "review",
+          "note": "LIVRÉE ultradev 2026-07-11 (dev sonnet, review opus, 3 findings corrigés + 1 écarté motivé). AgentTtlResolver 90 s si capacité sensible assignée ; ttl_seconds sorti du hash PHP↔Go ; contrainte 41.3 : déflag = DELETE, jamais value=off. StateCompiler calcule le ttl_seconds par poste (constante config aujourd'hui, StateCompiler.php:74) : court (60-120 s) si parc en bascule sensible (flag examen 41.3), défaut sinon ; abaissement du défaut global à mesurer (les 304 ETag sont quasi gratuits). Limite honnête : le TTL court n'arrive qu'au prochain check-in — le défaut global borne le pire cas ; canal wake serveur→agent hors-scope. Zéro code agent. Vérifier que ttl_seconds n'entre pas dans le StateHasher. Parallélisable."
         }
       ]
     }
