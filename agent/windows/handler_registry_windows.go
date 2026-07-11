@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 
 	"sambaedu/agent/shared"
@@ -296,31 +295,8 @@ func isHkuFanOutTarget(name string) bool {
 	return !strings.HasSuffix(upper, "_CLASSES")
 }
 
-// SHChangeNotify (shell32) — signale au shell un changement global afin que
-// l'Explorer DÉJÀ ouvert relise ses réglages de vue (Hidden, HideFileExt) sans
-// attendre un relogon. Sans cet appel, écrire HKCU\…\Explorer\Advanced ne change
-// RIEN à l'écran tant que la session reste ouverte (l'Explorer met ses réglages
-// de vue en cache). FFI Win32 sans cgo, même style que le handler wallpaper
-// (NewLazySystemDLL).
-const (
-	shcneAssocChanged = 0x08000000 // SHCNE_ASSOCCHANGED : force le shell à relire ses réglages
-	shcnfIDList       = 0x0000     // SHCNF_IDLIST
-)
-
-var (
-	modShell32         = windows.NewLazySystemDLL("shell32.dll")
-	procSHChangeNotify = modShell32.NewProc("SHChangeNotify")
-)
-
-// NotifyShellChanged émet SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, ...) —
-// implémente shared.registryNotifier (optionnel). Appelé par le COMPAGNON (dans
-// la session de l'utilisateur) APRÈS une écriture HKCU effective. Best-effort :
-// SHChangeNotify ne retourne rien d'exploitable et un shell non rafraîchi n'est
-// PAS une erreur de convergence (la clé est bien écrite ; au pire l'effet
-// apparaît au prochain relogon).
-func (o *registryOps) NotifyShellChanged() {
-	_, _, _ = procSHChangeNotify.Call(uintptr(shcneAssocChanged), uintptr(shcnfIDList), 0, 0)
-	if o.log != nil {
-		o.log.Infof("Rafraîchissement shell émis (SHChangeNotify) — l'Explorer relit Hidden/HideFileExt")
-	}
-}
+// NB (Story 43.1) : l'ancien hook `NotifyShellChanged` (SHChangeNotify inline,
+// ex-shared.registryNotifier) a MIGRÉ vers l'échelle de rafraîchissement —
+// refresh_windows.go (refreshOps.ShellNotify), pilotée par le compagnon en fin
+// de passe. UNE seule voie d'émission (piège n° 5) : registryOps ne porte plus
+// aucun geste shell.
