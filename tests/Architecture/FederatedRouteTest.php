@@ -101,7 +101,19 @@ class FederatedRouteTest extends TestCase
             ->in(realpath(__DIR__ . '/../../app/Auth/Federated'))
             ->name('*.php');
 
+        // Epic 39 (couture controlHub↔SE5) : `FederatedJwtVerifier` résout
+        // désormais l'IdP fédéré et l'uuid d'instance depuis la connexion
+        // controlHub (`ControlHubConnection::current()`, `config('controlHub…')`).
+        // Ce couplage est assumé par design — le fichier est donc exclu du
+        // garde-fou domain-neutral, qui continue de protéger le RESTE du
+        // namespace (controller, autres vérificateurs, modèles) contre toute
+        // fuite `controlHub`.
+        $couplageAssume = ['FederatedJwtVerifier.php'];
+
         foreach ($finder as $file) {
+            if (in_array($file->getFilename(), $couplageAssume, true)) {
+                continue;
+            }
             $content = strtolower((string) $file->getContents());
             self::assertStringNotContainsString(
                 'controlhub',

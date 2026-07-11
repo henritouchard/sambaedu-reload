@@ -212,6 +212,18 @@ class AdministratorKerberosContext
         if ($this->stdinDetached || PHP_SAPI !== 'cli') {
             return;
         }
+
+        // En contexte PHPUnit (process long-lived partagé par des milliers de
+        // tests), fermer le STDIN global du process le corromprait DÉFINITIVEMENT :
+        // `stream_isatty(STDIN)` (Laravel ConfiguresPrompts) lèverait un TypeError
+        // pour TOUTES les commandes console exécutées ensuite → cascade de ~160
+        // faux échecs en run complet. Les sous-process kinit/smbclient sont fakés
+        // en test : le détachement du TTY n'a aucun objet ici. On ne détache donc
+        // jamais stdin sous les tests (le comportement prod CLI reste inchangé).
+        if (app()->runningUnitTests()) {
+            return;
+        }
+
         $this->stdinDetached = true;
 
         if (defined('STDIN') && is_resource(STDIN)) {

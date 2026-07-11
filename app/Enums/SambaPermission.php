@@ -332,7 +332,15 @@ enum SambaPermission: string
         $bitmask = 0;
         foreach ($permissionNames as $name) {
             $perm = self::tryFrom($name);
-            if ($perm !== null) {
+            // Symétrie avec `bitmaskMapping()` / `fromSingleBitmask()` /
+            // `fromBitmask()` : les permissions à bit secondaire (SE5-natives
+            // sans bit legacy dédié — NetworkShare*, FolderRule*, ShareManage,
+            // ComputerRemoteRdp — qui pointent le bit représentatif
+            // `SE_SHARE_REFRESH`) sont EXCLUES des conversions bitmask. Sans ce
+            // filtre, un rôle comme `ReferentNumerique` (qui a NetworkShare* +
+            // FolderRule* mais AUCUN `share.*`) verrait le bit `ShareRefresh`
+            // (0x80) fuiter dans son bitmask legacy → asymétrie du round-trip.
+            if ($perm !== null && ! $perm->isSecondaryBitPermission()) {
                 $bitmask |= $perm->bitmask();
             }
         }

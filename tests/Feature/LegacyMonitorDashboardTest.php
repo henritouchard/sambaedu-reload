@@ -26,6 +26,10 @@ class LegacyMonitorDashboardTest extends TestCase
         if (! Schema::hasTable('legacy_catchall_logs')) {
             Schema::create('legacy_catchall_logs', function (Blueprint $table) {
                 $table->id();
+                // Story 38.2 (migration 2026_07_10) — le dashboard groupe par
+                // `source` (tombstone|catchall) ; sans cette colonne la requête
+                // d'agrégation lève « no such column: source » → 500.
+                $table->string('source', 16)->default('catchall');
                 $table->string('method', 10);
                 $table->string('path', 2048);
                 $table->string('ip', 45);

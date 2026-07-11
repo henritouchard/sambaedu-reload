@@ -11,9 +11,12 @@ use PHPUnit\Framework\TestCase;
  * Garde-fou architectural Story 16.14 — Routes + ordre + permissions (AC7.3).
  *
  * Vérifie :
- *   1. Les 3 routes nouvelles sont déclarées dans routes/web.php.
- *   2. Toutes 3 sont gardées par `can:server.admin`.
- *   3. Les routes `by-ou` et `sections` sont déclarées AVANT la route `{guid}` (anti-régression piège 1 de 16.9).
+ *   1. Les routes nouvelles (`by-ou`, `jobs`) sont déclarées dans routes/web.php.
+ *   2. Elles sont gardées par `can:server.admin`.
+ *   3. La route `by-ou` est déclarée AVANT la route `{guid}` (anti-régression piège 1 de 16.9).
+ *
+ * NB : la route `sections` (« Sections natives ») a été retirée (commit 6e98c41) ;
+ * ses assertions ont été supprimées de ce garde-fou.
  */
 class Story1614RoutesTest extends TestCase
 {
@@ -45,21 +48,11 @@ class Story1614RoutesTest extends TestCase
         );
     }
 
-    #[Test]
-    public function route_sections_is_declared(): void
-    {
-        self::assertStringContainsString(
-            "'/sections'",
-            $this->webPhpContent,
-            "La route /sections doit être déclarée dans routes/web.php (AC4.1)."
-        );
-
-        self::assertStringContainsString(
-            "name('sections')",
-            $this->webPhpContent,
-            "La route sections doit avoir le nom 'sections' dans le groupe gpo. (AC4.1)."
-        );
-    }
+    // NOTE : la route `/sections` (« Sections natives » 16.14/AC4) a été
+    // SUPPRIMÉE volontairement — commit 6e98c41 « chore(gpo): suppression de la
+    // page catalogue Sections natives ». Les assertions correspondantes ont
+    // donc été retirées de ce garde-fou (le garde couvre désormais /by-ou +
+    // /jobs, toujours en vigueur).
 
     #[Test]
     public function route_system_jobs_is_declared(): void
@@ -91,13 +84,6 @@ class Story1614RoutesTest extends TestCase
             "La route by-ou doit être protégée par can:server.admin."
         );
 
-        $sectionsSection = $this->extractRouteBlock($this->webPhpContent, "'/sections'");
-        self::assertStringContainsString(
-            "can:server.admin",
-            $sectionsSection,
-            "La route sections doit être protégée par can:server.admin."
-        );
-
         $jobsSection = $this->extractRouteBlock($this->webPhpContent, "'/jobs'");
         self::assertStringContainsString(
             "can:server.admin",
@@ -109,25 +95,18 @@ class Story1614RoutesTest extends TestCase
     #[Test]
     public function static_routes_declared_before_guid_parameterized_route(): void
     {
-        // Vérifier l'ordre : by-ou et sections AVANT /{guid} dans le groupe settings/gpo
+        // Vérifier l'ordre : by-ou AVANT /{guid} dans le groupe settings/gpo
+        // (la route sections a été supprimée — cf. commit 6e98c41).
         $byOuPos = strpos($this->webPhpContent, "'/by-ou'");
-        $sectionsPos = strpos($this->webPhpContent, "'/sections'");
         $guidPos = strpos($this->webPhpContent, "'/{guid}'");
 
         self::assertNotFalse($byOuPos, "Route by-ou introuvable.");
-        self::assertNotFalse($sectionsPos, "Route sections introuvable.");
         self::assertNotFalse($guidPos, "Route /{guid} introuvable.");
 
         self::assertLessThan(
             $guidPos,
             $byOuPos,
             "La route by-ou DOIT être déclarée AVANT la route paramétrée /{guid} (anti-régression piège 1 de 16.9)."
-        );
-
-        self::assertLessThan(
-            $guidPos,
-            $sectionsPos,
-            "La route sections DOIT être déclarée AVANT la route paramétrée /{guid} (anti-régression piège 1 de 16.9)."
         );
     }
 

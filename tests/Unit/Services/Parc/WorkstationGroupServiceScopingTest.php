@@ -149,6 +149,20 @@ class WorkstationGroupServiceScopingTest extends TestCase
             $this->createdTables = true;
         }
 
+        // Table consultée par les withCount `agentApplicationInventory as
+        // installed_apps_count / error_apps_count` de paginateMachines /
+        // paginateGroupMachines (Story 27.5) — stub minimal.
+        if (!Schema::hasTable('agent_application_inventory')) {
+            Schema::create('agent_application_inventory', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('workstation_id');
+                $table->string('app_id', 191)->nullable();
+                $table->string('status', 32)->nullable();
+                $table->timestamps();
+            });
+            $this->createdTables = true;
+        }
+
         // Story 16.13bis — table consultée par l'eager-load `migrationStatus`
         // ajouté à paginateMachines (Workstation::with('migrationStatus')).
         if (!Schema::hasTable('workstations_migration_status')) {
