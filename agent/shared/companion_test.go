@@ -382,22 +382,60 @@ func TestCompanionRunWritesUserRainmeterIniBeforeWatchdog(t *testing.T) {
 
 // fakeRefreshOps : RefreshOps en mémoire — enregistre la SÉQUENCE des gestes
 // (AC5 : prouver « un seul geste par passe, le plus fort ») et simule l'échec.
+// Story 43.4 : `events` trace en PLUS l'ordre complet gestes + notice
+// (show_notice/dismiss) — `seq` reste la séquence 43.1 des gestes SEULS
+// (AC4 : la séquence observable du geste est inchangée, les assertions 43.1
+// restent byte-identiques).
 type fakeRefreshOps struct {
-	seq          []string
+	seq          []string // gestes seulement (43.1)
+	events       []string // gestes + show_notice/dismiss (43.4, ordre complet)
 	broadcastErr error
 	restartErr   error
+	noticeFails  bool     // simule un échec de création de la fenêtre (D4)
+	noticeTexts  []string // libellés reçus par ShowRestartNotice
+	dismissCalls int      // nombre TOTAL d'appels du dismiss nominal
+	lastDismiss  func()   // dernier dismiss rendu (re-appelable par les tests)
 }
 
-func (f *fakeRefreshOps) ShellNotify() { f.seq = append(f.seq, "shell_notify") }
+func (f *fakeRefreshOps) gesture(name string) {
+	f.seq = append(f.seq, name)
+	f.events = append(f.events, name)
+}
+
+func (f *fakeRefreshOps) ShellNotify() { f.gesture("shell_notify") }
 func (f *fakeRefreshOps) PolicyBroadcast() error {
-	f.seq = append(f.seq, "policy_broadcast")
+	f.gesture("policy_broadcast")
 
 	return f.broadcastErr
 }
 func (f *fakeRefreshOps) RestartExplorer() error {
-	f.seq = append(f.seq, "explorer_restart")
+	f.gesture("explorer_restart")
 
 	return f.restartErr
+}
+
+// ShowRestartNotice (Story 43.4) : enregistre l'appel (events + libellé) et
+// rend (shown, dismiss). shown=false quand noticeFails (fenêtre non affichée →
+// le compagnon ne paie pas le lead time, review 43.4 #2) ; le dismiss ne trace
+// que sa PREMIÈRE invocation (idempotence du contrat : double appel sans
+// effet). noticeFails simule le contrat D4 — échec de création ⇒ dismiss no-op,
+// JAMAIS nil.
+func (f *fakeRefreshOps) ShowRestartNotice(text string) (bool, func()) {
+	f.noticeTexts = append(f.noticeTexts, text)
+	f.events = append(f.events, "show_notice")
+	if f.noticeFails {
+		f.lastDismiss = func() {}
+
+		return false, f.lastDismiss
+	}
+	f.lastDismiss = func() {
+		f.dismissCalls++
+		if f.dismissCalls == 1 {
+			f.events = append(f.events, "dismiss")
+		}
+	}
+
+	return true, f.lastDismiss
 }
 
 // newRefreshTestCompanion : compagnon câblé handlers registry+registry_list
@@ -413,6 +451,9 @@ func newRefreshTestCompanion(t *testing.T) (*Companion, *Store, *fakeRegistryOps
 		"registry_list": &RegistryListHandler{Ops: regOps},
 	}
 	c.Refresh = refresh
+	// Story 43.4 : lead time de lecture réduit au minimum (le défaut ~2 s
+	// ferait ramper la suite — defaultDuration traite <= 0 comme le défaut).
+	c.NoticeLeadTime = time.Millisecond
 
 	return c, store, regOps, refresh
 }
@@ -718,6 +759,162 @@ func TestCompanionRefreshAccumulationResetBetweenPasses(t *testing.T) {
 	}
 	if len(refresh.seq) != 1 {
 		t.Fatalf("passe 2 stable : aucun geste supplémentaire, obtenu %v", refresh.seq)
+	}
+}
+
+// --- Story 43.4 : fenêtre d'avertissement avant explorer_restart -------------
+
+func TestCompanionRestartNoticeShownBeforeRestartDismissedAfter(t *testing.T) {
+	// AC1 : restart NON throttlé (réellement exécuté) ⇒ la notice est montrée
+	// AVANT RestartExplorer et dismiss est appelé APRÈS son retour — ordre
+	// complet [show_notice explorer_restart dismiss], exactement UNE fois.
+	c, store, _, refresh := newRefreshTestCompanion(t)
+	writeSessionCache(t, store, refreshSessionState(registryRestrictRunExplorerRestart))
+
+	ran, err := c.RunPass()
+	if err != nil || !ran {
+		t.Fatalf("passe attendue : %v %v", ran, err)
+	}
+	if got := strings.Join(refresh.events, ","); got != "show_notice,explorer_restart,dismiss" {
+		t.Fatalf("ordre notice/restart/dismiss attendu, obtenu %v", refresh.events)
+	}
+	if refresh.dismissCalls != 1 {
+		t.Fatalf("dismiss appelé exactement une fois par le compagnon, obtenu %d", refresh.dismissCalls)
+	}
+	// Libellé D6 : la const partagée, telle quelle (FR, sans jargon).
+	if len(refresh.noticeTexts) != 1 || refresh.noticeTexts[0] != restartNoticeText {
+		t.Fatalf("libellé D6 attendu (%q), obtenu %v", restartNoticeText, refresh.noticeTexts)
+	}
+	// AC4 : la séquence 43.1 des GESTES reste inchangée (un seul geste).
+	if len(refresh.seq) != 1 || refresh.seq[0] != "explorer_restart" {
+		t.Fatalf("séquence de gestes 43.1 inchangée attendue : %v", refresh.seq)
+	}
+}
+
+func TestCompanionRestartNoticeNeverShownForWeakerGesturesOrStablePass(t *testing.T) {
+	// AC1 (And) / D1 : shell_notify, policy_broadcast et passe STABLE ne
+	// montrent JAMAIS la notice — « l'absence d'action = on ne l'a jamais
+	// créée ».
+	c, store, _, refresh := newRefreshTestCompanion(t)
+
+	// Passe 1 : plancher shell_notify (item HKCU changé sans hint).
+	writeSessionCache(t, store, refreshSessionState(registryHiddenNoHint))
+	if _, err := c.RunPass(); err != nil {
+		t.Fatalf("passe shell_notify : %v", err)
+	}
+	// Passe 2 : hint policy_broadcast (item changé).
+	writeSessionCache(t, store, refreshSessionState(registryNoDrivesPolicyBroadcast))
+	if _, err := c.RunPass(); err != nil {
+		t.Fatalf("passe policy_broadcast : %v", err)
+	}
+	// Passe 3 : STABLE (rien ne change) ⇒ RefreshNone, aucun geste.
+	if _, err := c.RunPass(); err != nil {
+		t.Fatalf("passe stable : %v", err)
+	}
+
+	if got := strings.Join(refresh.events, ","); got != "shell_notify,policy_broadcast" {
+		t.Fatalf("aucune notice sur gestes faibles/stable — events [shell_notify policy_broadcast] attendus, obtenu %v", refresh.events)
+	}
+	if len(refresh.noticeTexts) != 0 {
+		t.Fatalf("ShowRestartNotice jamais appelé attendu : %v", refresh.noticeTexts)
+	}
+}
+
+func TestCompanionRestartNoticeNotShownOnThrottledDegradedRestart(t *testing.T) {
+	// Piège #6 : second restart < 10 min ⇒ DÉGRADÉ en policy_broadcast —
+	// aucun kill de shell, donc AUCUNE notice (la notice vit APRÈS le check
+	// throttle, dans le seul chemin qui atteint RestartExplorer).
+	c, store, regOps, refresh := newRefreshTestCompanion(t)
+	now := time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC)
+	c.Now = func() time.Time { return now }
+	writeSessionCache(t, store, refreshSessionState(registryRestrictRunExplorerRestart))
+
+	if _, err := c.RunPass(); err != nil {
+		t.Fatalf("passe 1 : %v", err)
+	}
+	redriftKey(regOps, `Software\P\Explorer`, "RestrictRun")
+	now = now.Add(time.Minute)
+	if _, err := c.RunPass(); err != nil {
+		t.Fatalf("passe 2 : %v", err)
+	}
+
+	want := "show_notice,explorer_restart,dismiss,policy_broadcast"
+	if got := strings.Join(refresh.events, ","); got != want {
+		t.Fatalf("le restart dégradé ne montre pas de notice — events [%s] attendus, obtenu %v", want, refresh.events)
+	}
+	if len(refresh.noticeTexts) != 1 {
+		t.Fatalf("une seule notice (passe 1) attendue : %v", refresh.noticeTexts)
+	}
+}
+
+func TestCompanionRestartNoticeFailureNeverBlocksRestart(t *testing.T) {
+	// AC2 / D4 : échec simulé de la notice (dismiss no-op) ET échec du geste
+	// lui-même ⇒ RestartExplorer est QUAND MÊME tenté, la passe, le drop et
+	// l'applied-state restent intacts — jamais une erreur de passe.
+	c, store, _, refresh := newRefreshTestCompanion(t)
+	refresh.noticeFails = true
+	refresh.restartErr = errors.New("explorer.exe introuvable")
+	writeSessionCache(t, store, refreshSessionState(registryRestrictRunExplorerRestart))
+
+	ran, err := c.RunPass()
+	if err != nil || !ran {
+		t.Fatalf("échec notice/geste ≠ échec de passe : %v %v", ran, err)
+	}
+	// Le restart a bien été tenté APRÈS la tentative de notice ; le dismiss
+	// no-op ne trace rien (aucune fenêtre à fermer).
+	if got := strings.Join(refresh.events, ","); got != "show_notice,explorer_restart" {
+		t.Fatalf("restart tenté malgré l'échec de la notice — events attendus [show_notice explorer_restart], obtenu %v", refresh.events)
+	}
+	raw, err := os.ReadFile(c.DropPath)
+	if err != nil || !strings.Contains(string(raw), `"status":"drift"`) {
+		t.Fatalf("drop intact attendu : %s %v", raw, err)
+	}
+	applied, corrupted := ReadAppliedState(c.User.AppliedStatePath())
+	if corrupted || applied["registry"].Hash == "" {
+		t.Fatalf("applied-state persisté attendu : %+v %v", applied, corrupted)
+	}
+}
+
+func TestCompanionRestartNoticeDismissIdempotent(t *testing.T) {
+	// AC2 : dismiss est IDEMPOTENT — le compagnon l'appelle une fois ; des
+	// appels supplémentaires (contrat de l'impl, mimé par le fake) sont sans
+	// effet observable et sans panique.
+	c, store, _, refresh := newRefreshTestCompanion(t)
+	writeSessionCache(t, store, refreshSessionState(registryRestrictRunExplorerRestart))
+
+	if _, err := c.RunPass(); err != nil {
+		t.Fatalf("passe : %v", err)
+	}
+	if refresh.dismissCalls != 1 || refresh.lastDismiss == nil {
+		t.Fatalf("un dismiss appelé une fois attendu : %d", refresh.dismissCalls)
+	}
+	// Double appel (défensif) : aucun évènement de plus.
+	refresh.lastDismiss()
+	refresh.lastDismiss()
+	if got := strings.Join(refresh.events, ","); got != "show_notice,explorer_restart,dismiss" {
+		t.Fatalf("dismiss idempotent — aucun évènement supplémentaire attendu, obtenu %v", refresh.events)
+	}
+}
+
+func TestCompanionIgnoresMachineScopeItems(t *testing.T) {
+	// AC5 / piège #5 : un item MACHINE forgé avec hint explorer_restart n'est
+	// JAMAIS dispatché par le compagnon (partition des portées) — aucun geste,
+	// AUCUNE notice. Côté SYSTEM, l'exclusion est STRUCTURELLE : le
+	// MachineEngine (main_windows.go) ne reçoit aucune RefreshOps et le
+	// fan-out HKU changé rend RefreshNone même avec un hint fort
+	// (TestRegistryHkuNeverTriggersShellRefresh) — ShowRestartNotice est
+	// inatteignable en session 0.
+	c, store, _, refresh := newRefreshTestCompanion(t)
+	machineOnly := `{"schema":"se5.desired-state/v1","generated_at":"2026-07-13T08:00:00+00:00","ttl_seconds":3600,"machine":[` +
+		registryRestrictRunExplorerRestart + `],"session":[],"machine_user":[]}`
+	writeSessionCache(t, store, machineOnly)
+
+	ran, err := c.RunPass()
+	if err != nil || !ran {
+		t.Fatalf("passe attendue : %v %v", ran, err)
+	}
+	if len(refresh.events) != 0 || len(refresh.noticeTexts) != 0 {
+		t.Fatalf("aucun geste ni notice pour la portée machine : %v %v", refresh.events, refresh.noticeTexts)
 	}
 }
 

@@ -86,6 +86,12 @@ type Companion struct {
 	// Now : horloge injectable (tests). nil = time.Now.
 	Now func() time.Time
 
+	// NoticeLeadTime : délai de lecture entre l'affichage de la fenêtre
+	// d'avertissement et le kill d'Explorer (Story 43.4, D5). <= 0 = défaut
+	// restartNoticeLeadTime (~2 s). Injectable (tests) ; encouru UNIQUEMENT
+	// sur la branche explorer_restart réellement exécutée.
+	NoticeLeadTime time.Duration
+
 	// lastExplorerRestart : horodatage du dernier explorer_restart TENTÉ par
 	// CETTE instance (throttle anti-thrash, review 43.1 #1). En mémoire
 	// seulement, jamais persisté : le thrash visé est INTRA-vie du compagnon
@@ -109,11 +115,20 @@ func (c *Companion) now() time.Time {
 	return time.Now()
 }
 
-func (c *Companion) pollInterval() time.Duration { return defaultDuration(c.PollInterval, 2*time.Second) }
-func (c *Companion) pollTimeout() time.Duration  { return defaultDuration(c.PollTimeout, 60*time.Second) }
-func (c *Companion) freshWindow() time.Duration  { return defaultDuration(c.FreshWindow, 5*time.Minute) }
-func (c *Companion) cachePoll() time.Duration    { return defaultDuration(c.CachePoll, 60*time.Second) }
-func (c *Companion) periodicPass() time.Duration { return defaultDuration(c.PeriodicPass, 5*time.Minute) }
+func (c *Companion) pollInterval() time.Duration {
+	return defaultDuration(c.PollInterval, 2*time.Second)
+}
+func (c *Companion) pollTimeout() time.Duration {
+	return defaultDuration(c.PollTimeout, 60*time.Second)
+}
+func (c *Companion) freshWindow() time.Duration { return defaultDuration(c.FreshWindow, 5*time.Minute) }
+func (c *Companion) cachePoll() time.Duration   { return defaultDuration(c.CachePoll, 60*time.Second) }
+func (c *Companion) periodicPass() time.Duration {
+	return defaultDuration(c.PeriodicPass, 5*time.Minute)
+}
+func (c *Companion) noticeLeadTime() time.Duration {
+	return defaultDuration(c.NoticeLeadTime, restartNoticeLeadTime)
+}
 
 // explorerRestartMinInterval : intervalle MINIMAL entre deux explorer_restart
 // par instance de Companion (review 43.1 #1, anti-thrash). En drift RÉCURRENT
@@ -285,7 +300,32 @@ func (c *Companion) runRefreshGesture() {
 		// Horodaté à la TENTATIVE (même en échec : le shell a pu être tué) —
 		// le throttle protège la session, pas le succès du geste.
 		c.lastExplorerRestart = c.now()
-		if err := c.Refresh.RestartExplorer(); err != nil {
+		// Fenêtre d'avertissement (Story 43.4, D1/D2) : UNIQUEMENT ici — le
+		// seul chemin qui atteint réellement RestartExplorer (jamais sur les
+		// gestes faibles, jamais en passe stable, jamais sur le restart
+		// throttlé→dégradé ci-dessus : aucune perturbation à couvrir). La
+		// fenêtre vit dans le PROCESS du compagnon : elle SURVIT au kill
+		// d'explorer.exe, et c'est dismiss() qui la ferme APRÈS le retour de
+		// RestartExplorer (qui sonde déjà le retour du shell — poll ~3 s +
+		// grâce 1 s). Best-effort ABSOLU (D4) : une notice en échec rend un
+		// dismiss no-op côté impl — le restart part QUAND MÊME.
+		shown, dismiss := c.Refresh.ShowRestartNotice(restartNoticeText)
+		if dismiss == nil {
+			dismiss = func() {} // défense : une impl rendant nil ne casse rien (D4)
+		}
+		// Bref délai de lecture (D5) — borné et constant : laisser lire le
+		// message avant le clignotement de la barre des tâches. UNIQUEMENT si la
+		// fenêtre s'est réellement affichée : pas de délai mort avant le kill
+		// quand la création a échoué (review 43.4 #2).
+		if shown {
+			time.Sleep(c.noticeLeadTime())
+		}
+		err := c.Refresh.RestartExplorer()
+		// Fermée APRÈS le retour du geste (shell revenu, D2) — y compris en
+		// échec du restart : jamais de fenêtre orpheline. dismiss est
+		// idempotent et borné (contrat ShowRestartNotice).
+		dismiss()
+		if err != nil {
 			c.Log.Warningf("Rafraîchissement explorer_restart en échec : %v — les clés sont écrites, l'effet attendra le relogon (best-effort).", err)
 
 			return

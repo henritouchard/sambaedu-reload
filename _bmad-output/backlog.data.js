@@ -1670,6 +1670,12 @@ const DATASETS = {
           "title": "Serveur — ttl_seconds dynamique (cadence de propagation pilotée)",
           "status": "review",
           "note": "LIVRÉE ultradev 2026-07-11 (dev sonnet, review opus, 3 findings corrigés + 1 écarté motivé). AgentTtlResolver 90 s si capacité sensible assignée ; ttl_seconds sorti du hash PHP↔Go ; contrainte 41.3 : déflag = DELETE, jamais value=off. StateCompiler calcule le ttl_seconds par poste (constante config aujourd'hui, StateCompiler.php:74) : court (60-120 s) si parc en bascule sensible (flag examen 41.3), défaut sinon ; abaissement du défaut global à mesurer (les 304 ETag sont quasi gratuits). Limite honnête : le TTL court n'arrive qu'au prochain check-in — le défaut global borne le pire cas ; canal wake serveur→agent hors-scope. Zéro code agent. Vérifier que ttl_seconds n'entre pas dans le StateHasher. Parallélisable."
+        },
+        {
+          "id": "43-4",
+          "title": "Agent — fenêtre d'avertissement avant redémarrage d'Explorer (explorer_restart)",
+          "status": "review",
+          "note": "LIVRÉE 2026-07-13 (dev-cycle : dev fable, review opus, findings corrigés #1/#2/#3/#4 + spinner/typo à la demande). 100 % agent Go, ZÉRO changement serveur/contrat/golden. Le compagnon lève sa PROPRE fenêtre top-most « patientez » (WS_POPUP + WS_EX_TOPMOST|WS_EX_TOOLWINDOW, FFI user32/gdi32 sans cgo, message pump sur thread LockOSThread, WNDPROC via NewCallback) UNIQUEMENT quand le geste résolu de fin de passe est un explorer_restart RÉELLEMENT exécuté (jamais gestes faibles/stable/throttlé-dégradé, jamais session 0). La fenêtre appartient au process compagnon → SURVIT au kill d'explorer.exe ; c'est dismiss() qui la ferme après le retour du shell. Best-effort ABSOLU (D4) : échec/lenteur = warning + restart quand même ; shown=false ⇒ pas de lead time mort. Design : spinner ASCII animé (WM_TIMER, thread dédié) + police Segoe UI agrandie. Bump agent 2.11.0 — PUBLICATION MANUELLE requise (comportement visible). Amont : 43.1 explorer_restart (mergé main). Reco dev : fable. Doc review : codeReviews/43-4.md."
         }
       ]
     }

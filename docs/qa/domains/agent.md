@@ -4283,3 +4283,81 @@ en lab ou VM).
       publication requise pour cette story (2.10.0 déjà due à la 43.1).
 - [ ] ROLLOUT — release agent 2.10.0 publiée AVANT de jouer la migration de
       retrofit en prod/VM (sinon hint ignoré en silence, UI mensongère).
+
+## Story 43.4 — Fenêtre d'avertissement avant `explorer_restart`
+
+Le redémarrage d'`explorer.exe` (geste le plus fort de l'échelle 43.1) est le
+seul geste visuellement perturbant : barre des tâches qui disparaît/réapparaît
+~2-3 s, fenêtres de l'Explorateur perdues (assumé NFR-A1). Depuis la
+**2.11.0**, quand — et seulement quand — un `explorer_restart` est RÉELLEMENT
+exécuté, le compagnon affiche SA propre petite fenêtre top-most « Application
+des réglages en cours — l'écran va se rafraîchir, merci de patienter quelques
+secondes. » ~2 s AVANT de tuer le shell, la maintient pendant le redémarrage
+(elle vit dans le PROCESS du compagnon : elle SURVIT au kill d'explorer.exe)
+et la ferme APRÈS le retour du shell. Aucun bouton, aucune interaction :
+purement informative, auto-fermée. Best-effort ABSOLU : un échec de création
+de la fenêtre est un warning `companion.log`, le restart part quand même.
+
+Publication MANUELLE de la **2.11.0** requise (update.sh ne publie jamais
+seul) : un binaire ≤ 2.10.0 redémarre Explorer SANS avertissement (aucune
+casse — juste le trou d'UX que cette story couvre). Contrat wire/golden
+INCHANGÉS : la fenêtre est une réaction 100 % locale du compagnon au geste
+déjà résolu (aucun hint nouveau, aucun champ de payload).
+
+### Scénario 43.4.1 — POSITIF : fenêtre avant le clignotement, fermée après le retour du shell
+
+1. Poste lab migré en **2.11.0** (version rapportée au check-in = 2.11.0),
+   session utilisateur OUVERTE.
+2. Basculer une capacité de vue Explorer (ou `restrict_run`, Epic 41) taguée
+   `explorer_restart` (seed 43.2/41.x — ou édition du cache per-SID, cf. NB de
+   la section 43.1), puis relogon (ou attendre la re-convergence).
+3. À la convergence : la fenêtre « Application des réglages en cours… »
+   apparaît centrée, au-dessus de tout, AVANT le clignotement de la barre des
+   tâches (~2 s de lecture), reste affichée PENDANT le redémarrage du shell,
+   et disparaît APRÈS le retour de la barre des tâches.
+4. Les AUTRES applis restent intactes (NFR-A1) ; la fenêtre n'a ni bouton
+   barre des tâches, ni bordure, ni titre ; elle ne vole pas le focus.
+5. **Contenu de la fenêtre** : message en police lisible (Segoe UI, plus gros
+   que la police système) + **spinner animé** (glyphe `|`/`/`/`-`/`\` qui
+   tourne, ~120 ms/frame). Le spinner continue de tourner PENDANT la
+   disparition de la barre des tâches (l'animation vit sur le thread propre de
+   la fenêtre) — vérifier qu'il ne se fige pas au moment du kill du shell.
+6. `companion.log` : « Rafraîchissement de session émis : explorer_restart »
+   — aucun warning de notice sur le chemin nominal.
+
+### Scénario 43.4.2 — NÉGATIF : geste faible → aucune fenêtre
+
+1. Poste 2.11.0, session ouverte.
+2. Basculer une capacité restée en `shell_notify` (ex. `show_file_extensions`
+   — lot vues Explorer) : au cycle suivant, `companion.log` montre
+   « shell_notify », le réglage s'applique… et AUCUNE fenêtre n'apparaît.
+3. Idem pour une capacité `policy_broadcast` : geste émis, AUCUNE fenêtre.
+
+### Scénario 43.4.3 — STABLE : relogon sans changement → aucune fenêtre
+
+1. Poste 2.11.0 convergé (aucune bascule serveur depuis le dernier passage).
+2. Relogon : AUCUNE fenêtre, AUCUNE ligne « Rafraîchissement de session
+   émis » (passe stable = zéro geste, zéro clignotement — principe Epic 43
+   préservé).
+
+### Scénario 43.4.4 — THROTTLE : le restart dégradé ne montre pas de fenêtre
+
+1. Provoquer deux convergences `explorer_restart` à moins de 10 min
+   d'intervalle (re-drift forcé, cf. scénario 43.1.3 étape 6).
+2. Premier restart : fenêtre montrée (43.4.1). Second : `companion.log`
+   montre le warning « THROTTLÉ … dégradé en policy_broadcast » et AUCUNE
+   fenêtre n'apparaît (aucun kill de shell = aucune perturbation à couvrir).
+3. > 10 min après : le restart repart AVEC sa fenêtre.
+
+### Check-list
+
+- [ ] 43.4.1 — Fenêtre visible AVANT le clignotement, survit au restart,
+      fermée APRÈS le retour du shell ; applis intactes ; pas de vol de focus.
+- [ ] 43.4.2 — `shell_notify`/`policy_broadcast` : jamais de fenêtre.
+- [ ] 43.4.3 — Passe stable/relogon sans changement : jamais de fenêtre.
+- [ ] 43.4.4 — Restart throttlé→dégradé : pas de fenêtre ; restart suivant
+      (> 10 min) : fenêtre de retour.
+- [ ] Publication 2.11.0 MANUELLE faite (comportement VISIBLE — vérifier au
+      passage l'état de la 2.10.0, gate des seeders 43.2).
+- [ ] Golden `tests/Fixtures/Agent/*.v1.json` STRICTEMENT inchangés (réaction
+      locale au geste, aucun changement de wire — D7).

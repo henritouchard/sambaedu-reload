@@ -1,6 +1,9 @@
 package shared
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // Échelle de rafraîchissement du compagnon (Story 43.1, Epic 43 — application
 // immédiate). Après une écriture HKCU EFFECTIVE, l'Explorer déjà ouvert ne
@@ -129,7 +132,37 @@ type RefreshOps interface {
 	// compagnon (droits user, jamais d'élévation), avec garde
 	// anti-double-lancement (piège n° 3).
 	RestartExplorer() error
+	// ShowRestartNotice affiche la fenêtre d'avertissement « patientez »
+	// AVANT le redémarrage d'Explorer (Story 43.4, D2/D3). La fenêtre vit
+	// dans le PROCESS du compagnon (jamais parentée au shell) : elle SURVIT
+	// au kill d'explorer.exe et c'est le dismiss retourné qui la ferme,
+	// appelé par le compagnon APRÈS le retour de RestartExplorer. Contrat :
+	//   - best-effort ABSOLU (D4) : échec/lenteur de création = warning côté
+	//     impl + dismiss no-op retourné — JAMAIS nil, JAMAIS bloquant, le
+	//     restart part quand même (l'avertissement est un confort) ;
+	//   - shown indique si la fenêtre a réellement été affichée : false sur
+	//     échec/timeout de création. Le compagnon ne paie le lead time (délai
+	//     de lecture) QUE si shown est true — pas de délai mort avant le kill
+	//     quand il n'y a rien à lire (review 43.4 #2) ;
+	//   - dismiss est IDEMPOTENT (double appel sans effet) et BORNÉ (ne pend
+	//     jamais la passe), appelable même si la fenêtre n'a jamais existé.
+	// Appelée UNIQUEMENT depuis la branche explorer_restart NON throttlée de
+	// runRefreshGesture (D1, pièges #1/#6) — jamais pour les gestes faibles,
+	// jamais en passe stable, jamais côté SYSTEM/session 0 (piège #5).
+	ShowRestartNotice(text string) (shown bool, dismiss func())
 }
+
+// restartNoticeText : libellé de la fenêtre d'avertissement (Story 43.4, D6) —
+// court, français, sans jargon ; purement informatif (aucun bouton, aucune
+// interaction : la fenêtre est auto-fermée par le compagnon).
+const restartNoticeText = "Application des réglages en cours — l'écran va se rafraîchir, merci de patienter quelques secondes."
+
+// restartNoticeLeadTime : bref délai de lecture entre l'affichage de la
+// fenêtre et le kill du shell (Story 43.4, D5) — borné et constant, encouru
+// UNIQUEMENT sur la branche restart (jamais au régime stable : le surcoût ne
+// frappe que le logon où un réglage change réellement). Défaut du champ
+// Companion.NoticeLeadTime (injectable — tests).
+const restartNoticeLeadTime = 2 * time.Second
 
 // RefreshRequester : interface OPTIONNELLE qu'un handler peut implémenter pour
 // déclarer le geste de rafraîchissement requis par sa DERNIÈRE passe (patron

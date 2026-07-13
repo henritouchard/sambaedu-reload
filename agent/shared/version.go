@@ -265,7 +265,35 @@ package shared
 // (privilege) n'avaient JAMAIS été publiées — vérifier au moment de publier
 // si la 2.9.0 l'a été depuis (sinon la 2.10.0 livre les cinq lots d'un coup).
 //
+// 2.11.0 = fenêtre d'avertissement avant explorer_restart (Story 43.4, Epic
+// 43) : quand — et SEULEMENT quand — le geste résolu de fin de passe est un
+// explorer_restart RÉELLEMENT exécuté (jamais shell_notify/policy_broadcast,
+// jamais passe stable, jamais le restart throttlé→dégradé), le compagnon
+// affiche SA propre petite fenêtre top-most « Application des réglages en
+// cours — l'écran va se rafraîchir… » AVANT de tuer le shell (délai de
+// lecture ~2 s, const restartNoticeLeadTime), la maintient PENDANT le
+// redémarrage (elle vit dans le PROCESS du compagnon, non parentée au shell —
+// elle SURVIT au kill d'explorer.exe) et la ferme APRÈS le retour du shell
+// (dismiss après RestartExplorer, qui sonde déjà ce retour). NOUVELLE méthode
+// RefreshOps.ShowRestartNotice(text) (dismiss func()) ; impl Windows
+// agent/windows/notice_windows.go — PREMIÈRE fenêtre native de l'agent, FFI
+// user32/gdi32 pur sans cgo (RegisterClassExW sous sync.Once, WNDPROC paquet
+// via NewCallback, CreateWindowExW WS_POPUP + WS_EX_TOPMOST|WS_EX_TOOLWINDOW,
+// STATIC centré, message pump sur goroutine LockOSThread). Best-effort
+// ABSOLU : échec/lenteur de création (borne 1 s) = warning + dismiss no-op,
+// le restart part QUAND MÊME ; dismiss idempotent (sync.Once) et borné (2 s).
+// Session user seulement — le MachineEngine SYSTEM n'a aucune RefreshOps,
+// aucune fenêtre en session 0. Contrat wire/golden INCHANGÉS (réaction 100 %
+// LOCALE du compagnon au geste déjà résolu : aucun hint nouveau, aucun champ
+// de payload, aucune projection — D7). ⚠️ Comportement VISIBLE : un binaire
+// ≤ 2.10.0 redémarre Explorer SANS avertissement (aucune casse, juste le trou
+// d'UX) → PUBLIER la release 2.11.0 (manuelle — update.sh ne publie jamais
+// seul) pour que l'avertissement prenne effet sur le parc. ⚠️ ÉTAT DES
+// PUBLICATIONS : vérifier au moment de publier si la 2.10.0 (échelle de
+// rafraîchissement, gate des seeders 43.2) l'a été depuis la 43.1 — sinon la
+// 2.11.0 livre les lots en attente d'un coup.
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.10.0"
+var Version = "2.11.0"
