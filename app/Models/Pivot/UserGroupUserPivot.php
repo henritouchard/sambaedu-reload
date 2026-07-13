@@ -117,6 +117,14 @@ class UserGroupUserPivot extends Pivot
      */
     public static function defaultRoleForGlobalRole(?string $globalRole): string
     {
-        return $globalRole === 'prof' ? self::ROLE_MANAGER : self::ROLE_MEMBER;
+        $role = $globalRole === 'prof' ? self::ROLE_MANAGER : self::ROLE_MEMBER;
+
+        // Review 42.1 #2 — défense en profondeur : la garde est câblée sur le
+        // point de dérivation partagé par tous les écrivains, pas seulement
+        // exercée en test. Coût nul, et 42.2/42.4 hériteront du filet quand des
+        // valeurs non constantes (UI, import AD) transiteront par ici.
+        self::assertValidRole($role);
+
+        return $role;
     }
 }

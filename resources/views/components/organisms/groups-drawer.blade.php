@@ -351,11 +351,19 @@ new class extends Component {
                             }
                         }
                         $allGroupIds = UserGroup::query()->whereIn('name', $adGroupCns)->pluck('id')->all();
-                        $sqlUser->userGroups()->sync($allGroupIds);
+                        // Story 42.1 (review #1) — rôle dérivé sur les arêtes
+                        // NOUVELLES uniquement (existantes non réécrites).
+                        $sqlUser->userGroups()->sync(
+                            $sqlUser->userGroupSyncPayloadWithDerivedRole($allGroupIds)
+                        );
                     } elseif ($this->removeMode) {
                         $sqlUser->userGroups()->detach($selectedGroupIds);
                     } else {
-                        $sqlUser->userGroups()->syncWithoutDetaching($selectedGroupIds);
+                        // Story 42.1 (review #1) — idem : rôle dérivé, nouvelles
+                        // arêtes uniquement.
+                        $sqlUser->userGroups()->syncWithoutDetaching(
+                            $sqlUser->userGroupSyncPayloadWithDerivedRole($selectedGroupIds)
+                        );
                     }
                 }
 

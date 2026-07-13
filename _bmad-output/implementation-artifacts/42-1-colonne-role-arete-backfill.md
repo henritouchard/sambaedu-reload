@@ -163,6 +163,7 @@ claude-opus-4-8 (dev-story, main)
 ### Debug Log References
 
 - `vendor/bin/phpunit --filter "UserGroup|MergeLegacy|HeadTeacher|GroupShowMembers|UserServiceClassChange|UserCreation|Backfill|UserGroupUserPivot"` → **129 tests / 376 assertions, OK**.
+- Review #3 — le filtre ci-dessus ne couvrait pas les commandes d'import qui exercent `projectFoldedGroup` : ajouter `|SyncFromAdImportCommand|SyncUsersFromAdCommand` au filet de non-régression. Run post-corrections (filtre complet + `UserDerivedRolePayload`) → **142 tests / 415 assertions, OK**.
 - `vendor/bin/phpunit --filter "UserPolicy|UserGroupUserPivotObserver"` → **18 tests, OK** (non-régression policy + observer, non touchés).
 - `DB_CONNECTION=sqlite DB_DATABASE=<scratch> php artisan migrate --force` → migration `2026_07_13_120000_add_role_to_user_group_user` **DONE** (full migrate SQLite passe, AC1). Ordre des migrations validé : 4.14 (2026_06_25) tourne AVANT la colonne `role`, la garde `Schema::hasColumn` dans `MergeLegacyUserGroups` empêche toute casse.
 
@@ -223,3 +224,13 @@ claude-opus-4-8 (dev-story, main)
 **opus.**
 
 L'epic pré-cadrait sonnet (« migration + backfill cadrés »), révisé à la création : le vrai risque n'est pas la migration (triviale) mais l'**invariant miroir** `is_head_teacher`⇔`role` à maintenir simultanément sur 3 flux d'écriture hétérogènes (read-back `sync()` associatif, action SQL pure `MergeLegacyUserGroups` avec garde d'ordre de migrations, import users), le piège `syncWithoutDetaching`-avec-attributs qui écrase silencieusement les arêtes existantes, et la frontière chirurgicale avec le canal projection 4.15 qui ne doit PAS bouger (toute fuite de bascule = fenêtre où la projection lit une colonne morte — exactement ce que 42.2 doit éviter). Profil identique à 4.14 (même famille de pièges pivot/PK composite), qui avait été confiée à opus. Multi-fichiers (~12), logique critique, zéro UI créative → opus ; review par le modèle opposé.
+
+## Code Review Record (2026-07-13)
+
+Review adversariale **sonnet** (dev opus) + évaluation orchestrateur (éval des findings, lecture code) : **approuvé avec réserves** — 0 critique, 2 importants, 2 mineurs, **tous corrigés**. Doc : `_bmad-output/codeReviews/42-1.md`.
+
+Corrections appliquées :
+1. (#1 🟠, pertinence 3) Écrivains pivot UI hors import instrumentés : `User::userGroupSyncPayloadWithDerivedRole()` (rôle dérivé sur arêtes NOUVELLES uniquement, existantes jamais réécrites) câblé sur `syncGroupsFromAd` (fiche user) et les 2 écritures du drawer « Gestion des groupes ». Tests : `tests/Feature/Models/UserDerivedRolePayloadTest.php` (3 tests).
+2. (#2 🟠, pertinence 2) `assertValidRole()` câblée dans `defaultRoleForGlobalRole()` (défense en profondeur, plus une garde morte).
+3. (#3 🟡, pertinence 2) Filet de non-régression documenté complété (Sync*CommandTest).
+4. (#4 🟡, pertinence 2) Commentaire `MergeLegacyUserGroups` corrigé : la garde `hasColumn` couvre l'invocation manuelle/ops sur base pré-42.1, pas un `migrate fresh` (la migration 4.14 n'invoque pas l'action).

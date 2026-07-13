@@ -235,7 +235,12 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                 ->whereIn('name', $adGroupCns)
                 ->pluck('id')
                 ->all();
-            $sqlUser->userGroups()->sync($matchingGroupIds);
+            // Story 42.1 (review #1) — rôle d'arête dérivé appliqué aux arêtes
+            // NOUVELLES uniquement ; une arête existante n'est jamais réécrite
+            // (un `owner` promu survit à la re-synchronisation).
+            $sqlUser->userGroups()->sync(
+                $sqlUser->userGroupSyncPayloadWithDerivedRole($matchingGroupIds)
+            );
         }
 
         // Rafraîchir l'affichage

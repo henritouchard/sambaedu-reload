@@ -126,6 +126,42 @@ class User extends Authenticatable implements Wireable
     }
 
     /**
+     * Story 42.1 (review #1) — payload de sync pivot appliquant le rôle d'arête
+     * PAR DÉFAUT (dérivé du rôle GLOBAL `users.role`, jamais de round-trip
+     * LDAP) aux arêtes NOUVELLES uniquement. Les ids déjà attachés sont
+     * renvoyés SANS attribut : `sync()`/`syncWithoutDetaching()` ne réécrit
+     * alors pas leur pivot, donc un rôle promu (`owner`) n'est jamais
+     * rétrogradé par ces chemins.
+     *
+     * Consommé par les écrivains pivot UI hors import (fiche user
+     * `syncGroupsFromAd`, drawer « Gestion des groupes ») ; l'import users
+     * (`UserService::persistUserGroupsToSql`) porte sa propre variante avec
+     * capture d'état préalable.
+     *
+     * @param array<int,int|string> $groupIds
+     * @return array<int,array<string,string>>
+     */
+    public function userGroupSyncPayloadWithDerivedRole(array $groupIds): array
+    {
+        $derivedRole = \App\Models\Pivot\UserGroupUserPivot::defaultRoleForGlobalRole($this->role);
+
+        $alreadyAttachedIds = $this->userGroups()
+            ->pluck('user_groups.id')
+            ->map(static fn ($id): int => (int) $id)
+            ->all();
+
+        $payload = [];
+        foreach ($groupIds as $gid) {
+            $gid = (int) $gid;
+            $payload[$gid] = in_array($gid, $alreadyAttachedIds, true)
+                ? []
+                : ['role' => $derivedRole];
+        }
+
+        return $payload;
+    }
+
+    /**
      * Story 4.13 — Helper PARTAGÉ de résolution classe↔partage post-fold.
      *
      * Depuis le fold de l'import (4.13), une classe est UNE seule ligne

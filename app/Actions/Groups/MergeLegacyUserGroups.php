@@ -68,12 +68,13 @@ class MergeLegacyUserGroups
             'skipped_collisions' => 0,
         ];
 
-        // Story 42.1 — cette action est référencée par la migration 4.14
-        // (2026_06_25), ANTÉRIEURE à la colonne `role` (2026_07_13). Sur une
-        // base pré-42.1 (ou un `migrate` fresh où 4.14 tourne avant la colonne),
-        // la colonne `role` n'existe pas encore → on GARDE toute écriture de
-        // `role` derrière `Schema::hasColumn`. Sans la colonne : comportement
-        // 4.14 strictement intact. Avec : miroir `role` ⇔ `is_head_teacher`.
+        // Story 42.1 (review #4) — la migration 4.14 (2026_06_25) n'invoque PAS
+        // cette action (geste manuel/ops via tinker, documenté dans la
+        // migration elle-même) : le scénario réel de la garde est une
+        // invocation manuelle sur une base pré-42.1, où la colonne `role`
+        // (2026_07_13) n'existe pas encore → toute écriture de `role` reste
+        // derrière `Schema::hasColumn`. Sans la colonne : comportement 4.14
+        // strictement intact. Avec : miroir `role` ⇔ `is_head_teacher`.
         $hasRoleColumn = Schema::hasColumn('user_group_user', 'role');
 
         // 1) Charger toutes les lignes une fois, indexer par baseKey (lower).
