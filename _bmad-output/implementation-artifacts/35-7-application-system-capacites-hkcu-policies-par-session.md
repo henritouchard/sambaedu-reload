@@ -1,6 +1,6 @@
 # Story 35.7 : Application SYSTEM des capacités `HKCU\…\Policies\*` par session (correct-course)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Source d'autorité : _bmad-output/planning-artifacts/epics-capacites-v2.md (Epic 35, DONE — story de correct-course sur défaut runtime confirmé). Décision de cadrage validée par Henri le 2026-07-13 (option 1 : ciblage par-utilisateur conservé). -->
 
@@ -143,32 +143,32 @@ afin **que le ciblage par groupe d'utilisateurs (élèves) fonctionne — le ser
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Contrat & golden (AC1)** *(commencer ici : fige la sémantique)*
-  - [ ] 1.1 `docs/agent/contract-v1.md` : §7.1 ligne `writer` au tableau (+ exemple 6 clés) + note d'articulation avec « Portée → acteur » et l'exclusion `refresh` ; §7.6 idem pour `registry_list` ; §9 évolution 35.7 (champ ajouté = mineur, binaire antérieur = silence, publier avant d'armer).
-  - [ ] 1.2 Golden : `state.v1.json` étendu (writer sur un item registry ET un item registry_list de portée session, sans `refresh` — modifier des items existants pour préserver les comptages) ; recalcul des hashes jumeaux `ContractV1Test::FROZEN_STATE_HASH` ↔ `hasher_test.go frozenStateHash` (et hashes d'items dépendants) ; `report.v1.json` intouché ; justification au Dev Agent Record.
-- [ ] **Task 2 — Providers PHP + guard (AC2)**
-  - [ ] 2.1 `app/Models/CapabilityProjection.php` : const `WRITER_SYSTEM = 'system'` (+ docblock sémantique).
-  - [ ] 2.2 `AbstractCapabilityStateProvider.php` : recopie de l'attribut `writer` de la clé de spec sur l'item émis (chemins écriture ET `$ensure: absent`) ; garde `withRefreshHint()` (jamais de `refresh` sur item writer) ; docblock.
-  - [ ] 2.3 `AbstractRegistryListCapabilityProvider.php` : recopie idem sur le payload conteneur.
-  - [ ] 2.4 `CapabilitySpecCollisionGuard.php` : borné D3 (valeur, mécanismes, HKCU-only) + docblock (sémantique, exclusion refresh, leçon Policies domaine).
-  - [ ] 2.5 Tests : `CapabilityRegistryProviderTest` (émission 6 clés / 5 clés absent / byte-identité sans attribut / jamais refresh+writer), `CapabilityRegistryListProviderTest` (conteneur marqué), `CapabilityRegistryCompilationTest` (précédence UserGroup > Broadcast avec marqueur voyageant), tests guard (writer invalide, writer sur HKLM/HKU refusés, catalogue seedé vert).
-- [ ] **Task 3 — Agent Go : partition compagnon (AC3)**
-  - [ ] 3.1 Helper shared de partition D4 (payload brut, générique) + branchement dans `companion.go RunPass` (avant `Engine.RunPass`, log debug) — `engine.go`/parsers intouchés.
-  - [ ] 3.2 Tests compagnon : items marqués écartés (aucun op registre tenté), items non marqués inchangés, valeur writer inconnue skippée sans erreur, drop/applied-state per-user inchangés.
-- [ ] **Task 4 — Agent Go : passe SYSTEM par-session (AC4)**
-  - [ ] 4.1 Décorateur d'ops D5 (shared, pur) : traduction HKCU→`HKU\<SID>`, `UserHives` = erreur franche ; doc (sonde race-logoff héritée de l'impl Windows `Write`).
-  - [ ] 4.2 `agent/shared/sessionapply.go` : passe par-session D6 (lecture cache per-SID, partition, moteur registry+registry_list sur ops décorées, applied-state per-SID via nouveau path `sessionstore.go`, verdicts → `machineReportItems`) ; branchement `loop.go` (après `fetchSessionStates`, hors quarantaine) + `sessionfetch.go RunSessionFetch` (converge sans rapporter) ; champ `Agent.SessionSystemOps` (nil = inerte) câblé dans `agent/windows/main_windows.go`.
-  - [ ] 4.3 Tests (fake RegistryOps réutilisé, jamais dupliqué) : ciblage un-SID (2 sessions, contrats différents), STRICT re-drift à travers le moteur, `ensure:absent` + réconciliation `registry_list` dans la ruche ciblée, session déloguée = no-op sans orpheline, erreur isolée par session, quarantaine = passe sautée, ops nil = inerte, fusion des verdicts par type dans le rapport.
-  - [ ] 4.4 `agent/shared/version.go` : bump **2.12.0** + changelog (piège #11).
-- [ ] **Task 5 — Lot : retrofit + commentaires (AC5)**
-  - [ ] 5.1 Migration `2026_07_13_100000_retrofit_session_system_writer_policies.php` (D7 : writer posé, refresh retiré, idempotente, down() exact, commentaire de tête = cause racine + audit D8 + ordre de publication).
-  - [ ] 5.2 Corrections de COMMENTAIRES seuls dans `2026_07_03_110000` et `2026_07_02_100000` (AC5 — zéro donnée).
-  - [ ] 5.3 `tests/Feature/Migrations/CapabilitiesSchemaAndSeedTest.php` : specs re-routées (writer présent, refresh absent), idempotence/réversibilité, intégration provider données réelles (AC5), invariant guard étendu.
-- [ ] **Task 6 — Validation finale (AC6, AC7)**
-  - [ ] 6.1 Tests HÔTE ciblés (php8.4 + sqlite, JAMAIS de run massif) : filtres de la section Testing.
-  - [ ] 6.2 Tests Go (`~/go-toolchain/go/bin/go`, hors PATH) : `cd agent && go test ./...` ; `GOOS=windows go build ./...` ; `go vet ./...` (linux ET GOOS=windows).
-  - [ ] 6.3 Docs : `docs/agent/state-providers.md` (note writer, section registry/registry_list) ; `docs/qa/domains/agent.md` section « Story 35.7 » append-only (scénarios : élève bloqué au logon suivant, prof OK même poste, binaire antérieur silencieux, session déloguée en course).
-  - [ ] 6.4 Dev Agent Record : justification golden (piège #7), ⚠️ ORDRE OPÉRATEUR (publier 2.12.0 → attendre remontée version → `php artisan migrate` sur /vm — jamais auto-appliquée), consigne e2e lab manuel AC7.
+- [x] **Task 1 — Contrat & golden (AC1)** *(commencer ici : fige la sémantique)*
+  - [x] 1.1 `docs/agent/contract-v1.md` : §7.1 ligne `writer` au tableau (+ exemple 6 clés) + note d'articulation avec « Portée → acteur » et l'exclusion `refresh` ; §7.6 idem pour `registry_list` ; §9 évolution 35.7 (champ ajouté = mineur, binaire antérieur = silence, publier avant d'armer).
+  - [x] 1.2 Golden : `state.v1.json` étendu (writer sur un item registry ET un item registry_list de portée session, sans `refresh` — modifier des items existants pour préserver les comptages) ; recalcul des hashes jumeaux `ContractV1Test::FROZEN_STATE_HASH` ↔ `hasher_test.go frozenStateHash` (et hashes d'items dépendants) ; `report.v1.json` intouché ; justification au Dev Agent Record.
+- [x] **Task 2 — Providers PHP + guard (AC2)**
+  - [x] 2.1 `app/Models/CapabilityProjection.php` : const `WRITER_SYSTEM = 'system'` (+ docblock sémantique).
+  - [x] 2.2 `AbstractCapabilityStateProvider.php` : recopie de l'attribut `writer` de la clé de spec sur l'item émis (chemins écriture ET `$ensure: absent`) ; garde `withRefreshHint()` (jamais de `refresh` sur item writer) ; docblock.
+  - [x] 2.3 `AbstractRegistryListCapabilityProvider.php` : recopie idem sur le payload conteneur.
+  - [x] 2.4 `CapabilitySpecCollisionGuard.php` : borné D3 (valeur, mécanismes, HKCU-only) + docblock (sémantique, exclusion refresh, leçon Policies domaine).
+  - [x] 2.5 Tests : `CapabilityRegistryProviderTest` (émission 6 clés / 5 clés absent / byte-identité sans attribut / jamais refresh+writer), `CapabilityRegistryListProviderTest` (conteneur marqué), `CapabilityRegistryCompilationTest` (précédence UserGroup > Broadcast avec marqueur voyageant), tests guard (writer invalide, writer sur HKLM/HKU refusés, catalogue seedé vert).
+- [x] **Task 3 — Agent Go : partition compagnon (AC3)**
+  - [x] 3.1 Helper shared de partition D4 (payload brut, générique) + branchement dans `companion.go RunPass` (avant `Engine.RunPass`, log debug) — `engine.go`/parsers intouchés.
+  - [x] 3.2 Tests compagnon : items marqués écartés (aucun op registre tenté), items non marqués inchangés, valeur writer inconnue skippée sans erreur, drop/applied-state per-user inchangés.
+- [x] **Task 4 — Agent Go : passe SYSTEM par-session (AC4)**
+  - [x] 4.1 Décorateur d'ops D5 (shared, pur) : traduction HKCU→`HKU\<SID>`, `UserHives` = erreur franche ; doc (sonde race-logoff héritée de l'impl Windows `Write`).
+  - [x] 4.2 `agent/shared/sessionapply.go` : passe par-session D6 (lecture cache per-SID, partition, moteur registry+registry_list sur ops décorées, applied-state per-SID via nouveau path `sessionstore.go`, verdicts → `machineReportItems`) ; branchement `loop.go` (après `fetchSessionStates`, hors quarantaine) + `sessionfetch.go RunSessionFetch` (converge sans rapporter) ; champ `Agent.SessionSystemOps` (nil = inerte) câblé dans `agent/windows/main_windows.go`.
+  - [x] 4.3 Tests (fake RegistryOps réutilisé, jamais dupliqué) : ciblage un-SID (2 sessions, contrats différents), STRICT re-drift à travers le moteur, `ensure:absent` + réconciliation `registry_list` dans la ruche ciblée, session déloguée = no-op sans orpheline, erreur isolée par session, quarantaine = passe sautée, ops nil = inerte, fusion des verdicts par type dans le rapport.
+  - [x] 4.4 `agent/shared/version.go` : bump **2.12.0** + changelog (piège #11).
+- [x] **Task 5 — Lot : retrofit + commentaires (AC5)**
+  - [x] 5.1 Migration `2026_07_13_100000_retrofit_session_system_writer_policies.php` (D7 : writer posé, refresh retiré, idempotente, down() exact, commentaire de tête = cause racine + audit D8 + ordre de publication).
+  - [x] 5.2 Corrections de COMMENTAIRES seuls dans `2026_07_03_110000` et `2026_07_02_100000` (AC5 — zéro donnée).
+  - [x] 5.3 `tests/Feature/Migrations/CapabilitiesSchemaAndSeedTest.php` : specs re-routées (writer présent, refresh absent), idempotence/réversibilité, intégration provider données réelles (AC5), invariant guard étendu.
+- [x] **Task 6 — Validation finale (AC6, AC7)**
+  - [x] 6.1 Tests HÔTE ciblés (php8.4 + sqlite, JAMAIS de run massif) : filtres de la section Testing.
+  - [x] 6.2 Tests Go (`~/go-toolchain/go/bin/go`, hors PATH) : `cd agent && go test ./...` ; `GOOS=windows go build ./...` ; `go vet ./...` (linux ET GOOS=windows).
+  - [x] 6.3 Docs : `docs/agent/state-providers.md` (note writer, section registry/registry_list) ; `docs/qa/domains/agent.md` section « Story 35.7 » append-only (scénarios : élève bloqué au logon suivant, prof OK même poste, binaire antérieur silencieux, session déloguée en course).
+  - [x] 6.4 Dev Agent Record : justification golden (piège #7), ⚠️ ORDRE OPÉRATEUR (publier 2.12.0 → attendre remontée version → `php artisan migrate` sur /vm — jamais auto-appliquée), consigne e2e lab manuel AC7.
 
 ## Dev Notes
 
@@ -262,8 +262,60 @@ afin **que le ciblage par groupe d'utilisateurs (élèves) fonctionne — le ser
 
 ### Agent Model Used
 
+claude-fable-5
+
 ### Debug Log References
+
+- PHP hôte (php 8.4.5 + sqlite, filtres ciblés) :
+  - `php artisan test --filter="CapabilityRegistryProviderTest|CapabilityRegistryListProviderTest|CapabilityRegistryCompilationTest|CapabilityRegistryListCompilationTest"` → **77 passed (350 assertions)** ;
+  - `php artisan test --filter=CapabilitiesSchemaAndSeedTest` → **54 passed (990 assertions)** ;
+  - `php artisan test --filter="ContractV1Test|StateHasherTest"` → **21 passed (166 assertions)** ;
+  - non-régression adjacente : `--filter="StateEndpointTest|StateCompilerTest"` 52 passed, `--filter=CapabilityLegacyCleanupCompilationTest` 5 passed, `--filter=CapabilityRefreshHintTest` 8 passed, `--filter=GroupCapabilitiesSectionTest` 22 passed.
+- Go (`~/go-toolchain/go/bin/go`, depuis `agent/`) :
+  - `go test ./... -count=1` → `ok sambaedu/agent/provision` + `ok sambaedu/agent/shared` ;
+  - `GOOS=windows go build ./...` → OK ;
+  - `go vet ./...` (linux) ET `GOOS=windows go vet ./...` → OK.
+- Recalcul des hashes golden : script scratchpad `rehash.php` chargeant le `StateHasher` PHP réel sur le golden modifié (item hashes + state hash).
 
 ### Completion Notes List
 
+- **Justification golden/hashes (piège #7, règle 23.1)** : `writer` est un CHAMP nouveau du wire (pas une valeur de domaine) → la forme fige au golden. Les DEUX items session concernés ont été **MODIFIÉS** (jamais ajoutés — comptages 9/8/1 et 18 items de `contract_test.go`/`hasher_test.go` préservés) : (a) l'item `registry` session (ex-HideFileExt+refresh) devient le flag réel post-retrofit `…\Policies\Explorer!DisallowRun = 1` marqué `writer: "system"` ; (b) l'item `registry_list` session (conteneur `…\Policies\Explorer\DisallowRun`) gagne `writer: "system"`. Les deux PERDENT leur hint `refresh` (exclusion mutuelle, piège #6 — la couverture golden de la forme `refresh` disparaît : elle reste couverte par les tests dédiés providers/handlers 43.1/43.2 ; conséquence structurelle assumée, il n'existait qu'un item session par type). Hashes recalculés À L'IDENTIQUE des deux côtés avec le `StateHasher` PHP réel : `FROZEN_STATE_HASH` = `frozenStateHash` = `af00bc8350ab453f105397f22d5d4716fe97bdf014c101e07dc0319a3703a65f` ; hash item registry `a19a1be2…f9cfd93e`, hash item registry_list `8bcf6507…86ef41ca` — vérifiés croisés par les nouveaux tests jumeaux (`writer_field_changes_*` PHP ↔ `TestHashItemWriter*` Go, NFR13). `report.v1.json` STRICTEMENT inchangé.
+- **⚠️ ORDRE OPÉRATEUR (piège #1, AC6)** : publier la release **2.12.0 MANUELLEMENT** → attendre la remontée de version au check-in (elle fait foi ; `update.sh` ne publie jamais seul) → `php artisan migrate` sur /vm (retrofit `2026_07_13_100000` — les migrations VM ne sont JAMAIS auto-appliquées). Un binaire ≤ 2.11.x ignore le marqueur EN SILENCE : aucune casse ne flotte, mais le compagnon garde son « Accès refusé » et le service n'applique rien — migrer d'abord = croire avoir corrigé sans avoir corrigé. Vérifier au passage l'état de publication de la 2.11.0 (epic 43) : sinon la 2.12.0 livre les lots en attente d'un coup.
+- **E2E lab MANUEL (AC7, post-story — jamais exécuté par le dev)** : consigné au runbook `docs/qa/domains/agent.md` § Story 35.7 — armer `blocked_executables` on par override UserGroup élèves (geste 35.4) ; session élève : au **logon suivant** cmd/PowerShell/mstsc bloqués (restriction Explorer), rapport `compliant`, clés dans `HKU\<SID élève>` SEUL ; session prof/technicien MÊME poste : cmd.exe OK (preuve du ciblage par-utilisateur — le critère qui invalidait la rustine HKLM) ; + scénarios binaire antérieur silencieux et race logoff.
+- **Version agent** : point de départ ajusté 2.11.**1** (correctif intermédiaire du working tree, piège #11) → bump MINEUR **2.12.0** + entrée changelog complète dans `version.go`.
+- **Frontière 35.3 respectée** : aucun octet changé dans `engine.go`, `parseRegistrySpec`/`parseRegistryListSpec`, le fan-out `isUsersHive`/`fanOutUserHives`/`UserHives` Windows, `StateCompiler.php`, `StateHasher.php`/`hasher.go` (le hash change par les DONNÉES golden), ni `hide_drives`/`windows_copilot_off`. La traduction HKCU→`HKU\<SID>` est un décorateur d'ops pur (`sessionHiveOps`), handlers réutilisés tels quels ; `UserHives()` du décorateur = erreur franche. La sonde race-logoff de `Write` Windows joue gratuitement (le décorateur émet `hive: HKU`, path préfixé `<SID>\` = base de fan-out sondée) — prouvé par `TestSessionApplyLoggedOffSessionMaterializesNothing`.
+- **Rafraîchissement 43.1 neutralisé structurellement** dans la passe SYSTEM : les handlers accumulent `refreshWanted` sur le spec HKCU (isUserHive vrai) mais sont instanciés PAR PASSE et `TakeRefreshRequest` n'est jamais consommé (iso MachineEngine) — aucun geste depuis la session 0 ; documenté dans `sessionapply.go`.
+- **Tests mis à jour (pas seulement ajoutés)** : le retrofit re-shape 3 specs seedées → `retrofit_migration_seeds_the_conservative_refresh_hints_per_capability` (43.2) asserte désormais l'état FINAL (hints retirés des 3 re-routées), `refresh_hints_retrofit_migration_is_idempotent_and_reversible` normalise `refresh` des 3 re-routées hors snapshot (retrofit postérieur, pattern existant), `registry_list_lot_migration_is_idempotent_and_reversible` normalise aussi `writer`, et le test d'intégration `blocked_executables_bi_projection_emits_flag_and_list_per_provider` devient l'intégration AC5 (formes writer 6/5/5 clés, jamais refresh).
+- **Effet UI assumé (hors périmètre code)** : `Capability::effectTiming()` fait retomber `blocked_executables`/`registry_editing_disabled` sur le badge « À la prochaine session » (le hint `refresh` retiré) — c'est désormais le badge HONNÊTE (effet au logon suivant), aucun code UI touché.
+- **Décision hors-spec mineure** : `withWriterMarker()` (provider) est DÉFENSIF au render (recopie ssi valeur === 'system' ET clé HKCU) — iso discipline `refresh` ; le guard refuse déjà en amont (règle 6, violations nommées). Un `writer` non-string dans un payload wire est traité côté agent comme « présent mais hors enum » (skip des deux acteurs).
+
 ### File List
+
+- `tests/Fixtures/Agent/state.v1.json` — golden : 2 items session modifiés (writer posé, refresh retiré), hashes recalculés
+- `tests/Unit/Services/Agent/ContractV1Test.php` — FROZEN_STATE_HASH recalculé + justification 35.7
+- `tests/Unit/Services/Agent/StateHasherTest.php` — tests jumeaux `writer_field_changes_*` (hashes croisés figés)
+- `docs/agent/contract-v1.md` — §7.1 ligne `writer` + exemple 6 clés + note « Portée → acteur » ; §7.6 ligne `writer` ; §9 évolution 35.7
+- `app/Models/CapabilityProjection.php` — const `WRITER_SYSTEM` + docblock
+- `app/Services/Agent/Providers/AbstractCapabilityStateProvider.php` — `withWriterMarker()` (recopie écriture + absent), garde `withRefreshHint()` (jamais refresh sur item writer), docblocks
+- `app/Services/Agent/Providers/AbstractRegistryListCapabilityProvider.php` — recopie writer sur le conteneur, docblock
+- `app/Services/Agent/Providers/CapabilitySpecCollisionGuard.php` — règle 6 (enum fermé + HKCU-only) + docblock
+- `tests/Unit/Services/Agent/CapabilityRegistryProviderTest.php` — 6 tests writer (AC2)
+- `tests/Unit/Services/Agent/CapabilityRegistryListProviderTest.php` — 3 tests writer conteneur (AC2)
+- `tests/Unit/Services/Agent/CapabilityRegistryCompilationTest.php` — 2 tests compilation (UserGroup > Broadcast avec marqueur voyageant ; machine-only sans writer)
+- `agent/shared/sessionapply.go` — NOUVEAU : partition D4 (`SplitSystemWriterItems`) + décorateur D5 (`sessionHiveOps`) + passe D6 (`convergeSessionSystem`)
+- `agent/shared/sessionapply_test.go` — NOUVEAU : 13 tests (partition, décorateur, ciblage un-SID, STRICT re-drift, absent+list dans la ruche ciblée, race logoff, isolation, quarantaine, nil-inerte, fusion par type)
+- `agent/shared/companion.go` — partition avant le moteur dans `RunPass` (AC3)
+- `agent/shared/companion_test.go` — 3 tests partition compagnon (piège d'accès, valeur inconnue, tout-délégué)
+- `agent/shared/sessionstore.go` — `Store.SessionAppliedStatePath()` (applied-state per-SID, piège #8)
+- `agent/shared/loop.go` — champ `Agent.SessionSystemOps` + branchement `convergeSessionSystem()` au cycle
+- `agent/shared/sessionfetch.go` — branchement `convergeSessionSystem()` dans `RunSessionFetch` (at-logon, converge sans rapporter)
+- `agent/shared/hasher_test.go` — `frozenStateHash` recalculé + justification + tests jumeaux `TestHashItemWriter*`
+- `agent/shared/version.go` — bump 2.11.1 → **2.12.0** + changelog
+- `agent/windows/main_windows.go` — câblage `SessionSystemOps: &registryOps{…}`
+- `database/migrations/2026_07_13_100000_retrofit_session_system_writer_policies.php` — NOUVEAU : retrofit D7 (writer posé, refresh retiré, idempotent, down() exact, commentaire cause racine + audit D8 + ordre de publication)
+- `database/migrations/2026_07_03_110000_seed_capabilities_registry_list_lot.php` — commentaires FAUX corrigés (zéro donnée)
+- `database/migrations/2026_07_02_100000_seed_capabilities_gpo_cd95_lot.php` — commentaires FAUX corrigés (zéro donnée)
+- `tests/Feature/Migrations/CapabilitiesSchemaAndSeedTest.php` — section 35.7 (retrofit assertions + idempotence/réversibilité + guard règle 6 + invariant catalogue) ; tests 43.2/35.2 mis à jour (état final post-retrofit, normalisations de snapshot)
+- `docs/agent/state-providers.md` — notes writer (sections registry + registry_list)
+- `docs/qa/domains/agent.md` — section « Story 35.7 » append-only (4 scénarios + check-list)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — ligne 35-7 → review

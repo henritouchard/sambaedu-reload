@@ -178,6 +178,12 @@ func (a *Agent) RunSessionFetch(cfg Config) {
 	}()
 
 	a.fetchSessionStates(cfg)
+	// Story 35.7 : passe SYSTEM par-session au logon aussi — « un seul code
+	// pour les deux déclencheurs » (décision 24.3 n°4). Le processus at-logon
+	// CONVERGE mais ne rapporte pas (aucun canal POST — les verdicts accumulés
+	// meurent avec lui ; le cycle du service re-testera, level-triggered).
+	// Fetch en échec/offline : la passe applique sur le DERNIER cache existant.
+	a.convergeSessionSystem()
 	a.SyncWallpaperAssets(cfg)
 	a.SyncShortcutIcons(cfg) // Story 27.7 : icônes uploadées (GET statique sans token)
 }

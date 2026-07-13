@@ -379,6 +379,78 @@ class CapabilityRegistryListProviderTest extends TestCase
         self::assertSame(['hive', 'path', 'entry_type', 'values'], array_keys($item->payload));
     }
 
+    // ── Story 35.7 (D1/D2, AC2) — marqueur `writer` par conteneur de spec ──
+    // Le conteneur marqué est réconcilié par le service SYSTEM dans HKU\<SID>
+    // (jamais par le compagnon — …\Policies\Explorer\DisallowRun non
+    // user-writable sur poste joint au domaine).
+
+    #[Test]
+    public function session_provider_recopies_the_writer_marker_as_a_five_key_container(): void
+    {
+        // (a) conteneur marqué : EXACTEMENT 5 clés {hive, path, entry_type,
+        // values, writer} — sur le `on` (liste peuplée) ET sur le `off`
+        // (purge, liste vide) : le marqueur voyage avec la clé.
+        $cap = $this->makeListCapability('blocked_executables', 'on', [
+            ['hive' => 'HKCU', 'path' => 'Software\\P\\Explorer\\DisallowRun', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['cmd.exe'], 'off' => []], 'writer' => 'system'],
+        ]);
+
+        $broadcast = $this->userProvider()->itemsFor($this->ctx())->first();
+        self::assertSame(['hive', 'path', 'entry_type', 'values', 'writer'], array_keys($broadcast->payload));
+        self::assertSame('system', $broadcast->payload['writer']);
+        self::assertSame(['cmd.exe'], $broadcast->payload['values']);
+
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => WorkstationGroup::class,
+            'assignable_id' => $this->parc->id,
+            'value' => 'off',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $override = $this->userProvider()->itemsFor($this->ctx())
+            ->first(fn (StateCandidate $c): bool => $c->maille === StateMaille::LogicalGroup);
+        self::assertSame([], $override->payload['values'], 'off = purge (liste vide)');
+        self::assertSame('system', $override->payload['writer'], 'le marqueur voyage sur le candidat de maille');
+    }
+
+    #[Test]
+    public function refresh_hint_is_never_posed_on_a_writer_marked_container(): void
+    {
+        // (b) piège n°6 — exclusion mutuelle refresh/writer côté registry_list :
+        // un hint résiduel au spec n'est JAMAIS recopié sur le conteneur marqué.
+        $cap = Capability::factory()->create(['key' => 'marked_list_with_hint', 'default_value' => 'on']);
+        CapabilityProjection::factory()->for($cap)->create([
+            'mechanism' => CapabilityProjection::MECHANISM_REGISTRY_LIST,
+            'spec' => [
+                'keys' => [
+                    ['hive' => 'HKCU', 'path' => 'Software\\P\\Explorer\\DisallowRun', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['cmd.exe']], 'writer' => 'system'],
+                ],
+                'refresh' => 'policy_broadcast',
+            ],
+        ]);
+
+        $item = $this->userProvider()->itemsFor($this->ctx())->first();
+
+        self::assertSame('system', $item->payload['writer']);
+        self::assertArrayNotHasKey('refresh', $item->payload, 'JAMAIS refresh sur un conteneur writer (piège n°6)');
+    }
+
+    #[Test]
+    public function machine_provider_never_emits_the_writer_marker_on_a_container(): void
+    {
+        // (c) garde HKCU du helper : un conteneur HKLM portant un marqueur
+        // corrompu n'est jamais recopié par le provider Machine (défense au
+        // render — le guard refuse déjà à l'authoring).
+        $this->makeListCapability('rogue_marked_machine_list', 'on', [
+            ['hive' => 'HKLM', 'path' => 'SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallForcelist', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['abc']], 'writer' => 'system'],
+        ]);
+
+        $machineItems = $this->machineProvider()->itemsFor($this->ctx());
+
+        self::assertCount(1, $machineItems);
+        self::assertArrayNotHasKey('writer', $machineItems->first()->payload, 'JAMAIS de writer sur un conteneur Machine (AC2)');
+    }
+
     // ── NFR7 — zéro AD/APCu dans les sources ───────────────────────────────
 
     #[Test]

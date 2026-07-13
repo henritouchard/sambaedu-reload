@@ -165,13 +165,13 @@
             "semantics": "exclusive",
             "payload": {
                 "hive": "HKCU",
-                "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
-                "name": "HideFileExt",
+                "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
+                "name": "DisallowRun",
                 "type": "REG_DWORD",
-                "value": 0,
-                "refresh": "shell_notify"
+                "value": 1,
+                "writer": "system"
             },
-            "hash": "8d81f541d4fe267ecf6763edf09635bdba0d33d2e59e0662c1312f800e66fbdd"
+            "hash": "a19a1be2cf3670be2b0eafb85371af3c1d79e5f20bfab3d8d5ed93e9f9cfd93e"
         },
         {
             "type": "registry_list",
@@ -184,9 +184,9 @@
                     "cmd.exe",
                     "powershell.exe"
                 ],
-                "refresh": "policy_broadcast"
+                "writer": "system"
             },
-            "hash": "698a7a3eccb1ebd7f6d8e477eb6372ecdee90e753ef29462388119689ead9422"
+            "hash": "8bcf6507d5a8e9180df24f482bfc074b40551673d0f1199ed5b8bc8d86ef41ca"
         },
         {
             "type": "associations",

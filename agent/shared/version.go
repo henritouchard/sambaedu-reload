@@ -293,7 +293,44 @@ package shared
 // rafraîchissement, gate des seeders 43.2) l'a été depuis la 43.1 — sinon la
 // 2.11.0 livre les lots en attente d'un coup.
 //
+// 2.12.0 = application SYSTEM des capacités `HKCU\…\Policies\*` par session
+// (Story 35.7, contrat §7.1/§7.6) : champ additif OPTIONNEL `writer` sur les
+// payloads `registry`/`registry_list` (enum fermé, seule valeur publiée
+// "system" — portées session/machine_user, ruche HKCU, mutuellement exclusif
+// avec `refresh`). Cause racine : sur poste JOINT AU DOMAINE, TOUT
+// `HKCU\…\Policies\*` — y compris `CurrentVersion\Policies` — est en LECTURE
+// SEULE pour l'utilisateur standard (durcissement anti-GPO) : le COMPAGNON
+// échouait en « Accès refusé » sur `blocked_executables` (flag DisallowRun +
+// conteneur `DisallowRun\1..5`). Désormais : (1) le COMPAGNON ÉCARTE tout item
+// porteur du champ `writer` AVANT son moteur (partition SplitSystemWriterItems
+// — skip générique sur PRÉSENCE du champ, valeur future inconnue skippée aussi,
+// engine.go/parseurs byte-identiques) ; (2) le SERVICE SYSTEM gagne une passe
+// PAR-SESSION (sessionapply.go, cycle ET tâche at-logon session-fetch — un
+// seul code) : pour chaque session interactive de la dernière énumération WTS,
+// les items `writer == "system"` du cache per-SID sont appliqués dans
+// `HKU\<SID de LA session ciblée>` via un DÉCORATEUR d'ops (sessionHiveOps :
+// HKCU → HKU\<SID> — UN SID, JAMAIS le fan-out .DEFAULT/multi-ruches de 35.3 ;
+// les overrides UserGroup/User atteignent l'item, ciblage par-utilisateur
+// conservé). Handlers registry/registry_list réutilisés TELS QUELS
+// (réconciliation de conteneur incluse) ; sonde race-logoff de Write héritée
+// gratuitement (session déloguée = no-op, jamais d'orpheline) ; applied-state
+// PAR SID (cache\sessions\<SID>\applied-state.json) ; verdicts fusionnés par
+// type au rapport du cycle (la tâche at-logon converge sans rapporter).
+// NOUVEAU champ Agent.SessionSystemOps (nil = passe inerte), câblé par
+// main_windows.go. EFFET AU LOGON SUIVANT de la session ciblée (Explorer lit
+// ces policies au logon — comportement GPO user policy ; le retrofit serveur
+// RETIRE le hint `refresh` des 3 projections re-routées, exclusion mutuelle).
+// ⚠️ Un binaire ≤ 2.11.x IGNORE le marqueur EN SILENCE (champ inconnu, §9) :
+// AUCUNE casse ne flotte (contrairement au piège HKU/35.3) mais AUCUN
+// correctif — le compagnon garde son « Accès refusé », le service n'applique
+// rien → PUBLIER la release 2.12.0 (manuelle — update.sh ne publie jamais
+// seul) AVANT de jouer la migration retrofit
+// `2026_07_13_100000_retrofit_session_system_writer_policies.php` sur /vm
+// (la version rapportée au check-in fait foi). ⚠️ ÉTAT DES PUBLICATIONS :
+// vérifier au moment de publier si la 2.11.0 (fenêtre explorer_restart,
+// epic 43) l'a été — sinon la 2.12.0 livre les lots en attente d'un coup.
+//
 // Injectable au build (var, pas const) :
 //
 //	go build -ldflags "-X sambaedu/agent/shared.Version=2.2.1"
-var Version = "2.11.1"
+var Version = "2.12.0"

@@ -18,11 +18,15 @@ use App\Models\CapabilityProjection;
  * provider ne voit que SA projection (`itemsFor()` filtre par mécanisme).
  *
  * **Payload EXACTEMENT 4 clés** `{hive, path, entry_type, values}` (invariant
- * central 27.12 : jamais d'id/key de capacité) — **+ `refresh` OPTIONNEL**
- * (Story 43.2) recopié par le foyer UNIQUE hérité d'`itemsFor()`
- * ({@see AbstractCapabilityStateProvider::withRefreshHint()}), portée
- * Session/MachineUser uniquement, jamais sur un conteneur Machine/HKLM. Le
- * code hérité ci-dessous (`expand()`) reste INCHANGÉ — la recopie ne vit pas ici :
+ * central 27.12 : jamais d'id/key de capacité) — **+ `refresh` OU `writer`
+ * OPTIONNELS, mutuellement exclusifs** : `refresh` (Story 43.2) recopié par le
+ * foyer UNIQUE hérité d'`itemsFor()`
+ * ({@see AbstractCapabilityStateProvider::withRefreshHint()}) ; `writer`
+ * (Story 35.7) recopié PAR CLÉ dans `expand()` ci-dessous
+ * ({@see AbstractCapabilityStateProvider::withWriterMarker()} — le conteneur
+ * est réconcilié par le service SYSTEM dans `HKU\<SID>` de la session, jamais
+ * par le compagnon). Portée Session/MachineUser uniquement, jamais sur un
+ * conteneur Machine/HKLM :
  *   - `entry_type ∈ REG_SZ | REG_EXPAND_SZ` (borné par le contrat — les listes
  *     indexées Windows sont des chaînes), défaut de `spec` : REG_SZ ;
  *   - `values` = liste ORDONNÉE de chaînes (cast défensif, zéro float §4.1).
@@ -130,7 +134,9 @@ abstract class AbstractRegistryListCapabilityProvider extends AbstractCapability
                 continue;
             }
 
-            $payloads[] = [
+            // Marqueur `writer` (Story 35.7) recopié PAR CLÉ — 5 clés au lieu
+            // de 4 quand le conteneur est délégué au service SYSTEM.
+            $payloads[] = $this->withWriterMarker($key, $hive, [
                 'hive' => $hive,
                 'path' => (string) ($key['path'] ?? ''),
                 'entry_type' => $entryType,
@@ -139,7 +145,7 @@ abstract class AbstractRegistryListCapabilityProvider extends AbstractCapability
                     static fn ($v): string => (string) $v,
                     $resolved,
                 )),
-            ];
+            ]);
         }
 
         return $payloads;

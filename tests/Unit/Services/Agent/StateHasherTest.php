@@ -319,6 +319,105 @@ class StateHasherTest extends TestCase
         );
     }
 
+    // ── Champ `writer` (Story 35.7) : entre dans la canonicalisation ──────
+    // AUCUNE modification du StateHasher : la canonicalisation générique
+    // intègre naturellement le champ additif `writer` (appliqué par le service
+    // SYSTEM dans HKU\<SID> — trees HKCU\…\Policies\* non écrivables par le
+    // compagnon). Jumeaux des tests Go (hasher_test.go::TestHashItemWriter*).
+
+    #[Test]
+    public function writer_field_changes_the_item_hash(): void
+    {
+        $base = [
+            'type' => 'registry',
+            'semantics' => 'exclusive',
+            'payload' => [
+                'hive' => 'HKCU',
+                'path' => 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer',
+                'name' => 'DisallowRun',
+                'type' => 'REG_DWORD',
+                'value' => 1,
+            ],
+        ];
+        $marked = $base;
+        $marked['payload']['writer'] = 'system';
+
+        $this->assertNotSame(
+            $this->hasher->hashItem($base),
+            $this->hasher->hashItem($marked),
+            'deux items qui ne diffèrent que par `writer` doivent avoir des hashes distincts',
+        );
+        // Hash figé de l'item golden marqué (flag DisallowRun, writer: system)
+        // — jumeau Go, test croisé NFR13.
+        $this->assertSame(
+            'a19a1be2cf3670be2b0eafb85371af3c1d79e5f20bfab3d8d5ed93e9f9cfd93e',
+            $this->hasher->hashItem($marked),
+        );
+    }
+
+    #[Test]
+    public function writer_field_changes_the_registry_list_container_hash(): void
+    {
+        $base = [
+            'type' => 'registry_list',
+            'semantics' => 'exclusive',
+            'payload' => [
+                'hive' => 'HKCU',
+                'path' => 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\\DisallowRun',
+                'entry_type' => 'REG_SZ',
+                'values' => ['cmd.exe', 'powershell.exe'],
+            ],
+        ];
+        $marked = $base;
+        $marked['payload']['writer'] = 'system';
+
+        $this->assertNotSame(
+            $this->hasher->hashItem($base),
+            $this->hasher->hashItem($marked),
+            'deux conteneurs qui ne diffèrent que par `writer` doivent avoir des hashes distincts',
+        );
+        // Hash figé du conteneur golden marqué — jumeau Go, test croisé NFR13.
+        $this->assertSame(
+            '8bcf6507d5a8e9180df24f482bfc074b40551673d0f1199ed5b8bc8d86ef41ca',
+            $this->hasher->hashItem($marked),
+        );
+    }
+
+    // Champ `refresh` (Story 43.2) — Story 35.7 review #1 : les 2 seuls items
+    // `refresh` du golden ont été ré-affectés au marqueur `writer` (exclusion
+    // refresh⊥writer, piège #6) → le champ a disparu du golden. Ce test dédié
+    // restaure la couverture de hash cross-language NFR13 sur ce champ de PROD
+    // sans réintroduire d'item au golden. Jumeau Go (hasher_test.go::TestHashItemRefresh*).
+    #[Test]
+    public function refresh_field_changes_the_item_hash(): void
+    {
+        $base = [
+            'type' => 'registry',
+            'semantics' => 'exclusive',
+            'payload' => [
+                'hive' => 'HKCU',
+                'path' => 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced',
+                'name' => 'HideFileExt',
+                'type' => 'REG_DWORD',
+                'value' => 0,
+            ],
+        ];
+        $marked = $base;
+        $marked['payload']['refresh'] = 'shell_notify';
+
+        $this->assertNotSame(
+            $this->hasher->hashItem($base),
+            $this->hasher->hashItem($marked),
+            'deux items qui ne diffèrent que par `refresh` doivent avoir des hashes distincts',
+        );
+        // Hash figé de l'item porteur de `refresh: shell_notify` — jumeau Go,
+        // test croisé NFR13 (canonicalisation générique du champ additif).
+        $this->assertSame(
+            '8d81f541d4fe267ecf6763edf09635bdba0d33d2e59e0662c1312f800e66fbdd',
+            $this->hasher->hashItem($marked),
+        );
+    }
+
     #[Test]
     public function write_item_without_ensure_keeps_its_pre_story_hash(): void
     {

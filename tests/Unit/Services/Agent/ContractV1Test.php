@@ -244,7 +244,30 @@ class ContractV1Test extends TestCase
     // NFR13) — AUCUN bump de `agent/shared/version.go` (le mécanisme agent
     // 2.10.0 qui LIT `payload["refresh"]` est déjà livré par la 43.1 mergée ;
     // seul le hash gelé de TEST bouge, cf. Dev Agent Record de la story).
-    private const FROZEN_STATE_HASH = '5beb682b413ac2c5cef74baef19a17d3f47efe7cf163371201db0db954d506b0';
+    //
+    // Re-bumpé SCIEMMENT par la Story 35.7 (champ `writer` au payload, §7.1/
+    // §7.6, §9) : champ additif OPTIONNEL `writer` (enum fermé, seule valeur
+    // publiée `"system"`) déclarant que l'item est appliqué par le SERVICE
+    // SYSTEM dans `HKU\<SID>` de la session du contexte — jamais par le
+    // compagnon (trees `HKCU\…\Policies\*` en lecture seule pour l'utilisateur
+    // standard sur poste joint au domaine). Les DEUX items session concernés
+    // sont MODIFIÉS (jamais ajoutés — comptages 9/8/1 préservés) : (a) l'item
+    // `registry` session devient le flag `…\Policies\Explorer!DisallowRun = 1`
+    // marqué `writer: "system"` (la forme réelle émise post-retrofit
+    // 2026_07_13_100000) ; (b) l'item `registry_list` session (conteneur
+    // `…\Policies\Explorer\DisallowRun`) gagne `writer: "system"`. Les deux
+    // PERDENT leur hint `refresh` (exclusion mutuelle refresh/writer, piège
+    // n°6 de la story : `refresh` n'est émis QUE sur les items appliqués par
+    // le compagnon) — la couverture de la forme `refresh` vit dans les tests
+    // dédiés providers/handlers (43.1/43.2), plus dans le golden. Champ
+    // additif = forward-compatible, pas un major : un agent ≤ 2.11.x IGNORE
+    // le marqueur EN SILENCE (compagnon : « Accès refusé » statu quo ;
+    // service : rien d'appliqué) → publier la release 2.12.0 AVANT le
+    // retrofit. `report.v1.json` INCHANGÉ (le rapport ne porte pas `writer`).
+    // 18 items au total (inchangé), hash d'état RECALCULÉ. Le jumeau Go
+    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé
+    // NFR13).
+    private const FROZEN_STATE_HASH = 'af00bc8350ab453f105397f22d5d4716fe97bdf014c101e07dc0319a3703a65f';
 
     private StateHasher $hasher;
 

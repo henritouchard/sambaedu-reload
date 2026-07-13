@@ -163,7 +163,25 @@ import (
 // croisé NFR13). AUCUN bump de `agent/shared/version.go` : SEUL ce fichier de
 // TEST bouge côté agent/ (le mécanisme 2.10.0 qui lit le hint est déjà livré
 // par la 43.1 mergée) — voir Dev Agent Record de la story 43.2.
-const frozenStateHash = "5beb682b413ac2c5cef74baef19a17d3f47efe7cf163371201db0db954d506b0"
+// Re-bumpé SCIEMMENT par la Story 35.7 (champ `writer` au payload session,
+// §7.1/§7.6, §9) : champ additif OPTIONNEL `writer` (enum fermé, seule valeur
+// publiée "system") — l'item est appliqué par le SERVICE SYSTEM dans
+// `HKU\<SID>` de la session du contexte, JAMAIS par le compagnon (trees
+// `HKCU\…\Policies\*` en lecture seule pour l'utilisateur standard sur poste
+// joint au domaine). Les DEUX items session concernés sont MODIFIÉS (jamais
+// ajoutés — comptages 9/8/1 et 18 items préservés) : (a) l'item `registry`
+// session devient le flag `…\Policies\Explorer!DisallowRun = 1` marqué
+// `writer: "system"` (forme réelle émise post-retrofit 2026_07_13_100000) ;
+// (b) l'item `registry_list` session (conteneur `…\Policies\Explorer\
+// DisallowRun`) gagne `writer: "system"`. Les deux PERDENT leur hint
+// `refresh` (exclusion mutuelle refresh/writer, piège n°6 : `refresh` n'est
+// émis QUE sur les items appliqués par le compagnon). Champ additif =
+// forward-compatible, pas un major : un binaire ≤ 2.11.x IGNORE le marqueur
+// EN SILENCE (compagnon : « Accès refusé » statu quo ; service : rien
+// d'appliqué) → PUBLIER la release 2.12.0 AVANT le retrofit. `report.v1.json`
+// INCHANGÉ. Hash d'état RECALCULÉ, bumpé à l'IDENTIQUE côté PHP
+// (ContractV1Test::FROZEN_STATE_HASH — test croisé NFR13).
+const frozenStateHash = "af00bc8350ab453f105397f22d5d4716fe97bdf014c101e07dc0319a3703a65f"
 
 // goldenFile lit un golden file canonique EN PLACE (NFR13 : un seul jeu de
 // golden files, partagé serveur ⇄ agent — jamais copié dans agent/).
@@ -333,6 +351,67 @@ func TestHashItemEnsureFieldChangesTheHash(t *testing.T) {
 	}
 	if a == b {
 		t.Errorf("deux items qui ne diffèrent que par `ensure` doivent avoir des hashes DISTINCTS (got %s)", a)
+	}
+}
+
+// --- Champ `writer` (Story 35.7) : entre dans la canonicalisation ------------
+//
+// AUCUNE modification du hasher : la canonicalisation générique intègre
+// naturellement le champ additif `writer` (appliqué par le service SYSTEM
+// dans HKU\<SID> — trees HKCU\…\Policies\* non écrivables par le compagnon).
+// Jumeaux des tests PHP (StateHasherTest::writer_field_changes_*).
+func TestHashItemWriterFieldChangesTheHash(t *testing.T) {
+	base := `{"type":"registry","semantics":"exclusive","payload":{"hive":"HKCU","path":"Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer","name":"DisallowRun","type":"REG_DWORD","value":1}}`
+	marked := `{"type":"registry","semantics":"exclusive","payload":{"hive":"HKCU","path":"Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer","name":"DisallowRun","type":"REG_DWORD","value":1,"writer":"system"}}`
+
+	hBase := fwHashOf(t, base)
+	hMarked := fwHashOf(t, marked)
+	if hBase == hMarked {
+		t.Errorf("deux items registry qui ne diffèrent que par `writer` doivent avoir des hashes DISTINCTS (got %s)", hBase)
+	}
+	// L'item golden marqué (flag DisallowRun, writer: system) porte bien le
+	// hash figé du golden — test croisé NFR13 avec le StateHasher PHP.
+	if hMarked != "a19a1be2cf3670be2b0eafb85371af3c1d79e5f20bfab3d8d5ed93e9f9cfd93e" {
+		t.Errorf("hash de l'item registry writer golden divergent du StateHasher PHP : got %s", hMarked)
+	}
+}
+
+func TestHashItemWriterFieldChangesTheRegistryListHash(t *testing.T) {
+	base := `{"type":"registry_list","semantics":"exclusive","payload":{"hive":"HKCU","path":"Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\\DisallowRun","entry_type":"REG_SZ","values":["cmd.exe","powershell.exe"]}}`
+	marked := `{"type":"registry_list","semantics":"exclusive","payload":{"hive":"HKCU","path":"Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\\DisallowRun","entry_type":"REG_SZ","values":["cmd.exe","powershell.exe"],"writer":"system"}}`
+
+	hBase := fwHashOf(t, base)
+	hMarked := fwHashOf(t, marked)
+	if hBase == hMarked {
+		t.Errorf("deux conteneurs registry_list qui ne diffèrent que par `writer` doivent avoir des hashes DISTINCTS (got %s)", hBase)
+	}
+	// Le conteneur golden marqué porte bien le hash figé du golden — test
+	// croisé NFR13 avec le StateHasher PHP.
+	if hMarked != "8bcf6507d5a8e9180df24f482bfc074b40551673d0f1199ed5b8bc8d86ef41ca" {
+		t.Errorf("hash du conteneur registry_list writer golden divergent du StateHasher PHP : got %s", hMarked)
+	}
+}
+
+// --- Champ `refresh` (Story 43.2) : couverture de hash cross-language ---------
+//
+// Story 35.7 review #1 : les 2 seuls items `refresh` du golden ont été
+// ré-affectés au marqueur `writer` (exclusion mutuelle refresh⊥writer, piège
+// #6) — le champ `refresh` a donc disparu du golden. Ce test dédié restaure
+// l'invariant NFR13 sur ce champ de PROD (echelle de rafraîchissement 43.1)
+// sans réintroduire d'item au golden. Jumeau PHP (StateHasherTest::refresh_*).
+func TestHashItemRefreshFieldChangesTheHash(t *testing.T) {
+	base := `{"type":"registry","semantics":"exclusive","payload":{"hive":"HKCU","path":"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced","name":"HideFileExt","type":"REG_DWORD","value":0}}`
+	marked := `{"type":"registry","semantics":"exclusive","payload":{"hive":"HKCU","path":"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced","name":"HideFileExt","type":"REG_DWORD","value":0,"refresh":"shell_notify"}}`
+
+	hBase := fwHashOf(t, base)
+	hMarked := fwHashOf(t, marked)
+	if hBase == hMarked {
+		t.Errorf("deux items registry qui ne diffèrent que par `refresh` doivent avoir des hashes DISTINCTS (got %s)", hBase)
+	}
+	// Hash figé de l'item porteur de `refresh: shell_notify` — test croisé
+	// NFR13 avec le StateHasher PHP (canonicalisation générique du champ additif).
+	if hMarked != "8d81f541d4fe267ecf6763edf09635bdba0d33d2e59e0662c1312f800e66fbdd" {
+		t.Errorf("hash de l'item registry refresh divergent du StateHasher PHP : got %s", hMarked)
 	}
 }
 

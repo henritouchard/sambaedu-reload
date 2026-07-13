@@ -67,6 +67,19 @@ func (s *Store) SessionEtagPath(sid string) string {
 	return filepath.Join(s.SessionCacheDir(sid), etagCacheFile)
 }
 
+// SessionAppliedStatePath : dernier-appliqué de la passe SYSTEM PAR-SESSION
+// (Story 35.7, piège n°8) — cache\sessions\<SID>\applied-state.json. Écrit par
+// SYSTEM (WriteAppliedState atomique) dans le répertoire per-SID existant : le
+// fichier HÉRITE de l'ACL <SID>:R posée à la création (lecture user
+// inoffensive — hashes/timestamps opaques, iso justification de l'applied-state
+// machine). DISTINCT de l'applied-state machine (Store.AppliedStatePath) ET du
+// per-user du compagnon (%LOCALAPPDATA% — UserStore.AppliedStatePath) : sans
+// mémoire propre, chaque cycle de la passe par-session serait un « premier
+// passage §5 » et le drift ne serait jamais rapporté.
+func (s *Store) SessionAppliedStatePath(sid string) string {
+	return filepath.Join(s.SessionCacheDir(sid), appliedStateFile)
+}
+
 func (s *Store) AssetsDir() string {
 	return filepath.Join(s.root(), assetsDirName)
 }

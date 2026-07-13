@@ -530,6 +530,24 @@ SZ/EXPAND_SZ→chaîne) pour le contrat §4.1 (**zéro float**).
 - **Rapport unique-type** : les deux portées émettant `registry`, l'agent
   fusionne par type avant le POST /report (`MergeReportItemsByType`, pire statut
   gagne).
+- **Marqueur `writer: "system"` (Story 35.7, contrat §7.1).** Attribut
+  OPTIONNEL posé **PAR CLÉ** de `spec.keys[]` (`'writer' => 'system'` — enum
+  fermé, `CapabilityProjection::WRITER_SYSTEM`), UNIQUEMENT sur une clé
+  `hive: HKCU` (guard, règle 6). Recopié tel quel sur l'item émis
+  (`withWriterMarker()`, formes 6/5/5 clés) : l'item est appliqué par le
+  **service SYSTEM dans `HKU\<SID>` de la session du contexte** — jamais par
+  le compagnon, qui l'écarte avant son moteur. Nécessaire aux trees
+  `HKCU\…\Policies\*` (dont `CurrentVersion\Policies`), en LECTURE SEULE pour
+  l'utilisateur standard sur poste joint au domaine. **Distinct du fan-out
+  HKU 35.3** : UN SID (la session dont provient le state `?user=`), les
+  overrides UserGroup/User ATTEIGNENT l'item — le ciblage par-utilisateur est
+  conservé. `exclusiveKey()`/`StateCompiler` INTOUCHÉS (le marqueur voyage
+  avec la clé gagnante). **Mutuellement exclusif avec `refresh`**
+  (`withRefreshHint()` ne pose jamais le hint sur un item marqué — effet au
+  logon suivant, comportement GPO user policy). Re-routées par le retrofit
+  `2026_07_13_100000` : `blocked_executables` (2 projections) +
+  `registry_editing_disabled`. Binaire ≤ 2.11.x : marqueur ignoré EN SILENCE
+  → publier la 2.12.0 AVANT le retrofit.
 
 #### Limites connues
 
@@ -594,6 +612,14 @@ d'authoring est `capabilities`, la liste est UNE projection
   (liste vide = purge des seules entrées numérotées). Changement effectif HKCU
   ⇒ rafraîchissement shell (même gate que registry ; `DisallowRun` est lu par
   l'Explorer au logon SUIVANT).
+- **Marqueur `writer: "system"` (Story 35.7, contrat §7.6)** — même sémantique
+  que `registry` (voir section ci-dessus) : attribut par CLÉ recopié sur le
+  conteneur émis (5 clés), le conteneur est **réconcilié par le service SYSTEM
+  dans `HKU\<SID>` de la session du contexte** (décorateur d'ops un-SID —
+  réconciliation D3 incluse), jamais par le compagnon. HKCU + portée session
+  uniquement ; mutuellement exclusif avec `refresh`. Cas fondateur : le
+  conteneur `…\Policies\Explorer\DisallowRun` de `blocked_executables`
+  (« Accès refusé » compagnon confirmé runtime — retrofit `2026_07_13_100000`).
 - **Garde-fou d'authoring** (`CapabilitySpecCollisionGuard`, service pur +
   invariant `CapabilitiesSchemaAndSeedTest`) : une clé-conteneur ciblée à la
   fois par un scalaire `registry` et un `registry_list` est REFUSÉE (les

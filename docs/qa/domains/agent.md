@@ -4361,3 +4361,94 @@ déjà résolu (aucun hint nouveau, aucun champ de payload).
       passage l'état de la 2.10.0, gate des seeders 43.2).
 - [ ] Golden `tests/Fixtures/Agent/*.v1.json` STRICTEMENT inchangés (réaction
       locale au geste, aucun changement de wire — D7).
+
+## Story 35.7 — Application SYSTEM des capacités `HKCU\…\Policies\*` par session (`writer: system`)
+
+Correct-course sur défaut runtime confirmé : sur poste JOINT AU DOMAINE, tout
+`HKCU\…\Policies\*` — y compris `CurrentVersion\Policies` — est en LECTURE
+SEULE pour l'utilisateur standard : le compagnon échouait en « Accès refusé »
+sur `blocked_executables` (flag `DisallowRun` + conteneur `DisallowRun\1..5`).
+Correctif : champ additif `writer: "system"` (§7.1/§7.6) — le SERVICE SYSTEM
+applique ces items PAR-SESSION dans `HKU\<SID de la session ciblée>` (jamais
+`.DEFAULT`, jamais les autres ruches — distinct du fan-out HKU 35.3), le
+compagnon les ÉCARTE avant son moteur. Le ciblage PAR-UTILISATEUR (override
+UserGroup élèves, 35.4) est conservé — c'est le critère qui invalidait la
+rustine HKLM. Re-routées : `blocked_executables` (2 projections) +
+`registry_editing_disabled` (retrofit `2026_07_13_100000`). Effet au **logon
+suivant** de la session ciblée (Explorer lit ces policies au logon —
+comportement d'une GPO user policy ; le hint `refresh` est RETIRÉ de ces
+projections, exclusion mutuelle refresh/writer).
+
+⚠️ **ORDRE OPÉRATEUR IMPÉRATIF** : publier la release **2.12.0** MANUELLEMENT
+→ attendre la remontée de version au check-in (elle fait foi) → `php artisan
+migrate` sur /vm (retrofit `2026_07_13_100000`). Un binaire ≤ 2.11.x ignore le
+marqueur EN SILENCE : aucune casse, mais le défaut « Accès refusé » persiste
+côté compagnon et rien n'est appliqué côté service — migrer d'abord = croire
+avoir corrigé sans avoir corrigé.
+
+### Scénario 35.7.1 — POSITIF : élève bloqué au LOGON SUIVANT (e2e lab)
+
+1. Poste lab migré en **2.12.0** (version rapportée au check-in = 2.12.0),
+   migration `2026_07_13_100000` jouée sur le serveur.
+2. Armer `blocked_executables` `on` par override UserGroup élèves (geste 35.4).
+3. Ouvrir une session ÉLÈVE (ou attendre le cycle service si elle est déjà
+   ouverte) : au cycle, `agent.log` montre « Passe SYSTEM par-session
+   S-1-5-21-… : N item(s) writer=system » — PLUS AUCUN « Accès refusé » dans
+   `companion.log` (l'item n'y passe plus).
+4. Contrôler `HKU\<SID élève>\Software\Microsoft\Windows\CurrentVersion\
+   Policies\Explorer` : flag `DisallowRun = 1` + entrées `DisallowRun\1..5`
+   (powershell, powershell_ise, pwsh, mstsc, cmd). AUCUNE clé équivalente dans
+   `.DEFAULT` ni dans les autres ruches chargées (ciblage un-SID).
+5. **Dans la session élève COURANTE** : `cmd.exe` se lance encore — ATTENDU
+   (limite documentée : Explorer lit `DisallowRun` au logon).
+6. **Relogon élève** : `cmd.exe`, PowerShell, mstsc refusent de se lancer
+   (restriction Explorer). Le rapport remonte `registry`/`registry_list`
+   `compliant` au cycle suivant.
+
+### Scénario 35.7.2 — CIBLAGE : prof OK sur le MÊME poste
+
+1. Même poste, même armement (override UserGroup élèves uniquement).
+2. Session PROF/TECHNICIEN (même poste, y compris simultanée) : `cmd.exe`
+   fonctionne — le contrat `?user=<prof>` ne contient PAS l'item (l'override
+   UserGroup n'atteint que les membres), sa ruche `HKU\<SID prof>` reste
+   vierge de toute clé `DisallowRun`.
+3. C'est la preuve du ciblage par-utilisateur — le critère qui invalidait la
+   rustine HKLM machine-wide (hide_drives/copilot, piège n°10).
+
+### Scénario 35.7.3 — BINAIRE ANTÉRIEUR : silence total, ordre de publication
+
+1. Poste resté en ≤ 2.11.x, migration jouée côté serveur (l'ordre INVERSE de
+   la consigne — à ne PAS reproduire en prod, c'est le scénario d'illustration).
+2. Compagnon : le champ `writer` est ignoré (parseurs indulgents) — il TENTE
+   encore l'écriture HKCU → « Accès refusé » → type en `error` au drop : le
+   STATU QUO du défaut, aucune régression nouvelle.
+3. Service : pas de passe par-session dans ce binaire → rien d'appliqué, AUCUNE
+   erreur (« réglage sans effet, zéro erreur »).
+4. Publier la 2.12.0 → au cycle suivant la remontée de version, le correctif
+   prend effet (3 → 35.7.1).
+
+### Scénario 35.7.4 — RACE : session déloguée entre l'énumération et l'écriture
+
+1. Session élève ouverte, capacité armée ; provoquer un logoff PENDANT le
+   cycle du service (fenêtre courte — répéter au besoin, ou vérifier par les
+   tests hôte `TestSessionApplyLoggedOffSessionMaterializesNothing`).
+2. La ruche `HKU\<SID>` démontée n'est PAS matérialisée : AUCUNE clé orpheline
+   sous `HKEY_USERS` (sonde race-logoff de `Write`, héritée de 35.3), aucun
+   crash — la session s'évapore de l'énumération au cycle suivant.
+3. `agent.log` : la passe de CETTE session est un no-op silencieux ; les
+   autres sessions du poste convergent normalement (isolation par session).
+
+### Check-list
+
+- [ ] 35.7.1 — Élève : clés posées dans `HKU\<SID élève>` seul ; cmd.exe
+      bloqué AU LOGON SUIVANT ; rapport `compliant` ; plus d'« Accès refusé »
+      dans companion.log.
+- [ ] 35.7.2 — Prof/technicien MÊME poste : cmd.exe OK, ruche vierge (preuve
+      du ciblage par-utilisateur).
+- [ ] 35.7.3 — Binaire ≤ 2.11.x : silence (statu quo compagnon, service
+      inerte) — publication 2.12.0 AVANT migration respectée.
+- [ ] 35.7.4 — Session déloguée en course : aucune clé orpheline, aucune
+      erreur, autres sessions intactes.
+- [ ] Golden `state.v1.json` bumpé AVEC justification (hashes jumeaux PHP↔Go
+      recalculés — items session registry/registry_list marqués `writer`,
+      hint `refresh` retiré) ; `report.v1.json` STRICTEMENT inchangé.

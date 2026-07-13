@@ -34,9 +34,14 @@ use Illuminate\Support\Facades\Schema;
  * ── cmd.exe ≈ DisableCMD (iso-intention CD95) ───────────────────────────────
  * La GPO « Blocages élèves » posait `DisableCMD` en laissant les scripts
  * autorisés (« Désactiver aussi les scripts : Non ») : bloquer l'EXÉCUTABLE
- * interactif via `DisallowRun` + `cmd.exe` est iso-intention — et vit dans le
- * tree restrictions user-writable (PAS `HKCU\Software\Policies`, non écrivable
- * par le compagnon). Zéro broker d'élévation (décision de cadrage epic 35).
+ * interactif via `DisallowRun` + `cmd.exe` est iso-intention. ⚠️ Commentaire
+ * d'origine FAUX (corrigé par la Story 35.7) : le tree
+ * `HKCU\…\CurrentVersion\Policies` est LUI AUSSI en lecture seule pour
+ * l'utilisateur standard sur poste joint au domaine (TOUT `HKCU\…\Policies\*`
+ * est durci, pas seulement `Software\Policies`) — défaut « Accès refusé »
+ * confirmé en runtime. Ces clés sont appliquées par le SERVICE SYSTEM via le
+ * marqueur `writer: system` (retrofit `2026_07_13_100000`, Story 35.7). Zéro
+ * broker d'élévation (décision de cadrage epic 35).
  *
  * ── ARMEMENT = DONNÉE, PAS CE SEED ──────────────────────────────────────────
  * Les deux capacités naissent OPT-IN (`default_value = 'unmanaged'`, sentinelle
@@ -54,7 +59,10 @@ return new class extends Migration
 
         $now = now();
 
-        // Tree restrictions user (writable par le compagnon, iso lot CD95).
+        // Tree restrictions user. ⚠️ Commentaire d'origine FAUX (« writable
+        // par le compagnon ») corrigé par la Story 35.7 : lecture seule pour
+        // l'utilisateur standard sur poste joint au domaine — appliqué par
+        // SYSTEM via `writer: system` (retrofit 2026_07_13_100000).
         $userPoliciesExplorer = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';
 
         // Libellés convention « sujet + état » : le label est un sujet NEUTRE,

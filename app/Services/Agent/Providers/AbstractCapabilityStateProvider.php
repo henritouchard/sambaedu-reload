@@ -48,12 +48,14 @@ use Illuminate\Support\Facades\DB;
  *
  * **Invariant central (piège n°1).** Ni `id`/`key` de capacité, ni de projection,
  * ne fuit au payload — l'item registry reste CONCRET : `{hive, path, name, type,
- * value}` (5 clés, **+ `refresh` OPTIONNEL** — Story 43.2, {@see withRefreshHint()})
+ * value}` (5 clés, **+ `refresh` OU `writer` OPTIONNELS** — mutuellement
+ * exclusifs, Stories 43.2/35.7, {@see withRefreshHint()}/{@see withWriterMarker()})
  * pour une ÉCRITURE, `{hive, path, name, ensure: "absent"}` (4 clés, Story 35.1,
- * **+ `refresh` OPTIONNEL** idem) pour une SUPPRESSION. Le hint `refresh` n'est
- * JAMAIS recopié sur un item émis par un provider de portée Machine (jamais sur
- * une clé HKLM/HKU) — seuls Session/MachineUser le portent. C'est CE qui garde
- * « éditeur de clés brutes » (v2) gratuit ET garantit que l'agent ne change pas.
+ * **+ `refresh` OU `writer` OPTIONNELS** idem) pour une SUPPRESSION. Ni le hint
+ * `refresh` ni le marqueur `writer` ne sont JAMAIS recopiés sur un item émis par
+ * un provider de portée Machine (jamais sur une clé HKLM/HKU) — seuls
+ * Session/MachineUser les portent. C'est CE qui garde « éditeur de clés brutes »
+ * (v2) gratuit ET garantit que l'agent ne change pas.
  *
  * **Trois régimes par clé de `spec`** (Story 35.1) :
  *   1. **écrire** — valeur résolue scalaire/liste → item 5 clés (le provider
@@ -276,6 +278,13 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
      * régime stable). Clé `refresh` en DERNIÈRE position (lisibilité fixtures
      * — le hash canonicalise en triant les clés, la position est indifférente).
      *
+     * GARDE STRUCTURELLE 35.7 (piège n°6 — exclusion mutuelle refresh/writer) :
+     * JAMAIS de `refresh` sur un item marqué `writer: "system"` — même si la
+     * projection porte un hint résiduel (donnée incohérente hypothétique, le
+     * retrofit `2026_07_13_100000` retire le hint des projections re-routées).
+     * Un item appliqué par le service SYSTEM n'a AUCUN compagnon pour exécuter
+     * le geste : l'effet est au logon suivant (comportement GPO user policy).
+     *
      * FOYER UNIQUE : appelé aux DEUX sites de push d'{@see itemsFor()} (Broadcast
      * ET overrides) — JAMAIS dans `expand()` (deux foyers → dérive), hérité tel
      * quel par {@see AbstractRegistryListCapabilityProvider} (même `itemsFor()`).
@@ -285,6 +294,13 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
      */
     protected function withRefreshHint(CapabilityProjection $projection, array $payload): array
     {
+        // Story 35.7 (piège n°6) — item délégué au service SYSTEM : le
+        // compagnon ne l'applique pas, aucun geste de rafraîchissement n'a de
+        // sens → `refresh` n'est JAMAIS posé (exclusion mutuelle structurelle).
+        if (array_key_exists('writer', $payload)) {
+            return $payload;
+        }
+
         if (! in_array($this->mechanism(), [
             CapabilityProjection::MECHANISM_REGISTRY,
             CapabilityProjection::MECHANISM_REGISTRY_LIST,
@@ -372,28 +388,59 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
             // NON reconnue ⇒ clé non émise (défensif, pas d'exception au render).
             if (is_array($resolved) && ! array_is_list($resolved)) {
                 if (($resolved[self::SPEC_ENSURE] ?? null) === self::ENSURE_ABSENT) {
-                    // Item de suppression : EXACTEMENT 4 clés, ni type ni value.
-                    $payloads[] = [
+                    // Item de suppression : EXACTEMENT 4 clés, ni type ni value
+                    // (+ `writer` OPTIONNEL, Story 35.7 — 5 clés).
+                    $payloads[] = $this->withWriterMarker($key, $hive, [
                         'hive' => $hive,
                         'path' => (string) ($key['path'] ?? ''),
                         'name' => (string) ($key['name'] ?? ''),
                         'ensure' => self::ENSURE_ABSENT,
-                    ];
+                    ]);
                 }
 
                 continue;
             }
 
-            $payloads[] = [
+            $payloads[] = $this->withWriterMarker($key, $hive, [
                 'hive' => $hive,
                 'path' => (string) ($key['path'] ?? ''),
                 'name' => (string) ($key['name'] ?? ''),
                 'type' => $type,
                 'value' => $this->typedValue($type, $resolved),
-            ];
+            ]);
         }
 
         return $payloads;
+    }
+
+    /**
+     * Story 35.7 (D2) — recopie l'attribut `writer` de la CLÉ de `spec` sur le
+     * payload émis (écriture 6 clés / suppression 5 clés / conteneur list
+     * 5 clés — le marqueur voyage AVEC la clé, l'identité `exclusiveKey()` est
+     * INCHANGÉE : la précédence de compilation existante arbitre normalement).
+     *
+     * DÉFENSIF au render (iso discipline `refresh`) : recopié SSI la valeur
+     * est EXACTEMENT {@see CapabilityProjection::WRITER_SYSTEM} (enum fermé —
+     * toute autre valeur, déjà refusée à l'authoring par
+     * {@see CapabilitySpecCollisionGuard}, n'est jamais recopiée) ET la clé
+     * est `hive: HKCU` (le service SYSTEM est déjà l'exécutant des ruches
+     * HKLM/HKU — le marqueur n'y a pas de sens et le guard le refuse). Comme
+     * seuls les providers de portée Session émettent les clés HKCU (filtre
+     * {@see handlesHive()}), le champ n'atteint structurellement JAMAIS un
+     * item machine/HKU (AC2).
+     *
+     * @param  array<string,mixed>  $key  la clé de `spec` source
+     * @param  array<string,mixed>  $payload
+     * @return array<string,mixed>
+     */
+    protected function withWriterMarker(array $key, string $hive, array $payload): array
+    {
+        if (($key['writer'] ?? null) === CapabilityProjection::WRITER_SYSTEM
+            && strcasecmp($hive, CapabilityProjection::HIVE_USER) === 0) {
+            $payload['writer'] = CapabilityProjection::WRITER_SYSTEM;
+        }
+
+        return $payload;
     }
 
     /**

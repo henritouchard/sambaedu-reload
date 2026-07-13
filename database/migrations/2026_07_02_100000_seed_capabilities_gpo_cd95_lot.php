@@ -72,8 +72,13 @@ return new class extends Migration
             ['value' => 'on', 'label' => 'Activé'],
         ], JSON_UNESCAPED_UNICODE);
 
-        // Tree restrictions user (HKCU\Software\Microsoft\...\CurrentVersion\Policies)
-        // — écrivable par le companion, CONTRAIREMENT à HKCU\Software\Policies.
+        // Tree restrictions user (HKCU\Software\Microsoft\...\CurrentVersion\Policies).
+        // ⚠️ Commentaire d'origine FAUX (« écrivable par le companion,
+        // CONTRAIREMENT à HKCU\Software\Policies ») corrigé par la Story 35.7 :
+        // sur poste joint au domaine, TOUT `HKCU\…\Policies\*` — y compris
+        // CurrentVersion\Policies — est en LECTURE SEULE pour l'utilisateur
+        // standard. Les clés Session de ce tree sont appliquées par le SERVICE
+        // SYSTEM via `writer: system` (retrofit 2026_07_13_100000).
         $userPoliciesExplorer = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';
         $userPoliciesSystem = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System';
 
@@ -257,7 +262,13 @@ return new class extends Migration
                 'default_value' => 'unmanaged',
                 'warning' => null,
                 'keys' => [
-                    // Tree restrictions user-writable (pas \Policies) → OK companion.
+                    // ⚠️ Commentaire d'origine FAUX (« user-writable → OK
+                    // companion ») corrigé par la Story 35.7 : ce tree
+                    // (`…\CurrentVersion\Policies\System`) est en lecture
+                    // seule pour l'utilisateur standard sur poste joint au
+                    // domaine — appliqué par SYSTEM via `writer: system`
+                    // (retrofit 2026_07_13_100000, défaut latent iso
+                    // blocked_executables).
                     ['hive' => 'HKCU', 'path' => $userPoliciesSystem, 'name' => 'DisableRegistryTools', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
                 ],
             ],

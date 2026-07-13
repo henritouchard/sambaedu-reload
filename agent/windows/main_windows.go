@@ -175,6 +175,12 @@ func newAgent(echo bool) *shared.Agent {
 		// test/Linux (provisioning inerte).
 		Rainmeter:    rainmeterPortableStore(),
 		RainmeterACL: setRainmeterACL,
+		// Story 35.7 : ops registre RÉELLES de la passe SYSTEM par-session —
+		// décorées PAR SID côté shared (HKCU → HKU\<SID>) pour appliquer les
+		// items `writer: "system"` (trees HKCU\…\Policies\*, non écrivables
+		// par le compagnon sur poste joint au domaine). Mêmes ops concrètes
+		// que le MachineEngine ; nil = passe inerte (tests hôte).
+		SessionSystemOps: &registryOps{log: logger},
 		// Story 27.3 : moteur de convergence de la portée MACHINE (le service
 		// SYSTEM en est le SEUL acteur — le compagnon ignore la portée machine,
 		// NFR5). Premier type machine : `registry` HKLM (droits SYSTEM). UN seul

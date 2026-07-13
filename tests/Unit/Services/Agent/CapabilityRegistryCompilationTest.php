@@ -432,4 +432,66 @@ class CapabilityRegistryCompilationTest extends TestCase
         // NFR-A4 : drift ponctuel de re-application documenté).
         self::assertNotEmpty((new StateHasher)->hashItem($session[0]));
     }
+
+    // ── Story 35.7 (AC2) — marqueur `writer` bout-en-bout via le VRAI StateCompiler ─
+    // `exclusiveKey()` et le StateCompiler sont INTOUCHÉS : l'identité
+    // {hive|path|name} ne change pas, le marqueur voyage AVEC la clé gagnante.
+
+    #[Test]
+    public function user_group_override_beats_broadcast_and_the_writer_marker_travels_with_the_winning_key(): void
+    {
+        // Cible métier réelle (blocked_executables, geste 35.4) : défaut
+        // Broadcast `off` (suppression marquée) ; override UserGroup élèves
+        // `on` (écriture marquée). La maille UserGroup bat le Broadcast pour
+        // CETTE clé et le state PAR-SESSION porte l'item d'écriture 6 clés,
+        // `writer: "system"` inclus.
+        $user = User::factory()->create();
+        $group = UserGroup::factory()->create();
+        $user->groups()->attach($group->id);
+
+        $cap = $this->makeCapability('blocked_executables', 'off', [
+            ['hive' => 'HKCU', 'path' => 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer', 'name' => 'DisallowRun', 'type' => 'REG_DWORD', 'value' => ['on' => 1, 'off' => ['$ensure' => 'absent']], 'writer' => 'system'],
+        ]);
+        DB::table('capability_assignments')->insert([
+            'capability_id' => $cap->id,
+            'assignable_type' => UserGroup::class,
+            'assignable_id' => $group->id,
+            'value' => 'on',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $session = $this->sessionItems($this->compiler()->compile(TargetContext::for($this->ws, $user)));
+
+        $registry = array_values(array_filter($session, fn ($i): bool => $i['type'] === 'registry'));
+        self::assertCount(1, $registry, 'une seule valeur gagne pour l\'identité {hive|path|name} — le marqueur ne change pas l\'identité');
+        self::assertSame(
+            ['hive', 'path', 'name', 'type', 'value', 'writer'],
+            array_keys($registry[0]['payload']),
+            'l\'override UserGroup (écriture marquée 6 clés) bat le Broadcast (suppression marquée)',
+        );
+        self::assertSame(1, $registry[0]['payload']['value']);
+        self::assertSame('system', $registry[0]['payload']['writer'], 'le marqueur voyage avec la clé gagnante');
+        self::assertArrayNotHasKey('refresh', $registry[0]['payload'], 'exclusion mutuelle refresh/writer (piège n°6)');
+
+        // Le hash de l'item marqué est calculable (le marqueur entre au canon
+        // — drift ponctuel de re-application documenté, §9).
+        self::assertNotEmpty((new StateHasher)->hashItem($registry[0]));
+    }
+
+    #[Test]
+    public function machine_only_compile_never_carries_a_writer_item(): void
+    {
+        // Le contexte MACHINE (service SYSTEM, sans ?user) ne compile JAMAIS
+        // un item marqué : la clé HKCU marquée n'est émise que par le provider
+        // Session — le state machine reste vierge de `writer`.
+        $this->makeCapability('blocked_executables', 'on', [
+            ['hive' => 'HKCU', 'path' => 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer', 'name' => 'DisallowRun', 'type' => 'REG_DWORD', 'value' => ['on' => 1], 'writer' => 'system'],
+        ]);
+
+        $state = $this->compiler()->compile(TargetContext::for($this->ws, null));
+
+        $machine = array_values(array_filter($state[StateContract::SCOPE_MACHINE], fn ($i): bool => $i['type'] === 'registry'));
+        self::assertSame([], $machine, 'aucun item registry machine : la clé marquée est HKCU/session');
+    }
 }

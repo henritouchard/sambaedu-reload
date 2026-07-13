@@ -585,6 +585,86 @@ func TestCompanionRefreshGestureFailureKeepsPassAndReportIntact(t *testing.T) {
 	}
 }
 
+// --- Story 35.7 (AC3) — partition par exécutant : skip des items `writer` ----
+
+func TestCompanionPassSkipsWriterMarkedItemsBeforeTheEngine(t *testing.T) {
+	// Un item marqué `writer: "system"` est ÉCARTÉ AVANT le moteur : AUCUNE
+	// tentative d'op registre user-context (plus jamais d'« Accès refusé »).
+	// Preuve par piégeage : une erreur de lecture est ARMÉE sur l'identité de
+	// l'item marqué — si le compagnon la touchait, le type passerait error ;
+	// il reste drift (l'item NON marqué converge comme avant, byte-identité).
+	c, store, regOps, _ := newRefreshTestCompanion(t)
+	regOps.readErr[keyID("HKCU", `Software\P\Explorer`, "DisallowRun")] = errors.New("accès refusé (piège : ne doit JAMAIS être touché)")
+	writeSessionCache(t, store, refreshSessionState(itemFlagWriter, registryHiddenNoHint))
+
+	ran, err := c.RunPass()
+	if err != nil || !ran {
+		t.Fatalf("passe attendue : %v %v", ran, err)
+	}
+
+	// L'item non marqué a convergé (chemin historique inchangé).
+	if got := regOps.values[keyID("HKCU", `Software\Test\Advanced`, "Hidden")]; got.Int != 1 {
+		t.Fatalf("l'item non marqué doit converger, values=%v", regOps.values)
+	}
+	// L'item marqué n'a JAMAIS été tenté (l'identité piégée est intacte).
+	if _, ok := regOps.values[keyID("HKCU", `Software\P\Explorer`, "DisallowRun")]; ok {
+		t.Fatal("l'item writer=system ne doit JAMAIS être écrit par le compagnon")
+	}
+	raw, err := os.ReadFile(c.DropPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"status":"drift"`) || strings.Contains(string(raw), `"status":"error"`) {
+		t.Fatalf("verdict drift attendu (l'item piégé n'a pas été touché — pas d'error) : %s", raw)
+	}
+	// Applied-state per-user inchangé dans son rôle (persisté pour le type).
+	applied, corrupted := ReadAppliedState(c.User.AppliedStatePath())
+	if corrupted || applied["registry"].Hash == "" {
+		t.Fatalf("applied-state per-user persisté attendu : %+v %v", applied, corrupted)
+	}
+}
+
+func TestCompanionPassSkipsUnknownWriterValuesWithoutError(t *testing.T) {
+	// Forward-compat (piège n°5) : une valeur `writer` FUTURE inconnue est
+	// skippée sur PRÉSENCE du champ — sans erreur, sans op, passe nominale.
+	c, store, regOps, _ := newRefreshTestCompanion(t)
+	writeSessionCache(t, store, refreshSessionState(itemUnknownWriter, registryHiddenNoHint))
+
+	ran, err := c.RunPass()
+	if err != nil || !ran {
+		t.Fatalf("passe attendue : %v %v", ran, err)
+	}
+	if _, ok := regOps.values[keyID("HKCU", `Software\P\Future`, "K")]; ok {
+		t.Fatal("valeur writer inconnue : item skippé, jamais écrit")
+	}
+	if got := regOps.values[keyID("HKCU", `Software\Test\Advanced`, "Hidden")]; got.Int != 1 {
+		t.Fatalf("les items non marqués convergent normalement, values=%v", regOps.values)
+	}
+}
+
+func TestCompanionPassAllItemsDelegatedYieldsQuietEmptyPass(t *testing.T) {
+	// Cache dont TOUS les items registre sont délégués : le compagnon n'émet
+	// AUCUN statut pour ces types (ils ne passent plus par ses handlers) et
+	// l'échelle de rafraîchissement 43.1 ne reçoit RIEN (zéro geste).
+	c, store, regOps, refresh := newRefreshTestCompanion(t)
+	writeSessionCache(t, store, refreshSessionState(itemFlagWriter, itemListWriter))
+
+	ran, err := c.RunPass()
+	if err != nil || !ran {
+		t.Fatalf("passe attendue : %v %v", ran, err)
+	}
+	if regOps.readCnt != 0 || regOps.writeCnt != 0 {
+		t.Fatalf("aucun op registre attendu (tout est délégué) : reads=%d writes=%d", regOps.readCnt, regOps.writeCnt)
+	}
+	raw, _ := os.ReadFile(c.DropPath)
+	if !strings.Contains(string(raw), `"items":[]`) {
+		t.Fatalf("drop vide attendu (aucun type traité par le compagnon) : %s", raw)
+	}
+	if len(refresh.seq) != 0 {
+		t.Fatalf("l'échelle de rafraîchissement ne reçoit plus rien de ces items : %v", refresh.seq)
+	}
+}
+
 // readCompanionLog : contenu du companion.log d'un Logger{Dir: dir} de test
 // (vide si rien n'a encore été écrit).
 func readCompanionLog(t *testing.T, dir string) string {

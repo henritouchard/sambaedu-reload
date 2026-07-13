@@ -141,9 +141,22 @@ type Agent struct {
 	// plateformes sans registre) — le cycle réseau/cache/report continue.
 	MachineEngine *Engine
 
+	// SessionSystemOps : ops registre RÉELLES de la passe SYSTEM PAR-SESSION
+	// (Story 35.7) — décorées PAR SID côté shared (sessionHiveOps : HKCU →
+	// HKU\<SID>) pour appliquer les items `writer: "system"` des caches
+	// per-session (trees HKCU\…\Policies\*, non écrivables par le compagnon).
+	// Injectées par le binaire Windows (mêmes ops concrètes que le
+	// MachineEngine). nil = passe INERTE (tests hôte via fake, console de
+	// debug, plateforme sans registre) — patron MachineEngine/Rainmeter.
+	SessionSystemOps RegistryOps
+
 	// machineReportItems : items de rapport de la DERNIÈRE convergence machine
 	// (Story 27.3), vidés dans le BuildReport du même cycle (le service est
 	// in-process : pas de drop, contrairement au compagnon). PROCESS-LOCAL.
+	// Story 35.7 : les verdicts de la passe SYSTEM par-session s'y AJOUTENT
+	// (convergeSessionSystem) — MergeReportItemsByType fusionne avec le
+	// verdict machine et les drops compagnon (pire statut gagne, types
+	// uniques §6).
 	machineReportItems []ReportItem
 
 	// activeSIDs : ensemble des SID des sessions interactives VIVANTES
@@ -317,6 +330,14 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 		// valide → re-test level-triggered (drift réimposé).
 		a.convergeMachine()
 		a.fetchSessionStates(cfg)
+		// Story 35.7 : passe SYSTEM PAR-SESSION — applique les items
+		// `writer: "system"` (trees HKCU\…\Policies\*, non écrivables par le
+		// compagnon) de chaque cache per-SID dans HKU\<SID>, GREFFÉE après le
+		// fetch (même énumération WTS, jamais de second appel — piège n°12).
+		// Ses verdicts rejoignent machineReportItems → POST /report du cycle.
+		// Best-effort : une session en échec n'empêche ni les autres ni le
+		// cycle ; quarantaine (même tombée PENDANT le fetch) = passe sautée.
+		a.convergeSessionSystem()
 		a.SyncWallpaperAssets(cfg)
 		// Story 27.7 : pré-télécharge les icônes UPLOADÉES de raccourcis
 		// content-addressed (GET HTTP statique sans token) AVANT la passe

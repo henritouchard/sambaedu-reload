@@ -214,6 +214,23 @@ func (c *Companion) RunPass() (bool, error) {
 	items := ItemsFromScope(state.Session, c.Log)
 	items = append(items, ItemsFromScope(state.MachineUser, c.Log)...)
 
+	// Partition par EXÉCUTANT (Story 35.7, D4 — AVANT le moteur, engine.go
+	// intouché) : les items porteurs du champ `writer` sont DÉLÉGUÉS au
+	// service SYSTEM (trees HKCU\…\Policies\* en lecture seule pour
+	// l'utilisateur standard sur poste joint au domaine — plus JAMAIS de
+	// tentative user-context, plus d'« Accès refusé »). Skip GÉNÉRIQUE sur
+	// PRÉSENCE du champ (tout type, valeur future inconnue incluse —
+	// forward-compat, piège n°5) ; les items non marqués suivent le chemin
+	// historique byte-identique. Conséquence 43.1 : ces items ne passent plus
+	// par les handlers du compagnon — l'échelle de rafraîchissement n'en
+	// reçoit plus rien (effet au logon suivant, comportement GPO user).
+	companionItems, systemItems := SplitSystemWriterItems(items)
+	if delegated := len(items) - len(companionItems); delegated > 0 {
+		c.Log.Debugf("%d item(s) porteurs de `writer` écartés avant le moteur (dont %d writer=system, délégués au service SYSTEM).",
+			delegated, len(systemItems))
+	}
+	items = companionItems
+
 	// Dernier-appliqué PER-USER (mode default §5) — JAMAIS le fichier
 	// machine sous ProgramData (ACL SYSTEM, et le dernier-appliqué d'un item
 	// session est propre à CHAQUE user). Corrompu = repart sans mémoire

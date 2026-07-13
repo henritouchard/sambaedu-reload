@@ -743,6 +743,145 @@ class CapabilityRegistryProviderTest extends TestCase
         self::assertSame(['hive', 'path', 'name', 'type', 'value'], array_keys($item->payload));
     }
 
+    // ── Story 35.7 (D1/D2, AC2) — marqueur `writer` par clé de spec ────────
+    // L'attribut `'writer' => 'system'` d'une CLÉ de spec est recopié sur
+    // l'item émis (l'item est appliqué par le service SYSTEM dans HKU\<SID>,
+    // jamais par le compagnon — trees HKCU\…\Policies\* non user-writable).
+
+    /** La spec du flag DisallowRun re-routée (miroir du retrofit 2026_07_13_100000). */
+    private const WRITER_FLAG_KEYS = [
+        ['hive' => 'HKCU', 'path' => 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer', 'name' => 'DisallowRun', 'type' => 'REG_DWORD', 'value' => ['on' => 1, 'off' => ['$ensure' => 'absent']], 'writer' => 'system'],
+    ];
+
+    #[Test]
+    public function session_provider_recopies_the_writer_marker_as_a_six_key_write_item(): void
+    {
+        // (a) écriture marquée : EXACTEMENT 6 clés {hive, path, name, type,
+        // value, writer}, zéro fuite d'id, zéro float — sur le Broadcast ET
+        // sur l'override de maille (le marqueur voyage avec la clé).
+        $cap = $this->makeCapability('blocked_executables', 'on', self::WRITER_FLAG_KEYS);
+
+        $broadcast = $this->userProvider()->itemsFor($this->ctx())->first();
+        self::assertSame(['hive', 'path', 'name', 'type', 'value', 'writer'], array_keys($broadcast->payload));
+        self::assertSame('system', $broadcast->payload['writer']);
+        self::assertSame(1, $broadcast->payload['value']);
+        foreach (['id', 'key', 'capability_id', 'label', 'spec', 'refresh'] as $forbidden) {
+            self::assertArrayNotHasKey($forbidden, $broadcast->payload);
+        }
+
+        $this->setOverride($cap, $this->parc, 'on');
+        $override = $this->userProvider()->itemsFor($this->ctx())
+            ->first(fn (StateCandidate $c): bool => $c->maille === StateMaille::LogicalGroup);
+        self::assertSame('system', $override->payload['writer'], 'le marqueur voyage sur le candidat de maille');
+    }
+
+    #[Test]
+    public function session_provider_recopies_the_writer_marker_on_ensure_absent_items_too(): void
+    {
+        // (b) suppression marquée : EXACTEMENT 5 clés {hive, path, name,
+        // ensure, writer} — le « off » de blocked_executables supprime le flag
+        // dans la ruche ciblée, via le service SYSTEM.
+        $this->makeCapability('blocked_executables', 'off', self::WRITER_FLAG_KEYS);
+
+        $items = $this->userProvider()->itemsFor($this->ctx());
+
+        self::assertCount(1, $items);
+        $payload = $items->first()->payload;
+        self::assertSame(['hive', 'path', 'name', 'ensure', 'writer'], array_keys($payload));
+        self::assertSame('absent', $payload['ensure']);
+        self::assertSame('system', $payload['writer']);
+    }
+
+    #[Test]
+    public function a_spec_key_without_writer_emits_byte_identical_payloads(): void
+    {
+        // (c) non-régression : une clé SANS attribut writer reste byte-identique
+        // (5 clés écriture / 4 clés absent — jamais de clé `writer`).
+        $this->makeCapability('registry_editing_disabled', 'on', [
+            ['hive' => 'HKCU', 'path' => 'Software\\X\\System', 'name' => 'DisableRegistryTools', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
+        ]);
+
+        $payload = $this->userProvider()->itemsFor($this->ctx())->first()->payload;
+
+        self::assertSame(['hive', 'path', 'name', 'type', 'value'], array_keys($payload));
+    }
+
+    #[Test]
+    public function refresh_hint_is_never_posed_on_a_writer_marked_item(): void
+    {
+        // (d) piège n°6 — exclusion mutuelle refresh/writer : MÊME si la
+        // projection porte un hint résiduel (donnée incohérente hypothétique),
+        // withRefreshHint() ne pose JAMAIS `refresh` sur un item marqué. Les
+        // clés NON marquées de la même spec gardent le hint (le spec peut
+        // légitimement mêler les deux régimes).
+        $cap = Capability::factory()->create(['key' => 'mixed_writer_refresh', 'default_value' => 'on']);
+        CapabilityProjection::factory()->for($cap)->create([
+            'mechanism' => CapabilityProjection::MECHANISM_REGISTRY,
+            'spec' => [
+                'keys' => [
+                    ['hive' => 'HKCU', 'path' => 'Software\\P\\Explorer', 'name' => 'Marked', 'type' => 'REG_DWORD', 'value' => ['on' => 1], 'writer' => 'system'],
+                    ['hive' => 'HKCU', 'path' => 'Software\\X\\Advanced', 'name' => 'Companion', 'type' => 'REG_DWORD', 'value' => ['on' => 1]],
+                ],
+                'refresh' => 'policy_broadcast',
+            ],
+        ]);
+
+        $items = $this->userProvider()->itemsFor($this->ctx());
+        $marked = $items->first(fn (StateCandidate $c): bool => $c->payload['name'] === 'Marked');
+        $companion = $items->first(fn (StateCandidate $c): bool => $c->payload['name'] === 'Companion');
+
+        self::assertSame('system', $marked->payload['writer']);
+        self::assertArrayNotHasKey('refresh', $marked->payload, 'JAMAIS refresh sur un item writer (piège n°6)');
+
+        self::assertArrayNotHasKey('writer', $companion->payload);
+        self::assertSame('policy_broadcast', $companion->payload['refresh'], 'la clé compagnon garde son hint');
+    }
+
+    #[Test]
+    public function machine_provider_never_emits_the_writer_marker(): void
+    {
+        // (e) spec mixte HKLM + HKCU marquée : le provider Machine n'émet que
+        // la clé HKLM SANS writer (même si la donnée corrompue portait le
+        // marqueur sur la clé HKLM, la garde HKCU du helper le refuse) ; le
+        // provider Session émet la clé HKCU marquée.
+        $this->makeCapability('mixed_writer_cap', 'on', [
+            ['hive' => 'HKLM', 'path' => 'SOFTWARE\\X', 'name' => 'MachineKey', 'type' => 'REG_DWORD', 'value' => ['on' => 1], 'writer' => 'system'],
+            ['hive' => 'HKCU', 'path' => 'Software\\P\\Explorer', 'name' => 'UserKey', 'type' => 'REG_DWORD', 'value' => ['on' => 1], 'writer' => 'system'],
+        ]);
+
+        $machineItems = $this->machineProvider()->itemsFor($this->ctx());
+        $userItems = $this->userProvider()->itemsFor($this->ctx());
+
+        self::assertCount(1, $machineItems);
+        self::assertArrayNotHasKey('writer', $machineItems->first()->payload, 'JAMAIS de writer sur un item machine (AC2)');
+
+        self::assertCount(1, $userItems);
+        self::assertSame('system', $userItems->first()->payload['writer']);
+    }
+
+    #[Test]
+    public function an_invalid_writer_value_is_tolerated_at_render_and_never_recopied(): void
+    {
+        // (f) donnée corrompue hypothétique (déjà refusée à l'authoring par le
+        // guard, règle 6a) : le render reste DÉFENSIF — enum fermé, toute
+        // valeur ≠ 'system' n'est jamais recopiée, jamais d'exception.
+        foreach ([null, 42, 'SYSTEM', 'companion', ''] as $i => $invalidWriter) {
+            $cap = Capability::factory()->create(['key' => 'invalid_writer_cap_'.$i, 'default_value' => 'on']);
+            CapabilityProjection::factory()->for($cap)->create([
+                'mechanism' => CapabilityProjection::MECHANISM_REGISTRY,
+                'spec' => ['keys' => [
+                    ['hive' => 'HKCU', 'path' => 'Software\\P', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 1], 'writer' => $invalidWriter],
+                ]],
+            ]);
+
+            $item = $this->userProvider()->itemsFor($this->ctx())
+                ->first(fn (StateCandidate $c): bool => (int) $c->sourceId === (int) $cap->id);
+
+            self::assertNotNull($item);
+            self::assertArrayNotHasKey('writer', $item->payload, 'valeur '.var_export($invalidWriter, true).' ne doit jamais être recopiée');
+        }
+    }
+
     // ── exclusiveKey : identité insensible à la casse ─────────────────────
 
     #[Test]

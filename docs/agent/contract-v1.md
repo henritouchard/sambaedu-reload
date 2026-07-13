@@ -273,11 +273,30 @@ clés distinctes s'accumulent). Le payload porte un item de registre **CONCRET**
 | `type` | string | `REG_SZ` \| `REG_DWORD` \| `REG_EXPAND_SZ` \| `REG_MULTI_SZ` \| `REG_QWORD`. |
 | `value` | int \| string \| list&lt;string&gt; | Valeur cible TYPÉE : `REG_DWORD`/`REG_QWORD` → **entier** (zéro float, §4.1) ; `REG_SZ`/`REG_EXPAND_SZ` → **string** ; `REG_MULTI_SZ` → **liste de strings** (jamais `{}` — §4.1). Absent sur un item `ensure: "absent"`. |
 | `ensure` | string (**optionnel**) | `present` \| `absent`. **Absence du champ = `present`** (rétro-compatible §9). `absent` = l'agent **supprime la valeur nommée** si elle existe (jamais la clé-conteneur). Le serveur n'émet **JAMAIS** `ensure: "present"` explicitement — un item d'écriture reste EXACTEMENT 5 clés (byte-identité des payloads existants). |
-| `refresh` | string (**optionnel**, Story 43.2) | `shell_notify` \| `policy_broadcast` \| `explorer_restart` (vocabulaire FERMÉ, casse canonique minuscule). Geste de rafraîchissement que le **compagnon de session** exécute en fin de passe (le PLUS FORT des items changés, 43.1) pour rendre le réglage effectif SANS attendre le prochain logon Windows. Posé par le serveur au **niveau RACINE du `spec`** de la projection (une valeur par projection, jamais par clé) et recopié TEL QUEL sur chaque item émis — **UNIQUEMENT** pour un item de portée **session/machine_user** (JAMAIS machine/HKU : le compagnon de session n'existe pas côté service SYSTEM). **Absence du champ** = comportement legacy inchangé (« effet au prochain logon Windows »). Un agent **≤ 2.9.0** ignore ce champ inconnu **SANS ERREUR** (§9, champ ajouté) — il écrit la valeur mais n'exécute AUCUN geste : publier la release 2.10.0 (43.1) est un prérequis pour que le hint soit honoré. |
+| `refresh` | string (**optionnel**, Story 43.2) | `shell_notify` \| `policy_broadcast` \| `explorer_restart` (vocabulaire FERMÉ, casse canonique minuscule). Geste de rafraîchissement que le **compagnon de session** exécute en fin de passe (le PLUS FORT des items changés, 43.1) pour rendre le réglage effectif SANS attendre le prochain logon Windows. Posé par le serveur au **niveau RACINE du `spec`** de la projection (une valeur par projection, jamais par clé) et recopié TEL QUEL sur chaque item émis — **UNIQUEMENT** pour un item de portée **session/machine_user** (JAMAIS machine/HKU : le compagnon de session n'existe pas côté service SYSTEM). **Absence du champ** = comportement legacy inchangé (« effet au prochain logon Windows »). Un agent **≤ 2.9.0** ignore ce champ inconnu **SANS ERREUR** (§9, champ ajouté) — il écrit la valeur mais n'exécute AUCUN geste : publier la release 2.10.0 (43.1) est un prérequis pour que le hint soit honoré. **Mutuellement exclusif avec `writer`** (Story 35.7) : `refresh` n'est émis QUE sur un item appliqué par le compagnon — jamais combiné au marqueur `writer` ci-dessous. |
+| `writer` | string (**optionnel**, Story 35.7) | Enum FERMÉ, seule valeur publiée : `"system"`. L'item est **appliqué par le service SYSTEM dans `HKU\<SID>` de la session du contexte** (`GET /state?user=`) — **jamais par le compagnon**, qui l'ÉCARTE avant son moteur. Nécessaire aux trees `HKCU\…\Policies\*` (dont `CurrentVersion\Policies`, pas seulement `Software\Policies`) : **lecture seule pour l'utilisateur standard sur poste joint au domaine** (durcissement ACL anti-contournement de GPO — leçon `blocked_executables`, « Accès refusé » du compagnon). Portées **session/machine_user** UNIQUEMENT, ruche `HKCU` UNIQUEMENT (l'item reste honnête : la cible logique EST la ruche de l'utilisateur ciblé — la traduction `HKCU` → `HKU\<SID>` est un décorateur d'ops côté agent, UN seul SID, **jamais** le fan-out multi-ruches de `HKU` §7.1). JAMAIS émis sur un item machine/HKU (le service y est déjà l'exécutant), JAMAIS combiné à `refresh` (exclusion mutuelle — effet au **logon suivant**, comportement d'une GPO user policy). Posé par le serveur **PAR CLÉ de `spec`** (propriété de la clé/de l'ACL de son tree, contrairement à `refresh` posé par projection). Absence du champ = exécutant par défaut de la portée (compagnon). **Valeur inconnue (future)** : skippée par les DEUX acteurs sans erreur (forward-compat — le compagnon skippe sur PRÉSENCE du champ, le service sélectionne sur ÉGALITÉ stricte `"system"`). Un binaire **≤ 2.11.x** ignore le marqueur **EN SILENCE** : le compagnon garde l'« Accès refusé » actuel, le service n'applique rien — publier la release 2.12.0 AVANT d'armer le marqueur (§9). |
+
+Item d'**écriture marqué** (Story 35.7) — EXACTEMENT 6 clés :
+
+```json
+{
+  "type": "registry",
+  "semantics": "exclusive",
+  "payload": {
+    "hive": "HKCU",
+    "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
+    "name": "DisallowRun",
+    "type": "REG_DWORD",
+    "value": 1,
+    "writer": "system"
+  },
+  "hash": "a19a1be2…f9cfd93e"
+}
+```
 
 Item de **suppression** (`ensure: "absent"`) — EXACTEMENT 4 clés (+ `refresh`
-optionnel, portée session/machine_user uniquement — jamais émis sur un item
-machine/HKU), ni `type` ni `value` :
+OU `writer` optionnels — mutuellement exclusifs, portée session/machine_user
+uniquement, jamais émis sur un item machine/HKU), ni `type` ni `value` :
 
 ```json
 {
@@ -305,9 +324,10 @@ machine/HKU), ni `type` ni `value` :
 > 3. **Ne pas gérer** — la clé n'apparaît PAS dans la cible : l'agent n'y touche
 >    plus (§8, la valeur en place reste celle qu'elle avait).
 >
-> **Invariant amendé (Story 43.2) :** les items 1 et 2 ci-dessus restent
-> EXACTEMENT 5/4 clés — **+ `refresh` optionnel**, émis UNIQUEMENT sur un item
-> de portée session/machine_user (JAMAIS machine/HKU). L'invariant qui NE BOUGE
+> **Invariant amendé (Stories 43.2 + 35.7) :** les items 1 et 2 ci-dessus
+> restent EXACTEMENT 5/4 clés — **+ `refresh` OU `writer` optionnels**
+> (mutuellement exclusifs), émis UNIQUEMENT sur un item de portée
+> session/machine_user (JAMAIS machine/HKU). L'invariant qui NE BOUGE
 > JAMAIS : ni `id`/`key` de capacité au payload.
 >
 > Un item `absent` et un item d'écriture sur la MÊME identité `{hive|path|name}`
@@ -341,6 +361,19 @@ machine/HKU), ni `type` ni `value` :
 > le **compagnon** applique les items HKCU (portée `session`). Comme les deux
 > portées émettent le type `registry`, l'agent **fusionne par type** avant le
 > rapport (pire statut gagne) pour respecter l'unicité des types §6.
+>
+> **Exception `writer: "system"` (Story 35.7)** : un item HKCU de portée
+> session/machine_user **marqué** est appliqué par le **service SYSTEM** dans
+> `HKU\<SID de la session dont provient le contrat>` — passe PAR-SESSION sur
+> le cache `cache\sessions\<SID>\state.json`, ciblée UN SID (jamais
+> `.DEFAULT`, jamais les autres ruches — distinction structurante avec le
+> fan-out HKU). Le compagnon ÉCARTE ces items avant son moteur (plus jamais
+> d'« Accès refusé »). Le routage se décide sur le CHAMP `writer` du payload,
+> JAMAIS sur la forme du `path` (le serveur DÉCLARE, l'agent ROUTE). Les
+> verdicts par-session rejoignent le rapport du cycle service via la même
+> fusion par type ; la tâche at-logon converge sans rapporter. Effet au
+> **logon suivant** de la session ciblée (Explorer lit ces policies au logon
+> — aucun geste de rafraîchissement mid-session, exclusion `refresh`).
 >
 > **Agents antérieurs à 2.5.0 face à un item `HKU`** : le parse réussit (les
 > valeurs de `hive` ne sont pas validées au parse) puis `rootKey()` refuse la
@@ -626,9 +659,10 @@ mêmes casiers que `registry`.
 }
 ```
 
-Le payload porte **EXACTEMENT 4 clés** (+ `refresh` OPTIONNEL, Story 43.2 —
-portée session/machine_user uniquement, jamais émis sur un conteneur
-machine/HKLM) — jamais de `name`, jamais d'id de capacité, zéro float (§4.1) :
+Le payload porte **EXACTEMENT 4 clés** (+ `refresh` OU `writer` OPTIONNELS —
+mutuellement exclusifs, Stories 43.2/35.7, portée session/machine_user
+uniquement, jamais émis sur un conteneur machine/HKLM) — jamais de `name`,
+jamais d'id de capacité, zéro float (§4.1) :
 
 | Clé | Type JSON | Sens |
 |---|---|---|
@@ -636,7 +670,8 @@ machine/HKLM) — jamais de `name`, jamais d'id de capacité, zéro float (§4.1
 | `path` | string | Chemin de la **clé-conteneur** sous la ruche (la clé dont les sous-valeurs `1..N` sont la liste). |
 | `entry_type` | string | Type des entrées : `REG_SZ` \| `REG_EXPAND_SZ` **uniquement** (les listes indexées Windows sont des chaînes — borné par le contrat). |
 | `values` | list&lt;string&gt; | Liste **ORDONNÉE** de chaînes. L'ordre est **porteur de sens** : la canonicalisation du hash ne trie pas les listes (§4) — le même contenu dans un autre ordre est un autre hash. **`[]` (liste vide) est une vraie valeur** : « purger toutes les entrées numérotées » (le « off » honnête d'une liste). |
-| `refresh` | string (**optionnel**, Story 43.2) | Même vocabulaire/sémantique que §7.1 (`shell_notify` \| `policy_broadcast` \| `explorer_restart`) — geste de rafraîchissement exécuté par le compagnon en fin de passe (43.1). Recopié depuis la RACINE du `spec` de la projection ; jamais sur un conteneur émis par le provider Machine. |
+| `refresh` | string (**optionnel**, Story 43.2) | Même vocabulaire/sémantique que §7.1 (`shell_notify` \| `policy_broadcast` \| `explorer_restart`) — geste de rafraîchissement exécuté par le compagnon en fin de passe (43.1). Recopié depuis la RACINE du `spec` de la projection ; jamais sur un conteneur émis par le provider Machine. **Mutuellement exclusif avec `writer`** (Story 35.7). |
+| `writer` | string (**optionnel**, Story 35.7) | Même sémantique que §7.1 : enum FERMÉ (`"system"` seule valeur publiée) — le conteneur est **réconcilié par le service SYSTEM dans `HKU\<SID>` de la session du contexte** (décorateur d'ops un-SID, réconciliation D3 incluse : entrées `1..N` + purge des surnuméraires numériques), JAMAIS par le compagnon (qui l'écarte avant son moteur). Nécessaire aux conteneurs `HKCU\…\Policies\*` (ex. `…\Policies\Explorer\DisallowRun`), lecture seule pour l'utilisateur standard sur poste joint au domaine. HKCU + portée session/machine_user UNIQUEMENT ; jamais combiné à `refresh` (effet au logon suivant). Un binaire ≤ 2.11.x ignore le marqueur EN SILENCE → publier la 2.12.0 avant d'armer (§9). |
 
 **Sémantique de réconciliation (D3 — l'agent POSSÈDE la clé-conteneur) :**
 
@@ -1098,6 +1133,25 @@ décision de contrat consommée par chaque handler côté agent.
   par poste ayant la capacité assignée, à sa première convergence
   post-migration — le geste que le moteur GPO émet après chaque application,
   inoffensif, borné à un tir par poste.
+  Ex. Story 35.7 : champ optionnel `writer` sur les items `registry`/
+  `registry_list` (§7.1/§7.6, enum fermé — seule valeur publiée `"system"`,
+  portée session/machine_user + ruche HKCU uniquement, mutuellement exclusif
+  avec `refresh`) — absence = exécutant par défaut de la portée (compagnon) ;
+  présence = application par le **service SYSTEM dans `HKU\<SID>` de la
+  session du contexte** (trees `HKCU\…\Policies\*` en lecture seule pour
+  l'utilisateur standard sur poste joint au domaine). Golden `state.v1.json`
+  bumpé avec justification (les deux items session registry/registry_list
+  MODIFIÉS — marqués `writer`, hint `refresh` retiré), agent bumpé 2.12.0.
+  Cas limite **le plus silencieux des trois précédents** : un binaire
+  ≤ 2.11.x ignore le marqueur EN SILENCE — AUCUNE régression ne flotte
+  (contrairement à HKU/35.3), mais AUCUN correctif non plus : le compagnon
+  garde son « Accès refusé » (statu quo du défaut), le service n'applique
+  rien. Ordre opérateur : **publier la release 2.12.0 AVANT de jouer le
+  retrofit** `2026_07_13_100000_retrofit_session_system_writer_policies.php`
+  (l'inverse laisse le défaut visible en croyant l'avoir corrigé — la version
+  rapportée au check-in fait foi). Drift ponctuel attendu (le marqueur entre
+  dans le hash de chaque item re-routé) : re-application idempotente unique
+  par session ciblée, bénigne.
 - **Type ajouté** → version **mineure** aussi (constante `RESOURCE_TYPES`
   additive, `ReportRequest` suit). Ex. Story 35.2 : type `registry_list`
   (§7.6), golden bumpé avec justification, agent bumpé 2.4.0. Ex. Story 36.1 :

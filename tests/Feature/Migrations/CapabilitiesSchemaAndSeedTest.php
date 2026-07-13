@@ -547,8 +547,10 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             $projections->pluck('mechanism')->all(),
         );
 
-        // Flag registry : tree restrictions user-writable (PAS HKCU\Software\
-        // Policies), on=1, off=marqueur de suppression 35.1.
+        // Flag registry : tree restrictions `…\CurrentVersion\Policies` (en
+        // LECTURE SEULE pour l'utilisateur standard sur poste joint au domaine
+        // — appliqué par SYSTEM via writer:system, Story 35.7), on=1,
+        // off=marqueur de suppression 35.1.
         $flag = $projections[0]->spec['keys'][0];
         self::assertSame('HKCU', $flag['hive']);
         self::assertSame('Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer', $flag['path']);
@@ -577,14 +579,22 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
         $migration = require database_path('migrations/2026_07_03_110000_seed_capabilities_registry_list_lot.php');
 
         // Story 43.2 — le retrofit `2026_07_11_100000` (POSTÉRIEUR, orthogonal)
-        // pose `spec.refresh` sur `blocked_executables` APRÈS ce seed. Rejouer
+        // pose `spec.refresh` sur `blocked_executables` APRÈS ce seed. Story
+        // 35.7 — le retrofit `2026_07_13_100000` (POSTÉRIEUR aussi) pose
+        // `writer: 'system'` sur ses clés HKCU et retire le hint. Rejouer
         // CE seed isolément (hors séquence complète) réécrit sa `spec` ENTIÈRE
         // (piège n°7 : littéraux `keys` dupliqués, colonne remplacée) et efface
-        // donc `refresh` — orthogonal à ce que CETTE migration possède. On
-        // normalise `refresh` HORS du snapshot pour tester l'idempotence des
-        // champs QUE ce seed possède (`keys`), pas ceux d'un retrofit ultérieur.
+        // donc `refresh` ET `writer` — orthogonaux à ce que CETTE migration
+        // possède. On normalise les DEUX HORS du snapshot pour tester
+        // l'idempotence des champs QUE ce seed possède (`keys` nues), pas ceux
+        // des retrofits ultérieurs.
         $stripRefresh = static function (array $spec): array {
             unset($spec['refresh']);
+            foreach ($spec['keys'] ?? [] as $i => $key) {
+                if (is_array($key)) {
+                    unset($spec['keys'][$i]['writer']);
+                }
+            }
 
             return $spec;
         };
@@ -1152,42 +1162,48 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
                 'updated_at' => now(),
             ]);
 
-            // Story 43.2 (D3, D4) — le retrofit `2026_07_11_100000` pose
-            // `refresh: policy_broadcast` dans LES DEUX specs de la
-            // bi-projection : recopié en DERNIÈRE clé de CHAQUE payload Session
-            // (flag ET conteneur), y compris l'item de SUPPRESSION `ensure`.
+            // Story 35.7 (D7, AC5 — intégration provider sur DONNÉES RÉELLES) :
+            // le retrofit `2026_07_13_100000` re-route les DEUX projections vers
+            // l'exécutant SYSTEM — `writer: "system"` recopié en DERNIÈRE clé de
+            // CHAQUE payload Session (flag ET conteneur), et le hint `refresh`
+            // du retrofit 43.2 est RETIRÉ (exclusion mutuelle, piège n°6).
             $flagItems = $forCap($registryProvider->itemsFor($ctx()));
             self::assertCount(1, $flagItems, 'le provider registry ne voit que le flag');
-            self::assertSame(['hive', 'path', 'name', 'type', 'value', 'refresh'], array_keys($flagItems[0]->payload));
+            self::assertSame(['hive', 'path', 'name', 'type', 'value', 'writer'], array_keys($flagItems[0]->payload));
             self::assertSame('DisallowRun', $flagItems[0]->payload['name']);
             self::assertSame(1, $flagItems[0]->payload['value']);
-            self::assertSame('policy_broadcast', $flagItems[0]->payload['refresh']);
+            self::assertSame('system', $flagItems[0]->payload['writer']);
+            self::assertArrayNotHasKey('refresh', $flagItems[0]->payload, 'JAMAIS refresh sur un item writer (piège n°6)');
 
             $listItems = $forCap($listProvider->itemsFor($ctx()));
             self::assertCount(1, $listItems, 'le provider list ne voit que le conteneur');
-            self::assertSame(['hive', 'path', 'entry_type', 'values', 'refresh'], array_keys($listItems[0]->payload));
+            self::assertSame(['hive', 'path', 'entry_type', 'values', 'writer'], array_keys($listItems[0]->payload));
             self::assertSame(
                 ['powershell.exe', 'powershell_ise.exe', 'pwsh.exe', 'mstsc.exe', 'cmd.exe'],
                 $listItems[0]->payload['values'],
                 'les 5 entrées, ordre préservé',
             );
-            self::assertSame('policy_broadcast', $listItems[0]->payload['refresh']);
+            self::assertSame('system', $listItems[0]->payload['writer']);
+            self::assertArrayNotHasKey('refresh', $listItems[0]->payload);
 
-            // Override `off` ⇒ action combinée : flag SUPPRIMÉ + entrées PURGÉES.
+            // Override `off` ⇒ action combinée : flag SUPPRIMÉ + entrées PURGÉES
+            // — TOUJOURS via l'exécutant SYSTEM (le marqueur voyage aussi sur
+            // l'item de suppression et sur la purge).
             DB::table('capability_assignments')
                 ->where('capability_id', $cap->id)
                 ->update(['value' => 'off']);
 
             $flagOff = $forCap($registryProvider->itemsFor($ctx()));
             self::assertCount(1, $flagOff);
-            self::assertSame(['hive', 'path', 'name', 'ensure', 'refresh'], array_keys($flagOff[0]->payload));
+            self::assertSame(['hive', 'path', 'name', 'ensure', 'writer'], array_keys($flagOff[0]->payload));
             self::assertSame('absent', $flagOff[0]->payload['ensure']);
-            self::assertSame('policy_broadcast', $flagOff[0]->payload['refresh'], 'supprimer une policy exige le même geste (D3)');
+            self::assertSame('system', $flagOff[0]->payload['writer'], 'supprimer une policy exige le même exécutant');
 
             $listOff = $forCap($listProvider->itemsFor($ctx()));
             self::assertCount(1, $listOff);
             self::assertSame([], $listOff[0]->payload['values'], 'off = purge (liste vide)');
-            self::assertSame('policy_broadcast', $listOff[0]->payload['refresh']);
+            self::assertSame('system', $listOff[0]->payload['writer']);
+            self::assertArrayNotHasKey('refresh', $listOff[0]->payload);
         } finally {
             WorkstationGroupObserver::enableSync();
             UserGroupObserver::enableSync();
@@ -1880,18 +1896,23 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             self::assertSame('shell_notify', $projection->spec['refresh'] ?? null, "{$key} : hint shell_notify attendu");
         }
 
-        // D4 : `policy_broadcast` sur blocked_executables (LES DEUX projections
-        // de la bi-projection) et registry_editing_disabled.
+        // Story 35.7 (D7, piège n°6) — les 3 projections `…\Policies\*` que le
+        // retrofit 43.2 avait mises en `policy_broadcast` sont RE-ROUTÉES vers
+        // l'exécutant SYSTEM : le retrofit `2026_07_13_100000` POSTÉRIEUR
+        // retire leur hint `refresh` (exclusion mutuelle refresh/writer) et
+        // pose `writer: 'system'` sur leurs clés HKCU. L'état FINAL du
+        // catalogue (toutes migrations jouées) est donc : PAS de refresh,
+        // writer partout sur ces specs.
         $blocked = Capability::query()->where('key', 'blocked_executables')->firstOrFail()
             ->projections()->where('os', 'windows')->orderBy('mechanism')->get();
         self::assertCount(2, $blocked);
         foreach ($blocked as $p) {
-            self::assertSame('policy_broadcast', $p->spec['refresh'] ?? null, "blocked_executables [{$p->mechanism}] : hint policy_broadcast attendu");
+            self::assertArrayNotHasKey('refresh', $p->spec, "blocked_executables [{$p->mechanism}] : hint RETIRÉ par le retrofit 35.7");
         }
 
         $registryEditing = Capability::query()->where('key', 'registry_editing_disabled')->firstOrFail()
             ->projections()->where('os', 'windows')->where('mechanism', 'registry')->firstOrFail();
-        self::assertSame('policy_broadcast', $registryEditing->spec['refresh'] ?? null);
+        self::assertArrayNotHasKey('refresh', $registryEditing->spec, 'registry_editing_disabled : hint RETIRÉ par le retrofit 35.7');
 
         // D4 : AUCUN hint ailleurs — dont explorer_sidebar_pins_hidden (HKLM
         // only, la règle 5b du guard REFUSERAIT un hint), numlock_on_logon
@@ -1931,6 +1952,22 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
     {
         $migration = require database_path('migrations/2026_07_11_100000_retrofit_capabilities_refresh_hints.php');
 
+        // Story 35.7 — le retrofit `2026_07_13_100000` (POSTÉRIEUR, orthogonal)
+        // RETIRE le hint `refresh` des 3 projections re-routées vers l'exécutant
+        // SYSTEM (blocked_executables ×2 + registry_editing_disabled). Rejouer
+        // CE retrofit 43.2 isolément re-pose leur hint — orthogonal à ce que
+        // 43.2 possède encore (les 6 capacités de vues Explorer). On normalise
+        // `refresh` HORS du snapshot pour ces 3 specs (iso pattern du seed
+        // registry_list vs retrofit postérieur).
+        $rerouted = ['blocked_executables', 'registry_editing_disabled'];
+        $stripReroutedRefresh = static function (array $spec, string $key) use ($rerouted): array {
+            if (in_array($key, $rerouted, true)) {
+                unset($spec['refresh']);
+            }
+
+            return $spec;
+        };
+
         $snapshot = fn (): array => Capability::query()
             ->whereIn('key', [
                 'show_file_extensions', 'show_hidden_files', 'quick_access_history_hidden',
@@ -1941,7 +1978,9 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             ->get()
             ->map(fn (Capability $c): array => [
                 'key' => $c->key,
-                'specs' => $c->projections()->orderBy('mechanism')->pluck('spec')->all(),
+                'specs' => $c->projections()->orderBy('mechanism')->pluck('spec')
+                    ->map(fn (array $spec): array => $stripReroutedRefresh($spec, (string) $c->key))
+                    ->all(),
             ])
             ->all();
 
@@ -1977,6 +2016,198 @@ class CapabilitiesSchemaAndSeedTest extends TestCase
             [],
             $guard->violations($this->seededWindowsProjections()),
             'le catalogue seedé (retrofit 43.2 inclus) ne doit porter AUCUNE violation d\'authoring',
+        );
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Story 35.7 (AC5) — retrofit `writer: system` des capacités Policies
+    // ══════════════════════════════════════════════════════════════════════
+
+    #[Test]
+    public function writer_retrofit_reroutes_the_three_policies_projections_and_removes_their_refresh_hint(): void
+    {
+        // D7 — état FINAL du catalogue (toutes migrations jouées) : les clés
+        // HKCU des 3 projections re-routées portent `writer: 'system'` ET
+        // leur hint `refresh` (retrofit 43.2) est RETIRÉ ; le reste des specs
+        // est byte-identique (mêmes hive/path/name/type/value/entry_type).
+        $blocked = Capability::query()->where('key', 'blocked_executables')->firstOrFail()
+            ->projections()->where('os', 'windows')->orderBy('mechanism')->get();
+        self::assertCount(2, $blocked, 'bi-projection présente');
+
+        // Flag registry : clé d'origine intacte + writer, hint retiré.
+        $flag = $blocked->firstWhere('mechanism', CapabilityProjection::MECHANISM_REGISTRY)->spec;
+        self::assertArrayNotHasKey('refresh', $flag);
+        self::assertSame(
+            ['hive', 'path', 'name', 'type', 'value', 'writer'],
+            array_keys($flag['keys'][0]),
+            'la clé du flag gagne UNIQUEMENT l\'attribut writer',
+        );
+        self::assertSame('system', $flag['keys'][0]['writer']);
+        self::assertSame('HKCU', $flag['keys'][0]['hive']);
+        self::assertSame('DisallowRun', $flag['keys'][0]['name']);
+        self::assertSame(['on' => 1, 'off' => ['$ensure' => 'absent']], $flag['keys'][0]['value']);
+
+        // Conteneur registry_list : idem.
+        $container = $blocked->firstWhere('mechanism', CapabilityProjection::MECHANISM_REGISTRY_LIST)->spec;
+        self::assertArrayNotHasKey('refresh', $container);
+        self::assertSame('system', $container['keys'][0]['writer']);
+        self::assertSame(
+            ['powershell.exe', 'powershell_ise.exe', 'pwsh.exe', 'mstsc.exe', 'cmd.exe'],
+            $container['keys'][0]['values']['on'],
+            'les 5 entrées d\'origine, ordre préservé',
+        );
+
+        // registry_editing_disabled : même tree durci, même re-routage.
+        $registryEditing = Capability::query()->where('key', 'registry_editing_disabled')->firstOrFail()
+            ->projections()->where('os', 'windows')->where('mechanism', 'registry')->firstOrFail()->spec;
+        self::assertArrayNotHasKey('refresh', $registryEditing);
+        self::assertSame('system', $registryEditing['keys'][0]['writer']);
+        self::assertSame('DisableRegistryTools', $registryEditing['keys'][0]['name']);
+    }
+
+    #[Test]
+    public function writer_retrofit_migration_is_idempotent_and_reversible(): void
+    {
+        // AC5 — rejouable sans effet de bord ; down() = état antérieur EXACT
+        // (writer retiré, hint `refresh: policy_broadcast` du retrofit 43.2
+        // reposé). Iso pattern `refresh_hints_retrofit_migration_…`.
+        $migration = require database_path('migrations/2026_07_13_100000_retrofit_session_system_writer_policies.php');
+
+        $snapshot = fn (): array => Capability::query()
+            ->whereIn('key', ['blocked_executables', 'registry_editing_disabled'])
+            ->orderBy('key')
+            ->get()
+            ->map(fn (Capability $c): array => [
+                'key' => $c->key,
+                'specs' => $c->projections()->orderBy('mechanism')->pluck('spec')->all(),
+            ])
+            ->all();
+
+        // up() déjà joué par RefreshDatabase → rejouer = aucun effet de bord.
+        $before = $snapshot();
+        self::assertCount(2, $before);
+        $migration->up();
+        self::assertSame($before, $snapshot(), 'up() rejoué = idempotent');
+
+        // down() = état antérieur exact : writer retiré de TOUTES les clés,
+        // hint policy_broadcast reposé (l'état laissé par le retrofit 43.2).
+        $migration->down();
+        foreach ($snapshot() as $row) {
+            foreach ($row['specs'] as $spec) {
+                self::assertSame('policy_broadcast', $spec['refresh'] ?? null, "{$row['key']} : refresh reposé par down()");
+                foreach ($spec['keys'] as $key) {
+                    self::assertArrayNotHasKey('writer', $key, "{$row['key']} : writer retiré par down()");
+                }
+            }
+        }
+
+        // …et up() re-retrofitte à l'identique (rejouable après down()).
+        $migration->up();
+        self::assertSame($before, $snapshot(), 'up() après down() = état retrofitté identique');
+    }
+
+    // ── Story 35.7 (AC2/D3) — règle 6 du guard : writer borné ───────────────
+
+    #[Test]
+    public function guard_accepts_the_writer_marker_on_hkcu_keys_of_both_mechanisms(): void
+    {
+        $guard = new CapabilitySpecCollisionGuard;
+
+        $violations = $guard->violations([
+            [
+                'capability' => 'blocked_executables',
+                'mechanism' => 'registry',
+                'spec' => ['keys' => [
+                    ['hive' => 'HKCU', 'path' => 'Software\\P\\Explorer', 'name' => 'DisallowRun', 'type' => 'REG_DWORD', 'value' => ['on' => 1], 'writer' => 'system'],
+                ]],
+            ],
+            [
+                'capability' => 'blocked_executables',
+                'mechanism' => 'registry_list',
+                'spec' => ['keys' => [
+                    ['hive' => 'HKCU', 'path' => 'Software\\P\\Explorer\\DisallowRun', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['cmd.exe']], 'writer' => 'system'],
+                ]],
+            ],
+        ]);
+
+        self::assertSame([], $violations, 'writer=system sur une clé HKCU est un authoring VALIDE (les deux mécanismes)');
+    }
+
+    #[Test]
+    public function guard_refuses_a_writer_value_outside_the_closed_enum(): void
+    {
+        // Règle 6a — enum FERMÉ : 'system' est la seule valeur publiée
+        // (rejette variantes de casse, valeurs futures anticipées, non-string).
+        $guard = new CapabilitySpecCollisionGuard;
+
+        foreach (['SYSTEM', 'companion', '', 42, null, true] as $writer) {
+            $violations = $guard->violations([
+                [
+                    'capability' => 'bad_writer_cap',
+                    'mechanism' => 'registry',
+                    'spec' => ['keys' => [
+                        ['hive' => 'HKCU', 'path' => 'Software\\P', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 1], 'writer' => $writer],
+                    ]],
+                ],
+            ]);
+
+            self::assertCount(1, $violations, 'valeur '.var_export($writer, true).' doit être refusée');
+            self::assertStringContainsString('bad_writer_cap', $violations[0]);
+            self::assertStringContainsString('enum fermé', $violations[0]);
+        }
+    }
+
+    #[Test]
+    public function guard_refuses_the_writer_marker_on_hklm_and_hku_keys(): void
+    {
+        // Règle 6b — writer sur HKLM/HKU = violation NOMMÉE : le service
+        // SYSTEM y est déjà l'exécutant, le marqueur n'y a aucun sens.
+        $guard = new CapabilitySpecCollisionGuard;
+
+        // registry : HKLM et HKU refusés.
+        foreach (['HKLM', 'HKU'] as $hive) {
+            $violations = $guard->violations([
+                [
+                    'capability' => 'rogue_writer_cap',
+                    'mechanism' => 'registry',
+                    'spec' => ['keys' => [
+                        ['hive' => $hive, 'path' => 'SOFTWARE\\P', 'name' => 'K', 'type' => 'REG_DWORD', 'value' => ['on' => 1], 'writer' => 'system'],
+                    ]],
+                ],
+            ]);
+
+            self::assertCount(1, $violations, "writer sur {$hive} doit être refusé");
+            self::assertStringContainsString('rogue_writer_cap', $violations[0]);
+            self::assertStringContainsString('hive=HKCU', $violations[0]);
+        }
+
+        // registry_list : un conteneur HKLM marqué est refusé aussi.
+        $violations = $guard->violations([
+            [
+                'capability' => 'rogue_writer_list_cap',
+                'mechanism' => 'registry_list',
+                'spec' => ['keys' => [
+                    ['hive' => 'HKLM', 'path' => 'SOFTWARE\\Policies\\X\\List', 'entry_type' => 'REG_SZ', 'values' => ['on' => ['a']], 'writer' => 'system'],
+                ]],
+            ],
+        ]);
+
+        self::assertCount(1, $violations, 'writer sur un conteneur HKLM doit être refusé');
+        self::assertStringContainsString('rogue_writer_list_cap', $violations[0]);
+    }
+
+    #[Test]
+    public function guard_passes_the_full_seeded_catalog_after_the_writer_retrofit(): void
+    {
+        // AC2 — invariant vert sur le catalogue RÉELLEMENT SEEDÉ APRÈS le
+        // retrofit 35.7 (writer posé, hints retirés) : les règles 1→6
+        // tournent ensemble sur les données réelles et ne lèvent RIEN.
+        $guard = new CapabilitySpecCollisionGuard;
+
+        self::assertSame(
+            [],
+            $guard->violations($this->seededWindowsProjections()),
+            'le catalogue seedé (retrofit 35.7 inclus) ne doit porter AUCUNE violation d\'authoring',
         );
     }
 }

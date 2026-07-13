@@ -155,6 +155,34 @@ class CapabilityProjection extends Model
     ];
 
     /**
+     * Marqueur d'exécutant SYSTEM — champ `writer` (Story 35.7, contrat
+     * §7.1/§7.6). Convention d'authoring : attribut OPTIONNEL `writer` posé
+     * **PAR CLÉ** de `spec.keys[]` (propriété de la CLÉ — l'ACL de son tree —
+     * contrairement à `refresh`, posé par projection) des mécanismes
+     * `registry`/`registry_list`, UNIQUEMENT sur une clé `hive: HKCU`
+     * (portées Session/MachineUser). Enum FERMÉ : `"system"` est la seule
+     * valeur publiée. Sémantique : l'item est appliqué par le **service
+     * SYSTEM dans `HKU\<SID>` de la session du contexte** (jamais par le
+     * compagnon, qui l'écarte) — nécessaire aux trees `HKCU\…\Policies\*`
+     * (dont `CurrentVersion\Policies`), en LECTURE SEULE pour l'utilisateur
+     * standard sur poste joint au domaine (durcissement ACL anti-contournement
+     * de GPO — cause racine du défaut `blocked_executables`).
+     *
+     * **Exclusion mutuelle `refresh`/`writer`** (piège n°6 de la story) :
+     * `refresh` n'est émis QUE sur un item appliqué par le compagnon —
+     * {@see AbstractCapabilityStateProvider::withRefreshHint()} ne pose
+     * JAMAIS `refresh` sur un item marqué `writer`. Effet au **logon
+     * suivant** (comportement d'une GPO user policy).
+     *
+     * Single source de vérité consommée par le guard d'authoring
+     * ({@see CapabilitySpecCollisionGuard}) et la recopie provider
+     * ({@see AbstractCapabilityStateProvider::expand()}). Les migrations
+     * dupliquent le littéral `'system'` (jamais de référence au code
+     * applicatif — décision 35.1).
+     */
+    public const WRITER_SYSTEM = 'system';
+
+    /**
      * Ruche machine (portée machine / service SYSTEM) — clé de `spec.keys[].hive`
      * du mécanisme `registry`. Foyer canonique de la constante depuis le rewrite
      * capability-first (le modèle `RegistrySetting` est superseded — Story 27.12).

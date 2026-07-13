@@ -52,6 +52,25 @@ use App\Models\CapabilityProjection;
  *      gaté par portée Session/MachineUser) — une erreur d'authoring, refusée
  *      en amont plutôt que silence. `spec.refresh` ABSENT est un no-op (champ
  *      optionnel, AC1) : aucune des deux sous-règles ne s'applique.
+ *   6. MARQUEUR `writer` (Story 35.7, D3) — attribut OPTIONNEL posé **PAR
+ *      CLÉ** de `spec.keys[]` (contrairement à `refresh`, posé par
+ *      projection) des mécanismes registry + registry_list. Borné : (a) la
+ *      valeur DOIT être `'system'` ({@see CapabilityProjection::WRITER_SYSTEM},
+ *      enum fermé — toute autre valeur est une violation nommée) ; (b) la clé
+ *      porteuse DOIT être `hive: HKCU` — `writer` sur HKLM/HKU est une
+ *      violation nommée : le service SYSTEM y est DÉJÀ l'exécutant, le
+ *      marqueur n'y a aucun sens. Sémantique : l'item marqué est appliqué par
+ *      le service SYSTEM dans `HKU\<SID>` de la session du contexte (jamais
+ *      par le compagnon — trees `HKCU\…\Policies\*`, dont
+ *      `CurrentVersion\Policies`, en LECTURE SEULE pour l'utilisateur
+ *      standard sur poste joint au domaine : leçon runtime
+ *      `blocked_executables`, « Accès refusé » du compagnon). **Exclusion
+ *      mutuelle refresh/writer** (piège n°6) : `refresh` n'est émis QUE sur
+ *      les items appliqués par le compagnon — la garde structurelle vit dans
+ *      `withRefreshHint()` (jamais de `refresh` sur un payload marqué) et le
+ *      retrofit `2026_07_13_100000` retire le hint des projections
+ *      re-routées ; pas de règle de guard supplémentaire (le spec peut
+ *      légitimement mêler clés marquées et clés compagnon sous un même hint).
  *
  * **Sémantique `HKU` (Story 35.3, contrat §7.1).** Une clé `hive: 'HKU'` est
  * émise par le provider MACHINE seul et appliquée par le service SYSTEM à
@@ -137,6 +156,55 @@ final class CapabilitySpecCollisionGuard
                     (string) ($projection['capability'] ?? ''),
                     $refresh,
                 );
+            }
+        }
+
+        // ── 6. Marqueur `writer` (Story 35.7) : enum fermé + HKCU-only ──────
+        foreach ($projections as $projection) {
+            $mechanism = $projection['mechanism'] ?? null;
+            if (! in_array($mechanism, [
+                CapabilityProjection::MECHANISM_REGISTRY,
+                CapabilityProjection::MECHANISM_REGISTRY_LIST,
+            ], true)) {
+                continue;
+            }
+
+            foreach ($this->specKeys($projection['spec'] ?? null) as $key) {
+                if (! array_key_exists('writer', $key)) {
+                    continue; // champ optionnel ABSENT : rien à valider.
+                }
+
+                $writer = $key['writer'];
+                $identity = $this->identity($key);
+
+                // 6a. Enum FERMÉ : 'system' est la seule valeur publiée.
+                if ($writer !== CapabilityProjection::WRITER_SYSTEM) {
+                    $violations[] = sprintf(
+                        "%s [%s] clé '%s' : writer %s hors enum fermé ('%s' est la seule valeur publiée).",
+                        $mechanism,
+                        (string) ($projection['capability'] ?? ''),
+                        $identity,
+                        is_string($writer) ? "'{$writer}'" : '('.get_debug_type($writer).')',
+                        CapabilityProjection::WRITER_SYSTEM,
+                    );
+
+                    continue; // valeur invalide : la règle 6b (HKCU) n'ajoute rien.
+                }
+
+                // 6b. HKCU UNIQUEMENT : sur HKLM/HKU le service SYSTEM est
+                // DÉJÀ l'exécutant — le marqueur n'y a aucun sens.
+                $hive = strtoupper(trim((string) ($key['hive'] ?? '')));
+                if ($hive !== strtoupper(CapabilityProjection::HIVE_USER)) {
+                    $violations[] = sprintf(
+                        "%s [%s] clé '%s' : writer 'system' sur la ruche '%s' — le service SYSTEM "
+                        .'y est déjà l\'exécutant, marqueur admis UNIQUEMENT sur une clé hive=HKCU '
+                        .'(application par-session HKU\<SID>, Story 35.7).',
+                        $mechanism,
+                        (string) ($projection['capability'] ?? ''),
+                        $identity,
+                        $hive,
+                    );
+                }
             }
         }
 

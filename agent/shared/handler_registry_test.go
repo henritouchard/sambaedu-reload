@@ -63,6 +63,17 @@ func (o *fakeRegistryOps) Read(hive, path, name string) (RegistryValue, bool, er
 	if err := o.readErr[id]; err != nil {
 		return RegistryValue{}, false, err
 	}
+	// Iso impl Windows (Story 35.7 review #2) : lire une cible HKU dont la
+	// ruche de fan-out a été DÉMONTÉE depuis l'énumération est une ABSENCE
+	// gracieuse (no-op nil), jamais une erreur — c'est ce que garantit le
+	// verdict « drift silencieux sans clé orpheline » du piège #4 de bout en
+	// bout (l'assertion Status != error de la passe par-session en dépend).
+	if isUsersHive(hive) {
+		base, _, _ := strings.Cut(strings.ToLower(path), `\`)
+		if o.unmountedHku[base] {
+			return RegistryValue{}, false, nil
+		}
+	}
 	v, ok := o.values[id]
 
 	return v, ok, nil
