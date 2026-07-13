@@ -176,7 +176,7 @@ new #[Title('Logs exécution scripts - SE4FS')] class extends Component {
 
 <x-organisms.page title="Logs d'exécution scripts"
     icon="fa-solid fa-clipboard-list"
-    description="Logs centralisés d'exécution des scripts user/system du parc (Story 16.12).">
+    description="Logs centralisés d'exécution des scripts user/system du parc.">
 
     <x-slot:actions>
         <div class="flex flex-wrap gap-2 items-center">

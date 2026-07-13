@@ -271,7 +271,7 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
 ?>
 
 <x-organisms.page title="Réglages de déploiement WPKG" :scrollable="true"
-    description="Toggle canal winget + allowlist IP des endpoints WPKG (linux_out / winget_out). Story 15.6.">
+    description="Toggle canal winget + allowlist IP des endpoints WPKG (linux_out / winget_out).">
 
     <x-slot:actions>
         <div class="flex flex-wrap gap-2 items-center">
@@ -292,7 +292,6 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
                 <h2 class="card-title text-lg flex items-center gap-2">
                     <i class="fa-solid fa-robot text-info"></i>
                     L'agent déclenche WPKG
-                    <span class="badge badge-ghost badge-sm">Story 27.5</span>
                 </h2>
                 <p class="text-sm text-base-content/80">
                     Le <strong>canal desired-state de l'agent</strong> (handler <code>applications</code>, moteur
@@ -326,7 +325,6 @@ new #[Title('Réglages de déploiement WPKG - SE4FS')] class extends Component {
                 <h2 class="card-title text-lg flex items-center gap-2">
                     <i class="fa-solid fa-sliders text-primary"></i>
                     Réglages de déploiement
-                    <span class="badge badge-ghost badge-sm">Story 15.6</span>
                 </h2>
                 <p class="text-sm text-base-content/70 mb-4">
                     Ces réglages s'appliquent immédiatement sans rebuild de cache ni accès SSH.

@@ -172,33 +172,33 @@ class MakePage extends Command
      */
     private function getIndexViewContent(string $name, string $nameSnake, bool $hasService): string
     {
-        $dataVariable = $hasService ? '$data' : '';
-        $dataDisplay = $hasService ? '{{ $data }}' : '';
-        
+        // Page Livewire SFC (single-file component), convention filesystem-based
+        // router du projet : le composant est automatiquement enveloppé par le
+        // layout `layouts::app` (config/livewire.php → component_layout).
         return <<<BLADE
-@extends('layouts.admin-sidebar')
+<?php
 
-@section('title', '{$name} - SambaEdu')
+use Livewire\Attributes\Title;
+use Livewire\Component;
 
-@section('content')
-<div>
-    <div class="mb-6">
-        <h1 class="text-3xl font-bold text-base-content">{$name}</h1>
-    </div>
+/**
+ * Page Livewire SFC — {$name}.
+ */
+new #[Title('{$name}')] class extends Component {
+    public function mount(): void
+    {
+        //
+    }
+};
+?>
 
+<x-organisms.page title="{$name}">
     <div class="card bg-base-100 shadow-sm border border-base-200">
         <div class="card-body">
             <p class="text-base-content/70">Contenu de la page {$name}</p>
-            @if(isset(\$data))
-                <div class="mt-4">
-                    <p class="text-sm text-base-content/60">Données reçues :</p>
-                    <pre class="bg-base-200 p-4 rounded mt-2">{{ json_encode(\$data, JSON_PRETTY_PRINT) }}</pre>
-                </div>
-            @endif
         </div>
     </div>
-</div>
-@endsection
+</x-organisms.page>
 BLADE;
     }
 

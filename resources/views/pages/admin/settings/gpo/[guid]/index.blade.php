@@ -331,7 +331,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
                 <div>
                     <p class="text-sm">
                         Cette page est en <strong>lecture seule</strong>.
-                        L'édition native de cette section arrive dans les prochaines stories de l'Epic 16.
+                        L'édition native de cette section arrivera dans une prochaine version.
                     </p>
                 </div>
             </div>

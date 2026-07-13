@@ -492,7 +492,7 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
 ?>
 
 <x-organisms.page title="Réservations DHCP" :scrollable="true"
-    description="Gestion native des réservations et baux DHCP (FR20 + FR22)">
+    description="Gestion native des réservations et baux DHCP">
 
     <x-slot:actions>
         @if ($tab === 'subnets')
