@@ -92,6 +92,9 @@ class UserCreationTest extends TestCase
             Schema::create('user_group_user', function (Blueprint $table) {
                 $table->foreignId('user_group_id')->constrained('user_groups')->onDelete('cascade');
                 $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+                // Story 42.1 — rôle d'arête (parité migration ; l'attach import
+                // pose désormais `role` dérivé sur les arêtes nouvelles).
+                $table->string('role', 20)->default('member');
                 $table->primary(['user_group_id', 'user_id']);
             });
         }

@@ -188,6 +188,87 @@ class UserServiceClassChangeTest extends TestCase
         $this->assertTrue($bob->groups()->where('user_groups.id', $eleves->id)->exists());
     }
 
+    // =====================================================================
+    // Story 42.1 — défaut de rôle au rattachement (nouvelles arêtes only)
+    // =====================================================================
+
+    #[Test]
+    public function it_attaches_new_edges_with_manager_role_for_a_prof(): void
+    {
+        // 42.1 AC5 — un prof rattaché reçoit `role='manager'` sur ses NOUVELLES
+        // arêtes (dérivé du rôle global `users.role='prof'`), classe ET non-classe.
+        $prof = SqlUser::create(['login' => 'prof.role', 'role' => 'prof', 'is_active' => true]);
+        $profs = UserGroup::create(['name' => 'Profs', 'type' => 'role']);
+        $classe6A = UserGroup::create(['name' => '6A', 'type' => 'classe']);
+
+        $mock = Mockery::mock(ShareService::class);
+        $mock->shouldReceive('syncUserClassMemberships')->andReturn(true);
+        $this->app->instance(ShareService::class, $mock);
+
+        $service = app(UserService::class);
+        $this->callPersist($service, 'prof.role', 'Profs', '', ['6A']);
+
+        $this->assertSame('manager', $this->pivotRole($classe6A->id, $prof->id), 'classe → manager');
+        $this->assertSame('manager', $this->pivotRole($profs->id, $prof->id), 'non-classe → manager');
+    }
+
+    #[Test]
+    public function it_attaches_new_edges_with_member_role_for_an_eleve(): void
+    {
+        // 42.1 AC5 — un élève reçoit `role='member'` par défaut.
+        $eleve = SqlUser::create(['login' => 'eleve.role', 'role' => 'eleve', 'is_active' => true]);
+        $eleves = UserGroup::create(['name' => 'Eleves', 'type' => 'role']);
+        $classe6A = UserGroup::create(['name' => '6A', 'type' => 'classe']);
+
+        $mock = Mockery::mock(ShareService::class);
+        $mock->shouldReceive('syncUserClassMemberships')->andReturn(true);
+        $this->app->instance(ShareService::class, $mock);
+
+        $service = app(UserService::class);
+        $this->callPersist($service, 'eleve.role', 'Eleves', '', ['6A']);
+
+        $this->assertSame('member', $this->pivotRole($classe6A->id, $eleve->id));
+        $this->assertSame('member', $this->pivotRole($eleves->id, $eleve->id));
+    }
+
+    #[Test]
+    public function it_does_not_downgrade_an_existing_owner_edge_on_reimport(): void
+    {
+        // 42.1 AC5 (piège syncWithoutDetaching) — une arête existante `owner`
+        // (PP) ne doit PAS être rétrogradée par un re-import (les attributs ne
+        // s'appliquent qu'aux arêtes NOUVELLES).
+        $prof = SqlUser::create(['login' => 'prof.pp', 'role' => 'prof', 'is_active' => true]);
+        $profs = UserGroup::create(['name' => 'Profs', 'type' => 'role']);
+        $classe6A = UserGroup::create(['name' => '6A', 'type' => 'classe']);
+
+        // Pré-attache : prof déjà PP de 6A (owner) + déjà dans Profs (manager).
+        UserGroupUserPivotObserver::disableSync();
+        $prof->groups()->syncWithoutDetaching([
+            $classe6A->id => ['role' => 'owner'],
+            $profs->id => ['role' => 'manager'],
+        ]);
+        UserGroupUserPivotObserver::enableSync();
+
+        $mock = Mockery::mock(ShareService::class);
+        $mock->shouldReceive('syncUserClassMemberships')->andReturn(true);
+        $this->app->instance(ShareService::class, $mock);
+
+        // Re-import avec le MÊME rattachement.
+        $service = app(UserService::class);
+        $this->callPersist($service, 'prof.pp', 'Profs', '', ['6A']);
+
+        $this->assertSame('owner', $this->pivotRole($classe6A->id, $prof->id), 'owner conservé, jamais rétrogradé');
+        $this->assertSame('manager', $this->pivotRole($profs->id, $prof->id), 'non-classe existante intacte');
+    }
+
+    private function pivotRole(int $groupId, int $userId): string
+    {
+        return (string) \Illuminate\Support\Facades\DB::table('user_group_user')
+            ->where('user_group_id', $groupId)
+            ->where('user_id', $userId)
+            ->value('role');
+    }
+
     /**
      * @return array<string, bool>
      */

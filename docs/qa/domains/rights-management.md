@@ -1053,3 +1053,57 @@ Le toast de succès n'est affiché que si l'état **persisté** du groupe couran
 - **Attendu** : write-through autorisé sur n'importe quel parc (capabilities-tab) et sur le défaut diffusé (registry-tab), strictement comme avant 29.8.
 
 > **Couverture automatisée.** `tests/Feature/Livewire/Parc/CapabilitiesTabCustomizeScopingTest.php` : `positive_delegate_can_complete_write_through_on_a` / `…can_open_edit_on_a` / `…can_remove_override_on_a` (14.1), `positive_delegate_is_forbidden_on_b_without_write_or_audit_trace` (14.2), `positive_delegate_is_still_blocked_by_upstream_lock` (14.4 capabilities-tab), `global_admin_can_save_override_on_a_and_b` (14.5). `tests/Feature/Livewire/Admin/ParcDefaultsUpstreamLockTest.php` : `non_admin_is_blocked_on_registry_tab` (14.3 — la fermeture au mount est aussi couverte par `AdminSettingsParcDefaultsPageTest::registry_tab_gate_blocks_mount_without_server_admin`), `save_default_is_blocked_for_upstream_locked_capability` / `toggle_lock_is_blocked_for_upstream_locked_capability` (14.4 registry-tab). `tests/Unit/Policies/CapabilityPolicyTest.php` : contrat unitaire révisé (`right_is_no_longer_enforced_at_policy_level`, `null_capability_is_always_allowed`, `deny_when_capability_is_upstream_locked`).
+
+## Section 15 — Rôle sur l'arête `user_group_user.role` + backfill (Story 42.1, 2026-07-13)
+
+> **Contexte.** Le rôle d'un utilisateur DANS un groupe devient un attribut d'arête `role` (`member|manager|owner`) sur le pivot `user_group_user`, backfillé depuis l'existant (`is_head_teacher` + `users.role`). `role === 'owner'` **absorbe** l'ancien flag d'arête `is_head_teacher` (professeur principal). **Aucune écriture AD** dans cette story : `is_head_teacher` reste écrit EN MIROIR de `role` (invariant `role === 'owner'` ⇔ `is_head_teacher === true`) tant que la projection AD 4.15 le lit (bascule + suppression = Story 42.2). Le rôle GLOBAL `users.role` est CONSERVÉ (policies, création de home, droits UI). Vocabulaire borné APPLICATIVEMENT (SQLite ne borne pas les varchar).
+
+### Runbook migration VM (geste post-merge MANUEL — `project_vm_migrations_not_auto_applied`)
+- **Avant** : `cd /var/www/sambaedu-reload && php artisan migrate:status` — la ligne `2026_07_13_120000_add_role_to_user_group_user` doit être `Pending`.
+- **Appliquer** : `php artisan migrate --force` puis, si config cachée, `php artisan config:cache && chown www-admin:www-admin` sur les fichiers concernés.
+- **Après** : `migrate:status` → la migration passe `Ran`. Contrôle SQL : `SELECT role, COUNT(*) FROM user_group_user GROUP BY role;` — répartition attendue `owner` (ex-PP) / `manager` (profs membres) / `member` (le reste). PG borne réellement le varchar(20) ; SQLite non.
+
+### Scénario 15.1 — Backfill déterministe (owner > manager > member)
+- **Préparation** : une classe `3A` avec un élève, un prof membre non-PP, un prof PP (`is_head_teacher=true`).
+- **Attendu** : après `migrate` (ou l'action `BackfillUserGroupUserRoles`), `(3A, prof PP)` = `owner`, `(3A, prof membre)` = `manager`, `(3A, élève)` = `member`. Précédence : un prof PP est `owner` (pas `manager`).
+
+### Scénario 15.2 — Idempotence du backfill
+- **Préparation** : rejouer l'action `BackfillUserGroupUserRoles` deux fois de suite.
+- **Attendu** : état final identique, aucune exception, même compte-rendu de comptage. Une arête au `role` obsolète est réalignée sur l'état courant (`is_head_teacher` + `users.role`). Aucune requête LDAP (dérivation SQL pure sur la colonne `users.role`).
+
+### Scénario 15.3 — Read-back import pose `role` en miroir
+- **Préparation** : AD `Classe_3A={alice(élève)}`, `Equipe_3A={bob(prof), carol(prof)}`, `PP_3A={bob}` ; lancer `syncFromAd` (ou `updateGroup` avec `head_teacher_ids=[bob]`).
+- **Attendu** : `(3A, bob)` = `owner` + `is_head_teacher=true` ; `(3A, carol)` = `manager` + `false` ; `(3A, alice)` = `member` + `false`. Un 2ᵉ `syncFromAd` = no-op (aucune bascule de rôle fantôme). L'union/dédup/détache 4.13 reste intacte. NOTE : l'import RESTE autoritaire sur `role` (AD-first transitoire) — un `role` édité à la main serait réécrit ; comportement raffiné en 42.4.
+
+### Scénario 15.4 — Fusion legacy pose `role` en miroir (garde ordre de migrations)
+- **Préparation** : base héritée pré-fold avec `Classe_3A`/`Equipe_3A`/`PP_3A` ; exécuter l'action `MergeLegacyUserGroups`.
+- **Attendu** : après fusion, les PP portent `owner`, les profs `manager`, les élèves `member` sur la ligne survivante — miroir du flag `is_head_teacher`. **Cas critique** : sur une base **sans** la colonne `role` (pré-42.1), l'action ne lève PAS (garde `Schema::hasColumn`) et conserve le comportement 4.14 (flag seul).
+
+### Scénario 15.5 — Défaut de rôle au rattachement (nouvelles arêtes uniquement)
+- **Préparation** : importer un prof (rattaché à une classe + un groupe rôle), puis un élève ; enfin, re-importer un prof déjà PP (`owner`) d'une classe.
+- **Attendu** : le prof reçoit `manager` sur ses NOUVELLES arêtes (dérivé de `users.role='prof'`), l'élève `member`. Le re-import du prof PP **ne rétrograde PAS** son arête `owner` (piège `syncWithoutDetaching`-avec-attributs : les attributs ne s'appliquent qu'aux arêtes réellement nouvelles). Le défaut DB `member` reste le filet pour tout attach hors chemins instrumentés.
+
+### Scénario 15.6 — Vocabulaire borné applicativement (garde)
+- **Préparation** : appeler `UserGroupUserPivot::assertValidRole()` avec une valeur hors `member|manager|owner` (ex. `superadmin`, `Owner` en casse mixte).
+- **Attendu** : `InvalidArgumentException`. Le vocabulaire est en minuscules strictes ; `defaultRoleForGlobalRole()` ne renvoie JAMAIS `owner` (owner = désignation explicite du PP).
+
+### Scénario 15.7 — Lecture UI du badge PP basculée sur `role === 'owner'`
+- **Préparation** : ouvrir la fiche groupe `/app/users/groups/[id]` d'une classe avec un PP ; ouvrir la modale « Professeur principal ».
+- **Attendu** : le badge PP (icône) et la sélection des PP se lisent désormais sur `role === 'owner'` (miroir de `is_head_teacher`). Un membre non-prof porteur de l'arête `owner` n'est PAS badgé (le badge reste gaté par le rôle GLOBAL `prof`). Le canal de projection (`save()` → `head_teacher_ids` → `updateGroup`) est INCHANGÉ.
+
+### Scénario 15.8 — Aucune écriture AD (non-régression, CRITIQUE)
+- **Préparation** : dérouler 15.3 et observer les appels au `GroupRepository` / `syncRoleAwareAdGroupMembers`.
+- **Attendu** : aucune nouvelle écriture LDAP, aucun changement des cibles/CN projetés. `syncRoleAwareAdGroupMembers`, la dérivation `$headTeacherUserIds` d'`updateGroup` et le payload `head_teacher_ids` sont INTACTS (bascule = 42.2). `UserPolicy` inchangée (elle ne lit pas `is_head_teacher` — elle lit `User.role` global + co-membership de classe).
+
+> **Couverture automatisée.** `tests/Unit/Models/UserGroupUserPivotTest.php` (vocabulaire + helpers), `tests/Feature/Migrations/BackfillUserGroupUserRolesTest.php` (backfill déterministe/idempotent + migration réelle up/down), `tests/Feature/Migrations/MergeLegacyUserGroupsMigrationTest.php` (miroir fusion + garde hasColumn), `tests/Unit/Services/UserGroupServiceLegacyCompatibilityTest.php` (miroir read-back + idempotence + piège withPivot), `tests/Feature/Services/UserServiceClassChangeTest.php` (défaut au rattachement + non-rétrogradation owner), `tests/Feature/Livewire/Users/HeadTeacherSectionTest.php` & `GroupShowMembersTabsTest.php` (lectures UI sur `role === 'owner'`).
+
+### Checklist rapide Section 15
+- [ ] `migrate:status` : `add_role_to_user_group_user` `Pending` → `Ran` après `migrate --force` sur /vm
+- [ ] Répartition `SELECT role, COUNT(*) FROM user_group_user GROUP BY role;` cohérente (owner/manager/member)
+- [ ] Backfill idempotent (2 runs = même état), zéro LDAP
+- [ ] Read-back pose `role` en miroir de `is_head_teacher` (PP→owner, prof→manager, élève→member)
+- [ ] Fusion legacy pose `role` miroir ; sans colonne `role` = comportement 4.14 intact
+- [ ] Défaut au rattachement : prof→manager, élève→member ; owner jamais rétrogradé au re-import
+- [ ] `assertValidRole` rejette hors vocabulaire ; `defaultRoleForGlobalRole` jamais owner
+- [ ] Badge PP UI lu sur `role === 'owner'` ; canal projection `head_teacher_ids` inchangé
+- [ ] Aucune écriture AD ; `UserPolicy` inchangée

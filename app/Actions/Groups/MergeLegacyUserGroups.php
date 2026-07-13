@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Groups;
 
+use App\Models\Pivot\UserGroupUserPivot;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Story 4.14 — Fusion des lignes `user_groups` HÉRITÉES (bases importées AVANT
@@ -66,6 +68,14 @@ class MergeLegacyUserGroups
             'skipped_collisions' => 0,
         ];
 
+        // Story 42.1 — cette action est référencée par la migration 4.14
+        // (2026_06_25), ANTÉRIEURE à la colonne `role` (2026_07_13). Sur une
+        // base pré-42.1 (ou un `migrate` fresh où 4.14 tourne avant la colonne),
+        // la colonne `role` n'existe pas encore → on GARDE toute écriture de
+        // `role` derrière `Schema::hasColumn`. Sans la colonne : comportement
+        // 4.14 strictement intact. Avec : miroir `role` ⇔ `is_head_teacher`.
+        $hasRoleColumn = Schema::hasColumn('user_group_user', 'role');
+
         // 1) Charger toutes les lignes une fois, indexer par baseKey (lower).
         //    On groupe à la fois les lignes préfixées (Classe_/Equipe_/PP_) ET
         //    les éventuelles lignes nues de type classe/équipe préexistantes —
@@ -105,7 +115,7 @@ class MergeLegacyUserGroups
         //    atomiques ensemble — sinon un re-run pourrait élire une autre
         //    survivante sur un état partiel et casser l'idempotence).
         foreach ($byBase as $group) {
-            DB::transaction(function () use ($group, &$report): void {
+            DB::transaction(function () use ($group, &$report, $hasRoleColumn): void {
                 $bareName = $this->resolveBareName($group);
 
                 $survivor = $this->chooseSurvivor($group);
@@ -127,7 +137,7 @@ class MergeLegacyUserGroups
                 //     nu type equipe, sans fusion. (Si plusieurs lignes, on passe
                 //     par le chemin de fusion standard ci-dessous.)
                 if (count($redundant) === 0) {
-                    $this->renameLonelyPrefixedRow($survivor, $bareName, $report);
+                    $this->renameLonelyPrefixedRow($survivor, $bareName, $report, $hasRoleColumn);
 
                     return;
                 }
@@ -168,12 +178,33 @@ class MergeLegacyUserGroups
                     ->all();
 
                 if (count($redundantUserIds) > 0) {
+                    // Story 42.1 — rôle miroir des membres reportés : `member`
+                    // par défaut, `manager` pour les profs (lecture COLONNE
+                    // `users.role`, zéro LDAP). Les PP passeront `owner` à
+                    // l'étape (c) ci-dessous. Sans colonne `role` : `false`
+                    // uniquement (comportement 4.14).
+                    $roleByUser = [];
+                    if ($hasRoleColumn) {
+                        $roleByUser = DB::table('users')
+                            ->whereIn('id', $redundantUserIds)
+                            ->pluck('role', 'id');
+                    }
+
                     $insertRows = array_map(
-                        static fn (int $uid): array => [
-                            'user_group_id' => (int) $survivor->id,
-                            'user_id' => $uid,
-                            'is_head_teacher' => false,
-                        ],
+                        static function (int $uid) use ($survivor, $hasRoleColumn, $roleByUser): array {
+                            $row = [
+                                'user_group_id' => (int) $survivor->id,
+                                'user_id' => $uid,
+                                'is_head_teacher' => false,
+                            ];
+                            if ($hasRoleColumn) {
+                                $row['role'] = UserGroupUserPivot::defaultRoleForGlobalRole(
+                                    $roleByUser[$uid] ?? null
+                                );
+                            }
+
+                            return $row;
+                        },
                         $redundantUserIds
                     );
 
@@ -187,10 +218,17 @@ class MergeLegacyUserGroups
                 //     survivante (ils sont désormais tous présents sur la
                 //     survivante via le report (b) ou y étaient déjà).
                 if (count($ppUserIds) > 0) {
+                    // Story 42.1 — miroir : PP → `owner` en même temps que le
+                    // flag (invariant `owner` ⇔ `is_head_teacher=true`).
+                    $ppUpdate = ['is_head_teacher' => true];
+                    if ($hasRoleColumn) {
+                        $ppUpdate['role'] = UserGroupUserPivot::ROLE_OWNER;
+                    }
+
                     $flagged = DB::table('user_group_user')
                         ->where('user_group_id', (int) $survivor->id)
                         ->whereIn('user_id', $ppUserIds)
-                        ->update(['is_head_teacher' => true]);
+                        ->update($ppUpdate);
 
                     $report['head_teachers_flagged'] += (int) $flagged;
                 }
@@ -308,7 +346,7 @@ class MergeLegacyUserGroups
      * que de violer l'unicité — situation non attendue, la ligne nue aurait
      * dû être regroupée avec elle).
      */
-    private function renameLonelyPrefixedRow(object $row, string $bareName, array &$report): void
+    private function renameLonelyPrefixedRow(object $row, string $bareName, array &$report, bool $hasRoleColumn = false): void
     {
         $prefix = $this->foldPrefixOf((string) $row->name);
 
@@ -351,9 +389,15 @@ class MergeLegacyUserGroups
         // SONT des PP. On pose le flag d'arête, sinon 4.15 (écriture SQL→AD)
         // raterait ces PP tant qu'aucun `syncFromAd` n'a reposé le flag.
         if ($prefix === 'PP_') {
+            // Story 42.1 — miroir `owner` ⇔ `is_head_teacher` (garde hasColumn).
+            $ppUpdate = ['is_head_teacher' => true];
+            if ($hasRoleColumn) {
+                $ppUpdate['role'] = UserGroupUserPivot::ROLE_OWNER;
+            }
+
             $flagged = DB::table('user_group_user')
                 ->where('user_group_id', (int) $row->id)
-                ->update(['is_head_teacher' => true]);
+                ->update($ppUpdate);
 
             $report['head_teachers_flagged'] += (int) $flagged;
         }

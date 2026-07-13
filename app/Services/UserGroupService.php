@@ -601,10 +601,30 @@ class UserGroupService
         // Matiere_@, orphelin equipe…) ne portent jamais `true` :
         // ils n'ont pas de CN `PP_` dans `$folded['cns']`, donc
         // `$ppUserIds` y est vide — `is_head_teacher` reste false.
+        // Story 42.1 — miroir `role` posé EN MÊME TEMPS que `is_head_teacher`
+        // (invariant `role === 'owner'` ⇔ `is_head_teacher === true`). Le rôle
+        // des membres non-PP est dérivé du rôle GLOBAL `users.role` résolu EN
+        // UNE SEULE requête pour l'union des membres (jamais `isProf()` par
+        // membre — round-trip LDAP). L'import RESTE autoritaire sur `role`
+        // (AD-first transitoire) ; la dérivation `Equipe_`-consciente avec
+        // précédence et données sales est le read-back 42.4, pas cette story.
+        $uniqueMemberIds = array_values(array_unique($memberIds));
+        $globalRoles = $uniqueMemberIds === []
+            ? collect()
+            : User::query()
+                ->whereIn('id', $uniqueMemberIds)
+                ->pluck('role', 'id');
+
         $syncPayload = [];
-        foreach (array_unique($memberIds) as $memberId) {
+        foreach ($uniqueMemberIds as $memberId) {
+            $isPP = isset($ppUserIds[$memberId]);
             $syncPayload[$memberId] = [
-                'is_head_teacher' => isset($ppUserIds[$memberId]),
+                'is_head_teacher' => $isPP,
+                'role' => $isPP
+                    ? \App\Models\Pivot\UserGroupUserPivot::ROLE_OWNER
+                    : \App\Models\Pivot\UserGroupUserPivot::defaultRoleForGlobalRole(
+                        $globalRoles[$memberId] ?? null
+                    ),
             ];
         }
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Pivot\UserGroupUserPivot;
 use App\Services\UserGroupService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
@@ -73,9 +74,12 @@ new #[Title('Groupe utilisateur')] class extends Component {
                 'login' => $user->login,
                 'label' => $label,
                 'role' => $role,
-                // Badge PP : porté par l'arête pivot (withPivot 'is_head_teacher',
-                // story 4.14). N'a de sens que pour une classe + un prof.
-                'is_head_teacher' => (bool) ($user->pivot->is_head_teacher ?? false),
+                // Badge PP : porté par le RÔLE d'arête (`role === 'owner'`,
+                // story 42.1 — bascule de lecture depuis `is_head_teacher`). La
+                // CLÉ de view-model reste `'is_head_teacher'` : le `'role'`
+                // ci-dessus est le rôle GLOBAL (prof/eleve/autre), ne PAS
+                // introduire de collision de nom (l'UI rôle d'arête = 42.3).
+                'is_head_teacher' => (($user->pivot->role ?? null) === UserGroupUserPivot::ROLE_OWNER),
             ];
         }) ?? collect();
     }

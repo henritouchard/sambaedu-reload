@@ -1410,6 +1410,19 @@ class UserService
                 return;
             }
 
+            // Story 42.1 — rôle d'arête PAR DÉFAUT au rattachement, dérivé du
+            // rôle GLOBAL `users.role` DÉJÀ en mémoire (`$sqlUser->role`,
+            // colonne SQL — JAMAIS `isProf()` qui ferait un round-trip LDAP).
+            // Appliqué UNIQUEMENT aux arêtes RÉELLEMENT NOUVELLES : un
+            // `syncWithoutDetaching([$id => attrs])` UPDATE les arêtes existantes
+            // → passer l'attribut à une arête déjà présente écraserait un rôle
+            // promu (`owner`). Une arête existante n'est donc JAMAIS réécrite par
+            // ce chemin (le défaut DB `'member'` reste le filet pour tout attach
+            // hors chemins instrumentés).
+            $derivedRole = \App\Models\Pivot\UserGroupUserPivot::defaultRoleForGlobalRole(
+                $sqlUser->role
+            );
+
             // 1. Groupes non-classes (catégorie + fonction) — syncWithoutDetaching.
             //    On les distingue des classes par convention de nommage
             //    (`Classe_*`) pour être tolérant aux fixtures historiques
@@ -1425,7 +1438,22 @@ class UserService
             })->pluck('id');
 
             if ($nonClasseIds->isNotEmpty()) {
-                $sqlUser->groups()->syncWithoutDetaching($nonClasseIds);
+                // Story 42.1 — n'appliquer le rôle dérivé qu'aux arêtes NOUVELLES.
+                // Les ids déjà attachés sont ré-attachés sans attribut (no-op de
+                // rôle) ; seuls les nouveaux reçoivent `['role' => $derivedRole]`.
+                $alreadyAttachedIds = $sqlUser->groups()
+                    ->whereIn('user_groups.id', $nonClasseIds->all())
+                    ->pluck('user_groups.id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+                $syncNonClasse = [];
+                foreach ($nonClasseIds as $gid) {
+                    $gid = (int) $gid;
+                    $syncNonClasse[$gid] = in_array($gid, $alreadyAttachedIds, true)
+                        ? []
+                        : ['role' => $derivedRole];
+                }
+                $sqlUser->groups()->syncWithoutDetaching($syncNonClasse);
             }
 
             // 2. Classes — sync atomique (detach implicite des classes absentes).
@@ -1483,7 +1511,21 @@ class UserService
                     $sqlUser->groups()->detach($toDetach);
                 }
                 if ($newClassIdsArr !== []) {
-                    $sqlUser->groups()->syncWithoutDetaching($newClassIdsArr);
+                    // Story 42.1 — rôle dérivé sur les arêtes de classe
+                    // RÉELLEMENT nouvelles (absentes de `$oldClassIds`). Les
+                    // classes déjà attachées gardent leur rôle (jamais rétrogradé,
+                    // ex. `owner` d'un PP conservé au re-import).
+                    $newlyAttachedClassIds = array_values(
+                        array_diff($newClassIdsArr, $oldClassIds)
+                    );
+                    $syncClasses = [];
+                    foreach ($newClassIdsArr as $cid) {
+                        $cid = (int) $cid;
+                        $syncClasses[$cid] = in_array($cid, $newlyAttachedClassIds, true)
+                            ? ['role' => $derivedRole]
+                            : [];
+                    }
+                    $sqlUser->groups()->syncWithoutDetaching($syncClasses);
                 }
             } finally {
                 \App\Observers\UserGroupUserPivotObserver::enableSync();

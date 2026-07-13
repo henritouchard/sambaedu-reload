@@ -71,7 +71,11 @@ class UserGroup extends Model implements Wireable
             'user_id'
         )
             ->using(\App\Models\Pivot\UserGroupUserPivot::class)
-            ->withPivot('is_head_teacher');
+            // Story 42.1 — `'role'` ajouté au withPivot (miroir de `is_head_teacher`,
+            // conservé jusqu'à 42.2). SANS ce withPivot, `sync([$id => ['role'=>…]])`
+            // IGNORE silencieusement l'attribut d'arête. `withPivot` n'introduit pas
+            // de timestamps (le pivot custom 5.2 reste `$timestamps=false`).
+            ->withPivot('is_head_teacher', 'role');
     }
 
     public function wallpapers(): MorphMany

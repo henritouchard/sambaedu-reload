@@ -1,6 +1,7 @@
 <?php
 
 use App\Components\Traits\WithToasts;
+use App\Models\Pivot\UserGroupUserPivot;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Services\UserGroupService;
@@ -119,8 +120,11 @@ new class extends Component {
             return;
         }
 
+        // Story 42.1 — la sélection PP se lit désormais sur le RÔLE d'arête
+        // (`role === 'owner'`), miroir de `is_head_teacher`. Le canal de
+        // projection (`save()` → `head_teacher_ids` → updateGroup) reste inchangé.
         $this->headTeacherIds = $group->users
-            ->filter(static fn(User $u): bool => (bool) ($u->pivot->is_head_teacher ?? false))
+            ->filter(static fn(User $u): bool => (($u->pivot->role ?? null) === UserGroupUserPivot::ROLE_OWNER))
             ->map(static fn(User $u): int => (int) $u->id)
             ->values()
             ->all();
@@ -208,7 +212,7 @@ new class extends Component {
                 ->whereKey($this->groupId)
                 ->firstOrFail()
                 ->users()
-                ->wherePivot('is_head_teacher', true)
+                ->wherePivot('role', UserGroupUserPivot::ROLE_OWNER)
                 ->pluck('users.id')
                 ->map(static fn(mixed $id): int => (int) $id)
                 ->sort()

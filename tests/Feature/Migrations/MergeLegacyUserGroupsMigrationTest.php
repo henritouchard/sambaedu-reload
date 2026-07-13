@@ -349,6 +349,81 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
         $this->assertFalse(Schema::hasColumn('user_group_user', 'is_head_teacher'), 'down() retire la colonne');
     }
 
+    // ==================================================================
+    // Story 42.1 — miroir `role` ⇔ `is_head_teacher` (garde hasColumn)
+    // ==================================================================
+
+    #[Test]
+    public function it_mirrors_role_owner_on_head_teachers_after_merge(): void
+    {
+        // 42.1 AC6 — fusion Classe_/Equipe_/PP_ : le PP (bob) hérite `owner`,
+        // les autres membres `manager` (prof) / `member` (élève), miroir du flag.
+        $alice = $this->mkUserWithRole('alice', 'eleve');
+        $bob = $this->mkUserWithRole('bob', 'prof');
+        $carol = $this->mkUserWithRole('carol', 'prof');
+
+        $classe = $this->mkGroup('Classe_3A', 'classe', 'g-cl', 'CN=Classe_3A');
+        $equipe = $this->mkGroup('Equipe_3A', 'equipe', 'g-eq', 'CN=Equipe_3A');
+        $pp = $this->mkGroup('PP_3A', 'equipe', 'g-pp', 'CN=PP_3A');
+
+        $this->link($classe, $alice);
+        $this->link($equipe, $bob);
+        $this->link($equipe, $carol);
+        $this->link($pp, $bob);
+
+        (new MergeLegacyUserGroups())();
+
+        $survivor = (int) DB::table('user_groups')->where('name', '3A')->value('id');
+
+        // Invariant miroir : owner ⇔ is_head_teacher.
+        $this->assertSame('owner', $this->role($survivor, $bob));
+        $this->assertTrue($this->flag($survivor, $bob));
+        $this->assertSame('manager', $this->role($survivor, $carol), 'prof non-PP → manager');
+        $this->assertFalse($this->flag($survivor, $carol));
+        $this->assertSame('member', $this->role($survivor, $alice), 'élève → member');
+        $this->assertFalse($this->flag($survivor, $alice));
+    }
+
+    #[Test]
+    public function it_mirrors_role_owner_on_lonely_pp_row(): void
+    {
+        // 42.1 AC6 — un PP_ isolé renommé : ses membres passent owner (miroir).
+        $bob = $this->mkUserWithRole('bob', 'prof');
+        $pp = $this->mkGroup('PP_3A', 'equipe', 'g-pp', 'CN=PP_3A');
+        $this->link($pp, $bob);
+
+        (new MergeLegacyUserGroups())();
+
+        $survivor = (int) DB::table('user_groups')->where('name', '3A')->value('id');
+        $this->assertSame('owner', $this->role($survivor, $bob));
+        $this->assertTrue($this->flag($survivor, $bob));
+    }
+
+    #[Test]
+    public function it_leaves_role_untouched_when_column_absent(): void
+    {
+        // 42.1 AC6/T7.4 — sur un schéma SANS colonne `role` (base pré-42.1),
+        // la garde Schema::hasColumn court-circuite toute écriture de `role` :
+        // comportement 4.14 strictement intact, aucune exception.
+        Schema::table('user_group_user', static function (Blueprint $table): void {
+            $table->dropColumn('role');
+        });
+        $this->assertFalse(Schema::hasColumn('user_group_user', 'role'));
+
+        $bob = $this->mkUserWithRole('bob', 'prof');
+        $classe = $this->mkGroup('Classe_3A', 'classe', 'g-cl', 'CN=Classe_3A');
+        $pp = $this->mkGroup('PP_3A', 'equipe', 'g-pp', 'CN=PP_3A');
+        $this->link($classe, $bob);
+        $this->link($pp, $bob);
+
+        // Ne doit PAS lever malgré l'absence de colonne `role`.
+        (new MergeLegacyUserGroups())();
+
+        $survivor = (int) DB::table('user_groups')->where('name', '3A')->value('id');
+        // Comportement 4.14 préservé : le flag est bien posé.
+        $this->assertTrue($this->flag($survivor, $bob));
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
@@ -421,9 +496,30 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
                 $table->unsignedBigInteger('user_group_id');
                 $table->unsignedBigInteger('user_id');
                 $table->boolean('is_head_teacher')->default(false);
+                // Story 42.1 — colonne d'arête `role` (parité migration).
+                $table->string('role', 20)->default('member');
                 $table->primary(['user_group_id', 'user_id']);
             });
             $this->createdTables = true;
         }
+    }
+
+    private function role(int $groupId, int $userId): ?string
+    {
+        $value = DB::table('user_group_user')
+            ->where('user_group_id', $groupId)
+            ->where('user_id', $userId)
+            ->value('role');
+
+        return $value === null ? null : (string) $value;
+    }
+
+    private function mkUserWithRole(string $login, string $globalRole): int
+    {
+        return (int) DB::table('users')->insertGetId([
+            'login' => $login,
+            'role' => $globalRole,
+            'is_active' => true,
+        ]);
     }
 }

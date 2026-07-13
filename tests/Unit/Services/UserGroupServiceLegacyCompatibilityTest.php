@@ -1421,6 +1421,87 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
     }
 
     #[Test]
+    public function it_mirrors_role_on_pivot_read_back(): void
+    {
+        // 42.1 AC7 — le read-back pose `role` en MIROIR de `is_head_teacher` :
+        // prof1 PP → owner, prof2 prof non-PP → manager, eleve → member.
+        // L'invariant `role === 'owner'` ⇔ `is_head_teacher === true` tient.
+        [$service, $prof1, $prof2, $eleve] = $this->makeClassFixture();
+
+        $service->createGroup([
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $prof2->id, $eleve->id],
+            'head_teacher_ids' => [$prof1->id],
+        ]);
+
+        $group = UserGroup::query()->where('name', '3A')->firstOrFail();
+
+        $this->assertSame('owner', $this->pivotRole($group->id, $prof1->id), 'PP → owner');
+        $this->assertSame('manager', $this->pivotRole($group->id, $prof2->id), 'prof non-PP → manager');
+        $this->assertSame('member', $this->pivotRole($group->id, $eleve->id), 'élève → member');
+
+        // Invariant miroir après le flux.
+        $this->assertTrue($this->isHeadTeacher($group->id, $prof1->id));
+        $this->assertFalse($this->isHeadTeacher($group->id, $prof2->id));
+        $this->assertFalse($this->isHeadTeacher($group->id, $eleve->id));
+    }
+
+    #[Test]
+    public function it_keeps_role_mirror_idempotent_across_two_imports(): void
+    {
+        // 42.1 AC7 — un 2e read-back sans changement conserve exactement le
+        // même `role` sur chaque arête (aucune bascule de rôle fantôme).
+        [$service, $prof1, $prof2, $eleve] = $this->makeClassFixture();
+
+        $service->createGroup([
+            'name' => '3A',
+            'display_name' => '3A',
+            'type' => 'classe',
+            'user_ids' => [$prof1->id, $prof2->id, $eleve->id],
+            'head_teacher_ids' => [$prof1->id],
+        ]);
+
+        $group = UserGroup::query()->where('name', '3A')->firstOrFail();
+
+        // 2e import isolé.
+        $service->importFromUsersAdGroups();
+
+        $this->assertSame('owner', $this->pivotRole($group->id, $prof1->id));
+        $this->assertSame('manager', $this->pivotRole($group->id, $prof2->id));
+        $this->assertSame('member', $this->pivotRole($group->id, $eleve->id));
+    }
+
+    #[Test]
+    public function sync_persists_the_role_edge_attribute_withpivot_trap(): void
+    {
+        // 42.1 AC3 — piège 4.14 : SANS `withPivot('role')`, un
+        // `sync([$id => ['role' => …]])` ignorerait SILENCIEUSEMENT l'attribut.
+        // On prouve qu'il est bien persisté sur les 3 relations.
+        $prof = User::query()->create([
+            'login' => 'prof.x', 'role' => 'prof',
+            'dn' => 'CN=prof.x,OU=Users,DC=example,DC=local', 'is_active' => true,
+        ]);
+        $group = UserGroup::query()->create([
+            'name' => 'ZZ', 'display_name' => 'ZZ', 'type' => 'classe',
+        ]);
+
+        // Écriture via UserGroup::users().
+        $group->users()->sync([$prof->id => ['role' => 'manager']]);
+        $this->assertSame('manager', $this->pivotRole($group->id, $prof->id));
+
+        // Lecture via User::userGroups() et User::groups() (withPivot('role')).
+        $prof->refresh();
+        $this->assertSame('manager', (string) $prof->userGroups()->first()->pivot->role);
+        $this->assertSame('manager', (string) $prof->groups()->first()->pivot->role);
+
+        // Écriture via User::groups() (relation d'écriture de l'import).
+        $prof->groups()->updateExistingPivot($group->id, ['role' => 'owner']);
+        $this->assertSame('owner', $this->pivotRole($group->id, $prof->id));
+    }
+
+    #[Test]
     public function it_is_idempotent_across_repeated_pp_writes(): void
     {
         // AC7 — deux updateGroup consécutifs avec le même head_teacher_ids : au
@@ -1973,6 +2054,17 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
     }
 
     /**
+     * Story 42.1 — lit le rôle d'arête brut (`role`) sur le pivot.
+     */
+    private function pivotRole(int $groupId, int $userId): string
+    {
+        return (string) \Illuminate\Support\Facades\DB::table('user_group_user')
+            ->where('user_group_id', $groupId)
+            ->where('user_id', $userId)
+            ->value('role');
+    }
+
+    /**
      * Court-circuite la résolution LDAP de `User::isProf()/isEleve()` en
      * pré-remplissant le cache request-scope statique avec `null` : sans
      * connexion AD sur l'hôte de test, la résolution retombe alors sur
@@ -2191,6 +2283,8 @@ class UserGroupServiceLegacyCompatibilityTest extends TestCase
                 $table->unsignedBigInteger('user_id');
                 // Story 4.14 — colonne d'arête (parité avec la migration).
                 $table->boolean('is_head_teacher')->default(false);
+                // Story 42.1 — rôle d'arête (parité avec la migration).
+                $table->string('role', 20)->default('member');
                 $table->primary(['user_group_id', 'user_id']);
             });
             $this->createdTables = true;

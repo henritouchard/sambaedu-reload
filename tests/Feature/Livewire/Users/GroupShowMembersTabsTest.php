@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Livewire\Users;
 
+use App\Models\Pivot\UserGroupUserPivot;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Observers\UserGroupObserver;
@@ -132,10 +133,11 @@ class GroupShowMembersTabsTest extends TestCase
         $profPp = User::create(['login' => 'prof.pp', 'role' => 'prof', 'fullname' => 'Alice Pp', 'is_active' => true]);
         $prof = User::create(['login' => 'prof.simple', 'role' => 'prof', 'fullname' => 'Bob Simple', 'is_active' => true]);
         $eleve = User::create(['login' => 'eleve.un', 'role' => 'eleve', 'fullname' => 'Chloe Eleve', 'is_active' => true]);
+        // Story 42.1 — miroir `role` ⇔ `is_head_teacher` (owner pour le PP).
         $group->users()->sync([
-            $profPp->id => ['is_head_teacher' => true],
-            $prof->id => ['is_head_teacher' => false],
-            $eleve->id => ['is_head_teacher' => false],
+            $profPp->id => ['is_head_teacher' => true, 'role' => UserGroupUserPivot::ROLE_OWNER],
+            $prof->id => ['is_head_teacher' => false, 'role' => UserGroupUserPivot::ROLE_MANAGER],
+            $eleve->id => ['is_head_teacher' => false, 'role' => UserGroupUserPivot::ROLE_MEMBER],
         ]);
         $this->primeNoLdap('prof.pp', 'prof.simple', 'eleve.un');
         return [$group, $profPp, $prof, $eleve];
@@ -197,9 +199,11 @@ class GroupShowMembersTabsTest extends TestCase
     {
         $this->actingAs($this->makeAdmin());
         $group = UserGroup::create(['name' => 'Projet', 'type' => 'projet', 'display_name' => 'Projet X']);
-        // Donnée limite : un membre non-prof porteur du flag pivot is_head_teacher.
+        // Donnée limite : un membre non-prof porteur de l'arête `owner` (miroir
+        // de `is_head_teacher`). Le badge PP est gaté par le rôle GLOBAL `prof` →
+        // pas de badge pour un admin, même porteur de l'arête owner.
         $admin = User::create(['login' => 'perso.un', 'role' => 'admin', 'fullname' => 'Dora Perso', 'is_active' => true]);
-        $group->users()->sync([$admin->id => ['is_head_teacher' => true]]);
+        $group->users()->sync([$admin->id => ['is_head_teacher' => true, 'role' => UserGroupUserPivot::ROLE_OWNER]]);
         $this->primeNoLdap('perso.un');
 
         Livewire::test($this->componentPath(), ['id' => $group->id])

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Livewire\Users;
 
+use App\Models\Pivot\UserGroupUserPivot;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Observers\UserGroupObserver;
@@ -87,7 +88,15 @@ class HeadTeacherSectionTest extends TestCase
                     $pp = array_flip(array_map('intval', $data['head_teacher_ids'] ?? []));
                     $payload = [];
                     foreach ($group->users as $u) {
-                        $payload[(int) $u->id] = ['is_head_teacher' => isset($pp[(int) $u->id])];
+                        // Story 42.1 — le read-back réel écrit `role` en MIROIR de
+                        // `is_head_teacher` (owner ⇔ PP). Le fake reproduit le miroir.
+                        $isPP = isset($pp[(int) $u->id]);
+                        $payload[(int) $u->id] = [
+                            'is_head_teacher' => $isPP,
+                            'role' => $isPP
+                                ? UserGroupUserPivot::ROLE_OWNER
+                                : UserGroupUserPivot::defaultRoleForGlobalRole($u->role),
+                        ];
                     }
                     $group->users()->sync($payload);
                     return $group->fresh(['users']);
@@ -228,7 +237,11 @@ class HeadTeacherSectionTest extends TestCase
     {
         $this->actingAs($this->makeAdmin());
         [$group, $prof1] = $this->makeClasseWithMembers('3A');
-        $group->users()->updateExistingPivot($prof1->id, ['is_head_teacher' => true]);
+        // Story 42.1 — état PP pré-existant : miroir `owner` ⇔ `is_head_teacher`.
+        $group->users()->updateExistingPivot($prof1->id, [
+            'is_head_teacher' => true,
+            'role' => UserGroupUserPivot::ROLE_OWNER,
+        ]);
 
         Livewire::test($this->componentPath(), ['groupId' => $group->id])
             ->assertSet('headTeacherIds', [$prof1->id])

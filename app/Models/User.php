@@ -117,7 +117,12 @@ class User extends Authenticatable implements Wireable
             'user_group_user',
             'user_id',
             'user_group_id'
-        )->using(\App\Models\Pivot\UserGroupUserPivot::class);
+        )
+            ->using(\App\Models\Pivot\UserGroupUserPivot::class)
+            // Story 42.1 — `withPivot('role')` : l'arête est désormais écrite ET
+            // lue des deux côtés (42.1 écrit via `User::groups()` dans UserService ;
+            // 42.2/42.3 liront de part et d'autre). Le D4 « minimal » de 4.14 est levé.
+            ->withPivot('role');
     }
 
     /**
@@ -187,7 +192,12 @@ class User extends Authenticatable implements Wireable
             'user_group_user',
             'user_id',
             'user_group_id'
-        )->using(\App\Models\Pivot\UserGroupUserPivot::class);
+        )
+            ->using(\App\Models\Pivot\UserGroupUserPivot::class)
+            // Story 42.1 — `withPivot('role')` : c'est la relation d'ÉCRITURE de
+            // l'arête à l'import users (`persistUserGroupsToSql`). Sans elle, le
+            // rôle dérivé passé au sync/attach serait ignoré silencieusement.
+            ->withPivot('role');
     }
 
     /**

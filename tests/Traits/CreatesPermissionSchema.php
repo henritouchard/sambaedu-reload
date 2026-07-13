@@ -87,6 +87,8 @@ trait CreatesPermissionSchema
                 $table->unsignedBigInteger('user_id');
                 // Story 4.14 — attribut d'arête « professeur principal ».
                 $table->boolean('is_head_teacher')->default(false);
+                // Story 42.1 — rôle d'arête (parité avec la migration).
+                $table->string('role', 20)->default('member');
                 $table->primary(['user_group_id', 'user_id']);
             });
             $this->createdTables[] = 'user_group_user';
