@@ -6,7 +6,22 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
-// php artisan make:page maNouvellePage
+// php artisan make:page reports
+// php artisan make:page admin/settings/reports
+//
+// Génère une page Livewire 4 SFC (single-file component) conforme au
+// filesystem-based router du projet :
+//   - la page vit dans resources/views/pages/<chemin-kebab>/index.blade.php ;
+//   - c'est un SFC (bloc PHP « new class extends Component … » + un unique
+//     élément racine), enveloppé automatiquement par le layout `layouts::app`
+//     (config/livewire.php → component_layout) ;
+//   - la route est déclarée via la macro Livewire 4
+//     `Route::livewire('/uri', 'pages::<chemin.points>.index')->name('<nom>')`
+//     dans le groupe de préfixe choisi (app|admin) de routes/web.php.
+//
+// AUCUN Controller ni route MVC (GET/POST/DELETE `[Controller::class, ...]`)
+// n'est généré : l'ancien modèle a été retiré. Un Service métier optionnel
+// peut être créé et injecté dans `mount()`.
 class MakePage extends Command
 {
     /**
@@ -14,54 +29,61 @@ class MakePage extends Command
      *
      * @var string
      */
-    protected $signature = 'make:page {name? : Le nom de la page (en PascalCase)}';
+    protected $signature = 'make:page {name? : Le chemin de la page (ex: reports, admin/settings/reports)}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Crée une page complète avec vues Blade, Controller, Service et Routes';
+    protected $description = 'Crée une page Livewire 4 SFC (single-file component) + sa route livewire, conforme au filesystem-based router';
 
     /**
      * Execute the console command.
      */
-    public function handle()
+    public function handle(): int
     {
-        $this->info('🚀 Assistant de création de page Laravel');
+        $this->info('🚀 Assistant de création de page Livewire SFC');
         $this->newLine();
 
-        // Demander le nom si non fourni
+        // Demander le nom / chemin si non fourni.
         $name = $this->argument('name');
-        if (!$name) {
-            $name = $this->ask('Quel est le nom de votre page ? (ex: Products, Users, Dashboard)');
+        if (! $name) {
+            $name = $this->ask('Chemin de la page ? (ex: reports, admin/settings/reports)');
         }
 
         if (empty($name)) {
             $this->error('❌ Le nom de la page est requis.');
+
             return Command::FAILURE;
         }
 
-        // Normaliser le nom
-        $name = Str::studly($name);
-        $nameSnake = Str::snake($name);
-        $nameKebab = Str::kebab($name);
-        $nameLower = strtolower($name);
+        // Normalisation en segments kebab-case (= dossiers du filesystem-router).
+        // Accepte les séparateurs `/` ou `\` et les noms en PascalCase.
+        $segments = collect(preg_split('#[/\\\\]+#', trim($name, "/\\ ")))
+            ->filter()
+            ->map(fn (string $s): string => Str::kebab(Str::studly($s)))
+            ->values()
+            ->all();
 
-        $this->info("📝 Création de la page : {$name}");
+        if (empty($segments)) {
+            $this->error('❌ Nom de page invalide.');
+
+            return Command::FAILURE;
+        }
+
+        $dirPath = implode('/', $segments);          // admin/settings/reports
+        $dotPath = implode('.', $segments);          // admin.settings.reports
+        $component = "pages::{$dotPath}.index";       // pages::admin.settings.reports.index
+        $lastKebab = end($segments);                  // reports
+        $title = Str::headline($lastKebab);           // Reports / Rights Management
+        $serviceName = Str::studly($lastKebab);       // Reports → ReportsService
+
+        $this->info("📝 Page : {$dirPath}  →  composant {$component}");
         $this->newLine();
 
-        // Questions interactives
-        $createView = $this->confirm('Voulez-vous créer une vue Blade ?', true);
-        $createController = $this->confirm('Voulez-vous créer un Controller ?', true);
-        $createService = $this->confirm('Voulez-vous créer un Service ?', true);
-        $addComments = $this->confirm('Voulez-vous ajouter des commentaires avec exemples dans le Controller ?', false);
-        $addRoute = $this->confirm('Voulez-vous ajouter une route dans web.php ?', true);
-
-        if (!$createView && !$createController && !$createService && !$addRoute) {
-            $this->warn('⚠️  Aucun élément sélectionné. Arrêt de la commande.');
-            return Command::FAILURE;
-        }
+        $createService = $this->confirm('Créer un Service métier optionnel (injecté dans mount) ?', false);
+        $addRoute = $this->confirm('Déclarer la route livewire dans web.php ?', true);
 
         $this->newLine();
         $this->info('🔨 Génération des fichiers...');
@@ -69,45 +91,47 @@ class MakePage extends Command
 
         $success = true;
 
-        // Créer le Service (en premier car le controller en dépend)
+        // Service métier (optionnel) — créé en premier pour être référencé par le SFC.
         if ($createService) {
-            if ($this->createService($name)) {
-                $this->info("✅ Service créé : App\\Services\\{$name}Service");
+            if ($this->createService($serviceName)) {
+                $this->info("✅ Service créé : App\\Services\\{$serviceName}Service");
             } else {
-                $this->error("❌ Erreur lors de la création du Service");
+                $this->error('❌ Erreur lors de la création du Service');
                 $success = false;
+                $createService = false; // ne pas référencer un service absent
             }
         }
 
-        // Créer le Controller
-        if ($createController) {
-            if ($this->createController($name, $nameSnake, $createService, $addComments)) {
-                $this->info("✅ Controller créé : App\\Http\\Controllers\\{$name}Controller");
-            } else {
-                $this->error("❌ Erreur lors de la création du Controller");
-                $success = false;
-            }
+        // Page SFC.
+        if ($this->createSfcPage($dirPath, $title, $serviceName, $createService)) {
+            $this->info("✅ Page SFC créée : resources/views/pages/{$dirPath}/index.blade.php");
+        } else {
+            $this->error('❌ Erreur lors de la création de la page SFC');
+            $success = false;
         }
 
-        // Créer la vue Blade
-        if ($createView) {
-            if ($this->createBladeView($name, $nameSnake, $createService)) {
-                $this->info("✅ Vue Blade créée : resources/views/{$nameSnake}/index.blade.php");
-            } else {
-                $this->error("❌ Erreur lors de la création de la vue Blade");
-                $success = false;
-            }
-        }
-
-        // Ajouter les routes
+        // Route livewire.
         if ($addRoute) {
-            $routePrefix = $this->ask('Quel préfixe de route souhaitez-vous ? (ex: app, admin)', 'app');
-            $routeName = $this->ask('Quel nom de route souhaitez-vous ? (ex: products, users)', $nameLower);
-            
-            if ($this->addRoutes($name, $routePrefix, $routeName)) {
-                $this->info("✅ Routes ajoutées dans web.php avec le préfixe '{$routePrefix}'");
+            $prefix = $this->choice('Préfixe de route ?', ['app', 'admin'], 'app');
+
+            // On retire le segment de préfixe s'il est en tête (le groupe l'ajoute déjà).
+            $uriSegments = $segments;
+            if (($uriSegments[0] ?? null) === $prefix) {
+                array_shift($uriSegments);
+            }
+            $defaultUri = '/'.implode('/', $uriSegments);
+            if ($defaultUri === '/') {
+                $defaultUri = '/'.$lastKebab;
+            }
+            $defaultName = implode('.', $uriSegments) ?: $lastKebab;
+
+            $uri = $this->ask("URI (après le préfixe /{$prefix}) ?", $defaultUri);
+            $routeName = $this->ask("Nom de la route (après le préfixe {$prefix}.) ?", $defaultName);
+
+            if ($this->addRoute($prefix, $uri, $component, $routeName)) {
+                $this->info("✅ Route livewire ajoutée : {$prefix}.{$routeName} → {$component}");
             } else {
-                $this->error("❌ Erreur lors de l'ajout des routes");
+                $this->error("❌ Erreur lors de l'ajout de la route");
                 $success = false;
             }
         }
@@ -117,17 +141,12 @@ class MakePage extends Command
             $this->info('✨ Création terminée avec succès !');
             $this->newLine();
             $this->comment('💡 Prochaines étapes :');
-            if ($createView) {
-                $this->comment("   • Éditez la vue : resources/views/{$nameSnake}/index.blade.php");
-            }
-            if ($createController) {
-                $this->comment("   • Ajoutez vos méthodes dans : app/Http/Controllers/{$name}Controller.php");
-            }
+            $this->comment("   • Éditez la page : resources/views/pages/{$dirPath}/index.blade.php");
             if ($createService) {
-                $this->comment("   • Ajoutez votre logique métier dans : app/Services/{$name}Service.php");
+                $this->comment("   • Ajoutez votre logique métier dans : app/Services/{$serviceName}Service.php");
             }
             if ($addRoute) {
-                $this->comment("   • Vérifiez la route dans : routes/web.php");
+                $this->comment('   • Vérifiez la route dans : routes/web.php');
             }
         } else {
             $this->error('❌ Certaines erreurs sont survenues lors de la création.');
@@ -137,371 +156,233 @@ class MakePage extends Command
     }
 
     /**
-     * Crée la vue Blade de base
+     * Crée la page Livewire SFC dans resources/views/pages/<dirPath>/index.blade.php.
      */
-    private function createBladeView(string $name, string $nameSnake, bool $hasService): bool
+    private function createSfcPage(string $dirPath, string $title, string $serviceName, bool $hasService): bool
     {
-        $viewsDir = resource_path("views/{$nameSnake}");
-        $viewPath = "{$viewsDir}/index.blade.php";
-        
-        // Créer le dossier si nécessaire
-        if (!File::exists($viewsDir)) {
-            File::makeDirectory($viewsDir, 0755, true);
+        $pageDir = resource_path("views/pages/{$dirPath}");
+        $viewPath = "{$pageDir}/index.blade.php";
+
+        if (! File::exists($pageDir)) {
+            File::makeDirectory($pageDir, 0755, true);
         }
 
-        // Vérifier si le fichier existe déjà
         if (File::exists($viewPath)) {
-            if (!$this->confirm("Le fichier {$viewPath} existe déjà. Voulez-vous le remplacer ?", false)) {
+            if (! $this->confirm("Le fichier {$viewPath} existe déjà. Voulez-vous le remplacer ?", false)) {
                 return false;
             }
         }
 
-        $content = $this->getIndexViewContent($name, $nameSnake, $hasService);
+        $content = $this->getSfcContent($title, $serviceName, $hasService);
 
         try {
             File::put($viewPath, $content);
+
             return true;
         } catch (\Exception $e) {
-            $this->error("Erreur lors de la création de la vue : " . $e->getMessage());
+            $this->error('Erreur lors de la création de la page : '.$e->getMessage());
+
             return false;
         }
     }
 
     /**
-     * Contenu de la vue index
+     * Contenu de la page SFC (single-file component Livewire 4).
+     *
+     * Construit ligne à ligne : les lignes de code généré (contenant `$items`,
+     * `$this`, `$service`…) sont en simples quotes pour rester littérales ;
+     * seules les lignes interpolant $title / $serviceName sont en doubles quotes.
      */
-    private function getIndexViewContent(string $name, string $nameSnake, bool $hasService): string
+    private function getSfcContent(string $title, string $serviceName, bool $hasService): string
     {
-        // Page Livewire SFC (single-file component), convention filesystem-based
-        // router du projet : le composant est automatiquement enveloppé par le
-        // layout `layouts::app` (config/livewire.php → component_layout).
-        return <<<BLADE
-<?php
-
-use Livewire\Attributes\Title;
-use Livewire\Component;
-
-/**
- * Page Livewire SFC — {$name}.
- */
-new #[Title('{$name}')] class extends Component {
-    public function mount(): void
-    {
-        //
-    }
-};
-?>
-
-<x-organisms.page title="{$name}">
-    <div class="card bg-base-100 shadow-sm border border-base-200">
-        <div class="card-body">
-            <p class="text-base-content/70">Contenu de la page {$name}</p>
-        </div>
-    </div>
-</x-organisms.page>
-BLADE;
-    }
-
-    /**
-     * Crée un Controller
-     */
-    private function createController(string $name, string $nameSnake, bool $hasService, bool $addComments): bool
-    {
-        $controllerPath = app_path("Http/Controllers/{$name}Controller.php");
-
-        // Vérifier si le fichier existe déjà
-        if (File::exists($controllerPath)) {
-            if (!$this->confirm("Le fichier {$controllerPath} existe déjà. Voulez-vous le remplacer ?", false)) {
-                return false;
-            }
-        }
-
-        $serviceInjection = '';
-        $serviceProperty = '';
-        $serviceConstructor = '';
-        
         if ($hasService) {
-            $serviceInjection = "use App\\Services\\{$name}Service;";
-            $serviceProperty = "    private {$name}Service \${$nameSnake}Service;";
-            $serviceConstructor = <<<PHP
-    public function __construct({$name}Service \${$nameSnake}Service)
-    {
-        \$this->{$nameSnake}Service = \${$nameSnake}Service;
-    }
-PHP;
+            $stateBlock = [
+                '    /** @var array<int, mixed> Données chargées depuis le service. */',
+                '    public array $items = [];',
+                '',
+                "    public function mount({$serviceName}Service \$service): void",
+                '    {',
+                '        // Injection de service via mount() (pas de constructeur en Livewire).',
+                '        $this->items = $service->getAll();',
+                '    }',
+            ];
+            $bodyBlock = [
+                '        @forelse ($items as $item)',
+                '            <pre class="bg-base-200 p-2 rounded text-xs">{{ json_encode($item, JSON_PRETTY_PRINT) }}</pre>',
+                '        @empty',
+                '            <p class="text-base-content/70">Aucune donnée.</p>',
+                '        @endforelse',
+            ];
+        } else {
+            $stateBlock = [
+                '    public function mount(): void',
+                '    {',
+                "        // Garde d'accès si besoin, ex :",
+                "        // if (! \\Illuminate\\Support\\Facades\\Gate::allows('server.admin')) { abort(403); }",
+                '    }',
+            ];
+            $bodyBlock = [
+                "            <p class=\"text-base-content/70\">Contenu de la page {$title}.</p>",
+            ];
         }
 
-        // Générer les commentaires si demandé
-        $indexComments = '';
-        $storeComments = '';
-        $destroyComments = '';
-        
-        if ($addComments) {
-            $indexComments = <<<PHP
-
-        // Exemples d'utilisation de \$request :
-        // \$request->input('key')           // Récupère une valeur du formulaire
-        // \$request->get('key', 'default')  // Récupère avec valeur par défaut
-        // \$request->all()                  // Récupère toutes les données
-        // \$request->only(['key1', 'key2']) // Récupère seulement certaines clés
-        // \$request->except(['key1'])       // Récupère tout sauf certaines clés
-        // \$request->has('key')             // Vérifie si une clé existe
-        // \$request->user()                 // Récupère l'utilisateur connecté
-        // \$request->ip()                   // Récupère l'adresse IP
-        // \$request->header('X-Custom')     // Récupère un header HTTP
-        // \$request->method()               // Récupère la méthode HTTP (GET, POST, etc.)
-        // \$request->path()                 // Récupère le chemin de l'URL
-        // \$request->url()                  // Récupère l'URL complète
-        // \$request->query('key')           // Récupère un paramètre de requête (?key=value)
-PHP;
-            
-            $storeComments = <<<PHP
-
-        // Exemples d'utilisation de \$request pour POST :
-        // \$request->validate([             // Validation des données
-        //     'name' => 'required|string|max:255',
-        //     'email' => 'required|email',
-        // ]);
-        // \$request->input('name')           // Récupère 'name' du formulaire
-        // \$request->file('photo')           // Récupère un fichier uploadé
-        // \$request->hasFile('photo')       // Vérifie si un fichier a été uploadé
-        // \$request->json()                 // Récupère les données JSON (pour API)
-        // \$request->bearerToken()          // Récupère le token Bearer (pour API)
-        // \$request->header('Authorization') // Récupère le header Authorization
-PHP;
-            
-            $destroyComments = <<<PHP
-
-        // Exemples d'utilisation de \$request pour DELETE :
-        // \$request->input('id')             // Récupère l'ID depuis le body
-        // \$request->route('id')             // Récupère l'ID depuis la route
-        // \$request->query('id')             // Récupère l'ID depuis la query string
-        // \$request->header('X-Request-ID') // Récupère un header personnalisé
-PHP;
+        $lines = ['<?php', ''];
+        if ($hasService) {
+            $lines[] = "use App\\Services\\{$serviceName}Service;";
         }
-        
-        $serviceCall = $hasService ? "\$data = \$this->{$nameSnake}Service->getAll();\n        " : '';
-        $dataPass = $hasService ? ", ['data' => \$data]" : '';
-        
-        $controllerContent = <<<PHP
-<?php
+        $lines[] = 'use Livewire\\Attributes\\Title;';
+        $lines[] = 'use Livewire\\Component;';
+        $lines[] = '';
+        $lines[] = '/**';
+        $lines[] = " * Page Livewire SFC — {$title}.";
+        $lines[] = ' *';
+        $lines[] = ' * Single-file component enveloppé par le layout `layouts::app`';
+        $lines[] = ' * (config/livewire.php → component_layout). Un unique élément racine requis.';
+        $lines[] = ' */';
+        $lines[] = "new #[Title('{$title}')] class extends Component {";
+        $lines = array_merge($lines, $stateBlock);
+        $lines[] = '};';
+        $lines[] = '?>';
+        $lines[] = '';
+        $lines[] = "<x-organisms.page title=\"{$title}\">";
+        $lines[] = '    <div class="card bg-base-100 shadow-sm border border-base-200">';
+        $lines[] = '        <div class="card-body">';
+        $lines = array_merge($lines, $bodyBlock);
+        $lines[] = '        </div>';
+        $lines[] = '    </div>';
+        $lines[] = '</x-organisms.page>';
+        $lines[] = '';
 
-namespace App\Http\Controllers;
-
-use Illuminate\Http\Request;
-{$serviceInjection}
-
-class {$name}Controller extends Controller
-{
-{$serviceProperty}
-{$serviceConstructor}
-    
-    /**
-     * Affiche la page
-     */
-    public function index(Request \$request)
-    {{$indexComments}
-        {$serviceCall}return view('{$nameSnake}.index'{$dataPass});
-    }
-    
-    /**
-     * Traite une requête POST
-     */
-    public function store(Request \$request)
-    {{$storeComments}
-        // Récupérer les données du formulaire
-        // \$data = \$request->input('key');
-        
-        // Traiter les données...
-        
-        // Rediriger ou retourner une réponse
-        return redirect()->back()->with('success', 'Données enregistrées avec succès');
-    }
-    
-    /**
-     * Traite une requête DELETE
-     */
-    public function destroy(Request \$request, string \$id)
-    {{$destroyComments}
-        // Récupérer l'ID depuis la route ou le body
-        // \$id = \$request->route('id') ?? \$request->input('id');
-        
-        // Supprimer la ressource...
-        
-        // Rediriger ou retourner une réponse
-        return redirect()->back()->with('success', 'Ressource supprimée avec succès');
-    }
-}
-PHP;
-
-        try {
-            File::put($controllerPath, $controllerContent);
-            return true;
-        } catch (\Exception $e) {
-            $this->error("Erreur : " . $e->getMessage());
-            return false;
-        }
+        return implode("\n", $lines);
     }
 
     /**
-     * Crée un Service
+     * Crée un Service métier optionnel.
      */
     private function createService(string $name): bool
     {
         $servicePath = app_path("Services/{$name}Service.php");
 
-        // Vérifier si le fichier existe déjà
         if (File::exists($servicePath)) {
-            if (!$this->confirm("Le fichier {$servicePath} existe déjà. Voulez-vous le remplacer ?", false)) {
+            if (! $this->confirm("Le fichier {$servicePath} existe déjà. Voulez-vous le remplacer ?", false)) {
                 return false;
             }
         }
 
-        $serviceContent = <<<PHP
-<?php
-
-namespace App\Services;
-
-use Illuminate\Support\Facades\Log;
-
-/**
- * Service de gestion de {$name}
- */
-class {$name}Service
-{
-    /**
-     * Récupère toutes les ressources
-     */
-    public function getAll(): array
-    {
-        try {
-            // Implémentez votre logique ici
-            return [];
-        } catch (\Exception \$e) {
-            Log::error('{$name}Service getAll error: ' . \$e->getMessage());
-            return [];
-        }
-    }
-}
-PHP;
+        $serviceContent = implode("\n", [
+            '<?php',
+            '',
+            'namespace App\\Services;',
+            '',
+            'use Illuminate\\Support\\Facades\\Log;',
+            '',
+            '/**',
+            " * Service de gestion de {$name}.",
+            ' */',
+            "class {$name}Service",
+            '{',
+            '    /**',
+            '     * Récupère toutes les ressources.',
+            '     *',
+            '     * @return array<int, mixed>',
+            '     */',
+            '    public function getAll(): array',
+            '    {',
+            '        try {',
+            '            // Implémentez votre logique ici.',
+            '            return [];',
+            "        } catch (\\Exception \$e) {",
+            "            Log::error('{$name}Service getAll error: '.\$e->getMessage());",
+            '',
+            '            return [];',
+            '        }',
+            '    }',
+            '}',
+            '',
+        ]);
 
         try {
             File::put($servicePath, $serviceContent);
+
             return true;
         } catch (\Exception $e) {
-            $this->error("Erreur : " . $e->getMessage());
+            $this->error('Erreur : '.$e->getMessage());
+
             return false;
         }
     }
 
     /**
-     * Ajoute les routes (GET, POST, DELETE) dans web.php
+     * Déclare une route livewire dans le groupe de préfixe (app|admin) de web.php.
+     *
+     * Localise l'ouverture du groupe par son `->name('<prefix>.')->group(function (…) {`
+     * — insensible à la forme du middleware (string ou tableau) — puis insère la
+     * route juste avant l'accolade fermante correspondante. Si le groupe est
+     * introuvable ou mal formé, la route est imprimée pour insertion manuelle
+     * (repli non bloquant).
      */
-    private function addRoutes(string $name, string $prefix, string $routeName): bool
+    private function addRoute(string $prefix, string $uri, string $component, string $routeName): bool
     {
         $webPath = base_path('routes/web.php');
-        
-        if (!File::exists($webPath)) {
+
+        if (! File::exists($webPath)) {
             $this->error("Le fichier routes/web.php n'existe pas.");
+
             return false;
         }
 
+        $uri = '/'.ltrim($uri, '/');
+        $line = "    Route::livewire('{$uri}', '{$component}')->name('{$routeName}');";
+
         $content = File::get($webPath);
-        $controllerName = "{$name}Controller";
-        $controllerNamespace = "App\\Http\\Controllers\\{$controllerName}";
 
-        // Vérifier si les routes existent déjà
-        if (strpos($content, "{$controllerName}::class") !== false) {
-            if (!$this->confirm("Des routes pour {$controllerName} existent déjà. Voulez-vous continuer quand même ?", false)) {
-                return false;
-            }
+        // Localiser l'ouverture du groupe : ->name('<prefix>.')->group(function (...) {
+        $pattern = "/->name\(['\"]".preg_quote($prefix, '/')."\.['\"]\)->group\(function\s*\([^)]*\)\s*\{/";
+
+        if (! preg_match($pattern, $content, $m, PREG_OFFSET_CAPTURE)) {
+            $this->warn("⚠️  Groupe de préfixe '{$prefix}' introuvable dans web.php. Ajoutez la route manuellement :");
+            $this->line($line);
+
+            return true;
         }
 
-        // Générer les routes GET, POST et DELETE
-        $newRoutes = <<<PHP
-    // Routes pour {$name}
-    Route::get('/{$routeName}', [{$controllerNamespace}::class, 'index'])->name('{$routeName}');
-    Route::post('/{$routeName}', [{$controllerNamespace}::class, 'store'])->name('{$routeName}.store');
-    Route::delete('/{$routeName}/{id}', [{$controllerNamespace}::class, 'destroy'])->name('{$routeName}.destroy');
-PHP;
+        // Position juste après l'accolade ouvrante du groupe.
+        $start = $m[0][1] + strlen($m[0][0]);
 
-        // Ajouter l'import du controller en haut du fichier si nécessaire
-        $importStatement = "use {$controllerNamespace};";
-        if (strpos($content, $importStatement) === false) {
-            // Trouver la dernière ligne d'import
-            $lines = explode("\n", $content);
-            $lastImportIndex = 0;
-            foreach ($lines as $index => $line) {
-                if (preg_match('/^use\s+/', $line)) {
-                    $lastImportIndex = $index;
-                }
+        // Trouver l'accolade fermante correspondante par comptage de niveaux.
+        $depth = 1;
+        $i = $start;
+        $len = strlen($content);
+        while ($i < $len && $depth > 0) {
+            $ch = $content[$i];
+            if ($ch === '{') {
+                $depth++;
+            } elseif ($ch === '}') {
+                $depth--;
             }
-            // Insérer l'import après le dernier import
-            array_splice($lines, $lastImportIndex + 1, 0, $importStatement);
-            $content = implode("\n", $lines);
+            $i++;
         }
 
-        // Chercher si le préfixe existe déjà dans un groupe
-        $prefixPattern = "/Route::prefix\(['\"]{$prefix}['\"]\)->middleware\(['\"]sambaedu\.auth['\"]\)->name\(['\"]{$prefix}\.['\"]\)->group\(function\s*\(\)\s*\{/";
-        
-        if (preg_match($prefixPattern, $content, $matches, PREG_OFFSET_CAPTURE)) {
-            // Le préfixe existe déjà, ajouter les routes dans ce groupe
-            $matchPos = $matches[0][1];
-            $matchLength = strlen($matches[0][0]);
-            
-            // Trouver la fin du groupe (la parenthèse fermante correspondante)
-            $pos = $matchPos + $matchLength;
-            $openBraces = 1;
-            $endPos = $pos;
-            
-            while ($openBraces > 0 && $endPos < strlen($content)) {
-                if ($content[$endPos] === '{') {
-                    $openBraces++;
-                } elseif ($content[$endPos] === '}') {
-                    $openBraces--;
-                }
-                $endPos++;
-            }
-            
-            // Insérer la route juste avant la fermeture du groupe
-            $beforeClose = substr($content, 0, $endPos - 1);
-            $afterClose = substr($content, $endPos - 1);
-            
-            // Ajouter les routes juste avant la fermeture du groupe
-            $insertion = "\n" . $newRoutes . "\n";
-            $content = $beforeClose . $insertion . $afterClose;
-        } else {
-            // Le préfixe n'existe pas, créer un nouveau groupe
-            $routesGroup = <<<PHP
+        if ($depth !== 0) {
+            $this->warn("⚠️  Fin du groupe '{$prefix}' introuvable dans web.php. Ajoutez la route manuellement :");
+            $this->line($line);
 
-// Routes pour {$name}
-Route::prefix('{$prefix}')->middleware('sambaedu.auth')->name('{$prefix}.')->group(function () {
-{$newRoutes}
-});
-
-PHP;
-            
-            // Ajouter avant la route fallback ou à la fin
-            $fallbackPattern = '/\/\*.*?Fallback Route.*?\*\/.*?Route::match\(\[.*?\].*?->where\(.*?\);/s';
-            if (preg_match($fallbackPattern, $content)) {
-                $content = preg_replace(
-                    $fallbackPattern,
-                    $routesGroup . "\n" . '$0',
-                    $content
-                );
-            } else {
-                // Ajouter avant la dernière ligne si elle existe
-                $content = rtrim($content) . "\n" . $routesGroup;
-            }
+            return true;
         }
+
+        $closePos = $i - 1; // position de l'accolade fermante du groupe
+        $before = rtrim(substr($content, 0, $closePos));
+        $after = substr($content, $closePos);
+        $content = $before."\n\n".$line."\n".$after;
 
         try {
             File::put($webPath, $content);
+
             return true;
         } catch (\Exception $e) {
-            $this->error("Erreur : " . $e->getMessage());
+            $this->error('Erreur : '.$e->getMessage());
+
             return false;
         }
     }
 }
-
